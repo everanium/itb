@@ -203,12 +203,18 @@ All five requirements apply universally to all three seeds in all modes.
 
 | Threat | Exploit requires | Practical risk | Mitigation |
 |---|---|---|---|
-| rotateBits7 shift timing (DPA/SPA class) | Oscilloscope on CPU die, >10GHz, lab access | Same as AES DPA | Register-only, no software side-channel |
+| rotateBits7 shift timing (DPA/SPA class) | Oscilloscope on CPU die, >10GHz, lab access | Same class as DPA on any cipher | Register-only, no software side-channel |
 | Container size metadata | Network observation | Metadata only | Inherent to all ciphers, no crypto advantage |
 | Non-CSPRNG container | Deployer misconfiguration | Degrades barrier | crypto/rand mandatory, non-CSPRNG unsupported |
 | COBS decode truncation | Wrong seed / tampered data | None | Downstream null check returns "wrong seed" error |
 | Bit-flip false null (DoS) | Data bit modification | None (with MAC) | MAC verified before null search; noise flips harmless |
 | CGO AVX2 side-channel | Co-located attacker | None (see below) | All AVX2 ops constant-time; identical to pure Go |
+| Spectre v1/v2/v4, Downfall, etc. | Secret-dependent memory access gadget | No known gadget in ITB data path | Register-only ops; no `table[secret_index]` |
+| MDS, Zenbleed (stale data) | CPU buffer residue | Seeds may remain in buffers | Not ITB-specific; identical for all ciphers |
+| Rowhammer, RAMBleed | DRAM bit flips / reads | Memory corruption / leakage | Not ITB-specific; ECC memory recommended |
+| Heap memory exposure | Memory dump, debugger, Meltdown | Seeds, cached hash keys in heap | Not ITB-specific; secureWipe on intermediate buffers |
+
+For detailed per-CVE analysis of 20+ hardware attacks (Spectre variants, Downfall, Hertzbleed, MDS, Zenbleed, Rowhammer), see [HWTHREATS.md](HWTHREATS.md).
 
 ### CGO Backend Side-Channel Equivalence
 
