@@ -56,6 +56,8 @@ These attacks read stale data from internal CPU buffers (line fill buffers, stor
 
 **Mitigation:** ECC memory detects and corrects single-bit flips. For high-security deployments, ECC memory is recommended alongside hardware memory encryption (AMD SEV, Intel SGX/TDX, ARM CCA).
 
+**Heap memory exposure.** Sensitive data resides in heap memory during the lifetime of the process: seed components (`Seed.Components []uint64`), intermediate hash buffers, and plaintext during encode/decode. The library mitigates by calling `secureWipe` on intermediate buffers after use, but cannot wipe Go runtime internals or kernel buffers used during `crypto/rand` generation. Additionally, cached hash wrappers (e.g., `makeAESHash()`, `makeBlake3Hash()`) store a fixed random key in a closure for the lifetime of the session — this key persists in heap memory and is not wiped until the process exits. If an attacker can read heap memory (Meltdown, memory dump, debugger), they can read seeds and cached keys directly — regardless of the cipher used. This is identical for all software symmetric ciphers and is not specific to ITB.
+
 ## Summary
 
 None of the hardware-level attacks analyzed above were found to introduce a new attack surface specific to ITB beyond what is already documented (startPixel cache side-channel, heap memory exposure). The construction's register-only data path for secret-dependent operations (`noisePos`, `dataRotation`, `channelXOR`) does not provide the disclosure gadget required by speculative execution attacks or the data-dependent memory access pattern required by cache-based attacks.
