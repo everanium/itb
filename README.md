@@ -505,6 +505,7 @@ encrypted, err := itb.Encrypt(noiseSeed, dataSeed, startSeed, data)
 - [PROOFS.md](PROOFS.md) — Formal security proofs
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
 - [SECURITY.md](SECURITY.md) — Security reference tables
+- [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.)
 
 ## License
 

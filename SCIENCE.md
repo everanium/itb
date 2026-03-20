@@ -521,19 +521,24 @@ No speculative execution (Spectre) vulnerability: no secret-dependent array inde
 
 **Conclusion:** The CGO backend preserves the side-channel security model of the pure Go implementation on all platforms. No new software-observable side-channel is introduced by SIMD auto-vectorization (AVX2 or NEON). The same DPA/SPA hardware-level threat (point 1) applies to both backends equally.
 
-**7. Spectre, Meltdown, and Rowhammer.**
+**7. Speculative execution, data sampling, and memory integrity attacks.** ITB's secret-dependent operations (`noisePos`, `dataRotation`, `channelXOR`) use only register operations (shift, XOR, AND, OR). There are no secret-dependent array accesses (no S-box, no T-tables). The CGO backend does not use `gather` instructions; AVX2 operations (`vpxor`, `vpand`, `vpor`, `vpsllw`, `vpsrlw`) are constant-weight and do not cause measurable frequency throttling.
 
-**Meltdown (CVE-2017-5754).** Out-of-order execution allows userspace to read kernel memory. If exploited against the ITB process, the attacker can read seeds, plaintext, and intermediate buffers directly from memory. This is identical to the "heap memory exposure" limitation documented above — all software symmetric ciphers (AES, ChaCha20, Serpent) are equally affected. Modern systems mitigate via KPTI (Kernel Page Table Isolation), enabled by default on Linux, macOS, and Windows since 2018.
+**CPU speculative execution attacks (summary):**
 
-**Spectre v1 — bounds check bypass (CVE-2017-5753).** The canonical Spectre v1 gadget requires a bounds-checked array access with a secret-dependent index: the branch predictor is mistrained, speculative execution performs the access, and the result leaks through cache timing. In AES, the S-box lookup `sbox[input ^ round_key]` is a textbook Spectre v1 target — a 256-byte table indexed by a key-dependent value on every round. ITB does not perform secret-dependent array indexing: `noisePos` and `dataRotation` are used only as shift amounts and bitmasks (register operations), `channelXOR` is a register XOR mask, and container access iterates sequentially from `startPixel`. No Spectre v1 gadget exists in the construction's data path. The `startPixel` offset determines the sequential iteration start point, but this is already documented as a cache side-channel limitation.
+| Attack class | Requires | ITB data path | Status |
+|---|---|---|---|
+| Spectre v1/v2/v4, Retbleed, Inception, Downfall, GhostRace, BHI, SLAM, Training Solo | Secret-dependent memory access gadget (`array[secret]`) | Register-only ops; no `table[secret_index]` | No known gadget |
+| Hertzbleed (remote power/timing) | Data-dependent power → frequency throttling | Lightweight register XOR/shift; constant-weight AVX2 | No known attack surface |
+| MDS, RFDS, Zenbleed (stale data sampling) | Stale data in CPU buffers | Seeds may remain in buffers; identical for AES/ChaCha20 | Not ITB-specific |
 
-**Spectre v2 — branch target injection (CVE-2017-5715).** The attacker poisons the branch target buffer to redirect speculative execution to a chosen gadget. Exploitation requires the gadget to perform a secret-dependent memory access that leaves a cache footprint. Since ITB's secret-dependent operations (XOR, shift, bitmask) are register-only with no memory access dependent on dataSeed values, no exploitable gadget exists even under branch target misprediction.
+**Memory integrity attacks (summary):**
 
-**Spectre v4 — speculative store bypass (CVE-2018-3639).** Exploits speculative load-before-store forwarding to read stale data at an address being written. ITB's pixel processing performs sequential writes to the container; there is no pattern where a speculative load on the same address would reveal secret-dependent behavior.
+| Attack | ITB impact | Status |
+|---|---|---|
+| Rowhammer, RAMBleed | Could corrupt/read seeds in DRAM; affects all software equally | Not ITB-specific; ECC memory recommended |
+| Meltdown (CVE-2017-5754) | Reads process memory (seeds, plaintext); identical for all ciphers | Not ITB-specific; KPTI mitigates |
 
-**Rowhammer.** Repeated DRAM row activation causes bit flips in adjacent rows, potentially corrupting seeds, container data, or plaintext in memory. This is a general memory integrity attack affecting all software — not specific to any cipher. ECC (Error-Correcting Code) memory detects and corrects single-bit flips, mitigating the primary Rowhammer vector. For high-security deployments, ECC memory is recommended alongside hardware memory encryption (AMD SEV, Intel SGX/TDX, ARM CCA).
-
-**Note:** ITB does not claim resistance to Spectre, Meltdown, or Rowhammer. However, the construction architecturally does not provide the primary attack surface that Spectre v1/v2 exploit in table-lookup-based ciphers: there are no secret-dependent array accesses (no S-box, no T-tables, no key-dependent table lookups). The root cause exploited by Spectre in AES implementations — `table[secret_index]` — is absent from ITB's data path by design. This architectural property has not been independently verified.
+ITB does not claim resistance to any hardware-level attack. However, the construction architecturally does not provide the disclosure gadget (`table[secret_index]`) required by speculative execution attacks. This has not been independently verified. See [HWTHREATS.md](HWTHREATS.md) for detailed per-CVE analysis.
 
 ### Scope and Maturity Disclaimer
 
