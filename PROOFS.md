@@ -167,6 +167,38 @@ D has zero software-observable side-channel. Even combined CCA + cache + KPA pro
 
 Three seeds is therefore the minimum: fewer creates cross-domain leakage in every possible pairing; three achieves pairwise independence through CSPRNG-generated independent keys. ∎
 
+## Proof 3b: ChainHash Full Component Utilization
+
+**Theorem.** For any hash function H satisfying requirement 4 (avalanche), ChainHash(data, S) with S = (s₀, s₁, ..., s_{n-1}) depends on all n components. No component can be changed without affecting the final output. This has not been independently verified.
+
+**Proof.** By contradiction. Suppose component s_k (0 ≤ k ≤ n-1) does not influence the final output h_{n-1}.
+
+ChainHash computes:
+```
+h₀ = H(data, s₀)
+hᵢ = H(data, sᵢ ⊕ hᵢ₋₁)    for i = 1, ..., n-1
+```
+
+*Step 1: Changing s_k changes the input to round k.*
+At round k, the second argument to H is `s_k ⊕ h_{k-1}` (or `s₀` for k=0). Changing s_k by even a single bit changes this argument by one bit.
+
+*Step 2: Avalanche propagates the change.*
+By requirement 4 (avalanche), a single-bit change in any input to H flips approximately 50% of output bits. Therefore h_k changes substantially when s_k changes.
+
+*Step 3: The change cascades through subsequent rounds.*
+At round k+1: the input is `s_{k+1} ⊕ h_k`. Since h_k changed (~50% of bits), this input changes, and by avalanche, h_{k+1} changes. By induction, every subsequent output h_{k+1}, h_{k+2}, ..., h_{n-1} changes.
+
+*Step 4: Contradiction.*
+The final output h_{n-1} changes when s_k changes. This contradicts the assumption that s_k does not influence h_{n-1}.
+
+Since this holds for all k ∈ {0, ..., n-1}, all components influence the output.
+
+**Role of requirement 2 (chain survival).** Requirement 2 prevents a separate failure mode: XOR-cancelling hash functions where H(data, k) = k ⊕ f(data). Such functions satisfy avalanche for individual calls, but in even-length chains the data dependency cancels:
+```
+h₁ = (s₁ ⊕ h₀) ⊕ f(data) = s₁ ⊕ s₀ ⊕ f(data) ⊕ f(data) = s₁ ⊕ s₀
+```
+All components are still utilized (summed via XOR), but the output loses dependence on the data input. Requirement 2 prevents this, ensuring both component utilization and data sensitivity. ∎
+
 ## Proof 4: Rotation Barrier
 
 **Theorem.** With unknown rotation r ∈ {0,...,6} from dataSeed, the attacker faces 7^P indistinguishable configurations for P pixels when using a non-invertible hash function.
