@@ -114,6 +114,59 @@ because all three are independently generated. The attacker knows the noise posi
 
 No memory access depends on dataSeed's values. No cache line, no memory pattern, no software-observable signal. ∎
 
+## Proof 3a: Triple-Seed Isolation Minimality
+
+**Theorem.** Three independent seeds is the minimum configuration such that compromise of any single configuration domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixel). This has not been independently verified.
+
+**Proof.**
+
+*Part 1: Three configuration domains.*
+
+The construction defines three disjoint configuration domains:
+- **N** (noise): noise bit position per pixel (3 bits/pixel), derived from noiseSeed
+- **D** (data): rotation (3 bits) + per-bit XOR masks (56 bits) per pixel, derived from dataSeed
+- **S** (start): pixel embedding offset (one per message), derived from startSeed
+
+Each domain has a documented attack surface:
+- N is recoverable via CCA with MAC-reveal (bit-flip → accept = noise bit)
+- S is observable via cache side-channel (memory access pattern)
+- D has zero software-observable side-channel (register-only operations)
+
+*Part 2: Single seed — complete break.*
+
+If one seed controls all three domains (N, D, S derived from same seed), CCA reveals N configuration (noise positions for all pixels). Since N and D are derived from the same seed, knowledge of N constrains the seed → D is recoverable. Complete configuration break.
+
+*Part 3: Two seeds — all pairings create cross-domain leakage.*
+
+Three possible 2-seed pairings exist. Each creates cross-domain leakage:
+
+**(a) Seed₁ = {N}, Seed₂ = {D, S}:**
+Cache side-channel reveals S (startPixel) from Seed₂. Under KPA, for each pixel the attacker has 56 candidate hash outputs (Section 2.9 in SCIENCE.md). S narrows the pixel-to-data mapping. Combined KPA + known S constrains Seed₂, leaking partial information about D. Cross-domain leak: S → D.
+
+**(b) Seed₁ = {N, S}, Seed₂ = {D}:**
+CCA reveals N from Seed₁. Cache reveals S from Seed₁. Both attack surfaces target the same seed. Multiple (nonce, startPixel) observations from cache side-channel provide constraints on Seed₁ → reduces search space for Seed₁ → N configuration obtained without CCA. Cross-domain leak: S → N.
+
+**(c) Seed₁ = {N, D}, Seed₂ = {S}:**
+CCA reveals N from Seed₁ (3 bits/pixel). Since N and D share Seed₁, CCA-derived N constraints reduce the effective key space of Seed₁. With KPA, the attacker knows plaintext and N configuration → 7 candidate D configurations per pixel (rotation 0-6), each fully determining the hash output → verification oracle for Seed₁. Cross-domain leak: N → D. This is the most severe pairing.
+
+*Part 4: Three seeds — pairwise independence.*
+
+With three seeds generated independently from crypto/rand:
+
+```
+I(noiseSeed ; dataSeed) = 0
+I(noiseSeed ; startSeed) = 0
+I(dataSeed ; startSeed) = 0
+```
+
+CCA reveals N (noiseSeed configuration). Since noiseSeed and dataSeed are independent random variables, I(dataSeed ; noiseSeed) = 0 — knowledge of the complete noiseSeed configuration provides zero information about dataSeed. Similarly for startSeed.
+
+Cache reveals S (startSeed → startPixel). Since startSeed is independent of both noiseSeed and dataSeed, the leak is contained.
+
+D has zero software-observable side-channel. Even combined CCA + cache + KPA provides: N configuration (from noiseSeed) + start pixel (from startSeed) + known plaintext. Per-bit XOR (1:1) ensures 7 candidate rotations per pixel remain valid (Section 2.9 in SCIENCE.md). Without information about dataSeed, the attacker cannot distinguish candidates → security reduces to brute-force over dataSeed key space.
+
+Three seeds is therefore the minimum: fewer creates cross-domain leakage in every possible pairing; three achieves pairwise independence through CSPRNG-generated independent keys. ∎
+
 ## Proof 4: Rotation Barrier
 
 **Theorem.** With unknown rotation r ∈ {0,...,6} from dataSeed, the attacker faces 7^P indistinguishable configurations for P pixels when using a non-invertible hash function.
