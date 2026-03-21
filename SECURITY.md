@@ -269,6 +269,9 @@ The information-theoretic barrier is computation-model-independent: provided the
 | **Simon** (periodicity) | Relies on PRF/PRP computational strength | Conjectured mitigated: aperiodic config map (nonce per message) |
 | **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: random container absorbs collisions |
 | **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: random container limits structural relations |
+| **Q2 superposition queries** | Theoretically applicable (oracle accepts superposition inputs) | Not applicable: MAC oracle is inherently classical (network request → accept/reject) |
+
+**Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB (without MAC) has no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
 
 AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See SCIENCE.md §2.12 for detailed analysis.
 

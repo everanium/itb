@@ -418,6 +418,17 @@ Each oracle query requires O(P) hash evaluations (P = pixel count) for full decr
 
 **Summary.** ITB's architecture provides two potential layers of quantum resistance: (1) the random container limits the applicability of quantum structural algorithms by making the construction's internal state unobservable under the random-container model (this property has not been independently verified against quantum attacks), and (2) Grover brute-force remains the primary quantum attack vector, degraded by expensive or absent oracle. At 512-bit key: 2^256 Grover operations. At 2048-bit key: 2^1024. Both are beyond any foreseeable quantum capability. Note that AES-256 and ChaCha20 with their 2^128 Grover bound are widely considered quantum-resistant for practical purposes.
 
+#### 2.12.5 Q1 vs Q2 Quantum Oracle Models
+
+Recent work on quantum security distinguishes two models: Q1 (adversary performs quantum computation locally, but oracle access is classical) and Q2 (adversary can send quantum superposition queries to the oracle). Several constructions provably secure in the classical setting — Luby-Rackoff, Even-Mansour, Keyed Sum of Permutations — become vulnerable in the Q2 model because the oracle structurally accepts superposition inputs.
+
+ITB's oracle model is inherently Q1:
+
+- **Core ITB (no MAC):** No oracle exists. The adversary has no verification mechanism — Grover cannot construct f(key) → {0, 1}.
+- **ITB + MAC-inside-encrypt:** The oracle is a physical network interaction: send a concrete container, receive accept/reject. Quantum superposition queries are physically impossible — the recipient's MAC verification operates on classical bytes, not superpositions.
+
+The Q2 model is inapplicable to ITB by design, not by cryptographic countermeasure. This is an architectural observation that has not been independently verified.
+
 ## 3. Comparison with Existing Ciphers
 
 ### 3.1 Maximum Key Size
