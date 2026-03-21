@@ -12,6 +12,27 @@ A parameterized symmetric cipher construction library for Go that achieves known
 
 **Central design idea:** The random container creates an information-theoretic barrier. PRF-grade hash functions are strongly recommended for production use, but the construction's architecture theoretically permits hash functions satisfying only five weaker requirements (full input sensitivity, chain survival, non-affine mixing, avalanche, non-invertibility) for research and educational purposes.
 
+## Why ITB: Inverted Approach to Cryptography
+
+Traditional symmetric ciphers (AES, ChaCha20) place all security burden on the mathematical strength of their core primitive. The keystream is XOR'd directly with plaintext — any weakness in the primitive is immediately exploitable because the attacker observes the primitive's output.
+
+ITB inverts this approach. Instead of relying solely on the primitive's strength, the construction interposes a **random container** (generated from `crypto/rand`) between the hash output and the observer. The hash output is consumed by modifying random bytes that the attacker never sees — the original container values are never transmitted. This creates an information-theoretic barrier: no computational power can extract information that does not exist in the observation.
+
+**Why the math is simple.** The construction uses only elementary operations: XOR, bitwise AND, modulo, bit shifts. There are no Galois fields, no S-boxes, no polynomial multiplication. This is not a weakness — it is a consequence of the design. The security comes from the **architecture** (random container, triple-seed isolation, per-bit XOR, noise embedding), not from the complexity of the math. Each architectural layer addresses a specific attack vector:
+
+- **Random container** — hash output unobservable under passive observation (COA, KPA)
+- **Per-bit XOR (1:1)** — 56 independent mask bits per pixel, every observation consistent with any plaintext
+- **Triple-seed isolation** — CCA leaks only noiseSeed (3 bits/pixel); dataSeed and startSeed remain independent
+- **Noise bit embedding** — no bit position is deterministically data from the public format
+
+**Why triple-seed is necessary.** Without three independent seeds, a leak in one domain cascades: CCA reveals noise positions → same seed gives rotation and XOR → full configuration recovered. Triple-seed isolation ensures each leak is contained: CCA → only noiseSeed, cache side-channel → only startSeed, dataSeed → zero software-observable exposure. This is the minimum configuration where every leak is architecturally isolated.
+
+**Why PRF requirements are relaxed.** In traditional ciphers, the attacker directly observes the primitive's output (keystream XOR plaintext). Any bias, invertibility, or algebraic structure is exploitable. In ITB, the hash output is absorbed by a random container modification — the attacker sees modified random bytes, not hash outputs. Under the random-container model, every observed byte value is compatible with every possible hash output. PRF-grade hash functions are strictly recommended for production use, but the construction's architecture theoretically permits weaker hash functions for research purposes. Using non-cryptographic hash functions in any real-world application is potentially dangerous.
+
+**Why quantum structural attacks are conjectured mitigated.** Quantum algorithms like Simon (periodicity), BHT (collisions), and quantum differential/linear analysis require observable structural relations between inputs and outputs. The random container makes these relations unobservable — the attacker cannot build the algebraic structures that quantum algorithms exploit. Additionally, ITB's MAC oracle (when present) is inherently classical: it accepts concrete bytes over a network, not quantum superposition queries (Q2 model inapplicable). This is an architectural observation that has not been independently verified.
+
+> **Important.** ITB is an experimental construction without peer review or independent cryptanalysis. The information-theoretic barrier is a ***software-level property*** — it provides no guarantees against hardware-level attacks. All security claims are under the random-container model and have not been independently verified.
+
 ## Installation
 
 ```bash
