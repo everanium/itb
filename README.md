@@ -12,6 +12,8 @@ A parameterized symmetric cipher construction library for Go that achieves known
 
 **Central design idea:** The random container creates an information-theoretic barrier. PRF-grade hash functions are strongly recommended for production use, but the construction's architecture theoretically permits hash functions satisfying only five weaker requirements (full input sensitivity, chain survival, non-affine mixing, avalanche, non-invertibility) for research and educational purposes.
 
+**See also: [ITB Light](https://github.com/everanium/itb-light)** — a lightweight PRF-only variant that preserves all information-theoretic barrier properties of ITB with single-round hashing and native PRF key sizes (128/256/512 bits).
+
 ## Why ITB: Inverted Approach to Cryptography
 
 Traditional symmetric ciphers (AES, ChaCha20) place all security burden on the mathematical strength of their core primitive. The keystream is XOR'd directly with plaintext — any weakness in the primitive is immediately exploitable because the attacker observes the primitive's output.
