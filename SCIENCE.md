@@ -551,6 +551,25 @@ No speculative execution (Spectre) vulnerability: no secret-dependent array inde
 
 ITB does not claim resistance to any hardware-level attack. However, the construction architecturally does not provide the disclosure gadget (`table[secret_index]`) required by speculative execution attacks. This has not been independently verified. See [HWTHREATS.md](HWTHREATS.md) for detailed per-CVE analysis.
 
+### DPA/SPA Resistance Analysis
+
+Differential Power Analysis (DPA) and Simple Power Analysis (SPA) exploit data-dependent power consumption patterns during cryptographic operations. Ciphers with secret-dependent table lookups (e.g., software S-box implementations) are vulnerable because each table index produces a distinct memory access pattern observable through power traces.
+
+**ITB's data path contains no secret-dependent table lookups.** All dataSeed-derived operations are register-only:
+
+| Operation | Instruction type | Power profile | Secret-dependent? |
+|---|---|---|---|
+| `dataHash % 7` | Register division | Constant | dataRotation derived |
+| `dataHash >> 3` | Register shift | Constant | xorMask derived |
+| `dataBits ^= channelXOR` | Register XOR | Constant | XOR mask applied |
+| `rotateBits7(dataBits, rotation)` | Register shift | ~0.3ns variation | rotation value |
+
+No memory access depends on dataSeed values. No cache line activation correlates with key material. The power profile of register XOR, shift, and AND operations does not vary with operand values on modern CPUs.
+
+**Maximum information from a successful DPA/SPA attack:** the rotation value (0-6) of individual pixels — not the key. Recovering the key from rotation values requires inverting ChainHash, which is blocked by requirement 5 (non-invertibility). For comparison, DPA on software table-lookup implementations can recover the full key through correlation of table indices with power traces across multiple operations.
+
+ITB does not claim formal DPA/SPA resistance. This analysis describes the architectural absence of the attack surface that DPA/SPA exploits, not a proven countermeasure. This has not been independently verified.
+
 ### Scope and Maturity Disclaimer
 
 ITB is a new construction without prior peer review or independent cryptanalysis. The primary contribution is theoretical: demonstrating that a symmetric cipher construction can achieve known-plaintext resistance under passive observation using an information-theoretic barrier with minimal hash function requirements (PRF/PRP/PRG relaxed under the random-container model). Performance is not a design goal.
