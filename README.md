@@ -151,6 +151,8 @@ ChainHash is not the bottleneck on high-core-count CPUs — crypto/rand containe
 
 ### ASIC Scalability
 
+**FPGA proof-of-concept is planned** using open-source Verilog IP cores for SipHash and ChaCha20 DRBG, with a custom ITB pixel pipeline. Target: full encrypt/decrypt roundtrip on a single FPGA chip.
+
 ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are trivial to implement in hardware. The construction's per-pixel parallelism (each pixel is independent) enables linear scalability through parallel processing units.
 
 **Pixel processing in ASIC:**
