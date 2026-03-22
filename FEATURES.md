@@ -28,7 +28,7 @@
 
 ## RGBWYOPA Pixel Format
 
-- **8-Channel Architecture.** Each pixel has 8 channels (Red, Green, Blue, White, Yellow, Orange, Purple, Alpha) × 8 bits = 64 bits. Each channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead (64/56). 8 channels ensures DataBitsPerPixel (56) is byte-aligned, enabling race-free parallel encode and decode.
+- **8-Channel Architecture.** Each pixel has 8 channels (Red, Green, Blue, White, Yellow, Orange, Purple, Alpha — mnemonic labels for an 8-byte unit; the format is not tied to image processing) × 8 bits = 64 bits. Each channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead (64/56). 8 channels ensures DataBitsPerPixel (56) is byte-aligned, enabling race-free parallel encode and decode.
 
 - **Dynamic Noise Position.** Per-pixel choice of noise bit position (any of 0-7) in each channel, determined by chained hash of seed + nonce + pixel index. No bit position is deterministically data from the public format, eliminating FORMAT+KPA attack surface.
 
