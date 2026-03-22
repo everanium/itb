@@ -165,15 +165,18 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 - Multiple hash engines can run in parallel (one per pixel pipeline)
 - No S-box in silicon — no DPA attack surface at the hardware level
 
-**Primary engineering challenge — parallel PRNG:**
+**Primary engineering challenge — PRNG throughput:**
 - Container generation (crypto/rand) is the throughput bottleneck in software (~735 MB/s on modern CPUs)
-- In ASIC, high-throughput CSPRNG requires parallel DRBG (Deterministic Random Bit Generator) cores seeded from a single TRNG (True Random Number Generator) entropy source — one TRNG provides seeds to multiple DRBG cores
-- Each DRBG core generates a segment of the container independently
-- Memory write bandwidth for interleaving parallel PRNG outputs into a single container is a secondary constraint
+- In ASIC, a ChaCha20-based DRBG (ARX, DPA-free) seeded from a single TRNG entropy source provides high-throughput random generation — up to 5× faster than AES-CTR DRBG, with inherent side-channel resistance (no table lookups)
+- A single ChaCha20 DRBG core at ~4 GB/s may be sufficient — the pixel processing pipeline (2 hash calls per pixel) becomes the bottleneck before DRBG does
+- Scaling is achieved by adding parallel pixel pipelines, not additional DRBG cores
 - Decrypt does not require PRNG (no container generation) — decrypt throughput is limited only by hash engine and memory bandwidth
 
+**DPA-free full stack:**
+- TRNG → ChaCha20 DRBG (ARX) → ARX hash engine (SipHash/BLAKE2s) → pixel processing (XOR, shift, rotate) — zero table lookups from PRNG to output, no DPA attack surface at any level
+
 **Theoretical throughput:**
-- With parallel PRNG + parallel hash engines + parallel pixel processing, ASIC implementations could theoretically achieve >1-2 GB/s for both encrypt and decrypt — the problem is purely engineering, not architectural
+- With ChaCha20 DRBG + parallel hash engines + parallel pixel processing, ASIC implementations could theoretically achieve >1-2 GB/s for both encrypt and decrypt — the problem is purely engineering, not architectural
 - Decrypt throughput could exceed encrypt due to absence of PRNG overhead
 
 ## Quick Start
