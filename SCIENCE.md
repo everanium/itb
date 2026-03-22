@@ -574,7 +574,7 @@ ITB does not claim formal DPA/SPA resistance. This analysis describes the archit
 
 ITB is a new construction without prior peer review or independent cryptanalysis. The primary contribution is theoretical: demonstrating that a symmetric cipher construction can achieve known-plaintext resistance under passive observation using an information-theoretic barrier with minimal hash function requirements (PRF/PRP/PRG relaxed under the random-container model). Performance is not a design goal.
 
-The authors do not claim that ITB is the most secure symmetric cipher construction, nor that the analysis is exhaustive. As a first publication, the construction may contain overlooked vulnerabilities at two levels:
+The author does not claim that ITB is the most secure symmetric cipher construction, nor that the analysis is exhaustive. As a first publication, the construction may contain overlooked vulnerabilities at two levels:
 
 **1. Fundamental (barrier invalidation).** If the information-theoretic barrier does not hold as claimed — e.g., if the random container does not fully absorb hash outputs under some attack model not considered here — the core security guarantee would be invalidated. This is considered unlikely: the proof that every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d) = v) is a direct consequence of probability theory, independent of the hash function. However, the interaction between the barrier and active attacks (CCA, side-channel, multi-message analysis) may have subtleties not captured by the current analysis.
 
