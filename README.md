@@ -161,7 +161,7 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 - No DPA attack surface — register-only operations in silicon
 
 **Hash engine:**
-- ARX-based PRF hash functions (SipHash-2-4, BLAKE2s) are pipeline-friendly in hardware: Add, Rotate, XOR — each completes in 1 clock cycle with no sequential chain dependency for short inputs (20 bytes per pixel)
+- ARX-based PRF hash functions (SipHash-2-4/ChaCha20/BLAKE2s — chosen at design time) are pipeline-friendly in hardware: Add, Rotate, XOR — each completes in 1 clock cycle with no sequential chain dependency for short inputs (20 bytes per pixel)
 - Multiple hash engines can run in parallel (one per pixel pipeline)
 - No S-box in silicon — no DPA attack surface at the hardware level
 
@@ -174,7 +174,7 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 - Decrypt does not require PRNG (no container generation) — decrypt throughput is limited only by hash engine and memory bandwidth
 
 **DPA-free full stack:**
-- TRNG (certified IP core) → ChaCha20 DRBG streaming (custom, ARX) → ARX hash engine (SipHash/BLAKE2s) → pixel processing (XOR, shift, rotate) — zero table lookups from PRNG to output, no DPA attack surface at any level
+- TRNG (certified IP core) → ChaCha20 DRBG streaming (custom, ARX) → ARX hash engine (SipHash-2-4/ChaCha20/BLAKE2s) → pixel processing (XOR, shift, rotate) — zero table lookups from PRNG to output, no DPA attack surface at any level
 
 **Theoretical throughput:**
 - With ChaCha20 DRBG + parallel hash engines + parallel pixel processing, ASIC implementations could theoretically achieve >1-2 GB/s for both encrypt and decrypt — the problem is purely engineering, not architectural
