@@ -367,7 +367,7 @@ Non-cryptographic hash functions may fail various SMHasher test categories (coll
 | Input sensitivity failure | Req 1: Full input sensitivity | Nonce ignored → cross-message config reuse |
 | Differential failure (complete) | Req 3-4: Non-affine + Avalanche | Related inputs → related outputs → algebraic solving |
 
-**Key insight.** ITB's five requirements cover a narrower range of properties than what SMHasher tests assess. A hash function could in principle fail collisions, bias, BIC, population count, sparse key, and window tests — and still satisfy ITB's requirements. Only avalanche failure, input sensitivity failure, and complete differential failure disqualify a hash function.
+**Key insight.** ITB's five requirements cover a narrower range of properties than what SMHasher tests assess. A hash function could in principle fail collisions, bias, BIC, population count, sparse key, and window tests — and still satisfy ITB's requirements. Only avalanche failure, input sensitivity failure, complete differential failure, chain survival failure (XOR-cancellation), and invertibility disqualify a hash function.
 
 This is why ITB can use non-cryptographic hash functions (XXH3, HighwayHash) that would be unsuitable for HMAC or digital signatures: the random container absorbs the statistical weaknesses that those applications cannot tolerate.
 
