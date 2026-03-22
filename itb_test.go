@@ -16,6 +16,7 @@ import (
 	"github.com/zeebo/xxh3"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
+	"golang.org/x/crypto/chacha20"
 )
 
 // noescape hides a pointer from escape analysis. The Go runtime uses
@@ -1740,6 +1741,79 @@ func BenchmarkBLAKE2s_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, make
 
 func BenchmarkBLAKE2s_KeySize512(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 64<<10) }
 func BenchmarkBLAKE2s_KeySize2048(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 64<<10) }
+
+// --- ChaCha20 as HashFunc256 (PRF, ARX-based, zero table lookups) ---
+
+// makeChaCha20Hash256 creates a HashFunc256 using ChaCha20.
+// Fixed random key + seed XOR'd into data. ChaCha20 keystream used as hash output.
+// ARX-based: no S-box, no table lookups — register-only operations.
+func makeChaCha20Hash256() HashFunc256 {
+	var fixedKey [32]byte
+	if _, err := rand.Read(fixedKey[:]); err != nil {
+		panic(err)
+	}
+
+	return func(data []byte, seed [4]uint64) [4]uint64 {
+		// XOR seed into fixed key to derive per-call key
+		var key [32]byte
+		copy(key[:], fixedKey[:])
+		for i := 0; i < 4; i++ {
+			off := i * 8
+			v := binary.LittleEndian.Uint64(key[off:])
+			binary.LittleEndian.PutUint64(key[off:], v^seed[i])
+		}
+		// Use first 12 bytes of data as nonce (pad if shorter)
+		var nonce [12]byte
+		copy(nonce[:], data)
+		c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
+		if err != nil {
+			panic(err)
+		}
+		var out [32]byte
+		c.XORKeyStream(out[:], out[:])
+		return [4]uint64{
+			binary.LittleEndian.Uint64(out[0:]),
+			binary.LittleEndian.Uint64(out[8:]),
+			binary.LittleEndian.Uint64(out[16:]),
+			binary.LittleEndian.Uint64(out[24:]),
+		}
+	}
+}
+
+func TestRoundtrip256_ChaCha20(t *testing.T) {
+	sizes := []int{1, 10, 64, 256, 1024, 4096}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed256(512, makeChaCha20Hash256())
+			data := generateData(sz)
+			encrypted, err := Encrypt256(ns, ds, ss, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("roundtrip failed for %d bytes", sz)
+			}
+		})
+	}
+}
+
+// --- Benchmarks: ChaCha20-256 (Encrypt/Decrypt, cached) ---
+
+func BenchmarkChaCha20_Encrypt_1KB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 1<<10) }
+func BenchmarkChaCha20_Encrypt_64KB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 64<<10) }
+func BenchmarkChaCha20_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 1<<20) }
+func BenchmarkChaCha20_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 16<<20) }
+func BenchmarkChaCha20_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 64<<20) }
+
+func BenchmarkChaCha20_Decrypt_1KB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 1<<10) }
+func BenchmarkChaCha20_Decrypt_64KB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 64<<10) }
+func BenchmarkChaCha20_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 1<<20) }
+func BenchmarkChaCha20_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 16<<20) }
+func BenchmarkChaCha20_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 64<<20) }
 
 // --- Benchmarks: HighwayHash-64 (Encrypt/Decrypt, 512-bit key, cached) ---
 
