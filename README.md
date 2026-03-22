@@ -137,6 +137,18 @@ Throughput scales with data size due to goroutine parallelism across CPU cores. 
 
 **BLAKE2b-512 highlight:** With 512-bit ChainHash (1 round for 512-bit key), BLAKE2b-512 is ~30% faster than BLAKE2b-256 (2 rounds) while providing wider MITM bottleneck (2^512 vs 2^256). PRF-level encryption at 110-173 MB/s.
 
+### Server-class CPU (AMD EPYC 9655P, 96-Core, bare metal, CGO mode)
+
+ITB scales linearly with core count. Per-pixel parallelism across goroutines utilizes all available cores.
+
+| Hash | Width | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 255 | 327 | 362 | 452 | 579 | 709 |
+| **ChaCha20** | 256 | 199 | 257 | 309 | 302 | 408 | 536 |
+| **BLAKE2b-512** | 512 | 229 | 297 | 331 | 357 | 484 | 601 |
+
+ChainHash is not the bottleneck on high-core-count CPUs — crypto/rand container generation (~813 MB/s on this CPU) becomes the limiting factor for encrypt. Decrypt does not require crypto/rand and scales further.
+
 ### ASIC Scalability
 
 ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are trivial to implement in hardware. The construction's per-pixel parallelism (each pixel is independent) enables linear scalability through parallel processing units.
