@@ -167,7 +167,7 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 
 **Primary engineering challenge — parallel PRNG:**
 - Container generation (crypto/rand) is the throughput bottleneck in software (~735 MB/s on modern CPUs)
-- In ASIC, high-throughput CSPRNG requires parallel DRBG (Deterministic Random Bit Generator) cores, each seeded from independent TRNG (True Random Number Generator) entropy sources
+- In ASIC, high-throughput CSPRNG requires parallel DRBG (Deterministic Random Bit Generator) cores seeded from a single TRNG (True Random Number Generator) entropy source — one TRNG provides seeds to multiple DRBG cores
 - Each DRBG core generates a segment of the container independently
 - Memory write bandwidth for interleaving parallel PRNG outputs into a single container is a secondary constraint
 - Decrypt does not require PRNG (no container generation) — decrypt throughput is limited only by hash engine and memory bandwidth
