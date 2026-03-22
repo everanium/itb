@@ -163,7 +163,7 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 - No DPA attack surface — register-only operations in silicon
 
 **Hash engine:**
-- ARX-based PRF hash functions (SipHash-2-4/ChaCha20/BLAKE2s — chosen at design time) are pipeline-friendly in hardware: Add, Rotate, XOR — each completes in 1 clock cycle with no sequential chain dependency for short inputs (20 bytes per pixel)
+- ARX-based PRF hash functions (SipHash-2-4/ChaCha20/BLAKE2s — chosen at design time) are pipeline-friendly in hardware: each individual operation (Add, Rotate, XOR) completes in 1 clock cycle; a full SipHash-2-4 call requires ~24 cycles for 20-byte input
 - Multiple hash engines can run in parallel (one per pixel pipeline)
 - No S-box in silicon — no DPA attack surface at the hardware level
 
