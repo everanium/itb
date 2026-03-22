@@ -530,7 +530,7 @@ The output format is identical across all four hash width variants.
 | Noise barrier (min container) | 2^648 (512-bit) to 2^2592 (2048-bit) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 
-## Integrity (MAC-inside-Encrypt)
+## Integrity (MAC-Inside-Encrypt)
 
 The core construction provides confidentiality only. For integrity protection against bit-flipping attacks, use the MAC-inside-encrypt pattern — the MAC is encrypted inside the container, preserving oracle-free deniability:
 
