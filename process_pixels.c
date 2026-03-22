@@ -102,6 +102,7 @@ void itb_process_pixels(
         int bitsLeft = totalBits - bitIndex;
         if (bitsLeft < DataBitsPerPixel) {
             chCount = (bitsLeft + DataBitsPerChannel - 1) / DataBitsPerChannel;
+            if (chCount > Channels) chCount = Channels;
         }
 
         if (encode) {
