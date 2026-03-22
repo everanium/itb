@@ -108,7 +108,20 @@ All five requirements apply universally to all three seeds in all modes.
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion (~P×2^14).
 \** With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (no CCA or startPixel required).
 
-## 8. Information-Theoretic Barrier Metrics
+## 8. Byte-Splitting Property
+
+Since `gcd(DataBitsPerChannel, BitsPerByte) = gcd(7, 8) = 1`, plaintext bytes never align with channel boundaries. Every plaintext byte is split across exactly 2 channels with independent per-channel XOR masks.
+
+| Property | Byte-aligned ciphers (AES-CTR, ChaCha20) | ITB |
+|---|---|---|
+| Plaintext byte → ciphertext mapping | 1 byte → 1 byte | 1 byte → 2 channels (7/8 non-aligned) |
+| Byte-level analysis | Straightforward | Structurally impossible without startPixel |
+| Partial KPA (know byte k, not k±1) | Byte k directly analyzable | Cannot compute channel bits (channel mixes 2 bytes) |
+| 56 worst-case candidates (full KPA + CCA + startPixel) | N/A | Theoretical minimum; without startPixel, candidates not computable |
+
+This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature. See SCIENCE.md Section 2.9.1 for detailed analysis.
+
+## 9. Information-Theoretic Barrier Metrics
 
 ### Container Bit Accounting (per pixel)
 
@@ -148,7 +161,7 @@ All five requirements apply universally to all three seeds in all modes.
 | Brute-force speedup | Per-candidate (cheaper reject, same search space) |
 | Grover reduction | Zero (2^(keyBits/2) unchanged) |
 
-## 9. Noise-Density Optimality (Why 8/1)
+## 10. Noise-Density Optimality (Why 8/1)
 
 | Format | Data/px | Noise/px | Overhead | CCA Config Leak | Barrier (512-bit, min) |
 |---|---|---|---|---|---|
@@ -159,7 +172,7 @@ All five requirements apply universally to all three seeds in all modes.
 
 8/1 is Pareto-optimal among the analyzed noise-density configurations. All barriers exceed the Landauer limit.
 
-## 10. Effective Key Size by Hash Function
+## 11. Effective Key Size by Hash Function
 
 | Hash Function | Output Width | API | Components | Nominal Key | Effective Bound |
 |---|---|---|---|---|---|
@@ -177,7 +190,7 @@ All five requirements apply universally to all three seeds in all modes.
 | `Seed256` | `HashFunc256` (256-bit) | ×256 | 4 | ×4 |
 | `Seed512` | `HashFunc512` (512-bit) | ×512 | 8 | ×8 |
 
-## 11. Hash Function Excluded Class
+## 12. Hash Function Excluded Class
 
 | # | Excluded Function Type | Failure Mode | Applicable When |
 |---|---|---|---|
@@ -188,7 +201,7 @@ All five requirements apply universally to all three seeds in all modes.
 | 5 | No avalanche | Correlation/cube attacks | MAC + reveal |
 | 6 | Invertible (seed from output+data) | Seed recovery via KPA + inversion | MAC + reveal + KPA |
 
-## 12. MAC Placement Design Space
+## 13. MAC Placement Design Space
 
 | MAC Placement | Covers Noise | Deniability | CCA Leak | Circular Dependency |
 |---|---|---|---|---|
@@ -199,7 +212,7 @@ All five requirements apply universally to all three seeds in all modes.
 
 **Bold:** implemented by `EncryptAuthenticated`. *Italic:* theoretical alternative, not implemented.
 
-## 13. Known Theoretical Threats
+## 14. Known Theoretical Threats
 
 | Threat | Exploit requires | Practical risk | Mitigation |
 |---|---|---|---|
@@ -234,11 +247,11 @@ The analysis applies equally to ARM64 NEON auto-vectorization: `veor`, `vand`, `
 
 Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (pure Go) and `CGO_ENABLED=1` (C + SIMD) does not change the security model on any platform. See SCIENCE.md §4 "Known Theoretical Threats" point 6 for detailed analysis.
 
-## 14. Hash Function Compliance
+## 15. Hash Function Compliance
 
 Production hash functions (XXH3, SipHash-2-4, AES-CMAC, HighwayHash, BLAKE2b, BLAKE2s, BLAKE3) satisfy all five requirements. Tests and benchmarks cover all listed hash functions across 64/128/256/512-bit widths.
 
-## 15. Security Properties Summary
+## 16. Security Properties Summary
 
 | Property | ITB |
 |---|---|
@@ -259,7 +272,7 @@ Production hash functions (XXH3, SipHash-2-4, AES-CMAC, HighwayHash, BLAKE2b, BL
 
 \* Software-level property under the random-container model. No guarantees against hardware-level attacks (see Disclaimer).
 
-## 16. Quantum Resistance (Conjectured)
+## 17. Quantum Resistance (Conjectured)
 
 The information-theoretic barrier is computation-model-independent: provided the container is generated from a source indistinguishable from true uniform randomness, every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d)=v), regardless of classical, quantum, or any future computational model. A quantum computer cannot extract information that does not exist in the observation. However, whether this property translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
 
@@ -277,7 +290,7 @@ AES-256 and ChaCha20 are widely considered quantum-resistant for practical purpo
 
 At 512-bit key: 2^256 Grover. At 2048-bit key: 2^1024.
 
-## 17. Maturity and Scope
+## 18. Maturity and Scope
 
 ITB is a new construction without prior peer review or independent cryptanalysis. The contribution is theoretical: demonstrating that KPA resistance under passive observation is achievable with minimal hash function requirements (PRF/PRP/PRG relaxed under the random-container model) through an information-theoretic barrier. Performance is not a design goal.
 

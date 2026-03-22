@@ -309,7 +309,57 @@ This would degrade known-plaintext resistance from information-theoretic to comp
     encode(d, xor_mask, bit_plane) is consistent with v
 ```
 
-Known plaintext does not uniquely determine the per-pixel configuration: each pixel observation is consistent with 56 candidate configurations (8 noisePos × 7 rotation), and per-bit XOR ensures all candidates are valid. Multi-pixel key recovery requires computational search over the key space. Under passive observation, per-pixel security is information-theoretic; full-container security reduces to key space exhaustion.
+Known plaintext does not uniquely determine the per-pixel configuration: each pixel observation is consistent with 56 candidate configurations (8 noisePos × 7 rotation) under worst-case assumptions (full KPA + CCA + known startPixel), and per-bit XOR ensures all candidates are valid. Multi-pixel key recovery requires computational search over the key space. Under passive observation, per-pixel security is information-theoretic; full-container security reduces to key space exhaustion.
+
+### 2.9.1 Byte-Splitting Property (7/8 Non-Alignment)
+
+A structural consequence of the RGBWYOPA 8/1 format: since `DataBitsPerChannel = 7` and `BitsPerByte = 8`, and `gcd(7, 8) = 1` (coprime), plaintext bytes never align with channel boundaries. Every plaintext byte is split across exactly 2 channels with a cyclically shifting split ratio.
+
+**Split pattern.** For plaintext byte at position k in the data stream:
+
+```
+Byte 0:  [7 bits in Ch₀] [1 bit in Ch₁]     split 7/1
+Byte 1:  [6 bits in Ch₁] [2 bits in Ch₂]    split 6/2
+Byte 2:  [5 bits in Ch₂] [3 bits in Ch₃]    split 5/3
+Byte 3:  [4 bits in Ch₃] [4 bits in Ch₄]    split 4/4
+Byte 4:  [3 bits in Ch₄] [5 bits in Ch₅]    split 3/5
+Byte 5:  [2 bits in Ch₅] [6 bits in Ch₆]    split 2/6
+Byte 6:  [1 bit in Ch₆]  [7 bits in Ch₇]    split 1/7
+Byte 7:  [7 bits in Ch₈] [1 bit in Ch₉]     split 7/1 (cycle repeats)
+```
+
+**Formal property:**
+
+```
+∀ plaintext byte b_k :
+    b_k is embedded as fragment(C_i, 8 - offset_k) ∥ fragment(C_{i+1}, offset_k)
+    where offset_k = (k × 8) mod 7
+    each fragment independently XOR'd with per-channel mask and rotated
+```
+
+**Consequences:**
+
+1. **Each plaintext byte is split across exactly 2 channels** — never 1, never 3. Maximum 2 because `DataBitsPerChannel (7) ≥ BitsPerByte - 1 (7)`.
+
+2. **Each channel contains bits from 2 adjacent plaintext bytes** — mixed within a single 7-bit data unit, independently XOR'd and rotated. The attacker cannot isolate a single plaintext byte from one channel observation.
+
+3. **Split ratio never repeats for adjacent bytes** — because `gcd(7, 8) = 1`, the cycle length is 7 before repeating. No two adjacent plaintext bytes share the same split pattern.
+
+4. **Per-channel XOR masks are independent** — the two fragments of a plaintext byte are encrypted with different 7-bit XOR masks (extracted from different positions in the dataSeed hash output). Knowing one fragment's mask provides zero information about the other.
+
+**Impact on attack complexity:**
+
+| Attack scenario | Without byte-splitting | With byte-splitting (ITB) |
+|---|---|---|
+| Full KPA + CCA + startPixel (worst case) | 56 candidates per pixel | 56 candidates per pixel (attacker knows both adjacent bytes) |
+| Partial KPA (knows byte k, not k±1) | 56 candidates per pixel | Cannot compute expected channel bits (channel mixes 2 bytes, one unknown) |
+| Full KPA, startPixel unknown | 56 × totalPixels | Cannot determine bit alignment per channel → candidates not computable |
+
+The 56 candidate count (Section 2.9) represents the **worst-case** theoretical minimum under full KPA + CCA + known startPixel. Without startPixel knowledge, byte-splitting prevents the attacker from determining the bit alignment for any channel, making per-channel candidate computation infeasible.
+
+**Comparison with byte-aligned ciphers.** In all widely deployed stream ciphers (AES-CTR, ChaCha20, Salsa20), the keystream is XOR'd with plaintext byte-by-byte: `ciphertext[i] = plaintext[i] ⊕ keystream[i]`. Each plaintext byte maps to exactly one ciphertext byte — byte-level analysis is straightforward. ITB's 7-bit channel width breaks this byte alignment, making byte-level analysis structurally impossible without knowledge of the bit offset (which depends on startPixel). This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature.
+
+Note: rotation in ITB (0-6, secret, per-pixel from dataSeed) differs fundamentally from rotation in ARX ciphers (e.g., ChaCha20: fixed amounts 16/12/8/7, public). ChaCha20 rotation is a mixing operation with known amounts — reversible by design. ITB rotation is an encryption operation with secret amount — not reversible without dataSeed. This has not been independently verified.
 
 ### 2.10 Hash Function Requirements Analysis
 
