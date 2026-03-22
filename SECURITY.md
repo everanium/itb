@@ -261,7 +261,7 @@ Production hash functions (XXH3, SipHash-2-4, AES-CMAC, HighwayHash, BLAKE2b, BL
 
 ## 16. Quantum Resistance (Conjectured)
 
-The information-theoretic barrier is computation-model-independent: provided the container is generated from a source indistinguishable from true uniform randomness, P(C'[p] = v | h) = 1/256 holds regardless of classical, quantum, or any future computational model. A quantum computer cannot extract information that does not exist in the observation. However, whether this property translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
+The information-theoretic barrier is computation-model-independent: provided the container is generated from a source indistinguishable from true uniform randomness, every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d)=v), regardless of classical, quantum, or any future computational model. A quantum computer cannot extract information that does not exist in the observation. However, whether this property translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
 
 | Quantum Algorithm | AES-CTR / ChaCha20 | ITB |
 |---|---|---|
@@ -287,7 +287,7 @@ ITB is a new construction without prior peer review or independent cryptanalysis
 | Independent cryptanalysis | None |
 | Formal proof (simulation-based) | Planned (see SCIENCE.md §7) |
 | Implementation audit | Not performed |
-| Core barrier (P(C'[p]=v\|h)=1/256) | Mathematical proof, hash-independent |
+| Core barrier (∀v, ∀h : ∃c : embed(c,h,d)=v) | Compatibility proof, hash-independent |
 | Active attack analysis (CCA, MITM) | Self-analysis, invites scrutiny |
 | Side-channel mitigations | Implemented, not independently audited |
 
