@@ -234,7 +234,7 @@ The barrier ensures that hash output is unobservable under passive attacks (the 
 - **CCA with MAC-reveal** (Section 4.1–4.5): bit-flip oracle reveals noise positions (noiseSeed config, 3 bits/pixel).
 - **Local CCA simulation**: attacker running on the same CPU can simulate CCA without a MAC oracle by encrypting with candidate seeds and comparing container patterns.
 - **Cache side-channel** (Section 4, startPixel limitation): memory access patterns leak startPixel.
-- **KPA + invertible hash**: with known plaintext and an invertible hash, the attacker can compute XOR masks → invert ChainHash → recover seed in ~P × 2^14 operations.
+- **KPA + invertible hash**: with known plaintext and an invertible hash, the attacker tries all 56 candidate configurations per pixel (8 noisePos × 7 rotation), computes candidate dataHash for each, inverts ChainHash → recovers dataSeed in ~56 × P hash inversions. This attack requires neither CCA nor startPixel knowledge — noise position uncertainty provides only a 56× multiplier, not a barrier. Requirement 5 (non-invertibility) is the sole defense.
 - **MITM backward step** (Section 2.2): meet-in-the-middle on ChainHash requires inverting the hash at each chain position.
 
 These attack vectors are blocked by the five hash requirements, not by the barrier:

@@ -106,7 +106,7 @@ All five requirements apply universally to all three seeds in all modes.
 
 † IT barrier is a software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion (~P×2^14).
-\** With invertible hash under KPA: seed recoverable in polynomial time.
+\** With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (no CCA or startPixel required).
 
 ## 8. Information-Theoretic Barrier Metrics
 
