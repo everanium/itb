@@ -137,6 +137,33 @@ Throughput scales with data size due to goroutine parallelism across CPU cores. 
 
 **BLAKE2b-512 highlight:** With 512-bit ChainHash (1 round for 512-bit key), BLAKE2b-512 is ~30% faster than BLAKE2b-256 (2 rounds) while providing wider MITM bottleneck (2^512 vs 2^256). PRF-level encryption at 110-173 MB/s.
 
+### ASIC Scalability
+
+ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are trivial to implement in hardware. The construction's per-pixel parallelism (each pixel is independent) enables linear scalability through parallel processing units.
+
+**Pixel processing in ASIC:**
+- All operations are combinational logic: XOR gates, barrel shifters, adders
+- No S-box ROM, no lookup tables, no GF(2^8) multiplier required
+- Each pixel can be processed by an independent hardware unit
+- 8 channels per pixel can be processed in parallel (8-wide datapath)
+- No DPA attack surface — register-only operations in silicon
+
+**Hash engine:**
+- ARX-based PRF hash functions (SipHash-2-4, BLAKE2s) are pipeline-friendly in hardware: Add, Rotate, XOR — each completes in 1 clock cycle with no sequential chain dependency for short inputs (20 bytes per pixel)
+- Multiple hash engines can run in parallel (one per pixel pipeline)
+- No S-box in silicon — no DPA attack surface at the hardware level
+
+**Primary engineering challenge — parallel PRNG:**
+- Container generation (crypto/rand) is the throughput bottleneck in software (~735 MB/s on modern CPUs)
+- In ASIC, high-throughput CSPRNG requires parallel DRBG (Deterministic Random Bit Generator) cores, each seeded from independent TRNG (True Random Number Generator) entropy sources
+- Each DRBG core generates a segment of the container independently
+- Memory write bandwidth for interleaving parallel PRNG outputs into a single container is a secondary constraint
+- Decrypt does not require PRNG (no container generation) — decrypt throughput is limited only by hash engine and memory bandwidth
+
+**Theoretical throughput:**
+- With parallel PRNG + parallel hash engines + parallel pixel processing, ASIC implementations could theoretically achieve >1-2 GB/s for both encrypt and decrypt — the problem is purely engineering, not architectural
+- Decrypt throughput could exceed encrypt due to absence of PRNG overhead
+
 ## Quick Start
 
 ```go
