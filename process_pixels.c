@@ -62,6 +62,8 @@ static inline void pack56bits(uint8_t *data, int dataLen, int bitIndex, const ui
 // in separate phases (extract → XOR → rotate → insert), enabling GCC -O3 -mavx2
 // to vectorize each phase independently.
 // GCC -O3 auto-vectorizes the per-channel loops (XOR, rotate, insert/extract).
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
 void itb_process_pixels(
     const uint64_t *noiseHashes,
     const uint64_t *dataHashes,
@@ -165,3 +167,4 @@ void itb_process_pixels(
         }
     }
 }
+#pragma GCC diagnostic pop
