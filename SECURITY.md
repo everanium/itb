@@ -108,6 +108,17 @@ All five requirements apply universally to all three seeds in all modes.
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion (~P×2^14).
 \** With invertible hash under KPA: seed recoverable in ~56 × P² hash inversions (no CCA required). Non-invertibility (requirement 5) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
 
+### KPA Attack Feasibility by Knowledge Level
+
+| KPA level | Invertible hash | Non-invertible hash |
+|---|---|---|
+| Full KPA (entire plaintext known) | ~56 × P² inversions → **breaks** | Brute-force 2^keyBits |
+| Partial KPA (headers, format known) | Byte-splitting blocks most channels (each channel mixes 2 adjacent bytes — both must be known) | Brute-force 2^keyBits |
+| Crib KPA (known fragment, position unknown) | Very limited — position unknown, byte-splitting blocks boundary channels | Brute-force 2^keyBits |
+| No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
+
+Full KPA is a worst-case theoretical assumption. In practice, full plaintext knowledge eliminates the need for decryption. Non-invertible hash ensures brute-force regardless of KPA level.
+
 ## 8. Byte-Splitting Property
 
 Since `gcd(DataBitsPerChannel, BitsPerByte) = gcd(7, 8) = 1`, plaintext bytes never align with channel boundaries. Every plaintext byte is split across exactly 2 channels with independent per-channel XOR masks.
