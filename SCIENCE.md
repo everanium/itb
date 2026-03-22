@@ -179,7 +179,7 @@ For example, with a 64-bit hash and 512-bit key (8 components): a single ChainHa
 
 For wider hash variants (128/256/512-bit), barrier 2 alone is sufficient. For the 64-bit variant, barriers 1 and 3 independently close the gap. Together, the three barriers are designed to make MITM harder than brute force at all supported key sizes.
 
-**Quantum (Grover).** Grover complexity is O(2^(keyBits/2)). At 512 bits: 2^256 — computationally infeasible with any foreseeable technology. At 2048 bits: 2^1024 — far beyond the Landauer thermodynamic limit (~2^306). Note that AES-256 with Grover bound 2^128 is widely considered quantum-resistant for practical purposes.
+**Quantum (Grover).** Grover complexity is O(2^(keyBits/2)) iterations, each requiring O(P) hash evaluations for full container decryption (where P = pixel count). At 512 bits: 2^256 iterations — computationally infeasible with any foreseeable technology. At 2048 bits: 2^1024 — far beyond the Landauer thermodynamic limit (~2^306). Note that AES-256 with Grover bound 2^128 is widely considered quantum-resistant for practical purposes.
 
 The oracle required by Grover is degraded under ITB's oracle-free design: no checksums, no headers, no magic bytes. The null terminator is encrypted and invisible without the correct seed.
 

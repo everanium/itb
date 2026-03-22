@@ -243,7 +243,7 @@ Production hash functions (XXH3, SipHash-2-4, AES-CMAC, HighwayHash, BLAKE2b, BL
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | 2^(keyBits/2) |
+| Grover resistance | 2^(keyBits/2) iterations × O(P) hash calls each |
 | Oracle-free deniability | ✓ (structural) |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
@@ -255,7 +255,7 @@ Production hash functions (XXH3, SipHash-2-4, AES-CMAC, HighwayHash, BLAKE2b, BL
 | Authentication | Optional (MAC-inside-encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
 | Quantum structural attacks | Conjectured mitigated (IT barrier is computation-model-independent; not independently verified) |
-| Grover oracle | Degraded (no oracle without MAC; expensive with MAC-inside) |
+| Grover oracle | Degraded: no oracle without MAC; with MAC-inside each query requires full decryption O(P) |
 
 \* Software-level property under the random-container model. No guarantees against hardware-level attacks (see Disclaimer).
 
