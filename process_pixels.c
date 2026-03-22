@@ -98,12 +98,14 @@ void itb_process_pixels(
         uint64_t xorMask = dataHash >> DataRotationBits;
 
         // Determine how many channels carry data in this pixel.
+        // Clamped to [0, Channels] to suppress GCC -Wstringop-overflow.
         int chCount = Channels;
         int bitsLeft = totalBits - bitIndex;
         if (bitsLeft < DataBitsPerPixel) {
             chCount = (bitsLeft + DataBitsPerChannel - 1) / DataBitsPerChannel;
-            if (chCount > Channels) chCount = Channels;
         }
+        if (chCount > Channels) chCount = Channels;
+        if (chCount < 0) chCount = 0;
 
         if (encode) {
             // Phase 1: Bulk extract 56 bits into 8×7-bit values.
