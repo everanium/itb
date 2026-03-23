@@ -94,7 +94,7 @@ go test -bench='BLAKE3_' -benchmem ./...
 go test -bench='KeySize' -benchmem ./...
 ```
 
-### Performance (i7-11700K, CGO mode, 512-bit key)
+### Performance (i7-11700K, VMware, CGO mode, 1024-2048 bit)
 
 **Encrypt (MB/s):**
 
@@ -122,7 +122,7 @@ Throughput scales with data size due to goroutine parallelism across CPU cores. 
 
 **BLAKE2b-512 highlight:** With 512-bit ChainHash (1 round for 512-bit key), BLAKE2b-512 is ~30% faster than BLAKE2b-256 (2 rounds) while providing wider MITM bottleneck (2^512 vs 2^256). PRF-level encryption at 110-173 MB/s.
 
-### Server-class CPU (AMD EPYC 9655P, 96-Core, bare metal, CGO mode)
+### Server-class CPU (AMD EPYC 9655P, 96-Core, Bare metal, CGO mode, 1024-2048 bit)
 
 ITB scales linearly with core count. Per-pixel parallelism across goroutines utilizes all available cores.
 
