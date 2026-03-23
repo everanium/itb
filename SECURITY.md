@@ -108,9 +108,12 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | KPA level | Invertible hash | Non-invertible hash |
 |---|---|---|
 | Full KPA (entire plaintext known) | ~56 × P inversions → **breaks** | Brute-force 2^keyBits |
+| Quarter KPA (~25% plaintext known)† | Slower than Full KPA but still **breaks** — see below | Brute-force 2^keyBits |
 | Partial KPA (headers, format known) | Byte-splitting blocks most channels (each channel mixes 2 adjacent bytes — both must be known) | Brute-force 2^keyBits |
 | Crib KPA (known fragment, position unknown) | Very limited — position unknown, byte-splitting blocks boundary channels | Brute-force 2^keyBits |
 | No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
+
+† **Quarter KPA analysis.** With ~25% of plaintext known, the attacker can find pixels where both adjacent bytes are known (within the known 25%), compute 56 candidate configs, invert ChainHash → recover candidate dataSeed → decrypt the remaining 75%. Three barriers slow the attack but do not prevent it: (1) **Byte-splitting** — fewer usable reference pixels (need two adjacent known bytes); (2) **Unknown startPixel** — P candidates to enumerate; (3) **ChainHash** — n-round XOR-chain must be fully inverted per candidate. The attack is more expensive than Full KPA but still breaks the construction with invertible hash. With non-invertible hash (PRF), quarter KPA degrades to brute-force — ChainHash cannot be inverted regardless of how much plaintext is known.
 
 Full KPA is a worst-case theoretical assumption. In practice, full plaintext knowledge eliminates the need for decryption. Non-invertible hash ensures brute-force regardless of KPA level.
 
