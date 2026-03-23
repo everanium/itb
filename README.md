@@ -31,7 +31,7 @@ ITB inverts this approach. Instead of relying solely on the primitive's strength
 
 **Why quantum structural attacks are conjectured mitigated.** Quantum algorithms like Simon (periodicity), BHT (collisions), and quantum differential/linear analysis require observable structural relations between inputs and outputs. The random container makes these relations unobservable — the attacker cannot build the algebraic structures that quantum algorithms exploit. Additionally, ITB's MAC oracle (when present) is inherently classical: it accepts concrete bytes over a network, not quantum superposition queries (Q2 model inapplicable). This is an architectural observation that has not been independently verified.
 
-> **Important.** ITB is an experimental construction without peer review or independent cryptanalysis. The information-theoretic barrier is a ***software-level property*** — it provides no guarantees against hardware-level attacks. All security claims are under the random-container model and have not been independently verified.
+> **Important.** ITB is an experimental construction without peer review or independent cryptanalysis. The information-theoretic barrier is a **software-level property** — it provides no guarantees against hardware-level attacks. All security claims are under the random-container model and have not been independently verified.
 
 ## Installation
 

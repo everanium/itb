@@ -100,14 +100,14 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Quantum structural (Simon, BHT) | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated |
 
 † IT barrier is a software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
-\* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion (~P×2^14).
-\** With invertible hash under KPA: seed recoverable in ~56 × P² hash inversions (no CCA required). Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
+\* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion.
+\** With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
 
 ### KPA Attack Feasibility by Knowledge Level
 
 | KPA level | Invertible hash | Non-invertible hash |
 |---|---|---|
-| Full KPA (entire plaintext known) | ~56 × P² inversions → **breaks** | Brute-force 2^keyBits |
+| Full KPA (entire plaintext known) | ~56 × P inversions → **breaks** | Brute-force 2^keyBits |
 | Partial KPA (headers, format known) | Byte-splitting blocks most channels (each channel mixes 2 adjacent bytes — both must be known) | Brute-force 2^keyBits |
 | Crib KPA (known fragment, position unknown) | Very limited — position unknown, byte-splitting blocks boundary channels | Brute-force 2^keyBits |
 | No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
@@ -123,7 +123,7 @@ Since `gcd(DataBitsPerChannel, BitsPerByte) = gcd(7, 8) = 1`, plaintext bytes ne
 | Plaintext byte → ciphertext mapping | 1 byte → 1 byte | 1 byte → 2 channels (7/8 non-aligned) |
 | Byte-level analysis | Straightforward | Structurally impossible without startPixel |
 | Partial KPA (know byte k, not k±1) | Byte k directly analyzable | Cannot compute channel bits (channel mixes 2 bytes) |
-| 56 worst-case candidates (Full KPA + CCA + startPixel) | N/A | Theoretical minimum; without startPixel, candidates not computable |
+| 7 worst-case candidates (Full KPA + CCA + startPixel) | N/A | noisePos known from CCA, 7 rotation candidates remain; without CCA: 56 (8 noisePos × 7 rotation) |
 
 This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature. See SCIENCE.md Section 2.9.1 for detailed analysis.
 
@@ -172,9 +172,9 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Format | Data/px | Noise/px | Overhead | CCA Config Leak | Barrier (1024-bit, min) |
 |---|---|---|---|---|---|
 | 8/1 (ITB) | 56 | 8 | 1.14× | 4.8% | 2^1352 |
-| 6/2 | 48 | 16 | 1.33× | 8.9% | 2^2704 |
-| 5/3 | 40 | 24 | 1.60× | 12.2% | 2^4056 |
-| 4/4 | 32 | 32 | 2.00× | 17.1% | 2^5408 |
+| 6/2 | 48 | 16 | 1.33× | 8.9% | 2^3136 |
+| 5/3 | 40 | 24 | 1.60× | 12.2% | 2^5400 |
+| 4/4 | 32 | 32 | 2.00× | 17.1% | 2^8192 |
 
 8/1 is Pareto-optimal among the analyzed noise-density configurations. All barriers exceed the Landauer limit.
 

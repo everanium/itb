@@ -10,7 +10,7 @@ ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construc
 
 ### 1.1 ChainHash
 
-Let H: {0,1}* × {0,1}^64 → {0,1}^64 be a keyed hash function. Let S = (s_0, s_1, ..., s_{n-1}) be a seed of n independent uint64 components, where n = keyBits / 64.
+Let H: {0,1}* × {0,1}^w → {0,1}^w be a keyed PRF-grade hash function with output width w bits (w ∈ {128, 256, 512}). Let S = (s_0, s_1, ..., s_{n-1}) be a seed of n independent uint64 components, where n = keyBits / 64.
 
 ChainHash is defined as:
 
@@ -117,8 +117,8 @@ noise_pos = noiseHash & 7              // 0-7: noise bit position in channel
 
 From dataSeed (59 config bits):
 ```
-data_rotation = dataHash % 7           // 0-6: rotation amount for 7-bit data
-xor_bits = dataHash >> 3               // 56 independent XOR mask bits (7 per channel)
+data_rotation = dataHash % 7           // 0-6: rotation amount (log₂7 ≈ 2.807 bits of entropy)
+xor_bits = dataHash >> 3               // 56 XOR mask bits (nearly independent of rotation for PRF output)
 channel_xor = (xor_bits >> (ch × 7)) & 0x7F   // per-channel 7-bit XOR mask
 ```
 
@@ -231,7 +231,7 @@ The barrier ensures that hash output is unobservable under passive attacks (the 
 - **CCA with MAC-reveal** (Section 4.1–4.5): bit-flip oracle reveals noise positions (noiseSeed config, 3 bits/pixel).
 - **Local CCA simulation**: attacker running on the same CPU can simulate CCA without a MAC oracle by encrypting with candidate seeds and comparing container patterns.
 - **Cache side-channel** (Section 4, startPixel limitation): memory access patterns leak startPixel.
-- **KPA + invertible hash**: with known plaintext and an invertible hash, the attacker tries all startPixel positions (P candidates) × 56 candidate configurations per pixel (8 noisePos × 7 rotation), computes candidate dataHash for each, inverts ChainHash → recovers dataSeed in ~56 × P² hash inversions. This attack requires neither CCA nor startPixel knowledge — startPixel adds only a P multiplier, noise position only 56×, both trivially small. No architectural layer (noise, rotation, byte-splitting, startPixel) prevents this attack — all are defence-in-depth for non-invertible hash. Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier.
+- **KPA + invertible hash**: with known plaintext and an invertible hash, the attacker tries all startPixel positions (P candidates) × 56 candidate configurations per pixel (8 noisePos × 7 rotation), computes candidate dataHash for each, inverts ChainHash → recovers dataSeed in ~56 × P hash inversions (P startPixel candidates × 56 configs, one reference pixel per candidate, verified by forward evaluation on a second pixel). This attack requires neither CCA nor startPixel knowledge. No architectural layer (noise, rotation, byte-splitting, startPixel) prevents this attack — all are defence-in-depth for non-invertible hash. Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier.
 - **MITM backward step** (Section 2.2): meet-in-the-middle on ChainHash requires inverting the hash at each chain position.
 
 These attack vectors are blocked by PRF properties of the hash function, not by the barrier:
@@ -270,7 +270,7 @@ Instead of brute-forcing the seed, directly guess the per-pixel configuration ma
 
 ### 2.9 Per-Bit XOR and Known-Plaintext Resistance
 
-**Design choice.** Each data bit has its own independent XOR mask bit (1:1 ratio), requiring 56 XOR bits + 3 rotation bits from dataSeed (59 of 64 bits) and 3 noise-position bits from noiseSeed. Total: 62 config bits per pixel from two ChainHash calls.
+**Design choice.** Each data bit has its own independent XOR mask bit (1:1 ratio), requiring 56 XOR bits + 3 rotation bits from dataSeed (59 of 64 bits) and 3 noise-position bits from noiseSeed. Total: ~62 config bits per pixel from two ChainHash calls (exact: log₂(8 × 7 × 2^56) = 61.807; 62 is the ceiling used for bit extraction).
 
 **Rationale.** With per-channel XOR (1:7 ratio, 8 XOR bits per pixel for 8 channels), an attacker with known plaintext can efficiently determine the per-pixel configuration:
 
@@ -306,7 +306,7 @@ This would degrade known-plaintext resistance from information-theoretic to comp
     encode(d, xor_mask, bit_plane) is consistent with v
 ```
 
-Known plaintext does not uniquely determine the per-pixel configuration: each pixel observation is consistent with 56 candidate configurations (8 noisePos × 7 rotation) under worst-case assumptions (full KPA + CCA + known startPixel), and per-bit XOR ensures all candidates are valid. Multi-pixel key recovery requires computational search over the key space. Under passive observation, per-pixel security is information-theoretic; full-container security reduces to key space exhaustion.
+Known plaintext does not uniquely determine the per-pixel configuration: each pixel observation is consistent with 56 candidate configurations (8 noisePos × 7 rotation) without CCA, or 7 candidates (rotation only) when CCA reveals noisePos, and per-bit XOR ensures all candidates are valid. Multi-pixel key recovery requires computational search over the key space. Under passive observation, per-pixel security is information-theoretic; full-container security reduces to key space exhaustion.
 
 ### 2.9.1 Byte-Splitting Property (7/8 Non-Alignment)
 
@@ -348,11 +348,12 @@ Byte 7:  [7 bits in Ch₈] [1 bit in Ch₉]     split 7/1 (cycle repeats)
 
 | Attack scenario | Without byte-splitting | With byte-splitting (ITB) |
 |---|---|---|
-| Full KPA + CCA + startPixel (worst case) | 56 candidates per pixel | 56 candidates per pixel (attacker knows both adjacent bytes) |
+| Full KPA + CCA + startPixel (worst case) | 7 candidates per pixel (noisePos known from CCA) | 7 candidates per pixel (attacker knows both adjacent bytes) |
 | Partial KPA (knows byte k, not k±1) | 56 candidates per pixel | Cannot compute expected channel bits (channel mixes 2 bytes, one unknown) |
+| Full KPA + startPixel (no CCA) | 56 candidates per pixel (noisePos unknown) | 56 candidates (attacker knows both adjacent bytes) |
 | Full KPA, startPixel unknown | 56 × totalPixels | Cannot determine bit alignment per channel → candidates not computable |
 
-The 56 candidate count (Section 2.9) represents the **worst-case** theoretical minimum under full KPA + CCA + known startPixel. Without startPixel knowledge, byte-splitting prevents the attacker from determining the bit alignment for any channel, making per-channel candidate computation infeasible.
+The 7 candidate count represents the worst-case theoretical minimum under full KPA + CCA + known startPixel (noisePos known from CCA, only 7 rotations remain). Without CCA, there are 56 candidates (8 noisePos × 7 rotation). Without startPixel knowledge, byte-splitting prevents the attacker from determining the bit alignment for any channel, making per-channel candidate computation infeasible.
 
 **Comparison with byte-aligned ciphers.** In all widely deployed stream ciphers (AES-CTR, ChaCha20, Salsa20), the keystream is XOR'd with plaintext byte-by-byte: `ciphertext[i] = plaintext[i] ⊕ keystream[i]`. Each plaintext byte maps to exactly one ciphertext byte — byte-level analysis is straightforward. ITB's 7-bit channel width breaks this byte alignment, making byte-level analysis structurally impossible without knowledge of the bit offset (which depends on startPixel). This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature.
 
@@ -403,7 +404,7 @@ Under the random-container model, this is an information-theoretic property rath
 |---|---|---|---|
 | **Grover** (brute-force) | Yes/no verification oracle | **Applicable** but degraded | Oracle exists but requires full decryption per query; O(2^(keyBits/2)) |
 | **Simon** (periodicity) | Periodic function structure | **Conjectured mitigated** | Config map is aperiodic: ChainHash with 128-bit nonce per message |
-| **BHT** (collision finding) | Observable collisions | **Conjectured mitigated** | Random container absorbs collisions (Section 2.11) |
+| **BHT** (collision finding) | Observable collisions | **Conjectured mitigated** | Random container absorbs collisions (Section 2.4.1) |
 | **Quantum differential** | Structural plaintext↔ciphertext relations | **Conjectured mitigated** | Random container limits structural relations |
 | **Quantum linear** | Linear/affine input-output relations | **Conjectured mitigated** | Non-affine mixing (PRF property) + random container |
 | **Future structural** | Observation of internal construction state | **Conjectured mitigated** | IT barrier: internal state unobservable under random-container model |
@@ -497,7 +498,7 @@ ITB's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated5
 
 ## 4. Limitations
 
-- **Performance.** ChainHash invokes the hash function n times per pixel. At n=8 (512 bits): throughput limited by hash speed. Each pixel is independent (counter-mode, same principle as AES-CTR parallelization), enabling parallel encode and decode across goroutines with deterministic output regardless of worker count.
+- **Performance.** ChainHash invokes the hash function numRounds times per pixel (numRounds = n / componentsPerRound). At n=8 (512 bits): 4 rounds for 128-bit hash, 2 for 256-bit, 1 for 512-bit. Throughput limited by hash speed. Each pixel is independent (counter-mode, same principle as AES-CTR parallelization), enabling parallel encode and decode across goroutines with deterministic output regardless of worker count.
 
 - **Internal state bottleneck.** Effective security limited by hash output width: 1024 bits for 128-bit hash, 2048 bits for 256-bit and 512-bit hash.
 
@@ -591,7 +592,7 @@ The author does not claim that ITB is the most secure symmetric cipher construct
 
 **1. Fundamental (barrier invalidation).** If the information-theoretic barrier does not hold as claimed — e.g., if the random container does not fully absorb hash outputs under some attack model not considered here — the core security guarantee would be invalidated. This is considered unlikely: the proof that every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d) = v) is a direct consequence of probability theory, independent of the hash function. However, the interaction between the barrier and active attacks (CCA, side-channel, multi-message analysis) may have subtleties not captured by the current analysis.
 
-**2. Implementational (correctable).** Edge cases in COBS framing, off-by-one errors in bit indexing, timing side-channels in constant-time operations, or insufficient secure-wiping coverage. These are correctable without redesigning the construction. The library includes mitigation for known side-channels (constant-time null search, secureWipe with runtime.KeepAlive, register-only dataSeed operations), but the mitigations themselves have not been independently audited.
+**2. Implementational (correctable).** Edge cases in COBS framing, off-by-one errors in bit indexing, timing side-channels in constant-time operations, or insufficient secure-wiping coverage. These are correctable without redesigning the construction. The library includes mitigation for known side-channels (constant-iteration null search (no early break; branch prediction may leak message length), secureWipe with runtime.KeepAlive, register-only dataSeed operations), but the mitigations themselves have not been independently audited.
 
 **Minimum container caveat.** The information-theoretic barrier strength depends on container size: 2^(8P) for P pixels. At minimum container (e.g., 169 pixels for 1024-bit key), the barrier is 2^1352 — well above the key space. However, for very small payloads where the container is only slightly larger than the minimum, the security margin above the key space is at its lowest. The construction does not provide security guarantees for containers smaller than MinPixels.
 
@@ -604,7 +605,7 @@ The author does not claim that ITB is the most secure symmetric cipher construct
 
 ### 4.1 Chosen-Ciphertext Attack and MAC Composition
 
-The MAC-inside-encrypt pattern (Section 4, "No authentication") preserves deniability but does not provide CCA2 (adaptive chosen-ciphertext) resistance on its own. If the recipient reveals the MAC verification result (accept/reject) to an untrusted party, the response acts as an oracle:
+The MAC-inside-encrypt pattern (see "No authentication" in Section 4) preserves deniability but does not provide CCA2 (adaptive chosen-ciphertext) resistance on its own. If the recipient reveals the MAC verification result (accept/reject) to an untrusted party, the response acts as an oracle:
 
 1. Attacker flips bit N in the container.
 2. Recipient decrypts, checks MAC, responds accept or reject.
@@ -808,11 +809,11 @@ With N noise bits per channel (8 − N data bits), selecting N positions from 8 
 | Format | MinPixels | Min side | Barrier | vs Landauer (2^306) |
 |---|---|---|---|---|
 | 8/1 (ITB) | 147 → 169 | 13×13 | 2^1352 | 4.4× beyond |
-| 6/2 | 147 → 169 | 13×13 | 2^2704 | 8.8× beyond |
-| 5/3 | 147 → 169 | 13×13 | 2^4056 | 13.3× beyond |
-| 4/4 | 147 → 169 | 13×13 | 2^5408 | 17.7× beyond |
+| 6/2 | 171 → 196 | 14×14 | 2^3136 | 10.2× beyond |
+| 5/3 | 205 → 225 | 15×15 | 2^5400 | 17.6× beyond |
+| 4/4 | 256 → 256 | 16×16 | 2^8192 | 26.8× beyond |
 
-Note: ratios are of exponents (1352/306 = 4.4), not of actual values. In absolute terms, 2^1352 exceeds 2^306 by a factor of 2^1046.
+Note: MinPixels = ceil(keyBits / dataBitsPerChannel) differs per format. Ratios are of exponents (1352/306 = 4.4), not of actual values.
 
 All formats produce barriers far beyond the Landauer limit. Increasing noise strengthens the barrier but with diminishing returns — all are already physically unreachable.
 

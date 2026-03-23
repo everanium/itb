@@ -6,8 +6,8 @@ Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cip
 
 ## Notation
 
-- H: hash function `func([]byte, uint64) uint64` satisfying Definition 2 (see SCIENCE.md)
-- S = (s₀, s₁, ..., s₇): seed of 8 independent uint64 components
+- H: PRF-grade hash function satisfying Definition 2 (see SCIENCE.md)
+- S = (s₀, s₁, ..., s_{n-1}): seed of n independent uint64 components (n = keyBits / 64)
 - N: 128-bit nonce from crypto/rand
 - C[p]: original container byte at pixel p (crypto/rand, uniform over [0, 255])
 - C'[p]: container byte after embedding
@@ -68,7 +68,7 @@ This m is uniquely determined and always exists (XOR is defined for all inputs).
 ∃! m ∈ {0,1}⁷ : encode(d, m, r, noisePos) is consistent with v
 ```
 
-The attacker with known plaintext d can compute a valid m for EVERY candidate position and rotation. All 56 candidates (8 noisePos × 7 rotation) per pixel are consistent with the observation — known plaintext does not uniquely determine the per-pixel configuration. Multi-pixel key recovery requires computational search over the key space.
+The attacker with known plaintext d can compute a valid m for EVERY candidate position and rotation. All 56 candidates (8 noisePos × 7 rotation) per pixel are consistent with the observation without CCA. With CCA (noisePos known), 7 rotation candidates remain. Known plaintext does not uniquely determine the per-pixel configuration. Multi-pixel key recovery requires computational search over the key space.
 
 **Corollary.** The attacker cannot determine the start pixel from known plaintext: every pixel position produces a valid (d, m) pair, making all P positions indistinguishable. ∎
 
@@ -267,7 +267,7 @@ Since 8/7 > 1, we have 8 × ⌈(keyBits+6)/7⌉ > keyBits for all keyBits ≥ 1.
 
 **Step 3: Response is binary.** Each query yields exactly 1 bit of information. The response classifies the flipped bit as noise or data.
 
-**Step 4: Classification determines noisePos.** For each channel byte (8 bits), exactly 1 produces "accept" (noise) and 7 produce "reject" (data). The position of the "accept" bit is noisePos. Per pixel: 8 channels share the same noisePos → 1 query per channel suffices.
+**Step 4: Classification determines noisePos.** For each channel byte (8 bits), exactly 1 produces "accept" (noise) and 7 produce "reject" (data). The position of the "accept" bit is noisePos. Per pixel: 8 channels share the same noisePos → 8 queries per pixel suffice (testing each bit position in any single channel; all channels share the same noisePos).
 
 **Step 5: No further information.** After classification, the attacker knows noisePos for each pixel (3 bits from noiseSeed). The 7 data bit positions are known, but their VALUES are protected by per-bit XOR:
 - Each data bit = `rotate(plaintext_bit ⊕ xor_mask_bit, r)`

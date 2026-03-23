@@ -202,8 +202,9 @@ func Decrypt256(noiseSeed, dataSeed, startSeed *Seed256, fileData []byte) ([]byt
 	process256(noiseSeed, dataSeed, startSeed, nonce, container, width, height, decoded, false)
 	defer secureWipe(decoded) // wipe after extracting plaintext
 
-	// Constant-time null search: always scans entire capacity to avoid
-	// timing leak of terminator position (side-channel resistance).
+	// Constant-iteration null search: always scans entire capacity (no early break)
+	// to avoid timing leak of terminator position. Note: branch prediction may still
+	// differ before/after the first null byte; this leaks COBS-encoded message length.
 	nullPos := -1
 	for i := 0; i < len(decoded); i++ {
 		if decoded[i] == 0x00 && nullPos == -1 {
