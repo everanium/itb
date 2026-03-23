@@ -1,0 +1,19 @@
+# Test and build binaries
+/itb
+/itb.test
+*.test
+
+# CPU/memory profiles
+*.prof
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
