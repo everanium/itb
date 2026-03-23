@@ -373,7 +373,7 @@ Under KPA, the attacker can compute 56 candidate dataHash values per pixel (8 no
 
 **Formal summary:**
 ```
-Barrier (Theorem 1):     ∀ consistent h : P(v | h) = 1/2    — noise bit independent of h
+Barrier (Theorem 1):     ∀ consistent h : P(v | h) = 1/2     — noise bit independent of h
 Compatibility (COA):     ∀v, ∀h : ∃c : embed(c, h, d) = v    — without KPA, all h consistent
 Ambiguity (KPA):         56 consistent h per pixel            — barrier preserves ambiguity
 PRF non-invertibility:   candidates → seed: impossible        — ambiguity unresolvable
