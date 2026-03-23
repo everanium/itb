@@ -125,7 +125,7 @@ Since `gcd(DataBitsPerChannel, BitsPerByte) = gcd(7, 8) = 1`, plaintext bytes ne
 | Partial KPA (know byte k, not k±1) | Byte k directly analyzable | Cannot compute channel bits (channel mixes 2 bytes) |
 | 7 worst-case candidates (Full KPA + CCA + startPixel) | N/A | noisePos known from CCA, 7 rotation candidates remain; without CCA: 56 (8 noisePos × 7 rotation) |
 
-This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature. See SCIENCE.md Section 2.9.1 for detailed analysis.
+This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature. See [SCIENCE.md Section 2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment) for detailed analysis.
 
 ## 9. Information-Theoretic Barrier Metrics
 
@@ -238,7 +238,7 @@ The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was 
 
 The analysis applies equally to ARM64 NEON auto-vectorization: `veor`, `vand`, `vorr`, `vshl`, `vshr` are constant-time on ARM. ARM `sdiv` (for `% totalPixels`) is variable-time but operates on public data only. ARM has no frequency throttling from NEON (unlike Intel AVX-512).
 
-Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (pure Go) and `CGO_ENABLED=1` (C + SIMD) does not change the security model on any platform. See SCIENCE.md §4 "Known Theoretical Threats" point 6 for detailed analysis.
+Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (pure Go) and `CGO_ENABLED=1` (C + SIMD) does not change the security model on any platform. See [SCIENCE.md §4](SCIENCE.md#known-theoretical-threats) "Known Theoretical Threats" point 6 for detailed analysis.
 
 ## 14. Hash Function Compliance
 
@@ -279,7 +279,7 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 **Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB (without MAC) has no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
 
-AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See SCIENCE.md §2.11 for detailed analysis.
+AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis.
 
 At 1024-bit key: 2^512 Grover. At 2048-bit key: 2^1024.
 
@@ -291,10 +291,10 @@ ITB is a new construction without prior peer review or independent cryptanalysis
 |---|---|
 | Peer review | None (first publication) |
 | Independent cryptanalysis | None |
-| Formal proof (simulation-based) | Planned (see SCIENCE.md §7) |
+| Formal proof (simulation-based) | Planned (see [SCIENCE.md §7](SCIENCE.md#7-research-directions)) |
 | Implementation audit | Not performed |
 | Core barrier (∀v, ∀h : ∃c : embed(c,h,d)=v) | Compatibility proof, hash-independent |
 | Active attack analysis (CCA, MITM) | Self-analysis, invites scrutiny |
 | Side-channel mitigations | Implemented, not independently audited |
 
-Potential vulnerability classes: (1) fundamental — barrier invalidation under unconsidered attack model (unlikely, barrier is probability-theoretic); (2) implementational — edge cases, timing, off-by-one (correctable). See SCIENCE.md §4 "Scope and Maturity Disclaimer" for detailed discussion.
+Potential vulnerability classes: (1) fundamental — barrier invalidation under unconsidered attack model (unlikely, barrier is probability-theoretic); (2) implementational — edge cases, timing, off-by-one (correctable). See [SCIENCE.md §4](SCIENCE.md#scope-and-maturity-disclaimer) "Scope and Maturity Disclaimer" for detailed discussion.

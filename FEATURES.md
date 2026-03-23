@@ -6,7 +6,7 @@
 
 - **Chained Hash Architecture.** N independent uint64 key components processed sequentially through a pluggable hash function. Each round feeds the previous output XOR'd with the next component. Each component is independent (no key-schedule relationships between components) — compromising one component reveals nothing about others. Designed to resist meet-in-the-middle attacks through three independent barriers: unobservable hash output, non-invertibility, and multi-call key discrimination.
 
-- **Pluggable Hash Function.** The library accepts hash functions at three widths: `HashFunc128` (128-bit), `HashFunc256` (256-bit), `HashFunc512` (512-bit). No built-in hash implementations, no external dependencies. Users supply SipHash-2-4, BLAKE3, AES-CMAC, BLAKE2b, or any conforming PRF function. PRF-grade hash functions are required. The random-container barrier provides additional architectural hardening by making hash output unobservable (see SCIENCE.md Section 2.4, 2.10).
+- **Pluggable Hash Function.** The library accepts hash functions at three widths: `HashFunc128` (128-bit), `HashFunc256` (256-bit), `HashFunc512` (512-bit). No built-in hash implementations, no external dependencies. Users supply SipHash-2-4, BLAKE3, AES-CMAC, BLAKE2b, or any conforming PRF function. PRF-grade hash functions are required. The random-container barrier provides additional architectural hardening by making hash output unobservable (see [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements), [2.10](SCIENCE.md#210-hash-function-requirements-analysis)).
 
 - **Three Hash Width Variants.** Parallel API sets for 128-bit (`Encrypt128`/`Decrypt128`), 256-bit (`Encrypt256`/`Decrypt256`), and 512-bit (`Encrypt512`/`Decrypt512`). All share the same pixel format, COBS framing, and security properties. ChainHash128 uses 2 components per round (128-bit intermediate state), ChainHash256 uses 4 components per round (256-bit intermediate state), ChainHash512 uses 8 components per round (512-bit intermediate state). Wider intermediate state enables higher effective key sizes.
 
@@ -20,7 +20,7 @@
 
 - **Random Container.** Container pixels generated from `crypto/rand`. The distribution of pixel values is identical before and after embedding, because both container and modifications are random.
 
-- **Hash Independence.** The random container creates an information-theoretic barrier: the hash output is consumed by a modification of a random pixel and is not reconstructible from passive observations (COA, KPA). PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable (see SCIENCE.md Section 2.4, Definition 2).
+- **Hash Independence.** The random container creates an information-theoretic barrier: the hash output is consumed by a modification of a random pixel and is not reconstructible from passive observations (COA, KPA). PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable (see [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements), [Definition 2](SCIENCE.md#5-formal-definitions)).
 
 - **Known-Plaintext Resistance (under passive observation).** Even with fully known plaintext, the attacker cannot derive hash outputs because original container pixel values are unknown (crypto/rand, never transmitted). Attack degrades to brute-force regardless of hash function.
 

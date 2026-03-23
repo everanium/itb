@@ -6,7 +6,7 @@ Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cip
 
 ## Notation
 
-- H: PRF-grade hash function satisfying Definition 2 (see SCIENCE.md)
+- H: PRF-grade hash function satisfying Definition 2 (see [SCIENCE.md](SCIENCE.md#5-formal-definitions))
 - S = (s₀, s₁, ..., s_{n-1}): seed of n independent uint64 components (n = keyBits / 64)
 - N: 128-bit nonce from crypto/rand
 - C[p]: original container byte at pixel p (crypto/rand, uniform over [0, 255])
@@ -141,7 +141,7 @@ If one seed controls all three domains (N, D, S derived from same seed), CCA rev
 Three possible 2-seed pairings exist. Each creates cross-domain leakage:
 
 **(a) Seed₁ = {N}, Seed₂ = {D, S}:**
-Cache side-channel reveals S (startPixel) from Seed₂. Under KPA, for each pixel the attacker has 56 candidate hash outputs (Section 2.9 in SCIENCE.md). S narrows the pixel-to-data mapping. Combined KPA + known S constrains Seed₂, leaking partial information about D. Cross-domain leak: S → D.
+Cache side-channel reveals S (startPixel) from Seed₂. Under KPA, for each pixel the attacker has 56 candidate hash outputs ([Section 2.9 in SCIENCE.md](SCIENCE.md#29-per-bit-xor-and-known-plaintext-resistance)). S narrows the pixel-to-data mapping. Combined KPA + known S constrains Seed₂, leaking partial information about D. Cross-domain leak: S → D.
 
 **(b) Seed₁ = {N, S}, Seed₂ = {D}:**
 CCA reveals N from Seed₁. Cache reveals S from Seed₁. Both attack surfaces target the same seed. Multiple (nonce, startPixel) observations from cache side-channel provide constraints on Seed₁ → reduces search space for Seed₁ → N configuration obtained without CCA. Cross-domain leak: S → N.
@@ -163,7 +163,7 @@ CCA reveals N (noiseSeed configuration). Since noiseSeed and dataSeed are indepe
 
 Cache reveals S (startSeed → startPixel). Since startSeed is independent of both noiseSeed and dataSeed, the leak is contained.
 
-D has zero software-observable side-channel. Even combined CCA + cache + KPA provides: N configuration (from noiseSeed) + start pixel (from startSeed) + known plaintext. Per-bit XOR (1:1) ensures 7 candidate rotations per pixel remain valid (Section 2.9 in SCIENCE.md). Without information about dataSeed, the attacker cannot distinguish candidates → security reduces to brute-force over dataSeed key space.
+D has zero software-observable side-channel. Even combined CCA + cache + KPA provides: N configuration (from noiseSeed) + start pixel (from startSeed) + known plaintext. Per-bit XOR (1:1) ensures 7 candidate rotations per pixel remain valid ([Section 2.9 in SCIENCE.md](SCIENCE.md#29-per-bit-xor-and-known-plaintext-resistance)). Without information about dataSeed, the attacker cannot distinguish candidates → security reduces to brute-force over dataSeed key space.
 
 Three seeds is therefore the minimum: fewer creates cross-domain leakage in every possible pairing; three achieves pairwise independence through CSPRNG-generated independent keys. ∎
 
