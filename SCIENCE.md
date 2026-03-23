@@ -380,6 +380,35 @@ PRF non-invertibility:   candidates → seed: impossible        — ambiguity un
 Invertible hash:         candidates → seed: possible          — ambiguity resolved (hash failure)
 ```
 
+**Worst-case combined attack (CCA + Full KPA + PRF):**
+```
+CCA (MAC-reveal)         → noisePos known (3 bits/pixel from noiseSeed)
+                         → noise bit value known (random CSPRNG bit — useless)
+                         → 7 rotation candidates remain (not 56)
+Full KPA                 → 7 candidate dataHash values per pixel, all consistent
+PRF (non-invertible)     → ChainHash inversion impossible → brute-force 2^keyBits
+Grover                   → 2^(keyBits/2) with expensive oracle (MAC-inside: O(P) per query)
+```
+
+**Why advanced cryptanalytic techniques do not apply to the absorbed PRF output:**
+
+The random container introduces a CSPRNG-generated component (noise bit) that is independent of the PRF computation. This breaks the prerequisites for standard and advanced attacks:
+
+| Attack technique | Prerequisite | Why blocked by ITB |
+|---|---|---|
+| Differential cryptanalysis | Observable input/output difference propagation | Output absorbed by random container — differences unobservable |
+| Linear cryptanalysis | Linear approximation between input and output bits | Noise bit (CSPRNG) destroys linearity — no exploitable correlation |
+| Algebraic attack (Gröbner/SAT) | System of equations relating input to output | 56^P ambiguity — system has exponentially many consistent solutions |
+| Slide attack | Repeating structure across rounds | ChainHash: each round uses independent component s_i ⊕ h_{i-1} |
+| Related-key attack | Algebraic relationship between keys | Triple-seed: three independent CSPRNG keys, no relationship |
+| Integral/Square attack | Balanced property over input set | Random container destroys balance — output is CSPRNG ⊕ PRF |
+| Boomerang attack | Composable differential paths | No observable intermediate state — barrier absorbs all rounds |
+| Interpolation attack | Low-degree polynomial representation | PRF output ⊕ CSPRNG noise — effective degree exceeds observation |
+| Cube attack | Superpoly recovery from public variables | Noise bit independent of all public and secret variables |
+| Side-channel (power/timing) | Secret-dependent operation timing | dataSeed: register-only operations (XOR, shift, AND) |
+
+All techniques require **observing** a relationship between the PRF's input and output. The information-theoretic barrier makes this observation impossible: the PRF output is absorbed by the random container, and the noise bit from CSPRNG is independent of the PRF computation. The attacker observes (PRF output modified by random container + independent CSPRNG noise bit) — a mixture of two independent random sources that cannot be decomposed without knowing the original container values (never transmitted).
+
 ### 2.10 Hash Function Requirements Analysis
 
 ITB requires PRF-grade hash functions. The PRF property guarantees all necessary sub-properties. The barrier provides additional architectural hardening:
