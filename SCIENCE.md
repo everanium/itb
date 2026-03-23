@@ -409,6 +409,17 @@ The random container introduces a CSPRNG-generated component (noise bit) that is
 
 All techniques require **observing** a relationship between the PRF's input and output. The information-theoretic barrier makes this observation impossible: the PRF output is absorbed by the random container, and the noise bit from CSPRNG is independent of the PRF computation. The attacker observes (PRF output modified by random container + independent CSPRNG noise bit) — a mixture of two independent random sources that cannot be decomposed without knowing the original container values (never transmitted).
 
+**The analysis dichotomy.** Advanced cryptanalytic techniques are never applicable to ITB, regardless of hash function properties:
+
+```
+Hash invertible     → seed recovered via inversion   → advanced analysis unnecessary (attacker already has everything)
+Hash non-invertible → barrier blocks PRF observation  → advanced analysis impossible (no observable input/output relation)
+```
+
+There is no intermediate state where advanced analysis is useful but full inversion is not. To apply differential, linear, algebraic, or any structural analysis, the attacker must observe the PRF output — the barrier prevents this. To bypass the barrier, the attacker must invert ChainHash — but inversion yields the seed directly, making analysis redundant.
+
+In both cases, **the barrier itself is never broken**. With an invertible hash, the attacker recovers the seed through a hash function property (invertibility) — not through the observation. The barrier still absorbs the hash output (PRF or non-PRF); the attacker bypasses it via a side path that does not depend on the observation. The failure is in the hash function, not in the barrier. The barrier creates a clean dichotomy: either the hash is invertible (broken by inversion, barrier intact) or it is not (protected by the barrier, analysis impossible).
+
 ### 2.10 Hash Function Requirements Analysis
 
 ITB requires PRF-grade hash functions. The PRF property guarantees all necessary sub-properties. The barrier provides additional architectural hardening:
