@@ -112,15 +112,35 @@ Even in the worst case (Full KPA + CCA + cache side-channel), the attacker gets:
 
 See [SCIENCE.md Section 4, startPixel limitation](SCIENCE.md#known-theoretical-threats).
 
-## 10. Quantum Attacks: Conjectured Mitigated
+## 10. Why the Barrier Is Not Broken by KPA Candidates
 
-The barrier is computation-model-independent: a quantum computer cannot extract information that does not exist in the observation.
+A common question: if the attacker with known plaintext can compute 56 candidate hash outputs per pixel, doesn't that mean the barrier failed to absorb the hash output?
 
-- **Grover** — no oracle (core ITB) or expensive oracle (MAC-inside: full decryption per query)
-- **Simon** — needs periodicity, config map is aperiodic (nonce per message)
-- **BHT** — needs observable collisions, random container absorbs them
-- **Q2 superposition queries** — MAC oracle is inherently classical (network request → accept/reject)
+No. The barrier is intact. Here is why:
 
-At 1024-bit key: 2^512 Grover. At 2048-bit key: 2^1024. Both are far beyond any foreseeable quantum capability.
+**What the barrier guarantees (Theorem 1):** for any observed byte value v and any hash output h, the probability P(v | h) = 1/2. This holds even under Full KPA — because the noise bit comes from the original container (CSPRNG), which is random and independent of everything. The observation does not uniquely determine the hash output. This is information theory, not computational assumption.
+
+**What the attacker computes:** the 56 candidates are not extracted from the observation. They are **calculated** from the combination of (known plaintext + observed byte + candidate config). This is arithmetic, not a barrier break. All 56 candidates are **equally consistent** with the observation — the attacker does not know which one is real.
+
+**Without hash inversion (PRF):** 56 candidates per pixel × P pixels = 56^P total combinations. For P = 169 (1024-bit key): 56^169 ≈ 2^987. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion impossible. The ambiguity is preserved.
+
+**With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** the ambiguity. The barrier is not broken — ChainHash is inverted.
+
+The barrier absorbs the hash output. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash function failure, not a barrier failure.
+
+## 11. Quantum Resistance
+
+The barrier works strictly by information theory: the observation does not contain information about the hash output. This property is **computation-model-independent** — it does not depend on whether the attacker uses a classical computer, a quantum computer, or any future computational model. A quantum computer cannot extract information that does not exist in the observation.
+
+This is the fundamental difference between ITB and traditional ciphers. AES and ChaCha20 rely on **computational hardness** — their security degrades if the attacker has more computational power (Grover: √ speedup). ITB's barrier relies on **information absence** — no amount of computation helps when the information is not there.
+
+Specific quantum algorithms and why they are conjectured mitigated:
+
+- **Grover** — requires a verification oracle. Core ITB (no MAC) has no oracle at all. With MAC-inside: each oracle query costs O(P) — full container decryption. At 1024-bit key: 2^512 iterations × O(P) each.
+- **Simon** — requires periodic function structure. ITB's config map is aperiodic: each message has a unique 128-bit nonce, creating a completely different configuration.
+- **BHT** — requires observable hash collisions. The random container absorbs collisions — two identical hash outputs on different pixels produce different observed bytes (different random container values).
+- **Q2 superposition queries** — requires oracle that accepts quantum superposition inputs. ITB's MAC oracle is inherently classical: it receives concrete bytes over a network and returns accept/reject. Superposition queries are physically impossible.
+
+At 1024-bit key: 2^512 Grover. At 2048-bit key: 2^1024. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis).

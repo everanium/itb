@@ -301,7 +301,9 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 **Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB (without MAC) has no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
 
-AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis.
+The fundamental difference between ITB and traditional ciphers under quantum attack: AES and ChaCha20 rely on **computational hardness** — their security degrades with more computational power (Grover: √ speedup). ITB's barrier relies on **information absence** — no computation (classical or quantum) helps when the information is not in the observation. This is an information-theoretic property, not a computational assumption.
+
+AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis. See also [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) for why KPA candidates do not break the barrier.
 
 At 1024-bit key: 2^512 Grover. At 2048-bit key: 2^1024.
 

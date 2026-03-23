@@ -359,6 +359,26 @@ The 7 candidate count represents the worst-case theoretical minimum under full K
 
 Note: rotation in ITB (0-6, secret, per-pixel from dataSeed) differs fundamentally from rotation in ARX ciphers (e.g., ChaCha20: fixed amounts 16/12/8/7, public). ChaCha20 rotation is a mixing operation with known amounts — reversible by design. ITB rotation is an encryption operation with secret amount — not reversible without dataSeed. This has not been independently verified.
 
+### 2.9.2 Why KPA Candidates Do Not Break the Barrier
+
+Under KPA, the attacker can compute 56 candidate dataHash values per pixel (8 noisePos × 7 rotation, or 7 with CCA). This raises the question: does the existence of computable candidates contradict the information-theoretic barrier?
+
+**The barrier is intact.** Theorem 1 states: P(C'[p,ch] = v | h) = 1/2 for any hash output h. This holds under KPA because the noise bit originates from the CSPRNG-generated container, independent of both the hash output and the plaintext. The observation probability is 1/2 regardless of which candidate is the true hash output. This is a property of information theory, not a computational assumption.
+
+**Candidates are ambiguity, not leakage.** The 56 candidates are not extracted from the observation — they are computed from the combination of (known plaintext + observed byte + candidate config). All 56 are equally consistent with the observation. The attacker does not learn which candidate is real. The barrier guarantees that the observation cannot distinguish between them.
+
+**Multi-pixel ambiguity.** Across P pixels, the total candidate space is 56^P. For P = 169 (1024-bit key): 56^169 ≈ 2^987. Without ChainHash inversion, the attacker cannot verify any candidate combination — the ambiguity is preserved by the barrier and enforced by PRF non-invertibility.
+
+**Hash inversion bypasses ambiguity, not the barrier.** With an invertible hash, the attacker resolves the ambiguity by inverting ChainHash: candidate dataHash → candidate dataSeed → verify on another pixel. This is a hash function failure (invertibility), not a barrier failure. The barrier still absorbs the hash output — the inversion provides an alternative path that does not depend on the observation.
+
+**Formal summary:**
+```
+Barrier (Theorem 1):     ∀h : P(v | h) = 1/2         — holds under any KPA
+Ambiguity (Theorem 2):   56 candidates, all consistent — barrier preserves ambiguity
+PRF non-invertibility:   candidates → seed: impossible — ambiguity unresolvable
+Invertible hash:         candidates → seed: possible   — ambiguity resolved (hash failure)
+```
+
 ### 2.10 Hash Function Requirements Analysis
 
 ITB requires PRF-grade hash functions. The PRF property guarantees all necessary sub-properties. The barrier provides additional architectural hardening:
