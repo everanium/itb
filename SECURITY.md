@@ -108,14 +108,29 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | KPA level | Invertible hash | Non-invertible hash |
 |---|---|---|
 | Full KPA (entire plaintext known) | ~56 × P inversions → **breaks** | Brute-force 2^keyBits |
-| Quarter KPA (~25% plaintext known)† | Slower than Full KPA but still **breaks** — see below | Brute-force 2^keyBits |
-| Partial KPA (headers, format known) | Consecutive known bytes (~10+) → **breaks** (same as Quarter KPA) | Brute-force 2^keyBits |
-| Crib KPA (known fragment, position unknown) | Very limited — position unknown, byte-splitting blocks boundary channels | Brute-force 2^keyBits |
+| Partial KPA (consecutive known bytes ~10+) | **breaks** (same cost as Full KPA — position known, only startPixel unknown) | Brute-force 2^keyBits |
+| Crib KPA (known fragment, position unknown) | P × L × 56 × n inversions — see cost table below | Brute-force 2^keyBits |
 | No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
 
-† **Quarter KPA analysis.** With ~25% of plaintext known, the attacker can find pixels where both adjacent bytes are known (within the known 25%), compute 56 candidate configs, invert ChainHash → recover candidate dataSeed → decrypt the remaining 75%. Three barriers slow the attack but do not prevent it: (1) **Byte-splitting** — fewer usable reference pixels (need two adjacent known bytes); (2) **Unknown startPixel** — P candidates to enumerate; (3) **ChainHash** — n-round XOR-chain must be fully inverted per candidate. The attack is more expensive than Full KPA but still breaks the construction with invertible hash. With non-invertible hash (PRF), quarter KPA degrades to brute-force — ChainHash cannot be inverted regardless of how much plaintext is known.
+Full KPA is a worst-case theoretical assumption. In practice, full plaintext knowledge eliminates the need for decryption. Non-invertible hash (PRF) ensures brute-force regardless of KPA level.
 
-Full KPA is a worst-case theoretical assumption. In practice, full plaintext knowledge eliminates the need for decryption. Non-invertible hash ensures brute-force regardless of KPA level.
+### KPA Attack Cost (invertible hash, worst-case assumption)
+
+The following table assumes: (1) the hash function is invertible, (2) the attacker knows exactly which hash function is used, (3) 1024-bit key, 128-bit hash, 8 ChainHash rounds. This demonstrates that the information-theoretic barrier alone does not provide full protection without PRF — non-invertibility is the sole defense under KPA.
+
+In practice: (a) ITB requires PRF-grade hash functions (non-invertible by definition → 2^keyBits brute-force), (b) the attacker does not know which hash function is used — they must guess which function to invert (SipHash-2-4, AES-CMAC, BLAKE3, BLAKE2b, BLAKE2s, or any user-supplied PRF), and each wrong guess wastes the entire computation.
+
+| Size | P | Full/Partial KPA | time @100ns | Crib (R) | Crib KPA | time @100ns |
+|---|---|---|---|---|---|---|
+| 4 KB | 625 | 2.8×10⁵ | 28 ms | R=1, 8B | 1.1×10⁹ | 1.9 min |
+| 16 MB | 2.4M | 1.1×10⁹ | 1.8 min | R=8, 256B | 2.3×10¹⁵ | 7.2 years |
+| 64 MB | 9.6M | 4.3×10⁹ | 7.2 min | R=32, 512B | 9.0×10¹⁵ | 28.7 years |
+| 256 MB | 38.5M | 1.7×10¹⁰ | 28.7 min | R=128, 1KB | 3.6×10¹⁶ | 114.6 years |
+| 1 GB | 154M | 6.9×10¹⁰ | 1.9 hours | R=512, 2KB | 1.4×10¹⁷ | 458 years |
+
+R — estimated crib repetitions in file. The attacker must guess the content type (ZIP, HTTP, JSON) to estimate R. Each wrong guess wastes the full P × (L/R) × 56 × 8 computation. Time assumes 100ns per hash inversion (realistic for software).
+
+**Quantum note.** Grover's algorithm does not meaningfully accelerate these attacks. With invertible hash, the attack is already broken classically (Full/Partial KPA in minutes/hours). With PRF (non-invertible), Grover provides √(2^keyBits) = 2^512 for 1024-bit key — computationally infeasible. For Crib KPA, Grover could theoretically provide √(P × L) speedup on the search, but each oracle query still requires sequential ChainHash inversion (8 dependent rounds) — the per-query cost O(n) is not parallelizable by quantum algorithms.
 
 ## 8. Byte-Splitting Property
 
