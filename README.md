@@ -8,9 +8,11 @@
 
 A parameterized symmetric cipher construction library for Go that achieves known-plaintext resistance under passive observation through an information-theoretic barrier.
 
-**Zero external dependencies.** Hash functions are supplied by the user.
+**The barrier works strictly by information theory. No computational power can extract what does not exist in the observation.** The information-theoretic barrier absorbs the output of a cryptographic PRF hash function, making hash output unobservable to a passive observer.
 
-**Central design idea:** The random container creates an information-theoretic barrier: hash output is consumed by a modification of a random pixel, making it unobservable. PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable.
+**[How the barrier works — accessible explanation](ITB.md)**
+
+**Zero external dependencies.** Hash functions are supplied by the user.
 
 ## Why ITB: Inverted Approach to Cryptography
 
@@ -500,6 +502,7 @@ encrypted, err := itb.Encrypt128(noiseSeed, dataSeed, startSeed, data)
 
 ## See Also
 
+- [ITB.md](ITB.md) — How the barrier works (accessible explanation)
 - [FEATURES.md](FEATURES.md) — Complete feature list and security properties
 - [PROOFS.md](PROOFS.md) — Formal security proofs
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
