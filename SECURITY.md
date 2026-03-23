@@ -120,13 +120,23 @@ The following table assumes: (1) the hash function is invertible, (2) the attack
 
 In practice: (a) ITB requires PRF-grade hash functions (non-invertible by definition → 2^keyBits brute-force), (b) the attacker does not know which hash function is used — they must guess which function to invert (SipHash-2-4, AES-CMAC, BLAKE3, BLAKE2b, BLAKE2s, or any user-supplied PRF), and each wrong guess wastes the entire computation.
 
-| Size | P | Full/Partial KPA | time @100ns | Crib (R) | Crib KPA | time @100ns |
+| Size | P | Attack | Known | R | Operations | time @100ns |
 |---|---|---|---|---|---|---|
-| 4 KB | 625 | 2.8×10⁵ | 28 ms | R=1, 8B | 1.1×10⁹ | 1.9 min |
-| 16 MB | 2.4M | 1.1×10⁹ | 1.8 min | R=8, 256B | 2.3×10¹⁵ | 7.2 years |
-| 64 MB | 9.6M | 4.3×10⁹ | 7.2 min | R=32, 512B | 9.0×10¹⁵ | 28.7 years |
-| 256 MB | 38.5M | 1.7×10¹⁰ | 28.7 min | R=128, 1KB | 3.6×10¹⁶ | 114.6 years |
-| 1 GB | 154M | 6.9×10¹⁰ | 1.9 hours | R=512, 2KB | 1.4×10¹⁷ | 458 years |
+| 4 KB | 625 | Full KPA | 100% | — | 2.8×10⁵ | 28 ms |
+| 4 KB | 625 | Partial KPA | 256B | — | 2.8×10⁵ | 28 ms |
+| 4 KB | 625 | Crib KPA | 8B | 1 | 1.1×10⁹ | 1.9 min |
+| 16 MB | 2.4M | Full KPA | 100% | — | 1.1×10⁹ | 1.8 min |
+| 16 MB | 2.4M | Partial KPA | 4 KB | — | 1.1×10⁹ | 1.8 min |
+| 16 MB | 2.4M | Crib KPA | 256B | 8 | 2.3×10¹⁵ | 7.2 years |
+| 64 MB | 9.6M | Full KPA | 100% | — | 4.3×10⁹ | 7.2 min |
+| 64 MB | 9.6M | Partial KPA | 8 KB | — | 4.3×10⁹ | 7.2 min |
+| 64 MB | 9.6M | Crib KPA | 512B | 32 | 9.0×10¹⁵ | 28.7 years |
+| 256 MB | 38.5M | Full KPA | 100% | — | 1.7×10¹⁰ | 28.7 min |
+| 256 MB | 38.5M | Partial KPA | 16 KB | — | 1.7×10¹⁰ | 28.7 min |
+| 256 MB | 38.5M | Crib KPA | 1 KB | 128 | 3.6×10¹⁶ | 114.6 years |
+| 1 GB | 154M | Full KPA | 100% | — | 6.9×10¹⁰ | 1.9 hours |
+| 1 GB | 154M | Partial KPA | 32 KB | — | 6.9×10¹⁰ | 1.9 hours |
+| 1 GB | 154M | Crib KPA | 2 KB | 512 | 1.4×10¹⁷ | 458 years |
 
 R — estimated crib repetitions in file. The attacker must guess the content type (ZIP, HTTP, JSON) to estimate R. Each wrong guess wastes the full P × (L/R) × 56 × 8 computation. Time assumes 100ns per hash inversion (realistic for software).
 
