@@ -109,7 +109,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 |---|---|---|
 | Full KPA (entire plaintext known) | ~56 × P inversions → **breaks** | Brute-force 2^keyBits |
 | Quarter KPA (~25% plaintext known)† | Slower than Full KPA but still **breaks** — see below | Brute-force 2^keyBits |
-| Partial KPA (headers, format known) | Byte-splitting blocks most channels (each channel mixes 2 adjacent bytes — both must be known) | Brute-force 2^keyBits |
+| Partial KPA (headers, format known) | Consecutive known bytes (~10+) → **breaks** (same as Quarter KPA) | Brute-force 2^keyBits |
 | Crib KPA (known fragment, position unknown) | Very limited — position unknown, byte-splitting blocks boundary channels | Brute-force 2^keyBits |
 | No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
 
