@@ -120,13 +120,13 @@ The following table assumes: (1) the hash function is invertible, (2) the attack
 
 In practice: (a) ITB requires PRF-grade hash functions (non-invertible by definition → 2^keyBits brute-force), (b) the attacker does not know which hash function is used — they must guess which function to invert (SipHash-2-4, AES-CMAC, BLAKE3, BLAKE2b, BLAKE2s, or any user-supplied PRF), and each wrong guess wastes the entire computation.
 
-| Size | P | Full/Partial KPA | time @100ns | Crib KPA (R) | time @100ns |
-|---|---|---|---|---|---|
-| 4 KB | 625 | 2.8×10⁵ | 28 ms | 1.1×10⁹ (R=1, 8B) | 1.9 min |
-| 16 MB | 2.4M | 1.1×10⁹ | 1.8 min | 2.3×10¹⁵ (R=8, 256B) | 7.2 years |
-| 64 MB | 9.6M | 4.3×10⁹ | 7.2 min | 9.0×10¹⁵ (R=32, 512B) | 28.7 years |
-| 256 MB | 38.5M | 1.7×10¹⁰ | 28.7 min | 3.6×10¹⁶ (R=128, 1KB) | 114.6 years |
-| 1 GB | 154M | 6.9×10¹⁰ | 1.9 hours | 1.4×10¹⁷ (R=512, 2KB) | 458 years |
+| Size | P | Full/Partial KPA | time @100ns | Crib KPA (R) | time @100ns | PRF (any KPA) |
+|---|---|---|---|---|---|---|
+| 4 KB | 625 | 2.8×10⁵ | 28 ms | 1.1×10⁹ (R=1, 8B) | 1.9 min | 2^keyBits |
+| 16 MB | 2.4M | 1.1×10⁹ | 1.8 min | 2.3×10¹⁵ (R=8, 256B) | 7.2 years | 2^keyBits |
+| 64 MB | 9.6M | 4.3×10⁹ | 7.2 min | 9.0×10¹⁵ (R=32, 512B) | 28.7 years | 2^keyBits |
+| 256 MB | 38.5M | 1.7×10¹⁰ | 28.7 min | 3.6×10¹⁶ (R=128, 1KB) | 114.6 years | 2^keyBits |
+| 1 GB | 154M | 6.9×10¹⁰ | 1.9 hours | 1.4×10¹⁷ (R=512, 2KB) | 458 years | 2^keyBits |
 
 Full/Partial KPA cost is identical: the attacker needs only one reference pixel with consecutive known bytes (~10+) to invert ChainHash, regardless of how much plaintext is known. The cost is P × 56 × 8 (startPixel candidates × configs × ChainHash rounds).
 
