@@ -12,6 +12,8 @@ A parameterized symmetric cipher construction library for Go that achieves known
 
 **[How the barrier works — accessible explanation](ITB.md)**
 
+**[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
+
 **Zero external dependencies.** Hash functions are supplied by the user.
 
 ## Why ITB: Inverted Approach to Cryptography
