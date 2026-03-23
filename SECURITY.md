@@ -132,6 +132,8 @@ Full/Partial KPA cost is identical: the attacker needs only one reference pixel 
 
 R — estimated crib repetitions in file. The attacker must guess the content type (ZIP, HTTP, JSON) to estimate R. Each wrong guess wastes the full P × (L/R) × 56 × 8 computation. Time assumes 100ns per hash inversion (realistic for software).
 
+**Streaming example.** A 1 GB MP4 file encrypted with EncryptStream256 (64 MB chunks, 16 chunks). The MP4 header (~1 KB) is in the first chunk only. With invertible hash: the attacker can attempt Partial KPA on chunk 1 (7.2 min). The remaining 15 chunks contain raw video stream with zero KPA — each requires independent brute-force. With PRF: all 16 chunks require 2^keyBits brute-force each, including chunk 1 with the known MP4 header.
+
 **Quantum note.** Grover's algorithm does not meaningfully accelerate these attacks. With invertible hash, the attack is already broken classically (Full/Partial KPA in minutes/hours). With PRF (non-invertible), Grover provides √(2^keyBits) = 2^512 for 1024-bit key — computationally infeasible. For Crib KPA, Grover could theoretically provide √(P × L) speedup on the search, but each oracle query still requires sequential ChainHash inversion (8 dependent rounds) — the per-query cost O(n) is not parallelizable by quantum algorithms.
 
 ## 8. Byte-Splitting Property
