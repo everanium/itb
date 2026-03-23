@@ -145,7 +145,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | dataSeed (rotation + XOR) | 59 | **0** (independent seed) | **59 (100%)** |
 | **Total** | **62** | **3 (4.8%)** | **59 (95.2%)** |
 
-### Barrier Strength at Minimum Container (1024-bit key)
+### Barrier Strength (1024-bit key)
 
 | Metric | Value |
 |---|---|

@@ -804,7 +804,7 @@ With N noise bits per channel (8 − N data bits), selecting N positions from 8 
 | 5/3 | 5 | 3 | 40 | 24 | 1.60× | 49 | 12.2% |
 | 4/4 | 4 | 4 | 32 | 32 | 2.00× | 41 | 17.1% |
 
-**Barrier at minimum container (1024-bit key):**
+**Barrier strength (1024-bit key):**
 
 | Format | MinPixels | Min side | Barrier | vs Landauer (2^306) |
 |---|---|---|---|---|

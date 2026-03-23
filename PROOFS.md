@@ -50,7 +50,7 @@ Since C[p,ch] is independent of h (container generated before embedding), and th
 P(C'[p,ch] = v | h) = P(noise bit at noisePos matches v's bit at noisePos) = 1/2
 ```
 
-This holds for ANY hash function H, including invertible ones. The hash output h is consumed by modification of a random value and is not reconstructible from the observation. ∎
+This holds for any hash function H. The hash output h is consumed by modification of a random value and is not reconstructible from the observation. ∎
 
 ## Proof 2: Per-Bit XOR KPA Resistance
 
