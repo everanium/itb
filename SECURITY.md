@@ -296,7 +296,7 @@ The information-theoretic barrier is computation-model-independent: provided the
 | **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (Core ITB, MAC + Silent Drop) or expensive oracle (MAC + Reveal: full decryption per query) |
 | **Simon** (periodicity) | Relies on PRF/PRP computational strength | Conjectured mitigated: aperiodic config map (nonce per message) |
 | **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container absorbs collisions; MAC + Reveal — encoding ambiguity (7 candidates) |
-| **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: random container limits structural relations |
+| **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container limits structural relations; MAC + Reveal — encoding ambiguity (7 candidates) |
 | **Q2 superposition queries** | Theoretically applicable (oracle accepts superposition inputs) | Not applicable: MAC oracle is inherently classical (network request → accept/reject) |
 
 **Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB and MAC + Silent Drop have no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
