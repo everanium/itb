@@ -424,7 +424,7 @@ In both cases, **the barrier itself is never broken**. With an invertible hash, 
 
 This does not work. After noise removal, the attacker has 7 "clean" data bits per channel: `rotate(plaintext ⊕ xor_mask, rotation)`. The data is still encrypted by dataSeed configuration (rotation + XOR). CCA revealed noiseSeed (noise positions), but dataSeed is a completely independent key (triple-seed isolation: I(dataSeed ; noiseSeed) = 0). Removing noise bits bypasses one wall (noiseSeed) but leaves the other wall intact (dataSeed).
 
-Without KPA: the cleaned data is still encrypted — equivalent to analyzing ciphertext. No analysis technique helps.
+Without KPA: the cleaned data is `rotate(unknown_plaintext ⊕ xor_mask, rotation)` — the attacker cannot separate plaintext from XOR mask without knowing either one. No candidates are computable. The barrier provides full information-theoretic protection.
 
 With Full KPA: the attacker computes 7 rotation candidates per pixel, each producing a valid candidate dataHash. The attacker cannot determine which of the 7 is correct from the observation. Across P pixels: 7^P ambiguity (for P = 169: 7^169 ≈ 2^474). This ambiguity is an information-theoretic property of the encoding (7 rotations in a 7-bit channel), not of the hash function — it holds for any H, PRF or non-PRF. Even after the data has been recovered through hash inversion, the observation still contains 7^P ambiguity. The barrier is never broken.
 
