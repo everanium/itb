@@ -164,7 +164,7 @@ For example, with a 128-bit hash and 1024-bit key (16 components): a single Chai
 
 ### 2.2 Brute-Force Resistance
 
-**Classical.** An attacker must try all 2^(64n) seeds. Each attempt requires full extraction from the container. No shortcut is known.
+**Classical.** Each individual seed has a key space of 2^(64n) where n is the number of components. The actual brute-force cost depends on the mode — see below for detailed analysis per composition mode.
 
 **Meet-in-the-middle resistance.** Three independent barriers prevent MITM on ChainHash:
 
