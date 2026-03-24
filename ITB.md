@@ -79,7 +79,7 @@ Full KPA (the attacker knows the entire plaintext) is the only scenario where th
 
 | Condition | Result |
 |---|---|
-| Full KPA + invertible hash | ~56 × P inversions → seed recovered → **breaks** |
+| Full KPA + invertible hash | ~56 × P inversions → **seed recovered** (barrier intact, hash inverted) |
 | Full KPA + PRF (non-invertible) | Inversion impossible → brute-force 2^keyBits |
 
 The attack: the attacker takes any pixel → 56 candidates (8 noisePos × 7 rotation) → computes candidate dataHash → **inverts** ChainHash → gets candidate dataSeed → verifies on a second pixel.

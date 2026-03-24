@@ -107,8 +107,8 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 
 | KPA level | Invertible hash | Non-invertible hash |
 |---|---|---|
-| Full KPA (entire plaintext known) | ~56 × P inversions → **breaks** | Brute-force 2^keyBits |
-| Partial KPA (consecutive known bytes ~10+) | **breaks** (same cost as Full KPA — position known, only startPixel unknown) | Brute-force 2^keyBits |
+| Full KPA (entire plaintext known) | ~56 × P inversions → **seed recovered** (barrier intact, hash inverted) | Brute-force 2^keyBits |
+| Partial KPA (consecutive known bytes ~10+) | **seed recovered** (same cost as Full KPA — position known, only startPixel unknown) | Brute-force 2^keyBits |
 | Crib KPA (known fragment, position unknown) | P × L × 56 × n inversions — see cost table below | Brute-force 2^keyBits |
 | No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
 
@@ -134,7 +134,7 @@ R — estimated crib repetitions in file. The attacker must guess the content ty
 
 **Streaming example.** A 1 GB MP4 file encrypted with EncryptStream256 (64 MB chunks, 16 chunks). The MP4 header (~1 KB) is in the first chunk only. With invertible hash: the attacker can attempt Partial KPA on chunk 1 (7.2 min). The remaining 15 chunks contain raw video stream with zero KPA — each requires independent brute-force. With PRF: all 16 chunks require 2^keyBits brute-force each, including chunk 1 with the known MP4 header.
 
-**Quantum note.** Grover's algorithm does not meaningfully accelerate these attacks. With invertible hash, the attack is already broken classically (Full/Partial KPA in minutes/hours). With PRF (non-invertible), Grover provides √(2^keyBits) = 2^512 for 1024-bit key — computationally infeasible. For Crib KPA, Grover could theoretically provide √(P × L) speedup on the search, but each oracle query still requires sequential ChainHash inversion (8 dependent rounds) — the per-query cost O(n) is not parallelizable by quantum algorithms.
+**Quantum note.** Grover's algorithm does not meaningfully accelerate these attacks. With invertible hash, the seed is already recoverable classically (Full/Partial KPA in minutes/hours). With PRF (non-invertible), Grover provides √(2^keyBits) = 2^512 for 1024-bit key — computationally infeasible. For Crib KPA, Grover could theoretically provide √(P × L) speedup on the search, but each oracle query still requires sequential ChainHash inversion (8 dependent rounds) — the per-query cost O(n) is not parallelizable by quantum algorithms.
 
 ## 8. Byte-Splitting Property
 
