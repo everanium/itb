@@ -460,7 +460,7 @@ The output format is identical across all three hash width variants.
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | √P × 2^keyBits (Core/Silent Drop‡‡; see ‡‡ in [SECURITY.md](SECURITY.md#7-attack-resistance-summary)) to 2^(keyBits/2) (MAC + Reveal) |
+| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to 2^(keyBits/2) (MAC + Reveal) |
 | Oracle-free deniability | Yes |
 | Hash function requirement | PRF required; barrier hardens PRF |
 | Known-plaintext resistance | Under passive observation |

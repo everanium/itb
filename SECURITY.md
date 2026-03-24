@@ -91,8 +91,8 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Known-plaintext (KPA) | ✓ IT barrier† | ✓ IT barrier† | ✓ Per-bit XOR | ✓ Per-bit XOR* |
 | Chosen-plaintext (CPA) | ✓ Independent maps | ✓ Independent maps | ✓ Independent maps | ✓ Independent maps |
 | Chosen-ciphertext (CCA) | ✓ No oracle | ✓ No oracle | noiseSeed leaked, dataSeed safe | noiseSeed leaked, dataSeed safe |
-| Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)†††‡‡ | 2^keyBits** | 2^keyBits** |
-| Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits†††‡‡ | 2^(keyBits/2)** | 2^(keyBits/2)** |
+| Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)††† | 2^keyBits** | 2^keyBits** |
+| Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits††† | 2^(keyBits/2)** | 2^(keyBits/2)** |
 | Map guessing | 2^(62P) | 2^(62P) | 2^(62P) | 2^(62P) |
 | Nonce reuse | Two-time pad | Two-time pad | Two-time pad | Two-time pad |
 | Bit-flipping | Undetected | Detected (MAC) | Detected (MAC) | Detected (MAC) |
@@ -103,7 +103,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion.
 \** With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
 ††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2×keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2×keyBits). Grover: √P × 2^keyBits. At 1024-bit keys (P=169): classical ~2^2055, Grover ~2^1028.
-‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. In this case, brute-force cost equals MAC + Reveal for classical (P × 2^(2×keyBits)) but without CCA (noiseSeed not leaked, noise cannot be stripped). Grover: √P × 2^keyBits.
+‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2×keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
 
 ### KPA Attack Feasibility by Knowledge Level
 
@@ -295,19 +295,19 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 | Quantum Algorithm | AES-CTR / ChaCha20 | ITB |
 |---|---|---|
-| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (Core ITB, MAC + Silent Drop‡‡) or expensive oracle (MAC + Reveal: full decryption per query) |
+| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (Core ITB, MAC + Silent Drop) or expensive oracle (MAC + Reveal: full decryption per query) |
 | **Simon** (periodicity) | Relies on PRF/PRP computational strength | Conjectured mitigated: aperiodic config map (nonce per message) |
 | **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container absorbs collisions; MAC + Reveal — encoding ambiguity (7 candidates) |
 | **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container limits structural relations; MAC + Reveal — encoding ambiguity (7 candidates) |
 | **Q2 superposition queries** | Theoretically applicable (oracle accepts superposition inputs) | Not applicable: MAC oracle is inherently classical (network request → accept/reject) |
 
-**Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB and MAC + Silent Drop‡‡ have no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
+**Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB and MAC + Silent Drop have no external oracle (if the attacker has insider knowledge of MAC presence, local verification is possible — see ‡‡). This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
 
 The fundamental difference between ITB and traditional ciphers under quantum attack: AES and ChaCha20 rely on **computational hardness** — their security degrades with more computational power (Grover: √ speedup). ITB's barrier relies on **information absence** — no computation (classical or quantum) helps when the information is not in the observation. This is an information-theoretic property, not a computational assumption.
 
 AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis. See also [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) for why KPA candidates do not break the barrier.
 
-At 1024-bit key (P=169): Core/Silent Drop‡‡ ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: 2^1024 classical, 2^512 Grover. At 2048-bit key (P=324): ~2^4105/~2^2052 or 2^2048/2^1024.
+At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: 2^1024 classical, 2^512 Grover. At 2048-bit key (P=324): ~2^4105/~2^2052 or 2^2048/2^1024.
 
 ## 17. Maturity and Scope
 
