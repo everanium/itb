@@ -26,7 +26,7 @@ ITB inverts this approach. Instead of relying solely on the primitive's strength
 
 - **Random container** — hash output unobservable under passive observation (COA, KPA)
 - **Per-bit XOR (1:1)** — 56 independent mask bits per pixel, every observation consistent with any plaintext
-- **Triple-seed isolation** — CCA leaks only noiseSeed (3 bits/pixel); dataSeed and startSeed remain independent
+- **Triple-seed isolation** — CCA leaks only noiseSeed (3 bits/pixel, MAC + Reveal only); dataSeed and startSeed remain independent
 - **Noise bit embedding** — no bit position is deterministically data from the public format
 
 **Why triple-seed is necessary.** Without three independent seeds, a leak in one domain cascades: CCA reveals noise positions → same seed gives rotation and XOR → full configuration recovered. Triple-seed isolation ensures each leak is contained: CCA → only noiseSeed, cache side-channel → only startSeed, dataSeed → zero software-observable exposure. This is the minimum configuration where every leak is architecturally isolated.

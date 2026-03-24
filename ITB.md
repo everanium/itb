@@ -51,7 +51,7 @@ With PRF hash, crypto/rand, and no co-located attacker:
 | **COA** (ciphertext only) | Attacker sees random bytes, hash output unobservable | Intact |
 | **KPA** (known plaintext) | Even with known plaintext, the original container is unknown | Intact |
 | **CPA** (chosen plaintext) | Different seed → different config, zero correlation | Intact |
-| **CCA** (chosen ciphertext) | Core ITB without MAC has no oracle at all | No oracle exists |
+| **CCA** (chosen ciphertext) | Core ITB and MAC + Silent Drop have no oracle | No oracle exists |
 
 The PRF is not even reached — the barrier blocks everything at the observation level. PRF is defence-in-depth for active attacks, which under normal conditions are not possible.
 
@@ -136,7 +136,7 @@ This is the fundamental difference between ITB and traditional ciphers. AES and 
 
 Specific quantum algorithms and why they are conjectured mitigated:
 
-- **Grover** — requires a verification oracle. Core ITB (no MAC) has no oracle at all. With MAC-inside: each oracle query costs O(P) — full container decryption. At 1024-bit key: 2^512 iterations × O(P) each.
+- **Grover** — requires a verification oracle. Core ITB and MAC + Silent Drop have no oracle. With MAC + Reveal: each oracle query costs O(P) — full container decryption. At 1024-bit key: 2^512 iterations × O(P) each.
 - **Simon** — requires periodic function structure. ITB's config map is aperiodic: each message has a unique 128-bit nonce, creating a completely different configuration.
 - **BHT** — requires observable hash collisions. The random container absorbs collisions — two identical hash outputs on different pixels produce different observed bytes (different random container values).
 - **Q2 superposition queries** — requires oracle that accepts quantum superposition inputs. ITB's MAC oracle is inherently classical: it receives concrete bytes over a network and returns accept/reject. Superposition queries are physically impossible.
@@ -153,6 +153,6 @@ The barrier and PRF hash function protect each other:
 
 - **Barrier protects the PRF:** hash collisions are the only theoretical weakness of a non-invertible hash function — two different inputs producing the same output. In a traditional cipher, collisions may be exploitable because the attacker observes the output directly. In ITB, collisions are invisible: two pixels with the same dataHash have different original container bytes (CSPRNG), so the observed bytes are different. The collision is absorbed.
 
-Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In core ITB (no MAC, no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + CCA: noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
+Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
 
 See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).

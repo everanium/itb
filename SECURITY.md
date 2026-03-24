@@ -293,13 +293,13 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 | Quantum Algorithm | AES-CTR / ChaCha20 | ITB |
 |---|---|---|
-| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (core) or expensive oracle (MAC-inside: full decryption per query) |
+| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (core ITB, MAC + Silent Drop) or expensive oracle (MAC + Reveal: full decryption per query) |
 | **Simon** (periodicity) | Relies on PRF/PRP computational strength | Conjectured mitigated: aperiodic config map (nonce per message) |
 | **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: random container absorbs collisions |
 | **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: random container limits structural relations |
 | **Q2 superposition queries** | Theoretically applicable (oracle accepts superposition inputs) | Not applicable: MAC oracle is inherently classical (network request → accept/reject) |
 
-**Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB (without MAC) has no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
+**Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB and MAC + Silent Drop have no oracle at all. This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
 
 The fundamental difference between ITB and traditional ciphers under quantum attack: AES and ChaCha20 rely on **computational hardness** — their security degrades with more computational power (Grover: √ speedup). ITB's barrier relies on **information absence** — no computation (classical or quantum) helps when the information is not in the observation. This is an information-theoretic property, not a computational assumption.
 

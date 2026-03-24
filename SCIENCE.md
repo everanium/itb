@@ -244,7 +244,7 @@ These attack vectors are blocked by PRF properties of the hash function, not by 
 | Avalanche | Correlation / cube attacks | Correlated outputs → local CCA simulation |
 | Non-invertibility | KPA + inversion, MITM backward step | Seed recovery in polynomial time |
 
-**The barrier and PRF are complementary (symbiosis).** PRF-grade hash functions are required. The two properties protect each other: (1) PRF non-invertibility protects the barrier by preventing KPA candidate verification (56-candidate ambiguity unresolvable); (2) the barrier protects the PRF by absorbing hash collisions — the only theoretical weakness of a non-invertible hash. In a traditional cipher, collisions may be exploitable (the attacker observes the output directly). In ITB, two pixels with the same dataHash have different original container bytes (CSPRNG), making the collision invisible. Together, they address all analyzed threat models (COA, KPA, CPA, CCA, side-channel). In core ITB (no MAC, no oracle, passive observation only), the symbiosis makes the non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed. With MAC + CCA: noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
+**The barrier and PRF are complementary (symbiosis).** PRF-grade hash functions are required. The two properties protect each other: (1) PRF non-invertibility protects the barrier by preventing KPA candidate verification (56-candidate ambiguity unresolvable); (2) the barrier protects the PRF by absorbing hash collisions — the only theoretical weakness of a non-invertible hash. In a traditional cipher, collisions may be exploitable (the attacker observes the output directly). In ITB, two pixels with the same dataHash have different original container bytes (CSPRNG), making the collision invisible. Together, they address all analyzed threat models (COA, KPA, CPA, CCA, side-channel). In core ITB and MAC + Silent Drop (no oracle, passive observation only), the symbiosis makes the non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
 
 ### 2.5 Nonce Reuse Analysis
 
@@ -484,7 +484,7 @@ Under the random-container model, this is an information-theoretic property rath
 
 Grover's algorithm requires a function f(key) → {0, 1} that can be evaluated in quantum superposition. In ITB:
 
-**Core ITB (no MAC):** The oracle does not exist. Every candidate key produces some decrypted output. Without verification metadata (no magic bytes, no checksums, no cleartext MAC), f(key) has no way to return 1 for the correct key. Grover cannot run without a well-defined oracle.
+**Core ITB (no MAC) and MAC + Silent Drop:** The oracle does not exist. Every candidate key produces some decrypted output. Without verification metadata (no magic bytes, no checksums, no cleartext MAC), f(key) has no way to return 1 for the correct key. Under MAC + Silent Drop, the MAC is present but the recipient never reveals the verification result — the attacker receives no accept/reject response, so no oracle can be constructed. Grover cannot run without a well-defined oracle.
 
 **ITB + MAC-inside-encrypt:** The oracle exists but is maximally expensive. To evaluate f(key):
 1. Decrypt128/256/512 entire container with candidate key
@@ -511,7 +511,8 @@ Recent work on quantum security distinguishes two models: Q1 (adversary performs
 ITB's oracle model is inherently Q1:
 
 - **Core ITB (no MAC):** No oracle exists. The adversary has no verification mechanism — Grover cannot construct f(key) → {0, 1}.
-- **ITB + MAC-inside-encrypt:** The oracle is a physical network interaction: send a concrete container, receive accept/reject. Quantum superposition queries are physically impossible — the recipient's MAC verification operates on classical bytes, not superpositions.
+- **MAC + Silent Drop:** The MAC is present but the recipient never reveals the verification result. No oracle exists — the adversary receives no accept/reject response, so Grover cannot construct f(key) → {0, 1}.
+- **MAC + Reveal:** The oracle is a physical network interaction: send a concrete container, receive accept/reject. Quantum superposition queries are physically impossible — the recipient's MAC verification operates on classical bytes, not superpositions.
 
 The Q2 model is inapplicable to ITB by design, not by cryptographic countermeasure. This is an architectural observation that has not been independently verified.
 
@@ -686,7 +687,7 @@ The MAC-inside-encrypt pattern (see "No authentication" in Section 4) preserves 
 
 **Triple-seed isolation limits the leak to noiseSeed only.** The CCA oracle reveals which bits are noise — this is the noise position (0-7) per pixel, determined by noiseSeed. Because noiseSeed, dataSeed, and startSeed are independent keys, this leak provides zero information about dataSeed (rotation + XOR masks, 59 config bits per pixel) or startSeed (pixel offset). The attacker learns 3 of 62 config bits per pixel (4.8%) — all from noiseSeed.
 
-**Important:** the CCA oracle exists ONLY when MAC is added. The core construction (without MAC) is structurally oracle-free — there is no verification mechanism to produce accept/reject responses, so no oracle can exist regardless of implementation.
+**Important:** the CCA oracle exists ONLY when MAC is added AND the verification result is revealed to the attacker (MAC + Reveal mode). The core construction (without MAC) and MAC + Silent Drop are structurally oracle-free — there is no verification mechanism to produce accept/reject responses (or the response is suppressed), so no oracle can exist regardless of implementation.
 
 **ITB composition security matrix:**
 
@@ -716,7 +717,7 @@ Implemented: MAC-inside (full capacity) — `EncryptAuthenticated128`/`EncryptAu
 
 **MAC scope matters.** If the MAC covers only the extracted plaintext, the CCA oracle additionally reveals which container regions carry padding vs COBS data (padding bit flips don't affect plaintext → "accept"), leaking the spatial layout, start pixel, and approximate message length. The library's `EncryptAuthenticated` avoids this by computing the MAC over the entire decrypted capacity (COBS + null terminator + fill). This makes every data bit "meaningful" — flipping any data bit changes the MAC input, producing "reject." The only remaining leak is noise position (noise bits → "accept"), with no spatial pattern.
 
-Core ITB without MAC has no CCA surface at all — deniability is a structural property of the construction, not a protocol-level guarantee.
+Core ITB and MAC + Silent Drop have no CCA surface at all — deniability is a structural property of the construction, not a protocol-level guarantee.
 
 **Mitigation is protocol-level, not library-level.** The recipient must not reveal individual MAC verification results to untrusted parties. Standard approaches:
 

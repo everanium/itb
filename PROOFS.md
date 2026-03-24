@@ -52,6 +52,8 @@ P(C'[p,ch] = v | h) = P(noise bit at noisePos matches v's bit at noisePos) = 1/2
 
 This holds for any hash function H. The hash output h is consumed by modification of a random value and is not reconstructible from the observation. ∎
 
+Note: this proof covers passive observation (Core ITB, MAC + Silent Drop). Under MAC + Reveal, noiseSeed config (3 bits/pixel) is additionally leaked via CCA oracle interaction — see Proof 6.
+
 ## Proof 2: Per-Bit XOR KPA Resistance
 
 **Theorem.** Under per-bit XOR (1:1), for any observed channel byte v and any known plaintext data bits d, there exists a 7-bit XOR mask m such that encoding d with mask m is consistent with v, for any noise position.
@@ -256,6 +258,8 @@ Barrier = 2^(8P) ≥ 2^(8 × ⌈keyBits/7⌉)
 Since 8/7 > 1, we have 8 × ⌈(keyBits+6)/7⌉ > keyBits for all keyBits ≥ 1. ∎
 
 ## Proof 6: CCA Leak Upper Bound
+
+This proof applies to the MAC + Reveal mode only. Under Core ITB and MAC + Silent Drop, no CCA oracle exists and the leak is zero.
 
 **Theorem.** Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable. Per-bit XOR prevents any further leakage.
 
