@@ -7,7 +7,7 @@ Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cip
 ## Notation
 
 - H: PRF-grade hash function satisfying Definition 2 (see [SCIENCE.md](SCIENCE.md#5-formal-definitions))
-- S = (s₀, s₁, ..., s_{n-1}): seed of n independent uint64 components (n = keyBits / 64)
+- S = (s₀, s₁, ..., s_{n-1}): seed of n independent w-bit blocks (n = keyBits / w)
 - N: 128-bit nonce from crypto/rand
 - C[p]: original container byte at pixel p (crypto/rand, uniform over [0, 255])
 - C'[p]: container byte after embedding
@@ -334,7 +334,7 @@ The extracted bytes are a deterministic but pseudorandom function of the wrong s
 
 Under the random-container model, the construction provides indistinguishability under ciphertext-only attack. ∎
 
-## Proof 9: MAC-inside-encrypt Composition
+## Proof 9: MAC-Inside-Encrypt Composition
 
 **Theorem.** `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` with MAC over full capacity (COBS + null + fill) is designed to prevent CCA spatial patterns and false null-terminator attacks (given a secure MAC function).
 
@@ -363,7 +363,7 @@ Any bit modification (including creating a false 0x00) fails MAC verification at
 
 ## Proof 10: Nonce Uniqueness
 
-**Theorem.** With 128-bit nonces from crypto/rand, the birthday collision probability reaches ~50% at 2^64 messages and is negligible for up to ~2^48 messages. A nonce collision affects only the colliding pair.
+**Theorem.** With 128-bit nonces from crypto/rand, the birthday collision probability reaches ~50% at 2^64 messages and remains practically safe for up to ~2^48 messages (collision probability ~2^{-33}). A nonce collision affects only the colliding pair.
 
 **Proof.** By the birthday paradox, the probability of at least one collision among n nonces drawn uniformly from {0,1}^128:
 

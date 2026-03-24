@@ -460,7 +460,7 @@ The output format is identical across all three hash width variants.
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to 2^(keyBits/2) (MAC + Reveal) |
+| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Oracle-free deniability | Yes |
 | Hash function requirement | PRF required; barrier hardens PRF |
 | Known-plaintext resistance | Under passive observation |
@@ -471,7 +471,7 @@ The output format is identical across all three hash width variants.
 
 ## Integrity (MAC-Inside-Encrypt)
 
-The core construction provides confidentiality only. For integrity protection against bit-flipping attacks, use the MAC-inside-encrypt pattern — the MAC is encrypted inside the container, preserving oracle-free deniability:
+The core construction provides confidentiality only. For integrity protection against bit-flipping attacks, use the MAC-Inside-Encrypt pattern — the MAC is encrypted inside the container, preserving oracle-free deniability:
 
 ```go
 // 128-bit variant

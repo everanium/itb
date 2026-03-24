@@ -80,15 +80,13 @@ Full KPA (the attacker knows the entire plaintext) is the only scenario where th
 | Condition | Result |
 |---|---|
 | Full KPA + invertible hash | ~56 × P inversions → **seed recovered** (barrier intact, hash inverted) |
-| Full KPA + PRF (non-invertible) | Inversion impossible → brute-force 2^keyBits |
+| Full KPA + PRF (non-invertible) | Inversion impossible → brute-force P × 2^(2×keyBits) (Core ITB) or P × 2^keyBits (MAC + Reveal) |
 
 The attack: the attacker takes any pixel → 56 candidates (8 noisePos × 7 rotation) → computes candidate dataHash → **inverts** ChainHash → gets candidate dataSeed → verifies on a second pixel.
 
-With PRF: the same 56 candidates, the same candidate dataHash values. But inverting ChainHash is impossible — PRF by definition. The only path: brute-force 2^keyBits.
+With PRF: the same 56 candidates, the same candidate dataHash values. But inverting ChainHash is impossible — PRF by definition. The only path: brute-force all seeds (P × 2^(2×keyBits) for Core ITB, P × 2^keyBits for MAC + Reveal).
 
 Non-invertibility is the sole wall. The barrier protects against passive observation. Byte-splitting blocks partial KPA. But under Full KPA + invertible hash, none of this helps — the attacker knows all bytes, does not need byte analysis, only needs inversion. PRF forbids this.
-
-See [SECURITY.md KPA Attack Feasibility table](SECURITY.md#kpa-attack-feasibility-by-knowledge-level).
 
 ## 8. CCA: Reveals Only Noise, Not Data
 
@@ -122,7 +120,7 @@ No. The barrier is intact. Here is why:
 
 **What the attacker computes:** the 56 candidates are not extracted from the observation. They are **calculated** from the combination of (known plaintext + observed byte + candidate config). This is arithmetic, not a barrier break. All 56 candidates are **equally consistent** with the observation — the attacker does not know which one is real.
 
-**Without hash inversion (PRF):** 56 candidates per pixel × P pixels = 56^P total combinations. For P = 169 (1024-bit key): 56^169 ≈ 2^987. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion impossible. The ambiguity is preserved.
+**Without hash inversion (PRF):** 56 candidates per pixel × P pixels = 56^P total combinations. For P = 169 (1024-bit key): 56^169 ≈ 2^981. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion impossible. The ambiguity is preserved.
 
 **With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** the ambiguity. The barrier is not broken — ChainHash is inverted.
 
@@ -136,12 +134,12 @@ This is the fundamental difference between ITB and traditional ciphers. AES and 
 
 Specific quantum algorithms and why they are conjectured mitigated:
 
-- **Grover** — requires a verification oracle. Core ITB and MAC + Silent Drop have no external oracle; the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random), while startSeed contributes only P startPixel candidates (enumerated, not brute-forced). Grover complexity: √P × 2^keyBits — at 1024-bit keys (P=169): ~2^1028. With MAC + Reveal: each oracle query costs O(P) — full container decryption. At 1024-bit key: 2^512 iterations × O(P) each.
+- **Grover** — requires a verification oracle. Core ITB and MAC + Silent Drop have no external oracle; the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random), while startSeed contributes only P startPixel candidates (enumerated, not brute-forced). Grover complexity: √P × 2^keyBits — at 1024-bit keys (P=169): ~2^1028. With MAC + Reveal: CCA reveals noisePos but not startPixel (independent startSeed). Search: dataSeed (2^keyBits) × P startPixel candidates. Grover: √(P × 2^keyBits) = √P × 2^(keyBits/2), each oracle query costs O(P) — full container decryption. At 1024-bit key: ~2^515 iterations × O(P) each.
 - **Simon** — requires periodic function structure. ITB's config map is aperiodic: each message has a unique 128-bit nonce, creating a completely different configuration.
 - **BHT** — requires observable hash collisions. In Core ITB and MAC + Silent Drop: the random container absorbs collisions — two identical hash outputs on different pixels produce different observed bytes (different random container values). After CCA (MAC + Reveal): collisions remain unobservable through encoding ambiguity (7 rotation candidates per pixel — attacker cannot identify which candidates collide).
 - **Q2 superposition queries** — requires oracle that accepts quantum superposition inputs. ITB's MAC oracle is inherently classical: it receives concrete bytes over a network and returns accept/reject. Superposition queries are physically impossible.
 
-At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: 2^1024 classical, 2^512 Grover. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
+At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: ~2^1031 classical, ~2^515 Grover. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
 

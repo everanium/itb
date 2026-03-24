@@ -2,7 +2,7 @@
 
 > **Disclaimer.** ITB is an experimental construction without peer review or formal certification. The information-theoretic barrier is a software-level property — it provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, undiscovered side-channels). PRF-grade hash functions are required. No warranty is provided.
 
-Comprehensive security comparison tables for ITB (Information-Theoretic Barrier) across three composition modes: Core (no MAC), MAC + silent drop, MAC + reveal. For detailed proofs and analysis, see [SCIENCE.md](SCIENCE.md).
+Comprehensive security comparison tables for ITB (Information-Theoretic Barrier) across three composition modes: Core (no MAC), MAC + Silent Drop, MAC + Reveal. For detailed proofs and analysis, see [SCIENCE.md](SCIENCE.md).
 
 ## 1. ITB Composition Modes
 
@@ -77,7 +77,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 |---|---|
 | AES-CBC + MAC-then-Encrypt‡ | Padding oracle → full plaintext (POODLE, Lucky13) |
 | AES-CTR + MAC-then-Encrypt | Bit-flip oracle → data structure |
-| ITB + MAC-inside (full capacity) | Noise position only (3 bits/pixel, no data) |
+| ITB + MAC-Inside (full capacity) | Noise position only (3 bits/pixel, no data) |
 | AES-GCM (AEAD) | None (MAC rejects before decryption) |
 | ChaCha20-Poly1305 (AEAD) | None (MAC rejects before decryption) |
 
@@ -91,8 +91,8 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Known-plaintext (KPA) | ✓ IT barrier† | ✓ IT barrier† | ✓ Per-bit XOR | ✓ Per-bit XOR* |
 | Chosen-plaintext (CPA) | ✓ Independent maps | ✓ Independent maps | ✓ Independent maps | ✓ Independent maps |
 | Chosen-ciphertext (CCA) | ✓ No oracle | ✓ No oracle | noiseSeed leaked, dataSeed safe | noiseSeed leaked, dataSeed safe |
-| Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)††† | 2^keyBits** | 2^keyBits** |
-| Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits††† | 2^(keyBits/2)** | 2^(keyBits/2)** |
+| Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)††† | P × 2^keyBits** | P × 2^keyBits** |
+| Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits††† | √P × 2^(keyBits/2)** | √P × 2^(keyBits/2)** |
 | Map guessing | 2^(62P) | 2^(62P) | 2^(62P) | 2^(62P) |
 | Nonce reuse | Two-time pad | Two-time pad | Two-time pad | Two-time pad |
 | Bit-flipping | Undetected | Detected (MAC) | Detected (MAC) | Detected (MAC) |
@@ -103,44 +103,11 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion.
 
-\** With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
+\** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted). startPixel enumerated as [0, P). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys (P=169): classical ~2^1031, Grover ~2^515. With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
 
 ††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2×keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2×keyBits). Grover: √P × 2^keyBits. At 1024-bit keys (P=169): classical ~2^2055, Grover ~2^1028.
 
 ‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2×keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
-
-### KPA Attack Feasibility by Knowledge Level
-
-| KPA level | Invertible hash | Non-invertible hash |
-|---|---|---|
-| Full KPA (entire plaintext known) | ~56 × P inversions → **seed recovered** (barrier intact, hash inverted) | Brute-force 2^keyBits |
-| Partial KPA (consecutive known bytes ~10+) | **seed recovered** (same cost as Full KPA — position known, only startPixel unknown) | Brute-force 2^keyBits |
-| Crib KPA (known fragment, position unknown) | P × L × 56 × n inversions — see cost table below | Brute-force 2^keyBits |
-| No KPA | Cannot start — no expected bits for comparison | Brute-force 2^keyBits |
-
-Full KPA is a worst-case theoretical assumption. In practice, full plaintext knowledge eliminates the need for decryption. Non-invertible hash (PRF) ensures brute-force regardless of KPA level.
-
-### KPA Attack Cost (invertible hash, worst-case assumption)
-
-The following table assumes: (1) the hash function is invertible, (2) the attacker knows exactly which hash function is used, (3) 1024-bit key, 128-bit hash, 8 ChainHash rounds. This demonstrates that the information-theoretic barrier alone does not provide full protection without PRF — non-invertibility is the sole defense under KPA.
-
-In practice: (a) ITB requires PRF-grade hash functions (non-invertible by definition → 2^keyBits brute-force), (b) the attacker does not know which hash function is used — they must guess which function to invert (SipHash-2-4, AES-CMAC, BLAKE3, BLAKE2b, BLAKE2s, or any user-supplied PRF), and each wrong guess wastes the entire computation.
-
-| Size | P | Full/Partial KPA | time @100ns | Crib KPA (R) | time @100ns | PRF (any KPA) |
-|---|---|---|---|---|---|---|
-| 4 KB | 625 | 2.8×10⁵ | 28 ms | 1.1×10⁹ (R=1, 8B) | 1.9 min | 2^keyBits |
-| 16 MB | 2.4M | 1.1×10⁹ | 1.8 min | 2.3×10¹⁵ (R=8, 256B) | 7.2 years | 2^keyBits |
-| 64 MB | 9.6M | 4.3×10⁹ | 7.2 min | 9.0×10¹⁵ (R=32, 512B) | 28.7 years | 2^keyBits |
-| 256 MB | 38.5M | 1.7×10¹⁰ | 28.7 min | 3.6×10¹⁶ (R=128, 1KB) | 114.6 years | 2^keyBits |
-| 1 GB | 154M | 6.9×10¹⁰ | 1.9 hours | 1.4×10¹⁷ (R=512, 2KB) | 458 years | 2^keyBits |
-
-Full/Partial KPA cost is identical: the attacker needs only one reference pixel with consecutive known bytes (~10+) to invert ChainHash, regardless of how much plaintext is known. The cost is P × 56 × 8 (startPixel candidates × configs × ChainHash rounds).
-
-R — estimated crib repetitions in file. The attacker must guess the content type (ZIP, HTTP, JSON) to estimate R. Each wrong guess wastes the full P × (L/R) × 56 × 8 computation. Time assumes 100ns per hash inversion (realistic for software).
-
-**Streaming example.** A 1 GB MP4 file encrypted with EncryptStream256 (64 MB chunks, 16 chunks). The MP4 header (~1 KB) is in the first chunk only. With invertible hash: the attacker can attempt Partial KPA on chunk 1 (7.2 min). The remaining 15 chunks contain raw video stream with zero KPA — each requires independent brute-force. With PRF: all 16 chunks require 2^keyBits brute-force each, including chunk 1 with the known MP4 header.
-
-**Quantum note.** Grover's algorithm does not meaningfully accelerate these attacks. With invertible hash, the seed is already recoverable classically (Full/Partial KPA in minutes/hours). With PRF (non-invertible), Grover provides √(2^keyBits) = 2^512 for 1024-bit key — computationally infeasible. For Crib KPA, Grover could theoretically provide √(P × L) speedup on the search, but each oracle query still requires sequential ChainHash inversion (8 dependent rounds) — the per-query cost O(n) is not parallelizable by quantum algorithms.
 
 ## 8. Byte-Splitting Property
 
@@ -191,9 +158,9 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Plaintext bits | Zero |
 | XOR mask bits | Zero |
 | Start pixel | Unknown |
-| Key-space reduction | Zero |
-| Brute-force speedup | Per-candidate (cheaper reject, same search space) |
-| Grover reduction | Zero (2^(keyBits/2) unchanged for MAC + Reveal mode) |
+| Key-space reduction | noiseSeed eliminated: P × 2^(2×keyBits) → P × 2^keyBits |
+| Brute-force speedup | Search space halved in exponent (two seeds → one seed) |
+| Grover reduction | √P × 2^keyBits → √P × 2^(keyBits/2) (noiseSeed eliminated from search) |
 
 ## 10. Noise-Density Optimality (Why 8/1)
 
@@ -211,7 +178,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Hash Function | Output Width | API | Components | Nominal Key | Effective Bound |
 |---|---|---|---|---|---|
 | SipHash-2-4, AES-CMAC | 128 bits | `Encrypt128` | 16 | 1024 bits | 1024 bits |
-| BLAKE2b, BLAKE2s, BLAKE3 | 256 bits | `Encrypt256` | 32 | 2048 bits | 2048 bits |
+| BLAKE2b-256, BLAKE2s, BLAKE3 | 256 bits | `Encrypt256` | 32 | 2048 bits | 2048 bits |
 | BLAKE2b-512 | 512 bits | `Encrypt512` | 32 | 2048 bits | 2048 bits |
 
 ### Seed Alignment by Width
@@ -277,7 +244,7 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to 2^(keyBits/2) (MAC + Reveal) × O(P) per query |
+| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); each MAC-Inside oracle query requires O(P) full decryption |
 | Oracle-free deniability | ✓ (structural) |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
@@ -286,10 +253,10 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
 | Nonce | 128-bit per-message (mandatory) |
-| Authentication | Optional (MAC-inside-encrypt, pluggable) |
+| Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
 | Quantum structural attacks | Conjectured mitigated (IT barrier is computation-model-independent; not independently verified) |
-| Grover oracle | Degraded: no oracle without MAC; with MAC-inside each query requires full decryption O(P) |
+| Grover oracle | Degraded: no oracle without MAC; with MAC-Inside each query requires full decryption O(P) |
 
 \* Software-level property under the random-container model. No guarantees against hardware-level attacks (see Disclaimer).
 
@@ -299,7 +266,7 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 | Quantum Algorithm | AES-CTR / ChaCha20 | ITB |
 |---|---|---|
-| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (Core ITB, MAC + Silent Drop) or expensive oracle (MAC + Reveal: full decryption per query) |
+| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (Core ITB) or expensive oracle (MAC-Inside: full decryption per query) |
 | **Simon** (periodicity) | Relies on PRF/PRP computational strength | Conjectured mitigated: aperiodic config map (nonce per message) |
 | **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container absorbs collisions; MAC + Reveal — encoding ambiguity (7 candidates) |
 | **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container limits structural relations; MAC + Reveal — encoding ambiguity (7 candidates) |
@@ -311,7 +278,7 @@ The fundamental difference between ITB and traditional ciphers under quantum att
 
 AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis. See also [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) for why KPA candidates do not break the barrier.
 
-At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: 2^1024 classical, 2^512 Grover. At 2048-bit key (P=324): ~2^4105/~2^2052 or 2^2048/2^1024.
+At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: ~2^1031 classical, ~2^515 Grover. At 2048-bit key (P=324): Core/Silent Drop ~2^4105/~2^2052, MAC + Reveal ~2^2056/~2^1028.
 
 ## 17. Maturity and Scope
 
