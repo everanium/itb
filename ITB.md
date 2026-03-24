@@ -143,7 +143,24 @@ At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
 
-## 12. Barrier and PRF: Symbiosis
+## 12. Expensive Oracle: Why Brute-Force Is Slow
+
+In AES or ChaCha20, testing one candidate key takes ~1 nanosecond — a single block operation. In ITB, testing one candidate requires decrypting the **entire container** — all P pixels, each with ChainHash evaluation. The larger the message, the more expensive each attempt.
+
+| Data size | P (pixels) | Time per attempt | vs AES |
+|---|---|---|---|
+| 1 KB | 169 | ~270 µs | 270,000× slower |
+| 4 MB | 602,176 | ~963 ms | ~1 billion× slower |
+| 16 MB | 2,408,704 | ~3.9 s | ~4 billion× slower |
+| 64 MB | 9,628,609 | ~15.4 s | ~15 billion× slower |
+
+Example: 1024-bit key, SipHash-2-4 (~100 ns/hash), 8 ChainHash rounds. This applies to all modes (Core ITB, MAC + Silent Drop, MAC + Reveal).
+
+This is not a tunable parameter — it is a structural consequence of the construction. Every brute-force candidate, classical or quantum (Grover), must pay this cost. ChainHash rounds are sequential and cannot be parallelized.
+
+See [SCIENCE.md §2.12](SCIENCE.md#212-per-query-cost-expensive-oracle) for detailed analysis.
+
+## 13. Barrier and PRF: Symbiosis
 
 The barrier and PRF hash function protect each other:
 

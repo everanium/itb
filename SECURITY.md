@@ -260,6 +260,21 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 
 \* Software-level property under the random-container model. No guarantees against hardware-level attacks (see Disclaimer).
 
+### Per-Query Cost: Expensive Oracle
+
+Each brute-force candidate (classical or Grover oracle query) requires full container decryption — processing all P pixels with ChainHash. This applies to all composition modes (Core ITB, MAC + Silent Drop, MAC + Reveal). The per-query cost grows linearly with data size, making larger messages more expensive to attack.
+
+Example: 1024-bit key, SipHash-2-4 (~100 ns/call), 8 ChainHash rounds, 2 hash calls per pixel (noiseSeed + dataSeed).
+
+| Data size | P (pixels) | Hash calls per candidate | Time per candidate | vs AES (~1 ns/candidate) |
+|---|---|---|---|---|
+| 1 KB | 169 | 2,704 | ~270 µs | ~270,000× slower |
+| 4 MB | 602,176 | 9,634,816 | ~963 ms | ~963,000,000× slower |
+| 16 MB | 2,408,704 | 38,539,264 | ~3.9 s | ~4,000,000,000× slower |
+| 64 MB | 9,628,609 | 154,057,744 | ~15.4 s | ~15,000,000,000× slower |
+
+Grover oracle queries have the same O(P) per-query cost — ChainHash rounds are sequential and not parallelizable by quantum algorithms. See [SCIENCE.md §2.12](SCIENCE.md#212-per-query-cost-expensive-oracle) for detailed analysis.
+
 ## 16. Quantum Resistance (Conjectured)
 
 The information-theoretic barrier is computation-model-independent: provided the container is generated from a source indistinguishable from true uniform randomness, every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d)=v), regardless of classical, quantum, or any future computational model. A quantum computer cannot extract information that does not exist in the observation. However, whether this property translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.

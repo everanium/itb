@@ -535,6 +535,34 @@ ITB's oracle model is inherently Q1:
 
 The Q2 model is inapplicable to ITB by design, not by cryptographic countermeasure. This is an architectural observation that has not been independently verified.
 
+### 2.12 Per-Query Cost: Expensive Oracle
+
+A distinguishing property of ITB's brute-force resistance is the per-query cost. In traditional stream ciphers (AES-CTR, ChaCha20), verifying a candidate key requires a single block operation — O(1) work, typically ~1 ns. In ITB, each candidate verification requires full container decryption: processing all P pixels, each requiring ChainHash evaluation for noiseSeed and dataSeed.
+
+**Per-query cost formula.** For a container with P pixels and ChainHash with R rounds per seed:
+
+```
+Cost per candidate = P × 2 × R hash calls
+```
+
+Where the factor 2 accounts for two independent ChainHash evaluations per pixel (noiseSeed + dataSeed). This cost applies to all composition modes:
+
+- **Core ITB / MAC + Silent Drop:** Each candidate (noiseSeed, dataSeed, startPixel) requires O(P) to verify. No oracle exists — the cost is paid during brute-force search regardless.
+- **MAC + Reveal:** Each candidate (dataSeed, startPixel) requires O(P) to verify against the MAC oracle. CCA reduces the search space (noiseSeed eliminated), but the per-query cost remains O(P).
+
+**Per-query cost by data size** (example: 1024-bit key, SipHash-2-4 ~100 ns/call, R=8):
+
+| Data size | P (pixels) | Hash calls per candidate | Time per candidate | vs AES (~1 ns/candidate) |
+|---|---|---|---|---|
+| 1 KB | 169 | 2,704 | ~270 µs | ~270,000× |
+| 4 MB | 602,176 | 9,634,816 | ~963 ms | ~963,000,000× |
+| 16 MB | 2,408,704 | 38,539,264 | ~3.9 s | ~4,000,000,000× |
+| 64 MB | 9,628,609 | 154,057,744 | ~15.4 s | ~15,000,000,000× |
+
+The per-query cost grows linearly with P (container pixel count). This means larger messages are more expensive to attack per candidate — a property not shared by traditional stream ciphers where per-query cost is constant.
+
+**Grover implications.** Each Grover oracle query incurs the same O(P) cost. ChainHash rounds are sequential (each round depends on the previous round's output) and cannot be parallelized by quantum algorithms. This does not change Grover's asymptotic complexity (√ of search space), but makes each quantum query maximally expensive compared to traditional ciphers where Grover oracle evaluation costs O(1).
+
 ## 3. Comparison with Existing Ciphers
 
 ### 3.1 Maximum Key Size
