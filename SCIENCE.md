@@ -409,6 +409,8 @@ The random container introduces a CSPRNG-generated component (noise bit) that is
 
 All techniques require **observing** a relationship between the PRF's input and output. The information-theoretic barrier makes this observation impossible: the PRF output is absorbed by the random container, and the noise bit from CSPRNG is independent of the PRF computation. The attacker observes (PRF output modified by random container + independent CSPRNG noise bit) — a mixture of two independent random sources that cannot be decomposed without knowing the original container values (never transmitted).
 
+The table above describes blocking under Core ITB and MAC + Silent Drop (noise bit present). After CCA (MAC + Reveal), noise bits are identified and the noise absorption mechanism is bypassed for noiseSeed. The analyses remain blocked for a different reason: dataSeed rotation ambiguity (7 candidates per pixel, 7^P total) combined with PRF and triple-seed isolation. Differential analysis between two pixels yields 7 × 7 = 49 candidate pairs — PRF makes all pairs indistinguishable from random. Linear, algebraic, and all other techniques face the same problem: no actual hash output, only unverifiable candidates. The result is identical — no analysis technique is applicable — but the blocking mechanism shifts from noise absorption to encoding ambiguity.
+
 **The analysis dichotomy.** Advanced cryptanalytic techniques are never applicable to ITB, regardless of hash function properties:
 
 ```
@@ -418,17 +420,19 @@ Hash non-invertible → barrier blocks PRF observation  → advanced analysis im
 
 There is no intermediate state where advanced analysis is useful but full inversion is not. To apply differential, linear, algebraic, or any structural analysis, the attacker must observe the PRF output — the barrier prevents this. To bypass the barrier, the attacker must invert ChainHash — but inversion yields the seed directly, making analysis redundant.
 
-In both cases, **the barrier itself is never broken**. With an invertible hash, the attacker recovers the seed through a hash function property (invertibility) — not through the observation. The barrier still absorbs the hash output (PRF or non-PRF); the attacker bypasses it via a side path that does not depend on the observation. The failure is in the hash function, not in the barrier. The barrier creates a clean dichotomy: either the hash is invertible (broken by inversion, barrier intact) or it is not (protected by the barrier, analysis impossible).
+In both cases, **the barrier itself is never broken**. The barrier consists of two mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous (Theorem 1); (2) encoding ambiguity — 7 rotation candidates per pixel from dataSeed create 7^P unverifiable combinations (Theorem 4). CCA can bypass mechanism (1) by revealing noise positions, but mechanism (2) remains intact through triple-seed isolation. Hash inversion bypasses both mechanisms via a side path (hash function property), but does not break them — the observation still contains the ambiguity.
+
+With an invertible hash, the attacker recovers the seed through invertibility — not through the observation. The barrier still absorbs the hash output (PRF or non-PRF); the attacker bypasses it via a side path that does not depend on the observation. The failure is in the hash function, not in the barrier. The barrier creates a clean dichotomy: either the hash is invertible (seed recovered via inversion, barrier intact) or it is not (protected by the barrier, analysis impossible).
 
 **What about physically removing noise bits?** A natural objection: "the barrier is information-theoretic, but I can use CCA to find all noise positions, physically remove noise bits from the container, shift data bits into place — and then apply all 10 analyses to the cleaned data."
 
 This does not work. After noise removal, the attacker has 7 "clean" data bits per channel: `rotate(plaintext ⊕ xor_mask, rotation)`. The data is still encrypted by dataSeed configuration (rotation + XOR). CCA revealed noiseSeed (noise positions), but dataSeed is a completely independent key (triple-seed isolation: I(dataSeed ; noiseSeed) = 0). Removing noise bits bypasses one wall (noiseSeed) but leaves the other wall intact (dataSeed).
 
-Without KPA: the cleaned data is `rotate(unknown_plaintext ⊕ xor_mask, rotation)` — the attacker cannot separate plaintext from XOR mask without knowing either one. No candidates are computable. The barrier provides full information-theoretic protection.
+Without KPA: the cleaned data is `rotate(unknown_plaintext ⊕ xor_mask, rotation)` — the attacker cannot separate plaintext from XOR mask without knowing either one. No candidates are computable. The dataSeed encryption layer provides full protection.
 
 With Full KPA: the attacker computes 7 rotation candidates per pixel, each producing a valid candidate dataHash. The attacker cannot determine which of the 7 is correct from the observation. Across P pixels: 7^P ambiguity (for P = 169: 7^169 ≈ 2^474). This ambiguity is an information-theoretic property of the encoding (7 rotations in a 7-bit channel), not of the hash function — it holds for any H, PRF or non-PRF. Even after the data has been recovered through hash inversion, the observation still contains 7^P ambiguity. The barrier is never broken.
 
-The noise bits are not what blocks the analyses. The analyses are blocked by the **dataSeed ambiguity** (7 rotations per pixel, independent of noise). Removing noise = bypassing noiseSeed. The barrier's protection continues through dataSeed isolation — a different independent key that CCA and noise removal cannot reach.
+The noise bits are not what blocks the analyses. The analyses are blocked by the barrier's second mechanism: **dataSeed encoding ambiguity** (7 rotations per pixel, independent of noise). Removing noise = bypassing mechanism (1). Mechanism (2) continues through triple-seed isolation — dataSeed is a different independent key that CCA and noise removal cannot reach.
 
 ### 2.10 Hash Function Requirements Analysis
 

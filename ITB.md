@@ -126,7 +126,7 @@ No. The barrier is intact. Here is why:
 
 **With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** the ambiguity. The barrier is not broken — ChainHash is inverted.
 
-The barrier absorbs the hash output. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash function failure, not a barrier failure.
+The barrier absorbs the hash output through two mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. CCA (MAC + Reveal) can bypass mechanism (1) by revealing noise positions, but mechanism (2) remains intact through triple-seed isolation. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash function failure, not a barrier failure.
 
 ## 11. Quantum Resistance
 
