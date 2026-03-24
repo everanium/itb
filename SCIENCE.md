@@ -420,6 +420,16 @@ There is no intermediate state where advanced analysis is useful but full invers
 
 In both cases, **the barrier itself is never broken**. With an invertible hash, the attacker recovers the seed through a hash function property (invertibility) — not through the observation. The barrier still absorbs the hash output (PRF or non-PRF); the attacker bypasses it via a side path that does not depend on the observation. The failure is in the hash function, not in the barrier. The barrier creates a clean dichotomy: either the hash is invertible (broken by inversion, barrier intact) or it is not (protected by the barrier, analysis impossible).
 
+**What about physically removing noise bits?** A natural objection: "the barrier is information-theoretic, but I can use CCA to find all noise positions, physically remove noise bits from the container, shift data bits into place — and then apply all 10 analyses to the cleaned data."
+
+This does not work. After noise removal, the attacker has 7 "clean" data bits per channel: `rotate(plaintext ⊕ xor_mask, rotation)`. The data is still encrypted by dataSeed configuration (rotation + XOR). CCA revealed noiseSeed (noise positions), but dataSeed is a completely independent key (triple-seed isolation: I(dataSeed ; noiseSeed) = 0). Removing noise bits bypasses one wall (noiseSeed) but leaves the other wall intact (dataSeed).
+
+Without KPA: the cleaned data is still encrypted — equivalent to analyzing ciphertext. No analysis technique helps.
+
+With Full KPA: the attacker computes 7 rotation candidates per pixel, each producing a valid candidate dataHash. But PRF output is random — no differential, linear, or algebraic pattern exists among the candidates. The attacker cannot determine which of the 7 is correct. Across P pixels: 7^P ambiguity (for P = 169: 7^169 ≈ 2^474) — preserved by information theory regardless of noise removal.
+
+The noise bits are not what blocks the analyses. The analyses are blocked by the **dataSeed ambiguity** (7 rotations per pixel, independent of noise). Removing noise = bypassing noiseSeed. The barrier's protection continues through dataSeed isolation — a different independent key that CCA and noise removal cannot reach.
+
 ### 2.10 Hash Function Requirements Analysis
 
 ITB requires PRF-grade hash functions. The PRF property guarantees all necessary sub-properties. The barrier provides additional architectural hardening:
