@@ -363,7 +363,11 @@ Note: rotation in ITB (0-6, secret, per-pixel from dataSeed) differs fundamental
 
 Under KPA, the attacker can compute 56 candidate dataHash values per pixel (8 noisePos × 7 rotation, or 7 with CCA). This raises the question: does the existence of computable candidates contradict the information-theoretic barrier?
 
-**The barrier is intact.** Theorem 1 states: P(C'[p,ch] = v | h) = 1/2 for any hash output h. This holds under KPA because the noise bit originates from the CSPRNG-generated container, independent of both the hash output and the plaintext. The observation probability is 1/2 regardless of which candidate is the true hash output. This is a property of information theory, not a computational assumption.
+**The barrier is intact (both mechanisms).**
+
+Theorem 1 (noise absorption): P(C'[p,ch] = v | h) = 1/2 for any hash output h. This holds under KPA because the noise bit originates from the CSPRNG-generated container, independent of both the hash output and the plaintext. The observation probability is 1/2 regardless of which candidate is the true hash output. This is a property of information theory, not a computational assumption.
+
+Theorem 4 (encoding ambiguity): with unknown rotation r ∈ {0,...,6} from dataSeed, each pixel has 7 indistinguishable rotation candidates. Even if CCA reveals noisePos (bypassing mechanism 1), 7 candidates per pixel remain — creating 7^P unverifiable combinations across the container. This is a structural property of the encoding (7 data bits in a 7-position rotation), not of the hash function.
 
 **Candidates are ambiguity, not leakage.** The 56 candidates are not extracted from the observation — they are computed from the combination of (known plaintext + observed byte + candidate config). All 56 are equally consistent with the observation. The attacker does not learn which candidate is real. The barrier guarantees that the observation cannot distinguish between them.
 
