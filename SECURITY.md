@@ -15,7 +15,7 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 | dataSeed config | ✓ Barrier intact | ✓ Barrier intact | ✓ **Independent** (zero CCA leak) |
 | Data rotation + XOR | ✓ | ✓ | ✓ (rotation barrier) |
 | Information-theoretic barrier† | ✓ Intact | ✓ Intact | ✓ dataSeed protected |
-| Practical value of leak | — | — | Zero |
+| Brute-force impact of leak | — | — | noiseSeed eliminated: P × 2^(2×keyBits) → P × 2^keyBits |
 
 † Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
 

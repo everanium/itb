@@ -6,7 +6,7 @@ The hash output exists — it is computed and determines the pixel configuration
 
 This is not destruction (the hash output is used), not hiding (there is no encryption on top), but absorption — the random container absorbs the hash output. Like dropping a drop of paint into an ocean of random waves — the paint is there, but the observer sees only waves.
 
-This is why the barrier is computation-model-independent: no matter how much computational power the attacker has — the information is not in the observation.
+This is why the barrier is computation-model-independent under passive observation: no matter how much computational power the attacker has — the information is not in the observation.
 
 **Formal basis:** ∀v, ∀h : ∃c : embed(c, h, d) = v — for any observed value, any hash output, there exists a container byte that produces this observation (see [SCIENCE.md Section 2.4.1](SCIENCE.md#241-the-barrier-passive-observation), [SECURITY.md Section 9](SECURITY.md#9-information-theoretic-barrier-metrics)).
 
@@ -98,7 +98,7 @@ Under CCA (bit-flip with MAC reveal), the attacker learns noise positions — wh
 
 With CCA, the candidate count drops from 56 (8 noisePos × 7 rotation) to 7 (only rotation unknown). But 7 candidates do not help without invertible hash — the attacker cannot verify which of the 7 is correct without inverting ChainHash.
 
-CCA leak = 3/62 ≈ 4.8% of per-pixel configuration. The practical value of this leak is zero: no plaintext bits, no XOR masks, no start pixel, no key-space reduction.
+CCA leak = 3/62 ≈ 4.8% of per-pixel configuration. CCA reveals no plaintext bits, no XOR masks, no start pixel. However, CCA eliminates noiseSeed from brute-force search: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1031 at 1024-bit) is still far beyond the Landauer limit (~2^306).
 
 See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md Section 4.1–4.5](SCIENCE.md#41-chosen-ciphertext-attack-and-mac-composition).
 

@@ -781,13 +781,13 @@ The attacker obtains the noise position (0-7) for every pixel — this is the co
 | Plaintext | No | 0 | — | Data bits encrypted, ordering unknown |
 | dataSeed / startSeed | No | 0 | — | Independent seeds, CCA reveals only noiseSeed |
 
-The 9464 data bits are visible but remain encrypted: each is XOR'd with an independent, unknown mask bit from dataSeed. The noise map strips away 1352 irrelevant bits, giving the attacker a cleaner view of the encrypted data — but the encryption (per-bit XOR + rotation + unknown start pixel) is untouched.
+The 9464 data bits are visible but remain encrypted: each is XOR'd with an independent, unknown mask bit from dataSeed. The noise map strips away 1352 noise bits (identifying which bits are noise vs data), giving the attacker a cleaner view of the encrypted data — but the encryption (per-bit XOR + rotation + unknown start pixel) is untouched.
 
 **Even with known plaintext + noise map, the data is not recoverable.** The attacker knows the COBS-encoded plaintext and which container bits carry data. To decrypt, they must map plaintext bits to container positions — this requires the start pixel (from startSeed, independent). Trying all 169 candidate start positions: for each, the attacker computes a candidate XOR mask = container_data ⊕ expected_data. With per-bit XOR (1:1), every candidate produces a valid mask (Section 2.9). The attacker cannot distinguish the correct start pixel from 168 wrong ones.
 
 **Brute-force optimization.** The attacker can use the 507-bit noise position map as a fast candidate rejection test: compute candidate noise positions from noiseSeed → compare with leaked map → reject mismatches. Wrong noiseSeed values rejected with probability 1 − 2^(−507). However, the search space remains P × 2^keyBits for dataSeed + startPixel enumeration — the rejection test is cheaper per candidate but does not reduce the number of candidates. Grover complexity remains √P × 2^(keyBits/2).
 
-**Conclusion.** The CCA noise map exposes which 1352 of 10816 bits are noise and which 9464 are encrypted data — revealing the complete noiseSeed configuration (507 bits). Due to triple-seed isolation, this provides zero information about dataSeed or startSeed. The per-bit XOR encryption (dataSeed) and unknown start pixel (startSeed) are unaffected. The attacker expends 10816 detectable queries to gain near-zero practical advantage. For comparison, the padding oracle in TLS 1.0's MAC-then-Encrypt composition with AES-CBC was exploitable to recover full plaintext (POODLE, Lucky13), though this was a protocol-level vulnerability addressed in subsequent TLS versions.
+**Conclusion.** The CCA noise map exposes which 1352 of 10816 bits are noise and which 9464 are encrypted data — revealing the complete noiseSeed configuration (507 bits). Due to triple-seed isolation, this provides zero information about dataSeed or startSeed. The per-bit XOR encryption (dataSeed) and unknown start pixel (startSeed) are unaffected. The attacker expends 10816 detectable queries to eliminate noiseSeed from brute-force (P × 2^(2×keyBits) → P × 2^keyBits), while the remaining security far exceeds the Landauer limit. For comparison, the padding oracle in TLS 1.0's MAC-then-Encrypt composition with AES-CBC was exploitable to recover full plaintext (POODLE, Lucky13), though this was a protocol-level vulnerability addressed in subsequent TLS versions.
 
 ### 4.3 Structural Upper Bound on CCA Leak
 
@@ -833,7 +833,7 @@ A natural question: can the MAC cover the entire container including noise bits,
 | Inside container (full capacity) | No | ✓ Preserved | Bit-plane only |
 | Outside container (header) | Yes | ✗ Broken | None |
 
-The library's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` uses MAC-Inside over the full capacity (COBS + null + fill). This is the optimal trade-off: deniability preserved, CCA leak limited to bit-plane (analyzed as harmless in Sections 4.2–4.3), and no circular dependency. The bit-plane leak (12.5% of bits classified as noise) yields zero practical advantage to the attacker — no plaintext, no XOR masks, no start pixel, no key-space reduction.
+The library's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` uses MAC-Inside over the full capacity (COBS + null + fill). This is the optimal trade-off: deniability preserved, CCA leak limited to bit-plane (Sections 4.2–4.3), and no circular dependency. The bit-plane leak (12.5% of bits classified as noise) reveals no plaintext, no XOR masks, no start pixel — but eliminates noiseSeed from brute-force: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1031 at 1024-bit) far exceeds the Landauer limit (~2^306).
 
 ### 4.5 Structural Barrier Invariant Under CCA
 
@@ -862,23 +862,24 @@ Config bits per pixel (triple-seed):
   Total config:                       62 → 4.8% leaked (noiseSeed only)
 ```
 
-**Critical: triple-seed isolation.** The CCA leak affects ONLY noiseSeed (noise positions). dataSeed (rotation + XOR masks) is an independent secret — CCA compromise of noiseSeed provides zero information about dataSeed. Data rotation makes dataSeed's hash output completely unobservable even with known plaintext.
+**Critical: triple-seed isolation.** The CCA leak affects ONLY noiseSeed (noise positions). dataSeed (rotation + XOR masks) is an independent secret — CCA compromise of noiseSeed provides zero information about dataSeed. Data rotation makes dataSeed's hash output unobservable under passive observation; with CCA + KPA, 7 indistinguishable rotation candidates per pixel remain (Theorem 4).
 
 | Seed | Config bits/pixel | CCA leak | Protected | Exploitable? |
 |---|---|---|---|---|
-| noiseSeed | 3 | 100% | 0% | Harmless (only noise positions) |
+| noiseSeed | 3 | 100% | 0% | Eliminates noiseSeed from brute-force |
 | dataSeed | 59 | **0%** | **100%** | **Not observable** |
 | Total | 62 | 4.8% | 95.2% | dataSeed independent |
 
 The CCA leak percentage (4.8%) is a structural property of the RGBWYOPA 8/1 format and does not depend on the hash function. The rotation barrier prevents mapping plaintext to physical positions regardless of hash properties (Section 2.9). However, resistance to CCA + KPA still requires PRF properties (Section 2.4.2).
 
-**Practical value of the 4.8% leak: zero.** The leaked noise position reveals which of 8 bit positions is noise in each channel — a structural classification, not data. It provides:
+**Impact of the 4.8% CCA leak.** The leaked noise position reveals which of 8 bit positions is noise in each channel — a structural classification, not data. It provides:
 
 - Zero plaintext bits (data values remain XOR-encrypted)
 - Zero XOR mask bits (56 independent masks per pixel, unobservable)
 - Zero start pixel information (data-to-pixel mapping unknown)
-- Key-space reduction: noiseSeed eliminated — Grover √P × 2^keyBits → √P × 2^(keyBits/2) (two seeds → one seed)
-- Classical brute-force reduction: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed)
+- Key-space reduction: noiseSeed eliminated — classical P × 2^(2×keyBits) → P × 2^keyBits, Grover √P × 2^keyBits → √P × 2^(keyBits/2) (two seeds → one seed)
+
+The remaining security after CCA (P × 2^keyBits ≈ 2^1031 at 1024-bit) far exceeds the Landauer limit (~2^306).
 
 The 4.8% leak is the structural cost of noise position range {0-7} under CCA with MAC-reveal. This range was chosen to eliminate the FORMAT+KPA attack surface: with noise restricted to {0,1}, bits 2-7 are deterministically data from the public format, giving an attacker 86% of XOR config under KPA without any oracle. With {0-7}, no bit position is deterministically data — FORMAT knowledge provides 0% XOR config.
 
@@ -933,7 +934,7 @@ The 8/1 format with noise range {0-7} sits at the Pareto frontier among the anal
 | {0, 1} | 86% (bits 2-7 public) | 1.7% (1/60) | **Seed recoverable without CCA** |
 | **{0-7} (ITB)** | **0%** | **4.8%** | **4.8% under CCA only** |
 
-The CCA leak increases from 1.7% to 4.8%, but the FORMAT+KPA attack is completely eliminated. This is a better trade-off: the 4.8% CCA leak is analyzed as harmless (Section 4.2–4.3), while the 86% FORMAT+KPA leak was exploitable with invertible hash functions.
+The CCA leak increases from 1.7% to 4.8%, but the FORMAT+KPA attack is completely eliminated. This is a better trade-off: the 4.8% CCA leak eliminates noiseSeed from brute-force but remaining security far exceeds Landauer (Section 4.2–4.3), while the 86% FORMAT+KPA leak was exploitable with invertible hash functions.
 
 ## 5. Formal Definitions
 
