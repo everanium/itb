@@ -24,7 +24,7 @@
 
 - **Known-Plaintext Resistance (under passive observation).** Even with fully known plaintext, the attacker cannot derive hash outputs because original container pixel values are unknown (crypto/rand, never transmitted). Attack degrades to brute-force regardless of hash function.
 
-These barrier properties hold fully under Core ITB and MAC + Silent Drop (no oracle). Under MAC + Reveal, noiseSeed config is leaked via CCA, but dataSeed remains fully protected.
+These barrier properties hold fully under Core ITB and MAC + Silent Drop‡‡ (no oracle; see ‡‡ note in SECURITY.md §7). Under MAC + Reveal, noiseSeed config is leaked via CCA, but dataSeed remains fully protected.
 
 - **Chosen-Plaintext Resistance.** Attacker can encrypt with their own seed and study their own configuration map. Knowledge of one seed's map provides zero information about any other seed's map, assuming independently generated seeds.
 
@@ -51,7 +51,7 @@ These barrier properties hold fully under Core ITB and MAC + Silent Drop (no ora
 - No padding required — triple-seed rotation barrier provides protection without padding schemes.
 - Wrong seed produces random-looking output with no verification oracle.
 
-MAC + Silent Drop also preserves oracle-free deniability — the attacker receives no verification response.
+MAC + Silent Drop‡‡ also preserves oracle-free deniability — the attacker receives no verification response.
 
 ## Map Space Exceeds Key Space
 

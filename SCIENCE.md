@@ -176,7 +176,7 @@ For example, with a 128-bit hash and 1024-bit key (16 components): a single Chai
 
 Together, the three barriers are designed to make MITM harder than brute force at all supported key sizes.
 
-**Quantum (Grover).** Grover complexity is O(2^(keyBits/2)) iterations, each requiring O(P) hash evaluations for full container decryption (where P = pixel count). At 1024 bits: 2^512 iterations — computationally infeasible with any foreseeable technology. At 2048 bits: 2^1024 — far beyond the Landauer thermodynamic limit (~2^306). Note that AES-256 with Grover bound 2^128 is widely considered quantum-resistant for practical purposes.
+**Quantum (Grover).** Grover complexity depends on the mode. **Core ITB / MAC + Silent Drop‡‡** (see ‡‡ note in SECURITY.md §7): the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random — independent attack is impossible). startSeed contributes only P startPixel candidates (enumerated as [0, P)), not 2^keyBits. Classical: P × 2^(2×keyBits). Grover: √(P × 2^(2×keyBits)) = √P × 2^keyBits — at 1024 bits (P=169): ~2^1028 iterations, at 2048 bits (P=324): ~2^2052. **MAC + Reveal:** CCA reveals noiseSeed and startPixel is trivially enumerable, reducing the search to dataSeed alone — Grover complexity O(2^(keyBits/2)), at 1024 bits: 2^512 iterations, at 2048 bits: 2^1024. Each Grover iteration requires O(P) hash evaluations for full container decryption (where P = pixel count). Even the MAC + Reveal bound (2^512 at 1024 bits) is computationally infeasible with any foreseeable technology; 2^1024 is far beyond the Landauer thermodynamic limit (~2^306). Note that AES-256 with Grover bound 2^128 is widely considered quantum-resistant for practical purposes.
 
 The oracle required by Grover is degraded under ITB's oracle-free design: no checksums, no headers, no magic bytes. The null terminator is encrypted and invisible without the correct seed.
 
@@ -244,7 +244,7 @@ These attack vectors are blocked by PRF properties of the hash function, not by 
 | Avalanche | Correlation / cube attacks | Correlated outputs → local CCA simulation |
 | Non-invertibility | KPA + inversion, MITM backward step | Seed recovery in polynomial time |
 
-**The barrier and PRF are complementary (symbiosis).** PRF-grade hash functions are required. The two properties protect each other: (1) PRF non-invertibility protects the barrier by preventing KPA candidate verification (56-candidate ambiguity unresolvable); (2) the barrier protects the PRF by absorbing hash collisions — the only theoretical weakness of a non-invertible hash. In a traditional cipher, collisions may be exploitable (the attacker observes the output directly). In ITB, two pixels with the same dataHash have different original container bytes (CSPRNG), making the collision invisible. Together, they address all analyzed threat models (COA, KPA, CPA, CCA, side-channel). In core ITB and MAC + Silent Drop (no oracle, passive observation only), the symbiosis makes the non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
+**The barrier and PRF are complementary (symbiosis).** PRF-grade hash functions are required. The two properties protect each other: (1) PRF non-invertibility protects the barrier by preventing KPA candidate verification (56-candidate ambiguity unresolvable); (2) the barrier protects the PRF by absorbing hash collisions — the only theoretical weakness of a non-invertible hash. In a traditional cipher, collisions may be exploitable (the attacker observes the output directly). In ITB, two pixels with the same dataHash have different original container bytes (CSPRNG), making the collision invisible. Together, they address all analyzed threat models (COA, KPA, CPA, CCA, side-channel). In core ITB and MAC + Silent Drop‡‡ (no oracle, passive observation only), the symbiosis makes the non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
 
 ### 2.5 Nonce Reuse Analysis
 
@@ -438,6 +438,17 @@ With Full KPA: the attacker computes 7 rotation candidates per pixel, each produ
 
 The noise bits are not what blocks the analyses. The analyses are blocked by the barrier's second mechanism: **dataSeed encoding ambiguity** (7 rotations per pixel, independent of noise). Removing noise = bypassing mechanism (1). Mechanism (2) continues through triple-seed isolation — dataSeed is a different independent key that CCA and noise removal cannot reach.
 
+**Configuration guessing vs seed brute-force.** An alternative attack strategy: instead of brute-forcing seeds, directly guess the per-pixel rotation configuration (56^P without CCA, 7^P with CCA). For minimum container (P = 169, 1024-bit key): 56^169 ≈ 2^981, 7^169 ≈ 2^474 — both cheaper than seed brute-force (~2^2055). However, configuration guessing grows exponentially with P, while seed brute-force grows linearly. For 8 KB plaintext (P = 1225):
+
+| Strategy | Min container (P=169) | 8 KB plaintext (P=1225) |
+|---|---|---|
+| 56^P (no CCA) | 2^981 | 2^7114 |
+| 7^P (with CCA) | 2^474 | 2^3439 |
+| Seed brute-force (classical) | ~2^2055 | ~2^2058 |
+| Seed brute-force (Grover) | ~2^1028 | ~2^1029 |
+
+For any plaintext larger than ~2.5 KB, configuration guessing exceeds seed brute-force — and seed brute-force itself is already physically impossible (2^2058 >> Landauer ~2^306). Both strategies require a verification oracle (MAC insider knowledge or equivalent); without oracle (Core ITB), neither can verify candidates.
+
 ### 2.10 Hash Function Requirements Analysis
 
 ITB requires PRF-grade hash functions. The PRF property guarantees all necessary sub-properties. The barrier provides additional architectural hardening:
@@ -463,7 +474,7 @@ ITB requires PRF-grade hash functions. The PRF property guarantees all necessary
 
 **Key space utilization.** A single ChainHash128 call with 128-bit output discriminates 2^128 of 2^1024 seeds. But the minimum container makes 169 independent calls with different data inputs. Collisions for one input do not persist across inputs (XOR-of-sums is not translation-invariant). Collective constraint: 169 × 64 = 10816 bits >> 1024 key bits. The full key space is utilized.
 
-**Conclusion.** Effective brute-force: 2^1024 classical (far beyond Landauer ~2^306), 2^512 Grover (far beyond Landauer). The information-theoretic barrier (2^1352 for 169 pixels) exceeds the key space under the random-container model.
+**Conclusion.** Effective brute-force depends on the mode. **MAC + Reveal** (single dataSeed): 2^1024 classical, 2^512 Grover — both far beyond Landauer (~2^306). **Core ITB / MAC + Silent Drop** (joint noiseSeed+dataSeed, startPixel enumerated): P × 2^(2×keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys (P=169): ~2^2055 classical, ~2^1028 Grover. The information-theoretic barrier (2^1352 for 169 pixels) exceeds the key space under the random-container model.
 
 With triple-seed architecture, dataSeed has zero side-channel exposure (register-only operations). PRF property applies universally to all three seeds, ensuring protection under all threat models including CCA, local CCA simulation, and cache side-channel combined attacks.
 
@@ -481,7 +492,7 @@ Under the random-container model, this is an information-theoretic property rath
 
 | Quantum Algorithm | Requires | ITB Status | Mechanism |
 |---|---|---|---|
-| **Grover** (brute-force) | Yes/no verification oracle | **Applicable** but degraded | Oracle exists but requires full decryption per query; O(2^(keyBits/2)) |
+| **Grover** (brute-force) | Yes/no verification oracle | **Applicable** but degraded | Oracle exists but requires full decryption per query; O(2^(keyBits/2)) for MAC + Reveal; √P × 2^keyBits for Core/Silent Drop‡‡ (no oracle, joint noiseSeed+dataSeed search) |
 | **Simon** (periodicity) | Periodic function structure | **Conjectured mitigated** | Config map is aperiodic: ChainHash with 128-bit nonce per message |
 | **BHT** (collision finding) | Observable collisions | **Conjectured mitigated** | Core/Silent Drop: random container absorbs collisions; MAC + Reveal: encoding ambiguity (7 candidates — collisions unidentifiable) |
 | **Quantum differential** | Structural plaintext↔ciphertext relations | **Conjectured mitigated** | Core/Silent Drop: container limits structural relations; MAC + Reveal: encoding ambiguity (7 candidates) |
@@ -492,7 +503,7 @@ Under the random-container model, this is an information-theoretic property rath
 
 Grover's algorithm requires a function f(key) → {0, 1} that can be evaluated in quantum superposition. In ITB:
 
-**Core ITB (no MAC) and MAC + Silent Drop:** The oracle does not exist. Every candidate key produces some decrypted output. Without verification metadata (no magic bytes, no checksums, no cleartext MAC), f(key) has no way to return 1 for the correct key. Under MAC + Silent Drop, the MAC is present but the recipient never reveals the verification result — the attacker receives no accept/reject response, so no oracle can be constructed. Grover cannot run without a well-defined oracle.
+**Core ITB (no MAC) and MAC + Silent Drop‡‡:** The oracle does not exist. Every candidate key produces some decrypted output. Without verification metadata (no magic bytes, no checksums, no cleartext MAC), f(key) has no way to return 1 for the correct key. Under MAC + Silent Drop, the MAC is present but the recipient never reveals the verification result — the attacker receives no accept/reject response, so no oracle can be constructed. Grover cannot run without a well-defined oracle.
 
 **ITB + MAC-inside-encrypt:** The oracle exists but is maximally expensive. To evaluate f(key):
 1. Decrypt128/256/512 entire container with candidate key
@@ -500,7 +511,7 @@ Grover's algorithm requires a function f(key) → {0, 1} that can be evaluated i
 3. Recompute MAC over payload
 4. Compare → match = correct key (f = 1)
 
-Each oracle query requires O(P) hash evaluations (P = pixel count) for full decryption. This does not reduce Grover's asymptotic complexity O(2^(keyBits/2)), but makes each query maximally expensive — unlike traditional ciphers where oracle evaluation is often a single block operation.
+Each oracle query requires O(P) hash evaluations (P = pixel count) for full decryption. This does not reduce Grover's asymptotic complexity O(2^(keyBits/2)) (MAC + Reveal mode), but makes each query maximally expensive — unlike traditional ciphers where oracle evaluation is often a single block operation. For Core ITB / MAC + Silent Drop‡‡ (no oracle): Grover over the joint noiseSeed+dataSeed space gives √P × 2^keyBits (startSeed contributes only P startPixel candidates).
 
 #### 2.11.4 Comparison with Traditional Ciphers Under Quantum Attack
 
@@ -510,7 +521,7 @@ Each oracle query requires O(P) hash evaluations (P = pixel count) for full decr
 | ChaCha20 | Well-studied PRF; no known quantum structural attacks | Efficient (single block verify) | 2^128 Grover; widely deployed |
 | ITB | Random container limits structural analysis (not independently verified) | Expensive (full decryption) or absent (no MAC) | IT barrier (conjectured) + computational |
 
-**Summary.** ITB's architecture provides two potential layers of quantum resistance: (1) the random container limits the applicability of quantum structural algorithms by making the construction's internal state unobservable under the random-container model (this property has not been independently verified against quantum attacks), and (2) Grover brute-force remains the primary quantum attack vector, degraded by expensive or absent oracle. At 1024-bit key: 2^512 Grover operations. At 2048-bit key: 2^1024. Both are beyond any foreseeable quantum capability. Note that AES-256 and ChaCha20 with their 2^128 Grover bound are widely considered quantum-resistant for practical purposes.
+**Summary.** ITB's architecture provides two potential layers of quantum resistance: (1) the random container limits the applicability of quantum structural algorithms by making the construction's internal state unobservable under the random-container model (this property has not been independently verified against quantum attacks), and (2) Grover brute-force remains the primary quantum attack vector, degraded by expensive or absent oracle. At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: 2^1024 classical, 2^512 Grover. Both are beyond any foreseeable quantum capability. Note that AES-256 and ChaCha20 with their 2^128 Grover bound are widely considered quantum-resistant for practical purposes.
 
 #### 2.11.5 Q1 vs Q2 Quantum Oracle Models
 
@@ -519,7 +530,7 @@ Recent work on quantum security distinguishes two models: Q1 (adversary performs
 ITB's oracle model is inherently Q1:
 
 - **Core ITB (no MAC):** No oracle exists. The adversary has no verification mechanism — Grover cannot construct f(key) → {0, 1}.
-- **MAC + Silent Drop:** The MAC is present but the recipient never reveals the verification result. No oracle exists — the adversary receives no accept/reject response, so Grover cannot construct f(key) → {0, 1}.
+- **MAC + Silent Drop‡‡:** The MAC is present but the recipient never reveals the verification result. No oracle exists — the adversary receives no accept/reject response, so Grover cannot construct f(key) → {0, 1}.
 - **MAC + Reveal:** The oracle is a physical network interaction: send a concrete container, receive accept/reject. Quantum superposition queries are physically impossible — the recipient's MAC verification operates on classical bytes, not superpositions.
 
 The Q2 model is inapplicable to ITB by design, not by cryptographic countermeasure. This is an architectural observation that has not been independently verified.
@@ -725,7 +736,7 @@ Implemented: MAC-inside (full capacity) — `EncryptAuthenticated128`/`EncryptAu
 
 **MAC scope matters.** If the MAC covers only the extracted plaintext, the CCA oracle additionally reveals which container regions carry padding vs COBS data (padding bit flips don't affect plaintext → "accept"), leaking the spatial layout, start pixel, and approximate message length. The library's `EncryptAuthenticated` avoids this by computing the MAC over the entire decrypted capacity (COBS + null terminator + fill). This makes every data bit "meaningful" — flipping any data bit changes the MAC input, producing "reject." The only remaining leak is noise position (noise bits → "accept"), with no spatial pattern.
 
-Core ITB and MAC + Silent Drop have no CCA surface at all — deniability is a structural property of the construction, not a protocol-level guarantee.
+Core ITB and MAC + Silent Drop‡‡ have no CCA surface at all — deniability is a structural property of the construction, not a protocol-level guarantee.
 
 **Mitigation is protocol-level, not library-level.** The recipient must not reveal individual MAC verification results to untrusted parties. Standard approaches:
 
@@ -774,7 +785,7 @@ The 9464 data bits are visible but remain encrypted: each is XOR'd with an indep
 
 **Even with known plaintext + noise map, the data is not recoverable.** The attacker knows the COBS-encoded plaintext and which container bits carry data. To decrypt, they must map plaintext bits to container positions — this requires the start pixel (from startSeed, independent). Trying all 169 candidate start positions: for each, the attacker computes a candidate XOR mask = container_data ⊕ expected_data. With per-bit XOR (1:1), every candidate produces a valid mask (Section 2.9). The attacker cannot distinguish the correct start pixel from 168 wrong ones.
 
-**Brute-force optimization.** The attacker can use the 507-bit noise position map as a fast candidate rejection test: compute candidate noise positions from noiseSeed → compare with leaked map → reject mismatches. Wrong noiseSeed values rejected with probability 1 − 2^(−507). However, the search space remains 2^512 per seed — the rejection test is cheaper per candidate but does not reduce the number of candidates. Grover complexity remains 2^(keyBits/2).
+**Brute-force optimization.** The attacker can use the 507-bit noise position map as a fast candidate rejection test: compute candidate noise positions from noiseSeed → compare with leaked map → reject mismatches. Wrong noiseSeed values rejected with probability 1 − 2^(−507). However, the search space remains 2^512 for dataSeed — the rejection test is cheaper per candidate but does not reduce the number of candidates. Grover complexity remains 2^(keyBits/2).
 
 **Conclusion.** The CCA noise map exposes which 1352 of 10816 bits are noise and which 9464 are encrypted data — revealing the complete noiseSeed configuration (507 bits). Due to triple-seed isolation, this provides zero information about dataSeed or startSeed. The per-bit XOR encryption (dataSeed) and unknown start pixel (startSeed) are unaffected. The attacker expends 10816 detectable queries to gain near-zero practical advantage. For comparison, the padding oracle in TLS 1.0's MAC-then-Encrypt composition with AES-CBC was exploitable to recover full plaintext (POODLE, Lucky13), though this was a protocol-level vulnerability addressed in subsequent TLS versions.
 
@@ -866,7 +877,7 @@ The CCA leak percentage (4.8%) is a structural property of the RGBWYOPA 8/1 form
 - Zero plaintext bits (data values remain XOR-encrypted)
 - Zero XOR mask bits (56 independent masks per pixel, unobservable)
 - Zero start pixel information (data-to-pixel mapping unknown)
-- Zero key-space reduction (Grover unchanged at 2^(keyBits/2))
+- Zero key-space reduction (Grover unchanged at 2^(keyBits/2) for MAC + Reveal)
 - Zero advantage over pure brute-force (bit-plane check is a cheaper reject test per candidate, not a smaller search space)
 
 The 4.8% leak is the structural cost of noise position range {0-7} under CCA with MAC-reveal. This range was chosen to eliminate the FORMAT+KPA attack surface: with noise restricted to {0,1}, bits 2-7 are deterministically data from the public format, giving an attacker 86% of XOR config under KPA without any oracle. With {0-7}, no bit position is deterministically data — FORMAT knowledge provides 0% XOR config.
