@@ -426,7 +426,7 @@ This does not work. After noise removal, the attacker has 7 "clean" data bits pe
 
 Without KPA: the cleaned data is still encrypted — equivalent to analyzing ciphertext. No analysis technique helps.
 
-With Full KPA: the attacker computes 7 rotation candidates per pixel, each producing a valid candidate dataHash. But PRF output is random — no differential, linear, or algebraic pattern exists among the candidates. The attacker cannot determine which of the 7 is correct. Across P pixels: 7^P ambiguity (for P = 169: 7^169 ≈ 2^474) — preserved by information theory regardless of noise removal.
+With Full KPA: the attacker computes 7 rotation candidates per pixel, each producing a valid candidate dataHash. The attacker cannot determine which of the 7 is correct from the observation. Across P pixels: 7^P ambiguity (for P = 169: 7^169 ≈ 2^474). This ambiguity is an information-theoretic property of the encoding (7 rotations in a 7-bit channel), not of the hash function — it holds for any H, PRF or non-PRF. Even after the data has been recovered through hash inversion, the observation still contains 7^P ambiguity. The barrier is never broken.
 
 The noise bits are not what blocks the analyses. The analyses are blocked by the **dataSeed ambiguity** (7 rotations per pixel, independent of noise). Removing noise = bypassing noiseSeed. The barrier's protection continues through dataSeed isolation — a different independent key that CCA and noise removal cannot reach.
 
