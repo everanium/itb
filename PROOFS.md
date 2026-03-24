@@ -328,7 +328,7 @@ The extracted bytes are a deterministic but pseudorandom function of the wrong s
 
 **Structural guarantees:**
 - No magic bytes or headers to distinguish correct from incorrect decryption
-- No checksum or MAC in core ITB
+- No checksum or MAC in Core ITB
 - COBS null terminator: with wrong seeds, first 0x00 byte occurs at a random position → COBS decodes a random-length random byte sequence
 - The probability that wrong seeds produce valid-looking output with a null terminator at a "reasonable" position is non-negligible — this is by design (deniability)
 

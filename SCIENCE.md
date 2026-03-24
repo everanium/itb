@@ -479,7 +479,7 @@ Under the random-container model, this is an information-theoretic property rath
 |---|---|---|---|
 | **Grover** (brute-force) | Yes/no verification oracle | **Applicable** but degraded | Oracle exists but requires full decryption per query; O(2^(keyBits/2)) |
 | **Simon** (periodicity) | Periodic function structure | **Conjectured mitigated** | Config map is aperiodic: ChainHash with 128-bit nonce per message |
-| **BHT** (collision finding) | Observable collisions | **Conjectured mitigated** | Random container absorbs collisions (Section 2.4.1) |
+| **BHT** (collision finding) | Observable collisions | **Conjectured mitigated** | Core/Silent Drop: random container absorbs collisions; MAC + Reveal: encoding ambiguity (7 candidates — collisions unidentifiable) |
 | **Quantum differential** | Structural plaintext↔ciphertext relations | **Conjectured mitigated** | Random container limits structural relations |
 | **Quantum linear** | Linear/affine input-output relations | **Conjectured mitigated** | Non-affine mixing (PRF property) + random container |
 | **Future structural** | Observation of internal construction state | **Conjectured mitigated** | IT barrier: internal state unobservable under random-container model |

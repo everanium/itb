@@ -138,7 +138,7 @@ Specific quantum algorithms and why they are conjectured mitigated:
 
 - **Grover** — requires a verification oracle. Core ITB and MAC + Silent Drop have no oracle. With MAC + Reveal: each oracle query costs O(P) — full container decryption. At 1024-bit key: 2^512 iterations × O(P) each.
 - **Simon** — requires periodic function structure. ITB's config map is aperiodic: each message has a unique 128-bit nonce, creating a completely different configuration.
-- **BHT** — requires observable hash collisions. The random container absorbs collisions — two identical hash outputs on different pixels produce different observed bytes (different random container values).
+- **BHT** — requires observable hash collisions. In Core ITB and MAC + Silent Drop: the random container absorbs collisions — two identical hash outputs on different pixels produce different observed bytes (different random container values). After CCA (MAC + Reveal): collisions remain unobservable through encoding ambiguity (7 rotation candidates per pixel — attacker cannot identify which candidates collide).
 - **Q2 superposition queries** — requires oracle that accepts quantum superposition inputs. ITB's MAC oracle is inherently classical: it receives concrete bytes over a network and returns accept/reject. Superposition queries are physically impossible.
 
 At 1024-bit key: 2^512 Grover. At 2048-bit key: 2^1024. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.

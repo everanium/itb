@@ -293,9 +293,9 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 | Quantum Algorithm | AES-CTR / ChaCha20 | ITB |
 |---|---|---|
-| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (core ITB, MAC + Silent Drop) or expensive oracle (MAC + Reveal: full decryption per query) |
+| **Grover** (brute-force) | Efficient oracle (single block verify); 2^128 for 256-bit key | No oracle (Core ITB, MAC + Silent Drop) or expensive oracle (MAC + Reveal: full decryption per query) |
 | **Simon** (periodicity) | Relies on PRF/PRP computational strength | Conjectured mitigated: aperiodic config map (nonce per message) |
-| **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: random container absorbs collisions |
+| **BHT** (collision finding) | Relies on PRF/PRP computational strength | Conjectured mitigated: Core/Silent Drop — container absorbs collisions; MAC + Reveal — encoding ambiguity (7 candidates) |
 | **Quantum differential/linear** | Relies on PRF/PRP computational strength | Conjectured mitigated: random container limits structural relations |
 | **Q2 superposition queries** | Theoretically applicable (oracle accepts superposition inputs) | Not applicable: MAC oracle is inherently classical (network request → accept/reject) |
 
