@@ -144,3 +144,15 @@ Specific quantum algorithms and why they are conjectured mitigated:
 At 1024-bit key: 2^512 Grover. At 2048-bit key: 2^1024. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
+
+## 12. Barrier and PRF: Symbiosis
+
+The barrier and PRF hash function protect each other:
+
+- **PRF protects the barrier:** non-invertibility prevents the attacker from resolving the 56-candidate ambiguity under KPA. Without inversion, the barrier's information-theoretic protection holds — the attacker cannot verify which candidate is real.
+
+- **Barrier protects the PRF:** hash collisions are the only theoretical weakness of a non-invertible hash function — two different inputs producing the same output. In a traditional cipher, collisions may be exploitable because the attacker observes the output directly. In ITB, collisions are invisible: two pixels with the same dataHash have different original container bytes (CSPRNG), so the observed bytes are different. The collision is absorbed.
+
+Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. The barrier makes a non-invertible hash function effectively an ideal primitive — no known attack surface remains.
+
+See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).

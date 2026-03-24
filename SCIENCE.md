@@ -244,7 +244,7 @@ These attack vectors are blocked by PRF properties of the hash function, not by 
 | Avalanche | Correlation / cube attacks | Correlated outputs → local CCA simulation |
 | Non-invertibility | KPA + inversion, MITM backward step | Seed recovery in polynomial time |
 
-**The barrier and PRF are complementary.** PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable. Together, they address all analyzed threat models (COA, KPA, CPA, CCA, side-channel).
+**The barrier and PRF are complementary (symbiosis).** PRF-grade hash functions are required. The two properties protect each other: (1) PRF non-invertibility protects the barrier by preventing KPA candidate verification (56-candidate ambiguity unresolvable); (2) the barrier protects the PRF by absorbing hash collisions — the only theoretical weakness of a non-invertible hash. In a traditional cipher, collisions may be exploitable (the attacker observes the output directly). In ITB, two pixels with the same dataHash have different original container bytes (CSPRNG), making the collision invisible. Together, they address all analyzed threat models (COA, KPA, CPA, CCA, side-channel) and make the non-invertible hash function effectively an ideal primitive.
 
 ### 2.5 Nonce Reuse Analysis
 
