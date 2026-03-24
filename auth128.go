@@ -117,6 +117,9 @@ func DecryptAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, fileData [
 	if totalPixels > math.MaxInt/Channels {
 		return nil, fmt.Errorf("itb: container too large for this platform: %d pixels", totalPixels)
 	}
+	if totalPixels > maxTotalPixels {
+		return nil, fmt.Errorf("itb: container too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
+	}
 	expectedSize := totalPixels * Channels
 	if len(container) < expectedSize {
 		return nil, fmt.Errorf("itb: container too short: got %d, need %d", len(container), expectedSize)

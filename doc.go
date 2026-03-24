@@ -93,7 +93,7 @@
 //
 //	Hash function             | State width | API            | Effective max key
 //	SipHash-2-4, AES-CMAC     | 128 bits    | Encrypt128     | 1024 bits
-//	BLAKE2b, BLAKE2s,         |             |                |
+//	BLAKE2b-256, BLAKE2s,     |             |                |
 //	  BLAKE3 keyed             | 256 bits    | Encrypt256     | 2048 bits
 //	BLAKE2b-512                | 512 bits    | Encrypt512     | 2048 bits
 //
@@ -114,11 +114,11 @@
 //     with no verification oracle for brute-force.
 //
 //   - Per-message 128-bit nonce prevents configuration reuse. Birthday
-//     collision after ~2^64 messages; ~2^48 messages for negligible probability.
+//     collision after ~2^64 messages; ~2^48 messages for practically safe collision probability (~2^{-33}).
 //
-//   - Triple-seed isolation: CCA reveals noiseSeed config only (noise
-//     positions), cache side-channel reveals startSeed only (pixel
-//     offset). dataSeed config (rotation + XOR) is completely
+//   - Triple-seed isolation: CCA reveals noiseSeed config only (MAC + Reveal
+//     only) (noise positions), cache side-channel reveals startPixel only
+//     (pixel offset derived from startSeed). dataSeed config (rotation + XOR) is completely
 //     independent, register-only, and unobservable.
 //
 //   - Information-theoretic barrier of 2^(8P) where P = pixel count.
@@ -148,7 +148,7 @@
 //	encrypted, _ = itb.Encrypt256(ns256, ds256, ss256, plaintext)
 //	decrypted, _ = itb.Decrypt256(ns256, ds256, ss256, encrypted)
 //
-// # Authenticated Encryption (MAC-inside-encrypt)
+// # Authenticated Encryption (MAC-Inside-Encrypt)
 //
 // The core construction provides confidentiality only. For integrity
 // protection, use [EncryptAuthenticated128] (or 256/512 variant) which encrypts

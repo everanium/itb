@@ -28,7 +28,7 @@ The nonce guarantees that the same message with the same seed produces each time
 - A different config map (nonce feeds into every ChainHash)
 - A different startPixel (nonce feeds into deriveStartPixel)
 
-1000 transmissions of the same message — 1000 completely independent containers. No correlation between them. Two-time pad is impossible until the birthday bound ~2^64 messages.
+1000 transmissions of the same message — 1000 independent containers (given unique nonces). No observable correlation between them. Two-time pad is impossible until the birthday bound ~2^64 messages.
 
 This is not a cryptographic trick — this is information theory: two independent random processes, the observation result contains no information about either one individually.
 

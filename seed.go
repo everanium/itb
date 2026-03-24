@@ -7,7 +7,7 @@ import (
 )
 
 // NonceSize is the per-message nonce size in bytes (128 bits).
-// Birthday collision after ~2^64 messages; negligible up to ~2^48 messages.
+// Birthday collision after ~2^64 messages; practically safe up to ~2^48 messages (collision probability ~2^{-33}).
 const NonceSize = 16
 
 // MaxKeyBits is the maximum supported key size in bits.

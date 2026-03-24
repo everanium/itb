@@ -387,7 +387,7 @@ Invertible hash:         candidates → seed: possible          — ambiguity re
 **Worst-case combined attack (CCA + Full KPA + PRF):**
 ```
 CCA (MAC-reveal)         → noisePos known (3 bits/pixel from noiseSeed)
-                         → noise bit value known (random CSPRNG bit — useless)
+                         → noise bit value known (random CSPRNG bit — carries no information about seed or plaintext)
                          → 7 rotation candidates remain (not 56)
 Full KPA                 → 7 candidate dataHash values per pixel, all consistent
 PRF (non-invertible)     → ChainHash inversion impossible → brute-force P × 2^keyBits
@@ -415,7 +415,7 @@ All techniques require **observing** a relationship between the PRF's input and 
 
 The table above describes blocking under Core ITB and MAC + Silent Drop (noise bit present). After CCA (MAC + Reveal), noise bits are identified and the noise absorption mechanism is bypassed for noiseSeed. The analyses remain blocked for a different reason: dataSeed rotation ambiguity (7 candidates per pixel, 7^P total) combined with PRF and triple-seed isolation. Differential analysis between two pixels yields 7 × 7 = 49 candidate pairs — PRF makes all pairs indistinguishable from random. Linear, algebraic, and all other techniques face the same problem: no actual hash output, only unverifiable candidates. The result is identical — no analysis technique is applicable — but the blocking mechanism shifts from noise absorption to encoding ambiguity.
 
-**The analysis dichotomy.** Advanced cryptanalytic techniques are never applicable to ITB, regardless of hash function properties:
+**The analysis dichotomy.** Under the invertible/non-invertible dichotomy, advanced cryptanalytic techniques do not apply to ITB:
 
 ```
 Hash invertible     → seed recovered via inversion   → advanced analysis unnecessary (attacker already has everything)
@@ -767,7 +767,7 @@ Container = 169 × 8 channels = 1352 bytes = 10816 bits
 
 The attacker obtains the noise position (0-7) for every pixel — this is the complete noiseSeed configuration. Due to triple-seed isolation, this reveals zero information about dataSeed (rotation + XOR) or startSeed (pixel offset).
 
-**Why the noise map does not help:**
+**What the noise map reveals and what it does not:**
 
 | Information | Leaked? | Bits | Source | Reason |
 |---|---|---|---|---|
@@ -777,7 +777,7 @@ The attacker obtains the noise position (0-7) for every pixel — this is the co
 | Data bit values (encrypted) | Visible | 9464 | — | Each bit = actual_data ⊕ unknown_xor_mask |
 | XOR masks | No | 0 | dataSeed | Per-bit XOR: no oracle distinguishes mask values |
 | Data rotation | No | 0 | dataSeed | Register-only, unobservable |
-| Start pixel | No | 0 | startSeed | No way to determine data-to-pixel mapping |
+| Start pixel | No | 0 | startSeed | Not leaked via CCA (cache side-channel documented separately) |
 | Plaintext | No | 0 | — | Data bits encrypted, ordering unknown |
 | dataSeed / startSeed | No | 0 | — | Independent seeds, CCA reveals only noiseSeed |
 

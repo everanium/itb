@@ -373,6 +373,54 @@ func TestMaxKeySize(t *testing.T) {
 	}
 }
 
+func TestMaxDataSize64MB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 64 MB roundtrip in short mode")
+	}
+	ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+	data := make([]byte, 64<<20) // 64 MB
+	if _, err := rand.Read(data); err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := Encrypt128(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt128(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("64 MB roundtrip data mismatch")
+	}
+}
+
+func TestMaxDataSizeExceeded(t *testing.T) {
+	ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+	data := make([]byte, 64<<20+1) // 64 MB + 1 byte
+	_, err := Encrypt128(ns, ds, ss, data)
+	if err == nil {
+		t.Fatal("expected error for data exceeding 64 MB limit")
+	}
+}
+
+func TestDecryptRejectOversizeContainer(t *testing.T) {
+	ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+
+	// Craft a fake container with dimensions that exceed maxTotalPixels (10M).
+	// 3200x3200 = 10,240,000 pixels > 10M limit.
+	header := make([]byte, 20) // 16 nonce + 4 dimensions
+	binary.BigEndian.PutUint16(header[16:], 3200)
+	binary.BigEndian.PutUint16(header[18:], 3200)
+	fakeContainer := make([]byte, len(header)+3200*3200*8)
+	copy(fakeContainer, header)
+
+	_, err := Decrypt128(ns, ds, ss, fakeContainer)
+	if err == nil {
+		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
+	}
+}
+
 func TestInvalidSeedSize(t *testing.T) {
 	// Below minimum
 	_, err := NewSeed128(256, sipHash128)

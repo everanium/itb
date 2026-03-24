@@ -93,7 +93,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Chosen-ciphertext (CCA) | ✓ No oracle | ✓ No oracle | noiseSeed leaked, dataSeed safe | noiseSeed leaked, dataSeed safe |
 | Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)††† | P × 2^keyBits** | P × 2^keyBits** |
 | Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits††† | √P × 2^(keyBits/2)** | √P × 2^(keyBits/2)** |
-| Map guessing | 2^(62P) | 2^(62P) | 2^(62P) | 2^(62P) |
+| Map guessing | 2^(62P) | 2^(62P) | 2^(59P) | 2^(59P) |
 | Nonce reuse | Two-time pad | Two-time pad | Two-time pad | Two-time pad |
 | Bit-flipping | Undetected | Detected (MAC) | Detected (MAC) | Detected (MAC) |
 | Padding oracle | N/A | N/A | ✓ No spatial pattern | ✓ No spatial pattern |
@@ -208,7 +208,7 @@ Implemented: Inside (full capacity) — `EncryptAuthenticated128` / `EncryptAuth
 | Container size metadata | Network observation | Metadata only | Inherent to all ciphers, no crypto advantage |
 | Non-CSPRNG container | Deployer misconfiguration | Degrades barrier | crypto/rand mandatory, non-CSPRNG unsupported |
 | COBS decode truncation | Wrong seed / tampered data | None | Downstream null check returns "wrong seed" error |
-| Bit-flip false null (DoS) | Data bit modification | None (with MAC) | MAC verified before null search; noise flips harmless |
+| Bit-flip false null (DoS) | Data bit modification | None (with MAC) | MAC verified before null search; noise flips do not affect decrypted data |
 | CGO AVX2 side-channel | Co-located attacker | None (see below) | All AVX2 ops constant-time; identical to pure Go |
 | Spectre v1/v2/v4, Downfall, etc. | Secret-dependent memory access gadget | No known gadget in ITB data path | Register-only ops; no `table[secret_index]` |
 | MDS, Zenbleed (stale data) | CPU buffer residue | Seeds may remain in buffers | Not ITB-specific; identical for all ciphers |

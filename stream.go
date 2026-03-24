@@ -36,6 +36,9 @@ func EncryptStream128(noiseSeed, dataSeed, startSeed *Seed128, data []byte, chun
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize(len(data))
 	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
 
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
@@ -89,6 +92,9 @@ func EncryptStream256(noiseSeed, dataSeed, startSeed *Seed256, data []byte, chun
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize(len(data))
 	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
 
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
@@ -141,6 +147,9 @@ func EncryptStream512(noiseSeed, dataSeed, startSeed *Seed512, data []byte, chun
 	}
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
 
 	for off := 0; off < len(data); off += chunkSize {
@@ -201,6 +210,9 @@ func parseChunkLen(data []byte) (int, error) {
 	totalPixels := width * height
 	if totalPixels > math.MaxInt/Channels {
 		return 0, fmt.Errorf("container too large: %d pixels", totalPixels)
+	}
+	if totalPixels > maxTotalPixels {
+		return 0, fmt.Errorf("chunk too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
 	}
 
 	chunkLen := headerSize + totalPixels*Channels

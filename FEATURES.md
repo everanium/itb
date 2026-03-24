@@ -18,7 +18,7 @@
 
 ## Information-Theoretic Barrier
 
-- **Random Container.** Container pixels generated from `crypto/rand`. The distribution of pixel values is identical before and after embedding, because both container and modifications are random.
+- **Random Container.** Container pixels generated from `crypto/rand`. The marginal distribution of individual pixel values is indistinguishable from uniform before and after embedding, because both container and modifications are random.
 
 - **Hash Independence.** The random container creates an information-theoretic barrier: the hash output is consumed by a modification of a random pixel and is not reconstructible from passive observations (COA, KPA). PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable (see [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements), [Definition 2](SCIENCE.md#5-formal-definitions)).
 

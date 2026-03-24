@@ -1,9 +1,5 @@
 package itb
 
-import (
-	"math"
-)
-
 const headerSize = NonceSize + 4 // nonce(16) + width(2) + height(2)
 
 const (
@@ -48,7 +44,12 @@ func rotateBits7(v byte, r uint) byte {
 	return ((v << r) | (v >> (7 - r))) & 0x7F
 }
 
-// maxDataSize is the maximum plaintext size to prevent integer overflow
-// in pixel/bit calculations. Automatically scales with platform int size:
-// ~256 MB on 32-bit, ~1 EB on 64-bit (limited by available RAM).
-const maxDataSize = math.MaxInt / 16
+// maxDataSize is the maximum plaintext size for a single message or chunk (64 MB).
+// This limit prevents uint32 pixel-index overflow in blockHash (counter is uint32)
+// and aligns with the maximum streaming chunk size.
+const maxDataSize = 64 << 20
+
+// maxTotalPixels is the maximum container pixel count for decrypt validation.
+// Covers maxDataSize + COBS overhead + square rounding (~9.6M pixels for 64 MB).
+// Well below uint32 max (4.3B) with 429× headroom.
+const maxTotalPixels = 10_000_000
