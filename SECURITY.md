@@ -244,7 +244,7 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); each MAC-Inside oracle query requires O(P) full decryption |
+| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); O(P) full decryption per candidate (all modes) |
 | Oracle-free deniability | ✓ (structural) |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
@@ -256,24 +256,24 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
 | Quantum structural attacks | Conjectured mitigated (IT barrier is computation-model-independent; not independently verified) |
-| Grover oracle | Degraded: no oracle without MAC; with MAC-Inside each query requires full decryption O(P) |
+| Grover oracle | Degraded: no oracle without MAC; with MAC-Inside each query requires full decryption O(P). Per-candidate O(P) cost applies to all modes |
 
 \* Software-level property under the random-container model. No guarantees against hardware-level attacks (see Disclaimer).
 
-### Per-Query Cost: Expensive Oracle
+### Per-Candidate Decryption Cost
 
 Each brute-force candidate (classical or Grover oracle query) requires full container decryption — processing all P pixels with ChainHash. This applies to all composition modes (Core ITB, MAC + Silent Drop, MAC + Reveal). The per-query cost grows linearly with data size, making larger messages more expensive to attack.
 
-Example: 1024-bit key, SipHash-2-4 (~100 ns/call), 8 ChainHash rounds, 2 hash calls per pixel (noiseSeed + dataSeed).
+Approximate empirical example: 1024-bit key, ~10 ns/hash (average across PRF functions on a typical modern CPU), 8 ChainHash rounds, 2 hash calls per pixel (noiseSeed + dataSeed). Actual times vary by hash function, key size, and hardware.
 
 | Data size | P (pixels) | Hash calls per candidate | Time per candidate | vs AES (~1 ns/candidate) |
 |---|---|---|---|---|
-| 1 KB | 169 | 2,704 | ~270 µs | ~270,000× slower |
-| 4 MB | 602,176 | 9,634,816 | ~963 ms | ~963,000,000× slower |
-| 16 MB | 2,408,704 | 38,539,264 | ~3.9 s | ~4,000,000,000× slower |
-| 64 MB | 9,628,609 | 154,057,744 | ~15.4 s | ~15,000,000,000× slower |
+| 1 KB | 169 | 2,704 | ~27 µs | ~27,000× slower |
+| 4 MB | 602,176 | 9,634,816 | ~96 ms | ~96,000,000× slower |
+| 16 MB | 2,408,704 | 38,539,264 | ~385 ms | ~385,000,000× slower |
+| 64 MB | 9,628,609 | 154,057,744 | ~1.5 s | ~1,500,000,000× slower |
 
-Grover oracle queries have the same O(P) per-query cost — ChainHash rounds are sequential and not parallelizable by quantum algorithms. See [SCIENCE.md §2.12](SCIENCE.md#212-per-query-cost-expensive-oracle) for detailed analysis.
+Grover oracle queries have the same O(P) per-candidate cost — ChainHash rounds are sequential and not parallelizable by quantum algorithms. See [SCIENCE.md §2.12](SCIENCE.md#212-per-candidate-decryption-cost) for detailed analysis.
 
 ## 16. Quantum Resistance (Conjectured)
 
