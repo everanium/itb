@@ -122,7 +122,7 @@
 //     only) (noise positions), cache side-channel reveals startPixel only
 //     (pixel offset derived from startSeed). dataSeed config (rotation + XOR) is completely
 //     independent, register-only, and unobservable. After CCA removes noise bits,
-//     guaranteed CSPRNG residue in data positions preserves ambiguity (Proof 12).
+//     guaranteed CSPRNG residue in data positions preserves ambiguity (Proof 10).
 //
 //   - Information-theoretic barrier of 2^(8P) where P = pixel count.
 //     Minimum container sized so encoding ambiguity exceeds key space:

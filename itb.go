@@ -66,7 +66,7 @@ func calcContainerSize(payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (w
 	for side*side < pixels {
 		side++
 	}
-	side++ // guaranteed CSPRNG fill: gap = 7×(2s+1) > 0 (Proof 12)
+	side++ // guaranteed CSPRNG fill: gap = 7×(2s+1) > 0 (Proof 10)
 	return side, side
 }
 

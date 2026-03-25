@@ -343,58 +343,7 @@ The extracted bytes are a deterministic but pseudorandom function of the wrong s
 
 Under the random-container model, the construction provides indistinguishability under ciphertext-only attack. ∎
 
-## Proof 9: MAC-Inside-Encrypt Composition
-
-**Theorem.** `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` with MAC over full capacity (COBS + null + fill) is designed to prevent CCA spatial patterns and false null-terminator attacks (given a secure MAC function).
-
-**Proof.**
-
-**Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload)` where `payload = [COBS data][0x00][crypto/rand fill]`.
-
-Under CCA, flipping any bit:
-- **COBS data bit** → payload changes → MAC(modified) ≠ tag → reject
-- **Null terminator bit** → payload changes → MAC(modified) ≠ tag → reject
-- **Fill byte bit** → payload changes → MAC(modified) ≠ tag → reject
-- **MAC tag bit** → tag changes → tag ≠ MAC(payload) → reject
-- **Noise bit** → payload unchanged → MAC(payload) = tag → accept
-
-Every data bit position produces "reject." Only noise bits produce "accept." The response pattern is uniform across all pixels: 87.5% reject, 12.5% accept. No spatial pattern distinguishes COBS from fill regions.
-
-**Part B: False null-terminator prevention.** MAC is verified BEFORE null-terminator search in DecryptAuthenticated128/256/512:
-
-```
-1. Decrypt128/256/512 entire capacity → decoded[]
-2. Verify: MAC(decoded[:payloadLen]) == decoded[payloadLen:]
-3. ONLY IF MAC passes: search for null terminator in decoded[:payloadLen]
-```
-
-Any bit modification (including creating a false 0x00) fails MAC verification at step 2. Step 3 is never reached with tampered data. ∎
-
-## Proof 10: Nonce Uniqueness
-
-**Theorem.** With 128-bit nonces from crypto/rand, the birthday collision probability reaches ~50% at 2^64 messages and remains practically safe for up to ~2^48 messages (collision probability ~2^{-33}). A nonce collision affects only the colliding pair.
-
-**Proof.** By the birthday paradox, the probability of at least one collision among n nonces drawn uniformly from {0,1}^128:
-
-```
-P(collision) ≈ 1 - e^(-n²/2^129) ≈ n²/2^129
-```
-
-For n = 2^64: P ≈ 2^128 / 2^129 = 1/2.
-
-For n = 2^32 (4 billion messages): P ≈ 2^64 / 2^129 = 2^(-65) ≈ negligible.
-
-**Impact of collision:** If nonce N is reused with the same seeds:
-- Same noiseSeed + N → identical noise positions for both messages
-- Same dataSeed + N → identical rotation and XOR masks
-- Same startSeed + N → identical start pixel
-- Different crypto/rand containers (generated independently)
-
-The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time pad at the bit level). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
-
-**Mitigation:** The nonce is mandatory and internally generated from crypto/rand on every Encrypt128/256/512 call. The caller cannot reuse nonces by design. ∎
-
-## Proof 11: Ambiguity Dominance Threshold
+## Proof 9: Ambiguity Dominance Threshold
 
 **Definition (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and container of P pixels, the number of observation-consistent configurations exceeds 2^k for P > P_threshold.
 
@@ -429,7 +378,7 @@ P > k / 5.807
 
 For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The MinPixels formula now guarantees ambiguity dominance at minimum container in all modes: Encrypt/Stream (P=196, no CCA) uses MinPixels = ⌈keyBits / log₂(56)⌉ which guarantees 56^P > 2^keyBits; Auth (P=400, CCA possible) uses MinPixelsAuth = ⌈keyBits / log₂(7)⌉ which guarantees 7^P > 2^keyBits. ∎
 
-## Proof 12: Guaranteed CSPRNG Residue (No Perfect Fill)
+## Proof 10: Guaranteed CSPRNG Residue (No Perfect Fill)
 
 **Theorem.** With container dimensions (side+1) × (side+1) where side = ⌈√(max(dataPixels, MinPixels))⌉, the container capacity strictly exceeds the maximum payload for any plaintext size. CSPRNG fill bytes are always present in the data bit positions after embedding.
 
@@ -481,3 +430,60 @@ Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot
 | 64 MB | 3,103 | 43,449 bytes |
 
 The CSPRNG residue grows with data size: larger containers have proportionally more guaranteed fill. This is a structural property of the `side++` construction and does not depend on the hash function, key size, or plaintext content.
+
+---
+
+## Additional Theorems
+
+The following theorems are well-known properties included for completeness. They are not numbered in the scientific paper.
+
+## MAC-Inside-Encrypt Composition
+
+**Theorem.** `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` with MAC over full capacity (COBS + null + fill) is designed to prevent CCA spatial patterns and false null-terminator attacks (given a secure MAC function).
+
+**Proof.**
+
+**Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload)` where `payload = [COBS data][0x00][crypto/rand fill]`.
+
+Under CCA, flipping any bit:
+- **COBS data bit** → payload changes → MAC(modified) ≠ tag → reject
+- **Null terminator bit** → payload changes → MAC(modified) ≠ tag → reject
+- **Fill byte bit** → payload changes → MAC(modified) ≠ tag → reject
+- **MAC tag bit** → tag changes → tag ≠ MAC(payload) → reject
+- **Noise bit** → payload unchanged → MAC(payload) = tag → accept
+
+Every data bit position produces "reject." Only noise bits produce "accept." The response pattern is uniform across all pixels: 87.5% reject, 12.5% accept. No spatial pattern distinguishes COBS from fill regions.
+
+**Part B: False null-terminator prevention.** MAC is verified BEFORE null-terminator search in DecryptAuthenticated128/256/512:
+
+```
+1. Decrypt128/256/512 entire capacity → decoded[]
+2. Verify: MAC(decoded[:payloadLen]) == decoded[payloadLen:]
+3. ONLY IF MAC passes: search for null terminator in decoded[:payloadLen]
+```
+
+Any bit modification (including creating a false 0x00) fails MAC verification at step 2. Step 3 is never reached with tampered data. ∎
+
+## Nonce Uniqueness
+
+**Theorem.** With 128-bit nonces from crypto/rand, the birthday collision probability reaches ~50% at 2^64 messages and remains practically safe for up to ~2^48 messages (collision probability ~2^{-33}). A nonce collision affects only the colliding pair.
+
+**Proof.** By the birthday paradox, the probability of at least one collision among n nonces drawn uniformly from {0,1}^128:
+
+```
+P(collision) ≈ 1 - e^(-n²/2^129) ≈ n²/2^129
+```
+
+For n = 2^64: P ≈ 2^128 / 2^129 = 1/2.
+
+For n = 2^32 (4 billion messages): P ≈ 2^64 / 2^129 = 2^(-65) ≈ negligible.
+
+**Impact of collision:** If nonce N is reused with the same seeds:
+- Same noiseSeed + N → identical noise positions for both messages
+- Same dataSeed + N → identical rotation and XOR masks
+- Same startSeed + N → identical start pixel
+- Different crypto/rand containers (generated independently)
+
+The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time pad at the bit level). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
+
+**Mitigation:** The nonce is mandatory and internally generated from crypto/rand on every Encrypt128/256/512 call. The caller cannot reuse nonces by design. ∎
