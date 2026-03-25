@@ -99,9 +99,16 @@ func (s *Seed512) Bits() int {
 	return len(s.Components) * 64
 }
 
-// MinPixels returns minimum pixel count for information-theoretic security under the random-container model.
+// MinPixels returns minimum pixel count ensuring encoding ambiguity (56^P)
+// exceeds key space (2^keyBits). Formula: ceil(keyBits / log2(56)).
 func (s *Seed512) MinPixels() int {
-	return (s.Bits() + Channels - 2) / (Channels - 1)
+	return (s.Bits()*minPixelsScale + minPixelsDivisor56 - 1) / minPixelsDivisor56
+}
+
+// MinPixelsAuth returns minimum pixel count ensuring encoding ambiguity (7^P)
+// exceeds key space (2^keyBits) even under CCA. Formula: ceil(keyBits / log2(7)).
+func (s *Seed512) MinPixelsAuth() int {
+	return (s.Bits()*minPixelsScale + minPixelsDivisor7 - 1) / minPixelsDivisor7
 }
 
 // MinSide returns minimum square container side length.

@@ -37,6 +37,38 @@ const (
 	DataConfigBits = DataRotationBits + DataBitsPerPixel // 59 — rotation + per-bit XOR
 )
 
+// minPixelsDivisor56 and minPixelsDivisor7 are scaled integer divisors for
+// ceil(keyBits / log2(56)) and ceil(keyBits / log2(7)) respectively.
+// log2(56) ≈ 5.8074, log2(7) ≈ 2.8074. Scaled by 10000 for integer arithmetic.
+const (
+	minPixelsDivisor56 = 58074 // log2(56) * 10000, rounded up
+	minPixelsDivisor7  = 28074 // log2(7) * 10000, rounded up
+	minPixelsScale     = 10000
+)
+
+// calcContainerSize computes square container dimensions from payload and minimum pixel counts.
+func calcContainerSize(payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (width, height int) {
+	needed := payloadCOBSLen + 1 // +1 for null terminator
+	pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
+
+	minPx := minPxNoise
+	if minPxData > minPx {
+		minPx = minPxData
+	}
+	if minPxStart > minPx {
+		minPx = minPxStart
+	}
+	if pixels < minPx {
+		pixels = minPx
+	}
+
+	side := 1
+	for side*side < pixels {
+		side++
+	}
+	return side, side
+}
+
 // minParallelPixels is the threshold for parallel processing.
 // Below this, goroutine overhead exceeds the benefit.
 const minParallelPixels = 256

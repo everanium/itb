@@ -28,7 +28,7 @@ func EncryptAuthenticated512(noiseSeed, dataSeed, startSeed *Seed512, data []byt
 
 	encoded := cobsEncode(data)
 
-	width, height := containerSize512(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
+	width, height := containerSizeAuth512(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
 	totalPixels := width * height
 	capacity := (totalPixels * DataBitsPerPixel) / 8
 

@@ -395,6 +395,35 @@ func TestMaxDataSize64MB(t *testing.T) {
 	}
 }
 
+func TestMinPixelsAmbiguityDominance(t *testing.T) {
+	// Verify MinPixels (56^P) and MinPixelsAuth (7^P) exceed key space
+	for _, bits := range []int{512, 1024, 2048} {
+		ns, _, _ := makeTripleSeed128(bits, sipHash128)
+
+		mp := ns.MinPixels()
+		mpa := ns.MinPixelsAuth()
+
+		// 56^MinPixels > 2^bits: MinPixels * log2(56) > bits
+		ambiguity56 := float64(mp) * 5.8074
+		if ambiguity56 <= float64(bits) {
+			t.Errorf("MinPixels(%d) = %d: 56^P = 2^%.0f does NOT exceed 2^%d", bits, mp, ambiguity56, bits)
+		}
+
+		// 7^MinPixelsAuth > 2^bits: MinPixelsAuth * log2(7) > bits
+		ambiguity7 := float64(mpa) * 2.8074
+		if ambiguity7 <= float64(bits) {
+			t.Errorf("MinPixelsAuth(%d) = %d: 7^P = 2^%.0f does NOT exceed 2^%d", bits, mpa, ambiguity7, bits)
+		}
+
+		// Auth must be larger than regular
+		if mpa <= mp {
+			t.Errorf("MinPixelsAuth(%d) = %d should be > MinPixels(%d) = %d", bits, mpa, bits, mp)
+		}
+
+		t.Logf("%d-bit: MinPixels=%d (56^P=2^%.0f), MinPixelsAuth=%d (7^P=2^%.0f)", bits, mp, ambiguity56, mpa, ambiguity7)
+	}
+}
+
 func TestSetMaxWorkers(t *testing.T) {
 	SetMaxWorkers(4)
 	if got := GetMaxWorkers(); got != 4 {

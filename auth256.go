@@ -33,7 +33,7 @@ func EncryptAuthenticated256(noiseSeed, dataSeed, startSeed *Seed256, data []byt
 
 	encoded := cobsEncode(data)
 
-	width, height := containerSize256(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
+	width, height := containerSizeAuth256(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
 	totalPixels := width * height
 	capacity := (totalPixels * DataBitsPerPixel) / 8
 

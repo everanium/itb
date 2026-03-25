@@ -124,8 +124,13 @@
 //     independent, register-only, and unobservable.
 //
 //   - Information-theoretic barrier of 2^(8P) where P = pixel count.
-//     Minimum container sized so barrier > key space: 2^1352 for 1024-bit
-//     key (169 pixels), far beyond the Landauer limit of ~2^306.
+//     Minimum container sized so encoding ambiguity exceeds key space:
+//     [MinPixels] = ceil(keyBits / log2(56)) for Encrypt/Decrypt/Stream
+//     (56^P > 2^keyBits); [MinPixelsAuth] = ceil(keyBits / log2(7)) for
+//     authenticated variants (7^P > 2^keyBits, CCA-resistant).
+//     At 1024-bit: MinPixels=177, MinPixelsAuth=365.
+//     Noise barrier at P=177: 2^(8×196) = 2^1568 (after square rounding),
+//     far beyond the Landauer limit of ~2^306.
 //
 // # Quick Start
 //

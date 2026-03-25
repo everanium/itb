@@ -8,27 +8,17 @@ import (
 )
 
 // containerSize128 calculates RGBWYOPA container dimensions for given payload (128-bit variant).
-// Uses max(noiseSeed, dataSeed, startSeed) MinPixels to ensure all seeds are fully utilized.
+// Uses max(noiseSeed, dataSeed, startSeed) MinPixels (56^P ambiguity dominance).
 func containerSize128(noiseSeed, dataSeed, startSeed *Seed128, payloadCOBSLen int) (width, height int) {
-	needed := payloadCOBSLen + 1 // +1 for null terminator
-	pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
+	return calcContainerSize(payloadCOBSLen,
+		noiseSeed.MinPixels(), dataSeed.MinPixels(), startSeed.MinPixels())
+}
 
-	minPx := noiseSeed.MinPixels()
-	if dp := dataSeed.MinPixels(); dp > minPx {
-		minPx = dp
-	}
-	if sp := startSeed.MinPixels(); sp > minPx {
-		minPx = sp
-	}
-	if pixels < minPx {
-		pixels = minPx
-	}
-
-	side := 1
-	for side*side < pixels {
-		side++
-	}
-	return side, side
+// containerSizeAuth128 calculates container dimensions for authenticated encryption.
+// Uses MinPixelsAuth (7^P ambiguity dominance — CCA-resistant).
+func containerSizeAuth128(noiseSeed, dataSeed, startSeed *Seed128, payloadCOBSLen int) (width, height int) {
+	return calcContainerSize(payloadCOBSLen,
+		noiseSeed.MinPixelsAuth(), dataSeed.MinPixelsAuth(), startSeed.MinPixelsAuth())
 }
 
 // process128 is the triple-seed encode/decode engine (128-bit variant).
