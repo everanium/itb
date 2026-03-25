@@ -26,7 +26,9 @@
 
 - **Known-Plaintext Resistance (under passive observation).** Even with fully known plaintext, the attacker cannot derive hash outputs because original container pixel values are unknown (crypto/rand, never transmitted). Attack degrades to brute-force regardless of hash function.
 
-These barrier properties hold fully under Core ITB and MAC + Silent Drop (no oracle). Under MAC + Reveal, noiseSeed config is leaked via CCA (noise absorption bypassed), but dataSeed remains fully protected (encoding ambiguity intact).
+- **Plausible Deniability.** Decryption with any seed always produces output — there is no structural difference between correct and incorrect decryption. Wrong seeds produce random-looking bytes indistinguishable from valid plaintext without external context. The number of plausible decryptions equals the key space — every seed is a valid candidate. This is a property of the encoding architecture, not of the encryption: data is embedded into a random container, and extraction always succeeds regardless of seed correctness. Classical brute-force and Grover both face an astronomical number of candidates with no efficient way to distinguish the real one (Core ITB / MAC + Silent Drop).
+
+These barrier properties hold fully under Core ITB and MAC + Silent Drop (no oracle). Under MAC + Reveal, noiseSeed config is leaked via CCA (noise absorption bypassed), but dataSeed remains fully protected (encoding ambiguity intact). Plausible deniability is preserved in all three modes — even with CCA, decoding with a wrong dataSeed still produces output (garbage indistinguishable from valid plaintext), and the MAC tag encrypted inside the container makes MAC verification failure indistinguishable from "no MAC present" or "wrong seed entirely."
 
 - **Chosen-Plaintext Resistance.** Attacker can encrypt with their own seed and study their own configuration map. Knowledge of one seed's map provides zero information about any other seed's map, assuming independently generated seeds.
 
