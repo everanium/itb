@@ -471,12 +471,16 @@ The output format is identical across all three hash width variants.
 |---|---|
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
-| Oracle-free deniability | Yes |
-| Hash function requirement | PRF required; barrier hardens PRF |
-| Known-plaintext resistance | Under passive observation |
+| Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
+| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA) |
+| Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
+| Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop; MAC + Reveal has CCA oracle limited to noise positions |
+| Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
-| Nonce reuse protection | 128-bit per-message nonce |
+| Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal |
 | Noise barrier (min container) | 2^1352 (1024-bit) to 2^2592 (2048-bit) |
+| Hash function requirement | PRF required; barrier hardens PRF |
+| Nonce reuse protection | 128-bit per-message nonce |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 
 ## Integrity (MAC-Inside-Encrypt)

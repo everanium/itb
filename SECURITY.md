@@ -245,10 +245,14 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 |---|---|
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); O(P) full decryption per candidate (all modes) |
-| Oracle-free deniability | ✓ (structural) |
+| Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
+| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA) |
+| Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
+| Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop (no oracle); MAC + Reveal has CCA oracle but limited to noise positions |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
 | Information-theoretic barrier* | dataSeed 100% protected under the random-container model |
+| Noise absorption* | ✓ Core ITB / MAC + Silent Drop (CSPRNG noise bit at unknown position; bypassed by CCA in MAC + Reveal) |
 | Noise barrier (min container) | 2^1352 (1024-bit) to 2^2592 (2048-bit) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
