@@ -6,6 +6,34 @@
 
 ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that achieves key sizes up to 2048 bits through chained hashing of independent key components. The random container creates an information-theoretic barrier between the construction's internal state and the observer, providing known-plaintext resistance under passive observation in the random-container model. PRF-grade hash functions are required. The barrier architecturally hardens the PRF by making hash output unobservable — an approach not previously formalized in symmetric cryptography. To my knowledge, no published symmetric cipher construction makes the primitive output architecturally unobservable.
 
+## Encoding Ambiguity Scale
+
+The barrier's encoding ambiguity grows exponentially with data size. Unlike traditional ciphers where more plaintext provides more constraints for the attacker (reducing key uncertainty), ITB inverts this relationship: each additional pixel adds 7 (CCA) or 56 (no CCA) unverifiable candidates, increasing attacker uncertainty.
+
+**MAC + Reveal (worst-case CCA, 7 rotation candidates per pixel):**
+
+| Data size | P (pixels) | 7^P | vs 1024-bit key (exponent ratio) | vs Landauer ~2^306 |
+|---|---|---|---|---|
+| 1 KB | 169 | 2^474 | 0.5× | 1.6× |
+| 8 KB | 1,225 | 2^3,439 | 3.4× | 11× |
+| 64 KB | 9,409 | 2^26,414 | 25.8× | 86× |
+| 1 MB | 150,544 | 2^422,630 | 413× | 1,381× |
+| 64 MB | 9,628,609 | 2^27,030,923 | 26,397× | 88,336× |
+
+**Core ITB / MAC + Silent Drop (no CCA, 56 candidates per pixel):**
+
+| Data size | P (pixels) | 56^P | vs 2048-bit key (exponent ratio) |
+|---|---|---|---|
+| 1 KB | 169 | 2^981 | 0.5× |
+| 8 KB | 1,225 | 2^7,114 | 3.5× |
+| 64 KB | 9,409 | 2^54,641 | 26.7× |
+| 1 MB | 150,544 | 2^874,262 | 427× |
+| 64 MB | 9,628,609 | 2^55,916,750 | 27,303× |
+
+At minimum container (1 KB, P=169), encoding ambiguity is smaller than the key space — this is an edge case. At 8 KB (P=1,225), ambiguity already exceeds the key space by 3.4× in the exponent. At 64 KB, the ratio reaches 25.8×. For any realistic data volume, encoding ambiguity dwarfs the key space by orders of magnitude in the exponent.
+
+**Relationship to Shannon.** Shannon proved that perfect secrecy requires |key| ≥ |message|. This applies to models where keystream is XOR'd directly with plaintext — each additional plaintext bit constrains the key. In ITB, each additional pixel adds ambiguity rather than constraint. The key is shorter than the message (not perfect secrecy in Shannon's definition), but the number of indistinguishable interpretations grows exponentially with data size. At 64 KB, 2^26,414 equally valid configurations exceed any computationally feasible enumeration — classical, quantum, or any foreseeable model. This is a different class of security property: **ambiguity-based security**, where uncertainty grows with data size rather than shrinking. The formal relationship to Shannon's framework remains an open research question (see [§7 Research Directions](#7-research-directions)).
+
 ## 1. Construction
 
 ### 1.1 ChainHash
