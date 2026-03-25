@@ -259,6 +259,7 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Nonce | 128-bit per-message (mandatory) |
 | Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
+| Classical cryptanalytic techniques | Blocked: differential, linear, algebraic, slide, related-key, integral, boomerang, interpolation, cube — PRF output absorbed by random container, unobservable ([SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)) |
 | Quantum structural attacks | Conjectured mitigated (IT barrier is computation-model-independent; not independently verified) |
 | Grover oracle | Degraded: no oracle without MAC; with MAC-Inside each query requires full decryption O(P). Per-candidate O(P) cost applies to all modes |
 
