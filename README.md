@@ -341,6 +341,9 @@ func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 
 // 256-bit: HashFunc256 = func(data []byte, seed [4]uint64) [4]uint64
 // BLAKE3 keyed cached (PRF, SIMD) — see Optimized Hash Wrappers below
+
+// 512-bit: HashFunc512 = func(data []byte, seed [8]uint64) [8]uint64
+// BLAKE2b-512 keyed cached (PRF, native 512-bit) — see Optimized Hash Wrappers below
 ```
 
 ## Optimized Hash Wrappers
@@ -407,12 +410,48 @@ ds, _ := itb.NewSeed256(2048, makeBlake3Hash())
 ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
 ```
 
-### Performance: Naive vs Cached (1MB, i7-11700K)
+### BLAKE2b Keyed Cached (512-bit)
 
-| Hash | Naive | Cached | Speedup |
+BLAKE2b-512 has native 512-bit key and output — fewer ChainHash rounds (4 vs 8 for 256-bit), higher throughput.
+
+```go
+func makeBlake2bHash512() itb.HashFunc512 {
+    var key [64]byte
+    rand.Read(key[:])
+
+    return func(data []byte, seed [8]uint64) [8]uint64 {
+        var buf [84]byte // 64-byte key + 20-byte max data
+        copy(buf[:64], key[:])
+        copy(buf[64:], data)
+        for i := 0; i < 8; i++ {
+            off := 64 + i*8
+            if off+8 <= len(buf) {
+                v := binary.LittleEndian.Uint64(buf[off:])
+                binary.LittleEndian.PutUint64(buf[off:], v^seed[i])
+            }
+        }
+        digest := blake2b.Sum512(buf[:64+len(data)])
+        var result [8]uint64
+        for i := range result {
+            result[i] = binary.LittleEndian.Uint64(digest[i*8:])
+        }
+        return result
+    }
+}
+
+ns, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+```
+
+### Performance: Cached Encrypt (1MB, i7-11700K, 16 threads)
+
+| Hash | Width | Encrypt 1 MB | Encrypt 64 MB |
 |---|---|---|---|
-| AES-NI 128-bit | ~8 MB/s | ~122 MB/s | 15× |
-| BLAKE3 256-bit | ~2 MB/s | ~55 MB/s | 27× |
+| SipHash-2-4 | 128-bit | ~80 MB/s | ~148 MB/s |
+| AES-NI | 128-bit | ~24 MB/s | ~112 MB/s |
+| BLAKE2b-512 | 512-bit | ~20 MB/s | ~122 MB/s |
+| BLAKE3 | 256-bit | ~7 MB/s | ~58 MB/s |
 
 ## Key Size Selection
 
