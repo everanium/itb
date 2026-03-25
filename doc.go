@@ -121,7 +121,8 @@
 //   - Triple-seed isolation: CCA reveals noiseSeed config only (MAC + Reveal
 //     only) (noise positions), cache side-channel reveals startPixel only
 //     (pixel offset derived from startSeed). dataSeed config (rotation + XOR) is completely
-//     independent, register-only, and unobservable.
+//     independent, register-only, and unobservable. After CCA removes noise bits,
+//     guaranteed CSPRNG residue in data positions preserves ambiguity (Proof 12).
 //
 //   - Information-theoretic barrier of 2^(8P) where P = pixel count.
 //     Minimum container sized so encoding ambiguity exceeds key space:
@@ -129,7 +130,7 @@
 //     (56^P > 2^keyBits); [MinPixelsAuth] = ceil(keyBits / log2(7)) for
 //     authenticated variants (7^P > 2^keyBits, CCA-resistant).
 //     At 1024-bit: MinPixels=177, MinPixelsAuth=365.
-//     Noise barrier at P=177: 2^(8×196) = 2^1568 (after square rounding),
+//     Noise barrier at MinPixels=177 (P=196 after square rounding): 2^(8×196) = 2^1568,
 //     far beyond the Landauer limit of ~2^306.
 //
 // # Quick Start

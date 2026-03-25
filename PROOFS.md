@@ -222,40 +222,49 @@ The attacker cannot verify individual pixel rotations independently. The total c
 |{(r₁, r₂, ..., r_P) : rᵢ ∈ {0,...,6}}| = 7^P
 ```
 
-For P = 169 (minimum container, 1024-bit key): 7^169 ≈ 10^143 ≈ 2^474 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^143 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. The noise barrier (2^1352 for 169 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer limit. ∎
+For P = 196 (minimum Encrypt/Stream container, 1024-bit key): 7^196 ≈ 10^166 ≈ 2^550 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^166 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. For P = 400 (minimum Auth container): 7^400 ≈ 2^1123. The noise barrier (2^1568 for 196 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer limit. ∎
 
 ## Proof 5: Noise Barrier Bound
 
-**Theorem.** With Channels = 8 and MinPixels = ⌈keyBits / (Channels - 1)⌉, the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits.
+**Theorem.** With Channels = 8, MinPixels = ⌈keyBits / log₂(56)⌉ for Encrypt/Stream and MinPixelsAuth = ⌈keyBits / log₂(7)⌉ for Auth, the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits.
 
-**Proof.** For keyBits = 1024:
+**Proof.** For keyBits = 1024, Encrypt/Stream mode:
 
 ```
-MinPixels = ⌈1024 / 7⌉ = 147
+MinPixels = ⌈1024 / log₂(56)⌉ = ⌈1024 / 5.807⌉ = 177
 ```
 
-Square container: side = ⌈√147⌉ = 13, P = 169.
+Square container: side = ⌈√177⌉ = 14, P = 196.
 
 Noise barrier:
 ```
-2^(8 × 169) = 2^1352
+2^(8 × 196) = 2^1568
 ```
 
 Key space: 2^1024.
 
 ```
-1352 > 1024  ⟹  2^1352 > 2^1024  ✓
+1568 > 1024  ⟹  2^1568 > 2^1024  ✓
 ```
 
-The barrier strictly exceeds the key space by a factor of 2^328.
+The barrier strictly exceeds the key space by a factor of 2^544.
 
-**General:** For any keyBits and Channels = 8:
+For keyBits = 1024, Auth mode:
+
 ```
-P ≥ ⌈keyBits / 7⌉
-Barrier = 2^(8P) ≥ 2^(8 × ⌈keyBits/7⌉)
+MinPixelsAuth = ⌈1024 / log₂(7)⌉ = ⌈1024 / 2.807⌉ = 365
 ```
 
-Since 8/7 > 1, we have 8 × ⌈(keyBits+6)/7⌉ > keyBits for all keyBits ≥ 1. ∎
+Square container: side = ⌈√365⌉ = 20, P = 400.
+
+Noise barrier:
+```
+2^(8 × 400) = 2^3200
+```
+
+The barrier strictly exceeds the key space by a factor of 2^2176.
+
+**General:** For Encrypt/Stream, P ≥ ⌈keyBits / log₂(56)⌉. Since 8 / log₂(56) = 8 / 5.807 ≈ 1.378 > 1, we have 8P > keyBits. For Auth, P ≥ ⌈keyBits / log₂(7)⌉. Since 8 / log₂(7) = 8 / 2.807 ≈ 2.850 > 1, we have 8P > keyBits. ∎
 
 ## Proof 6: CCA Leak Upper Bound
 
@@ -418,4 +427,57 @@ P > k / 5.807
 | 1024-bit | P > 365 pixels (~2.5 KB) | P > 177 pixels (~1.2 KB) |
 | 2048-bit | P > 730 pixels (~5.0 KB) | P > 353 pixels (~2.4 KB) |
 
-For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The minimum container (P=169 for 1024-bit key) falls slightly below the CCA threshold (365), but exceeds the no-CCA threshold (177). ∎
+For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The MinPixels formula now guarantees ambiguity dominance at minimum container in all modes: Encrypt/Stream (P=196, no CCA) uses MinPixels = ⌈keyBits / log₂(56)⌉ which guarantees 56^P > 2^keyBits; Auth (P=400, CCA possible) uses MinPixelsAuth = ⌈keyBits / log₂(7)⌉ which guarantees 7^P > 2^keyBits. ∎
+
+## Proof 12: Guaranteed CSPRNG Residue (No Perfect Fill)
+
+**Theorem.** With container dimensions (side+1) × (side+1) where side = ⌈√(max(dataPixels, MinPixels))⌉, the container capacity strictly exceeds the maximum payload for any plaintext size. CSPRNG fill bytes are always present in the data bit positions after embedding.
+
+**Motivation.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container). The remaining 87.5% contains data bits: encrypted plaintext + COBS framing + CSPRNG fill. If the container were perfectly filled (zero CSPRNG fill), all data bits would carry known-structure content (COBS-encoded plaintext + null terminator). With CSPRNG fill present, a portion of the data bits carry random fill — indistinguishable from encrypted plaintext even after noise removal. This preserves information-theoretic ambiguity within the data bit positions.
+
+**Proof.** Let s = ⌈√P_min⌉ where P_min = max(dataPixels, MinPixels). The current container uses P = s² pixels. With the `side++` modification, P' = (s+1)².
+
+The maximum payload that produces side value s is bounded by the capacity of an s² container:
+
+```
+max_payload(s) ≤ s² × 7 bytes
+```
+
+(Since if payload required more than s² pixels, side would be s+1 or larger.)
+
+The capacity of the (s+1)² container:
+
+```
+capacity(s+1) = (s+1)² × 7 = (s² + 2s + 1) × 7 bytes
+```
+
+The guaranteed CSPRNG fill (gap between capacity and maximum payload):
+
+```
+gap = capacity(s+1) - max_payload(s)
+    ≥ (s² + 2s + 1) × 7 - s² × 7
+    = (2s + 1) × 7 bytes
+```
+
+Since s ≥ 1: gap ≥ 21 bytes. For practical values (s ≥ 14 at 1024-bit key): gap ≥ 203 bytes.
+
+**This gap is strictly positive for all s ≥ 1.** Perfect fill (gap = 0) is mathematically impossible. ∎
+
+**Consequence for CCA resistance.** After CCA removes noise bits, the attacker observes 7 data bits per channel. These data bits contain:
+
+1. Encrypted plaintext (COBS-encoded + null terminator)
+2. Encrypted CSPRNG fill (guaranteed present by this theorem)
+
+Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill — both are processed by the same ChainHash-derived configuration. The CSPRNG fill provides information-theoretic ambiguity **within the data bit positions**, independent of and in addition to the rotation barrier (7^P, [Proof 4](#proof-4-rotation-barrier)).
+
+**Guaranteed minimum CSPRNG fill by data size:**
+
+| Data size | Side (s) | Min fill = 7×(2s+1) |
+|---|---|---|
+| MinPixels 1024-bit | 14 | 203 bytes |
+| MinPixelsAuth 1024-bit | 20 | 287 bytes |
+| 16 KB | 49 | 693 bytes |
+| 1 MB | 388 | 5,439 bytes |
+| 64 MB | 3,103 | 43,449 bytes |
+
+The CSPRNG residue grows with data size: larger containers have proportionally more guaranteed fill. This is a structural property of the `side++` construction and does not depend on the hash function, key size, or plaintext content.

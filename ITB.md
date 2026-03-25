@@ -98,9 +98,13 @@ Under CCA (bit-flip with MAC reveal), the attacker learns noise positions — wh
 
 With CCA, the candidate count drops from 56 (8 noisePos × 7 rotation) to 7 (only rotation unknown). But 7 candidates do not help without invertible hash — the attacker cannot verify which of the 7 is correct without inverting ChainHash.
 
-CCA leak = 3/62 ≈ 4.8% of per-pixel configuration. CCA reveals no plaintext bits, no XOR masks, no start pixel. However, CCA eliminates noiseSeed from brute-force search: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1031 at 1024-bit) is still far beyond the Landauer limit (~2^306).
+**What the attacker gets after removing noise bits.** CCA lets the attacker strip noise bits and see 7 data bits per channel. But "clean encrypted data" is a misleading description. These data bits contain a mixture of encrypted plaintext (COBS-encoded) **and** encrypted CSPRNG fill — both encrypted identically by dataSeed (rotation + XOR). The container is always over-sized relative to the payload: the `side++` construction guarantees at least (2s+1)×7 bytes of CSPRNG fill (≥203 bytes at 1024-bit key). Perfect fill — zero CSPRNG bytes — is mathematically impossible ([Proof 12](PROOFS.md#proof-12-guaranteed-csprng-residue-no-perfect-fill)).
 
-See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md Section 4.1–4.5](SCIENCE.md#41-chosen-ciphertext-attack-and-mac-composition).
+This means CCA does not give the attacker a clean plaintext-only ciphertext. A portion of the data bits carry random CSPRNG fill that is indistinguishable from encrypted plaintext. The attacker does not know where the plaintext ends and the fill begins, does not know the fill content, and cannot separate one from the other without the correct dataSeed. The information-theoretic barrier is partially preserved within the data channel itself: ambiguity from CSPRNG residue persists even after noise removal.
+
+CCA leak = 3/62 ≈ 4.8% of per-pixel configuration. CCA reveals no plaintext bits, no XOR masks, no start pixel. However, CCA eliminates noiseSeed from brute-force search: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1033 at 1024-bit, P=400) is still far beyond the Landauer limit (~2^306).
+
+See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md Section 4.1–4.5](SCIENCE.md#41-chosen-ciphertext-attack-and-mac-composition), [Proof 12](PROOFS.md#proof-12-guaranteed-csprng-residue-no-perfect-fill).
 
 ## 9. startPixel: Not Transmitted, Not Recoverable
 
@@ -120,11 +124,11 @@ No. The barrier is intact. Here is why:
 
 **What the attacker computes:** the 56 candidates are not extracted from the observation. They are **calculated** from the combination of (known plaintext + observed byte + candidate config). This is arithmetic, not a barrier break. All 56 candidates are **equally consistent** with the observation — the attacker does not know which one is real.
 
-**Without hash inversion (PRF):** 56 candidates per pixel × P pixels = 56^P total combinations. For P = 169 (1024-bit key): 56^169 ≈ 2^981. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion impossible. The ambiguity is preserved.
+**Without hash inversion (PRF):** 56 candidates per pixel × P pixels = 56^P total combinations. For P = 196 (1024-bit key, Encrypt/Stream): 56^196 ≈ 2^1138. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion impossible. The ambiguity is preserved.
 
 **With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** the ambiguity. The barrier is not broken — ChainHash is inverted.
 
-The barrier absorbs the hash output through two mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. CCA (MAC + Reveal) can bypass mechanism (1) by revealing noise positions, but mechanism (2) remains intact through triple-seed isolation. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash function failure, not a barrier failure.
+The barrier absorbs the hash output through two independent mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. An additional structural property reinforces the barrier after CCA: (3) CSPRNG residue — guaranteed fill bytes encrypted by dataSeed within the data channel, indistinguishable from encrypted plaintext ([Proof 12](PROOFS.md#proof-12-guaranteed-csprng-residue-no-perfect-fill)). CCA (MAC + Reveal) can bypass mechanism (1) by revealing noise positions, but mechanism (2) and property (3) remain intact through triple-seed isolation. The noise bits are removed, but the data bits still contain CSPRNG fill that the attacker cannot separate from plaintext — the information-theoretic barrier is never fully eliminated. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash function failure, not a barrier failure.
 
 ## 11. Quantum Resistance
 
@@ -134,12 +138,12 @@ This is the fundamental difference between ITB and traditional ciphers. AES and 
 
 Specific quantum algorithms and why they are conjectured mitigated:
 
-- **Grover** — requires a verification oracle. Core ITB and MAC + Silent Drop have no external oracle; the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random), while startSeed contributes only P startPixel candidates (enumerated, not brute-forced). Grover complexity: √P × 2^keyBits — at 1024-bit keys (P=169): ~2^1028. With MAC + Reveal: CCA reveals noisePos but not startPixel (independent startSeed). Search: dataSeed (2^keyBits) × P startPixel candidates. Grover: √(P × 2^keyBits) = √P × 2^(keyBits/2), each oracle query costs O(P) — full container decryption. At 1024-bit key: ~2^515 iterations × O(P) each.
+- **Grover** — requires a verification oracle. Core ITB and MAC + Silent Drop have no external oracle; the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random), while startSeed contributes only P startPixel candidates (enumerated, not brute-forced). Grover complexity: √P × 2^keyBits — at 1024-bit keys (P=196): ~2^1028. With MAC + Reveal: CCA reveals noisePos but not startPixel (independent startSeed). Search: dataSeed (2^keyBits) × P startPixel candidates. Grover: √(P × 2^keyBits) = √P × 2^(keyBits/2), each oracle query costs O(P) — full container decryption. At 1024-bit key (P=400): ~2^516 iterations × O(P) each.
 - **Simon** — requires periodic function structure. ITB's config map is aperiodic: each message has a unique 128-bit nonce, creating a completely different configuration.
 - **BHT** — requires observable hash collisions. In Core ITB and MAC + Silent Drop: the random container absorbs collisions — two identical hash outputs on different pixels produce different observed bytes (different random container values). After CCA (MAC + Reveal): collisions remain unobservable through encoding ambiguity (7 rotation candidates per pixel — attacker cannot identify which candidates collide).
 - **Q2 superposition queries** — requires oracle that accepts quantum superposition inputs. ITB's MAC oracle is inherently classical: it receives concrete bytes over a network and returns accept/reject. Superposition queries are physically impossible.
 
-At 1024-bit key (P=169): Core/Silent Drop ~2^2055 classical, ~2^1028 Grover. MAC + Reveal: ~2^1031 classical, ~2^515 Grover. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
+At 1024-bit key: Core/Silent Drop (P=196) ~2^2056 classical, ~2^1028 Grover. MAC + Reveal (P=400): ~2^1033 classical, ~2^516 Grover. Both are far beyond any foreseeable quantum capability. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
 
@@ -149,7 +153,7 @@ In AES or ChaCha20, testing one candidate key takes ~1 nanosecond — a single b
 
 | Data size | P (pixels) | Time per attempt | vs AES |
 |---|---|---|---|
-| 1 KB | 169 | ~27 µs | ~27,000× slower |
+| 1 KB | 196 | ~31 µs | ~31,000× slower |
 | 4 MB | 602,176 | ~96 ms | ~96 million× slower |
 | 16 MB | 2,408,704 | ~385 ms | ~385 million× slower |
 | 64 MB | 9,628,609 | ~1.5 s | ~1.5 billion× slower |
@@ -168,6 +172,6 @@ The barrier and PRF hash function protect each other:
 
 - **Barrier protects the PRF:** hash collisions are the only theoretical weakness of a non-invertible hash function — two different inputs producing the same output. In a traditional cipher, collisions may be exploitable because the attacker observes the output directly. In ITB, collisions are invisible: two pixels with the same dataHash have different original container bytes (CSPRNG), so the observed bytes are different. The collision is absorbed.
 
-Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation.
+Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation. Additionally, even after noise removal, the data channel retains CSPRNG fill bytes encrypted by dataSeed — perfect fill is impossible ([Proof 12](PROOFS.md#proof-12-guaranteed-csprng-residue-no-perfect-fill)), so information-theoretic ambiguity persists within the data bits themselves.
 
 See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).

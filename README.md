@@ -6,9 +6,9 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-A parameterized symmetric cipher construction library for Go that achieves known-plaintext resistance under passive observation through an information-theoretic barrier.
+A parameterized symmetric cipher construction library for Go that achieves known-plaintext resistance under passive observation through two independent barrier mechanisms: **noise absorption** (CSPRNG random container makes hash output unrecoverable) and **encoding ambiguity** (secret rotation creates 7^P unverifiable configurations surviving CCA). Triple-seed isolation ensures compromise of any domain provides zero information about the others.
 
-**The barrier works strictly by information theory. No computational power can extract what does not exist in the observation.** The information-theoretic barrier absorbs the output of a cryptographic PRF hash function, making hash output unobservable to a passive observer. The construction creates an ocean of ambiguity: every observation is equally consistent with exponentially many configurations, none distinguishable from the real one.
+**Ambiguity-based security**: attacker uncertainty grows exponentially with data size, inverting Shannon's classical relationship. Above ~1.2 KB (no CCA) or ~2.5 KB (CCA) for 1024-bit keys, encoding ambiguity exceeds the key space. At 64 KB: 2^26,414 equally valid configurations — no computational model can enumerate them. Noise barrier and key brute-force are independent additional layers.
 
 **[How the barrier works — accessible explanation](ITB.md)**
 
@@ -445,13 +445,16 @@ ss512, _ := itb.NewSeed512(2048, blake2bHash512)
 
 ## Minimum Container Size
 
-Information-theoretic security under the random-container model requires `ceil(keyBits / 7)` pixels,
-ensuring the noise barrier (2^(8P)) strictly exceeds the key space:
+Minimum container size depends on the API mode. Encrypt/Stream uses `ceil(keyBits / log₂(56))` pixels,
+ensuring encoding ambiguity (56^P) exceeds the key space. Auth uses `ceil(keyBits / log₂(7))` pixels,
+ensuring CCA ambiguity (7^P) exceeds the key space:
 
-| Key Size | Min Pixels → Container | Noise Barrier |
-|---|---|---|
-| 1024 bits | 147 → 169 (13×13) | 2^1352 ≥ 2^1024 |
-| 2048 bits | 293 → 324 (18×18) | 2^2592 ≥ 2^2048 |
+| Key Size | Mode | Min Pixels → Container | Noise Barrier |
+|---|---|---|---|
+| 1024 bits | Encrypt/Stream | 177 → 196 (14×14) | 2^1568 ≥ 2^1024 |
+| 1024 bits | Auth | 365 → 400 (20×20) | 2^3200 ≥ 2^1024 |
+| 2048 bits | Encrypt/Stream | 353 → 361 (19×19) | 2^2888 ≥ 2^2048 |
+| 2048 bits | Auth | 730 → 784 (28×28) | 2^6272 ≥ 2^2048 |
 
 ## Output Format
 
@@ -472,13 +475,13 @@ The output format is identical across all three hash width variants.
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
-| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA) |
+| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue adds independent ambiguity in data positions, [Proof 12](PROOFS.md#proof-12-guaranteed-csprng-residue-no-perfect-fill)) |
 | Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
 | Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop; MAC + Reveal has CCA oracle limited to noise positions |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
-| Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal |
-| Noise barrier (min container) | 2^1352 (1024-bit) to 2^2592 (2048-bit) |
+| Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives, [Proof 12](PROOFS.md#proof-12-guaranteed-csprng-residue-no-perfect-fill)) |
+| Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Hash function requirement | PRF required; barrier hardens PRF |
 | Nonce reuse protection | 128-bit per-message nonce |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
