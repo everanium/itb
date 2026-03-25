@@ -1,6 +1,6 @@
 # ITB: Formal Proofs
 
-> **Disclaimer.** These proofs are self-analysis by the author and have not been independently verified. ITB is an experimental construction. The information-theoretic barrier is a software-level property — it provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, cache timing). No warranty is provided.
+> **Disclaimer.** These proofs are self-analysis by the author and have not been independently verified. ITB is an experimental construction. The information-theoretic barrier is a software-level property, reinforced by two independent mechanisms: noise absorption (CSPRNG) and encoding ambiguity (rotation from triple-seed isolation). It provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, cache timing). No warranty is provided.
 
 Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cipher construction.
 

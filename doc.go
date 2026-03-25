@@ -5,8 +5,10 @@
 // # Security Notice
 //
 // ITB is an experimental construction without peer review or formal certification.
-// The information-theoretic barrier is a SOFTWARE-LEVEL property — it provides
-// NO guarantees against hardware-level attacks including: power analysis (DPA/SPA),
+// The information-theoretic barrier is a SOFTWARE-LEVEL property, reinforced by
+// two independent mechanisms: noise absorption (CSPRNG) and encoding ambiguity
+// (rotation from triple-seed isolation). It provides NO guarantees against
+// hardware-level attacks including: power analysis (DPA/SPA),
 // microarchitectural side-channels (Spectre, Meltdown, Rowhammer, cache timing),
 // undiscovered side-channel leakages, or CSPRNG implementation weaknesses.
 //

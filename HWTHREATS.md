@@ -1,6 +1,6 @@
 # ITB: Hardware-Level Threat Analysis
 
-> **Disclaimer.** This analysis is self-assessment by the author and has not been independently verified. ITB does not claim resistance to any hardware-level attack. The information-theoretic barrier is a **software-level property** — it provides no guarantees against hardware-level attacks. The observations below describe architectural properties of the construction's data path, not proven security guarantees. PRF-grade hash functions are required. No warranty is provided.
+> **Disclaimer.** This analysis is self-assessment by the author and has not been independently verified. ITB does not claim resistance to any hardware-level attack. The information-theoretic barrier is a **software-level property**, reinforced by two independent mechanisms: noise absorption (CSPRNG) and encoding ambiguity (rotation from triple-seed isolation). It provides no guarantees against hardware-level attacks. The observations below describe architectural properties of the construction's data path, not proven security guarantees. PRF-grade hash functions are required. No warranty is provided.
 
 ## Scope
 
