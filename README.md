@@ -235,10 +235,15 @@ The library provides three parallel API sets for different hash output widths. A
 
 Each variant also has authenticated versions (`EncryptAuthenticated128`/`DecryptAuthenticated128`, `EncryptAuthenticated256`/`DecryptAuthenticated256`, `EncryptAuthenticated512`/`DecryptAuthenticated512`) and streaming versions (`EncryptStream128`/`DecryptStream128`, `EncryptStream256`/`DecryptStream256`, `EncryptStream512`/`DecryptStream512`).
 
-### 128-bit Example (SipHash-2-4)
+## Optimized Hash Wrappers
+
+Hash functions like AES and BLAKE3 have expensive key setup. Creating a new cipher/hasher on every call wastes time on initialization. The **cached wrapper** pattern fixes this: create the cipher once with a fixed random key, mix seed components into the data instead. Each of the three seeds must get its own wrapper instance (independent key).
+
+### SipHash-2-4 (128-bit)
+
+SipHash is a pure function — no key setup, no caching needed. Optimal for 128-bit width.
 
 ```go
-// HashFunc128: func(data []byte, seed0, seed1 uint64) (lo, hi uint64)
 func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
     return siphash.Hash128(seed0, seed1, data)
 }
@@ -251,35 +256,104 @@ encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
 decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
 ```
 
-### 256-bit Example (BLAKE3)
+### AES-NI Cached (128-bit, stdlib)
 
 ```go
-// HashFunc256: func(data []byte, seed [4]uint64) [4]uint64
-func blake3Hash256(data []byte, seed [4]uint64) [4]uint64 {
-    var key [32]byte
-    binary.LittleEndian.PutUint64(key[0:], seed[0])
-    binary.LittleEndian.PutUint64(key[8:], seed[1])
-    binary.LittleEndian.PutUint64(key[16:], seed[2])
-    binary.LittleEndian.PutUint64(key[24:], seed[3])
-    h, _ := blake3.NewKeyed(key[:])
-    h.Write(data)
-    var out [32]byte
-    h.Sum(out[:0])
-    var result [4]uint64
-    for i := range result {
-        result[i] = binary.LittleEndian.Uint64(out[i*8:])
+func makeAESHash() itb.HashFunc128 {
+    var key [16]byte
+    rand.Read(key[:])
+    block, _ := aes.NewCipher(key[:])
+
+    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+        var b [16]byte
+        copy(b[:], data)
+        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
+        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
+        block.Encrypt(b[:], b[:])
+        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
+        block.Encrypt(b[:], b[:])
+        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
     }
-    return result
 }
-// Note: creates a new hasher per call. See "Optimized Hash Wrappers" below for production use.
 
-ns, _ := itb.NewSeed256(2048, blake3Hash256)  // 2048-bit key, 32 components, 8 rounds
-ds, _ := itb.NewSeed256(2048, blake3Hash256)
-ss, _ := itb.NewSeed256(2048, blake3Hash256)
-
-encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
-decrypted, _ := itb.Decrypt256(ns, ds, ss, encrypted)
+ns, _ := itb.NewSeed128(1024, makeAESHash())
+ds, _ := itb.NewSeed128(1024, makeAESHash())  // independent key per seed
+ss, _ := itb.NewSeed128(1024, makeAESHash())
 ```
+
+### BLAKE3 Keyed Cached (256-bit)
+
+```go
+func makeBlake3Hash() itb.HashFunc256 {
+    var key [32]byte
+    rand.Read(key[:])
+    template, _ := blake3.NewKeyed(key[:])
+
+    return func(data []byte, seed [4]uint64) [4]uint64 {
+        h := template.Clone()  // Clone is thread-safe, Reset is not
+        var mixed [32]byte
+        copy(mixed[:], data)
+        for i := 0; i < 4; i++ {
+            off := i * 8
+            binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
+        }
+        h.Write(mixed[:len(data)])
+        var buf [32]byte
+        h.Sum(buf[:0])
+        return [4]uint64{
+            binary.LittleEndian.Uint64(buf[0:]),  binary.LittleEndian.Uint64(buf[8:]),
+            binary.LittleEndian.Uint64(buf[16:]), binary.LittleEndian.Uint64(buf[24:]),
+        }
+    }
+}
+
+ns, _ := itb.NewSeed256(2048, makeBlake3Hash())
+ds, _ := itb.NewSeed256(2048, makeBlake3Hash())
+ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
+```
+
+### BLAKE2b-512 Keyed Cached (512-bit)
+
+BLAKE2b-512 has native 512-bit key and output — fewer ChainHash rounds (4 vs 8 for 256-bit), higher throughput.
+
+```go
+func makeBlake2bHash512() itb.HashFunc512 {
+    var key [64]byte
+    rand.Read(key[:])
+
+    return func(data []byte, seed [8]uint64) [8]uint64 {
+        var buf [84]byte // 64-byte key + 20-byte max data
+        copy(buf[:64], key[:])
+        copy(buf[64:], data)
+        for i := 0; i < 8; i++ {
+            off := 64 + i*8
+            if off+8 <= len(buf) {
+                v := binary.LittleEndian.Uint64(buf[off:])
+                binary.LittleEndian.PutUint64(buf[off:], v^seed[i])
+            }
+        }
+        digest := blake2b.Sum512(buf[:64+len(data)])
+        var result [8]uint64
+        for i := range result {
+            result[i] = binary.LittleEndian.Uint64(digest[i*8:])
+        }
+        return result
+    }
+}
+
+ns, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+```
+
+### Performance: Encrypt (i7-11700K, 16 threads)
+
+| Hash | Width | Encrypt 1 MB | Encrypt 64 MB |
+|---|---|---|---|
+| SipHash-2-4 | 128-bit | ~80 MB/s | ~148 MB/s |
+| AES-NI | 128-bit | ~24 MB/s | ~112 MB/s |
+| BLAKE2b-512 | 512-bit | ~20 MB/s | ~122 MB/s |
+| BLAKE3 | 256-bit | ~7 MB/s | ~58 MB/s |
 
 ### Parallelism Control
 
@@ -332,126 +406,15 @@ All 8 components are consumed in every case — no key material is skipped. A 25
 
 ```go
 // 128-bit: HashFunc128 = func(data []byte, seed0, seed1 uint64) (lo, hi uint64)
-// SipHash-2-4 (PRF)
-func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-    return siphash.Hash128(seed0, seed1, data)
-}
-
-// AES-NI cached (PRF, hardware-accelerated) — see Optimized Hash Wrappers below
+// SipHash-2-4 (PRF) — see Optimized Hash Wrappers above
+// AES-NI cached (PRF, hardware-accelerated) — see Optimized Hash Wrappers above
 
 // 256-bit: HashFunc256 = func(data []byte, seed [4]uint64) [4]uint64
-// BLAKE3 keyed cached (PRF, SIMD) — see Optimized Hash Wrappers below
+// BLAKE3 keyed cached (PRF, SIMD) — see Optimized Hash Wrappers above
 
 // 512-bit: HashFunc512 = func(data []byte, seed [8]uint64) [8]uint64
-// BLAKE2b-512 keyed cached (PRF, native 512-bit) — see Optimized Hash Wrappers below
+// BLAKE2b-512 keyed cached (PRF, native 512-bit) — see Optimized Hash Wrappers above
 ```
-
-## Optimized Hash Wrappers
-
-Hash functions like AES and BLAKE3 have expensive key setup. Creating a new cipher/hasher on every call (naive approach) wastes ~90% of time on initialization. The **cached wrapper** pattern fixes this: create the cipher once with a fixed random key, mix seed components into the data instead.
-
-Each of the three seeds must get its own wrapper instance (independent key).
-
-### AES-NI Cached (128-bit, stdlib)
-
-```go
-func makeAESHash() itb.HashFunc128 {
-    var key [16]byte
-    rand.Read(key[:])
-    block, _ := aes.NewCipher(key[:])
-
-    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-        var b [16]byte
-        // XOR seed into first 16 bytes of data
-        copy(b[:], data)
-        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
-        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
-        block.Encrypt(b[:], b[:])
-        // Process remaining bytes (data is 20 bytes: 4 counter + 16 nonce)
-        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
-        block.Encrypt(b[:], b[:])
-        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
-    }
-}
-
-ns, _ := itb.NewSeed128(1024, makeAESHash())
-ds, _ := itb.NewSeed128(1024, makeAESHash())  // independent key per seed
-ss, _ := itb.NewSeed128(1024, makeAESHash())
-```
-
-### BLAKE3 Keyed Cached (256-bit)
-
-```go
-func makeBlake3Hash() itb.HashFunc256 {
-    var key [32]byte
-    rand.Read(key[:])
-    template, _ := blake3.NewKeyed(key[:])
-
-    return func(data []byte, seed [4]uint64) [4]uint64 {
-        h := template.Clone()  // Clone is thread-safe, Reset is not
-        var mixed [32]byte
-        copy(mixed[:], data)
-        for i := 0; i < 4; i++ {
-            off := i * 8
-            binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
-        }
-        h.Write(mixed[:len(data)])
-        var buf [32]byte
-        h.Sum(buf[:0])
-        return [4]uint64{
-            binary.LittleEndian.Uint64(buf[0:]),  binary.LittleEndian.Uint64(buf[8:]),
-            binary.LittleEndian.Uint64(buf[16:]), binary.LittleEndian.Uint64(buf[24:]),
-        }
-    }
-}
-
-ns, _ := itb.NewSeed256(2048, makeBlake3Hash())
-ds, _ := itb.NewSeed256(2048, makeBlake3Hash())
-ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
-```
-
-### BLAKE2b Keyed Cached (512-bit)
-
-BLAKE2b-512 has native 512-bit key and output — fewer ChainHash rounds (4 vs 8 for 256-bit), higher throughput.
-
-```go
-func makeBlake2bHash512() itb.HashFunc512 {
-    var key [64]byte
-    rand.Read(key[:])
-
-    return func(data []byte, seed [8]uint64) [8]uint64 {
-        var buf [84]byte // 64-byte key + 20-byte max data
-        copy(buf[:64], key[:])
-        copy(buf[64:], data)
-        for i := 0; i < 8; i++ {
-            off := 64 + i*8
-            if off+8 <= len(buf) {
-                v := binary.LittleEndian.Uint64(buf[off:])
-                binary.LittleEndian.PutUint64(buf[off:], v^seed[i])
-            }
-        }
-        digest := blake2b.Sum512(buf[:64+len(data)])
-        var result [8]uint64
-        for i := range result {
-            result[i] = binary.LittleEndian.Uint64(digest[i*8:])
-        }
-        return result
-    }
-}
-
-ns, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-```
-
-### Performance: Cached Encrypt (1MB, i7-11700K, 16 threads)
-
-| Hash | Width | Encrypt 1 MB | Encrypt 64 MB |
-|---|---|---|---|
-| SipHash-2-4 | 128-bit | ~80 MB/s | ~148 MB/s |
-| AES-NI | 128-bit | ~24 MB/s | ~112 MB/s |
-| BLAKE2b-512 | 512-bit | ~20 MB/s | ~122 MB/s |
-| BLAKE3 | 256-bit | ~7 MB/s | ~58 MB/s |
 
 ## Key Size Selection
 
