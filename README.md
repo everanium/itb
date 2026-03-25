@@ -131,8 +131,8 @@ ITB scales linearly with core count. Per-pixel parallelism across goroutines uti
 | Hash | Width | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|
 | **SipHash-2-4** | 128 | 255 | 327 | 362 | 452 | 579 | 709 |
-| **ChaCha20** | 256 | 199 | 257 | 309 | 302 | 408 | 536 |
 | **BLAKE2b-512** | 512 | 229 | 297 | 331 | 357 | 484 | 601 |
+| **ChaCha20** | 256 | 199 | 257 | 309 | 302 | 408 | 536 |
 
 ChainHash is not the bottleneck on high-core-count CPUs — crypto/rand container generation (~813 MB/s on this CPU) becomes the limiting factor for encrypt. Decrypt does not require crypto/rand and scales further.
 
