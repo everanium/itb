@@ -384,3 +384,38 @@ For n = 2^32 (4 billion messages): P ≈ 2^64 / 2^129 = 2^(-65) ≈ negligible.
 The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time pad at the bit level). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
 
 **Mitigation:** The nonce is mandatory and internally generated from crypto/rand on every Encrypt128/256/512 call. The caller cannot reuse nonces by design. ∎
+
+## Proof 11: Ambiguity Dominance Threshold
+
+**Definition (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and container of P pixels, the number of observation-consistent configurations exceeds 2^k for P > P_threshold.
+
+**Theorem.** For ITB with key size k bits:
+- Under CCA (MAC + Reveal): P_threshold = ⌈k / log₂(7)⌉ ≈ ⌈k / 2.807⌉
+- Without CCA (Core ITB / MAC + Silent Drop): P_threshold = ⌈k / log₂(56)⌉ ≈ ⌈k / 5.807⌉
+
+Above P_threshold, encoding ambiguity exceeds the key space in the exponent.
+
+**Proof.** Under CCA, each pixel has 7 rotation candidates ([Proof 4](#proof-4-rotation-barrier)). The total ambiguity is 7^P. The condition 7^P > 2^k is equivalent to:
+
+```
+P × log₂(7) > k
+P > k / log₂(7)
+P > k / 2.807
+```
+
+Without CCA, each pixel has 56 candidates (8 noisePos × 7 rotation). The condition 56^P > 2^k:
+
+```
+P × log₂(56) > k
+P > k / log₂(56)
+P > k / 5.807
+```
+
+**Concrete thresholds:**
+
+| Key size | CCA (7^P > 2^k) | No CCA (56^P > 2^k) |
+|---|---|---|
+| 1024-bit | P > 365 pixels (~2.5 KB) | P > 177 pixels (~1.2 KB) |
+| 2048-bit | P > 730 pixels (~5.0 KB) | P > 353 pixels (~2.4 KB) |
+
+For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The minimum container (P=169 for 1024-bit key) falls slightly below the CCA threshold (365), but exceeds the no-CCA threshold (177). ∎

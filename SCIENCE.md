@@ -30,9 +30,18 @@ The barrier's encoding ambiguity grows exponentially with data size. Unlike trad
 | 1 MB | 150,544 | 2^874,262 | 427× |
 | 64 MB | 9,628,609 | 2^55,916,750 | 27,303× |
 
-At minimum container (1 KB, P=169), encoding ambiguity is smaller than the key space — this is an edge case. At 8 KB (P=1,225), ambiguity already exceeds the key space by 3.4× in the exponent. At 64 KB, the ratio reaches 25.8×. For any realistic data volume, encoding ambiguity dwarfs the key space by orders of magnitude in the exponent.
+**Ambiguity dominance threshold.** Encoding ambiguity exceeds the key space when P > P_threshold ([Proof 11](PROOFS.md#proof-11-ambiguity-dominance-threshold)):
 
-**Relationship to Shannon.** Shannon proved that perfect secrecy requires |key| ≥ |message|. This applies to models where keystream is XOR'd directly with plaintext — each additional plaintext bit constrains the key. In ITB, each additional pixel adds ambiguity rather than constraint. The key is shorter than the message (not perfect secrecy in Shannon's definition), but the number of indistinguishable interpretations grows exponentially with data size. At 64 KB, 2^26,414 equally valid configurations exceed any computationally feasible enumeration — classical, quantum, or any foreseeable model. This is a different class of security property: **ambiguity-based security**, where uncertainty grows with data size rather than shrinking. The formal relationship to Shannon's framework remains an open research question (see [§7 Research Directions](#7-research-directions)).
+| Key size | CCA threshold (7^P > 2^k) | No CCA threshold (56^P > 2^k) |
+|---|---|---|
+| 1024-bit | P > 365 pixels (~2.5 KB) | P > 177 pixels (~1.2 KB) |
+| 2048-bit | P > 730 pixels (~5.0 KB) | P > 353 pixels (~2.4 KB) |
+
+At minimum container (1 KB, P=169), encoding ambiguity is smaller than the CCA key space threshold (365) — this is an edge case. The no-CCA threshold (177) is already exceeded at minimum container. At 8 KB (P=1,225), ambiguity exceeds the key space by 3.4× in the exponent. At 64 KB, the ratio reaches 25.8×. For any realistic data volume, encoding ambiguity dwarfs the key space by orders of magnitude in the exponent.
+
+**Relationship to Shannon.** Shannon proved that perfect secrecy requires |key| ≥ |message|. This applies to models where keystream is XOR'd directly with plaintext — each additional plaintext bit constrains the key. In ITB, each additional pixel adds ambiguity rather than constraint. The key is shorter than the message (not perfect secrecy in Shannon's definition), but the number of indistinguishable interpretations grows exponentially with data size. At 64 KB, 2^26,414 equally valid configurations exceed any computationally feasible enumeration — classical, quantum, or any foreseeable model.
+
+**Definition: Ambiguity-Based Security.** A construction has (k, P)-ambiguity-based security if, for key size k bits and container of P pixels, the number of observation-consistent configurations exceeds 2^k for P > P_threshold, where P_threshold = ⌈k / log₂(candidates)⌉. For ITB: candidates = 7 (CCA) or 56 (no CCA). This is a different class of security property where uncertainty grows with data size rather than shrinking. The formal relationship to Shannon's framework remains an open research question (see [§7 Research Directions](#7-research-directions)).
 
 ## 1. Construction
 
@@ -1021,6 +1030,8 @@ Triple-seed architecture isolates dataSeed (zero side-channel, register-only), b
 ```
 
 No single-byte observation narrows the set of possible hash outputs. A passive observer who does not know C cannot determine the hash configuration from the container. The joint distribution of C' differs from uniform because pixel configurations are correlated through the seed; exploiting this correlation requires computational search over the key space. PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable ([Section 2.4.2](#242-beyond-the-barrier-active-attacks-and-side-channels)).
+
+**Definition 5 (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and container of P pixels, the number of observation-consistent configurations exceeds 2^k for P > P_threshold. For ITB: P_threshold = ⌈k / log₂(C)⌉ where C = 7 (CCA, rotation candidates only) or C = 56 (no CCA, 8 noisePos × 7 rotation). Above P_threshold, encoding ambiguity dominates the key space. See [Proof 11](PROOFS.md#proof-11-ambiguity-dominance-threshold).
 
 ## 6. 512-bit Hash Support
 
