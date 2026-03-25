@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"runtime"
 	"sync"
 )
 
@@ -57,16 +56,7 @@ func process128(noiseSeed, dataSeed, startSeed *Seed128, nonce []byte, container
 	// writes to non-overlapping pixel regions in container[]. Decode
 	// accumulates all channels into a uint64 and writes 7 complete bytes
 	// per pixel — no byte-boundary overlap between adjacent pixels.
-	numWorkers := 1
-	if dataPixels >= minParallelPixels {
-		numWorkers = runtime.NumCPU()
-		if numWorkers > dataPixels/64 {
-			numWorkers = dataPixels / 64
-		}
-		if numWorkers < 1 {
-			numWorkers = 1
-		}
-	}
+	numWorkers := effectiveWorkers(dataPixels)
 
 	if numWorkers == 1 {
 		processChunk128(noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, encode)

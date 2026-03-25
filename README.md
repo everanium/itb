@@ -281,6 +281,14 @@ encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
 decrypted, _ := itb.Decrypt256(ns, ds, ss, encrypted)
 ```
 
+### Parallelism Control
+
+```go
+itb.SetMaxWorkers(4) // limit to 4 CPU cores for pixel processing
+```
+
+By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Valid range: 1–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
+
 ## Hash Function Selection
 
 ITB accepts pluggable hash functions at three widths. Requirements: the hash must process all input bytes with non-invertible, non-affine, avalanche mixing that survives the ChainHash XOR-chain. PRF required; the barrier hardens PRF by making hash output unobservable.

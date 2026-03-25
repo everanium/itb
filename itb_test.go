@@ -395,13 +395,125 @@ func TestMaxDataSize64MB(t *testing.T) {
 	}
 }
 
-func TestMaxDataSizeExceeded(t *testing.T) {
-	ns, ds, ss := makeTripleSeed128(1024, sipHash128)
-	data := make([]byte, 64<<20+1) // 64 MB + 1 byte
-	_, err := Encrypt128(ns, ds, ss, data)
-	if err == nil {
-		t.Fatal("expected error for data exceeding 64 MB limit")
+func TestSetMaxWorkers(t *testing.T) {
+	SetMaxWorkers(4)
+	if got := GetMaxWorkers(); got != 4 {
+		t.Fatalf("GetMaxWorkers() = %d, want 4", got)
 	}
+
+	// Clamp to 1
+	SetMaxWorkers(0)
+	if got := GetMaxWorkers(); got != 1 {
+		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(0) = %d, want 1", got)
+	}
+	SetMaxWorkers(-5)
+	if got := GetMaxWorkers(); got != 1 {
+		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(-5) = %d, want 1", got)
+	}
+
+	// Clamp to 256
+	SetMaxWorkers(1000)
+	if got := GetMaxWorkers(); got != 256 {
+		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(1000) = %d, want 256", got)
+	}
+
+	// Reset
+	SetMaxWorkers(1)
+}
+
+func TestMaxDataSizeExceeded(t *testing.T) {
+	t.Run("Encrypt128", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+		if _, err := Encrypt128(ns, ds, ss, make([]byte, 64<<20+1)); err == nil {
+			t.Fatal("expected error for 64 MB + 1 byte")
+		}
+		if _, err := Encrypt128(ns, ds, ss, make([]byte, 80<<20)); err == nil {
+			t.Fatal("expected error for 80 MB")
+		}
+		if _, err := Encrypt128(ns, ds, ss, make([]byte, 16<<20)); err != nil {
+			t.Fatalf("16 MB should succeed: %v", err)
+		}
+	})
+
+	t.Run("Encrypt256", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed256(512, makeBlake2bHash256())
+		if _, err := Encrypt256(ns, ds, ss, make([]byte, 64<<20+1)); err == nil {
+			t.Fatal("expected error for 64 MB + 1 byte")
+		}
+		if _, err := Encrypt256(ns, ds, ss, make([]byte, 80<<20)); err == nil {
+			t.Fatal("expected error for 80 MB")
+		}
+		if _, err := Encrypt256(ns, ds, ss, make([]byte, 16<<20)); err != nil {
+			t.Fatalf("16 MB should succeed: %v", err)
+		}
+	})
+
+	t.Run("Encrypt512", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed512(512, makeBlake2bHash512())
+		if _, err := Encrypt512(ns, ds, ss, make([]byte, 64<<20+1)); err == nil {
+			t.Fatal("expected error for 64 MB + 1 byte")
+		}
+		if _, err := Encrypt512(ns, ds, ss, make([]byte, 80<<20)); err == nil {
+			t.Fatal("expected error for 80 MB")
+		}
+		if _, err := Encrypt512(ns, ds, ss, make([]byte, 16<<20)); err != nil {
+			t.Fatalf("16 MB should succeed: %v", err)
+		}
+	})
+
+	t.Run("EncryptAuthenticated128", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+		if _, err := EncryptAuthenticated128(ns, ds, ss, make([]byte, 64<<20+1), simpleMACFunc); err == nil {
+			t.Fatal("expected error for 64 MB + 1 byte")
+		}
+		if _, err := EncryptAuthenticated128(ns, ds, ss, make([]byte, 80<<20), simpleMACFunc); err == nil {
+			t.Fatal("expected error for 80 MB")
+		}
+	})
+
+	t.Run("EncryptAuthenticated256", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed256(512, makeBlake2bHash256())
+		if _, err := EncryptAuthenticated256(ns, ds, ss, make([]byte, 64<<20+1), simpleMACFunc); err == nil {
+			t.Fatal("expected error for 64 MB + 1 byte")
+		}
+		if _, err := EncryptAuthenticated256(ns, ds, ss, make([]byte, 80<<20), simpleMACFunc); err == nil {
+			t.Fatal("expected error for 80 MB")
+		}
+	})
+
+	t.Run("EncryptAuthenticated512", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed512(512, makeBlake2bHash512())
+		if _, err := EncryptAuthenticated512(ns, ds, ss, make([]byte, 64<<20+1), simpleMACFunc); err == nil {
+			t.Fatal("expected error for 64 MB + 1 byte")
+		}
+		if _, err := EncryptAuthenticated512(ns, ds, ss, make([]byte, 80<<20), simpleMACFunc); err == nil {
+			t.Fatal("expected error for 80 MB")
+		}
+	})
+
+	t.Run("EncryptStream128", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+		err := EncryptStream128(ns, ds, ss, make([]byte, 1024), 80<<20, func([]byte) error { return nil })
+		if err == nil {
+			t.Fatal("expected error for chunk size 80 MB")
+		}
+	})
+
+	t.Run("EncryptStream256", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed256(512, makeBlake2bHash256())
+		err := EncryptStream256(ns, ds, ss, make([]byte, 1024), 80<<20, func([]byte) error { return nil })
+		if err == nil {
+			t.Fatal("expected error for chunk size 80 MB")
+		}
+	})
+
+	t.Run("EncryptStream512", func(t *testing.T) {
+		ns, ds, ss := makeTripleSeed512(512, makeBlake2bHash512())
+		err := EncryptStream512(ns, ds, ss, make([]byte, 1024), 80<<20, func([]byte) error { return nil })
+		if err == nil {
+			t.Fatal("expected error for chunk size 80 MB")
+		}
+	})
 }
 
 func TestDecryptRejectOversizeContainer(t *testing.T) {
@@ -1947,6 +2059,27 @@ func BenchmarkBLAKE3_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeB
 func BenchmarkBLAKE3_Decrypt_4MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 4<<20) }
 func BenchmarkBLAKE3_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 16<<20) }
 func BenchmarkBLAKE3_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20) }
+
+func BenchmarkBLAKE3_Encrypt_64MB_1Worker(b *testing.B) {
+	SetMaxWorkers(1)
+	defer SetMaxWorkers(1) // reset to avoid affecting other benchmarks
+	benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
+}
+func BenchmarkBLAKE3_Encrypt_64MB_8Workers(b *testing.B) {
+	SetMaxWorkers(8)
+	defer SetMaxWorkers(1)
+	benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
+}
+func BenchmarkBLAKE3_Decrypt_64MB_1Worker(b *testing.B) {
+	SetMaxWorkers(1)
+	defer SetMaxWorkers(1)
+	benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
+}
+func BenchmarkBLAKE3_Decrypt_64MB_8Workers(b *testing.B) {
+	SetMaxWorkers(8)
+	defer SetMaxWorkers(1)
+	benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
+}
 
 func BenchmarkBLAKE3_KeySize512(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<10) }
 func BenchmarkBLAKE3_KeySize2048(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 64<<10) }

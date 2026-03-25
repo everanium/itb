@@ -188,4 +188,14 @@
 // Streaming variants are available for all three widths:
 // [EncryptStream128], [EncryptStream256], [EncryptStream512],
 // [DecryptStream128], [DecryptStream256], [DecryptStream512].
+//
+// # Parallelism Control
+//
+// Pixel processing is parallelized across available CPU cores by default.
+// To limit CPU usage (e.g., on shared servers), use [SetMaxWorkers]:
+//
+//	itb.SetMaxWorkers(4) // use at most 4 cores
+//
+// Valid range: 1 to 256. The setting is global and thread-safe (atomic).
+// Query the current limit with [GetMaxWorkers].
 package itb

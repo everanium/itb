@@ -1,5 +1,10 @@
 package itb
 
+import (
+	"runtime"
+	"sync/atomic"
+)
+
 const headerSize = NonceSize + 4 // nonce(16) + width(2) + height(2)
 
 const (
@@ -53,3 +58,46 @@ const maxDataSize = 64 << 20
 // Covers maxDataSize + COBS overhead + square rounding (~9.6M pixels for 64 MB).
 // Well below uint32 max (4.3B) with 429× headroom.
 const maxTotalPixels = 10_000_000
+
+// maxWorkers controls the maximum number of parallel workers for pixel processing.
+// 0 means use runtime.NumCPU() (default). Valid range: 1-256.
+var maxWorkers atomic.Int32
+
+// SetMaxWorkers sets the maximum number of parallel workers for pixel processing.
+// Valid range: 1 to 256. Values outside this range are clamped.
+// This affects all subsequent Encrypt/Decrypt calls across all hash widths.
+func SetMaxWorkers(n int) {
+	if n < 1 {
+		n = 1
+	}
+	if n > 256 {
+		n = 256
+	}
+	maxWorkers.Store(int32(n))
+}
+
+// GetMaxWorkers returns the current maximum worker limit.
+// Returns 0 if no limit is set (default: uses all available CPUs).
+func GetMaxWorkers() int {
+	return int(maxWorkers.Load())
+}
+
+// effectiveWorkers returns the number of workers to use for parallel processing.
+func effectiveWorkers(dataPixels int) int {
+	if dataPixels < minParallelPixels {
+		return 1
+	}
+	numWorkers := runtime.NumCPU()
+	if limit := int(maxWorkers.Load()); limit > 0 {
+		if numWorkers > limit {
+			numWorkers = limit
+		}
+	}
+	if numWorkers > dataPixels/64 {
+		numWorkers = dataPixels / 64
+	}
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+	return numWorkers
+}

@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"runtime"
 	"sync"
 )
 
@@ -43,16 +42,7 @@ func process512(noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container
 		dataPixels = maxPx
 	}
 
-	numWorkers := 1
-	if dataPixels >= minParallelPixels {
-		numWorkers = runtime.NumCPU()
-		if numWorkers > dataPixels/64 {
-			numWorkers = dataPixels / 64
-		}
-		if numWorkers < 1 {
-			numWorkers = 1
-		}
-	}
+	numWorkers := effectiveWorkers(dataPixels)
 
 	if numWorkers == 1 {
 		processChunk512(noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, encode)
