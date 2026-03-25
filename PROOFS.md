@@ -20,7 +20,7 @@ Proofs are stated in terms of generic ChainHash output. They apply equally to al
 
 ## Proof 1: Information-Theoretic Barrier
 
-**Theorem.** For a random container C generated from crypto/rand and any hash function H satisfying Definition 2, the distribution of observed pixel values after embedding is independent of the hash output.
+**Theorem.** For a random container C generated from crypto/rand and any hash function H satisfying [Definition 2](SCIENCE.md#5-formal-definitions), the distribution of observed pixel values after embedding is independent of the hash output.
 
 **Setup.** Consider one channel byte of pixel p. The original value C[p,ch] ~ Uniform(0, 255). The hash output determines: noise position noisePos (0-7), XOR mask channelXOR (7 bits), and rotation r (0-6).
 
@@ -52,7 +52,7 @@ P(C'[p,ch] = v | h) = P(noise bit at noisePos matches v's bit at noisePos) = 1/2
 
 This holds for any hash function H. The hash output h is consumed by modification of a random value and is not reconstructible from the observation. ∎
 
-Note: this proof covers passive observation (Core ITB, MAC + Silent Drop). Under MAC + Reveal, noiseSeed config (3 bits/pixel) is additionally leaked via CCA oracle interaction — see Proof 6.
+Note: this proof covers passive observation (Core ITB, MAC + Silent Drop). Under MAC + Reveal, noiseSeed config (3 bits/pixel) is additionally leaked via CCA oracle interaction — see [Proof 6](#proof-6-cca-leak-upper-bound).
 
 ## Proof 2: Per-Bit XOR KPA Resistance
 
@@ -222,7 +222,7 @@ The attacker cannot verify individual pixel rotations independently. The total c
 |{(r₁, r₂, ..., r_P) : rᵢ ∈ {0,...,6}}| = 7^P
 ```
 
-For P = 169 (minimum container, 1024-bit key): 7^169 ≈ 10^143 ≈ 2^474 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^143 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. The noise barrier (2^1352 for 169 pixels, Proof 5) independently exceeds the Landauer limit. ∎
+For P = 169 (minimum container, 1024-bit key): 7^169 ≈ 10^143 ≈ 2^474 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^143 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. The noise barrier (2^1352 for 169 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer limit. ∎
 
 ## Proof 5: Noise Barrier Bound
 
@@ -275,8 +275,8 @@ This proof applies to the MAC + Reveal mode only. Under Core ITB and MAC + Silen
 
 **Step 5: No further information.** After classification, the attacker knows noisePos for each pixel (3 bits from noiseSeed). The 7 data bit positions are known, but their VALUES are protected by per-bit XOR:
 - Each data bit = `rotate(plaintext_bit ⊕ xor_mask_bit, r)`
-- XOR mask and rotation from dataSeed (independent of noiseSeed, Proof 3)
-- Per Proof 2: any observed value is consistent with any plaintext under some (m, r)
+- XOR mask and rotation from dataSeed (independent of noiseSeed, [Proof 3](#proof-3-triple-seed-isolation))
+- Per [Proof 2](#proof-2-per-bit-xor-kpa-resistance): any observed value is consistent with any plaintext under some (m, r)
 
 Multi-bit flips yield a single binary response — no amplification beyond single-bit classification.
 
@@ -290,7 +290,7 @@ Multi-bit flips yield a single binary response — no amplification beyond singl
 - dataRotation = dataHash % 7 → some rotations more frequent
 - channelXOR bits → some XOR values more probable
 
-**Unobservability:** The attacker cannot observe dataSeed's hash output (Proof 3: triple-seed isolation). The bias manifests only in the encrypted data within the container:
+**Unobservability:** The attacker cannot observe dataSeed's hash output ([Proof 3](#proof-3-triple-seed-isolation): triple-seed isolation). The bias manifests only in the encrypted data within the container:
 
 ```
 container_data = insert(rotate(plaintext ⊕ biased_xor, biased_r), noise, noisePos)
@@ -301,7 +301,7 @@ Without knowing rotation r, the attacker observes rotated-and-XOR'd data. The ro
 - The attacker sees rotate(x, r) where r varies per pixel
 - Without r, the mapping plaintext → observed bits is 7-to-1 ambiguous per pixel
 
-**With non-invertible hash:** Even if the attacker detects statistical patterns in observed bits, they cannot verify candidate rotations (Proof 4). The bias provides a Bayesian prior (some rotations more likely), but without verification, this prior cannot be confirmed or exploited:
+**With non-invertible hash:** Even if the attacker detects statistical patterns in observed bits, they cannot verify candidate rotations ([Proof 4](#proof-4-rotation-barrier)). The bias provides a Bayesian prior (some rotations more likely), but without verification, this prior cannot be confirmed or exploited:
 
 ```
 P(r = r' | observed) ≈ P(r = r') × P(observed | r = r') / P(observed)

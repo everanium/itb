@@ -148,7 +148,7 @@ The construction's key space is 2^(64n) where n = number of components. Effectiv
 
 **Single-call bottleneck.** After processing components s_0 through s_{k-1}, the intermediate state h_{k-1} is a single output of H — w bits wide. If two different partial keys produce the same h_{k-1}, remaining components cannot distinguish them. This limits a single ChainHash evaluation to w bits of effective key discrimination, where w is the hash output width. For ChainHash128: w = 128. For ChainHash256: w = 256. For ChainHash512: w = 512.
 
-**Multi-call recovery.** ITB evaluates ChainHash independently for each pixel with different data inputs (counter || nonce). Collisions that exist for one data input do not persist across different inputs when the hash uses non-linear mixing (addition, multiplication), because XOR-of-sums is not translation-invariant. For all hash widths, only 64 bits of the output are extracted per pixel for config (Section 1.1.3). With P pixels, the collective constraint is P × 64 bits, which exceeds the key space at minimum container size (see Section 1.1.3 table).
+**Multi-call recovery.** ITB evaluates ChainHash independently for each pixel with different data inputs (counter || nonce). Collisions that exist for one data input do not persist across different inputs when the hash uses non-linear mixing (addition, multiplication), because XOR-of-sums is not translation-invariant. For all hash widths, only 64 bits of the output are extracted per pixel for config ([Section 1.1.3](#113-per-pixel-config-extraction-and-effective-security)). With P pixels, the collective constraint is P × 64 bits, which exceeds the key space at minimum container size (see [Section 1.1.3](#113-per-pixel-config-extraction-and-effective-security) table).
 
 For example, with a 128-bit hash and 1024-bit key (16 components): a single ChainHash128 call provides 128 bits of discrimination. But the minimum container has 147 pixels = 147 independent calls, providing 147 × 64 = 9408 constraint bits >> 1024 key bits. The full key space is utilized in all variants.
 
@@ -196,7 +196,7 @@ ITB includes no verification metadata:
 
 ### 2.4 Information-Theoretic Barrier and Hash Requirements
 
-The random container creates an information-theoretic barrier between the construction's internal state and the observer. This barrier is the construction's central design idea. PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable (Section 2.10, Definition 2).
+The random container creates an information-theoretic barrier between the construction's internal state and the observer. This barrier is the construction's central design idea. PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable ([Section 2.10](SCIENCE.md#210-hash-function-requirements-analysis), [Definition 2](#5-formal-definitions)).
 
 #### 2.4.1 The Barrier: Passive Observation
 
@@ -228,11 +228,11 @@ The original container byte C[p,ch] is uniformly random and never transmitted to
 
 The barrier ensures that hash output is unobservable under passive attacks (the *random-container model*: the container is generated from a CSPRNG and the original pixel values are never transmitted to the attacker). However, active attacks (CCA) and side channels can bypass the barrier by obtaining partial information about the hash configuration through non-observational means:
 
-- **CCA with MAC-reveal** (Section 4.1–4.5): bit-flip oracle reveals noise positions (noiseSeed config, 3 bits/pixel).
+- **CCA with MAC-reveal** ([Sections 4.1–4.5](#41-chosen-ciphertext-attack-and-mac-composition)): bit-flip oracle reveals noise positions (noiseSeed config, 3 bits/pixel).
 - **Local CCA simulation**: attacker running on the same CPU can simulate CCA without a MAC oracle by encrypting with candidate seeds and comparing container patterns.
-- **Cache side-channel** (Section 4, startPixel limitation): memory access patterns leak startPixel.
+- **Cache side-channel** ([Section 4](#4-limitations), startPixel limitation): memory access patterns leak startPixel.
 - **KPA + invertible hash**: with known plaintext and an invertible hash, the attacker tries all startPixel positions (P candidates) × 56 candidate configurations per pixel (8 noisePos × 7 rotation), computes candidate dataHash for each, inverts ChainHash → recovers dataSeed in ~56 × P hash inversions (P startPixel candidates × 56 configs, one reference pixel per candidate, verified by forward evaluation on a second pixel). This attack requires neither CCA nor startPixel knowledge. No architectural layer (noise, rotation, byte-splitting, startPixel) prevents this attack — all are defence-in-depth for non-invertible hash. Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier.
-- **MITM backward step** (Section 2.2): meet-in-the-middle on ChainHash requires inverting the hash at each chain position.
+- **MITM backward step** ([Section 2.2](#22-brute-force-resistance)): meet-in-the-middle on ChainHash requires inverting the hash at each chain position.
 
 These attack vectors are blocked by PRF properties of the hash function, not by the barrier:
 
@@ -365,9 +365,9 @@ Under KPA, the attacker can compute 56 candidate dataHash values per pixel (8 no
 
 **The barrier is intact (both mechanisms).**
 
-Theorem 1 (noise absorption): P(C'[p,ch] = v | h) = 1/2 for any hash output h. This holds under KPA because the noise bit originates from the CSPRNG-generated container, independent of both the hash output and the plaintext. The observation probability is 1/2 regardless of which candidate is the true hash output. This is a property of information theory, not a computational assumption.
+[Theorem 1](PROOFS.md#proof-1-information-theoretic-barrier) (noise absorption): P(C'[p,ch] = v | h) = 1/2 for any hash output h. This holds under KPA because the noise bit originates from the CSPRNG-generated container, independent of both the hash output and the plaintext. The observation probability is 1/2 regardless of which candidate is the true hash output. This is a property of information theory, not a computational assumption.
 
-Theorem 4 (encoding ambiguity): with unknown rotation r ∈ {0,...,6} from dataSeed, each pixel has 7 indistinguishable rotation candidates. Even if CCA reveals noisePos (bypassing mechanism 1), 7 candidates per pixel remain — creating 7^P unverifiable combinations across the container. This is a structural property of the encoding (7 data bits in a 7-position rotation), not of the hash function.
+[Theorem 4](PROOFS.md#proof-4-rotation-barrier) (encoding ambiguity): with unknown rotation r ∈ {0,...,6} from dataSeed, each pixel has 7 indistinguishable rotation candidates. Even if CCA reveals noisePos (bypassing mechanism 1), 7 candidates per pixel remain — creating 7^P unverifiable combinations across the container. This is a structural property of the encoding (7 data bits in a 7-position rotation), not of the hash function.
 
 **Candidates are ambiguity, not leakage.** The 56 candidates are not extracted from the observation — they are computed from the combination of (known plaintext + observed byte + candidate config). All 56 are equally consistent with the observation. The attacker does not learn which candidate is real. The barrier guarantees that the observation cannot distinguish between them.
 
@@ -424,7 +424,7 @@ Hash non-invertible → barrier blocks PRF observation  → advanced analysis im
 
 There is no intermediate state where advanced analysis is useful but full inversion is not. To apply differential, linear, algebraic, or any structural analysis, the attacker must observe the PRF output — the barrier prevents this. To bypass the barrier, the attacker must invert ChainHash — but inversion yields the seed directly, making analysis redundant.
 
-In both cases, **the barrier itself is never broken**. The barrier consists of two mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous (Theorem 1); (2) encoding ambiguity — 7 rotation candidates per pixel from dataSeed create 7^P unverifiable combinations (Theorem 4). CCA can bypass mechanism (1) by revealing noise positions, but mechanism (2) remains intact through triple-seed isolation. Hash inversion bypasses both mechanisms via a side path (hash function property), but does not break them — the observation still contains the ambiguity.
+In both cases, **the barrier itself is never broken**. The barrier consists of two mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous ([Theorem 1](PROOFS.md#proof-1-information-theoretic-barrier)); (2) encoding ambiguity — 7 rotation candidates per pixel from dataSeed create 7^P unverifiable combinations ([Theorem 4](PROOFS.md#proof-4-rotation-barrier)). CCA can bypass mechanism (1) by revealing noise positions, but mechanism (2) remains intact through triple-seed isolation. Hash inversion bypasses both mechanisms via a side path (hash function property), but does not break them — the observation still contains the ambiguity.
 
 With an invertible hash, the attacker recovers the seed through invertibility — not through the observation. The barrier still absorbs the hash output (PRF or non-PRF); the attacker bypasses it via a side path that does not depend on the observation. The failure is in the hash function, not in the barrier. The barrier creates a clean dichotomy: either the hash is invertible (seed recovered via inversion, barrier intact) or it is not (protected by the barrier, analysis impossible).
 
@@ -717,14 +717,14 @@ The author does not claim that ITB is the most secure symmetric cipher construct
 
 **Areas for reviewer scrutiny:**
 
-- Whether PRF is sufficient (Definition 2), or whether additional properties are needed for attack models not considered.
+- Whether PRF is sufficient ([Definition 2](#5-formal-definitions)), or whether additional properties are needed for attack models not considered.
 - Whether the triple-seed isolation provides the claimed independence under all side-channel combinations.
-- Whether the CCA leak analysis (Sections 4.1–4.7) correctly bounds the information extractable from the MAC oracle.
-- Whether the ChainHash construction achieves the claimed effective key sizes through multi-call recovery (Section 1.1.3, 2.1).
+- Whether the CCA leak analysis ([Sections 4.1–4.7](#41-chosen-ciphertext-attack-and-mac-composition)) correctly bounds the information extractable from the MAC oracle.
+- Whether the ChainHash construction achieves the claimed effective key sizes through multi-call recovery ([Section 1.1.3](#113-per-pixel-config-extraction-and-effective-security), [2.1](#21-key-space)).
 
 ### 4.1 Chosen-Ciphertext Attack and MAC Composition
 
-The MAC-Inside-Encrypt pattern (see "No authentication" in Section 4) preserves deniability but does not provide CCA2 (adaptive chosen-ciphertext) resistance on its own. If the recipient reveals the MAC verification result (accept/reject) to an untrusted party, the response acts as an oracle:
+The MAC-Inside-Encrypt pattern (see "No authentication" in [Section 4](#4-limitations)) preserves deniability but does not provide CCA2 (adaptive chosen-ciphertext) resistance on its own. If the recipient reveals the MAC verification result (accept/reject) to an untrusted party, the response acts as an oracle:
 
 1. Attacker flips bit N in the container.
 2. Recipient decrypts, checks MAC, responds accept or reject.
@@ -811,7 +811,7 @@ The attacker obtains the noise position (0-7) for every pixel — this is the co
 
 The 9464 data bits are visible but remain encrypted: each is XOR'd with an independent, unknown mask bit from dataSeed. The noise map strips away 1352 noise bits (identifying which bits are noise vs data), giving the attacker a cleaner view of the encrypted data — but the encryption (per-bit XOR + rotation + unknown start pixel) is untouched.
 
-**Even with known plaintext + noise map, the data is not recoverable.** The attacker knows the COBS-encoded plaintext and which container bits carry data. To decrypt, they must map plaintext bits to container positions — this requires the start pixel (from startSeed, independent). Trying all 169 candidate start positions: for each, the attacker computes a candidate XOR mask = container_data ⊕ expected_data. With per-bit XOR (1:1), every candidate produces a valid mask (Section 2.9). The attacker cannot distinguish the correct start pixel from 168 wrong ones.
+**Even with known plaintext + noise map, the data is not recoverable.** The attacker knows the COBS-encoded plaintext and which container bits carry data. To decrypt, they must map plaintext bits to container positions — this requires the start pixel (from startSeed, independent). Trying all 169 candidate start positions: for each, the attacker computes a candidate XOR mask = container_data ⊕ expected_data. With per-bit XOR (1:1), every candidate produces a valid mask ([Section 2.9](#29-per-bit-xor-and-known-plaintext-resistance)). The attacker cannot distinguish the correct start pixel from 168 wrong ones.
 
 **Brute-force optimization.** The attacker can use the 507-bit noise position map as a fast candidate rejection test: compute candidate noise positions from noiseSeed → compare with leaked map → reject mismatches. Wrong noiseSeed values rejected with probability 1 − 2^(−507). However, the search space remains P × 2^keyBits for dataSeed + startPixel enumeration — the rejection test is cheaper per candidate but does not reduce the number of candidates. Grover complexity remains √P × 2^(keyBits/2).
 
@@ -838,13 +838,13 @@ The oracle response perfectly classifies each bit as noise or data, revealing th
 
 - **Multi-bit modifications.** Flipping N bits simultaneously still yields a single binary response. The information is at most 1 bit per query, not N bits. Multi-bit strategies cannot exceed the single-bit classification rate.
 
-**This upper bound is a structural property of per-bit XOR (1:1).** With per-channel XOR (1:7), the oracle would additionally enable cross-channel consistency checks, leaking XOR masks (Section 2.9). The 1:1 design eliminates this by ensuring independent XOR per data bit — no consistency constraint exists between bits.
+**This upper bound is a structural property of per-bit XOR (1:1).** With per-channel XOR (1:7), the oracle would additionally enable cross-channel consistency checks, leaking XOR masks ([Section 2.9](#29-per-bit-xor-and-known-plaintext-resistance)). The 1:1 design eliminates this by ensuring independent XOR per data bit — no consistency constraint exists between bits.
 
 ### 4.4 Why MAC Cannot Cover Noise Bits
 
 A natural question: can the MAC cover the entire container including noise bits, achieving 100% reject (zero CCA leak)? No — this is not achievable within the current construction while preserving deniability.
 
-**Circular dependency.** The MAC tag must be stored inside the container to preserve deniability (Section 4.1). But embedding the tag modifies the container's data bits. If the MAC is computed over the container (including noise), embedding the tag changes the MAC input, invalidating the tag:
+**Circular dependency.** The MAC tag must be stored inside the container to preserve deniability ([Section 4.1](#41-chosen-ciphertext-attack-and-mac-composition)). But embedding the tag modifies the container's data bits. If the MAC is computed over the container (including noise), embedding the tag changes the MAC input, invalidating the tag:
 
 ```
 1. Embed payload → container formed (noise bits fixed)
@@ -852,7 +852,7 @@ A natural question: can the MAC cover the entire container including noise bits,
 3. Embed tag → container changes → MAC invalid
 ```
 
-**Alternative: MAC in header (outside container).** Placing the MAC in the cleartext header eliminates the circular dependency — the MAC covers all container bytes including noise. However, the cleartext MAC serves as a brute-force verification oracle: the attacker tries candidate seeds, decrypts, recomputes the MAC, and checks against the public tag. This breaks oracle-free deniability (Section 2.3).
+**Alternative: MAC in header (outside container).** Placing the MAC in the cleartext header eliminates the circular dependency — the MAC covers all container bytes including noise. However, the cleartext MAC serves as a brute-force verification oracle: the attacker tries candidate seeds, decrypts, recomputes the MAC, and checks against the public tag. This breaks oracle-free deniability ([Section 2.3](#23-oracle-free-deniability)).
 
 **Design space:**
 
@@ -861,7 +861,7 @@ A natural question: can the MAC cover the entire container including noise bits,
 | Inside container (full capacity) | No | ✓ Preserved | Bit-plane only |
 | Outside container (header) | Yes | ✗ Broken | None |
 
-The library's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` uses MAC-Inside over the full capacity (COBS + null + fill). This is the optimal trade-off: deniability preserved, CCA leak limited to bit-plane (Sections 4.2–4.3), and no circular dependency. The bit-plane leak (12.5% of bits classified as noise) reveals no plaintext, no XOR masks, no start pixel — but eliminates noiseSeed from brute-force: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1031 at 1024-bit) far exceeds the Landauer limit (~2^306).
+The library's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` uses MAC-Inside over the full capacity (COBS + null + fill). This is the optimal trade-off: deniability preserved, CCA leak limited to bit-plane ([Sections 4.2–4.3](#42-quantitative-cca-analysis-bit-plane-leak-impact)), and no circular dependency. The bit-plane leak (12.5% of bits classified as noise) reveals no plaintext, no XOR masks, no start pixel — but eliminates noiseSeed from brute-force: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1031 at 1024-bit) far exceeds the Landauer limit (~2^306).
 
 ### 4.5 Structural Barrier Invariant Under CCA
 
@@ -890,7 +890,7 @@ Config bits per pixel (triple-seed):
   Total config:                       62 → 4.8% leaked (noiseSeed only)
 ```
 
-**Critical: triple-seed isolation.** The CCA leak affects ONLY noiseSeed (noise positions). dataSeed (rotation + XOR masks) is an independent secret — CCA compromise of noiseSeed provides zero information about dataSeed. Data rotation makes dataSeed's hash output unobservable under passive observation; with CCA + KPA, 7 indistinguishable rotation candidates per pixel remain (Theorem 4).
+**Critical: triple-seed isolation.** The CCA leak affects ONLY noiseSeed (noise positions). dataSeed (rotation + XOR masks) is an independent secret — CCA compromise of noiseSeed provides zero information about dataSeed. Data rotation makes dataSeed's hash output unobservable under passive observation; with CCA + KPA, 7 indistinguishable rotation candidates per pixel remain ([Theorem 4](PROOFS.md#proof-4-rotation-barrier)).
 
 | Seed | Config bits/pixel | CCA leak | Protected | Exploitable? |
 |---|---|---|---|---|
@@ -898,7 +898,7 @@ Config bits per pixel (triple-seed):
 | dataSeed | 59 | **0%** | **100%** | **Not observable** |
 | Total | 62 | 4.8% | 95.2% | dataSeed independent |
 
-The CCA leak percentage (4.8%) is a structural property of the RGBWYOPA 8/1 format and does not depend on the hash function. The rotation barrier prevents mapping plaintext to physical positions regardless of hash properties (Section 2.9). However, resistance to CCA + KPA still requires PRF properties (Section 2.4.2).
+The CCA leak percentage (4.8%) is a structural property of the RGBWYOPA 8/1 format and does not depend on the hash function. The rotation barrier prevents mapping plaintext to physical positions regardless of hash properties ([Section 2.9](#29-per-bit-xor-and-known-plaintext-resistance)). However, resistance to CCA + KPA still requires PRF properties ([Section 2.4.2](#242-beyond-the-barrier-active-attacks-and-side-channels)).
 
 **Impact of the 4.8% CCA leak.** The leaked noise position reveals which of 8 bit positions is noise in each channel — a structural classification, not data. It provides:
 
@@ -945,7 +945,7 @@ All formats produce barriers far beyond the Landauer limit. Increasing noise str
 
 3. **Barrier: 2^1352** — already 4.4× beyond the Landauer limit (~2^306). Further increase provides no practical security gain while degrading efficiency and increasing CCA leak.
 
-The 8/1 format with noise range {0-7} sits at the Pareto frontier among the analyzed configurations. The 4.8% CCA leak is the cost of eliminating the FORMAT+KPA attack surface (Section 4.7), the 1.14× overhead is the minimum achievable with any noise at all, and the barrier exceeds physical limits by a comfortable margin.
+The 8/1 format with noise range {0-7} sits at the Pareto frontier among the analyzed configurations. The 4.8% CCA leak is the cost of eliminating the FORMAT+KPA attack surface ([Section 4.7](#47-noise-position-range-paradox)), the 1.14× overhead is the minimum achievable with any noise at all, and the barrier exceeds physical limits by a comfortable margin.
 
 ### 4.7 Noise Position Range Paradox
 
@@ -962,7 +962,7 @@ The 8/1 format with noise range {0-7} sits at the Pareto frontier among the anal
 | {0, 1} | 86% (bits 2-7 public) | 1.7% (1/60) | **Seed recoverable without CCA** |
 | **{0-7} (ITB)** | **0%** | **4.8%** | **4.8% under CCA only** |
 
-The CCA leak increases from 1.7% to 4.8%, but the FORMAT+KPA attack is completely eliminated. This is a better trade-off: the 4.8% CCA leak eliminates noiseSeed from brute-force but remaining security far exceeds Landauer (Section 4.2–4.3), while the 86% FORMAT+KPA leak was exploitable with invertible hash functions.
+The CCA leak increases from 1.7% to 4.8%, but the FORMAT+KPA attack is completely eliminated. This is a better trade-off: the 4.8% CCA leak eliminates noiseSeed from brute-force but remaining security far exceeds Landauer ([Sections 4.2–4.3](#42-quantitative-cca-analysis-bit-plane-leak-impact)), while the 86% FORMAT+KPA leak was exploitable with invertible hash functions.
 
 ## 5. Formal Definitions
 
@@ -992,7 +992,7 @@ Triple-seed architecture isolates dataSeed (zero side-channel, register-only), b
 ∀v, ∀h : ∃c : embed(c, h, d) = v
 ```
 
-No single-byte observation narrows the set of possible hash outputs. A passive observer who does not know C cannot determine the hash configuration from the container. The joint distribution of C' differs from uniform because pixel configurations are correlated through the seed; exploiting this correlation requires computational search over the key space. PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable (Section 2.4.2).
+No single-byte observation narrows the set of possible hash outputs. A passive observer who does not know C cannot determine the hash configuration from the container. The joint distribution of C' differs from uniform because pixel configurations are correlated through the seed; exploiting this correlation requires computational search over the key space. PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable ([Section 2.4.2](#242-beyond-the-barrier-active-attacks-and-side-channels)).
 
 ## 6. 512-bit Hash Support
 
@@ -1004,7 +1004,7 @@ ChainHash512: 8 components per round, 512-bit intermediate state
 Effective max key: min(keyBits, 512 × numRounds)
 ```
 
-For a 2048-bit key (32 components): ChainHash512 completes in 4 rounds (vs 8 rounds for ChainHash256, 16 for ChainHash128). Fewer rounds = wider MITM bottleneck (2^512) + faster execution (Section 1.1.4).
+For a 2048-bit key (32 components): ChainHash512 completes in 4 rounds (vs 8 rounds for ChainHash256, 16 for ChainHash128). Fewer rounds = wider MITM bottleneck (2^512) + faster execution ([Section 1.1.4](#114-wider-hash-variants-fewer-rounds-wider-mitm-bottleneck)).
 
 **Hash functions:**
 

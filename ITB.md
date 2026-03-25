@@ -116,7 +116,7 @@ A common question: if the attacker with known plaintext can compute 56 candidate
 
 No. The barrier is intact. Here is why:
 
-**What the barrier guarantees (Theorem 1):** for any observed byte value v and any hash output h, the probability P(v | h) = 1/2. This holds even under Full KPA — because the noise bit comes from the original container (CSPRNG), which is random and independent of everything. The observation does not uniquely determine the hash output. This is information theory, not computational assumption.
+**What the barrier guarantees ([Theorem 1](PROOFS.md#proof-1-information-theoretic-barrier)):** for any observed byte value v and any hash output h, the probability P(v | h) = 1/2. This holds even under Full KPA — because the noise bit comes from the original container (CSPRNG), which is random and independent of everything. The observation does not uniquely determine the hash output. This is information theory, not computational assumption.
 
 **What the attacker computes:** the 56 candidates are not extracted from the observation. They are **calculated** from the combination of (known plaintext + observed byte + candidate config). This is arithmetic, not a barrier break. All 56 candidates are **equally consistent** with the observation — the attacker does not know which one is real.
 

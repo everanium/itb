@@ -8,7 +8,7 @@
 
 A parameterized symmetric cipher construction library for Go that achieves known-plaintext resistance under passive observation through an information-theoretic barrier.
 
-**The barrier works strictly by information theory. No computational power can extract what does not exist in the observation.** The information-theoretic barrier absorbs the output of a cryptographic PRF hash function, making hash output unobservable to a passive observer.
+**The barrier works strictly by information theory. No computational power can extract what does not exist in the observation.** The information-theoretic barrier absorbs the output of a cryptographic PRF hash function, making hash output unobservable to a passive observer. The construction creates an ocean of ambiguity: every observation is equally consistent with exponentially many configurations, none distinguishable from the real one.
 
 **[How the barrier works — accessible explanation](ITB.md)**
 
