@@ -20,11 +20,13 @@
 
 - **Random Container.** Container pixels generated from `crypto/rand`. The marginal distribution of individual pixel values is indistinguishable from uniform before and after embedding, because both container and modifications are random.
 
+- **Encoding Ambiguity.** Each pixel has 7 rotation candidates (0–6) from an independent dataSeed. Across P pixels: 7^P unverifiable combinations (for P = 169: 7^169 ≈ 2^474). This mechanism survives CCA — even if noise positions are revealed, rotation ambiguity remains intact through triple-seed isolation (dataSeed is independent of noiseSeed). See [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
+
 - **Hash Independence.** The random container creates an information-theoretic barrier: the hash output is consumed by a modification of a random pixel and is not reconstructible from passive observations (COA, KPA). PRF-grade hash functions are required. The barrier provides additional architectural hardening by making hash output unobservable (see [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements), [Definition 2](SCIENCE.md#5-formal-definitions)).
 
 - **Known-Plaintext Resistance (under passive observation).** Even with fully known plaintext, the attacker cannot derive hash outputs because original container pixel values are unknown (crypto/rand, never transmitted). Attack degrades to brute-force regardless of hash function.
 
-These barrier properties hold fully under Core ITB and MAC + Silent Drop (no oracle). Under MAC + Reveal, noiseSeed config is leaked via CCA, but dataSeed remains fully protected.
+These barrier properties hold fully under Core ITB and MAC + Silent Drop (no oracle). Under MAC + Reveal, noiseSeed config is leaked via CCA (noise absorption bypassed), but dataSeed remains fully protected (encoding ambiguity intact).
 
 - **Chosen-Plaintext Resistance.** Attacker can encrypt with their own seed and study their own configuration map. Knowledge of one seed's map provides zero information about any other seed's map, assuming independently generated seeds.
 
