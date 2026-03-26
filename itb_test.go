@@ -7,6 +7,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"sync"
 	"testing"
 	"unsafe"
 
@@ -16,6 +18,11 @@ import (
 	"golang.org/x/crypto/blake2s"
 	"golang.org/x/crypto/chacha20"
 )
+
+func TestMain(m *testing.M) {
+	SetMaxWorkers(8)
+	os.Exit(m.Run())
+}
 
 // noescape hides a pointer from escape analysis. The Go runtime uses
 // this trick internally. Safe when the callee does not retain the pointer.
@@ -119,7 +126,7 @@ func TestNonceUniqueness(t *testing.T) {
 	data := []byte("same data, different nonce")
 	enc1, _ := Encrypt128(ns, ds, ss, data)
 	enc2, _ := Encrypt128(ns, ds, ss, data)
-	if bytes.Equal(enc1[:NonceSize], enc2[:NonceSize]) {
+	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -164,7 +171,7 @@ func TestContainerSizes(t *testing.T) {
 			if !bytes.Equal(data, decrypted) {
 				t.Fatal("data mismatch")
 			}
-			containerSize := len(encrypted) - headerSize
+			containerSize := len(encrypted) - headerSize()
 			pixels := containerSize / Channels
 			capacity := (pixels * DataBitsPerPixel) / 8
 			t.Logf("container: %d pixels, capacity: %d bytes, output: %d bytes", pixels, capacity, len(encrypted))
@@ -395,6 +402,92 @@ func TestMaxDataSize64MB(t *testing.T) {
 	}
 }
 
+func TestNonceBits(t *testing.T) {
+	for _, nonceBits := range []int{128, 256, 512} {
+		t.Run(fmt.Sprintf("%dbit", nonceBits), func(t *testing.T) {
+			SetNonceBits(nonceBits)
+			defer SetNonceBits(128)
+
+			if got := GetNonceBits(); got != nonceBits {
+				t.Fatalf("GetNonceBits() = %d, want %d", got, nonceBits)
+			}
+
+			// SipHash 128-bit roundtrip
+			ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+			data := generateData(1 << 20) // 1 MB
+			encrypted, err := Encrypt128(ns, ds, ss, data)
+			if err != nil {
+				t.Fatalf("Encrypt128: %v", err)
+			}
+			decrypted, err := Decrypt128(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatalf("Decrypt128: %v", err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatal("SipHash roundtrip mismatch")
+			}
+
+			// BLAKE3 256-bit roundtrip
+			ns2, ds2, ss2 := makeTripleSeed256(512, makeBlake3Hash256())
+			encrypted2, err := Encrypt256(ns2, ds2, ss2, data)
+			if err != nil {
+				t.Fatalf("Encrypt256: %v", err)
+			}
+			decrypted2, err := Decrypt256(ns2, ds2, ss2, encrypted2)
+			if err != nil {
+				t.Fatalf("Decrypt256: %v", err)
+			}
+			if !bytes.Equal(data, decrypted2) {
+				t.Fatal("BLAKE3 roundtrip mismatch")
+			}
+
+			// BLAKE2b-512 roundtrip
+			ns5, ds5, ss5 := makeTripleSeed512(512, makeBlake2bHash512())
+			encrypted5, err := Encrypt512(ns5, ds5, ss5, data)
+			if err != nil {
+				t.Fatalf("Encrypt512: %v", err)
+			}
+			decrypted5, err := Decrypt512(ns5, ds5, ss5, encrypted5)
+			if err != nil {
+				t.Fatalf("Decrypt512: %v", err)
+			}
+			if !bytes.Equal(data, decrypted5) {
+				t.Fatal("BLAKE2b-512 roundtrip mismatch")
+			}
+
+			// AES 128-bit roundtrip
+			aesHash := makeAESHash128()
+			ns3, ds3, ss3 := makeTripleSeed128(1024, aesHash)
+			encrypted3, err := Encrypt128(ns3, ds3, ss3, data)
+			if err != nil {
+				t.Fatalf("AES Encrypt128: %v", err)
+			}
+			decrypted3, err := Decrypt128(ns3, ds3, ss3, encrypted3)
+			if err != nil {
+				t.Fatalf("AES Decrypt128: %v", err)
+			}
+			if !bytes.Equal(data, decrypted3) {
+				t.Fatal("AES roundtrip mismatch")
+			}
+
+			t.Logf("nonce=%d bits: SipHash ✓ BLAKE3 ✓ BLAKE2b-512 ✓ AES ✓ (1 MB each)", nonceBits)
+		})
+	}
+}
+
+func TestSetNonceBitsPanic(t *testing.T) {
+	for _, invalid := range []int{0, 64, 137, 1024, -1} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("SetNonceBits(%d) should panic", invalid)
+				}
+			}()
+			SetNonceBits(invalid)
+		}()
+	}
+}
+
 func TestMinPixelsAmbiguityDominance(t *testing.T) {
 	// Verify MinPixels (56^P) and MinPixelsAuth (7^P) exceed key space
 	for _, bits := range []int{512, 1024, 2048} {
@@ -446,8 +539,62 @@ func TestSetMaxWorkers(t *testing.T) {
 		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(1000) = %d, want 256", got)
 	}
 
-	// Reset
-	SetMaxWorkers(1)
+	// Restore global default for other tests
+	SetMaxWorkers(8)
+}
+
+func TestSetBarrierFill(t *testing.T) {
+	// Valid values
+	for _, v := range []int{1, 2, 4, 8, 16, 32} {
+		SetBarrierFill(v)
+		if got := GetBarrierFill(); got != v {
+			t.Fatalf("GetBarrierFill() = %d, want %d", got, v)
+		}
+	}
+
+	// Invalid values must panic
+	for _, invalid := range []int{0, 3, 5, 7, 9, 15, 33, 64, -1} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("SetBarrierFill(%d) should panic", invalid)
+				}
+			}()
+			SetBarrierFill(invalid)
+		}()
+	}
+
+	// Restore default
+	SetBarrierFill(1)
+}
+
+func TestBarrierFill32_64MB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 64 MB + BarrierFill(32) in short mode")
+	}
+	SetBarrierFill(32)
+	SetMaxWorkers(8)
+	defer func() {
+		SetBarrierFill(1)
+		SetMaxWorkers(8)
+	}()
+
+	ns, ds, ss := makeTripleSeed128(1024, sipHash128)
+	data := make([]byte, 64<<20) // 64 MB
+	if _, err := rand.Read(data); err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := Encrypt128(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt128(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("64 MB + BarrierFill(32) roundtrip data mismatch")
+	}
 }
 
 func TestMaxDataSizeExceeded(t *testing.T) {
@@ -550,9 +697,10 @@ func TestDecryptRejectOversizeContainer(t *testing.T) {
 
 	// Craft a fake container with dimensions that exceed maxTotalPixels (10M).
 	// 3200x3200 = 10,240,000 pixels > 10M limit.
-	header := make([]byte, 20) // 16 nonce + 4 dimensions
-	binary.BigEndian.PutUint16(header[16:], 3200)
-	binary.BigEndian.PutUint16(header[18:], 3200)
+	header := make([]byte, headerSize()+Channels) // nonce + dimensions
+	nonceSz := currentNonceSize()
+	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 
@@ -635,7 +783,7 @@ func TestCorruptedContainer(t *testing.T) {
 	}
 
 	// Truncated container
-	_, err = Decrypt128(ns, ds, ss, encrypted[:headerSize+1])
+	_, err = Decrypt128(ns, ds, ss, encrypted[:headerSize()+1])
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
@@ -649,10 +797,10 @@ func TestCorruptedContainer(t *testing.T) {
 	// Zero dimensions
 	corrupted := make([]byte, len(encrypted))
 	copy(corrupted, encrypted)
-	corrupted[NonceSize] = 0
-	corrupted[NonceSize+1] = 0
-	corrupted[NonceSize+2] = 0
-	corrupted[NonceSize+3] = 0
+	corrupted[currentNonceSize()] = 0
+	corrupted[currentNonceSize()+1] = 0
+	corrupted[currentNonceSize()+2] = 0
+	corrupted[currentNonceSize()+3] = 0
 	_, err = Decrypt128(ns, ds, ss, corrupted)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
@@ -711,7 +859,7 @@ func TestAuthenticatedTamperDetection(t *testing.T) {
 	// noise position.
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSize; i < len(tampered); i++ {
+	for i := headerSize(); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 
@@ -777,13 +925,17 @@ func makeAESHash128() HashFunc128 {
 		}
 		aesEncryptNoescape(block, &b1)
 
-		// Block 2: XOR remaining data bytes (16-19) into state.
-		if len(data) > 16 {
-			for j := 16; j < len(data); j++ {
-				b1[j-16] ^= data[j]
+		// Remaining blocks: XOR 16-byte chunks into state, encrypt each.
+		for off := 16; off < len(data); off += 16 {
+			end := off + 16
+			if end > len(data) {
+				end = len(data)
 			}
+			for j := off; j < end; j++ {
+				b1[j-off] ^= data[j]
+			}
+			aesEncryptNoescape(block, &b1)
 		}
-		aesEncryptNoescape(block, &b1)
 
 		return binary.LittleEndian.Uint64(b1[:8]), binary.LittleEndian.Uint64(b1[8:])
 	}
@@ -970,15 +1122,20 @@ func makeBlake3Hash256() HashFunc256 {
 	if _, err := rand.Read(blake3Key[:]); err != nil {
 		panic(err)
 	}
-	// Template hasher — never written to, only cloned.
 	template, _ := blake3.NewKeyed(blake3Key[:])
+	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [4]uint64) [4]uint64 {
 		h := template.Clone()
 
-		// Mix seed into data via stack buffer, then write.
-		var mixed [32]byte
-		copy(mixed[:], data)
+		mixedPtr := pool.Get().(*[]byte)
+		mixed := *mixedPtr
+		if cap(mixed) < len(data) {
+			mixed = make([]byte, len(data))
+		} else {
+			mixed = mixed[:len(data)]
+		}
+		copy(mixed, data)
 		// XOR seed[0..3] into first 32 bytes.
 		for i := 0; i < 4; i++ {
 			s := seed[i]
@@ -987,7 +1144,9 @@ func makeBlake3Hash256() HashFunc256 {
 				binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^s)
 			}
 		}
-		h.Write(mixed[:len(data)])
+		h.Write(mixed)
+		*mixedPtr = mixed
+		pool.Put(mixedPtr)
 		var buf [32]byte
 		h.Sum(buf[:0])
 
@@ -1011,10 +1170,17 @@ func makeBlake2bHash256() HashFunc256 {
 	if _, err := rand.Read(b2key[:]); err != nil {
 		panic(err)
 	}
+	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		// Build: [32-byte key][data ^ seed]
-		var buf [64]byte
+		need := 32 + len(data)
+		bufPtr := pool.Get().(*[]byte)
+		buf := *bufPtr
+		if cap(buf) < need {
+			buf = make([]byte, need)
+		} else {
+			buf = buf[:need]
+		}
 		copy(buf[:32], b2key[:])
 		copy(buf[32:], data)
 		for i := 0; i < 4; i++ {
@@ -1023,7 +1189,9 @@ func makeBlake2bHash256() HashFunc256 {
 				binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 			}
 		}
-		digest := blake2b.Sum256(buf[:32+len(data)])
+		digest := blake2b.Sum256(buf)
+		*bufPtr = buf
+		pool.Put(bufPtr)
 		return [4]uint64{
 			binary.LittleEndian.Uint64(digest[0:]),
 			binary.LittleEndian.Uint64(digest[8:]),
@@ -1041,9 +1209,17 @@ func makeBlake2sHash256() HashFunc256 {
 	if _, err := rand.Read(b2key[:]); err != nil {
 		panic(err)
 	}
+	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		var buf [64]byte
+		need := 32 + len(data)
+		bufPtr := pool.Get().(*[]byte)
+		buf := *bufPtr
+		if cap(buf) < need {
+			buf = make([]byte, need)
+		} else {
+			buf = buf[:need]
+		}
 		copy(buf[:32], b2key[:])
 		copy(buf[32:], data)
 		for i := 0; i < 4; i++ {
@@ -1052,7 +1228,9 @@ func makeBlake2sHash256() HashFunc256 {
 				binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 			}
 		}
-		digest := blake2s.Sum256(buf[:32+len(data)])
+		digest := blake2s.Sum256(buf)
+		*bufPtr = buf
+		pool.Put(bufPtr)
 		return [4]uint64{
 			binary.LittleEndian.Uint64(digest[0:]),
 			binary.LittleEndian.Uint64(digest[8:]),
@@ -1337,9 +1515,17 @@ func makeBlake2bHash512() HashFunc512 {
 	if _, err := rand.Read(b2key[:]); err != nil {
 		panic(err)
 	}
+	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [8]uint64) [8]uint64 {
-		var buf [84]byte // 64-byte key + 20-byte max data
+		need := 64 + len(data)
+		bufPtr := pool.Get().(*[]byte)
+		buf := *bufPtr
+		if cap(buf) < need {
+			buf = make([]byte, need)
+		} else {
+			buf = buf[:need]
+		}
 		copy(buf[:64], b2key[:])
 		copy(buf[64:], data)
 		for i := 0; i < 8; i++ {
@@ -1348,7 +1534,9 @@ func makeBlake2bHash512() HashFunc512 {
 				binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 			}
 		}
-		digest := blake2b.Sum512(buf[:64+len(data)])
+		digest := blake2b.Sum512(buf)
+		*bufPtr = buf
+		pool.Put(bufPtr)
 		return [8]uint64{
 			binary.LittleEndian.Uint64(digest[0:]),
 			binary.LittleEndian.Uint64(digest[8:]),
@@ -1699,7 +1887,7 @@ func TestCorruptedContainer256(t *testing.T) {
 	}
 
 	// Truncated container
-	_, err = Decrypt256(ns, ds, ss, encrypted[:headerSize+1])
+	_, err = Decrypt256(ns, ds, ss, encrypted[:headerSize()+1])
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
@@ -1707,10 +1895,10 @@ func TestCorruptedContainer256(t *testing.T) {
 	// Zero dimensions
 	corrupted := make([]byte, len(encrypted))
 	copy(corrupted, encrypted)
-	corrupted[NonceSize] = 0
-	corrupted[NonceSize+1] = 0
-	corrupted[NonceSize+2] = 0
-	corrupted[NonceSize+3] = 0
+	corrupted[currentNonceSize()] = 0
+	corrupted[currentNonceSize()+1] = 0
+	corrupted[currentNonceSize()+2] = 0
+	corrupted[currentNonceSize()+3] = 0
 	_, err = Decrypt256(ns, ds, ss, corrupted)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
@@ -1733,7 +1921,7 @@ func TestCorruptedContainer512(t *testing.T) {
 	}
 
 	// Truncated container
-	_, err = Decrypt512(ns, ds, ss, encrypted[:headerSize+1])
+	_, err = Decrypt512(ns, ds, ss, encrypted[:headerSize()+1])
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
@@ -1741,10 +1929,10 @@ func TestCorruptedContainer512(t *testing.T) {
 	// Zero dimensions
 	corrupted := make([]byte, len(encrypted))
 	copy(corrupted, encrypted)
-	corrupted[NonceSize] = 0
-	corrupted[NonceSize+1] = 0
-	corrupted[NonceSize+2] = 0
-	corrupted[NonceSize+3] = 0
+	corrupted[currentNonceSize()] = 0
+	corrupted[currentNonceSize()+1] = 0
+	corrupted[currentNonceSize()+2] = 0
+	corrupted[currentNonceSize()+3] = 0
 	_, err = Decrypt512(ns, ds, ss, corrupted)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
@@ -1764,7 +1952,7 @@ func TestAuthenticatedTamperDetection256(t *testing.T) {
 
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSize; i < len(tampered); i++ {
+	for i := headerSize(); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 
@@ -1785,7 +1973,7 @@ func TestAuthenticatedTamperDetection512(t *testing.T) {
 
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSize; i < len(tampered); i++ {
+	for i := headerSize(); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 
@@ -1837,7 +2025,7 @@ func TestParseChunkLenErrors(t *testing.T) {
 	}
 
 	// Zero dimensions (width=0, height=0)
-	buf := make([]byte, headerSize+8)
+	buf := make([]byte, headerSize()+8)
 	// nonce: 16 bytes of zeros, then width=0, height=0
 	_, err = parseChunkLen(buf)
 	if err == nil {
@@ -1845,26 +2033,26 @@ func TestParseChunkLenErrors(t *testing.T) {
 	}
 
 	// Valid header but truncated data
-	// Set width=1, height=1 => need headerSize + 1*1*8 = 28 bytes
-	binary.BigEndian.PutUint16(buf[NonceSize:], 1)
-	binary.BigEndian.PutUint16(buf[NonceSize+2:], 1)
-	// buf is only headerSize+8 bytes = 28, which is exactly enough for 1x1
+	// Set width=1, height=1 => need headerSize() + 1*1*8 = 28 bytes
+	binary.BigEndian.PutUint16(buf[currentNonceSize():], 1)
+	binary.BigEndian.PutUint16(buf[currentNonceSize()+2:], 1)
+	// buf is only headerSize()+8 bytes = 28, which is exactly enough for 1x1
 	// Make it shorter to trigger truncation
-	_, err = parseChunkLen(buf[:headerSize+4])
+	_, err = parseChunkLen(buf[:headerSize()+4])
 	if err == nil {
 		t.Fatal("expected error for truncated data")
 	}
 
 	// Valid case: 1x1 should succeed with full data
-	fullBuf := make([]byte, headerSize+Channels)
-	binary.BigEndian.PutUint16(fullBuf[NonceSize:], 1)
-	binary.BigEndian.PutUint16(fullBuf[NonceSize+2:], 1)
+	fullBuf := make([]byte, headerSize()+Channels)
+	binary.BigEndian.PutUint16(fullBuf[currentNonceSize():], 1)
+	binary.BigEndian.PutUint16(fullBuf[currentNonceSize()+2:], 1)
 	n, err := parseChunkLen(fullBuf)
 	if err != nil {
 		t.Fatalf("unexpected error for valid 1x1: %v", err)
 	}
-	if n != headerSize+Channels {
-		t.Fatalf("parseChunkLen returned %d, want %d", n, headerSize+Channels)
+	if n != headerSize()+Channels {
+		t.Fatalf("parseChunkLen returned %d, want %d", n, headerSize()+Channels)
 	}
 }
 
@@ -2091,22 +2279,22 @@ func BenchmarkBLAKE3_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeB
 
 func BenchmarkBLAKE3_Encrypt_64MB_1Worker(b *testing.B) {
 	SetMaxWorkers(1)
-	defer SetMaxWorkers(1) // reset to avoid affecting other benchmarks
+	defer SetMaxWorkers(8)
 	benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
 }
 func BenchmarkBLAKE3_Encrypt_64MB_8Workers(b *testing.B) {
 	SetMaxWorkers(8)
-	defer SetMaxWorkers(1)
+	defer SetMaxWorkers(8)
 	benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
 }
 func BenchmarkBLAKE3_Decrypt_64MB_1Worker(b *testing.B) {
 	SetMaxWorkers(1)
-	defer SetMaxWorkers(1)
+	defer SetMaxWorkers(8)
 	benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
 }
 func BenchmarkBLAKE3_Decrypt_64MB_8Workers(b *testing.B) {
 	SetMaxWorkers(8)
-	defer SetMaxWorkers(1)
+	defer SetMaxWorkers(8)
 	benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20)
 }
 

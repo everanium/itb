@@ -194,12 +194,12 @@ func DecryptStream512(noiseSeed, dataSeed, startSeed *Seed512, data []byte, emit
 // parseChunkLen reads a chunk header and returns the total chunk size in bytes.
 // Format: [16-byte nonce][2-byte width BE][2-byte height BE][W*H*8 container]
 func parseChunkLen(data []byte) (int, error) {
-	if len(data) < headerSize {
+	if len(data) < headerSize() {
 		return 0, fmt.Errorf("data too short for header")
 	}
 
-	width := int(binary.BigEndian.Uint16(data[NonceSize:]))
-	height := int(binary.BigEndian.Uint16(data[NonceSize+2:]))
+	width := int(binary.BigEndian.Uint16(data[currentNonceSize():]))
+	height := int(binary.BigEndian.Uint16(data[currentNonceSize()+2:]))
 
 	if width == 0 || height == 0 {
 		return 0, fmt.Errorf("invalid dimensions %dx%d", width, height)
@@ -215,7 +215,7 @@ func parseChunkLen(data []byte) (int, error) {
 		return 0, fmt.Errorf("chunk too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
 	}
 
-	chunkLen := headerSize + totalPixels*Channels
+	chunkLen := headerSize() + totalPixels*Channels
 	if len(data) < chunkLen {
 		return 0, fmt.Errorf("data too short: need %d, have %d", chunkLen, len(data))
 	}

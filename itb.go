@@ -5,7 +5,8 @@ import (
 	"sync/atomic"
 )
 
-const headerSize = NonceSize + 4 // nonce(16) + width(2) + height(2)
+// headerSize returns the container header size: nonce + width(2) + height(2).
+func headerSize() int { return currentNonceSize() + 4 }
 
 const (
 	// Channels is the number of channels per pixel (RGBWYOPA:
@@ -66,7 +67,7 @@ func calcContainerSize(payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (w
 	for side*side < pixels {
 		side++
 	}
-	side++ // guaranteed CSPRNG fill: gap = 7×(2s+1) > 0 (Proof 10)
+	side += currentBarrierFill() // guaranteed CSPRNG fill (Proof 10)
 	return side, side
 }
 

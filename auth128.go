@@ -73,7 +73,7 @@ func EncryptAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, data []byt
 	secureWipe(payload)
 	secureWipe(full)
 
-	out := make([]byte, 0, headerSize+len(container))
+	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
 	var dim [4]byte
 	binary.BigEndian.PutUint16(dim[0:], uint16(width))
@@ -98,14 +98,14 @@ func DecryptAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, fileData [
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	if len(fileData) < headerSize+Channels {
+	if len(fileData) < headerSize()+Channels {
 		return nil, fmt.Errorf("itb: data too short")
 	}
 
-	nonce := fileData[:NonceSize]
-	width := int(binary.BigEndian.Uint16(fileData[NonceSize:]))
-	height := int(binary.BigEndian.Uint16(fileData[NonceSize+2:]))
-	container := fileData[headerSize:]
+	nonce := fileData[:currentNonceSize()]
+	width := int(binary.BigEndian.Uint16(fileData[currentNonceSize():]))
+	height := int(binary.BigEndian.Uint16(fileData[currentNonceSize()+2:]))
+	container := fileData[headerSize():]
 
 	if width == 0 || height == 0 {
 		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)

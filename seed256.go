@@ -148,9 +148,9 @@ func (s *Seed256) blockHash256(buf []byte, blockIdx int) [4]uint64 {
 
 // deriveStartPixel computes seed+nonce-dependent pixel offset.
 func (s *Seed256) deriveStartPixel(nonce []byte, totalPixels int) int {
-	var buf [17]byte
+	buf := make([]byte, 1+len(nonce))
 	buf[0] = 0x02
 	copy(buf[1:], nonce)
-	h := s.ChainHash256(buf[:])
+	h := s.ChainHash256(buf)
 	return int(h[0] % uint64(totalPixels))
 }

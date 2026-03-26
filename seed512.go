@@ -154,9 +154,9 @@ func (s *Seed512) blockHash512(buf []byte, blockIdx int) [8]uint64 {
 
 // deriveStartPixel computes seed+nonce-dependent pixel offset.
 func (s *Seed512) deriveStartPixel(nonce []byte, totalPixels int) int {
-	var buf [17]byte
+	buf := make([]byte, 1+len(nonce))
 	buf[0] = 0x02
 	copy(buf[1:], nonce)
-	h := s.ChainHash512(buf[:])
+	h := s.ChainHash512(buf)
 	return int(h[0] % uint64(totalPixels))
 }

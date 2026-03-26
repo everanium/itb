@@ -131,7 +131,7 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 	process128(noiseSeed, dataSeed, startSeed, nonce, container, width, height, payload, true)
 	secureWipe(payload) // minimize plaintext exposure in heap
 
-	out := make([]byte, 0, headerSize+len(container))
+	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
 	var dim [4]byte
 	binary.BigEndian.PutUint16(dim[0:], uint16(width))
@@ -154,14 +154,14 @@ func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byt
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
 		return nil, fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
 	}
-	if len(fileData) < headerSize+Channels {
+	if len(fileData) < headerSize()+Channels {
 		return nil, fmt.Errorf("itb: data too short")
 	}
 
-	nonce := fileData[:NonceSize]
-	width := int(binary.BigEndian.Uint16(fileData[NonceSize:]))
-	height := int(binary.BigEndian.Uint16(fileData[NonceSize+2:]))
-	container := fileData[headerSize:]
+	nonce := fileData[:currentNonceSize()]
+	width := int(binary.BigEndian.Uint16(fileData[currentNonceSize():]))
+	height := int(binary.BigEndian.Uint16(fileData[currentNonceSize()+2:]))
+	container := fileData[headerSize():]
 
 	// Overflow-safe multiplication: check before computing to prevent
 	// integer overflow on 32-bit platforms decrypting containers from 64-bit.

@@ -47,8 +47,10 @@
 //     128-bit hash → 1024-bit max, 256-bit hash → 2048-bit max,
 //     512-bit hash → 2048-bit max.
 //
-//   - Nonce: [NonceSize] (128-bit) per-message, generated internally from
-//     crypto/rand. Mandatory — prevents configuration reuse across messages.
+//   - Nonce: configurable per-message nonce generated internally from
+//     crypto/rand. Default [NonceSize] = 128-bit; call [SetNonceBits] to
+//     select 128, 256, or 512 bits. Mandatory — prevents configuration
+//     reuse across messages. Birthday collision at ~2^(nonceBits/2) messages.
 //
 // # Hash Width Variants
 //
@@ -115,8 +117,11 @@
 //     terminator under encryption. Wrong seed produces random-looking output
 //     with no verification oracle for brute-force.
 //
-//   - Per-message 128-bit nonce prevents configuration reuse. Birthday
-//     collision after ~2^64 messages; ~2^48 messages for practically safe collision probability (~2^{-33}).
+//   - Per-message nonce (default 128-bit, configurable to 256 or 512 via
+//     [SetNonceBits]) prevents configuration reuse. Birthday collision
+//     bounds depend on nonce size: ~2^64 messages at 128-bit, ~2^128 at
+//     256-bit, ~2^256 at 512-bit. Practically safe collision probability
+//     (~2^{-33}): ~2^48 / ~2^112 / ~2^240 messages respectively.
 //
 //   - Triple-seed isolation: CCA reveals noiseSeed config only (MAC + Reveal
 //     only) (noise positions), cache side-channel reveals startPixel only
@@ -206,4 +211,31 @@
 //
 // Valid range: 1 to 256. The setting is global and thread-safe (atomic).
 // Query the current limit with [GetMaxWorkers].
+//
+// # Nonce Configuration
+//
+// By default the nonce is 128 bits ([NonceSize] = 16 bytes). For higher
+// collision resistance, increase the nonce size with [SetNonceBits]:
+//
+//	itb.SetNonceBits(256) // 256-bit nonce (~2^128 birthday bound)
+//
+// Valid values: 128, 256, 512. The setting is global and thread-safe (atomic).
+// Both sender and receiver must use the same nonce size.
+// Query the current setting with [GetNonceBits].
+//
+// # Barrier Fill (CSPRNG Margin)
+//
+// The container side is increased by a configurable margin to guarantee
+// CSPRNG residue in every container (Proof 10: No Perfect Fill). The gap
+// between pixel capacity and data requirement ensures that some pixel
+// channels carry only CSPRNG random data, even after CCA eliminates
+// noise bits. Default margin is 1. To increase the CSPRNG fill margin:
+//
+//	itb.SetBarrierFill(4) // side += 4 instead of side += 1
+//
+// Valid values: 1, 2, 4, 8, 16, 32. Panics on invalid input.
+// Asymmetric: the receiver does not need the same value as the sender,
+// because the container dimensions are stored in the header.
+// The setting is global and thread-safe (atomic).
+// Query the current value with [GetBarrierFill].
 package itb

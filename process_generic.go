@@ -6,9 +6,9 @@ package itb
 func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 20)
+	noiseBuf := make([]byte, 4+currentNonceSize())
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 20)
+	dataBuf := make([]byte, 4+currentNonceSize())
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)
@@ -89,9 +89,9 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 func processChunk512(noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 20)
+	noiseBuf := make([]byte, 4+currentNonceSize())
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 20)
+	dataBuf := make([]byte, 4+currentNonceSize())
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)
@@ -174,9 +174,9 @@ func processChunk512(noiseSeed, dataSeed *Seed512, nonce []byte, container []byt
 func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 20)
+	noiseBuf := make([]byte, 4+currentNonceSize())
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 20)
+	dataBuf := make([]byte, 4+currentNonceSize())
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)

@@ -185,6 +185,11 @@ func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 }
 
 func main() {
+    // Optional: global configuration (all thread-safe, atomic)
+    itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
+    itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
     // Create three independent seeds (triple-seed isolation)
     noiseSeed, err := itb.NewSeed128(1024, sipHash128)
     if err != nil {
@@ -244,6 +249,10 @@ Hash functions like AES and BLAKE3 have expensive key setup. Creating a new ciph
 SipHash is a pure function — no key setup, no caching needed. Optimal for 128-bit width.
 
 ```go
+itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
+itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
+itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+
 func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
     return siphash.Hash128(seed0, seed1, data)
 }
@@ -259,6 +268,10 @@ decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
 ### AES-NI Cached (128-bit, stdlib)
 
 ```go
+itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
+itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
+itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+
 func makeAESHash() itb.HashFunc128 {
     var key [16]byte
     rand.Read(key[:])
@@ -284,20 +297,30 @@ ss, _ := itb.NewSeed128(1024, makeAESHash())
 ### BLAKE3 Keyed Cached (256-bit)
 
 ```go
+itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
+itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
+itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+
 func makeBlake3Hash() itb.HashFunc256 {
     var key [32]byte
     rand.Read(key[:])
     template, _ := blake3.NewKeyed(key[:])
+    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
     return func(data []byte, seed [4]uint64) [4]uint64 {
-        h := template.Clone()  // Clone is thread-safe, Reset is not
-        var mixed [32]byte
-        copy(mixed[:], data)
+        h := template.Clone()
+        ptr := pool.Get().(*[]byte)
+        mixed := *ptr
+        if cap(mixed) < len(data) { mixed = make([]byte, len(data)) } else { mixed = mixed[:len(data)] }
+        copy(mixed, data)
         for i := 0; i < 4; i++ {
             off := i * 8
-            binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
+            if off+8 <= len(mixed) {
+                binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
+            }
         }
-        h.Write(mixed[:len(data)])
+        h.Write(mixed)
+        *ptr = mixed; pool.Put(ptr)
         var buf [32]byte
         h.Sum(buf[:0])
         return [4]uint64{
@@ -317,22 +340,30 @@ ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
 BLAKE2b-512 has native 512-bit key and output — fewer ChainHash rounds (4 vs 8 for 256-bit), higher throughput.
 
 ```go
+itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
+itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
+itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+
 func makeBlake2bHash512() itb.HashFunc512 {
     var key [64]byte
     rand.Read(key[:])
+    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
     return func(data []byte, seed [8]uint64) [8]uint64 {
-        var buf [84]byte // 64-byte key + 20-byte max data
+        need := 64 + len(data)
+        ptr := pool.Get().(*[]byte)
+        buf := *ptr
+        if cap(buf) < need { buf = make([]byte, need) } else { buf = buf[:need] }
         copy(buf[:64], key[:])
         copy(buf[64:], data)
         for i := 0; i < 8; i++ {
             off := 64 + i*8
             if off+8 <= len(buf) {
-                v := binary.LittleEndian.Uint64(buf[off:])
-                binary.LittleEndian.PutUint64(buf[off:], v^seed[i])
+                binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
             }
         }
-        digest := blake2b.Sum512(buf[:64+len(data)])
+        digest := blake2b.Sum512(buf)
+        *ptr = buf; pool.Put(ptr)
         var result [8]uint64
         for i := range result {
             result[i] = binary.LittleEndian.Uint64(digest[i*8:])
@@ -362,6 +393,36 @@ itb.SetMaxWorkers(4) // limit to 4 CPU cores for pixel processing
 ```
 
 By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Valid range: 1–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
+
+### Nonce Configuration
+
+```go
+itb.SetNonceBits(256) // 256-bit nonce (~2^128 birthday bound)
+```
+
+Default nonce is 128 bits (birthday collision at ~2^64 messages). For higher collision resistance, use `SetNonceBits`. Valid values: 128, 256, 512. Panics on invalid input. Both sender and receiver must use the same nonce size. Query with `itb.GetNonceBits()`.
+
+### Barrier Fill (CSPRNG Margin)
+
+```go
+itb.SetBarrierFill(4) // side += 4 instead of default side += 1
+```
+
+Controls the CSPRNG fill margin added to the container side dimension. The construction guarantees that every container has strictly more pixel capacity than the payload requires — the excess capacity is filled with `crypto/rand` data encrypted by dataSeed. This CSPRNG residue is indistinguishable from encrypted plaintext and provides information-theoretic ambiguity within the data channel ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+
+Valid values: 1, 2, 4, 8, 16, 32. Default: 1. Panics on invalid input. Thread-safe (atomic). Query with `itb.GetBarrierFill()`.
+
+**Why this matters after CCA.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container), bypassing mechanism 1 (noise absorption). But CSPRNG fill bytes remain in the data bit positions — encrypted identically to plaintext by dataSeed (rotation + XOR). COBS decoding stops at the `0x00` null terminator and never reaches the fill region, so the fill content is never constrained by the plaintext structure. The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill without the correct dataSeed. Although CCA reveals noise bit positions (bypassing the noise-position uncertainty of mechanism 1), CSPRNG residue in data positions provides independent information-theoretic ambiguity that persists regardless of CCA.
+
+The rotation barrier (7^P from [Proof 4](PROOFS.md#proof-4-rotation-barrier)) remains complemented by this reduced information-theoretic barrier from CSPRNG fill. Three layers operate in every scenario:
+
+| Layer | Core ITB | After CCA (MAC + Reveal) |
+|---|---|---|
+| Noise absorption (mechanism 1) | Full (8 noise bits/pixel) | Partial — noise bits removed, CSPRNG fill in data positions survives |
+| Encoding ambiguity (mechanism 2) | 56^P | 7^P (rotation only) |
+| Brute-force cost | P × 2^(2×keyBits) | P × 2^keyBits |
+
+**Asymmetric property.** The receiver does not need the same `SetBarrierFill` value as the sender. Encrypt writes the container dimensions (W×H) into the header; Decrypt reads W×H from the header and processes whatever pixels are present. A larger fill margin on the sender side increases CSPRNG residue without requiring any configuration change on the receiver. This confirms the configurable nature of the information-theoretic barrier — the sender can independently tune the CSPRNG fill margin.
 
 ## Hash Function Selection
 
