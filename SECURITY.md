@@ -19,7 +19,7 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 † Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
 
-¶ CCA eliminates noise bits (12.5%), but CSPRNG fill bytes remain encrypted in data bit positions by dataSeed — indistinguishable from plaintext ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+¶ CCA eliminates noise bits (12.5%), but CSPRNG fill bytes remain encrypted in data bit positions by dataSeed — indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 ## 2. Hash Function Requirements
 
@@ -79,7 +79,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 |---|---|
 | AES-CBC + MAC-then-Encrypt‡ | Padding oracle → full plaintext (POODLE, Lucky13) |
 | AES-CTR + MAC-then-Encrypt | Bit-flip oracle → data structure |
-| ITB + MAC-Inside (full capacity) | Noise position only (3 bits/pixel, no data); CSPRNG fill persists in data positions ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| ITB + MAC-Inside (full capacity) | Noise position only (3 bits/pixel, no data); CSPRNG fill persists in data positions ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | AES-GCM (AEAD) | None (MAC rejects before decryption) |
 | ChaCha20-Poly1305 (AEAD) | None (MAC rejects before decryption) |
 
@@ -109,7 +109,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 
 ††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2×keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2×keyBits). Grover: √P × 2^keyBits. At 1024-bit keys (P=196): classical ~2^2056, Grover ~2^1028.
 
-§§ CCA removes noise bits (12.5% of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+§§ CCA removes noise bits (12.5% of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 ‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2×keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
 
@@ -144,7 +144,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | dataSeed (rotation + XOR) | 59 | **0** (independent seed) | **59 (100%)** |
 | **Total** | **62** | **3 (4.8%)** | **59 (95.2%)** |
 
-§ CCA reveals noise bit positions, but does not eliminate all ambiguity: CSPRNG fill bytes in data positions remain encrypted by dataSeed, indistinguishable from plaintext ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+§ CCA reveals noise bit positions, but does not eliminate all ambiguity: CSPRNG fill bytes in data positions remain encrypted by dataSeed, indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 ### Barrier Strength (1024-bit key)
 
@@ -160,7 +160,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Config map space (P=400) | 2^24800 |
 | Key space | 2^1024 |
 
-‖ Noise barrier applies to Core ITB / MAC + Silent Drop. Under CCA (MAC + Reveal), noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+‖ Noise barrier applies to Core ITB / MAC + Silent Drop. Under CCA (MAC + Reveal), noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 ### Practical Value of ~5% CCA Leak
 
@@ -172,7 +172,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Key-space reduction | noiseSeed eliminated: P × 2^(2×keyBits) → P × 2^keyBits |
 | Brute-force speedup | Search space halved in exponent (two seeds → one seed) |
 | Grover reduction | √P × 2^keyBits → √P × 2^(keyBits/2) (noiseSeed eliminated from search) |
-| CSPRNG residue after CCA | Persists: fill bytes in data positions encrypted by dataSeed ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| CSPRNG residue after CCA | Persists: fill bytes in data positions encrypted by dataSeed ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 
 ## 10. Noise-Density Optimality (Why 8/1)
 
@@ -259,12 +259,12 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); O(P) full decryption per candidate (all modes) |
 | Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
-| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue persists in data positions, [Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue persists in data positions, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
 | Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop (no oracle); MAC + Reveal has CCA oracle but limited to noise positions |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
-| Noise absorption* | ✓ Core ITB / MAC + Silent Drop (CSPRNG noise bit at unknown position; noise bits bypassed by CCA in MAC + Reveal, but CSPRNG fill in data positions persists — [Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| Noise absorption* | ✓ Core ITB / MAC + Silent Drop (CSPRNG noise bit at unknown position; noise bits bypassed by CCA in MAC + Reveal, but CSPRNG fill in data positions persists — [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
