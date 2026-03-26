@@ -1,5 +1,5 @@
 // Package itb implements ITB (Information-Theoretic Barrier): a parameterized
-// symmetric cipher construction that achieves known-plaintext resistance
+// symmetric cipher construction that makes hash output unobservable
 // under passive observation through an information-theoretic barrier.
 //
 // # Security Notice

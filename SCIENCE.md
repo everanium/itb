@@ -8,7 +8,7 @@ ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construc
 
 ## Encoding Ambiguity Scale
 
-The barrier's encoding ambiguity grows exponentially with data size. Unlike traditional ciphers where more plaintext provides more constraints for the attacker (reducing key uncertainty), ITB inverts this relationship: each additional pixel adds 7 (CCA) or 56 (no CCA) unverifiable candidates, increasing attacker uncertainty.
+The barrier's encoding ambiguity grows exponentially with data size. Unlike traditional ciphers where more plaintext provides more constraints for the attacker (reducing uncertainty about the key), ITB inverts this relationship: each additional pixel adds 7 (CCA) or 56 (no CCA) unverifiable candidates, increasing uncertainty about the correct configuration.
 
 **MAC + Reveal (worst-case CCA, 7 rotation candidates per pixel, vs 1024-bit key):**
 
