@@ -162,6 +162,28 @@
 //	encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
 //	decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
 //
+//	// AES-NI Cached (128-bit hash, 1024-bit effective key, stdlib)
+//	func makeAESHash() itb.HashFunc128 {
+//	    var key [16]byte
+//	    rand.Read(key[:])
+//	    block, _ := aes.NewCipher(key[:])
+//
+//	    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+//	        var b [16]byte
+//	        copy(b[:], data)
+//	        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
+//	        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
+//	        block.Encrypt(b[:], b[:])
+//	        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
+//	        block.Encrypt(b[:], b[:])
+//	        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
+//	    }
+//	}
+//
+//	ns, _ = itb.NewSeed128(1024, makeAESHash())
+//	ds, _ = itb.NewSeed128(1024, makeAESHash())  // independent key per seed
+//	ss, _ = itb.NewSeed128(1024, makeAESHash())
+//
 //	// BLAKE3 Keyed Cached (256-bit hash, 2048-bit effective key, sync.Pool)
 //	func makeBlake3Hash() itb.HashFunc256 {
 //	    var key [32]byte
@@ -198,28 +220,6 @@
 //
 //	encrypted, _ = itb.Encrypt256(ns256, ds256, ss256, plaintext)
 //	decrypted, _ = itb.Decrypt256(ns256, ds256, ss256, encrypted)
-//
-//	// AES-NI Cached (128-bit hash, 1024-bit effective key, stdlib)
-//	func makeAESHash() itb.HashFunc128 {
-//	    var key [16]byte
-//	    rand.Read(key[:])
-//	    block, _ := aes.NewCipher(key[:])
-//
-//	    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-//	        var b [16]byte
-//	        copy(b[:], data)
-//	        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
-//	        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
-//	        block.Encrypt(b[:], b[:])
-//	        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
-//	        block.Encrypt(b[:], b[:])
-//	        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
-//	    }
-//	}
-//
-//	ns, _ = itb.NewSeed128(1024, makeAESHash())
-//	ds, _ = itb.NewSeed128(1024, makeAESHash())  // independent key per seed
-//	ss, _ = itb.NewSeed128(1024, makeAESHash())
 //
 //	// BLAKE2b-512 Keyed Cached (512-bit hash, 2048-bit effective key, sync.Pool)
 //	func makeBlake2bHash512() itb.HashFunc512 {
