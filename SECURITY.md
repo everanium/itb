@@ -162,7 +162,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 
 ‖ Noise barrier applies to Core ITB / MAC + Silent Drop. Under CCA (MAC + Reveal), noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
-### Practical Value of ~5% CCA Leak
+### Practical Value of 4.8% CCA Leak
 
 | Information | Gained by attacker? |
 |---|---|
