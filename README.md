@@ -414,7 +414,7 @@ Default nonce is 128 bits (birthday collision at ~2^64 messages). For higher col
 itb.SetBarrierFill(4) // side += 4 instead of default side += 1
 ```
 
-Controls the CSPRNG fill margin added to the container side dimension. The construction guarantees that every container has strictly more pixel capacity than the payload requires — the excess capacity is filled with `crypto/rand` data encrypted by dataSeed. This CSPRNG residue is indistinguishable from encrypted plaintext and provides information-theoretic ambiguity within the data channel ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+Controls the CSPRNG fill margin added to the container side dimension. The construction guarantees that every container has strictly more pixel capacity than the payload requires — the excess capacity is filled with `crypto/rand` data encrypted by dataSeed. This CSPRNG residue is indistinguishable from encrypted plaintext and provides information-theoretic ambiguity within the data channel ([Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 Valid values: 1, 2, 4, 8, 16, 32. Default: 1. Panics on invalid input. Thread-safe (atomic). Query with `itb.GetBarrierFill()`.
 
@@ -542,12 +542,12 @@ The output format is identical across all three hash width variants.
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
-| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue adds independent ambiguity in data positions, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue adds independent ambiguity in data positions, [Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
 | Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop; MAC + Reveal has CCA oracle limited to noise positions |
 | Known-plaintext resistance | Under passive observation (IT barrier) |
 | Chosen-plaintext resistance | Independent maps |
-| Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives, [Theorem 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Hash function requirement | PRF required; barrier hardens PRF |
 | Nonce reuse protection | 128-bit per-message nonce |
