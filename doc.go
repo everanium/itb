@@ -199,6 +199,64 @@
 //	encrypted, _ = itb.Encrypt256(ns256, ds256, ss256, plaintext)
 //	decrypted, _ = itb.Decrypt256(ns256, ds256, ss256, encrypted)
 //
+//	// AES-NI Cached (128-bit hash, 1024-bit effective key, stdlib)
+//	func makeAESHash() itb.HashFunc128 {
+//	    var key [16]byte
+//	    rand.Read(key[:])
+//	    block, _ := aes.NewCipher(key[:])
+//
+//	    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+//	        var b [16]byte
+//	        copy(b[:], data)
+//	        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
+//	        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
+//	        block.Encrypt(b[:], b[:])
+//	        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
+//	        block.Encrypt(b[:], b[:])
+//	        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
+//	    }
+//	}
+//
+//	ns, _ = itb.NewSeed128(1024, makeAESHash())
+//	ds, _ = itb.NewSeed128(1024, makeAESHash())  // independent key per seed
+//	ss, _ = itb.NewSeed128(1024, makeAESHash())
+//
+//	// BLAKE2b-512 Keyed Cached (512-bit hash, 2048-bit effective key, sync.Pool)
+//	func makeBlake2bHash512() itb.HashFunc512 {
+//	    var key [64]byte
+//	    rand.Read(key[:])
+//	    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
+//
+//	    return func(data []byte, seed [8]uint64) [8]uint64 {
+//	        need := 64 + len(data)
+//	        ptr := pool.Get().(*[]byte)
+//	        buf := *ptr
+//	        if cap(buf) < need { buf = make([]byte, need) } else { buf = buf[:need] }
+//	        copy(buf[:64], key[:])
+//	        copy(buf[64:], data)
+//	        for i := 0; i < 8; i++ {
+//	            off := 64 + i*8
+//	            if off+8 <= len(buf) {
+//	                binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
+//	            }
+//	        }
+//	        digest := blake2b.Sum512(buf)
+//	        *ptr = buf; pool.Put(ptr)
+//	        var result [8]uint64
+//	        for i := range result {
+//	            result[i] = binary.LittleEndian.Uint64(digest[i*8:])
+//	        }
+//	        return result
+//	    }
+//	}
+//
+//	ns512, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+//	ds512, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+//	ss512, _ := itb.NewSeed512(2048, makeBlake2bHash512())
+//
+//	encrypted, _ = itb.Encrypt512(ns512, ds512, ss512, plaintext)
+//	decrypted, _ = itb.Decrypt512(ns512, ds512, ss512, encrypted)
+//
 // # Authenticated Encryption (MAC-Inside-Encrypt)
 //
 // The core construction provides confidentiality only. For integrity
