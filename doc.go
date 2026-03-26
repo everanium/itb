@@ -145,18 +145,56 @@
 //	    "github.com/everanium/itb"
 //	)
 //
-//	// 128-bit hash (1024-bit effective key)
-//	ns, _ := itb.NewSeed128(1024, mySipHash128)
-//	ds, _ := itb.NewSeed128(1024, mySipHash128)
-//	ss, _ := itb.NewSeed128(1024, mySipHash128)
+//	// Optional: global configuration (all thread-safe, atomic)
+//	itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
+//	itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
+//	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+//
+//	// SipHash-2-4 (128-bit hash, 1024-bit effective key)
+//	func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+//	    return siphash.Hash128(seed0, seed1, data)
+//	}
+//
+//	ns, _ := itb.NewSeed128(1024, sipHash128)
+//	ds, _ := itb.NewSeed128(1024, sipHash128)
+//	ss, _ := itb.NewSeed128(1024, sipHash128)
 //
 //	encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
 //	decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
 //
-//	// 256-bit hash (2048-bit effective key)
-//	ns256, _ := itb.NewSeed256(2048, myBlake3Hash256)
-//	ds256, _ := itb.NewSeed256(2048, myBlake3Hash256)
-//	ss256, _ := itb.NewSeed256(2048, myBlake3Hash256)
+//	// BLAKE3 Keyed Cached (256-bit hash, 2048-bit effective key, sync.Pool)
+//	func makeBlake3Hash() itb.HashFunc256 {
+//	    var key [32]byte
+//	    rand.Read(key[:])
+//	    template, _ := blake3.NewKeyed(key[:])
+//	    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
+//
+//	    return func(data []byte, seed [4]uint64) [4]uint64 {
+//	        h := template.Clone()
+//	        ptr := pool.Get().(*[]byte)
+//	        mixed := *ptr
+//	        if cap(mixed) < len(data) { mixed = make([]byte, len(data)) } else { mixed = mixed[:len(data)] }
+//	        copy(mixed, data)
+//	        for i := 0; i < 4; i++ {
+//	            off := i * 8
+//	            if off+8 <= len(mixed) {
+//	                binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
+//	            }
+//	        }
+//	        h.Write(mixed)
+//	        *ptr = mixed; pool.Put(ptr)
+//	        var buf [32]byte
+//	        h.Sum(buf[:0])
+//	        return [4]uint64{
+//	            binary.LittleEndian.Uint64(buf[0:]),  binary.LittleEndian.Uint64(buf[8:]),
+//	            binary.LittleEndian.Uint64(buf[16:]), binary.LittleEndian.Uint64(buf[24:]),
+//	        }
+//	    }
+//	}
+//
+//	ns256, _ := itb.NewSeed256(2048, makeBlake3Hash())
+//	ds256, _ := itb.NewSeed256(2048, makeBlake3Hash())
+//	ss256, _ := itb.NewSeed256(2048, makeBlake3Hash())
 //
 //	encrypted, _ = itb.Encrypt256(ns256, ds256, ss256, plaintext)
 //	decrypted, _ = itb.Decrypt256(ns256, ds256, ss256, encrypted)
