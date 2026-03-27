@@ -71,7 +71,7 @@ Three layers of protection under Partial KPA:
 2. **Byte-splitting** — byte-level analysis impossible (gcd(7,8) = 1)
 3. **PRF** — even if the attacker somehow gets through, inversion is impossible
 
-None of the three is breached. The PRF is not even reached.
+All three layers work together. PRF non-invertibility prevents candidate verification.
 
 See [SCIENCE.md Section 2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment), [SECURITY.md Section 8](SECURITY.md#8-byte-splitting-property).
 
