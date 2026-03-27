@@ -214,6 +214,34 @@ decrypted, _ := itb.Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 // Security: P × 2^(3×512) = P × 2^1536. Faster than Single 1024-bit, stronger security.
 ```
 
+### Mixing PRF Primitives
+
+Each seed has its own hash function — you can use **different PRF implementations** for different seeds within the same hash width. The receiver must use the same assignment.
+
+**Single Ouroboros (3 seeds):**
+```go
+ns, _ := itb.NewSeed128(1024, sipHash128)      // noiseSeed: SipHash-2-4
+ds, _ := itb.NewSeed128(1024, makeAESHash())    // dataSeed: AES-CMAC
+ss, _ := itb.NewSeed128(1024, sipHash128)       // startSeed: SipHash-2-4
+
+encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
+```
+
+**Triple Ouroboros (7 seeds):**
+```go
+ns, _  := itb.NewSeed128(512, sipHash128)       // shared noise: SipHash
+ds1, _ := itb.NewSeed128(512, makeAESHash())    // ring 1 data: AES-CMAC
+ds2, _ := itb.NewSeed128(512, sipHash128)       // ring 2 data: SipHash
+ds3, _ := itb.NewSeed128(512, makeAESHash())    // ring 3 data: AES-CMAC
+ss1, _ := itb.NewSeed128(512, sipHash128)       // ring 1 start: SipHash
+ss2, _ := itb.NewSeed128(512, makeAESHash())    // ring 2 start: AES-CMAC
+ss3, _ := itb.NewSeed128(512, sipHash128)       // ring 3 start: SipHash
+
+encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+```
+
+For Triple Ouroboros, use the most performance-balanced PRF primitives across the three dataSeed rings — this ensures all three parallel goroutines finish at similar times.
+
 ## How It Works
 
 ITB encrypts data into raw RGBWYOPA pixel containers (8 channels per pixel: Red, Green, Blue, White, Yellow, Orange, Purple, Alpha — mnemonic labels for an 8-byte unit; the format is not tied to image processing) generated from `crypto/rand`. Each 8-bit channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead. Each pixel's bit-plane selection and per-channel XOR masks are derived from a chained hash of the seed and a per-message nonce. The random container creates an information-theoretic barrier: hash outputs are absorbed by modifications of random pixel values — the original container bytes are never transmitted, so the modifications are unknown, and the hash output is unobservable.
