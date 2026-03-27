@@ -46,6 +46,10 @@ Each seed has its own ChainHash with its own components. There is no mathematica
 
 **Note (dual-container variant — Double Ouroboros).** An alternative approach to doubling brute-force space without modifying pixel processing: split plaintext into two parts (e.g., even/odd bytes), encrypt each into a separate CSPRNG container with independent dataSeed and startSeed, sharing nonce, dimensions, and noiseSeed. Output format: `[nonce][W][H][container1: W×H×8][container2: W×H×8]`. Each container is a complete ITB encryption with its own startPixel and data configuration — two rings wrapping independently. The attacker needs both dataSeed values to recover plaintext; one alone yields every other byte — useless without the second. Under CCA: P × 2^(2×keyBits) classical, √P × 2^keyBits Grover. No code changes to pixel processing — two standard Encrypt calls on split data, concatenated. Double Ouroboros.
 
+**Note (triple-container variant — Triple Ouroboros).** Three containers, plaintext split into three parts (every 3rd byte), 7 seeds: 3 × dataSeed + 3 × startSeed + 1 × noiseSeed (shared). Three independent rings, three startPixels, three rotation/XOR configurations. One dataSeed yields every third byte — useless without the other two. Under CCA: P × 2^(3×keyBits) classical, √P × 2^(3×keyBits/2) Grover.
+
+**General pattern (N-tuple Ouroboros).** N containers = (2N+1) seeds (N × dataSeed + N × startSeed + 1 × noiseSeed). Plaintext split into N parts. Under CCA: P × 2^(N×keyBits) classical. No changes to pixel processing — N standard Encrypt calls on split data. The three-seed architecture (N=1) remains the proven optimum for practical use; N>1 is theoretical and architecturally trivial to implement when needed.
+
 ## 5. Under Normal Use: The Barrier Is Practically Impenetrable
 
 With PRF hash, crypto/rand, and no co-located attacker:
