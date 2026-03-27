@@ -305,7 +305,8 @@
 //
 //	itb.SetMaxWorkers(4) // use at most 4 cores
 //
-// Valid range: 1 to 256. The setting is global and thread-safe (atomic).
+// Pass 0 to use all available CPUs (default). Valid range: 0 to 256.
+// The setting is global and thread-safe (atomic).
 // Query the current limit with [GetMaxWorkers].
 //
 // # Nonce Configuration

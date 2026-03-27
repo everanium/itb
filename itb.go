@@ -98,11 +98,12 @@ const maxTotalPixels = 10_000_000
 var maxWorkers atomic.Int32
 
 // SetMaxWorkers sets the maximum number of parallel workers for pixel processing.
-// Valid range: 1 to 256. Values outside this range are clamped.
+// Pass 0 to use all available CPUs (default). Valid range: 0 to 256.
+// Values above 256 are clamped. Negative values are treated as 0 (all CPUs).
 // This affects all subsequent Encrypt/Decrypt calls across all hash widths.
 func SetMaxWorkers(n int) {
-	if n < 1 {
-		n = 1
+	if n < 0 {
+		n = 0
 	}
 	if n > 256 {
 		n = 256

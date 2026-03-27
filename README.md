@@ -102,45 +102,11 @@ go test -bench='BLAKE3_' -benchmem ./...
 go test -bench='KeySize' -benchmem ./...
 ```
 
-### Performance (i7-11700K, VMware, CGO mode, 1024-2048 bit)
+### Performance
 
-**Encrypt (MB/s):**
+Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
 
-| Hash | Width | Crypto | ITB Key | 1 MB | 16 MB | 64 MB |
-|---|---|---|---|---|---|---|
-| **SipHash-2-4** | 128 | PRF | 1024 | 138 | 146 | 135 |
-| **BLAKE2b-512** | 512 | PRF | 2048 | 110 | 126 | 119 |
-| **AES-CMAC** | 128 | PRF | 1024 | 114 | 143 | 132 |
-| **BLAKE2s** | 256 | PRF | 2048 | 89 | 98 | 97 |
-| **BLAKE2b-256** | 256 | PRF | 2048 | 75 | 92 | 92 |
-| **BLAKE3** | 256 | PRF | 2048 | 64 | 68 | 63 |
-
-**Decrypt (MB/s):**
-
-| Hash | Width | Crypto | ITB Key | 1 MB | 16 MB | 64 MB |
-|---|---|---|---|---|---|---|
-| **SipHash-2-4** | 128 | PRF | 1024 | 165 | 197 | 200 |
-| **BLAKE2b-512** | 512 | PRF | 2048 | 151 | 173 | 171 |
-| **AES-CMAC** | 128 | PRF | 1024 | 152 | 187 | 168 |
-| **BLAKE2s** | 256 | PRF | 2048 | 106 | 121 | 107 |
-| **BLAKE2b-256** | 256 | PRF | 2048 | 98 | 114 | 110 |
-| **BLAKE3** | 256 | PRF | 2048 | 72 | 75 | 72 |
-
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses C pixel processing with GCC `-O3 -mavx2` auto-vectorization + L1-cache micro-batching. Pure Go fallback (`CGO_ENABLED=0`) is ~10-20% slower on decrypt.
-
-**BLAKE2b-512 highlight:** With 512-bit ChainHash (1 round for 512-bit key), BLAKE2b-512 is ~30% faster than BLAKE2b-256 (2 rounds) while providing wider MITM bottleneck (2^512 vs 2^256). PRF-level encryption at 110-173 MB/s.
-
-### Server-class CPU (AMD EPYC 9655P, 96-Core, Bare metal, CGO mode, 1024-2048 bit)
-
-ITB scales linearly with core count. Per-pixel parallelism across goroutines utilizes all available cores.
-
-| Hash | Width | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
-|---|---|---|---|---|---|---|---|
-| **SipHash-2-4** | 128 | 255 | 327 | 362 | 452 | 579 | 709 |
-| **BLAKE2b-512** | 512 | 229 | 297 | 331 | 357 | 484 | 601 |
-| **ChaCha20** | 256 | 199 | 257 | 309 | 302 | 408 | 536 |
-
-ChainHash is not the bottleneck on high-core-count CPUs — crypto/rand container generation (~813 MB/s on this CPU) becomes the limiting factor for encrypt. Decrypt does not require crypto/rand and scales further.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses C pixel processing with GCC `-O3 -mavx2` auto-vectorization + L1-cache micro-batching. Pure Go fallback (`CGO_ENABLED=0`) is ~10-20% slower on decrypt. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
 ### ASIC Scalability
 
@@ -383,22 +349,13 @@ ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ```
 
-### Performance: Encrypt (i7-11700K, 16 threads)
-
-| Hash | Width | Encrypt 1 MB | Encrypt 64 MB |
-|---|---|---|---|
-| SipHash-2-4 | 128-bit | ~80 MB/s | ~148 MB/s |
-| AES-NI | 128-bit | ~24 MB/s | ~112 MB/s |
-| BLAKE2b-512 | 512-bit | ~20 MB/s | ~122 MB/s |
-| BLAKE3 | 256-bit | ~7 MB/s | ~58 MB/s |
-
 ### Parallelism Control
 
 ```go
 itb.SetMaxWorkers(4) // limit to 4 CPU cores for pixel processing
 ```
 
-By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Valid range: 1–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
+By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Pass 0 to use all CPUs (default). Valid range: 0–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
 
 ### Nonce Configuration
 
