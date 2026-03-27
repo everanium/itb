@@ -222,3 +222,161 @@ func parseChunkLen(data []byte) (int, error) {
 
 	return chunkLen, nil
 }
+
+// --- Triple Ouroboros streaming (7-seed) ---
+
+// EncryptStream3x128 encrypts data in chunks using Triple Ouroboros (128-bit variant).
+func EncryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream3x128 decrypts concatenated chunks produced by EncryptStream3x128.
+func DecryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	for off := 0; off < len(data); {
+		chunkLen, err := parseChunkLen(data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream3x256 encrypts data in chunks using Triple Ouroboros (256-bit variant).
+func EncryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream3x256 decrypts concatenated chunks produced by EncryptStream3x256.
+func DecryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	for off := 0; off < len(data); {
+		chunkLen, err := parseChunkLen(data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream3x512 encrypts data in chunks using Triple Ouroboros (512-bit variant).
+func EncryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream3x512 decrypts concatenated chunks produced by EncryptStream3x512.
+func DecryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	for off := 0; off < len(data); {
+		chunkLen, err := parseChunkLen(data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}

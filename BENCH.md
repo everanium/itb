@@ -1,4 +1,4 @@
-# ITB Benchmark Results
+# ITB Single Ouroboros Benchmark Results
 
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode)
 

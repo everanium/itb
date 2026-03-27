@@ -1,9 +1,11 @@
 package itb
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"math"
+	"runtime"
 	"sync"
 )
 
@@ -20,7 +22,8 @@ func containerSizeAuth512(noiseSeed, dataSeed, startSeed *Seed512, payloadCOBSLe
 }
 
 // process512 is the triple-seed encode/decode engine (512-bit variant).
-func process512(noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container []byte, width, height int, data []byte, encode bool) {
+// maxW limits the number of workers (0 = use default from effectiveWorkers).
+func process512(noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container []byte, width, height int, data []byte, encode bool, maxW int) {
 	totalPixels := width * height
 	startPixel := startSeed.deriveStartPixel(nonce, totalPixels)
 	totalBits := len(data) * 8
@@ -31,6 +34,9 @@ func process512(noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container
 	}
 
 	numWorkers := effectiveWorkers(dataPixels)
+	if maxW > 0 && numWorkers > maxW {
+		numWorkers = maxW
+	}
 
 	if numWorkers == 1 {
 		processChunk512(noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, encode)
@@ -105,7 +111,7 @@ func Encrypt512(noiseSeed, dataSeed, startSeed *Seed512, data []byte) ([]byte, e
 		return nil, err
 	}
 
-	process512(noiseSeed, dataSeed, startSeed, nonce, container, width, height, payload, true)
+	process512(noiseSeed, dataSeed, startSeed, nonce, container, width, height, payload, true, 0)
 	secureWipe(payload)
 
 	out := make([]byte, 0, headerSize()+len(container))
@@ -158,7 +164,7 @@ func Decrypt512(noiseSeed, dataSeed, startSeed *Seed512, fileData []byte) ([]byt
 
 	decoded := make([]byte, capacity)
 
-	process512(noiseSeed, dataSeed, startSeed, nonce, container, width, height, decoded, false)
+	process512(noiseSeed, dataSeed, startSeed, nonce, container, width, height, decoded, false, 0)
 	defer secureWipe(decoded)
 
 	nullPos := -1
@@ -180,4 +186,236 @@ func Decrypt512(noiseSeed, dataSeed, startSeed *Seed512, fileData []byte) ([]byt
 	}
 
 	return original, nil
+}
+
+// checkSevenSeeds512 verifies all 7 seeds are distinct pointers (seven-seed isolation).
+func checkSevenSeeds512(ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) error {
+	seeds := [7]*Seed512{ns, ds1, ds2, ds3, ss1, ss2, ss3}
+	for i := 0; i < len(seeds); i++ {
+		for j := i + 1; j < len(seeds); j++ {
+			if seeds[i] == seeds[j] {
+				return fmt.Errorf("itb: all seven seeds must be different (seven-seed isolation)")
+			}
+		}
+	}
+	return nil
+}
+
+// containerSize3_512 calculates container dimensions for Triple Ouroboros (512-bit variant).
+func containerSize3_512(noiseSeed *Seed512, dataSeed1, dataSeed2, dataSeed3 *Seed512, startSeed1, startSeed2, startSeed3 *Seed512, cobsLens [3]int) (width, height int) {
+	return calcContainerSize3(cobsLens,
+		noiseSeed.MinPixels(),
+		[3]int{dataSeed1.MinPixels(), dataSeed2.MinPixels(), dataSeed3.MinPixels()},
+		[3]int{startSeed1.MinPixels(), startSeed2.MinPixels(), startSeed3.MinPixels()})
+}
+
+// containerSizeAuth3_512 calculates container dimensions for authenticated Triple Ouroboros (512-bit variant).
+func containerSizeAuth3_512(noiseSeed *Seed512, dataSeed1, dataSeed2, dataSeed3 *Seed512, startSeed1, startSeed2, startSeed3 *Seed512, cobsLens [3]int) (width, height int) {
+	return calcContainerSize3(cobsLens,
+		noiseSeed.MinPixelsAuth(),
+		[3]int{dataSeed1.MinPixelsAuth(), dataSeed2.MinPixelsAuth(), dataSeed3.MinPixelsAuth()},
+		[3]int{startSeed1.MinPixelsAuth(), startSeed2.MinPixelsAuth(), startSeed3.MinPixelsAuth()})
+}
+
+// Encrypt3x512 encrypts data using Triple Ouroboros with 7 seeds (512-bit variant).
+// Plaintext is split into 3 parts (every 3rd byte), each encrypted into 1/3 of the
+// pixel data with independent dataSeed and startSeed, sharing noiseSeed.
+// Output format is identical to standard ITB: [nonce][W][H][W*H*8 pixels].
+func Encrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
+	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("itb: empty data")
+	}
+	if len(data) > maxDataSize {
+		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
+	}
+
+	p0, p1, p2 := splitTriple(data)
+	enc0 := cobsEncode(p0)
+	enc1 := cobsEncode(p1)
+	enc2 := cobsEncode(p2)
+
+	width, height := containerSize3_512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, [3]int{len(enc0), len(enc1), len(enc2)})
+	totalPixels := width * height
+	third := totalPixels / 3
+	thirdPixels2 := totalPixels - 2*third
+
+	caps := [3]int{
+		(third * DataBitsPerPixel) / 8,
+		(third * DataBitsPerPixel) / 8,
+		(thirdPixels2 * DataBitsPerPixel) / 8,
+	}
+	encs := [3][]byte{enc0, enc1, enc2}
+	for i, enc := range encs {
+		if len(enc)+1 > caps[i] {
+			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
+		}
+	}
+
+	// Build 3 payloads
+	payloads := [3][]byte{}
+	for i, enc := range encs {
+		payload := make([]byte, caps[i])
+		copy(payload, enc)
+		payload[len(enc)] = 0x00
+		fillStart := len(enc) + 1
+		if fillStart < caps[i] {
+			fillBytes, err := generateRandomBytes(caps[i] - fillStart)
+			if err != nil {
+				return nil, err
+			}
+			copy(payload[fillStart:], fillBytes)
+		}
+		payloads[i] = payload
+	}
+
+	// 3×CSPRNG parallel generation into one pre-allocated buffer
+	container := make([]byte, totalPixels*Channels)
+	var wg sync.WaitGroup
+	var randErr [3]error
+	wg.Add(3)
+	go func() { _, randErr[0] = rand.Read(container[0 : third*Channels]); wg.Done() }()
+	go func() { _, randErr[1] = rand.Read(container[third*Channels : 2*third*Channels]); wg.Done() }()
+	go func() { _, randErr[2] = rand.Read(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
+	wg.Wait()
+	for _, err := range randErr {
+		if err != nil {
+			return nil, fmt.Errorf("itb: crypto/rand: %w", err)
+		}
+	}
+
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, err
+	}
+
+	// 3 parallel goroutines for pixel processing, each limited to 1/3 of CPU cores
+	offset1 := third * Channels
+	offset2 := 2 * third * Channels
+	perThird := runtime.NumCPU() / 3
+	if perThird < 1 {
+		perThird = 1
+	}
+	wg.Add(3)
+	go func() {
+		process512(noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process512(noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, payloads[1], true, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process512(noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, payloads[2], true, perThird)
+		wg.Done()
+	}()
+	wg.Wait()
+
+	for i := range payloads {
+		secureWipe(payloads[i])
+	}
+
+	out := make([]byte, 0, headerSize()+len(container))
+	out = append(out, nonce...)
+	var dim [4]byte
+	binary.BigEndian.PutUint16(dim[0:], uint16(width))
+	binary.BigEndian.PutUint16(dim[2:], uint16(height))
+	out = append(out, dim[:]...)
+	out = append(out, container...)
+
+	return out, nil
+}
+
+// Decrypt3x512 decrypts data encrypted by [Encrypt3x512] (Triple Ouroboros, 512-bit variant).
+func Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
+	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, err
+	}
+	if len(fileData) < headerSize()+Channels {
+		return nil, fmt.Errorf("itb: data too short")
+	}
+
+	nonce := fileData[:currentNonceSize()]
+	width := int(binary.BigEndian.Uint16(fileData[currentNonceSize():]))
+	height := int(binary.BigEndian.Uint16(fileData[currentNonceSize()+2:]))
+	container := fileData[headerSize():]
+
+	if width == 0 || height == 0 {
+		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
+	}
+	if width > math.MaxInt/height {
+		return nil, fmt.Errorf("itb: container dimensions %dx%d overflow int", width, height)
+	}
+	totalPixels := width * height
+	if totalPixels > math.MaxInt/Channels {
+		return nil, fmt.Errorf("itb: container too large for this platform: %d pixels", totalPixels)
+	}
+	if totalPixels > maxTotalPixels {
+		return nil, fmt.Errorf("itb: container too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
+	}
+	expectedSize := totalPixels * Channels
+	if len(container) < expectedSize {
+		return nil, fmt.Errorf("itb: container too short: got %d, need %d", len(container), expectedSize)
+	}
+
+	third := totalPixels / 3
+	thirdPixels2 := totalPixels - 2*third
+
+	caps := [3]int{
+		(third * DataBitsPerPixel) / 8,
+		(third * DataBitsPerPixel) / 8,
+		(thirdPixels2 * DataBitsPerPixel) / 8,
+	}
+
+	decoded := [3][]byte{
+		make([]byte, caps[0]),
+		make([]byte, caps[1]),
+		make([]byte, caps[2]),
+	}
+
+	offset1 := third * Channels
+	offset2 := 2 * third * Channels
+	perThird := runtime.NumCPU() / 3
+	if perThird < 1 {
+		perThird = 1
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		process512(noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, decoded[0], false, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process512(noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, decoded[1], false, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process512(noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird)
+		wg.Done()
+	}()
+	wg.Wait()
+
+	parts := [3][]byte{}
+	for i := 0; i < 3; i++ {
+		defer secureWipe(decoded[i])
+		nullPos := -1
+		for j := 0; j < len(decoded[i]); j++ {
+			if decoded[i][j] == 0x00 && nullPos == -1 {
+				nullPos = j
+			}
+		}
+		if nullPos < 0 {
+			return nil, fmt.Errorf("itb: no terminator found in third %d (wrong seed?)", i)
+		}
+		if nullPos == 0 {
+			parts[i] = []byte{}
+		} else {
+			parts[i] = cobsDecode(decoded[i][:nullPos])
+		}
+	}
+
+	return interleaveTriple(parts[0], parts[1], parts[2]), nil
 }

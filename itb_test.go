@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"unsafe"
@@ -19,10 +18,10 @@ import (
 	"golang.org/x/crypto/chacha20"
 )
 
-func TestMain(m *testing.M) {
-	SetMaxWorkers(0)
-	os.Exit(m.Run())
-}
+//func TestMain(m *testing.M) {
+//	SetMaxWorkers(0)
+//	os.Exit(m.Run())
+//}
 
 // noescape hides a pointer from escape analysis. The Go runtime uses
 // this trick internally. Safe when the callee does not retain the pointer.
@@ -2144,7 +2143,7 @@ func TestCOBS(t *testing.T) {
 	}
 }
 
-// --- Benchmark helpers ---
+// --- Single Ouroboros benchmark helpers ---
 
 func benchEncrypt128(b *testing.B, hashFunc HashFunc128, bits, dataSize int) {
 	ns, ds, ss := makeTripleSeed128(bits, hashFunc)
@@ -2292,153 +2291,153 @@ func benchDecrypt512Cached(b *testing.B, maker func() HashFunc512, bits, dataSiz
 
 // --- Benchmarks: ITB Width 512-bit (all hash functions at 512-bit key) ---
 
-func BenchmarkAES_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 512, 1<<20) }
-func BenchmarkAES_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 512, 16<<20) }
-func BenchmarkAES_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 512, 64<<20) }
-func BenchmarkAES_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128Cached(b, makeAESHash128, 512, 1<<20) }
-func BenchmarkAES_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 512, 16<<20) }
-func BenchmarkAES_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 512, 64<<20) }
+func BenchmarkSingleAES_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 512, 1<<20) }
+func BenchmarkSingleAES_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 512, 16<<20) }
+func BenchmarkSingleAES_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 512, 64<<20) }
+func BenchmarkSingleAES_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128Cached(b, makeAESHash128, 512, 1<<20) }
+func BenchmarkSingleAES_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 512, 16<<20) }
+func BenchmarkSingleAES_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 512, 64<<20) }
 
-func BenchmarkChaCha20_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 1<<20) }
-func BenchmarkChaCha20_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 16<<20) }
-func BenchmarkChaCha20_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 64<<20) }
-func BenchmarkChaCha20_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 1<<20) }
-func BenchmarkChaCha20_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 16<<20) }
-func BenchmarkChaCha20_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 64<<20) }
+func BenchmarkSingleChaCha20_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 1<<20) }
+func BenchmarkSingleChaCha20_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 16<<20) }
+func BenchmarkSingleChaCha20_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 512, 64<<20) }
+func BenchmarkSingleChaCha20_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 1<<20) }
+func BenchmarkSingleChaCha20_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 16<<20) }
+func BenchmarkSingleChaCha20_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 512, 64<<20) }
 
-func BenchmarkSipHash_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128(b, sipHash128, 512, 1<<20) }
-func BenchmarkSipHash_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt128(b, sipHash128, 512, 16<<20) }
-func BenchmarkSipHash_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt128(b, sipHash128, 512, 64<<20) }
-func BenchmarkSipHash_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128(b, sipHash128, 512, 1<<20) }
-func BenchmarkSipHash_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt128(b, sipHash128, 512, 16<<20) }
-func BenchmarkSipHash_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt128(b, sipHash128, 512, 64<<20) }
+func BenchmarkSingleSipHash_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128(b, sipHash128, 512, 1<<20) }
+func BenchmarkSingleSipHash_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt128(b, sipHash128, 512, 16<<20) }
+func BenchmarkSingleSipHash_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt128(b, sipHash128, 512, 64<<20) }
+func BenchmarkSingleSipHash_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128(b, sipHash128, 512, 1<<20) }
+func BenchmarkSingleSipHash_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt128(b, sipHash128, 512, 16<<20) }
+func BenchmarkSingleSipHash_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt128(b, sipHash128, 512, 64<<20) }
 
-func BenchmarkBLAKE3_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 1<<20) }
-func BenchmarkBLAKE3_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 16<<20) }
-func BenchmarkBLAKE3_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<20) }
-func BenchmarkBLAKE3_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 1<<20) }
-func BenchmarkBLAKE3_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 16<<20) }
-func BenchmarkBLAKE3_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20) }
+func BenchmarkSingleBLAKE3_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 1<<20) }
+func BenchmarkSingleBLAKE3_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 16<<20) }
+func BenchmarkSingleBLAKE3_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 512, 64<<20) }
+func BenchmarkSingleBLAKE3_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 1<<20) }
+func BenchmarkSingleBLAKE3_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 16<<20) }
+func BenchmarkSingleBLAKE3_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 512, 64<<20) }
 
-func BenchmarkBLAKE2b_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2bHash256, 512, 1<<20) }
-func BenchmarkBLAKE2b_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 512, 16<<20) }
-func BenchmarkBLAKE2b_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 512, 64<<20) }
-func BenchmarkBLAKE2b_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2bHash256, 512, 1<<20) }
-func BenchmarkBLAKE2b_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 512, 16<<20) }
-func BenchmarkBLAKE2b_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 512, 64<<20) }
+func BenchmarkSingleBLAKE2b_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2bHash256, 512, 1<<20) }
+func BenchmarkSingleBLAKE2b_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 512, 16<<20) }
+func BenchmarkSingleBLAKE2b_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 512, 64<<20) }
+func BenchmarkSingleBLAKE2b_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2bHash256, 512, 1<<20) }
+func BenchmarkSingleBLAKE2b_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 512, 16<<20) }
+func BenchmarkSingleBLAKE2b_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 512, 64<<20) }
 
-func BenchmarkBLAKE2s_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 1<<20) }
-func BenchmarkBLAKE2s_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 16<<20) }
-func BenchmarkBLAKE2s_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 64<<20) }
-func BenchmarkBLAKE2s_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2sHash256, 512, 1<<20) }
-func BenchmarkBLAKE2s_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 512, 16<<20) }
-func BenchmarkBLAKE2s_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 512, 64<<20) }
+func BenchmarkSingleBLAKE2s_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 1<<20) }
+func BenchmarkSingleBLAKE2s_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 16<<20) }
+func BenchmarkSingleBLAKE2s_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 512, 64<<20) }
+func BenchmarkSingleBLAKE2s_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2sHash256, 512, 1<<20) }
+func BenchmarkSingleBLAKE2s_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 512, 16<<20) }
+func BenchmarkSingleBLAKE2s_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 512, 64<<20) }
 
-func BenchmarkBLAKE2b512_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeBlake2bHash512, 512, 1<<20) }
-func BenchmarkBLAKE2b512_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 512, 16<<20) }
-func BenchmarkBLAKE2b512_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 512, 64<<20) }
-func BenchmarkBLAKE2b512_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 1<<20) }
-func BenchmarkBLAKE2b512_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 16<<20) }
-func BenchmarkBLAKE2b512_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 64<<20) }
+func BenchmarkSingleBLAKE2b512_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeBlake2bHash512, 512, 1<<20) }
+func BenchmarkSingleBLAKE2b512_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 512, 16<<20) }
+func BenchmarkSingleBLAKE2b512_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 512, 64<<20) }
+func BenchmarkSingleBLAKE2b512_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 1<<20) }
+func BenchmarkSingleBLAKE2b512_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 16<<20) }
+func BenchmarkSingleBLAKE2b512_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 64<<20) }
 
 // --- Benchmarks: ITB Width 1024-bit (all hash functions at 1024-bit key) ---
 
-func BenchmarkAES_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 1024, 1<<20) }
-func BenchmarkAES_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 1024, 16<<20) }
-func BenchmarkAES_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 1024, 64<<20) }
-func BenchmarkAES_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128Cached(b, makeAESHash128, 1024, 1<<20) }
-func BenchmarkAES_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 1024, 16<<20) }
-func BenchmarkAES_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 1024, 64<<20) }
+func BenchmarkSingleAES_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 1024, 1<<20) }
+func BenchmarkSingleAES_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 1024, 16<<20) }
+func BenchmarkSingleAES_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 1024, 64<<20) }
+func BenchmarkSingleAES_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128Cached(b, makeAESHash128, 1024, 1<<20) }
+func BenchmarkSingleAES_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 1024, 16<<20) }
+func BenchmarkSingleAES_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 1024, 64<<20) }
 
-func BenchmarkChaCha20_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 1024, 1<<20) }
-func BenchmarkChaCha20_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 1024, 16<<20) }
-func BenchmarkChaCha20_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 1024, 64<<20) }
-func BenchmarkChaCha20_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 1024, 1<<20) }
-func BenchmarkChaCha20_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 1024, 16<<20) }
-func BenchmarkChaCha20_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 1024, 64<<20) }
+func BenchmarkSingleChaCha20_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 1024, 1<<20) }
+func BenchmarkSingleChaCha20_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 1024, 16<<20) }
+func BenchmarkSingleChaCha20_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 1024, 64<<20) }
+func BenchmarkSingleChaCha20_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 1024, 1<<20) }
+func BenchmarkSingleChaCha20_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 1024, 16<<20) }
+func BenchmarkSingleChaCha20_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 1024, 64<<20) }
 
-func BenchmarkSipHash_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128(b, sipHash128, 1024, 1<<20) }
-func BenchmarkSipHash_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt128(b, sipHash128, 1024, 16<<20) }
-func BenchmarkSipHash_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt128(b, sipHash128, 1024, 64<<20) }
-func BenchmarkSipHash_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128(b, sipHash128, 1024, 1<<20) }
-func BenchmarkSipHash_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt128(b, sipHash128, 1024, 16<<20) }
-func BenchmarkSipHash_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt128(b, sipHash128, 1024, 64<<20) }
+func BenchmarkSingleSipHash_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128(b, sipHash128, 1024, 1<<20) }
+func BenchmarkSingleSipHash_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt128(b, sipHash128, 1024, 16<<20) }
+func BenchmarkSingleSipHash_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt128(b, sipHash128, 1024, 64<<20) }
+func BenchmarkSingleSipHash_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128(b, sipHash128, 1024, 1<<20) }
+func BenchmarkSingleSipHash_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt128(b, sipHash128, 1024, 16<<20) }
+func BenchmarkSingleSipHash_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt128(b, sipHash128, 1024, 64<<20) }
 
-func BenchmarkBLAKE3_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 1024, 1<<20) }
-func BenchmarkBLAKE3_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 1024, 16<<20) }
-func BenchmarkBLAKE3_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 1024, 64<<20) }
-func BenchmarkBLAKE3_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 1024, 1<<20) }
-func BenchmarkBLAKE3_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 1024, 16<<20) }
-func BenchmarkBLAKE3_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 1024, 64<<20) }
+func BenchmarkSingleBLAKE3_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 1024, 1<<20) }
+func BenchmarkSingleBLAKE3_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 1024, 16<<20) }
+func BenchmarkSingleBLAKE3_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 1024, 64<<20) }
+func BenchmarkSingleBLAKE3_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 1024, 1<<20) }
+func BenchmarkSingleBLAKE3_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 1024, 16<<20) }
+func BenchmarkSingleBLAKE3_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 1024, 64<<20) }
 
-func BenchmarkBLAKE2b_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2bHash256, 1024, 1<<20) }
-func BenchmarkBLAKE2b_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 1024, 16<<20) }
-func BenchmarkBLAKE2b_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 1024, 64<<20) }
-func BenchmarkBLAKE2b_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2bHash256, 1024, 1<<20) }
-func BenchmarkBLAKE2b_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 1024, 16<<20) }
-func BenchmarkBLAKE2b_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 1024, 64<<20) }
+func BenchmarkSingleBLAKE2b_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2bHash256, 1024, 1<<20) }
+func BenchmarkSingleBLAKE2b_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 1024, 16<<20) }
+func BenchmarkSingleBLAKE2b_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 1024, 64<<20) }
+func BenchmarkSingleBLAKE2b_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2bHash256, 1024, 1<<20) }
+func BenchmarkSingleBLAKE2b_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 1024, 16<<20) }
+func BenchmarkSingleBLAKE2b_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 1024, 64<<20) }
 
-func BenchmarkBLAKE2s_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 1024, 1<<20) }
-func BenchmarkBLAKE2s_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 1024, 16<<20) }
-func BenchmarkBLAKE2s_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 1024, 64<<20) }
-func BenchmarkBLAKE2s_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2sHash256, 1024, 1<<20) }
-func BenchmarkBLAKE2s_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 1024, 16<<20) }
-func BenchmarkBLAKE2s_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 1024, 64<<20) }
+func BenchmarkSingleBLAKE2s_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 1024, 1<<20) }
+func BenchmarkSingleBLAKE2s_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 1024, 16<<20) }
+func BenchmarkSingleBLAKE2s_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 1024, 64<<20) }
+func BenchmarkSingleBLAKE2s_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2sHash256, 1024, 1<<20) }
+func BenchmarkSingleBLAKE2s_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 1024, 16<<20) }
+func BenchmarkSingleBLAKE2s_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 1024, 64<<20) }
 
-func BenchmarkBLAKE2b512_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeBlake2bHash512, 1024, 1<<20) }
-func BenchmarkBLAKE2b512_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 1024, 16<<20) }
-func BenchmarkBLAKE2b512_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 1024, 64<<20) }
-func BenchmarkBLAKE2b512_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 1<<20) }
-func BenchmarkBLAKE2b512_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 16<<20) }
-func BenchmarkBLAKE2b512_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 64<<20) }
+func BenchmarkSingleBLAKE2b512_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeBlake2bHash512, 1024, 1<<20) }
+func BenchmarkSingleBLAKE2b512_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 1024, 16<<20) }
+func BenchmarkSingleBLAKE2b512_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 1024, 64<<20) }
+func BenchmarkSingleBLAKE2b512_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 1<<20) }
+func BenchmarkSingleBLAKE2b512_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 16<<20) }
+func BenchmarkSingleBLAKE2b512_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 64<<20) }
 
 // --- Benchmarks: ITB Width 2048-bit (all hash functions at 2048-bit key) ---
 
-func BenchmarkAES_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 2048, 1<<20) }
-func BenchmarkAES_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 2048, 16<<20) }
-func BenchmarkAES_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 2048, 64<<20) }
-func BenchmarkAES_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128Cached(b, makeAESHash128, 2048, 1<<20) }
-func BenchmarkAES_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 2048, 16<<20) }
-func BenchmarkAES_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 2048, 64<<20) }
+func BenchmarkSingleAES_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 2048, 1<<20) }
+func BenchmarkSingleAES_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 2048, 16<<20) }
+func BenchmarkSingleAES_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt128Cached(b, makeAESHash128, 2048, 64<<20) }
+func BenchmarkSingleAES_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128Cached(b, makeAESHash128, 2048, 1<<20) }
+func BenchmarkSingleAES_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 2048, 16<<20) }
+func BenchmarkSingleAES_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt128Cached(b, makeAESHash128, 2048, 64<<20) }
 
-func BenchmarkChaCha20_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 2048, 1<<20) }
-func BenchmarkChaCha20_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 2048, 16<<20) }
-func BenchmarkChaCha20_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 2048, 64<<20) }
-func BenchmarkChaCha20_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 2048, 1<<20) }
-func BenchmarkChaCha20_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 2048, 16<<20) }
-func BenchmarkChaCha20_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 2048, 64<<20) }
+func BenchmarkSingleChaCha20_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeChaCha20Hash256, 2048, 1<<20) }
+func BenchmarkSingleChaCha20_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 2048, 16<<20) }
+func BenchmarkSingleChaCha20_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeChaCha20Hash256, 2048, 64<<20) }
+func BenchmarkSingleChaCha20_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeChaCha20Hash256, 2048, 1<<20) }
+func BenchmarkSingleChaCha20_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 2048, 16<<20) }
+func BenchmarkSingleChaCha20_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeChaCha20Hash256, 2048, 64<<20) }
 
-func BenchmarkSipHash_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128(b, sipHash128, 2048, 1<<20) }
-func BenchmarkSipHash_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt128(b, sipHash128, 2048, 16<<20) }
-func BenchmarkSipHash_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt128(b, sipHash128, 2048, 64<<20) }
-func BenchmarkSipHash_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128(b, sipHash128, 2048, 1<<20) }
-func BenchmarkSipHash_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt128(b, sipHash128, 2048, 16<<20) }
-func BenchmarkSipHash_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt128(b, sipHash128, 2048, 64<<20) }
+func BenchmarkSingleSipHash_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128(b, sipHash128, 2048, 1<<20) }
+func BenchmarkSingleSipHash_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt128(b, sipHash128, 2048, 16<<20) }
+func BenchmarkSingleSipHash_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt128(b, sipHash128, 2048, 64<<20) }
+func BenchmarkSingleSipHash_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt128(b, sipHash128, 2048, 1<<20) }
+func BenchmarkSingleSipHash_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt128(b, sipHash128, 2048, 16<<20) }
+func BenchmarkSingleSipHash_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt128(b, sipHash128, 2048, 64<<20) }
 
-func BenchmarkBLAKE3_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 1<<20) }
-func BenchmarkBLAKE3_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 16<<20) }
-func BenchmarkBLAKE3_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 64<<20) }
-func BenchmarkBLAKE3_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 2048, 1<<20) }
-func BenchmarkBLAKE3_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 2048, 16<<20) }
-func BenchmarkBLAKE3_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 2048, 64<<20) }
+func BenchmarkSingleBLAKE3_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 1<<20) }
+func BenchmarkSingleBLAKE3_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 16<<20) }
+func BenchmarkSingleBLAKE3_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake3Hash256, 2048, 64<<20) }
+func BenchmarkSingleBLAKE3_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake3Hash256, 2048, 1<<20) }
+func BenchmarkSingleBLAKE3_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 2048, 16<<20) }
+func BenchmarkSingleBLAKE3_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake3Hash256, 2048, 64<<20) }
 
-func BenchmarkBLAKE2b_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2bHash256, 2048, 1<<20) }
-func BenchmarkBLAKE2b_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 2048, 16<<20) }
-func BenchmarkBLAKE2b_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 2048, 64<<20) }
-func BenchmarkBLAKE2b_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2bHash256, 2048, 1<<20) }
-func BenchmarkBLAKE2b_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 2048, 16<<20) }
-func BenchmarkBLAKE2b_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 2048, 64<<20) }
+func BenchmarkSingleBLAKE2b_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2bHash256, 2048, 1<<20) }
+func BenchmarkSingleBLAKE2b_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 2048, 16<<20) }
+func BenchmarkSingleBLAKE2b_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2bHash256, 2048, 64<<20) }
+func BenchmarkSingleBLAKE2b_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2bHash256, 2048, 1<<20) }
+func BenchmarkSingleBLAKE2b_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 2048, 16<<20) }
+func BenchmarkSingleBLAKE2b_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2bHash256, 2048, 64<<20) }
 
-func BenchmarkBLAKE2s_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 1<<20) }
-func BenchmarkBLAKE2s_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 16<<20) }
-func BenchmarkBLAKE2s_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 64<<20) }
-func BenchmarkBLAKE2s_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2sHash256, 2048, 1<<20) }
-func BenchmarkBLAKE2s_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 2048, 16<<20) }
-func BenchmarkBLAKE2s_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 2048, 64<<20) }
+func BenchmarkSingleBLAKE2s_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 1<<20) }
+func BenchmarkSingleBLAKE2s_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 16<<20) }
+func BenchmarkSingleBLAKE2s_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeBlake2sHash256, 2048, 64<<20) }
+func BenchmarkSingleBLAKE2s_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeBlake2sHash256, 2048, 1<<20) }
+func BenchmarkSingleBLAKE2s_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 2048, 16<<20) }
+func BenchmarkSingleBLAKE2s_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeBlake2sHash256, 2048, 64<<20) }
 
-func BenchmarkBLAKE2b512_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeBlake2bHash512, 2048, 1<<20) }
-func BenchmarkBLAKE2b512_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 2048, 16<<20) }
-func BenchmarkBLAKE2b512_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 2048, 64<<20) }
-func BenchmarkBLAKE2b512_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 1<<20) }
-func BenchmarkBLAKE2b512_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 16<<20) }
-func BenchmarkBLAKE2b512_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 64<<20) }
+func BenchmarkSingleBLAKE2b512_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeBlake2bHash512, 2048, 1<<20) }
+func BenchmarkSingleBLAKE2b512_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 2048, 16<<20) }
+func BenchmarkSingleBLAKE2b512_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeBlake2bHash512, 2048, 64<<20) }
+func BenchmarkSingleBLAKE2b512_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 1<<20) }
+func BenchmarkSingleBLAKE2b512_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 16<<20) }
+func BenchmarkSingleBLAKE2b512_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 64<<20) }

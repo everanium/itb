@@ -275,6 +275,10 @@
 // [EncryptAuthenticated128], [EncryptAuthenticated256], [EncryptAuthenticated512],
 // [DecryptAuthenticated128], [DecryptAuthenticated256], [DecryptAuthenticated512].
 //
+// Triple Ouroboros authenticated variants (7 seeds):
+// [EncryptAuthenticated3x128], [EncryptAuthenticated3x256], [EncryptAuthenticated3x512],
+// [DecryptAuthenticated3x128], [DecryptAuthenticated3x256], [DecryptAuthenticated3x512].
+//
 // # Streaming (Chunked Encryption)
 //
 // For large data that exceeds available memory, use the streaming API.
@@ -297,6 +301,31 @@
 // Streaming variants are available for all three widths:
 // [EncryptStream128], [EncryptStream256], [EncryptStream512],
 // [DecryptStream128], [DecryptStream256], [DecryptStream512].
+//
+// Triple Ouroboros streaming variants (7 seeds):
+// [EncryptStream3x128], [EncryptStream3x256], [EncryptStream3x512],
+// [DecryptStream3x128], [DecryptStream3x256], [DecryptStream3x512].
+//
+// # Triple Ouroboros (7-seed variant)
+//
+// Triple Ouroboros splits plaintext into 3 parts at the byte level (every 3rd
+// byte), encrypting each into 1/3 of the pixel data with independent dataSeed
+// and startSeed, sharing noiseSeed. Output format is identical to standard ITB.
+// Security: P × 2^(3×keyBits) under CCA. 7 seeds: 3×dataSeed + 3×startSeed +
+// 1×noiseSeed. All seven seeds must be distinct pointers.
+//
+//	encrypted, _ := itb.Encrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3,
+//	    startSeed1, startSeed2, startSeed3, plaintext)
+//	decrypted, _ := itb.Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3,
+//	    startSeed1, startSeed2, startSeed3, encrypted)
+//
+// Available for all three hash widths:
+// [Encrypt3x128], [Encrypt3x256], [Encrypt3x512],
+// [Decrypt3x128], [Decrypt3x256], [Decrypt3x512].
+//
+// For best throughput, use 512-bit ITB key — security becomes P × 2^1536
+// (3 × 512), stronger than Single 1024-bit, while ChainHash runs at 512-bit
+// speed. See [ITB3.md] for accessible explanation and [BENCH3.md] for benchmarks.
 //
 // # Parallelism Control
 //

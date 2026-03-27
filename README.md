@@ -18,6 +18,8 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[How the barrier works — accessible explanation](ITB.md)**
 
+**[Triple Ouroboros — 7-seed variant with 3× security](ITB3.md)**
+
 **[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
 
 **Zero external dependencies.** Hash functions are supplied by the user.
@@ -105,6 +107,7 @@ go test -bench='KeySize' -benchmem ./...
 ### Performance
 
 Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
+Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
 Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses C pixel processing with GCC `-O3 -mavx2` auto-vectorization + L1-cache micro-batching. Pure Go fallback (`CGO_ENABLED=0`) is ~10-20% slower on decrypt. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
@@ -194,6 +197,23 @@ func main() {
 }
 ```
 
+## Quick Start — Triple Ouroboros (7 seeds, 3× security)
+
+```go
+// Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start), 512-bit for speed
+ns, _  := itb.NewSeed128(512, sipHash128) // shared noiseSeed
+ds1, _ := itb.NewSeed128(512, sipHash128) // dataSeed per ring
+ds2, _ := itb.NewSeed128(512, sipHash128)
+ds3, _ := itb.NewSeed128(512, sipHash128)
+ss1, _ := itb.NewSeed128(512, sipHash128) // startSeed per ring
+ss2, _ := itb.NewSeed128(512, sipHash128)
+ss3, _ := itb.NewSeed128(512, sipHash128)
+
+encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+decrypted, _ := itb.Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+// Security: P × 2^(3×512) = P × 2^1536. Faster than Single 1024-bit, stronger security.
+```
+
 ## How It Works
 
 ITB encrypts data into raw RGBWYOPA pixel containers (8 channels per pixel: Red, Green, Blue, White, Yellow, Orange, Purple, Alpha — mnemonic labels for an 8-byte unit; the format is not tied to image processing) generated from `crypto/rand`. Each 8-bit channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead. Each pixel's bit-plane selection and per-channel XOR masks are derived from a chained hash of the seed and a per-message nonce. The random container creates an information-theoretic barrier: hash outputs are absorbed by modifications of random pixel values — the original container bytes are never transmitted, so the modifications are unknown, and the hash output is unobservable.
@@ -204,13 +224,16 @@ The data is embedded starting at a seed-dependent pixel offset with wrap-around 
 
 The library provides three parallel API sets for different hash output widths. All share the same pixel format, framing, and security properties — the difference is in ChainHash intermediate state width.
 
-| API | Hash Type | State | Effective Max Key | Target Hash Functions |
-|---|---|---|---|---|
-| `Encrypt128` / `Decrypt128` | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
-| `Encrypt256` / `Decrypt256` | `HashFunc256` (256-bit) | 256-bit | 2048 bits | BLAKE3 keyed |
-| `Encrypt512` / `Decrypt512` | `HashFunc512` (512-bit) | 512-bit | 2048 bits | BLAKE2b-512 |
+| API | Seeds | Hash Type | State | Effective Max Key | Target Hash Functions |
+|---|---|---|---|---|---|
+| `Encrypt128` / `Decrypt128` | 3 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
+| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | BLAKE3 keyed |
+| `Encrypt512` / `Decrypt512` | 3 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | BLAKE2b-512 |
+| `Encrypt3x128` / `Decrypt3x128` | 7 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
+| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | BLAKE3 keyed |
+| `Encrypt3x512` / `Decrypt3x512` | 7 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | BLAKE2b-512 |
 
-Each variant also has authenticated versions (`EncryptAuthenticated128`/`DecryptAuthenticated128`, `EncryptAuthenticated256`/`DecryptAuthenticated256`, `EncryptAuthenticated512`/`DecryptAuthenticated512`) and streaming versions (`EncryptStream128`/`DecryptStream128`, `EncryptStream256`/`DecryptStream256`, `EncryptStream512`/`DecryptStream512`).
+Each variant also has authenticated versions (`EncryptAuthenticated128`/`DecryptAuthenticated128`, `EncryptAuthenticated3x128`/`DecryptAuthenticated3x128`, etc.) and streaming versions (`EncryptStream128`/`DecryptStream128`, `EncryptStream3x128`/`DecryptStream3x128`, etc.).
 
 ## Optimized Hash Wrappers
 
@@ -546,6 +569,7 @@ encrypted, err := itb.Encrypt128(noiseSeed, dataSeed, startSeed, data)
 ## See Also
 
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation)
+- [ITB3.md](ITB3.md) — Triple Ouroboros (7-seed variant, 3× security)
 - [FEATURES.md](FEATURES.md) — Complete feature list and security properties
 - [PROOFS.md](PROOFS.md) — Formal security proofs
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
