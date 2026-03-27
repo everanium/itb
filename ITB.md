@@ -55,7 +55,7 @@ With PRF hash, crypto/rand, and no co-located attacker:
 | **CPA** (chosen plaintext) | Different seed → different config, zero correlation | Intact |
 | **CCA** (chosen ciphertext) | Core ITB and MAC + Silent Drop have no external oracle (see SECURITY.md ‡‡ for insider case) | No oracle exists |
 
-The PRF is not even reached — the barrier blocks everything at the observation level. PRF is defence-in-depth for active attacks, which under normal conditions are not possible.
+Under passive observation (COA, CPA), the barrier alone blocks all analysis. Under KPA (including partial KPA), PRF non-invertibility is essential — with an invertible hash, the attacker can recover the seed via candidate verification. PRF and the barrier work together: the barrier makes hash output unobservable, PRF prevents candidate verification.
 
 See [SECURITY.md Section 7](SECURITY.md#7-attack-resistance-summary) for the full attack resistance table.
 
