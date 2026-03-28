@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/dchest/siphash"
+	goaes "github.com/jedisct1/go-aes"
 	"github.com/zeebo/blake3"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
@@ -1608,6 +1609,49 @@ func makeBlake2bHash512() HashFunc512 {
 	}
 }
 
+// AreionSoEM256 as HashFunc256 — one-shot, stateless, AES-NI accelerated
+func makeAreionSoEM256() HashFunc256 {
+	var fixedKey [32]byte
+	rand.Read(fixedKey[:])
+	return func(data []byte, seed [4]uint64) [4]uint64 {
+		var key [64]byte
+		copy(key[:32], fixedKey[:])
+		for i := 0; i < 4; i++ {
+			binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
+		}
+		var input [32]byte
+		copy(input[:], data)
+		result := goaes.AreionSoEM256(&key, &input)
+		return [4]uint64{
+			binary.LittleEndian.Uint64(result[0:]),
+			binary.LittleEndian.Uint64(result[8:]),
+			binary.LittleEndian.Uint64(result[16:]),
+			binary.LittleEndian.Uint64(result[24:]),
+		}
+	}
+}
+
+// AreionSoEM512 as HashFunc512 — one-shot, stateless, AES-NI accelerated
+func makeAreionSoEM512() HashFunc512 {
+	var fixedKey [64]byte
+	rand.Read(fixedKey[:])
+	return func(data []byte, seed [8]uint64) [8]uint64 {
+		var key [128]byte
+		copy(key[:64], fixedKey[:])
+		for i := 0; i < 8; i++ {
+			binary.LittleEndian.PutUint64(key[64+i*8:], seed[i])
+		}
+		var input [64]byte
+		copy(input[:], data)
+		result := goaes.AreionSoEM512(&key, &input)
+		var out [8]uint64
+		for i := range out {
+			out[i] = binary.LittleEndian.Uint64(result[i*8:])
+		}
+		return out
+	}
+}
+
 func TestRoundtrip512(t *testing.T) {
 	sizes := []int{1, 64, 1024, 65536}
 	for _, sz := range sizes {
@@ -2340,6 +2384,20 @@ func BenchmarkSingleBLAKE2b512_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt5
 func BenchmarkSingleBLAKE2b512_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 16<<20) }
 func BenchmarkSingleBLAKE2b512_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 512, 64<<20) }
 
+func BenchmarkSingleAreionSoEM256_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeAreionSoEM256, 512, 1<<20) }
+func BenchmarkSingleAreionSoEM256_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeAreionSoEM256, 512, 16<<20) }
+func BenchmarkSingleAreionSoEM256_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeAreionSoEM256, 512, 64<<20) }
+func BenchmarkSingleAreionSoEM256_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeAreionSoEM256, 512, 1<<20) }
+func BenchmarkSingleAreionSoEM256_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeAreionSoEM256, 512, 16<<20) }
+func BenchmarkSingleAreionSoEM256_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeAreionSoEM256, 512, 64<<20) }
+
+func BenchmarkSingleAreionSoEM512_512bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeAreionSoEM512, 512, 1<<20) }
+func BenchmarkSingleAreionSoEM512_512bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeAreionSoEM512, 512, 16<<20) }
+func BenchmarkSingleAreionSoEM512_512bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeAreionSoEM512, 512, 64<<20) }
+func BenchmarkSingleAreionSoEM512_512bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeAreionSoEM512, 512, 1<<20) }
+func BenchmarkSingleAreionSoEM512_512bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeAreionSoEM512, 512, 16<<20) }
+func BenchmarkSingleAreionSoEM512_512bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeAreionSoEM512, 512, 64<<20) }
+
 // --- Benchmarks: ITB Width 1024-bit (all hash functions at 1024-bit key) ---
 
 func BenchmarkSingleAES_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 1024, 1<<20) }
@@ -2391,6 +2449,20 @@ func BenchmarkSingleBLAKE2b512_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt
 func BenchmarkSingleBLAKE2b512_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 16<<20) }
 func BenchmarkSingleBLAKE2b512_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 1024, 64<<20) }
 
+func BenchmarkSingleAreionSoEM256_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeAreionSoEM256, 1024, 1<<20) }
+func BenchmarkSingleAreionSoEM256_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeAreionSoEM256, 1024, 16<<20) }
+func BenchmarkSingleAreionSoEM256_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeAreionSoEM256, 1024, 64<<20) }
+func BenchmarkSingleAreionSoEM256_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeAreionSoEM256, 1024, 1<<20) }
+func BenchmarkSingleAreionSoEM256_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeAreionSoEM256, 1024, 16<<20) }
+func BenchmarkSingleAreionSoEM256_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeAreionSoEM256, 1024, 64<<20) }
+
+func BenchmarkSingleAreionSoEM512_1024bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeAreionSoEM512, 1024, 1<<20) }
+func BenchmarkSingleAreionSoEM512_1024bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeAreionSoEM512, 1024, 16<<20) }
+func BenchmarkSingleAreionSoEM512_1024bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeAreionSoEM512, 1024, 64<<20) }
+func BenchmarkSingleAreionSoEM512_1024bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeAreionSoEM512, 1024, 1<<20) }
+func BenchmarkSingleAreionSoEM512_1024bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeAreionSoEM512, 1024, 16<<20) }
+func BenchmarkSingleAreionSoEM512_1024bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeAreionSoEM512, 1024, 64<<20) }
+
 // --- Benchmarks: ITB Width 2048-bit (all hash functions at 2048-bit key) ---
 
 func BenchmarkSingleAES_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt128Cached(b, makeAESHash128, 2048, 1<<20) }
@@ -2441,3 +2513,17 @@ func BenchmarkSingleBLAKE2b512_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt
 func BenchmarkSingleBLAKE2b512_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 1<<20) }
 func BenchmarkSingleBLAKE2b512_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 16<<20) }
 func BenchmarkSingleBLAKE2b512_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeBlake2bHash512, 2048, 64<<20) }
+
+func BenchmarkSingleAreionSoEM256_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt256Cached(b, makeAreionSoEM256, 2048, 1<<20) }
+func BenchmarkSingleAreionSoEM256_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt256Cached(b, makeAreionSoEM256, 2048, 16<<20) }
+func BenchmarkSingleAreionSoEM256_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt256Cached(b, makeAreionSoEM256, 2048, 64<<20) }
+func BenchmarkSingleAreionSoEM256_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt256Cached(b, makeAreionSoEM256, 2048, 1<<20) }
+func BenchmarkSingleAreionSoEM256_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt256Cached(b, makeAreionSoEM256, 2048, 16<<20) }
+func BenchmarkSingleAreionSoEM256_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt256Cached(b, makeAreionSoEM256, 2048, 64<<20) }
+
+func BenchmarkSingleAreionSoEM512_2048bit_Encrypt_1MB(b *testing.B)  { benchEncrypt512Cached(b, makeAreionSoEM512, 2048, 1<<20) }
+func BenchmarkSingleAreionSoEM512_2048bit_Encrypt_16MB(b *testing.B) { benchEncrypt512Cached(b, makeAreionSoEM512, 2048, 16<<20) }
+func BenchmarkSingleAreionSoEM512_2048bit_Encrypt_64MB(b *testing.B) { benchEncrypt512Cached(b, makeAreionSoEM512, 2048, 64<<20) }
+func BenchmarkSingleAreionSoEM512_2048bit_Decrypt_1MB(b *testing.B)  { benchDecrypt512Cached(b, makeAreionSoEM512, 2048, 1<<20) }
+func BenchmarkSingleAreionSoEM512_2048bit_Decrypt_16MB(b *testing.B) { benchDecrypt512Cached(b, makeAreionSoEM512, 2048, 16<<20) }
+func BenchmarkSingleAreionSoEM512_2048bit_Decrypt_64MB(b *testing.B) { benchDecrypt512Cached(b, makeAreionSoEM512, 2048, 64<<20) }

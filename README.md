@@ -400,6 +400,36 @@ ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ```
 
+### Areion-SoEM (256/512-bit, AES-NI accelerated, no wrapper needed)
+
+Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. One-shot, stateless, zero-allocation — no cached wrapper required.
+
+```go
+import goaes "github.com/jedisct1/go-aes"
+
+// AreionSoEM256 — 256-bit PRF, one function call per hash
+func areionHash256(data []byte, seed [4]uint64) [4]uint64 {
+    var key [64]byte
+    copy(key[:32], fixedKey[:]) // pre-generated random key
+    for i := 0; i < 4; i++ {
+        binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
+    }
+    var input [32]byte
+    copy(input[:], data)
+    result := goaes.AreionSoEM256(&key, &input)
+    return [4]uint64{
+        binary.LittleEndian.Uint64(result[0:]),  binary.LittleEndian.Uint64(result[8:]),
+        binary.LittleEndian.Uint64(result[16:]), binary.LittleEndian.Uint64(result[24:]),
+    }
+}
+
+ns, _ := itb.NewSeed256(2048, areionHash256)
+ds, _ := itb.NewSeed256(2048, areionHash256)
+ss, _ := itb.NewSeed256(2048, areionHash256)
+```
+
+AreionSoEM512 follows the same pattern with `[128]byte` key, `[64]byte` input, and `HashFunc512`. See benchmarks in [BENCH.md](BENCH.md).
+
 ### Parallelism Control
 
 ```go
