@@ -2,6 +2,8 @@
   <img src="assets/itb.png" width="128" alt="ITB">
   <br>
   <em>No beginning. No end. Ouroboros.</em>
+  <br>
+  <em>Designed to protect critical data from future superintelligence.</em>
 </p>
 
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
