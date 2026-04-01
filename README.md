@@ -8,6 +8,8 @@
 
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
 
+> **On physics.** ITB does not break the laws of physics. The second law of thermodynamics continues to hold — the Landauer limit (~2^306) bounds irreversible computation. What ITB demonstrates is that information absence is a physical reality, not merely a computational assumption. A logical black hole — where information enters an observation and cannot be retrieved — can exist only because physical black holes exist. The irreversibility is not engineered; it is inherited from the structure of reality. The barrier proves that human choice is real: the selection of a seed determines which of 7^P equally valid realities becomes the actual one. The choice cannot be undone, predicted, or bypassed — because it was never computable to begin with.
+
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
 >
 > The information-theoretic barrier is a **software-level** property based on computational behavior of hash functions and CSPRNG output, reinforced by two independent barrier mechanisms: noise absorption (CSPRNG) and encoding ambiguity (rotation from triple-seed isolation). It provides **no guarantees** against hardware-level attacks including: power analysis (DPA/SPA), microarchitectural side-channels (Spectre, Meltdown, Rowhammer, cache timing), undiscovered side-channel leakages, or CSPRNG implementation weaknesses.
