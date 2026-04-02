@@ -65,7 +65,7 @@ Direct guessing of the per-pixel configuration map requires 2^(62P) attempts whe
 
 ## Triple-Seed Isolation Validation
 
-- **Runtime enforcement.** All 18 public functions (Encrypt/Decrypt/EncryptAuthenticated/DecryptAuthenticated/EncryptStream/DecryptStream × 3 widths) validate that all three seed pointers are distinct. Passing the same seed as multiple parameters returns an error, preventing accidental nullification of triple-seed isolation.
+- **Runtime enforcement.** All 36 public functions (Encrypt/Decrypt/EncryptAuthenticated/DecryptAuthenticated/EncryptStream/DecryptStream × 3 widths × 2 modes: Single Ouroboros with 3-seed validation, Triple Ouroboros with 7-seed validation) validate that all seed pointers are distinct. Passing the same seed as multiple parameters returns an error, preventing accidental nullification of seed isolation.
 
 ## Design Principles
 

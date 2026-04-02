@@ -187,7 +187,7 @@ The construction's key space is 2^(64n) where n = number of components. Effectiv
 
 **Multi-call recovery.** ITB evaluates ChainHash independently for each pixel with different data inputs (counter || nonce). Collisions that exist for one data input do not persist across different inputs when the hash uses non-linear mixing (addition, multiplication), because XOR-of-sums is not translation-invariant. For all hash widths, only 64 bits of the output are extracted per pixel for config ([Section 1.1.3](#113-per-pixel-config-extraction-and-effective-security)). With P pixels, the collective constraint is P × 64 bits, which exceeds the key space at minimum container size (see [Section 1.1.3](#113-per-pixel-config-extraction-and-effective-security) table).
 
-For example, with a 128-bit hash and 1024-bit key (16 components): a single ChainHash128 call provides 128 bits of discrimination. But the minimum container has 177 pixels = 177 independent calls, providing 177 × 64 = 11328 constraint bits >> 1024 key bits. The full key space is utilized in all variants.
+For example, with a 128-bit hash and 1024-bit key (16 components): a single ChainHash128 call provides 128 bits of discrimination. But the minimum container has 196 pixels (14×14) = 196 independent calls, providing 196 × 64 = 12544 constraint bits >> 1024 key bits. The full key space is utilized in all variants.
 
 **Effective security by hash width:**
 
@@ -513,7 +513,7 @@ ITB requires PRF-grade hash functions. The PRF property guarantees all necessary
 | BLAKE3 keyed | 256-bit | SIMD (AVX-512) | PRF | 2048 bits |
 | BLAKE2b-512 keyed | 512-bit | SSE | PRF | 2048 bits |
 
-**Key space utilization.** A single ChainHash128 call with 128-bit output discriminates 2^128 of 2^1024 seeds. But the minimum container makes 177 independent calls with different data inputs. Collisions for one input do not persist across inputs (XOR-of-sums is not translation-invariant). Collective constraint: 177 × 64 = 11328 bits >> 1024 key bits. The full key space is utilized.
+**Key space utilization.** A single ChainHash128 call with 128-bit output discriminates 2^128 of 2^1024 seeds. But the minimum container makes 196 independent calls (14×14 pixels) with different data inputs. Collisions for one input do not persist across inputs (XOR-of-sums is not translation-invariant). Collective constraint: 196 × 64 = 12544 bits >> 1024 key bits. The full key space is utilized.
 
 **Conclusion.** Effective brute-force depends on the mode. **MAC + Reveal** (dataSeed + startPixel enumeration): ~2^1033 classical, ~2^516 Grover (P=400) — both far beyond Landauer (~2^306). **Core ITB / MAC + Silent Drop** (joint noiseSeed+dataSeed, startPixel enumerated): P × 2^(2×keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys (P=196): ~2^2056 classical, ~2^1028 Grover. The information-theoretic barrier (2^1568 for 196 pixels) exceeds the key space under the random-container model.
 

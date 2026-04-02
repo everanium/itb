@@ -14,6 +14,9 @@
 *.swo
 *~
 
+# Internal audit (not for publication)
+HIGHSTAKE.md
+
 # OS
 .DS_Store
 Thumbs.db

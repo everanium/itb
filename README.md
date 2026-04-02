@@ -628,6 +628,27 @@ encrypted, err := itb.Encrypt128(seed, seed, seed, data)
 encrypted, err := itb.Encrypt128(noiseSeed, dataSeed, startSeed, data)
 ```
 
+## Formal Security Model
+
+A simulation-based proof is a purely mathematical construction: "for every adversary A in the real world, there exists a simulator S in the ideal world such that the outputs of A and S are indistinguishable." This is proven logically, not computationally. It is independent of hardware, logic system, or computational model.
+
+ITB does not fit cleanly into the standard binary security model:
+
+- **Standard model:** the adversary either distinguishes (break) or does not (secure). Binary.
+- **ITB:** the adversary always receives output. The output is always "valid." There is no point where the system returns accept/reject. Instead, the result is a **spectrum of plausibility** — every key produces output, and there is no way to rank candidates without external context.
+
+The semantics of decryption are ternary:
+1. Correct key → correct plaintext
+2. Wrong key → garbage indistinguishable from plaintext
+3. Observer → cannot determine which of the two cases is present
+
+Possible formalization paths:
+- **Indistinguishability-based** definitions (standard in cryptography, binary logic — sufficient)
+- **Simulation-based** proof with an ideal functionality that always returns random bytes (this is the "ideal world" of ITB — the real-world output is indistinguishable from random)
+- **Quantitative information flow** (how many bits leak — the per-byte barrier shows 0 bits leaked per observation)
+
+All three approaches use standard mathematics. The formal relationship between ITB's ambiguity-based security and Shannon's framework remains an open research question (see [SCIENCE.md §7](SCIENCE.md#7-research-directions)).
+
 ## See Also
 
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation)
