@@ -268,7 +268,7 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
-| Nonce | 128-bit per-message (mandatory) |
+| Nonce | 128/256/512-bit per-message (default 128-bit, mandatory) |
 | Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
 | Classical cryptanalytic techniques | Blocked: differential, linear, algebraic, slide, related-key, integral, boomerang, interpolation, cube — PRF output absorbed by random container, unobservable ([SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)) |

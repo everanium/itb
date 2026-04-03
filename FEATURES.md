@@ -12,7 +12,7 @@
 
 - **Dynamic Key Size.** 512 to 2048 bits. Alignment depends on hash width: 128-bit multiples for `Seed128`, 256-bit multiples for `Seed256`, 512-bit multiples for `Seed512`. Effective security upper-bounded by `min(keyBits, hashInternalState × numRounds)`. With BLAKE3 (256-bit internal state): 2048-bit effective security (no bottleneck). With AES/SipHash-2-4 (128-bit): 1024 bits.
 
-- **128-bit Per-Message Nonce.** Generated from `crypto/rand` on every encryption call. Mixed into every hash invocation. Mandatory — prevents pixel configuration reuse across messages. Birthday collision after ~2^64 messages.
+- **Per-Message Nonce (128/256/512-bit).** Generated from `crypto/rand` on every encryption call. Default 128-bit; configurable to 256 or 512 via `SetNonceBits`. Mixed into every hash invocation. Mandatory — prevents pixel configuration reuse across messages. Birthday collision after ~2^64 messages (128-bit), ~2^128 (256-bit), ~2^256 (512-bit).
 
 - **COBS Binary Framing.** Internal Consistent Overhead Byte Stuffing encodes arbitrary binary data (including 0x00 bytes) so that 0x00 never appears in encoded output. Overhead ~0.4%. Enables null terminator as unambiguous message boundary. Encrypt files, archives, images, executables, protocol buffers, or any binary format.
 

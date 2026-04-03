@@ -592,7 +592,7 @@ The output format is identical across all three hash width variants.
 | Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Hash function requirement | PRF required; barrier hardens PRF |
-| Nonce reuse protection | 128-bit per-message nonce |
+| Nonce reuse protection | 128/256/512-bit per-message nonce (default 128-bit) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 
 ## Integrity (MAC-Inside-Encrypt)
