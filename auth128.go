@@ -188,15 +188,24 @@ func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	}
 
 	p0, p1, p2 := splitTriple(data)
-	enc0, enc1, enc2 := cobsEncode(p0), cobsEncode(p1), cobsEncode(p2)
+	enc0 := cobsEncode(p0)
+	enc1 := cobsEncode(p1)
+	enc2 := cobsEncode(p2)
 
+	// part2 COBS length increased by tagSize for container sizing
 	cobsLens := [3]int{len(enc0), len(enc1), len(enc2) + tagSize}
 	width, height := containerSizeAuth3_128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 	totalPixels := width * height
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
-	caps := [3]int{(third * DataBitsPerPixel) / 8, (third * DataBitsPerPixel) / 8, (thirdPixels2 * DataBitsPerPixel) / 8}
 
+	caps := [3]int{
+		(third * DataBitsPerPixel) / 8,
+		(third * DataBitsPerPixel) / 8,
+		(thirdPixels2 * DataBitsPerPixel) / 8,
+	}
+
+	// Build payloads: part0 and part1 full capacity, part2 reserves tagSize
 	payloads := [3][]byte{}
 	for i, enc := range [3][]byte{enc0, enc1, enc2} {
 		payloadLen := caps[i]
@@ -211,25 +220,28 @@ func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		payload[len(enc)] = 0x00
 		fillStart := len(enc) + 1
 		if fillStart < payloadLen {
-			fb, err := generateRandomBytes(payloadLen - fillStart)
+			fillBytes, err := generateRandomBytes(payloadLen - fillStart)
 			if err != nil {
 				return nil, err
 			}
-			copy(payload[fillStart:], fb)
+			copy(payload[fillStart:], fillBytes)
 		}
 		payloads[i] = payload
 	}
 
+	// MAC over concatenated payloads (covers all fill bytes)
 	macInput := make([]byte, 0, len(payloads[0])+len(payloads[1])+len(payloads[2]))
 	macInput = append(macInput, payloads[0]...)
 	macInput = append(macInput, payloads[1]...)
 	macInput = append(macInput, payloads[2]...)
 	tag := macFunc(macInput)
 
+	// full2 = payload2 + tag
 	full2 := make([]byte, caps[2])
 	copy(full2, payloads[2])
 	copy(full2[len(payloads[2]):], tag)
 
+	// 3×CSPRNG parallel generation
 	container := make([]byte, totalPixels*Channels)
 	var wg sync.WaitGroup
 	var randErr [3]error
@@ -253,18 +265,28 @@ func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	if perThird < 1 {
 		perThird = 1
 	}
-	o1, o2 := third*Channels, 2*third*Channels
+	offset1 := third * Channels
+	offset2 := 2 * third * Channels
 	wg.Add(3)
-	go func() { process128(noiseSeed, dataSeed1, startSeed1, nonce, container[0:o1], third, 1, payloads[0], true, perThird); wg.Done() }()
-	go func() { process128(noiseSeed, dataSeed2, startSeed2, nonce, container[o1:o2], third, 1, payloads[1], true, perThird); wg.Done() }()
 	go func() {
-		process128(noiseSeed, dataSeed3, startSeed3, nonce, container[o2:totalPixels*Channels], thirdPixels2, 1, full2, true, perThird)
+		process128(noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process128(noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, payloads[1], true, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process128(noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, full2, true, perThird)
 		wg.Done()
 	}()
 	wg.Wait()
 
-	secureWipe(payloads[0]); secureWipe(payloads[1]); secureWipe(payloads[2])
-	secureWipe(full2); secureWipe(macInput)
+	secureWipe(payloads[0])
+	secureWipe(payloads[1])
+	secureWipe(payloads[2])
+	secureWipe(full2)
+	secureWipe(macInput)
 
 	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
@@ -273,6 +295,7 @@ func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	binary.BigEndian.PutUint16(dim[2:], uint16(height))
 	out = append(out, dim[:]...)
 	out = append(out, container...)
+
 	return out, nil
 }
 
@@ -284,10 +307,12 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	if macFunc == nil {
 		return nil, fmt.Errorf("itb: macFunc must not be nil")
 	}
+
 	tagSize := len(macFunc([]byte{}))
 	if tagSize == 0 {
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
+
 	if len(fileData) < headerSize()+Channels {
 		return nil, fmt.Errorf("itb: data too short")
 	}
@@ -310,50 +335,72 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	if totalPixels > maxTotalPixels {
 		return nil, fmt.Errorf("itb: container too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
 	}
-	if len(container) < totalPixels*Channels {
-		return nil, fmt.Errorf("itb: container too short")
+	expectedSize := totalPixels * Channels
+	if len(container) < expectedSize {
+		return nil, fmt.Errorf("itb: container too short: got %d, need %d", len(container), expectedSize)
 	}
 
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
-	caps := [3]int{(third * DataBitsPerPixel) / 8, (third * DataBitsPerPixel) / 8, (thirdPixels2 * DataBitsPerPixel) / 8}
+
+	caps := [3]int{
+		(third * DataBitsPerPixel) / 8,
+		(third * DataBitsPerPixel) / 8,
+		(thirdPixels2 * DataBitsPerPixel) / 8,
+	}
 	if caps[2] <= tagSize {
 		return nil, fmt.Errorf("itb: container too small for MAC tag")
 	}
 
 	decoded := [3][]byte{make([]byte, caps[0]), make([]byte, caps[1]), make([]byte, caps[2])}
+
 	perThird := runtime.NumCPU() / 3
 	if perThird < 1 {
 		perThird = 1
 	}
-	o1, o2 := third*Channels, 2*third*Channels
+	offset1 := third * Channels
+	offset2 := 2 * third * Channels
 
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { process128(noiseSeed, dataSeed1, startSeed1, nonce, container[0:o1], third, 1, decoded[0], false, perThird); wg.Done() }()
-	go func() { process128(noiseSeed, dataSeed2, startSeed2, nonce, container[o1:o2], third, 1, decoded[1], false, perThird); wg.Done() }()
 	go func() {
-		process128(noiseSeed, dataSeed3, startSeed3, nonce, container[o2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird)
+		process128(noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, decoded[0], false, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process128(noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, decoded[1], false, perThird)
+		wg.Done()
+	}()
+	go func() {
+		process128(noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird)
 		wg.Done()
 	}()
 	wg.Wait()
 
-	defer secureWipe(decoded[0]); defer secureWipe(decoded[1]); defer secureWipe(decoded[2])
+	defer secureWipe(decoded[0])
+	defer secureWipe(decoded[1])
+	defer secureWipe(decoded[2])
 
+	// Split part2 into payload + tag
 	payloadLen2 := caps[2] - tagSize
+	payload2 := decoded[2][:payloadLen2]
+	tag := decoded[2][payloadLen2:]
+
+	// Verify MAC over concatenated payloads
 	macInput := make([]byte, 0, len(decoded[0])+len(decoded[1])+payloadLen2)
 	macInput = append(macInput, decoded[0]...)
 	macInput = append(macInput, decoded[1]...)
-	macInput = append(macInput, decoded[2][:payloadLen2]...)
+	macInput = append(macInput, payload2...)
 	expected := macFunc(macInput)
 	secureWipe(macInput)
 
-	if !constantTimeEqual(decoded[2][payloadLen2:], expected) {
+	if !constantTimeEqual(tag, expected) {
 		return nil, fmt.Errorf("itb: MAC verification failed (tampered or wrong key)")
 	}
 
+	// Decode each part
 	parts := [3][]byte{}
-	for i, dec := range [][]byte{decoded[0], decoded[1], decoded[2][:payloadLen2]} {
+	for i, dec := range [][]byte{decoded[0], decoded[1], payload2} {
 		nullPos := -1
 		for j := 0; j < len(dec); j++ {
 			if dec[j] == 0x00 && nullPos == -1 {
@@ -369,5 +416,6 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 			parts[i] = cobsDecode(dec[:nullPos])
 		}
 	}
+
 	return interleaveTriple(parts[0], parts[1], parts[2]), nil
 }

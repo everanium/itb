@@ -16,23 +16,38 @@ func containerSize512(noiseSeed, dataSeed, startSeed *Seed512, payloadCOBSLen in
 		noiseSeed.MinPixels(), dataSeed.MinPixels(), startSeed.MinPixels())
 }
 
+// containerSizeAuth512 calculates container dimensions for authenticated encryption.
+// Uses MinPixelsAuth (7^P ambiguity dominance — CCA-resistant).
 func containerSizeAuth512(noiseSeed, dataSeed, startSeed *Seed512, payloadCOBSLen int) (width, height int) {
 	return calcContainerSize(payloadCOBSLen,
 		noiseSeed.MinPixelsAuth(), dataSeed.MinPixelsAuth(), startSeed.MinPixelsAuth())
 }
 
 // process512 is the triple-seed encode/decode engine (512-bit variant).
-// maxW limits the number of workers (0 = use default from effectiveWorkers).
+//
+// Three independent 512-bit seeds provide separate configuration domains:
+//
+//   - noiseSeed → noise position (0-7): which bit in each channel is noise.
+//   - dataSeed → data rotation (0-6) + per-bit XOR masks (56 bits).
+//   - startSeed → pixel start offset.
+//
+// Uses blockHash512 (512-bit hash) per pixel, taking the low 64-bit half
+// for noise/data configuration. Otherwise identical to process.
 func process512(noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container []byte, width, height int, data []byte, encode bool, maxW int) {
 	totalPixels := width * height
 	startPixel := startSeed.deriveStartPixel(nonce, totalPixels)
 	totalBits := len(data) * 8
 
+	// Determine pixel count that carries data.
 	dataPixels := totalPixels
 	if maxPx := (totalBits + DataBitsPerPixel - 1) / DataBitsPerPixel; maxPx < dataPixels {
 		dataPixels = maxPx
 	}
 
+	// Parallel encode and decode. Encode reads data[] (read-only) and
+	// writes to non-overlapping pixel regions in container[]. Decode
+	// accumulates all channels into a uint64 and writes 7 complete bytes
+	// per pixel — no byte-boundary overlap between adjacent pixels.
 	numWorkers := effectiveWorkers(dataPixels)
 	if maxW > 0 && numWorkers > maxW {
 		numWorkers = maxW
@@ -62,13 +77,19 @@ func process512(noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container
 	wg.Wait()
 }
 
-// Encrypt512 encrypts arbitrary binary data into a raw RGBWYOPA pixel container (512-bit variant).
+// Encrypt512 encrypts arbitrary binary data into a raw RGBWYOPA pixel container
+// using 512-bit seeds.
 //
-// Uses triple-seed architecture with Seed512: noiseSeed controls noise bit placement,
-// dataSeed controls data rotation and XOR masks, startSeed controls
-// pixel start offset. All three seeds are independent.
+// Uses triple-seed architecture with Seed512: noiseSeed controls noise bit
+// placement, dataSeed controls data rotation and XOR masks, startSeed controls
+// pixel start offset. All three seeds are independent — compromise of one does
+// not reveal the others.
 //
-// Output format: [16-byte nonce][2-byte width BE][2-byte height BE][W*H*8 raw RGBWYOPA].
+// Pipeline: data → COBS encode → [0x00 terminator] → embed into
+// crypto/rand RGBWYOPA container with per-bit XOR, data rotation,
+// and dynamic noise position.
+//
+// Output format: [16-byte nonce][2-byte width BE][2-byte height BE][W×H×8 raw RGBWYOPA].
 func Encrypt512(noiseSeed, dataSeed, startSeed *Seed512, data []byte) ([]byte, error) {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
 		return nil, fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
@@ -93,6 +114,7 @@ func Encrypt512(noiseSeed, dataSeed, startSeed *Seed512, data []byte) ([]byte, e
 	payload := make([]byte, capacity)
 	copy(payload, encoded)
 	payload[len(encoded)] = 0x00
+	// Remaining capacity after COBS + null filled with crypto/rand.
 	fillStart := len(encoded) + 1
 	if fillStart < capacity {
 		fillBytes, err := generateRandomBytes(capacity - fillStart)
@@ -112,7 +134,7 @@ func Encrypt512(noiseSeed, dataSeed, startSeed *Seed512, data []byte) ([]byte, e
 	}
 
 	process512(noiseSeed, dataSeed, startSeed, nonce, container, width, height, payload, true, 0)
-	secureWipe(payload)
+	secureWipe(payload) // minimize plaintext exposure in heap
 
 	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
@@ -125,7 +147,14 @@ func Encrypt512(noiseSeed, dataSeed, startSeed *Seed512, data []byte) ([]byte, e
 	return out, nil
 }
 
-// Decrypt512 extracts data hidden by [Encrypt512] (512-bit variant).
+// Decrypt512 extracts data hidden by [Encrypt512] using 512-bit seeds.
+//
+// Parses [nonce][width][height][RGBWYOPA] format, applies the reverse
+// extraction with triple-seed decryption, finds the null terminator,
+// and COBS-decodes the original data.
+//
+// Returns error if seeds are wrong (no valid terminator found) or
+// data is corrupted.
 func Decrypt512(noiseSeed, dataSeed, startSeed *Seed512, fileData []byte) ([]byte, error) {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
 		return nil, fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
@@ -139,6 +168,8 @@ func Decrypt512(noiseSeed, dataSeed, startSeed *Seed512, fileData []byte) ([]byt
 	height := int(binary.BigEndian.Uint16(fileData[currentNonceSize()+2:]))
 	container := fileData[headerSize():]
 
+	// Overflow-safe multiplication: check before computing to prevent
+	// integer overflow on 32-bit platforms decrypting containers from 64-bit.
 	if width == 0 || height == 0 {
 		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
 	}
@@ -165,8 +196,11 @@ func Decrypt512(noiseSeed, dataSeed, startSeed *Seed512, fileData []byte) ([]byt
 	decoded := make([]byte, capacity)
 
 	process512(noiseSeed, dataSeed, startSeed, nonce, container, width, height, decoded, false, 0)
-	defer secureWipe(decoded)
+	defer secureWipe(decoded) // wipe after extracting plaintext
 
+	// Constant-iteration null search: always scans entire capacity (no early break)
+	// to avoid timing leak of terminator position. Note: branch prediction may still
+	// differ before/after the first null byte; this leaks COBS-encoded message length.
 	nullPos := -1
 	for i := 0; i < len(decoded); i++ {
 		if decoded[i] == 0x00 && nullPos == -1 {
@@ -220,7 +254,7 @@ func containerSizeAuth3_512(noiseSeed *Seed512, dataSeed1, dataSeed2, dataSeed3 
 // Encrypt3x512 encrypts data using Triple Ouroboros with 7 seeds (512-bit variant).
 // Plaintext is split into 3 parts (every 3rd byte), each encrypted into 1/3 of the
 // pixel data with independent dataSeed and startSeed, sharing noiseSeed.
-// Output format is identical to standard ITB: [nonce][W][H][W*H*8 pixels].
+// Output format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
 func Encrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
 	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err

@@ -1063,6 +1063,151 @@ func TestAuthenticated256(t *testing.T) {
 	}
 }
 
+func TestBinarySafety256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatalf("data mismatch")
+	}
+}
+
+func TestWrongSeed256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := []byte("secret message for wrong seed test")
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong seeds — may return error OR garbage data (oracle-free deniability)
+	wns, wds, wss := makeTripleSeed256(512, testHash256)
+	decrypted, err := Decrypt256(wns, wds, wss, encrypted)
+	if err != nil {
+		return // expected
+	}
+	if bytes.Equal(data, decrypted) {
+		t.Fatal("wrong seed produced correct plaintext")
+	}
+}
+
+func TestNonceUniqueness256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := []byte("same data, different nonce")
+	enc1, _ := Encrypt256(ns, ds, ss, data)
+	enc2, _ := Encrypt256(ns, ds, ss, data)
+	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+		t.Fatal("two encryptions produced identical nonces")
+	}
+}
+
+func TestSingleByte256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := []byte{0x42}
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch")
+	}
+}
+
+func TestSingleZeroByte256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := []byte{0x00}
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch for single 0x00 byte")
+	}
+}
+
+func TestAllZeroBytes256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := make([]byte, 256) // 256 zero bytes
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch for all-zero data")
+	}
+}
+
+func TestAllFFBytes256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := bytes.Repeat([]byte{0xFF}, 256)
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch for all-0xFF data")
+	}
+}
+
+func TestExactMinContainer256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	data := generateData(560)
+	encrypted, err := Encrypt256(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch at min container boundary")
+	}
+}
+
+func TestPixelBoundary256(t *testing.T) {
+	ns, ds, ss := makeTripleSeed256(512, testHash256)
+	// Test sizes around pixel boundaries (56 bits = 7 bytes per pixel)
+	for _, sz := range []int{6, 7, 8, 13, 14, 15, 55, 56, 57} {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			data := generateData(sz)
+			encrypted, err := Encrypt256(ns, ds, ss, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
 func TestSeed128Validation(t *testing.T) {
 	_, err := NewSeed128(256, sipHash128)
 	if err == nil {
@@ -1702,6 +1847,151 @@ func TestAuthenticated512(t *testing.T) {
 	}
 	if !bytes.Equal(data, decrypted) {
 		t.Fatal("512-bit authenticated: data mismatch")
+	}
+}
+
+func TestBinarySafety512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatalf("data mismatch")
+	}
+}
+
+func TestWrongSeed512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := []byte("secret message for wrong seed test")
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong seeds — may return error OR garbage data (oracle-free deniability)
+	wns, wds, wss := makeTripleSeed512(512, testHash512)
+	decrypted, err := Decrypt512(wns, wds, wss, encrypted)
+	if err != nil {
+		return // expected
+	}
+	if bytes.Equal(data, decrypted) {
+		t.Fatal("wrong seed produced correct plaintext")
+	}
+}
+
+func TestNonceUniqueness512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := []byte("same data, different nonce")
+	enc1, _ := Encrypt512(ns, ds, ss, data)
+	enc2, _ := Encrypt512(ns, ds, ss, data)
+	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+		t.Fatal("two encryptions produced identical nonces")
+	}
+}
+
+func TestSingleByte512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := []byte{0x42}
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch")
+	}
+}
+
+func TestSingleZeroByte512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := []byte{0x00}
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch for single 0x00 byte")
+	}
+}
+
+func TestAllZeroBytes512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := make([]byte, 256) // 256 zero bytes
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch for all-zero data")
+	}
+}
+
+func TestAllFFBytes512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := bytes.Repeat([]byte{0xFF}, 256)
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch for all-0xFF data")
+	}
+}
+
+func TestExactMinContainer512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	data := generateData(560)
+	encrypted, err := Encrypt512(ns, ds, ss, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("data mismatch at min container boundary")
+	}
+}
+
+func TestPixelBoundary512(t *testing.T) {
+	ns, ds, ss := makeTripleSeed512(512, testHash512)
+	// Test sizes around pixel boundaries (56 bits = 7 bytes per pixel)
+	for _, sz := range []int{6, 7, 8, 13, 14, 15, 55, 56, 57} {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			data := generateData(sz)
+			encrypted, err := Encrypt512(ns, ds, ss, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("data mismatch at %d bytes", sz)
+			}
+		})
 	}
 }
 

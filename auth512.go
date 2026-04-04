@@ -10,6 +10,11 @@ import (
 )
 
 // EncryptAuthenticated512 encrypts data with integrity protection using 512-bit hash.
+//
+// Pipeline: data → COBS encode → build payload [COBS][0x00][fill]
+// → MAC(payload) → append tag → embed [payload][tag] into container.
+//
+// The MAC covers the entire payload including fill bytes.
 func EncryptAuthenticated512(noiseSeed, dataSeed, startSeed *Seed512, data []byte, macFunc MACFunc) ([]byte, error) {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
 		return nil, fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")

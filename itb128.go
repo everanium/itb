@@ -222,6 +222,7 @@ func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byt
 	return original, nil
 }
 
+// checkSevenSeeds128 verifies all 7 seeds are distinct pointers (seven-seed isolation).
 func checkSevenSeeds128(ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) error {
 	seeds := [7]*Seed128{ns, ds1, ds2, ds3, ss1, ss2, ss3}
 	for i := 0; i < len(seeds); i++ {
@@ -234,6 +235,7 @@ func checkSevenSeeds128(ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) error {
 	return nil
 }
 
+// containerSize3_128 calculates container dimensions for Triple Ouroboros (128-bit variant).
 func containerSize3_128(noiseSeed *Seed128, dataSeed1, dataSeed2, dataSeed3 *Seed128, startSeed1, startSeed2, startSeed3 *Seed128, cobsLens [3]int) (width, height int) {
 	return calcContainerSize3(cobsLens,
 		noiseSeed.MinPixels(),
@@ -241,6 +243,7 @@ func containerSize3_128(noiseSeed *Seed128, dataSeed1, dataSeed2, dataSeed3 *See
 		[3]int{startSeed1.MinPixels(), startSeed2.MinPixels(), startSeed3.MinPixels()})
 }
 
+// containerSizeAuth3_128 calculates container dimensions for authenticated Triple Ouroboros (128-bit variant).
 func containerSizeAuth3_128(noiseSeed *Seed128, dataSeed1, dataSeed2, dataSeed3 *Seed128, startSeed1, startSeed2, startSeed3 *Seed128, cobsLens [3]int) (width, height int) {
 	return calcContainerSize3(cobsLens,
 		noiseSeed.MinPixelsAuth(),
@@ -249,6 +252,9 @@ func containerSizeAuth3_128(noiseSeed *Seed128, dataSeed1, dataSeed2, dataSeed3 
 }
 
 // Encrypt3x128 encrypts data using Triple Ouroboros with 7 seeds (128-bit variant).
+// Plaintext is split into 3 parts (every 3rd byte), each encrypted into 1/3 of the
+// pixel data with independent dataSeed and startSeed, sharing noiseSeed.
+// Output format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
 func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte) ([]byte, error) {
 	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
@@ -282,6 +288,7 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		}
 	}
 
+	// Build 3 payloads
 	payloads := [3][]byte{}
 	for i, enc := range encs {
 		payload := make([]byte, caps[i])
@@ -298,6 +305,7 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		payloads[i] = payload
 	}
 
+	// 3×CSPRNG parallel generation into one pre-allocated buffer
 	container := make([]byte, totalPixels*Channels)
 	var wg sync.WaitGroup
 	var randErr [3]error
@@ -317,12 +325,13 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		return nil, err
 	}
 
+	// 3 parallel goroutines for pixel processing, each limited to 1/3 of CPU cores
+	offset1 := third * Channels
+	offset2 := 2 * third * Channels
 	perThird := runtime.NumCPU() / 3
 	if perThird < 1 {
 		perThird = 1
 	}
-	offset1 := third * Channels
-	offset2 := 2 * third * Channels
 	wg.Add(3)
 	go func() {
 		process128(noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
@@ -394,14 +403,18 @@ func Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
 
-	decoded := [3][]byte{make([]byte, caps[0]), make([]byte, caps[1]), make([]byte, caps[2])}
+	decoded := [3][]byte{
+		make([]byte, caps[0]),
+		make([]byte, caps[1]),
+		make([]byte, caps[2]),
+	}
 
+	offset1 := third * Channels
+	offset2 := 2 * third * Channels
 	perThird := runtime.NumCPU() / 3
 	if perThird < 1 {
 		perThird = 1
 	}
-	offset1 := third * Channels
-	offset2 := 2 * third * Channels
 
 	var wg sync.WaitGroup
 	wg.Add(3)

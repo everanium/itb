@@ -138,6 +138,42 @@ func TestTriple_BinarySafety(t *testing.T) {
 	}
 }
 
+func TestTriple_BinarySafety256(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
+	encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatalf("data mismatch")
+	}
+}
+
+func TestTriple_BinarySafety512(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
+	encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatalf("data mismatch")
+	}
+}
+
 func TestTriple_WrongSeed(t *testing.T) {
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
 	data := []byte("secret message for wrong seed test")
@@ -156,11 +192,79 @@ func TestTriple_WrongSeed(t *testing.T) {
 	}
 }
 
+func TestTriple_WrongSeed256(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := []byte("secret message for wrong seed test")
+	encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong seeds — may return error OR garbage data (oracle-free deniability)
+	wns, wds1, wds2, wds3, wss1, wss2, wss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	wh := makeBlake3Hash256()
+	wns.Hash, wds1.Hash, wds2.Hash, wds3.Hash, wss1.Hash, wss2.Hash, wss3.Hash = wh, wh, wh, wh, wh, wh, wh
+	decrypted, err := Decrypt3x256(wns, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
+	if err != nil {
+		return // expected
+	}
+	if bytes.Equal(data, decrypted) {
+		t.Fatal("wrong seed produced correct plaintext")
+	}
+}
+
+func TestTriple_WrongSeed512(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := []byte("secret message for wrong seed test")
+	encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong seeds — may return error OR garbage data (oracle-free deniability)
+	wns, wds1, wds2, wds3, wss1, wss2, wss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	wh := makeBlake2bHash512()
+	wns.Hash, wds1.Hash, wds2.Hash, wds3.Hash, wss1.Hash, wss2.Hash, wss3.Hash = wh, wh, wh, wh, wh, wh, wh
+	decrypted, err := Decrypt3x512(wns, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
+	if err != nil {
+		return // expected
+	}
+	if bytes.Equal(data, decrypted) {
+		t.Fatal("wrong seed produced correct plaintext")
+	}
+}
+
 func TestTriple_NonceUniqueness(t *testing.T) {
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
 	data := []byte("same data, different nonce")
 	enc1, _ := Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	enc2, _ := Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+		t.Fatal("two encryptions produced identical nonces")
+	}
+}
+
+func TestTriple_NonceUniqueness256(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := []byte("same data, different nonce")
+	enc1, _ := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	enc2, _ := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+		t.Fatal("two encryptions produced identical nonces")
+	}
+}
+
+func TestTriple_NonceUniqueness512(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := []byte("same data, different nonce")
+	enc1, _ := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	enc2, _ := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
@@ -208,6 +312,92 @@ func TestTriple_TripleSeedIsolationValidation(t *testing.T) {
 
 	// All seven same
 	if _, err := Encrypt3x128(s1, s1, s1, s1, s1, s1, s1, data); err == nil {
+		t.Fatal("expected error when all seeds same")
+	}
+}
+
+func TestTriple_TripleSeedIsolationValidation256(t *testing.T) {
+	s1, _ := NewSeed256(512, makeBlake3Hash256())
+	s2, _ := NewSeed256(512, makeBlake3Hash256())
+	s3, _ := NewSeed256(512, makeBlake3Hash256())
+	s4, _ := NewSeed256(512, makeBlake3Hash256())
+	s5, _ := NewSeed256(512, makeBlake3Hash256())
+	s6, _ := NewSeed256(512, makeBlake3Hash256())
+	data := []byte("test")
+
+	// Any pair of aliased seeds must be rejected.
+	unique := []*Seed256{s1, s2, s3, s4, s5, s6}
+
+	tryAlias := func(i, j int) error {
+		seeds := make([]*Seed256, 7)
+		u := 0
+		for k := 0; k < 7; k++ {
+			if k == i || k == j {
+				continue
+			}
+			seeds[k] = unique[u]
+			u++
+		}
+		alias, _ := NewSeed256(512, makeBlake3Hash256())
+		seeds[i] = alias
+		seeds[j] = alias
+		_, err := Encrypt3x256(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], data)
+		return err
+	}
+
+	for i := 0; i < 7; i++ {
+		for j := i + 1; j < 7; j++ {
+			if err := tryAlias(i, j); err == nil {
+				t.Fatalf("expected error when seeds at positions %d and %d are aliased", i, j)
+			}
+		}
+	}
+
+	// All seven same
+	if _, err := Encrypt3x256(s1, s1, s1, s1, s1, s1, s1, data); err == nil {
+		t.Fatal("expected error when all seeds same")
+	}
+}
+
+func TestTriple_TripleSeedIsolationValidation512(t *testing.T) {
+	s1, _ := NewSeed512(512, makeBlake2bHash512())
+	s2, _ := NewSeed512(512, makeBlake2bHash512())
+	s3, _ := NewSeed512(512, makeBlake2bHash512())
+	s4, _ := NewSeed512(512, makeBlake2bHash512())
+	s5, _ := NewSeed512(512, makeBlake2bHash512())
+	s6, _ := NewSeed512(512, makeBlake2bHash512())
+	data := []byte("test")
+
+	// Any pair of aliased seeds must be rejected.
+	unique := []*Seed512{s1, s2, s3, s4, s5, s6}
+
+	tryAlias := func(i, j int) error {
+		seeds := make([]*Seed512, 7)
+		u := 0
+		for k := 0; k < 7; k++ {
+			if k == i || k == j {
+				continue
+			}
+			seeds[k] = unique[u]
+			u++
+		}
+		alias, _ := NewSeed512(512, makeBlake2bHash512())
+		seeds[i] = alias
+		seeds[j] = alias
+		_, err := Encrypt3x512(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], data)
+		return err
+	}
+
+	for i := 0; i < 7; i++ {
+		for j := i + 1; j < 7; j++ {
+			if err := tryAlias(i, j); err == nil {
+				t.Fatalf("expected error when seeds at positions %d and %d are aliased", i, j)
+			}
+		}
+	}
+
+	// All seven same
+	if _, err := Encrypt3x512(s1, s1, s1, s1, s1, s1, s1, data); err == nil {
 		t.Fatal("expected error when all seeds same")
 	}
 }
@@ -350,6 +540,54 @@ func TestTriple_MaxDataSize64MB(t *testing.T) {
 	}
 }
 
+func TestTriple_MaxDataSize64MB256(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 64 MB test in short mode")
+	}
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(1024, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := make([]byte, 64<<20) // 64 MB
+	if _, err := rand.Read(data); err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("256-bit: 64 MB roundtrip data mismatch")
+	}
+}
+
+func TestTriple_MaxDataSize64MB512(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 64 MB test in short mode")
+	}
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(1024, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := make([]byte, 64<<20) // 64 MB
+	if _, err := rand.Read(data); err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("512-bit: 64 MB roundtrip data mismatch")
+	}
+}
+
 func TestTriple_FormatIdentical(t *testing.T) {
 	// Both Single Ouroboros and Triple Ouroboros must produce containers
 	// with the same header format: nonce || width || height || pixel data.
@@ -399,6 +637,50 @@ func TestTriple_SmallData(t *testing.T) {
 			}
 			if !bytes.Equal(data, decrypted) {
 				t.Fatalf("data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestTriple_SmallData256(t *testing.T) {
+	for _, sz := range []int{1, 2, 3, 4} {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+			h := makeBlake3Hash256()
+			ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+			data := generateData(sz)
+			encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("256-bit: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestTriple_SmallData512(t *testing.T) {
+	for _, sz := range []int{1, 2, 3, 4} {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+			h := makeBlake2bHash512()
+			ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+			data := generateData(sz)
+			encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("512-bit: data mismatch at %d bytes", sz)
 			}
 		})
 	}
@@ -465,6 +747,26 @@ func TestTriple_Roundtrip512(t *testing.T) {
 func TestTriple_EmptyData(t *testing.T) {
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
 	_, err := Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
+	if err == nil {
+		t.Fatal("expected error for empty data")
+	}
+}
+
+func TestTriple_EmptyData256(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	_, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
+	if err == nil {
+		t.Fatal("expected error for empty data")
+	}
+}
+
+func TestTriple_EmptyData512(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	_, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
 	if err == nil {
 		t.Fatal("expected error for empty data")
 	}
@@ -649,6 +951,24 @@ func TestTriple_MaxDataSizeExceeded(t *testing.T) {
 	}
 }
 
+func TestTriple_MaxDataSizeExceeded256(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	if _, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
+		t.Fatal("expected error for 64 MB + 1 byte")
+	}
+}
+
+func TestTriple_MaxDataSizeExceeded512(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	if _, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
+		t.Fatal("expected error for 64 MB + 1 byte")
+	}
+}
+
 func TestTriple_DecryptRejectOversizeContainer(t *testing.T) {
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
 	header := make([]byte, headerSize()+Channels)
@@ -658,6 +978,38 @@ func TestTriple_DecryptRejectOversizeContainer(t *testing.T) {
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 	_, err := Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
+	if err == nil {
+		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
+	}
+}
+
+func TestTriple_DecryptRejectOversizeContainer256(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	header := make([]byte, headerSize()+Channels)
+	nonceSz := currentNonceSize()
+	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	fakeContainer := make([]byte, len(header)+3200*3200*8)
+	copy(fakeContainer, header)
+	_, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
+	if err == nil {
+		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
+	}
+}
+
+func TestTriple_DecryptRejectOversizeContainer512(t *testing.T) {
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	header := make([]byte, headerSize()+Channels)
+	nonceSz := currentNonceSize()
+	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	fakeContainer := make([]byte, len(header)+3200*3200*8)
+	copy(fakeContainer, header)
+	_, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
 	if err == nil {
 		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
 	}
@@ -682,6 +1034,54 @@ func TestTriple_BarrierFill32_64MB(t *testing.T) {
 	}
 	if !bytes.Equal(data, decrypted) {
 		t.Fatal("64 MB + BarrierFill(32) Triple roundtrip data mismatch")
+	}
+}
+
+func TestTriple_BarrierFill32_64MB256(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 64 MB test in short mode")
+	}
+	SetBarrierFill(32)
+	defer SetBarrierFill(1)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+	h := makeBlake3Hash256()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := make([]byte, 64<<20)
+	rand.Read(data)
+	encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("256-bit: 64 MB + BarrierFill(32) Triple roundtrip data mismatch")
+	}
+}
+
+func TestTriple_BarrierFill32_64MB512(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 64 MB test in short mode")
+	}
+	SetBarrierFill(32)
+	defer SetBarrierFill(1)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+	h := makeBlake2bHash512()
+	ns.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h
+	data := make([]byte, 64<<20)
+	rand.Read(data)
+	encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decrypted) {
+		t.Fatal("512-bit: 64 MB + BarrierFill(32) Triple roundtrip data mismatch")
 	}
 }
 
