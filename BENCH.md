@@ -2,7 +2,7 @@
 
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode)
 
-### ITB 512-bit
+### ITB Single 512-bit (security: P × 2^512)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -11,11 +11,11 @@
 | **BLAKE2b-512** | 512 | 512 | PRF | 99 | 115 | 124 | 131 | 149 | 149 |
 | **AreionSoEM512** | 512 | 512 | PRF | 99 | 112 | 111 | 128 | 133 | 139 |
 | **AreionSoEM256** | 256 | 512 | PRF | 113 | 109 | 108 | 124 | 129 | 129 |
-| **BLAKE2s** | 256 | 512 | PRF | 75 | 87 | 88 | 84 | 100 | 104 |
 | **ChaCha20** | 256 | 512 | PRF | 73 | 87 | 89 | 87 | 101 | 104 |
+| **BLAKE2s** | 256 | 512 | PRF | 75 | 87 | 88 | 84 | 100 | 104 |
 | **BLAKE3** | 256 | 512 | PRF | 48 | 56 | 57 | 52 | 61 | 63 |
 
-### ITB 1024-bit
+### ITB Single 1024-bit (security: P × 2^1024)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -24,11 +24,11 @@
 | **BLAKE2b-512** | 512 | 1024 | PRF | 65 | 81 | 83 | 78 | 90 | 93 |
 | **AreionSoEM512** | 512 | 1024 | PRF | 65 | 72 | 72 | 74 | 78 | 79 |
 | **AreionSoEM256** | 256 | 1024 | PRF | 64 | 66 | 65 | 72 | 77 | 76 |
-| **BLAKE2s** | 256 | 1024 | PRF | 45 | 54 | 54 | 49 | 57 | 60 |
 | **ChaCha20** | 256 | 1024 | PRF | 45 | 53 | 53 | 50 | 57 | 57 |
+| **BLAKE2s** | 256 | 1024 | PRF | 45 | 54 | 54 | 49 | 57 | 60 |
 | **BLAKE3** | 256 | 1024 | PRF | 28 | 33 | 33 | 30 | 33 | 33 |
 
-### ITB 2048-bit
+### ITB Single 2048-bit (security: P × 2^2048)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -43,7 +43,7 @@
 
 ## AMD EPYC 9655P (96-Core, Bare metal, CGO mode)
 
-### ITB 512-bit
+### ITB Single 512-bit (security: P × 2^512)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -56,7 +56,7 @@
 | **BLAKE2s** | 256 | 512 | PRF | 151 | 226 | 236 | 214 | 283 | 316 |
 | **BLAKE3** | 256 | 512 | PRF | 119 | 161 | 182 | 156 | 199 | 236 |
 
-### ITB 1024-bit
+### ITB Single 1024-bit (security: P × 2^1024)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -69,7 +69,7 @@
 | **BLAKE2s** | 256 | 1024 | PRF | 112 | 174 | 176 | 136 | 185 | 210 |
 | **BLAKE3** | 256 | 1024 | PRF | 84 | 108 | 123 | 95 | 130 | 148 |
 
-### ITB 2048-bit
+### ITB Single 2048-bit (security: P × 2^2048)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
