@@ -126,7 +126,7 @@ Triple Ouroboros inherits all security properties from Single Ouroboros ([ITB.md
 **What stays the same:**
 - Noise absorption (mechanism 1): 12.5% noise bits per region, same noiseSeed
 - Encoding ambiguity (mechanism 2): rotation 0-6 per pixel, different dataSeed per region
-- CSPRNG residue (Proof 10): guaranteed fill in each region, covered by MAC
+- CSPRNG residue ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)): guaranteed fill in each region, covered by MAC
 - Per-bit XOR (1:1): 56 independent mask bits per pixel
 - Byte-splitting: gcd(7,8)=1, every byte split across 2 channels
 - Oracle-free deniability: wrong seeds → garbage, no verification oracle
