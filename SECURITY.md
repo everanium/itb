@@ -98,7 +98,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Map guessing | 2^(62P) | 2^(62P) | 2^(59P) | 2^(59P) |
 | Nonce reuse | Two-time pad | Two-time pad | Two-time pad | Two-time pad |
 | Bit-flipping | Undetected | Detected (MAC) | Detected (MAC) | Detected (MAC) |
-| Padding oracle | N/A | N/A | ✓ No spatial pattern | ✓ No spatial pattern |
+| Padding oracle | N/A (no padding) | N/A (no padding) | N/A (no padding) | N/A (no padding) |
 | Quantum structural (Simon, BHT) | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated |
 
 † IT barrier is a software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
