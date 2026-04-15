@@ -207,16 +207,17 @@ func Decrypt512(noiseSeed, dataSeed, startSeed *Seed512, fileData []byte) ([]byt
 			nullPos = i
 		}
 	}
-	if nullPos < 0 {
-		return nil, fmt.Errorf("itb: no terminator found (wrong seed?)")
-	}
-	if nullPos == 0 {
-		return nil, fmt.Errorf("itb: empty payload")
+	// Plausible deniability: never return "no terminator" error.
+	// Wrong seeds produce random bytes; returning them as-is ensures every
+	// seed always produces output — the caller cannot distinguish correct
+	// from incorrect decryption without external context.
+	if nullPos <= 0 {
+		return decoded, nil
 	}
 
 	original := cobsDecode(decoded[:nullPos])
 	if len(original) == 0 {
-		return nil, fmt.Errorf("itb: COBS decode produced empty output")
+		return decoded, nil
 	}
 
 	return original, nil
@@ -441,10 +442,10 @@ func Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 				nullPos = j
 			}
 		}
+		// Plausible deniability: no terminator → return raw decoded bytes.
 		if nullPos < 0 {
-			return nil, fmt.Errorf("itb: no terminator found in third %d (wrong seed?)", i)
-		}
-		if nullPos == 0 {
+			parts[i] = decoded[i]
+		} else if nullPos == 0 {
 			parts[i] = []byte{}
 		} else {
 			parts[i] = cobsDecode(decoded[i][:nullPos])
