@@ -443,10 +443,8 @@ func Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 			}
 		}
 		// Plausible deniability: no terminator → return raw decoded bytes.
-		if nullPos < 0 {
+		if nullPos <= 0 {
 			parts[i] = decoded[i]
-		} else if nullPos == 0 {
-			parts[i] = []byte{}
 		} else {
 			parts[i] = cobsDecode(decoded[i][:nullPos])
 		}
