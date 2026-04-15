@@ -417,7 +417,7 @@ Under KPA, the attacker can compute 56 candidate dataHash values per pixel (8 no
 Barrier (Theorem 1):     ∀ consistent h : P(v | h) = 1/2     — noise bit independent of h
 Compatibility (COA):     ∀v, ∀h : ∃c : embed(c, h, d) = v    — without KPA, all h consistent
 Ambiguity (KPA):         56 consistent h per pixel            — barrier preserves ambiguity
-CSPRNG residue ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)): data bits contain plaintext + fill  — fill indistinguishable from ciphertext
+CSPRNG residue (Proof 10): data bits contain plaintext + fill  — fill indistinguishable from ciphertext
 PRF non-invertibility:   candidates → seed: impossible        — ambiguity unresolvable
 Invertible hash:         candidates → seed: possible          — ambiguity resolved (hash failure)
 ```
@@ -427,7 +427,7 @@ Invertible hash:         candidates → seed: possible          — ambiguity re
 CCA (MAC-reveal)         → noisePos known (3 bits/pixel from noiseSeed)
                          → noise bit value known (random CSPRNG bit — carries no information about seed or plaintext)
                          → 7 rotation candidates remain (not 56)
-                         → data bits still contain CSPRNG fill ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill): perfect fill impossible)
+                         → data bits still contain CSPRNG fill (Proof 10: perfect fill impossible)
 Full KPA                 → 7 candidate dataHash values per pixel, all consistent
 PRF (non-invertible)     → ChainHash inversion impossible → brute-force P × 2^keyBits
 Grover                   → √P × 2^keyBits (Core/Silent Drop, no oracle) to √P × 2^(keyBits/2) (MAC + Reveal); O(P) per candidate (all modes)
