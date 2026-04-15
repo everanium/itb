@@ -152,11 +152,8 @@ func DecryptAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, fileData [
 			nullPos = i
 		}
 	}
-	if nullPos < 0 {
+	if nullPos <= 0 {
 		return nil, fmt.Errorf("itb: no terminator found")
-	}
-	if nullPos == 0 {
-		return nil, fmt.Errorf("itb: empty payload")
 	}
 
 	original := cobsDecode(payload[:nullPos])
@@ -407,14 +404,10 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 				nullPos = j
 			}
 		}
-		if nullPos < 0 {
+		if nullPos <= 0 {
 			return nil, fmt.Errorf("itb: no terminator found in third %d", i)
 		}
-		if nullPos == 0 {
-			parts[i] = []byte{}
-		} else {
-			parts[i] = cobsDecode(dec[:nullPos])
-		}
+		parts[i] = cobsDecode(dec[:nullPos])
 	}
 
 	return interleaveTriple(parts[0], parts[1], parts[2]), nil
