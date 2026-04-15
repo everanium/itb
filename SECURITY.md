@@ -67,7 +67,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Information-theoretic barrier† | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Oracle-free deniability | ✗ | Partial | Partial | ✗ | ✓ |
 | CCA spatial pattern eliminated | ✗ | — | — | ✓ | ✓ |
-| Resistant to padding oracle | ✗ | — | — | ✓ | ✓ |
+| Padding oracle | Vulnerable (POODLE, Lucky13) | — | — | N/A (no padding) | N/A (no padding) |
 | Hash requirement | PRF/PRP | PRF | PRF | PRP | PRF |
 | Maturity / standardization | TLS 1.0-1.1 | OTR v3/v4 | Signal Protocol | NIST SP 800-38D | **None** |
 

@@ -646,7 +646,7 @@ ITB's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated5
 | Information-theoretic barrier† | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Oracle-free deniability | ✗ | Partial | Partial | ✗ | ✓ |
 | CCA spatial pattern eliminated | ✗ | — | — | ✓ | ✓ |
-| Resistant to padding oracle | ✗ | — | — | ✓ | ✓ |
+| Padding oracle | Vulnerable (POODLE, Lucky13) | — | — | N/A (no padding) | N/A (no padding) |
 | Hash function requirement | PRF/PRP | PRF | PRF | PRP | PRF |
 | Maturity / peer review | Extensive | Extensive | Extensive | Extensive | **None** |
 | Performance | High | High | High | High | Lower (per-pixel hashing) |
