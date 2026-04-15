@@ -642,7 +642,7 @@ ITB's `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated5
 | Property | MtE (TLS 1.0)‡ | OTR | Signal | AEAD (GCM) | ITB |
 |---|---|---|---|---|---|
 | Tag encrypted inside ciphertext | ✓ | ✗ | ✗ | ✗ | ✓ |
-| MAC covers padding | ✗ | — | — | ✓ | ✓ |
+| MAC covers fill | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Information-theoretic barrier† | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Oracle-free deniability | ✗ | Partial | Partial | ✗ | ✓ |
 | CCA spatial pattern eliminated | ✗ | — | — | ✓ | ✓ |

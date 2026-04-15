@@ -63,7 +63,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Property | MtE (TLS 1.0) | OTR | Signal | AEAD (GCM) | ITB |
 |---|---|---|---|---|---|
 | Tag encrypted inside | ✓ | ✗ | ✗ | ✗ | ✓ |
-| MAC covers padding | ✗ | — | — | ✓ | ✓ |
+| MAC covers fill | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Information-theoretic barrier† | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Oracle-free deniability | ✗ | Partial | Partial | ✗ | ✓ |
 | CCA spatial pattern eliminated | ✗ | — | — | ✓ | ✓ |
