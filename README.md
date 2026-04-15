@@ -569,13 +569,13 @@ ensuring CCA ambiguity (7^P) exceeds the key space:
 
 ```
 Offset  Size     Content
-0       16       Nonce (crypto/rand, public)
-16      2        Width (uint16 big-endian)
-18      2        Height (uint16 big-endian)
-20      W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload
+0       N        Nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
+N       2        Width (uint16 big-endian)
+N+2     2        Height (uint16 big-endian)
+N+4     W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload
 ```
 
-The output format is identical across all three hash width variants.
+Default nonce size is 128-bit (16 bytes). Configurable to 256-bit (32 bytes) or 512-bit (64 bytes) via `SetNonceBits`. The output format is identical across all three hash width variants.
 
 ## Security Summary
 
