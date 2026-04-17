@@ -289,6 +289,8 @@ Each encryption generates a fresh nonce from crypto/rand (default 128-bit; confi
 
 **Impact of nonce collision:** attacker obtains two containers with the same hash configuration but different random containers. Per-pixel XOR masks cancel when comparing extracted bits — yielding data1 ⊕ data2. This is a two-time pad. The mandatory nonce prevents this.
 
+**Nonce-misuse resistance.** Nonce collision in ITB is **strictly local**: the two-time pad compromises confidentiality of the 2–3 colliding messages only. Seeds remain secret because a single collision provides one ChainHash output for one (pixelIndex, nonce) input — insufficient to invert ChainHash (PRF non-invertibility). All three seeds (noiseSeed, dataSeed, startSeed) retain full entropy; future messages with fresh nonces are unaffected, so **no key rotation is required** after a collision. A single collision also provides too few observations for Simon's periodicity detection, BHT collision-finding, or quantum structural algebraic attacks — these require multiple distinct input-output pairs from the same function. This contrasts with AES-GCM where a single nonce reuse leaks the GHASH authentication key H, enabling **permanent forgery** of arbitrary messages under the same key until key rotation — a global catastrophe. ITB achieves nonce-misuse resistance through PRF architecture rather than dedicated misuse-resistant construction (as in AES-GCM-SIV).
+
 ### 2.6 Resistance to Known-Plaintext Attack
 
 Even with fully known plaintext, the attacker cannot derive hash outputs because the original container pixel values are unknown (crypto/rand, never transmitted). Known-plaintext attack degrades to brute-force regardless of hash function properties.

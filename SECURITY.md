@@ -111,6 +111,8 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 
 §§ CCA removes noise bits (12.5% of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
+**Nonce reuse is local.** Two-time pad applies only to the colliding 2–3 messages (confidentiality of those messages compromised). Seeds remain secret (PRF non-invertibility blocks ChainHash inversion), so future messages with fresh nonces are unaffected — **no key rotation required**. A single nonce collision provides too few observations for Simon, BHT, or quantum structural algebraic attacks. Unlike AES-GCM where nonce reuse leaks the GHASH key H and enables forgery until key rotation (global catastrophe affecting all subsequent messages), ITB nonce collision is **strictly local** — ITB is nonce-misuse-resistant under the PRF assumption.
+
 ‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2×keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
 
 ## 8. Byte-Splitting Property
