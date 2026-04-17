@@ -26,7 +26,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
 
-**[Scientific paper (preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
+**[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
 **Zero external dependencies.** Hash functions are supplied by the user.
 
