@@ -1,6 +1,6 @@
 # ITB Security Reference
 
-> **Disclaimer.** ITB is an experimental construction without peer review or formal certification. The information-theoretic barrier is a software-level property, reinforced by two independent mechanisms: noise absorption (CSPRNG) and encoding ambiguity (rotation from triple-seed isolation). It provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, undiscovered side-channels). PRF-grade hash functions are required. No warranty is provided.
+> **Disclaimer.** ITB is an experimental construction without peer review or formal certification. The information-theoretic barrier is a software-level property, reinforced by two independent barrier mechanisms: noise absorption from CSPRNG, and encoding ambiguity (56^P without CCA, 7^P under CCA) from triple-seed isolation. Architectural layers deny the point of application: independent startSeed and 8-noisePos ambiguity from independent noiseSeed under Full KPA, plus gcd(7,8)=1 byte-splitting under Partial KPA. Full KPA defense is 3-factor under PRF assumption (4-factor under Partial KPA) — see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance). It provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, undiscovered side-channels). PRF-grade hash functions are required. No warranty is provided.
 
 Comprehensive security comparison tables for ITB (Information-Theoretic Barrier) across three composition modes: Core (no MAC), MAC + Silent Drop, MAC + Reveal. For detailed proofs and analysis, see [SCIENCE.md](SCIENCE.md).
 
@@ -27,14 +27,16 @@ Triple-seed architecture: noiseSeed (noise positions), dataSeed (rotation + XOR,
 
 PRF-grade hash functions are required. PRF property guarantees all necessary sub-properties (input sensitivity, chain survival, non-affine mixing, avalanche, non-invertibility) by definition.
 
+PRF weakness decomposes into three cases. **Total inversion** defeats the construction via algorithmic seed recovery (see [Proof 4a Asymmetry note](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). **Occasional/sporadic partial inversion** is absorbed by the architecture: recovered candidates are indistinguishable from the false-positive distribution produced by startPixel isolation, per-pixel 1:1 ambiguity, and byte-splitting under Partial KPA. **Systematic partial inversion** is a real non-absorbed threat — the architecture raises the cost but does not eliminate the attack. No such systematic weakness is currently known to reduce the Full KPA work factor below the Theorem 4a bound.
+
 | # | Requirement | Purpose |
 |---|---|---|
-| — | PRF / PRP / PRG | Required; barrier hardens PRF by making hash output unobservable |
-| — | Collision resistance | Absorbed by random container (defence-in-depth) |
-| — | Bias / distribution | Absorbed by rotation barrier (defence-in-depth) |
-| — | Population count | Absorbed by random container (defence-in-depth) |
-| — | Bit Independence (BIC) | Absorbed by random container (defence-in-depth) |
-| — | Sparse/dense key | Absorbed by random container (defence-in-depth) |
+| — | PRF / PRP / PRG | Required; PRF and barrier are complementary — neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) |
+| — | Collision resistance | Absorbed by random container (defense-in-depth) |
+| — | Bias / distribution | Absorbed by rotation barrier ([Proof 7](PROOFS.md#proof-7-bias-neutralization), defense-in-depth) |
+| — | Population count | Absorbed by random container (defense-in-depth) |
+| — | Bit Independence (BIC) | Absorbed by random container (defense-in-depth) |
+| — | Sparse/dense key | Absorbed by random container (defense-in-depth) |
 
 ## 3. Comparison with Other Ciphers: Key Size
 
@@ -90,7 +92,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 | Attack | Core ITB | MAC + Silent Drop‡‡ | MAC + Reveal | MAC + Reveal + KPA |
 |---|---|---|---|---|
 | Ciphertext-only (COA) | ✓ IT barrier† | ✓ IT barrier† | ✓ IT barrier† | ✓ IT barrier† |
-| Known-plaintext (KPA) | ✓ IT barrier† | ✓ IT barrier† | ✓ Per-bit XOR | ✓ Per-bit XOR* |
+| Known-plaintext (KPA) | ✓ 3-factor under PRF (PRF + 7-rotation × 8-noisePos + startPixel); byte-split activates under Partial KPA† | ✓ 3-factor (same as Core)† | ✓ 3-factor under PRF (PRF + rotation 7^P + startPixel); byte-split activates under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) | ✓ 3-factor under PRF (PRF + rotation 7^P + startPixel); byte-split activates under Partial KPA* (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) |
 | Chosen-plaintext (CPA) | ✓ Independent maps | ✓ Independent maps | ✓ Independent maps | ✓ Independent maps |
 | Chosen-ciphertext (CCA) | ✓ No oracle | ✓ No oracle | noiseSeed leaked, dataSeed safe§§ | noiseSeed leaked, dataSeed safe§§ |
 | Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)††† | P × 2^keyBits** | P × 2^keyBits** |
@@ -105,7 +107,7 @@ PRF-grade hash functions are required. PRF property guarantees all necessary sub
 
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion.
 
-\** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted). startPixel enumerated as [0, P). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys (P=400): classical ~2^1033, Grover ~2^516. With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Non-invertibility (PRF property) is the sole defense for the information-theoretic barrier; all other layers are defence-in-depth.
+\** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted). startPixel enumerated as [0, P). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys (P=400): classical ~2^1033, Grover ~2^516. With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Under PRF, Full KPA requires simultaneously three independent obstacles: (1) inverting ChainHash, AND (2) guessing startPixel from independent startSeed (no leak from noiseSeed/dataSeed), AND (3) resolving 7-rotation and 8-noisePos ambiguity per pixel at signal/noise 1:1 (all 56 candidates equally consistent with observation). Under Partial KPA, a 4th obstacle is effective: gcd(7,8)=1 byte-splitting blocks per-channel candidate formulation when adjacent bytes are unknown. PRF non-invertibility and the architectural layers combine conjunctively, not redundantly: an attacker with partial PRF inversion still faces P startPixel candidates to enumerate and 56-fold per-pixel ambiguity to disambiguate without a verification oracle.
 
 ††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2×keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2×keyBits). Grover: √P × 2^keyBits. At 1024-bit keys (P=196): classical ~2^2056, Grover ~2^1028.
 
@@ -257,14 +259,14 @@ PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE
 
 | Property | ITB |
 |---|---|
-| Information-theoretic barrier* | Random-container noise absorption (CSPRNG) + encoding rotation ambiguity 7^P (triple-seed isolation) |
+| Information-theoretic barrier* | Two mechanisms: random-container noise absorption (CSPRNG) + encoding ambiguity (56^P without CCA from 8-noisePos × 7-rotation, 7^P under CCA from rotation only). Architectural layers denying the point of application: independent startSeed (startPixel not transmitted) under Full KPA, plus gcd(7,8)=1 byte-splitting under Partial KPA. All combine under PRF assumption via [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) |
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); O(P) full decryption per candidate (all modes) |
 | Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue persists in data positions, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
 | Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop (no oracle); MAC + Reveal has CCA oracle but limited to noise positions |
-| Known-plaintext resistance | Under passive observation (PRF + IT barrier) |
+| Known-plaintext resistance | 3-factor under PRF assumption for Full KPA: PRF non-invertibility (verification) + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. gcd(7,8) byte-splitting is a 4th factor effective only under Partial KPA; see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance), [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) |
 | Chosen-plaintext resistance | Independent maps |
 | Noise absorption* | ✓ Core ITB / MAC + Silent Drop (CSPRNG noise bit at unknown position; noise bits bypassed by CCA in MAC + Reveal, but CSPRNG fill in data positions persists — [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
@@ -316,7 +318,7 @@ At 1024-bit key: Core/Silent Drop (P=196) ~2^2056 classical, ~2^1028 Grover. MAC
 
 ## 17. Maturity and Scope
 
-ITB is a new construction without prior peer review or independent cryptanalysis. The contribution is theoretical: demonstrating that PRF-grade hash functions can be architecturally hardened through an information-theoretic barrier that makes hash output unobservable under passive observation. Performance is not a design goal.
+ITB is a new construction without prior peer review or independent cryptanalysis. The contribution is theoretical: demonstrating that Full KPA resistance is 3-factor under PRF assumption (PRF non-invertibility + independent startSeed + per-pixel 1:1 ambiguity), with gcd(7,8)=1 byte-splitting as a 4th factor effective only under Partial KPA. PRF non-invertibility closes the candidate-verification step; architectural layers deny the attacker a usable reference pixel (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Performance is not a design goal.
 
 | Aspect | Status |
 |---|---|

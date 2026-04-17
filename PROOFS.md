@@ -1,6 +1,6 @@
 # ITB: Formal Proofs
 
-> **Disclaimer.** These proofs are self-analysis by the author and have not been independently verified. ITB is an experimental construction. The information-theoretic barrier is a software-level property, reinforced by two independent mechanisms: noise absorption (CSPRNG) and encoding ambiguity (rotation from triple-seed isolation). It provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, cache timing). No warranty is provided.
+> **Disclaimer.** These proofs are self-analysis by the author and have not been independently verified. ITB is an experimental construction. The information-theoretic barrier is a software-level property, reinforced by two independent barrier mechanisms: noise absorption from CSPRNG, and encoding ambiguity (56^P without CCA, 7^P under CCA) from triple-seed isolation. Architectural layers deny the point of application: independent startSeed and 8-noisePos ambiguity from independent noiseSeed under Full KPA, plus gcd(7,8)=1 byte-splitting under Partial KPA. Full KPA defense is 3-factor under PRF assumption (4-factor under Partial KPA) — see [Proof 4a](#proof-4a-multi-factor-full-kpa-resistance). It provides no guarantees against hardware-level attacks (DPA/SPA, Spectre, Meltdown, cache timing). No warranty is provided.
 
 Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cipher construction.
 
@@ -118,7 +118,7 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 
 ## Proof 3a: Triple-Seed Isolation Minimality
 
-**Theorem.** Three independent seeds is the minimum configuration such that compromise of any single configuration domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixel). This has not been independently verified.
+**Theorem.** Three independent seeds are the minimum configuration such that compromise of any single configuration domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixel). This has not been independently verified.
 
 **Proof.**
 
@@ -184,18 +184,18 @@ hᵢ = H(data, sᵢ ⊕ hᵢ₋₁)    for i = 1, ..., n-1
 *Step 1: Changing s_k changes the input to round k.*
 At round k, the second argument to H is `s_k ⊕ h_{k-1}` (or `s₀` for k=0). Changing s_k by even a single bit changes this argument by one bit.
 
-*Step 2: Avalanche propagates the change.*
-By the avalanche property (inherent in any PRF), a single-bit change in any input to H flips approximately 50% of output bits. Therefore h_k changes substantially when s_k changes.
+*Step 2: PRF property propagates the change.*
+By the PRF property, H with altered input is computationally indistinguishable from a fresh uniform value. Therefore h_k differs substantially (with overwhelming probability) when s_k changes.
 
 *Step 3: The change cascades through subsequent rounds.*
-At round k+1: the input is `s_{k+1} ⊕ h_k`. Since h_k changed (~50% of bits), this input changes, and by avalanche, h_{k+1} changes. By induction, every subsequent output h_{k+1}, h_{k+2}, ..., h_{n-1} changes.
+At round k+1: the input is `s_{k+1} ⊕ h_k`. Since h_k changed, this input changes; by the PRF property applied again, h_{k+1} is indistinguishable from fresh uniform and hence differs from the original. By induction, every subsequent output h_{k+1}, h_{k+2}, ..., h_{n-1} differs with overwhelming probability.
 
 *Step 4: Contradiction.*
 The final output h_{n-1} changes when s_k changes. This contradicts the assumption that s_k does not influence h_{n-1}.
 
 Since this holds for all k ∈ {0, ..., n-1}, all components influence the output.
 
-**Role of chain survival (PRF property).** Chain survival prevents a separate failure mode: XOR-cancelling hash functions where H(data, k) = k ⊕ f(data). Such functions satisfy avalanche for individual calls, but in even-length chains the data dependency cancels:
+**Role of chain survival.** Chain survival prevents a separate failure mode: XOR-cancelling hash functions where H(data, k) = k ⊕ f(data). Such functions satisfy avalanche for individual calls, but in even-length chains the data dependency cancels:
 ```
 h₁ = (s₁ ⊕ h₀) ⊕ f(data) = s₁ ⊕ s₀ ⊕ f(data) ⊕ f(data) = s₁ ⊕ s₀
 ```
@@ -214,7 +214,7 @@ m' = rotate⁻¹(observed, r') ⊕ d
 
 This produces a valid candidate XOR mask m'. There are exactly 7 valid (r', m') pairs per pixel. The attacker cannot determine which is correct without knowing dataSeed.
 
-**With non-invertible hash (PRF property):** To verify a candidate (r', m'), the attacker would need to check if m' equals bits 3-58 of ChainHash(counter||nonce, dataSeed). This requires evaluating ChainHash with the correct dataSeed — but dataSeed is unknown, and ChainHash cannot be inverted.
+**Under the PRF assumption (inversion is infeasible):** To verify a candidate (r', m'), the attacker would need to check if m' equals bits 3-58 of ChainHash(counter||nonce, dataSeed). This requires evaluating ChainHash with the correct dataSeed — but dataSeed is unknown, and ChainHash cannot be inverted.
 
 The attacker cannot verify individual pixel rotations independently. The total configuration space is:
 
@@ -223,6 +223,32 @@ The attacker cannot verify individual pixel rotations independently. The total c
 ```
 
 For P = 196 (minimum Encrypt/Stream container, 1024-bit key): 7^196 ≈ 10^166 ≈ 2^550 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^166 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. For P = 400 (minimum Auth container): 7^400 ≈ 2^1123. The noise barrier (2^1568 for 196 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer limit. ∎
+
+This proof covers one layer (rotation barrier). For the complete multi-factor Full KPA defense, see [Proof 4a](#proof-4a-multi-factor-full-kpa-resistance).
+
+## Proof 4a: Multi-Factor Full KPA Resistance
+
+**Theorem.** Under the PRF assumption, Full KPA brute-force seed recovery requires at least:
+- P × 2^(2×keyBits) hash evaluations for Core ITB (joint noiseSeed + dataSeed search)
+- P × 2^keyBits hash evaluations for MAC + Reveal (noiseSeed eliminated, dataSeed + startPixel enumeration)
+
+with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional factor that any shortcut attack must also defeat. The attacker must simultaneously succeed on three independent obstacles — (1) PRF inversion, (2) enumeration of P startPixel candidates derived from an independent startSeed, (3) resolution of 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1 — plus one Partial-KPA-specific obstacle, (4) gcd(7,8)=1 byte-splitting non-alignability, effective only under Partial KPA.
+
+**Proof.** Obstacles (1)–(3) correspond to disjoint entropy sources and jointly determine the Full KPA brute-force cost; obstacle (4) is a Partial-KPA-specific defense:
+
+**(1) PRF inversion.** Given a verified candidate dataHash h', recovering dataSeed from H(counter||nonce, dataSeed) = h' requires hash inversion ([Definition 2, SCIENCE.md §5](SCIENCE.md#5-formal-definitions)). Under the PRF assumption (which implies one-wayness), this is infeasible.
+
+**(2) startPixel isolation.** startPixel = f(startSeed, nonce) where startSeed ⊥ noiseSeed ⊥ dataSeed ([Proof 3](#proof-3-triple-seed-isolation)). startPixel is not transmitted in the cleartext header. An attacker with full known plaintext does not know which pixel of the container corresponds to plaintext byte 0 — there are P candidate offsets with no feedback to narrow them.
+
+**(3) Per-pixel ambiguity at 1:1 signal/noise.** Per [Proof 1](#proof-1-information-theoretic-barrier): P(v | h) = 1/2 for any observed byte v and any hash output h. Per [Proof 4](#proof-4-rotation-barrier): 7 rotation candidates remain indistinguishable after the barrier. Combined: 56 candidates per pixel (8 noisePos × 7 rotation), each equally consistent with the observation. Signal/noise ratio is 1:1 — the observation provides no ranking signal to the attacker. Formally: sup_{c,c'} Pr[c | obs] / Pr[c' | obs] = 1 — all candidates are equiprobable conditional on the observation.
+
+**(4) Byte-splitting non-alignability (Partial KPA defense).** Per [SCIENCE.md §2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment): gcd(7,8)=1 guarantees every plaintext byte is split across exactly 2 channels. Under Partial KPA, where the attacker has incomplete plaintext, per-channel candidate formulation (a potential shortcut attack) is blocked because each channel depends on two bytes — missing one prevents candidate computation. Under Full KPA this shortcut is not available anyway (brute force enumerates seeds directly), so obstacle (4) has no additional defensive effect.
+
+**Composition.** Obstacles (1)–(3) have disjoint entropy sources by [Proof 3](#proof-3-triple-seed-isolation) and jointly determine the Full KPA brute-force cost stated in the theorem. Full KPA defense is 3-factor under PRF assumption (PRF non-invertibility, startPixel isolation, per-pixel 1:1 ambiguity); gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. The obstacles are not independent sub-problems defeated sequentially but interlocking constraints.
+
+**Composition conjecture.** Hash output bias and collisions are absorbed by the barrier ([Proof 7](#proof-7-bias-neutralization), BHT analysis). Occasional/sporadic PRF inversion events are additionally absorbed by startPixel isolation and per-pixel 1:1 ambiguity (obstacles 2, 3), plus gcd(7,8)=1 byte-splitting under Partial KPA (obstacle 4): recovered candidates become indistinguishable from the false-positive distribution. Systematic partial PRF inversion is a real (non-absorbed) threat that the barrier does not neutralize — the architecture raises cost but does not eliminate the attack — however, no such systematic weakness is currently known to reduce the Full KPA work factor below the theorem bound. Only total PRF inversion circumvents this via algorithmic seed recovery (see Asymmetry note).
+
+**Asymmetry note.** Obstacle (1) (PRF non-invertibility) is asymmetrically privileged: a complete failure of PRF (total hash inversion) allows obstacles (2)–(4) to be resolved algorithmically via recovered seeds, whereas a complete failure of any architectural layer leaves PRF non-invertibility intact. The multi-factor property therefore protects against **partial** PRF weakening and **any degree** of architectural weakness, but not against **total** PRF inversion. ∎
 
 ## Proof 5: Noise Barrier Bound
 
@@ -270,7 +296,7 @@ The barrier strictly exceeds the key space by a factor of 2^2176.
 
 This proof applies to the MAC + Reveal mode only. Under Core ITB and MAC + Silent Drop, no CCA oracle exists and the leak is zero.
 
-**Theorem.** Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable. Per-bit XOR prevents any further leakage.
+**Theorem.** Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model. Per-bit XOR prevents any further leakage.
 
 **Proof.** The CCA oracle provides a binary response per query: accept (noise bit flipped, data unchanged, MAC passes) or reject (data bit flipped, data changed, MAC fails).
 
@@ -307,7 +333,7 @@ container_data = insert(rotate(plaintext ⊕ biased_xor, biased_r), noise, noise
 
 Without knowing rotation r, the attacker observes rotated-and-XOR'd data. The rotation scrambles any statistical pattern:
 - Different pixels use different rotations (from different dataHash evaluations)
-- The attacker sees rotate(x, r) where r varies per pixel
+- The attacker sees rotate(x, r) where r varies from pixel to pixel
 - Without r, the mapping plaintext → observed bits is 7-to-1 ambiguous per pixel
 
 **With non-invertible hash:** Even if the attacker detects statistical patterns in observed bits, they cannot verify candidate rotations ([Proof 4](#proof-4-rotation-barrier)). The bias provides a Bayesian prior (some rotations more likely), but without verification, this prior cannot be confirmed or exploited:
@@ -316,7 +342,7 @@ Without knowing rotation r, the attacker observes rotated-and-XOR'd data. The ro
 P(r = r' | observed) ≈ P(r = r') × P(observed | r = r') / P(observed)
 ```
 
-Without the ability to evaluate P(observed | r = r') (requires dataSeed), the Bayesian update is vacuous. ∎
+Without the ability to evaluate P(observed | r = r') (requires dataSeed), the Bayesian update is uninformative. ∎
 
 ## Proof 8: Oracle-Free Deniability
 

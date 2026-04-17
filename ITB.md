@@ -61,7 +61,14 @@ With PRF hash, crypto/rand, and no co-located attacker:
 | **CPA** (chosen plaintext) | Different seed → different config, zero correlation | Intact |
 | **CCA** (chosen ciphertext) | Core ITB and MAC + Silent Drop have no external oracle (see SECURITY.md ‡‡ for insider case) | No oracle exists |
 
-Under passive observation (COA, CPA), the barrier alone blocks all analysis. Under KPA (including partial KPA), PRF non-invertibility is essential — with an invertible hash, the attacker can recover the seed via candidate verification. PRF and the barrier work together: the barrier makes hash output unobservable, PRF prevents candidate verification.
+Under passive observation (COA, CPA), the barrier alone blocks all analysis. Under Full KPA, PRF non-invertibility is essential — it closes the candidate-verification step, while two architectural layers deny the attacker a usable reference pixel:
+
+- **Independent startSeed** — startPixel is not transmitted; derived from a separate ChainHash. The attacker must enumerate P candidates without feedback.
+- **7-rotation × 8-noisePos encoding ambiguity** — 56 per-pixel candidates preserved at signal/noise 1:1.
+
+Under Partial KPA, gcd(7,8)=1 byte-splitting adds a 4th factor — per-channel candidate formulation is blocked when adjacent bytes are unknown (each channel depends on two bytes; missing one prevents candidate computation).
+
+An attacker with partial PRF inversion capability still faces P startPixel candidates to enumerate and 56-fold per-pixel ambiguity to disambiguate without a verification oracle.
 
 See [SECURITY.md Section 7](SECURITY.md#7-attack-resistance-summary) for the full attack resistance table.
 
@@ -77,11 +84,11 @@ Three layers of protection under Partial KPA:
 2. **Byte-splitting** — byte-level analysis impossible (gcd(7,8) = 1)
 3. **PRF** — even if the attacker somehow gets through, inversion is impossible
 
-All three layers work together. PRF non-invertibility prevents candidate verification.
+All three layers work together: the barrier denies observation, byte-splitting denies per-channel candidate formulation under Partial KPA, and PRF denies candidate verification. Under Full KPA, byte-splitting does not add defensive benefit (the attacker has all adjacent bytes), but the defense is nonetheless 3-factor under PRF assumption: PRF non-invertibility + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. The layers are architecturally independent and combine conjunctively (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
 
 See [SCIENCE.md Section 2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment), [SECURITY.md Section 8](SECURITY.md#8-byte-splitting-property).
 
-## 7. Full KPA: The Only Theoretical Threat (Requires Invertible Hash)
+## 7. Full KPA: The Only Theoretical Threat (PRF Assumption)
 
 Full KPA (the attacker knows the entire plaintext) is the only scenario where the barrier can be bypassed — but only with an invertible hash function:
 
@@ -90,11 +97,13 @@ Full KPA (the attacker knows the entire plaintext) is the only scenario where th
 | Full KPA + invertible hash | ~56 × P inversions → **seed recovered** (barrier intact, hash inverted) |
 | Full KPA + PRF (non-invertible) | Inversion impossible → brute-force P × 2^(2×keyBits) (Core ITB) or P × 2^keyBits (MAC + Reveal) |
 
-The attack: the attacker takes any pixel → 56 candidates (8 noisePos × 7 rotation) → computes candidate dataHash → **inverts** ChainHash → gets candidate dataSeed → verifies on a second pixel.
+The attack: the attacker takes any pixel → 56 candidates (8 noisePos × 7 rotation) → computes candidate dataHash → **inverts** ChainHash → gets candidate dataSeed → verifies on a second pixel (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
 
 With PRF: the same 56 candidates, the same candidate dataHash values. But inverting ChainHash is impossible — PRF by definition. The only path: brute-force all seeds (P × 2^(2×keyBits) for Core ITB, P × 2^keyBits for MAC + Reveal).
 
-Non-invertibility is the sole wall. The barrier protects against passive observation. Byte-splitting blocks partial KPA. But under Full KPA + invertible hash, none of this helps — the attacker knows all bytes, does not need byte analysis, only needs inversion. PRF forbids this.
+**Under Full KPA + total PRF inversion**, the architectural layers collapse via algorithmic seed recovery (see Asymmetry note in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)): the attacker inverts hashes to recover dataSeed, then re-derives startPixel and the per-pixel configuration. The multi-factor property defends against *partial* PRF weakness, not total failure. Within partial PRF weakness, occasional/sporadic inversion events are absorbed — the architectural obstacles generate a false-positive distribution that hides the true candidates. Systematic partial inversion is not absorbed; the architecture raises cost but does not eliminate the attack. No such systematic weakness is currently known (see [Proof 4a Composition conjecture](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
+
+**Under Full KPA + non-invertible PRF**, the defense is 3-factor under PRF assumption: (1) PRF non-invertibility prevents candidate verification; (2) independent startSeed requires enumeration of P startPixel candidates — startPixel is not transmitted; (3) 7-rotation and 8-noisePos per-pixel ambiguity preserved by the barrier at 1:1 signal/noise. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA (when the attacker is missing adjacent bytes). A partial weakening of PRF is not sufficient for a Full KPA break: the attacker still faces P startPixel candidates to enumerate + 56-fold per-pixel ambiguity to disambiguate without a verification oracle. PRF non-invertibility is necessary, and together with the architectural layers it constitutes the 3-factor KPA defense under PRF assumption, 4-factor under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
 
 ## 8. CCA: Reveals Only Noise, Not Data
 

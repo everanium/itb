@@ -129,6 +129,7 @@ Triple Ouroboros inherits all security properties from Single Ouroboros ([ITB.md
 - CSPRNG residue ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)): guaranteed fill in each region, covered by MAC
 - Per-bit XOR (1:1): 56 independent mask bits per pixel
 - Byte-splitting: gcd(7,8)=1, every byte split across 2 channels
+- KPA defense: Full KPA is 3-factor under PRF assumption — PRF non-invertibility + 7-rotation × 8-noisePos + independent startSeed per ring combine conjunctively (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Each ring has independent dataSeed and startSeed, so obstacles (1), (2), (3) of Proof 4a apply per ring. noiseSeed is shared across rings, so the 8-noisePos layer applies once to the whole container, not replicated per ring. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA.
 - Oracle-free deniability: wrong seeds → garbage, no verification oracle
 - MAC-Inside-Encrypt: tag encrypted in region 2, covers all fill bytes of all 3 regions
 

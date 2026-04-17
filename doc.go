@@ -6,11 +6,16 @@
 //
 // ITB is an experimental construction without peer review or formal certification.
 // The information-theoretic barrier is a SOFTWARE-LEVEL property, reinforced by
-// two independent mechanisms: noise absorption (CSPRNG) and encoding ambiguity
-// (rotation from triple-seed isolation). It provides NO guarantees against
-// hardware-level attacks including: power analysis (DPA/SPA),
-// microarchitectural side-channels (Spectre, Meltdown, Rowhammer, cache timing),
-// undiscovered side-channel leakages, or CSPRNG implementation weaknesses.
+// two independent barrier mechanisms: noise absorption from CSPRNG, and
+// encoding ambiguity (56^P without CCA, 7^P under CCA) from triple-seed
+// isolation. Architectural layers deny the point of application: independent
+// startSeed and 8-noisePos ambiguity from independent noiseSeed under Full
+// KPA, plus gcd(7,8)=1 byte-splitting under Partial KPA. Full KPA defense is
+// 3-factor under PRF assumption (4-factor under Partial KPA) — see PROOFS.md
+// Proof 4a. It provides NO guarantees against hardware-level attacks
+// including: power analysis (DPA/SPA), microarchitectural side-channels
+// (Spectre, Meltdown, Rowhammer, cache timing), undiscovered side-channel
+// leakages, or CSPRNG implementation weaknesses.
 //
 // PRF-grade hash functions are required. No warranty is provided.
 //
@@ -26,8 +31,11 @@
 //
 // The random container creates an information-theoretic barrier: hash output
 // is consumed by a modification of a random pixel, making it unobservable.
-// PRF-grade hash functions are required. The barrier provides additional
-// architectural hardening by making hash output unobservable.
+// PRF required. PRF closes the candidate-verification step; under Full KPA,
+// barrier and architectural layers (triple-seed isolation, encoding
+// ambiguity, independent startSeed) deny the point of application — 3-factor
+// combination under PRF assumption; gcd(7,8)=1 byte-splitting adds a 4th
+// factor under Partial KPA (see PROOFS.md Proof 4a).
 //
 // # Architecture
 //
@@ -106,12 +114,16 @@
 //   - Information-theoretic barrier: hash output consumed by modification of
 //     random pixels — not reconstructible from observations. Any hash function
 //     with non-invertible, non-affine, avalanche mixing surviving the
-//     XOR-chain is sufficient. PRF required; the barrier hardens PRF
-//     by making hash output unobservable.
+//     XOR-chain is sufficient. PRF required; PRF and barrier are complementary —
+//     neither sufficient alone (see PROOFS.md Proof 4a).
 //
-//   - Known-plaintext resistance (under passive observation): even with fully known plaintext,
-//     the attacker cannot derive hash outputs because original container pixel
-//     values are unknown (crypto/rand, never transmitted).
+//   - Known-plaintext resistance (3-factor under PRF assumption, 4-factor under Partial KPA): even with
+//     fully known plaintext, the attacker cannot derive hash outputs because
+//     original container pixel values are unknown (crypto/rand, never
+//     transmitted). Under Full KPA, defense is 3-factor: PRF non-invertibility
+//     + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity.
+//     gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial
+//     KPA (see PROOFS.md Proof 4a).
 //
 //   - Oracle-free deniability: no size headers, no checksums. COBS + null
 //     terminator under encryption. Wrong seed produces random-looking output
