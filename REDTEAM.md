@@ -617,7 +617,7 @@ Before running the attack chain against a corpus, the demasking helper was valid
 
 | Hash | Width | Layer 1 exact recovery | Layer 1 ambiguous | Layer 1 **wrong matches** | Layer 2 startPixel recovered | Reconstruction vs ground truth |
 |------|------:|-----------------------:|------------------:|-------------------------:|:---------------------------:|:------------------------------:|
-| FNV-1a | 128 | 99.25 % | 0.75 % | **0** | ✓ (0.02 s brute force) | 100 % byte-for-byte match |
+| FNV-1a | 128 | 99.25 % | 0.75 % | **0** | ✓ | 100 % byte-for-byte match |
 | MD5 | 128 | 99.24 % | 0.76 % | **0** | ✓ | 100 % byte-for-byte match |
 | BLAKE3 | 256 | 99.14 % | 0.86 % | **0** | ✓ | 100 % byte-for-byte match |
 | BLAKE2b-512 | 512 | 99.30 % | 0.70 % | **0** | ✓ | 100 % byte-for-byte match |
@@ -651,7 +651,7 @@ FNV-1a's per-byte operation is `h ← (h ⊕ byte) · FNV_PRIME_64`. The `⊕ by
 
 This distinction matters: the attacker cannot simply run Gaussian elimination on recovered `channelXOR` observations to invert the seed. Seed recovery still requires bitvector-SAT over the combined XOR + integer-multiplication constraints — research-lab scale compute for 1024-bit keys.
 
-What the NIST STS failures DO show is that **the non-linearity from carries is not strong enough** to produce statistically-PRF output over 8 rounds of ChainHash XOR composition. The reconstructed stream inherits enough residual structure for FFT to detect spectral peaks on every bit-stream and for block-level + run-length tests to flag proportion deviations. A SAT solver attacking this stream has **substantially more exploitable bias** than it would against a true PRF output — this likely shifts the seed-recovery wall-clock toward the lower end of the Phase 2a FNV-1a range (hours – 1 year on a 1 000-node cluster under idealised conditions) or below, though this plan does not attempt the actual SAT run.
+What the NIST STS failures DO show is that **the non-linearity from carries is not strong enough** to produce statistically-PRF output over 8 rounds of ChainHash XOR composition. The reconstructed stream inherits enough residual structure for FFT to detect spectral peaks on every bit-stream and for block-level + run-length tests to flag proportion deviations. A SAT solver attacking this stream has **substantially more exploitable bias** than it would against a true PRF output — this likely shifts the seed-recovery wall-clock toward the lower end of the [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure) FNV-1a range (hours – 1 year on a 1 000-node cluster under idealised conditions) or below, though this plan does not attempt the actual SAT run.
 
 Under PRF (BLAKE3 at 4 rounds at 1024-bit key) the reconstructed stream's 188 / 188 pass means the attacker's SAT problem has **no statistical bias to exploit beyond the raw algebraic complexity** — the single remaining obstacle (ChainHash SAT-hardness over a PRF) remains effectively infeasible.
 
@@ -661,7 +661,7 @@ The [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structu
 
 What remains after peeling is exactly the "Full KPA + `startPixel` known" entry from Phase 2a's [back-of-envelope table](#back-of-envelope-1000-node-cluster-wall-clock-full-kpa-startpixel-known) — **hours to 1 year** on a 1 000-node cluster under FNV-1a, or structurally infeasible under PRF. The NIST STS results validate this split empirically: under FNV-1a the remaining single-layer defence exhibits detectable output bias (the SAT solver would have real leverage); under PRF no such leverage exists (output is indistinguishable from random).
 
-**The takeaway is not that the Phase 2a estimates are wrong.** They are correct for the threat model they state. The takeaway is that **architectural obstacles (2) and (3) are load-bearing against below-spec primitives** — a single-layer "just-ChainHash" defence is sufficient under a real PRF but **insufficient under an invertible primitive** even when the primitive is wrapped in 8 rounds of XOR composition. This is why `SECURITY.md` and `SCIENCE.md` consistently require PRF-grade primitives for production use, and this empirical demonstration makes that requirement concrete.
+**The takeaway is not that the [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure) estimates are wrong.** They are correct for the threat model they state. The takeaway is that **architectural obstacles (2) and (3) are load-bearing against below-spec primitives** — a single-layer "just-ChainHash" defence is sufficient under a real PRF but **insufficient under an invertible primitive** even when the primitive is wrapped in 8 rounds of XOR composition. This is why [`SECURITY.md`](SECURITY.md) and [`SCIENCE.md`](SCIENCE.md) consistently require PRF-grade primitives for production use, and this empirical demonstration makes that requirement concrete.
 
 ### Validation of [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) locality claim
 
