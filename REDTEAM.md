@@ -14,8 +14,8 @@ At shipped defaults (BF=1):
 
 - **All 10 hashes pass every test on typical runs** — including the deliberately-broken FNV-1a (linear, fully invertible) and MD5 (collisions + output biases). The barrier produces ciphertext statistically indistinguishable from a true PRF across the whole primitive spectrum.
 - **Per-pixel candidate KL floor on 8 × 1 MB `html_giant` samples**: Mode A (idealized attacker, BF=1, N = 9.6 M obs/candidate) band [0.000018, 0.000021] nats, spread 3 × 10⁻⁶ across all 10 hashes; Mode B (realistic attacker — no `startPixel`, no plaintext, full container — BF=32, N = 11.3 M) band [0.000012, 0.000016] nats, spread 4 × 10⁻⁶. Both sit at ≈1.4× theoretical `bins/N` floor. A one-off probe at **N = 7.7 × 10⁷** (one 63 MB BLAKE3 encryption at the ITB data-size limit, Mode B, BF=32) drives observed KL max to **1.8 × 10⁻⁶ nats** — within 1.1× of the floor, subnanonat territory where float64 precision begins to matter.
-- **NIST STS: all 10 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (FNV-1a → bin 8, MD5 → bin 6, ChaCha20 → bin 1, BLAKE3 → bin 2, etc). Proportion is 100/100 for all 10 hashes on every one of the 148 template sub-tests. Single-test failures across the whole N = 100 run: 2 out of 1 880 — well under the 1 % expected at α = 0.01. When a given hash's cluster lands in bin 0 on any one run, the proportion column mechanically reports a catastrophic-looking 40/188 for that hash (it has happened to FNV-1a at N=20 and BLAKE3 at N=100 on BF=32 in this suite); this is the documented NIST SP 800-22 artefact on near-uniform output, *not* a primitive-specific signal.
-- **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively *conditional on that SAT-hardness assumption*. No Z3 runs were executed; the claim rests on structural analysis.
+- **NIST STS: all 10 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (FNV-1a → bin 8, MD5 → bin 6, ChaCha20 → bin 1, BLAKE3 → bin 2, etc). Proportion is 100/100 for all 10 hashes on every one of the 148 template sub-tests. Single-test failures across the whole N = 100 run: 2 out of 1 880 — well under the 1 % expected at α = 0.01. When a given hash's cluster lands in bin 0 on any one run, the proportion column mechanically reports a catastrophic-looking 40/188 for that hash (it has happened to FNV-1a at N=20 and BLAKE3 at N=100 on BF=32 in this suite); this is the documented NIST SP 800-22 artefact on near-uniform output, **not** a primitive-specific signal.
+- **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively **conditional on that SAT-hardness assumption**. No Z3 runs were executed; the claim rests on structural analysis.
 - **Realistic threat model** (Partial KPA + unknown startPixel) places the attack past civilisational timescales on a 1000-node cluster.
 
 The results corroborate the paper's "barrier-based construction" claim: security arises from the architecture (8-channel packing, 7-bit extraction with rotation, CSPRNG-fill residue, ChainHash XOR chain) rather than from the quality of the underlying hash. Weak and strong primitives produce statistically identical ciphertext under every distinguisher run.
@@ -28,14 +28,12 @@ This is a self-audit by the project author. Red-team validation tests a specific
 
 ### Paper claims tested
 
-| Claim | Reference |
-|-------|-----------|
-| [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier) — per-pixel information-theoretic barrier, P(v\|h) = 1/2 | [`PROOFS.md`](PROOFS.md) |
-| [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) — multi-factor Full KPA resistance, obstacles (2) and (3) | [`PROOFS.md`](PROOFS.md) |
-| [Proof 7](PROOFS.md#proof-7-bias-neutralization) — bias neutralisation by rotation barrier | [`PROOFS.md`](PROOFS.md) |
-| [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill) — guaranteed CSPRNG residue (fill minimum) | [`PROOFS.md`](PROOFS.md) |
-| Nonce independence — per-message independent configurations | [`PROOFS.md`](PROOFS.md#nonce-uniqueness) |
-| Composition conjecture — barrier absorbs systematic partial PRF weakness | see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) |
+- [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier) — per-pixel information-theoretic barrier, P(v\|h) = 1/2
+- [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) — multi-factor Full KPA resistance, obstacles (2) and (3)
+- [Proof 7](PROOFS.md#proof-7-bias-neutralization) — bias neutralisation by rotation barrier
+- [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill) — guaranteed CSPRNG residue (fill minimum)
+- [Nonce independence](PROOFS.md#nonce-uniqueness) — per-message independent configurations
+- Composition conjecture — barrier absorbs systematic partial PRF weakness (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance))
 
 ### Threat model
 
@@ -53,7 +51,7 @@ Attack classes:
 - **Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.
 - **Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).
 - **Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.
-- **Length leakage.** Ciphertext length is a deterministic function of plaintext length + `BarrierFill` (`side = ceil(sqrt(data_pixels)) + BarrierFill`, then `side²`). Plaintext length is therefore trivially recoverable to within a pixel. Not quantified in this report.
+- **Length leakage.** The 20-byte ciphertext header transmits `[W×H]` in cleartext, so the attacker reads the container dimensions directly (no recovery needed). Plaintext length is bounded by `(side − BarrierFill)² × 56` bits, with residual slack up to `O(side × BarrierFill)` pixels — a small informational leak standard to length-preserving encryption, not useful for decryption (the container dimensions are a fixed cost ITB pays for the barrier-based layout and do not reduce attacker work on any of the three obstacles).
 - **Adversarial machine-learning distinguishers** (CNN, deep-learning distinguisher trained on cover/stego pairs)
 - **Physical side channels** (timing, power, EM)
 - **Chosen-ciphertext attack with MAC reveal** (MAC + Reveal mode)
@@ -61,8 +59,9 @@ Attack classes:
 
 Scope gaps:
 - **Triple Ouroboros on Phases 2b / 2c / 3a** — Triple is validated on the two mode-agnostic phases (Phase 1 + Phase 3b, both BF=1 and BF=32). Phases 2b / 2c / 3a require a 3-partition analyzer rewrite to interpret the `splitTriple` interleaving; they are not included in this pass. Triple is architecturally strictly more defended than Single (see [Attack-cost implications of Triple Ouroboros](#attack-cost-implications-of-triple-ouroboros))
-- **Widely-deployed hash primitives missing from the 10-hash matrix**: HMAC-SHA-256, Poly1305, GHASH, SHA-3/Keccak. Absent; adding them would round out the algebraic-primitive coverage
-- **Ablations not run**: rotation disabled, `noisePos` fixed, reduced `keyBits` (128 / 256 / 512). `SetBarrierFill` tested at 1 (default) and 32 (max); intermediate values (2, 4, 8, 16) not exercised
+- **Widely-deployed hash primitives missing from the 10-hash matrix**: HMAC-SHA-256, GHASH, SHA-3/Keccak. Absent; adding them would round out the algebraic-primitive coverage
+- **`SetBarrierFill` intermediate values** (2, 4, 8, 16) not exercised; the shipped default (1) and the maximum (32) bracket the regime, and per-phase results are monotonic between them, but fine-grained sweep is absent
+- **Structured binary plaintexts** (PDF, PNG, MP4, compressed streams) absent from the corpus; the 10 kinds are all text-ish (HTTP / JSON / HTML / plain text). High-entropy compressed binaries and format-specific byte patterns could expose behaviours not surfaced by the current corpus
 - **Direct `/dev/urandom` side-by-side baselines** for Phase 1 per-channel χ², Phase 2b KL floor, and Phase 3a rotation-invariant rate (NIST STS uses urandom implicitly as its calibration baseline; other phases do not)
 - **Cross-sample variance** on `html_giant`: the runs aggregate `N = 8` samples per hash into the KL estimate (both BF=1 and BF=32, both Mode A and Mode B). The aggregate floor is reported; the per-sample variance distribution is not itself reported.
 
@@ -349,7 +348,7 @@ Rotation and `noisePos` (the 56-candidate baseline) sit inside the Z3 unknowns o
 
 1. **Under Full KPA + known `startPixel`** (the simplification used for the Phase 2b / 3a empirical tests), a well-funded attacker reaches 1024-bit seed recovery in *hours to ~1 year* of 1000-node cluster time — and that already assumes ChainHash is the only active defensive layer. Even this idealised threat already requires solving SAT, not modular inversions.
 2. **Under Full KPA + unknown `startPixel`** (still idealised), the attack multiplies by ~`P` (with possible incremental-SMT amortisation reducing the effective multiplier by up to ~10×). At typical `P ≈ 10⁴`, this pushes the cost into centuries – ~10 000 years.
-3. **Under Partial KPA + unknown `startPixel`** (the production threat model), the 50 % unknown case lands at ~10¹² – 10¹⁶ years of 1000-node time. The three defence layers stack multiplicatively, *conditional on the SAT-hardness assumption above*.
+3. **Under Partial KPA + unknown `startPixel`** (the production threat model), the 50 % unknown case lands at ~10¹² – 10¹⁶ years of 1000-node time. The three defence layers stack multiplicatively, **conditional on the SAT-hardness assumption above**.
 4. **ChainHash is the load-bearing premise.** Without it the same architecture (invertible FNV-1a + 56-candidate baseline + unknown `startPixel` + Partial KPA) would collapse to CPU-hour-scale cost on commodity hardware — every layer would resolve to cheap modular inversions rather than SAT. Keeping it makes every other layer an independent SAT multiplier, subject to the SAT-hardness premise.
 
 **Proposed paper addition.** A caveat in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) or adjacent prose noting that invertibility of the base primitive does not translate into invertibility of ChainHash for `n > 1` rounds; the compound cost scales with round count, giving `keyBits`-dependent defence-in-depth that the current prose does not claim. The naive `~56 × P` inversions bound holds tightly only at `keyBits = 128` with both `startPixel` and plaintext fully known — three simplifications simultaneously.
