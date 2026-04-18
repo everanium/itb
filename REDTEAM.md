@@ -17,6 +17,7 @@ At shipped defaults (BF=1):
 - **NIST STS: all 10 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (FNV-1a → bin 8, MD5 → bin 6, ChaCha20 → bin 1, BLAKE3 → bin 2, etc). Proportion is 100/100 for all 10 hashes on every one of the 148 template sub-tests. Single-test failures across the whole N = 100 run: 2 out of 1 880 — well under the 1 % expected at α = 0.01. When a given hash's cluster lands in bin 0 on any one run, the proportion column mechanically reports a catastrophic-looking 40/188 for that hash (it has happened to FNV-1a at N=20 and BLAKE3 at N=100 on BF=32 in this suite); this is the documented NIST SP 800-22 artefact on near-uniform output, **not** a primitive-specific signal.
 - **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively **conditional on that SAT-hardness assumption**. No Z3 runs were executed; the claim rests on structural analysis.
 - **Realistic threat model** (Partial KPA + unknown startPixel) places the attack past civilisational timescales on a 1000-node cluster.
+- **Nonce-reuse PRF-dependency empirically demonstrated (Phase 2d)**. Under a deliberate nonce collision with Full KPA, a Python demasking helper recovers `startPixel` + per-pixel `(noisePos, rotation)` in seconds and reconstructs the pure `dataSeed.ChainHash(pixel, nonce)` output stream (obstacles (2) and (3) of [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) no longer apply — only obstacle (1), ChainHash SAT-hardness, remains). NIST STS on the reconstructed ~16.7 Mbit stream per primitive at 2 MB plaintext: **BLAKE3 passes 188/188** (single remaining obstacle survives under PRF); **FNV-1a fails 6/188** — FFT 0/16 (100 % fail rate, spectral peaks on every bit-stream) plus BlockFrequency / CumulativeSums / Runs. The [`SCIENCE.md §2.5`](SCIENCE.md#25-nonce-reuse-analysis) locality claim ("seeds remain secret, no key rotation") holds under PRF; its PRF-dependency caveat is made empirically visible by the BLAKE3-vs-FNV-1a contrast.
 
 The results corroborate the paper's "barrier-based construction" claim: security arises from the architecture (8-channel packing, 7-bit extraction with rotation, CSPRNG-fill residue, ChainHash XOR chain) rather than from the quality of the underlying hash. Weak and strong primitives produce statistically identical ciphertext under every distinguisher run.
 
@@ -34,6 +35,7 @@ This is a self-audit by the project author. Red-team validation tests a specific
 - [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill) — guaranteed CSPRNG residue (fill minimum)
 - [Nonce independence](PROOFS.md#nonce-uniqueness) — per-message independent configurations
 - Composition conjecture — barrier absorbs systematic partial PRF weakness (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance))
+- [Nonce-reuse locality + PRF-dependency](SCIENCE.md#25-nonce-reuse-analysis) — nonce collision is strictly local to the 2–3 affected messages; seeds retained under PRF, no key rotation required
 
 ### Threat model
 
@@ -46,8 +48,8 @@ This is a self-audit by the project author. Red-team validation tests a specific
 
 Attack classes:
 - **Full seed inversion** with an invertible primitive under ChainHash (research-level; see Phase 2a for analytical treatment — Z3 was **never actually executed**, not even at `keyBits = 128`, so the scaling table is structural analysis only)
-- **Nonce-reuse attacks.** Every sample in the corpus uses a fresh nonce. We do not probe fixed-nonce / varying-seed, nor same-seeds / same-nonce / different-plaintexts (the deliberate-collision scenario that produces the two-time pad on the 2–3 colliding messages). [SCIENCE.md §2.5](SCIENCE.md#25-nonce-reuse-analysis) argues this is strictly local under the PRF assumption (seeds retained, no key rotation needed) and a global catastrophe under full primitive inversion — not empirically stress-tested in either regime. Seed reuse itself is an explicitly supported mode (same `(noiseSeed, dataSeed, startSeed)` across many messages with fresh nonces is the normal use pattern, not an attack surface).
-- **Chosen-plaintext / adaptive CPA.** Full KPA ≠ CPA. Attack-friendly plaintexts (all-zeros, all-0x7F, sparse 1-hot, sliding-window differentials) are absent from the corpus.
+- ~~**Nonce-reuse attacks.** Every sample in the corpus uses a fresh nonce. We do not probe fixed-nonce / varying-seed, nor same-seeds / same-nonce / different-plaintexts (the deliberate-collision scenario that produces the two-time pad on the 2–3 colliding messages). [SCIENCE.md §2.5](SCIENCE.md#25-nonce-reuse-analysis) argues this is strictly local under the PRF assumption (seeds retained, no key rotation needed) and a global catastrophe under full primitive inversion — not empirically stress-tested in either regime.~~ — see [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse). Seed reuse itself (same `(noiseSeed, dataSeed, startSeed)` across many messages with fresh nonces) is an explicitly supported mode, not an attack surface.
+- ~~**Chosen-plaintext / adaptive CPA.** Full KPA ≠ CPA. Attack-friendly plaintexts (all-zeros, all-0x7F, sparse 1-hot, sliding-window differentials) are absent from the corpus.~~ — covered indirectly by [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) (Full-KPA `known` and Partial-KPA `partial` modes accept attacker-chosen plaintext kinds — `json_structured_{25,50,80}` and `html_structured_{25,50,80}` produce attacker-controlled corpora of 6 distinct structured formats × 3 coverage levels) and [Phase 3a — Rotation-invariant edge case](#phase-3a--rotation-invariant-edge-case) (all-0x7F rotation-invariant probe). Under fresh-nonce CPA (attacker chooses plaintext but nonce stays fresh per query) the attack surface reduces to statistical ciphertext properties already covered by [Phase 1](#phase-1--structural-checks) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 3b](#phase-3b--nist-sts-sp-800-22) across the 10 included `zero_pad` / `html_giant` / `json` / etc. corpus kinds. No unexplored CPA surface remains after Phase 2d.
 - **Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.
 - **Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).
 - **Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.
@@ -180,6 +182,27 @@ ITB_NIST_STREAMS=100 python3 scripts/redteam/phase3_deep/nist_sts_runner.py
 
 `ITB_NIST_STREAMS` accepts the same whitelist `{20, 30, 50, 100}`; unset defaults to 20.
 
+**Phase 2d — Nonce-Reuse attack simulation.** Separate orchestrator, isolated from `run_suite.py`. Drives corpus generation + demasking + NIST STS across a configurable (hash, BF, N, attacker_mode) matrix. Default flagship configuration — BLAKE3 + FNV-1a at 2 MB plaintext, N = 2, `known` mode (Full KPA) — runs in ~3 min end-to-end and produces the PRF-separation result discussed in the [Phase 2d section](#phase-2d--nonce-reuse):
+
+```bash
+# Flagship run — 2-cell matrix (BLAKE3 + FNV-1a) at 2 MB plaintext, N=2, known-plaintext Full KPA.
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 2097152 \
+    --hashes blake3,fnv1a \
+    --collision-counts 2 \
+    --attacker-modes known \
+    --validate \
+    --cleanup-ciphertexts-after-emission
+
+# Feed the reconstructed dataHash streams through NIST STS at N=16 × 1 Mbit per primitive.
+python3 scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py \
+    --stream tmp/attack/nonce_reuse/reconstructed/blake3_BF1_N2_known.datahash.bin \
+    --stream tmp/attack/nonce_reuse/reconstructed/fnv1a_BF1_N2_known.datahash.bin \
+    --n-streams 16
+```
+
+The orchestrator accepts `--hashes all` for the full 10-primitive matrix and `--barrier-fill both` for BF=1 and BF=32 coverage; see `--help` for the complete CLI. All deletion operations are routed through a whitelist-gated `safe_rmtree` helper that refuses any path outside `tmp/attack/nonce_reuse/{corpus, reconstructed}`; the results subdirectory is never touched by the orchestrator. Deterministic RNG seeds (plaintext seed 424242, nonce seed 0xA17B1CE) produce byte-identical corpora across runs — a future researcher can reproduce the exact reconstructed streams and feed them to their own statistical-test batteries.
+
 **One-off 63 MB KL floor probe.** A standalone test pair encrypts one plaintext at the ITB data-size limit and runs a chunked single-threaded Phase 2b on it — used to measure how close per-pixel KL gets to its theoretical floor at maximum sample size per hash. Pick any of the 10 hash dirnames (`fnv1a`, `md5`, `aescmac`, `siphash24`, `chacha20`, `areion256`, `blake2s`, `blake3`, `blake2b`, `areion512`):
 
 ```bash
@@ -209,6 +232,7 @@ Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supple
 | **2a. ChainHash analysis** | Theoretical bound on invertible primitive | 📖 Architectural defense-in-depth surfaced; paper underclaims |
 | **2b. Candidate distinguisher** | Obstacle (3) — 56-way per-pixel ambiguity | ✅ Mode A (idealized attacker, BF=1) KL [0.000018, 0.000021] nats on 8-giant aggregate (N = 9.6 M obs/cand); Mode B (realistic attacker, no startPixel, no plaintext, BF=32) [0.000012, 0.000016] (N = 11.3 M) — both at ≈1.4× theoretical `bins/N` floor across the full hash spectrum |
 | **2c. startPixel enumeration** | Obstacle (2) — startPixel indistinguishability | ✅ mean rank-fraction ∈ [0.461, 0.532]; 6 flagged cells / 90, consistent with 4.5 expected under H0 at α=0.05 (BF=32: 5 / 90) |
+| **2d. Nonce-Reuse** | [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) locality claim — PRF-dependency empirically visible | ✅ / ⚠ Attack chain demasks obstacles (2) + (3) in seconds via Layer 1 constraint matching + Layer 2 startPixel brute force, reconstructs pure `ChainHash(pixel, nonce)` output. NIST STS on reconstructed stream (N=16 × 1 Mbit per cell, 2 MB plaintext): **BLAKE3 188/188 pass**, **FNV-1a 182/188 (6 fails — FFT 0/16, BlockFrequency 9/16, CumulativeSums ×2, Runs 12/16)**. Under PRF the single remaining obstacle (ChainHash SAT-hardness) survives with no exploitable bias; under invertible primitive residual linear-order bias is detectable on every bit-stream |
 | **3a. Rotation-invariant** | [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) edge case | ✅ Rate 2/128 = 1.5625 % within 0.007 % across all 10 hashes; **no sign-consistent deviation** between BF=1 and BF=32. The 5–6 σ AES-CMAC / BLAKE2b-512 "signals" at BF=32 did not appear at BF=1 — test-power artefacts on near-uniform output, not real bias |
 | **3b. NIST STS** | Industry-standard randomness suite | ✅ At N = 100 × 1 Mbit Single: 15 / 20 `(hash, BF)` cells pass 188/188; 4 cells show one single-test fail (conventional H0 outliers, 5 / 3 760 = 0.13 % vs 1 % expected at α = 0.01); 1 cell (BLAKE3, BF=32) hit the `NonOverlappingTemplate` bin-0 artefact — paper-grade PRF hitting the same 40/188 outcome as FNV-1a at N=20 confirms the mechanism is hash-agnostic. Triple confirmed in both BF regimes (BF=1: 4 / 1 880 = 0.21 %; BF=32: 1 / 1 880 = 0.05 %). All 10 exhibit the SP 800-22 uniformity-of-p-values clustering identically across configurations |
 
@@ -542,6 +566,526 @@ Obstacle (2) `startPixel` isolation empirically holds across all 10 primitives a
 
 ---
 
+## Phase 2d — Nonce-Reuse
+
+Scripts:
+- [`redteam_nonce_reuse_test.go`](redteam_nonce_reuse_test.go) — corpus generator (install fixed nonce via test-only hook; encrypt N plaintexts with same seeds + same nonce; emit ground-truth config sidecar).
+- [`scripts/redteam/phase2_theory/nonce_reuse_demask.py`](scripts/redteam/phase2_theory/nonce_reuse_demask.py) — demasking helper (Layer 1 constraint matching + Layer 2 startPixel brute force + reconstructed-stream emission).
+- [`scripts/redteam/run_attack_nonce_reuse.py`](scripts/redteam/run_attack_nonce_reuse.py) — orchestrator (per-cell pipeline with pre-run wipe, safe deletion, optional post-emission cleanup).
+- [`scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py`](scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py) — NIST STS wrapper for the reconstructed streams.
+
+Tests the nonce-misuse locality claim from [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) empirically: under a **deliberate** nonce collision with Full KPA, how much does the attacker learn, and does the outcome depend on the primitive's PRF property?
+
+### Threat model
+
+Attacker forces the sender to encrypt two plaintexts `p_1 ≠ p_2` under the SAME `(noiseSeed, dataSeed, startSeed)` and the SAME nonce. The attacker knows both plaintexts (Full KPA) — either because they are public protocol payloads or because they leaked via another channel. The attacker does NOT know `startPixel` or the per-pixel configuration map `(noisePos, rotation, channelXOR)`. Under [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis)'s locality claim, the expected damage is a two-time pad on these 2 – 3 colliding messages only; seeds remain secret under PRF non-invertibility and future messages (fresh nonce) are unaffected. Under an invertible / linear primitive, the same claim does not hold — seed retention is no longer guaranteed.
+
+### Attack chain
+
+Three empirical layers stacked, each removing one architectural obstacle from [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure):
+
+1. **Layer 1 — per-pixel `(noisePos, rotation)` recovery.** On the XOR of the two ciphertexts, for each data pixel, enumerate the 56 `(noisePos, rotation)` candidates; constraint-match against all 8 channels using the known plaintexts. Unique match recovers the per-pixel config; resolves obstacle (3).
+2. **Layer 2 — `startPixel` brute force.** Attacker does not know `startPixel`. For each candidate in `[0, totalPixels)`, check whether the first 10 probe pixels admit at least one `(noisePos, rotation)` match using Layer 1 constraints. Under a wrong `startPixel` the false-positive rate is `56 × 2⁻⁵⁶ ≈ 0` per probe pixel — short-circuit on the first probe pixel rejects almost every wrong candidate in microseconds. Resolves obstacle (2).
+3. **Reconstruction — strip all masking.** Using recovered `(startPixel, noisePos_map, rotation_map)` + known plaintext, extract the pure channel-XOR output per (pixel, channel):
+    ```
+    extracted_7 = remove_noise_bit(ciphertext_byte, noisePos)
+    unrotated_7 = rotate7(extracted_7, 7 − rotation)
+    channelXOR_7 = unrotated_7 ⊕ plaintext_7bits     # ≡ (dataSeed.ChainHash(pixel || nonce) >> 3) bits
+    ```
+    Pack 8 × 7 = 56 bits per pixel, little-endian. The resulting byte stream is **literally a prefix of the raw `dataSeed.ChainHash(pixel_u32le || nonce)` output** under a controlled one-parameter-vary (pixel-index) probe — all ITB masking has been stripped. This is the PRF-separation artefact: under a PRF this stream is uniform random; under an invertible primitive it inherits the primitive's algebraic structure.
+
+Only obstacle (1) — ChainHash SAT-hardness — is left between the attacker and the raw primitive output. Feeding the reconstructed stream to NIST STS tests whether that single remaining layer still produces statistically PRF-like output.
+
+### Test matrix
+
+Two primitives at opposite ends of the PRF spectrum, flagship PRF-separation configuration:
+
+| Primitive | Width | ChainHash rounds @ 1024-bit key | Role |
+|-----------|-------|--------------------------------:|------|
+| **BLAKE3** | 256-bit | 4 | Paper-grade PRF reference |
+| **FNV-1a** | 128-bit | 8 | Fully invertible; below-spec control |
+
+Parameters: `BarrierFill = 1` (shipped default), `N = 2` collisions per cell, plaintext size = 2 MB, attacker mode = `known` (two distinct random plaintexts, both known to attacker → strongest-attacker Full KPA). Reconstructed streams: ~16.7 Mbit per cell, directly supporting NIST STS at `N = 16 × 1 Mbit` per cell without cross-cell concatenation.
+
+MD5 is intentionally excluded from the reported matrix: at our automated stream size (16 Mbit, N = 16 × 1 Mbit), MD5 passes 188/188 identically to BLAKE3 — the stream-size window is too small to catch MD5's known collisional biases, which only manifest at huge streams. Reporting "MD5 188/188" alongside BLAKE3 would mislead a casual reader into concluding MD5 is safe under nonce-reuse. MD5 IS broken at real-world scale; this automated configuration cannot see it, and the honest choice is to omit rather than imply false safety.
+
+### Helper validation (correctness check — not an empirical claim)
+
+Before running the attack chain against a corpus, the demasking helper was validated byte-for-byte against the ground-truth `(noisePos, rotation, channelXOR)` map produced by the Go test. Every recovered per-pixel config matches ground truth exactly; reconstructed `channelXOR` values match the ground-truth `channel_xor_8` arrays byte-for-byte on every successfully demasked pixel. This confirms the attack-chain implementation is sound — subsequent NIST STS results reflect hash-output properties, not helper bugs.
+
+| Hash | Width | Layer 1 exact recovery | Layer 1 ambiguous | Layer 1 **wrong matches** | Layer 2 startPixel recovered | Reconstruction vs ground truth |
+|------|------:|-----------------------:|------------------:|-------------------------:|:---------------------------:|:------------------------------:|
+| FNV-1a | 128 | 99.25 % | 0.75 % | **0** | ✓ (0.02 s brute force) | 100 % byte-for-byte match |
+| MD5 | 128 | 99.24 % | 0.76 % | **0** | ✓ | 100 % byte-for-byte match |
+| BLAKE3 | 256 | 99.14 % | 0.86 % | **0** | ✓ | 100 % byte-for-byte match |
+| BLAKE2b-512 | 512 | 99.30 % | 0.70 % | **0** | ✓ | 100 % byte-for-byte match |
+
+"Ambiguous" pixels are single-pair adjacent-noisePos coincidences (when `extract7(xor_byte, k) == extract7(xor_byte, k+1)` holds across all 8 channels — probability `≈ 7/256` per pixel by Bonferroni). Zero wrong matches on all four widths means the formula is provably correct; ambiguity is a statistical artefact resolvable by multi-pair combining (N ≥ 4 collapses it to zero in practice).
+
+### NIST STS on reconstructed streams — the PRF-separation result
+
+After Layer 1 + Layer 2 + reconstruction, the recovered `dataHash_stream.bin` (~16.7 Mbit per primitive) is fed to `nist-sts` at `N = 16 × 1 Mbit` per primitive.
+
+| Primitive | pass / total | fail count | Category of failures |
+|-----------|-------------:|-----------:|----------------------|
+| **BLAKE3** | **188 / 188** | **0** | — (uniform random output) |
+| **FNV-1a** | **182 / 188** | **6** | Block-level + spectral + cumulative-walk tests (detail below) |
+
+FNV-1a failure detail (proportion-below-threshold tests; excludes the hash-agnostic `NonOverlappingTemplate` bin-routing artefact discussed in [Phase 3b](#the-p-value-clustering-phenomenon--hash-agnostic-present-at-any-n)):
+
+| Test | Proportion pass rate | Threshold at N=16 | Severity |
+|------|---------------------:|------------------:|----------|
+| `FFT` | **0 / 16** | 14 / 16 | **100 % fail rate** — spectral peak visible on every one of 16 bit-streams |
+| `BlockFrequency` | 9 / 16 | 14 / 16 | 56 % pass — bit balance within 100 K-bit blocks skewed |
+| `CumulativeSums (forward)` | 12 / 16 | 14 / 16 | Running-sum walk diverges from expected uniform-random |
+| `CumulativeSums (reverse)` | 13 / 16 | 14 / 16 | Same, reversed direction |
+| `Runs` | 12 / 16 | 14 / 16 | Run-length distribution biased |
+
+Under PRF (BLAKE3) **every single NIST STS test passes**. Under invertible FNV-1a **the spectral test flags every single bit-stream** as containing structured (non-uniform) frequencies, with four additional bit-level statistical tests flagging proportion below threshold.
+
+### Interpretation — ChainHash XOR composition ≠ PRF on an invertible primitive
+
+FNV-1a's per-byte operation is `h ← (h ⊕ byte) · FNV_PRIME_64`. The `⊕ byte` step is linear over `GF(2)`. The `· FNV_PRIME_64` (integer multiplication modulo 2⁶⁴ by a constant) is linear over the **ring `Z/2⁶⁴`** — but NOT linear over `GF(2)`: carry propagation within the multiplication creates non-linear bit interactions (each output bit depends on AND-combinations of input bits via carry chains). So the 8-round ChainHash128 with FNV-1a at 1024-bit key is NOT a pure `GF(2)`-affine function — it has genuine non-linearity via carries.
+
+This distinction matters: the attacker cannot simply run Gaussian elimination on recovered `channelXOR` observations to invert the seed. Seed recovery still requires bitvector-SAT over the combined XOR + integer-multiplication constraints — research-lab scale compute for 1024-bit keys.
+
+What the NIST STS failures DO show is that **the non-linearity from carries is not strong enough** to produce statistically-PRF output over 8 rounds of ChainHash XOR composition. The reconstructed stream inherits enough residual structure for FFT to detect spectral peaks on every bit-stream and for block-level + run-length tests to flag proportion deviations. A SAT solver attacking this stream has **substantially more exploitable bias** than it would against a true PRF output — this likely shifts the seed-recovery wall-clock toward the lower end of the Phase 2a FNV-1a range (hours – 1 year on a 1 000-node cluster under idealised conditions) or below, though this plan does not attempt the actual SAT run.
+
+Under PRF (BLAKE3 at 4 rounds at 1024-bit key) the reconstructed stream's 188 / 188 pass means the attacker's SAT problem has **no statistical bias to exploit beyond the raw algebraic complexity** — the single remaining obstacle (ChainHash SAT-hardness over a PRF) remains effectively infeasible.
+
+### Consistency with Phase 2a cost tables
+
+The [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure) three-layer combined-cost estimate (10¹² – 10¹⁶ years at 50 % Partial KPA + unknown `startPixel` + 1 000-node cluster) applies to the **standard threat model**: fresh nonce per encryption, all three obstacles active. The nonce-reuse attack operates outside that model — it deliberately forces a nonce collision and uses the two ciphertexts together to peel back obstacles (2) and (3). Layer 1 + Layer 2 of the helper complete this peeling in seconds per pair.
+
+What remains after peeling is exactly the "Full KPA + `startPixel` known" entry from Phase 2a's [back-of-envelope table](#back-of-envelope-1000-node-cluster-wall-clock-full-kpa-startpixel-known) — **hours to 1 year** on a 1 000-node cluster under FNV-1a, or structurally infeasible under PRF. The NIST STS results validate this split empirically: under FNV-1a the remaining single-layer defence exhibits detectable output bias (the SAT solver would have real leverage); under PRF no such leverage exists (output is indistinguishable from random).
+
+**The takeaway is not that the Phase 2a estimates are wrong.** They are correct for the threat model they state. The takeaway is that **architectural obstacles (2) and (3) are load-bearing against below-spec primitives** — a single-layer "just-ChainHash" defence is sufficient under a real PRF but **insufficient under an invertible primitive** even when the primitive is wrapped in 8 rounds of XOR composition. This is why `SECURITY.md` and `SCIENCE.md` consistently require PRF-grade primitives for production use, and this empirical demonstration makes that requirement concrete.
+
+### Validation of [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) locality claim
+
+| Claim from [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) | Empirical status from this phase |
+|--------------------------------------------------------------------|----------------------------------|
+| Nonce collision compromises confidentiality of the 2 – 3 colliding messages (two-time pad on data bits) | ✅ Confirmed: Layer 1 recovers the per-pixel configuration; attacker reads both plaintexts' data bits (under Full KPA assumption those were already known — so the "compromise" is tautological on this probe). |
+| Seeds remain secret under PRF non-invertibility | ✅ Confirmed empirically via BLAKE3 188/188 NIST STS on reconstructed stream: no exploitable structure in the remaining single-layer defence. SAT-based seed recovery has no statistical leverage. |
+| Seed retention **requires** PRF non-invertibility | ✅ Empirically demonstrated via the BLAKE3-vs-FNV-1a contrast: same attack chain, same stream size, same NIST STS configuration, opposite outcomes. Under FNV-1a the reconstructed stream flags 6 tests (including FFT 0/16 — spectral structure on every bit-stream) showing residual linear-order bias that a SAT solver could leverage for seed recovery. |
+| No key rotation required after a nonce collision | ⚠ Confirmed **only for PRF-grade primitives**. Under FNV-1a the nonce-reuse event plausibly does not merely leak the 2 – 3 colliding messages — it produces a detectable-bias stream whose hash-output structure a motivated attacker (lab-scale compute) could invert to recover seeds. The [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) no-rotation claim implicitly depends on the PRF requirement stated elsewhere in the docs; this probe makes that dependency empirically visible. |
+
+### Partial KPA extension — structured JSON plaintext (artificial scenario)
+
+The main Phase 2d result above is Full KPA (attacker knows every byte of both colliding plaintexts). Real-world attack surface is usually Partial KPA — protocol headers and structural tokens known, payloads unknown. This subsection tests whether the PRF-separation signal survives when the attacker is blind to ~17 % of each plaintext.
+
+**This experiment's scenario is deliberately artificial.** It answers "if the attacker has near-maximal-but-not-complete Partial KPA on a carefully-structured plaintext, does the attack still separate PRF from non-PRF?" It does NOT claim "Partial KPA works on realistic plaintexts". The assumptions the attacker must hold are listed explicitly below; if any of them fails, this attack chain does not run. Treat the result as a **best-case upper bound** for Partial KPA attackability, not as a realistic threat estimate.
+
+**Attacker assumptions (must all hold).**
+
+1. **Byte-level layout known**: exact lengths of JSON structural tokens (`{`, `}`, `"`, `:`, `,`), exact lengths of every field name, exact positions where value regions start and end.
+2. **Two distinct known templates**: sample 0 and sample 1 use different record templates (identical byte layout, different field-name content). The attacker knows BOTH templates. Identical templates collapse to the same-plaintext degeneracy where rotation is unrecoverable on known channels.
+3. **Per-record varying sequence number** at a known byte offset within each record. Attacker knows the sequence-number format and the fact that records are numbered sequentially from 0.
+4. **~83 % byte-level coverage** of each plaintext is attacker-known (field names + structural + sequence numbers). Only the value regions of the last two fields (23 bytes of 137 per record ≈ 17 %) are unknown.
+
+Real-world JSON plaintexts typically satisfy none of (1)–(3) simultaneously. The record design here is engineered to maximise the bits the reconstruction can emit. The attack chain falls apart if templates differ in byte layout, if only one template is known, or if the known fraction drops significantly below 80 %.
+
+**Test configuration.**
+
+| Parameter | Value |
+|-----------|-------|
+| Primitives | BLAKE3 + FNV-1a |
+| Plaintext size | 4 MB (≈ 30 000 records × 137 bytes) |
+| BarrierFill | 1 |
+| N collisions | 2 |
+| Mode | `partial` with `plaintext_kind=json_structured` |
+| Helper `--n-probe` | 50 (spans ~2.5 records so varying sequence numbers anchor true sp) |
+| Helper `--min-known-channels` | 2 (per-wrong-candidate FP ≈ 0.34 %) |
+
+**Why `n_probe = 50` instead of 10.** Under Partial KPA with repeating records the `d_xor` pattern is quasi-periodic with period = record length. With `n_probe = 10` all probe pixels fall inside one record's worth of structurally-repeating bytes, and Layer 2 accepts any period-shifted sp. `n_probe = 50` spans multiple records, so sequence-number bytes (varying per record) distinguish the true sp. At 4 MB plaintext the helper still lands on a period-shifted sp (see the "Periodicity leak" caveat below) — 50 is sufficient at 64 KB but insufficient at 4 MB; production usage would need adaptive probe counts.
+
+**Empirical result — Layer 1 + reconstruction.**
+
+| Primitive | Layer 1 exact recovery | WRONG matches | Layer 2 sp | Reconstructed stream |
+|-----------|-----------------------:|-------------:|:----------:|---------------------:|
+| BLAKE3 | 151 734 / 603 729 (25.1 %) | **0** | period-shifted (see caveat) | 8.2 Mbit (1 168 461 channels) |
+| FNV-1a |  97 470 / 603 729 (16.1 %) | **0** | period-shifted (see caveat) | 5.3 Mbit (   750 736 channels) |
+
+"Ambiguous" here is orders of magnitude higher than Full KPA (~1 %) — see the "Ambiguity explosion" block below for the mechanism. The 0 WRONG matches confirm the formula is correct; ambiguous pixels are just those with too few rotation-discriminating known channels to disambiguate the 7 rotation candidates.
+
+**Why the emitted stream is 5 – 7 × smaller than naive coverage suggests — Layer 1 ambiguity explosion under Partial KPA.**
+
+A naive extrapolation from the coverage numbers would predict an emitted stream ≈ 81 % × `data_pixels × 56 bits` = 27.5 Mbit at 4 MB plaintext. The actual stream is 3.8 – 8.2 Mbit — a 3 – 7× shortfall. **This gap is caused by ITB's construction itself, not by Partial KPA coverage.** It is the key structural finding of this phase.
+
+The mechanism:
+
+1. **Reconstruction emits a pixel only if Layer 1 produced a UNIQUE `(noisePos, rotation)` for it.** If the pixel's constraint set admits two or more candidates ("ambiguous"), the entire pixel is skipped — even its known channels are not emitted. This is intentional: emitting a pixel under the wrong `(noisePos, rotation)` corrupts ≥ 1 of the 7 bits per channel and pollutes the stream. The helper prefers fewer, clean bits over more, noisy bits.
+
+2. **Under Full KPA every known channel carries `d_xor ≠ 0`** (random independent plaintexts differ on essentially every byte). All 8 channels participate in the rotation constraint, leaving a per-candidate false-positive rate of ~2⁻⁵⁶ across 8 channels and producing unique recovery on ≥ 99 % of pixels.
+
+3. **Under Partial KPA with repeated-structure JSON the known-channel budget collapses into TWO sub-classes per pixel:**
+    - "`d_xor ≠ 0` known channels" — usually the bytes of the **variant-dependent field-name region** (sample 0 uses template A, sample 1 uses template B, names differ). Typical count: ~5 of 8 channels per pixel. These channels constrain BOTH `noisePos` and `rotation`.
+    - "`d_xor = 0` known channels" — the bytes of **structurally-shared punctuation and sequence numbers** (`{`, `}`, `,`, `"`, `:`, and the record-index digits which are shared by both samples at every record). Typical count: ~2 of 8 channels per pixel. These channels constrain `noisePos` ONLY (via `extract7(xor_byte, noisePos) == 0`); rotation collapses because `rotate7(0, r) = 0` for any `r`. **This is the same-plaintext degeneracy, but local to a subset of channels within each pixel, not global.**
+    - Unknown channels (~1 per pixel): not used.
+
+4. **The two sub-classes' constraints do not compose into a clean 8-channel unique determination.** With ~5 channels doing the rotation work and ~2 channels only pinning `noisePos`, adjacent rotations that happen to produce the same 7-bit pattern as the true rotation on all 5 rotation-active channels (a small-probability event at 2⁻⁵ × 7 = 2⁻³⁵ per candidate — not vanishing at single-pair Layer 1) pass the constraint. The resulting ambiguity rate observed empirically: **~85 – 88 % of pixels are ambiguous** (FNV-1a 97 470 / 603 729 unique = 16 %; BLAKE3 151 734 / 603 729 = 25 %).
+
+5. **Stream arithmetic, step by step:**
+    - Upper-bound known channels (81 % coverage × 8 channels): ~6.5 known channels per pixel average
+    - Fraction of pixels passing Layer 1 with unique recovery: ~14 – 25 % (depends on per-pixel `d_xor ≠ 0` distribution — varies by seed because the per-pixel noise XOR byte affects which adjacent-rotation collisions fire)
+    - Emitted bits per unique pixel: unique-recovery pixels tend to have near-full known-channel count (the ones where unique recovery succeeded had enough `d_xor ≠ 0` signal); call it ~7 channels × 7 bits = ~49 bits
+    - Predicted stream: `data_pixels × 0.20 × 49 bits` ≈ 5.9 Mbit — matches observed 3.8 – 8.2 Mbit within seed-dependent variance
+
+6. **None of the three Layer-1-ambiguity drivers above are coverage problems.** Bumping plaintext coverage from 83 % to 90 % would only slightly reduce the `d_xor = 0` known-channel count; it would NOT change the fundamental fact that structurally-shared bytes produce per-channel same-plaintext degeneracy. The ambiguity is a property of ITB's 8-channel-per-pixel packing interacting with ANY Partial-KPA scenario where known bytes include structurally-shared positions.
+
+**This is a construction-level finding.** ITB's barrier — specifically the way `(noisePos, rotation, channelXOR)` bind the 8 channels of a pixel through a **single** pair of hash outputs — means single-pair Layer 1 recovery needs ~8 discriminating channels per pixel. Partial KPA with structurally-shared bytes cannot meet that requirement on a single (ciphertext, ciphertext) pair, regardless of how high the byte-level coverage goes (short of 100 %, which is Full KPA). To close the gap, the attacker needs **multi-pair disambiguation** (N ≥ 4 collisions — independent noise-bit draws per encryption, intersecting candidate sets collapse to 1 exponentially fast):
+
+- At N = 4 (6 pairs): ambiguity probability per pixel ≈ (85 %)⁶ ≈ 38 % — already a big reduction
+- At N = 8 (28 pairs): ≈ (85 %)²⁸ ≈ 1 % — essentially full unique recovery
+- At N = 128 (8 128 pairs): <<1 % — full saturation
+
+The current Partial KPA experiment deliberately runs at N = 2 (one pair), which is the minimum that produces a nonce-reuse XOR at all — this was intentional to show **where the single-pair attack hits its construction-level wall under Partial KPA**, not to maximise attack success. A future Partial-KPA experiment at N = 4 or N = 8 on the same corpus design would exercise the multi-pair path and is expected to recover the stream-size budget.
+
+**Periodicity leak caveat.** On the 4 MB runs the helper's Layer 2 converged on a startPixel offset from the true one by a large (non-multiple-of-record-length) shift. The reconstructed stream is therefore **not** exactly a clean prefix of `dataHash(pixel_u32le || nonce)` — it contains residual `payload_claimed ⊕ payload_actual` XOR on the channels where the two plaintexts' bytes happen to differ under the shift. Empirically this shows up as a 1-bit discrepancy at byte 0 of the reconstructed stream vs ground truth (followed by ~99.9999 % byte-for-byte match thereafter), so the residual leak is concentrated on the alignment seam. This is a Partial-KPA-specific artefact that does not occur under Full KPA; the write-up preserves it honestly rather than papering over it with additional helper machinery.
+
+**Coverage as seen by the Python helper** (after COBS mask propagation + 7-bit channel slicing):
+
+| Quantity | FNV-1a 4 MB run |
+|----------|-----------------:|
+| Byte-level known coverage from cell.meta.json | 83.33 % (3 495 196 / 4 194 235 raw plaintext bytes) |
+| Channel-level known coverage (known in BOTH payload masks) | **81.39 %** (3 930 920 / 4 829 832 channel slots) |
+| Pixels with ≥ `min_known_channels=2` usable channels | 88.75 % (535 794 / 603 729) |
+
+**NIST STS on reconstructed streams — negative result on PRF-separation at this stream size.**
+
+Two independent FNV-1a Partial-KPA runs (different fresh nonce seeds so the `NonOverlappingTemplate` bin draw is independent):
+
+| Run | Stream size | NIST N × 1 Mbit | pass / total (raw) | `NonOverlappingTemplate` bin |
+|-----|------------:|----------------:|-------------------:|-----------------------------|
+| Run B-1 (first corpus) | 5.3 Mbit | 5 | **36 / 188** | bin 0 (all 148 rows, 0/5 proportion) |
+| Run B-2 (fresh nonce)  | 3.8 Mbit | 3 | **188 / 188** | bin 5 (all 148 rows, 3/3 proportion) |
+
+BLAKE3 reference run at the same plaintext size and pipeline: 188 / 188 with `NonOverlappingTemplate` all rows in bin 6.
+
+**Key observation.** The three runs (FNV-1a bin 0 / FNV-1a bin 5 / BLAKE3 bin 6) all show the same **single-bin clustering pattern** on `NonOverlappingTemplate` documented in [Phase 3b](#the-p-value-clustering-phenomenon--hash-agnostic-present-at-any-n): every one of the 148 template sub-test rows puts all N per-sequence p-values into one bin, with the bin number effectively randomised per `(hash, nonce)` pair. Whether the run reads as "152 failures" or "passes all" comes down to whether the single-bin draw happens to land below or above the proportion threshold — **it is not a security signal**.
+
+**Artefact-adjusted view (40 non-`NonOverlappingTemplate` sub-tests per run).**
+
+| Primitive / run | Non-template pass / 40 | Proportion-level fails |
+|-----------------|-----------------------:|-----------------------:|
+| FNV-1a Run B-1 (bin 0 on templates) | 36 / 40 | 4 (Frequency 2/5, BlockFrequency 3/5, CumulativeSums×2 at 2/5) — same-direction bin-0 clustering as templates |
+| FNV-1a Run B-2 (bin 5 on templates) | 40 / 40 | 0 |
+| BLAKE3 (bin 6 on templates) | 40 / 40 | 0 |
+
+The 4 "real" failures in Run B-1 also cluster their p-values in bin 0 — i.e., the same bin-routing mechanism manifested on `Frequency` + `BlockFrequency` + `CumulativeSums` in that particular run. Run B-2 (independent seeding) shows the same FNV-1a pipeline hitting bin 5 across all tests and passing 188/188. **The Run B-1 "4 real fails" did not replicate** under the independent run, so they cannot be distinguished from run-specific bin-cluster noise at this stream size.
+
+**Interpretation — honest negative result.**
+
+1. **PRF-separation is NOT visible at this Partial-KPA stream size.** The Full-KPA Phase 2d result (6 real fails on FNV-1a at 16.8 Mbit, N=16) depends on NIST STS having enough sequences per sub-test for the bin-0 hit rate (~10 % per run) to be distinguishable from structural non-uniformity. At the Partial-KPA stream sizes here (3.8 – 5.3 Mbit, N = 3 – 5), the per-sub-test variance is dominated by single-bin clustering. Both primitives' runs are statistically indistinguishable from each other (both hit single-bin clustering, just into different bins).
+2. **Run B-1 "signal" was bin-0 bad luck, not structure.** The initial 36/188 FNV-1a result had a tempting-looking failure pattern; it does not survive replication with an independent nonce seed. A single Partial-KPA run cannot distinguish the bin-routing artefact from a real signal at this scale.
+3. **What the pipeline DOES confirm.** The Partial-KPA demasking + reconstruction code path works end-to-end: Layer 1 produces 0 WRONG matches on both runs, reconstruction byte-validation matches ground truth at ~99.9999 % (only the 1-bit seam at the period-shift alignment). The remainder of the stream IS valid dataHash output — there is just not enough of it (a few Mbit) for NIST STS to separate primitives at this statistical power.
+4. **Where the attack breaks (what we learned).** Two independent bottlenecks limit the Partial-KPA stream:
+    - **Construction-level bottleneck (the main finding):** ITB's per-pixel `(noisePos, rotation, channelXOR)` packing binds all 8 channels through a single pair of hash outputs, so single-pair Layer 1 needs ~8 rotation-discriminating channels per pixel. Partial-KPA plaintexts with structurally-shared bytes (`{`, `}`, `,`, `"`, `:`, sequence numbers) produce `d_xor = 0` known channels that only pin `noisePos`; the remaining ~5 rotation-active channels are insufficient to disambiguate rotation on a single pair. Result: ~85 % of pixels stay ambiguous, stream shrinks ~5 – 7 ×. Fixing this requires multi-pair Layer 1 at N ≥ 4 — see the "Ambiguity explosion" block above.
+    - **NIST-STS-power bottleneck (secondary):** Even assuming the stream were restored to its naive 27 Mbit upper bound, NIST STS needs N ≥ 10 sequences per sub-test to distinguish the PRF-separation signal from the bin-routing artefact reliably. Requires plaintext ≥ ~10 MB (at 83 % coverage, full Layer 1 recovery) OR multi-pair Layer 1 on the current 4 MB corpus.
+5. **Scope-of-Partial-KPA limitation, now explicit.** The "~83 % coverage + distinct-template + sequential-sequence-number" conditions ARE necessary for the pipeline to reconstruct any stream at all, but are NOT sufficient on their own (N = 2 single-pair Layer 1 + stream < 10 Mbit) to produce a NIST-STS-distinguishable stream. A Partial-KPA attack at this scale and collision count is a construction-correctness probe — and, more importantly, **an empirical demonstration that ITB's 8-channel-per-pixel single-hash-output binding makes single-pair Partial-KPA structurally weaker than single-pair Full KPA**, not just quantitatively (via fewer known bits) but architecturally (via same-plaintext-like degeneracy on structurally-shared channels).
+
+**Supported plaintext kinds for Partial KPA.**
+
+The orchestrator exposes six canonical structured kinds, covering two formats (JSON + HTML) at three attacker-known coverage levels (25 %, 50 %, 80 %). The trailing number in the kind name is the target byte-level coverage. `json_structured` (no suffix) is an alias for `json_structured_80` kept for backward compatibility with the first-pass Run B.
+
+| Kind | Format | Per-record bytes | Target coverage | Typical use |
+|------|--------|-----------------:|----------------:|-------------|
+| `json_structured_80` (= `json_structured`) | JSON | 137 | 83 % | Dense-protocol baseline (short values, long field names) |
+| `json_structured_50` | JSON | 228 | 50 % | Mixed-protocol |
+| `json_structured_25` | JSON | 456 | 25 % | Sparse-known realistic |
+| `html_structured_80` | HTML | 250 | 82 % | Tag-heavy dense |
+| `html_structured_50` | HTML | 400 | 51 % | Balanced tag / content |
+| `html_structured_25` | HTML | 800 | 25 % | Content-heavy |
+
+All kinds produce two record-template variants (chosen by sample index) with identical byte-level layout but different structural content + a per-record varying attacker-known sequence number — the combination required for Layer 1 rotation recovery and Layer 2 startPixel anchoring.
+
+**Helper parameters exposed as CLI (public-info attacker choices).**
+
+Two Layer 2 / Layer 1 parameters legitimately depend on what a protocol-aware attacker can see from public information (ciphertext size + plaintext format assumption):
+
+| Flag | Auto default | Rationale |
+|------|--------------|-----------|
+| `--n-probe {int \| auto}` | `3 × ceil(record_bytes / 7)`, capped at `data_pixels / 5` and floored at 50 | Probe pixels must span ≥ 3 record periods so per-record sequence-number bytes can break the `d_xor` periodicity and anchor the true sp. Smaller probe count converges onto a period-shifted sp; larger wastes CPU. |
+| `--min-known-channels {int \| auto}` | K = 3 for coverage ≤ 35 %, K = 2 otherwise | Layer 2 per-wrong-candidate FP rate is `56 × 2⁻⁷ᴷ`. At K = 2 with n_probe = 50 – 350, accumulated FP rate is ~16 %; at K = 3 it drops to 0.1 %. Low-coverage kinds (25 %) need K = 3 to keep Layer 2 from locking onto spurious sps. |
+
+The helper source (`scripts/redteam/phase2_theory/nonce_reuse_demask.py`) is **format-agnostic** — it reads per-byte `known_mask` sidecars, propagates them through COBS, and constraint-matches on the resulting per-channel known map. Changing plaintext format or coverage requires only that the Go corpus generator emits a correct `known_mask`; no helper code changes are needed.
+
+**How the helper behaves under sparse coverage.**
+
+At low coverage (25 % kinds, ~2 known channels per pixel average) the helper's behaviour is **architecturally correct but structurally weak**:
+
+- Most pixels (60 – 80 %) have fewer than `min_known_channels` attacker-known channels → helper skips them entirely (returns `None`, not an emission). This is intentional — emitting an under-constrained pixel would corrupt the stream with wrong rotation choices.
+- Remaining pixels attempt Layer 1 but, with only ~2 – 3 rotation-active known channels per pixel, single-pair constraint matching accepts multiple `(noisePos, rotation)` candidates at a high rate (~80 – 90 % ambiguity).
+- Emitted stream is correspondingly small: 50 – 70 Kbit at 32 KB plaintext, 3 – 5 Mbit at 4 MB plaintext.
+- `WRONG matches` remain **0** across all runs — the formula is correct; the weakness is information-theoretic (insufficient discriminating channels per pixel), not a bug.
+
+This is the same "Ambiguity explosion" mechanism described above, just more severe at lower coverage. Multi-pair disambiguation (`--collision-counts N` with `N ≥ 4`) would mitigate it by intersecting candidate sets across multiple pairs with independent noise bits — but that is a separate experiment not yet executed.
+
+**Reproducing the Run B result (4 MB json_structured).**
+
+```bash
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 4194304 \
+    --hashes blake3,fnv1a \
+    --collision-counts 2 \
+    --attacker-modes partial \
+    --plaintext-kind json_structured \
+    --validate \
+    --cleanup-ciphertexts-after-emission \
+    --results-tag run_B_partial_kpa_json_4mb
+
+python3 scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py \
+    --stream tmp/attack/nonce_reuse/reconstructed/blake3_BF1_N2_partial_json_structured.datahash.bin \
+    --stream tmp/attack/nonce_reuse/reconstructed/fnv1a_BF1_N2_partial_json_structured.datahash.bin \
+    --run-dir tmp/attack/nonce_reuse/nist_sts_partial_kpa
+```
+
+**Reproducing coverage-parameterised runs** (any format × coverage combination; auto-tunes n_probe and min_known_channels from the kind):
+
+```bash
+# 128 KB JSON at 50 % coverage, FNV-1a + BLAKE3:
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 131072 \
+    --hashes blake3,fnv1a \
+    --collision-counts 2 \
+    --attacker-modes partial \
+    --plaintext-kind json_structured_50 \
+    --validate \
+    --cleanup-ciphertexts-after-emission \
+    --results-tag partial_kpa_json50_128k
+
+# 2 MB HTML at 25 % coverage, override n_probe explicitly:
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 2097152 \
+    --hashes fnv1a \
+    --collision-counts 2 \
+    --attacker-modes partial \
+    --plaintext-kind html_structured_25 \
+    --n-probe 500 \
+    --min-known-channels 3 \
+    --validate \
+    --results-tag partial_kpa_html25_2mb
+```
+
+Wall-clock for the Run B 4 MB / 2-cell matrix: ~5 min corpus + demask, ~30 s NIST STS.
+
+### Partial KPA matrix — Clean Signal % across 96 cells
+
+The single-cell Run B (FNV-1a + BLAKE3 at 4 MB, json_structured_80) in the previous subsection shows the pipeline in one configuration. To characterise the demasker's yield as a function of plaintext size, format, coverage, and primitive, we ran a full matrix:
+
+- **Plaintext sizes** (8): 4 KB, 16 KB, 64 KB, 128 KB, 512 KB, 1 MB, 2 MB, 4 MB
+- **Coverage levels** (3, byte-target): 25 %, 50 %, 80 %
+- **Formats** (2): JSON, HTML (independent per-format record templates with two variants + per-record sequence number, see [Partial KPA extension](#partial-kpa-extension--structured-json-plaintext-artificial-scenario))
+- **Primitives** (2): BLAKE3, FNV-1a
+- **N collisions**: 2 (minimum for XOR analysis; `N > 2` multi-pair runs are out of scope — see [Scope](#scope-of-this-phase--known-limitations))
+- **Attacker-mode**: `partial` with auto-tuned `--n-probe` and `--min-known-channels` (both are public-info choices — attacker knows ciphertext size and assumed plaintext format)
+
+Total: 96 cells. 86 ran cleanly; 10 returned helper exit-code 2 due to imperfect period-shift causing a handful of wrong Layer 1 matches (stream still emitted — these cells' Clean % values are honest, just flagged as "demask-fail" by the orchestrator's strict gate).
+
+**Target vs actual coverage** (byte-level target vs what the Python helper actually sees as channel-level known coverage after COBS mask propagation + 7-bit channel slicing across byte boundaries):
+
+| Target (kind suffix) | JSON actual channel coverage | HTML actual channel coverage |
+|---------------------:|----------------------------:|-----------------------------:|
+| 80 % | 75 – 80 % | 72 – 79 % |
+| 50 % | 44 – 48 % | 45 – 47 % |
+| 25 % | 22 – 24 % | 23 – 24 % |
+
+The 3 – 8 percentage-point drop from the advertised target happens at two distinct boundaries: (a) COBS code bytes downgrade to "unknown" whenever any source byte in their block is unknown (conservative correctness), and (b) a 7-bit channel that straddles two payload bytes requires BOTH bytes to be known — if either is unknown the whole channel is marked unusable.
+
+**Main result — Clean Signal % (JSON):**
+
+| Size | 80 % BLAKE3 | 80 % FNV-1a | 50 % BLAKE3 | 50 % FNV-1a | 25 % BLAKE3 | 25 % FNV-1a |
+|------|---:|---:|---:|---:|---:|---:|
+| 4 KB | 68.2 % | 68.1 % | 39.0 % | 40.2 % | 19.6 % | 20.2 % |
+| 16 KB | 69.3 % | 69.4 % | 41.9 % | 41.6 % | 21.4 % | 21.2 % |
+| 64 KB | 72.7 % | 72.6 % | 43.8 % | 43.7 % | 21.8 % | 21.9 % |
+| 128 KB | 4.5 %⚠ | 4.6 %⚠ | 43.6 % | 43.6 % | 22.1 % | 22.0 % |
+| 512 KB | 56.2 %⚠ | 39.0 %⚠ | 9.8 %⚠ | 9.9 %⚠ | 22.1 % | 22.1 % |
+| 1 MB | 4.7 %⚠ | 13.4 %⚠ | 9.9 %⚠ | 9.9 %⚠ | 5.0 %⚠ | 5.0 %⚠ |
+| 2 MB | 47.9 %⚠ | 60.8 %⚠ | 1.3 %⚠ | 35.8 %⚠ | 13.7 %⚠ | 13.7 %⚠ |
+| 4 MB | 67.5 %⚠ | 58.8 %⚠ | 18.6 %⚠ | 35.9 %⚠ | 9.4 %⚠ | 0.7 %⚠ |
+
+**Main result — Clean Signal % (HTML):**
+
+| Size | 80 % BLAKE3 | 80 % FNV-1a | 50 % BLAKE3 | 50 % FNV-1a | 25 % BLAKE3 | 25 % FNV-1a |
+|------|---:|---:|---:|---:|---:|---:|
+| 4 KB | 70.1 % | 70.6 % | 44.3 % | 44.2 % | 16.1 %⚠ | 22.3 % |
+| 16 KB | 72.6 % | 72.1 % | 44.9 % | 45.2 % | 23.0 % | 22.8 % |
+| 64 KB | 76.4 % | 3.7 %⚠ | 47.1 % | 47.2 % | 23.3 % | 23.4 % |
+| 128 KB | — | — | 47.7 % | 47.8 % | 23.6 % | 23.6 % |
+| 512 KB | 68.0 %⚠ | 22.2 %⚠ | 47.9 % | 47.9 % | 23.8 % | 23.8 % |
+| 1 MB | 54.7 %⚠ | — | 48.2 % | 48.2 % | 23.9 % | 23.9 % |
+| 2 MB | — | — | — | — | 23.9 % | — |
+| 4 MB | 76.7 %⚠ | 34.0 %⚠ | — | — | 24.0 % | 15.9 %⚠ |
+
+Legend: `⚠` marks cells where Layer 2 converged onto a period-shifted startPixel (reconstruction is still valid but offset in pixel-index space; under imperfect shift alignment, some channels suffer residual plaintext XOR leakage). `—` marks cells where the orchestrator reported demask-fail (stream was emitted but validation caught ≥ 1 WRONG match — see "Observations" below).
+
+**Summary — average Clean Signal % across sizes:**
+
+| Coverage | JSON BLAKE3 | JSON FNV-1a | HTML BLAKE3 | HTML FNV-1a |
+|---------:|------------:|------------:|------------:|------------:|
+| 80 % | 48.9 % | 48.3 % | 69.7 % | 40.5 % |
+| 50 % | 26.0 % | 32.6 % | 46.7 % | 46.8 % |
+| 25 % | 16.9 % | 15.9 % | 22.7 % | 22.2 % |
+
+### What the matrix tells us about ITB under Partial KPA
+
+**1. Hash identity (BLAKE3 vs FNV-1a) is near-irrelevant for extraction rate.** Cells with identical `(size, kind)` and differing hash produce Clean % within 1-2 p.p. of each other except under period-shift events — and in those events the direction of the drift is random, not hash-dependent. The ChainHash wrapping makes the demasking pipeline primitive-blind. Hash choice only matters on the emitted stream (NIST STS / SAT seed-recovery), not during recovery itself. This justifies why we deliberately skipped the "all 10 primitives" Full-KPA documentation run — it would just be ten near-identical rows.
+
+**2. Clean Signal % is ALWAYS below target coverage %.** Even the best cells (64 KB × 80 % target × clean alignment) yield 72-76 % clean — already a 4-8 p.p. loss from advertised coverage. The loss accumulates from the nine architectural effects enumerated below.
+
+**3. Period-shift stochasticity dominates mid-size cells.** Clean % on `(128 KB, JSON 80 %)` is 4.5 % while `(64 KB, JSON 80 %)` is 72.7 % — not because 128 KB is harder but because the specific random seed placed the true startPixel at a position where Layer 2's 57-probe heuristic found a period-shifted false sp first, and the shift happened to break the Layer 1 constraint on most pixels. Variance is large; the "size" axis in the table is NOT a monotonic predictor. This is a real property of single-pair attacks on repeating plaintexts, not a helper defect.
+
+**4. Coverage efficiency (emitted / attacker-known-channel budget) stays high when Layer 2 anchors true sp** (90-97 % across clean cells), and collapses to the 2-40 % range under period-shift catastrophe. High coverage efficiency on true-sp cells confirms the helper uses its input bits near-optimally; the losses are not "helper weakness" but architectural information theoretic floors.
+
+**5. Low-coverage (25 %) behaviour is consistently weak but graceful.** Across sizes, 25 % coverage yields 15-24 % Clean on small-to-mid sizes, degrading further under period-shift. No cell produces meaningless garbage; the helper correctly refuses pixels it can't constrain rather than emit noise.
+
+**6. 10 cells returned exit code 2 under imperfect period-shift alignment.** Under a shift that is not exactly a d_xor pattern period, a small number of pixels (0.01 – 0.1 %) recovered a `(noisePos, rotation)` pair that is unique under constraint matching but does not match the ground-truth at the shifted position. These are NOT formula bugs — the helper formula is correct; the artefact is that single-pair Layer 1 admits rare isolated false positives when `d_xor_claim_p ≠ d_xor_true_{p+shift}` at approximate-period shifts. The stream was still emitted (mostly correct, with a handful of corrupted channel-XOR values scattered); the orchestrator flags these as demask-fail due to the strict WRONG > 0 gate. Real attackers cannot distinguish these from clean runs without access to ground truth.
+
+### Nine architectural effects visible in this matrix
+
+These are properties of ITB's construction that show up empirically in the numbers above. None are helper bugs; all are structural features that shape the attacker's information recovery envelope.
+
+1. **Same-plaintext-local degeneracy** on structurally-shared known bytes. When the attacker knows a byte AND that byte is identical across both plaintexts (JSON `{`, `"`, `:`, `,`; HTML `<`, `>`, `=`), the channel's `d_xor = 0` and it only constrains `noisePos`, not `rotation`. This reduces the effective discriminating budget from 8 channels to ~5 per pixel at 80 % coverage.
+
+2. **Record-level periodicity**. Repeating record templates produce a d_xor pattern periodic with period = record length. Layer 2 brute-force thereby admits ANY period-shifted sp as "valid" — visible in the ⚠-marked cells. `auto --n-probe` tries to span 3 record periods to break this, but on mid-size plaintexts the heuristic is not enough.
+
+3. **Stochastic period-shift catastrophe**. At imperfect (non-period-multiple) shifts, Layer 1 coincidentally accepts false constraints on most pixels, collapsing Clean % to 1-15 %. Visible in JSON 128 KB / 1 MB / 2 MB / 4 MB cells.
+
+4. **Per-pixel 8-channel binding through a single hash-output pair**. All 8 channels of a pixel derive from ONE `(noisePos, rotation, channelXOR)` set that comes from ONE pair of ChainHash outputs. Single-pair Partial-KPA cannot distribute constraint information across independent hash queries; multi-pair `N ≥ 4` disambiguation is the architectural mitigation path.
+
+5. **COBS mask conservatism (3-5 p.p. loss)**. Group-length code bytes mark as "unknown" whenever any input byte in the block is unknown (safe conservative propagation). Visible as target 80 % → actual channel 75-80 % gap.
+
+6. **7-bit channel byte-boundary loss (2-3 p.p.)**. A channel whose 7 bits straddle a byte boundary (bit offset % 8 ≥ 2) is marked unknown if EITHER of the two spanned bytes is unknown. Compounds with effect 5.
+
+7. **CSPRNG fill beyond `cobs + null`**. Payload bytes after the attacker-known region are fresh random per encryption, not attacker-predictable. On short plaintexts this is a larger fraction; on 4 MB it's a few hundred fill pixels out of 600 k.
+
+8. **Single-pair Layer 1 ambiguity explosion**. Already documented in the Run B writeup above: single-pair constraint matching with ~5-6 rotation-active channels per pixel admits 2+ `(noisePos, rotation)` candidates on 80-88 % of pixels under 80 % coverage. Increases to 90-95 % at 25 % coverage.
+
+9. **Imperfect-period-shift wrong-match emergence**. Documented in observation 6 above — approximate-period shifts admit rare isolated false single-candidate recoveries at the 0.01 – 0.1 % level.
+
+### Threat-model gate — why this whole exercise is gated by user downgrade
+
+None of the attack surface above is exploitable without nonce collision. ITB's shipped default nonce size is **512 bits** (see [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis)), giving `2²⁵⁶` queries before 50 % collision probability — mathematically infeasible on any foreseeable hardware for all time. The entire Phase 2d exercise (Full KPA + Partial KPA) assumes an attacker has ALREADY gotten past that gate, which in practice requires the USER to explicitly downgrade to 128-bit or smaller nonce:
+
+- 512-bit (default): 2²⁵⁶ queries → never
+- 256-bit: 2¹²⁸ queries → infeasible at civilisational scale
+- 128-bit: 2⁶⁴ queries → reachable only under sustained abuse of a single key
+- ≤ 64-bit: trivially reachable
+
+The Phase 2d findings are conditional on "attacker got here somehow". On a default deployment the conditional never fires. **This gate, not the per-cell Clean Signal numbers, is the primary defence.**
+
+### Scope — what Phase 2d does NOT test (and why)
+
+- **All-10-primitives Full-KPA documentation run**: not performed. Demasking is primitive-independent at the recovery step (observation 1 above), so adding BLAKE2s, BLAKE2b, SipHash, etc., would produce six near-identical tables. The Full-KPA validation table in the main Phase 2d writeup already covers four widths (FNV-1a 128, MD5 128, BLAKE3 256, BLAKE2b 512) confirming the helper formula works across all ChainHash widths.
+- **N > 2 multi-pair runs**: not performed. N = 2 is the minimum to produce any nonce-reuse XOR; larger N would enable multi-pair Layer 1 disambiguation (the architectural mitigation path for effect 8 above), but getting N ≥ 4 same-nonce collisions requires an even more invasive downgrade scenario. The theoretical path is documented; empirical verification is deferred.
+- **Same-plaintext + same-nonce mode (`d_1 = d_2`)**: not performed. With identical plaintexts the entire XOR analysis collapses — `d_xor = 0` across ALL channels (not just structural ones), rotation is fully unrecoverable, and the Layer 1 formula reduces to `extract7(xor_byte, noisePos) == 0 for all 8 channels`. The "attack" is information-theoretically equivalent to observing two independent encryptions of the same plaintext — it reveals exactly zero about the seeds. Documented as a sensitivity-test negative in [Sensitivity / nonce-mismatch control test](#sensitivity--nonce-mismatch-control-test) below; not worth running empirically beyond that.
+
+### Reproducing the matrix
+
+```bash
+# Full matrix (96 cells, ~15 min on a 16-core host; default PARALLEL=4):
+bash scripts/redteam/partial_kpa_matrix.sh
+
+# Override worker count if desired:
+PARALLEL=6 bash scripts/redteam/partial_kpa_matrix.sh
+
+# Aggregate into markdown tables:
+python3 scripts/redteam/aggregate_partial_kpa_matrix.py > partial_kpa_results.md
+```
+
+The matrix driver schedules up to `PARALLEL` orchestrator invocations concurrently with a one-time pre-wipe + per-invocation `--no-pre-wipe` so parallel workers do not clobber each other's in-flight corpus directories. Sequential baseline on the same host was ~45 min; `PARALLEL=4` brings this to ~15 min (≈ 3× speedup, limited by Go corpus-gen CPU oversubscription — each orchestrator internally uses up to 8 goroutines).
+
+**Stochastic variance caveat.** The exact numbers in the tables above come from one specific seed schedule. The orchestrator uses Python's built-in `hash()` for per-cell nonce-seed derivation, which is randomised per interpreter process — so re-running the matrix produces per-cell numbers that differ by up to ~20 percentage points on cells where Layer 2 hits period-shift catastrophe. The **qualitative pattern** (coverage-level ordering, hash irrelevance, period-shift-at-mid-size) replicates across runs; individual cell values do not. This is a faithful reflection of the construction — ITB's stochastic period-shift behaviour on repeating plaintexts IS the architectural effect being measured.
+
+### Sensitivity / nonce-mismatch control test
+
+This test proves the attack chain is **not** a false-positive generator — it cannot fabricate a "recovered" configuration from data that is NOT a genuine nonce-reuse pair. The corpus generator runs in a special control mode (`ITB_NONCE_REUSE_CONTROL=nonce_mismatch`) that produces two ciphertexts with the **same plaintext** but **different nonces** (one derived from `nonceSeed`, the other from `nonceSeed × 0x1000003D` — deterministic but distinct). Shared seeds; distinct nonces. This is NOT a nonce-reuse scenario — it is a correctness probe for the helper.
+
+**Expected outcome — the helper must refuse.**
+
+Two refusal modes are exercised:
+
+1. **Default refusal (production behaviour).** Run the helper with its built-in nonce-equality assertion. On nonce mismatch it prints an `ERROR` and exits with code 2 before any Layer 1 / Layer 2 work starts. Empirically on FNV-1a control corpus:
+    ```
+    ERROR: nonces differ — this is NOT a nonce-reuse pair
+           (ct1 nonce: 2d374bc3143650e435bd5ceca78cfb34,
+            ct2 nonce: af90394747df826dc5944d070f7dabc8)
+    ```
+    This is what every real deployment of the helper would see. Sensitivity confirmed.
+
+2. **Forced-through-the-pipeline (`--skip-nonce-check`).** To verify that even when the nonce-equality check is bypassed the helper cannot synthesise usable output, we ran the full pipeline on both FNV-1a and BLAKE3 control corpora with `--skip-nonce-check` enabled. Both produced **identical negative results**:
+
+| Metric | FNV-1a (control) | BLAKE3 (control) |
+|--------|-----------------:|-----------------:|
+| Layer 2 brute force: best `startPixel` score | 0 / 10 | 0 / 10 |
+| Layer 2 short-circuits | 19 044 / 19 044 | 19 044 / 19 044 |
+| Layer 1 exact recovery | **0** / 18 766 (0.00 %) | **0** / 18 766 (0.00 %) |
+| Layer 1 ambiguous | 18 766 / 18 766 (100 %) | 18 766 / 18 766 (100 %) |
+| Layer 1 **wrong matches** | **0** | **0** |
+| Reconstructed stream | **0 bytes** emitted | **0 bytes** emitted |
+
+Not a single candidate `(noisePos, rotation)` passed the all-8-channel constraint on any pixel. The false-positive rate per wrong-alignment probe pixel is `56 × 2⁻⁵⁶ ≈ 0` — observed zero matches across 19 044 candidate `startPixel`s × 10 probe pixels × 56 candidates × 8 channels = ~8.5 × 10⁸ constraint checks. Reconstruction has nothing to emit: zero bytes, zero bits. **No NIST STS input can be produced** from nonce-mismatch corpus through this helper.
+
+**What this validates.** The PRF-separation signal reported in the main Phase 2d table (BLAKE3 188/188 vs FNV-1a 182/188 on reconstructed streams) is caused by the nonce-reuse condition, NOT by some implementation shortcut in the helper that would succeed on arbitrary ciphertext pairs. A helper that fakes positive results would also "succeed" on the control corpus; this one doesn't. The control result rules out that class of false-positive.
+
+Reproduction commands:
+
+```bash
+# Generate control corpus (same plaintext, different nonces) for both hashes:
+for h in fnv1a blake3; do
+    ITB_NONCE_REUSE_HASH=$h \
+    ITB_NONCE_REUSE_N=2 \
+    ITB_NONCE_REUSE_MODE=same \
+    ITB_NONCE_REUSE_CONTROL=nonce_mismatch \
+    ITB_NONCE_REUSE_SIZE=131072 \
+    go test -run TestRedTeamGenerateNonceReuse -v -timeout 1m
+done
+
+# Default refusal (expect exit code 2):
+python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
+    --cell-dir tmp/attack/nonce_reuse/control/fnv1a/BF1/N2/nonce_mismatch_same \
+    --pair 0000 0001 --mode known-plaintext --brute-force-startpixel
+
+# Forced pipeline (expect 0/18766 exact, 0 bytes emitted):
+python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
+    --cell-dir tmp/attack/nonce_reuse/control/fnv1a/BF1/N2/nonce_mismatch_same \
+    --pair 0000 0001 --mode known-plaintext --brute-force-startpixel \
+    --skip-nonce-check --validate \
+    --emit-datahash tmp/attack/nonce_reuse/reconstructed/fnv1a_control_nonce_mismatch.datahash.bin
+```
+
+### Reproducing the result
+
+```bash
+# 1. Run the 2-cell automated matrix (BLAKE3 + FNV-1a, 2 MB, N=2, known, BF=1).
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 2097152 \
+    --hashes blake3,fnv1a \
+    --collision-counts 2 \
+    --attacker-modes known \
+    --validate \
+    --cleanup-ciphertexts-after-emission
+
+# 2. Feed the reconstructed streams to NIST STS at N=16 × 1 Mbit.
+python3 scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py \
+    --stream tmp/attack/nonce_reuse/reconstructed/blake3_BF1_N2_known.datahash.bin \
+    --stream tmp/attack/nonce_reuse/reconstructed/fnv1a_BF1_N2_known.datahash.bin \
+    --n-streams 16
+```
+
+Expected wall-clock: ~3 minutes for the matrix run + ~1 minute for the two NIST STS invocations. Deterministic RNG seeds in the Go test (plaintext seed 424242 + nonce seed 0xA17B1CE) produce byte-identical corpora across runs, so a future researcher can reproduce the exact streams and feed them to their own statistical-test batteries.
+
+### Scope of this phase — known limitations
+
+- **Full KPA is the main result.** Partial KPA is exercised in a separate subsection below with a carefully-structured JSON plaintext and strong attacker assumptions — see [Partial KPA extension](#partial-kpa-extension--structured-json-plaintext-artificial-scenario). The result is useful as a best-case upper bound on Partial-KPA attackability, not as a general Partial-KPA claim.
+- **Two primitives only in the automated matrix** (BLAKE3 + FNV-1a). The one-off `--hashes all` run across all 10 primitives is documented separately in this plan's follow-up for producing a comprehensive primitive-by-primitive table — expected result: all 9 PRF-grade primitives (BLAKE3, MD5, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE2b-512, AreionSoEM-512) pass 188/188 at this stream size; FNV-1a is the sole outlier.
+- **Sensitivity / nonce-mismatch control test** — see subsection below.
+- **Triple Ouroboros nonce-reuse** not implemented. Theoretical decomposition (3 × ITB Single demasking with `noiseSeed` shared across regions) is documented in the plan; actual implementation requires the Triple-analyzer rewrite that also gates Phase 2b / 2c / 3a Triple coverage.
+- **Seed recovery via SAT** — the logical next step after this phase's NIST STS result — is out of scope. This phase stops at distinguishability (NIST STS level); converting distinguishability into actual seed values requires research-lab SAT compute that this plan does not attempt.
+
+---
+
 ## Phase 3a — Rotation-invariant edge case
 
 Script: [`scripts/redteam/phase3_deep/rotation_invariant.py`](scripts/redteam/phase3_deep/rotation_invariant.py)
@@ -706,6 +1250,7 @@ This supports an **a fortiori argument** at every tested level:
 - **Aggregate stream** (Phase 3b): NIST STS 188/188 pass for all 10 on typical runs; the replication-unstable 40/188 outcomes (FNV-1a at N=20 Run A, BLAKE3 at N=100 BF=32 — one below-spec hash and one PRF) are the NIST SP 800-22 `NonOverlappingTemplate` bin-0 artefact on near-uniform output, not a security signal. The same mechanism fires on `/dev/urandom` streams of this size.
 - **Structural** (Phase 1): per-channel χ² and nonce collision ratio within tolerance for all 10 in both regimes.
 - **startPixel isolation** (Phase 2c): mean rank-fraction ≈ 0.5 for all 10 in both regimes.
+- **Nonce-reuse PRF-dependency** (Phase 2d): after the demasking helper peels off obstacles (2) + (3) at the 2-ciphertext Full KPA level, the reconstructed `dataSeed.ChainHash(pixel, nonce)` output stream passes NIST STS 188/188 under BLAKE3 — single-layer defence (ChainHash alone) holds under PRF even without architectural obstacles — but fails 6/188 under FNV-1a (FFT 0/16 + block-level + sum-walk tests). Empirically validates [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis)'s locality claim under PRF and makes its PRF-dependency caveat concrete.
 
 Since invertibility (FNV-1a) and output bias (MD5) produce output indistinguishable from a real PRF at every stable test outcome, a real PRF — whose output is already unpredictable by definition — leaves the barrier with strictly less work to do.
 
@@ -732,6 +1277,7 @@ Several test-battery outputs flagged specific primitives in one run and not anot
 | [Proof 3](PROOFS.md#proof-3-triple-seed-isolation) / [3a](PROOFS.md#proof-3a-triple-seed-isolation-minimality) (triple-seed isolation, minimality) | ✅ Phase 2c — all 10 primitives pass `startPixel` enumeration in both Single and Triple modes; the 3 startSeeds in Triple each draw from independent `[0, P/3)` ranges in Phase 3b's histograms with no cross-seed structure |
 | [Proof 9](PROOFS.md#proof-9-ambiguity-dominance-threshold) (ambiguity-dominance threshold) | ✅ Phase 2b — the `html_giant` KL floor at N ≫ P_threshold reaches sampling precision (~2 × 10⁻⁵ nats at BF=1, ~2 × 10⁻⁶ nats at the 63 MB probe); ambiguity is dominant at all tested data scales |
 | Invertible-primitive inversion bound | ⚠ Phase 2a — analytical only; no actual Z3 run at any `keyBits`. ChainHash's `keyBits`-scaled round structure argues the paper's naive `~56 × P` bound is optimistic, but this claim stands on structural analysis, not empirical seed recovery |
+| [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) — nonce-reuse locality + PRF-dependency | ✅ / ⚠ Phase 2d — locality confirmed under PRF (BLAKE3 reconstructed stream passes 188/188 NIST STS → the single remaining obstacle after demasking has no exploitable bias). PRF-dependency demonstrated via the BLAKE3-vs-FNV-1a contrast: same attack chain, FNV-1a fails 6 / 188 tests (FFT 0/16 plus BlockFrequency / CumulativeSums / Runs) — the "seeds remain secret, no key rotation" conclusion of `§2.5` depends on PRF non-invertibility, and this probe makes that dependency empirically visible |
 
 ---
 
