@@ -7,6 +7,13 @@ import (
 	"sync/atomic"
 )
 
+// testNonceOverride is set only by test code (see setTestNonce in *_test.go).
+// Production callers never set this — generateNonce falls through to crypto/rand.
+// One atomic load per encryption in the hot path; negligible overhead in
+// production, critical for nonce-reuse attack simulation in Probe 1 of the
+// red-team plan.
+var testNonceOverride atomic.Pointer[[]byte]
+
 // NonceSize is the default per-message nonce size in bytes (128 bits).
 // Use SetNonceBits to change. Birthday collision at ~2^(nonceBits/2) messages.
 const NonceSize = 16
@@ -80,7 +87,13 @@ func currentBarrierFill() int {
 const MaxKeyBits = 2048
 
 // generateNonce returns a fresh cryptographic nonce of current configured size.
+// If a test has installed a fixed nonce via setTestNonce, returns a copy of
+// that instead — used for nonce-reuse attack simulation. Production callers
+// never hit the override branch (the setter is in *_test.go only).
 func generateNonce() ([]byte, error) {
+	if p := testNonceOverride.Load(); p != nil {
+		return append([]byte(nil), *p...), nil
+	}
 	nonce := make([]byte, currentNonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
