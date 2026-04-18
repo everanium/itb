@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Prepare binary streams per hash variant for dieharder / NIST STS.
+"""Prepare per-hash binary streams for NIST STS (Phase 3b).
 
 Reads all ciphertexts in tmp/encrypted/<hash>/*.bin, strips the 20-byte
 header (16 nonce + 2W + 2H), concatenates the pixel bytes, writes to
-tmp/streams/<hash>.bin.
+tmp/streams/<hash>.bin. Required preprocessing step before
+nist_sts_runner.py — NIST STS consumes a single contiguous binary file
+per hash, not a tree of sample files.
 
 Output size: ~40 MB per hash from 387 samples (mostly huge kinds).
 """

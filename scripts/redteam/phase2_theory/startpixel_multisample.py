@@ -130,7 +130,7 @@ def run_sample(hash_name: str, base: str, probe_pixels: int = 40) -> dict:
     meta = json.loads(meta_path.read_text())
 
     total_pixels = meta["total_pixels"]
-    true_start_pixel = meta["start_pixel"]
+    true_start_pixel = meta["start_pixels"][0]
 
     # Container as (total_pixels, 8_channels) uint8 array
     container = ciphertext[HEADER_SIZE:HEADER_SIZE + total_pixels * CHANNELS]

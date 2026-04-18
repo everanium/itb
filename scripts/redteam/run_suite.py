@@ -89,6 +89,68 @@ def run_step(
     return ok, elapsed
 
 
+def run_step_parallel(
+    name: str,
+    specs: list[tuple[str, list[str], Path]],
+    env: dict[str, str] | None = None,
+    tail_lines: int = 10,
+) -> tuple[bool, float]:
+    """Run multiple subprocess pipelines in parallel, wait for all.
+
+    `specs` is a list of (label, cmd, log_path) triples — each gets its
+    own subprocess.Popen writing stdout+stderr to its log_path. The
+    worker count each subscript uses is unchanged (8 inside each), so
+    two entries here means 16 concurrent workers — temporary thermal
+    throttling is acceptable because the whole block finishes in 1-2
+    minutes.
+
+    Returns (all_ok, elapsed_seconds).
+    """
+    sep = "=" * 70
+    print(f"\n{sep}\n  {name}\n{sep}")
+    for label, cmd, log_path in specs:
+        print(f"  [{label}] cmd: {' '.join(cmd)}")
+        print(f"  [{label}] log: {log_path.relative_to(PROJ)}")
+
+    t0 = time.time()
+    procs = []
+    handles = []
+    for label, cmd, log_path in specs:
+        f = open(log_path, "w")
+        handles.append(f)
+        p = subprocess.Popen(
+            cmd,
+            cwd=PROJ,
+            env=env,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+        )
+        procs.append((label, p, log_path))
+
+    results = []
+    for label, p, log_path in procs:
+        rc = p.wait()
+        results.append((label, rc, log_path))
+    for f in handles:
+        f.close()
+
+    elapsed = time.time() - t0
+    all_ok = all(rc == 0 for _, rc, _ in results)
+    print(f"  -> elapsed={elapsed:.1f}s  all_ok={all_ok}")
+    for label, rc, log_path in results:
+        print(f"  [{label}] exit={rc}")
+        try:
+            with open(log_path) as f:
+                lines = f.readlines()
+            tail = lines[-tail_lines:]
+            print(f"  [{label}] --- last {len(tail)} line(s) ---")
+            for ln in tail:
+                print(f"  [{label}] | {ln.rstrip()}")
+        except FileNotFoundError:
+            pass
+    return all_ok, elapsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the full ITB red-team validation suite.",
@@ -118,13 +180,6 @@ def main() -> int:
              "the uniformity-of-p-values test so a single-bin cluster on "
              "near-uniform output becomes statistically implausible rather "
              "than merely bad-luck bin-routing.",
-    )
-    parser.add_argument(
-        "--skip-mega",
-        action="store_true",
-        help="Skip mega-stream generation for NIST STS (prepare_streams uses "
-             "the regular corpus — this flag is a no-op kept for forwards "
-             "compatibility)",
     )
     args = parser.parse_args()
 
@@ -178,11 +233,23 @@ def main() -> int:
     step += 1
 
     if not triple:
-        # Phase 2b KL distinguisher — requires single-startPixel alignment
-        run_step(
-            f"{step}/{total_steps}  Phase 2b — per-pixel candidate KL distinguisher (parallel 8 workers)",
-            ["python3", "-u", "scripts/redteam/phase2_theory/distinguisher.py"],
-            results_dir / "04_phase2b.log",
+        # Phase 2b KL distinguisher — two variants launched in parallel:
+        #   Mode A (distinguisher.py): attacker knows startPixel + plaintext
+        #     alignment → reads data-carrying pixels only.
+        #   Mode B (distinguisher_full.py): realistic attacker — no
+        #     startPixel, no plaintext XOR, iterates all P container
+        #     pixels including CSPRNG fill.
+        # Each uses its own 8-worker Pool → 16 concurrent cores for ~1-2 min.
+        run_step_parallel(
+            f"{step}/{total_steps}  Phase 2b — candidate KL distinguisher (two modes in parallel, 8 workers each)",
+            [
+                ("Mode A / known-startPixel",
+                 ["python3", "-u", "scripts/redteam/phase2_theory/distinguisher.py"],
+                 results_dir / "04_phase2b.log"),
+                ("Mode B / full-container",
+                 ["python3", "-u", "scripts/redteam/phase2_theory/distinguisher_full.py"],
+                 results_dir / "04_phase2b_full.log"),
+            ],
             tail_lines=15,
         )
         step += 1
