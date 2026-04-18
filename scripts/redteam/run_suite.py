@@ -176,10 +176,12 @@ def main() -> int:
         choices=[20, 30, 50, 100],
         default=20,
         help="Number of 1-Mbit sequences for NIST STS "
-             "(default: 20, NIST SP 800-22 example). Higher values stress "
-             "the uniformity-of-p-values test so a single-bin cluster on "
-             "near-uniform output becomes statistically implausible rather "
-             "than merely bad-luck bin-routing.",
+             "(default: 20, NIST SP 800-22 example). Larger N does not "
+             "eliminate the single-bin p-value clustering on near-uniform "
+             "output — bin-0 draws still happen at ~10%% per (hash, run) "
+             "at any N — but it lets conventional non-bin-0 proportion "
+             "failures stand out as genuine outliers instead of being "
+             "confused with the bin-routing artefact.",
     )
     args = parser.parse_args()
 

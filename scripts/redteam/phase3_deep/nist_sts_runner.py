@@ -53,10 +53,13 @@ BITSTREAM_LEN = 1_000_000  # bits per sequence (fixed at 1 Mbit)
 INPUT_FORMAT = 1           # binary
 
 # NUM_STREAMS is configurable via ITB_NIST_STREAMS env var (whitelist-validated);
-# default 20 matches NIST SP 800-22 example. Higher values stress the
-# uniformity-of-p-values test more effectively (at N=20 a single-bin cluster is
-# plausible under near-uniform output; at N=100 it is overwhelmingly unlikely
-# unless the cluster is real signal).
+# default 20 matches NIST SP 800-22 example. Larger N does not eliminate the
+# NonOverlappingTemplate single-bin clustering on near-uniform output — the
+# cluster lands in bin 0 at ~10% per (hash, run) pair at any N (BLAKE3 drew
+# bin 0 at N=100 BF=32 in this suite, alongside FNV-1a at N=20 Run A). What
+# larger N does buy is that conventional non-bin-0 proportion failures stand
+# out as genuine outliers instead of being confused with the bin-routing
+# artefact.
 _ALLOWED_STREAMS = {20, 30, 50, 100}
 
 

@@ -149,7 +149,7 @@ python3 scripts/redteam/run_suite.py triple --barrier-fill 1  --nist-streams 100
 python3 scripts/redteam/run_suite.py triple --barrier-fill 32 --nist-streams 100  # high-fill supplementary
 ```
 
-Valid `--nist-streams` values are `{20, 30, 50, 100}` — fixed whitelist; 20 matches the NIST SP 800-22 example, 100 is recommended for this suite because it defeats the single-bin p-value clustering artefact on near-uniform output (see Phase 3b for the mechanism).
+Valid `--nist-streams` values are `{20, 30, 50, 100}` — fixed whitelist; 20 matches the NIST SP 800-22 example, 100 is recommended for this suite because larger N lets conventional non-bin-0 proportion failures stand out as genuine outliers separable from the `NonOverlappingTemplate` bin-routing artefact. N=100 does **not** eliminate the artefact — bin-0 draws still occur at ~10 % per `(hash, run)` pair at any N (BLAKE3 hit 40/188 at N=100 BF=32 in this suite; see Phase 3b).
 
 Or run phases manually in sequence:
 
