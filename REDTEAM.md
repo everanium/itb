@@ -16,7 +16,7 @@ At shipped defaults (BF=1):
 - **Per-pixel candidate KL floor on 8 × 1 MB `html_giant` samples (primary at BF=1, N = 9.6 M obs/candidate)**: 0.000018 – 0.000021 nats, spread just 3 × 10⁻⁶ nats across all 10 hashes. At the supplementary BF=32 configuration with a single `html_giant` sample per hash (N = 1.2 M obs/candidate), the band widens as theory predicts to 0.000139 – 0.000156 nats — still a 10⁻⁴ floor, no hash-specific deviation. A one-off probe at **N = 7.5 × 10⁷** (one 63 MB BLAKE3 encryption, the ITB data-size limit) drives the observed KL max to **2.3 × 10⁻⁶ nats** — within 1.4× of the theoretical floor, subnanonat territory where float64 precision begins to matter.
 - **NIST STS: all 10 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (FNV-1a → bin 8, MD5 → bin 6, ChaCha20 → bin 1, BLAKE3 → bin 2, etc). Proportion is 100/100 for all 10 hashes on every one of the 148 template sub-tests. Single-test failures across the whole N = 100 run: 2 out of 1 880 — well under the 1 % expected at α = 0.01. An earlier Run A at N = 20 drew bin 0 for FNV-1a and showed a catastrophic-looking 40/188 result; this is the documented NIST SP 800-22 artefact on near-uniform output, *not* a primitive-specific signal.
 - **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively *conditional on that SAT-hardness assumption*. No Z3 runs were executed; the claim rests on structural analysis.
-- **Realistic threat model** (Partial KPA + unknown startPixel) places the attack past civilisational timescales on a 1 000-node cluster.
+- **Realistic threat model** (Partial KPA + unknown startPixel) places the attack past civilisational timescales on a 1000-node cluster.
 
 The results corroborate the paper's "barrier-based construction" claim: security arises from the architecture (8-channel packing, 7-bit extraction with rotation, CSPRNG-fill residue, ChainHash XOR chain) rather than from the quality of the underlying hash. Weak and strong primitives produce statistically identical ciphertext under every distinguisher run.
 
@@ -145,7 +145,8 @@ python3 scripts/redteam/run_suite.py single --barrier-fill 32 --nist-streams 100
 #   only; Phases 2b / 2c / 3a are skipped because their analyzers assume a single
 #   global startPixel and need a 3-partition rewrite.
 #   Wall-clock ~6 min at BarrierFill=1 on 8 cores.
-python3 scripts/redteam/run_suite.py triple --barrier-fill 1  --nist-streams 100
+python3 scripts/redteam/run_suite.py triple --barrier-fill 1  --nist-streams 100  # shipped default
+python3 scripts/redteam/run_suite.py triple --barrier-fill 32 --nist-streams 100  # high-fill supplementary
 ```
 
 Valid `--nist-streams` values are `{20, 30, 50, 100}` — fixed whitelist; 20 matches the NIST SP 800-22 example, 100 is recommended for this suite because it defeats the single-bin p-value clustering artefact on near-uniform output (see Phase 3b for the mechanism).
@@ -193,7 +194,7 @@ python3 scripts/redteam/phase2_theory/kl_massive_single.py blake3
 
 ## Results summary
 
-Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supplementary results at BF=32 in parentheses; Triple-mode results in the separate Triple Ouroboros section below.
+Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supplementary results at BF=32 in parentheses; Triple mode results in the separate Triple Ouroboros section below.
 
 | Phase | What it tests | Result at BF=1 Single (BF=32 Single in parens) |
 |-------|---------------|-----------------------------------------------|
@@ -249,13 +250,13 @@ A realistic well-funded adversary stacks several multipliers on top of sequentia
 - **Incremental SMT amortisation across `startPixel` guesses**: modern solvers with push/pop can share learned clauses across near-identical instances differing only by a single parameter. May reduce the ×P multiplier below to ×(P/5) – ×(P/10) for parametric families.
 - **Quantum Grover**: further √ speedup once fault-tolerant quantum computers exist at ~10⁶ logical-qubit scale.
 
-### Back-of-envelope 1 000-node cluster wall-clock (Full KPA, startPixel known)
+### Back-of-envelope 1000-node cluster wall-clock (Full KPA, startPixel known)
 
 | Setup | Wall-clock at 1024-bit seeds |
 |-------|------------------------------|
 | Sequential single machine | ~10⁵ – 10⁸ hours |
-| 1 000-node naive split | ~10² – 10⁵ hours (months to ~11 years) |
-| 1 000-node + portfolio parallelism (~10× practical speedup) | **~10 – 10⁴ hours (hours to ~1 year)** |
+| 1000-node naive split | ~10² – 10⁵ hours (months to ~11 years) |
+| 1000-node + portfolio parallelism (~10× practical speedup) | **~10 – 10⁴ hours (hours to ~1 year)** |
 
 The "~1 year" upper figure corresponds to the pessimistic end of the per-round cost range and assumes no algebraic shortcut; the optimistic end (hours) assumes Z3 handles the constant-multiplicative structure of FNV-1a well. A state-level attacker would plausibly land somewhere in this band.
 
@@ -280,7 +281,7 @@ byte 7: starts fresh in slot 8 (next pixel)
 
 **Coverage depends on unknown-byte distribution.** If unknown bytes are **interleaved bit-by-bit** (random-bit model), the per-pixel `k` tracks the fraction roughly linearly. If they form **runs** (a block of consecutive unknown bytes — the realistic case for HTTP/JSON body), each run blinds 4 – 5 consecutive channels completely and `k` can drop locally to ~14 inside the run. The table below uses the interleaved (optimistic-for-attacker) average.
 
-| Plaintext unknown | Typical per-pixel `k` | Multiplier over Full KPA (`2^(56−k)`) | 1 000-node wall-clock |
+| Plaintext unknown | Typical per-pixel `k` | Multiplier over Full KPA (`2^(56−k)`) | 1000-node wall-clock |
 |------------------:|---------------------:|---------------------------------------:|----------------------:|
 | 0 % (Full KPA) | 56 | 1× | hours – 1 year |
 | 20 % unknown | ~45 | ~10³ | ~years – millennia |
@@ -309,7 +310,7 @@ Approximate `P` for a range of plaintext sizes at `SetBarrierFill(32)` (the conf
 
 ### Combined realistic threat model (all layers stacked)
 
-On the same 1 000-node cluster with practical portfolio parallelism, using the range in the Full-KPA table, with `P ≈ 10⁴` for a typical 20 KB payload at `BarrierFill=32`:
+On the same 1000-node cluster with practical portfolio parallelism, using the range in the Full-KPA table, with `P ≈ 10⁴` for a typical 20 KB payload at `BarrierFill=32`:
 
 | Scenario | Wall-clock at 1024-bit, `P ≈ 10⁴` |
 |---------|----------------------------------:|
@@ -324,7 +325,7 @@ The three layers (ChainHash, `startPixel` enumeration, Partial KPA byte-splittin
 
 **Without ChainHash (hypothetical).** Invertible FNV-1a + known `startPixel` + Full KPA would resolve to microsecond-per-inversion modular inverses. With unknown `startPixel`, the attacker cycles `P ≈ 10⁵ × 56 × µs` → seconds-to-minutes total. Partial KPA adds free bits but would still resolve in hours at worst.
 
-**With ChainHash (actual ITB).** Each `startPixel` guess triggers a full SAT instance over 1024 seed bits + 6 ambiguity bits per used pixel, with 8 rounds of nested multiplication through the XOR chain — *hours to ~1 year* of 1 000-node time per attempt (the range reflects per-round SMT-cost uncertainty). That SAT-vs-inversion flip is what makes the defensive layers stack:
+**With ChainHash (actual ITB).** Each `startPixel` guess triggers a full SAT instance over 1024 seed bits + 6 ambiguity bits per used pixel, with 8 rounds of nested multiplication through the XOR chain — *hours to ~1 year* of 1000-node time per attempt (the range reflects per-round SMT-cost uncertainty). That SAT-vs-inversion flip is what makes the defensive layers stack:
 
 | Layer | Role | Without ChainHash | With ChainHash (actual) |
 |-------|------|-------------------|-------------------------|
@@ -337,9 +338,9 @@ Rotation and `noisePos` (the 56-candidate baseline) sit inside the Z3 unknowns o
 
 ### Architectural takeaway
 
-1. **Under Full KPA + known `startPixel`** (the simplification used for the Phase 2b / 3a empirical tests), a well-funded attacker reaches 1024-bit seed recovery in *hours to ~1 year* of 1 000-node cluster time — and that already assumes ChainHash is the only active defensive layer. Even this idealised threat already requires solving SAT, not modular inversions.
+1. **Under Full KPA + known `startPixel`** (the simplification used for the Phase 2b / 3a empirical tests), a well-funded attacker reaches 1024-bit seed recovery in *hours to ~1 year* of 1000-node cluster time — and that already assumes ChainHash is the only active defensive layer. Even this idealised threat already requires solving SAT, not modular inversions.
 2. **Under Full KPA + unknown `startPixel`** (still idealised), the attack multiplies by ~`P` (with possible incremental-SMT amortisation reducing the effective multiplier by up to ~10×). At typical `P ≈ 10⁴`, this pushes the cost into centuries – ~10 000 years.
-3. **Under Partial KPA + unknown `startPixel`** (the production threat model), the 50 % unknown case lands at ~10¹² – 10¹⁶ years of 1 000-node time. The three defence layers stack multiplicatively, *conditional on the SAT-hardness assumption above*.
+3. **Under Partial KPA + unknown `startPixel`** (the production threat model), the 50 % unknown case lands at ~10¹² – 10¹⁶ years of 1000-node time. The three defence layers stack multiplicatively, *conditional on the SAT-hardness assumption above*.
 4. **ChainHash is the load-bearing premise.** Without it the same architecture (invertible FNV-1a + 56-candidate baseline + unknown `startPixel` + Partial KPA) would collapse to CPU-hour-scale cost on commodity hardware — every layer would resolve to cheap modular inversions rather than SAT. Keeping it makes every other layer an independent SAT multiplier, subject to the SAT-hardness premise.
 
 **Proposed paper addition.** A caveat in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) or adjacent prose noting that invertibility of the base primitive does not translate into invertibility of ChainHash for `n > 1` rounds; the compound cost scales with round count, giving `keyBits`-dependent defence-in-depth that the current prose does not claim. The naive `~56 × P` inversions bound holds tightly only at `keyBits = 128` with both `startPixel` and plaintext fully known — three simplifications simultaneously.
@@ -484,18 +485,18 @@ Attacker does **not** know `startPixel`; enumerates all `P` candidates and runs 
 
 **95 % CI under H0 ≈ 0.5 ± 0.050** at N = 129. All 10 hashes inside CI in both regimes; mean z-scores cluster tightly around 0.
 
-### Flagged per-kind cells
+### Per-kind cells below α = 0.05 on either sign-test or t-test
 
-| Hash | Kind | mean rank-fraction | t-test p | Flag | Regime |
-|------|------|-------------------:|---------:|------|--------|
-| AreionSoEM-512 | text_small | 0.7084 | 0.010 | ⚠⚠ | BF=1 |
-| AreionSoEM-512 | http_large | 0.6077 | 0.026 | ⚠⚠ | BF=1 |
-| ChaCha20 | http_large | 0.6136 | 0.029 | ⚠ | BF=1 |
-| BLAKE2s | http | 0.6378 | 0.043 | ⚠ | BF=1 |
-| BLAKE2b-512 | text_large | 0.3615 | 0.012 | ⚠ | BF=1 |
-| AreionSoEM-256 | html_huge | 0.9679 | 0.015 | ⚠ | BF=1 |
+| Hash | Kind | rank-fraction | sign-test p | t-test p | Regime |
+|------|------|--------------:|------------:|---------:|--------|
+| AreionSoEM-512 | text_small | 0.7084 | 0.011 | 0.010 | BF=1 |
+| AreionSoEM-512 | http_large | 0.6077 | 0.008 | 0.026 | BF=1 |
+| ChaCha20 | http_large | 0.6136 | 0.021 | 0.029 | BF=1 |
+| BLAKE2s | http | 0.6378 | 0.055 | 0.043 | BF=1 |
+| BLAKE2b-512 | text_large | 0.3615 | 0.997 | 0.012 | BF=1 |
+| AreionSoEM-256 | html_huge | 0.9679 | 0.125 | 0.015 | BF=1 |
 
-**6 flags out of 90 cells at BF=1** (5 flags at BF=32 with a different distribution of affected hashes). Under α = 0.05 with 90 tests, ~4.5 false positives are expected by chance — 5 and 6 are both within the ±2 σ envelope of 4.5 under H0. No hash is flagged consistently across the two regimes, and flagged hashes span both directions (high and low rank-fraction) and both primitive classes — this is the pattern of random false-positive scatter under a true null.
+A cell lands in this table when **either** its sign-test or t-test returns `p < 0.05` — this is the disjunctive flag the analyzer script emits for inspection. **6 such cells appear at BF=1 (5 at BF=32 with a different distribution of affected hashes).** Under α = 0.05 across 90 `(hash, kind)` cells and two tests, 4.5–9 cells would be expected by chance even under a true null; 5–6 sits in the lower half of that range. No hash is flagged consistently across the two regimes, and flagged hashes span both directions (high and low rank-fraction) and both primitive classes — this is the pattern of random false-positive scatter under a true null, not evidence of a distinguisher.
 
 Obstacle (2) `startPixel` isolation empirically holds across all 10 primitives at both fill regimes.
 
@@ -551,7 +552,7 @@ Four independent runs were executed: two BF=1 replications at the NIST SP 800-22
 
 | Hash | BF=1 Run A (N=20) | BF=1 Run B (N=20) | BF=32 (N=20) | **BF=1 (N=100)** |
 |------|-----------------:|-----------------:|-------------:|-----------------:|
-| FNV-1a | 40 / 188 ⚠ | 188 / 188 | 188 / 188 | 187 / 188 |
+| FNV-1a | **40 / 188 †** | 188 / 188 | 188 / 188 | 187 / 188 |
 | MD5 | 188 / 188 | 187 / 188 | 188 / 188 | **188 / 188** |
 | AES-CMAC | 188 / 188 | 188 / 188 | 188 / 188 | 187 / 188 |
 | SipHash-2-4 | 188 / 188 | 188 / 188 | 188 / 188 | **188 / 188** |
@@ -562,7 +563,9 @@ Four independent runs were executed: two BF=1 replications at the NIST SP 800-22
 | BLAKE2b-512 | 188 / 188 | 188 / 188 | 188 / 188 | **188 / 188** |
 | AreionSoEM-512 | 188 / 188 | 188 / 188 | 188 / 188 | **188 / 188** |
 
-At the recommended N = 100 configuration, **8 of 10 hashes pass 188/188 and the remaining 2 show one test-failure each** (FNV-1a `Serial` at 95/100, AES-CMAC `RandomExcursions` at 56/60 — both conventional proportion-threshold fails on non-clustered histograms). Across 10 × 188 = 1 880 tests the observed 2 false positives are well below the 19 expected at α = 0.01.
+† **The 40/188 cell is a NIST SP 800-22 test-battery artefact, not an actual cryptographic failure.** NIST STS's `NonOverlappingTemplate` uniformity-of-p-values test routes each run's 20 (or 100) per-sequence p-values into one of 10 histogram bins; ITB ciphertext is so uniform that all p-values cluster into a *single* bin. Which bin is effectively random per run, and at N = 20 there is a ~10 % chance the cluster lands in bin 0 — which mechanically triggers the proportion threshold because bin 0 contains the p-values below the pass cut-off. In Run A, FNV-1a drew bin 0; in Run B, BF=32, and the N = 100 run, every hash's cluster landed in bin 1 – 9 and proportion passed. The clustering pattern itself is **universal across all 10 hashes in all 4 configurations** — the mechanism is explained in detail in the subsection below. `/dev/urandom` exhibits the same pattern on streams of this size.
+
+At the recommended N = 100 configuration, **8 of 10 hashes pass 188/188 and the remaining 2 show one test-failure each** on tests with *non-clustered* histograms (FNV-1a `Serial` at 95/100, AES-CMAC `RandomExcursions` at 56/60 — conventional near-threshold proportion fails, different phenomenon from the bin-routing artefact above). Across 10 × 188 = 1 880 tests the observed 2 false positives are well below the 19 expected at α = 0.01.
 
 ### The p-value clustering phenomenon — why N=20 was misleading
 
@@ -602,7 +605,7 @@ Triple Ouroboros uses 7 seeds (1 noiseSeed + 3 dataSeeds + 3 startSeeds); the co
 
 ### Phase 1 in Triple mode
 
-All 10 hashes pass in both fill regimes: 0 / 80 Bonferroni failures; collision ratios in [0.98, 1.03] at BF=1 and [0.978, 1.007] at BF=32. The structural profile is indistinguishable from Single-mode at the same corpus — the 8-channel packing is absorbed equally whether the container is split into 1 or 3 logical partitions.
+All 10 hashes pass in both fill regimes: 0 / 80 Bonferroni failures; collision ratios in [0.98, 1.03] at BF=1 and [0.978, 1.007] at BF=32. The structural profile is indistinguishable from Single mode at the same corpus — the 8-channel packing is absorbed equally whether the container is split into 1 or 3 logical partitions.
 
 ### Phase 3b in Triple mode (N = 100)
 
@@ -624,7 +627,7 @@ All 10 hashes pass in both fill regimes: 0 / 80 Bonferroni failures; collision r
 
 Both regimes are well under the 1 % expected false-positive rate at α = 0.01.
 
-The bin-clustering pattern is the same one analysed in Phase 3b's Single-mode discussion: every hash's 100 per-sequence p-values land in a single histogram bin, the bin is random per run, and at N = 100 a bin-0 draw no longer triggers proportion failure. In this Triple run, three hashes drew bin 0 across the two fill regimes (BLAKE2b-512 at BF=1; AES-CMAC and ChaCha20 at BF=32) — all three still pass proportion 100/100. The per-hash bin assignments differ between regimes, confirming the bin draw is random per run rather than primitive-specific.
+The bin-clustering pattern is the same one analysed in Phase 3b's Single mode discussion: every hash's 100 per-sequence p-values land in a single histogram bin, the bin is random per run, and at N = 100 a bin-0 draw no longer triggers proportion failure. In this Triple run, three hashes drew bin 0 across the two fill regimes (BLAKE2b-512 at BF=1; AES-CMAC and ChaCha20 at BF=32) — all three still pass proportion 100/100. The per-hash bin assignments differ between regimes, confirming the bin draw is random per run rather than primitive-specific.
 
 ### Attack-cost implications of Triple Ouroboros
 
@@ -638,7 +641,7 @@ Triple's 7-seed structure is strictly more defended than Single, and the `startP
 
 The `×3` for three independent `dataSeed` SAT recoveries already captures the three independent COBS-encoded payloads and their padding — both are facets of the same "each third is an independent encryption of one payload block", so counting them separately would double-count.
 
-Stacked on top of the Single-mode "10¹² – 10¹⁶ years at Partial KPA 50 %" baseline (itself carrying ±2–3 orders of magnitude uncertainty from Phase 2a's back-of-envelope nature): Triple pushes the realistic-attacker horizon into **~10¹⁹ – 10²³ years, ± ≈ 3 orders of magnitude**. Even the optimistic end of this range is past any meaningful temporal horizon.
+Stacked on top of the Single mode "10¹² – 10¹⁶ years at Partial KPA 50 %" baseline (itself carrying ±2–3 orders of magnitude uncertainty from Phase 2a's back-of-envelope nature): Triple pushes the realistic-attacker horizon into **~10¹⁹ – 10²³ years, ± ≈ 3 orders of magnitude**. Even the optimistic end of this range is past any meaningful temporal horizon.
 
 ---
 
@@ -694,7 +697,7 @@ Several test-battery outputs flagged specific primitives in one run and not anot
 
 ## Caveats and what this does NOT prove
 
-- **"No distinguisher exists"** is not claimed — only "no replicable distinguisher was detected for any of the 10 tested primitives across the 2 × 2 configuration matrix `{Single, Triple} × {BF=1, BF=32}` run in this pass (two independent BF=1 Single-mode replications, plus BF=32 Single, plus BF=1 and BF=32 Triple)". Follow-up corpora may find what this one missed.
+- **"No distinguisher exists"** is not claimed — only "no replicable distinguisher was detected for any of the 10 tested primitives across the 2 × 2 configuration matrix `{Single, Triple} × {BF=1, BF=32}` run in this pass (two independent BF=1 Single mode replications, plus BF=32 Single, plus BF=1 and BF=32 Triple)". Follow-up corpora may find what this one missed.
 - **Structural / algebraic attacks against ChainHash.** Phase 2a's cost tables are back-of-envelope structural-analysis estimates with ± 2 – 3 orders of magnitude uncertainty. **No actual Z3 (or any SMT solver) was run at any `keyBits`** in this pass. Algebraic attacks over Z[2^128] (Gröbner basis, polynomial interpolation) remain research-level and are the single largest uncertainty in the cost argument.
 - **Statistical power.** At `N = 130` samples per hash per kind (pooled), the Phase 2c mean-rank-fraction CI is ±0.050 — a ~2 % systematic bias per hash would not be detectable. Smaller per-kind sample sizes (`*_huge` at N = 3; `html_giant` at N = 8 per hash at BF=1, N = 1 at BF=32 supplementary) have correspondingly wider CIs. Conclusions are "no distinguisher at this effect size and power," not "no distinguisher of any magnitude".
 - **Phase 2b per-sample variance on `html_giant`** — the primary BF=1 run aggregates 8 samples per hash into the KL estimate, giving N = 9.6 M observations per candidate. The per-sample variance distribution is not itself reported; the aggregate floor is reported instead. At the supplementary BF=32 run the sample count is N = 1 per hash, so variance is not measurable there.
