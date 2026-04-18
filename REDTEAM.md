@@ -51,7 +51,6 @@ Attack classes:
 - **Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.
 - **Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).
 - **Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.
-- **Length leakage.** The 20-byte ciphertext header transmits `[W×H]` in cleartext, so the attacker reads the container dimensions directly (no recovery needed). Plaintext length is bounded by `(side − BarrierFill)² × 56` bits, with residual slack up to `O(side × BarrierFill)` pixels — a small informational leak standard to length-preserving encryption, not useful for decryption (the container dimensions are a fixed cost ITB pays for the barrier-based layout and do not reduce attacker work on any of the three obstacles).
 - **Adversarial machine-learning distinguishers** (CNN, deep-learning distinguisher trained on cover/stego pairs)
 - **Physical side channels** (timing, power, EM)
 - **Chosen-ciphertext attack with MAC reveal** (MAC + Reveal mode)
