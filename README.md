@@ -26,6 +26,8 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
 
+**[Empirical red-team validation](REDTEAM.md)** — 10 hash primitives × full 2×2 configuration matrix, five phases of statistical / structural distinguishers, all pass; NIST STS 188/188 across both Single and Triple Ouroboros at shipped and maximum fill regimes.
+
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
 **Zero external dependencies.** Hash functions are supplied by the user.
@@ -661,6 +663,7 @@ All three approaches use standard mathematics. The formal relationship between I
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
 - [SECURITY.md](SECURITY.md) — Security reference tables
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.)
+- [REDTEAM.md](REDTEAM.md) — Empirical red-team validation (10 hash primitives, five statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
 
 ## License
 

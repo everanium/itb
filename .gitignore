@@ -14,8 +14,10 @@
 *.swo
 *~
 
-# Internal audit (not for publication)
-HIGHSTAKE.md
+# Red team attack sandbox
+tmp/
+__pycache__/
+*.pyc
 
 # OS
 .DS_Store
