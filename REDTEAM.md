@@ -425,7 +425,7 @@ The `html_giant` row is flagged for one hash at BF=1 (FNV-1a, `bit_exceed=21`) a
 
 The finite-sample KL floor scales as `bins / N = 128 / N`, so absolute KL numbers drop linearly as samples get larger. The informative quantity is not the absolute KL, which varies by four orders of magnitude with N, but the ratio **`observed_max / theoretical_floor`**, which stays close to 1× at every data scale and for every primitive tested.
 
-Per-kind figures at BF=1, averaged across all 10 hashes (max and min across primitives within 5 %):
+Per-kind figures at BF=1, averaged across all 10 hashes (max and min across primitives within 5 %). Re-running the same analyzer at BF=32 produces the same ratio band within ±0.3× per kind — expected, since the Phase 2b accumulators read data-carrying pixels only (N = `data_pixels × 8 channels`, determined by plaintext length, independent of CSPRNG-fill padding). Numbers below therefore characterise both fill regimes.
 
 | Kind | data pixels (aggregate) | N obs / candidate | Theoretical floor `bins/N` | Observed KL max | Ratio max / floor |
 |------|------------------------:|------------------:|---------------------------:|----------------:|------------------:|
@@ -442,7 +442,7 @@ Per-kind figures at BF=1, averaged across all 10 hashes (max and min across prim
 
 Ratio stays in the narrow band 1.4×–2.6× across four orders of magnitude of N and the full spectrum of hash primitives. Under a true null where the output is genuinely uniform random, the max-over-1540-pairs of a `bins/N`-floor statistic has expected value `√(ln 1540) ≈ 2.7×` floor — the observed 1.4×–2.6× is *below* this null expectation everywhere. **Every primitive, at every data scale, produces a pairwise-KL distribution tight enough to sit at the sampling precision limit of the measurement**.
 
-Absolute KL is dictated by how many observations the test accumulates; the ratio to theoretical floor is dictated by the architecture. The ratio is **invariant** under data size change (four orders of magnitude) and under hash primitive change (linearly invertible FNV-1a sits in the same band as PRF-grade BLAKE3). This is the empirical signature of a barrier-based construction.
+Absolute KL is dictated by how many observations the test accumulates; the ratio to theoretical floor is dictated by the architecture. The ratio is **invariant** under data size change (four orders of magnitude), under hash primitive change (linearly invertible FNV-1a sits in the same band as PRF-grade BLAKE3), and under fill regime change (BF=1 and BF=32 produce the same 1.4×–2.7× band within per-cell sampling noise). This is the empirical signature of a barrier-based construction.
 
 ### KL floor probe on a single 63 MB sample (one-off, BLAKE3, BF=1)
 
