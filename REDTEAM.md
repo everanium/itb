@@ -680,12 +680,14 @@ The main Phase 2d result above is Full KPA (attacker knows every byte of both co
 
 **Attacker assumptions (must all hold).**
 
-1. **Byte-level layout known**: exact lengths of JSON structural tokens (`{`, `}`, `"`, `:`, `,`), exact lengths of every field name, exact positions where value regions start and end.
-2. **Two distinct known templates**: sample 0 and sample 1 use different record templates (identical byte layout, different field-name content). The attacker knows BOTH templates. Identical templates collapse to the same-plaintext degeneracy where rotation is unrecoverable on known channels.
+1. **Byte-level layout known**: exact lengths of structural framing tokens (JSON's `{`, `}`, `"`, `:`, `,` OR HTML's `<`, `>`, `=`, tag names), exact lengths of every field name / tag name, exact positions where value regions start and end.
+2. **Two distinct known templates**: sample 0 and sample 1 use different record templates (identical byte layout, different field-name / tag-name content). The attacker knows BOTH templates. Identical templates collapse to the same-plaintext degeneracy where rotation is unrecoverable on known channels.
 3. **Per-record varying sequence number** at a known byte offset within each record. Attacker knows the sequence-number format and the fact that records are numbered sequentially from 0.
 4. **~83 % byte-level coverage** of each plaintext is attacker-known (field names + structural + sequence numbers). Only the value regions of the last two fields (23 bytes of 137 per record ≈ 17 %) are unknown.
 
-Real-world JSON plaintexts typically satisfy none of (1)–(3) simultaneously. The record design here is engineered to maximise the bits the reconstruction can emit. The attack chain falls apart if templates differ in byte layout, if only one template is known, or if the known fraction drops significantly below 80 %.
+Assumptions 1–3 are **architectural requirements** that apply to every structured plaintext kind the helper supports (`json_structured_{25, 50, 80}` and `html_structured_{25, 50, 80}`, see [Partial KPA matrix](#partial-kpa-matrix--clean-signal--across-96-cells)) — violate any of them and single-pair Partial KPA collapses to same-plaintext degeneracy or loses Layer 2 anchor. The Python helper itself is format-agnostic and coverage-agnostic via `known_mask` sidecars; only the Go corpus generator enforces these invariants. Assumption 4 is **configuration-specific** to this Run B cell (4 MB JSON at `json_structured_80`); the 50 %- and 25 %-coverage variants described in the matrix section trade off fewer attacker-known bytes (down to ~25 %) for longer records and proportionally smaller reconstructed streams.
+
+Real-world JSON or HTML plaintexts typically satisfy none of (1)–(3) simultaneously. The record design here is engineered to maximise the bits the reconstruction can emit. The attack chain falls apart if templates differ in byte layout, if only one template is known, or if the known fraction drops significantly below 25 % (the lowest configured kind).
 
 **Test configuration.**
 
