@@ -174,10 +174,14 @@ python3 scripts/redteam/phase2_theory/startpixel_multisample.py
 # 5. Phase 3a — rotation-invariant edge case (~30 s)
 python3 scripts/redteam/phase3_deep/rotation_invariant.py
 
-# 6. Prepare streams for NIST STS
+# 6. Prepare streams for NIST STS (also consumed by step 7 sub-tests)
 python3 scripts/redteam/phase3_deep/prepare_streams.py
 
-# 7. Phase 3b — NIST STS parallel runner (~5 min at N=100, ~1 min at N=20)
+# 7. Phase 1 sub-tests — FFT + Markov (mode-agnostic, Single + Triple; reads tmp/streams/)
+python3 scripts/redteam/phase1_sanity/fft_per_channel.py
+python3 scripts/redteam/phase1_sanity/markov.py
+
+# 8. Phase 3b — NIST STS parallel runner (~5 min at N=100, ~1 min at N=20)
 ITB_NIST_STREAMS=100 python3 scripts/redteam/phase3_deep/nist_sts_runner.py
 ```
 
