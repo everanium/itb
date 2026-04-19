@@ -137,6 +137,53 @@ Nonce reuse is the single edge case where the barrier can leak local information
 
 → For the 96-cell empirical matrix quantifying Clean Signal % under each (format, coverage, plaintext size, primitive) combination, and for the full 9-effect architectural analysis of why the demasker's yield is always below attacker-known byte coverage, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
 
+### 8.1 Why binary formats defeat Partial-KPA demasking entirely
+
+The condition list above makes the attack conditional on "attacker knows plaintext format at byte-level precision over ≳ 90 % of the plaintext". The idealised JSON / HTML corpora used in the [REDTEAM Phase 2d matrix](REDTEAM.md#phase-2d--nonce-reuse) DO satisfy this — but only because they are artificially engineered to. Real-world binary formats (ZIP, PDF, MP4, MP3, SQLite database, any container-structured file) do not satisfy it, and on them the demasker extracts nothing meaningful.
+
+**Concrete ZIP example.** Two ZIP archives encrypted under same seeds + same nonce, 1000 files each, filenames `1.txt` … `1000.txt`, contents differ between the two archives.
+
+| Attacker knows (100 %) | Attacker does NOT know |
+|---|---|
+| `PK\x03\x04` (4 bytes) at offset 0 (first Local File Header) | Position of every subsequent LFH (depends on prior compressed sizes + filename lengths) |
+| ZIP structural layout from the public spec | Filename length of file N (varies 5 – 8 bytes for `1.txt` – `1000.txt`) |
+| `PK\x01\x02` signature format (Central Directory entry) | Position of every CD entry — offset is a function of every prior file's size and name |
+| `PK\x05\x06` EOCD signature format | Position of EOCD; CRC32 per file; compressed + uncompressed size per file; entire file content |
+
+Known bytes with **fixed positions** = 4 (the first LFH signature at offset 0). Attacker-known byte coverage = 4 / ~1 MB ≈ **0.003 %** — three orders of magnitude below the ~90 % the attack requires.
+
+Worse, those 4 known bytes are **identical** in both archives (same ZIP signature in both plaintexts). On the 4 known bytes `d1 ⊕ d2 = 0` → same-plaintext degeneracy → rotation unrecoverable → Layer 2 cannot anchor. Demasker bounces out before anything productive runs.
+
+**Could the attacker brute-force signature offsets?** In principle — try `PK\x01\x02` at offset X for every X, see whether the demasker converges. In practice the offset-hypothesis space for a 1000-file archive is `~10⁶ – 10⁷`, demasker validation is binary (match / no-match with no gradient), and each demask attempt is ~30 seconds. Years of compute for a guess that may not even be feasible given the DEFLATE-compression entropy of the content between signatures.
+
+**This pattern applies to every binary container format.**
+
+| Format | Why Partial KPA breaks on it |
+|---|---|
+| **ZIP / JAR / APK / DOCX** | Variable-offset signatures wrapped around DEFLATE-compressed content |
+| **PDF** | xref tables at variable offsets; object streams with unpredictable compression |
+| **MP4 / QuickTime / HEIF** | Atom/box structure with variable-length data payloads |
+| **MP3 / AAC / FLAC** | Frame-level signatures but variable frame sizes + audio-codec entropy |
+| **SQLite database** | Page-based structure with variable B-tree content |
+| **PNG / JPEG / WebP / AVIF** | Chunk-based with variable-size data payloads |
+| **TAR / GZIP / XZ / ZSTD** | Stream-based compression hides all internal structure |
+
+All share the same pattern: **tiny known-signature islands in a sea of attacker-unpredictable, often compression-entropy-maximised content at variable offsets**. None of them offer the attacker the fixed-position byte-level predictability that the demasker needs.
+
+**The formal rule.**
+
+Partial-KPA demasking on ITB is feasible only on plaintext formats that simultaneously exhibit:
+
+1. **Fixed-position** attacker-predictable structural bytes (not variable-offset signatures).
+2. **Varying content between the two colliding messages** at those known positions (not same-signature-both-messages).
+3. **Byte-level position precision** known to the attacker for ≳ 90 % of plaintext bytes (not "we know it's a ZIP").
+
+Idealised structured plaintexts such as the `json_structured_{25,50,80}` / `html_structured_{25,50,80}` corpora in the [REDTEAM Phase 2d matrix](REDTEAM.md#phase-2d--nonce-reuse) satisfy all three simultaneously — because they are artificially engineered to maximise the signal the demasker can extract. The REDTEAM writeup is explicit that these corpora trade realism for measurable empirical signal; they do not represent a realistic threat model.
+
+**On real binary formats the demasker is useless.** Even a structured-format attacker-knowledge claim like "we know all filenames and sizes a priori" rarely extends to byte-level coverage of content — and content is where most of any binary file's bytes live.
+
+→ Back-link to [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse) for the empirical stream-size + Clean-Signal data that underlies the "tiny-signal-on-idealised-corpora, zero-signal-on-realistic-corpora" framing.
+
 ## 9. CCA: Reveals Only Noise, Not Data
 
 Under CCA (bit-flip with MAC reveal), the attacker learns noise positions — which bit in each channel is noise (3 bits per pixel from noiseSeed). But due to triple-seed isolation:
