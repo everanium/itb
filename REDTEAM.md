@@ -986,7 +986,7 @@ The Phase 2d findings are conditional on "attacker got there somehow". At a 512-
 ### Scope — what Phase 2d does NOT test (and why)
 
 - **All-10-primitives Full-KPA documentation run**: not performed. Demasking is primitive-independent at the recovery step (observation 1 above), so adding BLAKE2s, BLAKE2b, SipHash, etc., would produce six near-identical tables. The Full-KPA validation table in the main Phase 2d writeup already covers four widths (FNV-1a 128, MD5 128, BLAKE3 256, BLAKE2b 512) confirming the demasker formula works across all ChainHash widths.
-- **N > 2 multi-pair runs**: not performed. N = 2 is the minimum to produce any nonce-reuse XOR; larger N would enable multi-pair Layer 1 disambiguation (the architectural mitigation path for effect 8 above), but getting N ≥ 4 same-nonce collisions requires an even more invasive downgrade scenario. The theoretical path is documented; empirical verification is deferred.
+- **N > 2 multi-pair runs**: not performed. N = 2 is the minimum to produce any nonce-reuse XOR; larger N would enable multi-pair Layer 1 disambiguation (the architectural mitigation path for effect 8 above), but getting N ≥ 4 same-nonce collisions requires an even more invasive downgrade scenario. The theoretical path is documented.
 - **Same-plaintext + same-nonce mode (`d_1 = d_2`)**: not performed. With identical plaintexts the entire XOR analysis collapses — `d_xor = 0` across ALL channels (not just structural ones), rotation is fully unrecoverable, and the Layer 1 formula reduces to `extract7(xor_byte, noisePos) == 0 for all 8 channels`. The "attack" is information-theoretically equivalent to observing two independent encryptions of the same plaintext — it reveals exactly zero about the seeds. Documented as a sensitivity-test negative in [Sensitivity / nonce-mismatch control test](#sensitivity--nonce-mismatch-control-test) below; not worth running empirically beyond that.
 
 ### Reproducing the matrix
@@ -1037,10 +1037,13 @@ Not a single candidate `(noisePos, rotation)` passed the all-8-channel constrain
 
 **What this validates.** The PRF-separation signal reported in the main Phase 2d table (BLAKE3 188/188 vs FNV-1a 182/188 on reconstructed streams) is caused by the nonce-reuse condition, NOT by some implementation shortcut in the demasker that would succeed on arbitrary ciphertext pairs. A demasker that fakes positive results would also "succeed" on the control corpus; this one doesn't. The control result rules out that class of false-positive.
 
-Reproduction commands:
+**Reproducing the sensitivity test** (the control corpus above — demonstrates the demasker refuses to "succeed" on non-nonce-reuse data; if it DID succeed here, the entire ITB nonce-reuse threat-model argument would be moot):
 
 ```bash
-# Generate control corpus (same plaintext, different nonces) for both hashes:
+# Generate control corpus (same plaintext, different nonces) for both hashes.
+# The corpus is a deliberate mis-framing of the attack: shared seeds but
+# DIFFERENT nonces per ciphertext — i.e. NO nonce reuse. The demasker must
+# detect this and refuse to emit a reconstructed stream.
 for h in fnv1a blake3; do
     ITB_NONCE_REUSE_HASH=$h \
     ITB_NONCE_REUSE_N=2 \
@@ -1050,12 +1053,17 @@ for h in fnv1a blake3; do
     go test -run TestRedTeamGenerateNonceReuse -v -timeout 1m
 done
 
-# Default refusal (expect exit code 2):
+# Invocation 1 — default refusal. Expected: exit code 2 with an ERROR
+# message about mismatched nonces, before any Layer 1/2 work runs.
 python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
     --cell-dir tmp/attack/nonce_reuse/control/fnv1a/BF1/N2/nonce_mismatch_same \
     --pair 0000 0001 --mode known-plaintext --brute-force-startpixel
 
-# Forced pipeline (expect 0/18766 exact, 0 bytes emitted):
+# Invocation 2 — force the pipeline past the nonce-equality guard with
+# --skip-nonce-check. Expected: Layer 2 finds no valid startPixel, Layer 1
+# 0/18 766 exact recoveries, reconstruction emits 0 bytes. Confirms that
+# even when the guard is bypassed, the underlying constraint mathematics
+# cannot produce usable output from non-nonce-reuse data.
 python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
     --cell-dir tmp/attack/nonce_reuse/control/fnv1a/BF1/N2/nonce_mismatch_same \
     --pair 0000 0001 --mode known-plaintext --brute-force-startpixel \
@@ -1063,26 +1071,6 @@ python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
     --emit-datahash tmp/attack/nonce_reuse/reconstructed/fnv1a_control_nonce_mismatch.datahash.bin
 ```
 
-### Reproducing the result
-
-```bash
-# 1. Run the 2-cell automated matrix (BLAKE3 + FNV-1a, 2 MB, N=2, known, BF=1).
-python3 scripts/redteam/run_attack_nonce_reuse.py \
-    --plaintext-size 2097152 \
-    --hashes blake3,fnv1a \
-    --collision-counts 2 \
-    --attacker-modes known \
-    --validate \
-    --cleanup-ciphertexts-after-emission
-
-# 2. Feed the reconstructed streams to NIST STS at N=16 × 1 Mbit.
-python3 scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py \
-    --stream tmp/attack/nonce_reuse/reconstructed/blake3_BF1_N2_known.datahash.bin \
-    --stream tmp/attack/nonce_reuse/reconstructed/fnv1a_BF1_N2_known.datahash.bin \
-    --n-streams 16
-```
-
-Expected wall-clock: ~3 minutes for the matrix run + ~1 minute for the two NIST STS invocations. Deterministic RNG seeds in the Go test (plaintext seed 424242 + nonce seed 0xA17B1CE) produce byte-identical corpora across runs, so a future researcher can reproduce the exact streams and feed them to their own statistical-test batteries.
 
 ### Scope of this phase — known limitations
 
