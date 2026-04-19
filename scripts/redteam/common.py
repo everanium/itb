@@ -22,6 +22,11 @@ HASHES = [
     ("blake3",    "BLAKE3",         256),
     ("blake2b",   "BLAKE2b-512",    512),
     ("areion512", "AreionSoEM512",  512),
+    # Test-only below-FNV-1a primitive for seed-inversion demo (Phase 2a
+    # extension in REDTEAM.md). GF(2)-linear throughout — ChainHash<CRC128>
+    # collapses to a Gaussian-elimination-solvable system. Never used in
+    # production ITB.
+    ("crc128",    "CRC128-test",    128),
 ]
 
 HASH_DIRNAMES = [h[0] for h in HASHES]

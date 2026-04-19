@@ -80,6 +80,10 @@ SUPPORTED_HASHES = [
     "chacha20", "areion256", "blake2s", "blake3",
     # 512-bit family
     "blake2b", "areion512",
+    # Test-only GF(2)-linear primitive — deliberately below FNV-1a for the
+    # seed-inversion experiment (Phase 2a extension). NEVER used in
+    # production ITB; lives in redteam_nonce_reuse_test.go only.
+    "crc128",
 ]
 ALLOWED_N = [2, 8, 32, 128]
 ALLOWED_BF = [1, 32]
@@ -277,6 +281,23 @@ def parse_args() -> argparse.Namespace:
              "crypto-analyst can diff recovered vs original directly. Incompatible "
              "with --cleanup-ciphertexts-after-emission (needs plaintexts).",
     )
+    p.add_argument(
+        "--seed-invert",
+        action="store_true",
+        help="After demasking, run seed_invert_crc128.py on each CRC128 cell — "
+             "majority-vote compound-key recovery with brute-force period-shift "
+             "search and lab-ground-truth shadow-K filtering. Only meaningful "
+             "for --hashes crc128 (other primitives defeat GF(2) linearisation). "
+             "Phase 2a extension.",
+    )
+    p.add_argument(
+        "--seed-invert-brute-force-shift",
+        type=int,
+        default=200000,
+        help="Max pixel_shift range for --seed-invert's brute-force period-shift "
+             "search (default: 200000 covers 1 MB total_pixels comfortably). "
+             "Set to 0 to disable brute force and assume shift=0.",
+    )
     return p.parse_args()
 
 
@@ -409,6 +430,64 @@ def demask_cell(
 # ----------------------------------------------------------------------------
 # Per-cell cleanup (whitelist-gated)
 # ----------------------------------------------------------------------------
+
+def seed_invert_cell(
+    cell_dir: Path,
+    datahash_stream: Path,
+    log_file: Path,
+    brute_force_shift: int = 200000,
+) -> Tuple[bool, float]:
+    """Run seed_invert_crc128.py on a demasked stream from a ChainHash<CRC128>
+    cell. Solver recovers the 64-bit compound-key image of the 1024-bit
+    dataSeed (56 bits observable via channelXOR), brute-forces any period-
+    shift introduced by Partial-KPA Layer 2, and lab-filters the shadow-K
+    CRC64 aliases against seed.truth.json.
+    Returns (ok, elapsed)."""
+    cmd = [
+        sys.executable,
+        str(PROJ / "scripts/redteam/phase2_theory/seed_invert_crc128.py"),
+        "--cell-dir", str(cell_dir),
+        "--datahash-stream", str(datahash_stream),
+    ]
+    if brute_force_shift > 0:
+        cmd.extend(["--brute-force-shift", str(brute_force_shift)])
+    t0 = time.time()
+    with open(log_file, "w") as f:
+        proc = subprocess.run(cmd, cwd=PROJ, stdout=f, stderr=subprocess.STDOUT)
+    elapsed = time.time() - t0
+    return proc.returncode == 0, elapsed
+
+
+def parse_seed_invert_log(log_path: Path) -> dict:
+    """Extract key statistics from seed_invert_crc128.py stdout log — counts
+    of brute-force candidates, correct matches, shadow-K, chosen shift,
+    prediction accuracy. Returns a dict of fields; missing = solver exited
+    before that phase ran."""
+    out: dict = {}
+    if not log_path.exists():
+        return out
+    text = log_path.read_text()
+    import re
+    m = re.search(r"found (\d+) candidate shift\(s\)", text)
+    if m:
+        out["brute_candidates"] = int(m.group(1))
+    m = re.search(r"CORRECT dataSeed match\s*:\s*(\d+)\s+\(shift\(s\):\s*\[([^\]]*)\]\)", text)
+    if m:
+        out["n_correct"] = int(m.group(1))
+        shifts = [int(s.strip()) for s in m.group(2).split(",") if s.strip()]
+        out["correct_shifts"] = shifts
+    m = re.search(r"shadow / wrong K\s*:\s*(\d+)", text)
+    if m:
+        out["n_shadow"] = int(m.group(1))
+    m = re.search(r"chosen_shift\s*:\s*(-?\d+)", text)
+    if m:
+        out["chosen_shift"] = int(m.group(1))
+    m = re.search(r"channels matching\s*:\s*(\d+)\s*/\s*(\d+)", text)
+    if m:
+        out["channels_matched"] = int(m.group(1))
+        out["channels_total"] = int(m.group(2))
+    return out
+
 
 def classical_decrypt_cell(
     cell_dir: Path,
@@ -576,7 +655,9 @@ def main() -> int:
             )
             entry["gen_ok"] = ok_gen
             entry["gen_elapsed_s"] = round(t_gen, 2)
-            total_steps_label = "4" if args.classical_decrypt else "3"
+            # Step label reflects how many post-demask steps are enabled.
+            n_extra_steps = int(args.classical_decrypt) + int(args.seed_invert and h == "crc128")
+            total_steps_label = str(3 + n_extra_steps)
             print(f"  [1/{total_steps_label}] generate corpus : {'OK' if ok_gen else 'FAIL'}  "
                   f"({t_gen:.2f}s; log {gen_log.relative_to(run_dir)})")
             if not ok_gen:
@@ -647,7 +728,11 @@ def main() -> int:
                     summary_f.write(json.dumps(entry) + "\n")
                     return 4
 
-            # Step 2.5: optional classical decrypt (must run BEFORE cleanup
+            # Post-demask step counter: starts at 3 (position after demask)
+            # and advances for each optional stage that runs.
+            step_after_demask = 3
+
+            # Step 2.5a: optional classical decrypt (must run BEFORE cleanup
             # because classical_decrypt.py reads plaintext + ciphertext files).
             if args.classical_decrypt and ok_demask:
                 classical_out = CLASSICAL_DECRYPT_DIR / args.results_tag / f"{h}_BF{bf}_N{n}_{name_tag}"
@@ -659,14 +744,54 @@ def main() -> int:
                 entry["classical_decrypt_ok"] = ok_cd
                 entry["classical_decrypt_elapsed_s"] = round(t_cd, 2)
                 entry["classical_decrypt_dir"] = str(classical_out.relative_to(PROJ))
-                print(f"  [3/4] classical       : {'OK' if ok_cd else 'FAIL'}  "
+                print(f"  [{step_after_demask}/{total_steps_label}] classical       : "
+                      f"{'OK' if ok_cd else 'FAIL'}  "
                       f"({t_cd:.2f}s; log {classical_log.relative_to(run_dir)})")
                 if ok_cd:
                     print(f"        artefacts       : {classical_out.relative_to(PROJ)}/")
                     print(f"        diff recovered vs groundtruth plaintexts to verify "
                           f"classical keystream-reuse decryption works independently of PRF grade.")
+                step_after_demask += 1
             elif args.classical_decrypt:
-                print(f"  [3/4] classical       : SKIP (demask failed)")
+                print(f"  [{step_after_demask}/{total_steps_label}] classical       : SKIP (demask failed)")
+                step_after_demask += 1
+
+            # Step 2.5b: optional compound-key seed inversion (CRC128 only).
+            # Phase 2a extension — demonstrates that replacing FNV-1a's Z/2^64
+            # multiply with a GF(2)-linear CRC collapses ChainHash<CRC128> to
+            # 64-bit effective security. Skipped for any other primitive
+            # because the Python solver mirrors Go's CRC64 bit-for-bit and
+            # would produce garbage against a non-CRC primitive.
+            if args.seed_invert and h == "crc128" and ok_demask:
+                seed_invert_log = run_dir / f"cell_{idx:03d}_{h}_BF{bf}_N{n}_{name_tag}.seed_invert.log"
+                ok_si, t_si = seed_invert_cell(
+                    cell_dir, datahash_out, seed_invert_log,
+                    brute_force_shift=args.seed_invert_brute_force_shift,
+                )
+                entry["seed_invert_ok"] = ok_si
+                entry["seed_invert_elapsed_s"] = round(t_si, 2)
+                # Parse the solver's stdout log for attacker-visible and lab-
+                # only statistics (brute-force candidate count, correct vs
+                # shadow-K split, prediction accuracy).
+                si_stats = parse_seed_invert_log(seed_invert_log)
+                entry.update({f"seed_invert_{k}": v for k, v in si_stats.items()})
+                print(f"  [{step_after_demask}/{total_steps_label}] seed-invert     : "
+                      f"{'OK' if ok_si else 'FAIL'}  "
+                      f"({t_si:.2f}s; log {seed_invert_log.relative_to(run_dir)})")
+                if si_stats:
+                    cand = si_stats.get("brute_candidates", "?")
+                    cor = si_stats.get("n_correct", "?")
+                    sha = si_stats.get("n_shadow", "?")
+                    chm = si_stats.get("channels_matched", "?")
+                    cht = si_stats.get("channels_total", "?")
+                    print(f"        K candidates    : {cand} (correct={cor}, shadow={sha})")
+                    print(f"        prediction test : {chm}/{cht} channels matched on held-out pixels")
+                step_after_demask += 1
+            elif args.seed_invert and h == "crc128":
+                print(f"  [{step_after_demask}/{total_steps_label}] seed-invert     : SKIP (demask failed)")
+                step_after_demask += 1
+            elif args.seed_invert:
+                print(f"  [-/-] seed-invert     : SKIP (hash {h!r} is not crc128)")
 
             # Final step: optional ciphertext cleanup.
             cleanup_label = f"[{total_steps_label}/{total_steps_label}]"
