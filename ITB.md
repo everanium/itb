@@ -117,10 +117,11 @@ Nonce reuse is the single edge case where the barrier can leak local information
 
 **All five conditions held:**
 
-| Primitive | What the attacker walks away with |
+| Primitive class | What the attacker walks away with |
 |---|---|
-| PRF (BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256/512, BLAKE2s, BLAKE2b-512, MD5 in PRF-output mode) | Plaintexts of the 2 – 3 colliding messages only. No seeds, no configuration map, nothing reusable on future traffic. |
-| Invertible (FNV-1a) | Same plaintexts + a reconstructed `dataSeed.ChainHash(pixel, nonce)` output stream — usable as ammunition for a SAT solver. Seed recovery still requires **three separate research-scale SAT campaigns**, one per seed (dataSeed, startSeed, noiseSeed). Each campaign consumes many independent nonce-reuse sessions (each session requires forcing a fresh birthday-bound nonce collision). Not push-button: `startSeed` yields ONE observation per session; `noiseSeed` requires a separate `noisePos` emit pipeline that the demasker does not even ship by default. |
+| PRF-grade (BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256/512, BLAKE2s, BLAKE2b-512) | Plaintexts of the 2 – 3 colliding messages only. No seeds, no configuration map, nothing reusable on future traffic. |
+| Broken but not trivially invertible (MD5 — collisions ≈ 2⁶⁴, preimage ≈ 2¹²³) | Same — MD5's collisional weakness does not translate into seed recovery under the ChainHash XOR wrap; preimage-hardness remains research-scale, so the outcome tracks the PRF-grade row in practice at this attack surface. |
+| Invertible in practice (FNV-1a) | Same plaintexts + a reconstructed `dataSeed.ChainHash(pixel, nonce)` output stream — usable as ammunition for a SAT solver. Seed recovery still requires **three separate research-scale SAT campaigns**, one per seed (dataSeed, startSeed, noiseSeed). Each campaign consumes many independent nonce-reuse sessions (each session requires forcing a fresh birthday-bound nonce collision). Not push-button: `startSeed` yields ONE observation per session; `noiseSeed` requires a separate `noisePos` emit pipeline that the demasker does not even ship by default. |
 
 **Any one condition violated:**
 
