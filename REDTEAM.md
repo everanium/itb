@@ -805,6 +805,8 @@ The orchestrator exposes six canonical structured kinds, covering two formats (J
 
 All kinds produce two record-template variants (chosen by sample index) with identical byte-level layout but different structural content + a per-record varying attacker-known sequence number — the combination required for Layer 1 rotation recovery and Layer 2 startPixel anchoring.
 
+> **These six kinds are artificially engineered** for maximum Partial-KPA signal. Real-world binary formats (ZIP, PDF, MP4, MP3, SQLite, PNG, TAR, …) have tiny fixed-position signature islands at variable offsets surrounded by compression-entropy-maximised content, and the demasker extracts ~0 % signal from them. For a worked ZIP example (0.003 % fixed-position coverage, same-plaintext degeneracy on the shared `PK\x03\x04` signature, why brute-forcing signature offsets is infeasible) and the full list of format classes that defeat the attack, see [ITB.md § 8.1 Why binary formats defeat Partial-KPA demasking entirely](ITB.md#81-why-binary-formats-defeat-partial-kpa-demasking-entirely).
+
 **Demasker parameters exposed as CLI (public-info attacker choices).**
 
 Two Layer 2 / Layer 1 parameters legitimately depend on what a protocol-aware attacker can see from public information (ciphertext size + plaintext format assumption):
