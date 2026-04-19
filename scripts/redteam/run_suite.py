@@ -190,9 +190,11 @@ def main() -> int:
     results_dir = TMP / "results" / f"{args.mode}_bf{bf}"
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Phase count in the step labels changes with mode: single runs 7 steps,
-    # triple runs 4 (corpus + Phase 1 + prepare_streams + Phase 3b).
-    total_steps = 4 if triple else 7
+    # Phase count in the step labels changes with mode: single runs 8 steps,
+    # triple runs 5 (corpus + Phase 1 + prepare_streams + Phase 1 sub-tests
+    # FFT + Markov + Phase 3b). The FFT / Markov sub-tests are mode-agnostic
+    # byte-level statistics so they run in both modes.
+    total_steps = 5 if triple else 8
 
     print(f"\n{'#' * 70}")
     print(f"#  ITB RED-TEAM SUITE — mode={args.mode}  BarrierFill={bf}  "
@@ -285,13 +287,31 @@ def main() -> int:
         return 1
     step += 1
 
+    # Phase 1 sub-tests — FFT spectral flatness + Markov transition matrix.
+    # Both are byte-level statistics on the concatenated stream and therefore
+    # mode-agnostic (Single and Triple indistinguishable at this level).
+    # Run in parallel (each is single-process, <30 s wall-clock).
+    run_step_parallel(
+        f"{step}/{total_steps}  Phase 1 sub-tests — FFT + Markov (parallel)",
+        [
+            ("FFT per-channel",
+             ["python3", "-u", "scripts/redteam/phase1_sanity/fft_per_channel.py"],
+             results_dir / "07_phase1_fft.log"),
+            ("Markov adj-byte + adj-channel",
+             ["python3", "-u", "scripts/redteam/phase1_sanity/markov.py"],
+             results_dir / "07_phase1_markov.log"),
+        ],
+        tail_lines=15,
+    )
+    step += 1
+
     # Phase 3b NIST STS — stream level, mode-agnostic
     nist_env = os.environ.copy()
     nist_env["ITB_NIST_STREAMS"] = str(args.nist_streams)
     run_step(
         f"{step}/{total_steps}  Phase 3b — NIST STS (10 parallel nist-sts, {args.nist_streams} × 1 Mbit each)",
         ["python3", "-u", "scripts/redteam/phase3_deep/nist_sts_runner.py"],
-        results_dir / "07_phase3b.log",
+        results_dir / "08_phase3b.log",
         env=nist_env,
         tail_lines=30,
     )
