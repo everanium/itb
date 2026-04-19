@@ -209,6 +209,8 @@ python3 scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py \
 
 The orchestrator accepts `--hashes all` for the full 10-primitive matrix and `--barrier-fill both` for BF=1 and BF=32 coverage; see `--help` for the complete CLI. All deletion operations are routed through a whitelist-gated `safe_rmtree` helper that refuses any path outside `tmp/attack/nonce_reuse/{corpus, reconstructed}`; the results subdirectory is never touched by the orchestrator. Deterministic RNG seeds (plaintext seed 424242, nonce seed 0xA17B1CE) produce byte-identical corpora across runs — a future researcher can reproduce the exact reconstructed streams and feed them to their own statistical-test batteries.
 
+For the classical keystream-reuse plaintext-recovery pipeline (adds `--classical-decrypt` post-demask step, supports `--plaintext-kind random_masked_{25,50,80}` + `json_structured_{25,50,80}` + `html_structured_{25,50,80}` for Partial KPA variants, emits `recovered_plaintext_P{1,2}.bin` + `groundtruth_plaintext_P{1,2}.bin` for diff verification), see [Phase 2d — Classical keystream-reuse decryption](#classical-keystream-reuse-decryption--empirical-plaintext-recovery-from-config-map).
+
 **One-off 63 MB KL floor probe.** A standalone test pair encrypts one plaintext at the ITB data-size limit and runs a chunked single-threaded Phase 2b on it — used to measure how close per-pixel KL gets to its theoretical floor at maximum sample size per hash. Pick any of the 10 hash dirnames (`fnv1a`, `md5`, `aescmac`, `siphash24`, `chacha20`, `areion256`, `blake2s`, `blake3`, `blake2b`, `areion512`):
 
 ```bash
@@ -699,6 +701,223 @@ What remains after peeling is exactly the "Full KPA + `startPixel` known" entry 
 | Seeds remain secret under PRF non-invertibility | ✅ Confirmed empirically via BLAKE3 188/188 NIST STS on reconstructed stream: no exploitable structure in the remaining single-layer defence. SAT-based seed recovery has no statistical leverage. |
 | Seed retention **requires** PRF non-invertibility | ✅ Empirically demonstrated via the BLAKE3-vs-FNV-1a contrast: same attack chain, same stream size, same NIST STS configuration, opposite outcomes. Under FNV-1a the reconstructed stream flags 6 tests (including FFT 0/16 — spectral structure on every bit-stream) showing residual linear-order bias that a SAT solver could leverage for seed recovery. |
 | No key rotation required after a nonce collision | ⚠ Confirmed **only for PRF-grade primitives**. Under FNV-1a the nonce-reuse event plausibly does not merely leak the 2 – 3 colliding messages — it produces a detectable-bias stream whose hash-output structure a motivated attacker (lab-scale compute) could invert to recover seeds. The [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) no-rotation claim implicitly depends on the PRF requirement stated elsewhere in the docs; this probe makes that dependency empirically visible. |
+
+### Classical keystream-reuse decryption — empirical plaintext recovery from config map
+
+The NIST STS result above (PRF vs FNV-1a split) is about **seed recovery via SAT** on the reconstructed hash-output stream. Plaintext recovery of the 2 – 3 colliding messages follows a separate, simpler path: the per-pixel config map `(noisePos, rotation, channelXOR)` recovered by Layer 1 + Layer 2 **is** the classical keystream-equivalent for this single `(seeds, nonce)`. Applying it directly to both colliding ciphertexts decrypts them in the standard keystream-reuse sense — no SAT required, works **identically under PRF and non-PRF primitives**.
+
+Empirical demonstration at 64 KB plaintext, `BarrierFill = 1`, `N = 2` collisions, Full KPA on both plaintexts fed into Layer 1:
+
+| Corpus kind | Hash | Cobs-form byte match | Gap markers (in 65 675 bytes) | Visual plaintext recovery |
+|-------------|------|---------------------:|------------------------------:|---------------------------|
+| Random (attacker-modes `known`) | FNV-1a | **99.17 %** (65 128 / 65 675) | ~546 bytes (0.83 %) | 100 % raw match after gap-patch from ground truth |
+| Random (attacker-modes `known`) | BLAKE3 | **99.19 %** (65 142 / 65 675) | ~532 bytes (0.81 %) | 100 % raw match after gap-patch from ground truth |
+| `json_structured` (attacker-modes `partial`) | FNV-1a | **95.50 %** (62 720 / 65 672) | 75 – 85 markers | JSON structure + field names + value content fully legible; ~0.12 % of output is 0xFF gap markers localized around structurally-shared bytes |
+| `json_structured` (attacker-modes `partial`) | BLAKE3 | **95.50 %** (62 720 / 65 672) | 75 – 117 markers | Identical to FNV-1a row — PRF does not defend against config-map keystream reuse |
+| `html_structured_80` (attacker-modes `partial`) | FNV-1a | **98.40 %** (64 625 / 65 674) | 32 – 44 markers | HTML structure + tag names + attribute values fully legible; even fewer gaps than JSON due to HTML's different shared-byte distribution |
+| `html_structured_80` (attacker-modes `partial`) | BLAKE3 | **98.44 %** (64 652 / 65 674) | 36 – 51 markers | Identical to FNV-1a row |
+
+Key observations: (a) PRF-grade BLAKE3 and invertible FNV-1a give **numerically identical** plaintext-recovery outcomes — the barrier to classical keystream reuse is architectural, not primitive-based; (b) gaps correspond to single-pair Layer 1 ambiguity on structurally-shared bytes where `d_xor = 0`, close to 0 with multi-pair combining at `N ≥ 4`; (c) the raw COBS-decoded plaintext is visually almost identical to the original — field names, tag names, value content, record boundaries all intact.
+
+Example — first ~220 bytes of recovered plaintext vs original, BLAKE3 on `html_structured_80`:
+
+```
+recovered : <identifier-of-record-in-system>00000</identifier-of-record-in-system><the-timestamp-of-the-event-iso>uUPmRM379bKXGdBT403XmMweN</the-timestamp-of-the-event-iso><the-encrypted-opaque-payload01>...
+groundtruth: <identifier-of-record-in-system>00000</identifier-of-record-in-system><the-timestamp-of-the-event-iso>uUPmRM379bKXGdBT403XmMweN</the-timestamp-of-the-event-iso><the-encrypted-opaque-payload01>...
+```
+
+Full-KPA classical-decrypt pipeline (corpus + demask + reconstruction + classical XOR + COBS-decode → raw plaintext files):
+
+```bash
+# Random Full KPA, FNV-1a + BLAKE3, with classical-decrypt post-demask step:
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 65536 \
+    --hashes fnv1a,blake3 \
+    --barrier-fill 1 \
+    --collision-counts 2 \
+    --attacker-modes known \
+    --validate \
+    --classical-decrypt \
+    --results-tag full_kpa_random_classical
+
+# JSON structured variant (partial mode used only to get JSON plaintext;
+# classical_decrypt still treats attacker-known .plain as Full KPA input):
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 65536 \
+    --hashes fnv1a,blake3 \
+    --barrier-fill 1 \
+    --collision-counts 2 \
+    --attacker-modes partial \
+    --plaintext-kind json_structured \
+    --validate \
+    --classical-decrypt \
+    --results-tag full_kpa_json_classical
+
+# HTML structured variant (82 % coverage, 250-byte records):
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 65536 \
+    --hashes fnv1a,blake3 \
+    --barrier-fill 1 \
+    --collision-counts 2 \
+    --attacker-modes partial \
+    --plaintext-kind html_structured_80 \
+    --validate \
+    --classical-decrypt \
+    --results-tag full_kpa_html_classical
+```
+
+Each run emits per-cell recovered-plaintext artefacts under
+`tmp/attack/nonce_reuse/classical_decrypt/<results-tag>/<hash>_BF1_N2_<mode>/`:
+`recovered_cobs_P{1,2}.bin` (COBS-encoded stream after keystream XOR;
+compare byte-for-byte to what was packed into pixels) and
+`recovered_plaintext_P{1,2}.bin` + `groundtruth_plaintext_P{1,2}.bin`
+(raw plaintext bytes, 0xFF at gap positions, for direct diff).
+
+> **Period-shift catastrophe caveat.** On structured `partial` kinds
+> (JSON / HTML) the `d_xor` pattern is periodic at record-length
+> granularity; Layer 2's `startPixel` brute force can converge on a
+> period-shifted false `startPixel` if probe depth is too small
+> (effect 3 in the [Partial KPA matrix](#nine-architectural-effects-visible-in-this-matrix)
+> — drops Clean Signal from ~95 % to ~20 %). The orchestrator above
+> auto-tunes `--n-probe` per kind: `json_structured_*` → 57 probe pixels
+> (3 × 19-pixel record period), `html_structured_*` → 105 pixels
+> (3 × 35-pixel record period). `random` / `known` attacker mode gets
+> `--n-probe 10` (no periodicity so small probe suffices). If invoking
+> `classical_decrypt.py` directly on a partial-kind cell, pass
+> `--n-probe 60` (JSON) or `--n-probe 105` (HTML) explicitly to avoid the
+> period-shift collapse. The orchestrator path shown above handles this
+> automatically.
+
+Verify recovery by diffing against ground truth — the two plaintexts are
+identical at the byte level except at the small localised gap positions:
+
+```bash
+TAG=full_kpa_html_classical
+CELL=blake3_BF1_N2_partial_html_structured_80
+DIR=tmp/attack/nonce_reuse/classical_decrypt/$TAG/$CELL
+
+# Hex side-by-side of first 512 bytes
+diff <(xxd $DIR/groundtruth_plaintext_P1.bin | head -32) \
+     <(xxd $DIR/recovered_plaintext_P1.bin  | head -32)
+
+# Exact byte-count of mismatches (should equal the gap-marker count in the log)
+cmp -l $DIR/groundtruth_plaintext_P1.bin $DIR/recovered_plaintext_P1.bin | wc -l
+
+# Viewable text — opens recovered plaintext as a file; JSON / HTML structure
+# is readable end-to-end with 0xFF markers at the ~0.12 % gap positions.
+less $DIR/recovered_plaintext_P1.bin
+```
+
+For the random-plaintext run, a gap-aware post-processor that patches gap
+pixels from multi-pair observations (here simulated from ground truth)
+recovers the last 0.83 % and produces **100.0000 %** raw plaintext match —
+the path a real attacker would take at `N ≥ 4` collisions where
+`(1/256)^6 ≈ 10⁻¹⁵` per-pixel ambiguity is architecturally eliminated.
+
+The headline takeaway: **under nonce reuse + Full KPA, BLAKE3 and FNV-1a
+give identical plaintext recovery**. PRF property is **load-bearing for
+seed-level security across nonces**, not for plaintext confidentiality of
+the specific messages that collided on this nonce. The "SAT seed recovery"
+framing in the Phase 2d NIST STS result is a separate attack dimension —
+targeting different assets (seeds, not plaintext) with a different attack
+path (SAT inversion of ChainHash, not keystream reuse).
+
+#### Partial KPA (25 % mask) — no new plaintext beyond attacker input
+
+Same pipeline at 25 %-coverage Partial KPA (symmetric mask — attacker knows
+the same byte positions on both P1 and P2). Layer 1 partial recovery uses
+only channels where both masks mark the byte known; classical decryption
+then emits a plaintext byte only when every channel spanning it is both
+Layer-1-recovered and mask-known. At 64 KB plaintext, `BarrierFill = 1`,
+`N = 2`, auto-tuned `--n-probe` + `--min-known-channels`:
+
+| Corpus kind | Hash | Input mask | Layer 1 unique | Recoverable bytes |
+|-------------|------|-----------:|---------------:|------------------:|
+| `random_masked_25` | FNV-1a | 24.71 % | 154 / 9 604 (1.6 %) | **0.06 %** (42 / 65 536) |
+| `random_masked_25` | BLAKE3 | 24.71 % | 164 / 9 604 (1.7 %) | **0.06 %** (40 / 65 536) |
+| `json_structured_25` | FNV-1a | 25.17 % | 2 181 / 9 604 (22.7 %) | **6.40 %** (4 184 / 65 352) |
+| `json_structured_25` | BLAKE3 | 25.17 % | 2 189 / 9 604 (22.8 %) | **6.42 %** (4 198 / 65 352) |
+| `html_structured_25` | FNV-1a | 25.16 % | 2 344 / 9 604 (24.4 %) | **5.26 %** (3 429 / 65 190) |
+| `html_structured_25` | BLAKE3 | 25.16 % | 2 344 / 9 604 (24.4 %) | **5.26 %** (3 430 / 65 190) |
+
+Three structural observations:
+
+1. **`recoverable < mask-input` on every row.** Attacker walked in with
+   ≈ 25 % of bytes and walked out with ≤ 6.42 % of bytes — strict loss of
+   coverage through the pipeline. Byte-boundary / channel-boundary
+   misalignment accounts for most of the gap: a byte's 8 bits span
+   channels of possibly two adjacent pixels, and emitting a byte needs
+   BOTH spanning (pixel, channel) positions to be Layer-1-recovered AND
+   mask-known. Either constraint failing drops the byte to 0xFF gap.
+2. **Random mask is dramatically worse for the attacker than structured.**
+   `random_masked_25` yields only **0.06 %** recoverable vs 5 – 6 % for
+   the structured kinds. Reason: random-scatter 25 % coverage projects to
+   ~6 % channel-known rate (2-byte-spanning channels need BOTH bytes
+   known → `0.25² = 0.0625`). With `min_known_channels = 3` Layer 1
+   threshold, only ~1.6 % of pixels have enough known channels to recover
+   config. Structured kinds cluster their known bytes at predictable
+   offsets — same aggregate coverage, dramatically higher per-pixel
+   concentration.
+3. **Recoverable bytes ⊆ mask-input bytes** on every row. No new plaintext
+   leaks beyond the attacker's input; classical keystream reuse under
+   symmetric Partial KPA just reproduces what the attacker already held.
+   This is the empirical confirmation of the "no new plaintext" framing
+   in [ITB.md § 8.1](ITB.md#81-why-binary-formats-defeat-partial-kpa-demasking-entirely)
+   and the item-1 note in ["What a successful Partial-KPA demask actually
+   gets the attacker"](#what-a-successful-partial-kpa-demask-actually-gets-the-attacker).
+
+FNV-1a and BLAKE3 rows are numerically identical within Layer-1 sampling
+noise — PRF property does not defend against this path, same architectural
+equivalence as in the Full KPA rows above.
+
+Visual recovered vs groundtruth snippet (BLAKE3 on `json_structured_25`,
+0xFF gaps rendered as `·` for readability):
+
+```
+recovered : ··"identi·ier_o·_record_in_system":·······,"the_timestamp_o·_the_event_iso":"································································································he···crypted_opaque_payload__":"···················································
+groundtruth: [{"identifier_of_record_in_system":"00000","the_timestamp_of_the_event_iso":"uUPmRM379bKXGdBT403XmMweNr6JvMgc4zxsja7vOpNMut2TBj1pBlSsPK7YGQoj...
+```
+
+Only structural tokens + partial field-name fragments surface; value
+regions (`00000`, timestamp values, opaque payload) remain fully 0xFF — the
+attacker never held them as input, so classical decryption cannot produce
+them.
+
+Reproduction commands:
+
+```bash
+# random_masked_25: independent random plaintexts per sample + shared
+# uniform-random 25 %-coverage byte mask (no structural framing).
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 65536 --hashes fnv1a,blake3 \
+    --barrier-fill 1 --collision-counts 2 \
+    --attacker-modes partial --plaintext-kind random_masked_25 \
+    --validate --classical-decrypt \
+    --results-tag partial_kpa_25_random
+
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 65536 --hashes fnv1a,blake3 \
+    --barrier-fill 1 --collision-counts 2 \
+    --attacker-modes partial --plaintext-kind json_structured_25 \
+    --validate --classical-decrypt \
+    --results-tag partial_kpa_25_json
+
+python3 scripts/redteam/run_attack_nonce_reuse.py \
+    --plaintext-size 65536 --hashes fnv1a,blake3 \
+    --barrier-fill 1 --collision-counts 2 \
+    --attacker-modes partial --plaintext-kind html_structured_25 \
+    --validate --classical-decrypt \
+    --results-tag partial_kpa_25_html
+```
+
+`classical_decrypt.py` auto-detects partial mode when `ct_*.known_mask`
+sidecars are present in the cell directory; the orchestrator passes
+auto-tuned `--n-probe` (195 for `*_25` kinds at 64 KB) and
+`--min-known-channels 3` (Layer 2 FP control at low coverage).
+The resulting `recovered_plaintext_P{1,2}.bin` files are directly
+diff-comparable to `groundtruth_plaintext_P{1,2}.bin` — 0xFF positions
+mark where the attacker had no input byte AND / OR Layer 1 failed to
+recover the covering pixel.
 
 ### Partial KPA extension — structured JSON plaintext (artificial scenario)
 

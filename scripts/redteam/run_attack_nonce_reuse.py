@@ -64,6 +64,7 @@ PROJ = _THIS.parents[2]
 TMP_ATTACK = PROJ / "tmp" / "attack" / "nonce_reuse"
 CORPUS_DIR = TMP_ATTACK / "corpus"
 RECONSTRUCTED_DIR = TMP_ATTACK / "reconstructed"
+CLASSICAL_DECRYPT_DIR = TMP_ATTACK / "classical_decrypt"
 RESULTS_DIR = TMP_ATTACK / "results"
 
 # Safety whitelist — orchestrator may only ever delete under these.
@@ -95,6 +96,12 @@ ALLOWED_PLAINTEXT_KINDS = [
     "html_structured_80",
     "html_structured_50",
     "html_structured_25",
+    # Random-plaintext Partial KPA: independent random plaintexts per sample
+    # + a shared random byte-position mask at the target coverage. No
+    # structural framing, so no same-plaintext degeneracy on known channels.
+    "random_masked_25",
+    "random_masked_50",
+    "random_masked_80",
 ]
 
 # Per-kind record byte length + approximate known-coverage. Mirrors the Go
@@ -109,6 +116,13 @@ STRUCTURED_KIND_HINTS = {
     "html_structured_80": {"record_bytes": 250, "coverage_pct": 80},
     "html_structured_50": {"record_bytes": 400, "coverage_pct": 50},
     "html_structured_25": {"record_bytes": 800, "coverage_pct": 25},
+    # random_masked_<N> has no record period (each byte independently masked);
+    # record_bytes is not meaningful — auto_n_probe falls back to the default
+    # Partial-KPA probe depth (50) which is fine since there is no periodic
+    # d_xor pattern to anchor around.
+    "random_masked_25": {"record_bytes": 0, "coverage_pct": 25},
+    "random_masked_50": {"record_bytes": 0, "coverage_pct": 50},
+    "random_masked_80": {"record_bytes": 0, "coverage_pct": 80},
 }
 
 
@@ -252,6 +266,17 @@ def parse_args() -> argparse.Namespace:
              "below 1 %% over n_probe probes), K=2 otherwise. Public-info choice: the "
              "attacker sees the expected coverage from the plaintext_kind.",
     )
+    p.add_argument(
+        "--classical-decrypt",
+        action="store_true",
+        help="After demasking, run classical_decrypt.py on each cell — apply the "
+             "recovered config map (keystream-equivalent for this (seeds, nonce)) "
+             "back to both colliding ciphertexts and COBS-decode the result. "
+             "Emits recovered_plaintext_P{1,2}.bin + groundtruth_plaintext_P{1,2}.bin "
+             "into tmp/attack/nonce_reuse/classical_decrypt/<tag>/<cell>/ so a "
+             "crypto-analyst can diff recovered vs original directly. Incompatible "
+             "with --cleanup-ciphertexts-after-emission (needs plaintexts).",
+    )
     return p.parse_args()
 
 
@@ -384,6 +409,37 @@ def demask_cell(
 # ----------------------------------------------------------------------------
 # Per-cell cleanup (whitelist-gated)
 # ----------------------------------------------------------------------------
+
+def classical_decrypt_cell(
+    cell_dir: Path,
+    pair: Tuple[str, str],
+    out_dir: Path,
+    log_file: Path,
+    n_probe: int = 10,
+) -> Tuple[bool, float]:
+    """Run classical_decrypt.py on one cell — Full-KPA config extraction
+    followed by classical keystream-reuse decryption of both ciphertexts.
+    Emits recovered_cobs_P{1,2}.bin + recovered_plaintext_P{1,2}.bin +
+    groundtruth_plaintext_P{1,2}.bin into `out_dir`.
+    Returns (ok, elapsed).
+    """
+    cmd = [
+        sys.executable,
+        str(PROJ / "scripts/redteam/phase2_theory/classical_decrypt.py"),
+        "--cell-dir", str(cell_dir),
+        "--pair", pair[0], pair[1],
+        "--emit-decrypted", str(out_dir),
+        "--n-probe", str(n_probe),
+    ]
+    t0 = time.time()
+    with open(log_file, "w") as f:
+        proc = subprocess.run(cmd, cwd=PROJ, stdout=f, stderr=subprocess.STDOUT)
+    elapsed = time.time() - t0
+    # classical_decrypt returns 0 on 100% match, 1 on partial — both emit
+    # artefacts, so orchestrator treats 1 as "incomplete but artefacts valid".
+    ok = proc.returncode in (0, 1)
+    return ok, elapsed
+
 
 def cleanup_cell_corpus(cell_dir: Path) -> None:
     """Remove the ciphertext corpus for one cell once its reconstructed stream
@@ -520,7 +576,8 @@ def main() -> int:
             )
             entry["gen_ok"] = ok_gen
             entry["gen_elapsed_s"] = round(t_gen, 2)
-            print(f"  [1/3] generate corpus : {'OK' if ok_gen else 'FAIL'}  "
+            total_steps_label = "4" if args.classical_decrypt else "3"
+            print(f"  [1/{total_steps_label}] generate corpus : {'OK' if ok_gen else 'FAIL'}  "
                   f"({t_gen:.2f}s; log {gen_log.relative_to(run_dir)})")
             if not ok_gen:
                 fails.append({**entry, "stage": "generate"})
@@ -536,7 +593,7 @@ def main() -> int:
             helper_mode = mode_to_helper[m]
             if m == "blind":
                 # Helper does not support blind mode yet — skip demasking gracefully.
-                print(f"  [2/3] demask          : SKIP (blind mode not implemented in helper MVP)")
+                print(f"  [2/{total_steps_label}] demask          : SKIP (blind mode not implemented in helper MVP)")
                 entry["demask_ok"] = None
                 entry["demask_elapsed_s"] = None
                 entry["datahash_emitted"] = False
@@ -578,7 +635,7 @@ def main() -> int:
             entry["demask_elapsed_s"] = round(t_demask, 2)
             entry["datahash_emitted"] = datahash_out.exists()
             entry["datahash_size_bytes"] = datahash_out.stat().st_size if datahash_out.exists() else 0
-            print(f"  [2/3] demask+emit     : {'OK' if ok_demask else 'FAIL'}  "
+            print(f"  [2/{total_steps_label}] demask+emit     : {'OK' if ok_demask else 'FAIL'}  "
                   f"({t_demask:.2f}s; log {demask_log.relative_to(run_dir)})")
             if entry["datahash_emitted"]:
                 print(f"        datahash stream : {entry['datahash_size_bytes']:,} bytes "
@@ -590,12 +647,34 @@ def main() -> int:
                     summary_f.write(json.dumps(entry) + "\n")
                     return 4
 
-            # Step 3: optional ciphertext cleanup.
+            # Step 2.5: optional classical decrypt (must run BEFORE cleanup
+            # because classical_decrypt.py reads plaintext + ciphertext files).
+            if args.classical_decrypt and ok_demask:
+                classical_out = CLASSICAL_DECRYPT_DIR / args.results_tag / f"{h}_BF{bf}_N{n}_{name_tag}"
+                classical_log = run_dir / f"cell_{idx:03d}_{h}_BF{bf}_N{n}_{name_tag}.classical_decrypt.log"
+                ok_cd, t_cd = classical_decrypt_cell(
+                    cell_dir, ("0000", "0001"), classical_out, classical_log,
+                    n_probe=n_probe_cell,
+                )
+                entry["classical_decrypt_ok"] = ok_cd
+                entry["classical_decrypt_elapsed_s"] = round(t_cd, 2)
+                entry["classical_decrypt_dir"] = str(classical_out.relative_to(PROJ))
+                print(f"  [3/4] classical       : {'OK' if ok_cd else 'FAIL'}  "
+                      f"({t_cd:.2f}s; log {classical_log.relative_to(run_dir)})")
+                if ok_cd:
+                    print(f"        artefacts       : {classical_out.relative_to(PROJ)}/")
+                    print(f"        diff recovered vs groundtruth plaintexts to verify "
+                          f"classical keystream-reuse decryption works independently of PRF grade.")
+            elif args.classical_decrypt:
+                print(f"  [3/4] classical       : SKIP (demask failed)")
+
+            # Final step: optional ciphertext cleanup.
+            cleanup_label = f"[{total_steps_label}/{total_steps_label}]"
             if args.cleanup_ciphertexts_after_emission:
                 cleanup_cell_corpus(cell_dir)
-                print(f"  [3/3] cleanup corpus  : OK (safe_rmtree)")
+                print(f"  {cleanup_label} cleanup corpus  : OK (safe_rmtree)")
             else:
-                print(f"  [3/3] cleanup corpus  : SKIP (--cleanup-ciphertexts-after-emission off)")
+                print(f"  {cleanup_label} cleanup corpus  : SKIP (--cleanup-ciphertexts-after-emission off)")
 
             summary_entries.append(entry)
             summary_f.write(json.dumps(entry) + "\n")
