@@ -1014,6 +1014,8 @@ Suppose every precondition lines up — the attacker forced a nonce-reuse event,
 
 4. **No seed is leaked directly.** Every seed-inversion path — even under the most attacker-favourable primitive choice — reduces to "stack enough observations across enough independent nonce-reuse sessions, then solve a bitvector-SAT instance over an 8-round ChainHash wrap at 1024-bit key". The Phase 2a cost tables apply to each such inversion independently.
 
+5. **Config-map path — classical keystream reuse, no SAT needed.** Alongside the hash-output stream, Layer 1+2 also recovers the per-pixel `(noisePos, rotation, channelXOR)` map — classical keystream-equivalent for this single `(seeds, nonce)`. Direct decryption of any ciphertext sharing this nonce runs on this map alone (Full KPA: both colliding plaintexts; Partial KPA: positions with overlapping coverage, plus occasional gap-fill). Blast radius bounded by the architectural gate (caller cannot set nonces → typically 2–3 messages per birthday event); SAT stays the separate cross-nonce seed-recovery path.
+
 So the "reconstructed dataHash stream" framing is technically accurate but can oversell the attack: what the stream literally is is a prefix of `dataSeed.ChainHash(pixel, nonce)` output under one specific `(seeds, nonce)` session — useful ammunition for a SAT solver targeting `dataSeed` specifically under FNV-1a, but not a seed value and not directly applicable to `startSeed` or `noiseSeed`. A full compromise under FNV-1a would require three separate SAT campaigns against three seeds, each consuming many independent nonce-reuse sessions. Under any PRF-grade primitive none of the three SAT campaigns can start.
 
 ### Threat-model gate — why this whole exercise is gated by user nonce-size choice
