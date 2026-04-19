@@ -105,7 +105,38 @@ With PRF: the same 56 candidates, the same candidate dataHash values. But invert
 
 **Under Full KPA + non-invertible PRF**, the defense is 3-factor under PRF assumption: (1) PRF non-invertibility prevents candidate verification; (2) independent startSeed requires enumeration of P startPixel candidates — startPixel is not transmitted; (3) 7-rotation and 8-noisePos per-pixel ambiguity preserved by the barrier at 1:1 signal/noise. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA (when the attacker is missing adjacent bytes). A partial weakening of PRF is not sufficient for a Full KPA break: the attacker still faces P startPixel candidates to enumerate + 56-fold per-pixel ambiguity to disambiguate without a verification oracle. PRF non-invertibility is necessary, and together with the architectural layers it constitutes the 3-factor KPA defense under PRF assumption, 4-factor under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
 
-## 8. CCA: Reveals Only Noise, Not Data
+## 8. Nonce Reuse: Only If Every Condition Holds
+
+Nonce reuse is the single edge case where the barrier can leak local information without brute-forcing seeds. But **every** condition below must hold simultaneously — miss any one and the attack collapses:
+
+1. **User downgraded the nonce size from 512-bit to ≤ 128-bit.** ITB supports nonce sizes up to 512 bits → `2^256` queries to birthday-collision → mathematically unreachable on any foreseeable hardware. Shrinking to 128-bit is the gate the attacker cannot force open; only the user can.
+2. **Same seeds + same nonce across ≥ 2 messages.** Different nonces → different container + config + startPixel → no cross-message information transfer.
+3. **Attacker knows plaintext format at byte-level precision over ≳ 90 % of the plaintext.** Exact field-name lengths, exact value-region offsets, exact structural-punctuation positions. Off by one byte anywhere → every subsequent mask position misaligns → demasker returns nothing useful.
+4. **Two DISTINCT template variants, both known to the attacker.** Both messages sharing the same template byte-for-byte → `d1 ⊕ d2 = 0` on all known channels → rotation unrecoverable → degenerate same-plaintext case (attacker effectively sees two copies of the same ciphertext).
+5. **Per-record varying sequence numbers at known offsets.** Without per-record variation the `d_xor` pattern is periodic over the record length → Layer 2 locks onto a period-shifted startPixel → reconstruction leaks residual plaintext-XOR, not hash output.
+
+**All five conditions held:**
+
+| Primitive | What the attacker walks away with |
+|---|---|
+| PRF (BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256/512, BLAKE2s, BLAKE2b-512, MD5 in PRF-output mode) | Plaintexts of the 2 – 3 colliding messages only. No seeds, no configuration map, nothing reusable on future traffic. |
+| Invertible (FNV-1a) | Same plaintexts + a reconstructed `dataSeed.ChainHash(pixel, nonce)` output stream — usable as ammunition for a SAT solver. Seed recovery still requires **three separate research-scale SAT campaigns**, one per seed (dataSeed, startSeed, noiseSeed). Each campaign consumes many independent nonce-reuse sessions (each session requires forcing a fresh birthday-bound nonce collision). Not push-button: `startSeed` yields ONE observation per session; `noiseSeed` requires a separate `noisePos` emit pipeline that the demasker does not even ship by default. |
+
+**Any one condition violated:**
+
+| Violated condition | Result |
+|---|---|
+| 1 (512-bit nonce in use) | No nonce collision ever occurs. Attack never starts. |
+| 2 (nonces differ) | XOR of ciphertexts is pure random noise. Demasker refuses (validated empirically: 0 / 18 766 recovery on nonce-mismatch control corpus). |
+| 3 (format misknown by ≥ 10 %) | Known-mask misaligns with actual payload bytes. Layer 1 constraint-matching accepts bogus `(noisePos, rotation)` candidates → WRONG matches flood the output → demasker exits with code 2. Format brute-forcing over the `10^8 – 10^12` hypothesis space is a binary-pass/fail search with no gradient. |
+| 4 (single template used by both messages) | Rotation constraint collapses on known channels. Demasker at best recovers noisePos only (ambiguity stays 7× per pixel on rotation). Stream mostly zero bytes. |
+| 5 (no per-record variation) | Layer 2 converges onto any of `~N_records` period-shifted startPixel candidates. Reconstruction under a period-shifted sp XORs recovered data with the wrong payload → output is a mix of hash-output bits and plaintext-difference residue, not a clean hash stream. |
+
+→ The security gate is the user's choice of nonce size. At 512-bit nonce the attack is mathematically out of reach.
+
+→ For the 96-cell empirical matrix quantifying Clean Signal % under each (format, coverage, plaintext size, primitive) combination, and for the full 9-effect architectural analysis of why the demasker's yield is always below attacker-known byte coverage, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
+
+## 9. CCA: Reveals Only Noise, Not Data
 
 Under CCA (bit-flip with MAC reveal), the attacker learns noise positions — which bit in each channel is noise (3 bits per pixel from noiseSeed). But due to triple-seed isolation:
 
@@ -123,7 +154,7 @@ CCA leak = 3/62 ≈ 4.8% of per-pixel configuration. CCA reveals no plaintext bi
 
 See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md Section 4.1–4.5](SCIENCE.md#41-chosen-ciphertext-attack-and-mac-composition), [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
 
-## 9. startPixel: Not Transmitted, Not Recoverable
+## 10. startPixel: Not Transmitted, Not Recoverable
 
 startPixel is computed from startSeed + nonce via ChainHash. It is not transmitted, not stored, computed in a register once. The only theoretical way to learn it is a cache side-channel (Flush+Reload, Prime+Probe) by a co-located attacker on the same CPU.
 
@@ -131,7 +162,7 @@ Even in the worst case (Full KPA + CCA + cache side-channel), the attacker gets:
 
 See [SCIENCE.md Section 4, startPixel limitation](SCIENCE.md#known-theoretical-threats).
 
-## 10. Why the Barrier Is Not Broken by KPA Candidates
+## 11. Why the Barrier Is Not Broken by KPA Candidates
 
 A common question: if the attacker with known plaintext can compute 56 candidate hash outputs per pixel, doesn't that mean the barrier failed to absorb the hash output?
 
@@ -147,7 +178,7 @@ No. The barrier is intact. Here is why:
 
 The barrier absorbs the hash output through two independent mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. CSPRNG residue — guaranteed fill bytes encrypted by dataSeed within the data channel, indistinguishable from encrypted plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — is a structural property of mechanism (1): even after CCA reveals noise bit positions, CSPRNG fill remains in the data channel. CCA (MAC + Reveal) can bypass noise-position uncertainty of mechanism (1), but mechanism (2) and the CSPRNG residue remain intact through triple-seed isolation. The noise bits are removed, but the data bits still contain CSPRNG fill that the attacker cannot separate from plaintext — the information-theoretic barrier is never fully eliminated. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash function failure, not a barrier failure.
 
-## 11. Quantum Resistance
+## 12. Quantum Resistance
 
 The barrier works strictly by information theory: the observation does not contain information about the hash output. This property is **computation-model-independent** — it does not depend on whether the attacker uses a classical computer, a quantum computer, or any future computational model. A quantum computer cannot extract information that does not exist in the observation.
 
@@ -164,7 +195,7 @@ At 1024-bit key: Core/Silent Drop (P=196) ~2^2056 classical, ~2^1028 Grover. MAC
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
 
-## 12. Per-Candidate Cost: Why Brute-Force Is Slow
+## 13. Per-Candidate Cost: Why Brute-Force Is Slow
 
 In AES or ChaCha20, testing one candidate key takes ~1 nanosecond — a single block operation. In ITB, testing one candidate requires decrypting the **entire container** — all P pixels, each with ChainHash evaluation. The larger the message, the more expensive each attempt.
 
@@ -181,7 +212,7 @@ This is not a tunable parameter — it is a structural consequence of the constr
 
 See [SCIENCE.md §2.12](SCIENCE.md#212-per-candidate-decryption-cost) for detailed analysis.
 
-## 13. Barrier and PRF: Symbiosis
+## 14. Barrier and PRF: Symbiosis
 
 The barrier and PRF hash function protect each other:
 
