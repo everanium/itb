@@ -1173,7 +1173,7 @@ NIST STS reports 148 `NonOverlappingTemplate` sub-tests per run. Each sub-test b
 
 | Hash | Bin at BF=1 (N=100) | Bin at BF=32 (N=100) |
 |------|---------------------:|---------------------:|
-| FNV-1a | 8 | 2 |
+| FNV-1a | **0** | 2 |
 | MD5 | 6 | 2 |
 | AES-CMAC | 3 | 8 |
 | SipHash-2-4 | 2 | 8 |
@@ -1184,7 +1184,7 @@ NIST STS reports 148 `NonOverlappingTemplate` sub-tests per run. Each sub-test b
 | BLAKE2b-512 | 3 | 2 |
 | AreionSoEM-512 | 4 | 6 |
 
-Every hash — including FNV-1a, which raised the alarm at N=20 Run A by drawing bin 0, *and* BLAKE3, a paper-grade 256-bit PRF, which drew bin 0 at N=100 BF=32 — shows the same single-bin clustering pattern. The bin assignment is effectively random per `(hash, run)` pair. Proportion is 100/100 for every template sub-test on any run where the bin is **not** 0, and 0/100 on all 148 sub-tests simultaneously whenever it **is** 0.
+Every hash — including FNV-1a, which raised the alarm at N=20 by drawing bin 0, and BLAKE3, a paper-grade 256-bit PRF, which drew bin 0 at N=100 BF=32 — shows the same single-bin clustering pattern. The bin assignment is effectively random per `(hash, run)` pair. Proportion is 100/100 for every template sub-test on any run where the bin is **not** 0, and 0/100 on all 148 sub-tests simultaneously whenever it **is** 0.
 
 **This is a documented NIST SP 800-22 artefact** on near-uniform data. The uniformity-of-p-values meta-test fires (`*` on the 0.000000 uniformity p-value) whenever the input produces clustered per-sequence p-values — which is exactly what truly-random-looking data does at this N and template-size combination. /dev/urandom exhibits the same pattern. Increasing N from 20 to 100 does not eliminate the artefact; it only reduces its per-cell probability proportionally (still ~10 % per `(hash, run)` pair), so larger tables like this one make bin-0 draws visible as an occasional scattered event rather than the N=20 Run A situation where a single bin-0 draw on a single hash looked like "FNV-1a broke on NIST STS".
 
