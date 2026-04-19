@@ -974,10 +974,10 @@ None of the attack surface above is exploitable without nonce collision. **ITB s
 
 Collision-probability floor at 50 % as a function of nonce size:
 
-- **512-bit** (recommended for long-lived keys / no seed rotation): 2²⁵⁶ queries → never
-- 256-bit: 2¹²⁸ queries → infeasible at civilisational scale
-- 128-bit: 2⁶⁴ queries → reachable only under sustained abuse of a single key
-- ≤ 64-bit: trivially reachable
+- **512-bit** (recommended for long-lived keys / no seed rotation): 2²⁵⁶ queries → far beyond any conceivable compute budget
+- 256-bit: 2¹²⁸ queries → at the NIST 128-bit security margin (widely treated as long-term safe)
+- 128-bit: 2⁶⁴ queries → reachable only under sustained abuse of a single key at very high throughput
+- ≤ 64-bit: 2³² queries or fewer → trivially reachable
 
 Pick the nonce size deliberately: if seeds will be rotated per session / per message / per short-lived key, small-nonce configurations are safe within that rotation interval. If seeds are long-lived (months, years, forever on a device) and traffic volume is large, 512-bit is the configuration that keeps the Phase 2d attack surface mathematically out of reach without any operational ceremony.
 
