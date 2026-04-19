@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -1060,9 +1061,43 @@ def main() -> int:
                 start_pixel_used, meta["total_pixels"],
                 pixel_range=(start_idx, end_idx),
             )
+            # Full-mode also skips ambiguous pixels (recovered_config[i] is None),
+            # so the stream's 7-byte blocks are NOT a simple 1:1 mapping to data
+            # pixel indices 0..data_pixels-1. Emit `.index` sidecar listing the
+            # data_pixel_idx of each emitted 7-byte block in order, so any
+            # downstream analyzer can identify positions without guessing.
+            index_path = args.emit_datahash.with_suffix(
+                args.emit_datahash.suffix + ".index"
+            )
+            with open(index_path, "w") as f:
+                for data_idx in emitted_idxs:
+                    f.write(f"{data_idx}\n")
         t_emit = time.time() - t_emit0
         args.emit_datahash.parent.mkdir(parents=True, exist_ok=True)
         args.emit_datahash.write_bytes(stream_bytes)
+
+        # Attacker-visible metadata sidecar — records what the demasker
+        # converged to (Layer 2 output) plus aggregate stats, so downstream
+        # attacker tools (e.g. seed_invert_crc128.py) consume machine-readable
+        # input rather than parsing stdout logs. No ground truth in here.
+        meta_path = args.emit_datahash.with_suffix(
+            args.emit_datahash.suffix + ".meta.json"
+        )
+        demask_meta = {
+            "demasker_mode": args.mode,
+            "recovered_start_pixel": int(start_pixel_used),
+            "total_pixels": int(meta["total_pixels"]),
+            "data_pixels": int(meta["data_pixels"]),
+            "pixel_range": [int(start_idx), int(end_idx)],
+            "n_attempted": int(end_idx - start_idx),
+            "n_unique_recovery": int(sum(1 for r in recovered if r is not None)),
+            "n_ambiguous": int(sum(1 for r in recovered if r is None)),
+            "stream_mode": "partial" if is_partial else "full",
+            "stream_bytes": int(len(stream_bytes)),
+            "emitted_count": int(len(emitted_idxs)),
+            "index_sidecar": index_path.name,
+        }
+        meta_path.write_text(json.dumps(demask_meta) + "\n")
         print(f"  reconstruction time : {t_emit:.2f}s")
         if is_partial:
             print(f"  emitted channels    : {len(emitted_idxs)} 7-bit slices "

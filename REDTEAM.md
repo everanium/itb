@@ -17,6 +17,7 @@ At shipped defaults (BF=1):
 - **NIST STS: all 10 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (FNV-1a → bin 8, MD5 → bin 6, ChaCha20 → bin 1, BLAKE3 → bin 2, etc). Proportion is 100/100 for all 10 hashes on every one of the 148 template sub-tests. Single-test failures across the whole N = 100 run: 2 out of 1 880 — well under the 1 % expected at α = 0.01. When a given hash's cluster lands in bin 0 on any one run, the proportion column mechanically reports a catastrophic-looking 40/188 for that hash (it has happened to FNV-1a at N=20 and BLAKE3 at N=100 on BF=32 in this suite); this is the documented NIST SP 800-22 artefact on near-uniform output, **not** a primitive-specific signal.
 - **Phase 1 FFT + Markov sub-tests** (byte-level, mode-agnostic, Single + Triple, both BF regimes): per-channel spectral flatness stays within 6×10⁻⁵ of 1.0 for all 10 primitives (white-noise signature); adjacent-byte Markov χ² mean within ~85 of the df=65 535 H0 expectation with p medians scattered around 0.5. 1 Bonferroni false-positive in 280 within-pixel channel-pair tests, non-replicated across configs — same statistical-power artefact pattern as [Phase 3a](#phase-3a--rotation-invariant-edge-case).
 - **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively **conditional on that SAT-hardness assumption**. No Z3 runs were executed; the claim rests on structural analysis.
+- **Phase 2a extension — empirical GF(2)-linear collapse via CRC128 (Nonce-Reuse).** A test-only primitive (two CRC64 variants concatenated to 128 bits, fully GF(2)-linear) was wired into the [Phase 2d](#phase-2d--nonce-reuse) pipeline to verify empirically that the mixed-algebra premise is load-bearing. Unrolling 8 rounds of ChainHash at 1024-bit key collapses the 512-bit ECMA-side seed to a **64-bit compound key K** (56 bits observable via channelXOR); a commodity Python solver recovers K across the full matrix (54 cells — `{4 KB…1 MB} × {25/50/80 %} × {json_structured, html_structured, random_masked}`) with **53 / 53 correct dataSeeds recovered within demask-successful cells**. Even with the primitive fully collapsed ITB still imposes visible cost: 8 cells hit period-shift catastrophe requiring pixel-shift brute force, and shadow-K aliasing leaves the attacker with **up to 294 candidate keys per cell at 1 MB** (1 correct + 293 wrong), total 2 575 shadow-K candidates across the matrix — a population the attacker must filter via plaintext-consistency on companion ciphertexts. FNV-1a analogue impossible: the Z/2⁶⁴-multiply carry structure blocks GF(2)-linear collapse, leaving the SAT pathway (described above) as the only route.
 - **Realistic threat model** (Partial KPA + unknown startPixel) places the attack past civilisational timescales on a 1000-node cluster.
 - **Nonce-reuse PRF-dependency empirically demonstrated (Phase 2d)**. Under a deliberate nonce collision with Full KPA, a Python demasker recovers `startPixel` + per-pixel `(noisePos, rotation)` in seconds and reconstructs the pure `dataSeed.ChainHash(pixel, nonce)` output stream (obstacles (2) and (3) of [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) no longer apply — only obstacle (1), ChainHash SAT-hardness, remains). NIST STS on the reconstructed ~16.7 Mbit stream per primitive at 2 MB plaintext: **BLAKE3 passes 188/188** (single remaining obstacle survives under PRF); **FNV-1a fails 6/188** — FFT 0/16 (100 % fail rate, spectral peaks on every bit-stream) plus BlockFrequency / CumulativeSums / Runs. The [`SCIENCE.md §2.5`](SCIENCE.md#25-nonce-reuse-analysis) locality claim ("seeds remain secret, no key rotation") holds under PRF; its PRF-dependency caveat is made empirically visible by the BLAKE3-vs-FNV-1a contrast.
 
@@ -48,7 +49,7 @@ This is a self-audit by the project author. Red-team validation tests a specific
 ### Not tested
 
 Attack classes:
-- **Full seed inversion** with an invertible primitive under ChainHash (research-level; see Phase 2a for analytical treatment — Z3 was **never actually executed**, not even at the ITB-with-ChainHash minimum `keyBits = 512` (2 ChainHash rounds × 256-bit hash, or 4 × 128-bit) nor at the larger flagship `keyBits = 1024`, so the scaling table is structural analysis only. `NewSeed{128,256,512}` explicitly reject `keyBits < 512`; the 128-bit figure quoted in earlier drafts referred to the hash output width, not the key size.)
+- ~~**Full seed inversion** with an invertible primitive under ChainHash (research-level; see Phase 2a for analytical treatment — Z3 was **never actually executed**, not even at the ITB-with-ChainHash minimum `keyBits = 512` (2 ChainHash rounds × 256-bit hash, or 4 × 128-bit) nor at the larger flagship `keyBits = 1024`, so the scaling table is structural analysis only. `NewSeed{128,256,512}` explicitly reject `keyBits < 512`; the 128-bit figure quoted in earlier drafts referred to the hash output width, not the key size.)~~ — demonstrated empirically on a GF(2)-linear control primitive (CRC128) at flagship `keyBits = 1024` via the nonce-reuse + demasking chain; see [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse). FNV-1a (Z/2⁶⁴-multiply carry structure) and PRF-grade primitives remain out of empirical scope — the Z3 scaling table stays structural analysis.
 - ~~**Nonce-reuse attacks.** Every sample in the corpus uses a fresh nonce. We do not probe fixed-nonce / varying-seed, nor same-seeds / same-nonce / different-plaintexts (the deliberate-collision scenario that produces the two-time pad on the 2–3 colliding messages). [SCIENCE.md §2.5](SCIENCE.md#25-nonce-reuse-analysis) argues this is strictly local under the PRF assumption (seeds retained, no key rotation needed) and a global catastrophe under full primitive inversion — not empirically stress-tested in either regime.~~ — see [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse). Seed reuse itself (same `(noiseSeed, dataSeed, startSeed)` across many messages with fresh nonces) is an explicitly supported mode, not an attack surface.
 - ~~**Chosen-plaintext / adaptive CPA.** Full KPA ≠ CPA. Attack-friendly plaintexts (all-zeros, all-0x7F, sparse 1-hot, sliding-window differentials) are absent from the corpus.~~ — covered indirectly by [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) (Full-KPA `known` and Partial-KPA `partial` modes accept attacker-chosen plaintext kinds — `json_structured_{25,50,80}` and `html_structured_{25,50,80}` produce attacker-controlled corpora of 6 distinct structured formats × 3 coverage levels) and [Phase 3a — Rotation-invariant edge case](#phase-3a--rotation-invariant-edge-case) (all-0x7F rotation-invariant probe). Under fresh-nonce CPA (attacker chooses plaintext but nonce stays fresh per query) the attack surface reduces to statistical ciphertext properties already covered by [Phase 1](#phase-1--structural-checks--fft--markov-analysis) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 3b](#phase-3b--nist-sts-sp-800-22) across the 10 included `zero_pad` / `html_giant` / `json` / etc. corpus kinds. No unexplored CPA surface remains after Phase 2d.
 - **Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.
@@ -432,6 +433,146 @@ Rotation and `noisePos` (the 56-candidate baseline) sit inside the Z3 unknowns o
 
 At the actual minimum keyBits = 512: 128-bit hash → 4 ChainHash rounds, 256-bit hash → 2 rounds, 512-bit hash → 1 round. The "1 round at 512-bit minimum" case is **not a practical weakness** because both 512-bit primitives in the ITB hash matrix (BLAKE2b-512 and AreionSoEM-512) are PRF-grade — when the base primitive is already a PRF, ChainHash compounding adds defence-in-depth for invertible primitives but adds nothing meaningful on top of a PRF (the output is unpredictable by assumption, regardless of wrap depth). ChainHash composition is load-bearing specifically for the invertible primitives in the matrix (FNV-1a), which only exist at 128-bit width, where the minimum keyBits = 512 still gives 4 rounds. So the naive bound is effectively a bound for "ITB without ChainHash", which is not something shipped ITB ever configures, and shipping a non-PRF 512-bit primitive to trigger the degenerate case would be a deliberate choice outside ITB's supported hash matrix.
 
+### Phase 2a extension — empirical mixed-algebra stress test via CRC128 (Nonce-Reuse)
+
+The analytical argument above rests on the claim that mixed algebra (GF(2) XOR keying between rounds + a round function that is **not** GF(2)-linear — for FNV-1a the `· FNV_PRIME_64` multiplication modulo 2⁶⁴ provides the non-linearity via carry propagation) is what forces the attacker into bitvector-SAT territory. Replace the round function with a **purely GF(2)-linear** primitive and the chain collapses by construction. To make that collapse concrete — not merely implied — a test-only primitive was added to the corpus generator and driven through the full [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) pipeline.
+
+**CRC128 — the test-only below-FNV-1a primitive.** `CRC128(data, seed0, seed1) = (CRC64-ECMA(data, seed0), CRC64-ISO(data, seed1))`. Two independent CRC64 updates with different irreducible polynomials (ECMA + ISO), each keyed by one 64-bit half of the input seed, concatenated to 128 bits. Every operation is GF(2)-linear: the Sarwate update loop is polynomial division over GF(2)[x], the keyed initial-state register XOR is GF(2)-linear, concatenation preserves linearity. Wrapping this in ITB's ChainHash (XOR-keyed between rounds) keeps the whole chain GF(2)-linear end-to-end. Placed in [`redteam_nonce_reuse_test.go`](redteam_nonce_reuse_test.go) only; has zero cryptographic value and MUST NEVER be plugged into production — `NewSeed{128,256,512}` do not accept `crc128` through any public API.
+
+**The collapse result.** Unrolling 8 rounds of ChainHash at 1024-bit key gives:
+
+```
+hLo(p) = [M_L¹, M_L², M_L³, …, M_L⁸] · [s₁₄, s₁₂, s₁₀, s₈, s₆, s₄, s₂, s₀]  XOR  c(data(p))
+       = K  XOR  c(data(p))
+```
+
+where `M_L` is the length-L CRC64-ECMA state-transfer matrix (length is fixed at 20 bytes = 4-byte pixelIdx + 16-byte nonce — identical for every pixel), and `c(data(p)) = ChainHash(data(p), seed = all-zero)` is **fully attacker-computable**. The linear-combination image `K` is a **64-bit pixel-independent compound key** that is all the adversary needs — individual seed components `s₀ … s₁₄` are never needed to be recovered. ITB's encoding exposes 56 of K's 64 bits through `xorMask = hLo >> 3` (bits 3..58); the remaining 8 bits (0..2 and 59..63) do not enter any observable channelXOR and would only matter if the attacker tried to reconstruct `noisePos` (controlled by a separate `noiseSeed` — a different ChainHash with its own compound key) or the `dataRotation = hLo % 7` modular remainder.
+
+The contrast with FNV-1a is clean. FNV-1a's per-byte `h ← (h XOR byte) · FNV_PRIME_64` is linear over GF(2) for the XOR step and linear over the ring Z/2⁶⁴ for the multiply step — **but not jointly linear over GF(2)**. Carry chains within the multiplication create AND-combinations between bit positions, and those non-linear bits accumulate through 8 ChainHash rounds. No analogue of `K` exists for FNV-1a; the linear-image collapse above cannot be executed against FNV-1a without first breaking the carry structure via SMT (the analytical scenario at the top of this Phase 2a section).
+
+**Solver.** [`scripts/redteam/phase2_theory/seed_invert_crc128.py`](scripts/redteam/phase2_theory/seed_invert_crc128.py). Reads the demasker's emitted `.datahash.bin` + `.index` + `.meta.json` sidecars, computes `const(p)` for every data pixel once via the Python CRC64 mirror (matches Go's `crc64Keyed` bit-for-bit: no entry/exit complement, pure Sarwate reflected-polynomial loop), brute-forces the `pixel_shift` that Partial-KPA Layer 2 may have locked onto (shift-0 under Full KPA; non-zero when the demasker settled on a period-shifted sp), then majority-votes each bit of K across all observations. The shift brute force picks shifts whose probe-batch conflict rate lies below a 5 %-of-pins threshold (correct shift: near-zero conflicts, wrong shift: ~50 %). Due to CRC64's GF(2)-linearity, there are typically **multiple** shifts below threshold — these are "shadow-K" aliases where `shift_shadow - shift_true` happens to equal a bit-pattern perturbation of `pixel_le` that produces a consistent fake K differing from the true K by a fixed linear term. Shadow-K are structural, not a solver bug: they are what a real attacker would have to enumerate and filter via plaintext-consistency on a companion ciphertext. The lab-filter phase reads `cell.meta.json`'s ground-truth dataSeed **only** to identify which candidate is correct and count the shadow population — this is laboratory audit discipline, not an attacker capability.
+
+**Full 54-cell matrix.** `{4 KB, 16 KB, 64 KB, 128 KB, 512 KB, 1 MB} × {25 %, 50 %, 80 %} × {random_masked, json_structured, html_structured}` at `BarrierFill = 1, N = 2` nonce collisions, `partial` attacker mode with auto-tuned `--n-probe` and `--min-known-channels`. Driven by `scripts/redteam/crc128_seed_invert_matrix.sh` at `PARALLEL = 8` on a 16-core host (~25 min wall-clock end-to-end).
+
+| Metric | Result |
+|-----|-----|
+| Cells attempted | **54** |
+| Demasker OK | **53** (1 FAIL on 128 KB html 80 % — reproducibly falls below the single-pair Layer 1 disambiguation threshold at that specific size × kind × coverage combination) |
+| Solver succeeded | **53 / 53** (every cell where demask emitted a stream) |
+| Correct dataSeed recovered | **53 / 53**, one correct K per cell (100 % recovery rate within demask-successful cells) |
+| Held-out pixel prediction | **512 / 512 channels per cell** — the recovered K predicts every unobserved pixel's channelXOR bit-for-bit |
+| Period-shifted cells | **8 / 53** — Layer 2 locked on a period-shifted sp; solver brute-forced the correct `pixel_shift` and lab-filtered the shadow-K |
+| **Total shadow-K** | **2 575** across 53 inverted cells (mean 48.6 per cell, max 294) |
+| Total brute candidates | 2 628 (correct + shadow combined — this is the attacker-visible ambiguity) |
+
+**Shadow-K scales with container size.**
+
+| size | sum shadow-K across 9 cells | max per cell |
+|------|------:|------:|
+| 4 KB | **0** | 0 |
+| 16 KB | 19 | 4 |
+| 64 KB | 102 | 18 |
+| 128 KB | 174 | 36 |
+| 512 KB | 740 | 147 |
+| 1 MB | **1 540** | **294** |
+
+Scaling is roughly linear in `total_pixels` — the CRC64 linear-alias search space expands with every additional pixel index a brute-force shift could land on. At 1 MB the attacker faces up to **295 candidate compound keys** (1 correct + 294 wrong). Each shadow-K is a well-formed 64-bit value that self-consistently explains the observed stream under its specific shift hypothesis; they differ from the true K by linear perturbations of the 8-round ChainHash output and cannot be distinguished without either (a) a plaintext-consistency check on a companion ciphertext sharing the same `(dataSeed, nonce)` — which is already a form of secondary-crib attack — or (b) explicit cryptographic side information outside the demasker's output. The 4 KB row's **zero shadow-K** is informative: at that size the brute-force range effectively covers the whole container, no linear aliases fit inside the observation window, and the attacker would have a clean single-candidate answer — except that a 4 KB plaintext has ~584 data pixels, producing a 56 × 584 / 7 ≈ 4 672-bit compound-key observation that is **already sufficient** to recover K completely.
+
+**Shadow-K scales with coverage.** Higher known-channel coverage means more per-bit pins and more linear-combination paths for shadow-K aliases to survive:
+
+| coverage | sum shadow-K | max per cell |
+|---------:|------:|------:|
+| 25 % | 490 | 146 |
+| 50 % | 886 | 294 |
+| 80 % | 1 199 | 294 |
+
+**By plaintext kind** html_structured produces the largest shadow-K population (1 202 sum — period-length 137–800 bytes interacts with the 20-byte pixel_le field in ways that amplify alias counts), json_structured sits in the middle (765), and random_masked is cleanest (608) because there is no periodic `d_xor` structure for Layer 2 to period-shift onto.
+
+**Demask failure at 128 KB html 80 %.** A single cell reliably fails demask at this configuration. Layer 2 finds a sp that initially passes the probe-pixel check but Layer 1 subsequently detects WRONG matches (recovered_config contradicts itself on later pixels under that sp hypothesis), and the orchestrator's `--validate` gate rejects the run. Other 1 / 54 demask failures are expected under single-pair N = 2 Partial KPA at specific boundary coverages; a multi-pair (N ≥ 4) run would eliminate them. For the matrix this counts as "attacker was unlucky on the specific nonce seed"; regenerating the corpus with a different `ITB_NONCE_REUSE_NONCE_SEED` would produce a different outcome for this one cell.
+
+**What the matrix demonstrates — narrowly.**
+
+1. **GF(2)-linear ChainHash collapses exactly as the analytical argument predicts.** Replacing FNV-1a's Z/2⁶⁴ multiply with a same-algebra CRC64 reduces the 1024-bit key to a 64-bit (56-observable) compound key that a commodity Python script recovers in seconds to minutes from any [Phase 2d](#phase-2d--nonce-reuse) nonce-reuse demasked stream of non-trivial size. The mixed-algebra premise of the cost tables at the top of this Phase 2a section is therefore load-bearing, not decorative.
+2. **Even with the primitive fully collapsed, ITB's architecture still imposes visible cost.** The demasker's Layer 2 period-shift catastrophe leaks through to the solver as shadow-K aliasing: 8 / 53 cells required explicit pixel-shift discovery, and the attacker-visible candidate-K list grows to 295 entries at 1 MB. That ambiguity must be filtered by a secondary plaintext-consistency attack on a companion ciphertext — itself a non-trivial information requirement in realistic attacker conditions (the companion ciphertext must share the colliding `(dataSeed, nonce)` **and** have ≥ 1 attacker-known byte at a predictable offset).
+3. **Scale is the defender's friend, not the attacker's.** Shadow-K scales linearly with `total_pixels`, so larger plaintexts make the attacker's post-inversion filtering harder in absolute terms (a 295-candidate filter at 1 MB vs a 1-candidate answer at 4 KB). Every extra candidate multiplies the attacker's effort because each one requires an independent plaintext-consistency check on a companion ciphertext — so shipping longer messages under a single colliding `(dataSeed, nonce)` pair works *against* a CRC128-style attacker, not for them.
+
+**What the matrix does NOT demonstrate.**
+
+1. **FNV-1a seed recovery.** The solver's `chainhash_crc128_lo` Python mirror is hard-coded to CRC64-ECMA + CRC64-ISO. Running it on a FNV-1a corpus would produce garbage const-values and a ~50 % conflict rate on every candidate shift — the solver refuses such runs via the `meta["hash"] == "crc128"` gate. This is intentional: FNV-1a seed recovery is the analytical scenario at the top of this Phase 2a section, out of empirical scope for this plan.
+2. **PRF seed recovery.** Same reason — PRF primitives (BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM, BLAKE2*) have no GF(2)-linear structure that brute-force compound-key recovery could exploit, by the PRF assumption itself. They would require a PRF-break, out of scope by assumption.
+3. **The single demask failure.** 1 / 54 cells (128 KB html 80 %) does not produce a usable stream for the solver to operate on. This is a demasker-side edge case, not a solver-side limitation; a multi-pair (N ≥ 4) corpus or a different nonce-seed regeneration would close it.
+4. **Production attack feasibility.** Even if this attack worked against every real ITB primitive (it does not), the whole [Phase 2d](#phase-2d--nonce-reuse) attack chain is gated by a prior nonce collision — a `2⁻²⁵⁶` event at the shipped 512-bit nonce recommendation. The empirical collapse demonstrated here is conditional on the attacker already being past that gate. See [Threat-model gate](#threat-model-gate--why-this-whole-exercise-is-gated-by-user-nonce-size-choice) for the quantitative bound.
+
+**No-demask sanity control — why the demasker is load-bearing.** The compound-key recovery demonstrated above is entirely dependent on the demasker having already stripped ITB's masking layers (noise bit at `noisePos`, 7-bit rotation, channelXOR subtraction via known plaintext). To confirm that the masking itself hides the hash output — not just the architectural obstacles stacked on top — the solver was fed the **raw ciphertext bytes** of `ct_0000.bin` directly, as if they were the demasked dataHash stream, on **10 freshly regenerated 64 KB Full-KPA CRC128 corpora** (each run used a different `ITB_NONCE_REUSE_NONCE_SEED` to force an independent `(seeds, nonce)` draw). Brute-force pixel-shift search was enabled over the full container range `[0, 9604)`.
+
+| Iteration | Candidates below 5 %-conflict threshold | Conflict rate on full observations |
+|----------:|----------------------------------------:|------------------------------------:|
+| 1 | **0** | 49.6 % |
+| 2 | **0** | 49.6 % |
+| 3 | **0** | 49.7 % |
+| 4 | **0** | 49.6 % |
+| 5 | **0** | 49.5 % |
+| 6 | **0** | 49.6 % |
+| 7 | **0** | 49.6 % |
+| 8 | **0** | 49.6 % |
+| 9 | **0** | 49.6 % |
+| 10 | **0** | 49.6 % |
+
+**Conflict-rate range [49.5 %, 49.7 %] across all 10 runs — statistically indistinguishable from a fair coin flip.** This is the architectural signature of ITB's masking: raw ciphertext bytes carry exactly the entropy of uniform random noise with respect to the compound key. The attacker gets zero bit-level information about K from ciphertext alone; every possible pixel-shift produces ~50 % K-bit disagreement across observations (the expected value under H₀ = "K is unknown to the observer").
+
+Three architectural implications. **First,** even with a fully GF(2)-linear primitive (CRC128) where the algebraic collapse IS mathematically possible, the masking layers deny the attacker any input to execute it on. **Second,** the whole Phase 2a extension pipeline (solver at 53 / 54 inversion rate) is strictly conditional on the demasker having run first — and the demasker, in turn, requires a nonce collision between two colliding ciphertexts to run Layer 1 constraint matching. No collision → no demasking → no solver input → architecture wins even against below-FNV-1a primitives. **Third,** the `2⁻²⁵⁶` nonce-collision probability at 512-bit nonce is not just a theoretical gate but the only thing standing between the attacker and the entire empirical attack surface demonstrated in this section — the architecture's resistance to a GF(2)-linear primitive reduces to the resistance of the nonce-size choice, nothing more.
+
+**Reproduction commands.**
+
+```bash
+# Step 1 — generate corpus for one specific cell (e.g., 64 KB JSON 80 %
+# under nonce reuse with CRC128 primitive):
+ITB_REDTEAM=1 ITB_BARRIER_FILL=1 \
+  ITB_NONCE_REUSE_HASH=crc128 ITB_NONCE_REUSE_N=2 \
+  ITB_NONCE_REUSE_MODE=partial ITB_NONCE_REUSE_PLAINTEXT_KIND=json_structured_80 \
+  ITB_NONCE_REUSE_SIZE=65536 \
+  go test -run TestRedTeamGenerateNonceReuse -v -timeout 60s
+
+# Step 2 — demask + emit reconstructed dataHash stream + .index + .meta.json:
+python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
+  --cell-dir tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/partial_json_structured_80 \
+  --pair 0000 0001 --mode partial-plaintext --brute-force-startpixel --validate \
+  --emit-datahash tmp/attack/nonce_reuse/reconstructed/crc128_BF1_N2_partial_json_structured_80.datahash.bin
+
+# Step 3 — compound-key seed inversion with brute-force pixel-shift search
+# and laboratory shadow-K filter (reads cell.meta.json for ground-truth K
+# only to identify which candidate is correct — no attacker-side cheating
+# other than that final accounting step):
+python3 scripts/redteam/phase2_theory/seed_invert_crc128.py \
+  --cell-dir tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/partial_json_structured_80 \
+  --datahash-stream tmp/attack/nonce_reuse/reconstructed/crc128_BF1_N2_partial_json_structured_80.datahash.bin \
+  --brute-force-shift 200000
+
+# Step 4 — full 54-cell matrix (one command; ~25 min at PARALLEL=8 on 16-core):
+PARALLEL=8 bash scripts/redteam/crc128_seed_invert_matrix.sh
+
+# No-demask sanity control — feed raw ct_0000.bin straight to the solver
+# (skipping the demasker) and brute-force over all 9604 shifts in the 64 KB
+# container. Expected result: 0 candidates, ~49.6 % conflict rate — random.
+# Architecture denies the attacker any exploitable signal at the ciphertext
+# level, even for a fully GF(2)-linear primitive.
+ITB_REDTEAM=1 ITB_BARRIER_FILL=1 ITB_NONCE_REUSE_HASH=crc128 \
+  ITB_NONCE_REUSE_N=2 ITB_NONCE_REUSE_MODE=known ITB_NONCE_REUSE_SIZE=65536 \
+  go test -run TestRedTeamGenerateNonceReuse -v -timeout 60s
+python3 scripts/redteam/phase2_theory/seed_invert_crc128.py \
+  --cell-dir tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/known \
+  --datahash-stream tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/known/ct_0000.bin \
+  --brute-force-shift 10000
+
+# Render the matrix_summary.jsonl into a markdown table suitable for
+# audit review:
+python3 scripts/redteam/aggregate_crc128_matrix.py \
+  --input tmp/attack/nonce_reuse/results/crc128_seed_invert_matrix/matrix_summary.jsonl \
+  > crc128_matrix.md
+```
+
+Per-run artefacts: `tmp/attack/nonce_reuse/results/<tag>/summary.jsonl` (orchestrator cell record) + `<cell>.datahash.bin.meta.json` (demasker's recovered_sp + emission stats — attacker-visible) + `<cell>.seed_invert.log` (solver's per-candidate conflict rates + shadow-K accounting + prediction results).
+
 ---
 
 ## Phase 2b — Per-pixel candidate distinguisher
@@ -615,7 +756,7 @@ Three empirical layers stacked, each removing one architectural obstacle from [P
 
 1. **Layer 1 — per-pixel `(noisePos, rotation)` recovery.** On the XOR of the two ciphertexts, for each data pixel, enumerate the 56 `(noisePos, rotation)` candidates; constraint-match against all 8 channels using the known plaintexts. Unique match recovers the per-pixel config; resolves obstacle (3).
 2. **Layer 2 — `startPixel` brute force.** Attacker does not know `startPixel`. For each candidate in `[0, totalPixels)`, check whether the first 10 probe pixels admit at least one `(noisePos, rotation)` match using Layer 1 constraints. Under a wrong `startPixel` the false-positive rate is `56 × 2⁻⁵⁶ ≈ 0` per probe pixel — short-circuit on the first probe pixel rejects almost every wrong candidate in microseconds. Resolves obstacle (2).
-3. **Reconstruction — strip all masking.** Using recovered `(startPixel, noisePos_map, rotation_map)` + known plaintext, extract the pure channel-XOR output per (pixel, channel):
+3. **Reconstruction — strip all masking.** Using recovered `(startPixel, noisePos_map, rotation_map)` + known plaintext, extract the pure channelXOR output per (pixel, channel):
     ```
     extracted_7 = remove_noise_bit(ciphertext_byte, noisePos)
     unrotated_7 = rotate7(extracted_7, 7 − rotation)
@@ -1190,7 +1331,7 @@ Legend: `⚠` marks cells where Layer 2 converged onto a period-shifted startPix
 
 **5. Low-coverage (25 %) behaviour is consistently weak but graceful.** Across sizes, 25 % coverage yields 15-24 % Clean on small-to-mid sizes, degrading further under period-shift. No cell produces meaningless garbage; the demasker correctly refuses pixels it can't constrain rather than emit noise.
 
-**6. 10 cells returned exit code 2 under imperfect period-shift alignment.** Under a shift that is not exactly a `d_xor` pattern period, a small number of pixels (0.01 – 0.1 %) recovered a `(noisePos, rotation)` pair that is unique under constraint matching but does not match the ground-truth at the shifted position. These are NOT formula bugs — the demasker formula is correct; the artefact is that single-pair Layer 1 admits rare isolated false positives when `d_xor_claim_p ≠ d_xor_true_{p+shift}` at approximate-period shifts. The stream was still emitted (mostly correct, with a handful of corrupted channel-XOR values scattered); the orchestrator flags these as demask-fail due to the strict WRONG > 0 gate. Real attackers cannot distinguish these from clean runs without access to ground truth.
+**6. 10 cells returned exit code 2 under imperfect period-shift alignment.** Under a shift that is not exactly a `d_xor` pattern period, a small number of pixels (0.01 – 0.1 %) recovered a `(noisePos, rotation)` pair that is unique under constraint matching but does not match the ground-truth at the shifted position. These are NOT formula bugs — the demasker formula is correct; the artefact is that single-pair Layer 1 admits rare isolated false positives when `d_xor_claim_p ≠ d_xor_true_{p+shift}` at approximate-period shifts. The stream was still emitted (mostly correct, with a handful of corrupted channelXOR values scattered); the orchestrator flags these as demask-fail due to the strict WRONG > 0 gate. Real attackers cannot distinguish these from clean runs without access to ground truth.
 
 ### Nine architectural effects visible in this matrix
 
