@@ -50,10 +50,10 @@ This is a self-audit by the project author. Red-team validation tests a specific
 Attack classes:
 - **Full seed inversion** with an invertible primitive under ChainHash (research-level; see Phase 2a for analytical treatment — Z3 was **never actually executed**, not even at the ITB-with-ChainHash minimum `keyBits = 512` (2 ChainHash rounds × 256-bit hash, or 4 × 128-bit) nor at the larger flagship `keyBits = 1024`, so the scaling table is structural analysis only. `NewSeed{128,256,512}` explicitly reject `keyBits < 512`; the 128-bit figure quoted in earlier drafts referred to the hash output width, not the key size.)
 - ~~**Nonce-reuse attacks.** Every sample in the corpus uses a fresh nonce. We do not probe fixed-nonce / varying-seed, nor same-seeds / same-nonce / different-plaintexts (the deliberate-collision scenario that produces the two-time pad on the 2–3 colliding messages). [SCIENCE.md §2.5](SCIENCE.md#25-nonce-reuse-analysis) argues this is strictly local under the PRF assumption (seeds retained, no key rotation needed) and a global catastrophe under full primitive inversion — not empirically stress-tested in either regime.~~ — see [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse). Seed reuse itself (same `(noiseSeed, dataSeed, startSeed)` across many messages with fresh nonces) is an explicitly supported mode, not an attack surface.
-- ~~**Chosen-plaintext / adaptive CPA.** Full KPA ≠ CPA. Attack-friendly plaintexts (all-zeros, all-0x7F, sparse 1-hot, sliding-window differentials) are absent from the corpus.~~ — covered indirectly by [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) (Full-KPA `known` and Partial-KPA `partial` modes accept attacker-chosen plaintext kinds — `json_structured_{25,50,80}` and `html_structured_{25,50,80}` produce attacker-controlled corpora of 6 distinct structured formats × 3 coverage levels) and [Phase 3a — Rotation-invariant edge case](#phase-3a--rotation-invariant-edge-case) (all-0x7F rotation-invariant probe). Under fresh-nonce CPA (attacker chooses plaintext but nonce stays fresh per query) the attack surface reduces to statistical ciphertext properties already covered by [Phase 1](#phase-1--structural-checks) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 3b](#phase-3b--nist-sts-sp-800-22) across the 10 included `zero_pad` / `html_giant` / `json` / etc. corpus kinds. No unexplored CPA surface remains after Phase 2d.
+- ~~**Chosen-plaintext / adaptive CPA.** Full KPA ≠ CPA. Attack-friendly plaintexts (all-zeros, all-0x7F, sparse 1-hot, sliding-window differentials) are absent from the corpus.~~ — covered indirectly by [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) (Full-KPA `known` and Partial-KPA `partial` modes accept attacker-chosen plaintext kinds — `json_structured_{25,50,80}` and `html_structured_{25,50,80}` produce attacker-controlled corpora of 6 distinct structured formats × 3 coverage levels) and [Phase 3a — Rotation-invariant edge case](#phase-3a--rotation-invariant-edge-case) (all-0x7F rotation-invariant probe). Under fresh-nonce CPA (attacker chooses plaintext but nonce stays fresh per query) the attack surface reduces to statistical ciphertext properties already covered by [Phase 1](#phase-1--structural-checks--fft--markov-analysis) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 3b](#phase-3b--nist-sts-sp-800-22) across the 10 included `zero_pad` / `html_giant` / `json` / etc. corpus kinds. No unexplored CPA surface remains after Phase 2d.
 - **Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.
-- ~~**Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).~~ — see [Phase 1 — FFT / Markov analysis](#phase-1--fft--markov-analysis)
-- ~~**Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.~~ — see [Phase 1 — FFT / Markov analysis](#phase-1--fft--markov-analysis)
+- ~~**Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).~~ — see [Phase 1 — Structural checks + FFT / Markov analysis](#phase-1--structural-checks--fft--markov-analysis)
+- ~~**Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.~~ — see [Phase 1 — Structural checks + FFT / Markov analysis](#phase-1--structural-checks--fft--markov-analysis)
 - **Adversarial machine-learning distinguishers** (CNN, deep-learning distinguisher trained on cover/stego pairs)
 - **Physical side channels** (timing, power, EM)
 - **Chosen-ciphertext attack with MAC reveal** (MAC + Reveal mode)
@@ -236,8 +236,7 @@ Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supple
 
 | Phase | What it tests | Result at BF=1 Single (BF=32 Single in parens) |
 |-------|---------------|-----------------------------------------------|
-| **1. Structural** | 8-channel per-channel χ² + nonce-pair collision | ✅ 0 / 80 Bonferroni failures; collision ratio ∈ [0.983, 1.014] (BF=32: [0.993, 1.025]). Triple confirmed in both BF regimes, same pattern |
-| **1. FFT + Markov (sub-tests)** | Per-channel spectral flatness + adjacent-byte / adjacent-channel Markov χ² | ✅ Mode-agnostic (Single + Triple × BF=1 + BF=32). FFT flatness within 6×10⁻⁵ of 1.0 on all 10 primitives; Markov adj-byte χ² mean within ~85 of df=65 535 expectation, p medians around 0.5. 1 Bonferroni false-positive in 280 within-pixel channel-pair tests, non-replicated across configs |
+| **1. Structural + FFT + Markov** | 8-channel per-channel χ² + nonce-pair collision + per-channel spectral flatness + adjacent-byte / adjacent-channel Markov χ² | ✅ 0 / 80 Bonferroni failures; collision ratio ∈ [0.983, 1.014] (BF=32: [0.993, 1.025]). FFT flatness within 6×10⁻⁵ of 1.0 on all 10 primitives across all 4 mode × BF configs; Markov adj-byte χ² mean within ~85 of df=65 535 expectation, 0 replicable Bonferroni fails in 280 within-pixel channel-pair tests (1 non-replicated raw flag). Triple confirmed in both BF regimes, same pattern as Single |
 | **2a. ChainHash analysis** | Theoretical bound on invertible primitive | 📖 Architectural defense-in-depth surfaced; paper underclaims |
 | **2b. Candidate distinguisher** | Obstacle (3) — 56-way per-pixel ambiguity | ✅ Mode A (idealized attacker, BF=1) KL [0.000018, 0.000021] nats on 8-giant aggregate (N = 9.6 M obs/cand); Mode B (realistic attacker, no startPixel, no plaintext, BF=32) [0.000012, 0.000016] (N = 11.3 M) — both at ≈1.4× theoretical `bins/N` floor across the full hash spectrum |
 | **2c. startPixel enumeration** | Obstacle (2) — startPixel indistinguishability | ✅ mean rank-fraction ∈ [0.461, 0.532]; 6 flagged cells / 90, consistent with 4.5 expected under H0 at α=0.05 (BF=32: 5 / 90) |
@@ -247,11 +246,38 @@ Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supple
 
 ---
 
-## Phase 1 — FFT / Markov analysis
+## Phase 1 — Structural checks + FFT / Markov analysis
 
-Scripts: [`fft_per_channel.py`](scripts/redteam/phase1_sanity/fft_per_channel.py), [`markov.py`](scripts/redteam/phase1_sanity/markov.py).
+Four sub-tests probing byte-level structure that NIST STS (Phase 3b) does not cover at the 8-channel-aware granularity. Two ITB-specific structural checks (per-channel χ² + nonce-pair collision) and two mode-agnostic byte-level statistics (FFT spectral flatness + Markov transition χ²) that run unchanged on Single + Triple.
 
-Two byte-level Phase 1 sub-tests that do not depend on startPixel alignment → mode-agnostic (both run unchanged in Single and Triple). **FFT**: demultiplex each `tmp/streams/<hash>.bin` into 8 per-channel streams, Welch spectral flatness per channel + zero-lag Pearson between channel pairs. **Markov**: full 65 536-cell transition matrix (adjacent-byte on the flat stream + adjacent-channel within each pixel), χ² against uniform 1/65 536.
+Scripts: [`analyze.py`](scripts/redteam/phase1_sanity/analyze.py), [`fft_per_channel.py`](scripts/redteam/phase1_sanity/fft_per_channel.py), [`markov.py`](scripts/redteam/phase1_sanity/markov.py).
+
+### [A] Per-channel χ² + nonce-independence collision
+
+**Per-channel-position χ²** — byte offset `i` in the ciphertext belongs to channel `i mod 8`. A bias restricted to one channel is 8× diluted in the flat stream NIST STS sees, so each channel is tested separately with Bonferroni correction (α_eff = 0.00125).
+
+**Nonce-independence collision scan** — same-position byte matches between sample-pair prefixes, vectorised via `bincount`. Expected rate under fresh nonce + fresh seeds: 1/256. Sustained deviation indicates nonce-dependent structure.
+
+Results at BF=1 (130 samples per hash × 10 hashes; BF=32 numbers in parentheses):
+
+| Hash | Min channel p-value (BF=1 / BF=32) | Bonferroni fails | Collision ratio (BF=1 / BF=32) | Status |
+|------|-----------------------------------:|-----------------:|-------------------------------:|--------|
+| FNV-1a | 0.0452 / 0.0896 | 0 / 8 | 1.0107 / 1.0006 | ✅ |
+| MD5 | 0.0274 / 0.1995 | 0 / 8 | 1.0014 / 1.0253 | ✅ |
+| AES-CMAC | 0.0157 / 0.3017 | 0 / 8 | 1.0136 / 1.0086 | ✅ |
+| SipHash-2-4 | 0.0614 / 0.1468 | 0 / 8 | 1.0017 / 0.9931 | ✅ |
+| ChaCha20 | 0.1252 / 0.0737 | 0 / 8 | 0.9868 / 0.9934 | ✅ |
+| AreionSoEM-256 | 0.1388 / 0.1210 | 0 / 8 | 1.0036 / 1.0136 | ✅ |
+| BLAKE2s | 0.0793 / 0.0654 | 0 / 8 | 0.9834 / 0.9958 | ✅ |
+| BLAKE3 | 0.0433 / 0.0375 | 0 / 8 | 1.0012 / 0.9936 | ✅ |
+| BLAKE2b-512 | 0.0208 / 0.1671 | 0 / 8 | 1.0038 / 1.0172 | ✅ |
+| AreionSoEM-512 | 0.1390 / 0.0222 | 0 / 8 | 0.9866 / 0.9949 | ✅ |
+
+All 80 per-channel χ² tests pass Bonferroni correction at both BF=1 and BF=32; all collision ratios within [0.80, 1.20]. **Weak and strong PRFs produce identical per-channel profiles at shipped defaults** — including FNV-1a, which later shows the NIST STS template signal in Phase 3b. Per-channel χ² is not sensitive to the template-level structure that leaks FNV-1a; the structural test at the 8-channel aggregate level is clean.
+
+### [B] FFT / Markov sub-tests (mode-agnostic, Single + Triple)
+
+Two byte-level sub-tests that do not depend on startPixel alignment → mode-agnostic (both run unchanged in Single and Triple). **FFT**: demultiplex each `tmp/streams/<hash>.bin` into 8 per-channel streams, Welch spectral flatness per channel + zero-lag Pearson between channel pairs. **Markov**: full 65 536-cell transition matrix (adjacent-byte on the flat stream + adjacent-channel within each pixel), χ² against uniform 1/65 536.
 
 Summary across 10 primitives per cell × 2 modes × 2 fill regimes:
 
@@ -405,35 +431,6 @@ Rotation and `noisePos` (the 56-candidate baseline) sit inside the Z3 unknowns o
 **Proposed paper addition.** A caveat in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) or adjacent prose noting that invertibility of the base primitive does not translate into invertibility of ChainHash for `n > 1` rounds; the compound cost scales with round count, giving `keyBits`-dependent defence-in-depth that the current prose does not claim. The naive `~56 × P` inversions bound holds tightly only in the hypothetical `keyBits = hashWidth` single-round-ChainHash case (equivalent to removing ChainHash entirely) with both `startPixel` and plaintext fully known — and `NewSeed{128,256,512}` explicitly reject `keyBits < 512`, so that hypothetical is below the minimum ITB ever instantiates.
 
 At the actual minimum keyBits = 512: 128-bit hash → 4 ChainHash rounds, 256-bit hash → 2 rounds, 512-bit hash → 1 round. The "1 round at 512-bit minimum" case is **not a practical weakness** because both 512-bit primitives in the ITB hash matrix (BLAKE2b-512 and AreionSoEM-512) are PRF-grade — when the base primitive is already a PRF, ChainHash compounding adds defence-in-depth for invertible primitives but adds nothing meaningful on top of a PRF (the output is unpredictable by assumption, regardless of wrap depth). ChainHash composition is load-bearing specifically for the invertible primitives in the matrix (FNV-1a), which only exist at 128-bit width, where the minimum keyBits = 512 still gives 4 rounds. So the naive bound is effectively a bound for "ITB without ChainHash", which is not something shipped ITB ever configures, and shipping a non-PRF 512-bit primitive to trigger the degenerate case would be a deliberate choice outside ITB's supported hash matrix.
-
----
-
-## Phase 1 — Structural checks
-
-Script: [`scripts/redteam/phase1_sanity/analyze.py`](scripts/redteam/phase1_sanity/analyze.py)
-
-Two ITB-specific structural checks that NIST STS (Phase 3b) does not cover because they depend on the 8-channel layout:
-
-**[A] Per-channel-position χ²** — byte offset `i` in the ciphertext belongs to channel `i mod 8`. A bias restricted to one channel is 8× diluted in the flat stream NIST STS sees, so each channel is tested separately with Bonferroni correction (α_eff = 0.00125).
-
-**[B] Nonce-independence collision scan** — same-position byte matches between sample-pair prefixes, vectorised via `bincount`. Expected rate under fresh nonce + fresh seeds: 1/256. Sustained deviation indicates nonce-dependent structure.
-
-### Results at BF=1 (130 samples per hash × 10 hashes; BF=32 numbers in parentheses)
-
-| Hash | Min channel p-value (BF=1 / BF=32) | Bonferroni fails | Collision ratio (BF=1 / BF=32) | Status |
-|------|-----------------------------------:|-----------------:|-------------------------------:|--------|
-| FNV-1a | 0.0452 / 0.0896 | 0 / 8 | 1.0107 / 1.0006 | ✅ |
-| MD5 | 0.0274 / 0.1995 | 0 / 8 | 1.0014 / 1.0253 | ✅ |
-| AES-CMAC | 0.0157 / 0.3017 | 0 / 8 | 1.0136 / 1.0086 | ✅ |
-| SipHash-2-4 | 0.0614 / 0.1468 | 0 / 8 | 1.0017 / 0.9931 | ✅ |
-| ChaCha20 | 0.1252 / 0.0737 | 0 / 8 | 0.9868 / 0.9934 | ✅ |
-| AreionSoEM-256 | 0.1388 / 0.1210 | 0 / 8 | 1.0036 / 1.0136 | ✅ |
-| BLAKE2s | 0.0793 / 0.0654 | 0 / 8 | 0.9834 / 0.9958 | ✅ |
-| BLAKE3 | 0.0433 / 0.0375 | 0 / 8 | 1.0012 / 0.9936 | ✅ |
-| BLAKE2b-512 | 0.0208 / 0.1671 | 0 / 8 | 1.0038 / 1.0172 | ✅ |
-| AreionSoEM-512 | 0.1390 / 0.0222 | 0 / 8 | 0.9866 / 0.9949 | ✅ |
-
-All 80 per-channel χ² tests pass Bonferroni correction at both BF=1 and BF=32; all collision ratios within [0.80, 1.20]. **Weak and strong PRFs produce identical per-channel profiles at shipped defaults** — including FNV-1a, which later shows the NIST STS template signal in Phase 3b. Per-channel χ² is not sensitive to the template-level structure that leaks FNV-1a; the structural test at the 8-channel aggregate level is clean.
 
 ---
 
