@@ -153,12 +153,33 @@ func nonceReusePlaintextKindEnv(t *testing.T) string {
 	if _, _, ok := resolveStructuredKind(raw); ok {
 		return raw
 	}
-	allowed := []string{"random", "json_structured"}
+	// random_masked_<coverage%> kinds: random plaintext per sample (no
+	// structural framing) + random byte-position mask at target coverage,
+	// shared byte-position set across both samples (symmetric coverage).
+	if _, ok := resolveRandomMaskedKind(raw); ok {
+		return raw
+	}
+	allowed := []string{"random", "json_structured",
+		"random_masked_25", "random_masked_50", "random_masked_80"}
 	for k := range structuredPlaintextSpecs {
 		allowed = append(allowed, k)
 	}
 	t.Fatalf("ITB_NONCE_REUSE_PLAINTEXT_KIND=%q: must be one of %v", raw, allowed)
 	return ""
+}
+
+// resolveRandomMaskedKind parses `random_masked_<N>` and returns the coverage
+// percent (25 / 50 / 80). Returns (0, false) if the name does not match.
+func resolveRandomMaskedKind(kind string) (int, bool) {
+	switch kind {
+	case "random_masked_25":
+		return 25, true
+	case "random_masked_50":
+		return 50, true
+	case "random_masked_80":
+		return 80, true
+	}
+	return 0, false
 }
 
 // ----------------------------------------------------------------------------
@@ -1153,13 +1174,16 @@ func TestRedTeamGenerateNonceReuse(t *testing.T) {
 	// the plaintexts are identical and the mask distinction doesn't apply.
 	plaintextKind := nonceReusePlaintextKindEnv(t)
 	_, _, isStructured := resolveStructuredKind(plaintextKind)
-	if mode == "partial" && !isStructured {
+	_, isRandomMasked := resolveRandomMaskedKind(plaintextKind)
+	isPartialKind := isStructured || isRandomMasked
+	if mode == "partial" && !isPartialKind {
 		t.Fatalf("ITB_NONCE_REUSE_MODE=partial requires a structured plaintext kind "+
-			"(json_structured_80 / 50 / 25 or html_structured_80 / 50 / 25, or the "+
-			"alias json_structured) — got plaintext_kind=%q. Partial KPA needs a known_mask "+
-			"sidecar to carry the per-byte attacker-known bit.", plaintextKind)
+			"(json_structured_80 / 50 / 25, html_structured_80 / 50 / 25, or the "+
+			"alias json_structured) OR a random_masked_{25,50,80} kind — got "+
+			"plaintext_kind=%q. Partial KPA needs a known_mask sidecar to carry "+
+			"the per-byte attacker-known bit.", plaintextKind)
 	}
-	if isStructured && mode != "partial" {
+	if isPartialKind && mode != "partial" {
 		t.Fatalf("ITB_NONCE_REUSE_PLAINTEXT_KIND=%q is only supported under "+
 			"ITB_NONCE_REUSE_MODE=partial (got mode=%q). Other modes use uniform-random plaintexts.",
 			plaintextKind, mode)
@@ -1188,23 +1212,51 @@ func TestRedTeamGenerateNonceReuse(t *testing.T) {
 			}
 		}
 	case "partial":
-		// Structured plaintext kind (json_structured_{25,50,80} or
-		// html_structured_{25,50,80}): each sample uses a distinct record-
-		// template variant (chosen by sample index). All variants have
-		// identical byte-level layout (same field-name lengths + same value
-		// lengths), so the per-pixel channel-known mask is identical across
-		// samples. But the CONTENT of known bytes differs per variant, so on
-		// known channels `d1 ⊕ d2 ≠ 0` and Layer 1 can constrain both
-		// noisePos AND rotation (avoiding the same-plaintext degeneracy that
-		// affects identical-template designs).
+		// Partial-KPA corpus — two sub-paths:
 		//
-		// Value bytes remain random per sample and the attacker marks them
-		// unknown via the per-byte mask → genuine Partial KPA: attacker knows
-		// protocol structural tokens + sequence numbers but not payload values.
-		for i := 0; i < N; i++ {
-			pt, mask, _ := generateStructuredPlaintext(rng, plaintextSize, i, plaintextKind)
-			plaintexts[i] = pt
-			knownMasks[i] = mask
+		// (a) random_masked_<N>: independent random plaintexts per sample +
+		//     a shared random byte-position mask at the target coverage. No
+		//     structural framing, no same-plaintext degeneracy on known
+		//     channels (d_xor ≠ 0 uniformly on attacker-known bytes). Models
+		//     an attacker who happened to observe / guess a uniform random
+		//     subset of plaintext bytes in both messages.
+		//
+		// (b) json_structured_{25,50,80} / html_structured_{25,50,80}: each
+		//     sample uses a distinct record-template variant; byte-level
+		//     layout is identical across samples but CONTENT of known bytes
+		//     differs per variant. Attacker knows protocol framing tokens,
+		//     not payload values.
+		if coverage, ok := resolveRandomMaskedKind(plaintextKind); ok {
+			mask := make([]byte, plaintextSize)
+			// Deterministic mask drawn from the same RNG so the corpus
+			// regenerates byte-identically. Assign each byte "known" with
+			// probability coverage/100 using a uniform uint32 per byte.
+			// Shared across all N samples (symmetric coverage).
+			draws := make([]byte, plaintextSize*4)
+			if _, err := rng.Read(draws); err != nil {
+				t.Fatalf("rng read random mask draws: %v", err)
+			}
+			threshold := uint32(coverage) * ((1 << 32) / 100)
+			for j := 0; j < plaintextSize; j++ {
+				u := uint32(draws[j*4])<<24 | uint32(draws[j*4+1])<<16 |
+					uint32(draws[j*4+2])<<8 | uint32(draws[j*4+3])
+				if u < threshold {
+					mask[j] = 1
+				}
+			}
+			for i := 0; i < N; i++ {
+				plaintexts[i] = make([]byte, plaintextSize)
+				if _, err := rng.Read(plaintexts[i]); err != nil {
+					t.Fatalf("rng read random_masked plaintext %d: %v", i, err)
+				}
+				knownMasks[i] = append([]byte(nil), mask...)
+			}
+		} else {
+			for i := 0; i < N; i++ {
+				pt, m, _ := generateStructuredPlaintext(rng, plaintextSize, i, plaintextKind)
+				plaintexts[i] = pt
+				knownMasks[i] = m
+			}
 		}
 	default:
 		t.Fatalf("unhandled mode: %s", mode)
