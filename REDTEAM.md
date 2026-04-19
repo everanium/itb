@@ -158,30 +158,31 @@ Or run phases manually in sequence:
 # 1. Generate corpus (~1–2 min at BF=1; similar at BF=32)
 ITB_REDTEAM=1 ITB_BARRIER_FILL=1 go test -run TestRedTeamGenerate -v -timeout 60m
 
-# 2. Phase 1 — structural checks (per-channel χ² + nonce collision)
-python3 scripts/redteam/phase1_sanity/analyze.py
+# 2. Concatenate per-sample ciphertexts into per-hash byte streams (<5 s)
+#    Produces tmp/streams/<hash>.bin; consumed by Phase 1 sub-tests and NIST STS.
+python3 scripts/redteam/phase3_deep/prepare_streams.py
 
-# 3. Phase 2b — per-pixel candidate distinguisher, two threat models in parallel (~1-2 min)
+# 3. Phase 1 — structural (per-channel χ² + nonce collision) + FFT + Markov sub-tests
+#    analyze.py reads per-sample files from tmp/encrypted/;
+#    FFT + Markov read the concatenated per-hash streams from tmp/streams/.
+python3 scripts/redteam/phase1_sanity/analyze.py
+python3 scripts/redteam/phase1_sanity/fft_per_channel.py
+python3 scripts/redteam/phase1_sanity/markov.py
+
+# 4. Phase 2b — per-pixel candidate distinguisher, two threat models in parallel (~1-2 min)
 #    Mode A: attacker knows startPixel, data-aligned + plaintext XOR (idealized).
 #    Mode B: no startPixel, no plaintext, iterates full container (realistic).
 #    run_suite.py launches both concurrently; run standalone one-at-a-time if preferred.
 python3 scripts/redteam/phase2_theory/distinguisher.py       # Mode A
 python3 scripts/redteam/phase2_theory/distinguisher_full.py  # Mode B
 
-# 4. Phase 2c — startPixel enumeration (parallel, ~5 min at BF=1, ~12 min at BF=32)
+# 5. Phase 2c — startPixel enumeration (parallel, ~5 min at BF=1, ~12 min at BF=32)
 python3 scripts/redteam/phase2_theory/startpixel_multisample.py
 
-# 5. Phase 3a — rotation-invariant edge case (~30 s)
+# 6. Phase 3a — rotation-invariant edge case (~30 s)
 python3 scripts/redteam/phase3_deep/rotation_invariant.py
 
-# 6. Prepare streams for NIST STS (also consumed by step 7 sub-tests)
-python3 scripts/redteam/phase3_deep/prepare_streams.py
-
-# 7. Phase 1 sub-tests — FFT + Markov (mode-agnostic, Single + Triple; reads tmp/streams/)
-python3 scripts/redteam/phase1_sanity/fft_per_channel.py
-python3 scripts/redteam/phase1_sanity/markov.py
-
-# 8. Phase 3b — NIST STS parallel runner (~5 min at N=100, ~1 min at N=20)
+# 7. Phase 3b — NIST STS parallel runner (~5 min at N=100, ~1 min at N=20)
 ITB_NIST_STREAMS=100 python3 scripts/redteam/phase3_deep/nist_sts_runner.py
 ```
 
