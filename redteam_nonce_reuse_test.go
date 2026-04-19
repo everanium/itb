@@ -49,6 +49,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/crc64"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -56,6 +57,54 @@ import (
 	"testing"
 	"time"
 )
+
+// ----------------------------------------------------------------------------
+// CRC128 — test-only primitive for seed-recovery demonstration.
+//
+// NOT A PRODUCTION HASH. This is a deliberately-below-FNV-1a primitive:
+// two independent CRC64 computations with different irreducible polynomials
+// (ECMA + ISO), each keyed by one 64-bit half of the (seed0, seed1) input.
+// Output is (lo, hi) = (CRC64-ECMA, CRC64-ISO).
+//
+// Every operation is GF(2)-linear: CRC64 is polynomial division over GF(2)[x],
+// the keyed initial-state register XOR is GF(2)-linear, and concatenating two
+// GF(2)-linear maps is GF(2)-linear. Wrapping this in ITB's ChainHash (which
+// XOR-keys between rounds) keeps the whole chain GF(2)-linear end-to-end —
+// so a straightforward Gaussian elimination over GF(2) recovers the 1024-bit
+// dataSeed from a few dozen (input, output) observations under a shared
+// (seeds, nonce). This is the "worse-than-FNV-1a" control primitive used to
+// demonstrate empirically that ITB's mixed-algebra defense (GF(2) XOR +
+// Z/2^64 multiplication in FNV-1a's case) is LOAD-BEARING — replace the
+// Z/2^64 multiply with a same-algebra operation and the chain collapses.
+//
+// Placed in this test file (not in ITB's production hash matrix) because
+// it has zero cryptographic value and must NEVER be plugged into production.
+// ----------------------------------------------------------------------------
+
+var (
+	crc64TableECMA = crc64.MakeTable(crc64.ECMA)
+	crc64TableISO  = crc64.MakeTable(crc64.ISO)
+)
+
+// crc64Keyed runs a standard CRC64 update loop starting from `seed` as the
+// initial register state. Returns the final 64-bit register value. The
+// per-byte update is `crc = table[byte(crc)^b] ^ (crc >> 8)` — GF(2)-linear.
+func crc64Keyed(table *crc64.Table, data []byte, seed uint64) uint64 {
+	crc := seed
+	for _, b := range data {
+		crc = (*table)[byte(crc)^b] ^ (crc >> 8)
+	}
+	return crc
+}
+
+// crc128 is a HashFunc128-compatible adapter. (lo, hi) come from two
+// independent CRC64 computations with different polynomials keyed by
+// (seed0, seed1) respectively.
+func crc128(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
+	lo = crc64Keyed(crc64TableECMA, data, seed0)
+	hi = crc64Keyed(crc64TableISO, data, seed1)
+	return
+}
 
 // ----------------------------------------------------------------------------
 // setTestNonce — test-only helper to install a fixed nonce for generateNonce
@@ -707,7 +756,7 @@ type cellMetaJSON struct {
 // Matches the ordering in redteam_test.go:buildHashSpecs.
 func hashWidthForName(name string) (int, error) {
 	switch name {
-	case "fnv1a", "md5", "aescmac", "siphash24":
+	case "fnv1a", "md5", "aescmac", "siphash24", "crc128":
 		return 128, nil
 	case "chacha20", "areion256", "blake2s", "blake3":
 		return 256, nil
@@ -715,7 +764,7 @@ func hashWidthForName(name string) (int, error) {
 		return 512, nil
 	default:
 		return 0, fmt.Errorf("unknown hash %q; supported: fnv1a, md5, aescmac, siphash24, "+
-			"chacha20, areion256, blake2s, blake3, blake2b, areion512", name)
+			"crc128 (test-only), chacha20, areion256, blake2s, blake3, blake2b, areion512", name)
 	}
 }
 
@@ -731,6 +780,8 @@ func hashFunc128ForName(name string) (HashFunc128, string, error) {
 		return makeAESHash128(), "AES-CMAC", nil
 	case "siphash24":
 		return sipHash128, "SipHash-2-4", nil
+	case "crc128":
+		return crc128, "CRC128-test", nil
 	default:
 		return nil, "", fmt.Errorf("hash %q is not in the 128-bit family", name)
 	}
@@ -937,6 +988,33 @@ func runNonceReuseBody(t *testing.T, p nonceReuseParams, adapter nonceReuseWidth
 	}
 
 	noiseComp, dataComp, startComp := adapter.seedComponents()
+
+	// seed.truth.json — ground-truth seed components for the seed-inversion
+	// experiment (CRC128 only — other primitives do not have a feasible
+	// inversion path at these parameters). Emitted universally so the
+	// downstream solver can validate any primitive's recovered output
+	// against the expected seed.
+	seedTruth := struct {
+		KeyBits             int      `json:"key_bits"`
+		HashWidth           int      `json:"hash_width"`
+		NoiseSeedComponents []uint64 `json:"noise_seed_components"`
+		DataSeedComponents  []uint64 `json:"data_seed_components"`
+		StartSeedComponents []uint64 `json:"start_seed_components"`
+	}{
+		KeyBits:             p.keyBits,
+		HashWidth:           p.hashWidth,
+		NoiseSeedComponents: noiseComp,
+		DataSeedComponents:  dataComp,
+		StartSeedComponents: startComp,
+	}
+	seedTruthPath := filepath.Join(p.outDir, "seed.truth.json")
+	seedTruthJSON, err := json.Marshal(seedTruth)
+	if err != nil {
+		t.Fatalf("marshal seed.truth: %v", err)
+	}
+	if err := os.WriteFile(seedTruthPath, seedTruthJSON, 0o644); err != nil {
+		t.Fatalf("write %s: %v", seedTruthPath, err)
+	}
 	var perSampleHex []string
 	if p.controlMode == "nonce_mismatch" {
 		perSampleHex = make([]string, p.N)

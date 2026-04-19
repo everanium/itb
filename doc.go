@@ -60,6 +60,12 @@
 //     select 128, 256, or 512 bits. Mandatory — prevents configuration
 //     reuse across messages. Birthday collision at ~2^(nonceBits/2) messages.
 //
+// # Easter egg
+//
+// CRC128 + ITB + 512-bit nonce — arithmetically "safe" (2^-256 gate never fires).
+// Mathematically correct. Cryptographically a joke. Do not ship.
+// Look Phase 2a in REDTEAM.md
+//
 // # Hash Width Variants
 //
 // The library provides three parallel API sets for different hash output widths:
