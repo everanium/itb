@@ -93,7 +93,7 @@ Both Single and Triple Ouroboros were each run twice — at the **shipped defaul
 
 - `keyBits = 1024` per seed (Single: 3 seeds — noise, data, start; Triple: 7 seeds — 1 noise + 3 data + 3 start)
 - `SetMaxWorkers(8)` — parallel pixel processing
-- Nonce 128 bits (default)
+- Nonce 128 bits (test-harness setting — Phase 1 / 2b / 2c / 3a / 3b statistical results are independent of nonce size; only the header byte-count depends on it. For production the nonce-size recommendation is separate from the test-harness choice — see [Threat-model gate](#threat-model-gate--why-this-whole-exercise-is-gated-by-user-nonce-size-choice).)
 
 Per-regime phase logs live under `tmp/results/<mode>_bf<N>/` where `<mode>` is `single` or `triple` and `<N>` is the `BarrierFill` value.
 
@@ -944,7 +944,7 @@ Legend: `⚠` marks cells where Layer 2 converged onto a period-shifted startPix
 
 **5. Low-coverage (25 %) behaviour is consistently weak but graceful.** Across sizes, 25 % coverage yields 15-24 % Clean on small-to-mid sizes, degrading further under period-shift. No cell produces meaningless garbage; the demasker correctly refuses pixels it can't constrain rather than emit noise.
 
-**6. 10 cells returned exit code 2 under imperfect period-shift alignment.** Under a shift that is not exactly a d_xor pattern period, a small number of pixels (0.01 – 0.1 %) recovered a `(noisePos, rotation)` pair that is unique under constraint matching but does not match the ground-truth at the shifted position. These are NOT formula bugs — the demasker formula is correct; the artefact is that single-pair Layer 1 admits rare isolated false positives when `d_xor_claim_p ≠ d_xor_true_{p+shift}` at approximate-period shifts. The stream was still emitted (mostly correct, with a handful of corrupted channel-XOR values scattered); the orchestrator flags these as demask-fail due to the strict WRONG > 0 gate. Real attackers cannot distinguish these from clean runs without access to ground truth.
+**6. 10 cells returned exit code 2 under imperfect period-shift alignment.** Under a shift that is not exactly a `d_xor` pattern period, a small number of pixels (0.01 – 0.1 %) recovered a `(noisePos, rotation)` pair that is unique under constraint matching but does not match the ground-truth at the shifted position. These are NOT formula bugs — the demasker formula is correct; the artefact is that single-pair Layer 1 admits rare isolated false positives when `d_xor_claim_p ≠ d_xor_true_{p+shift}` at approximate-period shifts. The stream was still emitted (mostly correct, with a handful of corrupted channel-XOR values scattered); the orchestrator flags these as demask-fail due to the strict WRONG > 0 gate. Real attackers cannot distinguish these from clean runs without access to ground truth.
 
 ### Nine architectural effects visible in this matrix
 
@@ -952,7 +952,7 @@ These are properties of ITB's construction that show up empirically in the numbe
 
 1. **Same-plaintext-local degeneracy** on structurally-shared known bytes. When the attacker knows a byte AND that byte is identical across both plaintexts (JSON `{`, `"`, `:`, `,`; HTML `<`, `>`, `=`), the channel's `d_xor = 0` and it only constrains `noisePos`, not `rotation`. This reduces the effective discriminating budget from 8 channels to ~5 per pixel at 80 % coverage.
 
-2. **Record-level periodicity**. Repeating record templates produce a d_xor pattern periodic with period = record length. Layer 2 brute-force thereby admits ANY period-shifted sp as "valid" — visible in the ⚠-marked cells. `auto --n-probe` tries to span 3 record periods to break this, but on mid-size plaintexts the heuristic is not enough.
+2. **Record-level periodicity**. Repeating record templates produce a `d_xor` pattern periodic with period = record length. Layer 2 brute-force thereby admits ANY period-shifted sp as "valid" — visible in the ⚠-marked cells. `auto --n-probe` tries to span 3 record periods to break this, but on mid-size plaintexts the heuristic is not enough.
 
 3. **Stochastic period-shift catastrophe**. At imperfect (non-period-multiple) shifts, Layer 1 coincidentally accepts false constraints on most pixels, collapsing Clean % to 1-15 %. Visible in JSON 128 KB / 1 MB / 2 MB / 4 MB cells.
 
@@ -968,16 +968,20 @@ These are properties of ITB's construction that show up empirically in the numbe
 
 9. **Imperfect-period-shift wrong-match emergence**. Documented in observation 6 above — approximate-period shifts admit rare isolated false single-candidate recoveries at the 0.01 – 0.1 % level.
 
-### Threat-model gate — why this whole exercise is gated by user downgrade
+### Threat-model gate — why this whole exercise is gated by user nonce-size choice
 
-None of the attack surface above is exploitable without nonce collision. ITB's shipped default nonce size is **512 bits** (see [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis)), giving `2²⁵⁶` queries before 50 % collision probability — mathematically infeasible on any foreseeable hardware for all time. The entire Phase 2d exercise (Full KPA + Partial KPA) assumes an attacker has ALREADY gotten past that gate, which in practice requires the USER to explicitly downgrade to 128-bit or smaller nonce:
+None of the attack surface above is exploitable without nonce collision. **ITB supports nonce sizes up to 512 bits** (see [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis)), and a 512-bit nonce is the ideal choice for any deployment that transmits data over the network WITHOUT periodic key / seed rotation: at that size the 50 % collision probability requires `2²⁵⁶` queries, which is mathematically infeasible on any foreseeable hardware for all time. The entire Phase 2d exercise (Full KPA + Partial KPA) assumes an attacker has ALREADY gotten past the collision gate, which in practice requires the user to operate at a much smaller nonce size than 512 bits AND sustain the key long enough for the reduced gate to fire.
 
-- 512-bit (default): 2²⁵⁶ queries → never
+Collision-probability floor at 50 % as a function of nonce size:
+
+- **512-bit** (recommended for long-lived keys / no seed rotation): 2²⁵⁶ queries → never
 - 256-bit: 2¹²⁸ queries → infeasible at civilisational scale
 - 128-bit: 2⁶⁴ queries → reachable only under sustained abuse of a single key
 - ≤ 64-bit: trivially reachable
 
-The Phase 2d findings are conditional on "attacker got here somehow". On a default deployment the conditional never fires. **This gate, not the per-cell Clean Signal numbers, is the primary defence.**
+Pick the nonce size deliberately: if seeds will be rotated per session / per message / per short-lived key, small-nonce configurations are safe within that rotation interval. If seeds are long-lived (months, years, forever on a device) and traffic volume is large, 512-bit is the configuration that keeps the Phase 2d attack surface mathematically out of reach without any operational ceremony.
+
+The Phase 2d findings are conditional on "attacker got there somehow". At a 512-bit nonce with any realistic traffic volume, the conditional never fires. **This gate, not the per-cell Clean Signal numbers, is the primary defence.**
 
 ### Scope — what Phase 2d does NOT test (and why)
 
