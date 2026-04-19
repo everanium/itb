@@ -107,6 +107,8 @@ With PRF: the same 56 candidates, the same candidate dataHash values. But invert
 
 ## 8. Nonce Reuse: Only If Every Condition Holds
 
+> **Disclaimer — what "demasking" means here.** The demasker is **not a decryption tool**. It does not recover plaintext from ciphertext. What it does is strip ITB's masking layers (noise bit at `noisePos`, 7-bit rotation, channel-XOR) off a nonce-reuse ciphertext pair, exposing the underlying raw `dataSeed.ChainHash(pixel, nonce)` hash-output bits — **the clean PRF signal under a controlled (pixel, nonce) probe, not plaintext**. That stream is ammunition for a downstream seed-recovery SAT attempt (feasible only under invertible primitives like FNV-1a; infeasible under any PRF-grade primitive). It contains no plaintext. Any plaintext exposure under nonce reuse comes from the classical two-time pad (`C1 ⊕ C2` on data channels yields `plaintext_1 ⊕ plaintext_2`), not from the demasking machinery.
+
 Nonce reuse is the single edge case where the barrier can leak local information without brute-forcing seeds. But **every** condition below must hold simultaneously — miss any one and the attack collapses:
 
 1. **User downgraded the nonce size from 512-bit to ≤ 128-bit.** ITB supports nonce sizes up to 512 bits → `2^256` queries to birthday-collision → mathematically unreachable on any foreseeable hardware. Shrinking to 128-bit is the gate the attacker cannot force open; only the user can.
