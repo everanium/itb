@@ -597,7 +597,7 @@ Default nonce size is 128-bit (16 bytes). Configurable to 256-bit (32 bytes) or 
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) |
 | Nonce reuse protection | 128/256/512-bit per-message nonce (default 128-bit) |
-| Nonce misuse resistance | **Local** only: two-time pad on the colliding 2–3 messages. Seeds remain secret (PRF non-invertibility), future messages safe, no key rotation required. Single collision too few observations for Simon/structural/quantum algebraic attacks. Unlike AES-GCM where nonce reuse leaks H and enables forgery until key rotation (global catastrophe) |
+| Nonce misuse resistance | **Local** only: at most 2–3 colliding messages theoretically affected. In practice ITB's per-encryption noise + rotation + channelXOR mean `C1 ⊕ C2` does NOT reduce to `plaintext_1 ⊕ plaintext_2` as in a stream cipher — plaintext recovery requires the full demasker pipeline whose output is the hash stream, not plaintext bits (see [ITB.md §8](ITB.md#8-nonce-reuse-only-if-every-condition-holds)). Seeds remain secret (PRF non-invertibility), future messages safe, no key rotation required. Single collision too few observations for Simon / structural / quantum algebraic attacks. Unlike AES-GCM where nonce reuse leaks H and enables forgery until key rotation (global catastrophe) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 
 ## Integrity (MAC-Inside-Encrypt)
