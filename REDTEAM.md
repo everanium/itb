@@ -570,6 +570,8 @@ Obstacle (2) `startPixel` isolation empirically holds across all 10 primitives a
 
 ## Phase 2d — Nonce-Reuse
 
+> **For a reader-friendly summary of this section** — what nonce reuse actually is, the five conditions that ALL must hold for the attack to produce any signal, and why the user's choice of nonce size is the real defence — see [ITB.md § 8 Nonce Reuse](ITB.md#8-nonce-reuse-only-if-every-condition-holds). The rest of this Phase 2d section is the formal empirical write-up: corpus generator, demasker pipeline, 96-cell matrix, NIST STS tables, and the nine architectural effects visible in the data.
+
 Scripts:
 - [`redteam_nonce_reuse_test.go`](redteam_nonce_reuse_test.go) — corpus generator (install fixed nonce via test-only hook; encrypt N plaintexts with same seeds + same nonce; emit ground-truth config sidecar).
 - [`scripts/redteam/phase2_theory/nonce_reuse_demask.py`](scripts/redteam/phase2_theory/nonce_reuse_demask.py) — demasker (Layer 1 constraint matching + Layer 2 startPixel brute force + reconstructed-stream emission).
