@@ -62,7 +62,7 @@
 //
 // # Easter egg
 //
-// CRC128 + ITB + 512-bit nonce — arithmetically "safe" (2^-256 gate never fires).
+// FNV-1a 128-bit + ITB + 512-bit nonce — arithmetically "safe" (2^-256 gate never fires).
 // Mathematically correct. Cryptographically a joke. Do not ship.
 // Look Phase 2a in REDTEAM.md
 //
