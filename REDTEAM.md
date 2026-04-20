@@ -255,7 +255,7 @@ Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supple
 | **2c. startPixel enumeration** | Obstacle (2) — startPixel indistinguishability | ✅ mean rank-fraction ∈ [0.461, 0.532]; 6 flagged cells / 90, consistent with 4.5 expected under H0 at α=0.05 (BF=32: 5 / 90) |
 | **2d. Nonce-Reuse** | [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) locality claim — PRF-dependency empirically visible | ✅ / ⚠ Attack chain demasks obstacles (2) + (3) in seconds via Layer 1 constraint matching + Layer 2 startPixel brute force, reconstructs pure `ChainHash(pixel, nonce)` output. NIST STS on reconstructed stream (N=16 × 1 Mbit per cell, 2 MB plaintext): **BLAKE3 188/188 pass**, **FNV-1a 182/188 (6 fails — FFT 0/16, BlockFrequency 9/16, CumulativeSums ×2, Runs 12/16)**. Under PRF the single remaining obstacle (ChainHash SAT-hardness) survives with no exploitable bias; under invertible primitive residual linear-order bias is detectable on every bit-stream |
 | **3a. Rotation-invariant** | [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) edge case | ✅ Rate 2/128 = 1.5625 % within 0.007 % across all 10 hashes; **no sign-consistent deviation** between BF=1 and BF=32. The 5–6 σ AES-CMAC / BLAKE2b-512 "signals" at BF=32 did not appear at BF=1 — test-power artefacts on near-uniform output, not real bias |
-| **3b. NIST STS** | Industry-standard randomness suite | ✅ At N = 100 × 1 Mbit Single: 15 / 20 `(hash, BF)` cells pass 188/188; 4 cells show one single-test fail (conventional H0 outliers, 5 / 3 760 = 0.13 % vs 1 % expected at α = 0.01); 1 cell (BLAKE3, BF=32) hit the `NonOverlappingTemplate` bin-0 artefact — paper-grade PRF hitting the same 40/188 outcome as FNV-1a at N=20 confirms the mechanism is hash-agnostic. Triple confirmed in both BF regimes (BF=1: 4 / 1 880 = 0.21 %; BF=32: 1 / 1 880 = 0.05 %). All 10 exhibit the SP 800-22 uniformity-of-p-values clustering identically across configurations |
+| **3b. NIST STS** | Industry-standard randomness suite | ✅ At N = 100 × 1 Mbit Single: 15 / 20 `(hash, BF)` cells pass 188/188; 4 cells show one single-test fail (conventional H0 outliers, 5 / 3 760 = 0.13 % vs 1 % expected at α = 0.01); 1 cell (BLAKE3, BF=32) hit the `NonOverlappingTemplate` bin-0 artefact — paper-grade PRF hitting the same 40/188 outcome as FNV-1a at N=20 confirms the mechanism is hash-agnostic. Triple confirmed in both BF regimes (BF=1: 4 / 1 880 = 0.21 %; BF=32: 1 / 1 880 = 0.05 %). All 12 exhibit the SP 800-22 uniformity-of-p-values clustering identically across configurations |
 
 ---
 
@@ -271,10 +271,11 @@ Scripts: [`analyze.py`](scripts/redteam/phase1_sanity/analyze.py), [`fft_per_cha
 
 **Nonce-independence collision scan** — same-position byte matches between sample-pair prefixes, vectorised via `bincount`. Expected rate under fresh nonce + fresh seeds: 1/256. Sustained deviation indicates nonce-dependent structure.
 
-Results at BF=1 (130 samples per hash × 10 hashes; BF=32 numbers in parentheses):
+Results at BF=1 (137 samples per hash × 12 hashes; BF=32 numbers in parentheses):
 
 | Hash | Min channel p-value (BF=1 / BF=32) | Bonferroni fails | Collision ratio (BF=1 / BF=32) | Status |
 |------|-----------------------------------:|-----------------:|-------------------------------:|--------|
+| CRC128 | 0.0033 / 0.0258 | 0 / 8 | 0.9907 / 0.9888 | ✅ |
 | FNV-1a | 0.0452 / 0.0896 | 0 / 8 | 1.0107 / 1.0006 | ✅ |
 | MD5 | 0.0274 / 0.1995 | 0 / 8 | 1.0014 / 1.0253 | ✅ |
 | AES-CMAC | 0.0157 / 0.3017 | 0 / 8 | 1.0136 / 1.0086 | ✅ |
@@ -283,16 +284,17 @@ Results at BF=1 (130 samples per hash × 10 hashes; BF=32 numbers in parentheses
 | AreionSoEM-256 | 0.1388 / 0.1210 | 0 / 8 | 1.0036 / 1.0136 | ✅ |
 | BLAKE2s | 0.0793 / 0.0654 | 0 / 8 | 0.9834 / 0.9958 | ✅ |
 | BLAKE3 | 0.0433 / 0.0375 | 0 / 8 | 1.0012 / 0.9936 | ✅ |
+| BLAKE2b-256 | 0.0082 / 0.0720 | 0 / 8 | 1.0015 / 0.9999 | ✅ |
 | BLAKE2b-512 | 0.0208 / 0.1671 | 0 / 8 | 1.0038 / 1.0172 | ✅ |
 | AreionSoEM-512 | 0.1390 / 0.0222 | 0 / 8 | 0.9866 / 0.9949 | ✅ |
 
-All 80 per-channel χ² tests pass Bonferroni correction at both BF=1 and BF=32; all collision ratios within [0.80, 1.20]. **Weak and strong PRFs produce identical per-channel profiles at shipped defaults** — including FNV-1a, which later shows the NIST STS template signal in Phase 3b. Per-channel χ² is not sensitive to the template-level structure that leaks FNV-1a; the structural test at the 8-channel aggregate level is clean.
+All 80 per-channel χ² tests pass Bonferroni correction at both BF=1 and BF=32; all collision ratios within [0.80, 1.20]. **Weak and strong PRFs produce identical per-channel profiles at shipped defaults** — including FNV-1a, which later shows the NIST STS template signal in [Phase 3b](#phase-3b--nist-sts-sp-800-22). Per-channel χ² is not sensitive to the template-level structure that leaks FNV-1a; the structural test at the 8-channel aggregate level is clean.
 
 ### [B] FFT / Markov sub-tests (mode-agnostic, Single + Triple)
 
 Two byte-level sub-tests that do not depend on startPixel alignment → mode-agnostic (both run unchanged in Single and Triple). **FFT**: demultiplex each `tmp/streams/<hash>.bin` into 8 per-channel streams, Welch spectral flatness per channel + zero-lag Pearson between channel pairs. **Markov**: full 65 536-cell transition matrix (adjacent-byte on the flat stream + adjacent-channel within each pixel), χ² against uniform 1/65 536.
 
-Summary across 10 primitives per cell × 2 modes × 2 fill regimes:
+Summary across 12 primitives per cell × 2 modes × 2 fill regimes:
 
 | Mode × BF | FFT flatness mean | FFT max\|corr\| median | Markov adj-byte χ² mean | Markov adj-byte p median | Bonferroni fails / 70 |
 |-----------|------------------:|-----------------------:|------------------------:|-------------------------:|----------------------:|
@@ -302,6 +304,17 @@ Summary across 10 primitives per cell × 2 modes × 2 fill regimes:
 | Triple BF=32 | 0.99944 | 0.00156 | 65 532 | 0.59 | 0 |
 
 FFT flatness stays within 6×10⁻⁵ of 1.0 on every channel across all 4 configs — white-noise signature. Markov adjacent-byte χ² mean clusters within ~85 of the df=65 535 H0 expectation; p medians scatter around 0.5 (textbook H0). Zero replicable Bonferroni fails across 280 within-pixel channel-pair tests (one non-replicating raw flag on ChaCha20 Triple BF=1 matches the statistical-power-artefact pattern on near-uniform output documented in [Phase 3a](#phase-3a--rotation-invariant-edge-case) — not counted as a fail in the table). Effectively, feeding the suite's concatenated ciphertext stream through FFT + Markov is indistinguishable from feeding `/dev/urandom`.
+
+**CRC128 outlier — per-channel FFT spectral flatness.** The aggregate numbers above exclude CRC128 from the mean (CRC128 is the below-spec GF(2)-linear stress control, see [Hash matrix](#hash-matrix)). On the FFT sub-test CRC128 separates cleanly from the PRF-grade band in every one of the 4 `(mode × BF)` cells — a systematic, replicated signal:
+
+| Mode × BF | CRC128 flatness min | CRC128 flatness mean | PRF-grade flatness mean (reference) |
+|-----------|--------------------:|---------------------:|------------------------------------:|
+| Single BF=1 | 0.9486 | 0.9668 | 0.9992 |
+| Single BF=32 | 0.9691 | 0.9803 | 0.9994 |
+| Triple BF=1 | 0.9501 | 0.9673 | 0.9992 |
+| Triple BF=32 | 0.9689 | 0.9803 | 0.9994 |
+
+The 30-50× deviation from the PRF-grade 0.9994 baseline reflects residual per-channel spectral structure that the 8-round ChainHash XOR-composition of a fully GF(2)-linear round function cannot fully absorb. BarrierFill=32 damps the deviation (0.96 → 0.98 flatness mean) by diluting data-pixel structure with CSPRNG fill, but does not eliminate it. Markov sub-test on the same corpus shows CRC128 inside the normal band (adj-byte χ² p ∈ [0.05, 0.95], Bonferroni 0/8 across all 4 cells) — the FFT surface is the only Phase 1 sub-test where CRC128 is individually detectable. This is consistent with the architectural prediction in [Phase 2a extension — hash-agnostic bias-neutralization audit](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2): GF(2)-linearity surfaces on probes that accumulate per-position fine-grained structure, not on probes that only measure aggregate byte frequencies.
 
 ---
 
@@ -323,7 +336,9 @@ h_2 = FNV-1a(data, s_4  ⊕ h_1_lo, s_5  ⊕ h_1_hi)
 h_7 = FNV-1a(data, s_14 ⊕ h_6_lo, s_15 ⊕ h_6_hi)
 ```
 
-Inverting the last round yields **one 128-bit equation in two unknowns** (the final seed pair and the previous intermediate state). Multiple pixels provide more equations, but the system is non-linear through Z/2^128 multiplication and XOR-chained through eight levels — a hard bitvector SAT problem, not a direct inversion.
+Inverting the last round yields **one 128-bit equation in two unknowns** (the final seed pair and the previous intermediate state). Multiple pixels provide more equations, but the round function is **non-GF(2)-linear** — for FNV-1a via the Z/2⁶⁴ multiply-by-constant (carry-chain propagation creates AND-combinations between bit positions), for MD5 via its boolean-mixer `F/G/H/I` functions and modular additions (same carry mechanism) — and the round outputs are XOR-chained through eight levels. The resulting system is a hard bitvector SAT problem, not a direct inversion.
+
+**GF(2)-linear primitives are a structurally different case.** If the round function is itself GF(2)-linear (every output bit is a linear combination of input bits over GF(2)), then XOR-keyed composition preserves linearity: 8 rounds of ChainHash collapse to a single linear map `output_lane = K_lane ⊕ c_lane(data)` where `K_lane` is a compound key equal to the product of the round state-transfer matrices applied to the seed vector, and `c_lane(data) = ChainHash(data, seed = 0)` is attacker-computable. **The effective key space per observable lane is bounded by the primitive's per-lane internal state width, not by the `keyBits` parameter.** CRC128 is two independent CRC64 pipelines (ECMA + ISO) running in parallel: ChainHash XOR-keying feeds `s_{2k} ⊕ h_k.lo` only into the ECMA lane and `s_{2k+1} ⊕ h_k.hi` only into the ISO lane, so the two lanes never mix. The construction therefore has two independent 64-bit compound keys `K_ECMA` and `K_ISO` (128 bits total), but ITB extracts ciphertext bits only from `hLo` = the ECMA lane — the ISO lane is never observable through `channelXOR`. Attacker-reachable compound key is thus **64 bits** (ECMA lane), of which `channelXOR = hLo >> 3` exposes the middle 56 (bits 3..58). No number of ChainHash rounds and no amount of `keyBits` expansion can raise the per-lane effective key space above the lane's state width — extra seed bits live in the null space of the compound linear map. This is the analytical basis for [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse), where the collapse is demonstrated empirically: 1024-bit seed → 64 recoverable compound-key bits on a single CRC128 lane.
 
 ### Z3 feasibility by `keyBits`
 
