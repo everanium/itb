@@ -11,22 +11,25 @@ Display names match BENCH.md.
 """
 
 # Ordered list of (dirname, display_name, width_bits).
+#
+# Canonical order: below-spec lab-helper primitives first (CRC128, FNV-1a, MD5),
+# then PRF-grade primitives by width 128 → 256 → 512. See CLAUDE.md.
+#
+# CRC128 is a GF(2)-linear stress control — ChainHash<CRC128> collapses to a
+# Gaussian-elimination-solvable system. Not exported to any public API.
 HASHES = [
-    ("fnv1a",     "FNV-1a",         128),
-    ("md5",       "MD5",            128),
-    ("aescmac",   "AES-CMAC",       128),
-    ("siphash24", "SipHash-2-4",    128),
-    ("chacha20",  "ChaCha20",       256),
-    ("areion256", "AreionSoEM256",  256),
-    ("blake2s",   "BLAKE2s",        256),
-    ("blake3",    "BLAKE3",         256),
-    ("blake2b",   "BLAKE2b-512",    512),
-    ("areion512", "AreionSoEM512",  512),
-    # Test-only below-FNV-1a primitive for seed-inversion demo (Phase 2a
-    # extension in REDTEAM.md). GF(2)-linear throughout — ChainHash<CRC128>
-    # collapses to a Gaussian-elimination-solvable system. Never used in
-    # production ITB.
-    ("crc128",    "CRC128-test",    128),
+    ("crc128",     "CRC128",        128),
+    ("fnv1a",      "FNV-1a",        128),
+    ("md5",        "MD5",           128),
+    ("aescmac",    "AES-CMAC",      128),
+    ("siphash24",  "SipHash-2-4",   128),
+    ("chacha20",   "ChaCha20",      256),
+    ("areion256",  "AreionSoEM256", 256),
+    ("blake2s",    "BLAKE2s",       256),
+    ("blake3",     "BLAKE3",        256),
+    ("blake2b256", "BLAKE2b-256",   256),
+    ("blake2b",    "BLAKE2b-512",   512),
+    ("areion512",  "AreionSoEM512", 512),
 ]
 
 HASH_DIRNAMES = [h[0] for h in HASHES]
