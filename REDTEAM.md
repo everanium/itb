@@ -97,7 +97,7 @@ Twelve primitives spanning the full spectrum of cryptographic strength, all run 
 
 ### Settings
 
-Both Single and Triple Ouroboros were each run twice — at the **shipped default** `SetBarrierFill(1)` and at the **maximum** `SetBarrierFill(32)`. Single runs all five empirical phases; Triple runs the two mode-agnostic phases (1 and 3b). Other parameters are identical across all four runs:
+Both Single and Triple Ouroboros were each run twice — at the **shipped default** `SetBarrierFill(1)` and at the **maximum** `SetBarrierFill(32)`. Single runs the full empirical-phase suite; Triple runs the two mode-agnostic phases (1 and 3b). Other parameters are identical across all four runs:
 
 - `keyBits = 1024` per seed (Single: 3 seeds — noise, data, start; Triple: 7 seeds — 1 noise + 3 data + 3 start)
 - `SetMaxWorkers(8)` — parallel pixel processing
@@ -1818,7 +1818,7 @@ Every hash — including FNV-1a, which raised the alarm at N=20 by drawing bin 0
 1. **All 10 primitives are empirically indistinguishable on NIST STS.** The single-bin clustering is identical across invertible (FNV-1a), biased (MD5), and paper-grade PRF (eight others) primitives. No hash stands out structurally. The two 40/188 events in the table — FNV-1a at N=20 Run A and BLAKE3 at N=100 BF=32 — are both bin-0 draws of the same mechanism; one from a below-spec hash, one from a PRF, confirming the mechanism is hash-agnostic.
 2. **A 40/188 cell is bin-0 bad luck, not a security signal — regardless of which hash it happens to.** Any hash can draw bin 0 on any run and produce this catastrophic-looking proportion failure on all 148 `NonOverlappingTemplate` sub-tests simultaneously. Five configurations × 10 hashes = 50 (hash, run) trials in the suite; expected bin-0 hits at ~10 % per trial is ~5; observed is 2. Consistent with the null model.
 3. **N=100 does not eliminate the artefact — it just reduces per-cell probability proportionally.** At both N=20 and N=100 the bin-0 draw remains a ~10 % event per `(hash, run)` pair. Readers scanning the table should treat any 40/188 cell with † as equivalent to the 50 other cells — a random bin assignment that happened to land on bin 0 — rather than as a hash-specific failure. Larger-N runs are preferable because conventional (non-bin-0) proportion failures become genuine outliers, letting the eye separate real signal from the artefact.
-4. **The paper's explicit PRF-grade primitive requirement stands.** The empirical suite shows the architecture drives every tested primitive — including FNV-1a and MD5 — to statistically identical ciphertext across all five empirical phases; a real PRF's output is already unpredictable and gets absorbed identically. NIST STS cannot reliably distinguish ITB ciphertext produced with any of the 10 tested primitives from a true PRF across the three ITB widths (128 / 256 / 512).
+4. **The paper's explicit PRF-grade primitive requirement stands.** The empirical suite shows the architecture drives every tested primitive — including FNV-1a and MD5 — to statistically identical ciphertext across every empirical phase; a real PRF's output is already unpredictable and gets absorbed identically. NIST STS cannot reliably distinguish ITB ciphertext produced with any of the 10 tested primitives from a true PRF across the three ITB widths (128 / 256 / 512).
 
 ---
 

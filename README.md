@@ -26,7 +26,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
 
-**[Empirical red-team validation](REDTEAM.md)** — 10 hash primitives × full 2×2 configuration matrix, five phases of statistical / structural distinguishers, all pass; NIST STS 188/188 across both Single and Triple Ouroboros at shipped and maximum fill regimes.
+**[Empirical red-team validation](REDTEAM.md)** — 12 hash primitives (including CRC128 as a fully GF(2)-linear positive control) × 2×2 configuration matrix (Single + Triple Ouroboros × BF=1 + BF=32). Multiple empirical phases — structural / FFT / Markov, per-pixel candidate distinguisher, startPixel enumeration, ChainHash SAT-cost analysis + hash-agnostic bias audit, nonce-reuse demasker with 96-cell Partial-KPA matrix, 1008-cell related-seed differential, rotation-invariant edge case — all PRF-grade primitives neutralized; CRC128 collapses as expected, confirming the probes surface leakage when present. NIST STS 188/188 across all configurations.
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
