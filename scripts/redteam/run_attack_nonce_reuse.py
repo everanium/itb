@@ -82,7 +82,7 @@ SUPPORTED_HASHES = [
     "blake2b", "areion512",
     # Test-only GF(2)-linear primitive — deliberately below FNV-1a for the
     # seed-inversion experiment (Phase 2a extension). NEVER used in
-    # production ITB; lives in redteam_nonce_reuse_test.go only.
+    # production ITB; lives in redteam_lab_test.go only.
     "crc128",
 ]
 ALLOWED_N = [2, 8, 32, 128]

@@ -54,8 +54,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/zeebo/blake3"
 )
 
 // ----------------------------------------------------------------------------
@@ -170,10 +173,11 @@ func nonceReuseModeEnv(t *testing.T) string {
 		return "same"
 	}
 	switch raw {
-	case "same", "known", "blind", "partial":
+	case "same", "known", "known_ascii", "known_json_structured",
+		"known_html_structured", "blind", "partial":
 		return raw
 	default:
-		t.Fatalf("ITB_NONCE_REUSE_MODE=%q: must be one of {same, known, blind, partial}", raw)
+		t.Fatalf("ITB_NONCE_REUSE_MODE=%q: must be one of {same, known, known_ascii, known_json_structured, known_html_structured, blind, partial}", raw)
 		return ""
 	}
 }
@@ -745,7 +749,12 @@ type cellMetaJSON struct {
 	NoiseSeed         []uint64 `json:"noise_seed"`
 	DataSeed          []uint64 `json:"data_seed"`
 	StartSeed         []uint64 `json:"start_seed"`
-	GeneratedAt       string   `json:"generated_at"`
+	// Blake3KeyHex is set only when hash=blake3. It is the 32-byte BLAKE3
+	// key drawn by makeBlake3Hash256WithKey at corpus generation; the
+	// downstream bias probe uses it to mirror Go's keyed BLAKE3 output.
+	// LAB-ONLY field — not exposed anywhere else in ITB.
+	Blake3KeyHex string `json:"blake3_key_hex,omitempty"`
+	GeneratedAt  string `json:"generated_at"`
 }
 
 // ----------------------------------------------------------------------------
@@ -787,6 +796,14 @@ func hashFunc128ForName(name string) (HashFunc128, string, error) {
 	}
 }
 
+// redteamBlake3Key is populated when hashFunc256ForName instantiates a
+// BLAKE3 adapter. Used by the nonce-reuse corpus-generator body to emit
+// the per-corpus BLAKE3 key into cell.meta.json so the Python bias probe
+// can mirror Go's keyed BLAKE3 output bit-for-bit. Not part of any
+// attacker-visible information — this is a laboratory shortcut.
+var redteamBlake3Key [32]byte
+var redteamBlake3KeySet bool
+
 // hashFunc256ForName returns the 256-bit hash adapter matching the given
 // corpus dirname. Errors on unknown names or non-256-bit hashes.
 func hashFunc256ForName(name string) (HashFunc256, string, error) {
@@ -798,9 +815,52 @@ func hashFunc256ForName(name string) (HashFunc256, string, error) {
 	case "blake2s":
 		return makeBlake2sHash256(), "BLAKE2s", nil
 	case "blake3":
-		return makeBlake3Hash256(), "BLAKE3", nil
+		if _, err := rand.Read(redteamBlake3Key[:]); err != nil {
+			return nil, "", fmt.Errorf("rand.Read for BLAKE3 key: %w", err)
+		}
+		redteamBlake3KeySet = true
+		return makeBlake3Hash256WithKey(redteamBlake3Key), "BLAKE3", nil
 	default:
 		return nil, "", fmt.Errorf("hash %q is not in the 256-bit family", name)
+	}
+}
+
+// makeBlake3Hash256WithKey duplicates makeBlake3Hash256 but takes the
+// 32-byte BLAKE3 key as an argument instead of drawing it internally.
+// Used only by the redteam nonce-reuse corpus generator so the key can
+// be captured and emitted to cell.meta.json for downstream Python
+// bias-probe mirroring. Not reachable from any shipped API path.
+func makeBlake3Hash256WithKey(key [32]byte) HashFunc256 {
+	template, _ := blake3.NewKeyed(key[:])
+	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
+	return func(data []byte, seed [4]uint64) [4]uint64 {
+		h := template.Clone()
+		mixedPtr := pool.Get().(*[]byte)
+		mixed := *mixedPtr
+		if cap(mixed) < len(data) {
+			mixed = make([]byte, len(data))
+		} else {
+			mixed = mixed[:len(data)]
+		}
+		copy(mixed, data)
+		for i := 0; i < 4; i++ {
+			s := seed[i]
+			off := i * 8
+			if off+8 <= len(mixed) {
+				binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^s)
+			}
+		}
+		h.Write(mixed)
+		*mixedPtr = mixed
+		pool.Put(mixedPtr)
+		var buf [32]byte
+		h.Sum(buf[:0])
+		return [4]uint64{
+			binary.LittleEndian.Uint64(buf[0:]),
+			binary.LittleEndian.Uint64(buf[8:]),
+			binary.LittleEndian.Uint64(buf[16:]),
+			binary.LittleEndian.Uint64(buf[24:]),
+		}
 	}
 }
 
@@ -1065,6 +1125,12 @@ func runNonceReuseBody(t *testing.T, p nonceReuseParams, adapter nonceReuseWidth
 		StartSeed:         startComp,
 		GeneratedAt:       time.Now().UTC().Format(time.RFC3339),
 	}
+	if redteamBlake3KeySet {
+		meta.Blake3KeyHex = hex.EncodeToString(redteamBlake3Key[:])
+		// Reset for the next hashFunc256ForName call in subsequent invocations
+		// of this test (ensures we never emit a stale key under hash != blake3).
+		redteamBlake3KeySet = false
+	}
 	metaPath := filepath.Join(p.outDir, "cell.meta.json")
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -1288,6 +1354,47 @@ func TestRedTeamGenerateNonceReuse(t *testing.T) {
 			if _, err := rng.Read(plaintexts[i]); err != nil {
 				t.Fatalf("rng read plaintext %d: %v", i, err)
 			}
+		}
+	case "known_ascii":
+		// Full KPA, ASCII-only plaintext — a clean testbed for the
+		// hash-agnostic raw-mode bias audit (scripts/redteam/phase2_theory/
+		// raw_mode_bias_probe.py). No Partial-KPA mask sidecar, no record
+		// templating: every byte is drawn uniformly from the printable
+		// ASCII alphabet + whitespace. Lets the bias probe measure whether
+		// the architecture neutralizes the per-byte ASCII bit-7 = 0 bias
+		// for the currently-configured hash primitive. Deterministic from
+		// the plaintext-seed RNG so repeated runs produce byte-identical
+		// corpora.
+		for i := 0; i < N; i++ {
+			plaintexts[i] = make([]byte, plaintextSize)
+			for j := range plaintexts[i] {
+				r := rng.Intn(97)
+				switch {
+				case r == 95:
+					plaintexts[i][j] = 0x09 // tab
+				case r == 96:
+					plaintexts[i][j] = 0x0A // newline
+				default:
+					plaintexts[i][j] = byte(0x20 + r) // printable ASCII
+				}
+			}
+		}
+	case "known_json_structured", "known_html_structured":
+		// Full KPA, structured plaintext — the bias-probe companion to
+		// known_ascii, but with record-template structure (JSON array or
+		// HTML tag-wrapped document, the same generators used for
+		// partial_{json,html}_structured_80). Every byte is known to the
+		// attacker (no mask sidecar), but the byte statistics now carry
+		// ASCII bit-7 = 0 bias plus framing-token repetition. Used to
+		// separate "uniform ASCII bias" from "structural-token bias"
+		// contributions in the raw-mode bias audit.
+		structuredKind := "json_structured_80"
+		if mode == "known_html_structured" {
+			structuredKind = "html_structured_80"
+		}
+		for i := 0; i < N; i++ {
+			pt, _, _ := generateStructuredPlaintext(rng, plaintextSize, i, structuredKind)
+			plaintexts[i] = pt
 		}
 	case "partial":
 		// Partial-KPA corpus — two sub-paths:
