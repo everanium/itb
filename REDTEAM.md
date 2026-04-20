@@ -8,7 +8,7 @@
 
 ## TL;DR
 
-ITB ciphertext was subjected to **five empirical statistical / structural distinguishers plus one analytical phase** (ChainHash cost modelling), across **ten hash primitives** spanning the full spectrum — from deliberately broken primitives (FNV-1a invertible, MD5 biased) through fast keyed PRFs (SipHash-2-4, AES-CMAC) to paper-grade 256/512-bit constructions (BLAKE2s/3, BLAKE2b-512, ChaCha20, AreionSoEM-256/512). The suite was exercised across a 2 × 2 configuration matrix: `{Single, Triple} Ouroboros × {BF=1, BF=32} BarrierFill`. Single is the primary mode and runs the full 5-phase suite; Triple runs Phase 1 + Phase 3b (the two mode-agnostic phases).
+ITB ciphertext was subjected to **several empirical statistical / structural distinguishers plus one analytical phase** (ChainHash cost modelling), across a **12-primitive hash matrix** spanning the full spectrum — three below-spec stress controls (CRC128 fully GF(2)-linear, FNV-1a invertible, MD5 biased) and nine PRF-grade primitives (AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE3, BLAKE2b-256, BLAKE2b-512, AreionSoEM-512). Phase coverage is not uniform: Phase 1 / 2b / 2c / 3a / 3b were exercised on the 10 primitives available at corpus-generation time (no CRC128, no BLAKE2b-256); Phase 2a extension bias-audit covers CRC128 + FNV-1a + BLAKE3 + MD5; Phase 2e exercises the full 12. The suite was exercised across a 2 × 2 configuration matrix: `{Single, Triple} Ouroboros × {BF=1, BF=32} BarrierFill`. Single is the primary mode and runs the full 5-phase suite; Triple runs Phase 1 + Phase 3b (the two mode-agnostic phases).
 
 At shipped defaults (BF=1):
 
@@ -40,7 +40,7 @@ This is a self-audit by the project author. Red-team validation tests a specific
 
 ### Threat model
 
-ITB ciphertext sits at the finite-sample KL / χ² floor on every statistical surface we measure — effectively `/dev/urandom`. Lab probes therefore take deliberate concessions (disclose parameters, force architecturally-impossible preconditions, peek at ground truth) to create *any* measurable signal. Each bullet below names the concession and the scope in which it applies.
+ITB ciphertext sits at the finite-sample KL / χ² floor on every statistical surface measured — effectively `/dev/urandom`. Lab probes therefore take deliberate concessions (disclose parameters, force architecturally-impossible preconditions, peek at ground truth) to create *any* measurable signal. Each bullet below names the concession and the scope in which it applies.
 
 - **Full KPA** as the worst-case baseline: attacker knows complete plaintext and ciphertext per sample. **Partial KPA** analysed separately in [Phase 2d](#phase-2d--nonce-reuse) (coverage 25 % / 50 % / 80 %).
 - **Hash identity** known; **seed components / rotation / noisePos / dataRotation never disclosed** to the attacker model — used only as a ground-truth yardstick by lab analyzers during testing and lab-attack runs.
@@ -59,14 +59,14 @@ Attack classes:
 - ~~**Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.~~ — covered by [Phase 2e — Related-seed differential](#phase-2e--related-seed-differential): 1008-cell matrix across 12 primitives × 2 BF × 3 axes × 7 Δ × 2 PT; 10 production-grade primitives neutralized ✓, CRC128 + FNV-1a leak as expected per their structural properties.
 - ~~**Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).~~ — see [Phase 1 — Structural checks + FFT / Markov analysis](#phase-1--structural-checks--fft--markov-analysis)
 - ~~**Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.~~ — see [Phase 1 — Structural checks + FFT / Markov analysis](#phase-1--structural-checks--fft--markov-analysis)
-- **Adversarial ML distinguishers** — no known method to train a CNN / deep-learning classifier on an ITB ciphertext that sits at KL ≈ 0 signal/noise (behaves as `/dev/urandom` on every statistical surface we measure), so there is no gradient for the model to learn from.
+- **Adversarial ML distinguishers** — no known method to train a CNN / deep-learning classifier on an ITB ciphertext that sits at KL ≈ 0 signal/noise (behaves as `/dev/urandom` on every statistical surface measured), so there is no gradient for the model to learn from.
 - **Physical side channels** (timing, power, EM) — no specialised laboratory available.
 - **Chosen-ciphertext attack with MAC Reveal** — not planned; MAC Reveal is a user-protocol design choice outside ITB's core construction scope.
 - **Quantum adversaries** (Grover bounds remain theoretical) — no quantum machine available.
 
 Scope gaps:
 - **Triple Ouroboros on Phases 2a extension / 2b / 2c / 2d / 2e / 3a** — Triple is validated on the two mode-agnostic phases (Phase 1 + Phase 3b, both BF=1 and BF=32). Phase 2a extension bias-neutralization audit, Phase 2b per-pixel candidate distinguisher, Phase 2c startPixel enumeration, Phase 2d nonce-reuse demasker + seed inversion, Phase 2e related-seed differential, and Phase 3a rotation-invariant edge case all operate on the Single Ouroboros single-ring container layout; adapting them to the Triple 3-partition `splitTriple` interleaving requires a per-phase analyzer rewrite that is not included in this pass. Triple is architecturally strictly more defended than Single on every one of these surfaces — each Triple ring carries independent `dataSeed` so recovery of one ring does not reveal the other two, and the `splitTriple` boundaries partition the container into three isolated regions the attacker would need to re-synchronise per ring (see [Attack-cost implications of Triple Ouroboros](#attack-cost-implications-of-triple-ouroboros))
-- **Widely-deployed hash primitives missing from the 10-hash matrix**: HMAC-SHA-256, GHASH, SHA-3/Keccak. Absent; adding them would round out the algebraic-primitive coverage
+- **Widely-deployed hash primitives missing from the 12-hash matrix**: HMAC-SHA-256, GHASH, SHA-3/Keccak. Absent; adding them would round out the algebraic-primitive coverage
 - **`SetBarrierFill` intermediate values** (2, 4, 8, 16) not exercised; the shipped default (1) and the maximum (32) bracket the regime, and per-phase results are monotonic between them, but fine-grained sweep is absent
 - **Structured binary plaintexts** (PDF, PNG, MP4, compressed streams) absent from the corpus; the 10 kinds are all text-ish (HTTP / JSON / HTML / plain text). High-entropy compressed binaries and format-specific byte patterns could expose behaviours not surfaced by the current corpus
 - ~~**Direct `/dev/urandom` side-by-side baselines** for Phase 1 per-channel χ², Phase 2b KL floor, and Phase 3a rotation-invariant rate (NIST STS uses urandom implicitly as its calibration baseline; other phases do not)~~ — effectively moot. The [63 MB KL floor probe](#kl-floor-probe-on-a-single-63-mb-sample-one-off-blake3-bf1-bf32) lands Phase 2b's pairwise KL at **1.1× – 1.4× of the theoretical `bins/N` floor** — that floor IS the urandom expectation, so ITB ciphertext is already shown to be within measurement precision of `/dev/urandom` behaviour on [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher). [Phase 1](#phase-1--structural-checks--fft--markov-analysis) χ² and [Phase 3a](#phase-3a--rotation-invariant-edge-case) rotation-invariant rate similarly reach tolerances that match the `/dev/urandom` expectation (2/128 rate within 0.007 % across all 10 hashes at [Phase 3a](#phase-3a--rotation-invariant-edge-case)). A literal side-by-side `/dev/urandom` stream would confirm the same floors with no new information.
@@ -128,18 +128,24 @@ Ten plaintext kinds covering fill-dominated (~200 B) through data-dominated (~1 
 
 ### Reproducibility
 
-**Install prerequisites (Arch Linux).** Requires Go (for the corpus generator) and a handful of Python packages plus `nist-sts` from AUR:
+**Install prerequisites (Arch Linux).** Requires Go (for the corpus generator), a small set of Python packages for the analyzers / mirrors, plus `nist-sts` from AUR:
 
 ```bash
 # Core toolchain + Python analyzers
-pacman -S go gcc make base-devel python3 python-numpy python-scipy \
+pacman -S go gcc make base-devel python3 python-pip python-numpy python-scipy \
           python-matplotlib python-z3-solver python-claripy
+
+# BLAKE3 Python bindings (used by the Phase 2a extension bias-audit raw-mode
+# probe as a Go ↔ Python parity mirror for chainhashes/blake3.py) — install
+# via AUR, or via pip if AUR is not available
+yay -S python-blake3
+# alt: pip install --user blake3
 
 # NIST SP 800-22 test suite (AUR)
 yay -S nist-sts
 ```
 
-On non-Arch distributions, install equivalents via your package manager (`apt install golang-go python3-numpy python3-scipy`, build `nist-sts` from <https://github.com/terrillmoore/NIST-Statistical-Test-Suite> or similar).
+On non-Arch distributions, install equivalents via your package manager (`apt install golang-go python3-numpy python3-scipy python3-pip && pip install --user blake3`, build `nist-sts` from <https://github.com/terrillmoore/NIST-Statistical-Test-Suite> or similar).
 
 All scripts under [`scripts/redteam/`](scripts/redteam/). The simplest way to run the full suite is the master orchestrator:
 
@@ -214,7 +220,7 @@ python3 scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py \
     --n-streams 16
 ```
 
-The orchestrator accepts `--hashes all` for the full 10-primitive matrix and `--barrier-fill both` for BF=1 and BF=32 coverage; see `--help` for the complete CLI. All deletion operations are routed through a whitelist-gated `safe_rmtree` helper that refuses any path outside `tmp/attack/nonce_reuse/{corpus, reconstructed}`; the results subdirectory is never touched by the orchestrator. Deterministic RNG seeds (plaintext seed 424242, nonce seed 0xA17B1CE) produce byte-identical corpora across runs — a future researcher can reproduce the exact reconstructed streams and feed them to their own statistical-test batteries.
+The orchestrator accepts `--hashes all` for the full primitive matrix and `--barrier-fill both` for BF=1 and BF=32 coverage; see `--help` for the complete CLI. All deletion operations are routed through a whitelist-gated `safe_rmtree` helper that refuses any path outside `tmp/attack/nonce_reuse/{corpus, reconstructed}`; the results subdirectory is never touched by the orchestrator. Deterministic RNG seeds (plaintext seed 424242, nonce seed 0xA17B1CE) produce byte-identical corpora across runs — a future researcher can reproduce the exact reconstructed streams and feed them to their own statistical-test batteries.
 
 For the classical keystream-reuse plaintext-recovery pipeline (adds `--classical-decrypt` post-demask step, supports `--plaintext-kind random_masked_{25,50,80}` + `json_structured_{25,50,80}` + `html_structured_{25,50,80}` for Partial KPA variants, emits `recovered_plaintext_P{1,2}.bin` + `groundtruth_plaintext_P{1,2}.bin` for diff verification), see [Phase 2d — Classical keystream-reuse decryption](#classical-keystream-reuse-decryption--empirical-plaintext-recovery-from-config-map).
 
@@ -1941,7 +1947,7 @@ Several test-battery outputs flagged specific primitives in one run and not anot
 ## Reproducibility and data
 
 - **Scripts:** [`scripts/redteam/`](scripts/redteam/)
-- **Shared constants:** [`scripts/redteam/common.py`](scripts/redteam/common.py) (single source of truth for the 10-hash list and 10-kind list)
+- **Shared constants:** [`scripts/redteam/common.py`](scripts/redteam/common.py) (single source of truth for the primitive list and 10-kind list)
 - **Corpus test:** [`redteam_test.go`](redteam_test.go) (`TestRedTeamGenerate`)
 - **Phase logs:** `tmp/results/<mode>_bf<N>/0M_*.log` — one directory per `(Ouroboros mode, BarrierFill)` combination
 

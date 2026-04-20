@@ -677,7 +677,7 @@ All three approaches use standard mathematics. The formal relationship between I
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
 - [SECURITY.md](SECURITY.md) — Security reference tables
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.)
-- [REDTEAM.md](REDTEAM.md) — Empirical red-team validation (10 hash primitives, five statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
+- [REDTEAM.md](REDTEAM.md) — Empirical red-team validation (12-primitive hash matrix, multiple statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
 
 ## License
 
