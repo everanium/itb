@@ -59,10 +59,10 @@ Attack classes:
 - ~~**Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.~~ — covered by [Phase 2e — Related-seed differential](#phase-2e--related-seed-differential): 1008-cell matrix across 12 primitives × 2 BF × 3 axes × 7 Δ × 2 PT; 10 production-grade primitives neutralized ✓, CRC128 + FNV-1a leak as expected per their structural properties.
 - ~~**Frequency-domain / FFT on per-channel streams.** NIST STS includes DFT on the flat stream but not per-channel (which is where period-8 structure would live).~~ — see [Phase 1 — Structural checks + FFT / Markov analysis](#phase-1--structural-checks--fft--markov-analysis)
 - ~~**Markov / cross-channel conditional distributions.** `P(byte_n | byte_{n-1})` not probed.~~ — see [Phase 1 — Structural checks + FFT / Markov analysis](#phase-1--structural-checks--fft--markov-analysis)
-- **Adversarial machine-learning distinguishers** (CNN, deep-learning distinguisher trained on cover/stego pairs)
-- **Physical side channels** (timing, power, EM)
-- **Chosen-ciphertext attack with MAC reveal** (MAC + Reveal mode)
-- **Quantum adversaries** (Grover bounds are theoretical)
+- **Adversarial ML distinguishers** — no known method to train a CNN / deep-learning classifier on an ITB ciphertext that sits at KL ≈ 0 signal/noise (behaves as `/dev/urandom` on every statistical surface we measure), so there is no gradient for the model to learn from.
+- **Physical side channels** (timing, power, EM) — no specialised laboratory available.
+- **Chosen-ciphertext attack with MAC Reveal** — not planned; MAC Reveal is a user-protocol design choice outside ITB's core construction scope.
+- **Quantum adversaries** (Grover bounds remain theoretical) — no quantum machine available.
 
 Scope gaps:
 - **Triple Ouroboros on Phases 2a extension / 2b / 2c / 2d / 2e / 3a** — Triple is validated on the two mode-agnostic phases (Phase 1 + Phase 3b, both BF=1 and BF=32). Phase 2a extension bias-neutralization audit, Phase 2b per-pixel candidate distinguisher, Phase 2c startPixel enumeration, Phase 2d nonce-reuse demasker + seed inversion, Phase 2e related-seed differential, and Phase 3a rotation-invariant edge case all operate on the Single Ouroboros single-ring container layout; adapting them to the Triple 3-partition `splitTriple` interleaving requires a per-phase analyzer rewrite that is not included in this pass. Triple is architecturally strictly more defended than Single on every one of these surfaces — each Triple ring carries independent `dataSeed` so recovery of one ring does not reveal the other two, and the `splitTriple` boundaries partition the container into three isolated regions the attacker would need to re-synchronise per ring (see [Attack-cost implications of Triple Ouroboros](#attack-cost-implications-of-triple-ouroboros))
@@ -82,9 +82,9 @@ Twelve primitives spanning the full spectrum of cryptographic strength, all run 
 
 | Primitive | Width | Paper-spec PRF? | Observable properties |
 |-----------|:-----:|:---------------:|-----------------------|
-| CRC128 | 128 | ❌ lab-test only | Fully GF(2)-linear (CRC64-ECMA ‖ CRC64-ISO); test-only helper in [`redteam_lab_test.go`](redteam_lab_test.go), rejected by every `NewSeed*` public API. Included as a positive control to verify probes surface GF(2)-linear collapse when it is present |
-| FNV-1a | 128 | ❌ non-cryptographic | Fully invertible (linear over Z/2^128), no preimage resistance |
-| MD5 | 128 | ❌ broken | Collisions trivial, documented biases, preimage ~2^123 |
+| CRC128 | 128 | ❌ lab-test only | Fully GF(2)-linear (CRC64-ECMA ‖ CRC64-ISO): **Do not use** ; **Fully broken** ; **Lab only** |
+| FNV-1a | 128 | ❌ non-cryptographic | Fully invertible (linear over Z/2^128): **Do not use** ; **Dangerous** ; **Lab only** |
+| MD5 | 128 | ❌ broken | Collisions trivial (Biases, Preimage ~2^123): **Do not use** ; **Dangerous** ; **Lab only** |
 | AES-CMAC | 128 | ✅ | Standard AES-based keyed MAC |
 | SipHash-2-4 | 128 | ✅ | Fast keyed PRF |
 | ChaCha20 | 256 | ✅ | Stream-cipher-based PRF |
