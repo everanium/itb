@@ -437,7 +437,7 @@ At the actual minimum keyBits = 512: 128-bit hash → 4 ChainHash rounds, 256-bi
 
 The analytical argument above rests on the claim that mixed algebra (GF(2) XOR keying between rounds + a round function that is **not** GF(2)-linear — for FNV-1a the `· FNV_PRIME_64` multiplication modulo 2⁶⁴ provides the non-linearity via carry propagation) is what forces the attacker into bitvector-SAT territory. Replace the round function with a **purely GF(2)-linear** primitive and the chain collapses by construction. To make that collapse concrete — not merely implied — a test-only primitive was added to the corpus generator and driven through the full [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) pipeline.
 
-**CRC128 — the test-only below-FNV-1a primitive.** `CRC128(data, seed0, seed1) = (CRC64-ECMA(data, seed0), CRC64-ISO(data, seed1))`. Two independent CRC64 updates with different irreducible polynomials (ECMA + ISO), each keyed by one 64-bit half of the input seed, concatenated to 128 bits. Every operation is GF(2)-linear: the Sarwate update loop is polynomial division over GF(2)[x], the keyed initial-state register XOR is GF(2)-linear, concatenation preserves linearity. Wrapping this in ITB's ChainHash (XOR-keyed between rounds) keeps the whole chain GF(2)-linear end-to-end. Placed in [`redteam_nonce_reuse_test.go`](redteam_nonce_reuse_test.go) only; has zero cryptographic value and MUST NEVER be plugged into production — `NewSeed{128,256,512}` do not accept `crc128` through any public API.
+**CRC128 — the test-only below-FNV-1a primitive.** `CRC128(data, seed0, seed1) = (CRC64-ECMA(data, seed0), CRC64-ISO(data, seed1))`. Two independent CRC64 updates with different irreducible polynomials (ECMA + ISO), each keyed by one 64-bit half of the input seed, concatenated to 128 bits. Every operation is GF(2)-linear: the Sarwate update loop is polynomial division over GF(2)[x], the keyed initial-state register XOR is GF(2)-linear, concatenation preserves linearity. Wrapping this in ITB's ChainHash (XOR-keyed between rounds) keeps the whole chain GF(2)-linear end-to-end. Placed in [`redteam_lab_test.go`](redteam_lab_test.go) only; has zero cryptographic value and MUST NEVER be plugged into production — `NewSeed{128,256,512}` do not accept `crc128` through any public API.
 
 **The collapse result.** Unrolling 8 rounds of ChainHash at 1024-bit key gives:
 
@@ -503,7 +503,7 @@ Scaling is roughly linear in `total_pixels` — the CRC64 linear-alias search sp
 3. **The single demask failure.** 1 / 54 cells (128 KB html 80 %) does not produce a usable stream for the solver to operate on. This is a demasker-side edge case, not a solver-side limitation; a multi-pair (N ≥ 4) corpus or a different nonce-seed regeneration would close it.
 4. **Production attack feasibility.** Even if this attack worked against every real ITB primitive (it does not), the whole [Phase 2d](#phase-2d--nonce-reuse) attack chain is gated by a prior nonce collision — a `2⁻²⁵⁶` event at the shipped 512-bit nonce recommendation. The empirical collapse demonstrated here is conditional on the attacker already being past that gate. See [Threat-model gate](#threat-model-gate--why-this-whole-exercise-is-gated-by-user-nonce-size-choice) for the quantitative bound.
 
-**No-demask sanity control — why the demasker is load-bearing.** The compound-key recovery demonstrated above is entirely dependent on the demasker having already stripped ITB's masking layers (noise bit at `noisePos`, 7-bit rotation, channelXOR subtraction via known plaintext). To confirm that the masking itself hides the hash output — not just the architectural obstacles stacked on top — the solver was fed the **raw ciphertext bytes** of `ct_0000.bin` directly, as if they were the demasked dataHash stream, on **10 freshly regenerated 64 KB Full-KPA CRC128 corpora** (each run used a different `ITB_NONCE_REUSE_NONCE_SEED` to force an independent `(seeds, nonce)` draw). Brute-force pixel-shift search was enabled over the full container range `[0, 9604)`.
+**No-demask sanity control — why the demasker is load-bearing (random-plaintext scope).** The compound-key recovery demonstrated above is entirely dependent on the demasker having already stripped ITB's masking layers (noise bit at `noisePos`, 7-bit rotation, channelXOR subtraction via known plaintext). To confirm that the masking itself hides the hash output — not just the architectural obstacles stacked on top — the solver was fed the **raw ciphertext bytes** of `ct_0000.bin` directly (solver's `--raw-ciphertext-mode`: 8-byte-per-pixel container layout with the 20-byte ITB header skipped), on **10 freshly regenerated 64 KB Full-KPA CRC128 corpora under the `known` attacker mode — i.e., random `crypto/rand` plaintext, no structural bias**. Each run used a different `ITB_NONCE_REUSE_NONCE_SEED` to force an independent `(seeds, nonce)` draw. Brute-force pixel-shift search was enabled over the full container range `[0, 9604)`.
 
 | Iteration | Candidates below 5 %-conflict threshold | Conflict rate on full observations |
 |----------:|----------------------------------------:|------------------------------------:|
@@ -518,9 +518,11 @@ Scaling is roughly linear in `total_pixels` — the CRC64 linear-alias search sp
 | 9 | **0** | 49.6 % |
 | 10 | **0** | 49.6 % |
 
-**Conflict-rate range [49.5 %, 49.7 %] across all 10 runs — statistically indistinguishable from a fair coin flip.** This is the architectural signature of ITB's masking: raw ciphertext bytes carry exactly the entropy of uniform random noise with respect to the compound key. The attacker gets zero bit-level information about K from ciphertext alone; every possible pixel-shift produces ~50 % K-bit disagreement across observations (the expected value under H₀ = "K is unknown to the observer").
+**Conflict-rate range [49.5 %, 49.7 %] across all 10 runs — statistically indistinguishable from a fair coin flip.** Under random plaintext the result is an unconditional mathematical outcome, not an empirical coincidence: the 7-bit rotation plus channelXOR make the container byte a rotation-invariant function of a uniform input, so every possible shift hypothesis produces ~50 % K-bit disagreement regardless of how the attacker parses the bytes. The 8-byte-per-pixel raw mode used here is therefore a negative-control for parsing correctness (confirming that no 7-byte / 8-byte misalignment accidentally smuggles signal in), not a claim that ciphertext is signal-free against all plaintexts.
 
-Three architectural implications. **First,** even with a fully GF(2)-linear primitive (CRC128) where the algebraic collapse IS mathematically possible, the masking layers deny the attacker any input to execute it on. **Second,** the whole Phase 2a extension pipeline (solver at 53 / 54 inversion rate) is strictly conditional on the demasker having run first — and the demasker, in turn, requires a nonce collision between two colliding ciphertexts to run Layer 1 constraint matching. No collision → no demasking → no solver input → architecture wins even against below-FNV-1a primitives. **Third,** the `2⁻²⁵⁶` nonce-collision probability at 512-bit nonce is not just a theoretical gate but the only thing standing between the attacker and the entire empirical attack surface demonstrated in this section — the architecture's resistance to a GF(2)-linear primitive reduces to the resistance of the nonce-size choice, nothing more.
+Three architectural implications. **First,** even with a fully GF(2)-linear primitive (CRC128) where the algebraic collapse IS mathematically possible, ITB's masking layers deny the attacker any input to execute it on under random plaintext. **Second,** the whole Phase 2a extension pipeline (solver at 53 / 54 inversion rate) is strictly conditional on the demasker having run first — and the demasker, in turn, requires a nonce collision between two colliding ciphertexts to run Layer 1 constraint matching. No collision → no demasking → no solver input → architecture wins even against below-FNV-1a primitives. **Third,** the `2⁻²⁵⁶` nonce-collision probability at 512-bit nonce is not just a theoretical gate but the only thing standing between the attacker and the entire empirical attack surface demonstrated in this section — the architecture's resistance to a GF(2)-linear primitive reduces to the resistance of the nonce-size choice, nothing more.
+
+**Scope gap — structured-plaintext no-demask probe (open).** The sanity control above covers random plaintext only. Running `--raw-ciphertext-mode` against structured-plaintext corpora (`json_structured` / `html_structured`, where ASCII carries a bit-7 = 0 bias) was NOT performed. A back-of-envelope calculation suggests the per-observation bias after rotation-smearing + noise-bit pollution could manifest as a ~44 % vs ~50 % conflict gap at the correct pixel-shift, which — at ≈ 9 300 pin events per K bit — would be ≈ 24 σ separable from random scatter if the solver's majority-vote were fed those observations directly. Even if realised, this path still requires the attacker to KNOW the plaintext format (to predict the bias), which is the same Full-KPA precondition the demasker already needs; the structured-plaintext no-demask path does not open a *new* attack surface, it just re-occupies the same "attacker has Full KPA" regime that the demasker-based attack chain above already quantifies. Running the structured-corpus no-demask probe and documenting the actual bias is a deferred item.
 
 **Reproduction commands.**
 
@@ -551,18 +553,18 @@ python3 scripts/redteam/phase2_theory/seed_invert_crc128.py \
 # Step 4 — full 54-cell matrix (one command; ~25 min at PARALLEL=8 on 16-core):
 PARALLEL=8 bash scripts/redteam/crc128_seed_invert_matrix.sh
 
-# No-demask sanity control — feed raw ct_0000.bin straight to the solver
-# (skipping the demasker) and brute-force over all 9604 shifts in the 64 KB
-# container. Expected result: 0 candidates, ~49.6 % conflict rate — random.
-# Architecture denies the attacker any exploitable signal at the ciphertext
-# level, even for a fully GF(2)-linear primitive.
+# No-demask sanity control (random-plaintext scope) — feed raw ct_0000.bin
+# straight to the solver with `--raw-ciphertext-mode` (8-byte-per-pixel
+# container layout, 20-byte header skipped) and brute-force over all 9604
+# shifts in the 64 KB container. Expected result: 0 candidates, ~49.6 %
+# conflict rate — the rotation-invariance + uniform-plaintext outcome.
 ITB_REDTEAM=1 ITB_BARRIER_FILL=1 ITB_NONCE_REUSE_HASH=crc128 \
   ITB_NONCE_REUSE_N=2 ITB_NONCE_REUSE_MODE=known ITB_NONCE_REUSE_SIZE=65536 \
   go test -run TestRedTeamGenerateNonceReuse -v -timeout 60s
 python3 scripts/redteam/phase2_theory/seed_invert_crc128.py \
   --cell-dir tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/known \
   --datahash-stream tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/known/ct_0000.bin \
-  --brute-force-shift 10000
+  --raw-ciphertext-mode --brute-force-shift 10000
 
 # Render the matrix_summary.jsonl into a markdown table suitable for
 # audit review:
@@ -572,6 +574,115 @@ python3 scripts/redteam/aggregate_crc128_matrix.py \
 ```
 
 Per-run artefacts: `tmp/attack/nonce_reuse/results/<tag>/summary.jsonl` (orchestrator cell record) + `<cell>.datahash.bin.meta.json` (demasker's recovered_sp + emission stats — attacker-visible) + `<cell>.seed_invert.log` (solver's per-candidate conflict rates + shadow-K accounting + prediction results).
+
+---
+
+### Phase 2a extension — hash-agnostic bias-neutralization audit (axis-1 + axis-2)
+
+The mixed-algebra CRC128 attack chain in the preceding [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) demonstrates GF(2)-linear collapse under nonce-reuse *after the demasker has run*. This subsection covers a complementary measurement — an empirical audit of [Proof 7](PROOFS.md#proof-7-bias-neutralization) (bias neutralization by rotation barrier) on the **raw ciphertext directly**, with no demasking, no nonce-reuse, no Partial-KPA sidecar. The probe scans every candidate pixel-shift under a pluggable hash primitive and reports per-cell statistics from two independent axes. It is a hash-agnostic tool: the probe consumes any chainhash module that exports `chainhash_lo(data, seed) -> uint64` + `N_SEED_COMPONENTS`, and the same probe machinery runs against CRC128, FNV-1a, and BLAKE3 without change.
+
+**Methodology.**
+
+1. **Corpus.** Full-KPA plaintext in one of three shapes, generated by the existing nonce-reuse harness under three new `ITB_NONCE_REUSE_MODE` values:
+   - `known_ascii` — uniform printable ASCII (`0x20..0x7E` + `\t` + `\n`).
+   - `known_json_structured` — Full-KPA JSON array plaintext using the same generator as `partial_json_structured_80`; every byte is attacker-visible (no mask sidecar).
+   - `known_html_structured` — Full-KPA HTML tag-wrapped plaintext, analogous.
+   
+   `BarrierFill=1`, two colliding ciphertexts per cell (`N=2`), sizes `524288` and `1048576` bytes (container = 389 × 389 = `151321` pixels in both cases for the larger; `151321` total pixels is independent of plaintext size since plaintext is container-bounded by `data_pixels = total_pixels`).
+
+2. **Probe (`scripts/redteam/phase2_theory/raw_mode_bias_probe.py`).** For each candidate pixel-shift `s ∈ [0, total_pixels)`:
+   - Precompute `const(p) = chainhash(pixel_le || nonce, seed = 0)` for every `p`.
+   - Collect `K-bit_candidate = observed_bit ⊕ const_bit_at_pos(s, ch, k)` across ~16 000 observation triples `(container_pixel, channel, observed_7bits)` parsed from the raw `ct_0000.bin`.
+   - Per-bit majority vote produces a 64-bit compound-key candidate `K(s)` and a conflict count (number of observations outvoted by the per-bit majority).
+   
+   The full conflict-rate distribution across `total_pixels` candidate shifts is the **axis-1** statistic.
+
+3. **Axis 2 — prediction accuracy.** For the recovered `K(s)` at two specific shifts — the attacker-visible **min-conflict shift** and the lab-only **TRUE shift** (`= -startPixel mod total_pixels`, read from `cell.meta.json` in lab mode) — evaluate `predicted_channelXOR[ch] = (K ⊕ const(p)) >> (3 + 7·ch) & 0x7F` on 256 held-out pixels × 8 channels × 7 bits ≈ 1800 bit-trials. Report per-bit match rate vs `config.truth.json["per_pixel"]["channel_xor_8"]`. Binomial noise on that sample is ≈ 1 p.p. Distance from the 50 % baseline is the discriminator — the signed direction flips across plaintext formats because rotation-averaged majority-vote direction depends on token-specific bit-frequency profiles (ASCII uniform → +, JSON tokens → ± depending on corpus, HTML tokens → ±), so raw bit-accuracy is not a stable signal, `|pred − 50|` is.
+
+4. **Two-axis verdict.** `bias-leak ✗` if **either** axis-1 TRUE rank < 1 % with plateau < 1 % of total shifts **or** axis-2 TRUE `|Δ50|` ≥ 2 p.p. `neutralized ✓` if axis-2 TRUE `|Δ50|` ≤ 1 p.p. `ambiguous` otherwise. Axis-1 rank has high single-corpus variance (a PRF can land in the top 7 % by chance; the `1/total_pixels` minimum is a `1/151321` draw over a uniform random variable) — so neutralized does not require middle axis-1 rank, axis-2 TRUE is the robust discriminator. Conversely, axis-1 strong leak (rank = 1/151321) is independent of axis-2's amplitude — GF(2)-linear collapse surfaces in the conflict-rate distribution even when the K prediction itself is amplitude-diluted.
+
+**Results — 3 primitives × 2 sizes × 3 plaintext shapes = 18 cells.**
+
+| primitive | size | format | min % conflict | TRUE rank / total | plateau | TRUE bits % | \|Δ50 TRUE\| | verdict |
+|:----------|-----:|:-------|---------------:|:------------------|--------:|------------:|------------:|:--------|
+| blake3 | 512 KB | ascii            | 48.69 | 66997/76176   | 67149  | 49.67 | 0.33 | neutralized ✓ |
+| blake3 | 512 KB | json_structured  | 48.71 | 39450/76176   | 39718  | 50.68 | 0.68 | neutralized ✓ |
+| blake3 | 512 KB | html_structured  | 48.66 | 12168/76176   | 12309  | 50.21 | 0.21 | neutralized ✓ |
+| blake3 | 1 MB   | ascii            | 48.67 | 10108/151321  | 10137  | 50.63 | 0.63 | neutralized ✓ |
+| blake3 | 1 MB   | json_structured  | 48.70 | 6610/151321   | 6716   | 49.44 | 0.56 | neutralized ✓ |
+| blake3 | 1 MB   | html_structured  | 48.64 | 9311/151321   | 9318   | 50.25 | 0.25 | neutralized ✓ |
+| fnv1a  | 512 KB | ascii            | 48.73 | 73341/76176   | 73352  | 49.58 | 0.42 | neutralized ✓ |
+| fnv1a  | 512 KB | json_structured  | 48.68 | 34328/76176   | 34351  | 50.23 | 0.23 | neutralized ✓ |
+| fnv1a  | 512 KB | html_structured  | 48.70 | 34822/76176   | 34831  | 49.94 | 0.06 | neutralized ✓ |
+| fnv1a  | 1 MB   | ascii            | 48.72 | 151160/151321 | 151160 | 50.45 | 0.45 | neutralized ✓ |
+| fnv1a  | 1 MB   | json_structured  | 48.68 | 114134/151321 | 114212 | 49.57 | 0.43 | neutralized ✓ |
+| fnv1a  | 1 MB   | html_structured  | 48.68 | 18801/151321  | 19039  | 49.68 | 0.32 | neutralized ✓ |
+| crc128 | 512 KB | ascii            | 47.98 | 11762/76176   | 11767  | 46.43 | **3.57** | bias-leak ✗ |
+| crc128 | 512 KB | json_structured  | 47.81 | 8153/76176    | 8204   | 53.57 | **3.57** | bias-leak ✗ |
+| crc128 | 512 KB | html_structured  | 47.09 | 9408/76176    | 9491   | 50.00 | 0.00 | neutralized ✓ |
+| crc128 | 1 MB   | ascii            | 47.98 | **10/151321** | **18** | 53.57 | **3.57** | bias-leak ✗ |
+| crc128 | 1 MB   | json_structured  | 47.60 | **1/151321**  | **1**  | 48.21 | 1.79 | bias-leak ✗ |
+| crc128 | 1 MB   | html_structured  | 47.09 | **1/151321**  | **2**  | 51.79 | 1.79 | bias-leak ✗ |
+
+Roll-up: **BLAKE3 6/6 neutralized ✓**, **FNV-1a 6/6 neutralized ✓**, **CRC128 5 bias-leak ✗ / 1 neutralized**. The single CRC128 `neutralized` at `(512 KB, html_structured)` is a small-sample outcome: both axes straddle their thresholds (axis-1 rank 12.4 %, plateau 12.5 %; axis-2 TRUE exactly 50 %). Doubling the size to 1 MB under the same format surfaces the leak cleanly on axis-1 (rank 1/151321, plateau 2). Either size is sufficient under ASCII or JSON; HTML sits at the boundary for 512 KB. The CRC128 entries at 1 MB × structured hit the sharpest axis-1 signal possible (TRUE shift literally minimises the full 151321-shift distribution).
+
+**Architectural interpretation.**
+
+- **BLAKE3 (paper-grade PRF).** `|Δ50 TRUE|` ≤ 0.68 across every cell — indistinguishable from the 1 p.p. binomial-noise band at 1800 bit-trials. No detectable algebraic relation between recovered K and the true compound-key projection regardless of plaintext format. This is the PRF fingerprint: the wrapping layers have nothing coherent to amplify because the primitive itself is assumed pseudo-random.
+
+- **FNV-1a (invertible carry-chain multiply, test helper).** `|Δ50 TRUE|` ≤ 0.45 across every cell — same fingerprint as BLAKE3 on this probe. FNV-1a is algebraically invertible (`h ← (h XOR byte) · FNV_PRIME` has closed-form inverse over the modular-multiply group), but that invertibility lives in the carry-chain arithmetic ring, not in GF(2) — ChainHash wrapping at 1024-bit key feeds the rotation-barrier + channelXOR + noisePos masking layers through that non-GF(2)-linear diffusion, and the bit bias does not survive to the probe's detection threshold. The datapoint is important because FNV-1a sits architecturally between a PRF (assumed no-structure) and a pure GF(2)-linear primitive (no non-linear mixing at all) — it confirms that *full PRF assumption is not a precondition for Proof 7 to hold*; any non-GF(2)-linear diffusion in the round function is sufficient.
+
+- **CRC128 (GF(2)-linear test control).** Separates cleanly on both axes whenever the plaintext carries exploitable bit-frequency structure (ASCII uniform distribution, JSON token distribution, HTML token distribution at the larger 1 MB sample size). At 1 MB × structured, the TRUE shift hits literal rank 1/151321 — the minimum of the entire conflict-rate distribution — plateau 1 or 2 shifts. CRC128 is the positive-control outcome: it proves the probe correctly identifies GF(2)-linear collapse when it is present, which in turn validates the `neutralized ✓` readings on the other two primitives. It is a test-only primitive, not part of the production hash selection.
+
+Axis-2 TRUE sits at 3.57 p.p. from baseline for the three strongest ASCII-direction CRC128 cells (`ascii × {512K, 1M}` and `json × 512K`); at 1.79 p.p. for the `{json × 1M}` / `{html × 1M}` cells where axis-1 carries the full signal. The anti-correlation cases (TRUE = 46.43 %, 48.21 %) reflect token-specific majority-vote direction flips described in the methodology section — the signed sign is corpus-dependent, only the distance is robust.
+
+**Maximum-sample stress test — MD5 × 4 MB × uniform printable ASCII.** One extra cell outside the main matrix, run to cross-validate against [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) NIST-STS (which already reported ITB-wrapped MD5 output indistinguishable from random noise). MD5 is a deliberately broken cryptographic primitive (known collisions, documented output biases); the 4 MB input is `known_ascii` plaintext — uniform draws from the 97-character printable ASCII alphabet (`0x20`–`0x7E` + `\t` + `\n`), the same corpus shape as the `ascii` rows in the main matrix above. That is the strongest-bias plaintext combined with 4× the sample size of any cell in the main matrix — together a maximally aggressive stress test for the bias-neutralization claim.
+
+| primitive | size | format | min % conflict | TRUE rank / total | plateau | TRUE bits % | \|Δ50 TRUE\| | verdict |
+|:----------|-----:|:-------|---------------:|:------------------|--------:|------------:|------------:|:--------|
+| md5 | 4 MB | ascii | 48.65 | 72798/603729 | 73559 | 50.12 | **0.12** | neutralized ✓ |
+
+`|Δ50 TRUE| = 0.12 p.p.` sits deep inside the ~1 p.p. binomial-noise band on 1800 bit-trials — the audit reports `neutralized ✓` on a broken primitive + maximum bias plaintext + 4× sample size, and the result is in numerical agreement with Phase 2b's independent statistical-randomness framework on the same primitive. Both frameworks converge on the same conclusion from different measurement surfaces.
+
+**This bias-probe is a LABORATORY diagnostic, not an attacker tool.** The precision numbers in the tables above — particularly the `TRUE rank` column and the `|Δ50 TRUE|` axis-2 column for FNV-1a / BLAKE3 / MD5 — are achievable only because the probe has access to the ground-truth encryption configuration of its own test corpora (`cell.meta.json` supplies `start_pixel` for the TRUE-rank computation; `config.truth.json` supplies the per-pixel `channel_xor_8` ground truth that axis-2 prediction accuracy is measured against). Without that configuration, the probe cannot distinguish the `neutralized ✓` primitives from each other — FNV-1a's full conflict-rate distribution, BLAKE3's, and MD5's are all statistically indistinguishable from the `/dev/urandom` control at the probe's sample sizes (this is precisely the [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) `KL max ≈ 10⁻⁵ nats` floor result, reported from an independent measurement direction). The only primitive the probe separates on *attacker-visible* axes (distribution concentration around the minimum conflict rate) is CRC128 on biased plaintext — the GF(2)-linear control included specifically to verify the measurement pipeline can surface algebraic leaks when they exist.
+
+The probe therefore **cannot be used** to fingerprint the hash primitive in an intercepted ITB ciphertext from an unknown sender, to detect a primitive-misconfiguration remotely, or to distinguish ITB output generated by a specific primitive from ITB output generated by any other properly-wrapped primitive. It is a self-contained lab validation of ITB's Proof 7 (bias neutralization) run against corpora the experimenter controls — nothing more.
+
+Why we built it: ITB ciphertext under any production PRF primitive sits effectively at the finite-sample KL floor (`~10⁻⁵` nats — the mathematical lower bound of distinguishability from `/dev/urandom` at the tested sample sizes). At that regime no externally observable statistical diagnostic can separate primitives against each other. The only analytical direction left is an internal one — measure the bias that the probe can see *given full knowledge of what it should see*, and confirm that the signal matches the noise floor across primitives the architecture is claimed to neutralize. That is what this tool does, and why its output is diagnostic to us, but not to an outside observer.
+
+**What this audit does NOT claim.**
+
+1. That a single plaintext format determines attack feasibility. The probe's detection threshold is orders of magnitude tighter than a real-world attacker's exploitation threshold — a `bias-leak ✗` verdict means the *primitive's algebraic structure is empirically visible*, not that it is practically inversible without the full nonce-reuse + demask chain from the [preceding subsection](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse).
+2. That non-detectability implies a security bound. The probe's `neutralized ✓` band is ±1 p.p. on 1800 bit-trials; a weaker algebraic leak below that floor would go undetected in a single cell and would need a larger sample or a different probe to surface.
+3. That any of the tested primitives is a production recommendation. CRC128 and FNV-1a are test helpers in `redteam_test.go` / `redteam_lab_test.go`, not part of the shipped hash selection API (see [Hash matrix](#hash-matrix) for the production list).
+
+**Reproduction.**
+
+```bash
+# Full 18-cell matrix (3 primitives × 2 sizes × 3 formats); ~20 min at
+# PARALLEL=6 on a 16-core box.
+RESULTS_TAG=bias_audit \
+PRIMITIVES="crc128 fnv1a blake3" \
+SIZES="524288 1048576" \
+FORMATS="ascii json_structured html_structured" \
+PROBE_SIZE=auto PARALLEL=6 \
+bash scripts/redteam/bias_audit_matrix.sh
+
+# Render the matrix_summary.jsonl as markdown with the axis-1 + axis-2
+# columns and the combined verdict.
+python3 scripts/redteam/aggregate_bias_audit.py \
+  --input tmp/attack/nonce_reuse/results/bias_audit/matrix_summary.jsonl \
+  > bias_audit.md
+
+# Single-cell probe (plug in any chainhashes/<name>.py module — currently
+# bundled: crc128, fnv1a, blake3; analysts can add their own mirror).
+python3 scripts/redteam/phase2_theory/raw_mode_bias_probe.py \
+  --cell-dir tmp/attack/nonce_reuse/corpus/crc128/BF1/N2/known_ascii \
+  --hash-module chainhashes.crc128 \
+  --probe-size auto --top-n 5
+```
+
+Per-run artefacts: `tmp/attack/nonce_reuse/results/<tag>/matrix_summary.jsonl` (one JSON row per cell with both axes + derived statistics) + `probe_<primitive>_<size>_<fmt>.log` (per-cell verbose probe output including the top-N minimum-conflict shifts, the full percentile distribution, and both axis-2 evaluations).
 
 ---
 
@@ -739,7 +850,7 @@ Obstacle (2) `startPixel` isolation empirically holds across all 10 primitives a
 > **For a reader-friendly summary of this section** — what nonce reuse actually is, the five conditions that ALL must hold for the attack to produce any signal, and why the user's choice of nonce size is the real defence — see [ITB.md § 8 Nonce Reuse](ITB.md#8-nonce-reuse-only-if-every-condition-holds). The rest of this Phase 2d section is the formal empirical write-up: corpus generator, demasker pipeline, 96-cell matrix, NIST STS tables, and the nine architectural effects visible in the data.
 
 Scripts:
-- [`redteam_nonce_reuse_test.go`](redteam_nonce_reuse_test.go) — corpus generator (install fixed nonce via test-only hook; encrypt N plaintexts with same seeds + same nonce; emit ground-truth config sidecar).
+- [`redteam_lab_test.go`](redteam_lab_test.go) — corpus generator (install fixed nonce via test-only hook; encrypt N plaintexts with same seeds + same nonce; emit ground-truth config sidecar).
 - [`scripts/redteam/phase2_theory/nonce_reuse_demask.py`](scripts/redteam/phase2_theory/nonce_reuse_demask.py) — demasker (Layer 1 constraint matching + Layer 2 startPixel brute force + reconstructed-stream emission).
 - [`scripts/redteam/run_attack_nonce_reuse.py`](scripts/redteam/run_attack_nonce_reuse.py) — orchestrator (per-cell pipeline with pre-run wipe, safe deletion, optional post-emission cleanup).
 - [`scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py`](scripts/redteam/phase3_deep/nist_sts_on_attack_streams.py) — NIST STS wrapper for the reconstructed streams.
