@@ -1599,6 +1599,125 @@ python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
 
 ---
 
+## Phase 2e — Related-seed differential
+
+Tests whether a one-seed XOR-differential (Δ on only `noiseSeed`, `dataSeed`, or `startSeed`) propagates into observable structure in the ciphertext diff `D = ct_0 ⊕ ct_1`. Both encrypts share the same nonce (`setTestNonce`), same plaintext, same base seeds on the two unaffected axes, same hash-function instance (cached key preserved). Under the PRF / non-GF(2)-linear assumption `D` should be uniform random on the `data` and `start` axes; the `noise` axis is always architecturally non-uniform because `noisePos` derivation permutes which bit of each container byte carries the CSPRNG noise.
+
+**Matrix**: 12 primitives × 2 BarrierFill values (1, 32) × 3 axes (noise, data, start) × 7 Δ patterns (single-bit low / mid-512 / high-1023, three random 1024-bit deltas, structural zero-low-half) × 2 plaintext kinds (random, uniform printable ASCII) = **1008 cells**, 512 KB plaintext each.
+
+### Per-primitive roll-up (max χ² across all 84 cells per primitive)
+
+| primitive | cells | max χ² | min p | max \|Δ50\| bit-dev | verdict |
+|:----------|------:|-------:|------:|-------------------:|:--------|
+| AES-CMAC     | 84 |  6 072 142 | 0 | 0.381 | neutralized ✓ |
+| AreionSoEM-256 | 84 | 6 135 232 | 0 | 0.382 | neutralized ✓ |
+| AreionSoEM-512 | 84 | 6 075 382 | 0 | 0.382 | neutralized ✓ |
+| BLAKE2b-256  | 84 |  6 067 622 | 0 | 0.381 | neutralized ✓ |
+| BLAKE2b-512  | 84 |  6 074 480 | 0 | 0.381 | neutralized ✓ |
+| BLAKE2s      | 84 |  6 087 498 | 0 | 0.382 | neutralized ✓ |
+| BLAKE3       | 84 |  6 132 607 | 0 | 0.381 | neutralized ✓ |
+| ChaCha20     | 84 |  6 051 389 | 0 | 0.381 | neutralized ✓ |
+| MD5          | 84 |  6 116 628 | 0 | 0.382 | neutralized ✓ |
+| SipHash-2-4  | 84 |  6 076 938 | 0 | 0.381 | neutralized ✓ |
+| CRC128       | 84 | **42 454 524** | 0 | **0.435** | **bias-leak ✗** |
+| FNV-1a       | 84 | **56 680 753** | 0 | **0.496** | **bias-leak ✗** |
+
+The 10 neutralized primitives cluster tightly at χ² ≈ 6.0–6.1 M — **that number is the architectural `noisePos` permutation signal**, not a primitive leak (see per-axis breakdown below). CRC128 sits at 7× that floor and FNV-1a at 9×; both show primitive-attributable structure.
+
+### Per-primitive × axis roll-up (max χ²)
+
+| primitive | noise | data | start |
+|:----------|------:|-----:|------:|
+| AES-CMAC     | 6 072 142 |   314 |   308 |
+| AreionSoEM-256 | 6 135 232 | 284 | 294 |
+| AreionSoEM-512 | 6 075 382 | 318 | 279 |
+| BLAKE2b-256  | 6 067 622 |   319 |   327 |
+| BLAKE2b-512  | 6 074 480 |   301 |   287 |
+| BLAKE2s      | 6 087 498 |   298 |   301 |
+| BLAKE3       | 6 132 607 |   290 |   295 |
+| ChaCha20     | 6 051 389 |   309 |   297 |
+| MD5          | 6 116 628 |   282 |   305 |
+| SipHash-2-4  | 6 076 938 |   289 |   302 |
+| **CRC128**   | 42 391 609 | 42 454 524 | 42 311 253 |
+| **FNV-1a**   | 56 680 753 | 56 656 354 | 56 503 886 |
+
+The 10 neutralized primitives register χ² within the df=255 random band on `data` and `start` (no primitive-attributable leak). CRC128 and FNV-1a leak on **every** axis — confirming architectural rotation + channelXOR + noisePos wrapping does not contain primitive-level differentials for GF(2)-linear (CRC128) or top-bit-isolating invertible-multiplicative (FNV-1a) primitives.
+
+### Per-primitive × Δ pattern — axis=data only (the cleanest differential test)
+
+| primitive | bit0 | bit_mid512 | bit_high1023 | rand_1 | rand_2 | rand_3 | zero_low_half |
+|:----------|-----:|-----------:|-------------:|-------:|-------:|-------:|--------------:|
+| AES-CMAC      | 246 | 251 |  252 | 265 | 248 | 262 | 289 |
+| AreionSoEM-256 | 263 | 249 | 256 | 284 | 247 | 229 | 264 |
+| AreionSoEM-512 | 264 | 285 | 243 | 243 | 284 | 317 | 276 |
+| BLAKE2b-256   | 262 | 254 | 253 | 236 | 298 | 319 | 286 |
+| BLAKE2b-512   | 280 | 232 | 265 | 294 | 244 | 288 | 301 |
+| BLAKE2s       | 245 | 250 | 245 | 269 | 276 | 298 | 313 |
+| BLAKE3        | 251 | 250 | 239 | 273 | 271 | 258 | 290 |
+| ChaCha20      | 268 | 290 | 304 | 278 | 224 | 236 | 233 |
+| MD5           | 230 | 255 | 256 | 267 | 283 | 282 | 260 |
+| SipHash-2-4   | 260 | 290 | 259 | 250 | 259 | 282 | 276 |
+| **CRC128**    | **13 981** | **27 561** | **42 454 524** | **14 622** | **17 882** | **15 846** | **8 120** |
+| **FNV-1a**    |    231 |    265 | **56 656 354** |    237 |    300 |    295 |    263 |
+
+FNV-1a's leak on `axis=data` is a **single-Δ effect**: only `bit_high1023` (flip of bit 63 of seed component 15) triggers the 56 M signal — FNV-1a's top-bit-isolated modular multiply preserves that bit's differential to output bit 127, which ITB's `hLo` extraction coincidentally discards, so the "leak" here is `D` becoming mostly-zero on data pixels (50% same bytes from unchanged `channelXOR`) rather than genuine algebraic recovery. CRC128 leaks on every Δ pattern because it is fully GF(2)-linear end-to-end.
+
+### Per-primitive × BarrierFill roll-up (max χ²)
+
+| primitive | BF=1 | BF=32 |
+|:----------|-----:|------:|
+| AES-CMAC     | 6 072 142 | 4 908 608 |
+| AreionSoEM-256 | 6 135 232 | 4 940 673 |
+| AreionSoEM-512 | 6 075 382 | 4 893 831 |
+| BLAKE2b-256  | 6 067 622 | 4 915 595 |
+| BLAKE2b-512  | 6 074 480 | 4 922 878 |
+| BLAKE2s      | 6 087 498 | 4 904 584 |
+| BLAKE3       | 6 132 607 | 4 903 913 |
+| ChaCha20     | 6 051 389 | 4 915 850 |
+| MD5          | 6 116 628 | 4 923 037 |
+| SipHash-2-4  | 6 076 938 | 4 923 866 |
+| CRC128       | 42 454 524 | 34 274 960 |
+| FNV-1a       | 56 680 753 | 45 778 056 |
+
+BF=32 systematically reduces χ² (~20 %) across **all** primitives — BarrierFill adds uniform CSPRNG fill pixels that dilute any signal proportionally. Relative ordering between primitives preserved; the 10-vs-2 split between neutralized and leaking primitives holds regardless of BF.
+
+### Architectural implications
+
+1. **PRF + carry-chain primitives are related-seed secure under ITB wrapping.** Tested matrix covers every 1024-bit ChainHash primitive in the suite; none of the 10 production / non-linear primitives shows a differential on `data` or `start` above the df=255 random band.
+2. **CRC128's GF(2)-linearity leaks end-to-end.** Already expected and documented in [Phase 2a (extension)](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse); Phase 2e confirms the leak appears in a second independent measurement surface (related-seed differential rather than bias-probe conflict-rate).
+3. **FNV-1a's top-bit isolation is ITB-invisible.** FNV-1a's `(state × 0x01000000000000000000013B) mod 2^128` preserves state's bit 127 only in output bit 127. ITB discards the high uint64 of `hLo/hHi` outputs; the leak is therefore visible to a differential probe but not to an encryption-path attacker.
+4. **BarrierFill is orthogonal to primitive security.** BF=1 vs BF=32 rescale χ² but do not reorder primitives into or out of the neutralized cluster.
+
+### BLAKE wrapper seed-injection fix (precondition)
+
+Phase 2e v2 initially surfaced an apparent BLAKE2b/2s/3 leak on Δ=`bit_high1023` across the `data` axis. Diagnosis: the cached-wrapper functions (`makeBlake2bHash256`, `makeBlake2sHash256`, `makeBlake2bHash512`, `makeBlake3Hash256`, `makeBlake3Hash256WithKey`) iterated the 4 (or 8) seed `uint64` values and XOR'd them at offsets `keyLen + i*8`, but guarded the XOR with `if off+8 <= len(buf)`. For ITB's internal 20-byte `pixel_le || nonce` input, `buf` was 52 bytes, so `seed[2]` and `seed[3]` (offsets 48 and 56) silently **dropped** — halving the effective ChainHash key width.
+
+Fix (applied to `itb_test.go`, `redteam_lab_test.go`, `README.md`, `doc.go`): pad the buffer to at least `keyLen + seedLen*8` bytes, zero-pad the stale tail, then XOR all seed lanes unconditionally. Added regression test `TestBlakeWrappersAllSeedBitsAffectOutput` that flips bits 0 and 63 of each seed component on 20-byte data and asserts every flip changes the digest. Phase 2e v3 + v4 re-runs with the fixed wrappers produce the data shown above.
+
+This is a **breaking change** for ciphertexts produced by pre-fix BLAKE wrappers; users who copied the README / doc.go example code or directly called the `itb_test.go` helpers need to regenerate with the fixed wrappers. The ITB core (`itb.go`, `itb128/256/512.go`, `seed*.go`, `process_generic.go`) was not affected.
+
+### Reproduction
+
+```bash
+# Full Phase 2e matrix — 1008 cells, ~30-60 min at PARALLEL=8 on 16-core.
+PARALLEL=8 bash scripts/redteam/phase2e_related_seed_matrix.sh
+
+# Render aggregate tables (per-primitive / per-axis / per-Δ / per-BF / per-PT):
+python3 scripts/redteam/phase2_theory/aggregate_related_seed_diff.py \
+  --input tmp/attack/related_seed_diff/results/phase2e_related_seed/matrix_summary.jsonl \
+  > phase2e_matrix.md
+
+# Narrow subset (e.g. CRC128 + BLAKE3 on the data axis only):
+PRIMITIVES="crc128 blake3" AXES="data" DELTA_KINDS="bit0 bit_high1023" \
+PT_KINDS="random" BFS="1" \
+RESULTS_TAG="phase2e_subset" PARALLEL=4 \
+bash scripts/redteam/phase2e_related_seed_matrix.sh
+```
+
+Per-cell artefacts: `tmp/attack/related_seed_diff/corpus/<primitive>/BF<n>/<axis>/<delta>/<pt>/` containing `ct_0.bin`, `ct_1.bin`, `plaintext.bin`, `cell.meta.json`, `stats.json`.
+
+---
+
 ## Phase 3a — Rotation-invariant edge case
 
 Script: [`scripts/redteam/phase3_deep/rotation_invariant.py`](scripts/redteam/phase3_deep/rotation_invariant.py)

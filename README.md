@@ -340,15 +340,22 @@ func makeBlake3Hash() itb.HashFunc256 {
 
     return func(data []byte, seed [4]uint64) [4]uint64 {
         h := template.Clone()
+        // Ensure mixed is long enough for all 4 seed uint64's (32 bytes),
+        // even when data is shorter. Without this, seed[i] for i past
+        // len(data)/8 would be silently dropped, halving effective key.
+        const seedInjectBytes = 32
+        payloadLen := len(data)
+        if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
         ptr := pool.Get().(*[]byte)
         mixed := *ptr
-        if cap(mixed) < len(data) { mixed = make([]byte, len(data)) } else { mixed = mixed[:len(data)] }
-        copy(mixed, data)
+        if cap(mixed) < payloadLen { mixed = make([]byte, payloadLen) } else { mixed = mixed[:payloadLen] }
+        // Zero-pad any tail beyond len(data) (pool buffer may be stale).
+        for i := len(data); i < payloadLen; i++ { mixed[i] = 0 }
+        copy(mixed[:len(data)], data)
+        // XOR seed[0..3] into first 32 bytes (guaranteed to fit now).
         for i := 0; i < 4; i++ {
             off := i * 8
-            if off+8 <= len(mixed) {
-                binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
-            }
+            binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
         }
         h.Write(mixed)
         *ptr = mixed; pool.Put(ptr)
@@ -381,17 +388,24 @@ func makeBlake2bHash512() itb.HashFunc512 {
     pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
     return func(data []byte, seed [8]uint64) [8]uint64 {
-        need := 64 + len(data)
+        // Ensure payload region is at least seedInjectBytes (64) long so all
+        // 8 seed uint64's XOR into the hash input. Otherwise seed[i] past
+        // len(data)/8 are silently dropped for short data.
+        const keyLen = 64
+        const seedInjectBytes = 64
+        payloadLen := len(data)
+        if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
+        need := keyLen + payloadLen
         ptr := pool.Get().(*[]byte)
         buf := *ptr
         if cap(buf) < need { buf = make([]byte, need) } else { buf = buf[:need] }
-        copy(buf[:64], key[:])
-        copy(buf[64:], data)
+        // Zero-pad any tail beyond the copied data (pool buffer may be stale).
+        for i := keyLen + len(data); i < need; i++ { buf[i] = 0 }
+        copy(buf[:keyLen], key[:])
+        copy(buf[keyLen:keyLen+len(data)], data)
         for i := 0; i < 8; i++ {
-            off := 64 + i*8
-            if off+8 <= len(buf) {
-                binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-            }
+            off := keyLen + i*8
+            binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
         }
         digest := blake2b.Sum512(buf)
         *ptr = buf; pool.Put(ptr)
