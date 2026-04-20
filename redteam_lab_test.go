@@ -767,13 +767,13 @@ func hashWidthForName(name string) (int, error) {
 	switch name {
 	case "fnv1a", "md5", "aescmac", "siphash24", "crc128":
 		return 128, nil
-	case "chacha20", "areion256", "blake2s", "blake3":
+	case "chacha20", "areion256", "blake2s", "blake3", "blake2b256":
 		return 256, nil
 	case "blake2b", "areion512":
 		return 512, nil
 	default:
 		return 0, fmt.Errorf("unknown hash %q; supported: fnv1a, md5, aescmac, siphash24, "+
-			"crc128 (test-only), chacha20, areion256, blake2s, blake3, blake2b, areion512", name)
+			"crc128 (test-only), chacha20, areion256, blake2s, blake3, blake2b256, blake2b, areion512", name)
 	}
 }
 
@@ -814,6 +814,8 @@ func hashFunc256ForName(name string) (HashFunc256, string, error) {
 		return makeAreionSoEM256(), "AreionSoEM256", nil
 	case "blake2s":
 		return makeBlake2sHash256(), "BLAKE2s", nil
+	case "blake2b256":
+		return makeBlake2bHash256(), "BLAKE2b-256", nil
 	case "blake3":
 		if _, err := rand.Read(redteamBlake3Key[:]); err != nil {
 			return nil, "", fmt.Errorf("rand.Read for BLAKE3 key: %w", err)
@@ -835,20 +837,28 @@ func makeBlake3Hash256WithKey(key [32]byte) HashFunc256 {
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 	return func(data []byte, seed [4]uint64) [4]uint64 {
 		h := template.Clone()
+		// Ensure mixed is long enough for all 4 seed uint64's (32 bytes),
+		// even when data is shorter. See makeBlake3Hash256 in itb_test.go for
+		// details on the short-data seed-drop bug this guards against.
+		const seedInjectBytes = 32
+		payloadLen := len(data)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
 		mixedPtr := pool.Get().(*[]byte)
 		mixed := *mixedPtr
-		if cap(mixed) < len(data) {
-			mixed = make([]byte, len(data))
+		if cap(mixed) < payloadLen {
+			mixed = make([]byte, payloadLen)
 		} else {
-			mixed = mixed[:len(data)]
+			mixed = mixed[:payloadLen]
 		}
-		copy(mixed, data)
+		for i := len(data); i < payloadLen; i++ {
+			mixed[i] = 0
+		}
+		copy(mixed[:len(data)], data)
 		for i := 0; i < 4; i++ {
-			s := seed[i]
 			off := i * 8
-			if off+8 <= len(mixed) {
-				binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^s)
-			}
+			binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
 		}
 		h.Write(mixed)
 		*mixedPtr = mixed
@@ -1519,4 +1529,415 @@ func TestRedTeamGenerateNonceReuse(t *testing.T) {
 	default:
 		t.Fatalf("unsupported hash width %d for %q", width, hashName)
 	}
+}
+
+// ----------------------------------------------------------------------------
+// Phase 2e — related-seed differential corpus generator
+// ----------------------------------------------------------------------------
+//
+// Generates ONE pair of ciphertexts (ct_0.bin, ct_1.bin) for a given
+// (primitive, seed_axis, delta_kind, plaintext_kind, plaintext_size) cell.
+// Both encrypts share the SAME fixed nonce and SAME plaintext; only the
+// seed on the requested axis differs by XOR with a known Δ.
+//
+// The Python analyzer computes D = ct_0 ⊕ ct_1 across the container
+// body, then runs distribution + correlation tests to measure whether
+// the seed differential Δ leaks into the ciphertext diff D. Under PRF
+// assumption D should be uniform random; under a GF(2)-linear primitive
+// (CRC128) D should carry a structured pattern related to Δ.
+//
+// Env vars (all required except defaults noted):
+//
+//   ITB_REL_HASH          — primitive name (as in hashFunc{128,256,512}ForName)
+//   ITB_REL_AXIS          — noise / data / start (which seed gets Δ XOR'd)
+//   ITB_REL_DELTA_KIND    — bit0 / bit_mid512 / bit_high1023 / rand_1 /
+//                           rand_2 / rand_3 / zero_low_half
+//   ITB_REL_PT_KIND       — random / ascii (default: random)
+//   ITB_REL_SIZE          — plaintext bytes (default: 524288 = 512 KB)
+//   ITB_REL_NONCE_SEED    — PRNG seed for nonce + base seeds + plaintext +
+//                           random-Δ derivation (default: 0xA17B1CE; same
+//                           nonce_seed across primitives produces
+//                           comparable baselines)
+//   ITB_REL_CELL_DIR      — output directory (required; attack orchestrator
+//                           supplies tmp/attack/related_seed_diff/corpus/...)
+
+const relSeedKeyBits = 1024 // fixed; matches production flagship config
+
+type relSeedParams struct {
+	hashName      string
+	axis          string
+	deltaKind     string
+	plaintextKind string
+	plaintextSize int
+	nonceSeed     uint64
+	barrierFill   int
+	cellDir       string
+}
+
+func relSeedEnv(t *testing.T) relSeedParams {
+	t.Helper()
+	p := relSeedParams{
+		hashName:      os.Getenv("ITB_REL_HASH"),
+		axis:          os.Getenv("ITB_REL_AXIS"),
+		deltaKind:     os.Getenv("ITB_REL_DELTA_KIND"),
+		plaintextKind: os.Getenv("ITB_REL_PT_KIND"),
+		cellDir:       os.Getenv("ITB_REL_CELL_DIR"),
+	}
+	if p.plaintextKind == "" {
+		p.plaintextKind = "random"
+	}
+	if p.hashName == "" || p.axis == "" || p.deltaKind == "" || p.cellDir == "" {
+		t.Skip("Phase 2e needs ITB_REL_HASH + ITB_REL_AXIS + ITB_REL_DELTA_KIND + ITB_REL_CELL_DIR")
+	}
+	switch p.axis {
+	case "noise", "data", "start":
+	default:
+		t.Fatalf("ITB_REL_AXIS=%q: must be noise / data / start", p.axis)
+	}
+	switch p.deltaKind {
+	case "bit0", "bit_mid512", "bit_high1023",
+		"rand_1", "rand_2", "rand_3", "zero_low_half":
+	default:
+		t.Fatalf("ITB_REL_DELTA_KIND=%q: unsupported", p.deltaKind)
+	}
+	switch p.plaintextKind {
+	case "random", "ascii":
+	default:
+		t.Fatalf("ITB_REL_PT_KIND=%q: must be random / ascii", p.plaintextKind)
+	}
+	sizeStr := os.Getenv("ITB_REL_SIZE")
+	p.plaintextSize = 512 * 1024
+	if sizeStr != "" {
+		v, err := strconv.Atoi(sizeStr)
+		if err != nil || v <= 0 || v > maxDataSize {
+			t.Fatalf("ITB_REL_SIZE=%q: must be integer in (0, %d]", sizeStr, maxDataSize)
+		}
+		p.plaintextSize = v
+	}
+	seedStr := os.Getenv("ITB_REL_NONCE_SEED")
+	p.nonceSeed = 0xA17B1CE
+	if seedStr != "" {
+		v, err := strconv.ParseUint(seedStr, 0, 64)
+		if err != nil {
+			t.Fatalf("ITB_REL_NONCE_SEED=%q: %v", seedStr, err)
+		}
+		p.nonceSeed = v
+	}
+	bfStr := os.Getenv("ITB_REL_BF")
+	p.barrierFill = 1
+	if bfStr != "" {
+		v, err := strconv.Atoi(bfStr)
+		if err != nil {
+			t.Fatalf("ITB_REL_BF=%q: %v", bfStr, err)
+		}
+		switch v {
+		case 1, 2, 4, 8, 16, 32:
+			p.barrierFill = v
+		default:
+			t.Fatalf("ITB_REL_BF=%d: must be 1/2/4/8/16/32", v)
+		}
+	}
+	return p
+}
+
+// deriveDeltaComponents builds the 16-uint64 Δ for the given kind.
+// Deterministic from (nonceSeed, axis, deltaKind) so the matrix is
+// reproducible across runs.
+//
+// For `zero_low_half` Δ is set to the base seed's low-8 components
+// (so XOR zeroes them) — must be computed AFTER base seeds are drawn.
+func deriveDeltaComponents(kind string, baseLow8 [8]uint64, nonceSeed uint64) [16]uint64 {
+	var d [16]uint64
+	switch kind {
+	case "bit0":
+		d[0] = 1
+	case "bit_mid512":
+		d[8] = 1
+	case "bit_high1023":
+		d[15] = 1 << 63
+	case "rand_1", "rand_2", "rand_3":
+		var sub uint64
+		switch kind {
+		case "rand_1":
+			sub = 1
+		case "rand_2":
+			sub = 2
+		case "rand_3":
+			sub = 3
+		}
+		rng := rand.New(rand.NewSource(int64(nonceSeed ^ (0xDEADBEEF00000000 | sub))))
+		for i := range d {
+			d[i] = rng.Uint64()
+		}
+	case "zero_low_half":
+		for i := 0; i < 8; i++ {
+			d[i] = baseLow8[i]
+		}
+	}
+	return d
+}
+
+// relSeedGeneratePlaintext returns a deterministic plaintext of the
+// requested size and kind.
+func relSeedGeneratePlaintext(rng *rand.Rand, size int, kind string) []byte {
+	pt := make([]byte, size)
+	switch kind {
+	case "random":
+		if _, err := rng.Read(pt); err != nil {
+			panic(err) // math/rand Read never fails
+		}
+	case "ascii":
+		for i := range pt {
+			r := rng.Intn(97)
+			switch {
+			case r == 95:
+				pt[i] = 0x09 // tab
+			case r == 96:
+				pt[i] = 0x0A // newline
+			default:
+				pt[i] = byte(0x20 + r) // printable ASCII
+			}
+		}
+	}
+	return pt
+}
+
+func TestRedTeamGenerateRelatedSeedPair(t *testing.T) {
+	p := relSeedEnv(t)
+
+	width, err := hashWidthForName(p.hashName)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if err := os.MkdirAll(p.cellDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", p.cellDir, err)
+	}
+
+	SetMaxWorkers(8)
+	SetBarrierFill(p.barrierFill)
+	t.Cleanup(func() {
+		SetMaxWorkers(0)
+		SetBarrierFill(1)
+	})
+
+	// Fixed nonce so the only diff between ct_0 and ct_1 is the seed Δ.
+	fixedNonce := deriveFixedNonce(p.nonceSeed, currentNonceSize())
+	setTestNonce(t, fixedNonce)
+
+	// PRNG sequence: nonce-seed keeps determinism reproducible. Four
+	// disjoint substreams — one for each of (ns, ds, ss) base components
+	// and one for the plaintext bytes — so varying PT_KIND doesn't shift
+	// seed values.
+	const (
+		streamNoise uint64 = 0x1111111111111111
+		streamData  uint64 = 0x2222222222222222
+		streamStart uint64 = 0x3333333333333333
+		streamPT    uint64 = 0x4444444444444444
+	)
+	draw16 := func(stream uint64) [16]uint64 {
+		rng := rand.New(rand.NewSource(int64(p.nonceSeed ^ stream)))
+		var out [16]uint64
+		for i := range out {
+			out[i] = rng.Uint64()
+		}
+		return out
+	}
+	noiseBase := draw16(streamNoise)
+	dataBase := draw16(streamData)
+	startBase := draw16(streamStart)
+
+	// Derive Δ (depends on axis-specific base for zero_low_half).
+	var basedelta [8]uint64
+	switch p.axis {
+	case "noise":
+		copy(basedelta[:], noiseBase[:8])
+	case "data":
+		copy(basedelta[:], dataBase[:8])
+	case "start":
+		copy(basedelta[:], startBase[:8])
+	}
+	delta := deriveDeltaComponents(p.deltaKind, basedelta, p.nonceSeed)
+
+	// Apply Δ to the requested axis to get seed_variant.
+	var noiseVar, dataVar, startVar [16]uint64
+	noiseVar = noiseBase
+	dataVar = dataBase
+	startVar = startBase
+	switch p.axis {
+	case "noise":
+		for i := range noiseVar {
+			noiseVar[i] ^= delta[i]
+		}
+	case "data":
+		for i := range dataVar {
+			dataVar[i] ^= delta[i]
+		}
+	case "start":
+		for i := range startVar {
+			startVar[i] ^= delta[i]
+		}
+	}
+
+	// Plaintext (determined from its own stream; does NOT depend on axis/Δ).
+	ptRng := rand.New(rand.NewSource(int64(p.nonceSeed ^ streamPT)))
+	plaintext := relSeedGeneratePlaintext(ptRng, p.plaintextSize, p.plaintextKind)
+
+	// Create ONE hash-function instance per width and reuse it across both
+	// encrypts. Critical: primitives with cached wrappers (AES-CMAC, BLAKE3
+	// keyed, ChaCha20, BLAKE2, AreionSoEM) draw an internal random key at
+	// factory time; calling hashFunc*ForName twice would give two different
+	// keys → ct_0 and ct_1 would be completely unrelated random ciphertexts
+	// → D = ct_0 ⊕ ct_1 would look uniform from pure key-randomness, not
+	// from architectural security. Reusing one instance exercises the
+	// production "same hash function instance, different seed components"
+	// setup that ITB actually ships.
+	var hf128 HashFunc128
+	var hf256 HashFunc256
+	var hf512 HashFunc512
+	switch width {
+	case 128:
+		h, _, herr := hashFunc128ForName(p.hashName)
+		if herr != nil {
+			t.Fatalf("hashFunc128: %v", herr)
+		}
+		hf128 = h
+	case 256:
+		h, _, herr := hashFunc256ForName(p.hashName)
+		if herr != nil {
+			t.Fatalf("hashFunc256: %v", herr)
+		}
+		hf256 = h
+	case 512:
+		h, _, herr := hashFunc512ForName(p.hashName)
+		if herr != nil {
+			t.Fatalf("hashFunc512: %v", herr)
+		}
+		hf512 = h
+	}
+
+	encryptOnce := func(noiseComps, dataComps, startComps [16]uint64) []byte {
+		switch width {
+		case 128:
+			ns, err := SeedFromComponents128(hf128, noiseComps[:]...)
+			if err != nil {
+				t.Fatalf("ns seed: %v", err)
+			}
+			ds, err := SeedFromComponents128(hf128, dataComps[:]...)
+			if err != nil {
+				t.Fatalf("ds seed: %v", err)
+			}
+			ss, err := SeedFromComponents128(hf128, startComps[:]...)
+			if err != nil {
+				t.Fatalf("ss seed: %v", err)
+			}
+			out, err := Encrypt128(ns, ds, ss, plaintext)
+			if err != nil {
+				t.Fatalf("Encrypt128: %v", err)
+			}
+			return out
+		case 256:
+			ns, err := SeedFromComponents256(hf256, noiseComps[:]...)
+			if err != nil {
+				t.Fatalf("ns seed: %v", err)
+			}
+			ds, err := SeedFromComponents256(hf256, dataComps[:]...)
+			if err != nil {
+				t.Fatalf("ds seed: %v", err)
+			}
+			ss, err := SeedFromComponents256(hf256, startComps[:]...)
+			if err != nil {
+				t.Fatalf("ss seed: %v", err)
+			}
+			out, err := Encrypt256(ns, ds, ss, plaintext)
+			if err != nil {
+				t.Fatalf("Encrypt256: %v", err)
+			}
+			return out
+		case 512:
+			ns, err := SeedFromComponents512(hf512, noiseComps[:]...)
+			if err != nil {
+				t.Fatalf("ns seed: %v", err)
+			}
+			ds, err := SeedFromComponents512(hf512, dataComps[:]...)
+			if err != nil {
+				t.Fatalf("ds seed: %v", err)
+			}
+			ss, err := SeedFromComponents512(hf512, startComps[:]...)
+			if err != nil {
+				t.Fatalf("ss seed: %v", err)
+			}
+			out, err := Encrypt512(ns, ds, ss, plaintext)
+			if err != nil {
+				t.Fatalf("Encrypt512: %v", err)
+			}
+			return out
+		}
+		t.Fatalf("unsupported width %d", width)
+		return nil
+	}
+
+	ct0 := encryptOnce(noiseBase, dataBase, startBase)
+	ct1 := encryptOnce(noiseVar, dataVar, startVar)
+
+	if err := os.WriteFile(filepath.Join(p.cellDir, "ct_0.bin"), ct0, 0o644); err != nil {
+		t.Fatalf("write ct_0: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(p.cellDir, "ct_1.bin"), ct1, 0o644); err != nil {
+		t.Fatalf("write ct_1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(p.cellDir, "plaintext.bin"), plaintext, 0o644); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+
+	meta := struct {
+		Hash          string   `json:"hash"`
+		HashWidth     int      `json:"hash_width"`
+		KeyBits       int      `json:"key_bits"`
+		Axis          string   `json:"axis"`
+		DeltaKind     string   `json:"delta_kind"`
+		DeltaHex      string   `json:"delta_hex"`
+		PlaintextKind string   `json:"plaintext_kind"`
+		PlaintextSize int      `json:"plaintext_size"`
+		NonceHex      string   `json:"nonce_hex"`
+		NonceSeed     uint64   `json:"nonce_seed"`
+		BarrierFill   int      `json:"barrier_fill"`
+		Containers    [2]int   `json:"ciphertext_bytes"`
+		NoiseBase     []uint64 `json:"noise_base_components"`
+		DataBase      []uint64 `json:"data_base_components"`
+		StartBase     []uint64 `json:"start_base_components"`
+	}{
+		Hash:          p.hashName,
+		HashWidth:     width,
+		KeyBits:       relSeedKeyBits,
+		Axis:          p.axis,
+		DeltaKind:     p.deltaKind,
+		DeltaHex:      fmt.Sprintf("%x", deltaBytes(delta[:])),
+		PlaintextKind: p.plaintextKind,
+		PlaintextSize: p.plaintextSize,
+		NonceHex:      fmt.Sprintf("%x", fixedNonce),
+		NonceSeed:     p.nonceSeed,
+		BarrierFill:   currentBarrierFill(),
+		Containers:    [2]int{len(ct0), len(ct1)},
+		NoiseBase:     noiseBase[:],
+		DataBase:      dataBase[:],
+		StartBase:     startBase[:],
+	}
+	metaBytes, err := json.MarshalIndent(&meta, "", "  ")
+	if err != nil {
+		t.Fatalf("meta json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(p.cellDir, "cell.meta.json"), metaBytes, 0o644); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+	t.Logf("related-seed pair generated: hash=%s axis=%s delta=%s pt_kind=%s size=%d → %s",
+		p.hashName, p.axis, p.deltaKind, p.plaintextKind, p.plaintextSize, p.cellDir)
+}
+
+// deltaBytes flattens the 16-uint64 delta into a byte slice (LE).
+func deltaBytes(delta []uint64) []byte {
+	out := make([]byte, len(delta)*8)
+	for i, v := range delta {
+		binary.LittleEndian.PutUint64(out[i*8:], v)
+	}
+	return out
 }

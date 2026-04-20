@@ -1280,21 +1280,30 @@ func makeBlake3Hash256() HashFunc256 {
 	return func(data []byte, seed [4]uint64) [4]uint64 {
 		h := template.Clone()
 
+		// Ensure mixed is long enough for all 4 seed uint64's (32 bytes),
+		// even when data is shorter. Without this, seed[i] for i past
+		// len(data)/8 would be silently dropped, halving effective key.
+		const seedInjectBytes = 32
+		payloadLen := len(data)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
 		mixedPtr := pool.Get().(*[]byte)
 		mixed := *mixedPtr
-		if cap(mixed) < len(data) {
-			mixed = make([]byte, len(data))
+		if cap(mixed) < payloadLen {
+			mixed = make([]byte, payloadLen)
 		} else {
-			mixed = mixed[:len(data)]
+			mixed = mixed[:payloadLen]
 		}
-		copy(mixed, data)
-		// XOR seed[0..3] into first 32 bytes.
+		// Zero-pad any tail beyond len(data) (pool buffer may be stale).
+		for i := len(data); i < payloadLen; i++ {
+			mixed[i] = 0
+		}
+		copy(mixed[:len(data)], data)
+		// XOR seed[0..3] into first 32 bytes (guaranteed to fit now).
 		for i := 0; i < 4; i++ {
-			s := seed[i]
 			off := i * 8
-			if off+8 <= len(mixed) {
-				binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^s)
-			}
+			binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
 		}
 		h.Write(mixed)
 		*mixedPtr = mixed
@@ -1325,7 +1334,16 @@ func makeBlake2bHash256() HashFunc256 {
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		need := 32 + len(data)
+		// Ensure payload region is at least seedInjectBytes (32) long so all
+		// 4 seed uint64's XOR into the hash input. Otherwise seed[2..3] are
+		// silently dropped for short data (e.g. ITB's 20-byte pixel_le+nonce).
+		const keyLen = 32
+		const seedInjectBytes = 32
+		payloadLen := len(data)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
+		need := keyLen + payloadLen
 		bufPtr := pool.Get().(*[]byte)
 		buf := *bufPtr
 		if cap(buf) < need {
@@ -1333,13 +1351,15 @@ func makeBlake2bHash256() HashFunc256 {
 		} else {
 			buf = buf[:need]
 		}
-		copy(buf[:32], b2key[:])
-		copy(buf[32:], data)
+		// Zero-pad any tail beyond the copied data (pool buffer may be stale).
+		for i := keyLen + len(data); i < need; i++ {
+			buf[i] = 0
+		}
+		copy(buf[:keyLen], b2key[:])
+		copy(buf[keyLen:keyLen+len(data)], data)
 		for i := 0; i < 4; i++ {
-			off := 32 + i*8
-			if off+8 <= len(buf) {
-				binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-			}
+			off := keyLen + i*8
+			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 		}
 		digest := blake2b.Sum256(buf)
 		*bufPtr = buf
@@ -1364,7 +1384,16 @@ func makeBlake2sHash256() HashFunc256 {
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		need := 32 + len(data)
+		// Ensure payload region is at least seedInjectBytes (32) long so all
+		// 4 seed uint64's XOR into the hash input. See makeBlake2bHash256 for
+		// details on the short-data bug this guards against.
+		const keyLen = 32
+		const seedInjectBytes = 32
+		payloadLen := len(data)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
+		need := keyLen + payloadLen
 		bufPtr := pool.Get().(*[]byte)
 		buf := *bufPtr
 		if cap(buf) < need {
@@ -1372,13 +1401,14 @@ func makeBlake2sHash256() HashFunc256 {
 		} else {
 			buf = buf[:need]
 		}
-		copy(buf[:32], b2key[:])
-		copy(buf[32:], data)
+		for i := keyLen + len(data); i < need; i++ {
+			buf[i] = 0
+		}
+		copy(buf[:keyLen], b2key[:])
+		copy(buf[keyLen:keyLen+len(data)], data)
 		for i := 0; i < 4; i++ {
-			off := 32 + i*8
-			if off+8 <= len(buf) {
-				binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-			}
+			off := keyLen + i*8
+			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 		}
 		digest := blake2s.Sum256(buf)
 		*bufPtr = buf
@@ -1559,6 +1589,66 @@ func TestRoundtrip256_Blake2s(t *testing.T) {
 	}
 }
 
+// TestBlakeWrappersAllSeedBitsAffectOutput verifies that every bit of every
+// seed component in the BLAKE cached-wrapper HashFuncs affects the digest,
+// even for short data inputs (e.g. ITB's internal 20-byte pixel_le+nonce).
+//
+// Regression test: earlier versions of the wrappers guarded the seed XOR with
+// `if off+8 <= len(buf)` / `len(mixed)`, which silently dropped seed[2..3]
+// (and seed[2..7] for the 512 variant) when data was shorter than
+// seedLen*8 bytes — halving the effective ChainHash key.
+func TestBlakeWrappersAllSeedBitsAffectOutput(t *testing.T) {
+	data := []byte("hello world test 123") // 20 bytes, ITB-typical small input
+
+	// 256-bit family (4 uint64 seed)
+	for _, tc := range []struct {
+		name string
+		mk   func() HashFunc256
+	}{
+		{"blake2b-256", makeBlake2bHash256},
+		{"blake2s-256", makeBlake2sHash256},
+		{"blake3-256", makeBlake3Hash256},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hf := tc.mk()
+			base := hf(data, [4]uint64{0, 0, 0, 0})
+			for i := 0; i < 4; i++ {
+				for _, bit := range []uint{0, 63} {
+					var seed [4]uint64
+					seed[i] = uint64(1) << bit
+					got := hf(data, seed)
+					if got == base {
+						t.Errorf("seed[%d] bit %d did not affect output (base == got)", i, bit)
+					}
+				}
+			}
+		})
+	}
+
+	// 512-bit family (8 uint64 seed)
+	for _, tc := range []struct {
+		name string
+		mk   func() HashFunc512
+	}{
+		{"blake2b-512", makeBlake2bHash512},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hf := tc.mk()
+			base := hf(data, [8]uint64{})
+			for i := 0; i < 8; i++ {
+				for _, bit := range []uint{0, 63} {
+					var seed [8]uint64
+					seed[i] = uint64(1) << bit
+					got := hf(data, seed)
+					if got == base {
+						t.Errorf("seed[%d] bit %d did not affect output (base == got)", i, bit)
+					}
+				}
+			}
+		})
+	}
+}
+
 // --- Stream tests ---
 
 func TestStreamRoundtrip(t *testing.T) {
@@ -1722,7 +1812,16 @@ func makeBlake2bHash512() HashFunc512 {
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [8]uint64) [8]uint64 {
-		need := 64 + len(data)
+		// Ensure payload region is at least seedInjectBytes (64) long so all
+		// 8 seed uint64's XOR into the hash input. See makeBlake2bHash256 for
+		// details on the short-data bug this guards against.
+		const keyLen = 64
+		const seedInjectBytes = 64
+		payloadLen := len(data)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
+		need := keyLen + payloadLen
 		bufPtr := pool.Get().(*[]byte)
 		buf := *bufPtr
 		if cap(buf) < need {
@@ -1730,13 +1829,14 @@ func makeBlake2bHash512() HashFunc512 {
 		} else {
 			buf = buf[:need]
 		}
-		copy(buf[:64], b2key[:])
-		copy(buf[64:], data)
+		for i := keyLen + len(data); i < need; i++ {
+			buf[i] = 0
+		}
+		copy(buf[:keyLen], b2key[:])
+		copy(buf[keyLen:keyLen+len(data)], data)
 		for i := 0; i < 8; i++ {
-			off := 64 + i*8
-			if off+8 <= len(buf) {
-				binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-			}
+			off := keyLen + i*8
+			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 		}
 		digest := blake2b.Sum512(buf)
 		*bufPtr = buf
