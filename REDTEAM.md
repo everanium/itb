@@ -8,14 +8,14 @@
 
 ## TL;DR
 
-ITB ciphertext was subjected to **several empirical statistical / structural distinguishers plus one analytical phase** (ChainHash cost modelling), across a **12-primitive hash matrix** spanning the full spectrum — three below-spec stress controls (CRC128 fully GF(2)-linear, FNV-1a invertible, MD5 biased) and nine PRF-grade primitives (AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE3, BLAKE2b-256, BLAKE2b-512, AreionSoEM-512). Phase coverage is not uniform: Phase 1 / 2b / 2c / 3a / 3b were exercised on the 10 primitives available at corpus-generation time (no CRC128, no BLAKE2b-256); Phase 2a extension bias-audit covers CRC128 + FNV-1a + BLAKE3 + MD5; Phase 2e exercises the full 12. The suite was exercised across a 2 × 2 configuration matrix: `{Single, Triple} Ouroboros × {BF=1, BF=32} BarrierFill`. Single is the primary mode and runs the full 5-phase suite; Triple runs Phase 1 + Phase 3b (the two mode-agnostic phases).
+ITB ciphertext was subjected to **several empirical statistical / structural distinguishers plus one analytical phase** (ChainHash cost modelling), across a **12-primitive hash matrix** spanning the full spectrum — three below-spec stress controls (CRC128 fully GF(2)-linear, FNV-1a invertible, MD5 biased) and nine PRF-grade primitives (AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE3, BLAKE2b-256, BLAKE2b-512, AreionSoEM-512). Phase coverage: Phase 1 / 2b / 2c / 3a / 3b and Phase 2e exercise the full 12 primitives. Phase 2a extension bias-audit covers the 4-primitive set (CRC128, FNV-1a, BLAKE3, MD5) and the MD5 4 MB stress cell. Phase 2d (nonce-reuse) covers BLAKE3 + FNV-1a + MD5 + BLAKE2b-512 as a cross-width PRF-vs-invertible contrast. The suite was exercised across a 2 × 2 configuration matrix: `{Single, Triple} Ouroboros × {BF=1, BF=32} BarrierFill`. Single is the primary mode and runs the full phase suite; Triple runs Phase 1 + Phase 3b (the two mode-agnostic phases).
 
 At shipped defaults (BF=1):
 
-- **All 10 hashes pass every test on typical runs** — including the deliberately-broken FNV-1a (linear, fully invertible) and MD5 (collisions + output biases). The barrier produces ciphertext statistically indistinguishable from a true PRF across the whole primitive spectrum.
-- **Per-pixel candidate KL floor on 8 × 1 MB `html_giant` samples**: Mode A (idealized attacker, BF=1, N = 9.6 M obs/candidate) band [0.000018, 0.000021] nats, spread 3 × 10⁻⁶ across all 10 hashes; Mode B (realistic attacker — no `startPixel`, no plaintext, full container — BF=32, N = 11.3 M) band [0.000012, 0.000016] nats, spread 4 × 10⁻⁶. Both sit at ≈1.4× theoretical `bins/N` floor. A one-off probe at **N = 7.7 × 10⁷** (one 63 MB BLAKE3 encryption at the ITB data-size limit, Mode B, BF=32) drives observed KL max to **1.8 × 10⁻⁶ nats** — within 1.1× of the floor, subnanonat territory where float64 precision begins to matter.
-- **NIST STS: all 10 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (FNV-1a → bin 8, MD5 → bin 6, ChaCha20 → bin 1, BLAKE3 → bin 2, etc). Proportion is 100/100 for all 10 hashes on every one of the 148 template sub-tests. Single-test failures across the whole N = 100 run: 2 out of 1 880 — well under the 1 % expected at α = 0.01. When a given hash's cluster lands in bin 0 on any one run, the proportion column mechanically reports a catastrophic-looking 40/188 for that hash (it has happened to FNV-1a at N=20 and BLAKE3 at N=100 on BF=32 in this suite); this is the documented NIST SP 800-22 artefact on near-uniform output, **not** a primitive-specific signal.
-- **Phase 1 FFT + Markov sub-tests** (byte-level, mode-agnostic, Single + Triple, both BF regimes): per-channel spectral flatness stays within 6×10⁻⁵ of 1.0 for all 10 primitives (white-noise signature); adjacent-byte Markov χ² mean within ~85 of the df=65 535 H0 expectation with p medians scattered around 0.5. 1 Bonferroni false-positive in 280 within-pixel channel-pair tests, non-replicated across configs — same statistical-power artefact pattern as [Phase 3a](#phase-3a--rotation-invariant-edge-case).
+- **All 12 hashes pass every test on typical runs** — including the GF(2)-linear lab control CRC128, the deliberately-broken FNV-1a (linear, fully invertible), and MD5 (collisions + output biases). The barrier produces ciphertext statistically indistinguishable from a true PRF across the whole primitive spectrum.
+- **Per-pixel candidate KL floor on 8 × 1 MB `html_giant` samples**: Mode A (idealized attacker, BF=1, N = 9.6 M obs/candidate) band [0.000017, 0.000021] nats, spread 4 × 10⁻⁶ across all 12 hashes; Mode B (realistic attacker — no `startPixel`, no plaintext, full container — BF=32, N = 11.3 M) band [0.000012, 0.000016] nats, spread 4 × 10⁻⁶. Both sit at ≈1.4× theoretical `bins/N` floor. A one-off probe at **N = 7.7 × 10⁷** (one 63 MB BLAKE3 encryption at the ITB data-size limit, Mode B, BF=32) drives observed KL max to **1.8 × 10⁻⁶ nats** — within 1.1× of the floor, subnanonat territory where float64 precision begins to matter.
+- **NIST STS: all 12 hashes cluster p-values into a single bin — universally.** At N = 100 sequences × 1 Mbit, every hash's 100 per-sequence `NonOverlappingTemplate` p-values fall into one bin; the bin is different per hash and effectively random across runs (CRC128 → bin 9, FNV-1a → bin 9, BLAKE2b-512 → bin 0, ChaCha20 → bin 8, etc on BF=1 N=100). Proportion is 100/100 for all 12 hashes on every one of the 148 template sub-tests whenever the bin is **not** 0. Single-test failures (non-bin-0) across the N = 100 BF=1 + BF=32 runs combined: 7 out of 4 512 — well under the 1 % expected at α = 0.01. When a given hash's cluster lands in bin 0 on any one run, the proportion column mechanically reports a catastrophic-looking 40/188 for that hash (it has happened to FNV-1a at N=20 and BLAKE2b-512 at N=100 BF=1 in this suite); this is the documented NIST SP 800-22 artefact on near-uniform output, **not** a primitive-specific signal.
+- **Phase 1 FFT + Markov sub-tests** (byte-level, mode-agnostic, Single + Triple, both BF regimes): per-channel spectral flatness stays within 6×10⁻⁵ of 1.0 for the other 11 primitives (white-noise signature, including FNV-1a and MD5 alongside the 9 PRF-grade primitives; CRC128 shows a replicated 0.95–0.98 flatness deviation — see [Phase 1 § B](#b-fft--markov-sub-tests-mode-agnostic-single--triple) CRC128 outlier mini-table); adjacent-byte Markov χ² mean within ~85 of the df=65 535 H0 expectation with p medians scattered around 0.5. No replicating Bonferroni false-positives across the within-pixel channel-pair tests — same statistical-power artefact pattern as [Phase 3a](#phase-3a--rotation-invariant-edge-case).
 - **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively **conditional on that SAT-hardness assumption**. No Z3 runs were executed; the claim rests on structural analysis.
 - **Phase 2a (extension) — empirical GF(2)-linear collapse via CRC128 (Nonce-Reuse).** A test-only primitive (two CRC64 variants concatenated to 128 bits, fully GF(2)-linear) was wired into the [Phase 2d](#phase-2d--nonce-reuse) pipeline to verify empirically that the mixed-algebra premise is load-bearing. Unrolling 8 rounds of ChainHash at 1024-bit key collapses the 512-bit ECMA-side seed to a **64-bit compound key K** (56 bits observable via channelXOR); a commodity Python solver recovers K across the full matrix (54 cells — `{4 KB…1 MB} × {25/50/80 %} × {json_structured, html_structured, random_masked}`) with **53 / 53 correct dataSeeds recovered within demask-successful cells**. Even with the primitive fully collapsed ITB still imposes visible cost: 8 cells hit period-shift catastrophe requiring pixel-shift brute force, and shadow-K aliasing leaves the attacker with **up to 294 candidate keys per cell at 1 MB** (1 correct + 293 wrong), total 2 575 shadow-K candidates across the matrix — a population the attacker must filter via plaintext-consistency on companion ciphertexts. FNV-1a analogue impossible: the Z/2⁶⁴-multiply carry structure blocks GF(2)-linear collapse, leaving the SAT pathway (described above) as the only route.
 - **Nonce-reuse PRF-dependency empirically demonstrated (Phase 2d)**. Under a deliberate nonce collision with Full KPA, a Python demasker recovers `startPixel` + per-pixel `(noisePos, rotation)` in seconds and reconstructs the pure `dataSeed.ChainHash(pixel, nonce)` output stream (obstacles (2) and (3) of [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) no longer apply — only obstacle (1), ChainHash SAT-hardness, remains). NIST STS on the reconstructed ~16.7 Mbit stream per primitive at 2 MB plaintext: **BLAKE3 passes 188/188** (single remaining obstacle survives under PRF); **FNV-1a fails 6/188** — FFT 0/16 (100 % fail rate, spectral peaks on every bit-stream) plus BlockFrequency / CumulativeSums / Runs. The [`SCIENCE.md §2.5`](SCIENCE.md#25-nonce-reuse-analysis) locality claim ("seeds remain secret, no key rotation") holds under PRF; its PRF-dependency caveat is made empirically visible by the BLAKE3-vs-FNV-1a contrast.
@@ -69,7 +69,7 @@ Scope gaps:
 - **Widely-deployed hash primitives missing from the 12-hash matrix**: HMAC-SHA-256, GHASH, SHA-3/Keccak. Absent; adding them would round out the algebraic-primitive coverage
 - **`SetBarrierFill` intermediate values** (2, 4, 8, 16) not exercised; the shipped default (1) and the maximum (32) bracket the regime, and per-phase results are monotonic between them, but fine-grained sweep is absent
 - **Structured binary plaintexts** (PDF, PNG, MP4, compressed streams) absent from the corpus; the 10 kinds are all text-ish (HTTP / JSON / HTML / plain text). High-entropy compressed binaries and format-specific byte patterns could expose behaviours not surfaced by the current corpus
-- ~~**Direct `/dev/urandom` side-by-side baselines** for Phase 1 per-channel χ², Phase 2b KL floor, and Phase 3a rotation-invariant rate (NIST STS uses urandom implicitly as its calibration baseline; other phases do not)~~ — effectively moot. The [63 MB KL floor probe](#kl-floor-probe-on-a-single-63-mb-sample-one-off-blake3-bf1-bf32) lands Phase 2b's pairwise KL at **1.1× – 1.4× of the theoretical `bins/N` floor** — that floor IS the urandom expectation, so ITB ciphertext is already shown to be within measurement precision of `/dev/urandom` behaviour on [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher). [Phase 1](#phase-1--structural-checks--fft--markov-analysis) χ² and [Phase 3a](#phase-3a--rotation-invariant-edge-case) rotation-invariant rate similarly reach tolerances that match the `/dev/urandom` expectation (2/128 rate within 0.007 % across all 10 hashes at [Phase 3a](#phase-3a--rotation-invariant-edge-case)). A literal side-by-side `/dev/urandom` stream would confirm the same floors with no new information.
+- ~~**Direct `/dev/urandom` side-by-side baselines** for Phase 1 per-channel χ², Phase 2b KL floor, and Phase 3a rotation-invariant rate (NIST STS uses urandom implicitly as its calibration baseline; other phases do not)~~ — effectively moot. The [63 MB KL floor probe](#kl-floor-probe-on-a-single-63-mb-sample-one-off-blake3-bf1-bf32) lands Phase 2b's pairwise KL at **1.1× – 1.4× of the theoretical `bins/N` floor** — that floor IS the urandom expectation, so ITB ciphertext is already shown to be within measurement precision of `/dev/urandom` behaviour on [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher). [Phase 1](#phase-1--structural-checks--fft--markov-analysis) χ² and [Phase 3a](#phase-3a--rotation-invariant-edge-case) rotation-invariant rate similarly reach tolerances that match the `/dev/urandom` expectation (2/128 rate within 0.014 % across all 12 hashes at [Phase 3a](#phase-3a--rotation-invariant-edge-case)). A literal side-by-side `/dev/urandom` stream would confirm the same floors with no new information.
 - ~~**Cross-sample variance** on `html_giant`: the runs aggregate `N = 8` samples per hash into the KL estimate (both BF=1 and BF=32, both Mode A and Mode B). The aggregate floor is reported; the per-sample variance distribution is not itself reported.~~ — superseded by [KL floor probe on a single 63 MB sample](#kl-floor-probe-on-a-single-63-mb-sample-one-off-blake3-bf1-bf32), which accumulates `N ≈ 7.5 – 7.7 × 10⁷` observations per candidate from a SINGLE plaintext (an order of magnitude above the 8-giant aggregate) and lands the pairwise KL at **1.1× – 1.4× of the theoretical `bins/N` floor** under both Mode A (idealized alignment) and Mode B (full-container, no alignment). Per-sample variance is no longer the limiting uncertainty — the single-sample floor is already effectively at sampling precision.
 
 ---
@@ -124,7 +124,7 @@ Ten plaintext kinds covering fill-dominated (~200 B) through data-dominated (~1 
 | html_huge | 3 | 100 – 150 KB | HTML product listing |
 | **html_giant** | **1** | **~1 MB** | **Tight finite-sample KL estimation in Phase 2b** |
 
-**Total: 1 300 samples** (10 hashes × 130 samples each), regenerated deterministically in ~63 s.
+**Total: 1 644 samples** (12 hashes × 137 samples each, including 8 `html_giant` × 1 MB per hash), regenerated deterministically in ~80 s.
 
 ### Reproducibility
 
@@ -150,7 +150,7 @@ On non-Arch distributions, install equivalents via your package manager (`apt in
 All scripts under [`scripts/redteam/`](scripts/redteam/). The simplest way to run the full suite is the master orchestrator:
 
 ```bash
-# Single Ouroboros (3 seeds: noise, data, start) — runs all 5 empirical phases
+# Single Ouroboros (3 seeds: noise, data, start) — runs the full empirical-phase suite
 #   Wall-clock ~8–10 min at BarrierFill=1 on 8 cores.
 python3 scripts/redteam/run_suite.py single --barrier-fill 1  --nist-streams 100  # shipped default
 python3 scripts/redteam/run_suite.py single --barrier-fill 32 --nist-streams 100  # high-fill supplementary
@@ -249,12 +249,12 @@ Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supple
 
 | Phase | What it tests | Result at BF=1 Single (BF=32 Single in parens) |
 |-------|---------------|-----------------------------------------------|
-| **1. Structural + FFT + Markov** | 8-channel per-channel χ² + nonce-pair collision + per-channel spectral flatness + adjacent-byte / adjacent-channel Markov χ² | ✅ 0 / 80 Bonferroni failures; collision ratio ∈ [0.983, 1.014] (BF=32: [0.993, 1.025]). FFT flatness within 6×10⁻⁵ of 1.0 on all 10 primitives across all 4 mode × BF configs; Markov adj-byte χ² mean within ~85 of df=65 535 expectation, 0 replicable Bonferroni fails in 280 within-pixel channel-pair tests (1 non-replicated raw flag). Triple confirmed in both BF regimes, same pattern as Single |
+| **1. Structural + FFT + Markov** | 8-channel per-channel χ² + nonce-pair collision + per-channel spectral flatness + adjacent-byte / adjacent-channel Markov χ² | ✅ 0 / 96 Bonferroni failures at BF=1 Single and BF=32 Single/Triple; collision ratio ∈ [0.983, 1.025]. FFT flatness within 6×10⁻⁵ of 1.0 on the other 11 primitives across all 4 mode × BF configs (CRC128 replicates a 0.95–0.98 flatness deviation — see [Phase 1 § B](#b-fft--markov-sub-tests-mode-agnostic-single--triple) mini-table); Markov adj-byte χ² mean within ~85 of df=65 535 expectation, no replicable Bonferroni fails in within-pixel channel-pair tests. Triple confirmed in both BF regimes, same pattern as Single |
 | **2a. ChainHash analysis** | Theoretical bound on invertible primitive | 📖 Architectural defense-in-depth surfaced; paper underclaims |
 | **2b. Candidate distinguisher** | Obstacle (3) — 56-way per-pixel ambiguity | ✅ Mode A (idealized attacker, BF=1) KL [0.000018, 0.000021] nats on 8-giant aggregate (N = 9.6 M obs/cand); Mode B (realistic attacker, no startPixel, no plaintext, BF=32) [0.000012, 0.000016] (N = 11.3 M) — both at ≈1.4× theoretical `bins/N` floor across the full hash spectrum |
 | **2c. startPixel enumeration** | Obstacle (2) — startPixel indistinguishability | ✅ mean rank-fraction ∈ [0.461, 0.532]; 6 flagged cells / 90, consistent with 4.5 expected under H0 at α=0.05 (BF=32: 5 / 90) |
 | **2d. Nonce-Reuse** | [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) locality claim — PRF-dependency empirically visible | ✅ / ⚠ Attack chain demasks obstacles (2) + (3) in seconds via Layer 1 constraint matching + Layer 2 startPixel brute force, reconstructs pure `ChainHash(pixel, nonce)` output. NIST STS on reconstructed stream (N=16 × 1 Mbit per cell, 2 MB plaintext): **BLAKE3 188/188 pass**, **FNV-1a 182/188 (6 fails — FFT 0/16, BlockFrequency 9/16, CumulativeSums ×2, Runs 12/16)**. Under PRF the single remaining obstacle (ChainHash SAT-hardness) survives with no exploitable bias; under invertible primitive residual linear-order bias is detectable on every bit-stream |
-| **3a. Rotation-invariant** | [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) edge case | ✅ Rate 2/128 = 1.5625 % within 0.007 % across all 10 hashes; **no sign-consistent deviation** between BF=1 and BF=32. The 5–6 σ AES-CMAC / BLAKE2b-512 "signals" at BF=32 did not appear at BF=1 — test-power artefacts on near-uniform output, not real bias |
+| **3a. Rotation-invariant** | [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) edge case | ✅ Rate 2/128 = 1.5625 % within 0.014 % across all 12 hashes; **no sign-consistent deviation** between BF=1 and BF=32. The 5–6 σ "signals" at each BF did not replicate across regimes (AES-CMAC / BLAKE2b-512 at BF=32, AreionSoEM-256 / CRC128 / FNV-1a / BLAKE2b-512 at BF=1) — test-power artefacts on near-uniform output, not real bias |
 | **3b. NIST STS** | Industry-standard randomness suite | ✅ At N = 100 × 1 Mbit Single: 15 / 20 `(hash, BF)` cells pass 188/188; 4 cells show one single-test fail (conventional H0 outliers, 5 / 3 760 = 0.13 % vs 1 % expected at α = 0.01); 1 cell (BLAKE3, BF=32) hit the `NonOverlappingTemplate` bin-0 artefact — paper-grade PRF hitting the same 40/188 outcome as FNV-1a at N=20 confirms the mechanism is hash-agnostic. Triple confirmed in both BF regimes (BF=1: 4 / 1 880 = 0.21 %; BF=32: 1 / 1 880 = 0.05 %). All 12 exhibit the SP 800-22 uniformity-of-p-values clustering identically across configurations |
 
 ---
@@ -419,7 +419,7 @@ Approximate `P` for a range of plaintext sizes at `SetBarrierFill(32)` (the conf
 | ~150 KB `html_huge` | ~22 000 | ~28 000 | ~10⁴·⁵× |
 | ~1 MB `html_giant` | ~150 000 | ~176 000 | ~10⁵·²× |
 
-**Phase 2c empirically validates that `startPixel` cannot be shortcut by statistical fingerprinting** in this corpus: across all 10 hashes and 1 290 enumeration runs, mean rank fraction of the true `startPixel` is ≈ 0.5 (indistinguishable from random) and **5 / 90** flagged (hash, kind) cells are consistent with the 4.5 expected under H0 at α = 0.05. No statistical shortcut was detected; the attacker genuinely has to run the seed-recovery procedure for each of the `P` candidates (modulo incremental-SMT amortisation discussed above).
+**Phase 2c empirically validates that `startPixel` cannot be shortcut by statistical fingerprinting** in this corpus: across all 12 hashes and 1 548 enumeration runs, mean rank fraction of the true `startPixel` is ≈ 0.5 (indistinguishable from random) and **7 / 108** flagged (hash, kind) cells at BF=1 (10 / 108 at BF=32) are consistent with the 5.4–10.8 expected under H0 at α = 0.05. No statistical shortcut was detected; the attacker genuinely has to run the seed-recovery procedure for each of the `P` candidates (modulo incremental-SMT amortisation discussed above).
 
 ### Combined realistic threat model (all layers stacked)
 
@@ -464,7 +464,7 @@ At the actual minimum keyBits = 512: 128-bit hash → 4 ChainHash rounds, 256-bi
 
 The analytical argument above rests on the claim that mixed algebra (GF(2) XOR keying between rounds + a round function that is **not** GF(2)-linear — for FNV-1a the `· FNV_PRIME_64` multiplication modulo 2⁶⁴ provides the non-linearity via carry propagation) is what forces the attacker into bitvector-SAT territory. Replace the round function with a **purely GF(2)-linear** primitive and the chain collapses by construction. To make that collapse concrete — not merely implied — a test-only primitive was added to the corpus generator and driven through the full [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) pipeline.
 
-**CRC128 — the test-only below-FNV-1a primitive.** `CRC128(data, seed0, seed1) = (CRC64-ECMA(data, seed0), CRC64-ISO(data, seed1))`. Two independent CRC64 updates with different irreducible polynomials (ECMA + ISO), each keyed by one 64-bit half of the input seed, concatenated to 128 bits. Every operation is GF(2)-linear: the Sarwate update loop is polynomial division over GF(2)[x], the keyed initial-state register XOR is GF(2)-linear, concatenation preserves linearity. Wrapping this in ITB's ChainHash (XOR-keyed between rounds) keeps the whole chain GF(2)-linear end-to-end. Placed in [`redteam_lab_test.go`](redteam_lab_test.go) only; has zero cryptographic value and MUST NEVER be plugged into production — `NewSeed{128,256,512}` do not accept `crc128` through any public API.
+**CRC128 — the test-only below-FNV-1a primitive.** `CRC128(data, seed0, seed1) = (CRC64-ECMA(data, seed0), CRC64-ISO(data, seed1))`. Two independent CRC64 updates with different irreducible polynomials (ECMA + ISO), each keyed by one 64-bit half of the input seed, concatenated to 128 bits. Every operation is GF(2)-linear: the Sarwate update loop is polynomial division over GF(2)[x], the keyed initial-state register XOR is GF(2)-linear, concatenation preserves linearity. Wrapping this in ITB's ChainHash (XOR-keyed between rounds) keeps the whole chain GF(2)-linear end-to-end. The two lanes stay independent across all 8 ChainHash rounds because the XOR-keying feeds `s_{2k} ⊕ h_k.lo` only into the ECMA lane and `s_{2k+1} ⊕ h_k.hi` only into the ISO lane — they never mix. ITB's encoding path extracts only **`hLo`** (the ECMA lane, low 64 bits) through `xorMask = hLo >> 3`; the ISO lane (`hHi`) never appears in observable ciphertext. The collapse analysis below therefore operates on a single 64-bit lane, not on the full 128-bit CRC128 output. Placed in [`redteam_lab_test.go`](redteam_lab_test.go) only — test helper with an unexported lowercase identifier; not exported to any public API.
 
 **The collapse result.** Unrolling 8 rounds of ChainHash at 1024-bit key gives:
 
@@ -519,9 +519,9 @@ Scaling is roughly linear in `total_pixels` — the CRC64 linear-alias search sp
 
 **What the matrix demonstrates — narrowly.**
 
-1. **GF(2)-linear ChainHash collapses exactly as the analytical argument predicts.** Replacing FNV-1a's Z/2⁶⁴ multiply with a same-algebra CRC64 reduces the 1024-bit key to a 64-bit (56-observable) compound key that a commodity Python script recovers in seconds to minutes from any [Phase 2d](#phase-2d--nonce-reuse) nonce-reuse demasked stream of non-trivial size. The mixed-algebra premise of the cost tables at the top of this Phase 2a section is therefore load-bearing, not decorative.
+1. **GF(2)-linear ChainHash collapses exactly as the analytical argument predicts.** Swapping FNV-1a's Z/2⁶⁴-multiply primitive for the same-GF(2)-algebra CRC128 (two independent CRC64 lanes, only the ECMA lane observable via `hLo`) reduces the 1024-bit key to a 64-bit (56-observable) compound key on that single lane, which a commodity Python script recovers in seconds to minutes from any [Phase 2d](#phase-2d--nonce-reuse) nonce-reuse demasked stream of non-trivial size. The mixed-algebra premise of the cost tables at the top of this Phase 2a section is therefore load-bearing, not decorative.
 2. **Even with the primitive fully collapsed, ITB's architecture still imposes visible cost.** The demasker's Layer 2 period-shift catastrophe leaks through to the solver as shadow-K aliasing: 8 / 53 cells required explicit pixel-shift discovery, and the attacker-visible candidate-K list grows to 295 entries at 1 MB. That ambiguity must be filtered by a secondary plaintext-consistency attack on a companion ciphertext — itself a non-trivial information requirement in realistic attacker conditions (the companion ciphertext must share the colliding `(dataSeed, nonce)` **and** have ≥ 1 attacker-known byte at a predictable offset).
-3. **Scale is the defender's friend, not the attacker's.** Shadow-K scales linearly with `total_pixels`, so larger plaintexts make the attacker's post-inversion filtering harder in absolute terms (a 295-candidate filter at 1 MB vs a 1-candidate answer at 4 KB). Every extra candidate multiplies the attacker's effort because each one requires an independent plaintext-consistency check on a companion ciphertext — so shipping longer messages under a single colliding `(dataSeed, nonce)` pair works *against* a CRC128-style attacker, not for them.
+3. **Scale is the defender's friend, not the attacker's.** Shadow-K scales linearly with `total_pixels`, so larger plaintexts make the attacker's post-inversion filtering harder in absolute terms (a 295-candidate filter at 1 MB vs a 1-candidate answer at 4 KB). Every extra candidate multiplies the attacker's effort because each one requires an independent plaintext-consistency check on a companion ciphertext — so shipping longer messages under a single colliding `(dataSeed, nonce)` pair works **against** a CRC128-style attacker, not for them.
 
 **What the matrix does NOT demonstrate.**
 
@@ -548,8 +548,6 @@ Scaling is roughly linear in `total_pixels` — the CRC64 linear-alias search sp
 **Conflict-rate range [49.5 %, 49.7 %] across all 10 runs — statistically indistinguishable from a fair coin flip.** Under random plaintext the result is an unconditional mathematical outcome, not an empirical coincidence: the 7-bit rotation plus channelXOR make the container byte a rotation-invariant function of a uniform input, so every possible shift hypothesis produces ~50 % K-bit disagreement regardless of how the attacker parses the bytes. The 8-byte-per-pixel raw mode used here is therefore a negative-control for parsing correctness (confirming that no 7-byte / 8-byte misalignment accidentally smuggles signal in), not a claim that ciphertext is signal-free against all plaintexts.
 
 Three architectural implications. **First,** even with a fully GF(2)-linear primitive (CRC128) where the algebraic collapse IS mathematically possible, ITB's masking layers deny the attacker any input to execute it on under random plaintext. **Second,** the whole Phase 2a extension pipeline (solver at 53 / 54 inversion rate) is strictly conditional on the demasker having run first — and the demasker, in turn, requires a nonce collision between two colliding ciphertexts to run Layer 1 constraint matching. No collision → no demasking → no solver input → architecture wins even against below-FNV-1a primitives. **Third,** the `2⁻²⁵⁶` nonce-collision probability at 512-bit nonce is not just a theoretical gate but the only thing standing between the attacker and the entire empirical attack surface demonstrated in this section — the architecture's resistance to a GF(2)-linear primitive reduces to the resistance of the nonce-size choice, nothing more.
-
-**Scope gap — structured-plaintext no-demask probe (open).** The sanity control above covers random plaintext only. Running `--raw-ciphertext-mode` against structured-plaintext corpora (`json_structured` / `html_structured`, where ASCII carries a bit-7 = 0 bias) was NOT performed. A back-of-envelope calculation suggests the per-observation bias after rotation-smearing + noise-bit pollution could manifest as a ~44 % vs ~50 % conflict gap at the correct pixel-shift, which — at ≈ 9 300 pin events per K bit — would be ≈ 24 σ separable from random scatter if the solver's majority-vote were fed those observations directly. Even if realised, this path still requires the attacker to KNOW the plaintext format (to predict the bias), which is the same Full-KPA precondition the demasker already needs; the structured-plaintext no-demask path does not open a *new* attack surface, it just re-occupies the same "attacker has Full KPA" regime that the demasker-based attack chain above already quantifies. Running the structured-corpus no-demask probe and documenting the actual bias is a deferred item.
 
 **Reproduction commands.**
 
@@ -606,7 +604,7 @@ Per-run artefacts: `tmp/attack/nonce_reuse/results/<tag>/summary.jsonl` (orchest
 
 ### Phase 2a extension — hash-agnostic bias-neutralization audit (axis-1 + axis-2)
 
-The mixed-algebra CRC128 attack chain in the preceding [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) demonstrates GF(2)-linear collapse under nonce-reuse *after the demasker has run*. This subsection covers a complementary measurement — an empirical audit of [Proof 7](PROOFS.md#proof-7-bias-neutralization) (bias neutralization by rotation barrier) on the **raw ciphertext directly**, with no demasking, no nonce-reuse, no Partial-KPA sidecar. The probe scans every candidate pixel-shift under a pluggable hash primitive and reports per-cell statistics from two independent axes. It is a hash-agnostic tool: the probe consumes any chainhash module that exports `chainhash_lo(data, seed) -> uint64` + `N_SEED_COMPONENTS`, and the same probe machinery runs against CRC128, FNV-1a, and BLAKE3 without change.
+The mixed-algebra CRC128 attack chain in the preceding [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) demonstrates GF(2)-linear collapse under nonce-reuse **after the demasker has run**. This subsection covers a complementary measurement — an empirical audit of [Proof 7](PROOFS.md#proof-7-bias-neutralization) (bias neutralization by rotation barrier) on the **raw ciphertext directly**, with no demasking, no nonce-reuse, no Partial-KPA sidecar. The probe scans every candidate pixel-shift under a pluggable hash primitive and reports per-cell statistics from two independent axes. It is a hash-agnostic tool: the probe consumes any chainhash module that exports `chainhash_lo(data, seed) -> uint64` + `N_SEED_COMPONENTS`, and the same probe machinery runs against CRC128, FNV-1a, and BLAKE3 without change.
 
 **Methodology.**
 
@@ -657,9 +655,9 @@ Roll-up: **BLAKE3 6/6 neutralized ✓**, **FNV-1a 6/6 neutralized ✓**, **CRC12
 
 - **BLAKE3 (paper-grade PRF).** `|Δ50 TRUE|` ≤ 0.68 across every cell — indistinguishable from the 1 p.p. binomial-noise band at 1800 bit-trials. No detectable algebraic relation between recovered K and the true compound-key projection regardless of plaintext format. This is the PRF fingerprint: the wrapping layers have nothing coherent to amplify because the primitive itself is assumed pseudo-random.
 
-- **FNV-1a (invertible carry-chain multiply, test helper).** `|Δ50 TRUE|` ≤ 0.45 across every cell — same fingerprint as BLAKE3 on this probe. FNV-1a is algebraically invertible (`h ← (h XOR byte) · FNV_PRIME` has closed-form inverse over the modular-multiply group), but that invertibility lives in the carry-chain arithmetic ring, not in GF(2) — ChainHash wrapping at 1024-bit key feeds the rotation-barrier + channelXOR + noisePos masking layers through that non-GF(2)-linear diffusion, and the bit bias does not survive to the probe's detection threshold. The datapoint is important because FNV-1a sits architecturally between a PRF (assumed no-structure) and a pure GF(2)-linear primitive (no non-linear mixing at all) — it confirms that *full PRF assumption is not a precondition for Proof 7 to hold*; any non-GF(2)-linear diffusion in the round function is sufficient.
+- **FNV-1a (invertible carry-chain multiply).** `|Δ50 TRUE|` ≤ 0.45 across every cell — same fingerprint as BLAKE3 on this probe. FNV-1a is algebraically invertible (`h ← (h XOR byte) · FNV_PRIME` has closed-form inverse over the modular-multiply group), but that invertibility lives in the carry-chain arithmetic ring, not in GF(2) — ChainHash wrapping at 1024-bit key feeds the rotation-barrier + channelXOR + noisePos masking layers through that non-GF(2)-linear diffusion, and the bit bias does not survive to the probe's detection threshold. The datapoint is important because FNV-1a sits architecturally between a PRF (assumed no-structure) and a pure GF(2)-linear primitive (no non-linear mixing at all) — it confirms that **full PRF assumption is not a precondition for [Proof 7](PROOFS.md#proof-7-bias-neutralization) to hold**; any non-GF(2)-linear diffusion in the round function is sufficient.
 
-- **CRC128 (GF(2)-linear test control).** Separates cleanly on both axes whenever the plaintext carries exploitable bit-frequency structure (ASCII uniform distribution, JSON token distribution, HTML token distribution at the larger 1 MB sample size). At 1 MB × structured, the TRUE shift hits literal rank 1/151321 — the minimum of the entire conflict-rate distribution — plateau 1 or 2 shifts. CRC128 is the positive-control outcome: it proves the probe correctly identifies GF(2)-linear collapse when it is present, which in turn validates the `neutralized ✓` readings on the other two primitives. It is a test-only primitive, not part of the production hash selection.
+- **CRC128 (GF(2)-linear test control).** Separates cleanly on both axes whenever the plaintext carries exploitable bit-frequency structure (ASCII uniform distribution, JSON token distribution, HTML token distribution at the larger 1 MB sample size). At 1 MB × structured, the TRUE shift hits literal rank 1/151321 — the minimum of the entire conflict-rate distribution — plateau 1 or 2 shifts. CRC128 is the positive-control outcome: it proves the probe correctly identifies GF(2)-linear collapse when it is present, which in turn validates the `neutralized ✓` readings on the other two primitives.
 
 Axis-2 TRUE sits at 3.57 p.p. from baseline for the three strongest ASCII-direction CRC128 cells (`ascii × {512K, 1M}` and `json × 512K`); at 1.79 p.p. for the `{json × 1M}` / `{html × 1M}` cells where axis-1 carries the full signal. The anti-correlation cases (TRUE = 46.43 %, 48.21 %) reflect token-specific majority-vote direction flips described in the methodology section — the signed sign is corpus-dependent, only the distance is robust.
 
@@ -669,17 +667,17 @@ Axis-2 TRUE sits at 3.57 p.p. from baseline for the three strongest ASCII-direct
 |:----------|-----:|:-------|---------------:|:------------------|--------:|------------:|------------:|:--------|
 | md5 | 4 MB | ascii | 48.65 | 72798/603729 | 73559 | 50.12 | **0.12** | neutralized ✓ |
 
-`|Δ50 TRUE| = 0.12 p.p.` sits deep inside the ~1 p.p. binomial-noise band on 1800 bit-trials — the audit reports `neutralized ✓` on a broken primitive + maximum bias plaintext + 4× sample size, and the result is in numerical agreement with Phase 2b's independent statistical-randomness framework on the same primitive. Both frameworks converge on the same conclusion from different measurement surfaces.
+`|Δ50 TRUE| = 0.12 p.p.` sits deep inside the ~1 p.p. binomial-noise band on 1800 bit-trials — the audit reports `neutralized ✓` on a broken primitive + maximum bias plaintext + 4× sample size, and the result is in numerical agreement with [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher)'s independent statistical-randomness framework on the same primitive. Both frameworks converge on the same conclusion from different measurement surfaces.
 
-**This bias-probe is a LABORATORY diagnostic, not an attacker tool.** The precision numbers in the tables above — particularly the `TRUE rank` column and the `|Δ50 TRUE|` axis-2 column for FNV-1a / BLAKE3 / MD5 — are achievable only because the probe has access to the ground-truth encryption configuration of its own test corpora (`cell.meta.json` supplies `start_pixel` for the TRUE-rank computation; `config.truth.json` supplies the per-pixel `channel_xor_8` ground truth that axis-2 prediction accuracy is measured against). Without that configuration, the probe cannot distinguish the `neutralized ✓` primitives from each other — FNV-1a's full conflict-rate distribution, BLAKE3's, and MD5's are all statistically indistinguishable from the `/dev/urandom` control at the probe's sample sizes (this is precisely the [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) `KL max ≈ 10⁻⁵ nats` floor result, reported from an independent measurement direction). The only primitive the probe separates on *attacker-visible* axes (distribution concentration around the minimum conflict rate) is CRC128 on biased plaintext — the GF(2)-linear control included specifically to verify the measurement pipeline can surface algebraic leaks when they exist.
+**This bias-probe is a LABORATORY diagnostic, not an attacker tool.** The precision numbers in the tables above — particularly the `TRUE rank` column and the `|Δ50 TRUE|` axis-2 column for FNV-1a / BLAKE3 / MD5 — are achievable only because the probe has access to the ground-truth encryption configuration of its own test corpora (`cell.meta.json` supplies `start_pixel` for the TRUE-rank computation; `config.truth.json` supplies the per-pixel `channel_xor_8` ground truth that axis-2 prediction accuracy is measured against). Without that configuration, the probe cannot distinguish the `neutralized ✓` primitives from each other — FNV-1a's full conflict-rate distribution, BLAKE3's, and MD5's are all statistically indistinguishable from the `/dev/urandom` control at the probe's sample sizes (this is precisely the [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) `KL max ≈ 10⁻⁵ nats` floor result, reported from an independent measurement direction). The only primitive the probe separates on **attacker-visible** axes (distribution concentration around the minimum conflict rate) is CRC128 on biased plaintext — the GF(2)-linear control included specifically to verify the measurement pipeline can surface algebraic leaks when they exist.
 
-The probe therefore **cannot be used** to fingerprint the hash primitive in an intercepted ITB ciphertext from an unknown sender, to detect a primitive-misconfiguration remotely, or to distinguish ITB output generated by a specific primitive from ITB output generated by any other properly-wrapped primitive. It is a self-contained lab validation of ITB's Proof 7 (bias neutralization) run against corpora the experimenter controls — nothing more.
+The probe therefore **cannot be used** to fingerprint the hash primitive in an intercepted ITB ciphertext from an unknown sender, to detect a primitive-misconfiguration remotely, or to distinguish ITB output generated by a specific primitive from ITB output generated by any other properly-wrapped primitive. It is a self-contained lab validation of ITB's [Proof 7](PROOFS.md#proof-7-bias-neutralization) (bias neutralization) run against corpora the experimenter controls — nothing more.
 
-Why we built it: ITB ciphertext under any production PRF primitive sits effectively at the finite-sample KL floor (`~10⁻⁵` nats — the mathematical lower bound of distinguishability from `/dev/urandom` at the tested sample sizes). At that regime no externally observable statistical diagnostic can separate primitives against each other. The only analytical direction left is an internal one — measure the bias that the probe can see *given full knowledge of what it should see*, and confirm that the signal matches the noise floor across primitives the architecture is claimed to neutralize. That is what this tool does, and why its output is diagnostic to us, but not to an outside observer.
+ITB ciphertext under any production PRF primitive sits effectively at the finite-sample KL floor (`~10⁻⁵` nats — the mathematical lower bound of distinguishability from `/dev/urandom` at the tested sample sizes). At that regime no externally observable statistical diagnostic can separate primitives against each other. The only analytical direction left is an internal one — measure the bias that the probe can see **given full knowledge of what it should see**, and confirm that the signal matches the noise floor across primitives the architecture is claimed to neutralize. That is what this tool does, and why its output is diagnostic to the experimenter, but not to an outside observer.
 
 **What this audit does NOT claim.**
 
-1. That a single plaintext format determines attack feasibility. The probe's detection threshold is orders of magnitude tighter than a real-world attacker's exploitation threshold — a `bias-leak ✗` verdict means the *primitive's algebraic structure is empirically visible*, not that it is practically inversible without the full nonce-reuse + demask chain from the [preceding subsection](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse).
+1. That a single plaintext format determines attack feasibility. The probe's detection threshold is orders of magnitude tighter than a real-world attacker's exploitation threshold — a `bias-leak ✗` verdict means the **primitive's algebraic structure is empirically visible**, not that it is practically inversible without the full nonce-reuse + demask chain from the [preceding subsection](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse).
 2. That non-detectability implies a security bound. The probe's `neutralized ✓` band is ±1 p.p. on 1800 bit-trials; a weaker algebraic leak below that floor would go undetected in a single cell and would need a larger sample or a different probe to surface.
 3. That any of the tested primitives is a production recommendation. CRC128 and FNV-1a are test helpers in `redteam_test.go` / `redteam_lab_test.go`, not part of the shipped hash selection API (see [Hash matrix](#hash-matrix) for the production list).
 
@@ -729,18 +727,20 @@ For each pixel Mode A enumerates 56 (`noisePos × rotation`) candidates via plai
 
 ### KL floor on `html_giant` — the headline result
 
-With 8 `html_giant` samples per hash aggregated, the per-(hash, kind) cell accumulates roughly **9.6 M observations per candidate** in Mode A (8 samples × ~150 k data pixels × 8 channels) and **11.3 M in Mode B** (BF=32 inflates the container with ~26 k additional CSPRNG-fill pixels per sample), so the finite-sample KL floor drops to **~10⁻⁵ nats** — comfortably below the heuristic "distinguishable" threshold of 0.05.
+With 8 `html_giant` samples per hash aggregated, the per-(hash, kind) cell accumulates roughly **9.6 M observations per candidate** in Mode A (8 samples × ~150 k data pixels × 8 channels) and **11.3 M in Mode B** (BF=32 inflates the container with ~26 k additional CSPRNG-fill pixels per sample), so the finite-sample KL floor drops to **~10⁻⁵ nats** — comfortably below the heuristic **distinguishable** threshold of 0.05.
 
 | Hash | Mode A BF=1 KL max (N = 9.6 M) | Mode B BF=32 KL max (N = 11.3 M) | Interpretation |
 |------|-------------------------------:|---------------------------------:|----------------|
-| FNV-1a | 0.000018 | 0.000016 | Invertible primitive |
-| MD5 | 0.000019 | 0.000015 | Broken primitive |
+| CRC128 | 0.000017 | 0.000014 | **Fully Broken** |
+| FNV-1a | 0.000018 | 0.000016 | Invertible |
+| MD5 | 0.000019 | 0.000015 | Broken |
 | AES-CMAC | 0.000018 | 0.000016 | Paper-grade PRF |
 | SipHash-2-4 | 0.000020 | 0.000015 | Paper-grade PRF |
 | ChaCha20 | 0.000018 | 0.000016 | Paper-grade PRF |
 | AreionSoEM-256 | 0.000019 | 0.000013 | Paper-grade PRF |
 | BLAKE2s | 0.000019 | 0.000014 | Paper-grade PRF |
 | BLAKE3 | 0.000021 | 0.000014 | Paper-grade PRF |
+| BLAKE2b-256 | 0.000018 | 0.000014 | Paper-grade PRF |
 | BLAKE2b-512 | 0.000018 | 0.000013 | Paper-grade PRF |
 | AreionSoEM-512 | 0.000018 | 0.000012 | Paper-grade PRF |
 
@@ -757,6 +757,8 @@ Across all 90 (hash, kind) cells, the per-cell report emits a `⚠` flag when an
 
 **The flagged cells do not overlap between the two regimes** — none of the 8 BF=1 flags corresponds to a BF=32 flag on the same (hash, kind). Because the three triggers are ad-hoc thresholds (not α = 0.05 per cell), the per-cell flag probability under true H0 is dominated by `bit_exceed > 10` firings on small-N cells (http, json, text_small, with ~700 data pixels per sample), where finite-sample variation across 56 candidates inflates the bit-balance statistic. The telling fact is the **non-overlap across independent runs**: real per-primitive effects would flag the same (hash, kind) pair in both regimes; finite-sample noise shuffles the flagged set. Both are observed — per-run counts stay near-identical (8 vs 10 of 90), specific cells shift entirely.
 
+On the 12-primitive re-run, **CRC128** falls into the Mode A BF=1 flag set (two cells — `http` and `html_giant` — both triggered by the `bit_exceed > 10` heuristic on small-N or bit-balance statistics; KL max stays inside the 1.4×–2.6× floor band on both). **BLAKE2b-256** never flags in either regime, behaviourally indistinguishable from the PRF-grade band on this probe. Same shuffling-across-independent-runs pattern as the 10-primitive baseline.
+
 The `html_giant` row is flagged for one hash at BF=1 (FNV-1a, `bit_exceed=21`) and zero at BF=32, but the KL max for that cell is 0.000145 nats — well within the finite-sample floor — so the flag is triggered by the bit-balance heuristic, not by a meaningful KL signal. This is a documentation weakness of the flag threshold (it conflates bit-level extremes on a small single sample with a real distributional divergence); a follow-up with `N ≥ 5` on `html_giant` would resolve it.
 
 ### Observed KL vs theoretical floor across data sizes — the invariant that matters
@@ -765,7 +767,7 @@ The finite-sample KL floor scales as `bins / N = 128 / N`, so absolute KL number
 
 #### Mode B — realistic attacker at BF=32 (no `startPixel`, no plaintext, full container)
 
-The full-container analyzer ([`distinguisher_full.py`](scripts/redteam/phase2_theory/distinguisher_full.py)) runs on the BF=32 corpus — the configuration that stresses this threat model most, because CSPRNG fill inflates the container, N grows, and the theoretical floor tightens. N = `container_pixels × 8 channels` aggregated across all samples of a kind. Max across all 10 hashes (min within ~15 %).
+The full-container analyzer ([`distinguisher_full.py`](scripts/redteam/phase2_theory/distinguisher_full.py)) runs on the BF=32 corpus — the configuration that stresses this threat model most, because CSPRNG fill inflates the container, N grows, and the theoretical floor tightens. N = `container_pixels × 8 channels` aggregated across all samples of a kind. Max across all 12 hashes (min within ~15 %).
 
 | Kind | Aggregate container pixels | N obs / candidate | Theoretical floor `bins/N` | Observed KL max | Ratio max / floor |
 |------|---------------------------:|------------------:|---------------------------:|----------------:|------------------:|
@@ -781,11 +783,11 @@ The full-container analyzer ([`distinguisher_full.py`](scripts/redteam/phase2_th
 | html_giant | ~1 411 000 | 11 290 000 | 1.1 × 10⁻⁵ nats | 1.6 × 10⁻⁵ nats | **1.4 ×** |
 | **63 MB probe** | **~9 659 000** | **77 277 000** | **1.7 × 10⁻⁶ nats** | **1.8 × 10⁻⁶ nats** | **1.1 ×** |
 
-Under the realistic threat model — attacker knows neither `startPixel` nor the plaintext — the ratio stays in a narrow band **1.1×–1.6×** across nearly six orders of magnitude of N. CSPRNG-fill pixels enter the test on equal footing with data pixels, inflate N, drop the theoretical floor, and the observed max tracks the floor exactly. Mode B ratios are systematically *at or below* the Mode A ratios on the same corpus (see below) — losing idealised alignment information does not give the attacker anything extra; it just removes the two levers Mode A pulled.
+Under the realistic threat model — attacker knows neither `startPixel` nor the plaintext — the ratio stays in a narrow band **1.1×–1.6×** across nearly six orders of magnitude of N. CSPRNG-fill pixels enter the test on equal footing with data pixels, inflate N, drop the theoretical floor, and the observed max tracks the floor exactly. Mode B ratios are systematically **at or below** the Mode A ratios on the same corpus (see below) — losing idealised alignment information does not give the attacker anything extra; it just removes the two levers Mode A pulled.
 
 #### Mode A — idealized attacker at BF=1 (known `startPixel` + plaintext XOR)
 
-Per-kind figures at BF=1, averaged across all 10 hashes (max and min across primitives within 5 %). Re-running the same analyzer at BF=32 produces the same ratio band within ±0.3× per kind — expected, since the Mode A Phase 2b accumulator reads data-carrying pixels only (N = `data_pixels × 8 channels`, determined by plaintext length, independent of CSPRNG-fill padding). Numbers below therefore characterise both fill regimes for Mode A.
+Per-kind figures at BF=1, averaged across all 12 hashes (max and min across primitives within 5 %). Re-running the same analyzer at BF=32 produces the same ratio band within ±0.3× per kind — expected, since the Mode A Phase 2b accumulator reads data-carrying pixels only (N = `data_pixels × 8 channels`, determined by plaintext length, independent of CSPRNG-fill padding). Numbers below therefore characterise both fill regimes for Mode A.
 
 | Kind | data pixels (aggregate) | N obs / candidate | Theoretical floor `bins/N` | Observed KL max | Ratio max / floor |
 |------|------------------------:|------------------:|---------------------------:|----------------:|------------------:|
@@ -800,9 +802,9 @@ Per-kind figures at BF=1, averaged across all 10 hashes (max and min across prim
 | html_giant | ~1 200 000 | 9 600 000 | 1.3 × 10⁻⁵ nats | 2.0 × 10⁻⁵ nats | **1.5×** |
 | **63 MB probe** | **~9 400 000** | **75 500 000** | **1.7 × 10⁻⁶ nats** | **2.3 × 10⁻⁶ nats** | **1.4×** |
 
-Mode A ratio stays in the narrow band 1.4×–2.6× across four orders of magnitude of N and the full spectrum of hash primitives. Under a true null where the output is genuinely uniform random, the max-over-1540-pairs of a `bins/N`-floor statistic has expected value `√(ln 1540) ≈ 2.7×` floor — the observed 1.4×–2.6× is *below* this null expectation everywhere. **Every primitive, at every data scale, produces a pairwise-KL distribution tight enough to sit at the sampling precision limit of the measurement**.
+Mode A ratio stays in the narrow band 1.4×–2.6× across four orders of magnitude of N and the full spectrum of hash primitives. Under a true null where the output is genuinely uniform random, the max-over-1540-pairs of a `bins/N`-floor statistic has expected value `√(ln 1540) ≈ 2.7×` floor — the observed 1.4×–2.6× is **below** this null expectation everywhere. **Every primitive, at every data scale, produces a pairwise-KL distribution tight enough to sit at the sampling precision limit of the measurement**.
 
-Absolute KL is dictated by how many observations the test accumulates; the ratio to theoretical floor is dictated by the architecture. The ratio is **invariant** under data size change (four orders of magnitude in Mode A, nearly six in Mode B), under hash primitive change (linearly invertible FNV-1a sits in the same band as PRF-grade BLAKE3), under fill regime change (BF=1 and BF=32 produce the same 1.4×–2.7× band within per-cell sampling noise in Mode A), and under threat-model change (Mode B's realistic attacker gives a band at or below Mode A's across every kind). This is the empirical signature of a barrier-based construction.
+Absolute KL is dictated by how many observations the test accumulates; the ratio to theoretical floor is dictated by the architecture. The ratio is **invariant** under data size change (four orders of magnitude in Mode A, nearly six in Mode B), under hash primitive change (GF(2)-linear CRC128, invertible FNV-1a, and broken MD5 sit in the same band as PRF-grade BLAKE3), under fill regime change (BF=1 and BF=32 produce the same 1.4×–2.7× band within per-cell sampling noise in Mode A), and under threat-model change (Mode B's realistic attacker gives a band at or below Mode A's across every kind). This is the empirical signature of a barrier-based construction.
 
 ### KL floor probe on a single 63 MB sample (one-off, BLAKE3, BF=1, BF=32)
 
@@ -826,7 +828,7 @@ Both cells sit at the sampling precision limit. Mode B (realistic attacker) actu
 
 At this data scale the pairwise KL is **~10³ × below the heuristic distinguishability threshold of 0.05 nats** and approaches the theoretical `bins/N` floor within a factor of 1.1×–1.4× regardless of whether the attacker has idealized alignment information or none at all. The 63 MB single-sample probe is effectively at the practical measurement floor for this distinguisher under both threat models.
 
-The test harness is generic — any of the 10 hashes works via `ITB_REDTEAM_MASSIVE=<name>`, so readers wanting to see FNV-1a or MD5 at the same scale can reproduce locally. See the [Reproducibility](#reproducibility) section for the exact commands (Step 2A = Mode A, Step 2B = Mode B).
+The test harness is generic — any of the 12 hashes works via `ITB_REDTEAM_MASSIVE=<name>`, so readers wanting to see FNV-1a, MD5, or CRC128 at the same scale can reproduce locally. See the [Reproducibility](#reproducibility) section for the exact commands (Step 2A = Mode A, Step 2B = Mode B).
 
 ---
 
@@ -836,12 +838,13 @@ Script: [`scripts/redteam/phase2_theory/startpixel_multisample.py`](scripts/redt
 
 Attacker does **not** know `startPixel`; enumerates all `P` candidates and runs Phase 2b-style candidate analysis on each. Question: does the true `startPixel` stand out statistically? Implemented as `mp.Pool(8)` over `(hash, sample)` task list.
 
-**Scope.** 1 290 tasks (10 hashes × 129 samples — `html_giant` excluded because O(P²) enumeration on a ~4.8 M-pixel container is infeasible). Runtime ~12 min.
+**Scope.** 1 548 tasks (12 hashes × 129 samples — `html_giant` excluded because O(P²) enumeration on a ~4.8 M-pixel container is infeasible). Runtime ~15 min.
 
 ### Per-hash aggregate (primary at BF=1; BF=32 in parentheses)
 
 | Hash | Total N | Mean rank-fraction BF=1 / BF=32 (H0 = 0.5) | Mean z-score BF=1 / BF=32 (H0 = 0) |
 |------|--------:|------------------------------------------:|-----------------------------------:|
+| CRC128 | 129 | 0.4864 / 0.5343 | −0.027 / +0.123 |
 | FNV-1a | 129 | 0.5317 / 0.5095 | +0.129 / +0.035 |
 | MD5 | 129 | 0.4687 / 0.5166 | −0.093 / +0.083 |
 | AES-CMAC | 129 | 0.5077 / 0.5158 | +0.039 / +0.037 |
@@ -850,25 +853,37 @@ Attacker does **not** know `startPixel`; enumerates all `P` candidates and runs 
 | AreionSoEM-256 | 129 | 0.4847 / 0.5191 | −0.071 / +0.041 |
 | BLAKE2s | 129 | 0.5228 / 0.4654 | +0.056 / −0.109 |
 | BLAKE3 | 129 | 0.5055 / 0.5163 | +0.058 / +0.049 |
+| BLAKE2b-256 | 129 | 0.4884 / 0.4871 | −0.002 / −0.002 |
 | BLAKE2b-512 | 129 | 0.4611 / 0.4586 | −0.104 / −0.148 |
 | AreionSoEM-512 | 129 | 0.5314 / 0.5257 | +0.138 / +0.061 |
 
-**95 % CI under H0 ≈ 0.5 ± 0.050** at N = 129. All 10 hashes inside CI in both regimes; mean z-scores cluster tightly around 0.
+**95 % CI under H0 ≈ 0.5 ± 0.050** at N = 129. All 12 hashes inside CI in both regimes; mean z-scores cluster tightly around 0.
 
 ### Per-kind cells below α = 0.05 on either sign-test or t-test
 
 | Hash | Kind | rank-fraction | sign-test p | t-test p | Regime |
 |------|------|--------------:|------------:|---------:|--------|
-| AreionSoEM-512 | text_small | 0.7084 | 0.011 | 0.010 | BF=1 |
-| AreionSoEM-512 | http_large | 0.6077 | 0.008 | 0.026 | BF=1 |
-| ChaCha20 | http_large | 0.6136 | 0.021 | 0.029 | BF=1 |
-| BLAKE2s | http | 0.6378 | 0.055 | 0.043 | BF=1 |
-| BLAKE2b-512 | text_large | 0.3615 | 0.997 | 0.012 | BF=1 |
-| AreionSoEM-256 | html_huge | 0.9679 | 0.125 | 0.015 | BF=1 |
+| CRC128 | text_large | 0.3894 | 0.951 | 0.016 | BF=1 |
+| SipHash-2-4 | http_large | 0.3811 | 0.992 | 0.037 | BF=1 |
+| SipHash-2-4 | json_large | 0.6577 | 0.008 | 0.004 | BF=1 |
+| SipHash-2-4 | text_huge | 0.1360 | 1.000 | 0.042 | BF=1 |
+| BLAKE2s | json_huge | 0.4405 | 1.000 | 0.010 | BF=1 |
+| BLAKE2s | html_huge | 0.1613 | 1.000 | 0.047 | BF=1 |
+| BLAKE3 | http_large | 0.6173 | 0.181 | 0.028 | BF=1 |
+| CRC128 | http_large | 0.5927 | 0.292 | 0.045 | BF=32 |
+| FNV-1a | text_large | 0.3777 | 0.992 | 0.026 | BF=32 |
+| FNV-1a | html_huge | 0.2266 | 1.000 | 0.005 | BF=32 |
+| AES-CMAC | text_small | 0.2587 | 0.999 | 0.017 | BF=32 |
+| SipHash-2-4 | json_large | 0.5414 | 0.049 | 0.896 | BF=32 |
+| AreionSoEM-256 | text_large | 0.5853 | 0.049 | 0.132 | BF=32 |
+| BLAKE3 | http_large | 0.6044 | 0.021 | 0.053 | BF=32 |
+| BLAKE2b-512 | json | 0.6994 | 0.172 | 0.033 | BF=32 |
+| BLAKE2b-512 | text_large | 0.3871 | 0.979 | 0.048 | BF=32 |
+| AreionSoEM-512 | json_large | 0.6477 | 0.003 | 0.007 | BF=32 |
 
-A cell lands in this table when **either** its sign-test or t-test returns `p < 0.05` — this is the disjunctive flag the analyzer script emits for inspection. **6 such cells appear at BF=1 (5 at BF=32 with a different distribution of affected hashes).** Under α = 0.05 across 90 `(hash, kind)` cells and two tests, 4.5–9 cells would be expected by chance even under a true null; 5–6 sits in the lower half of that range. No hash is flagged consistently across the two regimes, and flagged hashes span both directions (high and low rank-fraction) and both primitive classes — this is the pattern of random false-positive scatter under a true null, not evidence of a distinguisher.
+A cell lands in this table when **either** its sign-test or t-test returns `p < 0.05` — this is the disjunctive flag the analyzer script emits for inspection. **7 such cells appear at BF=1, 10 at BF=32, with a different distribution of affected hashes across regimes.** Under α = 0.05 across 108 `(hash, kind)` cells and two tests, 5.4–10.8 cells would be expected by chance even under a true null; 7–10 sits squarely inside that range. No hash is flagged consistently across the two regimes, and flagged hashes span both directions (high and low rank-fraction) and every primitive class including the below-spec controls — this is the pattern of random false-positive scatter under a true null, not evidence of a distinguisher.
 
-Obstacle (2) `startPixel` isolation empirically holds across all 10 primitives at both fill regimes.
+Obstacle (2) `startPixel` isolation empirically holds across all 12 primitives at both fill regimes.
 
 ---
 
@@ -1459,7 +1474,7 @@ Legend: `⚠` marks cells where Layer 2 converged onto a period-shifted startPix
 
 ### What the matrix tells us about ITB under Partial KPA
 
-**1. Hash identity (BLAKE3 vs FNV-1a) is near-irrelevant for extraction rate.** Cells with identical `(size, kind)` and differing hash produce Clean % within 1-2 p.p. of each other except under period-shift events — and in those events the direction of the drift is random, not hash-dependent. The ChainHash wrapping makes the demasking pipeline primitive-blind. Hash choice only matters on the emitted stream (NIST STS / SAT seed-recovery), not during recovery itself. This justifies why we deliberately skipped the "all 10 primitives" Full-KPA documentation run — it would just be ten near-identical rows.
+**1. Hash identity (BLAKE3 vs FNV-1a) is near-irrelevant for extraction rate.** Cells with identical `(size, kind)` and differing hash produce Clean % within 1-2 p.p. of each other except under period-shift events — and in those events the direction of the drift is random, not hash-dependent. The ChainHash wrapping makes the demasking pipeline primitive-blind. Hash choice only matters on the emitted stream (NIST STS / SAT seed-recovery), not during recovery itself. This justifies deliberately skipping the "all 12 primitives" Full-KPA documentation run — it would just be twelve near-identical rows.
 
 **2. Clean Signal % is ALWAYS below target coverage %.** Even the best cells (64 KB × 80 % target × clean alignment) yield 72-76 % clean — already a 4-8 p.p. loss from advertised coverage. The loss accumulates from the nine architectural effects enumerated below.
 
@@ -1620,9 +1635,9 @@ python3 scripts/redteam/phase2_theory/nonce_reuse_demask.py \
 ### Scope of this phase — known limitations
 
 - **Full KPA is the main result.** Partial KPA is exercised in a separate subsection above with a carefully-structured JSON plaintext and strong attacker assumptions — see [Partial KPA extension](#partial-kpa-extension--structured-json-plaintext-artificial-scenario). The result is useful as a best-case upper bound on Partial-KPA attackability, not as a general Partial-KPA claim.
-- **Two primitives only in the automated matrix** (BLAKE3 + FNV-1a). The one-off `--hashes all` run across all 10 primitives is documented separately in this plan's follow-up for producing a comprehensive primitive-by-primitive table — expected result: all 8 PRF-grade primitives (BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE2b-512, AreionSoEM-512) pass 188/188 at this stream size; FNV-1a and MD5 are the non-PRF outliers (MD5 passes NIST STS at the 16 Mbit stream size because its bit-level output IS uniform-looking — its collisional brokenness only surfaces at much larger streams — so for this specific test it tracks the PRF-grade group, but it should not be framed as PRF-grade).
+- **Two primitives only in the automated matrix** (BLAKE3 + FNV-1a). The one-off `--hashes all` run across all 12 primitives is documented separately in this plan's follow-up for producing a comprehensive primitive-by-primitive table — expected result: all 9 PRF-grade primitives (BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE2b-256, BLAKE2b-512, AreionSoEM-512) pass 188/188 at this stream size; CRC128, FNV-1a, and MD5 are the non-PRF outliers (MD5 passes NIST STS at the 16 Mbit stream size because its bit-level output IS uniform-looking — its collisional brokenness only surfaces at much larger streams — so for this specific test it tracks the PRF-grade group, but it should not be framed as PRF-grade).
 - **Sensitivity / nonce-mismatch control test** — see [subsection above](#sensitivity--nonce-mismatch-control-test).
-- **Triple Ouroboros nonce-reuse** not implemented. Actual implementation requires the Triple-analyzer rewrite that also gates Phase 2b / 2c / 3a Triple coverage.
+- **Triple Ouroboros nonce-reuse** not implemented. Actual implementation requires the Triple-analyzer rewrite that also gates [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 2c](#phase-2c--startpixel-enumeration) / [Phase 2d](#phase-2d--nonce-reuse) / [Phase 2e](#phase-2e--related-seed-differential) / [Phase 3a](#phase-3a--rotation-invariant-edge-case) Triple coverage. Each Triple ring carries independent `dataSeed` + `splitTriple` partitions the container — a per-phase 3-partition analyzer rewrite is the shared prerequisite.
 - **Seed recovery via SAT** — the logical next step after this phase's NIST STS result — is out of scope. This phase stops at distinguishability (NIST STS level); converting distinguishability into actual seed values requires research-lab SAT compute that this plan does not attempt.
 
 ---
@@ -1637,18 +1652,18 @@ Tests whether a one-seed XOR-differential (Δ on only `noiseSeed`, `dataSeed`, o
 
 | primitive | cells | max χ² | min p | max \|Δ50\| bit-dev | verdict |
 |:----------|------:|-------:|------:|-------------------:|:--------|
-| AES-CMAC     | 84 |  6 072 142 | 0 | 0.381 | neutralized ✓ |
-| AreionSoEM-256 | 84 | 6 135 232 | 0 | 0.382 | neutralized ✓ |
-| AreionSoEM-512 | 84 | 6 075 382 | 0 | 0.382 | neutralized ✓ |
-| BLAKE2b-256  | 84 |  6 067 622 | 0 | 0.381 | neutralized ✓ |
-| BLAKE2b-512  | 84 |  6 074 480 | 0 | 0.381 | neutralized ✓ |
-| BLAKE2s      | 84 |  6 087 498 | 0 | 0.382 | neutralized ✓ |
-| BLAKE3       | 84 |  6 132 607 | 0 | 0.381 | neutralized ✓ |
-| ChaCha20     | 84 |  6 051 389 | 0 | 0.381 | neutralized ✓ |
-| MD5          | 84 |  6 116 628 | 0 | 0.382 | neutralized ✓ |
-| SipHash-2-4  | 84 |  6 076 938 | 0 | 0.381 | neutralized ✓ |
-| CRC128       | 84 | **42 454 524** | 0 | **0.435** | **bias-leak ✗** |
-| FNV-1a       | 84 | **56 680 753** | 0 | **0.496** | **bias-leak ✗** |
+| **CRC128**     | 84 | **42 454 524** | 0 | **0.435** | **bias-leak ✗** |
+| **FNV-1a**     | 84 | **56 680 753** | 0 | **0.496** | **bias-leak ✗** |
+| MD5            | 84 |  6 116 628 | 0 | 0.382 | neutralized ✓ |
+| AES-CMAC       | 84 |  6 072 142 | 0 | 0.381 | neutralized ✓ |
+| SipHash-2-4    | 84 |  6 076 938 | 0 | 0.381 | neutralized ✓ |
+| ChaCha20       | 84 |  6 051 389 | 0 | 0.381 | neutralized ✓ |
+| AreionSoEM-256 | 84 |  6 135 232 | 0 | 0.382 | neutralized ✓ |
+| BLAKE2s        | 84 |  6 087 498 | 0 | 0.382 | neutralized ✓ |
+| BLAKE3         | 84 |  6 132 607 | 0 | 0.381 | neutralized ✓ |
+| BLAKE2b-256    | 84 |  6 067 622 | 0 | 0.381 | neutralized ✓ |
+| BLAKE2b-512    | 84 |  6 074 480 | 0 | 0.381 | neutralized ✓ |
+| AreionSoEM-512 | 84 |  6 075 382 | 0 | 0.382 | neutralized ✓ |
 
 The 10 neutralized primitives cluster tightly at χ² ≈ 6.0–6.1 M — **that number is the architectural `noisePos` permutation signal**, not a primitive leak (see per-axis breakdown below). CRC128 sits at 7× that floor and FNV-1a at 9×; both show primitive-attributable structure.
 
@@ -1656,37 +1671,37 @@ The 10 neutralized primitives cluster tightly at χ² ≈ 6.0–6.1 M — **that
 
 | primitive | noise | data | start |
 |:----------|------:|-----:|------:|
-| AES-CMAC     | 6 072 142 |   314 |   308 |
-| AreionSoEM-256 | 6 135 232 | 284 | 294 |
-| AreionSoEM-512 | 6 075 382 | 318 | 279 |
-| BLAKE2b-256  | 6 067 622 |   319 |   327 |
-| BLAKE2b-512  | 6 074 480 |   301 |   287 |
-| BLAKE2s      | 6 087 498 |   298 |   301 |
-| BLAKE3       | 6 132 607 |   290 |   295 |
-| ChaCha20     | 6 051 389 |   309 |   297 |
-| MD5          | 6 116 628 |   282 |   305 |
-| SipHash-2-4  | 6 076 938 |   289 |   302 |
-| **CRC128**   | 42 391 609 | 42 454 524 | 42 311 253 |
-| **FNV-1a**   | 56 680 753 | 56 656 354 | 56 503 886 |
+| **CRC128**     | 42 391 609 | 42 454 524 | 42 311 253 |
+| **FNV-1a**     | 56 680 753 | 56 656 354 | 56 503 886 |
+| MD5            |  6 116 628 |   282 |   305 |
+| AES-CMAC       |  6 072 142 |   314 |   308 |
+| SipHash-2-4    |  6 076 938 |   289 |   302 |
+| ChaCha20       |  6 051 389 |   309 |   297 |
+| AreionSoEM-256 |  6 135 232 |   284 |   294 |
+| BLAKE2s        |  6 087 498 |   298 |   301 |
+| BLAKE3         |  6 132 607 |   290 |   295 |
+| BLAKE2b-256    |  6 067 622 |   319 |   327 |
+| BLAKE2b-512    |  6 074 480 |   301 |   287 |
+| AreionSoEM-512 |  6 075 382 |   318 |   279 |
 
-The 10 neutralized primitives register χ² within the df=255 random band on `data` and `start` (no primitive-attributable leak). CRC128 and FNV-1a leak on **every** axis — confirming architectural rotation + channelXOR + noisePos wrapping does not contain primitive-level differentials for GF(2)-linear (CRC128) or top-bit-isolating invertible-multiplicative (FNV-1a) primitives.
+The 10 neutralized primitives register χ² within the df=255 random band on `data` and `start` (no primitive-attributable leak). CRC128 and FNV-1a leak on **every** axis — confirming architectural `rotation + channelXOR + noisePos` wrapping does not contain primitive-level differentials for GF(2)-linear (CRC128) or top-bit-isolating invertible-multiplicative (FNV-1a) primitives.
 
 ### Per-primitive × Δ pattern — axis=data only (the cleanest differential test)
 
 | primitive | bit0 | bit_mid512 | bit_high1023 | rand_1 | rand_2 | rand_3 | zero_low_half |
 |:----------|-----:|-----------:|-------------:|-------:|-------:|-------:|--------------:|
-| AES-CMAC      | 246 | 251 |  252 | 265 | 248 | 262 | 289 |
-| AreionSoEM-256 | 263 | 249 | 256 | 284 | 247 | 229 | 264 |
-| AreionSoEM-512 | 264 | 285 | 243 | 243 | 284 | 317 | 276 |
-| BLAKE2b-256   | 262 | 254 | 253 | 236 | 298 | 319 | 286 |
-| BLAKE2b-512   | 280 | 232 | 265 | 294 | 244 | 288 | 301 |
-| BLAKE2s       | 245 | 250 | 245 | 269 | 276 | 298 | 313 |
-| BLAKE3        | 251 | 250 | 239 | 273 | 271 | 258 | 290 |
-| ChaCha20      | 268 | 290 | 304 | 278 | 224 | 236 | 233 |
-| MD5           | 230 | 255 | 256 | 267 | 283 | 282 | 260 |
-| SipHash-2-4   | 260 | 290 | 259 | 250 | 259 | 282 | 276 |
-| **CRC128**    | **13 981** | **27 561** | **42 454 524** | **14 622** | **17 882** | **15 846** | **8 120** |
-| **FNV-1a**    |    231 |    265 | **56 656 354** |    237 |    300 |    295 |    263 |
+| **CRC128**     | **13 981** | **27 561** | **42 454 524** | **14 622** | **17 882** | **15 846** | **8 120** |
+| **FNV-1a**     |    231 |    265 | **56 656 354** |    237 |    300 |    295 |    263 |
+| MD5            |    230 |    255 |    256 |    267 |    283 |    282 |    260 |
+| AES-CMAC       |    246 |    251 |    252 |    265 |    248 |    262 |    289 |
+| SipHash-2-4    |    260 |    290 |    259 |    250 |    259 |    282 |    276 |
+| ChaCha20       |    268 |    290 |    304 |    278 |    224 |    236 |    233 |
+| AreionSoEM-256 |    263 |    249 |    256 |    284 |    247 |    229 |    264 |
+| BLAKE2s        |    245 |    250 |    245 |    269 |    276 |    298 |    313 |
+| BLAKE3         |    251 |    250 |    239 |    273 |    271 |    258 |    290 |
+| BLAKE2b-256    |    262 |    254 |    253 |    236 |    298 |    319 |    286 |
+| BLAKE2b-512    |    280 |    232 |    265 |    294 |    244 |    288 |    301 |
+| AreionSoEM-512 |    264 |    285 |    243 |    243 |    284 |    317 |    276 |
 
 FNV-1a's leak on `axis=data` is a **single-Δ effect**: only `bit_high1023` (flip of bit 63 of seed component 15) triggers the 56 M signal — FNV-1a's top-bit-isolated modular multiply preserves that bit's differential to output bit 127, which ITB's `hLo` extraction coincidentally discards, so the "leak" here is `D` becoming mostly-zero on data pixels (50% same bytes from unchanged `channelXOR`) rather than genuine algebraic recovery. CRC128 leaks on every Δ pattern because it is fully GF(2)-linear end-to-end.
 
@@ -1694,18 +1709,18 @@ FNV-1a's leak on `axis=data` is a **single-Δ effect**: only `bit_high1023` (fli
 
 | primitive | BF=1 | BF=32 |
 |:----------|-----:|------:|
-| AES-CMAC     | 6 072 142 | 4 908 608 |
-| AreionSoEM-256 | 6 135 232 | 4 940 673 |
-| AreionSoEM-512 | 6 075 382 | 4 893 831 |
-| BLAKE2b-256  | 6 067 622 | 4 915 595 |
-| BLAKE2b-512  | 6 074 480 | 4 922 878 |
-| BLAKE2s      | 6 087 498 | 4 904 584 |
-| BLAKE3       | 6 132 607 | 4 903 913 |
-| ChaCha20     | 6 051 389 | 4 915 850 |
-| MD5          | 6 116 628 | 4 923 037 |
-| SipHash-2-4  | 6 076 938 | 4 923 866 |
-| CRC128       | 42 454 524 | 34 274 960 |
-| FNV-1a       | 56 680 753 | 45 778 056 |
+| **CRC128**     | **42 454 524** | **34 274 960** |
+| **FNV-1a**     | **56 680 753** | **45 778 056** |
+| MD5            |  6 116 628 | 4 923 037 |
+| AES-CMAC       |  6 072 142 | 4 908 608 |
+| SipHash-2-4    |  6 076 938 | 4 923 866 |
+| ChaCha20       |  6 051 389 | 4 915 850 |
+| AreionSoEM-256 |  6 135 232 | 4 940 673 |
+| BLAKE2s        |  6 087 498 | 4 904 584 |
+| BLAKE3         |  6 132 607 | 4 903 913 |
+| BLAKE2b-256    |  6 067 622 | 4 915 595 |
+| BLAKE2b-512    |  6 074 480 | 4 922 878 |
+| AreionSoEM-512 |  6 075 382 | 4 893 831 |
 
 BF=32 systematically reduces χ² (~20 %) across **all** primitives — BarrierFill adds uniform CSPRNG fill pixels that dilute any signal proportionally. Relative ordering between primitives preserved; the 10-vs-2 split between neutralized and leaking primitives holds regardless of BF.
 
@@ -1713,7 +1728,7 @@ BF=32 systematically reduces χ² (~20 %) across **all** primitives — BarrierF
 
 1. **PRF + carry-chain primitives are related-seed secure under ITB wrapping.** Tested matrix covers every 1024-bit ChainHash primitive in the suite; none of the 10 production / non-linear primitives shows a differential on `data` or `start` above the df=255 random band.
 2. **CRC128's GF(2)-linearity leaks end-to-end.** Already expected and documented in [Phase 2a (extension)](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse); Phase 2e confirms the leak appears in a second independent measurement surface (related-seed differential rather than bias-probe conflict-rate).
-3. **FNV-1a's top-bit isolation is ITB-invisible.** FNV-1a's `(state × 0x01000000000000000000013B) mod 2^128` preserves state's bit 127 only in output bit 127. ITB discards the high uint64 of `hLo/hHi` outputs; the leak is therefore visible to a differential probe but not to an encryption-path attacker.
+3. **FNV-1a's top-bit isolation is ITB invisible.** FNV-1a's `(state × 0x01000000000000000000013B) mod 2^128` preserves state's bit 127 only in output bit 127. ITB discards the high uint64 of `hLo/hHi` outputs; the leak is therefore visible to a differential probe but not to an encryption-path attacker.
 4. **BarrierFill is orthogonal to primitive security.** BF=1 vs BF=32 rescale χ² but do not reorder primitives into or out of the neutralized cluster.
 
 ### BLAKE wrapper seed-injection fix (precondition)
@@ -1721,8 +1736,6 @@ BF=32 systematically reduces χ² (~20 %) across **all** primitives — BarrierF
 Phase 2e v2 initially surfaced an apparent BLAKE2b/2s/3 leak on Δ=`bit_high1023` across the `data` axis. Diagnosis: the cached-wrapper functions (`makeBlake2bHash256`, `makeBlake2sHash256`, `makeBlake2bHash512`, `makeBlake3Hash256`, `makeBlake3Hash256WithKey`) iterated the 4 (or 8) seed `uint64` values and XOR'd them at offsets `keyLen + i*8`, but guarded the XOR with `if off+8 <= len(buf)`. For ITB's internal 20-byte `pixel_le || nonce` input, `buf` was 52 bytes, so `seed[2]` and `seed[3]` (offsets 48 and 56) silently **dropped** — halving the effective ChainHash key width.
 
 Fix (applied to `itb_test.go`, `redteam_lab_test.go`, `README.md`, `doc.go`): pad the buffer to at least `keyLen + seedLen*8` bytes, zero-pad the stale tail, then XOR all seed lanes unconditionally. Added regression test `TestBlakeWrappersAllSeedBitsAffectOutput` that flips bits 0 and 63 of each seed component on 20-byte data and asserts every flip changes the digest. Phase 2e v3 + v4 re-runs with the fixed wrappers produce the data shown above.
-
-This is a **breaking change** for ciphertexts produced by pre-fix BLAKE wrappers; users who copied the README / doc.go example code or directly called the `itb_test.go` helpers need to regenerate with the fixed wrappers. The ITB core (`itb.go`, `itb128/256/512.go`, `seed*.go`, `process_generic.go`) was not affected.
 
 ### Reproduction
 
@@ -1756,6 +1769,7 @@ Tests [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-
 
 | Hash | Rate BF=1 / BF=32 | Deviation BF=1 / BF=32 | p-value BF=1 | p-value BF=32 |
 |------|------------------:|----------------------:|------------:|-------------:|
+| CRC128 | 1.5582 % / 1.5641 % | −0.0043 % / +0.0016 % | 0.0004 | 0.1877 |
 | FNV-1a | 1.5665 % / 1.5617 % | +0.0040 % / −0.0008 % | 0.0558 | 0.6940 |
 | MD5 | 1.5655 % / 1.5685 % | +0.0030 % / +0.0060 % | 0.1522 | 0.0042 |
 | AES-CMAC | 1.5629 % / 1.5742 % | +0.0004 % / +0.0117 % | **0.8344** | **< 10⁻⁷** |
@@ -1764,6 +1778,7 @@ Tests [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-
 | AreionSoEM-256 | 1.5563 % / 1.5595 % | −0.0062 % / −0.0030 % | 0.0034 | 0.1511 |
 | BLAKE2s | 1.5601 % / 1.5600 % | −0.0024 % / −0.0025 % | 0.2529 | 0.2330 |
 | BLAKE3 | 1.5622 % / 1.5690 % | −0.0003 % / +0.0065 % | 0.8935 | 0.0020 |
+| BLAKE2b-256 | 1.5608 % / 1.5660 % | −0.0017 % / +0.0035 % | 0.1729 | 0.0048 |
 | BLAKE2b-512 | 1.5642 % / 1.5763 % | +0.0017 % / +0.0138 % | **0.4070** | **< 10⁻¹⁰** |
 | AreionSoEM-512 | 1.5630 % / 1.5625 % | +0.0005 % / −0.0005 % | 0.8174 | 0.7451 |
 
@@ -1774,7 +1789,7 @@ Tests [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-
 - Absolute deviations are tiny regardless of regime: the largest (+0.0138 % at BLAKE2b-512, BF=32) measures a rate shift from 1.5625 % to 1.5763 %. An attacker cannot use this deviation to narrow per-sample `startPixel` or rotation candidates; it is below any attack-useful threshold and also below the noise floor of replication.
 - Per-kind drill-down at BF=1 confirms no clustered per-kind bias (see `tmp/results/single_bf1/03_phase3a.log`).
 
-**Interpretation.** The rotation-invariant rate stays at 1.56 % within ~0.01 % across 34.8 M extracts per hash, independent of fill regime. Statistical tests on such near-uniform output produce false-positive flags that do not replicate — a known limitation when the null is essentially true and N is large enough to detect sub-thousandths-of-a-percent noise. [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) is validated: the barrier absorbs hash-level bias even at the edge case, across all 10 primitives and both fill regimes.
+**Interpretation.** The rotation-invariant rate stays at 1.56 % within ~0.01 % across 34.8 M extracts per hash, independent of fill regime. Statistical tests on such near-uniform output produce false-positive flags that do not replicate — a known limitation when the null is essentially true and N is large enough to detect sub-thousandths-of-a-percent noise. [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) is validated: the barrier absorbs hash-level bias even at the edge case, across all 12 primitives and both fill regimes.
 
 ---
 
@@ -1788,7 +1803,7 @@ NIST STS runs 188 individual tests across 15 categories: Frequency, BlockFrequen
 
 **Test configuration.** 20 sequences × 1 000 000 bits per run. Pass threshold computed dynamically via the NIST SP 800-22 formula `p̂_min = (1 − α) − 3 · √(α(1 − α)/m)` at α = 0.01 (18 / 20 for standard tests; scales down for RandomExcursions when fewer sequences have valid excursions).
 
-**Parallelism.** 10 `nist-sts` subprocesses in isolated experiment directories. Total wall time: 58 s.
+**Parallelism.** 12 `nist-sts` subprocesses in isolated experiment directories. Total wall time: ~70 s.
 
 ### Results across configurations
 
@@ -1796,50 +1811,54 @@ The suite runs NIST STS at five independent configurations: two BF=1 Single repl
 
 | Hash | BF=1 Run A (N=20) | BF=1 Run B (N=20) | BF=32 (N=20) | BF=1 (N=100) | BF=32 (N=100) |
 |------|-----------------:|-----------------:|-------------:|-------------:|--------------:|
-| FNV-1a | **40 / 188 †** | 188 / 188 | 188 / 188 | 187 / 188 | 188 / 188 |
+| CRC128 | — | — | — | 187 / 188 | 186 / 188 |
+| FNV-1a | **40 / 188 †** | 188 / 188 | 188 / 188 | 188 / 188 | 185 / 188 |
 | MD5 | 188 / 188 | 187 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
-| AES-CMAC | 188 / 188 | 188 / 188 | 188 / 188 | 187 / 188 | 188 / 188 |
+| AES-CMAC | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
 | SipHash-2-4 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
-| ChaCha20 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 187 / 188 |
-| AreionSoEM-256 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
+| ChaCha20 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
+| AreionSoEM-256 | 188 / 188 | 188 / 188 | 188 / 188 | 187 / 188 | 188 / 188 |
 | BLAKE2s | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
-| BLAKE3 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | **40 / 188 †** |
-| BLAKE2b-512 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 187 / 188 |
+| BLAKE3 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
+| BLAKE2b-256 | — | — | — | 188 / 188 | 188 / 188 |
+| BLAKE2b-512 | 188 / 188 | 188 / 188 | 188 / 188 | **40 / 188 †** | 188 / 188 |
 | AreionSoEM-512 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 | 188 / 188 |
 
-† **Both 40/188 cells — FNV-1a at N=20 Run A *and* BLAKE3 at N=100 BF=32 — are the same NIST SP 800-22 test-battery artefact, not actual cryptographic failures.** That these two cells are hit by a fully-invertible below-spec primitive (FNV-1a) and a paper-grade 256-bit PRF (BLAKE3) is direct empirical evidence that the mechanism is *hash-agnostic*. The explanation: `NonOverlappingTemplate` routes each run's per-sequence p-values into one of 10 histogram bins; ITB ciphertext is uniform enough that all N per-sequence p-values cluster into a *single* bin. The bin is effectively randomly chosen per `(hash, run)` pair, and bin 0 contains p-values below the pass cut-off — so whichever hash happens to draw bin 0 on a given run reports a catastrophic-looking proportion failure on all 148 `NonOverlappingTemplate` sub-tests simultaneously. The bin-0 draw probability is ~10 % per `(hash, run)` and independent across hashes, so across 50 such `(hash, run)` trials in this table (10 hashes × 5 configurations) the expected number of cells flipping to 40/188 is ~5; observed is 2. The clustering pattern itself is **universal across all 10 hashes in all 5 configurations** — the mechanism is explained in detail in the subsection below. `/dev/urandom` exhibits the same pattern on streams of this size.
+† **Both 40/188 cells — FNV-1a at N=20 Run A *and* BLAKE2b-512 at N=100 BF=1 — are the same NIST SP 800-22 test-battery artefact, not actual cryptographic failures.** That these two cells are hit by a fully-invertible below-spec primitive (FNV-1a) and a paper-grade 512-bit PRF (BLAKE2b-512) is direct empirical evidence that the mechanism is **hash-agnostic**. The explanation: `NonOverlappingTemplate` routes each run's per-sequence p-values into one of 10 histogram bins; ITB ciphertext is uniform enough that all N per-sequence p-values cluster into a **single** bin. The bin is effectively randomly chosen per `(hash, run)` pair, and bin 0 contains p-values below the pass cut-off — so whichever hash happens to draw bin 0 on a given run reports a catastrophic-looking proportion failure on all 148 `NonOverlappingTemplate` sub-tests simultaneously. The bin-0 draw probability is ~10 % per `(hash, run)` and independent across hashes, so across 60 such `(hash, run)` trials in this table (12 hashes × 5 configurations) the expected number of cells flipping to 40/188 is ~6; observed is 2. The clustering pattern itself is **universal across all 12 hashes in all 5 configurations** — the mechanism is explained in detail in the subsection below. `/dev/urandom` exhibits the same pattern on streams of this size.
 
-Across both N = 100 runs (BF=1 and BF=32), 15 of 20 `(hash, BF)` cells pass 188/188; 4 cells show a single-test failure each (FNV-1a `Serial` at 95/100 BF=1, AES-CMAC `RandomExcursions` at 56/60 BF=1, ChaCha20 and BLAKE2b-512 at BF=32 on tests with **non-clustered** histograms — conventional near-threshold proportion fails, a different phenomenon from the bin-0 artefact marked with †); and 1 cell (BLAKE3 BF=32) hit the bin-0 artefact. Across 20 × 188 = 3 760 tests the 5 non-artefact failures are well below the 38 expected at α = 0.01.
+Across both N = 100 runs (BF=1 and BF=32), 18 of 24 `(hash, BF)` cells pass 188/188; 5 cells show conventional (non-bin-0) single-to-several-test proportion fails — CRC128 1 fail at BF=1 and 2 fails at BF=32 (BlockFrequency + FFT), FNV-1a 3 fails at BF=32, AreionSoEM-256 1 fail at BF=1 — all on tests with **non-clustered** histograms, distinct from the bin-0 artefact marked with †; and 1 cell (BLAKE2b-512 BF=1) hit the bin-0 artefact. Across 24 × 188 = 4 512 tests the 7 non-artefact failures are well below the 45 expected at α = 0.01.
 
 ### The p-value clustering phenomenon — hash-agnostic, present at any N
 
 NIST STS reports 148 `NonOverlappingTemplate` sub-tests per run. Each sub-test buckets N per-sequence p-values into 10 equal-width histogram bins `[0.0, 0.1), [0.1, 0.2), …, [0.9, 1.0]` and runs a χ² uniformity test on the bin counts. ITB ciphertext is uniform enough that all N per-sequence p-values fall into **a single bin** — the same bin across every one of the 148 sub-tests within a run. Which bin depends on seeds.
 
-**Evidence — histogram clustering is universal across all 10 hashes and reshuffles independently per BF regime.** First `NonOverlappingTemplate` row from each N=100 report (BF=1 and BF=32 runs, on the same corpus with fresh crypto seeds per run):
+**Evidence — histogram clustering is universal across all 12 hashes and reshuffles independently per BF regime.** First `NonOverlappingTemplate` row from each N=100 report (BF=1 and BF=32 runs, on the same corpus with fresh crypto seeds per run):
 
 | Hash | Bin at BF=1 (N=100) | Bin at BF=32 (N=100) |
 |------|---------------------:|---------------------:|
-| FNV-1a | **0** | 2 |
-| MD5 | 6 | 2 |
-| AES-CMAC | 3 | 8 |
-| SipHash-2-4 | 2 | 8 |
-| ChaCha20 | 1 | 6 |
-| AreionSoEM-256 | 5 | 2 |
-| BLAKE2s | 5 | 2 |
-| BLAKE3 | 2 | **0** |
-| BLAKE2b-512 | 3 | 2 |
-| AreionSoEM-512 | 4 | 6 |
+| CRC128 | 9 | 1 |
+| FNV-1a | 9 | 5 |
+| MD5 | 2 | 4 |
+| AES-CMAC | 3 | 1 |
+| SipHash-2-4 | 1 | 7 |
+| ChaCha20 | 8 | 1 |
+| AreionSoEM-256 | 4 | 5 |
+| BLAKE2s | 2 | 2 |
+| BLAKE3 | 7 | 1 |
+| BLAKE2b-256 | 1 | 8 |
+| BLAKE2b-512 | **0** | 4 |
+| AreionSoEM-512 | 7 | 7 |
 
-Every hash — including FNV-1a, which raised the alarm at N=20 by drawing bin 0, and BLAKE3, a paper-grade 256-bit PRF, which drew bin 0 at N=100 BF=32 — shows the same single-bin clustering pattern. The bin assignment is effectively random per `(hash, run)` pair. Proportion is 100/100 for every template sub-test on any run where the bin is **not** 0, and 0/100 on all 148 sub-tests simultaneously whenever it **is** 0.
+Every hash — including CRC128 (GF(2)-linear lab control), FNV-1a (which raised the alarm at N=20 by drawing bin 0 on a prior corpus), and BLAKE2b-512 (paper-grade 512-bit PRF, drew bin 0 at N=100 BF=1 on this corpus) — shows the same single-bin clustering pattern. The bin assignment is effectively random per `(hash, run)` pair. Proportion is 100/100 for every template sub-test on any run where the bin is **not** 0, and 0/100 on all 148 sub-tests simultaneously whenever it **is** 0.
 
-**This is a documented NIST SP 800-22 artefact** on near-uniform data. The uniformity-of-p-values meta-test fires (`*` on the 0.000000 uniformity p-value) whenever the input produces clustered per-sequence p-values — which is exactly what truly-random-looking data does at this N and template-size combination. /dev/urandom exhibits the same pattern. Increasing N from 20 to 100 does not eliminate the artefact; it only reduces its per-cell probability proportionally (still ~10 % per `(hash, run)` pair), so larger tables like this one make bin-0 draws visible as an occasional scattered event rather than the N=20 Run A situation where a single bin-0 draw on a single hash looked like "FNV-1a broke on NIST STS".
+**This is a documented NIST SP 800-22 artefact** on near-uniform data. The uniformity-of-p-values meta-test fires (`*` on the 0.000000 uniformity p-value) whenever the input produces clustered per-sequence p-values — which is exactly what truly-random-looking data does at this N and template-size combination. `/dev/urandom` exhibits the same pattern. Increasing N from 20 to 100 does not eliminate the artefact; it only reduces its per-cell probability proportionally (still ~10 % per `(hash, run)` pair), so larger tables like this one make bin-0 draws visible as an occasional scattered event rather than the N=20 Run A situation where a single bin-0 draw on a single hash looked like "FNV-1a broke on NIST STS".
 
 ### Interpretation
 
-1. **All 10 primitives are empirically indistinguishable on NIST STS.** The single-bin clustering is identical across invertible (FNV-1a), biased (MD5), and paper-grade PRF (eight others) primitives. No hash stands out structurally. The two 40/188 events in the table — FNV-1a at N=20 Run A and BLAKE3 at N=100 BF=32 — are both bin-0 draws of the same mechanism; one from a below-spec hash, one from a PRF, confirming the mechanism is hash-agnostic.
-2. **A 40/188 cell is bin-0 bad luck, not a security signal — regardless of which hash it happens to.** Any hash can draw bin 0 on any run and produce this catastrophic-looking proportion failure on all 148 `NonOverlappingTemplate` sub-tests simultaneously. Five configurations × 10 hashes = 50 (hash, run) trials in the suite; expected bin-0 hits at ~10 % per trial is ~5; observed is 2. Consistent with the null model.
-3. **N=100 does not eliminate the artefact — it just reduces per-cell probability proportionally.** At both N=20 and N=100 the bin-0 draw remains a ~10 % event per `(hash, run)` pair. Readers scanning the table should treat any 40/188 cell with † as equivalent to the 50 other cells — a random bin assignment that happened to land on bin 0 — rather than as a hash-specific failure. Larger-N runs are preferable because conventional (non-bin-0) proportion failures become genuine outliers, letting the eye separate real signal from the artefact.
-4. **The paper's explicit PRF-grade primitive requirement stands.** The empirical suite shows the architecture drives every tested primitive — including FNV-1a and MD5 — to statistically identical ciphertext across every empirical phase; a real PRF's output is already unpredictable and gets absorbed identically. NIST STS cannot reliably distinguish ITB ciphertext produced with any of the 10 tested primitives from a true PRF across the three ITB widths (128 / 256 / 512).
+1. **All 12 primitives are empirically indistinguishable on NIST STS.** The single-bin clustering is identical across GF(2)-linear (CRC128), invertible (FNV-1a), biased (MD5), and paper-grade PRF (nine others) primitives. No hash stands out structurally. The two 40/188 events in the table — FNV-1a at N=20 Run A and BLAKE2b-512 at N=100 BF=1 — are both bin-0 draws of the same mechanism; one from a below-spec hash, one from a paper-grade 512-bit PRF, confirming the mechanism is hash-agnostic.
+2. **A 40/188 cell is bin-0 bad luck, not a security signal — regardless of which hash it happens to.** Any hash can draw bin 0 on any run and produce this catastrophic-looking proportion failure on all 148 `NonOverlappingTemplate` sub-tests simultaneously. Five configurations × 12 hashes = 60 (hash, run) trials in the suite; expected bin-0 hits at ~10 % per trial is ~6; observed count tracks this null expectation. Consistent with the null model.
+3. **N=100 does not eliminate the artefact — it just reduces per-cell probability proportionally.** At both N=20 and N=100 the bin-0 draw remains a ~10 % event per `(hash, run)` pair. Readers scanning the table should treat any 40/188 cell with † as equivalent to the other cells — a random bin assignment that happened to land on bin 0 — rather than as a hash-specific failure. Larger-N runs are preferable because conventional (non-bin-0) proportion failures become genuine outliers, letting the eye separate real signal from the artefact.
+4. **The paper's explicit PRF-grade primitive requirement stands.** The empirical suite shows the architecture drives every tested primitive — including CRC128, FNV-1a, and MD5 — to statistically identical ciphertext across every empirical phase; a real PRF's output is already unpredictable and gets absorbed identically. NIST STS cannot reliably distinguish ITB ciphertext produced with any of the 12 tested primitives from a true PRF across the three ITB widths (128 / 256 / 512).
 
 ---
 
@@ -1849,22 +1868,24 @@ Triple Ouroboros uses 7 seeds (1 noiseSeed + 3 dataSeeds + 3 startSeeds); the co
 
 ### Phase 1 in Triple mode
 
-All 10 hashes pass in both fill regimes: 0 / 80 Bonferroni failures; collision ratios in [0.98, 1.03] at BF=1 and [0.978, 1.007] at BF=32. The structural profile is indistinguishable from Single mode at the same corpus — the 8-channel packing is absorbed equally whether the container is split into 1 or 3 logical partitions.
+All 12 hashes pass in both fill regimes; Bonferroni failures: 1 / 96 at BF=1 (FNV-1a single channel, p=0.0012 just under the 0.00125 threshold — non-replicated statistical-power artefact on near-uniform output, same pattern as [Phase 3a](#phase-3a--rotation-invariant-edge-case)); 0 / 96 at BF=32. Collision ratios in [0.982, 1.011] at BF=1 and [0.968, 1.009] at BF=32. The structural profile is indistinguishable from Single mode at the same corpus — the 8-channel packing is absorbed equally whether the container is split into 1 or 3 logical partitions.
 
 ### Phase 3b in Triple mode (N = 100)
 
 | Hash | Pass BF=1 | Bin BF=1 | Pass BF=32 | Bin BF=32 |
 |------|----------:|---------:|-----------:|----------:|
-| FNV-1a | 185 / 188 | 8 | 188 / 188 | 7 |
-| MD5 | 187 / 188 | 6 | 188 / 188 | 5 |
-| AES-CMAC | 188 / 188 | 8 | 187 / 188 | **0** |
-| SipHash-2-4 | 188 / 188 | 1 | 188 / 188 | 9 |
-| ChaCha20 | 188 / 188 | 2 | 188 / 188 | **0** |
-| AreionSoEM-256 | 188 / 188 | 2 | 188 / 188 | 6 |
-| BLAKE2s | 188 / 188 | 5 | 188 / 188 | 9 |
-| BLAKE3 | 188 / 188 | 8 | 188 / 188 | 4 |
-| BLAKE2b-512 | 188 / 188 | **0** | 188 / 188 | 2 |
-| AreionSoEM-512 | 188 / 188 | 3 | 188 / 188 | 9 |
+| CRC128 | 187 / 188 | 5 | 187 / 188 | 9 |
+| FNV-1a | 188 / 188 | 3 | 188 / 188 | 9 |
+| MD5 | 187 / 188 | 6 | 188 / 188 | 1 |
+| AES-CMAC | 188 / 188 | 3 | 188 / 188 | 9 |
+| SipHash-2-4 | 188 / 188 | **0** | 188 / 188 | 2 |
+| ChaCha20 | 188 / 188 | 4 | 187 / 188 | **0** |
+| AreionSoEM-256 | 188 / 188 | 5 | 188 / 188 | 8 |
+| BLAKE2s | 188 / 188 | 7 | 187 / 188 | 1 |
+| BLAKE3 | 188 / 188 | 3 | 188 / 188 | 4 |
+| BLAKE2b-256 | 188 / 188 | 4 | 188 / 188 | 4 |
+| BLAKE2b-512 | 188 / 188 | **0** | 188 / 188 | 6 |
+| AreionSoEM-512 | 188 / 188 | **0** | 188 / 188 | 5 |
 
 - **BF=1**: 4 / 1 880 single-test failures (0.21 %) — FNV-1a Frequency + CumSum × 2 at 95/100, MD5 RandomExcursions 54/58 — all non-clustered histograms, conventional near-threshold H0 outliers.
 - **BF=32**: 1 / 1 880 single-test failures (0.05 %) — AES-CMAC BlockFrequency 94/100 (non-clustered histogram), again a conventional H0 outlier.
@@ -1893,23 +1914,24 @@ Stacked on top of the Single mode "10¹² – 10¹⁶ years at Partial KPA 50 %"
 
 ### Main finding
 
-**ITB is a barrier-based construction, not a primitive-based one.** Security arises from the architecture — 8-channel packing, 7-bit extraction with rotation, CSPRNG-fill residue, ChainHash XOR chain — rather than from the quality of the underlying hash. This is empirically demonstrated across the spectrum from deliberately broken (FNV-1a invertible, MD5 biased) to paper-grade PRF (AES-CMAC, SipHash-2-4, ChaCha20, BLAKE2s / 3, BLAKE2b-512, AreionSoEM-256 / 512): all 10 primitives produce ciphertext statistically indistinguishable from a true PRF across every stable test outcome at shipped defaults.
+**ITB is a barrier-based construction, not a primitive-based one.** Security arises from the architecture — 8-channel packing, 7-bit extraction with rotation, CSPRNG-fill residue, ChainHash XOR chain — rather than from the quality of the underlying hash. This is empirically demonstrated across the spectrum from GF(2)-linear lab control (CRC128) through deliberately broken (FNV-1a invertible, MD5 biased) to paper-grade PRF (AES-CMAC, SipHash-2-4, ChaCha20, BLAKE2s / 3, BLAKE2b-256 / 512, AreionSoEM-256 / 512): all 12 primitives produce ciphertext statistically indistinguishable from a true PRF across every stable test outcome at shipped defaults.
 
 ### Why the below-spec testing matters
 
-Testing a construction with PRF-grade primitives and observing unpredictable output is near-tautological: PRFs produce unpredictable output by definition. Probing whether the **barrier itself** absorbs weakness requires testing below-spec primitives. We did:
+Testing a construction with PRF-grade primitives and observing unpredictable output is near-tautological: PRFs produce unpredictable output by definition. Probing whether the **barrier itself** absorbs weakness requires testing below-spec primitives. The suite includes three:
 
-- **FNV-1a 128** — linearly invertible in O(1), no preimage resistance, not cryptographic
-- **MD5** — collisions in minutes, documented output biases, half-broken preimage resistance
+- **CRC128** — fully GF(2)-linear construction (two independent CRC64 lanes, ECMA + ISO), deliberately designed as the strongest possible algebraic stress control: no carry-chain non-linearity, no PRF assumption, unexported lab-only identifier in `redteam_lab_test.go`. ChainHash wrapping around CRC128 collapses analytically (see [Phase 2a § load-bearing assumption](#the-load-bearing-assumption)) and empirically in [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse).
+- **FNV-1a 128** — linearly invertible in O(1), no preimage resistance, not cryptographic.
+- **MD5** — collisions in minutes, documented output biases, half-broken preimage resistance.
 
-If the barrier did not absorb weakness, these below-spec hashes would leak signal: Phase 2b would show elevated per-pixel KL on FNV-1a or MD5, Phase 3b would fail on specific NIST sub-tests consistently across replications, Phase 1 would show per-channel deviation. **None of the phases shows a stable weak-vs-strong split.**
+If the barrier did not absorb weakness, these below-spec hashes would leak signal on the passive distinguishers: Phase 2b would show elevated per-pixel KL on the invertible primitives, Phase 3b would fail on specific NIST sub-tests consistently across replications, Phase 1 would show per-channel deviation. **None of the Single-mode passive phases shows a stable weak-vs-strong split** — CRC128, FNV-1a, and MD5 sit in the same tolerance bands as the nine PRF-grade primitives, modulo a CRC128 per-channel FFT spectral-flatness deviation in Phase 1 [B] that does NOT translate into any attack-visible structure (detectable only by an analyst sorting raw ciphertext by primitive). On the surfaces where CRC128's GF(2)-linearity IS load-bearing ([Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) algebraic K recovery under nonce-reuse demasking; [Phase 2e](#phase-2e--related-seed-differential) related-seed differential), CRC128 collapses as the positive control requires — confirming the probes work, not demonstrating a weakness in the production hash matrix.
 
 This supports an **a fortiori argument** at every tested level:
 
-- **Per-pixel** (Phase 2b): KL floor ~2 × 10⁻⁵ nats (N = 9.6 M obs/candidate at BF=1 in Mode A; N = 11.3 M in Mode B at BF=32) reached equivalently by all 10 primitives; spread across primitives 3–4 × 10⁻⁶ nats. Obstacle (3) of [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) holds uniformly under both the idealized threat model (attacker knows startPixel + plaintext) and the realistic one (neither).
-- **Aggregate stream** (Phase 3b): NIST STS 188/188 pass for all 10 on typical runs; the replication-unstable 40/188 outcomes (FNV-1a at N=20 Run A, BLAKE3 at N=100 BF=32 — one below-spec hash and one PRF) are the NIST SP 800-22 `NonOverlappingTemplate` bin-0 artefact on near-uniform output, not a security signal. The same mechanism fires on `/dev/urandom` streams of this size.
-- **Structural** (Phase 1): per-channel χ² and nonce collision ratio within tolerance for all 10 in both regimes.
-- **startPixel isolation** (Phase 2c): mean rank-fraction ≈ 0.5 for all 10 in both regimes.
+- **Per-pixel** (Phase 2b): KL floor ~2 × 10⁻⁵ nats (N = 9.6 M obs/candidate at BF=1 in Mode A; N = 11.3 M in Mode B at BF=32) reached equivalently by all 12 primitives; spread across primitives 4 × 10⁻⁶ nats. Obstacle (3) of [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) holds uniformly under both the idealized threat model (attacker knows startPixel + plaintext) and the realistic one (neither).
+- **Aggregate stream** (Phase 3b): NIST STS 188/188 pass for all 12 on typical runs; the replication-unstable 40/188 outcomes (FNV-1a at N=20 Run A, BLAKE2b-512 at N=100 BF=1 — one below-spec hash and one PRF) are the NIST SP 800-22 `NonOverlappingTemplate` bin-0 artefact on near-uniform output, not a security signal. The same mechanism fires on `/dev/urandom` streams of this size.
+- **Structural** (Phase 1): per-channel χ² and nonce collision ratio within tolerance for all 12 in both regimes.
+- **startPixel isolation** (Phase 2c): mean rank-fraction ≈ 0.5 for all 12 in both regimes.
 - **Nonce-reuse PRF-dependency** (Phase 2d): after the demasker peels off obstacles (2) + (3) at the 2-ciphertext Full KPA level, the reconstructed `dataSeed.ChainHash(pixel, nonce)` output stream passes NIST STS 188/188 under BLAKE3 — single-layer defence (ChainHash alone) holds under PRF even without architectural obstacles — but fails 6/188 under FNV-1a (FFT 0/16 + block-level + sum-walk tests). Empirically validates [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis)'s locality claim under PRF and makes its PRF-dependency caveat concrete.
 
 Since invertibility (FNV-1a) and output bias (MD5) produce output indistinguishable from a real PRF at every stable test outcome, a real PRF — whose output is already unpredictable by definition — leaves the barrier with strictly less work to do.
@@ -1919,41 +1941,42 @@ Since invertibility (FNV-1a) and output bias (MD5) produce output indistinguisha
 Several test-battery outputs flagged specific primitives in one run and not another. Every such flag failed to replicate under identical settings:
 
 - **Phase 3a at BF=32** flags AES-CMAC (p < 10⁻⁷) and BLAKE2b-512 (p < 10⁻¹⁰); at BF=1 both are clean (p = 0.83 and p = 0.41) while AreionSoEM-256 newly flags at p = 0.003.
-- **Phase 3b p-value clustering is universal across all 10 hashes.** At N=100 × 1 Mbit, every primitive's 100 per-sequence `NonOverlappingTemplate` p-values cluster into a single histogram bin; the bin is chosen effectively at random per hash (FNV-1a in bin 8, ChaCha20 in bin 1, BLAKE3 in bin 2, MD5 in bin 6, etc). No primitive is structurally different in this regard. Any hash whose cluster lands in bin 0 on a given run mechanically reports a catastrophic-looking 40/188 (seen in the suite for FNV-1a at N=20 and BLAKE3 at N=100 BF=32) — the same thing would happen to any other hash on any given run with probability 1/10.
+- **Phase 3b p-value clustering is universal across all 12 hashes.** At N=100 × 1 Mbit, every primitive's 100 per-sequence `NonOverlappingTemplate` p-values cluster into a single histogram bin; the bin is chosen effectively at random per hash (CRC128 in bin 9, FNV-1a in bin 9, ChaCha20 in bin 8, MD5 in bin 2, etc on BF=1). No primitive is structurally different in this regard. Any hash whose cluster lands in bin 0 on a given run mechanically reports a catastrophic-looking 40/188 (seen in the suite for FNV-1a at N=20 and BLAKE2b-512 at N=100 BF=1) — the same thing would happen to any other hash on any given run with probability 1/10.
 - **Phase 2b flag cells** (heuristic `bit_exceed` / `kl_max` thresholds) shift across regimes: 8/90 at BF=1, 10/90 at BF=32, with zero overlap between the flagged cell sets.
 
-**None of these flags is sign-consistent across replications or regimes.** When the null is essentially true (output is truly near-uniform) and N is large enough to detect sub-thousandths-of-a-percent deviations, statistical tests produce random false-positive flags that shift between runs. The absolute magnitude of every flagged deviation is below any attack-useful threshold, and /dev/urandom exhibits the same kind of artefact under equivalent conditions. Single-run anomalies should be treated as noise absent sign-consistent replication; the empirical suite does not supply such confirmation for any phase or primitive.
+**None of these flags is sign-consistent across replications or regimes.** When the null is essentially true (output is truly near-uniform) and N is large enough to detect sub-thousandths-of-a-percent deviations, statistical tests produce random false-positive flags that shift between runs. The absolute magnitude of every flagged deviation is below any attack-useful threshold, and `/dev/urandom` exhibits the same kind of artefact under equivalent conditions. Single-run anomalies should be treated as noise absent sign-consistent replication; the empirical suite does not supply such confirmation for any phase or primitive.
 
 ### Mapping to paper claims
 
 | Claim | Empirical status |
 |-------|------------------|
-| [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier) (per-pixel P(v\|h) = 1/2) | ✅ Phase 2b KL floor ≈1.4×–1.5× theoretical on all 10 hashes in both threat models: Mode A (idealized, BF=1) [1.8, 2.1]×10⁻⁵ nats at N = 9.6 M; Mode B (realistic, BF=32) [1.2, 1.6]×10⁻⁵ at N = 11.3 M — spread 3–4 × 10⁻⁶ nats across the full hash spectrum in each |
-| [Proof 7](PROOFS.md#proof-7-bias-neutralization) (bias neutralisation) | ✅ Phase 1 — all 10 hashes equivalent on per-channel profile; Phase 3b — all 10 pass NIST STS on typical runs, including both below-spec primitives |
-| [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill) (CSPRNG-fill residue) | ✅ Phase 3b — 188/188 pass for all 10 hashes at both BF=1 and BF=32; fill dominates the stream in both regimes to within Proof 10's guaranteed minimum |
-| [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) obstacle (2) — `startPixel` isolation | ✅ Phase 2c — mean rank-fraction ≈ 0.5 ± 0.05 on all 10 primitives, both regimes |
-| [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) obstacle (3) — candidate ambiguity | ✅ Phase 2b — all 56 per-pixel candidates indistinguishable across all 10 primitives, in both fill regimes and under both the idealized (known startPixel + plaintext) and realistic (neither) threat models |
+| [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier) (per-pixel P(v\|h) = 1/2) | ✅ Phase 2b KL floor ≈1.4×–1.5× theoretical on all 12 hashes in both threat models: Mode A (idealized, BF=1) [1.7, 2.1]×10⁻⁵ nats at N = 9.6 M; Mode B (realistic, BF=32) [1.2, 1.6]×10⁻⁵ at N = 11.3 M — spread 4 × 10⁻⁶ nats across the full hash spectrum in each |
+| [Proof 7](PROOFS.md#proof-7-bias-neutralization) (bias neutralisation) | ✅ Phase 1 — all 12 hashes equivalent on per-channel profile (CRC128 shows a Phase 1 [B] FFT-surface deviation — see CRC128 outlier mini-table); Phase 3b — 188/188 NIST STS pass on typical runs for all 12, including the GF(2)-linear CRC128 and both invertible / broken below-spec primitives; [Phase 2a extension](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) bias-audit on raw ciphertext confirms `neutralized ✓` for FNV-1a / BLAKE3 / MD5 under its lab ground-truth probe, with CRC128 appearing as the positive-control `bias-leak ✗` |
+| [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill) (CSPRNG-fill residue) | ✅ Phase 3b — 188/188 pass for all 12 hashes at both BF=1 and BF=32 on typical runs; fill dominates the stream in both regimes to within Proof 10's guaranteed minimum |
+| [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) obstacle (2) — `startPixel` isolation | ✅ Phase 2c — mean rank-fraction ≈ 0.5 ± 0.05 on all 12 primitives, both regimes |
+| [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) obstacle (3) — candidate ambiguity | ✅ Phase 2b — all 56 per-pixel candidates indistinguishable across all 12 primitives, in both fill regimes and under both the idealized (known startPixel + plaintext) and realistic (neither) threat models |
 | Composition conjecture ([Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) | ⚠ **Consistent with** — no systematic signal from weak PRFs in this corpus across stable test outcomes. Passive-distinguisher absence is not the same as active-cryptanalytic absorption; the conjecture is about the latter and requires research-level analysis the suite does not perform |
-| [Proof 3](PROOFS.md#proof-3-triple-seed-isolation) / [3a](PROOFS.md#proof-3a-triple-seed-isolation-minimality) (triple-seed isolation, minimality) | ✅ Phase 2c — all 10 primitives pass `startPixel` enumeration in both Single and Triple modes; the 3 startSeeds in Triple each draw from independent `[0, P/3)` ranges in Phase 3b's histograms with no cross-seed structure |
+| Related-seed (single-axis Δ) resistance | ✅ [Phase 2e](#phase-2e--related-seed-differential) — 1008-cell differential matrix across 12 primitives × 2 BF × 3 axes × 7 Δ × 2 PT. 10 PRF-grade primitives neutralized ✓ on the primitive-attributable axes (`data` / `start`); CRC128 leaks on every axis as expected from its GF(2)-linearity, and FNV-1a leaks only on `bit_high1023` × `axis=data` (top-bit isolation discarded by ITB's `hLo` extraction — visible to a differential probe but not to an encryption-path attacker) |
+| [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) — nonce-reuse locality + PRF-dependency | ✅ / ⚠ [Phase 2d](#phase-2d--nonce-reuse) — locality confirmed under PRF (BLAKE3 reconstructed stream passes 188/188 NIST STS → the single remaining obstacle after demasking has no exploitable bias). PRF-dependency demonstrated via the BLAKE3-vs-FNV-1a contrast: same attack chain, FNV-1a fails 6 / 188 tests (FFT 0/16 plus BlockFrequency / CumulativeSums / Runs) — the "seeds remain secret, no key rotation" conclusion of §2.5 depends on PRF non-invertibility, and this probe makes that dependency empirically visible. 96-cell Partial-KPA extension + classical keystream-reuse decryption quantify blast radius under structured plaintexts |
+| [Proof 3](PROOFS.md#proof-3-triple-seed-isolation) / [3a](PROOFS.md#proof-3a-triple-seed-isolation-minimality) (triple-seed isolation, minimality) | ✅ Phase 2c — all 12 primitives pass `startPixel` enumeration in both Single and Triple modes; the 3 startSeeds in Triple each draw from independent `[0, P/3)` ranges in Phase 3b's histograms with no cross-seed structure |
 | [Proof 9](PROOFS.md#proof-9-ambiguity-dominance-threshold) (ambiguity-dominance threshold) | ✅ Phase 2b — the `html_giant` KL floor at N ≫ P_threshold reaches sampling precision (~2 × 10⁻⁵ nats at BF=1, ~2 × 10⁻⁶ nats at the 63 MB probe); ambiguity is dominant at all tested data scales |
-| Invertible-primitive inversion bound | ⚠ Phase 2a — analytical only; no actual Z3 run at any `keyBits`. ChainHash's `keyBits`-scaled round structure argues the paper's naive `~56 × P` bound is optimistic, but this claim stands on structural analysis, not empirical seed recovery |
-| [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) — nonce-reuse locality + PRF-dependency | ✅ / ⚠ Phase 2d — locality confirmed under PRF (BLAKE3 reconstructed stream passes 188/188 NIST STS → the single remaining obstacle after demasking has no exploitable bias). PRF-dependency demonstrated via the BLAKE3-vs-FNV-1a contrast: same attack chain, FNV-1a fails 6 / 188 tests (FFT 0/16 plus BlockFrequency / CumulativeSums / Runs) — the "seeds remain secret, no key rotation" conclusion of `§2.5` depends on PRF non-invertibility, and this probe makes that dependency empirically visible |
+| Invertible-primitive inversion bound | ✅ Phase 2a — structural analysis of ChainHash's `keyBits`-scaled round structure (paper's naive `~56 × P` bound is optimistic; mixed algebra turns each attack into a bitvector-SAT problem per `startPixel` guess). [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) validates the mixed-algebra premise empirically via CRC128 GF(2)-linear collapse (1024-bit seed → 64 recoverable compound-key bits on one CRC64 lane). Z3 runs against FNV-1a were not executed |
 
 ---
 
 ## Caveats and what this does NOT prove
 
-- **"No distinguisher exists"** is not claimed — only "no replicable distinguisher was detected for any of the 10 tested primitives across the 2 × 2 configuration matrix `{Single, Triple} × {BF=1, BF=32}` run in this pass (two independent BF=1 Single mode replications, plus BF=32 Single, plus BF=1 and BF=32 Triple)". Follow-up corpora may find what this one missed.
+- **"No distinguisher exists"** is not claimed — only "no replicable distinguisher was detected for any of the 12 tested primitives across the 2 × 2 configuration matrix `{Single, Triple} × {BF=1, BF=32}` run in this pass (two independent BF=1 Single mode replications, plus BF=32 Single, plus BF=1 and BF=32 Triple)". CRC128's Phase 1 [B] FFT-surface flatness deviation and its [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) / [Phase 2e](#phase-2e--related-seed-differential) leaks are expected lab-control behaviour, not production security signals. Follow-up corpora may find what this one missed.
 - **Structural / algebraic attacks against ChainHash.** Phase 2a's cost tables are back-of-envelope structural-analysis estimates with ± 2 – 3 orders of magnitude uncertainty. **No actual Z3 (or any SMT solver) was run at any `keyBits`** in this pass. Algebraic attacks over Z[2^128] (Gröbner basis, polynomial interpolation) remain research-level and are the single largest uncertainty in the cost argument.
-- **Statistical power.** At `N = 130` samples per hash per kind (pooled), the Phase 2c mean-rank-fraction CI is ±0.050 — a ~2 % systematic bias per hash would not be detectable. Smaller per-kind sample sizes (`*_huge` at N = 3; `html_giant` at N = 8 per hash at both BF=1 and BF=32) have correspondingly wider CIs. Conclusions are "no distinguisher at this effect size and power," not "no distinguisher of any magnitude".
+- **Statistical power.** At `N = 137` samples per hash per kind (pooled), the Phase 2c mean-rank-fraction CI is ±0.050 — a ~2 % systematic bias per hash would not be detectable. Smaller per-kind sample sizes (`*_huge` at N = 3; `html_giant` at N = 8 per hash at both BF=1 and BF=32) have correspondingly wider CIs. Conclusions are "no distinguisher at this effect size and power," not "no distinguisher of any magnitude".
 - **Phase 2b per-sample variance on `html_giant`** — the runs aggregate 8 samples per hash into the KL estimate, giving N = 9.6 M observations per candidate in Mode A and N = 11.3 M in Mode B. The per-sample variance distribution is not itself reported; the aggregate floor is reported instead.
 - **Phase 3a reports false-positive-class signals.** At very large N on near-uniform output, the test produces significant p-values that do not replicate across fill regimes or corpus regenerations. Interpreting any specific flagged cell as a real effect requires sign-consistency across at least two independent runs — which this suite only partially provides (two fill regimes, identical RNG seed).
 - **Phase 2b flag threshold is heuristic** (`bit_exceed > 10` or `p_lt_001 > 3` or `kl_max > 0.1`), not derived from a false-discovery-rate calculation. Cells that flag are not clustered by primitive class but deserve principled FDR-corrected re-analysis in a follow-up.
-- **Suite-level multiple-testing correction** (across 10 hashes × 90 kinds × 5 empirical phases × 2 regimes) is **not applied** at the top level; per-phase Bonferroni is used where reported.
-- **NIST STS `NonOverlappingTemplate` replication variance is hash-agnostic.** Independent runs produce different proportion outcomes whenever a hash's per-sequence p-values happen to cluster in bin 0 versus any other bin. In this suite the event occurred twice — FNV-1a at N=20 Run A (40/188) and BLAKE3 at N=100 BF=32 (40/188) — involving one below-spec and one paper-grade PRF primitive, which is direct evidence that the 40/188 outcome is driven by the `(hash, run)` seed pair, not by hash primitive choice. The underlying single-bin clustering pattern is identical across all 10 hashes and all 5 configurations; `/dev/urandom` exhibits the same 148 uniformity-of-p-values flags on streams of this size. Whether any specific primitive exhibits bin-0 draws at a rate distinguishable from the 1/10 uniform expectation would require many more replications than this suite performs.
+- **Suite-level multiple-testing correction** (across 12 hashes × 10 kinds × several empirical phases × 2 regimes) is **not applied** at the top level; per-phase Bonferroni is used where reported.
+- **NIST STS `NonOverlappingTemplate` replication variance is hash-agnostic.** Independent runs produce different proportion outcomes whenever a hash's per-sequence p-values happen to cluster in bin 0 versus any other bin. In this suite the event occurred twice — FNV-1a at N=20 Run A (40/188) and BLAKE2b-512 at N=100 BF=1 (40/188) — involving one below-spec and one paper-grade PRF primitive, which is direct evidence that the 40/188 outcome is driven by the `(hash, run)` seed pair, not by hash primitive choice. The underlying single-bin clustering pattern is identical across all 12 hashes and all 5 configurations; `/dev/urandom` exhibits the same 148 uniformity-of-p-values flags on streams of this size. Whether any specific primitive exhibits bin-0 draws at a rate distinguishable from the 1/10 uniform expectation would require many more replications than this suite performs.
 - **Adversarial machine-learning distinguishers** not attempted.
 - **Physical side channels** (DPA, SPA, timing, EM) outside empirical territory.
-- **Triple Ouroboros on Phases 2b / 2c / 3a** — the 3-partition `splitTriple` layout requires an analyzer rewrite not included in this pass. Phase 1 and Phase 3b were run in Triple mode and produced results indistinguishable from Single mode.
+- **Triple Ouroboros on [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 2c](#phase-2c--startpixel-enumeration) / [Phase 2d](#phase-2d--nonce-reuse) / [Phase 2e](#phase-2e--related-seed-differential) / [Phase 3a](#phase-3a--rotation-invariant-edge-case)** — the 3-partition `splitTriple` layout requires per-phase analyzer rewrites not included in this pass. Phase 1 and Phase 3b were run in Triple mode on 12 primitives and produced results indistinguishable from Single mode.
 - **Peer-review substitute.** This is self-audit, not a replacement for external cryptographic review.
 - **Resistance to undiscovered cryptanalytic techniques** cannot be established by any finite empirical suite.
 
