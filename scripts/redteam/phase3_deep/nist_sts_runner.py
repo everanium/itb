@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 3b: run NIST STS in parallel across all 10 hash streams.
+"""Phase 3b: run NIST STS in parallel across all 12 hash streams.
 
 Each hash gets its own experiment directory (tmp/streams/nist_<hash>/) with
 a fresh experiments/AlgorithmTesting/finalAnalysisReport.txt; we then parse
@@ -20,7 +20,7 @@ Per-hash settings: 20 bit-streams of 1,000,000 bits each (20 Mbits consumed
 from the ~72 Mbit corpus stream). Produces 188 test results across 15
 categories.
 
-Parallelism: one subprocess per hash (up to 10 concurrent). Each runs in its
+Parallelism: one subprocess per hash (up to 12 concurrent). Each runs in its
 own CWD so experiments/ directories don't collide.
 
 Interpretation:
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     print(f"  Spawning up to {min(10, len(available))} parallel nist-sts processes...")
 
     t0 = time.time()
-    with mp.Pool(processes=min(10, len(available))) as pool:
+    with mp.Pool(processes=min(12, len(available))) as pool:
         results = pool.map(_worker, available)
     elapsed = time.time() - t0
     print(f"  Parallel runs completed in {elapsed:.1f}s")
