@@ -38,8 +38,17 @@ from pathlib import Path
 
 import numpy as np
 
+import os
+
 PROJ = Path(__file__).resolve().parents[3]
-MASSIVE_DIR = PROJ / "tmp" / "massive"
+# ITB_MASSIVE_DIR env var overrides the default tmp/massive lookup — used by
+# kl_matrix.py to give parallel workers isolated output directories.
+_MASSIVE_DIR_OVERRIDE = os.environ.get("ITB_MASSIVE_DIR", "")
+MASSIVE_DIR = (
+    Path(_MASSIVE_DIR_OVERRIDE).resolve()
+    if _MASSIVE_DIR_OVERRIDE
+    else PROJ / "tmp" / "massive"
+)
 
 HEADER_SIZE = 20
 CHANNELS = 8
