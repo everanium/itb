@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Phase 2a extension — CRC128 compound-key seed-inversion matrix (parallel).
+# Phase 2a extension — CRC128 compound-key recovery matrix (parallel).
 #
 # Iterates {sizes} × {coverages} × {kinds} for a Partial KPA nonce-reuse
 # attack against the test-only CRC128 primitive (ChainHash<CRC128> is
 # GF(2)-linear end-to-end at 1024-bit key, collapsing the 512-bit ECMA-
 # side dataSeed to a 64-bit compound key — 56 bits observable via
 # channelXOR). For every cell: corpus generator → demasker (Layer 1 +
-# Layer 2) → seed_invert_crc128.py (compound-key recovery with brute-
+# Layer 2) → compound_key_crc128.py (compound-key recovery with brute-
 # force period-shift search + lab-ground-truth shadow-K filter).
 #
 # PARALLEL defaults to 8 on a 16-core host. Every cell is independent
@@ -16,7 +16,7 @@
 # every worker.
 #
 # Usage:
-#   bash scripts/redteam/crc128_seed_invert_matrix.sh
+#   bash scripts/redteam/crc128_compound_key_matrix.sh
 #
 # Env vars:
 #   SIZES COVERAGES KINDS BRUTE_FORCE_SHIFT RESULTS_TAG PARALLEL
@@ -26,7 +26,7 @@ SIZES=${SIZES:-"4096 16384 65536 131072 524288 1048576"}
 COVERAGES=${COVERAGES:-"25 50 80"}
 KINDS=${KINDS:-"random_masked json_structured html_structured"}
 BRUTE_FORCE_SHIFT=${BRUTE_FORCE_SHIFT:-200000}
-RESULTS_TAG=${RESULTS_TAG:-"crc128_seed_invert_matrix"}
+RESULTS_TAG=${RESULTS_TAG:-"crc128_compound_key_matrix"}
 PARALLEL=${PARALLEL:-8}
 
 PROJ_DIR=$(cd "$(dirname "$0")/../.." && pwd)
@@ -42,7 +42,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "CRC128 seed-inversion matrix (parallel=$PARALLEL)"
+echo "CRC128 compound-key recovery matrix (parallel=$PARALLEL)"
 echo "==========================================================================="
 echo "  sizes             : $SIZES"
 echo "  coverages         : $COVERAGES"
@@ -98,8 +98,8 @@ python3 scripts/redteam/run_attack_nonce_reuse.py \
     --collision-counts 2 \
     --attacker-modes partial \
     --plaintext-kind "$full_kind" \
-    --seed-invert \
-    --seed-invert-brute-force-shift "$BRUTE_FORCE_SHIFT" \
+    --compound-key \
+    --compound-key-brute-force-shift "$BRUTE_FORCE_SHIFT" \
     --validate \
     --continue-on-error \
     --no-pre-wipe \
@@ -152,15 +152,15 @@ def main() -> int:
     # Compact one-liner for the progress log (uses first entry).
     first = entries[0] if entries else {}
     demask = "OK" if first.get("demask_ok") else "FAIL"
-    si_ok = first.get("seed_invert_ok")
+    si_ok = first.get("compound_key_ok")
     si = "OK" if si_ok is True else ("FAIL" if si_ok is False else "—")
-    cand = first.get("seed_invert_brute_candidates", "—")
-    cor = first.get("seed_invert_n_correct", "—")
-    sha = first.get("seed_invert_n_shadow", "—")
-    chm = first.get("seed_invert_channels_matched", "—")
-    cht = first.get("seed_invert_channels_total", "—")
-    shift = first.get("seed_invert_chosen_shift", "—")
-    wall = first.get("seed_invert_elapsed_s", "—")
+    cand = first.get("compound_key_brute_candidates", "—")
+    cor = first.get("compound_key_n_correct", "—")
+    sha = first.get("compound_key_n_shadow", "—")
+    chm = first.get("compound_key_channels_matched", "—")
+    cht = first.get("compound_key_channels_total", "—")
+    shift = first.get("compound_key_chosen_shift", "—")
+    wall = first.get("compound_key_elapsed_s", "—")
     human = (f"size={size:>7} cov={cov}% kind={kind:<16} demask={demask:<4} "
              f"si={si:<4} cands={cand:>3} correct={cor} shadow={sha:>3} "
              f"shift={shift} pred={chm}/{cht} wall={wall}s")
