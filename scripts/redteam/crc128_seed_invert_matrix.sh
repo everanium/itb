@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 2a extension — CRC128 compound-key seed-inversion matrix (parallel).
 #
-# Iterates {sizes} × {coverages} × {kinds} for a Partial-KPA nonce-reuse
+# Iterates {sizes} × {coverages} × {kinds} for a Partial KPA nonce-reuse
 # attack against the test-only CRC128 primitive (ChainHash<CRC128> is
 # GF(2)-linear end-to-end at 1024-bit key, collapsing the 512-bit ECMA-
 # side dataSeed to a 64-bit compound key — 56 bits observable via

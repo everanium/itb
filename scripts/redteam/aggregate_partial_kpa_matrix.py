@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregate Partial-KPA matrix results into structured markdown.
+"""Aggregate Partial KPA matrix results into structured markdown.
 
 Produces:
   1. Two compact "Clean Signal %" tables (one per format), rows = sizes,

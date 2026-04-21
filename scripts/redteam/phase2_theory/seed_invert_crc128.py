@@ -201,7 +201,7 @@ def main() -> int:
     elif stream_mode_hint == "full":
         idx_path = auto_index if auto_index.exists() else None
         observations = parse_full_stream(stream_path, idx_path)
-        stream_mode = f"full-KPA ({'w/ index' if idx_path else 'legacy, no index'})"
+        stream_mode = f"Full KPA ({'w/ index' if idx_path else 'legacy, no index'})"
     elif auto_index.exists():
         first = auto_index.read_text().splitlines()[0].split()
         if len(first) == 2:
@@ -209,10 +209,10 @@ def main() -> int:
             stream_mode = "partial-mode (inferred from index format)"
         else:
             observations = parse_full_stream(stream_path, auto_index)
-            stream_mode = "full-KPA (inferred from index format)"
+            stream_mode = "Full KPA (inferred from index format)"
     else:
         observations = parse_full_stream(stream_path, None)
-        stream_mode = "full-KPA (legacy, contiguous indexing)"
+        stream_mode = "Full KPA (legacy, contiguous indexing)"
     print(f"  stream            : {stream_path.name}")
     print(f"  mode              : {stream_mode}")
     if demask_meta:

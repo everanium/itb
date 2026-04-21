@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Phase 2f — full-plaintext decryption via recovered K against ChainHash<CRC128>.
 
-Second stage of the crib-KPA attack chain. Takes a 56-bit observable K
+Second stage of the Crib KPA attack chain. Takes a 56-bit observable K
 (recovered by `crib_crc128_kpa.py` from a first ciphertext under some
 dataSeed) and a SECOND ciphertext encrypted under the same dataSeed /
 startSeed / noiseSeed but a DIFFERENT nonce, and reconstructs the full

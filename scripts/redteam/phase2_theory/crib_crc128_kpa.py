@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2f — CRIB-KPA algebraic K recovery against ChainHash<CRC128>.
+"""Phase 2f — Crib KPA algebraic K recovery against ChainHash<CRC128>.
 
 Goal B: recover K (CRC128 compound key) from a raw ITB ciphertext
 *without* nonce-reuse, *without* demasker. Attacker knows:
@@ -420,7 +420,7 @@ def main() -> int:
     known_prefix = bytes.fromhex(args.crib_prefix_hex)
 
     print(f"{'=' * 72}")
-    print(f"Phase 2f — crib-KPA (algebraic K recovery against ChainHash<CRC128>)")
+    print(f"Phase 2f — Crib KPA (algebraic K recovery against ChainHash<CRC128>)")
     print(f"{'=' * 72}")
     print(f"Cell:              {args.cell_dir}")
     print(f"Ciphertext:        {ct_path.name} ({ct_path.stat().st_size} bytes)")

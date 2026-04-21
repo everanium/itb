@@ -122,7 +122,7 @@ STRUCTURED_KIND_HINTS = {
     "html_structured_25": {"record_bytes": 800, "coverage_pct": 25},
     # random_masked_<N> has no record period (each byte independently masked);
     # record_bytes is not meaningful — auto_n_probe falls back to the default
-    # Partial-KPA probe depth (50) which is fine since there is no periodic
+    # Partial KPA probe depth (50) which is fine since there is no periodic
     # d_xor pattern to anchor around.
     "random_masked_25": {"record_bytes": 0, "coverage_pct": 25},
     "random_masked_50": {"record_bytes": 0, "coverage_pct": 50},
@@ -142,7 +142,7 @@ def auto_n_probe(kind: str, plaintext_size: int) -> int:
     """
     hint = STRUCTURED_KIND_HINTS.get(kind)
     if hint is None:
-        # Random-kind attacker — fall back to the historical Partial-KPA
+        # Random-kind attacker — fall back to the historical Partial KPA
         # default that works on JSON 80 % at mid-size plaintexts.
         return 50
     expected_record_pixels = max(1, hint["record_bytes"] // 7)
@@ -265,7 +265,7 @@ def parse_args() -> argparse.Namespace:
         "--min-known-channels",
         type=str,
         default="auto",
-        help="Helper Partial-KPA --min-known-channels threshold. Integer or 'auto' "
+        help="Helper Partial KPA --min-known-channels threshold. Integer or 'auto' "
              "(default). Auto-scale: K=3 for coverage ≤ 35 %% (to keep Layer 2 FP rate "
              "below 1 %% over n_probe probes), K=2 otherwise. Public-info choice: the "
              "attacker sees the expected coverage from the plaintext_kind.",
@@ -440,7 +440,7 @@ def seed_invert_cell(
     """Run seed_invert_crc128.py on a demasked stream from a ChainHash<CRC128>
     cell. Solver recovers the 64-bit compound-key image of the 1024-bit
     dataSeed (56 bits observable via channelXOR), brute-forces any period-
-    shift introduced by Partial-KPA Layer 2, and lab-filters the shadow-K
+    shift introduced by Partial KPA Layer 2, and lab-filters the shadow-K
     CRC64 aliases against seed.truth.json.
     Returns (ok, elapsed)."""
     cmd = [
@@ -496,7 +496,7 @@ def classical_decrypt_cell(
     log_file: Path,
     n_probe: int = 10,
 ) -> Tuple[bool, float]:
-    """Run classical_decrypt.py on one cell — Full-KPA config extraction
+    """Run classical_decrypt.py on one cell — Full KPA config extraction
     followed by classical keystream-reuse decryption of both ciphertexts.
     Emits recovered_cobs_P{1,2}.bin + recovered_plaintext_P{1,2}.bin +
     groundtruth_plaintext_P{1,2}.bin into `out_dir`.
@@ -632,7 +632,7 @@ def main() -> int:
             # Partial-mode cells go into a per-kind subdirectory of corpus/ and
             # a kind-labelled filename for the reconstructed stream so the
             # default random-plaintext runs never collide with json_structured
-            # Partial-KPA runs.
+            # Partial KPA runs.
             mode_seg = m if m != "partial" else f"partial_{args.plaintext_kind}"
             name_tag = m if m != "partial" else f"partial_{args.plaintext_kind}"
             cell_dir = CORPUS_DIR / h / f"BF{bf}" / f"N{n}" / mode_seg
@@ -682,7 +682,7 @@ def main() -> int:
                 summary_f.write(json.dumps(entry) + "\n")
                 continue
 
-            # Partial-KPA with periodic plaintexts needs n_probe sized to span
+            # Partial KPA with periodic plaintexts needs n_probe sized to span
             # multiple record periods — so per-record varying sequence-number
             # bytes break the d_xor periodicity and anchor the TRUE startPixel.
             # The attacker knows the plaintext kind and the ciphertext size,
@@ -697,11 +697,11 @@ def main() -> int:
                     min_known_cell = auto_min_known_channels(args.plaintext_kind)
                 else:
                     min_known_cell = int(args.min_known_channels)
-                print(f"        Partial-KPA helper params: n_probe={n_probe_cell} "
+                print(f"        Partial KPA helper params: n_probe={n_probe_cell} "
                       f"(auto={args.n_probe == 'auto'}), min_known_channels={min_known_cell} "
                       f"(auto={args.min_known_channels == 'auto'})")
             else:
-                # Full-KPA / same / blind keep the long-standing default.
+                # Full KPA / same / blind keep the long-standing default.
                 n_probe_cell = 10
                 min_known_cell = 2
 
