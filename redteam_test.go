@@ -42,6 +42,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -1152,7 +1153,14 @@ func TestRedTeamGenerateSingleMassive(t *testing.T) {
 	}
 
 	const keyBits = 1024
-	const plaintextSize = 63 * 1024 * 1024 // just below ITB's 64 MB maxDataSize
+	plaintextSize := 63 * 1024 * 1024 // just below ITB's 64 MB maxDataSize
+	if s := os.Getenv("ITB_REDTEAM_MASSIVE_SIZE"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 1 {
+			t.Fatalf("ITB_REDTEAM_MASSIVE_SIZE=%q: must be positive integer", s)
+		}
+		plaintextSize = sv
+	}
 
 	barrierFill := redteamBarrierFill(t)
 	SetMaxWorkers(8)
@@ -1191,7 +1199,11 @@ func TestRedTeamGenerateSingleMassive(t *testing.T) {
 	}
 	t.Logf("  encrypt done in %s", time.Since(t0))
 
-	outDir, _ := filepath.Abs("tmp/massive")
+	outDirRaw := "tmp/massive"
+	if s := os.Getenv("ITB_REDTEAM_MASSIVE_OUTDIR"); s != "" {
+		outDirRaw = s
+	}
+	outDir, _ := filepath.Abs(outDirRaw)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
