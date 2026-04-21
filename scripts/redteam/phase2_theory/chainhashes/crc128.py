@@ -85,3 +85,21 @@ def compute_expected_K(meta: dict, nonce: bytes) -> int:
     h_true = chainhash_lo(data, true_ds)
     h_zero = chainhash_lo(data, [0] * N_SEED_COMPONENTS)
     return h_true ^ h_zero
+
+
+def compute_expected_K_noise(meta: dict, nonce: bytes) -> int:
+    """Lab-only counterpart of compute_expected_K for the noiseSeed lane.
+    Returns the 64-bit compound key K_noise derived from `meta["noise_seed"]`.
+
+    noiseSeed uses the SAME CRC128 primitive and the SAME ChainHash structure
+    as dataSeed, just on a separate seed vector. The seed-independent
+    `c_public = h_zero` is therefore identical for both lanes; K_noise is
+    just `chainhash_lo(..., noise_seed) XOR c_public`. Audit / validation
+    only."""
+    import struct
+    true_ns = list(meta["noise_seed"])
+    pixel_le = struct.pack("<I", 0)
+    data = pixel_le + nonce
+    h_true = chainhash_lo(data, true_ns)
+    h_zero = chainhash_lo(data, [0] * N_SEED_COMPONENTS)
+    return h_true ^ h_zero
