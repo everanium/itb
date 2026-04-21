@@ -370,7 +370,9 @@ A realistic well-funded adversary stacks several multipliers on top of sequentia
 
 ### Back-of-envelope 1000-node cluster wall-clock (Full KPA, startPixel known)
 
-| Setup | Wall-clock at 1024-bit seeds |
+The nominal key size is 1024 bits, but under FNV-1a the encoder observes only `hLo` and `hLo` depends on the lo-lane seed components only (multiplication mod 2^128 propagates carries up, not down — lo output depends only on lo input). SAT unknowns therefore collapse to **512 effective bits** per seed; the remaining 512 hi-lane bits are unconstrained by any observable and need not be recovered for future-message decryption.
+
+| Setup | Wall-clock at 512-bit effective SAT unknowns |
 |-------|------------------------------|
 | Sequential single machine | ~10⁵ – 10⁸ hours |
 | 1000-node naive split | ~10² – 10⁵ hours (months to ~11 years) |
@@ -430,7 +432,7 @@ Approximate `P` for a range of plaintext sizes at `SetBarrierFill(32)` (the conf
 
 On the same 1000-node cluster with practical portfolio parallelism, using the range in the Full KPA table, with `P ≈ 10⁴` for a typical 20 KB payload at `BarrierFill=32`:
 
-| Scenario | Wall-clock at 1024-bit, `P ≈ 10⁴` |
+| Scenario | Wall-clock at 512-bit effective SAT unknowns, `P ≈ 10⁴` |
 |---------|----------------------------------:|
 | Full KPA + `startPixel` known (idealised) | hours – 1 year |
 | Full KPA + `startPixel` unknown (×`P`) | centuries – ~10 000 years |
@@ -443,7 +445,7 @@ The three layers (ChainHash, `startPixel` enumeration, Partial KPA byte-splittin
 
 **Without ChainHash (hypothetical).** Invertible FNV-1a + known `startPixel` + Full KPA would resolve to microsecond-per-inversion modular inverses. With unknown `startPixel`, the attacker cycles `P ≈ 10⁵ × 56 × µs` → seconds-to-minutes total. Partial KPA adds free bits but would still resolve in hours at worst.
 
-**With ChainHash (actual ITB).** Each `startPixel` guess triggers a full SAT instance over 1024 seed bits + 6 ambiguity bits per used pixel, with 8 rounds of nested multiplication through the XOR chain — *hours to ~1 year* of 1000-node time per attempt (the range reflects per-round SMT-cost uncertainty). That SAT-vs-inversion flip is what makes the defensive layers stack:
+**With ChainHash (actual ITB).** Each `startPixel` guess triggers a full SAT instance over **512 effective seed bits** (FNV-1a's lo lane; the hi lane is unconstrained by observable `hLo` and free to take any value) + 6 ambiguity bits per used pixel, with 8 rounds of nested multiplication through the XOR chain — *hours to ~1 year* of 1000-node time per attempt (the range reflects per-round SMT-cost uncertainty). That SAT-vs-inversion flip is what makes the defensive layers stack:
 
 | Layer | Role | Without ChainHash | With ChainHash (actual) |
 |-------|------|-------------------|-------------------------|
@@ -456,7 +458,7 @@ Rotation and `noisePos` (the 56-candidate baseline) sit inside the Z3 unknowns o
 
 ### Architectural takeaway
 
-1. **Under Full KPA + known `startPixel`** (the simplification used for the Phase 2b / 3a empirical tests), a well-funded attacker reaches 1024-bit seed recovery in *hours to ~1 year* of 1000-node cluster time — and that already assumes ChainHash is the only active defensive layer. Even this idealised threat already requires solving SAT, not modular inversions.
+1. **Under Full KPA + known `startPixel`** (the simplification used for the Phase 2b / 3a empirical tests), a well-funded attacker reaches 512-bit effective seed recovery (the lo lane of the nominal 1024-bit seed; the hi lane is unused by the encoder and needs no recovery) in *hours to ~1 year* of 1000-node cluster time — and that already assumes ChainHash is the only active defensive layer. Even this idealised threat already requires solving SAT, not modular inversions.
 2. **Under Full KPA + unknown `startPixel`** (still idealised), the attack multiplies by ~`P` (with possible incremental-SMT amortisation reducing the effective multiplier by up to ~10×). At typical `P ≈ 10⁴`, this pushes the cost into centuries – ~10 000 years.
 3. **Under Partial KPA + unknown `startPixel`** (the production threat model), the 50 % unknown case lands at ~10¹² – 10¹⁶ years of 1000-node time. The three defence layers stack multiplicatively, **conditional on the SAT-hardness assumption above**.
 4. **ChainHash is the load-bearing premise.** Without it the same architecture (invertible FNV-1a + 56-candidate baseline + unknown `startPixel` + Partial KPA) would collapse to CPU-hour-scale cost on commodity hardware — every layer would resolve to cheap modular inversions rather than SAT. Keeping it makes every other layer an independent SAT multiplier, subject to the SAT-hardness premise.
@@ -1060,7 +1062,7 @@ Under PRF (BLAKE3) **every single NIST STS test passes**. Under invertible FNV-1
 
 FNV-1a's per-byte operation is `h ← (h ⊕ byte) · FNV_PRIME_64`. The `⊕ byte` step is linear over `GF(2)`. The `· FNV_PRIME_64` (integer multiplication modulo 2⁶⁴ by a constant) is linear over the **ring `Z/2⁶⁴`** — but NOT linear over `GF(2)`: carry propagation within the multiplication creates non-linear bit interactions (each output bit depends on AND-combinations of input bits via carry chains). So the 8-round ChainHash128 with FNV-1a at 1024-bit key is NOT a pure `GF(2)`-affine function — it has genuine non-linearity via carries.
 
-This distinction matters: the attacker cannot simply run Gaussian elimination on recovered `channelXOR` observations to invert the seed. Seed recovery still requires bitvector-SAT over the combined XOR + integer-multiplication constraints — research-lab scale compute for 1024-bit keys.
+This distinction matters: the attacker cannot simply run Gaussian elimination on recovered `channelXOR` observations to invert the seed. Seed recovery still requires bitvector-SAT over the combined XOR + integer-multiplication constraints — research-lab scale compute for the 512-bit effective lo-lane unknowns (the nominal key is 1024-bit, but the hi lane never reaches `hLo` via FNV-1a's carry-up-only multiplication and is left unconstrained).
 
 What the NIST STS failures DO show is that **the non-linearity from carries is not strong enough** to produce statistically-PRF output over 8 rounds of ChainHash XOR composition. The reconstructed stream inherits enough residual structure for FFT to detect spectral peaks on every bit-stream and for block-level + run-length tests to flag proportion deviations. A SAT solver attacking this stream has **substantially more exploitable bias** than it would against a true PRF output — this likely shifts the seed-recovery wall-clock toward the lower end of the [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure) FNV-1a range (hours – 1 year on a 1 000-node cluster under idealised conditions) or below, though this plan does not attempt the actual SAT run.
 
@@ -1607,12 +1609,12 @@ Suppose every precondition lines up — the attacker forced a nonce-reuse event,
 2. **Under a PRF primitive (BLAKE3 / AES-CMAC / SipHash-2-4 / ChaCha20 / AreionSoEM-256/512 / BLAKE2s / BLAKE2b-512): just the hash-output stream, useless.** The reconstructed `dataHash` stream is statistically indistinguishable from uniform random (188/188 on NIST STS). Inverting it to recover `dataSeed` requires breaking the PRF — out of scope by assumption. `startSeed` and `noiseSeed` inversion hit the same wall. The attack surface closes on this output.
 
 3. **Under FNV-1a (the only invertible primitive in the hash matrix): one SAT instance per seed, not three free seeds.** The reconstructed `dataHash` stream exposes the ChainHash-wrapped FNV-1a's algebraic structure under a controlled pixel-index probe — which gives a SAT solver real leverage. But:
-    - `dataSeed` inversion requires solving an 8-round ChainHash128 bitvector-SAT instance over a 1024-bit unknown — still research-level, not a Gaussian elimination.
+    - `dataSeed` inversion requires solving an 8-round ChainHash128 bitvector-SAT instance over a 512-bit effective unknown (FNV-1a's lo lane; hi lane is unconstrained by observable `hLo` and not recovered — the nominal key is 1024-bit) — still research-level, not a Gaussian elimination.
     - `startSeed` inversion is WORSE. The attacker observes **one `startPixel` value per `(seeds, nonce)` session** — a 3-log₂(totalPixels) ≈ 17-bit observation. To invert `startSeed` via ChainHash, the attacker needs MANY independent nonce-reuse sessions (each giving one fresh startPixel observation under a different nonce), not many messages within one session. Each session requires forcing a fresh nonce collision — a birthday-bound event at whatever nonce size the deployment chose. At 512-bit nonce: never. Even at 128-bit the attacker needs 2⁶⁴ messages to force ONE collision session, let alone the many sessions needed to stack enough startPixel observations for SAT-inversion.
     - On top of that, `startPixel` is often NOT cleanly recoverable — Layer 2's period-shift behaviour (documented in effect 3 above) produces a set of plausible `startPixel` candidates, not a single value. Inverting `startSeed` from noisy multi-candidate observations is harder still.
     - `noiseSeed` inversion requires the demasker to ALSO emit a `noisePos` stream (3 bits per pixel from `noiseHash & 7`) — which the current demasker does not output as a distinct stream, only as internal per-pixel state consumed by reconstruction. To attack `noiseSeed` the attacker would need a separate pipeline to emit and accumulate `noisePos` observations across sessions, then run ANOTHER ChainHash-wrapped FNV-1a SAT instance on those.
 
-4. **No seed is leaked directly.** Every seed-inversion path — even under the most attacker-favourable primitive choice — reduces to "stack enough observations across enough independent nonce-reuse sessions, then solve a bitvector-SAT instance over an 8-round ChainHash wrap at 1024-bit key". The Phase 2a cost tables apply to each such inversion independently.
+4. **No seed is leaked directly.** Every seed-inversion path — even under the most attacker-favourable primitive choice (FNV-1a) — reduces to "stack enough observations across enough independent nonce-reuse sessions, then solve a bitvector-SAT instance over an 8-round ChainHash wrap on the 512-bit effective lo-lane unknowns (nominal key is 1024-bit; hi-lane is never constrained by observable `hLo`)". The Phase 2a cost tables apply to each such inversion independently.
 
 5. **Config-map path — classical keystream reuse, no SAT needed.** Alongside the hash-output stream, Layer 1+2 also recovers the per-pixel `(noisePos, rotation, channelXOR)` map — classical keystream-equivalent for this single `(seeds, nonce)`. Direct decryption of any ciphertext sharing this nonce runs on this map alone (Full KPA: both colliding plaintexts; Partial KPA: positions with overlapping coverage, plus occasional gap-fill). Blast radius bounded by the architectural gate (caller cannot set nonces → typically 2–3 messages per birthday event); SAT stays the separate cross-nonce seed-recovery path.
 
