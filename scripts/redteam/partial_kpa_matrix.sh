@@ -34,7 +34,7 @@ LOG="${OUTDIR}/matrix_driver.log"
 
 mkdir -p "$OUTDIR"
 {
-    echo "Starting Partial-KPA matrix (parallel) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "Starting Partial KPA matrix (parallel) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "Parallel workers: $PARALLEL"
     echo "Sizes: ${SIZES[*]}"
     echo "Kinds: ${KINDS[*]}"

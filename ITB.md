@@ -139,7 +139,7 @@ Nonce reuse is the single edge case where the barrier can leak local information
 
 → For the 96-cell empirical matrix quantifying Clean Signal % under each (format, coverage, plaintext size, primitive) combination, and for the full 9-effect architectural analysis of why the demasker's yield is always below attacker-known byte coverage, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
 
-### 8.1 Why binary formats defeat Partial-KPA demasking entirely
+### 8.1 Why binary formats defeat Partial KPA demasking entirely
 
 The condition list above makes the attack conditional on "attacker knows plaintext format at byte-level precision over ≳ 90 % of the plaintext". The idealised JSON / HTML corpora used in the [REDTEAM Phase 2d matrix](REDTEAM.md#phase-2d--nonce-reuse) DO satisfy this — but only because they are artificially engineered to. Real-world binary formats (ZIP, PDF, MP4, MP3, SQLite database, any container-structured file) do not satisfy it, and on them the demasker extracts nothing meaningful.
 
@@ -174,7 +174,7 @@ All share the same pattern: **tiny known-signature islands in a sea of attacker-
 
 **The formal rule.**
 
-Partial-KPA demasking on ITB is feasible only on plaintext formats that simultaneously exhibit:
+Partial KPA demasking on ITB is feasible only on plaintext formats that simultaneously exhibit:
 
 1. **Fixed-position** attacker-predictable structural bytes (not variable-offset signatures).
 2. **Varying content between the two colliding messages** at those known positions (not same-signature-both-messages).

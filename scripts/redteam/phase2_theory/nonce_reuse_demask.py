@@ -430,7 +430,7 @@ def layer1_recover_pixel_partial(
     channel_known: np.ndarray,     # shape (8,) bool
     min_known_channels: int,
 ) -> Optional[Tuple[int, int]]:
-    """Partial-KPA variant of layer1_recover_pixel_scalar. Constraint-match
+    """Partial KPA variant of layer1_recover_pixel_scalar. Constraint-match
     only on channels where `channel_known` is True; require at least
     `min_known_channels` such channels for the pixel to be eligible.
 
@@ -462,7 +462,7 @@ def any_candidate_matches_partial(
     channel_known: np.ndarray,
     min_known_channels: int,
 ) -> bool:
-    """Partial-KPA variant of any_candidate_matches. Returns True iff ANY
+    """Partial KPA variant of any_candidate_matches. Returns True iff ANY
     (noisePos, rotation) candidate has all KNOWN channels satisfy the XOR
     constraint. Under wrong startPixel + K known channels, per-candidate FP
     rate is 2⁻⁷ᴷ → all-56-candidates FP rate ≈ 56 × 2⁻⁷ᴷ (K=2: 0.34 %).
@@ -510,7 +510,7 @@ def layer2_brute_force_startpixel_partial(
     min_known_channels: int,
     verbose: bool = False,
 ) -> Tuple[int, int, float]:
-    """Partial-KPA Layer 2 brute force. Skips probe pixels with too few known
+    """Partial KPA Layer 2 brute force. Skips probe pixels with too few known
     channels (<min_known_channels) — they don't contribute discriminatory
     power. If the FIRST K probe pixels all have K_known_ch < min_known_channels,
     Layer 2 falls back to using later pixels; the effective probe set is the
@@ -585,7 +585,7 @@ def layer1_recover_range_partial(
     pixel_range: Tuple[int, int],
     min_known_channels: int,
 ) -> List[Optional[Tuple[int, int]]]:
-    """Partial-KPA Layer 1: runs constraint-match only on known channels,
+    """Partial KPA Layer 1: runs constraint-match only on known channels,
     requires ≥ min_known_channels per pixel. Returns per-pixel (noisePos,
     rotation) or None (skipped / ambiguous)."""
     start_idx, end_idx = pixel_range
@@ -618,7 +618,7 @@ def reconstruct_datahash_stream_partial(
     total_pixels: int,
     pixel_range: Tuple[int, int],
 ) -> Tuple[bytes, List[Tuple[int, int]]]:
-    """Partial-KPA reconstruction: emit 7-bit channelXOR values ONLY for
+    """Partial KPA reconstruction: emit 7-bit channelXOR values ONLY for
     channels where channel_known is True. Output is densely packed MSB-first
     across variable numbers of channels per pixel, then split into whole bytes.
 
@@ -746,7 +746,7 @@ def main() -> int:
         "--min-known-channels",
         type=int,
         default=2,
-        help="Partial-KPA: minimum number of attacker-known channels per pixel required "
+        help="Partial KPA: minimum number of attacker-known channels per pixel required "
              "to attempt constraint matching on that pixel. Below this threshold the "
              "per-candidate false-positive rate (56 × 2⁻⁷ᴷ) becomes non-negligible; "
              "K=2 keeps it at ~0.34 %% (default).",
@@ -952,7 +952,7 @@ def main() -> int:
                   f"--skip-nonce-check; proceeding to Layer 1 using sidecar sp for diagnostics)")
             start_pixel_used = meta["start_pixel"]
         elif is_partial:
-            # Partial-KPA with repeated-record plaintexts: d_xor pattern is
+            # Partial KPA with repeated-record plaintexts: d_xor pattern is
             # periodic → Layer 2 may settle on a period-shifted sp. The
             # reconstructed stream under such an sp is still valid dataHash
             # output, just labelled from a shifted pixel index. For NIST STS
@@ -963,7 +963,7 @@ def main() -> int:
             shift_candidate = (recovered_sp - meta["start_pixel"]) % tp1
             print(f"  Layer 2 RESULT: ⚠ recovered startPixel {recovered_sp} differs from "
                   f"ground-truth {meta['start_pixel']} by {shift_candidate} pixels — accepting "
-                  f"as a period-shifted alignment (valid under Partial-KPA with periodic "
+                  f"as a period-shifted alignment (valid under Partial KPA with periodic "
                   f"plaintexts; reconstructed stream is still valid dataHash output).")
             start_pixel_used = recovered_sp
         else:
@@ -1000,7 +1000,7 @@ def main() -> int:
 
     n_attempt = end_idx - start_idx
     print(f"\nLayer 1 recovery on data-pixel range [{start_idx}, {end_idx}) — {n_attempt} pixels"
-          + (f" [partial-KPA, min_known_channels={args.min_known_channels}]" if is_partial else ""))
+          + (f" [Partial KPA, min_known_channels={args.min_known_channels}]" if is_partial else ""))
     t0 = time.time()
     if is_partial:
         recovered = layer1_recover_range_partial(
@@ -1166,7 +1166,7 @@ def main() -> int:
     if args.validate:
         truth = load_config_truth(cell_dir)
         per_pixel_truth = truth["per_pixel"]
-        # Partial-KPA on periodic plaintexts may settle on a period-shifted sp.
+        # Partial KPA on periodic plaintexts may settle on a period-shifted sp.
         # Validate against truth at the shifted offset so "wrong" only reflects
         # real formula bugs, not period alignment.
         shift = 0
@@ -1174,7 +1174,7 @@ def main() -> int:
             shift = (start_pixel_used - meta["start_pixel"]) % tp1
             if shift != 0:
                 print(f"\nValidation accounting for period-shift: {shift} pixels "
-                      f"(Partial-KPA accepted a shifted sp; recovered "
+                      f"(Partial KPA accepted a shifted sp; recovered "
                       f"(noisePos, rotation) will be compared to truth@(data_idx + shift))")
             shifted_truth = [per_pixel_truth[(i + shift) % meta["data_pixels"]]
                              for i in range(meta["data_pixels"])]
