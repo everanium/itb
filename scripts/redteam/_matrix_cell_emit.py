@@ -28,15 +28,15 @@ def main() -> int:
     # Compact one-liner for the progress log (uses first entry).
     first = entries[0] if entries else {}
     demask = "OK" if first.get("demask_ok") else "FAIL"
-    si_ok = first.get("seed_invert_ok")
+    si_ok = first.get("compound_key_ok")
     si = "OK" if si_ok is True else ("FAIL" if si_ok is False else "—")
-    cand = first.get("seed_invert_brute_candidates", "—")
-    cor = first.get("seed_invert_n_correct", "—")
-    sha = first.get("seed_invert_n_shadow", "—")
-    chm = first.get("seed_invert_channels_matched", "—")
-    cht = first.get("seed_invert_channels_total", "—")
-    shift = first.get("seed_invert_chosen_shift", "—")
-    wall = first.get("seed_invert_elapsed_s", "—")
+    cand = first.get("compound_key_brute_candidates", "—")
+    cor = first.get("compound_key_n_correct", "—")
+    sha = first.get("compound_key_n_shadow", "—")
+    chm = first.get("compound_key_channels_matched", "—")
+    cht = first.get("compound_key_channels_total", "—")
+    shift = first.get("compound_key_chosen_shift", "—")
+    wall = first.get("compound_key_elapsed_s", "—")
     human = (f"size={size:>7} cov={cov}% kind={kind:<16} demask={demask:<4} "
              f"si={si:<4} cands={cand:>3} correct={cor} shadow={sha:>3} "
              f"shift={shift} pred={chm}/{cht} wall={wall}s")
