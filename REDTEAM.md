@@ -866,6 +866,60 @@ python3 scripts/redteam/phase2_theory/kl_urandom.py 77277312 5
 
 The script accepts any byte count that is a multiple of 8 (one pixel = 8 bytes); a single run at the Mode B size takes ~75 s on a commodity laptop. Substitute a different size to baseline the distinguisher at other N.
 
+#### Small-data variant at 4 KB × BF=32 — defensive maximum for small payloads
+
+`BarrierFill = 32` exists for small-plaintext deployments where the data entropy alone cannot saturate the statistical surface; the knob tops the container up with CSPRNG fill pixels until the fill dominates the byte stream. Running the same Mode B distinguisher on a 4 KB BLAKE3 encryption at BF=32 gives a container of 3 249 pixels (26 012 bytes including the 20-byte header) and N = 25 992 observations per candidate. The matching 5-run `/dev/urandom` baseline at the same N:
+
+| Source | KL max (nats) | Ratio max/floor | Max bit-dev | Mean bit fraction | χ² mean |
+|:-------|---------------:|----------------:|------------:|------------------:|--------:|
+| ITB ciphertext (Mode B, BF=32, BLAKE3, 4 KB plaintext) | 6.60 × 10⁻³ | 1.34× | 6.0 × 10⁻³ | 0.4987496 | 128.9 |
+| `/dev/urandom` — mean of 5 runs (N = 25 992) | 6.39 × 10⁻³ | 1.30× | 6.5 × 10⁻³ | 0.5000173 | 128.9 |
+| `/dev/urandom` — std across 5 runs | ± 0.86 × 10⁻³ | ± 0.17× | ± 1.5 × 10⁻³ | ± 1.5 × 10⁻³ | ± 11.2 |
+| Δ (ITB − urandom mean) | +0.21 × 10⁻³ | +0.04× | −0.6 × 10⁻³ | −1.3 × 10⁻³ | +0.06 |
+| \|Δ\| / σ | 0.24 | 0.24 | 0.39 | 0.87 | 0.006 |
+
+Every `|Δ| / σ` is below 1 — at the 4 KB × BF=32 point ITB ciphertext and `/dev/urandom` sit within the same sampling-noise envelope as tightly as they do at the 63 MB maximum. The operational takeaway matches the BF=32 design intent: for small payloads the CSPRNG residue fill keeps the container indistinguishable from `/dev/urandom` on the Mode B distinguisher. BF=1 is not retested at 4 KB — a small data-dominated container does not exercise the barrier's fill mechanism and is not a defensive configuration for small plaintexts.
+
+Reproduction:
+
+```bash
+# Encrypt 4 KB plaintext at BF=32 with BLAKE3, then run the Mode B analyzer.
+ITB_REDTEAM_MASSIVE=blake3 ITB_REDTEAM_MASSIVE_SIZE=4096 ITB_BARRIER_FILL=32 \
+    go test -run TestRedTeamGenerateSingleMassive -v -timeout 60s
+python3 scripts/redteam/phase2_theory/kl_massive_single_full.py blake3
+
+# Matching /dev/urandom baseline (container = 25 992 bytes).
+python3 scripts/redteam/phase2_theory/kl_urandom.py 25992 5
+```
+
+#### Full (size × BarrierFill) sweep — n = 25 samples per cell
+
+A 66-cell matrix sweeps 11 plaintext sizes (1 KB, 4 KB, 8 KB, 32 KB, 64 KB, 128 KB, 256 KB, 512 KB, 1 MB, 2 MB, 4 MB) × 6 BarrierFill values (1, 2, 4, 8, 16, 32) with **25 ITB encrypt + probe samples and 25 `/dev/urandom` samples per cell**. For each cell the mean ITB ratio and mean `/dev/urandom` ratio are compared as `z = |Δ_mean| / √(σ²_ITB + σ²_UR)`. Aggregates per BarrierFill, averaged over the 11 size rows:
+
+| BF | ITB mean | UR mean | Δ mean | \|Δ\| mean | z mean | % pass (z ≤ 1) |
+|:--:|---:|---:|---:|---:|---:|:---:|
+| 1  | 1.287 | 1.277 | +0.0096 | 0.038 | 0.213 | 100.0 % |
+| 2  | 1.291 | 1.284 | +0.0078 | 0.028 | 0.150 | 100.0 % |
+| 4  | 1.280 | 1.296 | −0.0159 | 0.041 | 0.213 | 100.0 % |
+| 8  | 1.268 | 1.273 | −0.0050 | 0.018 | 0.092 | 100.0 % |
+| 16 | 1.269 | 1.265 | +0.0042 | 0.038 | 0.192 | 100.0 % |
+| 32 | 1.262 | 1.260 | +0.0022 | 0.028 | 0.150 | 100.0 % |
+
+**All 66 cells pass `z_ratio ≤ 1.0`**; the matrix maximum is `z = 0.52` at (256 KB, BF = 1). No BarrierFill value produces a measurably tighter match to `/dev/urandom` than any other across the tested range — the per-pixel distinguisher at this sampling precision resolves only its own noise regardless of BarrierFill choice.
+
+Reproduction:
+
+```bash
+# Full 66-cell matrix: 11 sizes × 6 BFs × 25 samples per side, 8 parallel
+# cell workers. Output: tmp/kltest/matrix.{jsonl,md}. ~17 min on a
+# commodity 8-core laptop.
+python3 scripts/redteam/phase2_theory/kl_matrix.py
+
+# Override any dimension for ad-hoc runs — e.g. a single (size, BF) cell:
+python3 scripts/redteam/phase2_theory/kl_matrix.py \
+    --sizes 4096 --bfs 1 --n-samples 25 --workers 1
+```
+
 ---
 
 ## Phase 2c — startPixel enumeration
