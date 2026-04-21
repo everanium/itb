@@ -102,7 +102,7 @@ def parse_partial_stream(
 def parse_full_stream(
     stream_path: Path, index_path: Optional[Path] = None,
 ) -> List[Tuple[int, int, int]]:
-    """Parse a Full-KPA demasked stream (7 bytes per successfully-recovered
+    """Parse a Full KPA demasked stream (7 bytes per successfully-recovered
     data pixel, packed little-endian across 8 × 7-bit channels).
 
     Full-mode reconstruction SKIPS ambiguous pixels, so an `.index` sidecar

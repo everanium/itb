@@ -3,7 +3,7 @@
 #
 # Iterates {primitives} × {sizes} × {formats} under the clean
 # ITB_NONCE_REUSE_MODE=known_ascii corpus (Full KPA, printable-ASCII
-# plaintext, no Partial-KPA sidecar). For every cell:
+# plaintext, no Partial KPA sidecar). For every cell:
 #
 #   1. Go corpus generator with the requested hash + size + N=2
 #      collisions + BF=1. For blake3 the generator also emits
@@ -70,7 +70,7 @@ echo "Hash-agnostic bias-neutralization audit matrix (parallel=$PARALLEL)"
 echo "==========================================================================="
 echo "  primitives        : $PRIMITIVES"
 echo "  sizes             : $SIZES"
-echo "  formats           : $FORMATS  (Full-KPA; ascii | json_structured | html_structured)"
+echo "  formats           : $FORMATS  (Full KPA; ascii | json_structured | html_structured)"
 echo "  probe size        : $PROBE_SIZE"
 echo "  results tag       : $RESULTS_TAG"
 echo "  aggregate summary : $MATRIX_SUMMARY"
@@ -99,7 +99,7 @@ triple="$1"
 primitive=$(echo "$triple" | cut -d' ' -f1)
 size=$(echo     "$triple" | cut -d' ' -f2)
 fmt=$(echo      "$triple" | cut -d' ' -f3)
-# Map bias-audit format label → ITB_NONCE_REUSE_MODE (Full-KPA corpus
+# Map bias-audit format label → ITB_NONCE_REUSE_MODE (Full KPA corpus
 # mode with corresponding plaintext shape).
 case "$fmt" in
   ascii)           nonce_reuse_mode="known_ascii" ;;

@@ -232,9 +232,9 @@ This proof covers one layer (rotation barrier). For the complete multi-factor Fu
 - P × 2^(2×keyBits) hash evaluations for Core ITB (joint noiseSeed + dataSeed search)
 - P × 2^keyBits hash evaluations for MAC + Reveal (noiseSeed eliminated, dataSeed + startPixel enumeration)
 
-with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional factor that any shortcut attack must also defeat. The attacker must simultaneously succeed on three independent obstacles — (1) PRF inversion, (2) enumeration of P startPixel candidates derived from an independent startSeed, (3) resolution of 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1 — plus one Partial-KPA-specific obstacle, (4) gcd(7,8)=1 byte-splitting non-alignability, effective only under Partial KPA.
+with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional factor that any shortcut attack must also defeat. The attacker must simultaneously succeed on three independent obstacles — (1) PRF inversion, (2) enumeration of P startPixel candidates derived from an independent startSeed, (3) resolution of 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1 — plus one Partial KPA-specific obstacle, (4) gcd(7,8)=1 byte-splitting non-alignability, effective only under Partial KPA.
 
-**Proof.** Obstacles (1)–(3) correspond to disjoint entropy sources and jointly determine the Full KPA brute-force cost; obstacle (4) is a Partial-KPA-specific defense:
+**Proof.** Obstacles (1)–(3) correspond to disjoint entropy sources and jointly determine the Full KPA brute-force cost; obstacle (4) is a Partial KPA-specific defense:
 
 **(1) PRF inversion.** Given a verified candidate dataHash h', recovering dataSeed from H(counter||nonce, dataSeed) = h' requires hash inversion ([Definition 2, SCIENCE.md §5](SCIENCE.md#5-formal-definitions)). Under the PRF assumption (which implies one-wayness), this is infeasible.
 

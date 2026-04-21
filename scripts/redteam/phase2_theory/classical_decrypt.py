@@ -368,7 +368,7 @@ def main() -> int:
         unique = sum(1 for r in recovered if r is not None)
         print(f"  Layer 1 unique     : {unique}/{meta['data_pixels']}  ({t_l1:.2f}s)")
 
-        print(f"\nPhase B — partial-KPA classical decryption:")
+        print(f"\nPhase B — Partial KPA classical decryption:")
         print(f"  (attacker can derive channelXOR only at KNOWN channels of "
               f"Layer-1-recovered pixels; produces plaintext only at those positions)")
         p1_out, rec1, gaps1 = partial_mode_recovery(

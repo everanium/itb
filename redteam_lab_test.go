@@ -1105,7 +1105,7 @@ func runNonceReuseBody(t *testing.T, p nonceReuseParams, adapter nonceReuseWidth
 			}
 		}
 		knownCoverage = float64(knownBytesCount) / float64(len(p.knownMasks[0]))
-		t.Logf("Partial-KPA known-mask coverage: %.2f%% (%d / %d bytes known)",
+		t.Logf("Partial KPA known-mask coverage: %.2f%% (%d / %d bytes known)",
 			knownCoverage*100, knownBytesCount, len(p.knownMasks[0]))
 	}
 	meta := cellMetaJSON{
@@ -1368,7 +1368,7 @@ func TestRedTeamGenerateNonceReuse(t *testing.T) {
 	case "known_ascii":
 		// Full KPA, ASCII-only plaintext — a clean testbed for the
 		// hash-agnostic raw-mode bias audit (scripts/redteam/phase2_theory/
-		// raw_mode_bias_probe.py). No Partial-KPA mask sidecar, no record
+		// raw_mode_bias_probe.py). No Partial KPA mask sidecar, no record
 		// templating: every byte is drawn uniformly from the printable
 		// ASCII alphabet + whitespace. Lets the bias probe measure whether
 		// the architecture neutralizes the per-byte ASCII bit-7 = 0 bias
@@ -1407,7 +1407,7 @@ func TestRedTeamGenerateNonceReuse(t *testing.T) {
 			plaintexts[i] = pt
 		}
 	case "partial":
-		// Partial-KPA corpus — two sub-paths:
+		// Partial KPA corpus — two sub-paths:
 		//
 		// (a) random_masked_<N>: independent random plaintexts per sample +
 		//     a shared random byte-position mask at the target coverage. No
@@ -1943,12 +1943,12 @@ func deltaBytes(delta []uint64) []byte {
 }
 
 // ----------------------------------------------------------------------------
-// Crib-KPA cross-format corpus generator (Phase 2f)
+// Crib KPA cross-format corpus generator (Phase 2f)
 // ----------------------------------------------------------------------------
 //
 // Produces two ciphertexts under the SAME (noiseSeed, dataSeed, startSeed)
 // triple but DIFFERENT nonces. The first encrypts a JSON plaintext (suitable
-// as a crib-KPA target — publicly known schema prefix); the second encrypts
+// as a Crib KPA target — publicly known schema prefix); the second encrypts
 // an HTML plaintext (different format, fresh nonce). A compound-key K
 // recovered from the JSON ciphertext must decrypt the HTML ciphertext as
 // well, since K is a per-dataSeed invariant under ChainHash<CRC128>
@@ -2111,7 +2111,7 @@ func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
 		return len(ct)
 	}
 
-	// Corpus A — JSON plaintext (crib-KPA target). Deterministic per seedSource.
+	// Corpus A — JSON plaintext (Crib KPA target). Deterministic per seedSource.
 	rngA := rand.New(rand.NewSource(int64(seedSource) + 1))
 	ptA, _, _ := generateStructuredPlaintext(rngA, size, 0, "json_structured_80")
 	ctALen := writeCell("corpus_A_json", nonceA, ptA, "json_structured_80")
