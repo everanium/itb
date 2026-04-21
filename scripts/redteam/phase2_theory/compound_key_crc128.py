@@ -326,7 +326,7 @@ def main() -> int:
     print(f"\n{'-' * 72}")
     print(f"Red-team oracle filtering (lab-only: cell.meta.json ground truth")
     print(f"used to identify which brute-force candidate is correct; attacker")
-    print(f"would filter shadow K via plaintext-consistency on companion ct)")
+    print(f"would filter shadow-K via plaintext-consistency on companion ct)")
     print(f"{'-' * 72}")
     candidates = getattr(args, "_candidates", None)
     if candidates and K_expected is not None:

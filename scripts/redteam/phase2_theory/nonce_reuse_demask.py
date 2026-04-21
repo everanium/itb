@@ -1078,7 +1078,7 @@ def main() -> int:
 
         # Attacker-visible metadata sidecar — records what the demasker
         # converged to (Layer 2 output) plus aggregate stats, so downstream
-        # attacker tools (e.g. seed_invert_crc128.py) consume machine-readable
+        # attacker tools (e.g. compound_key_crc128.py) consume machine-readable
         # input rather than parsing stdout logs. No ground truth in here.
         meta_path = args.emit_datahash.with_suffix(
             args.emit_datahash.suffix + ".meta.json"

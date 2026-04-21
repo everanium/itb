@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Aggregate the CRC128 seed-inversion matrix_summary.jsonl into a compact
+"""Aggregate the CRC128 compound-key recovery matrix_summary.jsonl into a compact
 markdown table suitable for inclusion in REDTEAM.md Phase 2a extension.
 
 Reads from `tmp/attack/nonce_reuse/results/<tag>/matrix_summary.jsonl` —
 one JSON object per (size, coverage, kind) cell emitted by
-`crc128_seed_invert_matrix.sh`.
+`crc128_compound_key_matrix.sh`.
 
 Per-cell columns surfaced:
   - demasker outcome (OK / FAIL / period-shift / exit-2)
@@ -46,12 +46,12 @@ def fmt(val, default="—"):
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Aggregate CRC128 seed-inversion matrix into markdown."
+        description="Aggregate CRC128 compound-key recovery matrix into markdown."
     )
     ap.add_argument(
         "--input", type=Path,
-        default=PROJ / "tmp/attack/nonce_reuse/results/crc128_seed_invert_matrix/matrix_summary.jsonl",
-        help="matrix_summary.jsonl from crc128_seed_invert_matrix.sh",
+        default=PROJ / "tmp/attack/nonce_reuse/results/crc128_compound_key_matrix/matrix_summary.jsonl",
+        help="matrix_summary.jsonl from crc128_compound_key_matrix.sh",
     )
     args = ap.parse_args()
     if not args.input.exists():
@@ -77,7 +77,7 @@ def main() -> int:
     # Group by kind for section headers.
     kinds = sorted({r["matrix_kind"] for r in rows})
 
-    print("# CRC128 compound-key seed inversion — matrix\n")
+    print("# CRC128 compound-key recovery — matrix\n")
     print("Columns:\n"
           "- **size**: plaintext bytes (one of the configured SIZES)\n"
           "- **cov**: attacker-known byte-level coverage (%)\n"
@@ -105,15 +105,15 @@ def main() -> int:
             cov = f"{r.get('matrix_coverage', '?')}%"
             demask_ok = r.get("demask_ok")
             demask = "OK" if demask_ok is True else ("FAIL" if demask_ok is False else "—")
-            shift = r.get("seed_invert_chosen_shift")
+            shift = r.get("compound_key_chosen_shift")
             shift_s = "—" if shift is None else (f"{shift}" if shift == 0 or shift else str(shift))
-            cand = r.get("seed_invert_brute_candidates", "—")
-            correct = r.get("seed_invert_n_correct", "—")
-            shadow = r.get("seed_invert_n_shadow", "—")
-            chm = r.get("seed_invert_channels_matched")
-            cht = r.get("seed_invert_channels_total")
+            cand = r.get("compound_key_brute_candidates", "—")
+            correct = r.get("compound_key_n_correct", "—")
+            shadow = r.get("compound_key_n_shadow", "—")
+            chm = r.get("compound_key_channels_matched")
+            cht = r.get("compound_key_channels_total")
             pred = f"{chm}/{cht}" if chm is not None else "—"
-            wall = r.get("seed_invert_elapsed_s", "—")
+            wall = r.get("compound_key_elapsed_s", "—")
             print(f"| {size} | {cov} | {demask} | {shift_s} | "
                   f"{fmt(cand)} | {fmt(correct)} | {fmt(shadow)} | {pred} | {wall} |")
         print()
@@ -121,12 +121,12 @@ def main() -> int:
     # Summary roll-up.
     n_total = len(rows)
     n_demask_ok = sum(1 for r in rows if r.get("demask_ok") is True)
-    n_solver_ok = sum(1 for r in rows if r.get("seed_invert_ok") is True)
+    n_solver_ok = sum(1 for r in rows if r.get("compound_key_ok") is True)
     n_fully_recovered = sum(
         1 for r in rows
-        if r.get("seed_invert_channels_matched") is not None
-        and r.get("seed_invert_channels_total") is not None
-        and r.get("seed_invert_channels_matched") == r.get("seed_invert_channels_total")
+        if r.get("compound_key_channels_matched") is not None
+        and r.get("compound_key_channels_total") is not None
+        and r.get("compound_key_channels_matched") == r.get("compound_key_channels_total")
     )
     print("## Roll-up\n")
     print(f"- Cells attempted        : **{n_total}**")
@@ -135,10 +135,10 @@ def main() -> int:
     print(f"- Solver OK              : **{n_solver_ok}**")
     print(f"- K fully inverted       : **{n_fully_recovered}** / {n_total}  "
           f"(prediction 512/512 channels on held-out pixels)")
-    total_cand = sum(r.get("seed_invert_brute_candidates", 0) for r in rows if r.get("seed_invert_brute_candidates"))
-    total_shadow = sum(r.get("seed_invert_n_shadow", 0) for r in rows if r.get("seed_invert_n_shadow"))
-    shadow_cells = [r for r in rows if r.get("seed_invert_n_shadow")]
-    max_shadow = max((r["seed_invert_n_shadow"] for r in shadow_cells), default=0)
+    total_cand = sum(r.get("compound_key_brute_candidates", 0) for r in rows if r.get("compound_key_brute_candidates"))
+    total_shadow = sum(r.get("compound_key_n_shadow", 0) for r in rows if r.get("compound_key_n_shadow"))
+    shadow_cells = [r for r in rows if r.get("compound_key_n_shadow")]
+    max_shadow = max((r["compound_key_n_shadow"] for r in shadow_cells), default=0)
     mean_shadow = total_shadow / n_fully_recovered if n_fully_recovered else 0
     print(f"- Total brute candidates : **{total_cand}** (across all cells)")
     print(f"- **Total shadow-K       : {total_shadow}**  "
@@ -147,7 +147,7 @@ def main() -> int:
           f"per-cell ambiguity left over after all other defenses)")
     print(f"- Shadow-K per cell      : max **{max_shadow}**, mean **{mean_shadow:.1f}** "
           f"across {n_fully_recovered} inverted cells")
-    n_period_shift = sum(1 for r in rows if r.get("seed_invert_chosen_shift", 0))
+    n_period_shift = sum(1 for r in rows if r.get("compound_key_chosen_shift", 0))
     print(f"- Period-shifted cells   : **{n_period_shift}** "
           f"(Layer 2 locked on period-shifted sp; solver brute-forced the "
           f"correct pixel_shift and lab-filtered the shadow-K)")
@@ -158,7 +158,7 @@ def main() -> int:
         agg = {}
         for r in rows:
             v = r.get(key)
-            sh = r.get("seed_invert_n_shadow")
+            sh = r.get("compound_key_n_shadow")
             if v is None or sh is None:
                 continue
             agg.setdefault(v, []).append(sh)
