@@ -1941,3 +1941,213 @@ func deltaBytes(delta []uint64) []byte {
 	}
 	return out
 }
+
+// ----------------------------------------------------------------------------
+// Crib-KPA cross-format corpus generator (Phase 2f)
+// ----------------------------------------------------------------------------
+//
+// Produces two ciphertexts under the SAME (noiseSeed, dataSeed, startSeed)
+// triple but DIFFERENT nonces. The first encrypts a JSON plaintext (suitable
+// as a crib-KPA target — publicly known schema prefix); the second encrypts
+// an HTML plaintext (different format, fresh nonce). A compound-key K
+// recovered from the JSON ciphertext must decrypt the HTML ciphertext as
+// well, since K is a per-dataSeed invariant under ChainHash<CRC128>
+// (GF(2)-linear primitive → ChainHash output = K ⊕ c(pixel,nonce), K
+// depends only on the seed).
+//
+// Gated by `ITB_CRIB_CROSS=1`. Always uses CRC128 + keyBits=1024 + BF=1.
+// Seeds are deterministic given `ITB_CRIB_CROSS_SEED_SOURCE`; nonces are
+// deterministic given `ITB_CRIB_CROSS_NONCE_SEED`. Default size 4 KB.
+
+func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
+	if os.Getenv("ITB_CRIB_CROSS") != "1" {
+		t.Skip("set ITB_CRIB_CROSS=1 to generate the crib-cross corpus pair")
+	}
+
+	size := 4096
+	if s := os.Getenv("ITB_CRIB_CROSS_SIZE"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 4096 {
+			t.Fatalf("ITB_CRIB_CROSS_SIZE=%q: must be integer ≥ 4096", s)
+		}
+		size = sv
+	}
+	nonceSeed := uint64(0xDEADBEEFCAFEBABE)
+	if s := os.Getenv("ITB_CRIB_CROSS_NONCE_SEED"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_CRIB_CROSS_NONCE_SEED=%q: %v", s, err)
+		}
+		nonceSeed = sv
+	}
+	seedSource := uint64(0x1234567890ABCDEF)
+	if s := os.Getenv("ITB_CRIB_CROSS_SEED_SOURCE"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_CRIB_CROSS_SEED_SOURCE=%q: %v", s, err)
+		}
+		seedSource = sv
+	}
+
+	const keyBits = 1024
+
+	// Deterministic seed generation from ITB_CRIB_CROSS_SEED_SOURCE.
+	seedRng := rand.New(rand.NewSource(int64(seedSource)))
+	noiseComps := make([]uint64, 16)
+	dataComps := make([]uint64, 16)
+	startComps := make([]uint64, 16)
+	for i := range noiseComps {
+		noiseComps[i] = seedRng.Uint64()
+	}
+	for i := range dataComps {
+		dataComps[i] = seedRng.Uint64()
+	}
+	for i := range startComps {
+		startComps[i] = seedRng.Uint64()
+	}
+
+	hashFunc := HashFunc128(crc128)
+	nsSeed, err := SeedFromComponents128(hashFunc, noiseComps...)
+	if err != nil {
+		t.Fatalf("ns seed: %v", err)
+	}
+	dsSeed, err := SeedFromComponents128(hashFunc, dataComps...)
+	if err != nil {
+		t.Fatalf("ds seed: %v", err)
+	}
+	ssSeed, err := SeedFromComponents128(hashFunc, startComps...)
+	if err != nil {
+		t.Fatalf("ss seed: %v", err)
+	}
+
+	// Two distinct nonces, deterministic from nonceSeed.
+	nonceRng := rand.New(rand.NewSource(int64(nonceSeed)))
+	nonceA := make([]byte, 16)
+	nonceB := make([]byte, 16)
+	_, _ = nonceRng.Read(nonceA)
+	_, _ = nonceRng.Read(nonceB)
+	if bytes.Equal(nonceA, nonceB) {
+		t.Fatalf("nonceA == nonceB (nonceSeed collision); pick a different ITB_CRIB_CROSS_NONCE_SEED")
+	}
+
+	outDir, _ := filepath.Abs(filepath.Join("tmp", "attack", "crib_cross"))
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	writeCell := func(cellName string, nonce []byte, ptBytes []byte, kind string) int {
+		cellDir := filepath.Join(outDir, cellName)
+		if err := os.MkdirAll(cellDir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", cellDir, err)
+		}
+		setTestNonce(t, nonce)
+		ct, err := Encrypt128(nsSeed, dsSeed, ssSeed, ptBytes)
+		if err != nil {
+			t.Fatalf("Encrypt128 %s: %v", cellName, err)
+		}
+		// Parse W, H from the 20-byte header (16 nonce + 2 W + 2 H, big-endian).
+		if len(ct) < 20 {
+			t.Fatalf("ciphertext too short for header: %d", len(ct))
+		}
+		W := int(uint16(ct[16])<<8 | uint16(ct[17]))
+		H := int(uint16(ct[18])<<8 | uint16(ct[19]))
+		totalPixels := W * H
+		// Recover the ground-truth startPixel from dataSeed.ChainHash on the
+		// first data chunk (same derivation as the ITB encoder). Simpler path:
+		// parse from the encoder's internal state via a second deterministic
+		// encrypt — but we already have the ciphertext. We leave `start_pixel`
+		// out; the bias-probe will recover it and the decrypt script will
+		// verify against the full-plaintext match instead.
+		if err := os.WriteFile(filepath.Join(cellDir, "ct_0000.bin"), ct, 0o644); err != nil {
+			t.Fatalf("write ct: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(cellDir, "ct_0000.plain"), ptBytes, 0o644); err != nil {
+			t.Fatalf("write pt: %v", err)
+		}
+		meta := struct {
+			Hash           string   `json:"hash"`
+			HashDisplay    string   `json:"hash_display"`
+			HashWidth      int      `json:"hash_width"`
+			KeyBits        int      `json:"key_bits"`
+			BarrierFill    int      `json:"barrier_fill"`
+			Mode           string   `json:"mode"`
+			PlaintextKind  string   `json:"plaintext_kind"`
+			PlaintextSize  int      `json:"plaintext_size"`
+			NonceHex       string   `json:"nonce_hex"`
+			CiphertextSize int      `json:"ciphertext_size"`
+			Width          int      `json:"width"`
+			Height         int      `json:"height"`
+			TotalPixels    int      `json:"total_pixels"`
+			NoiseSeed      []uint64 `json:"noise_seed"`
+			DataSeed       []uint64 `json:"data_seed"`
+			StartSeed      []uint64 `json:"start_seed"`
+		}{
+			Hash:           "crc128",
+			HashDisplay:    "CRC128-test",
+			HashWidth:      128,
+			KeyBits:        keyBits,
+			BarrierFill:    currentBarrierFill(),
+			Mode:           "crib_cross",
+			PlaintextKind:  kind,
+			PlaintextSize:  len(ptBytes),
+			NonceHex:       hex.EncodeToString(nonce),
+			CiphertextSize: len(ct),
+			Width:          W,
+			Height:         H,
+			TotalPixels:    totalPixels,
+			NoiseSeed:      noiseComps,
+			DataSeed:       dataComps,
+			StartSeed:      startComps,
+		}
+		metaBytes, err := json.MarshalIndent(&meta, "", "  ")
+		if err != nil {
+			t.Fatalf("meta json: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(cellDir, "cell.meta.json"), metaBytes, 0o644); err != nil {
+			t.Fatalf("write meta: %v", err)
+		}
+		t.Logf("  %s: %d B plaintext, %d B ciphertext → %s",
+			cellName, len(ptBytes), len(ct), cellDir)
+		return len(ct)
+	}
+
+	// Corpus A — JSON plaintext (crib-KPA target). Deterministic per seedSource.
+	rngA := rand.New(rand.NewSource(int64(seedSource) + 1))
+	ptA, _, _ := generateStructuredPlaintext(rngA, size, 0, "json_structured_80")
+	ctALen := writeCell("corpus_A_json", nonceA, ptA, "json_structured_80")
+
+	// Corpus B — HTML plaintext under SAME seeds, DIFFERENT nonce. Target of
+	// the full-plaintext decrypt script that ingests K recovered from corpus A.
+	rngB := rand.New(rand.NewSource(int64(seedSource) + 2))
+	ptB, _, _ := generateStructuredPlaintext(rngB, size, 0, "html_structured_80")
+	ctBLen := writeCell("corpus_B_html", nonceB, ptB, "html_structured_80")
+
+	// Shared summary for tooling to discover both cells + seeds / nonces.
+	summary := struct {
+		KeyBits     int      `json:"key_bits"`
+		BarrierFill int      `json:"barrier_fill"`
+		Hash        string   `json:"hash"`
+		NoiseSeed   []uint64 `json:"noise_seed"`
+		DataSeed    []uint64 `json:"data_seed"`
+		StartSeed   []uint64 `json:"start_seed"`
+		NonceAHex   string   `json:"nonce_a_hex"`
+		NonceBHex   string   `json:"nonce_b_hex"`
+		CorpusA     string   `json:"corpus_a"`
+		CorpusB     string   `json:"corpus_b"`
+		SizeBytes   int      `json:"plaintext_size_bytes"`
+	}{
+		KeyBits: keyBits, BarrierFill: currentBarrierFill(), Hash: "crc128",
+		NoiseSeed: noiseComps, DataSeed: dataComps, StartSeed: startComps,
+		NonceAHex: hex.EncodeToString(nonceA),
+		NonceBHex: hex.EncodeToString(nonceB),
+		CorpusA:   "corpus_A_json",
+		CorpusB:   "corpus_B_html",
+		SizeBytes: size,
+	}
+	summaryBytes, _ := json.MarshalIndent(&summary, "", "  ")
+	if err := os.WriteFile(filepath.Join(outDir, "summary.json"), summaryBytes, 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+
+	t.Logf("crib-cross corpora generated at %s (A: %d B, B: %d B)", outDir, ctALen, ctBLen)
+}
