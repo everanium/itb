@@ -19,6 +19,8 @@ At shipped defaults (BF=1):
 - **Phase 2a (analytical)** proposes that ChainHash's XOR chain is the load-bearing assumption behind the defense-in-depth stacking: it converts otherwise cheap primitive inversions into bitvector-SAT instances, so each defensive layer (ChainHash, unknown startPixel, Partial KPA byte-splitting) stacks multiplicatively **conditional on that SAT-hardness assumption**. No Z3 runs were executed; the claim rests on structural analysis.
 - **Phase 2a (extension) — empirical GF(2)-linear collapse via CRC128 (Nonce-Reuse).** A test-only primitive (two CRC64 variants concatenated to 128 bits, fully GF(2)-linear) was wired into the [Phase 2d](#phase-2d--nonce-reuse) pipeline to verify empirically that the mixed-algebra premise is load-bearing. Unrolling 8 rounds of ChainHash at 1024-bit key collapses the 512-bit ECMA-side seed to a **64-bit compound key K** (56 bits observable via channelXOR); a commodity Python solver recovers K across the full matrix (54 cells — `{4 KB…1 MB} × {25/50/80 %} × {json_structured, html_structured, random_masked}`) with **53 / 53 correct dataSeeds recovered within demask-successful cells**. Even with the primitive fully collapsed ITB still imposes visible cost: 8 cells hit period-shift catastrophe requiring pixel-shift brute force, and shadow-K aliasing leaves the attacker with **up to 294 candidate keys per cell at 1 MB** (1 correct + 293 wrong), total 2 575 shadow-K candidates across the matrix — a population the attacker must filter via plaintext-consistency on companion ciphertexts. FNV-1a analogue impossible: the Z/2⁶⁴-multiply carry structure blocks GF(2)-linear collapse, leaving the SAT pathway (described above) as the only route.
 - **Nonce-reuse PRF-dependency empirically demonstrated (Phase 2d)**. Under a deliberate nonce collision with Full KPA, a Python demasker recovers `startPixel` + per-pixel `(noisePos, rotation)` in seconds and reconstructs the pure `dataSeed.ChainHash(pixel, nonce)` output stream (obstacles (2) and (3) of [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) no longer apply — only obstacle (1), ChainHash SAT-hardness, remains). NIST STS on the reconstructed ~16.7 Mbit stream per primitive at 2 MB plaintext: **BLAKE3 passes 188/188** (single remaining obstacle survives under PRF); **FNV-1a fails 6/188** — FFT 0/16 (100 % fail rate, spectral peaks on every bit-stream) plus BlockFrequency / CumulativeSums / Runs. The [`SCIENCE.md §2.5`](SCIENCE.md#25-nonce-reuse-analysis) locality claim ("seeds remain secret, no key rotation") holds under PRF; its PRF-dependency caveat is made empirically visible by the BLAKE3-vs-FNV-1a contrast.
+- **Related-seed differential (Phase 2e) — 1008-cell matrix.** 12 primitives × 2 BF × 3 axes × 7 Δ patterns × 2 PT kinds tests single-seed XOR-differential propagation under same nonce + same plaintext + shared hash-function instance. 10 primitives are neutralized on the primitive-attributable axes (`data` / `start`): the 9 PRF-grade primitives plus MD5. CRC128 leaks on every axis as expected from end-to-end GF(2)-linearity. FNV-1a shows a narrow lab-detectable signal on one specific Δ (top-bit isolation preserved into an output bit ITB's `hLo` extraction discards) — visible to the differential probe but not exploitable through the encryption API.
+- **Direct crib-KPA on GF(2)-linear primitive (Phase 2f) — cross-message confidentiality break.** Without nonce reuse, without the demasker, just a public JSON schema crib: CRC128's 64-bit per-`dataSeed` compound key `K` falls from a single 4 KB ciphertext in ~1 s. The same `K` partially decrypts a second ciphertext encrypted under the same seeds but a fresh nonce and different plaintext format (HTML) — **75.18 % byte-level** / **60.14 % full-pixel** accuracy. Two architectural findings: (i) `K` is nonce-independent, so one crib-KPA recovery compromises every future message under the same `dataSeed`; (ii) `noiseSeed` is **structurally inaccessible** to crib-KPA because its output is never linearly observable in the ciphertext — crib-KPA collapses `dataSeed` but not `noiseSeed`, and the noise-bit layer holds as an independent defence-in-depth layer that keeps ~25 % of plaintext bytes corrupted even with the primitive broken. Non-GF(2)-linear primitives (FNV-1a, MD5, every PRF-grade entry) are immune to this attack — see [Phase 2a extension bias audit](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2).
 
 The results corroborate the paper's "barrier-based construction" claim: security arises from the architecture (8-channel packing, 7-bit extraction with rotation, CSPRNG-fill residue, ChainHash XOR chain) rather than from the quality of the underlying hash. Weak and strong primitives produce statistically identical ciphertext under every distinguisher run.
 
@@ -47,13 +49,14 @@ ITB ciphertext sits at the finite-sample KL / χ² floor on every statistical su
 - **`startPixel` disclosed** in [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) Mode A and [Phase 3a](#phase-3a--rotation-invariant-edge-case) (isolate obstacle 3); **enumerated** in [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) Mode B + [Phase 2c](#phase-2c--startpixel-enumeration) (test obstacle 2).
 - **Nonce reuse forced** in [Phase 2d](#phase-2d--nonce-reuse) and [Phase 2e](#phase-2e--related-seed-differential) — a `2⁻²⁵⁶` event at the shipped 512-bit nonce. Every finding in both phases is conditional on the attacker already being past that gate (see [Threat-model gate](#threat-model-gate--why-this-whole-exercise-is-gated-by-user-nonce-size-choice)).
 - **Related-seed setup** in [Phase 2e](#phase-2e--related-seed-differential): same plaintext + same nonce + same two-of-three seeds + one-seed XOR-Δ across two encrypts, with a shared hash-function instance (cached PRF key preserved). No public API exposes any of these — lab-only test vector.
-- **Below-spec primitives** used as stress controls — `crc128` (fully GF(2)-linear, [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse)), `fnv1a` (non-cryptographic invertible, [Phase 2d](#phase-2d--nonce-reuse) PRF-separation), `md5` (broken, [Phase 2d](#phase-2d--nonce-reuse) validation table). All three are lab test-helpers in `redteam_test.go` / `redteam_lab_test.go` with unexported lowercase identifiers — **not exported to any public API**.
+- **Below-spec primitives** used as stress controls — `crc128` (fully GF(2)-linear, [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse) + [Phase 2f](#phase-2f--direct-crib-kpa-against-gf2-linear-primitives) direct crib-KPA), `fnv1a` (non-cryptographic invertible, [Phase 2d](#phase-2d--nonce-reuse) PRF-separation), `md5` (broken, [Phase 2d](#phase-2d--nonce-reuse) validation table). All three are lab test-helpers in `redteam_test.go` / `redteam_lab_test.go` with unexported lowercase identifiers — **not exported to any public API**.
 - **Ground-truth peek** in lab-only analyzers (CRC128 [shadow-K filter](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse), [raw-mode bias probe](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2)): analyzers read `cell.meta.json` / `config.truth.json` solely as a measurement yardstick, not as an attack input — see the probe's own scope note. These give an outside attacker zero advantage on ITB ciphertexts they do not control.
 
 ### Not tested
 
 Attack classes:
 - ~~**Full seed inversion** with an invertible primitive under ChainHash (research-level; see Phase 2a for analytical treatment — Z3 was **never actually executed**, not even at the ITB-with-ChainHash minimum `keyBits = 512` (2 ChainHash rounds × 256-bit hash, or 4 × 128-bit) nor at the larger flagship `keyBits = 1024`, so the scaling table is structural analysis only. `NewSeed{128,256,512}` explicitly reject `keyBits < 512`; the 128-bit figure quoted in earlier drafts referred to the hash output width, not the key size.)~~ — demonstrated empirically on a GF(2)-linear control primitive (CRC128) at flagship `keyBits = 1024` via the nonce-reuse + demasking chain; see [Phase 2a extension](#phase-2a-extension--empirical-mixed-algebra-stress-test-via-crc128-nonce-reuse). FNV-1a (Z/2⁶⁴-multiply carry structure) and PRF-grade primitives remain out of empirical scope — the Z3 scaling table stays structural analysis.
+- ~~**Direct crib-KPA on GF(2)-linear primitives** — no nonce reuse, no demasker, just a public-schema crib and the raw ciphertext. Not attempted.~~ — demonstrated empirically on CRC128 at flagship `keyBits = 1024` in [Phase 2f](#phase-2f--direct-crib-kpa-against-gf2-linear-primitives): the 64-bit compound key `K` falls from a single 4 KB JSON ciphertext via a 37-byte schema crib in ~1 s, and partially decrypts a cross-format (HTML) message encrypted under the same seeds with a fresh nonce. `noiseSeed` remains structurally inaccessible to crib-KPA (its output is not observable through the ciphertext), so the noise-bit layer continues to protect plaintext down to ~75 % byte-level accuracy even after the primitive-level break.
 - ~~**Nonce-reuse attacks.** Every sample in the corpus uses a fresh nonce. We do not probe fixed-nonce / varying-seed, nor same-seeds / same-nonce / different-plaintexts (the deliberate-collision scenario that produces the two-time pad on the 2–3 colliding messages). [SCIENCE.md §2.5](SCIENCE.md#25-nonce-reuse-analysis) argues this is strictly local under the PRF assumption (seeds retained, no key rotation needed) and a global catastrophe under full primitive inversion — not empirically stress-tested in either regime.~~ — see [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse). Seed reuse itself (same `(noiseSeed, dataSeed, startSeed)` across many messages with fresh nonces) is an explicitly supported mode, not an attack surface.
 - ~~**Chosen-plaintext / adaptive CPA.** Full KPA ≠ CPA. Attack-friendly plaintexts (all-zeros, all-0x7F, sparse 1-hot, sliding-window differentials) are absent from the corpus.~~ — covered indirectly by [Phase 2d — Nonce-Reuse](#phase-2d--nonce-reuse) (Full-KPA `known` and Partial-KPA `partial` modes accept attacker-chosen plaintext kinds — `json_structured_{25,50,80}` and `html_structured_{25,50,80}` produce attacker-controlled corpora of 6 distinct structured formats × 3 coverage levels) and [Phase 3a — Rotation-invariant edge case](#phase-3a--rotation-invariant-edge-case) (all-0x7F rotation-invariant probe). Under fresh-nonce CPA (attacker chooses plaintext but nonce stays fresh per query) the attack surface reduces to statistical ciphertext properties already covered by [Phase 1](#phase-1--structural-checks--fft--markov-analysis) / [Phase 2b](#phase-2b--per-pixel-candidate-distinguisher) / [Phase 3b](#phase-3b--nist-sts-sp-800-22) across the 10 included `zero_pad` / `html_giant` / `json` / etc. corpus kinds. No unexplored CPA surface remains after [Phase 2d](#phase-2d--nonce-reuse).
 - ~~**Related-key attacks.** The three-seed architecture begs testing `(ns, ds, ss)` vs `(ns, ds, ss ⊕ Δ)` ciphertext diffs; not done.~~ — covered by [Phase 2e — Related-seed differential](#phase-2e--related-seed-differential): 1008-cell matrix across 12 primitives × 2 BF × 3 axes × 7 Δ × 2 PT; 10 primitives neutralized ✓ (9 PRF-grade + MD5), CRC128 + FNV-1a leak as expected per their structural properties.
@@ -255,6 +258,7 @@ Primary results at **`SetBarrierFill(1)`** Single mode (shipped default); supple
 | **2c. startPixel enumeration** | Obstacle (2) — startPixel indistinguishability | ✅ mean rank-fraction ∈ [0.461, 0.532]; 6 flagged cells / 90, consistent with 4.5 expected under H0 at α=0.05 (BF=32: 5 / 90) |
 | **2d. Nonce-Reuse** | [`SCIENCE.md` §2.5](SCIENCE.md#25-nonce-reuse-analysis) locality claim — PRF-dependency empirically visible | ✅ / ⚠ Attack chain demasks obstacles (2) + (3) in seconds via Layer 1 constraint matching + Layer 2 startPixel brute force, reconstructs pure `ChainHash(pixel, nonce)` output. NIST STS on reconstructed stream (N=16 × 1 Mbit per cell, 2 MB plaintext): **BLAKE3 188/188 pass**, **FNV-1a 182/188 (6 fails — FFT 0/16, BlockFrequency 9/16, CumulativeSums ×2, Runs 12/16)**. Under PRF the single remaining obstacle (ChainHash SAT-hardness) survives with no exploitable bias; under invertible primitive residual linear-order bias is detectable on every bit-stream |
 | **2e. Related-seed differential** | Single-axis XOR-Δ on `noiseSeed` / `dataSeed` / `startSeed` with same nonce + same plaintext + shared hash-function instance | ✅ / ⚠ / ✗ 1008-cell matrix (12 primitives × 2 BF × 3 axes × 7 Δ × 2 PT). **10 primitives neutralized ✓** on primitive-attributable axes (`data` / `start`) — the 9 PRF-grade primitives plus MD5. **CRC128 bias-leak ✗** on every axis as expected from end-to-end GF(2)-linearity. **FNV-1a lab-detectable ⚠** through a single-Δ (`bit_high1023`) top-bit-isolation effect visible to the differential probe but not to an encryption-path attacker (ITB's `hLo` extraction discards the relevant bit) |
+| **2f. Direct crib-KPA (GF(2)-linear primitives)** | Compound-key recovery from a single ciphertext via public-schema crib, cross-message decrypt across fresh-nonce + different-format messages sharing `dataSeed` | ✗ CRC128: 64-bit `K` recovered in ~1 s from 4 KB JSON + 37-byte schema crib (no nonce reuse, no demasker). Cross-format decrypt on a fresh-nonce HTML message reaches 75.18 % byte-level / 60.14 % full-pixel accuracy. `K` is per-`dataSeed` invariant — one recovery breaks all future messages under the same `dataSeed`. ✅ Architectural finding: `noiseSeed` is **structurally inaccessible** to crib-KPA (no observable linear image in ciphertext), so the noise-bit layer keeps ~25 % of bytes corrupted even with K broken — defence-in-depth holds when the primitive fails. Non-GF(2)-linear primitives (FNV-1a, MD5, every PRF-grade entry) are immune — see [Phase 2a extension bias audit](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) |
 | **3a. Rotation-invariant** | [`SCIENCE.md` §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) edge case | ✅ Rate 2/128 = 1.5625 % within 0.014 % across all 12 primitives; **no sign-consistent deviation** between BF=1 and BF=32. The 5–6 σ "signals" at each BF did not replicate across regimes (AES-CMAC / BLAKE2b-512 at BF=32, AreionSoEM-256 / CRC128 / FNV-1a / BLAKE2b-512 at BF=1) — test-power artefacts on near-uniform output, not real bias |
 | **3b. NIST STS** | Industry-standard randomness suite | ✅ At N = 100 × 1 Mbit Single: 18 / 24 `(hash, BF)` cells pass 188/188; 5 cells show conventional (non-bin-0) single-to-several-test fails (7 / 4 512 = 0.16 % vs 1 % expected at α = 0.01); 1 cell (BLAKE2b-512, BF=1) hit the `NonOverlappingTemplate` bin-0 artefact — paper-grade 512-bit PRF hitting the same 40/188 outcome as FNV-1a at N=20 confirms the mechanism is hash-agnostic. Triple confirmed in both BF regimes. All 12 exhibit the SP 800-22 uniformity-of-p-values clustering identically across configurations |
 
@@ -1757,6 +1761,158 @@ bash scripts/redteam/phase2e_related_seed_matrix.sh
 ```
 
 Per-cell artefacts: `tmp/attack/related_seed_diff/corpus/<primitive>/BF<n>/<axis>/<delta>/<pt>/` containing `ct_0.bin`, `ct_1.bin`, `plaintext.bin`, `cell.meta.json`, `stats.json`.
+
+---
+
+## Phase 2f — Direct crib-KPA against GF(2)-linear primitives
+
+Scripts:
+- [`scripts/redteam/phase2_theory/crib_crc128_kpa.py`](scripts/redteam/phase2_theory/crib_crc128_kpa.py) — compound-key recovery from a single ciphertext via public-schema crib.
+- [`scripts/redteam/phase2_theory/crib_crc128_decrypt.py`](scripts/redteam/phase2_theory/crib_crc128_decrypt.py) — cross-message decrypt using the recovered K against a second ciphertext encrypted under the same seeds but a different nonce.
+- [`redteam_lab_test.go` `TestRedTeamGenerateCribCrossCorpus`](redteam_lab_test.go) — corpus generator producing two ciphertexts with shared seeds, different nonces, different plaintext formats (JSON + HTML).
+
+Tests direct confidentiality under a GF(2)-linear primitive **without** nonce reuse and **without** the demasker pipeline of [Phase 2d](#phase-2d--nonce-reuse). The attack is algebraic: ChainHash composition of a GF(2)-linear round function preserves linearity, so `dataHash(p) = K ⊕ c(p)` where `K` is a 64-bit per-lane compound key and `c(p)` is attacker-computable. A publicly-known plaintext prefix (JSON API schema) lets the attacker recover `K` from a single ciphertext; the same `K` then partially decrypts a second message encrypted under the same `dataSeed` but a fresh `nonce` and different plaintext format.
+
+### Attack chain
+
+1. **Corpus generation** — `TestRedTeamGenerateCribCrossCorpus` creates two cells sharing `(noiseSeed, dataSeed, startSeed)` but using distinct nonces:
+    - `corpus_A_json` — 4 KB `json_structured_80` plaintext, nonce_A
+    - `corpus_B_html` — 4 KB `html_structured_80` plaintext, nonce_B
+   Both at CRC128 + keyBits=1024 + BF=1. Shared seeds demonstrate the per-`dataSeed` invariance of `K` (`K` depends only on seed components, not on nonce or plaintext).
+
+2. **Crib-KPA on corpus A** ([`crib_crc128_kpa.py`](scripts/redteam/phase2_theory/crib_crc128_kpa.py)): attacker feeds the public JSON schema prefix (`\xff[{"identifier_of_record_in_system":"` — COBS start byte + first 36 bytes of the template, 37 bytes = 5 pixels) as a crib. The script brute-forces the pixel shift (equivalent to startPixel discovery) over all `total_pixels` candidates; for each shift, tries 56 `(noise_pos, rotation)` combinations on pixel 0 to derive candidate `K` values, verifies against pixels 1–4 of the crib. A single shift + single K candidate survives verification in ~1 s wall-clock on a 4 KB corpus. The solver returns a 64-bit K with **56 observable bits correct** (bits 3..58) and **8 bits ambiguous** (low 3 + high 5) because `channelXOR = hLo >> 3` only exposes bits 3..58.
+
+3. **Cross-format decrypt on corpus B** ([`crib_crc128_decrypt.py`](scripts/redteam/phase2_theory/crib_crc128_decrypt.py)): using the 56-bit observable K from step 2, the script enumerates all 256 placements of the unobservable 8 bits and runs each variant against corpus B's ciphertext. A 4-pixel HTML schema crib (`\xff<identifier-of-record-in-sy` — 28 bytes from the public HTML template, no record-specific values) anchors startPixel via brute force and narrows the K-variant set from 256 to a single winner. Deterministic `rotation = hLo mod 7` derivation + 8-way brute force over `noise_pos` per pixel with a printable-ASCII filter produces a partial plaintext reconstruction.
+
+### Empirical result (4 KB × CRC128 × BF=1, JSON → HTML cross-format)
+
+| Metric | Value |
+|:-------|------:|
+| Crib length (corpus A, JSON schema) | 37 bytes (5 pixels) |
+| Crib length (corpus B, HTML schema) | 28 bytes (4 pixels) |
+| Corpus A: K recovered | ✓ (56 observable bits) |
+| Corpus A: crib-KPA wall-clock | ~1 s |
+| Corpus B: K_variant + startPixel pairs surviving crib | 12 candidates |
+| Corpus B: winning variant matches ground-truth K | ✓ (0x9770020d7031bede) |
+| Corpus B: byte-level accuracy vs COBS-encoded plaintext | **75.18 %** (2960 / 3937 bytes) |
+| Corpus B: full-pixel accuracy (noise_pos picked correctly) | **60.14 %** (338 / 562 pixels) |
+
+Winning K decrypts pixel 0 of corpus B byte-for-byte as `\xff<identifier-of-record-in-system>` and recovers most schema tokens intact (`identifier-of-record-in-system`, `the-timestamp-of-the-event-iso`, `the-encrypted-opaque-payload01`, tag boundaries, record separators). Value regions (record IDs, timestamps, opaque payloads) and ~40 % of channel positions have byte-level corruption.
+
+### Architectural findings
+
+1. **GF(2)-linear primitives expose `dataSeed`'s compound key `K` on a single ciphertext.** No nonce reuse, no demasker, no lab access — pure public-schema crib-KPA. The solver extracts 56 of 64 observable K bits algebraically; the remaining 8 bits (high 5 + low 3) lie outside the `channelXOR = hLo >> 3` window and can only be disambiguated by crib or template consistency on a second ciphertext. This is the load-bearing empirical evidence that [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure)'s "mixed-algebra is load-bearing" premise is correct: replace FNV-1a's carry-chain non-linearity with a pure GF(2)-linear CRC128 and the entire ChainHash cost table collapses.
+
+2. **K is a per-`dataSeed` invariant, independent of nonce and plaintext.** `dataHash(p, nonce) = K ⊕ c(p, nonce)` where `c(·)` is attacker-computable for any nonce the attacker observes. A single K recovery breaks every future message encrypted under the same `dataSeed`, regardless of nonce rotation. This is why the cross-format decrypt works: corpus B under a fresh nonce still folds to the same K.
+
+3. **`noiseSeed` is structurally inaccessible to crib-KPA.** Unlike `dataSeed`, whose ChainHash output is exposed through `channelXOR` (56 bits per pixel), `noiseSeed.ChainHash` output is consumed as `noisePos = hLo & 7` — an index telling the encoder which of 8 container-byte positions carries the random noise bit. After encryption the noise bit at that position is **indistinguishable** from a data bit at the same position (both are random looking). The attacker cannot construct any observable "crib" for noiseSeed values; there is no position in the ciphertext where `noiseSeed` output appears as a recoverable linear image. The GF(2)-linear collapse that breaks `dataSeed` **does not apply to `noiseSeed`** — not because the primitive becomes non-linear there, but because the mapping `noiseSeed output → ciphertext` projects 64 bits of hash output into a single-bit architectural lane the attacker cannot probe through output-only observation.
+
+4. **The noise-bit layer continues to protect plaintext even when `K_data` is broken.** Because `noisePos` is not recoverable, the cross-format decrypt must brute-force 8 `noise_pos` candidates per pixel and pick via a printable-ASCII heuristic. For HTML plaintext (all printable), wrong `noise_pos` variants produce random 7-byte chunks that coincidentally look printable with probability `(95/128)^7 ≈ 12 %`; 8 tries give `~65 %` chance of accidental printable selection, driving full-pixel accuracy down to ~60 % and byte-level accuracy to ~75 %. This is a **surprise finding**: the barrier splits confidentiality into two independent layers, and the noise-bit layer survives a GF(2)-linear primitive break.
+
+5. **Full `noise_pos` brute force is infeasible.** `8^data_pixels = 8^562 ≈ 10^507` configurations for a 4 KB corpus; the script's per-pixel printable-ASCII filter is the only tractable heuristic, and it is intrinsically imperfect. An attacker wanting clean plaintext recovery would need either the noiseSeed components (lab-only, not recoverable through crib-KPA) or a cryptographically stronger noise_pos heuristic than "looks like ASCII", neither of which is accessible without cheating.
+
+### Plaintext-entropy scaling of the partial-recovery rate
+
+Finding (4) — that the noise-bit layer keeps ~25 % of bytes corrupted on HTML — is a floor, not a ceiling. The fraction of plaintext the attacker can salvage depends on the plaintext's alphabet: the `noise_pos` brute-force picks a winning candidate by "this 7-byte chunk looks like valid plaintext", and that filter degrades as the plaintext alphabet approaches the full 128-value 7-bit space.
+
+For a 7-bit plaintext alphabet of size `|A|`, a wrong `noise_pos` produces uniformly-random 7 bits; the probability that all 7 bytes in a pixel still look valid is `(|A| / 128)^7`. Over 8 brute-force tries, the chance of an accidental "valid" pick before the correct one is `1 − (1 − (|A|/128)^7)^8`.
+
+| Plaintext class | `\|A\|` per byte | Wrong-np "looks valid" per 7-byte chunk | Expected full-pixel recovery |
+|:----------------|---------------:|----------------------------------------:|-----------------------------:|
+| HTML / JSON (printable ASCII + whitespace + COBS) | ~95 | `(95/128)^7 ≈ 12 %` | **~60 %** (empirically 60.14 %) |
+| Raw ASCII text (letters + digits + punctuation) | ~75 | `(75/128)^7 ≈ 2.8 %` | ~82 % |
+| UTF-8 text with occasional multi-byte chars | ~110 | `(110/128)^7 ≈ 36 %` | ~30 % |
+| **Binary (ZIP, PDF, MP4, any compressed / encrypted stream)** | **128** | **100 %** (filter useless) | **~12.5 %** — the floor of a random 1-in-8 pick |
+
+For the HTML row the prediction (60 %) matches the empirical result (60.14 %) tightly, which in turn validates the model for the other rows.
+
+**Self-vs-cross decrypt consistency.** Running the same decrypt script against the *original* `corpus_A_json` (same seeds, same nonce, same JSON plaintext — i.e. no cross-message element, just a self-check that the recovered K works end-to-end on its source) reaches **79.65 % byte-level / 65.68 % full-pixel** accuracy. The cross-format / fresh-nonce `corpus_B_html` run reaches 75.18 % / 60.14 %. The two outcomes agree to within ~5 p.p., which:
+
+1. Confirms `K` is per-`dataSeed` invariant in practice — the same 64-bit key decrypts the source ciphertext and the cross-format ciphertext to statistically indistinguishable quality. No nonce-specific or format-specific advantage for the self-decrypt case.
+2. Validates the entropy-scaling model — the slight edge for JSON (65.7 % vs 60.1 % for HTML) is consistent with JSON's narrower effective alphabet (denser punctuation / digit usage, tighter within the printable band), which reduces the `(|A|/128)^7` probability of a wrong-`noise_pos` accidentally passing the filter.
+3. Rules out the possibility that the 60 % result on corpus B was an artefact of the fresh-nonce / different-plaintext context. It is the `noise_pos` layer, not the cross-message setup, that caps the recovery rate.
+
+### Binary-format immunity
+
+For binary plaintext the `noise_pos` filter collapses: any 7-bit value is a valid byte for a compressed stream, so **all 8 brute-force candidates per pixel pass the filter equally**. The script falls back to picking the first candidate, which is a random 1-in-8 choice — 12.5 % full-pixel accuracy, 87.5 % of pixels have 6 wrong bytes out of 7. The resulting byte stream looks uniformly random; ZIP CRC-32 footers fail, PDF xref tables break, compressed payload streams do not decompress. The attacker cannot distinguish a correctly recovered section from a corrupted one without format-specific side information.
+
+This is the **same architectural property** that [ITB.md § 8.1 — Why binary formats defeat Partial-KPA demasking entirely](ITB.md#81-why-binary-formats-defeat-partial-kpa-demasking-entirely) documents for the Partial-KPA demasker attack chain in Phase 2d: binary formats are intrinsically resistant to attacks whose per-pixel disambiguation relies on plaintext-alphabet structure. Phase 2f extends the observation to the crib-KPA + cross-message-decrypt chain: even if the GF(2)-linear primitive is fully broken and `K_data` is recovered, a binary-format ciphertext under the same `dataSeed` remains protected by the noise-bit layer to within ~1 bit of a random guess per channel. Users shipping ZIP / PDF / MP4 / compressed JSON / Protobuf / any binary-encoded data are one extra layer of defence deeper than users shipping HTML / JSON text, **independent of the primitive's algebraic structure**.
+
+This should not be read as "binary formats are safe to use with CRC128" — the stress control is explicitly lab-only and the point of the section is to map the surface where the primitive's GF(2)-linearity breaks confidentiality. It IS a useful architectural observation for the general case: the noise-bit layer's protection strength tracks the plaintext's Shannon entropy, not just the primitive's cryptographic strength.
+
+### Startup cost: full brute force vs bias-probe shortcut
+
+The crib-KPA script supports two startPixel-discovery modes. Both recover K with identical output; only the wall-clock scaling differs.
+
+**Full brute force (`--brute-force-shifts`).** Scans all `total_pixels` candidate shifts, running the 56-guess crib-KPA inner loop at each, and picks the shift whose K candidate survives the 5-pixel verify step. No bias-probe dependency, no lab access, pure attacker-side compute.
+
+Measured wall-clock scaling (single CPU core, commodity laptop). Per-shift inner-loop cost is ~2.45 ms — independent of plaintext size, confirmed across three measured anchor points (4 KB / 64 KB / 1 MB):
+
+| Plaintext size | total_pixels | Per-shift cost | Wall-clock range (22%–78% scan) | Worst-case full scan |
+|:---------------|-------------:|---------------:|----------------------------------:|---------------------:|
+| 4 KB | 625 | ~2.9 ms | **0.40 s – 1.41 s** | ~1.8 s |
+| 64 KB | 9 604 | ~2.4 ms | **5.1 s – 18.0 s** | ~23 s |
+| 1 MB | 151 321 | ~2.45 ms | **81 s – 297 s** (4 measured runs, 22%–78% scan) | ~6.2 min |
+| 10 MB | ~1.5 M | ~2.45 ms | **~13.5 min – ~48 min** | ~61 min |
+| 100 MB | ~15 M | ~2.45 ms | **~2.2 h – ~8 h** | ~10.2 h |
+
+The script short-circuits at the first shift whose K candidate passes the 5-pixel verify step (there is no benefit to scanning further once the crib locks in), so actual wall-clock depends on where the true shift lands in the scan order — uniformly distributed across `[0, total_pixels)`, so the expected value is `~0.5 × full-scan` but any single run may land anywhere in the scan interval. The 1 MB row reports the empirically measured 22%–78% spread across 4 independent runs with different seeds; other rows report the same 22%–78% band around their full-scan cost. Per-shift cost stays flat within measurement noise across three orders of magnitude, validating the linear-in-`total_pixels` model.
+
+Parallelism (map-reduce over shifts, trivially splittable) cuts wall-clock by the worker count — a commodity 16-core host brings the 100 MB worst case from ~10 h down to under 40 min, a small cloud allocation reaches GB-scale in hours. Full brute force is therefore a practical attacker capability on reasonable corpus sizes; it is **not** gated by bias-probe availability.
+
+**Bias-probe shortcut.** A production attacker with access to the [Phase 2a extension raw-mode bias probe](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) (`raw_mode_bias_probe.py`) can pre-filter candidate shifts to the top-5 conflict-rate plateau in sub-second time — the true shift always lands in that plateau under GF(2)-linearity. Crib-KPA then only verifies ≤5 shifts instead of `total_pixels`, reducing wall-clock to sub-second regardless of corpus size. This is a **quality-of-life optimisation**, not a load-bearing dependency: the full-brute-force row above demonstrates the attack completes in realistic time without it.
+
+### Reproduction
+
+The full pipeline is three steps: generate a shared-seeds corpus pair (step 1), recover the 64-bit compound key `K` from the JSON ciphertext via pure brute force with no bias-probe assist (step 2), feed that `K` into the cross-format decrypt against the HTML ciphertext encrypted under the same seeds but a fresh nonce (step 3). All three steps are size-parameterised via `ITB_CRIB_CROSS_SIZE`; the rest of the pipeline is size-independent.
+
+```bash
+# Step 1 — generate shared-seeds corpus pair under CRC128 + keyBits=1024 + BF=1.
+# Seeds (noiseSeed, dataSeed, startSeed) are identical across the two cells;
+# nonces differ. corpus_A_json is the crib-KPA target; corpus_B_html is the
+# cross-message decrypt target. Pick any of the three sizes (or any other
+# value ≥ 4096):
+
+ITB_CRIB_CROSS=1 ITB_CRIB_CROSS_SIZE=4096    \
+    go test -run TestRedTeamGenerateCribCrossCorpus -v -timeout 60s      # 4 KB
+ITB_CRIB_CROSS=1 ITB_CRIB_CROSS_SIZE=65536   \
+    go test -run TestRedTeamGenerateCribCrossCorpus -v -timeout 300s     # 64 KB
+ITB_CRIB_CROSS=1 ITB_CRIB_CROSS_SIZE=1048576 \
+    go test -run TestRedTeamGenerateCribCrossCorpus -v -timeout 600s     # 1 MB
+
+# Step 2 — recover K from corpus A via pure brute force (no bias probe).
+# The script prints `[shift N] ★ MATCH  K=0xXXXXXXXXXXXXXXXX` on the
+# winning shift; copy the 64-bit K hex into step 3.
+python3 scripts/redteam/phase2_theory/crib_crc128_kpa.py \
+    --cell-dir tmp/attack/crib_cross/corpus_A_json \
+    --verify-pixels 5 \
+    --brute-force-shifts
+
+# Step 3 — decrypt corpus B (HTML, fresh nonce) using the K from step 2.
+# The --k-observable hex is whatever step 2 printed; the script internally
+# masks it to the 56 observable bits and enumerates the 8 unknown bits.
+# The HTML crib `\xff<identifier-of-record-in-sy` (4 pixels, 28 bytes) is
+# the public schema prefix — no record-specific values.
+python3 scripts/redteam/phase2_theory/crib_crc128_decrypt.py \
+    --cell-dir tmp/attack/crib_cross/corpus_B_html \
+    --k-observable 0xPASTE_K_FROM_STEP_2 \
+    --crib-hex ff3c6964656e7469666965722d6f662d7265636f72642d696e2d7379
+
+# Optional — append the ground-truth plaintext file for a lab byte-level /
+# pixel-level accuracy report; the attack itself does not need it.
+#   --expected-plaintext tmp/attack/crib_cross/corpus_B_html/ct_0000.plain
+```
+
+Expected wall-clocks (single CPU core): 4 KB step 2 runs in under 2 s; 64 KB in ~5–18 s; 1 MB in ~81–297 s (uniform distribution of winning-shift position, see the scaling table above). Step 3 runs in a few seconds at all three sizes.
+
+Per-run artefacts:
+- `tmp/attack/crib_cross/corpus_A_json/` — JSON source used for crib-KPA (plus `cell.meta.json` with seed components for lab audit).
+- `tmp/attack/crib_cross/corpus_B_html/` — HTML decrypt target + `recovered_stream.bin` (partial-recovery output).
+- `tmp/attack/crib_cross/summary.json` — shared seeds + both nonces.
+
+### Scope
+
+This section establishes the outer bound of cross-message confidentiality damage from a GF(2)-linear primitive + public schema crib. It does NOT claim production ITB is vulnerable — CRC128 is an unexported lab-only stress control whose presence in `redteam_lab_test.go` is explicitly gated behind `redteam_lab_test.go`-resident identifiers not reachable through `NewSeed{128,256,512}`. Users who wire any non-GF(2)-linear primitive from the [Hash matrix](#hash-matrix) (FNV-1a, MD5, or any PRF-grade entry) into their deployment are not exposed to this attack chain — as formally argued in [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure) and empirically cross-validated by [Phase 2a extension bias audit](#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) (FNV-1a / BLAKE3 / MD5 all show `neutralized ✓` on raw-mode conflict-rate distribution where CRC128 shows `bias-leak ✗`).
 
 ---
 
