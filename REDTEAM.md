@@ -154,7 +154,27 @@ yay -S nist-sts
 yay -S bitwuzla
 ```
 
-On non-Arch distributions, install equivalents via your package manager (`apt install golang-go python3-numpy python3-scipy python3-pip && pip install --user blake3`, build `nist-sts` from <https://github.com/terrillmoore/NIST-Statistical-Test-Suite> or similar).
+**Install prerequisites (Debian / Ubuntu).** Bitwuzla and `nist-sts` are not packaged for apt and are built from source; the remaining tooling installs via apt and pip.
+
+```bash
+# Core toolchain + Python analyzers
+apt install golang-go build-essential cmake meson ninja-build libgmp-dev \
+            python3 python3-pip python3-numpy python3-scipy \
+            python3-matplotlib python3-z3
+
+# BLAKE3 Python bindings + claripy (no apt packages)
+pip install --user blake3 claripy
+
+# NIST SP 800-22 test suite — build from source
+git clone https://github.com/terrillmoore/NIST-Statistical-Test-Suite
+cd NIST-Statistical-Test-Suite && make
+
+# Bitwuzla 0.9+ SMT solver — build from source (no Debian/Ubuntu package)
+git clone https://github.com/bitwuzla/bitwuzla
+cd bitwuzla && ./configure.py && cd build && ninja && sudo ninja install
+```
+
+Other distributions: install equivalents via the native package manager; Bitwuzla and `nist-sts` typically require source builds regardless of platform.
 
 All scripts under [`scripts/redteam/`](scripts/redteam/). The simplest way to run the full suite is the master orchestrator:
 
