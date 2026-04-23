@@ -333,3 +333,9 @@ ITB is a new construction without prior peer review or independent cryptanalysis
 | Side-channel mitigations | Implemented, not independently audited |
 
 Potential vulnerability classes: (1) fundamental — barrier invalidation under unconsidered attack model (unlikely, barrier is probability-theoretic); (2) implementational — edge cases, timing, off-by-one (correctable). See [SCIENCE.md §4](SCIENCE.md#scope-and-maturity-disclaimer) "Scope and Maturity Disclaimer" for detailed discussion.
+
+## 18. Bit Soup (Triple Ouroboros opt-in mode)
+
+`SetBitSoup(1)` enables bit-granularity plaintext split for every Triple Ouroboros variant (`Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*`). Under Bit Soup, no single snake holds a real plaintext byte — each snake's payload is a fixed public bit-permutation across three consecutive plaintext bytes. Bit Soup reduces SAT cryptanalysis to an under-determined instance under Partial KPA + realistic protocol traffic; the barrier is information-theoretic at the instance-formulation layer, not computational at the solver layer. Default `SetBitSoup(0)` leaves byte-level Triple Ouroboros shipped behaviour unchanged.
+
+Ciphertext wire format is identical in both modes; no public header bit distinguishes them. See [ITB3.md](ITB3.md#bit-soup-bit-level-split-opt-in) for the accessible explanation and [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based) for the defensive framing in the SAT attack context.

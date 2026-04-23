@@ -167,6 +167,7 @@
 //	itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
 //	itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
 //	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+//	itb.SetBitSoup(1)       // Triple Ouroboros bit-level split ("bit soup"; default: 0 = byte-level)
 //
 //	// SipHash-2-4 (128-bit hash, 1024-bit effective key)
 //	func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
@@ -358,6 +359,40 @@
 // For best throughput, use 512-bit ITB key — security becomes P × 2^1536
 // (3 × 512), stronger than Single 1024-bit, while ChainHash runs at 512-bit
 // speed. See [ITB3.md] for accessible explanation and [BENCH3.md] for benchmarks.
+//
+// # Bit Soup (Triple Ouroboros opt-in)
+//
+// [SetBitSoup] configures Triple Ouroboros plaintext split granularity for the
+// whole process. Default mode 0 is byte-level (shipped behaviour). Mode 1
+// enables bit-level split ("bit soup"): every third bit of the plaintext
+// goes to a different snake, so no snake carries a real plaintext byte —
+// each snake's payload is a fixed public bit-permutation across three
+// consecutive plaintext bytes.
+//
+// Bit soup relocates the SAT-cryptanalysis barrier from the computational
+// layer to the instance-formulation layer. Standard cryptanalytic intuition
+// pictures SAT recovery as a solver-speed problem: "given a defined NP
+// instance, how fast can the attacker solve it." Bit soup targets the prior
+// question: "does the attacker have enough observation to define the
+// instance." Under Partial KPA + realistic protocol traffic, the per-snake
+// SAT instance is information-theoretically under-determined at typical
+// crib coverage — multiple joint (seed, startPixel) tuples satisfy the
+// sparse constraint set. Faster solvers, including any hypothetical shortcut
+// to PRF inversion, do not widen the crib or convert under-determination
+// into determination. This is orthogonal to, not stronger than, computational
+// hardness.
+//
+// Applies uniformly to every Triple Ouroboros variant — [Encrypt3x128] /
+// [Decrypt3x128], the 256- / 512-bit mirrors, [EncryptAuthenticated3x128] /
+// [DecryptAuthenticated3x128] and their mirrors, and [EncryptStream3x128] /
+// [DecryptStream3x128] and mirrors. The ciphertext wire format is identical
+// in both modes. Callers must set the same mode on both encrypt and decrypt
+// sides of the channel.
+//
+//	itb.SetBitSoup(1) // whole-process opt-in; default 0 = byte-level
+//
+// See [ITB3.md] for accessible explanation and [REDTEAM.md] Phase 2g for
+// the defensive framing in the SAT attack context.
 //
 // # Parallelism Control
 //

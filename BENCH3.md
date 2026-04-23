@@ -81,3 +81,44 @@
 | **ChaCha20** | 256 | 2048 | PRF | 110 | 152 | 172 | 140 | 195 | 215 |
 | **BLAKE2s** | 256 | 2048 | PRF | 81 | 101 | 123 | 98 | 150 | 154 |
 | **BLAKE3** | 256 | 2048 | PRF | 56 | 72 | 93 | 66 | 94 | 104 |
+
+## Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup mode)
+
+### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 512 | PRF | 41 | 43 | 43 | 46 | 48 | 50 |
+| **AES-CMAC** | 128 | 512 | PRF | 39 | 42 | 41 | 45 | 46 | 48 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 35 | 40 | 40 | 40 | 44 | 44 |
+| **AreionSoEM512** | 512 | 512 | PRF | 36 | 40 | 39 | 41 | 44 | 45 |
+| **AreionSoEM256** | 256 | 512 | PRF | 36 | 39 | 39 | 39 | 42 | 43 |
+| **BLAKE2s** | 256 | 512 | PRF | 31 | 35 | 34 | 35 | 38 | 39 |
+| **ChaCha20** | 256 | 512 | PRF | 33 | 36 | 35 | 36 | 38 | 40 |
+| **BLAKE3** | 256 | 512 | PRF | 26 | 27 | 27 | 28 | 30 | 29 |
+
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 1024 | PRF | 35 | 39 | 39 | 39 | 42 | 44 |
+| **AES-CMAC** | 128 | 1024 | PRF | 34 | 35 | 35 | 37 | 39 | 40 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 29 | 32 | 33 | 32 | 35 | 37 |
+| **AreionSoEM512** | 512 | 1024 | PRF | 29 | 33 | 33 | 32 | 35 | 36 |
+| **AreionSoEM256** | 256 | 1024 | PRF | 28 | 32 | 32 | 31 | 34 | 35 |
+| **BLAKE2s** | 256 | 1024 | PRF | 24 | 27 | 27 | 26 | 29 | 30 |
+| **ChaCha20** | 256 | 1024 | PRF | 26 | 28 | 28 | 28 | 29 | 30 |
+| **BLAKE3** | 256 | 1024 | PRF | 17 | 19 | 19 | 18 | 20 | 20 |
+
+### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 2048 | PRF | 28 | 32 | 32 | 31 | 34 | 35 |
+| **AES-CMAC** | 128 | 2048 | PRF | 27 | 29 | 29 | 29 | 31 | 32 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 22 | 25 | 25 | 23 | 26 | 27 |
+| **AreionSoEM512** | 512 | 2048 | PRF | 23 | 24 | 25 | 24 | 26 | 26 |
+| **AreionSoEM256** | 256 | 2048 | PRF | 21 | 24 | 23 | 23 | 25 | 25 |
+| **BLAKE2s** | 256 | 2048 | PRF | 17 | 19 | 19 | 18 | 20 | 20 |
+| **ChaCha20** | 256 | 2048 | PRF | 18 | 19 | 19 | 19 | 20 | 20 |
+| **BLAKE3** | 256 | 2048 | PRF | 11 | 12 | 12 | 11 | 12 | 13 |
