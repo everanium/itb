@@ -137,9 +137,9 @@ Default measurement grid per primitive:
 - **Hardware:** commodity 16-core Linux host, 48 GB RAM. Larger budgets
   (1-week, 3-month) delegated to secondary machines.
 
-### 3.3. Verdict categories
+### 3.3. Verdict categories and REDTEAM.md Hash matrix labels
 
-Each primitive × column cell gets one of:
+Each primitive × measurement cell gets one of the per-cell status codes:
 
 - ✗ **SAT-broken** — seed recovered with `holdout_functionally_equivalent`
   in the cell's wall-clock budget. Report recovered bit-count vs seed size,
@@ -154,6 +154,42 @@ Each primitive × column cell gets one of:
   migrate into scope from the formal-PRF category (shouldn't happen by
   design of § 1.1).
 
+Beyond the per-cell status, each primitive receives a **shelf-level
+verdict label** mirroring the [REDTEAM.md Hash matrix](REDTEAM.md#hash-matrix)
+convention so a reader can scan this document for the same class of
+decision they use when picking a primitive for production:
+
+- **Fully broken** — the Raw-KPA OR ChainHash-1 column empirically produced
+  `SAT-broken` with functionally-equivalent K in a reasonable commodity
+  budget (days-to-weeks single-core, not analytical extrapolation). The
+  primitive is empirically invertible through generic SAT on ITB-style
+  seed-to-output observations. Reference datum: FNV-1a in REDTEAM.md
+  Phase 2g — ~8 h single-core at ITB keyBits=512 for a functionally-
+  equivalent K, leading to its `Fully broken` marking in the REDTEAM.md
+  Hash matrix.
+- **Dangerous** — raw / ChainHash-1 SAT timed out at the shelf budget,
+  BUT analytical extrapolation from the measured per-round scaling AND
+  the measured primitive-level bit-blast cost puts the full ITB-wrapped
+  decrypt (keyBits = 512 minimum, 1024 shipped, or 2048 paranoid) inside
+  the attacker-reachable envelope — cluster-week to cluster-year budgets
+  that a well-funded adversary can allocate. Reference datum: MD5 in
+  REDTEAM.md Phase 2a extrapolation (reduced-round preimage via SAT
+  known, full-round extrapolated to cluster-days at keyBits=512 under
+  the measured raw-MD5 SAT cost curve), leading to its `Dangerous`
+  marking in the REDTEAM.md Hash matrix.
+- **Resistant (at tested budget)** — raw / ChainHash-1 SAT timed out at
+  the shelf budget AND analytical extrapolation to ITB-wrapped ranges
+  lands beyond any plausible attacker budget (decades to cosmological
+  timescales). No empirical break, no feasible extrapolation. This is
+  the weakest positive claim this shelf ever emits — always qualified
+  with the measured budget that produced the timeout.
+
+A primitive may hold different labels at different ITB-wrapping levels:
+e.g. `Fully broken at keyBits = 512 / 4 rounds` but `Resistant at
+keyBits = 1024 / 8 rounds`. The shelf records the worst-case level at
+which the break is feasible, with a concrete analytical extrapolation
+footnote for the levels where it is not.
+
 ---
 
 ## 4. Primitive shelf
@@ -163,60 +199,60 @@ by expected SAT-hardness (weakest first).
 
 ### 4.1. xxh family
 
-| Primitive | Raw KPA | ChainHash-1 | Impl | Notes |
-|:----------|:-------:|:-----------:|:----:|:------|
-| **xxh3-64 withSeed** (Collet, 2019+) | — | — | TODO | 64-bit seed, 64-bit output. Novel target: no published SAT KPA. Reference: `cespare/xxhash/v2`. |
-| **xxh3-128 withSeed** (Collet, 2019+) | — | — | TODO | 64-bit seed, 128-bit output. More observable per query than 64-bit variant. |
-| **xxh3-64 withSecret** (192 B secret) | — | — | TODO | 1 536-bit secret; expanded-seed form. |
-| **xxh3-128 withSecret** | — | — | TODO | Same as above, 128-bit output. |
-| **xxh64** (Collet, 2012) | — | — | TODO | Predecessor to xxh3; still widely deployed (LZ4 framing). |
+| Primitive | Raw KPA | ChainHash-1 | Verdict label | Impl | Notes |
+|:----------|:-------:|:-----------:|:-------------:|:----:|:------|
+| **xxh3-64 withSeed** (Collet, 2019+) | — | — | — | TODO | 64-bit seed, 64-bit output. Novel target: no published SAT KPA. Reference: `cespare/xxhash/v2`. |
+| **xxh3-128 withSeed** (Collet, 2019+) | — | — | — | TODO | 64-bit seed, 128-bit output. More observable per query than 64-bit variant. |
+| **xxh3-64 withSecret** (192 B secret) | — | — | — | TODO | 1 536-bit secret; expanded-seed form. |
+| **xxh3-128 withSecret** | — | — | — | TODO | Same as above, 128-bit output. |
+| **xxh64** (Collet, 2012) | — | — | — | TODO | Predecessor to xxh3; still widely deployed (LZ4 framing). |
 
 ### 4.2. MurmurHash family
 
-| Primitive | Raw KPA | ChainHash-1 | Impl | Notes |
-|:----------|:-------:|:-----------:|:----:|:------|
-| **MurmurHash3 x64_128** (Appleby, 2011) | — | — | TODO | Used in Cassandra, Kafka, Elasticsearch. 32-bit seed expanded to 128-bit output. |
-| **MurmurHash3 x86_128** | — | — | TODO | 32-bit platform variant. |
-| **MurmurHash3 x86_32** | — | — | TODO | Simpler structure; may fall to raw KPA quickly. |
+| Primitive | Raw KPA | ChainHash-1 | Verdict label | Impl | Notes |
+|:----------|:-------:|:-----------:|:-------------:|:----:|:------|
+| **MurmurHash3 x64_128** (Appleby, 2011) | — | — | — | TODO | Used in Cassandra, Kafka, Elasticsearch. 32-bit seed expanded to 128-bit output. |
+| **MurmurHash3 x86_128** | — | — | — | TODO | 32-bit platform variant. |
+| **MurmurHash3 x86_32** | — | — | — | TODO | Simpler structure; may fall to raw KPA quickly. |
 
 ### 4.3. Google hash family
 
-| Primitive | Raw KPA | ChainHash-1 | Impl | Notes |
-|:----------|:-------:|:-----------:|:----:|:------|
-| **CityHash64** (Google, 2011) | — | — | TODO | Originally optimised for Intel Sandy Bridge. Uses `PRIME × MUL` accumulator pattern. |
-| **CityHash128** | — | — | TODO | 128-bit output variant. |
-| **FarmHash64** (Google, 2014) | — | — | TODO | CityHash successor; internal algorithm selection based on input size. |
-| **FarmHash128** | — | — | TODO | |
-| **FarmHashFingerprint64** | — | — | TODO | Finalised fingerprint variant (deterministic across versions). |
+| Primitive | Raw KPA | ChainHash-1 | Verdict label | Impl | Notes |
+|:----------|:-------:|:-----------:|:-------------:|:----:|:------|
+| **CityHash64** (Google, 2011) | — | — | — | TODO | Originally optimised for Intel Sandy Bridge. Uses `PRIME × MUL` accumulator pattern. |
+| **CityHash128** | — | — | — | TODO | 128-bit output variant. |
+| **FarmHash64** (Google, 2014) | — | — | — | TODO | CityHash successor; internal algorithm selection based on input size. |
+| **FarmHash128** | — | — | — | TODO | |
+| **FarmHashFingerprint64** | — | — | — | TODO | Finalised fingerprint variant (deterministic across versions). |
 
 ### 4.4. Metro / Wy family
 
-| Primitive | Raw KPA | ChainHash-1 | Impl | Notes |
-|:----------|:-------:|:-----------:|:----:|:------|
-| **MetroHash64** (Rogers, 2015) | — | — | TODO | |
-| **MetroHash128** | — | — | TODO | |
-| **wyhash-final4** (Wang Yi, 2021+) | — | — | TODO | Used in Zig stdlib; inspired wyhash-derivative rapidhash. Two 64-bit multiplications per block. |
-| **wyhash-final3** | — | — | TODO | Previous generation; different accumulator structure. |
-| **rapidhash** (De Carli, 2024+) | — | — | TODO | wyhash-derivative; used in newer Rust crates as SwissTable hasher. |
-| **komihash** (Vaneev, 2021+) | — | — | TODO | Alternative wyhash-style fast 64-bit hash. |
+| Primitive | Raw KPA | ChainHash-1 | Verdict label | Impl | Notes |
+|:----------|:-------:|:-----------:|:-------------:|:----:|:------|
+| **MetroHash64** (Rogers, 2015) | — | — | — | TODO | |
+| **MetroHash128** | — | — | — | TODO | |
+| **wyhash-final4** (Wang Yi, 2021+) | — | — | — | TODO | Used in Zig stdlib; inspired wyhash-derivative rapidhash. Two 64-bit multiplications per block. |
+| **wyhash-final3** | — | — | — | TODO | Previous generation; different accumulator structure. |
+| **rapidhash** (De Carli, 2024+) | — | — | — | TODO | wyhash-derivative; used in newer Rust crates as SwissTable hasher. |
+| **komihash** (Vaneev, 2021+) | — | — | — | TODO | Alternative wyhash-style fast 64-bit hash. |
 
 ### 4.5. Rust ecosystem defaults
 
-| Primitive | Raw KPA | ChainHash-1 | Impl | Notes |
-|:----------|:-------:|:-----------:|:----:|:------|
-| **FxHash** (Firefox / rustc) | — | — | TODO | Simple `state = (state.rotate_left(5) ^ byte) * PRIME`. Likely trivially invertible — pending check; may migrate to "out of scope" if so. |
-| **AHash** (Kaitchuck) | — | — | TODO | Uses AES-NI when available → migrates to formal-PRF category. Pure-fallback path (no AES-NI) uses non-AES ARX mixing — that fallback IS in scope. |
-| **fnv-rs** default (FNV-1a 64) | — | — | TODO | Trivially invertible; already covered by ITB Phase 2g analogy — NOT in shelf scope. Listed here only for disambiguation against above. |
-| **foldhash** (Mara Bos, 2024+) | — | — | TODO | New Rust stdlib candidate; ARX-based. Relatively unstudied. |
-| **gxhash** (2024+) | — | — | TODO | AES-NI / VAES-based; migrates to formal-PRF when hw available, ARX fallback in scope. |
+| Primitive | Raw KPA | ChainHash-1 | Verdict label | Impl | Notes |
+|:----------|:-------:|:-----------:|:-------------:|:----:|:------|
+| **FxHash** (Firefox / rustc) | — | — | — | TODO | Simple `state = (state.rotate_left(5) ^ byte) * PRIME`. Likely trivially invertible — pending check; may migrate to "out of scope" if so. |
+| **AHash** (Kaitchuck) | — | — | — | TODO | Uses AES-NI when available → migrates to formal-PRF category. Pure-fallback path (no AES-NI) uses non-AES ARX mixing — that fallback IS in scope. |
+| **fnv-rs** default (FNV-1a 64) | — | — | — | TODO | Trivially invertible; already covered by ITB Phase 2g analogy — NOT in shelf scope. Listed here only for disambiguation against above. |
+| **foldhash** (Mara Bos, 2024+) | — | — | — | TODO | New Rust stdlib candidate; ARX-based. Relatively unstudied. |
+| **gxhash** (2024+) | — | — | — | TODO | AES-NI / VAES-based; migrates to formal-PRF when hw available, ARX fallback in scope. |
 
 ### 4.6. Zig / Go / other ecosystem
 
-| Primitive | Raw KPA | ChainHash-1 | Impl | Notes |
-|:----------|:-------:|:-----------:|:----:|:------|
-| **Zig stdlib Wyhash** | — | — | TODO | Ports upstream wyhash-final4. Covered above; this row just points to Zig-specific wrapper testing. |
-| **Go `hash/maphash`** | — | — | TODO | Runtime implementation uses AES-NI when available (→ formal-PRF); fallback variant uses wyhash-style ARX (→ in scope). |
-| **Rust `HashMap` pre-1.37** (SipHash-1-3) | — | — | TODO | Reduced-round SipHash variant. Whether the reduction moves it out of formal PRF bounds is an open question; measure. |
+| Primitive | Raw KPA | ChainHash-1 | Verdict label | Impl | Notes |
+|:----------|:-------:|:-----------:|:-------------:|:----:|:------|
+| **Zig stdlib Wyhash** | — | — | — | TODO | Ports upstream wyhash-final4. Covered above; this row just points to Zig-specific wrapper testing. |
+| **Go `hash/maphash`** | — | — | — | TODO | Runtime implementation uses AES-NI when available (→ formal-PRF); fallback variant uses wyhash-style ARX (→ in scope). |
+| **Rust `HashMap` pre-1.37** (SipHash-1-3) | — | — | — | TODO | Reduced-round SipHash variant. Whether the reduction moves it out of formal PRF bounds is an open question; measure. |
 
 ### 4.7. Other categories to consider later
 
@@ -232,15 +268,15 @@ by expected SAT-hardness (weakest first).
 
 Prior beliefs, updated as empirical rows land:
 
-| Primitive class | Expected raw-KPA verdict | Expected ChainHash-1 verdict |
-|:----------------|:------------------------:|:----------------------------:|
-| xxh3 / xxh64 family | ⏱ timeout at 1 week+ | ⏱ timeout, higher budget |
-| MurmurHash3 x64_128 | ⏱ timeout at 1 week | ⏱ timeout |
-| CityHash / FarmHash | ⏱ timeout at 1 week | ⏱ timeout |
-| wyhash / rapidhash / komihash | ⏱ timeout, unknown budget | ⏱ timeout |
-| MurmurHash3 x86_32 (short accum) | ✗ recoverable, hours-days | ✗ recoverable, extended |
-| FxHash (if non-trivial) | ✗ likely trivial at raw | — |
-| AHash ARX-fallback | ⏱ timeout 1 week | ⏱ timeout |
+| Primitive class | Expected raw-KPA verdict | Expected ChainHash-1 verdict | Expected shelf verdict label |
+|:----------------|:------------------------:|:----------------------------:|:-----------------------------:|
+| xxh3 / xxh64 family | ⏱ timeout at 1 week+ | ⏱ timeout, higher budget | **Dangerous** (analytical ITB extrapolation within cluster-year) |
+| MurmurHash3 x64_128 | ⏱ timeout at 1 week | ⏱ timeout | **Dangerous** |
+| CityHash / FarmHash | ⏱ timeout at 1 week | ⏱ timeout | **Dangerous** |
+| wyhash / rapidhash / komihash | ⏱ timeout, unknown budget | ⏱ timeout | **Dangerous** |
+| MurmurHash3 x86_32 (short accum) | ✗ recoverable, hours-days | ✗ recoverable, extended | **Fully broken** (expected sub-day at ITB keyBits=512) |
+| FxHash (if non-trivial) | ✗ likely trivial at raw | — | **Fully broken** or migrates to "invertible — out of scope" |
+| AHash ARX-fallback | ⏱ timeout 1 week | ⏱ timeout | **Dangerous** |
 
 Priors held with wide error bars. Any inversion at significantly tighter
 wall-clock than predicted is itself a publication.
@@ -294,3 +330,25 @@ zero published cryptanalysis). Subsequent primitives add breadth to the
   MD5 calibration outcome (PID 115102, 24 h budget) before committing to
   first shelf measurement. xxh3-128 withSeed identified as headline
   primary target per `.MD5STRESS.md` § 11 follow-up pointer.
+- 2026-04-23 — Moved out of `.gitignore`; SATHARNESS.md becomes a public
+  sibling of REDTEAM.md / ITB.md / SCIENCE.md / PROOFS.md as a statement
+  of intent — the non-crypto-hash empirical-cryptanalysis project is an
+  active, publicly-declared direction, not an internal planning document.
+- 2026-04-23 — Shelf verdict scheme aligned with
+  [REDTEAM.md Hash matrix](REDTEAM.md#hash-matrix) labels: per-primitive
+  **Verdict label** column added to every shelf table (xxh / Murmur /
+  Google / Metro-Wy / Rust / Zig-Go) with the same `Fully broken` /
+  `Dangerous` / `Resistant` vocabulary used for the ITB Hash matrix.
+  `Fully broken` = Raw-KPA or ChainHash-1 empirically produced functional
+  K in commodity budget (FNV-1a reference at ~8 h); `Dangerous` = shelf
+  measurement timed out, but analytical extrapolation under ChainHash +
+  ITB places full decrypt inside well-funded-attacker reach (cluster-
+  weeks to cluster-years — MD5 reference from REDTEAM.md Phase 2a);
+  `Resistant` = timeout at the shelf budget AND extrapolation to ITB-
+  wrapped levels lands beyond any plausible attacker budget. Expected
+  results matrix (§ 5) updated with prior-belief verdict labels for
+  each primitive family — to be replaced by empirical labels as shelf
+  measurements land. A primitive may hold different labels at different
+  ITB-wrapping levels (e.g. Fully broken at keyBits=512 / 4 rounds but
+  Resistant at keyBits=1024 / 8 rounds), recorded as worst-case with
+  analytical footnotes for the higher levels.
