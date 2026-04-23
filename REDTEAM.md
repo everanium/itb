@@ -147,6 +147,11 @@ yay -S python-blake3
 
 # NIST SP 800-22 test suite (AUR)
 yay -S nist-sts
+
+# Bitwuzla 0.9+ SMT solver (AUR) — used by the Phase 2g SAT harness; Z3 is
+# a fallback but Bitwuzla handles QF_BV multiplication-heavy formulas
+# 2–10× faster and enforces wall-clock timeout across every solver phase
+yay -S bitwuzla
 ```
 
 On non-Arch distributions, install equivalents via your package manager (`apt install golang-go python3-numpy python3-scipy python3-pip && pip install --user blake3`, build `nist-sts` from <https://github.com/terrillmoore/NIST-Statistical-Test-Suite> or similar).
