@@ -44,6 +44,7 @@ package itb
 // ciphertexts in the cell).
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
@@ -2749,4 +2750,301 @@ func TestRedTeamGenerateFNVStressCorpus(t *testing.T) {
 
 	t.Logf("fnvstress corpus bundle generated at %s (keyBits=%d rounds=%d cells=%d cribs/cell=%d)",
 		outDir, keyBits, numComponents/2, corpusCount, cribCount+1)
+}
+
+// buildFNVZipPlaintext constructs a deterministic ZIP archive containing
+// `fileCount` uncompressed (Store method) text files named "1.txt" through
+// "<fileCount>.txt", each carrying `perFileBytes` bytes of lorem-ipsum-like
+// printable-ASCII content sourced from the provided RNG. Store method keeps
+// file bodies printable while ZIP local file headers, central directory
+// entries, and end-of-central-directory record contribute the binary-
+// structured portion of the plaintext (PK signatures, 32-bit little-endian
+// CRC / size / offset fields). Purpose: produce a mixed-printable-plus-
+// binary plaintext that exercises the decrypt-side beam-search beyond the
+// JSON/HTML printable-ASCII regime.
+func buildFNVZipPlaintext(rng *rand.Rand, fileCount, perFileBytes int) []byte {
+	var loremWords = []string{
+		"lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing",
+		"elit", "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore",
+		"et", "dolore", "magna", "aliqua", "enim", "ad", "minim", "veniam",
+		"quis", "nostrud", "exercitation", "ullamco", "laboris", "nisi", "aliquip",
+		"ex", "ea", "commodo", "consequat", "duis", "aute", "irure", "in",
+		"reprehenderit", "voluptate", "velit", "esse", "cillum", "fugiat",
+		"nulla", "pariatur", "excepteur", "sint", "occaecat", "cupidatat",
+		"non", "proident", "sunt", "culpa", "qui", "officia", "deserunt",
+		"mollit", "anim", "id", "est", "laborum",
+	}
+	body := make([]byte, 0, perFileBytes+32)
+	for len(body) < perFileBytes {
+		if len(body) > 0 {
+			body = append(body, ' ')
+		}
+		body = append(body, loremWords[rng.Intn(len(loremWords))]...)
+	}
+	body = body[:perFileBytes]
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i := 1; i <= fileCount; i++ {
+		header := &zip.FileHeader{
+			Name:     fmt.Sprintf("%d.txt", i),
+			Method:   zip.Store,
+			Modified: time.Unix(1700000000, 0).UTC(),
+		}
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			panic(fmt.Sprintf("zip CreateHeader: %v", err))
+		}
+		fileRng := rand.New(rand.NewSource(int64(i) ^ 0x5A5A5A5A5A5A5A5A))
+		fileBody := make([]byte, 0, perFileBytes+32)
+		for len(fileBody) < perFileBytes {
+			if len(fileBody) > 0 {
+				fileBody = append(fileBody, ' ')
+			}
+			fileBody = append(fileBody, loremWords[fileRng.Intn(len(loremWords))]...)
+		}
+		fileBody = fileBody[:perFileBytes]
+		if _, err := w.Write(fileBody); err != nil {
+			panic(fmt.Sprintf("zip Write: %v", err))
+		}
+	}
+	if err := zw.Close(); err != nil {
+		panic(fmt.Sprintf("zip Close: %v", err))
+	}
+	return buf.Bytes()
+}
+
+// TestRedTeamGenerateFNVZipCorpus emits a single-cell ITB corpus whose
+// plaintext is a ZIP archive containing `ITB_FNV_ZIP_FILES` text files of
+// `ITB_FNV_ZIP_FILE_BYTES` bytes each (defaults: 100 × 1024 B ≈ 112 KB
+// plaintext). Primitive: FNV-1a at keyBits=512 + BF=1, shared seed-pattern
+// convention with the other FNV-1a stress / cross generators. Output path
+// `tmp/attack/fnvzip/cell_00_zip/` holds ct_0000.bin + ct_0000.plain +
+// cell.meta.json; top-level summary.json records seed components for lab
+// peek and geometric parameters for subsequent decrypt runs.
+//
+// The corpus supports decrypt-side empirical measurement of byte-match
+// recovery on binary plaintext under a known K. It is NOT used for SAT
+// harness input — dataSeed recovery methodology is the same as for
+// JSON/HTML corpora in [Phase 2g]; the ZIP corpus isolates the decrypt
+// side of the chain with plaintext-format-aware candidate ranking.
+//
+// Enable: `ITB_FNV_ZIP=1 go test -run TestRedTeamGenerateFNVZipCorpus -v`
+func TestRedTeamGenerateFNVZipCorpus(t *testing.T) {
+	if os.Getenv("ITB_FNV_ZIP") != "1" {
+		t.Skip("set ITB_FNV_ZIP=1 to generate the FNV-1a ZIP corpus")
+	}
+
+	keyBits := 512
+	if s := os.Getenv("ITB_FNV_ZIP_KEYBITS"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 512 || sv > 2048 || sv%128 != 0 {
+			t.Fatalf("ITB_FNV_ZIP_KEYBITS=%q: must be in [512,2048] multiple of 128", s)
+		}
+		keyBits = sv
+	}
+	fileCount := 100
+	if s := os.Getenv("ITB_FNV_ZIP_FILES"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 1 || sv > 10000 {
+			t.Fatalf("ITB_FNV_ZIP_FILES=%q: must be in [1,10000]", s)
+		}
+		fileCount = sv
+	}
+	perFileBytes := 1024
+	if s := os.Getenv("ITB_FNV_ZIP_FILE_BYTES"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 16 || sv > 1<<20 {
+			t.Fatalf("ITB_FNV_ZIP_FILE_BYTES=%q: must be in [16,1 MiB]", s)
+		}
+		perFileBytes = sv
+	}
+	seedSource := uint64(0x46_4e_56_5a_49_50_43_50) // "FNVZIPCP"
+	if s := os.Getenv("ITB_FNV_ZIP_SEED_SOURCE"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_FNV_ZIP_SEED_SOURCE=%q: %v", s, err)
+		}
+		seedSource = sv
+	}
+	nonceSeed := uint64(0x5a_49_50_4e_4f_4e_43_45) // "ZIPNONCE"
+	if s := os.Getenv("ITB_FNV_ZIP_NONCE_SEED"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_FNV_ZIP_NONCE_SEED=%q: %v", s, err)
+		}
+		nonceSeed = sv
+	}
+
+	numComponents := keyBits / 64
+	seedRng := rand.New(rand.NewSource(int64(seedSource)))
+	noiseComps := make([]uint64, numComponents)
+	dataComps := make([]uint64, numComponents)
+	startComps := make([]uint64, numComponents)
+	for i := range noiseComps {
+		noiseComps[i] = seedRng.Uint64()
+	}
+	for i := range dataComps {
+		dataComps[i] = seedRng.Uint64()
+	}
+	for i := range startComps {
+		startComps[i] = seedRng.Uint64()
+	}
+
+	hashFunc := HashFunc128(fnv1a128)
+	nsSeed, err := SeedFromComponents128(hashFunc, noiseComps...)
+	if err != nil {
+		t.Fatalf("ns seed: %v", err)
+	}
+	dsSeed, err := SeedFromComponents128(hashFunc, dataComps...)
+	if err != nil {
+		t.Fatalf("ds seed: %v", err)
+	}
+	ssSeed, err := SeedFromComponents128(hashFunc, startComps...)
+	if err != nil {
+		t.Fatalf("ss seed: %v", err)
+	}
+
+	plaintextRng := rand.New(rand.NewSource(int64(seedSource) ^ 0xC0FFEE_7A1B))
+	pt := buildFNVZipPlaintext(plaintextRng, fileCount, perFileBytes)
+
+	nonceRng := rand.New(rand.NewSource(int64(nonceSeed)))
+	nonce := make([]byte, 16)
+	if _, err := nonceRng.Read(nonce); err != nil {
+		t.Fatalf("nonce rng: %v", err)
+	}
+
+	outDirRel := "tmp/attack/fnvzip"
+	if s := os.Getenv("ITB_FNV_ZIP_OUTDIR"); s != "" {
+		outDirRel = s
+	}
+	outDir, _ := filepath.Abs(outDirRel)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cellName := "cell_00_zip"
+	cellDir := filepath.Join(outDir, cellName)
+	if err := os.MkdirAll(cellDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", cellDir, err)
+	}
+
+	setTestNonce(t, nonce)
+	ct, err := Encrypt128(nsSeed, dsSeed, ssSeed, pt)
+	if err != nil {
+		t.Fatalf("Encrypt128: %v", err)
+	}
+	if len(ct) < 20 {
+		t.Fatalf("ciphertext too short for header: %d", len(ct))
+	}
+	W := int(uint16(ct[16])<<8 | uint16(ct[17]))
+	H := int(uint16(ct[18])<<8 | uint16(ct[19]))
+	totalPixels := W * H
+
+	if err := os.WriteFile(filepath.Join(cellDir, "ct_0000.bin"), ct, 0o644); err != nil {
+		t.Fatalf("write ct: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cellDir, "ct_0000.plain"), pt, 0o644); err != nil {
+		t.Fatalf("write pt: %v", err)
+	}
+
+	meta := struct {
+		Hash           string   `json:"hash"`
+		HashDisplay    string   `json:"hash_display"`
+		HashWidth      int      `json:"hash_width"`
+		KeyBits        int      `json:"key_bits"`
+		Rounds         int      `json:"rounds"`
+		BarrierFill    int      `json:"barrier_fill"`
+		Mode           string   `json:"mode"`
+		Format         string   `json:"format"`
+		ZipFileCount   int      `json:"zip_file_count"`
+		ZipFileBytes   int      `json:"zip_file_bytes"`
+		PlaintextSize  int      `json:"plaintext_size"`
+		NonceHex       string   `json:"nonce_hex"`
+		CiphertextSize int      `json:"ciphertext_size"`
+		Width          int      `json:"width"`
+		Height         int      `json:"height"`
+		TotalPixels    int      `json:"total_pixels"`
+		NoiseSeed      []uint64 `json:"noise_seed"`
+		DataSeed       []uint64 `json:"data_seed"`
+		StartSeed      []uint64 `json:"start_seed"`
+	}{
+		Hash:           "fnv1a",
+		HashDisplay:    "FNV-1a-test",
+		HashWidth:      128,
+		KeyBits:        keyBits,
+		Rounds:         numComponents / 2,
+		BarrierFill:    currentBarrierFill(),
+		Mode:           "fnvzip",
+		Format:         "zip-store",
+		ZipFileCount:   fileCount,
+		ZipFileBytes:   perFileBytes,
+		PlaintextSize:  len(pt),
+		NonceHex:       hex.EncodeToString(nonce),
+		CiphertextSize: len(ct),
+		Width:          W,
+		Height:         H,
+		TotalPixels:    totalPixels,
+		NoiseSeed:      noiseComps,
+		DataSeed:       dataComps,
+		StartSeed:      startComps,
+	}
+	metaBytes, err := json.MarshalIndent(&meta, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cellDir, "cell.meta.json"), metaBytes, 0o644); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+
+	summary := struct {
+		Hash           string   `json:"hash"`
+		KeyBits        int      `json:"key_bits"`
+		Rounds         int      `json:"rounds"`
+		Mode           string   `json:"mode"`
+		CellName       string   `json:"cell_name"`
+		ZipFileCount   int      `json:"zip_file_count"`
+		ZipFileBytes   int      `json:"zip_file_bytes"`
+		NoiseLoLaneHex []string `json:"noise_lo_lane_hex"`
+		DataLoLaneHex  []string `json:"data_lo_lane_hex"`
+		StartLoLaneHex []string `json:"start_lo_lane_hex"`
+	}{
+		Hash:         "fnv1a",
+		KeyBits:      keyBits,
+		Rounds:       numComponents / 2,
+		Mode:         "fnvzip",
+		CellName:     cellName,
+		ZipFileCount: fileCount,
+		ZipFileBytes: perFileBytes,
+		NoiseLoLaneHex: func() []string {
+			out := make([]string, 0, numComponents/2)
+			for i := 0; i < numComponents; i += 2 {
+				out = append(out, fmt.Sprintf("%016x", noiseComps[i]))
+			}
+			return out
+		}(),
+		DataLoLaneHex: func() []string {
+			out := make([]string, 0, numComponents/2)
+			for i := 0; i < numComponents; i += 2 {
+				out = append(out, fmt.Sprintf("%016x", dataComps[i]))
+			}
+			return out
+		}(),
+		StartLoLaneHex: func() []string {
+			out := make([]string, 0, numComponents/2)
+			for i := 0; i < numComponents; i += 2 {
+				out = append(out, fmt.Sprintf("%016x", startComps[i]))
+			}
+			return out
+		}(),
+	}
+	summaryBytes, err := json.MarshalIndent(&summary, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "summary.json"), summaryBytes, 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+
+	t.Logf("fnvzip corpus generated at %s (keyBits=%d rounds=%d files=%d × %d B → plaintext=%d B ciphertext=%d B grid=%dx%d=%d pixels)",
+		cellDir, keyBits, numComponents/2, fileCount, perFileBytes, len(pt), len(ct), W, H, totalPixels)
 }

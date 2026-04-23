@@ -106,14 +106,20 @@ class _COBSStreamState:
 
     __slots__ = (
         "awaiting_code", "remaining", "terminated", "term_pos", "quality",
+        "relaxed_anchor",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, relaxed_anchor: bool = False) -> None:
         self.awaiting_code = True
         self.remaining = 0
         self.terminated = False
         self.term_pos = -1
         self.quality = 0
+        # relaxed_anchor = True → accept any 1..254 at byte 0 (plaintext may
+        # contain 0x00 bytes, so the COBS first-code byte varies with the
+        # position of the first 0x00 in source; no 0xFF anchor invariant).
+        # Used for binary plaintext formats (ZIP, PDF, compressed streams).
+        self.relaxed_anchor = relaxed_anchor
 
     def feed(self, byte: int, abs_pos: int) -> bool:
         """Advance the state by one byte at stream position `abs_pos`.
@@ -130,11 +136,15 @@ class _COBSStreamState:
                 self.terminated = True
                 self.term_pos = abs_pos
                 return True
-            if abs_pos == 0 and byte != 0xFF:
+            if abs_pos == 0 and byte != 0xFF and not self.relaxed_anchor:
                 return False
             self.remaining = byte - 1
             self.awaiting_code = self.remaining == 0
-            if byte == 0xFF and abs_pos % 255 == 0:
+            # 0xFF-at-255-stepped-position bonus is a structural signal that
+            # only holds for no-0x00 plaintexts (JSON/HTML). Suppress for
+            # relaxed anchor mode — binary plaintexts have code bytes at
+            # varying offsets driven by the 0x00 distribution in source.
+            if byte == 0xFF and abs_pos % 255 == 0 and not self.relaxed_anchor:
                 self.quality += 100
             return True
         if byte == 0:
@@ -153,6 +163,7 @@ class _COBSStreamState:
         s.terminated = self.terminated
         s.term_pos = self.term_pos
         s.quality = self.quality
+        s.relaxed_anchor = self.relaxed_anchor
         return s
 
 
@@ -168,6 +179,7 @@ def _try_decode_sp_np0(
     total_pixels: int,
     rounds: int,
     beam_width: int = _BEAM_WIDTH_DEFAULT,
+    relaxed_anchor: bool = False,
 ) -> Optional[Tuple[bytes, int, List[int]]]:
     """Decode the full container at `(sp, np_0)` via beam search over
     per-pixel noise_pos with COBS-state-machine rejection.
@@ -186,7 +198,7 @@ def _try_decode_sp_np0(
     """
     # Beam entries: (COBS state, full stream bytes so far, np_list so far).
     beam: List[Tuple[_COBSStreamState, bytearray, List[int]]] = [
-        (_COBSStreamState(), bytearray(), [])
+        (_COBSStreamState(relaxed_anchor=relaxed_anchor), bytearray(), [])
     ]
     terminator_hits: List[Tuple[int, bytes, List[int]]] = []  # (term_pos, stream, np_list)
 
@@ -260,6 +272,8 @@ def decrypt_full(
     rounds: int = 4,
     header_size: int = 20,
     progress_every: int = 16,
+    plaintext_format: str = "ascii",
+    start_pixel_override: Optional[int] = None,
 ) -> Optional[dict]:
     """Attempt full decrypt. Enumerate every (sp, np_0) combination,
     collect all candidates that produce a COBS-valid stream, pick the
@@ -270,17 +284,42 @@ def decrypt_full(
     architectural `COBS(plaintext) + 0x00` boundary, which sits strictly
     beyond any accidental shorter chain under attacker-realistic
     structured plaintext.
+
+    `plaintext_format` selects COBS anchor / ranker behaviour:
+      * "ascii" (default) — plaintext assumed 0x00-free (JSON, HTML,
+        printable text); COBS anchor at byte 0 must equal 0xFF, cobs-
+        valid survivors ranked by printable-ASCII ratio.
+      * "binary-zip" — plaintext may contain 0x00 at arbitrary offsets
+        (ZIP, PDF, compressed streams); COBS anchor relaxed to any
+        1..254 value, cobs-valid survivors ranked by ZIP-signature
+        count (PK\\x03\\x04 local file headers, PK\\x01\\x02 central
+        directory entries, PK\\x05\\x06 end-of-central-directory). The
+        format hint represents attacker side-channel knowledge — e.g.
+        partial decrypt reveals ZIP structure, or protocol context
+        announces a ZIP payload.
+
+    `start_pixel_override` optionally restricts the outer loop to a
+    single startPixel candidate (lab convenience or distributed-worker
+    single-candidate assignment). If None, the loop brute-forces every
+    startPixel 0..total_pixels-1 as before.
     """
     container = ciphertext[header_size:]
     t0 = time.perf_counter()
     tried = 0
     results: List[dict] = []
-    for sp in range(total_pixels):
+    relaxed_anchor = plaintext_format == "binary-zip"
+    sp_range = (
+        [start_pixel_override % total_pixels]
+        if start_pixel_override is not None
+        else range(total_pixels)
+    )
+    for sp in sp_range:
         for np_0 in range(8):
             tried += 1
             r = _try_decode_sp_np0(
                 sp=sp, np_0=np_0, K_lo=K_lo, nonce=nonce,
                 container=container, total_pixels=total_pixels, rounds=rounds,
+                relaxed_anchor=relaxed_anchor,
             )
             if r is None:
                 continue
@@ -308,22 +347,50 @@ def decrypt_full(
     if not results:
         return None
 
-    # Rank cobs-valid candidates by printable-ASCII ratio of recovered
-    # plaintext. Structured JSON/HTML plaintext is ≥ 99 % printable
-    # under cobs_decode of the true stream; ghost terminators (valid
-    # COBS chains that happen to land inside the CSPRNG-fill region
-    # past the real terminator) decode to near-random byte garbage at
-    # ~35 % printable-ASCII rate. The ratio separates them cleanly
-    # without any reference to ground-truth plaintext.
+    # Rank cobs-valid candidates by a format-aware discriminator. The
+    # true path always scores highest; ghost terminators (valid COBS
+    # chains that happen to land inside the CSPRNG-fill region past
+    # the real terminator) score near-zero because their recovered
+    # "plaintext" is random bytes that fail format-specific checks.
     def _printable_ratio(pt: bytes) -> float:
         if not pt:
             return 0.0
         return sum(1 for b in pt if 0x20 <= b <= 0x7E) / len(pt)
 
+    def _zip_signature_count(pt: bytes) -> int:
+        """Count PK\\x03\\x04, PK\\x01\\x02, PK\\x05\\x06 signatures in
+        candidate plaintext. True ZIP plaintext has N local file headers
+        + N central directory entries + 1 EOCD = 2N+1 signatures; random
+        garbage has near-zero signatures (probability `3 / 2^32` per
+        aligned 4-byte window)."""
+        sig_local = b"PK\x03\x04"
+        sig_central = b"PK\x01\x02"
+        sig_eocd = b"PK\x05\x06"
+        return (
+            pt.count(sig_local)
+            + pt.count(sig_central)
+            + pt.count(sig_eocd)
+        )
+
     for r in results:
         r["printable_ratio"] = _printable_ratio(r["plaintext"])
+        r["zip_signature_count"] = _zip_signature_count(r["plaintext"])
 
-    results.sort(key=lambda r: (-r["printable_ratio"], -r["terminator_idx"]))
+    if plaintext_format == "binary-zip":
+        # ZIP primary key: total PK-signature count (architectural: true
+        # path holds 2N+1 signatures for an N-file archive, ghost
+        # candidates have ≤ a handful by pure chance). Fallback to
+        # terminator position for ties (rare).
+        results.sort(
+            key=lambda r: (-r["zip_signature_count"], -r["terminator_idx"])
+        )
+    else:
+        # ASCII / JSON / HTML primary key: printable-ASCII ratio
+        # (≥ 99 % for true, ~35 % for ghost). Fallback to terminator.
+        results.sort(
+            key=lambda r: (-r["printable_ratio"], -r["terminator_idx"])
+        )
+
     best = results[0]
     best["wall_clock_sec"] = time.perf_counter() - t0
     best["tried_candidates"] = tried
@@ -356,6 +423,31 @@ def main() -> int:
         "--expected-plaintext", type=Path, default=None,
         help="ct_0000.plain for terminal-stage audit only (byte-match percent)",
     )
+    ap.add_argument(
+        "--plaintext-format",
+        choices=["ascii", "binary-zip"],
+        default="ascii",
+        help="Plaintext format hint for decrypt-side candidate ranking. "
+             "ascii (default): JSON / HTML / printable text, 0x00-free, "
+             "COBS anchor 0xFF at byte 0 enforced, ranker = printable-"
+             "ASCII ratio. binary-zip: ZIP archive, 0x00 bytes at "
+             "arbitrary offsets, relaxed COBS anchor (byte 0 any 1..254), "
+             "ranker = PK-signature count (0x03\\x04 / 0x01\\x02 / "
+             "0x05\\x06 headers). Represents attacker side-channel "
+             "knowledge of the plaintext format.",
+    )
+    ap.add_argument(
+        "--start-pixel", type=int, default=None,
+        help="Optional override: restrict the outer startPixel loop to "
+             "this specific integer (modulo total_pixels) and decrypt a "
+             "single candidate. Used either as a lab convenience (skip "
+             "brute force when truth startPixel is known from "
+             "cell.meta.json) OR in distributed attacker scenarios where "
+             "each worker is assigned one startPixel candidate and only "
+             "one returns a structurally-valid decrypt. When unset the "
+             "outer loop brute-forces every startPixel 0..total_pixels-1 "
+             "as before — full attacker-realistic behaviour unchanged.",
+    )
     args = ap.parse_args()
 
     meta = json.loads((args.target_cell_dir / "cell.meta.json").read_text())
@@ -373,6 +465,8 @@ def main() -> int:
         result = decrypt_full(
             ciphertext=ciphertext, K_lo=K_lo, nonce=nonce,
             total_pixels=total_pixels, rounds=args.rounds,
+            plaintext_format=args.plaintext_format,
+            start_pixel_override=args.start_pixel,
         )
         if result is None:
             print("[FAIL] decrypt machinery broken — ground-truth K failed")
@@ -425,6 +519,8 @@ def main() -> int:
     result = decrypt_full(
         ciphertext=ciphertext, K_lo=K_lo, nonce=nonce,
         total_pixels=total_pixels, rounds=args.rounds,
+        plaintext_format=args.plaintext_format,
+        start_pixel_override=args.start_pixel,
     )
     if result is None:
         print("[FAIL] no (sp, np_0) candidate decoded to a COBS-valid stream")
