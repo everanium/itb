@@ -209,6 +209,8 @@ func main() {
 
 ```go
 // Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start), 512-bit for speed
+itb.SetBitSoup(1) // optional: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
+
 ns, _  := itb.NewSeed128(512, sipHash128) // shared noiseSeed
 ds1, _ := itb.NewSeed128(512, sipHash128) // dataSeed per ring
 ds2, _ := itb.NewSeed128(512, sipHash128)

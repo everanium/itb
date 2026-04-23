@@ -267,7 +267,7 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 
-	p0, p1, p2 := splitTriple(data)
+	p0, p1, p2 := splitForTriple(data)
 	enc0 := cobsEncode(p0)
 	enc1 := cobsEncode(p1)
 	enc2 := cobsEncode(p2)
@@ -450,5 +450,5 @@ func Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		}
 	}
 
-	return interleaveTriple(parts[0], parts[1], parts[2]), nil
+	return interleaveForTriple(parts[0], parts[1], parts[2])
 }

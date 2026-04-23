@@ -152,7 +152,82 @@ On multi-core CPUs (96+ cores), Triple can be **faster** than Single at the same
 
 Full benchmark results: **[BENCH3.md](BENCH3.md)**
 
-**Note (Crazy Mode — bit-level split).** It is possible to go further: instead of splitting plaintext at the byte level, split at the **bit level** — every 3rd bit goes to a different snake. Three consecutive bits are assembled into a garbage byte (meaningless without the other two snakes), and this garbage byte passes through the standard ITB encoding pipeline. On the decrypt side, garbage bytes from three snakes are disassembled back into real bits and reassembled into the original plaintext. No single snake holds a single real byte — only unreconstructible garbage. The functions `splitTripleBits`/`interleaveTripleBits` are already implemented and tested. Performance cost: ~20× slower than byte-level split (30 MB/s vs 568 MB/s for split+interleave alone on 64 MB). If there is demand from the research community, we can add dedicated `Encrypt3Bits`/`Decrypt3Bits` functions for bit-level Triple Ouroboros in the future. Unreconstructible garbage. Can we do it? Yes. But why?
+## Bit Soup (bit-level split, opt-in)
+
+Triple Ouroboros has an additional switch: **`SetBitSoup(1)`** — a process-wide flag that changes the split from byte level to **bit level**. Every third bit of the plaintext goes to a different snake. Three consecutive bits are assembled into a garbage byte, meaningless without the other two snakes, and this garbage byte passes through the standard ITB encoding pipeline unchanged. On the decrypt side, garbage bytes from the three snakes are disassembled back into real bits and reassembled into the original plaintext.
+
+No real byte of plaintext exists in any one snake's payload. No header token, no JSON `{`, no HTML tag, no COBS framing boundary an attacker could latch onto. Just unreconstructible garbage per snake.
+
+### What happens to "Hello World!" under Bit Soup
+
+Same input as the byte-level example above (12 bytes of plaintext).
+
+**Step A — prepend a 4-byte BE length prefix.** The decoder needs the exact plaintext byte count to recover the original data after bit-level reassembly, so `SetBitSoup(1)` adds a `uint32(len(data))` big-endian header in front of the plaintext:
+
+```
+data' = 00 00 00 0C | H  e  l  l  o     W  o  r  l  d  !    (16 bytes = 128 bits)
+        └─ length ─┘   └──────── "Hello World!" ────────┘
+        uint32(12) BE
+```
+
+**Step B — interleave at the bit level.** Instead of every 3rd byte, every 3rd bit of the 128-bit stream goes to a different snake:
+
+```
+bit #:     0 1 2  3 4 5  6 7 8  9 10 11  12 13 14  15 16 17 ...
+snake →:   0 1 2  0 1 2  0 1 2  0  1  2   0  1  2   0  1  2 ...
+```
+
+**Step C — pack into garbage bytes.** Each 8 consecutive bits of a snake become one "garbage byte". A single garbage byte contains 3 bits from source byte k, 3 bits from k+1, and 2 bits from k+2 of `data'`. No contiguous plaintext byte survives.
+
+Result:
+
+```
+Snake 0:  00  C2  C6  D8  C4  01
+Snake 1:  00  A0  F8  E8  9B  00
+Snake 2:  00  19  3B  36  1A  02
+```
+
+Side-by-side with the byte-level example above:
+
+| Mode | Snake 0 payload | Snake 1 payload | Snake 2 payload |
+|---|---|---|---|
+| Byte-level Triple Ouroboros | `H  l  W  l` | `e  o  o  d` | `l     r  !` |
+| Bit Soup | `00 C2 C6 D8 C4 01` | `00 A0 F8 E8 9B 00` | `00 19 3B 36 1A 02` |
+
+Under byte-level, each snake carries readable letters from the plaintext. Under Bit Soup, nothing in any snake maps back to a recognisable character — every byte is a bit-level scramble across three adjacent source bytes.
+
+**Why Snake 0 byte 1 = `0xC2`.** Those 8 output bits come from 3 different source bytes of `data'`:
+
+| output bit (LSB → MSB) | source position | source byte | bit value |
+|---|---|---|---|
+| 0 | bit 24 | `0x0C` (length byte) bit 0 | 0 |
+| 1 | bit 27 | `0x0C` bit 3 | **1** |
+| 2 | bit 30 | `0x0C` bit 6 | 0 |
+| 3 | bit 33 | `H` (0x48) bit 1 | 0 |
+| 4 | bit 36 | `H` bit 4 | 0 |
+| 5 | bit 39 | `H` bit 7 | 0 |
+| 6 | bit 42 | `e` (0x65) bit 2 | **1** |
+| 7 | bit 45 | `e` bit 5 | **1** |
+
+Packed LSB-first: `0b11000010` = `0xC2`. One garbage byte of Snake 0 has mixed bits from three different source bytes — the length header, `H`, and `e` — with no way for a reader holding just this byte to isolate a recognisable character.
+
+The first byte of every snake is `0x00` because it falls entirely inside the length prefix (bytes 0–2 of `data'` are the MSBs of `uint32(12)` and are all zero). Starting from byte 1, the bit-mixing becomes visible.
+
+Everything downstream (COBS framing, CSPRNG fill, per-region ChainHash encryption, container assembly) is identical to byte-level Triple Ouroboros.
+
+**Why this matters.** SAT-based cryptanalysis needs a **crib** — a known fragment of plaintext — to set up the equations a solver will work on. In byte-level Triple Ouroboros, every third byte of the real plaintext sits inside a given snake, and those bytes carry whatever schema structure the protocol happens to have (JSON braces, HTML tags, fixed header fields). Under Bit Soup, every snake sees garbage. The attacker does not have enough observation to build a useful constraint system in the first place. The barrier is about **what the attacker can observe**, not about how fast a solver can run — faster solvers do not widen the crib. Against PRF-grade primitives, the SAT-way is effectively off the table for the foreseeable future.
+
+**Cost.** End-to-end throughput drops by **1.7× – 3.3×** depending on `keyBits` and payload size. On `keyBits=1024` (shipped default) AES Triple Ouroboros runs at roughly 33–39 MB/s in Bit Soup mode — inside the USB 2.0 practical range. Production-viable for scenarios where throughput is not the primary constraint: secrets, config, keys, personal vaults, encrypted backups, messaging, medical records, archival documents. Not the right tool for real-time video encode or high-IO disk block encryption.
+
+**How to enable:**
+
+```go
+itb.SetBitSoup(1) // whole-process opt-in; default is 0 (byte-level)
+```
+
+The ciphertext wire format is identical to byte-level Triple Ouroboros. An observer cannot distinguish the two modes. Callers must agree on the mode across both ends of the channel.
+
+Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts.
 
 ## API
 

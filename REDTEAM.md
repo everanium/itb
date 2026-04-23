@@ -2195,6 +2195,14 @@ Per-run artefacts:
 
 This section establishes the empirical attack cost for the weakest invertible-but-non-linear primitive in the matrix (FNV-1a) at ITB's architectural minimum configuration (`keyBits = 512`, 4 rounds). It does NOT claim production ITB is vulnerable: FNV-1a is marked `Fully broken` in the [Hash matrix](#hash-matrix) and is an unexported lab control with no public API path through `NewSeed{128,256,512}`. Users who wire a PRF-grade primitive from the [Hash matrix](#hash-matrix) (AES-CMAC, SipHash-2-4, ChaCha20, AreionSoEM-256, BLAKE2s, BLAKE3, BLAKE2b-256, BLAKE2b-512, AreionSoEM-512) into their deployment are not exposed to SAT-based seed recovery — under each primitive's PRF assumption, any successful SAT inversion would constitute a PRF distinguisher and is therefore ruled out by definition; published SAT cryptanalysis reaches only reduced-round variants in isolation, consistent with the assumption. ITB's per-pixel envelope compounds multiplicatively on top of this primitive-level PRF-hardness. The Phase 2g empirical figure is therefore a lower bound on attacker cost against PRF-grade primitives, not a measurement of them. Per-round cost scaling from 4 → 8 → 16 ChainHash rounds (corresponding to `keyBits = 512 → 1024 → 2048`) is analytical with wide error bars — see [Phase 2a](#phase-2a--chainhash-analysis-and-the-three-layer-defense-structure).
 
+### Defensive reserve: Bit Soup
+
+Triple Ouroboros ships an opt-in process-wide toggle `SetBitSoup(1)` (see [ITB3.md § Bit Soup](ITB3.md#bit-soup-bit-level-split-opt-in)) that changes plaintext splitting from byte to bit granularity. Under Bit Soup, each snake's payload is a fixed public bit-permutation across three consecutive plaintext bytes; no snake carries a real plaintext byte, and no schema-predictable crib can be constructed per snake.
+
+Bit Soup relocates the SAT-cryptanalysis barrier from the computational layer (solver wall-clock) to the instance-formulation layer (constraint completeness). Under Partial KPA + realistic protocol traffic, the joint per-snake SAT instance is information-theoretically under-determined at the crib coverage realistic protocols supply — a property of the observations available to the attacker, not of the solver applied to them. Improvements in solver performance do not convert an under-determined instance into a determined one.
+
+Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts; ciphertext wire format is identical across modes. Default `SetBitSoup(0)` leaves byte-level Triple Ouroboros shipped behaviour unchanged.
+
 ---
 
 ## Phase 3a — Rotation-invariant edge case

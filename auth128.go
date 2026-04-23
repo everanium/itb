@@ -184,7 +184,7 @@ func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	p0, p1, p2 := splitTriple(data)
+	p0, p1, p2 := splitForTriple(data)
 	enc0 := cobsEncode(p0)
 	enc1 := cobsEncode(p1)
 	enc2 := cobsEncode(p2)
@@ -410,5 +410,5 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		parts[i] = cobsDecode(dec[:nullPos])
 	}
 
-	return interleaveTriple(parts[0], parts[1], parts[2]), nil
+	return interleaveForTriple(parts[0], parts[1], parts[2])
 }
