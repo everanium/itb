@@ -1955,7 +1955,11 @@ func deltaBytes(delta []uint64) []byte {
 // (GF(2)-linear primitive → ChainHash output = K ⊕ c(pixel,nonce), K
 // depends only on the seed).
 //
-// Gated by `ITB_CRIB_CROSS=1`. Always uses CRC128 + keyBits=1024 + BF=1.
+// Gated by `ITB_CRIB_CROSS=1`. Defaults to CRC128 + keyBits=1024 + BF=1.
+// `ITB_CRIB_CROSS_HASH` selects the primitive: `crc128` (default) or
+// `fnv1a` (both 128-bit). The fnv1a variant is used to empirically
+// confirm that the CRC128 Crib KPA scripts do not apply to a non-
+// GF(2)-linear primitive even at the same corpus size / seed schedule.
 // Seeds are deterministic given `ITB_CRIB_CROSS_SEED_SOURCE`; nonces are
 // deterministic given `ITB_CRIB_CROSS_NONCE_SEED`. Default size 4 KB.
 
@@ -1991,6 +1995,16 @@ func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
 
 	const keyBits = 1024
 
+	hashChoice := "crc128"
+	if s := os.Getenv("ITB_CRIB_CROSS_HASH"); s != "" {
+		switch s {
+		case "crc128", "fnv1a":
+			hashChoice = s
+		default:
+			t.Fatalf("ITB_CRIB_CROSS_HASH=%q: must be one of {crc128, fnv1a}", s)
+		}
+	}
+
 	// Deterministic seed generation from ITB_CRIB_CROSS_SEED_SOURCE.
 	seedRng := rand.New(rand.NewSource(int64(seedSource)))
 	noiseComps := make([]uint64, 16)
@@ -2006,7 +2020,18 @@ func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
 		startComps[i] = seedRng.Uint64()
 	}
 
-	hashFunc := HashFunc128(crc128)
+	var hashFunc HashFunc128
+	switch hashChoice {
+	case "crc128":
+		hashFunc = HashFunc128(crc128)
+	case "fnv1a":
+		hashFunc = HashFunc128(fnv1a128)
+	}
+	hashLabel := hashChoice
+	hashDisplay := "CRC128-test"
+	if hashChoice == "fnv1a" {
+		hashDisplay = "FNV-1a-test"
+	}
 	nsSeed, err := SeedFromComponents128(hashFunc, noiseComps...)
 	if err != nil {
 		t.Fatalf("ns seed: %v", err)
@@ -2082,8 +2107,8 @@ func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
 			DataSeed       []uint64 `json:"data_seed"`
 			StartSeed      []uint64 `json:"start_seed"`
 		}{
-			Hash:           "crc128",
-			HashDisplay:    "CRC128-test",
+			Hash:           hashLabel,
+			HashDisplay:    hashDisplay,
 			HashWidth:      128,
 			KeyBits:        keyBits,
 			BarrierFill:    currentBarrierFill(),
@@ -2136,7 +2161,7 @@ func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
 		CorpusB     string   `json:"corpus_b"`
 		SizeBytes   int      `json:"plaintext_size_bytes"`
 	}{
-		KeyBits: keyBits, BarrierFill: currentBarrierFill(), Hash: "crc128",
+		KeyBits: keyBits, BarrierFill: currentBarrierFill(), Hash: hashLabel,
 		NoiseSeed: noiseComps, DataSeed: dataComps, StartSeed: startComps,
 		NonceAHex: hex.EncodeToString(nonceA),
 		NonceBHex: hex.EncodeToString(nonceB),
@@ -2150,4 +2175,578 @@ func TestRedTeamGenerateCribCrossCorpus(t *testing.T) {
 	}
 
 	t.Logf("crib-cross corpora generated at %s (A: %d B, B: %d B)", outDir, ctALen, ctBLen)
+}
+
+// ----------------------------------------------------------------------------
+// FNV-1a ChainHash128 reference-vector emitter (.FNVSTRESS Phase 0)
+// ----------------------------------------------------------------------------
+//
+// Emits a set of (seed_components, pixel_idx, nonce, hLo, hHi) reference
+// tuples computed by the canonical Go `fnv1a128` + `ChainHash128` implementation.
+// A Python parity gadget reads the sidecar JSON and cross-checks that
+// (a) its pure-Python lo-lane fast-path reproduces hLo bit-exact, and
+// (b) its Z3 symbolic encoding returns the same hLo when the seed is
+// substituted concretely. Without this parity gate, a subsequent SAT
+// harness risks encoding a structurally-wrong chain and never noticing.
+//
+// Gated by `ITB_FNV_REF=1`. Deterministic given the seed sources.
+// Default keyBits=512 (4 rounds — the ITB minimum), overridable via env.
+
+func TestRedTeamEmitFNV1aChainHashReference(t *testing.T) {
+	if os.Getenv("ITB_FNV_REF") != "1" {
+		t.Skip("set ITB_FNV_REF=1 to emit the FNV-1a ChainHash128 parity reference")
+	}
+
+	keyBits := 512
+	if s := os.Getenv("ITB_FNV_REF_KEYBITS"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 512 || sv > 2048 || sv%128 != 0 {
+			t.Fatalf("ITB_FNV_REF_KEYBITS=%q: must be in [512,2048] multiple of 128", s)
+		}
+		keyBits = sv
+	}
+	numVectors := 16
+	if s := os.Getenv("ITB_FNV_REF_COUNT"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 1 || sv > 4096 {
+			t.Fatalf("ITB_FNV_REF_COUNT=%q: must be in [1,4096]", s)
+		}
+		numVectors = sv
+	}
+	seedSource := uint64(0x46_4e_56_31_61_52_45_46) // "FNV1aREF"
+	if s := os.Getenv("ITB_FNV_REF_SEED_SOURCE"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_FNV_REF_SEED_SOURCE=%q: %v", s, err)
+		}
+		seedSource = sv
+	}
+	nonceSeed := uint64(0x50_41_52_49_54_59_30_30) // "PARITY00"
+	if s := os.Getenv("ITB_FNV_REF_NONCE_SEED"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_FNV_REF_NONCE_SEED=%q: %v", s, err)
+		}
+		nonceSeed = sv
+	}
+
+	numComponents := keyBits / 64
+	seedRng := rand.New(rand.NewSource(int64(seedSource)))
+	components := make([]uint64, numComponents)
+	for i := range components {
+		components[i] = seedRng.Uint64()
+	}
+
+	seed, err := SeedFromComponents128(HashFunc128(fnv1a128), components...)
+	if err != nil {
+		t.Fatalf("SeedFromComponents128: %v", err)
+	}
+
+	nonceRng := rand.New(rand.NewSource(int64(nonceSeed)))
+
+	// Each reference vector = one (pixel_idx, nonce) pair, producing one hLo.
+	// blockHash128 prepares `data = LE32(pixelIdx) || nonce`; here we replicate
+	// that byte layout directly and call ChainHash128, matching the encoder.
+	type refVector struct {
+		Index    int    `json:"index"`
+		PixelIdx uint32 `json:"pixel_idx"`
+		NonceHex string `json:"nonce_hex"`
+		DataHex  string `json:"data_hex"` // exact bytes fed to ChainHash128
+		HLoHex   string `json:"h_lo_hex"`
+		HHiHex   string `json:"h_hi_hex"`
+	}
+
+	vectors := make([]refVector, 0, numVectors)
+	nonceLen := 16
+	for i := 0; i < numVectors; i++ {
+		pixelIdx := uint32(seedRng.Int63n(1 << 20))
+		nonce := make([]byte, nonceLen)
+		if _, err := nonceRng.Read(nonce); err != nil {
+			t.Fatalf("nonce rng: %v", err)
+		}
+		data := make([]byte, 4+nonceLen)
+		binary.LittleEndian.PutUint32(data[:4], pixelIdx)
+		copy(data[4:], nonce)
+
+		hLo, hHi := seed.ChainHash128(data)
+
+		vectors = append(vectors, refVector{
+			Index:    i,
+			PixelIdx: pixelIdx,
+			NonceHex: hex.EncodeToString(nonce),
+			DataHex:  hex.EncodeToString(data),
+			HLoHex:   fmt.Sprintf("%016x", hLo),
+			HHiHex:   fmt.Sprintf("%016x", hHi),
+		})
+	}
+
+	outDir, _ := filepath.Abs(filepath.Join("tmp", "attack", "fnv_parity"))
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	componentsHex := make([]string, len(components))
+	for i, c := range components {
+		componentsHex[i] = fmt.Sprintf("%016x", c)
+	}
+
+	// The even-indexed seed components (s[0], s[2], s[4], ...) are the only
+	// ones entering the lo-lane cascade under FNV-1a carry-up-only arithmetic.
+	// The odd-indexed ones feed only the hi-lane. The JSON splits them out
+	// explicitly so the Python parity gadget can sanity-check its indexing.
+	evenLo := make([]string, 0, numComponents/2)
+	oddHi := make([]string, 0, numComponents/2)
+	for i := 0; i < numComponents; i += 2 {
+		evenLo = append(evenLo, componentsHex[i])
+		oddHi = append(oddHi, componentsHex[i+1])
+	}
+
+	payload := struct {
+		Comment           string      `json:"_comment"`
+		Hash              string      `json:"hash"`
+		KeyBits           int         `json:"key_bits"`
+		Rounds            int         `json:"rounds"`
+		NumComponents     int         `json:"num_components"`
+		SeedComponentsHex []string    `json:"seed_components_hex"`
+		LoLaneSeedsHex    []string    `json:"lo_lane_seeds_hex"` // s[0], s[2], s[4], ...
+		HiLaneSeedsHex    []string    `json:"hi_lane_seeds_hex"` // s[1], s[3], s[5], ...
+		FNVPrime128Hex    string      `json:"fnv_prime_128_hex"`
+		FNVPrimeLoHex     string      `json:"fnv_prime_lo_hex"`
+		NumVectors        int         `json:"num_vectors"`
+		Vectors           []refVector `json:"vectors"`
+	}{
+		Comment: "FNV-1a ChainHash128 parity reference. Python gadget must reproduce " +
+			"h_lo_hex bit-exact from (seed_components_hex, data_hex). Initial state " +
+			"of round 0 is seed0||seed1 directly (NO FNV offset basis XOR). " +
+			"lo-lane cascade uses only even-indexed seeds (s[0], s[2], ...).",
+		Hash:              "fnv1a",
+		KeyBits:           keyBits,
+		Rounds:            numComponents / 2,
+		NumComponents:     numComponents,
+		SeedComponentsHex: componentsHex,
+		LoLaneSeedsHex:    evenLo,
+		HiLaneSeedsHex:    oddHi,
+		FNVPrime128Hex:    "01000000000000000000013b",
+		FNVPrimeLoHex:     "000000000000013b",
+		NumVectors:        numVectors,
+		Vectors:           vectors,
+	}
+	payloadBytes, err := json.MarshalIndent(&payload, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	outPath := filepath.Join(outDir, "reference.json")
+	if err := os.WriteFile(outPath, payloadBytes, 0o644); err != nil {
+		t.Fatalf("write reference: %v", err)
+	}
+	t.Logf("emitted %d FNV-1a ChainHash128 reference vectors at %s (keyBits=%d rounds=%d)",
+		numVectors, outPath, keyBits, numComponents/2)
+}
+
+// ----------------------------------------------------------------------------
+// Multi-corpus FNV-1a stress-test generator (.FNVSTRESS Phase 1)
+// ----------------------------------------------------------------------------
+//
+// Emits `corpus_count` ciphertexts under the SAME (noiseSeed, dataSeed,
+// startSeed) triple, split 50/50 between JSON and HTML plaintext formats.
+// Each cell uses a distinct nonce. Every ciphertext shares the same
+// public-schema template so the attacker can predict `crib_count` × 21-byte
+// crib windows per ciphertext purely from the record sequence number.
+//
+// Default hash: `fnv1a128`. Default keyBits: 512 (4 ChainHash rounds — the
+// ITB-supported minimum; reduces FNV lo-lane SAT unknowns to 256 bits).
+//
+// Gated by `ITB_FNVSTRESS=1`. Deterministic given the three seed sources.
+
+// fnvStressPlaintext builds the structured plaintext + its crib map.
+// Every byte in the plaintext is either public-schema (attacker can predict
+// verbatim from the record sequence number) or random ASCII hex for the
+// value fields. Record layout per format:
+//
+//   JSON record k: `{"k":"IIIIIIII","v":"RRRRRRRRRRRRRRRR"}`  (39 B)
+//     whole stream: `[` + rec0 + `,` + rec1 + ... + `]`
+//     known prefix per record: first 21 bytes `{"k":"IIIIIIII","v":`
+//   HTML record k: `<r><k>IIIIIIII</k><v>RRRRRRRRRRRRRRRR</v></r>`  (45 B)
+//     whole stream: rec0 + rec1 + ... (no separator; <r>...</r> is self-contained)
+//     known prefix per record: first 21 bytes `<r><k>IIIIIIII</k><v>`
+//
+// The 8-byte IIIIIIII field is zero-padded lowercase hex of the record
+// index (records 0..N-1 → `00000000`..`0000NN`), publicly predictable.
+// The 16-byte RRRRRRRRRRRRRRRR field is uniform random `[0-9a-f]` — the
+// unknown value the attacker does NOT predict. No 0x00 bytes anywhere so
+// COBS encoding stays 1:1 structural.
+type fnvStressCrib struct {
+	RecordIndex  int    `json:"record_index"`
+	ByteStart    int    `json:"byte_start_in_plaintext"` // pre-COBS offset
+	ByteLen      int    `json:"byte_len"`                // always 21
+	ExpectedHex  string `json:"expected_hex"`            // 21 bytes = 42 hex chars
+	AnchorKind   string `json:"anchor_kind,omitempty"`   // "" or "cobs_ff_overhead"
+}
+
+func buildFNVStressPlaintext(rng *rand.Rand, format string, cribCount int) ([]byte, []fnvStressCrib) {
+	if cribCount < 1 || cribCount > 128 {
+		panic(fmt.Sprintf("cribCount out of range: %d", cribCount))
+	}
+	const hexAlphabet = "0123456789abcdef"
+	randomHex := func(n int) string {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = hexAlphabet[rng.Intn(16)]
+		}
+		return string(b)
+	}
+
+	var buf bytes.Buffer
+	cribs := make([]fnvStressCrib, 0, cribCount)
+
+	switch format {
+	case "json":
+		buf.WriteByte('[')
+		for k := 0; k < cribCount; k++ {
+			if k > 0 {
+				buf.WriteByte(',')
+			}
+			recordStart := buf.Len()
+			rec := fmt.Sprintf(`{"k":"%08x","v":"%s"}`, k, randomHex(16))
+			if len(rec) != 39 {
+				panic(fmt.Sprintf("json record length != 39: %d", len(rec)))
+			}
+			buf.WriteString(rec)
+			knownPrefix := rec[:21] // `{"k":"IIIIIIII","v":`
+			cribs = append(cribs, fnvStressCrib{
+				RecordIndex: k,
+				ByteStart:   recordStart,
+				ByteLen:     21,
+				ExpectedHex: hex.EncodeToString([]byte(knownPrefix)),
+			})
+		}
+		buf.WriteByte(']')
+	case "html":
+		for k := 0; k < cribCount; k++ {
+			recordStart := buf.Len()
+			rec := fmt.Sprintf(`<r><k>%08x</k><v>%s</v></r>`, k, randomHex(16))
+			if len(rec) != 45 {
+				panic(fmt.Sprintf("html record length != 45: %d", len(rec)))
+			}
+			buf.WriteString(rec)
+			knownPrefix := rec[:21] // `<r><k>IIIIIIII</k><v>`
+			cribs = append(cribs, fnvStressCrib{
+				RecordIndex: k,
+				ByteStart:   recordStart,
+				ByteLen:     21,
+				ExpectedHex: hex.EncodeToString([]byte(knownPrefix)),
+			})
+		}
+	default:
+		panic(fmt.Sprintf("unknown fnvstress format: %q", format))
+	}
+
+	pt := buf.Bytes()
+	if bytes.IndexByte(pt, 0x00) >= 0 {
+		panic("fnvstress plaintext contained 0x00 byte — COBS encoding assumption broken")
+	}
+	return pt, cribs
+}
+
+func TestRedTeamGenerateFNVStressCorpus(t *testing.T) {
+	if os.Getenv("ITB_FNVSTRESS") != "1" {
+		t.Skip("set ITB_FNVSTRESS=1 to generate the FNV-1a stress corpus bundle")
+	}
+
+	keyBits := 512
+	if s := os.Getenv("ITB_FNVSTRESS_KEYBITS"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 512 || sv > 2048 || sv%128 != 0 {
+			t.Fatalf("ITB_FNVSTRESS_KEYBITS=%q: must be in [512,2048] multiple of 128", s)
+		}
+		keyBits = sv
+	}
+	corpusCount := 8
+	if s := os.Getenv("ITB_FNVSTRESS_CORPUS_COUNT"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 2 || sv > 64 || sv%2 != 0 {
+			t.Fatalf("ITB_FNVSTRESS_CORPUS_COUNT=%q: must be even in [2,64]", s)
+		}
+		corpusCount = sv
+	}
+	cribCount := 41
+	if s := os.Getenv("ITB_FNVSTRESS_CRIB_COUNT"); s != "" {
+		sv, err := strconv.Atoi(s)
+		if err != nil || sv < 3 || sv > 128 {
+			t.Fatalf("ITB_FNVSTRESS_CRIB_COUNT=%q: must be in [3,128]", s)
+		}
+		cribCount = sv
+	}
+	seedSource := uint64(0x46_4e_56_53_54_52_45_53) // "FNVSTRES"
+	if s := os.Getenv("ITB_FNVSTRESS_SEED_SOURCE"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_FNVSTRESS_SEED_SOURCE=%q: %v", s, err)
+		}
+		seedSource = sv
+	}
+	nonceSeed := uint64(0x53_5f_4e_4f_4e_43_45_53) // "S_NONCES"
+	if s := os.Getenv("ITB_FNVSTRESS_NONCE_SEED"); s != "" {
+		sv, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			t.Fatalf("ITB_FNVSTRESS_NONCE_SEED=%q: %v", s, err)
+		}
+		nonceSeed = sv
+	}
+
+	numComponents := keyBits / 64
+	seedRng := rand.New(rand.NewSource(int64(seedSource)))
+	noiseComps := make([]uint64, numComponents)
+	dataComps := make([]uint64, numComponents)
+	startComps := make([]uint64, numComponents)
+	for i := range noiseComps {
+		noiseComps[i] = seedRng.Uint64()
+	}
+	for i := range dataComps {
+		dataComps[i] = seedRng.Uint64()
+	}
+	for i := range startComps {
+		startComps[i] = seedRng.Uint64()
+	}
+
+	hashFunc := HashFunc128(fnv1a128)
+	nsSeed, err := SeedFromComponents128(hashFunc, noiseComps...)
+	if err != nil {
+		t.Fatalf("ns seed: %v", err)
+	}
+	dsSeed, err := SeedFromComponents128(hashFunc, dataComps...)
+	if err != nil {
+		t.Fatalf("ds seed: %v", err)
+	}
+	ssSeed, err := SeedFromComponents128(hashFunc, startComps...)
+	if err != nil {
+		t.Fatalf("ss seed: %v", err)
+	}
+
+	nonceRng := rand.New(rand.NewSource(int64(nonceSeed)))
+	plaintextRng := rand.New(rand.NewSource(int64(seedSource) ^ 0xC0FFEE))
+
+	outDir, _ := filepath.Abs(filepath.Join("tmp", "attack", "fnvstress"))
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	type fnvStressCell struct {
+		CellName       string          `json:"cell_name"`
+		Format         string          `json:"format"` // "json" or "html"
+		NonceHex       string          `json:"nonce_hex"`
+		PlaintextSize  int             `json:"plaintext_size"`
+		CiphertextSize int             `json:"ciphertext_size"`
+		Width          int             `json:"width"`
+		Height         int             `json:"height"`
+		TotalPixels    int             `json:"total_pixels"`
+		Cribs          []fnvStressCrib `json:"cribs"`
+	}
+
+	cells := make([]fnvStressCell, 0, corpusCount)
+	nonceSet := make(map[string]struct{}, corpusCount)
+
+	for i := 0; i < corpusCount; i++ {
+		format := "json"
+		if i%2 == 1 {
+			format = "html"
+		}
+		cellName := fmt.Sprintf("cell_%02d_%s", i, format)
+
+		pt, cribs := buildFNVStressPlaintext(plaintextRng, format, cribCount)
+		if len(pt) > 4096 {
+			t.Fatalf("cell %d %s: plaintext %d B exceeds 4 KB budget", i, format, len(pt))
+		}
+
+		nonce := make([]byte, 16)
+		if _, err := nonceRng.Read(nonce); err != nil {
+			t.Fatalf("nonce rng: %v", err)
+		}
+		nh := hex.EncodeToString(nonce)
+		if _, dup := nonceSet[nh]; dup {
+			t.Fatalf("cell %d: nonce collision %s — pick a different ITB_FNVSTRESS_NONCE_SEED", i, nh)
+		}
+		nonceSet[nh] = struct{}{}
+
+		cellDir := filepath.Join(outDir, cellName)
+		if err := os.MkdirAll(cellDir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", cellDir, err)
+		}
+		setTestNonce(t, nonce)
+		ct, err := Encrypt128(nsSeed, dsSeed, ssSeed, pt)
+		if err != nil {
+			t.Fatalf("Encrypt128 %s: %v", cellName, err)
+		}
+		if len(ct) < 20 {
+			t.Fatalf("cell %d: ciphertext too short for header: %d", i, len(ct))
+		}
+		W := int(uint16(ct[16])<<8 | uint16(ct[17]))
+		H := int(uint16(ct[18])<<8 | uint16(ct[19]))
+		totalPixels := W * H
+
+		// Attach the COBS 0xFF overhead anchor as an extra logical crib at
+		// plaintext-byte -1 (i.e. it sits in the encoded stream one byte
+		// BEFORE the plaintext starts, at offset 0). The Python side will
+		// handle this anchor specially — its 0b1111111 low-7 pattern is
+		// rotation-invariant, so on the pixel covering encoded byte 0 only
+		// noise_pos remains ambiguous (8 hypotheses instead of 56).
+		anchor := fnvStressCrib{
+			RecordIndex: -1,
+			ByteStart:   -1, // sentinel: before the plaintext, in the COBS overhead byte
+			ByteLen:     1,
+			ExpectedHex: "ff",
+			AnchorKind:  "cobs_ff_overhead",
+		}
+		augmented := make([]fnvStressCrib, 0, len(cribs)+1)
+		augmented = append(augmented, anchor)
+		augmented = append(augmented, cribs...)
+
+		if err := os.WriteFile(filepath.Join(cellDir, "ct_0000.bin"), ct, 0o644); err != nil {
+			t.Fatalf("write ct: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(cellDir, "ct_0000.plain"), pt, 0o644); err != nil {
+			t.Fatalf("write pt: %v", err)
+		}
+
+		meta := struct {
+			Hash           string          `json:"hash"`
+			HashDisplay    string          `json:"hash_display"`
+			HashWidth      int             `json:"hash_width"`
+			KeyBits        int             `json:"key_bits"`
+			Rounds         int             `json:"rounds"`
+			BarrierFill    int             `json:"barrier_fill"`
+			Mode           string          `json:"mode"`
+			Format         string          `json:"format"`
+			PlaintextSize  int             `json:"plaintext_size"`
+			NonceHex       string          `json:"nonce_hex"`
+			CiphertextSize int             `json:"ciphertext_size"`
+			Width          int             `json:"width"`
+			Height         int             `json:"height"`
+			TotalPixels    int             `json:"total_pixels"`
+			Cribs          []fnvStressCrib `json:"cribs"`
+			NoiseSeed      []uint64        `json:"noise_seed"`
+			DataSeed       []uint64        `json:"data_seed"`
+			StartSeed      []uint64        `json:"start_seed"`
+		}{
+			Hash:           "fnv1a",
+			HashDisplay:    "FNV-1a-test",
+			HashWidth:      128,
+			KeyBits:        keyBits,
+			Rounds:         numComponents / 2,
+			BarrierFill:    currentBarrierFill(),
+			Mode:           "fnvstress",
+			Format:         format,
+			PlaintextSize:  len(pt),
+			NonceHex:       nh,
+			CiphertextSize: len(ct),
+			Width:          W,
+			Height:         H,
+			TotalPixels:    totalPixels,
+			Cribs:          augmented,
+			NoiseSeed:      noiseComps,
+			DataSeed:       dataComps,
+			StartSeed:      startComps,
+		}
+		metaBytes, err := json.MarshalIndent(&meta, "", "  ")
+		if err != nil {
+			t.Fatalf("meta json: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(cellDir, "cell.meta.json"), metaBytes, 0o644); err != nil {
+			t.Fatalf("write meta: %v", err)
+		}
+
+		cells = append(cells, fnvStressCell{
+			CellName:       cellName,
+			Format:         format,
+			NonceHex:       nh,
+			PlaintextSize:  len(pt),
+			CiphertextSize: len(ct),
+			Width:          W,
+			Height:         H,
+			TotalPixels:    totalPixels,
+			Cribs:          augmented,
+		})
+		t.Logf("  %s: %d B plaintext, %d B ciphertext, %d pixels, %d cribs",
+			cellName, len(pt), len(ct), totalPixels, len(augmented))
+	}
+
+	// Summary: shared seeds (for lab audit only — attacker-realistic
+	// scripts must NOT read these from the decision path), per-cell metadata,
+	// crib schemas, and the lo-lane/hi-lane split to cross-check against
+	// the Phase 0 parity reference.
+	componentsHex := func(vs []uint64) []string {
+		out := make([]string, len(vs))
+		for i, v := range vs {
+			out[i] = fmt.Sprintf("%016x", v)
+		}
+		return out
+	}
+	summary := struct {
+		Comment           string          `json:"_comment"`
+		Hash              string          `json:"hash"`
+		KeyBits           int             `json:"key_bits"`
+		Rounds            int             `json:"rounds"`
+		NumComponents     int             `json:"num_components"`
+		BarrierFill       int             `json:"barrier_fill"`
+		CorpusCount       int             `json:"corpus_count"`
+		CribCount         int             `json:"crib_count_per_cell_excluding_anchor"`
+		NoiseSeedHex      []string        `json:"noise_seed_hex"`
+		DataSeedHex       []string        `json:"data_seed_hex"`
+		StartSeedHex      []string        `json:"start_seed_hex"`
+		DataLoLaneHex     []string        `json:"data_lo_lane_hex"`  // s[0], s[2], ...
+		DataHiLaneHex     []string        `json:"data_hi_lane_hex"`  // s[1], s[3], ...
+		NoiseLoLaneHex    []string        `json:"noise_lo_lane_hex"` // for reference
+		Cells             []fnvStressCell `json:"cells"`
+	}{
+		Comment: "FNV-1a stress corpus. All cells share (noiseSeed, dataSeed, " +
+			"startSeed); each cell uses a distinct nonce. Attacker-realistic " +
+			"scripts must consume ONLY the cell ciphertexts plus the per-cell " +
+			"crib expected_hex fields (public schema). The *_seed_hex fields " +
+			"here are for terminal-stage validation ONLY — never feed them " +
+			"into decision logic. lo_lane_hex fields expose even-indexed " +
+			"components (s[0], s[2], ...) which are the only ones entering " +
+			"hLo under FNV-1a carry-up-only arithmetic.",
+		Hash:          "fnv1a",
+		KeyBits:       keyBits,
+		Rounds:        numComponents / 2,
+		NumComponents: numComponents,
+		BarrierFill:   currentBarrierFill(),
+		CorpusCount:   corpusCount,
+		CribCount:     cribCount,
+		NoiseSeedHex:  componentsHex(noiseComps),
+		DataSeedHex:   componentsHex(dataComps),
+		StartSeedHex:  componentsHex(startComps),
+		DataLoLaneHex: func() []string {
+			out := make([]string, 0, numComponents/2)
+			for i := 0; i < numComponents; i += 2 {
+				out = append(out, fmt.Sprintf("%016x", dataComps[i]))
+			}
+			return out
+		}(),
+		DataHiLaneHex: func() []string {
+			out := make([]string, 0, numComponents/2)
+			for i := 1; i < numComponents; i += 2 {
+				out = append(out, fmt.Sprintf("%016x", dataComps[i]))
+			}
+			return out
+		}(),
+		NoiseLoLaneHex: func() []string {
+			out := make([]string, 0, numComponents/2)
+			for i := 0; i < numComponents; i += 2 {
+				out = append(out, fmt.Sprintf("%016x", noiseComps[i]))
+			}
+			return out
+		}(),
+		Cells: cells,
+	}
+	summaryBytes, err := json.MarshalIndent(&summary, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "summary.json"), summaryBytes, 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+
+	t.Logf("fnvstress corpus bundle generated at %s (keyBits=%d rounds=%d cells=%d cribs/cell=%d)",
+		outDir, keyBits, numComponents/2, corpusCount, cribCount+1)
 }
