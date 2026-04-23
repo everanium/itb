@@ -317,6 +317,25 @@ xxh3-128 is the headline case (most deployed, most ambiguous PRF status,
 zero published cryptanalysis). Subsequent primitives add breadth to the
 "practically-behaves-like-PRF but no proof" empirical map.
 
+A separate orthogonal research thread, deferred: **ML-enhanced beam-search
+discrimination** under non-linear wrapping constructions. The current shelf
+harness ranks per-pixel `noise_pos` candidates using format-aware heuristics
+(printable-ASCII ratio, format-signature counts) — the same discriminators
+used in [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based) decrypt. Replacing those heuristics with a CNN /
+transformer / LLM-API scorer trained on self-generated corpora follows the
+established ML-cryptanalysis pattern (Gohr, CRYPTO 2019; subsequent follow-
+up literature); the trained model deploys on target ciphertext using only
+beam-search-visible partial reconstructions — attacker-realistic train /
+deploy separation preserved. Binary-format recovery rates under the current
+heuristic are known to sit at the random-byte collision floor ([REDTEAM.md
+Phase 2g architectural finding 6](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based)); ML-enhanced discrimination is expected to
+raise them substantially on formats that carry structural entropy margin
+(ZIP, PDF, MP4, DEFLATE). Quantifying this improvement is a distinct
+empirical study. Appropriate title for the follow-up paper: *"ML-enhanced
+beam-search disambiguation of noise-encoded ciphertexts under non-linear
+wrapping constructions"*. Out of scope for this shelf's primitive-resistance
+measurements; complements them by clarifying the decrypt-side boundary.
+
 ---
 
 ## 8. Running log
@@ -352,3 +371,10 @@ zero published cryptanalysis). Subsequent primitives add breadth to the
   ITB-wrapping levels (e.g. Fully broken at keyBits=512 / 4 rounds but
   Resistant at keyBits=1024 / 8 rounds), recorded as worst-case with
   analytical footnotes for the higher levels.
+- 2026-04-23 — ML-enhanced beam-search discrimination recorded in § 7 as
+  an orthogonal research thread (deferred). Current shelf harness ranks
+  per-pixel `noise_pos` candidates via format-aware heuristics; replacing
+  those with CNN / transformer / LLM-API scorers (Gohr CRYPTO 2019-style
+  methodology) is attacker-realistic and expected to lift binary-format
+  recovery rates above the random floor observed in REDTEAM.md Phase 2g
+  finding 6. Quantification deferred to a separate empirical paper.
