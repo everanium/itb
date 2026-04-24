@@ -38,7 +38,7 @@ var bitSoupEnabled atomic.Int32
 // length-prefix error or byte-level garbage (detectable via authenticated
 // variants' MAC check or caller-side integrity validation).
 //
-// Bit-soup Triple Ouroboros relocates the SAT-cryptanalysis barrier from the
+// Bit-soup relocates the SAT-cryptanalysis barrier from the
 // computational layer to the instance-formulation layer. Under Partial KPA +
 // realistic protocol traffic, the joint per-snake SAT instance is
 // information-theoretically under-determined at the crib coverage realistic
