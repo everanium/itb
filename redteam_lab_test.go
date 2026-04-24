@@ -3048,3 +3048,231 @@ func TestRedTeamGenerateFNVZipCorpus(t *testing.T) {
 	t.Logf("fnvzip corpus generated at %s (keyBits=%d rounds=%d files=%d × %d B → plaintext=%d B ciphertext=%d B grid=%dx%d=%d pixels)",
 		cellDir, keyBits, numComponents/2, fileCount, perFileBytes, len(pt), len(ct), W, H, totalPixels)
 }
+
+// ----------------------------------------------------------------------------
+// Triple Ouroboros nonce-reuse corpus generator — bit-soup bias audit support
+// ----------------------------------------------------------------------------
+//
+// TestRedTeamGenerateNonceReuseTriple is the Triple Ouroboros sibling of
+// [TestRedTeamGenerateNonceReuse]. It generates an N=2 nonce-reuse corpus
+// using [Encrypt3x128] so downstream bias probes can compare byte-level
+// Triple vs bit-soup Triple (via ITB_BITSOUP=1 set at TestMain time) under
+// identical analyzer code.
+//
+// Scope: CRC128 / FNV-1a only at 128-bit hash width, keyBits=1024, ASCII
+// plaintext. This is the minimal set that demonstrates the input-
+// distribution-driven bias neutralization claim under bit-soup; other
+// primitives (PRF-grade + MD5) are already at the conflict-rate floor
+// under byte-level and add no new information under bit-soup.
+//
+// Writes to tmp/attack/triple_nonce_reuse/... to keep the corpora separate
+// from the Single-Ouroboros bias_audit output. cell.meta.json is
+// compatible with raw_mode_bias_probe.py: data_seed / start_seed /
+// start_pixel are populated from snake 0 (the probe has no Triple-region
+// splitter by design — the attacker does not know the partition, per
+// attacker-realism discipline). The probe therefore measures the bias
+// signature over snake 0's region only (≈1/3 of the container). Signal
+// is weaker than the Single-Ouroboros bias_audit baseline but remains
+// sufficient to distinguish byte-level Triple (ASCII bit-7 bias
+// propagates through CRC128's GF(2)-linear structure → sub-50 % conflict
+// dip at snake 0's true shift) from bit-soup Triple (snake 0's input
+// stream is uniform bit-permuted garbage → no structural input for
+// CRC128 to amplify → flat ~50 % distribution).
+//
+// Seeds are derived deterministically from a fixed PRNG master so the
+// byte-level and bit-soup runs produce corpora under identical seed
+// material; the split mode is the only variable between the two
+// comparison arms.
+//
+// Env vars:
+//
+//	ITB_TRIPLE_NONCE_REUSE_HASH = crc128 | fnv1a (required)
+//	ITB_TRIPLE_NONCE_REUSE_SIZE = plaintext bytes (default 524288 = 512 KB)
+func TestRedTeamGenerateNonceReuseTriple(t *testing.T) {
+	hashName := os.Getenv("ITB_TRIPLE_NONCE_REUSE_HASH")
+	if hashName == "" {
+		t.Skip("set ITB_TRIPLE_NONCE_REUSE_HASH=crc128|fnv1a to generate " +
+			"Triple nonce-reuse corpus for bit-soup bias comparison")
+	}
+
+	var hashFunc HashFunc128
+	var hashDisplay string
+	switch hashName {
+	case "crc128":
+		hashFunc = HashFunc128(crc128)
+		hashDisplay = "CRC128-test"
+	case "fnv1a":
+		hashFunc = HashFunc128(fnv1a128)
+		hashDisplay = "FNV-1a"
+	default:
+		t.Fatalf("ITB_TRIPLE_NONCE_REUSE_HASH=%q: only crc128 / fnv1a are "+
+			"supported by this harness (Triple bit-soup audit scope)", hashName)
+	}
+
+	plaintextSize := 512 * 1024
+	if s := os.Getenv("ITB_TRIPLE_NONCE_REUSE_SIZE"); s != "" {
+		v, err := strconv.Atoi(s)
+		if err != nil || v <= 0 || v > maxDataSize {
+			t.Fatalf("ITB_TRIPLE_NONCE_REUSE_SIZE=%q: must be in (0, %d]", s, maxDataSize)
+		}
+		plaintextSize = v
+	}
+
+	const (
+		N           = 2
+		keyBits     = 1024
+		barrierFill = 1
+		nonceSeed   = uint64(0xA17B1CE)  // same as Single harness for comparability
+		masterSeed  = int64(0xBEEFBABE)  // deterministic seed derivation PRNG
+	)
+
+	SetMaxWorkers(8)
+	SetBarrierFill(barrierFill)
+	t.Cleanup(func() {
+		SetMaxWorkers(0)
+		SetBarrierFill(1)
+	})
+
+	fixedNonce := deriveFixedNonce(nonceSeed, currentNonceSize())
+	setTestNonce(t, fixedNonce)
+
+	// Deterministic seed derivation: same PRNG master produces identical
+	// seeds across byte-level and bit-soup runs, isolating split-mode as
+	// the only variable between corpora.
+	sr := rand.New(rand.NewSource(masterSeed))
+	compCount := keyBits / 64
+	makeSeed := func(label string) *Seed128 {
+		comps := make([]uint64, compCount)
+		for i := range comps {
+			comps[i] = sr.Uint64()
+		}
+		s, err := SeedFromComponents128(hashFunc, comps...)
+		if err != nil {
+			t.Fatalf("SeedFromComponents128(%s): %v", label, err)
+		}
+		return s
+	}
+	ns := makeSeed("noise")
+	var ds [3]*Seed128
+	var ss [3]*Seed128
+	for i := 0; i < 3; i++ {
+		ds[i] = makeSeed(fmt.Sprintf("data%d", i+1))
+		ss[i] = makeSeed(fmt.Sprintf("start%d", i+1))
+	}
+
+	// N=2 ASCII plaintexts, distribution matches the known_ascii case in
+	// the Single nonce-reuse harness.
+	ptRng := rand.New(rand.NewSource(424242))
+	plaintexts := make([][]byte, N)
+	for i := 0; i < N; i++ {
+		pt := make([]byte, plaintextSize)
+		for j := range pt {
+			r := ptRng.Intn(97)
+			switch {
+			case r == 95:
+				pt[j] = 0x09 // tab
+			case r == 96:
+				pt[j] = 0x0A // newline
+			default:
+				pt[j] = byte(0x20 + r) // printable ASCII
+			}
+		}
+		plaintexts[i] = pt
+	}
+
+	// Encrypt N times with the same fixed nonce (nonce-reuse corpus).
+	ciphertexts := make([][]byte, N)
+	for i := 0; i < N; i++ {
+		ct, err := Encrypt3x128(ns, ds[0], ds[1], ds[2], ss[0], ss[1], ss[2], plaintexts[i])
+		if err != nil {
+			t.Fatalf("Encrypt3x128 sample %d: %v", i, err)
+		}
+		ciphertexts[i] = ct
+	}
+
+	// Parse dims from the first ciphertext header.
+	if len(ciphertexts[0]) < headerSize() {
+		t.Fatalf("ciphertext too short for header: %d bytes", len(ciphertexts[0]))
+	}
+	width := int(binary.BigEndian.Uint16(ciphertexts[0][currentNonceSize():]))
+	height := int(binary.BigEndian.Uint16(ciphertexts[0][currentNonceSize()+2:]))
+	totalPixels := width * height
+
+	// Per-snake startPixel (3 independent offsets). Snake 0 is written
+	// to `start_pixel` for probe compatibility; the full triple is
+	// exposed via `start_pixels_all`.
+	sp := [3]int{
+		ss[0].deriveStartPixel(fixedNonce, totalPixels),
+		ss[1].deriveStartPixel(fixedNonce, totalPixels),
+		ss[2].deriveStartPixel(fixedNonce, totalPixels),
+	}
+
+	outDir, err := filepath.Abs(filepath.Join(
+		"tmp", "attack", "triple_nonce_reuse", "corpus",
+		hashName,
+		fmt.Sprintf("BF%d", barrierFill),
+		fmt.Sprintf("N%d", N),
+		"known_ascii",
+		fmt.Sprintf("size_%d", plaintextSize),
+	))
+	if err != nil {
+		t.Fatalf("filepath.Abs: %v", err)
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", outDir, err)
+	}
+
+	for i := 0; i < N; i++ {
+		plainPath := filepath.Join(outDir, fmt.Sprintf("ct_%04d.plain", i))
+		ctPath := filepath.Join(outDir, fmt.Sprintf("ct_%04d.bin", i))
+		if err := os.WriteFile(plainPath, plaintexts[i], 0o644); err != nil {
+			t.Fatalf("write %s: %v", plainPath, err)
+		}
+		if err := os.WriteFile(ctPath, ciphertexts[i], 0o644); err != nil {
+			t.Fatalf("write %s: %v", ctPath, err)
+		}
+	}
+
+	bitSoupMode := GetBitSoup()
+	meta := map[string]any{
+		"hash":                 hashName,
+		"hash_display":         hashDisplay,
+		"hash_width":           128,
+		"key_bits":             keyBits,
+		"barrier_fill":         barrierFill,
+		"n_collisions":         N,
+		"mode":                 "known_ascii",
+		"plaintext_kind":       "random",
+		"plaintext_size":       plaintextSize,
+		"nonce_hex":            hex.EncodeToString(fixedNonce),
+		"width":                width,
+		"height":               height,
+		"total_pixels":         totalPixels,
+		"start_pixel":          sp[0], // snake 0 — probe compat
+		"data_pixels":          totalPixels,
+		"known_bytes":          plaintextSize * N,
+		"fully_known_pixels":   totalPixels,
+		"partial_known_pixel":  totalPixels,
+		"known_mask_coverage":  1,
+		"noise_seed":           ns.Components,
+		"data_seed":            ds[0].Components, // snake 0 — probe compat
+		"start_seed":           ss[0].Components,
+		"triple_mode":          true,
+		"bit_soup_mode":        bitSoupMode,
+		"data_seeds_all":       [][]uint64{ds[0].Components, ds[1].Components, ds[2].Components},
+		"start_seeds_all":      [][]uint64{ss[0].Components, ss[1].Components, ss[2].Components},
+		"start_pixels_all":     sp[:],
+	}
+	metaBytes, err := json.MarshalIndent(&meta, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal cell.meta: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "cell.meta.json"), metaBytes, 0o644); err != nil {
+		t.Fatalf("write cell.meta.json: %v", err)
+	}
+
+	t.Logf("Triple nonce-reuse corpus generated at %s (hash=%s keyBits=%d size=%d N=%d bit_soup=%d)",
+		outDir, hashName, keyBits, plaintextSize, N, bitSoupMode)
+	t.Logf("  per-snake start_pixels: [%d, %d, %d]", sp[0], sp[1], sp[2])
+	t.Logf("  container %dx%d = %d pixels", width, height, totalPixels)
+}
