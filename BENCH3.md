@@ -122,3 +122,44 @@
 | **BLAKE2s** | 256 | 2048 | PRF | 17 | 19 | 19 | 18 | 20 | 20 |
 | **ChaCha20** | 256 | 2048 | PRF | 18 | 19 | 19 | 19 | 20 | 20 |
 | **BLAKE3** | 256 | 2048 | PRF | 11 | 12 | 12 | 11 | 12 | 13 |
+
+## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Bit Soup mode)
+
+### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 512 | PRF | 65 | 72 | 73 | 74 | 81 | 82 |
+| **AES-CMAC** | 128 | 512 | PRF | 63 | 70 | 72 | 72 | 78 | 81 |
+| **AreionSoEM512** | 512 | 512 | PRF | 62 | 69 | 71 | 71 | 77 | 81 |
+| **AreionSoEM256** | 256 | 512 | PRF | 62 | 68 | 70 | 70 | 77 | 79 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 59 | 68 | 70 | 68 | 76 | 79 |
+| **ChaCha20** | 256 | 512 | PRF | 60 | 68 | 71 | 68 | 75 | 78 |
+| **BLAKE2s** | 256 | 512 | PRF | 56 | 66 | 67 | 64 | 73 | 77 |
+| **BLAKE3** | 256 | 512 | PRF | 48 | 60 | 64 | 54 | 68 | 71 |
+
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 1024 | PRF | 63 | 70 | 72 | 72 | 79 | 81 |
+| **AES-CMAC** | 128 | 1024 | PRF | 59 | 67 | 71 | 67 | 74 | 79 |
+| **AreionSoEM512** | 512 | 1024 | PRF | 57 | 64 | 69 | 64 | 72 | 77 |
+| **AreionSoEM256** | 256 | 1024 | PRF | 56 | 65 | 69 | 63 | 72 | 77 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 56 | 64 | 66 | 63 | 73 | 76 |
+| **ChaCha20** | 256 | 1024 | PRF | 54 | 63 | 67 | 60 | 72 | 75 |
+| **BLAKE2s** | 256 | 1024 | PRF | 50 | 59 | 62 | 57 | 68 | 70 |
+| **BLAKE3** | 256 | 1024 | PRF | 39 | 53 | 54 | 45 | 59 | 62 |
+
+### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **SipHash-2-4** | 128 | 2048 | PRF | 59 | 67 | 70 | 67 | 76 | 79 |
+| **AES-CMAC** | 128 | 2048 | PRF | 53 | 63 | 67 | 59 | 70 | 74 |
+| **AreionSoEM512** | 512 | 2048 | PRF | 48 | 62 | 65 | 52 | 68 | 72 |
+| **AreionSoEM256** | 256 | 2048 | PRF | 47 | 61 | 64 | 52 | 68 | 71 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 49 | 58 | 63 | 54 | 66 | 69 |
+| **ChaCha20** | 256 | 2048 | PRF | 44 | 59 | 61 | 49 | 65 | 68 |
+| **BLAKE2s** | 256 | 2048 | PRF | 41 | 53 | 52 | 48 | 58 | 56 |
+| **BLAKE3** | 256 | 2048 | PRF | 32 | 40 | 46 | 34 | 48 | 49 |
