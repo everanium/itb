@@ -369,10 +369,10 @@
 // each snake's payload is a fixed public bit-permutation across three
 // consecutive plaintext bytes.
 //
-// Bit soup relocates the SAT-cryptanalysis barrier from the computational
+// Bit-soup relocates the SAT-cryptanalysis barrier from the computational
 // layer to the instance-formulation layer. Standard cryptanalytic intuition
 // pictures SAT recovery as a solver-speed problem: "given a defined NP
-// instance, how fast can the attacker solve it." Bit soup targets the prior
+// instance, how fast can the attacker solve it." Bit-soup targets the prior
 // question: "does the attacker have enough observation to define the
 // instance." Under Partial KPA + realistic protocol traffic, the per-snake
 // SAT instance is information-theoretically under-determined at typical

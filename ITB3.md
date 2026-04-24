@@ -191,8 +191,8 @@ Side-by-side with the byte-level example above:
 
 | Mode | Snake 0 payload | Snake 1 payload | Snake 2 payload |
 |---|---|---|---|
-| Byte-level Triple Ouroboros | `H  l  W  l` | `e  o  o  d` | `l     r  !` |
-| Bit Soup | `00 C2 C6 D8 C4 01` | `00 A0 F8 E8 9B 00` | `00 19 3B 36 1A 02` |
+| Triple Byte Level | `H  l  W  l` | `e  o  o  d` | `l     r  !` |
+| Triple Bit Soup | `00 C2 C6 D8 C4 01` | `00 A0 F8 E8 9B 00` | `00 19 3B 36 1A 02` |
 
 Under byte-level, each snake carries readable letters from the plaintext. Under Bit Soup, nothing in any snake maps back to a recognisable character — every byte is a bit-level scramble across three adjacent source bytes.
 
