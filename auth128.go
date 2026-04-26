@@ -410,5 +410,5 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		parts[i] = cobsDecode(dec[:nullPos])
 	}
 
-	return interleaveForTriple(parts[0], parts[1], parts[2])
+	return interleaveForTriple(parts[0], parts[1], parts[2]), nil
 }

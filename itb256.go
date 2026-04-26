@@ -450,5 +450,5 @@ func Decrypt3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		}
 	}
 
-	return interleaveForTriple(parts[0], parts[1], parts[2])
+	return interleaveForTriple(parts[0], parts[1], parts[2]), nil
 }
