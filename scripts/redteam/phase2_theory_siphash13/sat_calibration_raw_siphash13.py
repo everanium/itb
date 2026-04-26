@@ -1,29 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 0 calibration: raw MD5 ChainHash lo-lane SAT inversion cost.
+Phase 0 calibration: raw SipHash-1-3 ChainHash lo-lane SAT inversion cost.
 
 Pure-Python, no ITB envelope. The script synthesises its own
 (seed_lo_vec, seed_hi_vec, data_i, target_i) tuples, hands them to Z3 as
 constraints on symbolic seed components, and measures wall-clock. Answers:
 
-    "Can Z3 recover an N-round MD5 ChainHash seed (lo+hi lanes) from K
+    "Can Z3 recover an N-round SipHash-1-3 ChainHash seed (lo+hi lanes) from K
      synthetic hLo observations, and how fast?"
 
-Structural differences vs the FNV-1a calibration:
+Structural differences vs the FNV-1a / MD5 / mx3 / SeaHash calibrations:
 
-- MD5 mixes lo + hi lanes inside its compression function (ADD with carry +
-  F/G/H/I boolean mixers). There is no hLo-only collapse like FNV-1a's
-  carry-up-only multiply. Effective SAT unknowns per round = 128 bits
-  (full lo+hi), twice the FNV-1a 64 bits/round.
-- One full MD5 compression per ChainHash round (64 internal ops each) is
-  ~20× larger bit-blast than FNV-1a's 20-byte carry-multiply cascade.
-- At keyBits=512 / 4 rounds: 512 SAT unknowns vs FNV-1a's 256.
-
-If this bare harness fails on 1 round × small obs count within a day of
-single-core wall-clock, the full ITB-wrapped MD5 harness is out of reach
-on commodity hardware — which is itself a publishable negative empirical
-bound.
+- SipHash-1-3 internally mixes its full 256-bit state (4 × 64-bit words
+  v0..v3) within EACH primitive call via 1 message-mixing SipRound + 3
+  finalization SipRounds. The ITB ChainHash128 wrapper layers the
+  standard parallel two-lane adapter on top: `siphash13Hash128(data,
+  seed_lo, seed_hi)` runs two independent `siphash13Hash` calls, only
+  the lo lane's output is observed. As with mx3 / SeaHash, `s_hi_*`
+  are dead variables in the SAT formula at every round — the
+  `_force_declare_seed_syms` workaround re-emits their declarations.
+- SipHash-1-3 is **pure ARX** (add-rotate-xor) — NO multiplications,
+  NO variable shifts. Per SipRound: 6 modular adds + 6 constant
+  rotations + 6 XORs ≈ 18 operations. Per primitive call (1 + 3 = 4
+  SipRounds + message-mix XORs + final XOR): ≈ 96 operations,
+  dominated by adds. Bit-blast: every 64-bit add is ~64 clauses
+  (ripple-carry); rotations and XORs are free.
+- Per chain round at our 20-byte data: ~96 ARX ops × 2 lanes = 192 ops
+  (only lo-lane observed; hi-lane formula stays in symbolic form
+  because of the dead-vars elision). Per 8-observation cell at r = 1:
+  ~768 ARX ops, an order of magnitude smaller bit-blast than mx3 r = 1
+  obs = 8 (multiplications dominate there).
+- Empirical outcome at r = 1 obs = 8 is the boundary case explicitly
+  framed in HARNESS.md § 9.3: He & Yu (ePrint 2019/865) cryptanalyse
+  SipHash-2-1 / 2-2 with differential characteristics; SipHash-1-3 is
+  NOT directly covered by their key recovery, so this calibration
+  probes the boundary empirically.
 
 Attacker-realism note: same as FNV-1a calibration — the script is its own
 universe. It picks the seed, computes targets, asks Z3 to invert. No
@@ -31,7 +43,7 @@ defender, no lab peek; the SAT solver faces a problem with a known-to-
 exist solution.
 
 Usage:
-    python3 sat_calibration_raw_md5.py [--rounds 1]
+    python3 sat_calibration_raw_siphash13.py [--rounds 1]
                                        [--obs 16]
                                        [--timeout-sec 86400]
                                        [--seed-rng 42]
@@ -67,10 +79,10 @@ if str(_THIS_DIR) not in sys.path:
 if str(_PHASE2_THEORY_DIR) not in sys.path:
     sys.path.insert(0, str(_PHASE2_THEORY_DIR))
 
-from md5_chain_lo_concrete import (  # type: ignore
+from siphash13_chain_lo_concrete import (  # type: ignore
     MASK64,
-    md5_chain_lo_concrete,
-    md5_chain_lo_z3,
+    siphash13_chain_lo_concrete,
+    siphash13_chain_lo_z3,
 )
 from sat_solver_bitwuzla import solve_via_bitwuzla  # type: ignore
 
@@ -105,14 +117,41 @@ def _generate_synthetic_instance(
     rng: random.Random,
 ) -> tuple[List[int], List[Observation]]:
     """Pick random seed (lo+hi per round), compute hLo for `num_obs` inputs."""
-    # Flat list [s0_lo, s0_hi, s1_lo, s1_hi, ...] — matches md5_chain_lo_concrete API.
+    # Flat list [s0_lo, s0_hi, s1_lo, s1_hi, ...] — matches siphash13_chain_lo_concrete API.
     seed_components = [rng.getrandbits(64) for _ in range(2 * rounds)]
     observations: List[Observation] = []
     for _ in range(num_obs):
         data = bytes(rng.getrandbits(8) for _ in range(20))
-        target = md5_chain_lo_concrete(seed_components, data, rounds)
+        target = siphash13_chain_lo_concrete(seed_components, data, rounds)
         observations.append(Observation(data_bytes=data, target_hlo=target))
     return seed_components, observations
+
+
+def _force_declare_seed_syms(smt2_text: str, seed_var_names: Sequence[str]) -> str:
+    """Inject `(declare-fun ... (_ BitVec 64))` lines for any seed
+    symbol that Z3's `solver.to_smt2()` simplifier dropped from the
+    output (e.g. `s_hi_0` at r = 1, where the hi-lane siphash13Hash is
+    computed but its output is not part of any constraint, so Z3
+    treats `s_hi_0` as dead and elides its declaration).
+
+    Bitwuzla raises an "undefined symbol" error on the subsequent
+    `(get-value ...)` query for the missing symbol and — only when
+    `--time-limit` is also set — appears to idle until the time limit
+    expires, inflating wall-clock by 30–60× over the genuine sat-find
+    time. Re-emitting the missing declarations in front of the
+    `(check-sat)` line keeps `(get-value ...)` well-defined and
+    restores the true bitwuzla wall-clock.
+    """
+    import re
+    declared = set(re.findall(r"\(declare-(?:const|fun)\s+(\S+)", smt2_text))
+    missing = [n for n in seed_var_names if n not in declared]
+    if not missing:
+        return smt2_text
+    extra = "\n".join(f"(declare-fun {n} () (_ BitVec 64))" for n in missing)
+    # Insert before the FIRST `(check-sat)` (Z3's to_smt2 emits exactly
+    # one). `replace(..., count=1)` guards against any edge case where
+    # the literal string appears later in the dump.
+    return smt2_text.replace("(check-sat)", extra + "\n(check-sat)", 1)
 
 
 def _run_cell(
@@ -149,7 +188,7 @@ def _run_cell(
     seed_hi_syms = [BitVec(f"s_hi_{i}", 64) for i in range(rounds)]
 
     for obs in observations:
-        expr = md5_chain_lo_z3(
+        expr = siphash13_chain_lo_z3(
             z3, seed_lo_syms, seed_hi_syms, obs.data_bytes, rounds,
         )
         solver.add(expr == BitVecVal(obs.target_hlo, 64))
@@ -170,6 +209,7 @@ def _run_cell(
         for i in range(rounds):
             seed_names.append(f"s_lo_{i}")
             seed_names.append(f"s_hi_{i}")
+        smt2_text = _force_declare_seed_syms(smt2_text, seed_names)
         bw_status, bw_values = solve_via_bitwuzla(
             smt2_text, seed_names, timeout_sec, var_bit_width=64,
         )
@@ -228,7 +268,7 @@ def _run_cell(
         matches = (recovered_lo == truth_lo) and (recovered_hi == truth_hi)
 
         # Forward-check: does the recovered seed reproduce every observed
-        # hLo under the concrete reference? If yes and matches=False, MD5
+        # hLo under the concrete reference? If yes and matches=False, SipHash-1-3
         # has a structural multi-seed collision on this observation set
         # (a real empirical finding, unlikely but worth flagging). If no,
         # the SAT encoding drifted — harness broken.
@@ -237,7 +277,7 @@ def _run_cell(
             recovered_components.append(recovered_lo[i])
             recovered_components.append(recovered_hi[i])
         recovered_valid = all(
-            md5_chain_lo_concrete(
+            siphash13_chain_lo_concrete(
                 recovered_components, obs.data_bytes, rounds,
             ) == obs.target_hlo
             for obs in observations
@@ -248,10 +288,10 @@ def _run_cell(
             holdout_total = holdout_count
             for _ in range(holdout_count):
                 data = bytes(holdout_rng.getrandbits(8) for _ in range(20))
-                truth_target = md5_chain_lo_concrete(
+                truth_target = siphash13_chain_lo_concrete(
                     list(ground_truth), data, rounds,
                 )
-                recovered_target = md5_chain_lo_concrete(
+                recovered_target = siphash13_chain_lo_concrete(
                     recovered_components, data, rounds,
                 )
                 if truth_target == recovered_target:
@@ -277,7 +317,7 @@ def _run_cell(
 
 
 # ============================================================================
-# Cube-and-conquer (CnC) — split a single MD5 calibration cell's SAT
+# Cube-and-conquer (CnC) — split a single SipHash-1-3 calibration cell's SAT
 # instance into 8 cubes by enumerating the top 3 bits of `s_lo_0` ∈
 # [0..7]. Each cube is solved independently via a Bitwuzla subprocess
 # in a ProcessPoolExecutor worker. The first cube returning `sat` whose
@@ -286,16 +326,16 @@ def _run_cell(
 #
 # The cube constraint is a single `Extract(63, 61, s_lo_0) == k` assert
 # added AFTER all chain-hash constraints — it pins seed-input domain
-# only and never enters the MD5 compression encoding (`md5_chain_lo_z3`
-# in `md5_chain_lo_concrete.py`). The F/G/H/I boolean lattice and round
+# only and never enters the SipHash-1-3 SipRound encoding (`siphash13_chain_lo_z3`
+# in `siphash13_chain_lo_concrete.py`). The F/G/H/I boolean lattice and round
 # function constants are untouched.
 # ============================================================================
 
 
-def _solve_md5_cube_worker(worker_args: dict) -> dict:
+def _solve_siphash13_cube_worker(worker_args: dict) -> dict:
     """Top-level (picklable) worker for cube-and-conquer dispatch.
 
-    Builds the MD5 ChainHash z3 formula identically to `_run_cell`,
+    Builds the SipHash-1-3 ChainHash z3 formula identically to `_run_cell`,
     appends a single cube assertion pinning the top 3 bits of
     `s_lo_0` to `cube_id`, exports SMT-LIB2 via `solver.to_smt2()`,
     and ships the dump through `solve_via_bitwuzla`. Holdout / forward
@@ -314,9 +354,9 @@ def _solve_md5_cube_worker(worker_args: dict) -> dict:
         _sys.path.insert(0, str(_phase2_theory_dir))
 
     import z3 as _z3
-    from md5_chain_lo_concrete import (  # type: ignore
+    from siphash13_chain_lo_concrete import (  # type: ignore
         MASK64 as _MASK64,
-        md5_chain_lo_z3 as _md5_chain_lo_z3,
+        siphash13_chain_lo_z3 as _siphash13_chain_lo_z3,
     )
     from sat_solver_bitwuzla import (  # type: ignore
         solve_via_bitwuzla as _solve_via_bitwuzla,
@@ -331,17 +371,18 @@ def _solve_md5_cube_worker(worker_args: dict) -> dict:
     BitVec = _z3.BitVec
     BitVecVal = _z3.BitVecVal
 
+
     solver = _z3.Solver()
     seed_lo_syms = [BitVec(f"s_lo_{i}", 64) for i in range(rounds)]
     seed_hi_syms = [BitVec(f"s_hi_{i}", 64) for i in range(rounds)]
     for data_bytes, target_hlo in zip(data_bytes_list, targets):
-        expr = _md5_chain_lo_z3(
+        expr = _siphash13_chain_lo_z3(
             _z3, seed_lo_syms, seed_hi_syms, data_bytes, rounds,
         )
         solver.add(expr == BitVecVal(target_hlo, 64))
     # Cube pin: Extract(63, 61, s_lo_0) == cube_id ∈ [0..7].
     # Added after all chain-hash constraints; touches only the
-    # input seed-domain, never the MD5 round function.
+    # input seed-domain, never the SipHash-1-3 SipRound function.
     solver.add(
         _z3.Extract(63, 61, seed_lo_syms[0]) == BitVecVal(cube_id, 3)
     )
@@ -351,6 +392,7 @@ def _solve_md5_cube_worker(worker_args: dict) -> dict:
     for i in range(rounds):
         seed_names.append(f"s_lo_{i}")
         seed_names.append(f"s_hi_{i}")
+    smt2 = _force_declare_seed_syms(smt2, seed_names)
 
     t0 = _time.perf_counter()
     status, values = _solve_via_bitwuzla(
@@ -392,10 +434,10 @@ def _holdout_check(
     pass_count = 0
     for _ in range(holdout_count):
         data = bytes(rng_clone.getrandbits(8) for _ in range(20))
-        truth_target = md5_chain_lo_concrete(
+        truth_target = siphash13_chain_lo_concrete(
             list(ground_truth), data, rounds,
         )
-        recovered_target = md5_chain_lo_concrete(
+        recovered_target = siphash13_chain_lo_concrete(
             list(recovered_components), data, rounds,
         )
         if truth_target == recovered_target:
@@ -458,7 +500,7 @@ def _run_cell_cnc(
     ctx = _mp.get_context("fork")
     with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as pool:
         futures = {
-            pool.submit(_solve_md5_cube_worker, job): job["cube_id"]
+            pool.submit(_solve_siphash13_cube_worker, job): job["cube_id"]
             for job in jobs
         }
         for fut in as_completed(futures):
@@ -493,7 +535,7 @@ def _run_cell_cnc(
                 recovered_components.append(r["recovered_hi"][i])
 
             valid = all(
-                md5_chain_lo_concrete(
+                siphash13_chain_lo_concrete(
                     list(recovered_components), obs.data_bytes, rounds,
                 ) == obs.target_hlo
                 for obs in observations
@@ -557,7 +599,7 @@ def _run_cell_cnc(
             # Track the first Tier 3+ cube as canonical winner, but do
             # NOT short-circuit — every sat-valid cube is itself a
             # K-candidate (compound seed satisfying training under its
-            # 3-bit cube pin), and MD5's full lo+hi mixing makes
+            # 3-bit cube pin); SipHash-1-3's parallel two-lane composition with cross-coupled chain feedback makes
             # per-cube candidates the realistic empirical outcome
             # rather than a single bit-exact recovery. Letting all 8
             # cubes finish maximises candidate yield.
@@ -651,16 +693,17 @@ def main() -> int:
     ap.add_argument(
         "--timeout-sec", type=int, default=86400,
         help="per-cell Z3 timeout in seconds (default 86400 = 24 h; "
-             "MD5's larger bit-blast relative to FNV-1a warrants longer "
-             "per-cell budgets than the FNV calibration's 300 s default)",
+             "SipHash-1-3's bit-blast is intermediate between FNV-1a and MD5, "
+             "but every step is closed-form bijective so commodity "
+             "wall-clock is expected to be modest at low round counts)",
     )
     ap.add_argument(
-        "--seed-rng", type=int, default=0x4D_44_35_43_41_4C_49_42,  # "MD5CALIB"
+        "--seed-rng", type=int, default=0x53_49_50_43_41_4C_49_42,  # "SIPCALIB"
         help="Python-level random seed for reproducibility",
     )
     ap.add_argument(
         "--json-report",
-        default="tmp/attack/md5stress/phase0_raw_sat_calibration.json",
+        default="tmp/attack/siphash13stress/phase0_raw_sat_calibration.json",
         help="path to write the full cell-by-cell report",
     )
     ap.add_argument(
@@ -672,8 +715,8 @@ def main() -> int:
              "(`yay -S bitwuzla` on Arch). The subprocess boundary is "
              "the only mechanism that gives a HARD wall-clock cap "
              "across every solver phase (Z3's in-process `timeout` "
-             "halts only CDCL, not bit-blasting — important for MD5's "
-             "much larger bit-blast vs FNV-1a).",
+             "halts only CDCL, not bit-blasting — same reasoning as "
+             "the FNV-1a and MD5 calibrations).",
     )
     ap.add_argument(
         "--cube-and-conquer", action="store_true",
@@ -689,8 +732,12 @@ def main() -> int:
              "Forces --solver=bitwuzla. Use when the monolithic solve "
              "does not converge in wall-clock at higher rounds; the "
              "cube assert pins seed-input bits only and never touches "
-             "the MD5 compression encoding.",
+             "the SipHash-1-3 SipRound encoding.",
     )
+    # SipHash-1-3 is pure ARX (no multiplications, no variable shifts),
+    # so no `--mul-encoding` or `--var-shift-encoding` flags apply
+    # here — both axes are absent by primitive structure. This is the
+    # main shape difference from the mx3 / SeaHash calibration harnesses.
     ap.add_argument(
         "--workers", type=int, default=8,
         help="Number of parallel cube workers when --cube-and-conquer "
@@ -720,7 +767,7 @@ def main() -> int:
     results: List[CellResult] = []
 
     print(
-        f"Phase 0 raw MD5 SAT calibration: "
+        f"Phase 0 raw SipHash-1-3 SAT calibration: "
         f"rounds={rounds_list} obs={obs_list} timeout={args.timeout_sec}s"
     )
     print(

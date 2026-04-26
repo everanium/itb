@@ -48,14 +48,18 @@ from typing import List, Optional, Sequence
 # this calibration cannot drift from the verified Go reference. The
 # import path is relative to this file - both live in the same folder.
 _THIS_DIR = Path(__file__).resolve().parent
+_PHASE2_THEORY_DIR = _THIS_DIR.parent / "phase2_theory"
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
+if str(_PHASE2_THEORY_DIR) not in sys.path:
+    sys.path.insert(0, str(_PHASE2_THEORY_DIR))
 
 from fnv_chain_lo_concrete import (  # type: ignore
     MASK64,
     fnv_chain_lo_concrete,
     fnv_chain_lo_z3,
 )
+from sat_solver_bitwuzla import solve_via_bitwuzla  # type: ignore
 
 
 @dataclass
@@ -101,23 +105,39 @@ def _generate_synthetic_instance(
     return seed_lo_vec, observations
 
 
-def _run_z3_cell(
+def _run_cell(
     rounds: int,
     observations: Sequence[Observation],
     ground_truth: Sequence[int],
     timeout_sec: int,
+    solver_backend: str = "z3",
     holdout_rng: Optional[random.Random] = None,
     holdout_count: int = 32,
 ) -> CellResult:
-    """Build one SAT instance, solve, report."""
+    """Build one SAT instance, solve via the chosen backend, report.
+
+    The Z3 path uses an in-process `solver.check()` with
+    `set('timeout', ...)` — fast for small instances but the timer
+    only halts CDCL, not bit-blasting.
+
+    The Bitwuzla path dumps the same Z3-built formula via
+    `solver.to_smt2()` and ships it to the `bitwuzla` CLI through a
+    `subprocess.run(timeout=...)` boundary, which gives a HARD
+    wall-clock cap honoured across every solver phase. See
+    `sat_solver_bitwuzla.solve_via_bitwuzla` for the export details.
+    """
     import z3
 
     BitVec = z3.BitVec
     BitVecVal = z3.BitVecVal
 
-    # Fresh solver context.
+    # Fresh solver context — used for constraint building under either
+    # backend. Z3's in-process timeout is set only when we actually
+    # call `solver.check()` (i.e. the Z3 path); under bitwuzla the
+    # subprocess timeout is the operative cap.
     solver = z3.Solver()
-    solver.set("timeout", int(timeout_sec * 1000))  # ms
+    if solver_backend == "z3":
+        solver.set("timeout", int(timeout_sec * 1000))  # ms
 
     seed_syms = [BitVec(f"s_lo_{i}", 64) for i in range(rounds)]
 
@@ -128,18 +148,51 @@ def _run_z3_cell(
 
     rusage_before = resource.getrusage(resource.RUSAGE_SELF)
     t0 = time.perf_counter()
-    result = solver.check()
-    wall_clock = time.perf_counter() - t0
-    rusage_after = resource.getrusage(resource.RUSAGE_SELF)
 
-    # Statistics bag -> plain dict (Z3 returns a Statistics object).
-    stats_raw = solver.statistics()
-    stats_dict = {}
-    try:
-        for key in stats_raw.keys():
-            stats_dict[key] = stats_raw.get_key_value(key)
-    except Exception:
-        pass
+    recovered: List[Optional[int]] = []
+    stats_dict: dict = {}
+    status: str
+
+    if solver_backend == "bitwuzla":
+        smt2_text = solver.to_smt2()
+        seed_names = [f"s_lo_{i}" for i in range(rounds)]
+        bw_status, bw_values = solve_via_bitwuzla(
+            smt2_text, seed_names, timeout_sec, var_bit_width=64,
+        )
+        wall_clock = time.perf_counter() - t0
+        rusage_after = resource.getrusage(resource.RUSAGE_SELF)
+        status = bw_status
+        if bw_status == "sat":
+            recovered = [int(v) & MASK64 for v in bw_values]
+        # Bitwuzla CLI does not expose stats over stdout in the same
+        # way Z3 does; leave stats_dict empty rather than fabricating.
+    else:
+        result = solver.check()
+        wall_clock = time.perf_counter() - t0
+        rusage_after = resource.getrusage(resource.RUSAGE_SELF)
+        # Statistics bag -> plain dict (Z3 returns a Statistics object).
+        stats_raw = solver.statistics()
+        try:
+            for key in stats_raw.keys():
+                stats_dict[key] = stats_raw.get_key_value(key)
+        except Exception:
+            pass
+        status = str(result)
+        if result == z3.sat:
+            model = solver.model()
+            for sym in seed_syms:
+                val = model.eval(sym, model_completion=True)
+                if val is None:
+                    recovered.append(None)
+                else:
+                    recovered.append(int(val.as_long()) & MASK64)
+        elif result == z3.unknown:
+            reason = solver.reason_unknown()
+            if "timeout" in reason.lower() or "canceled" in reason.lower():
+                status = "timeout"
+            else:
+                status = f"unknown ({reason})"
+
     memory_kb = max(rusage_after.ru_maxrss, rusage_before.ru_maxrss)
 
     recovered_hex: List[str] = []
@@ -147,17 +200,8 @@ def _run_z3_cell(
     recovered_valid = False
     holdout_pass = 0
     holdout_total = 0
-    status = str(result)
 
-    if result == z3.sat:
-        model = solver.model()
-        recovered = []
-        for sym in seed_syms:
-            val = model.eval(sym, model_completion=True)
-            if val is None:
-                recovered.append(None)
-            else:
-                recovered.append(int(val.as_long()) & MASK64)
+    if status == "sat" and recovered:
         recovered_hex = [f"{v:016x}" if v is not None else "??" for v in recovered]
         matches = all(
             (recovered[i] is not None) and (recovered[i] == ground_truth[i])
@@ -167,7 +211,7 @@ def _run_z3_cell(
         # observed hLo target under the concrete reference implementation?
         # If yes and matches=False, the FNV-chain lo-lane has a structural
         # multi-seed collision on this observation set (a real finding).
-        # If no, the Z3 encoding drifted from the concrete reference and
+        # If no, the SAT encoding drifted from the concrete reference and
         # the whole harness is broken.
         if all(v is not None for v in recovered):
             recovered_valid = all(
@@ -197,13 +241,6 @@ def _run_z3_cell(
                     )
                     if truth_target == recovered_target:
                         holdout_pass += 1
-    elif result == z3.unknown:
-        # unknown usually means timeout - distinguish if reason is timeout.
-        reason = solver.reason_unknown()
-        if "timeout" in reason.lower() or "canceled" in reason.lower():
-            status = "timeout"
-        else:
-            status = f"unknown ({reason})"
 
     return CellResult(
         rounds=rounds,
@@ -256,9 +293,14 @@ def main() -> int:
     )
     ap.add_argument(
         "--solver",
-        choices=["z3"],
+        choices=["z3", "bitwuzla"],
         default="z3",
-        help="Bitwuzla support not wired yet; use z3 for Phase 2 calibration",
+        help="SAT backend. 'bitwuzla' exports the Z3-built formula as "
+             "SMT-LIB2 and ships it to the `bitwuzla` CLI via subprocess "
+             "(`yay -S bitwuzla` on Arch). The subprocess boundary is "
+             "the only mechanism that gives a HARD wall-clock cap "
+             "across every solver phase (Z3's in-process `timeout` "
+             "halts only CDCL, not bit-blasting).",
     )
     args = ap.parse_args()
 
@@ -286,11 +328,12 @@ def main() -> int:
         for num_obs in obs_list:
             seed_lo, obs = _generate_synthetic_instance(rounds, num_obs, rng)
             try:
-                result = _run_z3_cell(
+                result = _run_cell(
                     rounds=rounds,
                     observations=obs,
                     ground_truth=seed_lo,
                     timeout_sec=args.timeout_sec,
+                    solver_backend=args.solver,
                     holdout_rng=holdout_rng,
                     holdout_count=32,
                 )
