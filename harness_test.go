@@ -928,6 +928,280 @@ func TestRedTeamHarnessGenerateMx3NonceReuse(t *testing.T) {
 }
 
 // ============================================================================
+// SipHash-1-3 (Aumasson & Bernstein 2012; reduced-round variant)
+//   Canonical reference: https://www.aumasson.jp/siphash/siphash.pdf
+//   Reduced-round structure: 1 message-mixing round per 8-byte word + 3
+//   finalization rounds. Standard SipHash-2-4 is a designed PRF; SipHash-1-3
+//   is the speed-optimised boundary case in HARNESS.md § 4.1 row 7. He & Yu
+//   (ePrint 2019/865) cryptanalyse SipHash-2-1 / 2-2; SipHash-1-3 is NOT
+//   directly covered by their key-recovery attack, hence its "boundary"
+//   classification.
+//
+//   ITB deployment fixes the high half of SipHash's 128-bit key to zero
+//   (k1 = 0), driving the primitive from a single 64-bit seed component
+//   per call. This keeps the 16-component seed budget consistent with
+//   the other shelf primitives (mx3, t1ha1, seahash) and reduces the
+//   SAT recovery target on Axis C to 64 bits per call.
+//
+//   No canonical published test vectors for SipHash-1-3 with k1 = 0;
+//   parity with the Python mirror is established via deterministic
+//   random vectors covering every tail-handling branch.
+// ============================================================================
+
+// SipHash IV constants (Aumasson & Bernstein 2012, ASCII tags).
+const (
+	siphash13IV0 uint64 = 0x736F6D6570736575 // "somepseu"
+	siphash13IV1 uint64 = 0x646F72616E646F6D // "dorandom"
+	siphash13IV2 uint64 = 0x6C7967656E657261 // "lygenera"
+	siphash13IV3 uint64 = 0x7465646279746573 // "tedbytes"
+)
+
+// SipHash-1-3 round counts.
+const (
+	siphash13C = 1 // message-mixing rounds per 8-byte word
+	siphash13D = 3 // finalization rounds
+)
+
+// siphash13Round is one SipRound permutation. Matches the canonical 4-step
+// ARX layout from Aumasson & Bernstein 2012 § 2.1.
+func siphash13Round(v0, v1, v2, v3 uint64) (uint64, uint64, uint64, uint64) {
+	v0 += v1
+	v1 = bits.RotateLeft64(v1, 13)
+	v1 ^= v0
+	v0 = bits.RotateLeft64(v0, 32)
+
+	v2 += v3
+	v3 = bits.RotateLeft64(v3, 16)
+	v3 ^= v2
+
+	v0 += v3
+	v3 = bits.RotateLeft64(v3, 21)
+	v3 ^= v0
+
+	v2 += v1
+	v1 = bits.RotateLeft64(v1, 17)
+	v1 ^= v2
+	v2 = bits.RotateLeft64(v2, 32)
+
+	return v0, v1, v2, v3
+}
+
+// siphash13Hash computes SipHash-1-3 over data with the given 64-bit seed.
+// The high half of SipHash's 128-bit key is fixed to zero per the ITB
+// deployment choice; see file-level docstring for rationale.
+func siphash13Hash(data []byte, seed uint64) uint64 {
+	k0 := seed
+	k1 := uint64(0)
+
+	v0 := k0 ^ siphash13IV0
+	v1 := k1 ^ siphash13IV1
+	v2 := k0 ^ siphash13IV2
+	v3 := k1 ^ siphash13IV3
+
+	length := len(data)
+	end8 := length - (length % 8)
+
+	pos := 0
+	for pos < end8 {
+		m := binary.LittleEndian.Uint64(data[pos:])
+		v3 ^= m
+		for i := 0; i < siphash13C; i++ {
+			v0, v1, v2, v3 = siphash13Round(v0, v1, v2, v3)
+		}
+		v0 ^= m
+		pos += 8
+	}
+
+	// Final partial block: pad with zeros up to 7 bytes, then byte 7
+	// holds `length & 0xff` (canonical SipHash padding rule).
+	var lastBytes [8]byte
+	rem := length - end8
+	if rem > 0 {
+		copy(lastBytes[:rem], data[end8:])
+	}
+	lastBytes[7] = byte(length & 0xFF)
+	m := binary.LittleEndian.Uint64(lastBytes[:])
+	v3 ^= m
+	for i := 0; i < siphash13C; i++ {
+		v0, v1, v2, v3 = siphash13Round(v0, v1, v2, v3)
+	}
+	v0 ^= m
+
+	// Finalization.
+	v2 ^= 0xFF
+	for i := 0; i < siphash13D; i++ {
+		v0, v1, v2, v3 = siphash13Round(v0, v1, v2, v3)
+	}
+
+	return v0 ^ v1 ^ v2 ^ v3
+}
+
+// siphash13Hash128 is the parallel two-lane 128-bit adapter for the ITB
+// ChainHash128 interface.
+func siphash13Hash128(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
+	lo = siphash13Hash(data, seed0)
+	hi = siphash13Hash(data, seed1)
+	return
+}
+
+// chainHash128Siphash13 composes 8 rounds of ChainHash128 with SipHash-1-3
+// as the inner primitive at keyBits=1024.
+func chainHash128Siphash13(data []byte, seed []uint64) (lo, hi uint64) {
+	if len(seed) != 16 {
+		panic("chainHash128Siphash13: expected 16 seed components")
+	}
+	lo, hi = siphash13Hash128(data, seed[0], seed[1])
+	for i := 2; i < 16; i += 2 {
+		kLo := seed[i] ^ lo
+		kHi := seed[i+1] ^ hi
+		lo, hi = siphash13Hash128(data, kLo, kHi)
+	}
+	return
+}
+
+// TestSiphash13SelfCheck — structural sanity for SipHash-1-3 reference.
+// No canonical test vectors at k1 = 0 (the Aumasson/Bernstein reference
+// vectors use the all-distinct-bytes 128-bit key; we use a 64-bit-keyed
+// variant with k1 = 0 by deployment choice). Parity with the Python
+// mirror is delegated to scripts/redteam/phase2_theory/chainhashes/
+// _parity_test.py; this test exercises only deterministic properties.
+func TestSiphash13SelfCheck(t *testing.T) {
+	// Seed-sensitivity: same input under different seeds differs.
+	h0 := siphash13Hash([]byte("hello"), 0)
+	h42 := siphash13Hash([]byte("hello"), 42)
+	if h0 == h42 {
+		t.Fatalf("siphash13Hash seed-sensitivity failed: seed=0 and seed=42 both %016x",
+			h0)
+	}
+
+	// Length-sensitivity: appending bytes changes the output.
+	hLen5 := siphash13Hash([]byte("hello"), 0)
+	hLen6 := siphash13Hash([]byte("hellos"), 0)
+	if hLen5 == hLen6 {
+		t.Fatalf("siphash13Hash length-sensitivity failed: len=5 and len=6 both %016x",
+			hLen5)
+	}
+
+	// Tail-branch smoke: lengths 0..8 hash to distinct values under the
+	// same seed. Catches gross padding-byte miscalculation.
+	seen := map[uint64]int{}
+	for i := 0; i <= 8; i++ {
+		data := make([]byte, i)
+		for j := range data {
+			data[j] = byte(j + 1)
+		}
+		h := siphash13Hash(data, 0xA5A5A5A5A5A5A5A5)
+		if prev, ok := seen[h]; ok {
+			t.Fatalf("siphash13Hash tail collision at lengths %d and %d: both %016x",
+				prev, i, h)
+		}
+		seen[h] = i
+	}
+
+	// Round permutation sanity: siphash13Round on all-zero state stays
+	// all-zero (the round function is purely linear-plus-adds; with no
+	// nonzero input there is nothing to permute).
+	v0, v1, v2, v3 := siphash13Round(0, 0, 0, 0)
+	if v0 != 0 || v1 != 0 || v2 != 0 || v3 != 0 {
+		t.Fatalf("siphash13Round(0,0,0,0) = %016x %016x %016x %016x, want all zero",
+			v0, v1, v2, v3)
+	}
+}
+
+// TestRedTeamHarnessGenerateSiphash13NonceReuse — Axis B corpus generator.
+func TestRedTeamHarnessGenerateSiphash13NonceReuse(t *testing.T) {
+	mode := os.Getenv("ITB_HARNESS_SIPHASH13_MODE")
+	if mode == "" {
+		t.Skip("set ITB_HARNESS_SIPHASH13_MODE=known_ascii to generate siphash13 corpus")
+	}
+	if mode != "known_ascii" {
+		t.Fatalf("ITB_HARNESS_SIPHASH13_MODE=%q: only 'known_ascii' supported", mode)
+	}
+
+	sizeStr := os.Getenv("ITB_HARNESS_SIPHASH13_SIZE")
+	if sizeStr == "" {
+		t.Fatalf("ITB_HARNESS_SIPHASH13_SIZE required")
+	}
+	plaintextSize, err := strconv.Atoi(sizeStr)
+	if err != nil || plaintextSize <= 0 || plaintextSize > maxDataSize {
+		t.Fatalf("ITB_HARNESS_SIPHASH13_SIZE=%q invalid", sizeStr)
+	}
+
+	outDir := os.Getenv("ITB_HARNESS_SIPHASH13_OUT")
+	if outDir == "" {
+		t.Fatalf("ITB_HARNESS_SIPHASH13_OUT required")
+	}
+
+	N := 2
+	if s := os.Getenv("ITB_HARNESS_SIPHASH13_N"); s != "" {
+		if v, perr := strconv.Atoi(s); perr == nil && v > 0 {
+			N = v
+		}
+	}
+
+	nonceSeed := uint64(0xA17B1CE)
+	if s := os.Getenv("ITB_HARNESS_SIPHASH13_SEED"); s != "" {
+		if v, perr := strconv.ParseUint(s, 0, 64); perr == nil {
+			nonceSeed = v
+		}
+	}
+
+	barrierFill := 1
+	keyBits := 1024
+
+	SetMaxWorkers(8)
+	SetBarrierFill(barrierFill)
+	t.Cleanup(func() {
+		SetMaxWorkers(0)
+		SetBarrierFill(1)
+	})
+
+	fixedNonce := deriveFixedNonce(nonceSeed, currentNonceSize())
+	setTestNonce(t, fixedNonce)
+
+	rng := rand.New(rand.NewSource(424242))
+	plaintexts := make([][]byte, N)
+	for i := 0; i < N; i++ {
+		plaintexts[i] = make([]byte, plaintextSize)
+		for j := range plaintexts[i] {
+			r := rng.Intn(97)
+			switch {
+			case r == 95:
+				plaintexts[i][j] = 0x09
+			case r == 96:
+				plaintexts[i][j] = 0x0A
+			default:
+				plaintexts[i][j] = byte(0x20 + r)
+			}
+		}
+	}
+
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", outDir, err)
+	}
+
+	p := nonceReuseParams{
+		hashName:      "siphash13",
+		hashDisplay:   "siphash13",
+		hashWidth:     128,
+		keyBits:       keyBits,
+		barrierFill:   barrierFill,
+		N:             N,
+		mode:          "known_ascii",
+		plaintextKind: "random",
+		plaintextSize: plaintextSize,
+		fixedNonce:    fixedNonce,
+		plaintexts:    plaintexts,
+		outDir:        outDir,
+	}
+
+	t.Logf("Harness siphash13 corpus: %d bytes × %d ciphertexts, %s mode → %s",
+		plaintextSize, N, mode, outDir)
+
+	runNonceReuse128(t, &p, HashFunc128(siphash13Hash128))
+}
+
+// ============================================================================
 // NEXT PRIMITIVE APPENDS BELOW THIS LINE
 //
 // Append new primitive sections under their own "========" banner. Existing

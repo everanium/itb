@@ -360,6 +360,108 @@ func chainHash128Mx3(data []byte, seed []uint64) (lo, hi uint64) {
 	return
 }
 
+// --- SipHash-1-3 (Aumasson & Bernstein 2012, reduced-round variant) ---------
+//
+// Duplicated from harness_test.go so this standalone main can be built
+// without pulling the itb test package. Reduced-round structure: 1
+// message-mixing round + 3 finalization rounds. ITB deployment fixes
+// SipHash's k1 to zero, driving the primitive from a single 64-bit
+// seed component per call.
+
+const (
+	siphash13IV0 uint64 = 0x736F6D6570736575
+	siphash13IV1 uint64 = 0x646F72616E646F6D
+	siphash13IV2 uint64 = 0x6C7967656E657261
+	siphash13IV3 uint64 = 0x7465646279746573
+)
+
+const (
+	siphash13C = 1
+	siphash13D = 3
+)
+
+func siphash13Round(v0, v1, v2, v3 uint64) (uint64, uint64, uint64, uint64) {
+	v0 += v1
+	v1 = bits.RotateLeft64(v1, 13)
+	v1 ^= v0
+	v0 = bits.RotateLeft64(v0, 32)
+
+	v2 += v3
+	v3 = bits.RotateLeft64(v3, 16)
+	v3 ^= v2
+
+	v0 += v3
+	v3 = bits.RotateLeft64(v3, 21)
+	v3 ^= v0
+
+	v2 += v1
+	v1 = bits.RotateLeft64(v1, 17)
+	v1 ^= v2
+	v2 = bits.RotateLeft64(v2, 32)
+
+	return v0, v1, v2, v3
+}
+
+func siphash13Hash(data []byte, seed uint64) uint64 {
+	k0 := seed
+	k1 := uint64(0)
+
+	v0 := k0 ^ siphash13IV0
+	v1 := k1 ^ siphash13IV1
+	v2 := k0 ^ siphash13IV2
+	v3 := k1 ^ siphash13IV3
+
+	length := len(data)
+	end8 := length - (length % 8)
+
+	pos := 0
+	for pos < end8 {
+		m := binary.LittleEndian.Uint64(data[pos:])
+		v3 ^= m
+		for i := 0; i < siphash13C; i++ {
+			v0, v1, v2, v3 = siphash13Round(v0, v1, v2, v3)
+		}
+		v0 ^= m
+		pos += 8
+	}
+
+	var lastBytes [8]byte
+	rem := length - end8
+	if rem > 0 {
+		copy(lastBytes[:rem], data[end8:])
+	}
+	lastBytes[7] = byte(length & 0xFF)
+	m := binary.LittleEndian.Uint64(lastBytes[:])
+	v3 ^= m
+	for i := 0; i < siphash13C; i++ {
+		v0, v1, v2, v3 = siphash13Round(v0, v1, v2, v3)
+	}
+	v0 ^= m
+
+	v2 ^= 0xFF
+	for i := 0; i < siphash13D; i++ {
+		v0, v1, v2, v3 = siphash13Round(v0, v1, v2, v3)
+	}
+
+	return v0 ^ v1 ^ v2 ^ v3
+}
+
+func siphash13Hash128(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
+	lo = siphash13Hash(data, seed0)
+	hi = siphash13Hash(data, seed1)
+	return
+}
+
+func chainHash128Siphash13(data []byte, seed []uint64) (lo, hi uint64) {
+	lo, hi = siphash13Hash128(data, seed[0], seed[1])
+	for i := 2; i < len(seed); i += 2 {
+		kLo := seed[i] ^ lo
+		kHi := seed[i+1] ^ hi
+		lo, hi = siphash13Hash128(data, kLo, kHi)
+	}
+	return
+}
+
 func randBytes(rng *rand.Rand, n int) []byte {
 	b := make([]byte, n)
 	for i := range b {
@@ -459,6 +561,33 @@ func main() {
 		lo, hi := chainHash128Mx3(data, seed)
 		entries = append(entries, entry{
 			Primitive:      "mx3",
+			DataHex:        hex.EncodeToString(data),
+			SeedComponents: seed,
+			ExpectedLoHex:  fmt.Sprintf("%016x", lo),
+			ExpectedHiHex:  fmt.Sprintf("%016x", hi),
+		})
+	}
+
+	// SipHash-1-3 parity vectors. Size set exercises every padding case:
+	//   0 (empty — final block is pure padding with byte 7 = 0),
+	//   1..7 (each rem-byte padding case in the final block),
+	//   8 (one full 8-byte block + final padding-only block),
+	//   9..15 (one full block + partial-with-tail final),
+	//   16 (two full blocks + padding-only final),
+	//   17 (two full blocks + 1-byte tail final),
+	//   55 (six full blocks + 7-byte tail final),
+	//   63 (seven full blocks + 7-byte tail final),
+	//   64 (eight full blocks + padding-only final),
+	//   100, 1000 (many blocks + tail).
+	siphash13Sizes := []int{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 55, 63, 64, 100, 1000,
+	}
+	for _, sz := range siphash13Sizes {
+		data := randBytes(rng, sz)
+		seed := randSeed16(rng)
+		lo, hi := chainHash128Siphash13(data, seed)
+		entries = append(entries, entry{
+			Primitive:      "siphash13",
 			DataHex:        hex.EncodeToString(data),
 			SeedComponents: seed,
 			ExpectedLoHex:  fmt.Sprintf("%016x", lo),
