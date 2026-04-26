@@ -2,7 +2,6 @@ package itb
 
 import (
 	"encoding/binary"
-	"fmt"
 	"sync/atomic"
 )
 
@@ -121,21 +120,28 @@ func recoverTripleBitsLen(n0, n1, n2 int) int {
 // interleaveForTriple dispatches between byte-level [interleaveTriple] and
 // bit-level [interleaveTripleBits] based on the current [SetBitSoup] mode.
 // On the bit-soup path, strips the 4-byte length prefix and returns only
-// the original plaintext bytes. Reports a length-prefix validation error
-// if the prefix does not fit within the recovered payload (indicates
-// corrupted ciphertext or mode mismatch between encrypt and decrypt).
-func interleaveForTriple(p0, p1, p2 []byte) ([]byte, error) {
+// the original plaintext bytes. Plausible-decryption invariant: never
+// errors. Wrong-seed brute-force feeds garbage `p0/p1/p2` here; the
+// function returns garbage bytes (clamped to the recovered payload
+// extent) instead of distinguishing wrong-seed attempts from valid ones
+// via an error oracle.
+func interleaveForTriple(p0, p1, p2 []byte) []byte {
 	if !isBitSoupEnabled() {
-		return interleaveTriple(p0, p1, p2), nil
+		return interleaveTriple(p0, p1, p2)
 	}
 	totalBits := recoverTripleBitsLen(len(p0), len(p1), len(p2))
 	framed := interleaveTripleBits(p0, p1, p2, totalBits)
 	if len(framed) < 4 {
-		return nil, fmt.Errorf("itb: bit-soup payload too small for length prefix: %d bytes", len(framed))
+		// Wrong-seed garbage: return whatever bits exist. Right-seed
+		// path always produces framed ≥ 4 bytes by encoder invariant.
+		return framed
 	}
 	length := binary.BigEndian.Uint32(framed[:4])
-	if uint64(length)+4 > uint64(len(framed)) {
-		return nil, fmt.Errorf("itb: bit-soup length prefix exceeds payload: length=%d, payload=%d", length, len(framed))
+	end := uint64(length) + 4
+	if end > uint64(len(framed)) {
+		// Wrong-seed garbage: clamp to payload extent. Right-seed path
+		// always produces a valid length prefix.
+		end = uint64(len(framed))
 	}
-	return framed[4 : 4+int(length)], nil
+	return framed[4:int(end)]
 }
