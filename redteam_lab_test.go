@@ -266,9 +266,9 @@ func deriveFixedNonce(seed uint64, size int) []byte {
 // pixelConfigEntry matches the per-pixel configuration that processChunk128
 // derives at encryption time. One entry per data-carrying pixel.
 type pixelConfigEntry struct {
-	NoisePos    int   `json:"noise_pos"`       // 0-7, = noiseHash & 7
-	Rotation    int   `json:"rotation"`        // 0-6, = dataHash % 7
-	ChannelXOR8 []int `json:"channel_xor_8"`   // 8 values, 7-bit each = xorMask slicing
+	NoisePos    int   `json:"noise_pos"`     // 0-7, = noiseHash & 7
+	Rotation    int   `json:"rotation"`      // 0-6, = dataHash % 7
+	ChannelXOR8 []int `json:"channel_xor_8"` // 8 values, 7-bit each = xorMask slicing
 }
 
 // configTruthJSON is the ground-truth configuration written alongside the
@@ -368,11 +368,11 @@ func computeConfigMap512(noiseSeed, dataSeed *Seed512, nonce []byte, dataPixels 
 //   - `ValueLen` bytes of the value are either random-unknown or
 //     record-index-known depending on `ValueKind`.
 //   - `ValueKind` selects the value generation strategy:
-//       - "random": ValueLen random printable ASCII bytes (attacker-unknown)
-//       - "record_index_dec": ValueLen digit bytes zero-padded from the record
-//         index (attacker-known, varies per record — breaks the record-period
-//         symmetry that would otherwise give Layer 2 multiple equivalent sp
-//         candidates).
+//   - "random": ValueLen random printable ASCII bytes (attacker-unknown)
+//   - "record_index_dec": ValueLen digit bytes zero-padded from the record
+//     index (attacker-known, varies per record — breaks the record-period
+//     symmetry that would otherwise give Layer 2 multiple equivalent sp
+//     candidates).
 type jsonFieldSpec struct {
 	Name      string
 	ValueLen  int
@@ -736,7 +736,7 @@ type cellMetaJSON struct {
 	ControlMode       string   `json:"control_mode,omitempty"` // "" or "nonce_mismatch"
 	PlaintextKind     string   `json:"plaintext_kind"`         // "random" or "json_structured"
 	PlaintextSize     int      `json:"plaintext_size"`
-	NonceHex          string   `json:"nonce_hex"`              // in control mode: nonce of ct_0000 (per-sample nonces in PerSampleNonces)
+	NonceHex          string   `json:"nonce_hex"`                   // in control mode: nonce of ct_0000 (per-sample nonces in PerSampleNonces)
 	PerSampleNonces   []string `json:"per_sample_nonces,omitempty"` // control_nonce_mismatch only; len == N
 	Width             int      `json:"width"`
 	Height            int      `json:"height"`
@@ -902,7 +902,7 @@ type nonceReuseParams struct {
 	barrierFill     int
 	N               int
 	mode            string
-	plaintextKind   string   // "random" or "json_structured" (partial-mode requires the latter)
+	plaintextKind   string // "random" or "json_structured" (partial-mode requires the latter)
 	plaintextSize   int
 	fixedNonce      []byte
 	perSampleNonces [][]byte // populated only in control_nonce_mismatch mode; len == N
@@ -2364,12 +2364,12 @@ func TestRedTeamEmitFNV1aChainHashReference(t *testing.T) {
 // verbatim from the record sequence number) or random ASCII hex for the
 // value fields. Record layout per format:
 //
-//   JSON record k: `{"k":"IIIIIIII","v":"RRRRRRRRRRRRRRRR"}`  (39 B)
-//     whole stream: `[` + rec0 + `,` + rec1 + ... + `]`
-//     known prefix per record: first 21 bytes `{"k":"IIIIIIII","v":`
-//   HTML record k: `<r><k>IIIIIIII</k><v>RRRRRRRRRRRRRRRR</v></r>`  (45 B)
-//     whole stream: rec0 + rec1 + ... (no separator; <r>...</r> is self-contained)
-//     known prefix per record: first 21 bytes `<r><k>IIIIIIII</k><v>`
+//	JSON record k: `{"k":"IIIIIIII","v":"RRRRRRRRRRRRRRRR"}`  (39 B)
+//	  whole stream: `[` + rec0 + `,` + rec1 + ... + `]`
+//	  known prefix per record: first 21 bytes `{"k":"IIIIIIII","v":`
+//	HTML record k: `<r><k>IIIIIIII</k><v>RRRRRRRRRRRRRRRR</v></r>`  (45 B)
+//	  whole stream: rec0 + rec1 + ... (no separator; <r>...</r> is self-contained)
+//	  known prefix per record: first 21 bytes `<r><k>IIIIIIII</k><v>`
 //
 // The 8-byte IIIIIIII field is zero-padded lowercase hex of the record
 // index (records 0..N-1 → `00000000`..`0000NN`), publicly predictable.
@@ -2377,11 +2377,11 @@ func TestRedTeamEmitFNV1aChainHashReference(t *testing.T) {
 // unknown value the attacker does NOT predict. No 0x00 bytes anywhere so
 // COBS encoding stays 1:1 structural.
 type fnvStressCrib struct {
-	RecordIndex  int    `json:"record_index"`
-	ByteStart    int    `json:"byte_start_in_plaintext"` // pre-COBS offset
-	ByteLen      int    `json:"byte_len"`                // always 21
-	ExpectedHex  string `json:"expected_hex"`            // 21 bytes = 42 hex chars
-	AnchorKind   string `json:"anchor_kind,omitempty"`   // "" or "cobs_ff_overhead"
+	RecordIndex int    `json:"record_index"`
+	ByteStart   int    `json:"byte_start_in_plaintext"` // pre-COBS offset
+	ByteLen     int    `json:"byte_len"`                // always 21
+	ExpectedHex string `json:"expected_hex"`            // 21 bytes = 42 hex chars
+	AnchorKind  string `json:"anchor_kind,omitempty"`   // "" or "cobs_ff_overhead"
 }
 
 func buildFNVStressPlaintext(rng *rand.Rand, format string, cribCount int) ([]byte, []fnvStressCrib) {
@@ -2683,21 +2683,21 @@ func TestRedTeamGenerateFNVStressCorpus(t *testing.T) {
 		return out
 	}
 	summary := struct {
-		Comment           string          `json:"_comment"`
-		Hash              string          `json:"hash"`
-		KeyBits           int             `json:"key_bits"`
-		Rounds            int             `json:"rounds"`
-		NumComponents     int             `json:"num_components"`
-		BarrierFill       int             `json:"barrier_fill"`
-		CorpusCount       int             `json:"corpus_count"`
-		CribCount         int             `json:"crib_count_per_cell_excluding_anchor"`
-		NoiseSeedHex      []string        `json:"noise_seed_hex"`
-		DataSeedHex       []string        `json:"data_seed_hex"`
-		StartSeedHex      []string        `json:"start_seed_hex"`
-		DataLoLaneHex     []string        `json:"data_lo_lane_hex"`  // s[0], s[2], ...
-		DataHiLaneHex     []string        `json:"data_hi_lane_hex"`  // s[1], s[3], ...
-		NoiseLoLaneHex    []string        `json:"noise_lo_lane_hex"` // for reference
-		Cells             []fnvStressCell `json:"cells"`
+		Comment        string          `json:"_comment"`
+		Hash           string          `json:"hash"`
+		KeyBits        int             `json:"key_bits"`
+		Rounds         int             `json:"rounds"`
+		NumComponents  int             `json:"num_components"`
+		BarrierFill    int             `json:"barrier_fill"`
+		CorpusCount    int             `json:"corpus_count"`
+		CribCount      int             `json:"crib_count_per_cell_excluding_anchor"`
+		NoiseSeedHex   []string        `json:"noise_seed_hex"`
+		DataSeedHex    []string        `json:"data_seed_hex"`
+		StartSeedHex   []string        `json:"start_seed_hex"`
+		DataLoLaneHex  []string        `json:"data_lo_lane_hex"`  // s[0], s[2], ...
+		DataHiLaneHex  []string        `json:"data_hi_lane_hex"`  // s[1], s[3], ...
+		NoiseLoLaneHex []string        `json:"noise_lo_lane_hex"` // for reference
+		Cells          []fnvStressCell `json:"cells"`
 	}{
 		Comment: "FNV-1a stress corpus. All cells share (noiseSeed, dataSeed, " +
 			"startSeed); each cell uses a distinct nonce. Attacker-realistic " +
@@ -3122,8 +3122,8 @@ func TestRedTeamGenerateNonceReuseTriple(t *testing.T) {
 		N           = 2
 		keyBits     = 1024
 		barrierFill = 1
-		nonceSeed   = uint64(0xA17B1CE)  // same as Single harness for comparability
-		masterSeed  = int64(0xBEEFBABE)  // deterministic seed derivation PRNG
+		nonceSeed   = uint64(0xA17B1CE) // same as Single harness for comparability
+		masterSeed  = int64(0xBEEFBABE) // deterministic seed derivation PRNG
 	)
 
 	SetMaxWorkers(8)
@@ -3235,33 +3235,33 @@ func TestRedTeamGenerateNonceReuseTriple(t *testing.T) {
 
 	bitSoupMode := GetBitSoup()
 	meta := map[string]any{
-		"hash":                 hashName,
-		"hash_display":         hashDisplay,
-		"hash_width":           128,
-		"key_bits":             keyBits,
-		"barrier_fill":         barrierFill,
-		"n_collisions":         N,
-		"mode":                 "known_ascii",
-		"plaintext_kind":       "random",
-		"plaintext_size":       plaintextSize,
-		"nonce_hex":            hex.EncodeToString(fixedNonce),
-		"width":                width,
-		"height":               height,
-		"total_pixels":         totalPixels,
-		"start_pixel":          sp[0], // snake 0 — probe compat
-		"data_pixels":          totalPixels,
-		"known_bytes":          plaintextSize * N,
-		"fully_known_pixels":   totalPixels,
-		"partial_known_pixel":  totalPixels,
-		"known_mask_coverage":  1,
-		"noise_seed":           ns.Components,
-		"data_seed":            ds[0].Components, // snake 0 — probe compat
-		"start_seed":           ss[0].Components,
-		"triple_mode":          true,
-		"bit_soup_mode":        bitSoupMode,
-		"data_seeds_all":       [][]uint64{ds[0].Components, ds[1].Components, ds[2].Components},
-		"start_seeds_all":      [][]uint64{ss[0].Components, ss[1].Components, ss[2].Components},
-		"start_pixels_all":     sp[:],
+		"hash":                hashName,
+		"hash_display":        hashDisplay,
+		"hash_width":          128,
+		"key_bits":            keyBits,
+		"barrier_fill":        barrierFill,
+		"n_collisions":        N,
+		"mode":                "known_ascii",
+		"plaintext_kind":      "random",
+		"plaintext_size":      plaintextSize,
+		"nonce_hex":           hex.EncodeToString(fixedNonce),
+		"width":               width,
+		"height":              height,
+		"total_pixels":        totalPixels,
+		"start_pixel":         sp[0], // snake 0 — probe compat
+		"data_pixels":         totalPixels,
+		"known_bytes":         plaintextSize * N,
+		"fully_known_pixels":  totalPixels,
+		"partial_known_pixel": totalPixels,
+		"known_mask_coverage": 1,
+		"noise_seed":          ns.Components,
+		"data_seed":           ds[0].Components, // snake 0 — probe compat
+		"start_seed":          ss[0].Components,
+		"triple_mode":         true,
+		"bit_soup_mode":       bitSoupMode,
+		"data_seeds_all":      [][]uint64{ds[0].Components, ds[1].Components, ds[2].Components},
+		"start_seeds_all":     [][]uint64{ss[0].Components, ss[1].Components, ss[2].Components},
+		"start_pixels_all":    sp[:],
 	}
 	metaBytes, err := json.MarshalIndent(&meta, "", "  ")
 	if err != nil {
