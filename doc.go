@@ -182,6 +182,8 @@
 //	itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
 //	itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
 //	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+//	Most secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
 //	itb.SetBitSoup(1)       // Triple Ouroboros bit-level split ("bit soup"; default: 0 = byte-level)
 //
 //	// SipHash-2-4 (128-bit hash, 1024-bit effective key)
