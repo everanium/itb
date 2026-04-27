@@ -111,7 +111,8 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 		return nil, fmt.Errorf("itb: internal error: container too small")
 	}
 
-	payload := make([]byte, capacity)
+	payloadPtr, payload := acquireBuffer(capacity)
+	defer releaseBuffer(payloadPtr, payload)
 	copy(payload, encoded)
 	payload[len(encoded)] = 0x00
 	// Remaining capacity after COBS + null filled with crypto/rand.
@@ -134,7 +135,6 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 	}
 
 	process128(noiseSeed, dataSeed, startSeed, nonce, container, width, height, payload, true, 0)
-	secureWipe(payload) // minimize plaintext exposure in heap
 
 	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
@@ -150,11 +150,11 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 // Decrypt128 extracts data hidden by [Encrypt128] using 128-bit seeds.
 //
 // Parses [nonce][width][height][RGBWYOPA] format, applies the reverse
-// extraction with triple-seed decryption, finds the null terminator,
-// and COBS-decodes the original data.
+// extraction with triple-seed decryption, and COBS-decodes the result.
 //
-// Returns error if seeds are wrong (no valid terminator found) or
-// data is corrupted.
+// Errors only on structural issues (header parsing, dimension validation).
+// Wrong seeds produce random-looking output, never error — non-Auth mode
+// has no failure signal by design.
 func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byte, error) {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
 		return nil, fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
@@ -193,10 +193,10 @@ func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byt
 		return nil, fmt.Errorf("itb: container too small")
 	}
 
-	decoded := make([]byte, capacity)
+	decodedPtr, decoded := acquireBuffer(capacity)
+	defer releaseBuffer(decodedPtr, decoded)
 
 	process128(noiseSeed, dataSeed, startSeed, nonce, container, width, height, decoded, false, 0)
-	defer secureWipe(decoded) // wipe after extracting plaintext
 
 	// Constant-iteration null search: always scans entire capacity (no early break)
 	// to avoid timing leak of terminator position. Note: branch prediction may still
@@ -207,20 +207,10 @@ func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byt
 			nullPos = i
 		}
 	}
-	// Plausible deniability: never return "no terminator" error.
-	// Wrong seeds produce random bytes; returning them as-is ensures every
-	// seed always produces output — the caller cannot distinguish correct
-	// from incorrect decryption without external context.
-	if nullPos <= 0 {
-		return decoded, nil
+	if nullPos < 0 {
+		nullPos = len(decoded)
 	}
-
-	original := cobsDecode(decoded[:nullPos])
-	if len(original) == 0 {
-		return decoded, nil
-	}
-
-	return original, nil
+	return cobsDecode(decoded[:nullPos]), nil
 }
 
 // checkSevenSeeds128 verifies all 7 seeds are distinct pointers (seven-seed isolation).
@@ -267,12 +257,24 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 
-	p0, p1, p2 := splitForTriple(data)
-	enc0 := cobsEncode(p0)
-	enc1 := cobsEncode(p1)
-	enc2 := cobsEncode(p2)
+	p0, p1, p2 := splitForTripleParallel(data)
 
-	width, height := containerSize3_128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, [3]int{len(enc0), len(enc1), len(enc2)})
+	// Phase 1: 3 parallel cobsEncode
+	var encs [3][]byte
+	{
+		parts := [3][]byte{p0, p1, p2}
+		var wg sync.WaitGroup
+		wg.Add(3)
+		for i := 0; i < 3; i++ {
+			go func(i int) {
+				defer wg.Done()
+				encs[i] = cobsEncode(parts[i])
+			}(i)
+		}
+		wg.Wait()
+	}
+
+	width, height := containerSize3_128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, [3]int{len(encs[0]), len(encs[1]), len(encs[2])})
 	totalPixels := width * height
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
@@ -282,28 +284,49 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-	encs := [3][]byte{enc0, enc1, enc2}
-	for i, enc := range encs {
-		if len(enc)+1 > caps[i] {
+	for i := 0; i < 3; i++ {
+		if len(encs[i])+1 > caps[i] {
 			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
 		}
 	}
 
-	// Build 3 payloads
+	// Phase 2: 3 parallel payload-build
+	var payloadPtrs [3]*[]byte
 	payloads := [3][]byte{}
-	for i, enc := range encs {
-		payload := make([]byte, caps[i])
-		copy(payload, enc)
-		payload[len(enc)] = 0x00
-		fillStart := len(enc) + 1
-		if fillStart < caps[i] {
-			fillBytes, err := generateRandomBytes(caps[i] - fillStart)
+	defer func() {
+		for i := range payloadPtrs {
+			if payloadPtrs[i] != nil {
+				releaseBuffer(payloadPtrs[i], payloads[i])
+			}
+		}
+	}()
+	{
+		var errs [3]error
+		var wg sync.WaitGroup
+		wg.Add(3)
+		for i := 0; i < 3; i++ {
+			go func(i int) {
+				defer wg.Done()
+				payloadPtrs[i], payloads[i] = acquireBuffer(caps[i])
+				copy(payloads[i], encs[i])
+				payloads[i][len(encs[i])] = 0x00
+				fillStart := len(encs[i]) + 1
+				if fillStart < caps[i] {
+					fillBytes, err := generateRandomBytes(caps[i] - fillStart)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					copy(payloads[i][fillStart:], fillBytes)
+				}
+			}(i)
+		}
+		wg.Wait()
+		for _, err := range errs {
 			if err != nil {
 				return nil, err
 			}
-			copy(payload[fillStart:], fillBytes)
 		}
-		payloads[i] = payload
 	}
 
 	// 3×CSPRNG parallel generation into one pre-allocated buffer
@@ -347,10 +370,6 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		wg.Done()
 	}()
 	wg.Wait()
-
-	for i := range payloads {
-		secureWipe(payloads[i])
-	}
 
 	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
@@ -404,10 +423,17 @@ func Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
 
-	decoded := [3][]byte{
-		make([]byte, caps[0]),
-		make([]byte, caps[1]),
-		make([]byte, caps[2]),
+	var decodedPtrs [3]*[]byte
+	decoded := [3][]byte{}
+	defer func() {
+		for i := range decodedPtrs {
+			if decodedPtrs[i] != nil {
+				releaseBuffer(decodedPtrs[i], decoded[i])
+			}
+		}
+	}()
+	for i := 0; i < 3; i++ {
+		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
 	}
 
 	offset1 := third * Channels
@@ -433,22 +459,28 @@ func Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 	}()
 	wg.Wait()
 
+	// 3 parallel null-search + cobsDecode
 	parts := [3][]byte{}
-	for i := 0; i < 3; i++ {
-		defer secureWipe(decoded[i])
-		nullPos := -1
-		for j := 0; j < len(decoded[i]); j++ {
-			if decoded[i][j] == 0x00 && nullPos == -1 {
-				nullPos = j
-			}
+	{
+		var wg sync.WaitGroup
+		wg.Add(3)
+		for i := 0; i < 3; i++ {
+			go func(i int) {
+				defer wg.Done()
+				nullPos := -1
+				for j := 0; j < len(decoded[i]); j++ {
+					if decoded[i][j] == 0x00 && nullPos == -1 {
+						nullPos = j
+					}
+				}
+				if nullPos < 0 {
+					nullPos = len(decoded[i])
+				}
+				parts[i] = cobsDecode(decoded[i][:nullPos])
+			}(i)
 		}
-		// Plausible deniability: no terminator → return raw decoded bytes.
-		if nullPos <= 0 {
-			parts[i] = decoded[i]
-		} else {
-			parts[i] = cobsDecode(decoded[i][:nullPos])
-		}
+		wg.Wait()
 	}
 
-	return interleaveForTriple(parts[0], parts[1], parts[2]), nil
+	return interleaveForTripleParallel(parts[0], parts[1], parts[2]), nil
 }

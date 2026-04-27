@@ -45,7 +45,8 @@ func EncryptAuthenticated256(noiseSeed, dataSeed, startSeed *Seed256, data []byt
 	}
 
 	payloadLen := capacity - tagSize
-	payload := make([]byte, payloadLen)
+	payloadPtr, payload := acquireBuffer(payloadLen)
+	defer releaseBuffer(payloadPtr, payload)
 	copy(payload, encoded)
 	payload[len(encoded)] = 0x00
 	fillStart := len(encoded) + 1
@@ -59,7 +60,8 @@ func EncryptAuthenticated256(noiseSeed, dataSeed, startSeed *Seed256, data []byt
 
 	tag := macFunc(payload)
 
-	full := make([]byte, capacity)
+	fullPtr, full := acquireBuffer(capacity)
+	defer releaseBuffer(fullPtr, full)
 	copy(full, payload)
 	copy(full[payloadLen:], tag)
 
@@ -73,8 +75,6 @@ func EncryptAuthenticated256(noiseSeed, dataSeed, startSeed *Seed256, data []byt
 	}
 
 	process256(noiseSeed, dataSeed, startSeed, nonce, container, width, height, full, true, 0)
-	secureWipe(payload)
-	secureWipe(full)
 
 	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
@@ -133,9 +133,9 @@ func DecryptAuthenticated256(noiseSeed, dataSeed, startSeed *Seed256, fileData [
 		return nil, fmt.Errorf("itb: container too small for MAC tag")
 	}
 
-	decoded := make([]byte, capacity)
+	decodedPtr, decoded := acquireBuffer(capacity)
+	defer releaseBuffer(decodedPtr, decoded)
 	process256(noiseSeed, dataSeed, startSeed, nonce, container, width, height, decoded, false, 0)
-	defer secureWipe(decoded)
 
 	payloadLen := capacity - tagSize
 	payload := decoded[:payloadLen]
@@ -184,13 +184,25 @@ func EncryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	p0, p1, p2 := splitForTriple(data)
-	enc0 := cobsEncode(p0)
-	enc1 := cobsEncode(p1)
-	enc2 := cobsEncode(p2)
+	p0, p1, p2 := splitForTripleParallel(data)
+
+	// Phase 1: 3 parallel cobsEncode
+	var encs [3][]byte
+	{
+		parts := [3][]byte{p0, p1, p2}
+		var wg sync.WaitGroup
+		wg.Add(3)
+		for i := 0; i < 3; i++ {
+			go func(i int) {
+				defer wg.Done()
+				encs[i] = cobsEncode(parts[i])
+			}(i)
+		}
+		wg.Wait()
+	}
 
 	// part2 COBS length increased by tagSize for container sizing
-	cobsLens := [3]int{len(enc0), len(enc1), len(enc2) + tagSize}
+	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagSize}
 	width, height := containerSizeAuth3_256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 	totalPixels := width * height
 	third := totalPixels / 3
@@ -201,40 +213,65 @@ func EncryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-
-	// Build payloads: part0 and part1 full capacity, part2 reserves tagSize
-	payloads := [3][]byte{}
-	for i, enc := range [3][]byte{enc0, enc1, enc2} {
-		payloadLen := caps[i]
-		if i == 2 {
-			payloadLen = caps[i] - tagSize
-		}
-		if len(enc)+1 > payloadLen {
+	payloadLens := [3]int{caps[0], caps[1], caps[2] - tagSize}
+	for i := 0; i < 3; i++ {
+		if len(encs[i])+1 > payloadLens[i] {
 			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
 		}
-		payload := make([]byte, payloadLen)
-		copy(payload, enc)
-		payload[len(enc)] = 0x00
-		fillStart := len(enc) + 1
-		if fillStart < payloadLen {
-			fillBytes, err := generateRandomBytes(payloadLen - fillStart)
+	}
+
+	// Build payloads: part0 and part1 full capacity, part2 reserves tagSize
+	// Phase 2: 3 parallel payload-build
+	var payloadPtrs [3]*[]byte
+	payloads := [3][]byte{}
+	defer func() {
+		for i := range payloadPtrs {
+			if payloadPtrs[i] != nil {
+				releaseBuffer(payloadPtrs[i], payloads[i])
+			}
+		}
+	}()
+	{
+		var errs [3]error
+		var wg sync.WaitGroup
+		wg.Add(3)
+		for i := 0; i < 3; i++ {
+			go func(i int) {
+				defer wg.Done()
+				payloadPtrs[i], payloads[i] = acquireBuffer(payloadLens[i])
+				copy(payloads[i], encs[i])
+				payloads[i][len(encs[i])] = 0x00
+				fillStart := len(encs[i]) + 1
+				if fillStart < payloadLens[i] {
+					fillBytes, err := generateRandomBytes(payloadLens[i] - fillStart)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					copy(payloads[i][fillStart:], fillBytes)
+				}
+			}(i)
+		}
+		wg.Wait()
+		for _, err := range errs {
 			if err != nil {
 				return nil, err
 			}
-			copy(payload[fillStart:], fillBytes)
 		}
-		payloads[i] = payload
 	}
 
 	// MAC over concatenated payloads (covers all fill bytes)
-	macInput := make([]byte, 0, len(payloads[0])+len(payloads[1])+len(payloads[2]))
-	macInput = append(macInput, payloads[0]...)
-	macInput = append(macInput, payloads[1]...)
-	macInput = append(macInput, payloads[2]...)
+	macInputLen := len(payloads[0]) + len(payloads[1]) + len(payloads[2])
+	macInputPtr, macInput := acquireBuffer(macInputLen)
+	defer releaseBuffer(macInputPtr, macInput)
+	copy(macInput, payloads[0])
+	copy(macInput[len(payloads[0]):], payloads[1])
+	copy(macInput[len(payloads[0])+len(payloads[1]):], payloads[2])
 	tag := macFunc(macInput)
 
 	// full2 = payload2 + tag
-	full2 := make([]byte, caps[2])
+	full2Ptr, full2 := acquireBuffer(caps[2])
+	defer releaseBuffer(full2Ptr, full2)
 	copy(full2, payloads[2])
 	copy(full2[len(payloads[2]):], tag)
 
@@ -278,12 +315,6 @@ func EncryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		wg.Done()
 	}()
 	wg.Wait()
-
-	secureWipe(payloads[0])
-	secureWipe(payloads[1])
-	secureWipe(payloads[2])
-	secureWipe(full2)
-	secureWipe(macInput)
 
 	out := make([]byte, 0, headerSize()+len(container))
 	out = append(out, nonce...)
@@ -349,7 +380,18 @@ func DecryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		return nil, fmt.Errorf("itb: container too small for MAC tag")
 	}
 
-	decoded := [3][]byte{make([]byte, caps[0]), make([]byte, caps[1]), make([]byte, caps[2])}
+	var decodedPtrs [3]*[]byte
+	decoded := [3][]byte{}
+	defer func() {
+		for i := range decodedPtrs {
+			if decodedPtrs[i] != nil {
+				releaseBuffer(decodedPtrs[i], decoded[i])
+			}
+		}
+	}()
+	for i := 0; i < 3; i++ {
+		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
+	}
 
 	perThird := runtime.NumCPU() / 3
 	if perThird < 1 {
@@ -374,41 +416,55 @@ func DecryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	}()
 	wg.Wait()
 
-	defer secureWipe(decoded[0])
-	defer secureWipe(decoded[1])
-	defer secureWipe(decoded[2])
-
 	// Split part2 into payload + tag
 	payloadLen2 := caps[2] - tagSize
 	payload2 := decoded[2][:payloadLen2]
 	tag := decoded[2][payloadLen2:]
 
 	// Verify MAC over concatenated payloads
-	macInput := make([]byte, 0, len(decoded[0])+len(decoded[1])+payloadLen2)
-	macInput = append(macInput, decoded[0]...)
-	macInput = append(macInput, decoded[1]...)
-	macInput = append(macInput, payload2...)
+	macInputLen := len(decoded[0]) + len(decoded[1]) + payloadLen2
+	macInputPtr, macInput := acquireBuffer(macInputLen)
+	copy(macInput, decoded[0])
+	copy(macInput[len(decoded[0]):], decoded[1])
+	copy(macInput[len(decoded[0])+len(decoded[1]):], payload2)
 	expected := macFunc(macInput)
-	secureWipe(macInput)
+	releaseBuffer(macInputPtr, macInput)
 
 	if !constantTimeEqual(tag, expected) {
 		return nil, fmt.Errorf("itb: MAC verification failed (tampered or wrong key)")
 	}
 
-	// Decode each part
+	// 3 parallel null-search + cobsDecode (MAC already verified data integrity)
 	parts := [3][]byte{}
-	for i, dec := range [][]byte{decoded[0], decoded[1], payload2} {
-		nullPos := -1
-		for j := 0; j < len(dec); j++ {
-			if dec[j] == 0x00 && nullPos == -1 {
-				nullPos = j
+	{
+		decs := [][]byte{decoded[0], decoded[1], payload2}
+		var errs [3]error
+		var wg sync.WaitGroup
+		wg.Add(3)
+		for i := 0; i < 3; i++ {
+			go func(i int) {
+				defer wg.Done()
+				dec := decs[i]
+				nullPos := -1
+				for j := 0; j < len(dec); j++ {
+					if dec[j] == 0x00 && nullPos == -1 {
+						nullPos = j
+					}
+				}
+				if nullPos <= 0 {
+					errs[i] = fmt.Errorf("itb: no terminator found in third %d", i)
+					return
+				}
+				parts[i] = cobsDecode(dec[:nullPos])
+			}(i)
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				return nil, err
 			}
 		}
-		if nullPos <= 0 {
-			return nil, fmt.Errorf("itb: no terminator found in third %d", i)
-		}
-		parts[i] = cobsDecode(dec[:nullPos])
 	}
 
-	return interleaveForTriple(parts[0], parts[1], parts[2]), nil
+	return interleaveForTripleParallel(parts[0], parts[1], parts[2]), nil
 }
