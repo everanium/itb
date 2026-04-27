@@ -5,6 +5,40 @@ import (
 	"sync"
 )
 
+// splitForTripleParallel is the parallel counterpart of [splitForTriple].
+// Both branches run 3-way parallel kernels - byte-level via
+// [splitTripleParallel] (3 strided goroutines, one per lane), bit-soup via
+// [splitTripleBitsParallel] (period-3-byte chunks across CPU cores).
+func splitForTripleParallel(data []byte) (p0, p1, p2 []byte) {
+	if isBitSoupEnabled() {
+		p0, p1, p2, _ = splitTripleBitsParallel(prependTripleLen(data))
+		return
+	}
+	return splitTripleParallel(data)
+}
+
+// interleaveForTripleParallel is the parallel counterpart of
+// [interleaveForTriple]. Same plausible-decryption invariant - never errors,
+// returns wrong-seed garbage clamped to the recovered payload extent.
+// Both branches run 3-way parallel kernels - byte-level via
+// [interleaveTripleParallel], bit-soup via [interleaveTripleBitsParallel].
+func interleaveForTripleParallel(p0, p1, p2 []byte) []byte {
+	if !isBitSoupEnabled() {
+		return interleaveTripleParallel(p0, p1, p2)
+	}
+	totalBits := recoverTripleBitsLen(len(p0), len(p1), len(p2))
+	framed := interleaveTripleBitsParallel(p0, p1, p2, totalBits)
+	if len(framed) < 4 {
+		return framed
+	}
+	length := binary.BigEndian.Uint32(framed[:4])
+	end := uint64(length) + 4
+	if end > uint64(len(framed)) {
+		end = uint64(len(framed))
+	}
+	return framed[4:int(end)]
+}
+
 // splitTriple splits data into 3 parts: bytes[0::3], bytes[1::3], bytes[2::3].
 func splitTriple(data []byte) (p0, p1, p2 []byte) {
 	n := len(data)
@@ -50,40 +84,6 @@ func interleaveTriple(p0, p1, p2 []byte) []byte {
 		}
 	}
 	return result
-}
-
-// splitForTripleParallel is the parallel counterpart of [splitForTriple].
-// Both branches run 3-way parallel kernels - byte-level via
-// [splitTripleParallel] (3 strided goroutines, one per lane), bit-soup via
-// [splitTripleBitsParallel] (period-3-byte chunks across CPU cores).
-func splitForTripleParallel(data []byte) (p0, p1, p2 []byte) {
-	if isBitSoupEnabled() {
-		p0, p1, p2, _ = splitTripleBitsParallel(prependTripleLen(data))
-		return
-	}
-	return splitTripleParallel(data)
-}
-
-// interleaveForTripleParallel is the parallel counterpart of
-// [interleaveForTriple]. Same plausible-decryption invariant - never errors,
-// returns wrong-seed garbage clamped to the recovered payload extent.
-// Both branches run 3-way parallel kernels - byte-level via
-// [interleaveTripleParallel], bit-soup via [interleaveTripleBitsParallel].
-func interleaveForTripleParallel(p0, p1, p2 []byte) []byte {
-	if !isBitSoupEnabled() {
-		return interleaveTripleParallel(p0, p1, p2)
-	}
-	totalBits := recoverTripleBitsLen(len(p0), len(p1), len(p2))
-	framed := interleaveTripleBitsParallel(p0, p1, p2, totalBits)
-	if len(framed) < 4 {
-		return framed
-	}
-	length := binary.BigEndian.Uint32(framed[:4])
-	end := uint64(length) + 4
-	if end > uint64(len(framed)) {
-		end = uint64(len(framed))
-	}
-	return framed[4:int(end)]
 }
 
 // splitTripleParallel produces output bit-identical to [splitTriple] via
