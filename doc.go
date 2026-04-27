@@ -109,11 +109,26 @@
 // The chained hash construction passes intermediate state through the hash
 // function's output width, creating a bottleneck:
 //
-//	Hash function             | State width | API            | Effective max key
-//	SipHash-2-4, AES-CMAC     | 128 bits    | Encrypt128     | 1024 bits
-//	BLAKE2b-256, BLAKE2s,     |             |                |
-//	  BLAKE3 keyed             | 256 bits    | Encrypt256     | 2048 bits
-//	BLAKE2b-512                | 512 bits    | Encrypt512     | 2048 bits
+//	ITB Single Ouroboros
+//
+//	Hash function          | Hash key | API        | Recommended 
+//	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt128 | 1024 bits
+//	Areion-SoEM-256        | 256 bits | Encrypt256 | 1024 bits
+//	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt256 | 1024 bits
+//	BLAKE3 keyed, ChaCha20 | 256 bits | Encrypt256 | 1024 bits
+//	BLAKE2b-512            | 512 bits | Encrypt512 | 1024 bits
+//	Areion-SoEM-512        | 256 bits | Encrypt512 | 1024 bits
+//
+//	ITB Triple Ouroboros
+
+//	Hash function          | Hash key | API        | Recommended 
+//	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt3x128 | 1024 bits
+//	Areion-SoEM-256        | 256 bits | Encrypt3x256 | 1024 bits
+//	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt3x256 | 1024 bits
+//	BLAKE3 keyed, ChaCha20 | 256 bits | Encrypt3x256 | 1024 bits
+//	BLAKE2b-512            | 512 bits | Encrypt3x512 | 1024 bits
+//	Areion-SoEM-512        | 256 bits | Encrypt3x512 | 1024 bits
+
 //
 // # Security Properties
 //
