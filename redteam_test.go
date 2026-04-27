@@ -27,10 +27,10 @@ package itb
 //     FNV-1a, MD5, AES-CMAC, SipHash-2-4
 //
 //   256-bit (HashFunc256 → Seed256 → Encrypt256):
-//     ChaCha20, AreionSoEM256, BLAKE2s, BLAKE3
+//     ChaCha20, Areion-SoEM-256, BLAKE2s, BLAKE3
 //
 //   512-bit (HashFunc512 → Seed512 → Encrypt512):
-//     BLAKE2b-512, AreionSoEM512
+//     BLAKE2b-512, Areion-SoEM-512
 
 import (
 	"crypto/md5"
@@ -834,7 +834,7 @@ func assembleTripleResult512(ct []byte, ns *Seed512, ds, ss [3]*Seed512) *encryp
 // buildHashSpecs constructs the 12 hash variant specs for the red-team suite.
 // Key size is 1024 bits for all variants (standard ITB security level).
 // Hash functions that carry fixed random keys (AES-CMAC, BLAKE2s, BLAKE3, BLAKE2b,
-// AreionSoEM) are built once here and reused across all samples. CRC128 is a
+// Areion-SoEM) are built once here and reused across all samples. CRC128 is a
 // lab-only GF(2)-linear stress control; not exported to any public API.
 func buildHashSpecs(keyBits int, triple bool) []hashSpec {
 	aesCMAC := makeAESHash128()
@@ -854,12 +854,12 @@ func buildHashSpecs(keyBits int, triple bool) []hashSpec {
 			{displayName: "AES-CMAC", dirname: "aescmac", width: 128, encrypt: encrypt3x128Closure(aesCMAC, keyBits)},
 			{displayName: "SipHash-2-4", dirname: "siphash24", width: 128, encrypt: encrypt3x128Closure(sipHash128, keyBits)},
 			{displayName: "ChaCha20", dirname: "chacha20", width: 256, encrypt: encrypt3x256Closure(chacha20, keyBits)},
-			{displayName: "AreionSoEM256", dirname: "areion256", width: 256, encrypt: encrypt3x256Closure(areion256, keyBits)},
+			{displayName: "Areion-SoEM-256", dirname: "areion256", width: 256, encrypt: encrypt3x256Closure(areion256, keyBits)},
 			{displayName: "BLAKE2s", dirname: "blake2s", width: 256, encrypt: encrypt3x256Closure(blake2s, keyBits)},
 			{displayName: "BLAKE3", dirname: "blake3", width: 256, encrypt: encrypt3x256Closure(blake3, keyBits)},
 			{displayName: "BLAKE2b-256", dirname: "blake2b256", width: 256, encrypt: encrypt3x256Closure(blake2b256, keyBits)},
 			{displayName: "BLAKE2b-512", dirname: "blake2b", width: 512, encrypt: encrypt3x512Closure(blake2b512, keyBits)},
-			{displayName: "AreionSoEM512", dirname: "areion512", width: 512, encrypt: encrypt3x512Closure(areion512, keyBits)},
+			{displayName: "Areion-SoEM-512", dirname: "areion512", width: 512, encrypt: encrypt3x512Closure(areion512, keyBits)},
 		}
 	}
 	return []hashSpec{
@@ -869,12 +869,12 @@ func buildHashSpecs(keyBits int, triple bool) []hashSpec {
 		{displayName: "AES-CMAC", dirname: "aescmac", width: 128, encrypt: encrypt128Closure(aesCMAC, keyBits)},
 		{displayName: "SipHash-2-4", dirname: "siphash24", width: 128, encrypt: encrypt128Closure(sipHash128, keyBits)},
 		{displayName: "ChaCha20", dirname: "chacha20", width: 256, encrypt: encrypt256Closure(chacha20, keyBits)},
-		{displayName: "AreionSoEM256", dirname: "areion256", width: 256, encrypt: encrypt256Closure(areion256, keyBits)},
+		{displayName: "Areion-SoEM-256", dirname: "areion256", width: 256, encrypt: encrypt256Closure(areion256, keyBits)},
 		{displayName: "BLAKE2s", dirname: "blake2s", width: 256, encrypt: encrypt256Closure(blake2s, keyBits)},
 		{displayName: "BLAKE3", dirname: "blake3", width: 256, encrypt: encrypt256Closure(blake3, keyBits)},
 		{displayName: "BLAKE2b-256", dirname: "blake2b256", width: 256, encrypt: encrypt256Closure(blake2b256, keyBits)},
 		{displayName: "BLAKE2b-512", dirname: "blake2b", width: 512, encrypt: encrypt512Closure(blake2b512, keyBits)},
-		{displayName: "AreionSoEM512", dirname: "areion512", width: 512, encrypt: encrypt512Closure(areion512, keyBits)},
+		{displayName: "Areion-SoEM-512", dirname: "areion512", width: 512, encrypt: encrypt512Closure(areion512, keyBits)},
 	}
 }
 

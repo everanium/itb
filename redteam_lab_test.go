@@ -812,7 +812,7 @@ func hashFunc256ForName(name string) (HashFunc256, string, error) {
 	case "chacha20":
 		return makeChaCha20Hash256(), "ChaCha20", nil
 	case "areion256":
-		return makeAreionSoEM256(), "AreionSoEM256", nil
+		return makeAreionSoEM256(), "Areion-SoEM-256", nil
 	case "blake2s":
 		return makeBlake2sHash256(), "BLAKE2s", nil
 	case "blake2b256":
@@ -882,7 +882,7 @@ func hashFunc512ForName(name string) (HashFunc512, string, error) {
 	case "blake2b":
 		return makeBlake2bHash512(), "BLAKE2b-512", nil
 	case "areion512":
-		return makeAreionSoEM512(), "AreionSoEM512", nil
+		return makeAreionSoEM512(), "Areion-SoEM-512", nil
 	default:
 		return nil, "", fmt.Errorf("hash %q is not in the 512-bit family", name)
 	}
