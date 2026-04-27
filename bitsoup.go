@@ -148,6 +148,66 @@ func interleaveForTriple(p0, p1, p2 []byte) []byte {
 	return framed[4:int(end)]
 }
 
+// splitTripleBits splits data into 3 parts at the bit level: bits[0::3], bits[1::3], bits[2::3].
+// Each part is packed into bytes. Returns parts and totalBits for reassembly.
+func splitTripleBits(data []byte) (p0, p1, p2 []byte, totalBits int) {
+	totalBits = len(data) * 8
+	n0 := (totalBits + 2) / 3
+	n1 := (totalBits + 1) / 3
+	n2 := totalBits / 3
+	p0 = make([]byte, (n0+7)/8)
+	p1 = make([]byte, (n1+7)/8)
+	p2 = make([]byte, (n2+7)/8)
+
+	for i := 0; i < totalBits; i++ {
+		srcByte := i / 8
+		srcBit := uint(i % 8)
+		bit := (data[srcByte] >> srcBit) & 1
+
+		part := i % 3
+		idx := i / 3
+		dstByte := idx / 8
+		dstBit := uint(idx % 8)
+
+		switch part {
+		case 0:
+			p0[dstByte] |= bit << dstBit
+		case 1:
+			p1[dstByte] |= bit << dstBit
+		case 2:
+			p2[dstByte] |= bit << dstBit
+		}
+	}
+	return
+}
+
+// interleaveTripleBits reassembles 3 bit-level parts into original data.
+func interleaveTripleBits(p0, p1, p2 []byte, totalBits int) []byte {
+	result := make([]byte, (totalBits+7)/8)
+
+	for i := 0; i < totalBits; i++ {
+		part := i % 3
+		idx := i / 3
+		srcByte := idx / 8
+		srcBit := uint(idx % 8)
+
+		var bit byte
+		switch part {
+		case 0:
+			bit = (p0[srcByte] >> srcBit) & 1
+		case 1:
+			bit = (p1[srcByte] >> srcBit) & 1
+		case 2:
+			bit = (p2[srcByte] >> srcBit) & 1
+		}
+
+		dstByte := i / 8
+		dstBit := uint(i % 8)
+		result[dstByte] |= bit << dstBit
+	}
+	return result
+}
+
 // splitTripleBitsParallel produces output bit-identical to [splitTripleBits]
 // via period-3-byte chunking. Each 24-bit chunk is independent - chunk k
 // reads input bytes [3k, 3k+2] and writes byte k of every lane buffer.
