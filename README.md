@@ -433,7 +433,7 @@ Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round fu
 ```go
 import goaes "github.com/jedisct1/go-aes"
 
-// AreionSoEM256 — 256-bit PRF, one function call per hash
+// Areion-SoEM-256 — 256-bit PRF, one function call per hash
 func areionHash256(data []byte, seed [4]uint64) [4]uint64 {
     var key [64]byte
     copy(key[:32], fixedKey[:]) // pre-generated random key
@@ -454,7 +454,7 @@ ds, _ := itb.NewSeed256(2048, areionHash256)
 ss, _ := itb.NewSeed256(2048, areionHash256)
 ```
 
-AreionSoEM512 follows the same pattern with `[128]byte` key, `[64]byte` input, and `HashFunc512`. See benchmarks in [BENCH.md](BENCH.md).
+Areion-SoEM-512 follows the same pattern with `[128]byte` key, `[64]byte` input, and `HashFunc512`. See benchmarks in [BENCH.md](BENCH.md).
 
 ### Parallelism Control
 
