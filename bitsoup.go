@@ -2,6 +2,8 @@ package itb
 
 import (
 	"encoding/binary"
+	"runtime"
+	"sync"
 	"sync/atomic"
 )
 
@@ -22,8 +24,8 @@ var bitSoupEnabled atomic.Int32
 // SetBitSoup configures Triple Ouroboros split granularity for the whole
 // process.
 //
-//   mode == 0 → byte-level split (default, shipped behaviour).
-//   mode != 0 → bit-level split ("bit-soup"; opt-in reserve mode).
+//	mode == 0 → byte-level split (default, shipped behaviour).
+//	mode != 0 → bit-level split ("bit-soup"; opt-in reserve mode).
 //
 // Applies uniformly to every Triple Ouroboros variant — [Encrypt3x128] /
 // [Decrypt3x128], the 256- / 512-bit mirrors, [EncryptAuthenticated3x128] /
@@ -144,4 +146,199 @@ func interleaveForTriple(p0, p1, p2 []byte) []byte {
 		end = uint64(len(framed))
 	}
 	return framed[4:int(end)]
+}
+
+// splitTripleBitsParallel produces output bit-identical to [splitTripleBits]
+// via period-3-byte chunking. Each 24-bit chunk is independent - chunk k
+// reads input bytes [3k, 3k+2] and writes byte k of every lane buffer.
+// Disjoint output indices across chunks → workers run without locks.
+// Tail bits (when len(data) is not divisible by 3) processed sequentially
+// after the parallel pass; the tail spans at most 16 bits across at most
+// one byte per lane.
+func splitTripleBitsParallel(data []byte) (p0, p1, p2 []byte, totalBits int) {
+	totalBits = len(data) * 8
+	n0 := (totalBits + 2) / 3
+	n1 := (totalBits + 1) / 3
+	n2 := totalBits / 3
+	p0 = make([]byte, (n0+7)/8)
+	p1 = make([]byte, (n1+7)/8)
+	p2 = make([]byte, (n2+7)/8)
+
+	M := len(data) / 3
+
+	if M > 0 {
+		G := runtime.NumCPU()
+		if G > M {
+			G = M
+		}
+		chunksPerWorker := (M + G - 1) / G
+		var wg sync.WaitGroup
+		for w := 0; w < G; w++ {
+			start := w * chunksPerWorker
+			end := start + chunksPerWorker
+			if end > M {
+				end = M
+			}
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				for k := s; k < e; k++ {
+					l0, l1, l2 := chunk24(data[3*k], data[3*k+1], data[3*k+2])
+					p0[k] = l0
+					p1[k] = l1
+					p2[k] = l2
+				}
+			}(start, end)
+		}
+		wg.Wait()
+	}
+
+	tailStart := 24 * M
+	for i := tailStart; i < totalBits; i++ {
+		srcByte := i / 8
+		srcBit := uint(i % 8)
+		bit := (data[srcByte] >> srcBit) & 1
+
+		part := i % 3
+		idx := i / 3
+		dstByte := idx / 8
+		dstBit := uint(idx % 8)
+
+		switch part {
+		case 0:
+			p0[dstByte] |= bit << dstBit
+		case 1:
+			p1[dstByte] |= bit << dstBit
+		case 2:
+			p2[dstByte] |= bit << dstBit
+		}
+	}
+	return
+}
+
+// interleaveTripleBitsParallel produces output bit-identical to
+// [interleaveTripleBits] via the inverse 24-bit chunk kernel. Chunk k
+// reads byte k of every lane and writes output bytes [3k, 3k+2]. Tail
+// bits handled sequentially after the parallel pass.
+func interleaveTripleBitsParallel(p0, p1, p2 []byte, totalBits int) []byte {
+	result := make([]byte, (totalBits+7)/8)
+	M := totalBits / 24
+
+	if M > 0 {
+		G := runtime.NumCPU()
+		if G > M {
+			G = M
+		}
+		chunksPerWorker := (M + G - 1) / G
+		var wg sync.WaitGroup
+		for w := 0; w < G; w++ {
+			start := w * chunksPerWorker
+			end := start + chunksPerWorker
+			if end > M {
+				end = M
+			}
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				for k := s; k < e; k++ {
+					a, b, c := unchunk24(p0[k], p1[k], p2[k])
+					result[3*k] = a
+					result[3*k+1] = b
+					result[3*k+2] = c
+				}
+			}(start, end)
+		}
+		wg.Wait()
+	}
+
+	for i := 24 * M; i < totalBits; i++ {
+		part := i % 3
+		idx := i / 3
+		srcByte := idx / 8
+		srcBit := uint(idx % 8)
+
+		var bit byte
+		switch part {
+		case 0:
+			bit = (p0[srcByte] >> srcBit) & 1
+		case 1:
+			bit = (p1[srcByte] >> srcBit) & 1
+		case 2:
+			bit = (p2[srcByte] >> srcBit) & 1
+		}
+
+		dstByte := i / 8
+		dstBit := uint(i % 8)
+		result[dstByte] |= bit << dstBit
+	}
+	return result
+}
+
+// chunk24 is the forward 24-bit-permutation kernel - splits 3 input bytes
+// into 3 lane bytes per the (i mod 3) round-robin distribution starting
+// at phase 0. Output positions are derived from the per-byte fill table:
+// byte a contributes (3, 3, 2) bits to lanes (0, 1, 2); byte b adds
+// (3, 2, 3); byte c adds (2, 3, 3).
+func chunk24(a, b, c byte) (l0, l1, l2 byte) {
+	l0 = (a & 1) |
+		(((a >> 3) & 1) << 1) |
+		(((a >> 6) & 1) << 2) |
+		(((b >> 1) & 1) << 3) |
+		(((b >> 4) & 1) << 4) |
+		(((b >> 7) & 1) << 5) |
+		(((c >> 2) & 1) << 6) |
+		(((c >> 5) & 1) << 7)
+	l1 = ((a >> 1) & 1) |
+		(((a >> 4) & 1) << 1) |
+		(((a >> 7) & 1) << 2) |
+		(((b >> 2) & 1) << 3) |
+		(((b >> 5) & 1) << 4) |
+		((c & 1) << 5) |
+		(((c >> 3) & 1) << 6) |
+		(((c >> 6) & 1) << 7)
+	l2 = ((a >> 2) & 1) |
+		(((a >> 5) & 1) << 1) |
+		((b & 1) << 2) |
+		(((b >> 3) & 1) << 3) |
+		(((b >> 6) & 1) << 4) |
+		(((c >> 1) & 1) << 5) |
+		(((c >> 4) & 1) << 6) |
+		(((c >> 7) & 1) << 7)
+	return
+}
+
+// unchunk24 is the inverse of [chunk24] - reassembles 3 lane bytes back
+// into the original 3-byte input chunk.
+func unchunk24(l0, l1, l2 byte) (a, b, c byte) {
+	a = (l0 & 1) |
+		((l1 & 1) << 1) |
+		((l2 & 1) << 2) |
+		(((l0 >> 1) & 1) << 3) |
+		(((l1 >> 1) & 1) << 4) |
+		(((l2 >> 1) & 1) << 5) |
+		(((l0 >> 2) & 1) << 6) |
+		(((l1 >> 2) & 1) << 7)
+	b = ((l2 >> 2) & 1) |
+		(((l0 >> 3) & 1) << 1) |
+		(((l1 >> 3) & 1) << 2) |
+		(((l2 >> 3) & 1) << 3) |
+		(((l0 >> 4) & 1) << 4) |
+		(((l1 >> 4) & 1) << 5) |
+		(((l2 >> 4) & 1) << 6) |
+		(((l0 >> 5) & 1) << 7)
+	c = ((l1 >> 5) & 1) |
+		(((l2 >> 5) & 1) << 1) |
+		(((l0 >> 6) & 1) << 2) |
+		(((l1 >> 6) & 1) << 3) |
+		(((l2 >> 6) & 1) << 4) |
+		(((l0 >> 7) & 1) << 5) |
+		(((l1 >> 7) & 1) << 6) |
+		(((l2 >> 7) & 1) << 7)
+	return
 }

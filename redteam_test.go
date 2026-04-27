@@ -916,7 +916,7 @@ type sampleMeta struct {
 	Hash         string     `json:"hash"`         // dirname
 	HashDisplay  string     `json:"hash_display"` // BENCH.md name
 	HashWidth    int        `json:"hash_width"`
-	Mode         string     `json:"mode"`         // "single" or "triple"
+	Mode         string     `json:"mode"` // "single" or "triple"
 	PlaintextLen int        `json:"plaintext_len"`
 	NonceHex     string     `json:"nonce_hex"`
 	Width        int        `json:"width"`
@@ -1090,7 +1090,7 @@ func TestRedTeamGenerateMegaStreams(t *testing.T) {
 
 	const keyBits = 1024
 	const plaintextSize = 60 * 1024 * 1024 // 60 MB per encrypt (below ITB's 64 MB max)
-	const samplesPerHash = 4                // 4 × 60 MB = ~240 MB ciphertext per hash
+	const samplesPerHash = 4               // 4 × 60 MB = ~240 MB ciphertext per hash
 	barrierFill := redteamBarrierFill(t)
 
 	SetMaxWorkers(8)
@@ -1140,8 +1140,9 @@ func TestRedTeamGenerateMegaStreams(t *testing.T) {
 // observations per candidate.
 //
 // Gated by ITB_REDTEAM_MASSIVE=<hash_name>. Valid names match the 10 dirnames:
-//   fnv1a, md5, aescmac, siphash24, chacha20, areion256,
-//   blake2s, blake3, blake2b, areion512
+//
+//	fnv1a, md5, aescmac, siphash24, chacha20, areion256,
+//	blake2s, blake3, blake2b, areion512
 //
 // Respects ITB_BARRIER_FILL (default 1). Plaintext is deterministic (rng
 // seed 424242) so repeat runs produce identical input; the cryptographic

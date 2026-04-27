@@ -127,7 +127,8 @@
 //     fully known plaintext, the attacker cannot derive hash outputs because
 //     original container pixel values are unknown (crypto/rand, never
 //     transmitted). Under Full KPA, defense is 3-factor: PRF non-invertibility
-//     + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity.
+//
+//   - independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity.
 //     gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial
 //     KPA (see PROOFS.md Proof 4a).
 //
