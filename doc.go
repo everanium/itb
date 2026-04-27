@@ -111,7 +111,7 @@
 //
 //	ITB Single Ouroboros
 //
-//	Hash function          | Hash key | API        | Recommended 
+//	Hash function          | Hash key | API        | Recommended
 //	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt128 | 1024 bits
 //	Areion-SoEM-256        | 256 bits | Encrypt256 | 1024 bits
 //	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt256 | 1024 bits
@@ -121,7 +121,7 @@
 //
 //	ITB Triple Ouroboros
 
-//	Hash function          | Hash key | API        | Recommended 
+//	Hash function          | Hash key | API        | Recommended
 //	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt3x128 | 1024 bits
 //	Areion-SoEM-256        | 256 bits | Encrypt3x256 | 1024 bits
 //	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt3x256 | 1024 bits
@@ -129,7 +129,6 @@
 //	BLAKE2b-512            | 512 bits | Encrypt3x512 | 1024 bits
 //	Areion-SoEM-512        | 256 bits | Encrypt3x512 | 1024 bits
 
-//
 // # Security Properties
 //
 //   - Information-theoretic barrier: hash output consumed by modification of
