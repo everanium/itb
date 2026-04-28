@@ -284,7 +284,7 @@ Hash functions like AES and BLAKE3 have expensive key setup. Creating a new ciph
 
 ### Areion-SoEM (256/512-bit, VAES-accelerated batched dispatch — recommended)
 
-Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) and ~2× over scalar AES-NI on hosts with VAES + AVX2 but no AVX-512 (AMD Zen 3, Intel Alder Lake E-cores). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call.
+Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) and ~1.3× over scalar AES-NI on hosts with VAES + AVX2 but no AVX-512 (AMD Zen 3, Intel Alder Lake P/E-cores). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call.
 
 ```go
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
