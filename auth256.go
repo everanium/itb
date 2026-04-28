@@ -184,7 +184,12 @@ func EncryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	p0, p1, p2 := splitForTripleParallel(data)
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, err
+	}
+
+	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF256(noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -288,11 +293,6 @@ func EncryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		if err != nil {
 			return nil, fmt.Errorf("itb: crypto/rand: %w", err)
 		}
-	}
-
-	nonce, err := generateNonce()
-	if err != nil {
-		return nil, err
 	}
 
 	perThird := runtime.NumCPU() / 3
@@ -466,5 +466,5 @@ func DecryptAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		}
 	}
 
-	return interleaveForTripleParallel(parts[0], parts[1], parts[2]), nil
+	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF256(noiseSeed, nonce)), nil
 }

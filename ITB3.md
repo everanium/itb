@@ -229,6 +229,25 @@ The ciphertext wire format is identical to byte-level Triple Ouroboros. An obser
 
 Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts.
 
+## Lock Soup (Insane Interlocked Mode, opt-in overlay on Bit Soup)
+
+`SetLockSoup(1)` is an additional opt-in overlay on top of `SetBitSoup(1)`. The fixed public 24-bit chunk permutation `(3,3,2)/(3,2,3)/(2,3,3)` of plain Bit Soup is replaced by a per-chunk balanced 8-of-24 mask triple drawn from a 2^33 mask space (combinatorial unrank of `C(24,8) × C(16,8)` partitions), derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. On x86 with BMI2 (Haswell+, Excavator+/Zen 1+) the chunk kernel uses three PEXT (forward) / three PDEP (inverse) instructions; pure-Go softPEXT24 / softPDEP24 fallback covers other platforms.
+
+**Why this matters.** Plain Bit Soup denies the attacker per-snake real-byte cribs against a fixed public encoding — solver speed becomes irrelevant when the schema cribs cover only garbage. Lock Soup goes further by removing the public encoding entirely: each crib chunk multiplies attacker enumeration by ~2^33 with no shared algebraic structure to couple chunks across, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. Even an adversary with full plaintext-ciphertext pairs cannot anchor a SAT instance on a stable bit-position-to-lane mapping — the mapping is per-chunk-keyed and unobservable without the noiseSeed. SAT cryptanalysis is no longer a computational-hardness problem; it is an instance-formulation impossibility.
+
+**Cost.** End-to-end throughput is ~2×–7× slower than plain Bit Soup depending on platform; the BMI2 PEXT/PDEP path on x86 (Haswell+, Excavator+/Zen 1+) sits near the lower bound, the pure-Go fallback near the upper. The mode trades throughput for the strongest architectural barrier the construction can express. Intended for deployments where the barrier is the deployment priority and throughput is secondary — long-term archive encryption, high-value off-line ciphertexts, defense-in-depth layering above already-strong PRF guarantees.
+
+**How to enable:**
+
+```go
+itb.SetBitSoup(1)  // whole-process opt-in; default is 0 (byte-level)
+itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay; requires SetBitSoup(1); silent no-op otherwise
+```
+
+The ciphertext wire format remains identical. Both flags must agree across the encrypt and decrypt sides of the channel; mismatch produces wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged.
+
+Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts.
+
 ## API
 
 ```go
