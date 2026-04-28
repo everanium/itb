@@ -148,7 +148,7 @@ func pack256x4SoA(states *[4][32]byte) (b0, b1 aes.Block4) {
 }
 
 // unpack256x4SoA reverses `pack256x4SoA`, writing the four lanes back
-// into the AOS layout.
+// into the AoS layout.
 func unpack256x4SoA(b0, b1 *aes.Block4, states *[4][32]byte) {
 	for i := 0; i < 4; i++ {
 		copy(states[i][0:16], b0[i*16:(i+1)*16])
@@ -265,7 +265,7 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	return out
 }
 
-// pack512x4SoA reshapes four Areion512 states from AOS into four Block4
+// pack512x4SoA reshapes four Areion512 states from AoS into four Block4
 // SoA buffers, one per AES-block index (x0, x1, x2, x3).
 func pack512x4SoA(states *[4][64]byte) (b0, b1, b2, b3 aes.Block4) {
 	for i := 0; i < 4; i++ {

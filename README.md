@@ -70,21 +70,23 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 | **CGO (default)** | `go build` | C with SIMD auto-vectorization | C compiler (GCC/Clang) |
 | **Pure Go** | `CGO_ENABLED=0 go build` | Pure Go, zero C dependencies | None |
 
-CGO mode provides ~15-22% faster decrypt and ~6-17% faster encrypt through:
-- GCC `-O3` auto-vectorization of XOR/rotate/insert phases
-- L1-cache-friendly micro-batching (512 pixels per C call)
-- Parallel noise/data hash computation
-- `sync.Pool` for hash array reuse
+CGO mode provides ~25-35% faster decrypt and ~35-55% faster encrypt over the pure-Go backend (Areion-SoEM batched dispatch on amd64 with AVX-512+VBMI+GFNI). Per-pixel kernel uses three runtime-dispatched tiers:
 
-The C pixel processing code is portable — no platform-specific intrinsics. GCC `-O3` auto-vectorizes using the best available SIMD for each platform:
+- **Tier A — AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI:** 8-pixel ZMM batch. Phase 1 (extract 8×56 bits) fuses VPERMB + VPSRLQ + VPMULTISHIFTQB into 5 ZMM ops. Phase 4 (per-pixel rotate) and Phase 5 (per-pixel noise-bit insert) lower to single VGF2P8AFFINEQB ZMM ops. Active on Intel Tiger Lake / Rocket Lake / Sapphire Rapids+ and AMD Zen 4 / Zen 5.
+- **Tier B — AVX2 + GFNI:** 4-pixel YMM batch. Same five-phase shape, halved width. Phase 3-5 use VPXOR / VGF2P8AFFINEQB / VPAND / VPOR on YMM. Active on Intel Coffee Lake+ and AMD Zen 3+ (covers Alder Lake E-cores and similar AVX-512-disabled deployments).
+- **Plain-C fallback:** 4-pixel batched scalar loop, same memory layout as Tier B with no SIMD intrinsics. Runs on every host GCC supports — IFUNC is not used, so macOS Mach-O and Windows COFF builds reach this path through the same runtime branch as Linux/FreeBSD ELF. ARM64 (NEON) intrinsics are not yet implemented and currently route through this tier; GCC `-O3` still auto-vectorizes byte-parallel phases to NEON in a limited form.
 
-| Platform | SIMD | CGO Flag |
+CGO speedup also covers L1-cache-friendly micro-batching (512 pixels per C call), parallel noise/data hash computation through `BatchHashFunc` factories, `sync.Pool` for hash array reuse, and `__builtin_prefetch` 8 pixels ahead of the current iteration.
+
+| Platform | Per-pixel kernel | Areion-SoEM batched dispatch |
 |---|---|---|
-| x86-64 (Intel/AMD) | AVX2 (256-bit) | `-mavx2` (automatic) |
-| ARM64 (Apple Silicon, AWS Graviton) | NEON (128-bit) | enabled by default |
-| Other | Scalar `-O3` | — |
+| amd64 + AVX-512+GFNI+VBMI (Intel Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM (`internal/areionasm/areion_amd64.s`) |
+| amd64 + AVX2+GFNI (AMD Zen 3+, Coffee Lake+) | Tier B (YMM, 4-pixel batch) | AVX2+VAES ASM (same file, separate entry points) |
+| amd64 without VAES / older | Plain-C fallback | Go fallback via `aes.Round4HW` |
+| ARM64 / other GCC targets | Plain-C fallback | Go fallback via `aes.Round4HW` |
+| `CGO_ENABLED=0` | Pure Go (`process_generic.go`) | Go fallback |
 
-Hash computation remains in Go in both modes (pluggable hash functions).
+Hash computation remains in Go in both modes (pluggable hash functions); the C pixel kernel is platform-portable through `__attribute__((target(...)))` per-helper feature gates rather than IFUNC, so non-Linux/non-FreeBSD targets degrade gracefully.
 
 ### Testing
 
@@ -119,7 +121,7 @@ go test -bench='KeySize' -benchmem ./...
 Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
 Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses C pixel processing with GCC `-O3 -mavx2` auto-vectorization + L1-cache micro-batching. Pure Go fallback (`CGO_ENABLED=0`) is ~10-20% slower on decrypt. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, plain-C scalar) plus the Areion-SoEM batched VAES dispatch in `internal/areionasm`. Pure Go fallback (`CGO_ENABLED=0`) is ~25-40% slower on encrypt and ~20-35% slower on decrypt depending on hash and width. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
 ### ASIC Scalability
 
@@ -267,12 +269,12 @@ The library provides three parallel API sets for different hash output widths. A
 
 | API | Seeds | Hash Type | State | Effective Max Key | Target Hash Functions |
 |---|---|---|---|---|---|
+| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
+| `Encrypt512` / `Decrypt512` | 3 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
 | `Encrypt128` / `Decrypt128` | 3 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
-| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | BLAKE3 keyed |
-| `Encrypt512` / `Decrypt512` | 3 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | BLAKE2b-512 |
+| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
+| `Encrypt3x512` / `Decrypt3x512` | 7 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
 | `Encrypt3x128` / `Decrypt3x128` | 7 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
-| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | BLAKE3 keyed |
-| `Encrypt3x512` / `Decrypt3x512` | 7 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | BLAKE2b-512 |
 
 Each variant also has authenticated versions (`EncryptAuthenticated128`/`DecryptAuthenticated128`, `EncryptAuthenticated3x128`/`DecryptAuthenticated3x128`, etc.) and streaming versions (`EncryptStream128`/`DecryptStream128`, `EncryptStream3x128`/`DecryptStream3x128`, etc.).
 
@@ -282,7 +284,7 @@ Hash functions like AES and BLAKE3 have expensive key setup. Creating a new ciph
 
 ### Areion-SoEM (256/512-bit, VAES-accelerated batched dispatch — recommended)
 
-Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel ≥10th gen, AMD ≥Zen 4). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call when available, falling back transparently to single-call on hardware without VAES.
+Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) and ~2× over scalar AES-NI on hosts with VAES + AVX2 but no AVX-512 (AMD Zen 3, Intel Alder Lake E-cores). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call.
 
 ```go
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
@@ -301,20 +303,20 @@ encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
 decrypted, _ := itb.Decrypt256(ns, ds, ss, encrypted)
 ```
 
-Areion-SoEM-512 follows the same pattern using `MakeAreionSoEM512Hash()` and `itb.Encrypt512` / `itb.Decrypt512`. The batched arm of the returned pair shares the same internally-generated random fixed key as the single arm, so per-pixel hashes match bit-exact between the two dispatch paths (verified by the parity test suite). Triple Ouroboros wires the same way: each of the seven seeds receives an independent paired factory call.
+The Areion-SoEM-512 variant uses `MakeAreionSoEM512Hash()` paired with `itb.Encrypt512` / `itb.Decrypt512` and is wired identically. The batched arm of the returned pair shares the same internally-generated random fixed key as the single arm, so per-pixel hashes match bit-exact between the two dispatch paths (verified by the parity test suite). Triple Ouroboros wires the same way: each of the seven seeds receives an independent paired factory call.
 
 **Backward compatibility — no VAES required.** The same code works on every platform; only the throughput tier changes:
 
 | CPU / build | Path | Throughput tier |
 |---|---|---|
-| amd64 + VAES + AVX-512 (Intel ≥10th gen, AMD ≥Zen 4) | `internal/areionasm/areion_amd64.s` ASM | 4-way VAES, ~2× over single-call serial |
+| amd64 + VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) | `internal/areionasm/areion_amd64.s` AVX-512 ASM | 4-way VAES on ZMM, single VAESENC per round across all 4 lanes |
+| amd64 + VAES + AVX2 only (AMD Zen 3, Alder Lake E-cores) | `internal/areionasm/areion_amd64.s` AVX2 ASM | 4-way VAES on YMM, two 2-block VAESENC per round, ~2× over scalar AES-NI |
 | amd64 without VAES (older Intel / AMD) | Go fallback via `aes.Round4HW(state, zeroKey)` | 4× sequential AES-NI per round (no SIMD width gain, still hardware-accelerated) |
-| ARM64 with Crypto Extensions | Go fallback via ARM crypto parallel primitives | ARM hardware AES, comparable to AES-NI tier |
 | Pure software / `CGO_ENABLED=0` | Same Go fallback (process_generic.go batched dispatch wired) | Slowest tier, correct output preserved |
 
-Runtime CPU detection (`areionasm.HasVAESAVX512`) selects the right path once at package init via the upstream `github.com/jedisct1/go-aes` CPUID checks — no per-call branching cost. The bit-exact parity invariant `BatchHash(data)[i] == Hash(data[i])` holds on every platform; ITB's parity test (`TestAreionSoEM{256,512}x4Parity`) verifies this on every test run.
+Runtime CPU detection (`areionasm.HasVAESAVX512` and `areionasm.HasVAESAVX2NoAVX512`) selects the right path once at package init via the upstream `github.com/jedisct1/go-aes` CPUID checks — no per-call branching cost. The bit-exact parity invariant `BatchHash(data)[i] == Hash(data[i])` holds on every platform; ITB's parity test suite (`TestAreionSoEM{256,512}x4Parity` plus the direct-call parity tests for each tier and a 3-way cross-path parity test on hosts where all three implementations are runnable) verifies this on every test run.
 
-If you need to wire the underlying primitive manually (custom key management, keyless probe, etc.) call `aes.AreionSoEM256` / `aes.AreionSoEM512` from `github.com/jedisct1/go-aes` directly — same primitive, no batched dispatch, useful only when the paired-factory pattern does not fit your deployment.
+If the underlying primitive must be wired manually (custom key management, keyless probe, etc.) call `aes.AreionSoEM256` / `aes.AreionSoEM512` from `github.com/jedisct1/go-aes` directly — same primitive, no batched dispatch, useful only when the paired-factory pattern does not fit the deployment.
 
 ### SipHash-2-4 (128-bit)
 
@@ -507,12 +509,15 @@ ITB accepts pluggable hash functions at three widths. Requirements: the hash mus
 
 | Hash Function | Acceleration | Seed Input | Block/State | Hash Type | Max Key | Crypto | Go Library |
 |---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | **VAES** (AVX-512 / AVX2 / AES-NI fallback) | 256 bit | 256 bit | `HashFunc256` | 2048 | **PRF** | built-in (`MakeAreionSoEM256Hash`) |
+| **Areion-SoEM-512** | **VAES** (AVX-512 / AVX2 / AES-NI fallback) | 512 bit | 512 bit | `HashFunc512` | 2048 | **PRF** | built-in (`MakeAreionSoEM512Hash`) |
 | **SipHash-2-4** | — | 128 bit | 128 bit | `HashFunc128` | 1024 | **PRF** | `github.com/dchest/siphash` |
 | **AES-CMAC** | **AES-NI** | 128 bit (block) | 128 bit | `HashFunc128` | 1024 | **PRF** | `crypto/aes` (stdlib) |
 | **BLAKE2b keyed** | SSE | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
 | **BLAKE2s keyed** | — | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2s` |
 | **BLAKE3 keyed** | SIMD (AVX-512) | 256 bit | 256 bit | `HashFunc256` | 2048 | **PRF** | `github.com/zeebo/blake3` |
 | **BLAKE2b-512 keyed** | SSE | 512 bit | 512 bit | `HashFunc512` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
+| **ChaCha20** | SIMD (AVX2) | 256 bit (key) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/chacha20` |
 
 ### Choosing the Right Hash Width
 

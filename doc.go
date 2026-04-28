@@ -112,22 +112,23 @@
 //	ITB Single Ouroboros
 //
 //	Hash function          | Hash key | API        | Recommended
-//	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt128 | 1024 bits
 //	Areion-SoEM-256        | 256 bits | Encrypt256 | 1024 bits
+//	Areion-SoEM-512        | 512 bits | Encrypt512 | 1024 bits
+//	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt128 | 1024 bits
 //	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt256 | 1024 bits
 //	BLAKE3 keyed, ChaCha20 | 256 bits | Encrypt256 | 1024 bits
 //	BLAKE2b-512            | 512 bits | Encrypt512 | 1024 bits
-//	Areion-SoEM-512        | 256 bits | Encrypt512 | 1024 bits
+
 //
 //	ITB Triple Ouroboros
 
 //	Hash function          | Hash key | API        | Recommended
-//	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt3x128 | 1024 bits
 //	Areion-SoEM-256        | 256 bits | Encrypt3x256 | 1024 bits
+//	Areion-SoEM-512        | 512 bits | Encrypt3x512 | 1024 bits
+//	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt3x128 | 1024 bits
 //	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt3x256 | 1024 bits
 //	BLAKE3 keyed, ChaCha20 | 256 bits | Encrypt3x256 | 1024 bits
 //	BLAKE2b-512            | 512 bits | Encrypt3x512 | 1024 bits
-//	Areion-SoEM-512        | 256 bits | Encrypt3x512 | 1024 bits
 
 // # Security Properties
 //
@@ -189,9 +190,11 @@
 //	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
 //	// PRF wiring, recommended default. The paired factory returns (single,
 //	// batched) sharing the same fixed key; ITB processChunk256 dispatches
-//	// per-pixel hashing four pixels per batched call when the runtime CPU
-//	// supports VAES + AVX-512, falling back transparently to single-call
-//	// on hardware without VAES (correctness preserved on every platform).
+//	// per-pixel hashing four pixels per batched call. The runtime CPU
+//	// detection picks the most capable VAES tier available — AVX-512+VAES
+//	// on ZMM (Intel Ice Lake+, AMD Zen 4+), AVX2+VAES on YMM (AMD Zen 3,
+//	// Alder Lake E-cores), or a portable Go fallback via aes.Round4HW on
+//	// hardware without VAES (correctness preserved on every platform).
 //	ns256, _ := itb.NewSeed256(2048, nil)
 //	ns256.Hash, ns256.BatchHash = itb.MakeAreionSoEM256Hash()
 //	ds256, _ := itb.NewSeed256(2048, nil)
