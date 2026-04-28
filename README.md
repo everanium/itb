@@ -73,8 +73,8 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 CGO mode provides ~25-35% faster decrypt and ~35-55% faster encrypt over the pure-Go backend (Areion-SoEM batched dispatch on amd64 with AVX-512+VBMI+GFNI). Per-pixel kernel uses three runtime-dispatched tiers:
 
 - **Tier A — AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI:** 8-pixel ZMM batch. Phase 1 (extract 8×56 bits) fuses VPERMB + VPSRLQ + VPMULTISHIFTQB into 5 ZMM ops. Phase 4 (per-pixel rotate) and Phase 5 (per-pixel noise-bit insert) lower to single VGF2P8AFFINEQB ZMM ops. Active on Intel Tiger Lake / Rocket Lake / Sapphire Rapids+ and AMD Zen 4 / Zen 5.
-- **Tier B — AVX2 + GFNI:** 4-pixel YMM batch. Same five-phase shape, halved width. Phase 3-5 use VPXOR / VGF2P8AFFINEQB / VPAND / VPOR on YMM. Active on Intel Coffee Lake+ and AMD Zen 3+ (covers Alder Lake E-cores and similar AVX-512-disabled deployments).
-- **Plain-C fallback:** 4-pixel batched scalar loop, same memory layout as Tier B with no SIMD intrinsics. Runs on every host GCC supports — IFUNC is not used, so macOS Mach-O and Windows COFF builds reach this path through the same runtime branch as Linux/FreeBSD ELF. ARM64 (NEON) intrinsics are not yet implemented and currently route through this tier; GCC `-O3` still auto-vectorizes byte-parallel phases to NEON in a limited form.
+- **Tier B — AVX2 + GFNI:** 4-pixel YMM batch. Same five-phase shape, halved width. Phase 3-5 use VPXOR / VGF2P8AFFINEQB / VPAND / VPOR on YMM. Active on Intel Coffee Lake+ and AMD Zen 3+ (covers Alder Lake E-cores and similar AVX-512-disabled deployments). Insane Interlocked Mode (`SetLockSoup(1)`) lowers its per-chunk bit-permutation to a native BMI2 PEXTL/PDEPL ASM kernel, with a pure-Go fallback on hosts without BMI2.
+- **Tier C — Fallback:** 4-pixel batched scalar loop, same memory layout as Tier B with no SIMD intrinsics. Runs on every host GCC supports — IFUNC is not used, so macOS Mach-O and Windows COFF builds reach this path through the same runtime branch as Linux/FreeBSD ELF. ARM64 (NEON) intrinsics are not yet implemented and currently route through this tier; GCC `-O3` still auto-vectorizes byte-parallel phases to NEON in a limited form.
 
 CGO speedup also covers L1-cache-friendly micro-batching (512 pixels per C call), parallel noise/data hash computation through `BatchHashFunc` factories, `sync.Pool` for hash array reuse, and `__builtin_prefetch` 8 pixels ahead of the current iteration.
 
@@ -82,8 +82,8 @@ CGO speedup also covers L1-cache-friendly micro-batching (512 pixels per C call)
 |---|---|---|
 | amd64 + AVX-512+GFNI+VBMI (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM (`internal/areionasm/areion_amd64.s`) |
 | amd64 + AVX2+GFNI (AMD Zen 3+, Coffee Lake+) | Tier B (YMM, 4-pixel batch) | AVX2+VAES ASM (same file, separate entry points) |
-| amd64 without VAES / older | Plain-C fallback | Go fallback via `aes.Round4HW` |
-| arm64 / other GCC targets | Plain-C fallback | Go fallback via `aes.Round4HW` |
+| amd64 without VAES / older | Tier C — Fallback | Go fallback via `aes.Round4HW` |
+| arm64 / other GCC targets | Tier C — Fallback | Go fallback via `aes.Round4HW` |
 | `CGO_ENABLED=0` | Pure Go (`process_generic.go`) | Go fallback |
 
 Hash computation remains in Go in both modes (pluggable hash functions); the C pixel kernel is platform-portable through `__attribute__((target(...)))` per-helper feature gates rather than IFUNC, so non-Linux/non-FreeBSD targets degrade gracefully.
@@ -121,7 +121,7 @@ go test -bench='KeySize' -benchmem ./...
 Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
 Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, plain-C scalar) plus the Areion-SoEM batched VAES dispatch in `internal/areionasm`. Pure Go fallback (`CGO_ENABLED=0`) is ~25-40% slower on encrypt and ~20-35% slower on decrypt depending on hash and width. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus the Areion-SoEM batched VAES dispatch in `internal/areionasm`. Pure Go fallback (`CGO_ENABLED=0`) is ~25-40% slower on encrypt and ~20-35% slower on decrypt depending on hash and width. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
 ### ASIC Scalability
 
