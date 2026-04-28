@@ -253,7 +253,7 @@ Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (p
 
 ## 14. Hash Function Compliance
 
-PRF-grade hash functions (SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, BLAKE2b-512) satisfy all requirements. Tests and benchmarks cover all listed hash functions across 128/256/512-bit widths.
+PRF-grade hash functions (Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC, BLAKE2b-256, BLAKE2s, BLAKE3, BLAKE2b-512) satisfy all requirements. Tests and benchmarks cover all listed hash functions across 128/256/512-bit widths.
 
 ## 15. Security Properties Summary
 
