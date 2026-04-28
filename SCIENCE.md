@@ -532,10 +532,10 @@ ITB requires PRF-grade hash functions. The PRF property guarantees all necessary
 |---|---|---|---|---|
 | SipHash-2-4 | 128-bit | — | PRF | 1024 bits |
 | AES-CMAC | 128-bit | AES-NI (hardware) | PRF | 1024 bits |
-| BLAKE2b-256 keyed | 256-bit | SSE | PRF | 2048 bits |
-| BLAKE2s keyed | 256-bit | — | PRF | 2048 bits |
-| BLAKE3 keyed | 256-bit | SIMD (AVX-512) | PRF | 2048 bits |
-| BLAKE2b-512 keyed | 512-bit | SSE | PRF | 2048 bits |
+| BLAKE2b-256 | 256-bit | SSE | PRF | 2048 bits |
+| BLAKE2s | 256-bit | — | PRF | 2048 bits |
+| BLAKE3 | 256-bit | SIMD (AVX-512) | PRF | 2048 bits |
+| BLAKE2b-512 | 512-bit | SSE | PRF | 2048 bits |
 
 **Key space utilization.** A single ChainHash128 call with 128-bit output discriminates 2^128 of 2^1024 seeds. But the minimum container makes 196 independent calls (14×14 pixels) with different data inputs. Collisions for one input do not persist across inputs (XOR-of-sums is not translation-invariant). Collective constraint: 196 × 64 = 12544 bits >> 1024 key bits. The full key space is utilized.
 

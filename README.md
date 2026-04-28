@@ -513,9 +513,9 @@ ITB accepts pluggable hash functions at three widths. Requirements: the hash mus
 | **Areion-SoEM-512** | **VAES** (AVX-512 / AVX2 / AES-NI fallback) | 512 bit | 512 bit | `HashFunc512` | 2048 | **PRF** | built-in (`MakeAreionSoEM512Hash`) |
 | **SipHash-2-4** | — | 128 bit | 128 bit | `HashFunc128` | 1024 | **PRF** | `github.com/dchest/siphash` |
 | **AES-CMAC** | **AES-NI** | 128 bit (block) | 128 bit | `HashFunc128` | 1024 | **PRF** | `crypto/aes` (stdlib) |
-| **BLAKE2b keyed** | SSE | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
-| **BLAKE2s keyed** | — | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2s` |
-| **BLAKE3 keyed** | SIMD (AVX-512) | 256 bit | 256 bit | `HashFunc256` | 2048 | **PRF** | `github.com/zeebo/blake3` |
+| **BLAKE2b-256** | SSE | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
+| **BLAKE2s** | — | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2s` |
+| **BLAKE3** | SIMD (AVX-512) | 256 bit | 256 bit | `HashFunc256` | 2048 | **PRF** | `github.com/zeebo/blake3` |
 | **BLAKE2b-512 keyed** | SSE | 512 bit | 512 bit | `HashFunc512` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
 | **ChaCha20** | SIMD (AVX2) | 256 bit (key) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/chacha20` |
 
