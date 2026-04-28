@@ -280,6 +280,42 @@ Each variant also has authenticated versions (`EncryptAuthenticated128`/`Decrypt
 
 Hash functions like AES and BLAKE3 have expensive key setup. Creating a new cipher/hasher on every call wastes time on initialization. The **cached wrapper** pattern fixes this: create the cipher once with a fixed random key, mix seed components into the data instead. Each of the three seeds must get its own wrapper instance (independent key).
 
+### Areion-SoEM (256/512-bit, VAES-accelerated batched dispatch — recommended)
+
+Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel ≥10th gen, AMD ≥Zen 4). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call when available, falling back transparently to single-call on hardware without VAES.
+
+```go
+itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
+itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
+itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+
+// Areion-SoEM-256 — 256-bit PRF, batched VAES dispatch
+ns, _ := itb.NewSeed256(2048, nil)
+ns.Hash, ns.BatchHash = itb.MakeAreionSoEM256Hash()
+ds, _ := itb.NewSeed256(2048, nil)
+ds.Hash, ds.BatchHash = itb.MakeAreionSoEM256Hash()
+ss, _ := itb.NewSeed256(2048, nil)
+ss.Hash, ss.BatchHash = itb.MakeAreionSoEM256Hash()
+
+encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
+decrypted, _ := itb.Decrypt256(ns, ds, ss, encrypted)
+```
+
+Areion-SoEM-512 follows the same pattern using `MakeAreionSoEM512Hash()` and `itb.Encrypt512` / `itb.Decrypt512`. The batched arm of the returned pair shares the same internally-generated random fixed key as the single arm, so per-pixel hashes match bit-exact between the two dispatch paths (verified by the parity test suite). Triple Ouroboros wires the same way: each of the seven seeds receives an independent paired factory call.
+
+**Backward compatibility — no VAES required.** The same code works on every platform; only the throughput tier changes:
+
+| CPU / build | Path | Throughput tier |
+|---|---|---|
+| amd64 + VAES + AVX-512 (Intel ≥10th gen, AMD ≥Zen 4) | `internal/areionasm/areion_amd64.s` ASM | 4-way VAES, ~2× over single-call serial |
+| amd64 without VAES (older Intel / AMD) | Go fallback via `aes.Round4HW(state, zeroKey)` | 4× sequential AES-NI per round (no SIMD width gain, still hardware-accelerated) |
+| ARM64 with Crypto Extensions | Go fallback via ARM crypto parallel primitives | ARM hardware AES, comparable to AES-NI tier |
+| Pure software / `CGO_ENABLED=0` | Same Go fallback (process_generic.go batched dispatch wired) | Slowest tier, correct output preserved |
+
+Runtime CPU detection (`areionasm.HasVAESAVX512`) selects the right path once at package init via the upstream `github.com/jedisct1/go-aes` CPUID checks — no per-call branching cost. The bit-exact parity invariant `BatchHash(data)[i] == Hash(data[i])` holds on every platform; ITB's parity test (`TestAreionSoEM{256,512}x4Parity`) verifies this on every test run.
+
+If you need to wire the underlying primitive manually (custom key management, keyless probe, etc.) call `aes.AreionSoEM256` / `aes.AreionSoEM512` from `github.com/jedisct1/go-aes` directly — same primitive, no batched dispatch, useful only when the paired-factory pattern does not fit your deployment.
+
 ### SipHash-2-4 (128-bit)
 
 SipHash is a pure function — no key setup, no caching needed. Optimal for 128-bit width.
@@ -426,36 +462,6 @@ ns, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ```
-
-### Areion-SoEM (256/512-bit, AES-NI accelerated, no wrapper needed)
-
-Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. One-shot, stateless, zero-allocation — no cached wrapper required.
-
-```go
-import goaes "github.com/jedisct1/go-aes"
-
-// Areion-SoEM-256 — 256-bit PRF, one function call per hash
-func areionHash256(data []byte, seed [4]uint64) [4]uint64 {
-    var key [64]byte
-    copy(key[:32], fixedKey[:]) // pre-generated random key
-    for i := 0; i < 4; i++ {
-        binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
-    }
-    var input [32]byte
-    copy(input[:], data)
-    result := goaes.AreionSoEM256(&key, &input)
-    return [4]uint64{
-        binary.LittleEndian.Uint64(result[0:]),  binary.LittleEndian.Uint64(result[8:]),
-        binary.LittleEndian.Uint64(result[16:]), binary.LittleEndian.Uint64(result[24:]),
-    }
-}
-
-ns, _ := itb.NewSeed256(2048, areionHash256)
-ds, _ := itb.NewSeed256(2048, areionHash256)
-ss, _ := itb.NewSeed256(2048, areionHash256)
-```
-
-Areion-SoEM-512 follows the same pattern with `[128]byte` key, `[64]byte` input, and `HashFunc512`. See benchmarks in [BENCH.md](BENCH.md).
 
 ### Parallelism Control
 

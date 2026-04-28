@@ -3,7 +3,6 @@ package itb
 import (
 	"crypto/rand"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 )
 
@@ -102,12 +101,11 @@ func generateNonce() ([]byte, error) {
 }
 
 // secureWipe zeroes a byte slice to minimize sensitive data exposure in memory.
-// runtime.KeepAlive prevents the compiler from optimizing away the zero-fill.
+// clear() lowers to runtime.memclrNoHeapPointers — an observable side-effect
+// the compiler cannot elide, replacing the prior manual-loop + KeepAlive
+// pattern with a single intrinsic that widens to vector stores on amd64.
 func secureWipe(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
-	runtime.KeepAlive(b)
+	clear(b)
 }
 
 // generateRandomBytes returns n cryptographically random bytes.

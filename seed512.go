@@ -42,6 +42,12 @@ type HashFunc512 func(data []byte, seed [8]uint64) [8]uint64
 type Seed512 struct {
 	Components []uint64
 	Hash       HashFunc512
+	// BatchHash is the optional 4-way batched counterpart of Hash. See
+	// seed512_batch.go for the parity invariant and BatchHashFunc512
+	// type. nil disables batched dispatch and preserves the legacy
+	// single-call code path; non-nil routes processChunk512 through
+	// BatchChainHash512 four pixels at a time.
+	BatchHash BatchHashFunc512
 }
 
 // NewSeed512 creates a new 512-bit seed with cryptographically random components.
