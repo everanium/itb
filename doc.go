@@ -186,6 +186,29 @@
 //	Most secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
 //	itb.SetBitSoup(1)       // Triple Ouroboros bit-level split ("bit soup"; default: 0 = byte-level)
 //
+//	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
+//	// PRF wiring, recommended default. The paired factory returns (single,
+//	// batched) sharing the same fixed key; ITB processChunk256 dispatches
+//	// per-pixel hashing four pixels per batched call when the runtime CPU
+//	// supports VAES + AVX-512, falling back transparently to single-call
+//	// on hardware without VAES (correctness preserved on every platform).
+//	ns256, _ := itb.NewSeed256(2048, nil)
+//	ns256.Hash, ns256.BatchHash = itb.MakeAreionSoEM256Hash()
+//	ds256, _ := itb.NewSeed256(2048, nil)
+//	ds256.Hash, ds256.BatchHash = itb.MakeAreionSoEM256Hash()
+//	ss256, _ := itb.NewSeed256(2048, nil)
+//	ss256.Hash, ss256.BatchHash = itb.MakeAreionSoEM256Hash()
+//
+//	encrypted, _ := itb.Encrypt256(ns256, ds256, ss256, plaintext)
+//	decrypted, _ := itb.Decrypt256(ns256, ds256, ss256, encrypted)
+//
+//	// Areion-SoEM-512 with batched VAES dispatch — same factory pattern,
+//	// 64-byte key, 64-byte input, 8 × uint64 seed. Use itb.NewSeed512 +
+//	// itb.Encrypt512 / itb.Decrypt512 in place of the 256-bit variants.
+//	ns512, _ := itb.NewSeed512(2048, nil)
+//	ns512.Hash, ns512.BatchHash = itb.MakeAreionSoEM512Hash()
+//	// (analogous wiring for ds512, ss512)
+//
 //	// SipHash-2-4 (128-bit hash, 1024-bit effective key)
 //	func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 //	    return siphash.Hash128(seed0, seed1, data)

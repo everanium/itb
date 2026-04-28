@@ -1219,6 +1219,133 @@ func benchTripleDecrypt512Cached(b *testing.B, maker func() HashFunc512, bits, d
 	}
 }
 
+// benchTripleEncrypt256CachedBatched is the paired-maker variant of
+// benchTripleEncrypt256Cached. Each of the seven Triple Ouroboros
+// seeds (1 noise + 3 data + 3 start) receives an independent random
+// key plus its matching BatchHash, so processChunk256 dispatches every
+// per-pixel hash through the batched VAES path.
+func benchTripleEncrypt256CachedBatched(b *testing.B, maker func() (HashFunc256, BatchHashFunc256), bits, dataSize int) {
+	nsH, nsB := maker()
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(bits, nsH)
+	ns.BatchHash = nsB
+	dsH1, dsB1 := maker()
+	ds1.Hash = dsH1
+	ds1.BatchHash = dsB1
+	dsH2, dsB2 := maker()
+	ds2.Hash = dsH2
+	ds2.BatchHash = dsB2
+	dsH3, dsB3 := maker()
+	ds3.Hash = dsH3
+	ds3.BatchHash = dsB3
+	ssH1, ssB1 := maker()
+	ss1.Hash = ssH1
+	ss1.BatchHash = ssB1
+	ssH2, ssB2 := maker()
+	ss2.Hash = ssH2
+	ss2.BatchHash = ssB2
+	ssH3, ssB3 := maker()
+	ss3.Hash = ssH3
+	ss3.BatchHash = ssB3
+	data := generateData(dataSize)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	}
+}
+
+func benchTripleDecrypt256CachedBatched(b *testing.B, maker func() (HashFunc256, BatchHashFunc256), bits, dataSize int) {
+	nsH, nsB := maker()
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(bits, nsH)
+	ns.BatchHash = nsB
+	dsH1, dsB1 := maker()
+	ds1.Hash = dsH1
+	ds1.BatchHash = dsB1
+	dsH2, dsB2 := maker()
+	ds2.Hash = dsH2
+	ds2.BatchHash = dsB2
+	dsH3, dsB3 := maker()
+	ds3.Hash = dsH3
+	ds3.BatchHash = dsB3
+	ssH1, ssB1 := maker()
+	ss1.Hash = ssH1
+	ss1.BatchHash = ssB1
+	ssH2, ssB2 := maker()
+	ss2.Hash = ssH2
+	ss2.BatchHash = ssB2
+	ssH3, ssB3 := maker()
+	ss3.Hash = ssH3
+	ss3.BatchHash = ssB3
+	data := generateData(dataSize)
+	encrypted, _ := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	}
+}
+
+func benchTripleEncrypt512CachedBatched(b *testing.B, maker func() (HashFunc512, BatchHashFunc512), bits, dataSize int) {
+	nsH, nsB := maker()
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(bits, nsH)
+	ns.BatchHash = nsB
+	dsH1, dsB1 := maker()
+	ds1.Hash = dsH1
+	ds1.BatchHash = dsB1
+	dsH2, dsB2 := maker()
+	ds2.Hash = dsH2
+	ds2.BatchHash = dsB2
+	dsH3, dsB3 := maker()
+	ds3.Hash = dsH3
+	ds3.BatchHash = dsB3
+	ssH1, ssB1 := maker()
+	ss1.Hash = ssH1
+	ss1.BatchHash = ssB1
+	ssH2, ssB2 := maker()
+	ss2.Hash = ssH2
+	ss2.BatchHash = ssB2
+	ssH3, ssB3 := maker()
+	ss3.Hash = ssH3
+	ss3.BatchHash = ssB3
+	data := generateData(dataSize)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	}
+}
+
+func benchTripleDecrypt512CachedBatched(b *testing.B, maker func() (HashFunc512, BatchHashFunc512), bits, dataSize int) {
+	nsH, nsB := maker()
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(bits, nsH)
+	ns.BatchHash = nsB
+	dsH1, dsB1 := maker()
+	ds1.Hash = dsH1
+	ds1.BatchHash = dsB1
+	dsH2, dsB2 := maker()
+	ds2.Hash = dsH2
+	ds2.BatchHash = dsB2
+	dsH3, dsB3 := maker()
+	ds3.Hash = dsH3
+	ds3.BatchHash = dsB3
+	ssH1, ssB1 := maker()
+	ss1.Hash = ssH1
+	ss1.BatchHash = ssB1
+	ssH2, ssB2 := maker()
+	ss2.Hash = ssH2
+	ss2.BatchHash = ssB2
+	ssH3, ssB3 := maker()
+	ss3.Hash = ssH3
+	ss3.BatchHash = ssB3
+	data := generateData(dataSize)
+	encrypted, _ := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	}
+}
+
 // --- Benchmarks: ITB Triple Ouroboros Width 512-bit (all hash functions at 512-bit key) ---
 
 func BenchmarkTripleAES_512bit_Encrypt_1MB(b *testing.B) {
@@ -1336,41 +1463,41 @@ func BenchmarkTripleBLAKE2b512_512bit_Decrypt_64MB(b *testing.B) {
 }
 
 func BenchmarkTripleAreionSoEM256_512bit_Encrypt_1MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 512, 1<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 512, 1<<20)
 }
 func BenchmarkTripleAreionSoEM256_512bit_Encrypt_16MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 512, 16<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 512, 16<<20)
 }
 func BenchmarkTripleAreionSoEM256_512bit_Encrypt_64MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 512, 64<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 512, 64<<20)
 }
 func BenchmarkTripleAreionSoEM256_512bit_Decrypt_1MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 512, 1<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 512, 1<<20)
 }
 func BenchmarkTripleAreionSoEM256_512bit_Decrypt_16MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 512, 16<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 512, 16<<20)
 }
 func BenchmarkTripleAreionSoEM256_512bit_Decrypt_64MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 512, 64<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 512, 64<<20)
 }
 
 func BenchmarkTripleAreionSoEM512_512bit_Encrypt_1MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 512, 1<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 512, 1<<20)
 }
 func BenchmarkTripleAreionSoEM512_512bit_Encrypt_16MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 512, 16<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 512, 16<<20)
 }
 func BenchmarkTripleAreionSoEM512_512bit_Encrypt_64MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 512, 64<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 512, 64<<20)
 }
 func BenchmarkTripleAreionSoEM512_512bit_Decrypt_1MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 512, 1<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 512, 1<<20)
 }
 func BenchmarkTripleAreionSoEM512_512bit_Decrypt_16MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 512, 16<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 512, 16<<20)
 }
 func BenchmarkTripleAreionSoEM512_512bit_Decrypt_64MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 512, 64<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 512, 64<<20)
 }
 
 // --- Benchmarks: ITB Triple Ouroboros Width 1024-bit (all hash functions at 1024-bit key) ---
@@ -1490,41 +1617,41 @@ func BenchmarkTripleBLAKE2b512_1024bit_Decrypt_64MB(b *testing.B) {
 }
 
 func BenchmarkTripleAreionSoEM256_1024bit_Encrypt_1MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 1024, 1<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 1024, 1<<20)
 }
 func BenchmarkTripleAreionSoEM256_1024bit_Encrypt_16MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 1024, 16<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 1024, 16<<20)
 }
 func BenchmarkTripleAreionSoEM256_1024bit_Encrypt_64MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 1024, 64<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 1024, 64<<20)
 }
 func BenchmarkTripleAreionSoEM256_1024bit_Decrypt_1MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 1024, 1<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 1024, 1<<20)
 }
 func BenchmarkTripleAreionSoEM256_1024bit_Decrypt_16MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 1024, 16<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 1024, 16<<20)
 }
 func BenchmarkTripleAreionSoEM256_1024bit_Decrypt_64MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 1024, 64<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 1024, 64<<20)
 }
 
 func BenchmarkTripleAreionSoEM512_1024bit_Encrypt_1MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 1024, 1<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 1024, 1<<20)
 }
 func BenchmarkTripleAreionSoEM512_1024bit_Encrypt_16MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 1024, 16<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 1024, 16<<20)
 }
 func BenchmarkTripleAreionSoEM512_1024bit_Encrypt_64MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 1024, 64<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 1024, 64<<20)
 }
 func BenchmarkTripleAreionSoEM512_1024bit_Decrypt_1MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 1024, 1<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 1024, 1<<20)
 }
 func BenchmarkTripleAreionSoEM512_1024bit_Decrypt_16MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 1024, 16<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 1024, 16<<20)
 }
 func BenchmarkTripleAreionSoEM512_1024bit_Decrypt_64MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 1024, 64<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 1024, 64<<20)
 }
 
 // --- Benchmarks: ITB Triple Ouroboros Width 2048-bit (all hash functions at 2048-bit key) ---
@@ -1644,39 +1771,39 @@ func BenchmarkTripleBLAKE2b512_2048bit_Decrypt_64MB(b *testing.B) {
 }
 
 func BenchmarkTripleAreionSoEM256_2048bit_Encrypt_1MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 2048, 1<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 2048, 1<<20)
 }
 func BenchmarkTripleAreionSoEM256_2048bit_Encrypt_16MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 2048, 16<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 2048, 16<<20)
 }
 func BenchmarkTripleAreionSoEM256_2048bit_Encrypt_64MB(b *testing.B) {
-	benchTripleEncrypt256Cached(b, makeAreionSoEM256, 2048, 64<<20)
+	benchTripleEncrypt256CachedBatched(b, makeAreionSoEM256Pair, 2048, 64<<20)
 }
 func BenchmarkTripleAreionSoEM256_2048bit_Decrypt_1MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 2048, 1<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 2048, 1<<20)
 }
 func BenchmarkTripleAreionSoEM256_2048bit_Decrypt_16MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 2048, 16<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 2048, 16<<20)
 }
 func BenchmarkTripleAreionSoEM256_2048bit_Decrypt_64MB(b *testing.B) {
-	benchTripleDecrypt256Cached(b, makeAreionSoEM256, 2048, 64<<20)
+	benchTripleDecrypt256CachedBatched(b, makeAreionSoEM256Pair, 2048, 64<<20)
 }
 
 func BenchmarkTripleAreionSoEM512_2048bit_Encrypt_1MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 2048, 1<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 1<<20)
 }
 func BenchmarkTripleAreionSoEM512_2048bit_Encrypt_16MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 2048, 16<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 16<<20)
 }
 func BenchmarkTripleAreionSoEM512_2048bit_Encrypt_64MB(b *testing.B) {
-	benchTripleEncrypt512Cached(b, makeAreionSoEM512, 2048, 64<<20)
+	benchTripleEncrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 64<<20)
 }
 func BenchmarkTripleAreionSoEM512_2048bit_Decrypt_1MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 2048, 1<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 1<<20)
 }
 func BenchmarkTripleAreionSoEM512_2048bit_Decrypt_16MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 2048, 16<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 16<<20)
 }
 func BenchmarkTripleAreionSoEM512_2048bit_Decrypt_64MB(b *testing.B) {
-	benchTripleDecrypt512Cached(b, makeAreionSoEM512, 2048, 64<<20)
+	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 64<<20)
 }
