@@ -184,8 +184,12 @@
 //	itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
 //	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-//	Most secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
+//	Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
 //	itb.SetBitSoup(1)       // Triple Ouroboros bit-level split ("bit soup"; default: 0 = byte-level)
+//
+//	Most secure bit-permutation mode with performance trade-off ~2×-7× slower
+//	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation overlay on top of bit-soup;
+//	                        // ~2×-7× slower, raises SAT cryptanalysis to information-theoretic instance-formulation
 //
 //	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
 //	// PRF wiring, recommended default. The paired factory returns (single,
@@ -432,7 +436,23 @@
 // in both modes. Callers must set the same mode on both encrypt and decrypt
 // sides of the channel.
 //
-//	itb.SetBitSoup(1) // whole-process opt-in; default 0 = byte-level
+//	itb.SetBitSoup(1)  // whole-process opt-in; default 0 = byte-level
+//	itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed
+//	                   // bit-permutation; requires SetBitSoup(1); ~2×-7× slower
+//
+// [SetLockSoup] is an additional opt-in overlay on top of Bit Soup. It
+// replaces the public fixed bit-permutation with a per-chunk PRF-keyed
+// bijection drawn from a 2^33-mask space (one balanced 8-of-24 partition
+// per 24-bit chunk, derived deterministically from the encrypt-side
+// noiseSeed and nonce). Each crib chunk multiplies attacker enumeration
+// by ~2^33 with no shared algebraic structure to couple chunks across,
+// making the joint SAT instance under-determined under any realistic
+// crib coverage. Performance cost is ~2×–7× over plain Bit Soup
+// depending on platform — the BMI2 PEXT/PDEP path on x86 (Haswell+,
+// Excavator+/Zen 1+) sits near the lower bound, the pure-Go fallback
+// near the upper. The trade-off is acceptable only where the
+// architectural barrier is the deployment priority. Default
+// [SetLockSoup](0) leaves Bit Soup behaviour unchanged.
 //
 // See [ITB3.md] for accessible explanation and [REDTEAM.md] Phase 2g for
 // the defensive framing in the SAT attack context.

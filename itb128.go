@@ -257,7 +257,12 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 
-	p0, p1, p2 := splitForTripleParallel(data)
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, err
+	}
+
+	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -342,11 +347,6 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		if err != nil {
 			return nil, fmt.Errorf("itb: crypto/rand: %w", err)
 		}
-	}
-
-	nonce, err := generateNonce()
-	if err != nil {
-		return nil, err
 	}
 
 	// 3 parallel goroutines for pixel processing, each limited to 1/3 of CPU cores
@@ -482,5 +482,5 @@ func Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		wg.Wait()
 	}
 
-	return interleaveForTripleParallel(parts[0], parts[1], parts[2]), nil
+	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce)), nil
 }
