@@ -92,12 +92,12 @@ Twelve primitives spanning the full spectrum of cryptographic strength, all run 
 | AES-CMAC | 128 | ✅ | Standard AES-based keyed MAC |
 | SipHash-2-4 | 128 | ✅ | Fast keyed PRF |
 | ChaCha20 | 256 | ✅ | Stream-cipher-based PRF |
-| Areion-SoEM-256 | 256 | ✅ | Single-key Even-Mansour with Areion permutation |
+| Areion-SoEM-256 | 256 | ✅ | Sum of Even-Mansour |
 | BLAKE2s | 256 | ✅ | Keyed hash in PRF mode |
 | BLAKE3 | 256 | ✅ | Native keyed PRF |
 | BLAKE2b-256 | 256 | ✅ | Keyed hash in PRF mode (256-bit output) |
 | BLAKE2b-512 | 512 | ✅ | Keyed hash in PRF mode |
-| Areion-SoEM-512 | 512 | ✅ | Single-key Even-Mansour 512 |
+| Areion-SoEM-512 | 512 | ✅ | Sum of Even-Mansour |
 
 ### Settings
 
