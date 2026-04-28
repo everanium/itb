@@ -159,3 +159,20 @@ func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
 	hLo, _ := s.ChainHash128(buf)
 	return int(hLo % uint64(totalPixels))
 }
+
+// deriveNoiseSeed returns the full 128-bit ChainHash output derived from
+// the same domain-tagged buffer used by [Seed128.deriveStartPixel].
+// deriveStartPixel truncates to a pixel index (~13 bits); deriveNoiseSeed
+// exposes the full (hLo, hHi) pair for consumers that need it as PRF
+// seed material — e.g. LockSoup's per-chunk keystream when SetLockSoup(1)
+// is in effect.
+//
+// Typically called on noiseSeed in the Triple Ouroboros context — the
+// only shared seed across the 3 snakes, used as the keying source for
+// the cross-snake bit-soup permutation.
+func (s *Seed128) deriveNoiseSeed(nonce []byte) (uint64, uint64) {
+	buf := make([]byte, 1+len(nonce))
+	buf[0] = 0x02
+	copy(buf[1:], nonce)
+	return s.ChainHash128(buf)
+}

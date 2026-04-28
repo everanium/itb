@@ -1807,3 +1807,80 @@ func BenchmarkTripleAreionSoEM512_2048bit_Decrypt_16MB(b *testing.B) {
 func BenchmarkTripleAreionSoEM512_2048bit_Decrypt_64MB(b *testing.B) {
 	benchTripleDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 64<<20)
 }
+
+// TestTriple_LockSoup_Roundtrip mirrors [TestTriple_Roundtrip] across the
+// same boundary sizes, with SetBitSoup(1) + SetLockSoup(1) active for the
+// duration. Verifies Encrypt3x128 / Decrypt3x128 round-trip under the
+// LockSoup-keyed bit-soup permutation for 128-bit Triple Ouroboros.
+func TestTriple_LockSoup_Roundtrip(t *testing.T) {
+	withLockSoup(t)
+
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
+			data := generateData(sz)
+			encrypted, err := Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("data mismatch under SetLockSoup(1): got %d bytes, want %d", len(decrypted), len(data))
+			}
+		})
+	}
+}
+
+// TestTriple_LockSoup_Roundtrip256 is the 256-bit Triple Ouroboros mirror
+// of [TestTriple_LockSoup_Roundtrip].
+func TestTriple_LockSoup_Roundtrip256(t *testing.T) {
+	withLockSoup(t)
+
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+			data := generateData(sz)
+			encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("data mismatch under SetLockSoup(1): got %d bytes, want %d", len(decrypted), len(data))
+			}
+		})
+	}
+}
+
+// TestTriple_LockSoup_Roundtrip512 is the 512-bit Triple Ouroboros mirror
+// of [TestTriple_LockSoup_Roundtrip].
+func TestTriple_LockSoup_Roundtrip512(t *testing.T) {
+	withLockSoup(t)
+
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+			data := generateData(sz)
+			encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("data mismatch under SetLockSoup(1): got %d bytes, want %d", len(decrypted), len(data))
+			}
+		})
+	}
+}

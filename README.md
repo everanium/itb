@@ -213,8 +213,10 @@ func main() {
 
 ```go
 // Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start), 512-bit for speed
-// Most secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
-itb.SetBitSoup(1) // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
+// Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
+itb.SetBitSoup(1)  // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
+// Most secure bit-permutation mode with performance trade-off ~2×-7× slower
+itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower; requires SetBitSoup(1)
 
 ns, _  := itb.NewSeed128(512, sipHash128) // shared noiseSeed
 ds1, _ := itb.NewSeed128(512, sipHash128) // dataSeed per ring
