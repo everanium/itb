@@ -80,10 +80,10 @@ CGO speedup also covers L1-cache-friendly micro-batching (512 pixels per C call)
 
 | Platform | Per-pixel kernel | Areion-SoEM batched dispatch |
 |---|---|---|
-| amd64 + AVX-512+GFNI+VBMI (Intel Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM (`internal/areionasm/areion_amd64.s`) |
+| amd64 + AVX-512+GFNI+VBMI (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM (`internal/areionasm/areion_amd64.s`) |
 | amd64 + AVX2+GFNI (AMD Zen 3+, Coffee Lake+) | Tier B (YMM, 4-pixel batch) | AVX2+VAES ASM (same file, separate entry points) |
 | amd64 without VAES / older | Plain-C fallback | Go fallback via `aes.Round4HW` |
-| ARM64 / other GCC targets | Plain-C fallback | Go fallback via `aes.Round4HW` |
+| arm64 / other GCC targets | Plain-C fallback | Go fallback via `aes.Round4HW` |
 | `CGO_ENABLED=0` | Pure Go (`process_generic.go`) | Go fallback |
 
 Hash computation remains in Go in both modes (pluggable hash functions); the C pixel kernel is platform-portable through `__attribute__((target(...)))` per-helper feature gates rather than IFUNC, so non-Linux/non-FreeBSD targets degrade gracefully.
