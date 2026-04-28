@@ -26,7 +26,7 @@
 // Applies the 10-round Areion256 permutation to four lanes packed in
 // SoA layout: `*x0` holds the four lanes' first-half AES blocks
 // (Block4 = 64 bytes), `*x1` holds the second-half AES blocks. The
-// caller (Go side) is responsible for the AOS→SoA pack and the
+// caller (Go side) is responsible for the AoS <-> SoA pack and the
 // matching unpack on return.
 //
 // Per round (10 rounds total, alternating x0/x1 roles):

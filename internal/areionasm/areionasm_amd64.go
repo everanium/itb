@@ -7,7 +7,7 @@
 //
 // Only the assembly entry point and the pre-broadcast round-constant
 // table are exported from this package. All caller-side logic
-// (AOS↔SoA pack/unpack, SoEM key XORs, runtime dispatch) lives in the
+// (AoS <-> SoA pack/unpack, SoEM key XORs, runtime dispatch) lives in the
 // parent `itb` package.
 package areionasm
 
