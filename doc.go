@@ -43,8 +43,8 @@
 //
 //   - Hash function: pluggable, zero built-in dependencies. Three width variants:
 //     [HashFunc128] (128-bit), [HashFunc256] (256-bit), [HashFunc512] (512-bit).
-//     Users supply SipHash-2-4, AES-CMAC, BLAKE2b, BLAKE2s, BLAKE3, or any
-//     other conforming PRF function.
+//     Users supply Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC,
+//     BLAKE2b, BLAKE2s, BLAKE3, or any other conforming PRF function.
 //
 //   - Key size: minimum 512 bits (8 components) per seed, up to [MaxKeyBits]
 //     (2048). Three independent seeds: noiseSeed, dataSeed, startSeed.
@@ -76,12 +76,12 @@
 //
 //   - 256-bit ([Seed256], [Encrypt256], [Decrypt256]): uses [HashFunc256]
 //     with 256-bit intermediate state (4 components per round).
-//     Effective max key: 2048 bits. Targets: BLAKE3 keyed.
+//     Effective max key: 2048 bits. Targets: Areion-SoEM-256, BLAKE3.
 //
 //   - 512-bit ([Seed512], [Encrypt512], [Decrypt512]): uses [HashFunc512]
 //     with 512-bit intermediate state (8 components per round).
 //     Effective max key: 2048 bits (with current [MaxKeyBits]).
-//     Targets: BLAKE2b-512 (native 512-bit key and output).
+//     Targets: Areion-SoEM-512, BLAKE2b-512 (native 512-bit key and output).
 //
 // All three variants share the same RGBWYOPA pixel format, COBS framing,
 // triple-seed architecture, and security properties. The wider hash output
@@ -116,7 +116,7 @@
 //	Areion-SoEM-512        | 512 bits | Encrypt512 | 1024 bits
 //	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt128 | 1024 bits
 //	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt256 | 1024 bits
-//	BLAKE3 keyed, ChaCha20 | 256 bits | Encrypt256 | 1024 bits
+//	BLAKE3, ChaCha20       | 256 bits | Encrypt256 | 1024 bits
 //	BLAKE2b-512            | 512 bits | Encrypt512 | 1024 bits
 
 //
@@ -127,7 +127,7 @@
 //	Areion-SoEM-512        | 512 bits | Encrypt3x512 | 1024 bits
 //	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt3x128 | 1024 bits
 //	BLAKE2b-256, BLAKE2s   | 256 bits | Encrypt3x256 | 1024 bits
-//	BLAKE3 keyed, ChaCha20 | 256 bits | Encrypt3x256 | 1024 bits
+//	BLAKE3, ChaCha20       | 256 bits | Encrypt3x256 | 1024 bits
 //	BLAKE2b-512            | 512 bits | Encrypt3x512 | 1024 bits
 
 // # Security Properties
