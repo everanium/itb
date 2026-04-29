@@ -3,6 +3,7 @@ package itb
 import (
 	"bytes"
 	"crypto/rand"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -655,3 +656,95 @@ func benchSplitForSingle(b *testing.B, sizeBytes int) {
 func BenchmarkSplitForSingle_4KB(b *testing.B)  { benchSplitForSingle(b, 4*1024) }
 func BenchmarkSplitForSingle_64KB(b *testing.B) { benchSplitForSingle(b, 64*1024) }
 func BenchmarkSplitForSingle_1MB(b *testing.B)  { benchSplitForSingle(b, 1024*1024) }
+
+// withWiderNonceLockSoup configures process-wide state for a Lock Soup
+// round-trip under SetNonceBits(nonceBits), restoring all three globals
+// via t.Cleanup. Helper for the wider-nonce regression tests below.
+func withWiderNonceLockSoup(t testing.TB, nonceBits int) {
+	t.Helper()
+	prevNonce := currentNonceSize() * 8
+	prevBit := GetBitSoup()
+	prevLock := GetLockSoup()
+	SetNonceBits(nonceBits)
+	SetBitSoup(1)
+	SetLockSoup(1)
+	t.Cleanup(func() {
+		SetLockSoup(prevLock)
+		SetBitSoup(prevBit)
+		SetNonceBits(prevNonce)
+	})
+}
+
+// TestSingleLockSoup_WiderNonceRoundTrip verifies that
+// `SetNonceBits(256)` and `SetNonceBits(512)` flow correctly through
+// the Single Ouroboros Lock Soup pipeline: deriveNoiseSeed consumes the
+// full nonce length, lockSeed entropy scales with nonce width, and the
+// round-trip is bit-identical for plaintexts spanning boundary sizes.
+func TestSingleLockSoup_WiderNonceRoundTrip(t *testing.T) {
+	for _, nonceBits := range []int{256, 512} {
+		t.Run(fmt.Sprintf("nonce_%d", nonceBits), func(t *testing.T) {
+			withWiderNonceLockSoup(t, nonceBits)
+
+			for _, sz := range []int{1, 64, 1024, 4096, 65536} {
+				ns, err := NewSeed128(512, sipHash128)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ds, err := NewSeed128(512, sipHash128)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ss, err := NewSeed128(512, sipHash128)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data := make([]byte, sz)
+				if _, err := rand.Read(data); err != nil {
+					t.Fatal(err)
+				}
+				enc, err := Encrypt128(ns, ds, ss, data)
+				if err != nil {
+					t.Fatalf("Encrypt128 sz=%d nonce=%d: %v", sz, nonceBits, err)
+				}
+				dec, err := Decrypt128(ns, ds, ss, enc)
+				if err != nil {
+					t.Fatalf("Decrypt128 sz=%d nonce=%d: %v", sz, nonceBits, err)
+				}
+				if !bytes.Equal(data, dec) {
+					t.Fatalf("Single sz=%d nonce=%d: round-trip mismatch", sz, nonceBits)
+				}
+			}
+		})
+	}
+}
+
+// TestTripleLockSoup_WiderNonceRoundTrip is the Triple Ouroboros mirror
+// of [TestSingleLockSoup_WiderNonceRoundTrip], exercising
+// Encrypt3x128 / Decrypt3x128 under SetNonceBits(256) and (512) with
+// SetLockSoup(1) active.
+func TestTripleLockSoup_WiderNonceRoundTrip(t *testing.T) {
+	for _, nonceBits := range []int{256, 512} {
+		t.Run(fmt.Sprintf("nonce_%d", nonceBits), func(t *testing.T) {
+			withWiderNonceLockSoup(t, nonceBits)
+
+			for _, sz := range []int{1, 64, 1024, 4096, 65536} {
+				ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
+				data := make([]byte, sz)
+				if _, err := rand.Read(data); err != nil {
+					t.Fatal(err)
+				}
+				enc, err := Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+				if err != nil {
+					t.Fatalf("Encrypt3x128 sz=%d nonce=%d: %v", sz, nonceBits, err)
+				}
+				dec, err := Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, enc)
+				if err != nil {
+					t.Fatalf("Decrypt3x128 sz=%d nonce=%d: %v", sz, nonceBits, err)
+				}
+				if !bytes.Equal(data, dec) {
+					t.Fatalf("Triple sz=%d nonce=%d: round-trip mismatch", sz, nonceBits)
+				}
+			}
+		})
+	}
+}
