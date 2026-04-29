@@ -3323,3 +3323,154 @@ func BenchmarkSingleAreionSoEM512_2048bit_Decrypt_16MB(b *testing.B) {
 func BenchmarkSingleAreionSoEM512_2048bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt512CachedBatched(b, makeAreionSoEM512Pair, 2048, 64<<20)
 }
+
+// --- Single Lock Soup roundtrip tests ---
+
+// withSingleLockSoup turns on SetBitSoup(1) + SetLockSoup(1) for the
+// duration of the test, restoring both flags via t.Cleanup. Forces both
+// flags so the Single Lock Soup overlay is unambiguously active; the
+// dispatch-coupling rule (either flag set → activate) is exercised
+// separately by TestSingleLockSoup_CouplingDispatch.
+func withSingleLockSoup(t testing.TB) {
+	t.Helper()
+	prevBit := GetBitSoup()
+	prevLock := GetLockSoup()
+	SetBitSoup(1)
+	SetLockSoup(1)
+	t.Cleanup(func() {
+		SetLockSoup(prevLock)
+		SetBitSoup(prevBit)
+	})
+}
+
+func TestSingle_LockSoup_Roundtrip128(t *testing.T) {
+	withSingleLockSoup(t)
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed128(512, sipHash128)
+			data := generateData(sz)
+			encrypted, err := Encrypt128(ns, ds, ss, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt128(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("128-bit Single Lock Soup: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestSingle_LockSoup_Roundtrip256(t *testing.T) {
+	withSingleLockSoup(t)
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed256(512, testHash256)
+			data := generateData(sz)
+			encrypted, err := Encrypt256(ns, ds, ss, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt256(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("256-bit Single Lock Soup: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestSingle_LockSoup_Roundtrip512(t *testing.T) {
+	withSingleLockSoup(t)
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed512(512, testHash512)
+			data := generateData(sz)
+			encrypted, err := Encrypt512(ns, ds, ss, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := Decrypt512(ns, ds, ss, encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("512-bit Single Lock Soup: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestSingle_LockSoup_AuthRoundtrip128(t *testing.T) {
+	withSingleLockSoup(t)
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed128(512, sipHash128)
+			data := generateData(sz)
+			encrypted, err := EncryptAuthenticated128(ns, ds, ss, data, simpleMACFunc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := DecryptAuthenticated128(ns, ds, ss, encrypted, simpleMACFunc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("128-bit Single Lock Soup auth: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestSingle_LockSoup_AuthRoundtrip256(t *testing.T) {
+	withSingleLockSoup(t)
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed256(512, testHash256)
+			data := generateData(sz)
+			encrypted, err := EncryptAuthenticated256(ns, ds, ss, data, simpleMACFunc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := DecryptAuthenticated256(ns, ds, ss, encrypted, simpleMACFunc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("256-bit Single Lock Soup auth: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}
+
+func TestSingle_LockSoup_AuthRoundtrip512(t *testing.T) {
+	withSingleLockSoup(t)
+	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
+	for _, sz := range sizes {
+		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
+			ns, ds, ss := makeTripleSeed512(512, testHash512)
+			data := generateData(sz)
+			encrypted, err := EncryptAuthenticated512(ns, ds, ss, data, simpleMACFunc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decrypted, err := DecryptAuthenticated512(ns, ds, ss, encrypted, simpleMACFunc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(data, decrypted) {
+				t.Fatalf("512-bit Single Lock Soup auth: data mismatch at %d bytes", sz)
+			}
+		})
+	}
+}

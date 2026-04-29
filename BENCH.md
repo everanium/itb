@@ -81,3 +81,85 @@
 | **ChaCha20** | 256 | 2048 | PRF | 117 | 163 | 171 | 167 | 224 | 241 |
 | **BLAKE2s** | 256 | 2048 | PRF | 81 | 102 | 99 | 116 | 161 | 180 |
 | **BLAKE3** | 256 | 2048 | PRF | 62 | 68 | 66 | 68 | 81 | 112 |
+
+## Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup + Lock Soup mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 52 | 57 | 55 | 57 | 65 | 65 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 47 | 50 | 49 | 51 | 56 | 56 |
+| **SipHash-2-4** | 128 | 512 | PRF | 56 | 69 | 64 | 69 | 81 | 82 |
+| **AES-CMAC** | 128 | 512 | PRF | 67 | 83 | 73 | 89 | 109 | 107 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 38 | 46 | 46 | 43 | 53 | 53 |
+| **ChaCha20** | 256 | 512 | PRF | 35 | 40 | 41 | 39 | 45 | 48 |
+| **BLAKE2s** | 256 | 512 | PRF | 35 | 40 | 41 | 41 | 46 | 46 |
+| **BLAKE3** | 256 | 512 | PRF | 27 | 31 | 31 | 29 | 35 | 35 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 45 | 50 | 48 | 52 | 57 | 58 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 40 | 45 | 45 | 45 | 50 | 51 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 44 | 57 | 56 | 56 | 67 | 66 |
+| **AES-CMAC** | 128 | 1024 | PRF | 52 | 66 | 66 | 67 | 76 | 78 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 32 | 38 | 32 | 36 | 43 | 42 |
+| **ChaCha20** | 256 | 1024 | PRF | 26 | 30 | 30 | 30 | 34 | 33 |
+| **BLAKE2s** | 256 | 1024 | PRF | 26 | 31 | 28 | 30 | 33 | 32 |
+| **BLAKE3** | 256 | 1024 | PRF | 19 | 22 | 22 | 20 | 23 | 24 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 33 | 38 | 40 | 39 | 44 | 45 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 34 | 36 | 37 | 36 | 40 | 40 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 36 | 45 | 44 | 43 | 50 | 50 |
+| **AES-CMAC** | 128 | 2048 | PRF | 39 | 48 | 48 | 46 | 53 | 53 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 24 | 26 | 24 | 26 | 29 | 29 |
+| **ChaCha20** | 256 | 2048 | PRF | 19 | 22 | 21 | 21 | 23 | 23 |
+| **BLAKE2s** | 256 | 2048 | PRF | 19 | 21 | 20 | 21 | 21 | 22 |
+| **BLAKE3** | 256 | 2048 | PRF | 13 | 14 | 14 | 13 | 14 | 14 |
+
+## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Bit Soup + Lock Soup mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 147 | 172 | 216 | 239 | 295 | 369 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 142 | 168 | 195 | 227 | 303 | 318 |
+| **SipHash-2-4** | 128 | 512 | PRF | 133 | 200 | 232 | 244 | 373 | 417 |
+| **AES-CMAC** | 128 | 512 | PRF | 152 | 192 | 227 | 260 | 371 | 444 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 79 | 137 | 163 | 132 | 191 | 254 |
+| **ChaCha20** | 256 | 512 | PRF | 99 | 134 | 153 | 168 | 245 | 268 |
+| **BLAKE2s** | 256 | 512 | PRF | 74 | 117 | 138 | 126 | 197 | 192 |
+| **BLAKE3** | 256 | 512 | PRF | 64 | 100 | 108 | 99 | 136 | 169 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 138 | 173 | 197 | 219 | 288 | 342 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 134 | 154 | 193 | 207 | 242 | 296 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 129 | 190 | 225 | 223 | 324 | 412 |
+| **AES-CMAC** | 128 | 1024 | PRF | 133 | 178 | 208 | 223 | 308 | 358 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 72 | 125 | 136 | 117 | 186 | 181 |
+| **ChaCha20** | 256 | 1024 | PRF | 91 | 125 | 141 | 147 | 194 | 216 |
+| **BLAKE2s** | 256 | 1024 | PRF | 64 | 96 | 99 | 103 | 124 | 125 |
+| **BLAKE3** | 256 | 1024 | PRF | 51 | 89 | 85 | 76 | 109 | 102 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 126 | 160 | 179 | 187 | 238 | 279 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 122 | 154 | 173 | 179 | 229 | 255 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 124 | 163 | 194 | 201 | 300 | 320 |
+| **AES-CMAC** | 128 | 2048 | PRF | 111 | 148 | 184 | 181 | 237 | 285 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 59 | 102 | 104 | 100 | 141 | 118 |
+| **ChaCha20** | 256 | 2048 | PRF | 83 | 105 | 113 | 123 | 162 | 183 |
+| **BLAKE2s** | 256 | 2048 | PRF | 49 | 69 | 88 | 72 | 80 | 98 |
+| **BLAKE3** | 256 | 2048 | PRF | 39 | 58 | 66 | 50 | 66 | 76 |

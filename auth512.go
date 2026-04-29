@@ -34,7 +34,12 @@ func EncryptAuthenticated512(noiseSeed, dataSeed, startSeed *Seed512, data []byt
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	encoded := cobsEncode(data)
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, err
+	}
+
+	encoded := cobsEncode(splitForSingle(data, buildPermutePRF512(noiseSeed, nonce)))
 
 	width, height := containerSizeAuth512(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
 	totalPixels := width * height
@@ -66,10 +71,6 @@ func EncryptAuthenticated512(noiseSeed, dataSeed, startSeed *Seed512, data []byt
 	copy(full[payloadLen:], tag)
 
 	container, err := generateRandomBytes(totalPixels * Channels)
-	if err != nil {
-		return nil, err
-	}
-	nonce, err := generateNonce()
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +162,7 @@ func DecryptAuthenticated512(noiseSeed, dataSeed, startSeed *Seed512, fileData [
 		return nil, fmt.Errorf("itb: COBS decode produced empty output")
 	}
 
-	return original, nil
+	return interleaveForSingle(original, buildPermutePRF512(noiseSeed, nonce)), nil
 }
 
 // EncryptAuthenticated3x512 encrypts data with integrity using Triple Ouroboros (512-bit variant).

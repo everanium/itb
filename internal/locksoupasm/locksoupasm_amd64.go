@@ -46,3 +46,38 @@ func Chunk24Lock(x, m0, m1, m2 uint32) (l0, l1, l2 uint32)
 //
 //go:noescape
 func Unchunk24Lock(l0, l1, l2, m0, m1, m2 uint32) (x uint32)
+
+// HasAVX512Permute caches whether the runtime CPU supports the
+// AVX-512 feature set required by Permute24Avx512:
+//
+//   - AVX-512 F  — base 512-bit infrastructure
+//   - AVX-512 BW — byte-wise mask ops (VPMOVM2B, VPABSB, VPTESTMB)
+//   - AVX-512 VL — 256-bit (YMM) variants of those instructions
+//   - AVX-512 VBMI — VPERMB byte-shuffle
+//
+// Resolved once at init time from golang.org/x/sys/cpu's CPUID-driven
+// detection. Available on Intel Ice Lake / Tiger Lake / Rocket Lake /
+// Sapphire Rapids+, AMD Zen 4 / Zen 5. Same gate as the Tier A
+// per-pixel kernel in process_pixels.c.
+var HasAVX512Permute = cpu.X86.HasAVX512F &&
+	cpu.X86.HasAVX512BW &&
+	cpu.X86.HasAVX512VL &&
+	cpu.X86.HasAVX512VBMI
+
+// Permute24Avx512 applies an arbitrary bit permutation π: {0..23} →
+// {0..23} to the low 24 bits of x and returns the permuted result.
+// perm must be a stack-resident 32-byte buffer; perm[0..23] are the
+// source bit positions for output bits 0..23 (output[i] = bit perm[i]
+// of x), perm[24..31] must be zero (they are not consumed but VPERMB
+// uses them as gather indices into the bit-spread of x; nonzero values
+// would contaminate the result before the final 24-bit mask).
+//
+// The assembly body is ~7 vector instructions plus argument loads,
+// totalling ~30–40 cycles per call including Go ABI overhead — vs
+// ~80–100 cycles for the pure-Go softPermute24 fallback.
+//
+// Caller is responsible for the AVX-512 VBMI runtime gate via
+// HasAVX512Permute. Calling on a host without VBMI raises #UD.
+//
+//go:noescape
+func Permute24Avx512(x uint32, perm *[32]byte) (y uint32)

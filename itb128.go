@@ -101,7 +101,12 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 
-	encoded := cobsEncode(data)
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, err
+	}
+
+	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce)))
 
 	width, height := containerSize128(noiseSeed, dataSeed, startSeed, len(encoded))
 	totalPixels := width * height
@@ -126,10 +131,6 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 	}
 
 	container, err := generateRandomBytes(totalPixels * Channels)
-	if err != nil {
-		return nil, err
-	}
-	nonce, err := generateNonce()
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +211,7 @@ func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byt
 	if nullPos < 0 {
 		nullPos = len(decoded)
 	}
-	return cobsDecode(decoded[:nullPos]), nil
+	return interleaveForSingle(cobsDecode(decoded[:nullPos]), buildPermutePRF128(noiseSeed, nonce)), nil
 }
 
 // checkSevenSeeds128 verifies all 7 seeds are distinct pointers (seven-seed isolation).

@@ -20,3 +20,13 @@ func Chunk24Lock(x, m0, m1, m2 uint32) (l0, l1, l2 uint32) {
 func Unchunk24Lock(l0, l1, l2, m0, m1, m2 uint32) (x uint32) {
 	panic("locksoupasm: Unchunk24Lock unavailable on non-amd64 build")
 }
+
+// HasAVX512Permute is always false on non-amd64 builds.
+const HasAVX512Permute = false
+
+// Permute24Avx512 should never be called on non-amd64 builds — the parent
+// package's dispatch routes to softPermute24 when HasAVX512Permute is
+// false. Kept as a callable stub so the import resolves cleanly.
+func Permute24Avx512(x uint32, perm *[32]byte) (y uint32) {
+	panic("locksoupasm: Permute24Avx512 unavailable on non-amd64 build")
+}

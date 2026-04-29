@@ -154,7 +154,7 @@ Full benchmark results: **[BENCH3.md](BENCH3.md)**
 
 ## Bit Soup (bit-level split, opt-in)
 
-Triple Ouroboros has an additional switch: **`SetBitSoup(1)`** — a process-wide flag that changes the split from byte level to **bit level**. Every third bit of the plaintext goes to a different snake. Three consecutive bits are assembled into a garbage byte, meaningless without the other two snakes, and this garbage byte passes through the standard ITB encoding pipeline unchanged. On the decrypt side, garbage bytes from the three snakes are disassembled back into real bits and reassembled into the original plaintext.
+A process-wide flag **`SetBitSoup(1)`** changes the split from byte level to **bit level**. On Triple Ouroboros, every third bit of the plaintext goes to a different snake; three consecutive bits are assembled into a garbage byte, meaningless without the other two snakes, and this garbage byte passes through the standard ITB encoding pipeline unchanged. On the decrypt side, garbage bytes from the three snakes are disassembled back into real bits and reassembled into the original plaintext. Single Ouroboros has its own bit-level path engaged through the same flag (or symmetrically via `SetLockSoup(1)`); see [ITB.md § Lock Soup](ITB.md#lock-soup-insane-interlocked-mode-opt-in-overlay-on-bit-soup) for the Single-side accessible explanation.
 
 No real byte of plaintext exists in any one snake's payload. No header token, no JSON `{`, no HTML tag, no COBS framing boundary an attacker could latch onto. Just unreconstructible garbage per snake.
 
@@ -231,7 +231,7 @@ Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*`
 
 ## Lock Soup (Insane Interlocked Mode, opt-in overlay on Bit Soup)
 
-`SetLockSoup(1)` is an additional opt-in overlay on top of `SetBitSoup(1)`. The fixed public 24-bit chunk permutation `(3,3,2)/(3,2,3)/(2,3,3)` of plain Bit Soup is replaced by a per-chunk balanced 8-of-24 mask triple drawn from a 2^33 mask space (combinatorial unrank of `C(24,8) × C(16,8)` partitions), derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. On x86 with BMI2 (Haswell+, Excavator+/Zen 1+) the chunk kernel uses three PEXT (forward) / three PDEP (inverse) instructions; pure-Go softPEXT24 / softPDEP24 fallback covers other platforms.
+`SetLockSoup(1)` is the keyed-bit-permutation overlay on top of bit soup; setting it automatically engages `SetBitSoup(1)`. On Triple Ouroboros, the overlay replaces the fixed public 24-bit chunk permutation `(3,3,2)/(3,2,3)/(2,3,3)` of plain Bit Soup with a per-chunk balanced 8-of-24 mask triple drawn from a 2^33 mask space (combinatorial unrank of `C(24,8) × C(16,8)` partitions), derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. On x86 with BMI2 (Haswell+, Excavator+/Zen 1+) the chunk kernel uses three PEXT (forward) / three PDEP (inverse) instructions; pure-Go softPEXT24 / softPDEP24 fallback covers other platforms.
 
 **Why this matters.** Plain Bit Soup denies the attacker per-snake real-byte cribs against a fixed public encoding — solver speed becomes irrelevant when the schema cribs cover only garbage. Lock Soup goes further by removing the public encoding entirely: each crib chunk multiplies attacker enumeration by ~2^33 with no shared algebraic structure to couple chunks across, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. Even an adversary with full plaintext-ciphertext pairs cannot anchor a SAT instance on a stable bit-position-to-lane mapping — the mapping is per-chunk-keyed and unobservable without the noiseSeed. SAT cryptanalysis is no longer a computational-hardness problem; it is an instance-formulation impossibility.
 
@@ -241,12 +241,12 @@ Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*`
 
 ```go
 itb.SetBitSoup(1)  // whole-process opt-in; default is 0 (byte-level)
-itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay; requires SetBitSoup(1); silent no-op otherwise
+itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay; auto-enables SetBitSoup(1)
 ```
 
 The ciphertext wire format remains identical. Both flags must agree across the encrypt and decrypt sides of the channel; mismatch produces wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged.
 
-Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts.
+Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts. The Single Ouroboros counterpart is described in [ITB.md § Lock Soup](ITB.md#lock-soup-insane-interlocked-mode-opt-in-overlay-on-bit-soup).
 
 ## API
 
