@@ -85,7 +85,7 @@ TEXT ·Unchunk24Lock(SB),NOSPLIT,$0-28
 //
 // VZEROUPPER on exit per Go convention to keep upper YMM/ZMM state
 // from polluting downstream non-AVX code.
-TEXT ·Permute24Avx512(SB),NOSPLIT,$0-24
+TEXT ·Permute24Avx512(SB),NOSPLIT,$0-20
 	MOVL    x+0(FP), AX            // AX = x
 	ANDL    $0x00FFFFFF, AX        // mask to low 24 bits (defensive)
 	MOVQ    perm+8(FP), DX         // DX = &perm[0]
@@ -101,6 +101,6 @@ TEXT ·Permute24Avx512(SB),NOSPLIT,$0-24
 	KMOVD   K2, AX                 // AX = K2 low 32 bits
 	ANDL    $0x00FFFFFF, AX        // mask to low 24 bits
 
-	MOVL    AX, ret+16(FP)
+	MOVL    AX, y+16(FP)
 	VZEROUPPER
 	RET
