@@ -562,7 +562,7 @@ func rankToMaskTriple(prf uint64) (m0, m1, m2 uint32) {
 // softPEXT24 compresses bits of x selected by mask into a contiguous
 // low-order byte result. Pure-Go portable equivalent of the x86 BMI2 PEXT
 // instruction restricted to 24-bit width. Caller must supply popcount(mask)
-// ≤ 8 — exactly 8 in the LockSoup balanced-mask path. ~50 cycles bit-by-bit
+// ≤ 8 — exactly 8 in the Lock Soup balanced-mask path. ~50 cycles bit-by-bit
 // loop; acceptable for opt-in defense-reserve mode.
 func softPEXT24(x, mask uint32) byte {
 	var result byte
@@ -597,7 +597,7 @@ func softPDEP24(v byte, mask uint32) uint32 {
 	return result
 }
 
-// chunk24lock is the LockSoup-on counterpart of [chunk24]. Applies a
+// chunk24lock is the Lock Soup counterpart of [chunk24]. Applies a
 // PRF-keyed bit-permutation to a 3-byte input chunk under mask triple
 // (m0, m1, m2) supplied by the caller (typically derived via [lockPRF]).
 // Each lane gets exactly 8 bits compressed by its mask.
@@ -642,7 +642,7 @@ func unchunk24lock(l0, l1, l2 byte, m0, m1, m2 uint32) (a, b, c byte) {
 	return
 }
 
-// lockPRF is the closure-form interface used by LockSoup parallel kernels
+// lockPRF is the closure-form interface used by Lock Soup parallel kernels
 // to obtain a per-chunk mask triple. The closure captures the lockSeed
 // material and Hash function for the appropriate Seed width (built via
 // [buildLockPRF128] / [buildLockPRF256] / [buildLockPRF512] from the
@@ -659,12 +659,12 @@ func unchunk24lock(l0, l1, l2 byte, m0, m1, m2 uint32) (a, b, c byte) {
 // it to every prf invocation; the buf escape happens at most once per
 // goroutine, not once per chunk. Buffer layout:
 //
-//	buf[0]    = 0x03   (LockSoup keystream domain tag)
+//	buf[0]    = 0x03   (Lock Soup keystream domain tag)
 //	buf[1:9]  = uint64-LE(globalChunkIdx)
 //	buf[9:13] = (unused; reserved for future bound nonce / variant tag)
 type lockPRF func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32)
 
-// splitTripleBitsParallelLocked is the LockSoup-on counterpart of
+// splitTripleBitsParallelLocked is the Lock Soup counterpart of
 // [splitTripleBitsParallel]. Pads the input up to a multiple of 3 bytes
 // (zero-fill) and processes every 24-bit chunk via [chunk24lock] with a
 // per-chunk mask triple obtained from prf(k). No tail handling — padding
@@ -778,7 +778,7 @@ func interleaveTripleBitsParallelLocked(p0, p1, p2 []byte, totalBits int, prf lo
 	return result
 }
 
-// splitForTripleParallelLocked is the LockSoup-aware top-level dispatcher
+// splitForTripleParallelLocked is the Lock Soup aware top-level dispatcher
 // for plaintext splitting. The prf argument is always supplied by the
 // caller (built once per Encrypt3x* invocation); it is consumed only on
 // the locked bit-soup branch. Other branches ignore prf and behave
@@ -798,7 +798,7 @@ func splitForTripleParallelLocked(data []byte, prf lockPRF) (p0, p1, p2 []byte) 
 	return
 }
 
-// interleaveForTripleParallelLocked is the LockSoup-aware top-level
+// interleaveForTripleParallelLocked is the LockSoup aware top-level
 // dispatcher for plaintext reassembly, mirror of
 // [splitForTripleParallelLocked]. Same plausible-decryption invariant as
 // [interleaveForTripleParallel] — never errors, returns wrong-seed-style
