@@ -562,20 +562,24 @@ func rankToMaskTriple(prf uint64) (m0, m1, m2 uint32) {
 // softPEXT24 compresses bits of x selected by mask into a contiguous
 // low-order byte result. Pure-Go portable equivalent of the x86 BMI2 PEXT
 // instruction restricted to 24-bit width. Caller must supply popcount(mask)
-// ≤ 8 — exactly 8 in the Lock Soup balanced-mask path. ~50 cycles bit-by-bit
-// loop; acceptable for opt-in defense-reserve mode.
+// ≤ 8 — exactly 8 in the Lock Soup balanced-mask path.
+//
+// Branchless: the loop body uses only bitwise AND, OR, and variable shift
+// on register values; `outBit` increments by an integer derived from the
+// mask bit (no conditional). On platforms with hardware-constant variable
+// shift (modern x86 / ARM), every iteration runs in fixed time regardless
+// of the secret values in `x` or `mask`, eliminating the Spectre v1 /
+// branch-predictor surface that a conditional implementation would expose.
 func softPEXT24(x, mask uint32) byte {
-	var result byte
-	var outBit uint
-	for i := uint(0); i < 24; i++ {
-		if (mask>>i)&1 == 1 {
-			if (x>>i)&1 == 1 {
-				result |= 1 << outBit
-			}
-			outBit++
-		}
+	var result uint32
+	var outBit uint32
+	for i := uint32(0); i < 24; i++ {
+		bit := (mask >> i) & 1
+		xb := (x >> i) & 1
+		result |= (bit & xb) << outBit
+		outBit += bit
 	}
-	return result
+	return byte(result)
 }
 
 // softPDEP24 expands the low-order popcount(mask) bits of v into the
@@ -583,16 +587,18 @@ func softPEXT24(x, mask uint32) byte {
 // equivalent of the x86 BMI2 PDEP instruction restricted to 24-bit width.
 // Inverse of [softPEXT24] under matching mask: softPEXT24(softPDEP24(v,
 // mask), mask) == v for popcount(mask) == 8 and v < 256.
+//
+// Branchless: same construction as [softPEXT24] — bitwise AND, OR, and
+// variable shift on register values, `inBit` increments by an integer
+// derived from the mask bit. No conditional path on secret values.
 func softPDEP24(v byte, mask uint32) uint32 {
 	var result uint32
-	var inBit uint
-	for i := uint(0); i < 24; i++ {
-		if (mask>>i)&1 == 1 {
-			if (v>>inBit)&1 == 1 {
-				result |= uint32(1) << i
-			}
-			inBit++
-		}
+	var inBit uint32
+	for i := uint32(0); i < 24; i++ {
+		bit := (mask >> i) & 1
+		vb := uint32(v>>inBit) & 1
+		result |= (bit & vb) << i
+		inBit += bit
 	}
 	return result
 }
