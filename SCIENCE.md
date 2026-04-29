@@ -165,6 +165,28 @@ Each 8-bit channel carries 7 data bits and 1 noise bit. The noise_pos selects wh
 **Per-pixel noise:** 8 channels × 1 noise bit = 8 noise bits per pixel.
 **Overhead:** 64/56 = 1.14×.
 
+### 1.2.1 Interlocked Mode
+
+An opt-in process-wide flag `SetLockSoup(1)` replaces the byte-level chunk layout of [§1.2 Per-Pixel Configuration](#12-per-pixel-configuration) with a per-chunk PRF-keyed bit-permutation. The per-pixel configuration of [§1.2](#12-per-pixel-configuration) — noise position, rotation, per-bit XOR — continues to apply on the permuted bytes; ChainHash, message framing, and the nonce requirement are unchanged.
+
+**Permutation construction.** The plaintext is partitioned into 24-bit chunks. For each chunk indexed by `globalChunkIdx`, a permutation π ∈ S₂₄ is selected by a single PRF call:
+
+```
+permKey = ChainHash(domain-tag-byte || nonce, noiseSeed.Components)
+permIdx = PRF(domain-tag-byte || uint64_LE(globalChunkIdx), permKey)
+π       = LehmerUnrank(permIdx mod 24!, 24)
+```
+
+`ChainHash` is invoked once per encrypt; `PRF` is a single hash call per chunk, keyed by `permKey`. The 64-bit `permIdx` addresses 2⁶⁴ permutations drawn from the symmetric group S₂₄ (|S₂₄| = 24! ≈ 6.2 × 10²³). Permutations are realised by Lehmer-code unrank, which establishes a bijection between integers in [0, 24!) and S₂₄; restricting the rank to [0, 2⁶⁴) leaves a uniform 2⁶⁴ subset of S₂₄ under the PRF assumption. The resulting permutation is applied to the 24 bits of the chunk before the bytes enter the per-pixel configuration of [§1.2](#12-per-pixel-configuration).
+
+**KPA-resistance property (PRF-conditional).** Under any KPA, including a hypothetical adversary holding an ideal PRF-inversion oracle, each known-plaintext chunk multiplies the per-chunk attacker enumeration by approximately 2⁶⁴ with no shared algebraic structure between chunks: each chunk's permutation is independently PRF-keyed and unobservable without `noiseSeed`. The joint algebraic / SAT recovery instance over all crib chunks is information-theoretically under-determined regardless of crib density under the PRF assumption — solver throughput, including any hypothetical PRF-inversion shortcut, does not convert under-determination into a determined instance. The mode reduces SAT-style cryptanalysis from a computational-hardness problem to an instance-formulation impossibility on the per-chunk axis.
+
+The under-determination is conditional on the PRF assumption: it is a statement about the observations available to the attacker, not about the construction's resistance to an adversary that breaks the underlying hash function. Under a complete PRF break — i.e. an adversary who can predict the per-chunk permutation index from public inputs — the architectural barrier collapses to the same security as [§1.2](#12-per-pixel-configuration) without Interlocked Mode.
+
+**Implementation summary.** On x86 platforms with AVX-512 VBMI (Intel Ice Lake / Tiger Lake / Rocket Lake / Sapphire Rapids+, AMD Zen 4 / Zen 5) the per-chunk permutation lowers to a `VPERMB`-based hardware kernel. On platforms without AVX-512 VBMI a portable lookup-table fallback applies. End-to-end throughput overhead is approximately 2× – 7× depending on platform; the mode is opt-in and the default behaviour is the byte-level encoding of [§1.2](#12-per-pixel-configuration).
+
+**Cross-references.** The nonce requirement of [§1.4 Nonce Requirement](#14-nonce-requirement) applies unchanged: `permKey` depends on the per-message nonce, so distinct messages under the same seeds use independent per-chunk permutations. The KPA argument of [§2.6 Resistance to Known-Plaintext Attack](#26-resistance-to-known-plaintext-attack) is augmented by the per-chunk 2⁶⁴ enumeration multiplier under PRF.
+
 ### 1.3 Message Framing
 
 ```
