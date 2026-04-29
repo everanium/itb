@@ -72,7 +72,7 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 
 CGO mode provides ~25-35% faster decrypt and ~35-55% faster encrypt over the pure-Go backend (Areion-SoEM batched dispatch on amd64 with AVX-512+VBMI+GFNI). Per-pixel kernel uses three runtime-dispatched tiers:
 
-- **Tier A — AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI:** 8-pixel ZMM batch. Phase 1 (extract 8×56 bits) fuses VPERMB + VPSRLQ + VPMULTISHIFTQB into 5 ZMM ops. Phase 4 (per-pixel rotate) and Phase 5 (per-pixel noise-bit insert) lower to single VGF2P8AFFINEQB ZMM ops. Active on Intel Tiger Lake / Rocket Lake / Sapphire Rapids+ and AMD Zen 4 / Zen 5.
+- **Tier A — AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI:** 8-pixel ZMM batch. Phase 1 (extract 8×56 bits) fuses VPERMB + VPSRLQ + VPMULTISHIFTQB into 5 ZMM ops. Phase 4 (per-pixel rotate) and Phase 5 (per-pixel noise-bit insert) lower to single VGF2P8AFFINEQB ZMM ops. Insane Interlocked Mode (`SetLockSoup(1)`) on Single Ouroboros lowers its per-chunk bit-permutation to a native AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB ASM kernel, with a pure-Go LUT fallback on hosts without AVX-512 VBMI. Active on Intel Tiger Lake / Rocket Lake / Sapphire Rapids+ and AMD Zen 4 / Zen 5.
 - **Tier B — AVX2 + GFNI:** 4-pixel YMM batch. Same five-phase shape, halved width. Phase 3-5 use VPXOR / VGF2P8AFFINEQB / VPAND / VPOR on YMM. Active on Intel Coffee Lake+ and AMD Zen 3+ (covers Alder Lake E-cores and similar AVX-512-disabled deployments). Insane Interlocked Mode (`SetLockSoup(1)`) lowers its per-chunk bit-permutation to a native BMI2 PEXTL/PDEPL ASM kernel, with a pure-Go fallback on hosts without BMI2.
 - **Tier C — Fallback:** 4-pixel batched scalar loop, same memory layout as Tier B with no SIMD intrinsics. Runs on every host GCC supports — IFUNC is not used, so macOS Mach-O and Windows COFF builds reach this path through the same runtime branch as Linux/FreeBSD ELF. ARM64 (NEON) intrinsics are not yet implemented and currently route through this tier; GCC `-O3` still auto-vectorizes byte-parallel phases to NEON in a limited form.
 
@@ -215,8 +215,10 @@ func main() {
 // Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start), 512-bit for speed
 // Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
 itb.SetBitSoup(1)  // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
+                   // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
 // Most secure bit-permutation mode with performance trade-off ~2×-7× slower
-itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower; requires SetBitSoup(1)
+itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
+                   // automatically engages itb.SetBitSoup(1)
 
 ns, _  := itb.NewSeed128(512, sipHash128) // shared noiseSeed
 ds1, _ := itb.NewSeed128(512, sipHash128) // dataSeed per ring

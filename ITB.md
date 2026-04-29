@@ -273,3 +273,25 @@ The barrier and PRF hash function protect each other:
 Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but dataSeed remains protected by PRF non-invertibility and triple-seed isolation. Additionally, even after noise removal, the data channel retains CSPRNG fill bytes encrypted by dataSeed — perfect fill is impossible ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)), so information-theoretic ambiguity persists within the data bits themselves.
 
 See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).
+
+## 15. Lock Soup (Insane Interlocked Mode, opt-in overlay on Bit Soup)
+
+`SetLockSoup(1)` (or symmetrically `SetBitSoup(1)`) engages a per-chunk PRF-keyed bit-permutation overlay on Single Ouroboros. The two flags are **coupled** on Single — either flag activates both, vice versa — because plain bit-soup on a single snake offers no architectural barrier (the single snake carries the whole plaintext, so a public fixed permutation of bits within the snake is no harder for an attacker than a public fixed permutation of bytes). The Single Lock Soup path is keyed by construction.
+
+The overlay replaces the 24-bit chunk identity with a per-chunk full S₂₄ permutation drawn from a 2^64 space (Lehmer-code unrank of `24!` ≈ 6.2 × 10²³ permutations, addressed by the low 64 bits of a per-chunk PRF output). The permutation is derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. On x86 with AVX-512 VBMI (Ice Lake / Tiger Lake / Rocket Lake / Sapphire Rapids+, Zen 4 / Zen 5) the chunk kernel uses VPERMB + VPMOVM2B + VPTESTMB; pure-Go LUT fallback covers other platforms.
+
+**Why this matters.** Single Ouroboros has no snake-split barrier — the whole plaintext lives in one snake. Without Lock Soup, the only architectural barriers Single offers are PRF non-invertibility and the per-pixel CSPRNG-noise absorption. Lock Soup adds a third barrier: each crib chunk multiplies attacker enumeration by ~2^64 with no shared algebraic structure to couple chunks across, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. Even an adversary with full plaintext-ciphertext pairs cannot anchor a SAT instance on a stable bit-position mapping — the mapping is per-chunk-keyed and unobservable without the noiseSeed. SAT cryptanalysis is no longer a computational-hardness problem on Single; it is an instance-formulation impossibility. The 2^64 per-chunk floor is substantially stronger than the Triple variant's 2^33 — Single needs the higher floor to compensate for the absence of 3-way snake split.
+
+**Cost.** End-to-end throughput is ~2×–7× slower than the byte-level Single path depending on platform; the AVX-512 VBMI VPERMB hardware path on x86 sits near the lower bound, the pure-Go LUT fallback near the upper. The mode trades throughput for the strongest architectural barrier the construction can express on a single snake. Intended for deployments where the barrier is the deployment priority and throughput is secondary — long-term archive encryption, high-value off-line ciphertexts, defense-in-depth layering above already-strong PRF guarantees.
+
+**How to enable:**
+
+```go
+itb.SetLockSoup(1) // whole-process opt-in; auto-enables SetBitSoup(1)
+// or, equivalently on Single Ouroboros:
+itb.SetBitSoup(1)  // whole-process opt-in; on Single, equivalent to SetLockSoup(1)
+```
+
+The ciphertext wire format remains identical. Both flags must agree across the encrypt and decrypt sides of the channel; mismatch produces wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Default both flags zero leaves byte-level Single behaviour unchanged.
+
+Applies uniformly to `Encrypt128` / `Decrypt128`, the 256/512 mirrors, `EncryptAuthenticated*` and their decrypt counterparts, and the streaming variants. The Triple Ouroboros counterpart is described in [ITB3.md § Lock Soup](ITB3.md#lock-soup-insane-interlocked-mode-opt-in-overlay-on-bit-soup).

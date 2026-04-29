@@ -9,31 +9,46 @@ import (
 	"github.com/everanium/itb/internal/locksoupasm"
 )
 
-// bitSoupEnabled controls Triple Ouroboros plaintext split granularity for the
-// whole process. Default 0 = byte-level split (shipped behaviour). Non-zero =
-// bit-level "bit-soup" split — each snake's payload becomes a fixed public
-// permutation of 8 bits drawn from 3 consecutive real plaintext bytes, with
-// a 4-byte length prefix prepended to the plaintext before the split so the
-// decrypt side can recover the exact byte length without widening the wire
-// header.
+// bitSoupEnabled controls plaintext split granularity for the whole
+// process. Default 0 = byte-level split (shipped behaviour). Non-zero =
+// bit-level "bit soup" split.
+//
+// On Triple Ouroboros, the non-zero state engages a fixed public
+// permutation of 8 bits drawn from 3 consecutive real plaintext bytes
+// distributed across the 3 snakes; a 4-byte length prefix is prepended
+// to the plaintext before the split so the decrypt side recovers the
+// exact byte length without widening the wire header. On Single
+// Ouroboros, the non-zero state engages the Lock Soup overlay path
+// directly (no separate plain bit-soup layer exists in Single — the
+// public fixed bit-permutation alone offers no architectural barrier
+// because the single snake carries the whole plaintext, so the only
+// useful Single bit-permutation is the keyed one).
 //
 // Stored in an atomic.Int32 so concurrent reads from parallel encrypt /
-// decrypt goroutines are race-free. Each Encrypt3x* / Decrypt3x* call performs
-// a single load at dispatch and uses that captured value for the entire
-// operation.
+// decrypt goroutines are race-free. Each Encrypt* / Decrypt* call
+// performs a single load at dispatch and uses that captured value for
+// the entire operation.
 var bitSoupEnabled atomic.Int32
 
-// SetBitSoup configures Triple Ouroboros split granularity for the whole
+// SetBitSoup configures plaintext split granularity for the whole
 // process.
 //
 //	mode == 0 → byte-level split (default, shipped behaviour).
-//	mode != 0 → bit-level split ("bit-soup"; opt-in reserve mode).
+//	mode != 0 → bit-level split ("bit soup"; opt-in reserve mode).
 //
 // Applies uniformly to every Triple Ouroboros variant — [Encrypt3x128] /
 // [Decrypt3x128], the 256- / 512-bit mirrors, [EncryptAuthenticated3x128] /
 // [DecryptAuthenticated3x128] and their mirrors, and the streaming variants
-// [EncryptStream3x128] / [DecryptStream3x128] and mirrors. The ciphertext
-// wire format is identical in both modes: [nonce][W][H][pixels].
+// [EncryptStream3x128] / [DecryptStream3x128] and mirrors. On Single
+// Ouroboros — [Encrypt128] / [Decrypt128] and the 256/512 mirrors plus
+// authenticated and streaming counterparts — non-zero mode engages the
+// Lock Soup overlay (Single mode couples both flags; see [SetLockSoup]).
+// The ciphertext wire format is identical in all modes:
+// [nonce][W][H][pixels].
+//
+// Note: also automatically enabled when [SetLockSoup] is set to a
+// non-zero value, because the Lock Soup overlay layers on top of bit
+// soup.
 //
 // Deployment discipline: set the mode once at process startup before any
 // encrypt or decrypt call; callers must agree on the mode across both sides
@@ -41,7 +56,7 @@ var bitSoupEnabled atomic.Int32
 // length-prefix error or byte-level garbage (detectable via authenticated
 // variants' MAC check or caller-side integrity validation).
 //
-// Bit-soup relocates the SAT-cryptanalysis barrier from the
+// Bit soup relocates the SAT-cryptanalysis barrier from the
 // computational layer to the instance-formulation layer. Under Partial KPA +
 // realistic protocol traffic, the joint per-snake SAT instance is
 // information-theoretically under-determined at the crib coverage realistic
@@ -51,8 +66,8 @@ var bitSoupEnabled atomic.Int32
 // one. This is orthogonal to, not stronger than, computational hardness.
 func SetBitSoup(mode int32) { bitSoupEnabled.Store(mode) }
 
-// GetBitSoup returns the current Triple Ouroboros split mode
-// (0 = byte-level, non-zero = bit-level). See [SetBitSoup].
+// GetBitSoup returns the current bit soup mode (0 = byte-level,
+// non-zero = bit-level). See [SetBitSoup].
 func GetBitSoup() int32 { return bitSoupEnabled.Load() }
 
 // isBitSoupEnabled is the internal dispatch check used by splitForTriple /
@@ -405,45 +420,61 @@ func unchunk24(l0, l1, l2 byte) (a, b, c byte) {
 	return
 }
 
-// lockSoupEnabled controls the LockSoup keyed-permutation overlay on top of
-// the Triple Ouroboros bit-soup path. Default 0 = off (chunk24 / unchunk24
-// fixed permutation, ciphertext bit-identical to plain bit-soup). Non-zero =
-// on (chunk24lock / unchunk24lock per-chunk PRF-keyed permutation, ~33 bits
-// of keyed entropy per 24-bit chunk).
+// lockSoupEnabled controls the Lock Soup keyed-permutation overlay on top
+// of the bit soup path. Default 0 = off (fixed permutation on Triple, no
+// overlay on Single — ciphertext bit-identical to plain bit soup or to
+// byte-level when [bitSoupEnabled] is also off). Non-zero = on (per-chunk
+// PRF-keyed permutation, ~33 bits of keyed entropy per 24-bit chunk on
+// Triple, ~64 bits per 24-bit chunk on Single).
 //
 // Stored in an atomic.Int32 so concurrent reads from parallel encrypt /
-// decrypt goroutines are race-free. Each Encrypt3x* / Decrypt3x* call
+// decrypt goroutines are race-free. Each Encrypt* / Decrypt* call
 // performs a single load at dispatch and uses that captured value for the
 // entire operation.
 var lockSoupEnabled atomic.Int32
 
-// SetLockSoup configures the LockSoup keyed-permutation overlay for the
+// SetLockSoup configures the Lock Soup keyed-permutation overlay for the
 // whole process.
 //
-//	mode == 0 → off (default; ciphertext bit-identical to plain bit-soup).
-//	mode != 0 → on (per-chunk PRF-keyed bit-permutation; requires
-//	            SetBitSoup(1) — silent no-op when bit-soup is off).
+//	mode == 0 → off (default; ciphertext bit-identical to plain bit soup).
+//	mode != 0 → on (per-chunk PRF-keyed bit-permutation; automatically
+//	            engages [SetBitSoup] as well — Lock Soup layers on top of
+//	            bit soup, so non-zero Lock Soup implies non-zero bit soup).
 //
 // Applies uniformly to every Triple Ouroboros variant — [Encrypt3x128] /
 // [Decrypt3x128], the 256- / 512-bit mirrors, [EncryptAuthenticated3x128] /
-// [DecryptAuthenticated3x128] and their mirrors. Both sides of the channel
-// must use the same mode; mismatched modes produce wrong-seed-style garbage
-// (no error oracle, plausible-decryption invariant preserved).
+// [DecryptAuthenticated3x128] and their mirrors — and to every Single
+// Ouroboros variant: [Encrypt128] / [Decrypt128], the 256/512 mirrors,
+// authenticated and streaming counterparts. Both sides of the channel
+// must use the same mode; mismatched modes produce wrong-seed-style
+// garbage (no error oracle, plausible-decryption invariant preserved).
 //
 // Deployment discipline: set the mode once at process startup before any
-// encrypt or decrypt call; callers must agree on the mode across both sides
-// of the channel.
+// encrypt or decrypt call; callers must agree on the mode across both
+// sides of the channel.
 //
-// LockSoup raises the Triple bit-soup attacker-enumeration cost from the
-// public-encoding +18.1 bits (startPixel triple) to +33 bits per crib chunk
-// of additional keyed permutation entropy, making any SAT-tractable
-// recovery path infeasible even for below-spec primitives. This is an
-// opt-in defense-reserve mode layered on top of [SetBitSoup], itself
-// opt-in.
-func SetLockSoup(mode int32) { lockSoupEnabled.Store(mode) }
+// Lock Soup raises the bit soup attacker-enumeration cost from the
+// public-encoding floor (+18.1 bits via startPixel triple on Triple, +0
+// on Single because the single snake carries the whole plaintext) to
+// +33 bits per crib chunk on Triple, +64 bits per crib chunk on Single,
+// of additional keyed permutation entropy. This is an opt-in
+// defense-reserve mode that makes any SAT-tractable recovery path
+// infeasible even for below-spec primitives.
+func SetLockSoup(mode int32) {
+	lockSoupEnabled.Store(mode)
+	// Lock Soup overlay layers on top of bit soup; keep the two flags
+	// monotonically coupled in the on-direction so callers do not need
+	// to enable both explicitly. SetBitSoup remains independent in the
+	// off-direction — a caller that previously enabled both can
+	// SetLockSoup(0) to fall back to plain bit soup without losing the
+	// underlying split.
+	if mode != 0 {
+		bitSoupEnabled.Store(1)
+	}
+}
 
-// GetLockSoup returns the current LockSoup overlay mode (0 = off, non-zero
-// = on). See [SetLockSoup].
+// GetLockSoup returns the current Lock Soup overlay mode (0 = off,
+// non-zero = on). See [SetLockSoup].
 func GetLockSoup() int32 { return lockSoupEnabled.Load() }
 
 // isLockSoupEnabled is the internal dispatch check used by
@@ -844,5 +875,294 @@ func buildLockPRF512(noiseSeed *Seed512, nonce []byte) lockPRF {
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
 		out := h(buf, lockSeed)
 		return rankToMaskTriple(out[0])
+	}
+}
+
+// ============================================================================
+// Single Ouroboros Lock Soup — PRF-keyed bit permutation π: {0..23} → {0..23}
+// ============================================================================
+//
+// Plain bit-soup is a no-op on Single Ouroboros (no 3-way snake split exists
+// to drive a public 24-bit chunk permutation). Single Lock Soup lifts the
+// idea to a full PRF-keyed 24-element bit permutation per chunk: each 24-bit
+// chunk of the (length-prefixed, padded) plaintext becomes a bijection
+// π: {0..23} → {0..23} drawn from the 64-bit Lehmer-code subset of the
+// 24! ≈ 2^79.27 permutation space — a 2^64 attacker enumeration cost per
+// crib chunk with no shared algebraic structure to couple chunks across.
+//
+// SetBitSoup(1) and SetLockSoup(1) couple in dispatch on Single only:
+// either flag set activates the Single Lock Soup overlay; both off is the
+// default plain Single ITB path. The Set functions are not modified —
+// coupling lives entirely in [splitForSingle] / [interleaveForSingle]
+// dispatch checks and does not affect the Triple Ouroboros semantics where
+// the two flags are independently meaningful.
+
+// factC holds k! for k in [0, 24]. Consumed by [derivePermutation] as
+// per-step Lehmer-code base. Computed once at package init via the simple
+// k! = (k-1)! * k recurrence.
+var factC [25]uint64
+
+func init() {
+	factC[0] = 1
+	for k := 1; k <= 24; k++ {
+		factC[k] = factC[k-1] * uint64(k)
+	}
+}
+
+// derivePermutation maps a 64-bit PRF output to a 24-element bit permutation
+// via standard Lehmer-code unrank. Output range is [0, 2^64) — a uniform
+// subset of size 2^64 from the full 24! ≈ 2^79.27 permutation space; modulo
+// bias is zero (2^64 < 24!, so the standard prf %= 24! reduces to identity),
+// entropy loss (log2(24!) - 64 ≈ 15 bits) is negligible for the
+// mask-selection role and keeps the kernel scalar arithmetic strictly
+// 64-bit.
+//
+// Output is written into *perm and *invPerm (both [32]byte; only [0..23]
+// are written, [24..31] left as caller-provided zero from stack init).
+// Two arrays in one pass — invPerm[perm[i]] = i — saves a second 24-step
+// inversion at chunk-decode time.
+func derivePermutation(prf uint64, perm, invPerm *[32]byte) {
+	var remaining [24]byte
+	for i := byte(0); i < 24; i++ {
+		remaining[i] = i
+	}
+	n := 24
+	for i := 0; i < 24; i++ {
+		nu := uint64(n)
+		digit := int(prf % nu)
+		prf /= nu
+		perm[i] = remaining[digit]
+		copy(remaining[digit:n-1], remaining[digit+1:n])
+		n--
+	}
+	for i := byte(0); i < 24; i++ {
+		invPerm[perm[i]] = i
+	}
+}
+
+// softPermute24 is the pure-Go Single Lock Soup kernel. Gathers bit perm[i]
+// of x into bit i of the output, for i in 0..23. Loop is unrolled by Go's
+// compiler when perm is stack-resident; ~80–100 cycles per call on modern
+// x86. AVX-512 VBMI ASM path (when available) routes through
+// [locksoupasm.Permute24Avx512] for ~30–40 cycle equivalent.
+func softPermute24(x uint32, perm *[32]byte) uint32 {
+	var y uint32
+	for i := 0; i < 24; i++ {
+		y |= ((x >> perm[i]) & 1) << i
+	}
+	return y
+}
+
+// chunk24permute applies the PRF-keyed forward bit permutation to a packed
+// 24-bit chunk (a, b, c) under the supplied permutation index array perm.
+// Dispatches to [locksoupasm.Permute24Avx512] on hosts with AVX-512 VBMI;
+// otherwise to [softPermute24]. The branch predicts perfectly because the
+// runtime flag is a process-lifetime constant.
+func chunk24permute(a, b, c byte, perm *[32]byte) (a2, b2, c2 byte) {
+	x := uint32(a) | uint32(b)<<8 | uint32(c)<<16
+	var y uint32
+	if locksoupasm.HasAVX512Permute {
+		y = locksoupasm.Permute24Avx512(x, perm)
+	} else {
+		y = softPermute24(x, perm)
+	}
+	return byte(y), byte(y >> 8), byte(y >> 16)
+}
+
+// unchunk24permute is the inverse of [chunk24permute] under the same
+// PRF-derived permutation pair. The kernel body is identical to
+// chunk24permute — the inversion is encoded in the index array passed by
+// the caller (invPerm vs perm), not in a different operation. Symmetric
+// naming with [chunk24lock] / [unchunk24lock] for code-review legibility.
+func unchunk24permute(a, b, c byte, invPerm *[32]byte) (a2, b2, c2 byte) {
+	return chunk24permute(a, b, c, invPerm)
+}
+
+// permPRF is the closure-form interface used by Single Lock Soup parallel
+// kernels to obtain a per-chunk forward+inverse permutation pair. Caller
+// goroutines stack-allocate buf, perm, invPerm once and reuse them across
+// chunks; both perm arrays are pointer-out to keep allocation off the hot
+// path entirely. Buffer layout matches the Triple Lock Soup permPRF
+// contract (13-byte scratch) for caller-side discipline symmetry; the
+// closure body fills both arrays:
+//
+//	buf[0]    = 0x04   (Single Lock Soup keystream domain tag)
+//	buf[1:9]  = uint64-LE(globalChunkIdx)
+//	buf[9:13] = (unused; reserved for future bound nonce / variant tag)
+type permPRF func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte)
+
+// splitForSingle is the top-level Single Lock Soup dispatcher. Returns the
+// input slice unchanged when both bit-soup and lock-soup flags are off
+// (default plain Single ITB). When either flag is non-zero, activates the
+// Single Lock Soup overlay: prepend a 4-byte BE length, pad to a multiple
+// of 3 bytes, and apply [chunk24permute] under the per-chunk permutation
+// derived via prf. The 4-byte length prefix lives inside the encoded
+// plaintext so the decoder recovers the exact byte length without
+// widening the wire header.
+//
+// Coupling rule (Single only): SetBitSoup(1) || SetLockSoup(1) → overlay
+// active. Both flags off → pass-through. The Triple dispatchers continue
+// to read the two flags independently; the coupling does not leak across.
+func splitForSingle(data []byte, prf permPRF) []byte {
+	if !isBitSoupEnabled() && !isLockSoupEnabled() {
+		return data
+	}
+	framed := prependTripleLen(data)
+	L := len(framed)
+	LPad := ((L + 2) / 3) * 3
+	var padded []byte
+	if LPad == L {
+		padded = framed
+	} else {
+		padded = make([]byte, LPad)
+		copy(padded, framed)
+	}
+	M := LPad / 3
+	out := make([]byte, LPad)
+	if M == 0 {
+		return out
+	}
+
+	G := runtime.NumCPU()
+	if G > M {
+		G = M
+	}
+	chunksPerWorker := (M + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		start := w * chunksPerWorker
+		end := start + chunksPerWorker
+		if end > M {
+			end = M
+		}
+		if start >= end {
+			continue
+		}
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			var buf [13]byte
+			var perm, invPerm [32]byte
+			for k := s; k < e; k++ {
+				prf(buf[:], uint64(k), &perm, &invPerm)
+				a, b, c := chunk24permute(padded[3*k], padded[3*k+1], padded[3*k+2], &perm)
+				out[3*k] = a
+				out[3*k+1] = b
+				out[3*k+2] = c
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	return out
+}
+
+// interleaveForSingle is the inverse of [splitForSingle]. Returns its input
+// unchanged in the disabled (default) case. When the overlay is active,
+// processes input in 24-bit chunks via [unchunk24permute], then strips
+// the 4-byte length prefix to recover the original plaintext extent.
+//
+// Plausible-decryption invariant: never errors. Wrong-seed brute-force or
+// mismatched-mode decrypt feeds garbage chunks here; the function returns
+// garbage bytes (clamped to the recovered payload extent) instead of
+// distinguishing wrong-seed attempts via an error oracle.
+func interleaveForSingle(permuted []byte, prf permPRF) []byte {
+	if !isBitSoupEnabled() && !isLockSoupEnabled() {
+		return permuted
+	}
+	L := len(permuted)
+	M := L / 3
+	if M == 0 {
+		return nil
+	}
+	framed := make([]byte, M*3)
+
+	G := runtime.NumCPU()
+	if G > M {
+		G = M
+	}
+	chunksPerWorker := (M + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		start := w * chunksPerWorker
+		end := start + chunksPerWorker
+		if end > M {
+			end = M
+		}
+		if start >= end {
+			continue
+		}
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			var buf [13]byte
+			var perm, invPerm [32]byte
+			for k := s; k < e; k++ {
+				prf(buf[:], uint64(k), &perm, &invPerm)
+				a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerm)
+				framed[3*k] = a
+				framed[3*k+1] = b
+				framed[3*k+2] = c
+			}
+		}(start, end)
+	}
+	wg.Wait()
+
+	if len(framed) < 4 {
+		return framed
+	}
+	length := binary.BigEndian.Uint32(framed[:4])
+	end := uint64(length) + 4
+	if end > uint64(len(framed)) {
+		end = uint64(len(framed))
+	}
+	return framed[4:int(end)]
+}
+
+// buildPermutePRF128 constructs a [permPRF] closure for the 128-bit Single
+// Ouroboros context. Captures the noiseSeed-derived 128-bit lockSeed and
+// the Hash function; per-chunk PRF call uses a single Hash invocation (not
+// ChainHash) keyed by lockSeed with the chunk index as input. The 64-bit
+// hash output (lo half) is Lehmer-decoded into a 24-element forward
+// permutation array plus its inverse via [derivePermutation].
+//
+// Domain tag 0x04 separates Single Lock Soup's per-chunk PRF input from
+// the existing 0x02 (deriveStartPixel / deriveNoiseSeed) and 0x03
+// (Triple Lock Soup) tags. Buffer layout matches the Triple Lock Soup
+// closure (13 bytes total) for caller-side scratch reuse symmetry.
+func buildPermutePRF128(noiseSeed *Seed128, nonce []byte) permPRF {
+	lockLo, lockHi := noiseSeed.deriveNoiseSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
+		buf[0] = 0x04
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		hLo, _ := h(buf, lockLo, lockHi)
+		derivePermutation(hLo, perm, invPerm)
+	}
+}
+
+// buildPermutePRF256 — 256-bit Single Ouroboros equivalent of
+// [buildPermutePRF128]. Uses native 256-bit keying material; the 64-bit
+// Lehmer index is taken from the first uint64 of the output.
+func buildPermutePRF256(noiseSeed *Seed256, nonce []byte) permPRF {
+	lockSeed := noiseSeed.deriveNoiseSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
+		buf[0] = 0x04
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		derivePermutation(out[0], perm, invPerm)
+	}
+}
+
+// buildPermutePRF512 — 512-bit Single Ouroboros equivalent of
+// [buildPermutePRF128].
+func buildPermutePRF512(noiseSeed *Seed512, nonce []byte) permPRF {
+	lockSeed := noiseSeed.deriveNoiseSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
+		buf[0] = 0x04
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		derivePermutation(out[0], perm, invPerm)
 	}
 }

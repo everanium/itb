@@ -112,7 +112,7 @@ Every cell within noise envelope. Under fixed seed + varying structured input, t
 | **mx3**        | **SAT-broken** — Tier 3 FUNCTIONAL-EQ at obs = 8 / rounds = 1 (Z3 native ≈ 5 s, Bitwuzla native ≈ 2 s, holdout = 32 / 32) | **SAT-broken** — same wall-clock as Raw KPA (at rounds = 1 ChainHash composition degenerates to a single `mx3_hash` call: hi-lane seed unconstrained, lo-lane seed recovered functionally-equivalent to ground truth) | **Dangerous** — Raw + ChainHash-1 broken in seconds on commodity |
 | **SipHash-1-3** | **Timeout at 5-min budget** on rounds = 1 obs = 8 across Z3 and Bitwuzla | — (rounds = 1 already in timeout regime) | **Resistant at tested budget** |
 
-mx3 is the lone `Dangerous` row: the parallel two-lane construction collapses at rounds = 1 (hi-lane seed never enters the chain output's symbolic expression, and the lo-lane seed is functionally recoverable in seconds). Higher-round chains push mx3 into the timeout regime even on commodity budgets. Triple Bit Soup mode is expected to neutralise mx3 at the construction layer; that measurement is not yet on the shelf.
+mx3 is the lone `Dangerous` row: the parallel two-lane construction collapses at rounds = 1 (hi-lane seed never enters the chain output's symbolic expression, and the lo-lane seed is functionally recoverable in seconds). Higher-round chains push mx3 into the timeout regime even on commodity budgets. Bit Soup mode (Triple) and Lock Soup overlay (Triple `SetLockSoup(1)` or Single `SetBitSoup(1)`/`SetLockSoup(1)`) are expected to neutralise mx3 at the construction layer; that measurement is not yet on the shelf.
 
 ## 4. Primitive shelf
 

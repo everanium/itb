@@ -178,3 +178,94 @@ func TestChunk24Lock_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// softPermute24 is the pure-Go reference implementation of the bit-gather
+// kernel — output bit i is bit perm[i] of x. Self-contained for parity
+// against Permute24Avx512 without depending on parent-package internals.
+func softPermute24(x uint32, perm *[32]byte) uint32 {
+	var y uint32
+	for i := 0; i < 24; i++ {
+		y |= ((x >> perm[i]) & 1) << i
+	}
+	return y
+}
+
+// makeRandomPermutation builds a uniformly-random 24-element permutation
+// from a 64-bit seed via Lehmer-code unrank, mirroring the parent-package
+// derivePermutation algorithm. Self-contained reproduction.
+func makeRandomPermutation(seed uint64, perm, invPerm *[32]byte) {
+	var remaining [24]byte
+	for i := byte(0); i < 24; i++ {
+		remaining[i] = i
+	}
+	n := 24
+	for i := 0; i < 24; i++ {
+		nu := uint64(n)
+		digit := int(seed % nu)
+		seed /= nu
+		perm[i] = remaining[digit]
+		copy(remaining[digit:n-1], remaining[digit+1:n])
+		n--
+	}
+	for i := byte(0); i < 24; i++ {
+		invPerm[perm[i]] = i
+	}
+}
+
+// TestPermute24Avx512_ParityWithSoftReference verifies that the assembly
+// Permute24Avx512 matches the pure-Go softPermute24 reference across a
+// random sample of (x, perm) inputs spanning the permutation space.
+func TestPermute24Avx512_ParityWithSoftReference(t *testing.T) {
+	if !HasAVX512Permute {
+		t.Skip("AVX-512 VBMI not available on this CPU")
+	}
+
+	seedBuf := make([]byte, 8)
+	for trial := 0; trial < 10000; trial++ {
+		if _, err := rand.Read(seedBuf); err != nil {
+			t.Fatalf("rand.Read: %v", err)
+		}
+		seed := binary.LittleEndian.Uint64(seedBuf)
+		var perm, invPerm [32]byte
+		makeRandomPermutation(seed, &perm, &invPerm)
+
+		x := uint32((seed ^ uint64(trial)*0x9E3779B97F4A7C15) & 0xFFFFFF)
+
+		asmY := Permute24Avx512(x, &perm)
+		refY := softPermute24(x, &perm)
+
+		if asmY != refY {
+			t.Fatalf("trial %d: parity mismatch x=%06x perm[0..23]=% 02x asm=%06x ref=%06x",
+				trial, x, perm[:24], asmY, refY)
+		}
+	}
+}
+
+// TestPermute24Avx512_RoundTrip verifies that applying Permute24Avx512
+// with the forward permutation followed by the inverse permutation
+// recovers the original 24-bit input. End-to-end inverse property of
+// the assembly path keyed by both forward and inverse Lehmer-derived
+// permutation arrays.
+func TestPermute24Avx512_RoundTrip(t *testing.T) {
+	if !HasAVX512Permute {
+		t.Skip("AVX-512 VBMI not available on this CPU")
+	}
+
+	seedBuf := make([]byte, 8)
+	for trial := 0; trial < 10000; trial++ {
+		if _, err := rand.Read(seedBuf); err != nil {
+			t.Fatalf("rand.Read: %v", err)
+		}
+		seed := binary.LittleEndian.Uint64(seedBuf)
+		var perm, invPerm [32]byte
+		makeRandomPermutation(seed, &perm, &invPerm)
+
+		x := uint32((seed ^ uint64(trial)*0x9E3779B97F4A7C15) & 0xFFFFFF)
+
+		y := Permute24Avx512(x, &perm)
+		got := Permute24Avx512(y, &invPerm)
+		if got != x {
+			t.Fatalf("trial %d: round-trip failed x=%06x got=%06x", trial, x, got)
+		}
+	}
+}

@@ -59,3 +59,48 @@ TEXT ·Unchunk24Lock(SB),NOSPLIT,$0-28
 	ORL R9, R8
 	MOVL R8, x+24(FP)
 	RET
+
+// func Permute24Avx512(x uint32, perm *[32]byte) (y uint32)
+//
+// Frame layout (ABI0):
+//   x    at FP+0   (uint32, 4 bytes)
+//   perm at FP+8   (pointer, 8 bytes; +4 padding for 8-byte alignment)
+//   y    at FP+16  (uint32, 4 bytes return)
+//
+// Total arg+ret span is 20 bytes; declared frame is 24 to satisfy
+// 8-byte alignment of the call's stack argument area (matches the
+// existing $0-24 patterns used elsewhere in the codebase).
+//
+// Approach (AVX-512 VBMI bit-spread + VPERMB + bit-pack):
+//   Step 1: KMOVD AX → K1 spreads x's low 24 bits across mask register.
+//   Step 2: VPMOVM2B K1 → Y0 produces -1/0 per byte (24 active bytes,
+//           upper 8 of YMM zero by AVX-512VL semantics).
+//   Step 3: VPABSB Y0 → Y0 collapses -1/0 to 1/0 per byte.
+//   Step 4: VMOVDQU loads perm[0..31] into Y1.
+//   Step 5: VPERMB Y0 (table), Y1 (idx) → Y2, where Y2[i] = Y0[Y1[i]&63].
+//           For i in 0..23 this gathers bit perm[i] of x into byte i of Y2.
+//   Step 6: VPTESTMB Y2 → K2 sets a mask bit per nonzero byte of Y2.
+//   Step 7: KMOVD K2 → AX, masked to 24 bits (the high bytes of Y2 may
+//           hold gather artifacts from perm[24..31]; the AND clears them).
+//
+// VZEROUPPER on exit per Go convention to keep upper YMM/ZMM state
+// from polluting downstream non-AVX code.
+TEXT ·Permute24Avx512(SB),NOSPLIT,$0-24
+	MOVL    x+0(FP), AX            // AX = x
+	ANDL    $0x00FFFFFF, AX        // mask to low 24 bits (defensive)
+	MOVQ    perm+8(FP), DX         // DX = &perm[0]
+
+	KMOVD   AX, K1                 // K1 = bit-mask of x
+	VPMOVM2B K1, Y0                // Y0 byte = -1 / 0 per K1 bit
+	VPABSB  Y0, Y0                 // Y0 byte = 1 / 0
+
+	VMOVDQU (DX), Y1               // Y1 = perm[0..31]
+	VPERMB  Y0, Y1, Y2             // Y2[i] = Y0[Y1[i] & 0x3F]
+	VPTESTMB Y2, Y2, K2            // K2[i] = (Y2[i] != 0)
+
+	KMOVD   K2, AX                 // AX = K2 low 32 bits
+	ANDL    $0x00FFFFFF, AX        // mask to low 24 bits
+
+	MOVL    AX, ret+16(FP)
+	VZEROUPPER
+	RET
