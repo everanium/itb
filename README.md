@@ -176,6 +176,8 @@ func main() {
     itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
     itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
     itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
+                            // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
 
     // Create three independent seeds (triple-seed isolation)
     noiseSeed, err := itb.NewSeed128(1024, sipHash128)
@@ -294,6 +296,9 @@ Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round fu
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
 itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
 itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
+                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
+
 
 // Areion-SoEM-256 — 256-bit PRF, batched VAES dispatch
 ns, _ := itb.NewSeed256(2048, nil)
@@ -330,6 +335,8 @@ SipHash is a pure function — no key setup, no caching needed. Optimal for 128-
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
 itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
 itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
+                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
 
 func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
     return siphash.Hash128(seed0, seed1, data)
@@ -349,6 +356,8 @@ decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
 itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
 itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
+                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
 
 func makeAESHash() itb.HashFunc128 {
     var key [16]byte
@@ -378,6 +387,8 @@ ss, _ := itb.NewSeed128(1024, makeAESHash())
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
 itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
 itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
+                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
 
 func makeBlake3Hash() itb.HashFunc256 {
     var key [32]byte
@@ -428,6 +439,8 @@ BLAKE2b-512 has native 512-bit key and output — fewer ChainHash rounds (4 vs 8
 itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
 itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
 itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
+itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
+                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
 
 func makeBlake2bHash512() itb.HashFunc512 {
     var key [64]byte
