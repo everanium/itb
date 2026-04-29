@@ -186,10 +186,12 @@
 
 //	Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
 //	itb.SetBitSoup(1)       // Triple Ouroboros bit-level split ("bit soup"; default: 0 = byte-level)
+//	                        // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
 //
 //	Most secure bit-permutation mode with performance trade-off ~2×-7× slower
 //	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation overlay on top of bit-soup;
 //	                        // ~2×-7× slower, raises SAT cryptanalysis to information-theoretic instance-formulation
+//	                        // automatically enabled for Single Ouroboros if itb.SetBitSoup(1) is enabled or vice versa
 //
 //	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
 //	// PRF wiring, recommended default. The paired factory returns (single,
@@ -407,19 +409,24 @@
 // (3 × 512), stronger than Single 1024-bit, while ChainHash runs at 512-bit
 // speed. See [ITB3.md] for accessible explanation and [BENCH3.md] for benchmarks.
 //
-// # Bit Soup (Triple Ouroboros opt-in)
+// # Bit Soup (opt-in)
 //
-// [SetBitSoup] configures Triple Ouroboros plaintext split granularity for the
-// whole process. Default mode 0 is byte-level (shipped behaviour). Mode 1
-// enables bit-level split ("bit soup"): every third bit of the plaintext
-// goes to a different snake, so no snake carries a real plaintext byte —
+// [SetBitSoup] configures plaintext split granularity for the whole
+// process. Default mode 0 is byte-level (shipped behaviour). Mode 1
+// enables bit-level split ("bit soup").
+//
+// On Triple Ouroboros, mode 1 routes every third bit of the plaintext
+// to a different snake, so no snake carries a real plaintext byte —
 // each snake's payload is a fixed public bit-permutation across three
-// consecutive plaintext bytes.
+// consecutive plaintext bytes. On Single Ouroboros, mode 1 engages
+// the Lock Soup overlay (the public fixed bit-permutation alone gives
+// no architectural barrier on a single snake, so the Single bit-level
+// path is keyed by construction; see [SetLockSoup]).
 //
-// Bit-soup relocates the SAT-cryptanalysis barrier from the computational
+// Bit soup relocates the SAT-cryptanalysis barrier from the computational
 // layer to the instance-formulation layer. Standard cryptanalytic intuition
 // pictures SAT recovery as a solver-speed problem: "given a defined NP
-// instance, how fast can the attacker solve it." Bit-soup targets the prior
+// instance, how fast can the attacker solve it." Bit soup targets the prior
 // question: "does the attacker have enough observation to define the
 // instance." Under Partial KPA + realistic protocol traffic, the per-snake
 // SAT instance is information-theoretically under-determined at typical
@@ -432,30 +439,39 @@
 // Applies uniformly to every Triple Ouroboros variant — [Encrypt3x128] /
 // [Decrypt3x128], the 256- / 512-bit mirrors, [EncryptAuthenticated3x128] /
 // [DecryptAuthenticated3x128] and their mirrors, and [EncryptStream3x128] /
-// [DecryptStream3x128] and mirrors. The ciphertext wire format is identical
-// in both modes. Callers must set the same mode on both encrypt and decrypt
-// sides of the channel.
+// [DecryptStream3x128] and mirrors — and to every Single Ouroboros
+// variant: [Encrypt128] / [Decrypt128], the 256/512 mirrors,
+// authenticated and streaming counterparts. The ciphertext wire format
+// is identical in all modes. Callers must set the same mode on both
+// encrypt and decrypt sides of the channel.
 //
 //	itb.SetBitSoup(1)  // whole-process opt-in; default 0 = byte-level
+//	                   // (Single) automatically engages Lock Soup overlay
 //	itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed
-//	                   // bit-permutation; requires SetBitSoup(1); ~2×-7× slower
+//	                   // bit-permutation; ~2×-7× slower; auto-enables SetBitSoup(1)
 //
-// [SetLockSoup] is an additional opt-in overlay on top of Bit Soup. It
-// replaces the public fixed bit-permutation with a per-chunk PRF-keyed
-// bijection drawn from a 2^33-mask space (one balanced 8-of-24 partition
-// per 24-bit chunk, derived deterministically from the encrypt-side
-// noiseSeed and nonce). Each crib chunk multiplies attacker enumeration
-// by ~2^33 with no shared algebraic structure to couple chunks across,
-// making the joint SAT instance under-determined under any realistic
-// crib coverage. Performance cost is ~2×–7× over plain Bit Soup
-// depending on platform — the BMI2 PEXT/PDEP path on x86 (Haswell+,
-// Excavator+/Zen 1+) sits near the lower bound, the pure-Go fallback
-// near the upper. The trade-off is acceptable only where the
-// architectural barrier is the deployment priority. Default
-// [SetLockSoup](0) leaves Bit Soup behaviour unchanged.
+// [SetLockSoup] is the keyed-bit-permutation overlay. It replaces the
+// public fixed bit-permutation with a per-chunk PRF-keyed bijection
+// drawn from a 2^33-mask space (Triple, balanced 8-of-24 partition) or
+// 2^64 permutation space (Single, full S_24 via Lehmer-code unrank),
+// derived deterministically per chunk from the encrypt-side noiseSeed
+// and nonce. Each crib chunk multiplies attacker enumeration by the
+// per-chunk mask space size with no shared algebraic structure to
+// couple chunks across, making the joint SAT instance under-determined
+// under any realistic crib coverage. Performance cost is ~2×–7× over
+// plain Bit Soup depending on platform — the BMI2 PEXT/PDEP path on
+// x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB
+// path on x86 (Ice Lake+, Zen 4+) on Single, sit near the lower
+// bound; pure-Go fallbacks near the upper. The trade-off is acceptable
+// only where the architectural barrier is the deployment priority.
+// Default [SetLockSoup](0) leaves Bit Soup behaviour unchanged.
 //
-// See [ITB3.md] for accessible explanation and [REDTEAM.md] Phase 2g for
-// the defensive framing in the SAT attack context.
+// Setting SetLockSoup(1) automatically engages SetBitSoup(1) — the
+// overlay layers on top of bit soup, so the two flags are coupled in
+// the on-direction. SetBitSoup remains independent in the off-direction.
+//
+// See [ITB.md] / [ITB3.md] for accessible explanation and [REDTEAM.md]
+// Phase 2g for the defensive framing in the SAT attack context.
 //
 // # Parallelism Control
 //

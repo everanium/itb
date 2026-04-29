@@ -368,10 +368,11 @@ func TestLockSoup_DisabledIdentity(t *testing.T) {
 	}
 }
 
-// TestLockSoup_RejectsBitSoupOff verifies that setting SetLockSoup(1)
-// without SetBitSoup(1) is a silent no-op — the locked dispatchers fall
-// through to byte-level Triple, identical to default behaviour.
-func TestLockSoup_RejectsBitSoupOff(t *testing.T) {
+// TestLockSoup_AutoEnablesBitSoup verifies that SetLockSoup(1) on its own
+// automatically engages SetBitSoup(1) — the Lock Soup overlay layers on
+// top of bit soup, so a caller setting only the overlay flag must still
+// see the locked bit-soup pipeline run.
+func TestLockSoup_AutoEnablesBitSoup(t *testing.T) {
 	prevBit := GetBitSoup()
 	prevLock := GetLockSoup()
 	SetBitSoup(0)
@@ -381,7 +382,16 @@ func TestLockSoup_RejectsBitSoupOff(t *testing.T) {
 		SetBitSoup(prevBit)
 	})
 
-	prf := fixedTestLockPRF(0xFF, 0xFF00, 0xFF0000)
+	if GetBitSoup() == 0 {
+		t.Fatal("SetLockSoup(1) did not auto-enable bit soup")
+	}
+
+	noiseSeed, _, _, _, _, _, _ := makeSevenSeeds128(512, sipHash128)
+	nonce := make([]byte, currentNonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+	prf := buildLockPRF128(noiseSeed, nonce)
 
 	for _, n := range []int{1, 64, 1024} {
 		data := make([]byte, n)
@@ -389,24 +399,11 @@ func TestLockSoup_RejectsBitSoupOff(t *testing.T) {
 			t.Fatalf("rand.Read(%d): %v", n, err)
 		}
 
-		// Reference: byte-level Triple split (bit-soup off path).
-		refP0, refP1, refP2 := splitTripleParallel(data)
+		p0, p1, p2 := splitForTripleParallelLocked(data, prf)
+		out := interleaveForTripleParallelLocked(p0, p1, p2, prf)
 
-		// Subject under test: locked dispatcher with bit-soup off ⇒
-		// must take the byte-level branch regardless of LockSoup flag.
-		gotP0, gotP1, gotP2 := splitForTripleParallelLocked(data, prf)
-
-		if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
-			t.Fatalf("size=%d: SetLockSoup(1)+SetBitSoup(0) did not fall through to byte-level Triple", n)
-		}
-
-		refOut := interleaveTripleParallel(refP0, refP1, refP2)
-		gotOut := interleaveForTripleParallelLocked(gotP0, gotP1, gotP2, prf)
-		if !bytes.Equal(refOut, gotOut) {
-			t.Fatalf("size=%d: SetLockSoup(1)+SetBitSoup(0) interleave mismatch", n)
-		}
-		if !bytes.Equal(data, gotOut) {
-			t.Fatalf("size=%d: round-trip failed under SetLockSoup(1)+SetBitSoup(0)", n)
+		if !bytes.Equal(data, out) {
+			t.Fatalf("size=%d: round-trip failed under SetLockSoup(1) auto-enable", n)
 		}
 	}
 }
@@ -438,3 +435,223 @@ func TestLockSoup_LockedRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// fixedTestPermPRF returns a deterministic permPRF that ignores both buf
+// and chunk index, always filling perm/invPerm from the supplied 64-bit
+// Lehmer index. Useful for unit-testing chunk24permute / unchunk24permute
+// without depending on a Hash function or seed material.
+func fixedTestPermPRF(idx uint64) permPRF {
+	return func(_ []byte, _ uint64, perm, invPerm *[32]byte) {
+		derivePermutation(idx, perm, invPerm)
+	}
+}
+
+// TestSingleLockSoup_chunk24permute_RoundTrip verifies chunk24permute and
+// unchunk24permute are exact inverses across a sample of permutation
+// indices drawn from the 64-bit Lehmer-code subset of the 24! space.
+func TestSingleLockSoup_chunk24permute_RoundTrip(t *testing.T) {
+	indices := []uint64{
+		0,
+		1,
+		factC[24] - 1, // overflows to 0 since 24! > 2^64; safe here as Go truncates
+		12345,
+		7654321,
+		1 << 30,
+		(1 << 47) - 1,
+		^uint64(0),
+	}
+
+	for _, idx := range indices {
+		var perm, invPerm [32]byte
+		derivePermutation(idx, &perm, &invPerm)
+		for trial := 0; trial < 256; trial++ {
+			a := byte(trial)
+			b := byte(trial * 31)
+			c := byte(trial*53 ^ 0xAA)
+			a2, b2, c2 := chunk24permute(a, b, c, &perm)
+			a3, b3, c3 := unchunk24permute(a2, b2, c2, &invPerm)
+			if a != a3 || b != b3 || c != c3 {
+				t.Fatalf("idx=%d trial=%d: round-trip lost data: in=(%02x,%02x,%02x) out=(%02x,%02x,%02x)",
+					idx, trial, a, b, c, a3, b3, c3)
+			}
+		}
+	}
+}
+
+// TestSingleLockSoup_PermutationBijection verifies derivePermutation
+// invariants over a random sample of indices: each value in [0..23]
+// appears exactly once in perm, and invPerm correctly inverts perm.
+func TestSingleLockSoup_PermutationBijection(t *testing.T) {
+	rng := make([]byte, 8)
+	for trial := 0; trial < 1000; trial++ {
+		if _, err := rand.Read(rng); err != nil {
+			t.Fatalf("rand.Read: %v", err)
+		}
+		var idx uint64
+		for i, b := range rng {
+			idx |= uint64(b) << (8 * uint(i))
+		}
+
+		var perm, invPerm [32]byte
+		derivePermutation(idx, &perm, &invPerm)
+
+		var seen [24]bool
+		for i := 0; i < 24; i++ {
+			v := perm[i]
+			if v >= 24 {
+				t.Fatalf("trial=%d: perm[%d]=%d out of range", trial, i, v)
+			}
+			if seen[v] {
+				t.Fatalf("trial=%d: perm[%d]=%d duplicate", trial, i, v)
+			}
+			seen[v] = true
+		}
+		for i := 0; i < 24; i++ {
+			if !seen[i] {
+				t.Fatalf("trial=%d: value %d missing from perm", trial, i)
+			}
+		}
+		for i := byte(0); i < 24; i++ {
+			if invPerm[perm[i]] != i {
+				t.Fatalf("trial=%d: invPerm[perm[%d]=%d] = %d, want %d",
+					trial, i, perm[i], invPerm[perm[i]], i)
+			}
+		}
+		// Slack region must remain zero — softPermute24 / Permute24Avx512
+		// rely on perm[24..31] == 0 (VPERMB sources Y0[0] for those
+		// indices; the final 24-bit mask drops those bytes, but only if
+		// the underlying Y0[0] gather didn't escape into bits 0..23 via
+		// junk indices).
+		for i := 24; i < 32; i++ {
+			if perm[i] != 0 || invPerm[i] != 0 {
+				t.Fatalf("trial=%d: perm[%d]=%02x invPerm[%d]=%02x — slack must be zero",
+					trial, i, perm[i], i, invPerm[i])
+			}
+		}
+	}
+}
+
+// TestSingleLockSoup_DisabledIdentity verifies that splitForSingle /
+// interleaveForSingle return their input unchanged when both bit-soup
+// and lock-soup flags are off — the dispatch coupling does not activate
+// the overlay in the all-off state. The closure prf argument is built
+// but never invoked.
+func TestSingleLockSoup_DisabledIdentity(t *testing.T) {
+	prevBit := GetBitSoup()
+	prevLock := GetLockSoup()
+	SetBitSoup(0)
+	SetLockSoup(0)
+	t.Cleanup(func() {
+		SetLockSoup(prevLock)
+		SetBitSoup(prevBit)
+	})
+
+	prf := fixedTestPermPRF(0xDEADBEEFCAFEBABE)
+
+	for _, n := range []int{1, 100, 1023, 1024, 1377, 65536} {
+		data := make([]byte, n)
+		if _, err := rand.Read(data); err != nil {
+			t.Fatalf("rand.Read(%d): %v", n, err)
+		}
+
+		got := splitForSingle(data, prf)
+		if &got[0] != &data[0] || len(got) != len(data) {
+			t.Fatalf("size=%d: splitForSingle returned a copy under both-off — must pass-through", n)
+		}
+
+		gotOut := interleaveForSingle(got, prf)
+		if !bytes.Equal(data, gotOut) {
+			t.Fatalf("size=%d: identity round-trip failed under both-off", n)
+		}
+	}
+}
+
+// TestSingleLockSoup_CouplingDispatch verifies the Single-only coupling
+// rule: SetBitSoup(1)+SetLockSoup(0), SetBitSoup(0)+SetLockSoup(1), and
+// SetBitSoup(1)+SetLockSoup(1) must all activate the Single Lock Soup
+// overlay (i.e., produce identical encrypted output for the same data,
+// nonce, and seed material). Both-off remains the bypass case (covered
+// by TestSingleLockSoup_DisabledIdentity).
+func TestSingleLockSoup_CouplingDispatch(t *testing.T) {
+	noiseSeed, _ := NewSeed128(512, sipHash128)
+	nonce := make([]byte, currentNonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+	prf := buildPermutePRF128(noiseSeed, nonce)
+
+	data := make([]byte, 1377)
+	if _, err := rand.Read(data); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+
+	prevBit := GetBitSoup()
+	prevLock := GetLockSoup()
+	t.Cleanup(func() {
+		SetLockSoup(prevLock)
+		SetBitSoup(prevBit)
+	})
+
+	cases := []struct {
+		name     string
+		bit, lck int32
+	}{
+		{"bit_only", 1, 0},
+		{"lock_only", 0, 1},
+		{"both_on", 1, 1},
+	}
+
+	var ref []byte
+	for i, c := range cases {
+		SetBitSoup(c.bit)
+		SetLockSoup(c.lck)
+		got := splitForSingle(data, prf)
+		if i == 0 {
+			ref = make([]byte, len(got))
+			copy(ref, got)
+			continue
+		}
+		if !bytes.Equal(ref, got) {
+			t.Fatalf("%s: split output diverges from bit_only — coupling rule broken", c.name)
+		}
+	}
+}
+
+// benchSplitForSingle measures the Single Lock Soup forward kernel
+// (splitForSingle) under SetBitSoup(1)+SetLockSoup(1). The PRF closure is
+// built once before the timer starts; the loop body is the per-call cost
+// the production Encrypt128 / EncryptAuthenticated128 paths pay.
+func benchSplitForSingle(b *testing.B, sizeBytes int) {
+	prevBit := GetBitSoup()
+	prevLock := GetLockSoup()
+	SetBitSoup(1)
+	SetLockSoup(1)
+	defer func() {
+		SetLockSoup(prevLock)
+		SetBitSoup(prevBit)
+	}()
+
+	noiseSeed, err := NewSeed128(512, sipHash128)
+	if err != nil {
+		b.Fatal(err)
+	}
+	nonce := make([]byte, currentNonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		b.Fatal(err)
+	}
+	prf := buildPermutePRF128(noiseSeed, nonce)
+
+	data := make([]byte, sizeBytes)
+	if _, err := rand.Read(data); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	b.SetBytes(int64(sizeBytes))
+	for i := 0; i < b.N; i++ {
+		_ = splitForSingle(data, prf)
+	}
+}
+
+func BenchmarkSplitForSingle_4KB(b *testing.B)  { benchSplitForSingle(b, 4*1024) }
+func BenchmarkSplitForSingle_64KB(b *testing.B) { benchSplitForSingle(b, 64*1024) }
+func BenchmarkSplitForSingle_1MB(b *testing.B)  { benchSplitForSingle(b, 1024*1024) }
