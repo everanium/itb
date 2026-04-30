@@ -10,15 +10,20 @@ import (
 	"github.com/everanium/itb"
 )
 
-// AESCMAC returns a cached itb.HashFunc128 backed by AES, with a
-// freshly-generated 16-byte fixed key.
+// AESCMAC returns a cached itb.HashFunc128 backed by AES along with
+// the 16-byte fixed key the closure is bound to. With no argument the
+// key is freshly generated via crypto/rand; passing a single
+// caller-supplied [16]byte uses that key instead.
 //
-// Construction (same as the bench-validated reference wrapper from
-// itb_test.go):
+// The returned key is always the actual key in use — callers on the
+// persistence path must save it (encrypt today, decrypt tomorrow);
+// test fixtures and other throw-away usages can discard via `_`.
 //
-//   - key (16 random bytes) is loaded once into a cipher.Block
-//     (AES-NI hardware path on amd64 / arm64 hosts that expose the
-//     AES round instructions; software AES fallback otherwise);
+// Construction:
+//
+//   - key (16 bytes) is loaded once into a cipher.Block (AES-NI
+//     hardware path on amd64 / arm64 hosts that expose the AES round
+//     instructions; software AES fallback otherwise);
 //   - per call: seed0||seed1 is XOR'd into the first 16 data bytes,
 //     then encrypted in-place; remaining 16-byte data chunks are
 //     XOR'd into state and encrypted; the final 16-byte block is
@@ -28,12 +33,14 @@ import (
 // (it carries no per-call state), so concurrent goroutines may call
 // the returned function in parallel — Go's stdlib AES Encrypt path
 // is reentrant.
-func AESCMAC() itb.HashFunc128 {
+func AESCMAC(key ...[16]byte) (itb.HashFunc128, [16]byte) {
 	var aesKey [16]byte
-	if _, err := rand.Read(aesKey[:]); err != nil {
+	if len(key) > 0 {
+		aesKey = key[0]
+	} else if _, err := rand.Read(aesKey[:]); err != nil {
 		panic(err)
 	}
-	return AESCMACWithKey(aesKey)
+	return AESCMACWithKey(aesKey), aesKey
 }
 
 // AESCMACWithKey returns the AESCMAC closure built around a caller-

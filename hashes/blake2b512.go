@@ -18,12 +18,19 @@ import (
 // H(key || data ^ seed) where the payload is zero-padded out to 64
 // bytes when shorter, ensuring all eight seed uint64's contribute
 // regardless of how short the caller's data is.
-func BLAKE2b512() itb.HashFunc512 {
-	var key [64]byte
-	if _, err := rand.Read(key[:]); err != nil {
+// BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 along with
+// the 64-byte fixed key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [64]byte uses that key instead. Save the returned
+// key for cross-process persistence.
+func BLAKE2b512(key ...[64]byte) (itb.HashFunc512, [64]byte) {
+	var k [64]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
 		panic(err)
 	}
-	return BLAKE2b512WithKey(key)
+	return BLAKE2b512WithKey(k), k
 }
 
 // BLAKE2b512WithKey returns the BLAKE2b-512 closure built around a

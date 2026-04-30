@@ -895,54 +895,43 @@ func TestAuthenticatedWrongSeed(t *testing.T) {
 // --- 128-bit hash tests ---
 
 // makeAESHash128 creates a HashFunc128 with a pre-cached AES cipher.
-// The AES key is fixed per seed (created once), seed components are
-// XOR'd into the plaintext. This avoids key schedule on every call.
-// Each of the 3 seeds gets its own closure with its own AES key.
-// Zero allocations per call — all state on stack.
+// Test-internal counterpart of `hashes.AESCMAC()`; identical
+// construction kept here in lower-case form so itb-internal tests
+// (which cannot import `hashes/` due to the test-build import cycle)
+// exercise the same closure shape and security fixes that the public
+// factory ships.
+//
+// Construction: a 64-bit length tag is XOR'd into both halves of the
+// seed prefix (disambiguates inputs of different lengths — without it
+// empty / [0x00] / [0x00, 0x00] all hash to AES_K(seed0||seed1));
+// data is absorbed in 16-byte CBC-MAC blocks via absorbXOR + AES
+// Encrypt; the final state is returned as (lo64, hi64).
 func makeAESHash128() HashFunc128 {
 	var aesKey [16]byte
 	if _, err := rand.Read(aesKey[:]); err != nil {
 		panic(err)
 	}
 	block, _ := aes.NewCipher(aesKey[:])
-
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		// Block 1: XOR seed into first 16 bytes of data, encrypt.
-		// Input is always 20 bytes (4-byte counter + 16-byte nonce).
+		lenTag := uint64(len(data))
 		var b1 [16]byte
-		if len(data) >= 16 {
-			_ = data[15]
-			b1[0] = data[0] ^ byte(seed0)
-			b1[1] = data[1] ^ byte(seed0>>8)
-			b1[2] = data[2] ^ byte(seed0>>16)
-			b1[3] = data[3] ^ byte(seed0>>24)
-			b1[4] = data[4] ^ byte(seed0>>32)
-			b1[5] = data[5] ^ byte(seed0>>40)
-			b1[6] = data[6] ^ byte(seed0>>48)
-			b1[7] = data[7] ^ byte(seed0>>56)
-			b1[8] = data[8] ^ byte(seed1)
-			b1[9] = data[9] ^ byte(seed1>>8)
-			b1[10] = data[10] ^ byte(seed1>>16)
-			b1[11] = data[11] ^ byte(seed1>>24)
-			b1[12] = data[12] ^ byte(seed1>>32)
-			b1[13] = data[13] ^ byte(seed1>>40)
-			b1[14] = data[14] ^ byte(seed1>>48)
-			b1[15] = data[15] ^ byte(seed1>>56)
+		binary.LittleEndian.PutUint64(b1[0:], seed0^lenTag)
+		binary.LittleEndian.PutUint64(b1[8:], seed1^lenTag)
+		firstBlockLen := len(data)
+		if firstBlockLen > 16 {
+			firstBlockLen = 16
 		}
+		absorbXOR(b1[:firstBlockLen], data[:firstBlockLen])
 		aesEncryptNoescape(block, &b1)
 
-		// Remaining blocks: XOR 16-byte chunks into state, encrypt each.
 		for off := 16; off < len(data); off += 16 {
 			end := off + 16
 			if end > len(data) {
 				end = len(data)
 			}
-			for j := off; j < end; j++ {
-				b1[j-off] ^= data[j]
-			}
+			absorbXOR(b1[:end-off], data[off:end])
 			aesEncryptNoescape(block, &b1)
 		}
-
 		return binary.LittleEndian.Uint64(b1[:8]), binary.LittleEndian.Uint64(b1[8:])
 	}
 }
@@ -1424,16 +1413,27 @@ func makeBlake2sHash256() HashFunc256 {
 // --- ChaCha20 as HashFunc256 (PRF, ARX-based, zero table lookups) ---
 
 // makeChaCha20Hash256 creates a HashFunc256 using ChaCha20.
-// Fixed random key + seed XOR'd into data. ChaCha20 keystream used as hash output.
-// ARX-based: no S-box, no table lookups — register-only operations.
+// Test-internal counterpart of `hashes.ChaCha20()`; identical
+// construction kept here in lower-case form so itb-internal tests
+// (which cannot import `hashes/` due to the test-build import cycle)
+// exercise the same closure shape and security fixes that the public
+// factory ships.
+//
+// Construction (ARX-only PRF): the fixed key is XOR'd with the seed
+// components to derive a per-call 256-bit ChaCha20 key. Data is
+// absorbed CBC-MAC-style into a 32-byte state via repeated
+// `state ← E_K(state ⊕ chunk)` rounds where E_K is one ChaCha20
+// keystream block applied to the state. A length-tag prefix in the
+// initial state and a 24-byte data window per round (8 bytes of
+// chaining feedback) ensure every byte of the input contributes to
+// the digest regardless of input length — 128-, 256-, and 512-bit
+// nonce configurations all reach the digest with full strength.
 func makeChaCha20Hash256() HashFunc256 {
 	var fixedKey [32]byte
 	if _, err := rand.Read(fixedKey[:]); err != nil {
 		panic(err)
 	}
-
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		// XOR seed into fixed key to derive per-call key
 		var key [32]byte
 		copy(key[:], fixedKey[:])
 		for i := 0; i < 4; i++ {
@@ -1441,20 +1441,42 @@ func makeChaCha20Hash256() HashFunc256 {
 			v := binary.LittleEndian.Uint64(key[off:])
 			binary.LittleEndian.PutUint64(key[off:], v^seed[i])
 		}
-		// Use first 12 bytes of data as nonce (pad if shorter)
+
+		// Fixed zero nonce — the seed-mixed key carries the per-call
+		// freshness, so a constant nonce is safe for hash purposes.
 		var nonce [12]byte
-		copy(nonce[:], data)
 		c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
 		if err != nil {
 			panic(err)
 		}
-		var out [32]byte
-		c.XORKeyStream(out[:], out[:])
+
+		var state [32]byte
+		binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
+
+		const chunkSize = 24
+		if len(data) <= chunkSize {
+			copy(state[8:8+len(data)], data)
+			c.XORKeyStream(state[:], state[:])
+		} else {
+			copy(state[8:8+chunkSize], data[0:chunkSize])
+			c.XORKeyStream(state[:], state[:])
+			off := chunkSize
+			for off < len(data) {
+				end := off + chunkSize
+				if end > len(data) {
+					end = len(data)
+				}
+				absorbXOR(state[8:8+(end-off)], data[off:end])
+				c.XORKeyStream(state[:], state[:])
+				off = end
+			}
+		}
+
 		return [4]uint64{
-			binary.LittleEndian.Uint64(out[0:]),
-			binary.LittleEndian.Uint64(out[8:]),
-			binary.LittleEndian.Uint64(out[16:]),
-			binary.LittleEndian.Uint64(out[24:]),
+			binary.LittleEndian.Uint64(state[0:]),
+			binary.LittleEndian.Uint64(state[8:]),
+			binary.LittleEndian.Uint64(state[16:]),
+			binary.LittleEndian.Uint64(state[24:]),
 		}
 	}
 }
@@ -1860,29 +1882,31 @@ func makeBlake2bHash512() HashFunc512 {
 // random fixed key; both arms of the returned pair share that key so
 // per-pixel hashes match bit-exact between dispatch paths.
 func makeAreionSoEM256Pair() (HashFunc256, BatchHashFunc256) {
-	return MakeAreionSoEM256Hash()
+	h, b, _ := MakeAreionSoEM256Hash()
+	return h, b
 }
 
 // makeAreionSoEM512Pair is the 512-bit counterpart of
 // makeAreionSoEM256Pair. Same usage semantics.
 func makeAreionSoEM512Pair() (HashFunc512, BatchHashFunc512) {
-	return MakeAreionSoEM512Hash()
+	h, b, _ := MakeAreionSoEM512Hash()
+	return h, b
 }
 
 // makeAreionSoEM256 returns the single-call HashFunc256 only; kept for
 // legacy callers (redteam_test.go / redteam_lab_test.go) that pre-date
 // the batched dispatch path and use the older Hash-only test fixture
 // pattern. Internally delegates to MakeAreionSoEM256Hash and discards
-// the returned BatchHashFunc256; equivalent in security to the previous
-// implementation.
+// the returned BatchHashFunc256 + fixedKey; equivalent in security to
+// the previous implementation.
 func makeAreionSoEM256() HashFunc256 {
-	h, _ := MakeAreionSoEM256Hash()
+	h, _, _ := MakeAreionSoEM256Hash()
 	return h
 }
 
 // makeAreionSoEM512 is the 512-bit counterpart of makeAreionSoEM256.
 func makeAreionSoEM512() HashFunc512 {
-	h, _ := MakeAreionSoEM512Hash()
+	h, _, _ := MakeAreionSoEM512Hash()
 	return h
 }
 
@@ -2508,11 +2532,11 @@ func TestAuthenticatedWrongSeed512(t *testing.T) {
 	}
 }
 
-// --- parseChunkLen error paths ---
+// --- ParseChunkLen error paths ---
 
 func TestParseChunkLenErrors(t *testing.T) {
 	// Data too short for header
-	_, err := parseChunkLen([]byte{1, 2, 3})
+	_, err := ParseChunkLen([]byte{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected error for data too short for header")
 	}
@@ -2520,7 +2544,7 @@ func TestParseChunkLenErrors(t *testing.T) {
 	// Zero dimensions (width=0, height=0)
 	buf := make([]byte, headerSize()+8)
 	// nonce: 16 bytes of zeros, then width=0, height=0
-	_, err = parseChunkLen(buf)
+	_, err = ParseChunkLen(buf)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
 	}
@@ -2531,7 +2555,7 @@ func TestParseChunkLenErrors(t *testing.T) {
 	binary.BigEndian.PutUint16(buf[currentNonceSize()+2:], 1)
 	// buf is only headerSize()+8 bytes = 28, which is exactly enough for 1x1
 	// Make it shorter to trigger truncation
-	_, err = parseChunkLen(buf[:headerSize()+4])
+	_, err = ParseChunkLen(buf[:headerSize()+4])
 	if err == nil {
 		t.Fatal("expected error for truncated data")
 	}
@@ -2540,12 +2564,12 @@ func TestParseChunkLenErrors(t *testing.T) {
 	fullBuf := make([]byte, headerSize()+Channels)
 	binary.BigEndian.PutUint16(fullBuf[currentNonceSize():], 1)
 	binary.BigEndian.PutUint16(fullBuf[currentNonceSize()+2:], 1)
-	n, err := parseChunkLen(fullBuf)
+	n, err := ParseChunkLen(fullBuf)
 	if err != nil {
 		t.Fatalf("unexpected error for valid 1x1: %v", err)
 	}
 	if n != headerSize()+Channels {
-		t.Fatalf("parseChunkLen returned %d, want %d", n, headerSize()+Channels)
+		t.Fatalf("ParseChunkLen returned %d, want %d", n, headerSize()+Channels)
 	}
 }
 

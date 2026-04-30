@@ -41,6 +41,19 @@ func TestMain(m *testing.M) {
 	if v := os.Getenv("ITB_LOCKSOUP"); v != "" && v != "0" {
 		SetLockSoup(1)
 	}
+	if v := os.Getenv("ITB_NONCE_BITS"); v != "" {
+		switch v {
+		case "128":
+			SetNonceBits(128)
+		case "256":
+			SetNonceBits(256)
+		case "512":
+			SetNonceBits(512)
+		default:
+			fmt.Fprintf(os.Stderr,
+				"ITB_NONCE_BITS=%q invalid (expected 128/256/512); ignoring\n", v)
+		}
+	}
 	os.Exit(m.Run())
 }
 

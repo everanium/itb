@@ -4,12 +4,20 @@ Drop-in factories that produce `itb.HashFunc{128|256|512}` closures
 for the nine PRF-grade primitives ITB ships with as built-in
 factories for the C / FFI / mobile shared-library distribution.
 
-Every factory pre-keys its primitive once at construction (random
-fixed key from `crypto/rand`), reuses a `sync.Pool` of scratch
-buffers, and is safe to call concurrently from multiple goroutines.
-Without this caching, per-pixel hashing would re-key the underlying
-primitive on every call — the dominant cost in ITB's encrypt /
-decrypt path.
+Every factory pre-keys its primitive once at construction, reuses a
+`sync.Pool` of scratch buffers, and is safe to call concurrently from
+multiple goroutines. Without this caching, per-pixel hashing would
+re-key the underlying primitive on every call — the dominant cost in
+ITB's encrypt / decrypt path.
+
+Each factory accepts a variadic optional fixed key:
+- pass nothing → CSPRNG-generated key (returned alongside the closure
+  for the caller to save — required for cross-process persistence);
+- pass a saved key → restore-side reconstruction of the same closure.
+
+`SipHash24` is the one exception: its keying material is the per-call
+seed components themselves, so it has no internal fixed key and no
+variadic key argument.
 
 ## Canonical primitives
 
@@ -33,53 +41,192 @@ break the ABI.
 
 ## Usage
 
-Native Go API — pick a factory directly:
+Native Go API — generate a fresh random key, save it for persistence.
+
+The `saveKey(name, bytes)` / `loadKey(name)` key helpers and
+`saveSeed(name, components)` / `loadSeed(name)` seed helpers used in the
+snippets below are **user-side placeholders** for whatever persistence mechanism
+the deployment uses (config file / database / mounted secret / any storage )
+example helpers are **not** ITB API. ITB only returns the bytes;
+persisting them is the caller's responsibility.
+
+Areion-SoEM has paired (single, batched, fixedKey) constructors so the
+AVX-512 batched dispatch path is reachable:
 
 ```go
-ns, _ := itb.NewSeed256(2048, hashes.BLAKE3())
-ds, _ := itb.NewSeed256(2048, hashes.BLAKE3())
-ss, _ := itb.NewSeed256(2048, hashes.BLAKE3())
-encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
+
+// Sender
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
+)
+
+func main() {
+
+	itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+	itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                           // automatically enabled for Single Ouroboros if
+                           // itb.SetLockSoup(1) is enabled or vice versa
+
+	itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                           // bit-permutation overlay on top of bit-soup;
+                           // automatically enabled for Single Ouroboros if
+                           // itb.SetBitSoup(1) is enabled or vice versa
+
+	fnN, batchN, keyN := hashes.Areion512Pair() // random noise hash key generated
+	fnD, batchD, keyD := hashes.Areion512Pair() // random data hash key generated
+	fnS, batchS, keyS := hashes.Areion512Pair() // random start hash key generated
+
+	saveKey("noise-key", keyN[:]) // []byte user-supplied persistence
+	saveKey("data-key", keyD[:])  // []byte user-supplied persistence
+	saveKey("start-key", keyS[:]) // []byte user-supplied persistence
+
+	ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
+	ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
+	ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+
+	saveSeed("noise-seeds", ns.Components) // []uint64 user-supplied persistence
+	saveSeed("data-seeds", ds.Components)  // []uint64 user-supplied persistence
+	saveSeed("start-seeds", ss.Components) // []uint64 user-supplied persistence
+
+	ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
+	ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
+	ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+
+	plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+	// Encrypt into RGBWYOPA container
+	encrypted, err := itb.Encrypt512(ns, ds, ss, plaintext)
+	if err != nil {
+        	panic(err)
+	}
+	fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+	// Send encrypted payload
+
+}
+
+// Receiver
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
+)
+
+func main() {
+
+	// Receive encrypted payload
+
+	fnN, batchN, _ := hashes.Areion512Pair([64]byte(loadKey("noise-key")))
+	fnD, batchD, _ := hashes.Areion512Pair([64]byte(loadKey("data-key")))
+	fnS, batchS, _ := hashes.Areion512Pair([64]byte(loadKey("start-key")))
+
+	ns, _ := itb.SeedFromComponents512(fnN, loadSeed("noise-seeds")...)
+	ds, _ := itb.SeedFromComponents512(fnD, loadSeed("data-seeds")...)
+	ss, _ := itb.SeedFromComponents512(fnS, loadSeed("start-seeds")...)
+
+	ns.BatchHash = batchN
+	ds.BatchHash = batchD
+	ss.BatchHash = batchS
+
+	// Decrypt from RGBWYOPA container
+	decrypted, err := itb.Decrypt512(ns, ds, ss, encrypted)
+	if err != nil {
+        	panic(err)
+	}
+	fmt.Printf("decrypted: %d bytes\n", len(decrypted))
+
+}
+
 ```
 
-Name-keyed dispatch (used by the FFI layer; works for any code
-that selects the primitive at runtime):
+BLAKE2b512
 
 ```go
-h, _ := hashes.Make256("blake3")
-ns, _ := itb.NewSeed256(2048, h)
+fnN, keyN := hashes.BLAKE2b512()
+fnD, keyD := hashes.BLAKE2b512()
+fnS, keyS := hashes.BLAKE2b512()
+
+saveKey("noise-key", keyN[:]) // persist to... 
+saveKey("data-key", keyD[:])  // persist to... 
+saveKey("start-key", keyS[:]) // persist to... 
+
+ns, _ := itb.NewSeed512(1024, fnN) // random noise CSPRNG seeds generated
+ds, _ := itb.NewSeed512(1024, fnD) // random data CSPRNG seeds generated
+ss, _ := itb.NewSeed512(1024, fnS) // random start CSPRNG seeds generated
+
+saveSeed("noise-seeds", ns.Components) // []uint64 user-supplied persistence
+saveSeed("data-seeds", ds.Components)  // []uint64 user-supplied persistence
+saveSeed("start-seeds", ss.Components) // []uint64 user-supplied persistence
+
+plaintext := []byte("any text or binary data - including 0x00 bytes")
+// Encrypt into RGBWYOPA container
+encrypted, _ := itb.Encrypt512(ns, ds, ss, plaintext)
 ```
 
-Areion has paired (single, batched) constructors so the AVX-512
-batched dispatch path is reachable:
+SipHash24
 
 ```go
-h, b := hashes.Areion256Pair()
-seed, _ := itb.NewSeed256(2048, h)
-seed.BatchHash = b
+fnN := hashes.SipHash24()
+fnD := hashes.SipHash24()
+fnS := hashes.SipHash24()
+
+ns, _ := itb.NewSeed128(1024, fnN) // random noise CSPRNG seeds generated
+ds, _ := itb.NewSeed128(1024, fnD) // random data CSPRNG seeds generated
+ss, _ := itb.NewSeed128(1024, fnS) // random start CSPRNG seeds generated
+
+saveSeed("noise-seeds", ns.Components) // []uint64 user-supplied persistence
+saveSeed("data-seeds", ds.Components)  // []uint64 user-supplied persistence
+saveSeed("start-seeds", ss.Components) // []uint64 user-supplied persistence
+
+plaintext := []byte("any text or binary data - including 0x00 bytes")
+// Encrypt into RGBWYOPA container
+encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
+```
+
+Name-keyed dispatch (used by the FFI layer; works for any code that
+selects the primitive at runtime). Same variadic key pattern, but key
+is `[]byte` (size validated against the primitive's native length):
+
+```go
+fn, hashKey, _ := hashes.Make256("blake3") // random
+fn, _, _       := hashes.Make256("blake3", saved) // explicit
 ```
 
 ## Keyed variants
 
-The pluggable PRF wrappers — `AESCMAC`, `BLAKE2b256`, `BLAKE2b512`,
-`BLAKE2s`, `BLAKE3`, `ChaCha20` — each have a `WithKey` counterpart
-accepting the primitive's native fixed-key length. These are
-intended for serialization / deserialization of long-lived seeds
-across processes — encrypt today, decrypt tomorrow.
+Every cached factory ships a paired `*WithKey` form that takes the
+fixed key as a single non-variadic argument and returns just the
+closure (no key tuple element):
+
+| variadic-short                | explicit `WithKey`              |
+|-------------------------------|---------------------------------|
+| `Areion256Pair(...key)`       | `Areion256PairWithKey(key)`     |
+| `Areion512Pair(...key)`       | `Areion512PairWithKey(key)`     |
+| `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
+| `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
+| `BLAKE2s(...key)`             | `BLAKE2sWithKey(key)`           |
+| `BLAKE2b256(...key)`          | `BLAKE2b256WithKey(key)`        |
+| `BLAKE2b512(...key)`          | `BLAKE2b512WithKey(key)`        |
+| `BLAKE3(...key)`              | `BLAKE3WithKey(key)`            |
+
+The variadic short form delegates to `WithKey` (Go inliner removes
+the wrapper at compile time), so semantics are identical. Pick
+whichever reads cleaner at your call site:
+
+- **variadic** when the same call site handles both random-key and
+  explicit-key paths (e.g. a config-driven factory that defaults to
+  random when no key is in the config);
+- **`WithKey`** when the call site is unambiguously explicit-key
+  (restore path with the key already in scope) and the bare key
+  return value would be redundant noise.
 
 `SipHash24` has no `WithKey` because the seed components themselves
 are the entire SipHash key; serializing the seed components is
 sufficient.
-
-`Areion256Pair` and `Areion512Pair` likewise have no `WithKey`
-counterpart in this package: they delegate to the in-package
-`itb.MakeAreionSoEM{256,512}Hash` factories which generate a fresh
-random fixed key on every call. Long-lived Areion seeds need a
-persistence story added at the `itb` level (out of scope here).
-
-## Below-spec primitives
-
-CRC128, FNV-1a, MD5 — the lab stress controls used in REDTEAM.md
-and SCIENCE.md to surface algebraic and broken-PRF leakage — are
-intentionally absent. They are research instruments, not shippable
-cipher primitives.

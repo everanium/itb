@@ -24,12 +24,19 @@ import (
 // first 32 bytes; the input is zero-padded out to 32 bytes when the
 // caller's data is shorter, so all four seed uint64's contribute
 // regardless of how short the caller's data is.
-func BLAKE3() itb.HashFunc256 {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
+// BLAKE3 returns a cached BLAKE3-256 itb.HashFunc256 along with the
+// 32-byte BLAKE3 key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
+func BLAKE3(key ...[32]byte) (itb.HashFunc256, [32]byte) {
+	var k [32]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
 		panic(err)
 	}
-	return BLAKE3WithKey(key)
+	return BLAKE3WithKey(k), k
 }
 
 // BLAKE3WithKey returns the BLAKE3 closure built around a caller-

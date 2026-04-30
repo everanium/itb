@@ -63,7 +63,7 @@ func DecryptStream128(noiseSeed, dataSeed, startSeed *Seed128, data []byte, emit
 	}
 
 	for off := 0; off < len(data); {
-		chunkLen, err := parseChunkLen(data[off:])
+		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -119,7 +119,7 @@ func DecryptStream256(noiseSeed, dataSeed, startSeed *Seed256, data []byte, emit
 	}
 
 	for off := 0; off < len(data); {
-		chunkLen, err := parseChunkLen(data[off:])
+		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -175,7 +175,7 @@ func DecryptStream512(noiseSeed, dataSeed, startSeed *Seed512, data []byte, emit
 	}
 
 	for off := 0; off < len(data); {
-		chunkLen, err := parseChunkLen(data[off:])
+		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -191,9 +191,25 @@ func DecryptStream512(noiseSeed, dataSeed, startSeed *Seed512, data []byte, emit
 	return nil
 }
 
-// parseChunkLen reads a chunk header and returns the total chunk size in bytes.
-// Format: [16-byte nonce][2-byte width BE][2-byte height BE][W*H*8 container]
-func parseChunkLen(data []byte) (int, error) {
+// ParseChunkLen reads a chunk header and returns the total chunk size
+// in bytes. The chunk wire format is identical to a single-chunk
+// ITB ciphertext:
+//
+//	[16-byte nonce][2-byte width BE][2-byte height BE][W*H*8 container]
+//
+// Returns an error when the supplied buffer is shorter than the
+// fixed header size, the dimensions are zero / overflow / exceed
+// the container cap, or the buffer does not contain enough trailing
+// bytes for the announced container body.
+//
+// Streaming consumers use ParseChunkLen to walk a concatenated
+// stream of ITB ciphertexts on disk or over the wire one chunk at
+// a time without buffering the entire stream in memory: read the
+// fixed header, call ParseChunkLen to learn the chunk size, read
+// that many bytes, hand them to Decrypt{128,256,512} (or the
+// matching Decrypt3x* / DecryptAuthenticated* / etc.), repeat. The
+// FFI surface re-exports the same function as ITB_ParseChunkLen.
+func ParseChunkLen(data []byte) (int, error) {
 	if len(data) < headerSize() {
 		return 0, fmt.Errorf("data too short for header")
 	}
@@ -261,7 +277,7 @@ func DecryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		return err
 	}
 	for off := 0; off < len(data); {
-		chunkLen, err := parseChunkLen(data[off:])
+		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -313,7 +329,7 @@ func DecryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		return err
 	}
 	for off := 0; off < len(data); {
-		chunkLen, err := parseChunkLen(data[off:])
+		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -365,7 +381,7 @@ func DecryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		return err
 	}
 	for off := 0; off < len(data); {
-		chunkLen, err := parseChunkLen(data[off:])
+		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}

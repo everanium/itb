@@ -128,7 +128,7 @@ func roundtrip512(t *testing.T, name string, keyBits int, plaintext []byte) {
 }
 
 func newSeed128(name string, keyBits int) (*itb.Seed128, error) {
-	h, err := Make128(name)
+	h, _, err := Make128(name)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func newSeed128(name string, keyBits int) (*itb.Seed128, error) {
 }
 
 func newSeed256(name string, keyBits int) (*itb.Seed256, error) {
-	h, b, err := Make256Pair(name)
+	h, b, _, err := Make256Pair(name)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func newSeed256(name string, keyBits int) (*itb.Seed256, error) {
 }
 
 func newSeed512(name string, keyBits int) (*itb.Seed512, error) {
-	h, b, err := Make512Pair(name)
+	h, b, _, err := Make512Pair(name)
 	if err != nil {
 		return nil, err
 	}

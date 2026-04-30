@@ -28,12 +28,19 @@ import (
 // state, length tag, and chain feedback all live on the closure's
 // stack frame. Concurrent goroutines may invoke the returned
 // closure in parallel — there is no shared mutable state.
-func ChaCha20() itb.HashFunc256 {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
+// ChaCha20 returns a cached ChaCha20 itb.HashFunc256 along with the
+// 32-byte fixed key the closure is bound to. With no argument the
+// key is freshly generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
+func ChaCha20(key ...[32]byte) (itb.HashFunc256, [32]byte) {
+	var k [32]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
 		panic(err)
 	}
-	return ChaCha20WithKey(key)
+	return ChaCha20WithKey(k), k
 }
 
 // ChaCha20WithKey returns the ChaCha20 closure built around a

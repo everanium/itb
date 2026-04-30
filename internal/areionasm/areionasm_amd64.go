@@ -1,14 +1,37 @@
 //go:build amd64 && !purego
 
-// Package areionasm holds the AVX-512 + VAES assembly implementation
-// of the 4-way batched Areion256 permutation. It lives in an internal
-// subpackage because the parent `itb` package uses CGO (Go's build
-// system does not allow Go assembly files in CGO-using packages).
+// Package areionasm holds the AVX-512 + VAES (and AVX-2 fallback)
+// assembly implementation of the 4-way batched Areion family for the
+// parent `itb` package. It lives in an internal subpackage because
+// `itb` uses CGO (Go's build system does not allow Go assembly files
+// in CGO-using packages).
 //
-// Only the assembly entry point and the pre-broadcast round-constant
-// table are exported from this package. All caller-side logic
-// (AoS <-> SoA pack/unpack, SoEM key XORs, runtime dispatch) lives in the
-// parent `itb` package.
+// Exported kernels:
+//
+//   - Areion256Permutex4 / Areion512Permutex4 — per-half AVX-512 + VAES
+//     permutations. On amd64 production hot paths these are reached
+//     only via the AVX-2 sibling (see below) and the fused /
+//     chained-absorb kernels; the per-half AVX-512 entries remain
+//     primarily as the fast-known-good reference for parity tests.
+//   - Areion256Permutex4Avx2 / Areion512Permutex4Avx2 — AVX-2 + VAES
+//     fallbacks for hosts with VAES but no AVX-512 (some Alder Lake /
+//     Raptor Lake E-core configurations, certain Zen 3 SKUs).
+//   - Areion256SoEMPermutex4Interleaved /
+//     Areion512SoEMPermutex4Interleaved — fused per-half kernels that
+//     interleave state1 and state2 permutations on independent ZMM
+//     dependency chains and fold the SoEM output XOR (and Areion512's
+//     final cyclic rotation) into the writeback.
+//   - Areion256ChainAbsorb20x4 / 36x4 / 68x4 (and the Areion-SoEM-512
+//     trio) — specialised CBC-MAC chained-absorb kernels for the three
+//     ITB SetNonceBits buf shapes (1, 2 or 3 absorb rounds on -256;
+//     1, 1 or 2 on -512). State is held in ZMM registers across all
+//     absorb rounds; broadcast fixedKey and SoA-packed seedKey are
+//     loaded once at function entry.
+//
+// Also exported: the pre-broadcast round-constant table `AreionRC4x`
+// and the Areion-SoEM-256 domain-separation constant
+// `AreionSoEMDomainSep256`. AoS <-> SoA pack/unpack, runtime dispatch,
+// and the Go-side hash closures live in the parent `itb` package.
 package areionasm
 
 import "github.com/jedisct1/go-aes"
@@ -22,6 +45,17 @@ import "github.com/jedisct1/go-aes"
 // `Constants`. The assembly file `areion_amd64.s` references this
 // symbol as `·AreionRC4x(SB)`.
 var AreionRC4x [15 * 64]byte
+
+// AreionSoEMDomainSep256 is the SoEM-256 domain-separation constant
+// pre-broadcast to SoA Block4 layout: 0x01 in byte[0] of each 16-byte
+// lane slot, zero elsewhere. Used by the chained-absorb kernels to
+// XOR `d` into state2's first u64 word per SoEM construction.
+var AreionSoEMDomainSep256 = [64]byte{
+	0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // lane 0
+	0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // lane 1
+	0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // lane 2
+	0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // lane 3
+}
 
 // Constants is the canonical 15-entry round constant table — digits of
 // pi in little-endian byte order, copied verbatim from
