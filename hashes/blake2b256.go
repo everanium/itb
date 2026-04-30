@@ -23,12 +23,19 @@ import (
 // is shorter, ensuring all four seed uint64's contribute regardless
 // of how short the caller's data is — important for ITB which
 // hashes 20-byte (pixel_le + nonce) inputs in the inner loop.
-func BLAKE2b256() itb.HashFunc256 {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
+// BLAKE2b256 returns a cached BLAKE2b-256 itb.HashFunc256 along with
+// the 32-byte fixed key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
+func BLAKE2b256(key ...[32]byte) (itb.HashFunc256, [32]byte) {
+	var k [32]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
 		panic(err)
 	}
-	return BLAKE2b256WithKey(key)
+	return BLAKE2b256WithKey(k), k
 }
 
 // BLAKE2b256WithKey returns the BLAKE2b-256 closure built around a

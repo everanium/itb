@@ -17,6 +17,24 @@ import "github.com/everanium/itb"
 // This is a thin wrapper over the in-package itb.MakeAreionSoEM256Hash
 // helper; it exists so that Areion-SoEM-256 fits the same name-keyed
 // factory shape as the rest of the hashes/ package.
-func Areion256Pair() (itb.HashFunc256, itb.BatchHashFunc256) {
-	return itb.MakeAreionSoEM256Hash()
+//
+// With no argument a fresh 32-byte fixed key is generated via
+// crypto/rand; passing a single caller-supplied [32]byte uses that
+// key instead. The returned key (random or supplied) is always
+// emitted as the third return value — save it for cross-process
+// persistence.
+func Areion256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32]byte) {
+	return itb.MakeAreionSoEM256Hash(key...)
+}
+
+// Areion256PairWithKey returns the (single, batched) Areion-SoEM-256
+// pair built around a caller-supplied 32-byte fixed key. Same role as
+// the WithKey variants on the other hashes/ primitives — meant for the
+// persistence-restore path where the original fixed key has been saved
+// across processes (encrypt today, decrypt tomorrow).
+//
+// Thin wrapper over itb.MakeAreionSoEM256HashWithKey for symmetry with
+// the rest of the hashes/ package's WithKey factories.
+func Areion256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
+	return itb.MakeAreionSoEM256HashWithKey(fixedKey)
 }

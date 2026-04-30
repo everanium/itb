@@ -1,0 +1,299 @@
+//go:build amd64 && !purego
+
+// Fused chained-absorb VAES kernel for Areion-SoEM-256 with 68-byte
+// per-lane data input (the ITB SetNonceBits(512) buf shape).
+//
+// 68 bytes > 24-byte chunkSize, so the absorb runs as 3 SoEM rounds
+// with state held in (Z14, Z15) ZMM registers across all rounds.
+// Per-lane data layout:
+//
+//   Round 0:  state[0..8]   = lengthTag (= 68, baked in)
+//             state[8..32]  = data[0..24]                (24 bytes — full chunk)
+//   Round 1:  state[8..32] ⊕= data[24..48]               (24 bytes — full chunk)
+//   Round 2:  state[8..16]  ⊕= data[48..56]              (8 bytes high half b0)
+//             state[16..28] ⊕= data[56..68]              (12 bytes lower 3/4 b1)
+//             state[28..32]  unchanged
+
+#include "textflag.h"
+
+// AREION256_FUSED_ROUND — see areion_chain256_36_amd64.s for the
+// canonical description of this round-body macro.
+#define AREION256_FUSED_ROUND(s1a, s1b, s2a, s2b, rc) \
+	VMOVDQA64 s1a, Z2; \
+	VMOVDQA64 s2a, Z6; \
+	VAESENC rc, Z2, Z2; \
+	VAESENC rc, Z6, Z6; \
+	VAESENC s1b, Z2, Z2; \
+	VAESENC s2b, Z6, Z6; \
+	VAESENCLAST Z3, s1a, s1a; \
+	VAESENCLAST Z3, s2a, s2a; \
+	VMOVDQA64 Z2, s1b; \
+	VMOVDQA64 Z6, s2b
+
+// func Areion256ChainAbsorb68x4(
+//     fixedKey *[32]byte,
+//     seeds *[4][4]uint64,
+//     dataPtrs *[4]*byte,        // each ptr to ≥68 bytes
+//     out *[4][4]uint64)
+TEXT ·Areion256ChainAbsorb68x4(SB), NOSPLIT, $128-32
+	MOVQ fixedKey+0(FP), AX
+	MOVQ seeds+8(FP),    BX
+	MOVQ dataPtrs+16(FP), CX
+	MOVQ out+24(FP),     DX
+
+	MOVQ 0(CX),  R8
+	MOVQ 8(CX),  R9
+	MOVQ 16(CX), R10
+	MOVQ 24(CX), R11
+
+	VPXORD Z3, Z3, Z3
+
+	VBROADCASTI32X4 0(AX),  Z8
+	VBROADCASTI32X4 16(AX), Z9
+
+	VMOVDQU 0(BX),  X10
+	VINSERTI64X2 $1, 32(BX), Y10, Y10
+	VINSERTI64X2 $2, 64(BX), Z10, Z10
+	VINSERTI64X2 $3, 96(BX), Z10, Z10
+	VMOVDQU 16(BX), X11
+	VINSERTI64X2 $1, 48(BX), Y11, Y11
+	VINSERTI64X2 $2, 80(BX), Z11, Z11
+	VINSERTI64X2 $3, 112(BX), Z11, Z11
+
+	VMOVDQU64 ·AreionSoEMDomainSep256(SB), Z12
+
+	VMOVDQU64 ·AreionRC4x+0(SB),   Z16
+	VMOVDQU64 ·AreionRC4x+64(SB),  Z17
+	VMOVDQU64 ·AreionRC4x+128(SB), Z18
+	VMOVDQU64 ·AreionRC4x+192(SB), Z19
+	VMOVDQU64 ·AreionRC4x+256(SB), Z20
+	VMOVDQU64 ·AreionRC4x+320(SB), Z21
+	VMOVDQU64 ·AreionRC4x+384(SB), Z22
+	VMOVDQU64 ·AreionRC4x+448(SB), Z23
+	VMOVDQU64 ·AreionRC4x+512(SB), Z24
+	VMOVDQU64 ·AreionRC4x+576(SB), Z25
+
+	// ===== Round 0: build state from lengthTag(68) + data[0..24] =====
+	MOVQ $68, R12
+	MOVQ R12, 0(SP)
+	MOVQ R12, 32(SP)
+	MOVQ R12, 64(SP)
+	MOVQ R12, 96(SP)
+
+	// Lane 0.
+	MOVQ 0(R8),  R12
+	MOVQ R12, 8(SP)
+	MOVQ 8(R8),  R12
+	MOVQ R12, 16(SP)
+	MOVQ 16(R8), R12
+	MOVQ R12, 24(SP)
+	// Lane 1.
+	MOVQ 0(R9),  R12
+	MOVQ R12, 40(SP)
+	MOVQ 8(R9),  R12
+	MOVQ R12, 48(SP)
+	MOVQ 16(R9), R12
+	MOVQ R12, 56(SP)
+	// Lane 2.
+	MOVQ 0(R10), R12
+	MOVQ R12, 72(SP)
+	MOVQ 8(R10), R12
+	MOVQ R12, 80(SP)
+	MOVQ 16(R10), R12
+	MOVQ R12, 88(SP)
+	// Lane 3.
+	MOVQ 0(R11), R12
+	MOVQ R12, 104(SP)
+	MOVQ 8(R11), R12
+	MOVQ R12, 112(SP)
+	MOVQ 16(R11), R12
+	MOVQ R12, 120(SP)
+
+	VMOVDQU 0(SP), X14
+	VINSERTI64X2 $1, 32(SP), Y14, Y14
+	VINSERTI64X2 $2, 64(SP), Z14, Z14
+	VINSERTI64X2 $3, 96(SP), Z14, Z14
+	VMOVDQU 16(SP), X15
+	VINSERTI64X2 $1, 48(SP), Y15, Y15
+	VINSERTI64X2 $2, 80(SP), Z15, Z15
+	VINSERTI64X2 $3, 112(SP), Z15, Z15
+
+	VPXORD Z8,  Z14, Z0
+	VPXORD Z9,  Z15, Z1
+	VPXORD Z10, Z14, Z4
+	VPXORD Z12, Z4,  Z4
+	VPXORD Z11, Z15, Z5
+
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z16)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z17)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z18)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z19)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z20)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z21)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z22)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z23)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z24)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z25)
+
+	VPXORD Z4, Z0, Z14
+	VPXORD Z5, Z1, Z15
+
+	// ===== Round 1: XOR data[24..48] (24 bytes — full chunk) into state[8..32] =====
+	//
+	// Per lane stack[lane*32]:
+	//   [0..8]   = 0
+	//   [8..32]  = data[24..48]
+	XORQ R12, R12
+	// Lane 0.
+	MOVQ R12, 0(SP)
+	MOVQ 24(R8), R13
+	MOVQ R13, 8(SP)
+	MOVQ 32(R8), R13
+	MOVQ R13, 16(SP)
+	MOVQ 40(R8), R13
+	MOVQ R13, 24(SP)
+	// Lane 1.
+	MOVQ R12, 32(SP)
+	MOVQ 24(R9), R13
+	MOVQ R13, 40(SP)
+	MOVQ 32(R9), R13
+	MOVQ R13, 48(SP)
+	MOVQ 40(R9), R13
+	MOVQ R13, 56(SP)
+	// Lane 2.
+	MOVQ R12, 64(SP)
+	MOVQ 24(R10), R13
+	MOVQ R13, 72(SP)
+	MOVQ 32(R10), R13
+	MOVQ R13, 80(SP)
+	MOVQ 40(R10), R13
+	MOVQ R13, 88(SP)
+	// Lane 3.
+	MOVQ R12, 96(SP)
+	MOVQ 24(R11), R13
+	MOVQ R13, 104(SP)
+	MOVQ 32(R11), R13
+	MOVQ R13, 112(SP)
+	MOVQ 40(R11), R13
+	MOVQ R13, 120(SP)
+
+	VMOVDQU 0(SP), X2
+	VINSERTI64X2 $1, 32(SP), Y2, Y2
+	VINSERTI64X2 $2, 64(SP), Z2, Z2
+	VINSERTI64X2 $3, 96(SP), Z2, Z2
+	VMOVDQU 16(SP), X6
+	VINSERTI64X2 $1, 48(SP), Y6, Y6
+	VINSERTI64X2 $2, 80(SP), Z6, Z6
+	VINSERTI64X2 $3, 112(SP), Z6, Z6
+
+	VPXORD Z2, Z14, Z14
+	VPXORD Z6, Z15, Z15
+
+	VPXORD Z8,  Z14, Z0
+	VPXORD Z9,  Z15, Z1
+	VPXORD Z10, Z14, Z4
+	VPXORD Z12, Z4,  Z4
+	VPXORD Z11, Z15, Z5
+
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z16)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z17)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z18)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z19)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z20)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z21)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z22)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z23)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z24)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z25)
+
+	VPXORD Z4, Z0, Z14
+	VPXORD Z5, Z1, Z15
+
+	// ===== Round 2: XOR data[48..68] (20 bytes) into state[8..28] =====
+	//
+	// Per lane stack[lane*32]:
+	//   [0..8]   = 0
+	//   [8..16]  = data[48..56]
+	//   [16..28] = data[56..68]
+	//   [28..32] = 0
+	XORQ R12, R12
+	// Lane 0.
+	MOVQ R12, 0(SP)
+	MOVQ 48(R8), R13
+	MOVQ R13, 8(SP)
+	MOVQ 56(R8), R13
+	MOVQ R13, 16(SP)
+	MOVL 64(R8), R13
+	MOVL R13, 24(SP)
+	MOVL R12, 28(SP)
+	// Lane 1.
+	MOVQ R12, 32(SP)
+	MOVQ 48(R9), R13
+	MOVQ R13, 40(SP)
+	MOVQ 56(R9), R13
+	MOVQ R13, 48(SP)
+	MOVL 64(R9), R13
+	MOVL R13, 56(SP)
+	MOVL R12, 60(SP)
+	// Lane 2.
+	MOVQ R12, 64(SP)
+	MOVQ 48(R10), R13
+	MOVQ R13, 72(SP)
+	MOVQ 56(R10), R13
+	MOVQ R13, 80(SP)
+	MOVL 64(R10), R13
+	MOVL R13, 88(SP)
+	MOVL R12, 92(SP)
+	// Lane 3.
+	MOVQ R12, 96(SP)
+	MOVQ 48(R11), R13
+	MOVQ R13, 104(SP)
+	MOVQ 56(R11), R13
+	MOVQ R13, 112(SP)
+	MOVL 64(R11), R13
+	MOVL R13, 120(SP)
+	MOVL R12, 124(SP)
+
+	VMOVDQU 0(SP), X2
+	VINSERTI64X2 $1, 32(SP), Y2, Y2
+	VINSERTI64X2 $2, 64(SP), Z2, Z2
+	VINSERTI64X2 $3, 96(SP), Z2, Z2
+	VMOVDQU 16(SP), X6
+	VINSERTI64X2 $1, 48(SP), Y6, Y6
+	VINSERTI64X2 $2, 80(SP), Z6, Z6
+	VINSERTI64X2 $3, 112(SP), Z6, Z6
+
+	VPXORD Z2, Z14, Z14
+	VPXORD Z6, Z15, Z15
+
+	VPXORD Z8,  Z14, Z0
+	VPXORD Z9,  Z15, Z1
+	VPXORD Z10, Z14, Z4
+	VPXORD Z12, Z4,  Z4
+	VPXORD Z11, Z15, Z5
+
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z16)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z17)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z18)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z19)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z20)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z21)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z22)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z23)
+	AREION256_FUSED_ROUND(Z0, Z1, Z4, Z5, Z24)
+	AREION256_FUSED_ROUND(Z1, Z0, Z5, Z4, Z25)
+
+	VPXORD Z4, Z0, Z14
+	VPXORD Z5, Z1, Z15
+
+	VEXTRACTI64X2 $0, Z14, 0(DX)
+	VEXTRACTI64X2 $0, Z15, 16(DX)
+	VEXTRACTI64X2 $1, Z14, 32(DX)
+	VEXTRACTI64X2 $1, Z15, 48(DX)
+	VEXTRACTI64X2 $2, Z14, 64(DX)
+	VEXTRACTI64X2 $2, Z15, 80(DX)
+	VEXTRACTI64X2 $3, Z14, 96(DX)
+	VEXTRACTI64X2 $3, Z15, 112(DX)
+
+	VZEROUPPER
+	RET

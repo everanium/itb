@@ -134,7 +134,8 @@ func TestAESCMACEndToEndItb(t *testing.T) {
 func mkAESCMACTrio(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb.Seed128) {
 	t.Helper()
 	mk := func() *itb.Seed128 {
-		s, err := itb.NewSeed128(keyBits, AESCMAC())
+		fn, _ := AESCMAC()
+		s, err := itb.NewSeed128(keyBits, fn)
 		if err != nil {
 			t.Fatalf("NewSeed128: %v", err)
 		}
