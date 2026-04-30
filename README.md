@@ -191,12 +191,12 @@ func main() {
                        // automatically enabled for Single Ouroboros if
                        // itb.SetBitSoup(1) is enabled or vice versa
 
-    // Three independent CSPRNG-keyed Areion-SoEM-512 closures. The built-in
-    // factory generates a fresh random fixed key on every call; discarded
-    // here for the simple round-trip — capture for cross-process persistence.
-    fnN, batchN, _ := itb.MakeAreionSoEM512Hash() // random noise hash key generated
-    fnD, batchD, _ := itb.MakeAreionSoEM512Hash() // random data hash key generated
-    fnS, batchS, _ := itb.MakeAreionSoEM512Hash() // random start hash key generated
+    // Three independent CSPRNG-keyed Areion-SoEM-512 closures. The third
+    // return value (keyN/keyD/keyS) is the [64]byte fixed key — capture
+    // it per seed for cross-process persistence.
+    fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
+    fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
+    fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
 
     // Three independent CSPRNG-generated 2048-bit seeds.
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
@@ -206,6 +206,16 @@ func main() {
     ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
     ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
     ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+
+    // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys)
+    // and ns.Components/ds.Components/ss.Components ([]uint64 seed components)
+    // carry the entire reconstruction state. See hashes/README.md.
+    fmt.Printf("noise PRF key: %x\n", keyN[:])
+    fmt.Printf("data  PRF key: %x\n", keyD[:])
+    fmt.Printf("start PRF key: %x\n", keyS[:])
+    fmt.Printf("noise seed components: %v\n", ns.Components)
+    fmt.Printf("data  seed components: %v\n", ds.Components)
+    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -244,9 +254,9 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    fnN, batchN, _ := itb.MakeAreionSoEM512Hash()
-    fnD, batchD, _ := itb.MakeAreionSoEM512Hash()
-    fnS, batchS, _ := itb.MakeAreionSoEM512Hash()
+    fnN, batchN, keyN := itb.MakeAreionSoEM512Hash()
+    fnD, batchD, keyD := itb.MakeAreionSoEM512Hash()
+    fnS, batchS, keyS := itb.MakeAreionSoEM512Hash()
 
     ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
     ds, _ := itb.NewSeed512(2048, fnD); ds.BatchHash = batchD
@@ -256,6 +266,17 @@ func main() {
     var macKey [32]byte
     rand.Read(macKey[:])
     mac, _ := macs.KMAC256(macKey[:])
+
+    // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys),
+    // ns.Components/ds.Components/ss.Components ([]uint64 seed components),
+    // and macKey ([32]byte MAC key). See hashes/README.md and macs/README.md.
+    fmt.Printf("noise PRF key: %x\n", keyN[:])
+    fmt.Printf("data  PRF key: %x\n", keyD[:])
+    fmt.Printf("start PRF key: %x\n", keyS[:])
+    fmt.Printf("MAC key:       %x\n", macKey[:])
+    fmt.Printf("noise seed components: %v\n", ns.Components)
+    fmt.Printf("data  seed components: %v\n", ds.Components)
+    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -302,10 +323,12 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    // Three independent CSPRNG-keyed BLAKE2b-512 closures.
-    fnN, _ := hashes.BLAKE2b512() // random noise hash key generated
-    fnD, _ := hashes.BLAKE2b512() // random data hash key generated
-    fnS, _ := hashes.BLAKE2b512() // random start hash key generated
+    // Three independent CSPRNG-keyed BLAKE2b-512 closures. The second
+    // return value (keyN/keyD/keyS) is the [64]byte fixed key — capture
+    // it per seed for cross-process persistence.
+    fnN, keyN := hashes.BLAKE2b512() // random noise hash key generated
+    fnD, keyD := hashes.BLAKE2b512() // random data hash key generated
+    fnS, keyS := hashes.BLAKE2b512() // random start hash key generated
 
     // 2048-bit seeds — 32 components × 64 bits, multiple of 8 for Seed512.
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
@@ -316,6 +339,17 @@ func main() {
     var macKey [32]byte
     rand.Read(macKey[:])
     mac, _ := macs.HMACBLAKE3(macKey[:])
+
+    // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys),
+    // ns.Components/ds.Components/ss.Components ([]uint64 seed components),
+    // and macKey ([32]byte MAC key). See hashes/README.md and macs/README.md.
+    fmt.Printf("noise PRF key: %x\n", keyN[:])
+    fmt.Printf("data  PRF key: %x\n", keyD[:])
+    fmt.Printf("start PRF key: %x\n", keyS[:])
+    fmt.Printf("MAC key:       %x\n", macKey[:])
+    fmt.Printf("noise seed components: %v\n", ns.Components)
+    fmt.Printf("data  seed components: %v\n", ds.Components)
+    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -363,6 +397,14 @@ func main() {
     ns, _ := itb.NewSeed128(1024, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed128(1024, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed128(1024, fnS) // random start CSPRNG seeds generated
+
+    // For cross-process persistence: SipHash-2-4 has no fixed PRF key — the
+    // seed components themselves are the entire keying material. Capture
+    // ns.Components/ds.Components/ss.Components ([]uint64 each). See
+    // hashes/README.md for save/load patterns.
+    fmt.Printf("noise seed components: %v\n", ns.Components)
+    fmt.Printf("data  seed components: %v\n", ds.Components)
+    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -492,10 +534,12 @@ func main() {
                        // automatically enabled for Single Ouroboros if
                        // itb.SetBitSoup(1) is enabled or vice versa
 
-    // Three independent CSPRNG-keyed Areion-SoEM-256 closures.
-    fnN, batchN, _ := itb.MakeAreionSoEM256Hash() // random noise hash key generated
-    fnD, batchD, _ := itb.MakeAreionSoEM256Hash() // random data hash key generated
-    fnS, batchS, _ := itb.MakeAreionSoEM256Hash() // random start hash key generated
+    // Three independent CSPRNG-keyed Areion-SoEM-256 closures. The third
+    // return value (keyN/keyD/keyS) is the [32]byte fixed key — capture
+    // it per seed for cross-process persistence.
+    fnN, batchN, keyN := itb.MakeAreionSoEM256Hash() // random noise hash key generated
+    fnD, batchD, keyD := itb.MakeAreionSoEM256Hash() // random data hash key generated
+    fnS, batchS, keyS := itb.MakeAreionSoEM256Hash() // random start hash key generated
 
     // 1024-bit seeds — 16 components × 64 bits, multiple of 4 for Seed256.
     ns, _ := itb.NewSeed256(1024, fnN) // random noise CSPRNG seeds generated
@@ -505,6 +549,16 @@ func main() {
     ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
     ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
     ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+
+    // For cross-process persistence: keyN/keyD/keyS ([32]byte PRF fixed keys)
+    // and ns.Components/ds.Components/ss.Components ([]uint64 seed components)
+    // carry the entire reconstruction state. See hashes/README.md.
+    fmt.Printf("noise PRF key: %x\n", keyN[:])
+    fmt.Printf("data  PRF key: %x\n", keyD[:])
+    fmt.Printf("start PRF key: %x\n", keyS[:])
+    fmt.Printf("noise seed components: %v\n", ns.Components)
+    fmt.Printf("data  seed components: %v\n", ds.Components)
+    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
     chunkSize := 4 * 1024 * 1024 // 4 MB — bulk local crypto, not small-frame network streaming
