@@ -127,7 +127,8 @@ func TestChaCha20EndToEndItb(t *testing.T) {
 func mkChaCha20Trio(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *itb.Seed256) {
 	t.Helper()
 	mk := func() *itb.Seed256 {
-		s, err := itb.NewSeed256(keyBits, ChaCha20())
+		fn, _ := ChaCha20()
+		s, err := itb.NewSeed256(keyBits, fn)
 		if err != nil {
 			t.Fatalf("NewSeed256: %v", err)
 		}

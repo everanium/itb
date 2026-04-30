@@ -175,8 +175,8 @@
 // # Quick Start
 //
 //	import (
-//	    "github.com/dchest/siphash"
 //	    "github.com/everanium/itb"
+//	    "github.com/everanium/itb/hashes"
 //	)
 //
 //	// Optional: global configuration (all thread-safe, atomic)
@@ -195,18 +195,32 @@
 //
 //	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
 //	// PRF wiring, recommended default. The paired factory returns (single,
-//	// batched) sharing the same fixed key; ITB processChunk256 dispatches
-//	// per-pixel hashing four pixels per batched call. The runtime CPU
-//	// detection picks the most capable VAES tier available — AVX-512+VAES
-//	// on ZMM (Intel Ice Lake+, AMD Zen 4+), AVX2+VAES on YMM (AMD Zen 3,
-//	// Alder Lake E-cores), or a portable Go fallback via aes.Round4HW on
-//	// hardware without VAES (correctness preserved on every platform).
-//	ns256, _ := itb.NewSeed256(2048, nil)
-//	ns256.Hash, ns256.BatchHash = itb.MakeAreionSoEM256Hash()
-//	ds256, _ := itb.NewSeed256(2048, nil)
-//	ds256.Hash, ds256.BatchHash = itb.MakeAreionSoEM256Hash()
-//	ss256, _ := itb.NewSeed256(2048, nil)
-//	ss256.Hash, ss256.BatchHash = itb.MakeAreionSoEM256Hash()
+//	// batched, fixedKey) sharing the same fixed key; ITB processChunk256
+//	// dispatches per-pixel hashing four pixels per batched call. The
+//	// runtime CPU detection picks the most capable VAES tier available —
+//	// AVX-512+VAES on ZMM (Intel Ice Lake+, AMD Zen 4+), AVX2+VAES on
+//	// YMM (AMD Zen 3, Alder Lake E-cores), or a portable Go fallback via
+//	// aes.Round4HW on hardware without VAES (correctness preserved on
+//	// every platform).
+//	//
+//	// Pass nothing for a CSPRNG-generated key (returned alongside the
+//	// closure for cross-process persistence — save it!) or pass a saved
+//	// [32]byte key on the restore path. Three independent factory calls
+//	// give three independent fixed keys.
+//	fnN, batchN, keyN := itb.MakeAreionSoEM256Hash()
+//	fnD, batchD, keyD := itb.MakeAreionSoEM256Hash()
+//	fnS, batchS, keyS := itb.MakeAreionSoEM256Hash()
+//	saveKey("noise-key", keyN[:]) // persistence — write to config / KMS
+//	saveKey("data-key", keyD[:]) // persistence — write to config / KMS
+//	saveKey("start-key", keyS[:]) // persistence — write to config / KMS
+//	ns256, _ := itb.NewSeed256(1024, fnN)
+//	ds256, _ := itb.NewSeed256(1024, fnD)
+//	ss256, _ := itb.NewSeed256(1024, fnS)
+//	ns256.BatchHash = batchN
+//	ds256.BatchHash = batchD
+//	ss256.BatchHash = batchS
+//	// (analogous wiring for ns256, ds256, ss256 — three independent (hashFn, batchFn, hashKey)
+//	// triples, three independent saved keys)
 //
 //	encrypted, _ := itb.Encrypt256(ns256, ds256, ss256, plaintext)
 //	decrypted, _ := itb.Decrypt256(ns256, ds256, ss256, encrypted)
@@ -214,45 +228,72 @@
 //	// Areion-SoEM-512 with batched VAES dispatch — same factory pattern,
 //	// 64-byte key, 64-byte input, 8 × uint64 seed. Use itb.NewSeed512 +
 //	// itb.Encrypt512 / itb.Decrypt512 in place of the 256-bit variants.
-//	ns512, _ := itb.NewSeed512(2048, nil)
-//	ns512.Hash, ns512.BatchHash = itb.MakeAreionSoEM512Hash()
-//	// (analogous wiring for ds512, ss512)
+//	fnN, batchN, keyN := itb.MakeAreionSoEM512Hash()
+//	fnD, batchD, keyD := itb.MakeAreionSoEM512Hash()
+//	fnS, batchS, keyS := itb.MakeAreionSoEM512Hash()
+//	saveKey("noise-key", keyN[:]) // persistence — write to config / KMS
+//	saveKey("data-key", keyD[:]) // persistence — write to config / KMS
+//	saveKey("start-key", keyS[:]) // persistence — write to config / KMS
+//	ns512, _ := itb.NewSeed512(2048, fnN)
+//	ds512, _ := itb.NewSeed512(2048, fnD)
+//	ss512, _ := itb.NewSeed512(2048, fnS)
+//	ns512.BatchHash = batchN
+//	ds512.BatchHash = batchD
+//	ss512.BatchHash = batchS
+//	// (analogous wiring for ns512, ds512, ss512 — three independent (hashFn, batchFn, hashKey)
+//	// triples, three independent saved keys)
 //
-//	// SipHash-2-4 (128-bit hash, 1024-bit effective key)
-//	func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-//	    return siphash.Hash128(seed0, seed1, data)
-//	}
+//	encrypted, _ := itb.Encrypt512(ns512, ds512, ss512, plaintext)
+//	decrypted, _ := itb.Decrypt512(ns512, ds512, ss512, encrypted)
 //
-//	ns, _ := itb.NewSeed128(1024, sipHash128)
-//	ds, _ := itb.NewSeed128(1024, sipHash128)
-//	ss, _ := itb.NewSeed128(1024, sipHash128)
+//	// Other PRF primitives — use the hashes/ subpackage. Same variadic
+//	// pattern: pass nothing for random key, pass a saved key for restore.
+//	// Returned key is always emitted as the second value — capture it
+//	// for persistence (test fixtures discard via `_`).
+//
+//	// SipHash-2-4 (128-bit hash, 1024-bit effective key) — exception:
+//	// no internal fixed key (keying material is the seed components),
+//	// so this is the only factory that returns just one value.
+//	ns, _ := itb.NewSeed128(1024, hashes.SipHash24())
+//	ds, _ := itb.NewSeed128(1024, hashes.SipHash24())
+//	ss, _ := itb.NewSeed128(1024, hashes.SipHash24())
 //
 //	encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
 //	decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
 //
-//	// AES-NI Cached (128-bit hash, 1024-bit effective key, stdlib)
-//	func makeAESHash() itb.HashFunc128 {
-//	    var key [16]byte
-//	    rand.Read(key[:])
-//	    block, _ := aes.NewCipher(key[:])
+//	// AES-CMAC (128-bit hash, 1024-bit effective key, AES-NI hardware
+//	// path on amd64 / arm64 hosts that expose the AES round instructions)
+//	aesFn, aesKey := hashes.AESCMAC()
+//	saveKey("aescmac-noise", aesKey[:])
+//	ns, _ = itb.NewSeed128(1024, aesFn)
+//	// (repeat for ds, ss with independent keys; saveKey omitted in subsequent
+//	// snippets for brevity — but always required on the persistence path)
 //
-//	    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-//	        var b [16]byte
-//	        copy(b[:], data)
-//	        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
-//	        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
-//	        block.Encrypt(b[:], b[:])
-//	        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
-//	        block.Encrypt(b[:], b[:])
-//	        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
-//	    }
-//	}
+//	// BLAKE3 keyed (256-bit hash, 2048-bit effective key)
+//	b3Fn, b3Key := hashes.BLAKE3()
+//	_ = b3Key
+//	ns256, _ = itb.NewSeed256(2048, b3Fn)
 //
-//	ns, _ = itb.NewSeed128(1024, makeAESHash())
-//	ds, _ = itb.NewSeed128(1024, makeAESHash())  // independent key per seed
-//	ss, _ = itb.NewSeed128(1024, makeAESHash())
+//	// BLAKE2b-512 (512-bit hash, 2048-bit effective key, native 512-bit
+//	// output and up to 64-byte key)
+//	b2Fn, b2Key := hashes.BLAKE2b512()
+//	_ = b2Key
+//	ns512, _ = itb.NewSeed512(2048, b2Fn)
 //
-//	// BLAKE3 Keyed Cached (256-bit hash, 2048-bit effective key, sync.Pool)
+//	// Custom factory pattern (advanced) — write your own HashFunc when
+//	// you need a primitive not covered by the hashes/ subpackage, or
+//	// want a different keying / pooling strategy. The pattern below
+//	// is what hashes.BLAKE3() itself ships, reproduced here as a
+//	// reference. Three techniques worth noting:
+//	//
+//	//   - sync.Pool amortises per-call allocation of the scratch buffer
+//	//   - blake3.NewKeyed produces a hasher template; Clone() per call
+//	//     sidesteps the data race that Reset() on a shared hasher would
+//	//     cause under ITB's parallel goroutines in process256
+//	//   - the payload region is zero-padded out to seedInjectBytes (32)
+//	//     so all four seed uint64's contribute even when len(data) is
+//	//     shorter than 32 (e.g. a 20-byte ITB pixel input would
+//	//     otherwise drop seed[2..3] silently)
 //	func makeBlake3Hash() itb.HashFunc256 {
 //	    var key [32]byte
 //	    rand.Read(key[:])
@@ -261,19 +302,14 @@
 //
 //	    return func(data []byte, seed [4]uint64) [4]uint64 {
 //	        h := template.Clone()
-//	        // Ensure mixed is long enough for all 4 seed uint64's (32 bytes),
-//	        // even when data is shorter. Without this, seed[i] for i past
-//	        // len(data)/8 would be silently dropped, halving effective key.
 //	        const seedInjectBytes = 32
 //	        payloadLen := len(data)
 //	        if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
 //	        ptr := pool.Get().(*[]byte)
 //	        mixed := *ptr
 //	        if cap(mixed) < payloadLen { mixed = make([]byte, payloadLen) } else { mixed = mixed[:payloadLen] }
-//	        // Zero-pad any tail beyond len(data) (pool buffer may be stale).
 //	        for i := len(data); i < payloadLen; i++ { mixed[i] = 0 }
 //	        copy(mixed[:len(data)], data)
-//	        // XOR seed[0..3] into first 32 bytes (guaranteed to fit now).
 //	        for i := 0; i < 4; i++ {
 //	            off := i * 8
 //	            binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
@@ -289,55 +325,9 @@
 //	    }
 //	}
 //
-//	ns256, _ := itb.NewSeed256(2048, makeBlake3Hash())
-//	ds256, _ := itb.NewSeed256(2048, makeBlake3Hash())
-//	ss256, _ := itb.NewSeed256(2048, makeBlake3Hash())
-//
-//	encrypted, _ = itb.Encrypt256(ns256, ds256, ss256, plaintext)
-//	decrypted, _ = itb.Decrypt256(ns256, ds256, ss256, encrypted)
-//
-//	// BLAKE2b-512 Keyed Cached (512-bit hash, 2048-bit effective key, sync.Pool)
-//	func makeBlake2bHash512() itb.HashFunc512 {
-//	    var key [64]byte
-//	    rand.Read(key[:])
-//	    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
-//
-//	    return func(data []byte, seed [8]uint64) [8]uint64 {
-//	        // Ensure payload region is at least seedInjectBytes (64) long so all
-//	        // 8 seed uint64's XOR into the hash input. Otherwise seed[i] past
-//	        // len(data)/8 are silently dropped for short data.
-//	        const keyLen = 64
-//	        const seedInjectBytes = 64
-//	        payloadLen := len(data)
-//	        if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
-//	        need := keyLen + payloadLen
-//	        ptr := pool.Get().(*[]byte)
-//	        buf := *ptr
-//	        if cap(buf) < need { buf = make([]byte, need) } else { buf = buf[:need] }
-//	        // Zero-pad any tail beyond the copied data (pool buffer may be stale).
-//	        for i := keyLen + len(data); i < need; i++ { buf[i] = 0 }
-//	        copy(buf[:keyLen], key[:])
-//	        copy(buf[keyLen:keyLen+len(data)], data)
-//	        for i := 0; i < 8; i++ {
-//	            off := keyLen + i*8
-//	            binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-//	        }
-//	        digest := blake2b.Sum512(buf)
-//	        *ptr = buf; pool.Put(ptr)
-//	        var result [8]uint64
-//	        for i := range result {
-//	            result[i] = binary.LittleEndian.Uint64(digest[i*8:])
-//	        }
-//	        return result
-//	    }
-//	}
-//
-//	ns512, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-//	ds512, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-//	ss512, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-//
-//	encrypted, _ = itb.Encrypt512(ns512, ds512, ss512, plaintext)
-//	decrypted, _ = itb.Decrypt512(ns512, ds512, ss512, encrypted)
+//	ns256, _ = itb.NewSeed256(2048, makeBlake3Hash())
+//	ds256, _ = itb.NewSeed256(2048, makeBlake3Hash())
+//	ss256, _ = itb.NewSeed256(2048, makeBlake3Hash())
 //
 // # Authenticated Encryption (MAC-Inside-Encrypt)
 //
@@ -387,6 +377,13 @@
 // Triple Ouroboros streaming variants (7 seeds):
 // [EncryptStream3x128], [EncryptStream3x256], [EncryptStream3x512],
 // [DecryptStream3x128], [DecryptStream3x256], [DecryptStream3x512].
+//
+// [ParseChunkLen] inspects the first 20 bytes of a chunk header and
+// reports the chunk's total length on the wire, letting external
+// streaming consumers (FFI bindings, custom file-format wrappers)
+// walk a concatenated chunk stream one chunk at a time without
+// buffering the whole stream in memory. The function is also
+// exposed through the C ABI as ITB_ParseChunkLen.
 //
 // # Triple Ouroboros (7-seed variant)
 //

@@ -160,52 +160,221 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 
 ## Quick Start
 
+Three configurations covering the most common usage patterns. Every key and
+every seed component is CSPRNG-generated; no master key, no key-derivation
+step. Cross-process persistence (encrypt today, decrypt tomorrow / on a
+different host) is documented in [hashes/README.md](hashes/README.md) and
+[macs/README.md](macs/README.md).
+
+### Areion-SoEM-512 (recommended, no MAC)
+
 ```go
 package main
 
 import (
     "fmt"
-    "github.com/dchest/siphash"
     "github.com/everanium/itb"
 )
 
-func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-    return siphash.Hash128(seed0, seed1, data)
-}
-
 func main() {
     // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
-    itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
-                            // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
+    itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-    // Create three independent seeds (triple-seed isolation)
-    noiseSeed, err := itb.NewSeed128(1024, sipHash128)
-    if err != nil {
-        panic(err)
-    }
-    dataSeed, err := itb.NewSeed128(1024, sipHash128)
-    if err != nil {
-        panic(err)
-    }
-    startSeed, err := itb.NewSeed128(1024, sipHash128)
-    if err != nil {
-        panic(err)
-    }
+    itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                       // automatically enabled for Single Ouroboros if
+                       // itb.SetLockSoup(1) is enabled or vice versa
 
-    plaintext := []byte("any binary data — including 0x00 bytes")
+    itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                       // bit-permutation overlay on top of bit-soup;
+                       // automatically enabled for Single Ouroboros if
+                       // itb.SetBitSoup(1) is enabled or vice versa
+
+    // Three independent CSPRNG-keyed Areion-SoEM-512 closures. The built-in
+    // factory generates a fresh random fixed key on every call; discarded
+    // here for the simple round-trip — capture for cross-process persistence.
+    fnN, batchN, _ := itb.MakeAreionSoEM512Hash() // random noise hash key generated
+    fnD, batchD, _ := itb.MakeAreionSoEM512Hash() // random data hash key generated
+    fnS, batchS, _ := itb.MakeAreionSoEM512Hash() // random start hash key generated
+
+    // Three independent CSPRNG-generated 2048-bit seeds.
+    ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
+    ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
+    ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+
+    ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
+    ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
+    ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
 
     // Encrypt into RGBWYOPA container
-    encrypted, err := itb.Encrypt128(noiseSeed, dataSeed, startSeed, plaintext)
+    encrypted, err := itb.Encrypt512(ns, ds, ss, plaintext)
     if err != nil {
         panic(err)
     }
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
-    // Decrypt
-    decrypted, err := itb.Decrypt128(noiseSeed, dataSeed, startSeed, encrypted)
+    // Decrypt from RGBWYOPA container
+    decrypted, err := itb.Decrypt512(ns, ds, ss, encrypted)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+### Areion-SoEM-512 + KMAC-256 (authenticated)
+
+```go
+package main
+
+import (
+    "crypto/rand"
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/macs"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)
+    itb.SetNonceBits(512)
+    itb.SetBarrierFill(4)
+    itb.SetBitSoup(1)
+    itb.SetLockSoup(1)
+
+    fnN, batchN, _ := itb.MakeAreionSoEM512Hash()
+    fnD, batchD, _ := itb.MakeAreionSoEM512Hash()
+    fnS, batchS, _ := itb.MakeAreionSoEM512Hash()
+
+    ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
+    ds, _ := itb.NewSeed512(2048, fnD); ds.BatchHash = batchD
+    ss, _ := itb.NewSeed512(2048, fnS); ss.BatchHash = batchS
+
+    // KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte CSPRNG key, 32-byte tag.
+    var macKey [32]byte
+    rand.Read(macKey[:])
+    mac, _ := macs.KMAC256(macKey[:])
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+    // Authenticated encrypt — 32-byte tag is computed across the entire
+    // decrypted capacity and embedded inside the RGBWYOPA container,
+    // preserving oracle-free deniability.
+    encrypted, err := itb.EncryptAuthenticated512(ns, ds, ss, plaintext, mac)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Authenticated decrypt — any single-bit tamper triggers MAC failure
+    // (no oracle leak about which byte was tampered).
+    decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+Other shipped MACs: `macs.HMACSHA256(key)`, `macs.HMACBLAKE3(key)` — all
+three produce 32-byte tags. See [macs/README.md](macs/README.md) for the
+full MAC matrix.
+
+### BLAKE2b-512 + HMAC-BLAKE3 (authenticated, 2048-bit seeds)
+
+```go
+package main
+
+import (
+    "crypto/rand"
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+    "github.com/everanium/itb/macs"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)
+    itb.SetNonceBits(512)
+    itb.SetBarrierFill(4)
+    itb.SetBitSoup(1)
+    itb.SetLockSoup(1)
+
+    // Three independent CSPRNG-keyed BLAKE2b-512 closures.
+    fnN, _ := hashes.BLAKE2b512() // random noise hash key generated
+    fnD, _ := hashes.BLAKE2b512() // random data hash key generated
+    fnS, _ := hashes.BLAKE2b512() // random start hash key generated
+
+    // 2048-bit seeds — 32 components × 64 bits, multiple of 8 for Seed512.
+    ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
+    ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
+    ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+
+    // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
+    var macKey [32]byte
+    rand.Read(macKey[:])
+    mac, _ := macs.HMACBLAKE3(macKey[:])
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+    // Authenticated encrypt — 32-byte tag is computed across the entire
+    // decrypted capacity and embedded inside the RGBWYOPA container,
+    // preserving oracle-free deniability.
+    encrypted, err := itb.EncryptAuthenticated512(ns, ds, ss, plaintext, mac)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Authenticated decrypt — any single-bit tamper triggers MAC failure
+    // (no oracle leak about which byte was tampered).
+    decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+### SipHash-2-4 (lightweight, 128-bit hash, no internal fixed key)
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)
+
+    // SipHash-2-4 has no internal fixed key — the seed components themselves
+    // are the entire keying material. Three independent factory calls paired
+    // with three CSPRNG-generated seeds give three independent 1024-bit
+    // effective keys.
+    fnN := hashes.SipHash24()
+    fnD := hashes.SipHash24()
+    fnS := hashes.SipHash24()
+
+    ns, _ := itb.NewSeed128(1024, fnN) // random noise CSPRNG seeds generated
+    ds, _ := itb.NewSeed128(1024, fnD) // random data CSPRNG seeds generated
+    ss, _ := itb.NewSeed128(1024, fnS) // random start CSPRNG seeds generated
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+    // Encrypt into RGBWYOPA container
+    encrypted, err := itb.Encrypt128(ns, ds, ss, plaintext)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Decrypt from RGBWYOPA container
+    decrypted, err := itb.Decrypt128(ns, ds, ss, encrypted)
     if err != nil {
         panic(err)
     }
@@ -224,13 +393,13 @@ itb.SetBitSoup(1)  // optional mode: bit-level split ("bit soup"), opt-in SAT-re
 itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
                    // automatically engages itb.SetBitSoup(1)
 
-ns, _  := itb.NewSeed128(512, sipHash128) // shared noiseSeed
-ds1, _ := itb.NewSeed128(512, sipHash128) // dataSeed per ring
-ds2, _ := itb.NewSeed128(512, sipHash128)
-ds3, _ := itb.NewSeed128(512, sipHash128)
-ss1, _ := itb.NewSeed128(512, sipHash128) // startSeed per ring
-ss2, _ := itb.NewSeed128(512, sipHash128)
-ss3, _ := itb.NewSeed128(512, sipHash128)
+ns, _  := itb.NewSeed128(512, hashes.SipHash24()) // shared noiseSeed
+ds1, _ := itb.NewSeed128(512, hashes.SipHash24()) // dataSeed per ring
+ds2, _ := itb.NewSeed128(512, hashes.SipHash24())
+ds3, _ := itb.NewSeed128(512, hashes.SipHash24())
+ss1, _ := itb.NewSeed128(512, hashes.SipHash24()) // startSeed per ring
+ss2, _ := itb.NewSeed128(512, hashes.SipHash24())
+ss3, _ := itb.NewSeed128(512, hashes.SipHash24())
 
 encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 decrypted, _ := itb.Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
@@ -243,22 +412,22 @@ Each seed has its own hash function — you can use **different PRF implementati
 
 **Single Ouroboros (3 seeds):**
 ```go
-ns, _ := itb.NewSeed128(1024, sipHash128)      // noiseSeed: SipHash-2-4
-ds, _ := itb.NewSeed128(1024, makeAESHash())    // dataSeed: AES-CMAC
-ss, _ := itb.NewSeed128(1024, sipHash128)       // startSeed: SipHash-2-4
+ns, _ := itb.NewSeed128(1024, hashes.SipHash24()) // noiseSeed: SipHash-2-4
+ds, _ := itb.NewSeed128(1024, hashes.AESCMAC())   // dataSeed: AES-CMAC
+ss, _ := itb.NewSeed128(1024, hashes.SipHash24()) // startSeed: SipHash-2-4
 
 encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
 ```
 
 **Triple Ouroboros (7 seeds):**
 ```go
-ns, _  := itb.NewSeed128(512, sipHash128)       // shared noise: SipHash
-ds1, _ := itb.NewSeed128(512, makeAESHash())    // ring 1 data: AES-CMAC
-ds2, _ := itb.NewSeed128(512, sipHash128)       // ring 2 data: SipHash
-ds3, _ := itb.NewSeed128(512, makeAESHash())    // ring 3 data: AES-CMAC
-ss1, _ := itb.NewSeed128(512, sipHash128)       // ring 1 start: SipHash
-ss2, _ := itb.NewSeed128(512, makeAESHash())    // ring 2 start: AES-CMAC
-ss3, _ := itb.NewSeed128(512, sipHash128)       // ring 3 start: SipHash
+ns, _  := itb.NewSeed128(512, hashes.SipHash24()) // shared noise: SipHash
+ds1, _ := itb.NewSeed128(512, hashes.AESCMAC())   // ring 1 data: AES-CMAC
+ds2, _ := itb.NewSeed128(512, hashes.SipHash24()) // ring 2 data: SipHash
+ds3, _ := itb.NewSeed128(512, hashes.AESCMAC())   // ring 3 data: AES-CMAC
+ss1, _ := itb.NewSeed128(512, hashes.SipHash24()) // ring 1 start: SipHash
+ss2, _ := itb.NewSeed128(512, hashes.AESCMAC())   // ring 2 start: AES-CMAC
+ss3, _ := itb.NewSeed128(512, hashes.SipHash24()) // ring 3 start: SipHash
 
 encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 ```
@@ -277,10 +446,10 @@ The library provides three parallel API sets for different hash output widths. A
 
 | API | Seeds | Hash Type | State | Effective Max Key | Target Hash Functions |
 |---|---|---|---|---|---|
-| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
+| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
 | `Encrypt512` / `Decrypt512` | 3 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
 | `Encrypt128` / `Decrypt128` | 3 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
-| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 2048 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
+| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
 | `Encrypt3x512` / `Decrypt3x512` | 7 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
 | `Encrypt3x128` / `Decrypt3x128` | 7 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
 
@@ -290,28 +459,80 @@ Each variant also has authenticated versions (`EncryptAuthenticated128`/`Decrypt
 
 Hash functions like AES and BLAKE3 have expensive key setup. Creating a new cipher/hasher on every call wastes time on initialization. The **cached wrapper** pattern fixes this: create the cipher once with a fixed random key, mix seed components into the data instead. Each of the three seeds must get its own wrapper instance (independent key).
 
+The `hashes/` subpackage ships ready cached factories — `hashes.SipHash24()`, `hashes.AESCMAC()`, `hashes.ChaCha20()`, `hashes.BLAKE2s()`, `hashes.BLAKE2b256()`, `hashes.BLAKE2b512()`, `hashes.BLAKE3()` — each returning a closure with a freshly-generated random key. For the recommended-default Areion-SoEM, use the flagship factories shipped directly from the `itb` root package (see below). A `WithKey` variant is also exported for every primitive (`hashes.AESCMACWithKey(key)` etc.) for serialization paths where the fixed key must persist across processes.
+
 ### Areion-SoEM (256/512-bit, VAES-accelerated batched dispatch — recommended)
 
-Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) and ~1.3× over scalar AES-NI on hosts with VAES + AVX2 but no AVX-512 (AMD Zen 3, Intel Alder Lake P/E-cores). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call.
+Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) and ~1.3× over scalar AES-NI on hosts with VAES + AVX2 but no AVX-512 (AMD Zen 3, Intel Alder Lake P/E-cores). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc, fixedKey)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call. Pass nothing for a CSPRNG-generated `fixedKey` (returned for cross-process persistence — save it!) or pass a saved `[32]byte` / `[64]byte` on the restore path.
+
+Recent ASM work in `internal/areionasm/` lifts both arms substantially: the SoEM batched dispatch interleaves four VAES lanes per round for 3-4× over the prior sequential layout, and fused single-shot AVX-512 chain kernels (`areion_chain{256,512}_{20,36,68}_amd64.s`) collapse a full per-pixel ChainHash into one ASM call for 5-10× over the per-call Go path. The 20 / 36 / 68 byte specialisations cover `SetNonceBits(128 / 256 / 512)` respectively; state is held in ZMM registers across all CBC-MAC absorb rounds with zero memory round-trips.
+
+The example below pairs Areion-SoEM-256 with the streaming API (`EncryptStream256` / `DecryptStream256`) at a deliberately modest 1024-bit seed width — same Quick Start shape, just one tier down on key size and routed through the chunk-emitting callback variant suitable for socket / pipe / file delivery:
 
 ```go
-itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
-itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
-itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
-itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
-                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
+package main
 
+import (
+    "fmt"
+    "github.com/everanium/itb"
+)
 
-// Areion-SoEM-256 — 256-bit PRF, batched VAES dispatch
-ns, _ := itb.NewSeed256(2048, nil)
-ns.Hash, ns.BatchHash = itb.MakeAreionSoEM256Hash()
-ds, _ := itb.NewSeed256(2048, nil)
-ds.Hash, ds.BatchHash = itb.MakeAreionSoEM256Hash()
-ss, _ := itb.NewSeed256(2048, nil)
-ss.Hash, ss.BatchHash = itb.MakeAreionSoEM256Hash()
+func main() {
+    // Optional: global configuration (all thread-safe, atomic)
+    itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
-decrypted, _ := itb.Decrypt256(ns, ds, ss, encrypted)
+    itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                       // automatically enabled for Single Ouroboros if
+                       // itb.SetLockSoup(1) is enabled or vice versa
+
+    itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                       // bit-permutation overlay on top of bit-soup;
+                       // automatically enabled for Single Ouroboros if
+                       // itb.SetBitSoup(1) is enabled or vice versa
+
+    // Three independent CSPRNG-keyed Areion-SoEM-256 closures.
+    fnN, batchN, _ := itb.MakeAreionSoEM256Hash() // random noise hash key generated
+    fnD, batchD, _ := itb.MakeAreionSoEM256Hash() // random data hash key generated
+    fnS, batchS, _ := itb.MakeAreionSoEM256Hash() // random start hash key generated
+
+    // 1024-bit seeds — 16 components × 64 bits, multiple of 4 for Seed256.
+    ns, _ := itb.NewSeed256(1024, fnN) // random noise CSPRNG seeds generated
+    ds, _ := itb.NewSeed256(1024, fnD) // random data CSPRNG seeds generated
+    ss, _ := itb.NewSeed256(1024, fnS) // random start CSPRNG seeds generated
+
+    ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
+    ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
+    ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+    chunkSize := 4 * 1024 * 1024 // 4 MB — bulk local crypto, not small-frame network streaming
+
+    // EncryptStream256 — emits successive ciphertext chunks via callback.
+    // Useful for file-sized payloads that shouldn't materialise in memory.
+    var ciphertext []byte
+    err := itb.EncryptStream256(ns, ds, ss, plaintext, chunkSize, func(chunk []byte) error {
+        ciphertext = append(ciphertext, chunk...)
+        return nil
+    })
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(ciphertext))
+
+    // DecryptStream256 — emits successive plaintext chunks via callback.
+    // Production callers drive emit from a file / mapped-region read loop.
+    var decrypted []byte
+    err = itb.DecryptStream256(ns, ds, ss, ciphertext, func(chunk []byte) error {
+        decrypted = append(decrypted, chunk...)
+        return nil
+    })
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
 ```
 
 The Areion-SoEM-512 variant uses `MakeAreionSoEM512Hash()` paired with `itb.Encrypt512` / `itb.Decrypt512` and is wired identically. The batched arm of the returned pair shares the same internally-generated random fixed key as the single arm, so per-pixel hashes match bit-exact between the two dispatch paths (verified by the parity test suite). Triple Ouroboros wires the same way: each of the seven seeds receives an independent paired factory call.
@@ -320,78 +541,75 @@ The Areion-SoEM-512 variant uses `MakeAreionSoEM512Hash()` paired with `itb.Encr
 
 | CPU / build | Path | Throughput tier |
 |---|---|---|
-| amd64 + VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) | `internal/areionasm/areion_amd64.s` AVX-512 ASM | 4-way VAES on ZMM, single VAESENC per round across all 4 lanes |
-| amd64 + VAES + AVX2 only (AMD Zen 3, Alder Lake E-cores) | `internal/areionasm/areion_amd64.s` AVX2 ASM | 4-way VAES on YMM, two 2-block VAESENC per round, ~2× over scalar AES-NI |
-| amd64 without VAES (older Intel / AMD) | Go fallback via `aes.Round4HW(state, zeroKey)` | 4× sequential AES-NI per round (no SIMD width gain, still hardware-accelerated) |
-| Pure software / `CGO_ENABLED=0` | Same Go fallback (process_generic.go batched dispatch wired) | Slowest tier, correct output preserved |
+| amd64 + VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) | SoEM batched: `internal/areionasm/areion_soem{256,512}_amd64.s` + fused chain: `internal/areionasm/areion_chain{256,512}_{20,36,68}_amd64.s` | Top tier: 4-way VAES interleaved on ZMM **and** fused-state chain kernel (one ASM call per pixel; no memory round-trips between absorb rounds) |
+| amd64 + VAES + AVX2 only (AMD Zen 3, Alder Lake E-cores) | SoEM batched: `internal/areionasm/areion_soem{256,512}_amd64.s` (YMM path) | 4-way VAES interleaved on YMM, ~2× over scalar AES-NI; fused chain kernel falls back to per-call Go path |
+| amd64 without VAES (older Intel / AMD) | Go fallback via `aes.Round4HW(state, zeroKey)` (`internal/areionasm/areion_amd64.s` base permutation) | 4× sequential AES-NI per round (no SIMD width gain, still hardware-accelerated) |
+| Pure software / `CGO_ENABLED=0` | Same Go fallback (`process_generic.go` batched dispatch wired) | Slowest tier, correct output preserved |
 
 Runtime CPU detection (`areionasm.HasVAESAVX512` and `areionasm.HasVAESAVX2NoAVX512`) selects the right path once at package init via the upstream `github.com/jedisct1/go-aes` CPUID checks — no per-call branching cost. The bit-exact parity invariant `BatchHash(data)[i] == Hash(data[i])` holds on every platform; ITB's parity test suite (`TestAreionSoEM{256,512}x4Parity` plus the direct-call parity tests for each tier and a 3-way cross-path parity test on hosts where all three implementations are runnable) verifies this on every test run.
 
 If the underlying primitive must be wired manually (custom key management, keyless probe, etc.) call `aes.AreionSoEM256` / `aes.AreionSoEM512` from `github.com/jedisct1/go-aes` directly — same primitive, no batched dispatch, useful only when the paired-factory pattern does not fit the deployment.
 
-### SipHash-2-4 (128-bit)
+### Pluggable PRF primitives via `hashes/`
 
-SipHash is a pure function — no key setup, no caching needed. Optimal for 128-bit width.
+The `hashes/` subpackage ships cached factories for every PRF-grade primitive ITB exposes through its FFI surface. Every factory pre-keys its primitive once at construction, reuses a `sync.Pool` of scratch buffers, and is safe to call concurrently. Pass nothing for a CSPRNG-generated key (returned for cross-process persistence — capture and save it); pass a saved key on the restore path. The `WithKey` counterpart takes the fixed key as a single non-variadic argument when the call site is unambiguously explicit-key. SipHash-2-4 is the one exception — its keying material is the seed components themselves, no internal fixed key, no `WithKey` form.
+
+In FFI-stable index order:
+
+| # | Variadic factory | Explicit-key counterpart | Returns (variadic form) | Native width |
+|---|---|---|---|---|
+| 0 | `Areion256Pair(key ...[32]byte)` | `Areion256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
+| 1 | `Areion512Pair(key ...[64]byte)` | `Areion512PairWithKey(key [64]byte)` | `(HashFunc512, BatchHashFunc512, [64]byte)` | 512 |
+| 2 | `SipHash24()` | — (seed components are the entire key) | `HashFunc128` | 128 |
+| 3 | `AESCMAC(key ...[16]byte)` | `AESCMACWithKey(key [16]byte)` | `(HashFunc128, [16]byte)` | 128 |
+| 8 | `ChaCha20(key ...[32]byte)` | `ChaCha20WithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
+| 4 | `BLAKE2b256(key ...[32]byte)` | `BLAKE2b256WithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
+| 5 | `BLAKE2b512(key ...[64]byte)` | `BLAKE2b512WithKey(key [64]byte)` | `(HashFunc512, [64]byte)` | 512 |
+| 6 | `BLAKE2s(key ...[32]byte)` | `BLAKE2sWithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
+| 7 | `BLAKE3(key ...[32]byte)` | `BLAKE3WithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
+
+Name-keyed dispatch (used by the FFI layer; works for any code that selects the primitive at runtime). The key is `[]byte`, size validated against the primitive's native length:
+
+| Function | Returns | Covers |
+|---|---|---|
+| `Make128(name, key ...[]byte)` | `(HashFunc128, []byte, error)` | 128-bit primitives (SipHash, AES-CMAC) |
+| `Make256(name, key ...[]byte)` | `(HashFunc256, []byte, error)` | 256-bit primitives (BLAKE3, BLAKE2s, BLAKE2b-256, ChaCha20) |
+| `Make256Pair(name, key ...[]byte)` | `(HashFunc256, BatchHashFunc256, []byte, error)` | Areion-SoEM-256 (paired single + batched) |
+| `Make512(name, key ...[]byte)` | `(HashFunc512, []byte, error)` | 512-bit primitives (BLAKE2b-512) |
+| `Make512Pair(name, key ...[]byte)` | `(HashFunc512, BatchHashFunc512, []byte, error)` | Areion-SoEM-512 (paired single + batched) |
+| `Find(name)` | `(Spec, bool)` | Spec lookup for key-size / native-width metadata |
+
+See [hashes/README.md](hashes/README.md) for full Sender/Receiver examples covering CSPRNG seeds, cross-process persistence, and the batched-dispatch wiring required by Areion-SoEM.
+
+### Authenticated MACs via `macs/`
+
+The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. The factory takes the key as `[]byte` (no variadic random-key path — the caller generates the key via `crypto/rand.Read` and passes it explicitly):
+
+| # | Factory | Returns | Key size | Tag size |
+|---|---|---|---|---|
+| 0 | `KMAC256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
+|   | `KMAC256WithCustomization(key, customization []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
+| 1 | `HMACBLAKE3(key []byte)` | `(MACFunc, error)` | 32 B | 32 B |
+| 2 | `HMACSHA256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
+
+Name-keyed dispatch:
+
+| Function | Returns | Purpose |
+|---|---|---|
+| `Make(name, key []byte)` | `(MACFunc, error)` | Name-keyed dispatch (FFI / runtime selection) |
+| `Find(name)` | `(Spec, bool)` | Spec lookup for key-size metadata |
+
+See [macs/README.md](macs/README.md) for full authenticated-encryption examples (`EncryptAuthenticated{128,256,512}` / `DecryptAuthenticated{128,256,512}`) and the MAC-Inside-Encrypt placement-hiding rationale.
+
+### Custom factory pattern (advanced)
+
+Write your own `HashFunc` when you need a primitive not covered by the `hashes/` subpackage, or want a different keying / pooling strategy. The pattern below is what `hashes.BLAKE3()` itself ships, kept here as a reference. Three techniques worth noting:
+
+- `sync.Pool` amortises per-call allocation of the scratch buffer
+- `blake3.NewKeyed` produces a hasher template; `Clone()` per call sidesteps the data race that `Reset()` on a shared hasher would cause under ITB's parallel goroutines in `process256`
+- the payload region is zero-padded out to `seedInjectBytes` (32) so all four seed `uint64`'s contribute even when `len(data)` is shorter than 32 (a 20-byte ITB pixel input would otherwise drop `seed[2..3]` silently)
 
 ```go
-itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
-itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
-itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
-itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
-                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
-
-func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-    return siphash.Hash128(seed0, seed1, data)
-}
-
-ns, _ := itb.NewSeed128(1024, sipHash128)  // 1024-bit key, 16 components, 8 rounds
-ds, _ := itb.NewSeed128(1024, sipHash128)
-ss, _ := itb.NewSeed128(1024, sipHash128)
-
-encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
-decrypted, _ := itb.Decrypt128(ns, ds, ss, encrypted)
-```
-
-### AES-NI Cached (128-bit, stdlib)
-
-```go
-itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
-itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
-itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
-itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
-                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
-
-func makeAESHash() itb.HashFunc128 {
-    var key [16]byte
-    rand.Read(key[:])
-    block, _ := aes.NewCipher(key[:])
-
-    return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-        var b [16]byte
-        copy(b[:], data)
-        binary.LittleEndian.PutUint64(b[0:], binary.LittleEndian.Uint64(b[0:])^seed0)
-        binary.LittleEndian.PutUint64(b[8:], binary.LittleEndian.Uint64(b[8:])^seed1)
-        block.Encrypt(b[:], b[:])
-        for j := 16; j < len(data); j++ { b[j-16] ^= data[j] }
-        block.Encrypt(b[:], b[:])
-        return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
-    }
-}
-
-ns, _ := itb.NewSeed128(1024, makeAESHash())
-ds, _ := itb.NewSeed128(1024, makeAESHash())  // independent key per seed
-ss, _ := itb.NewSeed128(1024, makeAESHash())
-```
-
-### BLAKE3 Keyed Cached (256-bit)
-
-```go
-itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
-itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
-itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
-itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
-                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
-
 func makeBlake3Hash() itb.HashFunc256 {
     var key [32]byte
     rand.Read(key[:])
@@ -400,19 +618,14 @@ func makeBlake3Hash() itb.HashFunc256 {
 
     return func(data []byte, seed [4]uint64) [4]uint64 {
         h := template.Clone()
-        // Ensure mixed is long enough for all 4 seed uint64's (32 bytes),
-        // even when data is shorter. Without this, seed[i] for i past
-        // len(data)/8 would be silently dropped, halving effective key.
         const seedInjectBytes = 32
         payloadLen := len(data)
         if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
         ptr := pool.Get().(*[]byte)
         mixed := *ptr
         if cap(mixed) < payloadLen { mixed = make([]byte, payloadLen) } else { mixed = mixed[:payloadLen] }
-        // Zero-pad any tail beyond len(data) (pool buffer may be stale).
         for i := len(data); i < payloadLen; i++ { mixed[i] = 0 }
         copy(mixed[:len(data)], data)
-        // XOR seed[0..3] into first 32 bytes (guaranteed to fit now).
         for i := 0; i < 4; i++ {
             off := i * 8
             binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
@@ -431,57 +644,6 @@ func makeBlake3Hash() itb.HashFunc256 {
 ns, _ := itb.NewSeed256(2048, makeBlake3Hash())
 ds, _ := itb.NewSeed256(2048, makeBlake3Hash())
 ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
-```
-
-### BLAKE2b-512 Keyed Cached (512-bit)
-
-BLAKE2b-512 has native 512-bit key and output — fewer ChainHash rounds (4 vs 8 for 256-bit), higher throughput.
-
-```go
-itb.SetMaxWorkers(4)    // limit CPU cores (default: all)
-itb.SetNonceBits(256)   // 256-bit nonce (default: 128)
-itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1)
-itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation (~2×-7× slower)
-                        // on Single Ouroboros, equivalent to itb.SetBitSoup(1); the two flags couple symmetrically
-
-func makeBlake2bHash512() itb.HashFunc512 {
-    var key [64]byte
-    rand.Read(key[:])
-    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
-
-    return func(data []byte, seed [8]uint64) [8]uint64 {
-        // Ensure payload region is at least seedInjectBytes (64) long so all
-        // 8 seed uint64's XOR into the hash input. Otherwise seed[i] past
-        // len(data)/8 are silently dropped for short data.
-        const keyLen = 64
-        const seedInjectBytes = 64
-        payloadLen := len(data)
-        if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
-        need := keyLen + payloadLen
-        ptr := pool.Get().(*[]byte)
-        buf := *ptr
-        if cap(buf) < need { buf = make([]byte, need) } else { buf = buf[:need] }
-        // Zero-pad any tail beyond the copied data (pool buffer may be stale).
-        for i := keyLen + len(data); i < need; i++ { buf[i] = 0 }
-        copy(buf[:keyLen], key[:])
-        copy(buf[keyLen:keyLen+len(data)], data)
-        for i := 0; i < 8; i++ {
-            off := keyLen + i*8
-            binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-        }
-        digest := blake2b.Sum512(buf)
-        *ptr = buf; pool.Put(ptr)
-        var result [8]uint64
-        for i := range result {
-            result[i] = binary.LittleEndian.Uint64(digest[i*8:])
-        }
-        return result
-    }
-}
-
-ns, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-ds, _ := itb.NewSeed512(2048, makeBlake2bHash512())
-ss, _ := itb.NewSeed512(2048, makeBlake2bHash512())
 ```
 
 ### Parallelism Control
@@ -582,19 +744,19 @@ All 8 components are consumed in every case — no key material is skipped. A 25
 
 ```go
 // 128-bit hash: up to 1024-bit keys
-ns128, _ := itb.NewSeed128(1024, sipHash128)
-ds128, _ := itb.NewSeed128(1024, sipHash128)
-ss128, _ := itb.NewSeed128(1024, sipHash128)
+ns128, _ := itb.NewSeed128(1024, hashes.SipHash24())
+ds128, _ := itb.NewSeed128(1024, hashes.SipHash24())
+ss128, _ := itb.NewSeed128(1024, hashes.SipHash24())
 
 // 256-bit hash: up to 2048-bit keys
-ns256, _ := itb.NewSeed256(2048, blake3Hash256)
-ds256, _ := itb.NewSeed256(2048, blake3Hash256)
-ss256, _ := itb.NewSeed256(2048, blake3Hash256)
+ns256, _ := itb.NewSeed256(2048, hashes.BLAKE3())
+ds256, _ := itb.NewSeed256(2048, hashes.BLAKE3())
+ss256, _ := itb.NewSeed256(2048, hashes.BLAKE3())
 
 // 512-bit hash: up to 2048-bit keys
-ns512, _ := itb.NewSeed512(2048, blake2bHash512)
-ds512, _ := itb.NewSeed512(2048, blake2bHash512)
-ss512, _ := itb.NewSeed512(2048, blake2bHash512)
+ns512, _ := itb.NewSeed512(2048, hashes.BLAKE2b512())
+ds512, _ := itb.NewSeed512(2048, hashes.BLAKE2b512())
+ss512, _ := itb.NewSeed512(2048, hashes.BLAKE2b512())
 ```
 
 ### Seed Alignment Requirements

@@ -19,7 +19,7 @@ import (
 // nonce-bit configurations and confirms that flipping any single
 // byte changes the digest.
 func TestAreion256DigestDependsOnEveryByte(t *testing.T) {
-	hashFn, _ := Areion256Pair()
+	hashFn, _, _ := Areion256Pair()
 	seed := [4]uint64{0xDEADBEEF, 0xCAFEBABE, 0x12345678, 0x9ABCDEF0}
 
 	for _, n := range []int{20, 36, 68} {
@@ -48,7 +48,7 @@ func TestAreion256DigestDependsOnEveryByte(t *testing.T) {
 // the last 4 nonce bytes). The new chained absorb covers every byte
 // at every nonce-bit configuration.
 func TestAreion512DigestDependsOnEveryByte(t *testing.T) {
-	hashFn, _ := Areion512Pair()
+	hashFn, _, _ := Areion512Pair()
 	seed := [8]uint64{
 		0xDEADBEEF, 0xCAFEBABE, 0x12345678, 0x9ABCDEF0,
 		0x0FEDCBA9, 0x87654321, 0xBABEFACE, 0xFEEDFACE,
@@ -81,7 +81,7 @@ func TestAreion512DigestDependsOnEveryByte(t *testing.T) {
 // any divergence (different chunk size, different state init,
 // different round count) would surface here.
 func TestAreion256BatchedParityWithSingle(t *testing.T) {
-	single, batched := Areion256Pair()
+	single, batched, _ := Areion256Pair()
 	if batched == nil {
 		t.Skip("batched arm unavailable")
 	}
@@ -116,7 +116,7 @@ func TestAreion256BatchedParityWithSingle(t *testing.T) {
 // 512-bit variant at 68-byte input, exercising the 2-round chain
 // (only the 512-bit nonce config triggers >1 round on Areion-512).
 func TestAreion512BatchedParityWithSingle(t *testing.T) {
-	single, batched := Areion512Pair()
+	single, batched, _ := Areion512Pair()
 	if batched == nil {
 		t.Skip("batched arm unavailable")
 	}
@@ -152,7 +152,7 @@ func TestAreion512BatchedParityWithSingle(t *testing.T) {
 // (empty, 1-byte zero, 2-byte zero) would all encrypt the same
 // initial-state-of-zeros and collide.
 func TestAreionEmptyVsShortDistinct(t *testing.T) {
-	hash256, _ := Areion256Pair()
+	hash256, _, _ := Areion256Pair()
 	seed := [4]uint64{0x42, 0x43, 0x44, 0x45}
 
 	d0 := hash256([]byte{}, seed)
@@ -163,7 +163,7 @@ func TestAreionEmptyVsShortDistinct(t *testing.T) {
 			d0, d1, d2)
 	}
 
-	hash512, _ := Areion512Pair()
+	hash512, _, _ := Areion512Pair()
 	seed8 := [8]uint64{1, 2, 3, 4, 5, 6, 7, 8}
 	d0v := hash512([]byte{}, seed8)
 	d1v := hash512([]byte{0}, seed8)
@@ -223,7 +223,7 @@ func TestAreionEndToEndItb(t *testing.T) {
 func mkAreion256Trio(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *itb.Seed256) {
 	t.Helper()
 	mk := func() *itb.Seed256 {
-		h, b := Areion256Pair()
+		h, b, _ := Areion256Pair()
 		s, err := itb.NewSeed256(keyBits, h)
 		if err != nil {
 			t.Fatalf("NewSeed256: %v", err)
@@ -237,7 +237,7 @@ func mkAreion256Trio(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *it
 func mkAreion512Trio(t *testing.T, keyBits int) (*itb.Seed512, *itb.Seed512, *itb.Seed512) {
 	t.Helper()
 	mk := func() *itb.Seed512 {
-		h, b := Areion512Pair()
+		h, b, _ := Areion512Pair()
 		s, err := itb.NewSeed512(keyBits, h)
 		if err != nil {
 			t.Fatalf("NewSeed512: %v", err)

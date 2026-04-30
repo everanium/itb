@@ -17,12 +17,19 @@ import (
 // blake2s.Sum256 (no allocation, no keyed-mode handle). The payload
 // region is zero-padded to 32 bytes for short inputs so all four
 // seed uint64's contribute to the digest.
-func BLAKE2s() itb.HashFunc256 {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
+// BLAKE2s returns a cached BLAKE2s-256 itb.HashFunc256 along with the
+// 32-byte fixed key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
+func BLAKE2s(key ...[32]byte) (itb.HashFunc256, [32]byte) {
+	var k [32]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
 		panic(err)
 	}
-	return BLAKE2sWithKey(key)
+	return BLAKE2sWithKey(k), k
 }
 
 // BLAKE2sWithKey returns the BLAKE2s-256 closure built around a
