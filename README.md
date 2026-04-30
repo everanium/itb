@@ -596,7 +596,7 @@ The Areion-SoEM-512 variant uses `MakeAreionSoEM512Hash()` paired with `itb.Encr
 | CPU / build | Path | Throughput tier |
 |---|---|---|
 | amd64 + VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) | SoEM batched: `internal/areionasm/areion_soem{256,512}_amd64.s` + fused chain: `internal/areionasm/areion_chain{256,512}_{20,36,68}_amd64.s` | Top tier: 4-way VAES interleaved on ZMM **and** fused-state chain kernel (one ASM call per pixel; no memory round-trips between absorb rounds) |
-| amd64 + VAES + AVX2 only (AMD Zen 3, Alder Lake E-cores) | SoEM batched: `internal/areionasm/areion_soem{256,512}_amd64.s` (YMM path) | 4-way VAES interleaved on YMM, ~2× over scalar AES-NI; fused chain kernel falls back to per-call Go path |
+| amd64 + VAES + AVX2 only (AMD Zen 3, Alder Lake E-cores) | Per-half permute: `internal/areionasm/areion_amd64.s` (`Areion256Permutex4Avx2` / `Areion512Permutex4Avx2`); SoEM XOR finalize on the Go side | 4-way VAES on YMM (2 AES blocks per VAESENC × 2 sequential lane pairs = 4 blocks per state half), ~2× over scalar AES-NI; SoEM-state interleaving and fused chain kernel are AVX-512-only and fall back to per-call Go path |
 | amd64 without VAES (older Intel / AMD) | Go fallback via `aes.Round4HW(state, zeroKey)` (`internal/areionasm/areion_amd64.s` base permutation) | 4× sequential AES-NI per round (no SIMD width gain, still hardware-accelerated) |
 | Pure software / `CGO_ENABLED=0` | Same Go fallback (`process_generic.go` batched dispatch wired) | Slowest tier, correct output preserved |
 
