@@ -226,12 +226,18 @@ func main() {
     fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
+    //chunkSize := 4 * 1024 * 1024 // 4 MB - bulk local crypto, not small-frame network streaming
 
     // Encrypt into RGBWYOPA container
     encrypted, err := itb.Encrypt512(ns, ds, ss, plaintext)
     if err != nil {
         panic(err)
     }
+    //var ciphertext []byte
+    //err := itb.EncryptStream512(ns, ds, ss, plaintext, chunkSize, func(chunk []byte) error {
+    //    ciphertext = append(ciphertext, chunk...)
+    //    return nil
+    //})
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
     // Send encrypted payload
@@ -282,6 +288,11 @@ func main() {
     if err != nil {
         panic(err)
     }
+    //var decrypted []byte
+    //err = itb.DecryptStream512(ns, ds, ss, ciphertext, func(chunk []byte) error {
+    //    decrypted = append(decrypted, chunk...)
+    //    return nil
+    //})
     fmt.Printf("decrypted: %s\n", string(decrypted))
 }
 ```
