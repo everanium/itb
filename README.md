@@ -82,8 +82,8 @@ CGO speedup also covers L1-cache-friendly micro-batching (512 pixels per C call)
 
 | Platform | Per-pixel kernel | Areion-SoEM batched dispatch |
 |---|---|---|
-| amd64 + AVX-512+GFNI+VBMI (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM (`internal/areionasm/areion_amd64.s`) |
-| amd64 + AVX2+GFNI (AMD Zen 3+, Coffee Lake+) | Tier B (YMM, 4-pixel batch) | AVX2+VAES ASM (same file, separate entry points) |
+| amd64 + AVX-512+GFNI+VBMI (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM, 4-lane batch + SoEM two-half ILP interleaving (`internal/areionasm/areion_amd64.s`) |
+| amd64 + AVX2+GFNI (AMD Zen 3+, Coffee Lake+) | Tier B (YMM, 4-pixel batch) | AVX2+VAES ASM, 4-lane per-half permute (no SoEM ILP — AVX-512-only) |
 | amd64 without VAES / older | Tier C — Fallback | Go fallback via `aes.Round4HW` |
 | arm64 / other GCC targets | Tier C — Fallback | Go fallback via `aes.Round4HW` |
 | `CGO_ENABLED=0` | Pure Go (`process_generic.go`) | Go fallback |
