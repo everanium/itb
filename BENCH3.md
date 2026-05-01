@@ -2,6 +2,8 @@
 
 Results below were collected at `ITB_NONCE_SIZE=128` on hosts with AVX-512 SIMD support. All nine PRF-grade hash primitives in the registry — Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC, BLAKE2b-512, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20 — dispatch through hand-written ZMM AVX-512 (and VAES + AVX-512 where applicable) chain-absorb ASM kernels at the per-pixel hash hot path; the C ABI and Python FFI stacks populate the batched arm automatically.
 
+Lock Soup derives a fresh PRF-keyed bit-permutation mask per chunk, so per-byte primitive call rate is ~10× higher than the plain / Bit-Soup-only paths and the hash hot path becomes throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT + full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width.
+
 Reproduction:
 
 ```sh
