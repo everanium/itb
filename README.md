@@ -790,7 +790,9 @@ If the underlying primitive must be wired manually (custom key management, keyle
 
 ### Pluggable PRF primitives via `hashes/`
 
-The `hashes/` subpackage ships cached factories for every PRF-grade primitive ITB exposes through its FFI surface. Every factory pre-keys its primitive once at construction, reuses a `sync.Pool` of scratch buffers, and is safe to call concurrently. Pass nothing for a CSPRNG-generated key (returned for cross-process persistence — capture and save it); pass a saved key on the restore path. The `WithKey` counterpart takes the fixed key as a single non-variadic argument when the call site is unambiguously explicit-key. SipHash-2-4 is the one exception — its keying material is the seed components themselves, no internal fixed key, no `WithKey` form.
+The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive ITB exposes through its FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction, returns a `(single, batched, key)` triple — the batched arm wires the AVX-512 ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically — reuses a `sync.Pool` of scratch buffers, and is safe to call concurrently. Pass nothing for a CSPRNG-generated key (returned for cross-process persistence — capture and save it); pass a saved key on the restore path. The `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for unambiguously explicit-key call sites. SipHash-2-4 is the one exception — its keying material is the seed components themselves, no internal fixed key, so `SipHash24Pair()` takes no arguments and returns a `(single, batched)` pair without a third key element.
+
+Single-arm-only factories (`AESCMAC()`, `BLAKE2b256()`, `BLAKE2b512()`, `BLAKE2s()`, `BLAKE3()`, `ChaCha20()`, `SipHash24()`) remain available for callers that don't need the batched dispatch — they return only the single-call closure without exposing the ZMM-batched arm.
 
 In FFI-stable index order:
 
@@ -798,26 +800,25 @@ In FFI-stable index order:
 |---|---|---|---|---|
 | 0 | `Areion256Pair(key ...[32]byte)` | `Areion256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
 | 1 | `Areion512Pair(key ...[64]byte)` | `Areion512PairWithKey(key [64]byte)` | `(HashFunc512, BatchHashFunc512, [64]byte)` | 512 |
-| 2 | `SipHash24()` | — (seed components are the entire key) | `HashFunc128` | 128 |
-| 3 | `AESCMAC(key ...[16]byte)` | `AESCMACWithKey(key [16]byte)` | `(HashFunc128, [16]byte)` | 128 |
-| 8 | `ChaCha20(key ...[32]byte)` | `ChaCha20WithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
-| 4 | `BLAKE2b256(key ...[32]byte)` | `BLAKE2b256WithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
-| 5 | `BLAKE2b512(key ...[64]byte)` | `BLAKE2b512WithKey(key [64]byte)` | `(HashFunc512, [64]byte)` | 512 |
-| 6 | `BLAKE2s(key ...[32]byte)` | `BLAKE2sWithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
-| 7 | `BLAKE3(key ...[32]byte)` | `BLAKE3WithKey(key [32]byte)` | `(HashFunc256, [32]byte)` | 256 |
+| 2 | `SipHash24Pair()` | — (seed components are the entire key) | `(HashFunc128, BatchHashFunc128)` | 128 |
+| 3 | `AESCMACPair(key ...[16]byte)` | `AESCMACPairWithKey(key [16]byte)` | `(HashFunc128, BatchHashFunc128, [16]byte)` | 128 |
+| 4 | `BLAKE2b256Pair(key ...[32]byte)` | `BLAKE2b256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
+| 5 | `BLAKE2b512Pair(key ...[64]byte)` | `BLAKE2b512PairWithKey(key [64]byte)` | `(HashFunc512, BatchHashFunc512, [64]byte)` | 512 |
+| 6 | `BLAKE2s256Pair(key ...[32]byte)` | `BLAKE2s256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
+| 7 | `BLAKE3256Pair(key ...[32]byte)` | `BLAKE3256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
+| 8 | `ChaCha20256Pair(key ...[32]byte)` | `ChaCha20256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
 
-Name-keyed dispatch (used by the FFI layer; works for any code that selects the primitive at runtime). The key is `[]byte`, size validated against the primitive's native length:
+Name-keyed dispatch (used by the FFI layer; works for any code that selects the primitive at runtime). The key is `[]byte`, size validated against the primitive's native length. `Make<N>Pair` returns the batched arm alongside the single arm; `Make<N>` (no `Pair` suffix) is the single-arm-only convenience that drops the batched arm:
 
 | Function | Returns | Covers |
 |---|---|---|
-| `Make128(name, key ...[]byte)` | `(HashFunc128, []byte, error)` | 128-bit primitives (SipHash, AES-CMAC) |
-| `Make256(name, key ...[]byte)` | `(HashFunc256, []byte, error)` | 256-bit primitives (BLAKE3, BLAKE2s, BLAKE2b-256, ChaCha20) |
-| `Make256Pair(name, key ...[]byte)` | `(HashFunc256, BatchHashFunc256, []byte, error)` | Areion-SoEM-256 (paired single + batched) |
-| `Make512(name, key ...[]byte)` | `(HashFunc512, []byte, error)` | 512-bit primitives (BLAKE2b-512) |
-| `Make512Pair(name, key ...[]byte)` | `(HashFunc512, BatchHashFunc512, []byte, error)` | Areion-SoEM-512 (paired single + batched) |
+| `Make128(name, key ...[]byte)` | `(HashFunc128, []byte, error)` | 128-bit primitives, single arm only |
+| `Make128Pair(name, key ...[]byte)` | `(HashFunc128, BatchHashFunc128, []byte, error)` | 128-bit primitives, single + batched (SipHash-2-4, AES-CMAC) |
+| `Make256(name, key ...[]byte)` | `(HashFunc256, []byte, error)` | 256-bit primitives, single arm only |
+| `Make256Pair(name, key ...[]byte)` | `(HashFunc256, BatchHashFunc256, []byte, error)` | 256-bit primitives, single + batched (Areion-SoEM-256, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20) |
+| `Make512(name, key ...[]byte)` | `(HashFunc512, []byte, error)` | 512-bit primitives, single arm only |
+| `Make512Pair(name, key ...[]byte)` | `(HashFunc512, BatchHashFunc512, []byte, error)` | 512-bit primitives, single + batched (Areion-SoEM-512, BLAKE2b-512) |
 | `Find(name)` | `(Spec, bool)` | Spec lookup for key-size / native-width metadata |
-
-See [hashes/README.md](hashes/README.md) for full Sender/Receiver examples covering CSPRNG seeds, cross-process persistence, and the batched-dispatch wiring required by Areion-SoEM.
 
 ### Authenticated MACs via `macs/`
 
@@ -926,17 +927,19 @@ The rotation barrier (7^P from [Proof 4](PROOFS.md#proof-4-rotation-barrier)) re
 
 ITB accepts pluggable hash functions at three widths. Requirements: the hash must process all input bytes with non-invertible, non-affine, avalanche mixing that survives the ChainHash XOR-chain. PRF required. Under PRF assumption, Full KPA resistance is 3-factor: PRF non-invertibility, independent startSeed, and per-pixel 1:1 ambiguity — all combine conjunctively. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. Note: complete PRF inversion would collapse the architectural layers via seed recovery; the multi-factor property protects against partial PRF weakness, not total failure.
 
-| Hash Function | Acceleration | Seed Input | Block/State | Hash Type | Max Key | Crypto | Go Library |
-|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | **VAES** (AVX-512 / AVX2 / AES-NI fallback) | 256 bit | 256 bit | `HashFunc256` | 2048 | **PRF** | built-in (`MakeAreionSoEM256Hash`) |
-| **Areion-SoEM-512** | **VAES** (AVX-512 / AVX2 / AES-NI fallback) | 512 bit | 512 bit | `HashFunc512` | 2048 | **PRF** | built-in (`MakeAreionSoEM512Hash`) |
-| **SipHash-2-4** | — | 128 bit | 128 bit | `HashFunc128` | 1024 | **PRF** | `github.com/dchest/siphash` |
-| **AES-CMAC** | **AES-NI** | 128 bit (block) | 128 bit | `HashFunc128` | 1024 | **PRF** | `crypto/aes` (stdlib) |
-| **BLAKE2b-256** | SSE | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
-| **BLAKE2s** | — | 256 bit (prefix) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/blake2s` |
-| **BLAKE3** | SIMD (AVX-512) | 256 bit | 256 bit | `HashFunc256` | 2048 | **PRF** | `github.com/zeebo/blake3` |
-| **BLAKE2b-512 keyed** | SSE | 512 bit | 512 bit | `HashFunc512` | 2048 | **PRF** | `golang.org/x/crypto/blake2b` |
-| **ChaCha20** | SIMD (AVX2) | 256 bit (key) | 256 bit | `HashFunc256` | 2048 | **PRF** | `golang.org/x/crypto/chacha20` |
+All nine primitives are PRF-grade and accept ITB key sizes up to **2048 bits** (`itb.MaxKeyBits`); the per-width minimum is 512 bits and the bit count must be a multiple of the hash's native state width (128 / 256 / 512). The **Public Pair API** column lists the `hashes.<Primitive>Pair()` factory which returns the (single, batched) closure pair; the batched arm wires the ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically.
+
+| Hash | Type | ASM Acceleration | Public Pair API | Upstream Library |
+|---|---|---|---|---|
+| **Areion-SoEM-256** | `HashFunc256` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion256Pair()` | `github.com/jedisct1/go-aes` |
+| **Areion-SoEM-512** | `HashFunc512` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion512Pair()` | `github.com/jedisct1/go-aes` |
+| **SipHash-2-4** | `HashFunc128` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPROLQ, 4-lane) | `hashes.SipHash24Pair()` | `github.com/dchest/siphash` |
+| **AES-CMAC** | `HashFunc128` | VAES + AVX-512 ZMM (4-lane CBC-MAC) · AES-NI scalar | `hashes.AESCMACPair()` | `crypto/aes` (stdlib) |
+| **BLAKE2b-512** | `HashFunc512` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b512Pair()` | `golang.org/x/crypto/blake2b` |
+| **BLAKE2b-256** | `HashFunc256` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b256Pair()` | `golang.org/x/crypto/blake2b` |
+| **BLAKE2s** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane) | `hashes.BLAKE2s256Pair()` | `golang.org/x/crypto/blake2s` |
+| **BLAKE3** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane keyed-mode) | `hashes.BLAKE3256Pair()` | `github.com/zeebo/blake3` |
+| **ChaCha20** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPROLD, 4-lane) | `hashes.ChaCha20256Pair()` | `golang.org/x/crypto/chacha20` |
 
 ### Choosing the Right Hash Width
 
