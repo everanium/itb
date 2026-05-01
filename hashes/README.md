@@ -1,5 +1,7 @@
 # hashes — cached PRF-grade hash factories for ITB
 
+> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** Several wrappers diverge from the canonical RFC / NIST form of the underlying primitive in deliberate, documented ways — the registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifiers, not assertions of conformance with the RFC / NIST specification of the same name. Read CONSTRUCTIONS.md before assuming RFC compatibility.
+
 Drop-in factories that produce `itb.HashFunc{128|256|512}` closures
 for the nine PRF-grade primitives ITB ships with as built-in
 factories for the C / FFI / mobile shared-library distribution.
