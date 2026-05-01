@@ -9,7 +9,7 @@ ITB_NONCE_SIZE=128 go test -bench='BenchmarkExtSingle*' -benchtime=2s -count=1
 ITB_NONCE_SIZE=128 ITB_LOCKSOUP=1 go test -bench='BenchmarkExtSingle*' -benchtime=2s -count=1
 ```
 
-Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everanium/itb/blob/master/archive/OLDBENCH.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations.
+Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everanium/itb/blob/main/archive/OLDBENCH.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations.
 
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode)
 
