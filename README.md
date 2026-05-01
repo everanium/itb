@@ -123,7 +123,7 @@ go test -bench='KeySize' -benchmem ./...
 Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
 Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus the Areion-SoEM batched VAES dispatch in `internal/areionasm`. Pure Go fallback (`CGO_ENABLED=0`) is ~25-40% slower on encrypt and ~20-35% slower on decrypt depending on hash and width. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). Pure-Go mode (`CGO_ENABLED=0` or `-tags=purego`) is **~2×–7× slower** when the ZMM hash kernels fall back to per-call scalar references — slowdown widens with hash complexity (BLAKE / ARX kernels at the high end of the envelope, AES-CMAC / SipHash-2-4 at the low end where the scalar path is already AES-NI / `dchest/siphash`-tuned). Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
 ### ASIC Scalability
 
