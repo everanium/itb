@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/chacha20"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/chacha20asm"
 )
 
 // ChaCha20 returns a cached ChaCha20 itb.HashFunc256 with a
@@ -115,4 +116,105 @@ func ChaCha20WithKey(fixedKey [32]byte) itb.HashFunc256 {
 			binary.LittleEndian.Uint64(state[24:]),
 		}
 	}
+}
+
+// ChaCha20256Pair returns a fresh (single, batched) ChaCha20-256 hash
+// pair for itb.Seed256 integration. The two arms share the same
+// internally-generated random 32-byte fixed key so per-pixel hashes
+// computed via the batched dispatch match the single-call path
+// bit-exact (the parity invariant required by itb.BatchHashFunc256).
+//
+// On amd64 with AVX-512+VL the batched arm dispatches to a fused
+// ZMM-batched chain-absorb kernel for ITB's three SetNonceBits buf
+// shapes (20 / 36 / 68 byte inputs). On hosts without AVX-512+VL,
+// and for non-{20,36,68} input lengths, the batched arm falls back
+// to four single-call invocations and remains bit-exact.
+//
+// With no argument a fresh 32-byte fixed key is generated via
+// crypto/rand; passing a single caller-supplied [32]byte uses that
+// key instead. The returned key (random or supplied) is always
+// emitted as the third return value — save it for cross-process
+// persistence.
+//
+// Realistic uplift target: 2.5×-4.5× over the upstream
+// golang.org/x/crypto/chacha20 per-call dispatch on Rocket Lake;
+// higher on AMD Zen 5 / Sapphire Rapids+ where full-width 512-bit
+// ALUs and absent AVX-512 frequency throttle widen the envelope. The
+// gain is a mix of 4-lane parallelism (four independent ChaCha20
+// state evolutions retiring through one ZMM dispatch) and per-call
+// cipher.NewUnauthenticatedCipher / XORKeyStream amortisation across
+// the lanes.
+func ChaCha20256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32]byte) {
+	var k [32]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
+		panic(err)
+	}
+	single, batched := ChaCha20256PairWithKey(k)
+	return single, batched, k
+}
+
+// ChaCha20256PairWithKey returns the (single, batched) ChaCha20-256
+// pair built around a caller-supplied 32-byte fixed key, for the
+// persistence-restore path where the original key has been saved
+// across processes (encrypt today, decrypt tomorrow).
+//
+// The single arm is identical to ChaCha20WithKey(fixedKey). The
+// batched arm hot-dispatches to the fused ZMM-batched chain-absorb
+// kernel when all four lanes share an input length in {20, 36, 68};
+// for any other lane-length configuration it falls back to four
+// single-call invocations of the single arm.
+//
+// The ASM kernel returns 4 × uint64 per lane (32 bytes of state)
+// directly — no intermediate [8]uint32 repacking is required since
+// the ChaCha20 chain-absorb output is the 32-byte CBC-MAC-style
+// state buffer in its native LE byte order.
+func ChaCha20256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
+	single := ChaCha20WithKey(fixedKey)
+	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
+		commonLen := len(data[0])
+		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&
+			len(data[1]) == commonLen &&
+			len(data[2]) == commonLen &&
+			len(data[3]) == commonLen {
+			var dataPtrs [4]*byte
+			dataPtrs[0] = &data[0][0]
+			dataPtrs[1] = &data[1][0]
+			dataPtrs[2] = &data[2][0]
+			dataPtrs[3] = &data[3][0]
+			var out [4][4]uint64
+			seedsCopy := seeds
+			switch commonLen {
+			case 20:
+				chacha20asm.ChaCha20256ChainAbsorb20x4(
+					&fixedKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
+			case 36:
+				chacha20asm.ChaCha20256ChainAbsorb36x4(
+					&fixedKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
+			case 68:
+				chacha20asm.ChaCha20256ChainAbsorb68x4(
+					&fixedKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
+			}
+			return out
+		}
+		var out [4][4]uint64
+		for lane := 0; lane < 4; lane++ {
+			out[lane] = single(data[lane], seeds[lane])
+		}
+		return out
+	}
+	return single, batched
 }

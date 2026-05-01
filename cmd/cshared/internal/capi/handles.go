@@ -111,7 +111,7 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 
 	switch spec.Width {
 	case hashes.W128:
-		hf, hashKey, err := hashes.Make128(hashName)
+		hf, bf, hashKey, err := hashes.Make128Pair(hashName)
 		if err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
@@ -120,6 +120,9 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 		if err != nil {
 			setLastErr(StatusBadKeyBits)
 			return 0, StatusBadKeyBits
+		}
+		if bf != nil {
+			s.BatchHash = bf
 		}
 		h.seed128 = s
 		h.hashKey = hashKey
@@ -324,7 +327,7 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 
 	switch spec.Width {
 	case hashes.W128:
-		hf, generatedKey, err := hashes.Make128(hashName, keyArgs...)
+		hf, bf, generatedKey, err := hashes.Make128Pair(hashName, keyArgs...)
 		if err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
@@ -333,6 +336,9 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 		if err != nil {
 			setLastErr(StatusBadKeyBits)
 			return 0, StatusBadKeyBits
+		}
+		if bf != nil {
+			s.BatchHash = bf
 		}
 		h.seed128 = s
 		h.hashKey = generatedKey

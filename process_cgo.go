@@ -92,6 +92,18 @@ func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel,
 }
 
 // processChunk128 processes pixels using 128-bit hash seeds + C pixel processing.
+//
+// Two dispatch paths in the inner per-pixel hash loop:
+//
+//   - If both noiseSeed.BatchHash and dataSeed.BatchHash are non-nil,
+//     hashing dispatches four pixels at a time through the batched
+//     ChainHash path (blockHash128x4). Per-pixel encoding remains
+//     unchanged — the batched path only changes how hashes are
+//     produced, not how container bytes are touched. Tail of 0–3
+//     leftover pixels falls back to single-call blockHash128.
+//   - Otherwise the legacy single-call blockHash128 loop is used
+//     verbatim. Backward compatible with all existing primitives that
+//     do not provide a BatchHash field.
 func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
@@ -105,12 +117,35 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 	ha := getHashArrays(batchSz)
 	defer putHashArrays(ha)
 
-	noiseBuf := make([]byte, 4+currentNonceSize())
+	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
+	nonceLen := currentNonceSize()
+
+	noiseBuf := make([]byte, 4+nonceLen)
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSize())
+	dataBuf := make([]byte, 4+nonceLen)
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)
+
+	// Per-lane scratch buffers used only when the batched path is
+	// active. Lane 0 aliases the serial single-call buffer for tail
+	// fallback handling within the same iteration; lanes 1..3 are
+	// pulled from the shared bufferPool to avoid per-worker heap
+	// allocations on high-core-count hosts.
+	var noiseBufs, dataBufs [4][]byte
+	var noiseBufPtrs, dataBufPtrs [4]*[]byte
+	if useBatch {
+		noiseBufs[0] = noiseBuf
+		dataBufs[0] = dataBuf
+		for lane := 1; lane < 4; lane++ {
+			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + nonceLen)
+			copy(noiseBufs[lane][4:], nonce)
+			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + nonceLen)
+			copy(dataBufs[lane][4:], nonce)
+			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
+			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
+		}
+	}
 
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
@@ -119,9 +154,30 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 		}
 		bn := batchEnd - batchStart
 
-		for i := 0; i < bn; i++ {
-			ha.noise[i], _ = noiseSeed.blockHash128(noiseBuf, batchStart+i)
-			ha.data[i], _ = dataSeed.blockHash128(dataBuf, batchStart+i)
+		if useBatch {
+			i := 0
+			for ; i+4 <= bn; i += 4 {
+				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
+				noiseHs := noiseSeed.blockHash128x4(&noiseBufs, pixelIndices)
+				dataHs := dataSeed.blockHash128x4(&dataBufs, pixelIndices)
+				ha.noise[i+0] = noiseHs[0][0]
+				ha.noise[i+1] = noiseHs[1][0]
+				ha.noise[i+2] = noiseHs[2][0]
+				ha.noise[i+3] = noiseHs[3][0]
+				ha.data[i+0] = dataHs[0][0]
+				ha.data[i+1] = dataHs[1][0]
+				ha.data[i+2] = dataHs[2][0]
+				ha.data[i+3] = dataHs[3][0]
+			}
+			for ; i < bn; i++ {
+				ha.noise[i], _ = noiseSeed.blockHash128(noiseBuf, batchStart+i)
+				ha.data[i], _ = dataSeed.blockHash128(dataBuf, batchStart+i)
+			}
+		} else {
+			for i := 0; i < bn; i++ {
+				ha.noise[i], _ = noiseSeed.blockHash128(noiseBuf, batchStart+i)
+				ha.data[i], _ = dataSeed.blockHash128(dataBuf, batchStart+i)
+			}
 		}
 
 		callC(ha.noise[:bn], ha.data[:bn], container, data,

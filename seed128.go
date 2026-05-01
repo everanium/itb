@@ -40,6 +40,16 @@ type HashFunc128 func(data []byte, seed0, seed1 uint64) (lo, hi uint64)
 type Seed128 struct {
 	Components []uint64
 	Hash       HashFunc128
+	// BatchHash is the optional 4-way batched counterpart of Hash. When
+	// non-nil and ITB's runtime detects that both noiseSeed and dataSeed
+	// of an Encrypt128 / Decrypt128 invocation expose BatchHash,
+	// processChunk128 dispatches per-pixel hashing four pixels at a
+	// time via BatchChainHash128 instead of one pixel per ChainHash128
+	// call. The Hash field remains the bit-exact reference; BatchHash
+	// must agree with Hash on every input (see seed128_batch.go for the
+	// parity invariant). nil disables batched dispatch and preserves
+	// the legacy single-call code path.
+	BatchHash BatchHashFunc128
 }
 
 // NewSeed128 creates a new 128-bit seed with cryptographically random components.

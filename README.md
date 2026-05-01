@@ -34,7 +34,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
-**Zero external dependencies.** Hash functions are supplied by the user.
+**Zero external dependencies** beyond ABI contracts with standard PRF primitives (BLAKE2/3, ChaCha20, AES-CMAC, SipHash-2-4, Areion-SoEM); the chain-absorb hot path is hand-written ZMM AVX-512 ASM.
 
 ## Why ITB: Inverted Approach to Cryptography
 
@@ -72,7 +72,7 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 | **CGO (default)** | `go build` | C with SIMD auto-vectorization | C compiler (GCC/Clang) |
 | **Pure Go** | `CGO_ENABLED=0 go build` | Pure Go, zero C dependencies | None |
 
-CGO mode provides ~25-35% faster decrypt and ~35-55% faster encrypt over the pure-Go backend (Areion-SoEM batched dispatch on amd64 with AVX-512+VBMI+GFNI). Per-pixel kernel uses three runtime-dispatched tiers:
+On AVX-512 hosts, hand-written ZMM-batched chain-absorb ASM kernels accelerate the per-pixel hash hot path **2×–7×** over the per-call scalar fallback across all nine PRF-grade primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, ChaCha20, AES-CMAC, SipHash-2-4) — see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md) for measured numbers on Intel Rocket Lake and AMD EPYC 9655P (Zen 5). CGO mode (default) layers a C per-pixel kernel on top of the hash dispatch; pure-Go mode (`CGO_ENABLED=0`) uses a portable Go pixel pipeline (still picking up the ZMM hash kernels when AVX-512 is present). Per-pixel kernel uses three runtime-dispatched tiers:
 
 - **Tier A — AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI:** 8-pixel ZMM batch. Phase 1 (extract 8×56 bits) fuses VPERMB + VPSRLQ + VPMULTISHIFTQB into 5 ZMM ops. Phase 4 (per-pixel rotate) and Phase 5 (per-pixel noise-bit insert) lower to single VGF2P8AFFINEQB ZMM ops. Insane Interlocked Mode (`SetLockSoup(1)`) on Single Ouroboros lowers its per-chunk bit-permutation to a native AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB ASM kernel, with a pure-Go bit-shift gather fallback on hosts without AVX-512 VBMI. Active on Intel Tiger Lake / Rocket Lake / Sapphire Rapids+ and AMD Zen 4 / Zen 5.
 - **Tier B — AVX2 + GFNI:** 4-pixel YMM batch. Same five-phase shape, halved width. Phase 3-5 use VPXOR / VGF2P8AFFINEQB / VPAND / VPOR on YMM. Active on Intel Coffee Lake+ and AMD Zen 3+ (covers Alder Lake E-cores and similar AVX-512-disabled deployments). Insane Interlocked Mode (`SetLockSoup(1)`) lowers its per-chunk bit-permutation to a native BMI2 PEXTL/PDEPL ASM kernel, with a pure-Go fallback on hosts without BMI2.
@@ -169,6 +169,9 @@ different host) is documented in [hashes/README.md](hashes/README.md) and
 ### Areion-SoEM-512 (recommended, no MAC)
 
 ```go
+
+// Sender
+
 package main
 
 import (
@@ -191,21 +194,26 @@ func main() {
                        // automatically enabled for Single Ouroboros if
                        // itb.SetBitSoup(1) is enabled or vice versa
 
-    // Three independent CSPRNG-keyed Areion-SoEM-512 closures. The third
-    // return value (keyN/keyD/keyS) is the [64]byte fixed key — capture
-    // it per seed for cross-process persistence.
+    // Three independent CSPRNG-keyed Areion-SoEM-512 paired closures.
+    // The third return value (keyN/keyD/keyS) is the [64]byte fixed key —
+    // capture it per seed for cross-process persistence. The batched arm
+    // (batchN/batchD/batchS) wires the AVX-512 + VAES + ILP + ZMM-batched
+    // chain-absorb dispatch through Seed.BatchHash..
     fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
     fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
     fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
+    //fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN) // [64]byte saved noise hash key
+    //fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD) // [64]byte saved data hash key
+    //fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS) // [64]byte saved start hash key
 
     // Three independent CSPRNG-generated 2048-bit seeds.
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
 
-    ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
-    ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
-    ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+    ns.BatchHash = batchN // must enable batch
+    ds.BatchHash = batchD // must enable batch
+    ss.BatchHash = batchS // must enable batch
 
     // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys)
     // and ns.Components/ds.Components/ss.Components ([]uint64 seed components)
@@ -226,6 +234,49 @@ func main() {
     }
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
+    // Send encrypted payload
+}
+
+// Receiver
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)
+    itb.SetNonceBits(512)
+    itb.SetBarrierFill(4)
+    itb.SetBitSoup(1)
+    itb.SetLockSoup(1)
+
+    // Receive encrypted payload
+    // encrypted := ...
+
+    // Reconstruct from saved [64]byte PRF fixed keys + saved seed
+    // components. The persisted material was captured Sender-side via
+    // the keyN/keyD/keyS and ns.Components/ds.Components/ss.Components
+    // values printed above.
+    var keyN, keyD, keyS [64]byte
+    var nsComps, dsComps, ssComps []uint64
+    // keyN = ...; keyD = ...; keyS = ...
+    // nsComps = ...; dsComps = ...; ssComps = ...
+
+    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN)
+    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD)
+    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS)
+
+    ns, _ := itb.SeedFromComponents512(fnN, nsComps...)
+    ds, _ := itb.SeedFromComponents512(fnD, dsComps...)
+    ss, _ := itb.SeedFromComponents512(fnS, ssComps...)
+
+    ns.BatchHash = batchN
+    ds.BatchHash = batchD
+    ss.BatchHash = batchS
+
     // Decrypt from RGBWYOPA container
     decrypted, err := itb.Decrypt512(ns, ds, ss, encrypted)
     if err != nil {
@@ -238,6 +289,9 @@ func main() {
 ### Areion-SoEM-512 + KMAC-256 (authenticated)
 
 ```go
+
+// Sender
+
 package main
 
 import (
@@ -254,13 +308,25 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    fnN, batchN, keyN := itb.MakeAreionSoEM512Hash()
-    fnD, batchD, keyD := itb.MakeAreionSoEM512Hash()
-    fnS, batchS, keyS := itb.MakeAreionSoEM512Hash()
+    // Three independent CSPRNG-keyed Areion-SoEM-512 paired closures.
+    // The third return value (keyN/keyD/keyS) is the [64]byte fixed key —
+    // capture it per seed for cross-process persistence. The batched arm
+    // (batchN/batchD/batchS) wires the AVX-512 + VAES + ILP + ZMM-batched
+    // chain-absorb dispatch through Seed.BatchHash..
+    fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
+    fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
+    fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
+    //fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN) // [64]byte saved noise hash key
+    //fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD) // [64]byte saved data hash key
+    //fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS) // [64]byte saved start hash key
 
-    ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
-    ds, _ := itb.NewSeed512(2048, fnD); ds.BatchHash = batchD
-    ss, _ := itb.NewSeed512(2048, fnS); ss.BatchHash = batchS
+    ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
+    ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
+    ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+
+    ns.BatchHash = batchN // must enable batch
+    ds.BatchHash = batchD // must enable batch
+    ss.BatchHash = batchS // must enable batch
 
     // KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte CSPRNG key, 32-byte tag.
     var macKey [32]byte
@@ -289,6 +355,53 @@ func main() {
     }
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
+    // Send encrypted payload
+}
+
+// Receiver
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/macs"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)
+    itb.SetNonceBits(512)
+    itb.SetBarrierFill(4)
+    itb.SetBitSoup(1)
+    itb.SetLockSoup(1)
+
+    // Receive encrypted payload
+    // encrypted := ...
+
+    // Reconstruct from saved [64]byte PRF fixed keys + saved seed
+    // components + saved [32]byte MAC key. The persisted material was
+    // captured Sender-side via the keyN/keyD/keyS, ns.Components etc,
+    // and macKey values printed above.
+    var keyN, keyD, keyS [64]byte
+    var macKey [32]byte
+    var nsComps, dsComps, ssComps []uint64
+    // keyN = ...; keyD = ...; keyS = ...; macKey = ...
+    // nsComps = ...; dsComps = ...; ssComps = ...
+
+    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN)
+    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD)
+    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS)
+
+    ns, _ := itb.SeedFromComponents512(fnN, nsComps...)
+    ds, _ := itb.SeedFromComponents512(fnD, dsComps...)
+    ss, _ := itb.SeedFromComponents512(fnS, ssComps...)
+
+    ns.BatchHash = batchN
+    ds.BatchHash = batchD
+    ss.BatchHash = batchS
+
+    mac, _ := macs.KMAC256(macKey[:])
+
     // Authenticated decrypt — any single-bit tamper triggers MAC failure
     // (no oracle leak about which byte was tampered).
     decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
@@ -306,6 +419,9 @@ full MAC matrix.
 ### BLAKE2b-512 + HMAC-BLAKE3 (authenticated, 2048-bit seeds)
 
 ```go
+
+// Sender
+
 package main
 
 import (
@@ -323,17 +439,26 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    // Three independent CSPRNG-keyed BLAKE2b-512 closures. The second
-    // return value (keyN/keyD/keyS) is the [64]byte fixed key — capture
-    // it per seed for cross-process persistence.
-    fnN, keyN := hashes.BLAKE2b512() // random noise hash key generated
-    fnD, keyD := hashes.BLAKE2b512() // random data hash key generated
-    fnS, keyS := hashes.BLAKE2b512() // random start hash key generated
+    // Three independent CSPRNG-keyed BLAKE2b-512 paired closures. The
+    // third return value (keyN/keyD/keyS) is the [64]byte fixed key —
+    // capture it per seed for cross-process persistence. The batched
+    // arm (batchN/batchD/batchS) wires the AVX-512 + ZMM-batched
+    // chain-absorb dispatch through Seed.BatchHash.
+    fnN, batchN, keyN := hashes.BLAKE2b512Pair() // random noise hash key generated
+    fnD, batchD, keyD := hashes.BLAKE2b512Pair() // random data hash key generated
+    fnS, batchS, keyS := hashes.BLAKE2b512Pair() // random start hash key generated
+    //fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN) // [64]byte saved noise hash key
+    //fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD) // [64]byte saved data hash key
+    //fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS) // [64]byte saved start hash key
 
     // 2048-bit seeds — 32 components × 64 bits, multiple of 8 for Seed512.
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+
+    ns.BatchHash = batchN // must enable batch
+    ds.BatchHash = batchD // must enable batch
+    ss.BatchHash = batchS // must enable batch
 
     // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
     var macKey [32]byte
@@ -362,6 +487,54 @@ func main() {
     }
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
+    // Send encrypted payload
+}
+
+// Receiver
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+    "github.com/everanium/itb/macs"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)
+    itb.SetNonceBits(512)
+    itb.SetBarrierFill(4)
+    itb.SetBitSoup(1)
+    itb.SetLockSoup(1)
+
+    // Receive encrypted payload
+    // encrypted := ...
+
+    // Reconstruct from saved [64]byte PRF fixed keys + saved seed
+    // components + saved [32]byte MAC key. The persisted material was
+    // captured Sender-side via the keyN/keyD/keyS, ns.Components etc,
+    // and macKey values printed above.
+    var keyN, keyD, keyS [64]byte
+    var macKey [32]byte
+    var nsComps, dsComps, ssComps []uint64
+    // keyN = ...; keyD = ...; keyS = ...; macKey = ...;
+    // nsComps = ...; dsComps = ...; ssComps = ...
+
+    fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN)
+    fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD)
+    fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS)
+
+    ns, _ := itb.SeedFromComponents512(fnN, nsComps...)
+    ds, _ := itb.SeedFromComponents512(fnD, dsComps...)
+    ss, _ := itb.SeedFromComponents512(fnS, ssComps...)
+
+    ns.BatchHash = batchN
+    ds.BatchHash = batchD
+    ss.BatchHash = batchS
+
+    mac, _ := macs.HMACBLAKE3(macKey[:])
+
     // Authenticated decrypt — any single-bit tamper triggers MAC failure
     // (no oracle leak about which byte was tampered).
     decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
@@ -389,14 +562,19 @@ func main() {
     // SipHash-2-4 has no internal fixed key — the seed components themselves
     // are the entire keying material. Three independent factory calls paired
     // with three CSPRNG-generated seeds give three independent 1024-bit
-    // effective keys.
-    fnN := hashes.SipHash24()
-    fnD := hashes.SipHash24()
-    fnS := hashes.SipHash24()
+    // effective keys. The batched arm (batchN/batchD/batchS) wires the
+    // AVX-512 ZMM-batched chain-absorb dispatch through Seed.BatchHash.
+    fnN, batchN := hashes.SipHash24Pair()
+    fnD, batchD := hashes.SipHash24Pair()
+    fnS, batchS := hashes.SipHash24Pair()
 
     ns, _ := itb.NewSeed128(1024, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed128(1024, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed128(1024, fnS) // random start CSPRNG seeds generated
+
+    ns.BatchHash = batchN // must enable batch
+    ds.BatchHash = batchD // must enable batch
+    ss.BatchHash = batchS // must enable batch
 
     // For cross-process persistence: SipHash-2-4 has no fixed PRF key — the
     // seed components themselves are the entire keying material. Capture
@@ -534,21 +712,27 @@ func main() {
                        // automatically enabled for Single Ouroboros if
                        // itb.SetBitSoup(1) is enabled or vice versa
 
-    // Three independent CSPRNG-keyed Areion-SoEM-256 closures. The third
-    // return value (keyN/keyD/keyS) is the [32]byte fixed key — capture
-    // it per seed for cross-process persistence.
+
+    // Three independent CSPRNG-keyed Areion-SoEM-256 paired closures.
+    // The third return value (keyN/keyD/keyS) is the [32]byte fixed key —
+    // capture it per seed for cross-process persistence. The batched arm
+    // (batchN/batchD/batchS) wires the AVX-512 + VAES + ILP + ZMM-batched
+    // chain-absorb dispatch through Seed.BatchHash..
     fnN, batchN, keyN := itb.MakeAreionSoEM256Hash() // random noise hash key generated
     fnD, batchD, keyD := itb.MakeAreionSoEM256Hash() // random data hash key generated
     fnS, batchS, keyS := itb.MakeAreionSoEM256Hash() // random start hash key generated
+    //fnN, batchN := itb.MakeAreionSoEM256HashWithKey(keyN) // [32]byte saved noise hash key
+    //fnD, batchD := itb.MakeAreionSoEM256HashWithKey(keyD) // [32]byte saved data hash key
+    //fnS, batchS := itb.MakeAreionSoEM256HashWithKey(keyS) // [32]byte saved start hash key
 
     // 1024-bit seeds — 16 components × 64 bits, multiple of 4 for Seed256.
     ns, _ := itb.NewSeed256(1024, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed256(1024, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed256(1024, fnS) // random start CSPRNG seeds generated
 
-    ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
-    ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
-    ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+    ns.BatchHash = batchN // must enable batch
+    ds.BatchHash = batchD // must enable batch
+    ss.BatchHash = batchS // must enable batch
 
     // For cross-process persistence: keyN/keyD/keyS ([32]byte PRF fixed keys)
     // and ns.Components/ds.Components/ss.Components ([]uint64 seed components)
