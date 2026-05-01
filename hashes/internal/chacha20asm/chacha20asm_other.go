@@ -1,0 +1,10 @@
+//go:build !amd64 || purego
+
+// Stub package on platforms where the AVX-512 + VL chain-absorb
+// kernels do not apply. The parent hashes/ package falls back to
+// golang.org/x/crypto/chacha20 in this case; nothing here is
+// exercised.
+package chacha20asm
+
+// HasAVX512Fused is always false on non-amd64 / purego builds.
+var HasAVX512Fused = false
