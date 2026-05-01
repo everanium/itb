@@ -100,6 +100,47 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 	return nil, nil, fmt.Errorf("hashes: unknown 128-bit primitive %q", name)
 }
 
+// Make128Pair returns the (single, batched) HashFunc128 / BatchHashFunc128
+// pair for primitives with a 4-way batched implementation, plus the
+// fixed key the pair is bound to. The batched arm is nil for
+// primitives that do not implement a batched path. The single arm is
+// bit-exact equivalent to Make128 for the same name and key.
+//
+// Primitives currently returning a non-nil batched arm:
+//
+//   - "aescmac" — VAES + AVX-512 ZMM-batched AES-CMAC chain-absorb kernels
+//   - "siphash24" — AVX-512 ZMM-batched SipHash-2-4 chain-absorb kernels
+//
+// Variadic key arg follows the same pattern as Make128 / Make256Pair.
+func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error) {
+	switch name {
+	case "siphash24":
+		if len(key) > 0 {
+			return nil, nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
+		}
+		h, b := SipHash24Pair()
+		return h, b, nil, nil
+	case "aescmac":
+		explicit, err := validateKey("aescmac", 16, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [16]byte
+			copy(k[:], explicit)
+			h, b, ret := AESCMACPair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := AESCMACPair()
+		return h, b, ret[:], nil
+	}
+	h, ret, err := Make128(name, key...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return h, nil, ret, nil
+}
+
 // Make256 returns a fresh cached HashFunc256 for the named primitive
 // along with the fixed key the closure is bound to. Variadic key arg
 // follows the same pattern as Make128: pass nothing for random key,
@@ -190,9 +231,15 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 // primitives that do not implement a batched path. The single arm is
 // bit-exact equivalent to Make256 for the same name and key.
 //
-// At present only "areion256" returns a non-nil batched arm (driven by
-// the VAES + AVX-512 AreionSoEM256x4 ASM path). Variadic key arg
-// follows the same pattern as Make256.
+// Primitives currently returning a non-nil batched arm:
+//
+//   - "areion256" — VAES + AVX-512 AreionSoEM256x4 ASM kernel
+//   - "blake2b256" — AVX-512 ZMM-batched BLAKE2b chain-absorb kernels
+//   - "blake2s" — AVX-512 ZMM-batched BLAKE2s chain-absorb kernels
+//   - "blake3" — AVX-512 ZMM-batched BLAKE3 chain-absorb kernels
+//   - "chacha20" — AVX-512 ZMM-batched ChaCha20 chain-absorb kernels
+//
+// Variadic key arg follows the same pattern as Make256.
 func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
 	switch name {
 	case "areion256":
@@ -207,6 +254,58 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 			return h, b, ret[:], nil
 		}
 		h, b, ret := Areion256Pair()
+		return h, b, ret[:], nil
+	case "blake2b256":
+		explicit, err := validateKey("blake2b256", 32, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [32]byte
+			copy(k[:], explicit)
+			h, b, ret := BLAKE2b256Pair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := BLAKE2b256Pair()
+		return h, b, ret[:], nil
+	case "blake2s":
+		explicit, err := validateKey("blake2s", 32, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [32]byte
+			copy(k[:], explicit)
+			h, b, ret := BLAKE2s256Pair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := BLAKE2s256Pair()
+		return h, b, ret[:], nil
+	case "blake3":
+		explicit, err := validateKey("blake3", 32, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [32]byte
+			copy(k[:], explicit)
+			h, b, ret := BLAKE3256Pair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := BLAKE3256Pair()
+		return h, b, ret[:], nil
+	case "chacha20":
+		explicit, err := validateKey("chacha20", 32, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [32]byte
+			copy(k[:], explicit)
+			h, b, ret := ChaCha20256Pair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := ChaCha20256Pair()
 		return h, b, ret[:], nil
 	}
 	h, ret, err := Make256(name, key...)
@@ -264,7 +363,10 @@ func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
 // pair for primitives with a 4-way batched implementation, plus the
 // fixed key. The batched arm is nil when no batched path exists.
 //
-// At present only "areion512" returns a non-nil batched arm.
+// Primitives currently returning a non-nil batched arm:
+//
+//   - "areion512" — VAES + AVX-512 AreionSoEM512x4 ASM kernel
+//   - "blake2b512" — AVX-512 ZMM-batched BLAKE2b chain-absorb kernels
 func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc512, []byte, error) {
 	switch name {
 	case "areion512":
@@ -279,6 +381,19 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 			return h, b, ret[:], nil
 		}
 		h, b, ret := Areion512Pair()
+		return h, b, ret[:], nil
+	case "blake2b512":
+		explicit, err := validateKey("blake2b512", 64, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [64]byte
+			copy(k[:], explicit)
+			h, b, ret := BLAKE2b512Pair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := BLAKE2b512Pair()
 		return h, b, ret[:], nil
 	}
 	h, ret, err := Make512(name, key...)

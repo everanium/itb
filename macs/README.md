@@ -66,9 +66,16 @@ func main() {
 	                   // automatically enabled for Single Ouroboros if
 	                   // itb.SetBitSoup(1) is enabled or vice versa
 
+	// var keyN [64]byte = ...
+	// var keyD [64]byte = ...
+	// var keyS [64]byte = ...
+
 	fnN, batchN, keyN := hashes.Areion512Pair() // random noise hash key generated
 	fnD, batchD, keyD := hashes.Areion512Pair() // random data hash key generated
 	fnS, batchS, keyS := hashes.Areion512Pair() // random start hash key generated
+	//fnN, batchN := hashes.Areion512PairWithKey(keyN) // [64]byte key
+	//fnD, batchD := hashes.Areion512PairWithKey(keyD) // [64]byte key
+	//fnS, batchS := hashes.Areion512PairWithKey(keyS) // [64]byte key
 
 	saveKey("noise-key", keyN[:]) // []byte user-supplied persistence
 	saveKey("data-key", keyD[:])  // []byte user-supplied persistence
@@ -82,9 +89,9 @@ func main() {
 	saveSeed("data-seeds", ds.Components)  // []uint64 user-supplied persistence
 	saveSeed("start-seeds", ss.Components) // []uint64 user-supplied persistence
 
-	ns.BatchHash = batchN // must enable batch (only Areion-SoEM)
-	ds.BatchHash = batchD // must enable batch (only Areion-SoEM)
-	ss.BatchHash = batchS // must enable batch (only Areion-SoEM)
+	ns.BatchHash = batchN // must enable batch
+	ds.BatchHash = batchD // must enable batch
+	ss.BatchHash = batchS // must enable batch
 
 	// KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte key, 32-byte tag.
 	var macKey [32]byte
@@ -119,11 +126,33 @@ import (
 
 func main() {
 
+	itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+	itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+	                   // automatically enabled for Single Ouroboros if
+	                   // itb.SetLockSoup(1) is enabled or vice versa
+
+	itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
+	                   // bit-permutation overlay on top of bit-soup;
+	                   // automatically enabled for Single Ouroboros if
+	                   // itb.SetBitSoup(1) is enabled or vice versa
+
 	// Receive encrypted payload
+
+	// encrypted := ...
+
+	// var keyN [64]byte = ...
+	// var keyD [64]byte = ...
+	// var keyS [64]byte = ...
 
 	fnN, batchN, _ := hashes.Areion512Pair([64]byte(loadKey("noise-key")))
 	fnD, batchD, _ := hashes.Areion512Pair([64]byte(loadKey("data-key")))
 	fnS, batchS, _ := hashes.Areion512Pair([64]byte(loadKey("start-key")))
+	//fnN, batchN := hashes.Areion512PairWithKey(keyN) // [64]byte key
+	//fnD, batchD := hashes.Areion512PairWithKey(keyD) // [64]byte key
+	//fnS, batchS := hashes.Areion512PairWithKey(keyS) // [64]byte key
 
 	ns, _ := itb.SeedFromComponents512(fnN, loadSeed("noise-seeds")...)
 	ds, _ := itb.SeedFromComponents512(fnD, loadSeed("data-seeds")...)
@@ -147,34 +176,145 @@ func main() {
 
 ```
 
-BLAKE2b512 + HMAC-BLAKE3
+BLAKE2b-512 has paired (single, batched, fixedKey) constructors so the
+AVX-512 ZMM-batched chain-absorb dispatch path is reachable, paired with
+HMAC-BLAKE3 as the authentication primitive:
 
 ```go
-fnN, keyN := hashes.BLAKE2b512()
-fnD, keyD := hashes.BLAKE2b512()
-fnS, keyS := hashes.BLAKE2b512()
 
-saveKey("noise-key", keyN[:]) // persist to...
-saveKey("data-key", keyD[:])  // persist to...
-saveKey("start-key", keyS[:]) // persist to...
+// Sender
 
-ns, _ := itb.NewSeed512(1024, fnN) // random noise CSPRNG seeds generated
-ds, _ := itb.NewSeed512(1024, fnD) // random data CSPRNG seeds generated
-ss, _ := itb.NewSeed512(1024, fnS) // random start CSPRNG seeds generated
+import (
+	"crypto/rand"
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/macs"
+)
 
-saveSeed("noise-seeds", ns.Components) // []uint64 user-supplied persistence
-saveSeed("data-seeds", ds.Components)  // []uint64 user-supplied persistence
-saveSeed("start-seeds", ss.Components) // []uint64 user-supplied persistence
+func main() {
 
-// HMAC-BLAKE3 — fastest of the three MACs through the AVX-512 ASM kernel.
-var macKey [32]byte
-rand.Read(macKey[:])
-saveKey("mac-key", macKey[:]) // []byte user-supplied persistence
-mac, _ := macs.HMACBLAKE3(macKey[:])
+	itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-plaintext := []byte("any text or binary data - including 0x00 bytes")
-// Authenticated encrypt into RGBWYOPA container with embedded 32-byte tag
-encrypted, err := itb.EncryptAuthenticated512(ns, ds, ss, plaintext, mac)
+	itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+	                   // automatically enabled for Single Ouroboros if
+	                   // itb.SetLockSoup(1) is enabled or vice versa
+
+	itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
+	                   // bit-permutation overlay on top of bit-soup;
+	                   // automatically enabled for Single Ouroboros if
+	                   // itb.SetBitSoup(1) is enabled or vice versa
+
+	// var keyN [64]byte = ...
+	// var keyD [64]byte = ...
+	// var keyS [64]byte = ...
+
+	fnN, batchN, keyN := hashes.BLAKE2b512Pair() // random noise hash key generated
+	fnD, batchD, keyD := hashes.BLAKE2b512Pair() // random data hash key generated
+	fnS, batchS, keyS := hashes.BLAKE2b512Pair() // random start hash key generated
+	//fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN) // [64]byte key
+	//fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD) // [64]byte key
+	//fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS) // [64]byte key
+
+	saveKey("noise-key", keyN[:]) // []byte user-supplied persistence
+	saveKey("data-key", keyD[:])  // []byte user-supplied persistence
+	saveKey("start-key", keyS[:]) // []byte user-supplied persistence
+
+	ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
+	ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
+	ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+
+	saveSeed("noise-seeds", ns.Components) // []uint64 user-supplied persistence
+	saveSeed("data-seeds", ds.Components)  // []uint64 user-supplied persistence
+	saveSeed("start-seeds", ss.Components) // []uint64 user-supplied persistence
+
+	ns.BatchHash = batchN // must enable batch
+	ds.BatchHash = batchD // must enable batch
+	ss.BatchHash = batchS // must enable batch
+
+	// HMAC-BLAKE3 — fastest of the three MACs through the AVX-512 ASM kernel.
+	var macKey [32]byte
+	rand.Read(macKey[:])
+	saveKey("mac-key", macKey[:]) // []byte user-supplied persistence
+
+	mac, _ := macs.HMACBLAKE3(macKey[:])
+
+	plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+	// Authenticated encrypt — 32-byte tag is computed across the entire
+	// decrypted capacity and embedded inside the RGBWYOPA container,
+	// preserving oracle-free deniability.
+	encrypted, err := itb.EncryptAuthenticated512(ns, ds, ss, plaintext, mac)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+	// Send encrypted payload
+
+}
+
+// Receiver
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/macs"
+)
+
+func main() {
+
+	itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+	itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+	                   // automatically enabled for Single Ouroboros if
+	                   // itb.SetLockSoup(1) is enabled or vice versa
+
+	itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
+	                   // bit-permutation overlay on top of bit-soup;
+	                   // automatically enabled for Single Ouroboros if
+	                   // itb.SetBitSoup(1) is enabled or vice versa
+
+	// Receive encrypted payload
+
+	// encrypted := ...
+
+	// var keyN [64]byte = ...
+	// var keyD [64]byte = ...
+	// var keyS [64]byte = ...
+
+	fnN, batchN, _ := hashes.BLAKE2b512Pair([64]byte(loadKey("noise-key")))
+	fnD, batchD, _ := hashes.BLAKE2b512Pair([64]byte(loadKey("data-key")))
+	fnS, batchS, _ := hashes.BLAKE2b512Pair([64]byte(loadKey("start-key")))
+	//fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN) // [64]byte key
+	//fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD) // [64]byte key
+	//fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS) // [64]byte key
+
+	ns, _ := itb.SeedFromComponents512(fnN, loadSeed("noise-seeds")...)
+	ds, _ := itb.SeedFromComponents512(fnD, loadSeed("data-seeds")...)
+	ss, _ := itb.SeedFromComponents512(fnS, loadSeed("start-seeds")...)
+
+	ns.BatchHash = batchN
+	ds.BatchHash = batchD
+	ss.BatchHash = batchS
+
+	mac, _ := macs.HMACBLAKE3(loadKey("mac-key"))
+
+	// Authenticated decrypt — any single-bit tamper triggers MAC failure
+	// (no oracle leak about which byte was tampered).
+	decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("decrypted: %d bytes\n", len(decrypted))
+
+}
+
 ```
 
 SipHash24 + HMAC-SHA256

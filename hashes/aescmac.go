@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/aescmacasm"
 )
 
 // AESCMAC returns a cached itb.HashFunc128 backed by AES along with
@@ -129,4 +130,114 @@ func noescape(p unsafe.Pointer) unsafe.Pointer {
 func aesEncryptNoescape(block cipher.Block, buf *[16]byte) {
 	dst := (*[16]byte)(noescape(unsafe.Pointer(buf)))
 	block.Encrypt(dst[:], dst[:])
+}
+
+// AESCMACPair returns a fresh (single, batched) AES-CMAC-128 hash
+// pair for itb.Seed128 integration. The two arms share the same
+// internally-generated random 16-byte AES key so per-pixel hashes
+// computed via the batched dispatch match the single-call path
+// bit-exact (the parity invariant required by itb.BatchHashFunc128).
+//
+// On amd64 with VAES + AVX-512 the batched arm dispatches to a fused
+// ZMM-batched chain-absorb kernel for ITB's three SetNonceBits buf
+// shapes (20 / 36 / 68 byte inputs) — VAESENC on ZMM operates on
+// four independent AES blocks per instruction, so the per-pixel
+// AES-CMAC chain advances four lanes through one VAESENC instead of
+// four serial cipher.Block.Encrypt calls. On hosts without VAES +
+// AVX-512, and for non-{20,36,68} input lengths, the batched arm
+// falls back to four single-call invocations and remains bit-exact.
+//
+// With no argument a fresh 16-byte AES key is generated via
+// crypto/rand; passing a single caller-supplied [16]byte uses that
+// key instead. The returned key (random or supplied) is always
+// emitted as the third return value — save it for cross-process
+// persistence.
+//
+// Realistic uplift target: substantial over the upstream
+// crypto/aes-driven scalar dispatch on Rocket Lake; higher on AMD
+// Zen 5 / Sapphire Rapids+ where full-width 512-bit ALUs and VAESENC
+// per-cycle throughput (4 AES rounds/cycle on Zen 5 vs ~2-3 on
+// Rocket Lake) widen the envelope. The gain is a mix of 4-lane
+// parallelism (four independent AES-CMAC chains advancing through
+// one VAESENC) and per-call cipher.Block.Encrypt interface-dispatch
+// amortisation across the lanes.
+func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]byte) {
+	var k [16]byte
+	if len(key) > 0 {
+		k = key[0]
+	} else if _, err := rand.Read(k[:]); err != nil {
+		panic(err)
+	}
+	single, batched := AESCMACPairWithKey(k)
+	return single, batched, k
+}
+
+// AESCMACPairWithKey returns the (single, batched) AES-CMAC-128
+// pair built around a caller-supplied 16-byte AES key, for the
+// persistence-restore path where the original key has been saved
+// across processes (encrypt today, decrypt tomorrow).
+//
+// The single arm is identical to AESCMACWithKey(aesKey). The
+// batched arm hot-dispatches to the fused ZMM-batched chain-absorb
+// kernel when all four lanes share an input length in {20, 36, 68};
+// for any other lane-length configuration it falls back to four
+// single-call invocations of the single arm.
+//
+// The AES-128 round-key schedule (11 × 16-byte round keys = 176
+// bytes) is pre-expanded once via aescmacasm.ExpandKeyAES128 and
+// captured by the batched closure; the kernels broadcast each round
+// key to all 4 lanes via VBROADCASTI32X4 at function entry.
+func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
+	single := AESCMACWithKey(aesKey)
+	roundKeys := aescmacasm.ExpandKeyAES128(aesKey)
+	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
+		commonLen := len(data[0])
+		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&
+			len(data[1]) == commonLen &&
+			len(data[2]) == commonLen &&
+			len(data[3]) == commonLen {
+			var dataPtrs [4]*byte
+			dataPtrs[0] = &data[0][0]
+			dataPtrs[1] = &data[1][0]
+			dataPtrs[2] = &data[2][0]
+			dataPtrs[3] = &data[3][0]
+			var out [4][2]uint64
+			seedsCopy := seeds
+			switch commonLen {
+			case 20:
+				aescmacasm.AESCMAC128ChainAbsorb20x4(
+					&roundKeys,
+					&aesKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
+			case 36:
+				aescmacasm.AESCMAC128ChainAbsorb36x4(
+					&roundKeys,
+					&aesKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
+			case 68:
+				aescmacasm.AESCMAC128ChainAbsorb68x4(
+					&roundKeys,
+					&aesKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
+			}
+			return out
+		}
+		var out [4][2]uint64
+		for lane := 0; lane < 4; lane++ {
+			lo, hi := single(data[lane], seeds[lane][0], seeds[lane][1])
+			out[lane][0] = lo
+			out[lane][1] = hi
+		}
+		return out
+	}
+	return single, batched
 }

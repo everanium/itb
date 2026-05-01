@@ -144,11 +144,11 @@ calls in the process. Out-of-range values raise
 
 | Function | Accepted values | Default |
 |---|---|---|
-| `set_bit_soup(mode)` | 0 (off), non-zero (on) | 0 |
-| `set_lock_soup(mode)` | 0 (off), non-zero (on) | 0 |
 | `set_max_workers(n)` | non-negative int | 0 (auto) |
 | `set_nonce_bits(n)` | 128, 256, 512 | 128 |
 | `set_barrier_fill(n)` | 1, 2, 4, 8, 16, 32 | 1 |
+| `set_bit_soup(mode)` | 0 (off), non-zero (on) | 0 |
+| `set_lock_soup(mode)` | 0 (off), non-zero (on) | 0 |
 
 Read-only constants: `itb.max_key_bits()`, `itb.channels()`,
 `itb.header_size()`, `itb.version()`.
