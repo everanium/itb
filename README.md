@@ -639,31 +639,46 @@ decrypted, _ := itb.Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 
 ### Mixing PRF Primitives
 
-Each seed has its own hash function — you can use **different PRF implementations** for different seeds within the same hash width. The receiver must use the same assignment.
+Each seed has its own hash function — you can use **different PRF implementations** for different seeds within the same hash width. The receiver must use the same assignment. Both arms of the `*Pair()` factory propagate to the seed via `BatchHash` so the AVX-512 ZMM-batched dispatch stays active per primitive.
 
 **Single Ouroboros (3 seeds):**
 ```go
-ns, _ := itb.NewSeed128(1024, hashes.SipHash24()) // noiseSeed: SipHash-2-4
-ds, _ := itb.NewSeed128(1024, hashes.AESCMAC())   // dataSeed: AES-CMAC
-ss, _ := itb.NewSeed128(1024, hashes.SipHash24()) // startSeed: SipHash-2-4
+fnN, batchN, _ := hashes.BLAKE3256Pair()   // noiseSeed: BLAKE3
+fnD, batchD, _ := hashes.BLAKE2s256Pair()  // dataSeed:  BLAKE2s
+fnS, batchS, _ := hashes.BLAKE3256Pair()   // startSeed: BLAKE3
 
-encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
+ns, _ := itb.NewSeed256(1024, fnN)
+ds, _ := itb.NewSeed256(1024, fnD)
+ss, _ := itb.NewSeed256(1024, fnS)
+ns.BatchHash, ds.BatchHash, ss.BatchHash = batchN, batchD, batchS
+
+encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
 ```
 
 **Triple Ouroboros (7 seeds):**
 ```go
-ns, _  := itb.NewSeed128(512, hashes.SipHash24()) // shared noise: SipHash
-ds1, _ := itb.NewSeed128(512, hashes.AESCMAC())   // ring 1 data: AES-CMAC
-ds2, _ := itb.NewSeed128(512, hashes.SipHash24()) // ring 2 data: SipHash
-ds3, _ := itb.NewSeed128(512, hashes.AESCMAC())   // ring 3 data: AES-CMAC
-ss1, _ := itb.NewSeed128(512, hashes.SipHash24()) // ring 1 start: SipHash
-ss2, _ := itb.NewSeed128(512, hashes.AESCMAC())   // ring 2 start: AES-CMAC
-ss3, _ := itb.NewSeed128(512, hashes.SipHash24()) // ring 3 start: SipHash
+fnN,  batchN,  _ := hashes.BLAKE3256Pair()   // shared noise: BLAKE3
+fnD1, batchD1, _ := hashes.BLAKE2s256Pair()  // ring 1 data:  BLAKE2s
+fnD2, batchD2, _ := hashes.BLAKE3256Pair()   // ring 2 data:  BLAKE3
+fnD3, batchD3, _ := hashes.BLAKE2s256Pair()  // ring 3 data:  BLAKE2s
+fnS1, batchS1, _ := hashes.BLAKE3256Pair()   // ring 1 start: BLAKE3
+fnS2, batchS2, _ := hashes.BLAKE2s256Pair()  // ring 2 start: BLAKE2s
+fnS3, batchS3, _ := hashes.BLAKE3256Pair()   // ring 3 start: BLAKE3
 
-encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+ns,  _ := itb.NewSeed256(512, fnN)
+ds1, _ := itb.NewSeed256(512, fnD1)
+ds2, _ := itb.NewSeed256(512, fnD2)
+ds3, _ := itb.NewSeed256(512, fnD3)
+ss1, _ := itb.NewSeed256(512, fnS1)
+ss2, _ := itb.NewSeed256(512, fnS2)
+ss3, _ := itb.NewSeed256(512, fnS3)
+ns.BatchHash, ds1.BatchHash, ds2.BatchHash, ds3.BatchHash = batchN, batchD1, batchD2, batchD3
+ss1.BatchHash, ss2.BatchHash, ss3.BatchHash = batchS1, batchS2, batchS3
+
+encrypted, _ := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 ```
 
-For Triple Ouroboros, use the most performance-balanced PRF primitives across the three dataSeed rings — this ensures all three parallel goroutines finish at similar times.
+For Triple Ouroboros, use the most performance-balanced PRF primitives across the three dataSeed rings — this ensures all three parallel goroutines finish at similar times. BLAKE3 / BLAKE2s sit close on the AVX-512 ZMM throughput envelope (see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md)) and are a natural balanced pair.
 
 ## How It Works
 
