@@ -1076,3 +1076,45 @@ func TestExtTripleAttachLockSeedOverlayOffPanic(t *testing.T) {
 	}()
 	_, _ = itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 }
+
+// TestTripleAttachLockSeedMixedPrimitive256 — Triple Ouroboros
+// counterpart of [TestSingleAttachLockSeedMixedPrimitive256].
+// Verifies that Triple round-trip succeeds with a BLAKE2s-keyed
+// lockSeed attached to a BLAKE3-keyed noiseSeed (and BLAKE3 across
+// the 3 dataSeeds + 3 startSeeds). Triple Lock Soup's build-PRF
+// closure captures src.Hash, so the bit-permutation overlay
+// observably runs through the lockSeed primitive while the noise-
+// injection channel runs through the noiseSeed primitive.
+func TestTripleAttachLockSeedMixedPrimitive256(t *testing.T) {
+	withLockSoupAttachExt(t)
+
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ds1 := makeBlake3SeedAttachExt(t, 1024)
+	ds2 := makeBlake3SeedAttachExt(t, 1024)
+	ds3 := makeBlake3SeedAttachExt(t, 1024)
+	ss1 := makeBlake3SeedAttachExt(t, 1024)
+	ss2 := makeBlake3SeedAttachExt(t, 1024)
+	ss3 := makeBlake3SeedAttachExt(t, 1024)
+
+	hL, bL, _ := hashes.BLAKE2s256Pair()
+	ls, err := itb.NewSeed256(1024, hL)
+	if err != nil {
+		t.Fatalf("NewSeed256 (BLAKE2s lockSeed): %v", err)
+	}
+	ls.BatchHash = bL
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateDataExt(2048)
+	ct, err := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt3x256 (mixed-primitive lockSeed): %v", err)
+	}
+	pt, err := itb.Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+	if err != nil {
+		t.Fatalf("Decrypt3x256 (mixed-primitive lockSeed): %v", err)
+	}
+	if !bytes.Equal(pt, plaintext) {
+		t.Errorf("Triple mixed-primitive AttachLockSeed roundtrip mismatch: got %d bytes, want %d",
+			len(pt), len(plaintext))
+	}
+}

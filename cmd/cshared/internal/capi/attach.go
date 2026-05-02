@@ -7,10 +7,14 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// AttachLockSeed wires a dedicated lockSeed handle (the bit-permutation
-// derivation key source) onto an existing noise seed handle, exposing
-// the low-level [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
-// [Seed512.AttachLockSeed] mutators across the C ABI.
+// AttachLockSeed wires a dedicated lockSeed handle onto an existing
+// noise seed handle, exposing the low-level [Seed128.AttachLockSeed] /
+// [Seed256.AttachLockSeed] / [Seed512.AttachLockSeed] mutators across
+// the C ABI. The per-chunk PRF closure for the bit-permutation overlay
+// captures BOTH the lockSeed's Components AND its Hash function, so
+// the lockSeed primitive may legitimately differ from the noise seed
+// primitive within the same native width — keying-material isolation
+// plus algorithm diversity for defence-in-depth on the overlay path.
 //
 // The two handles must share the same native hash width; mixing
 // widths returns StatusSeedWidthMix. The underlying seed mutator

@@ -57,9 +57,12 @@ type Seed128 struct {
 	// bit-permutation derivation in [buildLockPRF128] /
 	// [buildPermutePRF128] (and their Cfg counterparts when no
 	// cfg-side lockSeed handle is set) routes through the attached
-	// lockSeed instead of the receiver, separating bit-permutation
-	// entropy from the noiseSeed-driven noise-injection channel
-	// without changing any public Encrypt / Decrypt signature.
+	// lockSeed instead of the receiver, taking BOTH the lockSeed's
+	// Components AND its Hash function for the per-chunk PRF closure
+	// — keying-material isolation plus algorithm diversity for the
+	// bit-permutation channel relative to the noiseSeed-driven
+	// noise-injection channel, without changing any public Encrypt /
+	// Decrypt signature.
 	attachedLockSeed *Seed128
 
 	// firstEncryptCalled records whether this seed has been used in
@@ -212,10 +215,14 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 // DecryptAuthenticated / EncryptStream / DecryptStream calls that
 // take this seed as the noise slot route bit-permutation derivation
 // through ls instead of through the receiver — the noise-injection
-// channel still consumes the receiver's components, but the
-// bit-permutation channel consumes ls's components, separating the
-// two entropy sources without changing any public Encrypt /
-// Decrypt signature.
+// channel still consumes the receiver's components and Hash, while
+// the bit-permutation channel consumes BOTH ls's Components AND
+// ls's Hash function, without changing any public Encrypt / Decrypt
+// signature. The PRF primitive on the bit-permutation channel may
+// therefore differ from the noise-injection channel's primitive
+// within the same native width (the *Seed128 type signature here
+// enforces width match), yielding keying-material isolation AND
+// algorithm diversity for defence-in-depth on the overlay path.
 //
 // Anti-conflation safeguards (each panics rather than silently
 // degrading the entropy isolation):
