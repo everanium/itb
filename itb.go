@@ -169,3 +169,69 @@ func effectiveWorkers(dataPixels int) int {
 	}
 	return numWorkers
 }
+
+// headerSizeCfg is the Cfg variant of [headerSize]: consults
+// [currentNonceSizeCfg] so a non-nil cfg with an explicit NonceBits
+// override is honoured at the header-layout site.
+func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
+
+// calcContainerSizeCfg is the Cfg variant of [calcContainerSize]:
+// consults [currentBarrierFillCfg] for the CSPRNG barrier margin so
+// a non-nil cfg with an explicit BarrierFill override is honoured at
+// the container-sizing site. Body otherwise identical.
+func calcContainerSizeCfg(cfg *Config, payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (width, height int) {
+	needed := payloadCOBSLen + 1 // +1 for null terminator
+	pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
+
+	minPx := minPxNoise
+	if minPxData > minPx {
+		minPx = minPxData
+	}
+	if minPxStart > minPx {
+		minPx = minPxStart
+	}
+	if pixels < minPx {
+		pixels = minPx
+	}
+
+	side := 1
+	for side*side < pixels {
+		side++
+	}
+	side += currentBarrierFillCfg(cfg)
+	return side, side
+}
+
+// calcContainerSize3Cfg is the Cfg variant of [calcContainerSize3]:
+// consults [currentBarrierFillCfg] for the CSPRNG barrier margin.
+// Body otherwise identical.
+func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
+	maxThirdPixels := 0
+	for i := 0; i < 3; i++ {
+		needed := cobsLens[i] + 1 // +1 for null terminator
+		pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
+
+		minPx := minPxNoise
+		if minPxData[i] > minPx {
+			minPx = minPxData[i]
+		}
+		if minPxStart[i] > minPx {
+			minPx = minPxStart[i]
+		}
+		if pixels < minPx {
+			pixels = minPx
+		}
+		if pixels > maxThirdPixels {
+			maxThirdPixels = pixels
+		}
+	}
+
+	totalPixels := 3 * maxThirdPixels
+
+	side := 1
+	for side*side < totalPixels {
+		side++
+	}
+	side += currentBarrierFillCfg(cfg)
+	return side, side
+}

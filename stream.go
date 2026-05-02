@@ -396,3 +396,359 @@ func DecryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 	}
 	return nil
 }
+
+// ParseChunkLenCfg is the Cfg variant of [ParseChunkLen]: consults
+// [currentNonceSizeCfg] and [headerSizeCfg] so a non-nil cfg with an
+// explicit NonceBits override is honoured at the chunk-header parse
+// site. Body otherwise identical.
+func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
+	if len(data) < headerSizeCfg(cfg) {
+		return 0, fmt.Errorf("data too short for header")
+	}
+
+	nonceLen := currentNonceSizeCfg(cfg)
+	width := int(binary.BigEndian.Uint16(data[nonceLen:]))
+	height := int(binary.BigEndian.Uint16(data[nonceLen+2:]))
+
+	if width == 0 || height == 0 {
+		return 0, fmt.Errorf("invalid dimensions %dx%d", width, height)
+	}
+	if width > math.MaxInt/height {
+		return 0, fmt.Errorf("dimensions %dx%d overflow", width, height)
+	}
+	totalPixels := width * height
+	if totalPixels > math.MaxInt/Channels {
+		return 0, fmt.Errorf("container too large: %d pixels", totalPixels)
+	}
+	if totalPixels > maxTotalPixels {
+		return 0, fmt.Errorf("chunk too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
+	}
+
+	chunkLen := headerSizeCfg(cfg) + totalPixels*Channels
+	if len(data) < chunkLen {
+		return 0, fmt.Errorf("data too short: need %d, have %d", chunkLen, len(data))
+	}
+
+	return chunkLen, nil
+}
+
+// EncryptStream128Cfg is the Cfg variant of [EncryptStream128]: drives
+// each chunk through [Encrypt128Cfg] so per-encryptor NonceBits /
+// BarrierFill / BitSoup / LockSoup / LockSeed overrides are honoured
+// chunk-by-chunk. Body otherwise identical.
+func EncryptStream128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
+		return fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt128Cfg(cfg, noiseSeed, dataSeed, startSeed, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream128Cfg is the Cfg variant of [DecryptStream128].
+func DecryptStream128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, data []byte, emit func(chunk []byte) error) error {
+	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
+		return fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
+	}
+
+	for off := 0; off < len(data); {
+		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt128Cfg(cfg, noiseSeed, dataSeed, startSeed, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream256Cfg is the Cfg variant of [EncryptStream256].
+func EncryptStream256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
+		return fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt256Cfg(cfg, noiseSeed, dataSeed, startSeed, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream256Cfg is the Cfg variant of [DecryptStream256].
+func DecryptStream256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, data []byte, emit func(chunk []byte) error) error {
+	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
+		return fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
+	}
+
+	for off := 0; off < len(data); {
+		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt256Cfg(cfg, noiseSeed, dataSeed, startSeed, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream512Cfg is the Cfg variant of [EncryptStream512].
+func EncryptStream512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
+		return fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt512Cfg(cfg, noiseSeed, dataSeed, startSeed, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream512Cfg is the Cfg variant of [DecryptStream512].
+func DecryptStream512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, data []byte, emit func(chunk []byte) error) error {
+	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {
+		return fmt.Errorf("itb: all three seeds must be different (triple-seed isolation)")
+	}
+
+	for off := 0; off < len(data); {
+		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt512Cfg(cfg, noiseSeed, dataSeed, startSeed, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream3x128Cfg is the Cfg variant of [EncryptStream3x128].
+func EncryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream3x128Cfg is the Cfg variant of [DecryptStream3x128].
+func DecryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	for off := 0; off < len(data); {
+		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream3x256Cfg is the Cfg variant of [EncryptStream3x256].
+func EncryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream3x256Cfg is the Cfg variant of [DecryptStream3x256].
+func DecryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	for off := 0; off < len(data); {
+		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}
+
+// EncryptStream3x512Cfg is the Cfg variant of [EncryptStream3x512].
+func EncryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("itb: empty data")
+	}
+	if chunkSize <= 0 {
+		chunkSize = ChunkSize(len(data))
+	}
+	if chunkSize > maxDataSize {
+		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk, err := Encrypt3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DecryptStream3x512Cfg is the Cfg variant of [DecryptStream3x512].
+func DecryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
+	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	for off := 0; off < len(data); {
+		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		decrypted, err := Decrypt3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		if err != nil {
+			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
+		}
+		if err := emit(decrypted); err != nil {
+			return err
+		}
+		off += chunkLen
+	}
+	return nil
+}

@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -3022,4 +3023,166 @@ func TestSingle_LockSoup_AuthRoundtrip512(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- LockSeed global setter / getter tests ---
+
+// TestSetLockSeedRoundtrip verifies SetLockSeed / GetLockSeed agree
+// on every valid value (0 and 1). The test saves and restores the
+// global so it does not leak state into the rest of the package.
+func TestSetLockSeedRoundtrip(t *testing.T) {
+	orig := GetLockSeed()
+	t.Cleanup(func() { SetLockSeed(int(orig)) })
+
+	for _, n := range []int{0, 1} {
+		SetLockSeed(n)
+		if got := GetLockSeed(); got != int32(n) {
+			t.Errorf("SetLockSeed(%d): GetLockSeed returned %d, want %d", n, got, n)
+		}
+	}
+}
+
+// TestSetLockSeedPanic verifies SetLockSeed rejects values outside
+// the {0, 1} domain. Misconfiguring a security-critical flag panics
+// rather than silently storing an unintended value.
+func TestSetLockSeedPanic(t *testing.T) {
+	orig := GetLockSeed()
+	t.Cleanup(func() { SetLockSeed(int(orig)) })
+
+	for _, n := range []int{-1, 2, 3, 100, -100} {
+		n := n
+		t.Run(fmt.Sprintf("%d", n), func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("SetLockSeed(%d): expected panic, got none", n)
+				}
+			}()
+			SetLockSeed(n)
+		})
+	}
+}
+
+// TestIsLockSeedActive verifies the internal dispatch check returns
+// the boolean projection of GetLockSeed: false at 0, true at 1.
+func TestIsLockSeedActive(t *testing.T) {
+	orig := GetLockSeed()
+	t.Cleanup(func() { SetLockSeed(int(orig)) })
+
+	SetLockSeed(0)
+	if isLockSeedActive() {
+		t.Errorf("after SetLockSeed(0): isLockSeedActive returned true, want false")
+	}
+
+	SetLockSeed(1)
+	if !isLockSeedActive() {
+		t.Errorf("after SetLockSeed(1): isLockSeedActive returned false, want true")
+	}
+}
+
+// BenchmarkSingleBLAKE3RoundTripAttachedLockSeed measures the legacy
+// itb root Encrypt + Decrypt round-trip throughput and per-
+// iteration allocation footprint when a dedicated lockSeed has
+// been wired into the noiseSeed via [Seed256.AttachLockSeed]. The
+// configuration mirrors the realistic shape:
+//
+//   - 1024-bit ITB key width (canonical mid-range).
+//   - 64 MiB plaintext (large enough that the per-pixel hash
+//     pipeline dominates and bench noise from the round-trip-
+//     framing overhead is negligible).
+//   - BLAKE3 keyed-hash primitive via the makeBlake3Hash256 native
+//     test helper (no hashes/ import — itb root tests run
+//     in-package and would hit the import cycle).
+//   - Single Ouroboros (3 noise / data / start seeds) plus a 4th
+//     dedicated lockSeed attached via ns.AttachLockSeed(ls).
+//   - SetLockSoup(1) engaged so the bit-permutation overlay
+//     actually consumes the attached lockSeed; otherwise the
+//     attach call is a no-op and the bench measures plain
+//     Encrypt + Decrypt without exercising the LockSeed path.
+//
+// Run as:
+//
+//	go test -bench=BenchmarkBLAKE3RoundTripAttachedLockSeed \
+//	    -benchmem -run=^$ -count=3 -benchtime=3x
+//
+// to dump per-iteration ns/op + B/op + allocs/op for inspection.
+func BenchmarkSingleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	SetLockSoup(1)
+	b.Cleanup(func() {
+		SetBitSoup(prevBS)
+		SetLockSoup(prevLS)
+	})
+
+	const (
+		bits     = 1024
+		dataSize = 64 << 20
+	)
+
+	ns, ds, ss := makeTripleSeed256(bits, makeBlake3Hash256())
+	ls, err := NewSeed256(bits, makeBlake3Hash256())
+	if err != nil {
+		b.Fatalf("NewSeed256(lockSeed): %v", err)
+	}
+	ns.AttachLockSeed(ls)
+
+	data := generateData(dataSize)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encrypted, err := Encrypt256(ns, ds, ss, data)
+		if err != nil {
+			b.Fatalf("Encrypt256: %v", err)
+		}
+		if _, err := Decrypt256(ns, ds, ss, encrypted); err != nil {
+			b.Fatalf("Decrypt256: %v", err)
+		}
+	}
+}
+
+// TestSingleAttachLockSeedOverlayOffPanic verifies the action-at-a-
+// distance guard for the Single Ouroboros native (non-Cfg) path: a
+// noiseSeed carrying an attached dedicated lockSeed but reaching the
+// bit-permutation PRF builder with neither global BitSoup nor global
+// LockSoup engaged panics with [ErrLockSeedOverlayOff] inside
+// [buildPermutePRF256] rather than silently producing byte-level
+// ciphertext that ignores the dedicated lockSeed entirely.
+//
+// The guard fires every time a build-PRF function is invoked, not
+// at AttachLockSeed-time, so the panic catches the misuse regardless
+// of call ordering — attach-then-no-SetLockSoup, attach-then-toggle-
+// SetLockSoup-back-to-zero, etc.
+//
+// Cleanup forces both flags off before the encrypt and restores the
+// caller's prior state afterwards so the test is hermetic regardless
+// of the global flag state on entry.
+func TestSingleAttachLockSeedOverlayOffPanic(t *testing.T) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	SetBitSoup(0)
+	SetLockSoup(0)
+	t.Cleanup(func() {
+		SetBitSoup(prevBS)
+		SetLockSoup(prevLS)
+	})
+
+	ns, ds, ss := makeTripleSeed256(1024, makeBlake3Hash256())
+	ls, err := NewSeed256(1024, makeBlake3Hash256())
+	if err != nil {
+		t.Fatalf("NewSeed256(lockSeed): %v", err)
+	}
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateData(64)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("Encrypt256 with attached lockSeed and overlay off: expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, ErrLockSeedOverlayOff) {
+			t.Errorf("Encrypt256: panic %v, want %v", r, ErrLockSeedOverlayOff)
+		}
+	}()
+	_, _ = Encrypt256(ns, ds, ss, plaintext)
 }

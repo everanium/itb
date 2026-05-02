@@ -104,7 +104,7 @@ func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel,
 //   - Otherwise the legacy single-call blockHash128 loop is used
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
-func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
 		return
@@ -118,7 +118,7 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
-	nonceLen := currentNonceSize()
+	nonceLen := currentNonceSizeCfg(cfg)
 
 	noiseBuf := make([]byte, 4+nonceLen)
 	copy(noiseBuf[4:], nonce)
@@ -198,7 +198,7 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 //   - Otherwise the legacy single-call blockHash256 loop is used
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
-func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
 		return
@@ -212,7 +212,7 @@ func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byt
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
-	nonceLen := currentNonceSize()
+	nonceLen := currentNonceSizeCfg(cfg)
 
 	noiseBuf := make([]byte, 4+nonceLen)
 	copy(noiseBuf[4:], nonce)
@@ -288,7 +288,7 @@ func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byt
 // Batched dispatch when both seeds expose BatchHash; see processChunk256
 // for the per-lane buffer layout and tail-handling rationale (the 512
 // path mirrors that structure with 8-uint64 hash outputs).
-func processChunk512(noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
 		return
@@ -302,7 +302,7 @@ func processChunk512(noiseSeed, dataSeed *Seed512, nonce []byte, container []byt
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
-	nonceLen := currentNonceSize()
+	nonceLen := currentNonceSizeCfg(cfg)
 
 	noiseBuf := make([]byte, 4+nonceLen)
 	copy(noiseBuf[4:], nonce)

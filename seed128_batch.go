@@ -2,39 +2,23 @@ package itb
 
 import "encoding/binary"
 
-// BatchHashFunc128 is the optional 4-way batched 128-bit hash interface.
-// A primitive whose underlying SIMD implementation supports
-// processing four independent (data, seed) tuples per call provides
-// this alongside its single-call HashFunc128 (for example a
-// ZMM-batched SipHash-2-4 or AES-CMAC kernel on x86_64 with
-// AVX-512 / VAES).
+// BatchHashFunc128 is the 4-way batched 128-bit hash interface
+// alongside [HashFunc128]. Primitives whose SIMD kernel processes
+// four independent (data, seed) tuples per call expose this — e.g.
+// the ZMM-batched SipHash-2-4 / AES-CMAC kernels on amd64 with
+// AVX-512 + VAES.
 //
-// Bit-exact parity invariant. For every i in {0,1,2,3} and arbitrary
-// inputs:
-//
-//	BatchHashFunc128(data, seeds)[i] == HashFunc128(data[i], seeds[i][0], seeds[i][1])
-//
-// (where the right-hand side's two return values are packed into the
-// [2]uint64 row at output position i: out[i][0] = lo, out[i][1] = hi.)
-//
-// Implementations that violate this break ITB security claims under
-// the batched dispatch path: the per-pixel ChainHash output would
-// diverge from the serial reference, invalidating the underlying
-// PRF assumption. The user-supplied wrapper is responsible for
-// preserving this invariant; ITB's test suite (per-primitive parity
-// in `hashes/<primitive>_test.go`) demonstrates the required
-// structure.
+// Bit-exact parity invariant: each lane output
+// BatchHashFunc128(data, seeds)[i] matches the serial
+// HashFunc128(data[i], seeds[i][0], seeds[i][1]) reference.
+// Implementations violating this break the PRF assumption on the
+// batched dispatch path.
 type BatchHashFunc128 func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64
 
-// BatchChainHash128 computes the four-way batched ChainHash128 on four
-// pixel buffers in parallel using `s.BatchHash`. Each output position
-// matches the serial `ChainHash128(data[i])` under the same seed
-// components — the chain composition is identical, just executed four
-// lanes at a time per round.
-//
-// Caller responsibility: `s.BatchHash` must be non-nil. The dispatch
-// in `processChunk128` checks this before invoking; user-level
-// callers should check explicitly.
+// BatchChainHash128 runs the four-way batched ChainHash128 via
+// s.BatchHash. Output [i] matches serial ChainHash128(data[i])
+// under the same Components. Caller ensures s.BatchHash != nil
+// (processChunk128 checks this before invoking).
 func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
 	var seeds [4][2]uint64
 	for lane := 0; lane < 4; lane++ {
@@ -54,13 +38,9 @@ func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
 	return h
 }
 
-// blockHash128x4 is the four-way batched counterpart of
-// `blockHash128`. Mutates the first four bytes of each `buf[i]` to
-// hold the corresponding `pixelIndices[i]` in little-endian, then
-// invokes `BatchChainHash128`.
-//
-// Caller must ensure each `buf[i]` has at least 4 bytes of writable
-// storage and that `s.BatchHash != nil`.
+// blockHash128x4 is the four-way counterpart of blockHash128.
+// Writes pixelIndices[i] as little-endian uint32 into buf[i]'s
+// first four bytes, then runs the batched chain hash.
 func (s *Seed128) blockHash128x4(buf *[4][]byte, pixelIndices [4]int) [4][2]uint64 {
 	for i := 0; i < 4; i++ {
 		binary.LittleEndian.PutUint32(buf[i], uint32(pixelIndices[i]))
