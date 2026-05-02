@@ -187,15 +187,18 @@
 // [github.com/everanium/itb/easy.Encryptor.Import] restores the
 // state on the receiver.
 //
+//	import "github.com/everanium/itb"
 //	import "github.com/everanium/itb/easy"
+//
+//	itb.SetMaxWorkers(8)    // limit to 4 CPU cores (default: all CPUs)
 //
 //	// (1) Areion-SoEM-512, no MAC.
 //	enc := easy.New("areion512", 2048, "kmac256")
 //	defer enc.Close()
 //	enc.SetNonceBits(512); enc.SetBarrierFill(4)
 //	enc.SetBitSoup(1);     enc.SetLockSoup(1)
-//	//enc.SetLockSeed(1)   // optional dedicated lockSeed; auto-couples
-//	                       // LockSoup + BitSoup. Adds one extra seed slot.
+//	//enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples
+//	                        // LockSoup + BitSoup. Adds one extra seed slot.
 //	blob := enc.Export()                          // ship to receiver
 //	encrypted, _ := enc.Encrypt(plaintext)
 //
