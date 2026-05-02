@@ -23,7 +23,7 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 | # | Registry name | Native width | Underlying primitive | Construction shape |
 |---|---|---|---|---|
 | 1 | `areion256` | 256 | AreionSoEM-256 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-256 as keyed round function |
-| 2 | `areion512` | 512 | AreionSoEM-512 | CBC-MAC with SoEM-512 as keyed round function |
+| 2 | `areion512` | 512 | AreionSoEM-512 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-512 as keyed round function |
 | 3 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
 | 4 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
 | 5 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
