@@ -21,14 +21,19 @@ var equivalenceSizes = []int{
 	1 << 20,
 }
 
-// TestMain honours the ITB_BITSOUP environment variable. When set to a
-// non-zero value before `go test` is invoked, the entire test suite runs
-// in bit-soup mode (SetBitSoup(1) called before any test or benchmark).
-// Unset or "0" leaves the default byte-level Triple Ouroboros behaviour.
+// TestMain honours the ITB_BITSOUP / ITB_LOCKSOUP / ITB_LOCKSEED /
+// ITB_NONCE_BITS environment variables. Each non-empty / non-"0"
+// value flips the corresponding process-global setter before any
+// test or benchmark runs; the entire test suite then sees that
+// configuration uniformly.
 //
-//	go test ./...                    # byte-level Triple Ouroboros (default)
+//	go test ./...                    # byte-level Single / Triple Ouroboros (default)
 //	ITB_BITSOUP=1 go test ./...      # bit-soup Triple Ouroboros
-//	ITB_BITSOUP=1 go test -bench=.   # bit-soup benchmarks
+//	ITB_BITSOUP=1 go test -bench=.   # bit-soup Triple Ouroboros
+//	ITB_LOCKSOUP=1 go test ./...     # Lock Soup Single / Triple Ouroboros
+//	ITB_NONCE_BITS=128 go test ./... # 128-bit nonces
+//	ITB_NONCE_BITS=256 go test ./... # 256-bit nonces
+//	ITB_NONCE_BITS=512 go test ./... # 512-bit nonces
 //
 // Works for every Triple Ouroboros test and benchmark in the package:
 // plain Encrypt3x*, EncryptAuthenticated3x*, and EncryptStream3x* all
@@ -239,7 +244,7 @@ func BenchmarkInterleaveParallel_16MB(b *testing.B) {
 
 // withLockSoup turns on SetBitSoup(1) + SetLockSoup(1) for the duration of
 // the test or subtest, restoring both flags via t.Cleanup. Helper for
-// LockSoup-specific tests below; preferred over manual defer because it
+// Lock Soup-specific tests below; preferred over manual defer because it
 // composes cleanly with t.Run subtests.
 func withLockSoup(t testing.TB) {
 	t.Helper()
@@ -339,7 +344,7 @@ func TestLockSoup_MaskBalance(t *testing.T) {
 // TestLockSoup_DisabledIdentity verifies that SetLockSoup(0) makes
 // splitForTripleParallelLocked / interleaveForTripleParallelLocked
 // produce output bit-identical to the plain bit-soup path. The
-// closure prf argument is built but ignored when LockSoup is off.
+// closure prf argument is built but ignored when Lock Soup is off.
 func TestLockSoup_DisabledIdentity(t *testing.T) {
 	prevBit := GetBitSoup()
 	prevLock := GetLockSoup()
@@ -351,7 +356,7 @@ func TestLockSoup_DisabledIdentity(t *testing.T) {
 	})
 
 	// Build a non-trivial closure to confirm it is not invoked when
-	// LockSoup is off (would produce different masks if called).
+	// Lock Soup is off (would produce different masks if called).
 	prf := fixedTestLockPRF(0xAAAAAA&0xFFFFFF, 0x555555&0xFFFFFF, 0)
 
 	for _, n := range []int{1, 100, 1023, 1024, 1377, 65536} {
@@ -364,7 +369,7 @@ func TestLockSoup_DisabledIdentity(t *testing.T) {
 		// taken when isLockSoupEnabled() returns false).
 		refP0, refP1, refP2 := splitForTripleParallel(data)
 
-		// Subject under test: locked dispatcher with LockSoup off.
+		// Subject under test: locked dispatcher with Lock Soup off.
 		gotP0, gotP1, gotP2 := splitForTripleParallelLocked(data, prf)
 
 		if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
@@ -690,7 +695,7 @@ func withWiderNonceLockSoup(t testing.TB, nonceBits int) {
 
 // TestSingleLockSoup_WiderNonceRoundTrip verifies that
 // `SetNonceBits(256)` and `SetNonceBits(512)` flow correctly through
-// the Single Ouroboros Lock Soup pipeline: deriveNoiseSeed consumes the
+// the Single Ouroboros Lock Soup pipeline: deriveInterLockSeed consumes the
 // full nonce length, lockSeed entropy scales with nonce width, and the
 // round-trip is bit-identical for plaintexts spanning boundary sizes.
 func TestSingleLockSoup_WiderNonceRoundTrip(t *testing.T) {

@@ -687,3 +687,857 @@ func ITB_Channels() C.int { return C.int(capi.Channels()) }
 // consumers must read this many bytes from the wire before calling
 // ITB_ParseChunkLen on each fresh chunk.
 func ITB_HeaderSize() C.int { return C.int(capi.HeaderSize()) }
+
+// ─── Easy encryptor ────────────────────────────────────────────────
+//
+// The ITB_Easy_* surface wraps the github.com/everanium/itb/easy
+// sub-package — one Encryptor handle replaces the (3 / 7 seeds + MAC)
+// constructor ceremony of the low-level path. The constructor takes
+// up to four parameters (primitive, keyBits, macName, mode); empty
+// strings and 0 select the package defaults ("areion512", 1024,
+// "kmac256"). All cipher entry points share the same caller-allocated
+// out / out_cap / *out_len buffer convention as the low-level
+// ITB_Encrypt / ITB_Decrypt path; the two-phase probe (NULL / 0 →
+// resize → retry) works identically.
+//
+// State persistence rides on the JSON-encoded blob produced by
+// ITB_Easy_Export; ITB_Easy_PeekConfig inspects a saved blob's
+// metadata before constructing a matching encryptor; ITB_Easy_Import
+// rebuilds the receiver's PRF / seed / MAC material from a prior
+// blob. Mismatch errors during Import surface the offending field
+// through ITB_Easy_LastMismatchField.
+
+//export ITB_Easy_New
+//
+// Constructs a fresh Encryptor handle. Pass NULL / 0 / NULL for
+// defaults ("areion512", 1024, "kmac256"). Mode must be 1 (Single
+// Ouroboros) or 3 (Triple Ouroboros); other values yield
+// ITB_ERR_BAD_INPUT.
+func ITB_Easy_New(
+	primitive *C.char, keyBits C.int, macName *C.char, mode C.int,
+	outHandle *C.uintptr_t,
+) C.int {
+	if outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	var primStr, macStr string
+	if primitive != nil {
+		primStr = C.GoString(primitive)
+	}
+	if macName != nil {
+		macStr = C.GoString(macName)
+	}
+	id, st := capi.NewEasy(primStr, int(keyBits), macStr, int(mode))
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Easy_Free
+//
+// Releases the Encryptor handle. Internally calls the encryptor's
+// Close (zeroing PRF keys, MAC key, seed components) before deleting
+// the cgo.Handle so key material does not linger after the binding
+// drops the handle.
+func ITB_Easy_Free(handle C.uintptr_t) C.int {
+	return C.int(capi.FreeEasy(capi.EasyHandleID(handle)))
+}
+
+//export ITB_Easy_Encrypt
+//
+// Encrypts plaintext through the Encryptor. Plain mode — does not
+// attach a MAC tag; for authenticated encryption use
+// ITB_Easy_EncryptAuth.
+func ITB_Easy_Encrypt(
+	handle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EasyEncrypt(capi.EasyHandleID(handle), pt, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Easy_Decrypt
+//
+// Decrypts ciphertext produced by ITB_Easy_Encrypt under the same
+// Encryptor handle.
+func ITB_Easy_Decrypt(
+	handle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EasyDecrypt(capi.EasyHandleID(handle), ct, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Easy_EncryptAuth
+//
+// Authenticated encrypt: attaches a MAC tag computed under the
+// Encryptor's bound MAC closure.
+func ITB_Easy_EncryptAuth(
+	handle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EasyEncryptAuth(capi.EasyHandleID(handle), pt, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Easy_DecryptAuth
+//
+// Authenticated decrypt. Returns ITB_ERR_MAC_FAILURE on tampered
+// ciphertext / wrong MAC key (distinct from generic decrypt failure).
+func ITB_Easy_DecryptAuth(
+	handle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EasyDecryptAuth(capi.EasyHandleID(handle), ct, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+// ─── Per-instance configuration setters ───────────────────────────
+
+//export ITB_Easy_SetNonceBits
+//
+// Accepts 128, 256, or 512. Other values yield ITB_ERR_BAD_INPUT.
+// Mutates only the encryptor's own Config copy; process-wide
+// ITB_SetNonceBits is unaffected.
+func ITB_Easy_SetNonceBits(handle C.uintptr_t, n C.int) C.int {
+	return C.int(capi.EasySetNonceBits(capi.EasyHandleID(handle), int(n)))
+}
+
+//export ITB_Easy_SetBarrierFill
+//
+// Accepts 1, 2, 4, 8, 16, 32. Other values yield ITB_ERR_BAD_INPUT.
+func ITB_Easy_SetBarrierFill(handle C.uintptr_t, n C.int) C.int {
+	return C.int(capi.EasySetBarrierFill(capi.EasyHandleID(handle), int(n)))
+}
+
+//export ITB_Easy_SetBitSoup
+//
+// 0 = byte-level split (default); non-zero = bit-level Bit Soup
+// split.
+func ITB_Easy_SetBitSoup(handle C.uintptr_t, mode C.int) C.int {
+	return C.int(capi.EasySetBitSoup(capi.EasyHandleID(handle), int(mode)))
+}
+
+//export ITB_Easy_SetLockSoup
+//
+// 0 = off (default); non-zero = on. Auto-couples BitSoup=1 on this
+// encryptor.
+func ITB_Easy_SetLockSoup(handle C.uintptr_t, mode C.int) C.int {
+	return C.int(capi.EasySetLockSoup(capi.EasyHandleID(handle), int(mode)))
+}
+
+//export ITB_Easy_SetLockSeed
+//
+// 0 = off; 1 = on (allocates a dedicated lockSeed and routes the
+// bit-permutation overlay through it; auto-couples LockSoup=1 +
+// BitSoup=1 on this encryptor). Calling after the first Encrypt
+// yields ITB_ERR_EASY_LOCKSEED_AFTER_ENCRYPT (status code 18).
+func ITB_Easy_SetLockSeed(handle C.uintptr_t, mode C.int) C.int {
+	return C.int(capi.EasySetLockSeed(capi.EasyHandleID(handle), int(mode)))
+}
+
+//export ITB_Easy_SetChunkSize
+//
+// Per-instance streaming chunk-size override (0 = auto-detect).
+func ITB_Easy_SetChunkSize(handle C.uintptr_t, n C.int) C.int {
+	return C.int(capi.EasySetChunkSize(capi.EasyHandleID(handle), int(n)))
+}
+
+// ─── Read-only field getters ──────────────────────────────────────
+
+//export ITB_Easy_Primitive
+//
+// Writes the encryptor's hash primitive name (NUL-terminated) into
+// out.
+func ITB_Easy_Primitive(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
+	name, st := capi.EasyPrimitive(capi.EasyHandleID(handle))
+	if st != capi.StatusOK {
+		return C.int(st)
+	}
+	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
+}
+
+//export ITB_Easy_KeyBits
+//
+// Returns the per-seed key width in bits, or 0 on a bad handle
+// (status returned via *outStatus).
+func ITB_Easy_KeyBits(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasyKeyBits(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
+}
+
+//export ITB_Easy_Mode
+//
+// Returns 1 (Single Ouroboros) or 3 (Triple Ouroboros), or 0 on a bad
+// handle (status returned via *outStatus).
+func ITB_Easy_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasyMode(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
+}
+
+//export ITB_Easy_MACName
+//
+// Writes the encryptor's MAC primitive name (NUL-terminated) into
+// out.
+func ITB_Easy_MACName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
+	name, st := capi.EasyMACName(capi.EasyHandleID(handle))
+	if st != capi.StatusOK {
+		return C.int(st)
+	}
+	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
+}
+
+// ─── Material getters (defensive copies) ──────────────────────────
+
+//export ITB_Easy_SeedCount
+//
+// Returns the number of seed slots: 3 (Single without LockSeed),
+// 4 (Single with LockSeed), 7 (Triple without LockSeed), 8 (Triple
+// with LockSeed). Status returned via *outStatus.
+func ITB_Easy_SeedCount(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasySeedCount(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
+}
+
+//export ITB_Easy_SeedComponents
+//
+// Writes the uint64 components of one seed slot into out (defensive
+// copy). *outLen receives the component count on success. capCount
+// (counted in uint64 elements) must be at least the slot's component
+// count or ITB_ERR_BAD_INPUT is returned. Pass capCount=0 / out=NULL
+// to probe the required size.
+func ITB_Easy_SeedComponents(
+	handle C.uintptr_t, slot C.int,
+	out *C.uint64_t, capCount C.int, outLen *C.int,
+) C.int {
+	comps, st := capi.EasySeedComponents(capi.EasyHandleID(handle), int(slot))
+	if st != capi.StatusOK {
+		return C.int(st)
+	}
+	if outLen != nil {
+		*outLen = C.int(len(comps))
+	}
+	if out == nil || capCount < C.int(len(comps)) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := unsafe.Slice((*uint64)(unsafe.Pointer(out)), int(capCount))
+	copy(dst, comps)
+	return C.int(capi.StatusOK)
+}
+
+//export ITB_Easy_HasPRFKeys
+//
+// Returns 1 when the encryptor's primitive uses fixed PRF keys per
+// seed slot (every shipped primitive except siphash24), 0 otherwise.
+// Status returned via *outStatus.
+func ITB_Easy_HasPRFKeys(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasyHasPRFKeys(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
+}
+
+//export ITB_Easy_PRFKey
+//
+// Writes the fixed PRF key bytes for one seed slot into out (defensive
+// copy). Returns ITB_ERR_BAD_INPUT when the primitive has no fixed
+// PRF keys (siphash24 — caller should consult ITB_Easy_HasPRFKeys
+// first) or when slot is out of range.
+func ITB_Easy_PRFKey(
+	handle C.uintptr_t, slot C.int,
+	out *C.uint8_t, capBytes C.size_t, outLen *C.size_t,
+) C.int {
+	key, st := capi.EasyPRFKey(capi.EasyHandleID(handle), int(slot))
+	if st != capi.StatusOK {
+		return C.int(st)
+	}
+	if outLen != nil {
+		*outLen = C.size_t(len(key))
+	}
+	if len(key) == 0 {
+		return C.int(capi.StatusOK)
+	}
+	if out == nil || capBytes < C.size_t(len(key)) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := unsafe.Slice((*byte)(unsafe.Pointer(out)), int(capBytes))
+	copy(dst, key)
+	return C.int(capi.StatusOK)
+}
+
+//export ITB_Easy_MACKey
+//
+// Writes a defensive copy of the encryptor's bound MAC fixed key into
+// out.
+func ITB_Easy_MACKey(
+	handle C.uintptr_t,
+	out *C.uint8_t, capBytes C.size_t, outLen *C.size_t,
+) C.int {
+	key, st := capi.EasyMACKey(capi.EasyHandleID(handle))
+	if st != capi.StatusOK {
+		return C.int(st)
+	}
+	if outLen != nil {
+		*outLen = C.size_t(len(key))
+	}
+	if out == nil || capBytes < C.size_t(len(key)) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := unsafe.Slice((*byte)(unsafe.Pointer(out)), int(capBytes))
+	copy(dst, key)
+	return C.int(capi.StatusOK)
+}
+
+// ─── Lifecycle ─────────────────────────────────────────────────────
+
+//export ITB_Easy_Close
+//
+// Zeroes the encryptor's PRF keys, MAC key, and seed components and
+// marks it closed. Subsequent method calls on the same handle return
+// ITB_ERR_EASY_CLOSED. Idempotent — multiple Close calls return
+// ITB_OK without panic. Releases the handle slot via ITB_Easy_Free
+// (Close alone does not delete the cgo.Handle).
+func ITB_Easy_Close(handle C.uintptr_t) C.int {
+	return C.int(capi.EasyClose(capi.EasyHandleID(handle)))
+}
+
+// ─── State serialization ──────────────────────────────────────────
+
+//export ITB_Easy_Export
+//
+// Serialises the encryptor's full state (PRF keys, seed components,
+// MAC key, dedicated lockSeed material when active) as a JSON blob
+// into the caller-allocated buffer. Same probe-then-retry buffer
+// convention as ITB_Encrypt: pass out=NULL / outCap=0 to discover
+// the required size, then resize and call again.
+func ITB_Easy_Export(
+	handle C.uintptr_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EasyExport(capi.EasyHandleID(handle), dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Easy_Import
+//
+// Replaces the encryptor's PRF keys, seed components, MAC key, and
+// (optionally) dedicated lockSeed material with the values carried
+// in a JSON blob produced by a prior ITB_Easy_Export call. On any
+// non-OK return the encryptor's pre-Import state is unchanged.
+//
+// On ITB_ERR_EASY_MISMATCH the offending JSON field is recorded; the
+// caller reads it through ITB_Easy_LastMismatchField immediately
+// after the failure on the same thread.
+func ITB_Easy_Import(
+	handle C.uintptr_t,
+	blob unsafe.Pointer, blobLen C.size_t,
+) C.int {
+	in := goBytesView(blob, blobLen)
+	return C.int(capi.EasyImport(capi.EasyHandleID(handle), in))
+}
+
+//export ITB_Easy_PeekConfig
+//
+// Parses a state blob's metadata (primitive, key_bits, mode, mac)
+// without performing full validation, allowing a caller to inspect a
+// saved blob before constructing a matching encryptor.
+//
+// Both string out-buffers follow the standard probe-then-retry
+// convention (pass NULL / 0 to discover the required size). The
+// integer outputs are populated on every successful call.
+func ITB_Easy_PeekConfig(
+	blob unsafe.Pointer, blobLen C.size_t,
+	primOut *C.char, primCap C.size_t, primLen *C.size_t,
+	keyBitsOut *C.int, modeOut *C.int,
+	macOut *C.char, macCap C.size_t, macLen *C.size_t,
+) C.int {
+	in := goBytesView(blob, blobLen)
+	prim, kb, mode, mac, st := capi.EasyPeekConfig(in)
+	if st != capi.StatusOK {
+		return C.int(st)
+	}
+	if keyBitsOut != nil {
+		*keyBitsOut = C.int(kb)
+	}
+	if modeOut != nil {
+		*modeOut = C.int(mode)
+	}
+	// Both writeCString calls must run so primLen AND macLen are both
+	// populated on the probe pass (cap=0 / out=NULL). Returning early
+	// after the first BufferTooSmall would leave macLen unset and
+	// force the caller into a guess-and-check sizing loop.
+	primSt := writeCString(prim, unsafe.Pointer(primOut), primCap, primLen)
+	macSt := writeCString(mac, unsafe.Pointer(macOut), macCap, macLen)
+	if primSt != capi.StatusOK {
+		return C.int(primSt)
+	}
+	return C.int(macSt)
+}
+
+//export ITB_Easy_LastMismatchField
+//
+// Writes the offending JSON field name from the most recent
+// ITB_Easy_Import call that returned ITB_ERR_EASY_MISMATCH. The
+// caller reads this immediately after the failure on the same
+// thread; the field text is empty when the most recent failure was
+// not a mismatch.
+func ITB_Easy_LastMismatchField(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
+	return C.int(writeCString(capi.LastMismatchField(), unsafe.Pointer(out), capBytes, outLen))
+}
+
+// ─── Per-instance nonce / chunk introspection ──────────────────────
+
+//export ITB_Easy_NonceBits
+//
+// Returns the per-instance nonce size in bits (128 / 256 / 512).
+// Falls back to the global ITB_GetNonceBits reading when no
+// per-instance override has been issued via ITB_Easy_SetNonceBits.
+// Status returned via *outStatus.
+func ITB_Easy_NonceBits(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasyNonceBits(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
+}
+
+//export ITB_Easy_HeaderSize
+//
+// Returns the per-instance ciphertext-chunk header size in bytes
+// (nonce + 2-byte width + 2-byte height). Tracks this encryptor's
+// own NonceBits, NOT the process-wide ITB_HeaderSize reading —
+// important when the encryptor has called ITB_Easy_SetNonceBits to
+// override the default. Status returned via *outStatus.
+func ITB_Easy_HeaderSize(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasyHeaderSize(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
+}
+
+//export ITB_Easy_ParseChunkLen
+//
+// Per-instance chunk-length parser: inspects a chunk header at the
+// front of the supplied buffer and writes the total wire length of
+// the chunk to *outChunkLen. Counterpart of ITB_ParseChunkLen but
+// keyed on this encryptor's own NonceBits, so a stream produced by
+// the encryptor under a non-default nonce size is parsed correctly
+// regardless of the process-wide nonce setting.
+//
+// Returns ITB_OK on success, ITB_ERR_BAD_INPUT when the buffer is
+// shorter than the header, the dimensions are zero, or the
+// width × height multiplication overflows the container pixel cap.
+func ITB_Easy_ParseChunkLen(
+	handle C.uintptr_t,
+	header unsafe.Pointer, headerLen C.size_t,
+	outChunkLen *C.size_t,
+) C.int {
+	if outChunkLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	hdr := goBytesView(header, headerLen)
+	n, st := capi.EasyParseChunkLen(capi.EasyHandleID(handle), hdr)
+	if st == capi.StatusOK {
+		*outChunkLen = C.size_t(n)
+	} else {
+		*outChunkLen = 0
+	}
+	return C.int(st)
+}
+
+// ─── Seed lifecycle — additional mutators ──────────────────────────
+
+//export ITB_AttachLockSeed
+//
+// Wires a dedicated lockSeed handle (the bit-permutation derivation
+// key source) onto an existing noise seed handle. Both handles must
+// share the same native hash width — mixing widths returns
+// ITB_ERR_SEED_WIDTH_MIX. The dedicated lockSeed has no observable
+// effect on the wire output unless the bit-permutation overlay is
+// engaged via ITB_SetBitSoup(1) or ITB_SetLockSoup(1) before the
+// first encrypt; the overlay-off guard inside the build-PRF closure
+// raises a panic on encrypt-time when an attach is present without
+// either flag.
+//
+// Misuse paths surface as ITB_ERR_BAD_INPUT: self-attach (passing
+// the same handle for noise and lock), component-array aliasing
+// (two distinct handles whose components slices share the same
+// backing array), and post-Encrypt switching (calling AttachLockSeed
+// on a noise seed that has already produced ciphertext).
+//
+// The lockSeed handle remains owned by the caller — AttachLockSeed
+// only records the pointer on the noise seed; releasing the lockSeed
+// via ITB_FreeSeed before the noise seed is used invalidates the
+// dedicated derivation path. Standard pairing: keep the lockSeed
+// alive for the lifetime of the noise seed.
+func ITB_AttachLockSeed(noiseHandle, lockHandle C.uintptr_t) C.int {
+	return C.int(capi.AttachLockSeed(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(lockHandle),
+	))
+}
+
+// ─── Native Blob — low-level state persistence ────────────────────
+//
+// itb.Blob{128,256,512} pack the low-level encryptor material —
+// per-seed hash key + Components + optional dedicated lockSeed +
+// optional MAC material — plus the captured process-wide
+// configuration into one self-describing JSON blob. Mirrors the
+// easy.Encryptor state-blob surface but at the native (mix-and-
+// match-primitives) level: no primitive name is recorded because
+// each seed slot can carry a different primitive on the low-level
+// path. Callers wire the matching factory onto each restored seed
+// after Import.
+//
+// The C ABI exposes the blob as an opaque BlobHandleID built via
+// ITB_Blob{128,256,512}_New, populated through slot-keyed setters
+// (ITB_Blob_SetKey / ITB_Blob_SetComponents) and optional MAC
+// setters, then serialised with ITB_Blob_Export / ITB_Blob_Export3.
+// The receiving side constructs a same-width handle, drives
+// ITB_Blob_Import / ITB_Blob_Import3, then reads each slot back via
+// the matching getter to feed its hash factory.
+//
+// Slot identifiers (ITB_BLOB_SLOT_*):
+//   N=0 (shared), D=1 / S=2 (Single only), L=3 (optional lockSeed,
+//   any mode), D1..D3=4..6 + S1..S3=7..9 (Triple only).
+//
+// Export option bitmask (ITB_BLOB_OPT_*):
+//   LOCKSEED=0x1 emits the L slot; MAC=0x2 emits MAC key + name.
+
+//export ITB_Blob128_New
+//
+// Constructs a fresh empty Blob128 handle. Zero / unset slots are
+// emitted as zero-length / zero-array fields by Export — the caller
+// populates the slots that apply to the active mode (Single or
+// Triple) before serialising.
+func ITB_Blob128_New(outHandle *C.uintptr_t) C.int {
+	if outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	id, st := capi.NewBlob128()
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Blob256_New
+//
+// Constructs a fresh empty Blob256 handle. See ITB_Blob128_New.
+func ITB_Blob256_New(outHandle *C.uintptr_t) C.int {
+	if outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	id, st := capi.NewBlob256()
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Blob512_New
+//
+// Constructs a fresh empty Blob512 handle. See ITB_Blob128_New.
+func ITB_Blob512_New(outHandle *C.uintptr_t) C.int {
+	if outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	id, st := capi.NewBlob512()
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Blob_Free
+//
+// Releases a blob handle. Safe to call on a zero handle (returns
+// ITB_ERR_BAD_HANDLE); idempotent across all three widths since
+// the underlying type is discriminated on the Go side.
+func ITB_Blob_Free(handle C.uintptr_t) C.int {
+	return C.int(capi.FreeBlob(capi.BlobHandleID(handle)))
+}
+
+//export ITB_Blob_Width
+//
+// Returns the native hash width of an existing blob handle (128 /
+// 256 / 512). Status returned via *outStatus.
+func ITB_Blob_Width(handle C.uintptr_t, outStatus *C.int) C.int {
+	w, st := capi.BlobWidth(capi.BlobHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(w)
+}
+
+//export ITB_Blob_Mode
+//
+// Returns the blob's mode field (0 = unset, 1 = Single, 3 = Triple).
+// Updated by Import / Import3; freshly constructed handles report 0
+// until Export / Export3 / Import / Import3 has run.
+func ITB_Blob_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
+	m, st := capi.BlobMode(capi.BlobHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(m)
+}
+
+//export ITB_Blob_SetKey
+//
+// Stores the hash key bytes for the requested slot on the handle.
+// 256-bit width requires exactly 32 bytes; 512-bit width requires
+// exactly 64 bytes. 128-bit width accepts variable lengths (empty
+// for siphash24, 16 bytes for aescmac); the downstream factory
+// validates the per-primitive length on Import-side wiring.
+func ITB_Blob_SetKey(
+	handle C.uintptr_t, slot C.int,
+	key unsafe.Pointer, keyLen C.size_t,
+) C.int {
+	k := goBytesView(key, keyLen)
+	return C.int(capi.BlobSetKey(capi.BlobHandleID(handle), int(slot), k))
+}
+
+//export ITB_Blob_GetKey
+//
+// Copies the hash key bytes from the requested slot into the
+// caller-allocated out buffer. Probe-then-retry: pass out=NULL /
+// outCap=0 to discover the required size in *outLen.
+func ITB_Blob_GetKey(
+	handle C.uintptr_t, slot C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.BlobGetKey(capi.BlobHandleID(handle), int(slot), dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Blob_SetComponents
+//
+// Stores the seed components (uint64 array) for the requested slot
+// on the handle. Component count is validated lazily at Export /
+// Import time — same 8..MaxKeyBits/64 multiple-of-8 invariants as
+// ITB_NewSeedFromComponents.
+func ITB_Blob_SetComponents(
+	handle C.uintptr_t, slot C.int,
+	comps *C.uint64_t, count C.size_t,
+) C.int {
+	if count > maxSliceLen {
+		return C.int(capi.StatusBadInput)
+	}
+	var compsView []uint64
+	if comps != nil && count > 0 {
+		compsView = unsafe.Slice((*uint64)(unsafe.Pointer(comps)), int(count))
+	}
+	return C.int(capi.BlobSetComponents(
+		capi.BlobHandleID(handle), int(slot), compsView,
+	))
+}
+
+//export ITB_Blob_GetComponents
+//
+// Copies the seed components from the requested slot into the
+// caller-allocated uint64 array. Probe-then-retry: pass out=NULL /
+// outCap=0 to discover the required count (in uint64 elements,
+// not bytes) in *outCount.
+func ITB_Blob_GetComponents(
+	handle C.uintptr_t, slot C.int,
+	out *C.uint64_t, outCap C.size_t, outCount *C.size_t,
+) C.int {
+	if outCount == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if outCap > maxSliceLen {
+		return C.int(capi.StatusBadInput)
+	}
+	var dst []uint64
+	if out != nil && outCap > 0 {
+		dst = unsafe.Slice((*uint64)(unsafe.Pointer(out)), int(outCap))
+	}
+	n, st := capi.BlobGetComponents(capi.BlobHandleID(handle), int(slot), dst)
+	*outCount = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Blob_SetMACKey
+//
+// Stores the optional MAC key bytes on the handle. Pass NULL / 0 to
+// clear a previously-set key. Export / Export3 only emits the MAC
+// section when both ITB_BLOB_OPT_MAC is set in the bitmask AND the
+// MAC key on the handle is non-empty.
+func ITB_Blob_SetMACKey(
+	handle C.uintptr_t,
+	key unsafe.Pointer, keyLen C.size_t,
+) C.int {
+	k := goBytesView(key, keyLen)
+	return C.int(capi.BlobSetMACKey(capi.BlobHandleID(handle), k))
+}
+
+//export ITB_Blob_GetMACKey
+//
+// Copies the MAC key from the handle into the caller-allocated out
+// buffer. Probe-then-retry standard convention.
+func ITB_Blob_GetMACKey(
+	handle C.uintptr_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.BlobGetMACKey(capi.BlobHandleID(handle), dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Blob_SetMACName
+//
+// Stores the optional MAC name on the handle (e.g. "kmac256",
+// "hmac-blake3"). Pass NULL / 0 to clear a previously-set name.
+func ITB_Blob_SetMACName(
+	handle C.uintptr_t,
+	name *C.char, nameLen C.size_t,
+) C.int {
+	var s string
+	if name != nil && nameLen > 0 {
+		s = C.GoStringN(name, C.int(nameLen))
+	}
+	return C.int(capi.BlobSetMACName(capi.BlobHandleID(handle), s))
+}
+
+//export ITB_Blob_GetMACName
+//
+// Writes the MAC name from the handle into the caller-allocated
+// out buffer (NUL-terminated). Probe-then-retry standard convention.
+func ITB_Blob_GetMACName(
+	handle C.uintptr_t,
+	out *C.char, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	name, st := capi.BlobGetMACName(capi.BlobHandleID(handle))
+	if st != capi.StatusOK {
+		if outLen != nil {
+			*outLen = 0
+		}
+		return C.int(st)
+	}
+	return C.int(writeCString(name, unsafe.Pointer(out), outCap, outLen))
+}
+
+//export ITB_Blob_Export
+//
+// Serialises the handle's Single-Ouroboros state into a JSON blob.
+// The optsBitmask is a bitwise-OR of ITB_BLOB_OPT_* flags
+// (LOCKSEED=0x1, MAC=0x2). Probe-then-retry buffer convention.
+func ITB_Blob_Export(
+	handle C.uintptr_t, optsBitmask C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.BlobExport(capi.BlobHandleID(handle), int(optsBitmask), dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Blob_Export3
+//
+// Serialises the handle's Triple-Ouroboros state into a JSON blob.
+// See ITB_Blob_Export for the bitmask + buffer convention.
+func ITB_Blob_Export3(
+	handle C.uintptr_t, optsBitmask C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.BlobExport3(capi.BlobHandleID(handle), int(optsBitmask), dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Blob_Import
+//
+// Parses a Single-Ouroboros JSON blob, populates the handle's slots,
+// and applies the captured globals via the process-wide setters.
+// Returns ITB_ERR_BLOB_MODE_MISMATCH on mode=3 input (call
+// ITB_Blob_Import3 instead), ITB_ERR_BLOB_MALFORMED on parse / shape
+// failure, ITB_ERR_BLOB_VERSION_TOO_NEW on unsupported version.
+func ITB_Blob_Import(
+	handle C.uintptr_t,
+	blob unsafe.Pointer, blobLen C.size_t,
+) C.int {
+	in := goBytesView(blob, blobLen)
+	return C.int(capi.BlobImport(capi.BlobHandleID(handle), in))
+}
+
+//export ITB_Blob_Import3
+//
+// Triple-Ouroboros counterpart of ITB_Blob_Import. Same error
+// contract.
+func ITB_Blob_Import3(
+	handle C.uintptr_t,
+	blob unsafe.Pointer, blobLen C.size_t,
+) C.int {
+	in := goBytesView(blob, blobLen)
+	return C.int(capi.BlobImport3(capi.BlobHandleID(handle), in))
+}

@@ -561,3 +561,114 @@ func TestNewSeedFromComponentsBadKeySize(t *testing.T) {
 		}
 	}
 }
+
+// TestAttachLockSeedRoundtrip exercises the FFI-level
+// AttachLockSeed: a fresh dedicated lockSeed is attached to a noise
+// seed, the bit-permutation overlay is engaged via SetLockSoup(1),
+// and a Single-Ouroboros Encrypt → Decrypt round-trip succeeds.
+// Without the overlay-off guard built into the build*PRF closures,
+// a missing SetLockSoup call would silently produce byte-level
+// ciphertext; with the overlay engaged the dedicated lockSeed
+// drives the bit-permutation derivation as designed.
+func TestAttachLockSeedRoundtrip(t *testing.T) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	defer func() {
+		SetBitSoup(prevBS)
+		SetLockSoup(prevLS)
+	}()
+	if st := SetLockSoup(1); st != StatusOK {
+		t.Fatalf("SetLockSoup: status=%v", st)
+	}
+
+	ns, _ := NewSeed("blake3", 1024)
+	defer FreeSeed(ns)
+	ds, _ := NewSeed("blake3", 1024)
+	defer FreeSeed(ds)
+	ss, _ := NewSeed("blake3", 1024)
+	defer FreeSeed(ss)
+	ls, _ := NewSeed("blake3", 1024)
+	defer FreeSeed(ls)
+
+	if st := AttachLockSeed(ns, ls); st != StatusOK {
+		t.Fatalf("AttachLockSeed: status=%v", st)
+	}
+
+	plaintext := []byte("attach lockseed FFI roundtrip payload")
+	out := make([]byte, 1<<16)
+	n, st := Encrypt(ns, ds, ss, plaintext, out)
+	if st != StatusOK {
+		t.Fatalf("Encrypt: status=%v", st)
+	}
+	pt := make([]byte, len(plaintext)+1024)
+	m, st := Decrypt(ns, ds, ss, out[:n], pt)
+	if st != StatusOK {
+		t.Fatalf("Decrypt: status=%v", st)
+	}
+	if !bytes.Equal(plaintext, pt[:m]) {
+		t.Fatalf("plaintext mismatch")
+	}
+}
+
+// TestAttachLockSeedRejection covers the three attach-time misuse
+// paths (self-attach, post-Encrypt switching, width mismatch). The
+// component-aliasing path is not reachable through the FFI surface
+// because every NewSeed produces a fresh CSPRNG-backed components
+// slice — it lives only on the Go-native AttachLockSeed entry point.
+func TestAttachLockSeedRejection(t *testing.T) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	defer func() {
+		SetBitSoup(prevBS)
+		SetLockSoup(prevLS)
+	}()
+	SetLockSoup(1)
+
+	// Self-attach: same handle for noise and lock.
+	ns, _ := NewSeed("blake3", 1024)
+	defer FreeSeed(ns)
+	if st := AttachLockSeed(ns, ns); st != StatusBadInput {
+		t.Errorf("self-attach: status=%v, want StatusBadInput", st)
+	}
+
+	// Width mismatch: attach a 128-bit lockSeed onto a 256-bit
+	// noiseSeed.
+	ls128, _ := NewSeed("siphash24", 1024)
+	defer FreeSeed(ls128)
+	if st := AttachLockSeed(ns, ls128); st != StatusSeedWidthMix {
+		t.Errorf("width-mismatch attach: status=%v, want StatusSeedWidthMix", st)
+	}
+
+	// Post-Encrypt switching: encrypt with one attached lockSeed,
+	// then attempt to attach a different one.
+	ls := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ls)
+	if st := AttachLockSeed(ns, ls); st != StatusOK {
+		t.Fatalf("first AttachLockSeed: status=%v", st)
+	}
+	ds := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ds)
+	ss := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ss)
+	out := make([]byte, 1<<16)
+	if _, st := Encrypt(ns, ds, ss, []byte("pre-switch"), out); st != StatusOK {
+		t.Fatalf("Encrypt: status=%v", st)
+	}
+	ls2 := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ls2)
+	if st := AttachLockSeed(ns, ls2); st != StatusBadInput {
+		t.Errorf("post-Encrypt attach: status=%v, want StatusBadInput", st)
+	}
+}
+
+// NewSeedOK is a small testing helper that fails the test when
+// NewSeed returns a non-OK status, returning the handle directly.
+// Used by attach-rejection tests to keep the assertion shape compact.
+func NewSeedOK(t *testing.T, name string, keyBits int) HandleID {
+	t.Helper()
+	id, st := NewSeed(name, keyBits)
+	if st != StatusOK {
+		t.Fatalf("NewSeed(%q, %d): status=%v", name, keyBits, st)
+	}
+	return id
+}

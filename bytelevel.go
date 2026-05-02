@@ -9,6 +9,7 @@ import (
 // Both branches run 3-way parallel kernels - byte-level via
 // [splitTripleParallel] (3 strided goroutines, one per lane), bit-soup via
 // [splitTripleBitsParallel] (period-3-byte chunks across CPU cores).
+// Test only function ; Not used in production.
 func splitForTripleParallel(data []byte) (p0, p1, p2 []byte) {
 	if isBitSoupEnabled() {
 		p0, p1, p2, _ = splitTripleBitsParallel(prependTripleLen(data))
@@ -22,6 +23,7 @@ func splitForTripleParallel(data []byte) (p0, p1, p2 []byte) {
 // returns wrong-seed garbage clamped to the recovered payload extent.
 // Both branches run 3-way parallel kernels - byte-level via
 // [interleaveTripleParallel], bit-soup via [interleaveTripleBitsParallel].
+// Test only function ; Not used in production.
 func interleaveForTripleParallel(p0, p1, p2 []byte) []byte {
 	if !isBitSoupEnabled() {
 		return interleaveTripleParallel(p0, p1, p2)

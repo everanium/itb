@@ -172,7 +172,81 @@
 //     Noise barrier at MinPixels=177 (P=196 after square rounding): 2^(8×196) = 2^1568,
 //     far beyond the Landauer limit of ~2^306.
 //
-// # Quick Start
+// # Quick Start (recommended) — easy.Encryptor
+//
+// The high-level [github.com/everanium/itb/easy.Encryptor] replaces
+// the low-level setup ceremony (per-seed PRF closures, BatchHash
+// wiring, MAC factory, optional AttachLockSeed) with one constructor
+// call. The encryptor allocates its own seeds + MAC closure,
+// snapshots the global configuration into a per-instance [Config],
+// and exposes setters that mutate only its own state without
+// touching the process-wide [SetMaxWorkers] / [SetNonceBits] etc.
+// Cross-process persistence is one method on each side:
+// [github.com/everanium/itb/easy.Encryptor.Export] returns a JSON
+// blob, [github.com/everanium/itb/easy.PeekConfig] inspects it,
+// [github.com/everanium/itb/easy.Encryptor.Import] restores the
+// state on the receiver.
+//
+//	import "github.com/everanium/itb/easy"
+//
+//	// (1) Areion-SoEM-512, no MAC.
+//	enc := easy.New("areion512", 2048, "kmac256")
+//	defer enc.Close()
+//	enc.SetNonceBits(512); enc.SetBarrierFill(4)
+//	enc.SetBitSoup(1);     enc.SetLockSoup(1)
+//	//enc.SetLockSeed(1)   // optional dedicated lockSeed; auto-couples
+//	                       // LockSoup + BitSoup. Adds one extra seed slot.
+//	blob := enc.Export()                          // ship to receiver
+//	encrypted, _ := enc.Encrypt(plaintext)
+//
+//	prim, kb, mode, mac := easy.PeekConfig(blob)  // receiver side
+//	var dec *easy.Encryptor
+//	if mode == 1 { dec = easy.New(prim, kb, mac) } else { dec = easy.New3(prim, kb, mac) }
+//	defer dec.Close()
+//	// dec.Import(blob) below automatically restores the full
+//	// per-instance configuration (nonce_bits, barrier_fill,
+//	// bit_soup, lock_soup, and the dedicated lockSeed material
+//	// when sender's SetLockSeed(1) was active). The Set* lines
+//	// below are kept for documentation — they show the knobs
+//	// available for explicit pre-Import override. BarrierFill is
+//	// asymmetric: a receiver-set value > 1 takes priority over
+//	// the blob's barrier_fill (the receiver's heavier CSPRNG
+//	// margin is preserved).
+//	dec.SetNonceBits(512); dec.SetBarrierFill(4)
+//	dec.SetBitSoup(1);     dec.SetLockSoup(1)
+//	dec.Import(blob)
+//	decrypted, _ := dec.Decrypt(encrypted)
+//
+//	// (2) Areion-SoEM-512 + KMAC-256, authenticated. The MAC
+//	// primitive is bound at construction time; encrypt_auth /
+//	// decrypt_auth attach a 32-byte tag inside the container.
+//	enc = easy.New("areion512", 2048, "kmac256")
+//	defer enc.Close()
+//	enc.SetBitSoup(1); enc.SetLockSoup(1)
+//	encrypted, _ = enc.EncryptAuth(plaintext)
+//	// dec.DecryptAuth surfaces tampering as a non-nil error rather
+//	// than corrupted plaintext.
+//
+//	// (3) BLAKE2b-512 + HMAC-BLAKE3, authenticated, 2048-bit seeds.
+//	// Mixing primitive + MAC is a one-line constructor change — no
+//	// per-call PRF / batched-arm / MAC-factory wiring.
+//	enc = easy.New("blake2b512", 2048, "hmac-blake3")
+//	defer enc.Close()
+//	enc.SetBitSoup(1); enc.SetLockSoup(1)
+//	encrypted, _ = enc.EncryptAuth(plaintext)
+//
+// Streaming on the easy surface lives entirely on the caller side:
+// slice plaintext into chunks of the desired size and call
+// [github.com/everanium/itb/easy.Encryptor.Encrypt] per chunk; on
+// the decrypt side walk the concatenated stream by reading
+// [github.com/everanium/itb/easy.Encryptor.HeaderSize] bytes,
+// calling [github.com/everanium/itb/easy.Encryptor.ParseChunkLen]
+// to learn the chunk's body length, reading the remaining bytes,
+// and feeding the full chunk to [github.com/everanium/itb/easy.Encryptor.Decrypt].
+// Both per-instance accessors track the encryptor's own NonceBits
+// without consulting the process-wide [GetNonceBits] / [ParseChunkLen].
+//
+// # Quick Start (low-level)
 //
 //	import (
 //	    "github.com/everanium/itb"
@@ -351,6 +425,13 @@
 // [EncryptAuthenticated3x128], [EncryptAuthenticated3x256], [EncryptAuthenticated3x512],
 // [DecryptAuthenticated3x128], [DecryptAuthenticated3x256], [DecryptAuthenticated3x512].
 //
+// Each authenticated entry point has a Cfg counterpart taking a
+// [Config] first argument for per-instance overrides
+// ([EncryptAuthenticated128Cfg] / [DecryptAuthenticated128Cfg] and
+// the 256/512 mirrors, plus the Triple-Ouroboros
+// [EncryptAuthenticated3x128Cfg] / [DecryptAuthenticated3x128Cfg]
+// and mirrors). See [Config] / [SnapshotGlobals].
+//
 // # Streaming (Chunked Encryption)
 //
 // For large data that exceeds available memory, use the streaming API.
@@ -385,6 +466,15 @@
 // buffering the whole stream in memory. The function is also
 // exposed through the C ABI as ITB_ParseChunkLen.
 //
+// Each streaming entry point has a Cfg counterpart taking a
+// [Config] first argument for per-instance overrides
+// ([EncryptStream128Cfg] / [DecryptStream128Cfg] and the 256/512
+// mirrors, plus the Triple-Ouroboros [EncryptStream3x128Cfg] /
+// [DecryptStream3x128Cfg] and mirrors). [ParseChunkLenCfg] is the
+// matching per-instance chunk-header reader, honouring the cfg's
+// own NonceBits when walking a stream produced by an encryptor that
+// overrides the global. See [Config] / [SnapshotGlobals].
+//
 // # Triple Ouroboros (7-seed variant)
 //
 // Triple Ouroboros splits plaintext into 3 parts at the byte level (every 3rd
@@ -401,6 +491,11 @@
 // Available for all three hash widths:
 // [Encrypt3x128], [Encrypt3x256], [Encrypt3x512],
 // [Decrypt3x128], [Decrypt3x256], [Decrypt3x512].
+//
+// Each Triple Ouroboros entry point has a Cfg counterpart taking a
+// [Config] first argument for per-instance overrides
+// ([Encrypt3x128Cfg] / [Decrypt3x128Cfg] and the 256/512 mirrors).
+// See [Config] / [SnapshotGlobals].
 //
 // For best throughput, use 512-bit ITB key — security becomes P × 2^1536
 // (3 × 512), stronger than Single 1024-bit, while ChainHash runs at 512-bit
@@ -440,7 +535,9 @@
 // variant: [Encrypt128] / [Decrypt128], the 256/512 mirrors,
 // authenticated and streaming counterparts. The ciphertext wire format
 // is identical in all modes. Callers must set the same mode on both
-// encrypt and decrypt sides of the channel.
+// encrypt and decrypt sides of the channel. Each variant's Cfg
+// counterpart honours BitSoup / LockSoup as a per-instance override
+// — see [Config] / [SnapshotGlobals].
 //
 //	itb.SetBitSoup(1)  // whole-process opt-in; default 0 = byte-level
 //	                   // (Single) automatically engages Lock Soup overlay
@@ -469,6 +566,90 @@
 //
 // See [ITB.md] / [ITB3.md] for accessible explanation and [REDTEAM.md]
 // Phase 2g for the defensive framing in the SAT attack context.
+//
+// # Per-instance configuration ([Config], Cfg variants)
+//
+// Every public encrypt / decrypt entry point has a Cfg counterpart
+// taking a [Config] first argument: [Encrypt128Cfg] /
+// [Decrypt128Cfg] and the 256/512 mirrors for Single Ouroboros,
+// [Encrypt3x128Cfg] / [Decrypt3x128Cfg] and mirrors for Triple
+// Ouroboros, the matching authenticated and streaming counterparts,
+// and [ParseChunkLenCfg]. A nil cfg falls through to the
+// process-global setter state, preserving the legacy entry-point
+// behaviour bit-exactly. A non-nil cfg overrides NonceBits /
+// BarrierFill / BitSoup / LockSoup / LockSeed on a per-call basis
+// without mutating the process globals — multiple encryptors with
+// distinct configurations can coexist in one process.
+//
+// [SnapshotGlobals] returns a fresh [Config] initialised from the
+// current global setter state, pinning the per-instance value to
+// the global at snapshot time. Subsequent global mutations do not
+// leak into a previously-snapshotted [Config]; subsequent mutations
+// of a snapshotted [Config] do not leak back into the globals. The
+// [github.com/everanium/itb/easy.Encryptor] surface uses this at
+// New / New3 time to seed each encryptor's own [Config] copy.
+//
+// # State persistence — Blob
+//
+// [Blob128] / [Blob256] / [Blob512] pack the native-API encryptor
+// material (per-seed hash key + Components + optional dedicated
+// lockSeed + optional MAC key + name) plus the captured
+// process-wide configuration into one self-describing JSON blob.
+// Export / Export3 produce the blob; Import / Import3 reverse it,
+// applying the captured globals via [SetNonceBits] /
+// [SetBarrierFill] / [SetBitSoup] / [SetLockSoup] before
+// populating the struct's public Key* / Components fields. The
+// receiver wires Hash / BatchHash from the saved key bytes through
+// the matching factory (e.g. [MakeAreionSoEM512HashWithKey]),
+// keeping the pluggable-PRF philosophy of the native API. Optional
+// LockSeed and MAC slots ride in the trailing [Blob128Opts] /
+// [Blob256Opts] / [Blob512Opts] options struct. The
+// [github.com/everanium/itb/easy.Encryptor.Export] surface is the
+// high-level alternative for callers that prefer constructor-bound
+// primitive selection plus auto-coupling.
+//
+// # AttachLockSeed (dedicated lockSeed)
+//
+// [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
+// [Seed512.AttachLockSeed] route the bit-permutation derivation
+// channel through a dedicated lockSeed instead of the noiseSeed,
+// separating that PRF's keying material from the noise-injection
+// channel without changing the public Encrypt / Decrypt signatures.
+// The dedicated seed is a fourth (Single) or fifth-through-eighth
+// (Triple) seed slot allocated alongside the standard noise / data
+// / start trio.
+//
+// The bit-permutation overlay must be engaged via [SetBitSoup] (1)
+// or [SetLockSoup] (1) before the first Encrypt call — the build-PRF
+// guard panics with [ErrLockSeedOverlayOff] on encrypt-time when an
+// attach is present without either flag, surfacing the misuse loudly
+// rather than silently producing byte-level ciphertext that ignores
+// the dedicated lockSeed entirely.
+//
+// Three attach-time misuse paths panic with their own sentinels:
+// [ErrLockSeedSelfAttach] (passing the same handle for noise and
+// lock), [ErrLockSeedComponentAliasing] (two distinct seed handles
+// whose Components slices share the same backing array), and
+// [ErrLockSeedAfterEncrypt] (calling AttachLockSeed on a noise seed
+// that has already produced ciphertext — switching mid-session
+// would break decryptability of pre-switch chunks).
+//
+//	itb.SetLockSoup(1)              // engage overlay BEFORE attach
+//	fnN, batchN, _ := itb.MakeAreionSoEM512Hash()
+//	fnL, batchL, _ := itb.MakeAreionSoEM512Hash()
+//	ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
+//	ls, _ := itb.NewSeed512(2048, fnL); ls.BatchHash = batchL
+//	ns.AttachLockSeed(ls)           // bit-permutation derivation now keyed by ls
+//	// ... ds, ss as usual; ns.AttachedLockSeed() returns ls.
+//	// Receiver mirrors the wire-up after rebuilding ls from saved
+//	// components / hash key.
+//
+// The [easy.Encryptor] surface auto-allocates and wires the
+// dedicated lockSeed when [easy.Encryptor.SetLockSeed] is called,
+// auto-couples LockSoup + BitSoup, and persists the dedicated seed
+// material across [easy.Encryptor.Export] / [easy.Encryptor.Import]
+// — no caller-side AttachLockSeed bookkeeping required on the
+// high-level path.
 //
 // # Parallelism Control
 //

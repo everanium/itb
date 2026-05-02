@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -1421,4 +1422,118 @@ func TestTriple_LockSoup_Roundtrip512(t *testing.T) {
 			}
 		})
 	}
+}
+
+// BenchmarkTripleBLAKE3RoundTripAttachedLockSeed measures the legacy
+// itb root Encrypt3x + Decrypt3x round-trip throughput and per-
+// iteration allocation footprint when a dedicated lockSeed has
+// been wired into the noiseSeed via [Seed256.AttachLockSeed].
+// Triple Ouroboros counterpart of
+// [BenchmarkSingleBLAKE3RoundTripAttachedLockSeed] in itb_test.go
+// — same shape, same bench loop, the only difference is the
+// seven-seed constellation (one noise + three data + three start)
+// feeding Encrypt3x256 / Decrypt3x256 instead of the three-seed
+// Single trio feeding Encrypt256 / Decrypt256.
+//
+// The configuration mirrors the realistic shape:
+//
+//   - 1024-bit ITB key width (canonical mid-range).
+//   - 64 MiB plaintext (large enough that the per-pixel hash
+//     pipeline dominates and bench noise from the round-trip-
+//     framing overhead is negligible).
+//   - BLAKE3 keyed-hash primitive via the makeBlake3Hash256 native
+//     test helper (no hashes/ import — itb root tests run
+//     in-package and would hit the import cycle).
+//   - Triple Ouroboros (1 noise + 3 data + 3 start = 7 seeds)
+//     plus an 8th dedicated lockSeed attached via
+//     ns.AttachLockSeed(ls).
+//   - SetLockSoup(1) engaged so the bit-permutation overlay
+//     actually consumes the attached lockSeed; otherwise the
+//     attach call is a no-op and the bench measures plain
+//     Encrypt3x + Decrypt3x without exercising the LockSeed
+//     path.
+//
+// Run as:
+//
+//	go test -bench=BenchmarkTripleBLAKE3RoundTripAttachedLockSeed \
+//	    -benchmem -run=^$ -count=3 -benchtime=3x
+//
+// to dump per-iteration ns/op + B/op + allocs/op for inspection.
+func BenchmarkTripleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	SetLockSoup(1)
+	b.Cleanup(func() {
+		SetBitSoup(prevBS)
+		SetLockSoup(prevLS)
+	})
+
+	const (
+		bits     = 1024
+		dataSize = 64 << 20
+	)
+
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(bits, makeBlake3Hash256())
+	ls, err := NewSeed256(bits, makeBlake3Hash256())
+	if err != nil {
+		b.Fatalf("NewSeed256(lockSeed): %v", err)
+	}
+	ns.AttachLockSeed(ls)
+
+	data := generateData(dataSize)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		if err != nil {
+			b.Fatalf("Encrypt3x256: %v", err)
+		}
+		if _, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
+			b.Fatalf("Decrypt3x256: %v", err)
+		}
+	}
+}
+
+// TestTripleAttachLockSeedOverlayOffPanic — Triple Ouroboros (7-seed)
+// counterpart of [TestSingleAttachLockSeedOverlayOffPanic]. Verifies
+// that a noiseSeed carrying an attached dedicated lockSeed but
+// reaching the bit-permutation PRF builder with neither global
+// BitSoup nor global LockSoup engaged panics with
+// [ErrLockSeedOverlayOff] inside [buildLockPRF256] rather than
+// silently producing byte-level ciphertext.
+//
+// Triple consults the bit-permutation PRF through buildLockPRF{N}
+// (not buildPermutePRF{N} — the latter is Single-only); the guard
+// is identical in shape across all six build*PRF{N} / build*PRF{N}Cfg
+// functions, so a single primitive at a single width covers the
+// regression-pinning role for the Triple native path.
+func TestTripleAttachLockSeedOverlayOffPanic(t *testing.T) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	SetBitSoup(0)
+	SetLockSoup(0)
+	t.Cleanup(func() {
+		SetBitSoup(prevBS)
+		SetLockSoup(prevLS)
+	})
+
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(1024, makeBlake3Hash256())
+	ls, err := NewSeed256(1024, makeBlake3Hash256())
+	if err != nil {
+		t.Fatalf("NewSeed256(lockSeed): %v", err)
+	}
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateData(64)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("Encrypt3x256 with attached lockSeed and overlay off: expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, ErrLockSeedOverlayOff) {
+			t.Errorf("Encrypt3x256: panic %v, want %v", r, ErrLockSeedOverlayOff)
+		}
+	}()
+	_, _ = Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 }

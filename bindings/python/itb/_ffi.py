@@ -35,6 +35,25 @@ STATUS_DECRYPT_FAILED = 7
 STATUS_SEED_WIDTH_MIX = 8
 STATUS_BAD_MAC = 9
 STATUS_MAC_FAILURE = 10
+# Easy encryptor (itb/easy sub-package) sentinel codes — block 11..18
+# is dedicated to the Encryptor surface so the lower codes 0..10
+# remain reserved for the low-level Encrypt / Decrypt path.
+STATUS_EASY_CLOSED = 11
+STATUS_EASY_MALFORMED = 12
+STATUS_EASY_VERSION_TOO_NEW = 13
+STATUS_EASY_UNKNOWN_PRIMITIVE = 14
+STATUS_EASY_UNKNOWN_MAC = 15
+STATUS_EASY_BAD_KEY_BITS = 16
+STATUS_EASY_MISMATCH = 17
+STATUS_EASY_LOCKSEED_AFTER_ENCRYPT = 18
+# Native Blob (itb.Blob128 / 256 / 512) sentinel codes — block 19..22
+# is dedicated to the low-level state-blob surface so the lower codes
+# 0..18 remain reserved for the seed-handle / Encrypt / Decrypt /
+# Encryptor paths.
+STATUS_BLOB_MODE_MISMATCH = 19
+STATUS_BLOB_MALFORMED = 20
+STATUS_BLOB_VERSION_TOO_NEW = 21
+STATUS_BLOB_TOO_MANY_OPTS = 22
 STATUS_INTERNAL = 99
 
 
@@ -60,6 +79,8 @@ extern int ITB_NewSeed(char* hashName, int keyBits, uintptr_t* outHandle);
 extern int ITB_FreeSeed(uintptr_t handle);
 extern int ITB_SeedWidth(uintptr_t handle, int* outStatus);
 extern int ITB_SeedHashName(uintptr_t handle, char* out, size_t capBytes, size_t* outLen);
+
+extern int ITB_AttachLockSeed(uintptr_t noiseHandle, uintptr_t lockHandle);
 
 extern int ITB_NewSeedFromComponents(
     char* hashName,
@@ -145,6 +166,127 @@ extern int ITB_Channels(void);
 extern int ITB_HeaderSize(void);
 
 extern int ITB_ParseChunkLen(void* header, size_t headerLen, size_t* outChunkLen);
+
+/* Easy encryptor surface — wraps github.com/everanium/itb/easy. */
+
+extern int ITB_Easy_New(
+    char* primitive, int keyBits, char* macName, int mode,
+    uintptr_t* outHandle);
+extern int ITB_Easy_Free(uintptr_t handle);
+
+extern int ITB_Easy_Encrypt(
+    uintptr_t handle,
+    void* plaintext, size_t ptlen,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Easy_Decrypt(
+    uintptr_t handle,
+    void* ciphertext, size_t ctlen,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Easy_EncryptAuth(
+    uintptr_t handle,
+    void* plaintext, size_t ptlen,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Easy_DecryptAuth(
+    uintptr_t handle,
+    void* ciphertext, size_t ctlen,
+    void* out, size_t outCap, size_t* outLen);
+
+extern int ITB_Easy_SetNonceBits(uintptr_t handle, int n);
+extern int ITB_Easy_SetBarrierFill(uintptr_t handle, int n);
+extern int ITB_Easy_SetBitSoup(uintptr_t handle, int mode);
+extern int ITB_Easy_SetLockSoup(uintptr_t handle, int mode);
+extern int ITB_Easy_SetLockSeed(uintptr_t handle, int mode);
+extern int ITB_Easy_SetChunkSize(uintptr_t handle, int n);
+
+extern int ITB_Easy_Primitive(uintptr_t handle, char* out, size_t capBytes, size_t* outLen);
+extern int ITB_Easy_KeyBits(uintptr_t handle, int* outStatus);
+extern int ITB_Easy_Mode(uintptr_t handle, int* outStatus);
+extern int ITB_Easy_MACName(uintptr_t handle, char* out, size_t capBytes, size_t* outLen);
+
+extern int ITB_Easy_SeedCount(uintptr_t handle, int* outStatus);
+extern int ITB_Easy_SeedComponents(
+    uintptr_t handle, int slot,
+    unsigned long long* out, int capCount, int* outLen);
+extern int ITB_Easy_HasPRFKeys(uintptr_t handle, int* outStatus);
+extern int ITB_Easy_PRFKey(
+    uintptr_t handle, int slot,
+    unsigned char* out, size_t capBytes, size_t* outLen);
+extern int ITB_Easy_MACKey(
+    uintptr_t handle,
+    unsigned char* out, size_t capBytes, size_t* outLen);
+
+extern int ITB_Easy_Close(uintptr_t handle);
+
+extern int ITB_Easy_Export(
+    uintptr_t handle,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Easy_Import(
+    uintptr_t handle,
+    void* blob, size_t blobLen);
+extern int ITB_Easy_PeekConfig(
+    void* blob, size_t blobLen,
+    char* primOut, size_t primCap, size_t* primLen,
+    int* keyBitsOut, int* modeOut,
+    char* macOut, size_t macCap, size_t* macLen);
+extern int ITB_Easy_LastMismatchField(char* out, size_t capBytes, size_t* outLen);
+
+extern int ITB_Easy_NonceBits(uintptr_t handle, int* outStatus);
+extern int ITB_Easy_HeaderSize(uintptr_t handle, int* outStatus);
+extern int ITB_Easy_ParseChunkLen(
+    uintptr_t handle,
+    void* header, size_t headerLen,
+    size_t* outChunkLen);
+
+/* Native Blob — low-level state persistence (itb.Blob128/256/512). */
+
+extern int ITB_Blob128_New(uintptr_t* outHandle);
+extern int ITB_Blob256_New(uintptr_t* outHandle);
+extern int ITB_Blob512_New(uintptr_t* outHandle);
+extern int ITB_Blob_Free(uintptr_t handle);
+
+extern int ITB_Blob_Width(uintptr_t handle, int* outStatus);
+extern int ITB_Blob_Mode(uintptr_t handle, int* outStatus);
+
+extern int ITB_Blob_SetKey(
+    uintptr_t handle, int slot,
+    void* key, size_t keyLen);
+extern int ITB_Blob_GetKey(
+    uintptr_t handle, int slot,
+    void* out, size_t outCap, size_t* outLen);
+
+extern int ITB_Blob_SetComponents(
+    uintptr_t handle, int slot,
+    unsigned long long* comps, size_t count);
+extern int ITB_Blob_GetComponents(
+    uintptr_t handle, int slot,
+    unsigned long long* out, size_t outCap, size_t* outCount);
+
+extern int ITB_Blob_SetMACKey(
+    uintptr_t handle,
+    void* key, size_t keyLen);
+extern int ITB_Blob_GetMACKey(
+    uintptr_t handle,
+    void* out, size_t outCap, size_t* outLen);
+
+extern int ITB_Blob_SetMACName(
+    uintptr_t handle,
+    char* name, size_t nameLen);
+extern int ITB_Blob_GetMACName(
+    uintptr_t handle,
+    char* out, size_t outCap, size_t* outLen);
+
+extern int ITB_Blob_Export(
+    uintptr_t handle, int optsBitmask,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Blob_Export3(
+    uintptr_t handle, int optsBitmask,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Blob_Import(
+    uintptr_t handle,
+    void* blob, size_t blobLen);
+extern int ITB_Blob_Import3(
+    uintptr_t handle,
+    void* blob, size_t blobLen);
 """
 
 
@@ -480,6 +622,38 @@ class Seed:
             self._handle = 0
             if rc != STATUS_OK:
                 _raise(rc)
+
+    def attach_lock_seed(self, lock_seed: "Seed") -> None:
+        """Wires a dedicated lockSeed onto this noise seed (the
+        bit-permutation derivation key source). Both seeds must
+        share the same native hash width.
+
+        The dedicated lockSeed has no observable effect on the wire
+        output unless the bit-permutation overlay is engaged via
+        :func:`itb.set_bit_soup` ``(1)`` or :func:`itb.set_lock_soup`
+        ``(1)`` before the first ``encrypt`` / ``decrypt`` call. The
+        Go-side build-PRF guard panics on encrypt-time when an
+        attach is present without either flag, surfacing as
+        :class:`ITBError`.
+
+        Misuse paths surface as ``ITBError(STATUS_BAD_INPUT)``:
+        self-attach (passing the same seed twice), component-array
+        aliasing (two distinct Seed handles whose components share
+        the same backing array — only reachable via raw FFI), and
+        post-encrypt switching (calling ``attach_lock_seed`` on a
+        noise seed that has already produced ciphertext). Width
+        mismatch surfaces as ``ITBError(STATUS_SEED_WIDTH_MIX)``.
+
+        The dedicated lockSeed remains owned by the caller —
+        attach only records the pointer on the noise seed, so
+        keep the lockSeed alive for the lifetime of the noise seed
+        (do not call ``lock_seed.free()`` before encrypt finishes).
+        """
+        if not isinstance(lock_seed, Seed):
+            raise TypeError("lock_seed must be an itb.Seed instance")
+        rc = _lib.ITB_AttachLockSeed(self._handle, lock_seed.handle)
+        if rc != STATUS_OK:
+            _raise(rc)
 
     def __enter__(self):
         return self

@@ -2,34 +2,23 @@ package itb
 
 import "encoding/binary"
 
-// BatchHashFunc256 is the optional 4-way batched 256-bit hash interface.
-// A primitive whose underlying SIMD implementation supports
-// processing four independent (data, seed) tuples per call provides
-// this alongside its single-call HashFunc256 (for example
-// `AreionSoEM256x4` on x86_64 with VAES + AVX-512).
+// BatchHashFunc256 is the 4-way batched 256-bit hash interface
+// alongside [HashFunc256]. Primitives whose SIMD kernel processes
+// four independent (data, seed) tuples per call expose this — e.g.
+// the ZMM-batched Areion-SoEM-256 / BLAKE3 / BLAKE2s / ChaCha20
+// kernels on amd64 with AVX-512 + VAES.
 //
-// Bit-exact parity invariant. For every i in {0,1,2,3} and arbitrary
-// inputs:
-//
-//	BatchHashFunc256(data, seeds)[i] == HashFunc256(data[i], seeds[i])
-//
-// Implementations that violate this break ITB security claims under
-// the batched dispatch path: the per-pixel ChainHash output would
-// diverge from the serial reference, invalidating the underlying
-// PRF assumption. The user-supplied wrapper is responsible for
-// preserving this invariant; ITB's test suite (Areion-SoEM parity in
-// `areion_test.go`) demonstrates the required structure.
+// Bit-exact parity invariant: each lane output
+// BatchHashFunc256(data, seeds)[i] matches the serial
+// HashFunc256(data[i], seeds[i]) reference. Implementations
+// violating this break the PRF assumption on the batched dispatch
+// path.
 type BatchHashFunc256 func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64
 
-// BatchChainHash256 computes the four-way batched ChainHash256 on four
-// pixel buffers in parallel using `s.BatchHash`. Each output position
-// matches the serial `ChainHash256(data[i])` under the same seed
-// components — the chain composition is identical, just executed four
-// lanes at a time per round.
-//
-// Caller responsibility: `s.BatchHash` must be non-nil. The dispatch
-// in `processChunk{256,512}` checks this before invoking; user-level
-// callers should check explicitly.
+// BatchChainHash256 runs the four-way batched ChainHash256 via
+// s.BatchHash. Output [i] matches serial ChainHash256(data[i])
+// under the same Components. Caller ensures s.BatchHash != nil
+// (processChunk256 checks this before invoking).
 func (s *Seed256) BatchChainHash256(buf *[4][]byte) [4][4]uint64 {
 	var seeds [4][4]uint64
 	for lane := 0; lane < 4; lane++ {
@@ -53,13 +42,9 @@ func (s *Seed256) BatchChainHash256(buf *[4][]byte) [4][4]uint64 {
 	return h
 }
 
-// blockHash256x4 is the four-way batched counterpart of
-// `blockHash256`. Mutates the first four bytes of each `buf[i]` to
-// hold the corresponding `pixelIndices[i]` in little-endian, then
-// invokes `BatchChainHash256`.
-//
-// Caller must ensure each `buf[i]` has at least 4 bytes of writable
-// storage and that `s.BatchHash != nil`.
+// blockHash256x4 is the four-way counterpart of blockHash256.
+// Writes pixelIndices[i] as little-endian uint32 into buf[i]'s
+// first four bytes, then runs the batched chain hash.
 func (s *Seed256) blockHash256x4(buf *[4][]byte, pixelIndices [4]int) [4][4]uint64 {
 	for i := 0; i < 4; i++ {
 		binary.LittleEndian.PutUint32(buf[i], uint32(pixelIndices[i]))
