@@ -620,6 +620,8 @@ import (
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Receive encrypted payload + blob
     // var encrypted, blob []byte = ..., ...
 
@@ -766,6 +768,8 @@ import (
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Receive encrypted payload + blob
     // var encrypted, blob []byte = ..., ...
 
@@ -913,6 +917,8 @@ import (
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Receive encrypted payload + blob
     // var encrypted, blob []byte = ..., ...
 
@@ -1030,12 +1036,14 @@ func main() {
 // Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start) plus an
 // optional 8th dedicated lockSeed, 512-bit for speed.
 
+itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
 // Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
-itb.SetBitSoup(1)  // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
-                   // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
+itb.SetBitSoup(1)       // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
+                        // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
 // Most secure bit-permutation mode with performance trade-off ~2×-7× slower
-itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
-                   // automatically engages itb.SetBitSoup(1)
+itb.SetLockSoup(1)      // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
+                        // automatically engages itb.SetBitSoup(1)
 
 // Eight independent CSPRNG-keyed Areion-SoEM-512 paired closures
 // (1 noise + 3 data + 3 start + 1 lock).
@@ -1178,10 +1186,10 @@ The library provides three parallel API sets for different hash output widths. A
 
 | API | Seeds | Hash Type | State | Effective Max Key | Target Hash Functions |
 |---|---|---|---|---|---|
-| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
+| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE2s, BLAKE3 keyed, BLAKE2b-256, ChaCha20 |
 | `Encrypt512` / `Decrypt512` | 3 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
 | `Encrypt128` / `Decrypt128` | 3 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
-| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE3 keyed, ChaCha20 |
+| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE2s, BLAKE3 keyed, BLAKE2b-256, ChaCha20 |
 | `Encrypt3x512` / `Decrypt3x512` | 7 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
 | `Encrypt3x128` / `Decrypt3x128` | 7 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | SipHash-2-4, AES-CMAC |
 
@@ -1211,18 +1219,18 @@ import (
 
 func main() {
     // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-    itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                       // automatically enabled for Single Ouroboros if
-                       // itb.SetLockSoup(1) is enabled or vice versa
+    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetLockSoup(1) is enabled or vice versa
 
-    itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                       // bit-permutation overlay on top of bit-soup;
-                       // automatically enabled for Single Ouroboros if
-                       // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                            // bit-permutation overlay on top of bit-soup;
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetBitSoup(1) is enabled or vice versa
 
 
     // Four independent CSPRNG-keyed Areion-SoEM-256 paired closures
