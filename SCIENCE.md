@@ -187,6 +187,15 @@ The under-determination is conditional on the PRF assumption: it is a statement 
 
 **Cross-references.** The nonce requirement of [§1.4 Nonce Requirement](#14-nonce-requirement) applies unchanged: `permKey` depends on the per-message nonce, so distinct messages under the same seeds use independent per-chunk permutations. The KPA argument of [§2.6 Resistance to Known-Plaintext Attack](#26-resistance-to-known-plaintext-attack) is augmented by the per-chunk 2⁶⁴ enumeration multiplier under PRF.
 
+**Optional dedicated lockSeed.** When `AttachLockSeed` (native path) or `Encryptor.SetLockSeed(1)` (Easy Mode) installs a dedicated lockSeed on the noiseSeed, the per-chunk permutation derivation routes through that seed:
+
+```
+permKey = ChainHash_lockSeed(domain-tag-byte || nonce, lockSeed.Components)
+permIdx = PRF_lockSeed(domain-tag-byte || uint64_LE(globalChunkIdx), permKey)
+```
+
+Both the keying material (`lockSeed.Components`) and the underlying PRF primitive (`lockSeed.Hash`) are independent of the noise-injection channel, within the constraint that the lockSeed shares the noiseSeed's native hash width. The bit-permutation channel may therefore use a different PRF primitive from the noise-injection channel — a structural shortcut against the noiseSeed primitive does not transfer to the lock-channel derivation, and vice versa. The 2⁶⁴-per-chunk under-determination property of the preceding paragraphs is unchanged; the dedicated lockSeed is an algorithm-diversity layer on top of the keying-material isolation already implied by the per-chunk PRF call. Default no attach leaves `permKey` / `permIdx` keyed by `noiseSeed.Components` and `noiseSeed.Hash` as written above.
+
 ### 1.3 Message Framing
 
 ```
