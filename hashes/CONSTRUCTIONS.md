@@ -1,4 +1,4 @@
-# `hashes/` — primitive constructions
+# `hashes/` — Primitive constructions
 
 This document describes how each PRF-grade primitive in the registry is wrapped before it reaches `itb.HashFunc{128|256|512}`. Several wrappers diverge from the canonical RFC / NIST form of the underlying primitive in deliberate, documented ways. The names in `registry.go` (`aescmac`, `chacha20`, `blake2b256`, etc.) are short identifiers, **not** assertions of conformance with the RFC / NIST specification of the same name.
 
