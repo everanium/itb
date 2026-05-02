@@ -1,8 +1,11 @@
 """Python binding tests for the low-level :meth:`itb.Seed.attach_lock_seed`
 mutator. The dedicated lockSeed routes the bit-permutation derivation
-through its own keying material instead of the noiseSeed, separating
-the bit-permutation entropy channel from the noise-injection channel
-without changing the public encrypt / decrypt signatures.
+through its own state instead of the noiseSeed: the per-chunk PRF
+closure captures BOTH the lockSeed's components AND its hash function,
+so the lockSeed primitive may legitimately differ from the noiseSeed
+primitive within the same native hash width — keying-material isolation
+plus algorithm diversity for defence-in-depth on the bit-permutation
+channel, without changing the public encrypt / decrypt signatures.
 
 The bit-permutation overlay must be engaged via :func:`itb.set_bit_soup`
 or :func:`itb.set_lock_soup` before any encrypt call — without the

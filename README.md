@@ -200,15 +200,15 @@ func main() {
     // *itb.Config snapshot. Two encryptors built side-by-side carry
     // independent settings; process-wide itb.Set* accessors are NOT
     // consulted after construction.
-    enc.SetNonceBits(512)  // 512-bit nonce (default: 128-bit)
-    enc.SetBarrierFill(4)  // CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
-    enc.SetBitSoup(1)      // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+    enc.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+    enc.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
+    enc.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
                             // auto-enabled for Single Ouroboros if SetLockSoup(1) is on
-    enc.SetLockSoup(1)     // optional Insane Interlocked Mode: per-chunk PRF-keyed
+    enc.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
                             // bit-permutation overlay on top of bit-soup;
                             // auto-enabled for Single Ouroboros if SetBitSoup(1) is on
 
-    //enc.SetLockSeed(1)   // optional dedicated lockSeed for the bit-permutation
+    //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
                             // derivation channel — separates that PRF's keying material
                             // from the noiseSeed-driven noise-injection channel; auto-
                             // couples SetLockSoup(1) + SetBitSoup(1). Adds one extra
@@ -283,7 +283,7 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
-    //dec.SetLockSeed(1)   // optional — Import below restores the dedicated
+    //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
     // Restore PRF keys, seed components, MAC key, and the per-instance
@@ -335,7 +335,7 @@ func main() {
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
 
-    //enc.SetLockSeed(1)   // optional dedicated lockSeed for the bit-permutation
+    //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
                             // derivation channel — auto-couples SetLockSoup(1) +
                             // SetBitSoup(1). Adds one extra seed slot. Must be
                             // called BEFORE the first EncryptAuth.
@@ -395,7 +395,7 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
-    //dec.SetLockSeed(1)   // optional — Import below restores the dedicated
+    //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
     if err := dec.Import(blob); err != nil {
@@ -446,7 +446,7 @@ func main() {
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
 
-    //enc.SetLockSeed(1)   // optional dedicated lockSeed; auto-couples LockSoup +
+    //enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples LockSoup +
                             // BitSoup. Adds one extra seed slot. Must be called
                             // BEFORE the first EncryptAuth.
 
@@ -498,7 +498,7 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
-    //dec.SetLockSeed(1)   // optional — Import below restores the dedicated
+    //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
     if err := dec.Import(blob); err != nil {
@@ -528,18 +528,18 @@ import (
 
 func main() {
     // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-    itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                       // automatically enabled for Single Ouroboros if
-                       // itb.SetLockSoup(1) is enabled or vice versa
+    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetLockSoup(1) is enabled or vice versa
 
-    itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                       // bit-permutation overlay on top of bit-soup;
-                       // automatically enabled for Single Ouroboros if
-                       // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                            // bit-permutation overlay on top of bit-soup;
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetBitSoup(1) is enabled or vice versa
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -679,11 +679,19 @@ import (
 )
 
 func main() {
-    itb.SetMaxWorkers(8)
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
+    // Optional: global configuration (all thread-safe, atomic)
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetLockSoup(1) is enabled or vice versa
+
+    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                            // bit-permutation overlay on top of bit-soup;
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetBitSoup(1) is enabled or vice versa
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -815,11 +823,19 @@ import (
 )
 
 func main() {
-    itb.SetMaxWorkers(8)
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
+    // Optional: global configuration (all thread-safe, atomic)
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetLockSoup(1) is enabled or vice versa
+
+    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                            // bit-permutation overlay on top of bit-soup;
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetBitSoup(1) is enabled or vice versa
 
     // Four independent CSPRNG-keyed BLAKE2b-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -940,9 +956,19 @@ import (
 )
 
 func main() {
-    itb.SetMaxWorkers(8)
-    itb.SetBitSoup(1)  // engage the bit-permutation overlay so the
-                       // optional dedicated lockSeed has wire effect
+    // Optional: global configuration (all thread-safe, atomic)
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetLockSoup(1) is enabled or vice versa
+
+    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                            // bit-permutation overlay on top of bit-soup;
+                            // automatically enabled for Single Ouroboros if
+                            // itb.SetBitSoup(1) is enabled or vice versa
 
     // SipHash-2-4 has no internal fixed key — the seed components themselves
     // are the entire keying material. Three independent factory calls paired
@@ -1081,7 +1107,7 @@ decrypted, _ := itb.Decrypt3x512(
 
 ### Mixing PRF Primitives
 
-Each seed has its own hash function — you can use **different PRF implementations** for different seeds within the same hash width. The receiver must use the same assignment. Both arms of the `*Pair()` factory propagate to the seed via `BatchHash` so the AVX-512 ZMM-batched dispatch stays active per primitive.
+Each seed has its own hash function — different PRF implementations are allowed for different seeds within the same hash width, including the dedicated lockSeed when one is attached via `AttachLockSeed`. The receiver must use the same assignment. Both arms of the `*Pair()` factory propagate to the seed via `BatchHash` so the AVX-512 ZMM-batched dispatch stays active per primitive. The Lock Soup overlay's per-chunk derivation captures the attached lockSeed's `Hash` (and components) — primitive divergence between the noise-injection channel and the bit-permutation channel is observable end-to-end and offers algorithm-diversity defence-in-depth on top of the independent keying material.
 
 **Single Ouroboros (3 seeds + optional dedicated lockSeed):**
 ```go
@@ -1095,8 +1121,10 @@ ss, _ := itb.NewSeed256(1024, fnS)
 ns.BatchHash, ds.BatchHash, ss.BatchHash = batchN, batchD, batchS
 
 // Optional: dedicated lockSeed for the bit-permutation derivation
-// channel — pick any 256-bit primitive, mixing rules apply equally
-// (the lockSeed primitive does not have to match the noiseSeed).
+// channel — pick any 256-bit primitive; the Lock Soup overlay
+// honestly routes its per-chunk PRF through ls.Hash and ls.Components,
+// so the lockSeed primitive may legitimately differ from the
+// noiseSeed primitive.
 fnL, batchL, _ := hashes.BLAKE2s256Pair()  // lockSeed: BLAKE2s
 ls, _ := itb.NewSeed256(1024, fnL); ls.BatchHash = batchL
 ns.AttachLockSeed(ls)
@@ -1126,6 +1154,9 @@ ss1.BatchHash, ss2.BatchHash, ss3.BatchHash = batchS1, batchS2, batchS3
 
 // Optional: dedicated lockSeed for the bit-permutation derivation
 // channel — same mixing rule as the Single Ouroboros block above.
+// ls.Hash and ls.Components both flow through the Lock Soup overlay,
+// so a primitive choice for ls is meaningful and not just keying-
+// material isolation.
 fnL, batchL, _ := hashes.BLAKE3256Pair()    // lockSeed: BLAKE3
 ls, _ := itb.NewSeed256(512, fnL); ls.BatchHash = batchL
 ns.AttachLockSeed(ls)

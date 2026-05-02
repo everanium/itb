@@ -1186,3 +1186,41 @@ func TestExtSingleAttachLockSeedOverlayOffPanic(t *testing.T) {
 	}()
 	_, _ = itb.Encrypt256(ns, ds, ss, plaintext)
 }
+
+// TestSingleAttachLockSeedMixedPrimitive256 verifies Single Ouroboros
+// round-trip when the dedicated lockSeed uses a different PRF
+// primitive from the noiseSeed (BLAKE3 noise / dataSeed / startSeed,
+// BLAKE2s lockSeed). The build-PRF closure captures src.Hash for
+// the per-chunk Lock Soup overlay, so a primitive divergence between
+// the noise-injection channel and the bit-permutation derivation
+// channel is observable end-to-end. Both arms (single and batched)
+// must be wired on the lockSeed for the round-trip to succeed.
+func TestSingleAttachLockSeedMixedPrimitive256(t *testing.T) {
+	withLockSoupAttachExt(t)
+
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ds := makeBlake3SeedAttachExt(t, 1024)
+	ss := makeBlake3SeedAttachExt(t, 1024)
+
+	hL, bL, _ := hashes.BLAKE2s256Pair()
+	ls, err := itb.NewSeed256(1024, hL)
+	if err != nil {
+		t.Fatalf("NewSeed256 (BLAKE2s lockSeed): %v", err)
+	}
+	ls.BatchHash = bL
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateDataExt(2048)
+	ct, err := itb.Encrypt256(ns, ds, ss, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt256 (mixed-primitive lockSeed): %v", err)
+	}
+	pt, err := itb.Decrypt256(ns, ds, ss, ct)
+	if err != nil {
+		t.Fatalf("Decrypt256 (mixed-primitive lockSeed): %v", err)
+	}
+	if !bytes.Equal(pt, plaintext) {
+		t.Errorf("mixed-primitive AttachLockSeed roundtrip mismatch: got %d bytes, want %d",
+			len(pt), len(plaintext))
+	}
+}

@@ -624,9 +624,14 @@ class Seed:
                 _raise(rc)
 
     def attach_lock_seed(self, lock_seed: "Seed") -> None:
-        """Wires a dedicated lockSeed onto this noise seed (the
-        bit-permutation derivation key source). Both seeds must
-        share the same native hash width.
+        """Wires a dedicated lockSeed onto this noise seed. The
+        per-chunk PRF closure for the bit-permutation overlay
+        captures BOTH the lockSeed's components AND its hash
+        function — keying-material isolation plus algorithm
+        diversity (the lockSeed primitive may legitimately differ
+        from the noise-seed primitive within the same native hash
+        width) for defence-in-depth on the overlay channel. Both
+        seeds must share the same native hash width.
 
         The dedicated lockSeed has no observable effect on the wire
         output unless the bit-permutation overlay is engaged via

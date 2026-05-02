@@ -1196,15 +1196,19 @@ func ITB_Easy_ParseChunkLen(
 
 //export ITB_AttachLockSeed
 //
-// Wires a dedicated lockSeed handle (the bit-permutation derivation
-// key source) onto an existing noise seed handle. Both handles must
-// share the same native hash width — mixing widths returns
-// ITB_ERR_SEED_WIDTH_MIX. The dedicated lockSeed has no observable
-// effect on the wire output unless the bit-permutation overlay is
-// engaged via ITB_SetBitSoup(1) or ITB_SetLockSoup(1) before the
-// first encrypt; the overlay-off guard inside the build-PRF closure
-// raises a panic on encrypt-time when an attach is present without
-// either flag.
+// Wires a dedicated lockSeed handle onto an existing noise seed
+// handle. The per-chunk PRF closure for the bit-permutation overlay
+// captures BOTH the lockSeed's Components AND its Hash function, so
+// the lockSeed primitive may legitimately differ from the noise seed
+// primitive within the same native width — keying-material isolation
+// plus algorithm diversity for defence-in-depth on the overlay path.
+// Both handles must share the same native hash width — mixing widths
+// returns ITB_ERR_SEED_WIDTH_MIX. The dedicated lockSeed has no
+// observable effect on the wire output unless the bit-permutation
+// overlay is engaged via ITB_SetBitSoup(1) or ITB_SetLockSoup(1)
+// before the first encrypt; the overlay-off guard inside the build-PRF
+// closure raises a panic on encrypt-time when an attach is present
+// without either flag.
 //
 // Misuse paths surface as ITB_ERR_BAD_INPUT: self-attach (passing
 // the same handle for noise and lock), component-array aliasing
