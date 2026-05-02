@@ -229,6 +229,8 @@ import itb
 # encrypted = ...
 # blob = ...
 
+itb.set_max_workers(8)        # limit to 8 CPU cores (default: 0 = all CPUs)
+
 prim, key_bits, mode, mac = itb.peek_config(blob)
 
 with itb.Encryptor(prim, key_bits, mac, mode=mode) as dec:
@@ -289,18 +291,18 @@ with itb.Encryptor(prim, key_bits, mac, mode=mode) as dec:
 import itb
 
 # Optional: global configuration (all process-wide, atomic)
-itb.set_max_workers(8)   # limit to 8 CPU cores (default: 0 = all CPUs)
-itb.set_nonce_bits(512)  # 512-bit nonce (default: 128-bit)
-itb.set_barrier_fill(4)  # CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+itb.set_max_workers(8)        # limit to 8 CPU cores (default: 0 = all CPUs)
+itb.set_nonce_bits(512)       # 512-bit nonce (default: 128-bit)
+itb.set_barrier_fill(4)       # CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-itb.set_bit_soup(1)      # optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                          # automatically enabled for Single Ouroboros if
-                          # itb.set_lock_soup(1) is enabled or vice versa
+itb.set_bit_soup(1)           # optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                              # automatically enabled for Single Ouroboros if
+                              # itb.set_lock_soup(1) is enabled or vice versa
 
-itb.set_lock_soup(1)     # optional Insane Interlocked Mode: per-chunk PRF-keyed
-                          # bit-permutation overlay on top of bit-soup;
-                          # automatically enabled for Single Ouroboros if
-                          # itb.set_bit_soup(1) is enabled or vice versa
+itb.set_lock_soup(1)          # optional Insane Interlocked Mode: per-chunk PRF-keyed
+                              # bit-permutation overlay on top of bit-soup;
+                              # automatically enabled for Single Ouroboros if
+                              # itb.set_bit_soup(1) is enabled or vice versa
 
 # Three independent CSPRNG-keyed Areion-SoEM-512 seeds. Each Seed
 # pre-keys its primitive once at construction; the C ABI / FFI
@@ -364,7 +366,7 @@ finally:
 
 import itb
 
-itb.set_max_workers(8)  # deployment knob — not serialised by Blob512
+itb.set_max_workers(8)        # deployment knob — not serialised by Blob512
 
 # Receive encrypted payload + blob_bytes
 # encrypted = ...; blob_bytes = ...
@@ -414,11 +416,19 @@ finally:
 import itb
 import secrets
 
-itb.set_max_workers(8)
-itb.set_nonce_bits(512)
-itb.set_barrier_fill(4)
-itb.set_bit_soup(1)
-itb.set_lock_soup(1)
+# Optional: global configuration (all process-wide, atomic)
+itb.set_max_workers(8)        # limit to 8 CPU cores (default: 0 = all CPUs)
+itb.set_nonce_bits(512)       # 512-bit nonce (default: 128-bit)
+itb.set_barrier_fill(4)       # CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+
+itb.set_bit_soup(1)           # optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                              # automatically enabled for Single Ouroboros if
+                              # itb.set_lock_soup(1) is enabled or vice versa
+
+itb.set_lock_soup(1)          # optional Insane Interlocked Mode: per-chunk PRF-keyed
+                              # bit-permutation overlay on top of bit-soup;
+                              # automatically enabled for Single Ouroboros if
+                              # itb.set_bit_soup(1) is enabled or vice versa
 
 ns = itb.Seed("areion512", 2048)
 ds = itb.Seed("areion512", 2048)
@@ -466,7 +476,7 @@ finally:
 
 import itb
 
-itb.set_max_workers(8)  # deployment knob — not serialised by Blob512
+itb.set_max_workers(8)        # deployment knob — not serialised by Blob512
 
 # Receive encrypted payload + blob_bytes
 # encrypted = ...; blob_bytes = ...

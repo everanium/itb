@@ -54,18 +54,18 @@ import (
 
 func main() {
 
-	itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
-	itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
-	itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-	itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-	                   // automatically enabled for Single Ouroboros if
-	                   // itb.SetLockSoup(1) is enabled or vice versa
+	itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+	                        // automatically enabled for Single Ouroboros if
+	                        // itb.SetLockSoup(1) is enabled or vice versa
 
-	itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
-	                   // bit-permutation overlay on top of bit-soup;
-	                   // automatically enabled for Single Ouroboros if
-	                   // itb.SetBitSoup(1) is enabled or vice versa
+	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+	                        // bit-permutation overlay on top of bit-soup;
+	                        // automatically enabled for Single Ouroboros if
+	                        // itb.SetBitSoup(1) is enabled or vice versa
 
 	// Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
 	// (3 main seeds + 1 optional dedicated lockSeed). Each Pair
@@ -131,7 +131,7 @@ import (
 
 func main() {
 
-	itb.SetMaxWorkers(8) // deployment knob — not serialised by Blob512
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
 
 	// Receive encrypted payload + blob
 	// encrypted := ...; blob := ...
@@ -187,18 +187,18 @@ import (
 
 func main() {
 
-	itb.SetMaxWorkers(8)  // limit to 8 CPU cores (default: all CPUs)
-	itb.SetNonceBits(512) // 512-bit nonce (default: 128-bit)
-	itb.SetBarrierFill(4) // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-	itb.SetBitSoup(1)  // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-	                   // automatically enabled for Single Ouroboros if
-	                   // itb.SetLockSoup(1) is enabled or vice versa
+	itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+	                        // automatically enabled for Single Ouroboros if
+	                        // itb.SetLockSoup(1) is enabled or vice versa
 
-	itb.SetLockSoup(1) // optional Insane Interlocked Mode: per-chunk PRF-keyed
-	                   // bit-permutation overlay on top of bit-soup;
-	                   // automatically enabled for Single Ouroboros if
-	                   // itb.SetBitSoup(1) is enabled or vice versa
+	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+	                        // bit-permutation overlay on top of bit-soup;
+	                        // automatically enabled for Single Ouroboros if
+	                        // itb.SetBitSoup(1) is enabled or vice versa
 
 	// Four independent CSPRNG-keyed BLAKE2b-512 paired closures
 	// (3 main seeds + 1 optional dedicated lockSeed). Each Pair
@@ -263,7 +263,7 @@ import (
 
 func main() {
 
-	itb.SetMaxWorkers(8) // deployment knob — not serialised by Blob512
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
 
 	// Receive encrypted payload + blob
 	// encrypted := ...; blob := ...
@@ -305,39 +305,62 @@ the hash, lockSeed-engaged via SetBitSoup, MAC + hash keys captured
 through Blob128:
 
 ```go
-itb.SetBitSoup(1) // engage the bit-permutation overlay so the
-                  // optional dedicated lockSeed has wire effect
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/macs"
+)
 
-fnN, batchN := hashes.SipHash24Pair()
-fnD, batchD := hashes.SipHash24Pair()
-fnS, batchS := hashes.SipHash24Pair()
-fnL, batchL := hashes.SipHash24Pair()
+func main() {
 
-ns, _ := itb.NewSeed128(1024, fnN); ns.BatchHash = batchN
-ds, _ := itb.NewSeed128(1024, fnD); ds.BatchHash = batchD
-ss, _ := itb.NewSeed128(1024, fnS); ss.BatchHash = batchS
-ls, _ := itb.NewSeed128(1024, fnL); ls.BatchHash = batchL
-ns.AttachLockSeed(ls)
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+	itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
+	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
 
-// HMAC-SHA256 — universal interoperability standard (RFC 4231).
-var macKey [32]byte
-rand.Read(macKey[:])
-mac, _ := macs.HMACSHA256(macKey[:])
+	itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+	                        // automatically enabled for Single Ouroboros if
+	                        // itb.SetLockSoup(1) is enabled or vice versa
 
-plaintext := []byte("any text or binary data - including 0x00 bytes")
-// Authenticated encrypt into RGBWYOPA container with embedded 32-byte tag
-encrypted, _ := itb.EncryptAuthenticated128(ns, ds, ss, plaintext, mac)
+	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
+	                        // bit-permutation overlay on top of bit-soup;
+	                        // automatically enabled for Single Ouroboros if
+	                        // itb.SetBitSoup(1) is enabled or vice versa
 
-// Cross-process persistence — Blob128 packs Components + the
-// optional dedicated lockSeed (KeyN/KeyD/KeyS/KeyL stay nil since
-// SipHash-2-4 has no internal fixed key) plus the MAC key + name.
-bSrc := &itb.Blob128{}
-blob, _ := bSrc.Export(nil, nil, nil, ns, ds, ss,
-    itb.Blob128Opts{
-        LS:     ls,
-        MACKey: macKey[:], MACName: "hmac-sha256",
-    })
-_ = blob // ship alongside the ciphertext
+
+
+	fnN, batchN := hashes.SipHash24Pair()
+	fnD, batchD := hashes.SipHash24Pair()
+	fnS, batchS := hashes.SipHash24Pair()
+	fnL, batchL := hashes.SipHash24Pair()
+
+	ns, _ := itb.NewSeed128(1024, fnN); ns.BatchHash = batchN
+	ds, _ := itb.NewSeed128(1024, fnD); ds.BatchHash = batchD
+	ss, _ := itb.NewSeed128(1024, fnS); ss.BatchHash = batchS
+	ls, _ := itb.NewSeed128(1024, fnL); ls.BatchHash = batchL
+	ns.AttachLockSeed(ls)
+
+	// HMAC-SHA256 — universal interoperability standard (RFC 4231).
+	var macKey [32]byte
+	rand.Read(macKey[:])
+	mac, _ := macs.HMACSHA256(macKey[:])
+
+	plaintext := []byte("any text or binary data - including 0x00 bytes")
+	// Authenticated encrypt into RGBWYOPA container with embedded 32-byte tag
+	encrypted, _ := itb.EncryptAuthenticated128(ns, ds, ss, plaintext, mac)
+
+	// Cross-process persistence — Blob128 packs Components + the
+	// optional dedicated lockSeed (KeyN/KeyD/KeyS/KeyL stay nil since
+	// SipHash-2-4 has no internal fixed key) plus the MAC key + name.
+	bSrc := &itb.Blob128{}
+	blob, _ := bSrc.Export(nil, nil, nil, ns, ds, ss,
+	    itb.Blob128Opts{
+		LS:     ls,
+		MACKey: macKey[:], MACName: "hmac-sha256",
+	})
+	_ = blob // ship alongside the ciphertext
+
+}
 ```
 
 Name-keyed dispatch (used by the FFI layer; works for any code that
