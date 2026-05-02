@@ -246,6 +246,8 @@ itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay; auto-enables Set
 
 The ciphertext wire format remains identical. Both flags must agree across the encrypt and decrypt sides of the channel; mismatch produces wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged.
 
+**Optional Lock Seed.** `AttachLockSeed` on the native path (or `Encryptor.SetLockSeed(1)` on the Easy Mode path) routes the per-chunk PRF closure for the Lock Soup overlay through a dedicated lockSeed slot allocated alongside the standard noise / 3 data / 3 start trio (7 → 8 seeds for Triple). The closure captures BOTH the lockSeed's components AND its PRF primitive, so the bit-permutation derivation channel may legitimately use a different PRF primitive from the noise-injection channel within the same native hash width — keying-material isolation plus algorithm-diversity defence-in-depth on top of the per-chunk 2^33 floor. A structural shortcut against the noiseSeed primitive cannot leak into the lock-channel derivation, and vice versa. Default no attach leaves the overlay routing through the noiseSeed unchanged.
+
 Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*` and their decrypt counterparts. The Single Ouroboros counterpart is described in [ITB.md § Lock Soup](ITB.md#lock-soup-insane-interlocked-mode-opt-in-overlay-on-bit-soup).
 
 ## API
