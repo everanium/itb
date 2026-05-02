@@ -185,10 +185,13 @@ package main
 
 import (
     "fmt"
+    "github.com/everanium/itb"
     "github.com/everanium/itb/easy"
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Single-Ouroboros (3 seeds) constructor — variadic args by type:
     // string matching hashes.Registry → primitive, string matching
     // macs.Registry → MAC, int → key_bits. Defaults: "areion512" /
@@ -249,10 +252,13 @@ package main
 
 import (
     "fmt"
+    "github.com/everanium/itb"
     "github.com/everanium/itb/easy"
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Receive encrypted payload + state blob
     // var encrypted, blob []byte = ..., ...
 
@@ -323,10 +329,13 @@ package main
 
 import (
     "fmt"
+    "github.com/everanium/itb"
     "github.com/everanium/itb/easy"
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     enc := easy.New("areion512", 2048, "kmac256")
     defer enc.Close()
 
@@ -366,10 +375,13 @@ package main
 import (
     "errors"
     "fmt"
+    "github.com/everanium/itb"
     "github.com/everanium/itb/easy"
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Receive encrypted payload + state blob
     // var encrypted, blob []byte = ..., ...
 
@@ -434,10 +446,13 @@ package main
 
 import (
     "fmt"
+    "github.com/everanium/itb"
     "github.com/everanium/itb/easy"
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     enc := easy.New("blake2b512", 2048, "hmac-blake3")
     defer enc.Close()
 
@@ -469,10 +484,13 @@ package main
 
 import (
     "fmt"
+    "github.com/everanium/itb"
     "github.com/everanium/itb/easy"
 )
 
 func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
     // Receive encrypted payload + state blob
     // var encrypted, blob []byte = ..., ...
 
