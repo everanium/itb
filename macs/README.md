@@ -1,4 +1,4 @@
-# macs — cached PRF-grade MAC factories for ITB Authenticated Encryption
+# macs — Cached PRF-grade MAC factories for ITB Authenticated Encryption
 
 Drop-in factories that produce `itb.MACFunc` closures for the three
 shipped MAC primitives. All three produce a 32-byte tag and accept
