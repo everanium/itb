@@ -1654,6 +1654,7 @@ All three approaches use standard mathematics. The formal relationship between I
 - [SECURITY.md](SECURITY.md) — Security reference tables
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.)
 - [REDTEAM.md](REDTEAM.md) — Empirical red-team validation (12-primitive hash matrix, multiple statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
+- [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) — Per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why)
 
 ## License
 
