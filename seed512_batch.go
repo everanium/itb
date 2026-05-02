@@ -2,16 +2,23 @@ package itb
 
 import "encoding/binary"
 
-// BatchHashFunc512 is the 4-way batched 512-bit hash counterpart of
-// BatchHashFunc256. See BatchHashFunc256 documentation for the
-// security-critical bit-exact parity invariant; the same requirement
-// applies here.
+// BatchHashFunc512 is the 4-way batched 512-bit hash interface
+// alongside [HashFunc512]. Primitives whose SIMD kernel processes
+// four independent (data, seed) tuples per call expose this — e.g.
+// the ZMM-batched Areion-SoEM-512 / BLAKE2b-512 kernels on amd64
+// with AVX-512 + VAES.
+//
+// Bit-exact parity invariant: each lane output
+// BatchHashFunc512(data, seeds)[i] matches the serial
+// HashFunc512(data[i], seeds[i]) reference. Implementations
+// violating this break the PRF assumption on the batched dispatch
+// path.
 type BatchHashFunc512 func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64
 
-// BatchChainHash512 computes the four-way batched ChainHash512 on four
-// pixel buffers in parallel using `s.BatchHash`. Output position [i]
-// matches serial `ChainHash512(data[i])` under the same seed
-// components.
+// BatchChainHash512 runs the four-way batched ChainHash512 via
+// s.BatchHash. Output [i] matches serial ChainHash512(data[i])
+// under the same Components. Caller ensures s.BatchHash != nil
+// (processChunk512 checks this before invoking).
 func (s *Seed512) BatchChainHash512(buf *[4][]byte) [4][8]uint64 {
 	var seeds [4][8]uint64
 	for lane := 0; lane < 4; lane++ {
@@ -44,9 +51,9 @@ func (s *Seed512) BatchChainHash512(buf *[4][]byte) [4][8]uint64 {
 	return h
 }
 
-// blockHash512x4 is the four-way batched counterpart of `blockHash512`.
-// Mutates the first four bytes of each `buf[i]` with the corresponding
-// `pixelIndices[i]` in little-endian, then runs the batched chain hash.
+// blockHash512x4 is the four-way counterpart of blockHash512.
+// Writes pixelIndices[i] as little-endian uint32 into buf[i]'s
+// first four bytes, then runs the batched chain hash.
 func (s *Seed512) blockHash512x4(buf *[4][]byte, pixelIndices [4]int) [4][8]uint64 {
 	for i := 0; i < 4; i++ {
 		binary.LittleEndian.PutUint32(buf[i], uint32(pixelIndices[i]))

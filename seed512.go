@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"sync/atomic"
 )
 
 // HashFunc512 is the pluggable 512-bit hash function interface.
@@ -48,6 +49,25 @@ type Seed512 struct {
 	// single-call code path; non-nil routes processChunk512 through
 	// BatchChainHash512 four pixels at a time.
 	BatchHash BatchHashFunc512
+
+	// attachedLockSeed is the optional dedicated lockSeed pointer
+	// installed via [Seed512.AttachLockSeed]. When non-nil, the
+	// bit-permutation derivation in [buildLockPRF512] /
+	// [buildPermutePRF512] (and their Cfg counterparts when no
+	// cfg-side lockSeed handle is set) routes through the attached
+	// lockSeed instead of the receiver, separating bit-permutation
+	// entropy from the noiseSeed-driven noise-injection channel
+	// without changing any public Encrypt / Decrypt signature.
+	attachedLockSeed *Seed512
+
+	// firstEncryptCalled records whether this seed has been used in
+	// a successful Encrypt path (process512 marks it on the
+	// encode=true branch). The AttachLockSeed safeguard reads this
+	// flag and panics with [ErrLockSeedAfterEncrypt] if a re-attach
+	// attempt happens after the first encrypt — switching the
+	// dedicated lockSeed mid-session would break decryptability of
+	// pre-switch ciphertext.
+	firstEncryptCalled atomic.Bool
 }
 
 // NewSeed512 creates a new 512-bit seed with cryptographically random components.
@@ -167,19 +187,84 @@ func (s *Seed512) deriveStartPixel(nonce []byte, totalPixels int) int {
 	return int(h[0] % uint64(totalPixels))
 }
 
-// deriveNoiseSeed returns the full 512-bit ChainHash output derived from
+// deriveInterLockSeed returns the full 512-bit ChainHash output derived from
 // the same domain-tagged buffer used by [Seed512.deriveStartPixel].
 // deriveStartPixel truncates to a pixel index (~13 bits) of h[0];
-// deriveNoiseSeed exposes the full [8]uint64 for consumers that
+// deriveInterLockSeed exposes the full [8]uint64 for consumers that
 // need it as PRF seed material — e.g. Lock Soup's per-chunk keystream
 // when SetLockSoup(1) is in effect.
 //
 // Typically called on noiseSeed in the Triple Ouroboros context — the
 // only shared seed across the 3 snakes, used as the keying source for
 // the cross-snake bit-soup permutation.
-func (s *Seed512) deriveNoiseSeed(nonce []byte) [8]uint64 {
+func (s *Seed512) deriveInterLockSeed(nonce []byte) [8]uint64 {
 	buf := make([]byte, 1+len(nonce))
 	buf[0] = 0x02
 	copy(buf[1:], nonce)
 	return s.ChainHash512(buf)
+}
+
+// AttachLockSeed installs ls as the dedicated lockSeed for this
+// noiseSeed. Subsequent Encrypt / Decrypt / EncryptAuthenticated /
+// DecryptAuthenticated / EncryptStream / DecryptStream calls that
+// take this seed as the noise slot route bit-permutation derivation
+// through ls instead of through the receiver — the noise-injection
+// channel still consumes the receiver's components, but the
+// bit-permutation channel consumes ls's components, separating the
+// two entropy sources without changing any public Encrypt /
+// Decrypt signature.
+//
+// Anti-conflation safeguards (each panics rather than silently
+// degrading the entropy isolation):
+//
+//   - Self-attach (ls == ns) panics with [ErrLockSeedSelfAttach]:
+//     bit-permutation derivation would still consume the receiver's
+//     state, defeating the isolation purpose.
+//   - Component-aliasing (ls.Components and the receiver's
+//     Components share the same backing array — typically because
+//     ls was built by copying the slice header rather than the
+//     underlying data) panics with [ErrLockSeedComponentAliasing]:
+//     a shared backing array means every encrypt-time mutation of
+//     either Components slice silently mutates the other, defeating
+//     the entropy isolation between the noise-injection and
+//     bit-permutation channels. The check is pointer-aliasing on
+//     the slice's first element, not value-equality — deep-copied
+//     slices that happen to carry identical uint64 values are not
+//     caught here.
+//   - Post-Encrypt re-attach (this seed has been used in a
+//     successful Encrypt) panics with [ErrLockSeedAfterEncrypt]:
+//     switching the dedicated lockSeed mid-session breaks
+//     decryptability of pre-switch ciphertext.
+//
+// Idempotent for the same ls (re-attaching the same pointer after
+// validation does not panic). Both seeds remain fully independent
+// objects — AttachLockSeed does not modify ls and does not copy
+// any state between the two; it merely records a single pointer
+// field on the receiver.
+//
+// Not safe for concurrent invocation with an in-flight Encrypt /
+// Decrypt on the same noiseSeed — caller serialises the attach
+// sequence before dispatching parallel encrypt traffic.
+func (s *Seed512) AttachLockSeed(ls *Seed512) {
+	if s.firstEncryptCalled.Load() {
+		panic(ErrLockSeedAfterEncrypt)
+	}
+	if ls == s {
+		panic(ErrLockSeedSelfAttach)
+	}
+	if len(s.Components) > 0 && len(ls.Components) > 0 &&
+		&s.Components[0] == &ls.Components[0] {
+		panic(ErrLockSeedComponentAliasing)
+	}
+	s.attachedLockSeed = ls
+}
+
+// AttachedLockSeed returns the dedicated lockSeed previously
+// installed via [Seed512.AttachLockSeed], or nil when no lockSeed
+// has been attached. Used internally by the bit-permutation
+// derivation builders to route through the dedicated seed when
+// present, and by serialization paths to extract the attached
+// lockSeed alongside the noiseSeed for persistence.
+func (s *Seed512) AttachedLockSeed() *Seed512 {
+	return s.attachedLockSeed
 }

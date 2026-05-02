@@ -166,7 +166,354 @@ step. Cross-process persistence (encrypt today, decrypt tomorrow / on a
 different host) is documented in [hashes/README.md](hashes/README.md) and
 [macs/README.md](macs/README.md).
 
-### Areion-SoEM-512 (recommended, no MAC)
+### Easy: Areion-SoEM-512 (recommended, no MAC)
+
+The high-level [`easy.Encryptor`](easy/) replaces the seven-line setup
+ceremony of the lower-level path with one constructor call. The
+encryptor allocates its own three (Single) or seven (Triple) seeds +
+MAC closure, snapshots the global configuration into a per-instance
+`*itb.Config`, and exposes setters that mutate only its own state
+without touching the process-wide `itb.Set*` accessors. Two
+encryptors with different settings can run concurrently without
+cross-contamination.
+
+```go
+
+// Sender
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    // Single-Ouroboros (3 seeds) constructor — variadic args by type:
+    // string matching hashes.Registry → primitive, string matching
+    // macs.Registry → MAC, int → key_bits. Defaults: "areion512" /
+    // 1024 / "kmac256". Triple Ouroboros (7 seeds) → easy.New3(...).
+    enc := easy.New("areion512", 2048, "kmac256")
+    defer enc.Close()
+
+    // Per-instance configuration — mutates only this encryptor's
+    // *itb.Config snapshot. Two encryptors built side-by-side carry
+    // independent settings; process-wide itb.Set* accessors are NOT
+    // consulted after construction.
+    enc.SetNonceBits(512)  // 512-bit nonce (default: 128-bit)
+    enc.SetBarrierFill(4)  // CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
+    enc.SetBitSoup(1)      // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                            // auto-enabled for Single Ouroboros if SetLockSoup(1) is on
+    enc.SetLockSoup(1)     // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                            // bit-permutation overlay on top of bit-soup;
+                            // auto-enabled for Single Ouroboros if SetBitSoup(1) is on
+
+    //enc.SetLockSeed(1)   // optional dedicated lockSeed for the bit-permutation
+                            // derivation channel — separates that PRF's keying material
+                            // from the noiseSeed-driven noise-injection channel; auto-
+                            // couples SetLockSoup(1) + SetBitSoup(1). Adds one extra
+                            // seed slot (3 → 4 for Single, 7 → 8 for Triple). Must be
+                            // called BEFORE the first Encrypt — switching mid-session
+                            // panics with easy.ErrLockSeedAfterEncrypt.
+
+    // For cross-process persistence: enc.Export() returns a single
+    // JSON blob carrying PRF keys, seed components, MAC key, and
+    // (when active) the dedicated lockSeed material. Ship it
+    // alongside the ciphertext or out-of-band.
+    blob := enc.Export()
+    fmt.Printf("state blob: %d bytes\n", len(blob))
+    fmt.Printf("primitive: %s, key_bits: %d, mode: %d, mac: %s\n",
+        enc.Primitive, enc.KeyBits, enc.Mode, enc.MACName)
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+    //chunkSize := 4 * 1024 * 1024 // 4 MB - bulk local crypto, not small-frame network streaming
+
+    // One-shot encrypt into RGBWYOPA container.
+    encrypted, err := enc.Encrypt(plaintext)
+    if err != nil {
+        panic(err)
+    }
+    //var ciphertext []byte
+    //err := enc.EncryptStream(plaintext, func(chunk []byte) error {
+    //    ciphertext = append(ciphertext, chunk...)
+    //    return nil
+    //})
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Send encrypted payload + state blob
+}
+
+// Receiver
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    // Receive encrypted payload + state blob
+    // var encrypted, blob []byte = ..., ...
+
+    // Optional: peek at the blob's metadata before constructing a
+    // matching encryptor. Useful when the receiver multiplexes blobs
+    // of different shapes (different primitive / mode / MAC choices).
+    prim, keyBits, mode, mac := easy.PeekConfig(blob)
+    fmt.Printf("peek: primitive=%s, key_bits=%d, mode=%d, mac=%s\n",
+        prim, keyBits, mode, mac)
+
+    var dec *easy.Encryptor
+    if mode == 1 {
+        dec = easy.New(prim, keyBits, mac)
+    } else {
+        dec = easy.New3(prim, keyBits, mac)
+    }
+    defer dec.Close()
+
+    // dec.Import(blob) below automatically restores the full
+    // per-instance configuration (NonceBits, BarrierFill, BitSoup,
+    // LockSoup, and the dedicated lockSeed material when sender's
+    // SetLockSeed(1) was active). The Set* lines below are kept for
+    // documentation — they show the knobs available for explicit
+    // pre-Import override. BarrierFill is asymmetric: a receiver-set
+    // value > 1 takes priority over the blob's barrier_fill (the
+    // receiver's heavier CSPRNG margin is preserved across Import).
+    dec.SetNonceBits(512)
+    dec.SetBarrierFill(4)
+    dec.SetBitSoup(1)
+    dec.SetLockSoup(1)
+    //dec.SetLockSeed(1)   // optional — Import below restores the dedicated
+                            // lockSeed slot from the blob's lock_seed:true.
+
+    // Restore PRF keys, seed components, MAC key, and the per-instance
+    // configuration overrides (nonce_bits / barrier_fill / bit_soup /
+    // lock_soup / lock_seed) from the saved blob.
+    if err := dec.Import(blob); err != nil {
+        panic(err)
+    }
+
+    // One-shot decrypt from RGBWYOPA container.
+    decrypted, err := dec.Decrypt(encrypted)
+    if err != nil {
+        panic(err)
+    }
+    //var decrypted []byte
+    //err = dec.DecryptStream(ciphertext, func(chunk []byte) error {
+    //    decrypted = append(decrypted, chunk...)
+    //    return nil
+    //})
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+### Easy: Areion-SoEM-512 + KMAC-256 (recommended, authenticated)
+
+The MAC primitive is bound at construction time — the third
+positional argument selects one of the registry names (`kmac256`,
+`hmac-sha256`, `hmac-blake3`). The encryptor allocates a fresh
+32-byte CSPRNG MAC key alongside the per-seed PRF keys; `Export()`
+carries all of them in a single JSON blob.
+
+```go
+
+// Sender
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    enc := easy.New("areion512", 2048, "kmac256")
+    defer enc.Close()
+
+    enc.SetNonceBits(512)
+    enc.SetBarrierFill(4)
+    enc.SetBitSoup(1)
+    enc.SetLockSoup(1)
+
+    //enc.SetLockSeed(1)   // optional dedicated lockSeed for the bit-permutation
+                            // derivation channel — auto-couples SetLockSoup(1) +
+                            // SetBitSoup(1). Adds one extra seed slot. Must be
+                            // called BEFORE the first EncryptAuth.
+
+    // Persistence blob — carries seeds + PRF keys + MAC key (and
+    // the dedicated lockSeed material when SetLockSeed(1) is active).
+    blob := enc.Export()
+    fmt.Printf("state blob: %d bytes\n", len(blob))
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+    // Authenticated encrypt — 32-byte tag is computed across the
+    // entire decrypted capacity and embedded inside the RGBWYOPA
+    // container, preserving oracle-free deniability.
+    encrypted, err := enc.EncryptAuth(plaintext)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Send encrypted payload + state blob
+}
+
+// Receiver
+
+package main
+
+import (
+    "errors"
+    "fmt"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    // Receive encrypted payload + state blob
+    // var encrypted, blob []byte = ..., ...
+
+    prim, keyBits, mode, mac := easy.PeekConfig(blob)
+
+    var dec *easy.Encryptor
+    if mode == 1 {
+        dec = easy.New(prim, keyBits, mac)
+    } else {
+        dec = easy.New3(prim, keyBits, mac)
+    }
+    defer dec.Close()
+
+    // dec.Import(blob) below automatically restores the full
+    // per-instance configuration (NonceBits, BarrierFill, BitSoup,
+    // LockSoup, and the dedicated lockSeed material when sender's
+    // SetLockSeed(1) was active). The Set* lines below are kept for
+    // documentation — they show the knobs available for explicit
+    // pre-Import override. BarrierFill is asymmetric: a receiver-set
+    // value > 1 takes priority over the blob's barrier_fill (the
+    // receiver's heavier CSPRNG margin is preserved across Import).
+    dec.SetNonceBits(512)
+    dec.SetBarrierFill(4)
+    dec.SetBitSoup(1)
+    dec.SetLockSoup(1)
+    //dec.SetLockSeed(1)   // optional — Import below restores the dedicated
+                            // lockSeed slot from the blob's lock_seed:true.
+
+    if err := dec.Import(blob); err != nil {
+        panic(err)
+    }
+
+    // Authenticated decrypt — any single-bit tamper triggers MAC
+    // failure (no oracle leak about which byte was tampered).
+    decrypted, err := dec.DecryptAuth(encrypted)
+    if err != nil {
+        if errors.Is(err, easy.ErrClosed) {
+            panic("encryptor was closed")
+        }
+        // The underlying itb.DecryptAuthenticated* returns a fixed-text
+        // error on MAC verification failure; check the error string or
+        // use the structural difference between MAC failure and other
+        // decrypt errors.
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+### Easy: BLAKE2b-512 + HMAC-BLAKE3 (recommended, authenticated, 2048-bit seeds)
+
+Same flow as the previous example, swapping the primitive name
+("blake2b512") and the MAC name ("hmac-blake3") at construction
+time. Mixing primitives at the encryptor level is one constructor
+argument away — no per-call PRF / batched-arm wiring.
+
+```go
+
+// Sender
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    enc := easy.New("blake2b512", 2048, "hmac-blake3")
+    defer enc.Close()
+
+    enc.SetNonceBits(512)
+    enc.SetBarrierFill(4)
+    enc.SetBitSoup(1)
+    enc.SetLockSoup(1)
+
+    //enc.SetLockSeed(1)   // optional dedicated lockSeed; auto-couples LockSoup +
+                            // BitSoup. Adds one extra seed slot. Must be called
+                            // BEFORE the first EncryptAuth.
+
+    blob := enc.Export()
+    fmt.Printf("state blob: %d bytes\n", len(blob))
+
+    plaintext := []byte("any text or binary data - including 0x00 bytes")
+    encrypted, err := enc.EncryptAuth(plaintext)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Send encrypted payload + state blob
+}
+
+// Receiver
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    // Receive encrypted payload + state blob
+    // var encrypted, blob []byte = ..., ...
+
+    prim, keyBits, mode, mac := easy.PeekConfig(blob)
+
+    var dec *easy.Encryptor
+    if mode == 1 {
+        dec = easy.New(prim, keyBits, mac)
+    } else {
+        dec = easy.New3(prim, keyBits, mac)
+    }
+    defer dec.Close()
+
+    // dec.Import(blob) below automatically restores the full
+    // per-instance configuration (NonceBits, BarrierFill, BitSoup,
+    // LockSoup, and the dedicated lockSeed material when sender's
+    // SetLockSeed(1) was active). The Set* lines below are kept for
+    // documentation — they show the knobs available for explicit
+    // pre-Import override. BarrierFill is asymmetric: a receiver-set
+    // value > 1 takes priority over the blob's barrier_fill (the
+    // receiver's heavier CSPRNG margin is preserved across Import).
+    dec.SetNonceBits(512)
+    dec.SetBarrierFill(4)
+    dec.SetBitSoup(1)
+    dec.SetLockSoup(1)
+    //dec.SetLockSeed(1)   // optional — Import below restores the dedicated
+                            // lockSeed slot from the blob's lock_seed:true.
+
+    if err := dec.Import(blob); err != nil {
+        panic(err)
+    }
+
+    decrypted, err := dec.DecryptAuth(encrypted)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+### Areion-SoEM-512 (low-level, no MAC)
 
 ```go
 
@@ -194,36 +541,41 @@ func main() {
                        // automatically enabled for Single Ouroboros if
                        // itb.SetBitSoup(1) is enabled or vice versa
 
-    // Three independent CSPRNG-keyed Areion-SoEM-512 paired closures.
-    // The third return value (keyN/keyD/keyS) is the [64]byte fixed key —
-    // capture it per seed for cross-process persistence. The batched arm
-    // (batchN/batchD/batchS) wires the AVX-512 + VAES + ILP + ZMM-batched
-    // chain-absorb dispatch through Seed.BatchHash..
+    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
+    // (noise / data / start / lock). The third return value
+    // (keyN/keyD/keyS/keyL) is the [64]byte fixed key — capture it
+    // per seed for cross-process persistence. The batched arm
+    // (batchN/batchD/batchS/batchL) wires the AVX-512 + VAES + ILP +
+    // ZMM-batched chain-absorb dispatch through Seed.BatchHash.
     fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
     fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
     fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
+    fnL, batchL, keyL := itb.MakeAreionSoEM512Hash() // random lock hash key generated
     //fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN) // [64]byte saved noise hash key
     //fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD) // [64]byte saved data hash key
     //fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS) // [64]byte saved start hash key
+    //fnL, batchL := itb.MakeAreionSoEM512HashWithKey(keyL) // [64]byte saved lock hash key
 
-    // Three independent CSPRNG-generated 2048-bit seeds.
+    // Four independent CSPRNG-generated 2048-bit seeds.
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+    ls, _ := itb.NewSeed512(2048, fnL) // random lock CSPRNG seeds generated
 
     ns.BatchHash = batchN // must enable batch
     ds.BatchHash = batchD // must enable batch
     ss.BatchHash = batchS // must enable batch
+    ls.BatchHash = batchL // must enable batch
 
-    // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys)
-    // and ns.Components/ds.Components/ss.Components ([]uint64 seed components)
-    // carry the entire reconstruction state. See hashes/README.md.
-    fmt.Printf("noise PRF key: %x\n", keyN[:])
-    fmt.Printf("data  PRF key: %x\n", keyD[:])
-    fmt.Printf("start PRF key: %x\n", keyS[:])
-    fmt.Printf("noise seed components: %v\n", ns.Components)
-    fmt.Printf("data  seed components: %v\n", ds.Components)
-    fmt.Printf("start seed components: %v\n", ss.Components)
+    // Optional: dedicated lockSeed for the bit-permutation derivation
+    // channel. Separates that PRF's keying material from the noiseSeed-
+    // driven noise-injection channel without changing the public Encrypt
+    // / Decrypt signatures. The bit-permutation overlay must be engaged
+    // (itb.SetBitSoup(1) or itb.SetLockSoup(1) — both already on above)
+    // before the first Encrypt; the build-PRF guard panics on encrypt-
+    // time with itb.ErrLockSeedOverlayOff when an attach is present
+    // without either flag.
+    ns.AttachLockSeed(ls)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
     //chunkSize := 4 * 1024 * 1024 // 4 MB - bulk local crypto, not small-frame network streaming
@@ -240,7 +592,22 @@ func main() {
     //})
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
-    // Send encrypted payload
+    // Cross-process persistence — Blob512 packs every PRF fixed key
+    // ([64]byte each) plus every seed's Components ([]uint64) plus the
+    // captured itb.Set* globals (NonceBits / BarrierFill / BitSoup /
+    // LockSoup) into one self-describing JSON blob. Triple-Ouroboros
+    // counterparts are Export3 / Import3 below; the lockSeed slot
+    // rides in Blob512Opts.
+    bSrc := &itb.Blob512{}
+    blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
+        itb.Blob512Opts{KeyL: keyL, LS: ls},
+    )
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("blob: %d bytes\n", len(blob))
+
+    // Send encrypted payload + blob
 }
 
 // Receiver
@@ -253,43 +620,42 @@ import (
 )
 
 func main() {
-    itb.SetMaxWorkers(8)
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
+    // Receive encrypted payload + blob
+    // var encrypted, blob []byte = ..., ...
 
-    // Receive encrypted payload
-    // encrypted := ...
+    // Restore everything from the blob — Blob512.Import applies the
+    // sender's NonceBits / BarrierFill / BitSoup / LockSoup globals
+    // unconditionally, then populates Mode + KeyN / KeyD / KeyS /
+    // KeyL plus NS / DS / SS / LS with .Components filled in. Hash
+    // and BatchHash on the seeds stay nil — caller wires them from
+    // the saved key bytes through the matching factory.
+    bDst := &itb.Blob512{}
+    if err := bDst.Import(blob); err != nil {
+        panic(err)
+    }
 
-    // Reconstruct from saved [64]byte PRF fixed keys + saved seed
-    // components. The persisted material was captured Sender-side via
-    // the keyN/keyD/keyS and ns.Components/ds.Components/ss.Components
-    // values printed above.
-    var keyN, keyD, keyS [64]byte
-    var nsComps, dsComps, ssComps []uint64
-    // keyN = ...; keyD = ...; keyS = ...
-    // nsComps = ...; dsComps = ...; ssComps = ...
+    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(bDst.KeyN)
+    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD)
+    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS)
+    fnL, batchL := itb.MakeAreionSoEM512HashWithKey(bDst.KeyL)
 
-    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN)
-    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD)
-    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS)
+    bDst.NS.Hash, bDst.NS.BatchHash = fnN, batchN
+    bDst.DS.Hash, bDst.DS.BatchHash = fnD, batchD
+    bDst.SS.Hash, bDst.SS.BatchHash = fnS, batchS
+    bDst.LS.Hash, bDst.LS.BatchHash = fnL, batchL
 
-    ns, _ := itb.SeedFromComponents512(fnN, nsComps...)
-    ds, _ := itb.SeedFromComponents512(fnD, dsComps...)
-    ss, _ := itb.SeedFromComponents512(fnS, ssComps...)
-
-    ns.BatchHash = batchN
-    ds.BatchHash = batchD
-    ss.BatchHash = batchS
+    // Mirror the sender's AttachLockSeed wire-up — the bit-permutation
+    // derivation channel must consult the same dedicated lockSeed
+    // material on both sides.
+    bDst.NS.AttachLockSeed(bDst.LS)
 
     // Decrypt from RGBWYOPA container
-    decrypted, err := itb.Decrypt512(ns, ds, ss, encrypted)
+    decrypted, err := itb.Decrypt512(bDst.NS, bDst.DS, bDst.SS, encrypted)
     if err != nil {
         panic(err)
     }
     //var decrypted []byte
-    //err = itb.DecryptStream512(ns, ds, ss, ciphertext, func(chunk []byte) error {
+    //err = itb.DecryptStream512(bDst.NS, bDst.DS, bDst.SS, ciphertext, func(chunk []byte) error {
     //    decrypted = append(decrypted, chunk...)
     //    return nil
     //})
@@ -297,7 +663,7 @@ func main() {
 }
 ```
 
-### Areion-SoEM-512 + KMAC-256 (authenticated)
+### Areion-SoEM-512 + KMAC-256 (low-level, authenticated)
 
 ```go
 
@@ -319,41 +685,37 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    // Three independent CSPRNG-keyed Areion-SoEM-512 paired closures.
-    // The third return value (keyN/keyD/keyS) is the [64]byte fixed key —
-    // capture it per seed for cross-process persistence. The batched arm
-    // (batchN/batchD/batchS) wires the AVX-512 + VAES + ILP + ZMM-batched
-    // chain-absorb dispatch through Seed.BatchHash..
+    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
+    // (noise / data / start / lock). The third return value
+    // (keyN/keyD/keyS/keyL) is the [64]byte fixed key — capture it
+    // per seed for cross-process persistence.
     fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
     fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
     fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
+    fnL, batchL, keyL := itb.MakeAreionSoEM512Hash() // random lock hash key generated
     //fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN) // [64]byte saved noise hash key
     //fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD) // [64]byte saved data hash key
     //fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS) // [64]byte saved start hash key
+    //fnL, batchL := itb.MakeAreionSoEM512HashWithKey(keyL) // [64]byte saved lock hash key
 
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+    ls, _ := itb.NewSeed512(2048, fnL) // random lock CSPRNG seeds generated
 
     ns.BatchHash = batchN // must enable batch
     ds.BatchHash = batchD // must enable batch
     ss.BatchHash = batchS // must enable batch
+    ls.BatchHash = batchL // must enable batch
+
+    // Optional: dedicated lockSeed for the bit-permutation derivation
+    // channel — same pattern as the no-MAC quick-start above.
+    ns.AttachLockSeed(ls)
 
     // KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte CSPRNG key, 32-byte tag.
     var macKey [32]byte
     rand.Read(macKey[:])
     mac, _ := macs.KMAC256(macKey[:])
-
-    // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys),
-    // ns.Components/ds.Components/ss.Components ([]uint64 seed components),
-    // and macKey ([32]byte MAC key). See hashes/README.md and macs/README.md.
-    fmt.Printf("noise PRF key: %x\n", keyN[:])
-    fmt.Printf("data  PRF key: %x\n", keyD[:])
-    fmt.Printf("start PRF key: %x\n", keyS[:])
-    fmt.Printf("MAC key:       %x\n", macKey[:])
-    fmt.Printf("noise seed components: %v\n", ns.Components)
-    fmt.Printf("data  seed components: %v\n", ds.Components)
-    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -366,7 +728,23 @@ func main() {
     }
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
-    // Send encrypted payload
+    // Cross-process persistence — Blob512 packs every PRF fixed key,
+    // every seed's Components, the dedicated lockSeed material, the
+    // captured itb.Set* globals, and the MAC key + name into one
+    // self-describing JSON blob.
+    bSrc := &itb.Blob512{}
+    blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
+        itb.Blob512Opts{
+            KeyL: keyL, LS: ls,
+            MACKey: macKey[:], MACName: "kmac256",
+        },
+    )
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("blob: %d bytes\n", len(blob))
+
+    // Send encrypted payload + blob
 }
 
 // Receiver
@@ -380,42 +758,35 @@ import (
 )
 
 func main() {
-    itb.SetMaxWorkers(8)
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
+    // Receive encrypted payload + blob
+    // var encrypted, blob []byte = ..., ...
 
-    // Receive encrypted payload
-    // encrypted := ...
+    // Restore everything from the blob — Import applies the sender's
+    // globals + populates seeds + Key* fields + MACKey / MACName.
+    bDst := &itb.Blob512{}
+    if err := bDst.Import(blob); err != nil {
+        panic(err)
+    }
 
-    // Reconstruct from saved [64]byte PRF fixed keys + saved seed
-    // components + saved [32]byte MAC key. The persisted material was
-    // captured Sender-side via the keyN/keyD/keyS, ns.Components etc,
-    // and macKey values printed above.
-    var keyN, keyD, keyS [64]byte
-    var macKey [32]byte
-    var nsComps, dsComps, ssComps []uint64
-    // keyN = ...; keyD = ...; keyS = ...; macKey = ...
-    // nsComps = ...; dsComps = ...; ssComps = ...
+    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(bDst.KeyN)
+    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD)
+    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS)
+    fnL, batchL := itb.MakeAreionSoEM512HashWithKey(bDst.KeyL)
 
-    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN)
-    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD)
-    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS)
+    bDst.NS.Hash, bDst.NS.BatchHash = fnN, batchN
+    bDst.DS.Hash, bDst.DS.BatchHash = fnD, batchD
+    bDst.SS.Hash, bDst.SS.BatchHash = fnS, batchS
+    bDst.LS.Hash, bDst.LS.BatchHash = fnL, batchL
+    bDst.NS.AttachLockSeed(bDst.LS)
 
-    ns, _ := itb.SeedFromComponents512(fnN, nsComps...)
-    ds, _ := itb.SeedFromComponents512(fnD, dsComps...)
-    ss, _ := itb.SeedFromComponents512(fnS, ssComps...)
-
-    ns.BatchHash = batchN
-    ds.BatchHash = batchD
-    ss.BatchHash = batchS
-
-    mac, _ := macs.KMAC256(macKey[:])
+    // Rebuild the MAC closure from the saved name + key. macs.Make
+    // routes through the registry, so any of the shipped MAC primitives
+    // (kmac256 / hmac-sha256 / hmac-blake3) restores via the same call.
+    mac, _ := macs.Make(bDst.MACName, bDst.MACKey)
 
     // Authenticated decrypt — any single-bit tamper triggers MAC failure
     // (no oracle leak about which byte was tampered).
-    decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
+    decrypted, err := itb.DecryptAuthenticated512(bDst.NS, bDst.DS, bDst.SS, encrypted, mac)
     if err != nil {
         panic(err)
     }
@@ -427,7 +798,7 @@ Other shipped MACs: `macs.HMACSHA256(key)`, `macs.HMACBLAKE3(key)` — all
 three produce 32-byte tags. See [macs/README.md](macs/README.md) for the
 full MAC matrix.
 
-### BLAKE2b-512 + HMAC-BLAKE3 (authenticated, 2048-bit seeds)
+### BLAKE2b-512 + HMAC-BLAKE3 (low-level, authenticated, 2048-bit seeds)
 
 ```go
 
@@ -450,42 +821,40 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    // Three independent CSPRNG-keyed BLAKE2b-512 paired closures. The
-    // third return value (keyN/keyD/keyS) is the [64]byte fixed key —
-    // capture it per seed for cross-process persistence. The batched
-    // arm (batchN/batchD/batchS) wires the AVX-512 + ZMM-batched
+    // Four independent CSPRNG-keyed BLAKE2b-512 paired closures
+    // (noise / data / start / lock). The third return value
+    // (keyN/keyD/keyS/keyL) is the [64]byte fixed key — capture it
+    // per seed for cross-process persistence. The batched arm
+    // (batchN/batchD/batchS/batchL) wires the AVX-512 + ZMM-batched
     // chain-absorb dispatch through Seed.BatchHash.
     fnN, batchN, keyN := hashes.BLAKE2b512Pair() // random noise hash key generated
     fnD, batchD, keyD := hashes.BLAKE2b512Pair() // random data hash key generated
     fnS, batchS, keyS := hashes.BLAKE2b512Pair() // random start hash key generated
+    fnL, batchL, keyL := hashes.BLAKE2b512Pair() // random lock hash key generated
     //fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN) // [64]byte saved noise hash key
     //fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD) // [64]byte saved data hash key
     //fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS) // [64]byte saved start hash key
+    //fnL, batchL := hashes.BLAKE2b512PairWithKey(keyL) // [64]byte saved lock hash key
 
     // 2048-bit seeds — 32 components × 64 bits, multiple of 8 for Seed512.
     ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
     ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
     ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
+    ls, _ := itb.NewSeed512(2048, fnL) // random lock CSPRNG seeds generated
 
     ns.BatchHash = batchN // must enable batch
     ds.BatchHash = batchD // must enable batch
     ss.BatchHash = batchS // must enable batch
+    ls.BatchHash = batchL // must enable batch
+
+    // Optional: dedicated lockSeed for the bit-permutation derivation
+    // channel — same pattern as the no-MAC quick-start above.
+    ns.AttachLockSeed(ls)
 
     // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
     var macKey [32]byte
     rand.Read(macKey[:])
     mac, _ := macs.HMACBLAKE3(macKey[:])
-
-    // For cross-process persistence: keyN/keyD/keyS ([64]byte PRF fixed keys),
-    // ns.Components/ds.Components/ss.Components ([]uint64 seed components),
-    // and macKey ([32]byte MAC key). See hashes/README.md and macs/README.md.
-    fmt.Printf("noise PRF key: %x\n", keyN[:])
-    fmt.Printf("data  PRF key: %x\n", keyD[:])
-    fmt.Printf("start PRF key: %x\n", keyS[:])
-    fmt.Printf("MAC key:       %x\n", macKey[:])
-    fmt.Printf("noise seed components: %v\n", ns.Components)
-    fmt.Printf("data  seed components: %v\n", ds.Components)
-    fmt.Printf("start seed components: %v\n", ss.Components)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -498,7 +867,22 @@ func main() {
     }
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
-    // Send encrypted payload
+    // Cross-process persistence — Blob512 packs PRF fixed keys, seed
+    // components, dedicated lockSeed material, captured itb.Set*
+    // globals, and MAC key + name into one self-describing JSON blob.
+    bSrc := &itb.Blob512{}
+    blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
+        itb.Blob512Opts{
+            KeyL: keyL, LS: ls,
+            MACKey: macKey[:], MACName: "hmac-blake3",
+        },
+    )
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("blob: %d bytes\n", len(blob))
+
+    // Send encrypted payload + blob
 }
 
 // Receiver
@@ -513,42 +897,30 @@ import (
 )
 
 func main() {
-    itb.SetMaxWorkers(8)
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
+    // Receive encrypted payload + blob
+    // var encrypted, blob []byte = ..., ...
 
-    // Receive encrypted payload
-    // encrypted := ...
+    bDst := &itb.Blob512{}
+    if err := bDst.Import(blob); err != nil {
+        panic(err)
+    }
 
-    // Reconstruct from saved [64]byte PRF fixed keys + saved seed
-    // components + saved [32]byte MAC key. The persisted material was
-    // captured Sender-side via the keyN/keyD/keyS, ns.Components etc,
-    // and macKey values printed above.
-    var keyN, keyD, keyS [64]byte
-    var macKey [32]byte
-    var nsComps, dsComps, ssComps []uint64
-    // keyN = ...; keyD = ...; keyS = ...; macKey = ...;
-    // nsComps = ...; dsComps = ...; ssComps = ...
+    fnN, batchN := hashes.BLAKE2b512PairWithKey(bDst.KeyN)
+    fnD, batchD := hashes.BLAKE2b512PairWithKey(bDst.KeyD)
+    fnS, batchS := hashes.BLAKE2b512PairWithKey(bDst.KeyS)
+    fnL, batchL := hashes.BLAKE2b512PairWithKey(bDst.KeyL)
 
-    fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN)
-    fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD)
-    fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS)
+    bDst.NS.Hash, bDst.NS.BatchHash = fnN, batchN
+    bDst.DS.Hash, bDst.DS.BatchHash = fnD, batchD
+    bDst.SS.Hash, bDst.SS.BatchHash = fnS, batchS
+    bDst.LS.Hash, bDst.LS.BatchHash = fnL, batchL
+    bDst.NS.AttachLockSeed(bDst.LS)
 
-    ns, _ := itb.SeedFromComponents512(fnN, nsComps...)
-    ds, _ := itb.SeedFromComponents512(fnD, dsComps...)
-    ss, _ := itb.SeedFromComponents512(fnS, ssComps...)
-
-    ns.BatchHash = batchN
-    ds.BatchHash = batchD
-    ss.BatchHash = batchS
-
-    mac, _ := macs.HMACBLAKE3(macKey[:])
+    mac, _ := macs.Make(bDst.MACName, bDst.MACKey)
 
     // Authenticated decrypt — any single-bit tamper triggers MAC failure
     // (no oracle leak about which byte was tampered).
-    decrypted, err := itb.DecryptAuthenticated512(ns, ds, ss, encrypted, mac)
+    decrypted, err := itb.DecryptAuthenticated512(bDst.NS, bDst.DS, bDst.SS, encrypted, mac)
     if err != nil {
         panic(err)
     }
@@ -569,6 +941,8 @@ import (
 
 func main() {
     itb.SetMaxWorkers(8)
+    itb.SetBitSoup(1)  // engage the bit-permutation overlay so the
+                       // optional dedicated lockSeed has wire effect
 
     // SipHash-2-4 has no internal fixed key — the seed components themselves
     // are the entire keying material. Three independent factory calls paired
@@ -579,36 +953,47 @@ func main() {
     fnD, batchD := hashes.SipHash24Pair()
     fnS, batchS := hashes.SipHash24Pair()
 
-    ns, _ := itb.NewSeed128(1024, fnN) // random noise CSPRNG seeds generated
-    ds, _ := itb.NewSeed128(1024, fnD) // random data CSPRNG seeds generated
-    ss, _ := itb.NewSeed128(1024, fnS) // random start CSPRNG seeds generated
+    ns, _ := itb.NewSeed128(1024, fnN); ns.BatchHash = batchN // random noise CSPRNG seeds generated, batch enabled
+    ds, _ := itb.NewSeed128(1024, fnD); ds.BatchHash = batchD // random data CSPRNG seeds generated, batch enabled
+    ss, _ := itb.NewSeed128(1024, fnS); ss.BatchHash = batchS // random start CSPRNG seeds generated, batch enabled
 
-    ns.BatchHash = batchN // must enable batch
-    ds.BatchHash = batchD // must enable batch
-    ss.BatchHash = batchS // must enable batch
-
-    // For cross-process persistence: SipHash-2-4 has no fixed PRF key — the
-    // seed components themselves are the entire keying material. Capture
-    // ns.Components/ds.Components/ss.Components ([]uint64 each). See
-    // hashes/README.md for save/load patterns.
-    fmt.Printf("noise seed components: %v\n", ns.Components)
-    fmt.Printf("data  seed components: %v\n", ds.Components)
-    fmt.Printf("start seed components: %v\n", ss.Components)
+    // Optional: dedicated lockSeed for the bit-permutation derivation
+    // channel — same flow as the Areion-SoEM-512 quick-starts above.
+    fnL, batchL := hashes.SipHash24Pair()
+    ls, _ := itb.NewSeed128(1024, fnL); ls.BatchHash = batchL
+    ns.AttachLockSeed(ls)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
-    // Encrypt into RGBWYOPA container
-    encrypted, err := itb.Encrypt128(ns, ds, ss, plaintext)
-    if err != nil {
-        panic(err)
-    }
+    encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
     fmt.Printf("encrypted: %d bytes\n", len(encrypted))
 
-    // Decrypt from RGBWYOPA container
-    decrypted, err := itb.Decrypt128(ns, ds, ss, encrypted)
-    if err != nil {
-        panic(err)
-    }
+    // Cross-process persistence — Blob128 packs every seed's Components
+    // (SipHash-2-4 has no fixed PRF key; the seed components are the
+    // entire keying material — KeyN/KeyD/KeyS/KeyL stay nil) plus the
+    // optional dedicated lockSeed and the captured itb.Set* globals
+    // into one self-describing JSON blob.
+    bSrc := &itb.Blob128{}
+    blob, _ := bSrc.Export(nil, nil, nil, ns, ds, ss,
+        itb.Blob128Opts{LS: ls})
+
+    // Receiver — Import reverses Export. Globals are restored
+    // unconditionally; Hash / BatchHash on each seed stay nil so the
+    // caller wires SipHash-2-4 closures from a fresh factory call.
+    bDst := &itb.Blob128{}
+    _ = bDst.Import(blob)
+
+    fnN2, batchN2 := hashes.SipHash24Pair()
+    fnD2, batchD2 := hashes.SipHash24Pair()
+    fnS2, batchS2 := hashes.SipHash24Pair()
+    fnL2, batchL2 := hashes.SipHash24Pair()
+    bDst.NS.Hash, bDst.NS.BatchHash = fnN2, batchN2
+    bDst.DS.Hash, bDst.DS.BatchHash = fnD2, batchD2
+    bDst.SS.Hash, bDst.SS.BatchHash = fnS2, batchS2
+    bDst.LS.Hash, bDst.LS.BatchHash = fnL2, batchL2
+    bDst.NS.AttachLockSeed(bDst.LS)
+
+    decrypted, _ := itb.Decrypt128(bDst.NS, bDst.DS, bDst.SS, encrypted)
     fmt.Printf("decrypted: %s\n", string(decrypted))
 }
 ```
@@ -616,7 +1001,9 @@ func main() {
 ## Quick Start — Triple Ouroboros (7 seeds, 3× security)
 
 ```go
-// Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start), 512-bit for speed
+// Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start) plus an
+// optional 8th dedicated lockSeed, 512-bit for speed.
+
 // Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
 itb.SetBitSoup(1)  // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
                    // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
@@ -624,16 +1011,71 @@ itb.SetBitSoup(1)  // optional mode: bit-level split ("bit soup"), opt-in SAT-re
 itb.SetLockSoup(1) // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
                    // automatically engages itb.SetBitSoup(1)
 
-ns, _  := itb.NewSeed128(512, hashes.SipHash24()) // shared noiseSeed
-ds1, _ := itb.NewSeed128(512, hashes.SipHash24()) // dataSeed per ring
-ds2, _ := itb.NewSeed128(512, hashes.SipHash24())
-ds3, _ := itb.NewSeed128(512, hashes.SipHash24())
-ss1, _ := itb.NewSeed128(512, hashes.SipHash24()) // startSeed per ring
-ss2, _ := itb.NewSeed128(512, hashes.SipHash24())
-ss3, _ := itb.NewSeed128(512, hashes.SipHash24())
+// Eight independent CSPRNG-keyed Areion-SoEM-512 paired closures
+// (1 noise + 3 data + 3 start + 1 lock).
+fnN,  batchN,  keyN  := itb.MakeAreionSoEM512Hash()
+fnD1, batchD1, keyD1 := itb.MakeAreionSoEM512Hash()
+fnD2, batchD2, keyD2 := itb.MakeAreionSoEM512Hash()
+fnD3, batchD3, keyD3 := itb.MakeAreionSoEM512Hash()
+fnS1, batchS1, keyS1 := itb.MakeAreionSoEM512Hash()
+fnS2, batchS2, keyS2 := itb.MakeAreionSoEM512Hash()
+fnS3, batchS3, keyS3 := itb.MakeAreionSoEM512Hash()
+fnL,  batchL,  keyL  := itb.MakeAreionSoEM512Hash()
 
-encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
-decrypted, _ := itb.Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+ns,  _ := itb.NewSeed512(2048, fnN);  ns.BatchHash  = batchN
+ds1, _ := itb.NewSeed512(2048, fnD1); ds1.BatchHash = batchD1
+ds2, _ := itb.NewSeed512(2048, fnD2); ds2.BatchHash = batchD2
+ds3, _ := itb.NewSeed512(2048, fnD3); ds3.BatchHash = batchD3
+ss1, _ := itb.NewSeed512(2048, fnS1); ss1.BatchHash = batchS1
+ss2, _ := itb.NewSeed512(2048, fnS2); ss2.BatchHash = batchS2
+ss3, _ := itb.NewSeed512(2048, fnS3); ss3.BatchHash = batchS3
+ls,  _ := itb.NewSeed512(2048, fnL);  ls.BatchHash  = batchL
+
+// Optional: dedicated lockSeed for the bit-permutation derivation
+// channel — same flow as the Single Ouroboros quick-starts above.
+ns.AttachLockSeed(ls)
+
+encrypted, _ := itb.Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+
+// Cross-process persistence — Blob512.Export3 packs the 7 seeds, the
+// 7 hash keys, the dedicated lockSeed material, and the captured
+// itb.Set* globals into one self-describing JSON blob. Add MACKey /
+// MACName to Blob512Opts when an authenticated variant is in use.
+bSrc := &itb.Blob512{}
+blob, _ := bSrc.Export3(
+    keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+    ns, ds1, ds2, ds3, ss1, ss2, ss3,
+    itb.Blob512Opts{KeyL: keyL, LS: ls},
+)
+
+// Receiver — Import3 reverses Export3. Globals are restored
+// unconditionally; Hash / BatchHash on each seed stay nil so the
+// caller wires them from the saved Key* bytes.
+bDst := &itb.Blob512{}
+_ = bDst.Import3(blob)
+
+fnN2,  batchN2  := itb.MakeAreionSoEM512HashWithKey(bDst.KeyN)
+fnD1b, batchD1b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD1)
+fnD2b, batchD2b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD2)
+fnD3b, batchD3b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD3)
+fnS1b, batchS1b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS1)
+fnS2b, batchS2b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS2)
+fnS3b, batchS3b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS3)
+fnLb,  batchLb  := itb.MakeAreionSoEM512HashWithKey(bDst.KeyL)
+
+bDst.NS.Hash,  bDst.NS.BatchHash  = fnN2,  batchN2
+bDst.DS1.Hash, bDst.DS1.BatchHash = fnD1b, batchD1b
+bDst.DS2.Hash, bDst.DS2.BatchHash = fnD2b, batchD2b
+bDst.DS3.Hash, bDst.DS3.BatchHash = fnD3b, batchD3b
+bDst.SS1.Hash, bDst.SS1.BatchHash = fnS1b, batchS1b
+bDst.SS2.Hash, bDst.SS2.BatchHash = fnS2b, batchS2b
+bDst.SS3.Hash, bDst.SS3.BatchHash = fnS3b, batchS3b
+bDst.LS.Hash,  bDst.LS.BatchHash  = fnLb,  batchLb
+bDst.NS.AttachLockSeed(bDst.LS)
+
+decrypted, _ := itb.Decrypt3x512(
+    bDst.NS, bDst.DS1, bDst.DS2, bDst.DS3, bDst.SS1, bDst.SS2, bDst.SS3, encrypted,
+)
 // Security: P × 2^(3×512) = P × 2^1536. Faster than Single 1024-bit, stronger security.
 ```
 
@@ -641,7 +1083,7 @@ decrypted, _ := itb.Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 
 Each seed has its own hash function — you can use **different PRF implementations** for different seeds within the same hash width. The receiver must use the same assignment. Both arms of the `*Pair()` factory propagate to the seed via `BatchHash` so the AVX-512 ZMM-batched dispatch stays active per primitive.
 
-**Single Ouroboros (3 seeds):**
+**Single Ouroboros (3 seeds + optional dedicated lockSeed):**
 ```go
 fnN, batchN, _ := hashes.BLAKE3256Pair()   // noiseSeed: BLAKE3
 fnD, batchD, _ := hashes.BLAKE2s256Pair()  // dataSeed:  BLAKE2s
@@ -652,10 +1094,17 @@ ds, _ := itb.NewSeed256(1024, fnD)
 ss, _ := itb.NewSeed256(1024, fnS)
 ns.BatchHash, ds.BatchHash, ss.BatchHash = batchN, batchD, batchS
 
+// Optional: dedicated lockSeed for the bit-permutation derivation
+// channel — pick any 256-bit primitive, mixing rules apply equally
+// (the lockSeed primitive does not have to match the noiseSeed).
+fnL, batchL, _ := hashes.BLAKE2s256Pair()  // lockSeed: BLAKE2s
+ls, _ := itb.NewSeed256(1024, fnL); ls.BatchHash = batchL
+ns.AttachLockSeed(ls)
+
 encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
 ```
 
-**Triple Ouroboros (7 seeds):**
+**Triple Ouroboros (7 seeds + optional dedicated lockSeed):**
 ```go
 fnN,  batchN,  _ := hashes.BLAKE3256Pair()   // shared noise: BLAKE3
 fnD1, batchD1, _ := hashes.BLAKE2s256Pair()  // ring 1 data:  BLAKE2s
@@ -674,6 +1123,12 @@ ss2, _ := itb.NewSeed256(512, fnS2)
 ss3, _ := itb.NewSeed256(512, fnS3)
 ns.BatchHash, ds1.BatchHash, ds2.BatchHash, ds3.BatchHash = batchN, batchD1, batchD2, batchD3
 ss1.BatchHash, ss2.BatchHash, ss3.BatchHash = batchS1, batchS2, batchS3
+
+// Optional: dedicated lockSeed for the bit-permutation derivation
+// channel — same mixing rule as the Single Ouroboros block above.
+fnL, batchL, _ := hashes.BLAKE3256Pair()    // lockSeed: BLAKE3
+ls, _ := itb.NewSeed256(512, fnL); ls.BatchHash = batchL
+ns.AttachLockSeed(ls)
 
 encrypted, _ := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 ```
@@ -739,36 +1194,30 @@ func main() {
                        // itb.SetBitSoup(1) is enabled or vice versa
 
 
-    // Three independent CSPRNG-keyed Areion-SoEM-256 paired closures.
-    // The third return value (keyN/keyD/keyS) is the [32]byte fixed key —
-    // capture it per seed for cross-process persistence. The batched arm
-    // (batchN/batchD/batchS) wires the AVX-512 + VAES + ILP + ZMM-batched
-    // chain-absorb dispatch through Seed.BatchHash..
+    // Four independent CSPRNG-keyed Areion-SoEM-256 paired closures
+    // (3 main seeds + 1 optional dedicated lockSeed). The third return
+    // value (keyN/keyD/keyS/keyL) is the [32]byte fixed key — capture
+    // it per seed for cross-process persistence. The batched arm
+    // (batchN/batchD/batchS/batchL) wires the AVX-512 + VAES + ILP +
+    // ZMM-batched chain-absorb dispatch through Seed.BatchHash.
     fnN, batchN, keyN := itb.MakeAreionSoEM256Hash() // random noise hash key generated
     fnD, batchD, keyD := itb.MakeAreionSoEM256Hash() // random data hash key generated
     fnS, batchS, keyS := itb.MakeAreionSoEM256Hash() // random start hash key generated
+    fnL, batchL, keyL := itb.MakeAreionSoEM256Hash() // random lock hash key generated
     //fnN, batchN := itb.MakeAreionSoEM256HashWithKey(keyN) // [32]byte saved noise hash key
     //fnD, batchD := itb.MakeAreionSoEM256HashWithKey(keyD) // [32]byte saved data hash key
     //fnS, batchS := itb.MakeAreionSoEM256HashWithKey(keyS) // [32]byte saved start hash key
+    //fnL, batchL := itb.MakeAreionSoEM256HashWithKey(keyL) // [32]byte saved lock hash key
 
     // 1024-bit seeds — 16 components × 64 bits, multiple of 4 for Seed256.
-    ns, _ := itb.NewSeed256(1024, fnN) // random noise CSPRNG seeds generated
-    ds, _ := itb.NewSeed256(1024, fnD) // random data CSPRNG seeds generated
-    ss, _ := itb.NewSeed256(1024, fnS) // random start CSPRNG seeds generated
+    ns, _ := itb.NewSeed256(1024, fnN); ns.BatchHash = batchN // random noise CSPRNG seeds, batch enabled
+    ds, _ := itb.NewSeed256(1024, fnD); ds.BatchHash = batchD // random data CSPRNG seeds, batch enabled
+    ss, _ := itb.NewSeed256(1024, fnS); ss.BatchHash = batchS // random start CSPRNG seeds, batch enabled
+    ls, _ := itb.NewSeed256(1024, fnL); ls.BatchHash = batchL // random lock CSPRNG seeds, batch enabled
 
-    ns.BatchHash = batchN // must enable batch
-    ds.BatchHash = batchD // must enable batch
-    ss.BatchHash = batchS // must enable batch
-
-    // For cross-process persistence: keyN/keyD/keyS ([32]byte PRF fixed keys)
-    // and ns.Components/ds.Components/ss.Components ([]uint64 seed components)
-    // carry the entire reconstruction state. See hashes/README.md.
-    fmt.Printf("noise PRF key: %x\n", keyN[:])
-    fmt.Printf("data  PRF key: %x\n", keyD[:])
-    fmt.Printf("start PRF key: %x\n", keyS[:])
-    fmt.Printf("noise seed components: %v\n", ns.Components)
-    fmt.Printf("data  seed components: %v\n", ds.Components)
-    fmt.Printf("start seed components: %v\n", ss.Components)
+    // Optional: dedicated lockSeed for the bit-permutation derivation
+    // channel — same flow as the Areion-SoEM-512 quick-starts above.
+    ns.AttachLockSeed(ls)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
     chunkSize := 4 * 1024 * 1024 // 4 MB — bulk local crypto, not small-frame network streaming
@@ -785,10 +1234,34 @@ func main() {
     }
     fmt.Printf("encrypted: %d bytes\n", len(ciphertext))
 
+    // Cross-process persistence — Blob256 packs every seed's hash key
+    // ([32]byte for Areion-SoEM-256) and Components ([]uint64) plus
+    // the optional dedicated lockSeed and the captured itb.Set* globals
+    // into one self-describing JSON blob.
+    bSrc := &itb.Blob256{}
+    blob, _ := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
+        itb.Blob256Opts{KeyL: keyL, LS: ls})
+
+    // Receiver — Import reverses Export. Globals are restored
+    // unconditionally; Hash / BatchHash on each seed stay nil so the
+    // caller wires them from the saved Key* bytes.
+    bDst := &itb.Blob256{}
+    _ = bDst.Import(blob)
+
+    fnN2, batchN2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyN)
+    fnD2, batchD2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyD)
+    fnS2, batchS2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyS)
+    fnL2, batchL2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyL)
+    bDst.NS.Hash, bDst.NS.BatchHash = fnN2, batchN2
+    bDst.DS.Hash, bDst.DS.BatchHash = fnD2, batchD2
+    bDst.SS.Hash, bDst.SS.BatchHash = fnS2, batchS2
+    bDst.LS.Hash, bDst.LS.BatchHash = fnL2, batchL2
+    bDst.NS.AttachLockSeed(bDst.LS)
+
     // DecryptStream256 — emits successive plaintext chunks via callback.
     // Production callers drive emit from a file / mapped-region read loop.
     var decrypted []byte
-    err = itb.DecryptStream256(ns, ds, ss, ciphertext, func(chunk []byte) error {
+    err = itb.DecryptStream256(bDst.NS, bDst.DS, bDst.SS, ciphertext, func(chunk []byte) error {
         decrypted = append(decrypted, chunk...)
         return nil
     })

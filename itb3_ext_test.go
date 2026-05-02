@@ -17,9 +17,12 @@
 package itb_test
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
 )
 
 // makeSevenSeeds128Ext is the external-test counterpart of
@@ -755,4 +758,321 @@ func BenchmarkExtTripleAreion512_2048bit_Decrypt_16MB(b *testing.B) {
 }
 func BenchmarkExtTripleAreion512_2048bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 64<<20)
+}
+
+// --- AttachLockSeed coverage, Triple Ouroboros (BLAKE3 256-bit) ---
+//
+// Mirror of the AttachLockSeed test cohort in itb_ext_test.go for
+// the Triple Ouroboros entry points (Encrypt3x256 / Decrypt3x256).
+// The shared helpers makeBlake3SeedAttachExt and
+// withLockSoupAttachExt (defined in itb_ext_test.go, same
+// package itb_test) and the file-local generateDataExt are
+// reused verbatim.
+//
+// Coverage is identical in shape to the Single cohort:
+//
+//   - Round-trip with a dedicated lockSeed attached to the sole
+//     noiseSeed of the seven-seed Triple constellation (one
+//     noise + three data + three start) under SetLockSoup(1).
+//   - Self-attach safeguard panic (ErrLockSeedSelfAttach).
+//   - Component-aliasing safeguard panic
+//     (ErrLockSeedComponentAliasing).
+//   - Post-Encrypt safeguard panic (ErrLockSeedAfterEncrypt) —
+//     here the firstEncryptCalled gate is tripped through
+//     Encrypt3x256 instead of Encrypt256, exercising the
+//     Triple-side process function's encode-branch flag store.
+//
+// AttachLockSeed and its safeguards are width-symmetric, so the
+// BLAKE3 256-bit primitive at 1024-bit ITB width is enough to
+// catch shape regressions on the Triple side too.
+
+// TestTripleAttachLockSeedRoundtrip256 verifies that Triple Ouroboros
+// Encrypt3x / Decrypt3x round-trip succeeds with a dedicated
+// lockSeed attached to the sole noiseSeed. SetLockSoup(1) engages
+// the bit-permutation overlay via buildLockPRF256.
+func TestTripleAttachLockSeedRoundtrip256(t *testing.T) {
+	withLockSoupAttachExt(t)
+
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ds1 := makeBlake3SeedAttachExt(t, 1024)
+	ds2 := makeBlake3SeedAttachExt(t, 1024)
+	ds3 := makeBlake3SeedAttachExt(t, 1024)
+	ss1 := makeBlake3SeedAttachExt(t, 1024)
+	ss2 := makeBlake3SeedAttachExt(t, 1024)
+	ss3 := makeBlake3SeedAttachExt(t, 1024)
+	ls := makeBlake3SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateDataExt(1024)
+	ct, err := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt3x256: %v", err)
+	}
+	pt, err := itb.Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+	if err != nil {
+		t.Fatalf("Decrypt3x256: %v", err)
+	}
+	if !bytes.Equal(pt, plaintext) {
+		t.Errorf("Triple AttachLockSeed roundtrip mismatch: got %d bytes, want %d",
+			len(pt), len(plaintext))
+	}
+}
+
+// TestTripleAttachLockSeedSelfAttachPanic verifies the self-attach
+// safeguard from the Triple cohort — passing the receiver itself
+// as the lockSeed argument panics with [itb.ErrLockSeedSelfAttach]
+// rather than silently degrading to a no-op self-derivation. The
+// safeguard is width / mode symmetric; the test runs as a Triple-
+// flavoured smoke check parallel to itb_ext_test.go's
+// TestAttachLockSeedSelfAttachPanic.
+func TestTripleAttachLockSeedSelfAttachPanic(t *testing.T) {
+	ns := makeBlake3SeedAttachExt(t, 1024)
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("AttachLockSeed(ns): expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedSelfAttach) {
+			t.Errorf("AttachLockSeed(ns): panic %v, want %v", r, itb.ErrLockSeedSelfAttach)
+		}
+	}()
+	ns.AttachLockSeed(ns)
+}
+
+// TestTripleAttachLockSeedComponentAliasingPanic verifies the
+// component-aliasing safeguard from the Triple cohort — when two
+// distinct *Seed256 values share the same Components backing
+// array, AttachLockSeed panics with
+// [itb.ErrLockSeedComponentAliasing] rather than silently
+// accepting the duplicated entropy source.
+func TestTripleAttachLockSeedComponentAliasingPanic(t *testing.T) {
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ls := makeBlake3SeedAttachExt(t, 1024)
+	ls.Components = ns.Components // alias the backing array
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("AttachLockSeed(aliased ls): expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedComponentAliasing) {
+			t.Errorf("AttachLockSeed(aliased ls): panic %v, want %v",
+				r, itb.ErrLockSeedComponentAliasing)
+		}
+	}()
+	ns.AttachLockSeed(ls)
+}
+
+// TestTripleAttachLockSeedAfterEncryptPanic verifies the
+// post-Encrypt safeguard from the Triple cohort. The
+// firstEncryptCalled gate on the noiseSeed is tripped via
+// Encrypt3x256 (instead of the Single Encrypt256 used in the
+// itb_ext_test.go counterpart), confirming that the process3x
+// path also stores the gate flag on the encode branch and the
+// AttachLockSeed re-attach safeguard fires correctly afterwards.
+func TestTripleAttachLockSeedAfterEncryptPanic(t *testing.T) {
+	withLockSoupAttachExt(t)
+
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ds1 := makeBlake3SeedAttachExt(t, 1024)
+	ds2 := makeBlake3SeedAttachExt(t, 1024)
+	ds3 := makeBlake3SeedAttachExt(t, 1024)
+	ss1 := makeBlake3SeedAttachExt(t, 1024)
+	ss2 := makeBlake3SeedAttachExt(t, 1024)
+	ss3 := makeBlake3SeedAttachExt(t, 1024)
+	ls := makeBlake3SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls) // pre-Encrypt attach is fine
+
+	plaintext := generateDataExt(64)
+	if _, err := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext); err != nil {
+		t.Fatalf("pre-panic Encrypt3x256: %v", err)
+	}
+
+	ls2 := makeBlake3SeedAttachExt(t, 1024)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("AttachLockSeed(ls2) after Encrypt3x: expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedAfterEncrypt) {
+			t.Errorf("AttachLockSeed(ls2) after Encrypt3x: panic %v, want %v",
+				r, itb.ErrLockSeedAfterEncrypt)
+		}
+	}()
+	ns.AttachLockSeed(ls2)
+}
+
+// BenchmarkExtTripleBLAKE3RoundTripAttachedLockSeed measures the
+// legacy itb root Encrypt3x + Decrypt3x round-trip throughput and
+// per-iteration allocation footprint when a dedicated lockSeed has
+// been wired into the noiseSeed via [itb.Seed256.AttachLockSeed].
+// Triple Ouroboros counterpart of
+// [BenchmarkExtSingleBLAKE3RoundTripAttachedLockSeed] in
+// itb_ext_test.go — same shape, same bench loop, the only
+// difference is the seven-seed constellation (one noise + three
+// data + three start) feeding Encrypt3x256 / Decrypt3x256 instead
+// of the three-seed Single trio feeding Encrypt256 / Decrypt256.
+//
+// The configuration mirrors the realistic shape:
+//
+//   - 1024-bit ITB key width (canonical mid-range).
+//   - 64 MiB plaintext (large enough that the per-pixel hash
+//     pipeline dominates and bench noise from the round-trip-
+//     framing overhead is negligible).
+//   - BLAKE3 keyed-hash primitive via [hashes.BLAKE3256Pair],
+//     which on amd64 + AVX-512 dispatches the batched arm to the
+//     ZMM-batched chain-absorb kernels in
+//     hashes/internal/blake3asm. A fresh BLAKE3 fixed key is
+//     generated for each of the eight seeds (noise / 3× data /
+//     3× start / lockSeed) so all eight seeds carry independent
+//     keying material.
+//   - Triple Ouroboros (1 noise + 3 data + 3 start = 7 seeds)
+//     plus an 8th dedicated lockSeed attached via
+//     ns.AttachLockSeed(ls).
+//   - SetLockSoup(1) engaged so the bit-permutation overlay
+//     actually consumes the attached lockSeed; otherwise the
+//     attach call is a no-op and the bench measures plain
+//     Encrypt3x + Decrypt3x without exercising the LockSeed
+//     path.
+//
+// Run as:
+//
+//	go test -bench=BenchmarkExtTripleBLAKE3RoundTripAttachedLockSeed \
+//	    -benchmem -run=^$ -count=3 -benchtime=3x
+//
+// to dump per-iteration ns/op + B/op + allocs/op for inspection.
+func BenchmarkExtTripleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
+	prevBS := itb.GetBitSoup()
+	prevLS := itb.GetLockSoup()
+	itb.SetLockSoup(1)
+	b.Cleanup(func() {
+		itb.SetBitSoup(prevBS)
+		itb.SetLockSoup(prevLS)
+	})
+
+	const (
+		bits     = 1024
+		dataSize = 64 << 20
+	)
+
+	hN, bN, _ := hashes.BLAKE3256Pair()
+	ns, err := itb.NewSeed256(bits, hN)
+	if err != nil {
+		b.Fatalf("NewSeed256(noiseSeed): %v", err)
+	}
+	ns.BatchHash = bN
+
+	hD1, bD1, _ := hashes.BLAKE3256Pair()
+	ds1, err := itb.NewSeed256(bits, hD1)
+	if err != nil {
+		b.Fatalf("NewSeed256(dataSeed1): %v", err)
+	}
+	ds1.BatchHash = bD1
+
+	hD2, bD2, _ := hashes.BLAKE3256Pair()
+	ds2, err := itb.NewSeed256(bits, hD2)
+	if err != nil {
+		b.Fatalf("NewSeed256(dataSeed2): %v", err)
+	}
+	ds2.BatchHash = bD2
+
+	hD3, bD3, _ := hashes.BLAKE3256Pair()
+	ds3, err := itb.NewSeed256(bits, hD3)
+	if err != nil {
+		b.Fatalf("NewSeed256(dataSeed3): %v", err)
+	}
+	ds3.BatchHash = bD3
+
+	hS1, bS1, _ := hashes.BLAKE3256Pair()
+	ss1, err := itb.NewSeed256(bits, hS1)
+	if err != nil {
+		b.Fatalf("NewSeed256(startSeed1): %v", err)
+	}
+	ss1.BatchHash = bS1
+
+	hS2, bS2, _ := hashes.BLAKE3256Pair()
+	ss2, err := itb.NewSeed256(bits, hS2)
+	if err != nil {
+		b.Fatalf("NewSeed256(startSeed2): %v", err)
+	}
+	ss2.BatchHash = bS2
+
+	hS3, bS3, _ := hashes.BLAKE3256Pair()
+	ss3, err := itb.NewSeed256(bits, hS3)
+	if err != nil {
+		b.Fatalf("NewSeed256(startSeed3): %v", err)
+	}
+	ss3.BatchHash = bS3
+
+	hL, bL, _ := hashes.BLAKE3256Pair()
+	ls, err := itb.NewSeed256(bits, hL)
+	if err != nil {
+		b.Fatalf("NewSeed256(lockSeed): %v", err)
+	}
+	ls.BatchHash = bL
+
+	ns.AttachLockSeed(ls)
+
+	data := generateDataExt(dataSize)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encrypted, err := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		if err != nil {
+			b.Fatalf("Encrypt3x256: %v", err)
+		}
+		if _, err := itb.Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
+			b.Fatalf("Decrypt3x256: %v", err)
+		}
+	}
+}
+
+// TestExtTripleAttachLockSeedOverlayOffPanic — Triple Ouroboros
+// counterpart of [TestExtSingleAttachLockSeedOverlayOffPanic] in
+// itb_ext_test.go. Same regression-pinning role for the
+// itb.Encrypt3x256 public entry point: a noiseSeed carrying an
+// attached dedicated lockSeed but reaching the bit-permutation PRF
+// builder with neither global BitSoup nor global LockSoup engaged
+// panics with [itb.ErrLockSeedOverlayOff] inside [buildLockPRF256]
+// rather than silently producing byte-level ciphertext.
+//
+// Reuses [makeBlake3SeedAttachExt] / [generateDataExt] from
+// itb_ext_test.go (same itb_test package) — both files share the
+// helpers via package-level visibility.
+func TestExtTripleAttachLockSeedOverlayOffPanic(t *testing.T) {
+	prevBS := itb.GetBitSoup()
+	prevLS := itb.GetLockSoup()
+	itb.SetBitSoup(0)
+	itb.SetLockSoup(0)
+	t.Cleanup(func() {
+		itb.SetBitSoup(prevBS)
+		itb.SetLockSoup(prevLS)
+	})
+
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ds1 := makeBlake3SeedAttachExt(t, 1024)
+	ds2 := makeBlake3SeedAttachExt(t, 1024)
+	ds3 := makeBlake3SeedAttachExt(t, 1024)
+	ss1 := makeBlake3SeedAttachExt(t, 1024)
+	ss2 := makeBlake3SeedAttachExt(t, 1024)
+	ss3 := makeBlake3SeedAttachExt(t, 1024)
+	ls := makeBlake3SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateDataExt(64)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("itb.Encrypt3x256 with attached lockSeed and overlay off: expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedOverlayOff) {
+			t.Errorf("itb.Encrypt3x256: panic %v, want %v", r, itb.ErrLockSeedOverlayOff)
+		}
+	}()
+	_, _ = itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 }

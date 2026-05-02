@@ -804,7 +804,7 @@ func splitForTripleParallelLocked(data []byte, prf lockPRF) (p0, p1, p2 []byte) 
 	return
 }
 
-// interleaveForTripleParallelLocked is the LockSoup aware top-level
+// interleaveForTripleParallelLocked is the Lock Soup aware top-level
 // dispatcher for plaintext reassembly, mirror of
 // [splitForTripleParallelLocked]. Same plausible-decryption invariant as
 // [interleaveForTripleParallel] — never errors, returns wrong-seed-style
@@ -838,11 +838,26 @@ func interleaveForTripleParallelLocked(p0, p1, p2 []byte, prf lockPRF) []byte {
 // ChainHash) keyed by lockSeed with the chunk index as input, taking 33
 // bits of the output as the mask-space rank passed to [rankToMaskTriple].
 //
+// When the noiseSeed has a dedicated lockSeed installed via
+// [Seed128.AttachLockSeed], that attached seed supplies the keying
+// material instead — separating bit-permutation entropy from the
+// noiseSeed-driven noise-injection channel without changing the public
+// Encrypt / Decrypt signatures. The Hash function captured by the
+// closure remains the noiseSeed's Hash regardless: only the per-chunk
+// PRF KEYING material differs.
+//
 // Caller must supply a non-nil noiseSeed; the closure is always built
 // (cheap, ~ns), but it is consumed only on the locked bit-soup branch in
 // [splitForTripleParallelLocked].
 func buildLockPRF128(noiseSeed *Seed128, nonce []byte) lockPRF {
-	lockLo, lockHi := noiseSeed.deriveNoiseSeed(nonce)
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
 	h := noiseSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
@@ -857,8 +872,20 @@ func buildLockPRF128(noiseSeed *Seed128, nonce []byte) lockPRF {
 // (4 × uint64) and the Hash function; per-chunk PRF call uses native 256-
 // bit keying material with the chunk index as input. The 33-bit
 // mask-space rank is taken from the first uint64 of the output.
+//
+// When the noiseSeed has a dedicated lockSeed installed via
+// [Seed256.AttachLockSeed], that attached seed supplies the keying
+// material instead. The Hash function captured by the closure remains
+// the noiseSeed's Hash; only the per-chunk PRF keying material differs.
 func buildLockPRF256(noiseSeed *Seed256, nonce []byte) lockPRF {
-	lockSeed := noiseSeed.deriveNoiseSeed(nonce)
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
 	h := noiseSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
@@ -873,8 +900,20 @@ func buildLockPRF256(noiseSeed *Seed256, nonce []byte) lockPRF {
 // (8 × uint64) and the Hash function; per-chunk PRF call uses native 512-
 // bit keying material with the chunk index as input. The 33-bit
 // mask-space rank is taken from the first uint64 of the output.
+//
+// When the noiseSeed has a dedicated lockSeed installed via
+// [Seed512.AttachLockSeed], that attached seed supplies the keying
+// material instead. The Hash function captured by the closure remains
+// the noiseSeed's Hash; only the per-chunk PRF keying material differs.
 func buildLockPRF512(noiseSeed *Seed512, nonce []byte) lockPRF {
-	lockSeed := noiseSeed.deriveNoiseSeed(nonce)
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
 	h := noiseSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
@@ -1132,11 +1171,23 @@ func interleaveForSingle(permuted []byte, prf permPRF) []byte {
 // permutation array plus its inverse via [derivePermutation].
 //
 // Domain tag 0x04 separates Single Lock Soup's per-chunk PRF input from
-// the existing 0x02 (deriveStartPixel / deriveNoiseSeed) and 0x03
+// the existing 0x02 (deriveStartPixel / deriveInterLockSeed) and 0x03
 // (Triple Lock Soup) tags. Buffer layout matches the Triple Lock Soup
 // closure (13 bytes total) for caller-side scratch reuse symmetry.
+//
+// When the noiseSeed has a dedicated lockSeed installed via
+// [Seed128.AttachLockSeed], that attached seed supplies the keying
+// material instead. The Hash function captured by the closure remains
+// the noiseSeed's Hash; only the per-chunk PRF keying material differs.
 func buildPermutePRF128(noiseSeed *Seed128, nonce []byte) permPRF {
-	lockLo, lockHi := noiseSeed.deriveNoiseSeed(nonce)
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
 	h := noiseSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
@@ -1148,9 +1199,19 @@ func buildPermutePRF128(noiseSeed *Seed128, nonce []byte) permPRF {
 
 // buildPermutePRF256 — 256-bit Single Ouroboros equivalent of
 // [buildPermutePRF128]. Uses native 256-bit keying material; the 64-bit
-// Lehmer index is taken from the first uint64 of the output.
+// Lehmer index is taken from the first uint64 of the output. When the
+// noiseSeed has a dedicated lockSeed installed via
+// [Seed256.AttachLockSeed], that attached seed supplies the keying
+// material instead.
 func buildPermutePRF256(noiseSeed *Seed256, nonce []byte) permPRF {
-	lockSeed := noiseSeed.deriveNoiseSeed(nonce)
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
 	h := noiseSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
@@ -1161,9 +1222,18 @@ func buildPermutePRF256(noiseSeed *Seed256, nonce []byte) permPRF {
 }
 
 // buildPermutePRF512 — 512-bit Single Ouroboros equivalent of
-// [buildPermutePRF128].
+// [buildPermutePRF128]. When the noiseSeed has a dedicated lockSeed
+// installed via [Seed512.AttachLockSeed], that attached seed supplies
+// the keying material instead.
 func buildPermutePRF512(noiseSeed *Seed512, nonce []byte) permPRF {
-	lockSeed := noiseSeed.deriveNoiseSeed(nonce)
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
 	h := noiseSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
@@ -1171,4 +1241,338 @@ func buildPermutePRF512(noiseSeed *Seed512, nonce []byte) permPRF {
 		out := h(buf, lockSeed)
 		derivePermutation(out[0], perm, invPerm)
 	}
+}
+
+// ============================================================================
+// Cfg-suffixed parallel variants — per-encryptor cfg threading
+// ============================================================================
+//
+// Every dispatcher / PRF-builder that consumes a process-global flag has a
+// Cfg-suffixed parallel here. Existing zero-arg counterparts stay live for
+// the legacy public API path; the encryptor pipeline calls these Cfg
+// variants instead, so per-encryptor BitSoup / LockSoup / LockSeedHandle
+// overrides are honoured for that encryptor without disturbing other
+// encryptors or process-global readers.
+
+// permSeedCfg128 returns the seed to use for inter-lock derivation,
+// in this precedence:
+//
+//  1. cfg.LockSeedHandle if non-nil and type-narrows to *Seed128 —
+//     the easy sub-package's per-encryptor explicit dedicated seed.
+//  2. noiseSeed.AttachedLockSeed() if non-nil — the low-level
+//     [Seed128.AttachLockSeed] mutator path.
+//  3. noiseSeed itself — the pre-LockSeed default.
+//
+// A nil cfg, an absent handle, or a type-narrow mismatch all fall
+// through to the AttachedLockSeed check, and from there to
+// noiseSeed. The width-mismatch fallback in (1) is defensive only —
+// the encryptor constructor enforces matching widths at LockSeed
+// activation time.
+func permSeedCfg128(cfg *Config, noiseSeed *Seed128) *Seed128 {
+	if cfg != nil && cfg.LockSeedHandle != nil {
+		if ls, ok := cfg.LockSeedHandle.(*Seed128); ok {
+			return ls
+		}
+	}
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		return ls
+	}
+	return noiseSeed
+}
+
+// permSeedCfg256 — 256-bit equivalent of [permSeedCfg128].
+func permSeedCfg256(cfg *Config, noiseSeed *Seed256) *Seed256 {
+	if cfg != nil && cfg.LockSeedHandle != nil {
+		if ls, ok := cfg.LockSeedHandle.(*Seed256); ok {
+			return ls
+		}
+	}
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		return ls
+	}
+	return noiseSeed
+}
+
+// permSeedCfg512 — 512-bit equivalent of [permSeedCfg128].
+func permSeedCfg512(cfg *Config, noiseSeed *Seed512) *Seed512 {
+	if cfg != nil && cfg.LockSeedHandle != nil {
+		if ls, ok := cfg.LockSeedHandle.(*Seed512); ok {
+			return ls
+		}
+	}
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		return ls
+	}
+	return noiseSeed
+}
+
+// buildLockPRF128Cfg is the Cfg variant of [buildLockPRF128]: routes
+// inter-lock derivation through [permSeedCfg128](cfg, noiseSeed) so
+// that an active dedicated lockSeed (cfg.LockSeedHandle) supplies
+// the keying material instead of noiseSeed itself; the closure body
+// is otherwise identical. The Hash function and noiseSeed identity
+// are preserved exactly when the cfg has no dedicated handle.
+func buildLockPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockPRF {
+	src := permSeedCfg128(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		hLo, _ := h(buf, lockLo, lockHi)
+		return rankToMaskTriple(hLo)
+	}
+}
+
+// buildLockPRF256Cfg — Cfg variant of [buildLockPRF256].
+func buildLockPRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockPRF {
+	src := permSeedCfg256(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		return rankToMaskTriple(out[0])
+	}
+}
+
+// buildLockPRF512Cfg — Cfg variant of [buildLockPRF512].
+func buildLockPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockPRF {
+	src := permSeedCfg512(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		return rankToMaskTriple(out[0])
+	}
+}
+
+// buildPermutePRF128Cfg is the Cfg variant of [buildPermutePRF128]:
+// routes inter-lock derivation through [permSeedCfg128](cfg,
+// noiseSeed) so that an active dedicated lockSeed supplies the
+// keying material instead of noiseSeed itself; the closure body is
+// otherwise identical.
+func buildPermutePRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) permPRF {
+	src := permSeedCfg128(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
+		buf[0] = 0x04
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		hLo, _ := h(buf, lockLo, lockHi)
+		derivePermutation(hLo, perm, invPerm)
+	}
+}
+
+// buildPermutePRF256Cfg — Cfg variant of [buildPermutePRF256].
+func buildPermutePRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) permPRF {
+	src := permSeedCfg256(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
+		buf[0] = 0x04
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		derivePermutation(out[0], perm, invPerm)
+	}
+}
+
+// buildPermutePRF512Cfg — Cfg variant of [buildPermutePRF512].
+func buildPermutePRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) permPRF {
+	src := permSeedCfg512(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := noiseSeed.Hash
+	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
+		buf[0] = 0x04
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		derivePermutation(out[0], perm, invPerm)
+	}
+}
+
+// splitForTripleParallelLockedCfg is the Cfg variant of
+// [splitForTripleParallelLocked]: consults [isBitSoupEnabledCfg] /
+// [isLockSoupEnabledCfg] so the dispatch honours per-encryptor
+// BitSoup / LockSoup overrides. Body otherwise identical.
+func splitForTripleParallelLockedCfg(cfg *Config, data []byte, prf lockPRF) (p0, p1, p2 []byte) {
+	if !isBitSoupEnabledCfg(cfg) {
+		return splitTripleParallel(data)
+	}
+	if !isLockSoupEnabledCfg(cfg) {
+		p0, p1, p2, _ = splitTripleBitsParallel(prependTripleLen(data))
+		return
+	}
+	p0, p1, p2, _ = splitTripleBitsParallelLocked(prependTripleLen(data), prf)
+	return
+}
+
+// interleaveForTripleParallelLockedCfg is the Cfg variant of
+// [interleaveForTripleParallelLocked]: consults [isBitSoupEnabledCfg]
+// / [isLockSoupEnabledCfg]. Body otherwise identical, including the
+// plausible-decryption invariant — never errors, returns wrong-seed-
+// style garbage clamped to the recovered payload extent on
+// mismatched-mode decrypt or wrong-seed brute-force.
+func interleaveForTripleParallelLockedCfg(cfg *Config, p0, p1, p2 []byte, prf lockPRF) []byte {
+	if !isBitSoupEnabledCfg(cfg) {
+		return interleaveTripleParallel(p0, p1, p2)
+	}
+	totalBits := recoverTripleBitsLen(len(p0), len(p1), len(p2))
+	var framed []byte
+	if !isLockSoupEnabledCfg(cfg) {
+		framed = interleaveTripleBitsParallel(p0, p1, p2, totalBits)
+	} else {
+		framed = interleaveTripleBitsParallelLocked(p0, p1, p2, totalBits, prf)
+	}
+	if len(framed) < 4 {
+		return framed
+	}
+	length := binary.BigEndian.Uint32(framed[:4])
+	end := uint64(length) + 4
+	if end > uint64(len(framed)) {
+		end = uint64(len(framed))
+	}
+	return framed[4:int(end)]
+}
+
+// splitForSingleCfg is the Cfg variant of [splitForSingle]: consults
+// [isBitSoupEnabledCfg] / [isLockSoupEnabledCfg]. Body otherwise
+// identical, including the SetBitSoup(1) || SetLockSoup(1) Single-
+// only coupling rule and the parallel chunk-permute kernel.
+func splitForSingleCfg(cfg *Config, data []byte, prf permPRF) []byte {
+	if !isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		return data
+	}
+	framed := prependTripleLen(data)
+	L := len(framed)
+	LPad := ((L + 2) / 3) * 3
+	var padded []byte
+	if LPad == L {
+		padded = framed
+	} else {
+		padded = make([]byte, LPad)
+		copy(padded, framed)
+	}
+	M := LPad / 3
+	out := make([]byte, LPad)
+	if M == 0 {
+		return out
+	}
+
+	G := runtime.NumCPU()
+	if G > M {
+		G = M
+	}
+	chunksPerWorker := (M + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		start := w * chunksPerWorker
+		end := start + chunksPerWorker
+		if end > M {
+			end = M
+		}
+		if start >= end {
+			continue
+		}
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			var buf [13]byte
+			var perm, invPerm [32]byte
+			for k := s; k < e; k++ {
+				prf(buf[:], uint64(k), &perm, &invPerm)
+				a, b, c := chunk24permute(padded[3*k], padded[3*k+1], padded[3*k+2], &perm)
+				out[3*k] = a
+				out[3*k+1] = b
+				out[3*k+2] = c
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	return out
+}
+
+// interleaveForSingleCfg is the Cfg variant of [interleaveForSingle]:
+// consults [isBitSoupEnabledCfg] / [isLockSoupEnabledCfg]. Body
+// otherwise identical, including the plausible-decryption invariant
+// — never errors, returns garbage bytes clamped to the recovered
+// payload extent on wrong-seed brute-force or mismatched-mode
+// decrypt.
+func interleaveForSingleCfg(cfg *Config, permuted []byte, prf permPRF) []byte {
+	if !isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		return permuted
+	}
+	L := len(permuted)
+	M := L / 3
+	if M == 0 {
+		return nil
+	}
+	framed := make([]byte, M*3)
+
+	G := runtime.NumCPU()
+	if G > M {
+		G = M
+	}
+	chunksPerWorker := (M + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		start := w * chunksPerWorker
+		end := start + chunksPerWorker
+		if end > M {
+			end = M
+		}
+		if start >= end {
+			continue
+		}
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			var buf [13]byte
+			var perm, invPerm [32]byte
+			for k := s; k < e; k++ {
+				prf(buf[:], uint64(k), &perm, &invPerm)
+				a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerm)
+				framed[3*k] = a
+				framed[3*k+1] = b
+				framed[3*k+2] = c
+			}
+		}(start, end)
+	}
+	wg.Wait()
+
+	if len(framed) < 4 {
+		return framed
+	}
+	length := binary.BigEndian.Uint32(framed[:4])
+	end := uint64(length) + 4
+	if end > uint64(len(framed)) {
+		end = uint64(len(framed))
+	}
+	return framed[4:int(end)]
 }

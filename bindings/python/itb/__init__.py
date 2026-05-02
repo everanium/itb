@@ -64,6 +64,19 @@ from .streams import (
     decrypt_stream_triple,
     DEFAULT_CHUNK_SIZE,
 )
+from .easy import (
+    Encryptor,
+    EasyMismatchError,
+    peek_config,
+)
+from .blob import (
+    Blob128,
+    Blob256,
+    Blob512,
+    BlobModeMismatchError,
+    BlobMalformedError,
+    BlobVersionTooNewError,
+)
 
 __all__ = [
     "Seed",
@@ -103,4 +116,13 @@ __all__ = [
     "header_size",
     "parse_chunk_len",
     "ITBError",
+    "Encryptor",
+    "EasyMismatchError",
+    "peek_config",
+    "Blob128",
+    "Blob256",
+    "Blob512",
+    "BlobModeMismatchError",
+    "BlobMalformedError",
+    "BlobVersionTooNewError",
 ]

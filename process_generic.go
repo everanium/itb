@@ -10,12 +10,12 @@ package itb
 // identical to the serial path. Non-batched primitives (BatchHash nil)
 // route directly to the legacy serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
-func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 4+currentNonceSize())
+	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSize())
+	dataBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)
@@ -28,9 +28,9 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 		noiseBufs[0] = noiseBuf
 		dataBufs[0] = dataBuf
 		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSize())
+			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
 			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSize())
+			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
 			copy(dataBufs[lane][4:], nonce)
 			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
 			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
@@ -195,12 +195,12 @@ func processChunk128(noiseSeed, dataSeed *Seed128, nonce []byte, container []byt
 // identical to the serial path. Non-batched primitives (BatchHash nil)
 // route directly to the legacy serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
-func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 4+currentNonceSize())
+	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSize())
+	dataBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)
@@ -213,9 +213,9 @@ func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byt
 		noiseBufs[0] = noiseBuf
 		dataBufs[0] = dataBuf
 		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSize())
+			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
 			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSize())
+			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
 			copy(dataBufs[lane][4:], nonce)
 			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
 			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
@@ -380,12 +380,12 @@ func processChunk256(noiseSeed, dataSeed *Seed256, nonce []byte, container []byt
 // identical to processChunk256 with 8-uint64 hash outputs in place of
 // 4-uint64 ones. Pure Go counterpart of the 512-bit batched path in
 // process_cgo.go.
-func processChunk512(noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 4+currentNonceSize())
+	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
 	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSize())
+	dataBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
 	copy(dataBuf[4:], nonce)
 	defer secureWipe(noiseBuf)
 	defer secureWipe(dataBuf)
@@ -398,9 +398,9 @@ func processChunk512(noiseSeed, dataSeed *Seed512, nonce []byte, container []byt
 		noiseBufs[0] = noiseBuf
 		dataBufs[0] = dataBuf
 		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSize())
+			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
 			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSize())
+			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
 			copy(dataBufs[lane][4:], nonce)
 			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
 			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
