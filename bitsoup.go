@@ -839,12 +839,15 @@ func interleaveForTripleParallelLocked(p0, p1, p2 []byte, prf lockPRF) []byte {
 // bits of the output as the mask-space rank passed to [rankToMaskTriple].
 //
 // When the noiseSeed has a dedicated lockSeed installed via
-// [Seed128.AttachLockSeed], that attached seed supplies the keying
-// material instead — separating bit-permutation entropy from the
-// noiseSeed-driven noise-injection channel without changing the public
-// Encrypt / Decrypt signatures. The Hash function captured by the
-// closure remains the noiseSeed's Hash regardless: only the per-chunk
-// PRF KEYING material differs.
+// [Seed128.AttachLockSeed], that attached seed supplies BOTH the
+// per-chunk PRF keying material AND the Hash function — separating
+// bit-permutation entropy from the noiseSeed-driven noise-injection
+// channel without changing the public Encrypt / Decrypt signatures.
+// The two channels can no longer be related-key-attacked through a
+// shared seed even when the same primitive is wired on both sides
+// (independent fixed keys), and may further use entirely different
+// PRF primitives within the same native width for algorithm-
+// diversity defence-in-depth.
 //
 // Caller must supply a non-nil noiseSeed; the closure is always built
 // (cheap, ~ns), but it is consumed only on the locked bit-soup branch in
@@ -858,7 +861,7 @@ func buildLockPRF128(noiseSeed *Seed128, nonce []byte) lockPRF {
 		src = ls
 	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -874,9 +877,9 @@ func buildLockPRF128(noiseSeed *Seed128, nonce []byte) lockPRF {
 // mask-space rank is taken from the first uint64 of the output.
 //
 // When the noiseSeed has a dedicated lockSeed installed via
-// [Seed256.AttachLockSeed], that attached seed supplies the keying
-// material instead. The Hash function captured by the closure remains
-// the noiseSeed's Hash; only the per-chunk PRF keying material differs.
+// [Seed256.AttachLockSeed], that attached seed supplies BOTH the
+// per-chunk PRF keying material AND the Hash function — see
+// [buildLockPRF128] for the channel-isolation rationale.
 func buildLockPRF256(noiseSeed *Seed256, nonce []byte) lockPRF {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
@@ -886,7 +889,7 @@ func buildLockPRF256(noiseSeed *Seed256, nonce []byte) lockPRF {
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -902,9 +905,9 @@ func buildLockPRF256(noiseSeed *Seed256, nonce []byte) lockPRF {
 // mask-space rank is taken from the first uint64 of the output.
 //
 // When the noiseSeed has a dedicated lockSeed installed via
-// [Seed512.AttachLockSeed], that attached seed supplies the keying
-// material instead. The Hash function captured by the closure remains
-// the noiseSeed's Hash; only the per-chunk PRF keying material differs.
+// [Seed512.AttachLockSeed], that attached seed supplies BOTH the
+// per-chunk PRF keying material AND the Hash function — see
+// [buildLockPRF128] for the channel-isolation rationale.
 func buildLockPRF512(noiseSeed *Seed512, nonce []byte) lockPRF {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
@@ -914,7 +917,7 @@ func buildLockPRF512(noiseSeed *Seed512, nonce []byte) lockPRF {
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1176,9 +1179,9 @@ func interleaveForSingle(permuted []byte, prf permPRF) []byte {
 // closure (13 bytes total) for caller-side scratch reuse symmetry.
 //
 // When the noiseSeed has a dedicated lockSeed installed via
-// [Seed128.AttachLockSeed], that attached seed supplies the keying
-// material instead. The Hash function captured by the closure remains
-// the noiseSeed's Hash; only the per-chunk PRF keying material differs.
+// [Seed128.AttachLockSeed], that attached seed supplies BOTH the
+// per-chunk PRF keying material AND the Hash function — see
+// [buildLockPRF128] for the channel-isolation rationale.
 func buildPermutePRF128(noiseSeed *Seed128, nonce []byte) permPRF {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
@@ -1188,7 +1191,7 @@ func buildPermutePRF128(noiseSeed *Seed128, nonce []byte) permPRF {
 		src = ls
 	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1201,8 +1204,9 @@ func buildPermutePRF128(noiseSeed *Seed128, nonce []byte) permPRF {
 // [buildPermutePRF128]. Uses native 256-bit keying material; the 64-bit
 // Lehmer index is taken from the first uint64 of the output. When the
 // noiseSeed has a dedicated lockSeed installed via
-// [Seed256.AttachLockSeed], that attached seed supplies the keying
-// material instead.
+// [Seed256.AttachLockSeed], that attached seed supplies BOTH the
+// per-chunk PRF keying material AND the Hash function — see
+// [buildLockPRF128] for the channel-isolation rationale.
 func buildPermutePRF256(noiseSeed *Seed256, nonce []byte) permPRF {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
@@ -1212,7 +1216,7 @@ func buildPermutePRF256(noiseSeed *Seed256, nonce []byte) permPRF {
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1224,7 +1228,8 @@ func buildPermutePRF256(noiseSeed *Seed256, nonce []byte) permPRF {
 // buildPermutePRF512 — 512-bit Single Ouroboros equivalent of
 // [buildPermutePRF128]. When the noiseSeed has a dedicated lockSeed
 // installed via [Seed512.AttachLockSeed], that attached seed supplies
-// the keying material instead.
+// BOTH the per-chunk PRF keying material AND the Hash function — see
+// [buildLockPRF128] for the channel-isolation rationale.
 func buildPermutePRF512(noiseSeed *Seed512, nonce []byte) permPRF {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
@@ -1234,7 +1239,7 @@ func buildPermutePRF512(noiseSeed *Seed512, nonce []byte) permPRF {
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1309,9 +1314,9 @@ func permSeedCfg512(cfg *Config, noiseSeed *Seed512) *Seed512 {
 // buildLockPRF128Cfg is the Cfg variant of [buildLockPRF128]: routes
 // inter-lock derivation through [permSeedCfg128](cfg, noiseSeed) so
 // that an active dedicated lockSeed (cfg.LockSeedHandle) supplies
-// the keying material instead of noiseSeed itself; the closure body
-// is otherwise identical. The Hash function and noiseSeed identity
-// are preserved exactly when the cfg has no dedicated handle.
+// BOTH the per-chunk PRF keying material AND the Hash function; the
+// closure body is otherwise identical. With no dedicated handle on
+// the cfg the noiseSeed's Hash and components are used as before.
 func buildLockPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockPRF {
 	src := permSeedCfg128(cfg, noiseSeed)
 	if noiseSeed.AttachedLockSeed() != nil &&
@@ -1319,7 +1324,7 @@ func buildLockPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockPRF {
 		panic(ErrLockSeedOverlayOff)
 	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1336,7 +1341,7 @@ func buildLockPRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockPRF {
 		panic(ErrLockSeedOverlayOff)
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1353,7 +1358,7 @@ func buildLockPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockPRF {
 		panic(ErrLockSeedOverlayOff)
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint32) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1364,9 +1369,11 @@ func buildLockPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockPRF {
 
 // buildPermutePRF128Cfg is the Cfg variant of [buildPermutePRF128]:
 // routes inter-lock derivation through [permSeedCfg128](cfg,
-// noiseSeed) so that an active dedicated lockSeed supplies the
-// keying material instead of noiseSeed itself; the closure body is
-// otherwise identical.
+// noiseSeed) so that an active dedicated lockSeed supplies BOTH the
+// per-chunk PRF keying material AND the Hash function for the
+// closure; the closure body is otherwise identical. With no dedicated
+// handle on the cfg the noiseSeed's Hash and components are used as
+// before.
 func buildPermutePRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) permPRF {
 	src := permSeedCfg128(cfg, noiseSeed)
 	if noiseSeed.AttachedLockSeed() != nil &&
@@ -1374,7 +1381,7 @@ func buildPermutePRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) permPR
 		panic(ErrLockSeedOverlayOff)
 	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1391,7 +1398,7 @@ func buildPermutePRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) permPR
 		panic(ErrLockSeedOverlayOff)
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -1408,7 +1415,7 @@ func buildPermutePRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) permPR
 		panic(ErrLockSeedOverlayOff)
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
-	h := noiseSeed.Hash
+	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte) {
 		buf[0] = 0x04
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)

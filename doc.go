@@ -613,11 +613,19 @@
 // [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
 // [Seed512.AttachLockSeed] route the bit-permutation derivation
 // channel through a dedicated lockSeed instead of the noiseSeed,
-// separating that PRF's keying material from the noise-injection
-// channel without changing the public Encrypt / Decrypt signatures.
-// The dedicated seed is a fourth (Single) or fifth-through-eighth
-// (Triple) seed slot allocated alongside the standard noise / data
-// / start trio.
+// without changing the public Encrypt / Decrypt signatures. The
+// per-chunk PRF closure captures BOTH the lockSeed's Components
+// (independent keying material) AND its Hash function, so the
+// overlay channel may legitimately run a different PRF primitive
+// from the noise-injection channel within the same native width
+// (the [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
+// [Seed512.AttachLockSeed] type signatures enforce width match).
+// This yields keying-material isolation AND algorithm diversity
+// for defence-in-depth on the bit-permutation overlay. The
+// dedicated seed is a fourth (Single) or fifth-through-eighth
+// (Triple) seed slot allocated alongside the standard noise /
+// data / start trio. With no dedicated lockSeed attached, the
+// overlay falls through to the noiseSeed's Components and Hash.
 //
 // The bit-permutation overlay must be engaged via [SetBitSoup] (1)
 // or [SetLockSoup] (1) before the first Encrypt call — the build-PRF
