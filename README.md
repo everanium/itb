@@ -205,8 +205,8 @@ func main() {
     // Single-Ouroboros (3 seeds) constructor — variadic args by type:
     // string matching hashes.Registry → primitive, string matching
     // macs.Registry → MAC, int → key_bits. Defaults: "areion512" /
-    // 1024 / "kmac256". Triple Ouroboros (7 seeds) → easy.New3(...).
-    enc := easy.New("areion512", 2048, "kmac256")
+    // 1024 / "hmac-blake3". Triple Ouroboros (7 seeds) → easy.New3(...).
+    enc := easy.New("areion512", 2048, "hmac-blake3")
     defer enc.Close()
 
     // Per-instance configuration — mutates only this encryptor's
@@ -346,7 +346,7 @@ import (
 func main() {
     itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
 
-    enc := easy.New("areion512", 2048, "kmac256")
+    enc := easy.New("areion512", 2048, "hmac-blake3")
     defer enc.Close()
 
     enc.SetNonceBits(512)
@@ -581,7 +581,7 @@ func main() {
         PrimitiveL: "blake2b256",  // dedicated lockSeed (optional;
                                    //   empty = no lockSeed slot)
         KeyBits:    1024,
-        MACName:    "kmac256",
+        MACName:    "hmac-blake3",
     })
     defer enc.Close()
 
@@ -648,7 +648,7 @@ func main() {
         PrimitiveS: "areion256",
         PrimitiveL: "blake2b256",
         KeyBits:    1024,
-        MACName:    "kmac256",
+        MACName:    "hmac-blake3",
     })
     defer dec.Close()
 
@@ -878,10 +878,10 @@ func main() {
     // channel — same pattern as the no-MAC quick-start above.
     ns.AttachLockSeed(ls)
 
-    // KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte CSPRNG key, 32-byte tag.
+    // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
     var macKey [32]byte
     rand.Read(macKey[:])
-    mac, _ := macs.KMAC256(macKey[:])
+    mac, _ := macs.HMACBLAKE3(macKey[:])
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -902,7 +902,7 @@ func main() {
     blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
         itb.Blob512Opts{
             KeyL: keyL, LS: ls,
-            MACKey: macKey[:], MACName: "kmac256",
+            MACKey: macKey[:], MACName: "hmac-blake3",
         },
     )
     if err != nil {
@@ -962,7 +962,7 @@ func main() {
 }
 ```
 
-Other shipped MACs: `macs.HMACSHA256(key)`, `macs.HMACBLAKE3(key)` — all
+Other shipped MACs: `macs.HMACSHA256(key)`, `macs.KMAC256(key)` — all
 three produce 32-byte tags. See [macs/README.md](macs/README.md) for the
 full MAC matrix.
 
@@ -1522,8 +1522,8 @@ The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and F
 |---|---|---|---|---|
 | 0 | `KMAC256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
 |   | `KMAC256WithCustomization(key, customization []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
-| 1 | `HMACBLAKE3(key []byte)` | `(MACFunc, error)` | 32 B | 32 B |
-| 2 | `HMACSHA256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
+| 1 | `HMACSHA256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
+| 2 | `HMACBLAKE3(key []byte)` | `(MACFunc, error)` | 32 B | 32 B |
 
 Name-keyed dispatch:
 

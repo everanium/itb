@@ -98,7 +98,7 @@ const (
 const (
 	defaultPrimitive = "areion512"
 	defaultKeyBits   = 1024
-	defaultMAC       = "kmac256"
+	defaultMAC       = "hmac-blake3"
 )
 
 // Encryptor is the high-level encrypt / decrypt object returned by
@@ -215,7 +215,7 @@ type Encryptor struct {
 //   - One string matching [hashes.Registry] — selects the PRF
 //     primitive; default "areion512".
 //   - One string matching [macs.Registry] — selects the MAC; default
-//     "kmac256".
+//     "hmac-blake3".
 //   - One int — selects key_bits; default 1024.
 //
 // Argument order is irrelevant; type-dispatch resolves each value to

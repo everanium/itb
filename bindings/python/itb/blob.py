@@ -9,7 +9,7 @@ low-level encrypt / decrypt path where each seed slot may carry a
 different primitive — the high-level :class:`Encryptor` wraps a
 narrower one-primitive-per-encryptor surface (see :mod:`itb.easy`).
 
-Quick start (sender, Single Ouroboros + Areion-SoEM-512 + KMAC256):
+Quick start (sender, Single Ouroboros + Areion-SoEM-512 + HMAC-BLAKE3):
 
     >>> from itb import Seed, Blob512, encrypt_auth, MAC
     >>> import os
@@ -17,13 +17,13 @@ Quick start (sender, Single Ouroboros + Areion-SoEM-512 + KMAC256):
     >>> ds = Seed("areion512", 2048)
     >>> ss = Seed("areion512", 2048)
     >>> mac_key = os.urandom(32)
-    >>> mac = MAC("kmac256", mac_key)
+    >>> mac = MAC("hmac-blake3", mac_key)
     >>> ct = encrypt_auth(ns, ds, ss, mac, b"payload")
     >>> b = Blob512()
     >>> b.set_key("n", ns.hash_key); b.set_components("n", ns.components)
     >>> b.set_key("d", ds.hash_key); b.set_components("d", ds.components)
     >>> b.set_key("s", ss.hash_key); b.set_components("s", ss.components)
-    >>> b.set_mac_key(mac_key); b.set_mac_name("kmac256")
+    >>> b.set_mac_key(mac_key); b.set_mac_name("hmac-blake3")
     >>> blob_bytes = b.export(mac=True)
     >>> # ... persist blob_bytes ...
 

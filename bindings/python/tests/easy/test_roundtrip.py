@@ -75,12 +75,14 @@ class TestEncryptorLifecycle(unittest.TestCase):
 
     def test_defaults(self):
         # Empty primitive / 0 keyBits / empty mac select package
-        # defaults: areion512 / 1024 / kmac256.
+        # defaults: areion512 / 1024 / hmac-blake3 (the latter via the
+        # binding-side override that maps ``mac=None`` to the
+        # lightest-overhead MAC available in the Easy-Mode surface).
         with itb.Encryptor() as enc:
             self.assertEqual(enc.primitive, "areion512")
             self.assertEqual(enc.key_bits, 1024)
             self.assertEqual(enc.mode, 1)
-            self.assertEqual(enc.mac_name, "kmac256")
+            self.assertEqual(enc.mac_name, "hmac-blake3")
 
     def test_bad_primitive(self):
         with self.assertRaises(itb.ITBError):

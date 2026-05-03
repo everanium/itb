@@ -60,7 +60,7 @@ MIXED_START = "blake2b256"
 MIXED_LOCK = "areion256"
 
 KEY_BITS = 1024
-MAC_NAME = "kmac256"
+MAC_NAME = "hmac-blake3"
 PAYLOAD_BYTES = _common.PAYLOAD_16MB
 
 
@@ -75,7 +75,7 @@ def _apply_lockseed_if_requested(enc: itb.Encryptor) -> None:
 
 def _build_single(primitive: str) -> itb.Encryptor:
     """Construct a single-primitive 1024-bit Single-Ouroboros
-    encryptor with KMAC256 authentication, mirroring the shape used
+    encryptor with HMAC-BLAKE3 authentication, mirroring the shape used
     by every benchmark in this module."""
     enc = itb.Encryptor(primitive, KEY_BITS, MAC_NAME, mode=1)
     _apply_lockseed_if_requested(enc)
@@ -85,20 +85,24 @@ def _build_single(primitive: str) -> itb.Encryptor:
 def _build_mixed_single() -> itb.Encryptor:
     """Construct a mixed-primitive Single-Ouroboros encryptor
     matching the README Quick Start composition (BLAKE3 noise /
-    BLAKE2s data / BLAKE2b-256 start + Areion-SoEM-256 dedicated
-    lockSeed). The four primitive names share the 256-bit native
-    hash width."""
+    BLAKE2s data / BLAKE2b-256 start). The dedicated Areion-SoEM-256
+    lockSeed slot is allocated only when ``ITB_LOCKSEED`` is set, so
+    the no-LockSeed bench arm measures the plain mixed-primitive
+    cost without the BitSoup + LockSoup auto-couple. The four
+    primitive names share the 256-bit native hash width."""
+    primL = MIXED_LOCK if _common.env_lock_seed() else None
     enc = itb.Encryptor.mixed_single(
         primitive_n=MIXED_NOISE,
         primitive_d=MIXED_DATA,
         primitive_s=MIXED_START,
-        primitive_l=MIXED_LOCK,
+        primitive_l=primL,
         key_bits=KEY_BITS,
         mac=MAC_NAME,
     )
-    # mixed_single with primitive_l set already auto-couples
-    # BitSoup + LockSoup; calling set_lock_seed here would be a
-    # redundant no-op against the already-active lockSeed slot.
+    # When primitive_l is set, mixed_single auto-couples BitSoup +
+    # LockSoup on construction; an extra set_lock_seed here would be a
+    # redundant no-op against the already-active lockSeed slot. When
+    # primitive_l is None the encryptor stays in plain mixed mode.
     return enc
 
 
