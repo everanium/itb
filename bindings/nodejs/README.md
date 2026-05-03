@@ -1,0 +1,613 @@
+# ITB Node.js / TypeScript binding
+
+`koffi`-based runtime FFI wrapper over the libitb shared library
+(`cmd/cshared`). No C compiler at install time, no compile-time
+link against libitb; the `.so` / `.dll` / `.dylib` is resolved and
+dispatched at first use through `koffi.load`. Targets Node.js 22+
+ESM with `[Symbol.dispose]` / `using` declarations for
+deterministic resource lifetime.
+
+## Build the shared library
+
+From the repo root:
+
+```bash
+go build -trimpath -buildmode=c-shared \
+    -o dist/linux-amd64/libitb.so ./cmd/cshared
+```
+
+(macOS produces `libitb.dylib` under `dist/darwin-<arch>/`,
+Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
+
+### Build tags governing hash-kernel selection
+
+| Build flag | ITB chain-absorb asm | Upstream hash asm | Use case |
+|---|---|---|---|
+| (none) | engaged | engaged | Default — full asm stack |
+| <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
+
+Passing `-tags=noitbasm` does not disable upstream asm in
+`zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
+same `libitb.so` is consumed by every binding (Go `easy/`, Python,
+Rust, C# / .NET, Node.js / TypeScript); the flag governs only the
+shared library, not the binding language.
+
+## Add to a Node.js project
+
+The library is published as `itb` targeting Node.js 22+. As a
+local file dependency from inside this repository:
+
+```json
+{
+  "dependencies": {
+    "itb": "file:../bindings/nodejs"
+  }
+}
+```
+
+Build the TypeScript surface once before consuming:
+
+```bash
+cd bindings/nodejs
+npm install
+npm run build
+```
+
+Project metadata: `name = "itb"`, `version = 0.1.0`,
+`type = "module"`, `engines.node = ">=22"`,
+`license = Apache-2.0`. The runtime dependency is `koffi` (modern
+runtime FFI, cross-runtime Node / Deno / Bun, no native compile);
+dev dependencies are `typescript` and `@types/node`.
+
+## Run the integration test suite
+
+```bash
+cd bindings/nodejs
+npm test
+```
+
+The integration test suite under `bindings/nodejs/test/` mirrors
+the Python and Rust binding's coverage — Single + Triple
+Ouroboros, mixed primitives, authenticated paths, blob round-trip,
+streaming chunked I/O, error paths, lockSeed lifecycle. Compiles
+the source + tests through `tsconfig.test.json` to `dist-test/`,
+then runs `node --test 'dist-test/test/**/*.test.js'`.
+
+## Library lookup order
+
+1. `ITB_LIBRARY_PATH` environment variable (absolute path).
+2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved by walking up
+   from this module's directory until a matching `dist/` folder is
+   found (raw sources via Node's type stripping or compiled
+   `dist/` / `dist-test/` / `dist-bench/` layouts all resolve).
+3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+
+## Quick Start — `Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
+
+The high-level `Encryptor` (mirroring the
+`github.com/everanium/itb/easy` Go sub-package) replaces the
+seven-line setup ceremony of the lower-level
+`Seed` / `encrypt` / `decrypt` path with one constructor call: the
+encryptor allocates its own three (Single) or seven (Triple) seeds
+plus MAC closure, snapshots the global configuration into a
+per-instance Config, and exposes setters that mutate only its own
+state without touching the process-wide `Library` accessors. Two
+encryptors with different settings can run concurrently without
+cross-contamination.
+
+The MAC primitive is bound at construction time — the `macName`
+parameter selects one of the registry names (`hmac-blake3` —
+recommended default, `hmac-sha256`, `kmac256`). The encryptor
+allocates a fresh 32-byte CSPRNG MAC key alongside the per-seed
+PRF keys; `enc.exportState()` carries all of them in a single
+JSON blob. On the receiver side, `dec.importState(blob)` restores
+the MAC key together with the seeds, so the encrypt-today /
+decrypt-tomorrow flow is one method call per side.
+
+When the `macName` argument is omitted (or `null`) the binding
+picks `"hmac-blake3"` rather than forwarding `null` through to
+libitb's own default — HMAC-BLAKE3 measures the lightest
+authenticated-mode overhead across the Easy Mode bench surface
+(~9% over plain encrypt vs HMAC-SHA256's ~15% vs KMAC-256's
+~44%).
+
+```typescript
+// Sender
+
+import { Encryptor, ITBError, Status, setMaxWorkers } from 'itb';
+
+// Per-instance configuration — mutates only this encryptor's
+// Config. Two encryptors built side-by-side carry independent
+// settings; process-wide Library accessors are NOT consulted
+// after construction. mode: 1 = Single Ouroboros (3 seeds);
+// mode: 3 = Triple Ouroboros (7 seeds).
+using enc = new Encryptor('areion512', 2048, 'hmac-blake3', 1);
+
+enc.setNonceBits(512);    // 512-bit nonce (default: 128-bit)
+enc.setBarrierFill(4);    // CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
+enc.setBitSoup(1);        // optional bit-level split ("bit-soup"; default: 0 = byte-level)
+                          // auto-enabled for Single Ouroboros if setLockSoup(1) is on
+enc.setLockSoup(1);       // optional Insane Interlocked Mode: per-chunk PRF-keyed
+                          // bit-permutation overlay on top of bit-soup;
+                          // auto-enabled for Single Ouroboros if setBitSoup(1) is on
+
+// enc.setLockSeed(1);    // optional dedicated lockSeed for the bit-permutation
+                          // derivation channel — separates that PRF's keying
+                          // material from the noiseSeed-driven noise-injection
+                          // channel; auto-couples setLockSoup(1) +
+                          // setBitSoup(1). Adds one extra seed slot
+                          // (3 → 4 for Single, 7 → 8 for Triple). Must be
+                          // called BEFORE the first encryptAuth — switching
+                          // mid-session raises ITBError with code
+                          // Status.EasyLockSeedAfterEncrypt.
+
+// Persistence blob — carries seeds + PRF keys + MAC key (and the
+// dedicated lockSeed material when setLockSeed(1) is active).
+const blob = enc.exportState();
+console.log(`state blob: ${blob.length} bytes`);
+console.log(`primitive: ${enc.primitive}, key_bits: ${enc.keyBits}, mode: ${enc.mode}, mac: ${enc.macName}`);
+
+const plaintext = new TextEncoder().encode('any text or binary data - including 0x00 bytes');
+// const chunkSize = 4 * 1024 * 1024;  // 4 MiB - bulk local crypto, not small-frame network streaming
+
+// Authenticated encrypt — 32-byte tag is computed across the
+// entire decrypted capacity and embedded inside the RGBWYOPA
+// container, preserving oracle-free deniability.
+const encrypted = enc.encryptAuth(plaintext);
+console.log(`encrypted: ${encrypted.length} bytes`);
+
+// Send encrypted payload + state blob; Symbol.dispose at scope
+// end (via using) releases the handle and zeroes the
+// per-encryptor output buffer. enc.close() is the explicit
+// zeroisation entry point that does not release the handle.
+
+
+// Receiver
+
+// Receive encrypted payload + state blob
+// const encrypted = ...;
+// const blob = ...;
+
+setMaxWorkers(8);   // limit to 8 CPU cores (default: 0 = all CPUs)
+
+// Optional: peek at the blob's metadata before constructing a
+// matching encryptor. Useful when the receiver multiplexes blobs
+// of different shapes (different primitive / mode / MAC choices).
+const cfg = Encryptor.peekConfig(blob);
+console.log(`peek: primitive=${cfg.primitive}, key_bits=${cfg.keyBits}, mode=${cfg.mode}, mac=${cfg.macName}`);
+
+using dec = new Encryptor(cfg.primitive, cfg.keyBits, cfg.macName, cfg.mode);
+
+// dec.importState(blob) below automatically restores the full
+// per-instance configuration (NonceBits, BarrierFill, BitSoup,
+// LockSoup, and the dedicated lockSeed material when sender's
+// setLockSeed(1) was active). The set*() lines below are kept
+// for documentation — they show the knobs available for explicit
+// pre-import override. BarrierFill is asymmetric: a receiver-set
+// value > 1 takes priority over the blob's BarrierFill (the
+// receiver's heavier CSPRNG margin is preserved across import).
+dec.setNonceBits(512);
+dec.setBarrierFill(4);
+dec.setBitSoup(1);
+dec.setLockSoup(1);
+
+// Restore PRF keys, seed components, MAC key, and the per-instance
+// configuration overrides (NonceBits / BarrierFill / BitSoup /
+// LockSoup / LockSeed) from the saved blob.
+dec.importState(blob);
+
+// Authenticated decrypt — any single-bit tamper triggers MAC
+// failure (no oracle leak about which byte was tampered).
+// Mismatch surfaces as ITBError with code Status.MacFailure,
+// not a corrupted plaintext.
+try {
+  const decrypted = dec.decryptAuth(encrypted);
+  console.log(`decrypted: ${new TextDecoder().decode(decrypted)}`);
+} catch (e) {
+  if (e instanceof ITBError && e.code === Status.MacFailure) {
+    console.log('MAC verification failed — tampered or wrong key');
+  } else {
+    throw e;
+  }
+}
+```
+
+## Quick Start — Mixed primitives (different PRF per seed slot)
+
+`Encryptor.mixedSingle` and `Encryptor.mixedTriple` accept
+per-slot primitive names — the noise / data / start (and optional
+dedicated lockSeed) seed slots can use different PRF primitives
+within the same native hash width. The mix-and-match-PRF freedom
+of the lower-level path, surfaced through the high-level
+`Encryptor` without forcing the caller off the Easy Mode
+constructor. The state blob carries per-slot primitives + per-slot
+PRF keys; the receiver constructs a matching encryptor with the
+same arguments and calls `importState` to restore.
+
+```typescript
+// Sender
+
+import { Encryptor } from 'itb';
+
+// Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
+// Every name must share the same native hash width — mixing widths
+// raises ITBError at construction time.
+// Triple Ouroboros mirror — Encryptor.mixedTriple takes seven
+// per-slot names (noise + 3 data + 3 start) plus the optional
+// primL lockSeed.
+using enc = Encryptor.mixedSingle(
+  'blake3',         // primN: noiseSeed   BLAKE3
+  'blake2s',        // primD: dataSeed    BLAKE2s
+  'areion256',      // primS: startSeed   Areion-SoEM-256
+  'blake2b256',     // primL: dedicated lockSeed (null for no lockSeed slot)
+  1024,             // keyBits
+  'hmac-blake3',    // macName
+);
+
+// Per-instance configuration applies as for the new Encryptor(...)
+// case shown above.
+enc.setNonceBits(512);
+enc.setBarrierFill(4);
+// BitSoup + LockSoup are auto-coupled on the on-direction by primL
+// above; explicit calls below are unnecessary but harmless if added.
+// enc.setBitSoup(1);
+// enc.setLockSoup(1);
+
+// Per-slot introspection — enc.primitive returns the first slot's
+// name, enc.primitiveAt(slot) returns each slot's name, enc.isMixed
+// is the typed predicate. Slot ordering is canonical: 0 = noiseSeed,
+// 1 = dataSeed, 2 = startSeed, 3 = lockSeed (Single); Triple grows
+// the middle range to 7 slots + lockSeed.
+console.log(`mixed=${enc.isMixed} primitive=${enc.primitive}`);
+for (let i = 0; i < 4; i++) {
+  console.log(`  slot ${i}: ${enc.primitiveAt(i)}`);
+}
+
+const blob = enc.exportState();
+const plaintext = new TextEncoder().encode('mixed-primitive Easy Mode payload');
+const encrypted = enc.encryptAuth(plaintext);
+
+
+// Receiver
+
+// Receive encrypted payload + state blob
+// const encrypted = ...;
+// const blob = ...;
+
+// Receiver constructs a matching mixed encryptor — every per-slot
+// primitive name plus keyBits and mac must agree with the sender.
+// importState validates each per-slot primitive against the receiver's
+// bound spec; mismatches raise ITBEasyMismatchError with the
+// "primitive" field tag.
+using dec = Encryptor.mixedSingle(
+  'blake3',
+  'blake2s',
+  'areion256',
+  'blake2b256',
+  1024,
+  'hmac-blake3',
+);
+
+dec.importState(blob);
+
+const decrypted = dec.decryptAuth(encrypted);
+console.log(`decrypted: ${new TextDecoder().decode(decrypted)}`);
+```
+
+## Quick Start — Triple Ouroboros
+
+Triple Ouroboros (3× security: P × 2^(3×key_bits)) takes seven
+seeds (one shared `noiseSeed` plus three `dataSeed` and three
+`startSeed`) on the low-level path, all wrapped behind a single
+`Encryptor` call when `mode === 3` is passed to the constructor.
+
+```typescript
+import { Encryptor } from 'itb';
+
+// mode = 3 selects Triple Ouroboros. All other constructor
+// arguments behave identically to the Single (mode = 1) case
+// shown above.
+using enc = new Encryptor('areion512', 2048, 'hmac-blake3', 3);
+
+const plaintext = new TextEncoder().encode('Triple Ouroboros payload');
+const encrypted = enc.encryptAuth(plaintext);
+const decrypted = enc.decryptAuth(encrypted);
+```
+
+`Encryptor.mixedTriple` is the per-slot mixed-primitive
+counterpart for Triple Ouroboros (7 + optional lockSeed slots).
+
+## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
+
+The lower-level path is for callers who prefer to manage the seven
+`Seed` handles (Triple) or three (Single) plus the MAC handle
+manually. `encryptAuth` / `decryptAuth` (Single) and
+`encryptAuthTriple` / `decryptAuthTriple` (Triple) take the seed
+handles and a `MAC` instance directly, so a non-Easy caller can
+share the underlying seeds across multiple encrypt sessions or
+expose the seed-introspection surface (`seed.components`,
+`seed.hashKey`, `Seed.fromComponents`) for cross-process
+persistence at the seed layer.
+
+```typescript
+import {
+  encryptAuth,
+  decryptAuth,
+  MAC,
+  Seed,
+  setBitSoup,
+  setLockSoup,
+} from 'itb';
+import { randomBytes } from 'node:crypto';
+
+// Optional: process-wide bit-permutation overlay. The setBitSoup /
+// setLockSoup pair flips the on-wire bit layout from byte-level to
+// bit-level + per-chunk PRF-keyed bit-permutation. Encryptor
+// instances in the same process inherit the active state at
+// construction time; the lower-level path consults the global
+// flags on every encrypt / decrypt call.
+setBitSoup(1);
+setLockSoup(1);
+
+// Three Single-Ouroboros seeds and one MAC handle. Seeds are
+// CSPRNG-keyed; persistence-restore would use Seed.fromComponents.
+using noise = new Seed('areion512', 2048);
+using data = new Seed('areion512', 2048);
+using start = new Seed('areion512', 2048);
+using mac = new MAC('hmac-blake3', randomBytes(32));
+
+const plaintext = new TextEncoder().encode('low-level authenticated payload');
+const encrypted = encryptAuth(noise, data, start, mac, plaintext);
+const decrypted = decryptAuth(noise, data, start, mac, encrypted);
+console.log(`decrypted: ${new TextDecoder().decode(decrypted)}`);
+```
+
+The Triple Ouroboros counterparts `encryptAuthTriple` /
+`decryptAuthTriple` take seven seed handles
+(`noise`, `data1`, `data2`, `data3`, `start1`, `start2`, `start3`)
+plus the MAC handle. Plain (non-authenticated) variants are
+`encrypt` / `decrypt` (Single) and `encryptTriple` / `decryptTriple`
+(Triple) — same shape minus the MAC argument.
+
+## Streams — chunked I/O over Node streams
+
+The `streams` module wraps `node:stream`'s `Readable` /
+`Writable` / `PassThrough` for files, sockets, and HTTP bodies. The
+binding owns the chunking — every fixed-size plaintext slice
+becomes one self-framed ITB chunk, and the wire format consists of
+those chunks concatenated end-to-end. Two convenience helpers,
+`encryptStream` and `decryptStream`, drive the pipe end-to-end;
+the underlying `StreamEncryptor` / `StreamDecryptor` classes are
+exposed for callers who want to control chunk timing or interleave
+encryption with other writes. Triple-Ouroboros mirrors —
+`encryptStreamTriple`, `decryptStreamTriple`, `StreamEncryptorTriple`,
+`StreamDecryptorTriple` — preserve the same shape, swapping in the
+seven-seed split.
+
+```typescript
+import { createReadStream, createWriteStream } from 'node:fs';
+import { Seed, encryptStream, decryptStream } from 'itb';
+
+// Encrypt: read plaintext from disk, write ITB chunks to disk.
+async function encryptFile(): Promise<void> {
+  using noise = new Seed('areion512', 2048);
+  using data = new Seed('areion512', 2048);
+  using start = new Seed('areion512', 2048);
+
+  const input = createReadStream('plaintext.bin');
+  const output = createWriteStream('ciphertext.bin');
+  // chunk_size: 4 MiB — bulk local crypto, not small-frame
+  // network streaming. Each plaintext slice becomes one ITB
+  // chunk on the wire.
+  await encryptStream(noise, data, start, input, output, 4 * 1024 * 1024);
+  output.end();
+}
+
+// Decrypt: stream ITB chunks from disk back to disk. The
+// StreamDecryptor probes each chunk's header (parseChunkLen) to
+// learn the on-wire chunk length before reading the body.
+async function decryptFile(): Promise<void> {
+  using noise = new Seed('areion512', 2048);
+  using data = new Seed('areion512', 2048);
+  using start = new Seed('areion512', 2048);
+
+  const input = createReadStream('ciphertext.bin');
+  const output = createWriteStream('decrypted.bin');
+  await decryptStream(noise, data, start, input, output);
+  output.end();
+}
+```
+
+The wrapped `Writable` is **NOT** auto-ended by the helper or by
+`StreamEncryptor.close()` / `StreamDecryptor.close()` — the caller
+owns the end-of-write contract. Tests using `PassThrough` pipes
+must call `output.end()` after the stream operation completes;
+otherwise downstream `for-await ... of output` consumers hang on
+an open writer.
+
+For class-based callers, `new StreamEncryptor(noise, data, start, output, chunkSize)`
+exposes `.write(chunk)` / `.close()` for explicit chunk-timing
+control; `new StreamDecryptor(noise, data, start, output)` exposes
+`.feed(chunk)` / `.close()`. The Triple variants mirror the same
+shape with seven seed arguments.
+
+## Native Blob — low-level state persistence
+
+Native `Blob128` / `Blob256` / `Blob512` objects carry the raw
+seed components, PRF keys, MAC key, and MAC name across processes
+without going through the Easy Mode JSON envelope. Useful for
+binary-protocol persistence backends (KMS, vault, on-wire blob)
+where the `Encryptor.exportState()` JSON format is heavier than
+needed.
+
+```typescript
+import {
+  Blob512,
+  BlobSlot,
+  BlobExportOpts,
+  Seed,
+  encrypt,
+  decrypt,
+} from 'itb';
+
+// Sender — pack three seeds into a Blob512.
+function pack(): Uint8Array {
+  using noise = Seed.fromComponents('areion512', noiseComponents, noiseHashKey);
+  using data = Seed.fromComponents('areion512', dataComponents, dataHashKey);
+  using start = Seed.fromComponents('areion512', startComponents, startHashKey);
+
+  using src = new Blob512();
+  src.setComponents(BlobSlot.N, noise.components);
+  src.setComponents(BlobSlot.D, data.components);
+  src.setComponents(BlobSlot.S, start.components);
+  src.setKey(BlobSlot.N, noise.hashKey);
+  src.setKey(BlobSlot.D, data.hashKey);
+  src.setKey(BlobSlot.S, start.hashKey);
+  // Optional: include MAC key + MAC name for authenticated paths.
+  // src.setMacKey(macKey);
+  // src.setMacName('hmac-blake3');
+  return src.exportState(BlobExportOpts.None);
+}
+
+// Receiver — unpack a Blob512 back into three seeds.
+function unpack(blob: Uint8Array, plaintext: Uint8Array): Uint8Array {
+  using dst = new Blob512();
+  dst.importState(blob);
+
+  using noise = Seed.fromComponents('areion512', dst.getComponents(BlobSlot.N), dst.getKey(BlobSlot.N));
+  using data = Seed.fromComponents('areion512', dst.getComponents(BlobSlot.D), dst.getKey(BlobSlot.D));
+  using start = Seed.fromComponents('areion512', dst.getComponents(BlobSlot.S), dst.getKey(BlobSlot.S));
+
+  return encrypt(noise, data, start, plaintext);
+}
+```
+
+Triple-Ouroboros blobs use `exportStateTriple` / `importStateTriple`
+on the same `Blob512` (or 256 / 128) handle; the mode is recorded
+in the blob and a Single-mode blob fed to a Triple-mode
+`importStateTriple` raises `ITBBlobModeMismatchError`.
+
+`BlobSlot` enumerates the slot index used by `setKey` / `setComponents`:
+`N=0, D=1, S=2, L=3, D1=4, D2=5, D3=6, S1=7, S2=8, S3=9`.
+`BlobExportOpts` is a bitmask: `None=0`, `LockSeed=1` (include the
+dedicated lockSeed slot), `Mac=2` (include the MAC key + name).
+
+## Hash primitives (Single / Triple)
+
+Names match the canonical `hashes/` registry: `areion256`,
+`areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`,
+`blake2s`, `blake3`, `chacha20`. Triple Ouroboros (3× security)
+takes seven seeds (one shared `noiseSeed` plus three `dataSeed`
+and three `startSeed`) via `encryptTriple` / `decryptTriple` and
+the authenticated counterparts `encryptAuthTriple` /
+`decryptAuthTriple`. Streaming counterparts: `StreamEncryptorTriple` /
+`StreamDecryptorTriple` / `encryptStreamTriple` /
+`decryptStreamTriple`.
+
+All seeds passed to one `encrypt` / `decrypt` call must share the
+same native hash width. Mixing widths raises
+`ITBError(Status.SeedWidthMix)`.
+
+## Process-wide configuration
+
+Every setter takes effect for all subsequent encrypt / decrypt
+calls in the process. Out-of-range values raise
+`ITBError(Status.BadInput)` rather than crashing. Per-encryptor
+overrides via `enc.setX(...)` mutate only that handle's Config and
+do not consult these globals after construction.
+
+| Function | Accepted values | Default |
+|---|---|---|
+| `setMaxWorkers(n)` | non-negative int | 0 (auto) |
+| `setNonceBits(n)` | 128, 256, 512 | 128 |
+| `setBarrierFill(n)` | 1, 2, 4, 8, 16, 32 | 1 |
+| `setBitSoup(mode)` | 0 (off), non-zero (on) | 0 |
+| `setLockSoup(mode)` | 0 (off), non-zero (on) | 0 |
+
+Read-only accessors: `maxKeyBits()`, `channels()`, `headerSize()`,
+`version()`.
+
+For low-level chunk parsing (e.g. when implementing custom file
+formats around ITB chunks): `parseChunkLen(header)` inspects the
+fixed-size chunk header and returns the chunk's total
+on-the-wire length; `headerSize()` returns the active header byte
+count (20 / 36 / 68 for nonce sizes 128 / 256 / 512 bits).
+
+## Concurrency
+
+`Seed` / `MAC` / `Encryptor` / `Blob128` / `Blob256` / `Blob512` /
+`StreamEncryptor` / `StreamDecryptor` (+ Triple variants) wrap
+mutex-protected libitb cgo handles, so concurrent read-only
+accessor calls against the same handle are sound at the libitb
+layer. The wrapper objects themselves are NOT `MessagePort`-cloneable
+(structured-clone strips the prototype chain and per-instance
+private fields including the output-buffer cache), so worker-thread
+sharing must go through the state-blob serialisation path:
+`enc.exportState()` → `MessageChannel` of the resulting `Uint8Array`
+→ `worker.importState(blob)` reconstructing a fresh wrapper on the
+recipient. `Encryptor` cipher methods write into a per-instance
+output-buffer cache; sharing one `Encryptor` across worker threads
+without external synchronisation corrupts that cache. Distinct
+`Encryptor` handles, each owned by one worker thread, run
+independently against the libitb worker pool.
+
+`koffi`'s synchronous `lib.func()` blocks the V8 main thread for
+the duration of the FFI call, so `FinalizationRegistry` callbacks
+(which queue on the JS event loop) cannot fire while libitb is
+in flight on the calling thread — the binding's wrapper objects
+remain reachable past every static-FFI call without explicit
+keep-alive guards. The same property does not hold for
+`koffi.func.async`; this binding ships sync FFI only.
+
+## Error model
+
+Every failure surfaces as `ITBError` (or one of its typed
+subclasses) with two fields:
+
+```typescript
+import { ITBError, ITBEasyMismatchError, MAC, Status } from 'itb';
+import { randomBytes } from 'node:crypto';
+
+try {
+  new MAC('nonsense', randomBytes(32));
+} catch (e) {
+  if (e instanceof ITBError) {
+    console.log(`status=${e.code} (${e.message})`); // e.code === Status.BadMac
+  }
+}
+
+try {
+  enc.importState(blob);
+} catch (e) {
+  if (e instanceof ITBEasyMismatchError) {
+    console.log(`mismatch on field '${e.field}'`); // e.code === Status.EasyMismatch
+  }
+}
+```
+
+Status codes are documented in
+`cmd/cshared/internal/capi/errors.go` and mirrored in `Status.*`
+exported constants. Typed subclasses provided for the most common
+selective-catch patterns:
+
+| Subclass | Status code | Raised on |
+|---|---|---|
+| `ITBEasyMismatchError` | `Status.EasyMismatch` | `Encryptor.importState` / `peekConfig` field disagreement; `.field` carries the JSON key |
+| `ITBBlobModeMismatchError` | `Status.BlobModeMismatch` | `Blob.importState` Single-vs-Triple mode mismatch |
+| `ITBBlobMalformedError` | `Status.BlobMalformed` | `Blob.importState` framing / length / magic-byte validation failure |
+| `ITBBlobVersionTooNewError` | `Status.BlobVersionTooNew` | `Blob.importState` version field newer than the binding can decode |
+
+Type / value-input errors raise plain JavaScript `TypeError` /
+`RangeError` (e.g. `plaintext` not a `Uint8Array`, `mode` not in
+`{1, 3}`, `chunkSize ≤ 0`).
+
+## Benchmarks
+
+A custom Go-bench-style harness lives under `bench/` and covers
+the four ops (`encrypt`, `decrypt`, `encrypt_auth`, `decrypt_auth`)
+across the nine PRF-grade primitives plus one mixed-primitive
+variant for both Single and Triple Ouroboros at 1024-bit ITB key
+width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
+for invocation / environment variables / output format and
+[`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results
+across the canonical pass matrix.

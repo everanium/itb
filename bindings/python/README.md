@@ -18,7 +18,7 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 
 ### Build tags governing hash-kernel selection
 
-| Build flag | Our chain-absorb asm | Upstream hash asm | Use case |
+| Build flag | ITB chain-absorb asm | Upstream hash asm | Use case |
 |---|---|---|---|
 | (none) | engaged | engaged | Default — full asm stack |
 | <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
@@ -674,3 +674,15 @@ Status codes are documented in `cmd/cshared/internal/capi/errors.go`
 and mirrored in `_ffi.STATUS_*` constants. Type / value-input
 errors raise `TypeError` / `ValueError` (e.g. `plaintext` not
 bytes-like, `chunk_size` ≤ 0).
+
+## Benchmarks
+
+A custom Go-bench-style harness lives under `easy/benchmarks/`
+and covers the four ops (`encrypt`, `decrypt`, `encrypt_auth`,
+`decrypt_auth`) across the nine PRF-grade primitives plus one
+mixed-primitive variant for both Single and Triple Ouroboros at
+1024-bit ITB key width and 16 MiB payload. See
+[`easy/benchmarks/README.md`](easy/benchmarks/README.md) for
+invocation / environment variables / output format and
+[`easy/benchmarks/BENCH.md`](easy/benchmarks/BENCH.md) for
+recorded throughput results across the canonical pass matrix.
