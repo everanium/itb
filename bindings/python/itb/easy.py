@@ -8,17 +8,17 @@ per-instance configuration. Two encryptors with different settings
 can be used in parallel without cross-contamination of the
 process-wide ITB configuration.
 
-Quick start (Single Ouroboros + KMAC256):
+Quick start (Single Ouroboros + HMAC-BLAKE3):
 
     >>> from itb import Encryptor
-    >>> with Encryptor("blake3", 1024, "kmac256") as enc:
+    >>> with Encryptor("blake3", 1024, "hmac-blake3") as enc:
     ...     ct = enc.encrypt_auth(b"hello world")
     ...     pt = enc.decrypt_auth(ct)
     ...     assert pt == b"hello world"
 
 Triple Ouroboros (7 seeds, mode=3):
 
-    >>> with Encryptor("areion512", 2048, "kmac256", mode=3) as enc:
+    >>> with Encryptor("areion512", 2048, "hmac-blake3", mode=3) as enc:
     ...     ct = enc.encrypt(b"large payload" * 1000)
     ...     pt = enc.decrypt(ct)
 
@@ -167,7 +167,7 @@ class Encryptor:
     mac:
         Canonical MAC name from :func:`itb.list_macs` — "kmac256",
         "hmac-sha256", or "hmac-blake3". Default ``None`` selects
-        "kmac256".
+        "hmac-blake3".
     mode:
         1 = Single Ouroboros (3 seeds — noise, data, start);
         3 = Triple Ouroboros (7 seeds — noise + 3 pairs of data /
@@ -196,7 +196,13 @@ class Encryptor:
         if mode not in (1, 3):
             raise ValueError(f"mode must be 1 (Single) or 3 (Triple), got {mode}")
         prim_arg = (primitive.encode("utf-8") if primitive else _ffi.NULL)
-        mac_arg = (mac.encode("utf-8") if mac else _ffi.NULL)
+        # Binding-side default override: when the caller passes
+        # ``mac=None`` the binding picks ``hmac-blake3`` rather than
+        # passing NULL through to libitb's own default. HMAC-BLAKE3
+        # measures the lightest MAC overhead in the Easy-Mode bench
+        # surface; routing the default through it gives the
+        # "constructor without arguments" path the lowest cost.
+        mac_arg = (mac.encode("utf-8") if mac else b"hmac-blake3")
         kb_arg = int(key_bits) if key_bits else 0
 
         h = _ffi.new("uintptr_t*")

@@ -71,12 +71,15 @@ def env_filter() -> Optional[str]:
 
 def env_min_seconds() -> float:
     """Minimum wall-clock seconds the measured iter loop should
-    take, read from ``ITB_BENCH_MIN_SEC`` (default 2.0). The runner
+    take, read from ``ITB_BENCH_MIN_SEC`` (default 5.0). The runner
     keeps doubling iteration count until the measured run reaches
-    this threshold, mirroring Go's ``-benchtime=Ns`` semantics."""
+    this threshold, mirroring Go's ``-benchtime=Ns`` semantics. The
+    5-second default is wide enough to absorb the cold-cache /
+    warm-up transient that distorts shorter measurement windows on
+    the 16 MiB encrypt / decrypt path."""
     v = os.environ.get("ITB_BENCH_MIN_SEC", "")
     if v == "":
-        return 2.0
+        return 5.0
     try:
         f = float(v)
         if f <= 0:
@@ -84,10 +87,10 @@ def env_min_seconds() -> float:
         return f
     except ValueError:
         print(
-            f"ITB_BENCH_MIN_SEC={v!r} invalid (expected positive float); using 2.0",
+            f"ITB_BENCH_MIN_SEC={v!r} invalid (expected positive float); using 5.0",
             file=sys.stderr,
         )
-        return 2.0
+        return 5.0
 
 
 def random_bytes(n: int) -> bytes:

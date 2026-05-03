@@ -37,7 +37,7 @@ rebuild on the receiver via `Blob{N}.Import` followed by per-slot
 factory rewiring + `macs.Make(blob.MACName, blob.MACKey)`.
 
 Areion-SoEM has paired (single, batched, fixedKey) constructors so the
-AVX-512 batched dispatch path is reachable, paired with KMAC-256 as
+AVX-512 batched dispatch path is reachable, paired with HMAC-BLAKE3 as
 the authentication primitive:
 
 ```go
@@ -89,10 +89,10 @@ func main() {
 	// (both already on above).
 	ns.AttachLockSeed(ls)
 
-	// KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte key, 32-byte tag.
+	// HMAC-BLAKE3 — fastest of the three MACs through the AVX-512 ASM kernel.
 	var macKey [32]byte
 	rand.Read(macKey[:])
-	mac, _ := macs.KMAC256(macKey[:])
+	mac, _ := macs.HMACBLAKE3(macKey[:])
 
 	plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -113,7 +113,7 @@ func main() {
 	blob, _ := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
 		itb.Blob512Opts{
 			KeyL: keyL, LS: ls,
-			MACKey: macKey[:], MACName: "kmac256",
+			MACKey: macKey[:], MACName: "hmac-blake3",
 		})
 
 	// Send encrypted payload + blob
@@ -218,7 +218,7 @@ func main() {
 	ls, _ := itb.NewSeed512(2048, fnL); ls.BatchHash = batchL // random lock CSPRNG seeds, batch enabled
 
 	// Optional: dedicated lockSeed for the bit-permutation derivation
-	// channel — same flow as the Areion-SoEM-512 + KMAC256 example.
+	// channel — same flow as the Areion-SoEM-512 + HMAC-BLAKE3 example.
 	ns.AttachLockSeed(ls)
 
 	// HMAC-BLAKE3 — fastest of the three MACs through the AVX-512 ASM kernel.
@@ -372,8 +372,8 @@ mac, _ := macs.Make("hmac-sha256", key)
 ```
 
 `KMAC256` has a `WithCustomization` counterpart for domain
-separation across distinct usages of the same key. `HMACSHA256`
-and `HMACBLAKE3` take the key as their only argument — there is
+separation across distinct usages of the same key. `HMAC-SHA256`
+and `HMAC-BLAKE3` take the key as their only argument — there is
 no separate `WithKey` variant since the key is already the only
 state the factory holds.
 
@@ -383,10 +383,10 @@ state the factory holds.
 build a high-level `*easy.Encryptor` around a single hash primitive
 plus a single MAC primitive chosen from the canonical list above.
 The MAC argument flips the encryptor's `EncryptAuth` /
-`DecryptAuth` path between the three options: `"kmac256"`
+`DecryptAuth` path between the three options: `"hmac-blake3"`
 (default — fastest under AVX-512+VL), `"hmac-sha256"` (dedicated
-HMAC-SHA-256, the conservative pick), and `"hmac-blake3"`
-(HMAC-BLAKE3 — highest scalar throughput on hosts where the BLAKE3
+HMAC-SHA-256, the conservative pick), and `"kmac256"`
+(KMAC256 — slowest under AVX-512+VL on hosts where the KMAC256
 single-call asm is engaged). The MAC key is generated fresh from
 crypto/rand alongside the seed material at construction; the
 state blob carries the MAC key + name and the receiver restores
@@ -539,9 +539,9 @@ func main() {
 		PrimitiveD: "blake2s",     // dataSeed:   BLAKE2s
 		PrimitiveS: "areion256",   // startSeed:  Areion-SoEM-256
 		PrimitiveL: "blake2b256",  // dedicated lockSeed (optional;
-		                           //   empty = no lockSeed slot)
+		                           // empty = no lockSeed slot)
 		KeyBits:    1024,
-		MACName:    "kmac256",
+		MACName:    "hmac-blake3",
 	})
 	defer enc.Close()
 
@@ -607,7 +607,7 @@ func main() {
 		PrimitiveS: "areion256",
 		PrimitiveL: "blake2b256",
 		KeyBits:    1024,
-		MACName:    "kmac256",
+		MACName:    "hmac-blake3",
 	})
 	defer dec.Close()
 
@@ -643,7 +643,7 @@ replay-resistance (per-message nonce), and CCA-resistance.
 Three primitives keep the choice tractable:
 
 - **`kmac256`** — modern NIST-standard keyed XOF (SP 800-185), based
-  on the well-vetted Keccak permutation.
+  on the well-vetted Keccak permutation. But slowest.
 - **`hmac-sha256`** — universal interoperability standard,
   hardware-accelerated through SHA-NI on amd64 / arm64 where the
   underlying CPU exposes the SHA-256 round instructions.

@@ -1,29 +1,34 @@
-# ITB Easy-Mode Python benchmarks
+# ITB Easy-Mode Rust benchmarks
 
-Two scripts cover the Easy-Mode encryption / decryption surface
-exposed by the Python binding:
+Two binaries cover the Easy-Mode encryption / decryption surface
+exposed by the Rust binding:
 
-* `bench_single.py` — Single Ouroboros (mode=1, 3 seeds + optional
+* `bench_single.rs` — Single Ouroboros (mode=1, 3 seeds + optional
   dedicated lockSeed). Walks the nine PRF-grade primitives plus
   one mixed-primitive variant.
-* `bench_triple.py` — Triple Ouroboros (mode=3, 7 seeds + optional
+* `bench_triple.rs` — Triple Ouroboros (mode=3, 7 seeds + optional
   dedicated lockSeed). Same nine + one mixed grid as the Single
-  script.
+  binary.
 
-Both scripts pin **1024-bit ITB key width** and **16 MiB
-CSPRNG-filled payload**, run four ops per case (`encrypt`,
+Both binaries pin **1024-bit ITB key width** and **16 MiB
+non-deterministic-fill payload**, run four ops per case (`encrypt`,
 `decrypt`, `encrypt_auth`, `decrypt_auth`), and emit a
 Go-bench-style line per case (`name iters ns/op MB/s`).
 
+The harness is a custom Go-bench-style runner in `benches/common.rs`
+(no `criterion` / `libtest` dependency); the two `[[bench]]` entries
+in `Cargo.toml` declare `harness = false` so each bench file's own
+`fn main()` is the entry point. `cargo bench` builds in release mode
+by default, so no `--release` flag is needed.
+
 ## Prerequisites
 
-Build the shared library once and install `cffi` (see the binding
-[README](../../README.md)):
+Build the shared library once (see the binding
+[README](../README.md)):
 
 ```bash
 go build -trimpath -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
-pip install cffi
 ```
 
 A project-private opt-out tag is available when the 4-lane
@@ -37,13 +42,18 @@ go build -trimpath -tags=noitbasm -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
 ```
 
+The Rust binding loads `libitb.so` / `.dll` / `.dylib` at runtime
+through `libloading`, picking it up from `LD_LIBRARY_PATH`,
+`<repo>/dist/<os>-<arch>/`, or the system loader path; see
+`bindings/rust/src/ffi.rs` for the full search list.
+
 ## Run
 
-From the repo root, with the binding on `PYTHONPATH`:
+From the binding root (`bindings/rust/`):
 
 ```bash
-PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_single
-PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_triple
+cargo bench --bench bench_single
+cargo bench --bench bench_triple
 ```
 
 ## Environment variables
@@ -55,7 +65,7 @@ PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_trip
 | `ITB_BENCH_FILTER`   | unset   | Substring filter on bench-function names — only cases whose name contains the filter are run. Useful when iterating on one primitive / op. |
 | `ITB_BENCH_MIN_SEC`  | `2.0`   | Minimum measured wall-clock seconds per case. The runner keeps doubling iteration count until the measured batch reaches the threshold, mirroring Go's `-benchtime=Ns`. |
 
-Worker count is fixed at `itb.set_max_workers(0)` (auto-detect),
+Worker count is fixed at `itb::set_max_workers(0)` (auto-detect),
 matching the Go bench default.
 
 ## Examples
@@ -63,22 +73,20 @@ matching the Go bench default.
 Whole grid, default settings (128-bit nonces, no lockSeed):
 
 ```bash
-PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_single
+cargo bench --bench bench_single
 ```
 
 512-bit nonces with the dedicated lockSeed channel + auto-coupled
 overlay:
 
 ```bash
-ITB_NONCE_BITS=512 ITB_LOCKSEED=1 \
-    PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_triple
+ITB_NONCE_BITS=512 ITB_LOCKSEED=1 cargo bench --bench bench_triple
 ```
 
 Just the BLAKE3 row of the Single grid:
 
 ```bash
-ITB_BENCH_FILTER=blake3_1024bit \
-    PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_single
+ITB_BENCH_FILTER=blake3_1024bit cargo bench --bench bench_single
 ```
 
 Only the encrypt-with-MAC ops across every primitive in the Triple
@@ -87,21 +95,20 @@ confidence intervals:
 
 ```bash
 ITB_BENCH_FILTER=encrypt_auth_16mb ITB_BENCH_MIN_SEC=5 \
-    PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_triple
+    cargo bench --bench bench_triple
 ```
 
 Just the mixed-primitive cases on the Single side:
 
 ```bash
-ITB_BENCH_FILTER=mixed \
-    PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_single
+ITB_BENCH_FILTER=mixed cargo bench --bench bench_single
 ```
 
 ## Output format
 
 ```
-# easy_single primitives=9 key_bits=1024 mac=hmac-blake3 nonce_bits=128 lockseed=off workers=auto
-# benchmarks=40 payload_bytes=16777216 min_seconds=5.0
+# easy_single primitives=9 key_bits=1024 mac=kmac256 nonce_bits=128 lockseed=off workers=auto
+# benchmarks=40 payload_bytes=16777216 min_seconds=2
 bench_single_aescmac_1024bit_encrypt_16mb               4    493210110.0 ns/op    32.44 MB/s
 bench_single_aescmac_1024bit_decrypt_16mb               4    488104225.0 ns/op    32.78 MB/s
 ...
@@ -116,15 +123,14 @@ The four columns are:
 3. Per-iter wall-clock cost in nanoseconds.
 4. Throughput in MiB/s, derived from `payload_bytes / ns_per_op`.
 
-Comparison with the Go bench cohort goes via `(MB/s ratio)` —
-the throughput column is the most direct cross-language signal for
-how much overhead the Python binding adds on top of the underlying
+Comparison with the Go bench cohort goes via `(MB/s ratio)` — the
+throughput column is the most direct cross-language signal for how
+much overhead the Rust binding adds on top of the underlying
 libitb call path.
 
 ## Recorded results
 
 A snapshot of the four canonical pass results (Single + Triple,
-each with and without `ITB_LOCKSEED=1`) captured on Intel Core
-i7-11700K is in [BENCH.md](BENCH.md). The same file briefly
-discusses the FFI overhead the binding leaves on top of the
-native Go path.
+each with and without `ITB_LOCKSEED=1`) is collected in
+[BENCH.md](BENCH.md). The same file briefly discusses the FFI
+overhead the binding leaves on top of the native Go path.
