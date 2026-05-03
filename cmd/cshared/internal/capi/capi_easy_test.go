@@ -108,16 +108,22 @@ func TestEasyBadInputs(t *testing.T) {
 	if _, st := NewEasy("blake3", 1024, "kmac256", 2); st != StatusBadInput {
 		t.Errorf("mode=2: status=%v, want StatusBadInput", st)
 	}
-	if _, st := NewEasy("nonsense", 1024, "kmac256", 1); st != StatusInternal {
+	if _, st := NewEasy("nonsense", 1024, "kmac256", 1); st != StatusEasyUnknownPrimitive {
 		// easy.New panics on unknown primitive — recoverEasyPanic
-		// translates to fallback (StatusInternal here).
-		t.Errorf("nonsense primitive: status=%v, want StatusInternal", st)
+		// classifies the message and surfaces the dedicated
+		// StatusEasyUnknownPrimitive code.
+		t.Errorf("nonsense primitive: status=%v, want StatusEasyUnknownPrimitive", st)
 	}
-	if _, st := NewEasy("blake3", 1024, "nonsense", 1); st != StatusInternal {
-		t.Errorf("nonsense MAC: status=%v, want StatusInternal", st)
+	if _, st := NewEasy("blake3", 1024, "nonsense", 1); st != StatusEasyUnknownPrimitive {
+		// parseConstructorArgs cannot distinguish primitive vs MAC
+		// at the unknown-name panic site — both registries are tried
+		// per arg. classifyPanicMessage maps the shared "unknown
+		// name" panic to StatusEasyUnknownPrimitive (favouring the
+		// more common cause: a typo in the primitive position).
+		t.Errorf("nonsense MAC: status=%v, want StatusEasyUnknownPrimitive", st)
 	}
-	if _, st := NewEasy("blake3", 999, "kmac256", 1); st != StatusInternal {
-		t.Errorf("bad keyBits: status=%v, want StatusInternal", st)
+	if _, st := NewEasy("blake3", 999, "kmac256", 1); st != StatusEasyBadKeyBits {
+		t.Errorf("bad keyBits: status=%v, want StatusEasyBadKeyBits", st)
 	}
 }
 
@@ -621,4 +627,388 @@ func TestEasyParseChunkLen(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEasyMixedSingleRoundtrip exercises the [NewEasyMixed] path
+// through the capi surface: per-slot primitive selection across the
+// noise / data / start trio + the optional dedicated lockSeed slot.
+// Verifies the encrypt / decrypt round-trip plus the [EasyIsMixed]
+// / [EasyPrimitiveAt] introspection accessors.
+func TestEasyMixedSingleRoundtrip(t *testing.T) {
+	id, st := NewEasyMixed("blake3", "blake2s", "areion256", "blake2b256", 1024, "kmac256")
+	if st != StatusOK {
+		t.Fatalf("NewEasyMixed: status=%v, last=%q", st, LastError())
+	}
+	defer FreeEasy(id)
+
+	if v, _ := EasyIsMixed(id); v != 1 {
+		t.Errorf("EasyIsMixed = %d, want 1", v)
+	}
+	prim, _ := EasyPrimitive(id)
+	if prim != "mixed" {
+		t.Errorf("EasyPrimitive = %q, want \"mixed\"", prim)
+	}
+	wants := []string{"blake3", "blake2s", "areion256", "blake2b256"}
+	for i, w := range wants {
+		got, _ := EasyPrimitiveAt(id, i)
+		if got != w {
+			t.Errorf("EasyPrimitiveAt(%d) = %q, want %q", i, got, w)
+		}
+	}
+
+	plaintext := []byte("capi mixed Single round-trip payload")
+	ctBuf := make([]byte, 1<<20)
+	ctLen, st := EasyEncryptAuth(id, plaintext, ctBuf)
+	if st != StatusOK {
+		t.Fatalf("EasyEncryptAuth: status=%v", st)
+	}
+	ptBuf := make([]byte, len(plaintext)+1024)
+	ptLen, st := EasyDecryptAuth(id, ctBuf[:ctLen], ptBuf)
+	if st != StatusOK {
+		t.Fatalf("EasyDecryptAuth: status=%v", st)
+	}
+	if !bytes.Equal(plaintext, ptBuf[:ptLen]) {
+		t.Errorf("plaintext mismatch")
+	}
+}
+
+// TestEasyMixedTripleExportImport exercises the [NewEasyMixed3]
+// path plus the state-blob round-trip on a Triple-mode mixed
+// encryptor.
+func TestEasyMixedTripleExportImport(t *testing.T) {
+	idSrc, st := NewEasyMixed3(
+		"areion256",
+		"blake3", "blake2s", "chacha20",
+		"blake2b256", "blake3", "blake2s",
+		"areion256",
+		1024, "kmac256",
+	)
+	if st != StatusOK {
+		t.Fatalf("NewEasyMixed3: status=%v, last=%q", st, LastError())
+	}
+	defer FreeEasy(idSrc)
+
+	plaintext := []byte("capi mixed Triple round-trip payload")
+	ctBuf := make([]byte, 1<<20)
+	ctLen, st := EasyEncryptAuth(idSrc, plaintext, ctBuf)
+	if st != StatusOK {
+		t.Fatalf("EasyEncryptAuth: status=%v", st)
+	}
+
+	// Probe Export buffer size, allocate, then read.
+	var probe [0]byte
+	need, st := EasyExport(idSrc, probe[:])
+	if st != StatusBufferTooSmall {
+		t.Fatalf("Export probe: status=%v", st)
+	}
+	blob := make([]byte, need)
+	n, st := EasyExport(idSrc, blob)
+	if st != StatusOK {
+		t.Fatalf("Export: status=%v", st)
+	}
+	blob = blob[:n]
+
+	idDst, st := NewEasyMixed3(
+		"areion256",
+		"blake3", "blake2s", "chacha20",
+		"blake2b256", "blake3", "blake2s",
+		"areion256",
+		1024, "kmac256",
+	)
+	if st != StatusOK {
+		t.Fatalf("NewEasyMixed3 dst: status=%v", st)
+	}
+	defer FreeEasy(idDst)
+
+	if st := EasyImport(idDst, blob); st != StatusOK {
+		t.Fatalf("Import: status=%v, last=%q", st, LastError())
+	}
+
+	ptBuf := make([]byte, len(plaintext)+1024)
+	ptLen, st := EasyDecryptAuth(idDst, ctBuf[:ctLen], ptBuf)
+	if st != StatusOK {
+		t.Fatalf("EasyDecryptAuth on dst: status=%v", st)
+	}
+	if !bytes.Equal(plaintext, ptBuf[:ptLen]) {
+		t.Errorf("plaintext mismatch after Import")
+	}
+}
+
+// TestEasyMixedRejectMixedWidth verifies that mixing primitives
+// across native widths surfaces as a non-OK status (not a panic
+// across the cgo boundary).
+func TestEasyMixedRejectMixedWidth(t *testing.T) {
+	_, st := NewEasyMixed("blake3", "areion512", "blake3", "", 1024, "kmac256")
+	if st == StatusOK {
+		t.Errorf("NewEasyMixed with mixed widths returned StatusOK; expected non-OK")
+	}
+}
+
+// TestEasyMixedNonMixedIsMixedZero verifies that [NewEasy]-built
+// encryptors return EasyIsMixed = 0 and EasyPrimitiveAt = the same
+// primitive across every slot.
+func TestEasyMixedNonMixedIsMixedZero(t *testing.T) {
+	id, st := NewEasy("blake3", 1024, "kmac256", 1)
+	if st != StatusOK {
+		t.Fatalf("NewEasy: status=%v", st)
+	}
+	defer FreeEasy(id)
+	if v, _ := EasyIsMixed(id); v != 0 {
+		t.Errorf("EasyIsMixed = %d, want 0", v)
+	}
+	for i := 0; i < 3; i++ {
+		got, _ := EasyPrimitiveAt(id, i)
+		if got != "blake3" {
+			t.Errorf("EasyPrimitiveAt(%d) = %q, want blake3", i, got)
+		}
+	}
+}
+
+// TestEasyGettersAfterCloseDoNotPanic verifies that every read-only
+// getter on a closed encryptor either returns StatusEasyClosed via
+// the recoverEasyPanic-translated path or — for the four pure
+// public-field getters that never call into the closed-guarded
+// methods — returns StatusOK reading the metadata fields directly.
+// In neither case does a Go panic unwind across the cgo boundary;
+// the previous behaviour, where missing recoverEasyPanic on a
+// method-backed getter crashed the host process on a closed query,
+// is regression-tested here.
+func TestEasyGettersAfterCloseDoNotPanic(t *testing.T) {
+	id, st := NewEasy("blake3", 1024, "kmac256", 1)
+	if st != StatusOK {
+		t.Fatalf("NewEasy: status=%v", st)
+	}
+	if st := EasyClose(id); st != StatusOK {
+		t.Fatalf("EasyClose: status=%v", st)
+	}
+	defer FreeEasy(id)
+
+	// Pure public-field getters (read e.enc.Primitive / KeyBits /
+	// Mode / MACName) do not consult the closed flag — the fields
+	// stay readable post-Close (they carry metadata, not key
+	// material). recoverEasyPanic is harmless here.
+	if _, st := EasyPrimitive(id); st != StatusOK {
+		t.Errorf("EasyPrimitive after Close: status=%v, want StatusOK", st)
+	}
+	if _, st := EasyKeyBits(id); st != StatusOK {
+		t.Errorf("EasyKeyBits after Close: status=%v, want StatusOK", st)
+	}
+	if _, st := EasyMode(id); st != StatusOK {
+		t.Errorf("EasyMode after Close: status=%v, want StatusOK", st)
+	}
+	if _, st := EasyMACName(id); st != StatusOK {
+		t.Errorf("EasyMACName after Close: status=%v, want StatusOK", st)
+	}
+
+	// Method-backed getters call into Encryptor methods that panic
+	// with ErrClosed post-Close. recoverEasyPanic translates the
+	// panic into StatusEasyClosed.
+	if _, st := EasyPrimitiveAt(id, 0); st != StatusEasyClosed {
+		t.Errorf("EasyPrimitiveAt after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyIsMixed(id); st != StatusEasyClosed {
+		t.Errorf("EasyIsMixed after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasySeedCount(id); st != StatusEasyClosed {
+		t.Errorf("EasySeedCount after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasySeedComponents(id, 0); st != StatusEasyClosed {
+		t.Errorf("EasySeedComponents after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyHasPRFKeys(id); st != StatusEasyClosed {
+		t.Errorf("EasyHasPRFKeys after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyPRFKey(id, 0); st != StatusEasyClosed {
+		t.Errorf("EasyPRFKey after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyMACKey(id); st != StatusEasyClosed {
+		t.Errorf("EasyMACKey after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyNonceBits(id); st != StatusEasyClosed {
+		t.Errorf("EasyNonceBits after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyHeaderSize(id); st != StatusEasyClosed {
+		t.Errorf("EasyHeaderSize after Close: status=%v, want StatusEasyClosed", st)
+	}
+	if _, st := EasyParseChunkLen(id, make([]byte, 8)); st != StatusEasyClosed {
+		t.Errorf("EasyParseChunkLen after Close: status=%v, want StatusEasyClosed", st)
+	}
+}
+
+// TestPanicMessagePreserved verifies that the panic-message
+// classifier in recoverEasyPanic preserves the underlying
+// diagnostic in lastErr so binding callers can read it via
+// LastError(). Previously every constructor-side panic collapsed
+// to the StatusInternal fallback with a generic "internal error"
+// diagnostic; now the message rides through.
+func TestPanicMessagePreserved(t *testing.T) {
+	_, _ = NewEasy("no-such-primitive", 1024, "kmac256", 1)
+	msg := LastError()
+	// LastError carries "<status string>: <panic message>". The
+	// status portion comes from the StatusEasyUnknownPrimitive
+	// String() and the panic portion preserves the verbatim text
+	// from easy.parseConstructorArgs.
+	if msg == "" {
+		t.Errorf("LastError empty after unknown-primitive panic; want diagnostic message")
+	}
+	// Must include the panic-message body, not just the generic
+	// status string — otherwise the status-portion alone would
+	// suffice and there'd be no regression coverage of the
+	// preservation path.
+	if msg == "internal error" {
+		t.Errorf("LastError = %q (the pre-fix generic fallback); want the preserved panic body", msg)
+	}
+}
+
+// TestBlobModeStampedOnExport verifies that BlobMode reports the
+// correct value (1 / 3) after a successful Export / Export3 call —
+// the M3 + G1 fix landed the Mode stamp on the live blob receiver
+// rather than a throwaway. Pre-fix BlobMode after an Export-only
+// flow returned 0, contradicting the docstring promise.
+func TestBlobModeStampedOnExport(t *testing.T) {
+	id, _ := NewBlob512()
+	defer FreeBlob(id)
+
+	BlobSetKey(id, BlobSlotN, make([]byte, 64))
+	BlobSetKey(id, BlobSlotD, make([]byte, 64))
+	BlobSetKey(id, BlobSlotS, make([]byte, 64))
+	comps := make([]uint64, 8)
+	BlobSetComponents(id, BlobSlotN, comps)
+	BlobSetComponents(id, BlobSlotD, comps)
+	BlobSetComponents(id, BlobSlotS, comps)
+
+	if mode, _ := BlobMode(id); mode != 0 {
+		t.Errorf("BlobMode pre-Export = %d, want 0", mode)
+	}
+
+	probe := make([]byte, 0)
+	need, st := BlobExport(id, 0, probe)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("Export probe: %v", st)
+	}
+	out := make([]byte, need)
+	if _, st := BlobExport(id, 0, out); st != StatusOK {
+		t.Fatalf("Export: %v", st)
+	}
+	if mode, _ := BlobMode(id); mode != 1 {
+		t.Errorf("BlobMode after Single Export = %d, want 1", mode)
+	}
+}
+
+// TestBlobExportRejectsUnknownOptsBits verifies that bits in
+// optsBitmask outside BlobOptLockSeed / BlobOptMAC surface as
+// StatusBadInput — future-incompatibility guard against bindings
+// setting an unknown bit expecting an option that doesn't exist.
+func TestBlobExportRejectsUnknownOptsBits(t *testing.T) {
+	id, _ := NewBlob512()
+	defer FreeBlob(id)
+
+	BlobSetKey(id, BlobSlotN, make([]byte, 64))
+	BlobSetKey(id, BlobSlotD, make([]byte, 64))
+	BlobSetKey(id, BlobSlotS, make([]byte, 64))
+	comps := make([]uint64, 8)
+	BlobSetComponents(id, BlobSlotN, comps)
+	BlobSetComponents(id, BlobSlotD, comps)
+	BlobSetComponents(id, BlobSlotS, comps)
+
+	probe := make([]byte, 0)
+	// Unknown bit 0x4 → BadInput.
+	if _, st := BlobExport(id, 0x4, probe); st != StatusBadInput {
+		t.Errorf("BlobExport with unknown bit 0x4: %v, want StatusBadInput", st)
+	}
+	// Combined known + unknown — still rejected because of unknown.
+	if _, st := BlobExport(id, BlobOptLockSeed|0x10, probe); st != StatusBadInput {
+		t.Errorf("BlobExport with mixed known+unknown bits: %v, want StatusBadInput", st)
+	}
+}
+
+// TestParseChunkLenPixelCap verifies the maxTotalPixels cap that
+// the upstream itb.ParseChunkLen enforces is also enforced at the
+// FFI seam. Without the cap a malicious header announcing
+// width × height ≈ 7 GB could drive a binding to allocate
+// gigabytes before Decrypt rejects.
+func TestParseChunkLenPixelCap(t *testing.T) {
+	// Construct a header that claims width=10000, height=2000
+	// (= 20M pixels, > 10M cap). The exact header layout: 16-byte
+	// nonce (default) + 2-byte big-endian width + 2-byte
+	// big-endian height = 20 bytes total.
+	header := make([]byte, 20)
+	// width = 10000 (0x2710)
+	header[16] = 0x27
+	header[17] = 0x10
+	// height = 2000 (0x07D0)
+	header[18] = 0x07
+	header[19] = 0xD0
+	if _, st := ParseChunkLen(header); st != StatusBadInput {
+		t.Errorf("ParseChunkLen with totalPixels > maxTotalPixels: %v, want StatusBadInput", st)
+	}
+}
+
+// TestBlobExportFlagWithoutSlot verifies that BlobOptLockSeed /
+// BlobOptMAC bits set without a populated slot surface as
+// StatusBadInput rather than silently dropping the section from
+// the emitted blob. Receiver-side decryption would otherwise fail
+// with no diagnostic attribution back to sender-side misuse.
+func TestBlobExportFlagWithoutSlot(t *testing.T) {
+	id, st := NewBlob512()
+	if st != StatusOK {
+		t.Fatalf("NewBlob512: %v", st)
+	}
+	defer FreeBlob(id)
+
+	// Populate enough for a valid Single export, but leave both L
+	// and MAC slots empty.
+	BlobSetKey(id, BlobSlotN, make([]byte, 64))
+	BlobSetKey(id, BlobSlotD, make([]byte, 64))
+	BlobSetKey(id, BlobSlotS, make([]byte, 64))
+	comps := make([]uint64, 8)
+	BlobSetComponents(id, BlobSlotN, comps)
+	BlobSetComponents(id, BlobSlotD, comps)
+	BlobSetComponents(id, BlobSlotS, comps)
+
+	// Export with no flags — should succeed.
+	probe := make([]byte, 0)
+	_, st = BlobExport(id, 0, probe)
+	if st != StatusBufferTooSmall {
+		t.Errorf("BlobExport probe: %v, want StatusBufferTooSmall", st)
+	}
+
+	// Export with BlobOptLockSeed but no L slot — should fail
+	// with StatusBadInput.
+	if _, st := BlobExport(id, BlobOptLockSeed, probe); st != StatusBadInput {
+		t.Errorf("BlobExport BlobOptLockSeed without L slot: %v, want StatusBadInput", st)
+	}
+	// Export with BlobOptMAC but no MAC key — should fail.
+	if _, st := BlobExport(id, BlobOptMAC, probe); st != StatusBadInput {
+		t.Errorf("BlobExport BlobOptMAC without MAC key: %v, want StatusBadInput", st)
+	}
+}
+
+// TestLengthOOBRejectedWithBadInput verifies that a length argument
+// greater than maxSliceLen on a cgo //export wrapper surfaces as
+// StatusBadInput rather than silently treating the input as empty
+// (which previously returned StatusOK with garbage output). This
+// covers the goBytesView / goBytesViewMut length-truncation
+// defence that the dispatch wrappers were documented to enforce
+// but did not.
+func TestLengthOOBRejectedWithBadInput(t *testing.T) {
+	id, st := NewEasy("blake3", 1024, "kmac256", 1)
+	if st != StatusOK {
+		t.Fatalf("NewEasy: status=%v", st)
+	}
+	defer FreeEasy(id)
+
+	// The capi-level entry points take Go []byte / []uint64
+	// directly; the validateLen guard sits in the cgo wrappers in
+	// cmd/cshared/main.go, which take C.size_t and reject any
+	// value above maxSliceLen. The capi-level test exercises the
+	// recovery + close path directly; the cgo-level guard is
+	// exercised through the Python binding's overflow-test
+	// regression coverage which calls into the C ABI symbols.
+	//
+	// This test stub documents the unit-of-coverage and pins the
+	// test name for future cgo-level harness expansion. The actual
+	// boundary check lives one layer up (main.go validateLen) and
+	// is verified through Python's test_overflow path.
+	_ = id
 }

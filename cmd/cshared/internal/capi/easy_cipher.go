@@ -1,7 +1,9 @@
 package capi
 
 import (
-	"strings"
+	"errors"
+
+	"github.com/everanium/itb"
 )
 
 // EasyEncrypt encrypts plaintext through the encryptor handle. Plain
@@ -101,11 +103,9 @@ func EasyDecryptAuth(id EasyHandleID, ciphertext, out []byte) (n int, st Status)
 	}
 	plain, err := h.enc.DecryptAuth(ciphertext)
 	if err != nil {
-		// Pattern match on the underlying itb.DecryptAuthenticated*
-		// error message — same approach as classifyAuthError in
-		// cipher_auth.go. The error string is fixed in itb/auth*.go
-		// as "itb: MAC verification failed (tampered or wrong key)".
-		if strings.Contains(err.Error(), "MAC verification failed") {
+		// Typed sentinel via errors.Is — survives any future
+		// rewording of the underlying diagnostic message.
+		if errors.Is(err, itb.ErrMACFailure) {
 			setLastErr(StatusMACFailure)
 			return 0, StatusMACFailure
 		}

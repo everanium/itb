@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // AVX-512 + VAES assembly path for 4-way batched Areion permutations.
 //

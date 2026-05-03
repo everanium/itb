@@ -4,7 +4,48 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
+
+	"github.com/everanium/itb/hashes"
 )
+
+// primitiveBatchedEngagedOnHost asks the hashes registry whether
+// the given primitive's Make*Pair returns a non-nil batched arm
+// on the current host — the same dispatch the production NewSeed
+// code uses. Tests that assert "Seed.BatchHash is non-nil" must
+// gate themselves on this so they pass under both the asm-engaged
+// build (where every batched-capable primitive surfaces a batched
+// arm) and the no-asm build (where Option C nil-routes the
+// batched arm so process_cgo's nil-fallback drives 4 single calls
+// instead of the slow scalar 4-lane wrapper).
+func primitiveBatchedEngagedOnHost(t *testing.T, name string) bool {
+	t.Helper()
+	spec, ok := hashes.Find(name)
+	if !ok {
+		t.Fatalf("hashes.Find(%q): primitive missing from registry", name)
+	}
+	switch spec.Width {
+	case hashes.W128:
+		_, batched, _, err := hashes.Make128Pair(name)
+		if err != nil {
+			t.Fatalf("Make128Pair(%s): %v", name, err)
+		}
+		return batched != nil
+	case hashes.W256:
+		_, batched, _, err := hashes.Make256Pair(name)
+		if err != nil {
+			t.Fatalf("Make256Pair(%s): %v", name, err)
+		}
+		return batched != nil
+	case hashes.W512:
+		_, batched, _, err := hashes.Make512Pair(name)
+		if err != nil {
+			t.Fatalf("Make512Pair(%s): %v", name, err)
+		}
+		return batched != nil
+	}
+	t.Fatalf("primitiveBatchedEngagedOnHost(%s): unhandled width %d", name, spec.Width)
+	return false
+}
 
 // batchedPrimitives lists the canonical names of every shipped hash
 // primitive that exposes a non-nil BatchHashFunc through the
@@ -67,8 +108,13 @@ func TestNewSeedBatchedDispatchWired(t *testing.T) {
 				t.Fatalf("NewSeed(%s): %v", name, st)
 			}
 			defer FreeSeed(id)
-			if !seedHandleHasBatchHash(t, id) {
-				t.Fatalf("Seed.BatchHash is nil for %s — FFI fast path is unwired", name)
+			engaged := primitiveBatchedEngagedOnHost(t, name)
+			has := seedHandleHasBatchHash(t, id)
+			if engaged && !has {
+				t.Fatalf("Seed.BatchHash is nil for %s despite hashes.Make*Pair returning a batched arm — FFI fast path is unwired", name)
+			}
+			if !engaged && has {
+				t.Fatalf("Seed.BatchHash is non-nil for %s although hashes.Make*Pair returned nil batched — process_cgo's nil-fallback would be faster than the scalar 4-lane wrapper", name)
 			}
 		})
 	}
@@ -104,8 +150,13 @@ func TestNewSeedFromComponentsBatchedDispatchWired(t *testing.T) {
 				t.Fatalf("NewSeedFromComponents(%s): %v", name, st)
 			}
 			defer FreeSeed(restored)
-			if !seedHandleHasBatchHash(t, restored) {
-				t.Fatalf("Seed.BatchHash is nil after NewSeedFromComponents(%s) — restore path is unwired", name)
+			engaged := primitiveBatchedEngagedOnHost(t, name)
+			has := seedHandleHasBatchHash(t, restored)
+			if engaged && !has {
+				t.Fatalf("Seed.BatchHash is nil after NewSeedFromComponents(%s) despite hashes.Make*Pair returning a batched arm — restore path is unwired", name)
+			}
+			if !engaged && has {
+				t.Fatalf("Seed.BatchHash is non-nil after NewSeedFromComponents(%s) although hashes.Make*Pair returned nil batched — restore path forces a slow scalar 4-lane wrapper that the live encrypt path would skip", name)
 			}
 		})
 	}

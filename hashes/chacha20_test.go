@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/chacha20asm"
 )
 
 // TestChaCha20DigestDependsOnEveryByte locks in the fix for the
@@ -182,19 +183,25 @@ func TestChaCha20256BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestChaCha20MakePairReturnsBatched verifies that the FFI-facing
-// Make256Pair entry point returns a non-nil batched arm for
-// chacha20. This is the contract surfaced to the C ABI and Python
-// FFI layers via cmd/cshared/internal/capi — without it those
-// layers would fall back to per-pixel dispatch even though the
-// ZMM-batched kernel is available.
-func TestChaCha20MakePairReturnsBatched(t *testing.T) {
+// TestChaCha20MakePairBatchedFollowsAsmEngagement verifies the
+// asm-conditional contract of Make256Pair for chacha20 — non-nil
+// batched when AVX-512 fused chain-absorb is engaged, nil batched
+// when the asm path is not reachable so process_cgo's nil-fallback
+// drives 4 single-call dispatches through the underlying ChaCha20
+// stream-cipher path directly.
+func TestChaCha20MakePairBatchedFollowsAsmEngagement(t *testing.T) {
 	_, b, _, err := Make256Pair("chacha20")
 	if err != nil {
 		t.Fatalf("Make256Pair(chacha20): %v", err)
 	}
-	if b == nil {
-		t.Fatal("Make256Pair(chacha20) returned nil batched arm — FFI will fall back to per-pixel dispatch")
+	if chacha20asm.HasAVX512Fused {
+		if b == nil {
+			t.Fatal("Make256Pair(chacha20) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
+		}
+	} else {
+		if b != nil {
+			t.Fatal("Make256Pair(chacha20) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
+		}
 	}
 }
 

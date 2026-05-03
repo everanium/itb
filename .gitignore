@@ -2,6 +2,7 @@
 /itb
 /itb.test
 *.test
+/cshared
 
 # CPU/memory profiles
 *.prof

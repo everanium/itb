@@ -54,6 +54,15 @@ func NewMAC(name string, key []byte) (id MACHandleID, st Status) {
 }
 
 // FreeMAC releases a MAC handle. Subsequent uses return StatusBadMAC.
+//
+// The MAC fixed key is captured opaquely inside the [itb.MACFunc]
+// closure (cSHAKE256 absorb state, pooled hmac.Hash, blake3.Hasher
+// template) — capi has no public API to wipe the captured bytes
+// before release, so the best-effort here is to nil out the
+// closure reference so the Go GC can reclaim the captured state at
+// the next collection cycle. Callers that need stricter wiping
+// must avoid holding sibling references and arrange for an
+// immediate GC.
 func FreeMAC(id MACHandleID) (st Status) {
 	if id == 0 {
 		setLastErr(StatusBadMAC)
@@ -65,6 +74,10 @@ func FreeMAC(id MACHandleID) (st Status) {
 			st = StatusBadMAC
 		}
 	}()
+	if h, ok := cgo.Handle(id).Value().(*MACHandle); ok && h != nil {
+		h.fn = nil
+		h.name = ""
+	}
 	cgo.Handle(id).Delete()
 	return StatusOK
 }

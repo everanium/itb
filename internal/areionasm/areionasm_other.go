@@ -1,4 +1,4 @@
-//go:build !amd64 || purego
+//go:build !amd64 || purego || noitbasm
 
 // Stub package on platforms where the AVX-512 + VAES assembly path
 // does not apply. The parent `itb` package always uses its portable

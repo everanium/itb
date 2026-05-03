@@ -273,3 +273,13 @@ func (s *Seed256) AttachLockSeed(ls *Seed256) {
 func (s *Seed256) AttachedLockSeed() *Seed256 {
 	return s.attachedLockSeed
 }
+
+// DetachLockSeed removes a previously-installed dedicated lockSeed
+// pointer from this noiseSeed. See [Seed128.DetachLockSeed] for the
+// full contract.
+func (s *Seed256) DetachLockSeed() {
+	if s.firstEncryptCalled.Load() {
+		panic(ErrLockSeedAfterEncrypt)
+	}
+	s.attachedLockSeed = nil
+}

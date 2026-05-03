@@ -1,12 +1,39 @@
 package itb
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 )
+
+// decodeBlobStrict parses a Blob{N} JSON payload into the supplied
+// blobV1 receiver with [json.Decoder.DisallowUnknownFields] enabled
+// so a tampered blob carrying extra fields is rejected as malformed
+// rather than silently accepted (the encoding/json default ignores
+// unknown fields). Trailing junk after the JSON value is also
+// rejected — json.Decoder.Decode otherwise consumes only the first
+// value and leaves the rest unread, allowing a tampered blob to
+// smuggle data past the structural check.
+//
+// Used by every Blob{128,256,512}.Import / Import3 entry point so
+// the strict-shape promise is uniform across widths.
+func decodeBlobStrict(data []byte, out *blobV1) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	// After the first value, the decoder's stream must be empty.
+	// dec.More() reports true if any non-whitespace remains; we
+	// reject as malformed in that case.
+	if dec.More() {
+		return ErrBlobMalformed
+	}
+	return nil
+}
 
 // Blob — native-API counterpart to the easy.Encryptor state-blob
 // surface. Three width-specific types ([Blob128], [Blob256],
@@ -341,6 +368,7 @@ func (b *Blob512) Export(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
+	b.Mode = 1
 	return json.Marshal(blob)
 }
 
@@ -409,6 +437,7 @@ func (b *Blob512) Export3(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
+	b.Mode = 3
 	return json.Marshal(blob)
 }
 
@@ -424,7 +453,7 @@ func (b *Blob512) Export3(
 // schema version.
 func (b *Blob512) Import(data []byte) error {
 	var blob blobV1
-	if err := json.Unmarshal(data, &blob); err != nil {
+	if err := decodeBlobStrict(data, &blob); err != nil {
 		return ErrBlobMalformed
 	}
 	if blob.Version > blobVersionV1 {
@@ -520,7 +549,7 @@ func (b *Blob512) Import(data []byte) error {
 // Same error contract; populates the Triple-mode field set.
 func (b *Blob512) Import3(data []byte) error {
 	var blob blobV1
-	if err := json.Unmarshal(data, &blob); err != nil {
+	if err := decodeBlobStrict(data, &blob); err != nil {
 		return ErrBlobMalformed
 	}
 	if blob.Version > blobVersionV1 {
@@ -739,6 +768,7 @@ func (b *Blob256) Export(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
+	b.Mode = 1
 	return json.Marshal(blob)
 }
 
@@ -804,13 +834,14 @@ func (b *Blob256) Export3(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
+	b.Mode = 3
 	return json.Marshal(blob)
 }
 
 // Import — Single Ouroboros, 256-bit width. See [Blob512.Import].
 func (b *Blob256) Import(data []byte) error {
 	var blob blobV1
-	if err := json.Unmarshal(data, &blob); err != nil {
+	if err := decodeBlobStrict(data, &blob); err != nil {
 		return ErrBlobMalformed
 	}
 	if blob.Version > blobVersionV1 {
@@ -901,7 +932,7 @@ func (b *Blob256) Import(data []byte) error {
 // Import3 — Triple Ouroboros, 256-bit width. See [Blob512.Import3].
 func (b *Blob256) Import3(data []byte) error {
 	var blob blobV1
-	if err := json.Unmarshal(data, &blob); err != nil {
+	if err := decodeBlobStrict(data, &blob); err != nil {
 		return ErrBlobMalformed
 	}
 	if blob.Version > blobVersionV1 {
@@ -1123,6 +1154,7 @@ func (b *Blob128) Export(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
+	b.Mode = 1
 	return json.Marshal(blob)
 }
 
@@ -1188,13 +1220,14 @@ func (b *Blob128) Export3(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
+	b.Mode = 3
 	return json.Marshal(blob)
 }
 
 // Import — Single Ouroboros, 128-bit width. See [Blob512.Import].
 func (b *Blob128) Import(data []byte) error {
 	var blob blobV1
-	if err := json.Unmarshal(data, &blob); err != nil {
+	if err := decodeBlobStrict(data, &blob); err != nil {
 		return ErrBlobMalformed
 	}
 	if blob.Version > blobVersionV1 {
@@ -1285,7 +1318,7 @@ func (b *Blob128) Import(data []byte) error {
 // Import3 — Triple Ouroboros, 128-bit width. See [Blob512.Import3].
 func (b *Blob128) Import3(data []byte) error {
 	var blob blobV1
-	if err := json.Unmarshal(data, &blob); err != nil {
+	if err := decodeBlobStrict(data, &blob); err != nil {
 		return ErrBlobMalformed
 	}
 	if blob.Version > blobVersionV1 {

@@ -11,6 +11,26 @@ install time). The shared library is searched in this order:
 
 Status codes returned by every entry point are translated to Python
 exceptions (``ITBError``) so callers do not have to inspect integers.
+
+Threading note. ``ITB_LastError`` and ``ITB_Easy_LastMismatchField``
+read process-global atomics that follow the C ``errno`` discipline:
+the most recent non-OK Status across the whole process wins, and a
+sibling thread that calls into libitb between the failing call and
+the diagnostic read overwrites the message. Multi-threaded Python
+applications that need reliable diagnostic attribution should
+serialise FFI calls under a process-wide lock or accept that the
+textual message returned by ``ITBError`` may belong to a different
+call. The structural Status code on the failing call's return
+value is unaffected — only the textual diagnostic is racy.
+
+Lock-seed lifecycle. ``Seed.attach_lock_seed`` records the lock
+seed pointer on the noiseSeed but does not bump a refcount on the
+Python object. Releasing the lock seed via ``lockSeed.free()``
+before the noiseSeed has finished its useful lifetime invalidates
+the bit-permutation overlay derivation; subsequent encrypt calls
+panic via ``ErrLockSeedOverlayOff`` or use zeroed components.
+Standard pairing: keep the lock seed alive at least as long as the
+noiseSeed.
 """
 
 from __future__ import annotations
@@ -65,9 +85,23 @@ class ITBError(RuntimeError):
         super().__init__(f"itb: status={code} ({message})" if message else f"itb: status={code}")
 
 
-_CDEF = """
-typedef unsigned long long uintptr_t;
-typedef unsigned long long size_t;
+# C ABI integer-typedef widths track the host word size — uintptr_t
+# and size_t are 8 bytes on 64-bit systems and 4 bytes on 32-bit
+# systems. cffi ABI mode resolves typedefs literally, so the CDEF
+# string must declare the right width for the target Python build.
+# sys.maxsize crosses 2**31 on 64-bit Pythons (typically ~2**63 - 1)
+# and stays below it on 32-bit Pythons (~2**31 - 1), giving a
+# reliable proxy for the host's C-side word size.
+if sys.maxsize > 2**31:
+    _PTR_TYPE = "unsigned long long"
+    _SIZE_TYPE = "unsigned long long"
+else:
+    _PTR_TYPE = "unsigned int"
+    _SIZE_TYPE = "unsigned int"
+
+_CDEF = f"""
+typedef {_PTR_TYPE} uintptr_t;
+typedef {_SIZE_TYPE} size_t;
 
 extern int ITB_Version(char* out, size_t capBytes, size_t* outLen);
 extern int ITB_HashCount(void);
@@ -172,7 +206,22 @@ extern int ITB_ParseChunkLen(void* header, size_t headerLen, size_t* outChunkLen
 extern int ITB_Easy_New(
     char* primitive, int keyBits, char* macName, int mode,
     uintptr_t* outHandle);
+extern int ITB_Easy_NewMixed(
+    char* primN, char* primD, char* primS, char* primL,
+    int keyBits, char* macName,
+    uintptr_t* outHandle);
+extern int ITB_Easy_NewMixed3(
+    char* primN,
+    char* primD1, char* primD2, char* primD3,
+    char* primS1, char* primS2, char* primS3,
+    char* primL,
+    int keyBits, char* macName,
+    uintptr_t* outHandle);
 extern int ITB_Easy_Free(uintptr_t handle);
+extern int ITB_Easy_PrimitiveAt(
+    uintptr_t handle, int slot,
+    char* out, size_t capBytes, size_t* outLen);
+extern int ITB_Easy_IsMixed(uintptr_t handle, int* outStatus);
 
 extern int ITB_Easy_Encrypt(
     uintptr_t handle,
@@ -541,11 +590,11 @@ class Seed:
         # Two-call pattern: first probe length (cap=0), then allocate.
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_GetSeedHashKey(self._handle, _ffi.NULL, 0, out_len)
-        # Probing returns BAD_INPUT when length is non-zero (no buffer
-        # to write into); empty key is OK.
+        # Probing returns BUFFER_TOO_SMALL when the key is non-empty
+        # (no buffer to write into); empty key is OK.
         if rc == STATUS_OK and int(out_len[0]) == 0:
             return b""
-        if rc != STATUS_BAD_INPUT:
+        if rc != STATUS_BUFFER_TOO_SMALL:
             _raise(rc)
         n = int(out_len[0])
         buf = _ffi.new(f"unsigned char[{n}]")
@@ -562,7 +611,7 @@ class Seed:
         ``Seed.from_components``."""
         out_len = _ffi.new("int*")
         rc = _lib.ITB_GetSeedComponents(self._handle, _ffi.NULL, 0, out_len)
-        if rc != STATUS_BAD_INPUT:
+        if rc != STATUS_BUFFER_TOO_SMALL:
             _raise(rc)
         n = int(out_len[0])
         buf = _ffi.new(f"unsigned long long[{n}]")

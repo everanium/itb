@@ -7,11 +7,14 @@
 // different settings can run in parallel goroutines without cross-
 // contamination.
 //
-// Mixing PRF primitives across the noise / data / start seeds is
-// not supported in this package; the encryptor accepts a single
-// primitive name that is applied to every seed slot. Deployments
-// requiring mixed primitives use the existing low-level path
-// directly.
+// [New] / [New3] bind one PRF primitive across every seed slot of
+// the resulting [Encryptor]. [NewMixed] / [NewMixed3] take a
+// per-slot primitive spec instead, allowing the noise / data /
+// start (and optional dedicated lockSeed) seed slots to use
+// different PRF primitives within the same native hash width;
+// width mismatches are rejected at construction with
+// [ErrEasyMixedWidth]. The MAC primitive remains one per
+// encryptor on both paths.
 package easy
 
 import (
@@ -195,6 +198,15 @@ type Encryptor struct {
 	barrierFillExplicit bool
 	bitSoupExplicit     bool
 	lockSoupExplicit    bool
+
+	// primitives holds per-slot canonical hash primitive names for
+	// encryptors built via [NewMixed] / [NewMixed3] — one entry per
+	// seed slot, parallel to seeds. nil for encryptors built via
+	// [New] / [New3] (single-primitive mode), where every slot
+	// shares Primitive. Consumed by [Encryptor.PrimitiveAt] for
+	// per-slot lookup and by the state-blob Export / Import path
+	// to round-trip the per-slot wiring across processes.
+	primitives []string
 }
 
 // New constructs an [Encryptor] configured for Single Ouroboros

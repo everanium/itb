@@ -554,7 +554,8 @@ func BlobSetMACName(id BlobHandleID, name string) (st Status) {
 
 // BlobGetMACName returns the MAC name from the handle, or "" if no
 // MAC is associated with this blob.
-func BlobGetMACName(id BlobHandleID) (string, Status) {
+func BlobGetMACName(id BlobHandleID) (name string, st Status) {
+	defer recoverPanic(&st, StatusInternal)
 	h, st := resolveBlob(id)
 	if st != StatusOK {
 		return "", st
@@ -579,13 +580,20 @@ func BlobGetMACName(id BlobHandleID) (string, Status) {
 // Caller-allocated-buffer convention: pass len(out) == 0 to probe
 // for the required size, then resize and retry.
 //
-// On success Mode on the underlying blob is left untouched (Export
-// does not need to update it; the caller may already have set Mode
-// via Import). The serialised JSON itself carries mode=1, regardless
-// of the handle's current Mode field.
+// Mode on the underlying blob is stamped to 1 (Single) on success,
+// matching the Import path so post-Export inspection via
+// [BlobMode] reports the correct value. Bits in optsBitmask outside
+// the documented BlobOptLockSeed / BlobOptMAC range are rejected
+// with StatusBadInput before any serialisation runs — future-
+// incompatibility guard against bindings setting an unknown bit
+// expecting an option that doesn't exist yet.
 func BlobExport(id BlobHandleID, optsBitmask int, out []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusInternal)
 
+	if optsBitmask&^(BlobOptLockSeed|BlobOptMAC) != 0 {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
 	h, st := resolveBlob(id)
 	if st != StatusOK {
 		return 0, st
@@ -594,31 +602,43 @@ func BlobExport(id BlobHandleID, optsBitmask int, out []byte) (n int, st Status)
 	var err error
 	switch h.width {
 	case hashes.W128:
-		opts := buildBlob128Opts(h.blob128, optsBitmask)
+		opts, optsOK := buildBlob128Opts(h.blob128, optsBitmask)
+		if !optsOK {
+			setLastErr(StatusBadInput)
+			return 0, StatusBadInput
+		}
 		b := h.blob128
 		if b.NS == nil || b.DS == nil || b.SS == nil {
 			setLastErr(StatusBadInput)
 			return 0, StatusBadInput
 		}
-		blob, err = (&itb.Blob128{}).Export(b.KeyN, b.KeyD, b.KeyS,
+		blob, err = b.Export(b.KeyN, b.KeyD, b.KeyS,
 			b.NS, b.DS, b.SS, opts)
 	case hashes.W256:
-		opts := buildBlob256Opts(h.blob256, optsBitmask)
+		opts, optsOK := buildBlob256Opts(h.blob256, optsBitmask)
+		if !optsOK {
+			setLastErr(StatusBadInput)
+			return 0, StatusBadInput
+		}
 		b := h.blob256
 		if b.NS == nil || b.DS == nil || b.SS == nil {
 			setLastErr(StatusBadInput)
 			return 0, StatusBadInput
 		}
-		blob, err = (&itb.Blob256{}).Export(b.KeyN, b.KeyD, b.KeyS,
+		blob, err = b.Export(b.KeyN, b.KeyD, b.KeyS,
 			b.NS, b.DS, b.SS, opts)
 	case hashes.W512:
-		opts := buildBlob512Opts(h.blob512, optsBitmask)
+		opts, optsOK := buildBlob512Opts(h.blob512, optsBitmask)
+		if !optsOK {
+			setLastErr(StatusBadInput)
+			return 0, StatusBadInput
+		}
 		b := h.blob512
 		if b.NS == nil || b.DS == nil || b.SS == nil {
 			setLastErr(StatusBadInput)
 			return 0, StatusBadInput
 		}
-		blob, err = (&itb.Blob512{}).Export(b.KeyN, b.KeyD, b.KeyS,
+		blob, err = b.Export(b.KeyN, b.KeyD, b.KeyS,
 			b.NS, b.DS, b.SS, opts)
 	default:
 		setLastErr(StatusInternal)
@@ -639,10 +659,17 @@ func BlobExport(id BlobHandleID, optsBitmask int, out []byte) (n int, st Status)
 
 // BlobExport3 serialises the handle's Triple-Ouroboros state (1
 // noise + 3 data + 3 start seeds + 7 hash keys, plus optional
-// lockSeed and MAC). Mirrors itb.Blob{N}.Export3.
+// lockSeed and MAC). Mirrors itb.Blob{N}.Export3. Bits outside the
+// documented BlobOptLockSeed / BlobOptMAC range are rejected with
+// StatusBadInput; Mode on the underlying blob is stamped to 3 on
+// success.
 func BlobExport3(id BlobHandleID, optsBitmask int, out []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusInternal)
 
+	if optsBitmask&^(BlobOptLockSeed|BlobOptMAC) != 0 {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
 	h, st := resolveBlob(id)
 	if st != StatusOK {
 		return 0, st
@@ -651,38 +678,50 @@ func BlobExport3(id BlobHandleID, optsBitmask int, out []byte) (n int, st Status
 	var err error
 	switch h.width {
 	case hashes.W128:
-		opts := buildBlob128Opts(h.blob128, optsBitmask)
+		opts, optsOK := buildBlob128Opts(h.blob128, optsBitmask)
+		if !optsOK {
+			setLastErr(StatusBadInput)
+			return 0, StatusBadInput
+		}
 		b := h.blob128
 		if b.NS == nil || b.DS1 == nil || b.DS2 == nil || b.DS3 == nil ||
 			b.SS1 == nil || b.SS2 == nil || b.SS3 == nil {
 			setLastErr(StatusBadInput)
 			return 0, StatusBadInput
 		}
-		blob, err = (&itb.Blob128{}).Export3(b.KeyN,
+		blob, err = b.Export3(b.KeyN,
 			b.KeyD1, b.KeyD2, b.KeyD3,
 			b.KeyS1, b.KeyS2, b.KeyS3,
 			b.NS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3, opts)
 	case hashes.W256:
-		opts := buildBlob256Opts(h.blob256, optsBitmask)
+		opts, optsOK := buildBlob256Opts(h.blob256, optsBitmask)
+		if !optsOK {
+			setLastErr(StatusBadInput)
+			return 0, StatusBadInput
+		}
 		b := h.blob256
 		if b.NS == nil || b.DS1 == nil || b.DS2 == nil || b.DS3 == nil ||
 			b.SS1 == nil || b.SS2 == nil || b.SS3 == nil {
 			setLastErr(StatusBadInput)
 			return 0, StatusBadInput
 		}
-		blob, err = (&itb.Blob256{}).Export3(b.KeyN,
+		blob, err = b.Export3(b.KeyN,
 			b.KeyD1, b.KeyD2, b.KeyD3,
 			b.KeyS1, b.KeyS2, b.KeyS3,
 			b.NS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3, opts)
 	case hashes.W512:
-		opts := buildBlob512Opts(h.blob512, optsBitmask)
+		opts, optsOK := buildBlob512Opts(h.blob512, optsBitmask)
+		if !optsOK {
+			setLastErr(StatusBadInput)
+			return 0, StatusBadInput
+		}
 		b := h.blob512
 		if b.NS == nil || b.DS1 == nil || b.DS2 == nil || b.DS3 == nil ||
 			b.SS1 == nil || b.SS2 == nil || b.SS3 == nil {
 			setLastErr(StatusBadInput)
 			return 0, StatusBadInput
 		}
-		blob, err = (&itb.Blob512{}).Export3(b.KeyN,
+		blob, err = b.Export3(b.KeyN,
 			b.KeyD1, b.KeyD2, b.KeyD3,
 			b.KeyS1, b.KeyS2, b.KeyS3,
 			b.NS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3, opts)
@@ -771,45 +810,67 @@ func BlobImport3(id BlobHandleID, data []byte) (st Status) {
 
 // buildBlob{128,256,512}Opts assembles the variadic options struct
 // for itb.Blob{N}.Export / Export3 from the handle's optional slots
-// (KeyL / LS / MACKey / MACName) gated by the caller-supplied bitmask.
-// A bit that is set but corresponds to an empty slot is silently
-// ignored — Export emits the section iff both the bit and the slot
-// are populated.
-func buildBlob128Opts(b *itb.Blob128, optsBitmask int) itb.Blob128Opts {
+// (KeyL / LS / MACKey / MACName) gated by the caller-supplied
+// bitmask. Returns ok=false when a bit is set but the matching slot
+// is unpopulated — the caller surfaces this as StatusBadInput
+// before any serialisation runs. Silently dropping the flag would
+// produce a blob that lacks the section the caller asked for, with
+// no diagnostic at the FFI seam — receiver-side decryption would
+// then fail in a way that's hard to attribute back to sender-side
+// misuse.
+func buildBlob128Opts(b *itb.Blob128, optsBitmask int) (itb.Blob128Opts, bool) {
 	var o itb.Blob128Opts
-	if optsBitmask&BlobOptLockSeed != 0 && b.LS != nil {
+	if optsBitmask&BlobOptLockSeed != 0 {
+		if b.LS == nil {
+			return o, false
+		}
 		o.KeyL = b.KeyL
 		o.LS = b.LS
 	}
-	if optsBitmask&BlobOptMAC != 0 && len(b.MACKey) > 0 {
+	if optsBitmask&BlobOptMAC != 0 {
+		if len(b.MACKey) == 0 {
+			return o, false
+		}
 		o.MACKey = b.MACKey
 		o.MACName = b.MACName
 	}
-	return o
+	return o, true
 }
 
-func buildBlob256Opts(b *itb.Blob256, optsBitmask int) itb.Blob256Opts {
+func buildBlob256Opts(b *itb.Blob256, optsBitmask int) (itb.Blob256Opts, bool) {
 	var o itb.Blob256Opts
-	if optsBitmask&BlobOptLockSeed != 0 && b.LS != nil {
+	if optsBitmask&BlobOptLockSeed != 0 {
+		if b.LS == nil {
+			return o, false
+		}
 		o.KeyL = b.KeyL
 		o.LS = b.LS
 	}
-	if optsBitmask&BlobOptMAC != 0 && len(b.MACKey) > 0 {
+	if optsBitmask&BlobOptMAC != 0 {
+		if len(b.MACKey) == 0 {
+			return o, false
+		}
 		o.MACKey = b.MACKey
 		o.MACName = b.MACName
 	}
-	return o
+	return o, true
 }
 
-func buildBlob512Opts(b *itb.Blob512, optsBitmask int) itb.Blob512Opts {
+func buildBlob512Opts(b *itb.Blob512, optsBitmask int) (itb.Blob512Opts, bool) {
 	var o itb.Blob512Opts
-	if optsBitmask&BlobOptLockSeed != 0 && b.LS != nil {
+	if optsBitmask&BlobOptLockSeed != 0 {
+		if b.LS == nil {
+			return o, false
+		}
 		o.KeyL = b.KeyL
 		o.LS = b.LS
 	}
-	if optsBitmask&BlobOptMAC != 0 && len(b.MACKey) > 0 {
+	if optsBitmask&BlobOptMAC != 0 {
+		if len(b.MACKey) == 0 {
+			return o, false
+		}
 		o.MACKey = b.MACKey
 		o.MACName = b.MACName
 	}
-	return o
+	return o, true
 }

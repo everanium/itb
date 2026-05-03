@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/aescmacasm"
 )
 
 // TestAESCMACDigestDependsOnEveryByte locks in the contract that
@@ -188,18 +189,25 @@ func TestAESCMAC128BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestAESCMACMakePairReturnsBatched verifies that the FFI-facing
-// Make128Pair entry point returns a non-nil batched arm for
-// aescmac. Without this wire-up, the C ABI / Python FFI / Go
-// callers would fall back to per-pixel dispatch even though the
-// ZMM-batched VAES kernel is available.
-func TestAESCMACMakePairReturnsBatched(t *testing.T) {
+// TestAESCMACMakePairBatchedFollowsAsmEngagement verifies the
+// asm-conditional contract of Make128Pair for aescmac — non-nil
+// batched when VAES + AVX-512 chain-absorb is engaged, nil batched
+// when the asm path is not reachable so process_cgo's nil-fallback
+// drives 4 single-call dispatches through the underlying
+// crypto/aes asm directly.
+func TestAESCMACMakePairBatchedFollowsAsmEngagement(t *testing.T) {
 	_, b, _, err := Make128Pair("aescmac")
 	if err != nil {
 		t.Fatalf("Make128Pair(aescmac): %v", err)
 	}
-	if b == nil {
-		t.Fatal("Make128Pair(aescmac) returned nil batched arm — FFI will fall back to per-pixel dispatch")
+	if aescmacasm.HasVAESAVX512 {
+		if b == nil {
+			t.Fatal("Make128Pair(aescmac) returned nil batched arm despite VAES+AVX-512 asm engaged — FFI will fall back to per-pixel dispatch")
+		}
+	} else {
+		if b != nil {
+			t.Fatal("Make128Pair(aescmac) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
+		}
 	}
 }
 

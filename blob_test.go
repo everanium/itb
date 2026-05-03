@@ -511,6 +511,24 @@ func TestBlobVersionTooNew(t *testing.T) {
 	}
 }
 
+// TestBlobImportRejectsUnknownFields verifies that a blob carrying
+// extra (unknown) JSON fields is rejected as malformed rather than
+// silently accepted. Pre-fix encoding/json's default behaviour is
+// to ignore unknown fields; the decodeBlobStrict helper enables
+// DisallowUnknownFields to harden the wire-format validation.
+func TestBlobImportRejectsUnknownFields(t *testing.T) {
+	bDst := &itb.Blob512{}
+	// Otherwise-valid Single blob shape with one extra unknown
+	// field "extra_attacker_field" injected at the top level.
+	withUnknown := []byte(`{"v":1,"mode":1,"key_bits":512,` +
+		`"key_n":"00","ns":["0"],"ds":["0"],"ss":["0"],` +
+		`"globals":{"nonce_bits":128,"barrier_fill":1,"bit_soup":0,"lock_soup":0},` +
+		`"extra_attacker_field":"oops"}`)
+	if err := bDst.Import(withUnknown); !errors.Is(err, itb.ErrBlobMalformed) {
+		t.Errorf("Import blob with unknown field: got %v, want itb.ErrBlobMalformed", err)
+	}
+}
+
 func TestBlobTooManyOpts(t *testing.T) {
 	withGlobals(t)
 	fnN, batchN, keyN := itb.MakeAreionSoEM512Hash()
