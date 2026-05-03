@@ -8,7 +8,7 @@ import (
 )
 
 // TestSmokeEncryptDecrypt verifies the round-trip works for the
-// default constructor (areion512 / 1024 / kmac256, Single mode).
+// default constructor (areion512 / 1024 / hmac-blake3, Single mode).
 func TestSmokeEncryptDecrypt(t *testing.T) {
 	enc := easy.New()
 	plaintext := []byte("hello world")
@@ -213,12 +213,12 @@ func TestSmokeExportImport(t *testing.T) {
 	}
 
 	prim, kb, mode, mac := easy.PeekConfig(blob)
-	if prim != "areion512" || kb != 1024 || mode != 1 || mac != "kmac256" {
-		t.Errorf("PeekConfig: got (%q, %d, %d, %q), want (areion512, 1024, 1, kmac256)",
+	if prim != "areion512" || kb != 1024 || mode != 1 || mac != "hmac-blake3" {
+		t.Errorf("PeekConfig: got (%q, %d, %d, %q), want (areion512, 1024, 1, hmac-blake3)",
 			prim, kb, mode, mac)
 	}
 
-	receiver := easy.New("areion512", 1024, "kmac256")
+	receiver := easy.New("areion512", 1024, "hmac-blake3")
 	defer receiver.Close()
 
 	if err := receiver.Import(blob); err != nil {

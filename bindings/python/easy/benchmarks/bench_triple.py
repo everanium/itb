@@ -66,7 +66,7 @@ MIXED_START3 = "blake3"
 MIXED_LOCK = "areion256"
 
 KEY_BITS = 1024
-MAC_NAME = "kmac256"
+MAC_NAME = "hmac-blake3"
 PAYLOAD_BYTES = _common.PAYLOAD_16MB
 
 
@@ -80,7 +80,7 @@ def _apply_lockseed_if_requested(enc: itb.Encryptor) -> None:
 
 def _build_triple(primitive: str) -> itb.Encryptor:
     """Construct a single-primitive 1024-bit Triple-Ouroboros
-    encryptor with KMAC256 authentication. Triple = mode=3, 7-seed
+    encryptor with HMAC-BLAKE3 authentication. Triple = mode=3, 7-seed
     layout."""
     enc = itb.Encryptor(primitive, KEY_BITS, MAC_NAME, mode=3)
     _apply_lockseed_if_requested(enc)
@@ -89,10 +89,13 @@ def _build_triple(primitive: str) -> itb.Encryptor:
 
 def _build_mixed_triple() -> itb.Encryptor:
     """Construct a mixed-primitive Triple-Ouroboros encryptor with
-    the four-name BLAKE family + Areion-SoEM-256 lockSeed
-    composition. Each of the seven middle slots draws from the
-    256-bit family; the four primitive names share the same native
-    hash width so the Encryptor.mixed_triple width-check passes."""
+    the four-name BLAKE family across the seven middle slots. The
+    dedicated Areion-SoEM-256 lockSeed slot is allocated only when
+    ``ITB_LOCKSEED`` is set, so the no-LockSeed bench arm measures
+    the plain mixed-primitive cost without the BitSoup + LockSoup
+    auto-couple. The four primitive names share the same native hash
+    width so the Encryptor.mixed_triple width-check passes."""
+    primL = MIXED_LOCK if _common.env_lock_seed() else None
     enc = itb.Encryptor.mixed_triple(
         primitive_n=MIXED_NOISE,
         primitive_d1=MIXED_DATA1,
@@ -101,7 +104,7 @@ def _build_mixed_triple() -> itb.Encryptor:
         primitive_s1=MIXED_START1,
         primitive_s2=MIXED_START2,
         primitive_s3=MIXED_START3,
-        primitive_l=MIXED_LOCK,
+        primitive_l=primL,
         key_bits=KEY_BITS,
         mac=MAC_NAME,
     )

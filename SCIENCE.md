@@ -739,7 +739,7 @@ The following are theoretical attack surfaces that have been analyzed and accept
 
 **5. Bit-flip DoS / false null terminator.** An attacker could attempt to flip data bits to create a false 0x00 null terminator, causing message truncation. With `EncryptAuthenticated128`/`256`/`512`: MAC is verified BEFORE null terminator search — any data bit modification fails MAC verification, and COBS decode is never reached. With core ITB (no MAC): bit-flip can truncate data, but this is the documented "No authentication" limitation. Noise bit flips do not affect the data stream and cannot create false terminators. No amplification or crash is possible — all paths return graceful errors with constant-time processing.
 
-**6. CGO backend side-channel analysis.** The optional C pixel processing backend (compiled with GCC `-O3`, with `-mavx2` on x86-64 and NEON auto-vectorization on ARM64) was analyzed for side-channel equivalence with the pure Go implementation. Findings:
+**6. CGO backend side-channel analysis.** The optional C pixel processing backend (compiled with GCC `-O3`, with `-mavx2` on x86-64 and NEON auto-vectorization on ARM64) was analyzed for side-channel equivalence with the Go-based pixel implementation (`CGO_ENABLED=0`). Findings:
 
 All SIMD instructions used by GCC auto-vectorization have **fixed latency** on both platforms — no data-dependent timing variation. The critical `dataHash % 7` operation (dataSeed rotation extraction) is optimized by GCC into a constant-time multiply-by-reciprocal sequence on both architectures — no division instruction on secret data.
 
@@ -759,7 +759,7 @@ Memory access patterns are identical between Go and C backends on both platforms
 
 No speculative execution (Spectre) vulnerability: no secret-dependent array indexing exists. `noisePos` and `dataRotation` are used only as shift amounts and bitmasks, never as array indices.
 
-**Conclusion:** The CGO backend preserves the side-channel security model of the pure Go implementation on all platforms. No new software-observable side-channel is introduced by SIMD auto-vectorization (AVX2 or NEON). The same DPA/SPA hardware-level threat (point 1) applies to both backends equally.
+**Conclusion:** The CGO backend preserves the side-channel security model of the Go-based pixel implementation (`CGO_ENABLED=0`) on all platforms. No new software-observable side-channel is introduced by SIMD auto-vectorization (AVX2 or NEON). The same DPA/SPA hardware-level threat (point 1) applies to both backends equally.
 
 **7. Speculative execution, data sampling, and memory integrity attacks.** ITB's secret-dependent operations (`noisePos`, `dataRotation`, `channelXOR`) use only register operations (shift, XOR, AND, OR). There are no secret-dependent array accesses (no S-box, no T-tables). The CGO backend does not use `gather` instructions; AVX2 operations (`vpxor`, `vpand`, `vpor`, `vpsllw`, `vpsrlw`) are constant-weight and do not cause measurable frequency throttling.
 

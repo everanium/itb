@@ -193,7 +193,7 @@
 //	itb.SetMaxWorkers(8)    // limit to 4 CPU cores (default: all CPUs)
 //
 //	// (1) Areion-SoEM-512, no MAC.
-//	enc := easy.New("areion512", 2048, "kmac256")
+//	enc := easy.New("areion512", 2048, "hmac-blake3")
 //	defer enc.Close()
 //	enc.SetNonceBits(512); enc.SetBarrierFill(4)
 //	enc.SetBitSoup(1);     enc.SetLockSoup(1)
@@ -220,10 +220,10 @@
 //	dec.Import(blob)
 //	decrypted, _ := dec.Decrypt(encrypted)
 //
-//	// (2) Areion-SoEM-512 + KMAC-256, authenticated. The MAC
+//	// (2) Areion-SoEM-512 + HMAC-BLAKE3, authenticated. The MAC
 //	// primitive is bound at construction time; encrypt_auth /
 //	// decrypt_auth attach a 32-byte tag inside the container.
-//	enc = easy.New("areion512", 2048, "kmac256")
+//	enc = easy.New("areion512", 2048, "hmac-blake3")
 //	defer enc.Close()
 //	enc.SetBitSoup(1); enc.SetLockSoup(1)
 //	encrypted, _ = enc.EncryptAuth(plaintext)
@@ -249,7 +249,7 @@
 //	enc = easy.NewMixed(easy.MixedSpec{
 //		PrimitiveN: "blake3", PrimitiveD: "blake2s",
 //		PrimitiveS: "areion256", PrimitiveL: "blake2b256",
-//		KeyBits: 1024, MACName: "kmac256",
+//		KeyBits: 1024, MACName: "hmac-blake3",
 //	})
 //	defer enc.Close()
 //	encrypted, _ = enc.EncryptAuth(plaintext)

@@ -18,16 +18,13 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 
 ### Build tags governing hash-kernel selection
 
-| Tag | Our chain-absorb asm | Upstream hash asm | Use case |
+| Build flag | Our chain-absorb asm | Upstream hash asm | Use case |
 |---|---|---|---|
 | (none) | engaged | engaged | Default — full asm stack |
-| `-tags=purego` | off | off (forced via the upstream `purego` convention) | Reproducible / sandboxed targets that must avoid every asm path |
-| `-tags=noitbasm` | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
+| <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
-The two opt-out tags are independent — passing `-tags=noitbasm`
-does not disable upstream asm in `zeebo/blake3`,
-`golang.org/x/crypto`, or `jedisct1/go-aes`; passing `-tags=purego`
-disables both layers.
+Passing `-tags=noitbasm` does not disable upstream asm in
+`zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`.
 
 ## Install requirements
 
@@ -70,7 +67,7 @@ import itb
 # Two encryptors built side-by-side carry independent settings;
 # process-wide itb.set_* accessors are NOT consulted after
 # construction.
-with itb.Encryptor("areion512", 2048, "kmac256") as enc:
+with itb.Encryptor("areion512", 2048, "hmac-blake3") as enc:
     enc.set_nonce_bits(512)   # 512-bit nonce (default: 128-bit)
     enc.set_barrier_fill(4)   # CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
     enc.set_bit_soup(1)       # optional bit-level split ("bit-soup"; default: 0 = byte-level)
@@ -178,11 +175,12 @@ with itb.Encryptor(prim, key_bits, mac, mode=mode) as dec:
     #decrypted = pbuf.getvalue()
 ```
 
-## Quick Start — `itb.Encryptor` + KMAC-256 (recommended, authenticated)
+## Quick Start — `itb.Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 The MAC primitive is bound at construction time — the third positional
 argument to :class:`itb.Encryptor` selects one of the registry names
-(``kmac256``, ``hmac-sha256``, ``hmac-blake3``). The encryptor
+(``hmac-blake3`` — recommended default, ``kmac256``, ``hmac-sha256``).
+The encryptor
 allocates a fresh 32-byte CSPRNG MAC key alongside the per-seed PRF
 keys; ``enc.export()`` carries all of them in a single JSON blob. On
 the receiver side, ``dec.import_state(blob)`` restores the MAC key
@@ -194,7 +192,7 @@ is one method call per side.
 
 import itb
 
-with itb.Encryptor("areion512", 2048, "kmac256") as enc:
+with itb.Encryptor("areion512", 2048, "hmac-blake3") as enc:
     enc.set_nonce_bits(512)   # per-instance — does NOT touch process-wide state
     enc.set_barrier_fill(4)
     enc.set_bit_soup(1)
@@ -327,7 +325,7 @@ enc = itb.Encryptor.mixed_single(
     primitive_l="blake2b256",   # dedicated lockSeed (optional;
                                 #   omit for no lockSeed slot)
     key_bits=1024,
-    mac="kmac256",
+    mac="hmac-blake3",
 )
 try:
     # Per-instance configuration applies as for itb.Encryptor(...).
@@ -383,7 +381,7 @@ dec = itb.Encryptor.mixed_single(
     primitive_s="areion256",
     primitive_l="blake2b256",
     key_bits=1024,
-    mac="kmac256",
+    mac="hmac-blake3",
 )
 try:
     # Restore PRF keys, seed components, MAC key, and the per-
@@ -524,7 +522,7 @@ finally:
     ns.free(); ds.free(); ss.free(); ls.free()
 ```
 
-## Quick Start — Areion-SoEM-512 + KMAC-256 (low-level, authenticated)
+## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
 
 ```python
 # Sender
@@ -555,9 +553,9 @@ ss = itb.Seed("areion512", 2048)
 ls = itb.Seed("areion512", 2048)
 ns.attach_lock_seed(ls)
 
-# KMAC-256 — NIST SP 800-185 keyed XOF, 32-byte CSPRNG key, 32-byte tag.
+# HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
 mac_key = secrets.token_bytes(32)
-mac = itb.MAC("kmac256", mac_key)
+mac = itb.MAC("hmac-blake3", mac_key)
 
 plaintext = b"any text or binary data - including 0x00 bytes"
 
@@ -578,7 +576,7 @@ try:
         blob.set_key("d", ds.hash_key); blob.set_components("d", ds.components)
         blob.set_key("s", ss.hash_key); blob.set_components("s", ss.components)
         blob.set_key("l", ls.hash_key); blob.set_components("l", ls.components)
-        blob.set_mac_key(mac_key); blob.set_mac_name("kmac256")
+        blob.set_mac_key(mac_key); blob.set_mac_name("hmac-blake3")
         blob_bytes = blob.export(lockseed=True, mac=True)
     print(f"persistence blob: {len(blob_bytes)} bytes")
 

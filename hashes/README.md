@@ -380,8 +380,8 @@ func main() {
 	// Single-Ouroboros (3 seeds) constructor — variadic args by type:
 	// string matching hashes.Registry → primitive, string matching
 	// macs.Registry → MAC, int → key_bits. Defaults: "areion512" /
-	// 1024 / "kmac256". Triple Ouroboros (7 seeds) → easy.New3(...).
-	enc := easy.New("blake3", 1024, "kmac256")
+	// 1024 / "hmac-blake3". Triple Ouroboros (7 seeds) → easy.New3(...).
+	enc := easy.New("blake3", 1024, "hmac-blake3")
 	defer enc.Close()
 
 	// Per-instance configuration.
@@ -503,9 +503,9 @@ func main() {
 		PrimitiveD: "blake2s",     // dataSeed:   BLAKE2s
 		PrimitiveS: "areion256",   // startSeed:  Areion-SoEM-256
 		PrimitiveL: "blake2b256",  // dedicated lockSeed (optional;
-		                           //   empty = no lockSeed slot)
+		                           // empty = no lockSeed slot)
 		KeyBits:    1024,
-		MACName:    "kmac256",
+		MACName:    "hmac-blake3",
 	})
 	defer enc.Close()
 
@@ -571,7 +571,7 @@ func main() {
 		PrimitiveS: "areion256",
 		PrimitiveL: "blake2b256",
 		KeyBits:    1024,
-		MACName:    "kmac256",
+		MACName:    "hmac-blake3",
 	})
 	defer dec.Close()
 
