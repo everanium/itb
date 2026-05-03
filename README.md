@@ -71,7 +71,7 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 |---|---|---|---|
 | **CGO (default)** | `go build` | C with SIMD auto-vectorization | C compiler (GCC/Clang) |
 | **No ITB ASM** (CGO) | <code>go&nbsp;build&nbsp;‑tags=noitbasm</code> | C with SIMD auto-vectorization, ITB chain-absorb / Lock Soup / Areion permutation ASM disabled — upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
-| **Pure-Go pixel kernel** | `CGO_ENABLED=0 go build` | Pure Go pixel pipeline (`process_generic.go`); ITB chain-absorb and upstream stdlib hash ASM stay engaged via Go assembly — only the C SIMD pixel kernel is opted out | None |
+| **Pure Go kernel** | `CGO_ENABLED=0 go build` | Pure Go pixel pipeline (`process_generic.go`); ITB chain-absorb and upstream stdlib hash ASM stay engaged via Go assembly — only the C SIMD pixel kernel is opted out | None |
 | **Fully scalar** | `CGO_ENABLED=0 go build -tags=purego` | Pure Go pixel pipeline AND every ASM kernel disabled; the universal `purego` convention is honoured by `zeebo/blake3` / `golang.org/x/crypto` / `jedisct1/go-aes` so the hash layer also goes scalar | None |
 
 On AVX-512 hosts, hand-written ZMM-batched chain-absorb ASM kernels accelerate the per-pixel hash hot path **2×–7×** over the per-call scalar fallback across all nine PRF-grade primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, ChaCha20, AES-CMAC, SipHash-2-4) — see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md) for measured numbers on Intel Rocket Lake and AMD EPYC 9655P (Zen 5). CGO mode (default) layers a C per-pixel kernel on top of the hash dispatch; building with `CGO_ENABLED=0` swaps that for a portable Go pixel pipeline while the Go-assembly ZMM chain-absorb hash kernels stay engaged when AVX-512 is present. Per-pixel kernel uses three runtime-dispatched tiers:
@@ -323,7 +323,7 @@ func main() {
 }
 ```
 
-### Easy: Areion-SoEM-512 + KMAC-256 (recommended, authenticated)
+### Easy: Areion-SoEM-512 + HMAC-BLAKE3 (recommended, authenticated)
 
 The MAC primitive is bound at construction time — the third
 positional argument selects one of the registry names (`kmac256`,
@@ -821,7 +821,7 @@ func main() {
 }
 ```
 
-### Areion-SoEM-512 + KMAC-256 (low-level, authenticated)
+### Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
 
 ```go
 
