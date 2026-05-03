@@ -1,16 +1,17 @@
-# C# binding throughput
+# ITB C# / .NET Binding — Easy Mode Benchmark Results
 
-Recorded on Intel Core i7-11700K (Rocket Lake, AVX-512 + VAES,
-8 cores / 16 threads, native Linux), .NET SDK 10.0.104, libitb
-0.1.0 in c-shared mode. Each cell is steady-state throughput in
-MB/s on a 16 MiB plaintext payload, ITB key width 1024 bits, MAC
-slot bound to **HMAC-BLAKE3** (the lightest authenticated-mode
-MAC — ~9 % overhead vs HMAC-SHA256's ~15 % vs KMAC-256's ~44 %).
-Each case ran for at least 5 wall-clock seconds (the
-`ITB_BENCH_MIN_SEC` default) to absorb cold-cache / warmup
-transients on the encrypt path.
+Throughput (MB/s) of `Itb.Encryptor.Encrypt` / `Decrypt` /
+`EncryptAuth` / `DecryptAuth` over the libitb c-shared library
+through the `[LibraryImport]` + `NativeLibrary.SetDllImportResolver`
+runtime FFI on .NET 10. Single + Triple Ouroboros at 1024-bit
+ITB key width on a 16 MiB non-deterministic-fill payload, four
+ops per primitive. The MAC slot is bound to **HMAC-BLAKE3** —
+the lightest authenticated-mode overhead among the three shipping
+MACs (the `EncryptAuth` row sits within a few percent of the
+matching `Encrypt` row, and well below HMAC-SHA256's ~15 % and
+KMAC-256's ~44 % overheads).
 
-Reproduction:
+The harness lives in this directory; reproduction:
 
 ```bash
 cd bindings/csharp
@@ -21,91 +22,122 @@ ITB_BENCH_MIN_SEC=5 dotnet run --project Itb.Bench -c Release -- triple
 ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 dotnet run --project Itb.Bench -c Release -- triple
 ```
 
-Primitive ordering follows the canonical PRF-grade subset of the
-ITB hash registry (`AES-CMAC`, `SipHash-2-4`, `ChaCha20`,
-`Areion-SoEM-256`, `BLAKE2s`, `BLAKE3`, `BLAKE2b-256`,
-`BLAKE2b-512`, `Areion-SoEM-512`). The `mixed` row constructs a
-mixed-primitive `Encryptor` (`blake3` noise / `areion256` data /
-`chacha20` start, plus `blake3` lockseed in the `with LockSeed`
-arm). Lower-than-pure-`blake3` mixed-row throughput in the LockSeed
-arm reflects the BitSoup + LockSoup auto-couple that the dedicated
-lockseed slot engages.
+The default measurement window is 5 seconds per case
+(`ITB_BENCH_MIN_SEC=5`), wide enough to absorb the cold-cache /
+warm-up transient that distorts shorter windows on the 16 MiB
+encrypt / decrypt path. `ITB_BENCH_FILTER=<substring>` narrows
+the matrix to a single primitive when re-running an outlier in
+isolation.
 
-## Single Ouroboros — no LockSeed
+## FFI overhead vs. native Go
 
-| Primitive | encrypt | decrypt | encrypt_auth | decrypt_auth |
-|---|---:|---:|---:|---:|
-| AES-CMAC | 189.5 | 265.1 | 174.2 | 246.2 |
-| SipHash-2-4 | 152.3 | 196.3 | 144.0 | 188.5 |
-| ChaCha20 | 111.2 | 131.7 | 106.5 | 124.9 |
-| Areion-SoEM-256 | 70.7 | 174.9 | 169.5 | 257.0 |
-| BLAKE2s | 101.3 | 117.7 | 93.5 | 116.7 |
-| BLAKE3 | 124.3 | 149.1 | 118.2 | 143.8 |
-| BLAKE2b-256 | 96.0 | 110.7 | 91.1 | 107.4 |
-| BLAKE2b-512 | 138.0 | 168.2 | 127.0 | 163.3 |
-| Areion-SoEM-512 | 204.8 | 301.8 | 186.9 | 278.0 |
-| mixed | 153.5 | 197.0 | 144.7 | 186.3 |
+The C# path adds a `[LibraryImport]` source-generated marshalling
+trampoline, the C ABI crossing into Go, and a result-copy from the
+c-shared output buffer back into a `byte[]`. The binding caches a
+per-encryptor output buffer and pre-allocates from a 1.25× upper
+bound on the empirical ITB ciphertext-expansion factor (≤ 1.155
+across every primitive / mode / nonce / payload-size combination)
+so the hot loop avoids the size-probe round-trip the
+process-global FFI helpers use. The cache is wiped on grow and on
+`Dispose`, so residual ciphertext / plaintext cannot linger in
+heap garbage between cipher calls.
 
-## Single Ouroboros — with LockSeed (BitSoup + LockSoup engaged)
+The numbers below ride the default build (no opt-out tags). On
+hosts without AVX-512+VL the Go side automatically nil-routes the
+4-lane batched chain-absorb arm so the per-pixel hash falls
+through to the upstream stdlib asm via the single Func — see the
+build-tag table in the [Python binding README](../../python/README.md)
+for the `-tags=purego` / `-tags=noitbasm` opt-outs (the same tags
+apply to the C# binding's libitb.so build).
 
-| Primitive | encrypt | decrypt | encrypt_auth | decrypt_auth |
-|---|---:|---:|---:|---:|
-| AES-CMAC | 73.3 | 83.8 | 71.7 | 82.5 |
-| SipHash-2-4 | 68.9 | 76.0 | 63.5 | 71.8 |
-| ChaCha20 | 45.0 | 47.7 | 36.0 | 41.6 |
-| Areion-SoEM-256 | 60.1 | 71.8 | 61.7 | 71.1 |
-| BLAKE2s | 42.9 | 46.2 | 42.4 | 45.6 |
-| BLAKE3 | 42.5 | 45.6 | 41.8 | 44.6 |
-| BLAKE2b-256 | 41.3 | 44.5 | 40.3 | 44.2 |
-| BLAKE2b-512 | 45.8 | 49.3 | 44.5 | 48.9 |
-| Areion-SoEM-512 | 52.3 | 57.7 | 50.2 | 56.8 |
-| mixed | 45.1 | 47.7 | 42.6 | 47.3 |
+## Intel Core i7-11700K (16 HT, native Linux, c-shared mode)
 
-## Triple Ouroboros — no LockSeed
+Recorded on Intel Core i7-11700K (Rocket Lake, AVX-512 + VAES,
+8 cores / 16 threads, native Linux), .NET SDK 10.0.104, libitb
+0.1.0 in c-shared mode.
 
-| Primitive | encrypt | decrypt | encrypt_auth | decrypt_auth |
-|---|---:|---:|---:|---:|
-| AES-CMAC | 247.6 | 287.6 | 190.3 | 272.9 |
-| SipHash-2-4 | 186.7 | 207.2 | 173.0 | 199.9 |
-| ChaCha20 | 124.8 | 134.0 | 118.1 | 129.6 |
-| Areion-SoEM-256 | 258.6 | 315.3 | 236.2 | 297.3 |
-| BLAKE2s | 114.5 | 122.4 | 108.7 | 119.8 |
-| BLAKE3 | 141.7 | 154.2 | 134.1 | 149.4 |
-| BLAKE2b-256 | 104.4 | 110.5 | 99.4 | 108.1 |
-| BLAKE2b-512 | 162.0 | 175.5 | 151.1 | 169.1 |
-| Areion-SoEM-512 | 275.4 | 323.0 | 247.8 | 310.9 |
-| mixed | 140.4 | 151.7 | 132.0 | 143.4 |
+### ITB Single 1024-bit (security: P × 2^1024)
 
-## Triple Ouroboros — with LockSeed (BitSoup + LockSoup engaged)
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 71 | 175 | 170 | 257 |
+| **Areion-SoEM-512** | 512 | PRF | 205 | 302 | 187 | 278 |
+| **SipHash-2-4** | 128 | PRF | 152 | 196 | 144 | 189 |
+| **AES-CMAC** | 128 | PRF | 190 | 265 | 174 | 246 |
+| **BLAKE2b-512** | 512 | PRF | 138 | 168 | 127 | 163 |
+| **BLAKE2b-256** | 256 | PRF | 96 | 111 | 91 | 107 |
+| **BLAKE2s** | 256 | PRF | 101 | 118 | 94 | 117 |
+| **BLAKE3** | 256 | PRF | 124 | 149 | 118 | 144 |
+| **ChaCha20** | 256 | PRF | 111 | 132 | 107 | 125 |
+| **Mixed** | 256 | PRF | 154 | 197 | 145 | 186 |
 
-| Primitive | encrypt | decrypt | encrypt_auth | decrypt_auth |
-|---|---:|---:|---:|---:|
-| AES-CMAC | 75.9 | 68.2 | 66.6 | 72.4 |
-| SipHash-2-4 | 68.9 | 73.0 | 67.1 | 71.7 |
-| ChaCha20 | 46.1 | 47.2 | 37.9 | 39.7 |
-| Areion-SoEM-256 | 58.9 | 63.7 | 59.9 | 61.9 |
-| BLAKE2s | 42.7 | 43.4 | 41.8 | 43.0 |
-| BLAKE3 | 40.5 | 41.9 | 40.0 | 41.1 |
-| BLAKE2b-256 | 39.1 | 41.4 | 40.4 | 40.9 |
-| BLAKE2b-512 | 44.1 | 45.9 | 42.5 | 44.8 |
-| Areion-SoEM-512 | 52.3 | 53.0 | 50.3 | 53.4 |
-| mixed | 33.6 | 42.1 | 38.4 | 41.0 |
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 259 | 315 | 236 | 297 |
+| **Areion-SoEM-512** | 512 | PRF | 275 | 323 | 248 | 311 |
+| **SipHash-2-4** | 128 | PRF | 187 | 207 | 173 | 200 |
+| **AES-CMAC** | 128 | PRF | 248 | 288 | 190 | 273 |
+| **BLAKE2b-512** | 512 | PRF | 162 | 176 | 151 | 169 |
+| **BLAKE2b-256** | 256 | PRF | 104 | 111 | 99 | 108 |
+| **BLAKE2s** | 256 | PRF | 115 | 122 | 109 | 120 |
+| **BLAKE3** | 256 | PRF | 142 | 154 | 134 | 149 |
+| **ChaCha20** | 256 | PRF | 125 | 134 | 118 | 130 |
+| **Mixed** | 256 | PRF | 140 | 152 | 132 | 143 |
+
+## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, LockSeed mode)
+
+The dedicated lockSeed channel (`Encryptor.SetLockSeed(1)` /
+`ITB_LOCKSEED=1`) auto-couples Bit Soup + Lock Soup on the
+on-direction. Numbers below run with all three overlays active.
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 60 | 72 | 62 | 71 |
+| **Areion-SoEM-512** | 512 | PRF | 52 | 58 | 50 | 57 |
+| **SipHash-2-4** | 128 | PRF | 69 | 76 | 64 | 72 |
+| **AES-CMAC** | 128 | PRF | 73 | 84 | 72 | 83 |
+| **BLAKE2b-512** | 512 | PRF | 46 | 49 | 45 | 49 |
+| **BLAKE2b-256** | 256 | PRF | 41 | 45 | 40 | 44 |
+| **BLAKE2s** | 256 | PRF | 43 | 46 | 42 | 46 |
+| **BLAKE3** | 256 | PRF | 43 | 46 | 42 | 45 |
+| **ChaCha20** | 256 | PRF | 45 | 48 | 36 | 42 |
+| **Mixed** | 256 | PRF | 45 | 48 | 43 | 47 |
+
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 59 | 64 | 60 | 62 |
+| **Areion-SoEM-512** | 512 | PRF | 52 | 53 | 50 | 53 |
+| **SipHash-2-4** | 128 | PRF | 69 | 73 | 67 | 72 |
+| **AES-CMAC** | 128 | PRF | 76 | 68 | 67 | 72 |
+| **BLAKE2b-512** | 512 | PRF | 44 | 46 | 43 | 45 |
+| **BLAKE2b-256** | 256 | PRF | 39 | 41 | 40 | 41 |
+| **BLAKE2s** | 256 | PRF | 43 | 43 | 42 | 43 |
+| **BLAKE3** | 256 | PRF | 41 | 42 | 40 | 41 |
+| **ChaCha20** | 256 | PRF | 46 | 47 | 38 | 40 |
+| **Mixed** | 256 | PRF | 34 | 42 | 38 | 41 |
 
 ## Notes
 
 - The first row in every Single-Ouroboros pass shows a transient
   asymmetry between encrypt and decrypt (e.g., Areion-SoEM-256
-  encrypt 70.7 MB/s vs decrypt 174.9 MB/s in the no-LockSeed pass).
+  encrypt 71 MB/s vs decrypt 175 MB/s in the no-LockSeed pass).
   This is the cold-cache + first-iteration warmup absorbed
-  imperfectly even at 5-second windows; subsequent rows in the same
-  pass run on warm caches and report symmetric encrypt-vs-decrypt
-  numbers. Re-running the same primitive in isolation
+  imperfectly even at 5-second windows; subsequent rows in the
+  same pass run on warm caches and report symmetric
+  encrypt-vs-decrypt numbers. Re-running the same primitive in
+  isolation
   (`ITB_BENCH_FILTER=areion256 ITB_BENCH_MIN_SEC=20 dotnet run -- single`)
   normalises the asymmetry.
-- The `with LockSeed` arms cap throughput in the 40-80 MB/s band
-  because the dedicated lockseed slot auto-engages BitSoup +
-  LockSoup; the bit-level split + per-chunk PRF-keyed
-  bit-permutation overlay together dominate the per-byte cost.
+- The LockSeed arms cap throughput in the 40-80 MB/s band because
+  the dedicated lockseed slot auto-engages BitSoup + LockSoup; the
+  bit-level split + per-chunk PRF-keyed bit-permutation overlay
+  together dominate the per-byte cost.
 - Triple Ouroboros exceeds Single Ouroboros throughput on most
   primitives because the seven-seed split exposes additional
   internal parallelism opportunities to libitb's worker pool while
