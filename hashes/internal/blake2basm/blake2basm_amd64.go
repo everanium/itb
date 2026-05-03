@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Package blake2basm holds the AVX-512 + VL fused chain-absorb kernel
 // implementation of BLAKE2b for the parent hashes/ package. The chain

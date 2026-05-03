@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Package locksoupasm holds the BMI2 PEXT/PDEP assembly implementation
 // of the per-chunk Lock Soup keyed bit-permutation kernels. It lives in

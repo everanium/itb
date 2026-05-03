@@ -125,6 +125,14 @@ Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
 Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). Pure-Go mode (`CGO_ENABLED=0` or `-tags=purego`) is **~2×–7× slower** when the ZMM hash kernels fall back to per-call scalar references — every primitive picks up a measurable ZMM uplift, but the relative gap is widest on the BLAKE / ARX primitives (heavier per-call closure overhead amortised across four lanes) and narrowest on AES-CMAC / SipHash-2-4, whose scalar paths already run AES-NI-accelerated through `crypto/aes` and the hand-tuned `dchest/siphash` assembly so the batched arm has less headroom to recover. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
+Build-time switches that govern hash-kernel selection:
+
+| Tag | Our internal asm | Upstream hash asm | When to use |
+|---|---|---|---|
+| (none) | engaged | engaged | Default — full asm stack on AVX-512+VL hosts |
+| `-tags=purego` | off | off (forced via the universal `purego` convention honoured by `zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) | Reproducible-build / sandboxed targets that must avoid every asm path |
+| `-tags=noitbasm` | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
+
 ### ASIC Scalability
 
 **FPGA proof-of-concept is planned** using open-source Verilog IP cores for SipHash and ChaCha20 DRBG, with a custom ITB pixel pipeline. Target: full encrypt/decrypt roundtrip on a single FPGA chip.
@@ -519,6 +527,134 @@ func main() {
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
+    if err := dec.Import(blob); err != nil {
+        panic(err)
+    }
+
+    decrypted, err := dec.DecryptAuth(encrypted)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("decrypted: %s\n", string(decrypted))
+}
+```
+
+### Easy: Mixed primitives — different PRF per seed slot
+
+`easy.NewMixed` and `easy.NewMixed3` accept a per-slot primitive
+spec, allowing the noise / data / start (and optional dedicated
+lockSeed) seed slots to use different PRF primitives within the
+same native hash width. The mix-and-match-PRF freedom of the
+lower-level path, surfaced through Easy Mode without forcing the
+caller off the high-level constructor. The state blob carries
+per-slot primitives + per-slot PRF keys; the receiver constructs a
+matching encryptor with the same spec and calls `Import` to
+restore.
+
+```go
+
+// Sender
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
+    // Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
+    // Every name must share the same native hash width — mixing
+    // widths is rejected at construction with easy.ErrEasyMixedWidth.
+    // Triple Ouroboros mirror — easy.NewMixed3(easy.MixedSpec3{...})
+    // takes seven per-slot names (noise + 3 data + 3 start) plus
+    // the optional PrimitiveL lockSeed.
+    enc := easy.NewMixed(easy.MixedSpec{
+        PrimitiveN: "blake3",      // noiseSeed:  BLAKE3
+        PrimitiveD: "blake2s",     // dataSeed:   BLAKE2s
+        PrimitiveS: "areion256",   // startSeed:  Areion-SoEM-256
+        PrimitiveL: "blake2b256",  // dedicated lockSeed (optional;
+                                   //   empty = no lockSeed slot)
+        KeyBits:    1024,
+        MACName:    "kmac256",
+    })
+    defer enc.Close()
+
+    // Per-instance configuration applies as for easy.New.
+    enc.SetNonceBits(512)
+    enc.SetBarrierFill(4)
+    // BitSoup + LockSoup are auto-coupled on the on-direction by
+    // PrimitiveL above; explicit calls below are unnecessary but
+    // harmless if added.
+    //enc.SetBitSoup(1)
+    //enc.SetLockSoup(1)
+
+    // Per-slot introspection — Primitive returns the "mixed"
+    // literal, PrimitiveAt(slot) returns each slot's name,
+    // IsMixed() is the typed predicate. Slot ordering is canonical:
+    // 0 = noiseSeed, 1 = dataSeed, 2 = startSeed, 3 = lockSeed
+    // (Single); Triple grows the middle range to 7 slots + lockSeed.
+    fmt.Printf("mixed=%v primitive=%s\n", enc.IsMixed(), enc.Primitive)
+    for i := 0; i < 4; i++ {
+        fmt.Printf("  slot %d: %s\n", i, enc.PrimitiveAt(i))
+    }
+
+    blob := enc.Export()
+    fmt.Printf("state blob: %d bytes\n", len(blob))
+
+    plaintext := []byte("mixed-primitive Easy Mode payload")
+
+    // Authenticated encrypt — 32-byte tag is computed across the
+    // entire decrypted capacity and embedded inside the RGBWYOPA
+    // container, preserving oracle-free deniability.
+    encrypted, err := enc.EncryptAuth(plaintext)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+    // Send encrypted payload + state blob
+}
+
+// Receiver
+
+package main
+
+import (
+    "fmt"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/easy"
+)
+
+func main() {
+    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
+    // Receive encrypted payload + state blob
+    // var encrypted, blob []byte = ..., ...
+
+    // Receiver constructs a matching mixed encryptor — every per-
+    // slot primitive name plus key_bits and mac must agree with the
+    // sender. Import validates each per-slot primitive against the
+    // receiver's bound spec; mismatches surface as
+    // easy.ErrMismatch{Field: "primitive"}.
+    dec := easy.NewMixed(easy.MixedSpec{
+        PrimitiveN: "blake3",
+        PrimitiveD: "blake2s",
+        PrimitiveS: "areion256",
+        PrimitiveL: "blake2b256",
+        KeyBits:    1024,
+        MACName:    "kmac256",
+    })
+    defer dec.Close()
+
+    // Restore PRF keys, seed components, MAC key, and the per-
+    // instance configuration overrides from the saved blob. Mixed
+    // blobs carry mixed:true plus a primitives array; Import on a
+    // single-primitive receiver (or vice versa) is rejected as a
+    // primitive mismatch.
     if err := dec.Import(blob); err != nil {
         panic(err)
     }

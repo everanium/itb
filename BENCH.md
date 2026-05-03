@@ -11,7 +11,12 @@ ITB_NONCE_SIZE=128 go test -bench='BenchmarkExtSingle*' -benchtime=2s -count=1
 ITB_NONCE_SIZE=128 ITB_LOCKSOUP=1 go test -bench='BenchmarkExtSingle*' -benchtime=2s -count=1
 ```
 
-Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everanium/itb/blob/main/archive/OLDBENCH.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations.
+Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512+VL chain-absorb kernels are not engaged:
+
+* `-tags=purego` — disables both our chain-absorb asm and the upstream stdlib asm (zeebo/blake3, golang.org/x/crypto, jedisct1/go-aes); the single Func falls into pure-Go scalar.
+* `-tags=noitbasm` — disables only our chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; throughput tracks the OLDBENCH single-Func numbers below.
+
+Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everanium/itb/blob/main/archive/OLDBENCH.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations. Numerically these also serve as the expected ballpark under `-tags=noitbasm` (the encrypt path runs 4× single arm via upstream asm — the pre-ZMM dispatch shape).
 
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode)
 

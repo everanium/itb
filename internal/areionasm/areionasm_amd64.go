@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Package areionasm holds the AVX-512 + VAES (and AVX-2 fallback)
 // assembly implementation of the 4-way batched Areion family for the

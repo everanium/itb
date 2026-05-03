@@ -50,6 +50,8 @@ import (
 	"unsafe"
 
 	"github.com/jedisct1/go-aes"
+
+	"github.com/everanium/itb/internal/areionasm"
 )
 
 // Areion round constants (digits of pi, little-endian) — must match
@@ -559,6 +561,20 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 			binary.LittleEndian.Uint64(state[24:]),
 		}
 	}
+	// On hosts without any VAES-capable asm path (purego / non-amd64
+	// / no-AESNI) the batched closure's AreionSoEM256x4 dispatch falls
+	// through to the package's portable Go SoEM scalar path, which
+	// pays the 4-lane wrapper cost on top of work the single arm
+	// already does through its own dispatcher. Returning nil here
+	// lets process_cgo.go's nil-fallback drive per-pixel hashing
+	// through the single arm directly. The check covers both AVX-512
+	// + VAES (HasVAESAVX512) and AVX-2 + VAES (HasVAESAVX2NoAVX512);
+	// either flag is enough to keep the batched path engaged because
+	// the AVX-2 4-way permutation still SIMD-parallelises across
+	// lanes.
+	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 {
+		return single, nil
+	}
 	// Batched chain: 4 lanes run their CBC-MAC chain in lock-step,
 	// each round dispatching one AreionSoEM256x4 call so the AVX-512
 	// 4-way SIMD parallelism is preserved. ITB feeds equal-length
@@ -708,6 +724,14 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 			out[i] = binary.LittleEndian.Uint64(state[i*8:])
 		}
 		return out
+	}
+	// On hosts without any VAES-capable asm path the batched
+	// AreionSoEM512x4 dispatch falls through to the portable Go
+	// scalar SoEM path; nil-out the batched arm so process_cgo.go's
+	// nil-fallback drives per-pixel hashing through the single arm
+	// directly. See the SoEM-256 counterpart above for the rationale.
+	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 {
+		return single, nil
 	}
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])

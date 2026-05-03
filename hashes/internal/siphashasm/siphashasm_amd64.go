@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Package siphashasm holds the AVX-512 + VL fused chain-absorb
 // kernel implementation of SipHash-2-4-128 for the parent hashes/

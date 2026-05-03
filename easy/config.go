@@ -63,10 +63,24 @@ func (e *Encryptor) SetBarrierFill(n int) {
 // 0 = byte-level split (default); non-zero = bit-level "bit soup"
 // split. Mutates only the encryptor's own [itb.Config] copy.
 //
+// Auto-couple guard: when a dedicated lockSeed is active on this
+// encryptor (cfg.LockSeed == 1, set either by
+// [Encryptor.SetLockSeed](1) or by [NewMixed] / [NewMixed3] with a
+// non-empty PrimitiveL), passing mode == 0 is silently overridden
+// to mode == 1. The bit-permutation overlay must stay engaged
+// while the dedicated lockSeed is allocated; allowing
+// SetBitSoup(0) here would let a subsequent encrypt panic with
+// ErrLockSeedOverlayOff inside the build-PRF closure when LockSoup
+// is also off. Drop the dedicated lockSeed via [Encryptor.SetLockSeed](0)
+// first if a fully-overlay-off configuration is the goal.
+//
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 func (e *Encryptor) SetBitSoup(mode int32) {
 	if e.closed {
 		panic(ErrClosed)
+	}
+	if mode == 0 && e.cfg.LockSeed == 1 {
+		mode = 1
 	}
 	e.cfg.BitSoup = mode
 	e.bitSoupExplicit = true
@@ -78,10 +92,20 @@ func (e *Encryptor) SetBitSoup(mode int32) {
 // [itb.SetLockSoup] behaviour: the Lock Soup overlay layers on top
 // of bit soup, so engaging the overlay engages bit soup as well.
 //
+// Auto-couple guard mirrors [Encryptor.SetBitSoup]: when a
+// dedicated lockSeed is active on this encryptor, passing mode == 0
+// is silently overridden to mode == 1 so the bit-permutation
+// overlay stays engaged. Drop the dedicated lockSeed via
+// [Encryptor.SetLockSeed](0) first if a fully-overlay-off
+// configuration is the goal.
+//
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 func (e *Encryptor) SetLockSoup(mode int32) {
 	if e.closed {
 		panic(ErrClosed)
+	}
+	if mode == 0 && e.cfg.LockSeed == 1 {
+		mode = 1
 	}
 	e.cfg.LockSoup = mode
 	e.lockSoupExplicit = true
@@ -137,7 +161,12 @@ func (e *Encryptor) SetLockSeed(mode int32) {
 
 	if mode == 1 {
 		// Activate: allocate a dedicated lockSeed if not already
-		// present.
+		// present, and wire it onto the noiseSeed via the width-
+		// typed AttachLockSeed mutator so the build-PRF closure
+		// in bitsoup.go sees AttachedLockSeed() != nil for both
+		// the cfg-driven (Easy Mode) and the seed-driven (native)
+		// dispatch paths. The native attach is symmetric with the
+		// Mixed-mode path which already attaches at construction.
 		if e.cfg.LockSeedHandle == nil {
 			seed, key := allocSeed(e.Primitive, e.KeyBits, e.width)
 			e.seeds = append(e.seeds, seed)
@@ -145,6 +174,9 @@ func (e *Encryptor) SetLockSeed(mode int32) {
 				e.prfKeys = append(e.prfKeys, key)
 			}
 			e.cfg.LockSeedHandle = seed
+			if len(e.seeds) > 0 {
+				attachNoiseSeedLockSeed(e.seeds[0], seed, e.width)
+			}
 		}
 		e.cfg.LockSeed = 1
 		// Auto-couple Lock Soup (which itself couples Bit Soup) so
@@ -169,6 +201,25 @@ func (e *Encryptor) SetLockSeed(mode int32) {
 			if len(e.seeds) > 0 {
 				e.seeds = e.seeds[:len(e.seeds)-1]
 			}
+			// Mixed-mode encryptors track per-slot primitive names
+			// in e.primitives parallel to e.seeds; shrink alongside
+			// so post-deactivation Export does not emit a stale
+			// trailing primitive entry that the receiver would
+			// reject as a length mismatch.
+			if len(e.primitives) > len(e.seeds) {
+				e.primitives = e.primitives[:len(e.seeds)]
+			}
+		}
+		// Detach the dedicated lockSeed pointer from the noiseSeed
+		// so the bit-permutation overlay's build-PRF closure sees
+		// AttachedLockSeed() == nil on subsequent Encrypt calls.
+		// Without this detach a Mixed-mode SetLockSeed(0) followed
+		// by SetBitSoup(0) + SetLockSoup(0) panics with
+		// ErrLockSeedOverlayOff inside the build-PRF closure
+		// because the noiseSeed still carries the attach from
+		// NewMixed / NewMixed3 construction time.
+		if len(e.seeds) > 0 {
+			detachNoiseSeedLockSeed(e.seeds[0], e.width)
 		}
 		e.cfg.LockSeedHandle = nil
 		e.cfg.LockSeed = 0
@@ -354,8 +405,22 @@ func (e *Encryptor) ParseChunkLen(header []byte) (int, error) {
 		return 0, fmt.Errorf("itb/easy: ParseChunkLen: pixel count overflow (%d pixels × %d channels)",
 			totalPixels, itb.Channels)
 	}
+	// Container pixel-count cap mirrors the upstream
+	// itb.ParseChunkLen limit. Without this cap a hostile chunk
+	// header announcing width × height ≈ 7 GB could drive a binding
+	// to allocate that much before the underlying Decrypt rejects.
+	if totalPixels > maxParseChunkPixels {
+		return 0, fmt.Errorf("itb/easy: ParseChunkLen: pixel count exceeds cap (%d > %d)",
+			totalPixels, maxParseChunkPixels)
+	}
 	return headerSz + totalPixels*itb.Channels, nil
 }
+
+// maxParseChunkPixels mirrors the unexported itb.maxTotalPixels
+// constant for the per-instance ParseChunkLen path. A maliciously-
+// large chunk header announcing more pixels than this is rejected
+// before any caller-side buffer allocation.
+const maxParseChunkPixels = 10_000_000
 
 // zeroSeedComponents clears the Components slice of a typed seed
 // pointer of the given primitive width. Used by [Encryptor.Close]
@@ -374,6 +439,58 @@ func zeroSeedComponents(handle interface{}, width int) {
 	case 512:
 		if s, ok := handle.(*itb.Seed512); ok {
 			clear(s.Components)
+		}
+	}
+}
+
+// detachNoiseSeedLockSeed clears the attached-lockSeed pointer on a
+// noiseSeed via the width-typed [itb.Seed{N}.DetachLockSeed]
+// mutator. Used by [Encryptor.SetLockSeed](0) to keep the
+// noiseSeed's attach state in sync with the cfg.LockSeedHandle
+// drop. No-op when the handle is the wrong type or the seed has no
+// attach to begin with.
+func detachNoiseSeedLockSeed(handle interface{}, width int) {
+	switch width {
+	case 128:
+		if s, ok := handle.(*itb.Seed128); ok {
+			s.DetachLockSeed()
+		}
+	case 256:
+		if s, ok := handle.(*itb.Seed256); ok {
+			s.DetachLockSeed()
+		}
+	case 512:
+		if s, ok := handle.(*itb.Seed512); ok {
+			s.DetachLockSeed()
+		}
+	}
+}
+
+// attachNoiseSeedLockSeed wires the lockSeed pointer onto the
+// noiseSeed via the width-typed [itb.Seed{N}.AttachLockSeed]
+// mutator. Used by [Encryptor.SetLockSeed](1) and by Import on
+// the rawLockSeed branch to keep the noiseSeed's attach state in
+// sync with the cfg.LockSeedHandle field. No-op when either
+// handle is the wrong type for the supplied width.
+func attachNoiseSeedLockSeed(noise, lock interface{}, width int) {
+	switch width {
+	case 128:
+		ns, nsOK := noise.(*itb.Seed128)
+		ls, lsOK := lock.(*itb.Seed128)
+		if nsOK && lsOK {
+			ns.AttachLockSeed(ls)
+		}
+	case 256:
+		ns, nsOK := noise.(*itb.Seed256)
+		ls, lsOK := lock.(*itb.Seed256)
+		if nsOK && lsOK {
+			ns.AttachLockSeed(ls)
+		}
+	case 512:
+		ns, nsOK := noise.(*itb.Seed512)
+		ls, lsOK := lock.(*itb.Seed512)
+		if nsOK && lsOK {
+			ns.AttachLockSeed(ls)
 		}
 	}
 }

@@ -129,6 +129,14 @@ func BLAKE2b512Pair(key ...[64]byte) (itb.HashFunc512, itb.BatchHashFunc512, [64
 // single-call invocations of the single arm.
 func BLAKE2b512PairWithKey(fixedKey [64]byte) (itb.HashFunc512, itb.BatchHashFunc512) {
 	single := BLAKE2b512WithKey(fixedKey)
+	// On hosts without the AVX-512 fused chain-absorb path the batched
+	// closure falls into the scalar Go reference; under that path
+	// process_cgo.go's nil-fallback (driving 4 single calls into the
+	// upstream golang.org/x/crypto BLAKE2b asm) outperforms the
+	// 4-lane wrapper. Return nil to opt into that fallback.
+	if !blake2basm.HasAVX512Fused {
+		return single, nil
+	}
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])
 		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&

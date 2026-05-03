@@ -1,6 +1,7 @@
 package easy
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -49,6 +50,24 @@ type stateBlobV1 struct {
 	BarrierFill int        `json:"barrier_fill,omitempty"`
 	BitSoup     *int32     `json:"bit_soup,omitempty"`
 	LockSoup    *int32     `json:"lock_soup,omitempty"`
+
+	// Mixed signals that the blob carries per-slot primitive names.
+	// Encoded as the literal `true` when the encryptor was built via
+	// [NewMixed] / [NewMixed3]; omitted (false) for single-primitive
+	// encryptors built via [New] / [New3]. The Primitive field on a
+	// mixed blob carries [MixedPrimitive] ("mixed") and the
+	// per-slot names live in Primitives instead.
+	Mixed bool `json:"mixed,omitempty"`
+
+	// Primitives carries one canonical [hashes.Registry] name per
+	// seed slot in canonical order: 0 = noiseSeed, then dataSeed
+	// (Single) or dataSeed1..3 (Triple), then startSeed (Single)
+	// or startSeed1..3 (Triple), with the optional dedicated
+	// lockSeed at the trailing slot when LockSeed is true. Length
+	// matches len(Seeds). Omitted entirely on single-primitive
+	// blobs; readers must treat `Mixed: false` and an empty
+	// Primitives slice as the legacy single-primitive shape.
+	Primitives []string `json:"primitives,omitempty"`
 }
 
 // modeToString maps the integer Mode encoding (1 = Single, 3 =
@@ -127,6 +146,17 @@ func (e *Encryptor) Export() []byte {
 
 	blob.MACKey = hex.EncodeToString(e.macKey)
 	blob.LockSeed = e.cfg.LockSeed > 0
+
+	// Mixed-mode encryptors carry [MixedPrimitive] in Primitive (set
+	// at construction), and the per-slot primitive names ride
+	// alongside through the Primitives field. Single-primitive
+	// encryptors leave Mixed false and Primitives empty so the blob
+	// shape remains identical to the pre-mixed schema for callers
+	// that never use [NewMixed] / [NewMixed3].
+	if e.primitives != nil {
+		blob.Mixed = true
+		blob.Primitives = append([]string(nil), e.primitives...)
+	}
 
 	// Per-instance configuration overrides — emitted only when the
 	// encryptor explicitly set them via the matching Set* method
@@ -229,18 +259,72 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		rawLockSeed = true
 	}
 
-	// Second pass — full struct unmarshal.
+	// Second pass — full struct unmarshal with DisallowUnknownFields
+	// so a tampered blob carrying extra fields is rejected as
+	// malformed rather than silently accepted (the encoding/json
+	// default ignores unknown fields).
 	var blob stateBlobV1
-	if err := json.Unmarshal(blobBytes, &blob); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(blobBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&blob); err != nil {
 		return ErrMalformed
 	}
 
-	spec, ok := hashes.Find(blob.Primitive)
-	if !ok {
-		return ErrUnknownPrimitive
-	}
-	if blob.Primitive != e.Primitive {
+	// Mixed-mode shape mismatch — the receiver and the blob must
+	// agree on whether the encryptor is single-primitive or per-slot
+	// mixed. A mixed blob landing on a [New]-built receiver (or
+	// vice versa) is rejected as a primitive mismatch; the receiver
+	// must be reconstructed via the matching constructor before
+	// Import.
+	receiverIsMixed := e.primitives != nil
+	if blob.Mixed != receiverIsMixed {
 		return &ErrMismatch{Field: "primitive"}
+	}
+
+	// Resolve the width-pinning [hashes.Spec] and the per-slot
+	// primitive name list. For mixed blobs every entry of
+	// blob.Primitives must resolve to the registry and share the
+	// noiseSeed slot's native width; for single-primitive blobs the
+	// noise / data / start slots all share blob.Primitive.
+	var spec hashes.Spec
+	var slotPrims []string
+	if blob.Mixed {
+		if blob.Primitive != MixedPrimitive {
+			return &ErrMismatch{Field: "primitive"}
+		}
+		if len(blob.Primitives) == 0 {
+			return ErrMalformed
+		}
+		if len(blob.Primitives) != len(e.primitives) {
+			return &ErrMismatch{Field: "primitive"}
+		}
+		s0, ok := hashes.Find(blob.Primitives[0])
+		if !ok {
+			return ErrUnknownPrimitive
+		}
+		spec = s0
+		for i, p := range blob.Primitives {
+			sp, ok := hashes.Find(p)
+			if !ok {
+				return ErrUnknownPrimitive
+			}
+			if int(sp.Width) != int(spec.Width) {
+				return ErrMalformed
+			}
+			if p != e.primitives[i] {
+				return &ErrMismatch{Field: "primitive"}
+			}
+		}
+		slotPrims = blob.Primitives
+	} else {
+		s, ok := hashes.Find(blob.Primitive)
+		if !ok {
+			return ErrUnknownPrimitive
+		}
+		spec = s
+		if blob.Primitive != e.Primitive {
+			return &ErrMismatch{Field: "primitive"}
+		}
 	}
 
 	switch blob.KeyBits {
@@ -271,14 +355,6 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		return &ErrMismatch{Field: "mac"}
 	}
 
-	isSipHash := blob.Primitive == "siphash24"
-	if isSipHash && len(blob.PRFKeys) > 0 {
-		return &ErrMismatch{Field: "prf_keys"}
-	}
-	if !isSipHash && len(blob.PRFKeys) == 0 {
-		return &ErrMismatch{Field: "prf_keys"}
-	}
-
 	nSeeds := 3
 	if mode == 3 {
 		nSeeds = 7
@@ -287,11 +363,40 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		nSeeds++
 	}
 
+	// PRFKeys validation. In single-primitive mode the field is
+	// either entirely absent (siphash24) or fully populated. In
+	// mixed mode the slice is always present with one entry per
+	// slot — empty string for siphash24 slots, hex bytes for the
+	// rest. In both modes len(blob.Seeds) must equal nSeeds.
+	isSipHashSingle := !blob.Mixed && blob.Primitive == "siphash24"
+	if blob.Mixed {
+		if len(blob.PRFKeys) != nSeeds {
+			return &ErrMismatch{Field: "prf_keys"}
+		}
+		if len(slotPrims) != nSeeds {
+			return &ErrMismatch{Field: "primitive"}
+		}
+		for i := 0; i < nSeeds; i++ {
+			slotIsSip := slotPrims[i] == "siphash24"
+			slotKeyEmpty := len(blob.PRFKeys[i]) == 0
+			if slotIsSip != slotKeyEmpty {
+				return &ErrMismatch{Field: "prf_keys"}
+			}
+		}
+	} else {
+		if isSipHashSingle && len(blob.PRFKeys) > 0 {
+			return &ErrMismatch{Field: "prf_keys"}
+		}
+		if !isSipHashSingle && len(blob.PRFKeys) == 0 {
+			return &ErrMismatch{Field: "prf_keys"}
+		}
+		if !isSipHashSingle && len(blob.PRFKeys) != nSeeds {
+			return &ErrMismatch{Field: "prf_keys"}
+		}
+	}
+
 	if len(blob.Seeds) != nSeeds {
 		return &ErrMismatch{Field: "seeds"}
-	}
-	if !isSipHash && len(blob.PRFKeys) != nSeeds {
-		return &ErrMismatch{Field: "prf_keys"}
 	}
 
 	macKey, err := hex.DecodeString(blob.MACKey)
@@ -302,8 +407,23 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		return &ErrMismatch{Field: "mac_key"}
 	}
 
+	// Decode PRFKeys. In mixed mode the slice is always allocated
+	// with nSeeds entries (nil for siphash24 slots). In single mode
+	// siphash24 leaves prfKeys at nil entirely (legacy shape).
 	var prfKeys [][]byte
-	if !isSipHash {
+	if blob.Mixed {
+		prfKeys = make([][]byte, nSeeds)
+		for i, hx := range blob.PRFKeys {
+			if hx == "" {
+				continue
+			}
+			kb, err := hex.DecodeString(hx)
+			if err != nil {
+				return &ErrMismatch{Field: "prf_keys"}
+			}
+			prfKeys[i] = kb
+		}
+	} else if !isSipHashSingle {
 		prfKeys = make([][]byte, nSeeds)
 		for i, hx := range blob.PRFKeys {
 			kb, err := hex.DecodeString(hx)
@@ -331,14 +451,25 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		seedCompsArr[i] = comps
 	}
 
+	// Per-slot reconstruction. In mixed mode each slot resolves to
+	// its own primitive name from slotPrims; in single mode every
+	// slot uses blob.Primitive. The width is shared across all slots
+	// in either mode.
 	width := int(spec.Width)
 	newSeeds := make([]interface{}, nSeeds)
 	for i := 0; i < nSeeds; i++ {
+		var slotPrim string
 		var key []byte
-		if !isSipHash {
-			key = prfKeys[i]
+		if blob.Mixed {
+			slotPrim = slotPrims[i]
+			key = prfKeys[i] // may be nil for siphash24 slots
+		} else {
+			slotPrim = blob.Primitive
+			if !isSipHashSingle {
+				key = prfKeys[i]
+			}
 		}
-		seed, err := reconstructSeed(blob.Primitive, width, key, seedCompsArr[i])
+		seed, err := reconstructSeed(slotPrim, width, key, seedCompsArr[i])
 		if err != nil {
 			return &ErrMismatch{Field: "prf_keys"}
 		}
@@ -361,10 +492,16 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 	}
 
 	e.seeds = newSeeds
-	if isSipHash {
-		e.prfKeys = nil
-	} else {
+	switch {
+	case blob.Mixed:
 		e.prfKeys = prfKeys
+		e.primitives = append([]string(nil), slotPrims...)
+	case isSipHashSingle:
+		e.prfKeys = nil
+		e.primitives = nil
+	default:
+		e.prfKeys = prfKeys
+		e.primitives = nil
 	}
 	e.macKey = macKey
 	e.macFunc = macFunc
@@ -404,6 +541,15 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 	if rawLockSeed {
 		e.cfg.LockSeed = 1
 		e.cfg.LockSeedHandle = newSeeds[nSeeds-1]
+		// Wire the dedicated lockSeed onto the noiseSeed via the
+		// width-typed AttachLockSeed mutator, mirroring NewMixed /
+		// NewMixed3 construction. Without this attach, post-Import
+		// SetLockSeed(0) followed by overlay-off setters would not
+		// release the noiseSeed's lockSeed pointer — symmetric with
+		// the construction-time path so SetLockSeed lifecycle
+		// behaves identically regardless of how the encryptor was
+		// born.
+		attachNoiseSeedLockSeed(newSeeds[0], newSeeds[nSeeds-1], e.width)
 		// Auto-couple Lock Soup + Bit Soup on the on-direction,
 		// mirroring [Encryptor.SetLockSeed]'s coupling behaviour: a
 		// dedicated lockSeed has no observable effect on the wire
@@ -428,7 +574,12 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		// Off-direction: do NOT auto-disable the overlay, mirroring
 		// SetLockSeed off-direction behaviour. Callers that want to
 		// drop only LockSeed but keep the underlying overlay engaged
-		// retain their pre-Import LockSoup / BitSoup setting.
+		// retain their pre-Import LockSoup / BitSoup setting. Detach
+		// the noiseSeed's lockSeed pointer (if any) symmetric with
+		// the rawLockSeed branch above.
+		if len(newSeeds) > 0 {
+			detachNoiseSeedLockSeed(newSeeds[0], e.width)
+		}
 	}
 
 	// Conceptually a fresh encryptor — re-allow SetLockSeed.
@@ -470,7 +621,9 @@ func PeekConfig(blob []byte) (primitive string, keyBits, mode int, mac string) {
 	}
 
 	var b stateBlobV1
-	if err := json.Unmarshal(blob, &b); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(blob))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&b); err != nil {
 		panic(fmt.Sprintf("itb/easy: PeekConfig: %v", err))
 	}
 

@@ -128,6 +128,16 @@ func BLAKE2b256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32
 // single-call invocations of the single arm.
 func BLAKE2b256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
 	single := BLAKE2b256WithKey(fixedKey)
+	// On hosts without the AVX-512 fused chain-absorb path the batched
+	// closure dispatches through the scalar Go reference, which costs
+	// the 4-lane data-marshalling wrapper on top of work that the
+	// single arm already performs via the upstream golang.org/x/crypto
+	// BLAKE2b asm. Returning nil here lets process_cgo.go's nil-
+	// fallback drive per-pixel hashing through the single arm
+	// directly — same OLDBENCH-style speed without the wrapper tax.
+	if !blake2basm.HasAVX512Fused {
+		return single, nil
+	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
 		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&

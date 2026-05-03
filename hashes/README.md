@@ -347,6 +347,252 @@ fn, hashKey, _ := hashes.Make256("blake3") // random
 fn, _, _       := hashes.Make256("blake3", saved) // explicit
 ```
 
+## Easy Mode — Quick start
+
+`easy.New` (Single Ouroboros) and `easy.New3` (Triple Ouroboros)
+build a high-level `*easy.Encryptor` around a single hash primitive
+chosen from the canonical list above. The constructor allocates
+its own seed material + MAC closure, snapshots the global ITB
+configuration into a per-instance `*itb.Config`, and exposes
+setters that mutate only its own state — two encryptors with
+different settings can run concurrently without cross-
+contamination. The state blob carries the PRF fixed key, seed
+components, MAC key, and (when active) the dedicated lockSeed
+material; the receiver constructs a matching encryptor with the
+same `(primitive, key_bits, mac, mode)` and calls `Import` to
+restore.
+
+```go
+
+// Sender
+
+package main
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/easy"
+)
+
+func main() {
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
+	// Single-Ouroboros (3 seeds) constructor — variadic args by type:
+	// string matching hashes.Registry → primitive, string matching
+	// macs.Registry → MAC, int → key_bits. Defaults: "areion512" /
+	// 1024 / "kmac256". Triple Ouroboros (7 seeds) → easy.New3(...).
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	// Per-instance configuration.
+	enc.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
+	enc.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
+
+	//enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
+	                        // derivation channel — separates that PRF's keying material
+	                        // from the noiseSeed-driven noise-injection channel; auto-
+	                        // couples SetLockSoup(1) + SetBitSoup(1). Adds one extra
+	                        // seed slot (3 → 4 for Single, 7 → 8 for Triple). Must be
+	                        // called BEFORE the first Encrypt — switching mid-session
+	                        // panics with easy.ErrLockSeedAfterEncrypt.
+
+	// For cross-process persistence: enc.Export() returns a single
+	// JSON blob carrying PRF keys, seed components, MAC key, and
+	// (when active) the dedicated lockSeed material.
+	blob := enc.Export()
+	fmt.Printf("state blob: %d bytes\n", len(blob))
+	fmt.Printf("primitive: %s, key_bits: %d, mode: %d, mac: %s\n",
+		enc.Primitive, enc.KeyBits, enc.Mode, enc.MACName)
+
+	plaintext := []byte("any text or binary data - including 0x00 bytes")
+
+	// Authenticated encrypt — 32-byte tag is computed across the
+	// entire decrypted capacity and embedded inside the RGBWYOPA
+	// container, preserving oracle-free deniability.
+	encrypted, err := enc.EncryptAuth(plaintext)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+	// Send encrypted payload + state blob
+
+}
+
+// Receiver
+
+package main
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/easy"
+)
+
+func main() {
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
+	// Receive encrypted payload + state blob
+	// var encrypted, blob []byte = ..., ...
+
+	// Optional: peek at the blob's metadata before constructing a
+	// matching encryptor. Useful when the receiver multiplexes blobs
+	// of different shapes (different primitive / mode / MAC choices).
+	prim, keyBits, mode, mac := easy.PeekConfig(blob)
+	fmt.Printf("peek: primitive=%s, key_bits=%d, mode=%d, mac=%s\n",
+		prim, keyBits, mode, mac)
+
+	var dec *easy.Encryptor
+	if mode == 1 {
+		dec = easy.New(prim, keyBits, mac)
+	} else {
+		dec = easy.New3(prim, keyBits, mac)
+	}
+	defer dec.Close()
+
+	// Restore PRF keys, seed components, MAC key, and the per-instance
+	// configuration overrides from the saved blob.
+	if err := dec.Import(blob); err != nil {
+		panic(err)
+	}
+
+	decrypted, err := dec.DecryptAuth(encrypted)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("decrypted: %s\n", string(decrypted))
+
+}
+```
+
+## Easy Mode — Mixed primitives (different PRF per seed slot)
+
+`easy.NewMixed` and `easy.NewMixed3` accept a per-slot primitive
+spec, allowing the noise / data / start (and optional dedicated
+lockSeed) seed slots to use different PRF primitives within the
+same native hash width. The mix-and-match-PRF freedom of the
+lower-level path, surfaced through Easy Mode without forcing the
+caller off the high-level constructor. The state blob carries
+per-slot primitives + per-slot PRF keys; the receiver constructs a
+matching encryptor with the same spec and calls `Import` to
+restore.
+
+```go
+
+// Sender
+
+package main
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/easy"
+)
+
+func main() {
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
+	// Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
+	// Every name must share the same native hash width — mixing
+	// widths is rejected at construction with easy.ErrEasyMixedWidth.
+	// Triple Ouroboros mirror — easy.NewMixed3(easy.MixedSpec3{...})
+	// takes seven per-slot names (noise + 3 data + 3 start) plus
+	// the optional PrimitiveL lockSeed.
+	enc := easy.NewMixed(easy.MixedSpec{
+		PrimitiveN: "blake3",      // noiseSeed:  BLAKE3
+		PrimitiveD: "blake2s",     // dataSeed:   BLAKE2s
+		PrimitiveS: "areion256",   // startSeed:  Areion-SoEM-256
+		PrimitiveL: "blake2b256",  // dedicated lockSeed (optional;
+		                           //   empty = no lockSeed slot)
+		KeyBits:    1024,
+		MACName:    "kmac256",
+	})
+	defer enc.Close()
+
+	// Per-instance configuration applies as for easy.New.
+	enc.SetNonceBits(512)
+	enc.SetBarrierFill(4)
+	// BitSoup + LockSoup are auto-coupled on the on-direction by
+	// PrimitiveL above; explicit calls below are unnecessary but
+	// harmless if added.
+	//enc.SetBitSoup(1)
+	//enc.SetLockSoup(1)
+
+	// Per-slot introspection — Primitive returns the "mixed"
+	// literal, PrimitiveAt(slot) returns each slot's name,
+	// IsMixed() is the typed predicate.
+	fmt.Printf("mixed=%v primitive=%s\n", enc.IsMixed(), enc.Primitive)
+	for i := 0; i < 4; i++ {
+		fmt.Printf("  slot %d: %s\n", i, enc.PrimitiveAt(i))
+	}
+
+	blob := enc.Export()
+	fmt.Printf("state blob: %d bytes\n", len(blob))
+
+	plaintext := []byte("mixed-primitive Easy Mode payload")
+
+	// Authenticated encrypt — 32-byte tag is computed across the
+	// entire decrypted capacity and embedded inside the RGBWYOPA
+	// container, preserving oracle-free deniability.
+	encrypted, err := enc.EncryptAuth(plaintext)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("encrypted: %d bytes\n", len(encrypted))
+
+	// Send encrypted payload + state blob
+
+}
+
+// Receiver
+
+package main
+
+import (
+	"fmt"
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/easy"
+)
+
+func main() {
+	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
+
+	// Receive encrypted payload + state blob
+	// var encrypted, blob []byte = ..., ...
+
+	// Receiver constructs a matching mixed encryptor — every per-
+	// slot primitive name plus key_bits and mac must agree with the
+	// sender. Import validates each per-slot primitive against the
+	// receiver's bound spec; mismatches surface as
+	// easy.ErrMismatch{Field: "primitive"}.
+	dec := easy.NewMixed(easy.MixedSpec{
+		PrimitiveN: "blake3",
+		PrimitiveD: "blake2s",
+		PrimitiveS: "areion256",
+		PrimitiveL: "blake2b256",
+		KeyBits:    1024,
+		MACName:    "kmac256",
+	})
+	defer dec.Close()
+
+	// Restore PRF keys, seed components, MAC key, and the per-
+	// instance configuration overrides from the saved blob. Mixed
+	// blobs carry mixed:true plus a primitives array; Import on a
+	// single-primitive receiver (or vice versa) is rejected as a
+	// primitive mismatch.
+	if err := dec.Import(blob); err != nil {
+		panic(err)
+	}
+
+	decrypted, err := dec.DecryptAuth(encrypted)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("decrypted: %s\n", string(decrypted))
+
+}
+```
+
 ## Keyed variants
 
 Every cached factory ships a paired `*WithKey` form that takes the

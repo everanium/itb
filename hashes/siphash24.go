@@ -49,6 +49,14 @@ func SipHash24() itb.HashFunc128 {
 // AVX-512 frequency throttle.
 func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 	single := SipHash24()
+	// On hosts without the AVX-512 fused chain-absorb path the batched
+	// closure falls into the scalar Go reference; under that path
+	// process_cgo.go's nil-fallback (driving 4 single calls through
+	// dchest/siphash's already-fast scalar implementation) outperforms
+	// the 4-lane wrapper. Return nil to opt into that fallback.
+	if !siphashasm.HasAVX512Fused {
+		return single, nil
+	}
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		commonLen := len(data[0])
 		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&

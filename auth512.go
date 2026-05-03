@@ -144,7 +144,7 @@ func DecryptAuthenticated512(noiseSeed, dataSeed, startSeed *Seed512, fileData [
 
 	expected := macFunc(payload)
 	if !constantTimeEqual(tag, expected) {
-		return nil, fmt.Errorf("itb: MAC verification failed (tampered or wrong key)")
+		return nil, ErrMACFailure
 	}
 
 	nullPos := -1
@@ -432,7 +432,7 @@ func DecryptAuthenticated3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 	releaseBuffer(macInputPtr, macInput)
 
 	if !constantTimeEqual(tag, expected) {
-		return nil, fmt.Errorf("itb: MAC verification failed (tampered or wrong key)")
+		return nil, ErrMACFailure
 	}
 
 	// 3 parallel null-search + cobsDecode (MAC already verified data integrity)
@@ -606,7 +606,7 @@ func DecryptAuthenticated512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *See
 
 	expected := macFunc(payload)
 	if !constantTimeEqual(tag, expected) {
-		return nil, fmt.Errorf("itb: MAC verification failed (tampered or wrong key)")
+		return nil, ErrMACFailure
 	}
 
 	nullPos := -1
@@ -901,7 +901,7 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 	releaseBuffer(macInputPtr, macInput)
 
 	if !constantTimeEqual(tag, expected) {
-		return nil, fmt.Errorf("itb: MAC verification failed (tampered or wrong key)")
+		return nil, ErrMACFailure
 	}
 
 	// 3 parallel null-search + cobsDecode (MAC already verified data integrity)

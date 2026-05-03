@@ -1,7 +1,7 @@
 package capi
 
 import (
-	"strings"
+	"errors"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
@@ -209,16 +209,17 @@ func decryptAuthTripleDispatch(
 }
 
 // classifyAuthError maps an itb.DecryptAuthenticated* error onto the
-// FFI status code. The underlying API returns plain `error` values
-// distinguished only by their message text — string match is the
-// only way to separate "MAC verification failed" from generic decrypt
-// errors. The error string is fixed in itb/auth*.go:
-// "itb: MAC verification failed (tampered or wrong key)".
+// FFI status code. The underlying API exposes [itb.ErrMACFailure] as
+// the typed sentinel for MAC-verification failure, so the
+// classification is errors.Is-driven rather than a substring match
+// on the error message — the sentinel survives any future
+// rewording of the diagnostic text. Generic decrypt errors fall
+// through to StatusDecryptFailed.
 func classifyAuthError(err error) Status {
 	if err == nil {
 		return StatusOK
 	}
-	if strings.Contains(err.Error(), "MAC verification failed") {
+	if errors.Is(err, itb.ErrMACFailure) {
 		return StatusMACFailure
 	}
 	return StatusDecryptFailed

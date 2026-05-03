@@ -113,8 +113,11 @@ func EasyClose(id EasyHandleID) (st Status) {
 
 // EasyPrimitive returns the canonical hash primitive name the
 // encryptor was constructed with. Mirrors the read-only Primitive
-// field on the Go struct.
-func EasyPrimitive(id EasyHandleID) (string, Status) {
+// field on the Go struct. Encryptors built via [NewEasyMixed] /
+// [NewEasyMixed3] return the literal "mixed" — bindings then
+// enumerate per-slot primitives via [EasyPrimitiveAt].
+func EasyPrimitive(id EasyHandleID) (name string, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return "", st
@@ -122,9 +125,46 @@ func EasyPrimitive(id EasyHandleID) (string, Status) {
 	return h.enc.Primitive, StatusOK
 }
 
+// EasyPrimitiveAt returns the canonical hash primitive name bound
+// to the given seed slot index. For single-primitive encryptors
+// every slot returns the same name [EasyPrimitive] reports; for
+// mixed-mode encryptors each slot can carry an independently chosen
+// primitive within the same native hash width.
+//
+// Slot ordering is canonical: 0 = noiseSeed, then dataSeed{,1..3},
+// then startSeed{,1..3}; the optional dedicated lockSeed sits at
+// the trailing slot when present. Out-of-range slots return the
+// empty string with StatusOK; bindings can also read [EasyIsMixed]
+// to detect whether per-slot enumeration is meaningful.
+func EasyPrimitiveAt(id EasyHandleID, slot int) (name string, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
+	h, st := resolveEasy(id)
+	if st != StatusOK {
+		return "", st
+	}
+	return h.enc.PrimitiveAt(slot), StatusOK
+}
+
+// EasyIsMixed returns 1 if the encryptor was constructed via
+// [NewEasyMixed] / [NewEasyMixed3] (per-slot primitive selection),
+// 0 if it was constructed via [NewEasy] (single primitive across
+// all slots).
+func EasyIsMixed(id EasyHandleID) (v int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
+	h, st := resolveEasy(id)
+	if st != StatusOK {
+		return 0, st
+	}
+	if h.enc.IsMixed() {
+		return 1, StatusOK
+	}
+	return 0, StatusOK
+}
+
 // EasyKeyBits returns the per-seed key width in bits — one of 512,
 // 1024, 2048.
-func EasyKeyBits(id EasyHandleID) (int, Status) {
+func EasyKeyBits(id EasyHandleID) (v int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st
@@ -135,7 +175,8 @@ func EasyKeyBits(id EasyHandleID) (int, Status) {
 // EasyMode returns 1 (Single Ouroboros, 3 seeds) or 3 (Triple
 // Ouroboros, 7 seeds). The integer encoding mirrors the Encrypt /
 // Encrypt3x distinction at the low-level API.
-func EasyMode(id EasyHandleID) (int, Status) {
+func EasyMode(id EasyHandleID) (v int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st
@@ -145,7 +186,8 @@ func EasyMode(id EasyHandleID) (int, Status) {
 
 // EasyMACName returns the canonical MAC primitive name the encryptor
 // was constructed with.
-func EasyMACName(id EasyHandleID) (string, Status) {
+func EasyMACName(id EasyHandleID) (name string, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return "", st
@@ -160,7 +202,8 @@ func EasyMACName(id EasyHandleID) (string, Status) {
 // 7 (Triple without LockSeed), 8 (Triple with LockSeed). Used by
 // bindings to determine the valid range for the slot index passed to
 // EasySeedComponents / EasyPRFKey.
-func EasySeedCount(id EasyHandleID) (int, Status) {
+func EasySeedCount(id EasyHandleID) (n int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st
@@ -177,7 +220,8 @@ func EasySeedCount(id EasyHandleID) (int, Status) {
 // Save these alongside EasyPRFKey output for cross-process restore
 // via Encryptor.Import (the FFI-side path goes through EasyExport /
 // EasyImport instead, which packs all material into one JSON blob).
-func EasySeedComponents(id EasyHandleID, slot int) ([]uint64, Status) {
+func EasySeedComponents(id EasyHandleID, slot int) (out []uint64, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return nil, st
@@ -195,7 +239,8 @@ func EasySeedComponents(id EasyHandleID, slot int) ([]uint64, Status) {
 // 0 otherwise. Bindings consult this before iterating slot indices
 // against EasyPRFKey, mirroring the easy.Encryptor.PRFKeys() == nil
 // check on the Go side.
-func EasyHasPRFKeys(id EasyHandleID) (int, Status) {
+func EasyHasPRFKeys(id EasyHandleID) (v int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st
@@ -210,7 +255,8 @@ func EasyHasPRFKeys(id EasyHandleID) (int, Status) {
 // (defensive copy). Returns StatusBadInput when the primitive has no
 // fixed PRF keys (siphash24 — caller should consult EasyHasPRFKeys
 // first) or when slot is out of range.
-func EasyPRFKey(id EasyHandleID, slot int) ([]byte, Status) {
+func EasyPRFKey(id EasyHandleID, slot int) (out []byte, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return nil, st
@@ -230,7 +276,8 @@ func EasyPRFKey(id EasyHandleID, slot int) ([]byte, Status) {
 // EasyMACKey returns a defensive copy of the encryptor's bound MAC
 // fixed key. Save these bytes alongside the seed components for
 // cross-process restore via the EasyExport / EasyImport JSON path.
-func EasyMACKey(id EasyHandleID) ([]byte, Status) {
+func EasyMACKey(id EasyHandleID) (out []byte, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return nil, st
@@ -244,7 +291,8 @@ func EasyMACKey(id EasyHandleID) ([]byte, Status) {
 // nonce size in bits (128 / 256 / 512). Falls back to the global
 // itb.GetNonceBits reading when no per-instance override has been
 // installed via EasySetNonceBits.
-func EasyNonceBits(id EasyHandleID) (int, Status) {
+func EasyNonceBits(id EasyHandleID) (v int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st
@@ -256,7 +304,8 @@ func EasyNonceBits(id EasyHandleID) (int, Status) {
 // ciphertext-chunk header size in bytes (nonce + 2-byte width +
 // 2-byte height). Tracks the encryptor's own NonceBits, NOT the
 // process-wide HeaderSize() reading.
-func EasyHeaderSize(id EasyHandleID) (int, Status) {
+func EasyHeaderSize(id EasyHandleID) (v int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st
@@ -270,7 +319,8 @@ func EasyHeaderSize(id EasyHandleID) (int, Status) {
 // header at the front of the supplied buffer. Returns
 // StatusBadInput on too-short buffer, zero dimensions, or
 // width × height overflow.
-func EasyParseChunkLen(id EasyHandleID, header []byte) (int, Status) {
+func EasyParseChunkLen(id EasyHandleID, header []byte) (n int, st Status) {
+	defer recoverEasyPanic(&st, StatusEasyClosed)
 	h, st := resolveEasy(id)
 	if st != StatusOK {
 		return 0, st

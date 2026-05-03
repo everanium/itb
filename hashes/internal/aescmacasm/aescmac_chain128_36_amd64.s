@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // ZMM-batched fused chain-absorb kernel for AES-CMAC-128 with 36-byte
 // per-lane data input (the ITB SetNonceBits(256) buf shape). Three

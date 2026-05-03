@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // ZMM-batched fused chain-absorb kernel for BLAKE2b-512 with 20-byte
 // per-lane data input (the ITB SetNonceBits(128) buf shape — default
