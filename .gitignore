@@ -23,3 +23,27 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Shared library / FFI build artefacts (cmd/cshared)
+/dist/
+libitb.so
+libitb.dll
+libitb.dylib
+libitb.h
+libitb.a
+cmd/cshared/libitb.*
+cmd/cshared/itb.h
+cmd/cshared/cshared
+cmd/cshared/cshared.h
+bindings/rust/target
+
+# Python pytest runtime cache
+.pytest_cache/
+
+# Rust formatter backup files
+*.rs.bk
+
+# Python build artefacts (in case anyone runs python -m build / pip install -e)
+**/*.egg-info/
+bindings/python/build/
+bindings/python/dist/
