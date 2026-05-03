@@ -40,12 +40,12 @@ internal static class BenchTriple
     {
         "areion256",
         "areion512",
-        "siphash24",
-        "aescmac",
         "blake2b256",
         "blake2b512",
         "blake2s",
         "blake3",
+        "aescmac",
+        "siphash24",
         "chacha20",
     };
 

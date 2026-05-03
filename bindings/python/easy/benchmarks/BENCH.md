@@ -73,7 +73,7 @@ for the `-tags=purego` / `-tags=noitbasm` opt-outs.
 ## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, LockSeed mode)
 
 The dedicated lockSeed channel (`set_lock_seed(1)` / `ITB_LOCKSEED=1`)
-auto-couples Bit Soup + Lock Soup on the on-direction. Numbers
+auto-couples bit-soup + lock-soup on the on-direction. Numbers
 below run with all three overlays active.
 
 ### ITB Single 1024-bit (security: P × 2^1024)
