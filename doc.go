@@ -238,6 +238,22 @@
 //	enc.SetBitSoup(1); enc.SetLockSoup(1)
 //	encrypted, _ = enc.EncryptAuth(plaintext)
 //
+//	// (4) Mixed primitives — different PRF per seed slot.
+//	// [github.com/everanium/itb/easy.NewMixed] /
+//	// [github.com/everanium/itb/easy.NewMixed3] take a
+//	// per-slot spec; every name must share the same native hash
+//	// width. The optional PrimitiveL field allocates a dedicated
+//	// lockSeed slot under its own primitive choice and auto-couples
+//	// BitSoup + LockSoup. PrimitiveAt(slot) reads the per-slot
+//	// canonical name; IsMixed() is the typed predicate.
+//	enc = easy.NewMixed(easy.MixedSpec{
+//		PrimitiveN: "blake3", PrimitiveD: "blake2s",
+//		PrimitiveS: "areion256", PrimitiveL: "blake2b256",
+//		KeyBits: 1024, MACName: "kmac256",
+//	})
+//	defer enc.Close()
+//	encrypted, _ = enc.EncryptAuth(plaintext)
+//
 // Streaming on the easy surface lives entirely on the caller side:
 // slice plaintext into chunks of the desired size and call
 // [github.com/everanium/itb/easy.Encryptor.Encrypt] per chunk; on

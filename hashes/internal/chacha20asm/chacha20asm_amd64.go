@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Package chacha20asm holds the AVX-512 + VL fused chain-absorb kernel
 // implementation of ChaCha20 for the parent hashes/ package. The chain

@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Fused AVX-512 + VAES kernel for the Areion-SoEM-512 4-way batched
 // PRF. Mirrors the SoEM-256 fused kernel one tier up:

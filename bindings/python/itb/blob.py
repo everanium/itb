@@ -181,10 +181,16 @@ class _BlobBase:
     def free(self):
         """Releases the underlying libitb handle. Idempotent — the
         handle attribute is zeroed after the first call so a second
-        :meth:`free` is a no-op rather than a double-free panic."""
+        :meth:`free` is a no-op rather than a double-free panic.
+        Mirrors :meth:`itb.Seed.free` / :meth:`itb.MAC.free`: a non-OK
+        status (typically ``STATUS_BAD_HANDLE`` if the handle was
+        already invalidated by a sibling thread) is raised as
+        :class:`ITBError` rather than silently swallowed."""
         if self._handle:
-            _lib.ITB_Blob_Free(self._handle)
+            rc = _lib.ITB_Blob_Free(self._handle)
             self._handle = 0
+            if rc != STATUS_OK:
+                _raise_blob(rc)
 
     close = free
 

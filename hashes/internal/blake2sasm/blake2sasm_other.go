@@ -1,4 +1,4 @@
-//go:build !amd64 || purego
+//go:build !amd64 || purego || noitbasm
 
 // Stub package on platforms where the AVX-512 + VL chain-absorb
 // kernels do not apply. The parent hashes/ package falls back to

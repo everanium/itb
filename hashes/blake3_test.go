@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/blake3asm"
 )
 
 // TestBLAKE3256BatchedParityWithSingle confirms that the 4-way
@@ -51,19 +52,30 @@ func TestBLAKE3256BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestBLAKE3MakePairReturnsBatched verifies that the FFI-facing
-// Make256Pair entry point returns a non-nil batched arm for
-// blake3. This is the contract surfaced to the C ABI and Python
-// FFI layers via cmd/cshared/internal/capi — without it those
-// layers would fall back to per-pixel dispatch even though the
-// ZMM-batched kernel is available.
-func TestBLAKE3MakePairReturnsBatched(t *testing.T) {
+// TestBLAKE3MakePairBatchedFollowsAsmEngagement verifies the
+// asm-conditional contract of the FFI-facing Make256Pair entry
+// point for blake3. When the AVX-512 fused chain-absorb path is
+// engaged on the host (blake3asm.HasAVX512Fused == true), the
+// batched arm must be non-nil so the C ABI / Python FFI layers
+// drive per-pixel hashing through the ZMM-batched kernel. When
+// the asm path is not engaged (purego build, non-amd64 host, or
+// amd64 without AVX-512+VL) the batched arm must be nil so
+// process_cgo.go's nil-fallback drives 4 single-call dispatches
+// through the upstream zeebo/blake3 path — measurably faster
+// than the scalar 4-lane chain-absorb wrapper would be.
+func TestBLAKE3MakePairBatchedFollowsAsmEngagement(t *testing.T) {
 	_, b, _, err := Make256Pair("blake3")
 	if err != nil {
 		t.Fatalf("Make256Pair(blake3): %v", err)
 	}
-	if b == nil {
-		t.Fatal("Make256Pair(blake3) returned nil batched arm — FFI will fall back to per-pixel dispatch")
+	if blake3asm.HasAVX512Fused {
+		if b == nil {
+			t.Fatal("Make256Pair(blake3) returned nil batched arm despite AVX-512+VL asm engaged — FFI will fall back to per-pixel dispatch")
+		}
+	} else {
+		if b != nil {
+			t.Fatal("Make256Pair(blake3) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper costs more than process_cgo's nil-fallback through 4 single calls")
+		}
 	}
 }
 

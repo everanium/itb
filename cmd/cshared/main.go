@@ -86,6 +86,27 @@ func goBytesViewMut(ptr unsafe.Pointer, capBytes C.size_t) []byte {
 	return unsafe.Slice((*byte)(ptr), int(capBytes))
 }
 
+// validateLen rejects any C-side length argument that exceeds
+// [maxSliceLen]. Used at the top of every cgo //export wrapper
+// before [goBytesView] / [goBytesViewMut] runs: without this guard
+// a hostile or buggy caller passing length > maxSliceLen would get
+// nil from the helpers and the wrapper would silently proceed as if
+// the input were empty (returning StatusOK with an empty
+// ciphertext, etc.) instead of StatusBadInput.
+//
+// The helpers themselves still return nil for the legitimate
+// probe forms (ptr==nil OR length==0), which is indistinguishable
+// from the truncation case at the helper level — so the bounds
+// check has to live at the wrapper.
+func validateLen(lengths ...C.size_t) bool {
+	for _, l := range lengths {
+		if l > maxSliceLen {
+			return false
+		}
+	}
+	return true
+}
+
 // writeCString copies s into a caller-allocated C buffer following
 // the size-out-param idiom. On success outLen reports the number of
 // bytes that have been written (including the trailing NUL).
@@ -278,6 +299,9 @@ func ITB_GetSeedHashKey(
 	capBytes C.size_t,
 	outLen *C.size_t,
 ) C.int {
+	if !validateLen(capBytes) {
+		return C.int(capi.StatusBadInput)
+	}
 	key, st := capi.SeedHashKey(capi.HandleID(handle))
 	if st != capi.StatusOK {
 		return C.int(st)
@@ -289,7 +313,7 @@ func ITB_GetSeedHashKey(
 		return C.int(capi.StatusOK)
 	}
 	if out == nil || capBytes < C.size_t(len(key)) {
-		return C.int(capi.StatusBadInput)
+		return C.int(capi.StatusBufferTooSmall)
 	}
 	dst := unsafe.Slice((*byte)(unsafe.Pointer(out)), int(capBytes))
 	copy(dst, key)
@@ -318,7 +342,7 @@ func ITB_GetSeedComponents(
 		*outLen = C.int(len(comps))
 	}
 	if out == nil || capCount < C.int(len(comps)) {
-		return C.int(capi.StatusBadInput)
+		return C.int(capi.StatusBufferTooSmall)
 	}
 	dst := unsafe.Slice((*uint64)(unsafe.Pointer(out)), int(capCount))
 	copy(dst, comps)
@@ -339,6 +363,9 @@ func ITB_Encrypt(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	pt := goBytesView(plaintext, ptlen)
@@ -362,6 +389,9 @@ func ITB_Decrypt(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	ct := goBytesView(ciphertext, ctlen)
@@ -394,6 +424,9 @@ func ITB_Encrypt3(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.Encrypt3(
@@ -416,6 +449,9 @@ func ITB_Decrypt3(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	ct := goBytesView(ciphertext, ctlen)
@@ -483,6 +519,9 @@ func ITB_NewMAC(macName *C.char, key unsafe.Pointer, keyLen C.size_t, outHandle 
 	if macName == nil || outHandle == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(keyLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	keyBytes := goBytesView(key, keyLen)
 	id, st := capi.NewMAC(C.GoString(macName), keyBytes)
 	if st == capi.StatusOK {
@@ -516,6 +555,9 @@ func ITB_EncryptAuth(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EncryptAuth(
@@ -537,6 +579,9 @@ func ITB_DecryptAuth(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	ct := goBytesView(ciphertext, ctlen)
@@ -563,6 +608,9 @@ func ITB_EncryptAuth3(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EncryptAuth3(
@@ -586,6 +634,9 @@ func ITB_DecryptAuth3(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	ct := goBytesView(ciphertext, ctlen)
@@ -660,6 +711,9 @@ func ITB_ParseChunkLen(header unsafe.Pointer, headerLen C.size_t, outChunkLen *C
 	if outChunkLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(headerLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	hdr := goBytesView(header, headerLen)
 	n, st := capi.ParseChunkLen(hdr)
 	if st == capi.StatusOK {
@@ -709,10 +763,16 @@ func ITB_HeaderSize() C.int { return C.int(capi.HeaderSize()) }
 
 //export ITB_Easy_New
 //
-// Constructs a fresh Encryptor handle. Pass NULL / 0 / NULL for
-// defaults ("areion512", 1024, "kmac256"). Mode must be 1 (Single
-// Ouroboros) or 3 (Triple Ouroboros); other values yield
-// ITB_ERR_BAD_INPUT.
+// Constructs a fresh Encryptor handle. The first three arguments
+// each accept a "default" sentinel:
+//
+//   - primitive: NULL for the package default ("areion512")
+//   - keyBits: 0 for the package default (1024)
+//   - macName: NULL for the package default ("kmac256")
+//
+// The fourth argument (mode) does NOT accept a default sentinel —
+// it must be 1 (Single Ouroboros) or 3 (Triple Ouroboros); any
+// other value (including 0) yields ITB_ERR_BAD_INPUT.
 func ITB_Easy_New(
 	primitive *C.char, keyBits C.int, macName *C.char, mode C.int,
 	outHandle *C.uintptr_t,
@@ -759,6 +819,9 @@ func ITB_Easy_Encrypt(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EasyEncrypt(capi.EasyHandleID(handle), pt, dst)
@@ -776,6 +839,9 @@ func ITB_Easy_Decrypt(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	ct := goBytesView(ciphertext, ctlen)
@@ -797,6 +863,9 @@ func ITB_Easy_EncryptAuth(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EasyEncryptAuth(capi.EasyHandleID(handle), pt, dst)
@@ -814,6 +883,9 @@ func ITB_Easy_DecryptAuth(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	ct := goBytesView(ciphertext, ctlen)
@@ -957,8 +1029,12 @@ func ITB_Easy_SeedComponents(
 	if outLen != nil {
 		*outLen = C.int(len(comps))
 	}
+	// Probe / undersized buffer surfaces as StatusBufferTooSmall —
+	// distinct from StatusBadInput (which is reserved for genuine
+	// caller errors like an out-of-range slot index, raised by
+	// capi.EasySeedComponents above before reaching this branch).
 	if out == nil || capCount < C.int(len(comps)) {
-		return C.int(capi.StatusBadInput)
+		return C.int(capi.StatusBufferTooSmall)
 	}
 	dst := unsafe.Slice((*uint64)(unsafe.Pointer(out)), int(capCount))
 	copy(dst, comps)
@@ -988,6 +1064,9 @@ func ITB_Easy_PRFKey(
 	handle C.uintptr_t, slot C.int,
 	out *C.uint8_t, capBytes C.size_t, outLen *C.size_t,
 ) C.int {
+	if !validateLen(capBytes) {
+		return C.int(capi.StatusBadInput)
+	}
 	key, st := capi.EasyPRFKey(capi.EasyHandleID(handle), int(slot))
 	if st != capi.StatusOK {
 		return C.int(st)
@@ -998,8 +1077,12 @@ func ITB_Easy_PRFKey(
 	if len(key) == 0 {
 		return C.int(capi.StatusOK)
 	}
+	// Probe / undersized buffer → StatusBufferTooSmall, distinct
+	// from StatusBadInput (which is reserved for out-of-range slot
+	// or no-fixed-key primitive — both raised by capi.EasyPRFKey
+	// before this branch is reached).
 	if out == nil || capBytes < C.size_t(len(key)) {
-		return C.int(capi.StatusBadInput)
+		return C.int(capi.StatusBufferTooSmall)
 	}
 	dst := unsafe.Slice((*byte)(unsafe.Pointer(out)), int(capBytes))
 	copy(dst, key)
@@ -1014,6 +1097,9 @@ func ITB_Easy_MACKey(
 	handle C.uintptr_t,
 	out *C.uint8_t, capBytes C.size_t, outLen *C.size_t,
 ) C.int {
+	if !validateLen(capBytes) {
+		return C.int(capi.StatusBadInput)
+	}
 	key, st := capi.EasyMACKey(capi.EasyHandleID(handle))
 	if st != capi.StatusOK {
 		return C.int(st)
@@ -1021,8 +1107,9 @@ func ITB_Easy_MACKey(
 	if outLen != nil {
 		*outLen = C.size_t(len(key))
 	}
+	// Probe / undersized buffer → StatusBufferTooSmall.
 	if out == nil || capBytes < C.size_t(len(key)) {
-		return C.int(capi.StatusBadInput)
+		return C.int(capi.StatusBufferTooSmall)
 	}
 	dst := unsafe.Slice((*byte)(unsafe.Pointer(out)), int(capBytes))
 	copy(dst, key)
@@ -1058,6 +1145,9 @@ func ITB_Easy_Export(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EasyExport(capi.EasyHandleID(handle), dst)
 	*outLen = C.size_t(n)
@@ -1078,6 +1168,9 @@ func ITB_Easy_Import(
 	handle C.uintptr_t,
 	blob unsafe.Pointer, blobLen C.size_t,
 ) C.int {
+	if !validateLen(blobLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	in := goBytesView(blob, blobLen)
 	return C.int(capi.EasyImport(capi.EasyHandleID(handle), in))
 }
@@ -1097,6 +1190,9 @@ func ITB_Easy_PeekConfig(
 	keyBitsOut *C.int, modeOut *C.int,
 	macOut *C.char, macCap C.size_t, macLen *C.size_t,
 ) C.int {
+	if !validateLen(blobLen, primCap, macCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	in := goBytesView(blob, blobLen)
 	prim, kb, mode, mac, st := capi.EasyPeekConfig(in)
 	if st != capi.StatusOK {
@@ -1180,6 +1276,9 @@ func ITB_Easy_ParseChunkLen(
 	outChunkLen *C.size_t,
 ) C.int {
 	if outChunkLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(headerLen) {
 		return C.int(capi.StatusBadInput)
 	}
 	hdr := goBytesView(header, headerLen)
@@ -1351,6 +1450,9 @@ func ITB_Blob_SetKey(
 	handle C.uintptr_t, slot C.int,
 	key unsafe.Pointer, keyLen C.size_t,
 ) C.int {
+	if !validateLen(keyLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	k := goBytesView(key, keyLen)
 	return C.int(capi.BlobSetKey(capi.BlobHandleID(handle), int(slot), k))
 }
@@ -1365,6 +1467,9 @@ func ITB_Blob_GetKey(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	dst := goBytesViewMut(out, outCap)
@@ -1384,6 +1489,14 @@ func ITB_Blob_SetComponents(
 	comps *C.uint64_t, count C.size_t,
 ) C.int {
 	if count > maxSliceLen {
+		return C.int(capi.StatusBadInput)
+	}
+	// Reject the inconsistent (comps==NULL && count>0) shape — a
+	// hostile or buggy caller passing a non-zero count without a
+	// matching pointer would otherwise be silently treated as the
+	// (NULL, 0) probe / clear form, dropping the components for
+	// the slot without diagnostic.
+	if comps == nil && count > 0 {
 		return C.int(capi.StatusBadInput)
 	}
 	var compsView []uint64
@@ -1430,6 +1543,9 @@ func ITB_Blob_SetMACKey(
 	handle C.uintptr_t,
 	key unsafe.Pointer, keyLen C.size_t,
 ) C.int {
+	if !validateLen(keyLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	k := goBytesView(key, keyLen)
 	return C.int(capi.BlobSetMACKey(capi.BlobHandleID(handle), k))
 }
@@ -1443,6 +1559,9 @@ func ITB_Blob_GetMACKey(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	dst := goBytesViewMut(out, outCap)
@@ -1459,6 +1578,9 @@ func ITB_Blob_SetMACName(
 	handle C.uintptr_t,
 	name *C.char, nameLen C.size_t,
 ) C.int {
+	if !validateLen(nameLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	var s string
 	if name != nil && nameLen > 0 {
 		s = C.GoStringN(name, C.int(nameLen))
@@ -1496,6 +1618,9 @@ func ITB_Blob_Export(
 	if outLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
+	if !validateLen(outCap) {
+		return C.int(capi.StatusBadInput)
+	}
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.BlobExport(capi.BlobHandleID(handle), int(optsBitmask), dst)
 	*outLen = C.size_t(n)
@@ -1511,6 +1636,9 @@ func ITB_Blob_Export3(
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
 ) C.int {
 	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(outCap) {
 		return C.int(capi.StatusBadInput)
 	}
 	dst := goBytesViewMut(out, outCap)
@@ -1530,6 +1658,9 @@ func ITB_Blob_Import(
 	handle C.uintptr_t,
 	blob unsafe.Pointer, blobLen C.size_t,
 ) C.int {
+	if !validateLen(blobLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	in := goBytesView(blob, blobLen)
 	return C.int(capi.BlobImport(capi.BlobHandleID(handle), in))
 }
@@ -1542,6 +1673,152 @@ func ITB_Blob_Import3(
 	handle C.uintptr_t,
 	blob unsafe.Pointer, blobLen C.size_t,
 ) C.int {
+	if !validateLen(blobLen) {
+		return C.int(capi.StatusBadInput)
+	}
 	in := goBytesView(blob, blobLen)
 	return C.int(capi.BlobImport3(capi.BlobHandleID(handle), in))
+}
+
+// ─── Easy Mode — per-slot PRF mixing ───────────────────────────────
+//
+// [easy.NewMixed] / [easy.NewMixed3] surface allows the noise / data
+// / start (and optional dedicated lockSeed) seed slots to use
+// different PRF primitives within the same native hash width — the
+// mix-and-match-PRF freedom the lower-level itb.Encrypt256 path
+// already supports, exposed through the high-level Easy Mode without
+// forcing the caller to plumb seven-line low-level setup per
+// encryptor.
+//
+// All per-slot primitive names must resolve to the same native hash
+// width via the local hashes.Registry; mixing widths returns
+// ITB_ERR_INTERNAL with the panic message captured in
+// ITB_LastError. Empty primL signals "no dedicated lockSeed" (3-slot
+// or 7-slot encryptor). A non-empty primL allocates the trailing
+// slot under that primitive and auto-couples BitSoup + LockSoup on
+// the on-direction, mirroring ITB_Easy_SetLockSeed(handle, 1) but
+// routing the bit-permutation derivation through the
+// caller-specified primitive instead of the noiseSeed primitive.
+//
+// Per-slot enumeration: ITB_Easy_PrimitiveAt(handle, slot) reads
+// the per-slot canonical name; ITB_Easy_IsMixed(handle) reports
+// whether the encryptor uses per-slot mixing.
+
+//export ITB_Easy_NewMixed
+//
+// Constructs a Single-Ouroboros Encryptor with per-slot PRF
+// primitive selection. primN / primD / primS cover the noise /
+// data / start slots; primL is the optional dedicated lockSeed
+// primitive (NULL or empty = no lockSeed allocation). All four
+// names must share the same native hash width via the hashes
+// registry.
+func ITB_Easy_NewMixed(
+	primN, primD, primS, primL *C.char,
+	keyBits C.int, macName *C.char,
+	outHandle *C.uintptr_t,
+) C.int {
+	if outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	var pN, pD, pS, pL, mac string
+	if primN != nil {
+		pN = C.GoString(primN)
+	}
+	if primD != nil {
+		pD = C.GoString(primD)
+	}
+	if primS != nil {
+		pS = C.GoString(primS)
+	}
+	if primL != nil {
+		pL = C.GoString(primL)
+	}
+	if macName != nil {
+		mac = C.GoString(macName)
+	}
+	id, st := capi.NewEasyMixed(pN, pD, pS, pL, int(keyBits), mac)
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Easy_NewMixed3
+//
+// Triple-Ouroboros counterpart of ITB_Easy_NewMixed. Accepts seven
+// per-slot primitive names (noise + 3 data + 3 start) plus the
+// optional lockSeed primitive (primL; NULL or empty = no lockSeed
+// allocation). All eight names must share the same native hash
+// width.
+func ITB_Easy_NewMixed3(
+	primN *C.char,
+	primD1, primD2, primD3 *C.char,
+	primS1, primS2, primS3 *C.char,
+	primL *C.char,
+	keyBits C.int, macName *C.char,
+	outHandle *C.uintptr_t,
+) C.int {
+	if outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	cstr := func(p *C.char) string {
+		if p == nil {
+			return ""
+		}
+		return C.GoString(p)
+	}
+	id, st := capi.NewEasyMixed3(
+		cstr(primN),
+		cstr(primD1), cstr(primD2), cstr(primD3),
+		cstr(primS1), cstr(primS2), cstr(primS3),
+		cstr(primL),
+		int(keyBits), cstr(macName),
+	)
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Easy_PrimitiveAt
+//
+// Returns the canonical hash primitive name bound to the given
+// seed slot index. For single-primitive encryptors every slot
+// returns the same name as ITB_Easy_Primitive; for mixed-mode
+// encryptors each slot can carry a different name. Slot ordering:
+// 0 = noiseSeed, 1..len-1 = data / start in canonical order, with
+// the optional dedicated lockSeed at the trailing slot.
+//
+// Out-of-range slots return the empty string. Same probe-then-retry
+// buffer convention as ITB_Easy_Primitive.
+func ITB_Easy_PrimitiveAt(
+	handle C.uintptr_t, slot C.int,
+	out *C.char, capBytes C.size_t, outLen *C.size_t,
+) C.int {
+	name, st := capi.EasyPrimitiveAt(capi.EasyHandleID(handle), int(slot))
+	if st != capi.StatusOK {
+		if outLen != nil {
+			*outLen = 0
+		}
+		return C.int(st)
+	}
+	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
+}
+
+//export ITB_Easy_IsMixed
+//
+// Returns 1 if the encryptor was constructed via ITB_Easy_NewMixed
+// / ITB_Easy_NewMixed3 (per-slot primitive selection), 0 if via
+// ITB_Easy_New (single primitive across all slots). Status returned
+// via *outStatus.
+func ITB_Easy_IsMixed(handle C.uintptr_t, outStatus *C.int) C.int {
+	v, st := capi.EasyIsMixed(capi.EasyHandleID(handle))
+	if outStatus != nil {
+		*outStatus = C.int(st)
+	}
+	return C.int(v)
 }

@@ -16,6 +16,19 @@ go build -trimpath -buildmode=c-shared \
 (macOS produces `libitb.dylib` under `dist/darwin-<arch>/`,
 Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 
+### Build tags governing hash-kernel selection
+
+| Tag | Our chain-absorb asm | Upstream hash asm | Use case |
+|---|---|---|---|
+| (none) | engaged | engaged | Default — full asm stack |
+| `-tags=purego` | off | off (forced via the upstream `purego` convention) | Reproducible / sandboxed targets that must avoid every asm path |
+| `-tags=noitbasm` | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
+
+The two opt-out tags are independent — passing `-tags=noitbasm`
+does not disable upstream asm in `zeebo/blake3`,
+`golang.org/x/crypto`, or `jedisct1/go-aes`; passing `-tags=purego`
+disables both layers.
+
 ## Install requirements
 
 ```bash
@@ -281,6 +294,109 @@ with itb.Encryptor(prim, key_bits, mac, mode=mode) as dec:
     #        pbuf.write(dec.decrypt_auth(bytes(accumulator[:chunk_len])))
     #        del accumulator[:chunk_len]
     #decrypted = pbuf.getvalue()
+```
+
+## Quick Start — Mixed primitives (different PRF per seed slot)
+
+`itb.Encryptor.mixed_single` and `itb.Encryptor.mixed_triple`
+classmethods accept per-slot primitive names — the noise / data /
+start (and optional dedicated lockSeed) seed slots can use
+different PRF primitives within the same native hash width. The
+mix-and-match-PRF freedom of the lower-level path, surfaced
+through the high-level :class:`itb.Encryptor` without forcing
+the caller off the Easy Mode constructor. The state blob carries
+per-slot primitives + per-slot PRF keys; the receiver constructs
+a matching encryptor with the same arguments and calls
+``import_state`` to restore.
+
+```python
+# Sender
+
+import itb
+
+# Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
+# Every name must share the same native hash width — mixing widths
+# raise ITBError at construction time.
+# Triple Ouroboros mirror — itb.Encryptor.mixed_triple takes seven
+# per-slot names (noise + 3 data + 3 start) plus the optional
+# primitive_l lockSeed.
+enc = itb.Encryptor.mixed_single(
+    primitive_n="blake3",       # noiseSeed:  BLAKE3
+    primitive_d="blake2s",      # dataSeed:   BLAKE2s
+    primitive_s="areion256",    # startSeed:  Areion-SoEM-256
+    primitive_l="blake2b256",   # dedicated lockSeed (optional;
+                                #   omit for no lockSeed slot)
+    key_bits=1024,
+    mac="kmac256",
+)
+try:
+    # Per-instance configuration applies as for itb.Encryptor(...).
+    enc.set_nonce_bits(512)
+    enc.set_barrier_fill(4)
+    # BitSoup + LockSoup are auto-coupled on the on-direction by
+    # primitive_l above; explicit calls below are unnecessary but
+    # harmless if added.
+    #enc.set_bit_soup(1)
+    #enc.set_lock_soup(1)
+
+    # Per-slot introspection — primitive returns "mixed" literal,
+    # primitive_at(slot) returns each slot's name, is_mixed is the
+    # typed predicate. Slot ordering is canonical: 0 = noiseSeed,
+    # 1 = dataSeed, 2 = startSeed, 3 = lockSeed (Single); Triple
+    # grows the middle range to 7 slots + lockSeed.
+    print(f"mixed={enc.is_mixed} primitive={enc.primitive!r}")
+    for i in range(4):
+        print(f"  slot {i}: {enc.primitive_at(i)}")
+
+    blob = enc.export()
+    print(f"state blob: {len(blob)} bytes")
+
+    plaintext = b"mixed-primitive Easy Mode payload"
+
+    # Authenticated encrypt — 32-byte tag is computed across the
+    # entire decrypted capacity and embedded inside the RGBWYOPA
+    # container, preserving oracle-free deniability.
+    encrypted = enc.encrypt_auth(plaintext)
+    print(f"encrypted: {len(encrypted)} bytes")
+
+    # Send encrypted payload + state blob
+finally:
+    enc.close()
+
+
+# Receiver
+
+import itb
+
+# Receive encrypted payload + state blob
+# encrypted = ...
+# blob = ...
+
+# Receiver constructs a matching mixed encryptor — every per-slot
+# primitive name plus key_bits and mac must agree with the sender.
+# import_state validates each per-slot primitive against the
+# receiver's bound spec; mismatches raise ITBError with the
+# "primitive" field tag.
+dec = itb.Encryptor.mixed_single(
+    primitive_n="blake3",
+    primitive_d="blake2s",
+    primitive_s="areion256",
+    primitive_l="blake2b256",
+    key_bits=1024,
+    mac="kmac256",
+)
+try:
+    # Restore PRF keys, seed components, MAC key, and the per-
+    # instance configuration overrides from the saved blob. Mixed
+    # blobs carry mixed:true plus a primitives array; import_state
+    # on a single-primitive receiver (or vice versa) is rejected as
+    # a primitive mismatch.
+    dec.import_state(blob)
+
+    decrypted = dec.decrypt_auth(encrypted)
+    print(f"decrypted: {decrypted.decode()}")
+finally:
+    dec.close()
 ```
 
 ## Quick Start — Areion-SoEM-512 (low-level, no MAC)

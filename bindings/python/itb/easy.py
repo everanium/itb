@@ -184,7 +184,7 @@ class Encryptor:
     the lower-level :class:`itb.Seed` / :class:`itb.MAC` lifecycle.
     """
 
-    __slots__ = ("_handle",)
+    __slots__ = ("_handle", "_out_buf", "_out_cap")
 
     def __init__(
         self,
@@ -204,6 +204,122 @@ class Encryptor:
         if rc != STATUS_OK:
             _raise_easy(rc)
         self._handle = int(h[0])
+        # Per-encryptor cffi output buffer cache. Grows on demand;
+        # close() / free() / __del__ wipe it before drop.
+        self._out_buf = _ffi.NULL
+        self._out_cap = 0
+
+    # ─── Mixed-mode constructors ───────────────────────────────────
+
+    @classmethod
+    def mixed_single(
+        cls,
+        primitive_n: str,
+        primitive_d: str,
+        primitive_s: str,
+        key_bits: int,
+        mac: str,
+        primitive_l: Optional[str] = None,
+    ) -> "Encryptor":
+        """Construct a Single-Ouroboros :class:`Encryptor` with
+        per-slot PRF primitive selection. ``primitive_n`` /
+        ``primitive_d`` / ``primitive_s`` cover the noise / data /
+        start slots; ``primitive_l`` (default ``None``) is the
+        optional dedicated lockSeed primitive — when provided, a 4th
+        seed slot is allocated under that primitive and BitSoup +
+        LockSoup are auto-coupled on the on-direction.
+
+        All four primitive names must resolve to the same native
+        hash width via the libitb registry; mixed widths raise
+        :class:`ITBError` with the panic message captured in
+        :func:`itb._last_error`.
+        """
+        primL = primitive_l or ""
+        h = _ffi.new("uintptr_t*")
+        rc = _lib.ITB_Easy_NewMixed(
+            primitive_n.encode("utf-8"),
+            primitive_d.encode("utf-8"),
+            primitive_s.encode("utf-8"),
+            (primL.encode("utf-8") if primL else _ffi.NULL),
+            int(key_bits),
+            mac.encode("utf-8"),
+            h,
+        )
+        if rc != STATUS_OK:
+            _raise_easy(rc)
+        obj = cls.__new__(cls)
+        obj._handle = int(h[0])
+        obj._out_buf = _ffi.NULL
+        obj._out_cap = 0
+        return obj
+
+    @classmethod
+    def mixed_triple(
+        cls,
+        primitive_n: str,
+        primitive_d1: str,
+        primitive_d2: str,
+        primitive_d3: str,
+        primitive_s1: str,
+        primitive_s2: str,
+        primitive_s3: str,
+        key_bits: int,
+        mac: str,
+        primitive_l: Optional[str] = None,
+    ) -> "Encryptor":
+        """Triple-Ouroboros counterpart of :meth:`mixed_single`.
+        Accepts seven per-slot primitive names (noise + 3 data +
+        3 start) plus the optional ``primitive_l`` lockSeed
+        primitive. See :meth:`mixed_single` for the construction
+        contract."""
+        primL = primitive_l or ""
+        h = _ffi.new("uintptr_t*")
+        rc = _lib.ITB_Easy_NewMixed3(
+            primitive_n.encode("utf-8"),
+            primitive_d1.encode("utf-8"),
+            primitive_d2.encode("utf-8"),
+            primitive_d3.encode("utf-8"),
+            primitive_s1.encode("utf-8"),
+            primitive_s2.encode("utf-8"),
+            primitive_s3.encode("utf-8"),
+            (primL.encode("utf-8") if primL else _ffi.NULL),
+            int(key_bits),
+            mac.encode("utf-8"),
+            h,
+        )
+        if rc != STATUS_OK:
+            _raise_easy(rc)
+        obj = cls.__new__(cls)
+        obj._handle = int(h[0])
+        obj._out_buf = _ffi.NULL
+        obj._out_cap = 0
+        return obj
+
+    # ─── Per-slot primitive accessors ──────────────────────────────
+
+    def primitive_at(self, slot: int) -> str:
+        """Return the canonical hash primitive name bound to the
+        given seed slot index. Slot ordering is canonical — 0 =
+        noiseSeed, then dataSeed{,1..3}, then startSeed{,1..3},
+        with the optional dedicated lockSeed at the trailing slot.
+        For single-primitive encryptors every slot returns the same
+        :attr:`primitive` value; for encryptors built via
+        :meth:`mixed_single` / :meth:`mixed_triple` each slot
+        returns its independently-chosen primitive name."""
+        return _read_str(lambda buf, cap, ol:
+                         _lib.ITB_Easy_PrimitiveAt(self._handle, int(slot), buf, cap, ol))
+
+    @property
+    def is_mixed(self) -> bool:
+        """``True`` when the encryptor was constructed via
+        :meth:`mixed_single` or :meth:`mixed_triple` (per-slot
+        primitive selection); ``False`` for single-primitive
+        encryptors built via the default :meth:`__init__`."""
+        st = _ffi.new("int*")
+        v = int(_lib.ITB_Easy_IsMixed(self._handle, st))
+        if int(st[0]) != STATUS_OK:
+            _raise_easy(int(st[0]))
+        return v != 0
 
     # ─── Read-only field properties ────────────────────────────────
 
@@ -301,54 +417,94 @@ class Encryptor:
 
     # ─── Cipher entry points ──────────────────────────────────────
 
-    def encrypt(self, plaintext: bytes) -> bytes:
+    def encrypt(self, plaintext) -> bytes:
         """Encrypts plaintext using the encryptor's configured
         primitive / key_bits / mode and per-instance Config snapshot.
         Plain mode — does not attach a MAC tag; for authenticated
         encryption use :meth:`encrypt_auth`."""
         if not isinstance(plaintext, (bytes, bytearray, memoryview)):
             raise TypeError("plaintext must be bytes-like")
-        return self._cipher_call(_lib.ITB_Easy_Encrypt, bytes(plaintext))
+        return self._cipher_call(_lib.ITB_Easy_Encrypt, plaintext)
 
-    def decrypt(self, ciphertext: bytes) -> bytes:
+    def decrypt(self, ciphertext) -> bytes:
         """Decrypts ciphertext produced by :meth:`encrypt` under the
         same encryptor."""
         if not isinstance(ciphertext, (bytes, bytearray, memoryview)):
             raise TypeError("ciphertext must be bytes-like")
-        return self._cipher_call(_lib.ITB_Easy_Decrypt, bytes(ciphertext))
+        return self._cipher_call(_lib.ITB_Easy_Decrypt, ciphertext)
 
-    def encrypt_auth(self, plaintext: bytes) -> bytes:
+    def encrypt_auth(self, plaintext) -> bytes:
         """Encrypts plaintext and attaches a MAC tag using the
         encryptor's bound MAC closure."""
         if not isinstance(plaintext, (bytes, bytearray, memoryview)):
             raise TypeError("plaintext must be bytes-like")
-        return self._cipher_call(_lib.ITB_Easy_EncryptAuth, bytes(plaintext))
+        return self._cipher_call(_lib.ITB_Easy_EncryptAuth, plaintext)
 
-    def decrypt_auth(self, ciphertext: bytes) -> bytes:
+    def decrypt_auth(self, ciphertext) -> bytes:
         """Verifies and decrypts ciphertext produced by
         :meth:`encrypt_auth`. Raises :class:`itb.ITBError` with code
         :data:`itb._ffi.STATUS_MAC_FAILURE` on tampered ciphertext /
         wrong MAC key."""
         if not isinstance(ciphertext, (bytes, bytearray, memoryview)):
             raise TypeError("ciphertext must be bytes-like")
-        return self._cipher_call(_lib.ITB_Easy_DecryptAuth, bytes(ciphertext))
+        return self._cipher_call(_lib.ITB_Easy_DecryptAuth, ciphertext)
 
-    def _cipher_call(self, fn, payload: bytes) -> bytes:
-        """Common buffer-convention dispatcher: probe required size →
-        allocate → retry. Identical pattern to the lower-level
-        ``_encrypt_or_decrypt`` helper in :mod:`itb._ffi`."""
+    def _cipher_call(self, fn, payload) -> bytes:
+        """Direct-call buffer-convention dispatcher with a per-encryptor
+        output cache. Skips the size-probe round-trip that the lower-
+        level _ffi helpers use: pre-allocates output capacity from a
+        1.25× upper bound (the empirical ITB ciphertext-expansion
+        factor measured at <= 1.155 across every primitive / mode /
+        nonce / payload-size combination) and falls through to an
+        explicit grow-and-retry only on the rare under-shoot. Reuses
+        the cffi buffer across calls; close() / free() wipe it before
+        drop. Input bytes are passed through directly; bytearray /
+        memoryview wrap via ``_ffi.from_buffer`` to avoid the
+        bytes()-copy that the previous implementation performed.
+
+        The current Easy_Encrypt / Easy_Decrypt C ABI does the full
+        crypto on every call regardless of out-buffer capacity (it
+        computes the result internally, then returns BUFFER_TOO_SMALL
+        without exposing the work) — so the pre-allocation here
+        avoids paying for a duplicate encrypt / decrypt on each
+        Python call.
+        """
+        payload_len = len(payload)
+        # 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
+        # expansion factor observed across the primitive / mode /
+        # nonce-bits matrix; floor at 4 KiB so the very-small payload
+        # case still gets a usable buffer.
+        cap = max(4096, (payload_len * 5) // 4 + 4096)
+        if self._out_cap < cap:
+            self._out_buf = _ffi.new("unsigned char[]", cap)
+            self._out_cap = cap
+
+        # cffi accepts bytes directly without a copy; bytearray and
+        # memoryview need from_buffer to avoid the implicit
+        # type-coercion copy.
+        if isinstance(payload, bytes):
+            in_arg = payload
+        else:
+            in_arg = _ffi.from_buffer("unsigned char[]", payload)
+
         out_len = _ffi.new("size_t*")
-        rc = fn(self._handle, payload, len(payload), _ffi.NULL, 0, out_len)
-        if rc != STATUS_BUFFER_TOO_SMALL:
-            if rc == STATUS_OK:
-                return b""
-            _raise_easy(rc)
-        need = int(out_len[0])
-        out_buf = _ffi.new("unsigned char[]", need)
-        rc = fn(self._handle, payload, len(payload), out_buf, need, out_len)
+        rc = fn(self._handle, in_arg, payload_len,
+                self._out_buf, self._out_cap, out_len)
+        if rc == STATUS_BUFFER_TOO_SMALL:
+            # Pre-allocation was too tight (extremely rare given the
+            # 1.25× safety margin) — grow exactly to the required size
+            # and retry. The first call already paid for the underlying
+            # crypto via the current C ABI's full-encrypt-on-every-call
+            # contract, so the retry runs the work again; this is
+            # strictly the fallback path and not the hot loop.
+            need = int(out_len[0])
+            self._out_buf = _ffi.new("unsigned char[]", need)
+            self._out_cap = need
+            rc = fn(self._handle, in_arg, payload_len,
+                    self._out_buf, self._out_cap, out_len)
         if rc != STATUS_OK:
             _raise_easy(rc)
-        return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+        return bytes(_ffi.buffer(self._out_buf, int(out_len[0])))
 
     # ─── Per-instance configuration setters ───────────────────────
 
@@ -420,13 +576,18 @@ class Encryptor:
         copy). Slot index follows the canonical ordering:
         Single = ``[noise, data, start]``; Triple = ``[noise, data1,
         data2, data3, start1, start2, start3]``; the dedicated
-        lockSeed slot is appended at the end (index 3 / 7) when
-        :attr:`lock_seed_active` is True."""
+        lockSeed slot, when present, is appended at the trailing
+        index (index 3 for Single, index 7 for Triple). Bindings can
+        consult :attr:`seed_count` to determine the valid slot
+        range for the active mode + lockSeed configuration."""
         out_len = _ffi.new("int*")
+        # Probe call — out=NULL / capCount=0 returns
+        # STATUS_BUFFER_TOO_SMALL with the required size in *outLen.
+        # STATUS_BAD_INPUT here would signal an out-of-range slot.
         rc = _lib.ITB_Easy_SeedComponents(self._handle, int(slot), _ffi.NULL, 0, out_len)
-        if rc != STATUS_BAD_INPUT:
-            if rc == STATUS_OK:
-                return []
+        if rc == STATUS_OK:
+            return []
+        if rc != STATUS_BUFFER_TOO_SMALL:
             _raise_easy(rc)
         n = int(out_len[0])
         buf = _ffi.new(f"unsigned long long[{n}]")
@@ -454,11 +615,12 @@ class Encryptor:
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_Easy_PRFKey(self._handle, int(slot), _ffi.NULL, 0, out_len)
         # Probe pattern: zero-length key → STATUS_OK + outLen=0
-        # (e.g. siphash24); non-zero length → STATUS_BAD_INPUT with
-        # outLen carrying the required size.
+        # (e.g. siphash24); non-zero length → STATUS_BUFFER_TOO_SMALL
+        # with outLen carrying the required size. STATUS_BAD_INPUT
+        # is reserved for out-of-range slot or no-fixed-key primitive.
         if rc == STATUS_OK and int(out_len[0]) == 0:
             return b""
-        if rc != STATUS_BAD_INPUT:
+        if rc != STATUS_BUFFER_TOO_SMALL:
             _raise_easy(rc)
         n = int(out_len[0])
         buf = _ffi.new(f"unsigned char[{n}]")
@@ -474,9 +636,9 @@ class Encryptor:
         cross-process restore via :meth:`export` / :meth:`import_state`."""
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_Easy_MACKey(self._handle, _ffi.NULL, 0, out_len)
-        if rc != STATUS_BAD_INPUT:
-            if rc == STATUS_OK and int(out_len[0]) == 0:
-                return b""
+        if rc == STATUS_OK and int(out_len[0]) == 0:
+            return b""
+        if rc != STATUS_BUFFER_TOO_SMALL:
             _raise_easy(rc)
         n = int(out_len[0])
         buf = _ffi.new(f"unsigned char[{n}]")
@@ -536,8 +698,15 @@ class Encryptor:
     def close(self) -> None:
         """Zeroes the encryptor's PRF keys, MAC key, and seed
         components, and marks the encryptor as closed. Idempotent —
-        multiple :meth:`close` calls return without raising."""
+        multiple :meth:`close` calls return without raising. Also
+        wipes the per-encryptor cffi output cache so the last
+        ciphertext / plaintext does not linger in heap memory after
+        the encryptor's working set has been zeroed on the Go side."""
         if self._handle:
+            if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+                _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+                self._out_buf = _ffi.NULL
+                self._out_cap = 0
             rc = _lib.ITB_Easy_Close(self._handle)
             # Close is documented as idempotent on the Go side; treat
             # any non-OK return after close as a bug.

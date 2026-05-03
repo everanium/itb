@@ -171,6 +171,22 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 // repeat calls return StatusBadHandle (cgo.Handle.Delete panics on
 // a stale handle, the deferred recover translates that into a clean
 // FFI error code).
+//
+// The PRF fixed key (hashKey) and the seed Components slice carry
+// caller-sensitive material. Both are wiped before the
+// cgo.Handle.Delete call so the discarded state does not linger in
+// memory until the GC reclaims it. The wipe is best-effort — the
+// underlying *Seed{N}.Hash closure may have captured the same key
+// by value, in which case only the Go-runtime closure release
+// reaches the residual copy.
+//
+// Threading constraint: the wipe runs in-place on the live
+// Components / hashKey slices. Calling FreeSeed concurrently with
+// an in-flight Encrypt / Decrypt that holds the same handle is a
+// caller error and produces wrong-decrypt rather than a late
+// panic — the sibling thread sees zeroed components mid-derivation
+// and emits garbage. Bindings must serialise FreeSeed against
+// every concurrent use of the handle.
 func FreeSeed(id HandleID) (st Status) {
 	if id == 0 {
 		setLastErr(StatusBadHandle)
@@ -182,6 +198,23 @@ func FreeSeed(id HandleID) (st Status) {
 			st = StatusBadHandle
 		}
 	}()
+	if h, ok := cgo.Handle(id).Value().(*SeedHandle); ok && h != nil {
+		clear(h.hashKey)
+		switch h.width {
+		case hashes.W128:
+			if h.seed128 != nil {
+				clear(h.seed128.Components)
+			}
+		case hashes.W256:
+			if h.seed256 != nil {
+				clear(h.seed256.Components)
+			}
+		case hashes.W512:
+			if h.seed512 != nil {
+				clear(h.seed512.Components)
+			}
+		}
+	}
 	cgo.Handle(id).Delete()
 	return StatusOK
 }

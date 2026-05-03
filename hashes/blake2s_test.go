@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/blake2sasm"
 )
 
 // TestBLAKE2s256BatchedParityWithSingle confirms that the 4-way
@@ -50,19 +51,25 @@ func TestBLAKE2s256BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestBLAKE2sMakePairReturnsBatched verifies that the FFI-facing
-// Make256Pair entry point returns a non-nil batched arm for blake2s.
-// This is the contract surfaced to the C ABI and Python FFI layers
-// via cmd/cshared/internal/capi — without it those layers would fall
-// back to per-pixel dispatch even though the ZMM-batched kernel is
-// available.
-func TestBLAKE2sMakePairReturnsBatched(t *testing.T) {
+// TestBLAKE2sMakePairBatchedFollowsAsmEngagement verifies the
+// asm-conditional contract of Make256Pair for blake2s — non-nil
+// batched when AVX-512 fused chain-absorb is engaged, nil batched
+// when the asm path is not reachable so process_cgo's nil-fallback
+// drives 4 single-call dispatches through the upstream
+// golang.org/x/crypto BLAKE2s asm directly.
+func TestBLAKE2sMakePairBatchedFollowsAsmEngagement(t *testing.T) {
 	_, b, _, err := Make256Pair("blake2s")
 	if err != nil {
 		t.Fatalf("Make256Pair(blake2s): %v", err)
 	}
-	if b == nil {
-		t.Fatal("Make256Pair(blake2s) returned nil batched arm — FFI will fall back to per-pixel dispatch")
+	if blake2sasm.HasAVX512Fused {
+		if b == nil {
+			t.Fatal("Make256Pair(blake2s) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
+		}
+	} else {
+		if b != nil {
+			t.Fatal("Make256Pair(blake2s) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
+		}
 	}
 }
 

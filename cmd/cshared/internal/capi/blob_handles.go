@@ -84,15 +84,29 @@ func NewBlob512() (id BlobHandleID, st Status) {
 	return BlobHandleID(cgo.NewHandle(h)), StatusOK
 }
 
-// FreeBlob releases the cgo.Handle backing a BlobHandleID. The
-// blob struct holds key bytes and seed components — the same
-// material a state-persistence consumer is expected to wipe after
-// use. The deferred recover translates a stale / zero handle panic
+// FreeBlob releases the cgo.Handle backing a BlobHandleID. Wipes
+// every key-material slot (per-slot hash keys, the seed Components
+// arrays for every populated slot, the optional MAC key) before
+// the cgo.Handle.Delete call so the discarded state does not
+// linger in memory until the GC reclaims it. The wipe is
+// best-effort — fixed-size [32]byte / [64]byte arrays embedded in
+// the Blob{N} struct can be cleared in place; the [Seed{N}]
+// pointers are nil-ed out after their Components slices are
+// cleared so the underlying seed structs become eligible for GC.
+//
+// The deferred recover translates a stale / zero handle panic
 // from cgo.Handle.Delete into StatusBadHandle.
 //
 // The blob structs do not own any resource that requires a Close
 // step (no goroutines, no OS handles), so unlike FreeEasy this is
-// a pure Delete with no pre-step.
+// a pure wipe + Delete with no separate close.
+//
+// Threading constraint mirrors FreeSeed: the wipe runs in-place
+// on the live Blob{N} struct, so calling FreeBlob concurrently
+// with an in-flight Export / Import / Get / Set on the same
+// handle is a caller error and produces wrong output (cleared key
+// bytes, zero components) rather than a late panic. Bindings must
+// serialise FreeBlob against every concurrent use of the handle.
 func FreeBlob(id BlobHandleID) (st Status) {
 	if id == 0 {
 		setLastErr(StatusBadHandle)
@@ -104,8 +118,79 @@ func FreeBlob(id BlobHandleID) (st Status) {
 			st = StatusBadHandle
 		}
 	}()
+	if h, ok := cgo.Handle(id).Value().(*BlobHandle); ok && h != nil {
+		switch h.width {
+		case hashes.W128:
+			wipeBlob128(h.blob128)
+		case hashes.W256:
+			wipeBlob256(h.blob256)
+		case hashes.W512:
+			wipeBlob512(h.blob512)
+		}
+	}
 	cgo.Handle(id).Delete()
 	return StatusOK
+}
+
+// wipeBlob128 / wipeBlob256 / wipeBlob512 zero every populated
+// key-material slot on a Blob{N} struct: per-slot hash keys, every
+// non-nil Seed{N}.Components slice, and the optional MAC key. The
+// width-typed Hash key fields on Blob{128} are []byte slices —
+// cleared via clear; on Blob{256} / Blob{512} they are fixed-size
+// [32]byte / [64]byte arrays — overwritten in place.
+func wipeBlob128(b *itb.Blob128) {
+	if b == nil {
+		return
+	}
+	clear(b.KeyN)
+	clear(b.KeyD)
+	clear(b.KeyS)
+	clear(b.KeyL)
+	clear(b.KeyD1)
+	clear(b.KeyD2)
+	clear(b.KeyD3)
+	clear(b.KeyS1)
+	clear(b.KeyS2)
+	clear(b.KeyS3)
+	for _, s := range []*itb.Seed128{b.NS, b.DS, b.SS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3} {
+		if s != nil {
+			clear(s.Components)
+		}
+	}
+	clear(b.MACKey)
+	b.MACName = ""
+}
+
+func wipeBlob256(b *itb.Blob256) {
+	if b == nil {
+		return
+	}
+	for _, k := range []*[32]byte{&b.KeyN, &b.KeyD, &b.KeyS, &b.KeyL, &b.KeyD1, &b.KeyD2, &b.KeyD3, &b.KeyS1, &b.KeyS2, &b.KeyS3} {
+		*k = [32]byte{}
+	}
+	for _, s := range []*itb.Seed256{b.NS, b.DS, b.SS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3} {
+		if s != nil {
+			clear(s.Components)
+		}
+	}
+	clear(b.MACKey)
+	b.MACName = ""
+}
+
+func wipeBlob512(b *itb.Blob512) {
+	if b == nil {
+		return
+	}
+	for _, k := range []*[64]byte{&b.KeyN, &b.KeyD, &b.KeyS, &b.KeyL, &b.KeyD1, &b.KeyD2, &b.KeyD3, &b.KeyS1, &b.KeyS2, &b.KeyS3} {
+		*k = [64]byte{}
+	}
+	for _, s := range []*itb.Seed512{b.NS, b.DS, b.SS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3} {
+		if s != nil {
+			clear(s.Components)
+		}
+	}
+	clear(b.MACKey)
+	b.MACName = ""
 }
 
 // resolveBlob returns the *BlobHandle behind an opaque BlobHandleID,

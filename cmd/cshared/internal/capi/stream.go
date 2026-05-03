@@ -48,5 +48,20 @@ func ParseChunkLen(header []byte) (int, Status) {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
+	// Container pixel-count cap mirrors the upstream itb.ParseChunkLen
+	// limit. Without this cap a hostile chunk header announcing
+	// width × height ≈ 7 GB could drive a binding to allocate that
+	// much before the underlying Decrypt rejects.
+	if totalPixels > maxTotalPixels {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
 	return headerSz + totalPixels*itb.Channels, StatusOK
 }
+
+// maxTotalPixels mirrors the unexported itb constant of the same
+// name. Bindings that drive the streaming decrypt path size their
+// per-chunk buffer by ParseChunkLen's return value, and the cap
+// keeps a maliciously-large announced size from landing as a
+// gigabyte allocation on the binding side.
+const maxTotalPixels = 10_000_000

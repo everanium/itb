@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Fused chained-absorb VAES kernel for Areion-SoEM-512 with 36-byte
 // per-lane data input (the ITB SetNonceBits(256) buf shape).

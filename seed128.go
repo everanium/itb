@@ -278,3 +278,22 @@ func (s *Seed128) AttachLockSeed(ls *Seed128) {
 func (s *Seed128) AttachedLockSeed() *Seed128 {
 	return s.attachedLockSeed
 }
+
+// DetachLockSeed removes a previously-installed dedicated lockSeed
+// pointer from this noiseSeed. After the call AttachedLockSeed
+// returns nil and the bit-permutation derivation falls back to
+// noiseSeed-driven keying material on subsequent encrypt calls.
+//
+// Panics with [ErrLockSeedAfterEncrypt] when called on a seed that
+// has already produced ciphertext — the post-Encrypt invariant
+// that protects pre-switch ciphertext from later detach is the
+// same one that protects against mid-session attach (mirrors
+// [Seed128.AttachLockSeed]).
+//
+// Safe to call when no lockSeed is attached (no-op).
+func (s *Seed128) DetachLockSeed() {
+	if s.firstEncryptCalled.Load() {
+		panic(ErrLockSeedAfterEncrypt)
+	}
+	s.attachedLockSeed = nil
+}

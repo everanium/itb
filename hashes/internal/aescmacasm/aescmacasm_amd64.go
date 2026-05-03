@@ -1,4 +1,4 @@
-//go:build amd64 && !purego
+//go:build amd64 && !purego && !noitbasm
 
 // Package aescmacasm holds the AVX-512 + VAES fused chain-absorb
 // kernel implementation of AES-CMAC for the parent hashes/ package.

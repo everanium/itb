@@ -189,6 +189,15 @@ func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]by
 // key to all 4 lanes via VBROADCASTI32X4 at function entry.
 func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
 	single := AESCMACWithKey(aesKey)
+	// On hosts without the VAES + AVX-512 fused chain-absorb path the
+	// batched closure falls into the scalar Go reference; under that
+	// path process_cgo.go's nil-fallback (driving 4 single calls into
+	// the underlying crypto/aes asm) outperforms the 4-lane wrapper.
+	// Return nil before the round-key expansion so the per-pair cost
+	// matches the simpler single-only contract.
+	if !aescmacasm.HasVAESAVX512 {
+		return single, nil
+	}
 	roundKeys := aescmacasm.ExpandKeyAES128(aesKey)
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		commonLen := len(data[0])
