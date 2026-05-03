@@ -1,8 +1,8 @@
 # Test and build binaries
 /itb
 /itb.test
-*.test
 /cshared
+*.test
 
 # CPU/memory profiles
 *.prof

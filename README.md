@@ -70,7 +70,9 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
 | **CGO (default)** | `go build` | C with SIMD auto-vectorization | C compiler (GCC/Clang) |
-| **Pure Go** | `CGO_ENABLED=0 go build` | Pure Go, zero C dependencies | None |
+| **No ITB ASM** (CGO) | <code>go&nbsp;build&nbsp;‑tags=noitbasm</code> | C with SIMD auto-vectorization, ITB chain-absorb / Lock Soup / Areion permutation ASM disabled — upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
+| **Pure-Go pixel kernel** | `CGO_ENABLED=0 go build` | Pure Go pixel pipeline (`process_generic.go`); ITB chain-absorb and upstream stdlib hash ASM stay engaged via Go assembly — only the C SIMD pixel kernel is opted out | None |
+| **Fully scalar** | `CGO_ENABLED=0 go build -tags=purego` | Pure Go pixel pipeline AND every ASM kernel disabled; the universal `purego` convention is honoured by `zeebo/blake3` / `golang.org/x/crypto` / `jedisct1/go-aes` so the hash layer also goes scalar | None |
 
 On AVX-512 hosts, hand-written ZMM-batched chain-absorb ASM kernels accelerate the per-pixel hash hot path **2×–7×** over the per-call scalar fallback across all nine PRF-grade primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, ChaCha20, AES-CMAC, SipHash-2-4) — see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md) for measured numbers on Intel Rocket Lake and AMD EPYC 9655P (Zen 5). CGO mode (default) layers a C per-pixel kernel on top of the hash dispatch; pure-Go mode (`CGO_ENABLED=0`) uses a portable Go pixel pipeline (still picking up the ZMM hash kernels when AVX-512 is present). Per-pixel kernel uses three runtime-dispatched tiers:
 
@@ -123,15 +125,15 @@ go test -bench='KeySize' -benchmem ./...
 Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
 Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). Pure-Go mode (`CGO_ENABLED=0` or `-tags=purego`) is **~2×–7× slower** when the ZMM hash kernels fall back to per-call scalar references — every primitive picks up a measurable ZMM uplift, but the relative gap is widest on the BLAKE / ARX primitives (heavier per-call closure overhead amortised across four lanes) and narrowest on AES-CMAC / SipHash-2-4, whose scalar paths already run AES-NI-accelerated through `crypto/aes` and the hand-tuned `dchest/siphash` assembly so the batched arm has less headroom to recover. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). `CGO_ENABLED=0` alone swaps only the C pixel kernel for the portable Go pipeline; the ZMM-batched hash ASM and upstream stdlib ASM stay engaged via Go assembly, so end-to-end throughput stays close to the CGO default on AVX-512 hosts. The full scalar fallback (`-tags=purego`, where every upstream module honours the convention) is **~2×–7× slower** when the ZMM hash kernels fall back to per-call scalar references — every primitive picks up a measurable ZMM uplift, but the relative gap is widest on the BLAKE / ARX primitives (heavier per-call closure overhead amortised across four lanes) and narrowest on AES-CMAC / SipHash-2-4, whose scalar paths already run AES-NI-accelerated through `crypto/aes` and the hand-tuned `dchest/siphash` assembly so the batched arm has less headroom to recover. The middle ground is `-tags=noitbasm` — disables the ITB chain-absorb wrapper while leaving upstream hash ASM engaged; throughput tracks the OLDBENCH single-Func numbers on hosts without AVX-512+VL where the 4-lane batched wrapper would be dead weight. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
 Build-time switches that govern hash-kernel selection:
 
-| Tag | Our internal asm | Upstream hash asm | When to use |
+| Build flag | Our internal asm | Upstream hash asm | When to use |
 |---|---|---|---|
 | (none) | engaged | engaged | Default — full asm stack on AVX-512+VL hosts |
-| `-tags=purego` | off | off (forced via the universal `purego` convention honoured by `zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) | Reproducible-build / sandboxed targets that must avoid every asm path |
-| `-tags=noitbasm` | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
+| <code>‑tags=purego</code> | off | off (forced via the universal `purego` convention honoured by `zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) | Reproducible-build / sandboxed targets that must avoid every asm path |
+| <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
 ### ASIC Scalability
 

@@ -249,7 +249,7 @@ The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was 
 
 The analysis applies equally to ARM64 NEON auto-vectorization: `veor`, `vand`, `vorr`, `vshl`, `vshr` are constant-time on ARM. ARM `sdiv` (for `% totalPixels`) is variable-time but operates on public data only. ARM has no frequency throttling from NEON (unlike Intel AVX-512).
 
-Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (pure Go) and `CGO_ENABLED=1` (C + SIMD) does not change the security model on any platform. See [SCIENCE.md §4](SCIENCE.md#known-theoretical-threats) "Known Theoretical Threats" point 6 for detailed analysis.
+Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (pure-Go pixel kernel; Go-assembly hash ASM stays engaged) and `CGO_ENABLED=1` (C + SIMD pixel kernel) does not change the security model on any platform. See [SCIENCE.md §4](SCIENCE.md#known-theoretical-threats) "Known Theoretical Threats" point 6 for detailed analysis.
 
 ## 14. Hash Function Compliance
 
