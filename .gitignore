@@ -36,6 +36,7 @@ cmd/cshared/itb.h
 cmd/cshared/cshared
 cmd/cshared/cshared.h
 bindings/rust/target
+bindings/rust/Cargo.lock
 
 # Python pytest runtime cache
 .pytest_cache/
