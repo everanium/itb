@@ -1,4 +1,4 @@
-# ITB C# / .NET Binding — Easy Mode Benchmark Results
+# ITB C# / .NET Binding - Easy Mode Benchmark Results
 
 Throughput (MB/s) of `Itb.Encryptor.Encrypt` / `Decrypt` /
 `EncryptAuth` / `DecryptAuth` over the libitb c-shared library

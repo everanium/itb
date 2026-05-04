@@ -1,0 +1,12 @@
+# Alire / GPRbuild build artefacts.
+obj/
+obj-tests/
+obj-bench/
+lib/
+
+# Alire local cache (synchronised toolchain references, lock files).
+alire/
+.alire/
+
+# Phase-1 verification scratch (deleted before final commit).
+scratch/
