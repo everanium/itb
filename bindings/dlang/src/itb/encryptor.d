@@ -156,6 +156,21 @@ EasyConfig peekConfig(const(ubyte)[] blob) @trusted
 /// MAC / seed material on the Go side and wipes the per-instance
 /// output cache on the D side.
 ///
+/// Auto-coupling. (1) `setLockSoup(1)` cascades to `setBitSoup(1)` on
+/// this encryptor (Lock Soup overlay layers on top of bit soup; the
+/// reverse direction does not auto-cascade — `setBitSoup(1)` alone
+/// activates the Single dispatcher's keyed bit-permutation path via
+/// the OR-gate but leaves `cfg.LockSoup` at 0). (2) `setLockSeed(1)`
+/// cascades to both `setLockSoup(1)` and `setBitSoup(1)` and lazily
+/// allocates a dedicated lockSeed wired onto the noiseSeed slot.
+/// (3) Off-direction coercion while LockSeed active: while
+/// `cfg.LockSeed == 1`, `setBitSoup(0)` and `setLockSoup(0)` are
+/// silently coerced to 1 to keep the overlay engaged on the
+/// dedicated lockSeed channel; drop the lockSeed via `setLockSeed(0)`
+/// first to fully disengage. The auto-coupling lives entirely on the
+/// Go side; the D forwarder pushes the requested mode and reads back
+/// post-cascade values via `bitSoup` / `lockSoup` getters.
+///
 /// Concurrency. Cipher methods (`encrypt` / `decrypt` / `encryptAuth`
 /// / `decryptAuth`) write into the per-instance output-buffer cache
 /// and are **not safe** to invoke concurrently against the same
@@ -173,6 +188,13 @@ struct Encryptor
     /// Per-encryptor output buffer cache. Grows on demand;
     /// `close` / destructor wipe it before drop.
     private ubyte[] _outCache;
+    /// Tracks the closed / freed state independently of the handle
+    /// field so the preflight in `_checkOpen` can surface
+    /// `Status.EasyClosed` after `close` / destructor without
+    /// relying on the libitb-side handle-id lookup (which would
+    /// surface `Status.BadHandle` once the destructor has cleared
+    /// the handle slot).
+    private bool _closed;
 
     @disable this(this);
 
@@ -202,10 +224,6 @@ struct Encryptor
     /// start). Other values throw `ITBError(Status.BadInput)`.
     this(string primitive, int keyBits, string macName = null, int mode = 1) @trusted
     {
-        if (mode != 1 && mode != 3)
-            throw new ITBError(Status.BadInput,
-                "mode must be 1 (Single) or 3 (Triple), got " ~ mode.to!string);
-
         // Binding-side default override: when the caller passes
         // `macName=null` the binding picks `hmac-blake3` rather than
         // forwarding NULL through to libitb's own default.
@@ -239,9 +257,9 @@ struct Encryptor
         string primN,
         string primD,
         string primS,
+        string primL,
         int keyBits,
-        string macName = null,
-        string primL = null) @trusted
+        string macName = null) @trusted
     {
         string effectiveMac = (macName is null || macName.length == 0) ? "hmac-blake3" : macName;
 
@@ -280,9 +298,9 @@ struct Encryptor
         string primS1,
         string primS2,
         string primS3,
+        string primL,
         int keyBits,
-        string macName = null,
-        string primL = null) @trusted
+        string macName = null) @trusted
     {
         string effectiveMac = (macName is null || macName.length == 0) ? "hmac-blake3" : macName;
 
@@ -328,6 +346,7 @@ struct Encryptor
             cast(void) ITB_Easy_Free(_handle);
             _handle = 0;
         }
+        _closed = true;
     }
 
     // ─── Read-only field accessors ────────────────────────────────────
@@ -343,6 +362,7 @@ struct Encryptor
     /// Returns the canonical primitive name bound at construction.
     string primitive() @trusted
     {
+        _checkOpen();
         size_t h = _handle;
         return readString((char* buf, size_t cap, size_t* outLen) =>
             ITB_Easy_Primitive(h, buf, cap, outLen));
@@ -359,6 +379,7 @@ struct Encryptor
     /// returns its independently-chosen primitive name.
     string primitiveAt(int slot) @trusted
     {
+        _checkOpen();
         size_t h = _handle;
         return readString((char* buf, size_t cap, size_t* outLen) =>
             ITB_Easy_PrimitiveAt(h, slot, buf, cap, outLen));
@@ -367,6 +388,7 @@ struct Encryptor
     /// Returns the ITB key width in bits.
     int keyBits() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_KeyBits(_handle, &st);
         check(st);
@@ -376,6 +398,7 @@ struct Encryptor
     /// Returns 1 (Single Ouroboros) or 3 (Triple Ouroboros).
     int mode() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_Mode(_handle, &st);
         check(st);
@@ -388,6 +411,7 @@ struct Encryptor
     /// constructor.
     bool isMixed() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_IsMixed(_handle, &st);
         check(st);
@@ -397,6 +421,7 @@ struct Encryptor
     /// Returns the canonical MAC name bound at construction.
     string macName() @trusted
     {
+        _checkOpen();
         size_t h = _handle;
         return readString((char* buf, size_t cap, size_t* outLen) =>
             ITB_Easy_MACName(h, buf, cap, outLen));
@@ -407,6 +432,7 @@ struct Encryptor
     /// 8 (Triple with LockSeed).
     int seedCount() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_SeedCount(_handle, &st);
         check(st);
@@ -421,6 +447,7 @@ struct Encryptor
     /// the Go side is reflected immediately.
     int nonceBits() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_NonceBits(_handle, &st);
         check(st);
@@ -438,6 +465,7 @@ struct Encryptor
     /// authenticated-decrypt test.
     int easyHeaderSize() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_HeaderSize(_handle, &st);
         check(st);
@@ -448,6 +476,7 @@ struct Encryptor
     /// seed slot (every shipped primitive except `siphash24`).
     bool hasPRFKeys() @trusted
     {
+        _checkOpen();
         int st = 0;
         int v = ITB_Easy_HasPRFKeys(_handle, &st);
         check(st);
@@ -473,6 +502,7 @@ struct Encryptor
     /// the container pixel cap.
     size_t parseChunkLen(const(ubyte)[] header) @trusted
     {
+        _checkOpen();
         void* hdrPtr = header.length == 0 ? null : cast(void*) header.ptr;
         size_t out_ = 0;
         int rc = ITB_Easy_ParseChunkLen(_handle, hdrPtr, header.length, &out_);
@@ -494,6 +524,7 @@ struct Encryptor
     /// lockSeed configuration.
     ulong[] seedComponents(int slot) @trusted
     {
+        _checkOpen();
         int outLen = 0;
         // Probe call — out=NULL / capCount=0 returns
         // BufferTooSmall with the required size in *outLen.
@@ -515,6 +546,7 @@ struct Encryptor
     /// `hasPRFKeys` first) or when `slot` is out of range.
     ubyte[] prfKey(int slot) @trusted
     {
+        _checkOpen();
         size_t h = _handle;
         return readBytes((ubyte* buf, size_t cap, size_t* outLen) =>
             ITB_Easy_PRFKey(h, slot, buf, cap, outLen));
@@ -525,6 +557,7 @@ struct Encryptor
     /// cross-process restore via `exportState` / `importState`.
     ubyte[] macKey() @trusted
     {
+        _checkOpen();
         size_t h = _handle;
         return readBytes((ubyte* buf, size_t cap, size_t* outLen) =>
             ITB_Easy_MACKey(h, buf, cap, outLen));
@@ -596,6 +629,7 @@ struct Encryptor
     /// on the next access.
     void setNonceBits(int n) @trusted
     {
+        _checkOpen();
         check(ITB_Easy_SetNonceBits(_handle, n));
     }
 
@@ -604,13 +638,20 @@ struct Encryptor
     /// not need the same value as sender.
     void setBarrierFill(int n) @trusted
     {
+        _checkOpen();
         check(ITB_Easy_SetBarrierFill(_handle, n));
     }
 
     /// 0 = byte-level split (default); non-zero = bit-level Bit Soup
-    /// split.
+    /// split. In Single Ouroboros, mode 1 alone activates the
+    /// dispatcher's keyed bit-permutation overlay (Single OR-gates
+    /// the two flags). While `cfg.LockSeed == 1` mode 0 is silently
+    /// coerced to 1 to keep the dedicated lockSeed channel engaged;
+    /// drop the lockSeed via `setLockSeed(0)` first to fully
+    /// disengage.
     void setBitSoup(int mode) @trusted
     {
+        _checkOpen();
         check(ITB_Easy_SetBitSoup(_handle, mode));
     }
 
@@ -618,6 +659,7 @@ struct Encryptor
     /// this encryptor.
     void setLockSoup(int mode) @trusted
     {
+        _checkOpen();
         check(ITB_Easy_SetLockSoup(_handle, mode));
     }
 
@@ -628,6 +670,7 @@ struct Encryptor
     /// `ITBError(Status.EasyLockSeedAfterEncrypt)`.
     void setLockSeed(int mode) @trusted
     {
+        _checkOpen();
         check(ITB_Easy_SetLockSeed(_handle, mode));
     }
 
@@ -635,6 +678,7 @@ struct Encryptor
     /// via `itb.ChunkSize` on the Go side).
     void setChunkSize(int n) @trusted
     {
+        _checkOpen();
         check(ITB_Easy_SetChunkSize(_handle, n));
     }
 
@@ -653,6 +697,7 @@ struct Encryptor
     /// structural seed count.
     ubyte[] exportState() @trusted
     {
+        _checkOpen();
         size_t outLen = 0;
         int rc = ITB_Easy_Export(_handle, null, 0, &outLen);
         if (rc == Status.OK)
@@ -677,6 +722,7 @@ struct Encryptor
     /// retrievable via `lastMismatchField`.
     void importState(const(ubyte)[] blob) @trusted
     {
+        _checkOpen();
         void* blobPtr = blob.length == 0 ? null : cast(void*) blob.ptr;
         int rc = ITB_Easy_Import(_handle, blobPtr, blob.length);
         check(rc);
@@ -692,10 +738,19 @@ struct Encryptor
     /// set has been zeroed on the Go side.
     void close() @trusted
     {
+        // Wipe the cached output buffer regardless of close state —
+        // repeated close calls keep the cache wiped without racing
+        // the Go-side close.
         _wipeCache();
-        if (_handle == 0)
+        if (_closed || _handle == 0)
+        {
+            // Idempotent — already closed.
+            _closed = true;
             return;
-        check(ITB_Easy_Close(_handle));
+        }
+        int rc = ITB_Easy_Close(_handle);
+        _closed = true;
+        check(rc);
     }
 
     // ─── Internals ───────────────────────────────────────────────────
@@ -720,6 +775,7 @@ struct Encryptor
     /// decrypt on each D call.
     private ubyte[] _cipherCall(FnEasyCipher fn, const(ubyte)[] payload) @trusted
     {
+        _checkOpen();
         // 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
         // expansion factor observed across the primitive / mode /
         // nonce-bits matrix; floor at 4 KiB so the very-small payload
@@ -801,5 +857,17 @@ struct Encryptor
         if (_outCache.length > 0)
             _outCache[] = 0;
         _outCache = null;
+    }
+
+    /// Preflight rejection for closed / freed encryptors. Throws
+    /// `ITBError(Status.EasyClosed)` before any libitb FFI call so
+    /// callers see the canonical "encryptor has been closed" code
+    /// regardless of whether the underlying handle slot has merely
+    /// been zeroed (post-`close`) or has been released back to libitb
+    /// (post-destructor).
+    private void _checkOpen() @safe pure
+    {
+        if (_closed || _handle == 0)
+            throw new ITBError(Status.EasyClosed, "encryptor has been closed");
     }
 }

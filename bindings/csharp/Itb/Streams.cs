@@ -112,7 +112,7 @@ public sealed class StreamEncryptor : IDisposable
     {
         if (_closed)
         {
-            throw new InvalidOperationException("write on closed StreamEncryptor");
+            throw new ItbException(StatusCode.EasyClosed, "write on closed StreamEncryptor");
         }
         for (var i = 0; i < data.Length; i++)
         {
@@ -216,7 +216,7 @@ public sealed class StreamDecryptor : IDisposable
     {
         if (_closed)
         {
-            throw new InvalidOperationException("feed on closed StreamDecryptor");
+            throw new ItbException(StatusCode.EasyClosed, "feed on closed StreamDecryptor");
         }
         for (var i = 0; i < data.Length; i++)
         {
@@ -353,7 +353,7 @@ public sealed class StreamEncryptorTriple : IDisposable
     {
         if (_closed)
         {
-            throw new InvalidOperationException("write on closed StreamEncryptorTriple");
+            throw new ItbException(StatusCode.EasyClosed, "write on closed StreamEncryptorTriple");
         }
         for (var i = 0; i < data.Length; i++)
         {
@@ -457,7 +457,7 @@ public sealed class StreamDecryptorTriple : IDisposable
     {
         if (_closed)
         {
-            throw new InvalidOperationException("feed on closed StreamDecryptorTriple");
+            throw new ItbException(StatusCode.EasyClosed, "feed on closed StreamDecryptorTriple");
         }
         for (var i = 0; i < data.Length; i++)
         {

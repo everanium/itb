@@ -78,11 +78,16 @@ class EasyMismatchError(ITBError):
         self.field = field
 
 
-def _last_mismatch_field() -> str:
+def last_mismatch_field() -> str:
     """Reads the offending JSON field name from the most recent
     ITB_Easy_Import call that returned STATUS_EASY_MISMATCH on this
     thread. Empty string when the most recent failure was not a
-    mismatch."""
+    mismatch.
+
+    The Encryptor.import_state method already attaches this name to
+    the raised EasyMismatchError.field attribute; this free function
+    is exposed for callers that need to read the field independently
+    of the error path."""
     out_len = _ffi.new("size_t*")
     rc = _lib.ITB_Easy_LastMismatchField(_ffi.NULL, 0, out_len)
     if rc not in (STATUS_OK, STATUS_BUFFER_TOO_SMALL):
@@ -95,6 +100,10 @@ def _last_mismatch_field() -> str:
     if rc != STATUS_OK:
         return ""
     return _ffi.string(buf, int(out_len[0]) - 1).decode("utf-8")
+
+
+# Internal alias for backwards compatibility.
+_last_mismatch_field = last_mismatch_field
 
 
 def _raise_easy(code: int):
@@ -215,7 +224,7 @@ class Encryptor:
         collection-time zeroisation.
     """
 
-    __slots__ = ("_handle", "_out_buf", "_out_cap")
+    __slots__ = ("_handle", "_out_buf", "_out_cap", "_closed")
 
     def __init__(
         self,
@@ -224,8 +233,6 @@ class Encryptor:
         mac: Optional[str] = None,
         mode: int = 1,
     ):
-        if mode not in (1, 3):
-            raise ITBError(STATUS_BAD_INPUT, f"mode must be 1 (Single) or 3 (Triple), got {mode}")
         prim_arg = (primitive.encode("utf-8") if primitive else _ffi.NULL)
         # Binding-side default override: when the caller passes
         # ``mac=None`` the binding picks ``hmac-blake3`` rather than
@@ -245,6 +252,13 @@ class Encryptor:
         # close() / free() / __del__ wipe it before drop.
         self._out_buf = _ffi.NULL
         self._out_cap = 0
+        # Tracks the closed / freed state independently of the handle
+        # field so the preflight in :meth:`_check_open` can surface
+        # ``STATUS_EASY_CLOSED`` after :meth:`close` / :meth:`free`
+        # without relying on the libitb-side handle-id lookup (which
+        # would surface ``STATUS_BAD_HANDLE`` once :meth:`free` has
+        # cleared the handle slot).
+        self._closed = False
 
     # ─── Mixed-mode constructors ───────────────────────────────────
 
@@ -254,9 +268,9 @@ class Encryptor:
         primitive_n: str,
         primitive_d: str,
         primitive_s: str,
+        primitive_l: Optional[str],
         key_bits: int,
         mac: str,
-        primitive_l: Optional[str] = None,
     ) -> "Encryptor":
         """Construct a Single-Ouroboros :class:`Encryptor` with
         per-slot PRF primitive selection. ``primitive_n`` /
@@ -288,6 +302,7 @@ class Encryptor:
         obj._handle = int(h[0])
         obj._out_buf = _ffi.NULL
         obj._out_cap = 0
+        obj._closed = False
         return obj
 
     @classmethod
@@ -300,9 +315,9 @@ class Encryptor:
         primitive_s1: str,
         primitive_s2: str,
         primitive_s3: str,
+        primitive_l: Optional[str],
         key_bits: int,
         mac: str,
-        primitive_l: Optional[str] = None,
     ) -> "Encryptor":
         """Triple-Ouroboros counterpart of :meth:`mixed_single`.
         Accepts seven per-slot primitive names (noise + 3 data +
@@ -330,7 +345,20 @@ class Encryptor:
         obj._handle = int(h[0])
         obj._out_buf = _ffi.NULL
         obj._out_cap = 0
+        obj._closed = False
         return obj
+
+    # ─── Internal preflight ────────────────────────────────────────
+
+    def _check_open(self) -> None:
+        """Preflight rejection for closed / freed encryptors. Surfaces
+        :class:`ITBError` with code :data:`STATUS_EASY_CLOSED` before
+        any libitb FFI call so callers see the canonical "encryptor
+        has been closed" code regardless of whether the underlying
+        handle slot has merely been zeroed (post-:meth:`close`) or has
+        been released back to libitb (post-:meth:`free`)."""
+        if self._closed or not self._handle:
+            raise ITBError(STATUS_EASY_CLOSED, "encryptor has been closed")
 
     # ─── Per-slot primitive accessors ──────────────────────────────
 
@@ -343,6 +371,7 @@ class Encryptor:
         :attr:`primitive` value; for encryptors built via
         :meth:`mixed_single` / :meth:`mixed_triple` each slot
         returns its independently-chosen primitive name."""
+        self._check_open()
         return _read_str(lambda buf, cap, ol:
                          _lib.ITB_Easy_PrimitiveAt(self._handle, int(slot), buf, cap, ol))
 
@@ -352,6 +381,7 @@ class Encryptor:
         :meth:`mixed_single` or :meth:`mixed_triple` (per-slot
         primitive selection); ``False`` for single-primitive
         encryptors built via the default :meth:`__init__`."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_IsMixed(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -370,12 +400,14 @@ class Encryptor:
     @property
     def primitive(self) -> str:
         """Returns the canonical primitive name bound at construction."""
+        self._check_open()
         return _read_str(lambda buf, cap, ol:
                          _lib.ITB_Easy_Primitive(self._handle, buf, cap, ol))
 
     @property
     def key_bits(self) -> int:
         """Returns the ITB key width in bits."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_KeyBits(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -385,6 +417,7 @@ class Encryptor:
     @property
     def mode(self) -> int:
         """Returns 1 (Single Ouroboros) or 3 (Triple Ouroboros)."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_Mode(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -394,6 +427,7 @@ class Encryptor:
     @property
     def mac_name(self) -> str:
         """Returns the canonical MAC name bound at construction."""
+        self._check_open()
         return _read_str(lambda buf, cap, ol:
                          _lib.ITB_Easy_MACName(self._handle, buf, cap, ol))
 
@@ -406,6 +440,7 @@ class Encryptor:
         no per-instance override has been issued. Reads the live
         cfg.NonceBits via ``ITB_Easy_NonceBits`` so a setter call on
         the Go side is reflected immediately."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_NonceBits(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -422,6 +457,7 @@ class Encryptor:
         default. Use this when slicing a chunk header off the front
         of a ciphertext stream produced by this encryptor or when
         sizing a tamper region for an authenticated-decrypt test."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_HeaderSize(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -447,6 +483,7 @@ class Encryptor:
         :data:`itb._ffi.STATUS_BAD_INPUT` on too-short buffer, zero
         dimensions, or width × height overflow against the
         container pixel cap."""
+        self._check_open()
         if not isinstance(header, (bytes, bytearray, memoryview)):
             raise TypeError("header must be bytes-like")
         hdr = bytes(header)
@@ -531,6 +568,7 @@ class Encryptor:
         avoids paying for a duplicate encrypt / decrypt on each
         Python call.
         """
+        self._check_open()
         payload_len = len(payload)
         # 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
         # expansion factor observed across the primitive / mode /
@@ -578,6 +616,7 @@ class Encryptor:
         :attr:`nonce_bits` / :attr:`header_size` properties read
         through to the live Go-side cfg.NonceBits, so they reflect
         the new value automatically on the next access."""
+        self._check_open()
         rc = _lib.ITB_Easy_SetNonceBits(self._handle, int(n))
         if rc != STATUS_OK:
             _raise_easy(rc)
@@ -586,6 +625,7 @@ class Encryptor:
         """Override the CSPRNG barrier-fill margin for this encryptor.
         Valid values: 1, 2, 4, 8, 16, 32. Asymmetric — receiver does
         not need the same value as sender."""
+        self._check_open()
         rc = _lib.ITB_Easy_SetBarrierFill(self._handle, int(n))
         if rc != STATUS_OK:
             _raise_easy(rc)
@@ -593,6 +633,7 @@ class Encryptor:
     def set_bit_soup(self, mode: int) -> None:
         """0 = byte-level split (default); non-zero = bit-level Bit Soup
         split."""
+        self._check_open()
         rc = _lib.ITB_Easy_SetBitSoup(self._handle, int(mode))
         if rc != STATUS_OK:
             _raise_easy(rc)
@@ -600,6 +641,7 @@ class Encryptor:
     def set_lock_soup(self, mode: int) -> None:
         """0 = off (default); non-zero = on. Auto-couples ``BitSoup=1``
         on this encryptor."""
+        self._check_open()
         rc = _lib.ITB_Easy_SetLockSoup(self._handle, int(mode))
         if rc != STATUS_OK:
             _raise_easy(rc)
@@ -609,6 +651,7 @@ class Encryptor:
         the bit-permutation overlay through it; auto-couples
         ``LockSoup=1 + BitSoup=1`` on this encryptor). Calling after
         the first encrypt raises ITBError(STATUS_EASY_LOCKSEED_AFTER_ENCRYPT)."""
+        self._check_open()
         rc = _lib.ITB_Easy_SetLockSeed(self._handle, int(mode))
         if rc != STATUS_OK:
             _raise_easy(rc)
@@ -616,6 +659,7 @@ class Encryptor:
     def set_chunk_size(self, n: int) -> None:
         """Per-instance streaming chunk-size override (0 = auto-detect
         via :data:`itb.ChunkSize` on the Go side)."""
+        self._check_open()
         rc = _lib.ITB_Easy_SetChunkSize(self._handle, int(n))
         if rc != STATUS_OK:
             _raise_easy(rc)
@@ -627,6 +671,7 @@ class Encryptor:
         """Number of seed slots: 3 (Single without LockSeed),
         4 (Single with LockSeed), 7 (Triple without LockSeed),
         8 (Triple with LockSeed)."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_SeedCount(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -642,6 +687,7 @@ class Encryptor:
         index (index 3 for Single, index 7 for Triple). Bindings can
         consult :attr:`seed_count` to determine the valid slot
         range for the active mode + lockSeed configuration."""
+        self._check_open()
         out_len = _ffi.new("int*")
         # Probe call — out=NULL / capCount=0 returns
         # STATUS_BUFFER_TOO_SMALL with the required size in *outLen.
@@ -662,6 +708,7 @@ class Encryptor:
     def has_prf_keys(self) -> bool:
         """``True`` when the encryptor's primitive uses fixed PRF keys
         per seed slot (every shipped primitive except siphash24)."""
+        self._check_open()
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_HasPRFKeys(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -674,6 +721,7 @@ class Encryptor:
         primitive has no fixed PRF keys (siphash24 — caller should
         consult :attr:`has_prf_keys` first) or when ``slot`` is out
         of range."""
+        self._check_open()
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_Easy_PRFKey(self._handle, int(slot), _ffi.NULL, 0, out_len)
         # Probe pattern: zero-length key → STATUS_OK + outLen=0
@@ -696,6 +744,7 @@ class Encryptor:
         """Returns a defensive copy of the encryptor's bound MAC fixed
         key. Save these bytes alongside the seed material for
         cross-process restore via :meth:`export` / :meth:`import_state`."""
+        self._check_open()
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_Easy_MACKey(self._handle, _ffi.NULL, 0, out_len)
         if rc == STATUS_OK and int(out_len[0]) == 0:
@@ -724,6 +773,7 @@ class Encryptor:
         — both sides communicate them via deployment config.
         LockSeed is carried because activating it changes the
         structural seed count."""
+        self._check_open()
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_Easy_Export(self._handle, _ffi.NULL, 0, out_len)
         if rc != STATUS_BUFFER_TOO_SMALL:
@@ -748,6 +798,7 @@ class Encryptor:
         Mismatch on primitive / key_bits / mode / mac raises
         :class:`EasyMismatchError` carrying the offending field name
         in the ``.field`` attribute."""
+        self._check_open()
         if not isinstance(blob, (bytes, bytearray, memoryview)):
             raise TypeError("blob must be bytes-like")
         blob_bytes = bytes(blob)
@@ -763,28 +814,47 @@ class Encryptor:
         multiple :meth:`close` calls return without raising. Also
         wipes the per-encryptor cffi output cache so the last
         ciphertext / plaintext does not linger in heap memory after
-        the encryptor's working set has been zeroed on the Go side."""
-        if self._handle:
-            if self._out_cap > 0 and self._out_buf != _ffi.NULL:
-                _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
-                self._out_buf = _ffi.NULL
-                self._out_cap = 0
-            rc = _lib.ITB_Easy_Close(self._handle)
-            # Close is documented as idempotent on the Go side; treat
-            # any non-OK return after close as a bug.
-            if rc != STATUS_OK:
-                _raise_easy(rc)
+        the encryptor's working set has been zeroed on the Go side.
+
+        Subsequent calls on a closed encryptor raise
+        :class:`ITBError` with code :data:`STATUS_EASY_CLOSED`,
+        regardless of whether the underlying handle slot has merely
+        been closed (post-:meth:`close`) or fully released
+        (post-:meth:`free`)."""
+        # Always wipe the cached output buffer — repeated close calls
+        # keep the cache wiped without racing the Go-side close.
+        if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+            _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+        self._out_buf = _ffi.NULL
+        self._out_cap = 0
+        if self._closed or not self._handle:
+            # Idempotent — already closed.
+            self._closed = True
+            return
+        rc = _lib.ITB_Easy_Close(self._handle)
+        self._closed = True
+        # Close is documented as idempotent on the Go side; treat
+        # any non-OK return after close as a bug.
+        if rc != STATUS_OK:
+            _raise_easy(rc)
 
     def free(self) -> None:
-        """Releases the underlying libitb handle slot. Calls
-        :meth:`close` first (so key material is zeroed even if the
-        binding consumer never called close explicitly) and then
-        deletes the FFI handle. Subsequent method calls on this
-        instance raise an :class:`AttributeError` (the cffi handle
-        is gone)."""
-        if self._handle:
-            rc = _lib.ITB_Easy_Free(self._handle)
-            self._handle = 0
+        """Releases the underlying libitb handle slot. Wipes the
+        per-encryptor cffi output cache (so key material does not
+        linger in heap memory) and then releases the libitb handle
+        slot. Idempotent — calling :meth:`free` on an already-freed
+        encryptor returns silently. Subsequent method calls on the
+        instance raise :class:`ITBError` with code
+        :data:`STATUS_EASY_CLOSED`."""
+        if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+            _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+        self._out_buf = _ffi.NULL
+        self._out_cap = 0
+        h = self._handle
+        self._handle = 0
+        self._closed = True
+        if h:
+            rc = _lib.ITB_Easy_Free(h)
             if rc != STATUS_OK:
                 _raise_easy(rc)
 
@@ -801,6 +871,7 @@ class Encryptor:
             if self._handle:
                 _lib.ITB_Easy_Free(self._handle)
                 self._handle = 0
+                self._closed = True
         except Exception:
             pass
 

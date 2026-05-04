@@ -509,13 +509,37 @@ void itb_buffer_free(uint8_t *buf);
  * start), `3` = Triple Ouroboros (7 seeds — noise + 3 pairs of data /
  * start). Other values surface as ITB_BAD_INPUT pre-FFI.
  *
- * Auto-couple semantics. `itb_encryptor_set_lock_seed(e, 1)`
- * automatically engages BitSoup + LockSoup on the on-direction
- * (Single Ouroboros). Calling `itb_encryptor_set_lock_soup` or
- * `itb_encryptor_set_bit_soup` similarly auto-couples the partner
- * knob. This is intentional libitb behaviour propagated through the
- * binding without filtering — set the desired final state and let
- * libitb decide which other knobs to flip.
+ * Auto-couple semantics. Three rules govern the
+ * BitSoup / LockSoup / LockSeed overlay across both Easy Mode
+ * setters and the low-level process-wide knobs:
+ *
+ * 1. **Setter-level: LockSoup → BitSoup** (always, both modes).
+ *    `itb_encryptor_set_lock_soup(e, non-zero)` auto-engages
+ *    cfg.BitSoup = 1. `itb_encryptor_set_lock_seed(e, 1)` auto-engages
+ *    cfg.BitSoup = 1 + cfg.LockSoup = 1 (the dedicated lockSeed has
+ *    no wire effect without the overlay).
+ *
+ * 2. **Mode-dependent dispatch: Single Ouroboros activates the
+ *    overlay if EITHER flag is set.** In mode = 1, the Go-side
+ *    `splitForSingle` (bitsoup.go:1054-1057) engages the lock-soup
+ *    overlay if either `cfg.BitSoup == 1` OR `cfg.LockSoup == 1`.
+ *    Practical effect: in Single Ouroboros, calling
+ *    `itb_encryptor_set_bit_soup(e, 1)` alone activates the
+ *    lock-soup overlay at encrypt time even though cfg.LockSoup
+ *    stays 0. In Triple Ouroboros (mode = 3), bit-soup and
+ *    lock-soup are independently meaningful — bit-soup alone
+ *    splits payload bits without the PRF-keyed permutation
+ *    overlay. The same rule applies to the process-wide
+ *    `itb_set_bit_soup` / `itb_set_lock_soup` knobs (they back the
+ *    same flags `splitForSingle` consults).
+ *
+ * 3. **Off-direction coercion while LockSeed active.** If cfg.LockSeed
+ *    == 1, calling `itb_encryptor_set_bit_soup(e, 0)` or
+ *    `itb_encryptor_set_lock_soup(e, 0)` is silently coerced to 1 to
+ *    keep the overlay engaged on the dedicated lockSeed channel; call
+ *    `itb_encryptor_set_lock_seed(e, 0)` first to detach the lockSeed
+ *    and fully disengage. This is intentional libitb behaviour
+ *    propagated through the binding without filtering.
  */
 
 /*
@@ -668,11 +692,18 @@ itb_status_t itb_encryptor_set_nonce_bits(itb_encryptor_t *e, int n);
 itb_status_t itb_encryptor_set_barrier_fill(itb_encryptor_t *e, int n);
 
 /* `0` = byte-level split (default); non-zero = bit-level Bit Soup
- * split. Auto-couples the partner knob. */
+ * split. Mode-dependent overlay engagement: in Single Ouroboros
+ * (mode = 1), enabling bit-soup activates the lock-soup overlay at
+ * encrypt time even though cfg.LockSoup stays 0; in Triple
+ * Ouroboros (mode = 3), bit-soup operates independently of
+ * lock-soup. While a dedicated lockSeed is active (cfg.LockSeed
+ * == 1) the Go-side easy package coerces `mode == 0` to `1` to
+ * keep the overlay engaged. */
 itb_status_t itb_encryptor_set_bit_soup(itb_encryptor_t *e, int mode);
 
-/* `0` = off (default); non-zero = on. Auto-couples BitSoup=1 on this
- * encryptor. */
+/* `0` = off (default); non-zero = on. Auto-couples BitSoup=1 on
+ * this encryptor (always, both modes — Lock Soup layers on top of
+ * bit soup). */
 itb_status_t itb_encryptor_set_lock_soup(itb_encryptor_t *e, int mode);
 
 /* `0` = off; `1` = on (allocates a dedicated lockSeed and routes the
@@ -1071,33 +1102,32 @@ typedef int (*itb_stream_write_fn)(void *user_ctx,
 
 /*
  * Reads plaintext from `read_fn` until EOF, encrypts in chunks of
- * `chunk_size` bytes, and writes concatenated ITB chunks to `write_fn`.
+ * `chunk_size` bytes (plain Single Ouroboros — routes through
+ * `itb_encrypt`), and writes concatenated ITB chunks to `write_fn`.
  * `chunk_size` MUST be > 0 (returns `ITB_BAD_INPUT` on zero).
- *
- * `mac` is optional. NULL routes through itb_encrypt (plain Single
- * Ouroboros); non-NULL routes through itb_encrypt_auth
- * (authenticated Single Ouroboros + MAC tag).
  *
  * `read_user_ctx` and `write_user_ctx` are independent — pass the
  * same pointer if the caller's context covers both directions, or
  * distinct pointers when read source and write sink are separate.
+ *
+ * Authenticated streams are not exposed in the free-function shape;
+ * callers needing per-chunk MAC tagging build the chunk loop on
+ * `itb_encryptor_encrypt_auth` directly. This matches the
+ * cross-binding stream surface — none of the seven bindings expose a
+ * MAC parameter on the stream free functions.
  */
 itb_status_t itb_stream_encrypt(const itb_seed_t *noise,
                                 const itb_seed_t *data,
                                 const itb_seed_t *start,
-                                const itb_mac_t *mac,
                                 itb_stream_read_fn read_fn, void *read_user_ctx,
                                 itb_stream_write_fn write_fn, void *write_user_ctx,
                                 size_t chunk_size);
 
 /*
  * Reads concatenated ITB chunks from `read_fn` until EOF and writes
- * the recovered plaintext to `write_fn`. The chunk-header size is
- * snapshotted at call entry; do not flip itb_set_nonce_bits during
- * the call.
- *
- * `mac` matches the matching itb_stream_encrypt's choice — NULL for
- * plain decrypt, non-NULL for authenticated decrypt.
+ * the recovered plaintext to `write_fn` (plain Single Ouroboros —
+ * routes through `itb_decrypt`). The chunk-header size is snapshotted
+ * at call entry; do not flip itb_set_nonce_bits during the call.
  *
  * `chunk_size` controls the read-buffer granularity and MUST be > 0
  * (returns `ITB_BAD_INPUT` on zero); the per-chunk decrypt path
@@ -1107,7 +1137,6 @@ itb_status_t itb_stream_encrypt(const itb_seed_t *noise,
 itb_status_t itb_stream_decrypt(const itb_seed_t *noise,
                                 const itb_seed_t *data,
                                 const itb_seed_t *start,
-                                const itb_mac_t *mac,
                                 itb_stream_read_fn read_fn, void *read_user_ctx,
                                 itb_stream_write_fn write_fn, void *write_user_ctx,
                                 size_t chunk_size);
@@ -1120,7 +1149,6 @@ itb_status_t itb_stream_encrypt_triple(const itb_seed_t *noise,
                                        const itb_seed_t *start1,
                                        const itb_seed_t *start2,
                                        const itb_seed_t *start3,
-                                       const itb_mac_t *mac,
                                        itb_stream_read_fn read_fn,
                                        void *read_user_ctx,
                                        itb_stream_write_fn write_fn,
@@ -1135,7 +1163,6 @@ itb_status_t itb_stream_decrypt_triple(const itb_seed_t *noise,
                                        const itb_seed_t *start1,
                                        const itb_seed_t *start2,
                                        const itb_seed_t *start3,
-                                       const itb_mac_t *mac,
                                        itb_stream_read_fn read_fn,
                                        void *read_user_ctx,
                                        itb_stream_write_fn write_fn,

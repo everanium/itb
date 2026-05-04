@@ -30,6 +30,7 @@ from ._ffi import (
     MAC,
     ITBError,
     STATUS_BAD_INPUT,
+    STATUS_EASY_CLOSED,
     encrypt as _encrypt,
     decrypt as _decrypt,
     encrypt_triple as _encrypt_triple,
@@ -90,7 +91,7 @@ class StreamEncryptor:
 
     def write(self, data: bytes) -> int:
         if self._closed:
-            raise ValueError("write on closed StreamEncryptor")
+            raise ITBError(STATUS_EASY_CLOSED, "write on closed StreamEncryptor")
         self._buf.extend(data)
         while len(self._buf) >= self._chunk_size:
             chunk = bytes(self._buf[: self._chunk_size])
@@ -156,7 +157,7 @@ class StreamDecryptor:
 
     def feed(self, data: bytes) -> int:
         if self._closed:
-            raise ValueError("feed on closed StreamDecryptor")
+            raise ITBError(STATUS_EASY_CLOSED, "feed on closed StreamDecryptor")
         self._buf.extend(data)
         self._drain()
         return len(data)
@@ -230,7 +231,7 @@ class StreamEncryptor3:
 
     def write(self, data: bytes) -> int:
         if self._closed:
-            raise ValueError("write on closed StreamEncryptor3")
+            raise ITBError(STATUS_EASY_CLOSED, "write on closed StreamEncryptor3")
         self._buf.extend(data)
         while len(self._buf) >= self._chunk_size:
             chunk = bytes(self._buf[: self._chunk_size])
@@ -285,7 +286,7 @@ class StreamDecryptor3:
 
     def feed(self, data: bytes) -> int:
         if self._closed:
-            raise ValueError("feed on closed StreamDecryptor3")
+            raise ITBError(STATUS_EASY_CLOSED, "feed on closed StreamDecryptor3")
         self._buf.extend(data)
         self._drain()
         return len(data)

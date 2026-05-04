@@ -33,6 +33,35 @@ public static class Library
     public static unsafe string Version =>
         ReadString.Read(ItbNative.ITB_Version);
 
+    /// <summary>
+    /// Reads <c>ITB_LastError</c> for the most recent non-OK status
+    /// returned on this thread. Empty string when no error has been
+    /// recorded. The textual message follows C errno discipline: it
+    /// is published through a process-wide atomic, so a sibling
+    /// thread that calls into libitb between the failing call and
+    /// this read can overwrite the message. The structural status
+    /// code on the failing call is unaffected — only the textual
+    /// message is racy. <see cref="ItbException"/> already attaches
+    /// this string to its <see cref="Exception.Message"/> at throw
+    /// time; this static accessor is exposed for callers that want
+    /// to read the diagnostic independently of the exception path.
+    /// </summary>
+    public static unsafe string LastError =>
+        ReadString.Read(ItbNative.ITB_LastError);
+
+    /// <summary>
+    /// Reads the offending JSON field name from the most recent
+    /// <c>ITB_Easy_Import</c> call that returned
+    /// <see cref="StatusCode.EasyMismatch"/> on this thread. Empty
+    /// string when the most recent failure was not a mismatch.
+    /// <see cref="Encryptor.Import"/> already attaches this name to
+    /// the raised <see cref="ItbEasyMismatchException.Field"/>
+    /// property; this static accessor is exposed for callers that
+    /// need to read the field independently of the error path.
+    /// </summary>
+    public static unsafe string LastMismatchField =>
+        ReadString.Read(ItbNative.ITB_Easy_LastMismatchField);
+
     /// <summary>Maximum hash-key width supported by libitb, in bits.
     /// 2048 in the shipping build; check at runtime to validate
     /// caller-supplied <c>keyBits</c> arguments.</summary>
@@ -109,7 +138,11 @@ public static class Library
     /// Process-global Bit Soup mode (0 = byte-level Ouroboros,
     /// 1 = bit-soup). Affects only Encryptor instances created AFTER
     /// the property is set; pre-existing instances retain their
-    /// at-construction-time setting.
+    /// at-construction-time setting. Independent of <see cref="LockSoup"/>
+    /// at the setter level — there is no <c>BitSoup → LockSoup</c>
+    /// cascade; the cascade direction is one-way <c>LockSoup(1) →
+    /// BitSoup(1)</c>. In Single Ouroboros, either flag alone
+    /// activates the dispatcher's keyed bit-permutation overlay.
     /// </summary>
     public static int BitSoup
     {
@@ -120,8 +153,10 @@ public static class Library
     /// <summary>
     /// Process-global Lock Soup mode (0 = off, 1 = on). The Lock Soup
     /// step engages the per-cell PRF re-keying lane and pairs with
-    /// <c>AttachLockSeed</c> on a noise seed. Same lifecycle rules as
-    /// <see cref="BitSoup"/>.
+    /// <c>AttachLockSeed</c> on a noise seed. Setting a non-zero value
+    /// auto-couples <see cref="BitSoup"/> = 1 (Lock Soup overlay layers
+    /// on top of bit soup); the off-direction does not auto-disable
+    /// <see cref="BitSoup"/>. Same lifecycle rules as <see cref="BitSoup"/>.
     /// </summary>
     public static int LockSoup
     {

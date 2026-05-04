@@ -177,6 +177,17 @@ export class Encryptor implements Disposable {
   _handle: Handle = ZERO;
   /** @internal */
   _outputCache: Uint8Array | null = null;
+  /**
+   * Tracks the closed / freed state independently of the handle
+   * field so the preflight in {@link Encryptor._checkOpen} can
+   * surface `Status.EasyClosed` after {@link Encryptor.close} /
+   * {@link Encryptor.free} without relying on the libitb-side
+   * handle-id lookup (which would surface `Status.BadHandle` once
+   * {@link Encryptor.free} has cleared the handle slot).
+   *
+   * @internal
+   */
+  _closed: boolean = false;
 
   /**
    * Constructs a fresh encryptor.
@@ -210,12 +221,6 @@ export class Encryptor implements Disposable {
     macName: string | null = null,
     mode: number = 1,
   ) {
-    if (mode !== 1 && mode !== 3) {
-      throw new ITBError(
-        Status.BadInput,
-        `mode must be 1 (Single) or 3 (Triple), got ${mode}`,
-      );
-    }
     const effectiveMac = macName ?? 'hmac-blake3';
     const out: [Handle] = [ZERO];
     const rc = ITB_Easy_New(primitive, keyBits | 0, effectiveMac, mode | 0, out);
@@ -311,8 +316,25 @@ export class Encryptor implements Disposable {
     const inst = Object.create(Encryptor.prototype) as Encryptor;
     inst._handle = handle;
     inst._outputCache = null;
+    inst._closed = false;
     encryptorFinalizer.register(inst, handle, inst);
     return inst;
+  }
+
+  /**
+   * Preflight rejection for closed / freed encryptors. Throws
+   * `ITBError(Status.EasyClosed)` before any libitb FFI call so
+   * callers see the canonical "encryptor has been closed" code
+   * regardless of whether the underlying handle slot has merely
+   * been zeroed (post-{@link Encryptor.close}) or has been released
+   * back to libitb (post-{@link Encryptor.free}).
+   *
+   * @internal
+   */
+  private _checkOpen(): void {
+    if (this._closed || isZero(this._handle)) {
+      throw new ITBError(Status.EasyClosed, 'encryptor has been closed');
+    }
   }
 
   // ─── Per-slot primitive accessors ─────────────────────────────────
@@ -330,6 +352,7 @@ export class Encryptor implements Disposable {
    * independently-chosen primitive name.
    */
   primitiveAt(slot: number): string {
+    this._checkOpen();
     const handle = this._handle;
     const { rc, value } = readString((buf, cap, outLen) =>
       ITB_Easy_PrimitiveAt(handle, slot | 0, buf, cap, outLen),
@@ -347,6 +370,7 @@ export class Encryptor implements Disposable {
    * encryptors built via the primary constructor.
    */
   get isMixed(): boolean {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_IsMixed(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -368,6 +392,7 @@ export class Encryptor implements Disposable {
 
   /** Canonical primitive name bound at construction. */
   get primitive(): string {
+    this._checkOpen();
     const handle = this._handle;
     const { rc, value } = readString((buf, cap, outLen) =>
       ITB_Easy_Primitive(handle, buf, cap, outLen),
@@ -380,6 +405,7 @@ export class Encryptor implements Disposable {
 
   /** ITB key width in bits. */
   get keyBits(): number {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_KeyBits(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -390,6 +416,7 @@ export class Encryptor implements Disposable {
 
   /** 1 (Single Ouroboros) or 3 (Triple Ouroboros). */
   get mode(): number {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_Mode(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -400,6 +427,7 @@ export class Encryptor implements Disposable {
 
   /** Canonical MAC name bound at construction. */
   get macName(): string {
+    this._checkOpen();
     const handle = this._handle;
     const { rc, value } = readString((buf, cap, outLen) =>
       ITB_Easy_MACName(handle, buf, cap, outLen),
@@ -420,6 +448,7 @@ export class Encryptor implements Disposable {
    * Go side is reflected immediately.
    */
   get nonceBits(): number {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_NonceBits(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -440,6 +469,7 @@ export class Encryptor implements Disposable {
    * a tamper region for an authenticated-decrypt test.
    */
   get headerSize(): number {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_HeaderSize(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -469,6 +499,7 @@ export class Encryptor implements Disposable {
    * container pixel cap.
    */
   parseChunkLen(header: Uint8Array): number {
+    this._checkOpen();
     if (!(header instanceof Uint8Array)) {
       throw new TypeError('header must be a Uint8Array');
     }
@@ -559,6 +590,7 @@ export class Encryptor implements Disposable {
     ) => number,
     payload: Uint8Array,
   ): Uint8Array {
+    this._checkOpen();
     const payloadLen = payload.length;
     const cache = this._ensureOutputCache(payloadLen);
 
@@ -640,6 +672,7 @@ export class Encryptor implements Disposable {
    * they reflect the new value automatically on the next access.
    */
   setNonceBits(n: number): void {
+    this._checkOpen();
     check(ITB_Easy_SetNonceBits(this._handle, n | 0));
   }
 
@@ -649,21 +682,37 @@ export class Encryptor implements Disposable {
    * need the same value as sender.
    */
   setBarrierFill(n: number): void {
+    this._checkOpen();
     check(ITB_Easy_SetBarrierFill(this._handle, n | 0));
   }
 
-  /** 0 = byte-level split (default); non-zero = bit-level Bit Soup split. */
+  /**
+   * 0 = byte-level split (default); non-zero = bit-level Bit Soup
+   * split. **Mode-dependent overlay engagement:** in Single Ouroboros
+   * (mode = 1), enabling bit-soup activates the lock-soup overlay at
+   * encrypt time even though `cfg.LockSoup` stays 0 (Go-side
+   * `splitForSingle` engages overlay if either flag is set). In
+   * Triple Ouroboros (mode = 3), bit-soup operates independently of
+   * lock-soup.
+   */
   setBitSoup(mode: number): void {
+    this._checkOpen();
     check(ITB_Easy_SetBitSoup(this._handle, mode | 0));
   }
 
   /**
    * 0 = off (default); non-zero = on. **Auto-couples `BitSoup=1`** on
-   * this encryptor in Single-Ouroboros mode — the Go-side `easy/`
-   * package engages bit-soup as a precondition for lock-soup and
-   * the binding faithfully reflects that contract.
+   * this encryptor for both Single and Triple Ouroboros — the
+   * Go-side `easy/` package (itb/easy/config.go
+   * `Encryptor.SetLockSoup`) engages bit-soup unconditionally as a
+   * precondition for lock-soup, and the binding faithfully reflects
+   * that contract. The overlay-off-while-lockSeed-active guard
+   * additionally coerces `mode == 0` to `1` while
+   * `setLockSeed(1)` remains active; drop the dedicated lockSeed via
+   * `setLockSeed(0)` first to fully disengage.
    */
   setLockSoup(mode: number): void {
+    this._checkOpen();
     check(ITB_Easy_SetLockSoup(this._handle, mode | 0));
   }
 
@@ -674,6 +723,7 @@ export class Encryptor implements Disposable {
    * encrypt surfaces `ITBError(Status.EasyLockSeedAfterEncrypt)`.
    */
   setLockSeed(mode: number): void {
+    this._checkOpen();
     check(ITB_Easy_SetLockSeed(this._handle, mode | 0));
   }
 
@@ -682,6 +732,7 @@ export class Encryptor implements Disposable {
    * `itb.ChunkSize` on the Go side).
    */
   setChunkSize(n: number): void {
+    this._checkOpen();
     check(ITB_Easy_SetChunkSize(this._handle, n | 0));
   }
 
@@ -693,6 +744,7 @@ export class Encryptor implements Disposable {
    * 8 (Triple with LockSeed).
    */
   get seedCount(): number {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_SeedCount(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -713,6 +765,7 @@ export class Encryptor implements Disposable {
    * for the active mode + lockSeed configuration.
    */
   seedComponents(slot: number): bigint[] {
+    this._checkOpen();
     const probe: [number] = [0];
     let rc = ITB_Easy_SeedComponents(this._handle, slot | 0, null, 0, probe);
     if (rc === Status.Ok) {
@@ -736,6 +789,7 @@ export class Encryptor implements Disposable {
    * seed slot (every shipped primitive except `siphash24`).
    */
   get hasPRFKeys(): boolean {
+    this._checkOpen();
     const st: [number] = [0];
     const v = ITB_Easy_HasPRFKeys(this._handle, st);
     if (st[0] !== Status.Ok) {
@@ -752,6 +806,7 @@ export class Encryptor implements Disposable {
    * range.
    */
   prfKey(slot: number): Uint8Array {
+    this._checkOpen();
     const probe: [number | bigint] = [0];
     let rc = ITB_Easy_PRFKey(this._handle, slot | 0, null, 0, probe);
     // Probe pattern: zero-length key → STATUS_OK + outLen=0
@@ -781,6 +836,7 @@ export class Encryptor implements Disposable {
    * {@link Encryptor.importState}.
    */
   get macKey(): Uint8Array {
+    this._checkOpen();
     const probe: [number | bigint] = [0];
     let rc = ITB_Easy_MACKey(this._handle, null, 0, probe);
     if (rc === Status.Ok && Number(probe[0]) === 0) {
@@ -816,6 +872,7 @@ export class Encryptor implements Disposable {
    * count.
    */
   exportState(): Uint8Array {
+    this._checkOpen();
     const probe: [number | bigint] = [0];
     let rc = ITB_Easy_Export(this._handle, null, 0, probe);
     if (rc === Status.Ok) {
@@ -847,6 +904,7 @@ export class Encryptor implements Disposable {
    * name on its `.field` property.
    */
   importState(blob: Uint8Array): void {
+    this._checkOpen();
     if (!(blob instanceof Uint8Array)) {
       throw new TypeError('blob must be a Uint8Array');
     }
@@ -941,11 +999,17 @@ export class Encryptor implements Disposable {
    * one step.
    */
   close(): void {
-    if (isZero(this._handle)) {
+    // Wipe the cached output buffer regardless of close state —
+    // repeated close calls keep the cache wiped without racing the
+    // Go-side close.
+    this._wipeOutputCache();
+    if (this._closed || isZero(this._handle)) {
+      // Idempotent — already closed.
+      this._closed = true;
       return;
     }
-    this._wipeOutputCache();
     const rc = ITB_Easy_Close(this._handle);
+    this._closed = true;
     // Close is documented as idempotent on the Go side; treat any
     // non-OK return after close as a bug.
     check(rc);
@@ -956,19 +1020,22 @@ export class Encryptor implements Disposable {
    * per-encryptor output cache before release (so the last
    * ciphertext / plaintext is zeroed out of heap memory) and then
    * deletes the FFI handle. Subsequent method calls on this
-   * instance surface `ITBError(Status.BadHandle)` — the wrapper
-   * forwards a zero handle to libitb, which rejects it.
+   * instance surface `ITBError(Status.EasyClosed)` — the binding-side
+   * preflight in {@link Encryptor._checkOpen} short-circuits the
+   * libitb call after the handle slot has been cleared.
    *
    * Idempotent: calling `free` on an already-freed encryptor
    * returns silently.
    */
   free(): void {
+    this._wipeOutputCache();
     if (isZero(this._handle)) {
+      this._closed = true;
       return;
     }
-    this._wipeOutputCache();
     const h = this._handle;
     this._handle = ZERO;
+    this._closed = true;
     encryptorFinalizer.unregister(this);
     const rc = ITB_Easy_Free(h);
     check(rc);

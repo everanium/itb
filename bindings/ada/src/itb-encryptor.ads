@@ -37,10 +37,27 @@
 --  threat model should call Close immediately after the last decrypt
 --  rather than relying on Finalize at scope exit.
 --
---  Easy Mode auto-couple. Calling Set_Lock_Seed (1) /
---  Set_Bit_Soup (1) / Set_Lock_Soup (1) auto-engages Bit Soup +
---  Lock Soup on the on-direction. Documented "thinks-for-the-dumb-
---  user" behaviour matching every other binding.
+--  Auto-couple semantics. Three rules govern the
+--  Bit_Soup / Lock_Soup / Lock_Seed overlay (Go-side
+--  itb/easy/config.go + itb/bitsoup.go).
+--  (1) Setter-level: Lock_Soup -> Bit_Soup (always, both modes).
+--      Set_Lock_Soup (non-zero) sets Cfg.Bit_Soup = 1; Set_Lock_Seed
+--      (1) sets Cfg.Lock_Soup = 1 + Cfg.Bit_Soup = 1 (the dedicated
+--      lockSeed has no wire effect without the overlay).
+--  (2) Mode-dependent dispatch: Single Ouroboros activates the
+--      overlay if either flag is set. In mode = 1, the Go-side
+--      Split_For_Single engages the lock-soup overlay if EITHER
+--      Cfg.Bit_Soup = 1 OR Cfg.Lock_Soup = 1; practical effect --
+--      calling Set_Bit_Soup (1) alone activates the overlay at
+--      encrypt time even though Cfg.Lock_Soup stays 0. In Triple
+--      Ouroboros (mode = 3), bit-soup and lock-soup are
+--      independently meaningful -- bit-soup alone splits payload
+--      bits without the PRF-keyed permutation overlay.
+--  (3) Off-direction coercion while LockSeed active. While
+--      Cfg.Lock_Seed = 1, Set_Bit_Soup (0) and Set_Lock_Soup (0)
+--      are silently coerced to 1 to keep the overlay engaged on the
+--      dedicated lockSeed channel; call Set_Lock_Seed (0) first to
+--      fully disengage.
 --
 --  Default MAC override. When Mac_Name = "" is passed to Make /
 --  Mixed_Single / Mixed_Triple, the binding substitutes
@@ -198,11 +215,16 @@ package Itb.Encryptor is
    procedure Set_Barrier_Fill (Self : Encryptor; N : Integer);
 
    --  0 = byte-level split (default); non-zero = bit-level Bit Soup
-   --  split.
+   --  split. Mode-dependent overlay engagement: in Single Ouroboros
+   --  (Mode = 1), enabling bit-soup activates the lock-soup overlay
+   --  at encrypt time even though Cfg.Lock_Soup stays 0; in Triple
+   --  Ouroboros (Mode = 3), bit-soup operates independently of
+   --  lock-soup. See package header §Auto-couple semantics.
    procedure Set_Bit_Soup (Self : Encryptor; Mode : Integer);
 
    --  0 = off (default); non-zero = on. Auto-couples Bit_Soup = 1 on
-   --  this encryptor.
+   --  this encryptor (always, both Single and Triple Ouroboros
+   --  modes — Lock Soup layers on top of bit soup).
    procedure Set_Lock_Soup (Self : Encryptor; Mode : Integer);
 
    --  0 = off; 1 = on (allocates a dedicated lockSeed and routes the
@@ -356,9 +378,16 @@ private
 
    type Byte_Array_Access is access Byte_Array;
 
+   --  Tracks the closed / freed state independently of the Handle
+   --  field so the preflight in the body's Check_Open helper can
+   --  surface Itb.Status.Easy_Closed after Close / Finalize without
+   --  relying on the libitb-side handle-id lookup (which would
+   --  surface Itb.Status.Bad_Handle once Finalize has cleared the
+   --  handle slot).
    type Encryptor is new Ada.Finalization.Limited_Controlled with record
       Handle : Itb.Sys.Handle    := 0;
       Cache  : Byte_Array_Access := null;
+      Closed : Boolean           := False;
    end record;
 
    overriding procedure Finalize (Self : in out Encryptor);

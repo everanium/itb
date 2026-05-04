@@ -300,9 +300,9 @@ let mut enc = Encryptor::mixed_single(
     "blake3",         // primitive_n: noiseSeed:  BLAKE3
     "blake2s",        // primitive_d: dataSeed:   BLAKE2s
     "areion256",      // primitive_s: startSeed:  Areion-SoEM-256
+    Some("blake2b256"), // primitive_l: dedicated lockSeed (None for no lockSeed slot)
     1024,             // key_bits
     "hmac-blake3",    // mac
-    Some("blake2b256"), // primitive_l: dedicated lockSeed (None for no lockSeed slot)
 ).unwrap();
 
 // Per-instance configuration applies as for Encryptor::new(...).
@@ -357,9 +357,9 @@ let mut dec = Encryptor::mixed_single(
     "blake3",
     "blake2s",
     "areion256",
+    Some("blake2b256"),
     1024,
     "hmac-blake3",
-    Some("blake2b256"),
 ).unwrap();
 
 // Restore PRF keys, seed components, MAC key, and the per-instance

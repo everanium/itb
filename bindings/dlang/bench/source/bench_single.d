@@ -98,7 +98,7 @@ private EncBox* buildMixedSingle() @trusted
     auto box = new EncBox;
     box.enc = Encryptor.newMixed(
         MIXED_NOISE, MIXED_DATA, MIXED_START,
-        KEY_BITS, MAC_NAME, primL);
+        primL, KEY_BITS, MAC_NAME);
     _encryptorRegistry ~= box;
     return box;
 }

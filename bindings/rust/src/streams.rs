@@ -117,7 +117,7 @@ impl<'a, W: Write> StreamEncryptor<'a, W> {
     pub fn write(&mut self, data: &[u8]) -> Result<usize, ITBError> {
         if self.closed {
             return Err(ITBError::with_message(
-                ffi::STATUS_BAD_INPUT,
+                ffi::STATUS_EASY_CLOSED,
                 "write on closed StreamEncryptor",
             ));
         }
@@ -220,7 +220,7 @@ impl<'a, W: Write> StreamDecryptor<'a, W> {
     pub fn feed(&mut self, data: &[u8]) -> Result<usize, ITBError> {
         if self.closed {
             return Err(ITBError::with_message(
-                ffi::STATUS_BAD_INPUT,
+                ffi::STATUS_EASY_CLOSED,
                 "feed on closed StreamDecryptor",
             ));
         }
@@ -334,7 +334,7 @@ impl<'a, W: Write> StreamEncryptor3<'a, W> {
     pub fn write(&mut self, data: &[u8]) -> Result<usize, ITBError> {
         if self.closed {
             return Err(ITBError::with_message(
-                ffi::STATUS_BAD_INPUT,
+                ffi::STATUS_EASY_CLOSED,
                 "write on closed StreamEncryptor3",
             ));
         }
@@ -439,7 +439,7 @@ impl<'a, W: Write> StreamDecryptor3<'a, W> {
     pub fn feed(&mut self, data: &[u8]) -> Result<usize, ITBError> {
         if self.closed {
             return Err(ITBError::with_message(
-                ffi::STATUS_BAD_INPUT,
+                ffi::STATUS_EASY_CLOSED,
                 "feed on closed StreamDecryptor3",
             ));
         }

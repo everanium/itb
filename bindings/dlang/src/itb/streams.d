@@ -141,7 +141,7 @@ struct StreamEncryptor
     void write(const(ubyte)[] data) @trusted
     {
         if (_closed)
-            throw new ITBError(Status.BadInput, "write on closed StreamEncryptor");
+            throw new ITBError(Status.EasyClosed, "write on closed StreamEncryptor");
         _buf ~= data;
         while (_buf.length >= _chunkSize)
         {
@@ -252,7 +252,7 @@ struct StreamDecryptor
     void feed(const(ubyte)[] data) @trusted
     {
         if (_closed)
-            throw new ITBError(Status.BadInput, "feed on closed StreamDecryptor");
+            throw new ITBError(Status.EasyClosed, "feed on closed StreamDecryptor");
         _buf ~= data;
         drain();
     }
@@ -370,7 +370,7 @@ struct StreamEncryptor3
     void write(const(ubyte)[] data) @trusted
     {
         if (_closed)
-            throw new ITBError(Status.BadInput, "write on closed StreamEncryptor3");
+            throw new ITBError(Status.EasyClosed, "write on closed StreamEncryptor3");
         _buf ~= data;
         while (_buf.length >= _chunkSize)
         {
@@ -474,7 +474,7 @@ struct StreamDecryptor3
     void feed(const(ubyte)[] data) @trusted
     {
         if (_closed)
-            throw new ITBError(Status.BadInput, "feed on closed StreamDecryptor3");
+            throw new ITBError(Status.EasyClosed, "feed on closed StreamDecryptor3");
         _buf ~= data;
         drain();
     }

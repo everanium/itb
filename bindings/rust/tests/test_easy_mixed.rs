@@ -36,9 +36,9 @@ fn mixed_single_basic_roundtrip() {
         "blake3",
         "blake2s",
         "areion256",
+        None,
         1024,
         "kmac256",
-        None,
     )
     .unwrap();
     assert!(enc.is_mixed().unwrap());
@@ -59,9 +59,9 @@ fn mixed_single_with_dedicated_lockseed() {
         "blake3",
         "blake2s",
         "blake3",
+        Some("areion256"),
         1024,
         "kmac256",
-        Some("areion256"),
     )
     .unwrap();
     assert_eq!(enc.primitive_at(3).unwrap(), "areion256");
@@ -81,9 +81,9 @@ fn mixed_single_aescmac_siphash_128bit() {
         "aescmac",
         "siphash24",
         "aescmac",
+        None,
         512,
         "hmac-sha256",
-        None,
     )
     .unwrap();
     let plaintext = b"rs mixed 128-bit aescmac+siphash24 mix";
@@ -104,9 +104,9 @@ fn mixed_triple_basic_roundtrip() {
         "blake2b256",
         "blake3",
         "blake2s",
+        None,
         1024,
         "kmac256",
-        None,
     )
     .unwrap();
     let wants = [
@@ -132,9 +132,9 @@ fn mixed_triple_with_dedicated_lockseed() {
         "blake3",
         "blake2s",
         "blake3",
+        Some("areion256"),
         1024,
         "kmac256",
-        Some("areion256"),
     )
     .unwrap();
     assert_eq!(enc.primitive_at(7).unwrap(), "areion256");
@@ -152,9 +152,9 @@ fn mixed_single_export_import() {
         "blake3",
         "blake2s",
         "areion256",
+        None,
         1024,
         "kmac256",
-        None,
     )
     .unwrap();
     let plaintext = token_bytes(2048);
@@ -167,9 +167,9 @@ fn mixed_single_export_import() {
         "blake3",
         "blake2s",
         "areion256",
+        None,
         1024,
         "kmac256",
-        None,
     )
     .unwrap();
     receiver.import_state(&blob).unwrap();
@@ -188,9 +188,9 @@ fn mixed_triple_export_import_with_lockseed() {
         "blake2b256",
         "blake3",
         "blake2s",
+        Some("areion256"),
         1024,
         "kmac256",
-        Some("areion256"),
     )
     .unwrap();
     let ct = sender.encrypt_auth(&plaintext).unwrap();
@@ -205,9 +205,9 @@ fn mixed_triple_export_import_with_lockseed() {
         "blake2b256",
         "blake3",
         "blake2s",
+        Some("areion256"),
         1024,
         "kmac256",
-        Some("areion256"),
     )
     .unwrap();
     receiver.import_state(&blob).unwrap();
@@ -223,9 +223,9 @@ fn mixed_shape_mismatch() {
         "blake3",
         "blake2s",
         "blake3",
+        None,
         1024,
         "kmac256",
-        None,
     )
     .unwrap();
     let mixed_blob = mixed_sender.export().unwrap();
@@ -246,9 +246,9 @@ fn reject_mixed_width() {
         "blake3",     // 256-bit
         "areion512",  // 512-bit ← width mismatch
         "blake3",
+        None,
         1024,
         "kmac256",
-        None,
     );
     assert!(result.is_err());
 }
@@ -259,9 +259,9 @@ fn reject_unknown_primitive() {
         "no-such-primitive",
         "blake3",
         "blake3",
+        None,
         1024,
         "kmac256",
-        None,
     );
     assert!(result.is_err());
 }

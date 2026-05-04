@@ -518,7 +518,11 @@ def parse_chunk_len(header: bytes) -> int:
 
 
 def set_bit_soup(mode: int) -> None:
-    """0 = byte-level split (default); non-zero = bit-level Bit Soup split. Process-global."""
+    """0 = byte-level split (default); non-zero = bit-level Bit Soup
+    split. Process-global. Independent of :func:`set_lock_soup` at
+    the setter level — there is no ``BitSoup → LockSoup`` cascade. In
+    Single Ouroboros, either flag alone activates the dispatcher's
+    keyed bit-permutation overlay (Single OR-gates the two flags)."""
     rc = _lib.ITB_SetBitSoup(int(mode))
     if rc != STATUS_OK:
         _raise(rc)
@@ -530,7 +534,11 @@ def get_bit_soup() -> int:
 
 
 def set_lock_soup(mode: int) -> None:
-    """0 = off (default); non-zero = enable Insane Interlocked Mode (per-chunk PRF-keyed bit-permutation overlay). Process-global."""
+    """0 = off (default); non-zero = enable Insane Interlocked Mode
+    (per-chunk PRF-keyed bit-permutation overlay). Process-global. A
+    non-zero value auto-couples :func:`set_bit_soup` ``(1)`` (Lock
+    Soup overlay layers on top of bit soup; one-direction cascade).
+    The off-direction does not auto-disable bit soup."""
     rc = _lib.ITB_SetLockSoup(int(mode))
     if rc != STATUS_OK:
         _raise(rc)
@@ -1070,3 +1078,20 @@ def _encrypt_or_decrypt_triple(
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+
+
+def last_error() -> str:
+    """Reads ITB_LastError diagnostic for the most recent non-OK
+    status returned on this thread. Empty string when no error has
+    been recorded.
+
+    The textual message follows C errno discipline: it is published
+    through a process-wide atomic, so a sibling thread that calls
+    into libitb between the failing call and this read can overwrite
+    the message. The structural status code on the failing call is
+    unaffected — only the textual message is racy. The
+    ITBError exception class already attaches this string to its
+    .args[1] / Exception message at raise time; this free function is
+    exposed for callers that want to read the diagnostic independently
+    of the exception path."""
+    return _last_error()

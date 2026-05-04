@@ -501,7 +501,7 @@ begin
             raise Program_Error with "write after Finish must raise";
          exception
             when E : Itb.Errors.Itb_Error =>
-               if Itb.Errors.Status_Code (E) /= Itb.Status.Bad_Input then
+               if Itb.Errors.Status_Code (E) /= Itb.Status.Easy_Closed then
                   raise;
                end if;
          end;

@@ -93,8 +93,8 @@ func TestEasyDefaults(t *testing.T) {
 		t.Errorf("default keyBits = %d, want 1024", keyBits)
 	}
 	mac, _ := EasyMACName(id)
-	if mac != "kmac256" {
-		t.Errorf("default mac = %q, want kmac256", mac)
+	if mac != "hmac-blake3" {
+		t.Errorf("default mac = %q, want hmac-blake3", mac)
 	}
 	mode, _ := EasyMode(id)
 	if mode != 1 {
