@@ -68,10 +68,14 @@ COMPILER=ldc2 ./bindings/dlang/build.sh   # LLVM-backed release compiler
 COMPILER=gdc  ./bindings/dlang/build.sh   # GCC-backed compiler
 ```
 
-DMD is the fastest at compile time and the default for development;
-LDC2 produces the fastest binaries and is used for the bench harness;
-GDC accepts the source unchanged and is available for environments
-that prefer the GCC toolchain.
+DMD is the default for both development and the bench harness — its
+release codegen produces meaningfully faster binaries than LDC2 release
+on this binding's FFI hot path (counter-intuitive but reproducible —
+LDC2 -O3 release pessimises the `extern (C)` call pattern that
+dominates this binding's per-call cost). LDC2 remains available for
+environments that prefer the LLVM-backed release compiler. GDC accepts
+the source unchanged and is available for environments that prefer the
+GCC toolchain.
 
 ## Add to a DUB project
 
@@ -907,5 +911,5 @@ manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
 `ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
 underlying `bench/bin/itb-bench-single` /
 `bench/bin/itb-bench-triple` invocations (built ahead of time via
-`cd bench && dub build :single --compiler=ldc2 --build=release`
+`cd bench && dub build :single --compiler=dmd --build=release`
 and the `:triple` counterpart).

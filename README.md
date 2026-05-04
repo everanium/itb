@@ -185,10 +185,19 @@ counterparts) take read-only Seed pointers and allocate output per
 call — they are thread-safe under concurrent invocation on the same
 seeds. The exception is the shared `*itb.Config`: concurrent setter
 mutations on a Config that other goroutines are reading must be
-serialised by the caller. Process-wide `itb.Set*` setters
-(`SetNonceBits` / `SetBarrierFill` / `SetMaxWorkers` /
-`SetBitSoup` / `SetLockSoup`) are atomic and safe to call from any
-goroutine.
+serialised by the caller.
+
+**Caveat — Process-wide `itb.Set*` setters (`SetNonceBits` /
+`SetBarrierFill` / `SetMaxWorkers` / `SetBitSoup` / `SetLockSoup`)
+are atomic and safe to call from any goroutine. Atomic, but not logically
+race-free.** Each setter performs a single `atomic.Int32.Store`, so
+concurrent setter calls race-free by themselves; but mutating any of
+these knobs **while an encrypt or decrypt call is in flight** corrupts
+the running operation. The cipher snapshots its configuration at call
+entry and a mid-flight change breaks the running invariants — same plaintext
+shipped through two halves of the call under different settings will not
+round-trip on the receiver. Treat the global knobs as set-once-at-startup;
+rare runtime updates need external sequencing against active cipher calls.
 
 ## Quick Start
 
