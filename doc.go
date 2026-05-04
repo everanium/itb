@@ -187,6 +187,19 @@
 // [github.com/everanium/itb/easy.Encryptor.Import] restores the
 // state on the receiver.
 //
+// A single easy.Encryptor is NOT safe for concurrent use from
+// multiple goroutines — cipher methods, per-instance setters, and
+// Close / Import all mutate per-instance state without locking.
+// Sharing one Encryptor across goroutines requires external
+// synchronisation. Distinct Encryptor values, each owned by one
+// goroutine, run independently against the libitb worker pool. The
+// low-level free functions [Encrypt128Cfg] / [EncryptAuthenticated128Cfg]
+// (and the 256 / 512 width counterparts) take read-only Seed
+// pointers and allocate output per call — they are thread-safe
+// under concurrent invocation on the same seeds; only the shared
+// [Config] pointer requires caller-side serialisation when setters
+// race with readers.
+//
 //	import "github.com/everanium/itb"
 //	import "github.com/everanium/itb/easy"
 //

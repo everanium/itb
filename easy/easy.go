@@ -15,6 +15,19 @@
 // width mismatches are rejected at construction with
 // [ErrEasyMixedWidth]. The MAC primitive remains one per
 // encryptor on both paths.
+//
+// Concurrency. Distinct [Encryptor] values run in parallel
+// goroutines as documented above; a single [Encryptor] is NOT safe
+// for concurrent use from multiple goroutines (cipher methods,
+// setters, [Encryptor.Close], and [Encryptor.Import] all mutate
+// per-instance state without locking — see [Encryptor] for the full
+// contract). Callers needing to share one Encryptor across
+// goroutines wrap every method call in a sync.Mutex. The low-level
+// free functions in the parent package
+// ([github.com/everanium/itb.Encrypt128Cfg] /
+// [github.com/everanium/itb.EncryptAuthenticated128Cfg] and the
+// 256 / 512 width counterparts) are thread-safe under concurrent
+// invocation on the same seeds.
 package easy
 
 import (
@@ -115,6 +128,27 @@ const (
 // [Encryptor.SetLockSoup], [Encryptor.SetLockSeed], and
 // [Encryptor.SetChunkSize] methods, which mutate the encryptor's own
 // config copy without touching process globals or other encryptors.
+//
+// Concurrency. A single Encryptor is NOT safe for concurrent use
+// from multiple goroutines: cipher methods ([Encryptor.Encrypt] /
+// [Encryptor.Decrypt] / [Encryptor.EncryptAuth] /
+// [Encryptor.DecryptAuth]) write the firstEncryptCalled flag and
+// allocate the output buffer through the shared cgo handle table,
+// per-instance setters mutate cfg fields and the *Explicit flags
+// without locking, and [Encryptor.Close] / [Encryptor.Import] mutate
+// the closed flag and seed material. Sharing one Encryptor across
+// goroutines requires external synchronisation (a sync.Mutex held
+// for the duration of every cipher call, or a single-owner channel
+// pattern). Distinct Encryptor values, each owned by one goroutine,
+// run independently against the libitb worker pool — that is the
+// supported parallelism model. The low-level free functions
+// [github.com/everanium/itb.Encrypt128Cfg] /
+// [github.com/everanium/itb.EncryptAuthenticated128Cfg] (and the
+// 256 / 512 width counterparts) allocate output per call, take
+// read-only Seed pointers, and are safe under concurrent invocation
+// on the same seeds; the cfg pointer itself remains shared, so
+// concurrent setter mutations on a Config that other goroutines are
+// reading is the caller's responsibility to serialise.
 type Encryptor struct {
 	// Primitive is the canonical [hashes.Registry] name the encryptor
 	// is bound to.

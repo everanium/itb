@@ -154,6 +154,23 @@ export interface PeekedConfig {
  * explicit zeroing entry point that does NOT release the handle slot;
  * {@link Encryptor.free} zeroes the cache and releases the handle in
  * one step.
+ *
+ * Thread-safety contract.
+ * Cipher methods ({@link Encryptor.encrypt} / {@link Encryptor.decrypt}
+ * / {@link Encryptor.encryptAuth} / {@link Encryptor.decryptAuth})
+ * write into the per-instance output-buffer cache and are **not safe**
+ * to invoke concurrently against the same encryptor. Node.js's main
+ * thread is single-threaded by default, so the contract only matters
+ * when the application uses worker threads or multiple async contexts
+ * sharing one Encryptor handle. Per-instance configuration setters
+ * ({@link Encryptor.setNonceBits} / {@link Encryptor.setBarrierFill}
+ * / {@link Encryptor.setBitSoup} / {@link Encryptor.setLockSoup} /
+ * {@link Encryptor.setLockSeed} / {@link Encryptor.setChunkSize}) and
+ * state-serialisation methods ({@link Encryptor.exportState} /
+ * {@link Encryptor.importState}) likewise require external
+ * synchronisation when called against the same encryptor from multiple
+ * worker threads. Distinct Encryptor instances, each owned by one
+ * worker, run independently against the libitb worker pool.
  */
 export class Encryptor implements Disposable {
   /** @internal */

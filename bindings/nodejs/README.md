@@ -565,6 +565,15 @@ without external synchronisation corrupts that cache. Distinct
 `Encryptor` handles, each owned by one worker thread, run
 independently against the libitb worker pool.
 
+By contrast, the low-level cipher free functions (`encrypt` /
+`decrypt` / `encryptAuth` / `decryptAuth` plus the Triple
+counterparts) allocate output per call and are **thread-safe** under
+concurrent invocation on the same `Seed` handles — libitb's worker
+pool dispatches them independently. Two exceptions:
+`seed.attachLockSeed` mutates the noise Seed and must not race
+against an in-flight cipher call on it, and the process-wide setters
+above stay process-global.
+
 `koffi`'s synchronous `lib.func()` blocks the V8 main thread for
 the duration of the FFI call, so `FinalizationRegistry` callbacks
 (which queue on the JS event loop) cannot fire while libitb is
@@ -614,6 +623,35 @@ selective-catch patterns:
 Type / value-input errors raise plain JavaScript `TypeError` /
 `RangeError` (e.g. `plaintext` not a `Uint8Array`, `mode` not in
 `{1, 3}`, `chunkSize ≤ 0`).
+
+### Status codes
+
+| Code | Name | Description |
+|---|---|---|
+| 0 | `Status.Ok` | Success — the only non-failure return value |
+| 1 | `Status.BadHash` | Unknown hash primitive name |
+| 2 | `Status.BadKeyBits` | ITB key width invalid for the chosen primitive |
+| 3 | `Status.BadHandle` | FFI handle invalid or already freed |
+| 4 | `Status.BadInput` | Generic shape / range / domain violation on a call argument |
+| 5 | `Status.BufferTooSmall` | Output buffer cap below required size; probe-then-allocate idiom |
+| 6 | `Status.EncryptFailed` | Encrypt path raised on the Go side (rare; structural / OOM) |
+| 7 | `Status.DecryptFailed` | Decrypt path raised on the Go side (corrupt ciphertext shape) |
+| 8 | `Status.SeedWidthMix` | Seeds passed to one call do not share the same native hash width |
+| 9 | `Status.BadMac` | Unknown MAC name or key-length violates the primitive's `minKeyBytes` |
+| 10 | `Status.MacFailure` | MAC verification failed — tampered ciphertext or wrong MAC key |
+| 11 | `Status.EasyClosed` | Easy Mode encryptor call after `close()` |
+| 12 | `Status.EasyMalformed` | Easy Mode `importState` blob fails JSON parse / structural check |
+| 13 | `Status.EasyVersionTooNew` | Easy Mode blob version field higher than this build supports |
+| 14 | `Status.EasyUnknownPrimitive` | Easy Mode blob references a primitive this build does not know |
+| 15 | `Status.EasyUnknownMac` | Easy Mode blob references a MAC this build does not know |
+| 16 | `Status.EasyBadKeyBits` | Easy Mode blob's `key_bits` invalid for its primitive |
+| 17 | `Status.EasyMismatch` | Easy Mode blob disagrees with the receiver on `primitive` / `key_bits` / `mode` / `mac`; field name on `ITBEasyMismatchError.field` |
+| 18 | `Status.EasyLockSeedAfterEncrypt` | `setLockSeed(1)` called after the first encrypt — must precede the first ciphertext |
+| 19 | `Status.BlobModeMismatch` | Native Blob importer received a Single blob into a Triple receiver (or vice versa) |
+| 20 | `Status.BlobMalformed` | Native Blob payload fails JSON parse / magic / structural check |
+| 21 | `Status.BlobVersionTooNew` | Native Blob version field higher than this libitb build supports |
+| 22 | `Status.BlobTooManyOpts` | Native Blob export opts mask carries unsupported bits |
+| 99 | `Status.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
 ## Benchmarks
 

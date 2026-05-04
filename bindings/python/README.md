@@ -667,9 +667,51 @@ the fixed-size chunk header and returns the chunk's total
 on-the-wire length; `itb.header_size()` returns the active header
 byte count (20 / 36 / 68 for nonce sizes 128 / 256 / 512 bits).
 
+## Concurrency
+
+The libitb shared library exposes process-wide configuration through
+a small set of atomics (`set_nonce_bits`, `set_barrier_fill`,
+`set_bit_soup`, `set_lock_soup`, `set_max_workers`). Multiple threads
+calling these setters concurrently without external coordination
+will race for the final value visible to subsequent encrypt /
+decrypt calls — serialise the mutators behind a `threading.Lock` (or
+set them once at startup before spawning workers) when multiple
+Python threads need to touch them.
+
+Per-encryptor configuration via `Encryptor.set_nonce_bits` /
+`Encryptor.set_barrier_fill` / `Encryptor.set_bit_soup` /
+`Encryptor.set_lock_soup` mutates only that handle's Config copy and
+is safe to call from the owning thread without affecting other
+`Encryptor` instances. The cipher methods (`Encryptor.encrypt` /
+`Encryptor.decrypt` / `Encryptor.encrypt_auth` /
+`Encryptor.decrypt_auth`) write into the per-instance output-buffer
+cache; sharing one `Encryptor` across threads requires external
+synchronisation. Distinct `Encryptor` instances, each owned by one
+thread, run independently against the libitb worker pool.
+
+By contrast, the low-level cipher free functions (`itb.encrypt` /
+`itb.decrypt` / `itb.encrypt_auth` / `itb.decrypt_auth` plus the
+Triple counterparts) allocate output per call and are **thread-safe**
+under concurrent invocation on the same `Seed` handles — libitb's
+worker pool dispatches them independently. Two exceptions:
+`Seed.attach_lock_seed` mutates the noise Seed and must not race
+against an in-flight cipher call on it, and the process-wide setters
+above stay process-global.
+
+The wrapper objects (`Seed`, `MAC`, `Encryptor`, `Blob128` /
+`Blob256` / `Blob512`, `StreamEncryptor` / `StreamDecryptor`) are
+plain Python classes whose `__del__` finalisers call the matching
+libitb release entry points; the FFI-call layer is synchronous and
+holds the GIL, so the §11.j keepAlive trap that JIT-compiled GC
+languages (.NET `GC.KeepAlive`, Node.js `FinalizationRegistry`)
+require is N/A here — Python's reference count keeps the wrapper
+alive across the FFI call. Use `with Encryptor(...) as enc:` for
+deterministic close.
+
 ## Error model
 
-Every failure surfaces as `itb.ITBError` with two fields:
+Every failure surfaces as `ITBError` (or one of the four typed
+subclasses) with a `code` field and a textual message:
 
 ```python
 try:
@@ -678,10 +720,52 @@ except itb.ITBError as e:
     print(e.code, e)  # e.code == itb._ffi.STATUS_BAD_MAC
 ```
 
+The typed-exception hierarchy mirrors the C# / Node.js / Ada / D
+bindings:
+
+- `ITBError` — base class; carries `code` + the textual message.
+- `EasyMismatchError` — Easy Mode `import_state` rejected a field;
+  the offending JSON field name is on `.field`.
+- `BlobModeMismatchError` — Blob receiver rejected a Single-vs-Triple
+  wire mismatch.
+- `BlobMalformedError` — Blob payload failed structural checks.
+- `BlobVersionTooNewError` — Blob version field higher than this
+  libitb build supports.
+
 Status codes are documented in `cmd/cshared/internal/capi/errors.go`
-and mirrored in `_ffi.STATUS_*` constants. Type / value-input
+and mirrored as `itb._ffi.STATUS_*` constants. Type / value-input
 errors raise `TypeError` / `ValueError` (e.g. `plaintext` not
-bytes-like, `chunk_size` ≤ 0).
+bytes-like, `chunk_size` ≤ 0); only libitb-side failures route
+through `ITBError`.
+
+### Status codes
+
+| Code | Name | Description |
+|---|---|---|
+| 0 | `STATUS_OK` | Success — the only non-failure return value |
+| 1 | `STATUS_BAD_HASH` | Unknown hash primitive name |
+| 2 | `STATUS_BAD_KEY_BITS` | ITB key width invalid for the chosen primitive |
+| 3 | `STATUS_BAD_HANDLE` | FFI handle invalid or already freed |
+| 4 | `STATUS_BAD_INPUT` | Generic shape / range / domain violation on a call argument |
+| 5 | `STATUS_BUFFER_TOO_SMALL` | Output buffer cap below required size; probe-then-allocate idiom |
+| 6 | `STATUS_ENCRYPT_FAILED` | Encrypt path raised on the Go side (rare; structural / OOM) |
+| 7 | `STATUS_DECRYPT_FAILED` | Decrypt path raised on the Go side (corrupt ciphertext shape) |
+| 8 | `STATUS_SEED_WIDTH_MIX` | Seeds passed to one call do not share the same native hash width |
+| 9 | `STATUS_BAD_MAC` | Unknown MAC name or key-length violates the primitive's `min_key_bytes` |
+| 10 | `STATUS_MAC_FAILURE` | MAC verification failed — tampered ciphertext or wrong MAC key |
+| 11 | `STATUS_EASY_CLOSED` | Easy Mode encryptor call after `close()` |
+| 12 | `STATUS_EASY_MALFORMED` | Easy Mode `import_state` blob fails JSON parse / structural check |
+| 13 | `STATUS_EASY_VERSION_TOO_NEW` | Easy Mode blob version field higher than this build supports |
+| 14 | `STATUS_EASY_UNKNOWN_PRIMITIVE` | Easy Mode blob references a primitive this build does not know |
+| 15 | `STATUS_EASY_UNKNOWN_MAC` | Easy Mode blob references a MAC this build does not know |
+| 16 | `STATUS_EASY_BAD_KEY_BITS` | Easy Mode blob's `key_bits` invalid for its primitive |
+| 17 | `STATUS_EASY_MISMATCH` | Easy Mode blob disagrees with the receiver on `primitive` / `key_bits` / `mode` / `mac`; field name on `EasyMismatchError.field` |
+| 18 | `STATUS_EASY_LOCKSEED_AFTER_ENCRYPT` | `set_lock_seed(1)` called after the first encrypt — must precede the first ciphertext |
+| 19 | `STATUS_BLOB_MODE_MISMATCH` | Native Blob importer received a Single blob into a Triple receiver (or vice versa) |
+| 20 | `STATUS_BLOB_MALFORMED` | Native Blob payload fails JSON parse / magic / structural check |
+| 21 | `STATUS_BLOB_VERSION_TOO_NEW` | Native Blob version field higher than this libitb build supports |
+| 22 | `STATUS_BLOB_TOO_MANY_OPTS` | Native Blob export opts mask carries unsupported bits |
+| 99 | `STATUS_INTERNAL` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
 ## Benchmarks
 
