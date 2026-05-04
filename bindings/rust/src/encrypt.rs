@@ -1,11 +1,17 @@
 //! Low-level encrypt / decrypt entry points.
 //!
-//! Mirrors the free functions exposed by Python's `_ffi.py`:
+//! Exposes the libitb encrypt / decrypt surface as free functions:
 //! [`encrypt`] / [`decrypt`] over a (noise, data, start) Single
 //! Ouroboros seed trio, [`encrypt_triple`] / [`decrypt_triple`] over a
 //! seven-seed Triple Ouroboros configuration, and the four
 //! authenticated `*_auth` variants that take an additional [`MAC`]
 //! handle.
+//!
+//! Empty plaintext / ciphertext is rejected by libitb itself with
+//! [`ffi::STATUS_ENCRYPT_FAILED`](crate::ffi::STATUS_ENCRYPT_FAILED)
+//! (the Go-side `Encrypt128` / `Decrypt128` family returns
+//! `"itb: empty data"` before any work). The binding propagates the
+//! rejection verbatim — pass at least one byte.
 
 use std::ffi::c_void;
 

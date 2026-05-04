@@ -361,9 +361,9 @@ public class TestStreams
         try
         {
             var cbuf = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 new StreamEncryptor(seeds[0], seeds[1], seeds[2], cbuf, 0));
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 new StreamEncryptor(seeds[0], seeds[1], seeds[2], cbuf, -1));
         }
         finally
@@ -379,11 +379,11 @@ public class TestStreams
         try
         {
             var cbuf = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 new StreamEncryptorTriple(seeds[0],
                     seeds[1], seeds[2], seeds[3],
                     seeds[4], seeds[5], seeds[6], cbuf, 0));
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 new StreamEncryptorTriple(seeds[0],
                     seeds[1], seeds[2], seeds[3],
                     seeds[4], seeds[5], seeds[6], cbuf, -1));
@@ -402,7 +402,7 @@ public class TestStreams
         {
             var fin = new MemoryStream();
             var fout = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 StreamPipeline.EncryptStream(seeds[0], seeds[1], seeds[2],
                     fin, fout, 0));
         }
@@ -420,7 +420,7 @@ public class TestStreams
         {
             var fin = new MemoryStream();
             var fout = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 StreamPipeline.DecryptStream(seeds[0], seeds[1], seeds[2],
                     fin, fout, 0));
         }
@@ -438,7 +438,7 @@ public class TestStreams
         {
             var fin = new MemoryStream();
             var fout = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 StreamPipeline.EncryptStreamTriple(seeds[0],
                     seeds[1], seeds[2], seeds[3],
                     seeds[4], seeds[5], seeds[6], fin, fout, 0));
@@ -457,7 +457,7 @@ public class TestStreams
         {
             var fin = new MemoryStream();
             var fout = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 StreamPipeline.DecryptStreamTriple(seeds[0],
                     seeds[1], seeds[2], seeds[3],
                     seeds[4], seeds[5], seeds[6], fin, fout, 0));

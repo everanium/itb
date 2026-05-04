@@ -1,14 +1,13 @@
 --  Itb.Streams — file-like streaming wrappers over the one-shot
 --  Itb.Cipher Encrypt / Decrypt entry points.
 --
---  Mirrors bindings/rust/src/streams.rs. ITB ciphertexts cap at ~64 MB
---  plaintext per chunk (the underlying container size limit). Streaming
---  larger payloads slices the input into chunks at the binding layer,
---  encrypts each chunk through the Itb.Cipher path, and concatenates
---  the results. The reverse operation walks a concatenated chunk
---  stream by reading the chunk header, calling Itb.Parse_Chunk_Len to
---  learn the chunk's body length, reading that many bytes, and
---  decrypting the single chunk.
+--  ITB ciphertexts cap at ~64 MB plaintext per chunk (the underlying
+--  container size limit). Streaming larger payloads slices the input
+--  into chunks at the binding layer, encrypts each chunk through the
+--  Itb.Cipher path, and concatenates the results. The reverse
+--  operation walks a concatenated chunk stream by reading the chunk
+--  header, calling Itb.Parse_Chunk_Len to learn the chunk's body
+--  length, reading that many bytes, and decrypting the single chunk.
 --
 --  Ada idiom note. The wrappers do NOT derive from
 --  Ada.Streams.Root_Stream_Type — that would overload the standard

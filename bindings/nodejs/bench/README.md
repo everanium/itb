@@ -150,6 +150,3 @@ A snapshot of the four canonical pass results (Single + Triple,
 each with and without `ITB_LOCKSEED=1`) on Intel Core i7-11700K is
 collected in [BENCH.md](BENCH.md). The same file briefly discusses
 the FFI overhead the binding leaves on top of the native Go path.
-The cross-binding root [BENCH.md](../../../BENCH.md) carries the
-parallel Go / Python / Rust / C# / Node.js comparison so
-percent-over-native readings line up across languages.

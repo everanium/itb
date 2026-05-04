@@ -24,8 +24,9 @@
 /// the free functions additionally take a `size_t delegate(ubyte[])`
 /// reader delegate that fills its buffer argument with the next slice
 /// of input bytes and returns the number of bytes read (zero on EOF).
-/// The delegate-based shape is the D analogue of Rust's
-/// `Read` / `Write` trait closure adaptation.
+/// The delegate-based shape lets callers route bytes through any
+/// source / sink — sockets, files, in-memory buffers — without
+/// committing the streaming wrappers to a specific I/O abstraction.
 ///
 /// Warning. Do not call [`itb.registry.setNonceBits`] between writes
 /// on the same stream. The chunks are encrypted under the active

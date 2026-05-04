@@ -1,7 +1,7 @@
 --  Itb.Cipher — low-level encrypt / decrypt entry points.
 --
---  Mirrors bindings/rust/src/encrypt.rs. Provides eight free
---  subprograms over libitb's low-level cipher surface:
+--  Provides eight free subprograms over libitb's low-level cipher
+--  surface:
 --
 --    Encrypt              Single Ouroboros, 3-seed.
 --    Decrypt              Inverse.
@@ -16,6 +16,11 @@
 --  All seeds passed to one cipher call must share the same native
 --  hash width; mixing widths surfaces as Itb_Error with Status_Code
 --  = Seed_Width_Mix.
+--
+--  Empty plaintext / ciphertext is rejected by libitb itself with
+--  Status_Code = Encrypt_Failed (the Go-side Encrypt128 / Decrypt128
+--  family returns "itb: empty data" before any work). The binding
+--  propagates the rejection verbatim — pass at least one byte.
 
 with Itb.MAC;
 with Itb.Seed;

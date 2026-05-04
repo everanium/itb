@@ -8,13 +8,12 @@
 // can be used in parallel without cross-contamination of the
 // process-wide ITB configuration.
 //
-// API shape mirrors the Rust binding's Encryptor struct (RAII via
-// IDisposable, structured throw on failure, output-buffer cache for
-// the cipher methods); the typed-mismatch behaviour mirrors the Python
-// binding's EasyMismatchError — STATUS_EASY_MISMATCH from
-// ITB_Easy_Import surfaces as ItbEasyMismatchException carrying the
-// offending JSON field name on its .Field property. The dispatch is
-// automatic via ItbException.Check; no manual translation is required.
+// API shape combines RAII (via IDisposable), structured throw on
+// failure, and an output-buffer cache for the cipher methods. The
+// typed-mismatch behaviour surfaces STATUS_EASY_MISMATCH from
+// ITB_Easy_Import as ItbEasyMismatchException carrying the offending
+// JSON field name on its .Field property. The dispatch is automatic
+// via ItbException.Check; no manual translation is required.
 
 using System.Text;
 using Itb.Native;

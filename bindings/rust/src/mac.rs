@@ -1,8 +1,7 @@
 //! ITB MAC handle.
 //!
-//! Mirrors the Python binding's `MAC` class — a thin RAII wrapper
-//! over `ITB_NewMAC` / `ITB_FreeMAC` for use with the authenticated
-//! encrypt / decrypt entry points.
+//! Provides a thin RAII wrapper over `ITB_NewMAC` / `ITB_FreeMAC`
+//! for use with the authenticated encrypt / decrypt entry points.
 
 use std::ffi::{c_void, CString};
 

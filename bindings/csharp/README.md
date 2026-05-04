@@ -14,11 +14,29 @@ sudo pacman -S go go-tools dotnet-sdk dotnet-runtime aspnet-runtime
 
 ## Build the shared library
 
-From the repo root:
+The convenience driver `bindings/csharp/build.sh` builds
+`libitb.so` plus the C# / .NET binding's release assemblies in one
+step. Run it from anywhere:
+
+```bash
+./bindings/csharp/build.sh
+```
+
+For hosts without AVX-512+VL CPUs, opt out of the 4-lane batched
+chain-absorb wrapper:
+
+```bash
+./bindings/csharp/build.sh --noitbasm
+```
+
+The driver expands to two underlying steps — building libitb from
+the repo root, then `dotnet build -c Release` on the binding side.
+Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
+cd bindings/csharp && dotnet build -c Release
 ```
 
 (macOS produces `libitb.dylib` under `dist/darwin-<arch>/`,
@@ -31,19 +49,10 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 | (none) | engaged | engaged | Default — full asm stack |
 | <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
-For hosts without AVX-512+VL CPUs, build with the `-tags=noitbasm`
-flag:
-
-```bash
-go build -trimpath -tags=noitbasm -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-```
-
 Passing `-tags=noitbasm` does not disable upstream asm in
 `zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
-same `libitb.so` is consumed by every binding (Go `easy/`, Python,
-Rust, C#); the flag governs only the shared library, not the
-binding language.
+same `libitb.so` is consumed by every binding; the flag governs
+only the shared library, not the binding language.
 
 ## Add to a .NET project
 
@@ -72,14 +81,17 @@ introduced (`[LibraryImport]` and `NativeLibrary` are built-ins).
 ## Run the integration test suite
 
 ```bash
-cd bindings/csharp
-dotnet test -c Release
+./bindings/csharp/run_tests.sh
 ```
 
-The integration test suite under `bindings/csharp/Itb.Tests/`
-mirrors the Python and Rust binding's coverage — Single + Triple
-Ouroboros, mixed primitives, authenticated paths, blob round-trip,
-streaming chunked I/O, error paths, lockSeed lifecycle.
+The harness verifies `libitb.so` is present, exports
+`LD_LIBRARY_PATH`, and invokes `dotnet test -c Release`. Positional
+arguments are forwarded straight to `dotnet test` (e.g.
+`./run_tests.sh --filter FullyQualifiedName~Blake3` to scope the
+run). The integration test suite under `bindings/csharp/Itb.Tests/`
+mirrors the cross-binding coverage: Single + Triple Ouroboros,
+mixed primitives, authenticated paths, blob round-trip, streaming
+chunked I/O, error paths, lockSeed lifecycle.
 
 ## Library lookup order
 
@@ -723,6 +735,10 @@ and exposed as public constants on `Itb.StatusCode` (e.g.
 `StatusCode.MacFailure`, `StatusCode.SeedWidthMix`,
 `StatusCode.BadHash`).
 
+**Note:** empty plaintext / ciphertext is rejected by libitb itself
+with `ItbException(StatusCode.EncryptFailed)` ("itb: empty data") on
+every cipher entry point. Pass at least one byte.
+
 ### Status codes
 
 | Code | Name | Description |
@@ -771,3 +787,18 @@ substring), `ITB_BENCH_MIN_SEC` (default 5).
 
 See [`Itb.Bench/BENCH.md`](Itb.Bench/BENCH.md) for recorded
 throughput results across the canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `Itb.Bench/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/csharp/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/csharp/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `dotnet run -c Release --project Itb.Bench -- single` /
+`-- triple` invocations.

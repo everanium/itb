@@ -1,9 +1,10 @@
 // Handle to one keyed MAC primitive.
 //
-// Mirrors bindings/python/itb/_ffi.py `class MAC`. The libitb handle
-// is owned by the wrapper and released via [Symbol.dispose] / .free()
-// or, as a backstop, by a FinalizationRegistry cleanup callback when
-// the wrapper becomes unreachable.
+// Provides a thin wrapper over `ITB_NewMAC` / `ITB_FreeMAC` for use
+// with the authenticated encrypt / decrypt entry points. The libitb
+// handle is owned by the wrapper and released via [Symbol.dispose] /
+// .free() or, as a backstop, by a FinalizationRegistry cleanup
+// callback when the wrapper becomes unreachable.
 
 import { check } from './errors.js';
 import { ITB_FreeMAC, ITB_NewMAC } from './native.js';

@@ -1,6 +1,6 @@
 //! Error type returned by every fallible libitb call.
 //!
-//! Mirrors the Python binding's `ITBError(RuntimeError)` — a single
+//! Wraps every fallible libitb call's status code with a single
 //! error type carrying the structural status code (numeric) plus the
 //! optional textual diagnostic from `ITB_LastError`. Callers usually
 //! match on `code()` for control flow and use `Display` for logs.

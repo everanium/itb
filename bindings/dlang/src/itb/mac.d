@@ -1,8 +1,7 @@
 /// ITB MAC handle.
 ///
-/// Mirrors the Rust binding's `MAC` struct — a thin RAII wrapper over
-/// `ITB_NewMAC` / `ITB_FreeMAC` for use with the authenticated
-/// encrypt / decrypt entry points.
+/// Provides a thin RAII wrapper over `ITB_NewMAC` / `ITB_FreeMAC`
+/// for use with the authenticated encrypt / decrypt entry points.
 ///
 /// Lifecycle. Non-copyable (`@disable this(this);`); deterministic
 /// destructor at scope exit. Pass by `ref` to share without releasing.

@@ -1,8 +1,8 @@
 --  Itb.MAC — RAII wrapper over an ITB_NewMAC handle.
 --
---  Mirrors bindings/rust/src/mac.rs. The MAC type is a limited
---  controlled type; its Finalize procedure releases the underlying
---  libitb handle deterministically when the MAC goes out of scope.
+--  The MAC type is a limited controlled type; its Finalize procedure
+--  releases the underlying libitb handle deterministically when the
+--  MAC goes out of scope.
 --
 --  Used in conjunction with Itb.Cipher.Encrypt_Auth and its Triple /
 --  Decrypt variants for authenticated cipher mode.

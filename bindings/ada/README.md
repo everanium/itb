@@ -32,11 +32,38 @@ dependencies):
 
 ## Build the shared library
 
-From the repo root:
+The convenience driver `bindings/ada/build.sh` builds `libitb.so`
+plus the Ada library project (and tests / benches via the extra
+positional argument) in one step. Run it from anywhere:
+
+```bash
+./bindings/ada/build.sh
+```
+
+For hosts without AVX-512+VL CPUs, opt out of the 4-lane batched
+chain-absorb wrapper:
+
+```bash
+./bindings/ada/build.sh --noitbasm
+```
+
+The driver expands to two underlying steps — building libitb from
+the repo root, then `alr exec -- gprbuild -P itb.gpr` on the
+binding side (filtering the cosmetic `.sframe` linker notice).
+Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
+cd bindings/ada && alr exec -- gprbuild -P itb.gpr
+```
+
+The driver also forwards arguments to `gprbuild` after `--`, useful
+for compiling the test or bench projects in the same step:
+
+```bash
+./bindings/ada/build.sh -- -P itb_tests.gpr
+./bindings/ada/build.sh --skip-libitb -- -P itb_bench.gpr -f
 ```
 
 (macOS produces `libitb.dylib` under `dist/darwin-<arch>/`,
@@ -49,19 +76,10 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 | (none) | engaged | engaged | Default - full asm stack |
 | <code>-tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
-For hosts without AVX-512+VL CPUs, build with the `-tags=noitbasm`
-flag:
-
-```bash
-go build -trimpath -tags=noitbasm -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-```
-
 Passing `-tags=noitbasm` does not disable upstream asm in
 `zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
-same `libitb.so` is consumed by every binding (Go `easy/`, Python,
-Rust, C#, Node.js, Ada); the flag governs only the shared library,
-not the binding language.
+same `libitb.so` is consumed by every binding; the flag governs
+only the shared library, not the binding language.
 
 ## Add to a project
 
@@ -108,21 +126,23 @@ through compile-time linker search paths and runtime rpath.
 ## Run the integration test suite
 
 ```bash
-cd bindings/ada
-alr exec -- gprbuild -P itb_tests.gpr
-./run_tests.sh
+./bindings/ada/build.sh -- -P itb_tests.gpr
+./bindings/ada/run_tests.sh
 ```
 
-The integration test suite under `bindings/ada/tests/` mirrors the
-Python and Rust binding's coverage — Single + Triple Ouroboros,
-mixed primitives, authenticated paths, blob round-trip, streaming
-chunked I/O, error paths, lockSeed lifecycle. 30 standalone test
-executables, each a main procedure that exits 0 on pass; total
-wall-clock is ~3 seconds. Per-process isolation gives every test a
-fresh libitb global state, so tests that mutate process-global
-config (`Set_Bit_Soup` / `Set_Lock_Soup` / `Set_Max_Workers` /
-`Set_Nonce_Bits` / `Set_Barrier_Fill`) save and restore at procedure
-boundaries without a shared mutex.
+The harness iterates every ELF binary produced by `itb_tests.gpr`
+under `obj-tests/`, runs each one in turn, and reports pass / fail
+counts in Go-test style. The integration test suite under
+`bindings/ada/tests/` mirrors the cross-binding coverage:
+Single + Triple Ouroboros, mixed primitives, authenticated paths,
+blob round-trip, streaming chunked I/O, error paths, lockSeed
+lifecycle. 30 standalone test executables, each a main procedure
+that exits 0 on pass; total wall-clock is ~3 seconds. Per-process
+isolation gives every test a fresh libitb global state, so tests
+that mutate process-global config (`Set_Bit_Soup` /
+`Set_Lock_Soup` / `Set_Max_Workers` / `Set_Nonce_Bits` /
+`Set_Barrier_Fill`) save and restore at procedure boundaries
+without a shared mutex.
 
 `./run_tests.sh test_blake3` runs a single test by base name; the
 default invocation iterates every test executable in `obj-tests/`.
@@ -623,10 +643,9 @@ un-finalized — for the entire lifetime of the resulting stream
 wrapper. The wrappers cache the raw libitb handles internally;
 finalising the originating Seed before the stream finishes its
 work would free the handle while the stream is still using it (a
-stochastic use-after-free). Rust enforces the parallel constraint
-via `&'a Seed` lifetime borrows; Ada relies on caller discipline,
-the same way `Itb.Seed.Attach_Lock_Seed` already does for the
-dedicated lockSeed channel.
+stochastic use-after-free). Ada relies on caller discipline, the
+same way `Itb.Seed.Attach_Lock_Seed` already does for the dedicated
+lockSeed channel.
 
 ```ada
 with Ada.Streams; use Ada.Streams;
@@ -898,6 +917,11 @@ The structured payload attaches at the moment of the failing call,
 so `Status_Code (E)` / `Field (E)` / `Message (E)` are stable across
 intervening task-induced reads of libitb's own diagnostic globals.
 
+**Note:** empty plaintext / ciphertext is rejected by libitb itself
+with `Itb_Error` carrying `Status_Code = Encrypt_Failed`
+("itb: empty data") on every cipher entry point. Pass at least one
+byte.
+
 ### Status codes
 
 | Code | Name | Description |
@@ -938,14 +962,30 @@ for invocation / environment variables / output format and
 [`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results
 across the canonical pass matrix.
 
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `bench/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/ada/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/ada/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `obj-bench/bench_single` / `obj-bench/bench_triple`
+binaries (built ahead of time via
+`./bindings/ada/build.sh -- -P itb_bench.gpr`).
+
 FFI overhead in the Ada binding is link-time: `pragma Import (C, ...,
 External_Name => "ITB_*")` bakes the C symbol reference into the
 compiled Ada object at compile time, and `ld.so` resolves the symbol
 against the loaded `libitb.so` at process start. Per-call cost is
 one C ABI crossing — comparable to a regular C function call, no
-per-call FFI dispatch table lookup as in dlopen-style loaders
-(Python's cffi, Rust's libloading, Node's koffi). The output-buffer
-cache on `Itb.Encryptor.Encryptor` skips the size-probe round-trip
+per-call FFI dispatch table lookup as in dlopen-style loaders.
+The output-buffer cache on `Itb.Encryptor.Encryptor` skips the
+size-probe round-trip
 and a duplicate encrypt on every call; pre-allocation uses a 1.25×
 upper bound (the empirical ITB ciphertext-expansion factor measured
 at ≤ 1.155 across every primitive / mode / nonce / payload-size

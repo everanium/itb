@@ -118,7 +118,7 @@ export class StreamEncryptor {
     chunkSize: number = DEFAULT_CHUNK_SIZE,
   ) {
     if (chunkSize <= 0) {
-      throw new RangeError('chunkSize must be positive');
+      throw new ITBError(Status.BadInput, 'chunkSize must be positive');
     }
     this.noise = noise;
     this.data = data;
@@ -324,7 +324,7 @@ export class StreamEncryptorTriple {
     chunkSize: number = DEFAULT_CHUNK_SIZE,
   ) {
     if (chunkSize <= 0) {
-      throw new RangeError('chunkSize must be positive');
+      throw new ITBError(Status.BadInput, 'chunkSize must be positive');
     }
     this.noise = noise;
     this.data1 = data1;

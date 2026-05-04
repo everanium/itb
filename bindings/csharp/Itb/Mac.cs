@@ -1,6 +1,7 @@
 // MAC handle for ITB authenticated modes (HMAC-BLAKE3 / HMAC-SHA256 /
-// KMAC-256). Mirrors the Python binding's MAC class and the Rust
-// binding's MAC struct.
+// KMAC-256). Provides a thin RAII wrapper over ITB_NewMAC /
+// ITB_FreeMAC for use with the authenticated encrypt / decrypt entry
+// points.
 
 using Itb.Native;
 

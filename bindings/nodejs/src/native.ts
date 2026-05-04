@@ -1,8 +1,7 @@
 // koffi extern declarations for the libitb C ABI surface.
 //
-// Mirrors bindings/python/itb/_ffi.py CDEF block file-for-file. Every
-// libitb entry point returns `int` (a status code from `Status` in
-// `./status.ts`); output buffers / handles / counters are written
+// Every libitb entry point returns `int` (a status code from `Status`
+// in `./status.ts`); output buffers / handles / counters are written
 // through pointer parameters annotated `_Out_` (koffi writes back
 // into a 1-element array passed by the caller).
 //

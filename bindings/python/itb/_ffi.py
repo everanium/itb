@@ -12,6 +12,29 @@ install time). The shared library is searched in this order:
 Status codes returned by every entry point are translated to Python
 exceptions (``ITBError``) so callers do not have to inspect integers.
 
+Empty plaintext / ciphertext is rejected by libitb itself with
+``STATUS_ENCRYPT_FAILED`` (the Go-side ``Encrypt128`` / ``Decrypt128``
+family returns ``"itb: empty data"`` before any work). The binding
+propagates the rejection verbatim — pass at least one byte.
+
+Threading. The low-level free functions exposed at the module level
+(``encrypt`` / ``decrypt`` / ``encrypt_auth`` / ``decrypt_auth`` and
+the Triple Ouroboros variants) are thread-safe: each call allocates
+its own output buffer and the underlying libitb worker pool dispatches
+encrypts independently. Process-wide setters (``set_bit_soup``,
+``set_lock_soup``, ``set_max_workers``, ``set_nonce_bits``,
+``set_barrier_fill``) are atomic stores — each setter call atomically
+updates a single counter and is safe to invoke from any thread in
+isolation. The caveat is logical, not atomic: changing a knob WHILE
+an encrypt / decrypt call is in flight can corrupt that operation —
+the cipher snapshots the configuration at call entry and a mid-flight
+change breaks the running invariants. Treat the global knobs as
+set-once-at-startup; rare runtime updates need external sequencing
+against active cipher calls. ``Seed.attach_lock_seed`` mutates seed
+state (not a single atomic counter) — it is NOT thread-safe and must
+be called outside any in-flight cipher operation on the same noise
+seed.
+
 Threading note. ``ITB_LastError`` and ``ITB_Easy_LastMismatchField``
 read process-global atomics that follow the C ``errno`` discipline:
 the most recent non-OK Status across the whole process wins, and a
@@ -483,33 +506,50 @@ def parse_chunk_len(header: bytes) -> int:
     return int(out[0])
 
 
+# The set_* / get_* knobs below are process-global libitb state.
+# Setter calls are atomic — each one atomically updates a single
+# counter and is safe to invoke from any thread in isolation. The
+# caveat is logical rather than atomic: changing a knob WHILE a
+# cipher call is in flight can corrupt that operation (the cipher
+# snapshots the configuration at call entry and a mid-flight change
+# breaks the running invariants). Treat the knobs as set-once-at-
+# startup, or sequence rare runtime updates externally against
+# active cipher calls.
+
+
 def set_bit_soup(mode: int) -> None:
+    """0 = byte-level split (default); non-zero = bit-level Bit Soup split. Process-global."""
     rc = _lib.ITB_SetBitSoup(int(mode))
     if rc != STATUS_OK:
         _raise(rc)
 
 
 def get_bit_soup() -> int:
+    """Returns the current process-global Bit Soup mode (0 / non-zero)."""
     return int(_lib.ITB_GetBitSoup())
 
 
 def set_lock_soup(mode: int) -> None:
+    """0 = off (default); non-zero = enable Insane Interlocked Mode (per-chunk PRF-keyed bit-permutation overlay). Process-global."""
     rc = _lib.ITB_SetLockSoup(int(mode))
     if rc != STATUS_OK:
         _raise(rc)
 
 
 def get_lock_soup() -> int:
+    """Returns the current process-global Lock Soup mode (0 / non-zero)."""
     return int(_lib.ITB_GetLockSoup())
 
 
 def set_max_workers(n: int) -> None:
+    """Cap the libitb worker pool to ``n`` CPUs (0 = all CPUs, the default). Process-global."""
     rc = _lib.ITB_SetMaxWorkers(int(n))
     if rc != STATUS_OK:
         _raise(rc)
 
 
 def get_max_workers() -> int:
+    """Returns the current process-global worker-pool cap (0 = all CPUs)."""
     return int(_lib.ITB_GetMaxWorkers())
 
 
@@ -521,6 +561,7 @@ def set_nonce_bits(n: int) -> None:
 
 
 def get_nonce_bits() -> int:
+    """Returns the current process-global nonce-size override (128 / 256 / 512)."""
     return int(_lib.ITB_GetNonceBits())
 
 
@@ -532,6 +573,7 @@ def set_barrier_fill(n: int) -> None:
 
 
 def get_barrier_fill() -> int:
+    """Returns the current process-global barrier-fill margin (1 / 2 / 4 / 8 / 16 / 32)."""
     return int(_lib.ITB_GetBarrierFill())
 
 
@@ -563,14 +605,20 @@ class Seed:
 
     @property
     def handle(self) -> int:
+        """Returns the raw libitb handle (an opaque uintptr_t token).
+
+        Used by the low-level encrypt / decrypt free functions and by
+        :meth:`attach_lock_seed`."""
         return self._handle
 
     @property
     def hash_name(self) -> str:
+        """Returns the canonical hash name this seed was constructed with."""
         return self._hash_name
 
     @property
     def width(self) -> int:
+        """Returns the seed's native hash width in bits (128 / 256 / 512)."""
         st = _ffi.new("int*")
         w = int(_lib.ITB_SeedWidth(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -666,6 +714,13 @@ class Seed:
         return inst
 
     def free(self) -> None:
+        """Releases the underlying libitb handle.
+
+        Idempotent — the handle attribute is zeroed after the first
+        call so a second :meth:`free` is a no-op. Called automatically
+        by :meth:`__exit__` and :meth:`__del__`; an explicit call is
+        only needed when the caller wants release-time errors to
+        surface (rare)."""
         if self._handle:
             rc = _lib.ITB_FreeSeed(self._handle)
             self._handle = 0
@@ -786,6 +841,13 @@ class MAC:
         return self._name
 
     def free(self) -> None:
+        """Releases the underlying libitb MAC handle.
+
+        Idempotent — the handle attribute is zeroed after the first
+        call so a second :meth:`free` is a no-op. Called automatically
+        by :meth:`__exit__` and :meth:`__del__`; an explicit call is
+        only needed when the caller wants release-time errors to
+        surface (rare)."""
         if self._handle:
             rc = _lib.ITB_FreeMAC(self._handle)
             self._handle = 0

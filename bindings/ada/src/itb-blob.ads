@@ -1,10 +1,9 @@
 --  Itb.Blob — width-typed RAII wrappers over the libitb native-Blob
 --  surface (low-level state persistence).
 --
---  Mirrors bindings/rust/src/blob.rs. The Blob128 / Blob256 / Blob512
---  types are limited controlled wrappers; their Finalize procedures
---  release the underlying libitb handle deterministically when the
---  Blob goes out of scope.
+--  The Blob128 / Blob256 / Blob512 types are limited controlled
+--  wrappers; their Finalize procedures release the underlying
+--  libitb handle deterministically when the Blob goes out of scope.
 --
 --  The native-Blob layer packs the low-level Encryptor material — the
 --  per-seed hash key + components, the optional dedicated lockSeed,

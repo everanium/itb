@@ -1,10 +1,12 @@
 // Library-level metadata accessors and process-global setters.
 //
-// Mirrors the free-function surface in bindings/python/itb/_ffi.py
-// (`version`, `list_hashes`, `list_macs`, `set_bit_soup`,
-// `set_lock_soup`, `set_max_workers`, `set_nonce_bits`,
-// `set_barrier_fill`, `max_key_bits`, `channels`, `header_size`,
-// `parse_chunk_len`).
+// Exposes the libitb free-function surface that is not tied to a
+// specific seed / MAC / encryptor instance: hash + MAC catalogs
+// (`listHashes`, `listMacs`), `version`, the global getters / setters
+// (`setBitSoup`, `setLockSoup`, `setMaxWorkers`, `setNonceBits`,
+// `setBarrierFill` and their getter counterparts), key-budget /
+// container helpers (`maxKeyBits`, `channels`, `headerSize`), and the
+// `parseChunkLen` helper used by streaming consumers.
 
 import { check, errorFromStatus } from './errors.js';
 import {

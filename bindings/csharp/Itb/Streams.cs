@@ -92,7 +92,7 @@ public sealed class StreamEncryptor : IDisposable
         ArgumentNullException.ThrowIfNull(output);
         if (chunkSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(chunkSize),
+            throw new ItbException(StatusCode.BadInput,
                 "chunkSize must be positive");
         }
         _noise = noise;
@@ -332,7 +332,7 @@ public sealed class StreamEncryptorTriple : IDisposable
         ArgumentNullException.ThrowIfNull(output);
         if (chunkSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(chunkSize),
+            throw new ItbException(StatusCode.BadInput,
                 "chunkSize must be positive");
         }
         _noise = noise;
@@ -543,7 +543,7 @@ public static class StreamPipeline
         ArgumentNullException.ThrowIfNull(output);
         if (chunkSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(chunkSize),
+            throw new ItbException(StatusCode.BadInput,
                 "chunkSize must be positive");
         }
         using var enc = new StreamEncryptor(noise, data, start, output, chunkSize);
@@ -575,7 +575,7 @@ public static class StreamPipeline
         ArgumentNullException.ThrowIfNull(output);
         if (readSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(readSize),
+            throw new ItbException(StatusCode.BadInput,
                 "readSize must be positive");
         }
         using var dec = new StreamDecryptor(noise, data, start, output);
@@ -605,7 +605,7 @@ public static class StreamPipeline
         ArgumentNullException.ThrowIfNull(output);
         if (chunkSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(chunkSize),
+            throw new ItbException(StatusCode.BadInput,
                 "chunkSize must be positive");
         }
         using var enc = new StreamEncryptorTriple(noise, data1, data2, data3,
@@ -636,7 +636,7 @@ public static class StreamPipeline
         ArgumentNullException.ThrowIfNull(output);
         if (readSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(readSize),
+            throw new ItbException(StatusCode.BadInput,
                 "readSize must be positive");
         }
         using var dec = new StreamDecryptorTriple(noise, data1, data2, data3,

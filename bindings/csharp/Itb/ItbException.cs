@@ -5,10 +5,13 @@
 // exceptions below via <see cref="ItbException.Check(int)"/> or
 // <see cref="ItbException.FromStatus(int)"/>.
 //
-// The C# binding mirrors the Python binding's typed-subclass hierarchy
-// for selective catch blocks (the Rust binding flattens to a single
-// ITBError type because Rust has no exception-subclass machinery; C#
-// has, so the typed forms are preferred — see .NEXTBIND.md §1).
+// The hierarchy uses typed subclasses so selective catch blocks can
+// distinguish the structurally-distinct failure modes (Easy Mode
+// config mismatch, Blob mode mismatch, Blob malformation, Blob
+// version-too-new) while still falling through to the base
+// ItbException for generic handling. The numeric Status property on
+// every exception preserves the "match by code" idiom alongside the
+// type-based catch hierarchy.
 //
 // Threading caveat. The textual <see cref="Exception.Message"/> is read
 // from a process-wide atomic inside libitb that follows the C `errno`

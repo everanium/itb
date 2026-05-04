@@ -450,7 +450,7 @@ public sealed class TestEasyStreams
     /// <summary>
     /// <see cref="StreamEncryptor"/> with a non-positive
     /// <c>chunkSize</c> argument is rejected at construction with
-    /// <see cref="ArgumentOutOfRangeException"/>.
+    /// <see cref="ItbException"/> carrying <see cref="StatusCode.BadInput"/>.
     /// </summary>
     [Fact]
     public void StreamEncryptorRejectsZeroChunkSize()
@@ -459,9 +459,9 @@ public sealed class TestEasyStreams
         using var data = new Seed("blake3", 1024);
         using var start = new Seed("blake3", 1024);
         using var ms = new MemoryStream();
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        Assert.Throws<ItbException>(() =>
             new StreamEncryptor(noise, data, start, ms, chunkSize: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        Assert.Throws<ItbException>(() =>
             new StreamEncryptor(noise, data, start, ms, chunkSize: -1));
     }
 
@@ -480,7 +480,7 @@ public sealed class TestEasyStreams
                 seeds[i] = new Seed("blake3", 1024);
             }
             using var ms = new MemoryStream();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Assert.Throws<ItbException>(() =>
                 new StreamEncryptorTriple(
                     seeds[0], seeds[1], seeds[2], seeds[3],
                     seeds[4], seeds[5], seeds[6],

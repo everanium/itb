@@ -1,6 +1,6 @@
 // Resolves and dlopens libitb at module-load time.
 //
-// Lookup order (mirrors bindings/python/itb/_ffi.py):
+// Lookup order:
 //
 //   1. ITB_LIBRARY_PATH environment variable — absolute path.
 //   2. <repo>/dist/<os>-<arch>/libitb.<ext> — resolved by walking up
