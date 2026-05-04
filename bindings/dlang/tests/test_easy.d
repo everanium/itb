@@ -113,7 +113,7 @@ void testMixedSingleThreeSameWidthPrimitives()
     // the same native hash width, so newMixed accepts them as a
     // valid noise / data / start trio at keyBits=1024.
     auto enc = Encryptor.newMixed("areion256", "blake3", "blake2s",
-                                   1024, "kmac256", null);
+                                   null, 1024, "kmac256");
     assert(enc.isMixed());
     assert(enc.primitiveAt(0) == "areion256");
     assert(enc.primitiveAt(1) == "blake3");

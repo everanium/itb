@@ -281,9 +281,32 @@ pub struct Encryptor {
     /// [`Encryptor::close`] / [`Encryptor::free`] / `Drop` wipe it
     /// before drop.
     out_buf: Vec<u8>,
+    /// Tracks the closed / freed state independently of the handle
+    /// field so the preflight in [`Encryptor::check_open`] can
+    /// surface `STATUS_EASY_CLOSED` after [`Encryptor::close`] /
+    /// [`Encryptor::free`] without relying on the libitb-side
+    /// handle-id lookup (which would surface `STATUS_BAD_HANDLE` once
+    /// [`Encryptor::free`] has cleared the handle slot).
+    closed: bool,
 }
 
 impl Encryptor {
+    /// Preflight rejection for closed / freed encryptors. Surfaces
+    /// `ITBError(STATUS_EASY_CLOSED)` before any libitb FFI call so
+    /// callers see the canonical "encryptor has been closed" code
+    /// regardless of whether the underlying handle slot has merely
+    /// been zeroed (post-[`Encryptor::close`]) or has been released
+    /// back to libitb (post-[`Encryptor::free`]).
+    fn check_open(&self) -> Result<(), ITBError> {
+        if self.closed || self.handle == 0 {
+            return Err(ITBError::with_message(
+                ffi::STATUS_EASY_CLOSED,
+                "encryptor has been closed",
+            ));
+        }
+        Ok(())
+    }
+
     /// Constructs a fresh encryptor.
     ///
     /// `primitive` is a canonical hash name from
@@ -310,12 +333,6 @@ impl Encryptor {
         mac: Option<&str>,
         mode: i32,
     ) -> Result<Self, ITBError> {
-        if mode != 1 && mode != 3 {
-            return Err(ITBError::with_message(
-                ffi::STATUS_BAD_INPUT,
-                format!("mode must be 1 (Single) or 3 (Triple), got {mode}"),
-            ));
-        }
         let lib = ffi::lib();
         let prim_c = match primitive {
             Some(s) => Some(CString::new(s).map_err(|_| {
@@ -347,6 +364,7 @@ impl Encryptor {
         Ok(Self {
             handle,
             out_buf: Vec::new(),
+            closed: false,
         })
     }
 
@@ -369,9 +387,9 @@ impl Encryptor {
         primitive_n: &str,
         primitive_d: &str,
         primitive_s: &str,
+        primitive_l: Option<&str>,
         key_bits: i32,
         mac: &str,
-        primitive_l: Option<&str>,
     ) -> Result<Self, ITBError> {
         let lib = ffi::lib();
         let cn = CString::new(primitive_n).map_err(|_| {
@@ -412,6 +430,7 @@ impl Encryptor {
         Ok(Self {
             handle,
             out_buf: Vec::new(),
+            closed: false,
         })
     }
 
@@ -428,9 +447,9 @@ impl Encryptor {
         primitive_s1: &str,
         primitive_s2: &str,
         primitive_s3: &str,
+        primitive_l: Option<&str>,
         key_bits: i32,
         mac: &str,
-        primitive_l: Option<&str>,
     ) -> Result<Self, ITBError> {
         let lib = ffi::lib();
         let cn = CString::new(primitive_n).map_err(|_| {
@@ -487,6 +506,7 @@ impl Encryptor {
         Ok(Self {
             handle,
             out_buf: Vec::new(),
+            closed: false,
         })
     }
 
@@ -503,6 +523,7 @@ impl Encryptor {
     /// [`Encryptor::mixed_triple`] each slot returns its
     /// independently-chosen primitive name.
     pub fn primitive_at(&self, slot: i32) -> Result<String, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let handle = self.handle;
         easy_read_str(|out: *mut c_char, cap, out_len| unsafe {
@@ -515,6 +536,7 @@ impl Encryptor {
     /// (per-slot primitive selection); `false` for single-primitive
     /// encryptors built via [`Encryptor::new`].
     pub fn is_mixed(&self) -> Result<bool, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_IsMixed)(self.handle, &mut st) };
@@ -535,6 +557,7 @@ impl Encryptor {
 
     /// Returns the canonical primitive name bound at construction.
     pub fn primitive(&self) -> Result<String, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let handle = self.handle;
         easy_read_str(|out: *mut c_char, cap, out_len| unsafe {
@@ -544,6 +567,7 @@ impl Encryptor {
 
     /// Returns the ITB key width in bits.
     pub fn key_bits(&self) -> Result<i32, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_KeyBits)(self.handle, &mut st) };
@@ -555,6 +579,7 @@ impl Encryptor {
 
     /// Returns 1 (Single Ouroboros) or 3 (Triple Ouroboros).
     pub fn mode(&self) -> Result<i32, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_Mode)(self.handle, &mut st) };
@@ -566,6 +591,7 @@ impl Encryptor {
 
     /// Returns the canonical MAC name bound at construction.
     pub fn mac_name(&self) -> Result<String, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let handle = self.handle;
         easy_read_str(|out: *mut c_char, cap, out_len| unsafe {
@@ -581,6 +607,7 @@ impl Encryptor {
     /// `cfg.NonceBits` via `ITB_Easy_NonceBits` so a setter call on
     /// the Go side is reflected immediately.
     pub fn nonce_bits(&self) -> Result<i32, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_NonceBits)(self.handle, &mut st) };
@@ -600,6 +627,7 @@ impl Encryptor {
     /// the front of a ciphertext stream produced by this encryptor or
     /// when sizing a tamper region for an authenticated-decrypt test.
     pub fn header_size(&self) -> Result<i32, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_HeaderSize)(self.handle, &mut st) };
@@ -629,6 +657,7 @@ impl Encryptor {
     /// dimensions, or width × height overflow against the container
     /// pixel cap.
     pub fn parse_chunk_len(&self, header: &[u8]) -> Result<usize, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let hdr_ptr = if header.is_empty() {
             std::ptr::null()
@@ -701,6 +730,7 @@ impl Encryptor {
         f: ffi::FnEasyEncrypt,
         payload: &[u8],
     ) -> Result<Vec<u8>, ITBError> {
+        self.check_open()?;
         let payload_len = payload.len();
         // 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
         // expansion factor observed across the primitive / mode /
@@ -772,6 +802,7 @@ impl Encryptor {
     /// so they reflect the new value automatically on the next
     /// access.
     pub fn set_nonce_bits(&self, n: i32) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_SetNonceBits)(self.handle, n) };
         easy_check(rc)
@@ -781,6 +812,7 @@ impl Encryptor {
     /// Valid values: 1, 2, 4, 8, 16, 32. Asymmetric — receiver does
     /// not need the same value as sender.
     pub fn set_barrier_fill(&self, n: i32) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_SetBarrierFill)(self.handle, n) };
         easy_check(rc)
@@ -789,6 +821,7 @@ impl Encryptor {
     /// 0 = byte-level split (default); non-zero = bit-level Bit Soup
     /// split.
     pub fn set_bit_soup(&self, mode: i32) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_SetBitSoup)(self.handle, mode) };
         easy_check(rc)
@@ -797,6 +830,7 @@ impl Encryptor {
     /// 0 = off (default); non-zero = on. Auto-couples `BitSoup=1`
     /// on this encryptor.
     pub fn set_lock_soup(&self, mode: i32) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_SetLockSoup)(self.handle, mode) };
         easy_check(rc)
@@ -808,6 +842,7 @@ impl Encryptor {
     /// first encrypt surfaces
     /// `ITBError(STATUS_EASY_LOCKSEED_AFTER_ENCRYPT)`.
     pub fn set_lock_seed(&self, mode: i32) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_SetLockSeed)(self.handle, mode) };
         easy_check(rc)
@@ -816,6 +851,7 @@ impl Encryptor {
     /// Per-instance streaming chunk-size override (0 = auto-detect
     /// via `itb.ChunkSize` on the Go side).
     pub fn set_chunk_size(&self, n: i32) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_SetChunkSize)(self.handle, n) };
         easy_check(rc)
@@ -827,6 +863,7 @@ impl Encryptor {
     /// 4 (Single with LockSeed), 7 (Triple without LockSeed),
     /// 8 (Triple with LockSeed).
     pub fn seed_count(&self) -> Result<i32, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_SeedCount)(self.handle, &mut st) };
@@ -847,6 +884,7 @@ impl Encryptor {
     /// [`Encryptor::seed_count`] to determine the valid slot range
     /// for the active mode + lockSeed configuration.
     pub fn seed_components(&self, slot: i32) -> Result<Vec<u64>, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut out_len: c_int = 0;
         // Probe call — out=NULL / capCount=0 returns
@@ -888,6 +926,7 @@ impl Encryptor {
     /// `true` when the encryptor's primitive uses fixed PRF keys per
     /// seed slot (every shipped primitive except `siphash24`).
     pub fn has_prf_keys(&self) -> Result<bool, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut st: c_int = 0;
         let v = unsafe { (lib.ITB_Easy_HasPRFKeys)(self.handle, &mut st) };
@@ -903,6 +942,7 @@ impl Encryptor {
     /// consult [`Encryptor::has_prf_keys`] first) or when `slot` is
     /// out of range.
     pub fn prf_key(&self, slot: i32) -> Result<Vec<u8>, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut out_len: usize = 0;
         let rc = unsafe {
@@ -935,6 +975,7 @@ impl Encryptor {
     /// cross-process restore via [`Encryptor::export`] /
     /// [`Encryptor::import_state`].
     pub fn mac_key(&self) -> Result<Vec<u8>, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut out_len: usize = 0;
         let rc = unsafe {
@@ -973,6 +1014,7 @@ impl Encryptor {
     /// LockSeed is carried because activating it changes the
     /// structural seed count.
     pub fn export(&self) -> Result<Vec<u8>, ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let mut out_len: usize = 0;
         let rc = unsafe {
@@ -1014,6 +1056,7 @@ impl Encryptor {
     /// name is folded into the error's message and is also
     /// retrievable via [`last_mismatch_field`].
     pub fn import_state(&self, blob: &[u8]) -> Result<(), ITBError> {
+        self.check_open()?;
         let lib = ffi::lib();
         let blob_ptr = if blob.is_empty() {
             std::ptr::null()
@@ -1033,29 +1076,32 @@ impl Encryptor {
     /// plaintext does not linger in heap memory after the
     /// encryptor's working set has been zeroed on the Go side.
     pub fn close(&mut self) -> Result<(), ITBError> {
-        if self.handle == 0 {
-            return Ok(());
-        }
-        // Wipe the cached output buffer before releasing.
+        // Wipe the cached output buffer regardless of close state —
+        // repeated close calls keep the cache wiped without racing the
+        // Go-side close.
         for b in self.out_buf.iter_mut() {
             *b = 0;
         }
         self.out_buf.clear();
+        if self.closed || self.handle == 0 {
+            // Idempotent — already closed.
+            self.closed = true;
+            return Ok(());
+        }
         let lib = ffi::lib();
         let rc = unsafe { (lib.ITB_Easy_Close)(self.handle) };
+        self.closed = true;
         // Close is documented as idempotent on the Go side; treat any
         // non-OK return after close as a bug.
         easy_check(rc)
     }
 
-    /// Releases the underlying libitb handle slot. Calls
-    /// [`Encryptor::close`] first (so key material is zeroed even if
-    /// the binding consumer never called close explicitly) and then
-    /// deletes the FFI handle.
+    /// Releases the underlying libitb handle slot. Wipes the
+    /// per-encryptor output-buffer cache (so key material does not
+    /// linger in heap memory) and then releases the libitb handle
+    /// slot. Idempotent — `free` on an already-freed encryptor returns
+    /// silently.
     pub fn free(mut self) -> Result<(), ITBError> {
-        if self.handle == 0 {
-            return Ok(());
-        }
         // Wipe the output buffer cache; the Go-side close already
         // happens implicitly on Free, so skip the close round-trip
         // here and call Free directly.
@@ -1063,9 +1109,14 @@ impl Encryptor {
             *b = 0;
         }
         self.out_buf.clear();
-        let lib = ffi::lib();
-        let rc = unsafe { (lib.ITB_Easy_Free)(self.handle) };
+        let h = self.handle;
         self.handle = 0;
+        self.closed = true;
+        if h == 0 {
+            return Ok(());
+        }
+        let lib = ffi::lib();
+        let rc = unsafe { (lib.ITB_Easy_Free)(h) };
         easy_check(rc)
     }
 }
@@ -1083,6 +1134,7 @@ impl Drop for Encryptor {
             }
             self.handle = 0;
         }
+        self.closed = true;
         // Wipe any residual output bytes left in the buffer cache.
         for b in self.out_buf.iter_mut() {
             *b = 0;

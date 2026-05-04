@@ -32,6 +32,7 @@ export {
   ITBEasyMismatchError,
   ITBError,
   lastError,
+  lastMismatchField,
 } from './errors.js';
 export {
   channels,

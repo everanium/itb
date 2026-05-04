@@ -45,7 +45,7 @@ pub mod encryptor;
 pub mod blob;
 pub mod streams;
 
-pub use error::ITBError;
+pub use error::{last_error, ITBError};
 pub use registry::{
     channels, get_barrier_fill, get_bit_soup, get_lock_soup, get_max_workers,
     get_nonce_bits, header_size, list_hashes, list_macs, max_key_bits,

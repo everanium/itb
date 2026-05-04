@@ -1,7 +1,7 @@
 // Mixed-mode Encryptor (per-slot PRF primitive selection) tests.
 //
 // Mirrors bindings/python/tests/easy/test_mixed.py. Covers
-// Encryptor.Mixed (Single Ouroboros) and Encryptor.MixedTriple
+// Encryptor.Mixed (Single Ouroboros) and Encryptor.Mixed3
 // (Triple Ouroboros): round-trip, optional dedicated lockSeed under
 // its own primitive, state-blob Export / Import, mixed-width rejection
 // through the cgo boundary, and the per-slot introspection accessors
@@ -23,6 +23,7 @@ public sealed class TestEasyMixed
             primN: "blake3",
             primD: "blake2s",
             primS: "areion256",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256");
 
@@ -72,6 +73,7 @@ public sealed class TestEasyMixed
             primN: "aescmac",
             primD: "siphash24",
             primS: "aescmac",
+            primL: null,
             keyBits: 512,
             mac: "hmac-sha256");
 
@@ -88,7 +90,7 @@ public sealed class TestEasyMixed
     [Fact]
     public void TripleBasicRoundtrip()
     {
-        using var enc = Encryptor.MixedTriple(
+        using var enc = Encryptor.Mixed3(
             primN: "areion256",
             primD1: "blake3",
             primD2: "blake2s",
@@ -96,6 +98,7 @@ public sealed class TestEasyMixed
             primS1: "blake2b256",
             primS2: "blake3",
             primS3: "blake2s",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256");
 
@@ -121,7 +124,7 @@ public sealed class TestEasyMixed
     [Fact]
     public void TripleWithDedicatedLockSeed()
     {
-        using var enc = Encryptor.MixedTriple(
+        using var enc = Encryptor.Mixed3(
             primN: "blake3",
             primD1: "blake2s",
             primD2: "blake3",
@@ -163,6 +166,7 @@ public sealed class TestEasyMixed
             primN: "blake3",
             primD: "blake2s",
             primS: "areion256",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256"))
         {
@@ -175,6 +179,7 @@ public sealed class TestEasyMixed
             primN: "blake3",
             primD: "blake2s",
             primS: "areion256",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256");
         receiver.Import(blob);
@@ -198,7 +203,7 @@ public sealed class TestEasyMixed
 
         byte[] blob;
         byte[] ct;
-        using (var sender = Encryptor.MixedTriple(
+        using (var sender = Encryptor.Mixed3(
             primN: "areion256",
             primD1: "blake3",
             primD2: "blake2s",
@@ -214,7 +219,7 @@ public sealed class TestEasyMixed
             blob = sender.Export();
         }
 
-        using var receiver = Encryptor.MixedTriple(
+        using var receiver = Encryptor.Mixed3(
             primN: "areion256",
             primD1: "blake3",
             primD2: "blake2s",
@@ -242,6 +247,7 @@ public sealed class TestEasyMixed
             primN: "blake3",
             primD: "blake2s",
             primS: "blake3",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256"))
         {
@@ -268,6 +274,7 @@ public sealed class TestEasyMixed
             primN: "blake3",      // 256-bit
             primD: "areion512",   // 512-bit — width mismatch
             primS: "blake3",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256"));
     }
@@ -283,6 +290,7 @@ public sealed class TestEasyMixed
             primN: "no-such-primitive",
             primD: "blake3",
             primS: "blake3",
+            primL: null,
             keyBits: 1024,
             mac: "kmac256"));
     }

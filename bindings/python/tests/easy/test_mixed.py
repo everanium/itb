@@ -25,6 +25,7 @@ class TestMixedSingle(unittest.TestCase):
             primitive_n="blake3",
             primitive_d="blake2s",
             primitive_s="areion256",
+            primitive_l=None,
             key_bits=1024,
             mac="kmac256",
         )
@@ -67,6 +68,7 @@ class TestMixedSingle(unittest.TestCase):
             primitive_n="aescmac",
             primitive_d="siphash24",
             primitive_s="aescmac",
+            primitive_l=None,
             key_bits=512,
             mac="hmac-sha256",
         )
@@ -90,6 +92,7 @@ class TestMixedTriple(unittest.TestCase):
             primitive_s1="blake2b256",
             primitive_s2="blake3",
             primitive_s3="blake2s",
+            primitive_l=None,
             key_bits=1024,
             mac="kmac256",
         )
@@ -137,6 +140,7 @@ class TestMixedExportImport(unittest.TestCase):
             primitive_n="blake3",
             primitive_d="blake2s",
             primitive_s="areion256",
+            primitive_l=None,
             key_bits=1024,
             mac="kmac256",
         )
@@ -191,6 +195,7 @@ class TestMixedExportImport(unittest.TestCase):
             primitive_n="blake3",
             primitive_d="blake2s",
             primitive_s="blake3",
+            primitive_l=None,
             key_bits=1024,
             mac="kmac256",
         )
@@ -219,6 +224,7 @@ class TestMixedRejection(unittest.TestCase):
                 primitive_n="blake3",      # 256-bit
                 primitive_d="areion512",   # 512-bit ← width mismatch
                 primitive_s="blake3",
+                primitive_l=None,
                 key_bits=1024,
                 mac="kmac256",
             )
@@ -229,6 +235,7 @@ class TestMixedRejection(unittest.TestCase):
                 primitive_n="no-such-primitive",
                 primitive_d="blake3",
                 primitive_s="blake3",
+                primitive_l=None,
                 key_bits=1024,
                 mac="kmac256",
             )

@@ -103,7 +103,7 @@ START_TEST(test_streams_single_roundtrip_200kb)
     membuf_t in  = { plaintext, pt_len, pt_len, 0, 0 };
     membuf_t out = { NULL, 0, 0, 0, 0 };
 
-    ck_assert_int_eq(itb_stream_encrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_encrypt(n, d, s,
                                         membuf_read, &in,
                                         membuf_write, &out,
                                         64 * 1024), ITB_OK);
@@ -114,7 +114,7 @@ START_TEST(test_streams_single_roundtrip_200kb)
      * crosses chunk boundaries on multiple iterations. */
     membuf_t cin = { out.data, out.len, out.len, 0, 4096 };
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_decrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_decrypt(n, d, s,
                                         membuf_read, &cin,
                                         membuf_write, &recovered,
                                         4096), ITB_OK);
@@ -145,14 +145,14 @@ START_TEST(test_streams_single_roundtrip_short_payload)
 
     membuf_t in  = { (uint8_t *) plaintext, pt_len, pt_len, 0, 0 };
     membuf_t out = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_encrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_encrypt(n, d, s,
                                         membuf_read, &in,
                                         membuf_write, &out,
                                         64 * 1024), ITB_OK);
 
     membuf_t cin = { out.data, out.len, out.len, 0, 0 };
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_decrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_decrypt(n, d, s,
                                         membuf_read, &cin,
                                         membuf_write, &recovered,
                                         64 * 1024), ITB_OK);
@@ -182,14 +182,14 @@ START_TEST(test_streams_class_roundtrip_default_nonce)
 
     membuf_t in  = { plaintext, pt_len, pt_len, 0, 1000 }; /* short reads */
     membuf_t out = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_encrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_encrypt(n, d, s,
                                         membuf_read, &in,
                                         membuf_write, &out,
                                         SMALL_CHUNK), ITB_OK);
 
     membuf_t cin = { out.data, out.len, out.len, 0, 1024 }; /* 1 KiB shards */
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_decrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_decrypt(n, d, s,
                                         membuf_read, &cin,
                                         membuf_write, &recovered,
                                         SMALL_CHUNK), ITB_OK);
@@ -217,14 +217,14 @@ START_TEST(test_streams_encrypt_stream_decrypt_stream)
 
     membuf_t in  = { plaintext, pt_len, pt_len, 0, 0 };
     membuf_t out = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_encrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_encrypt(n, d, s,
                                         membuf_read, &in,
                                         membuf_write, &out,
                                         SMALL_CHUNK), ITB_OK);
 
     membuf_t cin = { out.data, out.len, out.len, 0, 0 };
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_decrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_decrypt(n, d, s,
                                         membuf_read, &cin,
                                         membuf_write, &recovered,
                                         SMALL_CHUNK), ITB_OK);
@@ -253,7 +253,7 @@ START_TEST(test_streams_class_roundtrip_default_nonce_triple)
     membuf_t in  = { plaintext, pt_len, pt_len, 0, 1000 };
     membuf_t out = { NULL, 0, 0, 0, 0 };
     ck_assert_int_eq(itb_stream_encrypt_triple(seeds[0], seeds[1], seeds[2], seeds[3],
-                                               seeds[4], seeds[5], seeds[6], NULL,
+                                               seeds[4], seeds[5], seeds[6],
                                                membuf_read, &in,
                                                membuf_write, &out,
                                                SMALL_CHUNK), ITB_OK);
@@ -261,7 +261,7 @@ START_TEST(test_streams_class_roundtrip_default_nonce_triple)
     membuf_t cin = { out.data, out.len, out.len, 0, 0 };
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
     ck_assert_int_eq(itb_stream_decrypt_triple(seeds[0], seeds[1], seeds[2], seeds[3],
-                                               seeds[4], seeds[5], seeds[6], NULL,
+                                               seeds[4], seeds[5], seeds[6],
                                                membuf_read, &cin,
                                                membuf_write, &recovered,
                                                SMALL_CHUNK), ITB_OK);
@@ -288,7 +288,7 @@ START_TEST(test_streams_encrypt_stream_triple_decrypt_stream_triple)
     membuf_t in  = { plaintext, pt_len, pt_len, 0, 0 };
     membuf_t out = { NULL, 0, 0, 0, 0 };
     ck_assert_int_eq(itb_stream_encrypt_triple(seeds[0], seeds[1], seeds[2], seeds[3],
-                                               seeds[4], seeds[5], seeds[6], NULL,
+                                               seeds[4], seeds[5], seeds[6],
                                                membuf_read, &in,
                                                membuf_write, &out,
                                                SMALL_CHUNK), ITB_OK);
@@ -296,7 +296,7 @@ START_TEST(test_streams_encrypt_stream_triple_decrypt_stream_triple)
     membuf_t cin = { out.data, out.len, out.len, 0, 0 };
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
     ck_assert_int_eq(itb_stream_decrypt_triple(seeds[0], seeds[1], seeds[2], seeds[3],
-                                               seeds[4], seeds[5], seeds[6], NULL,
+                                               seeds[4], seeds[5], seeds[6],
                                                membuf_read, &cin,
                                                membuf_write, &recovered,
                                                SMALL_CHUNK), ITB_OK);
@@ -327,7 +327,7 @@ START_TEST(test_streams_partial_chunk_at_close_raises)
     size_t small_pt_len = sizeof(small_pt) - 1;
     membuf_t in  = { (uint8_t *) small_pt, small_pt_len, small_pt_len, 0, 0 };
     membuf_t out = { NULL, 0, 0, 0, 0 };
-    ck_assert_int_eq(itb_stream_encrypt(n, d, s, NULL,
+    ck_assert_int_eq(itb_stream_encrypt(n, d, s,
                                         membuf_read, &in,
                                         membuf_write, &out,
                                         SMALL_CHUNK), ITB_OK);
@@ -338,7 +338,7 @@ START_TEST(test_streams_partial_chunk_at_close_raises)
      * prefix; the chunk loop reports ITB_BAD_INPUT. */
     membuf_t cin = { out.data, out.len, 30, 0, 0 };
     membuf_t recovered = { NULL, 0, 0, 0, 0 };
-    itb_status_t rc = itb_stream_decrypt(n, d, s, NULL,
+    itb_status_t rc = itb_stream_decrypt(n, d, s,
                                          membuf_read, &cin,
                                          membuf_write, &recovered,
                                          SMALL_CHUNK);

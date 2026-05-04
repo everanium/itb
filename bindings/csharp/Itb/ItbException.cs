@@ -114,14 +114,14 @@ public class ItbException : Exception
         }
     }
 
-    private static unsafe string? ReadEasyMismatchField()
+    private static unsafe string ReadEasyMismatchField()
     {
         try
         {
             int rc = Native.ItbNative.ITB_Easy_LastMismatchField(null, 0, out var requiredSize);
             if ((rc != Native.Status.Ok && rc != Native.Status.BufferTooSmall) || requiredSize <= 1)
             {
-                return null;
+                return string.Empty;
             }
             var buf = new byte[(int)requiredSize];
             int rc2;
@@ -132,15 +132,14 @@ public class ItbException : Exception
             }
             if (rc2 != Native.Status.Ok)
             {
-                return null;
+                return string.Empty;
             }
             var actualLen = outLen > 0 ? (int)outLen - 1 : 0;
-            var s = Encoding.UTF8.GetString(buf, 0, actualLen);
-            return string.IsNullOrEmpty(s) ? null : s;
+            return Encoding.UTF8.GetString(buf, 0, actualLen);
         }
         catch
         {
-            return null;
+            return string.Empty;
         }
     }
 }
@@ -168,19 +167,19 @@ public class ItbException : Exception
 /// </remarks>
 public sealed class ItbEasyMismatchException : ItbException
 {
-    /// <summary>Name of the mismatched configuration field, or
-    /// <c>null</c> if libitb did not record one.</summary>
-    public string? Field { get; }
+    /// <summary>Name of the mismatched configuration field, or the
+    /// empty string if libitb did not record one.</summary>
+    public string Field { get; }
 
     internal ItbEasyMismatchException(int status, string? message, string? field)
-        : base(status, FormatWithField(message, field))
+        : base(status, FormatWithField(message, field ?? string.Empty))
     {
-        Field = field;
+        Field = field ?? string.Empty;
     }
 
-    private static string? FormatWithField(string? message, string? field)
+    private static string? FormatWithField(string? message, string field)
     {
-        if (string.IsNullOrEmpty(field))
+        if (field.Length == 0)
         {
             return message;
         }

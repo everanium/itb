@@ -31,7 +31,7 @@ private ubyte[] tokenBytes(size_t n)
 void testMixedSingleBasicRoundtrip()
 {
     auto enc = Encryptor.newMixed("blake3", "blake2s", "areion256",
-                                   1024, "kmac256", null);
+                                   null, 1024, "kmac256");
     assert(enc.isMixed());
     assert(enc.primitive() == "mixed");
     assert(enc.primitiveAt(0) == "blake3");
@@ -47,7 +47,7 @@ void testMixedSingleBasicRoundtrip()
 void testMixedSingleWithDedicatedLockseed()
 {
     auto enc = Encryptor.newMixed("blake3", "blake2s", "blake3",
-                                   1024, "kmac256", "areion256");
+                                   "areion256", 1024, "kmac256");
     assert(enc.primitiveAt(3) == "areion256");
     auto plaintext = cast(const(ubyte)[]) "d mixed Single + dedicated lockSeed payload";
     auto ct = enc.encryptAuth(plaintext).dup;
@@ -62,7 +62,7 @@ void testMixedSingleAescmacSiphash128bit()
     // aescmac carries 16). Exercises the per-slot empty / non-empty
     // PRF-key validation in exportState / importState.
     auto enc = Encryptor.newMixed("aescmac", "siphash24", "aescmac",
-                                   512, "hmac-sha256", null);
+                                   null, 512, "hmac-sha256");
     auto plaintext = cast(const(ubyte)[]) "d mixed 128-bit aescmac+siphash24 mix";
     auto ct = enc.encrypt(plaintext).dup;
     auto pt = enc.decrypt(ct).dup;
@@ -76,7 +76,7 @@ void testMixedTripleBasicRoundtrip()
     auto enc = Encryptor.newMixed3(
         "areion256", "blake3", "blake2s", "chacha20",
         "blake2b256", "blake3", "blake2s",
-        1024, "kmac256", null);
+        null, 1024, "kmac256");
     static immutable string[] wants = [
         "areion256", "blake3", "blake2s", "chacha20",
         "blake2b256", "blake3", "blake2s",
@@ -97,7 +97,7 @@ void testMixedTripleWithDedicatedLockseed()
     auto enc = Encryptor.newMixed3(
         "blake3", "blake2s", "blake3", "blake2s",
         "blake3", "blake2s", "blake3",
-        1024, "kmac256", "areion256");
+        "areion256", 1024, "kmac256");
     assert(enc.primitiveAt(7) == "areion256");
     auto plaintext = cast(ubyte[]) replicate(
         cast(string) "d mixed Triple + lockSeed payload", 16);
@@ -115,13 +115,13 @@ void testMixedSingleExportImport()
     ubyte[] blob;
     {
         auto sender = Encryptor.newMixed("blake3", "blake2s", "areion256",
-                                          1024, "kmac256", null);
+                                          null, 1024, "kmac256");
         ct = sender.encryptAuth(plaintext).dup;
         blob = sender.exportState().dup;
         assert(blob.length > 0, "exported blob must not be empty");
     }
     auto receiver = Encryptor.newMixed("blake3", "blake2s", "areion256",
-                                        1024, "kmac256", null);
+                                        null, 1024, "kmac256");
     receiver.importState(blob);
     auto pt = receiver.decryptAuth(ct).dup;
     assert(pt == plaintext, "mixed Single import decrypt mismatch");
@@ -137,14 +137,14 @@ void testMixedTripleExportImportWithLockseed()
         auto sender = Encryptor.newMixed3(
             "areion256", "blake3", "blake2s", "chacha20",
             "blake2b256", "blake3", "blake2s",
-            1024, "kmac256", "areion256");
+            "areion256", 1024, "kmac256");
         ct = sender.encryptAuth(plaintext).dup;
         blob = sender.exportState().dup;
     }
     auto receiver = Encryptor.newMixed3(
         "areion256", "blake3", "blake2s", "chacha20",
         "blake2b256", "blake3", "blake2s",
-        1024, "kmac256", "areion256");
+        "areion256", 1024, "kmac256");
     receiver.importState(blob);
     auto pt = receiver.decryptAuth(ct).dup;
     assert(pt == plaintext, "mixed Triple + lockSeed import mismatch");
@@ -158,7 +158,7 @@ void testMixedShapeMismatch()
     {
         auto mixedSender = Encryptor.newMixed(
             "blake3", "blake2s", "blake3",
-            1024, "kmac256", null);
+            null, 1024, "kmac256");
         mixedBlob = mixedSender.exportState().dup;
     }
     auto singleRecv = Encryptor("blake3", 1024, "kmac256", 1);
@@ -177,7 +177,7 @@ void testRejectMixedWidth()
             "blake3",     // 256-bit
             "areion512",  // 512-bit ← width mismatch
             "blake3",
-            1024, "kmac256", null));
+            null, 1024, "kmac256"));
     assert(err !is null, "mixed-width must throw");
 }
 
@@ -187,7 +187,7 @@ void testRejectUnknownPrimitive()
         Encryptor.newMixed(
             "no-such-primitive",
             "blake3", "blake3",
-            1024, "kmac256", null));
+            null, 1024, "kmac256"));
     assert(err !is null, "unknown primitive must throw");
 }
 

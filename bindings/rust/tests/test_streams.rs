@@ -272,7 +272,7 @@ fn test_write_after_close_raises() {
     let result = enc.write(b"world");
     assert!(result.is_err(), "write after close must surface ITBError");
     let err = result.err().unwrap();
-    assert_eq!(err.code(), itb::STATUS_BAD_INPUT);
+    assert_eq!(err.code(), itb::STATUS_EASY_CLOSED);
 }
 
 #[test]

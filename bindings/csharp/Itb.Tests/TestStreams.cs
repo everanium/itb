@@ -313,8 +313,9 @@ public class TestStreams
                 cbuf, SmallChunk);
             enc.Write(new byte[] { 0x68, 0x65, 0x6c, 0x6c, 0x6f });
             enc.Close();
-            Assert.Throws<InvalidOperationException>(() =>
+            var ex = Assert.Throws<ItbException>(() =>
                 enc.Write(new byte[] { 0x77, 0x6f, 0x72, 0x6c, 0x64 }));
+            Assert.Equal(Itb.Native.Status.EasyClosed, ex.Status);
         }
         finally
         {

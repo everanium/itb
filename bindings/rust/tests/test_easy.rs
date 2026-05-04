@@ -109,7 +109,7 @@ fn mixed_single_three_same_width_primitives() {
     // valid noise / data / start trio at key_bits=1024 (a multiple
     // of 256).
     let mut enc =
-        Encryptor::mixed_single("areion256", "blake3", "blake2s", 1024, "kmac256", None)
+        Encryptor::mixed_single("areion256", "blake3", "blake2s", None, 1024, "kmac256")
             .unwrap();
     assert!(enc.is_mixed().unwrap());
     assert_eq!(enc.primitive_at(0).unwrap(), "areion256");

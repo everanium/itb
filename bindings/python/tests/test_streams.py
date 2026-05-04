@@ -219,8 +219,9 @@ class TestStreamErrors(unittest.TestCase):
             enc = itb.StreamEncryptor(*seeds, cbuf, chunk_size=SMALL_CHUNK)
             enc.write(b"hello")
             enc.close()
-            with self.assertRaises(ValueError):
+            with self.assertRaises(itb.ITBError) as cm:
                 enc.write(b"world")
+            self.assertEqual(cm.exception.code, itb._ffi.STATUS_EASY_CLOSED)
         finally:
             _free(seeds)
 

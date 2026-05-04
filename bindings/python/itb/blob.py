@@ -71,35 +71,52 @@ from ._ffi import (
 )
 
 
-# Slot identifiers — must mirror the BlobSlot* constants in
+# Slot identifiers — mirror the BlobSlot* constants in
 # cmd/cshared/internal/capi/blob_handles.go.
-_SLOT_N = 0
-_SLOT_D = 1
-_SLOT_S = 2
-_SLOT_L = 3
-_SLOT_D1 = 4
-_SLOT_D2 = 5
-_SLOT_D3 = 6
-_SLOT_S1 = 7
-_SLOT_S2 = 8
-_SLOT_S3 = 9
+SLOT_N = 0
+SLOT_D = 1
+SLOT_S = 2
+SLOT_L = 3
+SLOT_D1 = 4
+SLOT_D2 = 5
+SLOT_D3 = 6
+SLOT_S1 = 7
+SLOT_S2 = 8
+SLOT_S3 = 9
+
+# Aliased private names retained for backwards compatibility within
+# the binding's internal helpers.
+_SLOT_N = SLOT_N
+_SLOT_D = SLOT_D
+_SLOT_S = SLOT_S
+_SLOT_L = SLOT_L
+_SLOT_D1 = SLOT_D1
+_SLOT_D2 = SLOT_D2
+_SLOT_D3 = SLOT_D3
+_SLOT_S1 = SLOT_S1
+_SLOT_S2 = SLOT_S2
+_SLOT_S3 = SLOT_S3
 
 _SLOT_NAMES = {
-    "n": _SLOT_N,
-    "d": _SLOT_D,
-    "s": _SLOT_S,
-    "l": _SLOT_L,
-    "d1": _SLOT_D1,
-    "d2": _SLOT_D2,
-    "d3": _SLOT_D3,
-    "s1": _SLOT_S1,
-    "s2": _SLOT_S2,
-    "s3": _SLOT_S3,
+    "n": SLOT_N,
+    "d": SLOT_D,
+    "s": SLOT_S,
+    "l": SLOT_L,
+    "d1": SLOT_D1,
+    "d2": SLOT_D2,
+    "d3": SLOT_D3,
+    "s1": SLOT_S1,
+    "s2": SLOT_S2,
+    "s3": SLOT_S3,
 }
 
-# Export option bitmask — must mirror BlobOpt* in blob_handles.go.
-_OPT_LOCKSEED = 1 << 0
-_OPT_MAC = 1 << 1
+# Export option bitmask — mirror BlobOpt* in blob_handles.go.
+OPT_LOCKSEED = 1 << 0
+OPT_MAC = 1 << 1
+
+# Aliased private names retained for backwards compatibility.
+_OPT_LOCKSEED = OPT_LOCKSEED
+_OPT_MAC = OPT_MAC
 
 
 class BlobModeMismatchError(ITBError):

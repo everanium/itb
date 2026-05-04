@@ -91,7 +91,6 @@ static itb_status_t io_read_error(int rc)
 static itb_status_t encrypt_emit_single(const itb_seed_t *noise,
                                         const itb_seed_t *data,
                                         const itb_seed_t *start,
-                                        const itb_mac_t *mac,
                                         const uint8_t *chunk,
                                         size_t chunk_len,
                                         itb_stream_write_fn write_fn,
@@ -99,13 +98,8 @@ static itb_status_t encrypt_emit_single(const itb_seed_t *noise,
 {
     uint8_t *ct = NULL;
     size_t ct_len = 0;
-    itb_status_t st;
-    if (mac == NULL) {
-        st = itb_encrypt(noise, data, start, chunk, chunk_len, &ct, &ct_len);
-    } else {
-        st = itb_encrypt_auth(noise, data, start, mac,
-                              chunk, chunk_len, &ct, &ct_len);
-    }
+    itb_status_t st = itb_encrypt(noise, data, start, chunk, chunk_len,
+                                  &ct, &ct_len);
     if (st != ITB_OK) {
         return st;
     }
@@ -123,7 +117,6 @@ static itb_status_t encrypt_emit_single(const itb_seed_t *noise,
 static itb_status_t encrypt_loop_single(const itb_seed_t *noise,
                                         const itb_seed_t *data,
                                         const itb_seed_t *start,
-                                        const itb_mac_t *mac,
                                         itb_stream_read_fn read_fn,
                                         void *read_ctx,
                                         itb_stream_write_fn write_fn,
@@ -151,7 +144,7 @@ static itb_status_t encrypt_loop_single(const itb_seed_t *noise,
                 /* EOF — flush partial chunk if any, then stop. */
                 if (buffered > 0) {
                     itb_status_t st = encrypt_emit_single(
-                        noise, data, start, mac, buf, buffered,
+                        noise, data, start, buf, buffered,
                         write_fn, write_ctx);
                     if (st != ITB_OK) {
                         free(buf);
@@ -167,7 +160,7 @@ static itb_status_t encrypt_loop_single(const itb_seed_t *noise,
         }
         /* buf is full — emit one chunk and reset. */
         itb_status_t st = encrypt_emit_single(
-            noise, data, start, mac, buf, chunk_size, write_fn, write_ctx);
+            noise, data, start, buf, chunk_size, write_fn, write_ctx);
         if (st != ITB_OK) {
             free(buf);
             return st;
@@ -187,7 +180,6 @@ static itb_status_t encrypt_emit_triple(const itb_seed_t *noise,
                                         const itb_seed_t *start1,
                                         const itb_seed_t *start2,
                                         const itb_seed_t *start3,
-                                        const itb_mac_t *mac,
                                         const uint8_t *chunk,
                                         size_t chunk_len,
                                         itb_stream_write_fn write_fn,
@@ -195,16 +187,9 @@ static itb_status_t encrypt_emit_triple(const itb_seed_t *noise,
 {
     uint8_t *ct = NULL;
     size_t ct_len = 0;
-    itb_status_t st;
-    if (mac == NULL) {
-        st = itb_encrypt_triple(noise, data1, data2, data3,
-                                start1, start2, start3,
-                                chunk, chunk_len, &ct, &ct_len);
-    } else {
-        st = itb_encrypt_auth_triple(noise, data1, data2, data3,
-                                     start1, start2, start3, mac,
-                                     chunk, chunk_len, &ct, &ct_len);
-    }
+    itb_status_t st = itb_encrypt_triple(noise, data1, data2, data3,
+                                         start1, start2, start3,
+                                         chunk, chunk_len, &ct, &ct_len);
     if (st != ITB_OK) {
         return st;
     }
@@ -226,7 +211,6 @@ static itb_status_t encrypt_loop_triple(const itb_seed_t *noise,
                                         const itb_seed_t *start1,
                                         const itb_seed_t *start2,
                                         const itb_seed_t *start3,
-                                        const itb_mac_t *mac,
                                         itb_stream_read_fn read_fn,
                                         void *read_ctx,
                                         itb_stream_write_fn write_fn,
@@ -252,7 +236,7 @@ static itb_status_t encrypt_loop_triple(const itb_seed_t *noise,
                 if (buffered > 0) {
                     itb_status_t st = encrypt_emit_triple(
                         noise, data1, data2, data3,
-                        start1, start2, start3, mac,
+                        start1, start2, start3,
                         buf, buffered, write_fn, write_ctx);
                     if (st != ITB_OK) {
                         free(buf);
@@ -268,7 +252,7 @@ static itb_status_t encrypt_loop_triple(const itb_seed_t *noise,
         }
         itb_status_t st = encrypt_emit_triple(
             noise, data1, data2, data3,
-            start1, start2, start3, mac,
+            start1, start2, start3,
             buf, chunk_size, write_fn, write_ctx);
         if (st != ITB_OK) {
             free(buf);
@@ -334,7 +318,6 @@ static void accum_consume(uint8_t *buf, size_t *len, size_t n)
 static itb_status_t drain_single(const itb_seed_t *noise,
                                  const itb_seed_t *data,
                                  const itb_seed_t *start,
-                                 const itb_mac_t *mac,
                                  size_t header_size,
                                  uint8_t *buf, size_t *buf_len,
                                  itb_stream_write_fn write_fn,
@@ -351,12 +334,7 @@ static itb_status_t drain_single(const itb_seed_t *noise,
 
         uint8_t *pt = NULL;
         size_t pt_len = 0;
-        if (mac == NULL) {
-            st = itb_decrypt(noise, data, start, buf, chunk_len, &pt, &pt_len);
-        } else {
-            st = itb_decrypt_auth(noise, data, start, mac,
-                                  buf, chunk_len, &pt, &pt_len);
-        }
+        st = itb_decrypt(noise, data, start, buf, chunk_len, &pt, &pt_len);
         if (st != ITB_OK) {
             return st;
         }
@@ -379,7 +357,6 @@ static itb_status_t drain_triple(const itb_seed_t *noise,
                                  const itb_seed_t *start1,
                                  const itb_seed_t *start2,
                                  const itb_seed_t *start3,
-                                 const itb_mac_t *mac,
                                  size_t header_size,
                                  uint8_t *buf, size_t *buf_len,
                                  itb_stream_write_fn write_fn,
@@ -396,15 +373,9 @@ static itb_status_t drain_triple(const itb_seed_t *noise,
 
         uint8_t *pt = NULL;
         size_t pt_len = 0;
-        if (mac == NULL) {
-            st = itb_decrypt_triple(noise, data1, data2, data3,
-                                    start1, start2, start3,
-                                    buf, chunk_len, &pt, &pt_len);
-        } else {
-            st = itb_decrypt_auth_triple(noise, data1, data2, data3,
-                                         start1, start2, start3, mac,
-                                         buf, chunk_len, &pt, &pt_len);
-        }
+        st = itb_decrypt_triple(noise, data1, data2, data3,
+                                start1, start2, start3,
+                                buf, chunk_len, &pt, &pt_len);
         if (st != ITB_OK) {
             return st;
         }
@@ -423,7 +394,6 @@ static itb_status_t drain_triple(const itb_seed_t *noise,
 static itb_status_t decrypt_loop_single(const itb_seed_t *noise,
                                         const itb_seed_t *data,
                                         const itb_seed_t *start,
-                                        const itb_mac_t *mac,
                                         itb_stream_read_fn read_fn,
                                         void *read_ctx,
                                         itb_stream_write_fn write_fn,
@@ -488,7 +458,7 @@ static itb_status_t decrypt_loop_single(const itb_seed_t *noise,
         memcpy(accum + accum_len, read_buf, got);
         accum_len += got;
 
-        itb_status_t dst = drain_single(noise, data, start, mac,
+        itb_status_t dst = drain_single(noise, data, start,
                                         header_size,
                                         accum, &accum_len,
                                         write_fn, write_ctx);
@@ -507,7 +477,6 @@ static itb_status_t decrypt_loop_triple(const itb_seed_t *noise,
                                         const itb_seed_t *start1,
                                         const itb_seed_t *start2,
                                         const itb_seed_t *start3,
-                                        const itb_mac_t *mac,
                                         itb_stream_read_fn read_fn,
                                         void *read_ctx,
                                         itb_stream_write_fn write_fn,
@@ -566,7 +535,7 @@ static itb_status_t decrypt_loop_triple(const itb_seed_t *noise,
 
         itb_status_t dst = drain_triple(
             noise, data1, data2, data3,
-            start1, start2, start3, mac,
+            start1, start2, start3,
             header_size, accum, &accum_len, write_fn, write_ctx);
         if (dst != ITB_OK) {
             free(read_buf);
@@ -601,7 +570,6 @@ static itb_status_t validate_callbacks(itb_stream_read_fn read_fn,
 itb_status_t itb_stream_encrypt(const itb_seed_t *noise,
                                 const itb_seed_t *data,
                                 const itb_seed_t *start,
-                                const itb_mac_t *mac,
                                 itb_stream_read_fn read_fn, void *read_user_ctx,
                                 itb_stream_write_fn write_fn, void *write_user_ctx,
                                 size_t chunk_size)
@@ -614,7 +582,7 @@ itb_status_t itb_stream_encrypt(const itb_seed_t *noise,
     if (cv != ITB_OK) return cv;
     itb_status_t sv = validate_chunk_size(chunk_size);
     if (sv != ITB_OK) return sv;
-    return encrypt_loop_single(noise, data, start, mac,
+    return encrypt_loop_single(noise, data, start,
                                read_fn, read_user_ctx,
                                write_fn, write_user_ctx,
                                chunk_size);
@@ -623,7 +591,6 @@ itb_status_t itb_stream_encrypt(const itb_seed_t *noise,
 itb_status_t itb_stream_decrypt(const itb_seed_t *noise,
                                 const itb_seed_t *data,
                                 const itb_seed_t *start,
-                                const itb_mac_t *mac,
                                 itb_stream_read_fn read_fn, void *read_user_ctx,
                                 itb_stream_write_fn write_fn, void *write_user_ctx,
                                 size_t chunk_size)
@@ -636,7 +603,7 @@ itb_status_t itb_stream_decrypt(const itb_seed_t *noise,
     if (cv != ITB_OK) return cv;
     itb_status_t sv = validate_chunk_size(chunk_size);
     if (sv != ITB_OK) return sv;
-    return decrypt_loop_single(noise, data, start, mac,
+    return decrypt_loop_single(noise, data, start,
                                read_fn, read_user_ctx,
                                write_fn, write_user_ctx,
                                chunk_size);
@@ -649,7 +616,6 @@ itb_status_t itb_stream_encrypt_triple(const itb_seed_t *noise,
                                        const itb_seed_t *start1,
                                        const itb_seed_t *start2,
                                        const itb_seed_t *start3,
-                                       const itb_mac_t *mac,
                                        itb_stream_read_fn read_fn,
                                        void *read_user_ctx,
                                        itb_stream_write_fn write_fn,
@@ -666,7 +632,7 @@ itb_status_t itb_stream_encrypt_triple(const itb_seed_t *noise,
     itb_status_t sv = validate_chunk_size(chunk_size);
     if (sv != ITB_OK) return sv;
     return encrypt_loop_triple(noise, data1, data2, data3,
-                               start1, start2, start3, mac,
+                               start1, start2, start3,
                                read_fn, read_user_ctx,
                                write_fn, write_user_ctx,
                                chunk_size);
@@ -679,7 +645,6 @@ itb_status_t itb_stream_decrypt_triple(const itb_seed_t *noise,
                                        const itb_seed_t *start1,
                                        const itb_seed_t *start2,
                                        const itb_seed_t *start3,
-                                       const itb_mac_t *mac,
                                        itb_stream_read_fn read_fn,
                                        void *read_user_ctx,
                                        itb_stream_write_fn write_fn,
@@ -696,7 +661,7 @@ itb_status_t itb_stream_decrypt_triple(const itb_seed_t *noise,
     itb_status_t sv = validate_chunk_size(chunk_size);
     if (sv != ITB_OK) return sv;
     return decrypt_loop_triple(noise, data1, data2, data3,
-                               start1, start2, start3, mac,
+                               start1, start2, start3,
                                read_fn, read_user_ctx,
                                write_fn, write_user_ctx,
                                chunk_size);

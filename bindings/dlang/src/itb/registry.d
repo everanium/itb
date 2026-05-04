@@ -121,8 +121,11 @@ size_t parseChunkLen(const(ubyte)[] header) @trusted
 // ----- Global toggles --------------------------------------------------
 
 /// Enables (`mode = 1`) or disables (`mode = 0`) bit-soup mode
-/// process-wide. Auto-couples lock-soup on the on-direction. Throws
-/// `ITBError` on invalid mode.
+/// process-wide. Independent of lock-soup at the setter level — the
+/// cascade direction is `setLockSoup(1) → setBitSoup(1)`, not the
+/// reverse. In Single Ouroboros, either flag alone activates the
+/// bit-permutation overlay at dispatch time. Throws `ITBError` on
+/// invalid mode.
 void setBitSoup(int mode) @trusted
 {
     check(ITB_SetBitSoup(mode));

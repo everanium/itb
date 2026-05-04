@@ -84,7 +84,7 @@ internal static class BenchSingle
         // plain mixed mode.
         var primL = Common.EnvLockSeed() ? Common.MixedLock : null;
         return Encryptor.Mixed(
-            MixedNoise, MixedData, MixedStart, Common.KeyBits, Common.MacName, primL);
+            MixedNoise, MixedData, MixedStart, primL, Common.KeyBits, Common.MacName);
     }
 
     private static BenchCase MakeEncryptCase(string name, Encryptor enc)

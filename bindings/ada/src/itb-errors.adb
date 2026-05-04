@@ -59,6 +59,15 @@ package body Itb.Errors is
       return To_Ada (Buf (1 .. Out_Len - 1), Trim_Nul => False);
    end Get_Last_Mismatch_Field;
 
+   ---------------------------------------------------------------------
+   --  Public accessor over ITB_Easy_LastMismatchField. Delegates to the
+   --  package-body-private Get_Last_Mismatch_Field helper above.
+   ---------------------------------------------------------------------
+   function Last_Mismatch_Field return String is
+   begin
+      return Get_Last_Mismatch_Field;
+   end Last_Mismatch_Field;
+
    --  Pack <status>|<field>|<message> into a single Ada string.
    function Encode_Payload
      (Status_Code : Natural;
@@ -208,5 +217,14 @@ package body Itb.Errors is
               (Itb_Error'Identity, Payload);
       end case;
    end Raise_For;
+
+   ---------------------------------------------------------------------
+   --  Public accessor over ITB_LastError. Delegates to the
+   --  package-body-private Get_Last_Error helper above.
+   ---------------------------------------------------------------------
+   function Last_Error return String is
+   begin
+      return Get_Last_Error;
+   end Last_Error;
 
 end Itb.Errors;

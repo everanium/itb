@@ -96,9 +96,9 @@ fn build_mixed_single() -> Encryptor {
         MIXED_NOISE,
         MIXED_DATA,
         MIXED_START,
+        prim_l,
         KEY_BITS,
         MAC_NAME,
-        prim_l,
     )
     .expect("mixed_single")
 }

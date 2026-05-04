@@ -26,26 +26,26 @@
 //     b.setKey(BlobSlot.D, ds.hashKey); b.setComponents(BlobSlot.D, ds.components);
 //     b.setKey(BlobSlot.S, ss.hashKey); b.setComponents(BlobSlot.S, ss.components);
 //     b.setMacKey(macKey); b.setMacName('hmac-blake3');
-//     const blobBytes = b.exportState(BlobExportOpts.Mac);
+//     const blobBytes = b.export(BlobExportOpts.Mac);
 //     // ... persist blobBytes ...
 //
 // Receiver:
 //
 //     using b2 = new Blob512();
-//     b2.importState(blobBytes);
+//     b2.import(blobBytes);
 //     // Components and hash keys round-trip back into the receiver.
 //     using ns2 = Seed.fromComponents('areion512', b2.getComponents(BlobSlot.N), b2.getKey(BlobSlot.N));
 //     // ... wire ds2, ss2 the same way; rebuild MAC; decryptAuth ...
 //
-// The blob is mode-discriminated: `exportState` packs Single material,
-// `exportStateTriple` packs Triple material; `importState` and
-// `importStateTriple` are the corresponding receivers. A blob built
+// The blob is mode-discriminated: `export` packs Single material,
+// `exportTriple` packs Triple material; `import` and
+// `importTriple` are the corresponding receivers. A blob built
 // under one mode rejects the wrong importer with
 // `ITBBlobModeMismatchError`.
 //
 // Globals (NonceBits / BarrierFill / BitSoup / LockSoup) are captured
-// into the blob at `exportState` / `exportStateTriple` time and applied
-// process-wide on `importState` / `importStateTriple` via the existing
+// into the blob at `export` / `exportTriple` time and applied
+// process-wide on `import` / `importTriple` via the existing
 // `setNonceBits` / `setBarrierFill` / `setBitSoup` / `setLockSoup`
 // setters. The worker count and the global LockSeed flag are not
 // serialised — the former is a deployment knob, the latter is
@@ -155,8 +155,8 @@ function resolveSlot(slot: BlobSlotValue | number | string): number {
 // ──────────────────────────────────────────────────────────────────
 
 /**
- * Export-time option bitmask for `Blob.exportState` /
- * `Blob.exportStateTriple`. Bitwise-OR multiple flags together; the
+ * Export-time option bitmask for `Blob.export` /
+ * `Blob.exportTriple`. Bitwise-OR multiple flags together; the
  * raw `number` is forwarded to libitb so any extra bits will trip
  * `Status.BlobTooManyOpts`.
  */
@@ -228,7 +228,7 @@ abstract class BlobBase implements Disposable {
   /**
    * Blob mode field — `0` = unset (freshly constructed handle),
    * `1` = Single Ouroboros, `3` = Triple Ouroboros. Updated by
-   * `importState` / `importStateTriple` from the parsed blob's mode
+   * `import` / `importTriple` from the parsed blob's mode
    * discriminator.
    */
   get mode(): number {
@@ -261,8 +261,8 @@ abstract class BlobBase implements Disposable {
    * Stores the seed components (sequence of unsigned 64-bit
    * integers) for the given slot. Component count must satisfy the
    * 8..MaxKeyBits/64 multiple-of-8 invariants — same rules as
-   * `Seed.fromComponents`. Validation is deferred to `exportState`
-   * / `importState` time.
+   * `Seed.fromComponents`. Validation is deferred to `export`
+   * / `import` time.
    */
   setComponents(
     slot: BlobSlotValue | number | string,
@@ -277,7 +277,7 @@ abstract class BlobBase implements Disposable {
   /**
    * Stores the optional MAC key bytes. Pass `null` or an empty
    * `Uint8Array` to clear a previously-set key. The MAC section is
-   * only emitted by `exportState` / `exportStateTriple` when the
+   * only emitted by `export` / `exportTriple` when the
    * `BlobExportOpts.Mac` flag is set AND the MAC key on the handle
    * is non-empty.
    */
@@ -408,15 +408,15 @@ abstract class BlobBase implements Disposable {
    * must be non-empty on the handle). Multiple flags combine via
    * bitwise OR.
    */
-  exportState(opts: number = BlobExportOpts.None): Uint8Array {
+  export(opts: number = BlobExportOpts.None): Uint8Array {
     return this.runExport(opts | 0, false);
   }
 
   /**
    * Serialises the handle's Triple-Ouroboros state into a JSON
-   * blob. See `exportState` for the `opts` bitmask semantics.
+   * blob. See `export` for the `opts` bitmask semantics.
    */
-  exportStateTriple(opts: number = BlobExportOpts.None): Uint8Array {
+  exportTriple(opts: number = BlobExportOpts.None): Uint8Array {
     return this.runExport(opts | 0, true);
   }
 
@@ -430,7 +430,7 @@ abstract class BlobBase implements Disposable {
    * `ITBBlobVersionTooNewError` on a version field higher than this
    * build supports.
    */
-  importState(blob: Uint8Array): void {
+  import(blob: Uint8Array): void {
     if (!(blob instanceof Uint8Array)) {
       throw new TypeError('blob must be a Uint8Array');
     }
@@ -439,10 +439,10 @@ abstract class BlobBase implements Disposable {
   }
 
   /**
-   * Triple-Ouroboros counterpart of `importState`. Same error
+   * Triple-Ouroboros counterpart of `import`. Same error
    * contract.
    */
-  importStateTriple(blob: Uint8Array): void {
+  importTriple(blob: Uint8Array): void {
     if (!(blob instanceof Uint8Array)) {
       throw new TypeError('blob must be a Uint8Array');
     }

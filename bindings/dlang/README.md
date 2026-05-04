@@ -344,9 +344,9 @@ auto enc = Encryptor.newMixed(
     "blake3",         // primN: noiseSeed:  BLAKE3
     "blake2s",        // primD: dataSeed:   BLAKE2s
     "areion256",      // primS: startSeed:  Areion-SoEM-256
+    "blake2b256",     // primL: dedicated lockSeed (null for no lockSeed slot)
     1024,             // keyBits
-    "hmac-blake3",    // macName
-    "blake2b256");    // primL: dedicated lockSeed (null for no lockSeed slot)
+    "hmac-blake3");   // macName
 
 // Per-instance configuration applies as for Encryptor(...).
 enc.setNonceBits(512);
@@ -388,7 +388,7 @@ writefln("encrypted: %d bytes", encrypted.length);
 // ITBEasyMismatchError with the "primitive" field tag.
 auto dec = Encryptor.newMixed(
     "blake3", "blake2s", "areion256",
-    1024, "hmac-blake3", "blake2b256");
+    "blake2b256", 1024, "hmac-blake3");
 
 dec.importState(blob);
 

@@ -385,7 +385,7 @@ describe('test_streams', () => {
       assert.throws(
         () => enc.write(new TextEncoder().encode('world')),
         (err: unknown) =>
-          err instanceof ITBError && err.code === Status.BadInput,
+          err instanceof ITBError && err.code === Status.EasyClosed,
       );
     } finally {
       disposeAll(seeds);

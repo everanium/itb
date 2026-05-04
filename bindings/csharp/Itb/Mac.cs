@@ -50,14 +50,6 @@ public sealed class Mac : IDisposable
     /// with.</summary>
     public string MacName => _macName;
 
-    private void ThrowIfDisposed()
-    {
-        if (_handle == 0)
-        {
-            throw new ObjectDisposedException(nameof(Mac));
-        }
-    }
-
     /// <summary>Releases the underlying libitb handle. Idempotent.</summary>
     public void Dispose()
     {

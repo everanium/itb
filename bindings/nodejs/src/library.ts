@@ -117,6 +117,14 @@ export function parseChunkLen(header: Uint8Array): number {
   return Number(out[0]);
 }
 
+/**
+ * Sets the process-wide Bit Soup mode (0 = byte-level split,
+ * non-zero = bit-level Bit Soup split). Independent of
+ * `setLockSoup` at the setter level — there is no
+ * `BitSoup → LockSoup` cascade. In Single Ouroboros, either flag
+ * alone activates the dispatcher's keyed bit-permutation overlay
+ * (Single OR-gates the two flags).
+ */
 export function setBitSoup(mode: number): void {
   check(ITB_SetBitSoup(mode | 0));
 }
@@ -125,6 +133,12 @@ export function getBitSoup(): number {
   return ITB_GetBitSoup();
 }
 
+/**
+ * Sets the process-wide Lock Soup mode (0 = off, non-zero = on). A
+ * non-zero value auto-couples `setBitSoup(1)` (Lock Soup overlay
+ * layers on top of bit soup; one-direction cascade). The off-direction
+ * does not auto-disable bit soup.
+ */
 export function setLockSoup(mode: number): void {
   check(ITB_SetLockSoup(mode | 0));
 }

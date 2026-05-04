@@ -184,12 +184,12 @@ describe('test_blob', () => {
           src.setKey(slot, seed.hashKey);
           src.setComponents(slot, seed.components);
         }
-        blob = src.exportState();
+        blob = src.export();
       }
 
       resetGlobals();
       using dst = new Blob256();
-      dst.importState(blob);
+      dst.import(blob);
       assert.equal(dst.mode, 1);
       using ns2 = Seed.fromComponents('blake3', dst.getComponents('n'), dst.getKey('n'));
       using ds2 = Seed.fromComponents('blake3', dst.getComponents('d'), dst.getKey('d'));
@@ -220,12 +220,12 @@ describe('test_blob', () => {
             src.setKey(slot, seed.hashKey);
             src.setComponents(slot, seed.components);
           }
-          blob = src.exportStateTriple();
+          blob = src.exportTriple();
         }
 
         resetGlobals();
         using dst = new Blob256();
-        dst.importStateTriple(blob);
+        dst.importTriple(blob);
         assert.equal(dst.mode, 3);
         const seeds2: Seed[] = [];
         try {
@@ -269,12 +269,12 @@ describe('test_blob', () => {
           src.setKey(slot, seed.hashKey); // empty bytes for siphash24
           src.setComponents(slot, seed.components);
         }
-        blob = src.exportState();
+        blob = src.export();
       }
 
       resetGlobals();
       using dst = new Blob128();
-      dst.importState(blob);
+      dst.import(blob);
       using ns2 = Seed.fromComponents('siphash24', dst.getComponents('n'));
       using ds2 = Seed.fromComponents('siphash24', dst.getComponents('d'));
       using ss2 = Seed.fromComponents('siphash24', dst.getComponents('s'));
@@ -302,12 +302,12 @@ describe('test_blob', () => {
           src.setKey(slot, seed.hashKey);
           src.setComponents(slot, seed.components);
         }
-        blob = src.exportState();
+        blob = src.export();
       }
 
       resetGlobals();
       using dst = new Blob128();
-      dst.importState(blob);
+      dst.import(blob);
       using ns2 = Seed.fromComponents('aescmac', dst.getComponents('n'), dst.getKey('n'));
       using ds2 = Seed.fromComponents('aescmac', dst.getComponents('d'), dst.getKey('d'));
       using ss2 = Seed.fromComponents('aescmac', dst.getComponents('s'), dst.getKey('s'));
@@ -360,12 +360,12 @@ describe('test_blob', () => {
           src.setKey(slot, seed.hashKey);
           src.setComponents(slot, seed.components);
         }
-        blob = src.exportState();
+        blob = src.export();
       }
 
       using dst = new Blob512();
       assert.throws(
-        () => dst.importStateTriple(blob),
+        () => dst.importTriple(blob),
         (err: unknown) => err instanceof ITBBlobModeMismatchError,
       );
     });
@@ -374,7 +374,7 @@ describe('test_blob', () => {
   test('malformed', () => {
     using b = new Blob512();
     assert.throws(
-      () => b.importState(new TextEncoder().encode('{not json')),
+      () => b.import(new TextEncoder().encode('{not json')),
       (err: unknown) => err instanceof ITBBlobMalformedError,
     );
   });
@@ -400,7 +400,7 @@ describe('test_blob', () => {
     const data = new TextEncoder().encode(JSON.stringify(doc));
     using b = new Blob512();
     assert.throws(
-      () => b.importState(data),
+      () => b.import(data),
       (err: unknown) => err instanceof ITBBlobVersionTooNewError,
     );
   });
@@ -459,12 +459,12 @@ function blob512SingleRoundtrip(
         src.setMacKey(macKey!);
         src.setMacName('kmac256');
       }
-      blob = src.exportState(opts);
+      blob = src.export(opts);
     }
 
     resetGlobals();
     using dst = new Blob512();
-    dst.importState(blob);
+    dst.import(blob);
     assert.equal(dst.mode, 1, `withLs=${withLs} withMac=${withMac}`);
     assertGlobalsRestored(512, 4, 1, 1);
 
@@ -557,12 +557,12 @@ function blob512TripleRoundtrip(
         src.setMacKey(macKey!);
         src.setMacName('kmac256');
       }
-      blob = src.exportStateTriple(opts);
+      blob = src.exportTriple(opts);
     }
 
     resetGlobals();
     using dst = new Blob512();
-    dst.importStateTriple(blob);
+    dst.importTriple(blob);
     assert.equal(dst.mode, 3, `withLs=${withLs} withMac=${withMac}`);
     assertGlobalsRestored(512, 4, 1, 1);
 

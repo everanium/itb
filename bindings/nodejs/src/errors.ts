@@ -54,11 +54,12 @@ export class ITBError extends Error {
  * serialise the import calls externally.
  */
 export class ITBEasyMismatchError extends ITBError {
-  readonly field: string | null;
+  readonly field: string;
 
   constructor(code: number, message: string | undefined, field: string | null) {
-    super(code, formatWithField(message, field));
-    this.field = field;
+    const normalisedField = field ?? '';
+    super(code, formatWithField(message, normalisedField));
+    this.field = normalisedField;
     this.name = 'ITBEasyMismatchError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -101,8 +102,8 @@ function formatMessage(code: number, message: string | undefined): string {
   return `itb: status=${code} (${message})`;
 }
 
-function formatWithField(message: string | undefined, field: string | null): string | undefined {
-  if (field === null || field.length === 0) {
+function formatWithField(message: string | undefined, field: string): string | undefined {
+  if (field.length === 0) {
     return message;
   }
   if (!message || message.length === 0) {
@@ -125,17 +126,28 @@ export function lastError(): string {
   }
 }
 
-function lastMismatchField(): string | null {
+/**
+ * Reads `ITB_Easy_LastMismatchField` for the most recent
+ * `STATUS_EASY_MISMATCH` returned on this thread. Returns the empty
+ * string when the most recent failure was not a mismatch or libitb
+ * recorded no field.
+ *
+ * `Encryptor.import` already attaches this name to the returned
+ * `ITBEasyMismatchError.field` property; the free-function form is
+ * exposed for callers that need to read the field independently of
+ * the error path.
+ */
+export function lastMismatchField(): string {
   try {
     const { rc, value } = readString((out, cap, outLen) =>
       ITB_Easy_LastMismatchField(out, cap, outLen),
     );
-    if (rc !== Status.Ok || value.length === 0) {
-      return null;
+    if (rc !== Status.Ok) {
+      return '';
     }
     return value;
   } catch {
-    return null;
+    return '';
   }
 }
 

@@ -301,7 +301,7 @@ void testWriteAfterCloseRaises()
     auto err = collectException!ITBError(
         enc.write(cast(const(ubyte)[]) "world"));
     assert(err !is null, "write after close must throw");
-    assert(err.statusCode == Status.BadInput);
+    assert(err.statusCode == Status.EasyClosed);
 }
 
 void testPartialChunkAtCloseRaises()

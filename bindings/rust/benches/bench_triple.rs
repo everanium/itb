@@ -98,9 +98,9 @@ fn build_mixed_triple() -> Encryptor {
         MIXED_START1,
         MIXED_START2,
         MIXED_START3,
+        prim_l,
         KEY_BITS,
         MAC_NAME,
-        prim_l,
     )
     .expect("mixed_triple")
 }
