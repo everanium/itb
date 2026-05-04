@@ -76,10 +76,9 @@ import itb.errors : check, ITBError, raiseFor,
 import itb.status : Status;
 import itb.sys;
 
-/// Parsed metadata returned by `peekConfig`. Mirrors the
-/// `(primitive, keyBits, mode, macName)` tuple the Rust binding
-/// returns; the named-field form keeps call sites readable in D where
-/// tuple-unpacking is heavier than in Rust.
+/// Parsed metadata returned by `peekConfig`. Carries the
+/// `(primitive, keyBits, mode, macName)` quadruple as named fields for
+/// readable call sites.
 struct EasyConfig
 {
     string primitive;

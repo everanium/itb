@@ -3,8 +3,9 @@
 /// code to the right exception with the right structured payload
 /// attached.
 ///
-/// Cross-binding parity: the 5-class layout below mirrors the Python /
-/// C# / Node.js / Ada typed-exception hierarchy:
+/// The 5-class layout lets callers catch the structurally-distinct
+/// failure modes selectively while still falling through to the base
+/// class for generic handling:
 ///
 ///     base                    ← ITBError (carries .statusCode + .message)
 ///     EasyMismatch (.field)   ← ITBEasyMismatchError
@@ -12,9 +13,8 @@
 ///     BlobMalformed           ← ITBBlobMalformedError
 ///     BlobVersionTooNew       ← ITBBlobVersionTooNewError
 ///
-/// Rust uses a flat `ITBError` enum; the D multi-exception form is
-/// closer to the Python idiom but preserves the Rust "match by code"
-/// capability through the `.statusCode` field.
+/// The structured `.statusCode` field on every exception preserves the
+/// "match by code" idiom alongside the type-based catch hierarchy.
 ///
 /// Threading caveat. The textual `message` is read from a process-wide
 /// atomic inside libitb that follows the C `errno` discipline: the

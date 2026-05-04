@@ -99,7 +99,7 @@ class TestEncryptorLifecycle(unittest.TestCase):
                     itb.Encryptor("blake3", bits, "kmac256")
 
     def test_bad_mode(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(itb.ITBError):
             itb.Encryptor("blake3", 1024, "kmac256", mode=2)
 
 

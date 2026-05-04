@@ -200,8 +200,9 @@ export class Encryptor implements Disposable {
    *   start) or `3` (Triple Ouroboros, 7 seeds — noise + 3 pairs of
    *   data / start). The numeric value mirrors the security factor:
    *   Triple's seven-seed split delivers `P × 2^(3×keyBits)` versus
-   *   Single's `P × 2^keyBits`. Other values raise `RangeError`
-   *   before the FFI call. Defaults to `1` (Single).
+   *   Single's `P × 2^keyBits`. Other values raise
+   *   `ITBError(Status.BadInput)` before the FFI call. Defaults to
+   *   `1` (Single).
    */
   constructor(
     primitive: string,
@@ -210,7 +211,10 @@ export class Encryptor implements Disposable {
     mode: number = 1,
   ) {
     if (mode !== 1 && mode !== 3) {
-      throw new RangeError(`mode must be 1 (Single) or 3 (Triple), got ${mode}`);
+      throw new ITBError(
+        Status.BadInput,
+        `mode must be 1 (Single) or 3 (Triple), got ${mode}`,
+      );
     }
     const effectiveMac = macName ?? 'hmac-blake3';
     const out: [Handle] = [ZERO];
@@ -992,10 +996,9 @@ export class Encryptor implements Disposable {
 }
 
 /**
- * Module-level alias for `Encryptor.peekConfig`. Mirrors the
- * free-function shape of Python's `itb.peek_config` and Rust's
- * `itb::peek_config`. The canonical entry point remains the static
- * method on `Encryptor`; this alias exists for cross-binding
- * convenience only.
+ * Module-level alias for `Encryptor.peekConfig`. The static method on
+ * `Encryptor` remains the canonical entry point; this free-function
+ * alias lets callers inspect a blob's bound configuration without
+ * naming the class.
  */
 export const peekConfig = Encryptor.peekConfig;

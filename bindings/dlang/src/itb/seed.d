@@ -1,16 +1,17 @@
 /// ITB seed handle.
 ///
-/// Mirrors the Rust binding's `Seed` struct — a thin RAII wrapper over
-/// `ITB_NewSeed` / `ITB_FreeSeed` plus the introspection accessors
-/// (`width`, `hashName`, `hashKey`, `components`) and the
-/// deterministic-rebuild path `Seed.fromComponents`.
+/// Provides a thin RAII wrapper over `ITB_NewSeed` / `ITB_FreeSeed`
+/// plus the introspection accessors (`width`, `hashName`, `hashKey`,
+/// `components`) and the deterministic-rebuild path
+/// `Seed.fromComponents`.
 ///
 /// Lifecycle. The struct is non-copyable (`@disable this(this);`) so
 /// each `Seed` has a unique owner. The destructor calls
 /// `ITB_FreeSeed` at scope exit. To pass a seed across function
 /// boundaries without releasing the handle, take it by `ref` (the
-/// canonical "borrow" idiom in D, equivalent to Rust's `&Seed`). To
-/// transfer ownership, use `std.algorithm.mutation.move`.
+/// canonical borrow idiom in D — the callee observes the seed without
+/// taking ownership). To transfer ownership, use
+/// `std.algorithm.mutation.move`.
 ///
 /// Concurrency. A `Seed` handle is safe to share across threads only
 /// when the threads cooperate to ensure the destructor does not run
@@ -172,7 +173,7 @@ struct Seed
     /// Returns the canonical hash name reported by libitb (round-trip
     /// of the constructor argument). Equivalent to [`hashName`] for
     /// seeds constructed through this binding; the introspection path
-    /// is kept for parity with the Rust source binding.
+    /// queries libitb directly rather than returning the cached field.
     string hashNameIntrospect() const @trusted
     {
         size_t h = _handle;

@@ -1,11 +1,13 @@
 // Handle to one ITB seed.
 //
-// Mirrors bindings/python/itb/_ffi.py `class Seed`. The libitb handle
-// is owned by the wrapper and released via [Symbol.dispose] / .free()
-// or, as a backstop, by a FinalizationRegistry cleanup callback when
-// the wrapper becomes unreachable. Prefer `using` declarations for
-// deterministic lifetime; FinalizationRegistry runs at unspecified
-// times and is best-effort only.
+// Provides a thin wrapper over `ITB_NewSeed` / `ITB_FreeSeed` plus
+// the introspection accessors and the deterministic-rebuild path
+// `Seed.fromComponents`. The libitb handle is owned by the wrapper
+// and released via [Symbol.dispose] / .free() or, as a backstop, by
+// a FinalizationRegistry cleanup callback when the wrapper becomes
+// unreachable. Prefer `using` declarations for deterministic
+// lifetime; FinalizationRegistry runs at unspecified times and is
+// best-effort only.
 //
 // Lock-seed lifecycle. `attachLockSeed` records the lock seed
 // pointer on the noise seed but does not transfer ownership.

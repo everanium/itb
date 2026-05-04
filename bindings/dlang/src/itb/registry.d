@@ -1,9 +1,9 @@
 /// Registry, library configuration, and stream-header helpers.
 ///
-/// Mirrors the free functions exposed by the Rust `registry` module
-/// that are not tied to a specific seed / MAC / encryptor instance:
-/// hash + MAC catalogs, `version()`, the global `set` / `get` knobs,
-/// and the `parseChunkLen` helper used by streaming consumers.
+/// Exposes the libitb free-function surface that is not tied to a
+/// specific seed / MAC / encryptor instance: hash + MAC catalogs,
+/// `version()`, the global `set` / `get` knobs, and the
+/// `parseChunkLen` helper used by streaming consumers.
 ///
 /// All free functions in this module operate on libitb's process-wide
 /// state. Concurrent invocation across threads is safe at the FFI

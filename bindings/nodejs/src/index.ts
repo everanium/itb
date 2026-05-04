@@ -20,9 +20,10 @@ export {
 } from './cipher.js';
 export { Encryptor } from './encryptor.js';
 export type { PeekedConfig } from './encryptor.js';
-// Module-level alias for cross-binding parity with Python's
-// `itb.peek_config` and Rust's `itb::peek_config` free functions.
-// `Encryptor.peekConfig` remains the canonical entry point.
+// Module-level alias for `Encryptor.peekConfig`. The static method on
+// `Encryptor` remains the canonical entry point; this alias lets
+// callers inspect a blob's bound configuration without naming the
+// class.
 export { peekConfig } from './encryptor.js';
 export {
   ITBBlobMalformedError,

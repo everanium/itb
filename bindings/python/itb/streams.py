@@ -13,7 +13,7 @@ single chunk.
 Both classes accept any binary file-like object for the ``fout`` /
 ``fin`` arguments (open files, ``io.BytesIO``, sockets wrapped in
 ``socket.makefile('wb')`` etc.). Memory peak per call is bounded
-by ``chunk_size`` (default 64 MB), regardless of the total payload
+by ``chunk_size`` (default 16 MB), regardless of the total payload
 length.
 
 The Triple-Ouroboros (7-seed) variants share the same I/O contract
@@ -28,6 +28,8 @@ from . import _ffi
 from ._ffi import (
     Seed,
     MAC,
+    ITBError,
+    STATUS_BAD_INPUT,
     encrypt as _encrypt,
     decrypt as _decrypt,
     encrypt_triple as _encrypt_triple,
@@ -50,7 +52,7 @@ class StreamEncryptor:
     Usage:
 
         with itb.StreamEncryptor(ns, ds, ss, fout) as enc:
-            while data := fin.read(64 * 1024 * 1024):
+            while data := fin.read(1 << 20):
                 enc.write(data)
         # closing the context flushes the trailing partial chunk
 
@@ -79,7 +81,7 @@ class StreamEncryptor:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
     ):
         if chunk_size <= 0:
-            raise ValueError("chunk_size must be positive")
+            raise ITBError(STATUS_BAD_INPUT, "chunk_size must be positive")
         self._seeds = (noise, data, start)
         self._fout = fout
         self._chunk_size = chunk_size
@@ -127,6 +129,11 @@ class StreamDecryptor:
     (header + body) is available, then decrypts the chunk and
     writes the plaintext to ``fout``. Multiple full chunks in one
     feed call are processed sequentially.
+
+    When :meth:`__exit__` is called during exception propagation,
+    the partial-tail check is skipped so the original exception is
+    not masked. Callers who need partial-tail detection during
+    exception paths should call :meth:`close` explicitly.
     """
 
     __slots__ = ("_seeds", "_fout", "_buf", "_closed", "_header_size")
@@ -214,7 +221,7 @@ class StreamEncryptor3:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
     ):
         if chunk_size <= 0:
-            raise ValueError("chunk_size must be positive")
+            raise ITBError(STATUS_BAD_INPUT, "chunk_size must be positive")
         self._seeds = (noise, data1, data2, data3, start1, start2, start3)
         self._fout = fout
         self._chunk_size = chunk_size
@@ -249,7 +256,13 @@ class StreamEncryptor3:
 
 
 class StreamDecryptor3:
-    """Triple-Ouroboros (7-seed) counterpart of :class:`StreamDecryptor`."""
+    """Triple-Ouroboros (7-seed) counterpart of :class:`StreamDecryptor`.
+
+    When :meth:`__exit__` is called during exception propagation,
+    the partial-tail check is skipped so the original exception is
+    not masked. Callers who need partial-tail detection during
+    exception paths should call :meth:`close` explicitly.
+    """
 
     __slots__ = ("_seeds", "_fout", "_buf", "_closed", "_header_size")
 
@@ -341,6 +354,8 @@ def decrypt_stream(
 ) -> None:
     """Reads concatenated ITB chunks from ``fin`` until EOF and writes
     the recovered plaintext to ``fout``."""
+    if read_size <= 0:
+        raise ITBError(STATUS_BAD_INPUT, "read_size must be positive")
     with StreamDecryptor(noise, data, start, fout) as dec:
         while True:
             buf = fin.read(read_size)
@@ -385,6 +400,8 @@ def decrypt_stream_triple(
     read_size: int = DEFAULT_CHUNK_SIZE,
 ) -> None:
     """Triple-Ouroboros (7-seed) counterpart of :func:`decrypt_stream`."""
+    if read_size <= 0:
+        raise ITBError(STATUS_BAD_INPUT, "read_size must be positive")
     with StreamDecryptor3(
         noise, data1, data2, data3, start1, start2, start3, fout
     ) as dec:

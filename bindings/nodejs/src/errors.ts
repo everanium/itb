@@ -5,10 +5,13 @@
 // the typed exceptions below via `check(status)` or
 // `errorFromStatus(status)`.
 //
-// The Node.js binding mirrors the Python binding's typed-subclass
-// hierarchy for selective `instanceof` matching (`ITBError` base +
-// `ITBEasyMismatchError` with `.field` + `ITBBlobModeMismatchError`
-// + `ITBBlobMalformedError` + `ITBBlobVersionTooNewError`).
+// The hierarchy uses typed subclasses so selective `instanceof`
+// matching can distinguish the structurally-distinct failure modes
+// (`ITBError` base + `ITBEasyMismatchError` with `.field` +
+// `ITBBlobModeMismatchError` + `ITBBlobMalformedError` +
+// `ITBBlobVersionTooNewError`). The numeric `.code` on every
+// exception preserves the "match by code" idiom alongside the
+// type-based catch hierarchy.
 //
 // Threading caveat. The textual `.message` is read from a
 // process-wide atomic inside libitb that follows the C `errno`

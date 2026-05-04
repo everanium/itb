@@ -9,10 +9,6 @@
 --  (Itb.Encryptor). Codes 19..22 are reserved for the native Blob
 --  surface (Itb.Blob). Code 99 is a generic "internal" sentinel for
 --  paths the caller cannot recover from at the binding layer.
---
---  Cross-binding alignment: Rust src/ffi.rs `STATUS_*`, C#
---  Itb.Native.Status, Node.js src/status.ts, Python itb._status all
---  carry these same names with the same numeric values.
 
 package Itb.Status is
    pragma Preelaborate;

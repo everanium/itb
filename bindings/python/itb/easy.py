@@ -1,9 +1,9 @@
 """High-level Encryptor wrapper over the libitb C ABI.
 
 Mirrors the github.com/everanium/itb/easy Go sub-package: one
-constructor call replaces the existing 7-line setup ceremony (hash
-factory, three or seven seeds, MAC closure, container-config wiring)
-and returns an :class:`Encryptor` object that owns its own
+constructor call replaces the lower-level seven-line setup ceremony
+(hash factory, three or seven seeds, MAC closure, container-config
+wiring) and returns an :class:`Encryptor` object that owns its own
 per-instance configuration. Two encryptors with different settings
 can be used in parallel without cross-contamination of the
 process-wide ITB configuration.
@@ -200,6 +200,19 @@ class Encryptor:
         multiple threads. Distinct :class:`Encryptor` instances, each
         owned by one thread, run independently against the libitb
         worker pool.
+
+    Output-buffer cache.
+        The cipher methods reuse a per-encryptor cffi buffer to skip
+        the per-call FFI size-probe round-trip; the buffer grows on
+        demand and survives between calls. Each cipher call returns
+        a fresh ``bytes`` copy of the result, so the cache is never
+        exposed to the caller — but the cached bytes (the most recent
+        ciphertext or plaintext) sit in heap memory until the next
+        cipher call overwrites them or :meth:`close` / :meth:`free`
+        zeroes them. Callers handling sensitive plaintext under a
+        heap-scan threat model should call :meth:`close` immediately
+        after the last decrypt rather than relying on garbage-
+        collection-time zeroisation.
     """
 
     __slots__ = ("_handle", "_out_buf", "_out_cap")
@@ -212,7 +225,7 @@ class Encryptor:
         mode: int = 1,
     ):
         if mode not in (1, 3):
-            raise ValueError(f"mode must be 1 (Single) or 3 (Triple), got {mode}")
+            raise ITBError(STATUS_BAD_INPUT, f"mode must be 1 (Single) or 3 (Triple), got {mode}")
         prim_arg = (primitive.encode("utf-8") if primitive else _ffi.NULL)
         # Binding-side default override: when the caller passes
         # ``mac=None`` the binding picks ``hmac-blake3`` rather than
@@ -356,11 +369,13 @@ class Encryptor:
 
     @property
     def primitive(self) -> str:
+        """Returns the canonical primitive name bound at construction."""
         return _read_str(lambda buf, cap, ol:
                          _lib.ITB_Easy_Primitive(self._handle, buf, cap, ol))
 
     @property
     def key_bits(self) -> int:
+        """Returns the ITB key width in bits."""
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_KeyBits(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -369,6 +384,7 @@ class Encryptor:
 
     @property
     def mode(self) -> int:
+        """Returns 1 (Single Ouroboros) or 3 (Triple Ouroboros)."""
         st = _ffi.new("int*")
         v = int(_lib.ITB_Easy_Mode(self._handle, st))
         if int(st[0]) != STATUS_OK:
@@ -377,6 +393,7 @@ class Encryptor:
 
     @property
     def mac_name(self) -> str:
+        """Returns the canonical MAC name bound at construction."""
         return _read_str(lambda buf, cap, ol:
                          _lib.ITB_Easy_MACName(self._handle, buf, cap, ol))
 
@@ -445,21 +462,37 @@ class Encryptor:
         """Encrypts plaintext using the encryptor's configured
         primitive / key_bits / mode and per-instance Config snapshot.
         Plain mode — does not attach a MAC tag; for authenticated
-        encryption use :meth:`encrypt_auth`."""
+        encryption use :meth:`encrypt_auth`.
+
+        Empty plaintext is rejected by libitb itself with
+        :class:`ITBError` carrying
+        :data:`itb._ffi.STATUS_ENCRYPT_FAILED` (the Go-side
+        ``Encrypt128`` family returns ``"itb: empty data"`` before
+        any work). Pass at least one byte."""
         if not isinstance(plaintext, (bytes, bytearray, memoryview)):
             raise TypeError("plaintext must be bytes-like")
         return self._cipher_call(_lib.ITB_Easy_Encrypt, plaintext)
 
     def decrypt(self, ciphertext) -> bytes:
         """Decrypts ciphertext produced by :meth:`encrypt` under the
-        same encryptor."""
+        same encryptor.
+
+        Empty ciphertext is rejected by libitb itself with
+        :class:`ITBError` carrying
+        :data:`itb._ffi.STATUS_ENCRYPT_FAILED`. Pass at least one
+        byte."""
         if not isinstance(ciphertext, (bytes, bytearray, memoryview)):
             raise TypeError("ciphertext must be bytes-like")
         return self._cipher_call(_lib.ITB_Easy_Decrypt, ciphertext)
 
     def encrypt_auth(self, plaintext) -> bytes:
         """Encrypts plaintext and attaches a MAC tag using the
-        encryptor's bound MAC closure."""
+        encryptor's bound MAC closure.
+
+        Empty plaintext is rejected by libitb itself with
+        :class:`ITBError` carrying
+        :data:`itb._ffi.STATUS_ENCRYPT_FAILED`. Pass at least one
+        byte."""
         if not isinstance(plaintext, (bytes, bytearray, memoryview)):
             raise TypeError("plaintext must be bytes-like")
         return self._cipher_call(_lib.ITB_Easy_EncryptAuth, plaintext)
@@ -468,7 +501,12 @@ class Encryptor:
         """Verifies and decrypts ciphertext produced by
         :meth:`encrypt_auth`. Raises :class:`itb.ITBError` with code
         :data:`itb._ffi.STATUS_MAC_FAILURE` on tampered ciphertext /
-        wrong MAC key."""
+        wrong MAC key.
+
+        Empty ciphertext is rejected by libitb itself with
+        :class:`ITBError` carrying
+        :data:`itb._ffi.STATUS_ENCRYPT_FAILED`. Pass at least one
+        byte."""
         if not isinstance(ciphertext, (bytes, bytearray, memoryview)):
             raise TypeError("ciphertext must be bytes-like")
         return self._cipher_call(_lib.ITB_Easy_DecryptAuth, ciphertext)

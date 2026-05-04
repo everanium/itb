@@ -54,9 +54,8 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 
 Passing `-tags=noitbasm` does not disable upstream asm in
 `zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
-same `libitb.so` is consumed by every binding (Go `easy/`, Python,
-Rust, C#, Node.js, Ada, D); the flag governs only the shared
-library, not the binding language.
+same `libitb.so` is consumed by every binding; the flag governs
+only the shared library, not the binding language.
 
 ### Compiler selection
 
@@ -100,11 +99,10 @@ The only runtime dependency is `libitb.so` itself.
 The harness compiles every `tests/test_*.d` to its own standalone
 executable under `tests/build/` and runs each in turn. Per-process
 isolation gives every test a fresh libitb global state without
-needing an in-process serial lock — the same discipline used by
-the Ada and Rust bindings. The 30 test files mirror the cross-binding
-coverage: Single + Triple Ouroboros, mixed primitives, authenticated
-paths, blob round-trip, streaming chunked I/O, error paths,
-lockSeed lifecycle.
+needing an in-process serial lock. The 30 test files mirror the
+cross-binding coverage: Single + Triple Ouroboros, mixed primitives,
+authenticated paths, blob round-trip, streaming chunked I/O, error
+paths, lockSeed lifecycle.
 
 Override the compiler via the `COMPILER` environment variable:
 
@@ -571,8 +569,7 @@ delegates that receive each emitted chunk; the convenience free
 functions `encryptStream` / `decryptStream` (and Triple variants)
 additionally take a `size_t delegate(ubyte[])` reader delegate
 that fills its buffer argument with the next slice of input bytes
-and returns the number of bytes read (zero on EOF). This is the
-D analogue of Rust's `Read` / `Write` trait closure adaptation.
+and returns the number of bytes read (zero on EOF).
 
 ```d
 import itb;
@@ -832,8 +829,7 @@ catch (ITBError e)
 }
 ```
 
-The typed-exception hierarchy mirrors the Python / C# / Node.js /
-Ada bindings:
+The typed-exception hierarchy:
 
 - `ITBError` — base class; carries `statusCode` + `detail`.
 - `ITBEasyMismatchError` — Easy Mode `importState` rejected a
@@ -851,6 +847,11 @@ The `Encryptor.importState` path additionally folds the offending
 JSON field name into the thrown exception's `.field` member; the
 field is also retrievable via the module-level
 `lastMismatchField()` accessor.
+
+**Note:** empty plaintext / ciphertext is rejected by libitb itself
+with `ITBError` carrying `statusCode == Status.EncryptFailed`
+("itb: empty data") on every cipher entry point. Pass at least one
+byte.
 
 ### Status codes
 
@@ -891,3 +892,20 @@ width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
 for invocation / environment variables / output format and
 [`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results across the
 canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `bench/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/dlang/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/dlang/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `bench/bin/itb-bench-single` /
+`bench/bin/itb-bench-triple` invocations (built ahead of time via
+`cd bench && dub build :single --compiler=ldc2 --build=release`
+and the `:triple` counterpart).
