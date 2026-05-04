@@ -49,6 +49,20 @@
 --  the lightest authenticated-mode overhead in the bench surface;
 --  routing the default through it gives the constructor-without-
 --  arguments path the lowest cost.
+--
+--  Thread-safety contract. Cipher methods (Encrypt / Decrypt /
+--  Encrypt_Auth / Decrypt_Auth) write into the per-instance
+--  output-buffer cache and are NOT safe to invoke concurrently
+--  against the same Encryptor value from multiple Ada tasks. Sharing
+--  one Encryptor across tasks requires external synchronisation
+--  (e.g. a protected object guarding every cipher call). Per-instance
+--  configuration setters (Set_Nonce_Bits / Set_Barrier_Fill /
+--  Set_Bit_Soup / Set_Lock_Soup / Set_Lock_Seed / Set_Chunk_Size)
+--  and state-serialisation methods (Export_State / Import_State)
+--  likewise require external synchronisation when called against the
+--  same Encryptor from multiple tasks. Distinct Encryptor values,
+--  each owned by one task, run independently against the libitb
+--  worker pool.
 
 private with Ada.Finalization;
 

@@ -187,6 +187,25 @@ without touching the process-wide `itb.Set*` accessors. Two
 encryptors with different settings can run concurrently without
 cross-contamination.
 
+A single `easy.Encryptor` is NOT safe for concurrent use from
+multiple goroutines — cipher methods (`Encrypt` / `Decrypt` /
+`EncryptAuth` / `DecryptAuth`), per-instance setters, and `Close` /
+`Import` all mutate per-instance state without locking. Sharing one
+`Encryptor` across goroutines requires external synchronisation;
+distinct `Encryptor` values, each owned by one goroutine, run
+independently against the libitb worker pool. By contrast, the
+low-level cipher free functions (`itb.Encrypt128Cfg` /
+`itb.Decrypt128Cfg` / `itb.EncryptAuthenticated128Cfg` /
+`itb.DecryptAuthenticated128Cfg` plus the 256 / 512 width
+counterparts) take read-only Seed pointers and allocate output per
+call — they are thread-safe under concurrent invocation on the same
+seeds. The exception is the shared `*itb.Config`: concurrent setter
+mutations on a Config that other goroutines are reading must be
+serialised by the caller. Process-wide `itb.Set*` setters
+(`SetNonceBits` / `SetBarrierFill` / `SetMaxWorkers` /
+`SetBitSoup` / `SetLockSoup`) are atomic and safe to call from any
+goroutine.
+
 ```go
 
 // Sender

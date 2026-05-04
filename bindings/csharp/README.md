@@ -667,6 +667,15 @@ threads requires external synchronisation. Distinct `Encryptor`
 handles, each owned by one thread, run independently against the
 libitb worker pool.
 
+By contrast, the low-level cipher free functions (`Cipher.Encrypt`
+/ `Cipher.Decrypt` / `Cipher.EncryptAuth` / `Cipher.DecryptAuth`
+plus the Triple counterparts) allocate output per call and are
+**thread-safe** under concurrent invocation on the same `Seed`
+handles — libitb's worker pool dispatches them independently. Two
+exceptions: `Seed.AttachLockSeed` mutates the noise Seed and must
+not race against an in-flight cipher call on it, and the
+process-wide setters above stay process-global.
+
 The `Seed`, `Mac`, `Encryptor`, `Blob128` / `Blob256` / `Blob512`
 handle types are reference types whose underlying libitb handles
 are protected by libitb's internal mutex-protected handle table.
@@ -713,6 +722,35 @@ Status codes are documented in `cmd/cshared/internal/capi/errors.go`
 and exposed as public constants on `Itb.StatusCode` (e.g.
 `StatusCode.MacFailure`, `StatusCode.SeedWidthMix`,
 `StatusCode.BadHash`).
+
+### Status codes
+
+| Code | Name | Description |
+|---|---|---|
+| 0 | `StatusCode.Ok` | Success — the only non-failure return value |
+| 1 | `StatusCode.BadHash` | Unknown hash primitive name |
+| 2 | `StatusCode.BadKeyBits` | ITB key width invalid for the chosen primitive |
+| 3 | `StatusCode.BadHandle` | FFI handle invalid or already freed |
+| 4 | `StatusCode.BadInput` | Generic shape / range / domain violation on a call argument |
+| 5 | `StatusCode.BufferTooSmall` | Output buffer cap below required size; probe-then-allocate idiom |
+| 6 | `StatusCode.EncryptFailed` | Encrypt path raised on the Go side (rare; structural / OOM) |
+| 7 | `StatusCode.DecryptFailed` | Decrypt path raised on the Go side (corrupt ciphertext shape) |
+| 8 | `StatusCode.SeedWidthMix` | Seeds passed to one call do not share the same native hash width |
+| 9 | `StatusCode.BadMac` | Unknown MAC name or key-length violates the primitive's `MinKeyBytes` |
+| 10 | `StatusCode.MacFailure` | MAC verification failed — tampered ciphertext or wrong MAC key |
+| 11 | `StatusCode.EasyClosed` | Easy Mode encryptor call after `Close()` |
+| 12 | `StatusCode.EasyMalformed` | Easy Mode `Import` blob fails JSON parse / structural check |
+| 13 | `StatusCode.EasyVersionTooNew` | Easy Mode blob version field higher than this build supports |
+| 14 | `StatusCode.EasyUnknownPrimitive` | Easy Mode blob references a primitive this build does not know |
+| 15 | `StatusCode.EasyUnknownMac` | Easy Mode blob references a MAC this build does not know |
+| 16 | `StatusCode.EasyBadKeyBits` | Easy Mode blob's `key_bits` invalid for its primitive |
+| 17 | `StatusCode.EasyMismatch` | Easy Mode blob disagrees with the receiver on `primitive` / `key_bits` / `mode` / `mac`; field name on `ItbEasyMismatchException.Field` |
+| 18 | `StatusCode.EasyLockSeedAfterEncrypt` | `SetLockSeed(1)` called after the first encrypt — must precede the first ciphertext |
+| 19 | `StatusCode.BlobModeMismatch` | Native Blob importer received a Single blob into a Triple receiver (or vice versa) |
+| 20 | `StatusCode.BlobMalformed` | Native Blob payload fails JSON parse / magic / structural check |
+| 21 | `StatusCode.BlobVersionTooNew` | Native Blob version field higher than this libitb build supports |
+| 22 | `StatusCode.BlobTooManyOpts` | Native Blob export opts mask carries unsupported bits |
+| 99 | `StatusCode.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
 ## Benchmarks
 

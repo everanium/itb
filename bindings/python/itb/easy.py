@@ -182,6 +182,24 @@ class Encryptor:
     :meth:`close` explicitly to zero PRF / MAC / seed material when
     the session ends. The :meth:`free` alias is kept for parity with
     the lower-level :class:`itb.Seed` / :class:`itb.MAC` lifecycle.
+
+    Thread-safety contract.
+        Cipher methods (:meth:`encrypt` / :meth:`decrypt` /
+        :meth:`encrypt_auth` / :meth:`decrypt_auth`) write into the
+        per-instance output-buffer cache and are **not safe** to
+        invoke concurrently against the same encryptor. Sharing one
+        :class:`Encryptor` across threads requires external
+        synchronisation (e.g. a :class:`threading.Lock` held for the
+        duration of every cipher call). Per-instance configuration
+        setters (:meth:`set_nonce_bits` / :meth:`set_barrier_fill` /
+        :meth:`set_bit_soup` / :meth:`set_lock_soup` /
+        :meth:`set_lock_seed` / :meth:`set_chunk_size`) and
+        state-serialisation methods (:meth:`export_state` /
+        :meth:`import_state`) likewise require external
+        synchronisation when called against the same encryptor from
+        multiple threads. Distinct :class:`Encryptor` instances, each
+        owned by one thread, run independently against the libitb
+        worker pool.
     """
 
     __slots__ = ("_handle", "_out_buf", "_out_cap")

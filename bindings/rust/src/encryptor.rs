@@ -255,6 +255,26 @@ pub fn peek_config(blob: &[u8]) -> Result<(String, i32, i32, String), ITBError> 
 /// (wipes PRF / MAC / seed material on the Go side and wipes the
 /// per-instance output cache on the Rust side); [`Encryptor::free`]
 /// is the consuming counterpart that surfaces release-time errors.
+///
+/// # Thread-safety contract
+///
+/// Cipher methods ([`Encryptor::encrypt`] / [`Encryptor::decrypt`] /
+/// [`Encryptor::encrypt_auth`] / [`Encryptor::decrypt_auth`]) write
+/// into the per-instance output-buffer cache and are **not safe** to
+/// invoke concurrently against the same encryptor — Rust's borrow
+/// checker rejects parallel `&mut self` calls at compile time, but
+/// callers that wrap an `Encryptor` in `Arc<Mutex<...>>` etc. must
+/// keep the lock held for the duration of every cipher call. Sharing
+/// one [`Encryptor`] across threads requires external
+/// synchronisation. Per-instance configuration setters
+/// ([`Encryptor::set_nonce_bits`] / [`Encryptor::set_barrier_fill`]
+/// / [`Encryptor::set_bit_soup`] / [`Encryptor::set_lock_soup`] /
+/// [`Encryptor::set_lock_seed`] / [`Encryptor::set_chunk_size`]) and
+/// state-serialisation methods ([`Encryptor::export_state`] /
+/// [`Encryptor::import_state`]) likewise require external
+/// synchronisation when invoked against the same encryptor from
+/// multiple threads. Distinct [`Encryptor`] values, each owned by
+/// one thread, run independently against the libitb worker pool.
 pub struct Encryptor {
     handle: usize,
     /// Per-encryptor output buffer cache. Grows on demand;

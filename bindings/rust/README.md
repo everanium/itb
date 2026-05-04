@@ -716,6 +716,16 @@ external synchronisation. Distinct [`Encryptor`] handles, each
 owned by one thread, run independently against the libitb
 worker pool.
 
+By contrast, the low-level cipher free functions ([`itb::encrypt`]
+/ [`itb::decrypt`] / [`itb::encrypt_auth`] / [`itb::decrypt_auth`]
+plus the Triple counterparts) take `&Seed` and allocate their
+output `Vec<u8>` per call — they are **thread-safe** under
+concurrent invocation on the same Seed handles, with libitb's
+worker pool dispatching them independently. Two exceptions:
+[`Seed::attach_lock_seed`] mutates the noise Seed and must not race
+against an in-flight cipher call on it, and the process-wide
+setters above stay process-global.
+
 The [`Seed`], [`MAC`], [`Encryptor`], [`Blob128`] / [`Blob256`] /
 [`Blob512`] handle types are `Send + Sync` (auto-derived). Crossing
 a handle to another thread — moving via channel, dropping on a
@@ -754,6 +764,35 @@ The [`Encryptor::import_state`] path additionally folds the
 offending JSON field name into the error message on
 `STATUS_EASY_MISMATCH`; the field is also retrievable via
 [`itb::last_mismatch_field`].
+
+### Status codes
+
+| Code | Name | Description |
+|---|---|---|
+| 0 | `STATUS_OK` | Success — the only non-failure return value |
+| 1 | `STATUS_BAD_HASH` | Unknown hash primitive name |
+| 2 | `STATUS_BAD_KEY_BITS` | ITB key width invalid for the chosen primitive |
+| 3 | `STATUS_BAD_HANDLE` | FFI handle invalid or already freed |
+| 4 | `STATUS_BAD_INPUT` | Generic shape / range / domain violation on a call argument |
+| 5 | `STATUS_BUFFER_TOO_SMALL` | Output buffer cap below required size; probe-then-allocate idiom |
+| 6 | `STATUS_ENCRYPT_FAILED` | Encrypt path raised on the Go side (rare; structural / OOM) |
+| 7 | `STATUS_DECRYPT_FAILED` | Decrypt path raised on the Go side (corrupt ciphertext shape) |
+| 8 | `STATUS_SEED_WIDTH_MIX` | Seeds passed to one call do not share the same native hash width |
+| 9 | `STATUS_BAD_MAC` | Unknown MAC name or key-length violates the primitive's `min_key_bytes` |
+| 10 | `STATUS_MAC_FAILURE` | MAC verification failed — tampered ciphertext or wrong MAC key |
+| 11 | `STATUS_EASY_CLOSED` | Easy Mode encryptor call after `close()` |
+| 12 | `STATUS_EASY_MALFORMED` | Easy Mode `import_state` blob fails JSON parse / structural check |
+| 13 | `STATUS_EASY_VERSION_TOO_NEW` | Easy Mode blob version field higher than this build supports |
+| 14 | `STATUS_EASY_UNKNOWN_PRIMITIVE` | Easy Mode blob references a primitive this build does not know |
+| 15 | `STATUS_EASY_UNKNOWN_MAC` | Easy Mode blob references a MAC this build does not know |
+| 16 | `STATUS_EASY_BAD_KEY_BITS` | Easy Mode blob's `key_bits` invalid for its primitive |
+| 17 | `STATUS_EASY_MISMATCH` | Easy Mode blob disagrees with the receiver on `primitive` / `key_bits` / `mode` / `mac`; field name retrievable via `itb::last_mismatch_field()` |
+| 18 | `STATUS_EASY_LOCKSEED_AFTER_ENCRYPT` | `set_lock_seed(1)` called after the first encrypt — must precede the first ciphertext |
+| 19 | `STATUS_BLOB_MODE_MISMATCH` | Native Blob importer received a Single blob into a Triple receiver (or vice versa) |
+| 20 | `STATUS_BLOB_MALFORMED` | Native Blob payload fails JSON parse / magic / structural check |
+| 21 | `STATUS_BLOB_VERSION_TOO_NEW` | Native Blob version field higher than this libitb build supports |
+| 22 | `STATUS_BLOB_TOO_MANY_OPTS` | Native Blob export opts mask carries unsupported bits |
+| 99 | `STATUS_INTERNAL` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
 ## Benchmarks
 
