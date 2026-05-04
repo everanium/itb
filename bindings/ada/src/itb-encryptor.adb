@@ -185,7 +185,9 @@ package body Itb.Encryptor is
    --  Probe / allocate / write helper for the Easy-Mode string
    --  getters of shape
    --      int FFI (uintptr_t h, char* out, size_t cap, size_t* outLen)
-   --  Mirrors the easy_read_str helper in the Rust binding.
+   --  Routes every non-OK return code through the Easy-Mode error
+   --  translation so the offending JSON field name is folded into the
+   --  raised exception when the rc is Status.Easy_Mismatch.
    type Easy_String_Getter is access function
      (H       : Itb.Sys.Handle;
       Out_Buf : System.Address;

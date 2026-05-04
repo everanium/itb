@@ -12,7 +12,23 @@ sudo pacman -S go go-tools python python-cffi
 
 ## Build the shared library
 
-From the repo root:
+The convenience driver `bindings/python/build.sh` builds
+`libitb.so` in one step. Run it from anywhere:
+
+```bash
+./bindings/python/build.sh
+```
+
+For hosts without AVX-512+VL CPUs, opt out of the 4-lane batched
+chain-absorb wrapper:
+
+```bash
+./bindings/python/build.sh --noitbasm
+```
+
+The driver wraps the libitb build from the repo root; the Python
+binding loads `libitb.so` at runtime via cffi with no further
+build step on the binding side. Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
@@ -29,22 +45,26 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 | (none) | engaged | engaged | Default — full asm stack |
 | <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
-For hosts without AVX-512+VL CPUs, build with the `-tags=noitbasm`
-flag:
-
-```bash
-go build -trimpath -tags=noitbasm -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-```
-
 Passing `-tags=noitbasm` does not disable upstream asm in
-`zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`.
+`zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
+same `libitb.so` is consumed by every binding; the flag governs
+only the shared library, not the binding language.
 
 ## Run tests
 
 ```bash
-python -m unittest discover bindings/python/tests
+./bindings/python/run_tests.sh
 ```
+
+The harness verifies `libitb.so` is present, exports
+`LD_LIBRARY_PATH`, and invokes
+`python -m unittest discover -v tests`. Positional arguments are
+forwarded straight to unittest (e.g.
+`./run_tests.sh tests/test_blake3.py` to scope the run to one
+file). The integration test suite under `bindings/python/tests/`
+mirrors the cross-binding coverage: Single + Triple Ouroboros,
+mixed primitives, authenticated paths, blob round-trip, streaming
+chunked I/O, error paths, lockSeed lifecycle.
 
 ## Library lookup order
 
@@ -703,10 +723,9 @@ The wrapper objects (`Seed`, `MAC`, `Encryptor`, `Blob128` /
 plain Python classes whose `__del__` finalisers call the matching
 libitb release entry points; the FFI-call layer is synchronous and
 holds the GIL, so the §11.j keepAlive trap that JIT-compiled GC
-languages (.NET `GC.KeepAlive`, Node.js `FinalizationRegistry`)
-require is N/A here — Python's reference count keeps the wrapper
-alive across the FFI call. Use `with Encryptor(...) as enc:` for
-deterministic close.
+runtimes require is N/A here — Python's reference count keeps the
+wrapper alive across the FFI call. Use `with Encryptor(...) as enc:`
+for deterministic close.
 
 ## Error model
 
@@ -720,8 +739,7 @@ except itb.ITBError as e:
     print(e.code, e)  # e.code == itb._ffi.STATUS_BAD_MAC
 ```
 
-The typed-exception hierarchy mirrors the C# / Node.js / Ada / D
-bindings:
+The typed-exception hierarchy:
 
 - `ITBError` — base class; carries `code` + the textual message.
 - `EasyMismatchError` — Easy Mode `import_state` rejected a field;
@@ -737,6 +755,10 @@ and mirrored as `itb._ffi.STATUS_*` constants. Type / value-input
 errors raise `TypeError` / `ValueError` (e.g. `plaintext` not
 bytes-like, `chunk_size` ≤ 0); only libitb-side failures route
 through `ITBError`.
+
+Note: empty plaintext / ciphertext is rejected by libitb itself
+with `ITBError(STATUS_ENCRYPT_FAILED)` ("itb: empty data") on every
+cipher entry point. Pass at least one byte.
 
 ### Status codes
 
@@ -778,3 +800,18 @@ mixed-primitive variant for both Single and Triple Ouroboros at
 invocation / environment variables / output format and
 [`easy/benchmarks/BENCH.md`](easy/benchmarks/BENCH.md) for
 recorded throughput results across the canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `easy/benchmarks/BENCH.md` is driven by the wrapper script
+in the binding root:
+
+```bash
+./bindings/python/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/python/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `python -m easy.benchmarks.bench_single` /
+`python -m easy.benchmarks.bench_triple` invocations.

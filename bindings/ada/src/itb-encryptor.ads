@@ -1,12 +1,11 @@
 --  Itb.Encryptor — Easy Mode wrapper over the libitb C ABI.
 --
---  Mirrors bindings/rust/src/encryptor.rs. One Make / Mixed_Single /
---  Mixed_Triple call replaces the lower-level seven-line setup
---  ceremony (hash factory, three or seven seeds, MAC closure,
---  container-config wiring) and yields an Encryptor value that owns
---  its own per-instance configuration. Two encryptors with different
---  settings can be used in parallel without cross-contamination of
---  the process-wide ITB configuration.
+--  One Make / Mixed_Single / Mixed_Triple call replaces the lower-
+--  level seven-line setup ceremony (hash factory, three or seven
+--  seeds, MAC closure, container-config wiring) and yields an
+--  Encryptor value that owns its own per-instance configuration. Two
+--  encryptors with different settings can be used in parallel without
+--  cross-contamination of the process-wide ITB configuration.
 --
 --  Quick start (Single Ouroboros + HMAC-BLAKE3):
 --
@@ -83,9 +82,10 @@ package Itb.Encryptor is
    --  never copied; release deterministic at scope exit.
    type Encryptor is tagged limited private;
 
-   --  Peeked metadata record returned by Peek_Config. Mirrors the
-   --  four-tuple Rust returns: primitive name, ITB key width in bits,
-   --  Ouroboros mode (1 / 3), and the canonical MAC name.
+   --  Peeked metadata record returned by Peek_Config. Carries the
+   --  bound configuration as four named fields: primitive name, ITB
+   --  key width in bits, Ouroboros mode (1 / 3), and the canonical
+   --  MAC name.
    type Peeked_Config is record
       Primitive : Ada.Strings.Unbounded.Unbounded_String;
       Key_Bits  : Integer := 0;

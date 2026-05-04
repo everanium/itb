@@ -1,13 +1,13 @@
 /// Native-Blob wrapper over the libitb C ABI.
 ///
-/// Mirrors the Rust binding's `Blob128` / `Blob256` / `Blob512` types: a
-/// width-specific container that packs the low-level encryptor material
-/// (per-seed hash key + components + optional dedicated lockSeed +
-/// optional MAC key + name) plus the captured process-wide
-/// configuration into one self-describing JSON blob. Intended for the
-/// low-level encrypt / decrypt path where each seed slot may carry a
-/// different primitive — the high-level [`itb.encryptor.Encryptor`]
-/// wraps a narrower one-primitive-per-encryptor surface.
+/// Provides the `Blob128` / `Blob256` / `Blob512` width-specific
+/// containers that pack the low-level encryptor material (per-seed
+/// hash key + components + optional dedicated lockSeed + optional MAC
+/// key + name) plus the captured process-wide configuration into one
+/// self-describing JSON blob. Intended for the low-level encrypt /
+/// decrypt path where each seed slot may carry a different primitive —
+/// the high-level [`itb.encryptor.Encryptor`] wraps a narrower
+/// one-primitive-per-encryptor surface.
 ///
 /// Quick start (sender, Single Ouroboros + Areion-SoEM-512 + KMAC256):
 ///
@@ -72,11 +72,10 @@ import itb.sys;
 // --------------------------------------------------------------------
 
 /// Typed enumeration of the blob slot identifiers. The numeric values
-/// match the `SLOT_*` constants in the Rust binding (and the Go-side
-/// `BlobSlot*` constants in `cmd/cshared/internal/capi/blob_handles.go`)
-/// bit-identically: `N = 0`, `D = 1`, `S = 2`, `L = 3`, `D1..D3 = 4..6`,
-/// `S1..S3 = 7..9`. The enum is implicitly convertible to `int` for
-/// the FFI call sites.
+/// match the Go-side `BlobSlot*` constants in
+/// `cmd/cshared/internal/capi/blob_handles.go` bit-identically: `N = 0`,
+/// `D = 1`, `S = 2`, `L = 3`, `D1..D3 = 4..6`, `S1..S3 = 7..9`. The
+/// enum is implicitly convertible to `int` for the FFI call sites.
 enum BlobSlot : int
 {
     /// Noise seed (Single Ouroboros).
@@ -106,8 +105,9 @@ enum BlobSlot : int
 // --------------------------------------------------------------------
 
 /// Export option bitmask. Combine via the bitwise-or operator: e.g.
-/// `BlobOpt.LockSeed | BlobOpt.MAC`. The values match the Rust binding's
-/// `OPT_LOCKSEED` / `OPT_MAC` constants bit-identically.
+/// `BlobOpt.LockSeed | BlobOpt.MAC`. The values match the Go-side
+/// `BlobOpt*` constants in
+/// `cmd/cshared/internal/capi/blob_handles.go` bit-identically.
 ///
 /// `LockSeed` opts the `l` slot's KeyL + components into the exported
 /// blob. `MAC` opts the MAC key + name. Both must be non-empty on the

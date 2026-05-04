@@ -441,9 +441,9 @@ static LIB: OnceLock<LibItb> = OnceLock::new();
 /// Returns the process-wide library handle, loading it on first call.
 ///
 /// Panics with a descriptive message if the library cannot be located
-/// or any expected symbol is missing. This mirrors Python's `_ffi.py`
-/// where `_lib = _ffi.dlopen(...)` runs at module import time and
-/// raises `OSError` on failure.
+/// or any expected symbol is missing. The eager-load policy surfaces
+/// misconfigured library paths and ABI mismatches at the first use of
+/// any FFI entry point rather than at the failing call site.
 pub(crate) fn lib() -> &'static LibItb {
     LIB.get_or_init(|| match unsafe { LibItb::load() } {
         Ok(l) => l,
@@ -578,7 +578,7 @@ impl LibItb {
 }
 
 // --------------------------------------------------------------------
-// Library-path resolution — mirrors Python's _resolve_library_path.
+// Library-path resolution.
 // --------------------------------------------------------------------
 
 fn platform_lib_dir() -> &'static str {

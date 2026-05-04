@@ -15,11 +15,30 @@ sudo pacman -S go go-tools nodejs npm
 
 ## Build the shared library
 
-From the repo root:
+The convenience driver `bindings/nodejs/build.sh` builds
+`libitb.so` plus the Node.js / TypeScript binding's compiled
+output in one step. Run it from anywhere:
+
+```bash
+./bindings/nodejs/build.sh
+```
+
+For hosts without AVX-512+VL CPUs, opt out of the 4-lane batched
+chain-absorb wrapper:
+
+```bash
+./bindings/nodejs/build.sh --noitbasm
+```
+
+The driver expands to three underlying steps — building libitb
+from the repo root, running `npm install` if `node_modules/` is
+missing, then `npm run build` (TypeScript compile to `dist/`) on
+the binding side. Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
+cd bindings/nodejs && npm install && npm run build
 ```
 
 (macOS produces `libitb.dylib` under `dist/darwin-<arch>/`,
@@ -32,19 +51,10 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 | (none) | engaged | engaged | Default — full asm stack |
 | <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
-For hosts without AVX-512+VL CPUs, build with the `-tags=noitbasm`
-flag:
-
-```bash
-go build -trimpath -tags=noitbasm -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-```
-
 Passing `-tags=noitbasm` does not disable upstream asm in
 `zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
-same `libitb.so` is consumed by every binding (Go `easy/`, Python,
-Rust, C# / .NET, Node.js / TypeScript); the flag governs only the
-shared library, not the binding language.
+same `libitb.so` is consumed by every binding; the flag governs
+only the shared library, not the binding language.
 
 ## Add to a Node.js project
 
@@ -76,16 +86,20 @@ dev dependencies are `typescript` and `@types/node`.
 ## Run the integration test suite
 
 ```bash
-cd bindings/nodejs
-npm test
+./bindings/nodejs/run_tests.sh
 ```
 
-The integration test suite under `bindings/nodejs/test/` mirrors
-the Python and Rust binding's coverage — Single + Triple
-Ouroboros, mixed primitives, authenticated paths, blob round-trip,
-streaming chunked I/O, error paths, lockSeed lifecycle. Compiles
-the source + tests through `tsconfig.test.json` to `dist-test/`,
-then runs `node --test 'dist-test/test/**/*.test.js'`.
+The harness verifies `libitb.so` is present plus `node_modules/`
+exists, exports `LD_LIBRARY_PATH`, and invokes `npm test`.
+Positional arguments are forwarded straight to the npm test script
+(e.g. `./run_tests.sh dist-test/test/easy/test_blake3.test.js` to
+scope the run to one file). The integration test suite under
+`bindings/nodejs/test/` mirrors the cross-binding coverage:
+Single + Triple Ouroboros, mixed primitives, authenticated paths,
+blob round-trip, streaming chunked I/O, error paths, lockSeed
+lifecycle. `npm test` compiles the source + tests through
+`tsconfig.test.json` to `dist-test/`, then runs
+`node --test 'dist-test/test/**/*.test.js'`.
 
 ## Library lookup order
 
@@ -624,6 +638,10 @@ Type / value-input errors raise plain JavaScript `TypeError` /
 `RangeError` (e.g. `plaintext` not a `Uint8Array`, `mode` not in
 `{1, 3}`, `chunkSize ≤ 0`).
 
+**Note:** empty plaintext / ciphertext is rejected by libitb itself
+with `ITBError(Status.EncryptFailed)` ("itb: empty data") on every
+cipher entry point. Pass at least one byte.
+
 ### Status codes
 
 | Code | Name | Description |
@@ -663,3 +681,18 @@ width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
 for invocation / environment variables / output format and
 [`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results
 across the canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `bench/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/nodejs/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/nodejs/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `npm run bench:single` / `npm run bench:triple`
+invocations.

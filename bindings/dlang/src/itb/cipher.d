@@ -1,6 +1,6 @@
 /// Low-level encrypt / decrypt entry points.
 ///
-/// Mirrors the free functions exposed by Rust's `encrypt` module:
+/// Exposes the libitb encrypt / decrypt surface as free functions:
 /// `encrypt` / `decrypt` over a `(noise, data, start)` Single Ouroboros
 /// seed trio, `encryptTriple` / `decryptTriple` over a seven-seed
 /// Triple Ouroboros configuration, and the four authenticated `*Auth`
@@ -13,6 +13,11 @@
 /// allocation is GC-managed; for the throughput-sensitive Easy Mode
 /// surface, the per-encryptor output buffer cache (in
 /// `itb.encryptor`) skips the second-call round-trip.
+///
+/// Empty plaintext / ciphertext is rejected by libitb itself with
+/// `Status.EncryptFailed` (the Go-side `Encrypt128` / `Decrypt128`
+/// family returns `"itb: empty data"` before any work). The binding
+/// propagates the rejection verbatim — pass at least one byte.
 module itb.cipher;
 
 import itb.errors : check, ITBError, raiseFor;

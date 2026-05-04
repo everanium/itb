@@ -1,12 +1,13 @@
 // Low-level encrypt / decrypt entry points.
 //
-// Mirrors the free functions exposed by Python's itb._ffi
-// (encrypt / decrypt / encrypt_triple / decrypt_triple plus the four
-// authenticated *_auth variants) and the Rust binding's
-// itb::encrypt module. Every method follows the probe-allocate-call
-// idiom: a first call with a NULL out-buffer reports the required
-// output capacity, and a second call writes the ciphertext / plaintext
-// into the freshly allocated array.
+// Exposes the libitb encrypt / decrypt surface as static methods:
+// Encrypt / Decrypt over a Single Ouroboros (noise, data, start) seed
+// trio, EncryptTriple / DecryptTriple over a seven-seed Triple
+// Ouroboros configuration, plus the four authenticated *Auth variants
+// that take an additional Mac handle. Every method follows the
+// probe-allocate-call idiom: a first call with a NULL out-buffer
+// reports the required output capacity, and a second call writes the
+// ciphertext / plaintext into the freshly allocated array.
 
 using Itb.Native;
 
@@ -20,6 +21,12 @@ namespace Itb;
 /// seven-seed Triple Ouroboros configuration, and the four
 /// authenticated variants that take an additional <see cref="Mac"/>
 /// handle.
+///
+/// <para>Empty plaintext / ciphertext is rejected by libitb itself
+/// with <see cref="StatusCode.EncryptFailed"/> (the Go-side
+/// <c>Encrypt128</c> / <c>Decrypt128</c> family returns
+/// <c>"itb: empty data"</c> before any work). The binding propagates
+/// the rejection verbatim — pass at least one byte.</para>
 /// </summary>
 public static class Cipher
 {

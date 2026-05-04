@@ -1,7 +1,6 @@
 // ITB seed handle.
 //
-// Mirrors the Python binding's Seed class and the Rust binding's
-// Seed struct — a thin Disposable wrapper over ITB_NewSeed /
+// Provides a thin Disposable wrapper over ITB_NewSeed /
 // ITB_FreeSeed plus introspection accessors (Width, HashName,
 // GetHashKey, GetComponents) and the deterministic-rebuild path
 // FromComponents.

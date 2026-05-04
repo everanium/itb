@@ -1,11 +1,11 @@
 // Library-level read-only metadata, registry enumerators, mutable
 // process-global configuration, and the stream-frame parsing helper.
 //
-// All members are static. The class mirrors the top-level free
-// functions exposed by the Python binding (itb.version, itb.list_hashes,
-// itb.list_macs, itb.set_bit_soup, etc.) and the registry helpers in
-// the Rust binding's crate root (itb::version, itb::list_hashes,
-// itb::list_macs, itb::set_bit_soup).
+// All members are static. The class exposes the libitb free-function
+// surface that is not tied to a specific seed / MAC / encryptor
+// instance: hash + MAC catalogs, version, the global Set / Get
+// configuration knobs, and the ParseChunkLen helper used by streaming
+// consumers.
 
 using Itb.Native;
 

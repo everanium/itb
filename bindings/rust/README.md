@@ -14,11 +14,29 @@ sudo pacman -S go go-tools rustup cargo cargo-all-features
 
 ## Build the shared library
 
-From the repo root:
+The convenience driver `bindings/rust/build.sh` builds `libitb.so`
+plus the Rust crate's release artefact in one step. Run it from
+anywhere:
+
+```bash
+./bindings/rust/build.sh
+```
+
+For hosts without AVX-512+VL CPUs, opt out of the 4-lane batched
+chain-absorb wrapper:
+
+```bash
+./bindings/rust/build.sh --noitbasm
+```
+
+The driver expands to two underlying steps — building libitb from
+the repo root, then `cargo build --release` on the binding side.
+Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
+cd bindings/rust && cargo build --release
 ```
 
 (macOS produces `libitb.dylib` under `dist/darwin-<arch>/`,
@@ -31,19 +49,10 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 | (none) | engaged | engaged | Default — full asm stack |
 | <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
 
-For hosts without AVX-512+VL CPUs, build with the `-tags=noitbasm`
-flag:
-
-```bash
-go build -trimpath -tags=noitbasm -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-```
-
 Passing `-tags=noitbasm` does not disable upstream asm in
 `zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
-same `libitb.so` is consumed by every binding (Go `easy/`, Python,
-Rust); the flag governs only the shared library, not the binding
-language.
+same `libitb.so` is consumed by every binding; the flag governs
+only the shared library, not the binding language.
 
 ## Add to a Cargo project
 
@@ -68,13 +77,17 @@ Crate metadata: `name = "itb"`, `version = "0.1.0"`, `edition =
 ## Run the integration test suite
 
 ```bash
-cargo test --release
+./bindings/rust/run_tests.sh
 ```
 
-The integration test suite under `bindings/rust/tests/` mirrors the Python
-binding's coverage — Single + Triple Ouroboros, mixed primitives,
-authenticated paths, blob round-trip, streaming chunked I/O, error
-paths, lockSeed lifecycle.
+The harness verifies `libitb.so` is present, exports
+`LD_LIBRARY_PATH`, and invokes `cargo test --release`. Positional
+arguments are forwarded straight to cargo (e.g.
+`./run_tests.sh --test test_blake3` to scope the run to one
+binary). The integration test suite under `bindings/rust/tests/`
+mirrors the cross-binding coverage: Single + Triple Ouroboros,
+mixed primitives, authenticated paths, blob round-trip, streaming
+chunked I/O, error paths, lockSeed lifecycle.
 
 ## Library lookup order
 
@@ -765,6 +778,10 @@ offending JSON field name into the error message on
 `STATUS_EASY_MISMATCH`; the field is also retrievable via
 [`itb::last_mismatch_field`].
 
+**Note:** empty plaintext / ciphertext is rejected by libitb itself
+with `ITBError(STATUS_ENCRYPT_FAILED)` ("itb: empty data") on every
+cipher entry point. Pass at least one byte.
+
 ### Status codes
 
 | Code | Name | Description |
@@ -805,6 +822,21 @@ mixed-primitive variant for both Single and Triple Ouroboros at
 environment variables / output format and
 [`benches/BENCH.md`](benches/BENCH.md) for recorded throughput
 results across the canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `benches/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/rust/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/rust/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `cargo bench --bench bench_single` /
+`cargo bench --bench bench_triple` invocations.
 
 [`Encryptor`]: src/encryptor.rs
 [`Encryptor::new`]: src/encryptor.rs

@@ -1,8 +1,7 @@
 // Low-level encrypt / decrypt entry points (Single + Triple, plain +
-// authenticated). Mirrors bindings/python/itb/_ffi.py top-level
-// `encrypt`, `decrypt`, `encrypt_triple`, `decrypt_triple`,
-// `encrypt_auth`, `decrypt_auth`, `encrypt_auth_triple`,
-// `decrypt_auth_triple`.
+// authenticated). Exposes the libitb encrypt / decrypt surface as
+// free functions: `encrypt`, `decrypt`, `encryptTriple`,
+// `decryptTriple`, plus the four authenticated `*Auth` variants.
 //
 // Output sizing follows the libitb probe-then-write protocol: the
 // first call with `cap=0` returns `Status.BufferTooSmall` and writes
@@ -11,6 +10,11 @@
 //
 // All seeds passed to one call must share the same native hash
 // width. Mixing widths raises `ITBError(SeedWidthMix)`.
+//
+// Empty plaintext / ciphertext is rejected by libitb itself with
+// `Status.EncryptFailed` (the Go-side `Encrypt128` / `Decrypt128`
+// family returns `"itb: empty data"` before any work). The binding
+// propagates the rejection verbatim — pass at least one byte.
 
 import { errorFromStatus } from './errors.js';
 import type { MAC } from './mac.js';

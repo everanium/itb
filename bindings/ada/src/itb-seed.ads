@@ -1,8 +1,8 @@
 --  Itb.Seed — RAII wrapper over an ITB_NewSeed handle.
 --
---  Mirrors bindings/rust/src/seed.rs. The Seed type is a limited
---  controlled type; its Finalize procedure releases the underlying
---  libitb handle deterministically when the Seed goes out of scope.
+--  The Seed type is a limited controlled type; its Finalize
+--  procedure releases the underlying libitb handle deterministically
+--  when the Seed goes out of scope.
 --
 --  Constructors:
 --    Make             — CSPRNG-keyed seed with the named hash and

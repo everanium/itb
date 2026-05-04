@@ -113,7 +113,7 @@ describe('test_easy_roundtrip', () => {
 
   test('bad mode', () => {
     assert.throws(() => new Encryptor('blake3', 1024, 'kmac256', 2),
-      (err: unknown) => err instanceof RangeError);
+      (err: unknown) => err instanceof ITBError);
   });
 
   // ─── TestRoundtripSingle ──────────────────────────────────────────

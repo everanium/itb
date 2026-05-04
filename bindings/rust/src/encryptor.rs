@@ -13,7 +13,7 @@
 //! ```no_run
 //! use itb::Encryptor;
 //!
-//! let mut enc = Encryptor::new(Some("blake3"), Some(1024), Some("kmac256"), 1).unwrap();
+//! let mut enc = Encryptor::new(Some("blake3"), Some(1024), Some("hmac-blake3"), 1).unwrap();
 //! let ct = enc.encrypt_auth(b"hello world").unwrap();
 //! let pt = enc.decrypt_auth(&ct).unwrap();
 //! assert_eq!(pt, b"hello world");
@@ -24,7 +24,7 @@
 //! ```no_run
 //! use itb::Encryptor;
 //!
-//! let mut enc = Encryptor::new(Some("areion512"), Some(2048), Some("kmac256"), 3).unwrap();
+//! let mut enc = Encryptor::new(Some("areion512"), Some(2048), Some("hmac-blake3"), 3).unwrap();
 //! let big: Vec<u8> = b"large payload".repeat(1000);
 //! let ct = enc.encrypt(&big).unwrap();
 //! let pt = enc.decrypt(&ct).unwrap();
@@ -36,7 +36,7 @@
 //! ```no_run
 //! use itb::{Encryptor, encryptor::peek_config};
 //!
-//! # let enc = Encryptor::new(Some("blake3"), Some(1024), Some("kmac256"), 1).unwrap();
+//! # let enc = Encryptor::new(Some("blake3"), Some(1024), Some("hmac-blake3"), 1).unwrap();
 //! let blob = enc.export().unwrap();
 //! // ... save blob to disk / KMS / wire ...
 //! let (primitive, key_bits, mode, mac_name) = peek_config(&blob).unwrap();
@@ -298,7 +298,7 @@ impl Encryptor {
     ///
     /// `mac` is a canonical MAC name from [`crate::list_macs`] —
     /// `"kmac256"`, `"hmac-sha256"`, or `"hmac-blake3"`. `None`
-    /// selects `"kmac256"`.
+    /// selects `"hmac-blake3"`.
     ///
     /// `mode` is 1 (Single Ouroboros, 3 seeds — noise / data / start)
     /// or 3 (Triple Ouroboros, 7 seeds — noise + 3 pairs of data /
@@ -1058,7 +1058,7 @@ impl Encryptor {
         }
         // Wipe the output buffer cache; the Go-side close already
         // happens implicitly on Free, so skip the close round-trip
-        // here and call Free directly to mirror Python's `free()`.
+        // here and call Free directly.
         for b in self.out_buf.iter_mut() {
             *b = 0;
         }

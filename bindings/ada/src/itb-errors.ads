@@ -3,17 +3,16 @@
 --  numeric status code to the right exception with the right
 --  structured payload attached.
 --
---  Cross-binding parity: this 5-exception layout mirrors the
---  Python / C# / Node.js typed-exception hierarchy
+--  The 5-exception layout lets callers catch the structurally-distinct
+--  failure modes selectively while still falling through to the base
+--  exception for generic handling:
 --    base                   ← Itb_Error
 --    EasyMismatch (.field)  ← Itb_Easy_Mismatch_Error
 --    BlobModeMismatch       ← Itb_Blob_Mode_Mismatch_Error
 --    BlobMalformed          ← Itb_Blob_Malformed_Error
 --    BlobVersionTooNew      ← Itb_Blob_Version_Too_New_Error
---  Rust uses an enum-variant ITBError instead of subclassing; the Ada
---  multi-exception form is closer to the Python idiom but preserves
---  the Rust "match by code" capability through the Status_Code
---  accessor below.
+--  The Status_Code accessor below preserves the "match by code" idiom
+--  alongside the type-based exception hierarchy.
 --
 --  Structured payload format. The Exception_Message attached to every
 --  raise carries three pipe-separated fields, e.g.

@@ -1,10 +1,9 @@
 //! Registry, library configuration, and stream-header helpers.
 //!
-//! Mirrors the free functions exposed by the Python binding's
-//! `itb._ffi` module that are not tied to a specific seed / MAC /
-//! encryptor instance: hash + MAC catalogs, `version()`, the
-//! global `set_*` / `get_*` knobs, and the `parse_chunk_len()` helper
-//! used by streaming consumers.
+//! Exposes the libitb free-function surface that is not tied to a
+//! specific seed / MAC / encryptor instance: hash + MAC catalogs,
+//! `version()`, the global `set_*` / `get_*` knobs, and the
+//! `parse_chunk_len()` helper used by streaming consumers.
 
 use std::ffi::c_void;
 

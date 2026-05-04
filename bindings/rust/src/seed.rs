@@ -1,9 +1,9 @@
 //! ITB seed handle.
 //!
-//! Mirrors the Python binding's `Seed` class — a thin RAII wrapper
-//! over `ITB_NewSeed` / `ITB_FreeSeed` plus the introspection accessors
-//! (`width`, `hash_name`, `hash_key`, `components`) and the
-//! deterministic-rebuild path `Seed::from_components`.
+//! Provides a thin RAII wrapper over `ITB_NewSeed` / `ITB_FreeSeed`
+//! plus the introspection accessors (`width`, `hash_name`, `hash_key`,
+//! `components`) and the deterministic-rebuild path
+//! `Seed::from_components`.
 
 use std::ffi::{c_char, CString};
 
