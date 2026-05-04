@@ -9,8 +9,8 @@
 #   Pass 4: Triple Ouroboros, ITB_LOCKSEED=1
 #
 # The bench binaries are produced by
-#   `cd bench && dub build :single --compiler=ldc2 --build=release`
-#   `cd bench && dub build :triple --compiler=ldc2 --build=release`
+#   `cd bench && dub build :single --compiler=dmd --build=release`
+#   `cd bench && dub build :triple --compiler=dmd --build=release`
 # into `bench/bin/itb-bench-{single,triple}`. Each pass walks 40
 # cases at the configured 5-second per-case budget; total wall-clock
 # ~30-40 minutes.
@@ -45,8 +45,8 @@ fi
 BENCH_BIN_DIR="bench/bin"
 if [[ ! -x "$BENCH_BIN_DIR/itb-bench-single" || ! -x "$BENCH_BIN_DIR/itb-bench-triple" ]]; then
     echo "error: bench binaries missing at $BENCH_BIN_DIR/" >&2
-    echo "       cd bench && dub build :single --compiler=ldc2 --build=release" >&2
-    echo "       cd bench && dub build :triple --compiler=ldc2 --build=release" >&2
+    echo "       cd bench && dub build :single --compiler=dmd --build=release" >&2
+    echo "       cd bench && dub build :triple --compiler=dmd --build=release" >&2
     exit 1
 fi
 

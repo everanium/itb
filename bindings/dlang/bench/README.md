@@ -58,24 +58,23 @@ specifics.
 From the binding root (`bindings/dlang/`):
 
 ```bash
-dub build :single --compiler=ldc2
-dub build :triple --compiler=ldc2
+dub build :single --compiler=dmd --build=release
+dub build :triple --compiler=dmd --build=release
 ./bench/bin/itb-bench-single
 ./bench/bin/itb-bench-triple
 ```
 
-LDC2 produces meaningfully faster bench binaries than DMD; DMD is
-fine for compile-only verification but the recorded numbers in
-[BENCH.md](BENCH.md) come from LDC2 with the default
-optimisation level. Pass `--build=release` to dub when
-benchmarking with DMD (the default `debug` build emits debug
-symbols and skips inlining, systematically under-reporting
-throughput by 2-3x).
+DMD release produces meaningfully faster bench binaries than LDC2
+release on this binding's FFI hot path — counter-intuitive but
+reproducible: LDC2 -O3 release pessimises the `extern (C)` call
+pattern that dominates per-call cost on the 16 MiB encrypt / decrypt
+path, dropping throughput by 25-66% versus DMD release on the
+single-primitive arms. The recorded numbers in [BENCH.md](BENCH.md)
+come from DMD with `--build=release`.
 
-```bash
-dub build :single --compiler=dmd --build=release
-dub build :triple --compiler=dmd --build=release
-```
+The DMD default `debug` build emits debug symbols and skips inlining,
+systematically under-reporting throughput by 2-3x — always pass
+`--build=release` when benchmarking.
 
 Both binaries land in `bench/bin/` after build.
 

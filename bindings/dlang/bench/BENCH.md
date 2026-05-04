@@ -43,31 +43,31 @@ build-tag table in [`../README.md`](../README.md) for the
 
 | Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
 |---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | PRF | 135 | 188 | 124 | 176 |
-| **Areion-SoEM-512** | 512 | PRF | 139 | 193 | 135 | 183 |
-| **SipHash-2-4** | 128 | PRF | 153 | 198 | 143 | 189 |
-| **AES-CMAC** | 128 | PRF | 189 | 267 | 174 | 249 |
-| **BLAKE2b-512** | 512 | PRF | 98 | 119 | 92 | 164 |
-| **BLAKE2b-256** | 256 | PRF | 69 | 80 | 66 | 77 |
-| **BLAKE2s** | 256 | PRF | 100 | 119 | 98 | 115 |
-| **BLAKE3** | 256 | PRF | 122 | 149 | 116 | 144 |
-| **ChaCha20** | 256 | PRF | 110 | 131 | 105 | 124 |
-| **Mixed** | 256 | PRF | 110 | 129 | 104 | 127 |
+| **Areion-SoEM-256** | 256 | PRF | 187 | 272 | 180 | 268 |
+| **Areion-SoEM-512** | 512 | PRF | 203 | 281 | 187 | 270 |
+| **SipHash-2-4** | 128 | PRF | 150 | 196 | 143 | 187 |
+| **AES-CMAC** | 128 | PRF | 183 | 253 | 170 | 238 |
+| **BLAKE2b-512** | 512 | PRF | 136 | 170 | 128 | 162 |
+| **BLAKE2b-256** | 256 | PRF | 88 | 110 | 91 | 104 |
+| **BLAKE2s** | 256 | PRF | 102 | 118 | 87 | 116 |
+| **BLAKE3** | 256 | PRF | 122 | 149 | 115 | 140 |
+| **ChaCha20** | 256 | PRF | 110 | 131 | 106 | 124 |
+| **Mixed** | 256 | PRF | 108 | 128 | 105 | 127 |
 
 ### ITB Triple 1024-bit (security: P x 2^(3x1024) = P x 2^3072)
 
 | Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
 |---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | PRF | 169 | 195 | 143 | 184 |
-| **Areion-SoEM-512** | 512 | PRF | 172 | 206 | 152 | 193 |
-| **SipHash-2-4** | 128 | PRF | 186 | 212 | 175 | 200 |
-| **AES-CMAC** | 128 | PRF | 250 | 252 | 188 | 278 |
-| **BLAKE2b-512** | 512 | PRF | 111 | 120 | 101 | 176 |
-| **BLAKE2b-256** | 256 | PRF | 75 | 80 | 72 | 78 |
-| **BLAKE2s** | 256 | PRF | 115 | 123 | 109 | 119 |
-| **BLAKE3** | 256 | PRF | 144 | 155 | 134 | 150 |
-| **ChaCha20** | 256 | PRF | 127 | 134 | 119 | 131 |
-| **Mixed** | 256 | PRF | 124 | 133 | 119 | 132 |
+| **Areion-SoEM-256** | 256 | PRF | 278 | 334 | 242 | 311 |
+| **Areion-SoEM-512** | 512 | PRF | 287 | 345 | 253 | 318 |
+| **SipHash-2-4** | 128 | PRF | 185 | 199 | 174 | 203 |
+| **AES-CMAC** | 128 | PRF | 255 | 299 | 226 | 255 |
+| **BLAKE2b-512** | 512 | PRF | 166 | 183 | 155 | 177 |
+| **BLAKE2b-256** | 256 | PRF | 108 | 114 | 103 | 112 |
+| **BLAKE2s** | 256 | PRF | 118 | 126 | 112 | 122 |
+| **BLAKE3** | 256 | PRF | 146 | 159 | 138 | 153 |
+| **ChaCha20** | 256 | PRF | 129 | 138 | 122 | 134 |
+| **Mixed** | 256 | PRF | 124 | 135 | 118 | 131 |
 
 ## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, LockSeed mode)
 
@@ -79,31 +79,31 @@ on-direction. Numbers below run with all three overlays active.
 
 | Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
 |---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | PRF | 58 | 68 | 59 | 68 |
-| **Areion-SoEM-512** | 512 | PRF | 49 | 54 | 44 | 51 |
-| **SipHash-2-4** | 128 | PRF | 69 | 74 | 64 | 74 |
-| **AES-CMAC** | 128 | PRF | 74 | 86 | 74 | 85 |
-| **BLAKE2b-512** | 512 | PRF | 42 | 49 | 42 | 44 |
-| **BLAKE2b-256** | 256 | PRF | 40 | 40 | 40 | 39 |
-| **BLAKE2s** | 256 | PRF | 43 | 46 | 41 | 44 |
-| **BLAKE3** | 256 | PRF | 41 | 46 | 41 | 44 |
-| **ChaCha20** | 256 | PRF | 46 | 50 | 37 | 44 |
-| **Mixed** | 256 | PRF | 48 | 55 | 48 | 47 |
+| **Areion-SoEM-256** | 256 | PRF | 56 | 66 | 57 | 68 |
+| **Areion-SoEM-512** | 512 | PRF | 49 | 56 | 49 | 54 |
+| **SipHash-2-4** | 128 | PRF | 67 | 74 | 63 | 73 |
+| **AES-CMAC** | 128 | PRF | 74 | 84 | 69 | 78 |
+| **BLAKE2b-512** | 512 | PRF | 46 | 50 | 45 | 49 |
+| **BLAKE2b-256** | 256 | PRF | 42 | 45 | 42 | 44 |
+| **BLAKE2s** | 256 | PRF | 44 | 47 | 43 | 46 |
+| **BLAKE3** | 256 | PRF | 43 | 44 | 42 | 43 |
+| **ChaCha20** | 256 | PRF | 46 | 47 | 36 | 39 |
+| **Mixed** | 256 | PRF | 46 | 54 | 46 | 53 |
 
 ### ITB Triple 1024-bit (security: P x 2^(3x1024) = P x 2^3072)
 
 | Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
 |---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | PRF | 62 | 67 | 61 | 64 |
-| **Areion-SoEM-512** | 512 | PRF | 53 | 55 | 52 | 55 |
-| **SipHash-2-4** | 128 | PRF | 68 | 70 | 67 | 72 |
-| **AES-CMAC** | 128 | PRF | 76 | 80 | 72 | 61 |
-| **BLAKE2b-512** | 512 | PRF | 46 | 50 | 45 | 48 |
-| **BLAKE2b-256** | 256 | PRF | 43 | 44 | 42 | 43 |
-| **BLAKE2s** | 256 | PRF | 44 | 45 | 43 | 45 |
-| **BLAKE3** | 256 | PRF | 43 | 44 | 41 | 43 |
-| **ChaCha20** | 256 | PRF | 48 | 50 | 40 | 43 |
-| **Mixed** | 256 | PRF | 49 | 52 | 46 | 50 |
+| **Areion-SoEM-256** | 256 | PRF | 61 | 64 | 61 | 64 |
+| **Areion-SoEM-512** | 512 | PRF | 53 | 54 | 51 | 54 |
+| **SipHash-2-4** | 128 | PRF | 70 | 73 | 67 | 71 |
+| **AES-CMAC** | 128 | PRF | 74 | 82 | 75 | 80 |
+| **BLAKE2b-512** | 512 | PRF | 47 | 48 | 46 | 47 |
+| **BLAKE2b-256** | 256 | PRF | 43 | 44 | 43 | 44 |
+| **BLAKE2s** | 256 | PRF | 43 | 45 | 43 | 45 |
+| **BLAKE3** | 256 | PRF | 44 | 45 | 43 | 45 |
+| **ChaCha20** | 256 | PRF | 48 | 49 | 40 | 44 |
+| **Mixed** | 256 | PRF | 47 | 51 | 48 | 50 |
 
 ## Notes
 
