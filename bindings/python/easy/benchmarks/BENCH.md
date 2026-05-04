@@ -1,4 +1,4 @@
-# ITB Python Binding — Easy Mode Benchmark Results
+# ITB Python Binding - Easy Mode Benchmark Results
 
 Throughput (MB/s) of `itb.Encryptor.encrypt` / `decrypt` /
 `encrypt_auth` / `decrypt_auth` over the libitb c-shared library

@@ -1,4 +1,4 @@
-# ITB Node.js Binding — Easy Mode Benchmark Results
+# ITB Node.js / TypeScript Binding - Easy Mode Benchmark Results
 
 Throughput (MB/s) of `Encryptor.encrypt` / `decrypt` / `encryptAuth`
 / `decryptAuth` over the libitb c-shared library through the
