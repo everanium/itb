@@ -1,4 +1,4 @@
-# ITB Easy-Mode Rust benchmarks
+# ITB Rust Binding - Easy Mode Benchmark
 
 Two binaries cover the Easy-Mode encryption / decryption surface
 exposed by the Rust binding:

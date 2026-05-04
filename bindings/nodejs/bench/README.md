@@ -1,4 +1,4 @@
-# ITB Easy-Mode Node.js benchmarks
+# ITB Node.js / TypeScript Binding - Easy Mode Benchmark
 
 Two scripts cover the Easy-Mode encryption / decryption surface
 exposed by the Node.js binding:

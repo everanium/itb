@@ -1,4 +1,4 @@
-# ITB Easy-Mode Python benchmarks
+# ITB Python Binding - Easy Mode Benchmark
 
 Two scripts cover the Easy-Mode encryption / decryption surface
 exposed by the Python binding:

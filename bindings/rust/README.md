@@ -1,10 +1,16 @@
-# ITB Rust binding
+# ITB Rust Binding
 
 `libloading`-based Rust wrapper over the libitb shared library
 (`cmd/cshared`). Runtime FFI — no C compiler at install time, no
 compile-time link against libitb; the `.so` / `.dll` / `.dylib` is
 resolved and dispatched at first use through the `libloading`
 crate.
+
+## Prerequisites (Arch Linux)
+
+```bash
+sudo pacman -S go go-tools rustup cargo cargo-all-features
+```
 
 ## Build the shared library
 
@@ -24,6 +30,14 @@ Windows produces `libitb.dll` under `dist/windows-<arch>/`.)
 |---|---|---|---|
 | (none) | engaged | engaged | Default — full asm stack |
 | <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
+
+For hosts without AVX-512+VL CPUs, build with the `-tags=noitbasm`
+flag:
+
+```bash
+go build -trimpath -tags=noitbasm -buildmode=c-shared \
+    -o dist/linux-amd64/libitb.so ./cmd/cshared
+```
 
 Passing `-tags=noitbasm` does not disable upstream asm in
 `zeebo/blake3`, `golang.org/x/crypto`, or `jedisct1/go-aes`. The
