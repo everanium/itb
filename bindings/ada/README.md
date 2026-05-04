@@ -817,6 +817,15 @@ synchronisation (a protected object wrapping the cipher call, or a
 task-safe handle pool). Distinct `Encryptor` handles, each owned by
 one task, run independently against the libitb worker pool.
 
+By contrast, the low-level cipher free functions
+(`Itb.Cipher.Encrypt` / `Decrypt` / `Encrypt_Auth` / `Decrypt_Auth`
+plus the Triple counterparts) allocate output per call and are
+**task-safe** under concurrent invocation on the same `Seed`
+handles — libitb's worker pool dispatches them independently. Two
+exceptions: `Itb.Seed.Attach_Lock_Seed` mutates the noise Seed and
+must not race against an in-flight cipher call on it, and the
+process-wide setters above stay process-global.
+
 The `Itb.Seed.Seed`, `Itb.MAC.MAC`, `Itb.Encryptor.Encryptor`,
 `Itb.Blob.Blob128` / `Blob256` / `Blob512` types are
 `Limited_Controlled` — passed by reference, never copied. The
@@ -888,6 +897,35 @@ end Demo;
 The structured payload attaches at the moment of the failing call,
 so `Status_Code (E)` / `Field (E)` / `Message (E)` are stable across
 intervening task-induced reads of libitb's own diagnostic globals.
+
+### Status codes
+
+| Code | Name | Description |
+|---|---|---|
+| 0 | `Itb.Status.OK` | Success — the only non-failure return value |
+| 1 | `Itb.Status.Bad_Hash` | Unknown hash primitive name |
+| 2 | `Itb.Status.Bad_Key_Bits` | ITB key width invalid for the chosen primitive |
+| 3 | `Itb.Status.Bad_Handle` | FFI handle invalid or already freed |
+| 4 | `Itb.Status.Bad_Input` | Generic shape / range / domain violation on a call argument |
+| 5 | `Itb.Status.Buffer_Too_Small` | Output buffer cap below required size; probe-then-allocate idiom |
+| 6 | `Itb.Status.Encrypt_Failed` | Encrypt path raised on the Go side (rare; structural / OOM) |
+| 7 | `Itb.Status.Decrypt_Failed` | Decrypt path raised on the Go side (corrupt ciphertext shape) |
+| 8 | `Itb.Status.Seed_Width_Mix` | Seeds passed to one call do not share the same native hash width |
+| 9 | `Itb.Status.Bad_MAC` | Unknown MAC name or key-length violates the primitive's `Min_Key_Bytes` |
+| 10 | `Itb.Status.MAC_Failure` | MAC verification failed — tampered ciphertext or wrong MAC key |
+| 11 | `Itb.Status.Easy_Closed` | Easy Mode encryptor call after `Close` |
+| 12 | `Itb.Status.Easy_Malformed` | Easy Mode `Import_State` blob fails JSON parse / structural check |
+| 13 | `Itb.Status.Easy_Version_Too_New` | Easy Mode blob version field higher than this build supports |
+| 14 | `Itb.Status.Easy_Unknown_Primitive` | Easy Mode blob references a primitive this build does not know |
+| 15 | `Itb.Status.Easy_Unknown_MAC` | Easy Mode blob references a MAC this build does not know |
+| 16 | `Itb.Status.Easy_Bad_Key_Bits` | Easy Mode blob's `key_bits` invalid for its primitive |
+| 17 | `Itb.Status.Easy_Mismatch` | Easy Mode blob disagrees with the receiver on `primitive` / `key_bits` / `mode` / `mac`; field name reachable via `Itb.Errors.Field` |
+| 18 | `Itb.Status.Easy_LockSeed_After_Encrypt` | `Set_Lock_Seed (1)` called after the first encrypt — must precede the first ciphertext |
+| 19 | `Itb.Status.Blob_Mode_Mismatch` | Native Blob importer received a Single blob into a Triple receiver (or vice versa) |
+| 20 | `Itb.Status.Blob_Malformed` | Native Blob payload fails JSON parse / magic / structural check |
+| 21 | `Itb.Status.Blob_Version_Too_New` | Native Blob version field higher than this libitb build supports |
+| 22 | `Itb.Status.Blob_Too_Many_Opts` | Native Blob export opts mask carries unsupported bits |
+| 99 | `Itb.Status.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
 ## Benchmarks
 
