@@ -52,7 +52,8 @@ public sealed class TestEasyRoundtrip
         Assert.Equal(1, enc.Mode);
         Assert.Equal("kmac256", enc.MacName);
         enc.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => _ = enc.Primitive);
+        var ex = Assert.Throws<ItbException>(() => _ = enc.Primitive);
+        Assert.Equal(Itb.Native.Status.EasyClosed, ex.Status);
     }
 
     /// <summary>

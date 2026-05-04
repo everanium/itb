@@ -54,14 +54,34 @@ public readonly record struct EncryptorConfig(string Primitive, int KeyBits, int
 /// ~15 % vs KMAC-256's ~44 %); routing the default through it gives
 /// the "constructor without explicit MAC" path the lowest cost.</para>
 ///
-/// <para><b>Auto-coupling.</b> Calling <see cref="SetLockSeed"/> with
-/// mode 1, or <see cref="SetBitSoup"/> / <see cref="SetLockSoup"/>
-/// with non-zero modes, or <see cref="AttachLockSeed"/>, automatically
-/// engages the dependent overlay flags inside the Go-side
-/// <c>easy</c> package. This is intentional behaviour of the
-/// underlying Encryptor, not a binding-side workaround; the
-/// Single Ouroboros mode + lockSeed + Bit Soup + LockSoup combination
-/// is structurally inseparable.</para>
+/// <para><b>Auto-coupling.</b> Three rules govern the
+/// BitSoup / LockSoup / LockSeed overlay (Go-side
+/// itb/easy/config.go + itb/bitsoup.go) and propagate through this
+/// binding without filtering. (1) <b>Setter-level: LockSoup → BitSoup</b>
+/// (always, both modes). <see cref="SetLockSoup"/>(non-zero) sets
+/// <c>cfg.BitSoup = 1</c>; <see cref="SetLockSeed"/>(1) sets
+/// <c>cfg.LockSoup = 1 + cfg.BitSoup = 1</c> (the dedicated lockSeed
+/// has no wire effect without the overlay engaged, so both flags
+/// are forced on). (2) <b>Mode-dependent dispatch: Single Ouroboros
+/// activates the overlay if either flag is set.</b> In mode = 1, the
+/// Go-side <c>splitForSingle</c> engages the lock-soup overlay if
+/// EITHER <c>cfg.BitSoup == 1</c> OR <c>cfg.LockSoup == 1</c>;
+/// practical effect — calling <see cref="SetBitSoup"/>(1) alone
+/// activates the overlay at encrypt time even though
+/// <c>cfg.LockSoup</c> stays 0. In Triple Ouroboros (mode = 3),
+/// bit-soup and lock-soup are independently meaningful — bit-soup
+/// alone splits payload bits without the PRF-keyed permutation
+/// overlay. (3) <b>Off-direction coercion while LockSeed active.</b>
+/// While <c>cfg.LockSeed == 1</c>,
+/// <see cref="SetBitSoup"/>(0) and
+/// <see cref="SetLockSoup"/>(0) are silently coerced to 1 to keep
+/// the overlay engaged on the dedicated lockSeed channel; drop the
+/// lockSeed via <see cref="SetLockSeed"/>(0) first to fully
+/// disengage. <see cref="Seed.AttachLockSeed"/> at the low-level
+/// Seed surface does NOT auto-couple — it records the pointer at
+/// the seed level and the caller engages the overlay manually via
+/// <see cref="Library.BitSoup"/> / <see cref="Library.LockSoup"/>.
+/// </para>
 ///
 /// <para><b>Output-buffer cache.</b> The cipher methods reuse a
 /// per-encryptor <see cref="byte"/>[] to skip the per-call probe
@@ -106,6 +126,17 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     private byte[] _outputBuffer;
 
+    /// <summary>
+    /// Tracks the closed / disposed state independently of the
+    /// handle field so the preflight in <see cref="ThrowIfClosed"/>
+    /// can surface <see cref="Native.Status.EasyClosed"/> after
+    /// <see cref="Close"/> / <see cref="Dispose"/> without relying on
+    /// the libitb-side handle-id lookup (which would surface
+    /// <see cref="Native.Status.BadHandle"/> once <see cref="Dispose"/>
+    /// has cleared the handle slot).
+    /// </summary>
+    private bool _closed;
+
     private const string DefaultMac = "hmac-blake3";
 
     // ----------------------------------------------------------------
@@ -143,12 +174,14 @@ public sealed class Encryptor : IDisposable
         ItbException.Check(rc);
         _handle = handle;
         _outputBuffer = Array.Empty<byte>();
+        _closed = false;
     }
 
     private Encryptor(nuint handle)
     {
         _handle = handle;
         _outputBuffer = Array.Empty<byte>();
+        _closed = false;
     }
 
     /// <summary>
@@ -171,9 +204,9 @@ public sealed class Encryptor : IDisposable
         string primN,
         string primD,
         string primS,
+        string? primL,
         int keyBits,
-        string? mac = null,
-        string? primL = null)
+        string? mac = null)
     {
         ArgumentNullException.ThrowIfNull(primN);
         ArgumentNullException.ThrowIfNull(primD);
@@ -193,7 +226,7 @@ public sealed class Encryptor : IDisposable
     /// primitive. See <see cref="Mixed"/> for the construction
     /// contract.
     /// </summary>
-    public static Encryptor MixedTriple(
+    public static Encryptor Mixed3(
         string primN,
         string primD1,
         string primD2,
@@ -201,9 +234,9 @@ public sealed class Encryptor : IDisposable
         string primS1,
         string primS2,
         string primS3,
+        string? primL,
         int keyBits,
-        string? mac = null,
-        string? primL = null)
+        string? mac = null)
     {
         ArgumentNullException.ThrowIfNull(primN);
         ArgumentNullException.ThrowIfNull(primD1);
@@ -250,7 +283,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var handle = _handle;
             var result = ReadString.Read((byte* buf, nuint cap, out nuint outLen) =>
                 ItbNative.ITB_Easy_Primitive(handle, buf, cap, out outLen));
@@ -264,7 +297,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_KeyBits(_handle, out var st);
             ItbException.Check(st);
             return v;
@@ -276,7 +309,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_Mode(_handle, out var st);
             ItbException.Check(st);
             return v;
@@ -288,7 +321,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var handle = _handle;
             var result = ReadString.Read((byte* buf, nuint cap, out nuint outLen) =>
                 ItbNative.ITB_Easy_MACName(handle, buf, cap, out outLen));
@@ -306,7 +339,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_SeedCount(_handle, out var st);
             ItbException.Check(st);
             return v;
@@ -326,7 +359,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_NonceBits(_handle, out var st);
             ItbException.Check(st);
             return v;
@@ -345,7 +378,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_HeaderSize(_handle, out var st);
             ItbException.Check(st);
             return v;
@@ -354,7 +387,7 @@ public sealed class Encryptor : IDisposable
 
     /// <summary>
     /// <c>true</c> when this encryptor was constructed via
-    /// <see cref="Mixed"/> or <see cref="MixedTriple"/> (per-slot
+    /// <see cref="Mixed"/> or <see cref="Mixed3"/> (per-slot
     /// primitive selection); <c>false</c> for single-primitive
     /// encryptors built via the regular <see cref="Encryptor(string, int, string?, string)"/>
     /// constructor.
@@ -363,7 +396,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_IsMixed(_handle, out var st);
             ItbException.Check(st);
             return v != 0;
@@ -379,7 +412,7 @@ public sealed class Encryptor : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ThrowIfClosed();
             var v = ItbNative.ITB_Easy_HasPRFKeys(_handle, out var st);
             ItbException.Check(st);
             return v != 0;
@@ -393,12 +426,12 @@ public sealed class Encryptor : IDisposable
     /// dedicated lockSeed at the trailing slot. For single-primitive
     /// encryptors every slot returns the same <see cref="Primitive"/>
     /// value; for encryptors built via <see cref="Mixed"/> /
-    /// <see cref="MixedTriple"/> each slot returns its
+    /// <see cref="Mixed3"/> each slot returns its
     /// independently-chosen primitive name.
     /// </summary>
     public unsafe string PrimitiveAt(int slot)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         var handle = _handle;
         var s = slot;
         var result = ReadString.Read((byte* buf, nuint cap, out nuint outLen) =>
@@ -421,7 +454,7 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     public unsafe byte[] PRFKey(int slot)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         // Probe pattern: zero-length key returns Status.Ok + outLen=0
         // (siphash24); non-zero length returns Status.BufferTooSmall
         // with outLen carrying the required size. Status.BadInput is
@@ -458,7 +491,7 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     public unsafe byte[] MacKey()
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         var rc = ItbNative.ITB_Easy_MACKey(_handle, null, 0, out var outLen);
         if (rc == Status.Ok && outLen == 0)
         {
@@ -494,7 +527,7 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     public unsafe ulong[] SeedComponents(int slot)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         // Probe call: out=NULL / capCount=0 returns BufferTooSmall
         // with the required size in outLen. BadInput here would
         // signal an out-of-range slot.
@@ -549,7 +582,7 @@ public sealed class Encryptor : IDisposable
     /// </remarks>
     public unsafe int ParseChunkLen(ReadOnlySpan<byte> header)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         nuint outChunkLen;
         int rc;
         fixed (byte* p = header)
@@ -632,7 +665,7 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     private unsafe byte[] CipherCall(CipherOp op, ReadOnlySpan<byte> payload)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         var payloadLen = payload.Length;
         // 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
         // expansion factor observed across the primitive / mode /
@@ -726,7 +759,7 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     public void SetNonceBits(int n)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         ItbException.Check(ItbNative.ITB_Easy_SetNonceBits(_handle, n));
     }
 
@@ -737,31 +770,32 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     public void SetBarrierFill(int n)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         ItbException.Check(ItbNative.ITB_Easy_SetBarrierFill(_handle, n));
     }
 
     /// <summary>
     /// 0 = byte-level split (default); non-zero = bit-level Bit Soup
-    /// split. Engaging bit-soup auto-couples the LockSoup overlay on
-    /// the Single Ouroboros mode inside the Go-side easy package; the
-    /// auto-couple is intentional and not a binding-side workaround.
+    /// split. <b>Mode-dependent overlay engagement:</b> in Single
+    /// Ouroboros (mode = 1), enabling bit-soup activates the
+    /// lock-soup overlay at encrypt time even though
+    /// <c>cfg.LockSoup</c> stays 0; in Triple Ouroboros (mode = 3),
+    /// bit-soup operates independently of lock-soup.
     /// </summary>
     public void SetBitSoup(int mode)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         ItbException.Check(ItbNative.ITB_Easy_SetBitSoup(_handle, mode));
     }
 
     /// <summary>
     /// 0 = off (default); non-zero = on. Auto-couples
-    /// <c>BitSoup=1</c> on this encryptor (Single Ouroboros mode);
-    /// the auto-couple is intentional and not a binding-side
-    /// workaround.
+    /// <c>BitSoup=1</c> on this encryptor (always, both modes — Lock
+    /// Soup layers on top of bit soup).
     /// </summary>
     public void SetLockSoup(int mode)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         ItbException.Check(ItbNative.ITB_Easy_SetLockSoup(_handle, mode));
     }
 
@@ -769,8 +803,7 @@ public sealed class Encryptor : IDisposable
     /// 0 = off; 1 = on. When engaged, allocates a dedicated lockSeed
     /// and routes the bit-permutation overlay through it; this
     /// auto-couples <c>LockSoup=1 + BitSoup=1</c> on this encryptor
-    /// (Single Ouroboros mode). The auto-couple is intentional and
-    /// not a binding-side workaround.
+    /// (always, both Single and Triple Ouroboros modes).
     /// </summary>
     /// <remarks>
     /// Calling after the first encrypt surfaces
@@ -779,7 +812,7 @@ public sealed class Encryptor : IDisposable
     /// </remarks>
     public void SetLockSeed(int mode)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         ItbException.Check(ItbNative.ITB_Easy_SetLockSeed(_handle, mode));
     }
 
@@ -790,56 +823,8 @@ public sealed class Encryptor : IDisposable
     /// </summary>
     public void SetChunkSize(int n)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         ItbException.Check(ItbNative.ITB_Easy_SetChunkSize(_handle, n));
-    }
-
-    // ----------------------------------------------------------------
-    // Lock-seed attachment
-    // ----------------------------------------------------------------
-
-    /// <summary>
-    /// Wires a caller-supplied <see cref="Seed"/> as the dedicated
-    /// lockSeed for this encryptor's noiseSeed slot. The per-chunk
-    /// PRF closure for the bit-permutation overlay captures BOTH the
-    /// lockSeed's components AND its hash function — keying-material
-    /// isolation plus algorithm diversity for defence-in-depth on the
-    /// overlay channel. This is the explicit handle-level analogue of
-    /// <see cref="SetLockSeed"/>, useful when the caller needs to
-    /// supply a specific lockSeed (e.g. one rebuilt deterministically
-    /// from saved components) rather than letting the easy package
-    /// generate one.
-    /// </summary>
-    /// <remarks>
-    /// <para>The dedicated lockSeed has no observable effect on the
-    /// wire output unless the bit-permutation overlay is engaged via
-    /// <see cref="SetBitSoup"/> / <see cref="SetLockSoup"/> on this
-    /// encryptor before the first encrypt / decrypt call. The
-    /// engagement is auto-coupled at the Go-side; calling
-    /// <see cref="AttachLockSeed"/> on a Single-Ouroboros encryptor
-    /// also nudges <c>BitSoup=1 + LockSoup=1</c> via the same
-    /// path as <see cref="SetLockSeed"/>.</para>
-    /// <para>The <paramref name="lockSeed"/> remains owned by the
-    /// caller — attach only records the pointer on the encryptor's
-    /// noiseSeed handle, so keep <paramref name="lockSeed"/> alive
-    /// for the lifetime of this encryptor (do not dispose it before
-    /// the last encrypt finishes).</para>
-    /// <para>Misuse paths surface as <see cref="ItbException"/>:
-    /// width mismatch with status <c>SeedWidthMix</c>; post-encrypt
-    /// switching with status <c>EasyLockSeedAfterEncrypt</c>;
-    /// self-attach or aliasing with status <c>BadInput</c>.</para>
-    /// </remarks>
-    public void AttachLockSeed(Seed lockSeed)
-    {
-        ArgumentNullException.ThrowIfNull(lockSeed);
-        ThrowIfDisposed();
-        var rc = ItbNative.ITB_AttachLockSeed(_handle, lockSeed.Handle);
-        // Keep both handles rooted past the FFI call so the JIT cannot
-        // mark them dead after handle-field extraction and let the
-        // finalizer race ITB_AttachLockSeed.
-        GC.KeepAlive(this);
-        GC.KeepAlive(lockSeed);
-        ItbException.Check(rc);
     }
 
     // ----------------------------------------------------------------
@@ -863,7 +848,7 @@ public sealed class Encryptor : IDisposable
     /// </remarks>
     public unsafe byte[] Export()
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         var rc = ItbNative.ITB_Easy_Export(_handle, null, 0, out var outLen);
         if (rc == Status.Ok)
         {
@@ -905,7 +890,7 @@ public sealed class Encryptor : IDisposable
     /// </remarks>
     public unsafe void Import(ReadOnlySpan<byte> blob)
     {
-        ThrowIfDisposed();
+        ThrowIfClosed();
         int rc;
         fixed (byte* p = blob)
         {
@@ -996,12 +981,18 @@ public sealed class Encryptor : IDisposable
     /// </remarks>
     public void Close()
     {
-        if (_handle == 0)
+        // Wipe the cached output buffer regardless of close state —
+        // repeated close calls keep the cache wiped without racing
+        // the Go-side close.
+        WipeOutputBuffer();
+        if (_closed || _handle == 0)
         {
+            // Idempotent — already closed.
+            _closed = true;
             return;
         }
-        WipeOutputBuffer();
         var rc = ItbNative.ITB_Easy_Close(_handle);
+        _closed = true;
         // Close is documented as idempotent on the Go side; treat
         // any non-OK return after close as a bug.
         ItbException.Check(rc);
@@ -1011,15 +1002,20 @@ public sealed class Encryptor : IDisposable
     /// Releases the underlying libitb handle. Wipes the per-encryptor
     /// output buffer cache before the call so the most recent
     /// ciphertext or plaintext does not linger in heap memory.
-    /// Idempotent.
+    /// Idempotent — calling <see cref="Dispose"/> on an already-disposed
+    /// encryptor returns silently. Subsequent method calls on the
+    /// instance throw <see cref="ItbException"/> with status
+    /// <see cref="Native.Status.EasyClosed"/>.
     /// </summary>
     public void Dispose()
     {
-        if (_handle != 0)
+        WipeOutputBuffer();
+        var h = _handle;
+        _handle = 0;
+        _closed = true;
+        if (h != 0)
         {
-            WipeOutputBuffer();
-            ItbNative.ITB_Easy_Free(_handle);
-            _handle = 0;
+            ItbNative.ITB_Easy_Free(h);
         }
         GC.SuppressFinalize(this);
     }
@@ -1045,6 +1041,7 @@ public sealed class Encryptor : IDisposable
             }
             _handle = 0;
         }
+        _closed = true;
     }
 
     private void WipeOutputBuffer()
@@ -1055,11 +1052,21 @@ public sealed class Encryptor : IDisposable
         }
     }
 
-    private void ThrowIfDisposed()
+    /// <summary>
+    /// Preflight rejection for closed / disposed encryptors. Throws
+    /// <see cref="ItbException"/> with status
+    /// <see cref="Native.Status.EasyClosed"/> before any libitb FFI
+    /// call so callers see the canonical "encryptor has been closed"
+    /// code regardless of whether the underlying handle slot has
+    /// merely been zeroed (post-<see cref="Close"/>) or has been
+    /// released back to libitb (post-<see cref="Dispose"/>).
+    /// </summary>
+    private void ThrowIfClosed()
     {
-        if (_handle == 0)
+        if (_closed || _handle == 0)
         {
-            throw new ObjectDisposedException(nameof(Encryptor));
+            throw new ItbException(
+                Native.Status.EasyClosed, "encryptor has been closed");
         }
     }
 }

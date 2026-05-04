@@ -133,3 +133,19 @@ pub(crate) fn check(rc: i32) -> Result<(), ITBError> {
         Err(ITBError::from_status(rc))
     }
 }
+
+/// Reads `ITB_LastError` for the most recent non-OK status returned
+/// on this thread. Returns the empty string when no error has been
+/// recorded.
+///
+/// The textual message follows C errno discipline: it is published
+/// through a process-wide atomic, so a sibling thread that calls
+/// into libitb between the failing call and this read can overwrite
+/// the message. The structural status code on the failing call is
+/// unaffected — only the textual message is racy. The
+/// [`ITBError`] type already attaches this string at exception
+/// construction time; the free-function form is exposed for callers
+/// that want to read the diagnostic independently of the error path.
+pub fn last_error() -> String {
+    read_last_error()
+}

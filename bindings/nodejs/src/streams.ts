@@ -135,7 +135,7 @@ export class StreamEncryptor {
    */
   write(data: Uint8Array | Buffer): number {
     if (this.closed) {
-      throw new ITBError(Status.BadInput, 'write on closed StreamEncryptor');
+      throw new ITBError(Status.EasyClosed, 'write on closed StreamEncryptor');
     }
     const view = asUint8(data);
     this.buf.push(view);
@@ -223,7 +223,7 @@ export class StreamDecryptor {
    */
   feed(data: Uint8Array | Buffer): number {
     if (this.closed) {
-      throw new ITBError(Status.BadInput, 'feed on closed StreamDecryptor');
+      throw new ITBError(Status.EasyClosed, 'feed on closed StreamDecryptor');
     }
     const view = asUint8(data);
     this.buf.push(view);
@@ -339,7 +339,7 @@ export class StreamEncryptorTriple {
 
   write(data: Uint8Array | Buffer): number {
     if (this.closed) {
-      throw new ITBError(Status.BadInput, 'write on closed StreamEncryptorTriple');
+      throw new ITBError(Status.EasyClosed, 'write on closed StreamEncryptorTriple');
     }
     const view = asUint8(data);
     this.buf.push(view);
@@ -437,7 +437,7 @@ export class StreamDecryptorTriple {
 
   feed(data: Uint8Array | Buffer): number {
     if (this.closed) {
-      throw new ITBError(Status.BadInput, 'feed on closed StreamDecryptorTriple');
+      throw new ITBError(Status.EasyClosed, 'feed on closed StreamDecryptorTriple');
     }
     const view = asUint8(data);
     this.buf.push(view);

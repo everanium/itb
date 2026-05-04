@@ -3,7 +3,7 @@
 // Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
 // nine PRF-grade primitives, locked at 1024-bit ITB key width and
 // 16 MiB CSPRNG-filled payload. One mixed-primitive variant
-// (Encryptor.MixedTriple cycling the same BLAKE3 / Areion-SoEM-256 /
+// (Encryptor.Mixed3 cycling the same BLAKE3 / Areion-SoEM-256 /
 // ChaCha20 family + optional dedicated lockSeed used by bench_single_mixed)
 // covers the Easy-Mode Mixed surface alongside the single-primitive
 // grid.
@@ -84,11 +84,11 @@ internal static class BenchTriple
     private static Encryptor BuildMixedTriple()
     {
         var primL = Common.EnvLockSeed() ? Common.MixedLock : null;
-        return Encryptor.MixedTriple(
+        return Encryptor.Mixed3(
             MixedNoise,
             MixedData1, MixedData2, MixedData3,
             MixedStart1, MixedStart2, MixedStart3,
-            Common.KeyBits, Common.MacName, primL);
+            primL, Common.KeyBits, Common.MacName);
     }
 
     private static BenchCase MakeEncryptCase(string name, Encryptor enc)

@@ -98,11 +98,11 @@ function smokeBlobRoundTrip(): void {
   src.setKey(BlobSlot.N, randomBytes(64));
   src.setKey(BlobSlot.D, randomBytes(64));
   src.setKey(BlobSlot.S, randomBytes(64));
-  const blob = src.exportState();
+  const blob = src.export();
   console.log(`  blob size: ${blob.length} bytes`);
 
   using dst = new Blob512();
-  dst.importState(blob);
+  dst.import(blob);
   const back = dst.getComponents(BlobSlot.D);
   if (back.length !== dataComps.length || !back.every((v, i) => v === dataComps[i])) {
     throw new Error('Blob512 components mismatch on round-trip');

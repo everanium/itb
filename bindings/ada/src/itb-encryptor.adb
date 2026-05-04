@@ -78,6 +78,19 @@ package body Itb.Encryptor is
       end if;
    end Wipe_Cache;
 
+   --  Preflight rejection for closed / freed encryptors. Routes
+   --  through Itb.Errors.Raise_For with Itb.Status.Easy_Closed so
+   --  callers see the canonical "encryptor has been closed" code
+   --  regardless of whether the underlying handle slot has merely
+   --  been zeroed (post-Close) or has been released back to libitb
+   --  (post-Finalize).
+   procedure Check_Open (Self : Encryptor) is
+   begin
+      if Self.Closed or else Self.Handle = 0 then
+         Itb.Errors.Raise_For (Itb.Status.Easy_Closed);
+      end if;
+   end Check_Open;
+
    --  Grows the cache buffer to at least Need bytes. Wipes the
    --  previous buffer (if any) before deallocating it so a previous-
    --  call ciphertext / plaintext does not linger in heap garbage
@@ -145,6 +158,7 @@ package body Itb.Encryptor is
       Out_Len  : aliased size_t := 0;
       Status   : int;
    begin
+      Check_Open (Self);
       Ensure_Capacity (Self, Cap);
 
       Status := Fn
@@ -265,10 +279,12 @@ package body Itb.Encryptor is
       --  time when the project is built with -gnata (assertion checks
       --  enabled). Make is the entry point that decides what mode
       --  reaches libitb, so the runtime guard belongs here regardless
-      --  of the build configuration.
+      --  of the build configuration. Surface as Itb_Error / Bad_Input
+      --  for cross-binding parity with Python / C# / Rust / D / Node.js
+      --  where invalid mode flows through the libitb status-translation
+      --  pipeline instead of a language-builtin exception.
       if Mode /= 1 and then Mode /= 3 then
-         raise Constraint_Error
-           with "Itb.Encryptor.Make: Mode must be 1 (Single) or 3 (Triple)";
+         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
       end if;
 
       Status := Itb.Sys.ITB_Easy_New
@@ -426,9 +442,10 @@ package body Itb.Encryptor is
 
    procedure Set_Nonce_Bits (Self : Encryptor; N : Integer) is
       use Interfaces.C;
-      Status : constant int :=
-        Itb.Sys.ITB_Easy_SetNonceBits (Self.Handle, int (N));
+      Status : int;
    begin
+      Check_Open (Self);
+      Status := Itb.Sys.ITB_Easy_SetNonceBits (Self.Handle, int (N));
       if Status /= 0 then
          Itb.Errors.Raise_For (Integer (Status));
       end if;
@@ -436,9 +453,10 @@ package body Itb.Encryptor is
 
    procedure Set_Barrier_Fill (Self : Encryptor; N : Integer) is
       use Interfaces.C;
-      Status : constant int :=
-        Itb.Sys.ITB_Easy_SetBarrierFill (Self.Handle, int (N));
+      Status : int;
    begin
+      Check_Open (Self);
+      Status := Itb.Sys.ITB_Easy_SetBarrierFill (Self.Handle, int (N));
       if Status /= 0 then
          Itb.Errors.Raise_For (Integer (Status));
       end if;
@@ -446,9 +464,10 @@ package body Itb.Encryptor is
 
    procedure Set_Bit_Soup (Self : Encryptor; Mode : Integer) is
       use Interfaces.C;
-      Status : constant int :=
-        Itb.Sys.ITB_Easy_SetBitSoup (Self.Handle, int (Mode));
+      Status : int;
    begin
+      Check_Open (Self);
+      Status := Itb.Sys.ITB_Easy_SetBitSoup (Self.Handle, int (Mode));
       if Status /= 0 then
          Itb.Errors.Raise_For (Integer (Status));
       end if;
@@ -456,9 +475,10 @@ package body Itb.Encryptor is
 
    procedure Set_Lock_Soup (Self : Encryptor; Mode : Integer) is
       use Interfaces.C;
-      Status : constant int :=
-        Itb.Sys.ITB_Easy_SetLockSoup (Self.Handle, int (Mode));
+      Status : int;
    begin
+      Check_Open (Self);
+      Status := Itb.Sys.ITB_Easy_SetLockSoup (Self.Handle, int (Mode));
       if Status /= 0 then
          Itb.Errors.Raise_For (Integer (Status));
       end if;
@@ -466,9 +486,10 @@ package body Itb.Encryptor is
 
    procedure Set_Lock_Seed (Self : Encryptor; Mode : Integer) is
       use Interfaces.C;
-      Status : constant int :=
-        Itb.Sys.ITB_Easy_SetLockSeed (Self.Handle, int (Mode));
+      Status : int;
    begin
+      Check_Open (Self);
+      Status := Itb.Sys.ITB_Easy_SetLockSeed (Self.Handle, int (Mode));
       if Status /= 0 then
          Itb.Errors.Raise_For (Integer (Status));
       end if;
@@ -476,9 +497,10 @@ package body Itb.Encryptor is
 
    procedure Set_Chunk_Size (Self : Encryptor; N : Integer) is
       use Interfaces.C;
-      Status : constant int :=
-        Itb.Sys.ITB_Easy_SetChunkSize (Self.Handle, int (N));
+      Status : int;
    begin
+      Check_Open (Self);
+      Status := Itb.Sys.ITB_Easy_SetChunkSize (Self.Handle, int (N));
       if Status /= 0 then
          Itb.Errors.Raise_For (Integer (Status));
       end if;
@@ -490,6 +512,7 @@ package body Itb.Encryptor is
 
    function Primitive (Self : Encryptor) return String is
    begin
+      Check_Open (Self);
       return Read_Easy_String
         (Self.Handle, Itb.Sys.ITB_Easy_Primitive'Access);
    end Primitive;
@@ -501,6 +524,7 @@ package body Itb.Encryptor is
       Probe  : aliased size_t := 0;
       Status : int;
    begin
+      Check_Open (Self);
       Status := Itb.Sys.ITB_Easy_PrimitiveAt
                   (H       => H,
                    Slot    => Slot_C,
@@ -545,9 +569,10 @@ package body Itb.Encryptor is
    function Key_Bits (Self : Encryptor) return Integer is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_KeyBits (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_KeyBits (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -557,9 +582,10 @@ package body Itb.Encryptor is
    function Mode (Self : Encryptor) return Integer is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_Mode (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_Mode (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -568,6 +594,7 @@ package body Itb.Encryptor is
 
    function MAC_Name (Self : Encryptor) return String is
    begin
+      Check_Open (Self);
       return Read_Easy_String
         (Self.Handle, Itb.Sys.ITB_Easy_MACName'Access);
    end MAC_Name;
@@ -575,9 +602,10 @@ package body Itb.Encryptor is
    function Seed_Count (Self : Encryptor) return Integer is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_SeedCount (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_SeedCount (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -587,9 +615,10 @@ package body Itb.Encryptor is
    function Has_PRF_Keys (Self : Encryptor) return Boolean is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_HasPRFKeys (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_HasPRFKeys (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -599,9 +628,10 @@ package body Itb.Encryptor is
    function Is_Mixed (Self : Encryptor) return Boolean is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_IsMixed (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_IsMixed (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -611,9 +641,10 @@ package body Itb.Encryptor is
    function Nonce_Bits (Self : Encryptor) return Integer is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_NonceBits (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_NonceBits (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -623,9 +654,10 @@ package body Itb.Encryptor is
    function Header_Size (Self : Encryptor) return Integer is
       use Interfaces.C;
       Out_Status : aliased int := 0;
-      V          : constant int :=
-        Itb.Sys.ITB_Easy_HeaderSize (Self.Handle, Out_Status'Access);
+      V          : int;
    begin
+      Check_Open (Self);
+      V := Itb.Sys.ITB_Easy_HeaderSize (Self.Handle, Out_Status'Access);
       if Out_Status /= 0 then
          Itb.Errors.Raise_For (Integer (Out_Status));
       end if;
@@ -644,6 +676,7 @@ package body Itb.Encryptor is
       Probe  : aliased int := 0;
       Status : int;
    begin
+      Check_Open (Self);
       --  Probe required count.
       Status := Itb.Sys.ITB_Easy_SeedComponents
                   (H       => Self.Handle,
@@ -684,6 +717,7 @@ package body Itb.Encryptor is
       Probe  : aliased size_t := 0;
       Status : int;
    begin
+      Check_Open (Self);
       Status := Itb.Sys.ITB_Easy_PRFKey
                   (H       => Self.Handle,
                    Slot    => int (Slot),
@@ -723,6 +757,7 @@ package body Itb.Encryptor is
       Probe  : aliased size_t := 0;
       Status : int;
    begin
+      Check_Open (Self);
       Status := Itb.Sys.ITB_Easy_MACKey
                   (H       => Self.Handle,
                    Out_Buf => System.Null_Address,
@@ -765,6 +800,7 @@ package body Itb.Encryptor is
       Out_Chunk : aliased size_t := 0;
       Status    : int;
    begin
+      Check_Open (Self);
       Status := Itb.Sys.ITB_Easy_ParseChunkLen
                   (H          => Self.Handle,
                    Header     => Hdr_Addr,
@@ -784,18 +820,20 @@ package body Itb.Encryptor is
       use Interfaces.C;
       Status : int;
    begin
-      if Self.Handle = 0 then
-         return;
-      end if;
-      --  Wipe + free the cached output buffer before releasing the
-      --  Go-side state so a previous-call ciphertext / plaintext does
-      --  not linger in heap memory after the encryptor has been
-      --  zeroed on the Go side.
+      --  Wipe + free the cached output buffer regardless of close
+      --  state — repeated close calls keep the cache wiped without
+      --  racing the Go-side close.
       if Self.Cache /= null then
          Wipe_Cache (Self);
          Free_Cache (Self.Cache);
       end if;
+      if Self.Closed or else Self.Handle = 0 then
+         --  Idempotent — already closed.
+         Self.Closed := True;
+         return;
+      end if;
       Status := Itb.Sys.ITB_Easy_Close (Self.Handle);
+      Self.Closed := True;
       --  Close is documented as idempotent on the Go side; any
       --  non-OK return after close is a bug.
       if Status /= 0 then
@@ -812,6 +850,7 @@ package body Itb.Encryptor is
       Probe  : aliased size_t := 0;
       Status : int;
    begin
+      Check_Open (Self);
       Status := Itb.Sys.ITB_Easy_Export
                   (H       => Self.Handle,
                    Out_Buf => System.Null_Address,
@@ -848,6 +887,7 @@ package body Itb.Encryptor is
         (if Blob'Length > 0 then Blob'Address else System.Null_Address);
       Status    : int;
    begin
+      Check_Open (Self);
       Status := Itb.Sys.ITB_Easy_Import
                   (H        => Self.Handle,
                    Blob     => Blob_Addr,
@@ -942,6 +982,7 @@ package body Itb.Encryptor is
          Discard := Itb.Sys.ITB_Easy_Free (Self.Handle);
          Self.Handle := 0;
       end if;
+      Self.Closed := True;
       if Self.Cache /= null then
          Wipe_Cache (Self);
          Free_Cache (Self.Cache);

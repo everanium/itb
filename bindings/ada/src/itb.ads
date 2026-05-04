@@ -146,9 +146,18 @@ package Itb is
    --  Process-global configuration
    ---------------------------------------------------------------------
 
+   --  Process-wide Bit Soup mode (0 = byte-level split, non-zero =
+   --  bit-level Bit Soup split). Independent of Set_Lock_Soup at the
+   --  setter level — there is no BitSoup -> LockSoup cascade. In
+   --  Single Ouroboros, either flag alone activates the dispatcher's
+   --  keyed bit-permutation overlay (Single OR-gates the two flags).
    procedure Set_Bit_Soup (Mode : Integer);
    function  Get_Bit_Soup return Integer;
 
+   --  Process-wide Lock Soup mode (0 = off, non-zero = on). A
+   --  non-zero value auto-couples Set_Bit_Soup (1) (Lock Soup overlay
+   --  layers on top of bit soup; one-direction cascade). The
+   --  off-direction does not auto-disable bit soup.
    procedure Set_Lock_Soup (Mode : Integer);
    function  Get_Lock_Soup return Integer;
 

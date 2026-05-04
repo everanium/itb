@@ -102,7 +102,7 @@ private EncBox* buildMixedTriple() @trusted
         MIXED_NOISE,
         MIXED_DATA1, MIXED_DATA2, MIXED_DATA3,
         MIXED_START1, MIXED_START2, MIXED_START3,
-        KEY_BITS, MAC_NAME, primL);
+        primL, KEY_BITS, MAC_NAME);
     _encryptorRegistry ~= box;
     return box;
 }

@@ -333,7 +333,7 @@ package body Itb.Streams is
       Cursor : Stream_Element_Offset := Data'First;
    begin
       if Self.Closed then
-         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+         Itb.Errors.Raise_For (Itb.Status.Easy_Closed);
       end if;
       while Cursor <= Data'Last loop
          declare
@@ -534,7 +534,7 @@ package body Itb.Streams is
    begin
       Last := Buffer'First - 1;
       if Self.Closed then
-         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+         Itb.Errors.Raise_For (Itb.Status.Easy_Closed);
       end if;
       while Cursor <= Buffer'Last loop
          --  Drain anything already decoded.
@@ -674,7 +674,7 @@ package body Itb.Streams is
       Cursor : Stream_Element_Offset := Data'First;
    begin
       if Self.Closed then
-         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+         Itb.Errors.Raise_For (Itb.Status.Easy_Closed);
       end if;
       while Cursor <= Data'Last loop
          declare
@@ -869,7 +869,7 @@ package body Itb.Streams is
    begin
       Last := Buffer'First - 1;
       if Self.Closed then
-         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+         Itb.Errors.Raise_For (Itb.Status.Easy_Closed);
       end if;
       while Cursor <= Buffer'Last loop
          if Self.Plain /= null

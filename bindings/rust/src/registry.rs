@@ -90,6 +90,11 @@ pub fn parse_chunk_len(header: &[u8]) -> Result<usize, ITBError> {
 
 // ----- Global toggles --------------------------------------------------
 
+/// Sets the process-wide Bit Soup mode (0 = byte-level split,
+/// non-zero = bit-level Bit Soup split). Independent of `set_lock_soup`
+/// at the setter level — there is no `BitSoup → LockSoup` cascade. In
+/// Single Ouroboros, either flag alone activates the dispatcher's
+/// keyed bit-permutation overlay (Single OR-gates the two flags).
 pub fn set_bit_soup(mode: i32) -> Result<(), ITBError> {
     let rc = unsafe { (ffi::lib().ITB_SetBitSoup)(mode) };
     check(rc)
@@ -99,6 +104,10 @@ pub fn get_bit_soup() -> i32 {
     unsafe { (ffi::lib().ITB_GetBitSoup)() }
 }
 
+/// Sets the process-wide Lock Soup mode (0 = off, non-zero = on). A
+/// non-zero value auto-couples `set_bit_soup(1)` (Lock Soup overlay
+/// layers on top of bit soup; one-direction cascade). The off-direction
+/// does not auto-disable bit soup.
 pub fn set_lock_soup(mode: i32) -> Result<(), ITBError> {
     let rc = unsafe { (ffi::lib().ITB_SetLockSoup)(mode) };
     check(rc)

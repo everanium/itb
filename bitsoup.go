@@ -42,9 +42,13 @@ var bitSoupEnabled atomic.Int32
 // [EncryptStream3x128] / [DecryptStream3x128] and mirrors. On Single
 // Ouroboros — [Encrypt128] / [Decrypt128] and the 256/512 mirrors plus
 // authenticated and streaming counterparts — non-zero mode engages the
-// Lock Soup overlay (Single mode couples both flags; see [SetLockSoup]).
-// The ciphertext wire format is identical in all modes:
-// [nonce][W][H][pixels].
+// bit-permutation overlay path. The Single dispatcher OR-gates
+// [bitSoupEnabled] and [lockSoupEnabled] (either flag alone is sufficient
+// to activate the overlay); the flags themselves remain independent at
+// the setter level — there is no SetBitSoup → SetLockSoup cascade. See
+// [SetLockSoup] for the documented LockSoup → BitSoup cascade in the
+// opposite direction. The ciphertext wire format is identical in all
+// modes: [nonce][W][H][pixels].
 //
 // Note: also automatically enabled when [SetLockSoup] is set to a
 // non-zero value, because the Lock Soup overlay layers on top of bit

@@ -239,7 +239,7 @@ catch (ItbException ex) when (ex.Status == StatusCode.MacFailure)
 
 ## Quick Start — Mixed primitives (different PRF per seed slot)
 
-`Encryptor.Mixed` and `Encryptor.MixedTriple` accept per-slot
+`Encryptor.Mixed` and `Encryptor.Mixed3` accept per-slot
 primitive names — the noise / data / start (and optional dedicated
 lockSeed) seed slots can use different PRF primitives within the
 same native hash width. The mix-and-match-PRF freedom of the
@@ -257,7 +257,7 @@ using Itb;
 // Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
 // Every name must share the same native hash width — mixing widths
 // raises ItbException at construction time.
-// Triple Ouroboros mirror — Encryptor.MixedTriple takes seven
+// Triple Ouroboros mirror — Encryptor.Mixed3 takes seven
 // per-slot names (noise + 3 data + 3 start) plus the optional
 // primL lockSeed.
 using var enc = Encryptor.Mixed(
@@ -346,7 +346,7 @@ var decrypted = enc.DecryptAuth(encrypted);
 The seven-seed split is internal to the encryptor; the on-wire
 ciphertext format is identical in shape to Single Ouroboros — only
 the internal payload split / interleave differs. Mixed-primitive
-Triple is reachable via `Encryptor.MixedTriple`.
+Triple is reachable via `Encryptor.Mixed3`.
 
 ## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
 

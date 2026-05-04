@@ -494,13 +494,13 @@ function pack(): Uint8Array {
   // Optional: include MAC key + MAC name for authenticated paths.
   // src.setMacKey(macKey);
   // src.setMacName('hmac-blake3');
-  return src.exportState(BlobExportOpts.None);
+  return src.export(BlobExportOpts.None);
 }
 
 // Receiver — unpack a Blob512 back into three seeds.
 function unpack(blob: Uint8Array, plaintext: Uint8Array): Uint8Array {
   using dst = new Blob512();
-  dst.importState(blob);
+  dst.import(blob);
 
   using noise = Seed.fromComponents('areion512', dst.getComponents(BlobSlot.N), dst.getKey(BlobSlot.N));
   using data = Seed.fromComponents('areion512', dst.getComponents(BlobSlot.D), dst.getKey(BlobSlot.D));
@@ -510,10 +510,10 @@ function unpack(blob: Uint8Array, plaintext: Uint8Array): Uint8Array {
 }
 ```
 
-Triple-Ouroboros blobs use `exportStateTriple` / `importStateTriple`
+Triple-Ouroboros blobs use `exportTriple` / `importTriple`
 on the same `Blob512` (or 256 / 128) handle; the mode is recorded
 in the blob and a Single-mode blob fed to a Triple-mode
-`importStateTriple` raises `ITBBlobModeMismatchError`.
+`importTriple` raises `ITBBlobModeMismatchError`.
 
 `BlobSlot` enumerates the slot index used by `setKey` / `setComponents`:
 `N=0, D=1, S=2, L=3, D1=4, D2=5, D3=6, S1=7, S2=8, S3=9`.
@@ -630,9 +630,9 @@ selective-catch patterns:
 | Subclass | Status code | Raised on |
 |---|---|---|
 | `ITBEasyMismatchError` | `Status.EasyMismatch` | `Encryptor.importState` / `peekConfig` field disagreement; `.field` carries the JSON key |
-| `ITBBlobModeMismatchError` | `Status.BlobModeMismatch` | `Blob.importState` Single-vs-Triple mode mismatch |
-| `ITBBlobMalformedError` | `Status.BlobMalformed` | `Blob.importState` framing / length / magic-byte validation failure |
-| `ITBBlobVersionTooNewError` | `Status.BlobVersionTooNew` | `Blob.importState` version field newer than the binding can decode |
+| `ITBBlobModeMismatchError` | `Status.BlobModeMismatch` | `Blob.import` Single-vs-Triple mode mismatch |
+| `ITBBlobMalformedError` | `Status.BlobMalformed` | `Blob.import` framing / length / magic-byte validation failure |
+| `ITBBlobVersionTooNewError` | `Status.BlobVersionTooNew` | `Blob.import` version field newer than the binding can decode |
 
 Type / value-input errors raise plain JavaScript `TypeError` /
 `RangeError` (e.g. `plaintext` not a `Uint8Array`, `mode` not in
