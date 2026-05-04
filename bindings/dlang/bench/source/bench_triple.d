@@ -11,7 +11,7 @@
 /// Run with:
 ///
 /// ---
-/// dub build :triple --compiler=ldc2
+/// dub build :triple --compiler=dmd --build=release
 /// ./bench/bin/itb-bench-triple
 ///
 /// ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/bin/itb-bench-triple

@@ -10,7 +10,7 @@
 /// Run with:
 ///
 /// ---
-/// dub build :single --compiler=ldc2
+/// dub build :single --compiler=dmd --build=release
 /// ./bench/bin/itb-bench-single
 ///
 /// ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/bin/itb-bench-single
