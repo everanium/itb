@@ -19,13 +19,13 @@ use std::sync::Mutex;
 
 // Serialises the four import_mismatch_* tests that read
 // `itb::last_mismatch_field()` against each other. The accessor
-// reads a process-wide errno-style buffer (see .NEXTBIND.md §7
-// threading note); cargo's default test threading races the four
-// tests against each other within this binary, overwriting the
-// recorded field name between the failing import_state call and
-// the assert_eq. Other tests in this file do not trigger
-// STATUS_EASY_MISMATCH, so a lock shared only across these four is
-// sufficient — no need to gate the rest.
+// reads a process-wide errno-style buffer shared across all
+// threads in the address space; cargo's default test threading
+// races the four tests against each other within this binary,
+// overwriting the recorded field name between the failing
+// import_state call and the assert_eq. Other tests in this file
+// do not trigger STATUS_EASY_MISMATCH, so a lock shared only
+// across these four is sufficient — no need to gate the rest.
 static MISMATCH_FIELD_LOCK: Mutex<()> = Mutex::new(());
 
 const CANONICAL_HASHES: &[(&str, i32)] = &[

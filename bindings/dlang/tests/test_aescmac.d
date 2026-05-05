@@ -38,8 +38,8 @@ private size_t expectedKeyLen(string name)
 private static immutable int[] NONCE_SIZES = [128, 256, 512];
 private static immutable string[] MAC_NAMES = ["kmac256", "hmac-sha256", "hmac-blake3"];
 
-// Deterministic CSPRNG substitute (per .NEXTBIND.md §11.c). std.random
-// is pre-approved; seeded from a fixed value so failures reproduce.
+// Deterministic CSPRNG substitute. std.random is seeded from a fixed
+// value so test failures reproduce byte-for-byte across runs.
 private Random rng;
 static this() { rng = Random(0xC0FFEE); }
 

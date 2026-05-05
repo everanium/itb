@@ -14,9 +14,9 @@
  *
  * Free-function shape. The streams take Seeds (and an optional MAC),
  * NOT an itb_encryptor_t handle — matching the canonical
- * cross-binding contract codified in .NEXTBIND.md §11.k. The C# Phase
- * 5 attempt at handle-passing was rejected; the Rust / Python / D /
- * Ada source-of-truth shape is Seed-passing.
+ * cross-binding stream contract. The Rust / Python / D / Ada
+ * source-of-truth shape is Seed-passing; handle-passing is
+ * deliberately not exposed here.
  *
  * Callback design. Caller supplies a (read_fn, user_ctx) pair for the
  * input source and a (write_fn, user_ctx) pair for the output sink;

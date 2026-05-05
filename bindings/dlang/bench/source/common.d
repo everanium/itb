@@ -138,8 +138,9 @@ private shared ulong _randomCounter;
 
 /// Returns `n` non-deterministic test bytes via a clock-seeded
 /// xorshift64* LCG. Matches the Go-side generateDataExt /
-/// crypto/rand-fill pattern in spirit; CSPRNG substitution is
-/// pre-approved per `.NEXTBIND.md` §11.c.
+/// crypto/rand-fill pattern in spirit; the bench harness does not
+/// require cryptographic strength here, only payload non-uniformity
+/// and run-to-run divergence.
 ubyte[] randomBytes(size_t n) @trusted
 {
     ulong salt = atomicOp!"+="(_randomCounter, 1UL);

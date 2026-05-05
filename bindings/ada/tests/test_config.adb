@@ -32,9 +32,9 @@ procedure Test_Config is
 begin
 
    ------------------------------------------------------------------
-   --  bit_soup_roundtrip — Easy Mode auto-couple is intentional
-   --  (per .NEXTBIND.md §6); the global toggles independently and
-   --  is restored to the original value at the end.
+   --  bit_soup_roundtrip — Easy Mode auto-couple is intentional;
+   --  the global toggles independently and is restored to the
+   --  original value at the end.
    ------------------------------------------------------------------
    Itb.Set_Bit_Soup (1);
    if Itb.Get_Bit_Soup /= 1 then

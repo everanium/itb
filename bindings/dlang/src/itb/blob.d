@@ -183,10 +183,9 @@ struct Blob512
 // Shared method body — instantiated once per width-typed struct.
 // --------------------------------------------------------------------
 
-// Rationale for the mixin-template deviation from `.NEXTBIND.md` §15
-// D entry's "Skip templates unless absolutely needed" rule. The three
-// width-typed wrappers (`Blob128` / `Blob256` / `Blob512`) share 13
-// methods with bodies that differ only in the constructor's choice of
+// Rationale for the mixin-template choice. The three width-typed
+// wrappers (`Blob128` / `Blob256` / `Blob512`) share 13 methods with
+// bodies that differ only in the constructor's choice of
 // `ITB_Blob{128,256,512}_New`. Inlining the bodies into three separate
 // struct definitions would duplicate ~250 LOC of FFI wiring per width;
 // a single mixin template instantiated three times keeps the surface
@@ -351,7 +350,8 @@ private mixin template BlobImpl(int Width)
 
     /// Returns the MAC name from the handle, or an empty string if no
     /// MAC is associated. The trailing NUL libitb counts in the output
-    /// length is stripped uniformly (per `.NEXTBIND.md` §7).
+    /// length is stripped uniformly so the returned D string never
+    /// carries the C-side terminator.
     string getMACName() const @trusted
     {
         size_t h = _handle;

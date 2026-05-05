@@ -29,8 +29,10 @@ procedure Test_Attach_Lock_Seed is
    procedure Engage_Lock_Soup is
    begin
       Itb.Set_Lock_Soup (1);
-      --  Set_Lock_Soup auto-couples Bit_Soup=1 inside libitb (Easy
-      --  Mode auto-couple, intentional per .NEXTBIND.md §6).
+      --  Set_Lock_Soup auto-couples Bit_Soup=1 inside libitb. The
+      --  Easy Mode auto-couple is the documented behaviour: enabling
+      --  Lock_Soup implies Bit_Soup, since Lock_Soup operates on the
+      --  bit-soup permutation surface.
    end Engage_Lock_Soup;
 
    procedure Disengage_Lock_Soup is

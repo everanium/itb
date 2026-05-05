@@ -364,7 +364,9 @@ begin
    ------------------------------------------------------------------
    --  default_mac_override — Make ("blake3", 1024) (no Mac_Name) must
    --  override the empty string to "hmac-blake3" before any FFI call.
-   --  Mirrors the .NEXTBIND.md §6 documented contract.
+   --  This mirrors the documented Easy-Mode contract: the binding
+   --  substitutes the default MAC name when the caller omits it, so
+   --  libitb never sees an empty Mac_Name selector.
    ------------------------------------------------------------------
    declare
       Enc : constant Itb.Encryptor.Encryptor :=

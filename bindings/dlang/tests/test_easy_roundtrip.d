@@ -7,9 +7,8 @@
 // setters that mutate only the local Config copy without touching
 // libitb's process-global state.
 //
-// Skipped from the Rust source per the canonical-skip-set in
-// .NEXTBIND.md §5: none — the Rust file's tests all map cleanly to the
-// D surface.
+// No tests are skipped from the Rust source — every Rust case maps
+// cleanly onto the D surface.
 
 import std.exception : collectException;
 import std.random : Random, uniform;

@@ -133,7 +133,7 @@ describe('test_blob', () => {
   // Skipped — Python `test_double_free_idempotent` and
   // `test_context_manager` for Blob: covered by `using` /
   // `Disposable` contract in TypeScript and the wrapper's idempotent
-  // `.free()` pattern. Per `.NEXTBIND.md` §5 canonical skip set.
+  // `.free()` pattern.
 
   // ────────────────────────────────────────────────────────────────
   // Blob512 — areion512 round-trip, full matrix.

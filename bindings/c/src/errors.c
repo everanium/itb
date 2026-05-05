@@ -130,7 +130,9 @@ itb_status_t itb_internal_set_error_msg(int rc, const char *msg)
  *   Probe non-empty: *out_len = N - 1, return ITB_BUFFER_TOO_SMALL
  *   Read non-empty:  *out_len = N - 1, return ITB_OK, out NUL-terminated
  *
- * NUL-stripped uniformly per .NEXTBIND.md §7.
+ * NUL-stripped uniformly: libitb's `need` includes the trailing NUL,
+ * but *out_len reports VISIBLE length excluding NUL on every code
+ * path so callers see consistent strlen()-style semantics.
  */
 itb_status_t itb_internal_read_string(itb_internal_str_fn fn, void *ctx,
                                       char *out, size_t cap, size_t *out_len)

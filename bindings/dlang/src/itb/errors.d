@@ -227,10 +227,10 @@ string readLastMismatchField() @trusted nothrow
 /// `ITB_SeedHashName`, `ITB_Easy_Primitive`, `ITB_Easy_PrimitiveAt`,
 /// `ITB_Easy_MACName`, `ITB_Blob_GetMACName`, etc.).
 ///
-/// The trailing NUL libitb writes is stripped uniformly here (per
-/// `.NEXTBIND.md` §7 NUL-strip discipline). The caller passes a
-/// delegate that takes `(out_ptr, cap, out_len_ptr)` and returns the
-/// libitb status code.
+/// The trailing NUL libitb writes is stripped uniformly here so the
+/// returned D string never carries the C-side terminator. The caller
+/// passes a delegate that takes `(out_ptr, cap, out_len_ptr)` and
+/// returns the libitb status code.
 string readString(scope int delegate(char*, size_t, size_t*) @system call) @trusted
 {
     size_t outLen = 0;

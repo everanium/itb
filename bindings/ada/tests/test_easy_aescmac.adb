@@ -55,10 +55,10 @@ procedure Test_Easy_Aescmac is
 
    ------------------------------------------------------------------
    --  Pseudo-random byte buffer (deterministic LCG seeded from the
-   --  wall clock). Pre-approved CSPRNG substitution per
-   --  .NEXTBIND.md §11.c — ITB encryption is keyed by libitb's own
-   --  internal CSPRNG, so test plaintext / MAC key only need to be
-   --  non-trivial, not unpredictable.
+   --  wall clock). A non-CSPRNG generator is acceptable here because
+   --  ITB encryption is keyed by libitb's own internal CSPRNG; the
+   --  test plaintext / MAC key only need to be non-trivial, not
+   --  unpredictable.
    ------------------------------------------------------------------
 
    State : Unsigned_64 :=

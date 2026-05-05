@@ -78,8 +78,7 @@ static size_t saturating_expansion(size_t n)
 /*
  * Wipe-on-grow contract: zero the previous buffer before freeing it
  * so the most-recent ciphertext / plaintext does not linger in heap
- * garbage between cipher calls. Mirrors the C# Phase-8 audit fix M2
- * pattern (per .NEXTBIND.md §7).
+ * garbage between cipher calls.
  */
 static itb_status_t ensure_cache(struct itb_encryptor *e, size_t need)
 {

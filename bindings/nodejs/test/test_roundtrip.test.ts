@@ -133,7 +133,7 @@ describe('test_roundtrip', () => {
   // Skipped — Python `test_double_free_idempotent` and
   // `test_context_manager` on Seed: covered by `using`/`Disposable`
   // contract in TypeScript and the wrapper's idempotent `.free()`
-  // pattern. See `.NEXTBIND.md` §5 canonical skip set.
+  // pattern.
 
   // ────────────────────────────────────────────────────────────────
   // Single round-trip — full cross-primitive matrix.
@@ -161,7 +161,6 @@ describe('test_roundtrip', () => {
   // TypeScript's `Uint8Array` parameter type accepts any underlying
   // ArrayBuffer view (Buffer, subarray, fromHex, etc.) by construction;
   // there is no separate bytearray / memoryview type to discriminate.
-  // Per `.NEXTBIND.md` §5 canonical skip set.
 
   test('single seed width mismatch', () => {
     using ns = new Seed('siphash24', 1024); // width 128

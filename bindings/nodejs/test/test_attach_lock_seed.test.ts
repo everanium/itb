@@ -145,7 +145,6 @@ describe('test_attach_lock_seed', () => {
   // non-Seed value is passed. TypeScript rejects this at compile time
   // via the typed `lockSeed: Seed` parameter; the runtime guard
   // (`instanceof Seed`) is unreachable on type-checked call sites.
-  // Per `.NEXTBIND.md` §5 canonical skip set.
 
   test('overlay off panics on encrypt', () => {
     // Without either BitSoup or LockSoup engaged, the build-PRF guard

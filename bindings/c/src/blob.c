@@ -252,8 +252,8 @@ static itb_status_t blob_set_mac_name(uintptr_t handle, const char *name)
 }
 
 /* String-getter context shim for the MAC-name reader — routed through
- * itb_internal_read_string for uniform NUL-strip handling per
- * .NEXTBIND.md §7. */
+ * itb_internal_read_string for uniform NUL-strip handling so *out_len
+ * reports VISIBLE length (excluding NUL) on every code path. */
 struct blob_mac_name_ctx { uintptr_t handle; };
 
 static int call_blob_mac_name(char *out, size_t cap, size_t *out_len, void *ctx)
