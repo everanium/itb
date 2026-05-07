@@ -131,7 +131,7 @@ sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
 The wire format adds 32 bytes of stream prefix plus one byte of
 encrypted trailing flag per chunk; no externally visible MAC tag.
 
-**Easy Mode example:**
+**Easy Mode:**
 
 `itb::Encryptor::stream_encrypt_auth` accepts a `StreamSource`
 (`std::function<std::size_t(std::uint8_t*, std::size_t)>`) and a

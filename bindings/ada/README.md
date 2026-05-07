@@ -168,7 +168,7 @@ runtime `dlopen`-style probe is performed at startup.
 
 **Streaming AEAD** authenticates a chunked stream end-to-end while preserving the deniability of the per-chunk MAC-Inside-Encrypt container. Each chunk's MAC binds the encrypted payload to a 32-byte CSPRNG stream anchor (written as a once-per-stream wire prefix), the cumulative pixel offset of preceding chunks, and a final-flag bit — defending against chunk reorder, replay within or across streams sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail. The wire format adds 32 bytes of stream prefix plus one byte of encrypted trailing flag per chunk; no externally visible MAC tag.
 
-**Easy Mode example:**
+**Easy Mode:**
 
 `Itb.Encryptor.Encrypt_Stream_Auth` accepts any `Ada.Streams.Root_Stream_Type'Class` source and sink. `Ada.Streams.Stream_IO.Stream (File)` returns the corresponding `Stream_Access` for a file opened via `Stream_IO.Open` / `Stream_IO.Create`, which lets the binding stream directly between disk files. The MAC key is allocated CSPRNG-fresh inside the encryptor at constructor time.
 
