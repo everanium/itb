@@ -214,17 +214,6 @@ through the top-level free functions `itb.EncryptStream` /
 `itb.EncryptStreamAuth` and decrypt counterparts (process-wide configuration
 via `itb.Set*`, explicit seed + MAC handles).
 
-### Streaming AEAD Easy (MAC Authenticated)
-
-The high-level `easy.Encryptor.EncryptStreamAuthIO` consumes an `io.Reader`
-plus an explicit chunk size, generates the 32-byte `stream_id` prefix
-internally, drains the reader in chunkSize-byte windows, and writes each
-on-wire chunk to the supplied `io.Writer` in stream order. The matching
-`DecryptStreamAuthIO` reads the prefix, walks the wire bytes one chunk at a
-time, and writes recovered plaintext to the output writer. The MAC key is
-allocated CSPRNG-fresh inside the encryptor at construction time and is not
-exposed to the caller.
-
 ### Streaming Bindings Asymmetry
 
 The Go core and the `easy` package expose `io.Reader` / `io.Writer` entry
@@ -236,6 +225,17 @@ driving the read/write loop. The two patterns produce identical on-wire
 bytes — the **Alternative** examples in the No-MAC subsections below mirror
 the binding-side idiom for callers who prefer external control over chunk
 granularity and back-pressure.
+
+### Streaming AEAD Easy (MAC Authenticated)
+
+The high-level `easy.Encryptor.EncryptStreamAuthIO` consumes an `io.Reader`
+plus an explicit chunk size, generates the 32-byte `stream_id` prefix
+internally, drains the reader in chunkSize-byte windows, and writes each
+on-wire chunk to the supplied `io.Writer` in stream order. The matching
+`DecryptStreamAuthIO` reads the prefix, walks the wire bytes one chunk at a
+time, and writes recovered plaintext to the output writer. The MAC key is
+allocated CSPRNG-fresh inside the encryptor at construction time and is not
+exposed to the caller.
 
 ```go
 package main
