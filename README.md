@@ -138,14 +138,6 @@ Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
 Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). `CGO_ENABLED=0` alone swaps only the C pixel kernel for the portable Go pipeline; the ZMM-batched hash ASM and upstream stdlib ASM stay engaged via Go assembly, so end-to-end throughput stays close to the CGO default on AVX-512 hosts. The full scalar fallback is not usable with ITB (`-tags=purego`, where every upstream module honours the convention) is **~20×–100× slower** when the ZMM hash kernels fall back to per-call scalar references — every primitive picks up a measurable ZMM uplift, but the relative gap is widest on the BLAKE / ARX primitives (heavier per-call closure overhead amortised across four lanes) and narrowest on AES-CMAC / SipHash-2-4, whose scalar paths already run AES-NI-accelerated through `crypto/aes` and the hand-tuned `dchest/siphash` assembly so the batched arm has less headroom to recover. The middle ground is `-tags=noitbasm` — disables the ITB chain-absorb wrapper while leaving upstream hash ASM engaged; throughput tracks the OLDBENCH single-Func numbers on hosts without AVX-512+VL where the 4-lane batched wrapper would be dead weight. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
-Build-time switches that govern hash-kernel selection:
-
-| Build flag | Our internal asm | Upstream hash asm | When to use |
-|---|---|---|---|
-| (none) | engaged | engaged | Default — full asm stack on AVX-512+VL hosts |
-| <code>‑tags=noitbasm</code> | off | engaged | Hosts without AVX-512+VL where the 4-lane chain-absorb wrapper is dead weight; the encrypt path falls into `process_cgo`'s nil-`BatchHash` branch and drives 4 single-call invocations through the upstream asm directly |
-| <code>‑tags=purego</code> | off | off (forced via the universal `purego` convention honoured by `zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) is not usable with ITB | Reproducible-build / sandboxed targets that must avoid every asm path |
-
 ### ASIC Scalability
 
 **FPGA proof-of-concept is planned** using open-source Verilog IP cores for SipHash and ChaCha20 DRBG, with a custom ITB pixel pipeline. Target: full encrypt/decrypt roundtrip on a single FPGA chip.
