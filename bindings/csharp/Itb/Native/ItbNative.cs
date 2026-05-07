@@ -499,4 +499,141 @@ internal static unsafe partial class ItbNative
 
     [LibraryImport("libitb")]
     internal static partial int ITB_Blob_Import3(nuint handle, byte* blob, nuint blobLen);
+
+    // ----------------------------------------------------------------
+    // Streaming AEAD per-chunk dispatch — Single Ouroboros (3 seeds + MAC).
+    // streamID points to a 32-byte buffer (length fixed by the
+    // Streaming AEAD construction). cumulativePixelOffset is the
+    // running sum of W*H over preceding chunks; finalFlag is non-zero
+    // for the terminating chunk. finalFlagOut on the decrypt side
+    // receives the recovered flag value (0 / 1).
+    // ----------------------------------------------------------------
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_EncryptStreamAuthenticated128(
+        nuint noiseHandle, nuint dataHandle, nuint startHandle, nuint macHandle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_EncryptStreamAuthenticated256(
+        nuint noiseHandle, nuint dataHandle, nuint startHandle, nuint macHandle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_EncryptStreamAuthenticated512(
+        nuint noiseHandle, nuint dataHandle, nuint startHandle, nuint macHandle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_DecryptStreamAuthenticated128(
+        nuint noiseHandle, nuint dataHandle, nuint startHandle, nuint macHandle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_DecryptStreamAuthenticated256(
+        nuint noiseHandle, nuint dataHandle, nuint startHandle, nuint macHandle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_DecryptStreamAuthenticated512(
+        nuint noiseHandle, nuint dataHandle, nuint startHandle, nuint macHandle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
+
+    // Streaming AEAD per-chunk dispatch — Triple Ouroboros (7 seeds + MAC).
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_EncryptStreamAuthenticated3x128(
+        nuint noiseHandle,
+        nuint dataHandle1, nuint dataHandle2, nuint dataHandle3,
+        nuint startHandle1, nuint startHandle2, nuint startHandle3,
+        nuint macHandle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_EncryptStreamAuthenticated3x256(
+        nuint noiseHandle,
+        nuint dataHandle1, nuint dataHandle2, nuint dataHandle3,
+        nuint startHandle1, nuint startHandle2, nuint startHandle3,
+        nuint macHandle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_EncryptStreamAuthenticated3x512(
+        nuint noiseHandle,
+        nuint dataHandle1, nuint dataHandle2, nuint dataHandle3,
+        nuint startHandle1, nuint startHandle2, nuint startHandle3,
+        nuint macHandle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_DecryptStreamAuthenticated3x128(
+        nuint noiseHandle,
+        nuint dataHandle1, nuint dataHandle2, nuint dataHandle3,
+        nuint startHandle1, nuint startHandle2, nuint startHandle3,
+        nuint macHandle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_DecryptStreamAuthenticated3x256(
+        nuint noiseHandle,
+        nuint dataHandle1, nuint dataHandle2, nuint dataHandle3,
+        nuint startHandle1, nuint startHandle2, nuint startHandle3,
+        nuint macHandle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_DecryptStreamAuthenticated3x512(
+        nuint noiseHandle,
+        nuint dataHandle1, nuint dataHandle2, nuint dataHandle3,
+        nuint startHandle1, nuint startHandle2, nuint startHandle3,
+        nuint macHandle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
+
+    // Easy-mode Streaming AEAD per-chunk dispatch (driven by the
+    // encryptor handle rather than separate seed + MAC handles).
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_Easy_EncryptStreamAuth(
+        nuint handle,
+        byte* plaintext, nuint ptlen,
+        byte* streamID, ulong cumulativePixelOffset, int finalFlag,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb")]
+    internal static partial int ITB_Easy_DecryptStreamAuth(
+        nuint handle,
+        byte* ciphertext, nuint ctlen,
+        byte* streamID, ulong cumulativePixelOffset,
+        byte* @out, nuint outCap, out nuint outLen,
+        out int finalFlagOut);
 }

@@ -282,3 +282,105 @@ int ITB_Blob_Export(size_t handle, int optsBitmask, void* outBuf, size_t outCap,
 int ITB_Blob_Export3(size_t handle, int optsBitmask, void* outBuf, size_t outCap, size_t* outLen);
 int ITB_Blob_Import(size_t handle, void* blob, size_t blobLen);
 int ITB_Blob_Import3(size_t handle, void* blob, size_t blobLen);
+
+// ----- Streaming AEAD per-chunk surface ----------------------------------
+//
+// One ABI export per (Single / Triple) × (Encrypt / Decrypt) ×
+// (128 / 256 / 512). The encrypt path takes streamID + cumulative
+// pixel offset + final_flag in; the decrypt path takes streamID +
+// cumulative pixel offset in and writes final_flag_out. Easy-mode
+// counterparts route per-chunk dispatch through the encryptor's
+// bound config + MAC closure.
+
+int ITB_EncryptStreamAuthenticated128(
+    size_t noiseHandle, size_t dataHandle, size_t startHandle, size_t macHandle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+int ITB_EncryptStreamAuthenticated256(
+    size_t noiseHandle, size_t dataHandle, size_t startHandle, size_t macHandle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+int ITB_EncryptStreamAuthenticated512(
+    size_t noiseHandle, size_t dataHandle, size_t startHandle, size_t macHandle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+
+int ITB_DecryptStreamAuthenticated128(
+    size_t noiseHandle, size_t dataHandle, size_t startHandle, size_t macHandle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);
+int ITB_DecryptStreamAuthenticated256(
+    size_t noiseHandle, size_t dataHandle, size_t startHandle, size_t macHandle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);
+int ITB_DecryptStreamAuthenticated512(
+    size_t noiseHandle, size_t dataHandle, size_t startHandle, size_t macHandle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);
+
+int ITB_EncryptStreamAuthenticated3x128(
+    size_t noiseHandle,
+    size_t dataHandle1, size_t dataHandle2, size_t dataHandle3,
+    size_t startHandle1, size_t startHandle2, size_t startHandle3,
+    size_t macHandle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+int ITB_EncryptStreamAuthenticated3x256(
+    size_t noiseHandle,
+    size_t dataHandle1, size_t dataHandle2, size_t dataHandle3,
+    size_t startHandle1, size_t startHandle2, size_t startHandle3,
+    size_t macHandle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+int ITB_EncryptStreamAuthenticated3x512(
+    size_t noiseHandle,
+    size_t dataHandle1, size_t dataHandle2, size_t dataHandle3,
+    size_t startHandle1, size_t startHandle2, size_t startHandle3,
+    size_t macHandle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+
+int ITB_DecryptStreamAuthenticated3x128(
+    size_t noiseHandle,
+    size_t dataHandle1, size_t dataHandle2, size_t dataHandle3,
+    size_t startHandle1, size_t startHandle2, size_t startHandle3,
+    size_t macHandle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);
+int ITB_DecryptStreamAuthenticated3x256(
+    size_t noiseHandle,
+    size_t dataHandle1, size_t dataHandle2, size_t dataHandle3,
+    size_t startHandle1, size_t startHandle2, size_t startHandle3,
+    size_t macHandle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);
+int ITB_DecryptStreamAuthenticated3x512(
+    size_t noiseHandle,
+    size_t dataHandle1, size_t dataHandle2, size_t dataHandle3,
+    size_t startHandle1, size_t startHandle2, size_t startHandle3,
+    size_t macHandle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);
+
+int ITB_Easy_EncryptStreamAuth(
+    size_t handle,
+    void* plaintext, size_t ptLen,
+    ubyte* streamID, ulong cumulativePixelOffset, int finalFlag,
+    void* outBuf, size_t outCap, size_t* outLen);
+int ITB_Easy_DecryptStreamAuth(
+    size_t handle,
+    void* ciphertext, size_t ctLen,
+    ubyte* streamID, ulong cumulativePixelOffset,
+    void* outBuf, size_t outCap, size_t* outLen, int* finalFlagOut);

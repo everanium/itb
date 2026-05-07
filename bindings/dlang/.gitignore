@@ -8,6 +8,8 @@
 *.dylib
 *.dll
 __test__library__
+bench/bin/
+bench/results/
 itb-binding
 itb-test-runner
 itb-bench

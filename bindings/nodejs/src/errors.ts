@@ -95,6 +95,32 @@ export class ITBBlobVersionTooNewError extends ITBError {
   }
 }
 
+/**
+ * Raised by the authenticated streaming decrypt path when the input
+ * transcript exhausts without a chunk whose recovered `final_flag`
+ * is `1`. Carries `Status.StreamTruncated` (numeric value `23`).
+ */
+export class ITBStreamTruncatedError extends ITBError {
+  constructor(code: number, message?: string) {
+    super(code, message);
+    this.name = 'ITBStreamTruncatedError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * Raised by the authenticated streaming decrypt path when extra
+ * chunk bytes follow the terminating chunk on the wire transcript.
+ * Carries `Status.StreamAfterFinal` (numeric value `24`).
+ */
+export class ITBStreamAfterFinalError extends ITBError {
+  constructor(code: number, message?: string) {
+    super(code, message);
+    this.name = 'ITBStreamAfterFinalError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 function formatMessage(code: number, message: string | undefined): string {
   if (!message || message.length === 0) {
     return `itb: status=${code}`;
@@ -162,6 +188,10 @@ export function errorFromStatus(code: number): ITBError {
       return new ITBBlobMalformedError(code, msg);
     case Status.BlobVersionTooNew:
       return new ITBBlobVersionTooNewError(code, msg);
+    case Status.StreamTruncated:
+      return new ITBStreamTruncatedError(code, msg);
+    case Status.StreamAfterFinal:
+      return new ITBStreamAfterFinalError(code, msg);
     default:
       return new ITBError(code, msg);
   }

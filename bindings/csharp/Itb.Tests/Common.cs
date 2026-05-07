@@ -27,6 +27,22 @@ namespace Itb.Tests;
 public static class TestCollections
 {
     public const string GlobalState = "ItbGlobalState";
+
+    /// <summary>
+    /// Serialisation token for tests that assert on
+    /// <see cref="ItbEasyMismatchException.Field"/>.
+    /// <c>ITB_Easy_LastMismatchField</c> is a process-wide atomic
+    /// (documented in <see cref="ItbException"/>'s file header) — two
+    /// import calls that fail concurrently on different fields can
+    /// cross their published field-name strings between the two
+    /// exceptions. Test classes that read <c>.Field</c> opt in via
+    /// <c>[Collection(TestCollections.MismatchField)]</c> so the read
+    /// returns the value libitb published for the test's own failing
+    /// call, not for a sibling test's. The collection is independent
+    /// of <see cref="GlobalState"/> so field-asserting tests do not
+    /// serialise against the unrelated process-global state setters.
+    /// </summary>
+    public const string MismatchField = "ItbMismatchField";
 }
 
 /// <summary>
@@ -36,6 +52,16 @@ public static class TestCollections
 /// </summary>
 [CollectionDefinition(TestCollections.GlobalState, DisableParallelization = true)]
 public sealed class GlobalStateCollection
+{
+}
+
+/// <summary>
+/// Empty marker class for the <see cref="TestCollections.MismatchField"/>
+/// serialisation token. See <see cref="TestCollections.MismatchField"/>
+/// for the rationale.
+/// </summary>
+[CollectionDefinition(TestCollections.MismatchField, DisableParallelization = true)]
+public sealed class MismatchFieldCollection
 {
 }
 

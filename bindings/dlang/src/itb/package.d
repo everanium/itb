@@ -40,7 +40,9 @@ public import itb.errors :
     ITBEasyMismatchError,
     ITBBlobModeMismatchError,
     ITBBlobMalformedError,
-    ITBBlobVersionTooNewError;
+    ITBBlobVersionTooNewError,
+    ITBStreamTruncatedError,
+    ITBStreamAfterFinalError;
 public import itb.registry :
     version_,
     listHashes,
@@ -89,8 +91,16 @@ public import itb.streams :
     StreamDecryptor,
     StreamEncryptor3,
     StreamDecryptor3,
+    StreamEncryptorAuth,
+    StreamDecryptorAuth,
+    StreamEncryptorAuth3,
+    StreamDecryptorAuth3,
     encryptStream,
     decryptStream,
     encryptStreamTriple,
     decryptStreamTriple,
+    encryptStreamAuth,
+    decryptStreamAuth,
+    encryptStreamAuthTriple,
+    decryptStreamAuthTriple,
     DEFAULT_CHUNK_SIZE;

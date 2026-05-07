@@ -176,6 +176,107 @@ extern int ITB_Blob_Export3(uintptr_t handle, int opts_bitmask, void *out, size_
 extern int ITB_Blob_Import(uintptr_t handle, void *blob, size_t blob_len);
 extern int ITB_Blob_Import3(uintptr_t handle, void *blob, size_t blob_len);
 
+/* ---- Streaming AEAD per-chunk ABI --------------------------------- */
+/*
+ * Per-chunk Streaming AEAD entry points. The caller drives the chunk
+ * loop on the binding side: generate a 32-byte CSPRNG stream_id at
+ * stream start, write it as wire prefix, track a running cumulative
+ * pixel offset (sum of W * H over previously emitted chunks), and set
+ * final_flag != 0 on the terminating chunk only. Each call computes
+ * one chunk; same caller-allocated-buffer convention as the existing
+ * ITB_EncryptAuth* family. The 128 / 256 / 512 entry points are kept
+ * distinct purely for ABI symmetry; the underlying capi handler
+ * dispatches by the seeds' native hash width.
+ */
+extern int ITB_EncryptStreamAuthenticated128(
+    uintptr_t noise, uintptr_t data, uintptr_t start, uintptr_t mac,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_EncryptStreamAuthenticated256(
+    uintptr_t noise, uintptr_t data, uintptr_t start, uintptr_t mac,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_EncryptStreamAuthenticated512(
+    uintptr_t noise, uintptr_t data, uintptr_t start, uintptr_t mac,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_DecryptStreamAuthenticated128(
+    uintptr_t noise, uintptr_t data, uintptr_t start, uintptr_t mac,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+extern int ITB_DecryptStreamAuthenticated256(
+    uintptr_t noise, uintptr_t data, uintptr_t start, uintptr_t mac,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+extern int ITB_DecryptStreamAuthenticated512(
+    uintptr_t noise, uintptr_t data, uintptr_t start, uintptr_t mac,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+extern int ITB_EncryptStreamAuthenticated3x128(
+    uintptr_t noise,
+    uintptr_t data1, uintptr_t data2, uintptr_t data3,
+    uintptr_t start1, uintptr_t start2, uintptr_t start3,
+    uintptr_t mac,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_EncryptStreamAuthenticated3x256(
+    uintptr_t noise,
+    uintptr_t data1, uintptr_t data2, uintptr_t data3,
+    uintptr_t start1, uintptr_t start2, uintptr_t start3,
+    uintptr_t mac,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_EncryptStreamAuthenticated3x512(
+    uintptr_t noise,
+    uintptr_t data1, uintptr_t data2, uintptr_t data3,
+    uintptr_t start1, uintptr_t start2, uintptr_t start3,
+    uintptr_t mac,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_DecryptStreamAuthenticated3x128(
+    uintptr_t noise,
+    uintptr_t data1, uintptr_t data2, uintptr_t data3,
+    uintptr_t start1, uintptr_t start2, uintptr_t start3,
+    uintptr_t mac,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+extern int ITB_DecryptStreamAuthenticated3x256(
+    uintptr_t noise,
+    uintptr_t data1, uintptr_t data2, uintptr_t data3,
+    uintptr_t start1, uintptr_t start2, uintptr_t start3,
+    uintptr_t mac,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+extern int ITB_DecryptStreamAuthenticated3x512(
+    uintptr_t noise,
+    uintptr_t data1, uintptr_t data2, uintptr_t data3,
+    uintptr_t start1, uintptr_t start2, uintptr_t start3,
+    uintptr_t mac,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+extern int ITB_Easy_EncryptStreamAuth(
+    uintptr_t handle,
+    void *plaintext, size_t pt_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset, int final_flag,
+    void *out, size_t out_cap, size_t *out_len);
+extern int ITB_Easy_DecryptStreamAuth(
+    uintptr_t handle,
+    void *ciphertext, size_t ct_len,
+    uint8_t *stream_id, uint64_t cumulative_pixel_offset,
+    void *out, size_t out_cap, size_t *out_len, int *final_flag_out);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

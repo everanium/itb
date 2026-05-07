@@ -42,5 +42,11 @@ internal static class Status
     public const int BlobVersionTooNew = 21;
     public const int BlobTooManyOpts = 22;
 
+    // Streaming AEAD sentinel codes — block 23..24 covers the two
+    // end-of-stream failure modes the binding-side stream-loop helper
+    // detects after the per-chunk MAC verification path.
+    public const int StreamTruncated = 23;
+    public const int StreamAfterFinal = 24;
+
     public const int Internal = 99;
 }

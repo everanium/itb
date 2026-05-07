@@ -15,6 +15,7 @@ using Itb.Native;
 
 namespace Itb.Tests;
 
+[Collection(TestCollections.MismatchField)]
 public class TestEasyBlake3
 {
     // (hash, ITB_seed_width) — BLAKE3 ships only at -256.

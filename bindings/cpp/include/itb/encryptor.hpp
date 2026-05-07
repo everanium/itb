@@ -44,8 +44,10 @@
 #include <itb.h>
 #include <itb/errors.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -463,6 +465,30 @@ public:
         return decrypt_auth(reinterpret_cast<const std::uint8_t*>(s.data()),
                             s.size());
     }
+
+    // ---- Streaming AEAD member surface --------------------------
+    //
+    // Method-style entry points for the encryptor-bound Streaming AEAD
+    // pair. Forwards to the free functions
+    // `itb::encryptor_stream_encrypt_auth` /
+    // `itb::encryptor_stream_decrypt_auth` declared in
+    // `<itb/streams.hpp>`. Object-style consumers reach the streaming
+    // path without naming the free function explicitly.
+    //
+    // Definitions live at the bottom of `<itb/streams.hpp>` so the
+    // body has access to the helper context types defined alongside
+    // the free functions. Including only `<itb/encryptor.hpp>` is not
+    // sufficient to call these — pull in `<itb.hpp>` or
+    // `<itb/streams.hpp>`.
+    void stream_encrypt_auth(
+        std::function<std::size_t(std::uint8_t*, std::size_t)> read,
+        std::function<void(const std::uint8_t*, std::size_t)> write,
+        std::size_t chunk_size = static_cast<std::size_t>(16 * 1024 * 1024));
+
+    void stream_decrypt_auth(
+        std::function<std::size_t(std::uint8_t*, std::size_t)> read,
+        std::function<void(const std::uint8_t*, std::size_t)> write,
+        std::size_t chunk_size = static_cast<std::size_t>(16 * 1024 * 1024));
 
     // ---- Per-instance configuration setters --------------------
 

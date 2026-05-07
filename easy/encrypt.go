@@ -118,3 +118,67 @@ func (e *Encryptor) EncryptAuth(plaintext []byte) ([]byte, error) {
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
 }
+
+// EncryptStreamAuthenticated encrypts a single Streaming AEAD chunk
+// under the encryptor's bound seeds + MAC, with the streaming binding
+// components (streamID, cumulativePixelOffset, finalFlag) included in
+// the per-chunk MAC input. The returned chunk is one self-contained
+// authenticated wire chunk; the caller composes streams by writing a
+// 32-byte CSPRNG streamID prefix once at stream start, then invoking
+// this method per chunk with the running cumulativePixelOffset and
+// finalFlag = true on the terminating chunk only.
+//
+// Panics with [ErrClosed] when called after [Encryptor.Close].
+// Returns an error for the same failure paths as
+// [itb.EncryptStreamAuthenticated128] /
+// [itb.EncryptStreamAuthenticated256] /
+// [itb.EncryptStreamAuthenticated512] /
+// [itb.EncryptStreamAuthenticated3x{N}].
+func (e *Encryptor) EncryptStreamAuthenticated(
+	plaintext []byte,
+	streamID [32]byte,
+	cumulativePixelOffset uint64,
+	finalFlag bool,
+) ([]byte, error) {
+	if e.closed {
+		panic(ErrClosed)
+	}
+	e.firstEncryptCalled = true
+
+	switch e.width {
+	case 128:
+		if e.Mode == 1 {
+			return itb.EncryptStreamAuthenticated128Cfg(e.cfg,
+				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
+				plaintext, e.macFunc, streamID, cumulativePixelOffset, finalFlag)
+		}
+		return itb.EncryptStreamAuthenticated3x128Cfg(e.cfg,
+			e.seeds[0].(*itb.Seed128),
+			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
+			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
+			plaintext, e.macFunc, streamID, cumulativePixelOffset, finalFlag)
+	case 256:
+		if e.Mode == 1 {
+			return itb.EncryptStreamAuthenticated256Cfg(e.cfg,
+				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
+				plaintext, e.macFunc, streamID, cumulativePixelOffset, finalFlag)
+		}
+		return itb.EncryptStreamAuthenticated3x256Cfg(e.cfg,
+			e.seeds[0].(*itb.Seed256),
+			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
+			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
+			plaintext, e.macFunc, streamID, cumulativePixelOffset, finalFlag)
+	case 512:
+		if e.Mode == 1 {
+			return itb.EncryptStreamAuthenticated512Cfg(e.cfg,
+				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
+				plaintext, e.macFunc, streamID, cumulativePixelOffset, finalFlag)
+		}
+		return itb.EncryptStreamAuthenticated3x512Cfg(e.cfg,
+			e.seeds[0].(*itb.Seed512),
+			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
+			e.seeds[4].(*itb.Seed512), e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512),
+			plaintext, e.macFunc, streamID, cumulativePixelOffset, finalFlag)
+	}
+	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
+}

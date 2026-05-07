@@ -119,6 +119,131 @@ follows the standard dynamic-linker order:
    without `LD_LIBRARY_PATH`.
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while
+preserving the deniability of the per-chunk MAC-Inside-Encrypt
+container. Each chunk's MAC binds the encrypted payload to a 32-byte
+CSPRNG stream anchor (written as a once-per-stream wire prefix), the
+cumulative pixel offset of preceding chunks, and a final-flag bit —
+defending against chunk reorder, replay within or across streams
+sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
+The wire format adds 32 bytes of stream prefix plus one byte of
+encrypted trailing flag per chunk; no externally visible MAC tag.
+
+**Easy Mode example:**
+
+`itb::Encryptor::stream_encrypt_auth` accepts a `StreamSource`
+(`std::function<std::size_t(std::uint8_t*, std::size_t)>`) and a
+`StreamSink` (`std::function<void(const std::uint8_t*, std::size_t)>`).
+Closures capturing `std::ifstream` / `std::ofstream` by reference adapt
+file streams to the binding's callback shape. The MAC key is allocated
+CSPRNG-fresh inside the encryptor at constructor time.
+
+```cpp
+#include <fstream>
+#include <itb.hpp>
+
+constexpr std::size_t kChunkSize = std::size_t(16) * 1024 * 1024;
+
+auto make_reader = [](std::ifstream& in) {
+    return [&in](std::uint8_t* buf, std::size_t cap) -> std::size_t {
+        in.read(reinterpret_cast<char*>(buf), cap);
+        return static_cast<std::size_t>(in.gcount());
+    };
+};
+auto make_writer = [](std::ofstream& out) {
+    return [&out](const std::uint8_t* buf, std::size_t n) {
+        out.write(reinterpret_cast<const char*>(buf), n);
+    };
+};
+
+itb::Encryptor enc{"areion512", 1024, "hmac-blake3", 1};
+{
+    std::ifstream fin("/tmp/64mb.src", std::ios::binary);
+    std::ofstream fout("/tmp/64mb.enc", std::ios::binary);
+    enc.stream_encrypt_auth(make_reader(fin), make_writer(fout), kChunkSize);
+}
+{
+    std::ifstream fin("/tmp/64mb.enc", std::ios::binary);
+    std::ofstream fout("/tmp/64mb.dst", std::ios::binary);
+    enc.stream_decrypt_auth(make_reader(fin), make_writer(fout), kChunkSize);
+}
+```
+
+**Build + run:**
+
+```sh
+g++ -std=c++17 -O2 -Wall -o main main.cpp \
+    -I ~/src/c/include \
+    -I ~/src/cpp/include \
+    ~/src/c/build/libitb_c.a \
+    -L ~/src/dist/linux-amd64 -litb \
+    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -lpthread -ldl
+./main
+```
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example:**
+
+Free functions `itb::encrypt_stream_auth` / `itb::decrypt_stream_auth`
+take three `itb::Seed` instances plus an `itb::Mac` (32-byte key from
+`/dev/urandom`) and stream through the same chunked-AEAD construction.
+The same `StreamSource` / `StreamSink` closure shape applies as in Easy
+Mode.
+
+```cpp
+itb::Seed noise{"areion512", 1024};
+itb::Seed data {"areion512", 1024};
+itb::Seed start{"areion512", 1024};
+auto mac_key = csprng_mac_key();           // 32 bytes from /dev/urandom
+itb::Mac mac{"hmac-blake3", mac_key};
+
+{
+    std::ifstream fin("/tmp/64mb.src", std::ios::binary);
+    std::ofstream fout("/tmp/64mb.enc", std::ios::binary);
+    itb::encrypt_stream_auth(noise, data, start, mac,
+                             make_reader(fin), make_writer(fout),
+                             kChunkSize);
+}
+```
+
+**Build + run:**
+
+```sh
+g++ -std=c++17 -O2 -Wall -o main main.cpp \
+    -I ~/src/c/include \
+    -I ~/src/cpp/include \
+    ~/src/c/build/libitb_c.a \
+    -L ~/src/dist/linux-amd64 -litb \
+    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -lpthread -ldl
+./main
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+Linking pulls in both the static C-binding archive
+(`build/libitb_c.a`, used by the C++ wrapper internally) AND the shared
+Go-built library (`-litb`). The C++ headers under `bindings/cpp/include`
+re-use the C-binding's `itb.h` for the raw ABI declarations.
+
 ## Quick Start — `itb::Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 `itb::Encryptor` (mirroring the `github.com/everanium/itb/easy` Go

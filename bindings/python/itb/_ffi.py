@@ -97,6 +97,13 @@ STATUS_BLOB_MODE_MISMATCH = 19
 STATUS_BLOB_MALFORMED = 20
 STATUS_BLOB_VERSION_TOO_NEW = 21
 STATUS_BLOB_TOO_MANY_OPTS = 22
+# Streaming AEAD sentinel codes — block 23..24 covers the two
+# end-of-stream failure modes the binding-side stream-loop helper
+# detects after the per-chunk MAC verification path. Numeric values
+# are cross-binding canonical (mirrors ITB_STREAM_TRUNCATED /
+# ITB_STREAM_AFTER_FINAL in cmd/cshared/internal/capi/errors.go).
+STATUS_STREAM_TRUNCATED = 23
+STATUS_STREAM_AFTER_FINAL = 24
 STATUS_INTERNAL = 99
 
 
@@ -106,6 +113,24 @@ class ITBError(RuntimeError):
     def __init__(self, code: int, message: str = ""):
         self.code = code
         super().__init__(f"itb: status={code} ({message})" if message else f"itb: status={code}")
+
+
+class ItbStreamTruncatedError(ITBError):
+    """Raised when an authenticated stream input exhausts without
+    observing a chunk whose recovered ``final_flag`` is ``1``. Carries
+    :data:`STATUS_STREAM_TRUNCATED` (numeric value ``23``)."""
+
+    def __init__(self, message: str = ""):
+        super().__init__(STATUS_STREAM_TRUNCATED, message)
+
+
+class ItbStreamAfterFinalError(ITBError):
+    """Raised when extra chunk bytes follow the terminating chunk on an
+    authenticated stream's wire transcript. Carries
+    :data:`STATUS_STREAM_AFTER_FINAL` (numeric value ``24``)."""
+
+    def __init__(self, message: str = ""):
+        super().__init__(STATUS_STREAM_AFTER_FINAL, message)
 
 
 # C ABI integer-typedef widths track the host word size — uintptr_t
@@ -359,6 +384,141 @@ extern int ITB_Blob_Import(
 extern int ITB_Blob_Import3(
     uintptr_t handle,
     void* blob, size_t blobLen);
+
+/* Streaming AEAD per-chunk dispatch — Single Ouroboros (3 seeds + MAC).
+ * Mirrors the parameter order in libitb.h. The streamID buffer is a
+ * 32-byte array (length fixed by the Streaming AEAD construction). The
+ * cumulativePixelOffset is the running sum of W*H over preceding
+ * chunks; finalFlag is non-zero for the terminating chunk. */
+extern int ITB_EncryptStreamAuthenticated128(
+    uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle,
+    uintptr_t macHandle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_EncryptStreamAuthenticated256(
+    uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle,
+    uintptr_t macHandle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_EncryptStreamAuthenticated512(
+    uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle,
+    uintptr_t macHandle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+
+extern int ITB_DecryptStreamAuthenticated128(
+    uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle,
+    uintptr_t macHandle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
+extern int ITB_DecryptStreamAuthenticated256(
+    uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle,
+    uintptr_t macHandle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
+extern int ITB_DecryptStreamAuthenticated512(
+    uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle,
+    uintptr_t macHandle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
+
+/* Streaming AEAD per-chunk dispatch — Triple Ouroboros (7 seeds + MAC). */
+extern int ITB_EncryptStreamAuthenticated3x128(
+    uintptr_t noiseHandle,
+    uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3,
+    uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3,
+    uintptr_t macHandle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_EncryptStreamAuthenticated3x256(
+    uintptr_t noiseHandle,
+    uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3,
+    uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3,
+    uintptr_t macHandle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_EncryptStreamAuthenticated3x512(
+    uintptr_t noiseHandle,
+    uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3,
+    uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3,
+    uintptr_t macHandle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+
+extern int ITB_DecryptStreamAuthenticated3x128(
+    uintptr_t noiseHandle,
+    uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3,
+    uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3,
+    uintptr_t macHandle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
+extern int ITB_DecryptStreamAuthenticated3x256(
+    uintptr_t noiseHandle,
+    uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3,
+    uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3,
+    uintptr_t macHandle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
+extern int ITB_DecryptStreamAuthenticated3x512(
+    uintptr_t noiseHandle,
+    uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3,
+    uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3,
+    uintptr_t macHandle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
+
+/* Easy-mode Streaming AEAD per-chunk dispatch (driven by the
+ * encryptor handle rather than seed handles + MAC handle). */
+extern int ITB_Easy_EncryptStreamAuth(
+    uintptr_t handle,
+    void* plaintext, size_t ptlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    int finalFlag,
+    void* out, size_t outCap, size_t* outLen);
+extern int ITB_Easy_DecryptStreamAuth(
+    uintptr_t handle,
+    void* ciphertext, size_t ctlen,
+    unsigned char* streamID,
+    unsigned long long cumulativePixelOffset,
+    void* out, size_t outCap, size_t* outLen,
+    int* finalFlagOut);
 """
 
 
@@ -1078,6 +1238,241 @@ def _encrypt_or_decrypt_triple(
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+
+
+# ─── Streaming AEAD per-chunk helpers ──────────────────────────────────
+#
+# The 32-byte stream_id anchor and the per-chunk dispatch helpers below
+# are the binding-side primitives the StreamEncryptorAuth /
+# StreamDecryptorAuth classes (and the Encryptor.encrypt_stream_auth /
+# Encryptor.decrypt_stream_auth methods) compose into the Streaming AEAD
+# loop. Logic mirrors the C reference helpers in
+# bindings/c/src/streams.c — the binding-level helper handles
+# CSPRNG anchor generation, width dispatch, BUFFER_TOO_SMALL probe-and-
+# allocate retry, and the (cumulative_pixel_offset, final_flag) MAC
+# binding. Failure surfaces include the new STATUS_STREAM_TRUNCATED /
+# STATUS_STREAM_AFTER_FINAL codes typed via ItbStreamTruncatedError /
+# ItbStreamAfterFinalError.
+
+STREAM_ID_LEN = 32
+
+
+def _generate_stream_id() -> bytes:
+    """Returns a CSPRNG-fresh 32-byte Streaming AEAD anchor by
+    piggybacking on libitb's own CSPRNG: ITB_NewSeedFromComponents
+    with hash_key=NULL triggers a CSPRNG draw on the Go side, and
+    ITB_GetSeedHashKey reads back the 32-byte fixed key under the
+    blake3 primitive. The seed handle is freed before returning;
+    only the 32 random bytes survive. Mirrors the C reference helper
+    generate_stream_id in bindings/c/src/streams.c."""
+    comps = _ffi.new("unsigned long long[]", [1, 2, 3, 4, 5, 6, 7, 8])
+    h = _ffi.new("uintptr_t*")
+    rc = _lib.ITB_NewSeedFromComponents(
+        b"blake3", comps, 8, _ffi.NULL, 0, h,
+    )
+    if rc != STATUS_OK:
+        _raise(rc)
+    handle = int(h[0])
+    out_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]")
+    out_len = _ffi.new("size_t*")
+    rc = _lib.ITB_GetSeedHashKey(handle, out_buf, STREAM_ID_LEN, out_len)
+    free_rc = _lib.ITB_FreeSeed(handle)
+    if rc != STATUS_OK:
+        _raise(rc)
+    if free_rc != STATUS_OK:
+        _raise(free_rc)
+    if int(out_len[0]) != STREAM_ID_LEN:
+        raise ITBError(STATUS_INTERNAL, "stream_id CSPRNG draw returned wrong byte count")
+    return bytes(_ffi.buffer(out_buf, STREAM_ID_LEN))
+
+
+def _enc_auth_single_for_width(width: int):
+    return {
+        128: _lib.ITB_EncryptStreamAuthenticated128,
+        256: _lib.ITB_EncryptStreamAuthenticated256,
+        512: _lib.ITB_EncryptStreamAuthenticated512,
+    }[width]
+
+
+def _dec_auth_single_for_width(width: int):
+    return {
+        128: _lib.ITB_DecryptStreamAuthenticated128,
+        256: _lib.ITB_DecryptStreamAuthenticated256,
+        512: _lib.ITB_DecryptStreamAuthenticated512,
+    }[width]
+
+
+def _enc_auth_triple_for_width(width: int):
+    return {
+        128: _lib.ITB_EncryptStreamAuthenticated3x128,
+        256: _lib.ITB_EncryptStreamAuthenticated3x256,
+        512: _lib.ITB_EncryptStreamAuthenticated3x512,
+    }[width]
+
+
+def _dec_auth_triple_for_width(width: int):
+    return {
+        128: _lib.ITB_DecryptStreamAuthenticated3x128,
+        256: _lib.ITB_DecryptStreamAuthenticated3x256,
+        512: _lib.ITB_DecryptStreamAuthenticated3x512,
+    }[width]
+
+
+def _emit_chunk_auth_single(
+    width: int,
+    noise: "Seed", data: "Seed", start: "Seed",
+    mac: "MAC",
+    plaintext: bytes,
+    stream_id: bytes,
+    cum_pixels: int,
+    final_flag: bool,
+) -> bytes:
+    """Per-chunk encrypt dispatch (Single Ouroboros + MAC). Probes
+    output capacity, allocates, and returns the full chunk wire bytes
+    (including any 32-byte CSPRNG anchor only on the FIRST chunk —
+    handled by the caller, not by this helper)."""
+    fn = _enc_auth_single_for_width(width)
+    sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
+    in_arg = plaintext if plaintext else _ffi.NULL
+    out_len = _ffi.new("size_t*")
+    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+            in_arg, len(plaintext),
+            sid_buf, int(cum_pixels), 1 if final_flag else 0,
+            _ffi.NULL, 0, out_len)
+    if rc == STATUS_OK:
+        return b""
+    if rc != STATUS_BUFFER_TOO_SMALL:
+        _raise(rc)
+    need = int(out_len[0])
+    if need == 0:
+        return b""
+    out_buf = _ffi.new(f"unsigned char[{need}]")
+    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+            in_arg, len(plaintext),
+            sid_buf, int(cum_pixels), 1 if final_flag else 0,
+            out_buf, need, out_len)
+    if rc != STATUS_OK:
+        _raise(rc)
+    return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+
+
+def _emit_chunk_auth_triple(
+    width: int,
+    noise: "Seed",
+    data1: "Seed", data2: "Seed", data3: "Seed",
+    start1: "Seed", start2: "Seed", start3: "Seed",
+    mac: "MAC",
+    plaintext: bytes,
+    stream_id: bytes,
+    cum_pixels: int,
+    final_flag: bool,
+) -> bytes:
+    """Per-chunk encrypt dispatch (Triple Ouroboros + MAC)."""
+    fn = _enc_auth_triple_for_width(width)
+    sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
+    in_arg = plaintext if plaintext else _ffi.NULL
+    out_len = _ffi.new("size_t*")
+    rc = fn(noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle, in_arg, len(plaintext),
+            sid_buf, int(cum_pixels), 1 if final_flag else 0,
+            _ffi.NULL, 0, out_len)
+    if rc == STATUS_OK:
+        return b""
+    if rc != STATUS_BUFFER_TOO_SMALL:
+        _raise(rc)
+    need = int(out_len[0])
+    if need == 0:
+        return b""
+    out_buf = _ffi.new(f"unsigned char[{need}]")
+    rc = fn(noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle, in_arg, len(plaintext),
+            sid_buf, int(cum_pixels), 1 if final_flag else 0,
+            out_buf, need, out_len)
+    if rc != STATUS_OK:
+        _raise(rc)
+    return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+
+
+def _consume_chunk_auth_single(
+    width: int,
+    noise: "Seed", data: "Seed", start: "Seed",
+    mac: "MAC",
+    ciphertext: bytes,
+    stream_id: bytes,
+    cum_pixels: int,
+):
+    """Per-chunk decrypt dispatch (Single Ouroboros + MAC). Returns
+    ``(plaintext, final_flag)``. Surfaces ITBError on any non-OK
+    status — STATUS_MAC_FAILURE on tampered transcript, etc."""
+    fn = _dec_auth_single_for_width(width)
+    sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
+    in_arg = ciphertext if ciphertext else _ffi.NULL
+    out_len = _ffi.new("size_t*")
+    ff = _ffi.new("int*")
+    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+            in_arg, len(ciphertext),
+            sid_buf, int(cum_pixels),
+            _ffi.NULL, 0, out_len, ff)
+    if rc == STATUS_OK:
+        return b"", bool(int(ff[0]))
+    if rc != STATUS_BUFFER_TOO_SMALL:
+        _raise(rc)
+    need = int(out_len[0])
+    if need == 0:
+        return b"", bool(int(ff[0]))
+    out_buf = _ffi.new(f"unsigned char[{need}]")
+    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+            in_arg, len(ciphertext),
+            sid_buf, int(cum_pixels),
+            out_buf, need, out_len, ff)
+    if rc != STATUS_OK:
+        _raise(rc)
+    return bytes(_ffi.buffer(out_buf, int(out_len[0]))), bool(int(ff[0]))
+
+
+def _consume_chunk_auth_triple(
+    width: int,
+    noise: "Seed",
+    data1: "Seed", data2: "Seed", data3: "Seed",
+    start1: "Seed", start2: "Seed", start3: "Seed",
+    mac: "MAC",
+    ciphertext: bytes,
+    stream_id: bytes,
+    cum_pixels: int,
+):
+    """Per-chunk decrypt dispatch (Triple Ouroboros + MAC)."""
+    fn = _dec_auth_triple_for_width(width)
+    sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
+    in_arg = ciphertext if ciphertext else _ffi.NULL
+    out_len = _ffi.new("size_t*")
+    ff = _ffi.new("int*")
+    rc = fn(noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle, in_arg, len(ciphertext),
+            sid_buf, int(cum_pixels),
+            _ffi.NULL, 0, out_len, ff)
+    if rc == STATUS_OK:
+        return b"", bool(int(ff[0]))
+    if rc != STATUS_BUFFER_TOO_SMALL:
+        _raise(rc)
+    need = int(out_len[0])
+    if need == 0:
+        return b"", bool(int(ff[0]))
+    out_buf = _ffi.new(f"unsigned char[{need}]")
+    rc = fn(noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle, in_arg, len(ciphertext),
+            sid_buf, int(cum_pixels),
+            out_buf, need, out_len, ff)
+    if rc != STATUS_OK:
+        _raise(rc)
+    return bytes(_ffi.buffer(out_buf, int(out_len[0]))), bool(int(ff[0]))
 
 
 def last_error() -> str:

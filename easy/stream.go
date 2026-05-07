@@ -120,31 +120,3 @@ func (e *Encryptor) DecryptStream(ciphertext []byte, emit ChunkFunc) error {
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
 }
-
-// EncryptStreamAuth is the authenticated streaming counterpart to
-// [Encryptor.EncryptStream]. The signature is reserved so v1 callers
-// can interface-detect availability; the body returns
-// [ErrStreamAuthNotImplemented] until the streaming-AEAD design
-// ships.
-//
-// Panics with [ErrClosed] when called after [Encryptor.Close].
-func (e *Encryptor) EncryptStreamAuth(plaintext []byte, emit ChunkFunc) error {
-	if e.closed {
-		panic(ErrClosed)
-	}
-	return ErrStreamAuthNotImplemented
-}
-
-// DecryptStreamAuth is the authenticated streaming counterpart to
-// [Encryptor.DecryptStream]. The signature is reserved so v1 callers
-// can interface-detect availability; the body returns
-// [ErrStreamAuthNotImplemented] until the streaming-AEAD design
-// ships.
-//
-// Panics with [ErrClosed] when called after [Encryptor.Close].
-func (e *Encryptor) DecryptStreamAuth(ciphertext []byte, emit ChunkFunc) error {
-	if e.closed {
-		panic(ErrClosed)
-	}
-	return ErrStreamAuthNotImplemented
-}

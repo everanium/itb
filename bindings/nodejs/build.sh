@@ -33,6 +33,8 @@ if [ ! -d node_modules ]; then
     echo "==> installing npm dependencies"
     npm install
 fi
+echo "==> cleaning previous Node.js binding build artefacts (dist*/)"
+rm -rf dist dist-test 2>/dev/null || true
 echo "==> building Node.js binding (TypeScript)"
 npm run build
 

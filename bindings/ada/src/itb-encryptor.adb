@@ -2,6 +2,7 @@
 
 with Ada.Streams; use Ada.Streams;
 with Ada.Unchecked_Deallocation;
+with Interfaces;
 with Interfaces.C;
 with Interfaces.C.Strings;
 with System;
@@ -140,18 +141,26 @@ package body Itb.Encryptor is
       In_Addr     : constant System.Address :=
         (if Payload_Len > 0 then Payload'Address else System.Null_Address);
 
-      --  1.25x + 4 KiB headroom comfortably exceeds the 1.155 max
-      --  expansion factor observed across the primitive / mode /
-      --  nonce-bits matrix; floor at 4 KiB so the very-small payload
-      --  case still gets a usable buffer. The explicit Long_Long_Integer
-      --  intermediate guards against Stream_Element_Offset overflow at
-      --  very large payload sizes — under wrap the grow-and-retry path
-      --  would still recover, but the saturated initial allocation
-      --  avoids the extra round-trip.
+      --  1.25x + 128 KiB headroom comfortably exceeds the worst-case
+      --  expansion observed across the primitive / mode / nonce-bits
+      --  / barrier-fill matrix; bf=32 with payloads near 1 MiB pushes
+      --  the absolute ratio to ~1.346, leaving roughly 100 KiB of
+      --  residual margin over the 1.25x term that the constant pad
+      --  must absorb. The 128 KiB pad covers that worst case (and
+      --  the ratio tapers below 1.25x + small-K beyond a few MiB as
+      --  the bf-induced sqrt-shaped border overhead becomes
+      --  asymptotically negligible). Floor at 128 KiB so the very-
+      --  small payload case still gets a usable buffer that handles
+      --  the Triple + auth-MAC + bf=32 short-payload expansion
+      --  (~35 KiB at ptlen=1). The explicit Long_Long_Integer
+      --  intermediate guards against Stream_Element_Offset overflow
+      --  at very large payload sizes — under wrap the grow-and-retry
+      --  path would still recover, but the saturated initial
+      --  allocation avoids the extra round-trip.
       Cap_LL : constant Long_Long_Integer :=
         Long_Long_Integer'Max
-          (4096,
-           Long_Long_Integer (Payload_Len) * 5 / 4 + 4096);
+          (131072,
+           Long_Long_Integer (Payload_Len) * 5 / 4 + 131072);
       Cap     : constant Stream_Element_Offset :=
         Stream_Element_Offset (Cap_LL);
       Pt_Len_C : constant size_t := size_t (Payload_Len);
@@ -988,5 +997,820 @@ package body Itb.Encryptor is
          Free_Cache (Self.Cache);
       end if;
    end Finalize;
+
+   ---------------------------------------------------------------------
+   --  Streaming AEAD Easy methods.
+   ---------------------------------------------------------------------
+
+   use type Interfaces.Unsigned_64;
+
+   Stream_Auth_ID_Length : constant Stream_Element_Offset := 32;
+   subtype Easy_Stream_ID is Byte_Array (1 .. 32);
+
+   procedure Easy_Generate_Stream_ID (Out_Bytes : out Easy_Stream_ID) is
+      use Interfaces.C;
+      Comps   : aliased constant array (1 .. 8) of Itb.Sys.U64 :=
+                  [1, 2, 3, 4, 5, 6, 7, 8];
+      Cname   : Interfaces.C.Strings.chars_ptr :=
+                  Interfaces.C.Strings.New_String ("blake3");
+      H       : aliased Itb.Sys.Handle := 0;
+      Got     : aliased size_t := 0;
+      Status  : int;
+   begin
+      Out_Bytes := [others => 0];
+      Status := Itb.Sys.ITB_NewSeedFromComponents
+                  (Hash_Name      => Cname,
+                   Components     => Comps'Address,
+                   Components_Len => Comps'Length,
+                   Hash_Key       => System.Null_Address,
+                   Hash_Key_Len   => 0,
+                   Out_Handle     => H'Access);
+      Interfaces.C.Strings.Free (Cname);
+      if Status /= Itb.Status.OK then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      Status := Itb.Sys.ITB_GetSeedHashKey
+                  (H       => H,
+                   Out_Buf => Out_Bytes'Address,
+                   Cap     => size_t (Stream_Auth_ID_Length),
+                   Out_Len => Got'Access);
+      declare
+         Free_Status : constant int := Itb.Sys.ITB_FreeSeed (H);
+      begin
+         if Status /= Itb.Status.OK then
+            Itb.Errors.Raise_For (Integer (Status));
+         end if;
+         if Free_Status /= Itb.Status.OK then
+            Itb.Errors.Raise_For (Integer (Free_Status));
+         end if;
+      end;
+      if Got /= size_t (Stream_Auth_ID_Length) then
+         Itb.Errors.Raise_For (Itb.Status.Internal);
+      end if;
+   end Easy_Generate_Stream_ID;
+
+   --  Per-chunk encrypt dispatch through ITB_Easy_EncryptStreamAuth.
+   --  Probes required size, allocates a heap output buffer sized to
+   --  the FFI-reported requirement, fills it, and writes the resulting
+   --  bytes directly to Sink. Returning the ciphertext through the
+   --  sink (rather than as a Byte_Array result) keeps the per-chunk
+   --  output buffer entirely on the heap; with a 16 MiB Chunk_Size
+   --  the ciphertext is ~20 MiB, which would burst the default 8 MiB
+   --  thread stack as a returned Byte_Array. The optional Out_Pixels
+   --  hands the caller back the (W,H)-derived pixel count parsed from
+   --  the cipher header so cumulative-pixel tracking continues to
+   --  work without re-parsing.
+   procedure Easy_Emit_Chunk_Auth
+     (Handle     : Itb.Sys.Handle;
+      Plaintext  : Byte_Array;
+      Stream_ID  : Easy_Stream_ID;
+      Cum_Pixels : Itb.Sys.U64;
+      Final_Flag : Boolean;
+      Hsz        : Stream_Element_Offset;
+      Sink       : not null access Ada.Streams.Root_Stream_Type'Class;
+      Out_Pixels : out Itb.Sys.U64)
+   is
+      use Interfaces.C;
+      In_Addr : constant System.Address :=
+        (if Plaintext'Length > 0 then Plaintext'Address
+         else System.Null_Address);
+      FF      : constant int := (if Final_Flag then 1 else 0);
+      Probe   : aliased size_t := 0;
+      Status  : int;
+   begin
+      Out_Pixels := 0;
+      Status := Itb.Sys.ITB_Easy_EncryptStreamAuth
+                  (H                       => Handle,
+                   Plaintext               => In_Addr,
+                   Pt_Len                  => Plaintext'Length,
+                   Stream_ID               => Stream_ID'Address,
+                   Cumulative_Pixel_Offset => Cum_Pixels,
+                   Final_Flag              => FF,
+                   Out_Buf                 => System.Null_Address,
+                   Out_Cap                 => 0,
+                   Out_Len                 => Probe'Access);
+      if Status = Itb.Status.OK then
+         return;
+      end if;
+      if Status /= Itb.Status.Buffer_Too_Small then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      declare
+         Need    : constant size_t := Probe;
+         Result  : Byte_Array_Access :=
+                     new Byte_Array (1 .. Stream_Element_Offset (Need));
+         Out_Len : aliased size_t := 0;
+      begin
+         Status := Itb.Sys.ITB_Easy_EncryptStreamAuth
+                     (H                       => Handle,
+                      Plaintext               => In_Addr,
+                      Pt_Len                  => Plaintext'Length,
+                      Stream_ID               => Stream_ID'Address,
+                      Cumulative_Pixel_Offset => Cum_Pixels,
+                      Final_Flag              => FF,
+                      Out_Buf                 => Result.all'Address,
+                      Out_Cap                 => Need,
+                      Out_Len                 => Out_Len'Access);
+         if Status /= 0 then
+            Result.all := [others => 0];
+            Free_Cache (Result);
+            Itb.Errors.Raise_For (Integer (Status));
+         end if;
+         if Stream_Element_Offset (Out_Len) >= Hsz then
+            declare
+               First_Idx : constant Stream_Element_Offset := Result.all'First;
+               W : constant Natural :=
+                 Natural (Result (First_Idx + Hsz - 4)) * 256
+                 + Natural (Result (First_Idx + Hsz - 3));
+               H : constant Natural :=
+                 Natural (Result (First_Idx + Hsz - 2)) * 256
+                 + Natural (Result (First_Idx + Hsz - 1));
+            begin
+               Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
+            end;
+         end if;
+         if Out_Len > 0 then
+            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
+         end if;
+         Result.all := [others => 0];
+         Free_Cache (Result);
+      exception
+         when others =>
+            if Result /= null then
+               Result.all := [others => 0];
+               Free_Cache (Result);
+            end if;
+            raise;
+      end;
+   end Easy_Emit_Chunk_Auth;
+
+   procedure Easy_Consume_Chunk_Auth
+     (Handle     : Itb.Sys.Handle;
+      Cipher     : Byte_Array;
+      Stream_ID  : Easy_Stream_ID;
+      Cum_Pixels : Itb.Sys.U64;
+      PT_Out     : out Byte_Array_Access;
+      Final_Flag : out Boolean)
+   is
+      use Interfaces.C;
+      In_Addr : constant System.Address :=
+        (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
+      Probe   : aliased size_t := 0;
+      FF      : aliased int := 0;
+      Status  : int;
+   begin
+      PT_Out := null;
+      Final_Flag := False;
+      Status := Itb.Sys.ITB_Easy_DecryptStreamAuth
+                  (H                       => Handle,
+                   Ciphertext              => In_Addr,
+                   Ct_Len                  => Cipher'Length,
+                   Stream_ID               => Stream_ID'Address,
+                   Cumulative_Pixel_Offset => Cum_Pixels,
+                   Out_Buf                 => System.Null_Address,
+                   Out_Cap                 => 0,
+                   Out_Len                 => Probe'Access,
+                   Final_Flag_Out          => FF'Access);
+      if Status = Itb.Status.OK then
+         PT_Out := new Byte_Array (1 .. 0);
+         Final_Flag := FF /= 0;
+         return;
+      end if;
+      if Status /= Itb.Status.Buffer_Too_Small then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      declare
+         Need    : constant size_t := Probe;
+         Out_Len : aliased size_t := 0;
+      begin
+         PT_Out := new Byte_Array (1 .. Stream_Element_Offset (Need));
+         Status := Itb.Sys.ITB_Easy_DecryptStreamAuth
+                     (H                       => Handle,
+                      Ciphertext              => In_Addr,
+                      Ct_Len                  => Cipher'Length,
+                      Stream_ID               => Stream_ID'Address,
+                      Cumulative_Pixel_Offset => Cum_Pixels,
+                      Out_Buf                 => PT_Out (1)'Address,
+                      Out_Cap                 => Need,
+                      Out_Len                 => Out_Len'Access,
+                      Final_Flag_Out          => FF'Access);
+         if Status /= 0 then
+            Free_Cache (PT_Out);
+            Itb.Errors.Raise_For (Integer (Status));
+         end if;
+         declare
+            Real : constant Byte_Array_Access :=
+              new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
+         begin
+            if Out_Len > 0 then
+               Real (1 .. Stream_Element_Offset (Out_Len)) :=
+                 PT_Out (1 .. Stream_Element_Offset (Out_Len));
+            end if;
+            PT_Out.all := [others => 0];
+            Free_Cache (PT_Out);
+            PT_Out := Real;
+         end;
+         Final_Flag := FF /= 0;
+      end;
+   end Easy_Consume_Chunk_Auth;
+
+   procedure Encrypt_Stream_Auth
+     (Self       : in out Encryptor;
+      Source     : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink       : not null access Ada.Streams.Root_Stream_Type'Class;
+      Chunk_Size : Stream_Element_Offset)
+   is
+   begin
+      Check_Open (Self);
+      if Chunk_Size <= 0 then
+         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+      end if;
+      declare
+         Stream_ID  : Easy_Stream_ID;
+         Hsz        : constant Stream_Element_Offset :=
+                        Stream_Element_Offset (Header_Size (Self));
+         Cum        : Itb.Sys.U64 := 0;
+         --  Both buffers live on the heap so user-supplied chunk sizes
+         --  exceeding the default 8 MiB Linux thread stack (a typical
+         --  16 MiB Streaming AEAD chunk overflows it) do not blow the
+         --  Ada stack. Released at scope exit and on any propagated
+         --  exception via the handler below.
+         Buf        : Byte_Array_Access :=
+                        new Byte_Array (1 .. Chunk_Size + 1);
+         Buf_Used   : Stream_Element_Offset := 0;
+         Read_Buf   : Byte_Array_Access :=
+                        new Byte_Array (1 .. Chunk_Size);
+         Got        : Stream_Element_Offset;
+         EOF_Hit    : Boolean := False;
+      begin
+         Easy_Generate_Stream_ID (Stream_ID);
+         Sink.all.Write (Stream_ID);
+
+         while not EOF_Hit loop
+            --  Fill until buf is full (Chunk_Size + 1 bytes — one
+            --  byte of look-ahead beyond the chunk boundary) or EOF.
+            while Buf_Used < Buf'Length and then not EOF_Hit loop
+               declare
+                  Slice_End : constant Stream_Element_Offset :=
+                    Stream_Element_Offset'Min
+                      (Read_Buf'Last,
+                       Read_Buf'First + (Buf'Length - Buf_Used) - 1);
+                  Slice     : Stream_Element_Array
+                              renames Read_Buf (Read_Buf'First .. Slice_End);
+               begin
+                  Got := Slice'First - 1;
+                  Source.all.Read (Slice, Got);
+                  if Got < Slice'First then
+                     EOF_Hit := True;
+                  else
+                     declare
+                        N : constant Stream_Element_Offset :=
+                          Got - Slice'First + 1;
+                     begin
+                        Buf (Buf_Used + 1 .. Buf_Used + N) :=
+                          Slice (Slice'First .. Got);
+                        Buf_Used := Buf_Used + N;
+                     end;
+                  end if;
+               end;
+            end loop;
+            if Buf_Used > Chunk_Size then
+               --  Emit one full chunk as non-terminal. Pass the slice
+               --  directly to Easy_Emit_Chunk_Auth so the per-chunk
+               --  ciphertext never materialises as a stack-resident
+               --  Byte_Array result; the helper writes it straight to
+               --  Sink from its heap-allocated output buffer.
+               declare
+                  Pixels : Itb.Sys.U64 := 0;
+               begin
+                  Easy_Emit_Chunk_Auth
+                    (Self.Handle,
+                     Buf (1 .. Chunk_Size),
+                     Stream_ID, Cum, False, Hsz,
+                     Sink, Pixels);
+                  Cum := Cum + Pixels;
+                  Buf (1 .. Buf_Used - Chunk_Size) :=
+                    Buf (Chunk_Size + 1 .. Buf_Used);
+                  Buf_Used := Buf_Used - Chunk_Size;
+                  Buf (Buf_Used + 1 .. Buf'Last) := [others => 0];
+               end;
+            end if;
+         end loop;
+         --  Residual (possibly empty) as terminating chunk.
+         declare
+            Tail_Pixels : Itb.Sys.U64 := 0;
+         begin
+            Easy_Emit_Chunk_Auth
+              (Self.Handle,
+               Buf (1 .. Buf_Used),
+               Stream_ID, Cum, True, Hsz,
+               Sink, Tail_Pixels);
+         end;
+         Buf.all := [others => 0];
+         Free_Cache (Buf);
+         Read_Buf.all := [others => 0];
+         Free_Cache (Read_Buf);
+      exception
+         when others =>
+            if Buf /= null then
+               Buf.all := [others => 0];
+               Free_Cache (Buf);
+            end if;
+            if Read_Buf /= null then
+               Read_Buf.all := [others => 0];
+               Free_Cache (Read_Buf);
+            end if;
+            raise;
+      end;
+   end Encrypt_Stream_Auth;
+
+   procedure Decrypt_Stream_Auth
+     (Self      : in out Encryptor;
+      Source    : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink      : not null access Ada.Streams.Root_Stream_Type'Class;
+      Read_Size : Stream_Element_Offset)
+   is
+   begin
+      Check_Open (Self);
+      if Read_Size <= 0 then
+         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+      end if;
+      declare
+         Stream_ID    : Easy_Stream_ID := [others => 0];
+         Sid_Have     : Stream_Element_Offset := 0;
+         Hsz          : constant Stream_Element_Offset :=
+                          Stream_Element_Offset (Header_Size (Self));
+         Cum          : Itb.Sys.U64 := 0;
+         Seen_Final   : Boolean := False;
+         Accum        : Byte_Array_Access :=
+                          new Byte_Array (1 .. 64 * 1024);
+         Accum_Used   : Stream_Element_Offset := 0;
+         --  Read_Buf lives on the heap so user-supplied Read_Size
+         --  exceeding the default 8 MiB Linux thread stack does not
+         --  blow the Ada stack. Released at scope exit and on any
+         --  propagated exception via the handler below.
+         Read_Buf     : Byte_Array_Access :=
+                          new Byte_Array (1 .. Read_Size);
+         Got          : Stream_Element_Offset;
+         EOF_Hit      : Boolean := False;
+
+         procedure Drain is
+         begin
+            loop
+               if Seen_Final then
+                  if Accum_Used > 0 then
+                     Itb.Errors.Raise_For (Itb.Status.Stream_After_Final);
+                  end if;
+                  return;
+               end if;
+               if Accum_Used < Hsz then
+                  return;
+               end if;
+               declare
+                  Want : constant Natural := Itb.Encryptor.Parse_Chunk_Len
+                    (Self, Accum (1 .. Hsz));
+                  WL   : constant Stream_Element_Offset :=
+                    Stream_Element_Offset (Want);
+               begin
+                  if Accum_Used < WL then
+                     return;
+                  end if;
+                  declare
+                     W : constant Natural :=
+                       Natural (Accum (Hsz - 3)) * 256
+                       + Natural (Accum (Hsz - 2));
+                     H : constant Natural :=
+                       Natural (Accum (Hsz - 1)) * 256
+                       + Natural (Accum (Hsz));
+                     Pixels : constant Itb.Sys.U64 :=
+                       Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
+                     PT     : Byte_Array_Access;
+                     FF     : Boolean;
+                     Tail   : constant Stream_Element_Offset :=
+                       Accum_Used - WL;
+                  begin
+                     --  Pass the slice directly to the consumer rather
+                     --  than materialising a constant Byte_Array copy
+                     --  on the stack: at chunk sizes near 16 MiB the
+                     --  per-chunk ciphertext is ~20 MiB and a stack
+                     --  copy would burst the default 8 MiB thread
+                     --  stack. Easy_Consume_Chunk_Auth's PT_Out is
+                     --  already heap-resident.
+                     Easy_Consume_Chunk_Auth
+                       (Self.Handle, Accum (1 .. WL),
+                        Stream_ID, Cum, PT, FF);
+                     if PT'Length > 0 then
+                        Sink.all.Write (PT.all);
+                     end if;
+                     PT.all := [others => 0];
+                     Free_Cache (PT);
+                     if Tail > 0 then
+                        Accum (1 .. Tail) := Accum (WL + 1 .. Accum_Used);
+                     end if;
+                     Accum_Used := Tail;
+                     Cum := Cum + Pixels;
+                     if FF then
+                        Seen_Final := True;
+                     end if;
+                  end;
+               end;
+            end loop;
+         end Drain;
+      begin
+         while not EOF_Hit loop
+            Got := Read_Buf.all'First - 1;
+            Source.all.Read (Read_Buf.all, Got);
+            if Got < Read_Buf.all'First then
+               EOF_Hit := True;
+            else
+               declare
+                  Off : Stream_Element_Offset := Read_Buf.all'First;
+               begin
+                  if Sid_Have < Stream_Auth_ID_Length then
+                     declare
+                        Need : constant Stream_Element_Offset :=
+                          Stream_Auth_ID_Length - Sid_Have;
+                        Avail : constant Stream_Element_Offset :=
+                          Got - Read_Buf.all'First + 1;
+                        Take : constant Stream_Element_Offset :=
+                          Stream_Element_Offset'Min (Need, Avail);
+                     begin
+                        Stream_ID
+                          (Sid_Have + 1 .. Sid_Have + Take) :=
+                          Read_Buf (Off .. Off + Take - 1);
+                        Sid_Have := Sid_Have + Take;
+                        Off := Off + Take;
+                     end;
+                  end if;
+                  if Off <= Got then
+                     declare
+                        Append_N : constant Stream_Element_Offset :=
+                          Got - Off + 1;
+                     begin
+                        if Accum_Used + Append_N > Accum'Length then
+                           declare
+                              New_Cap : Stream_Element_Offset :=
+                                Accum'Length * 2;
+                              New_Buf : Byte_Array_Access;
+                           begin
+                              while New_Cap < Accum_Used + Append_N loop
+                                 New_Cap := New_Cap * 2;
+                              end loop;
+                              New_Buf := new Byte_Array (1 .. New_Cap);
+                              New_Buf (1 .. Accum_Used) :=
+                                Accum (1 .. Accum_Used);
+                              Free_Cache (Accum);
+                              Accum := New_Buf;
+                           end;
+                        end if;
+                        Accum (Accum_Used + 1 .. Accum_Used + Append_N)
+                          := Read_Buf (Off .. Got);
+                        Accum_Used := Accum_Used + Append_N;
+                     end;
+                  end if;
+                  if Sid_Have = Stream_Auth_ID_Length then
+                     Drain;
+                  end if;
+               end;
+            end if;
+         end loop;
+         if Sid_Have < Stream_Auth_ID_Length then
+            Free_Cache (Accum);
+            Read_Buf.all := [others => 0];
+            Free_Cache (Read_Buf);
+            Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+         end if;
+         Drain;
+         Free_Cache (Accum);
+         Read_Buf.all := [others => 0];
+         Free_Cache (Read_Buf);
+         if not Seen_Final then
+            Itb.Errors.Raise_For (Itb.Status.Stream_Truncated);
+         end if;
+      exception
+         when others =>
+            if Accum /= null then
+               Free_Cache (Accum);
+            end if;
+            if Read_Buf /= null then
+               Read_Buf.all := [others => 0];
+               Free_Cache (Read_Buf);
+            end if;
+            raise;
+      end;
+   end Decrypt_Stream_Auth;
+
+   ---------------------------------------------------------------------
+   --  Plain stream helpers — single-shot Easy_Encrypt / Easy_Decrypt
+   --  per chunk, with chunk boundaries carried in ITB's own per-chunk
+   --  header (nonce + W + H) parsed via Parse_Chunk_Len.
+   ---------------------------------------------------------------------
+
+   --  Emit one plain ciphertext chunk straight to Sink. Mirrors the
+   --  shape of Easy_Emit_Chunk_Auth but routes through ITB_Easy_Encrypt
+   --  (no Streaming AEAD parameters) and keeps the per-chunk output on
+   --  the heap so the per-chunk ciphertext never materialises as a
+   --  stack-resident Byte_Array.
+   procedure Easy_Emit_Chunk_Plain
+     (Handle    : Itb.Sys.Handle;
+      Plaintext : Byte_Array;
+      Sink      : not null access Ada.Streams.Root_Stream_Type'Class)
+   is
+      use Interfaces.C;
+      In_Addr : constant System.Address :=
+        (if Plaintext'Length > 0 then Plaintext'Address
+         else System.Null_Address);
+      Probe   : aliased size_t := 0;
+      Status  : int;
+   begin
+      Status := Itb.Sys.ITB_Easy_Encrypt
+                  (H       => Handle,
+                   Plaintext => In_Addr,
+                   Pt_Len    => size_t (Plaintext'Length),
+                   Out_Buf   => System.Null_Address,
+                   Out_Cap   => 0,
+                   Out_Len   => Probe'Access);
+      if Status = Itb.Status.OK then
+         return;
+      end if;
+      if Status /= Itb.Status.Buffer_Too_Small then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      declare
+         Need    : constant size_t := Probe;
+         Result  : Byte_Array_Access :=
+                     new Byte_Array (1 .. Stream_Element_Offset (Need));
+         Out_Len : aliased size_t := 0;
+      begin
+         Status := Itb.Sys.ITB_Easy_Encrypt
+                     (H         => Handle,
+                      Plaintext => In_Addr,
+                      Pt_Len    => size_t (Plaintext'Length),
+                      Out_Buf   => Result.all'Address,
+                      Out_Cap   => Need,
+                      Out_Len   => Out_Len'Access);
+         if Status /= 0 then
+            Result.all := [others => 0];
+            Free_Cache (Result);
+            Itb.Errors.Raise_For (Integer (Status));
+         end if;
+         if Out_Len > 0 then
+            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
+         end if;
+         Result.all := [others => 0];
+         Free_Cache (Result);
+      exception
+         when others =>
+            if Result /= null then
+               Result.all := [others => 0];
+               Free_Cache (Result);
+            end if;
+            raise;
+      end;
+   end Easy_Emit_Chunk_Plain;
+
+   --  Decrypt one plain ciphertext chunk and return the recovered
+   --  plaintext on the heap. Mirrors Easy_Consume_Chunk_Auth shape
+   --  minus the Streaming AEAD parameters and final-flag output.
+   procedure Easy_Consume_Chunk_Plain
+     (Handle : Itb.Sys.Handle;
+      Cipher : Byte_Array;
+      PT_Out : out Byte_Array_Access)
+   is
+      use Interfaces.C;
+      In_Addr : constant System.Address :=
+        (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
+      Probe   : aliased size_t := 0;
+      Status  : int;
+   begin
+      PT_Out := null;
+      Status := Itb.Sys.ITB_Easy_Decrypt
+                  (H          => Handle,
+                   Ciphertext => In_Addr,
+                   Ct_Len     => size_t (Cipher'Length),
+                   Out_Buf    => System.Null_Address,
+                   Out_Cap    => 0,
+                   Out_Len    => Probe'Access);
+      if Status = Itb.Status.OK then
+         PT_Out := new Byte_Array (1 .. 0);
+         return;
+      end if;
+      if Status /= Itb.Status.Buffer_Too_Small then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      declare
+         Need    : constant size_t := Probe;
+         Out_Len : aliased size_t := 0;
+      begin
+         PT_Out := new Byte_Array (1 .. Stream_Element_Offset (Need));
+         Status := Itb.Sys.ITB_Easy_Decrypt
+                     (H          => Handle,
+                      Ciphertext => In_Addr,
+                      Ct_Len     => size_t (Cipher'Length),
+                      Out_Buf    => PT_Out (1)'Address,
+                      Out_Cap    => Need,
+                      Out_Len    => Out_Len'Access);
+         if Status /= 0 then
+            PT_Out.all := [others => 0];
+            Free_Cache (PT_Out);
+            Itb.Errors.Raise_For (Integer (Status));
+         end if;
+         declare
+            Real : constant Byte_Array_Access :=
+              new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
+         begin
+            if Out_Len > 0 then
+               Real (1 .. Stream_Element_Offset (Out_Len)) :=
+                 PT_Out (1 .. Stream_Element_Offset (Out_Len));
+            end if;
+            PT_Out.all := [others => 0];
+            Free_Cache (PT_Out);
+            PT_Out := Real;
+         end;
+      end;
+   end Easy_Consume_Chunk_Plain;
+
+   procedure Encrypt_Stream
+     (Self       : in out Encryptor;
+      Source     : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink       : not null access Ada.Streams.Root_Stream_Type'Class;
+      Chunk_Size : Stream_Element_Offset)
+   is
+   begin
+      Check_Open (Self);
+      if Chunk_Size <= 0 then
+         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+      end if;
+      declare
+         --  Heap-resident plaintext staging buffer — sized to the
+         --  caller's chunk so a 16 MiB chunk does not burst the
+         --  default 8 MiB Linux thread stack. Released at scope exit
+         --  and on any propagated exception via the handler below.
+         Buf      : Byte_Array_Access :=
+                      new Byte_Array (1 .. Chunk_Size);
+         Buf_Used : Stream_Element_Offset := 0;
+         Got      : Stream_Element_Offset;
+         EOF_Hit  : Boolean := False;
+      begin
+         while not EOF_Hit loop
+            --  Fill Buf to Chunk_Size bytes or hit EOF.
+            while Buf_Used < Chunk_Size and then not EOF_Hit loop
+               declare
+                  Slice : Stream_Element_Array
+                            renames Buf (Buf_Used + 1 .. Chunk_Size);
+               begin
+                  Got := Slice'First - 1;
+                  Source.all.Read (Slice, Got);
+                  if Got < Slice'First then
+                     EOF_Hit := True;
+                  else
+                     Buf_Used := Got;
+                  end if;
+               end;
+            end loop;
+            if Buf_Used = Chunk_Size then
+               Easy_Emit_Chunk_Plain
+                 (Self.Handle, Buf (1 .. Chunk_Size), Sink);
+               Buf_Used := 0;
+               Buf.all  := [others => 0];
+            end if;
+         end loop;
+         --  Residual short chunk, if any. ITB rejects empty plaintext
+         --  with STATUS_ENCRYPT_FAILED, so emit only when at least
+         --  one byte remains.
+         if Buf_Used > 0 then
+            Easy_Emit_Chunk_Plain
+              (Self.Handle, Buf (1 .. Buf_Used), Sink);
+         end if;
+         Buf.all := [others => 0];
+         Free_Cache (Buf);
+      exception
+         when others =>
+            if Buf /= null then
+               Buf.all := [others => 0];
+               Free_Cache (Buf);
+            end if;
+            raise;
+      end;
+   end Encrypt_Stream;
+
+   procedure Decrypt_Stream
+     (Self      : in out Encryptor;
+      Source    : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink      : not null access Ada.Streams.Root_Stream_Type'Class;
+      Read_Size : Stream_Element_Offset)
+   is
+   begin
+      Check_Open (Self);
+      if Read_Size <= 0 then
+         Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+      end if;
+      declare
+         Hsz        : constant Stream_Element_Offset :=
+                        Stream_Element_Offset (Header_Size (Self));
+         --  Read_Buf lives on the heap so user-supplied Read_Size
+         --  exceeding the default 8 MiB Linux thread stack does not
+         --  blow the Ada stack.
+         Read_Buf   : Byte_Array_Access :=
+                        new Byte_Array (1 .. Read_Size);
+         Accum      : Byte_Array_Access :=
+                        new Byte_Array (1 .. 64 * 1024);
+         Accum_Used : Stream_Element_Offset := 0;
+         Got        : Stream_Element_Offset;
+         EOF_Hit    : Boolean := False;
+
+         procedure Drain is
+         begin
+            loop
+               if Accum_Used < Hsz then
+                  return;
+               end if;
+               declare
+                  Want : constant Natural := Itb.Encryptor.Parse_Chunk_Len
+                    (Self, Accum (1 .. Hsz));
+                  WL   : constant Stream_Element_Offset :=
+                    Stream_Element_Offset (Want);
+               begin
+                  if Accum_Used < WL then
+                     return;
+                  end if;
+                  declare
+                     PT   : Byte_Array_Access;
+                     Tail : constant Stream_Element_Offset :=
+                       Accum_Used - WL;
+                  begin
+                     Easy_Consume_Chunk_Plain
+                       (Self.Handle, Accum (1 .. WL), PT);
+                     if PT'Length > 0 then
+                        Sink.all.Write (PT.all);
+                     end if;
+                     PT.all := [others => 0];
+                     Free_Cache (PT);
+                     if Tail > 0 then
+                        Accum (1 .. Tail) := Accum (WL + 1 .. Accum_Used);
+                     end if;
+                     Accum_Used := Tail;
+                  end;
+               end;
+            end loop;
+         end Drain;
+      begin
+         while not EOF_Hit loop
+            Got := Read_Buf.all'First - 1;
+            Source.all.Read (Read_Buf.all, Got);
+            if Got < Read_Buf.all'First then
+               EOF_Hit := True;
+            else
+               declare
+                  Append_N : constant Stream_Element_Offset :=
+                    Got - Read_Buf.all'First + 1;
+               begin
+                  if Accum_Used + Append_N > Accum'Length then
+                     declare
+                        New_Cap : Stream_Element_Offset :=
+                          Accum'Length * 2;
+                        New_Buf : Byte_Array_Access;
+                     begin
+                        while New_Cap < Accum_Used + Append_N loop
+                           New_Cap := New_Cap * 2;
+                        end loop;
+                        New_Buf := new Byte_Array (1 .. New_Cap);
+                        New_Buf (1 .. Accum_Used) :=
+                          Accum (1 .. Accum_Used);
+                        Free_Cache (Accum);
+                        Accum := New_Buf;
+                     end;
+                  end if;
+                  Accum (Accum_Used + 1 .. Accum_Used + Append_N) :=
+                    Read_Buf (Read_Buf.all'First .. Got);
+                  Accum_Used := Accum_Used + Append_N;
+                  Drain;
+               end;
+            end if;
+         end loop;
+         if Accum_Used > 0 then
+            --  Trailing bytes that do not form a complete chunk —
+            --  surface as Bad_Input so the caller learns the
+            --  ciphertext stream was truncated mid-chunk.
+            Free_Cache (Accum);
+            Read_Buf.all := [others => 0];
+            Free_Cache (Read_Buf);
+            Itb.Errors.Raise_For (Itb.Status.Bad_Input);
+         end if;
+         Free_Cache (Accum);
+         Read_Buf.all := [others => 0];
+         Free_Cache (Read_Buf);
+      exception
+         when others =>
+            if Accum /= null then
+               Free_Cache (Accum);
+            end if;
+            if Read_Buf /= null then
+               Read_Buf.all := [others => 0];
+               Free_Cache (Read_Buf);
+            end if;
+            raise;
+      end;
+   end Decrypt_Stream;
 
 end Itb.Encryptor;

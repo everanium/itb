@@ -12,6 +12,7 @@ using Itb.Native;
 
 namespace Itb.Tests;
 
+[Collection(TestCollections.MismatchField)]
 public class TestEasySiphash24
 {
     private static readonly (string Hash, int Width)[] SiphashHashes = new[]

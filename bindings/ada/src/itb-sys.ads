@@ -782,4 +782,271 @@ package Itb.Sys is
       return C_Int
    with Import => True, Convention => C, External_Name => "ITB_Blob_Import3";
 
+   ---------------------------------------------------------------------
+   --  Streaming AEAD per-chunk ABI surface
+   ---------------------------------------------------------------------
+   --
+   --  One ABI export per (Single / Triple) × (Encrypt / Decrypt) ×
+   --  (128 / 256 / 512). The encrypt path takes Stream_ID +
+   --  Cumulative_Pixel_Offset + Final_Flag in; the decrypt path
+   --  takes Stream_ID + Cumulative_Pixel_Offset in and writes
+   --  Final_Flag_Out. Easy-mode counterparts route per-chunk
+   --  dispatch through the encryptor's bound config + MAC closure.
+
+   function ITB_EncryptStreamAuthenticated128
+     (Noise_Handle              : Handle;
+      Data_Handle               : Handle;
+      Start_Handle              : Handle;
+      MAC_Handle                : Handle;
+      Plaintext                 : System.Address;
+      Pt_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Final_Flag                : C_Int;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_EncryptStreamAuthenticated128";
+
+   function ITB_EncryptStreamAuthenticated256
+     (Noise_Handle              : Handle;
+      Data_Handle               : Handle;
+      Start_Handle              : Handle;
+      MAC_Handle                : Handle;
+      Plaintext                 : System.Address;
+      Pt_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Final_Flag                : C_Int;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_EncryptStreamAuthenticated256";
+
+   function ITB_EncryptStreamAuthenticated512
+     (Noise_Handle              : Handle;
+      Data_Handle               : Handle;
+      Start_Handle              : Handle;
+      MAC_Handle                : Handle;
+      Plaintext                 : System.Address;
+      Pt_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Final_Flag                : C_Int;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_EncryptStreamAuthenticated512";
+
+   function ITB_DecryptStreamAuthenticated128
+     (Noise_Handle              : Handle;
+      Data_Handle               : Handle;
+      Start_Handle              : Handle;
+      MAC_Handle                : Handle;
+      Ciphertext                : System.Address;
+      Ct_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T;
+      Final_Flag_Out            : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DecryptStreamAuthenticated128";
+
+   function ITB_DecryptStreamAuthenticated256
+     (Noise_Handle              : Handle;
+      Data_Handle               : Handle;
+      Start_Handle              : Handle;
+      MAC_Handle                : Handle;
+      Ciphertext                : System.Address;
+      Ct_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T;
+      Final_Flag_Out            : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DecryptStreamAuthenticated256";
+
+   function ITB_DecryptStreamAuthenticated512
+     (Noise_Handle              : Handle;
+      Data_Handle               : Handle;
+      Start_Handle              : Handle;
+      MAC_Handle                : Handle;
+      Ciphertext                : System.Address;
+      Ct_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T;
+      Final_Flag_Out            : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DecryptStreamAuthenticated512";
+
+   function ITB_EncryptStreamAuthenticated3x128
+     (Noise_Handle              : Handle;
+      Data_Handle1              : Handle;
+      Data_Handle2              : Handle;
+      Data_Handle3              : Handle;
+      Start_Handle1             : Handle;
+      Start_Handle2             : Handle;
+      Start_Handle3             : Handle;
+      MAC_Handle                : Handle;
+      Plaintext                 : System.Address;
+      Pt_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Final_Flag                : C_Int;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_EncryptStreamAuthenticated3x128";
+
+   function ITB_EncryptStreamAuthenticated3x256
+     (Noise_Handle              : Handle;
+      Data_Handle1              : Handle;
+      Data_Handle2              : Handle;
+      Data_Handle3              : Handle;
+      Start_Handle1             : Handle;
+      Start_Handle2             : Handle;
+      Start_Handle3             : Handle;
+      MAC_Handle                : Handle;
+      Plaintext                 : System.Address;
+      Pt_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Final_Flag                : C_Int;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_EncryptStreamAuthenticated3x256";
+
+   function ITB_EncryptStreamAuthenticated3x512
+     (Noise_Handle              : Handle;
+      Data_Handle1              : Handle;
+      Data_Handle2              : Handle;
+      Data_Handle3              : Handle;
+      Start_Handle1             : Handle;
+      Start_Handle2             : Handle;
+      Start_Handle3             : Handle;
+      MAC_Handle                : Handle;
+      Plaintext                 : System.Address;
+      Pt_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Final_Flag                : C_Int;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_EncryptStreamAuthenticated3x512";
+
+   function ITB_DecryptStreamAuthenticated3x128
+     (Noise_Handle              : Handle;
+      Data_Handle1              : Handle;
+      Data_Handle2              : Handle;
+      Data_Handle3              : Handle;
+      Start_Handle1             : Handle;
+      Start_Handle2             : Handle;
+      Start_Handle3             : Handle;
+      MAC_Handle                : Handle;
+      Ciphertext                : System.Address;
+      Ct_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T;
+      Final_Flag_Out            : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DecryptStreamAuthenticated3x128";
+
+   function ITB_DecryptStreamAuthenticated3x256
+     (Noise_Handle              : Handle;
+      Data_Handle1              : Handle;
+      Data_Handle2              : Handle;
+      Data_Handle3              : Handle;
+      Start_Handle1             : Handle;
+      Start_Handle2             : Handle;
+      Start_Handle3             : Handle;
+      MAC_Handle                : Handle;
+      Ciphertext                : System.Address;
+      Ct_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T;
+      Final_Flag_Out            : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DecryptStreamAuthenticated3x256";
+
+   function ITB_DecryptStreamAuthenticated3x512
+     (Noise_Handle              : Handle;
+      Data_Handle1              : Handle;
+      Data_Handle2              : Handle;
+      Data_Handle3              : Handle;
+      Start_Handle1             : Handle;
+      Start_Handle2             : Handle;
+      Start_Handle3             : Handle;
+      MAC_Handle                : Handle;
+      Ciphertext                : System.Address;
+      Ct_Len                    : Size_T;
+      Stream_ID                 : System.Address;
+      Cumulative_Pixel_Offset   : U64;
+      Out_Buf                   : System.Address;
+      Out_Cap                   : Size_T;
+      Out_Len                   : access Size_T;
+      Final_Flag_Out            : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DecryptStreamAuthenticated3x512";
+
+   function ITB_Easy_EncryptStreamAuth
+     (H                       : Handle;
+      Plaintext               : System.Address;
+      Pt_Len                  : Size_T;
+      Stream_ID               : System.Address;
+      Cumulative_Pixel_Offset : U64;
+      Final_Flag              : C_Int;
+      Out_Buf                 : System.Address;
+      Out_Cap                 : Size_T;
+      Out_Len                 : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_Easy_EncryptStreamAuth";
+
+   function ITB_Easy_DecryptStreamAuth
+     (H                       : Handle;
+      Ciphertext              : System.Address;
+      Ct_Len                  : Size_T;
+      Stream_ID               : System.Address;
+      Cumulative_Pixel_Offset : U64;
+      Out_Buf                 : System.Address;
+      Out_Cap                 : Size_T;
+      Out_Len                 : access Size_T;
+      Final_Flag_Out          : access C_Int)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_Easy_DecryptStreamAuth";
+
 end Itb.Sys;

@@ -10,6 +10,7 @@ using Itb.Native;
 
 namespace Itb.Tests;
 
+[Collection(TestCollections.MismatchField)]
 public class TestEasyBlake2s
 {
     private static readonly (string Hash, int Width)[] Blake2sHashes = new[]

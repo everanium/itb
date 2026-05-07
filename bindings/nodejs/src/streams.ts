@@ -42,10 +42,34 @@ import {
   encrypt as lowEncrypt,
   encryptTriple as lowEncryptTriple,
 } from './cipher.js';
-import { ITBError } from './errors.js';
+import {
+  ITBError,
+  ITBStreamAfterFinalError,
+  ITBStreamTruncatedError,
+  check,
+  errorFromStatus,
+} from './errors.js';
 import { headerSize, parseChunkLen } from './library.js';
+import type { MAC as Mac } from './mac.js';
 import type { Seed } from './seed.js';
 import { Status } from './status.js';
+import {
+  ITB_DecryptStreamAuthenticated128,
+  ITB_DecryptStreamAuthenticated256,
+  ITB_DecryptStreamAuthenticated512,
+  ITB_DecryptStreamAuthenticated3x128,
+  ITB_DecryptStreamAuthenticated3x256,
+  ITB_DecryptStreamAuthenticated3x512,
+  ITB_EncryptStreamAuthenticated128,
+  ITB_EncryptStreamAuthenticated256,
+  ITB_EncryptStreamAuthenticated512,
+  ITB_EncryptStreamAuthenticated3x128,
+  ITB_EncryptStreamAuthenticated3x256,
+  ITB_EncryptStreamAuthenticated3x512,
+  ITB_FreeSeed,
+  ITB_GetSeedHashKey,
+  ITB_NewSeedFromComponents,
+} from './native.js';
 
 /**
  * Default chunk size — matches `itb.DefaultChunkSize` on the Go
@@ -146,6 +170,10 @@ export class StreamEncryptor {
       const tail = merged.subarray(this.chunkSize);
       const ct = lowEncrypt(this.noise, this.data, this.start, chunk);
       this.output.write(ct);
+      // Zero the consumed plaintext slice in the shared backing
+      // buffer; the tail subarray covers a disjoint range and is
+      // unaffected.
+      chunk.fill(0);
       this.buf = tail.length > 0 ? [tail] : [];
       this.buffered = tail.length;
     }
@@ -164,6 +192,7 @@ export class StreamEncryptor {
       const merged = concatU8(this.buf, this.buffered);
       const ct = lowEncrypt(this.noise, this.data, this.start, merged);
       this.output.write(ct);
+      merged.fill(0);
       this.buf = [];
       this.buffered = 0;
     }
@@ -359,6 +388,7 @@ export class StreamEncryptorTriple {
         chunk,
       );
       this.output.write(ct);
+      chunk.fill(0);
       this.buf = tail.length > 0 ? [tail] : [];
       this.buffered = tail.length;
     }
@@ -382,6 +412,7 @@ export class StreamEncryptorTriple {
         merged,
       );
       this.output.write(ct);
+      merged.fill(0);
       this.buf = [];
       this.buffered = 0;
     }
@@ -640,6 +671,881 @@ export async function decryptStreamTriple(
   } catch (err) {
     // See decryptStream — Symbol.dispose absorbs trailing-bytes;
     // close() would mask the upstream failure.
+    dec[Symbol.dispose]();
+    throw err;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Authenticated streaming (Streaming AEAD)
+// ──────────────────────────────────────────────────────────────────
+//
+// Streaming AEAD wrappers built on top of the per-chunk
+// ITB_*StreamAuthenticated* ABI exports. The on-wire transcript
+// carries a 32-byte CSPRNG `streamId` prefix once at stream start,
+// followed by a sequence of authenticated chunks each bound to the
+// running `(streamId, cumulativePixelOffset, finalFlag)` tuple
+// inside the MAC closure.
+//
+// Failure surfaces:
+//
+//   - Chunk reorder / replay / cross-stream replay → `ITBError` with
+//     `Status.MacFailure`.
+//   - Incomplete 32-byte stream-id prefix at `close()` → `ITBError`
+//     with `Status.BadInput` (wire-level malformation).
+//   - Truncate-tail (drop terminating chunk after a fully observed
+//     prefix) → `ITBStreamTruncatedError`.
+//   - Extra bytes past the terminating chunk →
+//     `ITBStreamAfterFinalError`.
+//   - Stream-prefix tamper → `ITBError` with `Status.MacFailure` on
+//     chunk 0.
+//
+// The MAC handle (one per stream, allocated via `Mac`) is reused
+// across every chunk; the helper does not free it. Closed-state
+// preflight surfaces `Status.EasyClosed` on any post-close call.
+//
+// Sync-only FFI: koffi.lib.func() blocks the V8 main thread for the
+// duration of every per-chunk call, so `FinalizationRegistry` cannot
+// fire mid-FFI. The wrappers retain Seed / Mac references on
+// instance fields throughout the streaming lifetime; no explicit
+// `keepAlive` is required.
+
+export const STREAM_ID_LEN = 32;
+
+/**
+ * Generates a CSPRNG-fresh 32-byte Streaming AEAD anchor by
+ * piggybacking on libitb's own CSPRNG. Mirrors the C reference
+ * helper `generate_stream_id` in `bindings/c/src/streams.c`.
+ *
+ * @internal exported so the Encryptor's Streaming AEAD methods can
+ * reuse the same CSPRNG-anchor logic without duplication.
+ */
+export function generateStreamId(): Uint8Array {
+  const comps = new BigUint64Array([1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n]);
+  const handleOut: [bigint] = [0n];
+  let rc = ITB_NewSeedFromComponents(
+    'blake3',
+    new Uint8Array(comps.buffer, comps.byteOffset, comps.byteLength),
+    8,
+    null,
+    0,
+    handleOut,
+  );
+  check(rc);
+  const handle = handleOut[0];
+  const out = new Uint8Array(STREAM_ID_LEN);
+  const outLen: [bigint] = [0n];
+  rc = ITB_GetSeedHashKey(handle, out, BigInt(STREAM_ID_LEN), outLen);
+  const freeRc = ITB_FreeSeed(handle);
+  check(rc);
+  check(freeRc);
+  if (Number(outLen[0]) !== STREAM_ID_LEN) {
+    throw new ITBError(Status.Internal,
+      'streamId CSPRNG draw returned wrong byte count');
+  }
+  return out;
+}
+
+function readBe16(buf: Uint8Array, off: number): number {
+  return (buf[off]! << 8) | buf[off + 1]!;
+}
+
+function emitChunkAuthSingle(
+  width: number,
+  noise: Seed, data: Seed, start: Seed, mac: Mac,
+  plaintext: Uint8Array,
+  streamId: Uint8Array,
+  cumPixels: bigint,
+  finalFlag: boolean,
+): Uint8Array {
+  const fn = ((): typeof ITB_EncryptStreamAuthenticated128 => {
+    switch (width) {
+      case 128: return ITB_EncryptStreamAuthenticated128;
+      case 256: return ITB_EncryptStreamAuthenticated256;
+      case 512: return ITB_EncryptStreamAuthenticated512;
+      default:
+        throw new ITBError(Status.SeedWidthMix,
+          `unsupported native hash width ${width}`);
+    }
+  })();
+  const ff = finalFlag ? 1 : 0;
+  const ptArg = plaintext.length > 0 ? plaintext : new Uint8Array(0);
+  const outLen: [bigint] = [0n];
+  let rc = fn(
+    noise.handle as bigint, data.handle as bigint, start.handle as bigint,
+    mac.handle as bigint,
+    ptArg, BigInt(plaintext.length),
+    streamId, cumPixels, ff,
+    null, 0n, outLen,
+  );
+  if (rc === Status.Ok) return new Uint8Array(0);
+  if (rc !== Status.BufferTooSmall) {
+    throw errorFromStatus(rc);
+  }
+  const need = Number(outLen[0]);
+  if (need === 0) return new Uint8Array(0);
+  const buf = new Uint8Array(need);
+  rc = fn(
+    noise.handle as bigint, data.handle as bigint, start.handle as bigint,
+    mac.handle as bigint,
+    ptArg, BigInt(plaintext.length),
+    streamId, cumPixels, ff,
+    buf, BigInt(buf.length), outLen,
+  );
+  check(rc);
+  return buf.subarray(0, Number(outLen[0]));
+}
+
+function emitChunkAuthTriple(
+  width: number,
+  noise: Seed,
+  data1: Seed, data2: Seed, data3: Seed,
+  start1: Seed, start2: Seed, start3: Seed,
+  mac: Mac,
+  plaintext: Uint8Array,
+  streamId: Uint8Array,
+  cumPixels: bigint,
+  finalFlag: boolean,
+): Uint8Array {
+  const fn = ((): typeof ITB_EncryptStreamAuthenticated3x128 => {
+    switch (width) {
+      case 128: return ITB_EncryptStreamAuthenticated3x128;
+      case 256: return ITB_EncryptStreamAuthenticated3x256;
+      case 512: return ITB_EncryptStreamAuthenticated3x512;
+      default:
+        throw new ITBError(Status.SeedWidthMix,
+          `unsupported native hash width ${width}`);
+    }
+  })();
+  const ff = finalFlag ? 1 : 0;
+  const ptArg = plaintext.length > 0 ? plaintext : new Uint8Array(0);
+  const outLen: [bigint] = [0n];
+  let rc = fn(
+    noise.handle as bigint,
+    data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
+    start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
+    mac.handle as bigint,
+    ptArg, BigInt(plaintext.length),
+    streamId, cumPixels, ff,
+    null, 0n, outLen,
+  );
+  if (rc === Status.Ok) return new Uint8Array(0);
+  if (rc !== Status.BufferTooSmall) {
+    throw errorFromStatus(rc);
+  }
+  const need = Number(outLen[0]);
+  if (need === 0) return new Uint8Array(0);
+  const buf = new Uint8Array(need);
+  rc = fn(
+    noise.handle as bigint,
+    data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
+    start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
+    mac.handle as bigint,
+    ptArg, BigInt(plaintext.length),
+    streamId, cumPixels, ff,
+    buf, BigInt(buf.length), outLen,
+  );
+  check(rc);
+  return buf.subarray(0, Number(outLen[0]));
+}
+
+function consumeChunkAuthSingle(
+  width: number,
+  noise: Seed, data: Seed, start: Seed, mac: Mac,
+  ciphertext: Uint8Array,
+  streamId: Uint8Array,
+  cumPixels: bigint,
+): { pt: Uint8Array; finalFlag: boolean } {
+  const fn = ((): typeof ITB_DecryptStreamAuthenticated128 => {
+    switch (width) {
+      case 128: return ITB_DecryptStreamAuthenticated128;
+      case 256: return ITB_DecryptStreamAuthenticated256;
+      case 512: return ITB_DecryptStreamAuthenticated512;
+      default:
+        throw new ITBError(Status.SeedWidthMix,
+          `unsupported native hash width ${width}`);
+    }
+  })();
+  const ctArg = ciphertext.length > 0 ? ciphertext : new Uint8Array(0);
+  const outLen: [bigint] = [0n];
+  const ff: [number] = [0];
+  let rc = fn(
+    noise.handle as bigint, data.handle as bigint, start.handle as bigint,
+    mac.handle as bigint,
+    ctArg, BigInt(ciphertext.length),
+    streamId, cumPixels,
+    null, 0n, outLen, ff,
+  );
+  if (rc === Status.Ok) {
+    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+  }
+  if (rc !== Status.BufferTooSmall) {
+    throw errorFromStatus(rc);
+  }
+  const need = Number(outLen[0]);
+  if (need === 0) {
+    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+  }
+  const buf = new Uint8Array(need);
+  rc = fn(
+    noise.handle as bigint, data.handle as bigint, start.handle as bigint,
+    mac.handle as bigint,
+    ctArg, BigInt(ciphertext.length),
+    streamId, cumPixels,
+    buf, BigInt(buf.length), outLen, ff,
+  );
+  check(rc);
+  return { pt: buf.subarray(0, Number(outLen[0])), finalFlag: ff[0] !== 0 };
+}
+
+function consumeChunkAuthTriple(
+  width: number,
+  noise: Seed,
+  data1: Seed, data2: Seed, data3: Seed,
+  start1: Seed, start2: Seed, start3: Seed,
+  mac: Mac,
+  ciphertext: Uint8Array,
+  streamId: Uint8Array,
+  cumPixels: bigint,
+): { pt: Uint8Array; finalFlag: boolean } {
+  const fn = ((): typeof ITB_DecryptStreamAuthenticated3x128 => {
+    switch (width) {
+      case 128: return ITB_DecryptStreamAuthenticated3x128;
+      case 256: return ITB_DecryptStreamAuthenticated3x256;
+      case 512: return ITB_DecryptStreamAuthenticated3x512;
+      default:
+        throw new ITBError(Status.SeedWidthMix,
+          `unsupported native hash width ${width}`);
+    }
+  })();
+  const ctArg = ciphertext.length > 0 ? ciphertext : new Uint8Array(0);
+  const outLen: [bigint] = [0n];
+  const ff: [number] = [0];
+  let rc = fn(
+    noise.handle as bigint,
+    data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
+    start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
+    mac.handle as bigint,
+    ctArg, BigInt(ciphertext.length),
+    streamId, cumPixels,
+    null, 0n, outLen, ff,
+  );
+  if (rc === Status.Ok) {
+    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+  }
+  if (rc !== Status.BufferTooSmall) {
+    throw errorFromStatus(rc);
+  }
+  const need = Number(outLen[0]);
+  if (need === 0) {
+    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+  }
+  const buf = new Uint8Array(need);
+  rc = fn(
+    noise.handle as bigint,
+    data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
+    start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
+    mac.handle as bigint,
+    ctArg, BigInt(ciphertext.length),
+    streamId, cumPixels,
+    buf, BigInt(buf.length), outLen, ff,
+  );
+  check(rc);
+  return { pt: buf.subarray(0, Number(outLen[0])), finalFlag: ff[0] !== 0 };
+}
+
+/**
+ * Authenticated chunked-encrypt writer (Single Ouroboros + MAC).
+ * Buffers plaintext until at least `chunkSize` bytes are available,
+ * then drains one full chunk per FFI call. Each chunk is bound to
+ * the running `(streamId, cumulativePixelOffset, finalFlag)` tuple
+ * inside the MAC closure. The 32-byte CSPRNG `streamId` prefix is
+ * generated at construction and emitted on the first `write` /
+ * `close` call.
+ */
+export class StreamEncryptorAuth {
+  private readonly noise: Seed;
+  private readonly data: Seed;
+  private readonly start: Seed;
+  private readonly mac: Mac;
+  private readonly output: Writable;
+  private readonly chunkSize: number;
+  private readonly width: number;
+  private readonly headerSize: number;
+  private readonly streamId: Uint8Array;
+  private buf: Uint8Array[] = [];
+  private buffered = 0;
+  private cumPixels = 0n;
+  private closed = false;
+  private prefixEmitted = false;
+
+  constructor(
+    noise: Seed,
+    data: Seed,
+    start: Seed,
+    mac: Mac,
+    output: Writable,
+    chunkSize: number = DEFAULT_CHUNK_SIZE,
+  ) {
+    if (chunkSize <= 0) {
+      throw new ITBError(Status.BadInput, 'chunkSize must be positive');
+    }
+    this.noise = noise;
+    this.data = data;
+    this.start = start;
+    this.mac = mac;
+    this.output = output;
+    this.chunkSize = chunkSize;
+    this.width = noise.width;
+    this.headerSize = headerSize();
+    this.streamId = generateStreamId();
+  }
+
+  private emitPrefix(): void {
+    if (!this.prefixEmitted) {
+      this.output.write(this.streamId);
+      this.prefixEmitted = true;
+    }
+  }
+
+  private emitOne(ptLen: number, finalFlag: boolean): void {
+    const merged = concatU8(this.buf, this.buffered);
+    const chunkPt = merged.subarray(0, ptLen);
+    const tail = merged.subarray(ptLen);
+    const ct = emitChunkAuthSingle(
+      this.width, this.noise, this.data, this.start, this.mac,
+      chunkPt, this.streamId, this.cumPixels, finalFlag,
+    );
+    chunkPt.fill(0);
+    if (ct.length >= this.headerSize) {
+      const w = readBe16(ct, this.headerSize - 4);
+      const h = readBe16(ct, this.headerSize - 2);
+      this.cumPixels += BigInt(w) * BigInt(h);
+    }
+    this.output.write(ct);
+    this.buf = tail.length > 0 ? [tail] : [];
+    this.buffered = tail.length;
+  }
+
+  write(data: Uint8Array | Buffer): number {
+    if (this.closed) {
+      throw new ITBError(Status.EasyClosed, 'write on closed StreamEncryptorAuth');
+    }
+    this.emitPrefix();
+    const view = asUint8(data);
+    this.buf.push(view);
+    this.buffered += view.length;
+    // Keep at least one chunk's worth buffered until close() so the
+    // deferred-final pattern can decide whether to emit
+    // finalFlag = true.
+    while (this.buffered > this.chunkSize) {
+      this.emitOne(this.chunkSize, false);
+    }
+    return view.length;
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.emitPrefix();
+    this.emitOne(this.buffered, true);
+    this.closed = true;
+  }
+
+  [Symbol.dispose](): void {
+    this.close();
+  }
+}
+
+/**
+ * Authenticated chunked-decrypt writer (Single Ouroboros + MAC).
+ * Reads the 32-byte `streamId` prefix once, then drains every
+ * complete chunk available in the internal buffer.
+ */
+export class StreamDecryptorAuth {
+  private readonly noise: Seed;
+  private readonly data: Seed;
+  private readonly start: Seed;
+  private readonly mac: Mac;
+  private readonly output: Writable;
+  private readonly width: number;
+  private readonly headerSize: number;
+  private readonly streamId = new Uint8Array(STREAM_ID_LEN);
+  private sidHave = 0;
+  private buf: Uint8Array[] = [];
+  private buffered = 0;
+  private cumPixels = 0n;
+  private seenFinal = false;
+  private closed = false;
+
+  constructor(
+    noise: Seed,
+    data: Seed,
+    start: Seed,
+    mac: Mac,
+    output: Writable,
+  ) {
+    this.noise = noise;
+    this.data = data;
+    this.start = start;
+    this.mac = mac;
+    this.output = output;
+    this.width = noise.width;
+    this.headerSize = headerSize();
+  }
+
+  private drain(): void {
+    for (;;) {
+      if (this.seenFinal) {
+        if (this.buffered > 0) {
+          throw new ITBStreamAfterFinalError(
+            Status.StreamAfterFinal,
+            'auth stream: trailing bytes after terminator');
+        }
+        return;
+      }
+      if (this.buffered < this.headerSize) {
+        return;
+      }
+      const merged = concatU8(this.buf, this.buffered);
+      const chunkLen = parseChunkLen(merged.subarray(0, this.headerSize));
+      if (merged.length < chunkLen) {
+        this.buf = [merged];
+        this.buffered = merged.length;
+        return;
+      }
+      const w = readBe16(merged, this.headerSize - 4);
+      const h = readBe16(merged, this.headerSize - 2);
+      const pixels = BigInt(w) * BigInt(h);
+      const chunk = merged.subarray(0, chunkLen);
+      const tail = merged.subarray(chunkLen);
+      const { pt, finalFlag } = consumeChunkAuthSingle(
+        this.width, this.noise, this.data, this.start, this.mac,
+        chunk, this.streamId, this.cumPixels,
+      );
+      this.output.write(pt);
+      this.cumPixels += pixels;
+      this.buf = tail.length > 0 ? [tail] : [];
+      this.buffered = tail.length;
+      if (finalFlag) {
+        this.seenFinal = true;
+      }
+    }
+  }
+
+  feed(data: Uint8Array | Buffer): number {
+    if (this.closed) {
+      throw new ITBError(Status.EasyClosed, 'feed on closed StreamDecryptorAuth');
+    }
+    const view = asUint8(data);
+    let off = 0;
+    if (this.sidHave < STREAM_ID_LEN) {
+      const need = STREAM_ID_LEN - this.sidHave;
+      const take = Math.min(need, view.length);
+      this.streamId.set(view.subarray(0, take), this.sidHave);
+      this.sidHave += take;
+      off = take;
+    }
+    if (off < view.length) {
+      const tail = view.subarray(off);
+      this.buf.push(tail);
+      this.buffered += tail.length;
+    }
+    if (this.sidHave === STREAM_ID_LEN) {
+      this.drain();
+    }
+    return view.length;
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    if (this.sidHave < STREAM_ID_LEN) {
+      this.closed = true;
+      // Incomplete prefix is a wire-level malformation (header
+      // never finished arriving), distinct from "chunks observed
+      // but no terminator chunk among them" which is the
+      // truncate-tail signal.
+      throw new ITBError(
+        Status.BadInput, 'auth stream: prefix never observed');
+    }
+    this.drain();
+    this.closed = true;
+    if (!this.seenFinal) {
+      throw new ITBStreamTruncatedError(
+        Status.StreamTruncated, 'auth stream: terminator never observed');
+    }
+  }
+
+  [Symbol.dispose](): void {
+    // Mark closed without raising on partial input.
+    this.closed = true;
+  }
+}
+
+/**
+ * Triple-Ouroboros (7-seed) counterpart of `StreamEncryptorAuth`.
+ */
+export class StreamEncryptorAuthTriple {
+  private readonly noise: Seed;
+  private readonly data1: Seed;
+  private readonly data2: Seed;
+  private readonly data3: Seed;
+  private readonly start1: Seed;
+  private readonly start2: Seed;
+  private readonly start3: Seed;
+  private readonly mac: Mac;
+  private readonly output: Writable;
+  private readonly chunkSize: number;
+  private readonly width: number;
+  private readonly headerSize: number;
+  private readonly streamId: Uint8Array;
+  private buf: Uint8Array[] = [];
+  private buffered = 0;
+  private cumPixels = 0n;
+  private closed = false;
+  private prefixEmitted = false;
+
+  constructor(
+    noise: Seed,
+    data1: Seed,
+    data2: Seed,
+    data3: Seed,
+    start1: Seed,
+    start2: Seed,
+    start3: Seed,
+    mac: Mac,
+    output: Writable,
+    chunkSize: number = DEFAULT_CHUNK_SIZE,
+  ) {
+    if (chunkSize <= 0) {
+      throw new ITBError(Status.BadInput, 'chunkSize must be positive');
+    }
+    this.noise = noise;
+    this.data1 = data1;
+    this.data2 = data2;
+    this.data3 = data3;
+    this.start1 = start1;
+    this.start2 = start2;
+    this.start3 = start3;
+    this.mac = mac;
+    this.output = output;
+    this.chunkSize = chunkSize;
+    this.width = noise.width;
+    this.headerSize = headerSize();
+    this.streamId = generateStreamId();
+  }
+
+  private emitPrefix(): void {
+    if (!this.prefixEmitted) {
+      this.output.write(this.streamId);
+      this.prefixEmitted = true;
+    }
+  }
+
+  private emitOne(ptLen: number, finalFlag: boolean): void {
+    const merged = concatU8(this.buf, this.buffered);
+    const chunkPt = merged.subarray(0, ptLen);
+    const tail = merged.subarray(ptLen);
+    const ct = emitChunkAuthTriple(
+      this.width, this.noise,
+      this.data1, this.data2, this.data3,
+      this.start1, this.start2, this.start3,
+      this.mac,
+      chunkPt, this.streamId, this.cumPixels, finalFlag,
+    );
+    chunkPt.fill(0);
+    if (ct.length >= this.headerSize) {
+      const w = readBe16(ct, this.headerSize - 4);
+      const h = readBe16(ct, this.headerSize - 2);
+      this.cumPixels += BigInt(w) * BigInt(h);
+    }
+    this.output.write(ct);
+    this.buf = tail.length > 0 ? [tail] : [];
+    this.buffered = tail.length;
+  }
+
+  write(data: Uint8Array | Buffer): number {
+    if (this.closed) {
+      throw new ITBError(Status.EasyClosed,
+        'write on closed StreamEncryptorAuthTriple');
+    }
+    this.emitPrefix();
+    const view = asUint8(data);
+    this.buf.push(view);
+    this.buffered += view.length;
+    while (this.buffered > this.chunkSize) {
+      this.emitOne(this.chunkSize, false);
+    }
+    return view.length;
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.emitPrefix();
+    this.emitOne(this.buffered, true);
+    this.closed = true;
+  }
+
+  [Symbol.dispose](): void {
+    this.close();
+  }
+}
+
+/**
+ * Triple-Ouroboros (7-seed) counterpart of `StreamDecryptorAuth`.
+ */
+export class StreamDecryptorAuthTriple {
+  private readonly noise: Seed;
+  private readonly data1: Seed;
+  private readonly data2: Seed;
+  private readonly data3: Seed;
+  private readonly start1: Seed;
+  private readonly start2: Seed;
+  private readonly start3: Seed;
+  private readonly mac: Mac;
+  private readonly output: Writable;
+  private readonly width: number;
+  private readonly headerSize: number;
+  private readonly streamId = new Uint8Array(STREAM_ID_LEN);
+  private sidHave = 0;
+  private buf: Uint8Array[] = [];
+  private buffered = 0;
+  private cumPixels = 0n;
+  private seenFinal = false;
+  private closed = false;
+
+  constructor(
+    noise: Seed,
+    data1: Seed,
+    data2: Seed,
+    data3: Seed,
+    start1: Seed,
+    start2: Seed,
+    start3: Seed,
+    mac: Mac,
+    output: Writable,
+  ) {
+    this.noise = noise;
+    this.data1 = data1;
+    this.data2 = data2;
+    this.data3 = data3;
+    this.start1 = start1;
+    this.start2 = start2;
+    this.start3 = start3;
+    this.mac = mac;
+    this.output = output;
+    this.width = noise.width;
+    this.headerSize = headerSize();
+  }
+
+  private drain(): void {
+    for (;;) {
+      if (this.seenFinal) {
+        if (this.buffered > 0) {
+          throw new ITBStreamAfterFinalError(
+            Status.StreamAfterFinal,
+            'auth stream: trailing bytes after terminator');
+        }
+        return;
+      }
+      if (this.buffered < this.headerSize) {
+        return;
+      }
+      const merged = concatU8(this.buf, this.buffered);
+      const chunkLen = parseChunkLen(merged.subarray(0, this.headerSize));
+      if (merged.length < chunkLen) {
+        this.buf = [merged];
+        this.buffered = merged.length;
+        return;
+      }
+      const w = readBe16(merged, this.headerSize - 4);
+      const h = readBe16(merged, this.headerSize - 2);
+      const pixels = BigInt(w) * BigInt(h);
+      const chunk = merged.subarray(0, chunkLen);
+      const tail = merged.subarray(chunkLen);
+      const { pt, finalFlag } = consumeChunkAuthTriple(
+        this.width, this.noise,
+        this.data1, this.data2, this.data3,
+        this.start1, this.start2, this.start3,
+        this.mac,
+        chunk, this.streamId, this.cumPixels,
+      );
+      this.output.write(pt);
+      this.cumPixels += pixels;
+      this.buf = tail.length > 0 ? [tail] : [];
+      this.buffered = tail.length;
+      if (finalFlag) {
+        this.seenFinal = true;
+      }
+    }
+  }
+
+  feed(data: Uint8Array | Buffer): number {
+    if (this.closed) {
+      throw new ITBError(Status.EasyClosed,
+        'feed on closed StreamDecryptorAuthTriple');
+    }
+    const view = asUint8(data);
+    let off = 0;
+    if (this.sidHave < STREAM_ID_LEN) {
+      const need = STREAM_ID_LEN - this.sidHave;
+      const take = Math.min(need, view.length);
+      this.streamId.set(view.subarray(0, take), this.sidHave);
+      this.sidHave += take;
+      off = take;
+    }
+    if (off < view.length) {
+      const tail = view.subarray(off);
+      this.buf.push(tail);
+      this.buffered += tail.length;
+    }
+    if (this.sidHave === STREAM_ID_LEN) {
+      this.drain();
+    }
+    return view.length;
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    if (this.sidHave < STREAM_ID_LEN) {
+      this.closed = true;
+      // Incomplete prefix is a wire-level malformation (header
+      // never finished arriving), distinct from "chunks observed
+      // but no terminator chunk among them" which is the
+      // truncate-tail signal.
+      throw new ITBError(
+        Status.BadInput, 'auth stream: prefix never observed');
+    }
+    this.drain();
+    this.closed = true;
+    if (!this.seenFinal) {
+      throw new ITBStreamTruncatedError(
+        Status.StreamTruncated, 'auth stream: terminator never observed');
+    }
+  }
+
+  [Symbol.dispose](): void {
+    this.closed = true;
+  }
+}
+
+/**
+ * Reads plaintext from `input` until end-of-stream, encrypts each
+ * chunk under the Streaming AEAD construction, and writes the
+ * concatenated `streamId || chunk_0 || chunk_1 || ...` transcript
+ * to `output`. Neither stream is closed by the helper.
+ */
+export async function encryptStreamAuth(
+  noise: Seed,
+  data: Seed,
+  start: Seed,
+  mac: Mac,
+  input: Readable,
+  output: Writable,
+  chunkSize: number = DEFAULT_CHUNK_SIZE,
+): Promise<void> {
+  const enc = new StreamEncryptorAuth(noise, data, start, mac, output, chunkSize);
+  try {
+    for await (const chunk of iterateReadable(input)) {
+      enc.write(chunk);
+    }
+    enc.close();
+  } catch (err) {
+    enc.close();
+    throw err;
+  }
+}
+
+/**
+ * Reads a Streaming AEAD transcript from `input` until end-of-stream
+ * and writes the recovered plaintext to `output`. Surfaces `ITBError`
+ * with `Status.BadInput` when the input exhausts mid-prefix
+ * (incomplete 32-byte stream-id header), `ITBStreamTruncatedError`
+ * when the prefix is fully observed but no terminating chunk arrives,
+ * `ITBStreamAfterFinalError` when bytes follow the terminator, and
+ * `ITBError` with `Status.MacFailure` on any per-chunk MAC mismatch.
+ */
+export async function decryptStreamAuth(
+  noise: Seed,
+  data: Seed,
+  start: Seed,
+  mac: Mac,
+  input: Readable,
+  output: Writable,
+): Promise<void> {
+  const dec = new StreamDecryptorAuth(noise, data, start, mac, output);
+  try {
+    for await (const chunk of iterateReadable(input)) {
+      dec.feed(chunk);
+    }
+    dec.close();
+  } catch (err) {
+    dec[Symbol.dispose]();
+    throw err;
+  }
+}
+
+/**
+ * Triple-Ouroboros (7-seed) counterpart of `encryptStreamAuth`.
+ */
+export async function encryptStreamAuthTriple(
+  noise: Seed,
+  data1: Seed,
+  data2: Seed,
+  data3: Seed,
+  start1: Seed,
+  start2: Seed,
+  start3: Seed,
+  mac: Mac,
+  input: Readable,
+  output: Writable,
+  chunkSize: number = DEFAULT_CHUNK_SIZE,
+): Promise<void> {
+  const enc = new StreamEncryptorAuthTriple(
+    noise, data1, data2, data3, start1, start2, start3, mac, output, chunkSize,
+  );
+  try {
+    for await (const chunk of iterateReadable(input)) {
+      enc.write(chunk);
+    }
+    enc.close();
+  } catch (err) {
+    enc.close();
+    throw err;
+  }
+}
+
+/**
+ * Triple-Ouroboros (7-seed) counterpart of `decryptStreamAuth`.
+ */
+export async function decryptStreamAuthTriple(
+  noise: Seed,
+  data1: Seed,
+  data2: Seed,
+  data3: Seed,
+  start1: Seed,
+  start2: Seed,
+  start3: Seed,
+  mac: Mac,
+  input: Readable,
+  output: Writable,
+): Promise<void> {
+  const dec = new StreamDecryptorAuthTriple(
+    noise, data1, data2, data3, start1, start2, start3, mac, output,
+  );
+  try {
+    for await (const chunk of iterateReadable(input)) {
+      dec.feed(chunk);
+    }
+    dec.close();
+  } catch (err) {
     dec[Symbol.dispose]();
     throw err;
   }

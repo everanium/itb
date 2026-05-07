@@ -130,6 +130,123 @@ Filter to a subset by passing test names as positional arguments:
    `libitb` without `LD_LIBRARY_PATH`.
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while preserving the deniability of the per-chunk MAC-Inside-Encrypt container. Each chunk's MAC binds the encrypted payload to a 32-byte CSPRNG stream anchor (written as a once-per-stream wire prefix), the cumulative pixel offset of preceding chunks, and a final-flag bit — defending against chunk reorder, replay within or across streams sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail. The wire format adds 32 bytes of stream prefix plus one byte of encrypted trailing flag per chunk; no externally visible MAC tag.
+
+**Easy Mode example:**
+
+`Encryptor.encryptStreamAuth` consumes plaintext via a `reader` delegate (`size_t (ubyte[] buf)`) and emits the on-wire transcript via a `writer` delegate (`void (const(ubyte)[] data)`). Wrapping a `std.stdio.File` with `rawRead` / `rawWrite` produces the necessary block-level I/O. The MAC key is allocated CSPRNG-fresh inside the encryptor at constructor time.
+
+```d
+import std.stdio : File;
+import itb.encryptor : Encryptor;
+
+enum SRC_PATH   = "/tmp/64mb.src";
+enum ENC_PATH   = "/tmp/64mb.enc";
+enum DST_PATH   = "/tmp/64mb.dst";
+enum CHUNK_SIZE = 16UL * 1024 * 1024;
+
+auto enc = Encryptor("areion512", 1024, "hmac-blake3", 1);
+{
+    auto fin  = File(SRC_PATH, "rb");
+    auto fout = File(ENC_PATH, "wb");
+    size_t reader(ubyte[] buf) @trusted { return fin.rawRead(buf).length; }
+    void   writer(const(ubyte)[] d) @trusted { fout.rawWrite(d); }
+    enc.encryptStreamAuth(&reader, &writer, cast(size_t) CHUNK_SIZE);
+}
+{
+    auto fin  = File(ENC_PATH, "rb");
+    auto fout = File(DST_PATH, "wb");
+    size_t reader(ubyte[] buf) @trusted { return fin.rawRead(buf).length; }
+    void   writer(const(ubyte)[] d) @trusted { fout.rawWrite(d); }
+    enc.decryptStreamAuth(&reader, &writer, cast(size_t) CHUNK_SIZE);
+}
+enc.close();
+```
+
+**Build + run:**
+
+```json
+// ~/src/itb_stream_auth_example/dub.json
+{
+    "name": "itb_stream_auth_example",
+    "description": "ITB D binding Streaming AEAD full-flow file-I/O example.",
+    "targetType": "executable",
+    "targetName": "main",
+    "sourcePaths": ["."],
+    "importPaths": ["."],
+    "dependencies": {
+        "itb": { "path": "~/src/dlang/" }
+    },
+    "lflags-posix-dmd": [
+        "-L~/src/dist/linux-amd64",
+        "-litb",
+        "-rpath=~/src/dist/linux-amd64"
+    ],
+    "lflags-posix-ldc": [
+        "-L~/src/dist/linux-amd64",
+        "-litb",
+        "-rpath=~/src/dist/linux-amd64"
+    ]
+}
+```
+
+The `lflags-posix-dmd` / `lflags-posix-ldc` arrays use bare `-L` / `-rpath=` switches (not the `-L-Wl,-rpath` wrapping) because `dub` rewrites the bare form into the linker's native syntax for both DMD and LDC2.
+
+```sh
+cd ~/src/itb_stream_auth_example && dub run
+```
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example:**
+
+Free functions `encryptStreamAuth` / `decryptStreamAuth` in `itb.streams` take three explicit `Seed` instances plus a `MAC` (32-byte key from `/dev/urandom`) and stream through the same chunked-AEAD construction. Reader / writer delegates wired to per-call `File` objects feed each side.
+
+```d
+import itb.seed : Seed;
+import itb.mac : MAC;
+import itb.streams : encryptStreamAuth, decryptStreamAuth;
+
+auto noise = Seed("areion512", 1024);
+auto data  = Seed("areion512", 1024);
+auto start = Seed("areion512", 1024);
+auto macKey = csprngMacKey();           // 32 bytes from /dev/urandom
+auto mac = MAC("hmac-blake3", macKey[]);
+
+{
+    auto fin  = File(SRC_PATH, "rb");
+    auto fout = File(ENC_PATH, "wb");
+    size_t reader(ubyte[] buf) @trusted { return fin.rawRead(buf).length; }
+    void   writer(const(ubyte)[] d) @trusted { fout.rawWrite(d); }
+    encryptStreamAuth(noise, data, start, mac,
+                      &reader, &writer, cast(size_t) CHUNK_SIZE);
+}
+```
+
+**Build + run:**
+
+```sh
+cd ~/src/itb_stream_auth_example && dub run --quiet
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
 ## Quick Start — `itb.Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 The high-level `Encryptor` (mirroring the
