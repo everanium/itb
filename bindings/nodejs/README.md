@@ -220,7 +220,7 @@ Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Low-Level Mode example.** Module-level free functions
+**Low-Level Mode:** Module-level free functions
 `encryptStreamAuth` / `decryptStreamAuth` take three explicit `Seed`
 handles plus a `MAC` instance (32-byte key drawn via
 `crypto.randomBytes(32)`) and stream through the same chunked-AEAD
@@ -298,7 +298,7 @@ integer `1` for Single Ouroboros (`3` for Triple Ouroboros).
 Low-Level Mode does not carry a top-level mode parameter — Single vs
 Triple is selected by the seed-handle count passed in.
 
-## Quick Start — `Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
+## Quick Start — `Encryptor` + HMAC-BLAKE3 (MAC Authenticated)
 
 The high-level `Encryptor` (mirroring the
 `github.com/everanium/itb/easy` Go sub-package) replaces the
@@ -428,7 +428,7 @@ try {
 }
 ```
 
-## Quick Start — Mixed primitives (different PRF per seed slot)
+## Quick Start — Mixed primitives (Different PRF per seed slot)
 
 `Encryptor.mixedSingle` and `Encryptor.mixedTriple` accept
 per-slot primitive names — the noise / data / start (and optional
@@ -533,7 +533,7 @@ const decrypted = enc.decryptAuth(encrypted);
 `Encryptor.mixedTriple` is the per-slot mixed-primitive
 counterpart for Triple Ouroboros (7 + optional lockSeed slots).
 
-## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
+## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (Low-Level, MAC Authenticated)
 
 The lower-level path is for callers who prefer to manage the seven
 `Seed` handles (Triple) or three (Single) plus the MAC handle

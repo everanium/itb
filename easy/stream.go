@@ -2,6 +2,7 @@ package easy
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/everanium/itb"
 )
@@ -119,4 +120,92 @@ func (e *Encryptor) DecryptStream(ciphertext []byte, emit ChunkFunc) error {
 			ciphertext, emit)
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
+}
+
+// EncryptStreamIO encrypts a plain (non-authenticated) stream driven
+// by io.Reader / io.Writer. Reads up-to-chunkSize-byte windows from
+// src, encrypts each non-empty window through the matching
+// width-suffixed per-chunk path on the encryptor, and writes the
+// resulting wire chunk to dst. Empty src input emits nothing — the
+// underlying single-shot path rejects empty plaintext, and the
+// streaming helper preserves that semantic by simply not emitting any
+// chunk.
+//
+// chunkSize must be > 0; a zero or negative value yields a BadInput-
+// equivalent error before any byte is consumed from src. Plaintext is
+// read in streaming windows of the supplied chunk size, so callers
+// can process inputs that exceed available RAM.
+//
+// Panics with [ErrClosed] when called after [Encryptor.Close].
+// Returns the first non-nil error from the underlying per-chunk
+// [Encryptor.Encrypt] call, the writer's Write, or the reader's Read.
+func (e *Encryptor) EncryptStreamIO(src io.Reader, dst io.Writer, chunkSize int) error {
+	if e.closed {
+		panic(ErrClosed)
+	}
+	if chunkSize <= 0 {
+		return fmt.Errorf("itb/easy: chunkSize must be > 0")
+	}
+	e.firstEncryptCalled = true
+
+	stage := make([]byte, chunkSize)
+	for {
+		n, rerr := io.ReadFull(src, stage)
+		if rerr == io.EOF {
+			return nil
+		}
+		if rerr != nil && rerr != io.ErrUnexpectedEOF {
+			return rerr
+		}
+		if n == 0 {
+			return nil
+		}
+		ct, encErr := e.Encrypt(stage[:n])
+		if encErr != nil {
+			return encErr
+		}
+		if _, werr := dst.Write(ct); werr != nil {
+			return werr
+		}
+		if rerr == io.ErrUnexpectedEOF {
+			return nil
+		}
+	}
+}
+
+// DecryptStreamIO decrypts a plain stream produced by
+// [Encryptor.EncryptStreamIO] (or any wire-format-compatible producer
+// such as [Encryptor.EncryptStream] / the top-level [itb.EncryptStream]
+// family). Reads one chunk at a time using the per-instance header
+// size, dispatches the chunk through the matching width-suffixed
+// per-chunk decrypt path, and writes the recovered plaintext to dst.
+//
+// Wrong-seed input on plain (non-authenticated) streams produces
+// random-looking plaintext per chunk rather than an error — plain
+// mode has no failure signal by design.
+//
+// Panics with [ErrClosed] when called after [Encryptor.Close].
+// Returns the first non-nil error from the underlying per-chunk
+// [Encryptor.Decrypt] call, the writer's Write, or the reader's Read.
+func (e *Encryptor) DecryptStreamIO(src io.Reader, dst io.Writer) error {
+	if e.closed {
+		panic(ErrClosed)
+	}
+
+	for {
+		chunk, cerr := e.readStreamChunk(src)
+		if cerr == io.EOF {
+			return nil
+		}
+		if cerr != nil {
+			return cerr
+		}
+		plain, decErr := e.Decrypt(chunk)
+		if decErr != nil {
+			return decErr
+		}
+		if _, werr := dst.Write(plain); werr != nil {
+			return werr
+		}
+	}
 }

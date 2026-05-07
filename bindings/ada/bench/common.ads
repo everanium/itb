@@ -1,4 +1,4 @@
---  Common — shared scaffolding for the Ada Easy-Mode benchmark
+--  Common — shared scaffolding for the Ada Easy Mode benchmark
 --  binaries.
 --
 --  Mirrors bindings/rust/benches/common.rs and
@@ -17,7 +17,7 @@
 --      values 128 / 256 / 512. Maps to Itb.Set_Nonce_Bits before any
 --      Encryptor is constructed. Default 128.
 --    * ITB_LOCKSEED     — when set to a non-empty / non-"0" value,
---      every Easy-Mode encryptor in this run calls Set_Lock_Seed (1)
+--      every Easy Mode encryptor in this run calls Set_Lock_Seed (1)
 --      AND Itb.Set_Lock_Soup (1) is invoked at start. Mixed-primitive
 --      cases attach a dedicated lockSeed primitive (via Prim_L) under
 --      this flag; otherwise Prim_L is "" so the no-LockSeed bench arm
@@ -69,7 +69,7 @@ package Common is
    --  cases when ITB_LOCKSEED is set. When the env var is unset, the
    --  mixed cases pass "" for Prim_L — DO NOT pass a real primitive
    --  name unconditionally (that would auto-couple Bit Soup +
-   --  Lock Soup at the Easy-Mode level and the no-LockSeed arm would
+   --  Lock Soup at the Easy Mode level and the no-LockSeed arm would
    --  mis-measure as ~50 MB/s instead of the real ~110-130 MB/s
    --  plain-Mixed cost).
    Mixed_Lock : constant String := "areion256";

@@ -2,7 +2,7 @@
 !
 ! Mirrors the C binding's test_easy_siphash24.c at the Easy Mode
 ! level. SipHash-2-4 ships at a single hash width (128) and is the
-! lone shipped Easy-Mode primitive without an internal PRF key (the
+! lone shipped Easy Mode primitive without an internal PRF key (the
 ! 128-bit hash key is consumed directly per pixel; `has_prf_keys()`
 ! returns .false.). The test exercises Single Ouroboros + Triple
 ! Ouroboros construction via `new_itb_encryptor`, the read-only
@@ -70,7 +70,7 @@ contains
     call assert_true(TEST_NAME, "single header_size > 0", enc%header_size() > 0)
     ! SipHash-2-4 has no internal PRF key (the 128-bit hash key is the
     ! sole keying material); has_prf_keys() reports .false. for this
-    ! primitive uniquely among the shipped Easy-Mode primitives.
+    ! primitive uniquely among the shipped Easy Mode primitives.
     call assert_false(TEST_NAME, "single has_prf_keys (siphash24)", enc%has_prf_keys())
     call assert_false(TEST_NAME, "single is_mixed", enc%is_mixed())
 

@@ -720,6 +720,94 @@ func TestStreamAuth_FlagPreservedTripleBitSoup(t *testing.T) {
 	}
 }
 
+// TestStreamAuth_FlagPreservedTripleBitSoupLockSoup exercises the
+// final-flag round-trip when the keyed Lock Soup overlay is engaged
+// on top of bit-soup. Triple-Ouroboros encrypt / decrypt routes
+// payload bytes through [splitForTripleParallelLocked] /
+// [interleaveForTripleParallelLocked]; with lock_soup = 1 the
+// per-chunk PRF replaces the public {3,3,2}/{3,2,3}/{2,3,3} bit
+// schedule with a keyed permutation, so the flag byte's container
+// slot is repositioned by the PRF rather than by the public schedule
+// alone. Coverage extends [TestStreamAuth_FlagPreservedTripleBitSoup]
+// with the lock_soup axis at chunk_size = 1 plaintext byte across
+// every Triple width.
+func TestStreamAuth_FlagPreservedTripleBitSoupLockSoup(t *testing.T) {
+	prevBS := GetBitSoup()
+	prevLS := GetLockSoup()
+	// SetLockSoup(1) cascades BitSoup = 1 inside Go-core; restore in
+	// the documented order on cleanup so neither knob outlives the
+	// test.
+	SetLockSoup(1)
+	defer func() {
+		SetLockSoup(prevLS)
+		SetBitSoup(prevBS)
+	}()
+
+	plaintext := []byte{0x42}
+	var streamID [32]byte
+	for i := range streamID {
+		streamID[i] = byte(i + 0x10)
+	}
+
+	for _, finalFlag := range []bool{false, true} {
+		name := "NonFinal"
+		if finalFlag {
+			name = "Final"
+		}
+		t.Run(fmt.Sprintf("Triple128-%s", name), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
+			ct, err := EncryptStreamAuthenticated3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, streamAuthFlagMACFunc, streamID, 0, finalFlag)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pt, recoveredFinal, err := DecryptStreamAuthenticated3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(plaintext, pt) {
+				t.Fatalf("plaintext mismatch")
+			}
+			if recoveredFinal != finalFlag {
+				t.Fatalf("flag mismatch: encoded %v, recovered %v", finalFlag, recoveredFinal)
+			}
+		})
+		t.Run(fmt.Sprintf("Triple256-%s", name), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
+			ct, err := EncryptStreamAuthenticated3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, streamAuthFlagMACFunc, streamID, 0, finalFlag)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pt, recoveredFinal, err := DecryptStreamAuthenticated3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(plaintext, pt) {
+				t.Fatalf("plaintext mismatch")
+			}
+			if recoveredFinal != finalFlag {
+				t.Fatalf("flag mismatch: encoded %v, recovered %v", finalFlag, recoveredFinal)
+			}
+		})
+		t.Run(fmt.Sprintf("Triple512-%s", name), func(t *testing.T) {
+			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
+			ct, err := EncryptStreamAuthenticated3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, streamAuthFlagMACFunc, streamID, 0, finalFlag)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pt, recoveredFinal, err := DecryptStreamAuthenticated3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(plaintext, pt) {
+				t.Fatalf("plaintext mismatch")
+			}
+			if recoveredFinal != finalFlag {
+				t.Fatalf("flag mismatch: encoded %v, recovered %v", finalFlag, recoveredFinal)
+			}
+		})
+	}
+}
+
 // --- Empty-stream full-stream round-trip ---
 
 func TestStreamAuth_FullStreamEmpty(t *testing.T) {
@@ -734,5 +822,87 @@ func TestStreamAuth_FullStreamEmpty(t *testing.T) {
 	}
 	if recovered.Len() != 0 {
 		t.Fatalf("expected empty recovered plaintext, got %d bytes", recovered.Len())
+	}
+}
+
+// --- Full-stream Level 2 after-final detection ---
+
+// TestStreamAuth_FullStreamAfterFinal confirms the Single-Ouroboros
+// full-stream decoder rejects bytes that follow the terminator chunk
+// with [ErrStreamAfterFinal]. The transcript is constructed by
+// encrypting a multi-chunk stream then appending the terminating
+// chunk's bytes a second time so the decoder observes a chunk after
+// the terminator.
+func TestStreamAuth_FullStreamAfterFinal(t *testing.T) {
+	data := streamAuthTestData(11)
+	chunkSize := 512
+
+	ns, ds, ss := makeTripleSeed128(512, sipHash128)
+	var wire bytes.Buffer
+	if err := EncryptStreamAuth128(ns, ds, ss, data, chunkSize, streamAuthFlagMACFunc, emitToBuffer(&wire)); err != nil {
+		t.Fatal(err)
+	}
+
+	full := wire.Bytes()
+	off := streamIDPrefixLen
+	var lastOff, lastEnd int
+	for off < len(full) {
+		clen, err := ParseChunkLen(full[off:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at %d: %v", off, err)
+		}
+		lastOff = off
+		lastEnd = off + clen
+		off += clen
+	}
+	if lastOff == streamIDPrefixLen {
+		t.Fatal("only one chunk emitted; after-final test needs >=2 chunks")
+	}
+	tail := append([]byte(nil), full[lastOff:lastEnd]...)
+	transcript := append(append([]byte(nil), full...), tail...)
+
+	var sink bytes.Buffer
+	err := DecryptStreamAuth128(ns, ds, ss, transcript, streamAuthFlagMACFunc, emitToBuffer(&sink))
+	if !errors.Is(err, ErrStreamAfterFinal) {
+		t.Fatalf("expected ErrStreamAfterFinal, got %v", err)
+	}
+}
+
+// TestStreamAuth_FullStream3xAfterFinal mirrors
+// [TestStreamAuth_FullStreamAfterFinal] for the Triple-Ouroboros
+// full-stream decoder. Same construction at the
+// [DecryptStreamAuth3x128] entry point.
+func TestStreamAuth_FullStream3xAfterFinal(t *testing.T) {
+	data := streamAuthTestData(13)
+	chunkSize := 512
+
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
+	var wire bytes.Buffer
+	if err := EncryptStreamAuth3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data, chunkSize, streamAuthFlagMACFunc, emitToBuffer(&wire)); err != nil {
+		t.Fatal(err)
+	}
+
+	full := wire.Bytes()
+	off := streamIDPrefixLen
+	var lastOff, lastEnd int
+	for off < len(full) {
+		clen, err := ParseChunkLen(full[off:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at %d: %v", off, err)
+		}
+		lastOff = off
+		lastEnd = off + clen
+		off += clen
+	}
+	if lastOff == streamIDPrefixLen {
+		t.Fatal("only one chunk emitted; after-final test needs >=2 chunks")
+	}
+	tail := append([]byte(nil), full[lastOff:lastEnd]...)
+	transcript := append(append([]byte(nil), full...), tail...)
+
+	var sink bytes.Buffer
+	err := DecryptStreamAuth3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, transcript, streamAuthFlagMACFunc, emitToBuffer(&sink))
+	if !errors.Is(err, ErrStreamAfterFinal) {
+		t.Fatalf("expected ErrStreamAfterFinal, got %v", err)
 	}
 }

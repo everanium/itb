@@ -1,6 +1,6 @@
 // test_easy.cpp — Encryptor (Easy Mode) cross-cutting smoke coverage.
 //
-// Mirrors the high-level Easy-mode smoke pattern from the C binding's
+// Mirrors the high-level Easy Mode smoke pattern from the C binding's
 // test_easy.c and serves as the cross-cutting companion to the
 // per-primitive test_easy_<primitive>.cpp suites and to
 // test_easy_persistence.cpp / test_easy_nonce_sizes.cpp /

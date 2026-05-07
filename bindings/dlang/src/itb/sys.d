@@ -288,7 +288,7 @@ int ITB_Blob_Import3(size_t handle, void* blob, size_t blobLen);
 // One ABI export per (Single / Triple) × (Encrypt / Decrypt) ×
 // (128 / 256 / 512). The encrypt path takes streamID + cumulative
 // pixel offset + final_flag in; the decrypt path takes streamID +
-// cumulative pixel offset in and writes final_flag_out. Easy-mode
+// cumulative pixel offset in and writes final_flag_out. Easy Mode
 // counterparts route per-chunk dispatch through the encryptor's
 // bound config + MAC closure.
 

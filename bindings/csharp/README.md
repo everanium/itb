@@ -214,7 +214,7 @@ Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Low-Level Mode example.** Static functions on `StreamPipeline` take
+**Low-Level Mode:** Static functions on `StreamPipeline` take
 three explicit `Seed` handles plus an explicitly constructed `Mac`
 (32-byte key drawn via `RandomNumberGenerator.GetBytes(32)`) and
 stream through the same chunked-AEAD construction. Both seeds and MAC
@@ -286,7 +286,7 @@ Triple Ouroboros mode). Low-Level Mode does not carry a top-level mode
 parameter — Single vs Triple is selected by which `StreamPipeline`
 overload is invoked.
 
-## Quick Start — `Itb.Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
+## Quick Start — `Itb.Encryptor` + HMAC-BLAKE3 (MAC Authenticated)
 
 The high-level `Encryptor` (mirroring the
 `github.com/everanium/itb/easy` Go sub-package) replaces the
@@ -422,7 +422,7 @@ catch (ItbException ex) when (ex.Status == StatusCode.MacFailure)
 }
 ```
 
-## Quick Start — Mixed primitives (different PRF per seed slot)
+## Quick Start — Mixed primitives (Different PRF per seed slot)
 
 `Encryptor.Mixed` and `Encryptor.Mixed3` accept per-slot
 primitive names — the noise / data / start (and optional dedicated
@@ -533,7 +533,7 @@ ciphertext format is identical in shape to Single Ouroboros — only
 the internal payload split / interleave differs. Mixed-primitive
 Triple is reachable via `Encryptor.Mixed3`.
 
-## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
+## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (Low-Level, MAC Authenticated)
 
 The lower-level path uses explicit `Seed` handles for the
 noise / data / start trio plus an optional dedicated `Seed` wired

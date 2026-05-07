@@ -847,34 +847,48 @@ static itb_status_t emit_chunk_auth_single(int width,
 
     void *in_ptr = (pt_len == 0) ? NULL : (void *) plaintext;
 
-    /* Probe required output capacity. */
-    size_t need = 0;
-    int rc = fn(noise->handle, data->handle, start->handle, mac->handle,
-                in_ptr, pt_len,
-                stream_id, cum_pixels, final_flag,
-                NULL, 0, &need);
-    if (rc == ITB_OK) {
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        return ITB_OK;
-    }
-
-    uint8_t *ct = (uint8_t *) malloc(need);
+    /* Pre-allocate from the saturating 1.25x + 128 KiB upper bound and
+     * call once. The C ABI runs the full crypto on every call regardless
+     * of out-buffer capacity; skipping the probe halves the per-chunk
+     * cost on the steady-state path. The retry-once branch on
+     * STATUS_BUFFER_TOO_SMALL preserves the safety net for combinations
+     * outside the measured expansion-ratio matrix. */
+    size_t cap = itb_internal_buf_cap(pt_len);
+    uint8_t *ct = (uint8_t *) malloc(cap);
     if (ct == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
     }
     size_t written = 0;
-    rc = fn(noise->handle, data->handle, start->handle, mac->handle,
-            in_ptr, pt_len,
-            stream_id, cum_pixels, final_flag,
-            ct, need, &written);
+    int rc = fn(noise->handle, data->handle, start->handle, mac->handle,
+                in_ptr, pt_len,
+                stream_id, cum_pixels, final_flag,
+                ct, cap, &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            free(ct);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        uint8_t *resized = (uint8_t *) realloc(ct, need);
+        if (resized == NULL) {
+            free(ct);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        ct = resized;
+        cap = need;
+        rc = fn(noise->handle, data->handle, start->handle, mac->handle,
+                in_ptr, pt_len,
+                stream_id, cum_pixels, final_flag,
+                ct, cap, &written);
+    }
     if (rc != ITB_OK) {
         free(ct);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(ct);
+        return ITB_OK;
     }
     int wrc = write_fn(write_ctx, ct, written);
     if (wrc != 0) {
@@ -916,33 +930,46 @@ static itb_status_t emit_chunk_auth_triple(int width,
 
     void *in_ptr = (pt_len == 0) ? NULL : (void *) plaintext;
 
-    size_t need = 0;
+    size_t cap = itb_internal_buf_cap(pt_len);
+    uint8_t *ct = (uint8_t *) malloc(cap);
+    if (ct == NULL) {
+        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    }
+    size_t written = 0;
     int rc = fn(noise->handle,
                 data1->handle, data2->handle, data3->handle,
                 start1->handle, start2->handle, start3->handle,
                 mac->handle, in_ptr, pt_len,
                 stream_id, cum_pixels, final_flag,
-                NULL, 0, &need);
-    if (rc == ITB_OK) return ITB_OK;
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
+                ct, cap, &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            free(ct);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        uint8_t *resized = (uint8_t *) realloc(ct, need);
+        if (resized == NULL) {
+            free(ct);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        ct = resized;
+        cap = need;
+        rc = fn(noise->handle,
+                data1->handle, data2->handle, data3->handle,
+                start1->handle, start2->handle, start3->handle,
+                mac->handle, in_ptr, pt_len,
+                stream_id, cum_pixels, final_flag,
+                ct, cap, &written);
     }
-    if (need == 0) return ITB_OK;
-
-    uint8_t *ct = (uint8_t *) malloc(need);
-    if (ct == NULL) {
-        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
-    }
-    size_t written = 0;
-    rc = fn(noise->handle,
-            data1->handle, data2->handle, data3->handle,
-            start1->handle, start2->handle, start3->handle,
-            mac->handle, in_ptr, pt_len,
-            stream_id, cum_pixels, final_flag,
-            ct, need, &written);
     if (rc != ITB_OK) {
         free(ct);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(ct);
+        return ITB_OK;
     }
     int wrc = write_fn(write_ctx, ct, written);
     if (wrc != 0) {
@@ -984,36 +1011,51 @@ static itb_status_t consume_chunk_auth_single(int width,
     void *in_ptr = (ct_len == 0) ? NULL : (void *) ciphertext;
     int ff = 0;
 
-    size_t need = 0;
-    int rc = fn(noise->handle, data->handle, start->handle, mac->handle,
-                in_ptr, ct_len,
-                stream_id, cum_pixels,
-                NULL, 0, &need, &ff);
-    if (rc == ITB_OK) {
-        *out_final_flag = ff;
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        *out_final_flag = ff;
-        return ITB_OK;
-    }
-
-    uint8_t *pt = (uint8_t *) malloc(need);
+    /* Pre-allocate from the saturating 1.25x + 128 KiB upper bound
+     * sized on ct_len (decrypt-side plaintext is bounded above by the
+     * incoming chunk size). One call on the steady-state path; retry
+     * once on STATUS_BUFFER_TOO_SMALL covers any expansion-ratio
+     * anomaly outside the measured matrix. */
+    size_t cap = itb_internal_buf_cap(ct_len);
+    uint8_t *pt = (uint8_t *) malloc(cap);
     if (pt == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
     }
     size_t written = 0;
-    rc = fn(noise->handle, data->handle, start->handle, mac->handle,
-            in_ptr, ct_len,
-            stream_id, cum_pixels,
-            pt, need, &written, &ff);
+    int rc = fn(noise->handle, data->handle, start->handle, mac->handle,
+                in_ptr, ct_len,
+                stream_id, cum_pixels,
+                pt, cap, &written, &ff);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            memset(pt, 0, cap);
+            free(pt);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        memset(pt, 0, cap);
+        uint8_t *resized = (uint8_t *) realloc(pt, need);
+        if (resized == NULL) {
+            free(pt);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        pt = resized;
+        cap = need;
+        rc = fn(noise->handle, data->handle, start->handle, mac->handle,
+                in_ptr, ct_len,
+                stream_id, cum_pixels,
+                pt, cap, &written, &ff);
+    }
     if (rc != ITB_OK) {
-        memset(pt, 0, need);
+        memset(pt, 0, cap);
         free(pt);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(pt);
+        *out_final_flag = ff;
+        return ITB_OK;
     }
     int wrc = write_fn(write_ctx, pt, written);
     if (wrc != 0) {
@@ -1057,40 +1099,50 @@ static itb_status_t consume_chunk_auth_triple(int width,
     void *in_ptr = (ct_len == 0) ? NULL : (void *) ciphertext;
     int ff = 0;
 
-    size_t need = 0;
+    size_t cap = itb_internal_buf_cap(ct_len);
+    uint8_t *pt = (uint8_t *) malloc(cap);
+    if (pt == NULL) {
+        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    }
+    size_t written = 0;
     int rc = fn(noise->handle,
                 data1->handle, data2->handle, data3->handle,
                 start1->handle, start2->handle, start3->handle,
                 mac->handle, in_ptr, ct_len,
                 stream_id, cum_pixels,
-                NULL, 0, &need, &ff);
-    if (rc == ITB_OK) {
-        *out_final_flag = ff;
-        return ITB_OK;
+                pt, cap, &written, &ff);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            memset(pt, 0, cap);
+            free(pt);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        memset(pt, 0, cap);
+        uint8_t *resized = (uint8_t *) realloc(pt, need);
+        if (resized == NULL) {
+            free(pt);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        pt = resized;
+        cap = need;
+        rc = fn(noise->handle,
+                data1->handle, data2->handle, data3->handle,
+                start1->handle, start2->handle, start3->handle,
+                mac->handle, in_ptr, ct_len,
+                stream_id, cum_pixels,
+                pt, cap, &written, &ff);
     }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        *out_final_flag = ff;
-        return ITB_OK;
-    }
-
-    uint8_t *pt = (uint8_t *) malloc(need);
-    if (pt == NULL) {
-        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
-    }
-    size_t written = 0;
-    rc = fn(noise->handle,
-            data1->handle, data2->handle, data3->handle,
-            start1->handle, start2->handle, start3->handle,
-            mac->handle, in_ptr, ct_len,
-            stream_id, cum_pixels,
-            pt, need, &written, &ff);
     if (rc != ITB_OK) {
-        memset(pt, 0, need);
+        memset(pt, 0, cap);
         free(pt);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(pt);
+        *out_final_flag = ff;
+        return ITB_OK;
     }
     int wrc = write_fn(write_ctx, pt, written);
     if (wrc != 0) {
@@ -1907,11 +1959,57 @@ static itb_status_t encryptor_check_open(const itb_encryptor_t *e)
     return ITB_OK;
 }
 
-/* Per-chunk encrypt dispatcher for the Easy-mode auth-stream surface.
+/* Wipe-on-grow cache router for the Easy AEAD streaming per-chunk
+ * dispatchers. Mirrors encryptor.c::ensure_cache against the SAME
+ * encryptor->out_cache field that cipher_call uses for single-shot
+ * Easy encrypt / decrypt — the §7.1 contract codifies cache reuse on
+ * the per-chunk Easy AEAD path with the same scope as the single-shot
+ * canonical reference. The cache stays internal as the FFI write
+ * target ONLY; user code never observes the cache pointer
+ * (§11.o.2 aliasing-footgun mitigation — handled at the return path
+ * via a fresh user_buf + memcpy + free, identical to cipher_call).
+ *
+ * Wipe-on-grow zeroes the previous cache contents before freeing, so
+ * the most-recent chunk plaintext / ciphertext does not linger in heap
+ * garbage. Wipe-on-close runs through encryptor.c::wipe_cache from
+ * itb_encryptor_close / itb_encryptor_free; the streaming dispatcher
+ * does not own the lifecycle. */
+static itb_status_t stream_ensure_cache(struct itb_encryptor *e, size_t need)
+{
+    if (e->out_cache != NULL && e->out_cache_cap >= need) {
+        return ITB_OK;
+    }
+    if (e->out_cache != NULL && e->out_cache_cap > 0) {
+        memset(e->out_cache, 0, e->out_cache_cap);
+        free(e->out_cache);
+        e->out_cache = NULL;
+        e->out_cache_cap = 0;
+    }
+    size_t cap = (need < 131072) ? 131072 : need;
+    uint8_t *buf = (uint8_t *) malloc(cap);
+    if (buf == NULL) {
+        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    }
+    e->out_cache = buf;
+    e->out_cache_cap = cap;
+    assert(e->out_cache != NULL);
+    return ITB_OK;
+}
+
+/* Per-chunk encrypt dispatcher for the Easy Mode auth-stream surface.
  * Routes through ITB_Easy_EncryptStreamAuth and emits the produced
  * chunk wire bytes via write_fn (after passing through cum_write_fn
- * for the running-offset book-keeping). */
-static itb_status_t emit_chunk_easy_auth(uintptr_t handle,
+ * for the running-offset book-keeping).
+ *
+ * The FFI write target is the encryptor's internal out_cache, reused
+ * across every chunk dispatched through the same encryptor — the §7.1
+ * "Streaming AEAD per-chunk output buffer cache reuse" contract,
+ * mirroring encryptor.c::cipher_call. After the FFI returns, a fresh
+ * user-owned buffer is malloc'd and the bytes are memcpy'd from the
+ * cache (§11.o.2 aliasing-footgun mitigation — never hand the caller
+ * a pointer into the cache); the user_buf is handed to write_fn and
+ * freed once the synchronous callback returns. */
+static itb_status_t emit_chunk_easy_auth(struct itb_encryptor *e,
                                          const uint8_t *plaintext,
                                          size_t pt_len,
                                          uint8_t stream_id[ITB_STREAM_ID_LEN],
@@ -1921,40 +2019,60 @@ static itb_status_t emit_chunk_easy_auth(uintptr_t handle,
                                          void *write_ctx)
 {
     void *in_ptr = (pt_len == 0) ? NULL : (void *) plaintext;
-    size_t need = 0;
-    int rc = ITB_Easy_EncryptStreamAuth(handle, in_ptr, pt_len,
-                                        stream_id, cum_pixels, final_flag,
-                                        NULL, 0, &need);
-    if (rc == ITB_OK) return ITB_OK;
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) return ITB_OK;
-
-    uint8_t *ct = (uint8_t *) malloc(need);
-    if (ct == NULL) {
-        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    size_t cap = itb_internal_buf_cap(pt_len);
+    itb_status_t alloc_st = stream_ensure_cache(e, cap);
+    if (alloc_st != ITB_OK) {
+        return alloc_st;
     }
     size_t written = 0;
-    rc = ITB_Easy_EncryptStreamAuth(handle, in_ptr, pt_len,
-                                    stream_id, cum_pixels, final_flag,
-                                    ct, need, &written);
+    int rc = ITB_Easy_EncryptStreamAuth(e->handle, in_ptr, pt_len,
+                                        stream_id, cum_pixels, final_flag,
+                                        e->out_cache, e->out_cache_cap,
+                                        &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        alloc_st = stream_ensure_cache(e, need);
+        if (alloc_st != ITB_OK) {
+            return alloc_st;
+        }
+        rc = ITB_Easy_EncryptStreamAuth(e->handle, in_ptr, pt_len,
+                                        stream_id, cum_pixels, final_flag,
+                                        e->out_cache, e->out_cache_cap,
+                                        &written);
+    }
     if (rc != ITB_OK) {
-        free(ct);
         return itb_internal_set_error(rc);
     }
-    int wrc = write_fn(write_ctx, ct, written);
+    if (written == 0) {
+        return ITB_OK;
+    }
+    /* §11.o.2 aliasing-footgun mitigation: hand the caller a fresh
+     * user-owned buffer rather than a pointer into the encryptor's
+     * cache. The cache is reused across subsequent per-chunk dispatch
+     * sites; a pointer-into-cache surfaced through write_fn could be
+     * overwritten if the caller's sink retained the pointer past the
+     * synchronous callback boundary. */
+    uint8_t *user_buf = (uint8_t *) malloc(written);
+    if (user_buf == NULL) {
+        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    }
+    memcpy(user_buf, e->out_cache, written);
+    int wrc = write_fn(write_ctx, user_buf, written);
     if (wrc != 0) {
-        memset(ct, 0, written);
-        free(ct);
+        memset(user_buf, 0, written);
+        free(user_buf);
         return io_write_error(wrc);
     }
-    memset(ct, 0, written);
-    free(ct);
+    memset(user_buf, 0, written);
+    free(user_buf);
     return ITB_OK;
 }
 
-static itb_status_t consume_chunk_easy_auth(uintptr_t handle,
+static itb_status_t consume_chunk_easy_auth(struct itb_encryptor *e,
                                             const uint8_t *ciphertext,
                                             size_t ct_len,
                                             uint8_t stream_id[ITB_STREAM_ID_LEN],
@@ -1965,42 +2083,53 @@ static itb_status_t consume_chunk_easy_auth(uintptr_t handle,
 {
     void *in_ptr = (ct_len == 0) ? NULL : (void *) ciphertext;
     int ff = 0;
-    size_t need = 0;
-    int rc = ITB_Easy_DecryptStreamAuth(handle, in_ptr, ct_len,
-                                        stream_id, cum_pixels,
-                                        NULL, 0, &need, &ff);
-    if (rc == ITB_OK) {
-        *out_final_flag = ff;
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        *out_final_flag = ff;
-        return ITB_OK;
-    }
-    uint8_t *pt = (uint8_t *) malloc(need);
-    if (pt == NULL) {
-        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    size_t cap = itb_internal_buf_cap(ct_len);
+    itb_status_t alloc_st = stream_ensure_cache(e, cap);
+    if (alloc_st != ITB_OK) {
+        return alloc_st;
     }
     size_t written = 0;
-    rc = ITB_Easy_DecryptStreamAuth(handle, in_ptr, ct_len,
-                                    stream_id, cum_pixels,
-                                    pt, need, &written, &ff);
+    int rc = ITB_Easy_DecryptStreamAuth(e->handle, in_ptr, ct_len,
+                                        stream_id, cum_pixels,
+                                        e->out_cache, e->out_cache_cap,
+                                        &written, &ff);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        alloc_st = stream_ensure_cache(e, need);
+        if (alloc_st != ITB_OK) {
+            return alloc_st;
+        }
+        rc = ITB_Easy_DecryptStreamAuth(e->handle, in_ptr, ct_len,
+                                        stream_id, cum_pixels,
+                                        e->out_cache, e->out_cache_cap,
+                                        &written, &ff);
+    }
     if (rc != ITB_OK) {
-        memset(pt, 0, need);
-        free(pt);
         return itb_internal_set_error(rc);
     }
-    int wrc = write_fn(write_ctx, pt, written);
+    if (written == 0) {
+        *out_final_flag = ff;
+        return ITB_OK;
+    }
+    /* §11.o.2 aliasing-footgun mitigation: fresh user-owned buffer
+     * + memcpy from cache, mirroring the encrypt-side discipline above. */
+    uint8_t *user_buf = (uint8_t *) malloc(written);
+    if (user_buf == NULL) {
+        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    }
+    memcpy(user_buf, e->out_cache, written);
+    int wrc = write_fn(write_ctx, user_buf, written);
     if (wrc != 0) {
-        memset(pt, 0, written);
-        free(pt);
+        memset(user_buf, 0, written);
+        free(user_buf);
         return io_write_error(wrc);
     }
-    memset(pt, 0, written);
-    free(pt);
+    memset(user_buf, 0, written);
+    free(user_buf);
     *out_final_flag = ff;
     return ITB_OK;
 }
@@ -2088,7 +2217,7 @@ itb_status_t itb_encryptor_stream_encrypt_auth(itb_encryptor_t *e,
         }
 
         cumctx_reset_chunk(&cum);
-        st = emit_chunk_easy_auth(e->handle, cur, cur_len,
+        st = emit_chunk_easy_auth(e, cur, cur_len,
                                   stream_id, cum.cum_emitted, is_final,
                                   cum_write_fn, &cum);
         if (st != ITB_OK) {
@@ -2109,7 +2238,7 @@ itb_status_t itb_encryptor_stream_encrypt_auth(itb_encryptor_t *e,
     }
 
     cumctx_reset_chunk(&cum);
-    st = emit_chunk_easy_auth(e->handle, cur, 0,
+    st = emit_chunk_easy_auth(e, cur, 0,
                               stream_id, cum.cum_emitted, 1,
                               cum_write_fn, &cum);
     free(cur);
@@ -2179,7 +2308,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
                 }
                 if (accum_len < cl) break;
                 int ff = 0;
-                cs = consume_chunk_easy_auth(e->handle, accum, cl,
+                cs = consume_chunk_easy_auth(e, accum, cl,
                                              stream_id, cumulative,
                                              write_fn, write_user_ctx, &ff);
                 if (cs != ITB_OK) {
@@ -2268,7 +2397,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
             }
             if (accum_len < cl) break;
             int ff = 0;
-            cs = consume_chunk_easy_auth(e->handle, accum, cl,
+            cs = consume_chunk_easy_auth(e, accum, cl,
                                          stream_id, cumulative,
                                          write_fn, write_user_ctx, &ff);
             if (cs != ITB_OK) {

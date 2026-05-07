@@ -1,9 +1,9 @@
 """Tests for the authenticated streaming methods on the high-level
 :class:`itb.Encryptor` (``encrypt_stream_auth`` / ``decrypt_stream_auth``).
 
-Reuses the existing Easy-mode encryptor surface — one constructor
+Reuses the existing Easy Mode encryptor surface — one constructor
 call covers the seed material and MAC closure — and exercises the
-Easy-mode Streaming AEAD ABI export. Coverage parallels
+Easy Mode Streaming AEAD ABI export. Coverage parallels
 ``test_streams_auth.py`` at the per-encryptor entry point:
 
 - Round-trip across the canonical MAC × hash-width matrix.

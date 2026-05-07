@@ -1,4 +1,4 @@
-"""Shared scaffolding for the Python Easy-Mode benchmark scripts.
+"""Shared scaffolding for the Python Easy Mode benchmark scripts.
 
 The harness mirrors the Go ``testing.B`` benchmark style on the
 itb_ext_test.go / itb3_ext_test.go side: each bench function runs a
@@ -15,7 +15,7 @@ extended for Easy Mode):
   values 128 / 256 / 512. Maps to :func:`itb.set_nonce_bits` before
   any encryptor is constructed. Default 128.
 * ``ITB_LOCKSEED`` — when set to a non-empty / non-``0`` value, every
-  Easy-Mode encryptor in this run calls
+  Easy Mode encryptor in this run calls
   :meth:`itb.Encryptor.set_lock_seed(1)`. The Go side's
   auto-couple invariant then engages :meth:`set_bit_soup(1)` and
   :meth:`set_lock_soup(1)` automatically; no separate flags

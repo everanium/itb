@@ -3,7 +3,7 @@
 // EncryptStreamAuthenticated / DecryptStreamAuthenticated (per-chunk
 // Level 1) and EncryptStreamAuth / DecryptStreamAuth (full-stream
 // Level 2). Coverage mirrors the Go-core stream_auth_test.go suite at
-// the easy-mode wrapper level.
+// the Easy Mode wrapper level.
 package easy_test
 
 import (
@@ -559,4 +559,247 @@ func TestEasyStreamAuthDecryptStreamAuthClosed(t *testing.T) {
 		}
 	}()
 	_ = enc.DecryptStreamAuth([]byte("x"), func(chunk []byte) error { return nil })
+}
+
+// --- io.Reader / io.Writer Streaming AEAD round-trip ---
+
+// streamAuthIOSizes covers the {0, 1, cs-1, cs, cs+1, 10*cs} payload
+// matrix from the IO-method round-trip spec. Run against a small chunk
+// size so the matrix executes within the unit-test budget without
+// distorting the encrypt-side sizing arithmetic.
+func streamAuthIOSizes(chunkSize int) []int {
+	return []int{0, 1, chunkSize - 1, chunkSize, chunkSize + 1, 10 * chunkSize}
+}
+
+// TestEasyStreamAuthIORoundtripMatrix exercises EncryptStreamAuthIO →
+// DecryptStreamAuthIO across the (primitive width × Single/Triple ×
+// payload size) matrix. Round-trip via bytes.Reader / bytes.Buffer
+// confirms wire-format symmetry and cumulative-pixel-offset bookkeeping
+// across multi-chunk transcripts.
+func TestEasyStreamAuthIORoundtripMatrix(t *testing.T) {
+	const chunkSize = 1024
+
+	for _, ps := range streamAuthSpec {
+		for _, m := range streamAuthModes {
+			for _, sz := range streamAuthIOSizes(chunkSize) {
+				name := fmt.Sprintf("%s_w%d_%s_sz%d", ps.name, ps.width, m.name, sz)
+				t.Run(name, func(t *testing.T) {
+					enc := newStreamAuthEncryptor(ps.name, ps.keyBits, m.mode)
+					defer enc.Close()
+
+					plaintext := generateDataStreamAuth(sz)
+					var wire bytes.Buffer
+					if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), &wire, chunkSize); err != nil {
+						t.Fatalf("EncryptStreamAuthIO: %v", err)
+					}
+					var recovered bytes.Buffer
+					if err := enc.DecryptStreamAuthIO(bytes.NewReader(wire.Bytes()), &recovered); err != nil {
+						t.Fatalf("DecryptStreamAuthIO: %v", err)
+					}
+					if !bytes.Equal(recovered.Bytes(), plaintext) {
+						t.Errorf("plaintext roundtrip mismatch: got %d bytes, want %d",
+							recovered.Len(), len(plaintext))
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestEasyStreamAuthIOCrossAPIParityIOToCallback confirms a transcript
+// produced via EncryptStreamAuthIO decrypts cleanly through the
+// existing callback-driven DecryptStreamAuth surface. Wire-format
+// compatibility across the IO and callback variants is the load-bearing
+// invariant — both paths emit the same on-wire bytes.
+func TestEasyStreamAuthIOCrossAPIParityIOToCallback(t *testing.T) {
+	const chunkSize = 1024
+	plaintext := generateDataStreamAuth(8192)
+
+	enc := easy.New("siphash24", 512)
+	defer enc.Close()
+
+	var wire bytes.Buffer
+	if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), &wire, chunkSize); err != nil {
+		t.Fatalf("EncryptStreamAuthIO: %v", err)
+	}
+	var recovered bytes.Buffer
+	if err := enc.DecryptStreamAuth(wire.Bytes(), func(chunk []byte) error {
+		_, e := recovered.Write(chunk)
+		return e
+	}); err != nil {
+		t.Fatalf("DecryptStreamAuth (callback): %v", err)
+	}
+	if !bytes.Equal(recovered.Bytes(), plaintext) {
+		t.Errorf("IO-encode → callback-decode mismatch: got %d bytes, want %d",
+			recovered.Len(), len(plaintext))
+	}
+}
+
+// TestEasyStreamAuthIOCrossAPIParityCallbackToIO confirms the reverse
+// direction — a transcript produced via the callback-driven
+// EncryptStreamAuth decrypts cleanly through DecryptStreamAuthIO.
+func TestEasyStreamAuthIOCrossAPIParityCallbackToIO(t *testing.T) {
+	plaintext := generateDataStreamAuth(8192)
+
+	enc := easy.New("siphash24", 512)
+	defer enc.Close()
+	enc.SetChunkSize(1024)
+
+	var wire bytes.Buffer
+	if err := enc.EncryptStreamAuth(plaintext, func(chunk []byte) error {
+		_, e := wire.Write(chunk)
+		return e
+	}); err != nil {
+		t.Fatalf("EncryptStreamAuth (callback): %v", err)
+	}
+	var recovered bytes.Buffer
+	if err := enc.DecryptStreamAuthIO(bytes.NewReader(wire.Bytes()), &recovered); err != nil {
+		t.Fatalf("DecryptStreamAuthIO: %v", err)
+	}
+	if !bytes.Equal(recovered.Bytes(), plaintext) {
+		t.Errorf("callback-encode → IO-decode mismatch: got %d bytes, want %d",
+			recovered.Len(), len(plaintext))
+	}
+}
+
+// TestEasyStreamAuthIOEncryptChunkSizeNonPositive verifies the
+// chunkSize ≤ 0 preflight rejects without consuming the reader.
+func TestEasyStreamAuthIOEncryptChunkSizeNonPositive(t *testing.T) {
+	enc := easy.New("siphash24", 512)
+	defer enc.Close()
+
+	for _, cs := range []int{0, -1, -1024} {
+		t.Run(fmt.Sprintf("cs%d", cs), func(t *testing.T) {
+			r := bytes.NewReader([]byte("payload"))
+			var w bytes.Buffer
+			err := enc.EncryptStreamAuthIO(r, &w, cs)
+			if err == nil {
+				t.Fatal("expected error on non-positive chunkSize, got nil")
+			}
+			if r.Len() != len("payload") {
+				t.Errorf("reader was consumed: %d bytes remaining (want %d)",
+					r.Len(), len("payload"))
+			}
+			if w.Len() != 0 {
+				t.Errorf("writer received %d bytes; expected 0", w.Len())
+			}
+		})
+	}
+}
+
+// TestEasyStreamAuthIOClosedEncryptor verifies the IO methods panic
+// with [easy.ErrClosed] on a closed encryptor.
+func TestEasyStreamAuthIOClosedEncryptor(t *testing.T) {
+	t.Run("Encrypt", func(t *testing.T) {
+		enc := easy.New("siphash24", 512)
+		if err := enc.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		defer func() {
+			r := recover()
+			if r != easy.ErrClosed {
+				t.Errorf("post-Close EncryptStreamAuthIO: panic recovered as %v, want ErrClosed", r)
+			}
+		}()
+		_ = enc.EncryptStreamAuthIO(bytes.NewReader([]byte("x")), &bytes.Buffer{}, 1024)
+	})
+	t.Run("Decrypt", func(t *testing.T) {
+		enc := easy.New("siphash24", 512)
+		if err := enc.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		defer func() {
+			r := recover()
+			if r != easy.ErrClosed {
+				t.Errorf("post-Close DecryptStreamAuthIO: panic recovered as %v, want ErrClosed", r)
+			}
+		}()
+		_ = enc.DecryptStreamAuthIO(bytes.NewReader([]byte("x")), &bytes.Buffer{})
+	})
+}
+
+// TestEasyStreamAuthIOTruncateTail verifies that dropping the last
+// chunk of an IO-driven transcript yields [itb.ErrStreamTruncated]
+// on decrypt. Walks the wire bytes via [easy.Encryptor.ParseChunkLen]
+// to find the last chunk's start offset and slices the tail off
+// there.
+func TestEasyStreamAuthIOTruncateTail(t *testing.T) {
+	plaintext := generateDataStreamAuth(8192)
+	const chunkSize = 512
+
+	enc := easy.New("siphash24", 512)
+	defer enc.Close()
+
+	var wire bytes.Buffer
+	if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), &wire, chunkSize); err != nil {
+		t.Fatalf("EncryptStreamAuthIO: %v", err)
+	}
+
+	full := wire.Bytes()
+	const streamPrefixLen = 32
+	off := streamPrefixLen
+	var lastStart int
+	for off < len(full) {
+		clen, err := enc.ParseChunkLen(full[off:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at off %d: %v", off, err)
+		}
+		lastStart = off
+		off += clen
+	}
+	if lastStart == streamPrefixLen {
+		t.Fatal("only one chunk emitted; truncate-tail test needs >=2 chunks")
+	}
+	truncated := full[:lastStart]
+
+	var sink bytes.Buffer
+	err := enc.DecryptStreamAuthIO(bytes.NewReader(truncated), &sink)
+	if err == nil {
+		t.Fatal("expected error on truncated transcript, got nil")
+	}
+	if err.Error() != itb.ErrStreamTruncated.Error() &&
+		!bytesContainsString(err.Error(), itb.ErrStreamTruncated.Error()) {
+		t.Errorf("expected ErrStreamTruncated wrapping, got %v", err)
+	}
+}
+
+// TestEasyStreamAuthIOAfterFinal verifies that appending an extra
+// chunk after the terminating chunk yields [itb.ErrStreamAfterFinal]
+// on decrypt. Constructs the trailing chunk by re-encoding a fresh
+// terminator over the same encryptor — the test is structural (any
+// well-formed chunk after a final-flag chunk must be rejected).
+func TestEasyStreamAuthIOAfterFinal(t *testing.T) {
+	plaintext := generateDataStreamAuth(2048)
+	const chunkSize = 512
+
+	enc := easy.New("siphash24", 512)
+	defer enc.Close()
+
+	var wire bytes.Buffer
+	if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), &wire, chunkSize); err != nil {
+		t.Fatalf("EncryptStreamAuthIO: %v", err)
+	}
+	// Extract the wire prefix + chunks; append a freshly produced
+	// terminator chunk to the assembled stream. The cumulative-offset
+	// for the synthetic trailer doesn't matter — the decoder must
+	// reject any post-terminator content before per-chunk MAC verify.
+	full := wire.Bytes()
+	var streamID [32]byte
+	copy(streamID[:], full[:32])
+	extra, err := enc.EncryptStreamAuthenticated([]byte("x"), streamID, 0, true)
+	if err != nil {
+		t.Fatalf("EncryptStreamAuthenticated synthetic trailer: %v", err)
+	}
+	tampered := append([]byte(nil), full...)
+	tampered = append(tampered, extra...)
+
+	var sink bytes.Buffer
+	err = enc.DecryptStreamAuthIO(bytes.NewReader(tampered), &sink)
+	if err == nil {
+		t.Fatal("expected error on post-terminator content, got nil")
+	}
+	if err.Error() != itb.ErrStreamAfterFinal.Error() &&
+		!bytesContainsString(err.Error(), itb.ErrStreamAfterFinal.Error()) {
+		t.Errorf("expected ErrStreamAfterFinal wrapping, got %v", err)
+	}
 }

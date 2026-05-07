@@ -115,7 +115,7 @@ sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
 The wire format adds 32 bytes of stream prefix plus one byte of
 encrypted trailing flag per chunk; no externally visible MAC tag.
 
-**Low-Level Mode example:**
+**Low-Level Mode:**
 
 Free subroutines `itb_stream_encrypt_auth` / `itb_stream_decrypt_auth`
 take three `itb_seed_t` records plus an `itb_mac_t` (32-byte key from
@@ -372,7 +372,7 @@ seeds via the `_triple` counterparts:
 `itb_stream_encrypt_auth_triple`,
 `itb_stream_decrypt_auth_triple`.
 
-## Easy Mode — `type(itb_encryptor_t)` + HMAC-BLAKE3 (recommended, authenticated)
+## Easy Mode — `type(itb_encryptor_t)` + HMAC-BLAKE3 (MAC Authenticated)
 
 The Easy Mode encryptor (mirroring the
 `github.com/everanium/itb/easy` Go sub-package) replaces the

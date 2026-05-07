@@ -1,11 +1,11 @@
-// Easy-Mode Triple-Ouroboros benchmarks for the Node.js binding.
+// Easy Mode Triple-Ouroboros benchmarks for the Node.js binding.
 //
 // Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
 // nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
 // MiB CSPRNG-filled payload. One mixed-primitive variant
 // (`Encryptor.mixedTriple` cycling the same BLAKE family +
 // Areion-SoEM-256 dedicated lockSeed used by bench_single's mixed
-// case) covers the Easy-Mode Mixed surface alongside the
+// case) covers the Easy Mode Mixed surface alongside the
 // single-primitive grid.
 //
 // Run with:
@@ -45,6 +45,7 @@ import {
   runAll,
 } from './common.js';
 import type { BenchCase } from './common.js';
+import { buildStreamCasesTriple } from './bench-stream.js';
 
 const PAYLOAD_BYTES = PAYLOAD_16MB;
 
@@ -186,7 +187,7 @@ function buildCases(): BenchCase[] {
 }
 
 /** Bench entry point invoked by `main.ts`. */
-export function runTriple(): void {
+export async function runTriple(): Promise<void> {
   const nonceBits = envNonceBits(128);
   setMaxWorkers(0);
   setNonceBits(nonceBits);
@@ -196,5 +197,6 @@ export function runTriple(): void {
   );
 
   const cases = buildCases();
-  runAll(cases);
+  cases.push(...buildStreamCasesTriple());
+  await runAll(cases);
 }

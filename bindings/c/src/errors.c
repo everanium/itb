@@ -188,3 +188,26 @@ itb_status_t itb_internal_read_string(itb_internal_str_fn fn, void *ctx,
     return ITB_OK;
 }
 
+/* Saturating computation of max(131072, n * 5 / 4 + 131072) on size_t.
+ * See internal.h docstring. Implementation mirrors the
+ * `saturating_expansion` helper in encryptor.c (kept private to that
+ * translation unit for the per-encryptor cipher cache); this duplicate
+ * is exposed via internal.h for use by every cipher-call dispatcher
+ * across cipher.c / streams.c that pre-allocates output capacity. */
+size_t itb_internal_buf_cap(size_t payload_len)
+{
+    size_t mul;
+    if (payload_len > (SIZE_MAX / 5)) {
+        mul = SIZE_MAX;
+    } else {
+        mul = (payload_len * 5) / 4;
+    }
+    size_t add;
+    if (mul > SIZE_MAX - 131072) {
+        add = SIZE_MAX;
+    } else {
+        add = mul + 131072;
+    }
+    return (add < 131072) ? 131072 : add;
+}
+

@@ -1,7 +1,7 @@
 # ITB Fortran Binding - Easy Mode Benchmark
 
 Two executables (`itb-bench-single`, `itb-bench-triple`) cover the
-Easy-Mode encryption / decryption surface exposed by the Fortran
+Easy Mode encryption / decryption surface exposed by the Fortran
 binding through two `program` units driven by one shared
 `bench_common` module:
 
@@ -178,4 +178,4 @@ the FFI overhead the binding leaves on top of the native Go path
 through the `iso_c_binding` `bind(C, name="...")` declarations the
 binding's `itb_sys.f90` uses for every libitb FFI symbol. Pointer
 back to the binding's top-level [README.md](../README.md) for the
-broader Easy-Mode surface documentation.
+broader Easy Mode surface documentation.

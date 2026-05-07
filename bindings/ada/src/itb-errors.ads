@@ -16,7 +16,7 @@
 --
 --  Structured payload format. The Exception_Message attached to every
 --  raise carries three pipe-separated fields, e.g.
---      "12||malformed easy-mode state blob"
+--      "12||malformed Easy Mode state blob"
 --      "17|primitive|expected blake3, got chacha20"
 --      "0||generic libitb error"
 --  decoded by the Status_Code, Field, and Message accessor functions

@@ -48,3 +48,6 @@ bindings/rust/Cargo.lock
 **/*.egg-info/
 bindings/python/build/
 bindings/python/dist/
+
+# Fortran cache
+*.mod

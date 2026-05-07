@@ -77,7 +77,7 @@ class TestEncryptorLifecycle(unittest.TestCase):
         # Empty primitive / 0 keyBits / empty mac select package
         # defaults: areion512 / 1024 / hmac-blake3 (the latter via the
         # binding-side override that maps ``mac=None`` to the
-        # lightest-overhead MAC available in the Easy-Mode surface).
+        # lightest-overhead MAC available in the Easy Mode surface).
         with itb.Encryptor() as enc:
             self.assertEqual(enc.primitive, "areion512")
             self.assertEqual(enc.key_bits, 1024)

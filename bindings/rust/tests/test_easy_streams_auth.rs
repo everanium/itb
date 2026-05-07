@@ -1,4 +1,4 @@
-//! Authenticated Streaming AEAD tests for the Easy-mode encryptor
+//! Authenticated Streaming AEAD tests for the Easy Mode encryptor
 //! (`Encryptor::encrypt_stream_auth` / `Encryptor::decrypt_stream_auth`).
 //! Mirrors the seed-based suite in `test_streams_auth.rs` at the
 //! Encryptor abstraction level.

@@ -1,4 +1,4 @@
-// Shared scaffolding for the C# Easy-Mode benchmark harness.
+// Shared scaffolding for the C# Easy Mode benchmark harness.
 //
 // The harness mirrors the Go ``testing.B`` benchmark style on the
 // itb_ext_test.go / itb3_ext_test.go side: each bench case runs a
@@ -15,7 +15,7 @@
 //   values 128 / 256 / 512. Maps to Library.NonceBits before any
 //   Encryptor is constructed. Default 128.
 // * ITB_LOCKSEED    — when set to a non-empty / non-"0" value, every
-//   Easy-Mode encryptor in this run calls Encryptor.SetLockSeed(1)
+//   Easy Mode encryptor in this run calls Encryptor.SetLockSeed(1)
 //   AND Library.LockSoup is set to 1 at start. Mixed-primitive cases
 //   attach a dedicated lockSeed primitive at construction (via primL)
 //   under this flag; otherwise primL is null. Default off.
@@ -83,7 +83,7 @@ internal static class Common
     /// bench cases when <c>ITB_LOCKSEED</c> is set. When the env var is
     /// unset, the mixed cases pass <c>null</c> for primL — DO NOT pass
     /// a real primitive name unconditionally (that would auto-couple
-    /// BitSoup + LockSoup at the Easy-Mode level and the no-LockSeed
+    /// BitSoup + LockSoup at the Easy Mode level and the no-LockSeed
     /// arm would mis-measure as ~50 MB/s instead of the real
     /// ~110-130 MB/s plain-Mixed cost).</summary>
     public const string MixedLock = "blake3";

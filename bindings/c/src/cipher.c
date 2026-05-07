@@ -62,32 +62,48 @@ static itb_status_t common_single(fn_single_t fn,
 
     void *in_ptr = (payload_len == 0) ? NULL : (void *) payload;
 
-    /* Probe required size. */
-    size_t need = 0;
-    int rc = fn(h_n, h_d, h_s, in_ptr, payload_len, NULL, 0, &need);
-    if (rc == ITB_OK) {
-        /* Empty output. */
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-
-    uint8_t *buf = (uint8_t *) malloc(need);
+    /* Pre-allocate from the saturating 1.25x + 128 KiB upper bound and
+     * call once. The C ABI runs the full crypto on every call regardless
+     * of out-buffer capacity (probing with cap=0 to discover the
+     * required size would re-run the work on the retry); skipping the
+     * probe halves the per-chunk cost on the steady-state path. The
+     * retry-once branch on STATUS_BUFFER_TOO_SMALL is the safety net
+     * for combinations outside the measured expansion-ratio matrix. */
+    size_t cap = itb_internal_buf_cap(payload_len);
+    uint8_t *buf = (uint8_t *) malloc(cap);
     if (buf == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
     }
 
     size_t written = 0;
-    rc = fn(h_n, h_d, h_s, in_ptr, payload_len, buf, need, &written);
+    int rc = fn(h_n, h_d, h_s, in_ptr, payload_len, buf, cap, &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            free(buf);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        uint8_t *resized = (uint8_t *) realloc(buf, need);
+        if (resized == NULL) {
+            free(buf);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        buf = resized;
+        cap = need;
+        rc = fn(h_n, h_d, h_s, in_ptr, payload_len, buf, cap, &written);
+    }
     if (rc != ITB_OK) {
         free(buf);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        /* Empty output (defensive — current libitb rejects empty input
+         * with ITB_ENCRYPT_FAILED, so this branch is dead under the
+         * shipped contract). */
+        free(buf);
+        itb_internal_reset_error();
+        return ITB_OK;
     }
     *out_buf = buf;
     *out_len = written;
@@ -107,32 +123,40 @@ static itb_status_t common_triple(fn_triple_t fn,
 
     void *in_ptr = (payload_len == 0) ? NULL : (void *) payload;
 
-    size_t need = 0;
-    int rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3,
-                in_ptr, payload_len, NULL, 0, &need);
-    if (rc == ITB_OK) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-
-    uint8_t *buf = (uint8_t *) malloc(need);
+    size_t cap = itb_internal_buf_cap(payload_len);
+    uint8_t *buf = (uint8_t *) malloc(cap);
     if (buf == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
     }
 
     size_t written = 0;
-    rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3,
-            in_ptr, payload_len, buf, need, &written);
+    int rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3,
+                in_ptr, payload_len, buf, cap, &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            free(buf);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        uint8_t *resized = (uint8_t *) realloc(buf, need);
+        if (resized == NULL) {
+            free(buf);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        buf = resized;
+        cap = need;
+        rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3,
+                in_ptr, payload_len, buf, cap, &written);
+    }
     if (rc != ITB_OK) {
         free(buf);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(buf);
+        itb_internal_reset_error();
+        return ITB_OK;
     }
     *out_buf = buf;
     *out_len = written;
@@ -151,30 +175,38 @@ static itb_status_t common_auth(fn_auth_t fn,
 
     void *in_ptr = (payload_len == 0) ? NULL : (void *) payload;
 
-    size_t need = 0;
-    int rc = fn(h_n, h_d, h_s, h_m, in_ptr, payload_len, NULL, 0, &need);
-    if (rc == ITB_OK) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-
-    uint8_t *buf = (uint8_t *) malloc(need);
+    size_t cap = itb_internal_buf_cap(payload_len);
+    uint8_t *buf = (uint8_t *) malloc(cap);
     if (buf == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
     }
 
     size_t written = 0;
-    rc = fn(h_n, h_d, h_s, h_m, in_ptr, payload_len, buf, need, &written);
+    int rc = fn(h_n, h_d, h_s, h_m, in_ptr, payload_len, buf, cap, &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            free(buf);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        uint8_t *resized = (uint8_t *) realloc(buf, need);
+        if (resized == NULL) {
+            free(buf);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        buf = resized;
+        cap = need;
+        rc = fn(h_n, h_d, h_s, h_m, in_ptr, payload_len, buf, cap, &written);
+    }
     if (rc != ITB_OK) {
         free(buf);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(buf);
+        itb_internal_reset_error();
+        return ITB_OK;
     }
     *out_buf = buf;
     *out_len = written;
@@ -195,32 +227,40 @@ static itb_status_t common_auth3(fn_auth3_t fn,
 
     void *in_ptr = (payload_len == 0) ? NULL : (void *) payload;
 
-    size_t need = 0;
-    int rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3, h_m,
-                in_ptr, payload_len, NULL, 0, &need);
-    if (rc == ITB_OK) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-    if (rc != ITB_BUFFER_TOO_SMALL) {
-        return itb_internal_set_error(rc);
-    }
-    if (need == 0) {
-        itb_internal_reset_error();
-        return ITB_OK;
-    }
-
-    uint8_t *buf = (uint8_t *) malloc(need);
+    size_t cap = itb_internal_buf_cap(payload_len);
+    uint8_t *buf = (uint8_t *) malloc(cap);
     if (buf == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
     }
 
     size_t written = 0;
-    rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3, h_m,
-            in_ptr, payload_len, buf, need, &written);
+    int rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3, h_m,
+                in_ptr, payload_len, buf, cap, &written);
+    if (rc == ITB_BUFFER_TOO_SMALL) {
+        size_t need = written;
+        if (need == 0) {
+            free(buf);
+            return itb_internal_set_error_msg(
+                ITB_INTERNAL, "BUFFER_TOO_SMALL with zero need");
+        }
+        uint8_t *resized = (uint8_t *) realloc(buf, need);
+        if (resized == NULL) {
+            free(buf);
+            return itb_internal_set_error_msg(ITB_INTERNAL, "realloc failed");
+        }
+        buf = resized;
+        cap = need;
+        rc = fn(h_n, h_d1, h_d2, h_d3, h_s1, h_s2, h_s3, h_m,
+                in_ptr, payload_len, buf, cap, &written);
+    }
     if (rc != ITB_OK) {
         free(buf);
         return itb_internal_set_error(rc);
+    }
+    if (written == 0) {
+        free(buf);
+        itb_internal_reset_error();
+        return ITB_OK;
     }
     *out_buf = buf;
     *out_len = written;

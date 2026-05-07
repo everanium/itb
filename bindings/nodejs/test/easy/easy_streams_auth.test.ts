@@ -1,7 +1,7 @@
 // Tests for the authenticated streaming methods on the high-level
 // Encryptor (encryptStreamAuth / decryptStreamAuth).
 //
-// Drives the Easy-mode Streaming AEAD ABI export — one Encryptor
+// Drives the Easy Mode Streaming AEAD ABI export — one Encryptor
 // instance covers the seed material, MAC closure, and per-instance
 // configuration. Coverage parallels streams_auth.test.ts at the
 // per-encryptor entry point.

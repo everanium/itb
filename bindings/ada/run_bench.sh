@@ -7,11 +7,15 @@
 #   Pass 2: Triple Ouroboros, ITB_LOCKSEED unset
 #   Pass 3: Single Ouroboros, ITB_LOCKSEED=1
 #   Pass 4: Triple Ouroboros, ITB_LOCKSEED=1
+#   Pass 5: Streaming (16 AEAD IO + UserLoop cells across the
+#           Mode x Width x Op matrix), ITB_LOCKSEED unset
 #
 # The bench binaries are produced by `gprbuild -P itb_bench.gpr` into
-# `obj-bench/bench_single` and `obj-bench/bench_triple`. Each pass
-# walks 40 cases at the configured 5-second per-case budget; total
-# wall-clock ~30-40 minutes.
+# `obj-bench/bench_single`, `obj-bench/bench_triple`, and
+# `obj-bench/bench_stream`. The Single + Triple passes walk 40 cases
+# each at the configured 5-second per-case budget; the streaming
+# pass walks 16 cases at the same budget. Total wall-clock
+# ~40-50 minutes.
 #
 # Environment variables forwarded to the bench binaries:
 #   ITB_NONCE_BITS    nonce width (128 / 256 / 512; default 128)
@@ -41,7 +45,7 @@ if [[ ! -f "$DIST_DIR/libitb.so" ]]; then
 fi
 
 BENCH_BIN_DIR="obj-bench"
-if [[ ! -x "$BENCH_BIN_DIR/bench_single" || ! -x "$BENCH_BIN_DIR/bench_triple" ]]; then
+if [[ ! -x "$BENCH_BIN_DIR/bench_single" || ! -x "$BENCH_BIN_DIR/bench_triple" || ! -x "$BENCH_BIN_DIR/bench_stream" ]]; then
     echo "error: bench binaries missing at $BENCH_BIN_DIR/" >&2
     echo "       run ./build.sh and 'alr exec -- gprbuild -P itb_bench.gpr' first" >&2
     exit 1
@@ -90,6 +94,9 @@ if [[ $run_with_lockseed -eq 1 && $run_single -eq 1 ]]; then
 fi
 if [[ $run_with_lockseed -eq 1 && $run_triple -eq 1 ]]; then
     run_pass "Pass 4 / 4 -- Triple, ITB_LOCKSEED=on" bench_triple 1
+fi
+if [[ $run_no_lockseed -eq 1 ]]; then
+    run_pass "Pass 5 -- Streaming (16 cells), ITB_LOCKSEED=off" bench_stream 0
 fi
 
 echo

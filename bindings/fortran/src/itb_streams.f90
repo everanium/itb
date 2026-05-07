@@ -479,6 +479,15 @@ contains
   ! Per-chunk encrypt dispatcher routing via hash width to the
   ! matching ITB_EncryptStreamAuthenticated{128,256,512} ABI export.
   ! Allocates and returns the produced ciphertext via `ct_out`.
+  !
+  ! Capacity is pre-allocated from the same formula
+  ! `max(131072, plen + plen / 4 + 131072)` used by the Easy Mode
+  ! single-shot encrypt at `itb_enc_encrypt`. The 1.25x multiplier
+  ! plus 128 KiB pad covers every cell in the mode / nonce-bits /
+  ! barrier-fill matrix; the rare `STATUS_BUFFER_TOO_SMALL` from the
+  ! first call surfaces the libitb-reported required size in `need`,
+  ! and a single resize-and-retry recovers without invoking the
+  ! explicit two-call probe shape.
   subroutine auth_emit_chunk_single(width, noise, data, start, mac,    &
                                        plaintext, plen,                  &
                                        sid, cum, final_flag,             &
@@ -494,7 +503,7 @@ contains
     integer(itb_byte_kind), allocatable, target, intent(out) :: ct_out(:)
     integer(itb_status_kind),       intent(out) :: status
     type(c_ptr)              :: pt_ptr
-    integer(itb_size_kind)   :: need, written
+    integer(itb_size_kind)   :: cap, need, written
     integer(c_int)           :: rc
 
     if (plen == 0_itb_size_kind) then
@@ -503,48 +512,10 @@ contains
       pt_ptr = c_loc(plaintext)
     end if
 
+    cap = max(131072_itb_size_kind, &
+               plen + plen / 4_itb_size_kind + 131072_itb_size_kind)
+    allocate (ct_out(cap))
     need = 0_itb_size_kind
-    select case (width)
-    case (128)
-      rc = itb_encrypt_stream_authenticated128_c(                       &
-              noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
-              pt_ptr, plen,                                              &
-              c_loc(sid), cum, final_flag,                                &
-              c_null_ptr, 0_itb_size_kind, need)
-    case (256)
-      rc = itb_encrypt_stream_authenticated256_c(                       &
-              noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
-              pt_ptr, plen,                                              &
-              c_loc(sid), cum, final_flag,                                &
-              c_null_ptr, 0_itb_size_kind, need)
-    case (512)
-      rc = itb_encrypt_stream_authenticated512_c(                       &
-              noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
-              pt_ptr, plen,                                              &
-              c_loc(sid), cum, final_flag,                                &
-              c_null_ptr, 0_itb_size_kind, need)
-    case default
-      status = STATUS_INTERNAL
-      return
-    end select
-    if (rc /= STATUS_BUFFER_TOO_SMALL) then
-      if (rc /= STATUS_OK) then
-        status = rc
-        return
-      end if
-      ! Spec: capacity probe always returns BUFFER_TOO_SMALL with need
-      ! populated; an OK back is unexpected with cap=0.
-      allocate (ct_out(0))
-      status = STATUS_OK
-      return
-    end if
-    if (need == 0_itb_size_kind) then
-      allocate (ct_out(0))
-      status = STATUS_OK
-      return
-    end if
-
-    allocate (ct_out(need))
     written = 0_itb_size_kind
     select case (width)
     case (128)
@@ -552,32 +523,81 @@ contains
               noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
               pt_ptr, plen,                                              &
               c_loc(sid), cum, final_flag,                                &
-              c_loc(ct_out), need, written)
+              c_loc(ct_out), cap, written)
     case (256)
       rc = itb_encrypt_stream_authenticated256_c(                       &
               noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
               pt_ptr, plen,                                              &
               c_loc(sid), cum, final_flag,                                &
-              c_loc(ct_out), need, written)
+              c_loc(ct_out), cap, written)
     case (512)
       rc = itb_encrypt_stream_authenticated512_c(                       &
               noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
               pt_ptr, plen,                                              &
               c_loc(sid), cum, final_flag,                                &
-              c_loc(ct_out), need, written)
+              c_loc(ct_out), cap, written)
+    case default
+      deallocate (ct_out)
+      status = STATUS_INTERNAL
+      return
     end select
+    if (rc == STATUS_BUFFER_TOO_SMALL) then
+      ! Pre-allocation was too tight (small payloads through Triple /
+      ! authenticated variants can exceed the 1.25x bulk-rate bound).
+      ! `written` carries the libitb-reported required size; resize
+      ! exactly and retry once.
+      need = written
+      deallocate (ct_out)
+      allocate (ct_out(need))
+      written = 0_itb_size_kind
+      select case (width)
+      case (128)
+        rc = itb_encrypt_stream_authenticated128_c(                     &
+                noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),    &
+                pt_ptr, plen,                                            &
+                c_loc(sid), cum, final_flag,                              &
+                c_loc(ct_out), need, written)
+      case (256)
+        rc = itb_encrypt_stream_authenticated256_c(                     &
+                noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),    &
+                pt_ptr, plen,                                            &
+                c_loc(sid), cum, final_flag,                              &
+                c_loc(ct_out), need, written)
+      case (512)
+        rc = itb_encrypt_stream_authenticated512_c(                     &
+                noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),    &
+                pt_ptr, plen,                                            &
+                c_loc(sid), cum, final_flag,                              &
+                c_loc(ct_out), need, written)
+      end select
+    end if
     if (rc /= STATUS_OK) then
+      deallocate (ct_out)
       status = rc
       return
     end if
-    if (written /= need) then
-      ! Trim the trailing slack (the binding-side allocator over-
-      ! requested by ABI spec).
-      ct_out = ct_out(1:int(written))
+    if (written == 0_itb_size_kind) then
+      deallocate (ct_out)
+      allocate (ct_out(0))
+      status = STATUS_OK
+      return
     end if
+    ! Trim the trailing slack -- the pre-allocation is intentionally
+    ! larger than the actual output for almost every input size.
+    block
+      integer(itb_byte_kind), allocatable :: trimmed(:)
+      allocate (trimmed(written))
+      trimmed = ct_out(1:int(written))
+      call move_alloc(trimmed, ct_out)
+    end block
     status = STATUS_OK
   end subroutine
 
+  ! Triple-Ouroboros counterpart of auth_emit_chunk_single. Same
+  ! capacity-formula + retry-once shape; the wider primitive matrix
+  ! produces a strictly larger expansion ratio than Single, so the
+  ! retry path activates more often at the smallest payloads, but
+  ! the bulk regime still pre-allocates correctly.
   subroutine auth_emit_chunk_triple(width, noise,                       &
                                        data1, data2, data3,              &
                                        start1, start2, start3, mac,      &
@@ -597,7 +617,7 @@ contains
     integer(itb_byte_kind), allocatable, target, intent(out) :: ct_out(:)
     integer(itb_status_kind),       intent(out) :: status
     type(c_ptr)              :: pt_ptr
-    integer(itb_size_kind)   :: need, written
+    integer(itb_size_kind)   :: cap, need, written
     integer(c_int)           :: rc
 
     if (plen == 0_itb_size_kind) then
@@ -606,46 +626,10 @@ contains
       pt_ptr = c_loc(plaintext)
     end if
 
+    cap = max(131072_itb_size_kind, &
+               plen + plen / 4_itb_size_kind + 131072_itb_size_kind)
+    allocate (ct_out(cap))
     need = 0_itb_size_kind
-    select case (width)
-    case (128)
-      rc = itb_encrypt_stream_authenticated3x128_c(                     &
-              noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
-              start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
-              pt_ptr, plen, c_loc(sid), cum, final_flag,                  &
-              c_null_ptr, 0_itb_size_kind, need)
-    case (256)
-      rc = itb_encrypt_stream_authenticated3x256_c(                     &
-              noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
-              start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
-              pt_ptr, plen, c_loc(sid), cum, final_flag,                  &
-              c_null_ptr, 0_itb_size_kind, need)
-    case (512)
-      rc = itb_encrypt_stream_authenticated3x512_c(                     &
-              noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
-              start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
-              pt_ptr, plen, c_loc(sid), cum, final_flag,                  &
-              c_null_ptr, 0_itb_size_kind, need)
-    case default
-      status = STATUS_INTERNAL
-      return
-    end select
-    if (rc /= STATUS_BUFFER_TOO_SMALL) then
-      if (rc /= STATUS_OK) then
-        status = rc
-        return
-      end if
-      allocate (ct_out(0))
-      status = STATUS_OK
-      return
-    end if
-    if (need == 0_itb_size_kind) then
-      allocate (ct_out(0))
-      status = STATUS_OK
-      return
-    end if
-
-    allocate (ct_out(need))
     written = 0_itb_size_kind
     select case (width)
     case (128)
@@ -653,30 +637,75 @@ contains
               noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
               start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
               pt_ptr, plen, c_loc(sid), cum, final_flag,                  &
-              c_loc(ct_out), need, written)
+              c_loc(ct_out), cap, written)
     case (256)
       rc = itb_encrypt_stream_authenticated3x256_c(                     &
               noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
               start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
               pt_ptr, plen, c_loc(sid), cum, final_flag,                  &
-              c_loc(ct_out), need, written)
+              c_loc(ct_out), cap, written)
     case (512)
       rc = itb_encrypt_stream_authenticated3x512_c(                     &
               noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
               start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
               pt_ptr, plen, c_loc(sid), cum, final_flag,                  &
-              c_loc(ct_out), need, written)
+              c_loc(ct_out), cap, written)
+    case default
+      deallocate (ct_out)
+      status = STATUS_INTERNAL
+      return
     end select
+    if (rc == STATUS_BUFFER_TOO_SMALL) then
+      need = written
+      deallocate (ct_out)
+      allocate (ct_out(need))
+      written = 0_itb_size_kind
+      select case (width)
+      case (128)
+        rc = itb_encrypt_stream_authenticated3x128_c(                   &
+                noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(), &
+                start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),&
+                pt_ptr, plen, c_loc(sid), cum, final_flag,                &
+                c_loc(ct_out), need, written)
+      case (256)
+        rc = itb_encrypt_stream_authenticated3x256_c(                   &
+                noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(), &
+                start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),&
+                pt_ptr, plen, c_loc(sid), cum, final_flag,                &
+                c_loc(ct_out), need, written)
+      case (512)
+        rc = itb_encrypt_stream_authenticated3x512_c(                   &
+                noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(), &
+                start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),&
+                pt_ptr, plen, c_loc(sid), cum, final_flag,                &
+                c_loc(ct_out), need, written)
+      end select
+    end if
     if (rc /= STATUS_OK) then
+      deallocate (ct_out)
       status = rc
       return
     end if
-    if (written /= need) then
-      ct_out = ct_out(1:int(written))
+    if (written == 0_itb_size_kind) then
+      deallocate (ct_out)
+      allocate (ct_out(0))
+      status = STATUS_OK
+      return
     end if
+    block
+      integer(itb_byte_kind), allocatable :: trimmed(:)
+      allocate (trimmed(written))
+      trimmed = ct_out(1:int(written))
+      call move_alloc(trimmed, ct_out)
+    end block
     status = STATUS_OK
   end subroutine
 
+  ! Per-chunk decrypt dispatcher routing via hash width to the
+  ! matching ITB_DecryptStreamAuthenticated{128,256,512} ABI export.
+  ! Same capacity-formula + retry-once shape as the encrypt direction;
+  ! plaintext output is bounded by `ctlen`, so the formula is
+  ! conservative on the upper end.
   subroutine auth_consume_chunk_single(width, noise, data, start, mac,  &
                                           ciphertext, ctlen,              &
                                           sid, cum,                       &
@@ -692,7 +721,7 @@ contains
     integer(c_int),                 intent(out) :: final_flag
     integer(itb_status_kind),       intent(out) :: status
     type(c_ptr)              :: ct_ptr
-    integer(itb_size_kind)   :: need, written
+    integer(itb_size_kind)   :: cap, need, written
     integer(c_int)           :: rc, ff
 
     if (ctlen == 0_itb_size_kind) then
@@ -701,75 +730,80 @@ contains
       ct_ptr = c_loc(ciphertext)
     end if
 
+    cap = max(131072_itb_size_kind, &
+               ctlen + ctlen / 4_itb_size_kind + 131072_itb_size_kind)
+    allocate (pt_out(cap))
     need = 0_itb_size_kind
+    written = 0_itb_size_kind
     ff = 0_c_int
     select case (width)
     case (128)
       rc = itb_decrypt_stream_authenticated128_c(                       &
               noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
               ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_null_ptr, 0_itb_size_kind, need, ff)
+              c_loc(pt_out), cap, written, ff)
     case (256)
       rc = itb_decrypt_stream_authenticated256_c(                       &
               noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
               ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_null_ptr, 0_itb_size_kind, need, ff)
+              c_loc(pt_out), cap, written, ff)
     case (512)
       rc = itb_decrypt_stream_authenticated512_c(                       &
               noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
               ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_null_ptr, 0_itb_size_kind, need, ff)
+              c_loc(pt_out), cap, written, ff)
     case default
+      deallocate (pt_out)
       status = STATUS_INTERNAL
       return
     end select
-    if (rc == STATUS_OK) then
-      allocate (pt_out(0))
-      final_flag = ff
-      status = STATUS_OK
-      return
+    if (rc == STATUS_BUFFER_TOO_SMALL) then
+      need = written
+      deallocate (pt_out)
+      allocate (pt_out(need))
+      written = 0_itb_size_kind
+      select case (width)
+      case (128)
+        rc = itb_decrypt_stream_authenticated128_c(                     &
+                noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),    &
+                ct_ptr, ctlen, c_loc(sid), cum,                           &
+                c_loc(pt_out), need, written, ff)
+      case (256)
+        rc = itb_decrypt_stream_authenticated256_c(                     &
+                noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),    &
+                ct_ptr, ctlen, c_loc(sid), cum,                           &
+                c_loc(pt_out), need, written, ff)
+      case (512)
+        rc = itb_decrypt_stream_authenticated512_c(                     &
+                noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),    &
+                ct_ptr, ctlen, c_loc(sid), cum,                           &
+                c_loc(pt_out), need, written, ff)
+      end select
     end if
-    if (rc /= STATUS_BUFFER_TOO_SMALL) then
-      status = rc
-      return
-    end if
-    if (need == 0_itb_size_kind) then
-      allocate (pt_out(0))
-      final_flag = ff
-      status = STATUS_OK
-      return
-    end if
-
-    allocate (pt_out(need))
-    written = 0_itb_size_kind
-    select case (width)
-    case (128)
-      rc = itb_decrypt_stream_authenticated128_c(                       &
-              noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
-              ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_loc(pt_out), need, written, ff)
-    case (256)
-      rc = itb_decrypt_stream_authenticated256_c(                       &
-              noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
-              ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_loc(pt_out), need, written, ff)
-    case (512)
-      rc = itb_decrypt_stream_authenticated512_c(                       &
-              noise%raw_handle(), data%raw_handle(), start%raw_handle(), mac%raw_handle(),      &
-              ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_loc(pt_out), need, written, ff)
-    end select
     if (rc /= STATUS_OK) then
+      deallocate (pt_out)
       status = rc
       return
     end if
-    if (written /= need) then
-      pt_out = pt_out(1:int(written))
+    if (written == 0_itb_size_kind) then
+      deallocate (pt_out)
+      allocate (pt_out(0))
+      final_flag = ff
+      status = STATUS_OK
+      return
     end if
+    block
+      integer(itb_byte_kind), allocatable :: trimmed(:)
+      allocate (trimmed(written))
+      trimmed = pt_out(1:int(written))
+      call move_alloc(trimmed, pt_out)
+    end block
     final_flag = ff
     status = STATUS_OK
   end subroutine
 
+  ! Triple-Ouroboros counterpart of auth_consume_chunk_single. Same
+  ! capacity-formula + retry-once shape.
   subroutine auth_consume_chunk_triple(width, noise,                    &
                                           data1, data2, data3,           &
                                           start1, start2, start3, mac,    &
@@ -789,7 +823,7 @@ contains
     integer(c_int),                 intent(out) :: final_flag
     integer(itb_status_kind),       intent(out) :: status
     type(c_ptr)              :: ct_ptr
-    integer(itb_size_kind)   :: need, written
+    integer(itb_size_kind)   :: cap, need, written
     integer(c_int)           :: rc, ff
 
     if (ctlen == 0_itb_size_kind) then
@@ -798,7 +832,11 @@ contains
       ct_ptr = c_loc(ciphertext)
     end if
 
+    cap = max(131072_itb_size_kind, &
+               ctlen + ctlen / 4_itb_size_kind + 131072_itb_size_kind)
+    allocate (pt_out(cap))
     need = 0_itb_size_kind
+    written = 0_itb_size_kind
     ff = 0_c_int
     select case (width)
     case (128)
@@ -806,69 +844,68 @@ contains
               noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
               start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
               ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_null_ptr, 0_itb_size_kind, need, ff)
+              c_loc(pt_out), cap, written, ff)
     case (256)
       rc = itb_decrypt_stream_authenticated3x256_c(                     &
               noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
               start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
               ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_null_ptr, 0_itb_size_kind, need, ff)
+              c_loc(pt_out), cap, written, ff)
     case (512)
       rc = itb_decrypt_stream_authenticated3x512_c(                     &
               noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
               start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
               ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_null_ptr, 0_itb_size_kind, need, ff)
+              c_loc(pt_out), cap, written, ff)
     case default
+      deallocate (pt_out)
       status = STATUS_INTERNAL
       return
     end select
-    if (rc == STATUS_OK) then
-      allocate (pt_out(0))
-      final_flag = ff
-      status = STATUS_OK
-      return
+    if (rc == STATUS_BUFFER_TOO_SMALL) then
+      need = written
+      deallocate (pt_out)
+      allocate (pt_out(need))
+      written = 0_itb_size_kind
+      select case (width)
+      case (128)
+        rc = itb_decrypt_stream_authenticated3x128_c(                   &
+                noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(), &
+                start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),&
+                ct_ptr, ctlen, c_loc(sid), cum,                           &
+                c_loc(pt_out), need, written, ff)
+      case (256)
+        rc = itb_decrypt_stream_authenticated3x256_c(                   &
+                noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(), &
+                start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),&
+                ct_ptr, ctlen, c_loc(sid), cum,                           &
+                c_loc(pt_out), need, written, ff)
+      case (512)
+        rc = itb_decrypt_stream_authenticated3x512_c(                   &
+                noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(), &
+                start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),&
+                ct_ptr, ctlen, c_loc(sid), cum,                           &
+                c_loc(pt_out), need, written, ff)
+      end select
     end if
-    if (rc /= STATUS_BUFFER_TOO_SMALL) then
-      status = rc
-      return
-    end if
-    if (need == 0_itb_size_kind) then
-      allocate (pt_out(0))
-      final_flag = ff
-      status = STATUS_OK
-      return
-    end if
-
-    allocate (pt_out(need))
-    written = 0_itb_size_kind
-    select case (width)
-    case (128)
-      rc = itb_decrypt_stream_authenticated3x128_c(                     &
-              noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
-              start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
-              ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_loc(pt_out), need, written, ff)
-    case (256)
-      rc = itb_decrypt_stream_authenticated3x256_c(                     &
-              noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
-              start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
-              ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_loc(pt_out), need, written, ff)
-    case (512)
-      rc = itb_decrypt_stream_authenticated3x512_c(                     &
-              noise%raw_handle(), data1%raw_handle(), data2%raw_handle(), data3%raw_handle(),   &
-              start1%raw_handle(), start2%raw_handle(), start3%raw_handle(), mac%raw_handle(),  &
-              ct_ptr, ctlen, c_loc(sid), cum,                             &
-              c_loc(pt_out), need, written, ff)
-    end select
     if (rc /= STATUS_OK) then
+      deallocate (pt_out)
       status = rc
       return
     end if
-    if (written /= need) then
-      pt_out = pt_out(1:int(written))
+    if (written == 0_itb_size_kind) then
+      deallocate (pt_out)
+      allocate (pt_out(0))
+      final_flag = ff
+      status = STATUS_OK
+      return
     end if
+    block
+      integer(itb_byte_kind), allocatable :: trimmed(:)
+      allocate (trimmed(written))
+      trimmed = pt_out(1:int(written))
+      call move_alloc(trimmed, pt_out)
+    end block
     final_flag = ff
     status = STATUS_OK
   end subroutine
@@ -1805,7 +1842,8 @@ contains
 
   ! Per-chunk encrypt dispatcher for the Easy Mode auth-stream
   ! surface, routing through ITB_Easy_EncryptStreamAuth and returning
-  ! the produced ciphertext via `ct_out`.
+  ! the produced ciphertext via `ct_out`. Same capacity-formula +
+  ! retry-once shape as the Low-Level auth helpers.
   subroutine auth_emit_chunk_easy(handle, plaintext, plen,             &
                                      sid, cum, final_flag,                &
                                      ct_out, status)
@@ -1818,7 +1856,7 @@ contains
     integer(itb_byte_kind), allocatable, target, intent(out) :: ct_out(:)
     integer(itb_status_kind),       intent(out) :: status
     type(c_ptr)              :: pt_ptr
-    integer(itb_size_kind)   :: need, written
+    integer(itb_size_kind)   :: cap, need, written
     integer(c_int)           :: rc
 
     if (plen == 0_itb_size_kind) then
@@ -1827,41 +1865,47 @@ contains
       pt_ptr = c_loc(plaintext)
     end if
 
+    cap = max(131072_itb_size_kind, &
+               plen + plen / 4_itb_size_kind + 131072_itb_size_kind)
+    allocate (ct_out(cap))
     need = 0_itb_size_kind
-    rc = itb_easy_encrypt_stream_auth_c(handle, pt_ptr, plen,            &
-                                          c_loc(sid), cum, final_flag,    &
-                                          c_null_ptr, 0_itb_size_kind,    &
-                                          need)
-    if (rc /= STATUS_BUFFER_TOO_SMALL) then
-      if (rc /= STATUS_OK) then
-        status = rc
-        return
-      end if
-      allocate (ct_out(0))
-      status = STATUS_OK
-      return
-    end if
-    if (need == 0_itb_size_kind) then
-      allocate (ct_out(0))
-      status = STATUS_OK
-      return
-    end if
-
-    allocate (ct_out(need))
     written = 0_itb_size_kind
     rc = itb_easy_encrypt_stream_auth_c(handle, pt_ptr, plen,            &
                                           c_loc(sid), cum, final_flag,    &
-                                          c_loc(ct_out), need, written)
+                                          c_loc(ct_out), cap, written)
+    if (rc == STATUS_BUFFER_TOO_SMALL) then
+      need = written
+      deallocate (ct_out)
+      allocate (ct_out(need))
+      written = 0_itb_size_kind
+      rc = itb_easy_encrypt_stream_auth_c(handle, pt_ptr, plen,          &
+                                            c_loc(sid), cum, final_flag,  &
+                                            c_loc(ct_out), need, written)
+    end if
     if (rc /= STATUS_OK) then
+      deallocate (ct_out)
       status = rc
       return
     end if
-    if (written /= need) then
-      ct_out = ct_out(1:int(written))
+    if (written == 0_itb_size_kind) then
+      deallocate (ct_out)
+      allocate (ct_out(0))
+      status = STATUS_OK
+      return
     end if
+    block
+      integer(itb_byte_kind), allocatable :: trimmed(:)
+      allocate (trimmed(written))
+      trimmed = ct_out(1:int(written))
+      call move_alloc(trimmed, ct_out)
+    end block
     status = STATUS_OK
   end subroutine
 
+  ! Per-chunk decrypt dispatcher for the Easy Mode auth-stream
+  ! surface. Same capacity-formula + retry-once shape; plaintext
+  ! output is bounded by `ctlen`, so the formula is conservative on
+  ! the upper end.
   subroutine auth_consume_chunk_easy(handle, ciphertext, ctlen,        &
                                         sid, cum,                        &
                                         pt_out, final_flag, status)
@@ -1874,7 +1918,7 @@ contains
     integer(c_int),                 intent(out) :: final_flag
     integer(itb_status_kind),       intent(out) :: status
     type(c_ptr)              :: ct_ptr
-    integer(itb_size_kind)   :: need, written
+    integer(itb_size_kind)   :: cap, need, written
     integer(c_int)           :: rc, ff
 
     if (ctlen == 0_itb_size_kind) then
@@ -1883,41 +1927,42 @@ contains
       ct_ptr = c_loc(ciphertext)
     end if
 
+    cap = max(131072_itb_size_kind, &
+               ctlen + ctlen / 4_itb_size_kind + 131072_itb_size_kind)
+    allocate (pt_out(cap))
     need = 0_itb_size_kind
+    written = 0_itb_size_kind
     ff = 0_c_int
     rc = itb_easy_decrypt_stream_auth_c(handle, ct_ptr, ctlen,           &
                                           c_loc(sid), cum,                 &
-                                          c_null_ptr, 0_itb_size_kind,    &
-                                          need, ff)
-    if (rc == STATUS_OK) then
-      allocate (pt_out(0))
-      final_flag = ff
-      status = STATUS_OK
-      return
+                                          c_loc(pt_out), cap, written, ff)
+    if (rc == STATUS_BUFFER_TOO_SMALL) then
+      need = written
+      deallocate (pt_out)
+      allocate (pt_out(need))
+      written = 0_itb_size_kind
+      rc = itb_easy_decrypt_stream_auth_c(handle, ct_ptr, ctlen,         &
+                                            c_loc(sid), cum,               &
+                                            c_loc(pt_out), need, written, ff)
     end if
-    if (rc /= STATUS_BUFFER_TOO_SMALL) then
-      status = rc
-      return
-    end if
-    if (need == 0_itb_size_kind) then
-      allocate (pt_out(0))
-      final_flag = ff
-      status = STATUS_OK
-      return
-    end if
-
-    allocate (pt_out(need))
-    written = 0_itb_size_kind
-    rc = itb_easy_decrypt_stream_auth_c(handle, ct_ptr, ctlen,           &
-                                          c_loc(sid), cum,                 &
-                                          c_loc(pt_out), need, written, ff)
     if (rc /= STATUS_OK) then
+      deallocate (pt_out)
       status = rc
       return
     end if
-    if (written /= need) then
-      pt_out = pt_out(1:int(written))
+    if (written == 0_itb_size_kind) then
+      deallocate (pt_out)
+      allocate (pt_out(0))
+      final_flag = ff
+      status = STATUS_OK
+      return
     end if
+    block
+      integer(itb_byte_kind), allocatable :: trimmed(:)
+      allocate (trimmed(written))
+      trimmed = pt_out(1:int(written))
+      call move_alloc(trimmed, pt_out)
+    end block
     final_flag = ff
     status = STATUS_OK
   end subroutine

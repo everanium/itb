@@ -95,6 +95,24 @@ typedef int (*itb_internal_str_fn)(char *out, size_t cap, size_t *out_len, void 
 itb_status_t itb_internal_read_string(itb_internal_str_fn fn, void *ctx,
                                       char *out, size_t cap, size_t *out_len);
 
+/*
+ * Saturating computation of `max(131072, n * 5 / 4 + 131072)` on
+ * size_t. Caps at SIZE_MAX on overflow rather than wrapping, so the
+ * pre-allocation never under-allocates silently on pathologically
+ * large payloads. The 128 KiB pad absorbs the residual expansion
+ * from non-default barrier-fill values up to 32, where the absolute
+ * ratio reaches ~1.346 around the 1 MiB payload region (the 1.25x
+ * multiplier alone leaves a ~100 KiB shortfall there); it also acts
+ * as the floor for very-small payloads (Triple + auth-MAC + bf=32 at
+ * ptlen=1 expands to ~35 KiB).
+ *
+ * Used by every cipher-call dispatcher to size the output buffer
+ * up-front instead of paying for a probe-then-retry round-trip
+ * against the libitb ABI (which runs the full crypto on every
+ * out_cap=0 probe regardless of capacity).
+ */
+size_t itb_internal_buf_cap(size_t payload_len);
+
 /* ------------------------------------------------------------------ */
 /* Concrete blob structs (Phase 4B)                                    */
 /* ------------------------------------------------------------------ */

@@ -205,10 +205,10 @@ package body Itb.Encryptor is
       return Self.Cache (1 .. Stream_Element_Offset (Out_Len));
    end Cipher_Call;
 
-   --  Probe / allocate / write helper for the Easy-Mode string
+   --  Probe / allocate / write helper for the Easy Mode string
    --  getters of shape
    --      int FFI (uintptr_t h, char* out, size_t cap, size_t* outLen)
-   --  Routes every non-OK return code through the Easy-Mode error
+   --  Routes every non-OK return code through the Easy Mode error
    --  translation so the offending JSON field name is folded into the
    --  raised exception when the rc is Status.Easy_Mismatch.
    type Easy_String_Getter is access function
@@ -1050,18 +1050,19 @@ package body Itb.Encryptor is
    end Easy_Generate_Stream_ID;
 
    --  Per-chunk encrypt dispatch through ITB_Easy_EncryptStreamAuth.
-   --  Probes required size, allocates a heap output buffer sized to
-   --  the FFI-reported requirement, fills it, and writes the resulting
-   --  bytes directly to Sink. Returning the ciphertext through the
-   --  sink (rather than as a Byte_Array result) keeps the per-chunk
-   --  output buffer entirely on the heap; with a 16 MiB Chunk_Size
-   --  the ciphertext is ~20 MiB, which would burst the default 8 MiB
-   --  thread stack as a returned Byte_Array. The optional Out_Pixels
-   --  hands the caller back the (W,H)-derived pixel count parsed from
-   --  the cipher header so cumulative-pixel tracking continues to
-   --  work without re-parsing.
+   --  Routes the FFI write target through the per-encryptor output
+   --  cache (Self.Cache) via Ensure_Capacity + retry-once on
+   --  Buffer_Too_Small, mirroring Cipher_Call's reference shape — the
+   --  hot loop amortises the allocation across every chunk just like
+   --  the single-shot Easy Mode path does. Returning the ciphertext
+   --  through the sink keeps the per-chunk output buffer entirely on
+   --  the heap; with a 16 MiB Chunk_Size the ciphertext is ~20 MiB,
+   --  which would burst the default 8 MiB thread stack as a returned
+   --  Byte_Array. The Out_Pixels parameter hands the caller back the
+   --  (W,H)-derived pixel count parsed from the cipher header so
+   --  cumulative-pixel tracking continues to work without re-parsing.
    procedure Easy_Emit_Chunk_Auth
-     (Handle     : Itb.Sys.Handle;
+     (Self       : in out Encryptor;
       Plaintext  : Byte_Array;
       Stream_ID  : Easy_Stream_ID;
       Cum_Pixels : Itb.Sys.U64;
@@ -1075,143 +1076,136 @@ package body Itb.Encryptor is
         (if Plaintext'Length > 0 then Plaintext'Address
          else System.Null_Address);
       FF      : constant int := (if Final_Flag then 1 else 0);
-      Probe   : aliased size_t := 0;
+      --  See Cipher_Call for the formula+retry-once rationale. Pre-
+      --  allocate at 1.25x + 128 KiB so the per-chunk encrypt reaches
+      --  libitb in one FFI call instead of probe-then-retry, which
+      --  doubles the cipher work.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Plaintext'Length) * 5 / 4 + 131072);
+      Cap     : constant Stream_Element_Offset :=
+        Stream_Element_Offset (Cap_LL);
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Out_Pixels := 0;
+      Ensure_Capacity (Self, Cap);
       Status := Itb.Sys.ITB_Easy_EncryptStreamAuth
-                  (H                       => Handle,
+                  (H                       => Self.Handle,
                    Plaintext               => In_Addr,
                    Pt_Len                  => Plaintext'Length,
                    Stream_ID               => Stream_ID'Address,
                    Cumulative_Pixel_Offset => Cum_Pixels,
                    Final_Flag              => FF,
-                   Out_Buf                 => System.Null_Address,
-                   Out_Cap                 => 0,
-                   Out_Len                 => Probe'Access);
-      if Status = Itb.Status.OK then
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Array_Access :=
-                     new Byte_Array (1 .. Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
+                   Out_Buf                 => Self.Cache.all'Address,
+                   Out_Cap                 => size_t (Self.Cache.all'Length),
+                   Out_Len                 => Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         Ensure_Capacity (Self, Stream_Element_Offset (Out_Len));
+         Out_Len := 0;
          Status := Itb.Sys.ITB_Easy_EncryptStreamAuth
-                     (H                       => Handle,
+                     (H                       => Self.Handle,
                       Plaintext               => In_Addr,
                       Pt_Len                  => Plaintext'Length,
                       Stream_ID               => Stream_ID'Address,
                       Cumulative_Pixel_Offset => Cum_Pixels,
                       Final_Flag              => FF,
-                      Out_Buf                 => Result.all'Address,
-                      Out_Cap                 => Need,
+                      Out_Buf                 => Self.Cache.all'Address,
+                      Out_Cap                 =>
+                        size_t (Self.Cache.all'Length),
                       Out_Len                 => Out_Len'Access);
-         if Status /= 0 then
-            Result.all := [others => 0];
-            Free_Cache (Result);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         if Stream_Element_Offset (Out_Len) >= Hsz then
-            declare
-               First_Idx : constant Stream_Element_Offset := Result.all'First;
-               W : constant Natural :=
-                 Natural (Result (First_Idx + Hsz - 4)) * 256
-                 + Natural (Result (First_Idx + Hsz - 3));
-               H : constant Natural :=
-                 Natural (Result (First_Idx + Hsz - 2)) * 256
-                 + Natural (Result (First_Idx + Hsz - 1));
-            begin
-               Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
-            end;
-         end if;
-         if Out_Len > 0 then
-            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
-         end if;
-         Result.all := [others => 0];
-         Free_Cache (Result);
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Cache (Result);
-            end if;
-            raise;
-      end;
+      end if;
+
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      if Stream_Element_Offset (Out_Len) >= Hsz then
+         declare
+            First_Idx : constant Stream_Element_Offset :=
+              Self.Cache.all'First;
+            W : constant Natural :=
+              Natural (Self.Cache (First_Idx + Hsz - 4)) * 256
+              + Natural (Self.Cache (First_Idx + Hsz - 3));
+            H : constant Natural :=
+              Natural (Self.Cache (First_Idx + Hsz - 2)) * 256
+              + Natural (Self.Cache (First_Idx + Hsz - 1));
+         begin
+            Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
+         end;
+      end if;
+      if Out_Len > 0 then
+         Sink.all.Write
+           (Self.Cache (1 .. Stream_Element_Offset (Out_Len)));
+      end if;
    end Easy_Emit_Chunk_Auth;
 
+   --  Per-chunk decrypt dispatch through ITB_Easy_DecryptStreamAuth.
+   --  Routes the FFI write target through the per-encryptor output
+   --  cache (Self.Cache); the recovered plaintext lives in
+   --  Self.Cache (1 .. PT_Len) on return. The caller writes the slice
+   --  to its sink and is responsible for wiping the consumed prefix
+   --  (Self.Cache (1 .. PT_Len) := [others => 0]) before the next
+   --  cipher call overwrites those bytes. Wipe-on-grow + wipe-on-Close
+   --  + wipe-on-Finalize discipline of the cache is preserved by the
+   --  Ensure_Capacity / Wipe_Cache / Finalize trio.
    procedure Easy_Consume_Chunk_Auth
-     (Handle     : Itb.Sys.Handle;
+     (Self       : in out Encryptor;
       Cipher     : Byte_Array;
       Stream_ID  : Easy_Stream_ID;
       Cum_Pixels : Itb.Sys.U64;
-      PT_Out     : out Byte_Array_Access;
+      PT_Len     : out Stream_Element_Offset;
       Final_Flag : out Boolean)
    is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
       FF      : aliased int := 0;
+      --  See Cipher_Call / Easy_Emit_Chunk_Auth for the rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Cipher'Length) * 5 / 4 + 131072);
+      Cap     : constant Stream_Element_Offset :=
+        Stream_Element_Offset (Cap_LL);
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
-      PT_Out := null;
-      Final_Flag := False;
+      Ensure_Capacity (Self, Cap);
       Status := Itb.Sys.ITB_Easy_DecryptStreamAuth
-                  (H                       => Handle,
+                  (H                       => Self.Handle,
                    Ciphertext              => In_Addr,
                    Ct_Len                  => Cipher'Length,
                    Stream_ID               => Stream_ID'Address,
                    Cumulative_Pixel_Offset => Cum_Pixels,
-                   Out_Buf                 => System.Null_Address,
-                   Out_Cap                 => 0,
-                   Out_Len                 => Probe'Access,
+                   Out_Buf                 => Self.Cache.all'Address,
+                   Out_Cap                 => size_t (Self.Cache.all'Length),
+                   Out_Len                 => Out_Len'Access,
                    Final_Flag_Out          => FF'Access);
-      if Status = Itb.Status.OK then
-         PT_Out := new Byte_Array (1 .. 0);
-         Final_Flag := FF /= 0;
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
-      declare
-         Need    : constant size_t := Probe;
-         Out_Len : aliased size_t := 0;
-      begin
-         PT_Out := new Byte_Array (1 .. Stream_Element_Offset (Need));
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         Ensure_Capacity (Self, Stream_Element_Offset (Out_Len));
+         Out_Len := 0;
          Status := Itb.Sys.ITB_Easy_DecryptStreamAuth
-                     (H                       => Handle,
+                     (H                       => Self.Handle,
                       Ciphertext              => In_Addr,
                       Ct_Len                  => Cipher'Length,
                       Stream_ID               => Stream_ID'Address,
                       Cumulative_Pixel_Offset => Cum_Pixels,
-                      Out_Buf                 => PT_Out (1)'Address,
-                      Out_Cap                 => Need,
+                      Out_Buf                 => Self.Cache.all'Address,
+                      Out_Cap                 =>
+                        size_t (Self.Cache.all'Length),
                       Out_Len                 => Out_Len'Access,
                       Final_Flag_Out          => FF'Access);
-         if Status /= 0 then
-            Free_Cache (PT_Out);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         declare
-            Real : constant Byte_Array_Access :=
-              new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
-         begin
-            if Out_Len > 0 then
-               Real (1 .. Stream_Element_Offset (Out_Len)) :=
-                 PT_Out (1 .. Stream_Element_Offset (Out_Len));
-            end if;
-            PT_Out.all := [others => 0];
-            Free_Cache (PT_Out);
-            PT_Out := Real;
-         end;
-         Final_Flag := FF /= 0;
-      end;
+      end if;
+
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+
+      PT_Len := Stream_Element_Offset (Out_Len);
+      Final_Flag := FF /= 0;
    end Easy_Consume_Chunk_Auth;
 
    procedure Encrypt_Stream_Auth
@@ -1279,12 +1273,12 @@ package body Itb.Encryptor is
                --  directly to Easy_Emit_Chunk_Auth so the per-chunk
                --  ciphertext never materialises as a stack-resident
                --  Byte_Array result; the helper writes it straight to
-               --  Sink from its heap-allocated output buffer.
+               --  Sink from the per-encryptor cache.
                declare
                   Pixels : Itb.Sys.U64 := 0;
                begin
                   Easy_Emit_Chunk_Auth
-                    (Self.Handle,
+                    (Self,
                      Buf (1 .. Chunk_Size),
                      Stream_ID, Cum, False, Hsz,
                      Sink, Pixels);
@@ -1301,7 +1295,7 @@ package body Itb.Encryptor is
             Tail_Pixels : Itb.Sys.U64 := 0;
          begin
             Easy_Emit_Chunk_Auth
-              (Self.Handle,
+              (Self,
                Buf (1 .. Buf_Used),
                Stream_ID, Cum, True, Hsz,
                Sink, Tail_Pixels);
@@ -1384,7 +1378,7 @@ package body Itb.Encryptor is
                        + Natural (Accum (Hsz));
                      Pixels : constant Itb.Sys.U64 :=
                        Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
-                     PT     : Byte_Array_Access;
+                     PT_Len : Stream_Element_Offset := 0;
                      FF     : Boolean;
                      Tail   : constant Stream_Element_Offset :=
                        Accum_Used - WL;
@@ -1394,16 +1388,18 @@ package body Itb.Encryptor is
                      --  on the stack: at chunk sizes near 16 MiB the
                      --  per-chunk ciphertext is ~20 MiB and a stack
                      --  copy would burst the default 8 MiB thread
-                     --  stack. Easy_Consume_Chunk_Auth's PT_Out is
-                     --  already heap-resident.
+                     --  stack. The recovered plaintext lives in
+                     --  Self.Cache (1 .. PT_Len); wipe the consumed
+                     --  prefix after Sink.write so the next chunk's
+                     --  Ensure_Capacity does not have to wipe-on-grow
+                     --  for an unchanged-capacity case.
                      Easy_Consume_Chunk_Auth
-                       (Self.Handle, Accum (1 .. WL),
-                        Stream_ID, Cum, PT, FF);
-                     if PT'Length > 0 then
-                        Sink.all.Write (PT.all);
+                       (Self, Accum (1 .. WL),
+                        Stream_ID, Cum, PT_Len, FF);
+                     if PT_Len > 0 then
+                        Sink.all.Write (Self.Cache (1 .. PT_Len));
+                        Self.Cache (1 .. PT_Len) := [others => 0];
                      end if;
-                     PT.all := [others => 0];
-                     Free_Cache (PT);
                      if Tail > 0 then
                         Accum (1 .. Tail) := Accum (WL + 1 .. Accum_Used);
                      end if;
@@ -1520,53 +1516,60 @@ package body Itb.Encryptor is
       In_Addr : constant System.Address :=
         (if Plaintext'Length > 0 then Plaintext'Address
          else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Cipher_Call for the formula+retry-once rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Plaintext'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Array_Access :=
+                  new Byte_Array (1 .. Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Status := Itb.Sys.ITB_Easy_Encrypt
-                  (H       => Handle,
+                  (H         => Handle,
                    Plaintext => In_Addr,
                    Pt_Len    => size_t (Plaintext'Length),
-                   Out_Buf   => System.Null_Address,
-                   Out_Cap   => 0,
-                   Out_Len   => Probe'Access);
-      if Status = Itb.Status.OK then
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Array_Access :=
-                     new Byte_Array (1 .. Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Itb.Sys.ITB_Easy_Encrypt
-                     (H         => Handle,
-                      Plaintext => In_Addr,
-                      Pt_Len    => size_t (Plaintext'Length),
-                      Out_Buf   => Result.all'Address,
-                      Out_Cap   => Need,
-                      Out_Len   => Out_Len'Access);
-         if Status /= 0 then
+                   Out_Buf   => Result.all'Address,
+                   Out_Cap   => Cap,
+                   Out_Len   => Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need : constant size_t := Out_Len;
+         begin
             Result.all := [others => 0];
             Free_Cache (Result);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         if Out_Len > 0 then
-            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
-         end if;
+            Result := new Byte_Array (1 .. Stream_Element_Offset (Need));
+            Out_Len := 0;
+            Status := Itb.Sys.ITB_Easy_Encrypt
+                        (H         => Handle,
+                         Plaintext => In_Addr,
+                         Pt_Len    => size_t (Plaintext'Length),
+                         Out_Buf   => Result.all'Address,
+                         Out_Cap   => Need,
+                         Out_Len   => Out_Len'Access);
+         end;
+      end if;
+
+      if Status /= 0 then
          Result.all := [others => 0];
          Free_Cache (Result);
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Cache (Result);
-            end if;
-            raise;
-      end;
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      if Out_Len > 0 then
+         Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
+      end if;
+      Result.all := [others => 0];
+      Free_Cache (Result);
+   exception
+      when others =>
+         if Result /= null then
+            Result.all := [others => 0];
+            Free_Cache (Result);
+         end if;
+         raise;
    end Easy_Emit_Chunk_Plain;
 
    --  Decrypt one plain ciphertext chunk and return the recovered
@@ -1580,7 +1583,15 @@ package body Itb.Encryptor is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Cipher_Call / Easy_Emit_Chunk_Plain for the rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Cipher'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Buf     : Byte_Array_Access :=
+                  new Byte_Array (1 .. Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       PT_Out := null;
@@ -1588,46 +1599,53 @@ package body Itb.Encryptor is
                   (H          => Handle,
                    Ciphertext => In_Addr,
                    Ct_Len     => size_t (Cipher'Length),
-                   Out_Buf    => System.Null_Address,
-                   Out_Cap    => 0,
-                   Out_Len    => Probe'Access);
-      if Status = Itb.Status.OK then
-         PT_Out := new Byte_Array (1 .. 0);
-         return;
+                   Out_Buf    => Buf.all'Address,
+                   Out_Cap    => Cap,
+                   Out_Len    => Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need : constant size_t := Out_Len;
+         begin
+            Buf.all := [others => 0];
+            Free_Cache (Buf);
+            Buf := new Byte_Array (1 .. Stream_Element_Offset (Need));
+            Out_Len := 0;
+            Status := Itb.Sys.ITB_Easy_Decrypt
+                        (H          => Handle,
+                         Ciphertext => In_Addr,
+                         Ct_Len     => size_t (Cipher'Length),
+                         Out_Buf    => Buf.all'Address,
+                         Out_Cap    => Need,
+                         Out_Len    => Out_Len'Access);
+         end;
       end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
+
+      if Status /= 0 then
+         Buf.all := [others => 0];
+         Free_Cache (Buf);
          Itb.Errors.Raise_For (Integer (Status));
       end if;
+
       declare
-         Need    : constant size_t := Probe;
-         Out_Len : aliased size_t := 0;
+         Real : constant Byte_Array_Access :=
+           new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
       begin
-         PT_Out := new Byte_Array (1 .. Stream_Element_Offset (Need));
-         Status := Itb.Sys.ITB_Easy_Decrypt
-                     (H          => Handle,
-                      Ciphertext => In_Addr,
-                      Ct_Len     => size_t (Cipher'Length),
-                      Out_Buf    => PT_Out (1)'Address,
-                      Out_Cap    => Need,
-                      Out_Len    => Out_Len'Access);
-         if Status /= 0 then
-            PT_Out.all := [others => 0];
-            Free_Cache (PT_Out);
-            Itb.Errors.Raise_For (Integer (Status));
+         if Out_Len > 0 then
+            Real (1 .. Stream_Element_Offset (Out_Len)) :=
+              Buf (1 .. Stream_Element_Offset (Out_Len));
          end if;
-         declare
-            Real : constant Byte_Array_Access :=
-              new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
-         begin
-            if Out_Len > 0 then
-               Real (1 .. Stream_Element_Offset (Out_Len)) :=
-                 PT_Out (1 .. Stream_Element_Offset (Out_Len));
-            end if;
-            PT_Out.all := [others => 0];
-            Free_Cache (PT_Out);
-            PT_Out := Real;
-         end;
+         Buf.all := [others => 0];
+         Free_Cache (Buf);
+         PT_Out := Real;
       end;
+   exception
+      when others =>
+         if Buf /= null then
+            Buf.all := [others => 0];
+            Free_Cache (Buf);
+         end if;
+         raise;
    end Easy_Consume_Chunk_Plain;
 
    procedure Encrypt_Stream

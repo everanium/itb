@@ -1,6 +1,6 @@
 # ITB Rust Binding - Easy Mode Benchmark
 
-Two binaries cover the Easy-Mode encryption / decryption surface
+Two binaries cover the Easy Mode encryption / decryption surface
 exposed by the Rust binding:
 
 * `bench_single.rs` — Single Ouroboros (mode=1, 3 seeds + optional

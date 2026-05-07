@@ -1,6 +1,6 @@
 # ITB C++ Binding — Easy Mode Benchmark
 
-Two executables (`bench_single`, `bench_triple`) cover the Easy-Mode
+Two executables (`bench_single`, `bench_triple`) cover the Easy Mode
 encryption / decryption surface exposed by the C++ binding through the
 C binding's static archive (`-litb_c -litb`):
 

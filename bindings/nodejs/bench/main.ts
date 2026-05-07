@@ -1,4 +1,4 @@
-// Entry point for the Node.js Easy-Mode bench harness.
+// Entry point for the Node.js Easy Mode bench harness.
 //
 // `argv[2]` selects the pass:
 //   * `single` — runs the Single-Ouroboros 9-primitive + 1-mixed grid.
@@ -14,12 +14,19 @@
 import { runSingle } from './bench-single.js';
 import { runTriple } from './bench-triple.js';
 
-const arg = process.argv[2];
-if (arg === 'single') {
-  runSingle();
-} else if (arg === 'triple') {
-  runTriple();
-} else {
-  console.error(`Usage: node ${process.argv[1]} <single|triple>`);
-  process.exit(2);
+async function main(): Promise<void> {
+  const arg = process.argv[2];
+  if (arg === 'single') {
+    await runSingle();
+  } else if (arg === 'triple') {
+    await runTriple();
+  } else {
+    console.error(`Usage: node ${process.argv[1]} <single|triple>`);
+    process.exit(2);
+  }
 }
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

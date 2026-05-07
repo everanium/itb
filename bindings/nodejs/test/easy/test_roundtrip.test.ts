@@ -86,7 +86,7 @@ describe('test_easy_roundtrip', () => {
     // Empty primitive / 0 keyBits / null mac select package defaults
     // (areion512 / 1024 / hmac-blake3). The latter via the
     // binding-side override that maps macName === null to the
-    // lightest-overhead MAC available in the Easy-Mode surface.
+    // lightest-overhead MAC available in the Easy Mode surface.
     using enc = new Encryptor('', 0, null);
     assert.equal(enc.primitive, 'areion512');
     assert.equal(enc.keyBits, 1024);
