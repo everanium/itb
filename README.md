@@ -317,6 +317,13 @@ import (
     "github.com/everanium/itb/macs"
 )
 
+const (
+    srcPath   = "/tmp/64mb.src"
+    encPath   = "/tmp/64mb.enc"
+    dstPath   = "/tmp/64mb.dst"
+    chunkSize = 16 * 1024 * 1024
+)
+
 func main() {
     itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
     itb.SetNonceBits(512)
@@ -448,6 +455,9 @@ import (
     "github.com/everanium/itb/easy"
 )
 
+const encPlainPath = "/tmp/64mb_plain.enc"
+const dstPlainPath = "/tmp/64mb_plain.dst"
+
 func main() {
     itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
 
@@ -523,6 +533,9 @@ import (
     "github.com/everanium/itb/hashes"
 )
 
+const encPlainPath = "/tmp/64mb_plain.enc"
+const dstPlainPath = "/tmp/64mb_plain.dst"
+
 func main() {
     itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
     itb.SetNonceBits(512)
@@ -585,6 +598,9 @@ import (
     "github.com/everanium/itb"
     "github.com/everanium/itb/hashes"
 )
+
+const encPlainPath = "/tmp/64mb_plain.enc"
+const dstPlainPath = "/tmp/64mb_plain.dst"
 
 func main() {
     itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
