@@ -1822,3 +1822,579 @@ func ITB_Easy_IsMixed(handle C.uintptr_t, outStatus *C.int) C.int {
 	}
 	return C.int(v)
 }
+
+// ─── Streaming AEAD Encrypt / Decrypt ──────────────────────────────
+
+// streamIDFromC copies a 32-byte Streaming AEAD anchor out of a C
+// pointer into a fixed-size Go array. Returns false if the pointer
+// is NULL.
+func streamIDFromC(p *C.uint8_t) (sid [32]byte, ok bool) {
+	if p == nil {
+		return sid, false
+	}
+	src := unsafe.Slice((*byte)(unsafe.Pointer(p)), 32)
+	copy(sid[:], src)
+	return sid, true
+}
+
+//export ITB_EncryptStreamAuthenticated128
+//
+// Streaming AEAD single-Ouroboros encrypt for one chunk: takes the
+// (noise, data, start) seed trio (all width-128), a MAC handle, and
+// the streaming-binding components (32-byte streamID, running
+// cumulativePixelOffset, finalFlag). The MAC tag and the flag byte
+// are folded inside the cipher container under the barrier; same
+// caller-allocated-buffer convention as ITB_EncryptAuth. The exported
+// 128 / 256 / 512 entry points are kept distinct purely for ABI
+// symmetry with the existing ITB_EncryptAuth* family — the underlying
+// capi handler dispatches by the seeds' native hash width.
+func ITB_EncryptStreamAuthenticated128(
+	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EncryptStreamAuth(
+		capi.HandleID(noiseHandle), capi.HandleID(dataHandle), capi.HandleID(startHandle),
+		capi.MACHandleID(macHandle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_EncryptStreamAuthenticated256
+//
+// Streaming AEAD single-Ouroboros encrypt for one chunk (width-256
+// seeds). See ITB_EncryptStreamAuthenticated128 for the parameter
+// contract.
+func ITB_EncryptStreamAuthenticated256(
+	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EncryptStreamAuth(
+		capi.HandleID(noiseHandle), capi.HandleID(dataHandle), capi.HandleID(startHandle),
+		capi.MACHandleID(macHandle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_EncryptStreamAuthenticated512
+//
+// Streaming AEAD single-Ouroboros encrypt for one chunk (width-512
+// seeds). See ITB_EncryptStreamAuthenticated128 for the parameter
+// contract.
+func ITB_EncryptStreamAuthenticated512(
+	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EncryptStreamAuth(
+		capi.HandleID(noiseHandle), capi.HandleID(dataHandle), capi.HandleID(startHandle),
+		capi.MACHandleID(macHandle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_DecryptStreamAuthenticated128
+//
+// Streaming AEAD single-Ouroboros decrypt for one chunk. finalFlagOut,
+// when non-NULL, receives the recovered flag byte interpreted as
+// {0 = non-terminal, 1 = terminating}. Returns ITB_ERR_MAC_FAILURE on
+// tampered ciphertext / wrong MAC key / mismatched streamID /
+// mismatched cumulativePixelOffset. The 128 / 256 / 512 entry points
+// are kept distinct for ABI symmetry; the capi handler dispatches by
+// the seeds' native hash width.
+func ITB_DecryptStreamAuthenticated128(
+	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.DecryptStreamAuth(
+		capi.HandleID(noiseHandle), capi.HandleID(dataHandle), capi.HandleID(startHandle),
+		capi.MACHandleID(macHandle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}
+
+//export ITB_DecryptStreamAuthenticated256
+//
+// Streaming AEAD single-Ouroboros decrypt for one chunk (width-256
+// seeds). See ITB_DecryptStreamAuthenticated128 for the parameter
+// contract.
+func ITB_DecryptStreamAuthenticated256(
+	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.DecryptStreamAuth(
+		capi.HandleID(noiseHandle), capi.HandleID(dataHandle), capi.HandleID(startHandle),
+		capi.MACHandleID(macHandle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}
+
+//export ITB_DecryptStreamAuthenticated512
+//
+// Streaming AEAD single-Ouroboros decrypt for one chunk (width-512
+// seeds). See ITB_DecryptStreamAuthenticated128 for the parameter
+// contract.
+func ITB_DecryptStreamAuthenticated512(
+	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.DecryptStreamAuth(
+		capi.HandleID(noiseHandle), capi.HandleID(dataHandle), capi.HandleID(startHandle),
+		capi.MACHandleID(macHandle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}
+
+//export ITB_EncryptStreamAuthenticated3x128
+//
+// Streaming AEAD Triple-Ouroboros encrypt for one chunk: 7 seed
+// handles plus a MAC handle plus the streaming-binding components.
+// All 7 seeds must share native width 128.
+func ITB_EncryptStreamAuthenticated3x128(
+	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	startHandle1, startHandle2, startHandle3 C.uintptr_t,
+	macHandle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EncryptStreamAuth3(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
+		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
+		capi.MACHandleID(macHandle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_EncryptStreamAuthenticated3x256
+//
+// Streaming AEAD Triple-Ouroboros encrypt for one chunk (width-256
+// seeds). See ITB_EncryptStreamAuthenticated3x128 for the parameter
+// contract.
+func ITB_EncryptStreamAuthenticated3x256(
+	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	startHandle1, startHandle2, startHandle3 C.uintptr_t,
+	macHandle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EncryptStreamAuth3(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
+		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
+		capi.MACHandleID(macHandle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_EncryptStreamAuthenticated3x512
+//
+// Streaming AEAD Triple-Ouroboros encrypt for one chunk (width-512
+// seeds). See ITB_EncryptStreamAuthenticated3x128 for the parameter
+// contract.
+func ITB_EncryptStreamAuthenticated3x512(
+	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	startHandle1, startHandle2, startHandle3 C.uintptr_t,
+	macHandle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EncryptStreamAuth3(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
+		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
+		capi.MACHandleID(macHandle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_DecryptStreamAuthenticated3x128
+//
+// Streaming AEAD Triple-Ouroboros decrypt for one chunk. finalFlagOut,
+// when non-NULL, receives the recovered flag byte interpreted as
+// {0 = non-terminal, 1 = terminating}.
+func ITB_DecryptStreamAuthenticated3x128(
+	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	startHandle1, startHandle2, startHandle3 C.uintptr_t,
+	macHandle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.DecryptStreamAuth3(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
+		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
+		capi.MACHandleID(macHandle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}
+
+//export ITB_DecryptStreamAuthenticated3x256
+//
+// Streaming AEAD Triple-Ouroboros decrypt for one chunk (width-256
+// seeds). See ITB_DecryptStreamAuthenticated3x128 for the parameter
+// contract.
+func ITB_DecryptStreamAuthenticated3x256(
+	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	startHandle1, startHandle2, startHandle3 C.uintptr_t,
+	macHandle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.DecryptStreamAuth3(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
+		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
+		capi.MACHandleID(macHandle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}
+
+//export ITB_DecryptStreamAuthenticated3x512
+//
+// Streaming AEAD Triple-Ouroboros decrypt for one chunk (width-512
+// seeds). See ITB_DecryptStreamAuthenticated3x128 for the parameter
+// contract.
+func ITB_DecryptStreamAuthenticated3x512(
+	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	startHandle1, startHandle2, startHandle3 C.uintptr_t,
+	macHandle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.DecryptStreamAuth3(
+		capi.HandleID(noiseHandle),
+		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
+		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
+		capi.MACHandleID(macHandle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}
+
+//export ITB_Easy_EncryptStreamAuth
+//
+// Streaming AEAD encrypt through an Encryptor handle. The encryptor's
+// bound MAC closure is reused for every chunk; the caller drives the
+// loop, supplying a CSPRNG-fresh streamID once at stream start, the
+// running cumulativePixelOffset per chunk, and finalFlag != 0 on the
+// terminating chunk only. Same caller-allocated-buffer convention as
+// ITB_Easy_EncryptAuth.
+func ITB_Easy_EncryptStreamAuth(
+	handle C.uintptr_t,
+	plaintext unsafe.Pointer, ptlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	finalFlag C.int,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	pt := goBytesView(plaintext, ptlen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.EasyEncryptStreamAuth(
+		capi.EasyHandleID(handle), pt, dst,
+		sid, uint64(cumulativePixelOffset), finalFlag != 0,
+	)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Easy_DecryptStreamAuth
+//
+// Streaming AEAD decrypt through an Encryptor handle. finalFlagOut,
+// when non-NULL, receives the recovered flag byte interpreted as
+// {0 = non-terminal, 1 = terminating}. Returns ITB_ERR_MAC_FAILURE
+// on tampered ciphertext / wrong MAC key / mismatched streamID /
+// mismatched cumulativePixelOffset.
+func ITB_Easy_DecryptStreamAuth(
+	handle C.uintptr_t,
+	ciphertext unsafe.Pointer, ctlen C.size_t,
+	streamID *C.uint8_t,
+	cumulativePixelOffset C.uint64_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+	finalFlagOut *C.int,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ctlen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	sid, ok := streamIDFromC(streamID)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	ct := goBytesView(ciphertext, ctlen)
+	dst := goBytesViewMut(out, outCap)
+	n, ff, st := capi.EasyDecryptStreamAuth(
+		capi.EasyHandleID(handle), ct, dst,
+		sid, uint64(cumulativePixelOffset),
+	)
+	*outLen = C.size_t(n)
+	if finalFlagOut != nil {
+		if ff {
+			*finalFlagOut = 1
+		} else {
+			*finalFlagOut = 0
+		}
+	}
+	return C.int(st)
+}

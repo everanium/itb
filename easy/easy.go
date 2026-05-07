@@ -77,12 +77,6 @@ var ErrBadKeyBits = errors.New("itb/easy: invalid key_bits in state blob")
 // switch is rejected.
 var ErrLockSeedAfterEncrypt = errors.New("itb/easy: SetLockSeed after first Encrypt is not allowed")
 
-// ErrStreamAuthNotImplemented is returned by
-// [Encryptor.EncryptStreamAuth] and [Encryptor.DecryptStreamAuth]
-// until the streaming-AEAD design ships. The signatures are reserved
-// so v1 callers can interface-detect availability.
-var ErrStreamAuthNotImplemented = errors.New("itb/easy: EncryptStreamAuth / DecryptStreamAuth is not yet implemented")
-
 // ErrMismatch indicates the state blob disagrees with the receiver's
 // bound configuration on a specific field. Field is the canonical
 // JSON field name that triggered the rejection.

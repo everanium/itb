@@ -212,6 +212,14 @@ package body Itb.Errors is
             Ada.Exceptions.Raise_Exception
               (Itb_Blob_Version_Too_New_Error'Identity, Payload);
 
+         when Itb.Status.Stream_Truncated =>
+            Ada.Exceptions.Raise_Exception
+              (Itb_Stream_Truncated_Error'Identity, Payload);
+
+         when Itb.Status.Stream_After_Final =>
+            Ada.Exceptions.Raise_Exception
+              (Itb_Stream_After_Final_Error'Identity, Payload);
+
          when others =>
             Ada.Exceptions.Raise_Exception
               (Itb_Error'Identity, Payload);

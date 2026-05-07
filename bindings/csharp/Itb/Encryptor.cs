@@ -86,9 +86,11 @@ public readonly record struct EncryptorConfig(string Primitive, int KeyBits, int
 /// <para><b>Output-buffer cache.</b> The cipher methods reuse a
 /// per-encryptor <see cref="byte"/>[] to skip the per-call probe
 /// round-trip; the buffer grows on demand (initial allocation is
-/// <c>max(4096, payload * 5 / 4 + 4096)</c>, the empirical 1.155×
-/// upper-bound expansion plus 4 KiB headroom) and survives between
-/// calls. <see cref="Close"/> / <see cref="Dispose"/> / the finalizer
+/// <c>max(131072, payload * 5 / 4 + 131072)</c> — the 1.25×
+/// multiplier plus a 128 KiB headroom that absorbs the residual
+/// expansion from non-default barrier-fill values up to 32, where
+/// the absolute ratio reaches ~1.346 around the 1 MiB payload
+/// region) and survives between calls. <see cref="Close"/> / <see cref="Dispose"/> / the finalizer
 /// wipe its bytes before release so the most recent ciphertext or
 /// plaintext does not linger in heap memory after the working set has
 /// been zeroed on the Go side.</para>
@@ -667,11 +669,19 @@ public sealed class Encryptor : IDisposable
     {
         ThrowIfClosed();
         var payloadLen = payload.Length;
-        // 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
-        // expansion factor observed across the primitive / mode /
-        // nonce-bits matrix; floor at 4 KiB so the very-small payload
-        // case still gets a usable buffer.
-        var cap = Math.Max(4096, payloadLen * 5 / 4 + 4096);
+        // 1.25× + 128 KiB headroom comfortably exceeds the worst-case
+        // expansion observed across the primitive / mode / nonce-bits
+        // / barrier-fill matrix; bf=32 with payloads near 1 MiB pushes
+        // the absolute ratio to ~1.346, leaving roughly 100 KiB of
+        // residual margin over the 1.25× term that the constant pad
+        // must absorb. The 128 KiB pad covers that worst case (and
+        // the ratio tapers below 1.25× + small-K beyond a few MiB as
+        // the bf-induced sqrt-shaped border overhead becomes
+        // asymptotically negligible). Floor at 128 KiB so the very-
+        // small payload case still gets a usable buffer that handles
+        // the Triple + auth-MAC + bf=32 short-payload expansion
+        // (~35 KiB at ptlen=1).
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
         EnsureCapacity(cap);
 
         nuint outLen;
@@ -872,6 +882,268 @@ public sealed class Encryptor : IDisposable
             Array.Resize(ref buf, (int)outLen2);
         }
         return buf;
+    }
+
+    // ----------------------------------------------------------------
+    // Streaming AEAD entry points
+    // ----------------------------------------------------------------
+
+    /// <summary>
+    /// Reads plaintext from <paramref name="input"/> until end of
+    /// stream, encrypts each chunk under the Streaming AEAD
+    /// construction bound to this encryptor's seeds + MAC closure,
+    /// and writes the concatenated <c>stream_id || chunk_0 || chunk_1 || ...</c>
+    /// transcript to <paramref name="output"/>. Neither stream is
+    /// disposed by this method.
+    /// </summary>
+    /// <remarks>
+    /// <para><paramref name="chunkSize"/> defaults to
+    /// <see cref="StreamDefaults.DefaultChunkSize"/> (16 MiB) when
+    /// not supplied; it must be positive. The 32-byte CSPRNG
+    /// <c>stream_id</c> prefix is generated server-side per call;
+    /// the running cumulative pixel offset and the terminating
+    /// chunk's <c>final_flag = true</c> are managed
+    /// internally.</para>
+    /// <para>Empty stream is permitted — emits the 32-byte prefix
+    /// followed by a single terminating chunk carrying zero
+    /// plaintext bytes.</para>
+    /// </remarks>
+    public unsafe void EncryptStreamAuth(
+        Stream input, Stream output,
+        int chunkSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+        ThrowIfClosed();
+        if (chunkSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "chunkSize must be positive");
+        }
+        try
+        {
+            var streamId = StreamAuthInternal.GenerateStreamId();
+            output.Write(streamId, 0, streamId.Length);
+            var headerSz = HeaderSize;
+            ulong cumPixels = 0;
+            var buf = new List<byte>();
+            var readBuf = new byte[chunkSize];
+            var eof = false;
+            while (!eof)
+            {
+                while (buf.Count <= chunkSize && !eof)
+                {
+                    var n = input.Read(readBuf, 0, readBuf.Length);
+                    if (n == 0)
+                    {
+                        eof = true;
+                        break;
+                    }
+                    for (var i = 0; i < n; i++)
+                    {
+                        buf.Add(readBuf[i]);
+                    }
+                }
+                if (eof)
+                {
+                    var ptArr = buf.ToArray();
+                    for (var i = 0; i < buf.Count; i++) { buf[i] = 0; }
+                    buf.Clear();
+                    var ct = StreamAuthEasy.Emit(_handle, ptArr,
+                        streamId, cumPixels, true);
+                    Array.Clear(ptArr, 0, ptArr.Length);
+                    output.Write(ct, 0, ct.Length);
+                    if (ct.Length >= headerSz)
+                    {
+                        var w = StreamAuthInternal.ReadBe16(ct, headerSz - 4);
+                        var h = StreamAuthInternal.ReadBe16(ct, headerSz - 2);
+                        cumPixels += (ulong)w * (ulong)h;
+                    }
+                    break;
+                }
+                var nonTermPt = new byte[chunkSize];
+                for (var i = 0; i < chunkSize; i++)
+                {
+                    nonTermPt[i] = buf[i];
+                    buf[i] = 0;
+                }
+                buf.RemoveRange(0, chunkSize);
+                var ctNon = StreamAuthEasy.Emit(_handle, nonTermPt,
+                    streamId, cumPixels, false);
+                Array.Clear(nonTermPt, 0, nonTermPt.Length);
+                output.Write(ctNon, 0, ctNon.Length);
+                if (ctNon.Length >= headerSz)
+                {
+                    var w = StreamAuthInternal.ReadBe16(ctNon, headerSz - 4);
+                    var h = StreamAuthInternal.ReadBe16(ctNon, headerSz - 2);
+                    cumPixels += (ulong)w * (ulong)h;
+                }
+            }
+            Array.Clear(readBuf, 0, readBuf.Length);
+        }
+        finally
+        {
+            GC.KeepAlive(this);
+        }
+    }
+
+    /// <summary>
+    /// Reads a Streaming AEAD transcript from <paramref name="input"/>
+    /// until end of stream and writes the recovered plaintext to
+    /// <paramref name="output"/>. Surfaces
+    /// <see cref="ItbStreamTruncatedException"/> when the input
+    /// exhausts without a terminating chunk,
+    /// <see cref="ItbStreamAfterFinalException"/> when bytes follow
+    /// the terminator, and <see cref="ItbException"/> with status
+    /// <see cref="StatusCode.MacFailure"/> on any per-chunk MAC
+    /// mismatch.
+    /// </summary>
+    public unsafe void DecryptStreamAuth(
+        Stream input, Stream output,
+        int readSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+        ThrowIfClosed();
+        if (readSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "readSize must be positive");
+        }
+        try
+        {
+            var headerSz = HeaderSize;
+            var accum = new List<byte>();
+            var sidHave = 0;
+            var streamId = new byte[StreamAuthInternal.StreamIdLen];
+            ulong cumPixels = 0;
+            var seenFinal = false;
+            var readBuf = new byte[readSize];
+            while (true)
+            {
+                var n = input.Read(readBuf, 0, readBuf.Length);
+                if (n == 0)
+                {
+                    if (sidHave < StreamAuthInternal.StreamIdLen)
+                    {
+                        throw new ItbStreamTruncatedException(
+                            StatusCode.StreamTruncated,
+                            "auth stream: prefix never observed");
+                    }
+                    var header = new byte[headerSz];
+                    while (!seenFinal && accum.Count >= headerSz)
+                    {
+                        for (var i = 0; i < headerSz; i++)
+                        {
+                            header[i] = accum[i];
+                        }
+                        var cl = ParseChunkLen(header);
+                        if (accum.Count < cl)
+                        {
+                            break;
+                        }
+                        var w = StreamAuthInternal.ReadBe16(header, headerSz - 4);
+                        var h = StreamAuthInternal.ReadBe16(header, headerSz - 2);
+                        var pixels = (ulong)w * (ulong)h;
+                        var chunk = new byte[cl];
+                        accum.CopyTo(0, chunk, 0, cl);
+                        accum.RemoveRange(0, cl);
+                        var (pt, ff) = StreamAuthEasy.Consume(
+                            _handle, chunk, streamId, cumPixels);
+                        output.Write(pt, 0, pt.Length);
+                        Array.Clear(pt, 0, pt.Length);
+                        cumPixels += pixels;
+                        if (ff)
+                        {
+                            seenFinal = true;
+                        }
+                    }
+                    if (!seenFinal)
+                    {
+                        throw new ItbStreamTruncatedException(
+                            StatusCode.StreamTruncated,
+                            "auth stream: terminator never observed");
+                    }
+                    if (accum.Count > 0)
+                    {
+                        throw new ItbStreamAfterFinalException(
+                            StatusCode.StreamAfterFinal,
+                            "auth stream: trailing bytes after terminator");
+                    }
+                    Array.Clear(readBuf, 0, readBuf.Length);
+                    return;
+                }
+                var off = 0;
+                if (sidHave < StreamAuthInternal.StreamIdLen)
+                {
+                    var need = StreamAuthInternal.StreamIdLen - sidHave;
+                    var take = Math.Min(need, n);
+                    for (var i = 0; i < take; i++)
+                    {
+                        streamId[sidHave + i] = readBuf[i];
+                    }
+                    sidHave += take;
+                    off = take;
+                }
+                if (off < n)
+                {
+                    for (var i = off; i < n; i++)
+                    {
+                        accum.Add(readBuf[i]);
+                    }
+                }
+                if (sidHave < StreamAuthInternal.StreamIdLen)
+                {
+                    continue;
+                }
+                var hdr = new byte[headerSz];
+                while (true)
+                {
+                    if (seenFinal)
+                    {
+                        if (accum.Count > 0)
+                        {
+                            throw new ItbStreamAfterFinalException(
+                                StatusCode.StreamAfterFinal,
+                                "auth stream: trailing bytes after terminator");
+                        }
+                        break;
+                    }
+                    if (accum.Count < headerSz)
+                    {
+                        break;
+                    }
+                    for (var i = 0; i < headerSz; i++)
+                    {
+                        hdr[i] = accum[i];
+                    }
+                    var cl = ParseChunkLen(hdr);
+                    if (accum.Count < cl)
+                    {
+                        break;
+                    }
+                    var w = StreamAuthInternal.ReadBe16(hdr, headerSz - 4);
+                    var h = StreamAuthInternal.ReadBe16(hdr, headerSz - 2);
+                    var pixels = (ulong)w * (ulong)h;
+                    var chunk = new byte[cl];
+                    accum.CopyTo(0, chunk, 0, cl);
+                    accum.RemoveRange(0, cl);
+                    var (pt, ff) = StreamAuthEasy.Consume(
+                        _handle, chunk, streamId, cumPixels);
+                    output.Write(pt, 0, pt.Length);
+                    Array.Clear(pt, 0, pt.Length);
+                    cumPixels += pixels;
+                    if (ff)
+                    {
+                        seenFinal = true;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            GC.KeepAlive(this);
+        }
     }
 
     /// <summary>

@@ -31,6 +31,8 @@ go build -trimpath "${TAGS[@]}" -buildmode=c-shared \
 
 cd "$REPO_ROOT/bindings/dlang"
 COMPILER="${COMPILER:-dmd}"
+echo "==> cleaning previous D-binding build artefacts (dub clean)"
+dub clean 2>/dev/null || true
 echo "==> building D binding (dub build, compiler=$COMPILER)"
 dub build --compiler="$COMPILER"
 

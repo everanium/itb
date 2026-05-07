@@ -50,6 +50,16 @@ package Itb.Errors is
    --  of libitb knows how to parse.
    Itb_Blob_Version_Too_New_Error : exception;
 
+   --  Streaming AEAD: input exhausted without observing a chunk whose
+   --  recovered final_flag is set. Surfaced by the auth-stream decrypt
+   --  loop on truncate-tail.
+   Itb_Stream_Truncated_Error     : exception;
+
+   --  Streaming AEAD: extra chunk bytes followed the terminating
+   --  chunk. Surfaced by the auth-stream decrypt loop when a
+   --  transcript carries data past the terminator.
+   Itb_Stream_After_Final_Error   : exception;
+
    --  Accessors over the structured Exception_Message format. Return
    --  zero / empty when the payload is malformed (e.g. an Itb_Error
    --  re-raised with a non-canonical message).

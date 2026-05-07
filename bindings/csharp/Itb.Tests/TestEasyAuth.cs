@@ -16,6 +16,7 @@ using Itb.Native;
 
 namespace Itb.Tests;
 
+[Collection(TestCollections.MismatchField)]
 public sealed class TestEasyAuth
 {
     /// <summary>Three canonical MACs shipped through libitb's MAC

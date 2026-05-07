@@ -73,6 +73,167 @@ chunked I/O, error paths, lockSeed lifecycle.
    directory levels up from `bindings/python/itb/_ffi.py`.
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while
+preserving the deniability of the per-chunk MAC-Inside-Encrypt
+container. Each chunk's MAC binds the encrypted payload to a 32-byte
+CSPRNG stream anchor (written as a once-per-stream wire prefix), the
+cumulative pixel offset of preceding chunks, and a final-flag bit —
+defending against chunk reorder, replay within or across streams
+sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
+The wire format adds 32 bytes of stream prefix plus one byte of
+encrypted trailing flag per chunk; no externally visible MAC tag.
+
+The two examples below encrypt a 64 MiB random source file in 16 MiB
+chunks and verify a sha256 round-trip on the decrypted output.
+Production deployments typically encrypt files at 1 GiB+ scale through
+the same loop pattern; the chunk size selection (16 MiB here) controls
+per-iteration memory residency.
+
+**Easy Mode example.** `Encryptor.encrypt_stream_auth` consumes a
+binary file-like input, emits the on-wire transcript (32-byte
+`stream_id` prefix + chunked authenticated body) to a binary file-like
+output. The matching `decrypt_stream_auth` reverses the flow on the
+same encryptor. The MAC key is generated CSPRNG-fresh inside the
+encryptor at constructor time and is not exposed to the caller.
+
+```python
+import hashlib
+import os
+import itb
+
+SRC_PATH = "/tmp/64mb.src"
+ENC_PATH = "/tmp/64mb.enc"
+DST_PATH = "/tmp/64mb.dst"
+CHUNK_SIZE = 16 * 1024 * 1024
+
+def sha256_of(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+# Materialise a 64 MiB random source file once.
+if not os.path.exists(SRC_PATH) or os.path.getsize(SRC_PATH) != 64 * 1024 * 1024:
+    with open("/dev/urandom", "rb") as r, open(SRC_PATH, "wb") as w:
+        w.write(r.read(64 * 1024 * 1024))
+
+enc = itb.Encryptor(primitive="areion512", key_bits=1024,
+                    mac="hmac-blake3", mode=1)
+try:
+    with open(SRC_PATH, "rb") as fin, open(ENC_PATH, "wb") as fout:
+        enc.encrypt_stream_auth(fin, fout, chunk_size=CHUNK_SIZE)
+    with open(ENC_PATH, "rb") as fin, open(DST_PATH, "wb") as fout:
+        enc.decrypt_stream_auth(fin, fout, read_size=CHUNK_SIZE)
+finally:
+    enc.close()
+
+src_hash = sha256_of(SRC_PATH)
+dst_hash = sha256_of(DST_PATH)
+print(f"Easy Mode src sha256: {src_hash}")
+print(f"Easy Mode dst sha256: {dst_hash}")
+assert src_hash == dst_hash
+print("[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified")
+```
+
+**Build + run:**
+
+```sh
+# One-time install of the binding from the repo (editable mode).
+pip install -e ~/src/python
+
+# Place the source above in ~/src/python_example/main.py and run:
+cd ~/src/python_example && python3 main.py
+```
+
+The binding's library-lookup logic locates
+`~/src/dist/<os>-<arch>/libitb.so` automatically once the editable
+install resolves the `itb` package — no `ITB_LIBRARY_PATH` export is
+required when the shared library lives under the repository's
+canonical `dist/` tree. Override with `ITB_LIBRARY_PATH=/abs/path` to
+point at a non-canonical build.
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example.** Module-level free functions
+`itb.encrypt_stream_auth` / `itb.decrypt_stream_auth` take three
+explicit `Seed` handles plus an explicitly constructed `itb.MAC`
+(32-byte key drawn from `os.urandom`) and stream through the same
+chunked-AEAD construction. The seeds and MAC handle are caller-owned
+and must be freed when no longer needed.
+
+```python
+import hashlib
+import os
+import itb
+
+SRC_PATH = "/tmp/64mb.src"
+ENC_PATH = "/tmp/64mb.enc"
+DST_PATH = "/tmp/64mb.dst"
+CHUNK_SIZE = 16 * 1024 * 1024
+
+def sha256_of(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+noise = itb.Seed("areion512", 1024)
+data  = itb.Seed("areion512", 1024)
+start = itb.Seed("areion512", 1024)
+mac_key = os.urandom(32)
+mac = itb.MAC("hmac-blake3", mac_key)
+try:
+    with open(SRC_PATH, "rb") as fin, open(ENC_PATH, "wb") as fout:
+        itb.encrypt_stream_auth(noise, data, start, mac, fin, fout,
+                                chunk_size=CHUNK_SIZE)
+    with open(ENC_PATH, "rb") as fin, open(DST_PATH, "wb") as fout:
+        itb.decrypt_stream_auth(noise, data, start, mac, fin, fout,
+                                read_size=CHUNK_SIZE)
+finally:
+    mac.free()
+    noise.free(); data.free(); start.free()
+
+src_hash = sha256_of(SRC_PATH)
+dst_hash = sha256_of(DST_PATH)
+print(f"Low-Level src sha256: {src_hash}")
+print(f"Low-Level dst sha256: {dst_hash}")
+assert src_hash == dst_hash
+print("[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified")
+```
+
+**Build + run:**
+
+```sh
+cd ~/src/python_example && python3 main.py
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+The full-flow examples use `areion512` PRF + 1024-bit ITB key +
+`hmac-blake3` authenticator. The Easy Mode `Encryptor` constructor
+does not accept a `mac_key` parameter — the MAC key is allocated
+CSPRNG-fresh at construction time and lives entirely inside the
+encryptor. The 32-byte `mac_key` argument shape applies only to the
+low-level `itb.MAC(name, key)` constructor.
+
 ## Quick Start — `itb.Encryptor` (recommended high-level surface, no MAC)
 
 The high-level :class:`itb.Encryptor` (mirroring the

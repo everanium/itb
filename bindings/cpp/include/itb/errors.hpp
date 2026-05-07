@@ -63,6 +63,9 @@ inline constexpr int kBlobMalformed               = ITB_BLOB_MALFORMED;
 inline constexpr int kBlobVersionTooNew           = ITB_BLOB_VERSION_TOO_NEW;
 inline constexpr int kBlobTooManyOpts             = ITB_BLOB_TOO_MANY_OPTS;
 
+inline constexpr int kStreamTruncated             = ITB_STREAM_TRUNCATED;
+inline constexpr int kStreamAfterFinal            = ITB_STREAM_AFTER_FINAL;
+
 inline constexpr int kInternal                    = ITB_INTERNAL;
 
 // Returns a stable string name for a status code, or `"unknown"` for
@@ -93,6 +96,8 @@ inline std::string_view name(int code) noexcept {
     case kBlobMalformed:               return "BLOB_MALFORMED";
     case kBlobVersionTooNew:           return "BLOB_VERSION_TOO_NEW";
     case kBlobTooManyOpts:             return "BLOB_TOO_MANY_OPTS";
+    case kStreamTruncated:             return "STREAM_TRUNCATED";
+    case kStreamAfterFinal:            return "STREAM_AFTER_FINAL";
     case kInternal:                    return "INTERNAL";
     default:                           return "unknown";
     }
@@ -224,6 +229,26 @@ public:
     ItbBlobVersionTooNewError() : ItbError{status::kBlobVersionTooNew} {}
 };
 
+// `STATUS_STREAM_TRUNCATED` — Streaming AEAD decoder reached
+// end-of-input without observing the terminating chunk
+// (`final_flag = 1`). Indicates the wire transcript was cut short;
+// the decoder is fail-stop and emits no plaintext.
+class ItbStreamTruncatedError : public ItbError {
+public:
+    using ItbError::ItbError;
+    ItbStreamTruncatedError() : ItbError{status::kStreamTruncated} {}
+};
+
+// `STATUS_STREAM_AFTER_FINAL` — Streaming AEAD decoder observed
+// extra chunk bytes following the terminating chunk. Indicates an
+// adversary appended forged chunks past the legitimate end of the
+// transcript.
+class ItbStreamAfterFinalError : public ItbError {
+public:
+    using ItbError::ItbError;
+    ItbStreamAfterFinalError() : ItbError{status::kStreamAfterFinal} {}
+};
+
 // ---- last_mismatch_field implementation --------------------------
 //
 // Defined here, after `ItbError`, so the contract-violation paths
@@ -295,6 +320,10 @@ namespace detail {
         throw ItbBlobMalformedError{rc, std::move(message)};
     case status::kBlobVersionTooNew:
         throw ItbBlobVersionTooNewError{rc, std::move(message)};
+    case status::kStreamTruncated:
+        throw ItbStreamTruncatedError{rc, std::move(message)};
+    case status::kStreamAfterFinal:
+        throw ItbStreamAfterFinalError{rc, std::move(message)};
     default:
         throw ItbError{rc, std::move(message)};
     }

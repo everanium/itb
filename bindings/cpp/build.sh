@@ -37,8 +37,12 @@ case "${1:-}" in
 esac
 
 # Step 1 + 2 — delegate to the C binding's build.sh which chains
-# libitb.so + libitb_c.a in one step.
+# libitb.so + libitb_c.a in one step. The chained call performs its
+# own `make clean` against the C binding's tree before rebuilding.
 cd "$SCRIPT_DIR"
+echo "==> cleaning previous C++ build artefacts (make clean)"
+make clean 2>/dev/null || true
+mkdir -p tests/build bench/build
 echo "==> chaining ../c/build.sh ${NOITBASM}"
 (cd ../c && ./build.sh ${NOITBASM:+$NOITBASM})
 

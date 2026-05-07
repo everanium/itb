@@ -97,6 +97,110 @@ chunked I/O, error paths, lockSeed lifecycle.
    `dist/<os>-<arch>/`).
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while preserving the deniability of the per-chunk MAC-Inside-Encrypt container. Each chunk's MAC binds the encrypted payload to a 32-byte CSPRNG stream anchor (written as a once-per-stream wire prefix), the cumulative pixel offset of preceding chunks, and a final-flag bit — defending against chunk reorder, replay within or across streams sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail. The wire format adds 32 bytes of stream prefix plus one byte of encrypted trailing flag per chunk; no externally visible MAC tag.
+
+**Easy Mode example:**
+
+`Encryptor::encrypt_stream_auth` accepts any `Read`-implementing source and any `Write`-implementing sink. Buffered file readers / writers are the typical choice for production-scale plaintext / ciphertext on disk. The MAC key is allocated CSPRNG-fresh inside the encryptor at construction time.
+
+```rust,no_run
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+
+const SRC_PATH: &str = "/tmp/64mb.src";
+const ENC_PATH: &str = "/tmp/64mb.enc";
+const DST_PATH: &str = "/tmp/64mb.dst";
+const CHUNK_SIZE: usize = 16 * 1024 * 1024;
+
+let mut enc = itb::Encryptor::new(Some("areion512"), Some(1024),
+                                  Some("hmac-blake3"), 1)?;
+{
+    let fin  = BufReader::new(File::open(SRC_PATH)?);
+    let fout = BufWriter::new(File::create(ENC_PATH)?);
+    enc.encrypt_stream_auth(fin, fout, CHUNK_SIZE)?;
+}
+{
+    let fin  = BufReader::new(File::open(ENC_PATH)?);
+    let fout = BufWriter::new(File::create(DST_PATH)?);
+    enc.decrypt_stream_auth(fin, fout, CHUNK_SIZE)?;
+}
+enc.close()?;
+```
+
+**Build + run:**
+
+```toml
+# ~/src/itb_stream_auth_example/Cargo.toml
+[package]
+name = "itb_stream_auth_example"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+itb = { path = "~/src/rust" }
+
+[[bin]]
+name = "main"
+path = "main.rs"
+```
+
+```sh
+cd ~/src/itb_stream_auth_example && cargo run --release
+```
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example:**
+
+Free functions `itb::encrypt_stream_auth` / `itb::decrypt_stream_auth` take three explicit `Seed` references plus an `itb::MAC` (32-byte key from `/dev/urandom`) and stream through the same chunked-AEAD construction. The seeds and MAC handle are caller-owned and dropped at scope exit.
+
+```rust,no_run
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read};
+
+let noise = itb::Seed::new("areion512", 1024)?;
+let data  = itb::Seed::new("areion512", 1024)?;
+let start = itb::Seed::new("areion512", 1024)?;
+let mut mac_key = [0u8; 32];
+File::open("/dev/urandom")?.read_exact(&mut mac_key)?;
+let mac = itb::MAC::new("hmac-blake3", &mac_key)?;
+
+{
+    let fin  = BufReader::new(File::open(SRC_PATH)?);
+    let fout = BufWriter::new(File::create(ENC_PATH)?);
+    itb::encrypt_stream_auth(&noise, &data, &start, &mac, fin, fout, CHUNK_SIZE)?;
+}
+{
+    let fin  = BufReader::new(File::open(ENC_PATH)?);
+    let fout = BufWriter::new(File::create(DST_PATH)?);
+    itb::decrypt_stream_auth(&noise, &data, &start, &mac, fin, fout, CHUNK_SIZE)?;
+}
+```
+
+**Build + run:**
+
+```sh
+cd ~/src/itb_stream_auth_example && cargo run --release
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
 ## Quick Start — `itb::Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 The high-level [`Encryptor`] (mirroring the

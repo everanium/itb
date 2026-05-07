@@ -71,8 +71,9 @@ module itb.encryptor;
 import std.conv : to;
 import std.string : toStringz;
 
-import itb.errors : check, ITBError, raiseFor,
-    readBytes, readLastMismatchField, readString;
+import itb.errors : check, ITBError, ITBStreamAfterFinalError,
+    ITBStreamTruncatedError, raiseFor, readBytes, readLastMismatchField,
+    readString;
 import itb.status : Status;
 import itb.sys;
 
@@ -617,6 +618,166 @@ struct Encryptor
         return _cipherCall(&ITB_Easy_DecryptAuth, ciphertext);
     }
 
+    /// Reads plaintext from `reader` until EOF, encrypts in chunks of
+    /// `chunkSize` under the encryptor's bound config + MAC, and
+    /// writes the 32-byte CSPRNG `stream_id` prefix followed by
+    /// concatenated authenticated chunks via `writer`.
+    ///
+    /// Closed-state preflight: throws `ITBError(Status.EasyClosed)`
+    /// when the encryptor has been closed / freed.
+    void encryptStreamAuth(
+        scope size_t delegate(ubyte[]) @trusted reader,
+        scope void delegate(const(ubyte)[]) @trusted writer,
+        size_t chunkSize) @trusted
+    {
+        _checkOpen();
+        if (chunkSize == 0)
+            throw new ITBError(Status.BadInput, "chunkSize must be positive");
+        if (reader is null)
+            throw new ITBError(Status.BadInput, "reader delegate must be non-null");
+        if (writer is null)
+            throw new ITBError(Status.BadInput, "writer delegate must be non-null");
+
+        ubyte[STREAM_AUTH_ID_LEN] streamID = _easyGenerateStreamID();
+        size_t hsz = cast(size_t) easyHeaderSize();
+        writer(streamID[]);
+
+        ulong cum = 0;
+        ubyte[] buf;
+        ubyte[] readBuf = new ubyte[chunkSize];
+        bool eof = false;
+        // Deferred-final pattern: drain reads until buf > chunkSize,
+        // emit one non-terminal chunk; on EOF emit residual as
+        // terminal (possibly empty).
+        while (!eof)
+        {
+            while (buf.length <= chunkSize && !eof)
+            {
+                size_t n = reader(readBuf);
+                if (n == 0)
+                {
+                    eof = true;
+                    break;
+                }
+                buf ~= readBuf[0 .. n];
+            }
+            if (buf.length > chunkSize)
+            {
+                ubyte[] chunk = buf[0 .. chunkSize].dup;
+                buf[0 .. chunkSize] = 0;
+                buf = buf[chunkSize .. $];
+                ubyte[] ct = _easyEmitChunkAuth(chunk, streamID, cum, false);
+                chunk[] = 0;
+                if (ct.length >= hsz)
+                {
+                    size_t w = (cast(size_t) ct[hsz - 4] << 8) | cast(size_t) ct[hsz - 3];
+                    size_t h = (cast(size_t) ct[hsz - 2] << 8) | cast(size_t) ct[hsz - 1];
+                    cum += cast(ulong) w * cast(ulong) h;
+                }
+                writer(ct);
+            }
+        }
+        // Residual (possibly empty) as terminating chunk.
+        ubyte[] tailChunk = buf.dup;
+        buf[] = 0;
+        ubyte[] tailCt = _easyEmitChunkAuth(tailChunk, streamID, cum, true);
+        tailChunk[] = 0;
+        writer(tailCt);
+        readBuf[] = 0;
+    }
+
+    /// Reads an authenticated stream transcript from `reader` and
+    /// writes the recovered plaintext via `writer`. Throws
+    /// `ITBStreamTruncatedError` when input exhausts without a
+    /// terminating chunk, `ITBStreamAfterFinalError` when bytes
+    /// follow a terminator, and `ITBError(Status.MACFailure)` on
+    /// tampered transcript.
+    void decryptStreamAuth(
+        scope size_t delegate(ubyte[]) @trusted reader,
+        scope void delegate(const(ubyte)[]) @trusted writer,
+        size_t readSize) @trusted
+    {
+        _checkOpen();
+        if (readSize == 0)
+            throw new ITBError(Status.BadInput, "readSize must be positive");
+        if (reader is null)
+            throw new ITBError(Status.BadInput, "reader delegate must be non-null");
+        if (writer is null)
+            throw new ITBError(Status.BadInput, "writer delegate must be non-null");
+
+        size_t hsz = cast(size_t) easyHeaderSize();
+        ubyte[] accum;
+        ubyte[] readBuf = new ubyte[readSize];
+        ubyte[STREAM_AUTH_ID_LEN] streamID;
+        size_t sidHave = 0;
+        ulong cum = 0;
+        bool seenFinal = false;
+
+        void drain() @trusted
+        {
+            while (true)
+            {
+                if (seenFinal)
+                {
+                    if (accum.length > 0)
+                        throw new ITBStreamAfterFinalError(Status.StreamAfterFinal,
+                            "auth stream: trailing bytes after terminator");
+                    return;
+                }
+                if (accum.length < hsz)
+                    return;
+                // Per-instance parseChunkLen — uses this encryptor's
+                // configured nonceBits.
+                size_t chunkLen = this.parseChunkLen(accum[0 .. hsz]);
+                if (accum.length < chunkLen)
+                    return;
+                size_t w = (cast(size_t) accum[hsz - 4] << 8) | cast(size_t) accum[hsz - 3];
+                size_t h = (cast(size_t) accum[hsz - 2] << 8) | cast(size_t) accum[hsz - 1];
+                ulong pixels = cast(ulong) w * cast(ulong) h;
+                ubyte[] chunk = accum[0 .. chunkLen].dup;
+                accum = accum[chunkLen .. $];
+                bool ff = false;
+                ubyte[] pt = _easyConsumeChunkAuth(chunk, streamID, cum, ff);
+                writer(pt);
+                pt[] = 0;
+                cum += pixels;
+                if (ff)
+                    seenFinal = true;
+            }
+        }
+
+        while (true)
+        {
+            size_t n = reader(readBuf);
+            if (n == 0)
+                break;
+            size_t off = 0;
+            if (sidHave < STREAM_AUTH_ID_LEN)
+            {
+                size_t need = STREAM_AUTH_ID_LEN - sidHave;
+                size_t take = n < need ? n : need;
+                streamID[sidHave .. sidHave + take] = readBuf[0 .. take];
+                sidHave += take;
+                off = take;
+            }
+            if (off < n)
+                accum ~= readBuf[off .. n];
+            if (sidHave == STREAM_AUTH_ID_LEN)
+                drain();
+        }
+        if (sidHave < STREAM_AUTH_ID_LEN)
+        {
+            readBuf[] = 0;
+            throw new ITBError(Status.BadInput,
+                "auth stream: 32-byte stream prefix incomplete");
+        }
+        drain();
+        readBuf[] = 0;
+        if (!seenFinal)
+            throw new ITBStreamTruncatedError(Status.StreamTruncated,
+                "auth stream: terminator never observed");
+    }
+
     // ─── Per-instance configuration setters ──────────────────────────
 
     /// Override the nonce size for this encryptor's subsequent
@@ -819,7 +980,13 @@ struct Encryptor
     /// Computes the saturating output-cache capacity estimate for a
     /// payload of size `n`. Caps at `size_t.max` on overflow rather
     /// than wrapping, so the first cipher call never under-allocates
-    /// silently on pathologically large payloads.
+    /// silently on pathologically large payloads. The 128 KiB
+    /// constant (1.25x multiplier + 128 KiB pad + 128 KiB floor)
+    /// absorbs the residual expansion from non-default barrier-fill
+    /// values up to 32, where the absolute ratio reaches ~1.346
+    /// around the 1 MiB payload region; it also acts as the floor
+    /// for very-small payloads (Triple + auth-MAC + bf=32 at ptlen=1
+    /// expands to ~35 KiB).
     private static size_t _saturatingExpansion(size_t n) @safe @nogc nothrow pure
     {
         // n * 5 / 4 with overflow-safe arithmetic.
@@ -829,11 +996,11 @@ struct Encryptor
         else
             mul = (n * 5) / 4;
         size_t add;
-        if (mul > size_t.max - 4096)
+        if (mul > size_t.max - 131072)
             add = size_t.max;
         else
-            add = mul + 4096;
-        return add < 4096 ? 4096 : add;
+            add = mul + 131072;
+        return add < 131072 ? 131072 : add;
     }
 
     /// Ensures the output cache has at least `need` bytes of
@@ -846,7 +1013,7 @@ struct Encryptor
             return;
         if (_outCache.length > 0)
             _outCache[] = 0;
-        size_t cap = need < 4096 ? 4096 : need;
+        size_t cap = need < 131072 ? 131072 : need;
         _outCache = new ubyte[cap];
     }
 
@@ -869,5 +1036,105 @@ struct Encryptor
     {
         if (_closed || _handle == 0)
             throw new ITBError(Status.EasyClosed, "encryptor has been closed");
+    }
+
+    // ─── Streaming AEAD helpers ─────────────────────────────────────
+
+    private enum size_t STREAM_AUTH_ID_LEN = 32;
+
+    /// Generates a CSPRNG-fresh 32-byte Streaming AEAD anchor by
+    /// piggybacking on libitb's CSPRNG.
+    private ubyte[STREAM_AUTH_ID_LEN] _easyGenerateStreamID() @trusted
+    {
+        import std.string : toStringz;
+        ubyte[STREAM_AUTH_ID_LEN] out_;
+        ulong[8] comps = [1, 2, 3, 4, 5, 6, 7, 8];
+        size_t handle = 0;
+        const(char)* cname = toStringz("blake3");
+        int rc = ITB_NewSeedFromComponents(
+            cast(char*) cname,
+            comps.ptr, cast(int) comps.length,
+            null, 0,
+            &handle);
+        check(rc);
+        size_t got = 0;
+        rc = ITB_GetSeedHashKey(handle, out_.ptr, STREAM_AUTH_ID_LEN, &got);
+        int freeRc = ITB_FreeSeed(handle);
+        check(rc);
+        if (freeRc != Status.OK)
+            raiseFor(freeRc);
+        if (got != STREAM_AUTH_ID_LEN)
+            throw new ITBError(Status.Internal,
+                "stream_id CSPRNG draw returned wrong byte count");
+        return out_;
+    }
+
+    private ubyte[] _easyEmitChunkAuth(
+        const(ubyte)[] plaintext,
+        ref ubyte[STREAM_AUTH_ID_LEN] streamID,
+        ulong cumPixels,
+        bool finalFlag) @trusted
+    {
+        void* inPtr = plaintext.length == 0 ? null : cast(void*) plaintext.ptr;
+        int ff = finalFlag ? 1 : 0;
+        size_t need = 0;
+        int rc = ITB_Easy_EncryptStreamAuth(
+            _handle,
+            inPtr, plaintext.length,
+            streamID.ptr, cumPixels, ff,
+            null, 0, &need);
+        if (rc == Status.OK)
+            return [];
+        if (rc != Status.BufferTooSmall)
+            raiseFor(rc);
+        if (need == 0)
+            return [];
+        ubyte[] outBuf = new ubyte[need];
+        size_t written = 0;
+        rc = ITB_Easy_EncryptStreamAuth(
+            _handle,
+            inPtr, plaintext.length,
+            streamID.ptr, cumPixels, ff,
+            cast(void*) outBuf.ptr, outBuf.length, &written);
+        check(rc);
+        return outBuf[0 .. written];
+    }
+
+    private ubyte[] _easyConsumeChunkAuth(
+        const(ubyte)[] ciphertext,
+        ref ubyte[STREAM_AUTH_ID_LEN] streamID,
+        ulong cumPixels,
+        out bool finalFlagOut) @trusted
+    {
+        void* inPtr = ciphertext.length == 0 ? null : cast(void*) ciphertext.ptr;
+        size_t need = 0;
+        int ff = 0;
+        int rc = ITB_Easy_DecryptStreamAuth(
+            _handle,
+            inPtr, ciphertext.length,
+            streamID.ptr, cumPixels,
+            null, 0, &need, &ff);
+        if (rc == Status.OK)
+        {
+            finalFlagOut = ff != 0;
+            return [];
+        }
+        if (rc != Status.BufferTooSmall)
+            raiseFor(rc);
+        if (need == 0)
+        {
+            finalFlagOut = ff != 0;
+            return [];
+        }
+        ubyte[] outBuf = new ubyte[need];
+        size_t written = 0;
+        rc = ITB_Easy_DecryptStreamAuth(
+            _handle,
+            inPtr, ciphertext.length,
+            streamID.ptr, cumPixels,
+            cast(void*) outBuf.ptr, outBuf.length, &written, &ff);
+        check(rc);
+        finalFlagOut = ff != 0;
+        return outBuf[0 .. written];
     }
 }

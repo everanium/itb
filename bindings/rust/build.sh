@@ -28,6 +28,8 @@ go build -trimpath "${TAGS[@]}" -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
 
 cd "$REPO_ROOT/bindings/rust"
+echo "==> cleaning previous Rust-binding build artefacts (cargo clean)"
+cargo clean 2>/dev/null || true
 echo "==> building Rust binding (cargo build --release)"
 cargo build --release
 

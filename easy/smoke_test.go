@@ -91,21 +91,6 @@ func TestSmokeStreamRoundtrip(t *testing.T) {
 	}
 }
 
-// TestSmokeStreamAuthStub verifies the EncryptStreamAuth /
-// DecryptStreamAuth methods return ErrStreamAuthNotImplemented per
-// the v1 stub policy.
-func TestSmokeStreamAuthStub(t *testing.T) {
-	enc := easy.New()
-	noop := func(chunk []byte) error { return nil }
-
-	if err := enc.EncryptStreamAuth([]byte("x"), noop); err != easy.ErrStreamAuthNotImplemented {
-		t.Errorf("EncryptStreamAuth: got %v, want ErrStreamAuthNotImplemented", err)
-	}
-	if err := enc.DecryptStreamAuth([]byte("x"), noop); err != easy.ErrStreamAuthNotImplemented {
-		t.Errorf("DecryptStreamAuth: got %v, want ErrStreamAuthNotImplemented", err)
-	}
-}
-
 // TestSmokeGettersDefensiveCopy verifies the inspection getters
 // return defensive copies — mutating the returned slice does not
 // disturb the encryptor's internal state.

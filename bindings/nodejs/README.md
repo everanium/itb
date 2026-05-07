@@ -110,6 +110,194 @@ lifecycle. `npm test` compiles the source + tests through
    `dist/` / `dist-test/` / `dist-bench/` layouts all resolve).
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while
+preserving the deniability of the per-chunk MAC-Inside-Encrypt
+container. Each chunk's MAC binds the encrypted payload to a 32-byte
+CSPRNG stream anchor (written as a once-per-stream wire prefix), the
+cumulative pixel offset of preceding chunks, and a final-flag bit —
+defending against chunk reorder, replay within or across streams
+sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
+The wire format adds 32 bytes of stream prefix plus one byte of
+encrypted trailing flag per chunk; no externally visible MAC tag.
+
+The two examples below encrypt a 64 MiB random source file in 16 MiB
+chunks and verify a sha256 round-trip on the decrypted output.
+Production deployments typically encrypt files at 1 GiB+ scale through
+the same loop pattern; the chunk size selection (16 MiB here) controls
+per-iteration memory residency.
+
+**Easy Mode example.** `Encryptor.encryptStreamAuth` accepts any
+`Readable` source and any `Writable` sink; `fs.createReadStream` /
+`fs.createWriteStream` are the typical production-scale choices. Both
+stream-auth methods return a Promise that settles when the per-chunk
+loop completes. The MAC key is allocated CSPRNG-fresh inside the
+encryptor at constructor time.
+
+```javascript
+import { createReadStream, createWriteStream, existsSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { Encryptor } from 'itb';
+
+const SRC_PATH = '/tmp/64mb.src';
+const ENC_PATH = '/tmp/64mb.enc';
+const DST_PATH = '/tmp/64mb.dst';
+const CHUNK_SIZE = 16 * 1024 * 1024;
+
+async function sha256Of(path) {
+  const h = createHash('sha256');
+  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) {
+    h.update(chunk);
+  }
+  return h.digest('hex');
+}
+
+// Materialise a 64 MiB random source file once.
+if (!existsSync(SRC_PATH) || statSync(SRC_PATH).size !== 64 * 1024 * 1024) {
+  writeFileSync(SRC_PATH, randomBytes(64 * 1024 * 1024));
+}
+
+const enc = new Encryptor('areion512', 1024, 'hmac-blake3', 1);
+try {
+  await enc.encryptStreamAuth(
+    createReadStream(SRC_PATH, { highWaterMark: CHUNK_SIZE }),
+    createWriteStream(ENC_PATH),
+    CHUNK_SIZE,
+  );
+  await enc.decryptStreamAuth(
+    createReadStream(ENC_PATH, { highWaterMark: CHUNK_SIZE }),
+    createWriteStream(DST_PATH),
+  );
+} finally {
+  enc.close();
+}
+
+const srcHash = await sha256Of(SRC_PATH);
+const dstHash = await sha256Of(DST_PATH);
+console.log(`Easy Mode src sha256: ${srcHash}`);
+console.log(`Easy Mode dst sha256: ${dstHash}`);
+if (srcHash !== dstHash) throw new Error('Easy Mode: sha256 mismatch');
+console.log('[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified');
+```
+
+**Build + run:**
+
+The example project's `package.json` declares a single local-file
+dependency on the binding:
+
+```json
+{
+  "name": "itb-stream-aead-example",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "itb": "file:~/src/nodejs"
+  }
+}
+```
+
+Place the source above in `~/src/nodejs_example/main.mjs`, then:
+
+```sh
+cd ~/src/nodejs_example && npm install && node main.mjs
+```
+
+The binding's `koffi.load` resolver locates
+`~/src/dist/<os>-<arch>/libitb.so` automatically once `npm install`
+materialises `node_modules/itb` — no `ITB_LIBRARY_PATH` export is
+required when the shared library lives under the repository's
+canonical `dist/` tree. Override with `ITB_LIBRARY_PATH=/abs/path` to
+point at a non-canonical build.
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example.** Module-level free functions
+`encryptStreamAuth` / `decryptStreamAuth` take three explicit `Seed`
+handles plus a `MAC` instance (32-byte key drawn via
+`crypto.randomBytes(32)`) and stream through the same chunked-AEAD
+construction. Seed and MAC handles are explicitly freed at the end of
+the loop.
+
+```javascript
+import { createReadStream, createWriteStream } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { Seed, MAC, encryptStreamAuth, decryptStreamAuth } from 'itb';
+
+const SRC_PATH = '/tmp/64mb.src';
+const ENC_PATH = '/tmp/64mb.enc';
+const DST_PATH = '/tmp/64mb.dst';
+const CHUNK_SIZE = 16 * 1024 * 1024;
+
+async function sha256Of(path) {
+  const h = createHash('sha256');
+  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) {
+    h.update(chunk);
+  }
+  return h.digest('hex');
+}
+
+const noise = new Seed('areion512', 1024);
+const data  = new Seed('areion512', 1024);
+const start = new Seed('areion512', 1024);
+const macKey = randomBytes(32);
+const mac = new MAC('hmac-blake3', macKey);
+try {
+  await encryptStreamAuth(
+    noise, data, start, mac,
+    createReadStream(SRC_PATH, { highWaterMark: CHUNK_SIZE }),
+    createWriteStream(ENC_PATH),
+    CHUNK_SIZE,
+  );
+  await decryptStreamAuth(
+    noise, data, start, mac,
+    createReadStream(ENC_PATH, { highWaterMark: CHUNK_SIZE }),
+    createWriteStream(DST_PATH),
+  );
+} finally {
+  mac.free();
+  noise.free(); data.free(); start.free();
+}
+
+const srcHash = await sha256Of(SRC_PATH);
+const dstHash = await sha256Of(DST_PATH);
+console.log(`Low-Level src sha256: ${srcHash}`);
+console.log(`Low-Level dst sha256: ${dstHash}`);
+if (srcHash !== dstHash) throw new Error('Low-Level: sha256 mismatch');
+console.log('[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified');
+```
+
+**Build + run:**
+
+```sh
+cd ~/src/nodejs_example && node main.mjs
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+The Node.js binding's stream-auth methods are async and return
+Promises; every consumer must `await` the call (or chain `.then`) to
+drive the per-chunk loop to completion. Backpressure flows through
+Node.js's standard `Readable.pipe` buffering — the binding does not
+pull faster than the sink can absorb. Easy Mode mode parameter is the
+integer `1` for Single Ouroboros (`3` for Triple Ouroboros).
+Low-Level Mode does not carry a top-level mode parameter — Single vs
+Triple is selected by the seed-handle count passed in.
+
 ## Quick Start — `Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 The high-level `Encryptor` (mirroring the

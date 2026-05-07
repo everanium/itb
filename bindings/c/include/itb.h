@@ -114,6 +114,19 @@ typedef enum itb_status {
     ITB_BLOB_VERSION_TOO_NEW            = 21,
     ITB_BLOB_TOO_MANY_OPTS              = 22,
 
+    /* Binding-side Streaming AEAD diagnostics. The libitb ABI itself
+     * stops at code 22 — these two codes are introduced by the C
+     * binding's stream loop to attribute the two end-of-stream failure
+     * modes the per-chunk ABI cannot signal directly:
+     *   ITB_STREAM_TRUNCATED   : input ran out without observing a
+     *                            terminating chunk (final_flag == 1).
+     *   ITB_STREAM_AFTER_FINAL : extra chunk bytes followed the
+     *                            terminating chunk on the wire.
+     * The numeric values are private to the C binding and do not
+     * appear in the libitb header. */
+    ITB_STREAM_TRUNCATED                = 23,
+    ITB_STREAM_AFTER_FINAL              = 24,
+
     ITB_INTERNAL                        = 99
 } itb_status_t;
 
@@ -1168,6 +1181,123 @@ itb_status_t itb_stream_decrypt_triple(const itb_seed_t *noise,
                                        itb_stream_write_fn write_fn,
                                        void *write_user_ctx,
                                        size_t chunk_size);
+
+/* ------------------------------------------------------------------ */
+/* Authenticated streams (Streaming AEAD)                              */
+/* ------------------------------------------------------------------ */
+/*
+ * Streaming AEAD wrappers built on top of per-chunk libitb entry
+ * points. The on-wire transcript carries a 32-byte CSPRNG `stream_id`
+ * prefix once at stream start, followed by a sequence of ITB chunks
+ * each authenticated under the (stream_id, cumulative_pixel_offset,
+ * final_flag) binding tuple. The encoder helper generates the
+ * `stream_id`, writes the prefix, and tags the trailing chunk with
+ * `final_flag = true`; the decoder helper reads the prefix once and
+ * verifies every chunk under the same `stream_id`. Variants closed
+ * by the binding-side helper:
+ *
+ *   - Reorder of two chunks                  -> ITB_MAC_FAILURE
+ *   - Replay within a single stream          -> ITB_MAC_FAILURE
+ *   - Cross-stream replay sharing PRF/MAC    -> ITB_MAC_FAILURE
+ *   - Truncate-tail (drop last chunk)        -> ITB_STREAM_TRUNCATED
+ *   - Extra chunk past the terminating one   -> ITB_STREAM_AFTER_FINAL
+ *   - Stream-prefix tamper (32-byte header)  -> ITB_MAC_FAILURE
+ *
+ * The MAC handle (one per stream, allocated via itb_mac_new) is reused
+ * across every chunk; the helper does not free it. Same I/O contract,
+ * memory peak, and chunk_size > 0 preflight as the plain stream
+ * helpers above. Empty plaintext is permitted — a zero-byte stream
+ * emits the 32-byte `stream_id` prefix followed by a single
+ * terminating chunk carrying len=0 plaintext.
+ */
+
+/*
+ * Reads plaintext from `read_fn` until EOF, encrypts in chunks of
+ * `chunk_size` bytes (Single Ouroboros, Streaming AEAD), and writes
+ * the concatenated `stream_id || chunk_0 || chunk_1 || ...` transcript
+ * to `write_fn`. `chunk_size` MUST be > 0.
+ */
+itb_status_t itb_stream_encrypt_auth(const itb_seed_t *noise,
+                                     const itb_seed_t *data,
+                                     const itb_seed_t *start,
+                                     const itb_mac_t *mac,
+                                     itb_stream_read_fn read_fn, void *read_user_ctx,
+                                     itb_stream_write_fn write_fn, void *write_user_ctx,
+                                     size_t chunk_size);
+
+/*
+ * Reads a Streaming AEAD transcript from `read_fn` until EOF and
+ * writes the recovered plaintext to `write_fn`. Returns
+ * ITB_STREAM_TRUNCATED when input exhausts without a terminating
+ * chunk, ITB_STREAM_AFTER_FINAL when bytes follow the terminator,
+ * and ITB_MAC_FAILURE on any per-chunk MAC mismatch. `chunk_size`
+ * controls the read-buffer granularity and MUST be > 0.
+ */
+itb_status_t itb_stream_decrypt_auth(const itb_seed_t *noise,
+                                     const itb_seed_t *data,
+                                     const itb_seed_t *start,
+                                     const itb_mac_t *mac,
+                                     itb_stream_read_fn read_fn, void *read_user_ctx,
+                                     itb_stream_write_fn write_fn, void *write_user_ctx,
+                                     size_t chunk_size);
+
+/* Triple-Ouroboros (7-seed) counterpart of itb_stream_encrypt_auth. */
+itb_status_t itb_stream_encrypt_auth_triple(const itb_seed_t *noise,
+                                            const itb_seed_t *data1,
+                                            const itb_seed_t *data2,
+                                            const itb_seed_t *data3,
+                                            const itb_seed_t *start1,
+                                            const itb_seed_t *start2,
+                                            const itb_seed_t *start3,
+                                            const itb_mac_t *mac,
+                                            itb_stream_read_fn read_fn,
+                                            void *read_user_ctx,
+                                            itb_stream_write_fn write_fn,
+                                            void *write_user_ctx,
+                                            size_t chunk_size);
+
+/* Triple-Ouroboros (7-seed) counterpart of itb_stream_decrypt_auth. */
+itb_status_t itb_stream_decrypt_auth_triple(const itb_seed_t *noise,
+                                            const itb_seed_t *data1,
+                                            const itb_seed_t *data2,
+                                            const itb_seed_t *data3,
+                                            const itb_seed_t *start1,
+                                            const itb_seed_t *start2,
+                                            const itb_seed_t *start3,
+                                            const itb_mac_t *mac,
+                                            itb_stream_read_fn read_fn,
+                                            void *read_user_ctx,
+                                            itb_stream_write_fn write_fn,
+                                            void *write_user_ctx,
+                                            size_t chunk_size);
+
+/* ------------------------------------------------------------------ */
+/* Encryptor (Easy Mode) — Streaming AEAD                              */
+/* ------------------------------------------------------------------ */
+/*
+ * Encryptor-bound Streaming AEAD helpers. Reuse the encryptor's
+ * configured primitive / key-bits / mode / MAC closure; the per-call
+ * binding components (stream_id, cumulative_pixel_offset, final_flag)
+ * are managed by the helper internally. Encryptor's closed-state
+ * preflight (ITB_EASY_CLOSED) applies. Otherwise identical contract
+ * to the seed-based itb_stream_encrypt_auth / itb_stream_decrypt_auth
+ * — chunk_size > 0, callback I/O, ITB_STREAM_TRUNCATED /
+ * ITB_STREAM_AFTER_FINAL on the two end-of-stream failure modes.
+ */
+
+itb_status_t itb_encryptor_stream_encrypt_auth(itb_encryptor_t *e,
+                                               itb_stream_read_fn read_fn,
+                                               void *read_user_ctx,
+                                               itb_stream_write_fn write_fn,
+                                               void *write_user_ctx,
+                                               size_t chunk_size);
+
+itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
+                                               itb_stream_read_fn read_fn,
+                                               void *read_user_ctx,
+                                               itb_stream_write_fn write_fn,
+                                               void *write_user_ctx,
+                                               size_t chunk_size);
 
 #ifdef __cplusplus
 } /* extern "C" */

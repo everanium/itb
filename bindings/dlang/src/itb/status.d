@@ -52,5 +52,14 @@ enum Status : int
     BlobVersionTooNew        = 21,
     BlobTooManyOpts          = 22,
 
+    /// Streaming AEAD: input exhausted without observing a chunk
+    /// whose recovered final_flag is set. Surfaced by the auth-stream
+    /// decrypt loop on truncate-tail.
+    StreamTruncated          = 23,
+    /// Streaming AEAD: extra chunk bytes followed the terminating
+    /// chunk. Surfaced by the auth-stream decrypt loop when a
+    /// transcript carries data past final_flag = 1.
+    StreamAfterFinal         = 24,
+
     Internal                 = 99,
 }

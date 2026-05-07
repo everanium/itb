@@ -101,6 +101,191 @@ chunked I/O, error paths, lockSeed lifecycle.
    until a matching `dist/` folder is found.
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while
+preserving the deniability of the per-chunk MAC-Inside-Encrypt
+container. Each chunk's MAC binds the encrypted payload to a 32-byte
+CSPRNG stream anchor (written as a once-per-stream wire prefix), the
+cumulative pixel offset of preceding chunks, and a final-flag bit —
+defending against chunk reorder, replay within or across streams
+sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
+The wire format adds 32 bytes of stream prefix plus one byte of
+encrypted trailing flag per chunk; no externally visible MAC tag.
+
+The two examples below encrypt a 64 MiB random source file in 16 MiB
+chunks and verify a sha256 round-trip on the decrypted output.
+Production deployments typically encrypt files at 1 GiB+ scale through
+the same loop pattern; the chunk size selection (16 MiB here) controls
+per-iteration memory residency.
+
+**Easy Mode example.** `Encryptor.EncryptStreamAuth` accepts any
+`Stream` source and any `Stream` sink; `FileStream` opened via
+`File.OpenRead` / `File.Create` is the typical production-scale
+choice. The MAC key is allocated CSPRNG-fresh inside the encryptor at
+constructor time. `using` blocks drive deterministic disposal on both
+the encryptor and the file streams.
+
+```csharp
+using System.IO;
+using System.Security.Cryptography;
+using Itb;
+
+const string SRC_PATH = "/tmp/64mb.src";
+const string ENC_PATH = "/tmp/64mb.enc";
+const string DST_PATH = "/tmp/64mb.dst";
+const int CHUNK_SIZE = 16 * 1024 * 1024;
+
+static string Sha256Of(string path)
+{
+    using var sha = SHA256.Create();
+    using var fs = File.OpenRead(path);
+    return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+}
+
+// Materialise a 64 MiB random source file once.
+if (!File.Exists(SRC_PATH) || new FileInfo(SRC_PATH).Length != 64L * 1024 * 1024)
+{
+    byte[] buf = RandomNumberGenerator.GetBytes(64 * 1024 * 1024);
+    File.WriteAllBytes(SRC_PATH, buf);
+}
+
+using var enc = new Encryptor("areion512", 1024, "hmac-blake3", "single");
+using (var fin = File.OpenRead(SRC_PATH))
+using (var fout = File.Create(ENC_PATH))
+{
+    enc.EncryptStreamAuth(fin, fout, CHUNK_SIZE);
+}
+using (var fin = File.OpenRead(ENC_PATH))
+using (var fout = File.Create(DST_PATH))
+{
+    enc.DecryptStreamAuth(fin, fout, CHUNK_SIZE);
+}
+
+string srcHash = Sha256Of(SRC_PATH);
+string dstHash = Sha256Of(DST_PATH);
+Console.WriteLine($"Easy Mode src sha256: {srcHash}");
+Console.WriteLine($"Easy Mode dst sha256: {dstHash}");
+if (srcHash != dstHash) throw new Exception("Easy Mode: sha256 mismatch");
+Console.WriteLine("[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified");
+```
+
+**Build + run:**
+
+The example project carries a single `<ProjectReference>` to the
+binding's `Itb.csproj` and consumes the `Itb` namespace directly:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Example</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="~/src/csharp/Itb/Itb.csproj" />
+  </ItemGroup>
+</Project>
+```
+
+Place `Program.cs` (containing the source above) and `Example.csproj`
+under `~/src/csharp_example/`, then:
+
+```sh
+cd ~/src/csharp_example && dotnet run -c Release
+```
+
+The binding's `NativeLibrary` resolver locates
+`~/src/dist/<os>-<arch>/libitb.so` automatically once the project
+reference resolves the `Itb` assembly — no `ITB_LIBRARY_PATH` export
+is required when the shared library lives under the repository's
+canonical `dist/` tree. Override with `ITB_LIBRARY_PATH=/abs/path` to
+point at a non-canonical build.
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example.** Static functions on `StreamPipeline` take
+three explicit `Seed` handles plus an explicitly constructed `Mac`
+(32-byte key drawn via `RandomNumberGenerator.GetBytes(32)`) and
+stream through the same chunked-AEAD construction. Both seeds and MAC
+are `IDisposable` and bound to the same `using` discipline as the
+encryptor.
+
+```csharp
+using System.IO;
+using System.Security.Cryptography;
+using Itb;
+
+const string SRC_PATH = "/tmp/64mb.src";
+const string ENC_PATH = "/tmp/64mb.enc";
+const string DST_PATH = "/tmp/64mb.dst";
+const int CHUNK_SIZE = 16 * 1024 * 1024;
+
+static string Sha256Of(string path)
+{
+    using var sha = SHA256.Create();
+    using var fs = File.OpenRead(path);
+    return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+}
+
+using var noise = new Seed("areion512", 1024);
+using var data  = new Seed("areion512", 1024);
+using var start = new Seed("areion512", 1024);
+var macKey = RandomNumberGenerator.GetBytes(32);
+using var mac = new Mac("hmac-blake3", macKey);
+
+using (var fin = File.OpenRead(SRC_PATH))
+using (var fout = File.Create(ENC_PATH))
+{
+    StreamPipeline.EncryptStreamAuth(noise, data, start, mac, fin, fout, CHUNK_SIZE);
+}
+using (var fin = File.OpenRead(ENC_PATH))
+using (var fout = File.Create(DST_PATH))
+{
+    StreamPipeline.DecryptStreamAuth(noise, data, start, mac, fin, fout, CHUNK_SIZE);
+}
+
+string srcHash = Sha256Of(SRC_PATH);
+string dstHash = Sha256Of(DST_PATH);
+Console.WriteLine($"Low-Level src sha256: {srcHash}");
+Console.WriteLine($"Low-Level dst sha256: {dstHash}");
+if (srcHash != dstHash) throw new Exception("Low-Level: sha256 mismatch");
+Console.WriteLine("[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified");
+```
+
+**Build + run:**
+
+```sh
+cd ~/src/csharp_example && dotnet run -c Release
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+The C# binding's stream-auth surface accepts any `System.IO.Stream`
+subtype, so `FileStream`, `MemoryStream`, network sockets, and gzip /
+brotli decoders all participate uniformly without bespoke adapter
+types. Easy Mode `Encryptor` mode parameter is the case-insensitive
+string `"single"` for Single Ouroboros (or `"triple"` for the 7-seed
+Triple Ouroboros mode). Low-Level Mode does not carry a top-level mode
+parameter — Single vs Triple is selected by which `StreamPipeline`
+overload is invoked.
+
 ## Quick Start — `Itb.Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 The high-level `Encryptor` (mirroring the

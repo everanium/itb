@@ -381,3 +381,149 @@ export const ITB_Blob_Import = lib.func(
 export const ITB_Blob_Import3 = lib.func(
   'int ITB_Blob_Import3(uintptr_t handle, uint8_t *blob, size_t blobLen)',
 );
+
+// ──────────────────────────────────────────────────────────────────
+// Streaming AEAD per-chunk dispatch — Single Ouroboros (3 seeds + MAC).
+// streamID points to a 32-byte buffer (length fixed by the
+// Streaming AEAD construction). cumulativePixelOffset is the running
+// sum of W*H over preceding chunks; finalFlag is non-zero for the
+// terminating chunk. finalFlagOut on the decrypt side receives the
+// recovered flag value (0 / 1).
+// ──────────────────────────────────────────────────────────────────
+
+export const ITB_EncryptStreamAuthenticated128 = lib.func(
+  'int ITB_EncryptStreamAuthenticated128(' +
+    'uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+export const ITB_EncryptStreamAuthenticated256 = lib.func(
+  'int ITB_EncryptStreamAuthenticated256(' +
+    'uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+export const ITB_EncryptStreamAuthenticated512 = lib.func(
+  'int ITB_EncryptStreamAuthenticated512(' +
+    'uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+
+export const ITB_DecryptStreamAuthenticated128 = lib.func(
+  'int ITB_DecryptStreamAuthenticated128(' +
+    'uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
+export const ITB_DecryptStreamAuthenticated256 = lib.func(
+  'int ITB_DecryptStreamAuthenticated256(' +
+    'uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
+export const ITB_DecryptStreamAuthenticated512 = lib.func(
+  'int ITB_DecryptStreamAuthenticated512(' +
+    'uintptr_t noiseHandle, uintptr_t dataHandle, uintptr_t startHandle, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
+
+// Triple Ouroboros (7 seeds + MAC) per-chunk Streaming AEAD dispatch.
+
+export const ITB_EncryptStreamAuthenticated3x128 = lib.func(
+  'int ITB_EncryptStreamAuthenticated3x128(' +
+    'uintptr_t noiseHandle, ' +
+    'uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3, ' +
+    'uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+export const ITB_EncryptStreamAuthenticated3x256 = lib.func(
+  'int ITB_EncryptStreamAuthenticated3x256(' +
+    'uintptr_t noiseHandle, ' +
+    'uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3, ' +
+    'uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+export const ITB_EncryptStreamAuthenticated3x512 = lib.func(
+  'int ITB_EncryptStreamAuthenticated3x512(' +
+    'uintptr_t noiseHandle, ' +
+    'uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3, ' +
+    'uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+
+export const ITB_DecryptStreamAuthenticated3x128 = lib.func(
+  'int ITB_DecryptStreamAuthenticated3x128(' +
+    'uintptr_t noiseHandle, ' +
+    'uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3, ' +
+    'uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
+export const ITB_DecryptStreamAuthenticated3x256 = lib.func(
+  'int ITB_DecryptStreamAuthenticated3x256(' +
+    'uintptr_t noiseHandle, ' +
+    'uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3, ' +
+    'uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
+export const ITB_DecryptStreamAuthenticated3x512 = lib.func(
+  'int ITB_DecryptStreamAuthenticated3x512(' +
+    'uintptr_t noiseHandle, ' +
+    'uintptr_t dataHandle1, uintptr_t dataHandle2, uintptr_t dataHandle3, ' +
+    'uintptr_t startHandle1, uintptr_t startHandle2, uintptr_t startHandle3, ' +
+    'uintptr_t macHandle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
+
+// Easy-mode Streaming AEAD per-chunk dispatch (driven by the
+// encryptor handle rather than separate seed + MAC handles).
+
+export const ITB_Easy_EncryptStreamAuth = lib.func(
+  'int ITB_Easy_EncryptStreamAuth(uintptr_t handle, ' +
+    'uint8_t *plaintext, size_t ptlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, int finalFlag, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+export const ITB_Easy_DecryptStreamAuth = lib.func(
+  'int ITB_Easy_DecryptStreamAuth(uintptr_t handle, ' +
+    'uint8_t *ciphertext, size_t ctlen, ' +
+    'uint8_t *streamID, uint64_t cumulativePixelOffset, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen, ' +
+    '_Out_ int *finalFlagOut)',
+);
