@@ -1,11 +1,11 @@
-// bench_single.cpp — Easy-Mode Single-Ouroboros benchmarks for the C++
+// bench_single.cpp — Easy Mode Single-Ouroboros benchmarks for the C++
 // binding.
 //
 // Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the nine
 // PRF-grade primitives, locked at 1024-bit ITB key width and 16 MiB
 // CSPRNG-filled payload. One mixed-primitive variant
 // (itb::Encryptor::Mixed with BLAKE3 / BLAKE2s / BLAKE2b-256 +
-// Areion-SoEM-256 dedicated lockSeed) covers the Easy-Mode Mixed
+// Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
 // surface alongside the single-primitive grid.
 //
 // Run with:

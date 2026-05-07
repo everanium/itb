@@ -1,4 +1,4 @@
-// CLI dispatcher for the C# Easy-Mode bench harness.
+// CLI dispatcher for the C# Easy Mode bench harness.
 //
 // Two pass shapes are exposed:
 //

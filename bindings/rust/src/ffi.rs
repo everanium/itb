@@ -449,7 +449,7 @@ pub(crate) struct LibItb {
 
     // Streaming AEAD per-chunk ABI — three native hash widths
     // (128 / 256 / 512) for Single Ouroboros and Triple Ouroboros,
-    // both encrypt and decrypt. Plus the Easy-mode counterparts that
+    // both encrypt and decrypt. Plus the Easy Mode counterparts that
     // route per-chunk dispatch through the encryptor's bound config.
     pub(crate) ITB_EncryptStreamAuthenticated128: FnEncryptStreamAuth,
     pub(crate) ITB_EncryptStreamAuthenticated256: FnEncryptStreamAuth,

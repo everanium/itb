@@ -901,10 +901,24 @@ public sealed class StreamEncryptorAuth : IDisposable
     private readonly int _width;
     private readonly int _headerSize;
     private readonly byte[] _streamId;
-    private readonly List<byte> _buf = new();
+    // Contiguous staging buffer — sized to chunkSize + 1 so a single
+    // byte beyond the chunk boundary can sit there as the deferred-final
+    // probe. When _filled exceeds _chunkSize the leading _chunkSize
+    // bytes are emitted as non-terminal and the trailing residue
+    // (_filled - _chunkSize bytes) is shifted to staging[0]. On Close
+    // the residue is emitted as the terminating chunk.
+    private readonly byte[] _staging;
+    private int _filled;
     private ulong _cumPixels;
     private bool _closed;
     private bool _prefixEmitted;
+    // Per-stream output buffer cache for the per-chunk dispatcher
+    // (Bonus 1b in .NEXTBIND.md §7.1) — mirrors the per-encryptor
+    // _outputBuffer field on Encryptor but lives on the streaming
+    // class instance. Grown on demand by StreamAuthCipher.EmitSingle
+    // with the same wipe-on-grow + 1.25× + 128 KiB envelope shape as
+    // Encryptor.CipherCall; reused across every chunk's invocation.
+    private byte[] _outBuf = Array.Empty<byte>();
 
     /// <summary>
     /// Constructs a fresh authenticated stream encryptor.
@@ -937,6 +951,8 @@ public sealed class StreamEncryptorAuth : IDisposable
         _width = noise.Width;
         _headerSize = Library.HeaderSize;
         _streamId = StreamAuthInternal.GenerateStreamId();
+        // chunkSize + 1 holds the deferred-final probe byte.
+        _staging = new byte[chunkSize + 1];
     }
 
     private void EmitPrefix()
@@ -950,27 +966,33 @@ public sealed class StreamEncryptorAuth : IDisposable
 
     private void EmitOne(int plaintextLen, bool finalFlag)
     {
-        var chunkPt = new byte[plaintextLen];
-        for (var i = 0; i < plaintextLen; i++)
-        {
-            chunkPt[i] = _buf[i];
-            _buf[i] = 0;
-        }
-        if (plaintextLen > 0)
-        {
-            _buf.RemoveRange(0, plaintextLen);
-        }
-        var ct = StreamAuthCipher.EmitSingle(
+        var (ctBuf, ctLen) = StreamAuthCipher.EmitSingle(
             _width, _noise, _data, _start, _mac,
-            chunkPt, _streamId, _cumPixels, finalFlag);
-        Array.Clear(chunkPt, 0, chunkPt.Length);
-        if (ct.Length >= _headerSize)
+            _staging, plaintextLen, _streamId, _cumPixels, finalFlag,
+            ref _outBuf);
+        if (ctLen >= _headerSize)
         {
-            var w = StreamAuthInternal.ReadBe16(ct, _headerSize - 4);
-            var h = StreamAuthInternal.ReadBe16(ct, _headerSize - 2);
+            var w = StreamAuthInternal.ReadBe16(ctBuf, _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(ctBuf, _headerSize - 2);
             _cumPixels += (ulong)w * (ulong)h;
         }
-        _output.Write(ct, 0, ct.Length);
+        _output.Write(ctBuf, 0, ctLen);
+    }
+
+    /// <summary>
+    /// Wipes the per-stream output buffer cache. Mirrors the
+    /// wipe-on-Dispose discipline on
+    /// <see cref="Encryptor.WipeOutputBuffer"/>; called from
+    /// <see cref="Close"/> / <see cref="Dispose"/> so the most recent
+    /// chunk's ciphertext does not linger in heap garbage past stream
+    /// teardown.
+    /// </summary>
+    private void WipeOutBuf()
+    {
+        if (_outBuf.Length > 0)
+        {
+            Array.Clear(_outBuf, 0, _outBuf.Length);
+        }
     }
 
     /// <summary>
@@ -986,16 +1008,34 @@ public sealed class StreamEncryptorAuth : IDisposable
                 "write on closed StreamEncryptorAuth");
         }
         EmitPrefix();
-        for (var i = 0; i < data.Length; i++)
+        var consumed = 0;
+        while (consumed < data.Length)
         {
-            _buf.Add(data[i]);
-        }
-        // Keep at least one chunk's worth buffered until close() so
-        // the deferred-final pattern can decide whether to emit
-        // final_flag = true.
-        while (_buf.Count > _chunkSize)
-        {
-            EmitOne(_chunkSize, false);
+            // Fill staging up to chunkSize + 1 bytes (the +1 is the
+            // deferred-final probe).
+            var room = _staging.Length - _filled;
+            var take = Math.Min(room, data.Length - consumed);
+            data.Slice(consumed, take).CopyTo(
+                new Span<byte>(_staging, _filled, take));
+            _filled += take;
+            consumed += take;
+            // Keep at least one chunk's worth buffered until Close()
+            // so the deferred-final pattern can decide whether to emit
+            // final_flag = true. Only emit when more than _chunkSize
+            // bytes are present (one byte past the boundary).
+            if (_filled > _chunkSize)
+            {
+                EmitOne(_chunkSize, false);
+                // Shift residue (the trailing _filled - _chunkSize
+                // bytes) to staging[0]; wipe consumed prefix.
+                var residue = _filled - _chunkSize;
+                if (residue > 0)
+                {
+                    Buffer.BlockCopy(_staging, _chunkSize, _staging, 0, residue);
+                }
+                Array.Clear(_staging, residue, _staging.Length - residue);
+                _filled = residue;
+            }
         }
         return data.Length;
     }
@@ -1008,10 +1048,14 @@ public sealed class StreamEncryptorAuth : IDisposable
     {
         if (_closed)
         {
+            WipeOutBuf();
             return;
         }
         EmitPrefix();
-        EmitOne(_buf.Count, true);
+        EmitOne(_filled, true);
+        Array.Clear(_staging, 0, _staging.Length);
+        _filled = 0;
+        WipeOutBuf();
         _closed = true;
     }
 
@@ -1056,10 +1100,24 @@ public sealed class StreamDecryptorAuth : IDisposable
     private readonly int _headerSize;
     private readonly byte[] _streamId = new byte[StreamAuthInternal.StreamIdLen];
     private int _sidHave;
-    private readonly List<byte> _buf = new();
+    // Contiguous accumulator — _accum[_accumStart.._accumEnd) holds
+    // the unparsed wire bytes belonging to chunks not yet consumed.
+    // Slides via a head index (_accumStart) instead of List<byte>.
+    // RemoveRange; compacts when the head crosses half-way through
+    // the buffer to bound memory.
+    private byte[] _accum;
+    private int _accumStart;
+    private int _accumEnd;
     private ulong _cumPixels;
     private bool _seenFinal;
     private bool _closed;
+    // Per-stream output buffer cache for the per-chunk dispatcher
+    // (Bonus 1b in .NEXTBIND.md §7.1) — mirrors the per-encryptor
+    // _outputBuffer field on Encryptor but lives on the streaming
+    // class instance. Grown on demand by StreamAuthCipher.ConsumeSingle
+    // with the same wipe-on-grow + 1.25× + 128 KiB envelope shape as
+    // Encryptor.CipherCall; reused across every chunk's invocation.
+    private byte[] _outBuf = Array.Empty<byte>();
 
     /// <summary>
     /// Constructs a fresh authenticated stream decryptor.
@@ -1080,16 +1138,19 @@ public sealed class StreamDecryptorAuth : IDisposable
         _output = output;
         _width = noise.Width;
         _headerSize = Library.HeaderSize;
+        // 1 MiB initial capacity — same floor as the Easy Mode driver
+        // (Encryptor.DecryptStreamAuth) so cross-binding behaviour
+        // matches.
+        _accum = new byte[1 << 20];
     }
 
     private void Drain()
     {
-        var header = new byte[_headerSize];
         while (true)
         {
             if (_seenFinal)
             {
-                if (_buf.Count > 0)
+                if (_accumEnd - _accumStart > 0)
                 {
                     throw new ItbStreamAfterFinalException(
                         StatusCode.StreamAfterFinal,
@@ -1097,36 +1158,105 @@ public sealed class StreamDecryptorAuth : IDisposable
                 }
                 return;
             }
-            if (_buf.Count < _headerSize)
+            if (_accumEnd - _accumStart < _headerSize)
             {
                 return;
             }
-            for (var i = 0; i < _headerSize; i++)
-            {
-                header[i] = _buf[i];
-            }
-            var chunkLen = Library.ParseChunkLen(header);
-            if (_buf.Count < chunkLen)
+            var chunkLen = Library.ParseChunkLen(
+                new ReadOnlySpan<byte>(_accum, _accumStart, _headerSize));
+            if (_accumEnd - _accumStart < chunkLen)
             {
                 return;
             }
-            var w = StreamAuthInternal.ReadBe16(header, _headerSize - 4);
-            var h = StreamAuthInternal.ReadBe16(header, _headerSize - 2);
+            var w = StreamAuthInternal.ReadBe16(_accum, _accumStart + _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(_accum, _accumStart + _headerSize - 2);
             var pixels = (ulong)w * (ulong)h;
             var chunk = new byte[chunkLen];
-            _buf.CopyTo(0, chunk, 0, chunkLen);
-            _buf.RemoveRange(0, chunkLen);
-            var (pt, ff) = StreamAuthCipher.ConsumeSingle(
+            Buffer.BlockCopy(_accum, _accumStart, chunk, 0, chunkLen);
+            _accumStart += chunkLen;
+            // Compact when the head drifts past half the buffer
+            // — keeps the live region near offset 0 so subsequent
+            // Feed calls can append without growing.
+            if (_accumStart > _accum.Length / 2)
+            {
+                var live = _accumEnd - _accumStart;
+                if (live > 0)
+                {
+                    Buffer.BlockCopy(_accum, _accumStart, _accum, 0, live);
+                }
+                Array.Clear(_accum, live, _accum.Length - live);
+                _accumStart = 0;
+                _accumEnd = live;
+            }
+            var (ptBuf, ptLen, ff) = StreamAuthCipher.ConsumeSingle(
                 _width, _noise, _data, _start, _mac,
-                chunk, _streamId, _cumPixels);
-            _output.Write(pt, 0, pt.Length);
-            Array.Clear(pt, 0, pt.Length);
+                chunk, chunk.Length, _streamId, _cumPixels,
+                ref _outBuf);
+            _output.Write(ptBuf, 0, ptLen);
+            Array.Clear(ptBuf, 0, ptLen);
             _cumPixels += pixels;
             if (ff)
             {
                 _seenFinal = true;
             }
         }
+    }
+
+    /// <summary>
+    /// Wipes the per-stream output buffer cache. Mirrors the
+    /// wipe-on-Dispose discipline on
+    /// <see cref="Encryptor.WipeOutputBuffer"/>; called from
+    /// <see cref="Close"/> / <see cref="Dispose"/> so the most recent
+    /// chunk's plaintext does not linger in heap garbage past stream
+    /// teardown.
+    /// </summary>
+    private void WipeOutBuf()
+    {
+        if (_outBuf.Length > 0)
+        {
+            Array.Clear(_outBuf, 0, _outBuf.Length);
+        }
+    }
+
+    private void AppendToAccum(ReadOnlySpan<byte> src)
+    {
+        var add = src.Length;
+        if (add == 0)
+        {
+            return;
+        }
+        // Compact if there isn't enough tail space to absorb `add`
+        // bytes; grow if the live region itself is larger than the
+        // current capacity.
+        if (_accumEnd + add > _accum.Length)
+        {
+            var live = _accumEnd - _accumStart;
+            if (live + add > _accum.Length)
+            {
+                var newCap = _accum.Length;
+                while (newCap < live + add) { newCap *= 2; }
+                var grown = new byte[newCap];
+                if (live > 0)
+                {
+                    Buffer.BlockCopy(_accum, _accumStart, grown, 0, live);
+                }
+                Array.Clear(_accum, 0, _accum.Length);
+                _accum = grown;
+            }
+            else if (_accumStart > 0)
+            {
+                if (live > 0)
+                {
+                    Buffer.BlockCopy(_accum, _accumStart, _accum, 0, live);
+                }
+                // Wipe the now-stale tail region.
+                Array.Clear(_accum, live, _accum.Length - live);
+            }
+            _accumStart = 0;
+            _accumEnd = live;
+        }
+        src.CopyTo(new Span<byte>(_accum, _accumEnd, add));
+        _accumEnd += add;
     }
 
     /// <summary>
@@ -1145,19 +1275,14 @@ public sealed class StreamDecryptorAuth : IDisposable
         {
             var need = StreamAuthInternal.StreamIdLen - _sidHave;
             var take = Math.Min(need, data.Length);
-            for (var i = 0; i < take; i++)
-            {
-                _streamId[_sidHave + i] = data[i];
-            }
+            data.Slice(0, take).CopyTo(
+                new Span<byte>(_streamId, _sidHave, take));
             _sidHave += take;
             off = take;
         }
         if (off < data.Length)
         {
-            for (var i = off; i < data.Length; i++)
-            {
-                _buf.Add(data[i]);
-            }
+            AppendToAccum(data.Slice(off));
         }
         if (_sidHave == StreamAuthInternal.StreamIdLen)
         {
@@ -1178,10 +1303,12 @@ public sealed class StreamDecryptorAuth : IDisposable
     {
         if (_closed)
         {
+            WipeOutBuf();
             return;
         }
         if (_sidHave < StreamAuthInternal.StreamIdLen)
         {
+            WipeOutBuf();
             _closed = true;
             // Incomplete prefix is a wire-level malformation
             // (header never finished arriving), distinct from
@@ -1191,8 +1318,16 @@ public sealed class StreamDecryptorAuth : IDisposable
                 StatusCode.BadInput,
                 "auth stream: prefix never observed");
         }
-        Drain();
+        try
+        {
+            Drain();
+        }
+        finally
+        {
+            WipeOutBuf();
+        }
         _closed = true;
+        Array.Clear(_accum, 0, _accum.Length);
         if (!_seenFinal)
         {
             throw new ItbStreamTruncatedException(
@@ -1205,6 +1340,7 @@ public sealed class StreamDecryptorAuth : IDisposable
     /// input.</summary>
     public void Dispose()
     {
+        WipeOutBuf();
         _closed = true;
         GC.SuppressFinalize(this);
     }
@@ -1229,10 +1365,24 @@ public sealed class StreamEncryptorAuthTriple : IDisposable
     private readonly int _width;
     private readonly int _headerSize;
     private readonly byte[] _streamId;
-    private readonly List<byte> _buf = new();
+    // Contiguous staging buffer — sized to chunkSize + 1 so a single
+    // byte beyond the chunk boundary can sit there as the deferred-final
+    // probe. When _filled exceeds _chunkSize the leading _chunkSize
+    // bytes are emitted as non-terminal and the trailing residue
+    // (_filled - _chunkSize bytes) is shifted to staging[0]. On Close
+    // the residue is emitted as the terminating chunk.
+    private readonly byte[] _staging;
+    private int _filled;
     private ulong _cumPixels;
     private bool _closed;
     private bool _prefixEmitted;
+    // Per-stream output buffer cache for the per-chunk dispatcher
+    // (Bonus 1b in .NEXTBIND.md §7.1) — mirrors the per-encryptor
+    // _outputBuffer field on Encryptor but lives on the streaming
+    // class instance. Grown on demand by StreamAuthCipher.EmitTriple
+    // with the same wipe-on-grow + 1.25× + 128 KiB envelope shape as
+    // Encryptor.CipherCall; reused across every chunk's invocation.
+    private byte[] _outBuf = Array.Empty<byte>();
 
     /// <summary>Constructs a fresh Triple Ouroboros authenticated
     /// stream encryptor. <paramref name="chunkSize"/> must be
@@ -1272,6 +1422,8 @@ public sealed class StreamEncryptorAuthTriple : IDisposable
         _width = noise.Width;
         _headerSize = Library.HeaderSize;
         _streamId = StreamAuthInternal.GenerateStreamId();
+        // chunkSize + 1 holds the deferred-final probe byte.
+        _staging = new byte[chunkSize + 1];
     }
 
     private void EmitPrefix()
@@ -1285,28 +1437,34 @@ public sealed class StreamEncryptorAuthTriple : IDisposable
 
     private void EmitOne(int plaintextLen, bool finalFlag)
     {
-        var chunkPt = new byte[plaintextLen];
-        for (var i = 0; i < plaintextLen; i++)
-        {
-            chunkPt[i] = _buf[i];
-            _buf[i] = 0;
-        }
-        if (plaintextLen > 0)
-        {
-            _buf.RemoveRange(0, plaintextLen);
-        }
-        var ct = StreamAuthCipher.EmitTriple(
+        var (ctBuf, ctLen) = StreamAuthCipher.EmitTriple(
             _width, _noise, _data1, _data2, _data3,
             _start1, _start2, _start3, _mac,
-            chunkPt, _streamId, _cumPixels, finalFlag);
-        Array.Clear(chunkPt, 0, chunkPt.Length);
-        if (ct.Length >= _headerSize)
+            _staging, plaintextLen, _streamId, _cumPixels, finalFlag,
+            ref _outBuf);
+        if (ctLen >= _headerSize)
         {
-            var w = StreamAuthInternal.ReadBe16(ct, _headerSize - 4);
-            var h = StreamAuthInternal.ReadBe16(ct, _headerSize - 2);
+            var w = StreamAuthInternal.ReadBe16(ctBuf, _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(ctBuf, _headerSize - 2);
             _cumPixels += (ulong)w * (ulong)h;
         }
-        _output.Write(ct, 0, ct.Length);
+        _output.Write(ctBuf, 0, ctLen);
+    }
+
+    /// <summary>
+    /// Wipes the per-stream output buffer cache. Mirrors the
+    /// wipe-on-Dispose discipline on
+    /// <see cref="Encryptor.WipeOutputBuffer"/>; called from
+    /// <see cref="Close"/> / <see cref="Dispose"/> so the most recent
+    /// chunk's ciphertext does not linger in heap garbage past stream
+    /// teardown.
+    /// </summary>
+    private void WipeOutBuf()
+    {
+        if (_outBuf.Length > 0)
+        {
+            Array.Clear(_outBuf, 0, _outBuf.Length);
+        }
     }
 
     /// <summary>Appends <paramref name="data"/> to the internal
@@ -1319,13 +1477,30 @@ public sealed class StreamEncryptorAuthTriple : IDisposable
                 "write on closed StreamEncryptorAuthTriple");
         }
         EmitPrefix();
-        for (var i = 0; i < data.Length; i++)
+        var consumed = 0;
+        while (consumed < data.Length)
         {
-            _buf.Add(data[i]);
-        }
-        while (_buf.Count > _chunkSize)
-        {
-            EmitOne(_chunkSize, false);
+            var room = _staging.Length - _filled;
+            var take = Math.Min(room, data.Length - consumed);
+            data.Slice(consumed, take).CopyTo(
+                new Span<byte>(_staging, _filled, take));
+            _filled += take;
+            consumed += take;
+            // Keep at least one chunk's worth buffered until Close()
+            // so the deferred-final pattern can decide whether to emit
+            // final_flag = true. Only emit when more than _chunkSize
+            // bytes are present (one byte past the boundary).
+            if (_filled > _chunkSize)
+            {
+                EmitOne(_chunkSize, false);
+                var residue = _filled - _chunkSize;
+                if (residue > 0)
+                {
+                    Buffer.BlockCopy(_staging, _chunkSize, _staging, 0, residue);
+                }
+                Array.Clear(_staging, residue, _staging.Length - residue);
+                _filled = residue;
+            }
         }
         return data.Length;
     }
@@ -1336,10 +1511,14 @@ public sealed class StreamEncryptorAuthTriple : IDisposable
     {
         if (_closed)
         {
+            WipeOutBuf();
             return;
         }
         EmitPrefix();
-        EmitOne(_buf.Count, true);
+        EmitOne(_filled, true);
+        Array.Clear(_staging, 0, _staging.Length);
+        _filled = 0;
+        WipeOutBuf();
         _closed = true;
     }
 
@@ -1370,10 +1549,24 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
     private readonly int _headerSize;
     private readonly byte[] _streamId = new byte[StreamAuthInternal.StreamIdLen];
     private int _sidHave;
-    private readonly List<byte> _buf = new();
+    // Contiguous accumulator — _accum[_accumStart.._accumEnd) holds
+    // the unparsed wire bytes belonging to chunks not yet consumed.
+    // Slides via a head index (_accumStart) instead of List<byte>.
+    // RemoveRange; compacts when the head crosses half-way through
+    // the buffer to bound memory.
+    private byte[] _accum;
+    private int _accumStart;
+    private int _accumEnd;
     private ulong _cumPixels;
     private bool _seenFinal;
     private bool _closed;
+    // Per-stream output buffer cache for the per-chunk dispatcher
+    // (Bonus 1b in .NEXTBIND.md §7.1) — mirrors the per-encryptor
+    // _outputBuffer field on Encryptor but lives on the streaming
+    // class instance. Grown on demand by StreamAuthCipher.ConsumeTriple
+    // with the same wipe-on-grow + 1.25× + 128 KiB envelope shape as
+    // Encryptor.CipherCall; reused across every chunk's invocation.
+    private byte[] _outBuf = Array.Empty<byte>();
 
     /// <summary>Constructs a fresh Triple Ouroboros authenticated
     /// stream decryptor.</summary>
@@ -1404,16 +1597,18 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
         _output = output;
         _width = noise.Width;
         _headerSize = Library.HeaderSize;
+        // 1 MiB initial capacity — same floor as the Easy Mode driver
+        // (Encryptor.DecryptStreamAuth).
+        _accum = new byte[1 << 20];
     }
 
     private void Drain()
     {
-        var header = new byte[_headerSize];
         while (true)
         {
             if (_seenFinal)
             {
-                if (_buf.Count > 0)
+                if (_accumEnd - _accumStart > 0)
                 {
                     throw new ItbStreamAfterFinalException(
                         StatusCode.StreamAfterFinal,
@@ -1421,37 +1616,106 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
                 }
                 return;
             }
-            if (_buf.Count < _headerSize)
+            if (_accumEnd - _accumStart < _headerSize)
             {
                 return;
             }
-            for (var i = 0; i < _headerSize; i++)
-            {
-                header[i] = _buf[i];
-            }
-            var chunkLen = Library.ParseChunkLen(header);
-            if (_buf.Count < chunkLen)
+            var chunkLen = Library.ParseChunkLen(
+                new ReadOnlySpan<byte>(_accum, _accumStart, _headerSize));
+            if (_accumEnd - _accumStart < chunkLen)
             {
                 return;
             }
-            var w = StreamAuthInternal.ReadBe16(header, _headerSize - 4);
-            var h = StreamAuthInternal.ReadBe16(header, _headerSize - 2);
+            var w = StreamAuthInternal.ReadBe16(_accum, _accumStart + _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(_accum, _accumStart + _headerSize - 2);
             var pixels = (ulong)w * (ulong)h;
             var chunk = new byte[chunkLen];
-            _buf.CopyTo(0, chunk, 0, chunkLen);
-            _buf.RemoveRange(0, chunkLen);
-            var (pt, ff) = StreamAuthCipher.ConsumeTriple(
+            Buffer.BlockCopy(_accum, _accumStart, chunk, 0, chunkLen);
+            _accumStart += chunkLen;
+            // Compact when the head drifts past half the buffer
+            // — keeps the live region near offset 0 so subsequent
+            // Feed calls can append without growing.
+            if (_accumStart > _accum.Length / 2)
+            {
+                var live = _accumEnd - _accumStart;
+                if (live > 0)
+                {
+                    Buffer.BlockCopy(_accum, _accumStart, _accum, 0, live);
+                }
+                Array.Clear(_accum, live, _accum.Length - live);
+                _accumStart = 0;
+                _accumEnd = live;
+            }
+            var (ptBuf, ptLen, ff) = StreamAuthCipher.ConsumeTriple(
                 _width, _noise, _data1, _data2, _data3,
                 _start1, _start2, _start3, _mac,
-                chunk, _streamId, _cumPixels);
-            _output.Write(pt, 0, pt.Length);
-            Array.Clear(pt, 0, pt.Length);
+                chunk, chunk.Length, _streamId, _cumPixels,
+                ref _outBuf);
+            _output.Write(ptBuf, 0, ptLen);
+            Array.Clear(ptBuf, 0, ptLen);
             _cumPixels += pixels;
             if (ff)
             {
                 _seenFinal = true;
             }
         }
+    }
+
+    /// <summary>
+    /// Wipes the per-stream output buffer cache. Mirrors the
+    /// wipe-on-Dispose discipline on
+    /// <see cref="Encryptor.WipeOutputBuffer"/>; called from
+    /// <see cref="Close"/> / <see cref="Dispose"/> so the most recent
+    /// chunk's plaintext does not linger in heap garbage past stream
+    /// teardown.
+    /// </summary>
+    private void WipeOutBuf()
+    {
+        if (_outBuf.Length > 0)
+        {
+            Array.Clear(_outBuf, 0, _outBuf.Length);
+        }
+    }
+
+    private void AppendToAccum(ReadOnlySpan<byte> src)
+    {
+        var add = src.Length;
+        if (add == 0)
+        {
+            return;
+        }
+        // Compact if there isn't enough tail space to absorb `add`
+        // bytes; grow if the live region itself is larger than the
+        // current capacity.
+        if (_accumEnd + add > _accum.Length)
+        {
+            var live = _accumEnd - _accumStart;
+            if (live + add > _accum.Length)
+            {
+                var newCap = _accum.Length;
+                while (newCap < live + add) { newCap *= 2; }
+                var grown = new byte[newCap];
+                if (live > 0)
+                {
+                    Buffer.BlockCopy(_accum, _accumStart, grown, 0, live);
+                }
+                Array.Clear(_accum, 0, _accum.Length);
+                _accum = grown;
+            }
+            else if (_accumStart > 0)
+            {
+                if (live > 0)
+                {
+                    Buffer.BlockCopy(_accum, _accumStart, _accum, 0, live);
+                }
+                // Wipe the now-stale tail region.
+                Array.Clear(_accum, live, _accum.Length - live);
+            }
+            _accumStart = 0;
+            _accumEnd = live;
+        }
+        src.CopyTo(new Span<byte>(_accum, _accumEnd, add));
+        _accumEnd += add;
     }
 
     /// <summary>Appends <paramref name="data"/> and drains every
@@ -1468,19 +1732,14 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
         {
             var need = StreamAuthInternal.StreamIdLen - _sidHave;
             var take = Math.Min(need, data.Length);
-            for (var i = 0; i < take; i++)
-            {
-                _streamId[_sidHave + i] = data[i];
-            }
+            data.Slice(0, take).CopyTo(
+                new Span<byte>(_streamId, _sidHave, take));
             _sidHave += take;
             off = take;
         }
         if (off < data.Length)
         {
-            for (var i = off; i < data.Length; i++)
-            {
-                _buf.Add(data[i]);
-            }
+            AppendToAccum(data.Slice(off));
         }
         if (_sidHave == StreamAuthInternal.StreamIdLen)
         {
@@ -1499,10 +1758,12 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
     {
         if (_closed)
         {
+            WipeOutBuf();
             return;
         }
         if (_sidHave < StreamAuthInternal.StreamIdLen)
         {
+            WipeOutBuf();
             _closed = true;
             // Incomplete prefix is a wire-level malformation
             // (header never finished arriving), distinct from
@@ -1512,8 +1773,16 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
                 StatusCode.BadInput,
                 "auth stream: prefix never observed");
         }
-        Drain();
+        try
+        {
+            Drain();
+        }
+        finally
+        {
+            WipeOutBuf();
+        }
         _closed = true;
+        Array.Clear(_accum, 0, _accum.Length);
         if (!_seenFinal)
         {
             throw new ItbStreamTruncatedException(
@@ -1526,6 +1795,7 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
     /// partial input.</summary>
     public void Dispose()
     {
+        WipeOutBuf();
         _closed = true;
         GC.SuppressFinalize(this);
     }
@@ -1540,11 +1810,12 @@ public sealed class StreamDecryptorAuthTriple : IDisposable
 /// </summary>
 internal static unsafe class StreamAuthCipher
 {
-    public static byte[] EmitSingle(
+    public static (byte[] Buf, int OutLen) EmitSingle(
         int width,
         Seed noise, Seed data, Seed start, Mac mac,
-        byte[] plaintext, byte[] streamId,
-        ulong cumPixels, bool finalFlag)
+        byte[] plaintext, int plaintextLen, byte[] streamId,
+        ulong cumPixels, bool finalFlag,
+        ref byte[] cache)
     {
         try
         {
@@ -1553,47 +1824,36 @@ internal static unsafe class StreamAuthCipher
             var sh = start.Handle;
             var mh = mac.Handle;
             var ff = finalFlag ? 1 : 0;
+            var payloadLen = plaintextLen;
+            // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+            var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+            StreamAuthEasy.EnsureStreamCache(ref cache, cap);
             nuint outLen;
             int rc;
             fixed (byte* inPtr = plaintext)
             fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = cache)
             {
                 rc = InvokeEnc1(width, nh, dh, sh, mh,
-                    inPtr, (nuint)plaintext.Length,
+                    inPtr, (nuint)payloadLen,
                     sidPtr, cumPixels, ff,
-                    null, 0, out outLen);
+                    outPtr, (nuint)cache.Length, out outLen);
             }
-            if (rc == Status.Ok)
+            if (rc == Status.BufferTooSmall)
             {
-                return Array.Empty<byte>();
+                StreamAuthEasy.EnsureStreamCache(ref cache, (int)outLen);
+                fixed (byte* inPtr = plaintext)
+                fixed (byte* sidPtr = streamId)
+                fixed (byte* outPtr = cache)
+                {
+                    rc = InvokeEnc1(width, nh, dh, sh, mh,
+                        inPtr, (nuint)payloadLen,
+                        sidPtr, cumPixels, ff,
+                        outPtr, (nuint)cache.Length, out outLen);
+                }
             }
-            if (rc != Status.BufferTooSmall)
-            {
-                throw ItbException.FromStatus(rc);
-            }
-            var need = (int)outLen;
-            if (need == 0)
-            {
-                return Array.Empty<byte>();
-            }
-            var buf = new byte[need];
-            nuint outLen2;
-            int rc2;
-            fixed (byte* inPtr = plaintext)
-            fixed (byte* sidPtr = streamId)
-            fixed (byte* outPtr = buf)
-            {
-                rc2 = InvokeEnc1(width, nh, dh, sh, mh,
-                    inPtr, (nuint)plaintext.Length,
-                    sidPtr, cumPixels, ff,
-                    outPtr, (nuint)buf.Length, out outLen2);
-            }
-            ItbException.Check(rc2);
-            if ((int)outLen2 < buf.Length)
-            {
-                Array.Resize(ref buf, (int)outLen2);
-            }
-            return buf;
+            ItbException.Check(rc);
+            return (cache, (int)outLen);
         }
         finally
         {
@@ -1604,14 +1864,15 @@ internal static unsafe class StreamAuthCipher
         }
     }
 
-    public static byte[] EmitTriple(
+    public static (byte[] Buf, int OutLen) EmitTriple(
         int width,
         Seed noise,
         Seed data1, Seed data2, Seed data3,
         Seed start1, Seed start2, Seed start3,
         Mac mac,
-        byte[] plaintext, byte[] streamId,
-        ulong cumPixels, bool finalFlag)
+        byte[] plaintext, int plaintextLen, byte[] streamId,
+        ulong cumPixels, bool finalFlag,
+        ref byte[] cache)
     {
         try
         {
@@ -1624,47 +1885,36 @@ internal static unsafe class StreamAuthCipher
             var s3 = start3.Handle;
             var mh = mac.Handle;
             var ff = finalFlag ? 1 : 0;
+            var payloadLen = plaintextLen;
+            // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+            var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+            StreamAuthEasy.EnsureStreamCache(ref cache, cap);
             nuint outLen;
             int rc;
             fixed (byte* inPtr = plaintext)
             fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = cache)
             {
                 rc = InvokeEnc3(width, nh, d1, d2, d3, s1, s2, s3, mh,
-                    inPtr, (nuint)plaintext.Length,
+                    inPtr, (nuint)payloadLen,
                     sidPtr, cumPixels, ff,
-                    null, 0, out outLen);
+                    outPtr, (nuint)cache.Length, out outLen);
             }
-            if (rc == Status.Ok)
+            if (rc == Status.BufferTooSmall)
             {
-                return Array.Empty<byte>();
+                StreamAuthEasy.EnsureStreamCache(ref cache, (int)outLen);
+                fixed (byte* inPtr = plaintext)
+                fixed (byte* sidPtr = streamId)
+                fixed (byte* outPtr = cache)
+                {
+                    rc = InvokeEnc3(width, nh, d1, d2, d3, s1, s2, s3, mh,
+                        inPtr, (nuint)payloadLen,
+                        sidPtr, cumPixels, ff,
+                        outPtr, (nuint)cache.Length, out outLen);
+                }
             }
-            if (rc != Status.BufferTooSmall)
-            {
-                throw ItbException.FromStatus(rc);
-            }
-            var need = (int)outLen;
-            if (need == 0)
-            {
-                return Array.Empty<byte>();
-            }
-            var buf = new byte[need];
-            nuint outLen2;
-            int rc2;
-            fixed (byte* inPtr = plaintext)
-            fixed (byte* sidPtr = streamId)
-            fixed (byte* outPtr = buf)
-            {
-                rc2 = InvokeEnc3(width, nh, d1, d2, d3, s1, s2, s3, mh,
-                    inPtr, (nuint)plaintext.Length,
-                    sidPtr, cumPixels, ff,
-                    outPtr, (nuint)buf.Length, out outLen2);
-            }
-            ItbException.Check(rc2);
-            if ((int)outLen2 < buf.Length)
-            {
-                Array.Resize(ref buf, (int)outLen2);
-            }
-            return buf;
+            ItbException.Check(rc);
+            return (cache, (int)outLen);
         }
         finally
         {
@@ -1679,10 +1929,11 @@ internal static unsafe class StreamAuthCipher
         }
     }
 
-    public static (byte[] pt, bool finalFlag) ConsumeSingle(
+    public static (byte[] Buf, int OutLen, bool FinalFlag) ConsumeSingle(
         int width,
         Seed noise, Seed data, Seed start, Mac mac,
-        byte[] ciphertext, byte[] streamId, ulong cumPixels)
+        byte[] ciphertext, int ciphertextLen, byte[] streamId, ulong cumPixels,
+        ref byte[] cache)
     {
         try
         {
@@ -1690,49 +1941,37 @@ internal static unsafe class StreamAuthCipher
             var dh = data.Handle;
             var sh = start.Handle;
             var mh = mac.Handle;
+            var payloadLen = ciphertextLen;
+            // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+            var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+            StreamAuthEasy.EnsureStreamCache(ref cache, cap);
             nuint outLen;
             int ff;
             int rc;
             fixed (byte* inPtr = ciphertext)
             fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = cache)
             {
                 rc = InvokeDec1(width, nh, dh, sh, mh,
-                    inPtr, (nuint)ciphertext.Length,
+                    inPtr, (nuint)payloadLen,
                     sidPtr, cumPixels,
-                    null, 0, out outLen, out ff);
+                    outPtr, (nuint)cache.Length, out outLen, out ff);
             }
-            if (rc == Status.Ok)
+            if (rc == Status.BufferTooSmall)
             {
-                return (Array.Empty<byte>(), ff != 0);
+                StreamAuthEasy.EnsureStreamCache(ref cache, (int)outLen);
+                fixed (byte* inPtr = ciphertext)
+                fixed (byte* sidPtr = streamId)
+                fixed (byte* outPtr = cache)
+                {
+                    rc = InvokeDec1(width, nh, dh, sh, mh,
+                        inPtr, (nuint)payloadLen,
+                        sidPtr, cumPixels,
+                        outPtr, (nuint)cache.Length, out outLen, out ff);
+                }
             }
-            if (rc != Status.BufferTooSmall)
-            {
-                throw ItbException.FromStatus(rc);
-            }
-            var need = (int)outLen;
-            if (need == 0)
-            {
-                return (Array.Empty<byte>(), ff != 0);
-            }
-            var buf = new byte[need];
-            nuint outLen2;
-            int ff2;
-            int rc2;
-            fixed (byte* inPtr = ciphertext)
-            fixed (byte* sidPtr = streamId)
-            fixed (byte* outPtr = buf)
-            {
-                rc2 = InvokeDec1(width, nh, dh, sh, mh,
-                    inPtr, (nuint)ciphertext.Length,
-                    sidPtr, cumPixels,
-                    outPtr, (nuint)buf.Length, out outLen2, out ff2);
-            }
-            ItbException.Check(rc2);
-            if ((int)outLen2 < buf.Length)
-            {
-                Array.Resize(ref buf, (int)outLen2);
-            }
-            return (buf, ff2 != 0);
+            ItbException.Check(rc);
+            return (cache, (int)outLen, ff != 0);
         }
         finally
         {
@@ -1743,13 +1982,14 @@ internal static unsafe class StreamAuthCipher
         }
     }
 
-    public static (byte[] pt, bool finalFlag) ConsumeTriple(
+    public static (byte[] Buf, int OutLen, bool FinalFlag) ConsumeTriple(
         int width,
         Seed noise,
         Seed data1, Seed data2, Seed data3,
         Seed start1, Seed start2, Seed start3,
         Mac mac,
-        byte[] ciphertext, byte[] streamId, ulong cumPixels)
+        byte[] ciphertext, int ciphertextLen, byte[] streamId, ulong cumPixels,
+        ref byte[] cache)
     {
         try
         {
@@ -1761,49 +2001,37 @@ internal static unsafe class StreamAuthCipher
             var s2 = start2.Handle;
             var s3 = start3.Handle;
             var mh = mac.Handle;
+            var payloadLen = ciphertextLen;
+            // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+            var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+            StreamAuthEasy.EnsureStreamCache(ref cache, cap);
             nuint outLen;
             int ff;
             int rc;
             fixed (byte* inPtr = ciphertext)
             fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = cache)
             {
                 rc = InvokeDec3(width, nh, d1, d2, d3, s1, s2, s3, mh,
-                    inPtr, (nuint)ciphertext.Length,
+                    inPtr, (nuint)payloadLen,
                     sidPtr, cumPixels,
-                    null, 0, out outLen, out ff);
+                    outPtr, (nuint)cache.Length, out outLen, out ff);
             }
-            if (rc == Status.Ok)
+            if (rc == Status.BufferTooSmall)
             {
-                return (Array.Empty<byte>(), ff != 0);
+                StreamAuthEasy.EnsureStreamCache(ref cache, (int)outLen);
+                fixed (byte* inPtr = ciphertext)
+                fixed (byte* sidPtr = streamId)
+                fixed (byte* outPtr = cache)
+                {
+                    rc = InvokeDec3(width, nh, d1, d2, d3, s1, s2, s3, mh,
+                        inPtr, (nuint)payloadLen,
+                        sidPtr, cumPixels,
+                        outPtr, (nuint)cache.Length, out outLen, out ff);
+                }
             }
-            if (rc != Status.BufferTooSmall)
-            {
-                throw ItbException.FromStatus(rc);
-            }
-            var need = (int)outLen;
-            if (need == 0)
-            {
-                return (Array.Empty<byte>(), ff != 0);
-            }
-            var buf = new byte[need];
-            nuint outLen2;
-            int ff2;
-            int rc2;
-            fixed (byte* inPtr = ciphertext)
-            fixed (byte* sidPtr = streamId)
-            fixed (byte* outPtr = buf)
-            {
-                rc2 = InvokeDec3(width, nh, d1, d2, d3, s1, s2, s3, mh,
-                    inPtr, (nuint)ciphertext.Length,
-                    sidPtr, cumPixels,
-                    outPtr, (nuint)buf.Length, out outLen2, out ff2);
-            }
-            ItbException.Check(rc2);
-            if ((int)outLen2 < buf.Length)
-            {
-                Array.Resize(ref buf, (int)outLen2);
-            }
-            return (buf, ff2 != 0);
+            ItbException.Check(rc);
+            return (cache, (int)outLen, ff != 0);
         }
         finally
         {
@@ -1920,107 +2148,116 @@ internal static unsafe class StreamAuthCipher
 }
 
 /// <summary>
-/// Per-chunk dispatch helpers for the Easy-mode Streaming AEAD path.
+/// Per-chunk dispatch helpers for the Easy Mode Streaming AEAD path.
 /// Wraps the <c>ITB_Easy_EncryptStreamAuth</c> /
 /// <c>ITB_Easy_DecryptStreamAuth</c> ABI exports with the standard
 /// probe-and-allocate retry against the caller-supplied output
 /// capacity.
+///
+/// The <c>cache</c> parameter is a <c>ref</c> handle to the caller's
+/// reusable output buffer (typically <c>Encryptor._outputBuffer</c> —
+/// Bonus 1 in .NEXTBIND.md §7.1). The helper grows it on demand with
+/// the same wipe-on-grow + 1.25× + 128 KiB envelope shape as
+/// <c>Encryptor.CipherCall</c>; the returned tuple references the
+/// cache directly. The next chunk's call may reuse the same cache —
+/// <see cref="System.IO.Stream.Write(byte[], int, int)"/> is
+/// synchronous and consumes the buffer before returning, so the
+/// caller's <c>output.Write(buf, 0, len)</c> is complete by the time
+/// the next per-chunk dispatcher runs.
 /// </summary>
 internal static unsafe class StreamAuthEasy
 {
-    public static byte[] Emit(nuint encryptorHandle,
-        byte[] plaintext, byte[] streamId,
-        ulong cumPixels, bool finalFlag)
+    public static (byte[] Buf, int OutLen) Emit(nuint encryptorHandle,
+        byte[] plaintext, int plaintextLen, byte[] streamId,
+        ulong cumPixels, bool finalFlag,
+        ref byte[] cache)
     {
         var ff = finalFlag ? 1 : 0;
+        var payloadLen = plaintextLen;
+        // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+        EnsureStreamCache(ref cache, cap);
         nuint outLen;
         int rc;
         fixed (byte* inPtr = plaintext)
         fixed (byte* sidPtr = streamId)
+        fixed (byte* outPtr = cache)
         {
             rc = ItbNative.ITB_Easy_EncryptStreamAuth(
-                encryptorHandle, inPtr, (nuint)plaintext.Length,
+                encryptorHandle, inPtr, (nuint)payloadLen,
                 sidPtr, cumPixels, ff,
-                null, 0, out outLen);
+                outPtr, (nuint)cache.Length, out outLen);
         }
-        if (rc == Status.Ok)
+        if (rc == Status.BufferTooSmall)
         {
-            return Array.Empty<byte>();
+            EnsureStreamCache(ref cache, (int)outLen);
+            fixed (byte* inPtr = plaintext)
+            fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = cache)
+            {
+                rc = ItbNative.ITB_Easy_EncryptStreamAuth(
+                    encryptorHandle, inPtr, (nuint)payloadLen,
+                    sidPtr, cumPixels, ff,
+                    outPtr, (nuint)cache.Length, out outLen);
+            }
         }
-        if (rc != Status.BufferTooSmall)
-        {
-            throw ItbException.FromStatus(rc);
-        }
-        var need = (int)outLen;
-        if (need == 0)
-        {
-            return Array.Empty<byte>();
-        }
-        var buf = new byte[need];
-        nuint outLen2;
-        int rc2;
-        fixed (byte* inPtr = plaintext)
-        fixed (byte* sidPtr = streamId)
-        fixed (byte* outPtr = buf)
-        {
-            rc2 = ItbNative.ITB_Easy_EncryptStreamAuth(
-                encryptorHandle, inPtr, (nuint)plaintext.Length,
-                sidPtr, cumPixels, ff,
-                outPtr, (nuint)buf.Length, out outLen2);
-        }
-        ItbException.Check(rc2);
-        if ((int)outLen2 < buf.Length)
-        {
-            Array.Resize(ref buf, (int)outLen2);
-        }
-        return buf;
+        ItbException.Check(rc);
+        return (cache, (int)outLen);
     }
 
-    public static (byte[] pt, bool finalFlag) Consume(nuint encryptorHandle,
-        byte[] ciphertext, byte[] streamId, ulong cumPixels)
+    public static (byte[] Buf, int OutLen, bool FinalFlag) Consume(nuint encryptorHandle,
+        byte[] ciphertext, int ciphertextLen, byte[] streamId, ulong cumPixels,
+        ref byte[] cache)
     {
+        var payloadLen = ciphertextLen;
+        // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+        EnsureStreamCache(ref cache, cap);
         nuint outLen;
         int ff;
         int rc;
         fixed (byte* inPtr = ciphertext)
         fixed (byte* sidPtr = streamId)
+        fixed (byte* outPtr = cache)
         {
             rc = ItbNative.ITB_Easy_DecryptStreamAuth(
-                encryptorHandle, inPtr, (nuint)ciphertext.Length,
+                encryptorHandle, inPtr, (nuint)payloadLen,
                 sidPtr, cumPixels,
-                null, 0, out outLen, out ff);
+                outPtr, (nuint)cache.Length, out outLen, out ff);
         }
-        if (rc == Status.Ok)
+        if (rc == Status.BufferTooSmall)
         {
-            return (Array.Empty<byte>(), ff != 0);
+            EnsureStreamCache(ref cache, (int)outLen);
+            fixed (byte* inPtr = ciphertext)
+            fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = cache)
+            {
+                rc = ItbNative.ITB_Easy_DecryptStreamAuth(
+                    encryptorHandle, inPtr, (nuint)payloadLen,
+                    sidPtr, cumPixels,
+                    outPtr, (nuint)cache.Length, out outLen, out ff);
+            }
         }
-        if (rc != Status.BufferTooSmall)
+        ItbException.Check(rc);
+        return (cache, (int)outLen, ff != 0);
+    }
+
+    /// <summary>
+    /// Grow-on-demand + wipe-on-grow helper for the per-chunk output
+    /// buffer cache. Mirrors <c>Encryptor.EnsureCapacity</c>: zeros
+    /// the OLD contents before reassigning so the previous-chunk
+    /// ciphertext / plaintext does not linger in heap garbage between
+    /// dispatcher calls.
+    /// </summary>
+    internal static void EnsureStreamCache(ref byte[] cache, int needed)
+    {
+        if (cache.Length < needed)
         {
-            throw ItbException.FromStatus(rc);
+            if (cache.Length > 0)
+            {
+                Array.Clear(cache, 0, cache.Length);
+            }
+            cache = new byte[needed];
         }
-        var need = (int)outLen;
-        if (need == 0)
-        {
-            return (Array.Empty<byte>(), ff != 0);
-        }
-        var buf = new byte[need];
-        nuint outLen2;
-        int ff2;
-        int rc2;
-        fixed (byte* inPtr = ciphertext)
-        fixed (byte* sidPtr = streamId)
-        fixed (byte* outPtr = buf)
-        {
-            rc2 = ItbNative.ITB_Easy_DecryptStreamAuth(
-                encryptorHandle, inPtr, (nuint)ciphertext.Length,
-                sidPtr, cumPixels,
-                outPtr, (nuint)buf.Length, out outLen2, out ff2);
-        }
-        ItbException.Check(rc2);
-        if ((int)outLen2 < buf.Length)
-        {
-            Array.Resize(ref buf, (int)outLen2);
-        }
-        return (buf, ff2 != 0);
     }
 }

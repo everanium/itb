@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 )
 
@@ -1536,4 +1537,283 @@ func TestTripleAttachLockSeedOverlayOffPanic(t *testing.T) {
 		}
 	}()
 	_, _ = Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+}
+
+// --- Streaming benchmarks (Low-Level Triple Ouroboros, areion512, 1024-bit) ---
+
+// makeStreamTripleSeeds builds a 7-seed Triple Ouroboros constellation
+// (1 noise + 3 data + 3 start) under the supplied 512-bit hash pair,
+// with the batched arm wired on every seed so per-pixel hashing routes
+// through the ZMM-batched chain-absorb dispatch when AVX-512 is
+// available. Counterpart of makeStreamSingleSeeds in itb_test.go.
+func makeStreamTripleSeeds(b *testing.B, bits int, maker func() (HashFunc512, BatchHashFunc512)) (*Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512) {
+	nsH, nsB := maker()
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(bits, nsH)
+	ns.BatchHash = nsB
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
+	if ns == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
+		b.Fatalf("makeStreamTripleSeeds: nil seed")
+	}
+	return ns, ds1, ds2, ds3, ss1, ss2, ss3
+}
+
+// streamTripleMACKey draws a 32-byte CSPRNG MAC key for the Triple
+// AEAD streaming benches. Matches streamBenchMACKey shape; duplicated
+// to keep the Triple bench helpers self-contained.
+func streamTripleMACKey(b *testing.B) []byte {
+	k := make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		b.Fatalf("rand.Read mac key: %v", err)
+	}
+	return k
+}
+
+// streamTriplePlaintext draws an n-byte CSPRNG plaintext for the
+// Triple bench cohort.
+func streamTriplePlaintext(b *testing.B, n int) []byte {
+	src := make([]byte, n)
+	if _, err := rand.Read(src); err != nil {
+		b.Fatalf("rand.Read plaintext: %v", err)
+	}
+	return src
+}
+
+// BenchmarkTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [EncryptStreamAuth3x] (Triple Ouroboros, areion512
+// PRF, 1024-bit ITB key width, hmac-blake3 MAC) on a 64 MiB plaintext
+// streamed in 16 MiB chunks. The 7-seed constellation and the MAC
+// closure are constructed once outside the timer.
+func BenchmarkTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeStreamTripleSeeds(b, bits, makeAreionSoEM512Pair)
+	mac := newHMACBlake3Bench(streamTripleMACKey(b))
+	src := streamTriplePlaintext(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		if err := EncryptStreamAuth3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, mac, chunkSize); err != nil {
+			b.Fatalf("EncryptStreamAuth3x: %v", err)
+		}
+	}
+}
+
+// BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [DecryptStreamAuth3x] on a transcript pre-built
+// once outside the timer.
+func BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeStreamTripleSeeds(b, bits, makeAreionSoEM512Pair)
+	mac := newHMACBlake3Bench(streamTripleMACKey(b))
+	src := streamTriplePlaintext(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := EncryptStreamAuth3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(src), encBuf, mac, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStreamAuth3x: %v", err)
+	}
+	ciphertext := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(ciphertext)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		if err := DecryptStreamAuth3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, mac); err != nil {
+			b.Fatalf("DecryptStreamAuth3x: %v", err)
+		}
+	}
+}
+
+// BenchmarkTripleEncryptStreamIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [EncryptStream3x] (no MAC) under the same Triple
+// Ouroboros / areion512 / 1024-bit configuration.
+func BenchmarkTripleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeStreamTripleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamTriplePlaintext(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		if err := EncryptStream3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, chunkSize); err != nil {
+			b.Fatalf("EncryptStream3x: %v", err)
+		}
+	}
+}
+
+// BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [DecryptStream3x] on a transcript pre-built once.
+func BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeStreamTripleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamTriplePlaintext(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := EncryptStream3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(src), encBuf, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStream3x: %v", err)
+	}
+	ciphertext := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(ciphertext)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		if err := DecryptStream3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, r, buf); err != nil {
+			b.Fatalf("DecryptStream3x: %v", err)
+		}
+	}
+}
+
+// BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
+// measures the user-driven plain-stream Encrypt loop: caller reads
+// chunkSize-byte windows out of src, calls [Encrypt3x] per chunk, and
+// frames each ciphertext on the wire with a 4-byte big-endian length
+// prefix. Mirrors the exampleLowLevelModePlainUserLoop walker shape
+// from tmp/itb_examples/go/main.go scaled to the Triple 7-seed path.
+func BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeStreamTripleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamTriplePlaintext(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		stage := make([]byte, chunkSize)
+		var lenBuf [4]byte
+		for {
+			n, rerr := io.ReadFull(r, stage)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil && rerr != io.ErrUnexpectedEOF {
+				b.Fatalf("ReadFull: %v", rerr)
+			}
+			ct, encErr := Encrypt3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, stage[:n])
+			if encErr != nil {
+				b.Fatalf("Encrypt3x: %v", encErr)
+			}
+			lenBuf[0] = byte(len(ct) >> 24)
+			lenBuf[1] = byte(len(ct) >> 16)
+			lenBuf[2] = byte(len(ct) >> 8)
+			lenBuf[3] = byte(len(ct))
+			if _, werr := buf.Write(lenBuf[:]); werr != nil {
+				b.Fatalf("Write length prefix: %v", werr)
+			}
+			if _, werr := buf.Write(ct); werr != nil {
+				b.Fatalf("Write ciphertext: %v", werr)
+			}
+			if rerr == io.ErrUnexpectedEOF {
+				break
+			}
+		}
+	}
+}
+
+// BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
+// measures the user-driven plain-stream Decrypt loop: the framed
+// transcript is built once, and each iteration walks it via the
+// 4-byte BE length-prefix frame, calling [Decrypt3x] per chunk.
+func BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeStreamTripleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamTriplePlaintext(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	{
+		r := bytes.NewReader(src)
+		stage := make([]byte, chunkSize)
+		var lenBuf [4]byte
+		for {
+			n, rerr := io.ReadFull(r, stage)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil && rerr != io.ErrUnexpectedEOF {
+				b.Fatalf("setup ReadFull: %v", rerr)
+			}
+			ct, encErr := Encrypt3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, stage[:n])
+			if encErr != nil {
+				b.Fatalf("setup Encrypt3x: %v", encErr)
+			}
+			lenBuf[0] = byte(len(ct) >> 24)
+			lenBuf[1] = byte(len(ct) >> 16)
+			lenBuf[2] = byte(len(ct) >> 8)
+			lenBuf[3] = byte(len(ct))
+			encBuf.Write(lenBuf[:])
+			encBuf.Write(ct)
+			if rerr == io.ErrUnexpectedEOF {
+				break
+			}
+		}
+	}
+	transcript := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(transcript)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		var lenBuf [4]byte
+		for {
+			_, rerr := io.ReadFull(r, lenBuf[:])
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				b.Fatalf("ReadFull length: %v", rerr)
+			}
+			ctLen := int(lenBuf[0])<<24 | int(lenBuf[1])<<16 | int(lenBuf[2])<<8 | int(lenBuf[3])
+			ct := make([]byte, ctLen)
+			if _, rerr2 := io.ReadFull(r, ct); rerr2 != nil {
+				b.Fatalf("ReadFull body: %v", rerr2)
+			}
+			pt, decErr := Decrypt3x(ns, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+			if decErr != nil {
+				b.Fatalf("Decrypt3x: %v", decErr)
+			}
+			buf.Write(pt)
+		}
+	}
 }

@@ -1,20 +1,19 @@
 # ITB Triple Ouroboros Benchmark Results
 
-Results below were collected at `ITB_NONCE_SIZE=128` on hosts with AVX-512 SIMD support. All nine PRF-grade hash primitives in the registry — Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC, BLAKE2b-512, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20 — dispatch through hand-written ZMM AVX-512 (and VAES + AVX-512 where applicable) chain-absorb ASM kernels at the per-pixel hash hot path; the C ABI and Python FFI stacks populate the batched arm automatically.
+Results below were collected at `ITB_NONCE_BITS=128` on hosts with AVX-512 SIMD support. All nine PRF-grade hash primitives in the registry — Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC, BLAKE2b-512, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20 — dispatch through hand-written ZMM AVX-512 (and VAES + AVX-512 where applicable) chain-absorb ASM kernels at the per-pixel hash hot path; the C ABI and Python FFI stacks populate the batched arm automatically.
 
 Lock Soup derives a fresh PRF-keyed bit-permutation mask per chunk, so per-byte primitive call rate is ~10× higher than the plain / Bit-Soup-only paths and the hash hot path becomes throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT + full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width.
 
 Reproduction:
 
 ```sh
-ITB_NONCE_SIZE=128 go test -bench='BenchmarkExtTriple*' -benchtime=2s -count=1
-ITB_NONCE_SIZE=128 ITB_BITSOUP=1 go test -bench='BenchmarkExtTriple*' -benchtime=2s -count=1
-ITB_NONCE_SIZE=128 ITB_LOCKSOUP=1 go test -bench='BenchmarkExtTriple*' -benchtime=2s -count=1
+ITB_NONCE_BITS=128 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
+ITB_NONCE_BITS=128 ITB_BITSOUP=1 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
+ITB_NONCE_BITS=128 ITB_LOCKSOUP=1 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
 ```
 
 Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512+VL chain-absorb kernels are not engaged:
 
-* `-tags=purego` — disables both our chain-absorb asm and the upstream stdlib asm (zeebo/blake3, golang.org/x/crypto, jedisct1/go-aes); the single Func falls into pure-Go scalar.
 * `-tags=noitbasm` — disables only our chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; throughput tracks the OLDBENCH3 single-Func numbers below.
 
 Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everanium/itb/blob/main/archive/OLDBENCH3.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations. Numerically these also serve as the expected ballpark under `-tags=noitbasm` (the encrypt path runs 4× single arm via upstream asm — the pre-ZMM dispatch shape).

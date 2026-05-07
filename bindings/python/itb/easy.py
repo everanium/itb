@@ -44,6 +44,7 @@ container-cap heuristic in itb.ChunkSize.
 
 from __future__ import annotations
 
+import ctypes
 from typing import List, Optional, Tuple
 
 from ._ffi import (
@@ -242,7 +243,7 @@ class Encryptor:
         # Binding-side default override: when the caller passes
         # ``mac=None`` the binding picks ``hmac-blake3`` rather than
         # passing NULL through to libitb's own default. HMAC-BLAKE3
-        # measures the lightest MAC overhead in the Easy-Mode bench
+        # measures the lightest MAC overhead in the Easy Mode bench
         # surface; routing the default through it gives the
         # "constructor without arguments" path the lowest cost.
         mac_arg = (mac.encode("utf-8") if mac else b"hmac-blake3")
@@ -872,8 +873,12 @@ class Encryptor:
                 ct = self._stream_auth_emit(
                     bytes(buf), stream_id, cum_pixels, True)
                 # Wipe buffered plaintext after consumption.
-                for i in range(len(buf)):
-                    buf[i] = 0
+                if len(buf) > 0:
+                    ctypes.memset(
+                        (ctypes.c_char * len(buf)).from_buffer(buf),
+                        0,
+                        len(buf),
+                    )
                 buf.clear()
                 fout.write(ct)
                 if len(ct) >= header_sz:
@@ -884,8 +889,11 @@ class Encryptor:
             # buf has > cs bytes; emit one non-terminal chunk and
             # keep the leftover for the next iteration.
             chunk_pt = bytes(buf[:cs])
-            for i in range(cs):
-                buf[i] = 0
+            ctypes.memset(
+                (ctypes.c_char * cs).from_buffer(buf, 0),
+                0,
+                cs,
+            )
             del buf[:cs]
             ct = self._stream_auth_emit(
                 chunk_pt, stream_id, cum_pixels, False)
@@ -985,60 +993,97 @@ class Encryptor:
         self, plaintext: bytes, stream_id: bytes,
         cum_pixels: int, final_flag: bool,
     ) -> bytes:
-        """Per-chunk encrypt dispatch via the Easy-mode Streaming AEAD
-        ABI export. Probes output capacity, allocates, and returns
-        the wire chunk bytes."""
+        """Per-chunk encrypt dispatch via the Easy Mode Streaming AEAD
+        ABI export. Pre-allocates from the 1.25× + 128 KiB envelope
+        (mirror of :meth:`_cipher_call`); the C ABI runs the full
+        crypto on every call regardless of out-buffer capacity, so a
+        NULL/0 probe would double the work. The +32-byte tag and
+        +1-byte flag inherent to the Streaming AEAD per-chunk wire
+        layout are inside the 128 KiB pad's headroom even at
+        chunk_size = 1. STATUS_BUFFER_TOO_SMALL retry stays as the
+        safety net per .NEXTBIND.md §7.1.
+
+        Reuses the per-encryptor ``_out_buf`` / ``_out_cap`` cache
+        (Bonus 1 in §7.1) — same scope as the single-shot
+        :meth:`_cipher_call` path — so the streaming hot loop
+        amortises the cffi allocation across every chunk."""
+        self._check_open()
         sid_buf = _ffi.new(f"unsigned char[{_STREAM_ID_LEN}]", stream_id)
         in_arg = plaintext if plaintext else _ffi.NULL
+        payload_len = len(plaintext)
+        cap = max(131072, (payload_len * 5) // 4 + 131072)
+        if self._out_cap < cap:
+            # Wipe previous bytes before reassignment — cffi's _ffi.new
+            # discards the prior buffer without zeroing the heap region.
+            if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+                _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+            self._out_buf = _ffi.new("unsigned char[]", cap)
+            self._out_cap = cap
         out_len = _ffi.new("size_t*")
         rc = _lib.ITB_Easy_EncryptStreamAuth(
-            self._handle, in_arg, len(plaintext),
+            self._handle, in_arg, payload_len,
             sid_buf, int(cum_pixels), 1 if final_flag else 0,
-            _ffi.NULL, 0, out_len)
-        if rc == STATUS_OK:
-            return b""
-        if rc != STATUS_BUFFER_TOO_SMALL:
-            _raise_easy(rc)
-        need = int(out_len[0])
-        if need == 0:
-            return b""
-        out_buf = _ffi.new(f"unsigned char[{need}]")
-        rc = _lib.ITB_Easy_EncryptStreamAuth(
-            self._handle, in_arg, len(plaintext),
-            sid_buf, int(cum_pixels), 1 if final_flag else 0,
-            out_buf, need, out_len)
+            self._out_buf, self._out_cap, out_len)
+        if rc == STATUS_BUFFER_TOO_SMALL:
+            need = int(out_len[0])
+            if need == 0:
+                return b""
+            if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+                _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+            self._out_buf = _ffi.new("unsigned char[]", need)
+            self._out_cap = need
+            rc = _lib.ITB_Easy_EncryptStreamAuth(
+                self._handle, in_arg, payload_len,
+                sid_buf, int(cum_pixels), 1 if final_flag else 0,
+                self._out_buf, self._out_cap, out_len)
         if rc != STATUS_OK:
             _raise_easy(rc)
-        return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+        return bytes(_ffi.buffer(self._out_buf, int(out_len[0])))
 
     def _stream_auth_consume(
         self, ciphertext: bytes, stream_id: bytes, cum_pixels: int,
     ):
-        """Per-chunk decrypt dispatch via the Easy-mode Streaming AEAD
-        ABI export. Returns ``(plaintext, final_flag)``."""
+        """Per-chunk decrypt dispatch via the Easy Mode Streaming AEAD
+        ABI export. Pre-allocates from the 1.25× + 128 KiB envelope
+        (mirror of :meth:`_cipher_call`); see :meth:`_stream_auth_emit`
+        for the rationale. STATUS_BUFFER_TOO_SMALL retry stays as the
+        safety net per .NEXTBIND.md §7.1. Returns
+        ``(plaintext, final_flag)``.
+
+        Reuses the per-encryptor ``_out_buf`` / ``_out_cap`` cache
+        (Bonus 1 in §7.1) — same scope as the single-shot
+        :meth:`_cipher_call` path."""
+        self._check_open()
         sid_buf = _ffi.new(f"unsigned char[{_STREAM_ID_LEN}]", stream_id)
         in_arg = ciphertext if ciphertext else _ffi.NULL
+        payload_len = len(ciphertext)
+        cap = max(131072, (payload_len * 5) // 4 + 131072)
+        if self._out_cap < cap:
+            if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+                _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+            self._out_buf = _ffi.new("unsigned char[]", cap)
+            self._out_cap = cap
         out_len = _ffi.new("size_t*")
         ff = _ffi.new("int*")
         rc = _lib.ITB_Easy_DecryptStreamAuth(
-            self._handle, in_arg, len(ciphertext),
+            self._handle, in_arg, payload_len,
             sid_buf, int(cum_pixels),
-            _ffi.NULL, 0, out_len, ff)
-        if rc == STATUS_OK:
-            return b"", bool(int(ff[0]))
-        if rc != STATUS_BUFFER_TOO_SMALL:
-            _raise_easy(rc)
-        need = int(out_len[0])
-        if need == 0:
-            return b"", bool(int(ff[0]))
-        out_buf = _ffi.new(f"unsigned char[{need}]")
-        rc = _lib.ITB_Easy_DecryptStreamAuth(
-            self._handle, in_arg, len(ciphertext),
-            sid_buf, int(cum_pixels),
-            out_buf, need, out_len, ff)
+            self._out_buf, self._out_cap, out_len, ff)
+        if rc == STATUS_BUFFER_TOO_SMALL:
+            need = int(out_len[0])
+            if need == 0:
+                return b"", bool(int(ff[0]))
+            if self._out_cap > 0 and self._out_buf != _ffi.NULL:
+                _ffi.memmove(self._out_buf, b"\x00" * self._out_cap, self._out_cap)
+            self._out_buf = _ffi.new("unsigned char[]", need)
+            self._out_cap = need
+            rc = _lib.ITB_Easy_DecryptStreamAuth(
+                self._handle, in_arg, payload_len,
+                sid_buf, int(cum_pixels),
+                self._out_buf, self._out_cap, out_len, ff)
         if rc != STATUS_OK:
             _raise_easy(rc)
-        return bytes(_ffi.buffer(out_buf, int(out_len[0]))), bool(int(ff[0]))
+        return bytes(_ffi.buffer(self._out_buf, int(out_len[0]))), bool(int(ff[0]))
 
     # ─── Lifecycle ────────────────────────────────────────────────
 

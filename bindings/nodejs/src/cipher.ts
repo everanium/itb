@@ -3,10 +3,16 @@
 // free functions: `encrypt`, `decrypt`, `encryptTriple`,
 // `decryptTriple`, plus the four authenticated `*Auth` variants.
 //
-// Output sizing follows the libitb probe-then-write protocol: the
-// first call with `cap=0` returns `Status.BufferTooSmall` and writes
-// the required size into `outLen`; the second call with the
-// allocated buffer fills it.
+// Output sizing uses the formula+retry-once pattern shared with
+// `Encryptor._cipherCall`: pre-allocate
+// `Math.max(131072, Math.floor(payloadLen * 5 / 4) + 131072)` (1.25×
+// upper bound + 128 KiB headroom that absorbs barrier-fill expansion
+// up to bf=32 plus the small-payload Triple+auth-MAC fixed overhead),
+// invoke the C ABI once, and retry exactly once on
+// `Status.BufferTooSmall` using the returned `outLen` as the next
+// allocation size. The retry-once branch is the safety net for any
+// future barrier-fill / nonce-bits combination outside the measured
+// matrix.
 //
 // All seeds passed to one call must share the same native hash
 // width. Mixing widths raises `ITBError(SeedWidthMix)`.
@@ -15,6 +21,10 @@
 // `Status.EncryptFailed` (the Go-side `Encrypt128` / `Decrypt128`
 // family returns `"itb: empty data"` before any work). The binding
 // propagates the rejection verbatim — pass at least one byte.
+
+function preallocCap(payloadLen: number): number {
+  return Math.max(131072, Math.floor((payloadLen * 5) / 4) + 131072);
+}
 
 import { errorFromStatus } from './errors.js';
 import type { MAC } from './mac.js';
@@ -100,22 +110,27 @@ function runSingle(
   start: Seed,
   payload: Uint8Array,
 ): Uint8Array {
-  const probe: [number | bigint] = [0];
-  let rc = fn(noise.handle, data.handle, start.handle, payload, payload.length, null, 0, probe);
-  if (rc === Status.Ok) {
-    return new Uint8Array(0);
+  const cap = preallocCap(payload.length);
+  let out = new Uint8Array(cap);
+  const outLen: [number | bigint] = [0];
+  let rc = fn(
+    noise.handle, data.handle, start.handle,
+    payload, payload.length,
+    out, out.length, outLen,
+  );
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    out = new Uint8Array(need);
+    rc = fn(
+      noise.handle, data.handle, start.handle,
+      payload, payload.length,
+      out, out.length, outLen,
+    );
   }
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(probe[0]);
-  const out = new Uint8Array(need);
-  const filled: [number | bigint] = [0];
-  rc = fn(noise.handle, data.handle, start.handle, payload, payload.length, out, need, filled);
   if (rc !== Status.Ok) {
     throw errorFromStatus(rc);
   }
-  return out.subarray(0, Number(filled[0]));
+  return out.subarray(0, Number(outLen[0]));
 }
 
 function runTriple(
@@ -129,34 +144,31 @@ function runTriple(
   start3: Seed,
   payload: Uint8Array,
 ): Uint8Array {
-  const probe: [number | bigint] = [0];
+  const cap = preallocCap(payload.length);
+  let out = new Uint8Array(cap);
+  const outLen: [number | bigint] = [0];
   let rc = fn(
     noise.handle,
     data1.handle, data2.handle, data3.handle,
     start1.handle, start2.handle, start3.handle,
     payload, payload.length,
-    null, 0, probe,
+    out, out.length, outLen,
   );
-  if (rc === Status.Ok) {
-    return new Uint8Array(0);
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    out = new Uint8Array(need);
+    rc = fn(
+      noise.handle,
+      data1.handle, data2.handle, data3.handle,
+      start1.handle, start2.handle, start3.handle,
+      payload, payload.length,
+      out, out.length, outLen,
+    );
   }
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(probe[0]);
-  const out = new Uint8Array(need);
-  const filled: [number | bigint] = [0];
-  rc = fn(
-    noise.handle,
-    data1.handle, data2.handle, data3.handle,
-    start1.handle, start2.handle, start3.handle,
-    payload, payload.length,
-    out, need, filled,
-  );
   if (rc !== Status.Ok) {
     throw errorFromStatus(rc);
   }
-  return out.subarray(0, Number(filled[0]));
+  return out.subarray(0, Number(outLen[0]));
 }
 
 function runAuthSingle(
@@ -167,32 +179,29 @@ function runAuthSingle(
   mac: MAC,
   payload: Uint8Array,
 ): Uint8Array {
-  const probe: [number | bigint] = [0];
+  const cap = preallocCap(payload.length);
+  let out = new Uint8Array(cap);
+  const outLen: [number | bigint] = [0];
   let rc = fn(
     noise.handle, data.handle, start.handle,
     mac.handle,
     payload, payload.length,
-    null, 0, probe,
+    out, out.length, outLen,
   );
-  if (rc === Status.Ok) {
-    return new Uint8Array(0);
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    out = new Uint8Array(need);
+    rc = fn(
+      noise.handle, data.handle, start.handle,
+      mac.handle,
+      payload, payload.length,
+      out, out.length, outLen,
+    );
   }
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(probe[0]);
-  const out = new Uint8Array(need);
-  const filled: [number | bigint] = [0];
-  rc = fn(
-    noise.handle, data.handle, start.handle,
-    mac.handle,
-    payload, payload.length,
-    out, need, filled,
-  );
   if (rc !== Status.Ok) {
     throw errorFromStatus(rc);
   }
-  return out.subarray(0, Number(filled[0]));
+  return out.subarray(0, Number(outLen[0]));
 }
 
 function runAuthTriple(
@@ -207,36 +216,33 @@ function runAuthTriple(
   mac: MAC,
   payload: Uint8Array,
 ): Uint8Array {
-  const probe: [number | bigint] = [0];
+  const cap = preallocCap(payload.length);
+  let out = new Uint8Array(cap);
+  const outLen: [number | bigint] = [0];
   let rc = fn(
     noise.handle,
     data1.handle, data2.handle, data3.handle,
     start1.handle, start2.handle, start3.handle,
     mac.handle,
     payload, payload.length,
-    null, 0, probe,
+    out, out.length, outLen,
   );
-  if (rc === Status.Ok) {
-    return new Uint8Array(0);
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    out = new Uint8Array(need);
+    rc = fn(
+      noise.handle,
+      data1.handle, data2.handle, data3.handle,
+      start1.handle, start2.handle, start3.handle,
+      mac.handle,
+      payload, payload.length,
+      out, out.length, outLen,
+    );
   }
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(probe[0]);
-  const out = new Uint8Array(need);
-  const filled: [number | bigint] = [0];
-  rc = fn(
-    noise.handle,
-    data1.handle, data2.handle, data3.handle,
-    start1.handle, start2.handle, start3.handle,
-    mac.handle,
-    payload, payload.length,
-    out, need, filled,
-  );
   if (rc !== Status.Ok) {
     throw errorFromStatus(rc);
   }
-  return out.subarray(0, Number(filled[0]));
+  return out.subarray(0, Number(outLen[0]));
 }
 
 /** Encrypts plaintext under the (noise, data, start) seed trio. */

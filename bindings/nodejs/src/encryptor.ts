@@ -215,7 +215,7 @@ export class Encryptor implements Disposable {
    *   override:** when `macName` is `null`, the binding picks
    *   `"hmac-blake3"` rather than passing NULL through to libitb's
    *   own default. HMAC-BLAKE3 measures the lightest MAC overhead in
-   *   the Easy-Mode bench surface; routing the default through it
+   *   the Easy Mode bench surface; routing the default through it
    *   gives the constructor-without-arguments path the lowest cost.
    * @param mode `1` (Single Ouroboros, 3 seeds — noise / data /
    *   start) or `3` (Triple Ouroboros, 7 seeds — noise + 3 pairs of
@@ -606,7 +606,19 @@ export class Encryptor implements Disposable {
     const buf: Uint8Array[] = [];
     let buffered = 0;
     let eof = false;
-    const consumeBuffer = () => {
+    // Fast-path skip: when `buf` holds a single Uint8Array, the
+    // merged buffer is byte-identical to `buf[0]` — return the view
+    // directly to elide the alloc + memcpy of the slow-path merge.
+    // The fresh-allocation slow path is preserved verbatim for
+    // multi-part input. The boolean tracks ownership so the wipe-side
+    // path skips zeroing caller-provided source views.
+    const consumeBuffer = (): { merged: Uint8Array; owned: boolean } => {
+      if (buf.length === 1) {
+        const merged = buf[0]!;
+        buf.length = 0;
+        buffered = 0;
+        return { merged, owned: false };
+      }
       const merged = new Uint8Array(buffered);
       let off = 0;
       for (const p of buf) {
@@ -615,11 +627,17 @@ export class Encryptor implements Disposable {
       }
       buf.length = 0;
       buffered = 0;
-      return merged;
+      return { merged, owned: true };
     };
-    const emit = (pt: Uint8Array, finalFlag: boolean) => {
+    const emit = (pt: Uint8Array, finalFlag: boolean, owned: boolean) => {
       const ct = this._streamAuthEmit(pt, streamId, cumPixels, finalFlag);
-      pt.fill(0);
+      // Wipe the consumed plaintext only when `pt` is owned by the
+      // helper (slow-path fresh allocation). On the fast path `pt`
+      // is a view into a caller-supplied Uint8Array; zeroing it would
+      // corrupt the caller's buffer.
+      if (owned) {
+        pt.fill(0);
+      }
       output.write(ct);
       if (ct.length >= headerSz) {
         const w = (ct[headerSz - 4]! << 8) | ct[headerSz - 3]!;
@@ -646,13 +664,14 @@ export class Encryptor implements Disposable {
         buffered += chunk.length;
       }
       if (eof) {
-        emit(consumeBuffer(), true);
+        const { merged, owned } = consumeBuffer();
+        emit(merged, true, owned);
         break;
       }
-      const merged = consumeBuffer();
+      const { merged, owned } = consumeBuffer();
       const chunkPt = merged.subarray(0, chunkSize);
       const tail = merged.subarray(chunkSize);
-      emit(chunkPt, false);
+      emit(chunkPt, false, owned);
       if (tail.length > 0) {
         buf.push(tail);
         buffered += tail.length;
@@ -690,9 +709,19 @@ export class Encryptor implements Disposable {
         if (buffered < headerSz) {
           return;
         }
-        const merged = new Uint8Array(buffered);
-        let off = 0;
-        for (const p of buf) { merged.set(p, off); off += p.length; }
+        // Fast-path skip: single-element buffer is byte-identical to
+        // its sole part. Decrypt-side does not run a wipe pass on the
+        // merged buffer (per the §7.1 carve-out — `Writable.write`
+        // queues the reference until later flush), so the view-vs-copy
+        // distinction is safe at every consumer site below.
+        let merged: Uint8Array;
+        if (buf.length === 1) {
+          merged = buf[0]!;
+        } else {
+          merged = new Uint8Array(buffered);
+          let off = 0;
+          for (const p of buf) { merged.set(p, off); off += p.length; }
+        }
         const chunkLen = this.parseChunkLen(merged.subarray(0, headerSz));
         if (merged.length < chunkLen) {
           buf.length = 0;
@@ -768,31 +797,46 @@ export class Encryptor implements Disposable {
     const ff = finalFlag ? 1 : 0;
     const ptArg = plaintext.length > 0 ? plaintext : new Uint8Array(0);
     // koffi typed-pointer signature for `_Out_ size_t *outLen` accepts a
-    // `[number | bigint]` 1-tuple uniformly across the Easy-mode call
+    // `[number | bigint]` 1-tuple uniformly across the Easy Mode call
     // surface; the wider element type avoids the per-call workaround
     // cast that a strict `[bigint]` declaration would otherwise force.
     const outLen: [number | bigint] = [0n];
+    // Formula+retry-once: shares the 1.25× upper bound + 128 KiB
+    // headroom shape with `_cipherCall` and the low-level
+    // `cipher.ts` / `streams.ts` helpers. The Easy Stream-AEAD ABI
+    // shares the "compute-internally-then-return-BUFFER_TOO_SMALL"
+    // contract with the single-shot Easy ABI, so probing with a null
+    // out-buffer pays the per-chunk crypto twice; pre-allocating from
+    // the formula collapses that to one call in the hot path.
+    //
+    // Reuses the per-encryptor `_outputCache` (Bonus 1 in
+    // .NEXTBIND.md §7.1) — same scope as the single-shot
+    // `_cipherCall` path — so the streaming hot loop amortises the
+    // allocation across every chunk just like the single-shot Easy
+    // Mode path does. Returns `_outputCache.slice(...)` (eager copy)
+    // so subsequent chunk calls may safely overwrite the cache while
+    // the prior chunk's bytes remain queued in the consumer's
+    // `Writable`.
+    const cache = this._ensureOutputCache(plaintext.length);
     let rc = ITB_Easy_EncryptStreamAuth(
       this._handle as bigint, ptArg, BigInt(plaintext.length),
       streamId, cumPixels, ff,
-      null, 0n, outLen,
+      cache, BigInt(cache.length), outLen,
     );
-    if (rc === Status.Ok) return new Uint8Array(0);
-    if (rc !== Status.BufferTooSmall) {
-      throw errorFromStatus(rc);
+    if (rc === Status.BufferTooSmall) {
+      const need = Number(outLen[0]);
+      this._wipeAndReplaceCache(need);
+      const grown = this._outputCache!;
+      rc = ITB_Easy_EncryptStreamAuth(
+        this._handle as bigint, ptArg, BigInt(plaintext.length),
+        streamId, cumPixels, ff,
+        grown, BigInt(grown.length), outLen,
+      );
     }
-    const need = Number(outLen[0]);
-    if (need === 0) return new Uint8Array(0);
-    const buf = new Uint8Array(need);
-    rc = ITB_Easy_EncryptStreamAuth(
-      this._handle as bigint, ptArg, BigInt(plaintext.length),
-      streamId, cumPixels, ff,
-      buf, BigInt(buf.length), outLen,
-    );
     if (rc !== Status.Ok) {
       throw errorFromStatus(rc);
     }
-    return buf.subarray(0, Number(outLen[0]));
+    return this._outputCache!.slice(0, Number(outLen[0]));
   }
 
   /** @internal */
@@ -804,31 +848,41 @@ export class Encryptor implements Disposable {
     const ctArg = ciphertext.length > 0 ? ciphertext : new Uint8Array(0);
     const outLen: [number | bigint] = [0n];
     const ff: [number] = [0];
+    // Decrypt-side plaintext is bounded above by ciphertext length;
+    // the same 1.25× + 128 KiB headroom formula covers every libitb
+    // sizing. Retry-once is the safety net for any future
+    // barrier-fill / nonce-bits combination outside the measured
+    // matrix.
+    //
+    // Reuses the per-encryptor `_outputCache` (Bonus 1 in
+    // .NEXTBIND.md §7.1) — same scope as the single-shot
+    // `_cipherCall` path. The eager `slice` copy below detaches the
+    // returned plaintext from the cache so the next chunk's call may
+    // safely overwrite the cache while the prior chunk's bytes remain
+    // queued in the consumer's `Writable`.
+    const cache = this._ensureOutputCache(ciphertext.length);
     let rc = ITB_Easy_DecryptStreamAuth(
       this._handle as bigint, ctArg, BigInt(ciphertext.length),
       streamId, cumPixels,
-      null, 0n, outLen, ff,
+      cache, BigInt(cache.length), outLen, ff,
     );
-    if (rc === Status.Ok) {
-      return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+    if (rc === Status.BufferTooSmall) {
+      const need = Number(outLen[0]);
+      this._wipeAndReplaceCache(need);
+      const grown = this._outputCache!;
+      rc = ITB_Easy_DecryptStreamAuth(
+        this._handle as bigint, ctArg, BigInt(ciphertext.length),
+        streamId, cumPixels,
+        grown, BigInt(grown.length), outLen, ff,
+      );
     }
-    if (rc !== Status.BufferTooSmall) {
-      throw errorFromStatus(rc);
-    }
-    const need = Number(outLen[0]);
-    if (need === 0) {
-      return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
-    }
-    const buf = new Uint8Array(need);
-    rc = ITB_Easy_DecryptStreamAuth(
-      this._handle as bigint, ctArg, BigInt(ciphertext.length),
-      streamId, cumPixels,
-      buf, BigInt(buf.length), outLen, ff,
-    );
     if (rc !== Status.Ok) {
       throw errorFromStatus(rc);
     }
-    return { pt: buf.subarray(0, Number(outLen[0])), finalFlag: ff[0] !== 0 };
+    return {
+      pt: this._outputCache!.slice(0, Number(outLen[0])),
+      finalFlag: ff[0] !== 0,
+    };
   }
 
   /**

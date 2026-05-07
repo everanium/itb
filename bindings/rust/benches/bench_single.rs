@@ -1,11 +1,11 @@
-//! Easy-Mode Single-Ouroboros benchmarks for the Rust binding.
+//! Easy Mode Single-Ouroboros benchmarks for the Rust binding.
 //!
 //! Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
 //! nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
 //! MiB CSPRNG-filled payload. One mixed-primitive variant
 //! ([`itb::Encryptor::mixed_single`] with BLAKE3 / BLAKE2s /
 //! BLAKE2b-256 + Areion-SoEM-256 dedicated lockSeed) covers the
-//! Easy-Mode Mixed surface alongside the single-primitive grid.
+//! Easy Mode Mixed surface alongside the single-primitive grid.
 //!
 //! Run with::
 //!
@@ -214,6 +214,7 @@ fn build_cases() -> Vec<BenchCase> {
         format!("{base}_decrypt_auth_16mb"),
         build_mixed_single(),
     ));
+    append_stream_cases_single(&mut cases);
     cases
 }
 
@@ -233,4 +234,329 @@ fn main() {
 
     let cases = build_cases();
     common::run_all(cases);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Streaming benchmarks (Single Ouroboros).
+//
+// Eight cases exercising the full Single-Ouroboros streaming matrix
+// at 64 MiB total payload / 16 MiB chunk size under areion512 + 1024
+// bit ITB key + hmac-blake3 MAC:
+//
+//     | Mode      | Op      | Variant   |
+//     |-----------|---------|-----------|
+//     | Easy      | Encrypt | AEAD-IO   |
+//     | Easy      | Encrypt | UserLoop  |
+//     | Easy      | Decrypt | AEAD-IO   |
+//     | Easy      | Decrypt | UserLoop  |
+//     | Low-Level | Encrypt | AEAD-IO   |
+//     | Low-Level | Encrypt | UserLoop  |
+//     | Low-Level | Decrypt | AEAD-IO   |
+//     | Low-Level | Decrypt | UserLoop  |
+//
+// AEAD-IO  — Streaming AEAD over Read / Write traits. Easy:
+//            Encryptor::encrypt_stream_auth / decrypt_stream_auth.
+//            Low-Level: itb::encrypt_stream_auth / decrypt_stream_auth
+//            free functions over (noise, data, start, mac).
+//
+// UserLoop — plain Streaming via caller-side per-chunk loop; framing
+//            convention is a 4-byte big-endian ciphertext-length
+//            prefix preceding each chunk's ciphertext bytes (matching
+//            the canonical pattern in tmp/itb_examples/rust/main.rs).
+//            Easy uses Encryptor::encrypt / decrypt; Low-Level uses
+//            the itb::encrypt / decrypt free functions.
+//
+// Setup discipline: 64 MiB CSPRNG fill, Encryptor / Seed / MAC
+// construction, and (for Decrypt cases) the pre-encryption all run
+// outside the timer. Each measured iteration walks a fresh
+// Cursor / output Vec over the prepared inputs and tears them down.
+// ────────────────────────────────────────────────────────────────────
+
+use std::io::{Cursor, Read, Write};
+
+use itb::{Seed, MAC};
+
+const STREAM_PRIMITIVE: &str = "areion512";
+const STREAM_TOTAL_BYTES: usize = 64 << 20;
+const STREAM_CHUNK_BYTES: usize = 16 << 20;
+// Fixed 32-byte MAC key — matches the canonical .NEXTBIND.md /
+// .MACSTREAM.md MAC-key length and `MAC::new`'s 32-byte hmac-blake3
+// requirement. Value contents are immaterial for throughput
+// measurement; the MAC executes in O(MAC-key-length) per absorb
+// regardless of byte distribution.
+const STREAM_MAC_KEY: [u8; 32] = [
+    0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+    0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+    0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0x01,
+];
+
+fn build_stream_encryptor() -> Encryptor {
+    let enc = Encryptor::new(
+        Some(STREAM_PRIMITIVE),
+        Some(KEY_BITS),
+        Some(MAC_NAME),
+        1,
+    )
+    .unwrap_or_else(|e| panic!("Encryptor::new({STREAM_PRIMITIVE}, mode=1): {e:?}"));
+    apply_lockseed_if_requested(&enc);
+    enc
+}
+
+fn build_stream_seeds_single() -> (Seed, Seed, Seed) {
+    let n = Seed::new(STREAM_PRIMITIVE, KEY_BITS).expect("Seed::new noise");
+    let d = Seed::new(STREAM_PRIMITIVE, KEY_BITS).expect("Seed::new data");
+    let s = Seed::new(STREAM_PRIMITIVE, KEY_BITS).expect("Seed::new start");
+    (n, d, s)
+}
+
+fn build_stream_mac() -> MAC {
+    MAC::new(MAC_NAME, &STREAM_MAC_KEY).expect("MAC::new")
+}
+
+/// Frames a single chunk of plaintext under the UserLoop convention:
+/// 4-byte big-endian ciphertext-length prefix followed by ciphertext.
+fn frame_chunk(out: &mut Vec<u8>, ct: &[u8]) {
+    let len_be = (ct.len() as u32).to_be_bytes();
+    out.write_all(&len_be).expect("write len prefix");
+    out.write_all(ct).expect("write ct");
+}
+
+/// Easy AEAD-IO encrypt: per iteration, runs `encrypt_stream_auth`
+/// over a fresh Cursor reader / Vec writer.
+fn make_easy_stream_encrypt_aead_io_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let mut enc = build_stream_encryptor();
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let reader = Cursor::new(&payload[..]);
+            let mut writer: Vec<u8> = Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+            enc.encrypt_stream_auth(reader, &mut writer, STREAM_CHUNK_BYTES)
+                .expect("encrypt_stream_auth");
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Easy AEAD-IO decrypt: pre-encrypts once, then per iter decrypts
+/// the stored transcript through `decrypt_stream_auth`.
+fn make_easy_stream_decrypt_aead_io_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let mut enc = build_stream_encryptor();
+    let mut transcript: Vec<u8> = Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+    enc.encrypt_stream_auth(Cursor::new(&payload[..]), &mut transcript, STREAM_CHUNK_BYTES)
+        .expect("pre-encrypt for decrypt-case");
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let reader = Cursor::new(&transcript[..]);
+            let mut writer: Vec<u8> = Vec::with_capacity(STREAM_TOTAL_BYTES);
+            enc.decrypt_stream_auth(reader, &mut writer, STREAM_CHUNK_BYTES)
+                .expect("decrypt_stream_auth");
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Easy UserLoop encrypt: per iter, walks the plaintext in 16 MiB
+/// chunks and emits 4-byte BE-length-prefixed ciphertexts via
+/// `Encryptor::encrypt`.
+fn make_easy_stream_encrypt_userloop_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let mut enc = build_stream_encryptor();
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let mut writer: Vec<u8> =
+                Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+            let mut off = 0usize;
+            while off < payload.len() {
+                let end = std::cmp::min(off + STREAM_CHUNK_BYTES, payload.len());
+                let ct = enc.encrypt(&payload[off..end]).expect("encrypt");
+                frame_chunk(&mut writer, &ct);
+                off = end;
+            }
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Easy UserLoop decrypt: pre-frames the transcript once, then per
+/// iter parses the framing and calls `Encryptor::decrypt` per chunk.
+fn make_easy_stream_decrypt_userloop_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let mut enc = build_stream_encryptor();
+    let mut transcript: Vec<u8> =
+        Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+    let mut off = 0usize;
+    while off < payload.len() {
+        let end = std::cmp::min(off + STREAM_CHUNK_BYTES, payload.len());
+        let ct = enc.encrypt(&payload[off..end]).expect("pre-encrypt UserLoop");
+        frame_chunk(&mut transcript, &ct);
+        off = end;
+    }
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let mut reader = Cursor::new(&transcript[..]);
+            let mut writer: Vec<u8> = Vec::with_capacity(STREAM_TOTAL_BYTES);
+            loop {
+                let mut hdr = [0u8; 4];
+                match reader.read_exact(&mut hdr) {
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+                let n = u32::from_be_bytes(hdr) as usize;
+                let mut ct = vec![0u8; n];
+                reader.read_exact(&mut ct).expect("read ct");
+                let pt = enc.decrypt(&ct).expect("decrypt");
+                writer.write_all(&pt).expect("write pt");
+            }
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Low-Level AEAD-IO encrypt: per iter, runs `itb::encrypt_stream_auth`
+/// over the (noise, data, start, mac) handles + fresh I/O wrappers.
+fn make_lowlevel_stream_encrypt_aead_io_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let (n_seed, d_seed, s_seed) = build_stream_seeds_single();
+    let mac = build_stream_mac();
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let reader = Cursor::new(&payload[..]);
+            let mut writer: Vec<u8> =
+                Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+            itb::encrypt_stream_auth(
+                &n_seed, &d_seed, &s_seed, &mac,
+                reader, &mut writer, STREAM_CHUNK_BYTES,
+            )
+            .expect("encrypt_stream_auth (low-level)");
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Low-Level AEAD-IO decrypt: pre-encrypts once with the same seeds /
+/// MAC, then per iter walks the transcript through
+/// `itb::decrypt_stream_auth`.
+fn make_lowlevel_stream_decrypt_aead_io_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let (n_seed, d_seed, s_seed) = build_stream_seeds_single();
+    let mac = build_stream_mac();
+    let mut transcript: Vec<u8> =
+        Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+    itb::encrypt_stream_auth(
+        &n_seed, &d_seed, &s_seed, &mac,
+        Cursor::new(&payload[..]), &mut transcript, STREAM_CHUNK_BYTES,
+    )
+    .expect("pre-encrypt for low-level decrypt-case");
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let reader = Cursor::new(&transcript[..]);
+            let mut writer: Vec<u8> = Vec::with_capacity(STREAM_TOTAL_BYTES);
+            itb::decrypt_stream_auth(
+                &n_seed, &d_seed, &s_seed, &mac,
+                reader, &mut writer, STREAM_CHUNK_BYTES,
+            )
+            .expect("decrypt_stream_auth (low-level)");
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Low-Level UserLoop encrypt: per iter, walks the plaintext in
+/// 16 MiB chunks and frames each ciphertext via the free function
+/// `itb::encrypt`.
+fn make_lowlevel_stream_encrypt_userloop_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let (n_seed, d_seed, s_seed) = build_stream_seeds_single();
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let mut writer: Vec<u8> =
+                Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+            let mut off = 0usize;
+            while off < payload.len() {
+                let end = std::cmp::min(off + STREAM_CHUNK_BYTES, payload.len());
+                let ct = itb::encrypt(&n_seed, &d_seed, &s_seed, &payload[off..end])
+                    .expect("encrypt (low-level)");
+                frame_chunk(&mut writer, &ct);
+                off = end;
+            }
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Low-Level UserLoop decrypt: pre-frames the transcript once, then
+/// per iter walks the framing and calls `itb::decrypt` per chunk.
+fn make_lowlevel_stream_decrypt_userloop_case(name: String) -> BenchCase {
+    let payload = common::random_bytes(STREAM_TOTAL_BYTES);
+    let (n_seed, d_seed, s_seed) = build_stream_seeds_single();
+    let mut transcript: Vec<u8> =
+        Vec::with_capacity(STREAM_TOTAL_BYTES + (STREAM_TOTAL_BYTES >> 3));
+    let mut off = 0usize;
+    while off < payload.len() {
+        let end = std::cmp::min(off + STREAM_CHUNK_BYTES, payload.len());
+        let ct = itb::encrypt(&n_seed, &d_seed, &s_seed, &payload[off..end])
+            .expect("pre-encrypt UserLoop (low-level)");
+        frame_chunk(&mut transcript, &ct);
+        off = end;
+    }
+    let run: BenchFn = Box::new(move |iters: u64| {
+        for _ in 0..iters {
+            let mut reader = Cursor::new(&transcript[..]);
+            let mut writer: Vec<u8> = Vec::with_capacity(STREAM_TOTAL_BYTES);
+            loop {
+                let mut hdr = [0u8; 4];
+                match reader.read_exact(&mut hdr) {
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+                let n = u32::from_be_bytes(hdr) as usize;
+                let mut ct = vec![0u8; n];
+                reader.read_exact(&mut ct).expect("read ct (low-level)");
+                let pt = itb::decrypt(&n_seed, &d_seed, &s_seed, &ct)
+                    .expect("decrypt (low-level)");
+                writer.write_all(&pt).expect("write pt");
+            }
+        }
+    });
+    BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
+}
+
+/// Appends the eight Single-Ouroboros streaming benches to the
+/// running case list.  Naming convention:
+///
+///     bench_single_stream_<mode>_<op>_<variant>_<primitive>_<bits>bit_<size>mb
+///
+/// where `mode ∈ {easy, lowlevel}`, `op ∈ {encrypt, decrypt}`,
+/// `variant ∈ {aead_io, userloop}`. Order is mode-major /
+/// variant-minor / op-minor for filter-friendly grouping.
+fn append_stream_cases_single(cases: &mut Vec<BenchCase>) {
+    let base = format!(
+        "bench_single_stream_{STREAM_PRIMITIVE}_{KEY_BITS}bit_64mb"
+    );
+    cases.push(make_easy_stream_encrypt_aead_io_case(
+        format!("{base}_easy_encrypt_aead_io"),
+    ));
+    cases.push(make_easy_stream_decrypt_aead_io_case(
+        format!("{base}_easy_decrypt_aead_io"),
+    ));
+    cases.push(make_easy_stream_encrypt_userloop_case(
+        format!("{base}_easy_encrypt_userloop"),
+    ));
+    cases.push(make_easy_stream_decrypt_userloop_case(
+        format!("{base}_easy_decrypt_userloop"),
+    ));
+    cases.push(make_lowlevel_stream_encrypt_aead_io_case(
+        format!("{base}_lowlevel_encrypt_aead_io"),
+    ));
+    cases.push(make_lowlevel_stream_decrypt_aead_io_case(
+        format!("{base}_lowlevel_decrypt_aead_io"),
+    ));
+    cases.push(make_lowlevel_stream_encrypt_userloop_case(
+        format!("{base}_lowlevel_encrypt_userloop"),
+    ));
+    cases.push(make_lowlevel_stream_decrypt_userloop_case(
+        format!("{base}_lowlevel_decrypt_userloop"),
+    ));
 }

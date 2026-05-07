@@ -1,4 +1,4 @@
-/// Shared scaffolding for the D Easy-Mode benchmark binaries.
+/// Shared scaffolding for the D Easy Mode benchmark binaries.
 ///
 /// The harness mirrors the Go ``testing.B`` benchmark style on the
 /// itb_ext_test.go / itb3_ext_test.go side: each bench function runs
@@ -15,7 +15,7 @@
 ///   values 128 / 256 / 512. Maps to `itb.setNonceBits` before any
 ///   encryptor is constructed. Default 128.
 /// * `ITB_LOCKSEED` - when set to a non-empty / non-`0` value, every
-///   Easy-Mode encryptor in this run calls `Encryptor.setLockSeed`
+///   Easy Mode encryptor in this run calls `Encryptor.setLockSeed`
 ///   with mode=1. The Go side's auto-couple invariant then engages
 ///   BitSoup + LockSoup automatically; no separate flags required
 ///   for Easy Mode. Default off.

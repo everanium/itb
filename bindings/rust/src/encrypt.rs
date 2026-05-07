@@ -187,45 +187,51 @@ fn enc_dec(
     payload: &[u8],
 ) -> Result<Vec<u8>, ITBError> {
     let EncFn::Single(fn_ptr) = f;
-    let mut out_len: usize = 0;
-    let in_ptr = if payload.is_empty() {
+    let payload_len = payload.len();
+    let in_ptr = if payload_len == 0 {
         std::ptr::null()
     } else {
         payload.as_ptr() as *const c_void
     };
-    // Probe first to discover required size.
-    let rc = unsafe {
+    // 1.25× + 128 KiB headroom — see Encryptor::cipher_call for the
+    // measured-margin rationale. Skips the size-probe round-trip the
+    // libitb C ABI charges (the cipher does the full crypto on every
+    // call regardless of out-buffer capacity, then returns
+    // BUFFER_TOO_SMALL without exposing the work — so probe-then-retry
+    // doubles cipher work per call). The retry on BUFFER_TOO_SMALL
+    // remains as the safety net for any future barrier-fill /
+    // nonce-bits combination outside the measured matrix.
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut out = vec![0u8; cap];
+    let mut out_len: usize = 0;
+    let mut rc = unsafe {
         fn_ptr(
             noise.handle(),
             data.handle(),
             start.handle(),
             in_ptr,
-            payload.len(),
-            std::ptr::null_mut(),
-            0,
-            &mut out_len,
-        )
-    };
-    if rc == ffi::STATUS_OK {
-        return Ok(Vec::new());
-    }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    let need = out_len;
-    let mut out = vec![0u8; need];
-    let rc = unsafe {
-        fn_ptr(
-            noise.handle(),
-            data.handle(),
-            start.handle(),
-            in_ptr,
-            payload.len(),
+            payload_len,
             out.as_mut_ptr() as *mut c_void,
-            need,
+            out.len(),
             &mut out_len,
         )
     };
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        out = vec![0u8; need];
+        rc = unsafe {
+            fn_ptr(
+                noise.handle(),
+                data.handle(),
+                start.handle(),
+                in_ptr,
+                payload_len,
+                out.as_mut_ptr() as *mut c_void,
+                out.len(),
+                &mut out_len,
+            )
+        };
+    }
     check(rc)?;
     out.truncate(out_len);
     Ok(out)
@@ -243,13 +249,17 @@ fn enc_dec_triple(
     start3: &Seed,
     payload: &[u8],
 ) -> Result<Vec<u8>, ITBError> {
-    let mut out_len: usize = 0;
-    let in_ptr = if payload.is_empty() {
+    let payload_len = payload.len();
+    let in_ptr = if payload_len == 0 {
         std::ptr::null()
     } else {
         payload.as_ptr() as *const c_void
     };
-    let rc = unsafe {
+    // 1.25× + 128 KiB headroom; see Encryptor::cipher_call.
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut out = vec![0u8; cap];
+    let mut out_len: usize = 0;
+    let mut rc = unsafe {
         fn_ptr(
             noise.handle(),
             data1.handle(),
@@ -259,36 +269,32 @@ fn enc_dec_triple(
             start2.handle(),
             start3.handle(),
             in_ptr,
-            payload.len(),
-            std::ptr::null_mut(),
-            0,
-            &mut out_len,
-        )
-    };
-    if rc == ffi::STATUS_OK {
-        return Ok(Vec::new());
-    }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    let need = out_len;
-    let mut out = vec![0u8; need];
-    let rc = unsafe {
-        fn_ptr(
-            noise.handle(),
-            data1.handle(),
-            data2.handle(),
-            data3.handle(),
-            start1.handle(),
-            start2.handle(),
-            start3.handle(),
-            in_ptr,
-            payload.len(),
+            payload_len,
             out.as_mut_ptr() as *mut c_void,
-            need,
+            out.len(),
             &mut out_len,
         )
     };
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        out = vec![0u8; need];
+        rc = unsafe {
+            fn_ptr(
+                noise.handle(),
+                data1.handle(),
+                data2.handle(),
+                data3.handle(),
+                start1.handle(),
+                start2.handle(),
+                start3.handle(),
+                in_ptr,
+                payload_len,
+                out.as_mut_ptr() as *mut c_void,
+                out.len(),
+                &mut out_len,
+            )
+        };
+    }
     check(rc)?;
     out.truncate(out_len);
     Ok(out)
@@ -302,46 +308,46 @@ fn enc_dec_auth(
     mac: &MAC,
     payload: &[u8],
 ) -> Result<Vec<u8>, ITBError> {
-    let mut out_len: usize = 0;
-    let in_ptr = if payload.is_empty() {
+    let payload_len = payload.len();
+    let in_ptr = if payload_len == 0 {
         std::ptr::null()
     } else {
         payload.as_ptr() as *const c_void
     };
-    let rc = unsafe {
+    // 1.25× + 128 KiB headroom; see Encryptor::cipher_call.
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut out = vec![0u8; cap];
+    let mut out_len: usize = 0;
+    let mut rc = unsafe {
         fn_ptr(
             noise.handle(),
             data.handle(),
             start.handle(),
             mac.handle(),
             in_ptr,
-            payload.len(),
-            std::ptr::null_mut(),
-            0,
-            &mut out_len,
-        )
-    };
-    if rc == ffi::STATUS_OK {
-        return Ok(Vec::new());
-    }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    let need = out_len;
-    let mut out = vec![0u8; need];
-    let rc = unsafe {
-        fn_ptr(
-            noise.handle(),
-            data.handle(),
-            start.handle(),
-            mac.handle(),
-            in_ptr,
-            payload.len(),
+            payload_len,
             out.as_mut_ptr() as *mut c_void,
-            need,
+            out.len(),
             &mut out_len,
         )
     };
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        out = vec![0u8; need];
+        rc = unsafe {
+            fn_ptr(
+                noise.handle(),
+                data.handle(),
+                start.handle(),
+                mac.handle(),
+                in_ptr,
+                payload_len,
+                out.as_mut_ptr() as *mut c_void,
+                out.len(),
+                &mut out_len,
+            )
+        };
+    }
     check(rc)?;
     out.truncate(out_len);
     Ok(out)
@@ -360,13 +366,17 @@ fn enc_dec_auth_triple(
     mac: &MAC,
     payload: &[u8],
 ) -> Result<Vec<u8>, ITBError> {
-    let mut out_len: usize = 0;
-    let in_ptr = if payload.is_empty() {
+    let payload_len = payload.len();
+    let in_ptr = if payload_len == 0 {
         std::ptr::null()
     } else {
         payload.as_ptr() as *const c_void
     };
-    let rc = unsafe {
+    // 1.25× + 128 KiB headroom; see Encryptor::cipher_call.
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut out = vec![0u8; cap];
+    let mut out_len: usize = 0;
+    let mut rc = unsafe {
         fn_ptr(
             noise.handle(),
             data1.handle(),
@@ -377,37 +387,33 @@ fn enc_dec_auth_triple(
             start3.handle(),
             mac.handle(),
             in_ptr,
-            payload.len(),
-            std::ptr::null_mut(),
-            0,
-            &mut out_len,
-        )
-    };
-    if rc == ffi::STATUS_OK {
-        return Ok(Vec::new());
-    }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    let need = out_len;
-    let mut out = vec![0u8; need];
-    let rc = unsafe {
-        fn_ptr(
-            noise.handle(),
-            data1.handle(),
-            data2.handle(),
-            data3.handle(),
-            start1.handle(),
-            start2.handle(),
-            start3.handle(),
-            mac.handle(),
-            in_ptr,
-            payload.len(),
+            payload_len,
             out.as_mut_ptr() as *mut c_void,
-            need,
+            out.len(),
             &mut out_len,
         )
     };
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        out = vec![0u8; need];
+        rc = unsafe {
+            fn_ptr(
+                noise.handle(),
+                data1.handle(),
+                data2.handle(),
+                data3.handle(),
+                start1.handle(),
+                start2.handle(),
+                start3.handle(),
+                mac.handle(),
+                in_ptr,
+                payload_len,
+                out.as_mut_ptr() as *mut c_void,
+                out.len(),
+                &mut out_len,
+            )
+        };
+    }
     check(rc)?;
     out.truncate(out_len);
     Ok(out)

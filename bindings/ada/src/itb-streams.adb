@@ -34,6 +34,29 @@ package body Itb.Streams is
       return Result;
    end Allocate;
 
+   --  Grow-on-demand + wipe-on-grow helper for the per-stream output
+   --  cache. Mirrors Encryptor.Ensure_Capacity shape: zeroes the OLD
+   --  buffer (if any) before discarding it so the previous-chunk
+   --  ciphertext / plaintext does not linger in heap garbage between
+   --  cipher calls. Used by the four AEAD per-chunk dispatchers
+   --  (Encrypt_Chunk_Auth_Single_To_Sink / Triple, Decrypt_Chunk_Auth_
+   --  Single / Triple) to amortise the per-chunk FFI output allocation
+   --  across every chunk in the same stream.
+   procedure Ensure_Stream_Cache
+     (Cache : in out Byte_Buffer_Access;
+      Need  : Stream_Element_Offset)
+   is
+   begin
+      if Cache /= null and then Cache'Length >= Need then
+         return;
+      end if;
+      if Cache /= null then
+         Cache.all := [others => 0];
+         Free_Buffer (Cache);
+      end if;
+      Cache := new Byte_Array (1 .. Need);
+   end Ensure_Stream_Cache;
+
    --  Writes Data to the underlying Ada.Streams sink. Wraps the
    --  Stream'Class.Write primitive so call sites stay readable.
    procedure Write_All
@@ -96,7 +119,21 @@ package body Itb.Streams is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Plain'Length > 0 then Plain'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  Pre-allocate from the canonical 1.25x + 128 KiB formula so
+      --  the first FFI call reaches libitb with a buffer the cipher
+      --  can write into directly. The C ABI runs the full encrypt on
+      --  every call regardless of out-buffer capacity, so a probe-
+      --  then-retry pattern doubles the cipher cost per chunk. See
+      --  Itb.Encryptor.Cipher_Call for the rationale; retry once on
+      --  the rare under-shoot using the returned out_len.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Plain'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Buffer_Access :=
+                  Allocate (Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Status := Itb.Sys.ITB_Encrypt
@@ -105,49 +142,51 @@ package body Itb.Streams is
                    Start_Handle => Start_H,
                    Plaintext    => In_Addr,
                    Pt_Len       => Plain'Length,
-                   Out_Buf      => System.Null_Address,
-                   Out_Cap      => 0,
-                   Out_Len      => Probe'Access);
-      if Status = Itb.Status.OK then
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
+                   Out_Buf      => Result.all'Address,
+                   Out_Cap      => Cap,
+                   Out_Len      => Out_Len'Access);
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Buffer_Access :=
-                     Allocate (Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Itb.Sys.ITB_Encrypt
-                     (Noise_Handle => Noise_H,
-                      Data_Handle  => Data_H,
-                      Start_Handle => Start_H,
-                      Plaintext    => In_Addr,
-                      Pt_Len       => Plain'Length,
-                      Out_Buf      => Result.all'Address,
-                      Out_Cap      => Need,
-                      Out_Len      => Out_Len'Access);
-         if Status /= 0 then
+      if Status = Itb.Status.Buffer_Too_Small then
+         --  Pre-allocation was too tight (extremely rare given the
+         --  1.25x + 128 KiB safety margin). Grow exactly to the size
+         --  libitb just reported and retry. The first call already
+         --  paid for the cipher work; this is the fallback path.
+         declare
+            Need    : constant size_t := Out_Len;
+         begin
             Result.all := [others => 0];
             Free_Buffer (Result);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         if Out_Len > 0 then
-            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
-         end if;
+            Result := Allocate (Stream_Element_Offset (Need));
+            Out_Len := 0;
+            Status := Itb.Sys.ITB_Encrypt
+                        (Noise_Handle => Noise_H,
+                         Data_Handle  => Data_H,
+                         Start_Handle => Start_H,
+                         Plaintext    => In_Addr,
+                         Pt_Len       => Plain'Length,
+                         Out_Buf      => Result.all'Address,
+                         Out_Cap      => Need,
+                         Out_Len      => Out_Len'Access);
+         end;
+      end if;
+
+      if Status /= 0 then
          Result.all := [others => 0];
          Free_Buffer (Result);
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Buffer (Result);
-            end if;
-            raise;
-      end;
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      if Out_Len > 0 then
+         Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
+      end if;
+      Result.all := [others => 0];
+      Free_Buffer (Result);
+   exception
+      when others =>
+         if Result /= null then
+            Result.all := [others => 0];
+            Free_Buffer (Result);
+         end if;
+         raise;
    end Encrypt_Single_To_Sink;
 
    --  Per-chunk decrypt dispatcher that returns the recovered
@@ -167,7 +206,18 @@ package body Itb.Streams is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Encrypt_Single_To_Sink for the formula+retry-once
+      --  rationale. Decrypt's plaintext is bounded above by the input
+      --  ciphertext length, so the same 1.25x + 128 KiB envelope is
+      --  comfortably sufficient.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Cipher'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Buffer_Access :=
+                  Allocate (Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       PT_Out := null;
@@ -177,62 +227,59 @@ package body Itb.Streams is
                    Start_Handle => Start_H,
                    Ciphertext   => In_Addr,
                    Ct_Len       => Cipher'Length,
-                   Out_Buf      => System.Null_Address,
-                   Out_Cap      => 0,
-                   Out_Len      => Probe'Access);
-      if Status = Itb.Status.OK then
-         PT_Out := Allocate (0);
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
+                   Out_Buf      => Result.all'Address,
+                   Out_Cap      => Cap,
+                   Out_Len      => Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need : constant size_t := Out_Len;
+         begin
+            Result.all := [others => 0];
+            Free_Buffer (Result);
+            Result := Allocate (Stream_Element_Offset (Need));
+            Out_Len := 0;
+            Status := Itb.Sys.ITB_Decrypt
+                        (Noise_Handle => Noise_H,
+                         Data_Handle  => Data_H,
+                         Start_Handle => Start_H,
+                         Ciphertext   => In_Addr,
+                         Ct_Len       => Cipher'Length,
+                         Out_Buf      => Result.all'Address,
+                         Out_Cap      => Need,
+                         Out_Len      => Out_Len'Access);
+         end;
       end if;
 
+      if Status /= 0 then
+         Result.all := [others => 0];
+         Free_Buffer (Result);
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      --  Shrink the buffer to the exact decoded length so the caller
+      --  does not see uninitialised tail bytes. Allocate a fresh
+      --  tight-fit buffer, copy the prefix, free the oversized one.
+      --  Both buffers live on the heap so the copy does not touch
+      --  the stack.
       declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Buffer_Access :=
-                     Allocate (Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
+         Tight : constant Byte_Buffer_Access :=
+           Allocate (Stream_Element_Offset (Out_Len));
       begin
-         Status := Itb.Sys.ITB_Decrypt
-                     (Noise_Handle => Noise_H,
-                      Data_Handle  => Data_H,
-                      Start_Handle => Start_H,
-                      Ciphertext   => In_Addr,
-                      Ct_Len       => Cipher'Length,
-                      Out_Buf      => Result.all'Address,
-                      Out_Cap      => Need,
-                      Out_Len      => Out_Len'Access);
-         if Status /= 0 then
-            Result.all := [others => 0];
-            Free_Buffer (Result);
-            Itb.Errors.Raise_For (Integer (Status));
+         if Out_Len > 0 then
+            Tight (1 .. Stream_Element_Offset (Out_Len)) :=
+              Result (1 .. Stream_Element_Offset (Out_Len));
          end if;
-         --  Shrink the buffer to the exact decoded length so the
-         --  caller does not see uninitialised tail bytes. Allocate a
-         --  fresh tight-fit buffer, copy the prefix, free the
-         --  oversized one. Both buffers live on the heap so the copy
-         --  does not touch the stack.
-         declare
-            Tight : constant Byte_Buffer_Access :=
-              Allocate (Stream_Element_Offset (Out_Len));
-         begin
-            if Out_Len > 0 then
-               Tight (1 .. Stream_Element_Offset (Out_Len)) :=
-                 Result (1 .. Stream_Element_Offset (Out_Len));
-            end if;
+         Result.all := [others => 0];
+         Free_Buffer (Result);
+         PT_Out := Tight;
+      end;
+   exception
+      when others =>
+         if Result /= null then
             Result.all := [others => 0];
             Free_Buffer (Result);
-            PT_Out := Tight;
-         end;
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Buffer (Result);
-            end if;
-            raise;
-      end;
+         end if;
+         raise;
    end Decrypt_Single_To_Buffer;
 
    --  Triple-mode per-chunk encrypt dispatcher writing directly to
@@ -251,7 +298,17 @@ package body Itb.Streams is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Plain'Length > 0 then Plain'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Encrypt_Single_To_Sink for the formula+retry-once
+      --  rationale. Triple Ouroboros expansion stays inside the same
+      --  1.25x + 128 KiB envelope across the measured matrix.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Plain'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Buffer_Access :=
+                  Allocate (Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Status := Itb.Sys.ITB_Encrypt3
@@ -264,53 +321,51 @@ package body Itb.Streams is
                    Start_Handle3 => Start3_H,
                    Plaintext     => In_Addr,
                    Pt_Len        => Plain'Length,
-                   Out_Buf       => System.Null_Address,
-                   Out_Cap       => 0,
-                   Out_Len       => Probe'Access);
-      if Status = Itb.Status.OK then
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
+                   Out_Buf       => Result.all'Address,
+                   Out_Cap       => Cap,
+                   Out_Len       => Out_Len'Access);
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Buffer_Access :=
-                     Allocate (Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Itb.Sys.ITB_Encrypt3
-                     (Noise_Handle  => Noise_H,
-                      Data_Handle1  => Data1_H,
-                      Data_Handle2  => Data2_H,
-                      Data_Handle3  => Data3_H,
-                      Start_Handle1 => Start1_H,
-                      Start_Handle2 => Start2_H,
-                      Start_Handle3 => Start3_H,
-                      Plaintext     => In_Addr,
-                      Pt_Len        => Plain'Length,
-                      Out_Buf       => Result.all'Address,
-                      Out_Cap       => Need,
-                      Out_Len       => Out_Len'Access);
-         if Status /= 0 then
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need : constant size_t := Out_Len;
+         begin
             Result.all := [others => 0];
             Free_Buffer (Result);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         if Out_Len > 0 then
-            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
-         end if;
+            Result := Allocate (Stream_Element_Offset (Need));
+            Out_Len := 0;
+            Status := Itb.Sys.ITB_Encrypt3
+                        (Noise_Handle  => Noise_H,
+                         Data_Handle1  => Data1_H,
+                         Data_Handle2  => Data2_H,
+                         Data_Handle3  => Data3_H,
+                         Start_Handle1 => Start1_H,
+                         Start_Handle2 => Start2_H,
+                         Start_Handle3 => Start3_H,
+                         Plaintext     => In_Addr,
+                         Pt_Len        => Plain'Length,
+                         Out_Buf       => Result.all'Address,
+                         Out_Cap       => Need,
+                         Out_Len       => Out_Len'Access);
+         end;
+      end if;
+
+      if Status /= 0 then
          Result.all := [others => 0];
          Free_Buffer (Result);
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Buffer (Result);
-            end if;
-            raise;
-      end;
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      if Out_Len > 0 then
+         Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
+      end if;
+      Result.all := [others => 0];
+      Free_Buffer (Result);
+   exception
+      when others =>
+         if Result /= null then
+            Result.all := [others => 0];
+            Free_Buffer (Result);
+         end if;
+         raise;
    end Encrypt_Triple_To_Sink;
 
    --  Triple-mode per-chunk decrypt dispatcher returning a heap
@@ -329,7 +384,16 @@ package body Itb.Streams is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Encrypt_Single_To_Sink for the formula+retry-once
+      --  rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Cipher'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Buffer_Access :=
+                  Allocate (Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       PT_Out := null;
@@ -343,61 +407,58 @@ package body Itb.Streams is
                    Start_Handle3 => Start3_H,
                    Ciphertext    => In_Addr,
                    Ct_Len        => Cipher'Length,
-                   Out_Buf       => System.Null_Address,
-                   Out_Cap       => 0,
-                   Out_Len       => Probe'Access);
-      if Status = Itb.Status.OK then
-         PT_Out := Allocate (0);
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
+                   Out_Buf       => Result.all'Address,
+                   Out_Cap       => Cap,
+                   Out_Len       => Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need : constant size_t := Out_Len;
+         begin
+            Result.all := [others => 0];
+            Free_Buffer (Result);
+            Result := Allocate (Stream_Element_Offset (Need));
+            Out_Len := 0;
+            Status := Itb.Sys.ITB_Decrypt3
+                        (Noise_Handle  => Noise_H,
+                         Data_Handle1  => Data1_H,
+                         Data_Handle2  => Data2_H,
+                         Data_Handle3  => Data3_H,
+                         Start_Handle1 => Start1_H,
+                         Start_Handle2 => Start2_H,
+                         Start_Handle3 => Start3_H,
+                         Ciphertext    => In_Addr,
+                         Ct_Len        => Cipher'Length,
+                         Out_Buf       => Result.all'Address,
+                         Out_Cap       => Need,
+                         Out_Len       => Out_Len'Access);
+         end;
       end if;
 
+      if Status /= 0 then
+         Result.all := [others => 0];
+         Free_Buffer (Result);
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
       declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Buffer_Access :=
-                     Allocate (Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
+         Tight : constant Byte_Buffer_Access :=
+           Allocate (Stream_Element_Offset (Out_Len));
       begin
-         Status := Itb.Sys.ITB_Decrypt3
-                     (Noise_Handle  => Noise_H,
-                      Data_Handle1  => Data1_H,
-                      Data_Handle2  => Data2_H,
-                      Data_Handle3  => Data3_H,
-                      Start_Handle1 => Start1_H,
-                      Start_Handle2 => Start2_H,
-                      Start_Handle3 => Start3_H,
-                      Ciphertext    => In_Addr,
-                      Ct_Len        => Cipher'Length,
-                      Out_Buf       => Result.all'Address,
-                      Out_Cap       => Need,
-                      Out_Len       => Out_Len'Access);
-         if Status /= 0 then
-            Result.all := [others => 0];
-            Free_Buffer (Result);
-            Itb.Errors.Raise_For (Integer (Status));
+         if Out_Len > 0 then
+            Tight (1 .. Stream_Element_Offset (Out_Len)) :=
+              Result (1 .. Stream_Element_Offset (Out_Len));
          end if;
-         declare
-            Tight : constant Byte_Buffer_Access :=
-              Allocate (Stream_Element_Offset (Out_Len));
-         begin
-            if Out_Len > 0 then
-               Tight (1 .. Stream_Element_Offset (Out_Len)) :=
-                 Result (1 .. Stream_Element_Offset (Out_Len));
-            end if;
+         Result.all := [others => 0];
+         Free_Buffer (Result);
+         PT_Out := Tight;
+      end;
+   exception
+      when others =>
+         if Result /= null then
             Result.all := [others => 0];
             Free_Buffer (Result);
-            PT_Out := Tight;
-         end;
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Buffer (Result);
-            end if;
-            raise;
-      end;
+         end if;
+         raise;
    end Decrypt_Triple_To_Buffer;
 
    ---------------------------------------------------------------------
@@ -1252,7 +1313,11 @@ package body Itb.Streams is
    --  Per-chunk Single auth encrypt dispatcher writing directly to
    --  Sink. Out_Pixels carries the (W,H)-derived pixel count parsed
    --  from the cipher header so the caller can advance Cum_Pixels
-   --  without re-parsing.
+   --  without re-parsing. The Cache parameter routes the FFI write
+   --  target through the per-stream output buffer (grow-on-demand +
+   --  wipe-on-grow + wipe-on-Finalize) instead of a fresh allocation
+   --  per chunk; mirrors Encryptor.Cache discipline at the streaming-
+   --  class level.
    procedure Encrypt_Chunk_Auth_Single_To_Sink
      (Width       : Integer;
       Noise_H     : Itb.Sys.Handle;
@@ -1265,154 +1330,111 @@ package body Itb.Streams is
       Final_Flag  : Boolean;
       Header_Size : Stream_Element_Offset;
       Sink        : not null access Root_Stream_Type'Class;
+      Cache       : in out Byte_Buffer_Access;
       Out_Pixels  : out Itb.Sys.U64)
    is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Plain'Length > 0 then Plain'Address else System.Null_Address);
       FF      : constant int := (if Final_Flag then 1 else 0);
-      Probe   : aliased size_t := 0;
+      --  See Encrypt_Single_To_Sink for the formula+retry-once
+      --  rationale. The 1.25x + 128 KiB envelope absorbs the +1
+      --  flag byte and +32-byte MAC tag inside the container body
+      --  without an extra grow on any chunk size measured in the
+      --  matrix.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Plain'Length) * 5 / 4 + 131072);
+      Cap     : constant Stream_Element_Offset :=
+        Stream_Element_Offset (Cap_LL);
+      Out_Len : aliased size_t := 0;
       Status  : int;
-   begin
-      Out_Pixels := 0;
-      case Width is
-         when 128 =>
-            Status := Itb.Sys.ITB_EncryptStreamAuthenticated128
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle               => Data_H,
-                         Start_Handle              => Start_H,
-                         MAC_Handle                => MAC_H,
-                         Plaintext                 => In_Addr,
-                         Pt_Len                    => Plain'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Final_Flag                => FF,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access);
-         when 256 =>
-            Status := Itb.Sys.ITB_EncryptStreamAuthenticated256
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle               => Data_H,
-                         Start_Handle              => Start_H,
-                         MAC_Handle                => MAC_H,
-                         Plaintext                 => In_Addr,
-                         Pt_Len                    => Plain'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Final_Flag                => FF,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access);
-         when 512 =>
-            Status := Itb.Sys.ITB_EncryptStreamAuthenticated512
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle               => Data_H,
-                         Start_Handle              => Start_H,
-                         MAC_Handle                => MAC_H,
-                         Plaintext                 => In_Addr,
-                         Pt_Len                    => Plain'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Final_Flag                => FF,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access);
-         when others =>
-            Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
-      end case;
-      if Status = Itb.Status.OK then
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Buffer_Access :=
-                     Allocate (Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
+      procedure Call_FFI (Buf_Addr : System.Address;
+                          Buf_Cap  : size_t;
+                          OL       : access size_t;
+                          St       : out int) is
       begin
          case Width is
             when 128 =>
-               Status := Itb.Sys.ITB_EncryptStreamAuthenticated128
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle               => Data_H,
-                            Start_Handle              => Start_H,
-                            MAC_Handle                => MAC_H,
-                            Plaintext                 => In_Addr,
-                            Pt_Len                    => Plain'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Final_Flag                => FF,
-                            Out_Buf                   => Result.all'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access);
+               St := Itb.Sys.ITB_EncryptStreamAuthenticated128
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle               => Data_H,
+                        Start_Handle              => Start_H,
+                        MAC_Handle                => MAC_H,
+                        Plaintext                 => In_Addr,
+                        Pt_Len                    => Plain'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Final_Flag                => FF,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL);
             when 256 =>
-               Status := Itb.Sys.ITB_EncryptStreamAuthenticated256
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle               => Data_H,
-                            Start_Handle              => Start_H,
-                            MAC_Handle                => MAC_H,
-                            Plaintext                 => In_Addr,
-                            Pt_Len                    => Plain'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Final_Flag                => FF,
-                            Out_Buf                   => Result.all'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access);
+               St := Itb.Sys.ITB_EncryptStreamAuthenticated256
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle               => Data_H,
+                        Start_Handle              => Start_H,
+                        MAC_Handle                => MAC_H,
+                        Plaintext                 => In_Addr,
+                        Pt_Len                    => Plain'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Final_Flag                => FF,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL);
             when 512 =>
-               Status := Itb.Sys.ITB_EncryptStreamAuthenticated512
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle               => Data_H,
-                            Start_Handle              => Start_H,
-                            MAC_Handle                => MAC_H,
-                            Plaintext                 => In_Addr,
-                            Pt_Len                    => Plain'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Final_Flag                => FF,
-                            Out_Buf                   => Result.all'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access);
+               St := Itb.Sys.ITB_EncryptStreamAuthenticated512
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle               => Data_H,
+                        Start_Handle              => Start_H,
+                        MAC_Handle                => MAC_H,
+                        Plaintext                 => In_Addr,
+                        Pt_Len                    => Plain'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Final_Flag                => FF,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL);
             when others =>
-               Result.all := [others => 0];
-               Free_Buffer (Result);
                Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
          end case;
-         if Status /= 0 then
-            Result.all := [others => 0];
-            Free_Buffer (Result);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         if Stream_Element_Offset (Out_Len) >= Header_Size
-           and then Header_Size >= 4
-         then
-            declare
-               First_Idx : constant Stream_Element_Offset := Result.all'First;
-               W : constant Natural := Read_BE16
-                 (Result.all, First_Idx + Header_Size - 4);
-               H : constant Natural := Read_BE16
-                 (Result.all, First_Idx + Header_Size - 2);
-            begin
-               Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
-            end;
-         end if;
-         if Out_Len > 0 then
-            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
-         end if;
-         Result.all := [others => 0];
-         Free_Buffer (Result);
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Buffer (Result);
-            end if;
-            raise;
-      end;
+      end Call_FFI;
+   begin
+      Out_Pixels := 0;
+      Ensure_Stream_Cache (Cache, Cap);
+      Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                Out_Len'Access, Status);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         Ensure_Stream_Cache (Cache, Stream_Element_Offset (Out_Len));
+         Out_Len := 0;
+         Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                   Out_Len'Access, Status);
+      end if;
+
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      if Stream_Element_Offset (Out_Len) >= Header_Size
+        and then Header_Size >= 4
+      then
+         declare
+            First_Idx : constant Stream_Element_Offset := Cache.all'First;
+            W : constant Natural := Read_BE16
+              (Cache.all, First_Idx + Header_Size - 4);
+            H : constant Natural := Read_BE16
+              (Cache.all, First_Idx + Header_Size - 2);
+         begin
+            Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
+         end;
+      end if;
+      if Out_Len > 0 then
+         Sink.all.Write (Cache (1 .. Stream_Element_Offset (Out_Len)));
+      end if;
    end Encrypt_Chunk_Auth_Single_To_Sink;
 
    --  Per-chunk Triple auth encrypt dispatcher writing directly to
@@ -1433,182 +1455,129 @@ package body Itb.Streams is
       Final_Flag  : Boolean;
       Header_Size : Stream_Element_Offset;
       Sink        : not null access Root_Stream_Type'Class;
+      Cache       : in out Byte_Buffer_Access;
       Out_Pixels  : out Itb.Sys.U64)
    is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Plain'Length > 0 then Plain'Address else System.Null_Address);
       FF      : constant int := (if Final_Flag then 1 else 0);
-      Probe   : aliased size_t := 0;
+      --  See Encrypt_Chunk_Auth_Single_To_Sink for the formula+retry-once
+      --  rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Plain'Length) * 5 / 4 + 131072);
+      Cap     : constant Stream_Element_Offset :=
+        Stream_Element_Offset (Cap_LL);
+      Out_Len : aliased size_t := 0;
       Status  : int;
-   begin
-      Out_Pixels := 0;
-      case Width is
-         when 128 =>
-            Status := Itb.Sys.ITB_EncryptStreamAuthenticated3x128
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle1              => Data1_H,
-                         Data_Handle2              => Data2_H,
-                         Data_Handle3              => Data3_H,
-                         Start_Handle1             => Start1_H,
-                         Start_Handle2             => Start2_H,
-                         Start_Handle3             => Start3_H,
-                         MAC_Handle                => MAC_H,
-                         Plaintext                 => In_Addr,
-                         Pt_Len                    => Plain'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Final_Flag                => FF,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access);
-         when 256 =>
-            Status := Itb.Sys.ITB_EncryptStreamAuthenticated3x256
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle1              => Data1_H,
-                         Data_Handle2              => Data2_H,
-                         Data_Handle3              => Data3_H,
-                         Start_Handle1             => Start1_H,
-                         Start_Handle2             => Start2_H,
-                         Start_Handle3             => Start3_H,
-                         MAC_Handle                => MAC_H,
-                         Plaintext                 => In_Addr,
-                         Pt_Len                    => Plain'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Final_Flag                => FF,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access);
-         when 512 =>
-            Status := Itb.Sys.ITB_EncryptStreamAuthenticated3x512
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle1              => Data1_H,
-                         Data_Handle2              => Data2_H,
-                         Data_Handle3              => Data3_H,
-                         Start_Handle1             => Start1_H,
-                         Start_Handle2             => Start2_H,
-                         Start_Handle3             => Start3_H,
-                         MAC_Handle                => MAC_H,
-                         Plaintext                 => In_Addr,
-                         Pt_Len                    => Plain'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Final_Flag                => FF,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access);
-         when others =>
-            Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
-      end case;
-      if Status = Itb.Status.OK then
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Buffer_Access :=
-                     Allocate (Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
+      procedure Call_FFI (Buf_Addr : System.Address;
+                          Buf_Cap  : size_t;
+                          OL       : access size_t;
+                          St       : out int) is
       begin
          case Width is
             when 128 =>
-               Status := Itb.Sys.ITB_EncryptStreamAuthenticated3x128
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle1              => Data1_H,
-                            Data_Handle2              => Data2_H,
-                            Data_Handle3              => Data3_H,
-                            Start_Handle1             => Start1_H,
-                            Start_Handle2             => Start2_H,
-                            Start_Handle3             => Start3_H,
-                            MAC_Handle                => MAC_H,
-                            Plaintext                 => In_Addr,
-                            Pt_Len                    => Plain'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Final_Flag                => FF,
-                            Out_Buf                   => Result.all'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access);
+               St := Itb.Sys.ITB_EncryptStreamAuthenticated3x128
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle1              => Data1_H,
+                        Data_Handle2              => Data2_H,
+                        Data_Handle3              => Data3_H,
+                        Start_Handle1             => Start1_H,
+                        Start_Handle2             => Start2_H,
+                        Start_Handle3             => Start3_H,
+                        MAC_Handle                => MAC_H,
+                        Plaintext                 => In_Addr,
+                        Pt_Len                    => Plain'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Final_Flag                => FF,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL);
             when 256 =>
-               Status := Itb.Sys.ITB_EncryptStreamAuthenticated3x256
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle1              => Data1_H,
-                            Data_Handle2              => Data2_H,
-                            Data_Handle3              => Data3_H,
-                            Start_Handle1             => Start1_H,
-                            Start_Handle2             => Start2_H,
-                            Start_Handle3             => Start3_H,
-                            MAC_Handle                => MAC_H,
-                            Plaintext                 => In_Addr,
-                            Pt_Len                    => Plain'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Final_Flag                => FF,
-                            Out_Buf                   => Result.all'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access);
+               St := Itb.Sys.ITB_EncryptStreamAuthenticated3x256
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle1              => Data1_H,
+                        Data_Handle2              => Data2_H,
+                        Data_Handle3              => Data3_H,
+                        Start_Handle1             => Start1_H,
+                        Start_Handle2             => Start2_H,
+                        Start_Handle3             => Start3_H,
+                        MAC_Handle                => MAC_H,
+                        Plaintext                 => In_Addr,
+                        Pt_Len                    => Plain'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Final_Flag                => FF,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL);
             when 512 =>
-               Status := Itb.Sys.ITB_EncryptStreamAuthenticated3x512
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle1              => Data1_H,
-                            Data_Handle2              => Data2_H,
-                            Data_Handle3              => Data3_H,
-                            Start_Handle1             => Start1_H,
-                            Start_Handle2             => Start2_H,
-                            Start_Handle3             => Start3_H,
-                            MAC_Handle                => MAC_H,
-                            Plaintext                 => In_Addr,
-                            Pt_Len                    => Plain'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Final_Flag                => FF,
-                            Out_Buf                   => Result.all'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access);
+               St := Itb.Sys.ITB_EncryptStreamAuthenticated3x512
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle1              => Data1_H,
+                        Data_Handle2              => Data2_H,
+                        Data_Handle3              => Data3_H,
+                        Start_Handle1             => Start1_H,
+                        Start_Handle2             => Start2_H,
+                        Start_Handle3             => Start3_H,
+                        MAC_Handle                => MAC_H,
+                        Plaintext                 => In_Addr,
+                        Pt_Len                    => Plain'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Final_Flag                => FF,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL);
             when others =>
-               Result.all := [others => 0];
-               Free_Buffer (Result);
                Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
          end case;
-         if Status /= 0 then
-            Result.all := [others => 0];
-            Free_Buffer (Result);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         if Stream_Element_Offset (Out_Len) >= Header_Size
-           and then Header_Size >= 4
-         then
-            declare
-               First_Idx : constant Stream_Element_Offset := Result.all'First;
-               W : constant Natural := Read_BE16
-                 (Result.all, First_Idx + Header_Size - 4);
-               H : constant Natural := Read_BE16
-                 (Result.all, First_Idx + Header_Size - 2);
-            begin
-               Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
-            end;
-         end if;
-         if Out_Len > 0 then
-            Sink.all.Write (Result (1 .. Stream_Element_Offset (Out_Len)));
-         end if;
-         Result.all := [others => 0];
-         Free_Buffer (Result);
-      exception
-         when others =>
-            if Result /= null then
-               Result.all := [others => 0];
-               Free_Buffer (Result);
-            end if;
-            raise;
-      end;
+      end Call_FFI;
+   begin
+      Out_Pixels := 0;
+      Ensure_Stream_Cache (Cache, Cap);
+      Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                Out_Len'Access, Status);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         Ensure_Stream_Cache (Cache, Stream_Element_Offset (Out_Len));
+         Out_Len := 0;
+         Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                   Out_Len'Access, Status);
+      end if;
+
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      if Stream_Element_Offset (Out_Len) >= Header_Size
+        and then Header_Size >= 4
+      then
+         declare
+            First_Idx : constant Stream_Element_Offset := Cache.all'First;
+            W : constant Natural := Read_BE16
+              (Cache.all, First_Idx + Header_Size - 4);
+            H : constant Natural := Read_BE16
+              (Cache.all, First_Idx + Header_Size - 2);
+         begin
+            Out_Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
+         end;
+      end if;
+      if Out_Len > 0 then
+         Sink.all.Write (Cache (1 .. Stream_Element_Offset (Out_Len)));
+      end if;
    end Encrypt_Chunk_Auth_Triple_To_Sink;
 
-   --  Per-chunk decrypt dispatch (Single + MAC). On success returns
-   --  the recovered plaintext and writes the recovered final_flag.
+   --  Per-chunk decrypt dispatch (Single + MAC). On success the
+   --  recovered plaintext lives in Cache (1 .. PT_Len); the caller is
+   --  responsible for consuming the slice and wiping the prefix
+   --  (Cache (1 .. PT_Len) := [others => 0]) before the next chunk's
+   --  cipher call overwrites those bytes. Wipe-on-grow + wipe-on-
+   --  Finalize discipline of the cache is preserved by the
+   --  Ensure_Stream_Cache helper and the per-class Finalize.
    procedure Decrypt_Chunk_Auth_Single
      (Width      : Integer;
       Noise_H    : Itb.Sys.Handle;
@@ -1618,142 +1587,97 @@ package body Itb.Streams is
       Cipher     : Byte_Array;
       Stream_ID  : Stream_ID_Bytes;
       Cum_Pixels : Itb.Sys.U64;
-      PT_Out     : out Byte_Buffer_Access;
+      Cache      : in out Byte_Buffer_Access;
+      PT_Len     : out Stream_Element_Offset;
       Final_Flag : out Boolean)
    is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
       FF      : aliased int := 0;
+      --  See Encrypt_Single_To_Sink for the formula+retry-once
+      --  rationale. Decrypt's plaintext is bounded by ciphertext
+      --  length minus the constant authentication overhead, so the
+      --  same envelope is comfortably sufficient.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Cipher'Length) * 5 / 4 + 131072);
+      Cap     : constant Stream_Element_Offset :=
+        Stream_Element_Offset (Cap_LL);
+      Out_Len : aliased size_t := 0;
       Status  : int;
-   begin
-      PT_Out := null;
-      Final_Flag := False;
-      case Width is
-         when 128 =>
-            Status := Itb.Sys.ITB_DecryptStreamAuthenticated128
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle               => Data_H,
-                         Start_Handle              => Start_H,
-                         MAC_Handle                => MAC_H,
-                         Ciphertext                => In_Addr,
-                         Ct_Len                    => Cipher'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access,
-                         Final_Flag_Out            => FF'Access);
-         when 256 =>
-            Status := Itb.Sys.ITB_DecryptStreamAuthenticated256
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle               => Data_H,
-                         Start_Handle              => Start_H,
-                         MAC_Handle                => MAC_H,
-                         Ciphertext                => In_Addr,
-                         Ct_Len                    => Cipher'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access,
-                         Final_Flag_Out            => FF'Access);
-         when 512 =>
-            Status := Itb.Sys.ITB_DecryptStreamAuthenticated512
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle               => Data_H,
-                         Start_Handle              => Start_H,
-                         MAC_Handle                => MAC_H,
-                         Ciphertext                => In_Addr,
-                         Ct_Len                    => Cipher'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access,
-                         Final_Flag_Out            => FF'Access);
-         when others =>
-            Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
-      end case;
-      if Status = Itb.Status.OK then
-         PT_Out := new Byte_Array (1 .. 0);
-         Final_Flag := FF /= 0;
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
-      declare
-         Need : constant size_t := Probe;
-         Out_Len : aliased size_t := 0;
+
+      procedure Call_FFI (Buf_Addr : System.Address;
+                          Buf_Cap  : size_t;
+                          OL       : access size_t;
+                          St       : out int) is
       begin
-         PT_Out := Allocate (Stream_Element_Offset (Need));
          case Width is
             when 128 =>
-               Status := Itb.Sys.ITB_DecryptStreamAuthenticated128
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle               => Data_H,
-                            Start_Handle              => Start_H,
-                            MAC_Handle                => MAC_H,
-                            Ciphertext                => In_Addr,
-                            Ct_Len                    => Cipher'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Out_Buf                   => PT_Out (1)'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access,
-                            Final_Flag_Out            => FF'Access);
+               St := Itb.Sys.ITB_DecryptStreamAuthenticated128
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle               => Data_H,
+                        Start_Handle              => Start_H,
+                        MAC_Handle                => MAC_H,
+                        Ciphertext                => In_Addr,
+                        Ct_Len                    => Cipher'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL,
+                        Final_Flag_Out            => FF'Access);
             when 256 =>
-               Status := Itb.Sys.ITB_DecryptStreamAuthenticated256
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle               => Data_H,
-                            Start_Handle              => Start_H,
-                            MAC_Handle                => MAC_H,
-                            Ciphertext                => In_Addr,
-                            Ct_Len                    => Cipher'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Out_Buf                   => PT_Out (1)'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access,
-                            Final_Flag_Out            => FF'Access);
+               St := Itb.Sys.ITB_DecryptStreamAuthenticated256
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle               => Data_H,
+                        Start_Handle              => Start_H,
+                        MAC_Handle                => MAC_H,
+                        Ciphertext                => In_Addr,
+                        Ct_Len                    => Cipher'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL,
+                        Final_Flag_Out            => FF'Access);
             when 512 =>
-               Status := Itb.Sys.ITB_DecryptStreamAuthenticated512
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle               => Data_H,
-                            Start_Handle              => Start_H,
-                            MAC_Handle                => MAC_H,
-                            Ciphertext                => In_Addr,
-                            Ct_Len                    => Cipher'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Out_Buf                   => PT_Out (1)'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access,
-                            Final_Flag_Out            => FF'Access);
+               St := Itb.Sys.ITB_DecryptStreamAuthenticated512
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle               => Data_H,
+                        Start_Handle              => Start_H,
+                        MAC_Handle                => MAC_H,
+                        Ciphertext                => In_Addr,
+                        Ct_Len                    => Cipher'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL,
+                        Final_Flag_Out            => FF'Access);
             when others =>
                Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
          end case;
-         if Status /= 0 then
-            Free_Buffer (PT_Out);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         --  Truncate to actual length.
-         declare
-            Real : constant Byte_Buffer_Access :=
-              new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
-         begin
-            if Out_Len > 0 then
-               Real (1 .. Stream_Element_Offset (Out_Len)) :=
-                 PT_Out (1 .. Stream_Element_Offset (Out_Len));
-            end if;
-            PT_Out.all := [others => 0];
-            Free_Buffer (PT_Out);
-            PT_Out := Real;
-         end;
-         Final_Flag := FF /= 0;
-      end;
+      end Call_FFI;
+   begin
+      Ensure_Stream_Cache (Cache, Cap);
+      Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                Out_Len'Access, Status);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         Ensure_Stream_Cache (Cache, Stream_Element_Offset (Out_Len));
+         Out_Len := 0;
+         Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                   Out_Len'Access, Status);
+      end if;
+
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+
+      PT_Len := Stream_Element_Offset (Out_Len);
+      Final_Flag := FF /= 0;
    end Decrypt_Chunk_Auth_Single;
 
    procedure Decrypt_Chunk_Auth_Triple
@@ -1769,165 +1693,107 @@ package body Itb.Streams is
       Cipher     : Byte_Array;
       Stream_ID  : Stream_ID_Bytes;
       Cum_Pixels : Itb.Sys.U64;
-      PT_Out     : out Byte_Buffer_Access;
+      Cache      : in out Byte_Buffer_Access;
+      PT_Len     : out Stream_Element_Offset;
       Final_Flag : out Boolean)
    is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Cipher'Length > 0 then Cipher'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
       FF      : aliased int := 0;
+      --  See Decrypt_Chunk_Auth_Single for the formula+retry-once
+      --  rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Cipher'Length) * 5 / 4 + 131072);
+      Cap     : constant Stream_Element_Offset :=
+        Stream_Element_Offset (Cap_LL);
+      Out_Len : aliased size_t := 0;
       Status  : int;
-   begin
-      PT_Out := null;
-      Final_Flag := False;
-      case Width is
-         when 128 =>
-            Status := Itb.Sys.ITB_DecryptStreamAuthenticated3x128
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle1              => Data1_H,
-                         Data_Handle2              => Data2_H,
-                         Data_Handle3              => Data3_H,
-                         Start_Handle1             => Start1_H,
-                         Start_Handle2             => Start2_H,
-                         Start_Handle3             => Start3_H,
-                         MAC_Handle                => MAC_H,
-                         Ciphertext                => In_Addr,
-                         Ct_Len                    => Cipher'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access,
-                         Final_Flag_Out            => FF'Access);
-         when 256 =>
-            Status := Itb.Sys.ITB_DecryptStreamAuthenticated3x256
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle1              => Data1_H,
-                         Data_Handle2              => Data2_H,
-                         Data_Handle3              => Data3_H,
-                         Start_Handle1             => Start1_H,
-                         Start_Handle2             => Start2_H,
-                         Start_Handle3             => Start3_H,
-                         MAC_Handle                => MAC_H,
-                         Ciphertext                => In_Addr,
-                         Ct_Len                    => Cipher'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access,
-                         Final_Flag_Out            => FF'Access);
-         when 512 =>
-            Status := Itb.Sys.ITB_DecryptStreamAuthenticated3x512
-                        (Noise_Handle              => Noise_H,
-                         Data_Handle1              => Data1_H,
-                         Data_Handle2              => Data2_H,
-                         Data_Handle3              => Data3_H,
-                         Start_Handle1             => Start1_H,
-                         Start_Handle2             => Start2_H,
-                         Start_Handle3             => Start3_H,
-                         MAC_Handle                => MAC_H,
-                         Ciphertext                => In_Addr,
-                         Ct_Len                    => Cipher'Length,
-                         Stream_ID                 => Stream_ID'Address,
-                         Cumulative_Pixel_Offset   => Cum_Pixels,
-                         Out_Buf                   => System.Null_Address,
-                         Out_Cap                   => 0,
-                         Out_Len                   => Probe'Access,
-                         Final_Flag_Out            => FF'Access);
-         when others =>
-            Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
-      end case;
-      if Status = Itb.Status.OK then
-         PT_Out := new Byte_Array (1 .. 0);
-         Final_Flag := FF /= 0;
-         return;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
-      end if;
-      declare
-         Need : constant size_t := Probe;
-         Out_Len : aliased size_t := 0;
+
+      procedure Call_FFI (Buf_Addr : System.Address;
+                          Buf_Cap  : size_t;
+                          OL       : access size_t;
+                          St       : out int) is
       begin
-         PT_Out := Allocate (Stream_Element_Offset (Need));
          case Width is
             when 128 =>
-               Status := Itb.Sys.ITB_DecryptStreamAuthenticated3x128
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle1              => Data1_H,
-                            Data_Handle2              => Data2_H,
-                            Data_Handle3              => Data3_H,
-                            Start_Handle1             => Start1_H,
-                            Start_Handle2             => Start2_H,
-                            Start_Handle3             => Start3_H,
-                            MAC_Handle                => MAC_H,
-                            Ciphertext                => In_Addr,
-                            Ct_Len                    => Cipher'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Out_Buf                   => PT_Out (1)'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access,
-                            Final_Flag_Out            => FF'Access);
+               St := Itb.Sys.ITB_DecryptStreamAuthenticated3x128
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle1              => Data1_H,
+                        Data_Handle2              => Data2_H,
+                        Data_Handle3              => Data3_H,
+                        Start_Handle1             => Start1_H,
+                        Start_Handle2             => Start2_H,
+                        Start_Handle3             => Start3_H,
+                        MAC_Handle                => MAC_H,
+                        Ciphertext                => In_Addr,
+                        Ct_Len                    => Cipher'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL,
+                        Final_Flag_Out            => FF'Access);
             when 256 =>
-               Status := Itb.Sys.ITB_DecryptStreamAuthenticated3x256
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle1              => Data1_H,
-                            Data_Handle2              => Data2_H,
-                            Data_Handle3              => Data3_H,
-                            Start_Handle1             => Start1_H,
-                            Start_Handle2             => Start2_H,
-                            Start_Handle3             => Start3_H,
-                            MAC_Handle                => MAC_H,
-                            Ciphertext                => In_Addr,
-                            Ct_Len                    => Cipher'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Out_Buf                   => PT_Out (1)'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access,
-                            Final_Flag_Out            => FF'Access);
+               St := Itb.Sys.ITB_DecryptStreamAuthenticated3x256
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle1              => Data1_H,
+                        Data_Handle2              => Data2_H,
+                        Data_Handle3              => Data3_H,
+                        Start_Handle1             => Start1_H,
+                        Start_Handle2             => Start2_H,
+                        Start_Handle3             => Start3_H,
+                        MAC_Handle                => MAC_H,
+                        Ciphertext                => In_Addr,
+                        Ct_Len                    => Cipher'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL,
+                        Final_Flag_Out            => FF'Access);
             when 512 =>
-               Status := Itb.Sys.ITB_DecryptStreamAuthenticated3x512
-                           (Noise_Handle              => Noise_H,
-                            Data_Handle1              => Data1_H,
-                            Data_Handle2              => Data2_H,
-                            Data_Handle3              => Data3_H,
-                            Start_Handle1             => Start1_H,
-                            Start_Handle2             => Start2_H,
-                            Start_Handle3             => Start3_H,
-                            MAC_Handle                => MAC_H,
-                            Ciphertext                => In_Addr,
-                            Ct_Len                    => Cipher'Length,
-                            Stream_ID                 => Stream_ID'Address,
-                            Cumulative_Pixel_Offset   => Cum_Pixels,
-                            Out_Buf                   => PT_Out (1)'Address,
-                            Out_Cap                   => Need,
-                            Out_Len                   => Out_Len'Access,
-                            Final_Flag_Out            => FF'Access);
+               St := Itb.Sys.ITB_DecryptStreamAuthenticated3x512
+                       (Noise_Handle              => Noise_H,
+                        Data_Handle1              => Data1_H,
+                        Data_Handle2              => Data2_H,
+                        Data_Handle3              => Data3_H,
+                        Start_Handle1             => Start1_H,
+                        Start_Handle2             => Start2_H,
+                        Start_Handle3             => Start3_H,
+                        MAC_Handle                => MAC_H,
+                        Ciphertext                => In_Addr,
+                        Ct_Len                    => Cipher'Length,
+                        Stream_ID                 => Stream_ID'Address,
+                        Cumulative_Pixel_Offset   => Cum_Pixels,
+                        Out_Buf                   => Buf_Addr,
+                        Out_Cap                   => Buf_Cap,
+                        Out_Len                   => OL,
+                        Final_Flag_Out            => FF'Access);
             when others =>
                Itb.Errors.Raise_For (Itb.Status.Seed_Width_Mix);
          end case;
-         if Status /= 0 then
-            Free_Buffer (PT_Out);
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         declare
-            Real : constant Byte_Buffer_Access :=
-              new Byte_Array (1 .. Stream_Element_Offset (Out_Len));
-         begin
-            if Out_Len > 0 then
-               Real (1 .. Stream_Element_Offset (Out_Len)) :=
-                 PT_Out (1 .. Stream_Element_Offset (Out_Len));
-            end if;
-            PT_Out.all := [others => 0];
-            Free_Buffer (PT_Out);
-            PT_Out := Real;
-         end;
-         Final_Flag := FF /= 0;
-      end;
+      end Call_FFI;
+   begin
+      Ensure_Stream_Cache (Cache, Cap);
+      Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                Out_Len'Access, Status);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         Ensure_Stream_Cache (Cache, Stream_Element_Offset (Out_Len));
+         Out_Len := 0;
+         Call_FFI (Cache.all'Address, size_t (Cache.all'Length),
+                   Out_Len'Access, Status);
+      end if;
+
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+
+      PT_Len := Stream_Element_Offset (Out_Len);
+      Final_Flag := FF /= 0;
    end Decrypt_Chunk_Auth_Triple;
 
    ---------------------------------------------------------------------
@@ -1987,14 +1853,16 @@ package body Itb.Streams is
       --  Pass the buffer slice directly to the dispatcher so neither
       --  the chunk plaintext copy nor the per-chunk ciphertext (which
       --  is ~1.25x the chunk size, ~20 MiB at 16 MiB chunks) ever
-      --  materialises on the Ada stack.
+      --  materialises on the Ada stack. The dispatcher routes the FFI
+      --  write target through Self.Cache (per-stream cache) instead
+      --  of a fresh allocation per chunk.
       Encrypt_Chunk_Auth_Single_To_Sink
         (Self.Width, Self.Noise_H, Self.Data_H, Self.Start_H,
          Self.MAC_H,
          Self.Buf (1 .. Plaintext_Bytes),
          Self.Stream_ID, Self.Cum_Pixels,
          Final_Flag, Self.Header_Size,
-         Self.Sink, Pixels);
+         Self.Sink, Self.Cache, Pixels);
       Self.Cum_Pixels := Self.Cum_Pixels + Pixels;
       --  Slide buffer down.
       if Self.Buf_Used > Plaintext_Bytes then
@@ -2067,6 +1935,10 @@ package body Itb.Streams is
       if Self.Buf /= null then
          Self.Buf.all := [others => 0];
          Free_Buffer (Self.Buf);
+      end if;
+      if Self.Cache /= null then
+         Self.Cache.all := [others => 0];
+         Free_Buffer (Self.Cache);
       end if;
    end Finalize;
 
@@ -2234,19 +2106,24 @@ package body Itb.Streams is
       H := Read_BE16 (Self.Buf.all, Hdr_Len - 1);
       Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
       declare
-         Out_PT    : Byte_Buffer_Access;
-         FF        : Boolean;
-         Tail      : constant Stream_Element_Offset :=
+         PT_Len : Stream_Element_Offset := 0;
+         FF     : Boolean;
+         Tail   : constant Stream_Element_Offset :=
            Self.Buf_Used - Stream_Element_Offset (Want);
       begin
          --  Pass the slice directly so the per-chunk ciphertext does
-         --  not materialise as a stack-resident Byte_Array copy.
+         --  not materialise as a stack-resident Byte_Array copy. The
+         --  recovered plaintext lives in Self.Cache (1 .. PT_Len);
+         --  copy it into Self.Plain (which survives across
+         --  Read_Plaintext calls until fully drained) then wipe the
+         --  cache prefix so the next chunk's Ensure_Stream_Cache
+         --  starts clean.
          Decrypt_Chunk_Auth_Single
            (Self.Width, Self.Noise_H, Self.Data_H, Self.Start_H,
             Self.MAC_H,
             Self.Buf (1 .. Stream_Element_Offset (Want)),
             Self.Stream_ID, Self.Cum_Pixels,
-            Out_PT, FF);
+            Self.Cache, PT_Len, FF);
          if Tail > 0 then
             Self.Buf (1 .. Tail) :=
               Self.Buf
@@ -2257,7 +2134,11 @@ package body Itb.Streams is
             Self.Plain.all := [others => 0];
             Free_Buffer (Self.Plain);
          end if;
-         Self.Plain      := Out_PT;
+         Self.Plain := new Byte_Array (1 .. PT_Len);
+         if PT_Len > 0 then
+            Self.Plain (1 .. PT_Len) := Self.Cache (1 .. PT_Len);
+            Self.Cache (1 .. PT_Len) := [others => 0];
+         end if;
          Self.Plain_Pos  := 1;
          Self.Plain_Last := Self.Plain'Last;
          Self.Cum_Pixels := Self.Cum_Pixels + Pixels;
@@ -2347,6 +2228,10 @@ package body Itb.Streams is
          Self.Plain.all := [others => 0];
          Free_Buffer (Self.Plain);
       end if;
+      if Self.Cache /= null then
+         Self.Cache.all := [others => 0];
+         Free_Buffer (Self.Cache);
+      end if;
    end Finalize;
 
    ---------------------------------------------------------------------
@@ -2407,6 +2292,8 @@ package body Itb.Streams is
    is
       Pixels : Itb.Sys.U64 := 0;
    begin
+      --  Routes the FFI write target through Self.Cache (per-stream
+      --  cache) instead of a fresh allocation per chunk.
       Encrypt_Chunk_Auth_Triple_To_Sink
         (Self.Width, Self.Noise_H,
          Self.Data1_H, Self.Data2_H, Self.Data3_H,
@@ -2415,7 +2302,7 @@ package body Itb.Streams is
          Self.Buf (1 .. Plaintext_Bytes),
          Self.Stream_ID, Self.Cum_Pixels,
          Final_Flag, Self.Header_Size,
-         Self.Sink, Pixels);
+         Self.Sink, Self.Cache, Pixels);
       Self.Cum_Pixels := Self.Cum_Pixels + Pixels;
       if Self.Buf_Used > Plaintext_Bytes then
          Self.Buf (1 .. Self.Buf_Used - Plaintext_Bytes) :=
@@ -2484,6 +2371,10 @@ package body Itb.Streams is
       if Self.Buf /= null then
          Self.Buf.all := [others => 0];
          Free_Buffer (Self.Buf);
+      end if;
+      if Self.Cache /= null then
+         Self.Cache.all := [others => 0];
+         Free_Buffer (Self.Cache);
       end if;
    end Finalize;
 
@@ -2648,11 +2539,16 @@ package body Itb.Streams is
       H := Read_BE16 (Self.Buf.all, Hdr_Len - 1);
       Pixels := Itb.Sys.U64 (W) * Itb.Sys.U64 (H);
       declare
-         Out_PT : Byte_Buffer_Access;
+         PT_Len : Stream_Element_Offset := 0;
          FF     : Boolean;
          Tail   : constant Stream_Element_Offset :=
            Self.Buf_Used - Stream_Element_Offset (Want);
       begin
+         --  See Try_Decode_Chunk_Auth (Single counterpart) for the
+         --  cache-routing rationale: the recovered plaintext lives
+         --  in Self.Cache (1 .. PT_Len); copy it into Self.Plain
+         --  (which survives across Read_Plaintext calls) and wipe
+         --  the cache prefix.
          Decrypt_Chunk_Auth_Triple
            (Self.Width, Self.Noise_H,
             Self.Data1_H, Self.Data2_H, Self.Data3_H,
@@ -2660,7 +2556,7 @@ package body Itb.Streams is
             Self.MAC_H,
             Self.Buf (1 .. Stream_Element_Offset (Want)),
             Self.Stream_ID, Self.Cum_Pixels,
-            Out_PT, FF);
+            Self.Cache, PT_Len, FF);
          if Tail > 0 then
             Self.Buf (1 .. Tail) :=
               Self.Buf
@@ -2671,7 +2567,11 @@ package body Itb.Streams is
             Self.Plain.all := [others => 0];
             Free_Buffer (Self.Plain);
          end if;
-         Self.Plain      := Out_PT;
+         Self.Plain := new Byte_Array (1 .. PT_Len);
+         if PT_Len > 0 then
+            Self.Plain (1 .. PT_Len) := Self.Cache (1 .. PT_Len);
+            Self.Cache (1 .. PT_Len) := [others => 0];
+         end if;
          Self.Plain_Pos  := 1;
          Self.Plain_Last := Self.Plain'Last;
          Self.Cum_Pixels := Self.Cum_Pixels + Pixels;
@@ -2760,6 +2660,10 @@ package body Itb.Streams is
       if Self.Plain /= null then
          Self.Plain.all := [others => 0];
          Free_Buffer (Self.Plain);
+      end if;
+      if Self.Cache /= null then
+         Self.Cache.all := [others => 0];
+         Free_Buffer (Self.Cache);
       end if;
    end Finalize;
 

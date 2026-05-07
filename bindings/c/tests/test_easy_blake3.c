@@ -229,7 +229,7 @@ START_TEST(test_easy_blake3_persistence_across_nonce_sizes)
                 ck_assert_int_eq(itb_encryptor_set_nonce_bits(src, NONCE_SIZES[i]), ITB_OK);
 
                 /* PRF key length read via fixed-size buffer (every shipped
-                 * Easy-Mode primitive has a fixed key bounded by 64 bytes;
+                 * Easy Mode primitive has a fixed key bounded by 64 bytes;
                  * SipHash is the lone no-PRF-key exception, exercised in
                  * test_easy_siphash24.c). */
                 uint8_t prf_key[64];

@@ -47,7 +47,6 @@ import {
   ITBStreamAfterFinalError,
   ITBStreamTruncatedError,
   check,
-  errorFromStatus,
 } from './errors.js';
 import { headerSize, parseChunkLen } from './library.js';
 import type { MAC as Mac } from './mac.js';
@@ -750,6 +749,57 @@ function readBe16(buf: Uint8Array, off: number): number {
   return (buf[off]! << 8) | buf[off + 1]!;
 }
 
+// Pre-allocation formula shared with `Encryptor._cipherCall` and
+// `cipher.ts`: 1.25× upper bound + 128 KiB headroom that absorbs the
+// barrier-fill expansion (up to bf=32, ~1.346 absolute ratio at the
+// 1 MiB region) plus the small-payload Triple+auth-MAC fixed overhead
+// (Triple Ouroboros + auth-MAC + bf=32 at ptlen=1 expands to ~35 KiB).
+// Replaces the probe-then-write pattern that paid the full crypto
+// twice per chunk through the Stream-AEAD ABI's
+// "compute-internally-then-return-BUFFER_TOO_SMALL" contract.
+function preallocStreamCap(payloadLen: number): number {
+  return Math.max(131072, Math.floor((payloadLen * 5) / 4) + 131072);
+}
+
+/**
+ * Per-stream output buffer cache for the Streaming AEAD per-chunk
+ * dispatchers. Mirrors the per-encryptor `_outputCache` field on
+ * {@link Encryptor} but lives on the streaming class instance —
+ * Bonus 1b in .NEXTBIND.md §7.1. The cache grows on demand with the
+ * same wipe-on-grow + 1.25× + 128 KiB envelope shape as
+ * `Encryptor._cipherCall`.
+ *
+ * The class is not thread-safe; each
+ * {@link StreamEncryptorAuth} / {@link StreamDecryptorAuth} instance
+ * (Single + Triple) owns one cache, and a streaming class instance
+ * is single-writer / single-feeder by construction.
+ *
+ * @internal
+ */
+interface StreamAuthCache {
+  buf: Uint8Array | null;
+}
+
+/**
+ * Grow-on-demand + wipe-on-grow helper for {@link StreamAuthCache}.
+ * Mirrors `Encryptor._wipeAndReplaceCache`'s shape: zeroes the OLD
+ * contents before reassigning so the previous-chunk ciphertext /
+ * plaintext does not linger in heap garbage waiting for V8 GC.
+ *
+ * @internal
+ */
+function ensureStreamCache(cache: StreamAuthCache, need: number): Uint8Array {
+  const current = cache.buf;
+  if (current !== null && current.length >= need) {
+    return current;
+  }
+  if (current !== null) {
+    current.fill(0);
+  }
+  cache.buf = new Uint8Array(need);
+  return cache.buf;
+}
+
 function emitChunkAuthSingle(
   width: number,
   noise: Seed, data: Seed, start: Seed, mac: Mac,
@@ -757,6 +807,7 @@ function emitChunkAuthSingle(
   streamId: Uint8Array,
   cumPixels: bigint,
   finalFlag: boolean,
+  cache?: StreamAuthCache,
 ): Uint8Array {
   const fn = ((): typeof ITB_EncryptStreamAuthenticated128 => {
     switch (width) {
@@ -771,29 +822,43 @@ function emitChunkAuthSingle(
   const ff = finalFlag ? 1 : 0;
   const ptArg = plaintext.length > 0 ? plaintext : new Uint8Array(0);
   const outLen: [bigint] = [0n];
+  const cap = preallocStreamCap(plaintext.length);
+  // When `cache` is provided (object-based stream class call sites),
+  // the per-stream buffer is reused instead of allocating a fresh
+  // Uint8Array per chunk (Bonus 1b in .NEXTBIND.md §7.1). When
+  // omitted, falls back to the per-call allocation — preserves any
+  // forward-compatibility call site that has no stream-class cache
+  // to attach.
+  let buf = cache !== undefined
+    ? ensureStreamCache(cache, cap)
+    : new Uint8Array(cap);
   let rc = fn(
-    noise.handle as bigint, data.handle as bigint, start.handle as bigint,
-    mac.handle as bigint,
-    ptArg, BigInt(plaintext.length),
-    streamId, cumPixels, ff,
-    null, 0n, outLen,
-  );
-  if (rc === Status.Ok) return new Uint8Array(0);
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(outLen[0]);
-  if (need === 0) return new Uint8Array(0);
-  const buf = new Uint8Array(need);
-  rc = fn(
     noise.handle as bigint, data.handle as bigint, start.handle as bigint,
     mac.handle as bigint,
     ptArg, BigInt(plaintext.length),
     streamId, cumPixels, ff,
     buf, BigInt(buf.length), outLen,
   );
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    buf = cache !== undefined
+      ? ensureStreamCache(cache, need)
+      : new Uint8Array(need);
+    rc = fn(
+      noise.handle as bigint, data.handle as bigint, start.handle as bigint,
+      mac.handle as bigint,
+      ptArg, BigInt(plaintext.length),
+      streamId, cumPixels, ff,
+      buf, BigInt(buf.length), outLen,
+    );
+  }
   check(rc);
-  return buf.subarray(0, Number(outLen[0]));
+  // Eager `slice` copy when routing through the per-stream cache: the
+  // returned bytes detach from the cache so the next chunk's call may
+  // safely overwrite the cache while the prior chunk's bytes remain
+  // queued in the consumer's `Writable`.
+  const written = Number(outLen[0]);
+  return cache !== undefined ? buf.slice(0, written) : buf.subarray(0, written);
 }
 
 function emitChunkAuthTriple(
@@ -806,6 +871,7 @@ function emitChunkAuthTriple(
   streamId: Uint8Array,
   cumPixels: bigint,
   finalFlag: boolean,
+  cache?: StreamAuthCache,
 ): Uint8Array {
   const fn = ((): typeof ITB_EncryptStreamAuthenticated3x128 => {
     switch (width) {
@@ -820,23 +886,12 @@ function emitChunkAuthTriple(
   const ff = finalFlag ? 1 : 0;
   const ptArg = plaintext.length > 0 ? plaintext : new Uint8Array(0);
   const outLen: [bigint] = [0n];
+  const cap = preallocStreamCap(plaintext.length);
+  // See `emitChunkAuthSingle` for the cache-routing rationale.
+  let buf = cache !== undefined
+    ? ensureStreamCache(cache, cap)
+    : new Uint8Array(cap);
   let rc = fn(
-    noise.handle as bigint,
-    data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
-    start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
-    mac.handle as bigint,
-    ptArg, BigInt(plaintext.length),
-    streamId, cumPixels, ff,
-    null, 0n, outLen,
-  );
-  if (rc === Status.Ok) return new Uint8Array(0);
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(outLen[0]);
-  if (need === 0) return new Uint8Array(0);
-  const buf = new Uint8Array(need);
-  rc = fn(
     noise.handle as bigint,
     data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
     start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
@@ -845,8 +900,24 @@ function emitChunkAuthTriple(
     streamId, cumPixels, ff,
     buf, BigInt(buf.length), outLen,
   );
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    buf = cache !== undefined
+      ? ensureStreamCache(cache, need)
+      : new Uint8Array(need);
+    rc = fn(
+      noise.handle as bigint,
+      data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
+      start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
+      mac.handle as bigint,
+      ptArg, BigInt(plaintext.length),
+      streamId, cumPixels, ff,
+      buf, BigInt(buf.length), outLen,
+    );
+  }
   check(rc);
-  return buf.subarray(0, Number(outLen[0]));
+  const written = Number(outLen[0]);
+  return cache !== undefined ? buf.slice(0, written) : buf.subarray(0, written);
 }
 
 function consumeChunkAuthSingle(
@@ -855,6 +926,7 @@ function consumeChunkAuthSingle(
   ciphertext: Uint8Array,
   streamId: Uint8Array,
   cumPixels: bigint,
+  cache?: StreamAuthCache,
 ): { pt: Uint8Array; finalFlag: boolean } {
   const fn = ((): typeof ITB_DecryptStreamAuthenticated128 => {
     switch (width) {
@@ -869,33 +941,47 @@ function consumeChunkAuthSingle(
   const ctArg = ciphertext.length > 0 ? ciphertext : new Uint8Array(0);
   const outLen: [bigint] = [0n];
   const ff: [number] = [0];
+  // Decrypt-side plaintext is bounded above by ciphertext length, so
+  // the same 1.25× + 128 KiB headroom formula comfortably covers
+  // every container sizing from libitb. Retry-once is the safety net.
+  // See `emitChunkAuthSingle` for the cache-routing rationale.
+  const cap = preallocStreamCap(ciphertext.length);
+  let buf = cache !== undefined
+    ? ensureStreamCache(cache, cap)
+    : new Uint8Array(cap);
   let rc = fn(
-    noise.handle as bigint, data.handle as bigint, start.handle as bigint,
-    mac.handle as bigint,
-    ctArg, BigInt(ciphertext.length),
-    streamId, cumPixels,
-    null, 0n, outLen, ff,
-  );
-  if (rc === Status.Ok) {
-    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
-  }
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(outLen[0]);
-  if (need === 0) {
-    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
-  }
-  const buf = new Uint8Array(need);
-  rc = fn(
     noise.handle as bigint, data.handle as bigint, start.handle as bigint,
     mac.handle as bigint,
     ctArg, BigInt(ciphertext.length),
     streamId, cumPixels,
     buf, BigInt(buf.length), outLen, ff,
   );
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    buf = cache !== undefined
+      ? ensureStreamCache(cache, need)
+      : new Uint8Array(need);
+    rc = fn(
+      noise.handle as bigint, data.handle as bigint, start.handle as bigint,
+      mac.handle as bigint,
+      ctArg, BigInt(ciphertext.length),
+      streamId, cumPixels,
+      buf, BigInt(buf.length), outLen, ff,
+    );
+  }
   check(rc);
-  return { pt: buf.subarray(0, Number(outLen[0])), finalFlag: ff[0] !== 0 };
+  const written = Number(outLen[0]);
+  // Eager `slice` copy when routing through the per-stream cache: the
+  // returned plaintext detaches from the cache so the next chunk's
+  // call may safely overwrite the cache while the prior chunk's
+  // bytes remain queued in the consumer's `Writable` (the §7.1
+  // carve-out: `Writable.write` queues the reference until later
+  // flush — overwriting cache bytes mid-queue would corrupt the
+  // queued chunk).
+  return {
+    pt: cache !== undefined ? buf.slice(0, written) : buf.subarray(0, written),
+    finalFlag: ff[0] !== 0,
+  };
 }
 
 function consumeChunkAuthTriple(
@@ -907,6 +993,7 @@ function consumeChunkAuthTriple(
   ciphertext: Uint8Array,
   streamId: Uint8Array,
   cumPixels: bigint,
+  cache?: StreamAuthCache,
 ): { pt: Uint8Array; finalFlag: boolean } {
   const fn = ((): typeof ITB_DecryptStreamAuthenticated3x128 => {
     switch (width) {
@@ -921,27 +1008,13 @@ function consumeChunkAuthTriple(
   const ctArg = ciphertext.length > 0 ? ciphertext : new Uint8Array(0);
   const outLen: [bigint] = [0n];
   const ff: [number] = [0];
+  // See `emitChunkAuthSingle` and `consumeChunkAuthSingle` for the
+  // cache-routing rationale.
+  const cap = preallocStreamCap(ciphertext.length);
+  let buf = cache !== undefined
+    ? ensureStreamCache(cache, cap)
+    : new Uint8Array(cap);
   let rc = fn(
-    noise.handle as bigint,
-    data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
-    start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
-    mac.handle as bigint,
-    ctArg, BigInt(ciphertext.length),
-    streamId, cumPixels,
-    null, 0n, outLen, ff,
-  );
-  if (rc === Status.Ok) {
-    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
-  }
-  if (rc !== Status.BufferTooSmall) {
-    throw errorFromStatus(rc);
-  }
-  const need = Number(outLen[0]);
-  if (need === 0) {
-    return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
-  }
-  const buf = new Uint8Array(need);
-  rc = fn(
     noise.handle as bigint,
     data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
     start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
@@ -950,8 +1023,27 @@ function consumeChunkAuthTriple(
     streamId, cumPixels,
     buf, BigInt(buf.length), outLen, ff,
   );
+  if (rc === Status.BufferTooSmall) {
+    const need = Number(outLen[0]);
+    buf = cache !== undefined
+      ? ensureStreamCache(cache, need)
+      : new Uint8Array(need);
+    rc = fn(
+      noise.handle as bigint,
+      data1.handle as bigint, data2.handle as bigint, data3.handle as bigint,
+      start1.handle as bigint, start2.handle as bigint, start3.handle as bigint,
+      mac.handle as bigint,
+      ctArg, BigInt(ciphertext.length),
+      streamId, cumPixels,
+      buf, BigInt(buf.length), outLen, ff,
+    );
+  }
   check(rc);
-  return { pt: buf.subarray(0, Number(outLen[0])), finalFlag: ff[0] !== 0 };
+  const written = Number(outLen[0]);
+  return {
+    pt: cache !== undefined ? buf.slice(0, written) : buf.subarray(0, written),
+    finalFlag: ff[0] !== 0,
+  };
 }
 
 /**
@@ -978,6 +1070,17 @@ export class StreamEncryptorAuth {
   private cumPixels = 0n;
   private closed = false;
   private prefixEmitted = false;
+  /**
+   * Per-stream output buffer cache. Grows on demand; `close` /
+   * `[Symbol.dispose]` wipe it before drop. Same Bonus 1b shape as
+   * the per-encryptor `_outputCache` on {@link Encryptor} — the
+   * streaming class owns its own cache because the
+   * {@link emitChunkAuthSingle} helper has no encryptor instance to
+   * attach to (.NEXTBIND.md §7.1).
+   *
+   * @internal
+   */
+  private _outBuf: StreamAuthCache = { buf: null };
 
   constructor(
     noise: Seed,
@@ -1009,14 +1112,33 @@ export class StreamEncryptorAuth {
   }
 
   private emitOne(ptLen: number, finalFlag: boolean): void {
-    const merged = concatU8(this.buf, this.buffered);
+    // Fast-path skip: when `buf` holds a single Uint8Array (the
+    // common case for callers passing a chunkSize-aligned source),
+    // the merged buffer is byte-identical to `buf[0]` — return the
+    // view directly to elide the alloc + memcpy of the slow-path
+    // merge. The wipe pass is skipped on the fast path because `buf[0]`
+    // is a caller-owned view; zeroing it would corrupt the caller's
+    // buffer (semantic-preserving against the slow-path baseline,
+    // which fresh-allocates and only wipes its private copy).
+    let merged: Uint8Array;
+    let owned: boolean;
+    if (this.buf.length === 1) {
+      merged = this.buf[0]!;
+      owned = false;
+    } else {
+      merged = concatU8(this.buf, this.buffered);
+      owned = true;
+    }
     const chunkPt = merged.subarray(0, ptLen);
     const tail = merged.subarray(ptLen);
     const ct = emitChunkAuthSingle(
       this.width, this.noise, this.data, this.start, this.mac,
       chunkPt, this.streamId, this.cumPixels, finalFlag,
+      this._outBuf,
     );
-    chunkPt.fill(0);
+    if (owned) {
+      chunkPt.fill(0);
+    }
     if (ct.length >= this.headerSize) {
       const w = readBe16(ct, this.headerSize - 4);
       const h = readBe16(ct, this.headerSize - 2);
@@ -1025,6 +1147,20 @@ export class StreamEncryptorAuth {
     this.output.write(ct);
     this.buf = tail.length > 0 ? [tail] : [];
     this.buffered = tail.length;
+  }
+
+  /**
+   * Zeroes and drops the per-stream output cache. Called from
+   * `close` and `[Symbol.dispose]` so the last chunk's ciphertext
+   * does not linger in heap memory after the stream finalises.
+   *
+   * @internal
+   */
+  private _wipeOutBuf(): void {
+    if (this._outBuf.buf !== null) {
+      this._outBuf.buf.fill(0);
+      this._outBuf.buf = null;
+    }
   }
 
   write(data: Uint8Array | Buffer): number {
@@ -1046,11 +1182,13 @@ export class StreamEncryptorAuth {
 
   close(): void {
     if (this.closed) {
+      this._wipeOutBuf();
       return;
     }
     this.emitPrefix();
     this.emitOne(this.buffered, true);
     this.closed = true;
+    this._wipeOutBuf();
   }
 
   [Symbol.dispose](): void {
@@ -1078,6 +1216,15 @@ export class StreamDecryptorAuth {
   private cumPixels = 0n;
   private seenFinal = false;
   private closed = false;
+  /**
+   * Per-stream output buffer cache. Same Bonus 1b shape as the
+   * encrypt-side counterpart; reused across every chunk's decrypt
+   * dispatch instead of a fresh `Uint8Array` per chunk
+   * (.NEXTBIND.md §7.1).
+   *
+   * @internal
+   */
+  private _outBuf: StreamAuthCache = { buf: null };
 
   constructor(
     noise: Seed,
@@ -1108,7 +1255,13 @@ export class StreamDecryptorAuth {
       if (this.buffered < this.headerSize) {
         return;
       }
-      const merged = concatU8(this.buf, this.buffered);
+      // Fast-path skip: single-element buffer is byte-identical to
+      // its sole part. Decrypt-side does not wipe the merged buffer
+      // (§7.1 carve-out — `Writable.write` queues the reference), so
+      // returning the view is safe.
+      const merged = this.buf.length === 1
+        ? this.buf[0]!
+        : concatU8(this.buf, this.buffered);
       const chunkLen = parseChunkLen(merged.subarray(0, this.headerSize));
       if (merged.length < chunkLen) {
         this.buf = [merged];
@@ -1123,6 +1276,7 @@ export class StreamDecryptorAuth {
       const { pt, finalFlag } = consumeChunkAuthSingle(
         this.width, this.noise, this.data, this.start, this.mac,
         chunk, this.streamId, this.cumPixels,
+        this._outBuf,
       );
       this.output.write(pt);
       this.cumPixels += pixels;
@@ -1131,6 +1285,20 @@ export class StreamDecryptorAuth {
       if (finalFlag) {
         this.seenFinal = true;
       }
+    }
+  }
+
+  /**
+   * Zeroes and drops the per-stream output cache. Called from
+   * `close` and `[Symbol.dispose]` so the last chunk's plaintext
+   * does not linger in heap memory after the stream finalises.
+   *
+   * @internal
+   */
+  private _wipeOutBuf(): void {
+    if (this._outBuf.buf !== null) {
+      this._outBuf.buf.fill(0);
+      this._outBuf.buf = null;
     }
   }
 
@@ -1160,10 +1328,12 @@ export class StreamDecryptorAuth {
 
   close(): void {
     if (this.closed) {
+      this._wipeOutBuf();
       return;
     }
     if (this.sidHave < STREAM_ID_LEN) {
       this.closed = true;
+      this._wipeOutBuf();
       // Incomplete prefix is a wire-level malformation (header
       // never finished arriving), distinct from "chunks observed
       // but no terminator chunk among them" which is the
@@ -1173,6 +1343,7 @@ export class StreamDecryptorAuth {
     }
     this.drain();
     this.closed = true;
+    this._wipeOutBuf();
     if (!this.seenFinal) {
       throw new ITBStreamTruncatedError(
         Status.StreamTruncated, 'auth stream: terminator never observed');
@@ -1182,6 +1353,7 @@ export class StreamDecryptorAuth {
   [Symbol.dispose](): void {
     // Mark closed without raising on partial input.
     this.closed = true;
+    this._wipeOutBuf();
   }
 }
 
@@ -1207,6 +1379,14 @@ export class StreamEncryptorAuthTriple {
   private cumPixels = 0n;
   private closed = false;
   private prefixEmitted = false;
+  /**
+   * Per-stream output buffer cache. Same Bonus 1b shape as
+   * {@link StreamEncryptorAuth._outBuf}; reused across every chunk's
+   * encrypt dispatch (.NEXTBIND.md §7.1).
+   *
+   * @internal
+   */
+  private _outBuf: StreamAuthCache = { buf: null };
 
   constructor(
     noise: Seed,
@@ -1246,7 +1426,21 @@ export class StreamEncryptorAuthTriple {
   }
 
   private emitOne(ptLen: number, finalFlag: boolean): void {
-    const merged = concatU8(this.buf, this.buffered);
+    // Fast-path skip: when `buf` holds a single Uint8Array, the
+    // merged buffer is byte-identical to `buf[0]` — return the view
+    // directly to elide the alloc + memcpy of the slow-path merge.
+    // Wipe is skipped on the fast path because `buf[0]` is a
+    // caller-owned view; zeroing it would corrupt the caller's
+    // buffer.
+    let merged: Uint8Array;
+    let owned: boolean;
+    if (this.buf.length === 1) {
+      merged = this.buf[0]!;
+      owned = false;
+    } else {
+      merged = concatU8(this.buf, this.buffered);
+      owned = true;
+    }
     const chunkPt = merged.subarray(0, ptLen);
     const tail = merged.subarray(ptLen);
     const ct = emitChunkAuthTriple(
@@ -1255,8 +1449,11 @@ export class StreamEncryptorAuthTriple {
       this.start1, this.start2, this.start3,
       this.mac,
       chunkPt, this.streamId, this.cumPixels, finalFlag,
+      this._outBuf,
     );
-    chunkPt.fill(0);
+    if (owned) {
+      chunkPt.fill(0);
+    }
     if (ct.length >= this.headerSize) {
       const w = readBe16(ct, this.headerSize - 4);
       const h = readBe16(ct, this.headerSize - 2);
@@ -1265,6 +1462,20 @@ export class StreamEncryptorAuthTriple {
     this.output.write(ct);
     this.buf = tail.length > 0 ? [tail] : [];
     this.buffered = tail.length;
+  }
+
+  /**
+   * Zeroes and drops the per-stream output cache. Called from
+   * `close` and `[Symbol.dispose]` so the last chunk's ciphertext
+   * does not linger in heap memory after the stream finalises.
+   *
+   * @internal
+   */
+  private _wipeOutBuf(): void {
+    if (this._outBuf.buf !== null) {
+      this._outBuf.buf.fill(0);
+      this._outBuf.buf = null;
+    }
   }
 
   write(data: Uint8Array | Buffer): number {
@@ -1284,11 +1495,13 @@ export class StreamEncryptorAuthTriple {
 
   close(): void {
     if (this.closed) {
+      this._wipeOutBuf();
       return;
     }
     this.emitPrefix();
     this.emitOne(this.buffered, true);
     this.closed = true;
+    this._wipeOutBuf();
   }
 
   [Symbol.dispose](): void {
@@ -1318,6 +1531,14 @@ export class StreamDecryptorAuthTriple {
   private cumPixels = 0n;
   private seenFinal = false;
   private closed = false;
+  /**
+   * Per-stream output buffer cache. Same Bonus 1b shape as
+   * {@link StreamDecryptorAuth._outBuf}; reused across every chunk's
+   * decrypt dispatch (.NEXTBIND.md §7.1).
+   *
+   * @internal
+   */
+  private _outBuf: StreamAuthCache = { buf: null };
 
   constructor(
     noise: Seed,
@@ -1356,7 +1577,12 @@ export class StreamDecryptorAuthTriple {
       if (this.buffered < this.headerSize) {
         return;
       }
-      const merged = concatU8(this.buf, this.buffered);
+      // Fast-path skip: single-element buffer is byte-identical to
+      // its sole part. Decrypt-side does not wipe the merged buffer
+      // (§7.1 carve-out), so returning the view is safe.
+      const merged = this.buf.length === 1
+        ? this.buf[0]!
+        : concatU8(this.buf, this.buffered);
       const chunkLen = parseChunkLen(merged.subarray(0, this.headerSize));
       if (merged.length < chunkLen) {
         this.buf = [merged];
@@ -1374,6 +1600,7 @@ export class StreamDecryptorAuthTriple {
         this.start1, this.start2, this.start3,
         this.mac,
         chunk, this.streamId, this.cumPixels,
+        this._outBuf,
       );
       this.output.write(pt);
       this.cumPixels += pixels;
@@ -1382,6 +1609,20 @@ export class StreamDecryptorAuthTriple {
       if (finalFlag) {
         this.seenFinal = true;
       }
+    }
+  }
+
+  /**
+   * Zeroes and drops the per-stream output cache. Called from
+   * `close` and `[Symbol.dispose]` so the last chunk's plaintext
+   * does not linger in heap memory after the stream finalises.
+   *
+   * @internal
+   */
+  private _wipeOutBuf(): void {
+    if (this._outBuf.buf !== null) {
+      this._outBuf.buf.fill(0);
+      this._outBuf.buf = null;
     }
   }
 
@@ -1412,10 +1653,12 @@ export class StreamDecryptorAuthTriple {
 
   close(): void {
     if (this.closed) {
+      this._wipeOutBuf();
       return;
     }
     if (this.sidHave < STREAM_ID_LEN) {
       this.closed = true;
+      this._wipeOutBuf();
       // Incomplete prefix is a wire-level malformation (header
       // never finished arriving), distinct from "chunks observed
       // but no terminator chunk among them" which is the
@@ -1425,6 +1668,7 @@ export class StreamDecryptorAuthTriple {
     }
     this.drain();
     this.closed = true;
+    this._wipeOutBuf();
     if (!this.seenFinal) {
       throw new ITBStreamTruncatedError(
         Status.StreamTruncated, 'auth stream: terminator never observed');
@@ -1433,6 +1677,7 @@ export class StreamDecryptorAuthTriple {
 
   [Symbol.dispose](): void {
     this.closed = true;
+    this._wipeOutBuf();
   }
 }
 

@@ -1,4 +1,4 @@
---  Authenticated Streaming AEAD tests for the Easy-mode Encryptor
+--  Authenticated Streaming AEAD tests for the Easy Mode Encryptor
 --  (Encryptor.Encrypt_Stream_Auth / Decrypt_Stream_Auth). Mirrors
 --  the seed-based suite in test_streams_auth.adb at the Encryptor
 --  abstraction level.
@@ -136,11 +136,11 @@ procedure Test_Easy_Streams_Auth is
    ------------------------------------------------------------------
    procedure Test_Easy_Roundtrip_Single is
       Hashes : constant array (1 .. 3) of String (1 .. 9) :=
-        ("siphash24", "blake3   ", "areion512");
-      Hash_Lens : constant array (1 .. 3) of Positive := (9, 6, 9);
+        ["siphash24", "blake3   ", "areion512"];
+      Hash_Lens : constant array (1 .. 3) of Positive := [9, 6, 9];
       Macs : constant array (1 .. 3) of String (1 .. 11) :=
-        ("kmac256    ", "hmac-sha256", "hmac-blake3");
-      Mac_Lens : constant array (1 .. 3) of Positive := (7, 11, 11);
+        ["kmac256    ", "hmac-sha256", "hmac-blake3"];
+      Mac_Lens : constant array (1 .. 3) of Positive := [7, 11, 11];
       Plain : constant Byte_Array :=
         Pseudo_Plaintext (Small_Chunk * 2 + 11);
    begin
@@ -182,8 +182,8 @@ procedure Test_Easy_Streams_Auth is
    ------------------------------------------------------------------
    procedure Test_Easy_Roundtrip_Triple is
       Macs : constant array (1 .. 3) of String (1 .. 11) :=
-        ("kmac256    ", "hmac-sha256", "hmac-blake3");
-      Mac_Lens : constant array (1 .. 3) of Positive := (7, 11, 11);
+        ["kmac256    ", "hmac-sha256", "hmac-blake3"];
+      Mac_Lens : constant array (1 .. 3) of Positive := [7, 11, 11];
       Plain : constant Byte_Array :=
         Pseudo_Plaintext (Small_Chunk * 2 + 7);
    begin

@@ -1,11 +1,11 @@
-// Easy-Mode Triple-Ouroboros benchmarks for the C# binding.
+// Easy Mode Triple-Ouroboros benchmarks for the C# binding.
 //
 // Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
 // nine PRF-grade primitives, locked at 1024-bit ITB key width and
 // 16 MiB CSPRNG-filled payload. One mixed-primitive variant
 // (Encryptor.Mixed3 cycling the same BLAKE3 / Areion-SoEM-256 /
 // ChaCha20 family + optional dedicated lockSeed used by bench_single_mixed)
-// covers the Easy-Mode Mixed surface alongside the single-primitive
+// covers the Easy Mode Mixed surface alongside the single-primitive
 // grid.
 //
 // Run with:
@@ -186,6 +186,7 @@ internal static class BenchTriple
         Console.Out.Flush();
 
         var cases = BuildCases();
+        cases.AddRange(BenchStream.BuildStreamCasesTriple());
         Common.RunAll(cases);
     }
 }

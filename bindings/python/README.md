@@ -165,7 +165,7 @@ Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Low-Level Mode example.** Module-level free functions
+**Low-Level Mode:** Module-level free functions
 `itb.encrypt_stream_auth` / `itb.decrypt_stream_auth` take three
 explicit `Seed` handles plus an explicitly constructed `itb.MAC`
 (32-byte key drawn from `os.urandom`) and stream through the same
@@ -234,7 +234,7 @@ CSPRNG-fresh at construction time and lives entirely inside the
 encryptor. The 32-byte `mac_key` argument shape applies only to the
 low-level `itb.MAC(name, key)` constructor.
 
-## Quick Start — `itb.Encryptor` (recommended high-level surface, no MAC)
+## Quick Start — `itb.Encryptor` (No MAC)
 
 The high-level :class:`itb.Encryptor` (mirroring the
 ``github.com/everanium/itb/easy`` Go sub-package) replaces the
@@ -364,7 +364,7 @@ with itb.Encryptor(prim, key_bits, mac, mode=mode) as dec:
     #decrypted = pbuf.getvalue()
 ```
 
-## Quick Start — `itb.Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
+## Quick Start — `itb.Encryptor` + HMAC-BLAKE3 (MAC Authenticated)
 
 The MAC primitive is bound at construction time — the third positional
 argument to :class:`itb.Encryptor` selects one of the registry names
@@ -483,7 +483,7 @@ with itb.Encryptor(prim, key_bits, mac, mode=mode) as dec:
     #decrypted = pbuf.getvalue()
 ```
 
-## Quick Start — Mixed primitives (different PRF per seed slot)
+## Quick Start — Mixed primitives (Different PRF per seed slot)
 
 `itb.Encryptor.mixed_single` and `itb.Encryptor.mixed_triple`
 classmethods accept per-slot primitive names — the noise / data /
@@ -586,7 +586,7 @@ finally:
     dec.close()
 ```
 
-## Quick Start — Areion-SoEM-512 (low-level, no MAC)
+## Quick Start — Areion-SoEM-512 (Low-level, No MAC)
 
 ```python
 # Sender
@@ -711,7 +711,7 @@ finally:
     ns.free(); ds.free(); ss.free(); ls.free()
 ```
 
-## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
+## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (Low-Level, MAC Authenticated)
 
 ```python
 # Sender

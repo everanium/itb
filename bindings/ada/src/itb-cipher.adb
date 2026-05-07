@@ -15,14 +15,9 @@ package body Itb.Cipher is
    --  Internal helpers
    ---------------------------------------------------------------------
 
-   function Empty return Byte_Array is
-   begin
-      return Byte_Array'(1 .. 0 => 0);
-   end Empty;
-
-   --  Single Ouroboros (Encrypt / Decrypt) — shared probe / allocate
-   --  / write idiom. The fn-pointer choice (Encrypt vs Decrypt) is
-   --  passed by the caller; both signatures are identical.
+   --  Single Ouroboros (Encrypt / Decrypt) — shared formula+retry-once
+   --  output-buffer pattern. The fn-pointer choice (Encrypt vs Decrypt)
+   --  is passed by the caller; both signatures are identical.
    type Single_Cipher_Fn is access function
      (Noise_Handle : Itb.Sys.Handle;
       Data_Handle  : Itb.Sys.Handle;
@@ -45,43 +40,62 @@ package body Itb.Cipher is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Payload'Length > 0 then Payload'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  Pre-allocate from the canonical 1.25x + 128 KiB formula.
+      --  See Itb.Encryptor.Cipher_Call for the rationale: the underlying
+      --  C ABI runs the full encrypt / decrypt on every call regardless
+      --  of the supplied out-buffer capacity, so a probe-then-retry
+      --  pattern doubles the work per chunk. Allocate once at a size
+      --  that comfortably exceeds the worst-case ITB ciphertext
+      --  expansion observed across the primitive / mode / nonce-bits /
+      --  barrier-fill matrix; retry once on the rare under-shoot using
+      --  the returned out_len.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Payload'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Array (1 .. Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
-      --  Probe required output size.
       Status := Fn (Itb.Seed.Raw_Handle (Noise),
                     Itb.Seed.Raw_Handle (Data),
                     Itb.Seed.Raw_Handle (Start),
                     In_Addr,
                     Payload'Length,
-                    System.Null_Address,
-                    0,
-                    Probe'Access);
-      if Status = Itb.Status.OK then
-         return Empty;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
+                    Result'Address,
+                    Cap,
+                    Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         --  Pre-allocation was too tight (extremely rare given the
+         --  1.25x + 128 KiB safety margin). Retry exactly to the size
+         --  libitb just reported. The first call already paid for the
+         --  cipher work; this is the fallback path, not the hot loop.
+         declare
+            Need     : constant size_t := Out_Len;
+            Result2  : Byte_Array (1 .. Stream_Element_Offset (Need));
+            Out_Len2 : aliased size_t := 0;
+         begin
+            Status := Fn (Itb.Seed.Raw_Handle (Noise),
+                          Itb.Seed.Raw_Handle (Data),
+                          Itb.Seed.Raw_Handle (Start),
+                          In_Addr,
+                          Payload'Length,
+                          Result2'Address,
+                          Need,
+                          Out_Len2'Access);
+            if Status /= 0 then
+               Itb.Errors.Raise_For (Integer (Status));
+            end if;
+            return Result2 (1 .. Stream_Element_Offset (Out_Len2));
+         end;
       end if;
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Array (1 .. Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Fn (Itb.Seed.Raw_Handle (Noise),
-                       Itb.Seed.Raw_Handle (Data),
-                       Itb.Seed.Raw_Handle (Start),
-                       In_Addr,
-                       Payload'Length,
-                       Result'Address,
-                       Need,
-                       Out_Len'Access);
-         if Status /= 0 then
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         return Result (1 .. Stream_Element_Offset (Out_Len));
-      end;
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      return Result (1 .. Stream_Element_Offset (Out_Len));
    end Run_Single;
 
    type Triple_Cipher_Fn is access function
@@ -114,7 +128,14 @@ package body Itb.Cipher is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Payload'Length > 0 then Payload'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Run_Single for the formula+retry-once rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Payload'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Array (1 .. Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Status := Fn (Itb.Seed.Raw_Handle (Noise),
@@ -126,38 +147,39 @@ package body Itb.Cipher is
                     Itb.Seed.Raw_Handle (Start3),
                     In_Addr,
                     Payload'Length,
-                    System.Null_Address,
-                    0,
-                    Probe'Access);
-      if Status = Itb.Status.OK then
-         return Empty;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
+                    Result'Address,
+                    Cap,
+                    Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need     : constant size_t := Out_Len;
+            Result2  : Byte_Array (1 .. Stream_Element_Offset (Need));
+            Out_Len2 : aliased size_t := 0;
+         begin
+            Status := Fn (Itb.Seed.Raw_Handle (Noise),
+                          Itb.Seed.Raw_Handle (Data1),
+                          Itb.Seed.Raw_Handle (Data2),
+                          Itb.Seed.Raw_Handle (Data3),
+                          Itb.Seed.Raw_Handle (Start1),
+                          Itb.Seed.Raw_Handle (Start2),
+                          Itb.Seed.Raw_Handle (Start3),
+                          In_Addr,
+                          Payload'Length,
+                          Result2'Address,
+                          Need,
+                          Out_Len2'Access);
+            if Status /= 0 then
+               Itb.Errors.Raise_For (Integer (Status));
+            end if;
+            return Result2 (1 .. Stream_Element_Offset (Out_Len2));
+         end;
       end if;
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Array (1 .. Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Fn (Itb.Seed.Raw_Handle (Noise),
-                       Itb.Seed.Raw_Handle (Data1),
-                       Itb.Seed.Raw_Handle (Data2),
-                       Itb.Seed.Raw_Handle (Data3),
-                       Itb.Seed.Raw_Handle (Start1),
-                       Itb.Seed.Raw_Handle (Start2),
-                       Itb.Seed.Raw_Handle (Start3),
-                       In_Addr,
-                       Payload'Length,
-                       Result'Address,
-                       Need,
-                       Out_Len'Access);
-         if Status /= 0 then
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         return Result (1 .. Stream_Element_Offset (Out_Len));
-      end;
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      return Result (1 .. Stream_Element_Offset (Out_Len));
    end Run_Triple;
 
    type Auth_Cipher_Fn is access function
@@ -184,7 +206,14 @@ package body Itb.Cipher is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Payload'Length > 0 then Payload'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Run_Single for the formula+retry-once rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Payload'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Array (1 .. Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Status := Fn (Itb.Seed.Raw_Handle (Noise),
@@ -193,35 +222,36 @@ package body Itb.Cipher is
                     Itb.MAC.Raw_Handle (Mac),
                     In_Addr,
                     Payload'Length,
-                    System.Null_Address,
-                    0,
-                    Probe'Access);
-      if Status = Itb.Status.OK then
-         return Empty;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
+                    Result'Address,
+                    Cap,
+                    Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need     : constant size_t := Out_Len;
+            Result2  : Byte_Array (1 .. Stream_Element_Offset (Need));
+            Out_Len2 : aliased size_t := 0;
+         begin
+            Status := Fn (Itb.Seed.Raw_Handle (Noise),
+                          Itb.Seed.Raw_Handle (Data),
+                          Itb.Seed.Raw_Handle (Start),
+                          Itb.MAC.Raw_Handle (Mac),
+                          In_Addr,
+                          Payload'Length,
+                          Result2'Address,
+                          Need,
+                          Out_Len2'Access);
+            if Status /= 0 then
+               Itb.Errors.Raise_For (Integer (Status));
+            end if;
+            return Result2 (1 .. Stream_Element_Offset (Out_Len2));
+         end;
       end if;
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Array (1 .. Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Fn (Itb.Seed.Raw_Handle (Noise),
-                       Itb.Seed.Raw_Handle (Data),
-                       Itb.Seed.Raw_Handle (Start),
-                       Itb.MAC.Raw_Handle (Mac),
-                       In_Addr,
-                       Payload'Length,
-                       Result'Address,
-                       Need,
-                       Out_Len'Access);
-         if Status /= 0 then
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         return Result (1 .. Stream_Element_Offset (Out_Len));
-      end;
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      return Result (1 .. Stream_Element_Offset (Out_Len));
    end Run_Auth;
 
    type Auth_Triple_Cipher_Fn is access function
@@ -256,7 +286,14 @@ package body Itb.Cipher is
       use Interfaces.C;
       In_Addr : constant System.Address :=
         (if Payload'Length > 0 then Payload'Address else System.Null_Address);
-      Probe   : aliased size_t := 0;
+      --  See Run_Single for the formula+retry-once rationale.
+      Cap_LL  : constant Long_Long_Integer :=
+        Long_Long_Integer'Max
+          (131072,
+           Long_Long_Integer (Payload'Length) * 5 / 4 + 131072);
+      Cap     : constant size_t := size_t (Cap_LL);
+      Result  : Byte_Array (1 .. Stream_Element_Offset (Cap));
+      Out_Len : aliased size_t := 0;
       Status  : int;
    begin
       Status := Fn (Itb.Seed.Raw_Handle (Noise),
@@ -269,39 +306,40 @@ package body Itb.Cipher is
                     Itb.MAC.Raw_Handle (Mac),
                     In_Addr,
                     Payload'Length,
-                    System.Null_Address,
-                    0,
-                    Probe'Access);
-      if Status = Itb.Status.OK then
-         return Empty;
-      end if;
-      if Status /= Itb.Status.Buffer_Too_Small then
-         Itb.Errors.Raise_For (Integer (Status));
+                    Result'Address,
+                    Cap,
+                    Out_Len'Access);
+
+      if Status = Itb.Status.Buffer_Too_Small then
+         declare
+            Need     : constant size_t := Out_Len;
+            Result2  : Byte_Array (1 .. Stream_Element_Offset (Need));
+            Out_Len2 : aliased size_t := 0;
+         begin
+            Status := Fn (Itb.Seed.Raw_Handle (Noise),
+                          Itb.Seed.Raw_Handle (Data1),
+                          Itb.Seed.Raw_Handle (Data2),
+                          Itb.Seed.Raw_Handle (Data3),
+                          Itb.Seed.Raw_Handle (Start1),
+                          Itb.Seed.Raw_Handle (Start2),
+                          Itb.Seed.Raw_Handle (Start3),
+                          Itb.MAC.Raw_Handle (Mac),
+                          In_Addr,
+                          Payload'Length,
+                          Result2'Address,
+                          Need,
+                          Out_Len2'Access);
+            if Status /= 0 then
+               Itb.Errors.Raise_For (Integer (Status));
+            end if;
+            return Result2 (1 .. Stream_Element_Offset (Out_Len2));
+         end;
       end if;
 
-      declare
-         Need    : constant size_t := Probe;
-         Result  : Byte_Array (1 .. Stream_Element_Offset (Need));
-         Out_Len : aliased size_t := 0;
-      begin
-         Status := Fn (Itb.Seed.Raw_Handle (Noise),
-                       Itb.Seed.Raw_Handle (Data1),
-                       Itb.Seed.Raw_Handle (Data2),
-                       Itb.Seed.Raw_Handle (Data3),
-                       Itb.Seed.Raw_Handle (Start1),
-                       Itb.Seed.Raw_Handle (Start2),
-                       Itb.Seed.Raw_Handle (Start3),
-                       Itb.MAC.Raw_Handle (Mac),
-                       In_Addr,
-                       Payload'Length,
-                       Result'Address,
-                       Need,
-                       Out_Len'Access);
-         if Status /= 0 then
-            Itb.Errors.Raise_For (Integer (Status));
-         end if;
-         return Result (1 .. Stream_Element_Offset (Out_Len));
-      end;
+      if Status /= 0 then
+         Itb.Errors.Raise_For (Integer (Status));
+      end if;
+      return Result (1 .. Stream_Element_Offset (Out_Len));
    end Run_Auth_Triple;
 
    ---------------------------------------------------------------------

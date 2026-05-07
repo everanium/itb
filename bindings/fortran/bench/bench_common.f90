@@ -1,5 +1,5 @@
 ! bench_common.f90 -- shared scaffolding for the Fortran binding's
-! Easy-Mode bench binaries.
+! Easy Mode bench binaries.
 !
 ! Mirrors the cross-binding bench harness pattern: each bench case
 ! runs a one-iteration warm-up, then keeps doubling the iteration

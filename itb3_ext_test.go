@@ -18,10 +18,13 @@ package itb_test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/easy"
 	"github.com/everanium/itb/hashes"
 )
 
@@ -1116,5 +1119,225 @@ func TestTripleAttachLockSeedMixedPrimitive256(t *testing.T) {
 	if !bytes.Equal(pt, plaintext) {
 		t.Errorf("Triple mixed-primitive AttachLockSeed roundtrip mismatch: got %d bytes, want %d",
 			len(pt), len(plaintext))
+	}
+}
+
+// --- Streaming benchmarks (Easy Triple Ouroboros, areion512, 1024-bit) ---
+
+// streamEasyTriplePlaintextExt draws an n-byte CSPRNG plaintext for
+// the Easy Triple streaming bench cohort.
+func streamEasyTriplePlaintextExt(b *testing.B, n int) []byte {
+	src := make([]byte, n)
+	if _, err := rand.Read(src); err != nil {
+		b.Fatalf("rand.Read: %v", err)
+	}
+	return src
+}
+
+// BenchmarkExtEasyTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB
+// measures the throughput of [easy.Encryptor.EncryptStreamAuthIO]
+// (Triple Ouroboros, areion512 PRF, 1024-bit ITB key width,
+// hmac-blake3 MAC bound at construction) on a 64 MiB plaintext
+// streamed in 16 MiB chunks. The 7-seed encryptor is constructed
+// once outside the timer.
+func BenchmarkExtEasyTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	enc := easy.New3("areion512", 1024, "hmac-blake3")
+	defer enc.Close()
+	src := streamEasyTriplePlaintextExt(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		if err := enc.EncryptStreamAuthIO(r, buf, chunkSize); err != nil {
+			b.Fatalf("EncryptStreamAuthIO: %v", err)
+		}
+	}
+}
+
+// BenchmarkExtEasyTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB
+// measures the throughput of [easy.Encryptor.DecryptStreamAuthIO] on
+// a transcript pre-built once outside the timer.
+func BenchmarkExtEasyTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	enc := easy.New3("areion512", 1024, "hmac-blake3")
+	defer enc.Close()
+	src := streamEasyTriplePlaintextExt(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := enc.EncryptStreamAuthIO(bytes.NewReader(src), encBuf, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStreamAuthIO: %v", err)
+	}
+	ciphertext := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(ciphertext)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		if err := enc.DecryptStreamAuthIO(r, buf); err != nil {
+			b.Fatalf("DecryptStreamAuthIO: %v", err)
+		}
+	}
+}
+
+// BenchmarkExtEasyTripleEncryptStreamIO_Areion512_1024_64MB_C16MB
+// measures the throughput of [easy.Encryptor.EncryptStreamIO] (no
+// MAC) under the same Triple Ouroboros / areion512 / 1024-bit
+// configuration.
+func BenchmarkExtEasyTripleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	enc := easy.New3("areion512", 1024)
+	defer enc.Close()
+	src := streamEasyTriplePlaintextExt(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		if err := enc.EncryptStreamIO(r, buf, chunkSize); err != nil {
+			b.Fatalf("EncryptStreamIO: %v", err)
+		}
+	}
+}
+
+// BenchmarkExtEasyTripleDecryptStreamIO_Areion512_1024_64MB_C16MB
+// measures the throughput of [easy.Encryptor.DecryptStreamIO] on a
+// transcript pre-built once outside the timer.
+func BenchmarkExtEasyTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	enc := easy.New3("areion512", 1024)
+	defer enc.Close()
+	src := streamEasyTriplePlaintextExt(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := enc.EncryptStreamIO(bytes.NewReader(src), encBuf, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStreamIO: %v", err)
+	}
+	ciphertext := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(ciphertext)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		if err := enc.DecryptStreamIO(r, buf); err != nil {
+			b.Fatalf("DecryptStreamIO: %v", err)
+		}
+	}
+}
+
+// BenchmarkExtEasyTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
+// measures the user-driven plain-stream Encrypt loop on the Triple
+// Ouroboros encryptor: caller reads chunkSize-byte windows out of src,
+// calls [easy.Encryptor.Encrypt] per chunk, and writes each ITB wire
+// chunk verbatim. Mirrors exampleEasyModePlainUserLoop from
+// tmp/itb_examples/go/main.go scaled to the 7-seed Triple constellation.
+func BenchmarkExtEasyTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	enc := easy.New3("areion512", 1024)
+	defer enc.Close()
+	src := streamEasyTriplePlaintextExt(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		stage := make([]byte, chunkSize)
+		for {
+			n, rerr := io.ReadFull(r, stage)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil && rerr != io.ErrUnexpectedEOF {
+				b.Fatalf("ReadFull: %v", rerr)
+			}
+			ct, encErr := enc.Encrypt(stage[:n])
+			if encErr != nil {
+				b.Fatalf("Encrypt: %v", encErr)
+			}
+			if _, werr := buf.Write(ct); werr != nil {
+				b.Fatalf("Write: %v", werr)
+			}
+			if rerr == io.ErrUnexpectedEOF {
+				break
+			}
+		}
+	}
+}
+
+// BenchmarkExtEasyTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
+// measures the user-driven plain-stream Decrypt loop on the Triple
+// Ouroboros encryptor: caller reads the per-instance header via
+// [easy.Encryptor.HeaderSize], parses the chunk's total wire length
+// via [easy.Encryptor.ParseChunkLen], reads the body, and calls
+// [easy.Encryptor.Decrypt] per chunk. The wire transcript is built
+// once outside the timer.
+func BenchmarkExtEasyTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	enc := easy.New3("areion512", 1024)
+	defer enc.Close()
+	src := streamEasyTriplePlaintextExt(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := enc.EncryptStreamIO(bytes.NewReader(src), encBuf, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStreamIO: %v", err)
+	}
+	transcript := encBuf.Bytes()
+	headerSz := enc.HeaderSize()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(transcript)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		header := make([]byte, headerSz)
+		for {
+			_, rerr := io.ReadFull(r, header)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				b.Fatalf("ReadFull header: %v", rerr)
+			}
+			chunkLen, perr := enc.ParseChunkLen(header)
+			if perr != nil {
+				b.Fatalf("ParseChunkLen: %v", perr)
+			}
+			body := make([]byte, chunkLen-headerSz)
+			if _, rerr2 := io.ReadFull(r, body); rerr2 != nil {
+				b.Fatalf("ReadFull body: %v", rerr2)
+			}
+			chunk := make([]byte, 0, chunkLen)
+			chunk = append(chunk, header...)
+			chunk = append(chunk, body...)
+			pt, decErr := enc.Decrypt(chunk)
+			if decErr != nil {
+				b.Fatalf("Decrypt: %v", decErr)
+			}
+			buf.Write(pt)
+		}
 	}
 }

@@ -1,6 +1,6 @@
 # ITB Node.js / TypeScript Binding - Easy Mode Benchmark
 
-Two scripts cover the Easy-Mode encryption / decryption surface
+Two scripts cover the Easy Mode encryption / decryption surface
 exposed by the Node.js binding:
 
 * `bench-single.ts` — Single Ouroboros (mode=1, 3 seeds + optional

@@ -807,6 +807,41 @@ private FnDecAuthTriple _decAuthTripleForWidth(int width) @trusted
     }
 }
 
+/// Saturating output capacity estimate matching the per-encryptor
+/// output cache in `itb.encryptor`. Pre-allocates from a 1.25×
+/// multiplier + 128 KiB pad + 128 KiB floor so the first cipher call
+/// avoids the size-probe round-trip; an explicit retry-on-
+/// BufferTooSmall path remains as the safety net for non-default
+/// barrier-fill values that lift expansion above the formula.
+private size_t _streamSaturatingExpansion(size_t n) @safe @nogc nothrow pure
+{
+    size_t mul;
+    if (n > size_t.max / 5)
+        mul = size_t.max;
+    else
+        mul = (n * 5) / 4;
+    size_t add;
+    if (mul > size_t.max - 131072)
+        add = size_t.max;
+    else
+        add = mul + 131072;
+    return add < 131072 ? 131072 : add;
+}
+
+/// Grow-on-demand + wipe-on-grow helper for the per-stream output
+/// cache. Mirrors `Encryptor._ensureCache` shape: zeroes the OLD slice
+/// before discarding the reference so the previous-chunk ciphertext /
+/// plaintext does not linger in heap garbage waiting for GC.
+private void _ensureStreamCache(ref ubyte[] cache, size_t need) @trusted
+{
+    if (cache.length >= need)
+        return;
+    if (cache.length > 0)
+        cache[] = 0;
+    size_t cap = need < 131072 ? 131072 : need;
+    cache = new ubyte[cap];
+}
+
 private ubyte[] _emitChunkAuthSingle(
     int width,
     ref const Seed noise, ref const Seed data, ref const Seed start,
@@ -814,32 +849,33 @@ private ubyte[] _emitChunkAuthSingle(
     const(ubyte)[] plaintext,
     ref ubyte[STREAM_ID_LEN] streamID,
     ulong cumPixels,
-    bool finalFlag) @trusted
+    bool finalFlag,
+    ref ubyte[] outCache) @trusted
 {
     auto fn = _encAuthSingleForWidth(width);
     void* inPtr = plaintext.length == 0 ? null : cast(void*) plaintext.ptr;
     int ff = finalFlag ? 1 : 0;
-    size_t need = 0;
+    size_t cap = _streamSaturatingExpansion(plaintext.length);
+    // Reuse the per-stream output cache instead of a fresh GC alloc
+    // per chunk. Same Bonus 1 pattern as the Easy Mode dispatchers.
+    _ensureStreamCache(outCache, cap);
+    size_t written = 0;
     int rc = fn(
         noise.handle, data.handle, start.handle, mac.handle,
         inPtr, plaintext.length,
         streamID.ptr, cumPixels, ff,
-        null, 0, &need);
-    if (rc == Status.OK)
-        return [];
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    if (need == 0)
-        return [];
-    ubyte[] outBuf = new ubyte[need];
-    size_t written = 0;
-    rc = fn(
-        noise.handle, data.handle, start.handle, mac.handle,
-        inPtr, plaintext.length,
-        streamID.ptr, cumPixels, ff,
-        cast(void*) outBuf.ptr, outBuf.length, &written);
+        cast(void*) outCache.ptr, outCache.length, &written);
+    if (rc == Status.BufferTooSmall)
+    {
+        _ensureStreamCache(outCache, written);
+        rc = fn(
+            noise.handle, data.handle, start.handle, mac.handle,
+            inPtr, plaintext.length,
+            streamID.ptr, cumPixels, ff,
+            cast(void*) outCache.ptr, outCache.length, &written);
+    }
     check(rc);
-    return outBuf[0 .. written];
+    return outCache[0 .. written];
 }
 
 private ubyte[] _emitChunkAuthTriple(
@@ -851,12 +887,15 @@ private ubyte[] _emitChunkAuthTriple(
     const(ubyte)[] plaintext,
     ref ubyte[STREAM_ID_LEN] streamID,
     ulong cumPixels,
-    bool finalFlag) @trusted
+    bool finalFlag,
+    ref ubyte[] outCache) @trusted
 {
     auto fn = _encAuthTripleForWidth(width);
     void* inPtr = plaintext.length == 0 ? null : cast(void*) plaintext.ptr;
     int ff = finalFlag ? 1 : 0;
-    size_t need = 0;
+    size_t cap = _streamSaturatingExpansion(plaintext.length);
+    _ensureStreamCache(outCache, cap);
+    size_t written = 0;
     int rc = fn(
         noise.handle,
         data1.handle, data2.handle, data3.handle,
@@ -864,25 +903,21 @@ private ubyte[] _emitChunkAuthTriple(
         mac.handle,
         inPtr, plaintext.length,
         streamID.ptr, cumPixels, ff,
-        null, 0, &need);
-    if (rc == Status.OK)
-        return [];
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    if (need == 0)
-        return [];
-    ubyte[] outBuf = new ubyte[need];
-    size_t written = 0;
-    rc = fn(
-        noise.handle,
-        data1.handle, data2.handle, data3.handle,
-        start1.handle, start2.handle, start3.handle,
-        mac.handle,
-        inPtr, plaintext.length,
-        streamID.ptr, cumPixels, ff,
-        cast(void*) outBuf.ptr, outBuf.length, &written);
+        cast(void*) outCache.ptr, outCache.length, &written);
+    if (rc == Status.BufferTooSmall)
+    {
+        _ensureStreamCache(outCache, written);
+        rc = fn(
+            noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle,
+            inPtr, plaintext.length,
+            streamID.ptr, cumPixels, ff,
+            cast(void*) outCache.ptr, outCache.length, &written);
+    }
     check(rc);
-    return outBuf[0 .. written];
+    return outCache[0 .. written];
 }
 
 private struct ConsumeAuthResult
@@ -897,32 +932,31 @@ private ConsumeAuthResult _consumeChunkAuthSingle(
     ref const MAC mac,
     const(ubyte)[] ciphertext,
     ref ubyte[STREAM_ID_LEN] streamID,
-    ulong cumPixels) @trusted
+    ulong cumPixels,
+    ref ubyte[] outCache) @trusted
 {
     auto fn = _decAuthSingleForWidth(width);
     void* inPtr = ciphertext.length == 0 ? null : cast(void*) ciphertext.ptr;
-    size_t need = 0;
     int ff = 0;
+    size_t cap = _streamSaturatingExpansion(ciphertext.length);
+    _ensureStreamCache(outCache, cap);
+    size_t written = 0;
     int rc = fn(
         noise.handle, data.handle, start.handle, mac.handle,
         inPtr, ciphertext.length,
         streamID.ptr, cumPixels,
-        null, 0, &need, &ff);
-    if (rc == Status.OK)
-        return ConsumeAuthResult([], ff != 0);
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    if (need == 0)
-        return ConsumeAuthResult([], ff != 0);
-    ubyte[] outBuf = new ubyte[need];
-    size_t written = 0;
-    rc = fn(
-        noise.handle, data.handle, start.handle, mac.handle,
-        inPtr, ciphertext.length,
-        streamID.ptr, cumPixels,
-        cast(void*) outBuf.ptr, outBuf.length, &written, &ff);
+        cast(void*) outCache.ptr, outCache.length, &written, &ff);
+    if (rc == Status.BufferTooSmall)
+    {
+        _ensureStreamCache(outCache, written);
+        rc = fn(
+            noise.handle, data.handle, start.handle, mac.handle,
+            inPtr, ciphertext.length,
+            streamID.ptr, cumPixels,
+            cast(void*) outCache.ptr, outCache.length, &written, &ff);
+    }
     check(rc);
-    return ConsumeAuthResult(outBuf[0 .. written], ff != 0);
+    return ConsumeAuthResult(outCache[0 .. written], ff != 0);
 }
 
 private ConsumeAuthResult _consumeChunkAuthTriple(
@@ -933,12 +967,15 @@ private ConsumeAuthResult _consumeChunkAuthTriple(
     ref const MAC mac,
     const(ubyte)[] ciphertext,
     ref ubyte[STREAM_ID_LEN] streamID,
-    ulong cumPixels) @trusted
+    ulong cumPixels,
+    ref ubyte[] outCache) @trusted
 {
     auto fn = _decAuthTripleForWidth(width);
     void* inPtr = ciphertext.length == 0 ? null : cast(void*) ciphertext.ptr;
-    size_t need = 0;
     int ff = 0;
+    size_t cap = _streamSaturatingExpansion(ciphertext.length);
+    _ensureStreamCache(outCache, cap);
+    size_t written = 0;
     int rc = fn(
         noise.handle,
         data1.handle, data2.handle, data3.handle,
@@ -946,25 +983,21 @@ private ConsumeAuthResult _consumeChunkAuthTriple(
         mac.handle,
         inPtr, ciphertext.length,
         streamID.ptr, cumPixels,
-        null, 0, &need, &ff);
-    if (rc == Status.OK)
-        return ConsumeAuthResult([], ff != 0);
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    if (need == 0)
-        return ConsumeAuthResult([], ff != 0);
-    ubyte[] outBuf = new ubyte[need];
-    size_t written = 0;
-    rc = fn(
-        noise.handle,
-        data1.handle, data2.handle, data3.handle,
-        start1.handle, start2.handle, start3.handle,
-        mac.handle,
-        inPtr, ciphertext.length,
-        streamID.ptr, cumPixels,
-        cast(void*) outBuf.ptr, outBuf.length, &written, &ff);
+        cast(void*) outCache.ptr, outCache.length, &written, &ff);
+    if (rc == Status.BufferTooSmall)
+    {
+        _ensureStreamCache(outCache, written);
+        rc = fn(
+            noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle,
+            inPtr, ciphertext.length,
+            streamID.ptr, cumPixels,
+            cast(void*) outCache.ptr, outCache.length, &written, &ff);
+    }
     check(rc);
-    return ConsumeAuthResult(outBuf[0 .. written], ff != 0);
+    return ConsumeAuthResult(outCache[0 .. written], ff != 0);
 }
 
 // --------------------------------------------------------------------
@@ -1000,6 +1033,12 @@ struct StreamEncryptorAuth
     private const(Seed)* _dataRef;
     private const(Seed)* _startRef;
     private const(MAC)* _macRef;
+    /// Per-stream output buffer cache. Grows on demand; `close` /
+    /// destructor wipe it before drop. Same Bonus 1 shape as the
+    /// per-encryptor cache on `Encryptor` — the streaming class owns
+    /// its own cache because the helper free functions have no
+    /// encryptor instance to attach to.
+    private ubyte[] _outCache;
 
     @disable this(this);
 
@@ -1042,6 +1081,7 @@ struct StreamEncryptorAuth
         {
             // Swallow — destructor cannot raise.
         }
+        _wipeOutCache();
     }
 
     private void _emitPrefix() @trusted
@@ -1053,15 +1093,27 @@ struct StreamEncryptorAuth
         }
     }
 
+    private void _wipeOutCache() @trusted
+    {
+        if (_outCache.length > 0)
+            _outCache[] = 0;
+        _outCache = null;
+    }
+
     private void _emitOne(size_t plaintextLen, bool finalFlag) @trusted
     {
-        ubyte[] chunk = _buf[0 .. plaintextLen].dup;
-        _buf[0 .. plaintextLen] = 0;
-        _buf = _buf[plaintextLen .. $];
+        // Pass the slice into `_buf` directly to the FFI (skip the
+        // per-chunk `.dup`): the FFI copies the plaintext into the
+        // per-stream output cache during the cipher pass, so wiping
+        // the consumed prefix and advancing the buffer AFTER the FFI
+        // returns preserves the no-residue invariant without paying
+        // for a per-chunk owned copy.
+        ubyte[] chunk = _buf[0 .. plaintextLen];
         ubyte[] ct = _emitChunkAuthSingle(
             _width, *_noiseRef, *_dataRef, *_startRef, *_macRef,
-            chunk, _streamID, _cumPixels, finalFlag);
+            chunk, _streamID, _cumPixels, finalFlag, _outCache);
         chunk[] = 0;
+        _buf = _buf[plaintextLen .. $];
         if (ct.length >= _headerSize)
         {
             size_t w = _readBE16(ct[_headerSize - 4 .. _headerSize - 2]);
@@ -1100,6 +1152,7 @@ struct StreamEncryptorAuth
         size_t remaining = _buf.length;
         _emitOne(remaining, true);
         _closed = true;
+        _wipeOutCache();
     }
 }
 
@@ -1129,6 +1182,10 @@ struct StreamDecryptorAuth
     private const(Seed)* _dataRef;
     private const(Seed)* _startRef;
     private const(MAC)* _macRef;
+    /// Per-stream output buffer cache. Same Bonus 1 shape as the
+    /// encrypt-side counterpart; reused across every chunk's decrypt
+    /// dispatch instead of a fresh GC alloc per chunk.
+    private ubyte[] _outCache;
 
     @disable this(this);
 
@@ -1152,9 +1209,17 @@ struct StreamDecryptorAuth
         this._sidHave = 0;
     }
 
-    ~this() @safe
+    ~this() @trusted
     {
         _closed = true;
+        _wipeOutCache();
+    }
+
+    private void _wipeOutCache() @trusted
+    {
+        if (_outCache.length > 0)
+            _outCache[] = 0;
+        _outCache = null;
     }
 
     /// Appends `data` to the internal buffer and drains every
@@ -1189,11 +1254,13 @@ struct StreamDecryptorAuth
         if (_sidHave < STREAM_ID_LEN)
         {
             _closed = true;
+            _wipeOutCache();
             throw new ITBError(Status.BadInput,
                 "auth stream: 32-byte stream prefix incomplete");
         }
         _drain();
         _closed = true;
+        _wipeOutCache();
         if (!_seenFinal)
             throw new ITBStreamTruncatedError(Status.StreamTruncated,
                 "auth stream: terminator never observed");
@@ -1218,13 +1285,19 @@ struct StreamDecryptorAuth
             size_t w = _readBE16(_buf[_headerSize - 4 .. _headerSize - 2]);
             size_t h = _readBE16(_buf[_headerSize - 2 .. _headerSize]);
             ulong pixels = cast(ulong) w * cast(ulong) h;
-            ubyte[] chunk = _buf[0 .. chunkLen].dup;
-            _buf = _buf[chunkLen .. $];
+            // Pass the slice into `_buf` directly to the FFI (skip
+            // `.dup`): the FFI copies the recovered plaintext into the
+            // per-stream output cache, so wiping the consumed prefix
+            // and advancing AFTER the FFI returns preserves the
+            // no-residue invariant without a per-chunk owned copy.
+            ubyte[] chunk = _buf[0 .. chunkLen];
             auto r = _consumeChunkAuthSingle(
                 _width, *_noiseRef, *_dataRef, *_startRef, *_macRef,
-                chunk, _streamID, _cumPixels);
+                chunk, _streamID, _cumPixels, _outCache);
             _writer(r.plaintext);
             r.plaintext[] = 0;
+            chunk[] = 0;
+            _buf = _buf[chunkLen .. $];
             _cumPixels += pixels;
             if (r.finalFlag)
                 _seenFinal = true;
@@ -1257,6 +1330,9 @@ struct StreamEncryptorAuth3
     private const(Seed)* _start2Ref;
     private const(Seed)* _start3Ref;
     private const(MAC)* _macRef;
+    /// Per-stream output buffer cache (Triple variant). Same Bonus 1
+    /// shape as the Single counterpart.
+    private ubyte[] _outCache;
 
     @disable this(this);
 
@@ -1301,6 +1377,7 @@ struct StreamEncryptorAuth3
         {
             // Swallow — destructor cannot raise.
         }
+        _wipeOutCache();
     }
 
     private void _emitPrefix() @trusted
@@ -1312,18 +1389,29 @@ struct StreamEncryptorAuth3
         }
     }
 
+    private void _wipeOutCache() @trusted
+    {
+        if (_outCache.length > 0)
+            _outCache[] = 0;
+        _outCache = null;
+    }
+
     private void _emitOne(size_t plaintextLen, bool finalFlag) @trusted
     {
-        ubyte[] chunk = _buf[0 .. plaintextLen].dup;
-        _buf[0 .. plaintextLen] = 0;
-        _buf = _buf[plaintextLen .. $];
+        // Pass the slice into `_buf` directly to the FFI (skip
+        // `.dup`): the FFI copies the plaintext into the per-stream
+        // output cache during the cipher pass, so wiping the consumed
+        // prefix and advancing AFTER the FFI returns preserves the
+        // no-residue invariant without a per-chunk owned copy.
+        ubyte[] chunk = _buf[0 .. plaintextLen];
         ubyte[] ct = _emitChunkAuthTriple(
             _width, *_noiseRef,
             *_data1Ref, *_data2Ref, *_data3Ref,
             *_start1Ref, *_start2Ref, *_start3Ref,
             *_macRef,
-            chunk, _streamID, _cumPixels, finalFlag);
+            chunk, _streamID, _cumPixels, finalFlag, _outCache);
         chunk[] = 0;
+        _buf = _buf[plaintextLen .. $];
         if (ct.length >= _headerSize)
         {
             size_t w = _readBE16(ct[_headerSize - 4 .. _headerSize - 2]);
@@ -1354,6 +1442,7 @@ struct StreamEncryptorAuth3
         size_t remaining = _buf.length;
         _emitOne(remaining, true);
         _closed = true;
+        _wipeOutCache();
     }
 }
 
@@ -1378,6 +1467,9 @@ struct StreamDecryptorAuth3
     private const(Seed)* _start2Ref;
     private const(Seed)* _start3Ref;
     private const(MAC)* _macRef;
+    /// Per-stream output buffer cache (Triple variant). Same Bonus 1
+    /// shape as the Single counterpart.
+    private ubyte[] _outCache;
 
     @disable this(this);
 
@@ -1407,9 +1499,17 @@ struct StreamDecryptorAuth3
         this._sidHave = 0;
     }
 
-    ~this() @safe
+    ~this() @trusted
     {
         _closed = true;
+        _wipeOutCache();
+    }
+
+    private void _wipeOutCache() @trusted
+    {
+        if (_outCache.length > 0)
+            _outCache[] = 0;
+        _outCache = null;
     }
 
     void feed(const(ubyte)[] data) @trusted
@@ -1439,11 +1539,13 @@ struct StreamDecryptorAuth3
         if (_sidHave < STREAM_ID_LEN)
         {
             _closed = true;
+            _wipeOutCache();
             throw new ITBError(Status.BadInput,
                 "auth stream: 32-byte stream prefix incomplete");
         }
         _drain();
         _closed = true;
+        _wipeOutCache();
         if (!_seenFinal)
             throw new ITBStreamTruncatedError(Status.StreamTruncated,
                 "auth stream: terminator never observed");
@@ -1468,16 +1570,22 @@ struct StreamDecryptorAuth3
             size_t w = _readBE16(_buf[_headerSize - 4 .. _headerSize - 2]);
             size_t h = _readBE16(_buf[_headerSize - 2 .. _headerSize]);
             ulong pixels = cast(ulong) w * cast(ulong) h;
-            ubyte[] chunk = _buf[0 .. chunkLen].dup;
-            _buf = _buf[chunkLen .. $];
+            // Pass the slice into `_buf` directly to the FFI (skip
+            // `.dup`): the FFI copies the recovered plaintext into the
+            // per-stream output cache, so wiping the consumed prefix
+            // and advancing AFTER the FFI returns preserves the
+            // no-residue invariant without a per-chunk owned copy.
+            ubyte[] chunk = _buf[0 .. chunkLen];
             auto r = _consumeChunkAuthTriple(
                 _width, *_noiseRef,
                 *_data1Ref, *_data2Ref, *_data3Ref,
                 *_start1Ref, *_start2Ref, *_start3Ref,
                 *_macRef,
-                chunk, _streamID, _cumPixels);
+                chunk, _streamID, _cumPixels, _outCache);
             _writer(r.plaintext);
             r.plaintext[] = 0;
+            chunk[] = 0;
+            _buf = _buf[chunkLen .. $];
             _cumPixels += pixels;
             if (r.finalFlag)
                 _seenFinal = true;

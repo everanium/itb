@@ -219,11 +219,11 @@ procedure Test_Streams_Auth is
    ------------------------------------------------------------------
    procedure Test_Single_Roundtrip is
       Hashes : constant array (1 .. 3) of String (1 .. 9) :=
-        ("siphash24", "blake3   ", "areion512");
-      Hash_Lens : constant array (1 .. 3) of Positive := (9, 6, 9);
+        ["siphash24", "blake3   ", "areion512"];
+      Hash_Lens : constant array (1 .. 3) of Positive := [9, 6, 9];
       Macs : constant array (1 .. 3) of String (1 .. 11) :=
-        ("kmac256    ", "hmac-sha256", "hmac-blake3");
-      Mac_Lens : constant array (1 .. 3) of Positive := (7, 11, 11);
+        ["kmac256    ", "hmac-sha256", "hmac-blake3"];
+      Mac_Lens : constant array (1 .. 3) of Positive := [7, 11, 11];
       Plaintext : constant Byte_Array :=
         Pseudo_Plaintext (Small_Chunk * 3 + 17);
    begin
@@ -275,8 +275,8 @@ procedure Test_Streams_Auth is
    procedure Test_Triple_Roundtrip is
       Hash_Name : constant String := "blake3";
       Mac_Names : constant array (1 .. 3) of String (1 .. 11) :=
-        ("kmac256    ", "hmac-sha256", "hmac-blake3");
-      Mac_Lens : constant array (1 .. 3) of Positive := (7, 11, 11);
+        ["kmac256    ", "hmac-sha256", "hmac-blake3"];
+      Mac_Lens : constant array (1 .. 3) of Positive := [7, 11, 11];
       Plaintext : constant Byte_Array :=
         Pseudo_Plaintext (Small_Chunk * 2 + 1);
    begin

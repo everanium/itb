@@ -567,3 +567,133 @@ func TestDecryptStreamAuthShortPrefixExt(t *testing.T) {
 		t.Fatalf("DecryptStreamAuth(short): want error, got nil")
 	}
 }
+
+// TestDecryptStreamAuthShortPrefixMessageExt asserts the diagnostic
+// emitted by the io.Reader / io.Writer single-Ouroboros decrypt path
+// when the wire ends mid-prefix (1..31 bytes drawn) is the specific
+// "stream too short for stream prefix" message rather than the
+// generic mid-chunk EOF wrap. Mirrors the Rust / C / D bindings'
+// distinction at the same stage.
+func TestDecryptStreamAuthShortPrefixMessageExt(t *testing.T) {
+	ns, ds, ss := mkSeeds128Ext(t)
+	mac := macForStreamTest(t)
+	const wantSubstr = "stream too short for stream prefix"
+
+	for _, sz := range []int{0, 1, 17, 31} {
+		t.Run(fmt.Sprintf("%dbytes", sz), func(t *testing.T) {
+			short := bytes.Repeat([]byte{0xAB}, sz)
+			var ptBuf bytes.Buffer
+			err := itb.DecryptStreamAuth(ns, ds, ss, bytes.NewReader(short), &ptBuf, mac)
+			if err == nil {
+				t.Fatalf("DecryptStreamAuth(%d-byte): want error, got nil", sz)
+			}
+			if !bytes.Contains([]byte(err.Error()), []byte(wantSubstr)) {
+				t.Fatalf("DecryptStreamAuth(%d-byte): want error containing %q, got %v", sz, wantSubstr, err)
+			}
+		})
+	}
+}
+
+// TestDecryptStreamAuth3xShortPrefixMessageExt mirrors
+// [TestDecryptStreamAuthShortPrefixMessageExt] for the Triple-Ouroboros
+// io.Reader / io.Writer decrypt path.
+func TestDecryptStreamAuth3xShortPrefixMessageExt(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple128Ext(t)
+	mac := macForStreamTest(t)
+	const wantSubstr = "stream too short for stream prefix"
+
+	for _, sz := range []int{0, 1, 17, 31} {
+		t.Run(fmt.Sprintf("%dbytes", sz), func(t *testing.T) {
+			short := bytes.Repeat([]byte{0xAB}, sz)
+			var ptBuf bytes.Buffer
+			err := itb.DecryptStreamAuth3x(n, d1, d2, d3, s1, s2, s3, bytes.NewReader(short), &ptBuf, mac)
+			if err == nil {
+				t.Fatalf("DecryptStreamAuth3x(%d-byte): want error, got nil", sz)
+			}
+			if !bytes.Contains([]byte(err.Error()), []byte(wantSubstr)) {
+				t.Fatalf("DecryptStreamAuth3x(%d-byte): want error containing %q, got %v", sz, wantSubstr, err)
+			}
+		})
+	}
+}
+
+// TestDecryptStreamAuthAfterFinalExt confirms that bytes appearing
+// after a chunk whose recovered finalFlag = true are rejected with
+// [itb.ErrStreamAfterFinal] on the io.Reader / io.Writer single-
+// Ouroboros decrypt path. The transcript is constructed by encrypting
+// a multi-chunk stream and appending the terminating chunk again so
+// the decoder observes a chunk after the terminator.
+func TestDecryptStreamAuthAfterFinalExt(t *testing.T) {
+	ns, ds, ss := mkSeeds128Ext(t)
+	mac := macForStreamTest(t)
+	const chunk = 4096
+	pt := genTestPlaintextExt(t, 2*chunk+50)
+
+	var ctBuf bytes.Buffer
+	if err := itb.EncryptStreamAuth(ns, ds, ss, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+		t.Fatalf("EncryptStreamAuth: %v", err)
+	}
+	full := ctBuf.Bytes()
+
+	// Walk to find the terminating chunk's byte span and append a
+	// duplicate of it after the existing terminator. The duplicate
+	// is itself a structurally-valid chunk that authenticates under
+	// its own per-chunk MAC binding, but the decoder must reject it
+	// because seenFinal is already true at the boundary.
+	off := streamIDPrefixLenExt
+	var lastOff, lastEnd int
+	for off < len(full) {
+		clen, err := itb.ParseChunkLen(full[off:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at %d: %v", off, err)
+		}
+		lastOff = off
+		lastEnd = off + clen
+		off += clen
+	}
+	tail := append([]byte(nil), full[lastOff:lastEnd]...)
+	transcript := append(append([]byte(nil), full...), tail...)
+
+	var ptBuf bytes.Buffer
+	err := itb.DecryptStreamAuth(ns, ds, ss, bytes.NewReader(transcript), &ptBuf, mac)
+	if !errors.Is(err, itb.ErrStreamAfterFinal) {
+		t.Fatalf("DecryptStreamAuth(after-final): want ErrStreamAfterFinal, got %v", err)
+	}
+}
+
+// TestDecryptStreamAuth3xAfterFinalExt mirrors
+// [TestDecryptStreamAuthAfterFinalExt] for the Triple Ouroboros
+// io.Reader / io.Writer decrypt path. Same construction: append the
+// already-terminating chunk's bytes after the terminator and confirm
+// the decoder surfaces [itb.ErrStreamAfterFinal].
+func TestDecryptStreamAuth3xAfterFinalExt(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple128Ext(t)
+	mac := macForStreamTest(t)
+	const chunk = 4096
+	pt := genTestPlaintextExt(t, 2*chunk+50)
+
+	var ctBuf bytes.Buffer
+	if err := itb.EncryptStreamAuth3x(n, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+		t.Fatalf("EncryptStreamAuth3x: %v", err)
+	}
+	full := ctBuf.Bytes()
+	off := streamIDPrefixLenExt
+	var lastOff, lastEnd int
+	for off < len(full) {
+		clen, err := itb.ParseChunkLen(full[off:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at %d: %v", off, err)
+		}
+		lastOff = off
+		lastEnd = off + clen
+		off += clen
+	}
+	tail := append([]byte(nil), full[lastOff:lastEnd]...)
+	transcript := append(append([]byte(nil), full...), tail...)
+
+	var ptBuf bytes.Buffer
+	err := itb.DecryptStreamAuth3x(n, d1, d2, d3, s1, s2, s3, bytes.NewReader(transcript), &ptBuf, mac)
+	if !errors.Is(err, itb.ErrStreamAfterFinal) {
+		t.Fatalf("DecryptStreamAuth3x(after-final): want ErrStreamAfterFinal, got %v", err)
+	}
+}

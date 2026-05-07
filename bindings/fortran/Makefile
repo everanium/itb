@@ -105,7 +105,8 @@ HELPER_OBJ = $(TESTS_BUILD)/itb_test_helpers.o
 all: src
 src: $(SRC_OBJS)
 tests: src $(HELPER_OBJ) $(TEST_BINS)
-bench: src $(BENCH_BIN)/itb-bench-single $(BENCH_BIN)/itb-bench-triple
+bench: src $(BENCH_BIN)/itb-bench-single $(BENCH_BIN)/itb-bench-triple \
+              $(BENCH_BIN)/itb-bench-single-stream $(BENCH_BIN)/itb-bench-triple-stream
 
 # Pattern rule: src/%.f90 -> build/%.o + build/%.mod. Module files
 # land alongside the object files in $(BUILD_DIR).
@@ -173,6 +174,29 @@ $(BENCH_BIN)/itb-bench-triple: $(BENCH_BUILD)/bench_triple.o                    
                                 $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BIN)
 	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD)                 \
 	      $(BENCH_BUILD)/bench_triple.o $(BENCH_BUILD)/bench_common.o                   \
+	      $(SRC_OBJS) -o $@ $(LDFLAGS)
+
+# Streaming-AEAD bench binaries. Each compiles its own state +
+# in-memory I/O modules in the same source unit, mirroring the plain
+# bench_single / bench_triple object pattern.
+$(BENCH_BUILD)/bench_single_stream.o: bench/bench_single_stream.f90                        \
+                                $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BUILD)
+	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD) -c $< -o $@
+
+$(BENCH_BUILD)/bench_triple_stream.o: bench/bench_triple_stream.f90                        \
+                                $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BUILD)
+	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD) -c $< -o $@
+
+$(BENCH_BIN)/itb-bench-single-stream: $(BENCH_BUILD)/bench_single_stream.o                  \
+                                $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BIN)
+	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD)                 \
+	      $(BENCH_BUILD)/bench_single_stream.o $(BENCH_BUILD)/bench_common.o            \
+	      $(SRC_OBJS) -o $@ $(LDFLAGS)
+
+$(BENCH_BIN)/itb-bench-triple-stream: $(BENCH_BUILD)/bench_triple_stream.o                  \
+                                $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BIN)
+	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD)                 \
+	      $(BENCH_BUILD)/bench_triple_stream.o $(BENCH_BUILD)/bench_common.o            \
 	      $(SRC_OBJS) -o $@ $(LDFLAGS)
 
 $(BENCH_BUILD):

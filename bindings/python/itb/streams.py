@@ -22,6 +22,7 @@ and only differ in the seed list passed to the constructor.
 
 from __future__ import annotations
 
+import ctypes
 from typing import IO, Optional
 
 from . import _ffi
@@ -100,8 +101,11 @@ class StreamEncryptor:
             # Zero the consumed prefix in the source bytearray before
             # the slice-delete; del leaves the freed region in the
             # backing buffer otherwise.
-            for i in range(self._chunk_size):
-                self._buf[i] = 0
+            ctypes.memset(
+                (ctypes.c_char * self._chunk_size).from_buffer(self._buf, 0),
+                0,
+                self._chunk_size,
+            )
             del self._buf[: self._chunk_size]
         return len(data)
 
@@ -111,8 +115,11 @@ class StreamEncryptor:
         if self._buf:
             ct = _encrypt(*self._seeds, bytes(self._buf))
             self._fout.write(ct)
-            for i in range(len(self._buf)):
-                self._buf[i] = 0
+            ctypes.memset(
+                (ctypes.c_char * len(self._buf)).from_buffer(self._buf),
+                0,
+                len(self._buf),
+            )
             self._buf.clear()
         self._closed = True
 
@@ -244,8 +251,11 @@ class StreamEncryptor3:
             chunk = bytes(self._buf[: self._chunk_size])
             ct = _encrypt_triple(*self._seeds, chunk)
             self._fout.write(ct)
-            for i in range(self._chunk_size):
-                self._buf[i] = 0
+            ctypes.memset(
+                (ctypes.c_char * self._chunk_size).from_buffer(self._buf, 0),
+                0,
+                self._chunk_size,
+            )
             del self._buf[: self._chunk_size]
         return len(data)
 
@@ -255,8 +265,11 @@ class StreamEncryptor3:
         if self._buf:
             ct = _encrypt_triple(*self._seeds, bytes(self._buf))
             self._fout.write(ct)
-            for i in range(len(self._buf)):
-                self._buf[i] = 0
+            ctypes.memset(
+                (ctypes.c_char * len(self._buf)).from_buffer(self._buf),
+                0,
+                len(self._buf),
+            )
             self._buf.clear()
         self._closed = True
 
@@ -458,6 +471,7 @@ from ._ffi import (
     _emit_chunk_auth_triple,
     _consume_chunk_auth_single,
     _consume_chunk_auth_triple,
+    _StreamAuthCache,
 )
 
 
@@ -491,7 +505,7 @@ class StreamEncryptorAuth:
     __slots__ = (
         "_seeds", "_mac", "_fout", "_chunk_size", "_buf", "_closed",
         "_stream_id", "_cum_pixels", "_header_size", "_width",
-        "_prefix_emitted",
+        "_prefix_emitted", "_out_cache",
     )
 
     def __init__(
@@ -514,6 +528,12 @@ class StreamEncryptorAuth:
         self._cum_pixels = 0
         self._header_size = header_size()
         self._prefix_emitted = False
+        # Per-stream output buffer cache (Bonus 1b in .NEXTBIND.md
+        # §7.1). Separate from the per-encryptor cache on
+        # :class:`itb.easy.Encryptor` — the streaming class owns its
+        # own cache because the helper free functions in :mod:`_ffi`
+        # have no encryptor context to attach to.
+        self._out_cache = _StreamAuthCache()
 
     def _emit_prefix(self) -> None:
         if not self._prefix_emitted:
@@ -523,12 +543,17 @@ class StreamEncryptorAuth:
     def _emit_one(self, plaintext_len: int, final_flag: bool) -> None:
         chunk_pt = bytes(self._buf[:plaintext_len])
         # Wipe consumed prefix in source bytearray before slice-delete.
-        for i in range(plaintext_len):
-            self._buf[i] = 0
+        if plaintext_len > 0:
+            ctypes.memset(
+                (ctypes.c_char * plaintext_len).from_buffer(self._buf, 0),
+                0,
+                plaintext_len,
+            )
         del self._buf[:plaintext_len]
         ct = _emit_chunk_auth_single(
             self._width, *self._seeds, self._mac,
             chunk_pt, self._stream_id, self._cum_pixels, final_flag,
+            cache=self._out_cache,
         )
         if len(ct) >= self._header_size:
             w = _read_be16(ct, self._header_size - 4)
@@ -550,16 +575,29 @@ class StreamEncryptorAuth:
 
     def close(self) -> None:
         if self._closed:
+            # Idempotent — but still wipe cache on repeated close.
+            self._out_cache.wipe()
             return
         self._emit_prefix()
         self._emit_one(len(self._buf), True)
         self._closed = True
+        # Wipe per-stream cache so the last chunk's ciphertext does
+        # not linger in heap memory.
+        self._out_cache.wipe()
 
     def __enter__(self) -> "StreamEncryptorAuth":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
+
+    def __del__(self):
+        # Best-effort GC release — wipe the per-stream cache even when
+        # the consumer leaks the writer without calling close().
+        try:
+            self._out_cache.wipe()
+        except Exception:
+            pass
 
 
 class StreamDecryptorAuth:
@@ -587,7 +625,7 @@ class StreamDecryptorAuth:
     __slots__ = (
         "_seeds", "_mac", "_fout", "_buf", "_closed",
         "_stream_id", "_sid_have", "_cum_pixels", "_header_size",
-        "_width", "_seen_final",
+        "_width", "_seen_final", "_out_cache",
     )
 
     def __init__(
@@ -607,6 +645,9 @@ class StreamDecryptorAuth:
         self._header_size = header_size()
         self._width = noise.width
         self._seen_final = False
+        # Per-stream output buffer cache (Bonus 1b in .NEXTBIND.md
+        # §7.1). See :class:`StreamEncryptorAuth` for rationale.
+        self._out_cache = _StreamAuthCache()
 
     def _drain(self) -> None:
         while True:
@@ -628,6 +669,7 @@ class StreamDecryptorAuth:
             pt, ff = _consume_chunk_auth_single(
                 self._width, *self._seeds, self._mac,
                 chunk, bytes(self._stream_id), self._cum_pixels,
+                cache=self._out_cache,
             )
             self._fout.write(pt)
             self._cum_pixels += pixels
@@ -652,9 +694,11 @@ class StreamDecryptorAuth:
 
     def close(self) -> None:
         if self._closed:
+            self._out_cache.wipe()
             return
         if self._sid_have < _STREAM_ID_LEN:
             self._closed = True
+            self._out_cache.wipe()
             # An incomplete 32-byte stream-id prefix is a wire-level
             # malformation (header never finished arriving), distinct
             # from "chunks observed but no terminator chunk among
@@ -664,6 +708,10 @@ class StreamDecryptorAuth:
                 "auth stream: prefix never observed")
         self._drain()
         self._closed = True
+        # Wipe per-stream cache after the last chunk has been
+        # consumed so the recovered plaintext does not linger in
+        # heap memory.
+        self._out_cache.wipe()
         if not self._seen_final:
             raise ItbStreamTruncatedError(
                 "auth stream: terminator never observed")
@@ -676,6 +724,13 @@ class StreamDecryptorAuth:
             self.close()
         else:
             self._closed = True
+            self._out_cache.wipe()
+
+    def __del__(self):
+        try:
+            self._out_cache.wipe()
+        except Exception:
+            pass
 
 
 class StreamEncryptorAuth3:
@@ -685,7 +740,7 @@ class StreamEncryptorAuth3:
     __slots__ = (
         "_seeds", "_mac", "_fout", "_chunk_size", "_buf", "_closed",
         "_stream_id", "_cum_pixels", "_header_size", "_width",
-        "_prefix_emitted",
+        "_prefix_emitted", "_out_cache",
     )
 
     def __init__(
@@ -710,6 +765,9 @@ class StreamEncryptorAuth3:
         self._cum_pixels = 0
         self._header_size = header_size()
         self._prefix_emitted = False
+        # Per-stream output buffer cache (Bonus 1b in .NEXTBIND.md
+        # §7.1). See :class:`StreamEncryptorAuth` for rationale.
+        self._out_cache = _StreamAuthCache()
 
     def _emit_prefix(self) -> None:
         if not self._prefix_emitted:
@@ -718,12 +776,17 @@ class StreamEncryptorAuth3:
 
     def _emit_one(self, plaintext_len: int, final_flag: bool) -> None:
         chunk_pt = bytes(self._buf[:plaintext_len])
-        for i in range(plaintext_len):
-            self._buf[i] = 0
+        if plaintext_len > 0:
+            ctypes.memset(
+                (ctypes.c_char * plaintext_len).from_buffer(self._buf, 0),
+                0,
+                plaintext_len,
+            )
         del self._buf[:plaintext_len]
         ct = _emit_chunk_auth_triple(
             self._width, *self._seeds, self._mac,
             chunk_pt, self._stream_id, self._cum_pixels, final_flag,
+            cache=self._out_cache,
         )
         if len(ct) >= self._header_size:
             w = _read_be16(ct, self._header_size - 4)
@@ -742,16 +805,24 @@ class StreamEncryptorAuth3:
 
     def close(self) -> None:
         if self._closed:
+            self._out_cache.wipe()
             return
         self._emit_prefix()
         self._emit_one(len(self._buf), True)
         self._closed = True
+        self._out_cache.wipe()
 
     def __enter__(self) -> "StreamEncryptorAuth3":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
+
+    def __del__(self):
+        try:
+            self._out_cache.wipe()
+        except Exception:
+            pass
 
 
 class StreamDecryptorAuth3:
@@ -761,7 +832,7 @@ class StreamDecryptorAuth3:
     __slots__ = (
         "_seeds", "_mac", "_fout", "_buf", "_closed",
         "_stream_id", "_sid_have", "_cum_pixels", "_header_size",
-        "_width", "_seen_final",
+        "_width", "_seen_final", "_out_cache",
     )
 
     def __init__(
@@ -783,6 +854,9 @@ class StreamDecryptorAuth3:
         self._header_size = header_size()
         self._width = noise.width
         self._seen_final = False
+        # Per-stream output buffer cache (Bonus 1b in .NEXTBIND.md
+        # §7.1). See :class:`StreamEncryptorAuth` for rationale.
+        self._out_cache = _StreamAuthCache()
 
     def _drain(self) -> None:
         while True:
@@ -804,6 +878,7 @@ class StreamDecryptorAuth3:
             pt, ff = _consume_chunk_auth_triple(
                 self._width, *self._seeds, self._mac,
                 chunk, bytes(self._stream_id), self._cum_pixels,
+                cache=self._out_cache,
             )
             self._fout.write(pt)
             self._cum_pixels += pixels
@@ -828,9 +903,11 @@ class StreamDecryptorAuth3:
 
     def close(self) -> None:
         if self._closed:
+            self._out_cache.wipe()
             return
         if self._sid_have < _STREAM_ID_LEN:
             self._closed = True
+            self._out_cache.wipe()
             # An incomplete 32-byte stream-id prefix is a wire-level
             # malformation (header never finished arriving), distinct
             # from "chunks observed but no terminator chunk among
@@ -840,6 +917,7 @@ class StreamDecryptorAuth3:
                 "auth stream: prefix never observed")
         self._drain()
         self._closed = True
+        self._out_cache.wipe()
         if not self._seen_final:
             raise ItbStreamTruncatedError(
                 "auth stream: terminator never observed")
@@ -852,6 +930,13 @@ class StreamDecryptorAuth3:
             self.close()
         else:
             self._closed = True
+            self._out_cache.wipe()
+
+    def __del__(self):
+        try:
+            self._out_cache.wipe()
+        except Exception:
+            pass
 
 
 def encrypt_stream_auth(

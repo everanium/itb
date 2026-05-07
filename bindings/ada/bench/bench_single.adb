@@ -1,10 +1,10 @@
---  Easy-Mode Single-Ouroboros benchmarks for the Ada binding.
+--  Easy Mode Single-Ouroboros benchmarks for the Ada binding.
 --
 --  Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
 --  nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
 --  MiB CSPRNG-flavoured payload. One mixed-primitive variant
 --  (Itb.Encryptor.Mixed_Single with BLAKE3 / BLAKE2s / BLAKE2b-256 +
---  Areion-SoEM-256 dedicated lockSeed) covers the Easy-Mode Mixed
+--  Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
 --  surface alongside the single-primitive grid.
 --
 --  Run with::

@@ -50,7 +50,7 @@ public readonly record struct EncryptorConfig(string Primitive, int KeyBits, int
 /// <c>ITB_Easy_New</c> / <c>ITB_Easy_NewMixed</c> /
 /// <c>ITB_Easy_NewMixed3</c> call rather than forwarding NULL through
 /// to libitb's own default. HMAC-BLAKE3 measures the lightest MAC
-/// overhead in the Easy-Mode bench surface (~9 % vs HMAC-SHA256's
+/// overhead in the Easy Mode bench surface (~9 % vs HMAC-SHA256's
 /// ~15 % vs KMAC-256's ~44 %); routing the default through it gives
 /// the "constructor without explicit MAC" path the lowest cost.</para>
 ///
@@ -926,60 +926,66 @@ public sealed class Encryptor : IDisposable
             output.Write(streamId, 0, streamId.Length);
             var headerSz = HeaderSize;
             ulong cumPixels = 0;
-            var buf = new List<byte>();
-            var readBuf = new byte[chunkSize];
+            // Contiguous staging buffer — fills directly from input.
+            // Reads into staging[filled..]; on each iteration peek 1
+            // byte ahead (via Stream.ReadByte) to determine whether the
+            // current chunk is final. The peeked byte (if any) carries
+            // over into the next iteration as staging[0].
+            var staging = new byte[chunkSize];
+            var filled = 0;
             var eof = false;
             while (!eof)
             {
-                while (buf.Count <= chunkSize && !eof)
+                while (filled < chunkSize)
                 {
-                    var n = input.Read(readBuf, 0, readBuf.Length);
+                    var n = input.Read(staging, filled, chunkSize - filled);
                     if (n == 0)
                     {
                         eof = true;
                         break;
                     }
-                    for (var i = 0; i < n; i++)
-                    {
-                        buf.Add(readBuf[i]);
-                    }
+                    filled += n;
                 }
-                if (eof)
+                if (eof && filled == 0)
                 {
-                    var ptArr = buf.ToArray();
-                    for (var i = 0; i < buf.Count; i++) { buf[i] = 0; }
-                    buf.Clear();
-                    var ct = StreamAuthEasy.Emit(_handle, ptArr,
-                        streamId, cumPixels, true);
-                    Array.Clear(ptArr, 0, ptArr.Length);
-                    output.Write(ct, 0, ct.Length);
-                    if (ct.Length >= headerSz)
-                    {
-                        var w = StreamAuthInternal.ReadBe16(ct, headerSz - 4);
-                        var h = StreamAuthInternal.ReadBe16(ct, headerSz - 2);
-                        cumPixels += (ulong)w * (ulong)h;
-                    }
+                    // Empty stream — emit a single 0-byte terminating chunk.
+                    // Routes through the per-encryptor _outputBuffer cache
+                    // (Bonus 1 in .NEXTBIND.md §7.1) so the streaming
+                    // hot loop amortises allocation across every chunk
+                    // just like Encryptor.CipherCall does.
+                    var (ctBuf0, ctLen0) = StreamAuthEasy.Emit(_handle,
+                        staging, 0, streamId, cumPixels, true,
+                        ref _outputBuffer);
+                    output.Write(ctBuf0, 0, ctLen0);
                     break;
                 }
-                var nonTermPt = new byte[chunkSize];
-                for (var i = 0; i < chunkSize; i++)
+                // Peek 1 byte to determine whether this is the final chunk.
+                var probe = input.ReadByte();
+                var isFinal = probe < 0;
+                // Routes through the per-encryptor _outputBuffer cache
+                // (Bonus 1 in .NEXTBIND.md §7.1) — same scope as the
+                // single-shot CipherCall path, reused across every chunk.
+                var (ctBuf, ctLen) = StreamAuthEasy.Emit(_handle,
+                    staging, filled, streamId, cumPixels, isFinal,
+                    ref _outputBuffer);
+                output.Write(ctBuf, 0, ctLen);
+                if (ctLen >= headerSz)
                 {
-                    nonTermPt[i] = buf[i];
-                    buf[i] = 0;
-                }
-                buf.RemoveRange(0, chunkSize);
-                var ctNon = StreamAuthEasy.Emit(_handle, nonTermPt,
-                    streamId, cumPixels, false);
-                Array.Clear(nonTermPt, 0, nonTermPt.Length);
-                output.Write(ctNon, 0, ctNon.Length);
-                if (ctNon.Length >= headerSz)
-                {
-                    var w = StreamAuthInternal.ReadBe16(ctNon, headerSz - 4);
-                    var h = StreamAuthInternal.ReadBe16(ctNon, headerSz - 2);
+                    var w = StreamAuthInternal.ReadBe16(ctBuf, headerSz - 4);
+                    var h = StreamAuthInternal.ReadBe16(ctBuf, headerSz - 2);
                     cumPixels += (ulong)w * (ulong)h;
                 }
+                // Wipe the staging plaintext residue before the next chunk.
+                Array.Clear(staging, 0, filled);
+                if (isFinal)
+                {
+                    break;
+                }
+                // Carry the probed byte into the next iteration.
+                staging[0] = (byte)probe;
+                filled = 1;
             }
-            Array.Clear(readBuf, 0, readBuf.Length);
+            Array.Clear(staging, 0, staging.Length);
         }
         finally
         {
@@ -1013,7 +1019,14 @@ public sealed class Encryptor : IDisposable
         try
         {
             var headerSz = HeaderSize;
-            var accum = new List<byte>();
+            // Contiguous accumulator — accum[accumStart..accumEnd) holds
+            // the unparsed wire bytes belonging to chunks not yet
+            // consumed. Slides via a head index (accumStart) instead of
+            // List<byte>.RemoveRange; compacts when the head crosses
+            // half-way through the buffer to bound memory.
+            var accum = new byte[Math.Max(readSize * 2, 1 << 20)];
+            var accumStart = 0;
+            var accumEnd = 0;
             var sidHave = 0;
             var streamId = new byte[StreamAuthInternal.StreamIdLen];
             ulong cumPixels = 0;
@@ -1030,28 +1043,29 @@ public sealed class Encryptor : IDisposable
                             StatusCode.StreamTruncated,
                             "auth stream: prefix never observed");
                     }
-                    var header = new byte[headerSz];
-                    while (!seenFinal && accum.Count >= headerSz)
+                    while (!seenFinal && (accumEnd - accumStart) >= headerSz)
                     {
-                        for (var i = 0; i < headerSz; i++)
-                        {
-                            header[i] = accum[i];
-                        }
-                        var cl = ParseChunkLen(header);
-                        if (accum.Count < cl)
+                        var cl = ParseChunkLen(
+                            new ReadOnlySpan<byte>(accum, accumStart, headerSz));
+                        if ((accumEnd - accumStart) < cl)
                         {
                             break;
                         }
-                        var w = StreamAuthInternal.ReadBe16(header, headerSz - 4);
-                        var h = StreamAuthInternal.ReadBe16(header, headerSz - 2);
+                        var w = StreamAuthInternal.ReadBe16(accum, accumStart + headerSz - 4);
+                        var h = StreamAuthInternal.ReadBe16(accum, accumStart + headerSz - 2);
                         var pixels = (ulong)w * (ulong)h;
                         var chunk = new byte[cl];
-                        accum.CopyTo(0, chunk, 0, cl);
-                        accum.RemoveRange(0, cl);
-                        var (pt, ff) = StreamAuthEasy.Consume(
-                            _handle, chunk, streamId, cumPixels);
-                        output.Write(pt, 0, pt.Length);
-                        Array.Clear(pt, 0, pt.Length);
+                        Buffer.BlockCopy(accum, accumStart, chunk, 0, cl);
+                        accumStart += cl;
+                        // Routes through the per-encryptor _outputBuffer
+                        // cache (Bonus 1 in .NEXTBIND.md §7.1) — same
+                        // scope as the single-shot CipherCall path,
+                        // reused across every chunk.
+                        var (ptBuf, ptLen, ff) = StreamAuthEasy.Consume(
+                            _handle, chunk, chunk.Length, streamId, cumPixels,
+                            ref _outputBuffer);
+                        output.Write(ptBuf, 0, ptLen);
+                        Array.Clear(ptBuf, 0, ptLen);
                         cumPixels += pixels;
                         if (ff)
                         {
@@ -1064,13 +1078,14 @@ public sealed class Encryptor : IDisposable
                             StatusCode.StreamTruncated,
                             "auth stream: terminator never observed");
                     }
-                    if (accum.Count > 0)
+                    if ((accumEnd - accumStart) > 0)
                     {
                         throw new ItbStreamAfterFinalException(
                             StatusCode.StreamAfterFinal,
                             "auth stream: trailing bytes after terminator");
                     }
                     Array.Clear(readBuf, 0, readBuf.Length);
+                    Array.Clear(accum, 0, accum.Length);
                     return;
                 }
                 var off = 0;
@@ -1078,30 +1093,55 @@ public sealed class Encryptor : IDisposable
                 {
                     var need = StreamAuthInternal.StreamIdLen - sidHave;
                     var take = Math.Min(need, n);
-                    for (var i = 0; i < take; i++)
-                    {
-                        streamId[sidHave + i] = readBuf[i];
-                    }
+                    Buffer.BlockCopy(readBuf, 0, streamId, sidHave, take);
                     sidHave += take;
                     off = take;
                 }
                 if (off < n)
                 {
-                    for (var i = off; i < n; i++)
+                    var add = n - off;
+                    // Compact if there isn't enough tail space to absorb
+                    // `add` bytes; grow if the live region itself is
+                    // larger than the current capacity.
+                    if (accumEnd + add > accum.Length)
                     {
-                        accum.Add(readBuf[i]);
+                        var live = accumEnd - accumStart;
+                        if (live + add > accum.Length)
+                        {
+                            var newCap = accum.Length;
+                            while (newCap < live + add) { newCap *= 2; }
+                            var grown = new byte[newCap];
+                            if (live > 0)
+                            {
+                                Buffer.BlockCopy(accum, accumStart, grown, 0, live);
+                            }
+                            Array.Clear(accum, 0, accum.Length);
+                            accum = grown;
+                        }
+                        else if (accumStart > 0)
+                        {
+                            if (live > 0)
+                            {
+                                Buffer.BlockCopy(accum, accumStart, accum, 0, live);
+                            }
+                            // Wipe the now-stale tail region.
+                            Array.Clear(accum, live, accum.Length - live);
+                        }
+                        accumStart = 0;
+                        accumEnd = live;
                     }
+                    Buffer.BlockCopy(readBuf, off, accum, accumEnd, add);
+                    accumEnd += add;
                 }
                 if (sidHave < StreamAuthInternal.StreamIdLen)
                 {
                     continue;
                 }
-                var hdr = new byte[headerSz];
                 while (true)
                 {
                     if (seenFinal)
                     {
-                        if (accum.Count > 0)
+                        if ((accumEnd - accumStart) > 0)
                         {
                             throw new ItbStreamAfterFinalException(
                                 StatusCode.StreamAfterFinal,
@@ -1109,29 +1149,45 @@ public sealed class Encryptor : IDisposable
                         }
                         break;
                     }
-                    if (accum.Count < headerSz)
+                    if ((accumEnd - accumStart) < headerSz)
                     {
                         break;
                     }
-                    for (var i = 0; i < headerSz; i++)
-                    {
-                        hdr[i] = accum[i];
-                    }
-                    var cl = ParseChunkLen(hdr);
-                    if (accum.Count < cl)
+                    var cl = ParseChunkLen(
+                        new ReadOnlySpan<byte>(accum, accumStart, headerSz));
+                    if ((accumEnd - accumStart) < cl)
                     {
                         break;
                     }
-                    var w = StreamAuthInternal.ReadBe16(hdr, headerSz - 4);
-                    var h = StreamAuthInternal.ReadBe16(hdr, headerSz - 2);
+                    var w = StreamAuthInternal.ReadBe16(accum, accumStart + headerSz - 4);
+                    var h = StreamAuthInternal.ReadBe16(accum, accumStart + headerSz - 2);
                     var pixels = (ulong)w * (ulong)h;
                     var chunk = new byte[cl];
-                    accum.CopyTo(0, chunk, 0, cl);
-                    accum.RemoveRange(0, cl);
-                    var (pt, ff) = StreamAuthEasy.Consume(
-                        _handle, chunk, streamId, cumPixels);
-                    output.Write(pt, 0, pt.Length);
-                    Array.Clear(pt, 0, pt.Length);
+                    Buffer.BlockCopy(accum, accumStart, chunk, 0, cl);
+                    accumStart += cl;
+                    // Compact when the head drifts past half the buffer
+                    // — keeps the live region near offset 0 so
+                    // subsequent reads can append without growing.
+                    if (accumStart > accum.Length / 2)
+                    {
+                        var live = accumEnd - accumStart;
+                        if (live > 0)
+                        {
+                            Buffer.BlockCopy(accum, accumStart, accum, 0, live);
+                        }
+                        Array.Clear(accum, live, accum.Length - live);
+                        accumStart = 0;
+                        accumEnd = live;
+                    }
+                    // Routes through the per-encryptor _outputBuffer
+                    // cache (Bonus 1 in .NEXTBIND.md §7.1) — same scope
+                    // as the single-shot CipherCall path, reused across
+                    // every chunk.
+                    var (ptBuf, ptLen, ff) = StreamAuthEasy.Consume(
+                        _handle, chunk, chunk.Length, streamId, cumPixels,
+                        ref _outputBuffer);
+                    output.Write(ptBuf, 0, ptLen);
+                    Array.Clear(ptBuf, 0, ptLen);
                     cumPixels += pixels;
                     if (ff)
                     {

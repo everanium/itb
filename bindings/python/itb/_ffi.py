@@ -503,7 +503,7 @@ extern int ITB_DecryptStreamAuthenticated3x512(
     void* out, size_t outCap, size_t* outLen,
     int* finalFlagOut);
 
-/* Easy-mode Streaming AEAD per-chunk dispatch (driven by the
+/* Easy Mode Streaming AEAD per-chunk dispatch (driven by the
  * encryptor handle rather than seed handles + MAC handle). */
 extern int ITB_Easy_EncryptStreamAuth(
     uintptr_t handle,
@@ -1089,17 +1089,24 @@ def decrypt_auth_triple(
 
 
 def _enc_dec_auth(fn, noise: Seed, data: Seed, start: Seed, mac: MAC, payload: bytes) -> bytes:
+    # Pre-allocate from the 1.25× + 128 KiB envelope (mirror of
+    # easy.Encryptor._cipher_call). The C ABI runs the full crypto on
+    # every call regardless of out-buffer capacity, so a NULL/0 probe
+    # would double the work; the formula sizes the buffer correctly
+    # in one call across the full primitive / mode / nonce-bits /
+    # barrier-fill matrix. STATUS_BUFFER_TOO_SMALL retry stays as the
+    # safety net per .NEXTBIND.md §7.1.
+    payload_len = len(payload)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    out_buf = _ffi.new("unsigned char[]", cap)
     out_len = _ffi.new("size_t*")
     rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-            payload, len(payload), _ffi.NULL, 0, out_len)
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        if rc == STATUS_OK:
-            return b""
-        _raise(rc)
-    need = int(out_len[0])
-    out_buf = _ffi.new("unsigned char[]", need)
-    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-            payload, len(payload), out_buf, need, out_len)
+            payload, payload_len, out_buf, cap, out_len)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        out_buf = _ffi.new("unsigned char[]", need)
+        rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+                payload, payload_len, out_buf, need, out_len)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
@@ -1111,23 +1118,27 @@ def _enc_dec_auth_triple(
     start1: Seed, start2: Seed, start3: Seed,
     mac: MAC, payload: bytes,
 ) -> bytes:
+    # Pre-allocate from the 1.25× + 128 KiB envelope (mirror of
+    # easy.Encryptor._cipher_call); see _enc_dec_auth above for the
+    # rationale. STATUS_BUFFER_TOO_SMALL retry stays as the safety net
+    # per .NEXTBIND.md §7.1.
+    payload_len = len(payload)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    out_buf = _ffi.new("unsigned char[]", cap)
     out_len = _ffi.new("size_t*")
     rc = fn(noise.handle,
             data1.handle, data2.handle, data3.handle,
             start1.handle, start2.handle, start3.handle,
-            mac.handle, payload, len(payload),
-            _ffi.NULL, 0, out_len)
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        if rc == STATUS_OK:
-            return b""
-        _raise(rc)
-    need = int(out_len[0])
-    out_buf = _ffi.new("unsigned char[]", need)
-    rc = fn(noise.handle,
-            data1.handle, data2.handle, data3.handle,
-            start1.handle, start2.handle, start3.handle,
-            mac.handle, payload, len(payload),
-            out_buf, need, out_len)
+            mac.handle, payload, payload_len,
+            out_buf, cap, out_len)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        out_buf = _ffi.new("unsigned char[]", need)
+        rc = fn(noise.handle,
+                data1.handle, data2.handle, data3.handle,
+                start1.handle, start2.handle, start3.handle,
+                mac.handle, payload, payload_len,
+                out_buf, need, out_len)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
@@ -1192,20 +1203,26 @@ def decrypt_triple(
 
 
 def _encrypt_or_decrypt(fn, noise: Seed, data: Seed, start: Seed, payload: bytes) -> bytes:
+    # Pre-allocate from the 1.25× + 128 KiB envelope (mirror of
+    # easy.Encryptor._cipher_call). The C ABI runs the full crypto on
+    # every call regardless of out-buffer capacity, so a NULL/0 probe
+    # would double the work; the formula sizes the buffer correctly
+    # in one call across the full primitive / mode / nonce-bits /
+    # barrier-fill matrix. STATUS_BUFFER_TOO_SMALL retry stays as the
+    # safety net per .NEXTBIND.md §7.1.
+    payload_len = len(payload)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    out_buf = _ffi.new("unsigned char[]", cap)
     out_len = _ffi.new("size_t*")
-    # Probe first to discover required size.
     rc = fn(noise.handle, data.handle, start.handle,
-            payload, len(payload),
-            _ffi.NULL, 0, out_len)
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        if rc == STATUS_OK:
-            return b""
-        _raise(rc)
-    need = int(out_len[0])
-    out_buf = _ffi.new("unsigned char[]", need)
-    rc = fn(noise.handle, data.handle, start.handle,
-            payload, len(payload),
-            out_buf, need, out_len)
+            payload, payload_len,
+            out_buf, cap, out_len)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        out_buf = _ffi.new("unsigned char[]", need)
+        rc = fn(noise.handle, data.handle, start.handle,
+                payload, payload_len,
+                out_buf, need, out_len)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
@@ -1218,23 +1235,27 @@ def _encrypt_or_decrypt_triple(
     start1: Seed, start2: Seed, start3: Seed,
     payload: bytes,
 ) -> bytes:
+    # Pre-allocate from the 1.25× + 128 KiB envelope (mirror of
+    # easy.Encryptor._cipher_call); see _encrypt_or_decrypt above for
+    # the rationale. STATUS_BUFFER_TOO_SMALL retry stays as the safety
+    # net per .NEXTBIND.md §7.1.
+    payload_len = len(payload)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    out_buf = _ffi.new("unsigned char[]", cap)
     out_len = _ffi.new("size_t*")
     rc = fn(noise.handle,
             data1.handle, data2.handle, data3.handle,
             start1.handle, start2.handle, start3.handle,
-            payload, len(payload),
-            _ffi.NULL, 0, out_len)
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        if rc == STATUS_OK:
-            return b""
-        _raise(rc)
-    need = int(out_len[0])
-    out_buf = _ffi.new("unsigned char[]", need)
-    rc = fn(noise.handle,
-            data1.handle, data2.handle, data3.handle,
-            start1.handle, start2.handle, start3.handle,
-            payload, len(payload),
-            out_buf, need, out_len)
+            payload, payload_len,
+            out_buf, cap, out_len)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        out_buf = _ffi.new("unsigned char[]", need)
+        rc = fn(noise.handle,
+                data1.handle, data2.handle, data3.handle,
+                start1.handle, start2.handle, start3.handle,
+                payload, payload_len,
+                out_buf, need, out_len)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
@@ -1318,6 +1339,46 @@ def _dec_auth_triple_for_width(width: int):
     }[width]
 
 
+class _StreamAuthCache:
+    """Per-stream output buffer cache for Streaming AEAD per-chunk
+    dispatchers. Mirrors the per-encryptor ``_out_buf`` / ``_out_cap``
+    pair on :class:`itb.easy.Encryptor` but lives on the streaming
+    class instance — Bonus 1b in .NEXTBIND.md §7.1. The cache grows
+    on demand with the same wipe-on-grow + 1.25× + 128 KiB envelope
+    shape as :meth:`itb.easy.Encryptor._cipher_call`.
+
+    The class is not thread-safe; each :class:`StreamEncryptorAuth` /
+    :class:`StreamDecryptorAuth` instance owns one cache, and a
+    streaming class instance is single-writer / single-feeder by
+    construction (no caller would interleave ``write`` calls from two
+    threads on the same writer)."""
+
+    __slots__ = ("buf", "cap")
+
+    def __init__(self) -> None:
+        self.buf = _ffi.NULL
+        self.cap = 0
+
+    def ensure(self, need: int) -> None:
+        """Grows the cache to at least ``need`` bytes, wiping the
+        previous slab before reassignment. Idempotent when the cache
+        already meets the requested capacity."""
+        if self.cap >= need:
+            return
+        if self.cap > 0 and self.buf != _ffi.NULL:
+            _ffi.memmove(self.buf, b"\x00" * self.cap, self.cap)
+        self.buf = _ffi.new("unsigned char[]", need)
+        self.cap = need
+
+    def wipe(self) -> None:
+        """Zeroes and drops the cache. Called from the streaming
+        class's ``close`` / ``__exit__`` / ``__del__`` paths."""
+        if self.cap > 0 and self.buf != _ffi.NULL:
+            _ffi.memmove(self.buf, b"\x00" * self.cap, self.cap)
+        self.buf = _ffi.NULL
+        self.cap = 0
+
+
 def _emit_chunk_auth_single(
     width: int,
     noise: "Seed", data: "Seed", start: "Seed",
@@ -1326,31 +1387,53 @@ def _emit_chunk_auth_single(
     stream_id: bytes,
     cum_pixels: int,
     final_flag: bool,
+    cache: "_StreamAuthCache | None" = None,
 ) -> bytes:
-    """Per-chunk encrypt dispatch (Single Ouroboros + MAC). Probes
-    output capacity, allocates, and returns the full chunk wire bytes
-    (including any 32-byte CSPRNG anchor only on the FIRST chunk —
-    handled by the caller, not by this helper)."""
+    """Per-chunk encrypt dispatch (Single Ouroboros + MAC). Pre-
+    allocates output capacity from the 1.25× + 128 KiB envelope
+    (mirror of easy.Encryptor._cipher_call); the C ABI runs the full
+    crypto on every call regardless of out-buffer capacity, so a
+    NULL/0 probe would double the work. The +32-byte tag and +1-byte
+    flag inherent to the Streaming AEAD per-chunk wire layout are
+    inside the 128 KiB pad's headroom even at chunk_size = 1.
+    STATUS_BUFFER_TOO_SMALL retry stays as the safety net per
+    .NEXTBIND.md §7.1.
+
+    When ``cache`` is provided, the per-stream buffer is reused
+    instead of allocating a fresh cffi slab per chunk (Bonus 1b in
+    §7.1). When ``None``, falls back to the per-call allocation."""
     fn = _enc_auth_single_for_width(width)
     sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
     in_arg = plaintext if plaintext else _ffi.NULL
+    payload_len = len(plaintext)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    if cache is not None:
+        cache.ensure(cap)
+        out_buf = cache.buf
+        out_cap = cache.cap
+    else:
+        out_buf = _ffi.new(f"unsigned char[{cap}]")
+        out_cap = cap
     out_len = _ffi.new("size_t*")
     rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-            in_arg, len(plaintext),
+            in_arg, payload_len,
             sid_buf, int(cum_pixels), 1 if final_flag else 0,
-            _ffi.NULL, 0, out_len)
-    if rc == STATUS_OK:
-        return b""
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        _raise(rc)
-    need = int(out_len[0])
-    if need == 0:
-        return b""
-    out_buf = _ffi.new(f"unsigned char[{need}]")
-    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-            in_arg, len(plaintext),
-            sid_buf, int(cum_pixels), 1 if final_flag else 0,
-            out_buf, need, out_len)
+            out_buf, out_cap, out_len)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        if need == 0:
+            return b""
+        if cache is not None:
+            cache.ensure(need)
+            out_buf = cache.buf
+            out_cap = cache.cap
+        else:
+            out_buf = _ffi.new(f"unsigned char[{need}]")
+            out_cap = need
+        rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+                in_arg, payload_len,
+                sid_buf, int(cum_pixels), 1 if final_flag else 0,
+                out_buf, out_cap, out_len)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
@@ -1366,32 +1449,53 @@ def _emit_chunk_auth_triple(
     stream_id: bytes,
     cum_pixels: int,
     final_flag: bool,
+    cache: "_StreamAuthCache | None" = None,
 ) -> bytes:
-    """Per-chunk encrypt dispatch (Triple Ouroboros + MAC)."""
+    """Per-chunk encrypt dispatch (Triple Ouroboros + MAC). Pre-
+    allocates from the 1.25× + 128 KiB envelope; see
+    _emit_chunk_auth_single above for the rationale.
+    STATUS_BUFFER_TOO_SMALL retry stays as the safety net per
+    .NEXTBIND.md §7.1.
+
+    When ``cache`` is provided, the per-stream buffer is reused
+    instead of allocating a fresh cffi slab per chunk (Bonus 1b in
+    §7.1). When ``None``, falls back to the per-call allocation."""
     fn = _enc_auth_triple_for_width(width)
     sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
     in_arg = plaintext if plaintext else _ffi.NULL
+    payload_len = len(plaintext)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    if cache is not None:
+        cache.ensure(cap)
+        out_buf = cache.buf
+        out_cap = cache.cap
+    else:
+        out_buf = _ffi.new(f"unsigned char[{cap}]")
+        out_cap = cap
     out_len = _ffi.new("size_t*")
     rc = fn(noise.handle,
             data1.handle, data2.handle, data3.handle,
             start1.handle, start2.handle, start3.handle,
-            mac.handle, in_arg, len(plaintext),
+            mac.handle, in_arg, payload_len,
             sid_buf, int(cum_pixels), 1 if final_flag else 0,
-            _ffi.NULL, 0, out_len)
-    if rc == STATUS_OK:
-        return b""
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        _raise(rc)
-    need = int(out_len[0])
-    if need == 0:
-        return b""
-    out_buf = _ffi.new(f"unsigned char[{need}]")
-    rc = fn(noise.handle,
-            data1.handle, data2.handle, data3.handle,
-            start1.handle, start2.handle, start3.handle,
-            mac.handle, in_arg, len(plaintext),
-            sid_buf, int(cum_pixels), 1 if final_flag else 0,
-            out_buf, need, out_len)
+            out_buf, out_cap, out_len)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        if need == 0:
+            return b""
+        if cache is not None:
+            cache.ensure(need)
+            out_buf = cache.buf
+            out_cap = cache.cap
+        else:
+            out_buf = _ffi.new(f"unsigned char[{need}]")
+            out_cap = need
+        rc = fn(noise.handle,
+                data1.handle, data2.handle, data3.handle,
+                start1.handle, start2.handle, start3.handle,
+                mac.handle, in_arg, payload_len,
+                sid_buf, int(cum_pixels), 1 if final_flag else 0,
+                out_buf, out_cap, out_len)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0])))
@@ -1404,31 +1508,53 @@ def _consume_chunk_auth_single(
     ciphertext: bytes,
     stream_id: bytes,
     cum_pixels: int,
+    cache: "_StreamAuthCache | None" = None,
 ):
-    """Per-chunk decrypt dispatch (Single Ouroboros + MAC). Returns
-    ``(plaintext, final_flag)``. Surfaces ITBError on any non-OK
-    status — STATUS_MAC_FAILURE on tampered transcript, etc."""
+    """Per-chunk decrypt dispatch (Single Ouroboros + MAC). Pre-
+    allocates from the 1.25× + 128 KiB envelope (mirror of
+    easy.Encryptor._cipher_call); the C ABI runs the full crypto on
+    every call regardless of out-buffer capacity, so a NULL/0 probe
+    would double the work. Returns ``(plaintext, final_flag)``.
+    Surfaces ITBError on any non-OK status — STATUS_MAC_FAILURE on
+    tampered transcript, etc. STATUS_BUFFER_TOO_SMALL retry stays as
+    the safety net per .NEXTBIND.md §7.1.
+
+    When ``cache`` is provided, the per-stream buffer is reused
+    instead of allocating a fresh cffi slab per chunk (Bonus 1b in
+    §7.1). When ``None``, falls back to the per-call allocation."""
     fn = _dec_auth_single_for_width(width)
     sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
     in_arg = ciphertext if ciphertext else _ffi.NULL
+    payload_len = len(ciphertext)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    if cache is not None:
+        cache.ensure(cap)
+        out_buf = cache.buf
+        out_cap = cache.cap
+    else:
+        out_buf = _ffi.new(f"unsigned char[{cap}]")
+        out_cap = cap
     out_len = _ffi.new("size_t*")
     ff = _ffi.new("int*")
     rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-            in_arg, len(ciphertext),
+            in_arg, payload_len,
             sid_buf, int(cum_pixels),
-            _ffi.NULL, 0, out_len, ff)
-    if rc == STATUS_OK:
-        return b"", bool(int(ff[0]))
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        _raise(rc)
-    need = int(out_len[0])
-    if need == 0:
-        return b"", bool(int(ff[0]))
-    out_buf = _ffi.new(f"unsigned char[{need}]")
-    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-            in_arg, len(ciphertext),
-            sid_buf, int(cum_pixels),
-            out_buf, need, out_len, ff)
+            out_buf, out_cap, out_len, ff)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        if need == 0:
+            return b"", bool(int(ff[0]))
+        if cache is not None:
+            cache.ensure(need)
+            out_buf = cache.buf
+            out_cap = cache.cap
+        else:
+            out_buf = _ffi.new(f"unsigned char[{need}]")
+            out_cap = need
+        rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+                in_arg, payload_len,
+                sid_buf, int(cum_pixels),
+                out_buf, out_cap, out_len, ff)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0]))), bool(int(ff[0]))
@@ -1443,33 +1569,54 @@ def _consume_chunk_auth_triple(
     ciphertext: bytes,
     stream_id: bytes,
     cum_pixels: int,
+    cache: "_StreamAuthCache | None" = None,
 ):
-    """Per-chunk decrypt dispatch (Triple Ouroboros + MAC)."""
+    """Per-chunk decrypt dispatch (Triple Ouroboros + MAC). Pre-
+    allocates from the 1.25× + 128 KiB envelope; see
+    _consume_chunk_auth_single above for the rationale.
+    STATUS_BUFFER_TOO_SMALL retry stays as the safety net per
+    .NEXTBIND.md §7.1.
+
+    When ``cache`` is provided, the per-stream buffer is reused
+    instead of allocating a fresh cffi slab per chunk (Bonus 1b in
+    §7.1). When ``None``, falls back to the per-call allocation."""
     fn = _dec_auth_triple_for_width(width)
     sid_buf = _ffi.new(f"unsigned char[{STREAM_ID_LEN}]", stream_id)
     in_arg = ciphertext if ciphertext else _ffi.NULL
+    payload_len = len(ciphertext)
+    cap = max(131072, (payload_len * 5) // 4 + 131072)
+    if cache is not None:
+        cache.ensure(cap)
+        out_buf = cache.buf
+        out_cap = cache.cap
+    else:
+        out_buf = _ffi.new(f"unsigned char[{cap}]")
+        out_cap = cap
     out_len = _ffi.new("size_t*")
     ff = _ffi.new("int*")
     rc = fn(noise.handle,
             data1.handle, data2.handle, data3.handle,
             start1.handle, start2.handle, start3.handle,
-            mac.handle, in_arg, len(ciphertext),
+            mac.handle, in_arg, payload_len,
             sid_buf, int(cum_pixels),
-            _ffi.NULL, 0, out_len, ff)
-    if rc == STATUS_OK:
-        return b"", bool(int(ff[0]))
-    if rc != STATUS_BUFFER_TOO_SMALL:
-        _raise(rc)
-    need = int(out_len[0])
-    if need == 0:
-        return b"", bool(int(ff[0]))
-    out_buf = _ffi.new(f"unsigned char[{need}]")
-    rc = fn(noise.handle,
-            data1.handle, data2.handle, data3.handle,
-            start1.handle, start2.handle, start3.handle,
-            mac.handle, in_arg, len(ciphertext),
-            sid_buf, int(cum_pixels),
-            out_buf, need, out_len, ff)
+            out_buf, out_cap, out_len, ff)
+    if rc == STATUS_BUFFER_TOO_SMALL:
+        need = int(out_len[0])
+        if need == 0:
+            return b"", bool(int(ff[0]))
+        if cache is not None:
+            cache.ensure(need)
+            out_buf = cache.buf
+            out_cap = cache.cap
+        else:
+            out_buf = _ffi.new(f"unsigned char[{need}]")
+            out_cap = need
+        rc = fn(noise.handle,
+                data1.handle, data2.handle, data3.handle,
+                start1.handle, start2.handle, start3.handle,
+                mac.handle, in_arg, payload_len,
+                sid_buf, int(cum_pixels),
+                out_buf, out_cap, out_len, ff)
     if rc != STATUS_OK:
         _raise(rc)
     return bytes(_ffi.buffer(out_buf, int(out_len[0]))), bool(int(ff[0]))

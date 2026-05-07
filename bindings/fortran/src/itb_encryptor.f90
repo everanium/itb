@@ -812,7 +812,7 @@ contains
   end function
 
   ! Returns the per-slot PRF key (32 bytes) for primitives that carry
-  ! one. SipHash-2-4 is the only Easy-Mode primitive without an
+  ! one. SipHash-2-4 is the only Easy Mode primitive without an
   ! internal PRF key (its key material is consumed directly per pixel
   ! from seed components); calling `prf_key` on a SipHash encryptor
   ! returns a zero-length array.

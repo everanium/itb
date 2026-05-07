@@ -779,9 +779,31 @@ fn read_be16(p: &[u8]) -> usize {
     ((p[0] as usize) << 8) | (p[1] as usize)
 }
 
-/// Per-chunk encrypt dispatch (Single). Probes required size, then
-/// allocates the output buffer and runs the call again. Returns the
-/// freshly-allocated ciphertext bytes.
+/// Grow-on-demand + wipe-on-grow helper for the per-stream output
+/// cache. Mirrors `Encryptor::cipher_call`'s shape: zeroes the OLD
+/// contents before reassigning so the previous-chunk ciphertext /
+/// plaintext does not linger in heap garbage waiting for GC.
+fn ensure_stream_cache(cache: &mut Vec<u8>, need: usize) {
+    if cache.len() >= need {
+        return;
+    }
+    for b in cache.iter_mut() { *b = 0; }
+    *cache = vec![0u8; need];
+}
+
+/// Per-chunk encrypt dispatch (Single). Pre-allocates output capacity
+/// from the 1.25× + 128 KiB upper bound (see `Encryptor::cipher_call`)
+/// and falls through to a grow-and-retry on the rare under-shoot.
+/// Skips the size-probe round-trip the libitb C ABI charges (the
+/// cipher does the full crypto on every call regardless of out-buffer
+/// capacity, then returns BUFFER_TOO_SMALL without exposing the work
+/// — so probe-then-retry doubles cipher work per call).
+///
+/// When `cache` is provided, the per-stream buffer is reused instead
+/// of allocating a fresh `Vec<u8>` per chunk (Bonus 1b in
+/// .NEXTBIND.md §7.1). When `None`, falls back to the per-call
+/// allocation — preserves any future call site that has no
+/// stream-class cache to attach.
 #[allow(clippy::too_many_arguments)]
 fn emit_chunk_auth_single(
     width: i32,
@@ -793,66 +815,78 @@ fn emit_chunk_auth_single(
     stream_id: &[u8; STREAM_ID_LEN],
     cum_pixels: u64,
     final_flag: bool,
+    cache: Option<&mut Vec<u8>>,
 ) -> Result<Vec<u8>, ITBError> {
     let f = enc_auth_single_for_width(width)?;
-    let in_ptr: *const c_void = if plaintext.is_empty() {
+    let payload_len = plaintext.len();
+    let in_ptr: *const c_void = if payload_len == 0 {
         std::ptr::null()
     } else {
         plaintext.as_ptr() as *const c_void
     };
     let ff: std::ffi::c_int = if final_flag { 1 } else { 0 };
-    let mut need: usize = 0;
-    let rc = unsafe {
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut local: Vec<u8>;
+    let buf: &mut Vec<u8> = match cache {
+        Some(c) => {
+            ensure_stream_cache(c, cap);
+            c
+        }
+        None => {
+            local = vec![0u8; cap];
+            &mut local
+        }
+    };
+    let mut out_len: usize = 0;
+    let mut rc = unsafe {
         f(
             noise.handle(),
             data.handle(),
             start.handle(),
             mac.handle(),
             in_ptr,
-            plaintext.len(),
+            payload_len,
             stream_id.as_ptr(),
             cum_pixels,
             ff,
-            std::ptr::null_mut(),
-            0,
-            &mut need,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len(),
+            &mut out_len,
         )
     };
-    if rc == ffi::STATUS_OK {
-        return Ok(Vec::new());
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        ensure_stream_cache(buf, need);
+        rc = unsafe {
+            f(
+                noise.handle(),
+                data.handle(),
+                start.handle(),
+                mac.handle(),
+                in_ptr,
+                payload_len,
+                stream_id.as_ptr(),
+                cum_pixels,
+                ff,
+                buf.as_mut_ptr() as *mut c_void,
+                buf.len(),
+                &mut out_len,
+            )
+        };
     }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    if need == 0 {
-        return Ok(Vec::new());
-    }
-    let mut out = vec![0u8; need];
-    let mut written: usize = 0;
-    let rc = unsafe {
-        f(
-            noise.handle(),
-            data.handle(),
-            start.handle(),
-            mac.handle(),
-            in_ptr,
-            plaintext.len(),
-            stream_id.as_ptr(),
-            cum_pixels,
-            ff,
-            out.as_mut_ptr() as *mut c_void,
-            out.len(),
-            &mut written,
-        )
-    };
     if rc != ffi::STATUS_OK {
         return Err(ITBError::from_status(rc));
     }
-    out.truncate(written);
-    Ok(out)
+    Ok(buf[..out_len].to_vec())
 }
 
-/// Per-chunk encrypt dispatch (Triple).
+/// Per-chunk encrypt dispatch (Triple). 1.25× + 128 KiB pre-allocate
+/// + retry-once on BUFFER_TOO_SMALL; see `emit_chunk_auth_single`.
+///
+/// When `cache` is provided, the per-stream buffer is reused instead
+/// of allocating a fresh `Vec<u8>` per chunk (Bonus 1b in
+/// .NEXTBIND.md §7.1). When `None`, falls back to the per-call
+/// allocation.
 #[allow(clippy::too_many_arguments)]
 fn emit_chunk_auth_triple(
     width: i32,
@@ -868,16 +902,30 @@ fn emit_chunk_auth_triple(
     stream_id: &[u8; STREAM_ID_LEN],
     cum_pixels: u64,
     final_flag: bool,
+    cache: Option<&mut Vec<u8>>,
 ) -> Result<Vec<u8>, ITBError> {
     let f = enc_auth_triple_for_width(width)?;
-    let in_ptr: *const c_void = if plaintext.is_empty() {
+    let payload_len = plaintext.len();
+    let in_ptr: *const c_void = if payload_len == 0 {
         std::ptr::null()
     } else {
         plaintext.as_ptr() as *const c_void
     };
     let ff: std::ffi::c_int = if final_flag { 1 } else { 0 };
-    let mut need: usize = 0;
-    let rc = unsafe {
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut local: Vec<u8>;
+    let buf: &mut Vec<u8> = match cache {
+        Some(c) => {
+            ensure_stream_cache(c, cap);
+            c
+        }
+        None => {
+            local = vec![0u8; cap];
+            &mut local
+        }
+    };
+    let mut out_len: usize = 0;
+    let mut rc = unsafe {
         f(
             noise.handle(),
             data1.handle(),
@@ -888,55 +936,55 @@ fn emit_chunk_auth_triple(
             start3.handle(),
             mac.handle(),
             in_ptr,
-            plaintext.len(),
+            payload_len,
             stream_id.as_ptr(),
             cum_pixels,
             ff,
-            std::ptr::null_mut(),
-            0,
-            &mut need,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len(),
+            &mut out_len,
         )
     };
-    if rc == ffi::STATUS_OK {
-        return Ok(Vec::new());
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        ensure_stream_cache(buf, need);
+        rc = unsafe {
+            f(
+                noise.handle(),
+                data1.handle(),
+                data2.handle(),
+                data3.handle(),
+                start1.handle(),
+                start2.handle(),
+                start3.handle(),
+                mac.handle(),
+                in_ptr,
+                payload_len,
+                stream_id.as_ptr(),
+                cum_pixels,
+                ff,
+                buf.as_mut_ptr() as *mut c_void,
+                buf.len(),
+                &mut out_len,
+            )
+        };
     }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    if need == 0 {
-        return Ok(Vec::new());
-    }
-    let mut out = vec![0u8; need];
-    let mut written: usize = 0;
-    let rc = unsafe {
-        f(
-            noise.handle(),
-            data1.handle(),
-            data2.handle(),
-            data3.handle(),
-            start1.handle(),
-            start2.handle(),
-            start3.handle(),
-            mac.handle(),
-            in_ptr,
-            plaintext.len(),
-            stream_id.as_ptr(),
-            cum_pixels,
-            ff,
-            out.as_mut_ptr() as *mut c_void,
-            out.len(),
-            &mut written,
-        )
-    };
     if rc != ffi::STATUS_OK {
         return Err(ITBError::from_status(rc));
     }
-    out.truncate(written);
-    Ok(out)
+    Ok(buf[..out_len].to_vec())
 }
 
 /// Per-chunk decrypt dispatch (Single). Returns `(plaintext,
-/// final_flag)`.
+/// final_flag)`. 1.25× + 128 KiB pre-allocate + retry-once on
+/// BUFFER_TOO_SMALL; see `emit_chunk_auth_single`. Decrypt output
+/// (plaintext) is bounded above by ciphertext length, so the
+/// pre-allocation is generous.
+///
+/// When `cache` is provided, the per-stream buffer is reused instead
+/// of allocating a fresh `Vec<u8>` per chunk (Bonus 1b in
+/// .NEXTBIND.md §7.1). When `None`, falls back to the per-call
+/// allocation.
 #[allow(clippy::too_many_arguments)]
 fn consume_chunk_auth_single(
     width: i32,
@@ -947,66 +995,78 @@ fn consume_chunk_auth_single(
     ciphertext: &[u8],
     stream_id: &[u8; STREAM_ID_LEN],
     cum_pixels: u64,
+    cache: Option<&mut Vec<u8>>,
 ) -> Result<(Vec<u8>, bool), ITBError> {
     let f = dec_auth_single_for_width(width)?;
-    let in_ptr: *const c_void = if ciphertext.is_empty() {
+    let payload_len = ciphertext.len();
+    let in_ptr: *const c_void = if payload_len == 0 {
         std::ptr::null()
     } else {
         ciphertext.as_ptr() as *const c_void
     };
-    let mut need: usize = 0;
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut local: Vec<u8>;
+    let buf: &mut Vec<u8> = match cache {
+        Some(c) => {
+            ensure_stream_cache(c, cap);
+            c
+        }
+        None => {
+            local = vec![0u8; cap];
+            &mut local
+        }
+    };
+    let mut out_len: usize = 0;
     let mut ff: std::ffi::c_int = 0;
-    let rc = unsafe {
+    let mut rc = unsafe {
         f(
             noise.handle(),
             data.handle(),
             start.handle(),
             mac.handle(),
             in_ptr,
-            ciphertext.len(),
+            payload_len,
             stream_id.as_ptr(),
             cum_pixels,
-            std::ptr::null_mut(),
-            0,
-            &mut need,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len(),
+            &mut out_len,
             &mut ff,
         )
     };
-    if rc == ffi::STATUS_OK {
-        return Ok((Vec::new(), ff != 0));
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        ensure_stream_cache(buf, need);
+        rc = unsafe {
+            f(
+                noise.handle(),
+                data.handle(),
+                start.handle(),
+                mac.handle(),
+                in_ptr,
+                payload_len,
+                stream_id.as_ptr(),
+                cum_pixels,
+                buf.as_mut_ptr() as *mut c_void,
+                buf.len(),
+                &mut out_len,
+                &mut ff,
+            )
+        };
     }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    if need == 0 {
-        return Ok((Vec::new(), ff != 0));
-    }
-    let mut out = vec![0u8; need];
-    let mut written: usize = 0;
-    let rc = unsafe {
-        f(
-            noise.handle(),
-            data.handle(),
-            start.handle(),
-            mac.handle(),
-            in_ptr,
-            ciphertext.len(),
-            stream_id.as_ptr(),
-            cum_pixels,
-            out.as_mut_ptr() as *mut c_void,
-            out.len(),
-            &mut written,
-            &mut ff,
-        )
-    };
     if rc != ffi::STATUS_OK {
         return Err(ITBError::from_status(rc));
     }
-    out.truncate(written);
-    Ok((out, ff != 0))
+    Ok((buf[..out_len].to_vec(), ff != 0))
 }
 
-/// Per-chunk decrypt dispatch (Triple).
+/// Per-chunk decrypt dispatch (Triple). 1.25× + 128 KiB pre-allocate
+/// + retry-once on BUFFER_TOO_SMALL; see `emit_chunk_auth_single`.
+///
+/// When `cache` is provided, the per-stream buffer is reused instead
+/// of allocating a fresh `Vec<u8>` per chunk (Bonus 1b in
+/// .NEXTBIND.md §7.1). When `None`, falls back to the per-call
+/// allocation.
 #[allow(clippy::too_many_arguments)]
 fn consume_chunk_auth_triple(
     width: i32,
@@ -1021,16 +1081,30 @@ fn consume_chunk_auth_triple(
     ciphertext: &[u8],
     stream_id: &[u8; STREAM_ID_LEN],
     cum_pixels: u64,
+    cache: Option<&mut Vec<u8>>,
 ) -> Result<(Vec<u8>, bool), ITBError> {
     let f = dec_auth_triple_for_width(width)?;
-    let in_ptr: *const c_void = if ciphertext.is_empty() {
+    let payload_len = ciphertext.len();
+    let in_ptr: *const c_void = if payload_len == 0 {
         std::ptr::null()
     } else {
         ciphertext.as_ptr() as *const c_void
     };
-    let mut need: usize = 0;
+    let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+    let mut local: Vec<u8>;
+    let buf: &mut Vec<u8> = match cache {
+        Some(c) => {
+            ensure_stream_cache(c, cap);
+            c
+        }
+        None => {
+            local = vec![0u8; cap];
+            &mut local
+        }
+    };
+    let mut out_len: usize = 0;
     let mut ff: std::ffi::c_int = 0;
-    let rc = unsafe {
+    let mut rc = unsafe {
         f(
             noise.handle(),
             data1.handle(),
@@ -1041,51 +1115,43 @@ fn consume_chunk_auth_triple(
             start3.handle(),
             mac.handle(),
             in_ptr,
-            ciphertext.len(),
+            payload_len,
             stream_id.as_ptr(),
             cum_pixels,
-            std::ptr::null_mut(),
-            0,
-            &mut need,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len(),
+            &mut out_len,
             &mut ff,
         )
     };
-    if rc == ffi::STATUS_OK {
-        return Ok((Vec::new(), ff != 0));
+    if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+        let need = out_len;
+        ensure_stream_cache(buf, need);
+        rc = unsafe {
+            f(
+                noise.handle(),
+                data1.handle(),
+                data2.handle(),
+                data3.handle(),
+                start1.handle(),
+                start2.handle(),
+                start3.handle(),
+                mac.handle(),
+                in_ptr,
+                payload_len,
+                stream_id.as_ptr(),
+                cum_pixels,
+                buf.as_mut_ptr() as *mut c_void,
+                buf.len(),
+                &mut out_len,
+                &mut ff,
+            )
+        };
     }
-    if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-        return Err(ITBError::from_status(rc));
-    }
-    if need == 0 {
-        return Ok((Vec::new(), ff != 0));
-    }
-    let mut out = vec![0u8; need];
-    let mut written: usize = 0;
-    let rc = unsafe {
-        f(
-            noise.handle(),
-            data1.handle(),
-            data2.handle(),
-            data3.handle(),
-            start1.handle(),
-            start2.handle(),
-            start3.handle(),
-            mac.handle(),
-            in_ptr,
-            ciphertext.len(),
-            stream_id.as_ptr(),
-            cum_pixels,
-            out.as_mut_ptr() as *mut c_void,
-            out.len(),
-            &mut written,
-            &mut ff,
-        )
-    };
     if rc != ffi::STATUS_OK {
         return Err(ITBError::from_status(rc));
     }
-    out.truncate(written);
-    Ok((out, ff != 0))
+    Ok((buf[..out_len].to_vec(), ff != 0))
 }
 
 // --------------------------------------------------------------------
@@ -1116,6 +1182,12 @@ pub struct StreamEncryptorAuth<'a, W: Write> {
     buf: Vec<u8>,
     closed: bool,
     prefix_emitted: bool,
+    /// Per-stream output buffer cache. Grows on demand; `close` /
+    /// `Drop` wipe it before drop. Same Bonus 1b shape as the
+    /// per-encryptor cache on `Encryptor` — the streaming class owns
+    /// its own cache because the helper free functions have no
+    /// encryptor instance to attach to (.NEXTBIND.md §7.1).
+    out_buf: Vec<u8>,
 }
 
 impl<'a, W: Write> StreamEncryptorAuth<'a, W> {
@@ -1154,6 +1226,7 @@ impl<'a, W: Write> StreamEncryptorAuth<'a, W> {
             buf: Vec::new(),
             closed: false,
             prefix_emitted: false,
+            out_buf: Vec::new(),
         })
     }
 
@@ -1163,6 +1236,14 @@ impl<'a, W: Write> StreamEncryptorAuth<'a, W> {
             self.prefix_emitted = true;
         }
         Ok(())
+    }
+
+    /// Zeroes and drops the per-stream output cache. Called from
+    /// `close` and `Drop` so the last chunk's ciphertext does not
+    /// linger in heap memory after the stream finalises.
+    fn wipe_out_buf(&mut self) {
+        for b in self.out_buf.iter_mut() { *b = 0; }
+        self.out_buf.clear();
     }
 
     /// Emits one chunk of `plaintext_len` bytes from the buffer,
@@ -1180,6 +1261,7 @@ impl<'a, W: Write> StreamEncryptorAuth<'a, W> {
             &self.stream_id,
             self.cum_pixels,
             final_flag,
+            Some(&mut self.out_buf),
         )?;
         // Wipe the per-chunk plaintext copy before drop.
         let mut chunk_pt = chunk_pt;
@@ -1230,6 +1312,7 @@ impl<'a, W: Write> StreamEncryptorAuth<'a, W> {
         // Empty stream still emits one terminating chunk with len 0.
         self.emit_one(remaining, true)?;
         self.closed = true;
+        self.wipe_out_buf();
         Ok(())
     }
 }
@@ -1237,6 +1320,9 @@ impl<'a, W: Write> StreamEncryptorAuth<'a, W> {
 impl<'a, W: Write> Drop for StreamEncryptorAuth<'a, W> {
     fn drop(&mut self) {
         let _ = self.close();
+        // close() wipes on the success path; cover the early-return /
+        // error path here so the cache never escapes Drop populated.
+        self.wipe_out_buf();
     }
 }
 
@@ -1266,6 +1352,11 @@ pub struct StreamDecryptorAuth<'a, W: Write> {
     buf: Vec<u8>,
     seen_final: bool,
     closed: bool,
+    /// Per-stream output buffer cache. Same Bonus 1b shape as the
+    /// encrypt-side counterpart; reused across every chunk's decrypt
+    /// dispatch instead of a fresh `Vec<u8>` per chunk
+    /// (.NEXTBIND.md §7.1).
+    out_buf: Vec<u8>,
 }
 
 impl<'a, W: Write> StreamDecryptorAuth<'a, W> {
@@ -1294,7 +1385,16 @@ impl<'a, W: Write> StreamDecryptorAuth<'a, W> {
             buf: Vec::new(),
             seen_final: false,
             closed: false,
+            out_buf: Vec::new(),
         })
+    }
+
+    /// Zeroes and drops the per-stream output cache. Called from
+    /// `close` and `Drop` so the last chunk's plaintext does not
+    /// linger in heap memory after the stream finalises.
+    fn wipe_out_buf(&mut self) {
+        for b in self.out_buf.iter_mut() { *b = 0; }
+        self.out_buf.clear();
     }
 
     fn drain(&mut self) -> Result<(), ITBError> {
@@ -1328,6 +1428,7 @@ impl<'a, W: Write> StreamDecryptorAuth<'a, W> {
                 &chunk,
                 &self.stream_id,
                 self.cum_pixels,
+                Some(&mut self.out_buf),
             )?;
             self.fout.write_all(&pt).map_err(io_err)?;
             for b in pt.iter_mut() { *b = 0; }
@@ -1377,6 +1478,7 @@ impl<'a, W: Write> StreamDecryptorAuth<'a, W> {
         }
         if self.sid_have < STREAM_ID_LEN {
             self.closed = true;
+            self.wipe_out_buf();
             return Err(ITBError::with_message(
                 ffi::STATUS_BAD_INPUT,
                 "auth stream: 32-byte stream prefix incomplete",
@@ -1385,6 +1487,7 @@ impl<'a, W: Write> StreamDecryptorAuth<'a, W> {
         // Drain any remaining buffered chunks.
         self.drain()?;
         self.closed = true;
+        self.wipe_out_buf();
         if !self.seen_final {
             return Err(ITBError::with_message(
                 ffi::STATUS_STREAM_TRUNCATED,
@@ -1401,6 +1504,7 @@ impl<'a, W: Write> Drop for StreamDecryptorAuth<'a, W> {
         // raise. Callers that need to detect truncation must call
         // close() explicitly.
         self.closed = true;
+        self.wipe_out_buf();
     }
 }
 
@@ -1428,6 +1532,10 @@ pub struct StreamEncryptorAuth3<'a, W: Write> {
     buf: Vec<u8>,
     closed: bool,
     prefix_emitted: bool,
+    /// Per-stream output buffer cache. Same Bonus 1b shape as
+    /// `StreamEncryptorAuth.out_buf`; reused across every chunk's
+    /// encrypt dispatch (.NEXTBIND.md §7.1).
+    out_buf: Vec<u8>,
 }
 
 impl<'a, W: Write> StreamEncryptorAuth3<'a, W> {
@@ -1472,6 +1580,7 @@ impl<'a, W: Write> StreamEncryptorAuth3<'a, W> {
             buf: Vec::new(),
             closed: false,
             prefix_emitted: false,
+            out_buf: Vec::new(),
         })
     }
 
@@ -1481,6 +1590,14 @@ impl<'a, W: Write> StreamEncryptorAuth3<'a, W> {
             self.prefix_emitted = true;
         }
         Ok(())
+    }
+
+    /// Zeroes and drops the per-stream output cache. Called from
+    /// `close` and `Drop` so the last chunk's ciphertext does not
+    /// linger in heap memory after the stream finalises.
+    fn wipe_out_buf(&mut self) {
+        for b in self.out_buf.iter_mut() { *b = 0; }
+        self.out_buf.clear();
     }
 
     fn emit_one(&mut self, plaintext_len: usize, final_flag: bool) -> Result<(), ITBError> {
@@ -1499,6 +1616,7 @@ impl<'a, W: Write> StreamEncryptorAuth3<'a, W> {
             &self.stream_id,
             self.cum_pixels,
             final_flag,
+            Some(&mut self.out_buf),
         )?;
         let mut chunk_pt = chunk_pt;
         for b in chunk_pt.iter_mut() { *b = 0; }
@@ -1536,6 +1654,7 @@ impl<'a, W: Write> StreamEncryptorAuth3<'a, W> {
         let remaining = self.buf.len();
         self.emit_one(remaining, true)?;
         self.closed = true;
+        self.wipe_out_buf();
         Ok(())
     }
 }
@@ -1543,6 +1662,9 @@ impl<'a, W: Write> StreamEncryptorAuth3<'a, W> {
 impl<'a, W: Write> Drop for StreamEncryptorAuth3<'a, W> {
     fn drop(&mut self) {
         let _ = self.close();
+        // close() wipes on the success path; cover the early-return /
+        // error path here so the cache never escapes Drop populated.
+        self.wipe_out_buf();
     }
 }
 
@@ -1566,6 +1688,10 @@ pub struct StreamDecryptorAuth3<'a, W: Write> {
     buf: Vec<u8>,
     seen_final: bool,
     closed: bool,
+    /// Per-stream output buffer cache. Same Bonus 1b shape as
+    /// `StreamDecryptorAuth.out_buf`; reused across every chunk's
+    /// decrypt dispatch (.NEXTBIND.md §7.1).
+    out_buf: Vec<u8>,
 }
 
 impl<'a, W: Write> StreamDecryptorAuth3<'a, W> {
@@ -1602,7 +1728,16 @@ impl<'a, W: Write> StreamDecryptorAuth3<'a, W> {
             buf: Vec::new(),
             seen_final: false,
             closed: false,
+            out_buf: Vec::new(),
         })
+    }
+
+    /// Zeroes and drops the per-stream output cache. Called from
+    /// `close` and `Drop` so the last chunk's plaintext does not
+    /// linger in heap memory after the stream finalises.
+    fn wipe_out_buf(&mut self) {
+        for b in self.out_buf.iter_mut() { *b = 0; }
+        self.out_buf.clear();
     }
 
     fn drain(&mut self) -> Result<(), ITBError> {
@@ -1640,6 +1775,7 @@ impl<'a, W: Write> StreamDecryptorAuth3<'a, W> {
                 &chunk,
                 &self.stream_id,
                 self.cum_pixels,
+                Some(&mut self.out_buf),
             )?;
             self.fout.write_all(&pt).map_err(io_err)?;
             for b in pt.iter_mut() { *b = 0; }
@@ -1683,6 +1819,7 @@ impl<'a, W: Write> StreamDecryptorAuth3<'a, W> {
         }
         if self.sid_have < STREAM_ID_LEN {
             self.closed = true;
+            self.wipe_out_buf();
             return Err(ITBError::with_message(
                 ffi::STATUS_BAD_INPUT,
                 "auth stream: 32-byte stream prefix incomplete",
@@ -1690,6 +1827,7 @@ impl<'a, W: Write> StreamDecryptorAuth3<'a, W> {
         }
         self.drain()?;
         self.closed = true;
+        self.wipe_out_buf();
         if !self.seen_final {
             return Err(ITBError::with_message(
                 ffi::STATUS_STREAM_TRUNCATED,
@@ -1703,6 +1841,7 @@ impl<'a, W: Write> StreamDecryptorAuth3<'a, W> {
 impl<'a, W: Write> Drop for StreamDecryptorAuth3<'a, W> {
     fn drop(&mut self) {
         self.closed = true;
+        self.wipe_out_buf();
     }
 }
 

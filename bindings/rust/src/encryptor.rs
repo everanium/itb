@@ -343,7 +343,7 @@ impl Encryptor {
         // Binding-side default override: when the caller passes
         // `mac=None` the binding picks `hmac-blake3` rather than
         // forwarding NULL through to libitb's own default. HMAC-BLAKE3
-        // measures the lightest MAC overhead in the Easy-Mode bench
+        // measures the lightest MAC overhead in the Easy Mode bench
         // surface; routing the default through it gives the
         // "constructor without arguments" path the lowest cost.
         let mac_str = mac.unwrap_or("hmac-blake3");
@@ -1159,7 +1159,7 @@ impl Drop for Encryptor {
 // Encryptor — Streaming AEAD methods.
 // --------------------------------------------------------------------
 //
-// The Easy-mode Streaming AEAD surface mirrors the seed-based one:
+// The Easy Mode Streaming AEAD surface mirrors the seed-based one:
 // caller slices plaintext into chunks and the binding manages the
 // 32-byte CSPRNG `stream_id` prefix, the per-chunk
 // `cumulative_pixel_offset` running sum, and the terminating chunk's
@@ -1227,9 +1227,17 @@ fn easy_generate_stream_id() -> Result<[u8; STREAM_ID_LEN], ITBError> {
 
 impl Encryptor {
     /// Per-chunk authenticated-stream encrypt under the encryptor's
-    /// bound primitive / key-bits / mode / MAC closure. Probes
-    /// required output capacity, allocates, calls again. Plaintext
-    /// may be empty when `final_flag = true`.
+    /// bound primitive / key-bits / mode / MAC closure. Plaintext may
+    /// be empty when `final_flag = true`.
+    ///
+    /// Reuses the per-encryptor `out_buf` cache (Bonus 1 in
+    /// .NEXTBIND.md §7.1) — same scope as the single-shot
+    /// [`Encryptor::cipher_call`] path — so the streaming hot loop
+    /// amortises the allocation across every chunk just like the
+    /// single-shot Easy Mode path does. Returns
+    /// `self.out_buf[..out_len].to_vec()` (the eager copy detaches
+    /// the bytes from the cache so the next chunk's call may safely
+    /// overwrite the cache).
     fn easy_emit_chunk_auth(
         &mut self,
         plaintext: &[u8],
@@ -1239,60 +1247,66 @@ impl Encryptor {
     ) -> Result<Vec<u8>, ITBError> {
         let lib = ffi::lib();
         let f = lib.ITB_Easy_EncryptStreamAuth;
-        let in_ptr: *const c_void = if plaintext.is_empty() {
+        let payload_len = plaintext.len();
+        let in_ptr: *const c_void = if payload_len == 0 {
             std::ptr::null()
         } else {
             plaintext.as_ptr() as *const c_void
         };
         let ff: c_int = if final_flag { 1 } else { 0 };
-        let mut need: usize = 0;
-        let rc = unsafe {
+        // 1.25× + 128 KiB headroom; see Encryptor::cipher_call.
+        let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+        if self.out_buf.len() < cap {
+            // Wipe previous contents before drop — Vec's default drop
+            // deallocates without zeroing the heap region.
+            for b in self.out_buf.iter_mut() { *b = 0; }
+            self.out_buf = vec![0u8; cap];
+        }
+        let mut out_len: usize = 0;
+        let mut rc = unsafe {
             f(
                 self.handle,
                 in_ptr,
-                plaintext.len(),
+                payload_len,
                 stream_id.as_ptr(),
                 cum_pixels,
                 ff,
-                std::ptr::null_mut(),
-                0,
-                &mut need,
+                self.out_buf.as_mut_ptr() as *mut c_void,
+                self.out_buf.len(),
+                &mut out_len,
             )
         };
-        if rc == ffi::STATUS_OK {
-            return Ok(Vec::new());
+        if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+            let need = out_len;
+            for b in self.out_buf.iter_mut() { *b = 0; }
+            self.out_buf = vec![0u8; need];
+            rc = unsafe {
+                f(
+                    self.handle,
+                    in_ptr,
+                    payload_len,
+                    stream_id.as_ptr(),
+                    cum_pixels,
+                    ff,
+                    self.out_buf.as_mut_ptr() as *mut c_void,
+                    self.out_buf.len(),
+                    &mut out_len,
+                )
+            };
         }
-        if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-            return Err(easy_error(rc));
-        }
-        if need == 0 {
-            return Ok(Vec::new());
-        }
-        let mut out = vec![0u8; need];
-        let mut written: usize = 0;
-        let rc = unsafe {
-            f(
-                self.handle,
-                in_ptr,
-                plaintext.len(),
-                stream_id.as_ptr(),
-                cum_pixels,
-                ff,
-                out.as_mut_ptr() as *mut c_void,
-                out.len(),
-                &mut written,
-            )
-        };
         if rc != ffi::STATUS_OK {
             return Err(easy_error(rc));
         }
-        out.truncate(written);
-        Ok(out)
+        Ok(self.out_buf[..out_len].to_vec())
     }
 
     /// Per-chunk authenticated-stream decrypt. Returns
     /// `(plaintext, final_flag)` on a verified chunk; surfaces
     /// `STATUS_MAC_FAILURE` on tampered transcript.
+    ///
+    /// Reuses the per-encryptor `out_buf` cache (Bonus 1 in
+    /// .NEXTBIND.md §7.1) — see [`Encryptor::easy_emit_chunk_auth`]
+    /// for the rationale.
     fn easy_consume_chunk_auth(
         &mut self,
         ciphertext: &[u8],
@@ -1301,55 +1315,55 @@ impl Encryptor {
     ) -> Result<(Vec<u8>, bool), ITBError> {
         let lib = ffi::lib();
         let f = lib.ITB_Easy_DecryptStreamAuth;
-        let in_ptr: *const c_void = if ciphertext.is_empty() {
+        let payload_len = ciphertext.len();
+        let in_ptr: *const c_void = if payload_len == 0 {
             std::ptr::null()
         } else {
             ciphertext.as_ptr() as *const c_void
         };
-        let mut need: usize = 0;
+        // 1.25× + 128 KiB headroom; see Encryptor::cipher_call.
+        let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
+        if self.out_buf.len() < cap {
+            for b in self.out_buf.iter_mut() { *b = 0; }
+            self.out_buf = vec![0u8; cap];
+        }
+        let mut out_len: usize = 0;
         let mut ff: c_int = 0;
-        let rc = unsafe {
+        let mut rc = unsafe {
             f(
                 self.handle,
                 in_ptr,
-                ciphertext.len(),
+                payload_len,
                 stream_id.as_ptr(),
                 cum_pixels,
-                std::ptr::null_mut(),
-                0,
-                &mut need,
+                self.out_buf.as_mut_ptr() as *mut c_void,
+                self.out_buf.len(),
+                &mut out_len,
                 &mut ff,
             )
         };
-        if rc == ffi::STATUS_OK {
-            return Ok((Vec::new(), ff != 0));
+        if rc == ffi::STATUS_BUFFER_TOO_SMALL {
+            let need = out_len;
+            for b in self.out_buf.iter_mut() { *b = 0; }
+            self.out_buf = vec![0u8; need];
+            rc = unsafe {
+                f(
+                    self.handle,
+                    in_ptr,
+                    payload_len,
+                    stream_id.as_ptr(),
+                    cum_pixels,
+                    self.out_buf.as_mut_ptr() as *mut c_void,
+                    self.out_buf.len(),
+                    &mut out_len,
+                    &mut ff,
+                )
+            };
         }
-        if rc != ffi::STATUS_BUFFER_TOO_SMALL {
-            return Err(easy_error(rc));
-        }
-        if need == 0 {
-            return Ok((Vec::new(), ff != 0));
-        }
-        let mut out = vec![0u8; need];
-        let mut written: usize = 0;
-        let rc = unsafe {
-            f(
-                self.handle,
-                in_ptr,
-                ciphertext.len(),
-                stream_id.as_ptr(),
-                cum_pixels,
-                out.as_mut_ptr() as *mut c_void,
-                out.len(),
-                &mut written,
-                &mut ff,
-            )
-        };
         if rc != ffi::STATUS_OK {
             return Err(easy_error(rc));
         }
-        out.truncate(written);
-        Ok((out, ff != 0))
+        Ok((self.out_buf[..out_len].to_vec(), ff != 0))
     }
 
     /// Reads plaintext from `fin` until EOF, encrypts in chunks of

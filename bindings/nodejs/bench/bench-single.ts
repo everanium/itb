@@ -1,10 +1,10 @@
-// Easy-Mode Single-Ouroboros benchmarks for the Node.js binding.
+// Easy Mode Single-Ouroboros benchmarks for the Node.js binding.
 //
 // Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
 // nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
 // MiB CSPRNG-filled payload. One mixed-primitive variant
 // (`Encryptor.mixedSingle` with BLAKE3 / BLAKE2s / BLAKE2b-256 +
-// Areion-SoEM-256 dedicated lockSeed) covers the Easy-Mode Mixed
+// Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
 // surface alongside the single-primitive grid.
 //
 // Run with:
@@ -40,6 +40,7 @@ import {
   runAll,
 } from './common.js';
 import type { BenchCase } from './common.js';
+import { buildStreamCasesSingle } from './bench-stream.js';
 
 const PAYLOAD_BYTES = PAYLOAD_16MB;
 
@@ -198,7 +199,7 @@ function buildCases(): BenchCase[] {
 }
 
 /** Bench entry point invoked by `main.ts`. */
-export function runSingle(): void {
+export async function runSingle(): Promise<void> {
   const nonceBits = envNonceBits(128);
   setMaxWorkers(0);
   setNonceBits(nonceBits);
@@ -208,5 +209,6 @@ export function runSingle(): void {
   );
 
   const cases = buildCases();
-  runAll(cases);
+  cases.push(...buildStreamCasesSingle());
+  await runAll(cases);
 }

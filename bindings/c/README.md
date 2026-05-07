@@ -197,7 +197,7 @@ Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Low-Level Mode example:**
+**Low-Level Mode:**
 
 Free functions `itb_stream_encrypt_auth` / `itb_stream_decrypt_auth`
 take three `itb_seed_t *` handles plus an `itb_mac_t *` (constructed
@@ -253,7 +253,7 @@ user code) AND the shared Go-built library (`-litb` resolved against
 rpath embedded into the binary lets it find `libitb.so` at runtime
 without `LD_LIBRARY_PATH`.
 
-## Quick Start — `itb_encryptor_t` + HMAC-BLAKE3 (recommended, authenticated)
+## Quick Start — `itb_encryptor_t` + HMAC-BLAKE3 (MAC Authenticated)
 
 The high-level Easy Mode encryptor (mirroring the
 `github.com/everanium/itb/easy` Go sub-package) replaces the seven-line
@@ -426,7 +426,7 @@ on grow / `itb_encryptor_close` / `itb_encryptor_free`, so residual
 ciphertext / plaintext does not linger in heap memory beyond the next
 cipher call.
 
-## Quick Start — Mixed primitives (different PRF per seed slot)
+## Quick Start — Mixed primitives (Different PRF per seed slot)
 
 `itb_encryptor_new_mixed` and `itb_encryptor_new_mixed3` accept
 per-slot primitive names — the noise / data / start (and optional
@@ -564,7 +564,7 @@ ciphertext format is identical in shape to Single Ouroboros — only the
 internal payload split / interleave differs. Mixed-primitive Triple is
 reachable via `itb_encryptor_new_mixed3`.
 
-## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (low-level, authenticated)
+## Quick Start — Areion-SoEM-512 + HMAC-BLAKE3 (Low-Level, MAC Authenticated)
 
 The lower-level path uses explicit `itb_seed_t` handles for the
 noise / data / start trio plus an optional dedicated lock seed wired in

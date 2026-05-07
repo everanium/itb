@@ -1,6 +1,6 @@
 # ITB C Binding - Easy Mode Benchmark
 
-Two executables (`bench_single`, `bench_triple`) cover the Easy-Mode
+Two executables (`bench_single`, `bench_triple`) cover the Easy Mode
 encryption / decryption surface exposed by the C binding through two
 `int main(void)` entry points driven by one shared `common.c` /
 `common.h` module:
@@ -168,5 +168,5 @@ collected in [BENCH.md](BENCH.md). The same file briefly discusses
 the FFI overhead the binding leaves on top of the native Go path
 through the `extern "C"` declarations the wrapper uses for every
 `ITB_*` symbol. Pointer back to the binding's top-level
-[README.md](../README.md) for the broader Easy-Mode surface
+[README.md](../README.md) for the broader Easy Mode surface
 documentation.

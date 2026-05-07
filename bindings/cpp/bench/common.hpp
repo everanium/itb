@@ -1,4 +1,4 @@
-// common.hpp — shared scaffolding for the C++ binding's Easy-Mode
+// common.hpp — shared scaffolding for the C++ binding's Easy Mode
 // bench binaries.
 //
 // The harness mirrors the Go `testing.B` benchmark style on the
@@ -19,7 +19,7 @@
 //                     128 / 256 / 512. Maps to itb::set_nonce_bits
 //                     before any encryptor is constructed. Default 128.
 //   ITB_LOCKSEED      when set to a non-empty / non-`0` value, every
-//                     Easy-Mode encryptor in this run calls
+//                     Easy Mode encryptor in this run calls
 //                     enc.set_lock_seed(1). The Go side's auto-couple
 //                     invariant then engages BitSoup + LockSoup
 //                     automatically. Default off.

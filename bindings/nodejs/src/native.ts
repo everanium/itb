@@ -511,7 +511,7 @@ export const ITB_DecryptStreamAuthenticated3x512 = lib.func(
     '_Out_ int *finalFlagOut)',
 );
 
-// Easy-mode Streaming AEAD per-chunk dispatch (driven by the
+// Easy Mode Streaming AEAD per-chunk dispatch (driven by the
 // encryptor handle rather than separate seed + MAC handles).
 
 export const ITB_Easy_EncryptStreamAuth = lib.func(

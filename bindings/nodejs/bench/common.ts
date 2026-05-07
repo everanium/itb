@@ -1,4 +1,4 @@
-// Shared scaffolding for the Node.js Easy-Mode benchmark scripts.
+// Shared scaffolding for the Node.js Easy Mode benchmark scripts.
 //
 // The harness mirrors the Go ``testing.B`` benchmark style on the
 // itb_ext_test.go / itb3_ext_test.go side: each bench case runs a
@@ -15,7 +15,7 @@
 //   values 128 / 256 / 512. Maps to `setNonceBits` before any
 //   encryptor is constructed. Default 128.
 // * ``ITB_LOCKSEED`` — when set to a non-empty / non-``0`` value,
-//   every Easy-Mode encryptor in this run calls
+//   every Easy Mode encryptor in this run calls
 //   `Encryptor.setLockSeed(1)`. The Go side's auto-couple invariant
 //   then engages BitSoup + LockSoup automatically; no separate flags
 //   required for Easy Mode. Default off.
@@ -35,8 +35,10 @@
 
 /** Per-iter callable; accepts an iteration count and runs the
  * per-iter body that many times. The harness measures wall-clock
- * time outside the callable. */
-export type BenchFn = (iters: number) => void;
+ * time outside the callable. Returning a `Promise` is supported and
+ * awaited end-to-end, so async streaming benchmarks integrate
+ * cleanly with the canonical 5-second convergence loop. */
+export type BenchFn = (iters: number) => void | Promise<void>;
 
 /** One bench case: name + per-iter callable + payload byte count
  * (used to compute the MB/s column). */
@@ -178,11 +180,11 @@ export function envBenchMinSec(): number {
  * `minSeconds`. The final `ns/op` figure is the measured duration
  * of that final batch divided by its iteration count.
  */
-function measure(bench: BenchCase, minSeconds: number): void {
+async function measure(bench: BenchCase, minSeconds: number): Promise<void> {
   // Warm-up — one iteration to hit cache / cold-start transients
   // before the measured loop.
   try {
-    bench.run(1);
+    await bench.run(1);
   } catch (e) {
     console.log(`${bench.name}\tFAIL: ${(e as Error).message}`);
     return;
@@ -193,7 +195,7 @@ function measure(bench: BenchCase, minSeconds: number): void {
   let elapsed: bigint = 0n;
   while (true) {
     const t0 = process.hrtime.bigint();
-    bench.run(iters);
+    await bench.run(iters);
     elapsed = process.hrtime.bigint() - t0;
     if (elapsed >= minNs) {
       break;
@@ -221,7 +223,7 @@ function measure(bench: BenchCase, minSeconds: number): void {
  * case to stdout. Honours `ITB_BENCH_FILTER` for substring scoping
  * and `ITB_BENCH_MIN_SEC` for the per-case wall-clock budget.
  */
-export function runAll(cases: BenchCase[]): void {
+export async function runAll(cases: BenchCase[]): Promise<void> {
   const flt = envBenchFilter();
   const minSeconds = envBenchMinSec();
 
@@ -240,7 +242,7 @@ export function runAll(cases: BenchCase[]): void {
     `# benchmarks=${selected.length} payload_bytes=${first.payloadBytes} min_seconds=${minSeconds}`,
   );
   for (const bench of selected) {
-    measure(bench, minSeconds);
+    await measure(bench, minSeconds);
   }
 }
 

@@ -332,7 +332,7 @@ package Itb.Encryptor is
       Header : Byte_Array) return Natural;
 
    ---------------------------------------------------------------------
-   --  Streaming AEAD helpers (Easy mode).
+   --  Streaming AEAD helpers (Easy Mode).
    ---------------------------------------------------------------------
    --
    --  Reads plaintext from Source until EOF, encrypts in chunks of
@@ -358,7 +358,7 @@ package Itb.Encryptor is
       Read_Size : Ada.Streams.Stream_Element_Offset);
 
    ---------------------------------------------------------------------
-   --  Plain stream helpers (Easy mode, no MAC).
+   --  Plain stream helpers (Easy Mode, no MAC).
    ---------------------------------------------------------------------
    --
    --  Reads plaintext from Source until EOF, slices it into chunks of

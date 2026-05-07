@@ -1,4 +1,4 @@
-// bench_triple.cpp — Easy-Mode Triple-Ouroboros benchmarks for the C++
+// bench_triple.cpp — Easy Mode Triple-Ouroboros benchmarks for the C++
 // binding.
 //
 // Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
@@ -6,7 +6,7 @@
 // MiB CSPRNG-filled payload. One mixed-primitive variant
 // (itb::Encryptor::Mixed3 cycling the same BLAKE family +
 // Areion-SoEM-256 dedicated lockSeed used by bench_single's mixed
-// case) covers the Easy-Mode Mixed surface alongside the
+// case) covers the Easy Mode Mixed surface alongside the
 // single-primitive grid.
 //
 // Run with:
