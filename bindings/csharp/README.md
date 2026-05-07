@@ -119,7 +119,9 @@ Production deployments typically encrypt files at 1 GiB+ scale through
 the same loop pattern; the chunk size selection (16 MiB here) controls
 per-iteration memory residency.
 
-**Easy Mode example.** `Encryptor.EncryptStreamAuth` accepts any
+**Easy Mode:**
+
+`Encryptor.EncryptStreamAuth` accepts any
 `Stream` source and any `Stream` sink; `FileStream` opened via
 `File.OpenRead` / `File.Create` is the typical production-scale
 choice. The MAC key is allocated CSPRNG-fresh inside the encryptor at
@@ -214,7 +216,9 @@ Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Low-Level Mode:** Static functions on `StreamPipeline` take
+**Low-Level Mode:**
+
+Static functions on `StreamPipeline` take
 three explicit `Seed` handles plus an explicitly constructed `Mac`
 (32-byte key drawn via `RandomNumberGenerator.GetBytes(32)`) and
 stream through the same chunked-AEAD construction. Both seeds and MAC

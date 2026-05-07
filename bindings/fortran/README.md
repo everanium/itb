@@ -162,7 +162,7 @@ Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Easy Mode example:**
+**Easy Mode:**
 
 `itb_encryptor_stream_encrypt_auth` consumes plaintext via a `read_fn`
 procedure pointer matching `itb_stream_read_fn` and emits the on-wire

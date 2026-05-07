@@ -133,7 +133,7 @@ sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
 The wire format adds 32 bytes of stream prefix plus one byte of
 encrypted trailing flag per chunk; no externally visible MAC tag.
 
-**Easy Mode example:**
+**Easy Mode:**
 
 `itb_encryptor_stream_encrypt_auth` consumes plaintext via a `read_fn`
 callback and emits the on-wire transcript via a `write_fn` callback.
