@@ -128,7 +128,9 @@ Production deployments typically encrypt files at 1 GiB+ scale through
 the same loop pattern; the chunk size selection (16 MiB here) controls
 per-iteration memory residency.
 
-**Easy Mode example.** `Encryptor.encryptStreamAuth` accepts any
+**Easy Mode:**
+
+`Encryptor.encryptStreamAuth` accepts any
 `Readable` source and any `Writable` sink; `fs.createReadStream` /
 `fs.createWriteStream` are the typical production-scale choices. Both
 stream-auth methods return a Promise that settles when the per-chunk
@@ -220,7 +222,9 @@ Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71
 
 ---
 
-**Low-Level Mode:** Module-level free functions
+**Low-Level Mode:**
+
+Module-level free functions
 `encryptStreamAuth` / `decryptStreamAuth` take three explicit `Seed`
 handles plus a `MAC` instance (32-byte key drawn via
 `crypto.randomBytes(32)`) and stream through the same chunked-AEAD
