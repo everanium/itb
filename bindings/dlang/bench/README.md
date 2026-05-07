@@ -1,7 +1,7 @@
 # ITB D Binding - Easy Mode Benchmark
 
 Two executables (`itb-bench-single`, `itb-bench-triple`) cover the
-Easy-Mode encryption / decryption surface exposed by the D binding
+Easy Mode encryption / decryption surface exposed by the D binding
 through two `void main()` entry points driven by one shared
 `bench.common` module:
 

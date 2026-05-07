@@ -296,7 +296,7 @@ func TestEncryptStreamAuthEmptyNonFinal(t *testing.T) {
 	}
 }
 
-// TestEasyEncryptStreamAuthRoundtrip exercises the Easy-mode FFI
+// TestEasyEncryptStreamAuthRoundtrip exercises the Easy Mode FFI
 // streaming path across the 3-mode × 3-width matrix using the bound
 // MAC closure in the constructed encryptor.
 func TestEasyEncryptStreamAuthRoundtrip(t *testing.T) {

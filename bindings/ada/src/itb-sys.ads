@@ -790,7 +790,7 @@ package Itb.Sys is
    --  (128 / 256 / 512). The encrypt path takes Stream_ID +
    --  Cumulative_Pixel_Offset + Final_Flag in; the decrypt path
    --  takes Stream_ID + Cumulative_Pixel_Offset in and writes
-   --  Final_Flag_Out. Easy-mode counterparts route per-chunk
+   --  Final_Flag_Out. Easy Mode counterparts route per-chunk
    --  dispatch through the encryptor's bound config + MAC closure.
 
    function ITB_EncryptStreamAuthenticated128

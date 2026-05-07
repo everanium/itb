@@ -45,7 +45,9 @@ if [[ ! -f "$DIST_DIR/libitb.so" ]]; then
 fi
 
 BENCH_BIN_DIR="bench/bin"
-if [[ ! -x "$BENCH_BIN_DIR/itb-bench-single" || ! -x "$BENCH_BIN_DIR/itb-bench-triple" ]]; then
+if [[ ! -x "$BENCH_BIN_DIR/itb-bench-single" || ! -x "$BENCH_BIN_DIR/itb-bench-triple"           \
+   || ! -x "$BENCH_BIN_DIR/itb-bench-single-stream"                                              \
+   || ! -x "$BENCH_BIN_DIR/itb-bench-triple-stream" ]]; then
     echo "==> building bench binaries (FC=${FC:-gfortran})"
     make bench
 fi

@@ -1,6 +1,6 @@
 # ITB Ada Binding - Easy Mode Benchmark
 
-Two executables (`bench_single`, `bench_triple`) cover the Easy-Mode
+Two executables (`bench_single`, `bench_triple`) cover the Easy Mode
 encryption / decryption surface exposed by the Ada binding through
 two `procedure` mains driven by one shared `Common` package:
 

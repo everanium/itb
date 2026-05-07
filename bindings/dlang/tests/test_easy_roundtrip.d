@@ -88,7 +88,7 @@ void testDefaults()
 {
     // null primitive / 0 keyBits / null mac select libitb's defaults
     // (areion512 / 1024) plus the binding-side mac override to
-    // hmac-blake3 (the lightest-overhead MAC the Easy-Mode surface
+    // hmac-blake3 (the lightest-overhead MAC the Easy Mode surface
     // ships with).
     auto enc = Encryptor(null, 0, null, 1);
     assert(enc.primitive() == "areion512");

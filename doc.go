@@ -122,7 +122,7 @@
 //
 //	ITB Triple Ouroboros
 
-//	Hash function          | Hash key | API        | Recommended
+//	Hash function          | Hash key | API          | Recommended
 //	Areion-SoEM-256        | 256 bits | Encrypt3x256 | 1024 bits
 //	Areion-SoEM-512        | 512 bits | Encrypt3x512 | 1024 bits
 //	SipHash-2-4, AES-CMAC  | 128 bits | Encrypt3x128 | 1024 bits
@@ -172,7 +172,7 @@
 //     Noise barrier at MinPixels=177 (P=196 after square rounding): 2^(8×196) = 2^1568,
 //     far beyond the Landauer limit of ~2^306.
 //
-// # Quick Start (recommended) — easy.Encryptor
+// # Quick Start (Recommended) — easy.Encryptor
 //
 // The high-level [github.com/everanium/itb/easy.Encryptor] replaces
 // the low-level setup ceremony (per-seed PRF closures, BatchHash
@@ -473,6 +473,25 @@
 // [DecryptAuth3x256Cfg] forwards to [DecryptAuthenticated3x256Cfg].
 // The alias surface covers all 24 entry points and is allocation-free.
 //
+// # Width-less convenience helpers
+//
+// The width-suffixed entry points ([Encrypt128] / [Encrypt256] /
+// [Encrypt512] and the corresponding Decrypt / authenticated /
+// streaming counterparts) require the caller to pick the correct
+// suffix for the chosen seed type. The width-less helpers [Encrypt],
+// [Decrypt], [Encrypt3x], [Decrypt3x], [EncryptAuth], [DecryptAuth],
+// [EncryptAuth3x], [DecryptAuth3x], [EncryptStream], [DecryptStream],
+// [EncryptStream3x], [DecryptStream3x], [EncryptStreamAuth],
+// [DecryptStreamAuth], [EncryptStreamAuth3x], and
+// [DecryptStreamAuth3x] accept the seed bundle as `any` and dispatch
+// internally on the concrete pointer type. All seeds in the bundle
+// must carry one matching `*Seed{N}` width; mixing widths returns an
+// error. The dispatcher resolves the width once per call and
+// forwards verbatim — no allocation beyond what the underlying
+// width-suffixed call would do anyway. Callers using a single seed
+// width across the application can freeze on the width-less helpers
+// without losing performance.
+//
 // # Streaming (Chunked Encryption)
 //
 // For large data that exceeds available memory, use the streaming API.
@@ -515,6 +534,76 @@
 // matching per-instance chunk-header reader, honouring the cfg's
 // own NonceBits when walking a stream produced by an encryptor that
 // overrides the global. See [Config] / [SnapshotGlobals].
+//
+// The width-less plain-stream entry points [EncryptStream] and
+// [DecryptStream] (plus the Triple counterparts [EncryptStream3x] /
+// [DecryptStream3x]) accept seed pointers typed as `any` and drive
+// the read/write loop internally via [io.Reader] / [io.Writer]. They
+// dispatch on the concrete seed pointer type to the matching
+// width-suffixed per-chunk path. The on-wire bytes are identical to
+// the callback-driven helpers above; choice between the two is a
+// caller-side ergonomic preference.
+//
+// # Streaming AEAD (chunked authenticated encryption)
+//
+// The Streaming AEAD construction binds every chunk's MAC tag to a
+// 32-byte CSPRNG-fresh stream anchor (written once as a wire prefix
+// preceding chunk 0), the cumulative pixel offset of every preceding
+// chunk, and a final-flag bit recovered from inside the encrypted
+// container — defending against chunk reorder, replay within or
+// across streams sharing the PRF / MAC key, silent mid-stream drop,
+// and truncate-tail. The wire format adds 32 bytes of stream prefix
+// plus one byte of trailing flag per chunk inside the deniable
+// container layout; no externally visible MAC tag.
+//
+// Per-chunk primitives (one chunk per call, caller drives the loop):
+// [EncryptStreamAuthenticated128] / [EncryptStreamAuthenticated256] /
+// [EncryptStreamAuthenticated512] and the corresponding
+// [DecryptStreamAuthenticated128] / [DecryptStreamAuthenticated256] /
+// [DecryptStreamAuthenticated512] entry points, plus the
+// Triple-Ouroboros 7-seed variants
+// [EncryptStreamAuthenticated3x128] / [EncryptStreamAuthenticated3x256] /
+// [EncryptStreamAuthenticated3x512] and decrypt mirrors. Each takes
+// the streamID, the running cumulative pixel offset, and finalFlag
+// (true on the terminating chunk, false otherwise) explicitly. The
+// Cfg counterparts ([EncryptStreamAuthenticated128Cfg] etc., 24 in
+// total across width × Single+Triple × Encrypt+Decrypt × no-Cfg+Cfg)
+// honour a per-instance [Config] override.
+//
+// Higher-level helpers covering the per-chunk loop server-side:
+// [EncryptStreamAuth128] / [EncryptStreamAuth256] /
+// [EncryptStreamAuth512] (and the [EncryptStreamAuth3x{N}] variants)
+// drive a per-chunk emit callback under fixed seed handles, drawing
+// the 32-byte stream anchor, advancing cumulative pixel offset, and
+// flipping finalFlag on the last chunk. The width-less
+// [EncryptStreamAuth] / [DecryptStreamAuth] (plus the Triple
+// counterparts [EncryptStreamAuth3x] / [DecryptStreamAuth3x])
+// instead consume an [io.Reader] and write to an [io.Writer]
+// directly, dispatching on the concrete seed pointer type.
+// Aliasing follows the same `Authenticated` → `Auth` collapse rule
+// used by the single-shot family.
+//
+// [ErrStreamTruncated] and [ErrStreamAfterFinal] are the two
+// stream-specific sentinel errors. Decrypt-side helpers return
+// [ErrStreamTruncated] when the on-wire transcript exhausts before
+// a chunk with finalFlag = true is observed, and
+// [ErrStreamAfterFinal] when additional chunk bytes follow the
+// terminating chunk. Either error condition leaves any plaintext
+// emitted earlier in the stream trustworthy as far as it went; the
+// trailing data after the failure point is rejected verbatim.
+//
+// # Streaming bindings asymmetry
+//
+// For the No-MAC paths, the Go core and the
+// [github.com/everanium/itb/easy] package expose [io.Reader] /
+// [io.Writer] entry points ([EncryptStream] / [DecryptStream] and
+// the corresponding [github.com/everanium/itb/easy.Encryptor.EncryptStreamIO] /
+// [github.com/everanium/itb/easy.Encryptor.DecryptStreamIO] methods)
+// that drive the read/write loop internally. The official bindings
+// to other languages expose the No-MAC stream surface as per-chunk
+// free functions only and let the caller drive the loop. The two
+// patterns produce identical on-wire bytes; choice between them is
+// a Go-side convenience.
 //
 // # Triple Ouroboros (7-seed variant)
 //
@@ -597,7 +686,7 @@
 // plain Bit Soup depending on platform — the BMI2 PEXT/PDEP path on
 // x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB
 // path on x86 (Ice Lake+, Zen 4+) on Single, sit near the lower
-// bound; pure-Go fallbacks near the upper. The trade-off is acceptable
+// bound; Pure Go fallbacks near the upper. The trade-off is acceptable
 // only where the architectural barrier is the deployment priority.
 // Default [SetLockSoup](0) leaves Bit Soup behaviour unchanged.
 //

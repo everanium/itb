@@ -216,7 +216,7 @@ struct Encryptor
     /// and the empty string `""` trigger a binding-side override to
     /// `"hmac-blake3"` rather than forwarding NULL through to libitb's
     /// own default (`"kmac256"`); HMAC-BLAKE3 measures the lightest
-    /// MAC overhead in the Easy-Mode bench surface, so the
+    /// MAC overhead in the Easy Mode bench surface, so the
     /// constructor-without-MAC path picks the lowest-cost
     /// authenticated MAC by default.
     ///
@@ -663,11 +663,18 @@ struct Encryptor
             }
             if (buf.length > chunkSize)
             {
-                ubyte[] chunk = buf[0 .. chunkSize].dup;
-                buf[0 .. chunkSize] = 0;
-                buf = buf[chunkSize .. $];
+                // Pass the slice into `buf` directly to the FFI (skip
+                // the `.dup` materialisation): the FFI copies the
+                // plaintext into its output buffer during the cipher
+                // pass, so wiping the prefix AFTER the FFI returns
+                // preserves the no-residue invariant without paying for
+                // a per-chunk owned copy. The wipe ordering swap is
+                // safe because the FFI does not retain a pointer to the
+                // input slice after returning.
+                ubyte[] chunk = buf[0 .. chunkSize];
                 ubyte[] ct = _easyEmitChunkAuth(chunk, streamID, cum, false);
                 chunk[] = 0;
+                buf = buf[chunkSize .. $];
                 if (ct.length >= hsz)
                 {
                     size_t w = (cast(size_t) ct[hsz - 4] << 8) | cast(size_t) ct[hsz - 3];
@@ -677,9 +684,10 @@ struct Encryptor
                 writer(ct);
             }
         }
-        // Residual (possibly empty) as terminating chunk.
-        ubyte[] tailChunk = buf.dup;
-        buf[] = 0;
+        // Residual (possibly empty) as terminating chunk. Same .dup
+        // elimination as the non-terminal branch — pass the residual
+        // slice directly, wipe AFTER the FFI returns.
+        ubyte[] tailChunk = buf;
         ubyte[] tailCt = _easyEmitChunkAuth(tailChunk, streamID, cum, true);
         tailChunk[] = 0;
         writer(tailCt);
@@ -734,12 +742,20 @@ struct Encryptor
                 size_t w = (cast(size_t) accum[hsz - 4] << 8) | cast(size_t) accum[hsz - 3];
                 size_t h = (cast(size_t) accum[hsz - 2] << 8) | cast(size_t) accum[hsz - 1];
                 ulong pixels = cast(ulong) w * cast(ulong) h;
-                ubyte[] chunk = accum[0 .. chunkLen].dup;
-                accum = accum[chunkLen .. $];
+                // Pass the slice into `accum` directly to the FFI (skip
+                // the per-chunk `.dup`): the FFI copies the recovered
+                // plaintext into the per-encryptor output cache during
+                // its decrypt pass, so wiping the consumed prefix and
+                // advancing the accumulator AFTER the FFI returns
+                // preserves the no-residue invariant without paying for
+                // a per-chunk owned copy.
+                ubyte[] chunk = accum[0 .. chunkLen];
                 bool ff = false;
                 ubyte[] pt = _easyConsumeChunkAuth(chunk, streamID, cum, ff);
                 writer(pt);
                 pt[] = 0;
+                chunk[] = 0;
+                accum = accum[chunkLen .. $];
                 cum += pixels;
                 if (ff)
                     seenFinal = true;
@@ -1077,27 +1093,30 @@ struct Encryptor
     {
         void* inPtr = plaintext.length == 0 ? null : cast(void*) plaintext.ptr;
         int ff = finalFlag ? 1 : 0;
-        size_t need = 0;
+        size_t cap = _saturatingExpansion(plaintext.length);
+        // Reuse the per-encryptor output cache instead of a fresh GC
+        // alloc per chunk. Same grow-on-demand + wipe-on-grow shape as
+        // `_cipherCall`; the streaming driver's hot loop benefits from
+        // amortising the allocation across every chunk just like the
+        // single-shot Easy Mode path does.
+        _ensureCache(cap);
+        size_t written = 0;
         int rc = ITB_Easy_EncryptStreamAuth(
             _handle,
             inPtr, plaintext.length,
             streamID.ptr, cumPixels, ff,
-            null, 0, &need);
-        if (rc == Status.OK)
-            return [];
-        if (rc != Status.BufferTooSmall)
-            raiseFor(rc);
-        if (need == 0)
-            return [];
-        ubyte[] outBuf = new ubyte[need];
-        size_t written = 0;
-        rc = ITB_Easy_EncryptStreamAuth(
-            _handle,
-            inPtr, plaintext.length,
-            streamID.ptr, cumPixels, ff,
-            cast(void*) outBuf.ptr, outBuf.length, &written);
+            cast(void*) _outCache.ptr, _outCache.length, &written);
+        if (rc == Status.BufferTooSmall)
+        {
+            _ensureCache(written);
+            rc = ITB_Easy_EncryptStreamAuth(
+                _handle,
+                inPtr, plaintext.length,
+                streamID.ptr, cumPixels, ff,
+                cast(void*) _outCache.ptr, _outCache.length, &written);
+        }
         check(rc);
-        return outBuf[0 .. written];
+        return _outCache[0 .. written];
     }
 
     private ubyte[] _easyConsumeChunkAuth(
@@ -1107,34 +1126,29 @@ struct Encryptor
         out bool finalFlagOut) @trusted
     {
         void* inPtr = ciphertext.length == 0 ? null : cast(void*) ciphertext.ptr;
-        size_t need = 0;
         int ff = 0;
+        size_t cap = _saturatingExpansion(ciphertext.length);
+        // Reuse the per-encryptor output cache (grow-on-demand +
+        // wipe-on-grow), matching the Bonus 1 cache wiring in the
+        // encrypt-side dispatcher above.
+        _ensureCache(cap);
+        size_t written = 0;
         int rc = ITB_Easy_DecryptStreamAuth(
             _handle,
             inPtr, ciphertext.length,
             streamID.ptr, cumPixels,
-            null, 0, &need, &ff);
-        if (rc == Status.OK)
+            cast(void*) _outCache.ptr, _outCache.length, &written, &ff);
+        if (rc == Status.BufferTooSmall)
         {
-            finalFlagOut = ff != 0;
-            return [];
+            _ensureCache(written);
+            rc = ITB_Easy_DecryptStreamAuth(
+                _handle,
+                inPtr, ciphertext.length,
+                streamID.ptr, cumPixels,
+                cast(void*) _outCache.ptr, _outCache.length, &written, &ff);
         }
-        if (rc != Status.BufferTooSmall)
-            raiseFor(rc);
-        if (need == 0)
-        {
-            finalFlagOut = ff != 0;
-            return [];
-        }
-        ubyte[] outBuf = new ubyte[need];
-        size_t written = 0;
-        rc = ITB_Easy_DecryptStreamAuth(
-            _handle,
-            inPtr, ciphertext.length,
-            streamID.ptr, cumPixels,
-            cast(void*) outBuf.ptr, outBuf.length, &written, &ff);
         check(rc);
         finalFlagOut = ff != 0;
-        return outBuf[0 .. written];
+        return _outCache[0 .. written];
     }
 }

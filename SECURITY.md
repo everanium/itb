@@ -225,7 +225,7 @@ Implemented: Inside (full capacity) — `EncryptAuthenticated128` / `EncryptAuth
 | Non-CSPRNG container | Deployer misconfiguration | Degrades barrier | crypto/rand mandatory, non-CSPRNG unsupported |
 | COBS decode truncation | Wrong seed / tampered data | None | Core ITB: returns raw decoded bytes (plausible deniability, no oracle); Authenticated: MAC rejects before COBS decode |
 | Bit-flip false null (DoS) | Data bit modification | None (with MAC) | MAC verified before null search; noise flips do not affect decrypted data |
-| CGO AVX2 side-channel | Co-located attacker | None (see below) | All AVX2 ops constant-time; identical to pure Go |
+| CGO AVX2 side-channel | Co-located attacker | None (see below) | All AVX2 ops constant-time; identical to Pure Go |
 | Spectre v1/v2/v4, Downfall, etc. | Secret-dependent memory access gadget | No known gadget in ITB data path | Register-only ops; no `table[secret_index]` |
 | MDS, Zenbleed (stale data) | CPU buffer residue | Seeds may remain in buffers | Not ITB-specific; identical for all ciphers |
 | Rowhammer, RAMBleed | DRAM bit flips / reads | Memory corruption / leakage | Not ITB-specific; ECC memory recommended |
@@ -235,21 +235,21 @@ For detailed per-CVE analysis of 20+ hardware attacks (Spectre variants, Downfal
 
 ### CGO Backend Side-Channel Equivalence
 
-The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was verified for side-channel equivalence with the pure Go backend:
+The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was verified for side-channel equivalence with the Pure Go backend:
 
 | Concern | Status | Detail |
 |---|---|---|
 | AVX2 instruction timing | **Constant-time** | `vpxor`, `vpand`, `vpor`, `vpsllw`, `vpsrlw` — fixed latency on Intel |
 | `dataHash % 7` | **Constant-time** | GCC optimizes to `imulq` multiply-by-reciprocal, no `div` instruction |
 | `% totalPixels` (pixel wrap) | Variable-time `idivl` | Not secret: totalPixels = W×H from public header |
-| Container access pattern | Same as pure Go | `container[pixelOffset]` — startPixel cache pattern unchanged |
+| Container access pattern | Same as Pure Go | `container[pixelOffset]` — startPixel cache pattern unchanged |
 | Hash array access | Sequential | No data-dependent indexing |
 | Spectre | Not applicable | No secret-dependent array indexing |
 | L1 micro-batching | **Improves** cache resistance | 8KB batches harder to observe via Flush+Reload than full arrays |
 
 The analysis applies equally to ARM64 NEON auto-vectorization: `veor`, `vand`, `vorr`, `vshl`, `vshr` are constant-time on ARM. ARM `sdiv` (for `% totalPixels`) is variable-time but operates on public data only. ARM has no frequency throttling from NEON (unlike Intel AVX-512).
 
-Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (pure-Go pixel kernel; Go-assembly hash ASM stays engaged) and `CGO_ENABLED=1` (C + SIMD pixel kernel) does not change the security model on any platform. See [SCIENCE.md §4](SCIENCE.md#known-theoretical-threats) "Known Theoretical Threats" point 6 for detailed analysis.
+Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (Pure Go pixel kernel; Go-assembly hash ASM stays engaged) and `CGO_ENABLED=1` (C + SIMD pixel kernel) does not change the security model on any platform. See [SCIENCE.md §4](SCIENCE.md#known-theoretical-threats) "Known Theoretical Threats" point 6 for detailed analysis.
 
 ## 14. Hash Function Compliance
 
@@ -344,12 +344,12 @@ Ciphertext wire format is identical across all modes; no public header bit disti
 
 ## 19. Lock Soup (Insane Interlocked Mode, opt-in overlay on Bit Soup)
 
-`SetLockSoup(1)` is the keyed-bit-permutation overlay on top of bit soup; setting it automatically engages `SetBitSoup(1)` (the overlay layers on top of bit soup, so the two flags are coupled in the on-direction).
+`SetLockSoup(1)` is the keyed-bit-permutation overlay on top of bit soup; setting it automatically engages `SetBitSoup(1)` (the overlay layers on top of bit soup, so the two flags are coupled in the on-direction). Hardens KPA-resistance way.
 
 On Triple Ouroboros, the overlay replaces the fixed public 24-bit chunk permutation of plain Bit Soup with a per-chunk PRF-keyed balanced 8-of-24 mask triple drawn from a 2^33 mask space, derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. The mode strengthens the SAT-cryptanalysis barrier from the public-encoding layer (Bit Soup) to the keyed-encoding layer: each crib chunk multiplies attacker enumeration by ~2^33 with no shared algebraic structure across chunks, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. SAT cryptanalysis becomes an instance-formulation impossibility rather than a computational-hardness problem; solver throughput, including any hypothetical PRF-inversion shortcut, does not convert an under-determined instance into a determined one.
 
 On Single Ouroboros, `SetBitSoup(1)` and `SetLockSoup(1)` are coupled symmetrically — either flag activates the Lock Soup overlay (the two flags engage the same code path on Single, vice versa). The Single overlay replaces the 24-bit chunk identity with a per-chunk full S₂₄ permutation drawn from a 2^64 space (Lehmer-code unrank of `24!` ≈ 6.2 × 10²³ permutations, addressed by the low 64 bits of a per-chunk PRF output). Each crib chunk multiplies attacker enumeration by ~2^64 — substantially stronger per-chunk than the Triple variant's 2^33, because the single snake carries the whole plaintext and needs a higher floor to compensate for the absence of 3-way snake split.
 
-Performance cost is approximately 2×–7× slower than plain Bit Soup depending on platform; the BMI2 PEXT/PDEP path on x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB path on x86 (Ice Lake / Tiger Lake / Rocket Lake / Sapphire Rapids+, Zen 4 / Zen 5) on Single, sit near the lower bound; pure-Go fallbacks near the upper. The trade-off is acceptable only where the architectural barrier is the deployment priority. Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged. Both flags must agree across the encrypt and decrypt sides of the channel; mismatched modes produce wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Ciphertext wire format is identical across all three modes (Byte Level / Bit Soup / Lock Soup).
+Performance cost is approximately 2×–7× slower than plain Bit Soup depending on platform; the BMI2 PEXT/PDEP path on x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB path on x86 (Rocket Lake / Tiger Lake / Sapphire Rapids+, Zen 4 / Zen 5) on Single, sit near the lower bound; Pure Go fallbacks near the upper. The trade-off is acceptable only where the architectural barrier is the deployment priority. Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged. Both flags must agree across the encrypt and decrypt sides of the channel; mismatched modes produce wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Ciphertext wire format is identical across all three modes (Byte Level / Bit Soup / Lock Soup).
 
 `AttachLockSeed` on the native path (or `Encryptor.SetLockSeed(1)` on the Easy Mode path) routes the per-chunk permutation derivation through a dedicated lockSeed slot allocated alongside the standard noise / data / start trio. Both the keying material and the underlying PRF primitive are independent of the noise-injection channel within the same native hash width — algorithm-diversity defence-in-depth on top of the per-chunk 2³³ (Triple) / 2⁶⁴ (Single) Lock Soup floor. A structural shortcut against the noiseSeed primitive cannot leak into the lock-channel derivation, and vice versa. Default no attach leaves the overlay routing through the noiseSeed unchanged.

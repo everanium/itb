@@ -412,15 +412,18 @@ func DecryptStreamAuth(noiseSeed, dataSeed, startSeed any, src io.Reader, dst io
 	}
 
 	var streamID [streamIDPrefixLen]byte
-	n, perr := readExact(src, streamID[:])
-	if perr != nil {
-		if perr == io.EOF {
-			return fmt.Errorf("itb: stream too short for stream prefix")
-		}
-		return perr
-	}
-	if n != streamIDPrefixLen {
+	n, perr := io.ReadFull(src, streamID[:])
+	if perr == io.EOF || perr == io.ErrUnexpectedEOF || n != streamIDPrefixLen {
+		// Distinguish a stream cut before the 32-byte prefix lands
+		// from a generic mid-chunk EOF wrapped further down by
+		// readExact. The Rust / C / D bindings emit a specific
+		// "stream prefix incomplete" / "EOF before 32-byte stream_id
+		// prefix" diagnostic on this path; this Go-core path follows
+		// the same shape.
 		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	if perr != nil {
+		return perr
 	}
 
 	var cumulative uint64
@@ -545,15 +548,12 @@ func DecryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1,
 	}
 
 	var streamID [streamIDPrefixLen]byte
-	n, perr := readExact(src, streamID[:])
-	if perr != nil {
-		if perr == io.EOF {
-			return fmt.Errorf("itb: stream too short for stream prefix")
-		}
-		return perr
-	}
-	if n != streamIDPrefixLen {
+	n, perr := io.ReadFull(src, streamID[:])
+	if perr == io.EOF || perr == io.ErrUnexpectedEOF || n != streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	if perr != nil {
+		return perr
 	}
 
 	var cumulative uint64

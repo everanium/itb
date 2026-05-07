@@ -527,6 +527,10 @@ private
          Cum_Pixels     : Itb.Sys.U64 := 0;
          Prefix_Emitted : Boolean := False;
          Closed         : Boolean := False;
+         --  Per-stream output buffer cache. Reused across every chunk's
+         --  FFI dispatch instead of a fresh heap allocation per chunk.
+         --  Wiped on grow + on Finalize, mirroring Encryptor.Cache.
+         Cache          : Byte_Buffer_Access := null;
       end record;
 
    overriding procedure Finalize (Self : in out Stream_Encryptor_Auth);
@@ -553,6 +557,9 @@ private
          Seen_Final     : Boolean := False;
          At_EOF         : Boolean := False;
          Closed         : Boolean := False;
+         --  Per-stream output buffer cache (decrypt-side counterpart);
+         --  same wipe-on-grow + wipe-on-Finalize discipline.
+         Cache          : Byte_Buffer_Access := null;
       end record;
 
    overriding procedure Finalize (Self : in out Stream_Decryptor_Auth);
@@ -579,6 +586,8 @@ private
          Cum_Pixels     : Itb.Sys.U64 := 0;
          Prefix_Emitted : Boolean := False;
          Closed         : Boolean := False;
+         --  Per-stream output buffer cache (Triple variant).
+         Cache          : Byte_Buffer_Access := null;
       end record;
 
    overriding procedure Finalize (Self : in out Stream_Encryptor_Auth_3);
@@ -609,6 +618,9 @@ private
          Seen_Final     : Boolean := False;
          At_EOF         : Boolean := False;
          Closed         : Boolean := False;
+         --  Per-stream output buffer cache (decrypt-side Triple
+         --  variant).
+         Cache          : Byte_Buffer_Access := null;
       end record;
 
    overriding procedure Finalize (Self : in out Stream_Decryptor_Auth_3);

@@ -619,7 +619,7 @@ internal static unsafe partial class ItbNative
         byte* @out, nuint outCap, out nuint outLen,
         out int finalFlagOut);
 
-    // Easy-mode Streaming AEAD per-chunk dispatch (driven by the
+    // Easy Mode Streaming AEAD per-chunk dispatch (driven by the
     // encryptor handle rather than separate seed + MAC handles).
 
     [LibraryImport("libitb")]

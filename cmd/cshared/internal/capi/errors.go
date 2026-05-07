@@ -106,9 +106,9 @@ func (s Status) String() string {
 	case StatusBlobTooManyOpts:
 		return "Export accepts at most one options struct"
 	case StatusStreamTruncated:
-		return "streaming-AEAD transcript truncated before terminator"
+		return "Streaming AEAD transcript truncated before terminator"
 	case StatusStreamAfterFinal:
-		return "streaming-AEAD chunk after terminator"
+		return "Streaming AEAD chunk after terminator"
 	case StatusInternal:
 		return "internal error"
 	}

@@ -1,12 +1,12 @@
 /*
- * bench_single.c — Easy-Mode Single-Ouroboros benchmarks for the C
+ * bench_single.c — Easy Mode Single-Ouroboros benchmarks for the C
  * binding.
  *
  * Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
  * nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
  * MiB CSPRNG-filled payload. One mixed-primitive variant
  * (itb_encryptor_new_mixed with BLAKE3 / BLAKE2s / BLAKE2b-256 +
- * ChaCha20 dedicated lockSeed) covers the Easy-Mode Mixed surface
+ * ChaCha20 dedicated lockSeed) covers the Easy Mode Mixed surface
  * alongside the single-primitive grid.
  *
  * Run with:

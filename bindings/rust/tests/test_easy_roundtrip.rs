@@ -91,7 +91,7 @@ fn defaults() {
     // None primitive / None keyBits / None mac select package
     // defaults: areion512 / 1024 / hmac-blake3 (the latter via the
     // binding-side override that maps `mac=None` to the
-    // lightest-overhead MAC available in the Easy-Mode surface).
+    // lightest-overhead MAC available in the Easy Mode surface).
     let enc = Encryptor::new(None, None, None, 1).unwrap();
     assert_eq!(enc.primitive().unwrap(), "areion512");
     assert_eq!(enc.key_bits().unwrap(), 1024);

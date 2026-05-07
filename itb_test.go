@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"testing"
 	"unsafe"
@@ -3185,4 +3186,304 @@ func TestSingleAttachLockSeedOverlayOffPanic(t *testing.T) {
 		}
 	}()
 	_, _ = Encrypt256(ns, ds, ss, plaintext)
+}
+
+// --- Streaming benchmarks (Low-Level Single Ouroboros, areion512, 1024-bit) ---
+
+// newHMACBlake3Bench returns a streaming-bench-local hmac-blake3 closure
+// that mirrors macs.HMACBLAKE3 inline. The macs subpackage cannot be
+// imported from this in-package test file (macs imports itb, so the
+// reverse pulls in a cycle); the BLAKE3 dependency is already wired
+// here for the single-call hash benches above and is reused verbatim
+// for the 32-byte keyed PRF mode used by the streaming AEAD path.
+func newHMACBlake3Bench(key []byte) MACFunc {
+	if len(key) != 32 {
+		panic("newHMACBlake3Bench: key must be 32 bytes")
+	}
+	template, err := blake3.NewKeyed(key)
+	if err != nil {
+		panic(err)
+	}
+	return func(data []byte) []byte {
+		h := template.Clone()
+		h.Write(data)
+		var out [32]byte
+		h.Sum(out[:0])
+		return append([]byte(nil), out[:]...)
+	}
+}
+
+// makeStreamSingleSeeds builds a 3-seed Single Ouroboros constellation
+// (noiseSeed / dataSeed / startSeed) under the supplied 512-bit hash
+// pair, with the batched arm wired so per-pixel hashing routes through
+// the ZMM-batched chain-absorb dispatch when AVX-512 is available.
+func makeStreamSingleSeeds(b *testing.B, bits int, maker func() (HashFunc512, BatchHashFunc512)) (*Seed512, *Seed512, *Seed512) {
+	nsH, nsB := maker()
+	ns, ds, ss := makeTripleSeed512(bits, nsH)
+	ns.BatchHash = nsB
+	dsH, dsB := maker()
+	ds.Hash = dsH
+	ds.BatchHash = dsB
+	ssH, ssB := maker()
+	ss.Hash = ssH
+	ss.BatchHash = ssB
+	if ns == nil || ds == nil || ss == nil {
+		b.Fatalf("makeStreamSingleSeeds: nil seed")
+	}
+	return ns, ds, ss
+}
+
+// streamBenchPlaintext draws a 64 MiB CSPRNG plaintext used by every
+// streaming benchmark in this cohort.
+func streamBenchPlaintext(b *testing.B, n int) []byte {
+	src := make([]byte, n)
+	if _, err := rand.Read(src); err != nil {
+		b.Fatalf("rand.Read: %v", err)
+	}
+	return src
+}
+
+// streamBenchMACKey draws a 32-byte CSPRNG MAC key used by the AEAD
+// streaming benchmarks.
+func streamBenchMACKey(b *testing.B) []byte {
+	k := make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		b.Fatalf("rand.Read mac key: %v", err)
+	}
+	return k
+}
+
+// BenchmarkSingleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [EncryptStreamAuth] (Single Ouroboros, areion512
+// PRF, 1024-bit ITB key width, hmac-blake3 MAC) on a 64 MiB plaintext
+// streamed through an in-memory bytes.Reader -> bytes.Buffer pair in
+// 16 MiB chunks. The Single trio of seeds and the MAC closure are
+// constructed once outside the timer; the inner loop only runs the
+// IO-driven encrypt path.
+func BenchmarkSingleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds, ss := makeStreamSingleSeeds(b, bits, makeAreionSoEM512Pair)
+	mac := newHMACBlake3Bench(streamBenchMACKey(b))
+	src := streamBenchPlaintext(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		if err := EncryptStreamAuth(ns, ds, ss, r, buf, mac, chunkSize); err != nil {
+			b.Fatalf("EncryptStreamAuth: %v", err)
+		}
+	}
+}
+
+// BenchmarkSingleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [DecryptStreamAuth] on a transcript pre-built once
+// outside the timer. Each iteration walks a fresh bytes.Reader over
+// the same ciphertext; the recovered plaintext is written to a
+// bytes.Buffer of generous capacity.
+func BenchmarkSingleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds, ss := makeStreamSingleSeeds(b, bits, makeAreionSoEM512Pair)
+	mac := newHMACBlake3Bench(streamBenchMACKey(b))
+	src := streamBenchPlaintext(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := EncryptStreamAuth(ns, ds, ss, bytes.NewReader(src), encBuf, mac, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStreamAuth: %v", err)
+	}
+	ciphertext := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(ciphertext)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		if err := DecryptStreamAuth(ns, ds, ss, r, buf, mac); err != nil {
+			b.Fatalf("DecryptStreamAuth: %v", err)
+		}
+	}
+}
+
+// BenchmarkSingleEncryptStreamIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [EncryptStream] (no MAC) under the same Single
+// Ouroboros / areion512 / 1024-bit configuration.
+func BenchmarkSingleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds, ss := makeStreamSingleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamBenchPlaintext(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		if err := EncryptStream(ns, ds, ss, r, buf, chunkSize); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+// BenchmarkSingleDecryptStreamIO_Areion512_1024_64MB_C16MB measures
+// the throughput of [DecryptStream] on a transcript pre-built once.
+func BenchmarkSingleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds, ss := makeStreamSingleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamBenchPlaintext(b, dataSize)
+
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	if err := EncryptStream(ns, ds, ss, bytes.NewReader(src), encBuf, chunkSize); err != nil {
+		b.Fatalf("setup EncryptStream: %v", err)
+	}
+	ciphertext := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(ciphertext)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		if err := DecryptStream(ns, ds, ss, r, buf); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
+// BenchmarkSingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
+// measures the user-driven plain-stream Encrypt loop: the caller
+// reads chunkSize-byte windows out of src, calls [Encrypt] per chunk,
+// and frames each ciphertext on the wire with a 4-byte big-endian
+// length prefix. Mirrors the exampleLowLevelModePlainUserLoop walker
+// in tmp/itb_examples/go/main.go.
+func BenchmarkSingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds, ss := makeStreamSingleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamBenchPlaintext(b, dataSize)
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(src)
+		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+		stage := make([]byte, chunkSize)
+		var lenBuf [4]byte
+		for {
+			n, rerr := io.ReadFull(r, stage)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil && rerr != io.ErrUnexpectedEOF {
+				b.Fatalf("ReadFull: %v", rerr)
+			}
+			ct, encErr := Encrypt(ns, ds, ss, stage[:n])
+			if encErr != nil {
+				b.Fatalf("Encrypt: %v", encErr)
+			}
+			lenBuf[0] = byte(len(ct) >> 24)
+			lenBuf[1] = byte(len(ct) >> 16)
+			lenBuf[2] = byte(len(ct) >> 8)
+			lenBuf[3] = byte(len(ct))
+			if _, werr := buf.Write(lenBuf[:]); werr != nil {
+				b.Fatalf("Write length prefix: %v", werr)
+			}
+			if _, werr := buf.Write(ct); werr != nil {
+				b.Fatalf("Write ciphertext: %v", werr)
+			}
+			if rerr == io.ErrUnexpectedEOF {
+				break
+			}
+		}
+	}
+}
+
+// BenchmarkSingleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
+// measures the user-driven plain-stream Decrypt loop: the caller reads
+// the 4-byte big-endian length prefix, draws exactly that many bytes
+// into a chunk buffer, and calls [Decrypt] per chunk. The framed
+// ciphertext is built once outside the timer.
+func BenchmarkSingleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
+	const (
+		bits      = 1024
+		dataSize  = 64 << 20
+		chunkSize = 16 << 20
+	)
+	ns, ds, ss := makeStreamSingleSeeds(b, bits, makeAreionSoEM512Pair)
+	src := streamBenchPlaintext(b, dataSize)
+
+	// Build the 4-byte BE length-prefixed transcript once.
+	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
+	{
+		r := bytes.NewReader(src)
+		stage := make([]byte, chunkSize)
+		var lenBuf [4]byte
+		for {
+			n, rerr := io.ReadFull(r, stage)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil && rerr != io.ErrUnexpectedEOF {
+				b.Fatalf("setup ReadFull: %v", rerr)
+			}
+			ct, encErr := Encrypt(ns, ds, ss, stage[:n])
+			if encErr != nil {
+				b.Fatalf("setup Encrypt: %v", encErr)
+			}
+			lenBuf[0] = byte(len(ct) >> 24)
+			lenBuf[1] = byte(len(ct) >> 16)
+			lenBuf[2] = byte(len(ct) >> 8)
+			lenBuf[3] = byte(len(ct))
+			encBuf.Write(lenBuf[:])
+			encBuf.Write(ct)
+			if rerr == io.ErrUnexpectedEOF {
+				break
+			}
+		}
+	}
+	transcript := encBuf.Bytes()
+
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(transcript)
+		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+		var lenBuf [4]byte
+		for {
+			_, rerr := io.ReadFull(r, lenBuf[:])
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				b.Fatalf("ReadFull length: %v", rerr)
+			}
+			ctLen := int(lenBuf[0])<<24 | int(lenBuf[1])<<16 | int(lenBuf[2])<<8 | int(lenBuf[3])
+			ct := make([]byte, ctLen)
+			if _, rerr2 := io.ReadFull(r, ct); rerr2 != nil {
+				b.Fatalf("ReadFull body: %v", rerr2)
+			}
+			pt, decErr := Decrypt(ns, ds, ss, ct)
+			if decErr != nil {
+				b.Fatalf("Decrypt: %v", decErr)
+			}
+			buf.Write(pt)
+		}
+	}
 }

@@ -1,11 +1,11 @@
-"""Easy-Mode Triple-Ouroboros benchmarks for the Python binding.
+"""Easy Mode Triple-Ouroboros benchmarks for the Python binding.
 
 Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
 nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
 MiB CSPRNG-filled payload. One mixed-primitive variant
 (:meth:`itb.Encryptor.mixed_triple` cycling the same BLAKE family +
 Areion-SoEM-256 dedicated lockSeed used by bench_single_mixed)
-covers the Easy-Mode Mixed surface alongside the single-primitive
+covers the Easy Mode Mixed surface alongside the single-primitive
 grid.
 
 Run with::
@@ -30,6 +30,9 @@ split surface end-to-end.
 
 from __future__ import annotations
 
+import io
+import os
+import struct
 import sys
 from typing import Callable, List, Tuple
 
@@ -195,7 +198,279 @@ def main() -> None:
     )
 
     cases = _build_cases()
+    cases.extend(_build_stream_cases())
     _common.run_all(cases)
+
+
+# ─── Streaming benchmarks (Triple Ouroboros) ─────────────────────────
+#
+# The eight cases below cover the (Mode × Variant × Op) matrix at the
+# Triple-Ouroboros width: Easy Mode and Low-Level Mode × StreamAuthIO
+# and StreamUserLoop × Encrypt and Decrypt. Every case streams a
+# 64 MiB CSPRNG payload through 16 MiB chunks. The measured wall-clock
+# slice covers only the streaming path; CSPRNG payload generation,
+# encryptor / Seed / MAC construction, and pre-encryption for the
+# decrypt arms run outside the timer.
+#
+# StreamAuthIO drives the binding's authenticated streaming entry
+# points (:meth:`Encryptor.encrypt_stream_auth` /
+# :meth:`Encryptor.decrypt_stream_auth` for Easy Mode mode=3;
+# :func:`itb.encrypt_stream_auth_triple` /
+# :func:`itb.decrypt_stream_auth_triple` for Low-Level Mode). The
+# on-wire transcript carries the 32-byte CSPRNG ``stream_id`` prefix
+# followed by chunked authenticated bodies.
+#
+# StreamUserLoop drives the per-chunk plain cipher entry points
+# (:meth:`Encryptor.encrypt` / :meth:`Encryptor.decrypt` on the
+# Triple Mode encryptor for Easy Mode; :func:`itb.encrypt_stream_triple`
+# / :func:`itb.decrypt_stream_triple` for Low-Level Mode). The Easy
+# Mode arm wraps the per-chunk plain calls in a caller-side loop with
+# a 4-byte big-endian length prefix per chunk; the Low-Level Mode arm
+# calls the binding's Triple free-function wrapper which manages the
+# chunk loop internally without the MAC tag.
+
+STREAM_PAYLOAD_BYTES = 64 * 1024 * 1024
+STREAM_CHUNK_SIZE = 16 * 1024 * 1024
+STREAM_PRIMITIVE = "areion512"
+
+
+def _build_easy_stream_encryptor() -> itb.Encryptor:
+    """Construct the Easy Mode Triple-Ouroboros encryptor used for
+    every streaming case in this module — Areion-SoEM-512 / 1024-bit
+    key / HMAC-BLAKE3 MAC, mode=3."""
+    enc = itb.Encryptor(STREAM_PRIMITIVE, KEY_BITS, MAC_NAME, mode=3)
+    _apply_lockseed_if_requested(enc)
+    return enc
+
+
+def _build_lowlevel_stream_seeds() -> Tuple[
+    itb.Seed, itb.Seed, itb.Seed, itb.Seed,
+    itb.Seed, itb.Seed, itb.Seed,
+]:
+    """Allocate the seven Seed handles used by the Low-Level Mode
+    Triple-Ouroboros streaming cases (noise + 3 data + 3 start)."""
+    return (
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+        itb.Seed(STREAM_PRIMITIVE, KEY_BITS),
+    )
+
+
+def _make_easy_stream_auth_encrypt_case(name: str) -> _common.BenchCase:
+    """Easy Mode Triple-Ouroboros Streaming AEAD encrypt — full
+    64 MiB through 16 MiB chunks per iteration."""
+    enc = _build_easy_stream_encryptor()
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(payload)
+            fout = io.BytesIO()
+            enc.encrypt_stream_auth(fin, fout, chunk_size=STREAM_CHUNK_SIZE)
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_easy_stream_auth_decrypt_case(name: str) -> _common.BenchCase:
+    """Easy Mode Triple-Ouroboros Streaming AEAD decrypt —
+    pre-encrypts a 64 MiB transcript outside the timer; the iter loop
+    only times the decrypt path."""
+    enc = _build_easy_stream_encryptor()
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+    pre = io.BytesIO()
+    enc.encrypt_stream_auth(io.BytesIO(payload), pre,
+                            chunk_size=STREAM_CHUNK_SIZE)
+    transcript = pre.getvalue()
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(transcript)
+            fout = io.BytesIO()
+            enc.decrypt_stream_auth(fin, fout, read_size=STREAM_CHUNK_SIZE)
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_easy_user_loop_encrypt_case(name: str) -> _common.BenchCase:
+    """Easy Mode Triple-Ouroboros user-driven loop encrypt —
+    per-chunk :meth:`Encryptor.encrypt` calls wrapped in a
+    caller-side loop with a 4-byte big-endian ciphertext-length
+    prefix per chunk."""
+    enc = _build_easy_stream_encryptor()
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(payload)
+            fout = io.BytesIO()
+            while True:
+                chunk = fin.read(STREAM_CHUNK_SIZE)
+                if not chunk:
+                    break
+                ct = enc.encrypt(chunk)
+                fout.write(struct.pack(">I", len(ct)))
+                fout.write(ct)
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_easy_user_loop_decrypt_case(name: str) -> _common.BenchCase:
+    """Easy Mode Triple-Ouroboros user-driven loop decrypt —
+    pre-encrypts the chunked transcript outside the timer, then walks
+    4-byte BE length prefixes feeding each ciphertext slice to
+    :meth:`Encryptor.decrypt`."""
+    enc = _build_easy_stream_encryptor()
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+    pre = io.BytesIO()
+    src = io.BytesIO(payload)
+    while True:
+        chunk = src.read(STREAM_CHUNK_SIZE)
+        if not chunk:
+            break
+        ct = enc.encrypt(chunk)
+        pre.write(struct.pack(">I", len(ct)))
+        pre.write(ct)
+    transcript = pre.getvalue()
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(transcript)
+            fout = io.BytesIO()
+            while True:
+                hdr = fin.read(4)
+                if not hdr:
+                    break
+                (n,) = struct.unpack(">I", hdr)
+                ct = fin.read(n)
+                pt = enc.decrypt(ct)
+                fout.write(pt)
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_lowlevel_stream_auth_encrypt_case(name: str) -> _common.BenchCase:
+    """Low-Level Mode Triple-Ouroboros Streaming AEAD encrypt —
+    module-level :func:`itb.encrypt_stream_auth_triple` driving seven
+    caller-owned Seeds plus an explicitly-keyed :class:`itb.MAC`
+    handle."""
+    n_seed, d1, d2, d3, s1, s2, s3 = _build_lowlevel_stream_seeds()
+    mac_key = os.urandom(32)
+    mac = itb.MAC("hmac-blake3", mac_key)
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(payload)
+            fout = io.BytesIO()
+            itb.encrypt_stream_auth_triple(
+                n_seed, d1, d2, d3, s1, s2, s3,
+                mac, fin, fout, chunk_size=STREAM_CHUNK_SIZE,
+            )
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_lowlevel_stream_auth_decrypt_case(name: str) -> _common.BenchCase:
+    """Low-Level Mode Triple-Ouroboros Streaming AEAD decrypt —
+    pre-encrypts a 64 MiB transcript with the same Seed / MAC
+    septet, then times the inverse path."""
+    n_seed, d1, d2, d3, s1, s2, s3 = _build_lowlevel_stream_seeds()
+    mac_key = os.urandom(32)
+    mac = itb.MAC("hmac-blake3", mac_key)
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+    pre = io.BytesIO()
+    itb.encrypt_stream_auth_triple(
+        n_seed, d1, d2, d3, s1, s2, s3,
+        mac, io.BytesIO(payload), pre,
+        chunk_size=STREAM_CHUNK_SIZE,
+    )
+    transcript = pre.getvalue()
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(transcript)
+            fout = io.BytesIO()
+            itb.decrypt_stream_auth_triple(
+                n_seed, d1, d2, d3, s1, s2, s3,
+                mac, fin, fout, read_size=STREAM_CHUNK_SIZE,
+            )
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_lowlevel_user_loop_encrypt_case(name: str) -> _common.BenchCase:
+    """Low-Level Mode Triple-Ouroboros user-driven loop encrypt —
+    module-level :func:`itb.encrypt_stream_triple` running the plain
+    (no-MAC) chunked cipher pipeline."""
+    n_seed, d1, d2, d3, s1, s2, s3 = _build_lowlevel_stream_seeds()
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(payload)
+            fout = io.BytesIO()
+            itb.encrypt_stream_triple(
+                n_seed, d1, d2, d3, s1, s2, s3,
+                fin, fout, chunk_size=STREAM_CHUNK_SIZE,
+            )
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _make_lowlevel_user_loop_decrypt_case(name: str) -> _common.BenchCase:
+    """Low-Level Mode Triple-Ouroboros user-driven loop decrypt —
+    pre-encrypts the plain transcript outside the timer; the iter
+    body invokes :func:`itb.decrypt_stream_triple` against the
+    captured wire bytes."""
+    n_seed, d1, d2, d3, s1, s2, s3 = _build_lowlevel_stream_seeds()
+    payload = _common.random_bytes(STREAM_PAYLOAD_BYTES)
+    pre = io.BytesIO()
+    itb.encrypt_stream_triple(
+        n_seed, d1, d2, d3, s1, s2, s3,
+        io.BytesIO(payload), pre, chunk_size=STREAM_CHUNK_SIZE,
+    )
+    transcript = pre.getvalue()
+
+    def fn(iters: int) -> None:
+        for _ in range(iters):
+            fin = io.BytesIO(transcript)
+            fout = io.BytesIO()
+            itb.decrypt_stream_triple(
+                n_seed, d1, d2, d3, s1, s2, s3,
+                fin, fout, read_size=STREAM_CHUNK_SIZE,
+            )
+
+    return (name, fn, STREAM_PAYLOAD_BYTES)
+
+
+def _build_stream_cases() -> List[_common.BenchCase]:
+    """Assemble the eight Triple-Ouroboros streaming cases. Order is
+    (Mode × Variant × Op) — Easy / Low-Level outer, AEAD-IO /
+    user-loop middle, encrypt / decrypt inner — so a substring filter
+    on the variant name groups the four ops together."""
+    base = f"bench_triple_{STREAM_PRIMITIVE}_{KEY_BITS}bit"
+    cases: List[_common.BenchCase] = []
+    cases.append(_make_easy_stream_auth_encrypt_case(
+        f"{base}_easy_stream_auth_io_encrypt_64mb"))
+    cases.append(_make_easy_stream_auth_decrypt_case(
+        f"{base}_easy_stream_auth_io_decrypt_64mb"))
+    cases.append(_make_easy_user_loop_encrypt_case(
+        f"{base}_easy_stream_user_loop_encrypt_64mb"))
+    cases.append(_make_easy_user_loop_decrypt_case(
+        f"{base}_easy_stream_user_loop_decrypt_64mb"))
+    cases.append(_make_lowlevel_stream_auth_encrypt_case(
+        f"{base}_lowlevel_stream_auth_io_encrypt_64mb"))
+    cases.append(_make_lowlevel_stream_auth_decrypt_case(
+        f"{base}_lowlevel_stream_auth_io_decrypt_64mb"))
+    cases.append(_make_lowlevel_user_loop_encrypt_case(
+        f"{base}_lowlevel_stream_user_loop_encrypt_64mb"))
+    cases.append(_make_lowlevel_user_loop_decrypt_case(
+        f"{base}_lowlevel_stream_user_loop_decrypt_64mb"))
+    return cases
 
 
 if __name__ == "__main__":

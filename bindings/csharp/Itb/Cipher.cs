@@ -81,38 +81,42 @@ public static class Cipher
         var nh = noise.Handle;
         var dh = data.Handle;
         var sh = start.Handle;
+        var payloadLen = payload.Length;
+        // 1.25× + 128 KiB headroom — see Encryptor.CipherCall for the
+        // measured-margin rationale. Skips the size-probe round-trip
+        // the libitb C ABI charges (the cipher does the full crypto on
+        // every call regardless of out-buffer capacity, then returns
+        // BUFFER_TOO_SMALL without exposing the work — so
+        // probe-then-retry doubles cipher work per call). The retry on
+        // BUFFER_TOO_SMALL remains as the safety net for any future
+        // barrier-fill / nonce-bits combination outside the measured
+        // matrix.
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+        var buf = new byte[cap];
         nuint outLen;
         int rc;
         fixed (byte* inPtr = payload)
-        {
-            rc = encrypt
-                ? ItbNative.ITB_Encrypt(nh, dh, sh, inPtr, (nuint)payload.Length, null, 0, out outLen)
-                : ItbNative.ITB_Decrypt(nh, dh, sh, inPtr, (nuint)payload.Length, null, 0, out outLen);
-        }
-        if (rc == Status.Ok)
-        {
-            return Array.Empty<byte>();
-        }
-        if (rc != Status.BufferTooSmall)
-        {
-            throw ItbException.FromStatus(rc);
-        }
-
-        var need = outLen;
-        var buf = new byte[(int)need];
-        nuint outLen2;
-        int rc2;
-        fixed (byte* inPtr = payload)
         fixed (byte* outPtr = buf)
         {
-            rc2 = encrypt
-                ? ItbNative.ITB_Encrypt(nh, dh, sh, inPtr, (nuint)payload.Length, outPtr, need, out outLen2)
-                : ItbNative.ITB_Decrypt(nh, dh, sh, inPtr, (nuint)payload.Length, outPtr, need, out outLen2);
+            rc = encrypt
+                ? ItbNative.ITB_Encrypt(nh, dh, sh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                : ItbNative.ITB_Decrypt(nh, dh, sh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
         }
-        ItbException.Check(rc2);
-        if ((int)outLen2 < buf.Length)
+        if (rc == Status.BufferTooSmall)
         {
-            Array.Resize(ref buf, (int)outLen2);
+            buf = new byte[(int)outLen];
+            fixed (byte* inPtr = payload)
+            fixed (byte* outPtr = buf)
+            {
+                rc = encrypt
+                    ? ItbNative.ITB_Encrypt(nh, dh, sh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                    : ItbNative.ITB_Decrypt(nh, dh, sh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
+            }
+        }
+        ItbException.Check(rc);
+        if ((int)outLen < buf.Length)
+        {
+            Array.Resize(ref buf, (int)outLen);
         }
         return buf;
     }
@@ -176,38 +180,34 @@ public static class Cipher
         var s1 = start1.Handle;
         var s2 = start2.Handle;
         var s3 = start3.Handle;
+        var payloadLen = payload.Length;
+        // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+        var buf = new byte[cap];
         nuint outLen;
         int rc;
         fixed (byte* inPtr = payload)
-        {
-            rc = encrypt
-                ? ItbNative.ITB_Encrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payload.Length, null, 0, out outLen)
-                : ItbNative.ITB_Decrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payload.Length, null, 0, out outLen);
-        }
-        if (rc == Status.Ok)
-        {
-            return Array.Empty<byte>();
-        }
-        if (rc != Status.BufferTooSmall)
-        {
-            throw ItbException.FromStatus(rc);
-        }
-
-        var need = outLen;
-        var buf = new byte[(int)need];
-        nuint outLen2;
-        int rc2;
-        fixed (byte* inPtr = payload)
         fixed (byte* outPtr = buf)
         {
-            rc2 = encrypt
-                ? ItbNative.ITB_Encrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payload.Length, outPtr, need, out outLen2)
-                : ItbNative.ITB_Decrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payload.Length, outPtr, need, out outLen2);
+            rc = encrypt
+                ? ItbNative.ITB_Encrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                : ItbNative.ITB_Decrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
         }
-        ItbException.Check(rc2);
-        if ((int)outLen2 < buf.Length)
+        if (rc == Status.BufferTooSmall)
         {
-            Array.Resize(ref buf, (int)outLen2);
+            buf = new byte[(int)outLen];
+            fixed (byte* inPtr = payload)
+            fixed (byte* outPtr = buf)
+            {
+                rc = encrypt
+                    ? ItbNative.ITB_Encrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                    : ItbNative.ITB_Decrypt3(nh, d1, d2, d3, s1, s2, s3, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
+            }
+        }
+        ItbException.Check(rc);
+        if ((int)outLen < buf.Length)
+        {
+            Array.Resize(ref buf, (int)outLen);
         }
         return buf;
     }
@@ -272,38 +272,34 @@ public static class Cipher
         var dh = data.Handle;
         var sh = start.Handle;
         var mh = mac.Handle;
+        var payloadLen = payload.Length;
+        // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+        var buf = new byte[cap];
         nuint outLen;
         int rc;
         fixed (byte* inPtr = payload)
-        {
-            rc = encrypt
-                ? ItbNative.ITB_EncryptAuth(nh, dh, sh, mh, inPtr, (nuint)payload.Length, null, 0, out outLen)
-                : ItbNative.ITB_DecryptAuth(nh, dh, sh, mh, inPtr, (nuint)payload.Length, null, 0, out outLen);
-        }
-        if (rc == Status.Ok)
-        {
-            return Array.Empty<byte>();
-        }
-        if (rc != Status.BufferTooSmall)
-        {
-            throw ItbException.FromStatus(rc);
-        }
-
-        var need = outLen;
-        var buf = new byte[(int)need];
-        nuint outLen2;
-        int rc2;
-        fixed (byte* inPtr = payload)
         fixed (byte* outPtr = buf)
         {
-            rc2 = encrypt
-                ? ItbNative.ITB_EncryptAuth(nh, dh, sh, mh, inPtr, (nuint)payload.Length, outPtr, need, out outLen2)
-                : ItbNative.ITB_DecryptAuth(nh, dh, sh, mh, inPtr, (nuint)payload.Length, outPtr, need, out outLen2);
+            rc = encrypt
+                ? ItbNative.ITB_EncryptAuth(nh, dh, sh, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                : ItbNative.ITB_DecryptAuth(nh, dh, sh, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
         }
-        ItbException.Check(rc2);
-        if ((int)outLen2 < buf.Length)
+        if (rc == Status.BufferTooSmall)
         {
-            Array.Resize(ref buf, (int)outLen2);
+            buf = new byte[(int)outLen];
+            fixed (byte* inPtr = payload)
+            fixed (byte* outPtr = buf)
+            {
+                rc = encrypt
+                    ? ItbNative.ITB_EncryptAuth(nh, dh, sh, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                    : ItbNative.ITB_DecryptAuth(nh, dh, sh, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
+            }
+        }
+        ItbException.Check(rc);
+        if ((int)outLen < buf.Length)
+        {
+            Array.Resize(ref buf, (int)outLen);
         }
         return buf;
     }
@@ -372,38 +368,34 @@ public static class Cipher
         var s2 = start2.Handle;
         var s3 = start3.Handle;
         var mh = mac.Handle;
+        var payloadLen = payload.Length;
+        // 1.25× + 128 KiB headroom; see Encryptor.CipherCall.
+        var cap = Math.Max(131072, payloadLen * 5 / 4 + 131072);
+        var buf = new byte[cap];
         nuint outLen;
         int rc;
         fixed (byte* inPtr = payload)
-        {
-            rc = encrypt
-                ? ItbNative.ITB_EncryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payload.Length, null, 0, out outLen)
-                : ItbNative.ITB_DecryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payload.Length, null, 0, out outLen);
-        }
-        if (rc == Status.Ok)
-        {
-            return Array.Empty<byte>();
-        }
-        if (rc != Status.BufferTooSmall)
-        {
-            throw ItbException.FromStatus(rc);
-        }
-
-        var need = outLen;
-        var buf = new byte[(int)need];
-        nuint outLen2;
-        int rc2;
-        fixed (byte* inPtr = payload)
         fixed (byte* outPtr = buf)
         {
-            rc2 = encrypt
-                ? ItbNative.ITB_EncryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payload.Length, outPtr, need, out outLen2)
-                : ItbNative.ITB_DecryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payload.Length, outPtr, need, out outLen2);
+            rc = encrypt
+                ? ItbNative.ITB_EncryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                : ItbNative.ITB_DecryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
         }
-        ItbException.Check(rc2);
-        if ((int)outLen2 < buf.Length)
+        if (rc == Status.BufferTooSmall)
         {
-            Array.Resize(ref buf, (int)outLen2);
+            buf = new byte[(int)outLen];
+            fixed (byte* inPtr = payload)
+            fixed (byte* outPtr = buf)
+            {
+                rc = encrypt
+                    ? ItbNative.ITB_EncryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen)
+                    : ItbNative.ITB_DecryptAuth3(nh, d1, d2, d3, s1, s2, s3, mh, inPtr, (nuint)payloadLen, outPtr, (nuint)buf.Length, out outLen);
+            }
+        }
+        ItbException.Check(rc);
+        if ((int)outLen < buf.Length)
+        {
+            Array.Resize(ref buf, (int)outLen);
         }
         return buf;
     }

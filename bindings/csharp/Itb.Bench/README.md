@@ -1,6 +1,6 @@
 # ITB C# / .NET Binding - Easy Mode Benchmark
 
-A single executable (`Itb.Bench`) covers the Easy-Mode encryption /
+A single executable (`Itb.Bench`) covers the Easy Mode encryption /
 decryption surface exposed by the C# / .NET binding through a
 subcommand dispatcher:
 

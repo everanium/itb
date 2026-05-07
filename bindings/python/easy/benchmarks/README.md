@@ -1,6 +1,6 @@
 # ITB Python Binding - Easy Mode Benchmark
 
-Two scripts cover the Easy-Mode encryption / decryption surface
+Two scripts cover the Easy Mode encryption / decryption surface
 exposed by the Python binding:
 
 * `bench_single.py` — Single Ouroboros (mode=1, 3 seeds + optional

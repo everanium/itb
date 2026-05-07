@@ -125,8 +125,43 @@ ubyte[] decryptAuthTriple(
 }
 
 // --------------------------------------------------------------------
-// Internal dispatch helpers — probe / allocate / write idiom.
+// Internal dispatch helpers — formula-based pre-allocate + retry-once
+// on BufferTooSmall.
 // --------------------------------------------------------------------
+//
+// The dispatchers pre-size the output buffer from a 1.25× multiplier
+// plus a 128 KiB pad, mirroring the per-encryptor output cache in
+// `itb.encryptor`. The pre-allocation skips the size-probe round-trip
+// the earlier `cap = 0` form paid on every call; an explicit retry-on-
+// BufferTooSmall path remains as the safety net for the rare case where
+// a non-default barrier-fill setting pushes expansion past the formula's
+// upper bound. Saturating arithmetic protects against `size_t` wrap on
+// 32-bit targets at very large payload sizes.
+
+/// Computes the saturating output capacity estimate for a payload of
+/// size `n`. Caps at `size_t.max` on overflow rather than wrapping, so
+/// the first allocation never under-allocates silently on pathological
+/// payloads. The 128 KiB constant (1.25× multiplier + 128 KiB pad +
+/// 128 KiB floor) absorbs the residual expansion from non-default
+/// barrier-fill values up to 32, where the absolute ratio reaches
+/// ~1.346 around the 1 MiB payload region; it also acts as the floor
+/// for very-small payloads (Triple + auth-MAC + bf=32 at ptlen=1
+/// expands to ~35 KiB).
+private size_t saturatingExpansion(size_t n) @safe @nogc nothrow pure
+{
+    // n * 5 / 4 with overflow-safe arithmetic.
+    size_t mul;
+    if (n > size_t.max / 5)
+        mul = size_t.max;
+    else
+        mul = (n * 5) / 4;
+    size_t add;
+    if (mul > size_t.max - 131072)
+        add = size_t.max;
+    else
+        add = mul + 131072;
+    return add < 131072 ? 131072 : add;
+}
 
 private alias FnSingle = extern (C) int function(
     size_t, size_t, size_t,
@@ -150,16 +185,17 @@ private ubyte[] dispatchSingle(
     const(ubyte)[] payload) @trusted
 {
     void* inPtr = payload.length == 0 ? null : cast(void*) payload.ptr;
+    size_t cap = saturatingExpansion(payload.length);
+    auto buf = new ubyte[cap];
     size_t outLen = 0;
     int rc = fn(noise.handle, data.handle, start.handle,
-        inPtr, payload.length, null, 0, &outLen);
-    if (rc == Status.OK)
-        return [];
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    auto buf = new ubyte[outLen];
-    rc = fn(noise.handle, data.handle, start.handle,
-        inPtr, payload.length, cast(void*) buf.ptr, outLen, &outLen);
+        inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    if (rc == Status.BufferTooSmall)
+    {
+        buf = new ubyte[outLen];
+        rc = fn(noise.handle, data.handle, start.handle,
+            inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    }
     check(rc);
     return buf[0 .. outLen];
 }
@@ -172,22 +208,23 @@ private ubyte[] dispatchTriple(
     const(ubyte)[] payload) @trusted
 {
     void* inPtr = payload.length == 0 ? null : cast(void*) payload.ptr;
+    size_t cap = saturatingExpansion(payload.length);
+    auto buf = new ubyte[cap];
     size_t outLen = 0;
     int rc = fn(
         noise.handle,
         data1.handle, data2.handle, data3.handle,
         start1.handle, start2.handle, start3.handle,
-        inPtr, payload.length, null, 0, &outLen);
-    if (rc == Status.OK)
-        return [];
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    auto buf = new ubyte[outLen];
-    rc = fn(
-        noise.handle,
-        data1.handle, data2.handle, data3.handle,
-        start1.handle, start2.handle, start3.handle,
-        inPtr, payload.length, cast(void*) buf.ptr, outLen, &outLen);
+        inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    if (rc == Status.BufferTooSmall)
+    {
+        buf = new ubyte[outLen];
+        rc = fn(
+            noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    }
     check(rc);
     return buf[0 .. outLen];
 }
@@ -198,16 +235,17 @@ private ubyte[] dispatchAuth(
     ref const MAC mac, const(ubyte)[] payload) @trusted
 {
     void* inPtr = payload.length == 0 ? null : cast(void*) payload.ptr;
+    size_t cap = saturatingExpansion(payload.length);
+    auto buf = new ubyte[cap];
     size_t outLen = 0;
     int rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-        inPtr, payload.length, null, 0, &outLen);
-    if (rc == Status.OK)
-        return [];
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    auto buf = new ubyte[outLen];
-    rc = fn(noise.handle, data.handle, start.handle, mac.handle,
-        inPtr, payload.length, cast(void*) buf.ptr, outLen, &outLen);
+        inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    if (rc == Status.BufferTooSmall)
+    {
+        buf = new ubyte[outLen];
+        rc = fn(noise.handle, data.handle, start.handle, mac.handle,
+            inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    }
     check(rc);
     return buf[0 .. outLen];
 }
@@ -220,24 +258,25 @@ private ubyte[] dispatchAuthTriple(
     ref const MAC mac, const(ubyte)[] payload) @trusted
 {
     void* inPtr = payload.length == 0 ? null : cast(void*) payload.ptr;
+    size_t cap = saturatingExpansion(payload.length);
+    auto buf = new ubyte[cap];
     size_t outLen = 0;
     int rc = fn(
         noise.handle,
         data1.handle, data2.handle, data3.handle,
         start1.handle, start2.handle, start3.handle,
         mac.handle,
-        inPtr, payload.length, null, 0, &outLen);
-    if (rc == Status.OK)
-        return [];
-    if (rc != Status.BufferTooSmall)
-        raiseFor(rc);
-    auto buf = new ubyte[outLen];
-    rc = fn(
-        noise.handle,
-        data1.handle, data2.handle, data3.handle,
-        start1.handle, start2.handle, start3.handle,
-        mac.handle,
-        inPtr, payload.length, cast(void*) buf.ptr, outLen, &outLen);
+        inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    if (rc == Status.BufferTooSmall)
+    {
+        buf = new ubyte[outLen];
+        rc = fn(
+            noise.handle,
+            data1.handle, data2.handle, data3.handle,
+            start1.handle, start2.handle, start3.handle,
+            mac.handle,
+            inPtr, payload.length, cast(void*) buf.ptr, buf.length, &outLen);
+    }
     check(rc);
     return buf[0 .. outLen];
 }
