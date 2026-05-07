@@ -464,6 +464,15 @@
 // [EncryptAuthenticated3x128Cfg] / [DecryptAuthenticated3x128Cfg]
 // and mirrors). See [Config] / [SnapshotGlobals].
 //
+// # Short-name aliases
+//
+// Every authenticated entry point is also reachable under a shorter
+// name with the [EncryptAuthenticated] / [DecryptAuthenticated]
+// prefix collapsed to [EncryptAuth] / [DecryptAuth] — for example
+// [EncryptAuth128] forwards to [EncryptAuthenticated128] and
+// [DecryptAuth3x256Cfg] forwards to [DecryptAuthenticated3x256Cfg].
+// The alias surface covers all 24 entry points and is allocation-free.
+//
 // # Streaming (Chunked Encryption)
 //
 // For large data that exceeds available memory, use the streaming API.

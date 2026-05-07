@@ -122,9 +122,14 @@ public sealed class StreamEncryptor : IDisposable
         {
             var chunk = new byte[_chunkSize];
             _buf.CopyTo(0, chunk, 0, _chunkSize);
+            // Zero the consumed prefix so plaintext does not linger in
+            // the List's backing-array region the RemoveRange slide
+            // vacates.
+            for (var i = 0; i < _chunkSize; i++) { _buf[i] = 0; }
             _buf.RemoveRange(0, _chunkSize);
             var ct = Cipher.Encrypt(_noise, _data, _start, chunk);
             _output.Write(ct, 0, ct.Length);
+            Array.Clear(chunk, 0, chunk.Length);
         }
         return data.Length;
     }
@@ -142,9 +147,11 @@ public sealed class StreamEncryptor : IDisposable
         if (_buf.Count > 0)
         {
             var chunk = _buf.ToArray();
+            for (var i = 0; i < _buf.Count; i++) { _buf[i] = 0; }
             _buf.Clear();
             var ct = Cipher.Encrypt(_noise, _data, _start, chunk);
             _output.Write(ct, 0, ct.Length);
+            Array.Clear(chunk, 0, chunk.Length);
         }
         _closed = true;
     }
@@ -252,6 +259,7 @@ public sealed class StreamDecryptor : IDisposable
             _buf.RemoveRange(0, chunkLen);
             var pt = Cipher.Decrypt(_noise, _data, _start, chunk);
             _output.Write(pt, 0, pt.Length);
+            Array.Clear(pt, 0, pt.Length);
         }
     }
 
@@ -363,10 +371,12 @@ public sealed class StreamEncryptorTriple : IDisposable
         {
             var chunk = new byte[_chunkSize];
             _buf.CopyTo(0, chunk, 0, _chunkSize);
+            for (var i = 0; i < _chunkSize; i++) { _buf[i] = 0; }
             _buf.RemoveRange(0, _chunkSize);
             var ct = Cipher.EncryptTriple(_noise, _data1, _data2, _data3,
                 _start1, _start2, _start3, chunk);
             _output.Write(ct, 0, ct.Length);
+            Array.Clear(chunk, 0, chunk.Length);
         }
         return data.Length;
     }
@@ -382,10 +392,12 @@ public sealed class StreamEncryptorTriple : IDisposable
         if (_buf.Count > 0)
         {
             var chunk = _buf.ToArray();
+            for (var i = 0; i < _buf.Count; i++) { _buf[i] = 0; }
             _buf.Clear();
             var ct = Cipher.EncryptTriple(_noise, _data1, _data2, _data3,
                 _start1, _start2, _start3, chunk);
             _output.Write(ct, 0, ct.Length);
+            Array.Clear(chunk, 0, chunk.Length);
         }
         _closed = true;
     }
@@ -494,6 +506,7 @@ public sealed class StreamDecryptorTriple : IDisposable
             var pt = Cipher.DecryptTriple(_noise, _data1, _data2, _data3,
                 _start1, _start2, _start3, chunk);
             _output.Write(pt, 0, pt.Length);
+            Array.Clear(pt, 0, pt.Length);
         }
     }
 
@@ -558,6 +571,7 @@ public static class StreamPipeline
             enc.Write(buf.AsSpan(0, n));
         }
         enc.Close();
+        Array.Clear(buf, 0, buf.Length);
     }
 
     /// <summary>
@@ -621,6 +635,7 @@ public static class StreamPipeline
             enc.Write(buf.AsSpan(0, n));
         }
         enc.Close();
+        Array.Clear(buf, 0, buf.Length);
     }
 
     /// <summary>Triple Ouroboros (7-seed) counterpart of
@@ -652,5 +667,1360 @@ public static class StreamPipeline
             dec.Feed(buf.AsSpan(0, n));
         }
         dec.Close();
+    }
+
+    // ----------------------------------------------------------------
+    // Authenticated streaming (Streaming AEAD)
+    // ----------------------------------------------------------------
+
+    /// <summary>
+    /// Reads plaintext from <paramref name="input"/> until end of
+    /// stream, encrypts each chunk under the Streaming AEAD
+    /// construction (Single Ouroboros + MAC), and writes the
+    /// concatenated <c>stream_id || chunk_0 || chunk_1 || ...</c>
+    /// transcript to <paramref name="output"/>. Neither stream is
+    /// disposed by this method.
+    /// </summary>
+    public static void EncryptStreamAuth(
+        Seed noise, Seed data, Seed start, Mac mac,
+        Stream input, Stream output,
+        int chunkSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+        if (chunkSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "chunkSize must be positive");
+        }
+        using var enc = new StreamEncryptorAuth(noise, data, start, mac, output, chunkSize);
+        var buf = new byte[chunkSize];
+        while (true)
+        {
+            var n = input.Read(buf, 0, buf.Length);
+            if (n == 0)
+            {
+                break;
+            }
+            enc.Write(buf.AsSpan(0, n));
+        }
+        enc.Close();
+        Array.Clear(buf, 0, buf.Length);
+    }
+
+    /// <summary>
+    /// Reads a Streaming AEAD transcript from <paramref name="input"/>
+    /// until end of stream and writes the recovered plaintext to
+    /// <paramref name="output"/>. Surfaces <see cref="ItbException"/>
+    /// with status <see cref="StatusCode.BadInput"/> when the input
+    /// exhausts mid-prefix (incomplete 32-byte stream-id header),
+    /// <see cref="ItbStreamTruncatedException"/> when the prefix is
+    /// fully observed but no terminating chunk arrives,
+    /// <see cref="ItbStreamAfterFinalException"/> when bytes follow
+    /// the terminator, and <see cref="ItbException"/> with status
+    /// <see cref="StatusCode.MacFailure"/> on any per-chunk MAC
+    /// mismatch. Neither stream is disposed by this method.
+    /// </summary>
+    public static void DecryptStreamAuth(
+        Seed noise, Seed data, Seed start, Mac mac,
+        Stream input, Stream output,
+        int readSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+        if (readSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "readSize must be positive");
+        }
+        using var dec = new StreamDecryptorAuth(noise, data, start, mac, output);
+        var buf = new byte[readSize];
+        while (true)
+        {
+            var n = input.Read(buf, 0, buf.Length);
+            if (n == 0)
+            {
+                break;
+            }
+            dec.Feed(buf.AsSpan(0, n));
+        }
+        dec.Close();
+    }
+
+    /// <summary>Triple Ouroboros (7-seed) counterpart of
+    /// <see cref="EncryptStreamAuth"/>.</summary>
+    public static void EncryptStreamAuthTriple(
+        Seed noise,
+        Seed data1, Seed data2, Seed data3,
+        Seed start1, Seed start2, Seed start3,
+        Mac mac,
+        Stream input, Stream output,
+        int chunkSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+        if (chunkSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "chunkSize must be positive");
+        }
+        using var enc = new StreamEncryptorAuthTriple(
+            noise, data1, data2, data3, start1, start2, start3, mac, output, chunkSize);
+        var buf = new byte[chunkSize];
+        while (true)
+        {
+            var n = input.Read(buf, 0, buf.Length);
+            if (n == 0)
+            {
+                break;
+            }
+            enc.Write(buf.AsSpan(0, n));
+        }
+        enc.Close();
+        Array.Clear(buf, 0, buf.Length);
+    }
+
+    /// <summary>Triple Ouroboros (7-seed) counterpart of
+    /// <see cref="DecryptStreamAuth"/>.</summary>
+    public static void DecryptStreamAuthTriple(
+        Seed noise,
+        Seed data1, Seed data2, Seed data3,
+        Seed start1, Seed start2, Seed start3,
+        Mac mac,
+        Stream input, Stream output,
+        int readSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+        if (readSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "readSize must be positive");
+        }
+        using var dec = new StreamDecryptorAuthTriple(
+            noise, data1, data2, data3, start1, start2, start3, mac, output);
+        var buf = new byte[readSize];
+        while (true)
+        {
+            var n = input.Read(buf, 0, buf.Length);
+            if (n == 0)
+            {
+                break;
+            }
+            dec.Feed(buf.AsSpan(0, n));
+        }
+        dec.Close();
+    }
+}
+
+// --------------------------------------------------------------------
+// Streaming AEAD class wrappers — Single + Triple Ouroboros + MAC.
+// --------------------------------------------------------------------
+
+/// <summary>
+/// Internal helpers for the authenticated streaming wrappers — CSPRNG
+/// stream_id generation, per-chunk dispatch, big-endian header parse.
+/// </summary>
+internal static unsafe class StreamAuthInternal
+{
+    public const int StreamIdLen = 32;
+
+    /// <summary>
+    /// Generates a CSPRNG-fresh 32-byte Streaming AEAD anchor by
+    /// piggybacking on libitb's own CSPRNG: <c>ITB_NewSeedFromComponents</c>
+    /// with hashKey=null triggers a CSPRNG draw on the Go side, and
+    /// <c>ITB_GetSeedHashKey</c> reads back the 32-byte fixed key
+    /// under the blake3 primitive. The seed handle is freed before
+    /// returning; only the 32 random bytes survive.
+    /// </summary>
+    public static byte[] GenerateStreamId()
+    {
+        var comps = stackalloc ulong[8] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        nuint handle;
+        int rc = ItbNative.ITB_NewSeedFromComponents(
+            "blake3", comps, 8, null, 0, out handle);
+        ItbException.Check(rc);
+        var sid = new byte[StreamIdLen];
+        try
+        {
+            nuint outLen;
+            int rc2;
+            fixed (byte* p = sid)
+            {
+                rc2 = ItbNative.ITB_GetSeedHashKey(handle, p, (nuint)StreamIdLen, out outLen);
+            }
+            int freeRc = ItbNative.ITB_FreeSeed(handle);
+            ItbException.Check(rc2);
+            ItbException.Check(freeRc);
+            if ((int)outLen != StreamIdLen)
+            {
+                throw new ItbException(StatusCode.Internal,
+                    "stream_id CSPRNG draw returned wrong byte count");
+            }
+        }
+        catch
+        {
+            // Best-effort handle release on failure path.
+            _ = ItbNative.ITB_FreeSeed(handle);
+            throw;
+        }
+        return sid;
+    }
+
+    public static int ReadBe16(byte[] buf, int off)
+    {
+        return ((int)buf[off] << 8) | (int)buf[off + 1];
+    }
+}
+
+/// <summary>
+/// Authenticated chunked-encrypt writer (Single Ouroboros + MAC).
+/// Buffers plaintext until at least <c>chunkSize</c> bytes are
+/// available, then drains one full chunk per FFI call. Each chunk is
+/// bound to the running
+/// <c>(stream_id, cumulative_pixel_offset, final_flag)</c> tuple
+/// inside the MAC closure. The 32-byte CSPRNG <c>stream_id</c> prefix
+/// is generated at construction and emitted to the wrapped output on
+/// the first <see cref="Write"/> / <see cref="Close"/> call.
+/// </summary>
+/// <remarks>
+/// <para>The wrapped <see cref="Stream"/> is NOT disposed when this
+/// writer is disposed.</para>
+/// <para><b>Thread-safety contract.</b> The buffer-and-emit state
+/// machine is not safe to invoke concurrently from multiple
+/// threads.</para>
+/// </remarks>
+public sealed class StreamEncryptorAuth : IDisposable
+{
+    private readonly Seed _noise;
+    private readonly Seed _data;
+    private readonly Seed _start;
+    private readonly Mac _mac;
+    private readonly Stream _output;
+    private readonly int _chunkSize;
+    private readonly int _width;
+    private readonly int _headerSize;
+    private readonly byte[] _streamId;
+    private readonly List<byte> _buf = new();
+    private ulong _cumPixels;
+    private bool _closed;
+    private bool _prefixEmitted;
+
+    /// <summary>
+    /// Constructs a fresh authenticated stream encryptor.
+    /// <paramref name="chunkSize"/> must be positive. The 32-byte
+    /// CSPRNG <c>stream_id</c> prefix is generated here; it is
+    /// emitted on the first <see cref="Write"/> / <see cref="Close"/>
+    /// call.
+    /// </summary>
+    public StreamEncryptorAuth(
+        Seed noise, Seed data, Seed start, Mac mac,
+        Stream output,
+        int chunkSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(noise);
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(start);
+        ArgumentNullException.ThrowIfNull(mac);
+        ArgumentNullException.ThrowIfNull(output);
+        if (chunkSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "chunkSize must be positive");
+        }
+        _noise = noise;
+        _data = data;
+        _start = start;
+        _mac = mac;
+        _output = output;
+        _chunkSize = chunkSize;
+        _width = noise.Width;
+        _headerSize = Library.HeaderSize;
+        _streamId = StreamAuthInternal.GenerateStreamId();
+    }
+
+    private void EmitPrefix()
+    {
+        if (!_prefixEmitted)
+        {
+            _output.Write(_streamId, 0, _streamId.Length);
+            _prefixEmitted = true;
+        }
+    }
+
+    private void EmitOne(int plaintextLen, bool finalFlag)
+    {
+        var chunkPt = new byte[plaintextLen];
+        for (var i = 0; i < plaintextLen; i++)
+        {
+            chunkPt[i] = _buf[i];
+            _buf[i] = 0;
+        }
+        if (plaintextLen > 0)
+        {
+            _buf.RemoveRange(0, plaintextLen);
+        }
+        var ct = StreamAuthCipher.EmitSingle(
+            _width, _noise, _data, _start, _mac,
+            chunkPt, _streamId, _cumPixels, finalFlag);
+        Array.Clear(chunkPt, 0, chunkPt.Length);
+        if (ct.Length >= _headerSize)
+        {
+            var w = StreamAuthInternal.ReadBe16(ct, _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(ct, _headerSize - 2);
+            _cumPixels += (ulong)w * (ulong)h;
+        }
+        _output.Write(ct, 0, ct.Length);
+    }
+
+    /// <summary>
+    /// Appends <paramref name="data"/> to the internal buffer.
+    /// Drains every completed-but-not-final chunk to the sink. The
+    /// terminating chunk is emitted only by <see cref="Close"/>.
+    /// </summary>
+    public int Write(ReadOnlySpan<byte> data)
+    {
+        if (_closed)
+        {
+            throw new ItbException(StatusCode.EasyClosed,
+                "write on closed StreamEncryptorAuth");
+        }
+        EmitPrefix();
+        for (var i = 0; i < data.Length; i++)
+        {
+            _buf.Add(data[i]);
+        }
+        // Keep at least one chunk's worth buffered until close() so
+        // the deferred-final pattern can decide whether to emit
+        // final_flag = true.
+        while (_buf.Count > _chunkSize)
+        {
+            EmitOne(_chunkSize, false);
+        }
+        return data.Length;
+    }
+
+    /// <summary>
+    /// Emits the residual buffer as the terminating chunk and
+    /// finalises the stream. Idempotent.
+    /// </summary>
+    public void Close()
+    {
+        if (_closed)
+        {
+            return;
+        }
+        EmitPrefix();
+        EmitOne(_buf.Count, true);
+        _closed = true;
+    }
+
+    /// <summary>Calls <see cref="Close"/> if it has not been called
+    /// yet.</summary>
+    public void Dispose()
+    {
+        Close();
+        GC.SuppressFinalize(this);
+    }
+}
+
+/// <summary>
+/// Authenticated chunked-decrypt writer (Single Ouroboros + MAC).
+/// Reads the 32-byte <c>stream_id</c> prefix once, then drains every
+/// complete chunk available in the internal buffer. Each chunk is
+/// verified under the running cumulative pixel offset and recovered
+/// <c>final_flag</c>.
+/// </summary>
+/// <remarks>
+/// <para>The wrapped <see cref="Stream"/> is NOT disposed when this
+/// writer is disposed.</para>
+/// <para>An incomplete 32-byte prefix at <see cref="Close"/> surfaces
+/// as <see cref="ItbException"/> with status
+/// <see cref="StatusCode.BadInput"/> (wire-level malformation).
+/// Missing terminator after a fully observed prefix surfaces from
+/// <see cref="Close"/> as <see cref="ItbStreamTruncatedException"/>;
+/// trailing bytes after the terminator surface from
+/// <see cref="Feed"/> / <see cref="Close"/> as
+/// <see cref="ItbStreamAfterFinalException"/>. Tampered transcript
+/// or wrong MAC key surfaces as <see cref="ItbException"/> with
+/// status <see cref="StatusCode.MacFailure"/>.</para>
+/// </remarks>
+public sealed class StreamDecryptorAuth : IDisposable
+{
+    private readonly Seed _noise;
+    private readonly Seed _data;
+    private readonly Seed _start;
+    private readonly Mac _mac;
+    private readonly Stream _output;
+    private readonly int _width;
+    private readonly int _headerSize;
+    private readonly byte[] _streamId = new byte[StreamAuthInternal.StreamIdLen];
+    private int _sidHave;
+    private readonly List<byte> _buf = new();
+    private ulong _cumPixels;
+    private bool _seenFinal;
+    private bool _closed;
+
+    /// <summary>
+    /// Constructs a fresh authenticated stream decryptor.
+    /// </summary>
+    public StreamDecryptorAuth(
+        Seed noise, Seed data, Seed start, Mac mac,
+        Stream output)
+    {
+        ArgumentNullException.ThrowIfNull(noise);
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(start);
+        ArgumentNullException.ThrowIfNull(mac);
+        ArgumentNullException.ThrowIfNull(output);
+        _noise = noise;
+        _data = data;
+        _start = start;
+        _mac = mac;
+        _output = output;
+        _width = noise.Width;
+        _headerSize = Library.HeaderSize;
+    }
+
+    private void Drain()
+    {
+        var header = new byte[_headerSize];
+        while (true)
+        {
+            if (_seenFinal)
+            {
+                if (_buf.Count > 0)
+                {
+                    throw new ItbStreamAfterFinalException(
+                        StatusCode.StreamAfterFinal,
+                        "auth stream: trailing bytes after terminator");
+                }
+                return;
+            }
+            if (_buf.Count < _headerSize)
+            {
+                return;
+            }
+            for (var i = 0; i < _headerSize; i++)
+            {
+                header[i] = _buf[i];
+            }
+            var chunkLen = Library.ParseChunkLen(header);
+            if (_buf.Count < chunkLen)
+            {
+                return;
+            }
+            var w = StreamAuthInternal.ReadBe16(header, _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(header, _headerSize - 2);
+            var pixels = (ulong)w * (ulong)h;
+            var chunk = new byte[chunkLen];
+            _buf.CopyTo(0, chunk, 0, chunkLen);
+            _buf.RemoveRange(0, chunkLen);
+            var (pt, ff) = StreamAuthCipher.ConsumeSingle(
+                _width, _noise, _data, _start, _mac,
+                chunk, _streamId, _cumPixels);
+            _output.Write(pt, 0, pt.Length);
+            Array.Clear(pt, 0, pt.Length);
+            _cumPixels += pixels;
+            if (ff)
+            {
+                _seenFinal = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Appends <paramref name="data"/> to the internal buffer and
+    /// drains every complete chunk available.
+    /// </summary>
+    public int Feed(ReadOnlySpan<byte> data)
+    {
+        if (_closed)
+        {
+            throw new ItbException(StatusCode.EasyClosed,
+                "feed on closed StreamDecryptorAuth");
+        }
+        var off = 0;
+        if (_sidHave < StreamAuthInternal.StreamIdLen)
+        {
+            var need = StreamAuthInternal.StreamIdLen - _sidHave;
+            var take = Math.Min(need, data.Length);
+            for (var i = 0; i < take; i++)
+            {
+                _streamId[_sidHave + i] = data[i];
+            }
+            _sidHave += take;
+            off = take;
+        }
+        if (off < data.Length)
+        {
+            for (var i = off; i < data.Length; i++)
+            {
+                _buf.Add(data[i]);
+            }
+        }
+        if (_sidHave == StreamAuthInternal.StreamIdLen)
+        {
+            Drain();
+        }
+        return data.Length;
+    }
+
+    /// <summary>
+    /// Finalises the decryptor. An incomplete 32-byte stream-id
+    /// prefix surfaces <see cref="ItbException"/> with
+    /// <see cref="StatusCode.BadInput"/> (wire-level malformation,
+    /// header never finished arriving). A fully observed prefix
+    /// without a terminating chunk surfaces
+    /// <see cref="ItbStreamTruncatedException"/>.
+    /// </summary>
+    public void Close()
+    {
+        if (_closed)
+        {
+            return;
+        }
+        if (_sidHave < StreamAuthInternal.StreamIdLen)
+        {
+            _closed = true;
+            // Incomplete prefix is a wire-level malformation
+            // (header never finished arriving), distinct from
+            // "chunks observed but no terminator chunk among them"
+            // which is the truncate-tail signal.
+            throw new ItbException(
+                StatusCode.BadInput,
+                "auth stream: prefix never observed");
+        }
+        Drain();
+        _closed = true;
+        if (!_seenFinal)
+        {
+            throw new ItbStreamTruncatedException(
+                StatusCode.StreamTruncated,
+                "auth stream: terminator never observed");
+        }
+    }
+
+    /// <summary>Marks the decryptor closed without raising on partial
+    /// input.</summary>
+    public void Dispose()
+    {
+        _closed = true;
+        GC.SuppressFinalize(this);
+    }
+}
+
+/// <summary>
+/// Triple Ouroboros (7-seed) counterpart of
+/// <see cref="StreamEncryptorAuth"/>.
+/// </summary>
+public sealed class StreamEncryptorAuthTriple : IDisposable
+{
+    private readonly Seed _noise;
+    private readonly Seed _data1;
+    private readonly Seed _data2;
+    private readonly Seed _data3;
+    private readonly Seed _start1;
+    private readonly Seed _start2;
+    private readonly Seed _start3;
+    private readonly Mac _mac;
+    private readonly Stream _output;
+    private readonly int _chunkSize;
+    private readonly int _width;
+    private readonly int _headerSize;
+    private readonly byte[] _streamId;
+    private readonly List<byte> _buf = new();
+    private ulong _cumPixels;
+    private bool _closed;
+    private bool _prefixEmitted;
+
+    /// <summary>Constructs a fresh Triple Ouroboros authenticated
+    /// stream encryptor. <paramref name="chunkSize"/> must be
+    /// positive.</summary>
+    public StreamEncryptorAuthTriple(
+        Seed noise,
+        Seed data1, Seed data2, Seed data3,
+        Seed start1, Seed start2, Seed start3,
+        Mac mac,
+        Stream output,
+        int chunkSize = StreamDefaults.DefaultChunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(noise);
+        ArgumentNullException.ThrowIfNull(data1);
+        ArgumentNullException.ThrowIfNull(data2);
+        ArgumentNullException.ThrowIfNull(data3);
+        ArgumentNullException.ThrowIfNull(start1);
+        ArgumentNullException.ThrowIfNull(start2);
+        ArgumentNullException.ThrowIfNull(start3);
+        ArgumentNullException.ThrowIfNull(mac);
+        ArgumentNullException.ThrowIfNull(output);
+        if (chunkSize <= 0)
+        {
+            throw new ItbException(StatusCode.BadInput,
+                "chunkSize must be positive");
+        }
+        _noise = noise;
+        _data1 = data1;
+        _data2 = data2;
+        _data3 = data3;
+        _start1 = start1;
+        _start2 = start2;
+        _start3 = start3;
+        _mac = mac;
+        _output = output;
+        _chunkSize = chunkSize;
+        _width = noise.Width;
+        _headerSize = Library.HeaderSize;
+        _streamId = StreamAuthInternal.GenerateStreamId();
+    }
+
+    private void EmitPrefix()
+    {
+        if (!_prefixEmitted)
+        {
+            _output.Write(_streamId, 0, _streamId.Length);
+            _prefixEmitted = true;
+        }
+    }
+
+    private void EmitOne(int plaintextLen, bool finalFlag)
+    {
+        var chunkPt = new byte[plaintextLen];
+        for (var i = 0; i < plaintextLen; i++)
+        {
+            chunkPt[i] = _buf[i];
+            _buf[i] = 0;
+        }
+        if (plaintextLen > 0)
+        {
+            _buf.RemoveRange(0, plaintextLen);
+        }
+        var ct = StreamAuthCipher.EmitTriple(
+            _width, _noise, _data1, _data2, _data3,
+            _start1, _start2, _start3, _mac,
+            chunkPt, _streamId, _cumPixels, finalFlag);
+        Array.Clear(chunkPt, 0, chunkPt.Length);
+        if (ct.Length >= _headerSize)
+        {
+            var w = StreamAuthInternal.ReadBe16(ct, _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(ct, _headerSize - 2);
+            _cumPixels += (ulong)w * (ulong)h;
+        }
+        _output.Write(ct, 0, ct.Length);
+    }
+
+    /// <summary>Appends <paramref name="data"/> to the internal
+    /// buffer and emits non-terminal chunks.</summary>
+    public int Write(ReadOnlySpan<byte> data)
+    {
+        if (_closed)
+        {
+            throw new ItbException(StatusCode.EasyClosed,
+                "write on closed StreamEncryptorAuthTriple");
+        }
+        EmitPrefix();
+        for (var i = 0; i < data.Length; i++)
+        {
+            _buf.Add(data[i]);
+        }
+        while (_buf.Count > _chunkSize)
+        {
+            EmitOne(_chunkSize, false);
+        }
+        return data.Length;
+    }
+
+    /// <summary>Emits the residual buffer as the terminating chunk
+    /// and finalises the stream. Idempotent.</summary>
+    public void Close()
+    {
+        if (_closed)
+        {
+            return;
+        }
+        EmitPrefix();
+        EmitOne(_buf.Count, true);
+        _closed = true;
+    }
+
+    /// <summary>Calls <see cref="Close"/> if not already called.</summary>
+    public void Dispose()
+    {
+        Close();
+        GC.SuppressFinalize(this);
+    }
+}
+
+/// <summary>
+/// Triple Ouroboros (7-seed) counterpart of
+/// <see cref="StreamDecryptorAuth"/>.
+/// </summary>
+public sealed class StreamDecryptorAuthTriple : IDisposable
+{
+    private readonly Seed _noise;
+    private readonly Seed _data1;
+    private readonly Seed _data2;
+    private readonly Seed _data3;
+    private readonly Seed _start1;
+    private readonly Seed _start2;
+    private readonly Seed _start3;
+    private readonly Mac _mac;
+    private readonly Stream _output;
+    private readonly int _width;
+    private readonly int _headerSize;
+    private readonly byte[] _streamId = new byte[StreamAuthInternal.StreamIdLen];
+    private int _sidHave;
+    private readonly List<byte> _buf = new();
+    private ulong _cumPixels;
+    private bool _seenFinal;
+    private bool _closed;
+
+    /// <summary>Constructs a fresh Triple Ouroboros authenticated
+    /// stream decryptor.</summary>
+    public StreamDecryptorAuthTriple(
+        Seed noise,
+        Seed data1, Seed data2, Seed data3,
+        Seed start1, Seed start2, Seed start3,
+        Mac mac,
+        Stream output)
+    {
+        ArgumentNullException.ThrowIfNull(noise);
+        ArgumentNullException.ThrowIfNull(data1);
+        ArgumentNullException.ThrowIfNull(data2);
+        ArgumentNullException.ThrowIfNull(data3);
+        ArgumentNullException.ThrowIfNull(start1);
+        ArgumentNullException.ThrowIfNull(start2);
+        ArgumentNullException.ThrowIfNull(start3);
+        ArgumentNullException.ThrowIfNull(mac);
+        ArgumentNullException.ThrowIfNull(output);
+        _noise = noise;
+        _data1 = data1;
+        _data2 = data2;
+        _data3 = data3;
+        _start1 = start1;
+        _start2 = start2;
+        _start3 = start3;
+        _mac = mac;
+        _output = output;
+        _width = noise.Width;
+        _headerSize = Library.HeaderSize;
+    }
+
+    private void Drain()
+    {
+        var header = new byte[_headerSize];
+        while (true)
+        {
+            if (_seenFinal)
+            {
+                if (_buf.Count > 0)
+                {
+                    throw new ItbStreamAfterFinalException(
+                        StatusCode.StreamAfterFinal,
+                        "auth stream: trailing bytes after terminator");
+                }
+                return;
+            }
+            if (_buf.Count < _headerSize)
+            {
+                return;
+            }
+            for (var i = 0; i < _headerSize; i++)
+            {
+                header[i] = _buf[i];
+            }
+            var chunkLen = Library.ParseChunkLen(header);
+            if (_buf.Count < chunkLen)
+            {
+                return;
+            }
+            var w = StreamAuthInternal.ReadBe16(header, _headerSize - 4);
+            var h = StreamAuthInternal.ReadBe16(header, _headerSize - 2);
+            var pixels = (ulong)w * (ulong)h;
+            var chunk = new byte[chunkLen];
+            _buf.CopyTo(0, chunk, 0, chunkLen);
+            _buf.RemoveRange(0, chunkLen);
+            var (pt, ff) = StreamAuthCipher.ConsumeTriple(
+                _width, _noise, _data1, _data2, _data3,
+                _start1, _start2, _start3, _mac,
+                chunk, _streamId, _cumPixels);
+            _output.Write(pt, 0, pt.Length);
+            Array.Clear(pt, 0, pt.Length);
+            _cumPixels += pixels;
+            if (ff)
+            {
+                _seenFinal = true;
+            }
+        }
+    }
+
+    /// <summary>Appends <paramref name="data"/> and drains every
+    /// complete chunk.</summary>
+    public int Feed(ReadOnlySpan<byte> data)
+    {
+        if (_closed)
+        {
+            throw new ItbException(StatusCode.EasyClosed,
+                "feed on closed StreamDecryptorAuthTriple");
+        }
+        var off = 0;
+        if (_sidHave < StreamAuthInternal.StreamIdLen)
+        {
+            var need = StreamAuthInternal.StreamIdLen - _sidHave;
+            var take = Math.Min(need, data.Length);
+            for (var i = 0; i < take; i++)
+            {
+                _streamId[_sidHave + i] = data[i];
+            }
+            _sidHave += take;
+            off = take;
+        }
+        if (off < data.Length)
+        {
+            for (var i = off; i < data.Length; i++)
+            {
+                _buf.Add(data[i]);
+            }
+        }
+        if (_sidHave == StreamAuthInternal.StreamIdLen)
+        {
+            Drain();
+        }
+        return data.Length;
+    }
+
+    /// <summary>Finalises the decryptor. An incomplete 32-byte
+    /// stream-id prefix surfaces <see cref="ItbException"/> with
+    /// <see cref="StatusCode.BadInput"/> (wire-level malformation,
+    /// header never finished arriving). A fully observed prefix
+    /// without a terminating chunk surfaces
+    /// <see cref="ItbStreamTruncatedException"/>.</summary>
+    public void Close()
+    {
+        if (_closed)
+        {
+            return;
+        }
+        if (_sidHave < StreamAuthInternal.StreamIdLen)
+        {
+            _closed = true;
+            // Incomplete prefix is a wire-level malformation
+            // (header never finished arriving), distinct from
+            // "chunks observed but no terminator chunk among them"
+            // which is the truncate-tail signal.
+            throw new ItbException(
+                StatusCode.BadInput,
+                "auth stream: prefix never observed");
+        }
+        Drain();
+        _closed = true;
+        if (!_seenFinal)
+        {
+            throw new ItbStreamTruncatedException(
+                StatusCode.StreamTruncated,
+                "auth stream: terminator never observed");
+        }
+    }
+
+    /// <summary>Marks the decryptor closed without raising on
+    /// partial input.</summary>
+    public void Dispose()
+    {
+        _closed = true;
+        GC.SuppressFinalize(this);
+    }
+}
+
+/// <summary>
+/// Per-chunk dispatch helpers for the Streaming AEAD encrypt /
+/// decrypt path. Probes output capacity, allocates, and runs the
+/// call again. Every static method that extracts a handle from a
+/// Seed / Mac argument keeps the wrapper objects reachable past the
+/// FFI call via <see cref="GC.KeepAlive(object)"/>.
+/// </summary>
+internal static unsafe class StreamAuthCipher
+{
+    public static byte[] EmitSingle(
+        int width,
+        Seed noise, Seed data, Seed start, Mac mac,
+        byte[] plaintext, byte[] streamId,
+        ulong cumPixels, bool finalFlag)
+    {
+        try
+        {
+            var nh = noise.Handle;
+            var dh = data.Handle;
+            var sh = start.Handle;
+            var mh = mac.Handle;
+            var ff = finalFlag ? 1 : 0;
+            nuint outLen;
+            int rc;
+            fixed (byte* inPtr = plaintext)
+            fixed (byte* sidPtr = streamId)
+            {
+                rc = InvokeEnc1(width, nh, dh, sh, mh,
+                    inPtr, (nuint)plaintext.Length,
+                    sidPtr, cumPixels, ff,
+                    null, 0, out outLen);
+            }
+            if (rc == Status.Ok)
+            {
+                return Array.Empty<byte>();
+            }
+            if (rc != Status.BufferTooSmall)
+            {
+                throw ItbException.FromStatus(rc);
+            }
+            var need = (int)outLen;
+            if (need == 0)
+            {
+                return Array.Empty<byte>();
+            }
+            var buf = new byte[need];
+            nuint outLen2;
+            int rc2;
+            fixed (byte* inPtr = plaintext)
+            fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = buf)
+            {
+                rc2 = InvokeEnc1(width, nh, dh, sh, mh,
+                    inPtr, (nuint)plaintext.Length,
+                    sidPtr, cumPixels, ff,
+                    outPtr, (nuint)buf.Length, out outLen2);
+            }
+            ItbException.Check(rc2);
+            if ((int)outLen2 < buf.Length)
+            {
+                Array.Resize(ref buf, (int)outLen2);
+            }
+            return buf;
+        }
+        finally
+        {
+            GC.KeepAlive(noise);
+            GC.KeepAlive(data);
+            GC.KeepAlive(start);
+            GC.KeepAlive(mac);
+        }
+    }
+
+    public static byte[] EmitTriple(
+        int width,
+        Seed noise,
+        Seed data1, Seed data2, Seed data3,
+        Seed start1, Seed start2, Seed start3,
+        Mac mac,
+        byte[] plaintext, byte[] streamId,
+        ulong cumPixels, bool finalFlag)
+    {
+        try
+        {
+            var nh = noise.Handle;
+            var d1 = data1.Handle;
+            var d2 = data2.Handle;
+            var d3 = data3.Handle;
+            var s1 = start1.Handle;
+            var s2 = start2.Handle;
+            var s3 = start3.Handle;
+            var mh = mac.Handle;
+            var ff = finalFlag ? 1 : 0;
+            nuint outLen;
+            int rc;
+            fixed (byte* inPtr = plaintext)
+            fixed (byte* sidPtr = streamId)
+            {
+                rc = InvokeEnc3(width, nh, d1, d2, d3, s1, s2, s3, mh,
+                    inPtr, (nuint)plaintext.Length,
+                    sidPtr, cumPixels, ff,
+                    null, 0, out outLen);
+            }
+            if (rc == Status.Ok)
+            {
+                return Array.Empty<byte>();
+            }
+            if (rc != Status.BufferTooSmall)
+            {
+                throw ItbException.FromStatus(rc);
+            }
+            var need = (int)outLen;
+            if (need == 0)
+            {
+                return Array.Empty<byte>();
+            }
+            var buf = new byte[need];
+            nuint outLen2;
+            int rc2;
+            fixed (byte* inPtr = plaintext)
+            fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = buf)
+            {
+                rc2 = InvokeEnc3(width, nh, d1, d2, d3, s1, s2, s3, mh,
+                    inPtr, (nuint)plaintext.Length,
+                    sidPtr, cumPixels, ff,
+                    outPtr, (nuint)buf.Length, out outLen2);
+            }
+            ItbException.Check(rc2);
+            if ((int)outLen2 < buf.Length)
+            {
+                Array.Resize(ref buf, (int)outLen2);
+            }
+            return buf;
+        }
+        finally
+        {
+            GC.KeepAlive(noise);
+            GC.KeepAlive(data1);
+            GC.KeepAlive(data2);
+            GC.KeepAlive(data3);
+            GC.KeepAlive(start1);
+            GC.KeepAlive(start2);
+            GC.KeepAlive(start3);
+            GC.KeepAlive(mac);
+        }
+    }
+
+    public static (byte[] pt, bool finalFlag) ConsumeSingle(
+        int width,
+        Seed noise, Seed data, Seed start, Mac mac,
+        byte[] ciphertext, byte[] streamId, ulong cumPixels)
+    {
+        try
+        {
+            var nh = noise.Handle;
+            var dh = data.Handle;
+            var sh = start.Handle;
+            var mh = mac.Handle;
+            nuint outLen;
+            int ff;
+            int rc;
+            fixed (byte* inPtr = ciphertext)
+            fixed (byte* sidPtr = streamId)
+            {
+                rc = InvokeDec1(width, nh, dh, sh, mh,
+                    inPtr, (nuint)ciphertext.Length,
+                    sidPtr, cumPixels,
+                    null, 0, out outLen, out ff);
+            }
+            if (rc == Status.Ok)
+            {
+                return (Array.Empty<byte>(), ff != 0);
+            }
+            if (rc != Status.BufferTooSmall)
+            {
+                throw ItbException.FromStatus(rc);
+            }
+            var need = (int)outLen;
+            if (need == 0)
+            {
+                return (Array.Empty<byte>(), ff != 0);
+            }
+            var buf = new byte[need];
+            nuint outLen2;
+            int ff2;
+            int rc2;
+            fixed (byte* inPtr = ciphertext)
+            fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = buf)
+            {
+                rc2 = InvokeDec1(width, nh, dh, sh, mh,
+                    inPtr, (nuint)ciphertext.Length,
+                    sidPtr, cumPixels,
+                    outPtr, (nuint)buf.Length, out outLen2, out ff2);
+            }
+            ItbException.Check(rc2);
+            if ((int)outLen2 < buf.Length)
+            {
+                Array.Resize(ref buf, (int)outLen2);
+            }
+            return (buf, ff2 != 0);
+        }
+        finally
+        {
+            GC.KeepAlive(noise);
+            GC.KeepAlive(data);
+            GC.KeepAlive(start);
+            GC.KeepAlive(mac);
+        }
+    }
+
+    public static (byte[] pt, bool finalFlag) ConsumeTriple(
+        int width,
+        Seed noise,
+        Seed data1, Seed data2, Seed data3,
+        Seed start1, Seed start2, Seed start3,
+        Mac mac,
+        byte[] ciphertext, byte[] streamId, ulong cumPixels)
+    {
+        try
+        {
+            var nh = noise.Handle;
+            var d1 = data1.Handle;
+            var d2 = data2.Handle;
+            var d3 = data3.Handle;
+            var s1 = start1.Handle;
+            var s2 = start2.Handle;
+            var s3 = start3.Handle;
+            var mh = mac.Handle;
+            nuint outLen;
+            int ff;
+            int rc;
+            fixed (byte* inPtr = ciphertext)
+            fixed (byte* sidPtr = streamId)
+            {
+                rc = InvokeDec3(width, nh, d1, d2, d3, s1, s2, s3, mh,
+                    inPtr, (nuint)ciphertext.Length,
+                    sidPtr, cumPixels,
+                    null, 0, out outLen, out ff);
+            }
+            if (rc == Status.Ok)
+            {
+                return (Array.Empty<byte>(), ff != 0);
+            }
+            if (rc != Status.BufferTooSmall)
+            {
+                throw ItbException.FromStatus(rc);
+            }
+            var need = (int)outLen;
+            if (need == 0)
+            {
+                return (Array.Empty<byte>(), ff != 0);
+            }
+            var buf = new byte[need];
+            nuint outLen2;
+            int ff2;
+            int rc2;
+            fixed (byte* inPtr = ciphertext)
+            fixed (byte* sidPtr = streamId)
+            fixed (byte* outPtr = buf)
+            {
+                rc2 = InvokeDec3(width, nh, d1, d2, d3, s1, s2, s3, mh,
+                    inPtr, (nuint)ciphertext.Length,
+                    sidPtr, cumPixels,
+                    outPtr, (nuint)buf.Length, out outLen2, out ff2);
+            }
+            ItbException.Check(rc2);
+            if ((int)outLen2 < buf.Length)
+            {
+                Array.Resize(ref buf, (int)outLen2);
+            }
+            return (buf, ff2 != 0);
+        }
+        finally
+        {
+            GC.KeepAlive(noise);
+            GC.KeepAlive(data1);
+            GC.KeepAlive(data2);
+            GC.KeepAlive(data3);
+            GC.KeepAlive(start1);
+            GC.KeepAlive(start2);
+            GC.KeepAlive(start3);
+            GC.KeepAlive(mac);
+        }
+    }
+
+    private static int InvokeEnc1(
+        int width,
+        nuint nh, nuint dh, nuint sh, nuint mh,
+        byte* inPtr, nuint ptLen,
+        byte* sidPtr, ulong cumPixels, int ff,
+        byte* outPtr, nuint outCap, out nuint outLen)
+    {
+        return width switch
+        {
+            128 => ItbNative.ITB_EncryptStreamAuthenticated128(
+                nh, dh, sh, mh, inPtr, ptLen, sidPtr, cumPixels, ff,
+                outPtr, outCap, out outLen),
+            256 => ItbNative.ITB_EncryptStreamAuthenticated256(
+                nh, dh, sh, mh, inPtr, ptLen, sidPtr, cumPixels, ff,
+                outPtr, outCap, out outLen),
+            512 => ItbNative.ITB_EncryptStreamAuthenticated512(
+                nh, dh, sh, mh, inPtr, ptLen, sidPtr, cumPixels, ff,
+                outPtr, outCap, out outLen),
+            _ => throw new ItbException(StatusCode.SeedWidthMix,
+                $"unsupported native hash width {width}"),
+        };
+    }
+
+    private static int InvokeEnc3(
+        int width,
+        nuint nh, nuint d1, nuint d2, nuint d3,
+        nuint s1, nuint s2, nuint s3, nuint mh,
+        byte* inPtr, nuint ptLen,
+        byte* sidPtr, ulong cumPixels, int ff,
+        byte* outPtr, nuint outCap, out nuint outLen)
+    {
+        return width switch
+        {
+            128 => ItbNative.ITB_EncryptStreamAuthenticated3x128(
+                nh, d1, d2, d3, s1, s2, s3, mh,
+                inPtr, ptLen, sidPtr, cumPixels, ff,
+                outPtr, outCap, out outLen),
+            256 => ItbNative.ITB_EncryptStreamAuthenticated3x256(
+                nh, d1, d2, d3, s1, s2, s3, mh,
+                inPtr, ptLen, sidPtr, cumPixels, ff,
+                outPtr, outCap, out outLen),
+            512 => ItbNative.ITB_EncryptStreamAuthenticated3x512(
+                nh, d1, d2, d3, s1, s2, s3, mh,
+                inPtr, ptLen, sidPtr, cumPixels, ff,
+                outPtr, outCap, out outLen),
+            _ => throw new ItbException(StatusCode.SeedWidthMix,
+                $"unsupported native hash width {width}"),
+        };
+    }
+
+    private static int InvokeDec1(
+        int width,
+        nuint nh, nuint dh, nuint sh, nuint mh,
+        byte* inPtr, nuint ctLen,
+        byte* sidPtr, ulong cumPixels,
+        byte* outPtr, nuint outCap, out nuint outLen, out int finalFlagOut)
+    {
+        return width switch
+        {
+            128 => ItbNative.ITB_DecryptStreamAuthenticated128(
+                nh, dh, sh, mh, inPtr, ctLen, sidPtr, cumPixels,
+                outPtr, outCap, out outLen, out finalFlagOut),
+            256 => ItbNative.ITB_DecryptStreamAuthenticated256(
+                nh, dh, sh, mh, inPtr, ctLen, sidPtr, cumPixels,
+                outPtr, outCap, out outLen, out finalFlagOut),
+            512 => ItbNative.ITB_DecryptStreamAuthenticated512(
+                nh, dh, sh, mh, inPtr, ctLen, sidPtr, cumPixels,
+                outPtr, outCap, out outLen, out finalFlagOut),
+            _ => throw new ItbException(StatusCode.SeedWidthMix,
+                $"unsupported native hash width {width}"),
+        };
+    }
+
+    private static int InvokeDec3(
+        int width,
+        nuint nh, nuint d1, nuint d2, nuint d3,
+        nuint s1, nuint s2, nuint s3, nuint mh,
+        byte* inPtr, nuint ctLen,
+        byte* sidPtr, ulong cumPixels,
+        byte* outPtr, nuint outCap, out nuint outLen, out int finalFlagOut)
+    {
+        return width switch
+        {
+            128 => ItbNative.ITB_DecryptStreamAuthenticated3x128(
+                nh, d1, d2, d3, s1, s2, s3, mh,
+                inPtr, ctLen, sidPtr, cumPixels,
+                outPtr, outCap, out outLen, out finalFlagOut),
+            256 => ItbNative.ITB_DecryptStreamAuthenticated3x256(
+                nh, d1, d2, d3, s1, s2, s3, mh,
+                inPtr, ctLen, sidPtr, cumPixels,
+                outPtr, outCap, out outLen, out finalFlagOut),
+            512 => ItbNative.ITB_DecryptStreamAuthenticated3x512(
+                nh, d1, d2, d3, s1, s2, s3, mh,
+                inPtr, ctLen, sidPtr, cumPixels,
+                outPtr, outCap, out outLen, out finalFlagOut),
+            _ => throw new ItbException(StatusCode.SeedWidthMix,
+                $"unsupported native hash width {width}"),
+        };
+    }
+}
+
+/// <summary>
+/// Per-chunk dispatch helpers for the Easy-mode Streaming AEAD path.
+/// Wraps the <c>ITB_Easy_EncryptStreamAuth</c> /
+/// <c>ITB_Easy_DecryptStreamAuth</c> ABI exports with the standard
+/// probe-and-allocate retry against the caller-supplied output
+/// capacity.
+/// </summary>
+internal static unsafe class StreamAuthEasy
+{
+    public static byte[] Emit(nuint encryptorHandle,
+        byte[] plaintext, byte[] streamId,
+        ulong cumPixels, bool finalFlag)
+    {
+        var ff = finalFlag ? 1 : 0;
+        nuint outLen;
+        int rc;
+        fixed (byte* inPtr = plaintext)
+        fixed (byte* sidPtr = streamId)
+        {
+            rc = ItbNative.ITB_Easy_EncryptStreamAuth(
+                encryptorHandle, inPtr, (nuint)plaintext.Length,
+                sidPtr, cumPixels, ff,
+                null, 0, out outLen);
+        }
+        if (rc == Status.Ok)
+        {
+            return Array.Empty<byte>();
+        }
+        if (rc != Status.BufferTooSmall)
+        {
+            throw ItbException.FromStatus(rc);
+        }
+        var need = (int)outLen;
+        if (need == 0)
+        {
+            return Array.Empty<byte>();
+        }
+        var buf = new byte[need];
+        nuint outLen2;
+        int rc2;
+        fixed (byte* inPtr = plaintext)
+        fixed (byte* sidPtr = streamId)
+        fixed (byte* outPtr = buf)
+        {
+            rc2 = ItbNative.ITB_Easy_EncryptStreamAuth(
+                encryptorHandle, inPtr, (nuint)plaintext.Length,
+                sidPtr, cumPixels, ff,
+                outPtr, (nuint)buf.Length, out outLen2);
+        }
+        ItbException.Check(rc2);
+        if ((int)outLen2 < buf.Length)
+        {
+            Array.Resize(ref buf, (int)outLen2);
+        }
+        return buf;
+    }
+
+    public static (byte[] pt, bool finalFlag) Consume(nuint encryptorHandle,
+        byte[] ciphertext, byte[] streamId, ulong cumPixels)
+    {
+        nuint outLen;
+        int ff;
+        int rc;
+        fixed (byte* inPtr = ciphertext)
+        fixed (byte* sidPtr = streamId)
+        {
+            rc = ItbNative.ITB_Easy_DecryptStreamAuth(
+                encryptorHandle, inPtr, (nuint)ciphertext.Length,
+                sidPtr, cumPixels,
+                null, 0, out outLen, out ff);
+        }
+        if (rc == Status.Ok)
+        {
+            return (Array.Empty<byte>(), ff != 0);
+        }
+        if (rc != Status.BufferTooSmall)
+        {
+            throw ItbException.FromStatus(rc);
+        }
+        var need = (int)outLen;
+        if (need == 0)
+        {
+            return (Array.Empty<byte>(), ff != 0);
+        }
+        var buf = new byte[need];
+        nuint outLen2;
+        int ff2;
+        int rc2;
+        fixed (byte* inPtr = ciphertext)
+        fixed (byte* sidPtr = streamId)
+        fixed (byte* outPtr = buf)
+        {
+            rc2 = ItbNative.ITB_Easy_DecryptStreamAuth(
+                encryptorHandle, inPtr, (nuint)ciphertext.Length,
+                sidPtr, cumPixels,
+                outPtr, (nuint)buf.Length, out outLen2, out ff2);
+        }
+        ItbException.Check(rc2);
+        if ((int)outLen2 < buf.Length)
+        {
+            Array.Resize(ref buf, (int)outLen2);
+        }
+        return (buf, ff2 != 0);
     }
 }

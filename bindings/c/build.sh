@@ -31,6 +31,9 @@ go build -trimpath "${TAGS[@]}" -buildmode=c-shared \
     -o dist/linux-amd64/libitb.so ./cmd/cshared
 
 cd "$SCRIPT_DIR"
+echo "==> cleaning previous build artefacts (make clean)"
+make clean
+mkdir -p build tests/build bench/build
 echo "==> building C binding (make, CC=${CC:-cc})"
 make
 

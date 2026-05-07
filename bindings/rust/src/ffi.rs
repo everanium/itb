@@ -68,6 +68,11 @@ pub const STATUS_BLOB_MODE_MISMATCH: c_int = 19;
 pub const STATUS_BLOB_MALFORMED: c_int = 20;
 pub const STATUS_BLOB_VERSION_TOO_NEW: c_int = 21;
 pub const STATUS_BLOB_TOO_MANY_OPTS: c_int = 22;
+// Streaming AEAD end-of-stream sentinels — block 23..24 is reserved
+// for the stream-loop helper to surface the two end-of-stream failure
+// modes that the per-chunk libitb ABI cannot express on its own.
+pub const STATUS_STREAM_TRUNCATED: c_int = 23;
+pub const STATUS_STREAM_AFTER_FINAL: c_int = 24;
 pub const STATUS_INTERNAL: c_int = 99;
 
 // --------------------------------------------------------------------
@@ -173,6 +178,99 @@ pub type FnEncryptAuth3 = unsafe extern "C" fn(
     *mut usize,
 ) -> c_int;
 pub type FnDecryptAuth3 = FnEncryptAuth3;
+
+// Streaming AEAD per-chunk ABI typedefs — Single (3 seeds + MAC) and
+// Triple (7 seeds + MAC) at every native hash width (128 / 256 / 512).
+// Encrypt path takes streamID + cumulativePixelOffset + finalFlag in;
+// Decrypt path takes streamID + cumulativePixelOffset in and writes
+// finalFlagOut.
+pub type FnEncryptStreamAuth = unsafe extern "C" fn(
+    usize,                  // noiseHandle
+    usize,                  // dataHandle
+    usize,                  // startHandle
+    usize,                  // macHandle
+    *const c_void,          // plaintext
+    usize,                  // ptlen
+    *const u8,              // streamID[32]
+    u64,                    // cumulativePixelOffset
+    c_int,                  // finalFlag
+    *mut c_void,            // out
+    usize,                  // outCap
+    *mut usize,             // outLen
+) -> c_int;
+pub type FnDecryptStreamAuth = unsafe extern "C" fn(
+    usize,                  // noiseHandle
+    usize,                  // dataHandle
+    usize,                  // startHandle
+    usize,                  // macHandle
+    *const c_void,          // ciphertext
+    usize,                  // ctlen
+    *const u8,              // streamID[32]
+    u64,                    // cumulativePixelOffset
+    *mut c_void,            // out
+    usize,                  // outCap
+    *mut usize,             // outLen
+    *mut c_int,             // finalFlagOut
+) -> c_int;
+pub type FnEncryptStreamAuth3 = unsafe extern "C" fn(
+    usize,                  // noiseHandle
+    usize,                  // dataHandle1
+    usize,                  // dataHandle2
+    usize,                  // dataHandle3
+    usize,                  // startHandle1
+    usize,                  // startHandle2
+    usize,                  // startHandle3
+    usize,                  // macHandle
+    *const c_void,          // plaintext
+    usize,                  // ptlen
+    *const u8,              // streamID[32]
+    u64,                    // cumulativePixelOffset
+    c_int,                  // finalFlag
+    *mut c_void,            // out
+    usize,                  // outCap
+    *mut usize,             // outLen
+) -> c_int;
+pub type FnDecryptStreamAuth3 = unsafe extern "C" fn(
+    usize,                  // noiseHandle
+    usize,                  // dataHandle1
+    usize,                  // dataHandle2
+    usize,                  // dataHandle3
+    usize,                  // startHandle1
+    usize,                  // startHandle2
+    usize,                  // startHandle3
+    usize,                  // macHandle
+    *const c_void,          // ciphertext
+    usize,                  // ctlen
+    *const u8,              // streamID[32]
+    u64,                    // cumulativePixelOffset
+    *mut c_void,            // out
+    usize,                  // outCap
+    *mut usize,             // outLen
+    *mut c_int,             // finalFlagOut
+) -> c_int;
+
+pub type FnEasyEncryptStreamAuth = unsafe extern "C" fn(
+    usize,                  // encryptor handle
+    *const c_void,          // plaintext
+    usize,                  // ptlen
+    *const u8,              // streamID[32]
+    u64,                    // cumulativePixelOffset
+    c_int,                  // finalFlag
+    *mut c_void,            // out
+    usize,                  // outCap
+    *mut usize,             // outLen
+) -> c_int;
+pub type FnEasyDecryptStreamAuth = unsafe extern "C" fn(
+    usize,                  // encryptor handle
+    *const c_void,          // ciphertext
+    usize,                  // ctlen
+    *const u8,              // streamID[32]
+    u64,                    // cumulativePixelOffset
+    *mut c_void,            // out
+    usize,                  // outCap
+    *mut usize,             // outLen
+    *mut c_int,             // finalFlagOut
+) -> c_int;
 
 pub type FnSetBitSoup = unsafe extern "C" fn(c_int) -> c_int;
 pub type FnGetBitSoup = unsafe extern "C" fn() -> c_int;
@@ -349,6 +447,25 @@ pub(crate) struct LibItb {
     pub(crate) ITB_EncryptAuth3: FnEncryptAuth3,
     pub(crate) ITB_DecryptAuth3: FnDecryptAuth3,
 
+    // Streaming AEAD per-chunk ABI — three native hash widths
+    // (128 / 256 / 512) for Single Ouroboros and Triple Ouroboros,
+    // both encrypt and decrypt. Plus the Easy-mode counterparts that
+    // route per-chunk dispatch through the encryptor's bound config.
+    pub(crate) ITB_EncryptStreamAuthenticated128: FnEncryptStreamAuth,
+    pub(crate) ITB_EncryptStreamAuthenticated256: FnEncryptStreamAuth,
+    pub(crate) ITB_EncryptStreamAuthenticated512: FnEncryptStreamAuth,
+    pub(crate) ITB_DecryptStreamAuthenticated128: FnDecryptStreamAuth,
+    pub(crate) ITB_DecryptStreamAuthenticated256: FnDecryptStreamAuth,
+    pub(crate) ITB_DecryptStreamAuthenticated512: FnDecryptStreamAuth,
+    pub(crate) ITB_EncryptStreamAuthenticated3x128: FnEncryptStreamAuth3,
+    pub(crate) ITB_EncryptStreamAuthenticated3x256: FnEncryptStreamAuth3,
+    pub(crate) ITB_EncryptStreamAuthenticated3x512: FnEncryptStreamAuth3,
+    pub(crate) ITB_DecryptStreamAuthenticated3x128: FnDecryptStreamAuth3,
+    pub(crate) ITB_DecryptStreamAuthenticated3x256: FnDecryptStreamAuth3,
+    pub(crate) ITB_DecryptStreamAuthenticated3x512: FnDecryptStreamAuth3,
+    pub(crate) ITB_Easy_EncryptStreamAuth: FnEasyEncryptStreamAuth,
+    pub(crate) ITB_Easy_DecryptStreamAuth: FnEasyDecryptStreamAuth,
+
     pub(crate) ITB_SetBitSoup: FnSetBitSoup,
     pub(crate) ITB_GetBitSoup: FnGetBitSoup,
     pub(crate) ITB_SetLockSoup: FnSetLockSoup,
@@ -499,6 +616,21 @@ impl LibItb {
                 ITB_DecryptAuth: sym!(b"ITB_DecryptAuth"),
                 ITB_EncryptAuth3: sym!(b"ITB_EncryptAuth3"),
                 ITB_DecryptAuth3: sym!(b"ITB_DecryptAuth3"),
+
+                ITB_EncryptStreamAuthenticated128: sym!(b"ITB_EncryptStreamAuthenticated128"),
+                ITB_EncryptStreamAuthenticated256: sym!(b"ITB_EncryptStreamAuthenticated256"),
+                ITB_EncryptStreamAuthenticated512: sym!(b"ITB_EncryptStreamAuthenticated512"),
+                ITB_DecryptStreamAuthenticated128: sym!(b"ITB_DecryptStreamAuthenticated128"),
+                ITB_DecryptStreamAuthenticated256: sym!(b"ITB_DecryptStreamAuthenticated256"),
+                ITB_DecryptStreamAuthenticated512: sym!(b"ITB_DecryptStreamAuthenticated512"),
+                ITB_EncryptStreamAuthenticated3x128: sym!(b"ITB_EncryptStreamAuthenticated3x128"),
+                ITB_EncryptStreamAuthenticated3x256: sym!(b"ITB_EncryptStreamAuthenticated3x256"),
+                ITB_EncryptStreamAuthenticated3x512: sym!(b"ITB_EncryptStreamAuthenticated3x512"),
+                ITB_DecryptStreamAuthenticated3x128: sym!(b"ITB_DecryptStreamAuthenticated3x128"),
+                ITB_DecryptStreamAuthenticated3x256: sym!(b"ITB_DecryptStreamAuthenticated3x256"),
+                ITB_DecryptStreamAuthenticated3x512: sym!(b"ITB_DecryptStreamAuthenticated3x512"),
+                ITB_Easy_EncryptStreamAuth: sym!(b"ITB_Easy_EncryptStreamAuth"),
+                ITB_Easy_DecryptStreamAuth: sym!(b"ITB_Easy_DecryptStreamAuth"),
 
                 ITB_SetBitSoup: sym!(b"ITB_SetBitSoup"),
                 ITB_GetBitSoup: sym!(b"ITB_GetBitSoup"),

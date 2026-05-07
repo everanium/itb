@@ -53,11 +53,15 @@ static itb_status_t easy_set_error(int rc)
     return itb_internal_set_error(rc);
 }
 
-/* Saturating computation of `max(4096, n * 5 / 4 + 4096)` on size_t.
- * Caps at SIZE_MAX on overflow rather than wrapping, so the first
- * cipher call never under-allocates silently on pathologically large
- * payloads. Mirrors the Rust binding's Phase-8 audit fix F1
- * (`payload_len.saturating_mul(5) / 4 + 4096`). */
+/* Saturating computation of `max(131072, n * 5 / 4 + 131072)` on
+ * size_t. Caps at SIZE_MAX on overflow rather than wrapping, so the
+ * first cipher call never under-allocates silently on pathologically
+ * large payloads. The 128 KiB pad absorbs the residual expansion
+ * from non-default barrier-fill values up to 32, where the absolute
+ * ratio reaches ~1.346 around the 1 MiB payload region (the 1.25x
+ * multiplier alone leaves a ~100 KiB shortfall there); it also acts
+ * as the floor for very-small payloads (Triple + auth-MAC + bf=32 at
+ * ptlen=1 expands to ~35 KiB). */
 static size_t saturating_expansion(size_t n)
 {
     size_t mul;
@@ -67,12 +71,12 @@ static size_t saturating_expansion(size_t n)
         mul = (n * 5) / 4;
     }
     size_t add;
-    if (mul > SIZE_MAX - 4096) {
+    if (mul > SIZE_MAX - 131072) {
         add = SIZE_MAX;
     } else {
-        add = mul + 4096;
+        add = mul + 131072;
     }
-    return (add < 4096) ? 4096 : add;
+    return (add < 131072) ? 131072 : add;
 }
 
 /*
@@ -92,7 +96,7 @@ static itb_status_t ensure_cache(struct itb_encryptor *e, size_t need)
         e->out_cache = NULL;
         e->out_cache_cap = 0;
     }
-    size_t cap = (need < 4096) ? 4096 : need;
+    size_t cap = (need < 131072) ? 131072 : need;
     uint8_t *buf = (uint8_t *) malloc(cap);
     if (buf == NULL) {
         return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");

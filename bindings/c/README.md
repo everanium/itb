@@ -121,6 +121,138 @@ CC=clang ./bindings/c/run_tests.sh
    `libitb` without `LD_LIBRARY_PATH`.
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while
+preserving the deniability of the per-chunk MAC-Inside-Encrypt
+container. Each chunk's MAC binds the encrypted payload to a 32-byte
+CSPRNG stream anchor (written as a once-per-stream wire prefix), the
+cumulative pixel offset of preceding chunks, and a final-flag bit —
+defending against chunk reorder, replay within or across streams
+sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail.
+The wire format adds 32 bytes of stream prefix plus one byte of
+encrypted trailing flag per chunk; no externally visible MAC tag.
+
+**Easy Mode example:**
+
+`itb_encryptor_stream_encrypt_auth` consumes plaintext via a `read_fn`
+callback and emits the on-wire transcript via a `write_fn` callback.
+Both callbacks receive an opaque `user_ctx` pointer that the binding
+does not interpret — the example wires it to a `FILE *` opened via
+`fopen`, and the callbacks perform `fread` / `fwrite` against the
+file. The MAC key is allocated CSPRNG-fresh inside the encryptor at
+constructor time.
+
+```c
+#include "itb.h"
+#include <stdio.h>
+
+#define CHUNK_SIZE  ((size_t)16 * 1024 * 1024)
+
+static int file_read_fn(void *ctx, void *buf, size_t cap, size_t *out_n) {
+    *out_n = fread(buf, 1, cap, (FILE *) ctx);
+    return 0;
+}
+
+static int file_write_fn(void *ctx, const void *buf, size_t n) {
+    return (fwrite(buf, 1, n, (FILE *) ctx) == n) ? 0 : -1;
+}
+
+itb_encryptor_t *enc = NULL;
+itb_encryptor_new("areion512", 1024, "hmac-blake3", 1, &enc);
+
+FILE *fin  = fopen("/tmp/64mb.src", "rb");
+FILE *fout = fopen("/tmp/64mb.enc", "wb");
+itb_encryptor_stream_encrypt_auth(enc, file_read_fn, fin,
+                                  file_write_fn, fout, CHUNK_SIZE);
+fclose(fin); fclose(fout);
+
+fin  = fopen("/tmp/64mb.enc", "rb");
+fout = fopen("/tmp/64mb.dst", "wb");
+itb_encryptor_stream_decrypt_auth(enc, file_read_fn, fin,
+                                  file_write_fn, fout, CHUNK_SIZE);
+fclose(fin); fclose(fout);
+itb_encryptor_free(enc);
+```
+
+**Build + run:**
+
+```sh
+gcc -O2 -Wall -o main main.c \
+    -I ~/src/c/include \
+    ~/src/c/build/libitb_c.a \
+    -L ~/src/dist/linux-amd64 -litb \
+    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -lpthread -ldl -lm
+./main
+```
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example:**
+
+Free functions `itb_stream_encrypt_auth` / `itb_stream_decrypt_auth`
+take three `itb_seed_t *` handles plus an `itb_mac_t *` (constructed
+with a 32-byte key from `/dev/urandom`) and stream through the same
+chunked-AEAD construction. The same `read_fn` / `write_fn` callback
+shape applies as in Easy Mode.
+
+```c
+itb_seed_t *noise = NULL, *data = NULL, *start = NULL;
+itb_mac_t  *mac = NULL;
+unsigned char mac_key[32];                 /* fill from /dev/urandom */
+
+itb_seed_new("areion512", 1024, &noise);
+itb_seed_new("areion512", 1024, &data);
+itb_seed_new("areion512", 1024, &start);
+itb_mac_new ("hmac-blake3", mac_key, sizeof mac_key, &mac);
+
+FILE *fin  = fopen("/tmp/64mb.src", "rb");
+FILE *fout = fopen("/tmp/64mb.enc", "wb");
+itb_stream_encrypt_auth(noise, data, start, mac,
+    file_read_fn, fin, file_write_fn, fout, CHUNK_SIZE);
+fclose(fin); fclose(fout);
+
+itb_mac_free(mac);
+itb_seed_free(noise); itb_seed_free(data); itb_seed_free(start);
+```
+
+**Build + run:**
+
+```sh
+gcc -O2 -Wall -o main main.c \
+    -I ~/src/c/include \
+    ~/src/c/build/libitb_c.a \
+    -L ~/src/dist/linux-amd64 -litb \
+    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -lpthread -ldl -lm
+./main
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+Linking pulls in both the static C-binding archive
+(`build/libitb_c.a`, the C wrapper layer that exposes
+`itb_encryptor_*` / `itb_seed_*` / `itb_mac_*` / `itb_*_stream_*` to
+user code) AND the shared Go-built library (`-litb` resolved against
+`dist/<os>-<arch>/libitb.so`, which carries the raw `ITB_*` ABI). An
+rpath embedded into the binary lets it find `libitb.so` at runtime
+without `LD_LIBRARY_PATH`.
+
 ## Quick Start — `itb_encryptor_t` + HMAC-BLAKE3 (recommended, authenticated)
 
 The high-level Easy Mode encryptor (mirroring the

@@ -40,6 +40,16 @@ package Itb.Status is
    Blob_Version_Too_New        : constant := 21;
    Blob_Too_Many_Opts          : constant := 22;
 
+   --  Streaming AEAD: input exhausted without observing a chunk
+   --  whose recovered final_flag is set. Surfaced by the auth-stream
+   --  decrypt loop on truncate-tail.
+   Stream_Truncated            : constant := 23;
+
+   --  Streaming AEAD: extra chunk bytes followed the terminating
+   --  chunk. Surfaced by the auth-stream decrypt loop when a
+   --  transcript carries data past final_flag = 1.
+   Stream_After_Final          : constant := 24;
+
    Internal                    : constant := 99;
 
 end Itb.Status;

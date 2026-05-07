@@ -115,6 +115,34 @@ class ITBBlobVersionTooNewError : ITBError
     }
 }
 
+/// Streaming AEAD: input exhausted without observing a chunk whose
+/// recovered final_flag is set. Surfaced by the auth-stream decrypt
+/// loop on truncate-tail.
+class ITBStreamTruncatedError : ITBError
+{
+    this(int code, string detailMsg,
+         string file = __FILE__,
+         size_t line = __LINE__,
+         Throwable next = null) @safe pure nothrow
+    {
+        super(code, detailMsg, file, line, next);
+    }
+}
+
+/// Streaming AEAD: extra chunk bytes followed the terminating chunk
+/// (final_flag = 1). Surfaced by the auth-stream decrypt loop when a
+/// transcript carries data past the terminator.
+class ITBStreamAfterFinalError : ITBError
+{
+    this(int code, string detailMsg,
+         string file = __FILE__,
+         size_t line = __LINE__,
+         Throwable next = null) @safe pure nothrow
+    {
+        super(code, detailMsg, file, line, next);
+    }
+}
+
 /// Returns true when the call succeeded; false otherwise. Thin helper
 /// for the rare callers that want to inspect a status without
 /// allocating an exception.
@@ -150,6 +178,12 @@ void raiseFor(int status) @trusted
 
         case Status.BlobVersionTooNew:
             throw new ITBBlobVersionTooNewError(status, detailMsg);
+
+        case Status.StreamTruncated:
+            throw new ITBStreamTruncatedError(status, detailMsg);
+
+        case Status.StreamAfterFinal:
+            throw new ITBStreamAfterFinalError(status, detailMsg);
 
         default:
             throw new ITBError(status, detailMsg);

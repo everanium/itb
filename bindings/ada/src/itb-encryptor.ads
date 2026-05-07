@@ -82,6 +82,7 @@
 
 private with Ada.Finalization;
 
+with Ada.Streams;
 with Ada.Strings.Unbounded;
 
 with Itb.Sys;
@@ -329,6 +330,64 @@ package Itb.Encryptor is
    function Parse_Chunk_Len
      (Self   : Encryptor;
       Header : Byte_Array) return Natural;
+
+   ---------------------------------------------------------------------
+   --  Streaming AEAD helpers (Easy mode).
+   ---------------------------------------------------------------------
+   --
+   --  Reads plaintext from Source until EOF, encrypts in chunks of
+   --  Chunk_Size under the encryptor's bound config + MAC, and
+   --  writes the 32-byte CSPRNG stream_id prefix followed by
+   --  concatenated authenticated chunks to Sink. Closed-state
+   --  preflight raises Itb_Error / Easy_Closed.
+   procedure Encrypt_Stream_Auth
+     (Self       : in out Encryptor;
+      Source     : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink       : not null access Ada.Streams.Root_Stream_Type'Class;
+      Chunk_Size : Ada.Streams.Stream_Element_Offset);
+
+   --  Reads an authenticated stream transcript from Source and
+   --  writes the recovered plaintext to Sink. Surfaces
+   --  Itb_Stream_Truncated_Error on missing terminator,
+   --  Itb_Stream_After_Final_Error on trailing bytes, and
+   --  Itb_Error / MAC_Failure on tampered transcript.
+   procedure Decrypt_Stream_Auth
+     (Self      : in out Encryptor;
+      Source    : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink      : not null access Ada.Streams.Root_Stream_Type'Class;
+      Read_Size : Ada.Streams.Stream_Element_Offset);
+
+   ---------------------------------------------------------------------
+   --  Plain stream helpers (Easy mode, no MAC).
+   ---------------------------------------------------------------------
+   --
+   --  Reads plaintext from Source until EOF, slices it into chunks of
+   --  Chunk_Size bytes, dispatches each chunk through the per-instance
+   --  Easy encrypt entry point, and writes the resulting ciphertext
+   --  chunks to Sink. The chunk boundary is encoded in the ITB
+   --  per-chunk header (nonce + W + H) — no separate length prefix.
+   --  Closed-state preflight raises Itb_Error / Easy_Closed; an empty
+   --  Source (zero plaintext bytes) yields zero bytes on Sink. The
+   --  staging buffer lives on the heap so user-supplied chunk sizes
+   --  exceeding the default Linux thread stack do not blow the Ada
+   --  stack.
+   procedure Encrypt_Stream
+     (Self       : in out Encryptor;
+      Source     : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink       : not null access Ada.Streams.Root_Stream_Type'Class;
+      Chunk_Size : Ada.Streams.Stream_Element_Offset);
+
+   --  Reads a plain (non-authenticated) stream transcript from Source
+   --  and writes the recovered plaintext to Sink. Each ciphertext
+   --  chunk is detected via ITB's per-chunk header parse; trailing
+   --  bytes that do not form a complete chunk surface as
+   --  Itb_Error / Bad_Input. Read_Size governs the staging-buffer
+   --  granularity for Source reads (heap-allocated).
+   procedure Decrypt_Stream
+     (Self      : in out Encryptor;
+      Source    : not null access Ada.Streams.Root_Stream_Type'Class;
+      Sink      : not null access Ada.Streams.Root_Stream_Type'Class;
+      Read_Size : Ada.Streams.Stream_Element_Offset);
 
    ---------------------------------------------------------------------
    --  Lifecycle

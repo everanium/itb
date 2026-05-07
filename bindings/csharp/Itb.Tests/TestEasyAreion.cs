@@ -15,6 +15,7 @@ using Itb.Native;
 
 namespace Itb.Tests;
 
+[Collection(TestCollections.MismatchField)]
 public class TestEasyAreion
 {
     private static readonly (string Hash, int Width)[] AreionHashes = new[]

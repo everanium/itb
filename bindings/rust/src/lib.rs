@@ -65,8 +65,11 @@ pub use blob::{
     SLOT_S, SLOT_S1, SLOT_S2, SLOT_S3,
 };
 pub use streams::{
-    decrypt_stream, decrypt_stream_triple, encrypt_stream, encrypt_stream_triple,
-    StreamDecryptor, StreamDecryptor3, StreamEncryptor, StreamEncryptor3,
+    decrypt_stream, decrypt_stream_auth, decrypt_stream_auth_triple,
+    decrypt_stream_triple, encrypt_stream, encrypt_stream_auth,
+    encrypt_stream_auth_triple, encrypt_stream_triple,
+    StreamDecryptor, StreamDecryptor3, StreamDecryptorAuth, StreamDecryptorAuth3,
+    StreamEncryptor, StreamEncryptor3, StreamEncryptorAuth, StreamEncryptorAuth3,
     DEFAULT_CHUNK_SIZE,
 };
 
@@ -82,5 +85,5 @@ pub use crate::ffi::{
     STATUS_EASY_MISMATCH, STATUS_EASY_UNKNOWN_MAC,
     STATUS_EASY_UNKNOWN_PRIMITIVE, STATUS_EASY_VERSION_TOO_NEW,
     STATUS_ENCRYPT_FAILED, STATUS_INTERNAL, STATUS_MAC_FAILURE, STATUS_OK,
-    STATUS_SEED_WIDTH_MIX,
+    STATUS_SEED_WIDTH_MIX, STATUS_STREAM_AFTER_FINAL, STATUS_STREAM_TRUNCATED,
 };

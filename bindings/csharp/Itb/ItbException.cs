@@ -67,6 +67,10 @@ public class ItbException : Exception
                 new ItbBlobMalformedException(status, message),
             Native.Status.BlobVersionTooNew =>
                 new ItbBlobVersionTooNewException(status, message),
+            Native.Status.StreamTruncated =>
+                new ItbStreamTruncatedException(status, message),
+            Native.Status.StreamAfterFinal =>
+                new ItbStreamAfterFinalException(status, message),
             _ => new ItbException(status, message),
         };
     }
@@ -220,6 +224,34 @@ public sealed class ItbBlobMalformedException : ItbException
 public sealed class ItbBlobVersionTooNewException : ItbException
 {
     internal ItbBlobVersionTooNewException(int status, string? message)
+        : base(status, message)
+    {
+    }
+}
+
+/// <summary>
+/// Raised by the authenticated streaming decrypt path when the input
+/// transcript exhausts without a chunk whose recovered
+/// <c>final_flag</c> is <c>1</c>. Carries
+/// <see cref="StatusCode.StreamTruncated"/> (numeric value <c>23</c>).
+/// </summary>
+public sealed class ItbStreamTruncatedException : ItbException
+{
+    internal ItbStreamTruncatedException(int status, string? message)
+        : base(status, message)
+    {
+    }
+}
+
+/// <summary>
+/// Raised by the authenticated streaming decrypt path when extra
+/// chunk bytes follow the terminating chunk on the wire transcript.
+/// Carries <see cref="StatusCode.StreamAfterFinal"/> (numeric value
+/// <c>24</c>).
+/// </summary>
+public sealed class ItbStreamAfterFinalException : ItbException
+{
+    internal ItbStreamAfterFinalException(int status, string? message)
         : base(status, message)
     {
     }

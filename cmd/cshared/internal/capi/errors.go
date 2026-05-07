@@ -44,6 +44,13 @@ const (
 	StatusBlobVersionTooNew Status = 21
 	StatusBlobTooManyOpts   Status = 22
 
+	// Streaming AEAD end-of-stream signals raised by the binding-side
+	// stream-loop helpers when the input transcript is malformed at
+	// the terminator boundary. Returned by the binding's wrapper, not
+	// by the per-chunk ABI handlers.
+	StatusStreamTruncated  Status = 23
+	StatusStreamAfterFinal Status = 24
+
 	StatusInternal Status = 99
 )
 
@@ -98,6 +105,10 @@ func (s Status) String() string {
 		return "blob version too new"
 	case StatusBlobTooManyOpts:
 		return "Export accepts at most one options struct"
+	case StatusStreamTruncated:
+		return "streaming-AEAD transcript truncated before terminator"
+	case StatusStreamAfterFinal:
+		return "streaming-AEAD chunk after terminator"
 	case StatusInternal:
 		return "internal error"
 	}

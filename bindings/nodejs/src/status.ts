@@ -36,6 +36,9 @@ export const Status = {
   BlobMalformed: 20,
   BlobVersionTooNew: 21,
   BlobTooManyOpts: 22,
+  // Streaming AEAD sentinel codes — block 23..24.
+  StreamTruncated: 23,
+  StreamAfterFinal: 24,
   Internal: 99,
 } as const;
 

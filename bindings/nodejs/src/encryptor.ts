@@ -70,13 +70,17 @@ import {
   check,
   errorFromStatus,
   ITBError,
+  ITBStreamAfterFinalError,
+  ITBStreamTruncatedError,
 } from './errors.js';
 import {
   ITB_Easy_Close,
   ITB_Easy_Decrypt,
   ITB_Easy_DecryptAuth,
+  ITB_Easy_DecryptStreamAuth,
   ITB_Easy_Encrypt,
   ITB_Easy_EncryptAuth,
+  ITB_Easy_EncryptStreamAuth,
   ITB_Easy_Export,
   ITB_Easy_Free,
   ITB_Easy_HasPRFKeys,
@@ -105,6 +109,12 @@ import {
   ITB_Easy_SetLockSoup,
   ITB_Easy_SetNonceBits,
 } from './native.js';
+import {
+  DEFAULT_CHUNK_SIZE as STREAM_DEFAULT_CHUNK_SIZE,
+  STREAM_ID_LEN,
+  generateStreamId as _generateStreamId,
+} from './streams.js';
+import type { Readable, Writable } from 'node:stream';
 import { readString } from './read-string.js';
 import { Status } from './status.js';
 
@@ -560,6 +570,267 @@ export class Encryptor implements Disposable {
     return this._cipherCall(ITB_Easy_DecryptAuth, ciphertext);
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // Streaming AEAD entry points
+  // ────────────────────────────────────────────────────────────────
+
+  /**
+   * Reads plaintext from `input` until end-of-stream, encrypts each
+   * chunk under the Streaming AEAD construction bound to this
+   * encryptor's seeds + MAC closure, and writes the concatenated
+   * `streamId || chunk_0 || chunk_1 || ...` transcript to `output`.
+   * Neither stream is closed by the helper.
+   *
+   * `chunkSize` defaults to `DEFAULT_CHUNK_SIZE` (16 MiB) when not
+   * supplied; it must be positive. The 32-byte CSPRNG `streamId`
+   * prefix is generated server-side per call; the running cumulative
+   * pixel offset and the terminating chunk's `finalFlag = true` are
+   * managed internally.
+   *
+   * Empty stream is permitted — emits the 32-byte prefix followed by
+   * a single terminating chunk carrying zero plaintext bytes.
+   */
+  async encryptStreamAuth(
+    input: Readable,
+    output: Writable,
+    chunkSize: number = STREAM_DEFAULT_CHUNK_SIZE,
+  ): Promise<void> {
+    this._checkOpen();
+    if (chunkSize <= 0) {
+      throw new ITBError(Status.BadInput, 'chunkSize must be positive');
+    }
+    const streamId = _generateStreamId();
+    output.write(streamId);
+    const headerSz = this.headerSize;
+    let cumPixels = 0n;
+    const buf: Uint8Array[] = [];
+    let buffered = 0;
+    let eof = false;
+    const consumeBuffer = () => {
+      const merged = new Uint8Array(buffered);
+      let off = 0;
+      for (const p of buf) {
+        merged.set(p, off);
+        off += p.length;
+      }
+      buf.length = 0;
+      buffered = 0;
+      return merged;
+    };
+    const emit = (pt: Uint8Array, finalFlag: boolean) => {
+      const ct = this._streamAuthEmit(pt, streamId, cumPixels, finalFlag);
+      pt.fill(0);
+      output.write(ct);
+      if (ct.length >= headerSz) {
+        const w = (ct[headerSz - 4]! << 8) | ct[headerSz - 3]!;
+        const h = (ct[headerSz - 2]! << 8) | ct[headerSz - 1]!;
+        cumPixels += BigInt(w) * BigInt(h);
+      }
+    };
+    const iter = input[Symbol.asyncIterator]();
+    while (!eof) {
+      while (buffered <= chunkSize && !eof) {
+        const next = await iter.next();
+        if (next.done) {
+          eof = true;
+          break;
+        }
+        let chunk = next.value;
+        if (typeof chunk === 'string') {
+          chunk = new TextEncoder().encode(chunk);
+        } else if (!(chunk instanceof Uint8Array)) {
+          throw new TypeError(
+            'input stream emitted a non-Buffer / non-string chunk');
+        }
+        buf.push(chunk);
+        buffered += chunk.length;
+      }
+      if (eof) {
+        emit(consumeBuffer(), true);
+        break;
+      }
+      const merged = consumeBuffer();
+      const chunkPt = merged.subarray(0, chunkSize);
+      const tail = merged.subarray(chunkSize);
+      emit(chunkPt, false);
+      if (tail.length > 0) {
+        buf.push(tail);
+        buffered += tail.length;
+      }
+    }
+  }
+
+  /**
+   * Reads a Streaming AEAD transcript from `input` until end-of-stream
+   * and writes the recovered plaintext to `output`. Surfaces
+   * `ITBStreamTruncatedError` when the input exhausts without a
+   * terminating chunk, `ITBStreamAfterFinalError` when bytes follow
+   * the terminator, and `ITBError` with `Status.MacFailure` on any
+   * per-chunk MAC mismatch.
+   */
+  async decryptStreamAuth(input: Readable, output: Writable): Promise<void> {
+    this._checkOpen();
+    const headerSz = this.headerSize;
+    const streamId = new Uint8Array(STREAM_ID_LEN);
+    let sidHave = 0;
+    const buf: Uint8Array[] = [];
+    let buffered = 0;
+    let cumPixels = 0n;
+    let seenFinal = false;
+    const drainComplete = () => {
+      while (true) {
+        if (seenFinal) {
+          if (buffered > 0) {
+            throw new ITBStreamAfterFinalError(
+              Status.StreamAfterFinal,
+              'auth stream: trailing bytes after terminator');
+          }
+          return;
+        }
+        if (buffered < headerSz) {
+          return;
+        }
+        const merged = new Uint8Array(buffered);
+        let off = 0;
+        for (const p of buf) { merged.set(p, off); off += p.length; }
+        const chunkLen = this.parseChunkLen(merged.subarray(0, headerSz));
+        if (merged.length < chunkLen) {
+          buf.length = 0;
+          buf.push(merged);
+          buffered = merged.length;
+          return;
+        }
+        const w = (merged[headerSz - 4]! << 8) | merged[headerSz - 3]!;
+        const h = (merged[headerSz - 2]! << 8) | merged[headerSz - 1]!;
+        const pixels = BigInt(w) * BigInt(h);
+        const chunk = merged.subarray(0, chunkLen);
+        const tail = merged.subarray(chunkLen);
+        const { pt, finalFlag } = this._streamAuthConsume(
+          chunk, streamId, cumPixels);
+        output.write(pt);
+        cumPixels += pixels;
+        buf.length = 0;
+        if (tail.length > 0) {
+          buf.push(tail);
+          buffered = tail.length;
+        } else {
+          buffered = 0;
+        }
+        if (finalFlag) {
+          seenFinal = true;
+        }
+      }
+    };
+    for await (const raw of input) {
+      let chunk: Uint8Array;
+      if (raw instanceof Uint8Array) {
+        chunk = raw;
+      } else if (typeof raw === 'string') {
+        chunk = new TextEncoder().encode(raw);
+      } else {
+        throw new TypeError('input stream emitted a non-Buffer / non-string chunk');
+      }
+      let off = 0;
+      if (sidHave < STREAM_ID_LEN) {
+        const need = STREAM_ID_LEN - sidHave;
+        const take = Math.min(need, chunk.length);
+        streamId.set(chunk.subarray(0, take), sidHave);
+        sidHave += take;
+        off = take;
+      }
+      if (off < chunk.length) {
+        const tail = chunk.subarray(off);
+        buf.push(tail);
+        buffered += tail.length;
+      }
+      if (sidHave === STREAM_ID_LEN) {
+        drainComplete();
+      }
+    }
+    if (sidHave < STREAM_ID_LEN) {
+      throw new ITBStreamTruncatedError(
+        Status.StreamTruncated, 'auth stream: prefix never observed');
+    }
+    drainComplete();
+    if (!seenFinal) {
+      throw new ITBStreamTruncatedError(
+        Status.StreamTruncated, 'auth stream: terminator never observed');
+    }
+  }
+
+  /** @internal */
+  private _streamAuthEmit(
+    plaintext: Uint8Array,
+    streamId: Uint8Array,
+    cumPixels: bigint,
+    finalFlag: boolean,
+  ): Uint8Array {
+    const ff = finalFlag ? 1 : 0;
+    const ptArg = plaintext.length > 0 ? plaintext : new Uint8Array(0);
+    // koffi typed-pointer signature for `_Out_ size_t *outLen` accepts a
+    // `[number | bigint]` 1-tuple uniformly across the Easy-mode call
+    // surface; the wider element type avoids the per-call workaround
+    // cast that a strict `[bigint]` declaration would otherwise force.
+    const outLen: [number | bigint] = [0n];
+    let rc = ITB_Easy_EncryptStreamAuth(
+      this._handle as bigint, ptArg, BigInt(plaintext.length),
+      streamId, cumPixels, ff,
+      null, 0n, outLen,
+    );
+    if (rc === Status.Ok) return new Uint8Array(0);
+    if (rc !== Status.BufferTooSmall) {
+      throw errorFromStatus(rc);
+    }
+    const need = Number(outLen[0]);
+    if (need === 0) return new Uint8Array(0);
+    const buf = new Uint8Array(need);
+    rc = ITB_Easy_EncryptStreamAuth(
+      this._handle as bigint, ptArg, BigInt(plaintext.length),
+      streamId, cumPixels, ff,
+      buf, BigInt(buf.length), outLen,
+    );
+    if (rc !== Status.Ok) {
+      throw errorFromStatus(rc);
+    }
+    return buf.subarray(0, Number(outLen[0]));
+  }
+
+  /** @internal */
+  private _streamAuthConsume(
+    ciphertext: Uint8Array,
+    streamId: Uint8Array,
+    cumPixels: bigint,
+  ): { pt: Uint8Array; finalFlag: boolean } {
+    const ctArg = ciphertext.length > 0 ? ciphertext : new Uint8Array(0);
+    const outLen: [number | bigint] = [0n];
+    const ff: [number] = [0];
+    let rc = ITB_Easy_DecryptStreamAuth(
+      this._handle as bigint, ctArg, BigInt(ciphertext.length),
+      streamId, cumPixels,
+      null, 0n, outLen, ff,
+    );
+    if (rc === Status.Ok) {
+      return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+    }
+    if (rc !== Status.BufferTooSmall) {
+      throw errorFromStatus(rc);
+    }
+    const need = Number(outLen[0]);
+    if (need === 0) {
+      return { pt: new Uint8Array(0), finalFlag: ff[0] !== 0 };
+    }
+    const buf = new Uint8Array(need);
+    rc = ITB_Easy_DecryptStreamAuth(
+      this._handle as bigint, ctArg, BigInt(ciphertext.length),
+      streamId, cumPixels,
+      buf, BigInt(buf.length), outLen, ff,
+    );
+    if (rc !== Status.Ok) {
+      throw errorFromStatus(rc);
+    }
+    return { pt: buf.subarray(0, Number(outLen[0])), finalFlag: ff[0] !== 0 };
+  }
+
   /**
    * Direct-call buffer-convention dispatcher with a per-encryptor
    * output cache. Skips the size-probe round-trip the lower-level
@@ -620,10 +891,13 @@ export class Encryptor implements Disposable {
 
   /**
    * Lazily allocates the per-encryptor output buffer cache and grows
-   * it on demand. The growth threshold is `max(4096, payloadLen ×
-   * 5/4 + 4096)` — the 1.25× upper bound comfortably exceeds the
-   * empirical ≤ 1.155 expansion factor, with a 4 KiB headroom that
-   * also acts as the floor for very-small payloads.
+   * it on demand. The growth threshold is `max(131072, payloadLen ×
+   * 5/4 + 131072)` — the 1.25× multiplier plus a 128 KiB headroom
+   * that absorbs the residual expansion from non-default
+   * barrier-fill values up to 32, where the absolute ratio reaches
+   * ~1.346 around the 1 MiB payload region; the 128 KiB constant
+   * also acts as the floor for very-small payloads (Triple +
+   * auth-MAC + bf=32 at ptlen=1 expands to ~35 KiB).
    *
    * **Wipe-on-grow.** When the cache already exists but is too
    * small, the previous buffer is zeroed before the reference is
@@ -636,7 +910,7 @@ export class Encryptor implements Disposable {
    * @internal
    */
   private _ensureOutputCache(payloadLen: number): Uint8Array {
-    const need = Math.max(4096, Math.floor((payloadLen * 5) / 4) + 4096);
+    const need = Math.max(131072, Math.floor((payloadLen * 5) / 4) + 131072);
     const current = this._outputCache;
     if (current !== null && current.length >= need) {
       return current;

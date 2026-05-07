@@ -732,17 +732,28 @@ impl Encryptor {
     ) -> Result<Vec<u8>, ITBError> {
         self.check_open()?;
         let payload_len = payload.len();
-        // 1.25× + 4 KiB headroom comfortably exceeds the 1.155 max
-        // expansion factor observed across the primitive / mode /
-        // nonce-bits matrix; floor at 4 KiB so the very-small payload
-        // case still gets a usable buffer. The `saturating_mul`
+        // 1.25× + 128 KiB headroom comfortably exceeds the worst-case
+        // expansion observed across the primitive / mode / nonce-bits
+        // / barrier-fill matrix; bf=32 with payloads near 1 MiB
+        // pushes the absolute ratio to ~1.346, leaving roughly
+        // 100 KiB of residual margin over the 1.25× term that the
+        // constant pad must absorb. The 128 KiB pad covers that worst
+        // case (and the ratio tapers below 1.25× + small-K beyond a
+        // few MiB as the bf-induced sqrt-shaped border overhead
+        // becomes asymptotically negligible). Floor at 128 KiB so the
+        // very-small payload case still gets a usable buffer that
+        // handles the Triple + auth-MAC + bf=32 short-payload
+        // expansion (~35 KiB at ptlen=1). The `saturating_mul`
         // protects against `usize` wrap on 32-bit targets at very
         // large payload sizes — under wrap the grow-and-retry path
         // would still recover, but only at the cost of an extra
         // round-trip; saturating to `usize::MAX` keeps the first call
         // big enough on any host.
-        let cap = std::cmp::max(4096, payload_len.saturating_mul(5) / 4 + 4096);
+        let cap = std::cmp::max(131072, payload_len.saturating_mul(5) / 4 + 131072);
         if self.out_buf.len() < cap {
+            // Wipe previous contents before drop — Vec's default drop
+            // deallocates without zeroing the heap region.
+            for b in self.out_buf.iter_mut() { *b = 0; }
             self.out_buf = vec![0u8; cap];
         }
 
@@ -772,6 +783,7 @@ impl Encryptor {
             // the work again; this is strictly the fallback path and
             // not the hot loop.
             let need = out_len;
+            for b in self.out_buf.iter_mut() { *b = 0; }
             self.out_buf = vec![0u8; need];
             rc = unsafe {
                 f(
@@ -1140,5 +1152,395 @@ impl Drop for Encryptor {
             *b = 0;
         }
         self.out_buf.clear();
+    }
+}
+
+// --------------------------------------------------------------------
+// Encryptor — Streaming AEAD methods.
+// --------------------------------------------------------------------
+//
+// The Easy-mode Streaming AEAD surface mirrors the seed-based one:
+// caller slices plaintext into chunks and the binding manages the
+// 32-byte CSPRNG `stream_id` prefix, the per-chunk
+// `cumulative_pixel_offset` running sum, and the terminating chunk's
+// `final_flag = true`. The encryptor's bound primitive / key-bits /
+// mode / MAC closure is reused across every chunk; per-call binding
+// components are managed internally.
+//
+// Closed-state preflight applies — calling any auth-stream method on
+// a closed / freed encryptor surfaces `STATUS_EASY_CLOSED`.
+
+use std::io::{Read, Write};
+
+const STREAM_ID_LEN: usize = 32;
+
+fn enc_io_err(e: std::io::Error) -> ITBError {
+    ITBError::with_message(ffi::STATUS_INTERNAL, format!("io: {e}"))
+}
+
+fn read_be16_at(p: &[u8]) -> usize {
+    ((p[0] as usize) << 8) | (p[1] as usize)
+}
+
+/// Generates a CSPRNG-fresh 32-byte stream_id by piggybacking on
+/// libitb's CSPRNG. Same shape as `streams::generate_stream_id` but
+/// scoped here so the encryptor module does not pull `streams` as a
+/// hard dependency.
+fn easy_generate_stream_id() -> Result<[u8; STREAM_ID_LEN], ITBError> {
+    let lib = ffi::lib();
+    let cname = CString::new("blake3").unwrap();
+    let comps: [u64; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+    let mut handle: usize = 0;
+    let rc = unsafe {
+        (lib.ITB_NewSeedFromComponents)(
+            cname.as_ptr(),
+            comps.as_ptr(),
+            comps.len() as c_int,
+            std::ptr::null(),
+            0,
+            &mut handle,
+        )
+    };
+    if rc != ffi::STATUS_OK {
+        return Err(ITBError::with_message(rc, "stream_id seed alloc failed"));
+    }
+    let mut out = [0u8; STREAM_ID_LEN];
+    let mut got: usize = 0;
+    let rc = unsafe {
+        (lib.ITB_GetSeedHashKey)(handle, out.as_mut_ptr(), STREAM_ID_LEN, &mut got)
+    };
+    let free_rc = unsafe { (lib.ITB_FreeSeed)(handle) };
+    if rc != ffi::STATUS_OK {
+        return Err(ITBError::with_message(rc, "stream_id hash-key fetch failed"));
+    }
+    if free_rc != ffi::STATUS_OK {
+        return Err(ITBError::with_message(free_rc, "stream_id seed free failed"));
+    }
+    if got != STREAM_ID_LEN {
+        return Err(ITBError::with_message(
+            ffi::STATUS_INTERNAL,
+            "stream_id CSPRNG draw returned wrong byte count",
+        ));
+    }
+    Ok(out)
+}
+
+impl Encryptor {
+    /// Per-chunk authenticated-stream encrypt under the encryptor's
+    /// bound primitive / key-bits / mode / MAC closure. Probes
+    /// required output capacity, allocates, calls again. Plaintext
+    /// may be empty when `final_flag = true`.
+    fn easy_emit_chunk_auth(
+        &mut self,
+        plaintext: &[u8],
+        stream_id: &[u8; STREAM_ID_LEN],
+        cum_pixels: u64,
+        final_flag: bool,
+    ) -> Result<Vec<u8>, ITBError> {
+        let lib = ffi::lib();
+        let f = lib.ITB_Easy_EncryptStreamAuth;
+        let in_ptr: *const c_void = if plaintext.is_empty() {
+            std::ptr::null()
+        } else {
+            plaintext.as_ptr() as *const c_void
+        };
+        let ff: c_int = if final_flag { 1 } else { 0 };
+        let mut need: usize = 0;
+        let rc = unsafe {
+            f(
+                self.handle,
+                in_ptr,
+                plaintext.len(),
+                stream_id.as_ptr(),
+                cum_pixels,
+                ff,
+                std::ptr::null_mut(),
+                0,
+                &mut need,
+            )
+        };
+        if rc == ffi::STATUS_OK {
+            return Ok(Vec::new());
+        }
+        if rc != ffi::STATUS_BUFFER_TOO_SMALL {
+            return Err(easy_error(rc));
+        }
+        if need == 0 {
+            return Ok(Vec::new());
+        }
+        let mut out = vec![0u8; need];
+        let mut written: usize = 0;
+        let rc = unsafe {
+            f(
+                self.handle,
+                in_ptr,
+                plaintext.len(),
+                stream_id.as_ptr(),
+                cum_pixels,
+                ff,
+                out.as_mut_ptr() as *mut c_void,
+                out.len(),
+                &mut written,
+            )
+        };
+        if rc != ffi::STATUS_OK {
+            return Err(easy_error(rc));
+        }
+        out.truncate(written);
+        Ok(out)
+    }
+
+    /// Per-chunk authenticated-stream decrypt. Returns
+    /// `(plaintext, final_flag)` on a verified chunk; surfaces
+    /// `STATUS_MAC_FAILURE` on tampered transcript.
+    fn easy_consume_chunk_auth(
+        &mut self,
+        ciphertext: &[u8],
+        stream_id: &[u8; STREAM_ID_LEN],
+        cum_pixels: u64,
+    ) -> Result<(Vec<u8>, bool), ITBError> {
+        let lib = ffi::lib();
+        let f = lib.ITB_Easy_DecryptStreamAuth;
+        let in_ptr: *const c_void = if ciphertext.is_empty() {
+            std::ptr::null()
+        } else {
+            ciphertext.as_ptr() as *const c_void
+        };
+        let mut need: usize = 0;
+        let mut ff: c_int = 0;
+        let rc = unsafe {
+            f(
+                self.handle,
+                in_ptr,
+                ciphertext.len(),
+                stream_id.as_ptr(),
+                cum_pixels,
+                std::ptr::null_mut(),
+                0,
+                &mut need,
+                &mut ff,
+            )
+        };
+        if rc == ffi::STATUS_OK {
+            return Ok((Vec::new(), ff != 0));
+        }
+        if rc != ffi::STATUS_BUFFER_TOO_SMALL {
+            return Err(easy_error(rc));
+        }
+        if need == 0 {
+            return Ok((Vec::new(), ff != 0));
+        }
+        let mut out = vec![0u8; need];
+        let mut written: usize = 0;
+        let rc = unsafe {
+            f(
+                self.handle,
+                in_ptr,
+                ciphertext.len(),
+                stream_id.as_ptr(),
+                cum_pixels,
+                out.as_mut_ptr() as *mut c_void,
+                out.len(),
+                &mut written,
+                &mut ff,
+            )
+        };
+        if rc != ffi::STATUS_OK {
+            return Err(easy_error(rc));
+        }
+        out.truncate(written);
+        Ok((out, ff != 0))
+    }
+
+    /// Reads plaintext from `fin` until EOF, encrypts in chunks of
+    /// `chunk_size` under the encryptor's bound config + MAC, and
+    /// writes the 32-byte stream prefix followed by concatenated
+    /// authenticated chunks to `fout`. `chunk_size` must be positive.
+    pub fn encrypt_stream_auth<R: Read, W: Write>(
+        &mut self,
+        mut fin: R,
+        mut fout: W,
+        chunk_size: usize,
+    ) -> Result<(), ITBError> {
+        self.check_open()?;
+        if chunk_size == 0 {
+            return Err(ITBError::with_message(
+                ffi::STATUS_BAD_INPUT,
+                "chunk_size must be positive",
+            ));
+        }
+        let stream_id = easy_generate_stream_id()?;
+        let header_size = self.header_size()? as usize;
+        fout.write_all(&stream_id).map_err(enc_io_err)?;
+
+        let mut cum: u64 = 0;
+        let mut buf: Vec<u8> = Vec::with_capacity(chunk_size + 1);
+        let mut read_buf = vec![0u8; chunk_size];
+        let mut eof = false;
+        // Deferred-final pattern: drain reads until buf > chunk_size,
+        // then emit one non-terminal chunk. On EOF, emit residual as
+        // terminal (possibly empty).
+        while !eof {
+            // Fill until buf has at least chunk_size + 1 bytes (the +1
+            // byte signals more chunks follow) or EOF.
+            while buf.len() <= chunk_size && !eof {
+                let n = fin.read(&mut read_buf).map_err(enc_io_err)?;
+                if n == 0 {
+                    eof = true;
+                    break;
+                }
+                buf.extend_from_slice(&read_buf[..n]);
+            }
+            if buf.len() > chunk_size {
+                // Emit one full chunk as non-terminal.
+                let chunk: Vec<u8> = buf.drain(..chunk_size).collect();
+                let ct = self.easy_emit_chunk_auth(&chunk, &stream_id, cum, false)?;
+                let mut chunk = chunk;
+                for b in chunk.iter_mut() { *b = 0; }
+                if ct.len() >= header_size {
+                    let w = read_be16_at(&ct[header_size - 4..header_size - 2]);
+                    let h = read_be16_at(&ct[header_size - 2..header_size]);
+                    cum += (w as u64) * (h as u64);
+                }
+                fout.write_all(&ct).map_err(enc_io_err)?;
+            }
+        }
+        // Residual (possibly empty) is the terminating chunk.
+        let chunk: Vec<u8> = std::mem::take(&mut buf);
+        let ct = self.easy_emit_chunk_auth(&chunk, &stream_id, cum, true)?;
+        let mut chunk = chunk;
+        for b in chunk.iter_mut() { *b = 0; }
+        fout.write_all(&ct).map_err(enc_io_err)?;
+        for b in read_buf.iter_mut() { *b = 0; }
+        Ok(())
+    }
+
+    /// Reads an authenticated stream transcript from `fin` and writes
+    /// the recovered plaintext to `fout`. Surfaces
+    /// `STATUS_STREAM_TRUNCATED` when input exhausts without a
+    /// terminating chunk, `STATUS_STREAM_AFTER_FINAL` when extra
+    /// bytes follow a terminator, and `STATUS_MAC_FAILURE` on
+    /// tampered transcript. `chunk_size` controls the read-buffer
+    /// granularity and must be positive.
+    pub fn decrypt_stream_auth<R: Read, W: Write>(
+        &mut self,
+        mut fin: R,
+        mut fout: W,
+        chunk_size: usize,
+    ) -> Result<(), ITBError> {
+        self.check_open()?;
+        if chunk_size == 0 {
+            return Err(ITBError::with_message(
+                ffi::STATUS_BAD_INPUT,
+                "chunk_size must be positive",
+            ));
+        }
+        let header_size = self.header_size()? as usize;
+        let mut accum: Vec<u8> = Vec::new();
+        let mut read_buf = vec![0u8; chunk_size];
+        let mut stream_id = [0u8; STREAM_ID_LEN];
+        let mut sid_have: usize = 0;
+        let mut cum: u64 = 0;
+        let mut seen_final = false;
+
+        loop {
+            let n = fin.read(&mut read_buf).map_err(enc_io_err)?;
+            if n == 0 {
+                break;
+            }
+            let mut off = 0usize;
+            if sid_have < STREAM_ID_LEN {
+                let need = STREAM_ID_LEN - sid_have;
+                let take = std::cmp::min(need, n);
+                stream_id[sid_have..sid_have + take]
+                    .copy_from_slice(&read_buf[..take]);
+                sid_have += take;
+                off = take;
+            }
+            if off < n {
+                accum.extend_from_slice(&read_buf[off..n]);
+            }
+            if sid_have == STREAM_ID_LEN {
+                // Drain whole chunks.
+                loop {
+                    if seen_final {
+                        if !accum.is_empty() {
+                            for b in read_buf.iter_mut() { *b = 0; }
+                            return Err(ITBError::with_message(
+                                ffi::STATUS_STREAM_AFTER_FINAL,
+                                "auth stream: trailing bytes after terminator",
+                            ));
+                        }
+                        break;
+                    }
+                    if accum.len() < header_size {
+                        break;
+                    }
+                    let chunk_len = self.parse_chunk_len(&accum[..header_size])?;
+                    if accum.len() < chunk_len {
+                        break;
+                    }
+                    let w = read_be16_at(&accum[header_size - 4..header_size - 2]);
+                    let h = read_be16_at(&accum[header_size - 2..header_size]);
+                    let pixels = (w as u64) * (h as u64);
+                    let chunk: Vec<u8> = accum.drain(..chunk_len).collect();
+                    let (mut pt, ff) =
+                        self.easy_consume_chunk_auth(&chunk, &stream_id, cum)?;
+                    fout.write_all(&pt).map_err(enc_io_err)?;
+                    for b in pt.iter_mut() { *b = 0; }
+                    cum += pixels;
+                    if ff {
+                        seen_final = true;
+                    }
+                }
+            }
+        }
+        // EOF: drain remainder.
+        if sid_have < STREAM_ID_LEN {
+            for b in read_buf.iter_mut() { *b = 0; }
+            return Err(ITBError::with_message(
+                ffi::STATUS_BAD_INPUT,
+                "auth stream: 32-byte stream prefix incomplete",
+            ));
+        }
+        loop {
+            if seen_final {
+                if !accum.is_empty() {
+                    for b in read_buf.iter_mut() { *b = 0; }
+                    return Err(ITBError::with_message(
+                        ffi::STATUS_STREAM_AFTER_FINAL,
+                        "auth stream: trailing bytes after terminator",
+                    ));
+                }
+                break;
+            }
+            if accum.len() < header_size {
+                break;
+            }
+            let chunk_len = self.parse_chunk_len(&accum[..header_size])?;
+            if accum.len() < chunk_len {
+                break;
+            }
+            let w = read_be16_at(&accum[header_size - 4..header_size - 2]);
+            let h = read_be16_at(&accum[header_size - 2..header_size]);
+            let pixels = (w as u64) * (h as u64);
+            let chunk: Vec<u8> = accum.drain(..chunk_len).collect();
+            let (mut pt, ff) =
+                self.easy_consume_chunk_auth(&chunk, &stream_id, cum)?;
+            fout.write_all(&pt).map_err(enc_io_err)?;
+            for b in pt.iter_mut() { *b = 0; }
+            cum += pixels;
+            if ff {
+                seen_final = true;
+            }
+        }
+        for b in read_buf.iter_mut() { *b = 0; }
+        if !seen_final {
+            return Err(ITBError::with_message(
+                ffi::STATUS_STREAM_TRUNCATED,
+                "auth stream: terminator never observed",
+            ));
+        }
+        Ok(())
     }
 }

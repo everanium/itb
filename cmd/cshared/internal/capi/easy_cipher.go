@@ -119,3 +119,70 @@ func EasyDecryptAuth(id EasyHandleID, ciphertext, out []byte) (n int, st Status)
 	copy(out, plain)
 	return len(plain), StatusOK
 }
+
+// EasyEncryptStreamAuth encrypts a single Streaming AEAD chunk through
+// the encryptor handle, threading the streaming-binding components
+// (streamID, cumulativePixelOffset, finalFlag) into the per-chunk MAC
+// input. Same caller-allocated-buffer convention as EasyEncryptAuth.
+// The Encryptor's bound MAC closure is reused for every chunk of a
+// stream; the caller drives the loop, supplying a CSPRNG-fresh
+// streamID once at stream start, the running cumulativePixelOffset
+// per chunk, and finalFlag = true on the terminating chunk only.
+func EasyEncryptStreamAuth(
+	id EasyHandleID, plaintext, out []byte,
+	streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool,
+) (n int, st Status) {
+	defer recoverEasyPanic(&st, StatusEncryptFailed)
+
+	h, st := resolveEasy(id)
+	if st != StatusOK {
+		return 0, st
+	}
+	enc, err := h.enc.EncryptStreamAuthenticated(plaintext, streamID, cumulativePixelOffset, finalFlag)
+	if err != nil {
+		setLastErr(StatusEncryptFailed)
+		return 0, StatusEncryptFailed
+	}
+	if len(enc) > len(out) {
+		setLastErr(StatusBufferTooSmall)
+		return len(enc), StatusBufferTooSmall
+	}
+	copy(out, enc)
+	return len(enc), StatusOK
+}
+
+// EasyDecryptStreamAuth verifies and decrypts a single Streaming AEAD
+// chunk produced by EasyEncryptStreamAuth. The recovered finalFlag is
+// reported back through the returned bool. On MAC verification
+// failure (tampered ciphertext, wrong MAC key, mismatched streamID,
+// mismatched cumulativePixelOffset, mismatched MAC primitive) returns
+// StatusMACFailure; structural / dispatch errors return
+// StatusDecryptFailed.
+func EasyDecryptStreamAuth(
+	id EasyHandleID, ciphertext, out []byte,
+	streamID [32]byte, cumulativePixelOffset uint64,
+) (n int, finalFlag bool, st Status) {
+	defer recoverEasyPanic(&st, StatusDecryptFailed)
+
+	h, st := resolveEasy(id)
+	if st != StatusOK {
+		return 0, false, st
+	}
+	plain, ff, err := h.enc.DecryptStreamAuthenticated(ciphertext, streamID, cumulativePixelOffset)
+	if err != nil {
+		// Typed sentinel via errors.Is — survives any future
+		// rewording of the underlying diagnostic message.
+		if errors.Is(err, itb.ErrMACFailure) {
+			setLastErr(StatusMACFailure)
+			return 0, false, StatusMACFailure
+		}
+		setLastErr(StatusDecryptFailed)
+		return 0, false, StatusDecryptFailed
+	}
+	if len(plain) > len(out) {
+		setLastErr(StatusBufferTooSmall)
+		return len(plain), ff, StatusBufferTooSmall
+	}
+	copy(out, plain)
+	return len(plain), ff, StatusOK
+}

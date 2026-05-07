@@ -49,5 +49,8 @@ public static class StatusCode
     public const int BlobVersionTooNew = 21;
     public const int BlobTooManyOpts = 22;
 
+    public const int StreamTruncated = 23;
+    public const int StreamAfterFinal = 24;
+
     public const int Internal = 99;
 }

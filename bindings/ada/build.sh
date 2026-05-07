@@ -27,6 +27,25 @@ set -o pipefail
 cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 
+# --- optional 64 MiB stack-size linker switch (defense-in-depth) -----
+#
+# GNAT lays out by-value Byte_Array results from Itb.Encryptor.Encrypt
+# / Decrypt / Encrypt_Auth / Decrypt_Auth on the caller's stack frame
+# unless the receiving binding adopts the Build-In-Place idiom
+# (`new Byte_Array'(Itb.Encryptor.Encrypt (...))` — see README.md
+# "Build-In-Place idiom" note). Programs receiving the result into a
+# direct local of type Byte_Array overflow the default 8 MiB Linux
+# thread stack at plaintext sizes ≥ ~8 MiB.
+#
+# Uncomment the line below to bump the executable's stack reservation
+# to 64 MiB (sufficient for the largest sane single-shot payload).
+# Production code is encouraged to use the streaming entry points
+# (Encrypt_Stream / Decrypt_Stream / Encrypt_Stream_Auth /
+# Decrypt_Stream_Auth) which heap-allocate their per-chunk staging
+# buffers and do not require the stack-size bump.
+#
+# export LDFLAGS="${LDFLAGS:-} -Wl,-z,stack-size=67108864"
+
 # --- argument parsing -------------------------------------------------
 
 SKIP_LIBITB=0
@@ -70,6 +89,8 @@ fi
 # --- gprbuild step ----------------------------------------------------
 
 cd "$REPO_ROOT/bindings/ada"
+echo "==> cleaning previous Ada-binding build artefacts (gprclean)"
+alr exec -- gprclean -P itb.gpr 2>/dev/null || rm -rf obj/ lib/ 2>/dev/null || true
 echo "==> gprbuild ${GPR_ARGS[*]}"
 
 # Merge stdout + stderr into one stream and filter through grep -v

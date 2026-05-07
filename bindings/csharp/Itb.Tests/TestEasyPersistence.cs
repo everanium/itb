@@ -20,6 +20,7 @@ using Itb.Native;
 
 namespace Itb.Tests;
 
+[Collection(TestCollections.MismatchField)]
 public sealed class TestEasyPersistence
 {
     /// <summary>Canonical hash registry rows. Order mirrors the

@@ -164,6 +164,135 @@ default invocation iterates every test executable in `obj-tests/`.
 The link-time + rpath mechanism is the standard Ada idiom — no
 runtime `dlopen`-style probe is performed at startup.
 
+## Streaming AEAD
+
+**Streaming AEAD** authenticates a chunked stream end-to-end while preserving the deniability of the per-chunk MAC-Inside-Encrypt container. Each chunk's MAC binds the encrypted payload to a 32-byte CSPRNG stream anchor (written as a once-per-stream wire prefix), the cumulative pixel offset of preceding chunks, and a final-flag bit — defending against chunk reorder, replay within or across streams sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail. The wire format adds 32 bytes of stream prefix plus one byte of encrypted trailing flag per chunk; no externally visible MAC tag.
+
+**Easy Mode example:**
+
+`Itb.Encryptor.Encrypt_Stream_Auth` accepts any `Ada.Streams.Root_Stream_Type'Class` source and sink. `Ada.Streams.Stream_IO.Stream (File)` returns the corresponding `Stream_Access` for a file opened via `Stream_IO.Open` / `Stream_IO.Create`, which lets the binding stream directly between disk files. The MAC key is allocated CSPRNG-fresh inside the encryptor at constructor time.
+
+```ada
+with Ada.Streams;            use Ada.Streams;
+with Ada.Streams.Stream_IO;
+with Itb.Encryptor;
+
+declare
+   Enc       : Itb.Encryptor.Encryptor :=
+     Itb.Encryptor.Make ("areion512", 1024, "hmac-blake3", 1);
+   Plain_F   : Ada.Streams.Stream_IO.File_Type;
+   Cipher_F  : Ada.Streams.Stream_IO.File_Type;
+begin
+   Ada.Streams.Stream_IO.Open
+     (Plain_F, Ada.Streams.Stream_IO.In_File, "/tmp/64mb.src");
+   Ada.Streams.Stream_IO.Create
+     (Cipher_F, Ada.Streams.Stream_IO.Out_File, "/tmp/64mb.enc");
+   Itb.Encryptor.Encrypt_Stream_Auth
+     (Enc,
+      Ada.Streams.Stream_IO.Stream (Plain_F),
+      Ada.Streams.Stream_IO.Stream (Cipher_F),
+      Stream_Element_Offset (16 * 1024 * 1024));
+   Ada.Streams.Stream_IO.Close (Plain_F);
+   Ada.Streams.Stream_IO.Close (Cipher_F);
+   Itb.Encryptor.Close (Enc);
+end;
+```
+
+**Recommended idiom for single-shot non-streaming calls.** When a single-shot `Itb.Encryptor.Encrypt` / `Decrypt` (or `Encrypt_Auth` / `Decrypt_Auth`) is invoked on plaintext approaching or exceeding ~8 MiB, the function-result `Byte_Array` lands on the calling task's stack by default, which can overflow the standard 8 MiB main-thread stack. The Build-In-Place (BIP) idiom routes the result onto the heap instead:
+
+```ada
+declare
+   CT : Itb.Byte_Array_Access :=
+     new Itb.Byte_Array'(Itb.Encryptor.Encrypt_Auth (Enc, Plaintext));
+begin
+   ...
+   Itb.Free (CT);
+end;
+```
+
+The streaming entry points (`Encrypt_Stream` / `Decrypt_Stream` / `Encrypt_Stream_Auth` / `Decrypt_Stream_Auth`) heap-allocate their per-chunk staging buffers internally, so the default stack suffices regardless of plaintext size — they are the cleaner alternative for large-data flows. As a defense-in-depth alternative, `bindings/ada/build.sh` carries a commented `-Wl,-z,stack-size=67108864` switch and `bindings/ada/itb.gpr`'s `Linker` package carries the matching commented line; uncommenting either bumps the executable stack reservation to 64 MiB for users who keep the non-BIP idiom.
+
+**Build + run:**
+
+```ada
+--  ~/src/itb_stream_auth_example/example.gpr
+with "~/src/ada/itb.gpr";
+
+project Example is
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Exec_Dir use "obj";
+   for Main use ("main.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-O2", "-g", "-gnatwa", "-gnat2022");
+   end Compiler;
+end Example;
+```
+
+```sh
+cd ~/src/itb_stream_auth_example
+alr exec --manifest ~/src/ada/alire.toml -- \
+   gprbuild -P ~/src/itb_stream_auth_example/example.gpr
+./obj/main
+```
+
+**Output (verified):**
+
+```
+Easy Mode src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Easy Mode dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
+```
+
+---
+
+**Low-Level Mode example:**
+
+Free subprograms in `Itb.Streams` take three `Itb.Seed.Seed` records plus an `Itb.MAC.MAC` (32-byte key drawn from `/dev/urandom` via a `Stream_IO`-opened device read) and stream through the same chunked-AEAD construction.
+
+```ada
+declare
+   Noise : constant Itb.Seed.Seed := Itb.Seed.Make ("areion512", 1024);
+   Data  : constant Itb.Seed.Seed := Itb.Seed.Make ("areion512", 1024);
+   Start : constant Itb.Seed.Seed := Itb.Seed.Make ("areion512", 1024);
+   Mac   : constant Itb.MAC.MAC :=
+     Itb.MAC.Make ("hmac-blake3", Random_MAC_Key);
+   Plain_F  : Ada.Streams.Stream_IO.File_Type;
+   Cipher_F : Ada.Streams.Stream_IO.File_Type;
+begin
+   Ada.Streams.Stream_IO.Open
+     (Plain_F,  Ada.Streams.Stream_IO.In_File,  "/tmp/64mb.src");
+   Ada.Streams.Stream_IO.Create
+     (Cipher_F, Ada.Streams.Stream_IO.Out_File, "/tmp/64mb.enc");
+   Itb.Streams.Encrypt_Stream_Auth
+     (Noise, Data, Start, Mac,
+      Ada.Streams.Stream_IO.Stream (Plain_F),
+      Ada.Streams.Stream_IO.Stream (Cipher_F),
+      Stream_Element_Offset (16 * 1024 * 1024));
+   Ada.Streams.Stream_IO.Close (Plain_F);
+   Ada.Streams.Stream_IO.Close (Cipher_F);
+end;
+```
+
+**Build + run:**
+
+```sh
+cd ~/src/itb_stream_auth_example
+alr exec --manifest ~/src/ada/alire.toml -- \
+   gprbuild -P ~/src/itb_stream_auth_example/example.gpr
+./obj/main
+```
+
+**Output (verified):**
+
+```
+Low-Level src sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+Low-Level dst sha256: 7adc82f9bebf205db2a6c8033d7c1fe43d3bf8b3ecb0fbfd6c4c2dff71672425
+[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
+```
+
 ## Quick Start — `Itb.Encryptor` + HMAC-BLAKE3 (recommended, authenticated)
 
 The high-level `Encryptor` (mirroring the

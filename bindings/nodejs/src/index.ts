@@ -31,6 +31,8 @@ export {
   ITBBlobVersionTooNewError,
   ITBEasyMismatchError,
   ITBError,
+  ITBStreamAfterFinalError,
+  ITBStreamTruncatedError,
   lastError,
   lastMismatchField,
 } from './errors.js';
@@ -61,12 +63,21 @@ export { Status } from './status.js';
 export type { StatusCode } from './status.js';
 export {
   DEFAULT_CHUNK_SIZE,
+  STREAM_ID_LEN,
   decryptStream,
+  decryptStreamAuth,
+  decryptStreamAuthTriple,
   decryptStreamTriple,
   encryptStream,
+  encryptStreamAuth,
+  encryptStreamAuthTriple,
   encryptStreamTriple,
   StreamDecryptor,
+  StreamDecryptorAuth,
+  StreamDecryptorAuthTriple,
   StreamDecryptorTriple,
   StreamEncryptor,
+  StreamEncryptorAuth,
+  StreamEncryptorAuthTriple,
   StreamEncryptorTriple,
 } from './streams.js';
