@@ -140,3 +140,10 @@ var HasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
 // the YMM assembly variants run instead of falling all the way back to
 // the portable Go path.
 var HasVAESAVX2NoAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512
+
+// HasARMAESBatched is always false on amd64 builds — this is the ARM
+// Crypto Extension batched flag set by areionasm_arm64.go on arm64
+// hosts. Declared here so the parent itb package's gates compile
+// uniformly across architectures without per-arch build tag fences
+// inside the gate expression.
+var HasARMAESBatched = false

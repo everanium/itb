@@ -52,7 +52,7 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 
 **Why this is not a strict sponge.** A sponge has rate / capacity separation and an unkeyed permutation. This construction has no rate / capacity split (the entire 32-byte state passes through SoEM each round) and uses SoEM as a **keyed** permutation (the subkey carries the fixed key + per-call seed mix). Functionally a chained block-cipher MAC where SoEM-256 plays the block-cipher role.
 
-**Why SoEM-256 specifically.** SoEM with VAES + AVX-512 retires four AES rounds per VAESENC instruction, and the two-half independent ILP on x86 SIMD allows interleaving across two SoEM halves per call. This is the structural reason Areion-SoEM-256 / Areion-SoEM-512 outpace the other primitives at large ITB widths in the throughput tables.
+**Why SoEM-256 specifically.** SoEM with VAES + AVX-512 retires four AES rounds per VAESENC instruction, and the two-half independent ILP on x86 SIMD allows interleaving across two SoEM halves per call. AArch64 hosts with the ARM Crypto Extension (Graviton 2+, Apple M1+, Neoverse N1+/V1+/V2+) reach the same architectural shape via 4-lane parallel `AESE`/`AESMC` over NEON registers. This is the structural reason Areion-SoEM-256 / Areion-SoEM-512 outpace the other primitives at large ITB widths in the throughput tables.
 
 **Why CBC-MAC and not a sponge.** A sponge construction over the SoEM permutation is a structurally valid alternative — Keccak-like designs use exactly that pattern, and the academic narrative for SoEM-based PRFs commonly invokes the sponge frame. The CBC-MAC variant chosen here is a deliberate trade-off:
 
