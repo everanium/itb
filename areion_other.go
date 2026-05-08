@@ -1,12 +1,13 @@
-//go:build !amd64 || purego || noitbasm
+//go:build (!amd64 && !arm64) || purego || noitbasm
 
 package itb
 
 import "github.com/jedisct1/go-aes"
 
-// On non-amd64 platforms (or under the `purego` build tag) there is no
-// VAES assembly; the 4-way batched permutations dispatch directly to
-// the portable Go fallback.
+// On non-amd64 / non-arm64 platforms (or under the `purego` / `noitbasm`
+// build tags) there is no VAES or ARM Crypto Extension assembly; the
+// 4-way batched permutations dispatch directly to the portable Go
+// fallback.
 
 // SoA-native shims for non-amd64: unpack to AoS, run default,
 // repack. Falls back through the same path the amd64 default

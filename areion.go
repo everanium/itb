@@ -572,7 +572,7 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// either flag is enough to keep the batched path engaged because
 	// the AVX-2 4-way permutation still SIMD-parallelises across
 	// lanes.
-	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 {
+	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 && !areionasm.HasARMAESBatched {
 		return single, nil
 	}
 	// Batched chain: 4 lanes run their CBC-MAC chain in lock-step,
@@ -730,7 +730,7 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 	// scalar SoEM path; nil-out the batched arm so process_cgo.go's
 	// nil-fallback drives per-pixel hashing through the single arm
 	// directly. See the SoEM-256 counterpart above for the rationale.
-	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 {
+	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 && !areionasm.HasARMAESBatched {
 		return single, nil
 	}
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
