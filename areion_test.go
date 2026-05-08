@@ -510,6 +510,9 @@ func BenchmarkAreionSoEM256x4_BatchedAvx2(b *testing.B) {
 	if runtime.GOARCH != "amd64" {
 		b.Skip("AVX2 benchmark only on amd64")
 	}
+	if !areionasm.HasVAESAVX2NoAVX512 && !areionasm.HasVAESAVX512 {
+		b.Skip("AVX2 VAES benchmark requires VAES+AVX2 capability")
+	}
 	var keys [4][64]byte
 	var inputs [4][32]byte
 	rand.Read(keys[0][:])
@@ -537,6 +540,9 @@ func BenchmarkAreionSoEM256x4_BatchedAvx2(b *testing.B) {
 func BenchmarkAreionSoEM512x4_BatchedAvx2(b *testing.B) {
 	if runtime.GOARCH != "amd64" {
 		b.Skip("AVX2 benchmark only on amd64")
+	}
+	if !areionasm.HasVAESAVX2NoAVX512 && !areionasm.HasVAESAVX512 {
+		b.Skip("AVX2 VAES benchmark requires VAES+AVX2 capability")
 	}
 	var keys [4][128]byte
 	var inputs [4][64]byte
