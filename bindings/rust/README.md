@@ -6,6 +6,13 @@ compile-time link against libitb; the `.so` / `.dll` / `.dylib` is
 resolved and dispatched at first use through the `libloading`
 crate.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-rust`. Substitute the
+literal token in the recipes below; `cargo` does not expand `~`,
+so an absolute path (or one resolved by the shell before invocation)
+is required in `Cargo.toml`'s `path = ...` entries.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -132,22 +139,27 @@ enc.close()?;
 **Build + run:**
 
 ```toml
-# ~/src/itb_stream_auth_example/Cargo.toml
+# <itb>/itb_stream_auth_example/Cargo.toml
 [package]
 name = "itb_stream_auth_example"
 version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-itb = { path = "~/src/rust" }
+itb = { path = "<itb>/bindings/rust" }
 
 [[bin]]
 name = "main"
 path = "main.rs"
 ```
 
+The `path = ...` entry must be an absolute filesystem path (or a
+relative path resolved against the manifest's directory). `cargo`
+does not expand `~`, so a literal `~/...` here fails at manifest
+resolve time.
+
 ```sh
-cd ~/src/itb_stream_auth_example && cargo run --release
+cd <itb>/itb_stream_auth_example && cargo run --release
 ```
 
 **Output (verified):**
@@ -190,7 +202,7 @@ let mac = itb::MAC::new("hmac-blake3", &mac_key)?;
 **Build + run:**
 
 ```sh
-cd ~/src/itb_stream_auth_example && cargo run --release
+cd <itb>/itb_stream_auth_example && cargo run --release
 ```
 
 **Output (verified):**

@@ -6,6 +6,11 @@ Ada 2022 / Alire-managed wrapper over the libitb shared library
 at scope exit. Two-layer architecture: `Itb.Sys` (raw FFI,
 audit-friendly) plus `Itb.*` (safe wrappers).
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-ada`. Substitute the
+literal token in the recipes below.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -215,8 +220,8 @@ The streaming entry points (`Encrypt_Stream` / `Decrypt_Stream` / `Encrypt_Strea
 **Build + run:**
 
 ```ada
---  ~/src/itb_stream_auth_example/example.gpr
-with "~/src/ada/itb.gpr";
+--  <itb>/itb_stream_auth_example/example.gpr
+with "<itb>/bindings/ada/itb.gpr";
 
 project Example is
    for Source_Dirs use (".");
@@ -232,9 +237,9 @@ end Example;
 ```
 
 ```sh
-cd ~/src/itb_stream_auth_example
-alr exec --manifest ~/src/ada/alire.toml -- \
-   gprbuild -P ~/src/itb_stream_auth_example/example.gpr
+cd <itb>/itb_stream_auth_example
+alr exec --manifest <itb>/bindings/ada/alire.toml -- \
+   gprbuild -P <itb>/itb_stream_auth_example/example.gpr
 ./obj/main
 ```
 
@@ -279,9 +284,9 @@ end;
 **Build + run:**
 
 ```sh
-cd ~/src/itb_stream_auth_example
-alr exec --manifest ~/src/ada/alire.toml -- \
-   gprbuild -P ~/src/itb_stream_auth_example/example.gpr
+cd <itb>/itb_stream_auth_example
+alr exec --manifest <itb>/bindings/ada/alire.toml -- \
+   gprbuild -P <itb>/itb_stream_auth_example/example.gpr
 ./obj/main
 ```
 

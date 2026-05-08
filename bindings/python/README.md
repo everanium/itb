@@ -4,6 +4,11 @@ Cffi-based Python wrapper over the libitb shared library
 (`cmd/cshared`). ABI mode — no C compiler at install time, just
 ``cffi``.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-python`. Substitute the
+literal token in the recipes below.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -144,14 +149,14 @@ print("[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified")
 
 ```sh
 # One-time install of the binding from the repo (editable mode).
-pip install -e ~/src/python
+pip install -e <itb>/bindings/python
 
-# Place the source above in ~/src/python_example/main.py and run:
-cd ~/src/python_example && python3 main.py
+# Place the source above in <itb>/python_example/main.py and run:
+cd <itb>/python_example && python3 main.py
 ```
 
 The binding's library-lookup logic locates
-`~/src/dist/<os>-<arch>/libitb.so` automatically once the editable
+`<itb>/dist/<os>-<arch>/libitb.so` automatically once the editable
 install resolves the `itb` package — no `ITB_LIBRARY_PATH` export is
 required when the shared library lives under the repository's
 canonical `dist/` tree. Override with `ITB_LIBRARY_PATH=/abs/path` to
@@ -220,7 +225,7 @@ print("[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified")
 **Build + run:**
 
 ```sh
-cd ~/src/python_example && python3 main.py
+cd <itb>/python_example && python3 main.py
 ```
 
 **Output (verified):**

@@ -346,12 +346,22 @@ contains
 
   ! ---- 4-byte BE length-prefix UserLoop framing ------------------------
 
+  ! Writes a 4-byte big-endian length-prefix header followed by
+  ! `ct_bytes` into the pre-allocated `transcript` at offset
+  ! `transcript_len`, advancing `transcript_len` by the header + payload
+  ! length. The caller is responsible for pre-allocating `transcript`
+  ! to a capacity that covers every chunk of the stream (1.125x payload
+  ! suffices for the bench's worst case, mirroring the C harness's
+  ! `mem_writer_init` sizing). Mid-stream growth is intentionally
+  ! disallowed: per-chunk reallocate-and-copy was the dominant cost on
+  ! the User-Loop encrypt path before this discipline. Array-section
+  ! assignment lowers to a single `memcpy` under gfortran instead of an
+  ! element-wise byte copy.
   subroutine frame_chunk(transcript, transcript_len, ct_bytes)
     integer(itb_byte_kind), allocatable, intent(inout) :: transcript(:)
     integer(itb_size_kind),              intent(inout) :: transcript_len
     integer(itb_byte_kind),              intent(in)    :: ct_bytes(:)
-    integer(itb_byte_kind), allocatable :: tmp(:)
-    integer(itb_size_kind) :: ct_len, new_total, i
+    integer(itb_size_kind) :: ct_len, new_total
     integer(itb_byte_kind) :: hdr(4)
 
     ct_len = int(size(ct_bytes), itb_size_kind)
@@ -362,21 +372,14 @@ contains
 
     new_total = transcript_len + 4_itb_size_kind + ct_len
     if (.not. allocated(transcript)) then
-      allocate (transcript(new_total))
-    else if (int(size(transcript), itb_size_kind) < new_total) then
-      allocate (tmp(new_total))
-      do i = 1_itb_size_kind, transcript_len
-        tmp(i) = transcript(i)
-      end do
-      call move_alloc(tmp, transcript)
+      error stop "frame_chunk: transcript_buf not pre-allocated -- caller must size to STREAM_TOTAL_BYTES + STREAM_TOTAL_BYTES/8"
     end if
-    do i = 1_itb_size_kind, 4_itb_size_kind
-      transcript(transcript_len + i) = hdr(i)
-    end do
+    if (int(size(transcript), itb_size_kind) < new_total) then
+      error stop "frame_chunk: transcript_buf undersized -- increase prealloc"
+    end if
+    transcript(transcript_len + 1_itb_size_kind : transcript_len + 4_itb_size_kind) = hdr(1:4)
     transcript_len = transcript_len + 4_itb_size_kind
-    do i = 1_itb_size_kind, ct_len
-      transcript(transcript_len + i) = ct_bytes(i)
-    end do
+    transcript(transcript_len + 1_itb_size_kind : transcript_len + ct_len) = ct_bytes(1:ct_len)
     transcript_len = transcript_len + ct_len
   end subroutine
 
@@ -459,7 +462,21 @@ contains
     integer(itb_byte_kind), allocatable :: ct(:)
     integer(itb_byte_kind), allocatable :: transcript_buf(:)
     integer(itb_size_kind) :: transcript_len
+    integer(itb_size_kind) :: cap
+    ! Pre-allocate the transcript buffer to 1.5x payload + 32 KiB,
+    ! matching alloc_write_pool's AEAD-side sizing. The plain
+    ! per-chunk container (length-prefix + ITB ciphertext envelope
+    ! per chunk) can exceed a 1.125x bulk-rate cap on smaller chunks,
+    ! so the bench mirrors the AEAD sizing rather than the C harness's
+    ! 1.125x mem_writer_init cap. frame_chunk writes in-place via
+    ! array-section assignment instead of growing per-chunk, so the
+    ! User-Loop encrypt path measures cipher work rather than O(N^2)
+    ! reallocate-and-copy.
+    cap = int(STREAM_TOTAL_BYTES, itb_size_kind)                              &
+        + ishft(int(STREAM_TOTAL_BYTES, itb_size_kind), -1)                  &
+        + 32_itb_size_kind * 1024_itb_size_kind
     do i = 1_int64, iters
+      allocate (transcript_buf(cap))
       transcript_len = 0_itb_size_kind
       off = 0_itb_size_kind
       do while (off < int(STREAM_TOTAL_BYTES, itb_size_kind))
@@ -473,7 +490,7 @@ contains
         deallocate (ct)
         off = end_off
       end do
-      if (allocated(transcript_buf)) deallocate (transcript_buf)
+      deallocate (transcript_buf)
     end do
   end subroutine
 
@@ -569,7 +586,14 @@ contains
     integer(itb_byte_kind), allocatable :: ct(:)
     integer(itb_byte_kind), allocatable :: transcript_buf(:)
     integer(itb_size_kind) :: transcript_len
+    integer(itb_size_kind) :: cap
+    ! Pre-allocate the transcript buffer to 1.5x payload + 32 KiB.
+    ! See run_easy_encrypt_userloop for the rationale.
+    cap = int(STREAM_TOTAL_BYTES, itb_size_kind)                              &
+        + ishft(int(STREAM_TOTAL_BYTES, itb_size_kind), -1)                  &
+        + 32_itb_size_kind * 1024_itb_size_kind
     do i = 1_int64, iters
+      allocate (transcript_buf(cap))
       transcript_len = 0_itb_size_kind
       off = 0_itb_size_kind
       do while (off < int(STREAM_TOTAL_BYTES, itb_size_kind))
@@ -585,7 +609,7 @@ contains
         deallocate (ct)
         off = end_off
       end do
-      if (allocated(transcript_buf)) deallocate (transcript_buf)
+      deallocate (transcript_buf)
     end do
   end subroutine
 
@@ -711,6 +735,11 @@ contains
     integer(itb_byte_kind), allocatable :: ct(:)
     integer(itb_byte_kind), allocatable :: transcript_buf(:)
     integer(itb_size_kind) :: transcript_len
+    integer(itb_size_kind) :: cap
+    cap = int(STREAM_TOTAL_BYTES, itb_size_kind)                              &
+        + ishft(int(STREAM_TOTAL_BYTES, itb_size_kind), -1)                  &
+        + 32_itb_size_kind * 1024_itb_size_kind
+    allocate (transcript_buf(cap))
     transcript_len = 0_itb_size_kind
     off = 0_itb_size_kind
     do while (off < int(STREAM_TOTAL_BYTES, itb_size_kind))
@@ -734,6 +763,11 @@ contains
     integer(itb_byte_kind), allocatable :: ct(:)
     integer(itb_byte_kind), allocatable :: transcript_buf(:)
     integer(itb_size_kind) :: transcript_len
+    integer(itb_size_kind) :: cap
+    cap = int(STREAM_TOTAL_BYTES, itb_size_kind)                              &
+        + ishft(int(STREAM_TOTAL_BYTES, itb_size_kind), -1)                  &
+        + 32_itb_size_kind * 1024_itb_size_kind
+    allocate (transcript_buf(cap))
     transcript_len = 0_itb_size_kind
     off = 0_itb_size_kind
     do while (off < int(STREAM_TOTAL_BYTES, itb_size_kind))
