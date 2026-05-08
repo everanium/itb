@@ -567,7 +567,9 @@ static inline int itb_check_avx512_gfni(void) {
 // in a separate change. The scalar tail loop handles 0-3 leftover pixels and
 // any pixel with partial chCount (last pixel of an underfull bit budget).
 #pragma GCC diagnostic push
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 void itb_process_pixels(
     const uint64_t *noiseHashes,
     const uint64_t *dataHashes,
