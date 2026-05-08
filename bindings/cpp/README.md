@@ -7,6 +7,11 @@ under `<itb/...>`) and link against the C binding's static archive plus
 derived from `itb::ItbError`; every opaque handle is owned by a move-only
 RAII type that releases on destruction.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-cpp`. Substitute the literal
+token in the recipes below; shell does not expand it.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -175,11 +180,11 @@ itb::Encryptor enc{"areion512", 1024, "hmac-blake3", 1};
 
 ```sh
 g++ -std=c++17 -O2 -Wall -o main main.cpp \
-    -I ~/src/c/include \
-    -I ~/src/cpp/include \
-    ~/src/c/build/libitb_c.a \
-    -L ~/src/dist/linux-amd64 -litb \
-    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -I <itb>/bindings/c/include \
+    -I <itb>/bindings/cpp/include \
+    <itb>/bindings/c/build/libitb_c.a \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64 \
     -lpthread -ldl
 ./main
 ```
@@ -222,11 +227,11 @@ itb::Mac mac{"hmac-blake3", mac_key};
 
 ```sh
 g++ -std=c++17 -O2 -Wall -o main main.cpp \
-    -I ~/src/c/include \
-    -I ~/src/cpp/include \
-    ~/src/c/build/libitb_c.a \
-    -L ~/src/dist/linux-amd64 -litb \
-    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -I <itb>/bindings/c/include \
+    -I <itb>/bindings/cpp/include \
+    <itb>/bindings/c/build/libitb_c.a \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64 \
     -lpthread -ldl
 ./main
 ```

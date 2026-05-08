@@ -6,6 +6,11 @@ time, no compile-time link against libitb; the `.so` / `.dll` /
 `.dylib` is resolved and dispatched at first use through
 `NativeLibrary.SetDllImportResolver`.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-csharp`. Substitute the
+literal token in the recipes below.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -187,20 +192,20 @@ binding's `Itb.csproj` and consumes the `Itb` namespace directly:
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="~/src/csharp/Itb/Itb.csproj" />
+    <ProjectReference Include="<itb>/bindings/csharp/Itb/Itb.csproj" />
   </ItemGroup>
 </Project>
 ```
 
 Place `Program.cs` (containing the source above) and `Example.csproj`
-under `~/src/csharp_example/`, then:
+under `<itb>/csharp_example/`, then:
 
 ```sh
-cd ~/src/csharp_example && dotnet run -c Release
+cd <itb>/csharp_example && dotnet run -c Release
 ```
 
 The binding's `NativeLibrary` resolver locates
-`~/src/dist/<os>-<arch>/libitb.so` automatically once the project
+`<itb>/dist/<os>-<arch>/libitb.so` automatically once the project
 reference resolves the `Itb` assembly — no `ITB_LIBRARY_PATH` export
 is required when the shared library lives under the repository's
 canonical `dist/` tree. Override with `ITB_LIBRARY_PATH=/abs/path` to
@@ -270,7 +275,7 @@ Console.WriteLine("[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verifie
 **Build + run:**
 
 ```sh
-cd ~/src/csharp_example && dotnet run -c Release
+cd <itb>/csharp_example && dotnet run -c Release
 ```
 
 **Output (verified):**

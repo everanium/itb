@@ -7,6 +7,11 @@ dispatched at first use through `koffi.load`. Targets Node.js 22+
 ESM with `[Symbol.dispose]` / `using` declarations for
 deterministic resource lifetime.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-nodejs`. Substitute the
+literal token in the recipes below.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -194,19 +199,19 @@ dependency on the binding:
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "itb": "file:~/src/nodejs"
+    "itb": "file:<itb>/bindings/nodejs"
   }
 }
 ```
 
-Place the source above in `~/src/nodejs_example/main.mjs`, then:
+Place the source above in `<itb>/nodejs_example/main.mjs`, then:
 
 ```sh
-cd ~/src/nodejs_example && npm install && node main.mjs
+cd <itb>/nodejs_example && npm install && node main.mjs
 ```
 
 The binding's `koffi.load` resolver locates
-`~/src/dist/<os>-<arch>/libitb.so` automatically once `npm install`
+`<itb>/dist/<os>-<arch>/libitb.so` automatically once `npm install`
 materialises `node_modules/itb` — no `ITB_LIBRARY_PATH` export is
 required when the shared library lives under the repository's
 canonical `dist/` tree. Override with `ITB_LIBRARY_PATH=/abs/path` to
@@ -282,7 +287,7 @@ console.log('[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified');
 **Build + run:**
 
 ```sh
-cd ~/src/nodejs_example && node main.mjs
+cd <itb>/nodejs_example && node main.mjs
 ```
 
 **Output (verified):**
