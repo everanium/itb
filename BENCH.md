@@ -105,6 +105,50 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE3** | 256 | 2048 | PRF | 193 | 218 | 251 | 329 | 374 | 501 |
 | **ChaCha20** | 256 | 2048 | PRF | 187 | 212 | 244 | 313 | 363 | 478 |
 
+## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 115 | 112 | 110 | 198 | 188 | 190 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 109 | 108 | 105 | 197 | 189 | 191 |
+| **SipHash-2-4** | 128 | 512 | PRF | 126 | 131 | 132 | 253 | 272 | 272 |
+| **AES-CMAC** | 128 | 512 | PRF | 120 | 126 | 124 | 223 | 243 | 240 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 81 | 86 | 87 | 124 | 133 | 135 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 59 | 65 | 52 | 81 | 86 | 86 |
+| **BLAKE2s** | 256 | 512 | PRF | 68 | 65 | 67 | 90 | 95 | 91 |
+| **BLAKE3** | 256 | 512 | PRF | 33 | 34 | 34 | 38 | 40 | 40 |
+| **ChaCha20** | 256 | 512 | PRF | 19 | 42 | 46 | 19 | 47 | 56 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 83 | 83 | 81 | 126 | 121 | 121 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 82 | 80 | 81 | 124 | 121 | 121 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 100 | 104 | 106 | 162 | 177 | 179 |
+| **AES-CMAC** | 128 | 1024 | PRF | 91 | 97 | 96 | 144 | 153 | 155 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 55 | 55 | 54 | 73 | 81 | 76 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 36 | 33 | 35 | 46 | 50 | 48 |
+| **BLAKE2s** | 256 | 1024 | PRF | 40 | 38 | 38 | 52 | 55 | 51 |
+| **BLAKE3** | 256 | 1024 | PRF | 18 | 19 | 19 | 20 | 21 | 21 |
+| **ChaCha20** | 256 | 1024 | PRF | 10 | 24 | 27 | 10 | 25 | 30 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 56 | 56 | 56 | 71 | 71 | 71 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 55 | 54 | 55 | 70 | 69 | 70 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 72 | 76 | 75 | 98 | 106 | 107 |
+| **AES-CMAC** | 128 | 2048 | PRF | 62 | 68 | 67 | 81 | 91 | 90 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 33 | 32 | 33 | 42 | 37 | 44 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 21 | 24 | 21 | 24 | 27 | 21 |
+| **BLAKE2s** | 256 | 2048 | PRF | 21 | 23 | 23 | 25 | 30 | 23 |
+| **BLAKE3** | 256 | 2048 | PRF | 8 | 10 | 9 | 11 | 9 | 11 |
+| **ChaCha20** | 256 | 2048 | PRF | 5 | 13 | 15 | 5 | 13 | 15 |
+
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup + Lock Soup mode)
 
 ### ITB Single 512-bit (security: P × 2^512)
@@ -192,3 +236,47 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE2s** | 256 | 2048 | PRF | 120 | 140 | 177 | 186 | 235 | 269 |
 | **BLAKE3** | 256 | 2048 | PRF | 116 | 132 | 157 | 167 | 210 | 251 |
 | **ChaCha20** | 256 | 2048 | PRF | 33 | 67 | 94 | 38 | 88 | 134 |
+
+## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Bit Soup + Lock Soup mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 58 | 57 | 57 | 75 | 73 | 75 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 50 | 49 | 48 | 62 | 61 | 62 |
+| **SipHash-2-4** | 128 | 512 | PRF | 62 | 71 | 71 | 92 | 100 | 103 |
+| **AES-CMAC** | 128 | 512 | PRF | 60 | 70 | 70 | 85 | 98 | 97 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 37 | 38 | 40 | 47 | 48 | 46 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 32 | 35 | 31 | 40 | 42 | 40 |
+| **BLAKE2s** | 256 | 512 | PRF | 34 | 34 | 34 | 40 | 40 | 38 |
+| **BLAKE3** | 256 | 512 | PRF | 19 | 20 | 20 | 19 | 22 | 23 |
+| **ChaCha20** | 256 | 512 | PRF | 12 | 26 | 29 | 12 | 28 | 32 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 49 | 49 | 47 | 61 | 60 | 61 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 42 | 41 | 42 | 52 | 52 | 52 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 54 | 63 | 63 | 76 | 85 | 86 |
+| **AES-CMAC** | 128 | 1024 | PRF | 51 | 59 | 59 | 74 | 79 | 81 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 29 | 32 | 30 | 37 | 38 | 38 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 24 | 25 | 26 | 29 | 28 | 32 |
+| **BLAKE2s** | 256 | 1024 | PRF | 24 | 26 | 26 | 28 | 29 | 29 |
+| **BLAKE3** | 256 | 1024 | PRF | 11 | 14 | 14 | 14 | 15 | 15 |
+| **ChaCha20** | 256 | 1024 | PRF | 8 | 18 | 20 | 8 | 18 | 22 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 37 | 37 | 38 | 44 | 44 | 45 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 34 | 33 | 34 | 39 | 39 | 40 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 44 | 51 | 50 | 57 | 62 | 64 |
+| **AES-CMAC** | 128 | 2048 | PRF | 40 | 47 | 47 | 54 | 59 | 58 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 23 | 23 | 23 | 26 | 25 | 25 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 16 | 16 | 16 | 19 | 16 | 17 |
+| **BLAKE2s** | 256 | 2048 | PRF | 17 | 18 | 18 | 20 | 18 | 18 |
+| **BLAKE3** | 256 | 2048 | PRF | 8 | 8 | 8 | 9 | 9 | 9 |
+| **ChaCha20** | 256 | 2048 | PRF | 4 | 11 | 13 | 4 | 11 | 13 |
