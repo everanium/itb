@@ -10,6 +10,11 @@ audit-friendly) plus a per-concept module set (`itb_seed`,
 `itb_mac`, `itb_cipher`, `itb_encryptor`, `itb_blob`, `itb_streams`,
 `itb_library`).
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-fortran`. Substitute the
+literal token in the recipes below.
+
 ## At a glance
 
 | | |
@@ -103,6 +108,24 @@ program demo_encrypt
 end program
 ```
 
+**Build + run** the snippet above. The compile / link recipe matches
+every later Quick Start example in this README — `-I` against the
+`build/` directory holding the binding's `.mod` cache, the `.o` files
+linked in directly, the libitb shared library resolved via `-L /
+-litb` plus `-Wl,-rpath`:
+
+```sh
+gfortran -O2 -I <itb>/bindings/fortran/build \
+    -o main main.f90 \
+    <itb>/bindings/fortran/build/*.o \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64
+./main
+```
+
+The Intel toolchain accepts the same recipe with `ifx` substituted for
+`gfortran` and `build_ifx/` substituted for `build/`.
+
 ## Streaming AEAD
 
 **Streaming AEAD** authenticates a chunked stream end-to-end while
@@ -144,11 +167,11 @@ call itb_stream_encrypt_auth(noise, data, start, mac,                    &
 **Build + run:**
 
 ```sh
-gfortran -O2 -I ~/src/fortran/build \
+gfortran -O2 -I <itb>/bindings/fortran/build \
     -o main main.f90 \
-    ~/src/fortran/build/*.o \
-    -L ~/src/dist/linux-amd64 -litb \
-    -Wl,-rpath,~/src/dist/linux-amd64
+    <itb>/bindings/fortran/build/*.o \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64
 ./main
 ```
 
@@ -202,11 +225,11 @@ if (status /= STATUS_OK) error stop "encrypt failed"
 **Build + run:**
 
 ```sh
-gfortran -O2 -I ~/src/fortran/build \
+gfortran -O2 -I <itb>/bindings/fortran/build \
     -o main main.f90 \
-    ~/src/fortran/build/*.o \
-    -L ~/src/dist/linux-amd64 -litb \
-    -Wl,-rpath,~/src/dist/linux-amd64
+    <itb>/bindings/fortran/build/*.o \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64
 ./main
 ```
 

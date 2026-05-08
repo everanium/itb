@@ -7,6 +7,11 @@ and link `-litb_c -litb` so the dynamic loader resolves the underlying
 `ITB_*` exports against `libitb.so` at process start. No `dlopen`, no
 runtime FFI shim — every `ITB_*` symbol is bound at link time.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-c`. Substitute the literal
+token in the recipes below; shell does not expand it.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -179,10 +184,10 @@ itb_encryptor_free(enc);
 
 ```sh
 gcc -O2 -Wall -o main main.c \
-    -I ~/src/c/include \
-    ~/src/c/build/libitb_c.a \
-    -L ~/src/dist/linux-amd64 -litb \
-    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -I <itb>/bindings/c/include \
+    <itb>/bindings/c/build/libitb_c.a \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64 \
     -lpthread -ldl -lm
 ./main
 ```
@@ -229,10 +234,10 @@ itb_seed_free(noise); itb_seed_free(data); itb_seed_free(start);
 
 ```sh
 gcc -O2 -Wall -o main main.c \
-    -I ~/src/c/include \
-    ~/src/c/build/libitb_c.a \
-    -L ~/src/dist/linux-amd64 -litb \
-    -Wl,-rpath,~/src/dist/linux-amd64 \
+    -I <itb>/bindings/c/include \
+    <itb>/bindings/c/build/libitb_c.a \
+    -L <itb>/dist/linux-amd64 -litb \
+    -Wl,-rpath,<itb>/dist/linux-amd64 \
     -lpthread -ldl -lm
 ./main
 ```

@@ -6,6 +6,11 @@ no runtime `dlopen`. The binding links against `-litb` at DUB
 build time and bakes an `rpath` into produced executables so the
 loader finds `libitb.so` next to the repository's `dist/` tree.
 
+**Path placeholder.** `<itb>` denotes the path to the local ITB
+repository checkout (or this binding's mirror clone) — for example,
+`/home/you/go/src/itb` or `~/projects/itb-dlang`. Substitute the
+literal token in the recipes below.
+
 ## Prerequisites (Arch Linux)
 
 ```bash
@@ -168,7 +173,7 @@ enc.close();
 **Build + run:**
 
 ```json
-// ~/src/itb_stream_auth_example/dub.json
+// <itb>/itb_stream_auth_example/dub.json
 {
     "name": "itb_stream_auth_example",
     "description": "ITB D binding Streaming AEAD full-flow file-I/O example.",
@@ -177,17 +182,17 @@ enc.close();
     "sourcePaths": ["."],
     "importPaths": ["."],
     "dependencies": {
-        "itb": { "path": "~/src/dlang/" }
+        "itb": { "path": "<itb>/bindings/dlang/" }
     },
     "lflags-posix-dmd": [
-        "-L~/src/dist/linux-amd64",
+        "-L<itb>/dist/linux-amd64",
         "-litb",
-        "-rpath=~/src/dist/linux-amd64"
+        "-rpath=<itb>/dist/linux-amd64"
     ],
     "lflags-posix-ldc": [
-        "-L~/src/dist/linux-amd64",
+        "-L<itb>/dist/linux-amd64",
         "-litb",
-        "-rpath=~/src/dist/linux-amd64"
+        "-rpath=<itb>/dist/linux-amd64"
     ]
 }
 ```
@@ -195,7 +200,7 @@ enc.close();
 The `lflags-posix-dmd` / `lflags-posix-ldc` arrays use bare `-L` / `-rpath=` switches (not the `-L-Wl,-rpath` wrapping) because `dub` rewrites the bare form into the linker's native syntax for both DMD and LDC2.
 
 ```sh
-cd ~/src/itb_stream_auth_example && dub run
+cd <itb>/itb_stream_auth_example && dub run
 ```
 
 **Output (verified):**
@@ -236,7 +241,7 @@ auto mac = MAC("hmac-blake3", macKey[]);
 **Build + run:**
 
 ```sh
-cd ~/src/itb_stream_auth_example && dub run --quiet
+cd <itb>/itb_stream_auth_example && dub run --quiet
 ```
 
 **Output (verified):**
