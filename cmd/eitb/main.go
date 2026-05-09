@@ -535,13 +535,24 @@ func runMessageEasyNoMAC(cipherName string, plaintext []byte) ([]byte, int, erro
 	if err != nil {
 		return nil, 0, err
 	}
-	wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
+	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
 	if err != nil {
 		return nil, 0, err
 	}
+	wire := append(nonce, encrypted...)
 
 	// Receiver
-	recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
+	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// if err != nil {
+	// 	return nil, len(wire), err
+	// }
+	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
 	if err != nil {
 		return nil, len(wire), err
 	}
@@ -578,12 +589,23 @@ func runMessageEasyAuth(cipherName string, plaintext []byte) ([]byte, int, error
 	if err != nil {
 		return nil, 0, err
 	}
-	wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
+	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
 	if err != nil {
 		return nil, 0, err
 	}
+	wire := append(nonce, encrypted...)
 
-	recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
+	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// if err != nil {
+	// 	return nil, len(wire), err
+	// }
+	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
 	if err != nil {
 		return nil, len(wire), err
 	}
@@ -632,13 +654,24 @@ func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, 
 	if err != nil {
 		return nil, 0, err
 	}
-	wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
+	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
 	if err != nil {
 		return nil, 0, err
 	}
+	wire := append(nonce, encrypted...)
 
 	// Receiver
-	recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
+	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// if err != nil {
+	// 	return nil, len(wire), err
+	// }
+	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
 	if err != nil {
 		return nil, len(wire), err
 	}
@@ -698,13 +731,24 @@ func runMessageLowLevelAuth(cipherName string, plaintext []byte) ([]byte, int, e
 	if err != nil {
 		return nil, 0, err
 	}
-	wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
+	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
 	if err != nil {
 		return nil, 0, err
 	}
+	wire := append(nonce, encrypted...)
 
 	// Receiver
-	recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
+	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
+	// if err != nil {
+	// 	return nil, len(wire), err
+	// }
+	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
 	if err != nil {
 		return nil, len(wire), err
 	}
