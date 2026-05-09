@@ -212,21 +212,44 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 	if len(dst) < len(src) {
 		panic("wrapper/siphash: short dst")
 	}
-	for i := 0; i < len(src); {
-		if c.keystrmN == 0 {
-			c.refill()
-		}
-		// keystrm[8-keystrmN:] holds the unconsumed bytes.
+	n := len(src)
+	i := 0
+
+	// Drain leftover bytes from a previous partial refill, byte by byte.
+	if c.keystrmN > 0 {
 		off := 8 - c.keystrmN
 		take := c.keystrmN
-		if take > len(src)-i {
-			take = len(src) - i
+		if take > n {
+			take = n
 		}
 		for j := 0; j < take; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[off+j]
 		}
 		i += take
 		c.keystrmN -= take
+	}
+
+	// Bulk path: hash one 16-byte input per 8-byte keystream block, XOR
+	// directly via uint64 — skips the keystrm[8]byte buffer entirely.
+	var nonceBuf [16]byte
+	binary.LittleEndian.PutUint64(nonceBuf[:8], c.nonceHi)
+	for n-i >= 8 {
+		binary.LittleEndian.PutUint64(nonceBuf[8:], c.nonceLo^c.counter)
+		ksU64 := siphash.Hash(c.k0, c.k1, nonceBuf[:])
+		srcU64 := binary.LittleEndian.Uint64(src[i:])
+		binary.LittleEndian.PutUint64(dst[i:], srcU64^ksU64)
+		c.counter++
+		i += 8
+	}
+
+	// Tail (<8 bytes): refill keystrm buffer and consume the leading bytes.
+	if i < n {
+		c.refill()
+		rem := n - i
+		for j := 0; j < rem; j++ {
+			dst[i+j] = src[i+j] ^ c.keystrm[j]
+		}
+		c.keystrmN -= rem
 	}
 }
 
@@ -240,6 +263,12 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 //      AEAD case where the entire wire output (32-byte streamID + every
 //      chunk) is sealed as one blob — the receiver unwraps to recover the
 //      raw ITB stream then feeds it to ITB's stream decoder.
+//
+//      WrapInPlace / UnwrapInPlace are zero-allocation variants that XOR the
+//      caller's blob / wire buffer in place. Use when the caller has just
+//      produced an ITB ciphertext and will not re-read it, e.g. on the hot
+//      write-to-wire path where the allocation cost of a fresh output buffer
+//      dominates over the keystream XOR itself.
 //
 //   2. NewWrapWriter / NewUnwrapReader — io.Writer / io.Reader pipeline.
 //      Emits the nonce once at stream start, then XORs the entire bytestream
@@ -288,6 +317,48 @@ func Unwrap(name string, key, wire []byte) ([]byte, error) {
 	return out, nil
 }
 
+// WrapInPlace XORs blob in place under a fresh outer-cipher keystream and
+// returns the per-stream nonce. The caller is expected to emit nonce
+// followed by blob to the wire, or compose a single buffer themselves.
+//
+// blob is MUTATED. Do not pass plaintext that must be preserved beyond
+// the call. Suitable for hot paths where the caller has just produced an
+// ITB ciphertext and will not re-read it (the typical case for buffered
+// write-to-wire).
+func WrapInPlace(name string, key, blob []byte) ([]byte, error) {
+	nonce, err := generateNonce(name)
+	if err != nil {
+		return nil, err
+	}
+	ks, err := MakeKeystream(name, key, nonce)
+	if err != nil {
+		return nil, err
+	}
+	ks.XORKeyStream(blob, blob)
+	return nonce, nil
+}
+
+// UnwrapInPlace strips the leading nonce from wire and XORs the remainder
+// in place. Returns an aliased slice equal to wire[NonceSize(name):],
+// fully decrypted. wire is MUTATED.
+func UnwrapInPlace(name string, key, wire []byte) ([]byte, error) {
+	nlen, err := NonceSize(name)
+	if err != nil {
+		return nil, err
+	}
+	if len(wire) < nlen {
+		return nil, fmt.Errorf("wrapper: wire shorter than nonce (%d < %d)", len(wire), nlen)
+	}
+	nonce := wire[:nlen]
+	body := wire[nlen:]
+	ks, err := MakeKeystream(name, key, nonce)
+	if err != nil {
+		return nil, err
+	}
+	ks.XORKeyStream(body, body)
+	return body, nil
+}
+
 // keystreamReader and keystreamWriter wrap a Keystream to satisfy
 // io.Reader / io.Writer for the streaming-mode helpers below.
 //
@@ -298,12 +369,16 @@ func Unwrap(name string, key, wire []byte) ([]byte, error) {
 // contract explicit and works equally for the SipHash-CTR construction.
 
 type keystreamWriter struct {
-	w  io.Writer
-	ks Keystream
+	w       io.Writer
+	ks      Keystream
+	scratch []byte // reused across Writes; grows to the largest p seen
 }
 
 func (kw *keystreamWriter) Write(p []byte) (int, error) {
-	out := make([]byte, len(p))
+	if cap(kw.scratch) < len(p) {
+		kw.scratch = make([]byte, len(p))
+	}
+	out := kw.scratch[:len(p)]
 	kw.ks.XORKeyStream(out, p)
 	return kw.w.Write(out)
 }
