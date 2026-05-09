@@ -99,40 +99,44 @@ func configureEasy(e *easy.Encryptor) {
 	e.SetLockSoup(benchLockSoup)
 }
 
-func benchLowLevelSingleSeeds(b *testing.B) (noise, data, start *itb.Seed512) {
-	hashFn, _, err := hashes.Make512(benchPrimitive)
+// benchLowLevelMakeSeed512 builds one fresh *itb.Seed512 with both the
+// single-arm hash and the 4-way batched arm wired in. The batched arm
+// (assigned to Seed512.BatchHash) is what the per-pixel inner loop in
+// processChunk512 dispatches through when both noiseSeed.BatchHash and
+// dataSeed.BatchHash are non-nil — that path runs four pixels at a time
+// and is the canonical Low-Level fast-path setup used by every shipped
+// binding's bench harness and by easy.allocSeed in easy/easy.go:425+.
+//
+// Each seed receives an independently-keyed PRF instance (one
+// Make512Pair call per seed) so that the noise / data / start seed
+// slots use distinct PRF keys, mirroring what easy.New does at
+// easy.go:316-322 — sharing one (single, batched) closure pair across
+// all three slots would couple their key channels.
+func benchLowLevelMakeSeed512(b *testing.B) *itb.Seed512 {
+	b.Helper()
+	single, batched, _, err := hashes.Make512Pair(benchPrimitive)
 	if err != nil {
-		b.Fatalf("hashes.Make512: %v", err)
+		b.Fatalf("hashes.Make512Pair: %v", err)
 	}
-	if noise, err = itb.NewSeed512(benchSeedWidth, hashFn); err != nil {
-		b.Fatalf("NewSeed512 noise: %v", err)
+	seed, err := itb.NewSeed512(benchSeedWidth, single)
+	if err != nil {
+		b.Fatalf("NewSeed512: %v", err)
 	}
-	if data, err = itb.NewSeed512(benchSeedWidth, hashFn); err != nil {
-		b.Fatalf("NewSeed512 data: %v", err)
-	}
-	if start, err = itb.NewSeed512(benchSeedWidth, hashFn); err != nil {
-		b.Fatalf("NewSeed512 start: %v", err)
-	}
-	return
+	seed.BatchHash = batched
+	return seed
+}
+
+func benchLowLevelSingleSeeds(b *testing.B) (noise, data, start *itb.Seed512) {
+	return benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b)
 }
 
 func benchLowLevelTripleSeeds(b *testing.B) (noise, d1, d2, d3, s1, s2, s3 *itb.Seed512) {
-	hashFn, _, err := hashes.Make512(benchPrimitive)
-	if err != nil {
-		b.Fatalf("hashes.Make512: %v", err)
-	}
-	mk := func(name string) *itb.Seed512 {
-		s, err := itb.NewSeed512(benchSeedWidth, hashFn)
-		if err != nil {
-			b.Fatalf("NewSeed512 %s: %v", name, err)
-		}
-		return s
-	}
-	return mk("noise"), mk("data1"), mk("data2"), mk("data3"), mk("start1"), mk("start2"), mk("start3")
+	return benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b),
+		benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b), benchLowLevelMakeSeed512(b)
 }
 
 // ---------------------------------------------------------------------------
-// Wrapper-only baseline.
+// Wrapper-only baseline (round-trip — wrapper-cost-isolation case).
 // ---------------------------------------------------------------------------
 
 func BenchmarkWrapperOnly(b *testing.B) {
@@ -199,63 +203,90 @@ func BenchmarkWrapperOnlyInPlace(b *testing.B) {
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Single Ouroboros (12 sub-benches).
+// Single message — Single Ouroboros (24 sub-benches: 4 modes × 3 ciphers × 2 directions).
 // ---------------------------------------------------------------------------
 
 func BenchmarkMessageSingle(b *testing.B) {
 	plaintext := benchRandom(b, benchSingleSize)
 	for _, cn := range wrapper.CipherNames {
-		b.Run("easy-nomac/"+cn, func(b *testing.B) {
-			runMessageEasy(b, plaintext, cn, false, benchEasySingle)
+		b.Run("easy-nomac/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageEasyEncrypt(b, plaintext, cn, false, benchEasySingle)
 		})
-		b.Run("easy-auth/"+cn, func(b *testing.B) {
-			runMessageEasy(b, plaintext, cn, true, benchEasySingle)
+		b.Run("easy-nomac/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageEasyDecrypt(b, plaintext, cn, false, benchEasySingle)
 		})
-		b.Run("lowlevel-nomac/"+cn, func(b *testing.B) {
-			runMessageLowLevelSingleNoMAC(b, plaintext, cn)
+		b.Run("easy-auth/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageEasyEncrypt(b, plaintext, cn, true, benchEasySingle)
 		})
-		b.Run("lowlevel-auth/"+cn, func(b *testing.B) {
-			runMessageLowLevelSingleAuth(b, plaintext, cn)
+		b.Run("easy-auth/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageEasyDecrypt(b, plaintext, cn, true, benchEasySingle)
+		})
+		b.Run("lowlevel-nomac/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageLowLevelSingleNoMACEncrypt(b, plaintext, cn)
+		})
+		b.Run("lowlevel-nomac/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageLowLevelSingleNoMACDecrypt(b, plaintext, cn)
+		})
+		b.Run("lowlevel-auth/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageLowLevelSingleAuthEncrypt(b, plaintext, cn)
+		})
+		b.Run("lowlevel-auth/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageLowLevelSingleAuthDecrypt(b, plaintext, cn)
 		})
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Triple Ouroboros (12 sub-benches).
+// Single message — Triple Ouroboros (24 sub-benches).
 // ---------------------------------------------------------------------------
 
 func BenchmarkMessageTriple(b *testing.B) {
 	plaintext := benchRandom(b, benchSingleSize)
 	for _, cn := range wrapper.CipherNames {
-		b.Run("easy-nomac/"+cn, func(b *testing.B) {
-			runMessageEasy(b, plaintext, cn, false, benchEasyTriple)
+		b.Run("easy-nomac/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageEasyEncrypt(b, plaintext, cn, false, benchEasyTriple)
 		})
-		b.Run("easy-auth/"+cn, func(b *testing.B) {
-			runMessageEasy(b, plaintext, cn, true, benchEasyTriple)
+		b.Run("easy-nomac/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageEasyDecrypt(b, plaintext, cn, false, benchEasyTriple)
 		})
-		b.Run("lowlevel-nomac/"+cn, func(b *testing.B) {
-			runMessageLowLevelTripleNoMAC(b, plaintext, cn)
+		b.Run("easy-auth/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageEasyEncrypt(b, plaintext, cn, true, benchEasyTriple)
 		})
-		b.Run("lowlevel-auth/"+cn, func(b *testing.B) {
-			runMessageLowLevelTripleAuth(b, plaintext, cn)
+		b.Run("easy-auth/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageEasyDecrypt(b, plaintext, cn, true, benchEasyTriple)
+		})
+		b.Run("lowlevel-nomac/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageLowLevelTripleNoMACEncrypt(b, plaintext, cn)
+		})
+		b.Run("lowlevel-nomac/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageLowLevelTripleNoMACDecrypt(b, plaintext, cn)
+		})
+		b.Run("lowlevel-auth/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageLowLevelTripleAuthEncrypt(b, plaintext, cn)
+		})
+		b.Run("lowlevel-auth/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageLowLevelTripleAuthDecrypt(b, plaintext, cn)
 		})
 	}
 }
 
-func runMessageEasy(
+// --- Easy Mode Message helpers ---
+
+func runMessageEasyEncrypt(
 	b *testing.B,
 	plaintext []byte,
 	cn string,
 	withMAC bool,
 	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
 ) {
+	enc := mkEnc(b, withMAC)
+	configureEasy(enc)
+	defer enc.Close()
 	outerKey := benchOuterKey(b, cn)
 	var wireBuf []byte
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		enc := mkEnc(b, withMAC)
-		configureEasy(enc)
 		var encrypted []byte
 		var err error
 		if withMAC {
@@ -270,8 +301,48 @@ func runMessageEasy(
 		if err != nil {
 			b.Fatalf("WrapInPlace: %v", err)
 		}
-		wire := composeWire(&wireBuf, nonce, encrypted)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
+		_ = composeWire(&wireBuf, nonce, encrypted)
+	}
+}
+
+func runMessageEasyDecrypt(
+	b *testing.B,
+	plaintext []byte,
+	cn string,
+	withMAC bool,
+	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
+) {
+	enc := mkEnc(b, withMAC)
+	configureEasy(enc)
+	defer enc.Close()
+	outerKey := benchOuterKey(b, cn)
+
+	// Build one pristine wire (untimed). The timed loop refreshes a working
+	// copy each iteration because UnwrapInPlace mutates the buffer.
+	var encrypted []byte
+	var err error
+	if withMAC {
+		encrypted, err = enc.EncryptAuth(plaintext)
+	} else {
+		encrypted, err = enc.Encrypt(plaintext)
+	}
+	if err != nil {
+		b.Fatalf("Encrypt setup: %v", err)
+	}
+	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
+	if err != nil {
+		b.Fatalf("WrapInPlace setup: %v", err)
+	}
+	pristineWire := append(append([]byte{}, nonce...), encrypted...)
+	workWire := make([]byte, len(pristineWire))
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Refresh the working wire from the pristine copy. The memcpy is
+		// inside the timed total — small relative to ITB Decrypt cost.
+		copy(workWire, pristineWire)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
@@ -287,11 +358,12 @@ func runMessageEasy(
 		if len(pt) != len(plaintext) {
 			b.Fatalf("len mismatch: got %d want %d", len(pt), len(plaintext))
 		}
-		enc.Close()
 	}
 }
 
-func runMessageLowLevelSingleNoMAC(b *testing.B, plaintext []byte, cn string) {
+// --- Low-Level Single Ouroboros Message helpers ---
+
+func runMessageLowLevelSingleNoMACEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
 	var wireBuf []byte
@@ -306,8 +378,30 @@ func runMessageLowLevelSingleNoMAC(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("WrapInPlace: %v", err)
 		}
-		wire := composeWire(&wireBuf, nonce, encrypted)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
+		_ = composeWire(&wireBuf, nonce, encrypted)
+	}
+}
+
+func runMessageLowLevelSingleNoMACDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, data, start := benchLowLevelSingleSeeds(b)
+	outerKey := benchOuterKey(b, cn)
+
+	encrypted, err := itb.Encrypt(noise, data, start, plaintext)
+	if err != nil {
+		b.Fatalf("Encrypt setup: %v", err)
+	}
+	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
+	if err != nil {
+		b.Fatalf("WrapInPlace setup: %v", err)
+	}
+	pristineWire := append(append([]byte{}, nonce...), encrypted...)
+	workWire := make([]byte, len(pristineWire))
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		copy(workWire, pristineWire)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
@@ -321,7 +415,7 @@ func runMessageLowLevelSingleNoMAC(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-func runMessageLowLevelSingleAuth(b *testing.B, plaintext []byte, cn string) {
+func runMessageLowLevelSingleAuthEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
@@ -337,8 +431,31 @@ func runMessageLowLevelSingleAuth(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("WrapInPlace: %v", err)
 		}
-		wire := composeWire(&wireBuf, nonce, encrypted)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
+		_ = composeWire(&wireBuf, nonce, encrypted)
+	}
+}
+
+func runMessageLowLevelSingleAuthDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, data, start := benchLowLevelSingleSeeds(b)
+	macFunc := benchMACFunc(b)
+	outerKey := benchOuterKey(b, cn)
+
+	encrypted, err := itb.EncryptAuth(noise, data, start, plaintext, macFunc)
+	if err != nil {
+		b.Fatalf("EncryptAuth setup: %v", err)
+	}
+	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
+	if err != nil {
+		b.Fatalf("WrapInPlace setup: %v", err)
+	}
+	pristineWire := append(append([]byte{}, nonce...), encrypted...)
+	workWire := make([]byte, len(pristineWire))
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		copy(workWire, pristineWire)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
@@ -352,7 +469,9 @@ func runMessageLowLevelSingleAuth(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-func runMessageLowLevelTripleNoMAC(b *testing.B, plaintext []byte, cn string) {
+// --- Low-Level Triple Ouroboros Message helpers ---
+
+func runMessageLowLevelTripleNoMACEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
 	var wireBuf []byte
@@ -367,8 +486,30 @@ func runMessageLowLevelTripleNoMAC(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("WrapInPlace: %v", err)
 		}
-		wire := composeWire(&wireBuf, nonce, encrypted)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
+		_ = composeWire(&wireBuf, nonce, encrypted)
+	}
+}
+
+func runMessageLowLevelTripleNoMACDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
+	outerKey := benchOuterKey(b, cn)
+
+	encrypted, err := itb.Encrypt3x(noise, d1, d2, d3, s1, s2, s3, plaintext)
+	if err != nil {
+		b.Fatalf("Encrypt3x setup: %v", err)
+	}
+	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
+	if err != nil {
+		b.Fatalf("WrapInPlace setup: %v", err)
+	}
+	pristineWire := append(append([]byte{}, nonce...), encrypted...)
+	workWire := make([]byte, len(pristineWire))
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		copy(workWire, pristineWire)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
@@ -382,7 +523,7 @@ func runMessageLowLevelTripleNoMAC(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-func runMessageLowLevelTripleAuth(b *testing.B, plaintext []byte, cn string) {
+func runMessageLowLevelTripleAuthEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
@@ -398,8 +539,31 @@ func runMessageLowLevelTripleAuth(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("WrapInPlace: %v", err)
 		}
-		wire := composeWire(&wireBuf, nonce, encrypted)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
+		_ = composeWire(&wireBuf, nonce, encrypted)
+	}
+}
+
+func runMessageLowLevelTripleAuthDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
+	macFunc := benchMACFunc(b)
+	outerKey := benchOuterKey(b, cn)
+
+	encrypted, err := itb.EncryptAuth3x(noise, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
+	if err != nil {
+		b.Fatalf("EncryptAuth3x setup: %v", err)
+	}
+	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
+	if err != nil {
+		b.Fatalf("WrapInPlace setup: %v", err)
+	}
+	pristineWire := append(append([]byte{}, nonce...), encrypted...)
+	workWire := make([]byte, len(pristineWire))
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		copy(workWire, pristineWire)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
@@ -414,77 +578,114 @@ func runMessageLowLevelTripleAuth(b *testing.B, plaintext []byte, cn string) {
 }
 
 // ---------------------------------------------------------------------------
-// Streaming — Single Ouroboros (18 sub-benches).
+// Streaming — Single Ouroboros (36 sub-benches: 6 modes × 3 ciphers × 2 directions).
 // ---------------------------------------------------------------------------
 
 func BenchmarkStreamingSingle(b *testing.B) {
 	plaintext := benchRandom(b, benchStreamSize)
 	for _, cn := range wrapper.CipherNames {
-		b.Run("aead-easy-io/"+cn, func(b *testing.B) {
-			runAEADEasyIO(b, plaintext, cn, benchEasySingle)
+		b.Run("aead-easy-io/"+cn+"/encrypt", func(b *testing.B) {
+			runAEADEasyIOEncrypt(b, plaintext, cn, benchEasySingle)
 		})
-		b.Run("aead-lowlevel-io/"+cn, func(b *testing.B) {
-			runAEADLowLevelIOSingle(b, plaintext, cn)
+		b.Run("aead-easy-io/"+cn+"/decrypt", func(b *testing.B) {
+			runAEADEasyIODecrypt(b, plaintext, cn, benchEasySingle)
 		})
-		b.Run("noaead-easy-io/"+cn, func(b *testing.B) {
-			runNoAEADEasyIO(b, plaintext, cn, benchEasySingle)
+		b.Run("aead-lowlevel-io/"+cn+"/encrypt", func(b *testing.B) {
+			runAEADLowLevelIOSingleEncrypt(b, plaintext, cn)
 		})
-		b.Run("noaead-easy-userloop/"+cn, func(b *testing.B) {
-			runNoAEADEasyUserLoop(b, plaintext, cn, benchEasySingle)
+		b.Run("aead-lowlevel-io/"+cn+"/decrypt", func(b *testing.B) {
+			runAEADLowLevelIOSingleDecrypt(b, plaintext, cn)
 		})
-		b.Run("noaead-lowlevel-io/"+cn, func(b *testing.B) {
-			runNoAEADLowLevelIOSingle(b, plaintext, cn)
+		b.Run("noaead-easy-io/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADEasyIOEncrypt(b, plaintext, cn, benchEasySingle)
 		})
-		b.Run("noaead-lowlevel-userloop/"+cn, func(b *testing.B) {
-			runNoAEADLowLevelUserLoopSingle(b, plaintext, cn)
+		b.Run("noaead-easy-io/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADEasyIODecrypt(b, plaintext, cn, benchEasySingle)
+		})
+		b.Run("noaead-easy-userloop/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADEasyUserLoopEncrypt(b, plaintext, cn, benchEasySingle)
+		})
+		b.Run("noaead-easy-userloop/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADEasyUserLoopDecrypt(b, plaintext, cn, benchEasySingle)
+		})
+		b.Run("noaead-lowlevel-io/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADLowLevelIOSingleEncrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-lowlevel-io/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADLowLevelIOSingleDecrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-lowlevel-userloop/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADLowLevelUserLoopSingleEncrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-lowlevel-userloop/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADLowLevelUserLoopSingleDecrypt(b, plaintext, cn)
 		})
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Streaming — Triple Ouroboros (18 sub-benches).
+// Streaming — Triple Ouroboros (36 sub-benches).
 // ---------------------------------------------------------------------------
 
 func BenchmarkStreamingTriple(b *testing.B) {
 	plaintext := benchRandom(b, benchStreamSize)
 	for _, cn := range wrapper.CipherNames {
-		b.Run("aead-easy-io/"+cn, func(b *testing.B) {
-			runAEADEasyIO(b, plaintext, cn, benchEasyTriple)
+		b.Run("aead-easy-io/"+cn+"/encrypt", func(b *testing.B) {
+			runAEADEasyIOEncrypt(b, plaintext, cn, benchEasyTriple)
 		})
-		b.Run("aead-lowlevel-io/"+cn, func(b *testing.B) {
-			runAEADLowLevelIOTriple(b, plaintext, cn)
+		b.Run("aead-easy-io/"+cn+"/decrypt", func(b *testing.B) {
+			runAEADEasyIODecrypt(b, plaintext, cn, benchEasyTriple)
 		})
-		b.Run("noaead-easy-io/"+cn, func(b *testing.B) {
-			runNoAEADEasyIO(b, plaintext, cn, benchEasyTriple)
+		b.Run("aead-lowlevel-io/"+cn+"/encrypt", func(b *testing.B) {
+			runAEADLowLevelIOTripleEncrypt(b, plaintext, cn)
 		})
-		b.Run("noaead-easy-userloop/"+cn, func(b *testing.B) {
-			runNoAEADEasyUserLoop(b, plaintext, cn, benchEasyTriple)
+		b.Run("aead-lowlevel-io/"+cn+"/decrypt", func(b *testing.B) {
+			runAEADLowLevelIOTripleDecrypt(b, plaintext, cn)
 		})
-		b.Run("noaead-lowlevel-io/"+cn, func(b *testing.B) {
-			runNoAEADLowLevelIOTriple(b, plaintext, cn)
+		b.Run("noaead-easy-io/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADEasyIOEncrypt(b, plaintext, cn, benchEasyTriple)
 		})
-		b.Run("noaead-lowlevel-userloop/"+cn, func(b *testing.B) {
-			runNoAEADLowLevelUserLoopTriple(b, plaintext, cn)
+		b.Run("noaead-easy-io/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADEasyIODecrypt(b, plaintext, cn, benchEasyTriple)
+		})
+		b.Run("noaead-easy-userloop/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADEasyUserLoopEncrypt(b, plaintext, cn, benchEasyTriple)
+		})
+		b.Run("noaead-easy-userloop/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADEasyUserLoopDecrypt(b, plaintext, cn, benchEasyTriple)
+		})
+		b.Run("noaead-lowlevel-io/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADLowLevelIOTripleEncrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-lowlevel-io/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADLowLevelIOTripleDecrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-lowlevel-userloop/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADLowLevelUserLoopTripleEncrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-lowlevel-userloop/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADLowLevelUserLoopTripleDecrypt(b, plaintext, cn)
 		})
 	}
 }
 
-// --- Streaming AEAD Easy (IO-Driven) — shared between Single and Triple ---
+// --- Streaming AEAD Easy (IO-Driven) — Encrypt / Decrypt ---
 
-func runAEADEasyIO(
+func runAEADEasyIOEncrypt(
 	b *testing.B,
 	plaintext []byte,
 	cn string,
 	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
 ) {
+	enc := mkEnc(b, true)
+	configureEasy(enc)
+	defer enc.Close()
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		enc := mkEnc(b, true)
-		configureEasy(enc)
-
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -492,8 +693,36 @@ func runAEADEasyIO(
 		if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStreamAuthIO: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runAEADEasyIODecrypt(
+	b *testing.B,
+	plaintext []byte,
+	cn string,
+	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
+) {
+	enc := mkEnc(b, true)
+	configureEasy(enc)
+	defer enc.Close()
+	outerKey := benchOuterKey(b, cn)
+
+	// Build one pristine wire (untimed). The decrypt loop reads from a fresh
+	// bytes.Reader over the same backing slice each iteration.
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
+		b.Fatalf("EncryptStreamAuthIO setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -504,26 +733,26 @@ func runAEADEasyIO(
 		if dst.Len() != len(plaintext) {
 			b.Fatalf("len mismatch: got %d want %d", dst.Len(), len(plaintext))
 		}
-		enc.Close()
 	}
 }
 
-// --- Streaming Easy (No MAC, IO-Driven) — shared between Single and Triple ---
+// --- Streaming Easy (No MAC, IO-Driven) — Encrypt / Decrypt ---
 
-func runNoAEADEasyIO(
+func runNoAEADEasyIOEncrypt(
 	b *testing.B,
 	plaintext []byte,
 	cn string,
 	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
 ) {
+	enc := mkEnc(b, false)
+	configureEasy(enc)
+	defer enc.Close()
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		enc := mkEnc(b, false)
-		configureEasy(enc)
-
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -531,8 +760,34 @@ func runNoAEADEasyIO(
 		if err := enc.EncryptStreamIO(bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStreamIO: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runNoAEADEasyIODecrypt(
+	b *testing.B,
+	plaintext []byte,
+	cn string,
+	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
+) {
+	enc := mkEnc(b, false)
+	configureEasy(enc)
+	defer enc.Close()
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := enc.EncryptStreamIO(bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
+		b.Fatalf("EncryptStreamIO setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -543,26 +798,26 @@ func runNoAEADEasyIO(
 		if dst.Len() != len(plaintext) {
 			b.Fatalf("len mismatch: got %d want %d", dst.Len(), len(plaintext))
 		}
-		enc.Close()
 	}
 }
 
-// --- Streaming Easy (No MAC, User-Driven Loop) — shared between Single and Triple ---
+// --- Streaming Easy (No MAC, User-Driven Loop) — Encrypt / Decrypt ---
 
-func runNoAEADEasyUserLoop(
+func runNoAEADEasyUserLoopEncrypt(
 	b *testing.B,
 	plaintext []byte,
 	cn string,
 	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
 ) {
+	enc := mkEnc(b, false)
+	configureEasy(enc)
+	defer enc.Close()
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		enc := mkEnc(b, false)
-		configureEasy(enc)
-
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -572,8 +827,36 @@ func runNoAEADEasyUserLoop(
 		}); err != nil {
 			b.Fatalf("encryptUserLoop: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runNoAEADEasyUserLoopDecrypt(
+	b *testing.B,
+	plaintext []byte,
+	cn string,
+	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
+) {
+	enc := mkEnc(b, false)
+	configureEasy(enc)
+	defer enc.Close()
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := encryptUserLoop(plaintext, wrapWriter, func(buf []byte) ([]byte, error) {
+		return enc.Encrypt(buf)
+	}); err != nil {
+		b.Fatalf("encryptUserLoop setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -586,20 +869,20 @@ func runNoAEADEasyUserLoop(
 		if len(got) != len(plaintext) {
 			b.Fatalf("len mismatch: got %d want %d", len(got), len(plaintext))
 		}
-		enc.Close()
 	}
 }
 
-// --- Streaming AEAD Low-Level — Single ---
+// --- Streaming AEAD Low-Level — Single (Encrypt / Decrypt) ---
 
-func runAEADLowLevelIOSingle(b *testing.B, plaintext []byte, cn string) {
+func runAEADLowLevelIOSingleEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -607,8 +890,28 @@ func runAEADLowLevelIOSingle(b *testing.B, plaintext []byte, cn string) {
 		if err := itb.EncryptStreamAuth(noise, data, start, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStreamAuth: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runAEADLowLevelIOSingleDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, data, start := benchLowLevelSingleSeeds(b)
+	macFunc := benchMACFunc(b)
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := itb.EncryptStreamAuth(noise, data, start, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
+		b.Fatalf("EncryptStreamAuth setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -622,16 +925,17 @@ func runAEADLowLevelIOSingle(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-// --- Streaming AEAD Low-Level — Triple ---
+// --- Streaming AEAD Low-Level — Triple (Encrypt / Decrypt) ---
 
-func runAEADLowLevelIOTriple(b *testing.B, plaintext []byte, cn string) {
+func runAEADLowLevelIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -639,8 +943,28 @@ func runAEADLowLevelIOTriple(b *testing.B, plaintext []byte, cn string) {
 		if err := itb.EncryptStreamAuth3x(noise, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStreamAuth3x: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
+	macFunc := benchMACFunc(b)
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := itb.EncryptStreamAuth3x(noise, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
+		b.Fatalf("EncryptStreamAuth3x setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -654,15 +978,16 @@ func runAEADLowLevelIOTriple(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-// --- Streaming No MAC Low-Level (IO-Driven) — Single ---
+// --- Streaming No MAC Low-Level (IO-Driven) — Single (Encrypt / Decrypt) ---
 
-func runNoAEADLowLevelIOSingle(b *testing.B, plaintext []byte, cn string) {
+func runNoAEADLowLevelIOSingleEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -670,8 +995,27 @@ func runNoAEADLowLevelIOSingle(b *testing.B, plaintext []byte, cn string) {
 		if err := itb.EncryptStream(noise, data, start, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStream: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runNoAEADLowLevelIOSingleDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, data, start := benchLowLevelSingleSeeds(b)
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := itb.EncryptStream(noise, data, start, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
+		b.Fatalf("EncryptStream setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -685,15 +1029,16 @@ func runNoAEADLowLevelIOSingle(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-// --- Streaming No MAC Low-Level (IO-Driven) — Triple ---
+// --- Streaming No MAC Low-Level (IO-Driven) — Triple (Encrypt / Decrypt) ---
 
-func runNoAEADLowLevelIOTriple(b *testing.B, plaintext []byte, cn string) {
+func runNoAEADLowLevelIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -701,8 +1046,27 @@ func runNoAEADLowLevelIOTriple(b *testing.B, plaintext []byte, cn string) {
 		if err := itb.EncryptStream3x(noise, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStream3x: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runNoAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := itb.EncryptStream3x(noise, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
+		b.Fatalf("EncryptStream3x setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -716,15 +1080,16 @@ func runNoAEADLowLevelIOTriple(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
-// --- Streaming No MAC Low-Level (User-Driven Loop) — Single ---
+// --- Streaming No MAC Low-Level (User-Driven Loop) — Single (Encrypt / Decrypt) ---
 
-func runNoAEADLowLevelUserLoopSingle(b *testing.B, plaintext []byte, cn string) {
+func runNoAEADLowLevelUserLoopSingleEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -734,8 +1099,29 @@ func runNoAEADLowLevelUserLoopSingle(b *testing.B, plaintext []byte, cn string) 
 		}); err != nil {
 			b.Fatalf("encryptUserLoop: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runNoAEADLowLevelUserLoopSingleDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, data, start := benchLowLevelSingleSeeds(b)
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := encryptUserLoop(plaintext, wrapWriter, func(buf []byte) ([]byte, error) {
+		return itb.Encrypt(noise, data, start, buf)
+	}); err != nil {
+		b.Fatalf("encryptUserLoop setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
@@ -751,15 +1137,16 @@ func runNoAEADLowLevelUserLoopSingle(b *testing.B, plaintext []byte, cn string) 
 	}
 }
 
-// --- Streaming No MAC Low-Level (User-Driven Loop) — Triple ---
+// --- Streaming No MAC Low-Level (User-Driven Loop) — Triple (Encrypt / Decrypt) ---
 
-func runNoAEADLowLevelUserLoopTriple(b *testing.B, plaintext []byte, cn string) {
+func runNoAEADLowLevelUserLoopTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf bytes.Buffer
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var wireBuf bytes.Buffer
+		wireBuf.Reset()
 		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
@@ -769,8 +1156,29 @@ func runNoAEADLowLevelUserLoopTriple(b *testing.B, plaintext []byte, cn string) 
 		}); err != nil {
 			b.Fatalf("encryptUserLoop: %v", err)
 		}
+	}
+}
 
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(wireBuf.Bytes()))
+func runNoAEADLowLevelUserLoopTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
+	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
+	outerKey := benchOuterKey(b, cn)
+
+	var pristineBuf bytes.Buffer
+	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
+	if err != nil {
+		b.Fatalf("NewWrapWriter setup: %v", err)
+	}
+	if err := encryptUserLoop(plaintext, wrapWriter, func(buf []byte) ([]byte, error) {
+		return itb.Encrypt3x(noise, d1, d2, d3, s1, s2, s3, buf)
+	}); err != nil {
+		b.Fatalf("encryptUserLoop setup: %v", err)
+	}
+	pristineWire := pristineBuf.Bytes()
+
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
 		if err != nil {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
