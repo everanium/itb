@@ -33,7 +33,6 @@
 #include <itb/wrapper.hpp>
 
 #include <cstdint>
-#include <span>
 #include <utility>
 #include <vector>
 
@@ -90,9 +89,13 @@ TEST_CASE("wrapper::wrap / unwrap round-trip preserves blob bytes",
     auto blob = fill_pattern(kBlobLen);
     for (auto cipher : kAllCiphers) {
         auto key = itb::wrapper::generate_key(cipher);
-        auto wire = itb::wrapper::wrap(cipher, key, blob);
+        auto wire = itb::wrapper::wrap(cipher,
+                                       key.data(), key.size(),
+                                       blob.data(), blob.size());
         REQUIRE(wire.size() == itb::wrapper::nonce_size(cipher) + blob.size());
-        auto recovered = itb::wrapper::unwrap(cipher, key, wire);
+        auto recovered = itb::wrapper::unwrap(cipher,
+                                              key.data(), key.size(),
+                                              wire.data(), wire.size());
         REQUIRE(recovered == blob);
     }
 }
@@ -108,8 +111,8 @@ TEST_CASE("wrapper::wrap_in_place / unwrap_in_place round-trip preserves bytes",
         std::vector<std::uint8_t> blob = pristine;
         auto nonce = itb::wrapper::wrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{key},
-            std::span<std::uint8_t>{blob});
+            key.data(), key.size(),
+            blob.data(), blob.size());
         REQUIRE(nonce.size() == itb::wrapper::nonce_size(cipher));
         REQUIRE(blob != pristine); // body has been XORed
 
@@ -120,10 +123,11 @@ TEST_CASE("wrapper::wrap_in_place / unwrap_in_place round-trip preserves bytes",
 
         auto body = itb::wrapper::unwrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{key},
-            std::span<std::uint8_t>{wire});
-        REQUIRE(body.size() == pristine.size());
-        REQUIRE(std::vector<std::uint8_t>(body.begin(), body.end()) == pristine);
+            key.data(), key.size(),
+            wire.data(), wire.size());
+        REQUIRE(body.second == pristine.size());
+        REQUIRE(std::vector<std::uint8_t>(body.first, body.first + body.second)
+                == pristine);
     }
 }
 
@@ -134,19 +138,19 @@ TEST_CASE("wrapper::WrapStreamWriter / UnwrapStreamReader round-trip "
         auto key = itb::wrapper::generate_key(cipher);
 
         // Sender — feed two halves through one keystream session.
-        itb::wrapper::WrapStreamWriter ww{cipher, key};
+        itb::wrapper::WrapStreamWriter ww{cipher, key.data(), key.size()};
         REQUIRE(ww.cipher() == cipher);
         REQUIRE(ww.nonce().size() == itb::wrapper::nonce_size(cipher));
-        std::span<const std::uint8_t> first{blob.data(), kBlobLen};
-        std::span<const std::uint8_t> second{blob.data() + kBlobLen, kBlobLen};
-        auto wire1 = ww.update(first);
-        auto wire2 = ww.update(second);
+        auto wire1 = ww.update(blob.data(), kBlobLen);
+        auto wire2 = ww.update(blob.data() + kBlobLen, kBlobLen);
 
         // Receiver — strip nonce, feed the same two halves through one
         // unwrap session, recover the original bytes.
-        itb::wrapper::UnwrapStreamReader ur{cipher, key, ww.nonce()};
-        auto recovered1 = ur.update(wire1);
-        auto recovered2 = ur.update(wire2);
+        itb::wrapper::UnwrapStreamReader ur{cipher,
+                                            key.data(), key.size(),
+                                            ww.nonce().data(), ww.nonce().size()};
+        auto recovered1 = ur.update(wire1.data(), wire1.size());
+        auto recovered2 = ur.update(wire2.data(), wire2.size());
         std::vector<std::uint8_t> recovered;
         recovered.insert(recovered.end(), recovered1.begin(), recovered1.end());
         recovered.insert(recovered.end(), recovered2.begin(), recovered2.end());
@@ -161,13 +165,15 @@ TEST_CASE("wrapper::WrapStreamWriter::update_in_place mutates the buffer",
         auto key = itb::wrapper::generate_key(cipher);
 
         std::vector<std::uint8_t> buf = pristine;
-        itb::wrapper::WrapStreamWriter ww{cipher, key};
+        itb::wrapper::WrapStreamWriter ww{cipher, key.data(), key.size()};
         auto nonce = ww.nonce();
-        ww.update_in_place(std::span<std::uint8_t>{buf});
+        ww.update_in_place(buf.data(), buf.size());
         REQUIRE(buf != pristine);
 
-        itb::wrapper::UnwrapStreamReader ur{cipher, key, nonce};
-        ur.update_in_place(std::span<std::uint8_t>{buf});
+        itb::wrapper::UnwrapStreamReader ur{cipher,
+                                            key.data(), key.size(),
+                                            nonce.data(), nonce.size()};
+        ur.update_in_place(buf.data(), buf.size());
         REQUIRE(buf == pristine);
     }
 }
@@ -178,7 +184,9 @@ TEST_CASE("wrapper::wrap rejects mismatched key length",
     // AES needs 16 bytes; pass 8.
     std::vector<std::uint8_t> short_key(8, 0xAB);
     REQUIRE_THROWS_AS(
-        itb::wrapper::wrap(itb::wrapper::Cipher::Aes128Ctr, short_key, blob),
+        itb::wrapper::wrap(itb::wrapper::Cipher::Aes128Ctr,
+                           short_key.data(), short_key.size(),
+                           blob.data(), blob.size()),
         itb::ItbError);
 }
 
@@ -188,7 +196,9 @@ TEST_CASE("wrapper::unwrap rejects truncated wire shorter than nonce",
     // Nonce size for AES-128-CTR is 16; pass 8 bytes total.
     std::vector<std::uint8_t> too_short(8, 0xCD);
     REQUIRE_THROWS_AS(
-        itb::wrapper::unwrap(itb::wrapper::Cipher::Aes128Ctr, key, too_short),
+        itb::wrapper::unwrap(itb::wrapper::Cipher::Aes128Ctr,
+                             key.data(), key.size(),
+                             too_short.data(), too_short.size()),
         itb::ItbError);
 }
 
@@ -200,8 +210,12 @@ TEST_CASE("wrapper::unwrap with mismatched key produces non-equal body",
     auto blob = fill_pattern(kBlobLen);
     auto k1 = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
     auto k2 = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
-    auto wire = itb::wrapper::wrap(itb::wrapper::Cipher::Aes128Ctr, k1, blob);
-    auto recovered = itb::wrapper::unwrap(itb::wrapper::Cipher::Aes128Ctr, k2, wire);
+    auto wire = itb::wrapper::wrap(itb::wrapper::Cipher::Aes128Ctr,
+                                   k1.data(), k1.size(),
+                                   blob.data(), blob.size());
+    auto recovered = itb::wrapper::unwrap(itb::wrapper::Cipher::Aes128Ctr,
+                                          k2.data(), k2.size(),
+                                          wire.data(), wire.size());
     REQUIRE(recovered != blob);
 }
 
@@ -211,7 +225,9 @@ TEST_CASE("wrapper::UnwrapStreamReader rejects wrong-length wire nonce",
     std::vector<std::uint8_t> wrong_nonce(8, 0x11);
     auto build = [&]() {
         return itb::wrapper::UnwrapStreamReader{
-            itb::wrapper::Cipher::Aes128Ctr, key, wrong_nonce};
+            itb::wrapper::Cipher::Aes128Ctr,
+            key.data(), key.size(),
+            wrong_nonce.data(), wrong_nonce.size()};
     };
     REQUIRE_THROWS_AS(build(), itb::ItbError);
 }
@@ -220,18 +236,20 @@ TEST_CASE("wrapper::WrapStreamWriter move-construction transfers handle",
           "[wrapper][stream][move]") {
     auto key = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
     itb::wrapper::WrapStreamWriter src{
-        itb::wrapper::Cipher::Aes128Ctr, key};
+        itb::wrapper::Cipher::Aes128Ctr, key.data(), key.size()};
     auto nonce = src.nonce();
     itb::wrapper::WrapStreamWriter dst{std::move(src)};
     REQUIRE(dst.nonce() == nonce);
     auto blob = fill_pattern(64);
-    auto wire = dst.update(blob);
+    auto wire = dst.update(blob.data(), blob.size());
     REQUIRE(wire.size() == blob.size());
     // Receiver still pairs against `nonce` from `dst`, regardless of
     // the source vs. destination identity.
     itb::wrapper::UnwrapStreamReader ur{
-        itb::wrapper::Cipher::Aes128Ctr, key, dst.nonce()};
-    auto recovered = ur.update(wire);
+        itb::wrapper::Cipher::Aes128Ctr,
+        key.data(), key.size(),
+        dst.nonce().data(), dst.nonce().size()};
+    auto recovered = ur.update(wire.data(), wire.size());
     REQUIRE(recovered == blob);
 }
 
@@ -241,8 +259,12 @@ TEST_CASE("wrapper::generate_key returns a buffer that drives a round-trip",
         auto key = itb::wrapper::generate_key(cipher);
         REQUIRE(key.size() == itb::wrapper::key_size(cipher));
         auto blob = fill_pattern(64);
-        auto wire = itb::wrapper::wrap(cipher, key, blob);
-        auto recovered = itb::wrapper::unwrap(cipher, key, wire);
+        auto wire = itb::wrapper::wrap(cipher,
+                                       key.data(), key.size(),
+                                       blob.data(), blob.size());
+        auto recovered = itb::wrapper::unwrap(cipher,
+                                              key.data(), key.size(),
+                                              wire.data(), wire.size());
         REQUIRE(recovered == blob);
     }
 }
@@ -258,8 +280,8 @@ TEST_CASE("eitb-style end-to-end: ITB encryptor + wrapper round-trip",
     // Wrap in place mutates ct; nonce captured separately.
     auto nonce = itb::wrapper::wrap_in_place(
         itb::wrapper::Cipher::Aes128Ctr,
-        std::span<const std::uint8_t>{outer_key},
-        std::span<std::uint8_t>{ct});
+        outer_key.data(), outer_key.size(),
+        ct.data(), ct.size());
 
     // Compose wire = nonce || ct.
     std::vector<std::uint8_t> wire(nonce.size() + ct.size());
@@ -268,10 +290,10 @@ TEST_CASE("eitb-style end-to-end: ITB encryptor + wrapper round-trip",
 
     auto body = itb::wrapper::unwrap_in_place(
         itb::wrapper::Cipher::Aes128Ctr,
-        std::span<const std::uint8_t>{outer_key},
-        std::span<std::uint8_t>{wire});
+        outer_key.data(), outer_key.size(),
+        wire.data(), wire.size());
 
-    std::vector<std::uint8_t> body_vec(body.begin(), body.end());
+    std::vector<std::uint8_t> body_vec(body.first, body.first + body.second);
     auto recovered = enc.decrypt(body_vec);
     REQUIRE(recovered == plaintext);
 }

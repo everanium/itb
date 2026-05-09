@@ -27,7 +27,7 @@ The single keystream advances monotonically across all bytes within one wrap ses
 
 No length-prefix or other framing byte appears in cleartext on the wire in any wrap shape. The User-Driven Loop emits length prefixes through the wrap-writer so they get XORed into the keystream alongside the chunk bodies.
 
-The wrap surface requires C++20 (`std::span`). Every other C++ binding header still compiles under C++17; only `<itb/wrapper.hpp>` and the test_wrapper / bench_wrapper / eitb compilation units are gated to C++20 via the Makefile's `CXXSTD_WRAP` variable.
+The wrap surface compiles against the C++17 baseline shared by the rest of the binding. Public API entry points take `const std::uint8_t* + std::size_t` / `std::uint8_t* + std::size_t` pointer+length pairs; `unwrap_in_place` returns a `std::pair<std::uint8_t*, std::size_t>` over the recovered body. Consumers do not need to flip to C++20.
 
 ### Cipher selector
 
@@ -110,10 +110,11 @@ enc.stream_encrypt_auth(read_fn, [&inner](const std::uint8_t* b, std::size_t n) 
     inner.insert(inner.end(), b, b + n);
 });
 
-itb::wrapper::WrapStreamWriter ww{itb::wrapper::Cipher::Aes128Ctr, outer_key};
+itb::wrapper::WrapStreamWriter ww{itb::wrapper::Cipher::Aes128Ctr,
+                                  outer_key.data(), outer_key.size()};
 std::vector<std::uint8_t> wire;
 wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
-auto inner_xor = ww.update(inner);
+auto inner_xor = ww.update(inner.data(), inner.size());
 wire.insert(wire.end(), inner_xor.begin(), inner_xor.end());
 ```
 
@@ -139,8 +140,8 @@ auto outer_key = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 auto nonce = itb::wrapper::wrap_in_place(
     itb::wrapper::Cipher::Aes128Ctr,
-    std::span<const std::uint8_t>{outer_key},
-    std::span<std::uint8_t>{encrypted});
+    outer_key.data(), outer_key.size(),
+    encrypted.data(), encrypted.size());
 
 std::vector<std::uint8_t> wire(nonce.size() + encrypted.size());
 std::copy(nonce.begin(), nonce.end(), wire.begin());
@@ -150,9 +151,10 @@ std::copy(encrypted.begin(), encrypted.end(),
 // Receiver.
 auto body = itb::wrapper::unwrap_in_place(
     itb::wrapper::Cipher::Aes128Ctr,
-    std::span<const std::uint8_t>{outer_key},
-    std::span<std::uint8_t>{wire});
-auto pt = enc.decrypt(std::vector<std::uint8_t>(body.begin(), body.end()));
+    outer_key.data(), outer_key.size(),
+    wire.data(), wire.size());
+auto pt = enc.decrypt(
+    std::vector<std::uint8_t>(body.first, body.first + body.second));
 ```
 
 The immutable-input alternative uses `itb::wrapper::wrap` / `itb::wrapper::unwrap`, which allocate a fresh wire buffer at the cost of one extra allocation per call. The eitb runner exercises both via commented alternatives.

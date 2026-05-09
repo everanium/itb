@@ -22,15 +22,15 @@
 //   - `itb::wrapper::key_size(Cipher)` / `nonce_size(Cipher)` — byte
 //     lengths of the outer cipher's key / on-wire nonce.
 //   - `itb::wrapper::generate_key(Cipher)` — fresh CSPRNG outer key.
-//   - `itb::wrapper::wrap(Cipher, key, blob)` — single-shot wrap;
-//     allocates a fresh `nonce || ks-XOR(blob)` wire.
-//   - `itb::wrapper::unwrap(Cipher, key, wire)` — single-shot unwrap;
-//     allocates a fresh recovered-blob buffer.
-//   - `itb::wrapper::wrap_in_place(Cipher, key, blob, out_nonce)` —
+//   - `itb::wrapper::wrap(Cipher, key, key_len, blob, blob_len)` —
+//     single-shot wrap; allocates a fresh `nonce || ks-XOR(blob)` wire.
+//   - `itb::wrapper::unwrap(Cipher, key, key_len, wire, wire_len)` —
+//     single-shot unwrap; allocates a fresh recovered-blob buffer.
+//   - `itb::wrapper::wrap_in_place(Cipher, key, key_len, blob, blob_len)` —
 //     mutates `blob` in place; returns the per-stream nonce.
-//   - `itb::wrapper::unwrap_in_place(Cipher, key, wire)` — mutates
-//     `wire` in place; returns a span over the recovered body
-//     (`wire[nonce_size .. wire.size())`).
+//   - `itb::wrapper::unwrap_in_place(Cipher, key, key_len, wire, wire_len)` —
+//     mutates `wire` in place; returns a `(pointer, length)` pair over
+//     the recovered body (`wire[nonce_size .. wire_len)`).
 //   - `itb::wrapper::WrapStreamWriter` — RAII streaming wrap-encrypt
 //     handle with `update` / `update_in_place` methods.
 //   - `itb::wrapper::UnwrapStreamReader` — RAII streaming
@@ -62,15 +62,19 @@
 // `u32_LE` length prefixes) is written through the `update` calls so
 // the framing bytes pass through the keystream XOR alongside the
 // inner ITB ciphertext bodies.
+//
+// Public API uses `const uint8_t* + size_t` / `uint8_t* + size_t`
+// pointer+length pairs throughout, so the wrapper header compiles
+// against the same C++17 baseline as the rest of the C++ binding.
 
 #pragma once
 
 #include <itb.h>
 #include <itb/errors.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -148,15 +152,17 @@ inline std::vector<std::uint8_t> generate_key(Cipher cipher) {
 // keystream-XOR(blob)`. Empty blob is permitted — the wire becomes
 // `nonce` alone.
 inline std::vector<std::uint8_t> wrap(Cipher cipher,
-                                      std::span<const std::uint8_t> key,
-                                      std::span<const std::uint8_t> blob) {
+                                      const std::uint8_t* key,
+                                      std::size_t key_len,
+                                      const std::uint8_t* blob,
+                                      std::size_t blob_len) {
     std::uint8_t* buf = nullptr;
     std::size_t len = 0;
-    const std::uint8_t* blob_ptr = blob.empty() ? nullptr : blob.data();
+    const std::uint8_t* blob_ptr = (blob_len == 0) ? nullptr : blob;
     detail::check(itb_wrap(
         static_cast<itb_wrapper_cipher_t>(cipher),
-        key.data(), key.size(),
-        blob_ptr, blob.size(),
+        key, key_len,
+        blob_ptr, blob_len,
         &buf, &len));
     std::vector<std::uint8_t> out(buf, buf + len);
     itb_buffer_free(buf);
@@ -169,15 +175,17 @@ inline std::vector<std::uint8_t> wrap(Cipher cipher,
 // recovered blob. Throws `ItbError(STATUS_BAD_INPUT)` when `wire`
 // is shorter than the nonce.
 inline std::vector<std::uint8_t> unwrap(Cipher cipher,
-                                        std::span<const std::uint8_t> key,
-                                        std::span<const std::uint8_t> wire) {
+                                        const std::uint8_t* key,
+                                        std::size_t key_len,
+                                        const std::uint8_t* wire,
+                                        std::size_t wire_len) {
     std::uint8_t* buf = nullptr;
     std::size_t len = 0;
-    const std::uint8_t* wire_ptr = wire.empty() ? nullptr : wire.data();
+    const std::uint8_t* wire_ptr = (wire_len == 0) ? nullptr : wire;
     detail::check(itb_unwrap(
         static_cast<itb_wrapper_cipher_t>(cipher),
-        key.data(), key.size(),
-        wire_ptr, wire.size(),
+        key, key_len,
+        wire_ptr, wire_len,
         &buf, &len));
     std::vector<std::uint8_t> out(buf, buf + len);
     itb_buffer_free(buf);
@@ -193,45 +201,50 @@ inline std::vector<std::uint8_t> unwrap(Cipher cipher,
 // plaintext must be preserved.
 inline std::vector<std::uint8_t> wrap_in_place(
     Cipher cipher,
-    std::span<const std::uint8_t> key,
-    std::span<std::uint8_t> blob) {
+    const std::uint8_t* key,
+    std::size_t key_len,
+    std::uint8_t* blob,
+    std::size_t blob_len) {
     std::size_t nlen = nonce_size(cipher);
     std::vector<std::uint8_t> nonce(nlen, 0);
-    std::uint8_t* blob_ptr = blob.empty() ? nullptr : blob.data();
+    std::uint8_t* blob_ptr = (blob_len == 0) ? nullptr : blob;
     detail::check(itb_wrap_in_place(
         static_cast<itb_wrapper_cipher_t>(cipher),
-        key.data(), key.size(),
-        blob_ptr, blob.size(),
+        key, key_len,
+        blob_ptr, blob_len,
         nonce.data(), nonce.size()));
     return nonce;
 }
 
 // In-place single-shot unwrap. Strips the leading `nonce_size(cipher)`
 // bytes from `wire` and XOR-decrypts the remainder in place. Returns
-// a span over the decrypted body (`wire[nonce_size .. wire.size())`).
-// The leading nonce prefix is left unchanged. `wire` is **MUTATED**
-// in place.
+// a `(pointer, length)` pair over the decrypted body
+// (`wire[nonce_size .. wire_len)`). The leading nonce prefix is left
+// unchanged. `wire` is **MUTATED** in place.
 //
-// The returned span is a view into `wire`; the caller MUST keep
-// `wire`'s storage alive while reading through the span.
+// The returned pointer is a view into `wire`; the caller MUST keep
+// `wire`'s storage alive while reading through the pointer.
 //
-// Throws `ItbError(STATUS_BAD_INPUT)` when `wire` is shorter than the
-// nonce.
-inline std::span<std::uint8_t> unwrap_in_place(
+// Throws `ItbError(STATUS_BAD_INPUT)` when `wire_len` is shorter than
+// the nonce.
+inline std::pair<std::uint8_t*, std::size_t> unwrap_in_place(
     Cipher cipher,
-    std::span<const std::uint8_t> key,
-    std::span<std::uint8_t> wire) {
+    const std::uint8_t* key,
+    std::size_t key_len,
+    std::uint8_t* wire,
+    std::size_t wire_len) {
     std::size_t nlen = nonce_size(cipher);
-    std::uint8_t* wire_ptr = wire.empty() ? nullptr : wire.data();
+    std::uint8_t* wire_ptr = (wire_len == 0) ? nullptr : wire;
     detail::check(itb_unwrap_in_place(
         static_cast<itb_wrapper_cipher_t>(cipher),
-        key.data(), key.size(),
-        wire_ptr, wire.size()));
-    if (wire.size() < nlen) {
+        key, key_len,
+        wire_ptr, wire_len));
+    if (wire_len < nlen) {
         // Defensive: itb_unwrap_in_place rejected the call already.
-        return std::span<std::uint8_t>{};
+        return std::pair<std::uint8_t*, std::size_t>{nullptr, 0};
     }
-    return wire.subspan(nlen);
+    return std::pair<std::uint8_t*, std::size_t>{
+        wire + nlen, wire_len - nlen};
 }
 
 // ---- Streaming wrap-encrypt handle -------------------------------
@@ -252,13 +265,15 @@ public:
     // Allocate a fresh streaming wrap-encrypt handle for the named
     // outer cipher under the caller-supplied key. Draws a CSPRNG
     // nonce internally; reachable via `nonce()`.
-    WrapStreamWriter(Cipher cipher, std::span<const std::uint8_t> key)
+    WrapStreamWriter(Cipher cipher,
+                     const std::uint8_t* key,
+                     std::size_t key_len)
         : cipher_{cipher},
           nonce_(nonce_size(cipher), 0),
           handle_{nullptr} {
         detail::check(itb_wrap_stream_writer_new(
             static_cast<itb_wrapper_cipher_t>(cipher),
-            key.data(), key.size(),
+            key, key_len,
             nonce_.data(), nonce_.size(),
             &handle_));
     }
@@ -294,32 +309,33 @@ public:
     // The cipher selector this writer was constructed with.
     Cipher cipher() const noexcept { return cipher_; }
 
-    // XOR-encrypt `src` through the keystream into a freshly-
-    // allocated buffer of the same length. The keystream counter
-    // advances by `src.size()` bytes. Empty input is a no-op and
+    // XOR-encrypt `src_len` bytes at `src` through the keystream into a
+    // freshly-allocated buffer of the same length. The keystream
+    // counter advances by `src_len` bytes. Empty input is a no-op and
     // returns an empty vector.
-    std::vector<std::uint8_t> update(std::span<const std::uint8_t> src) {
-        std::vector<std::uint8_t> out(src.size(), 0);
-        if (src.empty()) {
+    std::vector<std::uint8_t> update(const std::uint8_t* src,
+                                     std::size_t src_len) {
+        std::vector<std::uint8_t> out(src_len, 0);
+        if (src_len == 0) {
             return out;
         }
         detail::check(itb_wrap_stream_writer_update(
             handle_,
-            src.data(), src.size(),
+            src, src_len,
             out.data(), out.size()));
         return out;
     }
 
-    // XOR-encrypt `buf` in place. The keystream counter advances by
-    // `buf.size()` bytes. Empty input is a no-op.
-    void update_in_place(std::span<std::uint8_t> buf) {
-        if (buf.empty()) {
+    // XOR-encrypt `buf_len` bytes at `buf` in place. The keystream
+    // counter advances by `buf_len` bytes. Empty input is a no-op.
+    void update_in_place(std::uint8_t* buf, std::size_t buf_len) {
+        if (buf_len == 0) {
             return;
         }
         detail::check(itb_wrap_stream_writer_update(
             handle_,
-            buf.data(), buf.size(),
-            buf.data(), buf.size()));
+            buf, buf_len,
+            buf, buf_len));
     }
 
 private:
@@ -343,18 +359,20 @@ private:
 // subsequent `update` calls XOR caller wire bytes back to plaintext
 // under the keystream advancing from counter zero.
 //
-// `wire_nonce` length must equal `nonce_size(cipher)` or the
-// constructor throws `ItbError(STATUS_BAD_INPUT)`.
+// `wire_nonce_len` must equal `nonce_size(cipher)` or the constructor
+// throws `ItbError(STATUS_BAD_INPUT)`.
 class UnwrapStreamReader {
 public:
     UnwrapStreamReader(Cipher cipher,
-                       std::span<const std::uint8_t> key,
-                       std::span<const std::uint8_t> wire_nonce)
+                       const std::uint8_t* key,
+                       std::size_t key_len,
+                       const std::uint8_t* wire_nonce,
+                       std::size_t wire_nonce_len)
         : cipher_{cipher}, handle_{nullptr} {
         detail::check(itb_unwrap_stream_reader_new(
             static_cast<itb_wrapper_cipher_t>(cipher),
-            key.data(), key.size(),
-            wire_nonce.data(), wire_nonce.size(),
+            key, key_len,
+            wire_nonce, wire_nonce_len,
             &handle_));
     }
 
@@ -380,30 +398,32 @@ public:
 
     Cipher cipher() const noexcept { return cipher_; }
 
-    // XOR-decrypt `src` through the keystream into a freshly-
-    // allocated buffer of the same length. Empty input is a no-op
-    // and returns an empty vector.
-    std::vector<std::uint8_t> update(std::span<const std::uint8_t> src) {
-        std::vector<std::uint8_t> out(src.size(), 0);
-        if (src.empty()) {
+    // XOR-decrypt `src_len` bytes at `src` through the keystream into
+    // a freshly-allocated buffer of the same length. Empty input is a
+    // no-op and returns an empty vector.
+    std::vector<std::uint8_t> update(const std::uint8_t* src,
+                                     std::size_t src_len) {
+        std::vector<std::uint8_t> out(src_len, 0);
+        if (src_len == 0) {
             return out;
         }
         detail::check(itb_unwrap_stream_reader_update(
             handle_,
-            src.data(), src.size(),
+            src, src_len,
             out.data(), out.size()));
         return out;
     }
 
-    // XOR-decrypt `buf` in place. Empty input is a no-op.
-    void update_in_place(std::span<std::uint8_t> buf) {
-        if (buf.empty()) {
+    // XOR-decrypt `buf_len` bytes at `buf` in place. Empty input is a
+    // no-op.
+    void update_in_place(std::uint8_t* buf, std::size_t buf_len) {
+        if (buf_len == 0) {
             return;
         }
         detail::check(itb_unwrap_stream_reader_update(
             handle_,
-            buf.data(), buf.size(),
-            buf.data(), buf.size()));
+            buf, buf_len,
+            buf, buf_len));
     }
 
 private:

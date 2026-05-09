@@ -50,7 +50,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -211,20 +210,20 @@ RunResult run_aead_easy_io(itb::wrapper::Cipher cipher,
 
         // Wrap inner bytes through one keystream session. Wire is
         // `nonce || ks-XOR(inner)`.
-        itb::wrapper::WrapStreamWriter ww{cipher, outer_key};
+        itb::wrapper::WrapStreamWriter ww{cipher, outer_key.data(), outer_key.size()};
         std::vector<std::uint8_t> wire;
         wire.reserve(ww.nonce().size() + inner.size());
         wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
-        auto inner_xor = ww.update(inner);
+        auto inner_xor = ww.update(inner.data(), inner.size());
         wire.insert(wire.end(), inner_xor.begin(), inner_xor.end());
 
         // Receiver — strip nonce, unwrap body, decrypt.
-        std::span<const std::uint8_t> nonce_view{wire.data(), ww.nonce().size()};
-        itb::wrapper::UnwrapStreamReader ur{cipher, outer_key, nonce_view};
-        std::span<const std::uint8_t> body{
-            wire.data() + ww.nonce().size(),
-            wire.size() - ww.nonce().size()};
-        auto inner_recovered = ur.update(body);
+        const std::size_t nlen = ww.nonce().size();
+        itb::wrapper::UnwrapStreamReader ur{cipher,
+                                            outer_key.data(), outer_key.size(),
+                                            wire.data(), nlen};
+        auto inner_recovered = ur.update(wire.data() + nlen,
+                                         wire.size() - nlen);
 
         std::vector<std::uint8_t> pt_out;
         InMemoryReader src2{&inner_recovered, 0};
@@ -266,19 +265,19 @@ RunResult run_aead_lowlevel_io(itb::wrapper::Cipher cipher,
 
         auto outer_key = itb::wrapper::generate_key(cipher);
 
-        itb::wrapper::WrapStreamWriter ww{cipher, outer_key};
+        itb::wrapper::WrapStreamWriter ww{cipher, outer_key.data(), outer_key.size()};
         std::vector<std::uint8_t> wire;
         wire.reserve(ww.nonce().size() + inner.size());
         wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
-        auto inner_xor = ww.update(inner);
+        auto inner_xor = ww.update(inner.data(), inner.size());
         wire.insert(wire.end(), inner_xor.begin(), inner_xor.end());
 
-        std::span<const std::uint8_t> nonce_view{wire.data(), ww.nonce().size()};
-        itb::wrapper::UnwrapStreamReader ur{cipher, outer_key, nonce_view};
-        std::span<const std::uint8_t> body{
-            wire.data() + ww.nonce().size(),
-            wire.size() - ww.nonce().size()};
-        auto inner_recovered = ur.update(body);
+        const std::size_t nlen2 = ww.nonce().size();
+        itb::wrapper::UnwrapStreamReader ur{cipher,
+                                            outer_key.data(), outer_key.size(),
+                                            wire.data(), nlen2};
+        auto inner_recovered = ur.update(wire.data() + nlen2,
+                                         wire.size() - nlen2);
 
         std::vector<std::uint8_t> pt_out;
         InMemoryReader src2{&inner_recovered, 0};
@@ -310,7 +309,7 @@ RunResult run_noaead_easy_userloop(itb::wrapper::Cipher cipher,
         // Sender — wrap-writer accumulating into `wire`.
         std::vector<std::uint8_t> wire;
         wire.reserve(plaintext.size() + 256);
-        itb::wrapper::WrapStreamWriter ww{cipher, outer_key};
+        itb::wrapper::WrapStreamWriter ww{cipher, outer_key.data(), outer_key.size()};
         wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
 
         for (std::size_t off = 0; off < plaintext.size(); off += kStreamChunkSize) {
@@ -319,9 +318,9 @@ RunResult run_noaead_easy_userloop(itb::wrapper::Cipher cipher,
             auto ct = enc.encrypt(plaintext.data() + off, take);
             std::uint8_t hdr[4];
             put_u32_le(hdr, static_cast<std::uint32_t>(ct.size()));
-            auto hdr_xor = ww.update(std::span<const std::uint8_t>{hdr, 4});
+            auto hdr_xor = ww.update(hdr, 4);
             wire.insert(wire.end(), hdr_xor.begin(), hdr_xor.end());
-            auto ct_xor = ww.update(ct);
+            auto ct_xor = ww.update(ct.data(), ct.size());
             wire.insert(wire.end(), ct_xor.begin(), ct_xor.end());
         }
 
@@ -331,8 +330,9 @@ RunResult run_noaead_easy_userloop(itb::wrapper::Cipher cipher,
         if (wire.size() < nlen) {
             throw std::runtime_error("wire shorter than nonce");
         }
-        std::span<const std::uint8_t> nonce_view{wire.data(), nlen};
-        itb::wrapper::UnwrapStreamReader ur{cipher, outer_key, nonce_view};
+        itb::wrapper::UnwrapStreamReader ur{cipher,
+                                            outer_key.data(), outer_key.size(),
+                                            wire.data(), nlen};
 
         std::vector<std::uint8_t> pt_out;
         std::size_t off = nlen;
@@ -340,13 +340,13 @@ RunResult run_noaead_easy_userloop(itb::wrapper::Cipher cipher,
             if (off + 4 > wire.size()) {
                 throw std::runtime_error("truncated length prefix");
             }
-            auto hdr = ur.update(std::span<const std::uint8_t>{wire.data() + off, 4});
+            auto hdr = ur.update(wire.data() + off, 4);
             off += 4;
             auto clen = get_u32_le(hdr.data());
             if (off + clen > wire.size()) {
                 throw std::runtime_error("truncated chunk body");
             }
-            auto ct = ur.update(std::span<const std::uint8_t>{wire.data() + off, clen});
+            auto ct = ur.update(wire.data() + off, clen);
             off += clen;
             auto pt = enc.decrypt(ct);
             pt_out.insert(pt_out.end(), pt.begin(), pt.end());
@@ -372,7 +372,7 @@ RunResult run_noaead_lowlevel_userloop(itb::wrapper::Cipher cipher,
 
         std::vector<std::uint8_t> wire;
         wire.reserve(plaintext.size() + 256);
-        itb::wrapper::WrapStreamWriter ww{cipher, outer_key};
+        itb::wrapper::WrapStreamWriter ww{cipher, outer_key.data(), outer_key.size()};
         wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
 
         for (std::size_t off = 0; off < plaintext.size(); off += kStreamChunkSize) {
@@ -382,9 +382,9 @@ RunResult run_noaead_lowlevel_userloop(itb::wrapper::Cipher cipher,
                                    plaintext.data() + off, take);
             std::uint8_t hdr[4];
             put_u32_le(hdr, static_cast<std::uint32_t>(ct.size()));
-            auto hdr_xor = ww.update(std::span<const std::uint8_t>{hdr, 4});
+            auto hdr_xor = ww.update(hdr, 4);
             wire.insert(wire.end(), hdr_xor.begin(), hdr_xor.end());
-            auto ct_xor = ww.update(ct);
+            auto ct_xor = ww.update(ct.data(), ct.size());
             wire.insert(wire.end(), ct_xor.begin(), ct_xor.end());
         }
 
@@ -392,8 +392,9 @@ RunResult run_noaead_lowlevel_userloop(itb::wrapper::Cipher cipher,
         if (wire.size() < nlen) {
             throw std::runtime_error("wire shorter than nonce");
         }
-        std::span<const std::uint8_t> nonce_view{wire.data(), nlen};
-        itb::wrapper::UnwrapStreamReader ur{cipher, outer_key, nonce_view};
+        itb::wrapper::UnwrapStreamReader ur{cipher,
+                                            outer_key.data(), outer_key.size(),
+                                            wire.data(), nlen};
 
         std::vector<std::uint8_t> pt_out;
         std::size_t off = nlen;
@@ -401,13 +402,13 @@ RunResult run_noaead_lowlevel_userloop(itb::wrapper::Cipher cipher,
             if (off + 4 > wire.size()) {
                 throw std::runtime_error("truncated length prefix");
             }
-            auto hdr = ur.update(std::span<const std::uint8_t>{wire.data() + off, 4});
+            auto hdr = ur.update(wire.data() + off, 4);
             off += 4;
             auto clen = get_u32_le(hdr.data());
             if (off + clen > wire.size()) {
                 throw std::runtime_error("truncated chunk body");
             }
-            auto ct = ur.update(std::span<const std::uint8_t>{wire.data() + off, clen});
+            auto ct = ur.update(wire.data() + off, clen);
             off += clen;
             auto pt = itb::decrypt(seeds[0], seeds[1], seeds[2], ct);
             pt_out.insert(pt_out.end(), pt.begin(), pt.end());
@@ -437,15 +438,17 @@ RunResult run_message_easy_nomac(itb::wrapper::Cipher cipher,
         auto outer_key = itb::wrapper::generate_key(cipher);
 
         // Wrap respects immutability of `encrypted` (allocates a fresh wire buffer):
-        //   auto wire = itb::wrapper::wrap(cipher, outer_key, encrypted);
+        //   auto wire = itb::wrapper::wrap(cipher,
+        //                                  outer_key.data(), outer_key.size(),
+        //                                  encrypted.data(), encrypted.size());
         //
         // wrap_in_place mutates `encrypted` and returns the per-stream
         // nonce; the caller composes `nonce || mutated-ct` into the
         // wire (one extra memcpy below). Zero allocation steady state.
         auto nonce = itb::wrapper::wrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{encrypted});
+            outer_key.data(), outer_key.size(),
+            encrypted.data(), encrypted.size());
 
         std::vector<std::uint8_t> wire(nonce.size() + encrypted.size());
         std::copy(nonce.begin(), nonce.end(), wire.begin());
@@ -453,13 +456,15 @@ RunResult run_message_easy_nomac(itb::wrapper::Cipher cipher,
                   wire.begin() + static_cast<std::ptrdiff_t>(nonce.size()));
 
         // Unwrap respects immutability of `wire`:
-        //   auto recovered = itb::wrapper::unwrap(cipher, outer_key, wire);
+        //   auto recovered = itb::wrapper::unwrap(cipher,
+        //                                         outer_key.data(), outer_key.size(),
+        //                                         wire.data(), wire.size());
         auto body = itb::wrapper::unwrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{wire});
+            outer_key.data(), outer_key.size(),
+            wire.data(), wire.size());
 
-        std::vector<std::uint8_t> body_vec(body.begin(), body.end());
+        std::vector<std::uint8_t> body_vec(body.first, body.first + body.second);
         auto pt = enc.decrypt(body_vec);
 
         r.ok = true;
@@ -484,8 +489,8 @@ RunResult run_message_easy_auth(itb::wrapper::Cipher cipher,
         // (wrap / unwrap with separately-allocated buffers).
         auto nonce = itb::wrapper::wrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{encrypted});
+            outer_key.data(), outer_key.size(),
+            encrypted.data(), encrypted.size());
 
         std::vector<std::uint8_t> wire(nonce.size() + encrypted.size());
         std::copy(nonce.begin(), nonce.end(), wire.begin());
@@ -494,10 +499,10 @@ RunResult run_message_easy_auth(itb::wrapper::Cipher cipher,
 
         auto body = itb::wrapper::unwrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{wire});
+            outer_key.data(), outer_key.size(),
+            wire.data(), wire.size());
 
-        std::vector<std::uint8_t> body_vec(body.begin(), body.end());
+        std::vector<std::uint8_t> body_vec(body.first, body.first + body.second);
         auto pt = enc.decrypt_auth(body_vec);
 
         r.ok = true;
@@ -521,8 +526,8 @@ RunResult run_message_lowlevel_nomac(itb::wrapper::Cipher cipher,
 
         auto nonce = itb::wrapper::wrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{encrypted});
+            outer_key.data(), outer_key.size(),
+            encrypted.data(), encrypted.size());
 
         std::vector<std::uint8_t> wire(nonce.size() + encrypted.size());
         std::copy(nonce.begin(), nonce.end(), wire.begin());
@@ -531,10 +536,10 @@ RunResult run_message_lowlevel_nomac(itb::wrapper::Cipher cipher,
 
         auto body = itb::wrapper::unwrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{wire});
+            outer_key.data(), outer_key.size(),
+            wire.data(), wire.size());
 
-        std::vector<std::uint8_t> body_vec(body.begin(), body.end());
+        std::vector<std::uint8_t> body_vec(body.first, body.first + body.second);
         auto pt = itb::decrypt(seeds[0], seeds[1], seeds[2], body_vec);
 
         r.ok = true;
@@ -562,8 +567,8 @@ RunResult run_message_lowlevel_auth(itb::wrapper::Cipher cipher,
 
         auto nonce = itb::wrapper::wrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{encrypted});
+            outer_key.data(), outer_key.size(),
+            encrypted.data(), encrypted.size());
 
         std::vector<std::uint8_t> wire(nonce.size() + encrypted.size());
         std::copy(nonce.begin(), nonce.end(), wire.begin());
@@ -572,10 +577,10 @@ RunResult run_message_lowlevel_auth(itb::wrapper::Cipher cipher,
 
         auto body = itb::wrapper::unwrap_in_place(
             cipher,
-            std::span<const std::uint8_t>{outer_key},
-            std::span<std::uint8_t>{wire});
+            outer_key.data(), outer_key.size(),
+            wire.data(), wire.size());
 
-        std::vector<std::uint8_t> body_vec(body.begin(), body.end());
+        std::vector<std::uint8_t> body_vec(body.first, body.first + body.second);
         auto pt = itb::decrypt_auth(seeds[0], seeds[1], seeds[2], mac, body_vec);
 
         r.ok = true;
