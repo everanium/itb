@@ -46,7 +46,6 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
-#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -142,8 +141,12 @@ bench::BenchCase make_wrapper_only_wrap_case(itb::wrapper::Cipher cipher,
                   "BenchmarkWrapperOnlyWrap/%s", cipher_name);
     bench::BenchFn run = [c](std::uint64_t iters) {
         for (std::uint64_t i = 0; i < iters; ++i) {
-            auto wire = itb::wrapper::wrap(c->cipher, c->outer_key, c->payload);
-            auto recovered = itb::wrapper::unwrap(c->cipher, c->outer_key, wire);
+            auto wire = itb::wrapper::wrap(c->cipher,
+                                           c->outer_key.data(), c->outer_key.size(),
+                                           c->payload.data(), c->payload.size());
+            auto recovered = itb::wrapper::unwrap(c->cipher,
+                                                  c->outer_key.data(), c->outer_key.size(),
+                                                  wire.data(), wire.size());
             (void)recovered;
         }
     };
@@ -172,14 +175,13 @@ bench::BenchCase make_wrapper_only_inplace_case(itb::wrapper::Cipher cipher,
                         c->payload.size());
             auto nonce = itb::wrapper::wrap_in_place(
                 c->cipher,
-                std::span<const std::uint8_t>{c->outer_key},
-                std::span<std::uint8_t>{c->work_wire.data() + nlen,
-                                        c->payload.size()});
+                c->outer_key.data(), c->outer_key.size(),
+                c->work_wire.data() + nlen, c->payload.size());
             std::memcpy(c->work_wire.data(), nonce.data(), nonce.size());
             (void)itb::wrapper::unwrap_in_place(
                 c->cipher,
-                std::span<const std::uint8_t>{c->outer_key},
-                std::span<std::uint8_t>{c->work_wire});
+                c->outer_key.data(), c->outer_key.size(),
+                c->work_wire.data(), c->work_wire.size());
         }
     };
     return bench::BenchCase{namebuf, std::move(run), kWrapperPayloadBytes};
@@ -209,7 +211,9 @@ bench::BenchCase make_message_encrypt_case(int mode, bool auth,
         for (std::uint64_t i = 0; i < iters; ++i) {
             auto ct = c->auth ? c->enc->encrypt_auth(c->payload)
                               : c->enc->encrypt(c->payload);
-            auto wire = itb::wrapper::wrap(c->cipher, c->outer_key, ct);
+            auto wire = itb::wrapper::wrap(c->cipher,
+                                           c->outer_key.data(), c->outer_key.size(),
+                                           ct.data(), ct.size());
             (void)wire;
         }
     };
@@ -232,7 +236,9 @@ bench::BenchCase make_message_decrypt_case(int mode, bool auth,
     // refresh the work_wire from this snapshot.
     auto ct = ctx->auth ? ctx->enc->encrypt_auth(ctx->payload)
                         : ctx->enc->encrypt(ctx->payload);
-    ctx->pristine_wire = itb::wrapper::wrap(ctx->cipher, ctx->outer_key, ct);
+    ctx->pristine_wire = itb::wrapper::wrap(ctx->cipher,
+                                            ctx->outer_key.data(), ctx->outer_key.size(),
+                                            ct.data(), ct.size());
     ctx->work_wire.resize(ctx->pristine_wire.size());
     auto* c = register_ctx(std::move(ctx));
 
@@ -247,7 +253,9 @@ bench::BenchCase make_message_decrypt_case(int mode, bool auth,
                         c->pristine_wire.data(),
                         c->pristine_wire.size());
             auto recovered = itb::wrapper::unwrap(
-                c->cipher, c->outer_key, c->work_wire);
+                c->cipher,
+                c->outer_key.data(), c->outer_key.size(),
+                c->work_wire.data(), c->work_wire.size());
             auto pt = c->auth ? c->enc->decrypt_auth(recovered)
                               : c->enc->decrypt(recovered);
             (void)pt;
@@ -342,25 +350,26 @@ void encrypt_userloop_inner(itb::Encryptor& enc,
         auto ct = enc.encrypt(payload.data() + off, take);
         std::uint8_t hdr[4];
         put_u32_le(hdr, static_cast<std::uint32_t>(ct.size()));
-        auto hdr_xor = ww.update(std::span<const std::uint8_t>{hdr, 4});
+        auto hdr_xor = ww.update(hdr, 4);
         wire_out.insert(wire_out.end(), hdr_xor.begin(), hdr_xor.end());
-        auto ct_xor = ww.update(ct);
+        auto ct_xor = ww.update(ct.data(), ct.size());
         wire_out.insert(wire_out.end(), ct_xor.begin(), ct_xor.end());
     }
 }
 
 void decrypt_userloop_inner(itb::Encryptor& enc,
                             itb::wrapper::UnwrapStreamReader& ur,
-                            std::span<const std::uint8_t> body,
+                            const std::uint8_t* body,
+                            std::size_t body_len,
                             std::vector<std::uint8_t>& pt_out) {
     std::size_t off = 0;
-    while (off < body.size()) {
-        if (off + 4 > body.size()) break;
-        auto hdr_xor = ur.update(body.subspan(off, 4));
+    while (off < body_len) {
+        if (off + 4 > body_len) break;
+        auto hdr_xor = ur.update(body + off, 4);
         off += 4;
         auto clen = get_u32_le(hdr_xor.data());
-        if (off + clen > body.size()) break;
-        auto ct = ur.update(body.subspan(off, clen));
+        if (off + clen > body_len) break;
+        auto ct = ur.update(body + off, clen);
         off += clen;
         auto pt = enc.decrypt(ct);
         pt_out.insert(pt_out.end(), pt.begin(), pt.end());
@@ -402,11 +411,12 @@ bench::BenchCase make_stream_encrypt_case(int mode, StreamKind kind,
         run = [c](std::uint64_t iters) {
             for (std::uint64_t i = 0; i < iters; ++i) {
                 auto inner = aead_encrypt_inner(*c->enc, c->payload, kStreamChunkBytes);
-                itb::wrapper::WrapStreamWriter ww{c->cipher, c->outer_key};
+                itb::wrapper::WrapStreamWriter ww{c->cipher,
+                                                  c->outer_key.data(), c->outer_key.size()};
                 std::vector<std::uint8_t> wire;
                 wire.reserve(ww.nonce().size() + inner.size());
                 wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
-                auto body_xor = ww.update(inner);
+                auto body_xor = ww.update(inner.data(), inner.size());
                 wire.insert(wire.end(), body_xor.begin(), body_xor.end());
             }
         };
@@ -415,7 +425,8 @@ bench::BenchCase make_stream_encrypt_case(int mode, StreamKind kind,
             for (std::uint64_t i = 0; i < iters; ++i) {
                 std::vector<std::uint8_t> wire;
                 wire.reserve(c->payload.size() + (c->payload.size() / 16) + 256);
-                itb::wrapper::WrapStreamWriter ww{c->cipher, c->outer_key};
+                itb::wrapper::WrapStreamWriter ww{c->cipher,
+                                                  c->outer_key.data(), c->outer_key.size()};
                 wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
                 encrypt_userloop_inner(*c->enc, c->payload, wire, ww, kStreamChunkBytes);
             }
@@ -426,12 +437,13 @@ bench::BenchCase make_stream_encrypt_case(int mode, StreamKind kind,
 
 void prime_pristine_aead(CaseCtx& c) {
     auto inner = aead_encrypt_inner(*c.enc, c.payload, kStreamChunkBytes);
-    itb::wrapper::WrapStreamWriter ww{c.cipher, c.outer_key};
+    itb::wrapper::WrapStreamWriter ww{c.cipher,
+                                      c.outer_key.data(), c.outer_key.size()};
     c.pristine_wire.clear();
     c.pristine_wire.reserve(ww.nonce().size() + inner.size());
     c.pristine_wire.insert(c.pristine_wire.end(),
                            ww.nonce().begin(), ww.nonce().end());
-    auto body_xor = ww.update(inner);
+    auto body_xor = ww.update(inner.data(), inner.size());
     c.pristine_wire.insert(c.pristine_wire.end(),
                            body_xor.begin(), body_xor.end());
     c.work_wire.resize(c.pristine_wire.size());
@@ -440,7 +452,8 @@ void prime_pristine_aead(CaseCtx& c) {
 void prime_pristine_userloop(CaseCtx& c) {
     std::vector<std::uint8_t> wire;
     wire.reserve(c.payload.size() + (c.payload.size() / 16) + 256);
-    itb::wrapper::WrapStreamWriter ww{c.cipher, c.outer_key};
+    itb::wrapper::WrapStreamWriter ww{c.cipher,
+                                      c.outer_key.data(), c.outer_key.size()};
     wire.insert(wire.end(), ww.nonce().begin(), ww.nonce().end());
     encrypt_userloop_inner(*c.enc, c.payload, wire, ww, kStreamChunkBytes);
     c.pristine_wire = std::move(wire);
@@ -480,12 +493,11 @@ bench::BenchCase make_stream_decrypt_case(int mode, StreamKind kind,
                 std::memcpy(c->work_wire.data(),
                             c->pristine_wire.data(),
                             c->pristine_wire.size());
-                std::span<const std::uint8_t> wire_nonce{c->work_wire.data(), nlen};
-                itb::wrapper::UnwrapStreamReader ur{c->cipher, c->outer_key, wire_nonce};
-                std::span<const std::uint8_t> body{
-                    c->work_wire.data() + nlen,
-                    c->work_wire.size() - nlen};
-                auto inner = ur.update(body);
+                itb::wrapper::UnwrapStreamReader ur{c->cipher,
+                                                    c->outer_key.data(), c->outer_key.size(),
+                                                    c->work_wire.data(), nlen};
+                auto inner = ur.update(c->work_wire.data() + nlen,
+                                       c->work_wire.size() - nlen);
                 auto pt = aead_decrypt_inner(*c->enc, inner, kStreamChunkBytes);
                 (void)pt;
             }
@@ -497,13 +509,14 @@ bench::BenchCase make_stream_decrypt_case(int mode, StreamKind kind,
                 std::memcpy(c->work_wire.data(),
                             c->pristine_wire.data(),
                             c->pristine_wire.size());
-                std::span<const std::uint8_t> wire_nonce{c->work_wire.data(), nlen};
-                itb::wrapper::UnwrapStreamReader ur{c->cipher, c->outer_key, wire_nonce};
-                std::span<const std::uint8_t> body{
-                    c->work_wire.data() + nlen,
-                    c->work_wire.size() - nlen};
+                itb::wrapper::UnwrapStreamReader ur{c->cipher,
+                                                    c->outer_key.data(), c->outer_key.size(),
+                                                    c->work_wire.data(), nlen};
                 std::vector<std::uint8_t> pt;
-                decrypt_userloop_inner(*c->enc, ur, body, pt);
+                decrypt_userloop_inner(*c->enc, ur,
+                                       c->work_wire.data() + nlen,
+                                       c->work_wire.size() - nlen,
+                                       pt);
                 (void)pt;
             }
         };
