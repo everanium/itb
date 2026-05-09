@@ -6,6 +6,7 @@
 /itb
 /itb.test
 /cshared
+**/eitb/eitb
 /eitb
 /cmd/eitb/eitb
 *.test
