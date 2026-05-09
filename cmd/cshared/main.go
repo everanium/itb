@@ -2398,3 +2398,295 @@ func ITB_Easy_DecryptStreamAuth(
 	}
 	return C.int(st)
 }
+
+// ─── Format-deniability wrapper (outer CTR cipher) ─────────────────
+//
+// The wrapper surface seals an ITB ciphertext inside one of three
+// outer keystream ciphers (AES-128-CTR / ChaCha20 / SipHash-CTR)
+// so the wire bytes carry no header / magic the receiver could
+// match against. Every entry point dispatches off a `cipher_name`
+// string ("aes" / "chacha" / "siphash"), mirroring the MAC-factory
+// pattern: one unified ABI per operation rather than one per
+// cipher. The Go-side implementation lives in
+// github.com/everanium/itb/wrapper; the helpers in capi/wrapper.go
+// and capi/wrapper_handles.go bridge the C ABI to that package
+// without copying the body bytes.
+//
+// Memcpy avoidance. Every body buffer crosses as a (ptr, len)
+// pair turned into a Go []byte alias via goBytesView /
+// goBytesViewMut — the keystream XOR mutates the C-side buffer in
+// place. Single-shot Wrap allocates the per-stream nonce inside
+// the caller-supplied output buffer's prefix; WrapInPlace lets
+// the caller own both the plaintext buffer (mutated in place)
+// and the nonce buffer.
+
+//export ITB_WrapperKeySize
+//
+// Reports the byte length of the keystream-cipher key for the named
+// outer cipher (16 / 32 / 16 for "aes" / "chacha" / "siphash").
+// Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
+func ITB_WrapperKeySize(cipherName *C.char, outSize *C.size_t) C.int {
+	if cipherName == nil || outSize == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	n, st := capi.WrapperKeySize(C.GoString(cipherName))
+	if st == capi.StatusOK {
+		*outSize = C.size_t(n)
+	} else {
+		*outSize = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_WrapperNonceSize
+//
+// Reports the on-wire nonce length the named outer cipher emits
+// per stream (16 / 12 / 16 for "aes" / "chacha" / "siphash").
+// Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
+func ITB_WrapperNonceSize(cipherName *C.char, outSize *C.size_t) C.int {
+	if cipherName == nil || outSize == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	n, st := capi.WrapperNonceSize(C.GoString(cipherName))
+	if st == capi.StatusOK {
+		*outSize = C.size_t(n)
+	} else {
+		*outSize = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_Wrap
+//
+// Seals one ITB ciphertext blob under the named outer cipher.
+// Wire form is `nonce || keystream-XOR(blob)` where the nonce
+// is freshly drawn from crypto/rand per call. The required out
+// capacity is NonceSize(name) + blob_len. Same caller-allocated-
+// buffer convention as ITB_Encrypt: on ITB_ERR_BUFFER_TOO_SMALL
+// *out_len receives the required size.
+func ITB_Wrap(
+	cipherName *C.char,
+	key unsafe.Pointer, keyLen C.size_t,
+	blob unsafe.Pointer, blobLen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if cipherName == nil || outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(keyLen, blobLen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	keyBytes := goBytesView(key, keyLen)
+	blobBytes := goBytesView(blob, blobLen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.Wrap(C.GoString(cipherName), keyBytes, blobBytes, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_Unwrap
+//
+// Reverses ITB_Wrap. Reads the leading NonceSize(name) bytes of
+// wire as the nonce, XOR-decrypts the remainder under (key,
+// nonce) into out. The recovered payload size is wire_len -
+// NonceSize(name); on ITB_ERR_BUFFER_TOO_SMALL *out_len receives
+// the required size.
+func ITB_Unwrap(
+	cipherName *C.char,
+	key unsafe.Pointer, keyLen C.size_t,
+	wire unsafe.Pointer, wireLen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if cipherName == nil || outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(keyLen, wireLen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	keyBytes := goBytesView(key, keyLen)
+	wireBytes := goBytesView(wire, wireLen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.Unwrap(C.GoString(cipherName), keyBytes, wireBytes, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+//export ITB_WrapInPlace
+//
+// XORs blob in place under a freshly-drawn outer keystream and
+// writes the per-stream nonce into out_nonce[0..NonceSize(name)).
+// blob is MUTATED. The caller is expected to emit nonce ||
+// blob to the wire. nonce_cap must be at least NonceSize(name);
+// on ITB_ERR_BUFFER_TOO_SMALL ITB_WrapperNonceSize reports the
+// required nonce length.
+func ITB_WrapInPlace(
+	cipherName *C.char,
+	key unsafe.Pointer, keyLen C.size_t,
+	blob unsafe.Pointer, blobLen C.size_t,
+	outNonce unsafe.Pointer, nonceCap C.size_t,
+) C.int {
+	if cipherName == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(keyLen, blobLen, nonceCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	keyBytes := goBytesView(key, keyLen)
+	// Allow zero-length blob (degenerate case): blobBytes nil is
+	// fine — the keystream XOR over an empty slice is a no-op.
+	blobBytes := goBytesView(blob, blobLen)
+	if blobBytes == nil && blobLen != 0 {
+		return C.int(capi.StatusBadInput)
+	}
+	nonceBuf := goBytesViewMut(outNonce, nonceCap)
+	_, st := capi.WrapInPlace(C.GoString(cipherName), keyBytes, blobBytes, nonceBuf)
+	return C.int(st)
+}
+
+//export ITB_UnwrapInPlace
+//
+// Strips the leading NonceSize(name) bytes from wire and XORs
+// the remainder in place. wire is MUTATED. The decrypted body
+// occupies wire[NonceSize(name):]; the nonce prefix is left
+// unchanged. wire_len must be >= NonceSize(name) or
+// ITB_ERR_BAD_INPUT is returned.
+func ITB_UnwrapInPlace(
+	cipherName *C.char,
+	key unsafe.Pointer, keyLen C.size_t,
+	wire unsafe.Pointer, wireLen C.size_t,
+) C.int {
+	if cipherName == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(keyLen, wireLen) {
+		return C.int(capi.StatusBadInput)
+	}
+	keyBytes := goBytesView(key, keyLen)
+	wireBytes := goBytesViewMut(wire, wireLen)
+	if wireBytes == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	_, st := capi.UnwrapInPlace(C.GoString(cipherName), keyBytes, wireBytes)
+	return C.int(st)
+}
+
+//export ITB_WrapStreamWriter_Init
+//
+// Allocates a streaming wrap-encrypt handle, draws a fresh nonce
+// from crypto/rand, and writes that nonce into out_nonce. The
+// caller must emit nonce_cap = NonceSize(name) bytes once at
+// stream start (typically as the wire prefix), then drive
+// subsequent body bytes through ITB_WrapStreamWriter_Update on
+// the returned handle. Pair with exactly one
+// ITB_WrapStreamWriter_Free call.
+func ITB_WrapStreamWriter_Init(
+	cipherName *C.char,
+	key unsafe.Pointer, keyLen C.size_t,
+	outNonce unsafe.Pointer, nonceCap C.size_t,
+	outHandle *C.uintptr_t,
+) C.int {
+	if cipherName == nil || outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(keyLen, nonceCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	keyBytes := goBytesView(key, keyLen)
+	nonceBuf := goBytesViewMut(outNonce, nonceCap)
+	id, _, st := capi.NewWrapStreamWriter(C.GoString(cipherName), keyBytes, nonceBuf)
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_WrapStreamWriter_Update
+//
+// XORs src[0..src_len) into dst[0..src_len) under the handle's
+// keystream, advancing the cipher counter. dst MAY equal src
+// (in-place mutation); dst_cap must be >= src_len.
+func ITB_WrapStreamWriter_Update(
+	handle C.uintptr_t,
+	src unsafe.Pointer, srcLen C.size_t,
+	dst unsafe.Pointer, dstCap C.size_t,
+) C.int {
+	if !validateLen(srcLen, dstCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	srcBytes := goBytesView(src, srcLen)
+	dstBytes := goBytesViewMut(dst, dstCap)
+	if srcLen != 0 && (srcBytes == nil || dstBytes == nil) {
+		return C.int(capi.StatusBadInput)
+	}
+	_, st := capi.WrapStreamUpdate(capi.WrapStreamHandleID(handle), srcBytes, dstBytes)
+	return C.int(st)
+}
+
+//export ITB_WrapStreamWriter_Free
+//
+// Releases the wrap-encrypt streaming handle. Subsequent uses
+// return ITB_ERR_BAD_HANDLE.
+func ITB_WrapStreamWriter_Free(handle C.uintptr_t) C.int {
+	return C.int(capi.FreeWrapStream(capi.WrapStreamHandleID(handle)))
+}
+
+//export ITB_UnwrapStreamReader_Init
+//
+// Allocates a streaming wrap-decrypt handle keyed by the leading
+// NonceSize(name) bytes of the wire (passed as wire_nonce). The
+// returned handle XORs subsequent body bytes back to plaintext
+// under the keystream advancing from counter zero. Pair with
+// exactly one ITB_UnwrapStreamReader_Free call.
+func ITB_UnwrapStreamReader_Init(
+	cipherName *C.char,
+	key unsafe.Pointer, keyLen C.size_t,
+	wireNonce unsafe.Pointer, nonceLen C.size_t,
+	outHandle *C.uintptr_t,
+) C.int {
+	if cipherName == nil || outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(keyLen, nonceLen) {
+		return C.int(capi.StatusBadInput)
+	}
+	keyBytes := goBytesView(key, keyLen)
+	nonceBytes := goBytesView(wireNonce, nonceLen)
+	id, st := capi.NewUnwrapStreamReader(C.GoString(cipherName), keyBytes, nonceBytes)
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+//export ITB_UnwrapStreamReader_Update
+//
+// XORs src[0..src_len) into dst[0..src_len) under the handle's
+// keystream. Mirror of ITB_WrapStreamWriter_Update with the same
+// in-place semantics.
+func ITB_UnwrapStreamReader_Update(
+	handle C.uintptr_t,
+	src unsafe.Pointer, srcLen C.size_t,
+	dst unsafe.Pointer, dstCap C.size_t,
+) C.int {
+	if !validateLen(srcLen, dstCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	srcBytes := goBytesView(src, srcLen)
+	dstBytes := goBytesViewMut(dst, dstCap)
+	if srcLen != 0 && (srcBytes == nil || dstBytes == nil) {
+		return C.int(capi.StatusBadInput)
+	}
+	_, st := capi.WrapStreamUpdate(capi.WrapStreamHandleID(handle), srcBytes, dstBytes)
+	return C.int(st)
+}
+
+//export ITB_UnwrapStreamReader_Free
+//
+// Releases the wrap-decrypt streaming handle.
+func ITB_UnwrapStreamReader_Free(handle C.uintptr_t) C.int {
+	return C.int(capi.FreeWrapStream(capi.WrapStreamHandleID(handle)))
+}
