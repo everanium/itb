@@ -1,7 +1,7 @@
 // Command eitb runs every example, also wrapping the ITB ciphertext
 // in one of three outer stream ciphers (AES-128-CTR, ChaCha20, SipHash-2-4 in CTR mode)
 // so the on-wire bytes look like generic outer cipher output rather than ITB native output.
-// Outer CTR mode cipher hides ITB nonce, WxH and 32 byte streamID prefix under AEAD mode.
+// Outer CTR mode cipher hides ITB nonce, WxH and 32-byte streamID prefix under AEAD mode.
 //
 // Usage:
 //
