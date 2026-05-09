@@ -40,14 +40,13 @@ The SipHash-CTR construction:
 - Each keystream block: `siphash.Hash(key, nonce_hi || (nonce_lo XOR counter_LE))` — 8-byte output, XORed with plaintext.
 - Counter increments per block; nonce stays fixed for the stream.
 
-## Quick Start examples
+## Quick Start
 
-Code paths under `cmd/itb-fd/main.go`. Run the matrix:
+Code paths under `cmd/eitb/main.go`. Run the matrix:
 
 ```sh
-go run ./cmd/itb-fd            # all examples × all ciphers
-go run ./cmd/itb-fd -v         # + sha256 match printouts
-go run ./cmd/itb-fd -example message-easy-auth -cipher chacha
+go run ./cmd/eitb       # run every example × every cipher
+go run ./cmd/eitb -help # print help
 ```
 
 ### 1. Streaming AEAD Easy (MAC Authenticated, IO-Driven)
