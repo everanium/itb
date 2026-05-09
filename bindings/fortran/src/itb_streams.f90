@@ -2190,7 +2190,11 @@ contains
             hdr(i) = accum(i)
           end do
           chunk_len = 0_itb_size_kind
-          rc = itb_parse_chunk_len_c(c_loc(hdr), header_size, chunk_len)
+          ! Per-encryptor parse: routes through ITB_Easy_ParseChunkLen so
+          ! the chunk_len calculation honours the per-instance nonce_bits
+          ! captured at construction time, not the process-global setting.
+          rc = itb_easy_parse_chunk_len_c(enc%raw_handle(),                &
+                                            c_loc(hdr), header_size, chunk_len)
           if (rc /= STATUS_OK) then
             status = rc
             return
@@ -2277,7 +2281,11 @@ contains
           hdr(i) = accum(i)
         end do
         chunk_len = 0_itb_size_kind
-        rc = itb_parse_chunk_len_c(c_loc(hdr), header_size, chunk_len)
+        ! Per-encryptor parse: routes through ITB_Easy_ParseChunkLen so
+        ! the chunk_len calculation honours the per-instance nonce_bits
+        ! captured at construction time, not the process-global setting.
+        rc = itb_easy_parse_chunk_len_c(enc%raw_handle(),                 &
+                                          c_loc(hdr), header_size, chunk_len)
         if (rc /= STATUS_OK) then
           status = rc
           return
