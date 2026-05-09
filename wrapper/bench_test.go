@@ -65,6 +65,19 @@ func benchOuterKey(b *testing.B, cn string) []byte {
 	return k
 }
 
+// composeWire concatenates nonce || body into *buf, growing it only when
+// the existing capacity is insufficient. The returned slice aliases *buf.
+func composeWire(buf *[]byte, nonce, body []byte) []byte {
+	need := len(nonce) + len(body)
+	if cap(*buf) < need {
+		*buf = make([]byte, 0, need)
+	}
+	out := append((*buf)[:0], nonce...)
+	out = append(out, body...)
+	*buf = out
+	return out
+}
+
 func benchEasySingle(b *testing.B, withMAC bool) *easy.Encryptor {
 	if withMAC {
 		return easy.New(benchPrimitive, benchSeedWidth, benchMACName)
@@ -237,6 +250,7 @@ func runMessageEasy(
 	mkEnc func(b *testing.B, withMAC bool) *easy.Encryptor,
 ) {
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf []byte
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -252,19 +266,20 @@ func runMessageEasy(
 		if err != nil {
 			b.Fatalf("Encrypt: %v", err)
 		}
-		wire, err := wrapper.Wrap(cn, outerKey, encrypted)
+		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
 		if err != nil {
-			b.Fatalf("Wrap: %v", err)
+			b.Fatalf("WrapInPlace: %v", err)
 		}
-		recovered, err := wrapper.Unwrap(cn, outerKey, wire)
+		wire := composeWire(&wireBuf, nonce, encrypted)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
 		if err != nil {
-			b.Fatalf("Unwrap: %v", err)
+			b.Fatalf("UnwrapInPlace: %v", err)
 		}
 		var pt []byte
 		if withMAC {
-			pt, err = enc.DecryptAuth(recovered)
+			pt, err = enc.DecryptAuth(body)
 		} else {
-			pt, err = enc.Decrypt(recovered)
+			pt, err = enc.Decrypt(body)
 		}
 		if err != nil {
 			b.Fatalf("Decrypt: %v", err)
@@ -279,6 +294,7 @@ func runMessageEasy(
 func runMessageLowLevelSingleNoMAC(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf []byte
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -286,15 +302,16 @@ func runMessageLowLevelSingleNoMAC(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("Encrypt: %v", err)
 		}
-		wire, err := wrapper.Wrap(cn, outerKey, encrypted)
+		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
 		if err != nil {
-			b.Fatalf("Wrap: %v", err)
+			b.Fatalf("WrapInPlace: %v", err)
 		}
-		recovered, err := wrapper.Unwrap(cn, outerKey, wire)
+		wire := composeWire(&wireBuf, nonce, encrypted)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
 		if err != nil {
-			b.Fatalf("Unwrap: %v", err)
+			b.Fatalf("UnwrapInPlace: %v", err)
 		}
-		pt, err := itb.Decrypt(noise, data, start, recovered)
+		pt, err := itb.Decrypt(noise, data, start, body)
 		if err != nil {
 			b.Fatalf("Decrypt: %v", err)
 		}
@@ -308,6 +325,7 @@ func runMessageLowLevelSingleAuth(b *testing.B, plaintext []byte, cn string) {
 	noise, data, start := benchLowLevelSingleSeeds(b)
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf []byte
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -315,15 +333,16 @@ func runMessageLowLevelSingleAuth(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("EncryptAuth: %v", err)
 		}
-		wire, err := wrapper.Wrap(cn, outerKey, encrypted)
+		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
 		if err != nil {
-			b.Fatalf("Wrap: %v", err)
+			b.Fatalf("WrapInPlace: %v", err)
 		}
-		recovered, err := wrapper.Unwrap(cn, outerKey, wire)
+		wire := composeWire(&wireBuf, nonce, encrypted)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
 		if err != nil {
-			b.Fatalf("Unwrap: %v", err)
+			b.Fatalf("UnwrapInPlace: %v", err)
 		}
-		pt, err := itb.DecryptAuth(noise, data, start, recovered, macFunc)
+		pt, err := itb.DecryptAuth(noise, data, start, body, macFunc)
 		if err != nil {
 			b.Fatalf("DecryptAuth: %v", err)
 		}
@@ -336,6 +355,7 @@ func runMessageLowLevelSingleAuth(b *testing.B, plaintext []byte, cn string) {
 func runMessageLowLevelTripleNoMAC(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf []byte
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -343,15 +363,16 @@ func runMessageLowLevelTripleNoMAC(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("Encrypt3x: %v", err)
 		}
-		wire, err := wrapper.Wrap(cn, outerKey, encrypted)
+		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
 		if err != nil {
-			b.Fatalf("Wrap: %v", err)
+			b.Fatalf("WrapInPlace: %v", err)
 		}
-		recovered, err := wrapper.Unwrap(cn, outerKey, wire)
+		wire := composeWire(&wireBuf, nonce, encrypted)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
 		if err != nil {
-			b.Fatalf("Unwrap: %v", err)
+			b.Fatalf("UnwrapInPlace: %v", err)
 		}
-		pt, err := itb.Decrypt3x(noise, d1, d2, d3, s1, s2, s3, recovered)
+		pt, err := itb.Decrypt3x(noise, d1, d2, d3, s1, s2, s3, body)
 		if err != nil {
 			b.Fatalf("Decrypt3x: %v", err)
 		}
@@ -365,6 +386,7 @@ func runMessageLowLevelTripleAuth(b *testing.B, plaintext []byte, cn string) {
 	noise, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
+	var wireBuf []byte
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -372,15 +394,16 @@ func runMessageLowLevelTripleAuth(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("EncryptAuth3x: %v", err)
 		}
-		wire, err := wrapper.Wrap(cn, outerKey, encrypted)
+		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
 		if err != nil {
-			b.Fatalf("Wrap: %v", err)
+			b.Fatalf("WrapInPlace: %v", err)
 		}
-		recovered, err := wrapper.Unwrap(cn, outerKey, wire)
+		wire := composeWire(&wireBuf, nonce, encrypted)
+		body, err := wrapper.UnwrapInPlace(cn, outerKey, wire)
 		if err != nil {
-			b.Fatalf("Unwrap: %v", err)
+			b.Fatalf("UnwrapInPlace: %v", err)
 		}
-		pt, err := itb.DecryptAuth3x(noise, d1, d2, d3, s1, s2, s3, recovered, macFunc)
+		pt, err := itb.DecryptAuth3x(noise, d1, d2, d3, s1, s2, s3, body, macFunc)
 		if err != nil {
 			b.Fatalf("DecryptAuth3x: %v", err)
 		}
