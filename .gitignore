@@ -6,6 +6,8 @@
 /itb
 /itb.test
 /cshared
+/eitb
+/cmd/eitb/eitb
 *.test
 
 # CPU/memory profiles
