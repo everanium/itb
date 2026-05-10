@@ -17,10 +17,10 @@
 !   2. aead-lowlevel-io           Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)
 !   3. noaead-easy-userloop       Streaming Easy        (No MAC, User-Driven Loop)
 !   4. noaead-lowlevel-userloop   Streaming Low-Level   (No MAC, User-Driven Loop)
-!   5. message-easy-nomac         Easy single-shot      (No MAC)
-!   6. message-easy-auth          Easy single-shot      (MAC Authenticated)
-!   7. message-lowlevel-nomac     Low-Level single-shot (No MAC)
-!   8. message-lowlevel-auth      Low-Level single-shot (MAC Authenticated)
+!   5. message-easy-nomac         Easy Single Message      (No MAC)
+!   6. message-easy-auth          Easy Single Message      (MAC Authenticated)
+!   7. message-lowlevel-nomac     Low-Level Single Message (No MAC)
+!   8. message-lowlevel-auth      Low-Level Single Message (MAC Authenticated)
 !
 ! Default behaviour applies `itb_wrap_in_place` / `itb_unwrap_in_place`
 ! on the message-* examples (zero-allocation steady state); the
@@ -36,7 +36,7 @@
 ! a paired in-memory source.
 !
 ! Streaming No MAC examples follow the User-Driven Loop pattern:
-! per-chunk single-shot `itb_encrypt` / `enc%encrypt` calls, with
+! per-chunk Single Message `itb_encrypt` / `enc%encrypt` calls, with
 ! `u32_LE_len || ct` framed bytes written through the wrap-writer.
 ! Length prefix and chunk body both pass through the keystream XOR;
 ! no length appears in cleartext on the wire.
@@ -663,7 +663,7 @@ contains
   ! ----------------------------------------------------------------
   ! 3. noaead-easy-userloop -- Streaming Easy (No MAC, User-Driven Loop)
   ! ----------------------------------------------------------------
-  ! Per-chunk single-shot enc.encrypt() / enc.decrypt(). Each
+  ! Per-chunk Single Message enc.encrypt() / enc.decrypt(). Each
   ! `u32_LE_len || ct` pair goes through the wrap-writer; on the
   ! receiver side the unwrap-reader recovers `u32_LE_len`, reads
   ! `len` bytes, and decrypts the chunk.
@@ -991,7 +991,7 @@ contains
   end subroutine
 
   ! ----------------------------------------------------------------
-  ! 5. message-easy-nomac -- Easy single-shot, No MAC.
+  ! 5. message-easy-nomac -- Easy Single Message, No MAC.
   ! Default: itb_wrap_in_place + itb_unwrap_in_place (zero allocation).
   ! Immutable alternative: itb_wrap + itb_unwrap (commented).
   ! ----------------------------------------------------------------
@@ -1075,7 +1075,7 @@ contains
   end subroutine
 
   ! ----------------------------------------------------------------
-  ! 6. message-easy-auth -- Easy single-shot, MAC Authenticated.
+  ! 6. message-easy-auth -- Easy Single Message, MAC Authenticated.
   ! ----------------------------------------------------------------
   subroutine run_message_easy_auth(cipher, plaintext, recovered, wire_n, ok, err_msg)
     integer,                                     intent(in)  :: cipher
@@ -1148,7 +1148,7 @@ contains
   end subroutine
 
   ! ----------------------------------------------------------------
-  ! 7. message-lowlevel-nomac -- Low-Level single-shot, No MAC.
+  ! 7. message-lowlevel-nomac -- Low-Level Single Message, No MAC.
   ! Three explicit Areion-SoEM-512 seeds.
   ! ----------------------------------------------------------------
   subroutine run_message_lowlevel_nomac(cipher, plaintext, recovered, wire_n, ok, err_msg)
@@ -1220,7 +1220,7 @@ contains
   end subroutine
 
   ! ----------------------------------------------------------------
-  ! 8. message-lowlevel-auth -- Low-Level single-shot, MAC Authenticated.
+  ! 8. message-lowlevel-auth -- Low-Level Single Message, MAC Authenticated.
   ! ----------------------------------------------------------------
   subroutine run_message_lowlevel_auth(cipher, plaintext, recovered, wire_n, ok, err_msg)
     integer,                                     intent(in)  :: cipher

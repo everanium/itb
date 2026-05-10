@@ -414,7 +414,7 @@ Cell runNoAEADLowLevelUserLoop(Cipher cipher, const(ubyte)[] plaintext) @trusted
 }
 
 // ---------------------------------------------------------------------------
-// 5. Single message — Easy: Areion-SoEM-512 (No MAC).
+// 5. Single Message — Easy: Areion-SoEM-512 (No MAC).
 //
 // One enc.encrypt() call → one ITB blob. wrapInPlace seals the whole blob
 // in place: nonce || ks-XOR(blob). The commented `wrap` alternative
@@ -468,7 +468,7 @@ Cell runMessageEasyNoMAC(Cipher cipher, const(ubyte)[] plaintext) @trusted
 }
 
 // ---------------------------------------------------------------------------
-// 6. Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated).
+// 6. Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated).
 // ---------------------------------------------------------------------------
 
 Cell runMessageEasyAuth(Cipher cipher, const(ubyte)[] plaintext) @trusted
@@ -518,7 +518,7 @@ Cell runMessageEasyAuth(Cipher cipher, const(ubyte)[] plaintext) @trusted
 }
 
 // ---------------------------------------------------------------------------
-// 7. Single message — Low-Level: Areion-SoEM-512 (No MAC).
+// 7. Single Message — Low-Level: Areion-SoEM-512 (No MAC).
 // ---------------------------------------------------------------------------
 
 Cell runMessageLowLevelNoMAC(Cipher cipher, const(ubyte)[] plaintext) @trusted
@@ -568,7 +568,7 @@ Cell runMessageLowLevelNoMAC(Cipher cipher, const(ubyte)[] plaintext) @trusted
 }
 
 // ---------------------------------------------------------------------------
-// 8. Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3
+// 8. Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3
 // (MAC Authenticated).
 // ---------------------------------------------------------------------------
 
@@ -655,16 +655,16 @@ void main(string[] args)
             "Streaming Low-Level (No MAC, User-Driven Loop)",
             STREAM_PLAINTEXT_LEN, &runNoAEADLowLevelUserLoop),
         Example("message-easy-nomac",
-            "Easy: Areion-SoEM-512 (No MAC, single-shot)",
+            "Easy: Areion-SoEM-512 (No MAC, Single Message)",
             MSG_PLAINTEXT_LEN, &runMessageEasyNoMAC),
         Example("message-easy-auth",
-            "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)",
+            "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)",
             MSG_PLAINTEXT_LEN, &runMessageEasyAuth),
         Example("message-lowlevel-nomac",
-            "Low-Level: Areion-SoEM-512 (No MAC, single-shot)",
+            "Low-Level: Areion-SoEM-512 (No MAC, Single Message)",
             MSG_PLAINTEXT_LEN, &runMessageLowLevelNoMAC),
         Example("message-lowlevel-auth",
-            "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)",
+            "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)",
             MSG_PLAINTEXT_LEN, &runMessageLowLevelAuth),
     ];
 

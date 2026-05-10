@@ -581,7 +581,7 @@
 // instead consume an [io.Reader] and write to an [io.Writer]
 // directly, dispatching on the concrete seed pointer type.
 // Aliasing follows the same `Authenticated` → `Auth` collapse rule
-// used by the single-shot family.
+// used by the Single Message family.
 //
 // [ErrStreamTruncated] and [ErrStreamAfterFinal] are the two
 // stream-specific sentinel errors. Decrypt-side helpers return

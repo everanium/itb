@@ -17,7 +17,7 @@ This is **not** a random-oracle indistinguishability claim. It is a "looks like 
 
 ## Wrapper API
 
-The C# surface exposes single-shot helpers (immutable + in-place mutation) and a streaming class pair:
+The C# surface exposes Single Message helpers (immutable + in-place mutation) and a streaming class pair:
 
 | Helper | Wire format | Use case |
 |---|---|---|
@@ -179,7 +179,7 @@ var wire = wireBuf.ToArray();
 
 (Receiver mirrors example 3, swapping `enc.Decrypt` for `Itb.Cipher.Decrypt(seeds[0], seeds[1], seeds[2], …)`.)
 
-### 5. Easy: Areion-SoEM-512 (No MAC, Single message)
+### 5. Easy: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `enc.Encrypt(plaintext)` returns one ITB blob. Wrap shape: `Wrap` — `nonce || ks-XOR(blob)`. The `WrapInPlace` / `UnwrapInPlace` variant is shown — mutates the caller's `Span<byte>` in place to skip the steady-state allocation.
 
@@ -204,7 +204,7 @@ var recoveredSpan = Wrapper.UnwrapInPlace(cipher, outerKey, wire);
 var pt = enc.Decrypt(recoveredSpan);
 ```
 
-### 6. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 6. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `enc.EncryptAuth` / `enc.DecryptAuth`. Wrap shape: `Wrap` (or `WrapInPlace`). The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 
@@ -226,7 +226,7 @@ var recoveredSpan = Wrapper.UnwrapInPlace(cipher, outerKey, wire);
 var pt = enc.DecryptAuth(recoveredSpan);
 ```
 
-### 7. Low-Level: Areion-SoEM-512 (No MAC, Single message)
+### 7. Low-Level: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `Itb.Cipher.Encrypt(seeds[0], seeds[1], seeds[2], plaintext)` / `Itb.Cipher.Decrypt(...)` with three explicit `Seed` handles. Wrap shape: `Wrap` (or `WrapInPlace`). Wire shape matches example 5; the difference is that the seed material is held by caller-side `Seed` handles rather than by an `Encryptor` instance.
 
@@ -246,7 +246,7 @@ var recoveredSpan = Wrapper.UnwrapInPlace(cipher, outerKey, wire);
 var pt = Itb.Cipher.Decrypt(seeds[0], seeds[1], seeds[2], recoveredSpan);
 ```
 
-### 8. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 8. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `Itb.Cipher.EncryptAuth(*seeds, mac, plaintext)` / `Itb.Cipher.DecryptAuth(...)`. Wrap shape: `Wrap` (or `WrapInPlace`). The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 

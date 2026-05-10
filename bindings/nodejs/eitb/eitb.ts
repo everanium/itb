@@ -20,10 +20,10 @@
 //   - aead-lowlevel-io           Streaming AEAD Low-Level   (MAC Authenticated, IO-Driven)
 //   - noaead-easy-userloop       Streaming Easy             (No MAC, User-Driven Loop)
 //   - noaead-lowlevel-userloop   Streaming Low-Level        (No MAC, User-Driven Loop)
-//   - message-easy-nomac         Easy single-shot           (No MAC)
-//   - message-easy-auth          Easy single-shot           (MAC Authenticated)
-//   - message-lowlevel-nomac     Low-Level single-shot      (No MAC)
-//   - message-lowlevel-auth      Low-Level single-shot      (MAC Authenticated)
+//   - message-easy-nomac         Easy Single Message           (No MAC)
+//   - message-easy-auth          Easy Single Message           (MAC Authenticated)
+//   - message-lowlevel-nomac     Low-Level Single Message      (No MAC)
+//   - message-lowlevel-auth      Low-Level Single Message      (MAC Authenticated)
 //
 // Single-message examples encrypt 1024 bytes; streaming examples
 // encrypt 64 KiB through 16 KiB chunks. Each example runs sender +
@@ -379,7 +379,7 @@ function runNoaeadLowLevelUserloop(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Single message — Easy: Areion-SoEM-512 (No MAC)
+// Single Message — Easy: Areion-SoEM-512 (No MAC)
 //
 // One enc.encrypt() call → one ITB blob. wrapInPlace mutates the
 // blob and returns the per-stream nonce; the caller composes
@@ -416,7 +416,7 @@ function runMessageEasyNomac(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC
+// Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC
 // Authenticated)
 // ────────────────────────────────────────────────────────────────────
 
@@ -449,7 +449,7 @@ function runMessageEasyAuth(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Single message — Low-Level: Areion-SoEM-512 (No MAC)
+// Single Message — Low-Level: Areion-SoEM-512 (No MAC)
 // ────────────────────────────────────────────────────────────────────
 
 function runMessageLowLevelNomac(
@@ -483,7 +483,7 @@ function runMessageLowLevelNomac(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC
+// Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC
 // Authenticated)
 // ────────────────────────────────────────────────────────────────────
 
@@ -562,27 +562,27 @@ const EXAMPLES: Example[] = [
   },
   {
     name: 'message-easy-nomac',
-    description: 'Easy: Areion-SoEM-512 (No MAC, single-shot)',
+    description: 'Easy: Areion-SoEM-512 (No MAC, Single Message)',
     plaintextN: SINGLE_MESSAGE_BYTES,
     run: runMessageEasyNomac,
   },
   {
     name: 'message-easy-auth',
     description:
-      'Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)',
+      'Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)',
     plaintextN: SINGLE_MESSAGE_BYTES,
     run: runMessageEasyAuth,
   },
   {
     name: 'message-lowlevel-nomac',
-    description: 'Low-Level: Areion-SoEM-512 (No MAC, single-shot)',
+    description: 'Low-Level: Areion-SoEM-512 (No MAC, Single Message)',
     plaintextN: SINGLE_MESSAGE_BYTES,
     run: runMessageLowLevelNomac,
   },
   {
     name: 'message-lowlevel-auth',
     description:
-      'Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)',
+      'Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)',
     plaintextN: SINGLE_MESSAGE_BYTES,
     run: runMessageLowLevelAuth,
   },

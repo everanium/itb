@@ -203,7 +203,7 @@ package body Itb.Wrapper is
    end Check_Nonce_Length;
 
    ---------------------------------------------------------------------
-   --  Single-shot Wrap / Unwrap (allocating)
+   --  Single Message Wrap / Unwrap (allocating)
    ---------------------------------------------------------------------
 
    function Wrap
@@ -283,7 +283,7 @@ package body Itb.Wrapper is
    end Unwrap;
 
    ---------------------------------------------------------------------
-   --  Single-shot Wrap / Unwrap (in-place mutation)
+   --  Single Message Wrap / Unwrap (in-place mutation)
    ---------------------------------------------------------------------
 
    procedure Wrap_In_Place

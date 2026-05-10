@@ -6,9 +6,9 @@ import (
 	"github.com/everanium/itb/wrapper"
 )
 
-// wrapper.go — single-shot format-deniability helpers.
+// wrapper.go — Single Message format-deniability helpers.
 //
-// These entry points expose the four single-shot variants from
+// These entry points expose the four Single Message variants from
 // github.com/everanium/itb/wrapper (Wrap, Unwrap, WrapInPlace,
 // UnwrapInPlace) plus the two sizing lookups (KeySize, NonceSize)
 // across the FFI surface.

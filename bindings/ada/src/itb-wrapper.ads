@@ -9,7 +9,7 @@
 --  format-deniability ONLY — ITB already provides
 --  content-deniability and the AEAD path already provides integrity.
 --
---  Quick start (single-shot Wrap / Unwrap, immutable inputs):
+--  Quick start (Single Message Wrap / Unwrap, immutable inputs):
 --
 --     declare
 --        Key  : constant Itb.Byte_Array :=
@@ -22,7 +22,7 @@
 --        pragma Assert (Recovered = Blob);
 --     end;
 --
---  Single-shot in-place mutation (zero-allocation steady state):
+--  Single Message in-place mutation (zero-allocation steady state):
 --
 --     declare
 --        N_Len     : constant Natural :=
@@ -113,7 +113,7 @@ package Itb.Wrapper is
    function Generate_Key (C : Cipher_Type) return Byte_Array;
 
    ---------------------------------------------------------------------
-   --  Single-shot Wrap / Unwrap (allocating)
+   --  Single Message Wrap / Unwrap (allocating)
    ---------------------------------------------------------------------
 
    --  Seals one ITB ciphertext blob under C with a fresh CSPRNG
@@ -137,7 +137,7 @@ package Itb.Wrapper is
       Wire   : Byte_Array) return Byte_Array;
 
    ---------------------------------------------------------------------
-   --  Single-shot Wrap / Unwrap (in-place mutation)
+   --  Single Message Wrap / Unwrap (in-place mutation)
    ---------------------------------------------------------------------
 
    --  XORs Blob in place under a fresh CSPRNG outer cipher keystream

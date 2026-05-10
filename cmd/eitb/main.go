@@ -66,10 +66,10 @@ func main() {
 		{name: "noaead-easy-userloop", description: "Streaming Easy (No MAC, User-Driven Loop)", plaintextN: 64 * 1024, run: runNoAEADEasyUserLoop},
 		{name: "noaead-lowlevel-io", description: "Streaming Low-Level (No MAC, IO-Driven)", plaintextN: 64 * 1024, run: runNoAEADLowLevelIO},
 		{name: "noaead-lowlevel-userloop", description: "Streaming Low-Level (No MAC, User-Driven Loop)", plaintextN: 64 * 1024, run: runNoAEADLowLevelUserLoop},
-		{name: "message-easy-nomac", description: "Easy: Areion-SoEM-512 (No MAC, single-shot)", plaintextN: 1024, run: runMessageEasyNoMAC},
-		{name: "message-easy-auth", description: "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)", plaintextN: 1024, run: runMessageEasyAuth},
-		{name: "message-lowlevel-nomac", description: "Low-Level: Areion-SoEM-512 (No MAC, single-shot)", plaintextN: 1024, run: runMessageLowLevelNoMAC},
-		{name: "message-lowlevel-auth", description: "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)", plaintextN: 1024, run: runMessageLowLevelAuth},
+		{name: "message-easy-nomac", description: "Easy: Areion-SoEM-512 (No MAC, Single Message)", plaintextN: 1024, run: runMessageEasyNoMAC},
+		{name: "message-easy-auth", description: "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", plaintextN: 1024, run: runMessageEasyAuth},
+		{name: "message-lowlevel-nomac", description: "Low-Level: Areion-SoEM-512 (No MAC, Single Message)", plaintextN: 1024, run: runMessageLowLevelNoMAC},
+		{name: "message-lowlevel-auth", description: "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", plaintextN: 1024, run: runMessageLowLevelAuth},
 	}
 
 	type result struct {
@@ -511,7 +511,7 @@ func runNoAEADLowLevelUserLoop(cipherName string, plaintext []byte) ([]byte, int
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Easy: Areion-SoEM-512 (No MAC).
+// Single Message — Easy: Areion-SoEM-512 (No MAC).
 //
 // One enc.Encrypt() call → one ITB blob. Wrap seals the whole blob:
 // nonce || ks-XOR(blob). Wire shape mirrors any "AES-CTR with a fresh nonce
@@ -564,7 +564,7 @@ func runMessageEasyNoMAC(cipherName string, plaintext []byte) ([]byte, int, erro
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3
+// Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3
 // (MAC Authenticated).
 //
 // EncryptAuth / DecryptAuth pair, again Wrap over the whole ITB output.
@@ -617,11 +617,11 @@ func runMessageEasyAuth(cipherName string, plaintext []byte) ([]byte, int, error
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Low-Level: Areion-SoEM-512 (No MAC).
+// Single Message — Low-Level: Areion-SoEM-512 (No MAC).
 //
 // Drives the width-less itb.Encrypt / itb.Decrypt helpers with three explicit
 // *Seed512 handles built from the Areion-SoEM-512 hash factory at the same
-// 2048-bit seed width used by the Easy single-shot variant. One Encrypt call
+// 2048-bit seed width used by the Easy Single Message variant. One Encrypt call
 // → one ITB blob; Wrap seals the whole blob: nonce || ks-XOR(blob).
 // ---------------------------------------------------------------------------
 
@@ -683,7 +683,7 @@ func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, 
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3
+// Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3
 // (MAC Authenticated).
 //
 // Drives the width-less itb.EncryptAuth / itb.DecryptAuth helpers with three

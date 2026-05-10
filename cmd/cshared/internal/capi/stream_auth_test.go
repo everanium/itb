@@ -276,7 +276,7 @@ func TestEncryptStreamAuthEmptyFinal(t *testing.T) {
 // TestEncryptStreamAuthEmptyNonFinal verifies that the underlying
 // streaming function rejects a zero-byte plaintext when finalFlag is
 // false (a non-terminal empty chunk is meaningless and the cipher
-// rejects it the same way the single-shot Auth path does on empty
+// rejects it the same way the Single Message Auth path does on empty
 // input).
 func TestEncryptStreamAuthEmptyNonFinal(t *testing.T) {
 	macID, st := NewMAC("kmac256", makeMACKey32(t))

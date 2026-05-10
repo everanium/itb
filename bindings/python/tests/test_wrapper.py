@@ -3,7 +3,7 @@
 
 Coverage mirrors the cross-binding contract for the wrapper surface:
 
-- 3 outer ciphers × 4 single-shot variants (wrap / unwrap /
+- 3 outer ciphers × 4 Single Message variants (wrap / unwrap /
   wrap_in_place / unwrap_in_place) — round-trip + nonce hygiene.
 - 3 outer ciphers × streaming WrapStreamWriter / UnwrapStreamReader
   multi-chunk round-trip.
@@ -281,7 +281,7 @@ class TestCrossFFIParity(unittest.TestCase):
     def setUpClass(cls):
         path = os.environ.get(
             "ITB_WRAPPER_PARITY_BIN",
-            "$HOME/scratch/wrapper_parity/parity_helper",
+            "/home/andrew/scratch/wrapper_parity/parity_helper",
         )
         cls.parity_bin = path if shutil.which(path) or Path(path).is_file() else None
 

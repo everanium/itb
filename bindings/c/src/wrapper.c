@@ -197,7 +197,7 @@ itb_status_t itb_wrapper_generate_key(itb_wrapper_cipher_t cipher,
 }
 
 /* ------------------------------------------------------------------ */
-/* Single-shot wrap / unwrap                                           */
+/* Single Message wrap / unwrap                                           */
 /* ------------------------------------------------------------------ */
 
 /*

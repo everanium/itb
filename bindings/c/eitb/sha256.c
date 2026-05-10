@@ -1,7 +1,7 @@
 /*
  * sha256.c — minimal SHA-256 implementation for the eitb verify path.
  *
- * FIPS 180-4 reference, single-shot. Constant-table layout matches
+ * FIPS 180-4 reference, Single Message. Constant-table layout matches
  * the standard; each round folds w[i] into the working variables in
  * the canonical order. The implementation is straight C with no
  * SIMD / AES-NI / SHA-NI intrinsics — used only for byte-level

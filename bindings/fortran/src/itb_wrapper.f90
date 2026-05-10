@@ -35,7 +35,7 @@
 ! NUL-terminated short name passed to the FFI. Out-of-range cipher
 ! values raise `STATUS_BAD_INPUT` via the standard error pipeline.
 !
-! Status reporting. The single-shot helpers and the stream
+! Status reporting. The Single Message helpers and the stream
 ! constructors / `update` calls receive a final status code through
 ! an `intent(out) :: status` argument rather than raising via
 ! `raise_itb_error` -- the caller may want to recover from a bad
@@ -43,7 +43,7 @@
 ! indicates success. On any non-OK code the binding's process-wide
 ! `itb_last_error_message()` carries the libitb diagnostic.
 !
-! Threading. The single-shot helpers are thread-safe -- every call
+! Threading. The Single Message helpers are thread-safe -- every call
 ! constructs an outer cipher session of its own and the libitb
 ! keystream constructor draws a fresh CSPRNG nonce per call. Stream
 ! handles are **single-feeder**: every `update` advances the
@@ -74,7 +74,7 @@ module itb_wrapper
   public :: ITB_WRAPPER_CIPHER_CHACHA20
   public :: ITB_WRAPPER_CIPHER_SIPHASH24
 
-  ! Single-shot + size helpers.
+  ! Single Message + size helpers.
   public :: itb_wrapper_cipher_name
   public :: itb_wrapper_key_size
   public :: itb_wrapper_nonce_size
@@ -298,7 +298,7 @@ contains
   end subroutine
 
   ! ----------------------------------------------------------------
-  ! Single-shot wrap / unwrap
+  ! Single Message wrap / unwrap
   ! ----------------------------------------------------------------
 
   ! Seals one ITB ciphertext blob under the named outer cipher.

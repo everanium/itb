@@ -1098,7 +1098,7 @@ struct Encryptor
         // alloc per chunk. Same grow-on-demand + wipe-on-grow shape as
         // `_cipherCall`; the streaming driver's hot loop benefits from
         // amortising the allocation across every chunk just like the
-        // single-shot Easy Mode path does.
+        // Single Message Easy Mode path does.
         _ensureCache(cap);
         size_t written = 0;
         int rc = ITB_Easy_EncryptStreamAuth(

@@ -97,7 +97,7 @@ Ada has no `Ada.Streams.Stream_IO` adapter for Non-AEAD streaming wrap surfaces;
 
 Per-chunk `Itb.Cipher.Encrypt` / `Itb.Cipher.Decrypt` with caller-side framing. Wrap shape identical to example 3.
 
-### 5. Single message — Easy: Areion-SoEM-512 (No MAC)
+### 5. Single Message — Easy: Areion-SoEM-512 (No MAC)
 
 ITB Call: `Itb.Encryptor.Encrypt` returns one ITB blob. Wrap shape: `Wrap_In_Place` (the default) — mutates the blob in place and returns the per-stream nonce, which the caller composes with the mutated blob to form the wire.
 
@@ -127,15 +127,15 @@ end;
 
 The allocating `Wrap` / `Unwrap` variants are commented out alongside the in-place defaults in `cmd/eitb/main.go` and `eitb/eitb.adb` so a caller who needs immutability of the input buffer can switch shapes by uncommenting the alternative.
 
-### 6. Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+### 6. Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
 
 ITB Call: `Itb.Encryptor.Encrypt_Auth` / `Decrypt_Auth`. Wrap shape: `Wrap_In_Place` over the whole authenticated ITB output. The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher contributes format-deniability only.
 
-### 7. Single message — Low-Level: Areion-SoEM-512 (No MAC)
+### 7. Single Message — Low-Level: Areion-SoEM-512 (No MAC)
 
 Same wrap shape as example 5; the difference is that the seed material is held in caller-owned `Itb.Seed.Seed` handles rather than by an `Itb.Encryptor.Encryptor` instance.
 
-### 8. Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+### 8. Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
 
 `Itb.Cipher.Encrypt_Auth` / `Decrypt_Auth` with three explicit Seeds plus the MAC closure constructed via `Itb.MAC.Make ("hmac-blake3", Mac_Key)`. Wrap shape mirrors the No MAC variant.
 

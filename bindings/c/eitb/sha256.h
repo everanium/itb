@@ -2,7 +2,7 @@
  * sha256.h — minimal SHA-256 used by the eitb verify path.
  *
  * Self-contained; no libcrypto dependency. The implementation is a
- * clean translation of FIPS 180-4 (single-shot input, fixed
+ * clean translation of FIPS 180-4 (Single Message input, fixed
  * 32-byte digest output). The eitb harness only ever computes one
  * digest per plaintext / recovered-plaintext pair, so the simplest
  * one-shot API is the most appropriate.

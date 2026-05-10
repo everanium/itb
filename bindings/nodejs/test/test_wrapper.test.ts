@@ -6,7 +6,7 @@
 // Covers:
 //
 //   - keySize / nonceSize / generateKey for all three outer ciphers.
-//   - Single-shot wrap / unwrap round-trip across the three ciphers.
+//   - Single Message wrap / unwrap round-trip across the three ciphers.
 //   - In-place wrap / unwrap round-trip across the three ciphers.
 //   - Streaming wrap / unwrap round-trip across the three ciphers.
 //   - Mixed in-place / immutable cross-pair (in-place wrap then
@@ -99,7 +99,7 @@ describe('test_wrapper', () => {
   });
 
   // ──────────────────────────────────────────────────────────────
-  // Single-shot wrap / unwrap
+  // Single Message wrap / unwrap
   // ──────────────────────────────────────────────────────────────
 
   for (const cipher of CIPHER_NAMES) {
@@ -355,7 +355,7 @@ describe('test_wrapper', () => {
   // ──────────────────────────────────────────────────────────────
 
   for (const cipher of CIPHER_NAMES) {
-    test(`stream-wrap then single-shot-unwrap parity ${cipher}`, () => {
+    test(`stream-wrap then Single Message-unwrap parity ${cipher}`, () => {
       const key = wrapperGenerateKey(cipher);
       const blob = randomBytes(2222);
       const writer = new WrapStreamWriter(cipher, key);

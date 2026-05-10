@@ -64,7 +64,7 @@ func newStreamEncryptor(primitive string, keyBits, mode int) *easy.Encryptor {
 
 // streamIOSizes covers the {1, cs-1, cs, cs+1, 10*cs} payload matrix
 // for the plain stream IO round-trip. The empty-input case is omitted
-// because the underlying single-shot Encrypt path rejects empty
+// because the underlying Single Message Encrypt path rejects empty
 // plaintext (the streaming helper preserves that semantic by simply
 // not emitting any chunk).
 func streamIOSizes(chunkSize int) []int {
@@ -106,7 +106,7 @@ func TestEasyStreamIORoundtripMatrix(t *testing.T) {
 
 // TestEasyStreamIOEmptyInputEmitsNothing confirms a 0-byte plaintext
 // produces no on-wire output. The plain stream path mirrors the
-// underlying single-shot Encrypt's empty-input rejection by simply
+// underlying Single Message Encrypt's empty-input rejection by simply
 // not emitting any chunk.
 func TestEasyStreamIOEmptyInputEmitsNothing(t *testing.T) {
 	enc := easy.New("siphash24", 512)

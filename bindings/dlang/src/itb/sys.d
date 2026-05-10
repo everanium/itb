@@ -388,7 +388,7 @@ int ITB_Easy_DecryptStreamAuth(
 // ----- Format-deniability wrapper surface -------------------------------
 //
 // 12 entry points binding the Go-side `wrapper` package to the FFI:
-// key / nonce introspection (2), single-shot wrap / unwrap (2),
+// key / nonce introspection (2), Single Message wrap / unwrap (2),
 // in-place wrap / unwrap (2), streaming writer init / update / free
 // (3), streaming reader init / update / free (3). Wraps an ITB
 // ciphertext under one of three outer keystream ciphers — AES-128-CTR,

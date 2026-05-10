@@ -127,7 +127,7 @@ func (e *Encryptor) DecryptStream(ciphertext []byte, emit ChunkFunc) error {
 // src, encrypts each non-empty window through the matching
 // width-suffixed per-chunk path on the encryptor, and writes the
 // resulting wire chunk to dst. Empty src input emits nothing — the
-// underlying single-shot path rejects empty plaintext, and the
+// underlying Single Message path rejects empty plaintext, and the
 // streaming helper preserves that semantic by simply not emitting any
 // chunk.
 //

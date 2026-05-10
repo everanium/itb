@@ -625,7 +625,7 @@ procedure Eitb is
       Free_Buf (Wire);
    end Run_NoAEAD_Low_Level_UserLoop;
 
-   --  Single message — Easy: Areion-SoEM-512 (No MAC).
+   --  Single Message — Easy: Areion-SoEM-512 (No MAC).
    --  WrapInPlace / UnwrapInPlace defaults; the (allocating) Wrap /
    --  Unwrap alternatives are commented out below — see comment for
    --  immutability tradeoff.
@@ -685,7 +685,7 @@ procedure Eitb is
       Itb.Encryptor.Close (Enc);
    end Run_Message_Easy_NoMAC;
 
-   --  Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3.
+   --  Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3.
    procedure Run_Message_Easy_Auth
      (Cipher    : Itb.Wrapper.Cipher_Type;
       Plain     : Byte_Array;
@@ -726,7 +726,7 @@ procedure Eitb is
       Itb.Encryptor.Close (Enc);
    end Run_Message_Easy_Auth;
 
-   --  Single message — Low-Level: Areion-SoEM-512 (No MAC).
+   --  Single Message — Low-Level: Areion-SoEM-512 (No MAC).
    procedure Run_Message_Low_Level_NoMAC
      (Cipher    : Itb.Wrapper.Cipher_Type;
       Plain     : Byte_Array;
@@ -772,7 +772,7 @@ procedure Eitb is
       end;
    end Run_Message_Low_Level_NoMAC;
 
-   --  Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3.
+   --  Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3.
    procedure Run_Message_Low_Level_Auth
      (Cipher    : Itb.Wrapper.Cipher_Type;
       Plain     : Byte_Array;

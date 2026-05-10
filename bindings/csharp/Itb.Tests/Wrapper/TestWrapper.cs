@@ -4,7 +4,7 @@
 // Coverage mirrors the cross-binding contract for the wrapper
 // surface:
 //
-//   - 3 outer ciphers × 4 single-shot variants
+//   - 3 outer ciphers × 4 Single Message variants
 //     (Wrap / Unwrap / WrapInPlace / UnwrapInPlace) — round-trip
 //     + nonce hygiene.
 //   - 3 outer ciphers × streaming WrapStreamWriter +

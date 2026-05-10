@@ -11,7 +11,7 @@ Streaming AEAD). The wrap exists for format-deniability ONLY — ITB
 already provides content-deniability and the AEAD path already
 provides integrity.
 
-Quick start (single-shot Wrap / Unwrap):
+Quick start (Single Message Wrap / Unwrap):
 
     >>> from itb import wrapper
     >>> key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
@@ -20,7 +20,7 @@ Quick start (single-shot Wrap / Unwrap):
     >>> recovered = wrapper.unwrap(wrapper.CIPHER_AES128_CTR, key, wire)
     >>> assert recovered == blob
 
-Single-shot in-place mutation (zero-allocation steady state):
+Single Message in-place mutation (zero-allocation steady state):
 
     >>> mutable = bytearray(blob)
     >>> nonce = wrapper.wrap_in_place(wrapper.CIPHER_CHACHA20, key, mutable)
@@ -176,7 +176,7 @@ def generate_key(cipher_name: str) -> bytes:
 
 
 def wrap(cipher_name: str, key: bytes, blob: bytes) -> bytes:
-    """Single-shot wrap. Seals ``blob`` under ``cipher_name`` with a
+    """Single Message wrap. Seals ``blob`` under ``cipher_name`` with a
     fresh per-call CSPRNG nonce; returns the wire bytes
     ``nonce || keystream-XOR(blob)``.
 
@@ -208,7 +208,7 @@ def wrap(cipher_name: str, key: bytes, blob: bytes) -> bytes:
 
 
 def unwrap(cipher_name: str, key: bytes, wire: bytes) -> bytes:
-    """Single-shot unwrap. Reads the leading ``nonce_size(cipher_name)``
+    """Single Message unwrap. Reads the leading ``nonce_size(cipher_name)``
     bytes of ``wire`` as the per-stream nonce, XOR-decrypts the
     remainder under ``(key, nonce)`` and returns the recovered blob.
 
@@ -245,7 +245,7 @@ def unwrap(cipher_name: str, key: bytes, wire: bytes) -> bytes:
 
 
 def wrap_in_place(cipher_name: str, key: bytes, blob) -> bytes:
-    """In-place single-shot wrap. XORs ``blob`` under a fresh per-
+    """In-place Single Message wrap. XORs ``blob`` under a fresh per-
     call CSPRNG nonce; returns the per-stream nonce as ``bytes``.
 
     The input ``blob`` is **MUTATED**. Pass a :class:`bytearray` or
@@ -288,7 +288,7 @@ def wrap_in_place(cipher_name: str, key: bytes, blob) -> bytes:
 
 
 def unwrap_in_place(cipher_name: str, key: bytes, wire) -> memoryview:
-    """In-place single-shot unwrap. Strips the leading
+    """In-place Single Message unwrap. Strips the leading
     ``nonce_size(cipher_name)`` bytes from ``wire`` and XOR-decrypts
     the remainder under ``(key, nonce)`` directly into the caller's
     buffer.

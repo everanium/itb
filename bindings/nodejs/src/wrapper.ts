@@ -11,14 +11,14 @@
 // format-deniability ONLY — ITB already provides content-deniability
 // and the AEAD path already provides integrity.
 //
-// Quick start — single-shot wrap / unwrap (immutable):
+// Quick start — Single Message wrap / unwrap (immutable):
 //
 //     import { wrap, unwrap, generateKey, Cipher } from 'itb';
 //     const key = generateKey(Cipher.Aes128Ctr);
 //     const wire = wrap(Cipher.Aes128Ctr, key, blob);
 //     const recovered = unwrap(Cipher.Aes128Ctr, key, wire);
 //
-// Quick start — single-shot in-place mutation (zero-allocation
+// Quick start — Single Message in-place mutation (zero-allocation
 // steady state):
 //
 //     import { wrapInPlace, unwrapInPlace } from 'itb';
@@ -251,10 +251,10 @@ export function generateKey(cipher: CipherName): Buffer {
   return randomBytes(keySize(cipher));
 }
 
-// ── Single-shot helpers ────────────────────────────────────────────
+// ── Single Message helpers ────────────────────────────────────────────
 
 /**
- * Single-shot wrap. Seals ``blob`` under ``cipher`` with a fresh
+ * Single Message wrap. Seals ``blob`` under ``cipher`` with a fresh
  * per-call CSPRNG nonce; returns a fresh wire buffer
  * `nonce || keystream-XOR(blob)`.
  *
@@ -286,7 +286,7 @@ export function wrap(cipher: CipherName, key: Buffer, blob: Buffer): Buffer {
 }
 
 /**
- * Single-shot unwrap. Reads the leading ``nonceSize(cipher)`` bytes
+ * Single Message unwrap. Reads the leading ``nonceSize(cipher)`` bytes
  * of ``wire`` as the per-stream nonce, XOR-decrypts the remainder
  * under ``(key, nonce)`` and returns the recovered blob.
  *
@@ -326,7 +326,7 @@ export function unwrap(cipher: CipherName, key: Buffer, wire: Buffer): Buffer {
 }
 
 /**
- * In-place single-shot wrap. XORs ``blob`` under a fresh per-call
+ * In-place Single Message wrap. XORs ``blob`` under a fresh per-call
  * CSPRNG nonce; returns the per-stream nonce as a fresh
  * {@link Buffer}.
  *
@@ -363,7 +363,7 @@ export function wrapInPlace(
 }
 
 /**
- * In-place single-shot unwrap. Strips the leading
+ * In-place Single Message unwrap. Strips the leading
  * ``nonceSize(cipher)`` bytes from ``wire`` and XOR-decrypts the
  * remainder under ``(key, nonce)`` directly into the caller's
  * buffer.

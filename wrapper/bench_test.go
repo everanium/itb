@@ -203,7 +203,7 @@ func BenchmarkWrapperOnlyInPlace(b *testing.B) {
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Single Ouroboros (24 sub-benches: 4 modes × 3 ciphers × 2 directions).
+// Single Message — Single Ouroboros (24 sub-benches: 4 modes × 3 ciphers × 2 directions).
 // ---------------------------------------------------------------------------
 
 func BenchmarkMessageSingle(b *testing.B) {
@@ -237,7 +237,7 @@ func BenchmarkMessageSingle(b *testing.B) {
 }
 
 // ---------------------------------------------------------------------------
-// Single message — Triple Ouroboros (24 sub-benches).
+// Single Message — Triple Ouroboros (24 sub-benches).
 // ---------------------------------------------------------------------------
 
 func BenchmarkMessageTriple(b *testing.B) {

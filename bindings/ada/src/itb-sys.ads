@@ -1055,7 +1055,7 @@ package Itb.Sys is
    --
    --  Twelve entry points covering the wrapper surface:
    --    * Two metadata getters (KeySize / NonceSize)
-   --    * Four single-shot calls (Wrap / Unwrap + WrapInPlace /
+   --    * Four Single Message calls (Wrap / Unwrap + WrapInPlace /
    --      UnwrapInPlace)
    --    * Six streaming-handle calls
    --      (WrapStreamWriter_Init/_Update/_Free +
