@@ -11,7 +11,7 @@
 // ONLY — ITB already provides content-deniability and the AEAD
 // path already provides integrity.
 //
-// Quick start (single-shot Wrap / Unwrap):
+// Quick start (Single Message Wrap / Unwrap):
 //
 //     var key = Wrapper.GenerateKey(Cipher.Aes128Ctr);
 //     byte[] blob = ...;
@@ -19,7 +19,7 @@
 //     byte[] recovered = Wrapper.Unwrap(Cipher.Aes128Ctr, key, wire);
 //     Debug.Assert(recovered.SequenceEqual(blob));
 //
-// Single-shot in-place mutation (zero-allocation steady state):
+// Single Message in-place mutation (zero-allocation steady state):
 //
 //     Span<byte> mutable = blob.ToArray();
 //     byte[] nonce = Wrapper.WrapInPlace(Cipher.ChaCha20, key, mutable);
@@ -148,7 +148,7 @@ public sealed class WrapperHandleClosedException : ItbException
 /// Format-deniability wrapper static surface. Provides
 /// <see cref="KeySize"/> / <see cref="NonceSize"/> /
 /// <see cref="GenerateKey"/> introspection helpers plus the four
-/// single-shot entry points (<see cref="Wrap"/> / <see cref="Unwrap"/>
+/// Single Message entry points (<see cref="Wrap"/> / <see cref="Unwrap"/>
 /// / <see cref="WrapInPlace"/> / <see cref="UnwrapInPlace"/>).
 /// Streaming surfaces are exposed through the
 /// <see cref="WrapStreamWriter"/> / <see cref="UnwrapStreamReader"/>
@@ -209,7 +209,7 @@ public static class Wrapper
     }
 
     /// <summary>
-    /// Single-shot wrap. Seals <paramref name="blob"/> under
+    /// Single Message wrap. Seals <paramref name="blob"/> under
     /// <paramref name="cipher"/> with a fresh per-call CSPRNG nonce;
     /// returns the wire bytes <c>nonce || keystream-XOR(blob)</c>.
     /// </summary>
@@ -247,7 +247,7 @@ public static class Wrapper
     }
 
     /// <summary>
-    /// Single-shot unwrap. Reads the leading
+    /// Single Message unwrap. Reads the leading
     /// <c>NonceSize(cipher)</c> bytes of <paramref name="wire"/> as
     /// the per-stream nonce, XOR-decrypts the remainder under
     /// <c>(key, nonce)</c> and returns the recovered blob.
@@ -293,7 +293,7 @@ public static class Wrapper
     }
 
     /// <summary>
-    /// In-place single-shot wrap. XORs <paramref name="blob"/> under
+    /// In-place Single Message wrap. XORs <paramref name="blob"/> under
     /// a fresh per-call CSPRNG nonce; returns the per-stream nonce.
     /// </summary>
     /// <remarks>
@@ -326,7 +326,7 @@ public static class Wrapper
     }
 
     /// <summary>
-    /// In-place single-shot unwrap. Strips the leading
+    /// In-place Single Message unwrap. Strips the leading
     /// <c>NonceSize(cipher)</c> bytes from <paramref name="wire"/>
     /// and XOR-decrypts the remainder under <c>(key, nonce)</c>
     /// directly into the caller's buffer. Returns a slice aliasing

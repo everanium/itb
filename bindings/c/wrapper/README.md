@@ -89,7 +89,7 @@ make eitb
 ./bin/eitb -v
 ```
 
-Eight examples cover the full streaming + single-shot matrix. The C binding has **no Streaming No MAC IO-Driven** examples (there is no `FILE*` / file-like wrapper writer / reader pair for Non-AEAD streaming); the No MAC streaming arm uses the User-Driven Loop only.
+Eight examples cover the full streaming + Single Message matrix. The C binding has **no Streaming No MAC IO-Driven** examples (there is no `FILE*` / file-like wrapper writer / reader pair for Non-AEAD streaming); the No MAC streaming arm uses the User-Driven Loop only.
 
 ### 1. Streaming AEAD Easy (MAC Authenticated, IO-Driven)
 
@@ -128,7 +128,7 @@ The Go README's "Alternative — User-Driven Loop" pattern: each chunk is one in
 
 Per-chunk `itb_encrypt` / `itb_decrypt` with caller-side framing. Wrap shape as in example 3.
 
-### 5. Easy: Areion-SoEM-512 (No MAC, Single message)
+### 5. Easy: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `itb_encryptor_encrypt(enc, plaintext, ...)` returns one ITB blob. Wrap shape: `itb_wrap_in_place` mutates the blob, returns the per-stream nonce; the caller composes `nonce || mutated-blob` to produce the wire. Receiver `itb_unwrap_in_place` mutates the wire and recovers `wire[nonce_size .. wire_len)` as the plaintext.
 
@@ -153,15 +153,15 @@ itb_encryptor_decrypt(enc, wire + 16, encrypted_len, &pt, &pt_len);
 
 The immutable-input alternative uses `itb_wrap` / `itb_unwrap`, which allocate a fresh wire buffer at the cost of one extra malloc per call. The eitb runner exercises both via commented alternatives.
 
-### 6. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 6. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `itb_encryptor_encrypt_auth` / `itb_encryptor_decrypt_auth`. Wrap shape: as in example 5. The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 
-### 7. Low-Level: Areion-SoEM-512 (No MAC, Single message)
+### 7. Low-Level: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `itb_encrypt(noise, data, start, plaintext, ...)` / `itb_decrypt(...)` with three explicit `itb_seed_t` handles built from `itb_seed_new("areion512", 2048, ...)`. Wrap shape as in example 5.
 
-### 8. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 8. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `itb_encrypt_auth` / `itb_decrypt_auth` with the MAC closure constructed via `itb_mac_new("hmac-blake3", mac_key, 32, ...)`. Wrap shape as in example 5.
 
@@ -212,7 +212,7 @@ The outer key MAY be reused across many streams provided each stream uses a fres
 
 ## Threading
 
-The single-shot `itb_wrap` / `itb_unwrap` / `itb_wrap_in_place` / `itb_unwrap_in_place` are thread-safe: each call constructs an outer cipher session of its own and the libitb keystream constructor draws a fresh CSPRNG nonce per call. The streaming `itb_wrap_stream_writer_t` / `itb_unwrap_stream_reader_t` handles are single-feeder — every `_update` call advances the underlying keystream counter; concurrent `_update` calls on the same handle race. Distinct handles run independently.
+The Single Message `itb_wrap` / `itb_unwrap` / `itb_wrap_in_place` / `itb_unwrap_in_place` are thread-safe: each call constructs an outer cipher session of its own and the libitb keystream constructor draws a fresh CSPRNG nonce per call. The streaming `itb_wrap_stream_writer_t` / `itb_unwrap_stream_reader_t` handles are single-feeder — every `_update` call advances the underlying keystream counter; concurrent `_update` calls on the same handle race. Distinct handles run independently.
 
 ## What this is not
 

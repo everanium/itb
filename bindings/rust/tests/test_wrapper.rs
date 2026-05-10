@@ -3,13 +3,13 @@
 //! Covers the 12-export FFI surface:
 //!
 //!   - key_size / nonce_size lookups against every cipher.
-//!   - wrap / unwrap (single-shot, immutable plaintext path).
+//!   - wrap / unwrap (Single Message, immutable plaintext path).
 //!   - wrap_in_place / unwrap_in_place (mutable plaintext path).
 //!   - WrapStreamWriter / UnwrapStreamReader (multi-chunk streaming).
 //!   - Negative paths: short wire, mis-sized key, mis-sized nonce,
 //!     post-close `update`.
 //!
-//! 22 tests minimum — 12 single-shot + 6 streaming + 4 negative.
+//! 22 tests minimum — 12 Single Message + 6 streaming + 4 negative.
 //! Mirrors the Python wrapper test coverage shape, translated to
 //! Rust idioms.
 

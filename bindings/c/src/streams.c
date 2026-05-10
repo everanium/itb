@@ -1984,9 +1984,9 @@ static itb_status_t encryptor_check_open(const itb_encryptor_t *e)
 
 /* Wipe-on-grow cache router for the Easy AEAD streaming per-chunk
  * dispatchers. Mirrors encryptor.c::ensure_cache against the SAME
- * encryptor->out_cache field that cipher_call uses for single-shot
+ * encryptor->out_cache field that cipher_call uses for Single Message
  * Easy encrypt / decrypt — the §7.1 contract codifies cache reuse on
- * the per-chunk Easy AEAD path with the same scope as the single-shot
+ * the per-chunk Easy AEAD path with the same scope as the Single Message
  * canonical reference. The cache stays internal as the FFI write
  * target ONLY; user code never observes the cache pointer
  * (§11.o.2 aliasing-footgun mitigation — handled at the return path

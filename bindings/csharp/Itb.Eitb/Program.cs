@@ -279,7 +279,7 @@ internal static class Program
     }
 
     // ----------------------------------------------------------------
-    // Single message — Easy: Areion-SoEM-512 (No MAC)
+    // Single Message — Easy: Areion-SoEM-512 (No MAC)
     //
     // One enc.Encrypt() call → one ITB blob. WrapInPlace mutates the
     // blob and returns the per-stream nonce; the caller composes
@@ -311,7 +311,7 @@ internal static class Program
     }
 
     // ----------------------------------------------------------------
-    // Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+    // Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
     // ----------------------------------------------------------------
 
     private static (byte[], int) RunMessageEasyAuth(OuterCipher cipher, byte[] plaintext)
@@ -337,7 +337,7 @@ internal static class Program
     }
 
     // ----------------------------------------------------------------
-    // Single message — Low-Level: Areion-SoEM-512 (No MAC)
+    // Single Message — Low-Level: Areion-SoEM-512 (No MAC)
     // ----------------------------------------------------------------
 
     private static (byte[], int) RunMessageLowLevelNomac(OuterCipher cipher, byte[] plaintext)
@@ -371,7 +371,7 @@ internal static class Program
     }
 
     // ----------------------------------------------------------------
-    // Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+    // Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
     // ----------------------------------------------------------------
 
     private static (byte[], int) RunMessageLowLevelAuth(OuterCipher cipher, byte[] plaintext)

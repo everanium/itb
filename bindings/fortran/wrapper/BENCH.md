@@ -60,7 +60,7 @@ Sub-bench count: **102**. (6 wrapper only round-trip + 24 Message Single + 24 Me
 
 `WrapInPlace` mutates the caller's blob and writes the per-stream nonce to a separate caller-supplied buffer; the steady-state allocation is zero. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call.
 
-### Single message — Single Ouroboros (16 MiB plaintext)
+### Single Message — Single Ouroboros (16 MiB plaintext)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
@@ -69,7 +69,7 @@ Sub-bench count: **102**. (6 wrapper only round-trip + 24 Message Single + 24 Me
 | **Low-Level** No MAC | TBD | TBD | TBD | TBD | TBD | TBD |
 | **Low-Level** MAC Authenticated | TBD | TBD | TBD | TBD | TBD | TBD |
 
-### Single message — Triple Ouroboros (16 MiB plaintext)
+### Single Message — Triple Ouroboros (16 MiB plaintext)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|

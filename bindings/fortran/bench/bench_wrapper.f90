@@ -22,8 +22,8 @@
 !
 ! Message sub-bench modes:
 !
-!   1. Easy No MAC          (single-shot enc.encrypt)
-!   2. Easy MAC Authenticated (single-shot enc.encrypt_auth)
+!   1. Easy No MAC          (Single Message enc.encrypt)
+!   2. Easy MAC Authenticated (Single Message enc.encrypt_auth)
 !   3. Low-Level No MAC      (itb_encrypt with explicit seeds)
 !   4. Low-Level MAC Authenticated (itb_encrypt_auth + MAC handle)
 !

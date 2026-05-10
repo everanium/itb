@@ -44,7 +44,7 @@ func constantTimeEqual(a, b []byte) bool {
 	return v == 0
 }
 
-// EncryptAuth is the width-less single-shot authenticated Encrypt
+// EncryptAuth is the width-less Single Message authenticated Encrypt
 // entry point. Dispatches to [EncryptAuthenticated128] /
 // [EncryptAuthenticated256] / [EncryptAuthenticated512] based on the
 // concrete pointer type of the supplied seeds. Every seed must carry
@@ -72,7 +72,7 @@ func EncryptAuth(noiseSeed, dataSeed, startSeed any, data []byte, macFunc MACFun
 	return nil, errSeedWidthMix
 }
 
-// DecryptAuth is the width-less single-shot authenticated Decrypt
+// DecryptAuth is the width-less Single Message authenticated Decrypt
 // entry point. Mirrors [EncryptAuth]; dispatches to
 // [DecryptAuthenticated128] / [DecryptAuthenticated256] /
 // [DecryptAuthenticated512].
@@ -92,7 +92,7 @@ func DecryptAuth(noiseSeed, dataSeed, startSeed any, fileData []byte, macFunc MA
 	return nil, errSeedWidthMix
 }
 
-// EncryptAuth3x is the width-less single-shot Triple-Ouroboros
+// EncryptAuth3x is the width-less Single Message Triple-Ouroboros
 // authenticated Encrypt entry point. Dispatches to
 // [EncryptAuthenticated3x128] / [EncryptAuthenticated3x256] /
 // [EncryptAuthenticated3x512] based on the concrete pointer type of
@@ -114,7 +114,7 @@ func EncryptAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, start
 	return nil, errSeedWidthMix
 }
 
-// DecryptAuth3x is the width-less single-shot Triple-Ouroboros
+// DecryptAuth3x is the width-less Single Message Triple-Ouroboros
 // authenticated Decrypt entry point. Mirrors [EncryptAuth3x];
 // dispatches to [DecryptAuthenticated3x128] /
 // [DecryptAuthenticated3x256] / [DecryptAuthenticated3x512].

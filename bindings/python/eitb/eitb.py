@@ -16,10 +16,10 @@ Examples covered:
   - aead-lowlevel-io           Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)
   - noaead-easy-userloop       Streaming Easy        (No MAC, User-Driven Loop)
   - noaead-lowlevel-userloop   Streaming Low-Level   (No MAC, User-Driven Loop)
-  - message-easy-nomac         Easy single-shot      (No MAC)
-  - message-easy-auth          Easy single-shot      (MAC Authenticated)
-  - message-lowlevel-nomac     Low-Level single-shot (No MAC)
-  - message-lowlevel-auth      Low-Level single-shot (MAC Authenticated)
+  - message-easy-nomac         Easy Single Message      (No MAC)
+  - message-easy-auth          Easy Single Message      (MAC Authenticated)
+  - message-lowlevel-nomac     Low-Level Single Message (No MAC)
+  - message-lowlevel-auth      Low-Level Single Message (MAC Authenticated)
 
 Single-message examples encrypt 1024 bytes; streaming examples
 encrypt 64 KiB through 16 KiB chunks. Each example runs sender +
@@ -276,7 +276,7 @@ def run_noaead_lowlevel_userloop(cipher_name: str, plaintext: bytes):
 
 
 # --------------------------------------------------------------------
-# Single message — Easy: Areion-SoEM-512 (No MAC)
+# Single Message — Easy: Areion-SoEM-512 (No MAC)
 #
 # One enc.encrypt() call → one ITB blob. WrapInPlace mutates the
 # blob and returns the per-stream nonce; the caller composes
@@ -318,7 +318,7 @@ def run_message_easy_nomac(cipher_name: str, plaintext: bytes):
 
 
 # --------------------------------------------------------------------
-# Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+# Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
 # --------------------------------------------------------------------
 
 
@@ -354,7 +354,7 @@ def run_message_easy_auth(cipher_name: str, plaintext: bytes):
 
 
 # --------------------------------------------------------------------
-# Single message — Low-Level: Areion-SoEM-512 (No MAC)
+# Single Message — Low-Level: Areion-SoEM-512 (No MAC)
 # --------------------------------------------------------------------
 
 
@@ -390,7 +390,7 @@ def run_message_lowlevel_nomac(cipher_name: str, plaintext: bytes):
 
 
 # --------------------------------------------------------------------
-# Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+# Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
 # --------------------------------------------------------------------
 
 
@@ -438,10 +438,10 @@ EXAMPLES = [
     ("aead-lowlevel-io", "Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)", STREAM_BYTES, run_aead_lowlevel_io),
     ("noaead-easy-userloop", "Streaming Easy (No MAC, User-Driven Loop)", STREAM_BYTES, run_noaead_easy_userloop),
     ("noaead-lowlevel-userloop", "Streaming Low-Level (No MAC, User-Driven Loop)", STREAM_BYTES, run_noaead_lowlevel_userloop),
-    ("message-easy-nomac", "Easy: Areion-SoEM-512 (No MAC, single-shot)", SINGLE_MESSAGE_BYTES, run_message_easy_nomac),
-    ("message-easy-auth", "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)", SINGLE_MESSAGE_BYTES, run_message_easy_auth),
-    ("message-lowlevel-nomac", "Low-Level: Areion-SoEM-512 (No MAC, single-shot)", SINGLE_MESSAGE_BYTES, run_message_lowlevel_nomac),
-    ("message-lowlevel-auth", "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, single-shot)", SINGLE_MESSAGE_BYTES, run_message_lowlevel_auth),
+    ("message-easy-nomac", "Easy: Areion-SoEM-512 (No MAC, Single Message)", SINGLE_MESSAGE_BYTES, run_message_easy_nomac),
+    ("message-easy-auth", "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", SINGLE_MESSAGE_BYTES, run_message_easy_auth),
+    ("message-lowlevel-nomac", "Low-Level: Areion-SoEM-512 (No MAC, Single Message)", SINGLE_MESSAGE_BYTES, run_message_lowlevel_nomac),
+    ("message-lowlevel-auth", "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", SINGLE_MESSAGE_BYTES, run_message_lowlevel_auth),
 ]
 
 

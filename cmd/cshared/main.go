@@ -2415,7 +2415,7 @@ func ITB_Easy_DecryptStreamAuth(
 // Memcpy avoidance. Every body buffer crosses as a (ptr, len)
 // pair turned into a Go []byte alias via goBytesView /
 // goBytesViewMut — the keystream XOR mutates the C-side buffer in
-// place. Single-shot Wrap allocates the per-stream nonce inside
+// place. Single Message Wrap allocates the per-stream nonce inside
 // the caller-supplied output buffer's prefix; WrapInPlace lets
 // the caller own both the plaintext buffer (mutated in place)
 // and the nonce buffer.

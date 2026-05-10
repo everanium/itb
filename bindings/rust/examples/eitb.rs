@@ -20,10 +20,10 @@
 //!   - aead-lowlevel-io           Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)
 //!   - noaead-easy-userloop       Streaming Easy        (No MAC, User-Driven Loop)
 //!   - noaead-lowlevel-userloop   Streaming Low-Level   (No MAC, User-Driven Loop)
-//!   - message-easy-nomac         Easy single-shot      (No MAC)
-//!   - message-easy-auth          Easy single-shot      (MAC Authenticated)
-//!   - message-lowlevel-nomac     Low-Level single-shot (No MAC)
-//!   - message-lowlevel-auth      Low-Level single-shot (MAC Authenticated)
+//!   - message-easy-nomac         Easy Single Message      (No MAC)
+//!   - message-easy-auth          Easy Single Message      (MAC Authenticated)
+//!   - message-lowlevel-nomac     Low-Level Single Message (No MAC)
+//!   - message-lowlevel-auth      Low-Level Single Message (MAC Authenticated)
 //!
 //! Single-message examples encrypt 1024 bytes; streaming examples
 //! encrypt 64 KiB through 16 KiB chunks. Each example runs sender +
@@ -356,7 +356,7 @@ fn run_noaead_lowlevel_userloop(
 }
 
 // --------------------------------------------------------------------
-// Single message — Easy: Areion-SoEM-512 (No MAC)
+// Single Message — Easy: Areion-SoEM-512 (No MAC)
 //
 // One enc.encrypt() call → one ITB blob. WrapInPlace mutates the
 // blob and returns the per-stream nonce; the caller composes
@@ -391,7 +391,7 @@ fn run_message_easy_nomac(cipher: Cipher, plaintext: &[u8]) -> Result<(Vec<u8>, 
 }
 
 // --------------------------------------------------------------------
-// Single message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+// Single Message — Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
 // --------------------------------------------------------------------
 
 fn run_message_easy_auth(cipher: Cipher, plaintext: &[u8]) -> Result<(Vec<u8>, usize), String> {
@@ -421,7 +421,7 @@ fn run_message_easy_auth(cipher: Cipher, plaintext: &[u8]) -> Result<(Vec<u8>, u
 }
 
 // --------------------------------------------------------------------
-// Single message — Low-Level: Areion-SoEM-512 (No MAC)
+// Single Message — Low-Level: Areion-SoEM-512 (No MAC)
 // --------------------------------------------------------------------
 
 fn run_message_lowlevel_nomac(cipher: Cipher, plaintext: &[u8]) -> Result<(Vec<u8>, usize), String> {
@@ -450,7 +450,7 @@ fn run_message_lowlevel_nomac(cipher: Cipher, plaintext: &[u8]) -> Result<(Vec<u
 }
 
 // --------------------------------------------------------------------
-// Single message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
+// Single Message — Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
 // --------------------------------------------------------------------
 
 fn run_message_lowlevel_auth(cipher: Cipher, plaintext: &[u8]) -> Result<(Vec<u8>, usize), String> {

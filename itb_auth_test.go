@@ -8,7 +8,7 @@ import (
 )
 
 // macFuncForTest returns a deterministic byte-keyed MAC closure for
-// the width-less single-shot helpers' authenticated tests. Body is
+// the width-less Single Message helpers' authenticated tests. Body is
 // chosen to be allocation-free and depend on every input byte without
 // pulling in a third-party MAC dependency at test time.
 func macFuncForTest(key [32]byte) MACFunc {
@@ -342,7 +342,7 @@ func TestEncrypt3xWidthMixRejected(t *testing.T) {
 	}
 }
 
-// --- Authenticated single-shot helpers ---
+// --- Authenticated Single Message helpers ---
 
 func TestEncryptAuthDecryptAuthRoundtrip(t *testing.T) {
 	sizes := []int{1, 4096, 65536}
