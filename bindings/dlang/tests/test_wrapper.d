@@ -1,7 +1,7 @@
 // Phase wrapper-rollout: confirms the format-deniability `wrapper`
 // module round-trips ITB ciphertext under each of the three outer
 // keystream ciphers (AES-128-CTR / ChaCha20 / SipHash-2-4 in CTR
-// mode), exercising single-shot wrap/unwrap, in-place mutation,
+// mode), exercising Single Message wrap/unwrap, in-place mutation,
 // and streaming wrap/unwrap entry points.
 //
 // Mirrors bindings/python/tests/test_wrapper.py and

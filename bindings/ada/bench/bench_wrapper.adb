@@ -14,7 +14,7 @@
 --    * 24  Streaming Triple Ouroboros
 --
 --  Modes covered (consistent with the eitb 8-example matrix):
---    Single message: easy-nomac, easy-auth, lowlevel-nomac, lowlevel-auth
+--    Single Message: easy-nomac, easy-auth, lowlevel-nomac, lowlevel-auth
 --    Streaming     : aead-easy-io, aead-lowlevel-io,
 --                    noaead-easy-userloop, noaead-lowlevel-userloop
 --
@@ -27,7 +27,7 @@
 --  Bench harness reuses the small Run_Once_Proc + Measure pattern
 --  copied from bench/bench_stream.adb so this case can dispatch
 --  directly into the per-case body without going through the
---  Common.Bench_Op enum (which has only the four single-shot ops).
+--  Common.Bench_Op enum (which has only the four Single Message ops).
 
 with Ada.Calendar;
 with Ada.Environment_Variables;
@@ -424,7 +424,7 @@ procedure Bench_Wrapper is
    --  Wrapper Only payloads.
    Wrap_Plain : Byte_Buf_Access := Random_Bytes (Wrapper_Only_Bytes);
 
-   --  Single message ITB ciphertexts (computed once per case via the
+   --  Single Message ITB ciphertexts (computed once per case via the
    --  Pre_Compute step) — one for each of the four single-message
    --  modes × Single / Triple.
    Single_Plain         : Byte_Buf_Access :=
@@ -656,7 +656,7 @@ procedure Bench_Wrapper is
 
    procedure Pre_Compute is
    begin
-      --  Single message — Single Ouroboros.
+      --  Single Message — Single Ouroboros.
       Single_Easy_Nomac :=
         new Byte_Array'(Itb.Encryptor.Encrypt
                           (Enc_Easy_Single, Single_Plain.all));
@@ -672,7 +672,7 @@ procedure Bench_Wrapper is
                           (Seed_Noise, Seed_Data1, Seed_Start1,
                            Mac_Handle, Single_Plain.all));
 
-      --  Single message — Triple Ouroboros.
+      --  Single Message — Triple Ouroboros.
       Triple_Easy_Nomac :=
         new Byte_Array'(Itb.Encryptor.Encrypt
                           (Enc_Easy_Triple, Single_Plain.all));
@@ -799,7 +799,7 @@ procedure Bench_Wrapper is
    end Run_Wrap_Only_In_Place;
 
    ---------------------------------------------------------------------
-   --  Single message — Single Ouroboros.
+   --  Single Message — Single Ouroboros.
    ---------------------------------------------------------------------
 
    Bench_Mode_CT : Byte_Buf_Access := null;

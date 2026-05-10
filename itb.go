@@ -84,7 +84,7 @@ func rotateBits7(v byte, r uint) byte {
 	return ((v << r) | (v >> (7 - r))) & 0x7F
 }
 
-// maxDataSize is the maximum plaintext size for a single message or chunk (64 MB).
+// maxDataSize is the maximum plaintext size for a Single Message or chunk (64 MB).
 // This limit prevents uint32 pixel-index overflow in blockHash (counter is uint32)
 // and aligns with the maximum streaming chunk size.
 const maxDataSize = 64 << 20
@@ -292,7 +292,7 @@ func dispatchWidthTriple(noise, data1, data2, data3, start1, start2, start3 any)
 	return w, nil
 }
 
-// Encrypt is the width-less single-shot plain Encrypt entry point.
+// Encrypt is the width-less Single Message plain Encrypt entry point.
 // Dispatches to [Encrypt128] / [Encrypt256] / [Encrypt512] based on
 // the concrete pointer type of the supplied seeds. Every seed must
 // carry the same concrete *SeedN type; mixing widths returns an
@@ -319,7 +319,7 @@ func Encrypt(noiseSeed, dataSeed, startSeed any, data []byte) ([]byte, error) {
 	return nil, errSeedWidthMix
 }
 
-// Decrypt is the width-less single-shot plain Decrypt entry point.
+// Decrypt is the width-less Single Message plain Decrypt entry point.
 // Mirrors [Encrypt]; dispatches to [Decrypt128] / [Decrypt256] /
 // [Decrypt512].
 func Decrypt(noiseSeed, dataSeed, startSeed any, fileData []byte) ([]byte, error) {
@@ -338,7 +338,7 @@ func Decrypt(noiseSeed, dataSeed, startSeed any, fileData []byte) ([]byte, error
 	return nil, errSeedWidthMix
 }
 
-// Encrypt3x is the width-less single-shot Triple-Ouroboros Encrypt
+// Encrypt3x is the width-less Single Message Triple-Ouroboros Encrypt
 // entry point. Dispatches to [Encrypt3x128] / [Encrypt3x256] /
 // [Encrypt3x512] based on the concrete pointer type of the supplied
 // seeds. All seven seeds must share one concrete *SeedN type; mixing
@@ -359,7 +359,7 @@ func Encrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed
 	return nil, errSeedWidthMix
 }
 
-// Decrypt3x is the width-less single-shot Triple-Ouroboros Decrypt
+// Decrypt3x is the width-less Single Message Triple-Ouroboros Decrypt
 // entry point. Mirrors [Encrypt3x]; dispatches to [Decrypt3x128] /
 // [Decrypt3x256] / [Decrypt3x512].
 func Decrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, fileData []byte) ([]byte, error) {

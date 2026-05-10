@@ -50,7 +50,7 @@ func KeySize(name string) (int, error) {
 // NonceSize returns the on-wire nonce length for the named outer cipher.
 //
 // The nonce is emitted as a single prefix per Wrap entry point. AES-CTR uses
-// a 16-byte block-sized IV; ChaCha20-RFC8439 uses a 12-byte nonce; SipHash-CTR
+// a 16-byte block-sized IV; ChaCha20 (RFC8439) uses a 12-byte nonce; SipHash-CTR
 // uses a 16-byte construction-defined nonce (the SipHash key is the wrapper
 // key; the nonce gets concatenated with the 64-bit counter under the PRF).
 func NonceSize(name string) (int, error) {
@@ -224,9 +224,9 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 //
 // Two flavours, picked per use case:
 //
-//   1. Wrap / Unwrap — single message. The whole ITB ciphertext is treated as
+//   1. Wrap / Unwrap — Single Message. The whole ITB ciphertext is treated as
 //      one opaque blob. Wire = nonce || keystream-XORed blob. Suitable for
-//      any single message Encrypt / EncryptAuth example output, plus the Streaming
+//      any Single Message Encrypt / EncryptAuth example output, plus the Streaming
 //      AEAD case where the entire wire output (32-byte streamID + every
 //      chunk) is sealed as one blob — the receiver unwraps to recover the
 //      raw ITB stream then feeds it to ITB's stream decoder.

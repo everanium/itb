@@ -17,7 +17,7 @@ This is **not** a random-oracle indistinguishability claim. It is a "looks like 
 
 ## Wrapper API
 
-The D module exposes single-shot helpers (immutable + in-place mutation) and a streaming RAII struct pair:
+The D module exposes Single Message helpers (immutable + in-place mutation) and a streaming RAII struct pair:
 
 | Helper | Wire format | Use case |
 |---|---|---|
@@ -187,7 +187,7 @@ while (off < plaintext.length)
 // Receiver mirrors example 3 with itb.cipher.decrypt(noise, data, start, ct).
 ```
 
-### 5. Easy: Areion-SoEM-512 (No MAC, Single message)
+### 5. Easy: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — `nonce || ks-XOR(blob)`. The `wrapInPlace` / `unwrapInPlace` variant is shown — mutates the caller's `ubyte[]` slice in place to skip the steady-state allocation.
 
@@ -213,7 +213,7 @@ auto recovered = unwrapInPlace(cipher, outerKey, wire);
 auto pt = enc.decrypt(recovered).dup;
 ```
 
-### 6. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 6. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `enc.encryptAuth` / `enc.decryptAuth`. Wrap shape: `wrap` (or `wrapInPlace`). The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 
@@ -236,7 +236,7 @@ auto recovered = unwrapInPlace(cipher, outerKey, wire);
 auto pt = enc.decryptAuth(recovered).dup;
 ```
 
-### 7. Low-Level: Areion-SoEM-512 (No MAC, Single message)
+### 7. Low-Level: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `itb.cipher.encrypt(noise, data, start, plaintext)` / `itb.cipher.decrypt(...)` with three explicit `Seed` handles. Wrap shape: `wrap` (or `wrapInPlace`). Wire shape matches example 5; the difference is that the seed material is held by caller-side `Seed` handles rather than by an `Encryptor` instance.
 
@@ -258,7 +258,7 @@ auto recovered = unwrapInPlace(cipher, outerKey, wire);
 auto pt = decrypt(noise, data, start, recovered);
 ```
 
-### 8. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 8. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `itb.cipher.encryptAuth(noise, data, start, mac, plaintext)` / `itb.cipher.decryptAuth(...)`. Wrap shape: `wrap` (or `wrapInPlace`). The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 

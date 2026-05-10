@@ -1,7 +1,7 @@
 // streams.go — width-less io.Reader / io.Writer streaming helpers
 // for plain and authenticated stream cipher modes. The width is
 // determined by the supplied seed type via the same any-typed
-// dispatch path used by the single-shot helpers in itb.go / auth.go.
+// dispatch path used by the Single Message helpers in itb.go / auth.go.
 //
 // Each helper drains src to EOF, encrypts or decrypts chunk-by-chunk,
 // and writes the resulting wire chunks (encrypt) or recovered
@@ -132,9 +132,9 @@ func validateChunkSize(chunkSize int) (int, error) {
 
 // EncryptStream is the width-less plain-stream Encrypt entry point.
 // Reads from src in up-to-chunkSize-byte windows, encrypts each
-// non-empty window via the matching width-suffixed single-shot path,
+// non-empty window via the matching width-suffixed Single Message path,
 // and writes the resulting wire chunk to dst. Empty src input emits
-// nothing (the single-shot path rejects empty plaintext; the
+// nothing (the Single Message path rejects empty plaintext; the
 // streaming helper preserves that semantic by simply not emitting any
 // chunk).
 //
@@ -170,7 +170,7 @@ func EncryptStream(noiseSeed, dataSeed, startSeed any, src io.Reader, dst io.Wri
 // DecryptStream is the width-less plain-stream Decrypt entry point.
 // Walks src one chunk at a time using the on-wire header to recover
 // each chunk's extent, decrypts the chunk via the matching
-// width-suffixed single-shot path, and writes the recovered plaintext
+// width-suffixed Single Message path, and writes the recovered plaintext
 // to dst.
 func DecryptStream(noiseSeed, dataSeed, startSeed any, src io.Reader, dst io.Writer) error {
 	if _, err := dispatchWidthSingle(noiseSeed, dataSeed, startSeed); err != nil {
@@ -309,7 +309,7 @@ func streamAuthDecryptTriple(width int, noiseSeed, dataSeed1, dataSeed2, dataSee
 // EncryptStreamAuth is the width-less single-Ouroboros Streaming AEAD
 // Encrypt entry point. Generates a fresh 32-byte CSPRNG streamID,
 // writes it as the wire prefix, then drains src in chunkSize windows
-// and emits each encrypted chunk through the matching single-shot
+// and emits each encrypted chunk through the matching Single Message
 // per-chunk implementation. The terminating chunk carries
 // finalFlag = true; an empty src draws and emits the streamID prefix
 // followed by a single zero-length terminating chunk.
@@ -397,7 +397,7 @@ func EncryptStreamAuth(noiseSeed, dataSeed, startSeed any, src io.Reader, dst io
 // DecryptStreamAuth is the width-less single-Ouroboros Streaming AEAD
 // Decrypt entry point. Reads the 32-byte streamID prefix, walks the
 // remaining bytes one chunk at a time, dispatches each chunk through
-// the matching single-shot DecryptStreamAuthenticated* path with the
+// the matching Single Message DecryptStreamAuthenticated* path with the
 // running cumulative pixel offset, and writes recovered plaintext to
 // dst. Returns [ErrStreamTruncated] when the transcript exhausts
 // without a terminating chunk and [ErrStreamAfterFinal] when chunks

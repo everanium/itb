@@ -11,7 +11,7 @@
 /// ITB already provides content-deniability and the AEAD path
 /// already provides integrity.
 ///
-/// Quick start (single-shot wrap / unwrap):
+/// Quick start (Single Message wrap / unwrap):
 ///
 /// ---
 /// import itb;
@@ -23,7 +23,7 @@
 /// assert(recovered == blob);
 /// ---
 ///
-/// Single-shot in-place mutation (zero-allocation steady state):
+/// Single Message in-place mutation (zero-allocation steady state):
 ///
 /// ---
 /// auto mutable = blob.dup;
@@ -295,10 +295,10 @@ private void _checkNonceLen(Cipher cipher, size_t nlen) @trusted
 }
 
 // --------------------------------------------------------------------
-// Single-shot wrap / unwrap.
+// Single Message wrap / unwrap.
 // --------------------------------------------------------------------
 
-/// Single-shot wrap. Seals `blob` under `cipher` with a fresh
+/// Single Message wrap. Seals `blob` under `cipher` with a fresh
 /// per-call CSPRNG nonce; returns the wire bytes
 /// `nonce || keystream-XOR(blob)`.
 ///
@@ -325,7 +325,7 @@ ubyte[] wrap(Cipher cipher, const(ubyte)[] key, const(ubyte)[] blob) @trusted
     return outBuf[0 .. outLen];
 }
 
-/// Single-shot unwrap. Reads the leading `nonceSize(cipher)` bytes
+/// Single Message unwrap. Reads the leading `nonceSize(cipher)` bytes
 /// of `wire` as the per-stream nonce, XOR-decrypts the remainder
 /// under `(key, nonce)` and returns the recovered blob.
 ///
@@ -359,7 +359,7 @@ ubyte[] unwrap(Cipher cipher, const(ubyte)[] key, const(ubyte)[] wire) @trusted
     return outBuf[0 .. outLen];
 }
 
-/// In-place single-shot wrap. XORs `blob` under a fresh per-call
+/// In-place Single Message wrap. XORs `blob` under a fresh per-call
 /// CSPRNG nonce; returns the per-stream nonce.
 ///
 /// `blob` is **MUTATED** — the caller is expected to emit
@@ -387,7 +387,7 @@ ubyte[] wrapInPlace(Cipher cipher, const(ubyte)[] key, ubyte[] blob) @trusted
     return nonceBuf;
 }
 
-/// In-place single-shot unwrap. Strips the leading
+/// In-place Single Message unwrap. Strips the leading
 /// `nonceSize(cipher)` bytes from `wire` and XOR-decrypts the
 /// remainder in place. The returned slice aliases
 /// `wire[nonceSize(cipher) .. $]` and contains the recovered blob.

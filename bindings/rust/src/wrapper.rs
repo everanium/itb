@@ -11,7 +11,7 @@
 //! ONLY — ITB already provides content-deniability and the AEAD
 //! path already provides integrity.
 //!
-//! Quick start (single-shot wrap / unwrap):
+//! Quick start (Single Message wrap / unwrap):
 //!
 //! ```no_run
 //! use itb::wrapper::{self, Cipher};
@@ -23,7 +23,7 @@
 //! assert_eq!(recovered, blob);
 //! ```
 //!
-//! Single-shot in-place mutation (zero-allocation steady state):
+//! Single Message in-place mutation (zero-allocation steady state):
 //!
 //! ```no_run
 //! use itb::wrapper::{self, Cipher};
@@ -228,7 +228,7 @@ fn check_key_len(cipher: Cipher, key: &[u8]) -> Result<(), ITBError> {
     Ok(())
 }
 
-/// Single-shot wrap. Seals `blob` under `cipher` with a fresh per-
+/// Single Message wrap. Seals `blob` under `cipher` with a fresh per-
 /// call CSPRNG nonce; returns the wire bytes
 /// `nonce || keystream-XOR(blob)`.
 ///
@@ -263,7 +263,7 @@ pub fn wrap(cipher: Cipher, key: &[u8], blob: &[u8]) -> Result<Vec<u8>, ITBError
     Ok(out)
 }
 
-/// Single-shot unwrap. Reads the leading `nonce_size(cipher)` bytes
+/// Single Message unwrap. Reads the leading `nonce_size(cipher)` bytes
 /// of `wire` as the per-stream nonce, XOR-decrypts the remainder
 /// under `(key, nonce)` and returns the recovered blob.
 ///
@@ -307,7 +307,7 @@ pub fn unwrap(cipher: Cipher, key: &[u8], wire: &[u8]) -> Result<Vec<u8>, ITBErr
     Ok(out)
 }
 
-/// In-place single-shot wrap. XORs `blob` under a fresh per-call
+/// In-place Single Message wrap. XORs `blob` under a fresh per-call
 /// CSPRNG nonce and returns the per-stream nonce as a `Vec<u8>`.
 ///
 /// `blob` is **MUTATED** — pass a fresh `Vec<u8>` or owned slice the
@@ -341,7 +341,7 @@ pub fn wrap_in_place(cipher: Cipher, key: &[u8], blob: &mut [u8]) -> Result<Vec<
     Ok(nonce)
 }
 
-/// In-place single-shot unwrap. Strips the leading
+/// In-place Single Message unwrap. Strips the leading
 /// `nonce_size(cipher)` bytes from `wire` and XOR-decrypts the
 /// remainder under `(key, nonce)` directly into the caller's
 /// buffer.

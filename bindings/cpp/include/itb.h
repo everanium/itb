@@ -1326,7 +1326,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
  *
  * Two flavours of helpers, picked per use case:
  *
- *   1. itb_wrap / itb_unwrap (single-shot, allocation) — seals the
+ *   1. itb_wrap / itb_unwrap (Single Message, allocation) — seals the
  *      whole ITB ciphertext blob as one wrap. Suitable for any
  *      single-message Encrypt / EncryptAuth output. Wire =
  *      `nonce || keystream-XOR(blob)`.
@@ -1358,7 +1358,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
  * a fresh nonce internally, so caller-side discipline is reduced to
  * "do not reuse the same (key, nonce) across distinct streams".
  *
- * Threading. The single-shot itb_wrap / itb_unwrap / itb_wrap_in_place
+ * Threading. The Single Message itb_wrap / itb_unwrap / itb_wrap_in_place
  * / itb_unwrap_in_place are thread-safe: each call constructs an
  * outer cipher session of its own and the libitb keystream
  * constructor draws a fresh CSPRNG nonce per call. The streaming
@@ -1421,7 +1421,7 @@ itb_status_t itb_wrapper_generate_key(itb_wrapper_cipher_t cipher,
                                       uint8_t **out_key, size_t *out_key_len);
 
 /*
- * Single-shot wrap. Seals `blob` under `cipher` with a fresh per-call
+ * Single Message wrap. Seals `blob` under `cipher` with a fresh per-call
  * CSPRNG nonce; *out_wire receives a freshly malloc'd buffer holding
  * `nonce || keystream-XOR(blob)`. Caller releases via itb_buffer_free().
  *
@@ -1435,7 +1435,7 @@ itb_status_t itb_wrap(itb_wrapper_cipher_t cipher,
                       uint8_t **out_wire, size_t *out_wire_len);
 
 /*
- * Single-shot unwrap. Reads the leading itb_wrapper_nonce_size(cipher)
+ * Single Message unwrap. Reads the leading itb_wrapper_nonce_size(cipher)
  * bytes of `wire` as the per-stream nonce, XOR-decrypts the remainder
  * under (key, nonce). *out_blob receives a freshly malloc'd buffer
  * holding the recovered blob; caller releases via itb_buffer_free().
@@ -1447,7 +1447,7 @@ itb_status_t itb_unwrap(itb_wrapper_cipher_t cipher,
                         uint8_t **out_blob, size_t *out_blob_len);
 
 /*
- * In-place single-shot wrap. XORs `blob` under a freshly drawn per-
+ * In-place Single Message wrap. XORs `blob` under a freshly drawn per-
  * call CSPRNG nonce; the caller-supplied `out_nonce` buffer (capacity
  * `nonce_cap`) receives the nonce bytes. The caller then emits
  * `nonce || mutated-blob` to the wire (or composes a single buffer).
@@ -1465,7 +1465,7 @@ itb_status_t itb_wrap_in_place(itb_wrapper_cipher_t cipher,
                                uint8_t *out_nonce, size_t nonce_cap);
 
 /*
- * In-place single-shot unwrap. Strips the leading
+ * In-place Single Message unwrap. Strips the leading
  * itb_wrapper_nonce_size(cipher) bytes from `wire` and XOR-decrypts
  * the remainder in place. The decrypted body occupies
  * `wire[nonce_size .. wire_len)`; the leading nonce prefix is left

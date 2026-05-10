@@ -955,7 +955,7 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 //
 // Empty plaintext is permitted only when finalFlag is true (the
 // empty-stream terminating chunk case); empty plaintext with
-// finalFlag = false is rejected with the same shape as the single-shot
+// finalFlag = false is rejected with the same shape as the Single Message
 // authenticated path.
 func EncryptStreamAuthenticated256(noiseSeed, dataSeed, startSeed *Seed256, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {

@@ -23,9 +23,9 @@
 //     lengths of the outer cipher's key / on-wire nonce.
 //   - `itb::wrapper::generate_key(Cipher)` — fresh CSPRNG outer key.
 //   - `itb::wrapper::wrap(Cipher, key, key_len, blob, blob_len)` —
-//     single-shot wrap; allocates a fresh `nonce || ks-XOR(blob)` wire.
+//     Single Message wrap; allocates a fresh `nonce || ks-XOR(blob)` wire.
 //   - `itb::wrapper::unwrap(Cipher, key, key_len, wire, wire_len)` —
-//     single-shot unwrap; allocates a fresh recovered-blob buffer.
+//     Single Message unwrap; allocates a fresh recovered-blob buffer.
 //   - `itb::wrapper::wrap_in_place(Cipher, key, key_len, blob, blob_len)` —
 //     mutates `blob` in place; returns the per-stream nonce.
 //   - `itb::wrapper::unwrap_in_place(Cipher, key, key_len, wire, wire_len)` —
@@ -43,7 +43,7 @@
 // `itb_unwrap_stream_reader_free`; double-free is idempotent at the
 // C-binding layer.
 //
-// Threading. The single-shot `wrap` / `unwrap` / `wrap_in_place` /
+// Threading. The Single Message `wrap` / `unwrap` / `wrap_in_place` /
 // `unwrap_in_place` are thread-safe — each call constructs an
 // outer cipher session of its own and the libitb keystream
 // constructor draws a fresh CSPRNG nonce per call. The streaming
@@ -145,9 +145,9 @@ inline std::vector<std::uint8_t> generate_key(Cipher cipher) {
     return out;
 }
 
-// ---- Single-shot wrap / unwrap -----------------------------------
+// ---- Single Message wrap / unwrap -----------------------------------
 
-// Single-shot wrap. Seals `blob` under `cipher` with a fresh per-call
+// Single Message wrap. Seals `blob` under `cipher` with a fresh per-call
 // CSPRNG nonce; returns a freshly-allocated buffer holding `nonce ||
 // keystream-XOR(blob)`. Empty blob is permitted — the wire becomes
 // `nonce` alone.
@@ -169,7 +169,7 @@ inline std::vector<std::uint8_t> wrap(Cipher cipher,
     return out;
 }
 
-// Single-shot unwrap. Reads the leading `nonce_size(cipher)` bytes of
+// Single Message unwrap. Reads the leading `nonce_size(cipher)` bytes of
 // `wire` as the per-stream nonce, XOR-decrypts the remainder under
 // `(key, nonce)`, and returns a freshly-allocated buffer holding the
 // recovered blob. Throws `ItbError(STATUS_BAD_INPUT)` when `wire`
@@ -192,7 +192,7 @@ inline std::vector<std::uint8_t> unwrap(Cipher cipher,
     return out;
 }
 
-// In-place single-shot wrap. XORs `blob` under a freshly drawn per-
+// In-place Single Message wrap. XORs `blob` under a freshly drawn per-
 // call CSPRNG nonce; the returned vector holds the per-stream nonce
 // bytes. The caller composes `nonce || mutated-blob` to produce the
 // wire (or emits the two pieces separately).
@@ -216,7 +216,7 @@ inline std::vector<std::uint8_t> wrap_in_place(
     return nonce;
 }
 
-// In-place single-shot unwrap. Strips the leading `nonce_size(cipher)`
+// In-place Single Message unwrap. Strips the leading `nonce_size(cipher)`
 // bytes from `wire` and XOR-decrypts the remainder in place. Returns
 // a `(pointer, length)` pair over the decrypted body
 // (`wire[nonce_size .. wire_len)`). The leading nonce prefix is left

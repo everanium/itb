@@ -61,7 +61,7 @@ ITB_BENCH_FILTER=bench_stream_triple \
 
 `wrap_in_place` mutates the caller's `Vec<u8>` and returns the per-stream nonce; the steady-state allocation is one nonce buffer (~16 bytes) per call. `wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `nonce_size + blob.len()` bytes per call. The AES delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; ChaCha20 and SipHash-CTR are compute-bound and the allocation savings are largely absorbed by the keystream throughput ceiling.
 
-### Single message — Single Ouroboros (16 MiB plaintext)
+### Single Message — Single Ouroboros (16 MiB plaintext)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
@@ -70,7 +70,7 @@ ITB_BENCH_FILTER=bench_stream_triple \
 | **Low-Level** No MAC | TBD | TBD | TBD | TBD | TBD | TBD |
 | **Low-Level** MAC Authenticated | TBD | TBD | TBD | TBD | TBD | TBD |
 
-### Single message — Triple Ouroboros (16 MiB plaintext)
+### Single Message — Triple Ouroboros (16 MiB plaintext)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
