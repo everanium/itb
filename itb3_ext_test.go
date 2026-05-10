@@ -1243,7 +1243,7 @@ func BenchmarkExtEasyTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.
 }
 
 // BenchmarkExtEasyTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Encrypt loop on the Triple
+// measures the User-Driven Encrypt loop on the Triple
 // Ouroboros encryptor: caller reads chunkSize-byte windows out of src,
 // calls [easy.Encryptor.Encrypt] per chunk, and writes each ITB wire
 // chunk verbatim. Mirrors exampleEasyModePlainUserLoop from
@@ -1286,7 +1286,7 @@ func BenchmarkExtEasyTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *te
 }
 
 // BenchmarkExtEasyTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Decrypt loop on the Triple
+// measures the User-Driven Decrypt loop on the Triple
 // Ouroboros encryptor: caller reads the per-instance header via
 // [easy.Encryptor.HeaderSize], parses the chunk's total wire length
 // via [easy.Encryptor.ParseChunkLen], reads the body, and calls

@@ -1,11 +1,11 @@
 // C# eitb — runs every wrapper × ITB example end-to-end.
 //
 // Mirrors cmd/eitb/main.go adapted to the C# binding asymmetry: the
-// binding has no Stream / IBufferWriter<byte> analogue for non-AEAD
+// binding has no Stream / IBufferWriter<byte> analogue for Non-AEAD
 // streaming wrap surfaces (Streaming AEAD does have file-like helpers
 // via Encryptor.EncryptStreamAuth / Cipher.EncryptStreamAuth, but the
 // wrap layer still goes through the WrapStreamWriter.Update /
-// UnwrapStreamReader.Update byte pump). The non-AEAD streaming arm
+// UnwrapStreamReader.Update byte pump). The Non-AEAD streaming arm
 // covers the User-Driven Loop variant only — caller produces an ITB
 // ciphertext per chunk via Encryptor.Encrypt(chunk) (or the low-level
 // Cipher.Encrypt), frames u32_LE_len || ct, and pushes through the

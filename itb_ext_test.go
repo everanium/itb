@@ -1244,7 +1244,7 @@ func streamEasyPlaintextExt(b *testing.B, n int) []byte {
 // (Single Ouroboros, areion512 PRF, 1024-bit ITB key width,
 // hmac-blake3 MAC bound at construction) on a 64 MiB plaintext
 // streamed in 16 MiB chunks. The encryptor is constructed once
-// outside the timer; the inner loop only runs the IO-driven
+// outside the timer; the inner loop only runs the IO-Driven
 // encrypt path.
 func BenchmarkExtEasySingleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
@@ -1349,7 +1349,7 @@ func BenchmarkExtEasySingleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.
 }
 
 // BenchmarkExtEasySingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Encrypt loop: caller reads
+// measures the User-Driven Encrypt loop: caller reads
 // chunkSize-byte windows out of src, calls [easy.Encryptor.Encrypt]
 // per chunk, and writes each ITB wire chunk verbatim to the sink.
 // No length-prefix is needed — the on-wire chunk's own W/H header
@@ -1395,7 +1395,7 @@ func BenchmarkExtEasySingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *te
 }
 
 // BenchmarkExtEasySingleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Decrypt loop: the caller reads
+// measures the User-Driven Decrypt loop: the caller reads
 // the per-instance header via [easy.Encryptor.HeaderSize], parses the
 // chunk's total wire length via [easy.Encryptor.ParseChunkLen], reads
 // the body, and calls [easy.Encryptor.Decrypt] per chunk. The wire

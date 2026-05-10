@@ -197,7 +197,7 @@ for {
 }
 ```
 
-### 7. Easy: Areion-SoEM-512 (No MAC, Single message)
+### 7. Easy: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: `enc.Encrypt(plaintext)` returns one ITB blob. Wrap shape: `Wrap` — `nonce || ks-XOR(blob)`. Wire shape mirrors any "outer cipher with a fresh nonce and an opaque payload" pattern.
 
@@ -216,7 +216,7 @@ recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
 pt, _ := enc.Decrypt(recovered)
 ```
 
-### 8. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 8. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: `enc.EncryptAuth` / `enc.DecryptAuth`. Wrap shape: `Wrap`. The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 
@@ -235,7 +235,7 @@ recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
 pt, _ := enc.DecryptAuth(recovered)
 ```
 
-### 9. Low-Level: Areion-SoEM-512 (No MAC, Single message)
+### 9. Low-Level: Areion-SoEM-512 (No MAC, Single Message)
 
 ITB Call: width-less `itb.Encrypt(noise, data, start, plaintext)` / `itb.Decrypt(...)` with three explicit `*Seed512` handles built from `hashes.Make512("areion512")`. Wrap shape: `Wrap` — `nonce || ks-XOR(blob)`. Wire shape matches example 7; the difference is that the seed material is held by caller-side handles rather than by an `easy.Encryptor` instance.
 
@@ -257,7 +257,7 @@ recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
 pt, _ := itb.Decrypt(noise, data, start, recovered)
 ```
 
-### 10. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single message)
+### 10. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
 
 ITB Call: width-less `itb.EncryptAuth(noise, data, start, plaintext, macFunc)` / `itb.DecryptAuth(...)` with the MAC closure constructed via `macs.Make("hmac-blake3", macKey)`. Wrap shape: `Wrap`. The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
 

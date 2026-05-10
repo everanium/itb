@@ -41,7 +41,7 @@
 //
 //   - ``Cipher.Aes128Ctr`` (`"aes"`) — AES-128-CTR with a 16-byte key
 //     + 16-byte nonce. AES-NI accelerated.
-//   - ``Cipher.ChaCha20`` (`"chacha"`) — ChaCha20-RFC8439 with a
+//   - ``Cipher.ChaCha20`` (`"chacha"`) — ChaCha20 (RFC8439) with a
 //     32-byte key + 12-byte nonce.
 //   - ``Cipher.SipHash24`` (`"siphash"`) — SipHash-2-4 in CTR mode
 //     with a 16-byte key + 16-byte nonce. Custom CTR construction
@@ -52,7 +52,7 @@
 // construction; multiple instances run independently. The free
 // functions (``wrap`` / ``unwrap`` / ``wrapInPlace`` /
 // ``unwrapInPlace``) are thread-safe — each call allocates its own
-// outer-cipher handle internally and the underlying libitb keystream
+// outer cipher handle internally and the underlying libitb keystream
 // constructor draws a fresh CSPRNG nonce per call.
 
 import { randomBytes } from 'node:crypto';
@@ -75,7 +75,7 @@ import {
 import { Status } from './status.js';
 
 /**
- * Canonical outer-cipher names accepted by the wrap surface. Match
+ * Canonical outer cipher names accepted by the wrap surface. Match
  * the ``CipherAES128CTR`` / ``CipherChaCha20`` / ``CipherSipHash24``
  * constants in ``github.com/everanium/itb/wrapper``.
  */

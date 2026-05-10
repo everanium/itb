@@ -2,10 +2,10 @@
 //
 // Mirrors `cmd/eitb/main.go` adapted to the Node.js binding asymmetry:
 // the binding has no `stream.Readable` / `stream.Writable` wrap-layer
-// adapter pair for non-AEAD streaming. Streaming AEAD wraps the
+// adapter pair for Non-AEAD streaming. Streaming AEAD wraps the
 // entire bytestream end-to-end via the `WrapStreamWriter` /
 // `UnwrapStreamReader` byte pump after the inner ITB transcript is
-// materialised in a `Buffer`. The non-AEAD streaming arm covers the
+// materialised in a `Buffer`. The Non-AEAD streaming arm covers the
 // User-Driven Loop variant only — caller produces an ITB ciphertext
 // per chunk via `Encryptor.encrypt(chunk)` (or the low-level free
 // function `encrypt(...)`), frames `u32_LE_len || ct`, and pushes

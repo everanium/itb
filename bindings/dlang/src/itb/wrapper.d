@@ -48,7 +48,7 @@
 ///
 /// The `Cipher` enum selects one of three outer ciphers: `aes128Ctr`
 /// (AES-128-CTR — 16-byte key + 16-byte nonce, AES-NI accelerated on
-/// the libitb side), `chaCha20` (ChaCha20-RFC8439 — 32-byte key +
+/// the libitb side), `chaCha20` (ChaCha20 (RFC8439) — 32-byte key +
 /// 12-byte nonce), or `sipHash24` (SipHash-2-4 in CTR mode — 16-byte
 /// key + 16-byte nonce, custom CTR construction over the SipHash-2-4
 /// PRF).
@@ -57,7 +57,7 @@
 /// one libitb stream handle and is single-feeder by construction.
 /// Multiple instances run independently. The free-function helpers
 /// (`wrap` / `unwrap` / `wrapInPlace` / `unwrapInPlace`) are
-/// thread-safe — each call allocates its own outer-cipher handle
+/// thread-safe — each call allocates its own outer cipher handle
 /// internally and the underlying libitb keystream constructor draws
 /// a fresh CSPRNG nonce per call.
 module itb.wrapper;

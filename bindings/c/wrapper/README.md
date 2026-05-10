@@ -89,7 +89,7 @@ make eitb
 ./bin/eitb -v
 ```
 
-Eight examples cover the full streaming + single-shot matrix. The C binding has **no Streaming No MAC IO-Driven** examples (there is no `FILE*` / file-like wrapper writer / reader pair for non-AEAD streaming); the No MAC streaming arm uses the User-Driven Loop only.
+Eight examples cover the full streaming + single-shot matrix. The C binding has **no Streaming No MAC IO-Driven** examples (there is no `FILE*` / file-like wrapper writer / reader pair for Non-AEAD streaming); the No MAC streaming arm uses the User-Driven Loop only.
 
 ### 1. Streaming AEAD Easy (MAC Authenticated, IO-Driven)
 
@@ -202,7 +202,7 @@ The wire-byte difference between cipher columns is exactly the per-stream nonce-
 
 ## Performance
 
-Bench numbers across Single Ouroboros and Triple Ouroboros, message and streaming, encrypt and decrypt (split sub-benches) are tracked in [BENCH.md](BENCH.md). Total sub-bench count: 102 (6 wrapper-only round-trip + 24 Message Single + 24 Message Triple + 24 Streaming Single + 24 Streaming Triple).
+Bench numbers across Single Ouroboros and Triple Ouroboros, message and streaming, encrypt and decrypt (split sub-benches) are tracked in [BENCH.md](BENCH.md). Total sub-bench count: 102 (6 wrapper only round-trip + 24 Message Single + 24 Message Triple + 24 Streaming Single + 24 Streaming Triple).
 
 ## Notes on outer cipher key management
 
@@ -212,7 +212,7 @@ The outer key MAY be reused across many streams provided each stream uses a fres
 
 ## Threading
 
-The single-shot `itb_wrap` / `itb_unwrap` / `itb_wrap_in_place` / `itb_unwrap_in_place` are thread-safe: each call constructs an outer-cipher session of its own and the libitb keystream constructor draws a fresh CSPRNG nonce per call. The streaming `itb_wrap_stream_writer_t` / `itb_unwrap_stream_reader_t` handles are single-feeder — every `_update` call advances the underlying keystream counter; concurrent `_update` calls on the same handle race. Distinct handles run independently.
+The single-shot `itb_wrap` / `itb_unwrap` / `itb_wrap_in_place` / `itb_unwrap_in_place` are thread-safe: each call constructs an outer cipher session of its own and the libitb keystream constructor draws a fresh CSPRNG nonce per call. The streaming `itb_wrap_stream_writer_t` / `itb_unwrap_stream_reader_t` handles are single-feeder — every `_update` call advances the underlying keystream counter; concurrent `_update` calls on the same handle race. Distinct handles run independently.
 
 ## What this is not
 
