@@ -43,7 +43,7 @@
 /// concatenated stream by reading the chunk header, calling
 /// `parseChunkLen`, and feeding the chunk to `decrypt`. The
 /// encryptor's chunk-size knob (set via `setChunkSize`) is consumed
-/// only by the Go-side `EncryptStream` entry point; one-shot
+/// only by the Go-side `EncryptStream` entry point; Single Message
 /// `encrypt` honours the container-cap heuristic in `itb.ChunkSize`.
 ///
 /// Output-buffer cache. The cipher methods reuse a per-encryptor

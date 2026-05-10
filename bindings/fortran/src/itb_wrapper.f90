@@ -14,7 +14,7 @@
 !
 ! Three flavours of helpers, picked per use case:
 !
-!   1. `itb_wrap` / `itb_unwrap` -- one-shot. Whole ITB ciphertext
+!   1. `itb_wrap` / `itb_unwrap` -- Single Message. Whole ITB ciphertext
 !      treated as one opaque blob. Wire = nonce || keystream-XOR(blob).
 !      Allocates a fresh `wire` / `blob` on the caller's behalf via
 !      the Fortran `allocatable, intent(out)` convention.

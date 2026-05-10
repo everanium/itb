@@ -21,8 +21,8 @@ The D module exposes Single Message helpers (immutable + in-place mutation) and 
 
 | Helper | Wire format | Use case |
 |---|---|---|
-| `wrap` / `unwrap` | `nonce \|\| keystream-XOR(blob)` | one-shot Encrypt / EncryptAuth output, immutable plaintext path. |
-| `wrapInPlace` / `unwrapInPlace` | same as `wrap` / `unwrap` | one-shot, zero-allocation steady state. Mutates the caller's `ubyte[]` slice. |
+| `wrap` / `unwrap` | `nonce \|\| keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output, immutable plaintext path. |
+| `wrapInPlace` / `unwrapInPlace` | same as `wrap` / `unwrap` | Single Message, zero-allocation steady state. Mutates the caller's `ubyte[]` slice. |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — Streaming AEAD wraps the entire bytestream end-to-end; User-Driven Loop emits per-chunk caller-side framing (`u32_LE` length prefix) through the wrap-writer so the framing bytes also pass through the keystream XOR. |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
@@ -283,7 +283,7 @@ auto pt = decryptAuth(noise, data, start, mac, recovered);
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for one-shot, 64 KiB for streaming) with byte-equality. Sample run:
+Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with byte-equality. Sample run:
 
 ```
 [PASS] aead-easy-io               + aes        pt=65536 wire=90208
