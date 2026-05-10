@@ -42,7 +42,7 @@ prefixes also XOR through):
 
 The cipher_name argument selects one of three outer ciphers: "aes"
 (AES-128-CTR — 16-byte key + 16-byte nonce, AES-NI accelerated),
-"chacha" (ChaCha20-RFC8439 — 32-byte key + 12-byte nonce), or
+"chacha" (ChaCha20 (RFC8439) — 32-byte key + 12-byte nonce), or
 "siphash" (SipHash-2-4 in CTR mode — 16-byte key + 16-byte nonce,
 custom CTR construction over the SipHash-2-4 PRF).
 
@@ -51,7 +51,7 @@ instance owns one libitb stream handle and is single-writer by
 construction; multiple instances run independently. The free
 functions (:func:`wrap` / :func:`unwrap` / :func:`wrap_in_place` /
 :func:`unwrap_in_place`) are thread-safe — each call allocates its
-own outer-cipher handle internally and the underlying libitb keystream
+own outer cipher handle internally and the underlying libitb keystream
 constructor draws a fresh CSPRNG nonce per call.
 """
 
@@ -71,7 +71,7 @@ from ._ffi import (
     STATUS_BUFFER_TOO_SMALL,
 )
 
-# Canonical outer-cipher names accepted by the wrap surface. Match
+# Canonical outer cipher names accepted by the wrap surface. Match
 # the ``CipherAES128CTR`` / ``CipherChaCha20`` / ``CipherSipHash24``
 # constants in github.com/everanium/itb/wrapper.
 CIPHER_AES128_CTR = "aes"

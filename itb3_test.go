@@ -1697,7 +1697,7 @@ func BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 }
 
 // BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Encrypt loop: caller reads
+// measures the User-Driven Encrypt loop: caller reads
 // chunkSize-byte windows out of src, calls [Encrypt3x] per chunk, and
 // frames each ciphertext on the wire with a 4-byte big-endian length
 // prefix. Mirrors the exampleLowLevelModePlainUserLoop walker shape
@@ -1748,7 +1748,7 @@ func BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B
 }
 
 // BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Decrypt loop: the framed
+// measures the User-Driven Decrypt loop: the framed
 // transcript is built once, and each iteration walks it via the
 // 4-byte BE length-prefix frame, calling [Decrypt3x] per chunk.
 func BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {

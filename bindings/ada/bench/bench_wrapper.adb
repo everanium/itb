@@ -5,11 +5,11 @@
 --  bindings/rust/benches/bench_wrapper.rs.
 --
 --  Sub-bench inventory (102 cases):
---    * 6   wrapper-only round-trip   (Wrap / Wrap_In_Place × 3 ciphers)
+--    * 6   wrapper only round-trip   (Wrap / Wrap_In_Place × 3 ciphers)
 --    * 24  Message Single Ouroboros  (4 modes × 3 ciphers × 2 dirs)
 --    * 24  Message Triple Ouroboros  (4 modes × 3 ciphers × 2 dirs)
 --    * 24  Streaming Single Ouroboros (4 modes × 3 ciphers × 2 dirs,
---          excludes noaead-*-io: Ada has no io-driven non-AEAD wrap
+--          excludes noaead-*-io: Ada has no IO-Driven Non-AEAD wrap
 --          surface — only User-Driven Loop on the no-MAC arm)
 --    * 24  Streaming Triple Ouroboros
 --
@@ -421,7 +421,7 @@ procedure Bench_Wrapper is
    --  access).
    ---------------------------------------------------------------------
 
-   --  Wrapper-only payloads.
+   --  Wrapper Only payloads.
    Wrap_Plain : Byte_Buf_Access := Random_Bytes (Wrapper_Only_Bytes);
 
    --  Single message ITB ciphertexts (computed once per case via the
@@ -736,7 +736,7 @@ procedure Bench_Wrapper is
    ---------------------------------------------------------------------
    --  Per-case Run_Once bodies. Each case binds (cipher, mode, op).
    --
-   --  Wrapper-only round-trip cases.
+   --  Wrapper Only round-trip cases.
    ---------------------------------------------------------------------
 
    Bench_Cipher : Outer_Cipher := Itb.Wrapper.Aes_128_Ctr;

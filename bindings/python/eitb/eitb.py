@@ -4,8 +4,8 @@ Mirrors ``cmd/eitb/main.go`` in the root repository, adapted to the
 Python binding asymmetry: there is no Streaming No MAC IO-Driven
 example (``noaead-easy-io`` / ``noaead-lowlevel-io`` from the Go
 matrix), because the Python binding does not expose a file-like /
-stream-like wrapper writer/reader pair for non-AEAD streaming. The
-non-AEAD streaming arm is the User-Driven Loop only.
+stream-like wrapper writer/reader pair for Non-AEAD streaming. The
+Non-AEAD streaming arm is the User-Driven Loop only.
 
 Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
 24 PASS/FAIL cells.

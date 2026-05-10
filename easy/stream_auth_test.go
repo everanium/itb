@@ -719,7 +719,7 @@ func TestEasyStreamAuthIOClosedEncryptor(t *testing.T) {
 }
 
 // TestEasyStreamAuthIOTruncateTail verifies that dropping the last
-// chunk of an IO-driven transcript yields [itb.ErrStreamTruncated]
+// chunk of an IO-Driven transcript yields [itb.ErrStreamTruncated]
 // on decrypt. Walks the wire bytes via [easy.Encryptor.ParseChunkLen]
 // to find the last chunk's start offset and slices the tail off
 // there.

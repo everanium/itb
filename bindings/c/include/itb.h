@@ -1306,7 +1306,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
  * Outer keystream-cipher envelope that hides the on-wire ITB byte
  * pattern (per-chunk header / 32-byte streamID prefix / container
  * layout) under one of three generic stream ciphers — AES-128-CTR,
- * ChaCha20-RFC8439, or SipHash-2-4 in CTR mode. Wire format is
+ * ChaCha20 (RFC8439), or SipHash-2-4 in CTR mode. Wire format is
  * `nonce || keystream-XOR(bytestream)`, indistinguishable from any
  * generic stream-cipher payload by surface pattern. ITB's content-
  * deniability is unchanged; the AEAD path's integrity is unchanged.
@@ -1351,7 +1351,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
  *
  * Threading. The single-shot itb_wrap / itb_unwrap / itb_wrap_in_place
  * / itb_unwrap_in_place are thread-safe: each call constructs an
- * outer-cipher session of its own and the libitb keystream
+ * outer cipher session of its own and the libitb keystream
  * constructor draws a fresh CSPRNG nonce per call. The streaming
  * itb_wrap_stream_writer_t / itb_unwrap_stream_reader_t handles are
  * single-feeder — every _update call advances the underlying
@@ -1397,7 +1397,7 @@ itb_status_t itb_wrapper_nonce_size(itb_wrapper_cipher_t cipher,
                                     size_t *out_size);
 
 /*
- * Generates a fresh CSPRNG outer-cipher key of the size required by
+ * Generates a fresh CSPRNG outer cipher key of the size required by
  * `cipher` (via itb_wrapper_key_size). On success, *out_key receives
  * a freshly malloc'd buffer the caller releases via itb_buffer_free();
  * *out_key_len receives the byte length. On failure *out_key is NULL

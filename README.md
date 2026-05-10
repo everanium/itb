@@ -218,12 +218,12 @@ via `itb.Set*`, explicit seed + MAC handles).
 ### Streaming Bindings Asymmetry
 
 The Go core and the `easy` package expose `io.Reader` / `io.Writer` entry
-points for both the Streaming AEAD path and the plain (No-MAC) stream path.
+points for both the Streaming AEAD path and the plain (No Mac) stream path.
 The official language bindings (Ada, C, C++, C#, D, Fortran, Rust, Node.js,
-Python and other bindings) expose IO-driven helpers for the Streaming AEAD path only;
+Python and other bindings) expose IO-Driven helpers for the Streaming AEAD path only;
 their plain-stream surface is a per-chunk free-function call with the caller
 driving the read/write loop. The two patterns produce identical on-wire
-bytes — the **Alternative** examples in the No-MAC subsections below mirror
+bytes — the **Alternative** examples in the No Mac subsections below mirror
 the binding-side idiom for callers who prefer external control over chunk
 granularity and back-pressure.
 
@@ -432,7 +432,7 @@ Easy Mode plain dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eeb
 [OK] Easy Mode plain stream: 64 MiB roundtrip verified
 ```
 
-**Alternative — user-driven loop (No memory residency):**
+**Alternative — User-Driven Loop (No memory residency):**
 
 The same `easy.Encryptor` exposes per-chunk `Encrypt` / `Decrypt` methods.
 Driving the read / write loop in caller code mirrors the per-chunk shape
@@ -577,11 +577,11 @@ Low-Level plain dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eeb
 [OK] Low-Level Mode plain stream: 64 MiB roundtrip verified
 ```
 
-**Alternative — user-driven loop (No memory residency):**
+**Alternative — User-Driven Loop (No memory residency):**
 
 The Go-core width-less `itb.Encrypt` / `itb.Decrypt` helpers operate on a
 single chunk at a time. Driving the read / write loop in caller code mirrors
-the per-chunk shape exposed by the official language bindings' no-MAC
+the per-chunk shape exposed by the official language bindings' No Mac
 plain-stream surface — useful when the caller wants explicit control over
 chunk granularity, back-pressure, or interleaved work between chunks. Each
 chunk's wire bytes are framed with a 4-byte big-endian length prefix
@@ -1372,7 +1372,7 @@ func main() {
     ls.BatchHash = batchL // must enable batch
 
     // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel — same pattern as the no-MAC quick-start above.
+    // channel — same pattern as the No Mac quick-start above.
     ns.AttachLockSeed(ls)
 
     // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
@@ -1521,7 +1521,7 @@ func main() {
     ls.BatchHash = batchL // must enable batch
 
     // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel — same pattern as the no-MAC quick-start above.
+    // channel — same pattern as the No Mac quick-start above.
     ns.AttachLockSeed(ls)
 
     // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.

@@ -588,7 +588,7 @@ pub(crate) struct LibItb {
     pub(crate) ITB_Blob_Import: FnBlobImport,
     pub(crate) ITB_Blob_Import3: FnBlobImport3,
 
-    // Format-deniability wrapper — the 12 outer-cipher FFI entries
+    // Format-deniability wrapper — the 12 outer cipher FFI entries
     // exported from cmd/cshared/main.go on top of github.com/everanium/itb/wrapper.
     pub(crate) ITB_WrapperKeySize: FnWrapperKeySize,
     pub(crate) ITB_WrapperNonceSize: FnWrapperNonceSize,

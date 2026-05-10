@@ -5,11 +5,11 @@
 // for the C++ binding asymmetry: the Streaming No MAC arm covers only
 // the User-Driven Loop variant (the C++ binding does not expose a
 // `std::ostream` / `std::istream` wrapper writer / reader pair for
-// non-AEAD streaming).
+// Non-AEAD streaming).
 //
 // Total sub-bench count: **102**.
 //
-//   - Wrapper-only round-trip (16 MiB blob)              :  6
+//   - Wrapper Only round-trip (16 MiB blob)              :  6
 //     ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
 //   - Message Single — 4 modes × 3 ciphers × 2 dirs      : 24
 //   - Message Triple — 4 modes × 3 ciphers × 2 dirs      : 24
@@ -79,7 +79,7 @@ std::unique_ptr<itb::Encryptor> new_encryptor(int mode, bool with_mac) {
         with_mac ? kBenchMacName : "",
         mode);
     // Match the wrapper/bench_test.go config: minimal config so the
-    // outer-cipher delta is not masked by per-pixel feature cost.
+    // outer cipher delta is not masked by per-pixel feature cost.
     enc->set_nonce_bits(128);
     enc->set_barrier_fill(1);
     enc->set_bit_soup(0);
@@ -119,9 +119,9 @@ CaseCtx* register_ctx(std::unique_ptr<CaseCtx> ctx) {
     return ctx_registry().back().get();
 }
 
-// ----- Wrapper-only sub-benches -------------------------------------
+// ----- Wrapper Only sub-benches -------------------------------------
 //
-// Pure outer-cipher cost — no ITB call. Two variants per cipher:
+// Pure outer cipher cost — no ITB call. Two variants per cipher:
 // Wrap (alloc) and WrapInPlace (zero alloc).
 //
 // Each iter performs one wrap + one unwrap (encrypt + decrypt timed
@@ -337,7 +337,7 @@ std::vector<std::uint8_t> aead_decrypt_inner(itb::Encryptor& enc,
     return out;
 }
 
-// User-driven loop: per-chunk encrypt; emit u32_LE_len || ct through
+// User-Driven Loop: per-chunk encrypt; emit u32_LE_len || ct through
 // the wrap-writer.
 void encrypt_userloop_inner(itb::Encryptor& enc,
                             const std::vector<std::uint8_t>& payload,
@@ -532,7 +532,7 @@ std::vector<bench::BenchCase> build_cases() {
     std::vector<bench::BenchCase> cases;
     cases.reserve(kTotalCases);
 
-    // Wrapper-only — 6 cases.
+    // Wrapper Only — 6 cases.
     for (std::size_t ci = 0; ci < kCipherCount; ++ci) {
         cases.push_back(make_wrapper_only_wrap_case(kCiphers[ci], kCipherNames[ci]));
         cases.push_back(make_wrapper_only_inplace_case(kCiphers[ci], kCipherNames[ci]));

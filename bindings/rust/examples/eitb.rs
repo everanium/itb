@@ -2,10 +2,10 @@
 //!
 //! Mirrors `cmd/eitb/main.go` adapted to the Rust binding asymmetry:
 //! the binding has no `std::io::Write` / `std::io::Read` adapter pair
-//! for non-AEAD streaming wrap surfaces (Streaming AEAD does have
+//! for Non-AEAD streaming wrap surfaces (Streaming AEAD does have
 //! file-like helpers, but the wrap layer still goes through the
 //! `WrapStreamWriter::update` / `UnwrapStreamReader::update` byte
-//! pump). The non-AEAD streaming arm covers the User-Driven Loop
+//! pump). The Non-AEAD streaming arm covers the User-Driven Loop
 //! variant only — caller produces an ITB ciphertext per chunk via
 //! `Encryptor::encrypt(chunk)` (or the low-level [`itb::encrypt`]),
 //! frames `u32_LE_len || ct`, and pushes through the wrap-stream

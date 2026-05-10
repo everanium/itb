@@ -5,12 +5,12 @@
  * Mirrors `wrapper/bench_test.go` from the root repository, adapted
  * for the C binding asymmetry: the Streaming No MAC arm covers only
  * the User-Driven Loop variant (the C binding does not expose a
- * FILE* / file-like wrapper writer / reader pair for non-AEAD
+ * FILE* / file-like wrapper writer / reader pair for Non-AEAD
  * streaming).
  *
  * Total sub-bench count: **102**.
  *
- *   - Wrapper-only round-trip (16 MiB blob)              :  6
+ *   - Wrapper Only round-trip (16 MiB blob)              :  6
  *     ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
  *   - Message Single — 4 modes × 3 ciphers × 2 dirs      : 24
  *   - Message Triple — 4 modes × 3 ciphers × 2 dirs      : 24
@@ -94,7 +94,7 @@ struct case_ctx {
      * pristine_wire_len; filled fresh by memcpy at the top of each
      * iter. */
     uint8_t *work_wire;
-    /* Per-iter outer-cipher key handle. */
+    /* Per-iter outer cipher key handle. */
     uint8_t *outer_key;
     size_t outer_key_len;
     /* Cipher selector + name (interned). */
@@ -182,7 +182,7 @@ static itb_encryptor_t *new_encryptor(int mode, int with_mac)
         abort();
     }
     /* Match the wrapper/bench_test.go config: minimal config so the
-     * outer-cipher delta is not masked by per-pixel feature cost. */
+     * outer cipher delta is not masked by per-pixel feature cost. */
     if (itb_encryptor_set_nonce_bits(e, 128) != ITB_OK
         || itb_encryptor_set_barrier_fill(e, 1) != ITB_OK
         || itb_encryptor_set_bit_soup(e, 0) != ITB_OK
@@ -193,9 +193,9 @@ static itb_encryptor_t *new_encryptor(int mode, int with_mac)
     return e;
 }
 
-/* ----- Wrapper-only sub-benches ----------------------------------- */
+/* ----- Wrapper Only sub-benches ----------------------------------- */
 /*
- * Pure outer-cipher cost — no ITB call. Two variants per cipher:
+ * Pure outer cipher cost — no ITB call. Two variants per cipher:
  * Wrap (alloc) and WrapInPlace (zero alloc).
  *
  * Each iter performs one wrap + one unwrap (encrypt + decrypt timed
@@ -855,7 +855,7 @@ static size_t build_cases(bench_case_t *cases)
 {
     size_t idx = 0;
 
-    /* Wrapper-only — 6 cases. */
+    /* Wrapper Only — 6 cases. */
     for (int ci = 0; ci < CIPHER_COUNT; ci++) {
         cases[idx++] = make_wrapper_only_wrap_case(CIPHERS[ci], CIPHER_NAMES[ci]);
         cases[idx++] = make_wrapper_only_inplace_case(CIPHERS[ci], CIPHER_NAMES[ci]);

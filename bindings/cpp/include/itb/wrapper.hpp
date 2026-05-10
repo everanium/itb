@@ -4,7 +4,7 @@
 // Header-only RAII facade over the C binding's `itb_wrap*` /
 // `itb_unwrap*` / `itb_wrap_stream_writer_*` /
 // `itb_unwrap_stream_reader_*` API. Wraps an ITB ciphertext under one
-// of three outer keystream ciphers — AES-128-CTR, ChaCha20-RFC8439,
+// of three outer keystream ciphers — AES-128-CTR, ChaCha20 (RFC8439),
 // or SipHash-2-4 in CTR mode — so the on-wire bytes carry no
 // ITB-specific format pattern. Wire format is `nonce ||
 // keystream-XOR(bytestream)`, indistinguishable from any generic
@@ -45,17 +45,17 @@
 //
 // Threading. The single-shot `wrap` / `unwrap` / `wrap_in_place` /
 // `unwrap_in_place` are thread-safe — each call constructs an
-// outer-cipher session of its own and the libitb keystream
+// outer cipher session of its own and the libitb keystream
 // constructor draws a fresh CSPRNG nonce per call. The streaming
 // `WrapStreamWriter` / `UnwrapStreamReader` handles are single-feeder
 // — every `update` call advances the underlying keystream counter;
 // concurrent `update` calls on the same handle race. Distinct
 // handles run independently.
 //
-// Asymmetry note (no `std::iostream` adapter for non-AEAD
+// Asymmetry note (no `std::iostream` adapter for Non-AEAD
 // streaming). The C++ binding's existing streams.hpp surface mirrors
 // the C binding's callback-driven push pattern for Streaming AEAD;
-// non-AEAD streaming is exposed only as the User-Driven Loop. The
+// Non-AEAD streaming is exposed only as the User-Driven Loop. The
 // wrapper layer follows the same pattern: the streaming wrap-writer
 // and unwrap-reader are byte-array `update` driven, not
 // `std::ostream` / `std::istream` driven. Caller-side framing (e.g.
@@ -129,7 +129,7 @@ inline std::size_t nonce_size(Cipher cipher) {
     return out;
 }
 
-// Generates a fresh CSPRNG outer-cipher key of the size required by
+// Generates a fresh CSPRNG outer cipher key of the size required by
 // `cipher` (via `key_size`). Reads `/dev/urandom` on POSIX hosts via
 // the C binding's `itb_wrapper_generate_key`.
 //

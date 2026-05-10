@@ -284,7 +284,7 @@ func Unwrap(name string, key, wire []byte) ([]byte, error) {
 	return out, nil
 }
 
-// WrapInPlace XORs blob in place under a fresh outer-cipher keystream and
+// WrapInPlace XORs blob in place under a fresh outer cipher keystream and
 // returns the per-stream nonce. The caller is expected to emit nonce
 // followed by blob to the wire, or compose a single buffer themselves.
 //
