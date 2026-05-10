@@ -31,7 +31,7 @@ No length-prefix or other framing byte appears in cleartext on the wire in any w
 
 ### Binding asymmetry
 
-The Python binding exposes Streaming AEAD as a file-like object surface (`Encryptor.encrypt_stream_auth` / `decrypt_stream_auth`). The Streaming No MAC path has **no** file-like / stream-like wrapper writer or reader pair. This asymmetry is intentional. The non-AEAD streaming arm in the Python wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)`, frames `u32_LE_len || ct`, and pushes through the streaming wrapper handle. See CLAUDE.md.
+The Python binding exposes Streaming AEAD as a file-like object surface (`Encryptor.encrypt_stream_auth` / `decrypt_stream_auth`). The Streaming No MAC path has **no** file-like / stream-like wrapper writer or reader pair. This asymmetry is intentional. The Non-AEAD streaming arm in the Python wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)`, frames `u32_LE_len || ct`, and pushes through the streaming wrapper handle. See CLAUDE.md.
 
 ## Outer ciphers
 

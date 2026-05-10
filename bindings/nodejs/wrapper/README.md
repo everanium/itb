@@ -33,7 +33,7 @@ The streaming classes implement `Disposable` — using a `using` declaration rel
 
 ### Binding asymmetry
 
-The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free functions `encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent stream adapter pair on top of the wrap surface for non-AEAD streaming. This asymmetry is intentional. The non-AEAD streaming arm in the Node.js wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
+The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free functions `encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent stream adapter pair on top of the wrap surface for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the Node.js wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
 
 ## Outer ciphers
 

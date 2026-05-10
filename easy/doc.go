@@ -7,7 +7,7 @@
 // invokes a [ChunkFunc] once per output chunk in stream order and
 // is the natural fit when the caller already holds the full
 // plaintext (or full ciphertext) in memory and prefers per-chunk
-// control over emission. The IO-driven family
+// control over emission. The IO-Driven family
 // ([Encryptor.EncryptStreamIO] / [Encryptor.DecryptStreamIO] and
 // the authenticated counterparts [Encryptor.EncryptStreamAuthIO] /
 // [Encryptor.DecryptStreamAuthIO]) consumes [io.Reader] / writes

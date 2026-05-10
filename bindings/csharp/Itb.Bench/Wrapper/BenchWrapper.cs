@@ -9,7 +9,7 @@
 //
 // Sub-bench inventory (per binding, 102 total):
 //
-//   Wrapper-only round-trip        : 3 ciphers × {wrap, wrap_in_place} = 6
+//   Wrapper Only round-trip        : 3 ciphers × {wrap, wrap_in_place} = 6
 //   Message Single                 : 3 ciphers × 4 modes × 2 dirs    = 24
 //   Message Triple                 : 3 ciphers × 4 modes × 2 dirs    = 24
 //   Streaming Single               : 3 ciphers × 4 modes × 2 dirs    = 24
@@ -80,7 +80,7 @@ internal static class BenchWrapper
 
     /// <summary>
     /// Single-Ouroboros Encryptor configured for the wrapper bench
-    /// matrix: minimum cipher config so the outer-cipher delta is
+    /// matrix: minimum cipher config so the outer cipher delta is
     /// not masked by per-pixel feature cost.
     /// </summary>
     private static Encryptor BenchEasySingle(bool withMac)
@@ -118,7 +118,7 @@ internal static class BenchWrapper
     }
 
     // ----------------------------------------------------------------
-    // 1. Wrapper-only round-trip (pure outer-cipher cost, no ITB call)
+    // 1. Wrapper Only round-trip (pure outer cipher cost, no ITB call)
     // ----------------------------------------------------------------
 
     private static IEnumerable<BenchCase> BuildWrapperOnly()
@@ -405,7 +405,7 @@ internal static class BenchWrapper
     //    4 modes: aead-easy-io, aead-lowlevel-io,
     //    noaead-easy-userloop, noaead-lowlevel-userloop. The two
     //    noaead-*-io variants present in the Go-native bench are
-    //    ABSENT here by binding asymmetry — non-AEAD streaming has no
+    //    ABSENT here by binding asymmetry — Non-AEAD streaming has no
     //    file-like writer / reader pair in the C# binding.
     // ----------------------------------------------------------------
 

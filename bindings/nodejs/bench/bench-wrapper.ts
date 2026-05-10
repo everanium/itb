@@ -4,7 +4,7 @@
 // `bindings/rust/benches/bench_wrapper.rs` and `wrapper/bench_test.go`.
 // Three test scopes:
 //
-//   * Wrapper-only — pure outer-cipher round-trip throughput on a
+//   * Wrapper Only — pure outer cipher round-trip throughput on a
 //     16 MiB random buffer (no ITB call). Two shapes: `wrap` (alloc
 //     fresh wire) and `wrapInPlace` (mutate caller's buffer).
 //     Encrypt + decrypt timed together — one round-trip per iter.
@@ -28,7 +28,7 @@
 // `Encryptor.encryptStreamAuth` / `decryptStreamAuth` plus the free
 // functions `encryptStreamAuth` / `decryptStreamAuth`, but does NOT
 // expose a `stream.Readable` / `stream.Writable` adapter pair on top
-// of the wrap surface for non-AEAD streaming. The non-AEAD streaming
+// of the wrap surface for Non-AEAD streaming. The Non-AEAD streaming
 // arm therefore covers the User-Driven Loop variant only (per-chunk
 // encrypt + caller-side u32_LE framing pushed through one wrap-stream
 // session). See CLAUDE.md.
@@ -140,7 +140,7 @@ async function drain(stream: PassThrough): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-// ─── Wrapper-only sub-benches (6 cases) ──────────────────────────
+// ─── Wrapper Only sub-benches (6 cases) ──────────────────────────
 
 function buildWrapperOnlyCases(): BenchCase[] {
   const cases: BenchCase[] = [];
@@ -155,7 +155,7 @@ function buildWrapperOnlyCases(): BenchCase[] {
           const wire = wrap(cipher, key, blob);
           const recovered = unwrap(cipher, key, wire);
           if (recovered.length !== blob.length) {
-            throw new Error(`wrapper-only ${cipher}: length mismatch`);
+            throw new Error(`wrapper only ${cipher}: length mismatch`);
           }
         }
       },
@@ -415,7 +415,7 @@ function buildMessageCases(modes: MessageMode[]): BenchCase[] {
         run: (iters: number) => {
           for (let i = 0; i < iters; i++) {
             // wire is mutated by unwrapInPlace inside the run body —
-            // refresh from pristine each iter so the outer-cipher
+            // refresh from pristine each iter so the outer cipher
             // input is the same wire every call. The Buffer.from
             // copy cost is small relative to ITB Decrypt at 16 MiB.
             mode.runDecrypt(cipher, wirePristine);

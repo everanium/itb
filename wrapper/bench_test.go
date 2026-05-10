@@ -136,7 +136,7 @@ func benchLowLevelTripleSeeds(b *testing.B) (noise, d1, d2, d3, s1, s2, s3 *itb.
 }
 
 // ---------------------------------------------------------------------------
-// Wrapper-only baseline (round-trip — wrapper-cost-isolation case).
+// Wrapper Only baseline (round-trip — wrapper-cost-isolation case).
 // ---------------------------------------------------------------------------
 
 func BenchmarkWrapperOnly(b *testing.B) {

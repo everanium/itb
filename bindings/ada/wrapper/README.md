@@ -1,6 +1,6 @@
 # ITB Format-Deniability Wrapper — Ada binding
 
-Ada-idiomatic surface over the 12 `ITB_Wrap*` / `ITB_Unwrap*` / `ITB_WrapStream*` / `ITB_UnwrapStream*` / `ITB_WrapperKeySize` / `ITB_WrapperNonceSize` exports in `cmd/cshared/main.go`. Wraps an ITB ciphertext under one of three outer keystream ciphers (AES-128-CTR / ChaCha20-RFC8439 / SipHash-2-4 in CTR mode) so the on-wire bytes carry no ITB-specific format pattern.
+Ada-idiomatic surface over the 12 `ITB_Wrap*` / `ITB_Unwrap*` / `ITB_WrapStream*` / `ITB_UnwrapStream*` / `ITB_WrapperKeySize` / `ITB_WrapperNonceSize` exports in `cmd/cshared/main.go`. Wraps an ITB ciphertext under one of three outer keystream ciphers (AES-128-CTR / ChaCha20 (RFC8439) / SipHash-2-4 in CTR mode) so the on-wire bytes carry no ITB-specific format pattern.
 
 ## Threat model
 
@@ -91,7 +91,7 @@ ITB Call: `Itb.Streams.Encrypt_Stream_Auth` / `Decrypt_Stream_Auth` with three e
 
 ITB Call: per-chunk `Itb.Encryptor.Encrypt`. Wrap shape: `Wrap_Stream_Writer` driven by a caller loop that emits `u32_LE_len || ct` per chunk through the wrapped writer. Length prefix and chunk body both pass through the keystream XOR — no length appears in cleartext on the wire.
 
-Ada has no `Ada.Streams.Stream_IO` adapter for non-AEAD streaming wrap surfaces; only User-Driven Loop is exposed.
+Ada has no `Ada.Streams.Stream_IO` adapter for Non-AEAD streaming wrap surfaces; only User-Driven Loop is exposed.
 
 ### 4. Streaming Low-Level (No MAC, User-Driven Loop)
 

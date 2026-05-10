@@ -2,7 +2,7 @@
 ///
 /// Mirrors `wrapper/bench_test.go` on the Go-native side and
 /// `bindings/{python,rust,csharp,nodejs}/.../bench_wrapper*` on the
-/// peer-binding side. Six wrapper-only round-trip cases (16 MiB random
+/// peer-binding side. Six wrapper only round-trip cases (16 MiB random
 /// blob through `wrap` / `wrapInPlace` per outer cipher) plus 96
 /// full-ITB cases split across:
 ///
@@ -18,11 +18,11 @@
 /// Total: 6 + 96 = **102 sub-benches** when run end-to-end.
 ///
 /// Streaming sub-benches do NOT include `noaead-*-io` cells. The D
-/// binding's non-AEAD streaming surface is User-Driven Loop only —
+/// binding's Non-AEAD streaming surface is User-Driven Loop only —
 /// there is no `OutputRange` / `InputRange` adapter pair for the
-/// non-AEAD case. The Streaming AEAD path (Easy + Low-Level)
+/// Non-AEAD case. The Streaming AEAD path (Easy + Low-Level)
 /// covers the IO-Driven delegate / reader / writer surface; the
-/// non-AEAD streaming column is the User-Driven Loop variant.
+/// Non-AEAD streaming column is the User-Driven Loop variant.
 ///
 /// Run with:
 ///
@@ -40,7 +40,7 @@
 /// Per CLAUDE.md voice / naming discipline: streaming = "Streaming
 /// AEAD" / "Streaming Easy" / "Streaming Low-Level"; modes = "Easy" /
 /// "Low-Level" / "MAC Authenticated" / "No MAC" / "Single Ouroboros" /
-/// "Triple Ouroboros"; outer-cipher arms = AES-128-CTR / ChaCha20 /
+/// "Triple Ouroboros"; outer cipher arms = AES-128-CTR / ChaCha20 /
 /// SipHash-CTR.
 module bench.bench_wrapper;
 
@@ -148,7 +148,7 @@ private Seed3Box* makeSeed3(bool authMac) @trusted
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Wrapper-only round-trip (16 MiB random blob, no ITB call).
+// Wrapper Only round-trip (16 MiB random blob, no ITB call).
 //
 // Three outer ciphers × two surfaces (`wrap` allocating + `wrapInPlace`
 // zero-alloc) = 6 sub-benches. Round-trip = encrypt + decrypt timed
@@ -534,7 +534,7 @@ private BenchCase makeMsgLowAuthDecTriple(string name, Cipher cipher) @trusted
 //                            encrypt per chunk + u32_LE_len framing).
 //
 // `noaead-*-io` cells are absent — see CLAUDE.md binding asymmetry
-// note. The D non-AEAD streaming surface is User-Driven Loop only.
+// note. The D Non-AEAD streaming surface is User-Driven Loop only.
 // ────────────────────────────────────────────────────────────────────
 
 // --- Streaming AEAD Easy IO-Driven (encrypt) -----------------------

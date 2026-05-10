@@ -4,8 +4,8 @@
 // C++ binding's asymmetry: there is no Streaming No MAC IO-Driven
 // example (`noaead-easy-io` / `noaead-lowlevel-io` from the Go
 // matrix) because the C++ binding does not expose a `std::ostream`
-// / `std::istream` wrapper writer / reader pair for non-AEAD
-// streaming. The non-AEAD streaming arm is the User-Driven Loop only.
+// / `std::istream` wrapper writer / reader pair for Non-AEAD
+// streaming. The Non-AEAD streaming arm is the User-Driven Loop only.
 //
 // Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
 // 24 PASS/FAIL cells.

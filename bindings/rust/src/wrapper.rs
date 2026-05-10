@@ -58,7 +58,7 @@
 //! construction; multiple instances run independently. The free
 //! functions ([`wrap`] / [`unwrap`] / [`wrap_in_place`] /
 //! [`unwrap_in_place`]) are thread-safe — each call allocates its
-//! own outer-cipher handle internally and the underlying libitb
+//! own outer cipher handle internally and the underlying libitb
 //! keystream constructor draws a fresh CSPRNG nonce per call.
 
 use std::ffi::{c_void, CString};

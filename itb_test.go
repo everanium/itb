@@ -3259,7 +3259,7 @@ func streamBenchMACKey(b *testing.B) []byte {
 // streamed through an in-memory bytes.Reader -> bytes.Buffer pair in
 // 16 MiB chunks. The Single trio of seeds and the MAC closure are
 // constructed once outside the timer; the inner loop only runs the
-// IO-driven encrypt path.
+// IO-Driven encrypt path.
 func BenchmarkSingleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
 		bits      = 1024
@@ -3365,7 +3365,7 @@ func BenchmarkSingleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 }
 
 // BenchmarkSingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Encrypt loop: the caller
+// measures the User-Driven Encrypt loop: the caller
 // reads chunkSize-byte windows out of src, calls [Encrypt] per chunk,
 // and frames each ciphertext on the wire with a 4-byte big-endian
 // length prefix. Mirrors the exampleLowLevelModePlainUserLoop walker
@@ -3416,7 +3416,7 @@ func BenchmarkSingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B
 }
 
 // BenchmarkSingleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the user-driven plain-stream Decrypt loop: the caller reads
+// measures the User-Driven Decrypt loop: the caller reads
 // the 4-byte big-endian length prefix, draws exactly that many bytes
 // into a chunk buffer, and calls [Decrypt] per chunk. The framed
 // ciphertext is built once outside the timer.

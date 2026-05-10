@@ -1,8 +1,8 @@
 --  Ada eitb — runs every wrapper × ITB example end-to-end.
 --
 --  Mirrors cmd/eitb/main.go adapted to the Ada binding asymmetry: the
---  binding has no Ada.Streams.Stream_IO-driven non-AEAD wrap surface;
---  the only non-AEAD streaming arm is the User-Driven Loop variant.
+--  binding has no Ada.Streams.Stream_IO-Driven Non-AEAD wrap surface;
+--  the only Non-AEAD streaming arm is the User-Driven Loop variant.
 --  Streaming AEAD is supported via Encryptor.Encrypt_Stream_Auth /
 --  Decrypt_Stream_Auth (Easy) and Itb.Streams.Encrypt_Stream_Auth /
 --  Decrypt_Stream_Auth (Low-Level), both of which write the inner

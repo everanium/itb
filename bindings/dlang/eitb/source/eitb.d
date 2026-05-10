@@ -89,7 +89,7 @@ struct Example
 // 32-byte stream prefix + per-chunk wire flows out through the writer
 // delegate. The format-deniability wrap intercepts via WrapStreamWriter:
 // ITB writes its bytestream into the wrap-writer's update path, which
-// prefixes a fresh outer-cipher nonce on the wire and XOR-encrypts every
+// prefixes a fresh outer cipher nonce on the wire and XOR-encrypts every
 // byte under (key, nonce). Receiver reverses with UnwrapStreamReader feeding
 // decryptStreamAuth.
 // ---------------------------------------------------------------------------

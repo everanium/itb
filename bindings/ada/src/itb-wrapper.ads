@@ -2,7 +2,7 @@
 --  surface.
 --
 --  Wraps an ITB ciphertext under one of three outer keystream ciphers
---  (AES-128-CTR / ChaCha20-RFC8439 / SipHash-2-4 in CTR mode) so the
+--  (AES-128-CTR / ChaCha20 (RFC8439) / SipHash-2-4 in CTR mode) so the
 --  on-wire bytes carry no ITB-specific format pattern (W / H /
 --  container layout for Non-AEAD; 32-byte streamID prefix +
 --  per-chunk metadata for Streaming AEAD). The wrap exists for
@@ -58,7 +58,7 @@
 --  concurrently against the same handle. Distinct values run
 --  independently. The free subprograms (Wrap / Unwrap /
 --  Wrap_In_Place / Unwrap_In_Place) are thread-safe — each call
---  allocates its own outer-cipher state internally and the
+--  allocates its own outer cipher state internally and the
 --  underlying libitb keystream constructor draws a fresh CSPRNG
 --  nonce per call.
 
@@ -140,7 +140,7 @@ package Itb.Wrapper is
    --  Single-shot Wrap / Unwrap (in-place mutation)
    ---------------------------------------------------------------------
 
-   --  XORs Blob in place under a fresh CSPRNG outer-cipher keystream
+   --  XORs Blob in place under a fresh CSPRNG outer cipher keystream
    --  and writes the per-stream nonce into Out_Nonce. The caller is
    --  expected to emit Out_Nonce followed by Blob to the wire (or
    --  compose a single buffer themselves).

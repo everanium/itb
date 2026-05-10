@@ -8,8 +8,8 @@
 //
 // The orchestrator runs four passes (Single / Triple × ±LockSeed at
 // min_seconds=5) and folds the per-pass output into BENCH.md. The
-// wrapper pass covers the format-deniability outer-cipher matrix
-// (102 sub-benches across 3 outer ciphers × Wrapper-only / Message
+// wrapper pass covers the format-deniability outer cipher matrix
+// (102 sub-benches across 3 outer ciphers × Wrapper Only / Message
 // Single / Message Triple / Streaming Single / Streaming Triple).
 // See Common.cs for the supported ITB_NONCE_BITS / ITB_LOCKSEED /
 // ITB_BENCH_FILTER / ITB_BENCH_MIN_SEC environment variables.

@@ -129,7 +129,7 @@ itb_status_t itb_wrapper_nonce_size(itb_wrapper_cipher_t cipher,
 /*
  * Caller-side CSPRNG. The libitb side draws its own per-call nonce
  * from crypto/rand for every Wrap / WrapInPlace / WrapStreamWriter_Init
- * call; this helper is the matching "give me a fresh outer-cipher key"
+ * call; this helper is the matching "give me a fresh outer cipher key"
  * convenience that the Python / Rust / etc. bindings expose. Reads
  * /dev/urandom on POSIX hosts.
  *

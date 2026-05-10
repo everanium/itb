@@ -7,7 +7,7 @@ file-like Streaming No MAC writer / reader pair).
 
 Total sub-bench count: **102**.
 
-  - Wrapper-only round-trip (16 MiB blob)              :  6  ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
+  - Wrapper Only round-trip (16 MiB blob)              :  6  ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
   - Message Single — 4 modes × 3 ciphers × 2 dirs      : 24
   - Message Triple — 4 modes × 3 ciphers × 2 dirs      : 24
   - Streaming Single — 4 modes × 3 ciphers × 2 dirs    : 24
@@ -73,7 +73,7 @@ STREAM_CHUNK_SIZE = _common.PAYLOAD_16MB  # 16 MiB
 
 
 # --------------------------------------------------------------------
-# Wrapper-only round-trip — pure outer-cipher cost (no ITB)
+# Wrapper Only round-trip — pure outer cipher cost (no ITB)
 # --------------------------------------------------------------------
 
 

@@ -184,7 +184,7 @@ begin
 end;
 ```
 
-**Recommended idiom for single-shot non-streaming calls.** When a single-shot `Itb.Encryptor.Encrypt` / `Decrypt` (or `Encrypt_Auth` / `Decrypt_Auth`) is invoked on plaintext approaching or exceeding ~8 MiB, the function-result `Byte_Array` lands on the calling task's stack by default, which can overflow the standard 8 MiB main-thread stack. The Build-In-Place (BIP) idiom routes the result onto the heap instead:
+**Recommended idiom for single message non-streaming calls.** When a single message `Itb.Encryptor.Encrypt` / `Decrypt` (or `Encrypt_Auth` / `Decrypt_Auth`) is invoked on plaintext approaching or exceeding ~8 MiB, the function-result `Byte_Array` lands on the calling task's stack by default, which can overflow the standard 8 MiB main-thread stack. The Build-In-Place (BIP) idiom routes the result onto the heap instead:
 
 ```ada
 declare

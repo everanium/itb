@@ -36,7 +36,7 @@
 // libitb stream handle and is single-feeder by construction. Multiple
 // instances run independently. The static Wrap / Unwrap / WrapInPlace
 // / UnwrapInPlace methods are thread-safe — each call allocates its
-// own outer-cipher handle internally and the underlying libitb
+// own outer cipher handle internally and the underlying libitb
 // keystream constructor draws a fresh CSPRNG nonce per call.
 
 using System.Security.Cryptography;

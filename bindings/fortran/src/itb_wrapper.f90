@@ -44,7 +44,7 @@
 ! `itb_last_error_message()` carries the libitb diagnostic.
 !
 ! Threading. The single-shot helpers are thread-safe -- every call
-! constructs an outer-cipher session of its own and the libitb
+! constructs an outer cipher session of its own and the libitb
 ! keystream constructor draws a fresh CSPRNG nonce per call. Stream
 ! handles are **single-feeder**: every `update` advances the
 ! underlying keystream counter; concurrent `update` calls on the
@@ -239,7 +239,7 @@ contains
     status = STATUS_OK
   end subroutine
 
-  ! Allocates and fills a fresh CSPRNG outer-cipher key for the named
+  ! Allocates and fills a fresh CSPRNG outer cipher key for the named
   ! cipher. The returned `key(:)` is sized to the cipher's exact key
   ! length. Caller owns the allocation; no de-allocation helper is
   ! needed since Fortran allocatables release at end-of-scope.
@@ -412,7 +412,7 @@ contains
     status = STATUS_OK
   end subroutine
 
-  ! XORs `blob` in place under a fresh outer-cipher keystream and
+  ! XORs `blob` in place under a fresh outer cipher keystream and
   ! writes the per-stream nonce into `nonce(1:nonce_len)`. `blob`
   ! is MUTATED. The caller emits `nonce` then `blob` to compose the
   ! wire; the return path is `itb_unwrap_in_place`.

@@ -9,7 +9,7 @@ import (
 
 // wrapper_handles.go — handle pattern for the streaming
 // format-deniability surface. The encrypt-side handle holds one
-// outer-cipher Keystream whose internal counter advances across
+// outer cipher Keystream whose internal counter advances across
 // successive Update calls; the decrypt-side handle is the
 // counterpart that consumes the leading nonce on Init and then
 // inverts the keystream XOR on each Update.
@@ -22,7 +22,7 @@ import (
 // Once the keystream is keyed, Update is the same XOR-in-place
 // operation on either side.
 
-// WrapStreamHandle wraps a single outer-cipher Keystream behind
+// WrapStreamHandle wraps a single outer cipher Keystream behind
 // an opaque uintptr crossing the cgo boundary. The keystream
 // counter advances monotonically across Update calls until the
 // handle is freed; no per-Update reinit cost.

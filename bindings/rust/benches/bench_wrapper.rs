@@ -3,7 +3,7 @@
 //! Mirrors `bindings/python/wrapper/benchmarks/bench_wrapper.py` and
 //! `wrapper/bench_test.go` from the repo root. Three test scopes:
 //!
-//!   * Wrapper-only — pure outer-cipher round-trip throughput on a
+//!   * Wrapper Only — pure outer cipher round-trip throughput on a
 //!     16 MiB random buffer (no ITB call). Two shapes: `wrap` (alloc
 //!     fresh wire) and `wrap_in_place` (mutate caller's buffer).
 //!     Encrypt + decrypt timed together — one round-trip per iter.
@@ -26,7 +26,7 @@
 //! Binding asymmetry — the Rust binding exposes Streaming AEAD
 //! (`encrypt_stream_auth` / `decrypt_stream_auth`) but does NOT
 //! expose a `Read` / `Write` adapter pair for the No MAC streaming
-//! path. The non-AEAD streaming arm therefore covers the User-Driven
+//! path. The Non-AEAD streaming arm therefore covers the User-Driven
 //! Loop variant only (per-chunk encrypt + caller-side u32_LE
 //! framing pushed through one wrap-stream session). See CLAUDE.md.
 //!
@@ -119,7 +119,7 @@ fn build_mac() -> MAC {
 }
 
 // --------------------------------------------------------------------
-// Scope 1 — wrapper-only round-trip on a 16 MiB random buffer.
+// Scope 1 — wrapper only round-trip on a 16 MiB random buffer.
 // --------------------------------------------------------------------
 
 fn make_wrapper_only_alloc(cipher: Cipher) -> BenchCase {
@@ -1177,7 +1177,7 @@ fn make_stream_triple_noaead_lowlevel_userloop_decrypt(cipher: Cipher) -> BenchC
 fn build_cases() -> Vec<BenchCase> {
     let mut cases: Vec<BenchCase> = Vec::with_capacity(102);
 
-    // Wrapper-only — 6 cases.
+    // Wrapper Only — 6 cases.
     for c in CIPHERS {
         cases.push(make_wrapper_only_alloc(c));
         cases.push(make_wrapper_only_inplace(c));

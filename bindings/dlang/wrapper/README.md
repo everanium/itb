@@ -33,7 +33,7 @@ The streaming structs are RAII — the destructor releases the underlying libitb
 
 ### Binding asymmetry
 
-The D binding exposes Streaming AEAD as a delegate-driven reader / writer pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free-function `itb.streams.encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent delegate-driven IO-Driven adapter pair for non-AEAD streaming. This asymmetry is intentional. The non-AEAD streaming arm in the D wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `itb.cipher.encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
+The D binding exposes Streaming AEAD as a delegate-driven reader / writer pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free-function `itb.streams.encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent delegate-driven IO-Driven adapter pair for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the D wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `itb.cipher.encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
 
 ## Outer ciphers
 

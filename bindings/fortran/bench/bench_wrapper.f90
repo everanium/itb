@@ -3,7 +3,7 @@
 !
 ! Mirrors the cross-binding wrapper bench shape:
 !
-!   * 6 wrapper-only round-trip cases   (3 ciphers x { Wrap, WrapInPlace })
+!   * 6 wrapper only round-trip cases   (3 ciphers x { Wrap, WrapInPlace })
 !   * 24 Message Single                  (4 modes x 3 ciphers x 2 dirs)
 !   * 24 Message Triple                  (4 modes x 3 ciphers x 2 dirs)
 !   * 24 Streaming Single                (4 modes x 3 ciphers x 2 dirs)
@@ -13,7 +13,7 @@
 !
 ! Streaming sub-bench inventory per direction = 4 modes x 3 ciphers
 ! = 12 (no `noaead-*-io` mode -- the Fortran binding has no
-! unit-IO analogue for non-AEAD streaming). Modes:
+! unit-IO analogue for Non-AEAD streaming). Modes:
 !
 !   1. Streaming AEAD Easy IO-Driven       (MAC Authenticated)
 !   2. Streaming AEAD Low-Level IO-Driven  (MAC Authenticated)
@@ -133,7 +133,7 @@ program bench_wrapper
 
   integer(int64), parameter :: WRAPPER_PAYLOAD_BYTES = PAYLOAD_16MB
   ! Total cases:
-  !   6 wrapper-only + 24 msg-single + 24 msg-triple +
+  !   6 wrapper only + 24 msg-single + 24 msg-triple +
   !   24 stream-single + 24 stream-triple = 102.
   integer, parameter :: TOTAL_CASES = 102
 
@@ -159,7 +159,7 @@ contains
   ! ----------------------------------------------------------------
   ! Per-iter callables.
   !
-  ! Wrapper-only Wrap-alloc: one fresh `wire(:)` allocation per call.
+  ! Wrapper Only Wrap-alloc: one fresh `wire(:)` allocation per call.
   ! ----------------------------------------------------------------
   subroutine run_wrap_alloc(case_idx, iters)
     integer,        intent(in) :: case_idx
@@ -176,7 +176,7 @@ contains
     end do
   end subroutine
 
-  ! Wrapper-only WrapInPlace: blob is mutated in place; nonce is
+  ! Wrapper Only WrapInPlace: blob is mutated in place; nonce is
   ! returned in a separately-allocated buffer. Each iteration first
   ! restores the blob from a fresh CSPRNG sample (so the per-call
   ! XOR overwrites a fresh buffer rather than the previous wrap's
@@ -288,7 +288,7 @@ contains
 
     idx = 0
 
-    ! Wrapper-only round-trip: 3 ciphers x { Wrap, WrapInPlace } = 6.
+    ! Wrapper Only round-trip: 3 ciphers x { Wrap, WrapInPlace } = 6.
     do c = 1, NUM_CIPHERS
       idx = idx + 1
       call register_wrapper_only(cs(idx),                                      &
@@ -391,7 +391,7 @@ contains
     character(*),       intent(in)  :: label
     integer,            intent(in)  :: cipher
     integer :: idx
-    ! Pipeline cases share the same payload size as wrapper-only
+    ! Pipeline cases share the same payload size as wrapper only
     ! to keep MB/s columns comparable across surfaces.
     call make_state(cipher, WRAPPER_PAYLOAD_BYTES, idx)
     c%name = label
