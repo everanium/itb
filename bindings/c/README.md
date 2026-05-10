@@ -706,7 +706,7 @@ itb_seed_from_components("areion512", comp2, comp2_count,
 
 `itb_stream_encrypt` / `itb_stream_decrypt` (and the seven-seed
 counterparts `itb_stream_encrypt_triple` / `itb_stream_decrypt_triple`)
-wrap the one-shot encrypt / decrypt API behind a chunked I/O surface.
+wrap the Single Message Encrypt / Decrypt API behind a chunked I/O surface.
 ITB ciphertexts cap at ~64 MB plaintext per chunk; streaming larger
 payloads slices the input into chunks at the binding layer, encrypts
 each chunk through the regular FFI path, and concatenates the results.

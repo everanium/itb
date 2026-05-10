@@ -650,7 +650,7 @@ Console.WriteLine($"decrypted: {System.Text.Encoding.UTF8.GetString(decrypted)}"
 
 `StreamEncryptor` / `StreamDecryptor` (and the seven-seed
 counterparts `StreamEncryptorTriple` / `StreamDecryptorTriple`)
-wrap the one-shot encrypt / decrypt API behind a `Write` /
+wrap the Single Message Encrypt / Decrypt API behind a `Write` /
 `Feed`-driven chunked I/O surface. ITB ciphertexts cap at
 ~64 MB plaintext per chunk; streaming larger payloads slices the
 input into chunks at the binding layer, encrypts each chunk

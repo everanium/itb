@@ -556,7 +556,7 @@ The push-pattern wrappers (`itb::StreamEncryptor` /
 `itb::StreamDecryptor` plus seven-seed `StreamEncryptorTriple` /
 `StreamDecryptorTriple`) and the free-function bridges
 (`itb::encrypt_stream` / `itb::decrypt_stream` plus Triple variants)
-wrap the one-shot encrypt / decrypt API behind a chunked I/O surface.
+wrap the Single Message Encrypt / Decrypt API behind a chunked I/O surface.
 ITB ciphertexts cap at ~64 MB plaintext per chunk; the binding slices
 larger inputs, encrypts each chunk through the regular FFI path, and
 concatenates the results. Memory peak is bounded by `chunk_size`

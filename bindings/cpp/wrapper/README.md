@@ -19,7 +19,7 @@ The C++ binding exposes the wrap surface in `include/itb/wrapper.hpp` under `nam
 
 | Helper | Wire format | Use case |
 |---|---|---|
-| `wrap` / `unwrap` | `nonce` + keystream-XOR(blob) | one-shot Encrypt / EncryptAuth output (separately allocated wire buffer) |
+| `wrap` / `unwrap` | `nonce` + keystream-XOR(blob) | Single Message Encrypt / EncryptAuth output (separately allocated wire buffer) |
 | `wrap_in_place` / `unwrap_in_place` | `nonce` separate, body XORed in place | zero-allocation steady state on the hot path; mutates the caller's blob / wire |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — AEAD IO-Driven, or User-Driven Loop where caller-side framing (e.g. per-chunk `u32_LE` length prefixes) is written through the wrap-writer so the framing bytes also pass through the keystream XOR |
 
@@ -173,7 +173,7 @@ ITB Call: `itb::encrypt_auth` / `itb::decrypt_auth` with the MAC closure constru
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for one-shot, 64 KiB for streaming) with sha256 byte-equality. Sample run:
+Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
 
 ```
 [PASS] aead-easy-io               + aes        pt=65536 wire=90016

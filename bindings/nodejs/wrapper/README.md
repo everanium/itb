@@ -21,8 +21,8 @@ The Node.js module exposes Single Message helpers (immutable + in-place mutation
 
 | Helper | Wire format | Use case |
 |---|---|---|
-| `wrap` / `unwrap` | `nonce \|\| keystream-XOR(blob)` | one-shot Encrypt / EncryptAuth output, immutable plaintext path. |
-| `wrapInPlace` / `unwrapInPlace` | same as `wrap` / `unwrap` | one-shot, zero-allocation steady state. Mutates the caller's `Buffer`. |
+| `wrap` / `unwrap` | `nonce \|\| keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output, immutable plaintext path. |
+| `wrapInPlace` / `unwrapInPlace` | same as `wrap` / `unwrap` | Single Message, zero-allocation steady state. Mutates the caller's `Buffer`. |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — Streaming AEAD wraps the entire bytestream end-to-end; User-Driven Loop emits per-chunk caller-side framing (`u32_LE` length prefix) through the wrap-writer so the framing bytes also pass through the keystream XOR. |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
@@ -33,7 +33,7 @@ The streaming classes implement `Disposable` — using a `using` declaration rel
 
 ### Binding asymmetry
 
-The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free functions `encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent stream adapter pair on top of the wrap surface for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the Node.js wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See the project guidelines.
+The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free functions `encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent stream adapter pair on top of the wrap surface for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the Node.js wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
 
 ## Outer ciphers
 
@@ -282,7 +282,7 @@ const pt = decryptAuth(s0, s1, s2, mac, recovered);
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for one-shot, 64 KiB for streaming) with sha256 byte-equality. Sample run:
+Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
 
 ```
 [PASS] aead-easy-io               + aes        pt=65536 wire=90208

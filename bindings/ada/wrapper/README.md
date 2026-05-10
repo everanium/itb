@@ -19,7 +19,7 @@ The `Itb.Wrapper` package exposes one `Cipher_Type` enumeration plus three usage
 
 | Helper | Wire format | Use case |
 |---|---|---|
-| `Wrap` / `Unwrap` | `nonce` + keystream-XOR(blob) | one-shot Encrypt / Encrypt_Auth output, immutable inputs |
+| `Wrap` / `Unwrap` | `nonce` + keystream-XOR(blob) | Single Message Encrypt / Encrypt_Auth output, immutable inputs |
 | `Wrap_In_Place` / `Unwrap_In_Place` | `nonce` + keystream-XOR(blob) | zero-allocation steady state on the hot path; mutates the caller's buffer |
 | `Wrap_Stream_Writer` / `Unwrap_Stream_Reader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — IO-Driven Streaming AEAD or User-Driven Loop where caller-side framing (`u32_LE` length prefix + body) is written through the wrap-writer so the framing bytes also pass through the keystream XOR |
 
@@ -141,7 +141,7 @@ Same wrap shape as example 5; the difference is that the seed material is held i
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for one-shot, 64 KiB for streaming) with byte-equality plus a short fingerprint cross-check.
+Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with byte-equality plus a short fingerprint cross-check.
 
 ```
 [PASS] aead-easy-io               + aes        pt=65536 wire=90208
