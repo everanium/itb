@@ -28,7 +28,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
-**Zero external dependencies** beyond ABI contracts with standard PRF primitives (BLAKE2/3, ChaCha20, AES-CMAC, SipHash-2-4, Areion-SoEM); the chain-absorb hot path is hand-written ZMM AVX-512 ASM.
+**Hash direct external dependencies** beyond ABI contracts and fallbacks with standard PRF primitives (BLAKE2/3, ChaCha20, AES-CMAC, SipHash-2-4, Areion-SoEM); the chain-absorb hot path is hand-written ZMM AVX-512 ASM.
 
 ## Status
 
@@ -102,8 +102,8 @@ ITB ships with two pixel-processing backends selected automatically at compile t
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | `-buildmode=c-shared` | C with SIMD auto-vectorization | C compiler (GCC/Clang) + AVX-512 |
-| **No ITB ASM** (CGO) | `-buildmode=c-shared -tags=noitbasm` | C with SIMD auto-vectorization, ITB chain-absorb / Lock Soup / Areion permutation ASM disabled — upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
+| **CGO (default)** | <code>-buildmode=c-shared</code> | C with SIMD auto-vectorization | C compiler (GCC/Clang) + AVX-512 |
+| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization, ITB chain-absorb / Lock Soup / Areion permutation ASM disabled — upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
 
 On AVX-512 hosts, hand-written ZMM-batched chain-absorb ASM kernels accelerate the per-pixel hash hot path **2×-7×** over the per-call `-tags=noitbasm` fallback across all nine PRF-grade primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20) — see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md) for measured numbers on Intel Rocket Lake and AMD EPYC 9655P (Zen 5). CGO mode (default) layers a C per-pixel kernel on top of the hash dispatch; building with `CGO_ENABLED=0` swaps that for a portable Go pixel pipeline while the Go-assembly ZMM chain-absorb hash kernels stay engaged when AVX-512 is present. Per-pixel kernel uses three runtime-dispatched tiers:
 
