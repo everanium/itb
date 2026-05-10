@@ -663,7 +663,7 @@ writefln("decrypted: %s", assumeUTF(decrypted));
 
 `StreamEncryptor` / `StreamDecryptor` (and the seven-seed
 counterparts `StreamEncryptor3` / `StreamDecryptor3`) wrap the
-one-shot encrypt / decrypt API behind a chunked I/O surface. ITB
+Single Message Encrypt / Decrypt API behind a chunked I/O surface. ITB
 ciphertexts cap at ~64 MB plaintext per chunk; streaming larger
 payloads slices the input into chunks at the binding layer,
 encrypts each chunk through the regular FFI path, and concatenates

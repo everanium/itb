@@ -19,7 +19,7 @@ The C binding exposes the wrap surface in `include/itb.h` under the **Format-den
 
 | Helper | Wire format | Use case |
 |---|---|---|
-| `itb_wrap` / `itb_unwrap` | `nonce` + keystream-XOR(blob) | one-shot Encrypt / EncryptAuth output (separately allocated wire buffer) |
+| `itb_wrap` / `itb_unwrap` | `nonce` + keystream-XOR(blob) | Single Message Encrypt / EncryptAuth output (separately allocated wire buffer) |
 | `itb_wrap_in_place` / `itb_unwrap_in_place` | `nonce` separate, body XORed in place | zero-allocation steady state on the hot path; mutates the caller's blob / wire |
 | `itb_wrap_stream_writer_*` / `itb_unwrap_stream_reader_*` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — AEAD IO-Driven, or User-Driven Loop where caller-side framing (e.g. per-chunk `u32_LE` length prefixes) is written through the wrap-writer so the framing bytes also pass through the keystream XOR |
 
@@ -167,7 +167,7 @@ ITB Call: `itb_encrypt_auth` / `itb_decrypt_auth` with the MAC closure construct
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for one-shot, 64 KiB for streaming) with sha256 byte-equality. Sample run:
+Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
 
 ```
 [PASS] aead-easy-io               + aes        pt=65536 wire=90016

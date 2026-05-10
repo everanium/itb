@@ -21,8 +21,8 @@ The C# surface exposes Single Message helpers (immutable + in-place mutation) an
 
 | Helper | Wire format | Use case |
 |---|---|---|
-| `Wrapper.Wrap` / `Wrapper.Unwrap` | `nonce \|\| keystream-XOR(blob)` | one-shot Encrypt / EncryptAuth output, immutable plaintext path. |
-| `Wrapper.WrapInPlace` / `Wrapper.UnwrapInPlace` | same as `Wrap` / `Unwrap` | one-shot, zero-allocation steady state. Mutates the caller's `Span<byte>`. |
+| `Wrapper.Wrap` / `Wrapper.Unwrap` | `nonce \|\| keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output, immutable plaintext path. |
+| `Wrapper.WrapInPlace` / `Wrapper.UnwrapInPlace` | same as `Wrap` / `Unwrap` | Single Message, zero-allocation steady state. Mutates the caller's `Span<byte>`. |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — Streaming AEAD wraps the entire bytestream end-to-end; User-Driven Loop emits per-chunk caller-side framing (`u32_LE` length prefix) through the wrap-writer so the framing bytes also pass through the keystream XOR. |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
@@ -269,7 +269,7 @@ var pt = Itb.Cipher.DecryptAuth(seeds[0], seeds[1], seeds[2], mac, recoveredSpan
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for one-shot, 64 KiB for streaming) with sha256 byte-equality. Sample run:
+Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
 
 ```
 [PASS] aead-easy-io               + aes        pt=65536 wire=90208

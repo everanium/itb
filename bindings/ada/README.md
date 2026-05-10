@@ -729,7 +729,7 @@ Ds, Ss, M, Encrypted)`.
 
 `Itb.Streams.Stream_Encryptor` / `Stream_Decryptor` (and the
 seven-seed counterparts `Stream_Encryptor_Triple` /
-`Stream_Decryptor_Triple`) wrap the one-shot encrypt / decrypt API
+`Stream_Decryptor_Triple`) wrap the Single Message Encrypt / Decrypt API
 behind a `Write_Plaintext` / `Read_Plaintext`-driven chunked I/O
 surface. ITB ciphertexts cap at ~64 MB plaintext per chunk;
 streaming larger payloads slices the input into chunks at the
