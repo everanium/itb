@@ -31,7 +31,7 @@
 // of the wrap surface for Non-AEAD streaming. The Non-AEAD streaming
 // arm therefore covers the User-Driven Loop variant only (per-chunk
 // encrypt + caller-side u32_LE framing pushed through one wrap-stream
-// session). See the project guidelines.
+// session). See CLAUDE.md.
 //
 // Run with:
 //
@@ -459,7 +459,7 @@ function buildStreamModesSingle(): StreamMode[] {
       }
     };
     modes.push({
-      tag: 'stream_single_aead_easy',
+      tag: 'stream_single_aead_easy_io',
       buildWire: wireOf,
       runEncrypt: async (cipher, payload) => {
         await wireOf(cipher, payload);
@@ -508,7 +508,7 @@ function buildStreamModesSingle(): StreamMode[] {
       }
     };
     modes.push({
-      tag: 'stream_single_aead_lowlevel',
+      tag: 'stream_single_aead_lowlevel_io',
       buildWire: wireOf,
       runEncrypt: async (cipher, payload) => {
         await wireOf(cipher, payload);
@@ -666,7 +666,7 @@ function buildStreamModesTriple(): StreamMode[] {
       }
     };
     modes.push({
-      tag: 'stream_triple_aead_easy',
+      tag: 'stream_triple_aead_easy_io',
       buildWire: wireOf,
       runEncrypt: async (cipher, payload) => {
         await wireOf(cipher, payload);
@@ -717,7 +717,7 @@ function buildStreamModesTriple(): StreamMode[] {
       }
     };
     modes.push({
-      tag: 'stream_triple_aead_lowlevel',
+      tag: 'stream_triple_aead_lowlevel_io',
       buildWire: wireOf,
       runEncrypt: async (cipher, payload) => {
         await wireOf(cipher, payload);
