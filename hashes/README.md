@@ -41,6 +41,100 @@ The order is FFI-stable; index 0..8 is exposed through
 `ITB_HashName(idx)` in the shared library and re-ordering would
 break the ABI.
 
+## Custom user-primitive builders
+
+Beyond the shipped primitives, the package exposes three builder families that wrap a user-supplied PRF into an `itb.HashFunc{128|256|512}` closure **with correct ITB nonce width preservation by construction**. These are for "I want to plug in SHA-256 / Ascon-PRF / Camellia-CMAC / My Own Custom hash primitive as the ITB PRF" use cases.
+
+| Builder | Wraps | Use when |
+|---|---|---|
+| `BuildCBCMACChainAbsorb{128,256,512}` | `crypto/cipher.Block` (caller-keyed) | You have a block cipher (AES, Camellia, ARIA, SM4, ...) and want CBC-MAC chain-absorb |
+| `BuildSpongeChainAbsorb{128,256,512}` | `Permute` + `(rate, capacity, fixedKey)` | You have an unkeyed permutation (Keccak-f, Ascon-PRF, ...) and want a keyed sponge |
+| `BuildARXChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | You have a full hash function (SHA-256, SM3, SHA-512, ...) and want safe absorption |
+
+**Why these matter for ITB security.** ITB supports nonce widths of 128, 256 or 512 bits via `SetNonceBits`. The per-call buffer presented to a `HashFunc` closure carries a domain-tag byte plus the configured nonce material — 20, 36, or 68 bytes for the three nonce widths respectively. Every byte of the `data` parameter must reach the digest for ITB's advertised nonce strength to hold.
+
+A naive user-written wrapper can silently truncate the ITB nonce in several ways:
+
+- **`crypto/sha256.Sum256(data)` wrapped naively into `HashFunc512`** — SHA-256 output is 32 bytes; the upper 32 bytes of any returned `[8]uint64` get zero-padded by naive repacking. ChainHash's per-call XOR-chain consumes the full 64-byte intermediate state, so a constant upper half across calls destroys half the entropy.
+- **`aes.NewCipher(key).Encrypt(iv, plaintext)` with ITB nonce as `iv`** — AES IV is 16 bytes regardless of how long the ITB nonce is. `SetNonceBits(512)` → effective 128-bit nonce. The advertised property is broken silently.
+- **`chacha20.NewUnauthenticatedCipher(key, nonce)` with ITB nonce as `nonce`** — ChaCha20 nonce slot is 12 bytes. Same trap.
+
+The builders sidestep all three traps by construction: the user supplies the primitive in its natural form, the builder absorbs the full `data` parameter through the appropriate chain pattern, the resulting closure preserves the full ITB nonce width by construction. No caller-side knowledge of the chain-absorb pattern is required.
+
+### When the builder is required vs optional
+
+The builders close the silent-truncation trap **constructively**, but they are not always strictly required. A user primitive is safely pluggable as a hand-written closure **without** a builder when **both** of these hold:
+
+1. The primitive has **native variable-length absorb** (Merkle-Damgard tree like BLAKE3, MD chaining like SHA-256/512, sponge with internal absorb loop like Keccak/Ascon — i.e. the primitive's own API accepts arbitrary input length and processes every byte).
+2. The primitive's **native output width is at least the required HashFunc width** (32 bytes for `HashFunc256`, 64 bytes for `HashFunc512`).
+
+The existing custom-factory pattern in the main repo [README — "Custom factory pattern (advanced)"](../README.md#custom-factory-pattern-advanced) is the canonical reference for this case: BLAKE3 via `blake3.NewKeyed` + `h.Write(mixed)` satisfies both conditions, so all four seed components are XOR'd into a zero-padded data buffer that BLAKE3 absorbs natively. No chain-absorb needed. The same pattern transfers to BLAKE2b/2s, SHA-256 (for HashFunc256), SHA-512 (for HashFunc512), KangarooTwelve, etc.
+
+A user primitive **requires** a builder when **at least one** of these holds:
+
+1. **Output-width upscaling**: primitive native output is narrower than the required HashFunc width. SHA-256 (32 bytes) → `HashFunc512` (64 bytes) is the classic trap — naive zero-padding of the upper half destroys half the intermediate-state entropy. The builder calls the underlying hash twice with domain separation to fill the full output width safely.
+2. **No native variable-length absorb**: primitive only handles fixed-width input in isolation. Raw `cipher.Block` (16-byte block), raw permutation function (320-bit Ascon-p state), block cipher used as a primitive rather than via a higher-level AEAD wrapper. The CBC-MAC or sponge builder constructs the chain externally so all input bytes reach the digest.
+3. **Defence against caller-side mistakes**: even when (1) and (2) of the "safe handwritten" conditions hold, a builder removes the opportunity to forget seed-component XOR or output-width matching. Useful for casual users / quick experiments / audit-friendly code.
+
+| Scenario | Builder required? | Why |
+|---|---|---|
+| BLAKE3 → `HashFunc256` (handwritten via `Write`) | No | Native variable-length absorb + native output 32 B matches |
+| BLAKE2b → `HashFunc{256,512}` (handwritten via `Sum`) | No | Same — native variable-length absorb, output width matches |
+| SHA-256 → `HashFunc256` | No (but builder simplifies) | Native MD absorb + 32 B output matches; builder still removes seed-injection responsibility |
+| SHA-256 → `HashFunc512` | **Yes** | Output-width upscaling — without builder, upper 32 B silently zero-padded |
+| SHA-512 → `HashFunc512` | No (but builder simplifies) | Native MD absorb + 64 B output matches |
+| AES block cipher → `HashFunc{128,256,512}` | **Yes** | Raw block cipher has no native variable-length absorb |
+| Ascon-p / Keccak-f (raw permutation) → `HashFunc{128,256,512}` | **Yes** | Raw permutation has no native variable-length absorb; sponge wrapper needed externally |
+| Camellia / SM4 / ARIA block cipher | **Yes** | Same as AES — raw block cipher needs CBC-MAC chain |
+
+### Example — SHA-256 via the ARX builder
+
+```go
+import (
+    "crypto/rand"
+    "crypto/sha256"
+
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+func main() {
+    // Long-lived fixed key (persist alongside ITB seeds for cross-process restore).
+    var fixedKey [32]byte
+    if _, err := rand.Read(fixedKey[:]); err != nil {
+        panic(err)
+    }
+
+    // SHA-256 wrapped safely. The builder folds {fixedKey, seed,
+    // length, domain} into the absorb buffer so the full ITB nonce
+    // (up to 64 bytes for SetNonceBits(512)) reaches the digest.
+    sha256Hash := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
+
+    // Use exactly like a built-in primitive — three independent seed
+    // instances (one per ITB role: noise / data / start).
+    itb.SetNonceBits(512)
+    itb.SetBarrierFill(4)
+
+    noiseSeed, _ := itb.NewSeed256(1024, sha256Hash)
+    dataSeed,  _ := itb.NewSeed256(1024, sha256Hash)
+    startSeed, _ := itb.NewSeed256(1024, sha256Hash)
+
+    plaintext := []byte("hello SHA-256 via ITB builder")
+    ct, _ := itb.Encrypt256(noiseSeed, dataSeed, startSeed, plaintext)
+    pt, _ := itb.Decrypt256(noiseSeed, dataSeed, startSeed, ct)
+
+    _ = pt // round-trip; bit-exact recovery of plaintext.
+}
+```
+
+The same pattern works for any 32-byte hash. `SM3` swap-in: substitute `sha256.Sum256` with `func(d []byte) [32]byte { return sm3.Sum(d) }` (using any SM3 implementation that exposes a one-shot 32-byte digest). For 64-byte digests like SHA-512, use `BuildARXChainAbsorb512(sha512.Sum512, fixedKey[:])`.
+
+### Performance note for builders
+
+Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]byte` state buffers, costing 5-15% throughput vs the inline per-primitive closures shipped here (`aescmac.go`, `chacha20.go`, ...). The built-in closures use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined permutation calls, and `unsafe.Pointer` escape-analysis tricks. The builders are intentionally simpler — they target correctness-by-construction for user primitives, not peak throughput. If you need both correctness *and* peak throughput for a specific primitive, write a dedicated closure following the `hashes/*.go` patterns.
+
+`BatchHash` (4-pixel batched ZMM-asm) is **not** provided by these builders — the batched arm is inherently primitive-specific (VAES for AES, multi-buffer SHA-NI for SHA-256, etc.) and cannot be templated. Seeds constructed from builder closures leave `BatchHash = nil`, which makes ITB fall back silently to the per-pixel scalar loop (`process_generic.go`). Correctness is preserved; throughput on AVX-512 hosts is left on the table.
+
 ## Usage
 
 Native Go API — generate fresh random keys, persist the encryptor
