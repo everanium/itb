@@ -43,7 +43,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 ## Bindings
 
-### Tier 1 - Native & Thin (14 bindings)
+### Tier 1 - Native & Thin
 
 | Binding | Backend | Status | Features | Tests | Release | Packages | Docs |
 |---|---|---|---|---|---|---|---|
@@ -62,7 +62,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Swift   | C      | None   | In development  | 0/0           | TBD         | TBD | TBD |
 | Zig     | C      | None   | In development  | 0/0           | TBD         | TBD | TBD |
 
-### Tier 2 - Relay (19 bindings)
+### Tier 2 - Relay
 
 | Binding    | Relay | Status | Features | Tests | Release | Packages | Docs |
 |---|---|---|---|---|---|---|---|
