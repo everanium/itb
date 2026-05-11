@@ -174,7 +174,7 @@ static int mread_read(void *ctx, void *buf, size_t cap, size_t *out_n) {
 itb_encryptor_t *enc = NULL;
 itb_encryptor_new("areion512", 1024, "hmac-blake3", 1, &enc);
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL; size_t outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
                          &outerKey, &outerKey_len);
@@ -276,7 +276,7 @@ itb_seed_new("areion512", 1024, &data);
 itb_seed_new("areion512", 1024, &start);
 itb_mac_new ("hmac-blake3", mac_key, sizeof mac_key, &mac);
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL; size_t outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
                          &outerKey, &outerKey_len);
@@ -418,7 +418,7 @@ itb_encryptor_encrypt_auth(enc, plaintext, plaintext_len,
                            &encrypted, &encrypted_len);
 printf("encrypted: %zu bytes\n", encrypted_len);
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL;
 size_t   outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
@@ -619,7 +619,7 @@ size_t   encrypted_len = 0;
 itb_encryptor_encrypt_auth(enc, plaintext, strlen(plaintext),
                            &encrypted, &encrypted_len);
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL;
 size_t   outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
@@ -701,7 +701,7 @@ size_t   encrypted_len = 0;
 itb_encryptor_encrypt_auth(enc, plaintext, strlen(plaintext),
                            &encrypted, &encrypted_len);
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL;
 size_t   outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
@@ -814,7 +814,7 @@ itb_encrypt_auth(ns, ds, ss, mac, plaintext, strlen(plaintext),
                  &encrypted, &encrypted_len);
 printf("encrypted: %zu bytes\n", encrypted_len);
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL;
 size_t   outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
@@ -1013,7 +1013,7 @@ itb_stream_encrypt(n, d, s, /* mac */ NULL,
                    write_cb, &ectx,
                    ITB_DEFAULT_CHUNK_SIZE);   /* chunk_size — must be > 0 */
 
-/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call. */
+/* Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived. */
 uint8_t *outerKey = NULL; size_t outerKey_len = 0;
 itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR,
                          &outerKey, &outerKey_len);

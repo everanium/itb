@@ -168,7 +168,7 @@ with Itb.Wrapper;
 declare
    Enc        : Itb.Encryptor.Encryptor :=
      Itb.Encryptor.Make ("areion512", 1024, "hmac-blake3", 1);
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key  : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
    N_Len      : constant Stream_Element_Offset :=
@@ -293,7 +293,7 @@ declare
    Start : constant Itb.Seed.Seed := Itb.Seed.Make ("areion512", 1024);
    Mac   : constant Itb.MAC.MAC :=
      Itb.MAC.Make ("hmac-blake3", Random_MAC_Key);
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
    N_Len     : constant Stream_Element_Offset :=
@@ -429,7 +429,7 @@ procedure Sender is
    Plaintext : constant Itb.Byte_Array :=
      To_Bytes ("any text or binary data - including 0x00 bytes");
 
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
 
@@ -626,7 +626,7 @@ with Itb.Wrapper;
 
 procedure Mixed_Sender is
    Plaintext : constant Itb.Byte_Array := ...;   --  payload bytes
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
 begin
@@ -729,7 +729,7 @@ procedure Triple_Demo is
         Mac_Name  => "hmac-blake3",
         Mode      => 3);
 
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
 
@@ -801,7 +801,7 @@ procedure Lowlevel_Sender is
    Mac_Key   : constant Itb.Byte_Array (1 .. 32) := [others => 0];
    --  Real code should pull Mac_Key from a CSPRNG; the zero key here
    --  is for example purposes only.
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
 begin
@@ -971,7 +971,7 @@ procedure Stream_Demo is
    D : constant Itb.Seed.Seed := Itb.Seed.Make ("blake3", 1024);
    S : constant Itb.Seed.Seed := Itb.Seed.Make ("blake3", 1024);
 
-   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+   --  Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
    Outer_Key : constant Itb.Byte_Array :=
      Itb.Wrapper.Generate_Key (Itb.Wrapper.Aes_128_Ctr);
    N_Len : constant Stream_Element_Offset :=

@@ -149,7 +149,7 @@ auto make_writer = [](std::ofstream& out) {
 
 itb::Encryptor enc{"areion512", 1024, "hmac-blake3", 1};
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 // Sender — collect the inner ITB stream in memory, then wrap the
@@ -257,7 +257,7 @@ itb::Seed start{"areion512", 1024};
 auto mac_key = csprng_mac_key();           // 32 bytes from /dev/urandom
 itb::Mac mac{"hmac-blake3", mac_key};
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 {
@@ -364,7 +364,7 @@ std::string plaintext = "any text or binary data - including 0x00 bytes";
 std::vector<std::uint8_t> encrypted = enc.encrypt_auth(plaintext);
 std::cout << "encrypted: " << encrypted.size() << " bytes\n";
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 // Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
@@ -504,7 +504,7 @@ auto blob = enc.export_state();
 std::string plaintext = "mixed-primitive Easy Mode payload";
 auto encrypted = enc.encrypt_auth(plaintext);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 // Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
@@ -565,7 +565,7 @@ std::string plaintext = "Triple Ouroboros payload";
 
 auto encrypted = enc.encrypt_auth(plaintext);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 // Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
@@ -643,7 +643,7 @@ std::string plaintext = "any text or binary data - including 0x00 bytes";
 auto encrypted = itb::encrypt_auth(ns, ds, ss, mac, plaintext);
 std::cout << "encrypted: " << encrypted.size() << " bytes\n";
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 // Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
@@ -751,7 +751,7 @@ itb::Seed n{"blake3", 1024};
 itb::Seed d{"blake3", 1024};
 itb::Seed s{"blake3", 1024};
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = itb::wrapper::generate_key(itb::wrapper::Cipher::Aes128Ctr);
 
 // Push-pattern: sink receives each ITB chunk. close() flushes the

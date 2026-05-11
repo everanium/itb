@@ -141,7 +141,7 @@ if (!File.Exists(SRC_PATH) || new FileInfo(SRC_PATH).Length != 64L * 1024 * 1024
     File.WriteAllBytes(SRC_PATH, buf);
 }
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 var outerKey = Wrapper.GenerateKey(OuterCipher.Aes128Ctr);
 
 using var enc = new Encryptor("areion512", 1024, "hmac-blake3", "single");
@@ -277,7 +277,7 @@ using var start = new Seed("areion512", 1024);
 var macKey = RandomNumberGenerator.GetBytes(32);
 using var mac = new Mac("hmac-blake3", macKey);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 var outerKey = Wrapper.GenerateKey(OuterCipher.Aes128Ctr);
 
 // Sender — encrypt to an intermediate file, then wrap end-to-end.
@@ -389,7 +389,7 @@ using Itb;
 using Itb.Wrapper;
 using OuterCipher = Itb.Wrapper.Cipher;
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 var outerKey = Wrapper.GenerateKey(OuterCipher.Aes128Ctr);
 
 // Per-instance configuration — mutates only this encryptor's
@@ -525,7 +525,7 @@ using Itb;
 using Itb.Wrapper;
 using OuterCipher = Itb.Wrapper.Cipher;
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 var outerKey = Wrapper.GenerateKey(OuterCipher.Aes128Ctr);
 
 // Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
@@ -615,7 +615,7 @@ using Itb;
 using Itb.Wrapper;
 using OuterCipher = Itb.Wrapper.Cipher;
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 var outerKey = Wrapper.GenerateKey(OuterCipher.Aes128Ctr);
 
 // mode: "triple" selects Triple Ouroboros. All other constructor
@@ -704,7 +704,7 @@ ns.AttachLockSeed(ls);
 var macKey = new byte[32];
 using var mac = new Mac("hmac-blake3", macKey);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 var outerKey = Wrapper.GenerateKey(OuterCipher.Aes128Ctr);
 
 var plaintext = "any text or binary data - including 0x00 bytes"u8.ToArray();

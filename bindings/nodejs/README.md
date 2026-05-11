@@ -155,7 +155,7 @@ if (!existsSync(SRC_PATH) || statSync(SRC_PATH).size !== 64 * 1024 * 1024) {
   writeFileSync(SRC_PATH, randomBytes(64 * 1024 * 1024));
 }
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 const enc = new Encryptor('areion512', 1024, 'hmac-blake3', 1);
@@ -297,7 +297,7 @@ async function sha256Of(path) {
   return h.digest('hex');
 }
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 const noise = new Seed('areion512', 1024);
@@ -442,7 +442,7 @@ import {
 // mode: 3 = Triple Ouroboros (7 seeds).
 using enc = new Encryptor('areion512', 2048, 'hmac-blake3', 1);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 enc.setNonceBits(512);    // 512-bit nonce (default: 128-bit)
@@ -581,7 +581,7 @@ using enc = Encryptor.mixedSingle(
   'hmac-blake3',    // macName
 );
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 // Per-instance configuration applies as for the new Encryptor(...)
@@ -661,7 +661,7 @@ import {
 // shown above.
 using enc = new Encryptor('areion512', 2048, 'hmac-blake3', 3);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 const plaintext = new TextEncoder().encode('Triple Ouroboros payload');
@@ -722,7 +722,7 @@ using data = new Seed('areion512', 2048);
 using start = new Seed('areion512', 2048);
 using mac = new MAC('hmac-blake3', randomBytes(32));
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 const plaintext = new TextEncoder().encode('low-level authenticated payload');
@@ -774,7 +774,7 @@ import {
   wrapperNonceSize,
 } from 'itb';
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 const outerKey = wrapperGenerateKey(Cipher.Aes128Ctr);
 
 // Encrypt: read plaintext from disk, drive the ITB chunked
