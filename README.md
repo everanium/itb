@@ -41,19 +41,50 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Go Native | Frozen | Fully completed | All passing | 13 May 2026 | TBD |
 | C ABI (`cmd/cshared`) | Frozen | Fully completed | All passing | 13 May 2026 | TBD |
 
-### Bindings
+## Bindings
 
-| Binding | Status | Features | Tests | Release | Packages | README |
-|---|---|---|---|---|---|---|
-| C       | Frozen | Fully completed | 33/33 PASS | 13 May 2026 | TBD | [README.md](bindings/c/README.md) |
-| C++     | Frozen | Fully completed | 44/44 PASS | 13 May 2026 | TBD | [README.md](bindings/cpp/README.md) |
-| Fortran | Frozen | Fully completed | 33/33 PASS | 13 May 2026 | TBD | [README.md](bindings/fortran/README.md) |
-| Ada     | Frozen | Fully completed | 33/33 PASS | 13 May 2026 | TBD | [README.md](bindings/ada/README.md) |
-| D       | Frozen | Fully completed | 33/33 PASS | 13 May 2026 | TBD | [README.md](bindings/dlang/README.md) |
-| Rust    | Frozen | Fully completed | 25/25 PASS | 13 May 2026 | TBD | [README.md](bindings/rust/README.md) |
-| C#      | Frozen | Fully completed | 368/368 PASS | 13 May 2026 | TBD | [README.md](bindings/csharp/README.md) |
-| Python  | Frozen | Fully completed | 285/285 PASS | 13 May 2026 | TBD | [README.md](bindings/python/README.md) |
-| Node.js | Frozen | Fully completed | 288/288 PASS | 13 May 2026 | TBD | [README.md](bindings/nodejs/README.md) |
+### Tier 1 - Native & Thin (14 bindings)
+
+| Binding | Backend | Status | Features | Tests | Release | Packages | Docs |
+|---|---|---|---|---|---|---|---|
+| C       | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/c/README.md)       |
+| C++     | C      | Frozen | Fully completed | 44/44 PASS    | 13 May 2026 | TBD | [README.md](bindings/cpp/README.md)     |
+| Fortran | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/fortran/README.md) |
+| Ada     | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/ada/README.md)     |
+| D       | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/dlang/README.md)   |
+| Rust    | Direct | Frozen | Fully completed | 25/25 PASS    | 13 May 2026 | TBD | [README.md](bindings/rust/README.md)    |
+| C#      | Direct | Frozen | Fully completed | 368/368 PASS  | 13 May 2026 | TBD | [README.md](bindings/csharp/README.md)  |
+| Python  | Direct | Frozen | Fully completed | 285/285 PASS  | 13 May 2026 | TBD | [README.md](bindings/python/README.md)  |
+| Node.js | Direct | Frozen | Fully completed | 288/288 PASS  | 13 May 2026 | TBD | [README.md](bindings/nodejs/README.md)  |
+| Java    | Direct | None   | In development  | 0/0           | TBD         | TBD | TBD |
+| Scala   | Java   | None   | In development  | 0/0           | TBD         | TBD | TBD |
+| Kotlin  | Java   | None   | In development  | 0/0           | TBD         | TBD | TBD |
+| Swift   | C      | None   | In development  | 0/0           | TBD         | TBD | TBD |
+| Zig     | C      | None   | In development  | 0/0           | TBD         | TBD | TBD |
+
+### Tier 2 - Relay (19 bindings)
+
+| Binding    | Relay | Status | Features | Tests | Release | Packages | Docs |
+|---|---|---|---|---|---|---|---|
+| Erlang     | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Elixir     | BEAM | None | In development | 0/0 | TBD | TBD | TBD |
+| Gleam      | BEAM | None | In development | 0/0 | TBD | TBD | TBD |
+| LFE        | BEAM | None | In development | 0/0 | TBD | TBD | TBD |
+| Groovy     | Java | None | In development | 0/0 | TBD | TBD | TBD |
+| Clojure    | Java | None | In development | 0/0 | TBD | TBD | TBD |
+| F#         | C#   | None | In development | 0/0 | TBD | TBD | TBD |
+| VB.NET     | C#   | None | In development | 0/0 | TBD | TBD | TBD |
+| PowerShell | C#   | None | In development | 0/0 | TBD | TBD | TBD |
+| Crystal    | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Dart       | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Haskell    | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Julia      | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Lua        | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Nim        | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| OCaml      | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| PHP        | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| R          | C    | None | In development | 0/0 | TBD | TBD | TBD |
+| Ruby       | C    | None | In development | 0/0 | TBD | TBD | TBD |
 
 **Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86_64 (Intel / AMD) and AArch64 (Graviton 4).
 
