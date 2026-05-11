@@ -203,6 +203,37 @@ This is the only registry primitive whose construction is verbatim its upstream 
 
 **No CCA / AEAD claims.** None of the constructions in this registry claim AEAD security, ciphertext integrity, or any property beyond PRF security on the digest output. ITB's authenticated-encryption surface is built **on top** of these primitives via separate KMAC-Inside-Encrypt machinery (see `EncryptAuth*` and the in-design streaming counterpart), not from these PRFs directly.
 
+## Nonce-width preservation across all primitives
+
+ITB advertises configurable nonce widths of 128 / 256 / 512 bits, exposed via `SetNonceBits`. The per-call buffer presented to each hash closure carries a domain-tag byte plus the configured nonce material — 20 / 36 / 68 byte shapes for the three nonce widths respectively. Every primitive in the registry must absorb that full buffer into the digest with **no silent truncation hidden inside the primitive composition**.
+
+**The trap to avoid.** Most modern primitives carry a fixed-width "nonce" or "IV" slot — AES-CMAC standard usage takes a 16-byte IV, ChaCha20-RFC7539 takes a 12-byte nonce. A naive composition that routes the ITB nonce into such a slot would silently truncate a 512-bit advertised property into 96 or 128 effective bits, with passing KAT tests, passing uniformity tests, and a still-valid (but reduced) PRF claim. The downgrade would be undetectable from outside the wrapper.
+
+Every closure in this registry sidesteps that trap. The table below names the specific mechanism per primitive:
+
+| # | Closure | File | Mechanism |
+|---|---------|------|-----------|
+| 1 | `areion256` | `areion256.go` → `areion.go` | CBC-MAC chain, 24-byte chunks via SoEM-256 keyed permutation; 64-byte nonce = 3 rounds |
+| 2 | `areion512` | `areion512.go` → `areion.go` | CBC-MAC chain, 56-byte chunks via SoEM-512 keyed permutation; 64-byte nonce = 2 rounds |
+| 3 | `blake2b256` | `blake2b256.go` | Prepend-key buffer `fixedKey(32) ‖ data ‖ zero-pad`; full nonce in data region, one `Sum256` |
+| 4 | `blake2b512` | `blake2b512.go` | Same shape scaled — 64-byte fixed-key prefix; seed XOR overlays full 64-byte nonce region |
+| 5 | `blake2s` | `blake2s.go` | Prepend-key buffer scaled to 32-byte widths, identical shape to `blake2b256` |
+| 6 | `blake3` | `blake3.go` | Native RFC keyed mode (`blake3.NewKeyed`) + `h.Write(mixed)` streams full 64-byte buffer |
+| 7 | `aescmac` | `aescmac.go` | CBC-MAC chain, 16-byte AES blocks; 65-byte input (1 domain tag + 64 nonce) = 5 AES rounds |
+| 8 | `siphash24` | `siphash24.go` | Native variable-length SipHash absorb, 8-byte SipRound blocks; 64-byte nonce = 8 rounds |
+| 9 | `chacha20` | `chacha20.go` | Native 12-byte nonce zeroed; freshness from `key = fixedKey ⊕ seed`; CBC-MAC-style chain over 24-byte data chunks |
+
+**Four architectural patterns** account for the table:
+
+1. **CBC-MAC chain over a keyed permutation** — `areion256`, `areion512`, `aescmac`, `chacha20`. The ITB nonce never lands in the primitive's native nonce or IV slot; it enters through the `data` parameter and absorbs iteratively. `chacha20` zeros ChaCha20's native 12-byte nonce explicitly (`var nonce [12]byte` in `chacha20.go`); freshness comes from the per-call `key = fixedKey ⊕ seed` derivation, not from the disabled nonce slot.
+2. **Prepend-key concatenation buffer** — `blake2b256`, `blake2b512`, `blake2s`. The closure builds `buf = fixedKey ‖ data ‖ zero-pad`, XORs the seed into the data prefix, and submits the whole buffer to BLAKE2's one-shot `Sum256` / `Sum512` path. For a 512-bit nonce: the full 64-byte nonce lives in the buffer's data region (seed XOR overlays the leading 32 bytes for `blake2b256` / `blake2s`; the trailing 32 bytes pass through verbatim into the compression). For `blake2b512` the seed-XOR region covers the entire 64-byte nonce. No primitive-internal slot is consumed by the ITB nonce.
+3. **Native keyed mode plus streaming write** — `blake3`. The fixed key is bound via `blake3.NewKeyed(fixedKey)` (RFC keyed mode); the ITB nonce flows in through `h.Write(mixed)` where `mixed` is the data buffer with seed XOR mixed into the leading 32 bytes. BLAKE3's chunk-tree streams the full 64-byte buffer through the keyed compression — no fixed-width slot intervenes.
+4. **Native variable-length absorb** — `siphash24`. SipHash-2-4 by design accepts arbitrary-length data through unlimited 8-byte SipRound blocks; the closure is a direct passthrough to `siphash.Hash128(seed0, seed1, data)`. There is no nonce slot to misuse. A 64-byte ITB nonce absorbs through 8 SipRound blocks; the SipHash spec encodes `len(data)` in the final block's padding byte, so length disambiguation is structural.
+
+**Type-level guard against cross-width misuse.** The `siphash24` closure returns `itb.HashFunc128`, not `HashFunc512`. Dispatch in `itb.Seed{128,256,512}` is type-discriminated: a `HashFunc128` closure cannot be installed where a `HashFunc512` is expected. Practically: SipHash-2-4 cannot be misconfigured into a 512-bit ITB seed path even by mistake — the Go type system rejects the assignment at compile time. The other eight primitives ship `HashFunc{128,256,512}` triplets where each variant has its construction scaled to its target width.
+
+**Verification surface.** The per-primitive `kat_test.go` (variable-length matrix) and `kat_fixed_test.go` (frozen-output vectors) pin every closure against regression at every supported nonce width. Any future change to a closure that silently truncated the nonce would change the digest output and fail the KAT vectors at the 256-bit and 512-bit shapes immediately, regardless of whether the change still passed at the 128-bit default.
+
 ## Why the names are not RFC / NIST identifiers
 
 The registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifiers chosen for FFI stability and brevity, not assertions of conformance with the RFC / NIST specification of the same name. Renaming to `aescbcmac` / `chacha20prf` / `blake2bprependkey` would communicate the divergence more aggressively, but at the cost of ABI churn (FFI index reordering, every existing example, every `Make*` call site, every Python binding name). The trade-off taken here: keep the short names, document the divergence in this file, and require external integrators to read the construction sections above before assuming RFC / NIST compatibility.
