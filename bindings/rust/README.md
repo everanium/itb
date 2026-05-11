@@ -106,7 +106,7 @@ const CHUNK_SIZE: usize = 16 * 1024 * 1024;
 let mut enc = itb::Encryptor::new(Some("areion512"), Some(1024),
                                   Some("hmac-blake3"), 1)?;
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr)?;
 
 // Sender — encrypt to an intermediate file, then wrap end-to-end
@@ -209,7 +209,7 @@ let mut mac_key = [0u8; 32];
 File::open("/dev/urandom")?.read_exact(&mut mac_key)?;
 let mac = itb::MAC::new("hmac-blake3", &mac_key)?;
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr)?;
 
 // Sender — encrypt to an intermediate file, then wrap end-to-end.
@@ -305,7 +305,7 @@ across the Easy Mode bench surface.
 use itb::{peek_config, Encryptor};
 use itb::wrapper::{self, Cipher, UnwrapStreamReader, WrapStreamWriter};
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
 
 // Per-instance configuration — mutates only this encryptor's
@@ -482,7 +482,7 @@ restore.
 use itb::Encryptor;
 use itb::wrapper::{self, Cipher};
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
 
 // Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
@@ -591,7 +591,7 @@ seeds (one shared `noiseSeed` plus three `dataSeed` and three
 use itb::Encryptor;
 use itb::wrapper::{self, Cipher};
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
 
 // mode=3 selects Triple Ouroboros. All other constructor arguments
@@ -679,7 +679,7 @@ ns.attach_lock_seed(&ls).unwrap();
 let mac_key = [0u8; 32];
 let mac = MAC::new("hmac-blake3", &mac_key).unwrap();
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
 
 let plaintext = b"any text or binary data - including 0x00 bytes";

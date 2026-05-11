@@ -134,7 +134,7 @@ enum ENC_PATH   = "/tmp/64mb.enc";
 enum DST_PATH   = "/tmp/64mb.dst";
 enum CHUNK_SIZE = 16UL * 1024 * 1024;
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 auto enc = Encryptor("areion512", 1024, "hmac-blake3", 1);
@@ -254,7 +254,7 @@ auto start = Seed("areion512", 1024);
 auto macKey = csprngMacKey();           // 32 bytes from /dev/urandom
 auto mac = MAC("hmac-blake3", macKey[]);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 {
@@ -339,7 +339,7 @@ import std.stdio : writefln;
 // mode = 3 = Triple Ouroboros (7 seeds).
 auto enc = Encryptor("areion512", 2048, "hmac-blake3", 1);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 enc.setNonceBits(512);    // 512-bit nonce (default: 128-bit)
@@ -534,7 +534,7 @@ auto enc = Encryptor.newMixed(
     1024,             // keyBits
     "hmac-blake3");   // macName
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 // Per-instance configuration applies as for Encryptor(...).
@@ -607,7 +607,7 @@ import itb;
 // behave identically to the Single (mode=1) case shown above.
 auto enc = Encryptor("areion512", 2048, "hmac-blake3", 3);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 auto plaintext = cast(const(ubyte)[]) "Triple Ouroboros payload";
@@ -685,7 +685,7 @@ ns.attachLockSeed(ls);
 ubyte[32] macKey = 0;
 auto mac = MAC("hmac-blake3", macKey[]);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 auto plaintext = cast(const(ubyte)[]) "any text or binary data - including 0x00 bytes";
@@ -798,7 +798,7 @@ auto n = Seed("blake3", 1024);
 auto d = Seed("blake3", 1024);
 auto s = Seed("blake3", 1024);
 
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 auto outerKey = wrapperGenerateKey(Cipher.aes128Ctr);
 
 // Encrypt: writer delegate receives each ITB chunk; the wrap-stream

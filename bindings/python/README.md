@@ -109,7 +109,7 @@ if not os.path.exists(SRC_PATH) or os.path.getsize(SRC_PATH) != 64 * 1024 * 1024
     with open("/dev/urandom", "rb") as r, open(SRC_PATH, "wb") as w:
         w.write(r.read(64 * 1024 * 1024))
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 enc = itb.Encryptor(primitive="areion512", key_bits=1024,
@@ -204,7 +204,7 @@ def sha256_of(path: str) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 noise = itb.Seed("areion512", 1024)
@@ -291,7 +291,7 @@ cross-contamination.
 import itb
 from itb import wrapper
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 # Per-instance configuration — mutates only this encryptor's Config.
@@ -441,7 +441,7 @@ is one method call per side.
 import itb
 from itb import wrapper
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 with itb.Encryptor("areion512", 2048, "hmac-blake3") as enc:
@@ -583,7 +583,7 @@ a matching encryptor with the same arguments and calls
 import itb
 from itb import wrapper
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 # Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
@@ -723,7 +723,7 @@ ss = itb.Seed("areion512", 2048)  # random start CSPRNG seeds + hash key generat
 ls = itb.Seed("areion512", 2048)  # random lock CSPRNG seeds + hash key generated
 ns.attach_lock_seed(ls)
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 plaintext = b"any text or binary data - including 0x00 bytes"
@@ -866,7 +866,7 @@ ns.attach_lock_seed(ls)
 mac_key = secrets.token_bytes(32)
 mac = itb.MAC("hmac-blake3", mac_key)
 
-# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+# Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outer_key = wrapper.generate_key(wrapper.CIPHER_AES128_CTR)
 
 plaintext = b"any text or binary data - including 0x00 bytes"

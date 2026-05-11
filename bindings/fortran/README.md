@@ -112,7 +112,7 @@ program demo_encrypt
   ct = enc%encrypt_auth(pt)
   ct_len = size(ct)
 
-  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
   call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
   ! Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
@@ -188,7 +188,7 @@ call new_itb_seed(start, "areion512", 1024)
 call random_mac_key(mac_key)              ! 32 bytes from /dev/urandom
 call new_itb_mac(mac, "hmac-blake3", mac_key)
 
-! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
 ! Encrypt the inner ITB stream into an in-memory buffer first, then
@@ -266,7 +266,7 @@ mem_wfn => mem_write   ! fills inner_buf via grow-buffer ctx
 
 call new_itb_encryptor(enc, "areion512", 1024, "hmac-blake3", 1)
 
-! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
 ! Encrypt the inner ITB stream into an in-memory buffer first.
@@ -405,7 +405,7 @@ program hdf5_encrypt_archive
   dst%dataset_id = create_h5_dataset("output.h5.itb")
   dst%offset     = 0_c_int64_t
 
-  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
   call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
   ! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
@@ -541,7 +541,7 @@ program demo_easy
   ct   = enc%encrypt_auth(pt)            ! 32-byte tag embedded inside the container
   ct_len = size(ct)
 
-  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
   call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
   ! Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
