@@ -35,4 +35,42 @@
 // stress controls (CRC128, FNV-1a, MD5) used in REDTEAM.md / SCIENCE.md
 // are intentionally absent here — they are research instruments, not
 // shippable cipher primitives.
+//
+// # Custom-primitive builders
+//
+// Beyond the nine shipped primitives, the package exposes three
+// builder families for safely wrapping user-supplied PRFs:
+//
+//   - [BuildCBCMACChainAbsorb128] / [BuildCBCMACChainAbsorb256] /
+//     [BuildCBCMACChainAbsorb512] — wrap a keyed block cipher into a
+//     CBC-MAC chain-absorb HashFunc closure.
+//   - [BuildSpongeChainAbsorb128] / [BuildSpongeChainAbsorb256] /
+//     [BuildSpongeChainAbsorb512] — wrap an unkeyed permutation +
+//     fixed-key into a keyed-sponge HashFunc closure.
+//   - [BuildARXChainAbsorb128] / [BuildARXChainAbsorb256] /
+//     [BuildARXChainAbsorb512] — wrap a full hash function (such as
+//     [crypto/sha256.Sum256]) + fixed-key into a Merkle-Damgard-style
+//     HashFunc closure.
+//
+// These builders exist primarily to close the silent-nonce-truncation
+// trap that a naive user wrapper falls into. A user who writes
+//
+//	func(data []byte, seed [8]uint64) [8]uint64 {
+//	    h := sha256.Sum256(data)
+//	    // ... zero-pad upper 32 bytes ... return [8]uint64{...}
+//	}
+//
+// silently truncates the upper half of ITB's 512-bit intermediate
+// state to a constant value, destroying half the entropy of
+// ChainHash's per-call XOR chain. The builders absorb the full ITB
+// nonce width into the digest through the appropriate chain pattern;
+// the user only writes a primitive call.
+//
+// Performance trade-off: the builders dispatch through interface
+// callbacks and []byte state buffers, losing 5-15% throughput vs the
+// inline per-primitive closures shipped in this package. The trade
+// is correctness-by-construction for any user primitive vs peak
+// throughput for the nine built-in primitives. See [CONSTRUCTIONS.md]
+// "Why use builders for custom user primitives" for the silent-
+// truncation failure modes the builders prevent.
 package hashes

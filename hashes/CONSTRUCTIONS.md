@@ -237,3 +237,97 @@ Every closure in this registry sidesteps that trap. The table below names the sp
 ## Why the names are not RFC / NIST identifiers
 
 The registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifiers chosen for FFI stability and brevity, not assertions of conformance with the RFC / NIST specification of the same name. Renaming to `aescbcmac` / `chacha20prf` / `blake2bprependkey` would communicate the divergence more aggressively, but at the cost of ABI churn (FFI index reordering, every existing example, every `Make*` call site, every Python binding name). The trade-off taken here: keep the short names, document the divergence in this file, and require external integrators to read the construction sections above before assuming RFC / NIST compatibility.
+
+## Why use builders for custom user primitives
+
+Beyond the shipped primitives, the package exposes three builder families in [`builders.go`](builders.go) for safely wrapping user-supplied PRFs:
+
+- `BuildCBCMACChainAbsorb{128,256,512}` — wraps a keyed [`cipher.Block`](https://pkg.go.dev/crypto/cipher#Block) into a CBC-MAC chain-absorb closure.
+- `BuildSpongeChainAbsorb{128,256,512}` — wraps an unkeyed permutation function into a keyed-sponge chain-absorb closure.
+- `BuildARXChainAbsorb{128,256,512}` — wraps a full hash function (`Hash256Fn` or `Hash512Fn`) into a Merkle-Damgard-style closure.
+
+The builders exist to close a specific silent-failure mode in pluggable PRF integration. This section documents the failure mode so external integrators understand the security argument for the builders' existence and the cost of bypassing them.
+
+### The trap — silent nonce truncation
+
+ITB supports configurable nonce widths via [`SetNonceBits`](https://pkg.go.dev/github.com/everanium/itb#SetNonceBits): 128, 256, or 512 bits. The per-call buffer presented to a `HashFunc{128|256|512}` closure carries the configured nonce material — 20, 36, or 68 bytes for the three widths respectively (4 bytes of pixel index + the configured nonce width).
+
+For ITB's advertised nonce width property to hold, **every byte** of the `data` parameter must reach the digest. Three concrete ways a naive user wrapper can silently break this invariant:
+
+**(1) Output width truncation.** A `HashFunc512` wrapper that produces fewer than 64 bytes of digest output and zero-pads the rest:
+
+```go
+// BROKEN — silently drops half of ITB's intermediate state entropy
+func myBrokenHash(data []byte, seed [8]uint64) [8]uint64 {
+    h := sha256.Sum256(data)        // 32-byte output
+    var out [8]uint64
+    for i := 0; i < 4; i++ {
+        out[i] = binary.LittleEndian.Uint64(h[i*8:])
+    }
+    // out[4:8] stays zero — disaster.
+    // ChainHash's per-call XOR chain in ITB consumes the full 64-byte
+    // intermediate state; a constant upper half across calls destroys
+    // half the entropy of the seed-mix chain.
+    return out
+}
+```
+
+**(2) Primitive's native nonce-slot truncation.** A wrapper that routes the ITB nonce into a primitive's fixed-width IV / nonce slot:
+
+```go
+// BROKEN — 512-bit ITB nonce silently truncated to 128-bit AES IV
+func myBrokenAESCMAC(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+    var iv [16]byte
+    copy(iv[:], data)           // takes only the first 16 of 68 input bytes
+    block, _ := aes.NewCipher(key[:])
+    block.Encrypt(iv[:], iv[:])
+    // ... return iv as (lo, hi) ...
+    // SetNonceBits(512) → effective 128-bit nonce. PRF property still
+    // holds at the reduced width, but the advertised "512-bit nonce"
+    // is broken silently.
+}
+```
+
+The same trap applies to ChaCha20's 12-byte native nonce slot, Poly1305's 16-byte tag slot, AES-GCM's 12-byte nonce slot, and every other primitive that defines a fixed-width "nonce" or "IV" input.
+
+**(3) Seed-component drop.** A wrapper that uses only some of the seed components passed by ITB:
+
+```go
+// BROKEN — seed[2..7] never reach the digest
+func myBrokenHash(data []byte, seed [8]uint64) [8]uint64 {
+    key := [16]byte{}
+    binary.LittleEndian.PutUint64(key[0:], seed[0])
+    binary.LittleEndian.PutUint64(key[8:], seed[1])
+    // seed[2..7] discarded — half of ChainHash's PRF key material
+    // never enters the digest. Per-call PRF key entropy halved silently.
+    ...
+}
+```
+
+In every case, the wrapper compiles cleanly, accepts the right type signature, and produces wire-compatible ciphertext. The only symptom is that ITB's advertised cryptographic property (512-bit nonce, full ChainHash entropy) is silently reduced to a smaller effective property. No runtime check catches this — `NewSeed{N}` only verifies the closure is non-nil.
+
+### What the builders do
+
+The three builder families above absorb the full `data` parameter — all 20 / 36 / 68 bytes of pixel index + ITB nonce — through their respective chain-absorb patterns:
+
+- **CBC-MAC chain**: data XOR'd into state in `BlockSize()`-byte chunks, then `block.Encrypt(state)` per chunk. State holds seed + length tag in initial bytes; every input byte reaches the final 16-byte digest extraction.
+- **Sponge chain**: data XOR'd into rate region in rate-byte chunks, then `permute(state)` per chunk. State holds fixedKey + seed in capacity region; rate region accumulates the full input through repeated permutation.
+- **ARX absorb**: data appended to a `(fixedKey || lenTag || seed || domain)` prefix in one canonical buffer; the underlying full hash function (`hashFn`) absorbs the whole thing through its native variable-length input path.
+
+In all three patterns, **all 8 seed components, the full input data, and a length tag reach the digest by construction**. The user only writes a primitive call (`block.Encrypt`, `permute`, or `hashFn`); the chain-absorb plumbing lives inside the builder. There is no caller-side knowledge of the chain-absorb pattern required, and no caller-side opportunity to drop bytes.
+
+### Performance cost of the builders
+
+The builders dispatch through interface callbacks (`cipher.Block.Encrypt`, the `Permute` function type, `Hash256Fn`/`Hash512Fn`) and operate on `make([]byte, stateSize)` buffers that escape to heap. The built-in primitive closures in this package use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined primitive calls, and `unsafe.Pointer` escape-analysis tricks to keep buffers on the stack and avoid heap allocation in the hot path.
+
+Concrete delta: ~5-15% throughput loss vs the inline implementations for the CBC-MAC and sponge patterns; ~0% delta for ARX (where the cost is dominated by the underlying hash function call). Built-in primitives stay primitive-specific for performance; builders target correctness-by-construction for user primitives.
+
+### Position in the chain of defenses
+
+The builders are an **additive** safety layer for the pluggable PRF surface. They do not replace any built-in primitive, do not change any existing API, and do not introduce new wire-format constraints. They exist so that:
+
+- Users who wrap their own primitive without reading every line of `aescmac.go` / `chacha20.go` / `areion.go` to crib the chain-absorb pattern still get correct nonce-width preservation.
+- The built-in primitives keep their hand-tuned inline implementations with all their performance benefits intact.
+- The pluggable-primitive use case has a documented "correct way to do it" beyond just "make sure your closure absorbs all the bytes — good luck".
+
+The KAT-test surface in `builders_test.go` includes a "full nonce absorption" check that verifies every byte of a 68-byte input affects the digest output, providing automated regression detection if the builders are ever modified in a way that reintroduces silent truncation.
