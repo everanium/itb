@@ -55,6 +55,7 @@ itb = { path = "bindings/rust" }
 Build once before running tests or examples:
 
 ```bash
+cd bindings/rust/
 cargo build --release
 ```
 
@@ -62,7 +63,29 @@ Crate metadata: `name = "itb"`, `version = "0.1.0"`, `edition =
 "2021"`, `license = "MIT"`. The only runtime dependency is
 `libloading = "0.9"`.
 
-## Run the integration test suite
+## Library lookup order
+
+1. `ITB_LIBRARY_PATH` environment variable (absolute path).
+2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved by walking up
+   from `CARGO_MANIFEST_DIR` (`bindings/rust/` → repo root →
+   `dist/<os>-<arch>/`).
+3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```rust
+itb::set_memory_limit(512 << 20);
+itb::set_gc_percent(20);
+```
+
+## Tests
 
 ```bash
 ./bindings/rust/run_tests.sh
@@ -77,13 +100,32 @@ mirrors the cross-binding coverage: Single + Triple Ouroboros,
 mixed primitives, authenticated paths, blob round-trip, streaming
 chunked I/O, error paths, lockSeed lifecycle.
 
-## Library lookup order
+## Benchmarks
 
-1. `ITB_LIBRARY_PATH` environment variable (absolute path).
-2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved by walking up
-   from `CARGO_MANIFEST_DIR` (`bindings/rust/` → repo root →
-   `dist/<os>-<arch>/`).
-3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+A custom Go-bench-style harness lives under `benches/` and covers
+the four ops (`encrypt`, `decrypt`, `encrypt_auth`,
+`decrypt_auth`) across the nine PRF-grade primitives plus one
+mixed-primitive variant for both Single and Triple Ouroboros at
+1024-bit ITB key width and 16 MiB payload. See
+[`benches/README.md`](benches/README.md) for invocation /
+environment variables / output format and
+[`benches/BENCH.md`](benches/BENCH.md) for recorded throughput
+results across the canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `benches/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/rust/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/rust/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `cargo bench --bench bench_single` /
+`cargo bench --bench bench_triple` invocations.
 
 ## Streaming AEAD
 
@@ -1047,32 +1089,7 @@ cipher entry point. Pass at least one byte.
 | 24 | `STATUS_STREAM_AFTER_FINAL` | Streaming AEAD transcript carries chunk bytes after the terminator; surfaced by the binding's stream loop as `ITBError` carrying this status |
 | 99 | `STATUS_INTERNAL` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
-## Benchmarks
-
-A custom Go-bench-style harness lives under `benches/` and covers
-the four ops (`encrypt`, `decrypt`, `encrypt_auth`,
-`decrypt_auth`) across the nine PRF-grade primitives plus one
-mixed-primitive variant for both Single and Triple Ouroboros at
-1024-bit ITB key width and 16 MiB payload. See
-[`benches/README.md`](benches/README.md) for invocation /
-environment variables / output format and
-[`benches/BENCH.md`](benches/BENCH.md) for recorded throughput
-results across the canonical pass matrix.
-
-The four-pass canonical sweep (Single + Triple × ±LockSeed) that
-fills `benches/BENCH.md` is driven by the wrapper script in the
-binding root:
-
-```bash
-./bindings/rust/run_bench.sh                  # full 4-pass canonical sweep
-./bindings/rust/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
-```
-
-The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
-manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
-`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
-underlying `cargo bench --bench bench_single` /
-`cargo bench --bench bench_triple` invocations.
+## API Overview
 
 [`Encryptor`]: src/encryptor.rs
 [`Encryptor::new`]: src/encryptor.rs

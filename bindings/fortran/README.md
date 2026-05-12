@@ -48,7 +48,24 @@ oneAPI apt / dnf repositories or installer; the Fortran sources are
 toolchain-agnostic and the Makefile picks up `FC=ifx` without
 further configuration.
 
-## Quick start
+## Library lookup order
+
+1. `ITB_LIBRARY_PATH` environment variable (absolute path), if
+   set, takes precedence over both subsequent steps.
+2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved from the
+   binding directory. The Makefile bakes
+   `-Wl,-rpath,../../dist/linux-amd64` into every test binary;
+   the linker's RPATH resolves `libitb.so` without
+   `LD_LIBRARY_PATH` for installed binaries.
+3. System loader path (`ld.so.cache`, `LD_LIBRARY_PATH`,
+   `DYLD_LIBRARY_PATH`, `PATH`).
+
+OS / arch mapping: `Linux/linux`, `Darwin/macos→darwin`,
+`Windows/windows`, `FreeBSD/freebsd` × `amd64` / `arm64`. The
+Fortran binding uses the platform's native dynamic linker; no
+`dlopen` shim is performed at startup.
+
+## Tests
 
 ```bash
 cd bindings/fortran
@@ -83,6 +100,8 @@ fpm test --compiler ifx               # 31 PASS
 
 The Makefile remains the primary build entry point — fpm exists
 for developer ergonomics, not as the binding's release surface.
+
+# Quick Start
 
 A minimal "encrypt one buffer in memory" snippet:
 
@@ -151,6 +170,20 @@ gfortran -O2 -I <itb>/bindings/fortran/build \
 
 The Intel toolchain accepts the same recipe with `ifx` substituted for
 `gfortran` and `build_ifx/` substituted for `build/`.
+
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```fortran
+prev = itb_set_memory_limit(int(512 * 1024 * 1024, c_int64_t))
+prev = itb_set_gc_percent(20)
+```
 
 ## Streaming AEAD
 
@@ -938,6 +971,48 @@ Export option bitmask (`opts` parameter on `b%export ()` /
 Combine via `ior` to opt into multiple sections in one export
 call. The default of `0` emits the base seed material only.
 
+## Hash primitives
+
+Names match the canonical libitb registry. Listed below in the
+binding-side canonical PRF-only ordering.
+
+| Primitive | FFI name | Native width (bits) | Family |
+|---|---|---|---|
+| **Areion-SoEM-256** | `areion256` | 256 | Areion |
+| **Areion-SoEM-512** | `areion512` | 512 | Areion |
+| **BLAKE2b-256** | `blake2b256` | 256 | BLAKE |
+| **BLAKE2b-512** | `blake2b512` | 512 | BLAKE |
+| **BLAKE2s** | `blake2s` | 256 | BLAKE |
+| **BLAKE3** | `blake3` | 256 | BLAKE |
+| **AES-CMAC** | `aescmac` | 128 | AES-CMAC |
+| **SipHash-2-4** | `siphash24` | 128 | SipHash |
+| **ChaCha20** | `chacha20` | 256 | ChaCha20 |
+
+SipHash-2-4 is the one primitive without an internal fixed key —
+its keying material is the seed components themselves.
+`itb_seed_t%hash_key ()` returns an empty array for a
+SipHash-2-4 seed; check `enc%has_prf_keys ()` before calling
+`enc%prf_key (slot)` on the per-slot encryptor accessor.
+
+All seeds passed to one cipher call must share the same native
+hash width. Mixing widths surfaces `STATUS_SEED_WIDTH_MIX`.
+
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that
+registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the
+Fortran binding's tests and examples use 32 bytes uniformly across
+primitives for cross-binding consistency. `hmac-blake3` requires
+exactly 32 bytes by construction.
+
 ## Process-wide configuration
 
 Every setter takes effect for all subsequent encrypt / decrypt
@@ -1036,79 +1111,6 @@ Empty plaintext / ciphertext is rejected by libitb itself with
 point. The binding propagates the rejection verbatim — pass at
 least one byte.
 
-## Hash primitives
-
-Names match the canonical libitb registry. Listed below in the
-binding-side canonical PRF-only ordering.
-
-| Primitive | FFI name | Native width (bits) | Family |
-|---|---|---|---|
-| **Areion-SoEM-256** | `areion256` | 256 | Areion |
-| **Areion-SoEM-512** | `areion512` | 512 | Areion |
-| **BLAKE2b-256** | `blake2b256` | 256 | BLAKE |
-| **BLAKE2b-512** | `blake2b512` | 512 | BLAKE |
-| **BLAKE2s** | `blake2s` | 256 | BLAKE |
-| **BLAKE3** | `blake3` | 256 | BLAKE |
-| **AES-CMAC** | `aescmac` | 128 | AES-CMAC |
-| **SipHash-2-4** | `siphash24` | 128 | SipHash |
-| **ChaCha20** | `chacha20` | 256 | ChaCha20 |
-
-SipHash-2-4 is the one primitive without an internal fixed key —
-its keying material is the seed components themselves.
-`itb_seed_t%hash_key ()` returns an empty array for a
-SipHash-2-4 seed; check `enc%has_prf_keys ()` before calling
-`enc%prf_key (slot)` on the per-slot encryptor accessor.
-
-All seeds passed to one cipher call must share the same native
-hash width. Mixing widths surfaces `STATUS_SEED_WIDTH_MIX`.
-
-## MAC primitives
-
-Names match the libitb MAC registry; ordering matches that
-registry's declaration order.
-
-| MAC | Key bytes | Tag bytes | Underlying primitive |
-|---|---|---|---|
-| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
-| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
-| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
-
-`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the
-Fortran binding's tests and examples use 32 bytes uniformly across
-primitives for cross-binding consistency. `hmac-blake3` requires
-exactly 32 bytes by construction.
-
-## Library lookup order
-
-1. `ITB_LIBRARY_PATH` environment variable (absolute path), if
-   set, takes precedence over both subsequent steps.
-2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved from the
-   binding directory. The Makefile bakes
-   `-Wl,-rpath,../../dist/linux-amd64` into every test binary;
-   the linker's RPATH resolves `libitb.so` without
-   `LD_LIBRARY_PATH` for installed binaries.
-3. System loader path (`ld.so.cache`, `LD_LIBRARY_PATH`,
-   `DYLD_LIBRARY_PATH`, `PATH`).
-
-OS / arch mapping: `Linux/linux`, `Darwin/macos→darwin`,
-`Windows/windows`, `FreeBSD/freebsd` × `amd64` / `arm64`. The
-Fortran binding uses the platform's native dynamic linker; no
-`dlopen` shim is performed at startup.
-
-## In-place encrypt / decrypt — future enhancement
-
-The current C ABI's `ITB_Encrypt` / `ITB_EncryptAuth` family takes
-distinct input / output buffers, copying input to output through
-the cipher. An in-place ABI extension
-(`ITB_EncryptInline` / `ITB_DecryptInline` plus authenticated
-counterparts) is on the libitb-side roadmap; once it lands, the
-Fortran binding will expose the same surface as `inline` /
-`encrypt_inline` overloads alongside the existing copy-based
-entry points. HPC consumers driving in-memory encryption against
-chunk buffers larger than the L3 cache stand to benefit from the
-reduced bandwidth pressure. No timeline; the surface here remains
-copy-based until libitb's roadmap entry lands.
-
 ## Constraints
 
 - **Fortran 2018 minimum.** The wrapper layer uses
@@ -1133,3 +1135,17 @@ copy-based until libitb's roadmap entry lands.
   `-litb` plus an embedded RPATH. Consumers wanting
   runtime-resolved FFI loading can wrap the binding's shared
   library list in their own `dlopen` shim.
+
+## In-place encrypt / decrypt — future enhancement
+
+The current C ABI's `ITB_Encrypt` / `ITB_EncryptAuth` family takes
+distinct input / output buffers, copying input to output through
+the cipher. An in-place ABI extension
+(`ITB_EncryptInline` / `ITB_DecryptInline` plus authenticated
+counterparts) is on the libitb-side roadmap; once it lands, the
+Fortran binding will expose the same surface as `inline` /
+`encrypt_inline` overloads alongside the existing copy-based
+entry points. HPC consumers driving in-memory encryption against
+chunk buffers larger than the L3 cache stand to benefit from the
+reduced bandwidth pressure. No timeline; the surface here remains
+copy-based until libitb's roadmap entry lands.
