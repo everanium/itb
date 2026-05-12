@@ -80,7 +80,30 @@ Package metadata: `name = "itb"`, `targetType = "library"`,
 `targetPath = "lib"`, `sourcePaths = ["src"]`, `license = "MIT"`.
 The only runtime dependency is `libitb.so` itself.
 
-## Run the integration test suite
+## Library lookup order
+
+1. `LD_LIBRARY_PATH` resolved at process startup. The test runner
+   exports it pointing at `<repo>/dist/linux-amd64/`.
+2. The `rpath` baked into the produced binary at link time
+   (`$ORIGIN/../../../dist/linux-amd64`). Installed binaries find
+   `libitb` without `LD_LIBRARY_PATH`.
+3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```d
+itb.setMemoryLimit(512L << 20);
+itb.setGcPercent(20);
+```
+
+## Tests
 
 ```bash
 ./bindings/dlang/run_tests.sh
@@ -107,14 +130,33 @@ Filter to a subset by passing test names as positional arguments:
 ./bindings/dlang/run_tests.sh test_blake3 test_easy_blake3
 ```
 
-## Library lookup order
+## Benchmarks
 
-1. `LD_LIBRARY_PATH` resolved at process startup. The test runner
-   exports it pointing at `<repo>/dist/linux-amd64/`.
-2. The `rpath` baked into the produced binary at link time
-   (`$ORIGIN/../../../dist/linux-amd64`). Installed binaries find
-   `libitb` without `LD_LIBRARY_PATH`.
-3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+A custom Go-bench-style harness lives under `bench/` and covers
+the four ops (`encrypt`, `decrypt`, `encryptAuth`, `decryptAuth`)
+across the nine PRF-grade primitives plus one mixed-primitive
+variant for both Single and Triple Ouroboros at 1024-bit ITB key
+width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
+for invocation / environment variables / output format and
+[`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results across the
+canonical pass matrix.
+
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `bench/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/dlang/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/dlang/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `bench/bin/itb-bench-single` /
+`bench/bin/itb-bench-triple` invocations (built ahead of time via
+`cd bench && dub build :single --compiler=dmd --build=release`
+and the `:triple` counterpart).
 
 ## Streaming AEAD
 
@@ -1114,31 +1156,3 @@ byte.
 | 23 | `Status.StreamTruncated` | Streaming AEAD transcript truncated before the terminator chunk; raised as `ITBStreamTruncatedError` |
 | 24 | `Status.StreamAfterFinal` | Streaming AEAD transcript carries chunk bytes after the terminator; raised as `ITBStreamAfterFinalError` |
 | 99 | `Status.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
-
-## Benchmarks
-
-A custom Go-bench-style harness lives under `bench/` and covers
-the four ops (`encrypt`, `decrypt`, `encryptAuth`, `decryptAuth`)
-across the nine PRF-grade primitives plus one mixed-primitive
-variant for both Single and Triple Ouroboros at 1024-bit ITB key
-width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
-for invocation / environment variables / output format and
-[`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results across the
-canonical pass matrix.
-
-The four-pass canonical sweep (Single + Triple × ±LockSeed) that
-fills `bench/BENCH.md` is driven by the wrapper script in the
-binding root:
-
-```bash
-./bindings/dlang/run_bench.sh                  # full 4-pass canonical sweep
-./bindings/dlang/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
-```
-
-The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
-manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
-`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
-underlying `bench/bin/itb-bench-single` /
-`bench/bin/itb-bench-triple` invocations (built ahead of time via
-`cd bench && dub build :single --compiler=dmd --build=release`
-and the `:triple` counterpart).
