@@ -109,7 +109,38 @@ Crate metadata: `name = "itb"`, `version = "0.1.0-dev"`,
 plus the standard library, with the libitb shared library located
 through compile-time linker search paths and runtime rpath.
 
-## Run the integration test suite
+## Library lookup order
+
+1. **Compile-time `-L` switch** in `itb.gpr`'s `Linker` package
+   resolves `-litb` against `<repo>/dist/<os>-<arch>/`. The
+   `ITB_DIST_DIR` external variable overrides the search prefix
+   (`alr exec -- gprbuild -P itb.gpr -XITB_DIST_DIR=/abs/path`).
+2. **Runtime `-Wl,-rpath,$ORIGIN/../../../dist/linux-amd64`** is
+   baked into the resulting binary. `ld.so` searches the binary's
+   RPATH first (resolving `$ORIGIN` to the binary's own directory),
+   then the standard system loader path.
+3. **System loader path** (`ld.so.cache`, `LD_LIBRARY_PATH`,
+   `DYLD_LIBRARY_PATH`, `PATH`). Setting `LD_LIBRARY_PATH` to an
+   absolute path overrides RPATH for diagnostic / installation use.
+
+The link-time + rpath mechanism is the standard Ada idiom — no
+runtime `dlopen`-style probe is performed at startup.
+
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```ada
+Discard := Itb.Set_Memory_Limit (512 * 1024 * 1024);
+Discard := Itb.Set_GC_Percent (20);
+```
+
+## Tests
 
 ```bash
 ./bindings/ada/build.sh -- -P itb_tests.gpr
@@ -133,22 +164,46 @@ without a shared mutex.
 `./run_tests.sh test_blake3` runs a single test by base name; the
 default invocation iterates every test executable in `obj-tests/`.
 
-## Library lookup order
+## Benchmarks
 
-1. **Compile-time `-L` switch** in `itb.gpr`'s `Linker` package
-   resolves `-litb` against `<repo>/dist/<os>-<arch>/`. The
-   `ITB_DIST_DIR` external variable overrides the search prefix
-   (`alr exec -- gprbuild -P itb.gpr -XITB_DIST_DIR=/abs/path`).
-2. **Runtime `-Wl,-rpath,$ORIGIN/../../../dist/linux-amd64`** is
-   baked into the resulting binary. `ld.so` searches the binary's
-   RPATH first (resolving `$ORIGIN` to the binary's own directory),
-   then the standard system loader path.
-3. **System loader path** (`ld.so.cache`, `LD_LIBRARY_PATH`,
-   `DYLD_LIBRARY_PATH`, `PATH`). Setting `LD_LIBRARY_PATH` to an
-   absolute path overrides RPATH for diagnostic / installation use.
+A custom Go-bench-style harness lives under `bench/` and covers the
+four ops (`Encrypt`, `Decrypt`, `Encrypt_Auth`, `Decrypt_Auth`)
+across the nine PRF-grade primitives plus one mixed-primitive
+variant for both Single and Triple Ouroboros at 1024-bit ITB key
+width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
+for invocation / environment variables / output format and
+[`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results
+across the canonical pass matrix.
 
-The link-time + rpath mechanism is the standard Ada idiom — no
-runtime `dlopen`-style probe is performed at startup.
+The four-pass canonical sweep (Single + Triple × ±LockSeed) that
+fills `bench/BENCH.md` is driven by the wrapper script in the
+binding root:
+
+```bash
+./bindings/ada/run_bench.sh                  # full 4-pass canonical sweep
+./bindings/ada/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+```
+
+The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
+manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
+`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
+underlying `obj-bench/bench_single` / `obj-bench/bench_triple`
+binaries (built ahead of time via
+`./bindings/ada/build.sh -- -P itb_bench.gpr`).
+
+FFI overhead in the Ada binding is link-time: `pragma Import (C, ...,
+External_Name => "ITB_*")` bakes the C symbol reference into the
+compiled Ada object at compile time, and `ld.so` resolves the symbol
+against the loaded `libitb.so` at process start. Per-call cost is
+one C ABI crossing — comparable to a regular C function call, no
+per-call FFI dispatch table lookup as in dlopen-style loaders.
+The output-buffer cache on `Itb.Encryptor.Encryptor` skips the
+size-probe round-trip
+and a duplicate encrypt on every call; pre-allocation uses a 1.25×
+upper bound (the empirical ITB ciphertext-expansion factor measured
+at ≤ 1.155 across every primitive / mode / nonce / payload-size
+combination) and the cache is wiped on grow, on `Close`, and on
+`Finalize`.
 
 ## Streaming AEAD
 
@@ -1307,44 +1362,3 @@ byte.
 | 23 | `Itb.Status.Stream_Truncated` | Streaming AEAD transcript truncated before the terminator chunk; raised as `Itb_Stream_Truncated_Error` |
 | 24 | `Itb.Status.Stream_After_Final` | Streaming AEAD transcript carries chunk bytes after the terminator; raised as `Itb_Stream_After_Final_Error` |
 | 99 | `Itb.Status.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
-
-## Benchmarks
-
-A custom Go-bench-style harness lives under `bench/` and covers the
-four ops (`Encrypt`, `Decrypt`, `Encrypt_Auth`, `Decrypt_Auth`)
-across the nine PRF-grade primitives plus one mixed-primitive
-variant for both Single and Triple Ouroboros at 1024-bit ITB key
-width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
-for invocation / environment variables / output format and
-[`bench/BENCH.md`](bench/BENCH.md) for recorded throughput results
-across the canonical pass matrix.
-
-The four-pass canonical sweep (Single + Triple × ±LockSeed) that
-fills `bench/BENCH.md` is driven by the wrapper script in the
-binding root:
-
-```bash
-./bindings/ada/run_bench.sh                  # full 4-pass canonical sweep
-./bindings/ada/run_bench.sh --lockseed-only  # pass 3 + pass 4 only
-```
-
-The harness sets `LD_LIBRARY_PATH` to `dist/linux-amd64/`,
-manages `ITB_LOCKSEED` per pass, and forwards `ITB_NONCE_BITS` /
-`ITB_BENCH_FILTER` / `ITB_BENCH_MIN_SEC` straight through to the
-underlying `obj-bench/bench_single` / `obj-bench/bench_triple`
-binaries (built ahead of time via
-`./bindings/ada/build.sh -- -P itb_bench.gpr`).
-
-FFI overhead in the Ada binding is link-time: `pragma Import (C, ...,
-External_Name => "ITB_*")` bakes the C symbol reference into the
-compiled Ada object at compile time, and `ld.so` resolves the symbol
-against the loaded `libitb.so` at process start. Per-call cost is
-one C ABI crossing — comparable to a regular C function call, no
-per-call FFI dispatch table lookup as in dlopen-style loaders.
-The output-buffer cache on `Itb.Encryptor.Encryptor` skips the
-size-probe round-trip
-and a duplicate encrypt on every call; pre-allocation uses a 1.25×
-upper bound (the empirical ITB ciphertext-expansion factor measured
-at ≤ 1.155 across every primitive / mode / nonce / payload-size
-combination) and the cache is wiped on grow, on `Close`, and on
-`Finalize`.

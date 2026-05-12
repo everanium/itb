@@ -106,6 +106,59 @@ follows the standard dynamic-linker order:
    without `LD_LIBRARY_PATH`.
 3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
 
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```cpp
+itb::set_memory_limit(512LL << 20);
+itb::set_gc_percent(20);
+```
+
+## Tests
+
+```bash
+cd bindings/cpp/
+make tests       # compile every tests/test_*.cpp into tests/build/test_*
+make test        # tests + run via run_tests.sh
+./run_tests.sh
+```
+
+The 41 test files cover Single + Triple round-trip across each PRF
+primitive, authenticated paths, mixed primitives, persistence and
+native blob round-trip, streaming chunked I/O, nonce-size variants,
+lockSeed lifecycle, closed-state preflight, empty-payload rejection,
+the typed exception hierarchy, and `last_mismatch_field()`. Each test
+compiles to a standalone executable under `tests/build/` linked
+against `build/libitb_c.a` + `libitb.so` + Catch2 v3. Per-process
+isolation gives every test a fresh libitb global state.
+
+Filter via `ITB_TEST_FILTER`, forwarded to Catch2's filter syntax:
+
+```bash
+ITB_TEST_FILTER='[blake3]' ./run_tests.sh
+```
+
+## Benchmarks
+
+Throughput numbers live in [`bench/BENCH.md`](bench/BENCH.md); see
+[`bench/README.md`](bench/README.md) for invocation, environment
+variables, and per-case output format. The harness covers four ops
+across the nine PRF-grade primitives plus one mixed variant for both
+Single and Triple at 1024-bit ITB key width and 16 MiB payload.
+Four-pass sweep:
+
+```bash
+cd bindings/cpp/
+make bench
+./run_bench.sh                  # full 4-pass canonical sweep
+```
+
 ## Streaming AEAD
 
 **Streaming AEAD** authenticates a chunked stream end-to-end while
@@ -1037,63 +1090,6 @@ caught as their typed subclass. Cold-path codes (programmer errors,
 malformed input, internal sentinels) are usually caught generically as
 `ItbError`.
 
-## API overview
-
-| Header | Public surface |
-|---|---|
-| `<itb.hpp>` | Meta-header — pulls in every wrapper below |
-| `<itb/errors.hpp>` | `ItbError` base + four typed subclasses; `itb::status::*`; `last_error()` / `last_mismatch_field()` |
-| `<itb/library.hpp>` | Process-wide setters / getters, `list_hashes` / `list_macs`, `version()`, `header_size()`, `parse_chunk_len()` |
-| `<itb/seed.hpp>` | `itb::Seed` — RAII over `itb_seed_t`; CSPRNG and `from_components` constructors; `width()` / `hash_key()` / `components()` / `attach_lock_seed()` |
-| `<itb/mac.hpp>` | `itb::Mac` — RAII over `itb_mac_t`; `(name, key)` constructor |
-| `<itb/cipher.hpp>` | Free-function low-level entry points — `encrypt` / `decrypt` / `encrypt_auth` / `decrypt_auth` plus Triple counterparts |
-| `<itb/encryptor.hpp>` | `itb::Encryptor` — Easy Mode RAII; single-primitive constructor + `Mixed` / `Mixed3`; cipher methods, per-instance setters, persistence; `peek_config` |
-| `<itb/streams.hpp>` | `StreamEncryptor` / `StreamDecryptor` push + Triple variants; free-function bridges `encrypt_stream` / `decrypt_stream`; `kDefaultChunkSize` |
-| `<itb/blob.hpp>` | `Blob128` / `Blob256` / `Blob512` Native Blob wrappers; `blob::Slot` / `blob::Opt` |
-
-All public types live in the top-level `itb::` namespace; helpers
-between headers live in `itb::detail::`. The `itb::status::*` constants
-and the `itb::blob::Slot` / `itb::blob::Opt` enums are namespaced for
-collision-free use. Hash names via `itb::list_hashes()`; MAC names
-(`kmac256`, `hmac-sha256`, `hmac-blake3`) via `itb::list_macs()`.
-
-## Tests
-
-```bash
-make tests       # compile every tests/test_*.cpp into tests/build/test_*
-make test        # tests + run via run_tests.sh
-./run_tests.sh   # discover + run every binary in tests/build/
-```
-
-The 41 test files cover Single + Triple round-trip across each PRF
-primitive, authenticated paths, mixed primitives, persistence and
-native blob round-trip, streaming chunked I/O, nonce-size variants,
-lockSeed lifecycle, closed-state preflight, empty-payload rejection,
-the typed exception hierarchy, and `last_mismatch_field()`. Each test
-compiles to a standalone executable under `tests/build/` linked
-against `build/libitb_c.a` + `libitb.so` + Catch2 v3. Per-process
-isolation gives every test a fresh libitb global state.
-
-Filter via `ITB_TEST_FILTER`, forwarded to Catch2's filter syntax:
-
-```bash
-ITB_TEST_FILTER='[blake3]' ./run_tests.sh
-```
-
-## Bench
-
-Throughput numbers live in [`bench/BENCH.md`](bench/BENCH.md); see
-[`bench/README.md`](bench/README.md) for invocation, environment
-variables, and per-case output format. The harness covers four ops
-across the nine PRF-grade primitives plus one mixed variant for both
-Single and Triple at 1024-bit ITB key width and 16 MiB payload.
-Four-pass sweep:
-
-```bash
-make bench
-./run_bench.sh                  # full 4-pass canonical sweep
-```
-
 ## Constraints
 
 - **C++17 minimum.** Headers use `std::string_view`, `std::optional`,
@@ -1113,3 +1109,23 @@ make bench
 - **No `dlopen`.** Symbols are bound at link time. Consumers wanting
   runtime FFI loading can wrap this binding in their own `dlopen`
   shim.
+
+## API Overview
+
+| Header | Public surface |
+|---|---|
+| `<itb.hpp>` | Meta-header — pulls in every wrapper below |
+| `<itb/errors.hpp>` | `ItbError` base + four typed subclasses; `itb::status::*`; `last_error()` / `last_mismatch_field()` |
+| `<itb/library.hpp>` | Process-wide setters / getters, `list_hashes` / `list_macs`, `version()`, `header_size()`, `parse_chunk_len()` |
+| `<itb/seed.hpp>` | `itb::Seed` — RAII over `itb_seed_t`; CSPRNG and `from_components` constructors; `width()` / `hash_key()` / `components()` / `attach_lock_seed()` |
+| `<itb/mac.hpp>` | `itb::Mac` — RAII over `itb_mac_t`; `(name, key)` constructor |
+| `<itb/cipher.hpp>` | Free-function low-level entry points — `encrypt` / `decrypt` / `encrypt_auth` / `decrypt_auth` plus Triple counterparts |
+| `<itb/encryptor.hpp>` | `itb::Encryptor` — Easy Mode RAII; single-primitive constructor + `Mixed` / `Mixed3`; cipher methods, per-instance setters, persistence; `peek_config` |
+| `<itb/streams.hpp>` | `StreamEncryptor` / `StreamDecryptor` push + Triple variants; free-function bridges `encrypt_stream` / `decrypt_stream`; `kDefaultChunkSize` |
+| `<itb/blob.hpp>` | `Blob128` / `Blob256` / `Blob512` Native Blob wrappers; `blob::Slot` / `blob::Opt` |
+
+All public types live in the top-level `itb::` namespace; helpers
+between headers live in `itb::detail::`. The `itb::status::*` constants
+and the `itb::blob::Slot` / `itb::blob::Opt` enums are namespaced for
+collision-free use. Hash names via `itb::list_hashes()`; MAC names
+(`kmac256`, `hmac-sha256`, `hmac-blake3`) via `itb::list_macs()`.

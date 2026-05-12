@@ -37,9 +37,11 @@ package main
 import "C"
 
 import (
+	"runtime/debug"
 	"unsafe"
 
 	"github.com/everanium/itb/cmd/cshared/internal/capi"
+	_ "github.com/everanium/itb/internal/runtimecfg"
 )
 
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
@@ -180,6 +182,36 @@ func ITB_HashWidth(i C.int) C.int { return C.int(capi.HashWidth(int(i))) }
 // a non-OK return on the same thread.
 func ITB_LastError(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	return C.int(writeCString(capi.LastError(), unsafe.Pointer(out), capBytes, outLen))
+}
+
+//export ITB_SetMemoryLimit
+//
+// Configures the Go runtime's heap-size soft limit (bytes). Pass -1
+// (or any negative value) to query the current limit without changing
+// it; the previous limit is returned. Setter calls override any
+// ITB_GOMEMLIMIT env var set at libitb load time.
+func ITB_SetMemoryLimit(limit C.int64_t) C.int64_t {
+	return C.int64_t(debug.SetMemoryLimit(int64(limit)))
+}
+
+//export ITB_SetGCPercent
+//
+// Configures the Go runtime's GC trigger percentage. The default is
+// 100 (GC fires at +100% heap growth); lower values trigger GC more
+// aggressively. Pass -1 (or any negative value) to query the current
+// value without changing it; the previous value is returned. Setter
+// calls override any ITB_GOGC env var set at libitb load time.
+func ITB_SetGCPercent(pct C.int) C.int {
+	if pct < 0 {
+		// Query mode — round-trip set-then-restore to retrieve current
+		// without long-term change. debug.SetGCPercent has no native
+		// query path; every call sets. Use 100 as the sentinel pass
+		// since it is the documented default and a benign target.
+		curr := debug.SetGCPercent(100)
+		debug.SetGCPercent(curr)
+		return C.int(curr)
+	}
+	return C.int(debug.SetGCPercent(int(pct)))
 }
 
 // ─── Seed lifecycle ────────────────────────────────────────────────

@@ -168,6 +168,20 @@ cd cmd/cshared && go build -buildmode=c-shared -o ../../dist/linux-amd64/libitb.
 cd cmd/cshared && go build -buildmode=c-shared -tags=noitbasm -o ../../dist/linux-amd64/libitb.so .
 ```
 
+### Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```go
+itb.SetMemoryLimit(512 << 20)
+itb.SetGCPercent(20)
+```
+
 ### Tests
 
 ```bash

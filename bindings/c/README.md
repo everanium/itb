@@ -78,10 +78,36 @@ The header is C++-aware (`extern "C"` block guarded by
 `__cplusplus`), so the same archive serves C and C++ consumers without
 a separate wrapper.
 
-## Run the integration test suite
+## Library lookup order
+
+1. `LD_LIBRARY_PATH` resolved at process startup. The test runner
+   inherits the embedded RPATH and does not export it.
+2. The `rpath` baked into the produced binary at link time
+   (`-Wl,-rpath,../../dist/linux-amd64`). Installed binaries find
+   `libitb` without `LD_LIBRARY_PATH`.
+3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
+
+- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+
+Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
+
+```c
+itb_set_memory_limit(512LL << 20);
+itb_set_gc_percent(20);
+```
+
+## Tests
 
 ```bash
-./bindings/c/run_tests.sh
+cd bindings/c
+make tests        # compile every test binary
+make test         # compile + run via ./run_tests.sh
+./run_tests.sh
 ```
 
 The harness compiles every `tests/test_*.c` to its own standalone
@@ -98,14 +124,30 @@ Override the compiler via the `CC` environment variable:
 CC=clang ./bindings/c/run_tests.sh
 ```
 
-## Library lookup order
+Each test file is compiled to its own standalone executable under
+`tests/build/` and linked against `build/libitb_c.a` plus `libitb.so`
+plus the system [Check](https://libcheck.github.io/check/) unit-testing
+framework. Per-process isolation gives every test a fresh libitb global
+state.
 
-1. `LD_LIBRARY_PATH` resolved at process startup. The test runner
-   inherits the embedded RPATH and does not export it.
-2. The `rpath` baked into the produced binary at link time
-   (`-Wl,-rpath,../../dist/linux-amd64`). Installed binaries find
-   `libitb` without `LD_LIBRARY_PATH`.
-3. System loader path (`ld.so.cache`, `DYLD_LIBRARY_PATH`, `PATH`).
+## Benchmarks
+
+A custom Go-bench-style harness lives under `bench/` and covers the
+four ops (`encrypt`, `decrypt`, `encrypt_auth`, `decrypt_auth`) across
+the nine PRF-grade primitives plus one mixed-primitive variant for
+both Single and Triple Ouroboros at 1024-bit ITB key width and 16 MiB
+payload. See [`bench/README.md`](bench/README.md) for invocation /
+environment variables / output format and [`bench/BENCH.md`](bench/BENCH.md)
+for recorded throughput results across the canonical pass matrix.
+
+The four-pass canonical sweep that fills `bench/BENCH.md` is driven by
+the wrapper script in the binding root:
+
+```bash
+cd bindings/c
+make bench
+./run_bench.sh                  # full 4-pass canonical sweep
+```
 
 ## Streaming AEAD
 
@@ -1278,58 +1320,6 @@ bit-identically.
 | `ITB_STREAM_TRUNCATED` | 23 | Streaming AEAD transcript truncated before the terminator chunk; surfaced by the binding's stream loop helpers |
 | `ITB_STREAM_AFTER_FINAL` | 24 | Streaming AEAD transcript carries chunk bytes after the terminator; surfaced by the binding's stream loop helpers |
 | `ITB_INTERNAL` | 99 | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
-
-## Tests
-
-`./run_tests.sh` builds and runs every `tests/test_*.c` file. The 30
-test files mirror the cross-binding coverage:
-
-```
-test_aescmac          test_easy_aescmac        test_easy_streams
-test_areion           test_easy_areion         test_nonce_sizes
-test_attach_lock_seed test_easy_auth           test_persistence
-test_auth             test_easy_blake2b        test_roundtrip
-test_blake2b          test_easy_blake2s        test_siphash24
-test_blake2s          test_easy_blake3         test_streams
-test_blake3           test_easy.c              test_streams_nonce
-test_blob             test_easy_chacha20
-test_chacha20         test_easy_mixed
-test_config           test_easy_nonce_sizes
-                      test_easy_persistence
-                      test_easy_roundtrip
-                      test_easy_siphash24
-```
-
-Each test file is compiled to its own standalone executable under
-`tests/build/` and linked against `build/libitb_c.a` plus `libitb.so`
-plus the system [Check](https://libcheck.github.io/check/) unit-testing
-framework. Per-process isolation gives every test a fresh libitb global
-state.
-
-Equivalent Make targets:
-
-```bash
-make tests        # compile every test binary
-make test         # compile + run via ./run_tests.sh
-```
-
-## Benchmarks
-
-A custom Go-bench-style harness lives under `bench/` and covers the
-four ops (`encrypt`, `decrypt`, `encrypt_auth`, `decrypt_auth`) across
-the nine PRF-grade primitives plus one mixed-primitive variant for
-both Single and Triple Ouroboros at 1024-bit ITB key width and 16 MiB
-payload. See [`bench/README.md`](bench/README.md) for invocation /
-environment variables / output format and [`bench/BENCH.md`](bench/BENCH.md)
-for recorded throughput results across the canonical pass matrix.
-
-The four-pass canonical sweep that fills `bench/BENCH.md` is driven by
-the wrapper script in the binding root:
-
-```bash
-make bench
-./run_bench.sh                  # full 4-pass canonical sweep
-```
 
 ## Constraints
 
