@@ -1012,6 +1012,18 @@ All seeds passed to one `encrypt` / `decrypt` call must share the
 same native hash width. Mixing widths throws `ITBError` with
 `Status.SeedWidthMix`.
 
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the binding fleet's tests and examples use 32 bytes uniformly across primitives for cross-binding consistency. `hmac-blake3` requires exactly 32 bytes by construction.
+
 ## Process-wide configuration
 
 Every setter takes effect for all subsequent encrypt / decrypt
@@ -1156,3 +1168,134 @@ byte.
 | 23 | `Status.StreamTruncated` | Streaming AEAD transcript truncated before the terminator chunk; raised as `ITBStreamTruncatedError` |
 | 24 | `Status.StreamAfterFinal` | Streaming AEAD transcript carries chunk bytes after the terminator; raised as `ITBStreamAfterFinalError` |
 | 99 | `Status.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
+
+## Constraints
+
+- **D 2.x with three supported compilers.** `dmd` is the reference
+  compiler; `ldc2` is the LLVM-backed release compiler used for the
+  bench arm; `gdc` (shipped via Arch's `gcc-d`) is optional. The
+  source uses `@safe` / `@nogc` / `pure` annotations where the FFI
+  substrate permits.
+- **`dub` build manager.** The package's `dub.json` declares
+  `targetType = "library"` plus `bench` and `eitb` sub-packages.
+- **Single library.** All consumer-visible declarations live under
+  `src/`; the FFI substrate (`itb.sys`) is kept separate so audits
+  can read it independently.
+- **libitb.so required at runtime.** The library links against
+  `dist/<os>-<arch>/libitb.<ext>` — the shared library must be built
+  first and reachable through the loader's search path (compile-time
+  `-L` plus runtime `RPATH` or `LD_LIBRARY_PATH`).
+- **No external runtime deps beyond Phobos + libitb.so.** The
+  binding uses only D's standard library; no third-party runtime
+  dependencies are pulled in.
+- **Frozen C ABI.** The `ITB_*` exports declared in `itb.sys` (synced
+  from `dist/<os>-<arch>/libitb.h`) are the contract; the binding
+  does not extend or reshape them.
+- **No `dlopen`.** Symbols are bound at link time. Consumers wanting
+  runtime FFI loading can wrap this binding's `itb.sys` layer in
+  their own `core.sys.posix.dlfcn` shim.
+
+## API Overview
+
+Every public symbol re-exports through the top-level `itb` module
+(`import itb;`). Sub-modules (`itb.seed`, `itb.streams`,
+`itb.wrapper`, ...) are reachable directly when finer-grained imports
+are preferred.
+
+### Library metadata (`itb.registry`)
+
+| Symbol | Purpose |
+|---|---|
+| `string version_()` | Library version `"<major>.<minor>.<patch>"` |
+| `int maxKeyBits()` | Max supported ITB key width in bits |
+| `int channels()` | Number of native channel slots |
+| `int headerSize()` | Current chunk header size in bytes |
+| `size_t parseChunkLen(const(ubyte)[] header)` | Parse chunk header, return total on-wire chunk length |
+| `HashInfo[] listHashes()` / `MACInfo[] listMACs()` | Catalogue accessors |
+
+### Process-wide configuration (`itb.registry`)
+
+| Symbol | Purpose |
+|---|---|
+| `void setBitSoup(int mode)` / `int getBitSoup()` | Bit Soup mode toggle |
+| `void setLockSoup(int mode)` / `int getLockSoup()` | Lock Soup mode toggle |
+| `void setMaxWorkers(int n)` / `int getMaxWorkers()` | Worker pool cap |
+| `void setNonceBits(int n)` / `int getNonceBits()` | Nonce width (128 / 256 / 512) |
+| `void setBarrierFill(int n)` / `int getBarrierFill()` | Barrier-fill factor |
+| `long setMemoryLimit(long limit)` | Go runtime heap soft limit in bytes; pass negative to query only |
+| `int setGcPercent(int pct)` | Go GC trigger percentage; pass negative to query only |
+
+### Seeds and MAC
+
+| Symbol | Purpose |
+|---|---|
+| `Seed(string hashName, int keyBits)` | CSPRNG-fresh seed |
+| `seed.width / hashName / hashKey / components / attachLockSeed(lockSeed)` | Introspection + lock-seed attachment |
+| `MAC(string macName, const(ubyte)[] key)` | Construct MAC handle |
+
+### Low-level cipher (`itb.cipher`)
+
+| Symbol | Purpose |
+|---|---|
+| `ubyte[] encrypt(noise, data, start, pt)` / `decrypt(...)` | Single Message |
+| `encryptAuth(noise, data, start, mac, pt)` / `decryptAuth(...)` | MAC-authenticated counterparts |
+| `encryptTriple(noise, d1, d2, d3, s1, s2, s3, pt)` / `decryptTriple(...)` | Triple Ouroboros |
+| `encryptAuthTriple(...)` / `decryptAuthTriple(...)` | Triple Ouroboros MAC-authenticated |
+
+### Easy Mode encryptor (`itb.encryptor`)
+
+| Symbol | Purpose |
+|---|---|
+| `Encryptor(string primitive, int keyBits, string mac = null, string mode = "single")` | Single-primitive constructor |
+| `Encryptor.mixed(primitives, keyBits, mac)` / `Encryptor.mixed3(primitives, keyBits, mac)` | Mixed-primitive Single / Triple |
+| `enc.encrypt(pt) / decrypt(ct) / encryptAuth(pt) / decryptAuth(ct)` | Cipher entry points |
+| `enc.setNonceBits / setBarrierFill / setBitSoup / setLockSoup / setLockSeed / setChunkSize` | Per-instance setters |
+| `enc.primitive / macName / keyBits / mode / nonceBits / headerSize / hasPRFKeys / isMixed / seedCount` | Accessors |
+| `enc.prfKey(slot) / macKey() / seedComponents(slot)` | Key-material accessors |
+| `enc.exportState() / importState(blob)` | State-blob persistence |
+| `EasyConfig peekConfig(const(ubyte)[] blob)` / `string lastMismatchField()` | Pre-import discriminator + mismatch-field accessor |
+| `enc.close()` | Release encryptor |
+
+### Streaming AEAD (`itb.streams`)
+
+| Symbol | Purpose |
+|---|---|
+| `StreamEncryptor / StreamDecryptor / StreamEncryptor3 / StreamDecryptor3` | Push-style Low-Level streamers |
+| `StreamEncryptorAuth / StreamDecryptorAuth / StreamEncryptorAuth3 / StreamDecryptorAuth3` | Push-style Streaming AEAD streamers |
+| `encryptStream / decryptStream / encryptStreamTriple / decryptStreamTriple` | Free-function bridges (Low-Level No MAC) |
+| `encryptStreamAuth / decryptStreamAuth / encryptStreamAuthTriple / decryptStreamAuthTriple` | Free-function bridges (Streaming AEAD) |
+| `DEFAULT_CHUNK_SIZE` | Default streaming chunk size in bytes |
+
+### Native Blob (`itb.blob`)
+
+| Symbol | Purpose |
+|---|---|
+| `Blob128 / Blob256 / Blob512` | Width-specific Native Blob handles |
+| `blob.setKey / setComponents / setMacKey / setMacName(...)` | Field setters |
+| `blob.getKey / getComponents / getMacKey / getMacName(...)` | Field getters |
+| `blob.exportState(opts) / exportStateTriple(opts) / importState(payload) / importStateTriple(payload)` | Serialisation |
+| `BlobSlot.N / D / S / L / D1 / D2 / D3 / S1 / S2 / S3` | Slot enum |
+| `BlobOpt.None / LockSeed / Mac` / `slotFromName(string)` | Export opt-in flags + name → slot helper |
+
+### Wrapper (`itb.wrapper`)
+
+| Symbol | Purpose |
+|---|---|
+| `Cipher.aes128ctr / chacha20 / siphash24` | Cipher enum |
+| `CIPHER_NAMES` | Canonical name list |
+| `string ffiName(Cipher c)` / `Cipher cipherFromName(string s)` | Enum ↔ string converters |
+| `size_t keySize(Cipher c)` / `size_t nonceSize(Cipher c)` | Cipher dimension accessors |
+| `ubyte[] wrapperGenerateKey(Cipher c)` | CSPRNG-fresh wrapper key |
+| `ubyte[] wrap(Cipher c, const(ubyte)[] key, const(ubyte)[] blob)` / `ubyte[] unwrap(...)` | Single Message Wrap / Unwrap |
+| `ubyte[] wrapInPlace(Cipher c, const(ubyte)[] key, ubyte[] buf)` / `ubyte[] unwrapInPlace(...)` | In-place Wrap / Unwrap |
+| `WrapStreamWriter / UnwrapStreamReader` | Streaming wrap writer / unwrap reader |
+| `WrapperError / WrapperInvalidCipherError / WrapperInvalidKeyError / WrapperInvalidNonceError / WrapperHandleClosedError` | Typed exceptions |
+
+### Error model (`itb.errors`)
+
+| Symbol | Purpose |
+|---|---|
+| `ITBError` | Base exception class; `.statusCode` carries the numeric status |
+| `ITBEasyMismatchError / ITBBlobModeMismatchError / ITBBlobMalformedError / ITBBlobVersionTooNewError` | Typed subclasses for cold-path discriminators |
+| `ITBStreamTruncatedError / ITBStreamAfterFinalError` | Streaming AEAD transcript-shape exceptions |
+| `Status` (enum, `itb.status`) | Status-code surface |

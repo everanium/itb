@@ -953,6 +953,18 @@ All seeds passed to one `encrypt` / `decrypt` call must share the
 same native hash width. Mixing widths raises
 `ITBError(STATUS_SEED_WIDTH_MIX)`.
 
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the binding fleet's tests and examples use 32 bytes uniformly across primitives for cross-binding consistency. `hmac-blake3` requires exactly 32 bytes by construction.
+
 ## Process-wide configuration
 
 Every setter takes effect for all subsequent encrypt / decrypt
@@ -1089,6 +1101,29 @@ cipher entry point. Pass at least one byte.
 | 24 | `STATUS_STREAM_AFTER_FINAL` | Streaming AEAD transcript carries chunk bytes after the terminator; surfaced by the binding's stream loop as `ITBError` carrying this status |
 | 99 | `STATUS_INTERNAL` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
 
+## Constraints
+
+- **Rust 1.70 minimum (edition 2021).** The crate's `Cargo.toml`
+  declares `edition = "2021"` and `rust-version = "1.70"`. Earlier
+  toolchains lack stabilised `let ... else` and other ergonomics the
+  wrapper layer relies on.
+- **Single crate.** All consumer-visible declarations live under
+  `bindings/rust/src/`; the FFI substrate is the `sys` submodule kept
+  separate so audits can read it independently.
+- **libitb.so required at runtime.** The crate links against
+  `dist/<os>-<arch>/libitb.<ext>` — the shared library must be built
+  first and reachable through the loader's search path (compile-time
+  `-L` plus runtime `RPATH` or `LD_LIBRARY_PATH`).
+- **No external runtime deps beyond libstd + libitb.so.** The crate
+  uses only the Rust standard library; no third-party runtime
+  dependencies are pulled in.
+- **Frozen C ABI.** The `ITB_*` exports declared in the `sys`
+  submodule (synced from `dist/<os>-<arch>/libitb.h`) are the
+  contract; the binding does not extend or reshape them.
+- **No `dlopen`.** Symbols are bound at link time. Consumers wanting
+  runtime FFI loading can wrap this crate's `sys` layer in their own
+  `libloading` shim.
+
 ## API Overview
 
 [`Encryptor`]: src/encryptor.rs
@@ -1138,6 +1173,8 @@ cipher entry point. Pass at least one byte.
 [`itb::version`]: src/registry.rs
 [`itb::list_macs`]: src/registry.rs
 [`itb::list_hashes`]: src/registry.rs
+[`itb::set_memory_limit`]: src/registry.rs
+[`itb::set_gc_percent`]: src/registry.rs
 [`itb::STATUS_MAC_FAILURE`]: src/lib.rs
 [`itb::STATUS_EASY_MISMATCH`]: src/lib.rs
 [`itb::STATUS_SEED_WIDTH_MIX`]: src/lib.rs

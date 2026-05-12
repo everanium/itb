@@ -987,6 +987,18 @@ All seeds passed to one `Cipher.Encrypt` / `Cipher.Decrypt` call
 must share the same native hash width. Mixing widths raises
 `ItbException` with status `SeedWidthMix`.
 
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the binding fleet's tests and examples use 32 bytes uniformly across primitives for cross-binding consistency. `hmac-blake3` requires exactly 32 bytes by construction.
+
 ## Process-wide configuration
 
 Every setter takes effect for all subsequent encrypt / decrypt
@@ -1134,3 +1146,135 @@ every cipher entry point. Pass at least one byte.
 | 23 | `StatusCode.StreamTruncated` | Streaming AEAD transcript truncated before the terminator chunk; raised as `ItbStreamTruncatedException` |
 | 24 | `StatusCode.StreamAfterFinal` | Streaming AEAD transcript carries chunk bytes after the terminator; raised as `ItbStreamAfterFinalException` |
 | 99 | `StatusCode.Internal` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
+
+## Constraints
+
+- **.NET 10 minimum.** Every project file under `bindings/csharp/`
+  declares `<TargetFramework>net10.0</TargetFramework>`. Earlier
+  runtimes lack the `Span<T>` / `Memory<T>` / `LibraryImport`
+  generator ergonomics the wrapper layer depends on.
+- **C# `latest` with nullable reference types.** Every project file
+  declares `<LangVersion>latest</LangVersion>` and
+  `<Nullable>enable</Nullable>`; consumers compile against the
+  nullable-annotated public surface.
+- **Single assembly.** All consumer-visible declarations live in the
+  `Itb` namespace inside `Itb.dll`; the FFI substrate (`Itb.Sys`
+  internal class) is kept separate so audits can read it
+  independently.
+- **libitb.so required at runtime.** The assembly loads
+  `dist/<os>-<arch>/libitb.<ext>` via `NativeLibrary.Load`; the
+  shared library must be built first and reachable through the
+  loader's search path.
+- **No external runtime deps beyond the .NET BCL + libitb.so.** The
+  package depends only on the .NET 10 base class library; the test
+  runner additionally requires `Microsoft.NET.Test.Sdk` + `xunit`.
+- **Frozen C ABI.** The `ITB_*` exports declared inside
+  `Itb.Sys.NativeMethods` (synced from `dist/<os>-<arch>/libitb.h`)
+  are the contract; the binding does not extend or reshape them.
+
+## API Overview
+
+Every public symbol lives in the `Itb` namespace. The wrapper
+(format-deniability outer cipher) surface is split into the
+`Itb.Wrapper` namespace.
+
+### Library metadata (`Itb.Library`)
+
+| Symbol | Purpose |
+|---|---|
+| `Library.Version` | Library version `"<major>.<minor>.<patch>"` |
+| `Library.MaxKeyBits` | Max supported ITB key width in bits |
+| `Library.Channels` | Number of native channel slots |
+| `Library.HeaderSize` | Current chunk header size in bytes |
+| `Library.ParseChunkLen(ReadOnlySpan<byte> header) -> int` | Parse chunk header, return total on-wire chunk length |
+| `Library.ListHashes() -> IReadOnlyList<HashInfo>` / `Library.ListMacs() -> IReadOnlyList<MacInfo>` | Catalogue accessors |
+| `Library.LastError` / `Library.LastMismatchField` | Per-thread last-error message / Easy mismatch field name |
+
+### Process-wide configuration (`Itb.Library`)
+
+| Symbol | Purpose |
+|---|---|
+| `Library.BitSoup { get; set; }` | Bit Soup mode toggle |
+| `Library.LockSoup { get; set; }` | Lock Soup mode toggle |
+| `Library.MaxWorkers { get; set; }` | Worker pool cap |
+| `Library.NonceBits { get; set; }` | Nonce width (128 / 256 / 512) |
+| `Library.BarrierFill { get; set; }` | Barrier-fill factor |
+| `long Library.SetMemoryLimit(long limit)` | Go runtime heap soft limit in bytes; pass negative to query only |
+| `int Library.SetGcPercent(int pct)` | Go GC trigger percentage; pass negative to query only |
+
+### Seeds and MAC
+
+| Symbol | Purpose |
+|---|---|
+| `new Seed(string hashName, int keyBits)` | CSPRNG-fresh seed |
+| `Seed.FromComponents(hashName, keyBits, components)` | Reconstruct from explicit components |
+| `seed.Width / HashName / HashNameIntrospect() / GetHashKey() / GetComponents() / AttachLockSeed(lock)` | Introspection + lock-seed attachment |
+| `new Mac(string macName, ReadOnlySpan<byte> key)` | Construct MAC handle |
+
+### Low-level cipher (`Itb.Cipher`)
+
+| Symbol | Purpose |
+|---|---|
+| `Cipher.Encrypt(noise, data, start, pt) -> byte[]` / `Cipher.Decrypt(...)` | Single Message |
+| `Cipher.EncryptAuth(noise, data, start, mac, pt)` / `Cipher.DecryptAuth(...)` | MAC-authenticated counterparts |
+| `Cipher.EncryptTriple(noise, d1, d2, d3, s1, s2, s3, pt)` / `Cipher.DecryptTriple(...)` | Triple Ouroboros |
+| `Cipher.EncryptAuthTriple(...)` / `Cipher.DecryptAuthTriple(...)` | Triple Ouroboros MAC-authenticated |
+
+### Easy Mode encryptor (`Itb.Encryptor`)
+
+| Symbol | Purpose |
+|---|---|
+| `new Encryptor(primitive, keyBits, mac=null, mode="single")` | Single-primitive constructor |
+| `Encryptor.Mixed(primitives, keyBits, mac=null)` / `Encryptor.Mixed3(primitives, keyBits, mac=null)` | Mixed-primitive Single / Triple |
+| `enc.Encrypt(pt) / Decrypt(ct) / EncryptAuth(pt) / DecryptAuth(ct)` | Cipher entry points |
+| `enc.SetNonceBits / SetBarrierFill / SetBitSoup / SetLockSoup / SetLockSeed / SetChunkSize` | Per-instance setters |
+| `enc.Primitive / KeyBits / Mode / MacName / SeedCount / NonceBits / HeaderSize / IsMixed / HasPRFKeys / PrimitiveAt(slot)` | Accessors |
+| `enc.PRFKey(slot) / MacKey() / SeedComponents(slot) / ParseChunkLen(header)` | Key-material + per-instance chunk-length parser |
+| `enc.Export() / Import(blob)` | State-blob persistence |
+| `Encryptor.PeekConfig(blob) -> EncryptorConfig` | Pre-import discriminator |
+| `enc.EncryptStreamAuth(...) / DecryptStreamAuth(...)` | Easy Mode Streaming AEAD over `System.IO.Stream` |
+| `enc.Close()` / `enc.Dispose()` | Close + release |
+
+### Streaming AEAD (`Itb.Streams`)
+
+| Symbol | Purpose |
+|---|---|
+| `new StreamEncryptor(noise, data, start, output, opts?)` / `new StreamDecryptor(noise, data, start, output)` | Push-style Low-Level Single |
+| `new StreamEncryptorTriple(noise, d1, d2, d3, s1, s2, s3, output, opts?)` / `new StreamDecryptorTriple(...)` | Push-style Low-Level Triple |
+| `StreamPipeline.EncryptStream / DecryptStream / EncryptStreamTriple / DecryptStreamTriple` | Free-function bridges (Low-Level No MAC) |
+| `StreamPipeline.EncryptStreamAuth / DecryptStreamAuth / EncryptStreamAuthTriple / DecryptStreamAuthTriple` | Free-function bridges (Streaming AEAD) |
+| `StreamDefaults.DefaultChunkSize` | Default streaming chunk size in bytes |
+
+### Native Blob
+
+| Symbol | Purpose |
+|---|---|
+| `new Blob128() / new Blob256() / new Blob512()` | Width-specific Native Blob handles |
+| `blob.Width / Mode` | Width + mode accessors |
+| `blob.SetKey / SetComponents / SetMacKey / SetMacName(...)` | Field setters |
+| `blob.GetKey / GetComponents / GetMacKey / GetMacName(...)` | Field getters |
+| `blob.Export(opts) / ExportTriple(opts) / Import(payload) / ImportTriple(payload)` | Serialisation |
+| `BlobSlot.N / D / S / L / D1 / D2 / D3 / S1 / S2 / S3` | Slot enum |
+| `BlobExportOpts.None / LockSeed / Mac` | Export opt-in flag bits |
+
+### Wrapper (`Itb.Wrapper`)
+
+| Symbol | Purpose |
+|---|---|
+| `Cipher.Aes128Ctr / ChaCha20 / SipHash24` | Cipher enum |
+| `Wrapper.AllCiphers` | Canonical cipher list |
+| `Wrapper.KeySize(cipher) / NonceSize(cipher)` | Cipher dimension accessors |
+| `Wrapper.GenerateKey(cipher) -> byte[]` | CSPRNG-fresh wrapper key |
+| `Wrapper.Wrap(cipher, key, blob) -> byte[]` / `Wrapper.Unwrap(cipher, key, wire) -> byte[]` | Single Message Wrap / Unwrap |
+| `Wrapper.WrapInPlace(cipher, key, buf) -> byte[]` / `Wrapper.UnwrapInPlace(cipher, key, wire) -> Span<byte>` | In-place Wrap / Unwrap |
+| `new WrapStreamWriter(cipher, key)` / `new UnwrapStreamReader(cipher, key, wireNonce)` | Streaming wrap writer / unwrap reader |
+| `InvalidCipherException / InvalidKeyException / InvalidNonceException / WrapperHandleClosedException` | Typed exceptions |
+
+### Error model
+
+| Symbol | Purpose |
+|---|---|
+| `ItbException` | Base exception class; `.Code` carries the numeric status |
+| `ItbEasyMismatchException / ItbBlobModeMismatchException / ItbBlobMalformedException / ItbBlobVersionTooNewException` | Typed subclasses for cold-path discriminators |
+| `ItbStreamTruncatedException / ItbStreamAfterFinalException` | Streaming AEAD transcript-shape exceptions |
+| `StatusCode` (enum) | Status-code surface |

@@ -1000,6 +1000,18 @@ All seeds passed to one `encrypt` / `decrypt` call must share the
 same native hash width. Mixing widths raises
 `ITBError(STATUS_SEED_WIDTH_MIX)`.
 
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the binding fleet's tests and examples use 32 bytes uniformly across primitives for cross-binding consistency. `hmac-blake3` requires exactly 32 bytes by construction.
+
 ## Process-wide configuration
 
 Every setter takes effect for all subsequent encrypt / decrypt
@@ -1126,3 +1138,138 @@ cipher entry point. Pass at least one byte.
 | 23 | `STATUS_STREAM_TRUNCATED` | Streaming AEAD transcript truncated before the terminator chunk; raised as `ItbStreamTruncatedError` |
 | 24 | `STATUS_STREAM_AFTER_FINAL` | Streaming AEAD transcript carries chunk bytes after the terminator; raised as `ItbStreamAfterFinalError` |
 | 99 | `STATUS_INTERNAL` | Generic "internal" sentinel for paths the caller cannot recover from at the binding layer |
+
+## Constraints
+
+- **Python 3.9 minimum.** The package's `pyproject.toml` declares
+  `requires-python = ">=3.9"`. Type-hint syntax (`X | None`, builtin
+  generics) and modern `dataclasses` features are used throughout the
+  wrapper.
+- **Single distribution.** All consumer-visible declarations live
+  under the `itb` package; the FFI substrate (`itb._sys`) is kept
+  separate so audits can read it independently.
+- **libitb.so required at runtime.** The package loads
+  `dist/<os>-<arch>/libitb.<ext>` via cffi at import time; the shared
+  library must be built first and reachable through the loader's
+  search path.
+- **External runtime deps.** The single non-stdlib runtime dependency
+  is `cffi >= 1.15`. The test runner additionally requires `pytest`.
+- **Frozen C ABI.** The `ITB_*` exports declared by the cffi-parsed
+  header (synced from `dist/<os>-<arch>/libitb.h`) are the contract;
+  the binding does not extend or reshape them.
+- **No `dlopen` indirection.** cffi resolves symbols at import time
+  against the located `libitb.<ext>`. Consumers wanting runtime FFI
+  loading against a different `libitb` can override the search via
+  the documented environment variables.
+
+## API Overview
+
+Every public symbol is reachable from the top-level `itb` namespace
+(via `itb.__all__`). Submodule `itb.wrapper` exposes the
+format-deniability outer-cipher surface and is imported on demand
+(`from itb import wrapper`).
+
+### Library metadata
+
+| Symbol | Purpose |
+|---|---|
+| `itb.version() -> str` | Library version `"<major>.<minor>.<patch>"` |
+| `itb.max_key_bits() -> int` | Max supported ITB key width in bits |
+| `itb.channels() -> int` | Number of native channel slots |
+| `itb.header_size() -> int` | Current chunk header size in bytes |
+| `itb.parse_chunk_len(header: bytes) -> int` | Parse a chunk header, return total on-wire chunk length |
+| `itb.list_hashes() -> list[tuple[str, int]]` | `(name, width_bits)` catalogue |
+| `itb.list_macs() -> list[tuple[str, int, int, int]]` | `(name, key_size, tag_size, min_key_bytes)` catalogue |
+| `itb.last_error() -> str` | Per-thread last-error message |
+
+### Process-wide configuration
+
+| Symbol | Purpose |
+|---|---|
+| `itb.set_bit_soup(mode: int)` / `itb.get_bit_soup() -> int` | Bit Soup mode toggle |
+| `itb.set_lock_soup(mode: int)` / `itb.get_lock_soup() -> int` | Lock Soup mode toggle |
+| `itb.set_max_workers(n: int)` / `itb.get_max_workers() -> int` | Worker pool cap |
+| `itb.set_nonce_bits(n: int)` / `itb.get_nonce_bits() -> int` | Nonce width (128 / 256 / 512) |
+| `itb.set_barrier_fill(n: int)` / `itb.get_barrier_fill() -> int` | Barrier-fill factor |
+| `itb.set_memory_limit(limit: int) -> int` | Go runtime heap soft limit in bytes; pass negative to query only |
+| `itb.set_gc_percent(pct: int) -> int` | Go GC trigger percentage; pass negative to query only |
+
+### Seeds and MAC
+
+| Symbol | Purpose |
+|---|---|
+| `itb.Seed(hash_name: str, key_bits: int)` | CSPRNG-fresh seed |
+| `itb.Seed.from_components(hash_name, key_bits, components)` | Reconstruct from explicit components |
+| `Seed.width` / `Seed.hash_name` / `Seed.hash_key` / `Seed.components` / `Seed.attach_lock_seed(lock_seed)` | Introspection + lock-seed attachment |
+| `itb.MAC(mac_name: str, key: bytes)` | Construct MAC handle (32-byte keys across the shipped catalogue) |
+
+### Low-level cipher (free functions)
+
+| Symbol | Purpose |
+|---|---|
+| `itb.encrypt(noise, data, start, plaintext) -> bytes` | Single Message encrypt |
+| `itb.decrypt(noise, data, start, ciphertext) -> bytes` | Single Message decrypt |
+| `itb.encrypt_auth(noise, data, start, mac, plaintext)` / `itb.decrypt_auth(...)` | MAC-authenticated counterparts |
+| `itb.encrypt_triple(noise, d1, d2, d3, s1, s2, s3, plaintext)` / `itb.decrypt_triple(...)` | Triple Ouroboros |
+| `itb.encrypt_auth_triple(...)` / `itb.decrypt_auth_triple(...)` | Triple Ouroboros MAC-authenticated |
+
+### Easy Mode encryptor
+
+| Symbol | Purpose |
+|---|---|
+| `itb.Encryptor(primitive, key_bits, mac=None, mode="single")` | Single-primitive constructor |
+| `itb.Encryptor.mixed(primitives, key_bits, mac=None)` | Mixed-primitive Single Ouroboros |
+| `itb.Encryptor.mixed3(primitives, key_bits, mac=None)` | Mixed-primitive Triple Ouroboros |
+| `enc.encrypt(plaintext)` / `enc.decrypt(ciphertext)` | Cipher entry points |
+| `enc.encrypt_auth(plaintext)` / `enc.decrypt_auth(ciphertext)` | MAC-authenticated cipher entry points |
+| `enc.set_nonce_bits / set_barrier_fill / set_bit_soup / set_lock_soup / set_lock_seed / set_chunk_size` | Per-instance setters |
+| `enc.primitive / mac_name / key_bits / mode / nonce_bits / header_size / has_prf_keys / is_mixed / seed_count` | Accessors |
+| `enc.prf_key(slot)` / `enc.mac_key()` / `enc.seed_components(slot)` | Key-material accessors |
+| `enc.export()` / `enc.import_state(blob)` | State-blob persistence |
+| `itb.peek_config(blob) -> dict` / `itb.last_mismatch_field() -> str` | Pre-import discriminator + mismatch-field accessor |
+| `enc.close()` | Release encryptor (idempotent) |
+
+### Streaming AEAD
+
+| Symbol | Purpose |
+|---|---|
+| `itb.encrypt_stream(read_fn, write_fn, noise, data, start, mac=None)` / `itb.decrypt_stream(...)` | Single Low-Level streams |
+| `itb.encrypt_stream_triple(read_fn, write_fn, noise, d1, d2, d3, s1, s2, s3, mac=None)` / `itb.decrypt_stream_triple(...)` | Triple Low-Level streams |
+| `itb.encrypt_stream_auth(...)` / `itb.decrypt_stream_auth(...)` | Single Low-Level Streaming AEAD |
+| `itb.encrypt_stream_auth_triple(...)` / `itb.decrypt_stream_auth_triple(...)` | Triple Low-Level Streaming AEAD |
+| `itb.StreamEncryptor / StreamDecryptor / StreamEncryptor3 / StreamDecryptor3` | Push-style Low-Level streamers |
+| `itb.StreamEncryptorAuth / StreamDecryptorAuth / StreamEncryptorAuth3 / StreamDecryptorAuth3` | Push-style Streaming AEAD streamers |
+| `itb.DEFAULT_CHUNK_SIZE` | Default streaming chunk size in bytes |
+
+### Native Blob
+
+| Symbol | Purpose |
+|---|---|
+| `itb.Blob128() / Blob256() / Blob512()` | Width-specific Native Blob handles |
+| `blob.set_key(slot, key)` / `blob.set_components(slot, components)` / `blob.set_mac_key(key)` / `blob.set_mac_name(name)` | Field setters |
+| `blob.get_key(slot)` / `blob.get_components(slot)` / `blob.get_mac_key()` / `blob.get_mac_name()` | Field getters |
+| `blob.export(opts=0)` / `blob.export_triple(opts=0)` / `blob.import_blob(payload)` / `blob.import_triple(payload)` | Serialisation |
+| `itb.SLOT_N / SLOT_D / SLOT_S / SLOT_L / SLOT_D1 / SLOT_D2 / SLOT_D3 / SLOT_S1 / SLOT_S2 / SLOT_S3` | Slot indices |
+| `itb.OPT_LOCKSEED / OPT_MAC` | Export opt-in flag bits |
+
+### Wrapper (`itb.wrapper`)
+
+| Symbol | Purpose |
+|---|---|
+| `wrapper.key_size(cipher_name: str) -> int` | Wrapper-cipher key size in bytes |
+| `wrapper.nonce_size(cipher_name: str) -> int` | Wire nonce size in bytes |
+| `wrapper.generate_key(cipher_name: str) -> bytes` | CSPRNG-fresh wrapper key |
+| `wrapper.wrap(cipher_name, key, blob) -> bytes` / `wrapper.unwrap(cipher_name, key, wire) -> bytes` | Single Message Wrap / Unwrap |
+| `wrapper.wrap_in_place(cipher_name, key, buf) -> bytes` / `wrapper.unwrap_in_place(cipher_name, key, wire) -> memoryview` | In-place Wrap / Unwrap |
+| `wrapper.WrapStreamWriter(cipher_name, key)` / `wrapper.UnwrapStreamReader(cipher_name, key, wire_nonce)` | Streaming wrap writer / unwrap reader |
+
+Wrapper cipher names: `aes-128-ctr`, `chacha20`, `siphash24`.
+
+### Error model
+
+| Symbol | Purpose |
+|---|---|
+| `itb.ITBError` | Base exception class; `.code` carries the numeric status |
+| `itb.EasyMismatchError / BlobModeMismatchError / BlobMalformedError / BlobVersionTooNewError` | Typed subclasses for cold-path discriminators |
+| `itb.ItbStreamTruncatedError / ItbStreamAfterFinalError` | Streaming AEAD transcript-shape exceptions |
+| `itb.STATUS_OK / STATUS_BAD_HASH / ... / STATUS_INTERNAL` | 24 status-code constants plus `STATUS_INTERNAL` |
