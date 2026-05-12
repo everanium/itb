@@ -1180,6 +1180,18 @@ authenticated counterparts `itb_encrypt_auth_triple` /
 All seeds passed to one encrypt / decrypt call must share the same
 native hash width. Mixing widths surfaces `ITB_SEED_WIDTH_MIX`.
 
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the binding fleet's tests and examples use 32 bytes uniformly across primitives for cross-binding consistency. `hmac-blake3` requires exactly 32 bytes by construction.
+
 ## Process-wide configuration
 
 Every setter takes effect for all subsequent encrypt / decrypt calls in
@@ -1346,3 +1358,128 @@ bit-identically.
 - **No `dlopen`.** Symbols are bound at link time. Consumers wanting
   runtime FFI loading (different `libitb.so` per environment) can wrap
   this binding's static archive in their own `dlopen` shim.
+
+## API Overview
+
+All public declarations live in `include/itb.h`. The surface is
+organised by concern below; every function returns `itb_status_t`
+(typedef'd integer status code) or a small fixed-width primitive type.
+Output strings follow a uniform `(char *out, size_t cap, size_t *out_len)`
+probe-then-fill convention.
+
+### Library metadata
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_version(char *out, size_t cap, size_t *out_len)` | Version string `"<major>.<minor>.<patch>"` |
+| `int itb_max_key_bits(void)` | Max supported ITB key width in bits |
+| `int itb_channels(void)` | Number of native channel slots |
+| `int itb_header_size(void)` | Current chunk header size (tracks `itb_set_nonce_bits`) |
+| `itb_status_t itb_parse_chunk_len(const void *header, size_t header_len, size_t *out_total)` | Parse chunk header, return total on-wire chunk length |
+| `int itb_hash_count(void)` / `itb_status_t itb_hash_name(int i, ...)` / `int itb_hash_width(int i)` | Hash catalogue accessors |
+| `int itb_mac_count(void)` / `itb_status_t itb_mac_name(int i, ...)` / `int itb_mac_key_size(int i)` / `int itb_mac_tag_size(int i)` / `int itb_mac_min_key_bytes(int i)` | MAC catalogue accessors |
+| `itb_status_t itb_last_status(void)` | Per-thread last status code |
+
+### Process-wide configuration
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_set_bit_soup(int mode)` / `int itb_get_bit_soup(void)` | Bit Soup mode toggle |
+| `itb_status_t itb_set_lock_soup(int mode)` / `int itb_get_lock_soup(void)` | Lock Soup mode toggle |
+| `itb_status_t itb_set_max_workers(int n)` / `int itb_get_max_workers(void)` | Worker pool size cap |
+| `itb_status_t itb_set_nonce_bits(int n)` / `int itb_get_nonce_bits(void)` | Nonce width (128 / 256 / 512) |
+| `itb_status_t itb_set_barrier_fill(int n)` / `int itb_get_barrier_fill(void)` | Barrier-fill factor (1, 2, 4, 8, 16, 32) |
+| `int64_t itb_set_memory_limit(int64_t limit)` | Go runtime heap soft limit; negative = query only |
+| `int itb_set_gc_percent(int pct)` | Go GC trigger percentage; negative = query only |
+
+### Seeds (`itb_seed_t`)
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_seed_new(const char *hash_name, int key_bits, itb_seed_t **out)` | CSPRNG-fresh seed |
+| `itb_status_t itb_seed_from_components(...)` | Reconstruct seed from explicit components |
+| `void itb_seed_free(itb_seed_t *s)` | Release seed handle |
+| `itb_status_t itb_seed_width(const itb_seed_t *s, int *out_width)` | Native digest width |
+| `itb_status_t itb_seed_hash_name(...)` / `itb_seed_hash_key(...)` / `itb_seed_components(...)` | Introspection accessors |
+| `itb_status_t itb_seed_attach_lock_seed(itb_seed_t *noise, const itb_seed_t *lock)` | Bind a lock seed onto a noise seed |
+
+### MAC handles (`itb_mac_t`)
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_mac_new(const char *mac_name, const uint8_t *key, size_t key_len, itb_mac_t **out)` | Construct MAC handle |
+| `void itb_mac_free(itb_mac_t *m)` | Release MAC handle |
+
+### Low-level cipher (free functions)
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_encrypt(noise, data, start, plaintext, ..., out)` | Single Message encrypt |
+| `itb_status_t itb_decrypt(noise, data, start, ciphertext, ..., out)` | Single Message decrypt |
+| `itb_status_t itb_encrypt_auth(noise, data, start, mac, ...)` / `itb_decrypt_auth(...)` | MAC-authenticated counterparts |
+| `itb_status_t itb_encrypt_triple(noise, d1, d2, d3, s1, s2, s3, ...)` / `itb_decrypt_triple(...)` | Triple Ouroboros (7 seeds) |
+| `itb_status_t itb_encrypt_auth_triple(...)` / `itb_decrypt_auth_triple(...)` | Triple Ouroboros MAC-authenticated |
+| `void itb_buffer_free(uint8_t *buf)` | Free output buffer allocated by an encrypt / decrypt call |
+
+### Easy Mode encryptor (`itb_encryptor_t`)
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_encryptor_new(const char *primitive, int key_bits, const char *mac, const char *mode, itb_encryptor_t **out)` | Single-primitive constructor |
+| `itb_status_t itb_encryptor_new_mixed(...)` / `itb_encryptor_new_mixed3(...)` | Mixed-primitive Single / Triple constructors |
+| `itb_status_t itb_encryptor_encrypt(...)` / `itb_encryptor_decrypt(...)` | Cipher entry points |
+| `itb_status_t itb_encryptor_encrypt_auth(...)` / `itb_encryptor_decrypt_auth(...)` | MAC-authenticated cipher entry points |
+| `itb_status_t itb_encryptor_set_nonce_bits / _barrier_fill / _bit_soup / _lock_soup / _lock_seed / _chunk_size (e, n)` | Per-instance overrides |
+| `itb_status_t itb_encryptor_primitive / _mac_name / _primitive_at / _key_bits / _mode / _seed_count / _nonce_bits / _header_size / _has_prf_keys / _is_mixed (...)` | Configuration accessors |
+| `itb_status_t itb_encryptor_parse_chunk_len(...)` | Per-instance chunk-length parser |
+| `itb_status_t itb_encryptor_prf_key(e, slot, ...)` / `itb_encryptor_mac_key(e, ...)` / `itb_encryptor_seed_components(...)` | Key-material accessors |
+| `itb_status_t itb_encryptor_export(...)` / `itb_encryptor_import(e, blob, blob_len)` | State-blob persistence |
+| `itb_status_t itb_easy_peek_config(...)` / `itb_easy_last_mismatch_field(...)` | Pre-import discriminator + mismatch field name |
+| `itb_status_t itb_encryptor_close(itb_encryptor_t *e)` / `void itb_encryptor_free(itb_encryptor_t *e)` | Close + release |
+
+### Streaming AEAD (free-function bridges and per-encryptor variants)
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_stream_encrypt / _decrypt (seeds, callbacks, ...)` | Single-primitive Low-Level stream (No MAC) |
+| `itb_status_t itb_stream_encrypt_triple / _decrypt_triple (...)` | Triple Low-Level stream (No MAC) |
+| `itb_status_t itb_stream_encrypt_auth / _decrypt_auth (seeds, mac, ...)` | Single Low-Level Streaming AEAD |
+| `itb_status_t itb_stream_encrypt_auth_triple / _decrypt_auth_triple (...)` | Triple Low-Level Streaming AEAD |
+| `itb_status_t itb_encryptor_stream_encrypt_auth(e, ...)` / `itb_encryptor_stream_decrypt_auth(e, ...)` | Easy Mode Streaming AEAD |
+| `typedef int (*itb_stream_read_fn)(...)` / `typedef int (*itb_stream_write_fn)(...)` | User-supplied IO callbacks |
+
+### Native Blob (`itb_blob128_t` / `itb_blob256_t` / `itb_blob512_t`)
+
+The three blob types are declared uniformly through the
+`ITB_DECLARE_BLOB_API(width, ...)` macro family. Per width the surface
+covers: `itb_blob<width>_new` / `_free`, `_set_key` / `_set_components`
+/ `_set_mac_key` / `_set_mac_name`, the matching `_get_*` introspection
+accessors, `_export` / `_export_triple` / `_import` / `_import_triple`,
+and `_width` / `_mode`.
+
+### Wrapper (format-deniability outer cipher)
+
+| Function | Purpose |
+|---|---|
+| `itb_status_t itb_wrapper_key_size(itb_wrapper_cipher_t cipher, size_t *out)` | Key size in bytes for a given cipher |
+| `itb_status_t itb_wrapper_nonce_size(itb_wrapper_cipher_t cipher, size_t *out)` | Wire nonce size in bytes |
+| `itb_status_t itb_wrapper_generate_key(itb_wrapper_cipher_t cipher, uint8_t *out, size_t out_cap)` | CSPRNG-fresh wrapper key |
+| `itb_status_t itb_wrap(cipher, key, blob, ...)` / `itb_unwrap(cipher, key, wire, ...)` | Single Message Wrap / Unwrap |
+| `itb_status_t itb_wrap_in_place(cipher, key, buf, ...)` / `itb_unwrap_in_place(...)` | In-place Wrap / Unwrap |
+| `itb_status_t itb_wrap_stream_writer_new(cipher, key, itb_wrap_stream_writer_t **out)` | Open a streaming wrap writer |
+| `itb_status_t itb_wrap_stream_writer_update(w, src, src_len, out, out_cap, ...)` / `void itb_wrap_stream_writer_free(w)` | Streaming wrap update / close |
+| `itb_status_t itb_unwrap_stream_reader_new(cipher, key, wire_nonce, ...)` / `..._update(...)` / `void ..._free(r)` | Streaming unwrap reader |
+
+The wrapper cipher enum (`itb_wrapper_cipher_t`) covers
+`ITB_WRAPPER_CIPHER_AES_128_CTR`, `ITB_WRAPPER_CIPHER_CHACHA20`, and
+`ITB_WRAPPER_CIPHER_SIPHASH24`.
+
+### Error handling
+
+| Symbol | Purpose |
+|---|---|
+| `typedef enum itb_status` | 24 named status codes plus `ITB_STATUS_INTERNAL` (99) |
+| `itb_status_t itb_last_status(void)` | Per-thread last-error retrieval |
+
+Hash names are sourced from `itb_hash_*`; MAC names (`kmac256`,
+`hmac-sha256`, `hmac-blake3`) from `itb_mac_*`.
