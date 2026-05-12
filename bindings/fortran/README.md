@@ -1149,3 +1149,120 @@ entry points. HPC consumers driving in-memory encryption against
 chunk buffers larger than the L3 cache stand to benefit from the
 reduced bandwidth pressure. No timeline; the surface here remains
 copy-based until libitb's roadmap entry lands.
+
+## API Overview
+
+A concise module-by-module roll-up of the public surface. The
+[Public API reference](#public-api-reference) section above carries
+the per-symbol breakdown; this overview groups the same symbols by
+concern for quick scanning. Every entry is a `public ::` export
+from the named module.
+
+### Library metadata (`itb_library`)
+
+| Symbol | Purpose |
+|---|---|
+| `itb_version () → string` | Library version `"<major>.<minor>.<patch>"` |
+| `itb_max_key_bits () → int` | Max supported ITB key width in bits |
+| `itb_channels () → int` | Number of native channel slots |
+| `itb_header_size () → int` | Current chunk header size in bytes |
+| `itb_hash_count / itb_hash_name (i) / itb_hash_width (i) / itb_list_hashes ()` | Hash catalogue accessors |
+| `itb_mac_count / itb_mac_name (i) / itb_mac_key_size (i) / itb_mac_tag_size (i) / itb_mac_min_key_bytes (i) / itb_list_macs ()` | MAC catalogue accessors |
+
+### Process-wide configuration (`itb_library`)
+
+| Symbol | Purpose |
+|---|---|
+| `itb_set_bit_soup / itb_get_bit_soup` | Bit Soup mode toggle |
+| `itb_set_lock_soup / itb_get_lock_soup` | Lock Soup mode toggle |
+| `itb_set_max_workers / itb_get_max_workers` | Worker pool cap |
+| `itb_set_nonce_bits / itb_get_nonce_bits` | Nonce width (128 / 256 / 512) |
+| `itb_set_barrier_fill / itb_get_barrier_fill` | Barrier-fill factor |
+| `function itb_set_memory_limit (limit) result (prev)` | Go runtime heap soft limit in bytes; pass negative to query only |
+| `function itb_set_gc_percent (pct) result (prev)` | Go GC trigger percentage; pass negative to query only |
+
+### Seeds and MAC (`itb_seed`, `itb_mac`)
+
+| Symbol | Purpose |
+|---|---|
+| `type :: itb_seed_t` | CSPRNG-keyed Seed handle |
+| `new_itb_seed (s, hash_name, key_bits)` | CSPRNG-fresh constructor |
+| `itb_seed_from_components (s, hash_name, components, hash_key)` | Reconstruct from explicit components |
+| `s%width / s%hash_name / s%components / s%hash_key / s%attach_lock_seed (lock)` | Seed introspection + lock-seed attachment |
+| `type :: itb_mac_t` | MAC handle |
+| `new_itb_mac (m, mac_name, key)` | Construct MAC handle |
+
+### Low-level cipher (`itb_cipher`)
+
+| Symbol | Purpose |
+|---|---|
+| `itb_encrypt (noise, data, start, plaintext) → ciphertext` / `itb_decrypt (...)` | Single Message |
+| `itb_encrypt_auth (noise, data, start, mac, plaintext)` / `itb_decrypt_auth (...)` | MAC-authenticated counterparts |
+| `itb_encrypt_triple (noise, d1, d2, d3, s1, s2, s3, plaintext)` / `itb_decrypt_triple (...)` | Triple Ouroboros |
+| `itb_encrypt_auth_triple (...)` / `itb_decrypt_auth_triple (...)` | Triple Ouroboros MAC-authenticated |
+
+### Easy Mode encryptor (`itb_encryptor`)
+
+| Symbol | Purpose |
+|---|---|
+| `type :: itb_encryptor_t` | Easy Mode encryptor handle |
+| `new_itb_encryptor (e, primitive, key_bits, mac_name, mode)` | Single-primitive constructor |
+| `itb_encryptor_mixed_single (e, prim_n, prim_d, prim_s, key_bits, mac_name [, prim_l])` | Mixed Single Ouroboros |
+| `itb_encryptor_mixed_triple (e, prim_n, prim_d1..3, prim_s1..3, key_bits, mac_name [, prim_l])` | Mixed Triple Ouroboros |
+| `e%encrypt / e%decrypt / e%encrypt_auth / e%decrypt_auth` | Cipher entry points |
+| `e%set_lock_seed / set_bit_soup / set_lock_soup / set_chunk_size / set_nonce_bits / set_barrier_fill` | Per-instance setters |
+| `e%primitive / primitive_at / mac_name / key_bits / mode / seed_count / nonce_bits / header_size / has_prf_keys / is_mixed` | Accessors |
+| `e%mac_key / prf_key / seed_components / parse_chunk_len` | Key-material + per-instance chunk-length parser |
+| `e%export_state / import_state` | State-blob persistence |
+| `itb_encryptor_peek_config (blob, primitive, key_bits, mode, mac_name)` | Pre-import discriminator |
+| `itb_last_mismatch_field () → field_name` | Read offending JSON field name after `STATUS_EASY_MISMATCH` |
+| `e%close / e%destroy` | Release encryptor |
+
+### Streaming AEAD (`itb_streams`)
+
+| Symbol | Purpose |
+|---|---|
+| `abstract interface itb_stream_read_fn / itb_stream_write_fn` | `bind(C)` source / sink callback shapes |
+| `itb_stream_encrypt / itb_stream_decrypt` | Single Low-Level streams |
+| `itb_stream_encrypt_triple / itb_stream_decrypt_triple` | Triple Low-Level streams |
+| `itb_stream_encrypt_auth / itb_stream_decrypt_auth` | Single Low-Level Streaming AEAD |
+| `itb_stream_encrypt_auth_triple / itb_stream_decrypt_auth_triple` | Triple Low-Level Streaming AEAD |
+| `itb_encryptor_stream_encrypt_auth / itb_encryptor_stream_decrypt_auth` | Easy Mode Streaming AEAD |
+
+### Native Blob (`itb_blob`)
+
+| Symbol | Purpose |
+|---|---|
+| `type :: itb_blob128_t / itb_blob256_t / itb_blob512_t` | Width-specific Native Blob handles |
+| `new_itb_blob128 / new_itb_blob256 / new_itb_blob512` | Constructors |
+| `b%width / b%mode` | Width + mode accessors |
+| `b%set_key / set_components / set_mac_key / set_mac_name (...)` | Field setters |
+| `b%get_key / get_components / get_mac_key / get_mac_name (...)` | Field getters |
+| `b%export / export_3 / import / import_3` | Serialisation |
+| `ITB_BLOB_OPT_LOCKSEED / ITB_BLOB_OPT_MAC` | Export opt-in flag bits |
+
+### Wrapper (`itb_wrapper`)
+
+| Symbol | Purpose |
+|---|---|
+| `ITB_WRAPPER_CIPHER_AES_128_CTR / ITB_WRAPPER_CIPHER_CHACHA20 / ITB_WRAPPER_CIPHER_SIPHASH24` | Cipher enum constants |
+| `itb_wrapper_cipher_name (cipher) → name` | Canonical FFI name |
+| `itb_wrapper_key_size (cipher) → bytes` / `itb_wrapper_nonce_size (cipher) → bytes` | Cipher dimension accessors |
+| `itb_wrapper_generate_key (cipher, key, status)` | CSPRNG-fresh wrapper key |
+| `itb_wrap (cipher, key, blob, wire, status)` / `itb_unwrap (cipher, key, wire, blob, status)` | Single Message Wrap / Unwrap |
+| `itb_wrap_in_place (cipher, key, buf, nonce, status)` / `itb_unwrap_in_place (cipher, key, wire, nonce, status)` | In-place Wrap / Unwrap |
+| `type(itb_wrap_stream_writer_t)` / `type(itb_unwrap_stream_reader_t)` | Streaming wrap writer / unwrap reader |
+| `itb_wrap_stream_writer_new (...) / itb_unwrap_stream_reader_new (...)` | Streamer constructors |
+
+### Errors and kinds (`itb_errors`, `itb_kinds`, `itb_strings`, `itb_sys`)
+
+| Symbol | Purpose |
+|---|---|
+| 24 `STATUS_*` constants + `STATUS_INTERNAL` | Status-code surface |
+| `raise_itb_error (status)` | Halt-on-error helper (`error stop 1`) — used by every wrapper method |
+| `itb_status_to_string (status) → name` | Pure status-to-name lookup |
+| `itb_last_error_message () → message` | Per-thread last-error retrieval |
+| `itb_status_kind / itb_handle_kind / itb_byte_kind / itb_u64_kind / itb_size_kind / itb_int32_kind` | `iso_c_binding` re-exports |
+| `itb_null_handle` | Sentinel zero handle for closed-state detection |
+| `c_buffer_to_fortran_string / make_c_string / fortran_string_to_c_buffer` | String-boundary helpers |
+| `itb_sys` module | Raw `bind(C)` FFI declarations — direct consumers should prefer the safe wrappers above |

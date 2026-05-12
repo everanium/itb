@@ -912,6 +912,18 @@ shared `noiseSeed`, three `dataSeed`, three `startSeed`) via the
 All seeds in one call must share the same native hash width; mixing
 widths throws `ItbError(STATUS_SEED_WIDTH_MIX)`.
 
+## MAC primitives
+
+Names match the libitb MAC registry; ordering matches that registry's declaration order.
+
+| MAC | Key bytes | Tag bytes | Underlying primitive |
+|---|---|---|---|
+| `kmac256` | 32 | 32 | KMAC256 (Keccak-derived) |
+| `hmac-sha256` | 32 | 32 | HMAC over SHA-256 |
+| `hmac-blake3` | 32 | 32 | HMAC over BLAKE3 |
+
+`kmac256` and `hmac-sha256` accept keys 16 bytes and longer; the binding fleet's tests and examples use 32 bytes uniformly across primitives for cross-binding consistency. `hmac-blake3` requires exactly 32 bytes by construction.
+
 ## Threading model
 
 Process-wide setters (`itb::set_nonce_bits`, `set_barrier_fill`,
@@ -1129,3 +1141,15 @@ between headers live in `itb::detail::`. The `itb::status::*` constants
 and the `itb::blob::Slot` / `itb::blob::Opt` enums are namespaced for
 collision-free use. Hash names via `itb::list_hashes()`; MAC names
 (`kmac256`, `hmac-sha256`, `hmac-blake3`) via `itb::list_macs()`.
+
+### Go runtime tuning setters
+
+Two additional process-wide setters from `<itb/library.hpp>` configure
+the Go runtime inside libitb. Both functions return the previous value
+and accept a negative argument as a "query only, do not change"
+sentinel.
+
+| Function | Purpose |
+|---|---|
+| `std::int64_t itb::set_memory_limit(std::int64_t limit)` | Sets the Go runtime heap soft limit in bytes. Overrides the `ITB_GOMEMLIMIT` env var sourced at library load. |
+| `int itb::set_gc_percent(int pct)` | Sets the Go GC trigger percentage (default 100). Overrides the `ITB_GOGC` env var sourced at library load. |
