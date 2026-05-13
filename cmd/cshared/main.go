@@ -141,26 +141,26 @@ func writeCString(s string, out unsafe.Pointer, capBytes C.size_t, outLen *C.siz
 
 // ─── Library introspection ─────────────────────────────────────────
 
-//export ITB_Version
-//
 // Writes the library version (NUL-terminated ASCII) into out, sets
 // *out_len to the number of bytes written including the NUL.
 // Returns ITB_OK on success, ITB_ERR_BUFFER_TOO_SMALL if cap is too
 // small (out_len then carries the required size).
+//
+//export ITB_Version
 func ITB_Version(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	return C.int(writeCString(libitbVersion, unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_HashCount
-//
 // Returns the number of PRF-grade hash primitives shipped (currently 9).
+//
+//export ITB_HashCount
 func ITB_HashCount() C.int { return C.int(capi.HashCount()) }
 
-//export ITB_HashName
-//
 // Writes the canonical name of the i-th hash primitive (NUL-
 // terminated) into out. Returns ITB_OK / ITB_ERR_BUFFER_TOO_SMALL /
 // ITB_ERR_BAD_INPUT (i out of range).
+//
+//export ITB_HashName
 func ITB_HashName(i C.int, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	name := capi.HashName(int(i))
 	if name == "" {
@@ -169,38 +169,38 @@ func ITB_HashName(i C.int, out *C.char, capBytes C.size_t, outLen *C.size_t) C.i
 	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_HashWidth
-//
 // Returns the native intermediate-state width (128 / 256 / 512) of
 // the i-th hash primitive, or 0 when i is out of range.
+//
+//export ITB_HashWidth
 func ITB_HashWidth(i C.int) C.int { return C.int(capi.HashWidth(int(i))) }
 
-//export ITB_LastError
-//
 // Writes the last error message produced on this thread's most
 // recent capi call. Standard errno-style: read it immediately after
 // a non-OK return on the same thread.
+//
+//export ITB_LastError
 func ITB_LastError(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	return C.int(writeCString(capi.LastError(), unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_SetMemoryLimit
-//
 // Configures the Go runtime's heap-size soft limit (bytes). Pass -1
 // (or any negative value) to query the current limit without changing
 // it; the previous limit is returned. Setter calls override any
 // ITB_GOMEMLIMIT env var set at libitb load time.
+//
+//export ITB_SetMemoryLimit
 func ITB_SetMemoryLimit(limit C.int64_t) C.int64_t {
 	return C.int64_t(debug.SetMemoryLimit(int64(limit)))
 }
 
-//export ITB_SetGCPercent
-//
 // Configures the Go runtime's GC trigger percentage. The default is
 // 100 (GC fires at +100% heap growth); lower values trigger GC more
 // aggressively. Pass -1 (or any negative value) to query the current
 // value without changing it; the previous value is returned. Setter
 // calls override any ITB_GOGC env var set at libitb load time.
+//
+//export ITB_SetGCPercent
 func ITB_SetGCPercent(pct C.int) C.int {
 	if pct < 0 {
 		// Query mode — round-trip set-then-restore to retrieve current
@@ -216,12 +216,12 @@ func ITB_SetGCPercent(pct C.int) C.int {
 
 // ─── Seed lifecycle ────────────────────────────────────────────────
 
-//export ITB_NewSeed
-//
 // Builds a fresh seed with the named hash primitive and ITB key
 // width in bits (512..2048, multiple of 64). The native hash width
 // is determined by hashName via the registry; *outHandle receives
 // an opaque uintptr_t paired with exactly one ITB_FreeSeed call.
+//
+//export ITB_NewSeed
 func ITB_NewSeed(hashName *C.char, keyBits C.int, outHandle *C.uintptr_t) C.int {
 	if hashName == nil || outHandle == nil {
 		return C.int(capi.StatusBadInput)
@@ -235,20 +235,20 @@ func ITB_NewSeed(hashName *C.char, keyBits C.int, outHandle *C.uintptr_t) C.int 
 	return C.int(st)
 }
 
-//export ITB_FreeSeed
-//
 // Releases the seed handle. Calling this on a stale or zero handle
 // returns ITB_ERR_BAD_HANDLE; the underlying *Seed becomes eligible
 // for GC after a successful call.
+//
+//export ITB_FreeSeed
 func ITB_FreeSeed(handle C.uintptr_t) C.int {
 	return C.int(capi.FreeSeed(capi.HandleID(handle)))
 }
 
-//export ITB_SeedWidth
-//
 // Reports the native hash width (128 / 256 / 512) of an existing
 // seed handle, or 0 on a bad handle (status returned via *outStatus
 // for the BAD_HANDLE distinction).
+//
+//export ITB_SeedWidth
 func ITB_SeedWidth(handle C.uintptr_t, outStatus *C.int) C.int {
 	w, st := capi.SeedWidth(capi.HandleID(handle))
 	if outStatus != nil {
@@ -257,10 +257,10 @@ func ITB_SeedWidth(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(w)
 }
 
-//export ITB_SeedHashName
-//
 // Writes the canonical hash name an existing seed handle was built
 // with (NUL-terminated) into out.
+//
+//export ITB_SeedHashName
 func ITB_SeedHashName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	name, st := capi.SeedHashName(capi.HandleID(handle))
 	if st != capi.StatusOK {
@@ -269,8 +269,6 @@ func ITB_SeedHashName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen
 	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_NewSeedFromComponents
-//
 // Builds a seed from caller-supplied uint64 components (deterministic
 // counterpart of ITB_NewSeed which generates components from
 // crypto/rand). hashKey is optional — pass NULL / 0 length for
@@ -281,6 +279,8 @@ func ITB_SeedHashName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen
 // hashKeyLen, if non-zero, must match the primitive's fixed-key size:
 // 16 (aescmac), 32 (areion256/blake2{s,b256}/blake3/chacha20),
 // 64 (areion512/blake2b512). hashKey is ignored for "siphash24".
+//
+//export ITB_NewSeedFromComponents
 func ITB_NewSeedFromComponents(
 	hashName *C.char,
 	components *C.uint64_t,
@@ -315,8 +315,6 @@ func ITB_NewSeedFromComponents(
 	return C.int(st)
 }
 
-//export ITB_GetSeedHashKey
-//
 // Writes the seed's underlying hash fixed key into out. *outLen
 // receives the actual key length on success (16 / 32 / 64 depending
 // on the primitive; 0 for "siphash24" which has no internal fixed
@@ -325,6 +323,8 @@ func ITB_NewSeedFromComponents(
 // size or StatusBadInput is returned. Save the bytes alongside the
 // seed components for cross-process restore via
 // ITB_NewSeedFromComponents.
+//
+//export ITB_GetSeedHashKey
 func ITB_GetSeedHashKey(
 	handle C.uintptr_t,
 	out *C.uint8_t,
@@ -352,14 +352,14 @@ func ITB_GetSeedHashKey(
 	return C.int(capi.StatusOK)
 }
 
-//export ITB_GetSeedComponents
-//
 // Writes the seed's uint64 components into out. *outLen receives the
 // component count on success (8..32). capCount (counted in uint64
 // elements, not bytes) must be at least the seed's component count
 // or StatusBadInput is returned. Save the components alongside
 // ITB_GetSeedHashKey for cross-process restore via
 // ITB_NewSeedFromComponents.
+//
+//export ITB_GetSeedComponents
 func ITB_GetSeedComponents(
 	handle C.uintptr_t,
 	out *C.uint64_t,
@@ -383,12 +383,12 @@ func ITB_GetSeedComponents(
 
 // ─── Encrypt / Decrypt ─────────────────────────────────────────────
 
-//export ITB_Encrypt
-//
 // Encrypts plaintext[0..ptlen) under (noiseHandle, dataHandle,
 // startHandle) into the caller-allocated buffer out[0..*outLen).
 // On success *outLen receives the bytes written. On
 // ITB_ERR_BUFFER_TOO_SMALL *outLen receives the required size.
+//
+//export ITB_Encrypt
 func ITB_Encrypt(
 	noiseHandle, dataHandle, startHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -410,11 +410,11 @@ func ITB_Encrypt(
 	return C.int(st)
 }
 
-//export ITB_Decrypt
-//
 // Decrypts ciphertext[0..ctlen) under (noiseHandle, dataHandle,
 // startHandle) into the caller-allocated buffer out[0..*outLen).
 // Same buffer convention as ITB_Encrypt.
+//
+//export ITB_Decrypt
 func ITB_Decrypt(
 	noiseHandle, dataHandle, startHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -436,8 +436,6 @@ func ITB_Decrypt(
 	return C.int(st)
 }
 
-//export ITB_Encrypt3
-//
 // Triple Ouroboros encrypt: takes seven seed handles (one shared
 // noise + three data + three start) and produces one ciphertext
 // that interleaves three snake payloads. Wire format identical to
@@ -447,6 +445,8 @@ func ITB_Decrypt(
 // All seven handles must share the same native hash width
 // (mixing 128/256/512 returns ITB_ERR_SEED_WIDTH_MIX). Same caller-
 // allocated-buffer convention as ITB_Encrypt.
+//
+//export ITB_Encrypt3
 func ITB_Encrypt3(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -471,9 +471,9 @@ func ITB_Encrypt3(
 	return C.int(st)
 }
 
-//export ITB_Decrypt3
-//
 // Inverse of ITB_Encrypt3.
+//
+//export ITB_Decrypt3
 func ITB_Decrypt3(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -500,16 +500,16 @@ func ITB_Decrypt3(
 
 // ─── MAC lifecycle and introspection ───────────────────────────────
 
-//export ITB_MACCount
-//
 // Returns the number of shipped MAC primitives (currently 3).
+//
+//export ITB_MACCount
 func ITB_MACCount() C.int { return C.int(capi.MACCount()) }
 
-//export ITB_MACName
-//
 // Writes the canonical name of the i-th MAC primitive (NUL-
 // terminated) into out. Returns ITB_OK / ITB_ERR_BUFFER_TOO_SMALL /
 // ITB_ERR_BAD_INPUT (i out of range).
+//
+//export ITB_MACName
 func ITB_MACName(i C.int, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	name := capi.MACRegistryName(int(i))
 	if name == "" {
@@ -518,35 +518,35 @@ func ITB_MACName(i C.int, out *C.char, capBytes C.size_t, outLen *C.size_t) C.in
 	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_MACKeySize
-//
 // Returns the recommended key size in bytes for the i-th MAC
 // primitive, or 0 when i is out of range.
+//
+//export ITB_MACKeySize
 func ITB_MACKeySize(i C.int) C.int {
 	return C.int(capi.MACRegistryKeySize(int(i)))
 }
 
-//export ITB_MACTagSize
-//
 // Returns the tag size in bytes for the i-th MAC primitive, or 0
 // when i is out of range.
+//
+//export ITB_MACTagSize
 func ITB_MACTagSize(i C.int) C.int {
 	return C.int(capi.MACRegistryTagSize(int(i)))
 }
 
-//export ITB_MACMinKeyBytes
-//
 // Returns the minimum acceptable key length (bytes) for the i-th
 // MAC primitive, or 0 when i is out of range.
+//
+//export ITB_MACMinKeyBytes
 func ITB_MACMinKeyBytes(i C.int) C.int {
 	return C.int(capi.MACRegistryMinKeyBytes(int(i)))
 }
 
-//export ITB_NewMAC
-//
 // Builds a fresh MAC handle keyed by key[0..keyLen) for the named
 // primitive. *outHandle receives an opaque uintptr_t that must be
 // paired with exactly one ITB_FreeMAC call.
+//
+//export ITB_NewMAC
 func ITB_NewMAC(macName *C.char, key unsafe.Pointer, keyLen C.size_t, outHandle *C.uintptr_t) C.int {
 	if macName == nil || outHandle == nil {
 		return C.int(capi.StatusBadInput)
@@ -564,21 +564,21 @@ func ITB_NewMAC(macName *C.char, key unsafe.Pointer, keyLen C.size_t, outHandle 
 	return C.int(st)
 }
 
-//export ITB_FreeMAC
-//
 // Releases the MAC handle. Subsequent uses return ITB_ERR_BAD_MAC.
+//
+//export ITB_FreeMAC
 func ITB_FreeMAC(handle C.uintptr_t) C.int {
 	return C.int(capi.FreeMAC(capi.MACHandleID(handle)))
 }
 
 // ─── Authenticated Encrypt / Decrypt ───────────────────────────────
 
-//export ITB_EncryptAuth
-//
 // Authenticated single-Ouroboros encrypt: takes the (noise, data,
 // start) seed trio plus a MAC handle, computes a tag over the
 // encrypted payload, and embeds it inside the container under the
 // barrier. Same caller-allocated-buffer convention as ITB_Encrypt.
+//
+//export ITB_EncryptAuth
 func ITB_EncryptAuth(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -600,11 +600,11 @@ func ITB_EncryptAuth(
 	return C.int(st)
 }
 
-//export ITB_DecryptAuth
-//
 // Authenticated single-Ouroboros decrypt. Returns ITB_ERR_MAC_FAILURE
 // on tampered ciphertext / wrong MAC key (distinct from generic
 // decrypt failure).
+//
+//export ITB_DecryptAuth
 func ITB_DecryptAuth(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -626,10 +626,10 @@ func ITB_DecryptAuth(
 	return C.int(st)
 }
 
-//export ITB_EncryptAuth3
-//
 // Authenticated Triple Ouroboros encrypt: 7 seed handles plus a
 // MAC handle.
+//
+//export ITB_EncryptAuth3
 func ITB_EncryptAuth3(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -655,9 +655,9 @@ func ITB_EncryptAuth3(
 	return C.int(st)
 }
 
-//export ITB_DecryptAuth3
-//
 // Authenticated Triple Ouroboros decrypt.
+//
+//export ITB_DecryptAuth3
 func ITB_DecryptAuth3(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -703,17 +703,17 @@ func ITB_SetMaxWorkers(n C.int) C.int { return C.int(capi.SetMaxWorkers(int(n)))
 //export ITB_GetMaxWorkers
 func ITB_GetMaxWorkers() C.int { return C.int(capi.GetMaxWorkers()) }
 
-//export ITB_SetNonceBits
-//
 // Accepts 128, 256, or 512. Other values return ITB_ERR_BAD_INPUT.
+//
+//export ITB_SetNonceBits
 func ITB_SetNonceBits(n C.int) C.int { return C.int(capi.SetNonceBits(int(n))) }
 
 //export ITB_GetNonceBits
 func ITB_GetNonceBits() C.int { return C.int(capi.GetNonceBits()) }
 
-//export ITB_SetBarrierFill
-//
 // Accepts 1, 2, 4, 8, 16, 32. Other values return ITB_ERR_BAD_INPUT.
+//
+//export ITB_SetBarrierFill
 func ITB_SetBarrierFill(n C.int) C.int { return C.int(capi.SetBarrierFill(int(n))) }
 
 //export ITB_GetBarrierFill
@@ -721,8 +721,6 @@ func ITB_GetBarrierFill() C.int { return C.int(capi.GetBarrierFill()) }
 
 // ─── Streaming helpers ─────────────────────────────────────────────
 
-//export ITB_ParseChunkLen
-//
 // Reads a chunk header (the fixed-size
 // [nonce(N) || width(2) || height(2)] prefix where N comes from the
 // active ITB_GetNonceBits configuration; query ITB_HeaderSize for
@@ -739,6 +737,8 @@ func ITB_GetBarrierFill() C.int { return C.int(capi.GetBarrierFill()) }
 // width × height multiplication overflows, or the announced pixel
 // count exceeds the container pixel cap. The function does no
 // decryption work — it only parses the wire-format header.
+//
+//export ITB_ParseChunkLen
 func ITB_ParseChunkLen(header unsafe.Pointer, headerLen C.size_t, outChunkLen *C.size_t) C.int {
 	if outChunkLen == nil {
 		return C.int(capi.StatusBadInput)
@@ -764,14 +764,14 @@ func ITB_MaxKeyBits() C.int { return C.int(capi.MaxKeyBits()) }
 //export ITB_Channels
 func ITB_Channels() C.int { return C.int(capi.Channels()) }
 
-//export ITB_HeaderSize
-//
 // Returns the current ciphertext-chunk header size in bytes
 // (nonce + width(2) + height(2)). Tracks the active nonce-size
 // configuration: 20 by default (128-bit nonce), 36 under
 // ITB_SetNonceBits(256), 68 under ITB_SetNonceBits(512). Streaming
 // consumers must read this many bytes from the wire before calling
 // ITB_ParseChunkLen on each fresh chunk.
+//
+//export ITB_HeaderSize
 func ITB_HeaderSize() C.int { return C.int(capi.HeaderSize()) }
 
 // ─── Easy encryptor ────────────────────────────────────────────────
@@ -793,8 +793,6 @@ func ITB_HeaderSize() C.int { return C.int(capi.HeaderSize()) }
 // blob. Mismatch errors during Import surface the offending field
 // through ITB_Easy_LastMismatchField.
 
-//export ITB_Easy_New
-//
 // Constructs a fresh Encryptor handle. The first three arguments
 // each accept a "default" sentinel:
 //
@@ -805,6 +803,8 @@ func ITB_HeaderSize() C.int { return C.int(capi.HeaderSize()) }
 // The fourth argument (mode) does NOT accept a default sentinel —
 // it must be 1 (Single Ouroboros) or 3 (Triple Ouroboros); any
 // other value (including 0) yields ITB_ERR_BAD_INPUT.
+//
+//export ITB_Easy_New
 func ITB_Easy_New(
 	primitive *C.char, keyBits C.int, macName *C.char, mode C.int,
 	outHandle *C.uintptr_t,
@@ -828,21 +828,21 @@ func ITB_Easy_New(
 	return C.int(st)
 }
 
-//export ITB_Easy_Free
-//
 // Releases the Encryptor handle. Internally calls the encryptor's
 // Close (zeroing PRF keys, MAC key, seed components) before deleting
 // the cgo.Handle so key material does not linger after the binding
 // drops the handle.
+//
+//export ITB_Easy_Free
 func ITB_Easy_Free(handle C.uintptr_t) C.int {
 	return C.int(capi.FreeEasy(capi.EasyHandleID(handle)))
 }
 
-//export ITB_Easy_Encrypt
-//
 // Encrypts plaintext through the Encryptor. Plain mode — does not
 // attach a MAC tag; for authenticated encryption use
 // ITB_Easy_EncryptAuth.
+//
+//export ITB_Easy_Encrypt
 func ITB_Easy_Encrypt(
 	handle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -861,10 +861,10 @@ func ITB_Easy_Encrypt(
 	return C.int(st)
 }
 
-//export ITB_Easy_Decrypt
-//
 // Decrypts ciphertext produced by ITB_Easy_Encrypt under the same
 // Encryptor handle.
+//
+//export ITB_Easy_Decrypt
 func ITB_Easy_Decrypt(
 	handle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -883,10 +883,10 @@ func ITB_Easy_Decrypt(
 	return C.int(st)
 }
 
-//export ITB_Easy_EncryptAuth
-//
 // Authenticated encrypt: attaches a MAC tag computed under the
 // Encryptor's bound MAC closure.
+//
+//export ITB_Easy_EncryptAuth
 func ITB_Easy_EncryptAuth(
 	handle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -905,10 +905,10 @@ func ITB_Easy_EncryptAuth(
 	return C.int(st)
 }
 
-//export ITB_Easy_DecryptAuth
-//
 // Authenticated decrypt. Returns ITB_ERR_MAC_FAILURE on tampered
 // ciphertext / wrong MAC key (distinct from generic decrypt failure).
+//
+//export ITB_Easy_DecryptAuth
 func ITB_Easy_DecryptAuth(
 	handle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -929,61 +929,61 @@ func ITB_Easy_DecryptAuth(
 
 // ─── Per-instance configuration setters ───────────────────────────
 
-//export ITB_Easy_SetNonceBits
-//
 // Accepts 128, 256, or 512. Other values yield ITB_ERR_BAD_INPUT.
 // Mutates only the encryptor's own Config copy; process-wide
 // ITB_SetNonceBits is unaffected.
+//
+//export ITB_Easy_SetNonceBits
 func ITB_Easy_SetNonceBits(handle C.uintptr_t, n C.int) C.int {
 	return C.int(capi.EasySetNonceBits(capi.EasyHandleID(handle), int(n)))
 }
 
-//export ITB_Easy_SetBarrierFill
-//
 // Accepts 1, 2, 4, 8, 16, 32. Other values yield ITB_ERR_BAD_INPUT.
+//
+//export ITB_Easy_SetBarrierFill
 func ITB_Easy_SetBarrierFill(handle C.uintptr_t, n C.int) C.int {
 	return C.int(capi.EasySetBarrierFill(capi.EasyHandleID(handle), int(n)))
 }
 
-//export ITB_Easy_SetBitSoup
-//
 // 0 = byte-level split (default); non-zero = bit-level Bit Soup
 // split.
+//
+//export ITB_Easy_SetBitSoup
 func ITB_Easy_SetBitSoup(handle C.uintptr_t, mode C.int) C.int {
 	return C.int(capi.EasySetBitSoup(capi.EasyHandleID(handle), int(mode)))
 }
 
-//export ITB_Easy_SetLockSoup
-//
 // 0 = off (default); non-zero = on. Auto-couples BitSoup=1 on this
 // encryptor.
+//
+//export ITB_Easy_SetLockSoup
 func ITB_Easy_SetLockSoup(handle C.uintptr_t, mode C.int) C.int {
 	return C.int(capi.EasySetLockSoup(capi.EasyHandleID(handle), int(mode)))
 }
 
-//export ITB_Easy_SetLockSeed
-//
 // 0 = off; 1 = on (allocates a dedicated lockSeed and routes the
 // bit-permutation overlay through it; auto-couples LockSoup=1 +
 // BitSoup=1 on this encryptor). Calling after the first Encrypt
 // yields ITB_ERR_EASY_LOCKSEED_AFTER_ENCRYPT (status code 18).
+//
+//export ITB_Easy_SetLockSeed
 func ITB_Easy_SetLockSeed(handle C.uintptr_t, mode C.int) C.int {
 	return C.int(capi.EasySetLockSeed(capi.EasyHandleID(handle), int(mode)))
 }
 
-//export ITB_Easy_SetChunkSize
-//
 // Per-instance streaming chunk-size override (0 = auto-detect).
+//
+//export ITB_Easy_SetChunkSize
 func ITB_Easy_SetChunkSize(handle C.uintptr_t, n C.int) C.int {
 	return C.int(capi.EasySetChunkSize(capi.EasyHandleID(handle), int(n)))
 }
 
 // ─── Read-only field getters ──────────────────────────────────────
 
-//export ITB_Easy_Primitive
-//
 // Writes the encryptor's hash primitive name (NUL-terminated) into
 // out.
+//
+//export ITB_Easy_Primitive
 func ITB_Easy_Primitive(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	name, st := capi.EasyPrimitive(capi.EasyHandleID(handle))
 	if st != capi.StatusOK {
@@ -992,10 +992,10 @@ func ITB_Easy_Primitive(handle C.uintptr_t, out *C.char, capBytes C.size_t, outL
 	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_Easy_KeyBits
-//
 // Returns the per-seed key width in bits, or 0 on a bad handle
 // (status returned via *outStatus).
+//
+//export ITB_Easy_KeyBits
 func ITB_Easy_KeyBits(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasyKeyBits(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1004,10 +1004,10 @@ func ITB_Easy_KeyBits(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(v)
 }
 
-//export ITB_Easy_Mode
-//
 // Returns 1 (Single Ouroboros) or 3 (Triple Ouroboros), or 0 on a bad
 // handle (status returned via *outStatus).
+//
+//export ITB_Easy_Mode
 func ITB_Easy_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasyMode(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1016,10 +1016,10 @@ func ITB_Easy_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(v)
 }
 
-//export ITB_Easy_MACName
-//
 // Writes the encryptor's MAC primitive name (NUL-terminated) into
 // out.
+//
+//export ITB_Easy_MACName
 func ITB_Easy_MACName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	name, st := capi.EasyMACName(capi.EasyHandleID(handle))
 	if st != capi.StatusOK {
@@ -1030,11 +1030,11 @@ func ITB_Easy_MACName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen
 
 // ─── Material getters (defensive copies) ──────────────────────────
 
-//export ITB_Easy_SeedCount
-//
 // Returns the number of seed slots: 3 (Single without LockSeed),
 // 4 (Single with LockSeed), 7 (Triple without LockSeed), 8 (Triple
 // with LockSeed). Status returned via *outStatus.
+//
+//export ITB_Easy_SeedCount
 func ITB_Easy_SeedCount(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasySeedCount(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1043,13 +1043,13 @@ func ITB_Easy_SeedCount(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(v)
 }
 
-//export ITB_Easy_SeedComponents
-//
 // Writes the uint64 components of one seed slot into out (defensive
 // copy). *outLen receives the component count on success. capCount
 // (counted in uint64 elements) must be at least the slot's component
 // count or ITB_ERR_BAD_INPUT is returned. Pass capCount=0 / out=NULL
 // to probe the required size.
+//
+//export ITB_Easy_SeedComponents
 func ITB_Easy_SeedComponents(
 	handle C.uintptr_t, slot C.int,
 	out *C.uint64_t, capCount C.int, outLen *C.int,
@@ -1073,11 +1073,11 @@ func ITB_Easy_SeedComponents(
 	return C.int(capi.StatusOK)
 }
 
-//export ITB_Easy_HasPRFKeys
-//
 // Returns 1 when the encryptor's primitive uses fixed PRF keys per
 // seed slot (every shipped primitive except siphash24), 0 otherwise.
 // Status returned via *outStatus.
+//
+//export ITB_Easy_HasPRFKeys
 func ITB_Easy_HasPRFKeys(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasyHasPRFKeys(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1086,12 +1086,12 @@ func ITB_Easy_HasPRFKeys(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(v)
 }
 
-//export ITB_Easy_PRFKey
-//
 // Writes the fixed PRF key bytes for one seed slot into out (defensive
 // copy). Returns ITB_ERR_BAD_INPUT when the primitive has no fixed
 // PRF keys (siphash24 — caller should consult ITB_Easy_HasPRFKeys
 // first) or when slot is out of range.
+//
+//export ITB_Easy_PRFKey
 func ITB_Easy_PRFKey(
 	handle C.uintptr_t, slot C.int,
 	out *C.uint8_t, capBytes C.size_t, outLen *C.size_t,
@@ -1121,10 +1121,10 @@ func ITB_Easy_PRFKey(
 	return C.int(capi.StatusOK)
 }
 
-//export ITB_Easy_MACKey
-//
 // Writes a defensive copy of the encryptor's bound MAC fixed key into
 // out.
+//
+//export ITB_Easy_MACKey
 func ITB_Easy_MACKey(
 	handle C.uintptr_t,
 	out *C.uint8_t, capBytes C.size_t, outLen *C.size_t,
@@ -1150,26 +1150,26 @@ func ITB_Easy_MACKey(
 
 // ─── Lifecycle ─────────────────────────────────────────────────────
 
-//export ITB_Easy_Close
-//
 // Zeroes the encryptor's PRF keys, MAC key, and seed components and
 // marks it closed. Subsequent method calls on the same handle return
 // ITB_ERR_EASY_CLOSED. Idempotent — multiple Close calls return
 // ITB_OK without panic. Releases the handle slot via ITB_Easy_Free
 // (Close alone does not delete the cgo.Handle).
+//
+//export ITB_Easy_Close
 func ITB_Easy_Close(handle C.uintptr_t) C.int {
 	return C.int(capi.EasyClose(capi.EasyHandleID(handle)))
 }
 
 // ─── State serialization ──────────────────────────────────────────
 
-//export ITB_Easy_Export
-//
 // Serialises the encryptor's full state (PRF keys, seed components,
 // MAC key, dedicated lockSeed material when active) as a JSON blob
 // into the caller-allocated buffer. Same probe-then-retry buffer
 // convention as ITB_Encrypt: pass out=NULL / outCap=0 to discover
 // the required size, then resize and call again.
+//
+//export ITB_Easy_Export
 func ITB_Easy_Export(
 	handle C.uintptr_t,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -1186,8 +1186,6 @@ func ITB_Easy_Export(
 	return C.int(st)
 }
 
-//export ITB_Easy_Import
-//
 // Replaces the encryptor's PRF keys, seed components, MAC key, and
 // (optionally) dedicated lockSeed material with the values carried
 // in a JSON blob produced by a prior ITB_Easy_Export call. On any
@@ -1196,6 +1194,8 @@ func ITB_Easy_Export(
 // On ITB_ERR_EASY_MISMATCH the offending JSON field is recorded; the
 // caller reads it through ITB_Easy_LastMismatchField immediately
 // after the failure on the same thread.
+//
+//export ITB_Easy_Import
 func ITB_Easy_Import(
 	handle C.uintptr_t,
 	blob unsafe.Pointer, blobLen C.size_t,
@@ -1207,8 +1207,6 @@ func ITB_Easy_Import(
 	return C.int(capi.EasyImport(capi.EasyHandleID(handle), in))
 }
 
-//export ITB_Easy_PeekConfig
-//
 // Parses a state blob's metadata (primitive, key_bits, mode, mac)
 // without performing full validation, allowing a caller to inspect a
 // saved blob before constructing a matching encryptor.
@@ -1216,6 +1214,8 @@ func ITB_Easy_Import(
 // Both string out-buffers follow the standard probe-then-retry
 // convention (pass NULL / 0 to discover the required size). The
 // integer outputs are populated on every successful call.
+//
+//export ITB_Easy_PeekConfig
 func ITB_Easy_PeekConfig(
 	blob unsafe.Pointer, blobLen C.size_t,
 	primOut *C.char, primCap C.size_t, primLen *C.size_t,
@@ -1248,25 +1248,25 @@ func ITB_Easy_PeekConfig(
 	return C.int(macSt)
 }
 
-//export ITB_Easy_LastMismatchField
-//
 // Writes the offending JSON field name from the most recent
 // ITB_Easy_Import call that returned ITB_ERR_EASY_MISMATCH. The
 // caller reads this immediately after the failure on the same
 // thread; the field text is empty when the most recent failure was
 // not a mismatch.
+//
+//export ITB_Easy_LastMismatchField
 func ITB_Easy_LastMismatchField(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	return C.int(writeCString(capi.LastMismatchField(), unsafe.Pointer(out), capBytes, outLen))
 }
 
 // ─── Per-instance nonce / chunk introspection ──────────────────────
 
-//export ITB_Easy_NonceBits
-//
 // Returns the per-instance nonce size in bits (128 / 256 / 512).
 // Falls back to the global ITB_GetNonceBits reading when no
 // per-instance override has been issued via ITB_Easy_SetNonceBits.
 // Status returned via *outStatus.
+//
+//export ITB_Easy_NonceBits
 func ITB_Easy_NonceBits(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasyNonceBits(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1275,13 +1275,13 @@ func ITB_Easy_NonceBits(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(v)
 }
 
-//export ITB_Easy_HeaderSize
-//
 // Returns the per-instance ciphertext-chunk header size in bytes
 // (nonce + 2-byte width + 2-byte height). Tracks this encryptor's
 // own NonceBits, NOT the process-wide ITB_HeaderSize reading —
 // important when the encryptor has called ITB_Easy_SetNonceBits to
 // override the default. Status returned via *outStatus.
+//
+//export ITB_Easy_HeaderSize
 func ITB_Easy_HeaderSize(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasyHeaderSize(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1290,8 +1290,6 @@ func ITB_Easy_HeaderSize(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(v)
 }
 
-//export ITB_Easy_ParseChunkLen
-//
 // Per-instance chunk-length parser: inspects a chunk header at the
 // front of the supplied buffer and writes the total wire length of
 // the chunk to *outChunkLen. Counterpart of ITB_ParseChunkLen but
@@ -1302,6 +1300,8 @@ func ITB_Easy_HeaderSize(handle C.uintptr_t, outStatus *C.int) C.int {
 // Returns ITB_OK on success, ITB_ERR_BAD_INPUT when the buffer is
 // shorter than the header, the dimensions are zero, or the
 // width × height multiplication overflows the container pixel cap.
+//
+//export ITB_Easy_ParseChunkLen
 func ITB_Easy_ParseChunkLen(
 	handle C.uintptr_t,
 	header unsafe.Pointer, headerLen C.size_t,
@@ -1325,8 +1325,6 @@ func ITB_Easy_ParseChunkLen(
 
 // ─── Seed lifecycle — additional mutators ──────────────────────────
 
-//export ITB_AttachLockSeed
-//
 // Wires a dedicated lockSeed handle onto an existing noise seed
 // handle. The per-chunk PRF closure for the bit-permutation overlay
 // captures BOTH the lockSeed's Components AND its Hash function, so
@@ -1352,6 +1350,8 @@ func ITB_Easy_ParseChunkLen(
 // via ITB_FreeSeed before the noise seed is used invalidates the
 // dedicated derivation path. Standard pairing: keep the lockSeed
 // alive for the lifetime of the noise seed.
+//
+//export ITB_AttachLockSeed
 func ITB_AttachLockSeed(noiseHandle, lockHandle C.uintptr_t) C.int {
 	return C.int(capi.AttachLockSeed(
 		capi.HandleID(noiseHandle),
@@ -1386,12 +1386,12 @@ func ITB_AttachLockSeed(noiseHandle, lockHandle C.uintptr_t) C.int {
 // Export option bitmask (ITB_BLOB_OPT_*):
 //   LOCKSEED=0x1 emits the L slot; MAC=0x2 emits MAC key + name.
 
-//export ITB_Blob128_New
-//
 // Constructs a fresh empty Blob128 handle. Zero / unset slots are
 // emitted as zero-length / zero-array fields by Export — the caller
 // populates the slots that apply to the active mode (Single or
 // Triple) before serialising.
+//
+//export ITB_Blob128_New
 func ITB_Blob128_New(outHandle *C.uintptr_t) C.int {
 	if outHandle == nil {
 		return C.int(capi.StatusBadInput)
@@ -1405,9 +1405,9 @@ func ITB_Blob128_New(outHandle *C.uintptr_t) C.int {
 	return C.int(st)
 }
 
-//export ITB_Blob256_New
-//
 // Constructs a fresh empty Blob256 handle. See ITB_Blob128_New.
+//
+//export ITB_Blob256_New
 func ITB_Blob256_New(outHandle *C.uintptr_t) C.int {
 	if outHandle == nil {
 		return C.int(capi.StatusBadInput)
@@ -1421,9 +1421,9 @@ func ITB_Blob256_New(outHandle *C.uintptr_t) C.int {
 	return C.int(st)
 }
 
-//export ITB_Blob512_New
-//
 // Constructs a fresh empty Blob512 handle. See ITB_Blob128_New.
+//
+//export ITB_Blob512_New
 func ITB_Blob512_New(outHandle *C.uintptr_t) C.int {
 	if outHandle == nil {
 		return C.int(capi.StatusBadInput)
@@ -1437,19 +1437,19 @@ func ITB_Blob512_New(outHandle *C.uintptr_t) C.int {
 	return C.int(st)
 }
 
-//export ITB_Blob_Free
-//
 // Releases a blob handle. Safe to call on a zero handle (returns
 // ITB_ERR_BAD_HANDLE); idempotent across all three widths since
 // the underlying type is discriminated on the Go side.
+//
+//export ITB_Blob_Free
 func ITB_Blob_Free(handle C.uintptr_t) C.int {
 	return C.int(capi.FreeBlob(capi.BlobHandleID(handle)))
 }
 
-//export ITB_Blob_Width
-//
 // Returns the native hash width of an existing blob handle (128 /
 // 256 / 512). Status returned via *outStatus.
+//
+//export ITB_Blob_Width
 func ITB_Blob_Width(handle C.uintptr_t, outStatus *C.int) C.int {
 	w, st := capi.BlobWidth(capi.BlobHandleID(handle))
 	if outStatus != nil {
@@ -1458,11 +1458,11 @@ func ITB_Blob_Width(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(w)
 }
 
-//export ITB_Blob_Mode
-//
 // Returns the blob's mode field (0 = unset, 1 = Single, 3 = Triple).
 // Updated by Import / Import3; freshly constructed handles report 0
 // until Export / Export3 / Import / Import3 has run.
+//
+//export ITB_Blob_Mode
 func ITB_Blob_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
 	m, st := capi.BlobMode(capi.BlobHandleID(handle))
 	if outStatus != nil {
@@ -1471,13 +1471,13 @@ func ITB_Blob_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
 	return C.int(m)
 }
 
-//export ITB_Blob_SetKey
-//
 // Stores the hash key bytes for the requested slot on the handle.
 // 256-bit width requires exactly 32 bytes; 512-bit width requires
 // exactly 64 bytes. 128-bit width accepts variable lengths (empty
 // for siphash24, 16 bytes for aescmac); the downstream factory
 // validates the per-primitive length on Import-side wiring.
+//
+//export ITB_Blob_SetKey
 func ITB_Blob_SetKey(
 	handle C.uintptr_t, slot C.int,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -1489,11 +1489,11 @@ func ITB_Blob_SetKey(
 	return C.int(capi.BlobSetKey(capi.BlobHandleID(handle), int(slot), k))
 }
 
-//export ITB_Blob_GetKey
-//
 // Copies the hash key bytes from the requested slot into the
 // caller-allocated out buffer. Probe-then-retry: pass out=NULL /
 // outCap=0 to discover the required size in *outLen.
+//
+//export ITB_Blob_GetKey
 func ITB_Blob_GetKey(
 	handle C.uintptr_t, slot C.int,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -1510,12 +1510,12 @@ func ITB_Blob_GetKey(
 	return C.int(st)
 }
 
-//export ITB_Blob_SetComponents
-//
 // Stores the seed components (uint64 array) for the requested slot
 // on the handle. Component count is validated lazily at Export /
 // Import time — same 8..MaxKeyBits/64 multiple-of-8 invariants as
 // ITB_NewSeedFromComponents.
+//
+//export ITB_Blob_SetComponents
 func ITB_Blob_SetComponents(
 	handle C.uintptr_t, slot C.int,
 	comps *C.uint64_t, count C.size_t,
@@ -1540,12 +1540,12 @@ func ITB_Blob_SetComponents(
 	))
 }
 
-//export ITB_Blob_GetComponents
-//
 // Copies the seed components from the requested slot into the
 // caller-allocated uint64 array. Probe-then-retry: pass out=NULL /
 // outCap=0 to discover the required count (in uint64 elements,
 // not bytes) in *outCount.
+//
+//export ITB_Blob_GetComponents
 func ITB_Blob_GetComponents(
 	handle C.uintptr_t, slot C.int,
 	out *C.uint64_t, outCap C.size_t, outCount *C.size_t,
@@ -1565,12 +1565,12 @@ func ITB_Blob_GetComponents(
 	return C.int(st)
 }
 
-//export ITB_Blob_SetMACKey
-//
 // Stores the optional MAC key bytes on the handle. Pass NULL / 0 to
 // clear a previously-set key. Export / Export3 only emits the MAC
 // section when both ITB_BLOB_OPT_MAC is set in the bitmask AND the
 // MAC key on the handle is non-empty.
+//
+//export ITB_Blob_SetMACKey
 func ITB_Blob_SetMACKey(
 	handle C.uintptr_t,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -1582,10 +1582,10 @@ func ITB_Blob_SetMACKey(
 	return C.int(capi.BlobSetMACKey(capi.BlobHandleID(handle), k))
 }
 
-//export ITB_Blob_GetMACKey
-//
 // Copies the MAC key from the handle into the caller-allocated out
 // buffer. Probe-then-retry standard convention.
+//
+//export ITB_Blob_GetMACKey
 func ITB_Blob_GetMACKey(
 	handle C.uintptr_t,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -1602,10 +1602,10 @@ func ITB_Blob_GetMACKey(
 	return C.int(st)
 }
 
-//export ITB_Blob_SetMACName
-//
 // Stores the optional MAC name on the handle (e.g. "kmac256",
 // "hmac-blake3"). Pass NULL / 0 to clear a previously-set name.
+//
+//export ITB_Blob_SetMACName
 func ITB_Blob_SetMACName(
 	handle C.uintptr_t,
 	name *C.char, nameLen C.size_t,
@@ -1620,10 +1620,10 @@ func ITB_Blob_SetMACName(
 	return C.int(capi.BlobSetMACName(capi.BlobHandleID(handle), s))
 }
 
-//export ITB_Blob_GetMACName
-//
 // Writes the MAC name from the handle into the caller-allocated
 // out buffer (NUL-terminated). Probe-then-retry standard convention.
+//
+//export ITB_Blob_GetMACName
 func ITB_Blob_GetMACName(
 	handle C.uintptr_t,
 	out *C.char, outCap C.size_t, outLen *C.size_t,
@@ -1638,11 +1638,11 @@ func ITB_Blob_GetMACName(
 	return C.int(writeCString(name, unsafe.Pointer(out), outCap, outLen))
 }
 
-//export ITB_Blob_Export
-//
 // Serialises the handle's Single-Ouroboros state into a JSON blob.
 // The optsBitmask is a bitwise-OR of ITB_BLOB_OPT_* flags
 // (LOCKSEED=0x1, MAC=0x2). Probe-then-retry buffer convention.
+//
+//export ITB_Blob_Export
 func ITB_Blob_Export(
 	handle C.uintptr_t, optsBitmask C.int,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -1659,10 +1659,10 @@ func ITB_Blob_Export(
 	return C.int(st)
 }
 
-//export ITB_Blob_Export3
-//
 // Serialises the handle's Triple-Ouroboros state into a JSON blob.
 // See ITB_Blob_Export for the bitmask + buffer convention.
+//
+//export ITB_Blob_Export3
 func ITB_Blob_Export3(
 	handle C.uintptr_t, optsBitmask C.int,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -1679,13 +1679,13 @@ func ITB_Blob_Export3(
 	return C.int(st)
 }
 
-//export ITB_Blob_Import
-//
 // Parses a Single-Ouroboros JSON blob, populates the handle's slots,
 // and applies the captured globals via the process-wide setters.
 // Returns ITB_ERR_BLOB_MODE_MISMATCH on mode=3 input (call
 // ITB_Blob_Import3 instead), ITB_ERR_BLOB_MALFORMED on parse / shape
 // failure, ITB_ERR_BLOB_VERSION_TOO_NEW on unsupported version.
+//
+//export ITB_Blob_Import
 func ITB_Blob_Import(
 	handle C.uintptr_t,
 	blob unsafe.Pointer, blobLen C.size_t,
@@ -1697,10 +1697,10 @@ func ITB_Blob_Import(
 	return C.int(capi.BlobImport(capi.BlobHandleID(handle), in))
 }
 
-//export ITB_Blob_Import3
-//
 // Triple-Ouroboros counterpart of ITB_Blob_Import. Same error
 // contract.
+//
+//export ITB_Blob_Import3
 func ITB_Blob_Import3(
 	handle C.uintptr_t,
 	blob unsafe.Pointer, blobLen C.size_t,
@@ -1736,14 +1736,14 @@ func ITB_Blob_Import3(
 // the per-slot canonical name; ITB_Easy_IsMixed(handle) reports
 // whether the encryptor uses per-slot mixing.
 
-//export ITB_Easy_NewMixed
-//
 // Constructs a Single-Ouroboros Encryptor with per-slot PRF
 // primitive selection. primN / primD / primS cover the noise /
 // data / start slots; primL is the optional dedicated lockSeed
 // primitive (NULL or empty = no lockSeed allocation). All four
 // names must share the same native hash width via the hashes
 // registry.
+//
+//export ITB_Easy_NewMixed
 func ITB_Easy_NewMixed(
 	primN, primD, primS, primL *C.char,
 	keyBits C.int, macName *C.char,
@@ -1777,13 +1777,13 @@ func ITB_Easy_NewMixed(
 	return C.int(st)
 }
 
-//export ITB_Easy_NewMixed3
-//
 // Triple-Ouroboros counterpart of ITB_Easy_NewMixed. Accepts seven
 // per-slot primitive names (noise + 3 data + 3 start) plus the
 // optional lockSeed primitive (primL; NULL or empty = no lockSeed
 // allocation). All eight names must share the same native hash
 // width.
+//
+//export ITB_Easy_NewMixed3
 func ITB_Easy_NewMixed3(
 	primN *C.char,
 	primD1, primD2, primD3 *C.char,
@@ -1816,8 +1816,6 @@ func ITB_Easy_NewMixed3(
 	return C.int(st)
 }
 
-//export ITB_Easy_PrimitiveAt
-//
 // Returns the canonical hash primitive name bound to the given
 // seed slot index. For single-primitive encryptors every slot
 // returns the same name as ITB_Easy_Primitive; for mixed-mode
@@ -1827,6 +1825,8 @@ func ITB_Easy_NewMixed3(
 //
 // Out-of-range slots return the empty string. Same probe-then-retry
 // buffer convention as ITB_Easy_Primitive.
+//
+//export ITB_Easy_PrimitiveAt
 func ITB_Easy_PrimitiveAt(
 	handle C.uintptr_t, slot C.int,
 	out *C.char, capBytes C.size_t, outLen *C.size_t,
@@ -1841,12 +1841,12 @@ func ITB_Easy_PrimitiveAt(
 	return C.int(writeCString(name, unsafe.Pointer(out), capBytes, outLen))
 }
 
-//export ITB_Easy_IsMixed
-//
 // Returns 1 if the encryptor was constructed via ITB_Easy_NewMixed
 // / ITB_Easy_NewMixed3 (per-slot primitive selection), 0 if via
 // ITB_Easy_New (single primitive across all slots). Status returned
 // via *outStatus.
+//
+//export ITB_Easy_IsMixed
 func ITB_Easy_IsMixed(handle C.uintptr_t, outStatus *C.int) C.int {
 	v, st := capi.EasyIsMixed(capi.EasyHandleID(handle))
 	if outStatus != nil {
@@ -1869,8 +1869,6 @@ func streamIDFromC(p *C.uint8_t) (sid [32]byte, ok bool) {
 	return sid, true
 }
 
-//export ITB_EncryptStreamAuthenticated128
-//
 // Streaming AEAD single-Ouroboros encrypt for one chunk: takes the
 // (noise, data, start) seed trio (all width-128), a MAC handle, and
 // the streaming-binding components (32-byte streamID, running
@@ -1880,6 +1878,8 @@ func streamIDFromC(p *C.uint8_t) (sid [32]byte, ok bool) {
 // 128 / 256 / 512 entry points are kept distinct purely for ABI
 // symmetry with the existing ITB_EncryptAuth* family — the underlying
 // capi handler dispatches by the seeds' native hash width.
+//
+//export ITB_EncryptStreamAuthenticated128
 func ITB_EncryptStreamAuthenticated128(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -1909,11 +1909,11 @@ func ITB_EncryptStreamAuthenticated128(
 	return C.int(st)
 }
 
-//export ITB_EncryptStreamAuthenticated256
-//
 // Streaming AEAD single-Ouroboros encrypt for one chunk (width-256
 // seeds). See ITB_EncryptStreamAuthenticated128 for the parameter
 // contract.
+//
+//export ITB_EncryptStreamAuthenticated256
 func ITB_EncryptStreamAuthenticated256(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -1943,11 +1943,11 @@ func ITB_EncryptStreamAuthenticated256(
 	return C.int(st)
 }
 
-//export ITB_EncryptStreamAuthenticated512
-//
 // Streaming AEAD single-Ouroboros encrypt for one chunk (width-512
 // seeds). See ITB_EncryptStreamAuthenticated128 for the parameter
 // contract.
+//
+//export ITB_EncryptStreamAuthenticated512
 func ITB_EncryptStreamAuthenticated512(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -1977,8 +1977,6 @@ func ITB_EncryptStreamAuthenticated512(
 	return C.int(st)
 }
 
-//export ITB_DecryptStreamAuthenticated128
-//
 // Streaming AEAD single-Ouroboros decrypt for one chunk. finalFlagOut,
 // when non-NULL, receives the recovered flag byte interpreted as
 // {0 = non-terminal, 1 = terminating}. Returns ITB_ERR_MAC_FAILURE on
@@ -1986,6 +1984,8 @@ func ITB_EncryptStreamAuthenticated512(
 // mismatched cumulativePixelOffset. The 128 / 256 / 512 entry points
 // are kept distinct for ABI symmetry; the capi handler dispatches by
 // the seeds' native hash width.
+//
+//export ITB_DecryptStreamAuthenticated128
 func ITB_DecryptStreamAuthenticated128(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -2022,11 +2022,11 @@ func ITB_DecryptStreamAuthenticated128(
 	return C.int(st)
 }
 
-//export ITB_DecryptStreamAuthenticated256
-//
 // Streaming AEAD single-Ouroboros decrypt for one chunk (width-256
 // seeds). See ITB_DecryptStreamAuthenticated128 for the parameter
 // contract.
+//
+//export ITB_DecryptStreamAuthenticated256
 func ITB_DecryptStreamAuthenticated256(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -2063,11 +2063,11 @@ func ITB_DecryptStreamAuthenticated256(
 	return C.int(st)
 }
 
-//export ITB_DecryptStreamAuthenticated512
-//
 // Streaming AEAD single-Ouroboros decrypt for one chunk (width-512
 // seeds). See ITB_DecryptStreamAuthenticated128 for the parameter
 // contract.
+//
+//export ITB_DecryptStreamAuthenticated512
 func ITB_DecryptStreamAuthenticated512(
 	noiseHandle, dataHandle, startHandle C.uintptr_t, macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -2104,11 +2104,11 @@ func ITB_DecryptStreamAuthenticated512(
 	return C.int(st)
 }
 
-//export ITB_EncryptStreamAuthenticated3x128
-//
 // Streaming AEAD Triple-Ouroboros encrypt for one chunk: 7 seed
 // handles plus a MAC handle plus the streaming-binding components.
 // All 7 seeds must share native width 128.
+//
+//export ITB_EncryptStreamAuthenticated3x128
 func ITB_EncryptStreamAuthenticated3x128(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -2142,11 +2142,11 @@ func ITB_EncryptStreamAuthenticated3x128(
 	return C.int(st)
 }
 
-//export ITB_EncryptStreamAuthenticated3x256
-//
 // Streaming AEAD Triple-Ouroboros encrypt for one chunk (width-256
 // seeds). See ITB_EncryptStreamAuthenticated3x128 for the parameter
 // contract.
+//
+//export ITB_EncryptStreamAuthenticated3x256
 func ITB_EncryptStreamAuthenticated3x256(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -2180,11 +2180,11 @@ func ITB_EncryptStreamAuthenticated3x256(
 	return C.int(st)
 }
 
-//export ITB_EncryptStreamAuthenticated3x512
-//
 // Streaming AEAD Triple-Ouroboros encrypt for one chunk (width-512
 // seeds). See ITB_EncryptStreamAuthenticated3x128 for the parameter
 // contract.
+//
+//export ITB_EncryptStreamAuthenticated3x512
 func ITB_EncryptStreamAuthenticated3x512(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -2218,11 +2218,11 @@ func ITB_EncryptStreamAuthenticated3x512(
 	return C.int(st)
 }
 
-//export ITB_DecryptStreamAuthenticated3x128
-//
 // Streaming AEAD Triple-Ouroboros decrypt for one chunk. finalFlagOut,
 // when non-NULL, receives the recovered flag byte interpreted as
 // {0 = non-terminal, 1 = terminating}.
+//
+//export ITB_DecryptStreamAuthenticated3x128
 func ITB_DecryptStreamAuthenticated3x128(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -2263,11 +2263,11 @@ func ITB_DecryptStreamAuthenticated3x128(
 	return C.int(st)
 }
 
-//export ITB_DecryptStreamAuthenticated3x256
-//
 // Streaming AEAD Triple-Ouroboros decrypt for one chunk (width-256
 // seeds). See ITB_DecryptStreamAuthenticated3x128 for the parameter
 // contract.
+//
+//export ITB_DecryptStreamAuthenticated3x256
 func ITB_DecryptStreamAuthenticated3x256(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -2308,11 +2308,11 @@ func ITB_DecryptStreamAuthenticated3x256(
 	return C.int(st)
 }
 
-//export ITB_DecryptStreamAuthenticated3x512
-//
 // Streaming AEAD Triple-Ouroboros decrypt for one chunk (width-512
 // seeds). See ITB_DecryptStreamAuthenticated3x128 for the parameter
 // contract.
+//
+//export ITB_DecryptStreamAuthenticated3x512
 func ITB_DecryptStreamAuthenticated3x512(
 	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
@@ -2353,14 +2353,14 @@ func ITB_DecryptStreamAuthenticated3x512(
 	return C.int(st)
 }
 
-//export ITB_Easy_EncryptStreamAuth
-//
 // Streaming AEAD encrypt through an Encryptor handle. The encryptor's
 // bound MAC closure is reused for every chunk; the caller drives the
 // loop, supplying a CSPRNG-fresh streamID once at stream start, the
 // running cumulativePixelOffset per chunk, and finalFlag != 0 on the
 // terminating chunk only. Same caller-allocated-buffer convention as
 // ITB_Easy_EncryptAuth.
+//
+//export ITB_Easy_EncryptStreamAuth
 func ITB_Easy_EncryptStreamAuth(
 	handle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -2389,13 +2389,13 @@ func ITB_Easy_EncryptStreamAuth(
 	return C.int(st)
 }
 
-//export ITB_Easy_DecryptStreamAuth
-//
 // Streaming AEAD decrypt through an Encryptor handle. finalFlagOut,
 // when non-NULL, receives the recovered flag byte interpreted as
 // {0 = non-terminal, 1 = terminating}. Returns ITB_ERR_MAC_FAILURE
 // on tampered ciphertext / wrong MAC key / mismatched streamID /
 // mismatched cumulativePixelOffset.
+//
+//export ITB_Easy_DecryptStreamAuth
 func ITB_Easy_DecryptStreamAuth(
 	handle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -2452,11 +2452,11 @@ func ITB_Easy_DecryptStreamAuth(
 // the caller own both the plaintext buffer (mutated in place)
 // and the nonce buffer.
 
-//export ITB_WrapperKeySize
-//
 // Reports the byte length of the keystream-cipher key for the named
 // outer cipher (16 / 32 / 16 for "aes" / "chacha" / "siphash").
 // Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
+//
+//export ITB_WrapperKeySize
 func ITB_WrapperKeySize(cipherName *C.char, outSize *C.size_t) C.int {
 	if cipherName == nil || outSize == nil {
 		return C.int(capi.StatusBadInput)
@@ -2470,11 +2470,11 @@ func ITB_WrapperKeySize(cipherName *C.char, outSize *C.size_t) C.int {
 	return C.int(st)
 }
 
-//export ITB_WrapperNonceSize
-//
 // Reports the on-wire nonce length the named outer cipher emits
 // per stream (16 / 12 / 16 for "aes" / "chacha" / "siphash").
 // Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
+//
+//export ITB_WrapperNonceSize
 func ITB_WrapperNonceSize(cipherName *C.char, outSize *C.size_t) C.int {
 	if cipherName == nil || outSize == nil {
 		return C.int(capi.StatusBadInput)
@@ -2488,14 +2488,14 @@ func ITB_WrapperNonceSize(cipherName *C.char, outSize *C.size_t) C.int {
 	return C.int(st)
 }
 
-//export ITB_Wrap
-//
 // Seals one ITB ciphertext blob under the named outer cipher.
 // Wire form is `nonce || keystream-XOR(blob)` where the nonce
 // is freshly drawn from crypto/rand per call. The required out
 // capacity is NonceSize(name) + blob_len. Same caller-allocated-
 // buffer convention as ITB_Encrypt: on ITB_ERR_BUFFER_TOO_SMALL
 // *out_len receives the required size.
+//
+//export ITB_Wrap
 func ITB_Wrap(
 	cipherName *C.char,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -2516,13 +2516,13 @@ func ITB_Wrap(
 	return C.int(st)
 }
 
-//export ITB_Unwrap
-//
 // Reverses ITB_Wrap. Reads the leading NonceSize(name) bytes of
 // wire as the nonce, XOR-decrypts the remainder under (key,
 // nonce) into out. The recovered payload size is wire_len -
 // NonceSize(name); on ITB_ERR_BUFFER_TOO_SMALL *out_len receives
 // the required size.
+//
+//export ITB_Unwrap
 func ITB_Unwrap(
 	cipherName *C.char,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -2543,14 +2543,14 @@ func ITB_Unwrap(
 	return C.int(st)
 }
 
-//export ITB_WrapInPlace
-//
 // XORs blob in place under a freshly-drawn outer keystream and
 // writes the per-stream nonce into out_nonce[0..NonceSize(name)).
 // blob is MUTATED. The caller is expected to emit nonce ||
 // blob to the wire. nonce_cap must be at least NonceSize(name);
 // on ITB_ERR_BUFFER_TOO_SMALL ITB_WrapperNonceSize reports the
 // required nonce length.
+//
+//export ITB_WrapInPlace
 func ITB_WrapInPlace(
 	cipherName *C.char,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -2575,13 +2575,13 @@ func ITB_WrapInPlace(
 	return C.int(st)
 }
 
-//export ITB_UnwrapInPlace
-//
 // Strips the leading NonceSize(name) bytes from wire and XORs
 // the remainder in place. wire is MUTATED. The decrypted body
 // occupies wire[NonceSize(name):]; the nonce prefix is left
 // unchanged. wire_len must be >= NonceSize(name) or
 // ITB_ERR_BAD_INPUT is returned.
+//
+//export ITB_UnwrapInPlace
 func ITB_UnwrapInPlace(
 	cipherName *C.char,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -2602,8 +2602,6 @@ func ITB_UnwrapInPlace(
 	return C.int(st)
 }
 
-//export ITB_WrapStreamWriter_Init
-//
 // Allocates a streaming wrap-encrypt handle, draws a fresh nonce
 // from crypto/rand, and writes that nonce into out_nonce. The
 // caller must emit nonce_cap = NonceSize(name) bytes once at
@@ -2611,6 +2609,8 @@ func ITB_UnwrapInPlace(
 // subsequent body bytes through ITB_WrapStreamWriter_Update on
 // the returned handle. Pair with exactly one
 // ITB_WrapStreamWriter_Free call.
+//
+//export ITB_WrapStreamWriter_Init
 func ITB_WrapStreamWriter_Init(
 	cipherName *C.char,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -2634,11 +2634,11 @@ func ITB_WrapStreamWriter_Init(
 	return C.int(st)
 }
 
-//export ITB_WrapStreamWriter_Update
-//
 // XORs src[0..src_len) into dst[0..src_len) under the handle's
 // keystream, advancing the cipher counter. dst MAY equal src
 // (in-place mutation); dst_cap must be >= src_len.
+//
+//export ITB_WrapStreamWriter_Update
 func ITB_WrapStreamWriter_Update(
 	handle C.uintptr_t,
 	src unsafe.Pointer, srcLen C.size_t,
@@ -2656,21 +2656,21 @@ func ITB_WrapStreamWriter_Update(
 	return C.int(st)
 }
 
-//export ITB_WrapStreamWriter_Free
-//
 // Releases the wrap-encrypt streaming handle. Subsequent uses
 // return ITB_ERR_BAD_HANDLE.
+//
+//export ITB_WrapStreamWriter_Free
 func ITB_WrapStreamWriter_Free(handle C.uintptr_t) C.int {
 	return C.int(capi.FreeWrapStream(capi.WrapStreamHandleID(handle)))
 }
 
-//export ITB_UnwrapStreamReader_Init
-//
 // Allocates a streaming wrap-decrypt handle keyed by the leading
 // NonceSize(name) bytes of the wire (passed as wire_nonce). The
 // returned handle XORs subsequent body bytes back to plaintext
 // under the keystream advancing from counter zero. Pair with
 // exactly one ITB_UnwrapStreamReader_Free call.
+//
+//export ITB_UnwrapStreamReader_Init
 func ITB_UnwrapStreamReader_Init(
 	cipherName *C.char,
 	key unsafe.Pointer, keyLen C.size_t,
@@ -2694,11 +2694,11 @@ func ITB_UnwrapStreamReader_Init(
 	return C.int(st)
 }
 
-//export ITB_UnwrapStreamReader_Update
-//
 // XORs src[0..src_len) into dst[0..src_len) under the handle's
 // keystream. Mirror of ITB_WrapStreamWriter_Update with the same
 // in-place semantics.
+//
+//export ITB_UnwrapStreamReader_Update
 func ITB_UnwrapStreamReader_Update(
 	handle C.uintptr_t,
 	src unsafe.Pointer, srcLen C.size_t,
@@ -2716,9 +2716,9 @@ func ITB_UnwrapStreamReader_Update(
 	return C.int(st)
 }
 
-//export ITB_UnwrapStreamReader_Free
-//
 // Releases the wrap-decrypt streaming handle.
+//
+//export ITB_UnwrapStreamReader_Free
 func ITB_UnwrapStreamReader_Free(handle C.uintptr_t) C.int {
 	return C.int(capi.FreeWrapStream(capi.WrapStreamHandleID(handle)))
 }

@@ -23,14 +23,14 @@
 //
 // Standards conformance:
 //   - kmac256       — NIST SP 800-185 Section 4.3.1, output L = 256
-//                     bits; bit-exact KAT cross-checked against
-//                     pycryptodome's KMAC256 implementation.
+//     bits; bit-exact KAT cross-checked against
+//     pycryptodome's KMAC256 implementation.
 //   - hmac-sha256   — RFC 2104 / FIPS 198-1 with SHA-256;
-//                     bit-exact KAT against RFC 4231 vectors.
+//     bit-exact KAT against RFC 4231 vectors.
 //   - hmac-blake3   — BLAKE3 native keyed mode (BLAKE3 spec §6),
-//                     covered by upstream zeebo/blake3 keyed-mode
-//                     KAT and the ITB Auth round-trip integration
-//                     test in this package.
+//     covered by upstream zeebo/blake3 keyed-mode
+//     KAT and the ITB Auth round-trip integration
+//     test in this package.
 //
 // Why these three. ITB's MAC-Inside-Encrypt construction places the
 // 32-byte tag inside the encrypted container, where the barrier

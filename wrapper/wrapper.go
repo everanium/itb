@@ -16,7 +16,7 @@ import (
 const (
 	CipherAES128CTR = "aes"
 	CipherChaCha20  = "chacha"
-	CipherSipHash24   = "siphash"
+	CipherSipHash24 = "siphash"
 )
 
 // CipherNames lists every supported outer cipher in iteration order.

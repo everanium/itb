@@ -330,7 +330,7 @@ func TestLockSoup_MaskBalance(t *testing.T) {
 			t.Fatalf("trial=%d: popcount mismatch: m0=%d m1=%d m2=%d (need 8 each)",
 				trial, popcount(m0), popcount(m1), popcount(m2))
 		}
-		if (m0 & m1) != 0 || (m1 & m2) != 0 || (m0 & m2) != 0 {
+		if (m0&m1) != 0 || (m1&m2) != 0 || (m0&m2) != 0 {
 			t.Fatalf("trial=%d: masks not disjoint: m0=%06x m1=%06x m2=%06x",
 				trial, m0, m1, m2)
 		}

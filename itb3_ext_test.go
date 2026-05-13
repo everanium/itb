@@ -82,12 +82,18 @@ func benchEncrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 	nsH, nsB := maker()
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128Ext(bits, nsH)
 	ns.BatchHash = nsB
-	h, bf := maker(); ds1.Hash, ds1.BatchHash = h, bf
-	h, bf = maker(); ds2.Hash, ds2.BatchHash = h, bf
-	h, bf = maker(); ds3.Hash, ds3.BatchHash = h, bf
-	h, bf = maker(); ss1.Hash, ss1.BatchHash = h, bf
-	h, bf = maker(); ss2.Hash, ss2.BatchHash = h, bf
-	h, bf = maker(); ss3.Hash, ss3.BatchHash = h, bf
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
@@ -100,12 +106,18 @@ func benchDecrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 	nsH, nsB := maker()
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128Ext(bits, nsH)
 	ns.BatchHash = nsB
-	h, bf := maker(); ds1.Hash, ds1.BatchHash = h, bf
-	h, bf = maker(); ds2.Hash, ds2.BatchHash = h, bf
-	h, bf = maker(); ds3.Hash, ds3.BatchHash = h, bf
-	h, bf = maker(); ss1.Hash, ss1.BatchHash = h, bf
-	h, bf = maker(); ss2.Hash, ss2.BatchHash = h, bf
-	h, bf = maker(); ss3.Hash, ss3.BatchHash = h, bf
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
 	encrypted, _ := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
@@ -123,12 +135,18 @@ func benchEncrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc2
 	nsH, nsB := maker()
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256Ext(bits, nsH)
 	ns.BatchHash = nsB
-	h, bf := maker(); ds1.Hash, ds1.BatchHash = h, bf
-	h, bf = maker(); ds2.Hash, ds2.BatchHash = h, bf
-	h, bf = maker(); ds3.Hash, ds3.BatchHash = h, bf
-	h, bf = maker(); ss1.Hash, ss1.BatchHash = h, bf
-	h, bf = maker(); ss2.Hash, ss2.BatchHash = h, bf
-	h, bf = maker(); ss3.Hash, ss3.BatchHash = h, bf
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
@@ -141,12 +159,18 @@ func benchDecrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc2
 	nsH, nsB := maker()
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256Ext(bits, nsH)
 	ns.BatchHash = nsB
-	h, bf := maker(); ds1.Hash, ds1.BatchHash = h, bf
-	h, bf = maker(); ds2.Hash, ds2.BatchHash = h, bf
-	h, bf = maker(); ds3.Hash, ds3.BatchHash = h, bf
-	h, bf = maker(); ss1.Hash, ss1.BatchHash = h, bf
-	h, bf = maker(); ss2.Hash, ss2.BatchHash = h, bf
-	h, bf = maker(); ss3.Hash, ss3.BatchHash = h, bf
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
 	encrypted, _ := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
@@ -163,12 +187,18 @@ func benchEncrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	nsH, nsB := maker()
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512Ext(bits, nsH)
 	ns.BatchHash = nsB
-	h, bf := maker(); ds1.Hash, ds1.BatchHash = h, bf
-	h, bf = maker(); ds2.Hash, ds2.BatchHash = h, bf
-	h, bf = maker(); ds3.Hash, ds3.BatchHash = h, bf
-	h, bf = maker(); ss1.Hash, ss1.BatchHash = h, bf
-	h, bf = maker(); ss2.Hash, ss2.BatchHash = h, bf
-	h, bf = maker(); ss3.Hash, ss3.BatchHash = h, bf
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
@@ -181,12 +211,18 @@ func benchDecrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	nsH, nsB := maker()
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512Ext(bits, nsH)
 	ns.BatchHash = nsB
-	h, bf := maker(); ds1.Hash, ds1.BatchHash = h, bf
-	h, bf = maker(); ds2.Hash, ds2.BatchHash = h, bf
-	h, bf = maker(); ds3.Hash, ds3.BatchHash = h, bf
-	h, bf = maker(); ss1.Hash, ss1.BatchHash = h, bf
-	h, bf = maker(); ss2.Hash, ss2.BatchHash = h, bf
-	h, bf = maker(); ss3.Hash, ss3.BatchHash = h, bf
+	h, bf := maker()
+	ds1.Hash, ds1.BatchHash = h, bf
+	h, bf = maker()
+	ds2.Hash, ds2.BatchHash = h, bf
+	h, bf = maker()
+	ds3.Hash, ds3.BatchHash = h, bf
+	h, bf = maker()
+	ss1.Hash, ss1.BatchHash = h, bf
+	h, bf = maker()
+	ss2.Hash, ss2.BatchHash = h, bf
+	h, bf = maker()
+	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
 	encrypted, _ := itb.Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))

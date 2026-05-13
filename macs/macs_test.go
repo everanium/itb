@@ -143,7 +143,7 @@ func TestHMACSHA256Vectors(t *testing.T) {
 		{
 			// RFC 4231 Test Case 2 (key shorter than block — but stretched internally).
 			name:   "rfc4231-tc2",
-			key:    "4a656665", // "Jefe"
+			key:    "4a656665",                                                 // "Jefe"
 			data:   "7768617420646f2079612077616e7420666f72206e6f7468696e673f", // "what do ya want for nothing?"
 			expect: "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
 		},
