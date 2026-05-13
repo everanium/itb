@@ -4,6 +4,26 @@
 
 Comprehensive security comparison tables for ITB (Information-Theoretic Barrier) across three composition modes: Core (no MAC), MAC + Silent Drop, MAC + Reveal. For detailed proofs and analysis, see [SCIENCE.md](SCIENCE.md).
 
+## Security Policy
+
+**Supported versions.** Active development tracks `main`. Tagged releases starting from `v0.1.0`. Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
+
+| Version | Supported |
+|---|---|
+| `main` (HEAD) | ✓ |
+| `v0.1.0` (latest tag) | ✓ |
+| pre-`v0.1.0` (no public tags) | — |
+
+**Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new). Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd). Email contact is intentionally not published — Discord and Security Advisories cover both informal triage and formal disclosure.
+
+**Triage and response.** Best-effort triage within 14 days. Pre-release status means no SLA or commercial support is implied. Responses are individually authored, not template-driven.
+
+**Coordinated disclosure.** Findings against the construction — cryptanalytic attacks, theoretical weaknesses, implementational flaws — are most welcome and prepared for academic publication. A 90-day coordinated disclosure window is the default; faster public disclosure may be appropriate when a fix lands quickly or the finding is already public via parallel discovery. The ITB construction was published to invite scrutiny, not to claim closed-form security — cryptanalytic findings under the author's own attribution are explicitly encouraged.
+
+**Out of scope.** Hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, fault injection), supply-chain attacks against dependencies, attacks against the host OS / language runtime / hardware platform itself. See the Disclaimer above.
+
+**Cryptographic context.** The deeper construction-level properties — composition modes, attack resistance, barrier metrics, byte-splitting, information-theoretic bounds, Bit Soup, Lock Soup — are catalogued in the numbered sections below. Refer there for the substantive cryptographic content; this section governs disclosure process only.
+
 ## 1. ITB Composition Modes
 
 | Property | Core ITB (no MAC) | MAC + Silent Drop‡‡ | MAC + Reveal |
