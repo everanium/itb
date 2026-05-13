@@ -213,3 +213,47 @@ func TestBLAKE2sMakePairITBRoundtrip(t *testing.T) {
 		t.Fatal("plaintext mismatch after Encrypt256/Decrypt256 via blake2s batched dispatch")
 	}
 }
+
+// TestBLAKE2sSingleArmDirect exercises the BLAKE2s() entry point that
+// returns only the single-arm closure (no batched dispatch). Calling
+// BLAKE2s(key) followed by BLAKE2s(key) with the same explicit key must
+// produce bit-exact identical digests, and the resulting closure must
+// be parity-equivalent to lane 0 of BLAKE2s256Pair(key)'s single arm.
+func TestBLAKE2sSingleArmDirect(t *testing.T) {
+	var key [32]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		t.Fatal(err)
+	}
+	h1, retKey1 := BLAKE2s(key)
+	if retKey1 != key {
+		t.Errorf("BLAKE2s(key) returned key %x, want %x", retKey1, key)
+	}
+	h2, retKey2 := BLAKE2s(key)
+	if retKey2 != key {
+		t.Errorf("BLAKE2s(key) attempt 2 returned key %x, want %x", retKey2, key)
+	}
+
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14}
+	seed := [4]uint64{0xabcd, 0x1234, 0x5678, 0x9abc}
+	out1 := h1(data, seed)
+	out2 := h2(data, seed)
+	if out1 != out2 {
+		t.Error("BLAKE2s(key): output diverges across two same-key direct calls")
+	}
+
+	pairSingle, _, _ := BLAKE2s256Pair(key)
+	if out1 != pairSingle(data, seed) {
+		t.Error("BLAKE2s(key) and BLAKE2s256Pair(key) single arm produce divergent digests")
+	}
+
+	// Random-key path: no argument generates a fresh key and the
+	// closure must remain functional.
+	hRand, randKey := BLAKE2s()
+	if randKey == ([32]byte{}) {
+		t.Error("BLAKE2s() returned zero key — random generation failed silently")
+	}
+	if hRand == nil {
+		t.Fatal("BLAKE2s() returned nil closure")
+	}
+	_ = hRand(data, seed)
+}

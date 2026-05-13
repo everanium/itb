@@ -8,7 +8,7 @@
 /cshared
 **/eitb/eitb
 /eitb
-/cmd/eitb/eitb
+/tools/eitb/eitb
 *.test
 
 # CPU/memory profiles

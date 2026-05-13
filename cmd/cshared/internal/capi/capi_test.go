@@ -672,3 +672,105 @@ func NewSeedOK(t *testing.T, name string, keyBits int) HandleID {
 	}
 	return id
 }
+
+// TestHeaderSizeMatchesNonce confirms HeaderSize tracks the active
+// NonceBits setting (nonce/8 + 4 dimension bytes). Restores the
+// process-wide setting at the end so neighbouring tests run with
+// their expected defaults.
+func TestHeaderSizeMatchesNonce(t *testing.T) {
+	orig := GetNonceBits()
+	defer SetNonceBits(orig)
+	for _, tc := range []struct {
+		bits int
+		want int
+	}{
+		{128, 16 + 4},
+		{256, 32 + 4},
+		{512, 64 + 4},
+	} {
+		if st := SetNonceBits(tc.bits); st != StatusOK {
+			t.Fatalf("SetNonceBits(%d): %v", tc.bits, st)
+		}
+		if got := HeaderSize(); got != tc.want {
+			t.Errorf("HeaderSize at NonceBits=%d = %d, want %d", tc.bits, got, tc.want)
+		}
+	}
+}
+
+// TestCapiErrorString covers the capiError.Error sentinel — the
+// dispatch-side fallback when a cached width does not match any
+// known case. The sentinel is unreachable through normal FFI use,
+// so the test instantiates the underlying string type directly to
+// confirm the Error() method preserves the message verbatim.
+func TestCapiErrorString(t *testing.T) {
+	const msg = "capi: synthetic test sentinel"
+	var e error = capiError(msg)
+	if got := e.Error(); got != msg {
+		t.Errorf("capiError.Error() = %q, want %q", got, msg)
+	}
+	if errInternal.Error() == "" {
+		t.Errorf("errInternal.Error() unexpectedly empty")
+	}
+}
+
+// TestDecryptBadHeader exercises the Decrypt error path where the
+// caller passes ciphertext too short to even contain the header.
+// The underlying itb.Decrypt* surface returns an error rather than
+// panicking, so the wrapper translates to StatusDecryptFailed.
+func TestDecryptBadHeader(t *testing.T) {
+	ns := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ns)
+	ds := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ds)
+	ss := NewSeedOK(t, "blake3", 1024)
+	defer FreeSeed(ss)
+
+	out := make([]byte, 1<<16)
+	short := []byte{0x00, 0x01, 0x02}
+	if _, st := Decrypt(ns, ds, ss, short, out); st != StatusDecryptFailed {
+		t.Errorf("Decrypt(short ciphertext): status=%v, want StatusDecryptFailed", st)
+	}
+}
+
+// TestDecrypt3BadHeader is the Triple counterpart of
+// TestDecryptBadHeader: same wire-shape malformation, surfaced
+// through the seven-seed dispatcher.
+func TestDecrypt3BadHeader(t *testing.T) {
+	ids := make([]HandleID, 7)
+	for i := range ids {
+		ids[i] = NewSeedOK(t, "blake3", 1024)
+	}
+	defer func() {
+		for _, id := range ids {
+			FreeSeed(id)
+		}
+	}()
+
+	out := make([]byte, 1<<16)
+	short := []byte{0x00, 0x01, 0x02}
+	_, st := Decrypt3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6], short, out)
+	if st != StatusDecryptFailed {
+		t.Errorf("Decrypt3(short ciphertext): status=%v, want StatusDecryptFailed", st)
+	}
+}
+
+// TestEncryptBadHandle confirms that Encrypt / Encrypt3 reject a
+// freed handle with StatusBadHandle before touching any cipher
+// state. Mirrors the existing TestFreeSeedIdempotent shape but for
+// the dispatch entry points.
+func TestEncryptBadHandle(t *testing.T) {
+	ns := NewSeedOK(t, "blake3", 1024)
+	ds := NewSeedOK(t, "blake3", 1024)
+	ss := NewSeedOK(t, "blake3", 1024)
+	FreeSeed(ns) // stale
+	defer FreeSeed(ds)
+	defer FreeSeed(ss)
+
+	out := make([]byte, 1<<16)
+	if _, st := Encrypt(ns, ds, ss, []byte("test"), out); st != StatusBadHandle {
+		t.Errorf("Encrypt(stale noise): status=%v, want StatusBadHandle", st)
+	}
+	if _, st := Decrypt(ns, ds, ss, []byte("test"), out); st != StatusBadHandle {
+		t.Errorf("Decrypt(stale noise): status=%v, want StatusBadHandle", st)
+	}
+}

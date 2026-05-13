@@ -344,3 +344,248 @@ func TestDecryptAuthCrossMACRejection(t *testing.T) {
 		t.Fatalf("Cross-MAC decrypt: %v, want StatusMACFailure", st)
 	}
 }
+
+// TestMACRegistryMinKeyBytesAllIndices iterates every shipped MAC
+// primitive and confirms MACRegistryMinKeyBytes returns a strictly
+// positive byte count. Currently every MAC in the registry uses a
+// 32-byte minimum (binding-fleet discipline) but the test does not
+// hardcode the value — it documents that the field is wired through
+// and non-zero, leaving the magnitude check to TestMACRegistry.
+func TestMACRegistryMinKeyBytesAllIndices(t *testing.T) {
+	if MACCount() == 0 {
+		t.Fatal("MACCount = 0, no registry entries to probe")
+	}
+	for i := 0; i < MACCount(); i++ {
+		got := MACRegistryMinKeyBytes(i)
+		if got <= 0 {
+			t.Errorf("MACRegistryMinKeyBytes(%d) = %d, want > 0", i, got)
+		}
+	}
+}
+
+// TestMACRegistryMinKeyBytesOutOfRange covers the i<0 and i>=N
+// branches that the per-index loop above does not reach.
+func TestMACRegistryMinKeyBytesOutOfRange(t *testing.T) {
+	for _, badIdx := range []int{-1, MACCount(), MACCount() + 1, 100} {
+		if got := MACRegistryMinKeyBytes(badIdx); got != 0 {
+			t.Errorf("MACRegistryMinKeyBytes(%d) = %d, want 0", badIdx, got)
+		}
+	}
+}
+
+// TestEncryptAuthBufferTooSmall exercises the auth-side buffer
+// probe path: encrypt into a tiny buffer, confirm the helper
+// reports the required size, then retry with the right size.
+func TestEncryptAuthBufferTooSmall(t *testing.T) {
+	ns, ds, ss := newSingleSeeds(t, "blake3", 1024)
+	defer freeAll(ns, ds, ss)
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	tiny := make([]byte, 4)
+	required, st := EncryptAuth(ns, ds, ss, macID, plaintext, tiny)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("EncryptAuth tiny: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required <= len(tiny) {
+		t.Errorf("required=%d, want > %d", required, len(tiny))
+	}
+	full := make([]byte, required)
+	got, st := EncryptAuth(ns, ds, ss, macID, plaintext, full)
+	if st != StatusOK {
+		t.Errorf("sized buffer: status=%v", st)
+	}
+	if got != required {
+		t.Errorf("got=%d, want %d", got, required)
+	}
+}
+
+// TestEncryptAuth3BufferTooSmall covers the Triple+Auth buffer-probe
+// path on the seven-seed dispatcher.
+func TestEncryptAuth3BufferTooSmall(t *testing.T) {
+	ids := newSevenSeeds(t, "blake3", 1024)
+	defer func() {
+		for _, id := range ids {
+			FreeSeed(id)
+		}
+	}()
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	tiny := make([]byte, 4)
+	required, st := EncryptAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, plaintext, tiny)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("EncryptAuth3 tiny: status=%v, want StatusBufferTooSmall", st)
+	}
+	full := make([]byte, required)
+	_, st = EncryptAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, plaintext, full)
+	if st != StatusOK {
+		t.Errorf("sized buffer: status=%v", st)
+	}
+}
+
+// TestDecryptAuth3BufferTooSmall covers the Triple+Auth decrypt-side
+// buffer-probe path.
+func TestDecryptAuth3BufferTooSmall(t *testing.T) {
+	ids := newSevenSeeds(t, "blake3", 1024)
+	defer func() {
+		for _, id := range ids {
+			FreeSeed(id)
+		}
+	}()
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	ctBuf := make([]byte, 1<<16)
+	ctLen, _ := EncryptAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, plaintext, ctBuf)
+
+	tiny := make([]byte, 4)
+	required, st := DecryptAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, ctBuf[:ctLen], tiny)
+	if st != StatusBufferTooSmall {
+		t.Errorf("DecryptAuth3 tiny: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required != len(plaintext) {
+		t.Errorf("required=%d, want %d", required, len(plaintext))
+	}
+}
+
+// TestEncryptStreamAuthBufferTooSmall covers the Stream+Auth Single
+// buffer-probe path.
+func TestEncryptStreamAuthBufferTooSmall(t *testing.T) {
+	ns, ds, ss := newSingleSeeds(t, "blake3", 1024)
+	defer freeAll(ns, ds, ss)
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	var sid [32]byte
+	rand.Read(sid[:])
+
+	tiny := make([]byte, 4)
+	required, st := EncryptStreamAuth(ns, ds, ss, macID, plaintext, tiny, sid, 0, true)
+	if st != StatusBufferTooSmall {
+		t.Errorf("EncryptStreamAuth tiny: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required <= len(tiny) {
+		t.Errorf("required=%d, want > %d", required, len(tiny))
+	}
+}
+
+// TestEncryptStreamAuth3BufferTooSmall covers the Stream+Auth Triple
+// buffer-probe path.
+func TestEncryptStreamAuth3BufferTooSmall(t *testing.T) {
+	ids := newSevenSeeds(t, "blake3", 1024)
+	defer func() {
+		for _, id := range ids {
+			FreeSeed(id)
+		}
+	}()
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+	var sid [32]byte
+	rand.Read(sid[:])
+
+	tiny := make([]byte, 4)
+	required, st := EncryptStreamAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, plaintext, tiny, sid, 0, true)
+	if st != StatusBufferTooSmall {
+		t.Errorf("EncryptStreamAuth3 tiny: status=%v, want StatusBufferTooSmall", st)
+	}
+	full := make([]byte, required)
+	if _, st := EncryptStreamAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, plaintext, full, sid, 0, true); st != StatusOK {
+		t.Errorf("sized buffer: status=%v", st)
+	}
+}
+
+// TestDecryptStreamAuth3BufferTooSmall covers the Stream+Auth Triple
+// decrypt-side buffer-probe path.
+func TestDecryptStreamAuth3BufferTooSmall(t *testing.T) {
+	ids := newSevenSeeds(t, "blake3", 1024)
+	defer func() {
+		for _, id := range ids {
+			FreeSeed(id)
+		}
+	}()
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+	var sid [32]byte
+	rand.Read(sid[:])
+
+	ctBuf := make([]byte, 1<<16)
+	ctLen, st := EncryptStreamAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, plaintext, ctBuf, sid, 0, true)
+	if st != StatusOK {
+		t.Fatalf("EncryptStreamAuth3: status=%v", st)
+	}
+
+	tiny := make([]byte, 4)
+	required, _, st := DecryptStreamAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, ctBuf[:ctLen], tiny, sid, 0)
+	if st != StatusBufferTooSmall {
+		t.Errorf("DecryptStreamAuth3 tiny: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required != len(plaintext) {
+		t.Errorf("required=%d, want %d", required, len(plaintext))
+	}
+}
+
+// TestEncryptAuthBadSeedHandle covers the stale-noise-handle branch
+// on EncryptAuth — fails at resolveTriple before the MAC layer.
+func TestEncryptAuthBadSeedHandle(t *testing.T) {
+	ns := NewSeedOK(t, "blake3", 1024)
+	ds := NewSeedOK(t, "blake3", 1024)
+	ss := NewSeedOK(t, "blake3", 1024)
+	FreeSeed(ns)
+	defer FreeSeed(ds)
+	defer FreeSeed(ss)
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	out := make([]byte, 1<<16)
+	if _, st := EncryptAuth(ns, ds, ss, macID, []byte("test"), out); st != StatusBadHandle {
+		t.Errorf("EncryptAuth(stale seed): status=%v, want StatusBadHandle", st)
+	}
+}
+
+// TestEncryptAuth3BadSeedHandle is the seven-seed variant of
+// TestEncryptAuthBadSeedHandle.
+func TestEncryptAuth3BadSeedHandle(t *testing.T) {
+	ids := newSevenSeeds(t, "blake3", 1024)
+	FreeSeed(ids[0]) // stale
+	defer func() {
+		for _, id := range ids[1:] {
+			FreeSeed(id)
+		}
+	}()
+	macID, _ := NewMAC("kmac256", makeMACKey32(t))
+	defer FreeMAC(macID)
+
+	out := make([]byte, 1<<16)
+	_, st := EncryptAuth3(ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6],
+		macID, []byte("test"), out)
+	if st != StatusBadHandle {
+		t.Errorf("EncryptAuth3(stale seed): status=%v, want StatusBadHandle", st)
+	}
+}

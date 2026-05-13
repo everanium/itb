@@ -187,6 +187,179 @@ func TestBlake3IV_RFC(t *testing.T) {
 	}
 }
 
+// runScalarBatch256Test exercises a single (scalarBatchKernel, length)
+// pair across the standard edge-case matrix. Each lane's output must
+// match the per-lane scalar reference bit-exactly. This drives the
+// 4-lane scalar batched chain-absorb path that serves as the fallback
+// on hosts without AVX-512+VL and as the parity baseline for the
+// ZMM-batched ASM kernels.
+func runScalarBatch256Test(
+	t *testing.T,
+	name string,
+	dataLen int,
+	kernel func(*[32]byte, *[4][4]uint64, *[4]*byte, *[4][8]uint32),
+) {
+	t.Helper()
+	for _, tc := range chainAbsorb256Cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bufs, ptrs := makeLaneData256(dataLen)
+			var laneWant [4][8]uint32
+			for lane := 0; lane < 4; lane++ {
+				laneWant[lane] = runReferenceClosure256(tc.key, bufs[lane], tc.seeds[lane])
+			}
+			var got [4][8]uint32
+			kernel(&tc.key, &tc.seeds, &ptrs, &got)
+			for lane := 0; lane < 4; lane++ {
+				for i := 0; i < 8; i++ {
+					if got[lane][i] != laneWant[lane][i] {
+						t.Fatalf("%s lane %d out[%d]: got=%#x want=%#x",
+							name, lane, i, got[lane][i], laneWant[lane][i])
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestScalarBatch256ChainAbsorb20_Parity verifies the scalar 4-lane
+// 20-byte BLAKE3-256 batched chain-absorb matches the per-lane
+// reference closure.
+func TestScalarBatch256ChainAbsorb20_Parity(t *testing.T) {
+	runScalarBatch256Test(t, "scalarBatch256ChainAbsorb20", 20, scalarBatch256ChainAbsorb20)
+}
+
+// TestScalarBatch256ChainAbsorb36_Parity — 36-byte counterpart.
+func TestScalarBatch256ChainAbsorb36_Parity(t *testing.T) {
+	runScalarBatch256Test(t, "scalarBatch256ChainAbsorb36", 36, scalarBatch256ChainAbsorb36)
+}
+
+// TestScalarBatch256ChainAbsorb68_Parity — 68-byte counterpart. Runs
+// two BLAKE3 blocks per lane (block 1: data[0:64], block 2: data[64:68]).
+func TestScalarBatch256ChainAbsorb68_Parity(t *testing.T) {
+	runScalarBatch256Test(t, "scalarBatch256ChainAbsorb68", 68, scalarBatch256ChainAbsorb68)
+}
+
+// TestPack256Buf_Layout verifies pack256Buf lays out the BLAKE3 mixed
+// buffer correctly: data first, with seed[0..3] XOR'd into the first
+// 32 bytes (LE uint64 over 4 × 8-byte chunks). Unlike BLAKE2{b,s}, no
+// key prefix exists in the buffer — the key lives in keyed-hash state.
+func TestPack256Buf_Layout(t *testing.T) {
+	data := make([]byte, 36)
+	for i := range data {
+		data[i] = byte(0x80 + i)
+	}
+	seed := [4]uint64{
+		0x1111111111111111, 0x2222222222222222,
+		0x3333333333333333, 0x4444444444444444,
+	}
+	mixed := make([]byte, 36)
+	pack256Buf(mixed, data, &seed)
+	for i := 0; i < 4; i++ {
+		off := i * 8
+		wantWord := binary.LittleEndian.Uint64(data[off:]) ^ seed[i]
+		gotWord := binary.LittleEndian.Uint64(mixed[off:])
+		if gotWord != wantWord {
+			t.Fatalf("mixed[%d:%d] word: got=%#x want=%#x",
+				off, off+8, gotWord, wantWord)
+		}
+	}
+	// Bytes past offset 32 are copied verbatim, no seed XOR.
+	for i := 32; i < 36; i++ {
+		if mixed[i] != data[i] {
+			t.Fatalf("mixed[%d]=%#x, want data[%d]=%#x", i, mixed[i], i, data[i])
+		}
+	}
+}
+
+// TestPack256Buf_ShortMixed exercises pack256Buf's early-break
+// branch when len(mixed) is below the 32-byte seed-injection region.
+// The branch `if off+8 > len(mixed) { break }` triggers when mixed is
+// short enough that the next 8-byte word would overflow.
+func TestPack256Buf_ShortMixed(t *testing.T) {
+	data := []byte{0x01, 0x02, 0x03, 0x04}
+	seed := [4]uint64{0xaaaaaaaaaaaaaaaa, 0xbbbbbbbbbbbbbbbb, 0xcccccccccccccccc, 0xdddddddddddddddd}
+	// 4-byte mixed cannot hold any full 8-byte seed word; the loop
+	// must break at i=0 without applying any seed XOR.
+	mixed := make([]byte, 4)
+	pack256Buf(mixed, data, &seed)
+	for i := 0; i < 4; i++ {
+		if mixed[i] != data[i] {
+			t.Fatalf("mixed[%d]=%#x, want data[%d]=%#x", i, mixed[i], i, data[i])
+		}
+	}
+}
+
+// TestBlake3KeyedSum_Roundtrip verifies blake3KeyedSum produces output
+// identical to the upstream zeebo/blake3 keyed-hash mode for the same
+// key and input.
+func TestBlake3KeyedSum_Roundtrip(t *testing.T) {
+	var key [32]byte
+	for i := range key {
+		key[i] = byte(0x20 + i)
+	}
+	mixed := []byte("blake3 keyed sum reference")
+	var got [32]byte
+	blake3KeyedSum(&key, mixed, got[:])
+
+	h, err := blake3.NewKeyed(key[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Write(mixed); err != nil {
+		t.Fatal(err)
+	}
+	var want [32]byte
+	h.Sum(want[:0])
+
+	if got != want {
+		t.Fatalf("blake3KeyedSum mismatch\n  got:  %x\n  want: %x", got, want)
+	}
+}
+
+// TestDispatcher_ScalarFallback drives the three public dispatchers
+// through their scalar fallback path by temporarily clearing the
+// HasAVX512Fused capability flag. Verifies that the scalar branch of
+// each dispatcher produces output bit-identical to the per-lane
+// reference closure.
+func TestDispatcher_ScalarFallback(t *testing.T) {
+	saved := HasAVX512Fused
+	HasAVX512Fused = false
+	t.Cleanup(func() { HasAVX512Fused = saved })
+
+	cases := []struct {
+		name    string
+		dataLen int
+		kernel  func(*[32]byte, *[4][4]uint64, *[4]*byte, *[4][8]uint32)
+	}{
+		{"Blake3256ChainAbsorb20x4 fallback", 20, Blake3256ChainAbsorb20x4},
+		{"Blake3256ChainAbsorb36x4 fallback", 36, Blake3256ChainAbsorb36x4},
+		{"Blake3256ChainAbsorb68x4 fallback", 68, Blake3256ChainAbsorb68x4},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, tc := range chainAbsorb256Cases {
+				t.Run(tc.name, func(t *testing.T) {
+					bufs, ptrs := makeLaneData256(c.dataLen)
+					var laneWant [4][8]uint32
+					for lane := 0; lane < 4; lane++ {
+						laneWant[lane] = runReferenceClosure256(tc.key, bufs[lane], tc.seeds[lane])
+					}
+					var got [4][8]uint32
+					c.kernel(&tc.key, &tc.seeds, &ptrs, &got)
+					for lane := 0; lane < 4; lane++ {
+						for i := 0; i < 8; i++ {
+							if got[lane][i] != laneWant[lane][i] {
+								t.Fatalf("%s lane %d out[%d]: got=%#x want=%#x",
+									c.name, lane, i, got[lane][i], laneWant[lane][i])
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestBlake3Flags verifies the domain-separation flag constants
 // match the BLAKE3 RFC §2.1 numeric values.
 func TestBlake3Flags(t *testing.T) {
