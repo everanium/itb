@@ -25,8 +25,8 @@ import (
 	"encoding/binary"
 	"testing"
 
-	stdaes "github.com/jedisct1/go-aes"
 	"github.com/dchest/siphash"
+	stdaes "github.com/jedisct1/go-aes"
 	"github.com/zeebo/blake3"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"

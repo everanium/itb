@@ -17,7 +17,7 @@ package areionasm
 //   - seeds:     per-lane seed components (4 lanes × 8 uint64 = 64 B per lane).
 //   - dataPtrs:  4 pointers, each to ≥20 bytes.
 //   - out:       output buffer; lane i's 64-byte digest at out[i] as
-//                8 little-endian uint64 words.
+//     8 little-endian uint64 words.
 //
 //go:noescape
 func Areion512ChainAbsorb20x4(

@@ -263,8 +263,8 @@ func TestMixedRejectMixedWidth(t *testing.T) {
 		t.Errorf("panic %v does not signal ErrEasyMixedWidth", r)
 	}()
 	_ = easy.NewMixed(easy.MixedSpec{
-		PrimitiveN: "blake3",     // 256-bit
-		PrimitiveD: "areion512",  // 512-bit ← width mismatch
+		PrimitiveN: "blake3",    // 256-bit
+		PrimitiveD: "areion512", // 512-bit ← width mismatch
 		PrimitiveS: "blake3",
 		KeyBits:    1024,
 		MACName:    "kmac256",
@@ -297,10 +297,10 @@ func TestMixedRejectLockSeedWidthMismatch(t *testing.T) {
 		}
 	}()
 	_ = easy.NewMixed(easy.MixedSpec{
-		PrimitiveN: "blake3",     // 256-bit
+		PrimitiveN: "blake3", // 256-bit
 		PrimitiveD: "blake3",
 		PrimitiveS: "blake3",
-		PrimitiveL: "areion512",  // 512-bit ← width mismatch
+		PrimitiveL: "areion512", // 512-bit ← width mismatch
 		KeyBits:    1024,
 		MACName:    "kmac256",
 	})
