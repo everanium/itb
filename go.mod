@@ -1,6 +1,6 @@
 module github.com/everanium/itb
 
-go 1.26.2
+go 1.26
 
 require (
 	github.com/dchest/siphash v1.2.3
