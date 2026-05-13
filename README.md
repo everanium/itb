@@ -6,6 +6,11 @@
   <em>Designed to protect critical data from future superintelligence.</em>
 </p>
 
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/everanium/itb"><img src="https://pkg.go.dev/badge/github.com/everanium/itb.svg" alt="Go Reference"></a>
+  <a href="https://goreportcard.com/report/github.com/everanium/itb"><img src="https://goreportcard.com/badge/github.com/everanium/itb" alt="Go Report Card"></a>
+</p>
+
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
 
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
