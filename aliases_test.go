@@ -474,3 +474,97 @@ func TestAliasesTampered(t *testing.T) {
 		}
 	})
 }
+
+// TestEncryptCfgRoundtrip exercises the non-authenticated *Cfg encrypt
+// + decrypt helpers across all three widths in both Single and Triple
+// Ouroboros modes. The companion EncryptAuth*Cfg helpers are already
+// covered by TestAliasesRoundtrip; this test closes the parallel set
+// for the plain (no-MAC) Single Message API.
+func TestEncryptCfgRoundtrip(t *testing.T) {
+	pt := deterministicPlaintext()
+
+	// --- 256-bit Single ---
+	t.Run("Encrypt256Cfg_Roundtrip", func(t *testing.T) {
+		ns, ds, ss := aliasFixture256(t)
+		cfg := SnapshotGlobals()
+		ct, err := Encrypt256Cfg(cfg, ns, ds, ss, pt)
+		if err != nil {
+			t.Fatalf("Encrypt256Cfg: %v", err)
+		}
+		got, err := Decrypt256Cfg(cfg, ns, ds, ss, ct)
+		if err != nil {
+			t.Fatalf("Decrypt256Cfg: %v", err)
+		}
+		if !bytes.Equal(pt, got) {
+			t.Fatalf("plaintext mismatch (len got=%d want=%d)", len(got), len(pt))
+		}
+	})
+
+	// --- 512-bit Single ---
+	t.Run("Encrypt512Cfg_Roundtrip", func(t *testing.T) {
+		ns, ds, ss := aliasFixture512(t)
+		cfg := SnapshotGlobals()
+		ct, err := Encrypt512Cfg(cfg, ns, ds, ss, pt)
+		if err != nil {
+			t.Fatalf("Encrypt512Cfg: %v", err)
+		}
+		got, err := Decrypt512Cfg(cfg, ns, ds, ss, ct)
+		if err != nil {
+			t.Fatalf("Decrypt512Cfg: %v", err)
+		}
+		if !bytes.Equal(pt, got) {
+			t.Fatalf("plaintext mismatch (len got=%d want=%d)", len(got), len(pt))
+		}
+	})
+
+	// --- 128-bit Triple ---
+	t.Run("Encrypt3x128Cfg_Roundtrip", func(t *testing.T) {
+		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
+		cfg := SnapshotGlobals()
+		ct, err := Encrypt3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt)
+		if err != nil {
+			t.Fatalf("Encrypt3x128Cfg: %v", err)
+		}
+		got, err := Decrypt3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct)
+		if err != nil {
+			t.Fatalf("Decrypt3x128Cfg: %v", err)
+		}
+		if !bytes.Equal(pt, got) {
+			t.Fatalf("plaintext mismatch (len got=%d want=%d)", len(got), len(pt))
+		}
+	})
+
+	// --- 256-bit Triple ---
+	t.Run("Encrypt3x256Cfg_Roundtrip", func(t *testing.T) {
+		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
+		cfg := SnapshotGlobals()
+		ct, err := Encrypt3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt)
+		if err != nil {
+			t.Fatalf("Encrypt3x256Cfg: %v", err)
+		}
+		got, err := Decrypt3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct)
+		if err != nil {
+			t.Fatalf("Decrypt3x256Cfg: %v", err)
+		}
+		if !bytes.Equal(pt, got) {
+			t.Fatalf("plaintext mismatch (len got=%d want=%d)", len(got), len(pt))
+		}
+	})
+
+	// --- 512-bit Triple ---
+	t.Run("Encrypt3x512Cfg_Roundtrip", func(t *testing.T) {
+		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
+		cfg := SnapshotGlobals()
+		ct, err := Encrypt3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt)
+		if err != nil {
+			t.Fatalf("Encrypt3x512Cfg: %v", err)
+		}
+		got, err := Decrypt3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct)
+		if err != nil {
+			t.Fatalf("Decrypt3x512Cfg: %v", err)
+		}
+		if !bytes.Equal(pt, got) {
+			t.Fatalf("plaintext mismatch (len got=%d want=%d)", len(got), len(pt))
+		}
+	})
+}

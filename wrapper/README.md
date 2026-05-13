@@ -42,11 +42,11 @@ The SipHash-CTR construction:
 
 ## Quick Start
 
-Code paths under `cmd/eitb/main.go`. Run the matrix:
+Code paths under `tools/eitb/main.go`. Run the matrix:
 
 ```sh
-go run ./cmd/eitb       # run every example × every cipher
-go run ./cmd/eitb -help # print help
+go run ./tools/eitb       # run every example × every cipher
+go run ./tools/eitb -help # print help
 ```
 
 ### 1. Streaming AEAD Easy (MAC Authenticated, IO-Driven)

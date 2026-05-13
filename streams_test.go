@@ -240,3 +240,173 @@ func TestEncryptStream3xWidthMixRejected(t *testing.T) {
 		t.Fatalf("EncryptStream3x(mixed widths): want error, got nil")
 	}
 }
+
+// --- Single / Triple plain-stream Cfg variants ---
+//
+// The *Cfg helpers in stream.go take a (data []byte, chunkSize int,
+// emit func([]byte) error) signature instead of the high-level
+// io.Reader / io.Writer pair. Round-trip the matrix by collecting
+// emitted chunks into a byte slice on the encrypt side and feeding
+// the concatenation into the matching decrypt Cfg helper.
+
+func TestEncryptStreamCfgRoundtrip128(t *testing.T) {
+	ns, ds, ss := mkSeeds128(t)
+	cfg := SnapshotGlobals()
+	pt := genTestPlaintext(t, 5000)
+
+	var ct bytes.Buffer
+	if err := EncryptStream128Cfg(cfg, ns, ds, ss, pt, 1024, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStream128Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStream128Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := DecryptStream128Cfg(cfg, ns, ds, ss, ct.Bytes(), func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStream128Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStream128Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStreamCfgRoundtrip256(t *testing.T) {
+	ns, ds, ss := mkSeeds256(t)
+	cfg := SnapshotGlobals()
+	pt := genTestPlaintext(t, 5000)
+
+	var ct bytes.Buffer
+	if err := EncryptStream256Cfg(cfg, ns, ds, ss, pt, 1024, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStream256Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStream256Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := DecryptStream256Cfg(cfg, ns, ds, ss, ct.Bytes(), func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStream256Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStream256Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStreamCfgRoundtrip512(t *testing.T) {
+	ns, ds, ss := mkSeeds512(t)
+	cfg := SnapshotGlobals()
+	pt := genTestPlaintext(t, 5000)
+
+	var ct bytes.Buffer
+	if err := EncryptStream512Cfg(cfg, ns, ds, ss, pt, 1024, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStream512Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStream512Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := DecryptStream512Cfg(cfg, ns, ds, ss, ct.Bytes(), func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStream512Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStream512Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStream3xCfgRoundtrip128(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+	cfg := SnapshotGlobals()
+	pt := genTestPlaintext(t, 5000)
+
+	var ct bytes.Buffer
+	if err := EncryptStream3x128Cfg(cfg, n, d1, d2, d3, s1, s2, s3, pt, 1024, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStream3x128Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStream3x128Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := DecryptStream3x128Cfg(cfg, n, d1, d2, d3, s1, s2, s3, ct.Bytes(), func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStream3x128Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStream3x128Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStream3xCfgRoundtrip256(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
+	cfg := SnapshotGlobals()
+	pt := genTestPlaintext(t, 5000)
+
+	var ct bytes.Buffer
+	if err := EncryptStream3x256Cfg(cfg, n, d1, d2, d3, s1, s2, s3, pt, 1024, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStream3x256Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStream3x256Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := DecryptStream3x256Cfg(cfg, n, d1, d2, d3, s1, s2, s3, ct.Bytes(), func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStream3x256Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStream3x256Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStream3xCfgRoundtrip512(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
+	cfg := SnapshotGlobals()
+	pt := genTestPlaintext(t, 5000)
+
+	var ct bytes.Buffer
+	if err := EncryptStream3x512Cfg(cfg, n, d1, d2, d3, s1, s2, s3, pt, 1024, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStream3x512Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStream3x512Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := DecryptStream3x512Cfg(cfg, n, d1, d2, d3, s1, s2, s3, ct.Bytes(), func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStream3x512Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStream3x512Cfg round-trip mismatch")
+	}
+}

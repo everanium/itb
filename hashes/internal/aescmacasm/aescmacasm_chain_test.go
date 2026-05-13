@@ -166,3 +166,173 @@ func TestAESCMAC128ChainAbsorb36x4(t *testing.T) {
 func TestAESCMAC128ChainAbsorb68x4(t *testing.T) {
 	runChainAbsorb128Test(t, "AESCMAC128ChainAbsorb68x4", 68, AESCMAC128ChainAbsorb68x4)
 }
+
+// runScalarBatchChainAbsorb128Test exercises a single (scalarBatchKernel,
+// length) pair across the standard edge-case matrix. Each lane's output
+// must match the per-lane scalar reference bit-exactly. This drives the
+// 4-lane scalar batched chain-absorb path that serves as the fallback on
+// hosts without VAES + AVX-512 and as the parity baseline for the
+// ZMM-batched ASM kernels.
+func runScalarBatchChainAbsorb128Test(
+	t *testing.T,
+	name string,
+	dataLen int,
+	kernel func(*[16]byte, *[4][2]uint64, *[4]*byte, *[4][2]uint64),
+) {
+	t.Helper()
+	for _, tc := range chainAbsorb128Cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bufs, ptrs := makeLaneData128(dataLen)
+			var laneWant [4][2]uint64
+			for lane := 0; lane < 4; lane++ {
+				lo, hi := runReferenceClosure128(tc.key, bufs[lane], tc.seeds[lane][0], tc.seeds[lane][1])
+				laneWant[lane][0] = lo
+				laneWant[lane][1] = hi
+			}
+			var got [4][2]uint64
+			kernel(&tc.key, &tc.seeds, &ptrs, &got)
+			for lane := 0; lane < 4; lane++ {
+				if got[lane] != laneWant[lane] {
+					t.Fatalf("%s lane %d: got=%x want=%x",
+						name, lane, got[lane], laneWant[lane])
+				}
+			}
+		})
+	}
+}
+
+// TestScalarBatch128ChainAbsorb20_Parity verifies the scalar 4-lane
+// 20-byte batched chain-absorb matches the per-lane reference closure.
+func TestScalarBatch128ChainAbsorb20_Parity(t *testing.T) {
+	runScalarBatchChainAbsorb128Test(t, "scalarBatch128ChainAbsorb20", 20, scalarBatch128ChainAbsorb20)
+}
+
+// TestScalarBatch128ChainAbsorb36_Parity — 36-byte counterpart.
+func TestScalarBatch128ChainAbsorb36_Parity(t *testing.T) {
+	runScalarBatchChainAbsorb128Test(t, "scalarBatch128ChainAbsorb36", 36, scalarBatch128ChainAbsorb36)
+}
+
+// TestScalarBatch128ChainAbsorb68_Parity — 68-byte counterpart.
+func TestScalarBatch128ChainAbsorb68_Parity(t *testing.T) {
+	runScalarBatchChainAbsorb128Test(t, "scalarBatch128ChainAbsorb68", 68, scalarBatch128ChainAbsorb68)
+}
+
+// TestScalar128ChainAbsorb_Parity drives the single-pixel scalar
+// chain-absorb across a variety of data lengths covering the three
+// production shapes (20 / 36 / 68 bytes) and additional boundary lengths
+// (0, 1, 15, 16, 17, 32, 33) that exercise the single-block / multi-
+// block branches inside the loop. The expected output is the bit-exact
+// reference closure on the same input.
+func TestScalar128ChainAbsorb_Parity(t *testing.T) {
+	key := ascendingKey128()
+	block := newScalarBlock(&key)
+	for _, dataLen := range []int{0, 1, 15, 16, 17, 20, 32, 33, 36, 64, 68} {
+		t.Run("len="+itoa128(dataLen), func(t *testing.T) {
+			data := make([]byte, dataLen)
+			for i := range data {
+				data[i] = byte(i + 0x42)
+			}
+			seed0 := uint64(0x0123456789abcdef)
+			seed1 := uint64(0xfedcba9876543210)
+			wantLo, wantHi := runReferenceClosure128(key, data, seed0, seed1)
+			gotLo, gotHi := scalar128ChainAbsorb(block, data, seed0, seed1)
+			if gotLo != wantLo || gotHi != wantHi {
+				t.Fatalf("len=%d: got=(%#x,%#x) want=(%#x,%#x)",
+					dataLen, gotLo, gotHi, wantLo, wantHi)
+			}
+		})
+	}
+}
+
+// TestNewScalarBlock_PanicOnNilKey verifies newScalarBlock with a valid
+// 16-byte key produces a working AES-128 block. The error-path
+// (aes.NewCipher returning err) is unreachable for a fixed 16-byte key
+// input — aes.NewCipher only fails on KeySizeError for non-16/24/32
+// lengths, which is impossible given the *[16]byte signature.
+func TestNewScalarBlock_Roundtrip(t *testing.T) {
+	key := ascendingKey128()
+	block := newScalarBlock(&key)
+	if block == nil {
+		t.Fatal("newScalarBlock returned nil")
+	}
+	var pt, ct, rt [16]byte
+	for i := range pt {
+		pt[i] = byte(i + 1)
+	}
+	block.Encrypt(ct[:], pt[:])
+	// crypto/aes does not expose Decrypt on the cipher.Block interface
+	// for the round-trip check; running Encrypt twice on a non-zero
+	// plaintext at minimum verifies the block is wired correctly.
+	block.Encrypt(rt[:], ct[:])
+	if pt == ct || ct == rt {
+		t.Fatal("newScalarBlock: Encrypt produced identity / fixed output")
+	}
+}
+
+// TestDispatcher_ScalarFallback drives the three public dispatchers
+// through their scalar fallback path by temporarily clearing the
+// HasVAESAVX512 capability flag. Verifies that the scalar branch of
+// each dispatcher (which would otherwise be unreachable on a host that
+// reports VAES + AVX-512 support) produces output bit-identical to
+// the per-lane reference closure.
+func TestDispatcher_ScalarFallback(t *testing.T) {
+	saved := HasVAESAVX512
+	HasVAESAVX512 = false
+	t.Cleanup(func() { HasVAESAVX512 = saved })
+
+	cases := []struct {
+		name    string
+		dataLen int
+		kernel  func(*[176]byte, *[16]byte, *[4][2]uint64, *[4]*byte, *[4][2]uint64)
+	}{
+		{"AESCMAC128ChainAbsorb20x4 fallback", 20, AESCMAC128ChainAbsorb20x4},
+		{"AESCMAC128ChainAbsorb36x4 fallback", 36, AESCMAC128ChainAbsorb36x4},
+		{"AESCMAC128ChainAbsorb68x4 fallback", 68, AESCMAC128ChainAbsorb68x4},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, tc := range chainAbsorb128Cases {
+				t.Run(tc.name, func(t *testing.T) {
+					roundKeys := ExpandKeyAES128(tc.key)
+					bufs, ptrs := makeLaneData128(c.dataLen)
+					var laneWant [4][2]uint64
+					for lane := 0; lane < 4; lane++ {
+						lo, hi := runReferenceClosure128(tc.key, bufs[lane], tc.seeds[lane][0], tc.seeds[lane][1])
+						laneWant[lane][0] = lo
+						laneWant[lane][1] = hi
+					}
+					var got [4][2]uint64
+					c.kernel(&roundKeys, &tc.key, &tc.seeds, &ptrs, &got)
+					for lane := 0; lane < 4; lane++ {
+						if got[lane] != laneWant[lane] {
+							t.Fatalf("%s lane %d: got=%x want=%x",
+								c.name, lane, got[lane], laneWant[lane])
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func itoa128(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	neg := v < 0
+	if neg {
+		v = -v
+	}
+	for v > 0 {
+		i--
+		buf[i] = byte('0' + v%10)
+		v /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}

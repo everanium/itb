@@ -281,3 +281,149 @@ func TestWrapErrors(t *testing.T) {
 		t.Errorf("FreeWrapStream(0): st=%v want StatusBadHandle", st)
 	}
 }
+
+// TestUnwrapBadCipherName confirms the unknown-cipher branch on the
+// allocating Unwrap helper (separate from the Wrap-side coverage in
+// TestWrapErrors). Sufficient wire length and key length are
+// supplied so the rejection comes from the name lookup, not the
+// downstream size guards.
+func TestUnwrapBadCipherName(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	wire := make([]byte, 32)
+	out := make([]byte, 32)
+	if _, st := Unwrap("nope", key, wire, out); st != StatusBadInput {
+		t.Errorf("Unwrap(unknown cipher): st=%v want StatusBadInput", st)
+	}
+}
+
+// TestUnwrapBadKeyLen confirms the short-key branch on Unwrap. The
+// path is symmetric to Wrap's short-key check; testing both halves
+// avoids one-sided coverage.
+func TestUnwrapBadKeyLen(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	wire := make([]byte, 32)
+	out := make([]byte, 32)
+	if _, st := Unwrap("aes", key[:8], wire, out); st != StatusBadInput {
+		t.Errorf("Unwrap(short-key): st=%v want StatusBadInput", st)
+	}
+}
+
+// TestUnwrapBufferTooSmall exercises the size-probe branch on the
+// allocating Unwrap: caller passes an undersized out buffer; helper
+// returns StatusBufferTooSmall with the required body length.
+func TestUnwrapBufferTooSmall(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	plain := make([]byte, 256)
+	if _, err := rand.Read(plain); err != nil {
+		t.Fatal(err)
+	}
+	nonceSz, _ := wrapper.NonceSize("aes")
+	wire := make([]byte, nonceSz+len(plain))
+	if _, st := Wrap("aes", key, plain, wire); st != StatusOK {
+		t.Fatalf("Wrap setup: st=%v", st)
+	}
+
+	tiny := make([]byte, 4)
+	n, st := Unwrap("aes", key, wire, tiny)
+	if st != StatusBufferTooSmall {
+		t.Errorf("Unwrap(short-out): st=%v want StatusBufferTooSmall", st)
+	}
+	if n != len(plain) {
+		t.Errorf("Unwrap(short-out): n=%d want %d", n, len(plain))
+	}
+}
+
+// TestUnwrapInPlaceShortWire exercises the wire-shorter-than-nonce
+// branch on the in-place variant. A real attacker-side bug could
+// supply a stripped wire; the helper must surface the malformation
+// as StatusBadInput rather than panicking.
+func TestUnwrapInPlaceShortWire(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	short := []byte{0x00, 0x01}
+	if _, st := UnwrapInPlace("aes", key, short); st != StatusBadInput {
+		t.Errorf("UnwrapInPlace(short-wire): st=%v want StatusBadInput", st)
+	}
+}
+
+// TestUnwrapInPlaceBadCipherName covers the unknown-name path on the
+// in-place variant.
+func TestUnwrapInPlaceBadCipherName(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	wire := make([]byte, 32)
+	if _, st := UnwrapInPlace("nope", key, wire); st != StatusBadInput {
+		t.Errorf("UnwrapInPlace(unknown cipher): st=%v want StatusBadInput", st)
+	}
+}
+
+// TestUnwrapInPlaceBadKeyLen covers the wrong-key-length branch on
+// the in-place variant.
+func TestUnwrapInPlaceBadKeyLen(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	wire := make([]byte, 32)
+	if _, st := UnwrapInPlace("aes", key[:4], wire); st != StatusBadInput {
+		t.Errorf("UnwrapInPlace(short-key): st=%v want StatusBadInput", st)
+	}
+}
+
+// TestWrapInPlaceErrors covers the three pre-keystream rejection
+// paths on WrapInPlace: unknown cipher name, wrong key length, and
+// out-nonce buffer too small.
+func TestWrapInPlaceErrors(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	blob := []byte("hello")
+	out := make([]byte, 16)
+	if _, st := WrapInPlace("nope", key, blob, out); st != StatusBadInput {
+		t.Errorf("WrapInPlace(unknown): st=%v want StatusBadInput", st)
+	}
+	if _, st := WrapInPlace("aes", key[:4], blob, out); st != StatusBadInput {
+		t.Errorf("WrapInPlace(short-key): st=%v want StatusBadInput", st)
+	}
+	tiny := make([]byte, 2)
+	n, st := WrapInPlace("aes", key, blob, tiny)
+	if st != StatusBufferTooSmall {
+		t.Errorf("WrapInPlace(short-nonce-buf): st=%v want StatusBufferTooSmall", st)
+	}
+	if n != 16 {
+		t.Errorf("WrapInPlace(short-nonce-buf): n=%d want 16", n)
+	}
+}
+
+// TestNewWrapStreamWriterErrors covers the three pre-construction
+// rejection paths on NewWrapStreamWriter: unknown cipher name,
+// wrong key length, and out-nonce buffer too small. Symmetric to
+// TestWrapInPlaceErrors but on the handle-constructor entry point.
+func TestNewWrapStreamWriterErrors(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	out := make([]byte, 16)
+	if _, _, st := NewWrapStreamWriter("nope", key, out); st != StatusBadInput {
+		t.Errorf("NewWrapStreamWriter(unknown): st=%v", st)
+	}
+	if _, _, st := NewWrapStreamWriter("aes", key[:4], out); st != StatusBadInput {
+		t.Errorf("NewWrapStreamWriter(short-key): st=%v", st)
+	}
+	tiny := make([]byte, 2)
+	_, n, st := NewWrapStreamWriter("aes", key, tiny)
+	if st != StatusBufferTooSmall {
+		t.Errorf("NewWrapStreamWriter(tiny-nonce): st=%v", st)
+	}
+	if n != 16 {
+		t.Errorf("NewWrapStreamWriter(tiny-nonce): n=%d want 16", n)
+	}
+}
+
+// TestNewUnwrapStreamReaderErrors covers the three pre-construction
+// rejection paths on NewUnwrapStreamReader: unknown cipher name,
+// wrong key length, and wrong-size nonce slice.
+func TestNewUnwrapStreamReaderErrors(t *testing.T) {
+	key := mustGenerateKey(t, "aes")
+	nonce := make([]byte, 16)
+	if _, st := NewUnwrapStreamReader("nope", key, nonce); st != StatusBadInput {
+		t.Errorf("NewUnwrapStreamReader(unknown): st=%v", st)
+	}
+	if _, st := NewUnwrapStreamReader("aes", key[:4], nonce); st != StatusBadInput {
+		t.Errorf("NewUnwrapStreamReader(short-key): st=%v", st)
+	}
+	if _, st := NewUnwrapStreamReader("aes", key, nonce[:8]); st != StatusBadInput {
+		t.Errorf("NewUnwrapStreamReader(short-nonce): st=%v", st)
+	}
+}

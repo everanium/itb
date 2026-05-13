@@ -506,3 +506,66 @@ func TestBuildersPanicOnBadParams(t *testing.T) {
 		BuildARXChainAbsorb128(nil, []byte("key"))
 	})
 }
+
+// TestBuildersPanicOnBadParams256_512 mirrors TestBuildersPanicOnBadParams
+// for the 256-bit and 512-bit sponge builders. The 128-bit variant
+// already covers the panic surface; the 256/512 builders have their own
+// rate/capacity/fixedKey precondition checks that must trigger panics
+// on the same three bad-input classes.
+func TestBuildersPanicOnBadParams256_512(t *testing.T) {
+	t.Run("Sponge256-rate-too-small", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for rate < 16")
+			}
+		}()
+		BuildSpongeChainAbsorb256(testPermute32, 8, 16, nil)
+	})
+
+	t.Run("Sponge256-capacity-too-small", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for capacity < 16")
+			}
+		}()
+		BuildSpongeChainAbsorb256(testPermute32, 16, 8, nil)
+	})
+
+	t.Run("Sponge256-fixedKey-too-big", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for fixedKey > capacity")
+			}
+		}()
+		bigKey := make([]byte, 32)
+		BuildSpongeChainAbsorb256(testPermute32, 16, 16, bigKey)
+	})
+
+	t.Run("Sponge512-rate-too-small", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for rate < 16")
+			}
+		}()
+		BuildSpongeChainAbsorb512(testPermute32, 8, 16, nil)
+	})
+
+	t.Run("Sponge512-capacity-too-small", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for capacity < 16")
+			}
+		}()
+		BuildSpongeChainAbsorb512(testPermute32, 16, 8, nil)
+	})
+
+	t.Run("Sponge512-fixedKey-too-big", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for fixedKey > capacity")
+			}
+		}()
+		bigKey := make([]byte, 32)
+		BuildSpongeChainAbsorb512(testPermute32, 16, 16, bigKey)
+	})
+}

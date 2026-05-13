@@ -799,3 +799,180 @@ func TestAreion512Permutex4CrossPath(t *testing.T) {
 		}
 	}
 }
+
+// TestMakeAreionSoEM256HashRandom exercises MakeAreionSoEM256Hash's
+// random-key entry point. The factory generates a fresh 32-byte
+// fixed key, builds a (single, batched) hash pair bound to that
+// key, and returns the key alongside the pair. The test confirms
+// the random-key generator path runs without panic and that a
+// parallel pair re-built from the returned key reproduces the
+// digest bit-exact via MakeAreionSoEM256HashWithKey.
+func TestMakeAreionSoEM256HashRandom(t *testing.T) {
+	hRand, bRand, key := MakeAreionSoEM256Hash()
+	if hRand == nil || bRand == nil {
+		t.Fatalf("MakeAreionSoEM256Hash returned nil hash/batch")
+	}
+	var allZero [32]byte
+	if key == allZero {
+		t.Fatalf("MakeAreionSoEM256Hash returned all-zero key (random source failed)")
+	}
+
+	// Build a parallel pair from the same key — digests must match.
+	hPair, _ := MakeAreionSoEM256HashWithKey(key)
+
+	var seed [4]uint64
+	for trial := 0; trial < 8; trial++ {
+		var input [64]byte
+		if _, err := rand.Read(input[:]); err != nil {
+			t.Fatalf("rand.Read: %v", err)
+		}
+		got := hRand(input[:], seed)
+		want := hPair(input[:], seed)
+		if got != want {
+			t.Fatalf("trial %d: random-key path digest != WithKey digest\n"+
+				"random: %x\nwithkey: %x", trial, got, want)
+		}
+		var zero [4]uint64
+		if got == zero {
+			t.Fatalf("trial %d: digest is all-zero (chain-absorb produced no entropy)", trial)
+		}
+	}
+}
+
+// TestMakeAreionSoEM256HashWithKey exercises the explicit-key entry
+// point. Two pairs built from the same fixed key must produce
+// bit-identical digests; two pairs built from different keys must
+// produce different digests on the same input.
+func TestMakeAreionSoEM256HashWithKey(t *testing.T) {
+	var key1, key2 [32]byte
+	if _, err := rand.Read(key1[:]); err != nil {
+		t.Fatalf("rand.Read key1: %v", err)
+	}
+	for {
+		if _, err := rand.Read(key2[:]); err != nil {
+			t.Fatalf("rand.Read key2: %v", err)
+		}
+		if key1 != key2 {
+			break
+		}
+	}
+
+	hA, _ := MakeAreionSoEM256HashWithKey(key1)
+	hB, _ := MakeAreionSoEM256HashWithKey(key1)
+	hC, _ := MakeAreionSoEM256HashWithKey(key2)
+
+	var seed [4]uint64
+	for trial := 0; trial < 8; trial++ {
+		var input [48]byte
+		if _, err := rand.Read(input[:]); err != nil {
+			t.Fatalf("rand.Read input: %v", err)
+		}
+		dA := hA(input[:], seed)
+		dB := hB(input[:], seed)
+		dC := hC(input[:], seed)
+		if dA != dB {
+			t.Fatalf("trial %d: same-key pairs produced different digests\n"+
+				"A: %x\nB: %x", trial, dA, dB)
+		}
+		if dA == dC {
+			t.Fatalf("trial %d: different-key pairs produced identical digests\n"+
+				"key1: %x\nkey2: %x\ndigest: %x", trial, key1, key2, dA)
+		}
+	}
+}
+
+// TestSoftPEXT24SoftPDEP24Roundtrip exercises the portable scalar
+// fallbacks for the BMI2 PEXT / PDEP instructions used by the
+// Lock Soup hot path. On amd64 hosts with BMI2 the chunk24lock /
+// unchunk24lock dispatchers route to locksoupasm.Chunk24Lock /
+// Unchunk24Lock, so the soft fallbacks are otherwise unreached
+// by the integration tests. Verify the round-trip identity
+// softPEXT24(softPDEP24(v, mask), mask) == v across the popcount-8
+// mask family used by Lock Soup (each of the three lanes per chunk
+// holds exactly 8 bits).
+func TestSoftPEXT24SoftPDEP24Roundtrip(t *testing.T) {
+	masks := []uint32{
+		0x0000FF, // low 8 bits
+		0x00FF00, // mid 8 bits
+		0xFF0000, // high 8 bits
+	}
+	var stride3 uint32
+	for i := 0; i < 24; i += 3 {
+		stride3 |= 1 << uint(i)
+	}
+	masks = append(masks, stride3) // pop = 8
+
+	for mi, mask := range masks {
+		pop := 0
+		for i := 0; i < 24; i++ {
+			if mask>>uint(i)&1 == 1 {
+				pop++
+			}
+		}
+		if pop != 8 {
+			continue
+		}
+		for v := 0; v < 256; v++ {
+			b := byte(v)
+			expanded := softPDEP24(b, mask)
+			recovered := softPEXT24(expanded, mask)
+			if recovered != b {
+				t.Fatalf("mask[%d]=%06x v=%02x: round-trip failed (expanded=%06x, recovered=%02x)",
+					mi, mask, b, expanded, recovered)
+			}
+		}
+	}
+}
+
+// TestSoftPermute24Roundtrip exercises the portable scalar fallback
+// for the AVX-512 VBMI permute kernel used by the Single Lock Soup
+// hot path. softPermute24(x, perm) gathers bit perm[i] of x into
+// bit i of the output; applying it again with the inverse permutation
+// must round-trip to x for any 24-bit x.
+func TestSoftPermute24Roundtrip(t *testing.T) {
+	// Build a non-trivial permutation: reverse of identity in the
+	// low 24 entries, identity in the slack high 8 entries.
+	var perm, invPerm [32]byte
+	for i := byte(0); i < 24; i++ {
+		perm[i] = 23 - i
+	}
+	for i := byte(24); i < 32; i++ {
+		perm[i] = i
+	}
+	for i := byte(0); i < 24; i++ {
+		invPerm[perm[i]] = i
+	}
+	for i := byte(24); i < 32; i++ {
+		invPerm[i] = i
+	}
+
+	for trial := 0; trial < 256; trial++ {
+		var buf [4]byte
+		if _, err := rand.Read(buf[:]); err != nil {
+			t.Fatalf("rand.Read: %v", err)
+		}
+		x := (uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16) & 0xFFFFFF
+		permuted := softPermute24(x, &perm)
+		recovered := softPermute24(permuted, &invPerm)
+		if recovered != x {
+			t.Fatalf("trial %d: softPermute24 round-trip failed (x=%06x, permuted=%06x, recovered=%06x)",
+				trial, x, permuted, recovered)
+		}
+	}
+
+	// Identity permutation must produce x unchanged.
+	var identity [32]byte
+	for i := byte(0); i < 32; i++ {
+		identity[i] = i
+	}
+	for trial := 0; trial < 16; trial++ {
+		var buf [4]byte
+		if _, err := rand.Read(buf[:]); err != nil {
+			t.Fatalf("rand.Read: %v", err)
+		}
+		x := (uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16) & 0xFFFFFF
+		if got := softPermute24(x, &identity); got != x {
+			t.Fatalf("trial %d: identity softPermute24 changed x: in=%06x out=%06x", trial, x, got)
+		}
+	}
+}
