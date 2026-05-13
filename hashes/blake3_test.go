@@ -215,3 +215,45 @@ func TestBLAKE3MakePairITBRoundtrip(t *testing.T) {
 		t.Fatal("plaintext mismatch after Encrypt256/Decrypt256 via blake3 batched dispatch")
 	}
 }
+
+// TestBLAKE3SingleArmDirect exercises the BLAKE3() entry point that
+// returns only the single-arm closure (no batched dispatch). Calling
+// BLAKE3(key) followed by BLAKE3(key) with the same explicit key must
+// produce bit-exact identical digests, and the resulting closure must
+// be parity-equivalent to the single arm of BLAKE3256Pair(key).
+func TestBLAKE3SingleArmDirect(t *testing.T) {
+	var key [32]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		t.Fatal(err)
+	}
+	h1, retKey1 := BLAKE3(key)
+	if retKey1 != key {
+		t.Errorf("BLAKE3(key) returned key %x, want %x", retKey1, key)
+	}
+	h2, retKey2 := BLAKE3(key)
+	if retKey2 != key {
+		t.Errorf("BLAKE3(key) attempt 2 returned key %x, want %x", retKey2, key)
+	}
+
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14}
+	seed := [4]uint64{0xabcd, 0x1234, 0x5678, 0x9abc}
+	out1 := h1(data, seed)
+	out2 := h2(data, seed)
+	if out1 != out2 {
+		t.Error("BLAKE3(key): output diverges across two same-key direct calls")
+	}
+
+	pairSingle, _, _ := BLAKE3256Pair(key)
+	if out1 != pairSingle(data, seed) {
+		t.Error("BLAKE3(key) and BLAKE3256Pair(key) single arm produce divergent digests")
+	}
+
+	hRand, randKey := BLAKE3()
+	if randKey == ([32]byte{}) {
+		t.Error("BLAKE3() returned zero key — random generation failed silently")
+	}
+	if hRand == nil {
+		t.Fatal("BLAKE3() returned nil closure")
+	}
+	_ = hRand(data, seed)
+}

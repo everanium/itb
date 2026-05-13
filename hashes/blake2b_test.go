@@ -385,3 +385,87 @@ func TestBLAKE2bMakePairITBRoundtrip(t *testing.T) {
 		}
 	})
 }
+
+// TestBLAKE2b256SingleArmDirect exercises the BLAKE2b256() entry point
+// that returns only the single-arm closure (no batched dispatch).
+// Calling BLAKE2b256(key) followed by BLAKE2b256(key) with the same
+// explicit key must produce bit-exact identical digests, and the
+// resulting closure must be parity-equivalent to the single arm of
+// BLAKE2b256Pair(key).
+func TestBLAKE2b256SingleArmDirect(t *testing.T) {
+	var key [32]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		t.Fatal(err)
+	}
+	h1, retKey1 := BLAKE2b256(key)
+	if retKey1 != key {
+		t.Errorf("BLAKE2b256(key) returned key %x, want %x", retKey1, key)
+	}
+	h2, retKey2 := BLAKE2b256(key)
+	if retKey2 != key {
+		t.Errorf("BLAKE2b256(key) attempt 2 returned key %x, want %x", retKey2, key)
+	}
+
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14}
+	seed := [4]uint64{0xabcd, 0x1234, 0x5678, 0x9abc}
+	out1 := h1(data, seed)
+	out2 := h2(data, seed)
+	if out1 != out2 {
+		t.Error("BLAKE2b256(key): output diverges across two same-key direct calls")
+	}
+
+	pairSingle, _, _ := BLAKE2b256Pair(key)
+	if out1 != pairSingle(data, seed) {
+		t.Error("BLAKE2b256(key) and BLAKE2b256Pair(key) single arm produce divergent digests")
+	}
+
+	hRand, randKey := BLAKE2b256()
+	if randKey == ([32]byte{}) {
+		t.Error("BLAKE2b256() returned zero key — random generation failed silently")
+	}
+	if hRand == nil {
+		t.Fatal("BLAKE2b256() returned nil closure")
+	}
+	_ = hRand(data, seed)
+}
+
+// TestBLAKE2b512SingleArmDirect exercises the BLAKE2b512() entry point
+// that returns only the single-arm closure (no batched dispatch).
+// Mirror of TestBLAKE2b256SingleArmDirect at width 512 with a 64-byte
+// fixed key.
+func TestBLAKE2b512SingleArmDirect(t *testing.T) {
+	var key [64]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		t.Fatal(err)
+	}
+	h1, retKey1 := BLAKE2b512(key)
+	if retKey1 != key {
+		t.Errorf("BLAKE2b512(key) returned key %x, want %x", retKey1, key)
+	}
+	h2, retKey2 := BLAKE2b512(key)
+	if retKey2 != key {
+		t.Errorf("BLAKE2b512(key) attempt 2 returned key %x, want %x", retKey2, key)
+	}
+
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14}
+	seed := [8]uint64{0xabcd, 0x1234, 0x5678, 0x9abc, 0xdef0, 0x2468, 0x1357, 0xfedc}
+	out1 := h1(data, seed)
+	out2 := h2(data, seed)
+	if out1 != out2 {
+		t.Error("BLAKE2b512(key): output diverges across two same-key direct calls")
+	}
+
+	pairSingle, _, _ := BLAKE2b512Pair(key)
+	if out1 != pairSingle(data, seed) {
+		t.Error("BLAKE2b512(key) and BLAKE2b512Pair(key) single arm produce divergent digests")
+	}
+
+	hRand, randKey := BLAKE2b512()
+	if randKey == ([64]byte{}) {
+		t.Error("BLAKE2b512() returned zero key — random generation failed silently")
+	}
+	if hRand == nil {
+		t.Fatal("BLAKE2b512() returned nil closure")
+	}
+	_ = hRand(data, seed)
+}

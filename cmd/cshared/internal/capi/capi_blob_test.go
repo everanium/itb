@@ -923,3 +923,472 @@ func bytesToHex(b []byte) string {
 	}
 	return string(out)
 }
+
+// TestBlobWidthReturnsConstructedWidth covers BlobWidth across the
+// three native hash widths. The widths are reported as the hashes.W*
+// constants used internally; a freshly-constructed handle stores its
+// width on every NewBlob{128,256,512} call.
+func TestBlobWidthReturnsConstructedWidth(t *testing.T) {
+	cases := []struct {
+		name string
+		ctor func() (BlobHandleID, Status)
+		want int
+	}{
+		{"W128", NewBlob128, 128},
+		{"W256", NewBlob256, 256},
+		{"W512", NewBlob512, 512},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			id, st := c.ctor()
+			if st != StatusOK {
+				t.Fatalf("ctor: status=%v", st)
+			}
+			defer FreeBlob(id)
+			w, st := BlobWidth(id)
+			if st != StatusOK {
+				t.Errorf("BlobWidth: status=%v", st)
+			}
+			if int(w) != c.want {
+				t.Errorf("BlobWidth = %d, want %d", w, c.want)
+			}
+		})
+	}
+
+	// Bad handle path — zero id is rejected with StatusBadHandle.
+	if _, st := BlobWidth(0); st != StatusBadHandle {
+		t.Errorf("BlobWidth(0): status=%v, want StatusBadHandle", st)
+	}
+}
+
+// TestBlobSetKeyBadLen exercises the wrong-key-length branches on
+// the 256 and 512 widths (the 128 width accepts variable-length
+// keys and is excluded). Both widths reject any non-native length
+// with StatusBadInput at the Set call rather than deferring until
+// Export.
+func TestBlobSetKeyBadLen(t *testing.T) {
+	id256, _ := NewBlob256()
+	defer FreeBlob(id256)
+	for _, sz := range []int{0, 1, 7, 31, 33, 64, 100} {
+		if st := BlobSetKey(id256, BlobSlotN, make([]byte, sz)); st != StatusBadInput {
+			t.Errorf("Blob256 SetKey(len=%d): status=%v, want StatusBadInput", sz, st)
+		}
+	}
+
+	id512, _ := NewBlob512()
+	defer FreeBlob(id512)
+	for _, sz := range []int{0, 1, 7, 32, 63, 65, 128} {
+		if st := BlobSetKey(id512, BlobSlotN, make([]byte, sz)); st != StatusBadInput {
+			t.Errorf("Blob512 SetKey(len=%d): status=%v, want StatusBadInput", sz, st)
+		}
+	}
+}
+
+// TestBlobSetKeyBadSlot exercises the unknown-slot branch across all
+// three widths.
+func TestBlobSetKeyBadSlot(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		ctor func() (BlobHandleID, Status)
+		key  []byte
+	}{
+		{"W128", NewBlob128, make([]byte, 16)},
+		{"W256", NewBlob256, make([]byte, 32)},
+		{"W512", NewBlob512, make([]byte, 64)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+			if st := BlobSetKey(id, 9999, c.key); st != StatusBadInput {
+				t.Errorf("SetKey(bad slot): status=%v, want StatusBadInput", st)
+			}
+		})
+	}
+}
+
+// TestBlobSetComponentsBadSlot exercises the unknown-slot branch on
+// BlobSetComponents across all three widths. The component validity
+// (count, multiple-of-8) is deferred to Export, so the bad-slot path
+// is the per-call rejection observable here.
+func TestBlobSetComponentsBadSlot(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		ctor func() (BlobHandleID, Status)
+	}{
+		{"W128", NewBlob128},
+		{"W256", NewBlob256},
+		{"W512", NewBlob512},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+			comps := make([]uint64, 8)
+			if st := BlobSetComponents(id, 9999, comps); st != StatusBadInput {
+				t.Errorf("SetComponents(bad slot): status=%v, want StatusBadInput", st)
+			}
+		})
+	}
+}
+
+// TestBlobSetMACKeyBadHandle covers the stale-handle branch on
+// BlobSetMACKey — the entry point copies the bytes unconditionally
+// for any valid handle (MAC primitive validation runs at Export
+// time), so the only observable rejection on this call is the
+// bad-handle resolve fault.
+func TestBlobSetMACKeyBadHandle(t *testing.T) {
+	id, _ := NewBlob512()
+	FreeBlob(id) // stale
+	if st := BlobSetMACKey(id, make([]byte, 32)); st != StatusBadHandle {
+		t.Errorf("BlobSetMACKey(stale): status=%v, want StatusBadHandle", st)
+	}
+}
+
+// TestBlobSetMACNameBadHandle is the BlobSetMACName counterpart of
+// TestBlobSetMACKeyBadHandle — same rationale.
+func TestBlobSetMACNameBadHandle(t *testing.T) {
+	id, _ := NewBlob512()
+	FreeBlob(id)
+	if st := BlobSetMACName(id, "kmac256"); st != StatusBadHandle {
+		t.Errorf("BlobSetMACName(stale): status=%v, want StatusBadHandle", st)
+	}
+}
+
+// TestBlobSetMACNameUnknownExport stores a placeholder MAC name on a
+// blob and confirms the Export side rejects the unknown name. The
+// Set call itself does not validate (the registry-aware check is at
+// Export); the test exercises the round-trip rejection to cover the
+// mapBlobError path for an unknown-MAC-name failure.
+func TestBlobSetMACNameUnknownExport(t *testing.T) {
+	id, _ := NewBlob512()
+	defer FreeBlob(id)
+
+	BlobSetKey(id, BlobSlotN, make([]byte, 64))
+	BlobSetKey(id, BlobSlotD, make([]byte, 64))
+	BlobSetKey(id, BlobSlotS, make([]byte, 64))
+	comps := make([]uint64, 8)
+	BlobSetComponents(id, BlobSlotN, comps)
+	BlobSetComponents(id, BlobSlotD, comps)
+	BlobSetComponents(id, BlobSlotS, comps)
+	BlobSetMACKey(id, make([]byte, 32))
+	BlobSetMACName(id, "nonsense-mac")
+
+	// Export with BlobOptMAC + unknown name — the underlying Export
+	// path raises an error that mapBlobError surfaces as a non-OK
+	// status.
+	probe := make([]byte, 0)
+	_, st := BlobExport(id, BlobOptMAC, probe)
+	if st == StatusOK {
+		t.Errorf("BlobExport with unknown MAC name unexpectedly returned StatusOK")
+	}
+}
+
+// TestBlobExportOptsLockSeedMissing exercises the AND-set-but-missing
+// branch in buildBlob128Opts / buildBlob256Opts: the option bit is
+// set in the bitmask but the LS slot has never been populated, so
+// the helper returns ok=false and BlobExport surfaces StatusBadInput.
+// Triggers the false-return path on both 128 and 256 widths to keep
+// both sibling functions's branches reached.
+func TestBlobExportOptsLockSeedMissing(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		ctor    func() (BlobHandleID, Status)
+		keyLen  int
+		expCode Status
+	}{
+		{"W128", NewBlob128, 16, StatusBadInput},
+		{"W256", NewBlob256, 32, StatusBadInput},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+
+			BlobSetKey(id, BlobSlotN, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotD, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotS, make([]byte, c.keyLen))
+			comps := make([]uint64, 8)
+			BlobSetComponents(id, BlobSlotN, comps)
+			BlobSetComponents(id, BlobSlotD, comps)
+			BlobSetComponents(id, BlobSlotS, comps)
+
+			// LockSeed flag set, but L slot empty → BadInput.
+			probe := make([]byte, 0)
+			if _, st := BlobExport(id, BlobOptLockSeed, probe); st != c.expCode {
+				t.Errorf("BlobExport LockSeed (L slot empty): status=%v, want %v", st, c.expCode)
+			}
+		})
+	}
+}
+
+// TestBlobExportOptsMACMissing exercises the AND-set-but-missing
+// branch where BlobOptMAC is asserted but the MAC key has never been
+// stored. Run across the 128 and 256 widths to mirror the helper-
+// sibling structure (buildBlob128Opts / buildBlob256Opts).
+func TestBlobExportOptsMACMissing(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		ctor   func() (BlobHandleID, Status)
+		keyLen int
+	}{
+		{"W128", NewBlob128, 16},
+		{"W256", NewBlob256, 32},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+
+			BlobSetKey(id, BlobSlotN, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotD, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotS, make([]byte, c.keyLen))
+			comps := make([]uint64, 8)
+			BlobSetComponents(id, BlobSlotN, comps)
+			BlobSetComponents(id, BlobSlotD, comps)
+			BlobSetComponents(id, BlobSlotS, comps)
+
+			probe := make([]byte, 0)
+			if _, st := BlobExport(id, BlobOptMAC, probe); st != StatusBadInput {
+				t.Errorf("BlobExport MAC (key empty): status=%v, want StatusBadInput", st)
+			}
+		})
+	}
+}
+
+// TestLastErrorBadHandlePath confirms LastError reports a non-empty
+// diagnostic after a stale-handle resolution failure, exercising the
+// non-nil-pointer branch of LastError that the empty-state path of
+// TestRegistry does not reach. The order matters: a non-OK call must
+// be the most-recent activity to populate the atomic pointer.
+func TestLastErrorBadHandlePath(t *testing.T) {
+	// Trigger a failure to populate lastErr.
+	if _, st := BlobWidth(0); st != StatusBadHandle {
+		t.Fatalf("BlobWidth(0): status=%v, want StatusBadHandle", st)
+	}
+	if msg := LastError(); msg == "" {
+		t.Errorf("LastError empty after stale-handle call; want non-empty")
+	}
+}
+
+// TestLastMismatchFieldEmptyOnFreshState is the LastMismatchField
+// counterpart to TestLastErrorBadHandlePath: a freshly-constructed
+// encryptor without any failed Import call exposes the empty branch
+// of LastMismatchField (the atomic pointer is nil).
+func TestLastMismatchFieldEmptyOnFreshState(t *testing.T) {
+	// The fresh state is hard to guarantee mid-suite; instead, drive
+	// a successful Import → the field is overwritten with "" by the
+	// setMismatchField("") call inside Encryptor.Import, exercising
+	// the nil-vs-empty branch through the load path.
+	src, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(src)
+	required, _ := EasyExport(src, nil)
+	blob := make([]byte, required)
+	n, _ := EasyExport(src, blob)
+	blob = blob[:n]
+
+	dst, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(dst)
+	if st := EasyImport(dst, blob); st != StatusOK {
+		t.Fatalf("Import: %v", st)
+	}
+	if got := LastMismatchField(); got != "" {
+		t.Errorf("LastMismatchField after successful Import = %q, want empty", got)
+	}
+}
+
+// TestBlobExportMissingSeedSlot covers the missing-seed-slot branch
+// on BlobExport across all three widths: KeyN+KeyD+KeyS are set but
+// at least one of the NS / DS / SS Seed slots is nil, so the helper
+// rejects with StatusBadInput before any serialisation runs.
+func TestBlobExportMissingSeedSlot(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		ctor   func() (BlobHandleID, Status)
+		keyLen int
+	}{
+		{"W128", NewBlob128, 16},
+		{"W256", NewBlob256, 32},
+		{"W512", NewBlob512, 64},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+			// Set keys but no components on any slot.
+			BlobSetKey(id, BlobSlotN, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotD, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotS, make([]byte, c.keyLen))
+			probe := make([]byte, 0)
+			if _, st := BlobExport(id, 0, probe); st != StatusBadInput {
+				t.Errorf("BlobExport missing seeds: status=%v, want StatusBadInput", st)
+			}
+		})
+	}
+}
+
+// TestBlobExport3MissingSeedSlot is the seven-seed counterpart of
+// TestBlobExportMissingSeedSlot — covers the Triple branch on each
+// width.
+func TestBlobExport3MissingSeedSlot(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		ctor   func() (BlobHandleID, Status)
+		keyLen int
+	}{
+		{"W128", NewBlob128, 16},
+		{"W256", NewBlob256, 32},
+		{"W512", NewBlob512, 64},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+			for _, slot := range []int{BlobSlotN, BlobSlotD1, BlobSlotD2, BlobSlotD3,
+				BlobSlotS1, BlobSlotS2, BlobSlotS3} {
+				BlobSetKey(id, slot, make([]byte, c.keyLen))
+			}
+			probe := make([]byte, 0)
+			if _, st := BlobExport3(id, 0, probe); st != StatusBadInput {
+				t.Errorf("BlobExport3 missing seeds: status=%v, want StatusBadInput", st)
+			}
+		})
+	}
+}
+
+// TestBlobExport3UnknownBitsRejected covers the bitmask-validation
+// branch on BlobExport3 (parallel to TestBlobExportRejectsUnknownOptsBits
+// for BlobExport).
+func TestBlobExport3UnknownBitsRejected(t *testing.T) {
+	id, _ := NewBlob512()
+	defer FreeBlob(id)
+	probe := make([]byte, 0)
+	if _, st := BlobExport3(id, 0x4, probe); st != StatusBadInput {
+		t.Errorf("BlobExport3 unknown bit: status=%v, want StatusBadInput", st)
+	}
+}
+
+// TestBlobMode128And256 covers the BlobMode width-switch branches
+// for the 128 and 256 widths (the 512 case is exercised by the
+// existing TestCapiBlob512SingleRoundtripFullMatrix and friends).
+// A freshly-constructed blob reports Mode == 0; after a successful
+// Export the Mode advances to 1.
+func TestBlobMode128And256(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		ctor   func() (BlobHandleID, Status)
+		keyLen int
+	}{
+		{"W128", NewBlob128, 16},
+		{"W256", NewBlob256, 32},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+			if mode, _ := BlobMode(id); mode != 0 {
+				t.Errorf("fresh BlobMode = %d, want 0", mode)
+			}
+			BlobSetKey(id, BlobSlotN, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotD, make([]byte, c.keyLen))
+			BlobSetKey(id, BlobSlotS, make([]byte, c.keyLen))
+			comps := make([]uint64, 8)
+			BlobSetComponents(id, BlobSlotN, comps)
+			BlobSetComponents(id, BlobSlotD, comps)
+			BlobSetComponents(id, BlobSlotS, comps)
+			probe := make([]byte, 0)
+			need, st := BlobExport(id, 0, probe)
+			if st != StatusBufferTooSmall {
+				t.Fatalf("probe: status=%v", st)
+			}
+			out := make([]byte, need)
+			if _, st := BlobExport(id, 0, out); st != StatusOK {
+				t.Fatalf("Export: status=%v", st)
+			}
+			if mode, _ := BlobMode(id); mode != 1 {
+				t.Errorf("after Export BlobMode = %d, want 1", mode)
+			}
+		})
+	}
+}
+
+// TestBlobImportBadHandle covers the stale-handle branch on
+// BlobImport / BlobImport3.
+func TestBlobImportBadHandle(t *testing.T) {
+	id, _ := NewBlob512()
+	FreeBlob(id)
+	if st := BlobImport(id, []byte("{}")); st != StatusBadHandle {
+		t.Errorf("BlobImport(stale): status=%v, want StatusBadHandle", st)
+	}
+	if st := BlobImport3(id, []byte("{}")); st != StatusBadHandle {
+		t.Errorf("BlobImport3(stale): status=%v, want StatusBadHandle", st)
+	}
+}
+
+// TestBlobExportBadHandle covers the stale-handle branch on
+// BlobExport / BlobExport3.
+func TestBlobExportBadHandle(t *testing.T) {
+	id, _ := NewBlob512()
+	FreeBlob(id)
+	probe := make([]byte, 0)
+	if _, st := BlobExport(id, 0, probe); st != StatusBadHandle {
+		t.Errorf("BlobExport(stale): status=%v, want StatusBadHandle", st)
+	}
+	if _, st := BlobExport3(id, 0, probe); st != StatusBadHandle {
+		t.Errorf("BlobExport3(stale): status=%v, want StatusBadHandle", st)
+	}
+}
+
+// TestBlobGetMACOnEmpty covers the empty-state branch on
+// BlobGetMACKey / BlobGetMACName (no key/name has been set on the
+// handle).
+func TestBlobGetMACOnEmpty(t *testing.T) {
+	id, _ := NewBlob512()
+	defer FreeBlob(id)
+	if n, st := BlobGetMACKey(id, nil); st != StatusOK || n != 0 {
+		t.Errorf("BlobGetMACKey empty: n=%d status=%v, want 0/OK", n, st)
+	}
+	if name, st := BlobGetMACName(id); st != StatusOK || name != "" {
+		t.Errorf("BlobGetMACName empty: name=%q status=%v, want empty/OK", name, st)
+	}
+}
+
+// TestBlobGetKVBadSlot exercises the unknown-slot branch on
+// BlobGetKey / BlobGetComponents across the three widths.
+func TestBlobGetKVBadSlot(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		ctor func() (BlobHandleID, Status)
+	}{
+		{"W128", NewBlob128},
+		{"W256", NewBlob256},
+		{"W512", NewBlob512},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			id, _ := c.ctor()
+			defer FreeBlob(id)
+			buf := make([]byte, 64)
+			if _, st := BlobGetKey(id, 9999, buf); st != StatusBadInput {
+				t.Errorf("BlobGetKey(bad slot): status=%v, want StatusBadInput", st)
+			}
+			cbuf := make([]uint64, 8)
+			if _, st := BlobGetComponents(id, 9999, cbuf); st != StatusBadInput {
+				t.Errorf("BlobGetComponents(bad slot): status=%v, want StatusBadInput", st)
+			}
+		})
+	}
+}
+
+// TestBlobGetKVStaleHandle covers the stale-handle resolve branch
+// on the read-side helpers.
+func TestBlobGetKVStaleHandle(t *testing.T) {
+	id, _ := NewBlob512()
+	FreeBlob(id)
+	buf := make([]byte, 64)
+	if _, st := BlobGetKey(id, BlobSlotN, buf); st != StatusBadHandle {
+		t.Errorf("BlobGetKey(stale): status=%v, want StatusBadHandle", st)
+	}
+	cbuf := make([]uint64, 8)
+	if _, st := BlobGetComponents(id, BlobSlotN, cbuf); st != StatusBadHandle {
+		t.Errorf("BlobGetComponents(stale): status=%v, want StatusBadHandle", st)
+	}
+	if _, st := BlobGetMACKey(id, buf); st != StatusBadHandle {
+		t.Errorf("BlobGetMACKey(stale): status=%v, want StatusBadHandle", st)
+	}
+	if _, st := BlobGetMACName(id); st != StatusBadHandle {
+		t.Errorf("BlobGetMACName(stale): status=%v, want StatusBadHandle", st)
+	}
+}

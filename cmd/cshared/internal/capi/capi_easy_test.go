@@ -1012,3 +1012,199 @@ func TestLengthOOBRejectedWithBadInput(t *testing.T) {
 	// is verified through Python's test_overflow path.
 	_ = id
 }
+
+// TestEasyEncryptBufferTooSmallAuth exercises the auth-side
+// StatusBufferTooSmall probe: encrypt with zero-cap output, confirm
+// the returned length reports required capacity, then retry with
+// the right size. Mirrors TestEasyEncryptBufferTooSmall for the
+// non-auth path.
+func TestEasyEncryptBufferTooSmallAuth(t *testing.T) {
+	id, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(id)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	required, st := EasyEncryptAuth(id, plaintext, nil)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("zero-cap probe: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required <= 0 {
+		t.Fatalf("required=%d, expected > 0", required)
+	}
+
+	full := make([]byte, required)
+	got, st := EasyEncryptAuth(id, plaintext, full)
+	if st != StatusOK {
+		t.Fatalf("sized buffer: status=%v", st)
+	}
+	if got != required {
+		t.Fatalf("got=%d, want %d", got, required)
+	}
+}
+
+// TestEasyDecryptBufferTooSmallAuth covers the auth-decrypt
+// StatusBufferTooSmall path: encrypt a payload, then attempt to
+// decrypt into a buffer too small for the recovered plaintext.
+func TestEasyDecryptBufferTooSmallAuth(t *testing.T) {
+	id, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(id)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	ctBuf := make([]byte, 1<<16)
+	ctLen, st := EasyEncryptAuth(id, plaintext, ctBuf)
+	if st != StatusOK {
+		t.Fatalf("EncryptAuth: status=%v", st)
+	}
+
+	tiny := make([]byte, 4)
+	required, st := EasyDecryptAuth(id, ctBuf[:ctLen], tiny)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("decrypt probe: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required != len(plaintext) {
+		t.Errorf("required=%d, want %d", required, len(plaintext))
+	}
+
+	full := make([]byte, required)
+	got, st := EasyDecryptAuth(id, ctBuf[:ctLen], full)
+	if st != StatusOK {
+		t.Fatalf("sized buffer: status=%v", st)
+	}
+	if got != required {
+		t.Errorf("got=%d, want %d", got, required)
+	}
+	if !bytes.Equal(plaintext, full[:got]) {
+		t.Errorf("plaintext mismatch on resized retry")
+	}
+}
+
+// TestEasyEncryptBufferTooSmallPlain covers the StatusBufferTooSmall
+// path on the plain EasyDecrypt entry. The auth-side coverage in
+// TestEasyDecryptBufferTooSmallAuth handles the auth path; this
+// covers the symmetric branch on the non-auth helper.
+func TestEasyDecryptBufferTooSmallPlain(t *testing.T) {
+	id, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(id)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	ctBuf := make([]byte, 1<<16)
+	ctLen, st := EasyEncrypt(id, plaintext, ctBuf)
+	if st != StatusOK {
+		t.Fatalf("Encrypt: status=%v", st)
+	}
+
+	tiny := make([]byte, 4)
+	required, st := EasyDecrypt(id, ctBuf[:ctLen], tiny)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("decrypt probe: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required != len(plaintext) {
+		t.Errorf("required=%d, want %d", required, len(plaintext))
+	}
+}
+
+// TestEasyStreamAuthBufferTooSmall exercises the BUFFER_TOO_SMALL
+// probe on the Streaming AEAD encrypt/decrypt entry points. The
+// stream-auth surface uses the same caller-allocated-buffer
+// convention; the probe-and-resize flow exercises the same length-
+// check branch on a different code path (the StreamID + offset
+// arguments live alongside).
+func TestEasyStreamAuthBufferTooSmall(t *testing.T) {
+	id, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(id)
+
+	plaintext := make([]byte, 256)
+	rand.Read(plaintext)
+
+	var streamID [32]byte
+	rand.Read(streamID[:])
+
+	// Encrypt-side BUFFER_TOO_SMALL.
+	required, st := EasyEncryptStreamAuth(id, plaintext, nil, streamID, 0, true)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("stream encrypt probe: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required <= 0 {
+		t.Fatalf("stream encrypt required=%d, expected > 0", required)
+	}
+	full := make([]byte, required)
+	got, st := EasyEncryptStreamAuth(id, plaintext, full, streamID, 0, true)
+	if st != StatusOK {
+		t.Fatalf("stream encrypt sized: status=%v", st)
+	}
+	if got != required {
+		t.Errorf("stream encrypt got=%d, want %d", got, required)
+	}
+
+	// Decrypt-side BUFFER_TOO_SMALL.
+	tiny := make([]byte, 4)
+	required2, _, st := EasyDecryptStreamAuth(id, full[:got], tiny, streamID, 0)
+	if st != StatusBufferTooSmall {
+		t.Fatalf("stream decrypt probe: status=%v, want StatusBufferTooSmall", st)
+	}
+	if required2 != len(plaintext) {
+		t.Errorf("stream decrypt required=%d, want %d", required2, len(plaintext))
+	}
+}
+
+// TestEasyDecryptMACFailureFieldSet exercises the recoverEasyPanic
+// MAC-failure classification: a tampered ciphertext produces
+// StatusMACFailure via the errors.Is(itb.ErrMACFailure) path. The
+// previous TestEasyMACFailure already covers the auth path; this
+// test additionally checks that LastError reports the MAC-failure
+// reason string (binding callers display it).
+func TestEasyDecryptMACFailureFieldSet(t *testing.T) {
+	id, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(id)
+
+	plaintext := []byte("integrity-protected payload")
+	out := make([]byte, 1<<16)
+	ctLen, st := EasyEncryptAuth(id, plaintext, out)
+	if st != StatusOK {
+		t.Fatalf("EncryptAuth: %v", st)
+	}
+
+	// Flip a byte deep inside the container body (past header).
+	if ctLen > 100 {
+		out[100] ^= 0xff
+	}
+
+	pt := make([]byte, len(plaintext)+1024)
+	if _, st := EasyDecryptAuth(id, out[:ctLen], pt); st != StatusMACFailure {
+		t.Fatalf("tampered: status=%v, want StatusMACFailure", st)
+	}
+	if msg := LastError(); msg == "" {
+		t.Errorf("LastError empty after MAC failure; want non-empty")
+	}
+}
+
+// TestEasyStreamAuthMACFailure covers the MAC-failure classification
+// on the stream-auth decrypt path. Tampering with the wire body
+// must surface as StatusMACFailure rather than the generic
+// StatusDecryptFailed, parallel to the non-stream auth path.
+func TestEasyStreamAuthMACFailure(t *testing.T) {
+	id, _ := NewEasy("blake3", 1024, "kmac256", 1)
+	defer FreeEasy(id)
+
+	plaintext := []byte("stream-protected payload")
+	out := make([]byte, 1<<16)
+	var streamID [32]byte
+	rand.Read(streamID[:])
+
+	ctLen, st := EasyEncryptStreamAuth(id, plaintext, out, streamID, 0, true)
+	if st != StatusOK {
+		t.Fatalf("stream encrypt: status=%v", st)
+	}
+	if ctLen > 100 {
+		out[100] ^= 0xff
+	}
+	pt := make([]byte, len(plaintext)+1024)
+	if _, _, st := EasyDecryptStreamAuth(id, out[:ctLen], pt, streamID, 0); st != StatusMACFailure {
+		t.Errorf("tampered stream: status=%v, want StatusMACFailure", st)
+	}
+}

@@ -1449,3 +1449,197 @@ func BenchmarkExtEasySingleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *te
 		}
 	}
 }
+
+// --- AttachLockSeed / DetachLockSeed coverage for all three widths ---
+//
+// The 256-bit AttachLockSeed contract is already covered above; this
+// section extends the matrix to the 128-bit AttachLockSeed entry
+// point plus the DetachLockSeed inverse for all three widths and
+// the panic gate that triggers when Detach is invoked on a seed
+// that has already produced ciphertext.
+
+// makeSipHash128SeedAttachExt is the 128-bit counterpart of
+// makeBlake3SeedAttachExt — produces a fresh SipHash-2-4-128-keyed
+// Seed128 at the requested key_bits.
+func makeSipHash128SeedAttachExt(t *testing.T, bits int) *itb.Seed128 {
+	t.Helper()
+	h := hashes.SipHash24()
+	s, err := itb.NewSeed128(bits, h)
+	if err != nil {
+		t.Fatalf("NewSeed128(%d): %v", bits, err)
+	}
+	return s
+}
+
+// makeBlake2b512SeedAttachExt is the 512-bit counterpart.
+func makeBlake2b512SeedAttachExt(t *testing.T, bits int) *itb.Seed512 {
+	t.Helper()
+	h, _ := hashes.BLAKE2b512()
+	s, err := itb.NewSeed512(bits, h)
+	if err != nil {
+		t.Fatalf("NewSeed512(%d): %v", bits, err)
+	}
+	return s
+}
+
+// TestAttachLockSeedRoundtripSingle128 verifies that Single Ouroboros
+// Encrypt128 / Decrypt128 round-trip succeeds with a dedicated
+// lockSeed attached to the noiseSeed. The bit-permutation overlay
+// is enabled via SetLockSoup(1) so the attached lockSeed is
+// consumed by buildPermutePRF128 rather than the fallback path.
+func TestAttachLockSeedRoundtripSingle128(t *testing.T) {
+	withLockSoupAttachExt(t)
+
+	ns := makeSipHash128SeedAttachExt(t, 1024)
+	ds := makeSipHash128SeedAttachExt(t, 1024)
+	ss := makeSipHash128SeedAttachExt(t, 1024)
+	ls := makeSipHash128SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateDataExt(1024)
+	ct, err := itb.Encrypt128(ns, ds, ss, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt128: %v", err)
+	}
+	pt, err := itb.Decrypt128(ns, ds, ss, ct)
+	if err != nil {
+		t.Fatalf("Decrypt128: %v", err)
+	}
+	if !bytes.Equal(pt, plaintext) {
+		t.Errorf("AttachLockSeed128 roundtrip mismatch: got %d bytes, want %d",
+			len(pt), len(plaintext))
+	}
+	if got := ns.AttachedLockSeed(); got != ls {
+		t.Errorf("AttachedLockSeed: got %p, want %p", got, ls)
+	}
+}
+
+// TestDetachLockSeed128 confirms that DetachLockSeed clears a
+// previously-attached lockSeed pointer on a Seed128 that has not
+// yet been used in an Encrypt call. After detach, AttachedLockSeed
+// returns nil.
+func TestDetachLockSeed128(t *testing.T) {
+	ns := makeSipHash128SeedAttachExt(t, 1024)
+	ls := makeSipHash128SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+	if ns.AttachedLockSeed() != ls {
+		t.Fatalf("AttachLockSeed did not install lockSeed")
+	}
+	ns.DetachLockSeed()
+	if got := ns.AttachedLockSeed(); got != nil {
+		t.Errorf("DetachLockSeed: AttachedLockSeed = %p, want nil", got)
+	}
+	// Idempotent — calling Detach on an unattached seed is a no-op.
+	ns.DetachLockSeed()
+	if got := ns.AttachedLockSeed(); got != nil {
+		t.Errorf("DetachLockSeed (second call): AttachedLockSeed = %p, want nil", got)
+	}
+}
+
+// TestDetachLockSeed256 confirms the 256-bit DetachLockSeed inverse.
+func TestDetachLockSeed256(t *testing.T) {
+	ns := makeBlake3SeedAttachExt(t, 1024)
+	ls := makeBlake3SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+	if ns.AttachedLockSeed() != ls {
+		t.Fatalf("AttachLockSeed did not install lockSeed")
+	}
+	ns.DetachLockSeed()
+	if got := ns.AttachedLockSeed(); got != nil {
+		t.Errorf("DetachLockSeed: AttachedLockSeed = %p, want nil", got)
+	}
+	ns.DetachLockSeed()
+	if got := ns.AttachedLockSeed(); got != nil {
+		t.Errorf("DetachLockSeed (second call): AttachedLockSeed = %p, want nil", got)
+	}
+}
+
+// TestDetachLockSeed512 confirms the 512-bit DetachLockSeed inverse.
+func TestDetachLockSeed512(t *testing.T) {
+	ns := makeBlake2b512SeedAttachExt(t, 1024)
+	ls := makeBlake2b512SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+	if ns.AttachedLockSeed() != ls {
+		t.Fatalf("AttachLockSeed did not install lockSeed")
+	}
+	ns.DetachLockSeed()
+	if got := ns.AttachedLockSeed(); got != nil {
+		t.Errorf("DetachLockSeed: AttachedLockSeed = %p, want nil", got)
+	}
+	ns.DetachLockSeed()
+	if got := ns.AttachedLockSeed(); got != nil {
+		t.Errorf("DetachLockSeed (second call): AttachedLockSeed = %p, want nil", got)
+	}
+}
+
+// TestDetachLockSeedAfterEncryptPanic128 verifies that DetachLockSeed
+// on a Seed128 that has already produced ciphertext panics with
+// ErrLockSeedAfterEncrypt — the post-Encrypt invariant that protects
+// pre-switch ciphertext from later detach is symmetric with the
+// AttachLockSeed gate.
+func TestDetachLockSeedAfterEncryptPanic128(t *testing.T) {
+	withLockSoupAttachExt(t)
+
+	ns := makeSipHash128SeedAttachExt(t, 1024)
+	ds := makeSipHash128SeedAttachExt(t, 1024)
+	ss := makeSipHash128SeedAttachExt(t, 1024)
+	ls := makeSipHash128SeedAttachExt(t, 1024)
+	ns.AttachLockSeed(ls)
+
+	plaintext := generateDataExt(64)
+	if _, err := itb.Encrypt128(ns, ds, ss, plaintext); err != nil {
+		t.Fatalf("pre-panic Encrypt128: %v", err)
+	}
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("DetachLockSeed after Encrypt: expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedAfterEncrypt) {
+			t.Errorf("DetachLockSeed after Encrypt: panic %v, want %v",
+				r, itb.ErrLockSeedAfterEncrypt)
+		}
+	}()
+	ns.DetachLockSeed()
+}
+
+// TestAttachLockSeedSelfAttachPanic128 verifies the 128-bit self-
+// attach safeguard mirrors the 256-bit gate.
+func TestAttachLockSeedSelfAttachPanic128(t *testing.T) {
+	ns := makeSipHash128SeedAttachExt(t, 1024)
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("AttachLockSeed(ns): expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedSelfAttach) {
+			t.Errorf("AttachLockSeed(ns): panic %v, want %v", r, itb.ErrLockSeedSelfAttach)
+		}
+	}()
+	ns.AttachLockSeed(ns)
+}
+
+// TestAttachLockSeedComponentAliasingPanic128 verifies the 128-bit
+// component-aliasing safeguard.
+func TestAttachLockSeedComponentAliasingPanic128(t *testing.T) {
+	ns := makeSipHash128SeedAttachExt(t, 1024)
+	ls := makeSipHash128SeedAttachExt(t, 1024)
+	ls.Components = ns.Components // alias the backing array
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("AttachLockSeed(aliased ls): expected panic, got none")
+		}
+		err, ok := r.(error)
+		if !ok || !errors.Is(err, itb.ErrLockSeedComponentAliasing) {
+			t.Errorf("AttachLockSeed(aliased ls): panic %v, want %v",
+				r, itb.ErrLockSeedComponentAliasing)
+		}
+	}()
+	ns.AttachLockSeed(ls)
+}

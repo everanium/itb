@@ -629,3 +629,127 @@ func wireSeed256(s *itb.Seed256, key [32]byte) {
 	s.Hash = fn
 	s.BatchHash = batch
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Blob128 — Triple Ouroboros round-trip (Export3 / Import3)
+// ───────────────────────────────────────────────────────────────────
+
+// TestBlob128TripleRoundtripSipHash exercises the 128-bit Triple
+// Ouroboros Export3 / Import3 path under SipHash-2-4 — the primitive
+// carries no fixed key so the seven hash-key arguments are nil.
+func TestBlob128TripleRoundtripSipHash(t *testing.T) {
+	withGlobals(t)
+	plaintext := []byte("blob128 triple siphash round-trip")
+
+	mkSeed := func() *itb.Seed128 {
+		fn := hashes.SipHash24()
+		s, _ := itb.NewSeed128(1024, fn)
+		return s
+	}
+	ns := mkSeed()
+	ds1, ds2, ds3 := mkSeed(), mkSeed(), mkSeed()
+	ss1, ss2, ss3 := mkSeed(), mkSeed(), mkSeed()
+
+	ct, err := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt3x128: %v", err)
+	}
+
+	bSrc := &itb.Blob128{}
+	data, err := bSrc.Export3(nil, nil, nil, nil, nil, nil, nil,
+		ns, ds1, ds2, ds3, ss1, ss2, ss3)
+	if err != nil {
+		t.Fatalf("Export3: %v", err)
+	}
+
+	resetGlobals()
+	bDst := &itb.Blob128{}
+	if err := bDst.Import3(data); err != nil {
+		t.Fatalf("Import3: %v", err)
+	}
+	assertGlobalsRestored(t, 512, 4, 1, 1)
+	assertMode(t, bDst.Mode, 3)
+
+	bDst.NS.Hash = hashes.SipHash24()
+	bDst.DS1.Hash = hashes.SipHash24()
+	bDst.DS2.Hash = hashes.SipHash24()
+	bDst.DS3.Hash = hashes.SipHash24()
+	bDst.SS1.Hash = hashes.SipHash24()
+	bDst.SS2.Hash = hashes.SipHash24()
+	bDst.SS3.Hash = hashes.SipHash24()
+
+	pt, err := itb.Decrypt3x128(bDst.NS, bDst.DS1, bDst.DS2, bDst.DS3,
+		bDst.SS1, bDst.SS2, bDst.SS3, ct)
+	if err != nil {
+		t.Fatalf("Decrypt3x128: %v", err)
+	}
+	if !bytes.Equal(pt, plaintext) {
+		t.Fatalf("plaintext mismatch")
+	}
+}
+
+// TestBlob128TripleRoundtripAESCMAC exercises the 128-bit Triple
+// Ouroboros Export3 / Import3 path under AES-CMAC — each seed
+// carries a distinct 16-byte fixed key that must round-trip via the
+// blob's KeyN / KeyD1..3 / KeyS1..3 fields.
+func TestBlob128TripleRoundtripAESCMAC(t *testing.T) {
+	withGlobals(t)
+	plaintext := []byte("blob128 triple aescmac round-trip")
+
+	mkSeed := func() (*itb.Seed128, []byte) {
+		fn, key := hashes.AESCMAC()
+		s, _ := itb.NewSeed128(1024, fn)
+		return s, key[:]
+	}
+	ns, keyN := mkSeed()
+	ds1, keyD1 := mkSeed()
+	ds2, keyD2 := mkSeed()
+	ds3, keyD3 := mkSeed()
+	ss1, keyS1 := mkSeed()
+	ss2, keyS2 := mkSeed()
+	ss3, keyS3 := mkSeed()
+
+	ct, err := itb.Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt3x128: %v", err)
+	}
+
+	bSrc := &itb.Blob128{}
+	data, err := bSrc.Export3(keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+		ns, ds1, ds2, ds3, ss1, ss2, ss3)
+	if err != nil {
+		t.Fatalf("Export3: %v", err)
+	}
+
+	resetGlobals()
+	bDst := &itb.Blob128{}
+	if err := bDst.Import3(data); err != nil {
+		t.Fatalf("Import3: %v", err)
+	}
+	assertMode(t, bDst.Mode, 3)
+	if !bytes.Equal(bDst.KeyN, keyN) {
+		t.Fatalf("KeyN mismatch after Import3")
+	}
+
+	wire := func(s *itb.Seed128, key []byte) {
+		var arr [16]byte
+		copy(arr[:], key)
+		s.Hash = hashes.AESCMACWithKey(arr)
+	}
+	wire(bDst.NS, bDst.KeyN)
+	wire(bDst.DS1, bDst.KeyD1)
+	wire(bDst.DS2, bDst.KeyD2)
+	wire(bDst.DS3, bDst.KeyD3)
+	wire(bDst.SS1, bDst.KeyS1)
+	wire(bDst.SS2, bDst.KeyS2)
+	wire(bDst.SS3, bDst.KeyS3)
+
+	pt, err := itb.Decrypt3x128(bDst.NS, bDst.DS1, bDst.DS2, bDst.DS3,
+		bDst.SS1, bDst.SS2, bDst.SS3, ct)
+	if err != nil {
+		t.Fatalf("Decrypt3x128: %v", err)
+	}
+	if !bytes.Equal(pt, plaintext) {
+		t.Fatalf("plaintext mismatch")
+	}
+}

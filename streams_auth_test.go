@@ -697,3 +697,181 @@ func TestDecryptStreamAuth3xAfterFinalExt(t *testing.T) {
 		t.Fatalf("DecryptStreamAuth3x(after-final): want ErrStreamAfterFinal, got %v", err)
 	}
 }
+
+// --- Authenticated-stream Cfg variants — 256-bit / 512-bit ---
+//
+// The auth-stream Cfg helpers in stream_auth.go take a (data []byte,
+// chunkSize int, macFunc MACFunc, emit func([]byte) error) signature.
+// Round-trip the 256/512 Single + Triple matrix by collecting emitted
+// chunks into a byte slice on the encrypt side, then feeding the
+// concatenated transcript into the matching decrypt Cfg helper.
+
+func TestEncryptStreamAuth256CfgRoundtripExt(t *testing.T) {
+	ns, ds, ss := mkSeeds256Ext(t)
+	mac := macForStreamTest(t)
+	cfg := itb.SnapshotGlobals()
+	pt := genTestPlaintextExt(t, 5000)
+
+	var ct bytes.Buffer
+	if err := itb.EncryptStreamAuth256Cfg(cfg, ns, ds, ss, pt, 1024, mac, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStreamAuth256Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStreamAuth256Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := itb.DecryptStreamAuth256Cfg(cfg, ns, ds, ss, ct.Bytes(), mac, func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStreamAuth256Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStreamAuth256Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStreamAuth512CfgRoundtripExt(t *testing.T) {
+	ns, ds, ss := mkSeeds512Ext(t)
+	mac := macForStreamTest(t)
+	cfg := itb.SnapshotGlobals()
+	pt := genTestPlaintextExt(t, 5000)
+
+	var ct bytes.Buffer
+	if err := itb.EncryptStreamAuth512Cfg(cfg, ns, ds, ss, pt, 1024, mac, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStreamAuth512Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStreamAuth512Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := itb.DecryptStreamAuth512Cfg(cfg, ns, ds, ss, ct.Bytes(), mac, func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStreamAuth512Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStreamAuth512Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStreamAuth3x256CfgRoundtripExt(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple256Ext(t)
+	mac := macForStreamTest(t)
+	cfg := itb.SnapshotGlobals()
+	pt := genTestPlaintextExt(t, 5000)
+
+	var ct bytes.Buffer
+	if err := itb.EncryptStreamAuth3x256Cfg(cfg, n, d1, d2, d3, s1, s2, s3, pt, 1024, mac, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStreamAuth3x256Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStreamAuth3x256Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := itb.DecryptStreamAuth3x256Cfg(cfg, n, d1, d2, d3, s1, s2, s3, ct.Bytes(), mac, func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStreamAuth3x256Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStreamAuth3x256Cfg round-trip mismatch")
+	}
+}
+
+func TestEncryptStreamAuth3x512CfgRoundtripExt(t *testing.T) {
+	n, d1, d2, d3, s1, s2, s3 := mkTriple512Ext(t)
+	mac := macForStreamTest(t)
+	cfg := itb.SnapshotGlobals()
+	pt := genTestPlaintextExt(t, 5000)
+
+	var ct bytes.Buffer
+	if err := itb.EncryptStreamAuth3x512Cfg(cfg, n, d1, d2, d3, s1, s2, s3, pt, 1024, mac, func(chunk []byte) error {
+		ct.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("EncryptStreamAuth3x512Cfg: %v", err)
+	}
+	if ct.Len() == 0 {
+		t.Fatalf("EncryptStreamAuth3x512Cfg: emitted no bytes")
+	}
+	var dec bytes.Buffer
+	if err := itb.DecryptStreamAuth3x512Cfg(cfg, n, d1, d2, d3, s1, s2, s3, ct.Bytes(), mac, func(chunk []byte) error {
+		dec.Write(chunk)
+		return nil
+	}); err != nil {
+		t.Fatalf("DecryptStreamAuth3x512Cfg: %v", err)
+	}
+	if !bytes.Equal(pt, dec.Bytes()) {
+		t.Fatalf("EncryptStreamAuth3x512Cfg round-trip mismatch")
+	}
+}
+
+// TestDecryptStreamAuthCfgTamperExt exercises the tamper-rejection
+// path of the 256/512 auth-stream Cfg decrypt helpers — a single
+// byte flip mid-transcript must surface as a MAC failure rather
+// than silently succeed.
+func TestDecryptStreamAuthCfgTamperExt(t *testing.T) {
+	t.Run("256_Single", func(t *testing.T) {
+		ns, ds, ss := mkSeeds256Ext(t)
+		mac := macForStreamTest(t)
+		cfg := itb.SnapshotGlobals()
+		pt := genTestPlaintextExt(t, 3000)
+
+		var ct bytes.Buffer
+		if err := itb.EncryptStreamAuth256Cfg(cfg, ns, ds, ss, pt, 1024, mac, func(chunk []byte) error {
+			ct.Write(chunk)
+			return nil
+		}); err != nil {
+			t.Fatalf("EncryptStreamAuth256Cfg: %v", err)
+		}
+		tampered := append([]byte(nil), ct.Bytes()...)
+		tampered[len(tampered)/2] ^= 0xFF
+
+		var dec bytes.Buffer
+		err := itb.DecryptStreamAuth256Cfg(cfg, ns, ds, ss, tampered, mac, func(chunk []byte) error {
+			dec.Write(chunk)
+			return nil
+		})
+		if err == nil {
+			t.Fatalf("DecryptStreamAuth256Cfg(tampered): want error, got nil")
+		}
+	})
+
+	t.Run("512_Single", func(t *testing.T) {
+		ns, ds, ss := mkSeeds512Ext(t)
+		mac := macForStreamTest(t)
+		cfg := itb.SnapshotGlobals()
+		pt := genTestPlaintextExt(t, 3000)
+
+		var ct bytes.Buffer
+		if err := itb.EncryptStreamAuth512Cfg(cfg, ns, ds, ss, pt, 1024, mac, func(chunk []byte) error {
+			ct.Write(chunk)
+			return nil
+		}); err != nil {
+			t.Fatalf("EncryptStreamAuth512Cfg: %v", err)
+		}
+		tampered := append([]byte(nil), ct.Bytes()...)
+		tampered[len(tampered)/2] ^= 0xFF
+
+		var dec bytes.Buffer
+		err := itb.DecryptStreamAuth512Cfg(cfg, ns, ds, ss, tampered, mac, func(chunk []byte) error {
+			dec.Write(chunk)
+			return nil
+		})
+		if err == nil {
+			t.Fatalf("DecryptStreamAuth512Cfg(tampered): want error, got nil")
+		}
+	})
+}
