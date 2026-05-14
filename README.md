@@ -216,6 +216,12 @@ CGO_ENABLED=0 go test -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 CGO_ENABLED=0 go test -tags=noitbasm -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 ```
 
+### Coverage
+
+```bash
+go test -coverprofile=coverage.out $(go list ./... | grep -vE 'tools/eitb|cmd/cshared$')
+```
+
 ### Performance
 
 Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
