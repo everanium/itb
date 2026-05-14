@@ -15,5 +15,4 @@ ignore:
   - "internal/locksoupasm/**"
   - "bindings/**"
   - "scripts/**"
-  - "science/**"
   - "**/*_test.go"
