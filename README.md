@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://pkg.go.dev/github.com/everanium/itb"><img src="https://pkg.go.dev/badge/github.com/everanium/itb.svg" alt="Go Reference"></a>
   <a href="https://goreportcard.com/report/github.com/everanium/itb"><img src="https://goreportcard.com/badge/github.com/everanium/itb" alt="Go Report Card"></a>
+  <a href="https://github.com/everanium/itb"><img src="https://img.shields.io/badge/coverage-92%25-brightgreen" alt="Coverage"></a>
 </p>
 
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
