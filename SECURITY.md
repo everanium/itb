@@ -364,7 +364,7 @@ Ciphertext wire format is identical across all modes; no public header bit disti
 
 ## 19. Lock Soup (Insane Interlocked Mode, opt-in overlay on Bit Soup)
 
-`SetLockSoup(1)` is the keyed-bit-permutation overlay on top of bit soup; setting it automatically engages `SetBitSoup(1)` (the overlay layers on top of bit soup, so the two flags are coupled in the on-direction). Hardens KPA-resistance way.
+`SetLockSoup(1)` is the keyed-bit-permutation overlay on top of bit soup; setting it automatically engages `SetBitSoup(1)` (the overlay layers on top of bit soup, so the two flags are coupled in the on-direction). An additional defense against KPA.
 
 On Triple Ouroboros, the overlay replaces the fixed public 24-bit chunk permutation of plain Bit Soup with a per-chunk PRF-keyed balanced 8-of-24 mask triple drawn from a 2^33 mask space, derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. The mode strengthens the SAT-cryptanalysis barrier from the public-encoding layer (Bit Soup) to the keyed-encoding layer: each crib chunk multiplies attacker enumeration by ~2^33 with no shared algebraic structure across chunks, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. SAT cryptanalysis becomes an instance-formulation impossibility rather than a computational-hardness problem; solver throughput, including any hypothetical PRF-inversion shortcut, does not convert an under-determined instance into a determined one.
 
