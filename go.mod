@@ -14,3 +14,5 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/zeebo/assert v1.3.0 // indirect
 )
+
+retract v0.1.0 // documentation fixes only; use v0.1.1 or later

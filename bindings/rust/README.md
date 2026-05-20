@@ -59,7 +59,7 @@ cd bindings/rust/
 cargo build --release
 ```
 
-Crate metadata: `name = "itb"`, `version = "0.1.0"`, `edition =
+Crate metadata: `name = "itb"`, `version = "0.1.1"`, `edition =
 "2021"`, `license = "MIT"`. The only runtime dependency is
 `libloading = "0.9"`.
 

@@ -6,13 +6,13 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 ## Security Policy
 
-**Supported versions.** Active development tracks `main`. Tagged releases starting from `v0.1.0`. Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
+**Supported versions.** Active development tracks `main`. Tagged releases starting from `v0.1.1`. Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
 
 | Version | Supported |
 |---|---|
 | `main` (HEAD) | ✓ |
-| `v0.1.0` (latest tag) | ✓ |
-| pre-`v0.1.0` (no public tags) | — |
+| `v0.1.1` (latest tag) | ✓ |
+| pre-`v0.1.1` (no public tags) | — |
 
 **Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new). Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd). Email contact is intentionally not published — Discord and Security Advisories cover both informal triage and formal disclosure.
 
