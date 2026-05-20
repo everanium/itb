@@ -116,8 +116,9 @@ Nonce reuse is the single edge case where the barrier can leak local information
 3. **Attacker knows plaintext format at byte-level precision over ≳ 90 % of the plaintext.** Exact field-name lengths, exact value-region offsets, exact structural-punctuation positions. Off by one byte anywhere → every subsequent mask position misaligns → demasker returns nothing useful.
 4. **Two DISTINCT template variants, both known to the attacker.** Both messages sharing the same template byte-for-byte → `d1 ⊕ d2 = 0` on all known channels → rotation unrecoverable → degenerate same-plaintext case (`C1 ⊕ C2` collapses to noise-bit variation only on known channels, no rotation information extractable).
 5. **Per-record varying sequence numbers at known offsets.** Without per-record variation the `d_xor` pattern is periodic over the record length → Layer 2 locks onto a period-shifted startPixel → reconstruction leaks residual plaintext-XOR, not hash output.
+6. **Lock Soup overlay disabled** (default). On Triple Ouroboros the relevant flag is `SetLockSoup(0)`; on Single Ouroboros the two flags are coupled symmetrically (either `SetBitSoup(1)` or `SetLockSoup(1)` activates the same overlay), so both must be `(0)`. With the overlay engaged, the per-chunk PRF-keyed bit-permutation is applied **before** COBS and the barrier — Layer 1's `(noisePos, rotation, channelXOR)` constraint matching sees `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))` rather than the barrier-aligned plaintext-pair-XOR it needs as anchor. Inverting π requires `noiseSeed` (default routing) or `lockSeed` (under `AttachLockSeed`), PRF-opaque under the PRF assumption; the demask chain exits with no usable signal. See [SECURITY.md §20](SECURITY.md#20-encoding-mode-security-summary) for the per-encoding-mode cross-cut.
 
-**All five conditions held:**
+**All six conditions held:**
 
 | Primitive class | What the attacker walks away with |
 |---|---|
@@ -134,6 +135,7 @@ Nonce reuse is the single edge case where the barrier can leak local information
 | 3 (format misknown by ≥ 10 %) | Known-mask misaligns with actual payload bytes. Layer 1 constraint-matching accepts bogus `(noisePos, rotation)` candidates → WRONG matches flood the output → demasker exits with code 2. Format brute-forcing over the `10^8 – 10^12` hypothesis space is a binary-pass/fail search with no gradient. |
 | 4 (single template used by both messages) | Rotation constraint collapses on known channels. Demasker at best recovers noisePos only (ambiguity stays 7× per pixel on rotation). Stream mostly zero bytes. |
 | 5 (no per-record variation) | Layer 2 converges onto any of `~N_records` period-shifted startPixel candidates. Reconstruction under a period-shifted sp XORs recovered data with the wrong payload → output is a mix of hash-output bits and plaintext-difference residue, not a clean hash stream. |
+| 6 (Lock Soup overlay enabled) | Per-chunk PRF-keyed bit-permutation sits between plaintext and the barrier the demasker probes. Layer 1 has no clean entry into the masking-layer structure it strips off — the two-time-pad signal carries `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))`, and inverting π without `noiseSeed` (default routing) or `lockSeed` (under `AttachLockSeed`) is PRF-opaque under the PRF assumption. Demasker returns no usable output regardless of how completely conditions 1–5 hold. |
 
 → The security gate is the user's choice of nonce size. At 512-bit nonce the attack is mathematically out of reach.
 

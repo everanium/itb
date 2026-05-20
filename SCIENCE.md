@@ -196,6 +196,22 @@ permIdx = PRF_lockSeed(domain-tag-byte || uint64_LE(globalChunkIdx), permKey)
 
 Both the keying material (`lockSeed.Components`) and the underlying PRF primitive (`lockSeed.Hash`) are independent of the noise-injection channel, within the constraint that the lockSeed shares the noiseSeed's native hash width. The bit-permutation channel may therefore use a different PRF primitive from the noise-injection channel — a structural shortcut against the noiseSeed primitive does not transfer to the lock-channel derivation, and vice versa. The 2⁶⁴-per-chunk under-determination property of the preceding paragraphs is unchanged; the dedicated lockSeed is an algorithm-diversity layer on top of the keying-material isolation already implied by the per-chunk PRF call. Default no attach leaves `permKey` / `permIdx` keyed by `noiseSeed.Components` and `noiseSeed.Hash` as written above.
 
+**Encoding Mode Security Summary.** The encoding-mode axis — **Byte Level** (default), **Bit Soup** (`SetBitSoup(1)`), **Lock Soup** (`SetLockSoup(1)`) with default `noiseSeed` routing, and **Lock Soup + dedicated `lockSeed`** via `AttachLockSeed` — adds an orthogonal layer of architectural barriers on top of the per-pixel configuration of [§1.2](#12-per-pixel-configuration). The table below cross-cuts those modes; cells identical between the Lock Soup base column and the dedicated-`lockSeed` Δ column are marked `(same)` to keep the keying-variant distinction visible without duplicating rows.
+
+| Property | Byte Level | Bit Soup | Lock Soup | + dedicated `lockSeed` Δ |
+|---|---|---|---|---|
+| Per-chunk attacker enumeration multiplier | 1 | 1 (public fixed permutation, cryptanalytic 1) | 2³³ Triple / 2⁶⁴ Single | (same) |
+| SAT instance under-determination | None beyond [§1.2](#12-per-pixel-configuration) | Partial KPA + realistic protocol traffic only | Any crib density under the PRF assumption | (same) |
+| Nonce-reuse demask via two-time pad | Up to 100% recovery on the colliding pair under Full KPA | Same as Byte Level (public permutation does not anchor the demasker beyond the existing per-snake crib reduction) | Demask entry point removed: the two-time-pad XOR yields `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))`, interpretable only with `lockSeed` (default-routed via `noiseSeed`), PRF-opaque under the PRF assumption | (same) |
+| π-channel keying material | n/a | Public (fixed) | `noiseSeed.Components` via `ChainHash(domain-tag ‖ nonce, noiseSeed.Components)` | Independent `lockSeed.Components` |
+| π-channel PRF primitive | n/a | n/a | `noiseSeed.Hash` | May differ from `noiseSeed.Hash` (algorithm-diversity) |
+| Algorithm-diversity isolation between noise channel and π channel | n/a | n/a | ✗ | ✓ |
+| Per-chunk PRF calls added by the overlay | 0 | 0 (public permutation) | +1 (`LehmerUnrank(permIdx mod 24!, 24)` on Single; combinadic balanced-mask unrank on Triple) | +1 (different key from the noise channel) |
+| Wire-format identity across modes | ✓ | ✓ | ✓ | ✓ |
+| Throughput overhead vs Byte Level | 1× | ~1.1× | ~2×–7× (BMI2 PEXT/PDEP on Triple; AVX-512 VBMI on Single; Pure Go fallback near the upper bound) | ~2×–7× + ~5% (extra PRF schedule on the lock-channel) |
+
+The Lock Soup column applies under the PRF assumption on `noiseSeed.Hash`; the dedicated-`lockSeed` column adds algorithm-diversity defence-in-depth without changing the per-chunk 2³³ / 2⁶⁴ floor. The wire-format-identity row preserves the plausible-decryption invariant across modes — no public bit distinguishes which encoding is active, and mismatched encrypt / decrypt modes produce wrong-seed-style garbage with no error oracle. The KPA argument of [§2.6 Resistance to Known-Plaintext Attack](#26-resistance-to-known-plaintext-attack) and the per-bit-XOR analysis of [§2.9 Per-Bit XOR and Known-Plaintext Resistance](#29-per-bit-xor-and-known-plaintext-resistance) compose orthogonally with this encoding-mode table; the composition-axis (MAC placement) cross-cut is [SECURITY.md §7](SECURITY.md#7-attack-resistance-summary) and the parallel full per-encoding-mode table is [SECURITY.md §20](SECURITY.md#20-encoding-mode-security-summary).
+
 ### 1.3 Message Framing
 
 ```
