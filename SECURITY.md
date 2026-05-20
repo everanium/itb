@@ -118,7 +118,7 @@ PRF weakness decomposes into three cases. **Total inversion** defeats the constr
 | Brute-force (classical) | P × 2^(2×keyBits)††† | P × 2^(2×keyBits)††† | P × 2^keyBits** | P × 2^keyBits** |
 | Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits††† | √P × 2^(keyBits/2)** | √P × 2^(keyBits/2)** |
 | Map guessing | 2^(62P) | 2^(62P) | 2^(59P) | 2^(59P) |
-| Nonce reuse | Two-time pad | Two-time pad | Two-time pad | Two-time pad |
+| Nonce reuse | Two-time pad†† | Two-time pad†† | Two-time pad†† | Two-time pad†† |
 | Bit-flipping | Undetected | Detected (MAC) | Detected (MAC) | Detected (MAC) |
 | Padding oracle | N/A (no padding) | N/A (no padding) | N/A (no padding) | N/A (no padding) |
 | Quantum structural (Simon, BHT) | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated |
@@ -134,6 +134,8 @@ PRF weakness decomposes into three cases. **Total inversion** defeats the constr
 §§ CCA removes noise bits (12.5% of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 **Nonce reuse is local.** Two-time pad applies only to the colliding 2–3 messages (confidentiality of those messages compromised). Seeds remain secret (PRF non-invertibility blocks ChainHash inversion), so future messages with fresh nonces are unaffected — **no key rotation required**. A single nonce collision provides too few observations for Simon, BHT, or quantum structural algebraic attacks. Unlike AES-GCM where nonce reuse leaks the GHASH key H and enables forgery until key rotation (global catastrophe affecting all subsequent messages), ITB nonce collision is **strictly local** — ITB is nonce-misuse-resistant under the PRF assumption. For the five conditions that ALL must hold before nonce reuse extracts any signal at all, see [ITB.md § 8 Nonce Reuse](ITB.md#8-nonce-reuse-only-if-every-condition-holds); for the empirical 96-cell Partial KPA matrix + NIST STS PRF-separation, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
+
+†† Encoding-axis modifier. Under `SetLockSoup(1)`, the demask entry point on the colliding messages is removed: the per-chunk PRF-keyed bit-permutation is applied before COBS and the barrier, so the two-time-pad XOR yields `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))` rather than plaintext-aligned bits. Interpreting that output requires `lockSeed` (or `noiseSeed` in default routing) and is PRF-opaque under the PRF assumption. See §20 for the full per-encoding-mode cross-cut.
 
 ‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2×keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
 
@@ -373,3 +375,23 @@ On Single Ouroboros, `SetBitSoup(1)` and `SetLockSoup(1)` are coupled symmetrica
 Performance cost is approximately 2×–7× slower than plain Bit Soup depending on platform; the BMI2 PEXT/PDEP path on x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB path on x86 (Rocket Lake / Tiger Lake / Sapphire Rapids+, Zen 4 / Zen 5) on Single, sit near the lower bound; Pure Go fallbacks near the upper. The trade-off is acceptable only where the architectural barrier is the deployment priority. Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged. Both flags must agree across the encrypt and decrypt sides of the channel; mismatched modes produce wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Ciphertext wire format is identical across all three modes (Byte Level / Bit Soup / Lock Soup).
 
 `AttachLockSeed` on the native path (or `Encryptor.SetLockSeed(1)` on the Easy Mode path) routes the per-chunk permutation derivation through a dedicated lockSeed slot allocated alongside the standard noise / data / start trio. Both the keying material and the underlying PRF primitive are independent of the noise-injection channel within the same native hash width — algorithm-diversity defence-in-depth on top of the per-chunk 2³³ (Triple) / 2⁶⁴ (Single) Lock Soup floor. A structural shortcut against the noiseSeed primitive cannot leak into the lock-channel derivation, and vice versa. Default no attach leaves the overlay routing through the noiseSeed unchanged.
+
+## 20. Encoding Mode Security Summary
+
+The §15 Security Properties Summary captures composition-axis claims (MAC placement) and applies uniformly to every encoding mode. The encoding-mode axis — **Byte Level** (default), **Bit Soup** (`SetBitSoup(1)`), **Lock Soup** (`SetLockSoup(1)`) with default `noiseSeed` routing, and **Lock Soup + dedicated `lockSeed`** via `AttachLockSeed` — adds an orthogonal layer of architectural barriers. The table below cross-cuts those modes; cells identical between the Lock Soup base column and the dedicated-`lockSeed` Δ column are marked `(same)` to keep the keying-variant distinction visible without duplicating rows.
+
+| Property | Byte Level | Bit Soup | Lock Soup | + dedicated `lockSeed` Δ |
+|---|---|---|---|---|
+| Per-chunk attacker enumeration multiplier | 1 | 1 (public fixed permutation, cryptanalytic 1) | 2³³ Triple / 2⁶⁴ Single | (same) |
+| SAT instance under-determination | None beyond Core ITB | Partial KPA + realistic protocol traffic only | Any crib density under the PRF assumption | (same) |
+| Nonce-reuse demask via two-time pad | Up to 100% recovery on the colliding pair under Full KPA | Same as Byte Level (public permutation does not anchor the demasker beyond the existing per-snake crib reduction) | Demask entry point removed: the two-time-pad XOR yields `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))`, interpretable only with `lockSeed` (default-routed via `noiseSeed`), PRF-opaque under the PRF assumption | (same) |
+| π-channel keying material | n/a | Public (fixed) | `noiseSeed.Components` via `deriveInterLockSeed(nonce)` | Independent `lockSeed.Components` |
+| π-channel PRF primitive | n/a | n/a | `noiseSeed.Hash` | May differ from `noiseSeed.Hash` (algorithm-diversity) |
+| Algorithm-diversity isolation between noise channel and π channel | n/a | n/a | ✗ | ✓ |
+| Per-chunk PRF calls added by the overlay | 0 | 0 (public permutation) | +1 (`LehmerUnrank` on a 64-bit PRF word on Single; combinadic `rankToMaskTriple` on a 64-bit PRF word on Triple) | +1 (different key from the noise channel) |
+| Wire-format identity across modes | ✓ | ✓ | ✓ | ✓ |
+| Throughput overhead vs Byte Level | 1× | ~1.1× | ~2×–7× (BMI2 PEXT/PDEP on Triple; AVX-512 VBMI on Single; Pure Go fallback near the upper bound) | ~2×–7× + ~5% (extra PRF schedule on the lock-channel) |
+
+The Lock Soup column applies under the PRF assumption on `noiseSeed.Hash`; the dedicated-`lockSeed` column adds algorithm-diversity defence-in-depth without changing the per-chunk 2³³ / 2⁶⁴ floor (see §19 final paragraph). The wire-format-identity row preserves the plausible-decryption invariant across modes — no public bit distinguishes which encoding is active, and mismatched encrypt / decrypt modes produce wrong-seed-style garbage with no error oracle.
+
+The §7 Attack Resistance Summary `Nonce reuse` row footnote †† surfaces the Lock Soup demask-entry-point removal to keep the encoding-axis behaviour visible from the composition-axis table; this section provides the full per-encoding-mode cross-cut. The under-determination claim in the SAT row is the architectural property described in §19 and [SCIENCE.md §1.2.1](SCIENCE.md#121-interlocked-mode); the dependency on the PRF assumption is repeated here to keep the encoding-mode claims aligned with the assumption-conditional discipline of §15.
