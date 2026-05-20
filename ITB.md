@@ -22,6 +22,8 @@ The barrier works because of separation of sources:
 
 Two independent random processes. CSPRNG does not know about PRF, PRF does not know about CSPRNG. Their only point of contact is the moment of embedding, after which the observer sees only the result, not the components.
 
+**Hash output bandwidth.** Each per-pixel ChainHash call produces a wide output — 128, 256, or 512 bits depending on the primitive — but the encoder consumes only the low 64 bits. About 62 of those are actually used (3 noise-position + 56 channelXOR + ~3 rotation); the rest is slack, and the high portion is discarded entirely. This is a coding-bandwidth choice — one `uint64` register fits the per-pixel needs exactly — not a security upgrade. It has one real side effect: any structural weakness of the underlying primitive that lives in the discarded bits is architecturally invisible to encryption-path observation. FNV-1a's top-bit-isolation case in the empirical red-team work is the canonical example (see [REDTEAM.md Phase 2e](REDTEAM.md#phase-2e--related-seed-differential)). For PRF-grade primitives the narrowing is defense-in-depth against partial weaknesses; under the standard PRF assumption it does not change cryptanalytic resistance at large captured-ciphertext volumes — truncation preserves PRF-security, it does not strengthen it. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security) for the formal treatment.
+
 ## 3. Nonce: A New Universe Per Message
 
 The nonce guarantees that the same message with the same seed produces each time:

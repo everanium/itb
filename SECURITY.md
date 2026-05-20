@@ -294,6 +294,7 @@ PRF-grade hash functions (Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMA
 | Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
+| PRF output consumed per pixel | 64 bits per ChainHash call (architectural cap independent of native primitive width; 50 % / 25 % / 12.5 % of 128 / 256 / 512-bit output, the remainder discarded by the per-pixel encoder). Truncation preserves PRF-conditional security but does not strengthen it; the discarded portion is architecturally invisible to the encryption path, closing structural weaknesses concentrated in those bits (FNV-1a top-bit-isolation case empirically documented in [REDTEAM.md Phase 2e](REDTEAM.md#phase-2e--related-seed-differential)) — defense-in-depth against partial PRF-failure, not an upgrade of PRF-conditional security under PRF-grade primitives. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security). |
 | Nonce | 128/256/512-bit per-message (default 128-bit, mandatory) |
 | Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
