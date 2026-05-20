@@ -70,6 +70,8 @@ For 128-bit hash functions H128: {0,1}* × {0,1}^64 × {0,1}^64 → {0,1}^64 × 
 ChainHash128(data, S) = (hLo, hHi)  after n/2 rounds
 ```
 
+The per-pixel encoder consumes only `hLo`; `hHi` is discarded — see [§1.1.3](#113-per-pixel-config-extraction-and-effective-security) for the per-call output-width narrowing and its security implications.
+
 Effective security: min(keyBits, 128 × numRounds). For 1024-bit key (16 components, 8 rounds): 1024-bit effective security (no bottleneck). Target hash functions: SipHash-2-4, AES-CMAC.
 
 ### 1.1.2 ChainHash256
@@ -82,6 +84,8 @@ h = H256(data, [s[4] ⊕ h[0], s[5] ⊕ h[1], s[6] ⊕ h[2], s[7] ⊕ h[3]])
 ...
 ChainHash256(data, S) = h  after n/4 rounds
 ```
+
+The per-pixel encoder consumes only `h[0]`; `h[1..3]` are discarded — see [§1.1.3](#113-per-pixel-config-extraction-and-effective-security) for the per-call output-width narrowing and its security implications.
 
 Effective security: min(keyBits, 256 × numRounds). For 2048-bit key (32 components, 8 rounds): 2048-bit effective security (no bottleneck). Target hash function: BLAKE3 keyed mode.
 
@@ -106,6 +110,16 @@ The effective key size is determined by two independent properties:
     In all cases, constraint bits >> key bits. The probability of two distinct keys producing identical observations across all pixels is negligible (2^(-6272) to 2^(-23104)), providing full key space discrimination.
 
 **Conclusion.** The 64-bit per-pixel extraction does not reduce effective security for any hash width. The chain operates at full width internally, and MITM bottleneck equals the intermediate state width. Multi-call observations provide sufficient constraints for complete key discrimination at all widths. Based on the multi-call discrimination argument, the effective key sizes (1024/2048 bits) are expected to be fully realized for all widths.
+
+**Output-width narrowing — defense-in-depth scope.**
+
+The extraction ratio (64 bits consumed of W bits produced per call) translates to **50 % / 25 % / 12.5 %** of the primitive output reaching the encryption path at native widths **128 / 256 / 512** respectively; the remainder is discarded by the per-pixel encoder before any observable byte is written. The narrowing is a coding-bandwidth choice — the per-pixel encoder requires 62 bits (3 noise-position + 56 channelXOR + ~3 rotation) which fit in one `uint64` register — not a security-driven decision. Two architectural side effects follow.
+
+*Truncation-invariance under the PRF assumption.* If the primitive is a secure PRF on its full W-bit output, then the projection onto any consistent subset of bits is a secure PRF on those bits (standard truncation reduction: any distinguisher on the projected output yields a distinguisher on the full output at the same advantage and time). Output narrowing therefore does not weaken the PRF-conditional security of the encryption path; equally, it does not strengthen it. At large captured-ciphertext volumes the attacker's birthday horizon and statistical-distinguisher surface are determined by the per-call width actually used (64 bits), not by W — cryptanalytic resistance is not multiplied by the W/64 ratio under the PRF assumption.
+
+*Architectural invisibility of discarded-bit weaknesses.* Any structural primitive weakness whose differential or algebraic signature concentrates in the discarded portion of the output is invisible to the encryption path by construction. The canonical empirical example is FNV-1a's top-bit-isolation effect documented in [REDTEAM.md Phase 2e](REDTEAM.md#phase-2e--related-seed-differential): `state × P_lo mod 2^128` preserves bit 127 of state into bit 127 of output, which a differential probe detects in a 56 M signal at the `bit_high1023` Δ — but ITB's `hLo` extraction discards bit 127, so the leak does not reach an encryption-path attacker. The closed surface is one specific class of partial-inversion weaknesses concentrated in the discarded W − 64 bits; PRF-grade primitives by hypothesis carry no such concentrated weakness in any bit position, so the protection is defense-in-depth against partial PRF-failure on a non-PRF or below-spec primitive, not an upgrade of PRF-conditional security under PRF-grade primitives.
+
+The Lock Soup overlay's per-chunk PRF closures ([`bitsoup.go`](bitsoup.go) `buildLockPRF128/256/512` and `buildPermutePRF128/256/512`) inherit the same narrowing pattern — only the low 64-bit slice of each per-chunk PRF call feeds the Lehmer / combinadic unrank, so the leak-surface bound applies symmetrically to the keyed-bit-permutation derivation channel.
 
 ### 1.1.4 Wider Hash Variants: Fewer Rounds, Wider MITM Bottleneck
 
