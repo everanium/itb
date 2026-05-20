@@ -28,9 +28,9 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
 
-**[Empirical red-team validation](REDTEAM.md)** — 12 hash primitives (including CRC128 and FNV-1a lo-lane for positive control) × 2×2 configuration matrix (Single + Triple Ouroboros × BF=1 + BF=32). Multiple empirical phases — structural / FFT / Markov, per-pixel candidate distinguisher, startPixel enumeration, ChainHash SAT-cost analysis + hash-agnostic bias audit, Direct Crib KPA SAT-cost analysis, nonce-reuse demasker with 96-cell Partial KPA matrix, 1008-cell related-seed differential, rotation-invariant edge case — all PRF-grade primitives neutralized.
+**[Empirical Red-Team validation](REDTEAM.md)** — 12 hash primitives (including CRC128, FNV-1a lo-lane and MD5 for positive control) × 2×2 configuration matrix (Single + Triple Ouroboros × BF=1 + BF=32). Multiple empirical phases — structural / FFT / Markov, per-pixel candidate distinguisher, startPixel enumeration, ChainHash SAT-cost analysis + hash-agnostic bias audit, Direct Crib KPA SAT-cost analysis, nonce-reuse demasker with 96-cell Partial KPA matrix, 1008-cell related-seed differential, rotation-invariant edge case - all PRF-grade primitives held under the tested conditions.
 
-**Discord:** [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd) - invite to chat with developer.
+**[Discord](https://discord.gg/wRYF8shHpd)** - invite to chat with developer.
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
@@ -121,7 +121,7 @@ ITB inverts this approach. Instead of relying solely on the primitive's strength
 
 **Why triple-seed is necessary.** Without three independent seeds, a leak in one domain cascades: CCA reveals noise positions → same seed gives rotation and XOR → full configuration recovered. Triple-seed isolation ensures each leak is contained: CCA → only noiseSeed, cache side-channel → only startSeed, dataSeed → zero software-observable exposure. This is the minimum configuration where every leak is architecturally isolated.
 
-**Why the Barrier and PRF are Complementary.** In traditional ciphers, the attacker directly observes the primitive's output (keystream XOR plaintext). Any weakness in the primitive is immediately exploitable. In ITB, the hash output is absorbed by a random container modification — the attacker sees modified random bytes, not hash outputs. Under the random-container model, every observed byte value is compatible with every possible hash output. PRF required. PRF closes the candidate-verification step; barrier and architectural layers (triple-seed isolation, encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application — 3-factor combination under PRF assumption (4-factor under Partial KPA). Neither is sufficient alone: architectural layers cannot resist an invertible hash, and without the barrier the attacker observes the keystream directly (as in AES-CTR, ChaCha20), making any PRF weakness immediately exploitable. See [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance).
+**Why the Barrier and PRF are Complementary.** In traditional ciphers, the attacker directly observes the primitive's output (keystream XOR plaintext). Any weakness in the primitive is immediately exploitable. In ITB, the hash output is absorbed by a random container modification — the attacker sees modified random bytes, not hash outputs. Under the random-container model, every observed byte value is compatible with every possible hash output. PRF closes the candidate-verification step; barrier and architectural layers (triple-seed isolation, encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application — 3-factor combination under PRF assumption (4-factor under Partial KPA). Neither is sufficient alone: architectural layers cannot resist an invertible hash, and without the barrier the attacker observes the keystream directly (as in AES-CTR, ChaCha20), making any PRF weakness immediately exploitable. See [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance).
 
 **Why quantum structural attacks are conjectured mitigated.** Quantum algorithms like Simon (periodicity), BHT (collisions), and quantum differential/linear analysis require observable structural relations between inputs and outputs. The random container makes these relations unobservable — the attacker cannot build the algebraic structures that quantum algorithms exploit. Additionally, ITB's MAC oracle (when present) is inherently classical: it accepts concrete bytes over a network, not quantum superposition queries (Q2 model inapplicable). This is an architectural observation that has not been independently verified.
 
@@ -229,6 +229,89 @@ Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
 
 Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). `CGO_ENABLED=0` alone swaps only the C pixel kernel for the portable Go pipeline; the ZMM-batched hash ASM and upstream stdlib ASM stay engaged via Go assembly, so end-to-end throughput stays close to the CGO default on AVX-512 hosts. The full scalar fallback is not usable with ITB (`-tags=purego`, where every upstream module honours the convention) is **~20×–100× slower** when the ZMM hash kernels fall back to per-call scalar references — every primitive picks up a measurable ZMM uplift, but the relative gap is widest on the BLAKE / ARX primitives (heavier per-call closure overhead amortised across four lanes) and narrowest on AES-CMAC / SipHash-2-4, whose scalar paths already run AES-NI-accelerated through `crypto/aes` and the hand-tuned `dchest/siphash` assembly so the batched arm has less headroom to recover. The middle ground is `-tags=noitbasm` — disables the ITB chain-absorb wrapper while leaving upstream hash ASM engaged; throughput tracks the OLDBENCH single-Func numbers on hosts without AVX-512+VL where the 4-lane batched wrapper would be dead weight. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
 
+### Parallelism Control
+
+```go
+itb.SetMaxWorkers(4) // limit to 4 CPU cores for pixel processing
+```
+
+By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Pass 0 to use all CPUs (default). Valid range: 0–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
+
+### Nonce Configuration
+
+```go
+itb.SetNonceBits(256) // 256-bit nonce (~2^128 birthday bound)
+```
+
+Default nonce is 128 bits (birthday collision at ~2^64 messages). For higher collision resistance, use `SetNonceBits`. Valid values: 128, 256, 512. Panics on invalid input. Both sender and receiver must use the same nonce size. Query with `itb.GetNonceBits()`.
+
+### Barrier Fill (CSPRNG Margin)
+
+```go
+itb.SetBarrierFill(4) // side += 4 instead of default side += 1
+```
+
+Controls the CSPRNG fill margin added to the container side dimension. The construction guarantees that every container has strictly more pixel capacity than the payload requires — the excess capacity is filled with `crypto/rand` data encrypted by dataSeed. This CSPRNG residue is indistinguishable from encrypted plaintext and provides information-theoretic ambiguity within the data channel ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+
+Valid values: 1, 2, 4, 8, 16, 32. Default: 1. Panics on invalid input. Thread-safe (atomic). Query with `itb.GetBarrierFill()`.
+
+**Why this matters after CCA.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container), bypassing mechanism 1 (noise absorption). But CSPRNG fill bytes remain in the data bit positions — encrypted identically to plaintext by dataSeed (rotation + XOR). COBS decoding stops at the `0x00` null terminator and never reaches the fill region, so the fill content is never constrained by the plaintext structure. The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill without the correct dataSeed. Although CCA reveals noise bit positions (bypassing the noise-position uncertainty of mechanism 1), CSPRNG residue in data positions provides independent information-theoretic ambiguity that persists regardless of CCA.
+
+The rotation barrier (7^P from [Proof 4](PROOFS.md#proof-4-rotation-barrier)) remains complemented by this reduced information-theoretic barrier from CSPRNG fill. Three layers operate in every scenario:
+
+| Layer | Core ITB | After CCA (MAC + Reveal) |
+|---|---|---|
+| Noise absorption (mechanism 1) | Full (8 noise bits/pixel) | Partial — noise bits removed, CSPRNG fill in data positions survives |
+| Encoding ambiguity (mechanism 2) | 56^P | 7^P (rotation only) |
+| Brute-force cost | P × 2^(2×keyBits) | P × 2^keyBits |
+
+**Asymmetric property.** The receiver does not need the same `SetBarrierFill` value as the sender. Encrypt writes the container dimensions (W×H) into the header; Decrypt reads W×H from the header and processes whatever pixels are present. A larger fill margin on the sender side increases CSPRNG residue without requiring any configuration change on the receiver. This confirms the configurable nature of the information-theoretic barrier — the sender can independently tune the CSPRNG fill margin.
+
+## Hash Function Selection
+
+ITB accepts pluggable hash functions at three widths. Requirements: the hash must process all input bytes with non-invertible, non-affine, avalanche mixing that survives the ChainHash XOR-chain. PRF required. Under PRF assumption, Full KPA resistance is 3-factor: PRF non-invertibility, independent startSeed, and per-pixel 1:1 ambiguity — all combine conjunctively. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. Note: complete PRF inversion would collapse the architectural layers via seed recovery; the multi-factor property protects against partial PRF weakness, not total failure.
+
+All nine primitives are PRF-grade and accept ITB key sizes up to **2048 bits** (`itb.MaxKeyBits`); the per-width minimum is 512 bits and the bit count must be a multiple of the hash's native state width (128 / 256 / 512). The **Public Pair API** column lists the `hashes.<Primitive>Pair()` factory which returns the (single, batched) closure pair; the batched arm wires the ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically.
+
+| Hash | Type | ASM Acceleration | Public Pair API | Upstream Library |
+|---|---|---|---|---|
+| **Areion-SoEM-256** | `HashFunc256` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion256Pair()` | `github.com/jedisct1/go-aes` |
+| **Areion-SoEM-512** | `HashFunc512` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion512Pair()` | `github.com/jedisct1/go-aes` |
+| **SipHash-2-4** | `HashFunc128` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPROLQ, 4-lane) | `hashes.SipHash24Pair()` | `github.com/dchest/siphash` |
+| **AES-CMAC** | `HashFunc128` | VAES + AVX-512 ZMM (4-lane CBC-MAC) · AES-NI scalar | `hashes.AESCMACPair()` | `crypto/aes` (stdlib) |
+| **BLAKE2b-512** | `HashFunc512` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b512Pair()` | `golang.org/x/crypto/blake2b` |
+| **BLAKE2b-256** | `HashFunc256` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b256Pair()` | `golang.org/x/crypto/blake2b` |
+| **BLAKE2s** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane) | `hashes.BLAKE2s256Pair()` | `golang.org/x/crypto/blake2s` |
+| **BLAKE3** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane keyed-mode) | `hashes.BLAKE3256Pair()` | `github.com/zeebo/blake3` |
+| **ChaCha20** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPROLD, 4-lane) | `hashes.ChaCha20256Pair()` | `golang.org/x/crypto/chacha20` |
+
+### Choosing the Right Hash Width
+
+The effective key size is determined by the **seed input width** of the hash function — not its output width. This is a critical distinction:
+
+```
+Effective max key = min(keyBits, seedInputWidth × numRounds)
+```
+
+### Why Wider Hash = Faster with Wider MITM Bottleneck
+
+With a 512-bit key (8 components), ChainHash processes components in groups matching the hash width:
+
+| Hash width | Components/round | Rounds | Hash calls/pixel |
+|---|---|---|---|
+| 128-bit | 2 | 4 | 4 |
+| 256-bit | 4 | **2** | **2** |
+| 512-bit | 8 | **1** | **1** |
+
+All 8 components are consumed in every case — no key material is skipped. A 256-bit hash simply processes 4 components per call instead of 1.
+
+**Faster:** each hash call has overhead (state initialization, finalization). For heavy hash functions (BLAKE3: ~300ns/call, BLAKE2b: ~200ns/call), fewer calls = proportionally faster.
+
+**Wider MITM bottleneck:** the wider intermediate state makes meet-in-the-middle attacks harder. With 256-bit state, an attacker must enumerate 2^256 possible intermediate values (vs 2^128 for a 128-bit hash). Additionally, fewer chain rounds means fewer potential split points for the attacker.
+
+**Bottom line:** prefer the widest available PRF variant — it's both faster and provides a wider MITM bottleneck.
+
+
 ### ASIC Scalability
 
 **FPGA proof-of-concept is planned** using open-source Verilog IP cores for SipHash and ChaCha20 DRBG, with a custom ITB pixel pipeline. Target: full encrypt/decrypt roundtrip on a single FPGA chip.
@@ -243,7 +326,7 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 - No DPA attack surface — register-only operations in silicon
 
 **Hash engine:**
-- ARX-based PRF hash functions (SipHash-2-4/ChaCha20/BLAKE2s — chosen at design time) are pipeline-friendly in hardware: each individual operation (Add, Rotate, XOR) completes in 1 clock cycle; a full SipHash-2-4 call requires ~24 cycles for 20-byte input
+- ARX-based PRF hash functions (BLAKE3) are pipeline-friendly in hardware
 - Multiple hash engines can run in parallel (one per pixel pipeline)
 - No S-box in silicon — no DPA attack surface at the hardware level
 
@@ -256,7 +339,7 @@ ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are tr
 - Decrypt does not require PRNG (no container generation) — decrypt throughput is limited only by hash engine and memory bandwidth
 
 **DPA-free full stack:**
-- TRNG (certified IP core) → ChaCha20 DRBG streaming (custom, ARX) → ARX hash engine (SipHash-2-4/ChaCha20/BLAKE2s) → pixel processing (XOR, shift, rotate) — zero table lookups from PRNG to output, no DPA attack surface at any level
+- TRNG (certified IP core) → ChaCha20 DRBG streaming (custom, ARX) → ARX hash engine (BLAKE3) → pixel processing (XOR, shift, rotate) — zero table lookups from PRNG to output, no DPA attack surface at any level
 
 **Theoretical throughput:**
 - With ChaCha20 DRBG + parallel hash engines + parallel pixel processing, ASIC implementations could theoretically achieve >1-2 GB/s for both encrypt and decrypt — the problem is purely engineering, not architectural
@@ -316,6 +399,8 @@ driving the read/write loop. The two patterns produce identical on-wire
 bytes — the **Alternative** examples in the No Mac subsections below mirror
 the binding-side idiom for callers who prefer external control over chunk
 granularity and back-pressure.
+
+## Quick Start
 
 ### Streaming AEAD Easy (MAC Authenticated)
 
@@ -386,13 +471,6 @@ func main() {
 }
 ```
 
-Output:
-```
-Easy Mode src sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-Easy Mode dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-[OK] Easy Mode: 64 MiB roundtrip via stream-auth verified
-```
-
 ### Streaming AEAD Low-Level (MAC Authenticated)
 
 Top-level free functions `itb.EncryptStreamAuth` / `itb.DecryptStreamAuth`
@@ -432,10 +510,25 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    hashFn, _, _ := hashes.Make512("areion512")
-    noise, _ := itb.NewSeed512(1024, hashFn)
-    data,  _ := itb.NewSeed512(1024, hashFn)
-    start, _ := itb.NewSeed512(1024, hashFn)
+    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
+    // (noise / data / start / lock). The batched arm wires the AVX-512 +
+    // VAES + ZMM chain-absorb dispatch through Seed.BatchHash — without
+    // it dispatch falls back to the legacy single-call path.
+    fnN, batchN, _, _ := hashes.Make512Pair("areion512")
+    fnD, batchD, _, _ := hashes.Make512Pair("areion512")
+    fnS, batchS, _, _ := hashes.Make512Pair("areion512")
+    fnL, batchL, _, _ := hashes.Make512Pair("areion512")
+
+    noise, _ := itb.NewSeed512(1024, fnN); noise.BatchHash = batchN
+    data,  _ := itb.NewSeed512(1024, fnD); data.BatchHash  = batchD
+    start, _ := itb.NewSeed512(1024, fnS); start.BatchHash = batchS
+    lock,  _ := itb.NewSeed512(1024, fnL); lock.BatchHash  = batchL
+
+    // Optional dedicated lockSeed for the Lock Soup bit-permutation
+    // channel — keying-material isolation plus algorithm-diversity
+    // defence-in-depth on top of the per-chunk keyed-permutation floor,
+    // without changing the public Encrypt / Decrypt signatures.
+    noise.AttachLockSeed(lock)
 
     macKey := make([]byte, 32)
     rand.Read(macKey)
@@ -469,13 +562,6 @@ func main() {
         bw.Flush(); fin.Close(); fout.Close()
     }
 }
-```
-
-Output:
-```
-Low-Level src sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-Low-Level dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-[OK] Low-Level Mode: 64 MiB roundtrip via stream-auth verified
 ```
 
 ### Streaming Easy (No MAC)
@@ -540,13 +626,6 @@ func main() {
         bw.Flush(); fin.Close(); fout.Close()
     }
 }
-```
-
-Output:
-```
-Easy Mode plain src sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-Easy Mode plain dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-[OK] Easy Mode plain stream: 64 MiB roundtrip verified
 ```
 
 **Alternative — User-Driven Loop (No memory residency):**
@@ -634,13 +713,6 @@ func main() {
 }
 ```
 
-Output:
-```
-Easy Mode plain user-loop src sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-Easy Mode plain user-loop dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-[OK] Easy Mode plain user-loop: 64 MiB roundtrip verified
-```
-
 ### Streaming Low-Level (No MAC)
 
 Top-level free functions `itb.EncryptStream` / `itb.DecryptStream` take three
@@ -671,10 +743,25 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    hashFn, _, _ := hashes.Make512("areion512")
-    noise, _ := itb.NewSeed512(1024, hashFn)
-    data,  _ := itb.NewSeed512(1024, hashFn)
-    start, _ := itb.NewSeed512(1024, hashFn)
+    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
+    // (noise / data / start / lock). The batched arm wires the AVX-512 +
+    // VAES + ZMM chain-absorb dispatch through Seed.BatchHash — without
+    // it dispatch falls back to the legacy single-call path.
+    fnN, batchN, _, _ := hashes.Make512Pair("areion512")
+    fnD, batchD, _, _ := hashes.Make512Pair("areion512")
+    fnS, batchS, _, _ := hashes.Make512Pair("areion512")
+    fnL, batchL, _, _ := hashes.Make512Pair("areion512")
+
+    noise, _ := itb.NewSeed512(1024, fnN); noise.BatchHash = batchN
+    data,  _ := itb.NewSeed512(1024, fnD); data.BatchHash  = batchD
+    start, _ := itb.NewSeed512(1024, fnS); start.BatchHash = batchS
+    lock,  _ := itb.NewSeed512(1024, fnL); lock.BatchHash  = batchL
+
+    // Optional dedicated lockSeed for the Lock Soup bit-permutation
+    // channel — keying-material isolation plus algorithm-diversity
+    // defence-in-depth on top of the per-chunk keyed-permutation floor,
+    // without changing the public Encrypt / Decrypt signatures.
+    noise.AttachLockSeed(lock)
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -703,13 +790,6 @@ func main() {
         bw.Flush(); fin.Close(); fout.Close()
     }
 }
-```
-
-Output:
-```
-Low-Level plain src sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-Low-Level plain dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-[OK] Low-Level Mode plain stream: 64 MiB roundtrip verified
 ```
 
 **Alternative — User-Driven Loop (No memory residency):**
@@ -746,10 +826,25 @@ func main() {
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
 
-    hashFn, _, _ := hashes.Make512("areion512")
-    noise, _ := itb.NewSeed512(1024, hashFn)
-    data,  _ := itb.NewSeed512(1024, hashFn)
-    start, _ := itb.NewSeed512(1024, hashFn)
+    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
+    // (noise / data / start / lock). The batched arm wires the AVX-512 +
+    // VAES + ZMM chain-absorb dispatch through Seed.BatchHash — without
+    // it dispatch falls back to the legacy single-call path.
+    fnN, batchN, _, _ := hashes.Make512Pair("areion512")
+    fnD, batchD, _, _ := hashes.Make512Pair("areion512")
+    fnS, batchS, _, _ := hashes.Make512Pair("areion512")
+    fnL, batchL, _, _ := hashes.Make512Pair("areion512")
+
+    noise, _ := itb.NewSeed512(1024, fnN); noise.BatchHash = batchN
+    data,  _ := itb.NewSeed512(1024, fnD); data.BatchHash  = batchD
+    start, _ := itb.NewSeed512(1024, fnS); start.BatchHash = batchS
+    lock,  _ := itb.NewSeed512(1024, fnL); lock.BatchHash  = batchL
+
+    // Optional dedicated lockSeed for the Lock Soup bit-permutation
+    // channel — keying-material isolation plus algorithm-diversity
+    // defence-in-depth on top of the per-chunk keyed-permutation floor,
+    // without changing the public Encrypt / Decrypt signatures.
+    noise.AttachLockSeed(lock)
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -802,14 +897,7 @@ func main() {
 }
 ```
 
-Output:
-```
-Low-Level plain user-loop src sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-Low-Level plain user-loop dst sha256: c33ebd485683f8201518112418d2bd428d1fcc3e9e4da2f49eebd3cf3da8fd11
-[OK] Low-Level Mode plain user-loop: 64 MiB roundtrip verified
-```
-
-## Quick Start
+### Single Message Examples
 
 Three configurations covering the most common usage patterns. Every key and
 every seed component is CSPRNG-generated; no master key, no key-derivation
@@ -1958,7 +2046,7 @@ func main() {
 }
 ```
 
-## Quick Start — Triple Ouroboros (7 seeds, 3× security)
+### Triple Ouroboros (7 seeds, 3× security)
 
 ```go
 // Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start) plus an
@@ -2374,88 +2462,6 @@ ds, _ := itb.NewSeed256(2048, makeBlake3Hash())
 ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
 ```
 
-### Parallelism Control
-
-```go
-itb.SetMaxWorkers(4) // limit to 4 CPU cores for pixel processing
-```
-
-By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Pass 0 to use all CPUs (default). Valid range: 0–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
-
-### Nonce Configuration
-
-```go
-itb.SetNonceBits(256) // 256-bit nonce (~2^128 birthday bound)
-```
-
-Default nonce is 128 bits (birthday collision at ~2^64 messages). For higher collision resistance, use `SetNonceBits`. Valid values: 128, 256, 512. Panics on invalid input. Both sender and receiver must use the same nonce size. Query with `itb.GetNonceBits()`.
-
-### Barrier Fill (CSPRNG Margin)
-
-```go
-itb.SetBarrierFill(4) // side += 4 instead of default side += 1
-```
-
-Controls the CSPRNG fill margin added to the container side dimension. The construction guarantees that every container has strictly more pixel capacity than the payload requires — the excess capacity is filled with `crypto/rand` data encrypted by dataSeed. This CSPRNG residue is indistinguishable from encrypted plaintext and provides information-theoretic ambiguity within the data channel ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
-
-Valid values: 1, 2, 4, 8, 16, 32. Default: 1. Panics on invalid input. Thread-safe (atomic). Query with `itb.GetBarrierFill()`.
-
-**Why this matters after CCA.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container), bypassing mechanism 1 (noise absorption). But CSPRNG fill bytes remain in the data bit positions — encrypted identically to plaintext by dataSeed (rotation + XOR). COBS decoding stops at the `0x00` null terminator and never reaches the fill region, so the fill content is never constrained by the plaintext structure. The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill without the correct dataSeed. Although CCA reveals noise bit positions (bypassing the noise-position uncertainty of mechanism 1), CSPRNG residue in data positions provides independent information-theoretic ambiguity that persists regardless of CCA.
-
-The rotation barrier (7^P from [Proof 4](PROOFS.md#proof-4-rotation-barrier)) remains complemented by this reduced information-theoretic barrier from CSPRNG fill. Three layers operate in every scenario:
-
-| Layer | Core ITB | After CCA (MAC + Reveal) |
-|---|---|---|
-| Noise absorption (mechanism 1) | Full (8 noise bits/pixel) | Partial — noise bits removed, CSPRNG fill in data positions survives |
-| Encoding ambiguity (mechanism 2) | 56^P | 7^P (rotation only) |
-| Brute-force cost | P × 2^(2×keyBits) | P × 2^keyBits |
-
-**Asymmetric property.** The receiver does not need the same `SetBarrierFill` value as the sender. Encrypt writes the container dimensions (W×H) into the header; Decrypt reads W×H from the header and processes whatever pixels are present. A larger fill margin on the sender side increases CSPRNG residue without requiring any configuration change on the receiver. This confirms the configurable nature of the information-theoretic barrier — the sender can independently tune the CSPRNG fill margin.
-
-## Hash Function Selection
-
-ITB accepts pluggable hash functions at three widths. Requirements: the hash must process all input bytes with non-invertible, non-affine, avalanche mixing that survives the ChainHash XOR-chain. PRF required. Under PRF assumption, Full KPA resistance is 3-factor: PRF non-invertibility, independent startSeed, and per-pixel 1:1 ambiguity — all combine conjunctively. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. Note: complete PRF inversion would collapse the architectural layers via seed recovery; the multi-factor property protects against partial PRF weakness, not total failure.
-
-All nine primitives are PRF-grade and accept ITB key sizes up to **2048 bits** (`itb.MaxKeyBits`); the per-width minimum is 512 bits and the bit count must be a multiple of the hash's native state width (128 / 256 / 512). The **Public Pair API** column lists the `hashes.<Primitive>Pair()` factory which returns the (single, batched) closure pair; the batched arm wires the ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically.
-
-| Hash | Type | ASM Acceleration | Public Pair API | Upstream Library |
-|---|---|---|---|---|
-| **Areion-SoEM-256** | `HashFunc256` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion256Pair()` | `github.com/jedisct1/go-aes` |
-| **Areion-SoEM-512** | `HashFunc512` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion512Pair()` | `github.com/jedisct1/go-aes` |
-| **SipHash-2-4** | `HashFunc128` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPROLQ, 4-lane) | `hashes.SipHash24Pair()` | `github.com/dchest/siphash` |
-| **AES-CMAC** | `HashFunc128` | VAES + AVX-512 ZMM (4-lane CBC-MAC) · AES-NI scalar | `hashes.AESCMACPair()` | `crypto/aes` (stdlib) |
-| **BLAKE2b-512** | `HashFunc512` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b512Pair()` | `golang.org/x/crypto/blake2b` |
-| **BLAKE2b-256** | `HashFunc256` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b256Pair()` | `golang.org/x/crypto/blake2b` |
-| **BLAKE2s** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane) | `hashes.BLAKE2s256Pair()` | `golang.org/x/crypto/blake2s` |
-| **BLAKE3** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane keyed-mode) | `hashes.BLAKE3256Pair()` | `github.com/zeebo/blake3` |
-| **ChaCha20** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPROLD, 4-lane) | `hashes.ChaCha20256Pair()` | `golang.org/x/crypto/chacha20` |
-
-### Choosing the Right Hash Width
-
-The effective key size is determined by the **seed input width** of the hash function — not its output width. This is a critical distinction:
-
-```
-Effective max key = min(keyBits, seedInputWidth × numRounds)
-```
-
-### Why Wider Hash = Faster with Wider MITM Bottleneck
-
-With a 512-bit key (8 components), ChainHash processes components in groups matching the hash width:
-
-| Hash width | Components/round | Rounds | Hash calls/pixel |
-|---|---|---|---|
-| 128-bit | 2 | 4 | 4 |
-| 256-bit | 4 | **2** | **2** |
-| 512-bit | 8 | **1** | **1** |
-
-All 8 components are consumed in every case — no key material is skipped. A 256-bit hash simply processes 4 components per call instead of 1.
-
-**Faster:** each hash call has overhead (state initialization, finalization). For heavy hash functions (BLAKE3: ~300ns/call, BLAKE2b: ~200ns/call), fewer calls = proportionally faster.
-
-**Wider MITM bottleneck:** the wider intermediate state makes meet-in-the-middle attacks harder. With 256-bit state, an attacker must enumerate 2^256 possible intermediate values (vs 2^128 for a 128-bit hash). Additionally, fewer chain rounds means fewer potential split points for the attacker.
-
-**Bottom line:** prefer the widest available PRF variant — it's both faster and provides a wider MITM bottleneck.
-
 ### Hash Function Wrappers
 
 ```go
@@ -2604,7 +2610,8 @@ All three approaches use standard mathematics. The formal relationship between I
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
 - [SECURITY.md](SECURITY.md) — Security reference tables
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.)
-- [REDTEAM.md](REDTEAM.md) — Empirical red-team validation (12-primitive hash matrix, multiple statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
+- [HARNESS.md](HARNESS.md) — Additional analysis of non-crypto hashes within barrier bias absorption and SAT calibration.
+- [REDTEAM.md](REDTEAM.md) — Empirical Red Team validation (12-primitive hash matrix, multiple statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
 - [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) — Per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why)
 
 ## License
