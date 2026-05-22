@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"bytes"
+	"crypto/mlkem"
 	"crypto/rand"
 	"testing"
 )
@@ -330,5 +331,120 @@ func TestNewWrapWriterUnknownCipher(t *testing.T) {
 	src := bytes.NewReader(make([]byte, 64))
 	if r, err := NewUnwrapReader("nonexistent", key, src); err == nil || r != nil {
 		t.Fatalf("NewUnwrapReader(nonexistent): got (%v, %v), want (nil, non-nil)", r, err)
+	}
+}
+
+// TestDeriveKey checks DeriveKey across every cipher: correct length,
+// determinism in (name, master), distinctness across masters, and that the
+// derived key round-trips through Wrap / Unwrap.
+func TestDeriveKey(t *testing.T) {
+	master := make([]byte, 32)
+	rand.Read(master)
+	other := make([]byte, 32)
+	rand.Read(other)
+
+	for _, name := range CipherNames {
+		t.Run(name, func(t *testing.T) {
+			want, err := KeySize(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			k1, err := DeriveKey(name, master)
+			if err != nil {
+				t.Fatalf("DeriveKey: %v", err)
+			}
+			if len(k1) != want {
+				t.Fatalf("DeriveKey(%s) len = %d, want %d", name, len(k1), want)
+			}
+			if k2, _ := DeriveKey(name, master); !bytes.Equal(k1, k2) {
+				t.Fatalf("DeriveKey(%s) not deterministic", name)
+			}
+			if k3, _ := DeriveKey(name, other); bytes.Equal(k1, k3) {
+				t.Fatalf("DeriveKey(%s) collided across distinct masters", name)
+			}
+
+			pt := []byte("derive-key round-trip payload")
+			wire, err := Wrap(name, k1, pt)
+			if err != nil {
+				t.Fatalf("Wrap: %v", err)
+			}
+			got, err := Unwrap(name, k1, wire)
+			if err != nil {
+				t.Fatalf("Unwrap: %v", err)
+			}
+			if !bytes.Equal(got, pt) {
+				t.Fatalf("DeriveKey(%s) round-trip mismatch", name)
+			}
+		})
+	}
+}
+
+// TestDeriveKeyDomainSeparation confirms the cipher name is bound into the
+// derivation: one master yields independent keys per cipher even when two
+// ciphers share the same key length.
+func TestDeriveKeyDomainSeparation(t *testing.T) {
+	master := make([]byte, 32)
+	rand.Read(master)
+	ka, err := DeriveKey(CipherAES128CTR, master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks, err := DeriveKey(CipherSipHash24, master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ka) != len(ks) {
+		t.Fatalf("precondition: aes and siphash key lengths differ (%d vs %d)", len(ka), len(ks))
+	}
+	if bytes.Equal(ka, ks) {
+		t.Fatal("DeriveKey: aes and siphash keys identical under the same master")
+	}
+}
+
+// TestDeriveKeyUnknownCipher exercises the KeySize error path in DeriveKey.
+func TestDeriveKeyUnknownCipher(t *testing.T) {
+	if k, err := DeriveKey("nonexistent", make([]byte, 32)); err == nil || k != nil {
+		t.Fatalf("DeriveKey(nonexistent): got (%v, %v), want (nil, non-nil)", k, err)
+	}
+}
+
+// TestDeriveKeyFromMLKEM demonstrates the intended post-quantum workflow: an
+// ML-KEM-768 shared secret feeds DeriveKey directly, and both endpoints
+// derive the same outer key from their respective shared-key copies, which
+// then round-trips through the wrapper.
+func TestDeriveKeyFromMLKEM(t *testing.T) {
+	dk, err := mlkem.GenerateKey768()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedEnc, ct := dk.EncapsulationKey().Encapsulate()
+	sharedDec, err := dk.Decapsulate(ct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(sharedEnc, sharedDec) {
+		t.Fatal("ML-KEM shared keys differ between endpoints")
+	}
+
+	for _, name := range CipherNames {
+		kEnc, err := DeriveKey(name, sharedEnc)
+		if err != nil {
+			t.Fatalf("DeriveKey(enc): %v", err)
+		}
+		kDec, err := DeriveKey(name, sharedDec)
+		if err != nil {
+			t.Fatalf("DeriveKey(dec): %v", err)
+		}
+		if !bytes.Equal(kEnc, kDec) {
+			t.Fatalf("%s: derived keys differ across ML-KEM endpoints", name)
+		}
+		wire, err := Wrap(name, kEnc, []byte("ml-kem derived payload"))
+		if err != nil {
+			t.Fatalf("%s: Wrap: %v", name, err)
+		}
+		got, err := Unwrap(name, kDec, wire)
+		if err != nil || string(got) != "ml-kem derived payload" {
+			t.Fatalf("%s: ml-kem-derived round-trip failed: got=%q err=%v", name, got, err)
+		}
 	}
 }
