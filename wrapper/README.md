@@ -64,6 +64,8 @@ enc := easy.New("areion512", 1024, "hmac-blake3")
 defer enc.Close()
 enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup(1)
 
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
 // Sender
@@ -90,6 +92,8 @@ start, _ := itb.NewSeed512(1024, hashFn)
 macKey := make([]byte, 32); rand.Read(macKey)
 macFunc, _ := macs.Make("hmac-blake3", macKey)
 
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
 _ = itb.EncryptStreamAuth(noise, data, start, plaintextReader, wrapWriter, macFunc, chunkSize)
@@ -118,6 +122,8 @@ _ = enc.DecryptStreamIO(unwrapReader, &dst)
 The README's "Alternative — User-Driven Loop" pattern: each chunk is one independent `enc.Encrypt(buf[:n])` call. Wrap shape: `NewWrapWriter` / `NewUnwrapReader` driven by a caller loop that emits `u32_LE_len || ct` per chunk through the wrapped writer. Length prefix and chunk body both pass through the keystream XOR — no length appears in cleartext on the wire.
 
 ```go
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
 // Sender
@@ -172,6 +178,8 @@ _ = itb.DecryptStream(noise, data, start, unwrapReader, &dst)
 Per-chunk `itb.Encrypt` / `itb.Decrypt` with caller-side framing. Wrap shape: `NewWrapWriter` / `NewUnwrapReader`. Each chunk is emitted as `u32_LE_len || ct` through the wrap-writer; the length and the body both pass through the keystream XOR.
 
 ```go
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
 var wireBuf bytes.Buffer
@@ -214,6 +222,8 @@ enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup
 
 encrypted, _ := enc.Encrypt(plaintext)
 
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
@@ -233,6 +243,8 @@ enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup
 
 encrypted, _ := enc.EncryptAuth(plaintext)
 
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
@@ -255,6 +267,8 @@ start, _ := itb.NewSeed512(2048, hashFn)
 
 encrypted, _ := itb.Encrypt(noise, data, start, plaintext)
 
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
@@ -280,6 +294,8 @@ macFunc, _ := macs.Make("hmac-blake3", macKey)
 
 encrypted, _ := itb.EncryptAuth(noise, data, start, plaintext, macFunc)
 
+// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
+// outerKey, _ := wrapper.DeriveKey(cipherName, master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
