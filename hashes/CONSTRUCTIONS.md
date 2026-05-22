@@ -1,5 +1,11 @@
 # `hashes/` — Primitive constructions
 
+> **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
+>
+> PRF-grade hash functions are **required**. No warranty is provided.
+
+**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+
 This document describes how each PRF-grade primitive in the registry is wrapped before it reaches `itb.HashFunc{128|256|512}`. Several wrappers diverge from the canonical RFC / NIST form of the underlying primitive in deliberate, documented ways. The names in `registry.go` (`aescmac`, `chacha20`, `blake2b256`, etc.) are short identifiers, **not** assertions of conformance with the RFC / NIST specification of the same name.
 
 Audience: external auditors, paper reviewers, downstream integrators reading the code wanting to know what is actually computed when ITB calls into one of these primitives.
