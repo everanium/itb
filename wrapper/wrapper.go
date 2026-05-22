@@ -124,16 +124,17 @@ func generateNonce(name string) ([]byte, error) {
 
 // SipHash-2-4 in CTR mode.
 //
-// SipHash-2-4 is a 128-bit-keyed PRF / MAC with 64-bit output. Building a
-// keystream from a PRF is the standard CTR construction:
+// SipHash-2-4 is a 128-bit-keyed PRF / MAC; the 128-bit-output variant
+// (SipHash-2-4-128) drives the keystream. Building a keystream from a PRF is
+// the standard CTR construction:
 //
-//	keystream_block_i = SipHash(K, nonce || counter_i)   (8 bytes per call)
+//	keystream_block_i = SipHash128(K, nonce || counter_i)   (16 bytes per call)
 //
-// The combined PRF input is 16 bytes (8-byte nonce-half + 8-byte counter, or
-// in this construction a 16-byte nonce broken into two 8-byte halves and
-// counter increments folded into the lower half). The construction is sound
-// under the same PRF assumption that justifies AES-CTR — XORing PRF output
-// with plaintext is the canonical PRF-secure stream.
+// The combined PRF input is 16 bytes (a 16-byte nonce split into two 8-byte
+// halves, counter increments folded into the lower half). The construction is
+// sound under the same PRF assumption that justifies AES-CTR — XORing PRF
+// output with plaintext is the canonical PRF-secure stream. The 128-bit
+// output places the keystream-block collision birthday at 2^64.
 //
 // The nonce is 16 bytes wide, partitioned as (nonce_hi||nonce_lo). Each
 // keystream block hashes a 16-byte input formed from
@@ -145,8 +146,8 @@ type sipCTR struct {
 	nonceHi  uint64
 	nonceLo  uint64
 	counter  uint64
-	keystrm  [8]byte
-	keystrmN int // number of unconsumed bytes in keystrm[8-keystrmN:]
+	keystrm  [16]byte
+	keystrmN int // number of unconsumed bytes in keystrm[16-keystrmN:]
 }
 
 func newSipHashCTR(key, nonce []byte) (Keystream, error) {
@@ -169,10 +170,11 @@ func (c *sipCTR) refill() {
 	var buf [16]byte
 	binary.LittleEndian.PutUint64(buf[:8], c.nonceHi)
 	binary.LittleEndian.PutUint64(buf[8:], c.nonceLo^c.counter)
-	out := siphash.Hash(c.k0, c.k1, buf[:])
-	binary.LittleEndian.PutUint64(c.keystrm[:], out)
+	lo, hi := siphash.Hash128(c.k0, c.k1, buf[:])
+	binary.LittleEndian.PutUint64(c.keystrm[:8], lo)
+	binary.LittleEndian.PutUint64(c.keystrm[8:], hi)
 	c.counter++
-	c.keystrmN = 8
+	c.keystrmN = 16
 }
 
 func (c *sipCTR) XORKeyStream(dst, src []byte) {
@@ -184,7 +186,7 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 
 	// Drain leftover bytes from a previous partial refill, byte by byte.
 	if c.keystrmN > 0 {
-		off := 8 - c.keystrmN
+		off := 16 - c.keystrmN
 		take := c.keystrmN
 		if take > n {
 			take = n
@@ -196,17 +198,19 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 		c.keystrmN -= take
 	}
 
-	// Bulk path: hash one 16-byte input per 8-byte keystream block, XOR
-	// directly via uint64 — skips the keystrm[8]byte buffer entirely.
+	// Bulk path: hash one 16-byte input per 16-byte keystream block, XOR
+	// directly via two uint64 — skips the keystrm[16]byte buffer entirely.
 	var nonceBuf [16]byte
 	binary.LittleEndian.PutUint64(nonceBuf[:8], c.nonceHi)
-	for n-i >= 8 {
+	for n-i >= 16 {
 		binary.LittleEndian.PutUint64(nonceBuf[8:], c.nonceLo^c.counter)
-		ksU64 := siphash.Hash(c.k0, c.k1, nonceBuf[:])
-		srcU64 := binary.LittleEndian.Uint64(src[i:])
-		binary.LittleEndian.PutUint64(dst[i:], srcU64^ksU64)
+		ksLo, ksHi := siphash.Hash128(c.k0, c.k1, nonceBuf[:])
+		srcLo := binary.LittleEndian.Uint64(src[i:])
+		srcHi := binary.LittleEndian.Uint64(src[i+8:])
+		binary.LittleEndian.PutUint64(dst[i:], srcLo^ksLo)
+		binary.LittleEndian.PutUint64(dst[i+8:], srcHi^ksHi)
 		c.counter++
-		i += 8
+		i += 16
 	}
 
 	// Tail (<8 bytes): refill keystrm buffer and consume the leading bytes.
