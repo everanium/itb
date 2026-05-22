@@ -70,7 +70,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Areion-SoEM-512 | 512 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
 | BLAKE2b-512 | 512 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
 | Vistrutah-MP-512 | 512 | Planned | Miyaguchi-Preneel | — | `jedisct1/go-aes` | TBD |
-| Haraka-512 | 512 | Planned | Davies-Meyer / MD | — | `jedisct1/go-aes` | TBD |
+| Haraka-512 | 512 | Planned | Davies-Meyer / MD (Dual-Chain) | — | `jedisct1/go-aes` | TBD |
 | KT256-XOF-512 | 512 | Planned | KangarooTwelve | — | Own (Go) | TBD |
 | HMAC-SHA512 | 512 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
 
