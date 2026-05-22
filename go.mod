@@ -15,4 +15,7 @@ require (
 	github.com/zeebo/assert v1.3.0 // indirect
 )
 
-retract v0.1.0 // documentation fixes only; use v0.1.1 or later
+retract (
+	v0.1.0 // documentation fixes only; use v0.1.2 or later
+	v0.1.1 // wrapper SipHash-CTR keystream collision (~32 GB/key); fixed in v0.1.2, use v0.1.2 or later
+)
