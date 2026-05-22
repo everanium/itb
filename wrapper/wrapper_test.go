@@ -274,31 +274,31 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	}
 }
 
-// TestSipHashCTRTailUnaligned drives a 9-byte plaintext (8-byte bulk path
-// followed by a 1-byte tail) to exercise the i < n tail branch.
+// TestSipHashCTRTailUnaligned drives a 17-byte plaintext (one 16-byte bulk
+// block followed by a 1-byte tail) to exercise the i < n tail branch.
 func TestSipHashCTRTailUnaligned(t *testing.T) {
 	key := make([]byte, 16)
 	nonce := make([]byte, 16)
 	rand.Read(key)
 	rand.Read(nonce)
-	plaintext := make([]byte, 9)
+	plaintext := make([]byte, 17)
 	rand.Read(plaintext)
 
 	enc, err := newSipHashCTR(key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct := make([]byte, 9)
+	ct := make([]byte, 17)
 	enc.XORKeyStream(ct, plaintext)
 
 	dec, err := newSipHashCTR(key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
-	recovered := make([]byte, 9)
+	recovered := make([]byte, 17)
 	dec.XORKeyStream(recovered, ct)
 	if !bytes.Equal(plaintext, recovered) {
-		t.Fatalf("siphash-ctr: 9-byte tail round-trip mismatch")
+		t.Fatalf("siphash-ctr: 17-byte tail round-trip mismatch")
 	}
 }
 
