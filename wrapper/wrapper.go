@@ -3,7 +3,9 @@ package wrapper
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -408,4 +410,24 @@ func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) 
 		return nil, err
 	}
 	return &keystreamReader{r: src, ks: ks}, nil
+}
+
+// DeriveKey deterministically derives an outer cipher key from a caller-
+// supplied master secret via HKDF-SHA256, sized for the named outer cipher.
+//
+// Where GenerateKey draws a fresh random key, DeriveKey is deterministic in
+// (name, master): the same inputs always yield the same key. This is the
+// preferred path when the master comes from a key-agreement step — e.g. an
+// ML-KEM (crypto/mlkem) shared secret — or any external high-entropy keying
+// material, so a rotated master re-derives the per-cipher key with no separate
+// key storage. master may be any length; HKDF-Extract normalises it. The
+// cipher name is bound into the HKDF info string, so one master yields
+// independent keys for different outer ciphers. The returned key has length
+// KeySize(name).
+func DeriveKey(name string, master []byte) ([]byte, error) {
+	n, err := KeySize(name)
+	if err != nil {
+		return nil, err
+	}
+	return hkdf.Key(sha256.New, master, nil, "itb-wrapper-derive-v1:"+name, n)
 }
