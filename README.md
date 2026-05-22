@@ -18,6 +18,8 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
+**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+
 A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through two independent barrier mechanisms: **noise absorption** (CSPRNG random container makes hash output unobservable) and **encoding ambiguity** (secret rotation creates 7^P unverifiable configurations surviving CCA). Triple-seed isolation ensures compromise of any domain provides zero information about the others.
 
 **Ambiguity-Based Security**: uncertainty about the correct configuration grows exponentially with data size, inverting Shannon's classical relationship. Above ~1.2 KB (no CCA) or ~2.5 KB (CCA) for 1024-bit keys, encoding ambiguity exceeds the key space. At 64 KB: 2^26,414 equally valid configurations — no computational model can enumerate them.
