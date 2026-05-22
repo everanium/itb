@@ -47,6 +47,33 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Go Native | Frozen | Fully completed | All passing | 13 May 2026 | TBD |
 | C ABI (`cmd/cshared`) | Frozen | Fully completed | All passing | 13 May 2026 | TBD |
 
+### Hashes
+
+| Hash | Slot | Status | Construction | Backend | Fallback | Release |
+|---|---|---|---|---|---|---|
+| AES-CMAC | 128 | Frozen | CBC-MAC | ASM ZMM + VAES | Go stdlib | 13 May 2026 |
+| SipHash-2-4 | 128 | Frozen | Direct PRF | ASM ZMM | `dchest/siphash` | 13 May 2026 |
+| AES-PRF | 128 | Planned | Feed-forward PRF | — | `jedisct1/go-aes` | TBD |
+| Camellia-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
+| SM4-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
+| ARIA-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
+| KT128 | 128 | Planned | KangarooTwelve | — | Own (Go) | TBD |
+| Areion-SoEM-256 | 256 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
+| BLAKE2b-256 | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
+| BLAKE2s | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
+| BLAKE3 | 256 | Frozen | Native-keyed | ASM ZMM | `zeebo/blake3` | 13 May 2026 |
+| ChaCha20 | 256 | Frozen | CBC-MAC (Stream) | ASM ZMM | `x/crypto` | 13 May 2026 |
+| Haraka-256 | 256 | Planned | Davies-Meyer / MD | — | `jedisct1/go-aes` | TBD |
+| HMAC-SM3 | 256 | Deferred | Merkle-Damgård | — | Own (Go) | TBD |
+| KT256 | 256 | Planned | KangarooTwelve | — | Own (Go) | TBD |
+| HMAC-SHA256 | 256 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
+| Areion-SoEM-512 | 512 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
+| BLAKE2b-512 | 512 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
+| Vistrutah-MP-512 | 512 | Planned | Miyaguchi-Preneel | — | `jedisct1/go-aes` | TBD |
+| Haraka-512 | 512 | Planned | Davies-Meyer / MD | — | `jedisct1/go-aes` | TBD |
+| KT256-XOF-512 | 512 | Planned | KangarooTwelve | — | Own (Go) | TBD |
+| HMAC-SHA512 | 512 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
+
 ## Bindings
 
 ### Tier 1 - Native & Thin
