@@ -31,7 +31,7 @@ No length-prefix or other framing byte appears in cleartext on the wire in any w
 
 ### Binding asymmetry
 
-The C# binding exposes Streaming AEAD via the `Encryptor.EncryptStreamAuth` / `DecryptStreamAuth` pair (Easy) and `StreamPipeline.EncryptStreamAuth` / `DecryptStreamAuth` (Low-Level), both consuming `System.IO.Stream` arguments. The Streaming No MAC path has **no** `System.IO.Stream` adapter for the wrap layer. This asymmetry is intentional. The Non-AEAD streaming arm in the C# wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.Encrypt(chunk)`, frames `u32_LE_len || ct`, and pushes through the streaming wrapper handle. See CLAUDE.md.
+The C# binding exposes Streaming AEAD via the `Encryptor.EncryptStreamAuth` / `DecryptStreamAuth` pair (Easy) and `StreamPipeline.EncryptStreamAuth` / `DecryptStreamAuth` (Low-Level), both consuming `System.IO.Stream` arguments. The Streaming No MAC path has **no** `System.IO.Stream` adapter for the wrap layer. This asymmetry is intentional. The Non-AEAD streaming arm in the C# wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.Encrypt(chunk)`, frames `u32_LE_len || ct`, and pushes through the streaming wrapper handle. See the project guidelines.
 
 ## Outer ciphers
 
@@ -45,7 +45,7 @@ The SipHash-CTR construction:
 
 - 16-byte SipHash key = wrapper key.
 - 16-byte nonce split into `(nonce_hi, nonce_lo)` 64-bit halves.
-- Each keystream block: `siphash.Hash(key, nonce_hi || (nonce_lo XOR counter_LE))` — 8-byte output, XORed with plaintext.
+- Each keystream block: `siphash.Hash128(key, nonce_hi || (nonce_lo XOR counter_LE))` — 16-byte output, XORed with plaintext.
 - Counter increments per block; nonce stays fixed for the stream.
 
 ## Quick Start

@@ -33,7 +33,7 @@ The streaming classes implement `Disposable` — using a `using` declaration rel
 
 ### Binding asymmetry
 
-The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free functions `encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent stream adapter pair on top of the wrap surface for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the Node.js wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
+The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`Encryptor.encryptStreamAuth` / `decryptStreamAuth`, plus the free functions `encryptStreamAuth` / `decryptStreamAuth`). The Streaming No MAC path has **no** equivalent stream adapter pair on top of the wrap surface for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the Node.js wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See the project guidelines.
 
 ## Outer ciphers
 
@@ -46,7 +46,7 @@ The Node.js binding exposes Streaming AEAD as a `Readable` / `Writable` pair (`E
 The SipHash-CTR construction:
 - 16-byte SipHash key = wrapper key.
 - 16-byte nonce split into `(nonce_hi, nonce_lo)` 64-bit halves.
-- Each keystream block: `siphash.Hash(key, nonce_hi || (nonce_lo XOR counter_LE))` — 8-byte output, XORed with plaintext.
+- Each keystream block: `siphash.Hash128(key, nonce_hi || (nonce_lo XOR counter_LE))` — 16-byte output, XORed with plaintext.
 - Counter increments per block; nonce stays fixed for the stream.
 
 ## Quick Start
