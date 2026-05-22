@@ -3,9 +3,40 @@ package hashes
 import (
 	"crypto/cipher"
 	"encoding/binary"
+	"sync"
 
 	"github.com/everanium/itb"
 )
+
+// newScratchPool returns a sync.Pool of reusable byte buffers, each
+// initialized to size bytes. Buffers are boxed as *[]byte so that
+// Get / Put move a pointer rather than re-boxing a []byte header into
+// an interface on every call (storing []byte directly in a sync.Pool
+// allocates the interface box per Put). Each builder closure owns its
+// own pool, so the buffer size matches that closure's fixed state /
+// scratch width and there is no cross-instance contention beyond the
+// per-P sharding sync.Pool already provides.
+func newScratchPool(size int) *sync.Pool {
+	return &sync.Pool{New: func() any {
+		b := make([]byte, size)
+		return &b
+	}}
+}
+
+// scratchAtLeast borrows a buffer from pool and guarantees its capacity
+// is at least need bytes, growing (and replacing the pooled buffer) only
+// when the current one is too small. For ITB's fixed nonce widths the
+// initial pool size covers every call, so the grow path is taken at most
+// once per pool. Returns the boxed pointer (to Put back) and a slice of
+// exactly need bytes.
+func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
+	bp := pool.Get().(*[]byte)
+	if cap(*bp) < need {
+		nb := make([]byte, need)
+		*bp = nb
+	}
+	return bp, (*bp)[:need]
+}
 
 // builders.go — safe pluggable PRF construction helpers for user primitives.
 //
@@ -73,12 +104,17 @@ import (
 //
 // Performance note
 //
-// These builders allocate the chain-absorb state buffer per call
-// (`make([]byte, blockSize)` or similar). Built-in primitives use
-// stack-allocated `var state [N]byte` arrays that survive escape
-// analysis. Callers needing peak throughput should add a sync.Pool
-// around the state buffer; for typical ITB use the allocation cost
-// is dominated by the underlying primitive's per-call cost anyway.
+// The chain-absorb state / scratch buffer escapes to the heap in every
+// family because it is passed to an indirect call the escape analyzer
+// cannot see through (cipher.Block.Encrypt, Permute, Hash256Fn /
+// Hash512Fn). Rather than allocate that buffer per call, each builder
+// closure owns a sync.Pool of reusable buffers (newScratchPool /
+// scratchAtLeast) sized to its fixed state width; after warm-up the
+// per-call allocation count is zero. Built-in primitives instead use
+// stack-allocated `var state [N]byte` arrays kept off the heap via
+// unsafe.Pointer noescape tricks — marginally faster than a pool Get /
+// Put but unsafe, so the generic builders take the pool route. The
+// remaining per-call cost is dominated by the underlying primitive.
 
 // ============================================================================
 // CBC-MAC Chain-Absorb builders — for caller-keyed block ciphers
@@ -116,8 +152,12 @@ func BuildCBCMACChainAbsorb128(block cipher.Block) itb.HashFunc128 {
 	if bs < 16 {
 		panic("hashes: BuildCBCMACChainAbsorb128 requires block size >= 16 bytes")
 	}
+	pool := newScratchPool(bs)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		return cbcMACChainAbsorbOne(block, bs, data, seed0, seed1, 0x01)
+		bp := pool.Get().(*[]byte)
+		lo, hi := cbcMACChainAbsorbOne(block, (*bp)[:bs], data, seed0, seed1, 0x01)
+		pool.Put(bp)
+		return lo, hi
 	}
 }
 
@@ -133,9 +173,13 @@ func BuildCBCMACChainAbsorb256(block cipher.Block) itb.HashFunc256 {
 	if bs < 16 {
 		panic("hashes: BuildCBCMACChainAbsorb256 requires block size >= 16 bytes")
 	}
+	pool := newScratchPool(bs)
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		lo0, hi0 := cbcMACChainAbsorbOne(block, bs, data, seed[0], seed[1], 0x02)
-		lo1, hi1 := cbcMACChainAbsorbOne(block, bs, data, seed[2], seed[3], 0x03)
+		bp := pool.Get().(*[]byte)
+		st := (*bp)[:bs]
+		lo0, hi0 := cbcMACChainAbsorbOne(block, st, data, seed[0], seed[1], 0x02)
+		lo1, hi1 := cbcMACChainAbsorbOne(block, st, data, seed[2], seed[3], 0x03)
+		pool.Put(bp)
 		return [4]uint64{lo0, hi0, lo1, hi1}
 	}
 }
@@ -158,11 +202,15 @@ func BuildCBCMACChainAbsorb512(block cipher.Block) itb.HashFunc512 {
 	if bs < 16 {
 		panic("hashes: BuildCBCMACChainAbsorb512 requires block size >= 16 bytes")
 	}
+	pool := newScratchPool(bs)
 	return func(data []byte, seed [8]uint64) [8]uint64 {
-		lo0, hi0 := cbcMACChainAbsorbOne(block, bs, data, seed[0], seed[1], 0x04)
-		lo1, hi1 := cbcMACChainAbsorbOne(block, bs, data, seed[2], seed[3], 0x05)
-		lo2, hi2 := cbcMACChainAbsorbOne(block, bs, data, seed[4], seed[5], 0x06)
-		lo3, hi3 := cbcMACChainAbsorbOne(block, bs, data, seed[6], seed[7], 0x07)
+		bp := pool.Get().(*[]byte)
+		st := (*bp)[:bs]
+		lo0, hi0 := cbcMACChainAbsorbOne(block, st, data, seed[0], seed[1], 0x04)
+		lo1, hi1 := cbcMACChainAbsorbOne(block, st, data, seed[2], seed[3], 0x05)
+		lo2, hi2 := cbcMACChainAbsorbOne(block, st, data, seed[4], seed[5], 0x06)
+		lo3, hi3 := cbcMACChainAbsorbOne(block, st, data, seed[6], seed[7], 0x07)
+		pool.Put(bp)
 		return [8]uint64{lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3}
 	}
 }
@@ -172,8 +220,11 @@ func BuildCBCMACChainAbsorb512(block cipher.Block) itb.HashFunc512 {
 // The domain byte is OR'd into the high byte of the seed0 word in
 // the initial state to differentiate parallel chains in the 256/512
 // width builders. seed1 is XOR'd with length-tag in the high word.
-func cbcMACChainAbsorbOne(block cipher.Block, bs int, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
-	state := make([]byte, bs)
+func cbcMACChainAbsorbOne(block cipher.Block, state []byte, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
+	bs := len(state)
+	for i := range state {
+		state[i] = 0
+	}
 	lenTag := uint64(len(data))
 	binary.LittleEndian.PutUint64(state[0:], seed0^lenTag^(uint64(domain)<<56))
 	binary.LittleEndian.PutUint64(state[8:], seed1^lenTag)
@@ -250,8 +301,12 @@ func BuildSpongeChainAbsorb128(permute Permute, rate, capacity int, fixedKey []b
 	if len(fixedKey) > capacity {
 		panic("hashes: fixedKey must fit in capacity region")
 	}
+	pool := newScratchPool(rate + capacity)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		return spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed0, seed1, 0x11)
+		bp := pool.Get().(*[]byte)
+		lo, hi := spongeChainAbsorbOne(permute, (*bp)[:rate+capacity], rate, capacity, fixedKey, data, seed0, seed1, 0x11)
+		pool.Put(bp)
+		return lo, hi
 	}
 }
 
@@ -269,9 +324,13 @@ func BuildSpongeChainAbsorb256(permute Permute, rate, capacity int, fixedKey []b
 	if len(fixedKey) > capacity {
 		panic("hashes: fixedKey must fit in capacity region")
 	}
+	pool := newScratchPool(rate + capacity)
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		lo0, hi0 := spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed[0], seed[1], 0x12)
-		lo1, hi1 := spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed[2], seed[3], 0x13)
+		bp := pool.Get().(*[]byte)
+		st := (*bp)[:rate+capacity]
+		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[0], seed[1], 0x12)
+		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[2], seed[3], 0x13)
+		pool.Put(bp)
 		return [4]uint64{lo0, hi0, lo1, hi1}
 	}
 }
@@ -290,11 +349,15 @@ func BuildSpongeChainAbsorb512(permute Permute, rate, capacity int, fixedKey []b
 	if len(fixedKey) > capacity {
 		panic("hashes: fixedKey must fit in capacity region")
 	}
+	pool := newScratchPool(rate + capacity)
 	return func(data []byte, seed [8]uint64) [8]uint64 {
-		lo0, hi0 := spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed[0], seed[1], 0x14)
-		lo1, hi1 := spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed[2], seed[3], 0x15)
-		lo2, hi2 := spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed[4], seed[5], 0x16)
-		lo3, hi3 := spongeChainAbsorbOne(permute, rate, capacity, fixedKey, data, seed[6], seed[7], 0x17)
+		bp := pool.Get().(*[]byte)
+		st := (*bp)[:rate+capacity]
+		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[0], seed[1], 0x14)
+		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[2], seed[3], 0x15)
+		lo2, hi2 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[4], seed[5], 0x16)
+		lo3, hi3 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[6], seed[7], 0x17)
+		pool.Put(bp)
 		return [8]uint64{lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3}
 	}
 }
@@ -304,22 +367,19 @@ func BuildSpongeChainAbsorb512(permute Permute, rate, capacity int, fixedKey []b
 // pair. fixedKey + seed components occupy the capacity region; the
 // length tag and domain byte initialize the rate region's leading
 // uint64.
-func spongeChainAbsorbOne(permute Permute, rate, capacity int, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
-	stateSize := rate + capacity
-	state := make([]byte, stateSize)
+func spongeChainAbsorbOne(permute Permute, state []byte, rate, capacity int, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
+	for i := range state {
+		state[i] = 0
+	}
 
 	// Capacity region: copy fixedKey, then XOR seed components into
 	// the first 16 bytes of the capacity slot. seed material reaches
 	// every byte of capacity[0:16] before the first permute call.
 	copy(state[rate:], fixedKey)
 	if capacity >= 16 {
-		seed0Bytes := make([]byte, 8)
-		seed1Bytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(seed0Bytes, seed0)
-		binary.LittleEndian.PutUint64(seed1Bytes, seed1)
 		for i := 0; i < 8; i++ {
-			state[rate+i] ^= seed0Bytes[i]
-			state[rate+8+i] ^= seed1Bytes[i]
+			state[rate+i] ^= byte(seed0 >> (8 * i))
+			state[rate+8+i] ^= byte(seed1 >> (8 * i))
 		}
 	}
 
@@ -385,8 +445,12 @@ func BuildARXChainAbsorb128(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc128 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb128 requires non-nil hashFn")
 	}
+	prefixLen := len(fixedKey) + 8 + 8 + 8 + 1
+	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		out := arxAbsorbHash256(hashFn, fixedKey, data, seed0, seed1, 0x21)
+		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
+		out := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed0, seed1, 0x21)
+		pool.Put(bp)
 		return binary.LittleEndian.Uint64(out[0:8]), binary.LittleEndian.Uint64(out[8:16])
 	}
 }
@@ -398,13 +462,18 @@ func BuildARXChainAbsorb256(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc256 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb256 requires non-nil hashFn")
 	}
+	prefixLen := len(fixedKey) + 8 + 8 + 8 + 1
+	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		out := arxAbsorbHash256(hashFn, fixedKey, data, seed[0], seed[1], 0x22)
+		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
+		out := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed[0], seed[1], 0x22)
 		// Second call with different domain + remaining seed components
 		// to fill the second half of the 32-byte output. The two halves
 		// are independent under the random-oracle / PRF assumption on
-		// hashFn.
-		out2 := arxAbsorbHash256(hashFn, fixedKey, data, seed[2], seed[3], 0x23)
+		// hashFn. The scratch buffer is fully overwritten on each call,
+		// so it is reused across both passes.
+		out2 := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed[2], seed[3], 0x23)
+		pool.Put(bp)
 		return [4]uint64{
 			binary.LittleEndian.Uint64(out[0:8]),
 			binary.LittleEndian.Uint64(out[8:16]),
@@ -425,12 +494,16 @@ func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb512 requires non-nil hashFn")
 	}
+	prefixLen := len(fixedKey) + 8 + 8*8 + 1
+	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed [8]uint64) [8]uint64 {
 		// Single hash call carries all 8 seed components: 4 in the
 		// first half via arxAbsorbHash512First, 4 in the second half
 		// via the seed-tail injection inside the prefix. Single hashFn
 		// call returns 64 bytes which we marshal directly.
-		out := arxAbsorbHash512(hashFn, fixedKey, data, seed, 0x24)
+		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
+		out := arxAbsorbHash512(hashFn, buf, fixedKey, data, seed, 0x24)
+		pool.Put(bp)
 		return [8]uint64{
 			binary.LittleEndian.Uint64(out[0:8]),
 			binary.LittleEndian.Uint64(out[8:16]),
@@ -447,9 +520,9 @@ func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 // arxAbsorbHash256 builds the canonical absorb buffer
 // (fixedKey || lenTag || seed0 || seed1 || domain || data) and feeds
 // it to the supplied 32-byte hash function. Returns the 32-byte digest.
-func arxAbsorbHash256(hashFn Hash256Fn, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) [32]byte {
+func arxAbsorbHash256(hashFn Hash256Fn, scratch []byte, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) [32]byte {
 	prefixLen := len(fixedKey) + 8 + 8 + 8 + 1 // key + lenTag + seed0 + seed1 + domain
-	buf := make([]byte, prefixLen+len(data))
+	buf := scratch[:prefixLen+len(data)]
 	off := 0
 	copy(buf[off:], fixedKey)
 	off += len(fixedKey)
@@ -468,9 +541,9 @@ func arxAbsorbHash256(hashFn Hash256Fn, fixedKey []byte, data []byte, seed0, see
 // arxAbsorbHash512 builds the canonical absorb buffer with all 8 seed
 // components and feeds it to the supplied 64-byte hash function.
 // Returns the 64-byte digest.
-func arxAbsorbHash512(hashFn Hash512Fn, fixedKey []byte, data []byte, seed [8]uint64, domain byte) [64]byte {
+func arxAbsorbHash512(hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []byte, seed [8]uint64, domain byte) [64]byte {
 	prefixLen := len(fixedKey) + 8 + 8*8 + 1 // key + lenTag + 8 seed words + domain
-	buf := make([]byte, prefixLen+len(data))
+	buf := scratch[:prefixLen+len(data)]
 	off := 0
 	copy(buf[off:], fixedKey)
 	off += len(fixedKey)
