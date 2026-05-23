@@ -35,16 +35,16 @@
 /* Cipher-name table                                                   */
 /* ------------------------------------------------------------------ */
 /*
- * Three interned NUL-terminated short names ("aes" / "chacha" /
- * "siphash") indexed by itb_wrapper_cipher_t. The pointer table is
+ * Three interned NUL-terminated short names ("aescmac" / "chacha20" /
+ * "siphash24") indexed by itb_wrapper_cipher_t. The pointer table is
  * static-storage so the returned pointers stay valid for the life of
  * the process. Out-of-range values map to NULL via the bounds check
  * in itb_wrapper_cipher_name.
  */
 static const char *const ITB_WRAPPER_CIPHER_NAMES[] = {
-    "aes",      /* ITB_WRAPPER_CIPHER_AES_128_CTR */
-    "chacha",   /* ITB_WRAPPER_CIPHER_CHACHA20    */
-    "siphash"   /* ITB_WRAPPER_CIPHER_SIPHASH24   */
+    "aescmac",   /* ITB_WRAPPER_CIPHER_AES_128_CTR */
+    "chacha20",  /* ITB_WRAPPER_CIPHER_CHACHA20    */
+    "siphash24"  /* ITB_WRAPPER_CIPHER_SIPHASH24   */
 };
 
 #define ITB_WRAPPER_CIPHER_COUNT \

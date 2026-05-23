@@ -75,7 +75,7 @@ import itb.sys;
 /// Outer keystream cipher selected per wrap session.
 ///
 /// Each variant maps to one of the three cipher-name strings the
-/// underlying FFI accepts: `"aes"` / `"chacha"` / `"siphash"`. The
+/// underlying FFI accepts: `"aescmac"` / `"chacha20"` / `"siphash24"`. The
 /// Go-side constants are `wrapper.CipherAES128CTR` /
 /// `wrapper.CipherChaCha20` / `wrapper.CipherSipHash24`.
 enum Cipher
@@ -107,22 +107,22 @@ string ffiName(Cipher cipher) @safe pure
 {
     final switch (cipher)
     {
-        case Cipher.aes128Ctr: return "aes";
-        case Cipher.chaCha20:  return "chacha";
-        case Cipher.sipHash24: return "siphash";
+        case Cipher.aes128Ctr: return "aescmac";
+        case Cipher.chaCha20:  return "chacha20";
+        case Cipher.sipHash24: return "siphash24";
     }
 }
 
 /// Parses a cipher name string into a `Cipher` value. Accepts only
-/// the three canonical forms ("aes" / "chacha" / "siphash"); any
+/// the three canonical forms ("aescmac" / "chacha20" / "siphash24"); any
 /// other value raises `WrapperInvalidCipherError`.
 Cipher cipherFromName(string name) @safe pure
 {
     switch (name)
     {
-        case "aes":     return Cipher.aes128Ctr;
-        case "chacha":  return Cipher.chaCha20;
-        case "siphash": return Cipher.sipHash24;
+        case "aescmac":   return Cipher.aes128Ctr;
+        case "chacha20":  return Cipher.chaCha20;
+        case "siphash24": return Cipher.sipHash24;
         default:
             throw new WrapperInvalidCipherError(name);
     }
@@ -148,8 +148,8 @@ class WrapperError : ITBError
     }
 }
 
-/// Raised when a cipher name string is not one of "aes" / "chacha" /
-/// "siphash". Carries `Status.BadInput`.
+/// Raised when a cipher name string is not one of "aescmac" / "chacha20" /
+/// "siphash24". Carries `Status.BadInput`.
 class WrapperInvalidCipherError : WrapperError
 {
     /// The unparseable cipher name.

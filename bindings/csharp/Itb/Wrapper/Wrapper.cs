@@ -47,7 +47,7 @@ namespace Itb.Wrapper;
 /// <summary>
 /// Outer keystream cipher selected per wrap session. Each variant
 /// maps to one of the three cipher-name strings the underlying FFI
-/// accepts: <c>"aes"</c> / <c>"chacha"</c> / <c>"siphash"</c>. The
+/// accepts: <c>"aescmac"</c> / <c>"chacha20"</c> / <c>"siphash24"</c>. The
 /// Go-side constants are <c>wrapper.CipherAES128CTR</c> /
 /// <c>wrapper.CipherChaCha20</c> / <c>wrapper.CipherSipHash24</c>.
 /// </summary>
@@ -76,9 +76,9 @@ public static class CipherExtensions
     /// point.</summary>
     public static string ToFfiName(this Cipher cipher) => cipher switch
     {
-        Cipher.Aes128Ctr => "aes",
-        Cipher.ChaCha20 => "chacha",
-        Cipher.SipHash24 => "siphash",
+        Cipher.Aes128Ctr => "aescmac",
+        Cipher.ChaCha20 => "chacha20",
+        Cipher.SipHash24 => "siphash24",
         _ => throw new ArgumentOutOfRangeException(nameof(cipher), cipher, "unknown wrapper cipher"),
     };
 }

@@ -39,11 +39,11 @@
 //
 // The ``Cipher`` enum selects one of three outer ciphers:
 //
-//   - ``Cipher.Aes128Ctr`` (`"aes"`) — AES-128-CTR with a 16-byte key
+//   - ``Cipher.Aes128Ctr`` (`"aescmac"`) — AES-128-CTR with a 16-byte key
 //     + 16-byte nonce. AES-NI accelerated.
-//   - ``Cipher.ChaCha20`` (`"chacha"`) — ChaCha20 (RFC8439) with a
+//   - ``Cipher.ChaCha20`` (`"chacha20"`) — ChaCha20 (RFC8439) with a
 //     32-byte key + 12-byte nonce.
-//   - ``Cipher.SipHash24`` (`"siphash"`) — SipHash-2-4 in CTR mode
+//   - ``Cipher.SipHash24`` (`"siphash24"`) — SipHash-2-4 in CTR mode
 //     with a 16-byte key + 16-byte nonce. Custom CTR construction
 //     over the SipHash-2-4 PRF.
 //
@@ -80,9 +80,9 @@ import { Status } from './status.js';
  * constants in ``github.com/everanium/itb/wrapper``.
  */
 export const Cipher = {
-  Aes128Ctr: 'aes',
-  ChaCha20: 'chacha',
-  SipHash24: 'siphash',
+  Aes128Ctr: 'aescmac',
+  ChaCha20: 'chacha20',
+  SipHash24: 'siphash24',
 } as const;
 
 /** String-literal type of a supported wrapper cipher name. */
@@ -215,7 +215,7 @@ function checkRc(rc: number): void {
 
 /**
  * Returns the byte length of the keystream-cipher key for the named
- * outer cipher (16 / 32 / 16 for `"aes"` / `"chacha"` / `"siphash"`).
+ * outer cipher (16 / 32 / 16 for `"aescmac"` / `"chacha20"` / `"siphash24"`).
  *
  * Raises {@link InvalidCipherError} on an unknown cipher name.
  */
@@ -229,7 +229,7 @@ export function keySize(cipher: CipherName): number {
 
 /**
  * Returns the on-wire nonce length the named outer cipher emits per
- * stream (16 / 12 / 16 for `"aes"` / `"chacha"` / `"siphash"`).
+ * stream (16 / 12 / 16 for `"aescmac"` / `"chacha20"` / `"siphash24"`).
  *
  * Raises {@link InvalidCipherError} on an unknown cipher name.
  */
@@ -243,7 +243,7 @@ export function nonceSize(cipher: CipherName): number {
 
 /**
  * Returns a fresh CSPRNG key of the size required by ``cipher`` (16
- * / 32 / 16 bytes for `"aes"` / `"chacha"` / `"siphash"`). Uses
+ * / 32 / 16 bytes for `"aescmac"` / `"chacha20"` / `"siphash24"`). Uses
  * Node's {@link randomBytes}. The returned key is opaque bytes; the
  * caller stores or shares it out-of-band.
  */

@@ -76,7 +76,7 @@ package Itb.Wrapper is
 
    --  Outer cipher selected per wrap session. Each variant maps to
    --  one of the three cipher-name strings the libitb FFI accepts:
-   --  "aes" / "chacha" / "siphash". The Go-side constants are
+   --  "aescmac" / "chacha20" / "siphash24". The Go-side constants are
    --  wrapper.CipherAES128CTR / wrapper.CipherChaCha20 /
    --  wrapper.CipherSipHash24.
    type Cipher_Type is (Aes_128_Ctr, Cha_Cha_20, Sip_Hash_24);
@@ -86,8 +86,8 @@ package Itb.Wrapper is
    All_Ciphers : constant Cipher_Array :=
      [Aes_128_Ctr, Cha_Cha_20, Sip_Hash_24];
 
-   --  Returns the canonical FFI cipher-name string ("aes" / "chacha"
-   --  / "siphash") for the given Cipher_Type. Used at every libitb
+   --  Returns the canonical FFI cipher-name string ("aescmac" / "chacha20"
+   --  / "siphash24") for the given Cipher_Type. Used at every libitb
    --  call site that takes a const char* cipherName argument.
    function Ffi_Name (C : Cipher_Type) return String;
 

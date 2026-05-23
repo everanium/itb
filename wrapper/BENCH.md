@@ -26,7 +26,7 @@ Filter examples:
 ```sh
 go test -run='^$' -bench='BenchmarkWrapperOnlyInPlace' -benchtime=5s -count=1 ./wrapper/
 go test -run='^$' -bench='BenchmarkMessageSingle/easy-nomac' -benchtime=5s -count=1 ./wrapper/
-go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aes' -benchtime=5s -count=1 ./wrapper/
+go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -count=1 ./wrapper/
 ```
 
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode)
