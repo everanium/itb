@@ -264,6 +264,38 @@ ubyte[] wrapperGenerateKey(Cipher cipher) @trusted
     return key;
 }
 
+/// Deterministically derives the outer cipher key for `cipher` from a
+/// caller-supplied `master` secret (e.g. an ML-KEM shared secret). The
+/// result is a deterministic function of `(cipher, master)`, so both
+/// endpoints derive the same key from a shared master. `master` must
+/// be at least `keySize(cipher)` bytes; returns the derived key of
+/// length `keySize(cipher)` (16 / 32 / 16 bytes for AES-128-CTR /
+/// ChaCha20 / SipHash-2-4). Throws `WrapperInvalidKeyError` when
+/// `master` is shorter than the cipher's key size.
+ubyte[] wrapperDeriveKey(Cipher cipher, const(ubyte)[] master) @trusted
+{
+    size_t klen = keySize(cipher);
+    if (master.length < klen)
+    {
+        import std.conv : to;
+        throw new WrapperInvalidKeyError(
+            Status.BadInput,
+            "wrapper " ~ ffiName(cipher) ~ ": master must be at least "
+            ~ klen.to!string ~ " bytes, got " ~ master.length.to!string);
+    }
+    auto name = ffiName(cipher);
+    const(char)* cname = toStringz(name);
+    auto outBuf = new ubyte[klen];
+    size_t outLen = 0;
+    void* masterPtr = master.length == 0 ? null : cast(void*) master.ptr;
+    int rc = ITB_WrapperDeriveKey(
+        cast(char*) cname,
+        masterPtr, master.length,
+        cast(void*) outBuf.ptr, klen, &outLen);
+    check(rc);
+    return outBuf[0 .. outLen];
+}
+
 // --------------------------------------------------------------------
 // Internal validation helpers.
 // --------------------------------------------------------------------

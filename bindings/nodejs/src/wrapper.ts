@@ -69,6 +69,7 @@ import {
   ITB_WrapStreamWriter_Free,
   ITB_WrapStreamWriter_Init,
   ITB_WrapStreamWriter_Update,
+  ITB_WrapperDeriveKey,
   ITB_WrapperKeySize,
   ITB_WrapperNonceSize,
 } from './native.js';
@@ -249,6 +250,40 @@ export function nonceSize(cipher: CipherName): number {
  */
 export function generateKey(cipher: CipherName): Buffer {
   return randomBytes(keySize(cipher));
+}
+
+/**
+ * Deterministically derives the outer cipher key for ``cipher`` from a
+ * caller-supplied ``master`` secret (e.g. an ML-KEM shared secret). The
+ * result is a deterministic function of ``(cipher, master)``, so both
+ * endpoints derive the same key from a shared master. ``master`` must
+ * be at least ``keySize(cipher)`` bytes; returns the derived key buffer
+ * of length ``keySize(cipher)`` (16 / 32 / 16 bytes for `"aescmac"` /
+ * `"chacha20"` / `"siphash24"`).
+ *
+ * Raises {@link InvalidCipherError} on an unknown cipher name and
+ * {@link InvalidKeyError} when ``master`` is shorter than the cipher's
+ * key size.
+ */
+export function deriveKey(cipher: CipherName, master: Buffer): Buffer {
+  const cn = validateCipher(cipher);
+  const masterB = ensureBuffer(master, 'master');
+  const klen = keySize(cn);
+  if (masterB.length < klen) {
+    throw new InvalidKeyError(cipher, klen, masterB.length);
+  }
+  const out = Buffer.alloc(klen);
+  const outLen: [number | bigint] = [0];
+  const rc = ITB_WrapperDeriveKey(
+    cn,
+    masterB,
+    masterB.length,
+    out,
+    out.length,
+    outLen,
+  );
+  checkRc(rc);
+  return out.subarray(0, Number(outLen[0]));
 }
 
 // ── Single Message helpers ────────────────────────────────────────────

@@ -39,6 +39,7 @@ import {
   unwrapInPlace,
   wrap,
   wrapInPlace,
+  wrapperDeriveKey,
   wrapperGenerateKey,
   wrapperKeySize,
   wrapperNonceSize,
@@ -97,6 +98,30 @@ describe('test_wrapper', () => {
       (e: unknown) => e instanceof InvalidCipherError,
     );
   });
+
+  // ──────────────────────────────────────────────────────────────
+  // deriveKey — deterministic derivation from a master secret
+  // ──────────────────────────────────────────────────────────────
+
+  for (const cipher of CIPHER_NAMES) {
+    test(`deriveKey deterministic + roundtrip ${cipher}`, () => {
+      // 32 random bytes as the master secret (stand-in for an ML-KEM
+      // shared secret; the binding ships no KEM).
+      const master = randomBytes(32);
+      const k1 = wrapperDeriveKey(cipher, master);
+      assert.equal(k1.length, EXPECTED_KEY_SIZES[cipher]);
+
+      // Determinism: same (cipher, master) yields the same key.
+      const k2 = wrapperDeriveKey(cipher, master);
+      assert.ok(bytesEqual(k1, k2));
+
+      // The derived key round-trips through wrap / unwrap.
+      const blob = randomBytes(1024);
+      const wire = wrap(cipher, k1, blob);
+      const recovered = unwrap(cipher, k1, wire);
+      assert.ok(bytesEqual(recovered, blob));
+    });
+  }
 
   // ──────────────────────────────────────────────────────────────
   // Single Message wrap / unwrap

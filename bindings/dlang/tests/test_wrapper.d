@@ -80,6 +80,37 @@ void testGenerateKeyLength()
     }
 }
 
+void testDeriveKeyDeterministicAndRoundtrips()
+{
+    import std.random : uniform, Random, unpredictableSeed;
+
+    // 32 random bytes as the master secret (stand-in for an ML-KEM
+    // shared secret; the binding ships no KEM).
+    auto rnd = Random(unpredictableSeed);
+    auto master = new ubyte[32];
+    foreach (i; 0 .. master.length)
+        master[i] = cast(ubyte) uniform(0, 256, rnd);
+
+    auto blob = pseudoBlob(1024);
+    foreach (c; ALL_CIPHERS)
+    {
+        auto key1 = wrapperDeriveKey(c, master);
+        assert(key1.length == keySize(c),
+            format("deriveKey(%s).length must equal keySize", ffiName(c)));
+
+        // Determinism: same (cipher, master) yields the same key.
+        auto key2 = wrapperDeriveKey(c, master);
+        assert(key1 == key2,
+            format("deriveKey(%s) must be deterministic for a fixed master", ffiName(c)));
+
+        // The derived key round-trips through wrap / unwrap.
+        auto wire = wrap(c, key1, blob);
+        auto recovered = unwrap(c, key1, wire);
+        assert(recovered == blob,
+            format("derived key for %s must round-trip through wrap/unwrap", ffiName(c)));
+    }
+}
+
 void testSingleShotRoundtrip()
 {
     auto blob = pseudoBlob(4096);
@@ -318,6 +349,7 @@ void main()
     testCipherEnumIntrospection();
     testKeyAndNonceSizes();
     testGenerateKeyLength();
+    testDeriveKeyDeterministicAndRoundtrips();
     testSingleShotRoundtrip();
     testSingleShotEmptyBlob();
     testInPlaceWrapRoundtrip();

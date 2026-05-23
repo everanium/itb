@@ -175,6 +175,37 @@ def generate_key(cipher_name: str) -> bytes:
     return secrets.token_bytes(key_size(cipher_name))
 
 
+def derive_key(cipher_name: str, master: bytes) -> bytes:
+    """Deterministically derives the outer cipher key for ``cipher_name``
+    from a caller-supplied ``master`` secret (e.g. an ML-KEM shared
+    secret). The result is a deterministic function of
+    ``(cipher_name, master)``, so both endpoints derive the same key
+    from a shared master. ``master`` must be at least
+    ``key_size(cipher_name)`` bytes; returns the derived key as
+    ``bytes`` of length ``key_size(cipher_name)`` (16 / 32 / 16 for
+    "aescmac" / "chacha20" / "siphash24"). Raises
+    :class:`InvalidCipherError` for an unknown name and
+    :class:`InvalidKeyError` for a too-short master."""
+    cn = _validate_cipher_name(cipher_name)
+    master_b = _bytes_view(master)
+    klen = key_size(cipher_name)
+    if len(master_b) < klen:
+        raise InvalidKeyError(
+            STATUS_BAD_INPUT,
+            f"{cipher_name!r}: master must be at least {klen} bytes, got {len(master_b)}",
+        )
+    out_buf = _ffi.new("unsigned char[]", klen)
+    out_len = _ffi.new("size_t*")
+    rc = _lib.ITB_WrapperDeriveKey(
+        cn,
+        master_b, len(master_b),
+        out_buf, klen, out_len,
+    )
+    if rc != STATUS_OK:
+        _raise_wrapper(rc)
+    return bytes(_ffi.buffer(out_buf, int(out_len[0])))
+
+
 def wrap(cipher_name: str, key: bytes, blob: bytes) -> bytes:
     """Single Message wrap. Seals ``blob`` under ``cipher_name`` with a
     fresh per-call CSPRNG nonce; returns the wire bytes
@@ -579,6 +610,7 @@ __all__ = [
     "key_size",
     "nonce_size",
     "generate_key",
+    "derive_key",
     "wrap",
     "unwrap",
     "wrap_in_place",

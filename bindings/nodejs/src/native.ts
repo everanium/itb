@@ -547,6 +547,12 @@ export const ITB_WrapperNonceSize = lib.func(
   'int ITB_WrapperNonceSize(const char *cipherName, _Out_ size_t *outSize)',
 );
 
+export const ITB_WrapperDeriveKey = lib.func(
+  'int ITB_WrapperDeriveKey(const char *cipherName, ' +
+    'uint8_t *master, size_t masterLen, ' +
+    'uint8_t *out, size_t outCap, _Out_ size_t *outLen)',
+);
+
 export const ITB_Wrap = lib.func(
   'int ITB_Wrap(const char *cipherName, ' +
     'uint8_t *key, size_t keyLen, ' +

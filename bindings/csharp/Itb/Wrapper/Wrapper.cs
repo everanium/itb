@@ -209,6 +209,49 @@ public static class Wrapper
     }
 
     /// <summary>
+    /// Deterministically derives the outer cipher key for
+    /// <paramref name="cipher"/> from a caller-supplied
+    /// <paramref name="master"/> secret (e.g. an ML-KEM shared secret).
+    /// The result is a deterministic function of
+    /// <c>(cipher, master)</c>, so both endpoints derive the same key
+    /// from a shared master.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="master"/> must be at least
+    /// <c>KeySize(cipher)</c> bytes; the returned key has length
+    /// <c>KeySize(cipher)</c> (16 / 32 / 16 bytes for AES / ChaCha /
+    /// SipHash). Throws <see cref="InvalidKeyException"/> when
+    /// <paramref name="master"/> is shorter than the cipher's key size.
+    /// </remarks>
+    public static unsafe byte[] DeriveKey(Cipher cipher, ReadOnlySpan<byte> master)
+    {
+        var name = cipher.ToFfiName();
+        var klen = KeySize(cipher);
+        if (master.Length < klen)
+        {
+            throw new InvalidKeyException(
+                $"wrapper {cipher.ToFfiName()}: master must be at least {klen} bytes, got {master.Length}");
+        }
+        var outBuf = new byte[klen];
+        nuint outLen;
+        int rc;
+        fixed (byte* masterPtr = master)
+        fixed (byte* outPtr = outBuf)
+        {
+            rc = ItbNative.ITB_WrapperDeriveKey(
+                name,
+                masterPtr, (nuint)master.Length,
+                outPtr, (nuint)klen, out outLen);
+        }
+        ItbException.Check(rc);
+        if ((int)outLen < outBuf.Length)
+        {
+            Array.Resize(ref outBuf, (int)outLen);
+        }
+        return outBuf;
+    }
+
+    /// <summary>
     /// Single Message wrap. Seals <paramref name="blob"/> under
     /// <paramref name="cipher"/> with a fresh per-call CSPRNG nonce;
     /// returns the wire bytes <c>nonce || keystream-XOR(blob)</c>.
