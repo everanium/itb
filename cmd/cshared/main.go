@@ -2488,6 +2488,33 @@ func ITB_WrapperNonceSize(cipherName *C.char, outSize *C.size_t) C.int {
 	return C.int(st)
 }
 
+// Deterministically derives the outer cipher key for the named cipher
+// from a caller-supplied master secret (e.g. an ML-KEM shared secret),
+// writing it into out[0..KeySize(name)). The result is a deterministic
+// function of (name, master), so both endpoints derive the same key
+// from a shared master. Same caller-allocated-buffer convention as
+// ITB_Wrap: on ITB_ERR_BUFFER_TOO_SMALL *out_len receives the required
+// size (KeySize(name)). master_len must be at least KeySize(name).
+//
+//export ITB_WrapperDeriveKey
+func ITB_WrapperDeriveKey(
+	cipherName *C.char,
+	master unsafe.Pointer, masterLen C.size_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
+) C.int {
+	if cipherName == nil || outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(masterLen, outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	masterBytes := goBytesView(master, masterLen)
+	dst := goBytesViewMut(out, outCap)
+	n, st := capi.WrapperDeriveKey(C.GoString(cipherName), masterBytes, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
 // Seals one ITB ciphertext blob under the named outer cipher.
 // Wire form is `nonce || keystream-XOR(blob)` where the nonce
 // is freshly drawn from crypto/rand per call. The required out

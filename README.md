@@ -474,6 +474,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 
     {
         fin, _ := os.Open(srcPath)
@@ -567,6 +568,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 
     {
         fin, _ := os.Open(srcPath)
@@ -631,6 +633,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 
     {
         fin, _ := os.Open(srcPath)
@@ -698,6 +701,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 
     {
         fin, _ := os.Open(srcPath)
@@ -795,6 +799,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 
     {
         fin, _ := os.Open(srcPath)
@@ -878,6 +883,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 
     {
         fin, _ := os.Open(srcPath)
@@ -1015,6 +1021,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -1154,6 +1161,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -1281,6 +1289,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -1431,6 +1440,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -1593,6 +1603,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -1757,6 +1768,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -1922,6 +1934,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -2037,6 +2050,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -2119,6 +2133,7 @@ encrypted, _ := itb.Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
 // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+// outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
 // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
 // ~0% overhead (Recommended in every case).
 nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
@@ -2332,6 +2347,7 @@ func main() {
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
     outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
+    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master)
     // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
     // ~0% overhead (Recommended in every case).
     nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, ciphertext)

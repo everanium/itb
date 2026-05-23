@@ -208,6 +208,48 @@ fn fill_random(buf: &mut [u8]) -> Result<(), ITBError> {
     }
 }
 
+/// Deterministically derives the outer cipher key for `cipher` from a
+/// caller-supplied `master` secret (e.g. an ML-KEM shared secret). The
+/// result is a deterministic function of `(cipher, master)`, so both
+/// endpoints derive the same key from a shared master.
+///
+/// `master` must be at least [`key_size`]`(cipher)` bytes; the returned
+/// key has length `key_size(cipher)` (16 / 32 / 16 for AES / ChaCha /
+/// SipHash). Returns [`ITBError`] with [`ffi::STATUS_BAD_INPUT`] for a
+/// too-short master.
+pub fn derive_key(cipher: Cipher, master: &[u8]) -> Result<Vec<u8>, ITBError> {
+    let cn = cipher_cstring(cipher)?;
+    let klen = key_size(cipher)?;
+    if master.len() < klen {
+        return Err(ITBError::with_message(
+            ffi::STATUS_BAD_INPUT,
+            format!(
+                "wrapper {cipher}: master must be at least {klen} bytes, got {}",
+                master.len()
+            ),
+        ));
+    }
+    let mut out = vec![0u8; klen];
+    let mut out_len: usize = 0;
+    let lib = ffi::lib();
+    let master_ptr = if master.is_empty() {
+        std::ptr::null()
+    } else {
+        master.as_ptr() as *const c_void
+    };
+    let out_ptr = out.as_mut_ptr() as *mut c_void;
+    let rc = unsafe {
+        (lib.ITB_WrapperDeriveKey)(
+            cn.as_ptr(),
+            master_ptr, master.len(),
+            out_ptr, klen, &mut out_len,
+        )
+    };
+    check(rc)?;
+    out.truncate(out_len);
+    Ok(out)
+}
+
 fn cipher_cstring(cipher: Cipher) -> Result<CString, ITBError> {
     CString::new(cipher.as_str()).map_err(|e| {
         ITBError::with_message(ffi::STATUS_INTERNAL, format!("cipher cstring: {e}"))

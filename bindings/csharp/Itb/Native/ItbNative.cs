@@ -663,6 +663,12 @@ internal static unsafe partial class ItbNative
     internal static partial int ITB_WrapperNonceSize(string cipherName, out nuint outSize);
 
     [LibraryImport("libitb", StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int ITB_WrapperDeriveKey(
+        string cipherName,
+        byte* master, nuint masterLen,
+        byte* @out, nuint outCap, out nuint outLen);
+
+    [LibraryImport("libitb", StringMarshalling = StringMarshalling.Utf8)]
     internal static partial int ITB_Wrap(
         string cipherName,
         byte* key, nuint keyLen,

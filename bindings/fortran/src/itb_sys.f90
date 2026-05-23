@@ -1126,6 +1126,16 @@ module itb_sys
       integer(c_int)             :: rc
     end function
 
+    function itb_wrapper_derive_key_c(cipherName, master, masterLen, &
+                                        out, outCap, outLen) &
+        bind(C, name="ITB_WrapperDeriveKey") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, master, out
+      integer(c_size_t), value   :: masterLen, outCap
+      integer(c_size_t)          :: outLen
+      integer(c_int)             :: rc
+    end function
+
     function itb_wrap_c(cipherName, key, keyLen, blob, blobLen, &
                           out, outCap, outLen) &
         bind(C, name="ITB_Wrap") result(rc)

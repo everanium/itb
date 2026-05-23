@@ -1438,6 +1438,24 @@ itb_status_t itb_wrapper_generate_key(itb_wrapper_cipher_t cipher,
                                       uint8_t **out_key, size_t *out_key_len);
 
 /*
+ * Deterministically derives the outer cipher key for `cipher` from a
+ * caller-supplied master secret (e.g. an ML-KEM shared secret). The
+ * result is a deterministic function of (cipher, master), so both
+ * endpoints derive the same key from a shared master. On success,
+ * *out_key receives a freshly malloc'd buffer the caller releases via
+ * itb_buffer_free(); *out_key_len receives the byte length (= the size
+ * reported by itb_wrapper_key_size). On failure *out_key is NULL and
+ * *out_key_len is 0; itb_last_error() carries the diagnostic.
+ *
+ * `master` must be at least itb_wrapper_key_size(cipher) bytes; a
+ * shorter master returns ITB_BAD_INPUT. Returns ITB_BAD_INPUT for an
+ * unknown cipher value.
+ */
+itb_status_t itb_wrapper_derive_key(itb_wrapper_cipher_t cipher,
+                                    const uint8_t *master, size_t master_len,
+                                    uint8_t **out_key, size_t *out_key_len);
+
+/*
  * Single Message wrap. Seals `blob` under `cipher` with a fresh per-call
  * CSPRNG nonce; *out_wire receives a freshly malloc'd buffer holding
  * `nonce || keystream-XOR(blob)`. Caller releases via itb_buffer_free().

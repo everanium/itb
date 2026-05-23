@@ -145,6 +145,30 @@ inline std::vector<std::uint8_t> generate_key(Cipher cipher) {
     return out;
 }
 
+// Deterministically derives the outer cipher key for `cipher` from a
+// caller-supplied master secret (e.g. an ML-KEM shared secret). The
+// result is a deterministic function of `(cipher, master)`, so both
+// endpoints derive the same key from a shared master. `master` must be
+// at least `key_size(cipher)` bytes; the returned buffer has length
+// `key_size(cipher)`.
+//
+// On failure (unknown cipher, too-short master) throws `ItbError`
+// carrying the libitb last-error message.
+inline std::vector<std::uint8_t> derive_key(Cipher cipher,
+                                            const std::uint8_t* master,
+                                            std::size_t master_len) {
+    std::uint8_t* buf = nullptr;
+    std::size_t len = 0;
+    const std::uint8_t* master_ptr = (master_len == 0) ? nullptr : master;
+    detail::check(itb_wrapper_derive_key(
+        static_cast<itb_wrapper_cipher_t>(cipher),
+        master_ptr, master_len,
+        &buf, &len));
+    std::vector<std::uint8_t> out(buf, buf + len);
+    itb_buffer_free(buf);
+    return out;
+}
+
 // ---- Single Message wrap / unwrap -----------------------------------
 
 // Single Message wrap. Seals `blob` under `cipher` with a fresh per-call

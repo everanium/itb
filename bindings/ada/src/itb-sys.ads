@@ -1090,6 +1090,17 @@ package Itb.Sys is
    with Import => True, Convention => C,
         External_Name => "ITB_WrapperNonceSize";
 
+   function ITB_WrapperDeriveKey
+     (Cipher_Name : C_String;
+      Master      : System.Address;
+      Master_Len  : Size_T;
+      Out_Buf     : System.Address;
+      Out_Cap     : Size_T;
+      Out_Len     : access Size_T)
+      return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_WrapperDeriveKey";
+
    function ITB_Wrap
      (Cipher_Name : C_String;
       Key         : System.Address;
