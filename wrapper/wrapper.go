@@ -11,13 +11,13 @@ import (
 
 // Cipher names accepted by the Make* helpers and the cmd/-flag parsing.
 const (
+	CipherSipHash24 = "siphash24"
 	CipherAES128CTR = "aescmac"
 	CipherChaCha20  = "chacha20"
-	CipherSipHash24 = "siphash24"
 )
 
 // CipherNames lists every supported outer cipher in iteration order.
-var CipherNames = []string{CipherAES128CTR, CipherChaCha20, CipherSipHash24}
+var CipherNames = []string{CipherSipHash24, CipherAES128CTR, CipherChaCha20}
 
 // Keystream is the outer cipher keystream the wrap helpers consume. It
 // aliases ctr.Keystream; the contract matches crypto/cipher.Stream —

@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** The registry names (`aescmac`, `siphash24`, `chacha20`) are short identifiers shared with the `hashes/` registry; here they select a key-derivation construction, not the per-pixel hash wrapper of the same name. Read CONSTRUCTIONS.md before assuming a particular standard's exact byte layout.
+> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** The registry names (`areion256`, `areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `chacha20`) are short identifiers shared with the `hashes/` registry; here they select a key-derivation construction, not the per-pixel hash wrapper of the same name. Read CONSTRUCTIONS.md before assuming a particular standard's exact byte layout.
 
 This package derives length-flexible subkeys from a **key-derivation key** (the **master**) under a public domain-separation **label**, with one construction per registry cipher name. The intended source of the master is a high-entropy, uniformly distributed secret — for example an ML-KEM shared secret — from which a caller wants several independent, named subkeys of arbitrary length.
 
@@ -20,7 +20,7 @@ func Derive(name string, master []byte, label string, outLen int) ([]byte, error
 
 `Derive` produces an `outLen`-byte subkey from `master` under the public domain-separation `label`, using the construction selected by `name`.
 
-- **`name`** selects the construction. Supported values are `aescmac`, `siphash24`, and `chacha20`. Any other value returns an error.
+- **`name`** selects the construction. Supported values are `areion256`, `areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `chacha20`. Any other value returns an error.
 - **`master`** is the key-derivation key. When `master` is longer than the selected primitive's key size it is **truncated down** to that size (a uniform master remains uniform under truncation). When `master` is **shorter** than the required key size `Derive` returns an error rather than fabricate key entropy.
 - **`label`** is a **public** domain-separation string. It is not secret; it only needs to be **distinct** per intended subkey. See the notes column below for the per-primitive role and length constraint.
 - **`outLen`** is the exact number of subkey bytes returned. It must be non-negative; `outLen == 0` returns an empty slice. Output length is otherwise arbitrary.
@@ -31,13 +31,19 @@ Derivations are **deterministic** in `(name, master, label, outLen)`: the same f
 
 | Registry name | Construction | Key size | Notes |
 |---|---|---|---|
-| `aescmac` | NIST SP 800-108 KDF in Counter Mode, PRF = AES-CMAC (RFC 4493) over AES-128 | 16 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
+| `areion256` | NIST SP 800-108 KDF in Counter Mode, PRF = registry Areion-SoEM-256 keyed hash | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
+| `areion512` | NIST SP 800-108 KDF in Counter Mode, PRF = registry Areion-SoEM-512 keyed hash | 32 bytes | `master` is stretched 32 → 64 via the `areion256` PRF to form the 64-byte family key. `label` any length. Output is **not** cross-length prefix-consistent. |
 | `siphash24` | NIST SP 800-108 KDF in Counter Mode, PRF = SipHash-2-4 with 128-bit output | 16 bytes | `master` is the `(k0, k1)` SipHash key (little-endian halves). `label` any length. Output is **not** cross-length prefix-consistent. |
+| `aescmac` | NIST SP 800-108 KDF in Counter Mode, PRF = AES-CMAC (RFC 4493) over AES-128 | 16 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
+| `blake2b256` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2b-256 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
+| `blake2b512` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2b-512 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
+| `blake2s` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2s-256 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
+| `blake3` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE3 | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
 | `chacha20` | XChaCha20 keystream KDF — `label` right-zero-padded to the 24-byte nonce | 32 bytes | `label` must be at most 24 bytes; longer is an error. Output **is** cross-length prefix-consistent. |
 
-The other six registry primitives (`areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`) are **not** supported by this package version; `Derive` returns an error for any name outside the three above.
+All nine registry primitives are supported; `Derive` returns an error for any name outside the nine above.
 
-**Cross-length prefix-consistency.** The two SP 800-108 constructions bind the requested output length `L` into every PRF block input, so deriving 64 bytes and truncating to 32 does **not** equal deriving 32 bytes directly — request the exact length needed. The XChaCha20 keystream construction does not bind a length into its input, so its output is prefix-consistent: the leading 32 bytes of a 64-byte derivation equal a 32-byte derivation under the same key and label. CONSTRUCTIONS.md states this distinction in full; do not slice a longer SP 800-108 derivation.
+**Cross-length prefix-consistency.** The eight SP 800-108 constructions bind the requested output length `L` into every PRF block input, so deriving 64 bytes and truncating to 32 does **not** equal deriving 32 bytes directly — request the exact length needed. The XChaCha20 keystream construction does not bind a length into its input, so its output is prefix-consistent: the leading 32 bytes of a 64-byte derivation equal a 32-byte derivation under the same key and label. CONSTRUCTIONS.md states this distinction in full; do not slice a longer SP 800-108 derivation.
 
 ## Key separation via labels
 
