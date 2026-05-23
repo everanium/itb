@@ -112,6 +112,17 @@ package Itb.Wrapper is
    --  Initialize is the safety boundary.
    function Generate_Key (C : Cipher_Type) return Byte_Array;
 
+   --  Deterministically derives the outer cipher key for C from a
+   --  caller-supplied Master secret (e.g. an ML-KEM shared secret).
+   --  The result is a deterministic function of (C, Master), so both
+   --  endpoints derive the same key from a shared master. Master must
+   --  be at least Key_Size(C) bytes; returns the derived key of length
+   --  Key_Size(C) (16 / 32 / 16 for AES / ChaCha / SipHash). Raises an
+   --  Itb_Error when Master is shorter than the cipher's key size.
+   function Derive_Key
+     (C      : Cipher_Type;
+      Master : Byte_Array) return Byte_Array;
+
    ---------------------------------------------------------------------
    --  Single Message Wrap / Unwrap (allocating)
    ---------------------------------------------------------------------

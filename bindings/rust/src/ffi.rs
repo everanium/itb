@@ -413,6 +413,13 @@ pub type FnBlobImport3 = unsafe extern "C" fn(usize, *const c_void, usize) -> c_
 pub type FnWrapperKeySize = unsafe extern "C" fn(*const c_char, *mut usize) -> c_int;
 pub type FnWrapperNonceSize = unsafe extern "C" fn(*const c_char, *mut usize) -> c_int;
 
+pub type FnWrapperDeriveKey = unsafe extern "C" fn(
+    *const c_char,        // cipherName
+    *const c_void, usize, // master, masterLen
+    *mut c_void, usize,   // out, outCap
+    *mut usize,           // outLen
+) -> c_int;
+
 pub type FnWrap = unsafe extern "C" fn(
     *const c_char,        // cipherName
     *const c_void, usize, // key
@@ -596,6 +603,7 @@ pub(crate) struct LibItb {
     // exported from cmd/cshared/main.go on top of github.com/everanium/itb/wrapper.
     pub(crate) ITB_WrapperKeySize: FnWrapperKeySize,
     pub(crate) ITB_WrapperNonceSize: FnWrapperNonceSize,
+    pub(crate) ITB_WrapperDeriveKey: FnWrapperDeriveKey,
     pub(crate) ITB_Wrap: FnWrap,
     pub(crate) ITB_Unwrap: FnUnwrap,
     pub(crate) ITB_WrapInPlace: FnWrapInPlace,
@@ -777,6 +785,7 @@ impl LibItb {
 
                 ITB_WrapperKeySize: sym!(b"ITB_WrapperKeySize"),
                 ITB_WrapperNonceSize: sym!(b"ITB_WrapperNonceSize"),
+                ITB_WrapperDeriveKey: sym!(b"ITB_WrapperDeriveKey"),
                 ITB_Wrap: sym!(b"ITB_Wrap"),
                 ITB_Unwrap: sym!(b"ITB_Unwrap"),
                 ITB_WrapInPlace: sym!(b"ITB_WrapInPlace"),

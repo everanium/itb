@@ -427,3 +427,60 @@ func TestNewUnwrapStreamReaderErrors(t *testing.T) {
 		t.Errorf("NewUnwrapStreamReader(short-nonce): st=%v", st)
 	}
 }
+
+// TestWrapperDeriveKey covers the WrapperDeriveKey helper: correct
+// length per cipher, determinism in (name, master), a derived key that
+// round-trips through Wrap / Unwrap, the buffer-too-small path, and
+// rejection of an unknown cipher and a too-short master.
+func TestWrapperDeriveKey(t *testing.T) {
+	master := make([]byte, 32)
+	if _, err := rand.Read(master); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range wrapper.CipherNames {
+		t.Run(name, func(t *testing.T) {
+			keySz, st := WrapperKeySize(name)
+			if st != StatusOK {
+				t.Fatalf("WrapperKeySize: st=%v", st)
+			}
+			out := make([]byte, keySz)
+			n, st := WrapperDeriveKey(name, master, out)
+			if st != StatusOK || n != keySz {
+				t.Fatalf("WrapperDeriveKey: n=%d st=%v, want %d OK", n, st, keySz)
+			}
+			out2 := make([]byte, keySz)
+			if _, st := WrapperDeriveKey(name, master, out2); st != StatusOK || !bytes.Equal(out, out2) {
+				t.Fatalf("WrapperDeriveKey not deterministic")
+			}
+
+			// The derived key round-trips through Wrap / Unwrap.
+			plain := []byte("derive-key round-trip payload")
+			nonceSz, _ := WrapperNonceSize(name)
+			wire := make([]byte, nonceSz+len(plain))
+			if _, st := Wrap(name, out, plain, wire); st != StatusOK {
+				t.Fatalf("Wrap under derived key: st=%v", st)
+			}
+			rec := make([]byte, len(plain))
+			if _, st := Unwrap(name, out, wire, rec); st != StatusOK {
+				t.Fatalf("Unwrap under derived key: st=%v", st)
+			}
+			if !bytes.Equal(rec, plain) {
+				t.Fatalf("derived-key round-trip mismatch")
+			}
+		})
+	}
+
+	// Buffer too small: out shorter than KeySize returns the required size.
+	if n, st := WrapperDeriveKey("aescmac", master, make([]byte, 1)); st != StatusBufferTooSmall || n != 16 {
+		t.Fatalf("WrapperDeriveKey(short out): n=%d st=%v, want 16 BufferTooSmall", n, st)
+	}
+	// Unknown cipher.
+	if _, st := WrapperDeriveKey("nonexistent", master, make([]byte, 32)); st != StatusBadInput {
+		t.Fatalf("WrapperDeriveKey(unknown): st=%v", st)
+	}
+	// Too-short master (below the primitive's key size) is rejected.
+	if _, st := WrapperDeriveKey("aescmac", make([]byte, 8), make([]byte, 16)); st != StatusBadInput {
+		t.Fatalf("WrapperDeriveKey(short master): st=%v", st)
+	}
+}

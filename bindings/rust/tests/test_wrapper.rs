@@ -66,6 +66,30 @@ fn generate_key_size_matches_cipher() {
     }
 }
 
+#[test]
+fn derive_key_deterministic_and_roundtrips() {
+    // 32 random bytes as the master secret (stand-in for an ML-KEM
+    // shared secret; the binding ships no KEM). Use a fresh CSPRNG
+    // 32-byte draw via the ChaCha20 key path, which sizes to 32.
+    let master = wrapper::generate_key(Cipher::ChaCha20).unwrap();
+    assert_eq!(master.len(), 32);
+
+    for cipher in Cipher::all() {
+        let k1 = wrapper::derive_key(cipher, &master).unwrap();
+        assert_eq!(k1.len(), wrapper::key_size(cipher).unwrap(), "{cipher}");
+
+        // Determinism: same (cipher, master) yields the same key.
+        let k2 = wrapper::derive_key(cipher, &master).unwrap();
+        assert_eq!(k1, k2, "{cipher}");
+
+        // The derived key round-trips through wrap / unwrap.
+        let blob = long_blob();
+        let wire = wrapper::wrap(cipher, &k1, &blob).unwrap();
+        let recovered = wrapper::unwrap(cipher, &k1, &wire).unwrap();
+        assert_eq!(recovered, blob, "{cipher}");
+    }
+}
+
 // --------------------------------------------------------------------
 // wrap / unwrap — immutable plaintext path
 // --------------------------------------------------------------------

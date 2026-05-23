@@ -33,6 +33,7 @@
 #include <itb/wrapper.hpp>
 
 #include <cstdint>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -264,6 +265,38 @@ TEST_CASE("wrapper::generate_key returns a buffer that drives a round-trip",
                                        blob.data(), blob.size());
         auto recovered = itb::wrapper::unwrap(cipher,
                                               key.data(), key.size(),
+                                              wire.data(), wire.size());
+        REQUIRE(recovered == blob);
+    }
+}
+
+TEST_CASE("wrapper::derive_key is deterministic and drives a round-trip",
+          "[wrapper][derive_key]") {
+    // 32 random bytes as the master secret (stand-in for an ML-KEM
+    // shared secret; the binding ships no KEM).
+    std::vector<std::uint8_t> master(32);
+    std::random_device rd;
+    for (auto& b : master) {
+        b = static_cast<std::uint8_t>(rd() & 0xFFu);
+    }
+
+    for (auto cipher : kAllCiphers) {
+        auto key1 = itb::wrapper::derive_key(cipher,
+                                             master.data(), master.size());
+        REQUIRE(key1.size() == itb::wrapper::key_size(cipher));
+
+        // Determinism: same (cipher, master) yields the same key.
+        auto key2 = itb::wrapper::derive_key(cipher,
+                                             master.data(), master.size());
+        REQUIRE(key1 == key2);
+
+        // The derived key round-trips through wrap / unwrap.
+        auto blob = fill_pattern(kBlobLen);
+        auto wire = itb::wrapper::wrap(cipher,
+                                       key1.data(), key1.size(),
+                                       blob.data(), blob.size());
+        auto recovered = itb::wrapper::unwrap(cipher,
+                                              key1.data(), key1.size(),
                                               wire.data(), wire.size());
         REQUIRE(recovered == blob);
     }

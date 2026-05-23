@@ -196,6 +196,53 @@ itb_status_t itb_wrapper_generate_key(itb_wrapper_cipher_t cipher,
     return ITB_OK;
 }
 
+itb_status_t itb_wrapper_derive_key(itb_wrapper_cipher_t cipher,
+                                    const uint8_t *master, size_t master_len,
+                                    uint8_t **out_key, size_t *out_key_len)
+{
+    if (out_key == NULL || out_key_len == NULL) {
+        return itb_internal_set_error_msg(
+            ITB_BAD_INPUT, "out_key or out_key_len is NULL");
+    }
+    *out_key = NULL;
+    *out_key_len = 0;
+
+    if (master == NULL && master_len != 0) {
+        return itb_internal_set_error_msg(
+            ITB_BAD_INPUT, "master is NULL with non-zero master_len");
+    }
+    const char *cn = cipher_name_or_set_error(cipher);
+    if (cn == NULL) {
+        return ITB_BAD_INPUT;
+    }
+    size_t klen = 0;
+    itb_status_t st = itb_wrapper_key_size(cipher, &klen);
+    if (st != ITB_OK) {
+        return st;
+    }
+    if (klen == 0) {
+        return itb_internal_set_error_msg(
+            ITB_INTERNAL, "wrapper: zero key length reported");
+    }
+    uint8_t *buf = (uint8_t *) malloc(klen);
+    if (buf == NULL) {
+        return itb_internal_set_error_msg(ITB_INTERNAL, "malloc failed");
+    }
+    size_t written = 0;
+    void *master_arg = (master_len == 0) ? NULL : (void *) master;
+    int rc = ITB_WrapperDeriveKey((char *) cn,
+                                  master_arg, master_len,
+                                  buf, klen, &written);
+    if (rc != ITB_OK) {
+        free(buf);
+        return itb_internal_set_error(rc);
+    }
+    *out_key = buf;
+    *out_key_len = written;
+    itb_internal_reset_error();
+    return ITB_OK;
+}
+
 /* ------------------------------------------------------------------ */
 /* Single Message wrap / unwrap                                           */
 /* ------------------------------------------------------------------ */

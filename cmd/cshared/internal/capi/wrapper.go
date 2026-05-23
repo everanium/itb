@@ -221,3 +221,33 @@ func UnwrapInPlace(name string, key, wire []byte) (n int, st Status) {
 	ks.XORKeyStream(body, body)
 	return len(body), StatusOK
 }
+
+// WrapperDeriveKey deterministically derives the outer cipher key for
+// the named cipher from a caller-supplied master secret, writing it
+// into out. The result is a deterministic function of (name, master):
+// the same inputs always yield the same key, so a master from a
+// key-agreement step (e.g. an ML-KEM shared secret) re-derives the
+// per-cipher key with no separate key storage. Same caller-allocated-
+// buffer convention as Wrap: returned n carries the bytes written on
+// success or the required capacity (KeySize(name)) on
+// StatusBufferTooSmall. master must be at least KeySize(name) bytes.
+func WrapperDeriveKey(name string, master, out []byte) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	keySz, err := wrapper.KeySize(name)
+	if err != nil {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	if len(out) < keySz {
+		setLastErr(StatusBufferTooSmall)
+		return keySz, StatusBufferTooSmall
+	}
+	key, err := wrapper.DeriveKey(name, master)
+	if err != nil {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	copy(out[:keySz], key)
+	return keySz, StatusOK
+}
