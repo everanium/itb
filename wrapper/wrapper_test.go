@@ -228,10 +228,10 @@ func TestMakeKeystreamBadNonceLen(t *testing.T) {
 	}
 }
 
-// TestSipHashCTRPartialBlockDrain drives sipCTR.XORKeyStream with a sequence
-// of 3-byte writes (24 bytes total). The 3-byte stride is intentionally
-// coprime to SipHash's 8-byte block, forcing the refill / leftover-drain
-// branches on most iterations.
+// TestSipHashCTRPartialBlockDrain drives the siphash24 keystream (via
+// MakeKeystream) with a sequence of 3-byte writes (24 bytes total). The
+// 3-byte stride is intentionally coprime to the 16-byte keystream block,
+// forcing the refill / leftover-drain branches on most iterations.
 func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	key := make([]byte, 16)
 	nonce := make([]byte, 16)
@@ -241,7 +241,7 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	rand.Read(plaintext)
 
 	// Encrypt via 3-byte chunks.
-	enc, err := newSipHashCTR(key, nonce)
+	enc, err := MakeKeystream(CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	}
 
 	// Encrypt the same plaintext as one 24-byte block — must match.
-	enc2, err := newSipHashCTR(key, nonce)
+	enc2, err := MakeKeystream(CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	}
 
 	// Decrypt the chunked ciphertext via 3-byte chunks — must recover plaintext.
-	dec, err := newSipHashCTR(key, nonce)
+	dec, err := MakeKeystream(CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,14 +285,14 @@ func TestSipHashCTRTailUnaligned(t *testing.T) {
 	plaintext := make([]byte, 17)
 	rand.Read(plaintext)
 
-	enc, err := newSipHashCTR(key, nonce)
+	enc, err := MakeKeystream(CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ct := make([]byte, 17)
 	enc.XORKeyStream(ct, plaintext)
 
-	dec, err := newSipHashCTR(key, nonce)
+	dec, err := MakeKeystream(CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}

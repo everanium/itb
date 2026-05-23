@@ -34,17 +34,18 @@ No length-prefix or other framing byte appears in cleartext on the wire in any w
 
 ## Outer ciphers
 
-| Cipher | Key | Nonce | Notes |
-|---|---|---|---|
-| AES-128-CTR | 16 B | 16 B | stdlib `crypto/aes` + `crypto/cipher.NewCTR`. AES-NI accelerated. |
-| ChaCha20 (RFC 8439) | 32 B | 12 B | `golang.org/x/crypto/chacha20`. No AES-NI dependency. |
-| SipHash-2-4 in CTR mode | 16 B | 16 B | `github.com/dchest/siphash` PRF. Custom CTR construction; sound under standard PRF assumption. |
+The keystream for each outer cipher is built by the [`ctr`](../ctr/) package,
+which is the single source of truth for cipher key / nonce sizes. The wrapper
+delegates `MakeKeystream` / `KeySize` / `NonceSize` to it.
 
-The SipHash-CTR construction:
-- 16-byte SipHash key = wrapper key.
-- 16-byte nonce split into `(nonce_hi, nonce_lo)` 64-bit halves.
-- Each keystream block: `siphash.Hash128(key, nonce_hi || (nonce_lo XOR counter_LE))` — 16-byte output, XORed with plaintext.
-- Counter increments per block; nonce stays fixed for the stream.
+| Cipher | Key | Nonce |
+|---|---|---|
+| AES-128-CTR | 16 B | 16 B |
+| ChaCha20 (RFC 8439) | 32 B | 12 B |
+| SipHash-2-4 in CTR mode | 16 B | 16 B |
+
+For the per-cipher construction detail (including the SipHash-CTR PRF-counter
+keystream), see [`ctr/CONSTRUCTIONS.md`](../ctr/CONSTRUCTIONS.md).
 
 ## Quick Start
 
