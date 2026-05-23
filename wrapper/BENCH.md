@@ -49,7 +49,7 @@ go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -co
 |---|---|---|
 | **AES-128-CTR** | 2470 | **4170** |
 | **ChaCha20** | 330 | 344 |
-| **SipHash-CTR** | 271 | 281 |
+| **SipHash-CTR** | 365 | 384 |
 
 `WrapInPlace` mutates the caller's blob and returns the per-stream nonce; the steady-state allocation is one nonce buffer (~16 bytes) per call. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call. The AES delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; ChaCha20 and SipHash-CTR are compute-bound and the allocation savings are largely absorbed by the keystream throughput ceiling.
 
