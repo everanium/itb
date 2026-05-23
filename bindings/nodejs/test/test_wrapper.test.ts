@@ -46,15 +46,15 @@ import {
 import type { CipherName } from '../src/index.js';
 
 const EXPECTED_KEY_SIZES: Record<CipherName, number> = {
-  aes: 16,
-  chacha: 32,
-  siphash: 16,
+  aescmac: 16,
+  chacha20: 32,
+  siphash24: 16,
 };
 
 const EXPECTED_NONCE_SIZES: Record<CipherName, number> = {
-  aes: 16,
-  chacha: 12,
-  siphash: 16,
+  aescmac: 16,
+  chacha20: 12,
+  siphash24: 16,
 };
 
 function bytesEqual(a: Buffer, b: Buffer): boolean {
@@ -68,10 +68,10 @@ describe('test_wrapper', () => {
   // ──────────────────────────────────────────────────────────────
 
   test('cipher names exhaustive', () => {
-    assert.deepStrictEqual([...CIPHER_NAMES], ['aes', 'chacha', 'siphash']);
-    assert.equal(Cipher.Aes128Ctr, 'aes');
-    assert.equal(Cipher.ChaCha20, 'chacha');
-    assert.equal(Cipher.SipHash24, 'siphash');
+    assert.deepStrictEqual([...CIPHER_NAMES], ['aescmac', 'chacha20', 'siphash24']);
+    assert.equal(Cipher.Aes128Ctr, 'aescmac');
+    assert.equal(Cipher.ChaCha20, 'chacha20');
+    assert.equal(Cipher.SipHash24, 'siphash24');
   });
 
   // ──────────────────────────────────────────────────────────────

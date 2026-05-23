@@ -61,9 +61,9 @@ constexpr std::size_t kExpectedNonce[] = { 16, 12, 16 };
 
 TEST_CASE("wrapper::ffi_name interns canonical short names",
           "[wrapper][ffi_name]") {
-    REQUIRE(itb::wrapper::ffi_name(itb::wrapper::Cipher::Aes128Ctr) == "aes");
-    REQUIRE(itb::wrapper::ffi_name(itb::wrapper::Cipher::ChaCha20)  == "chacha");
-    REQUIRE(itb::wrapper::ffi_name(itb::wrapper::Cipher::SipHash24) == "siphash");
+    REQUIRE(itb::wrapper::ffi_name(itb::wrapper::Cipher::Aes128Ctr) == "aescmac");
+    REQUIRE(itb::wrapper::ffi_name(itb::wrapper::Cipher::ChaCha20)  == "chacha20");
+    REQUIRE(itb::wrapper::ffi_name(itb::wrapper::Cipher::SipHash24) == "siphash24");
     // Out-of-range → empty view.
     auto bad = itb::wrapper::ffi_name(static_cast<itb::wrapper::Cipher>(99));
     REQUIRE(bad.empty());

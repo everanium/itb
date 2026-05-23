@@ -33,13 +33,13 @@ ubyte[] pseudoBlob(size_t n)
 
 void testCipherEnumIntrospection()
 {
-    assert(ffiName(Cipher.aes128Ctr) == "aes");
-    assert(ffiName(Cipher.chaCha20)  == "chacha");
-    assert(ffiName(Cipher.sipHash24) == "siphash");
+    assert(ffiName(Cipher.aes128Ctr) == "aescmac");
+    assert(ffiName(Cipher.chaCha20)  == "chacha20");
+    assert(ffiName(Cipher.sipHash24) == "siphash24");
 
-    assert(cipherFromName("aes")     == Cipher.aes128Ctr);
-    assert(cipherFromName("chacha")  == Cipher.chaCha20);
-    assert(cipherFromName("siphash") == Cipher.sipHash24);
+    assert(cipherFromName("aescmac")   == Cipher.aes128Ctr);
+    assert(cipherFromName("chacha20")  == Cipher.chaCha20);
+    assert(cipherFromName("siphash24") == Cipher.sipHash24);
 
     assert(CIPHER_NAMES.length == 3);
     assert(CIPHER_NAMES[0] == Cipher.aes128Ctr);

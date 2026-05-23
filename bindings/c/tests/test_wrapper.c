@@ -69,9 +69,9 @@ static const size_t EXPECTED_NONCE[] = { 16, 12, 16 };
 
 START_TEST(test_wrapper_cipher_name_interned)
 {
-    ck_assert_str_eq(itb_wrapper_cipher_name(ITB_WRAPPER_CIPHER_AES_128_CTR), "aes");
-    ck_assert_str_eq(itb_wrapper_cipher_name(ITB_WRAPPER_CIPHER_CHACHA20), "chacha");
-    ck_assert_str_eq(itb_wrapper_cipher_name(ITB_WRAPPER_CIPHER_SIPHASH24), "siphash");
+    ck_assert_str_eq(itb_wrapper_cipher_name(ITB_WRAPPER_CIPHER_AES_128_CTR), "aescmac");
+    ck_assert_str_eq(itb_wrapper_cipher_name(ITB_WRAPPER_CIPHER_CHACHA20), "chacha20");
+    ck_assert_str_eq(itb_wrapper_cipher_name(ITB_WRAPPER_CIPHER_SIPHASH24), "siphash24");
     ck_assert_ptr_eq(itb_wrapper_cipher_name((itb_wrapper_cipher_t) 99), NULL);
 }
 END_TEST

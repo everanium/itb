@@ -18,7 +18,7 @@
 //   - `itb::wrapper::Cipher` — strongly-typed enum class selector
 //     mapping to the C-binding's `itb_wrapper_cipher_t`.
 //   - `itb::wrapper::ffi_name(Cipher)` — interned canonical short
-//     name (`"aes"` / `"chacha"` / `"siphash"`).
+//     name (`"aescmac"` / `"chacha20"` / `"siphash24"`).
 //   - `itb::wrapper::key_size(Cipher)` / `nonce_size(Cipher)` — byte
 //     lengths of the outer cipher's key / on-wire nonce.
 //   - `itb::wrapper::generate_key(Cipher)` — fresh CSPRNG outer key.
@@ -97,7 +97,7 @@ enum class Cipher : int {
 };
 
 // Returns the canonical short name of the named outer cipher
-// (`"aes"` / `"chacha"` / `"siphash"`) as a non-owning view over the
+// (`"aescmac"` / `"chacha20"` / `"siphash24"`) as a non-owning view over the
 // process-lifetime interned C string. The view stays valid for the
 // life of the process; callers MUST NOT free the underlying buffer.
 inline std::string_view ffi_name(Cipher cipher) noexcept {

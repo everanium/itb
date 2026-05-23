@@ -37,9 +37,9 @@ func TestWrapperSizes(t *testing.T) {
 	want := map[string]struct {
 		key, nonce int
 	}{
-		"aes":     {16, 16},
-		"chacha":  {32, 12},
-		"siphash": {16, 16},
+		"aescmac":     {16, 16},
+		"chacha20":  {32, 12},
+		"siphash24": {16, 16},
 	}
 	for name, exp := range want {
 		k, st := WrapperKeySize(name)
@@ -251,7 +251,7 @@ func TestWrapStreamInPlace(t *testing.T) {
 
 // TestWrapErrors exercises the validation paths.
 func TestWrapErrors(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	plain := []byte("hello, deniable world")
 	wire := make([]byte, 16+len(plain))
 
@@ -260,15 +260,15 @@ func TestWrapErrors(t *testing.T) {
 		t.Errorf("Wrap(unknown): st=%v want StatusBadInput", st)
 	}
 	// Bad key length.
-	if _, st := Wrap("aes", key[:8], plain, wire); st != StatusBadInput {
+	if _, st := Wrap("aescmac", key[:8], plain, wire); st != StatusBadInput {
 		t.Errorf("Wrap(short-key): st=%v want StatusBadInput", st)
 	}
 	// Buffer too small.
-	if n, st := Wrap("aes", key, plain, wire[:10]); st != StatusBufferTooSmall || n != len(wire) {
+	if n, st := Wrap("aescmac", key, plain, wire[:10]); st != StatusBufferTooSmall || n != len(wire) {
 		t.Errorf("Wrap(short-out): n=%d st=%v want %d StatusBufferTooSmall", n, st, len(wire))
 	}
 	// Wire shorter than nonce on Unwrap.
-	if _, st := Unwrap("aes", key, []byte{1, 2, 3}, wire); st != StatusBadInput {
+	if _, st := Unwrap("aescmac", key, []byte{1, 2, 3}, wire); st != StatusBadInput {
 		t.Errorf("Unwrap(short-wire): st=%v want StatusBadInput", st)
 	}
 	// Bad handle on Update.
@@ -288,7 +288,7 @@ func TestWrapErrors(t *testing.T) {
 // supplied so the rejection comes from the name lookup, not the
 // downstream size guards.
 func TestUnwrapBadCipherName(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	wire := make([]byte, 32)
 	out := make([]byte, 32)
 	if _, st := Unwrap("nope", key, wire, out); st != StatusBadInput {
@@ -300,10 +300,10 @@ func TestUnwrapBadCipherName(t *testing.T) {
 // path is symmetric to Wrap's short-key check; testing both halves
 // avoids one-sided coverage.
 func TestUnwrapBadKeyLen(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	wire := make([]byte, 32)
 	out := make([]byte, 32)
-	if _, st := Unwrap("aes", key[:8], wire, out); st != StatusBadInput {
+	if _, st := Unwrap("aescmac", key[:8], wire, out); st != StatusBadInput {
 		t.Errorf("Unwrap(short-key): st=%v want StatusBadInput", st)
 	}
 }
@@ -312,19 +312,19 @@ func TestUnwrapBadKeyLen(t *testing.T) {
 // allocating Unwrap: caller passes an undersized out buffer; helper
 // returns StatusBufferTooSmall with the required body length.
 func TestUnwrapBufferTooSmall(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	plain := make([]byte, 256)
 	if _, err := rand.Read(plain); err != nil {
 		t.Fatal(err)
 	}
-	nonceSz, _ := wrapper.NonceSize("aes")
+	nonceSz, _ := wrapper.NonceSize("aescmac")
 	wire := make([]byte, nonceSz+len(plain))
-	if _, st := Wrap("aes", key, plain, wire); st != StatusOK {
+	if _, st := Wrap("aescmac", key, plain, wire); st != StatusOK {
 		t.Fatalf("Wrap setup: st=%v", st)
 	}
 
 	tiny := make([]byte, 4)
-	n, st := Unwrap("aes", key, wire, tiny)
+	n, st := Unwrap("aescmac", key, wire, tiny)
 	if st != StatusBufferTooSmall {
 		t.Errorf("Unwrap(short-out): st=%v want StatusBufferTooSmall", st)
 	}
@@ -338,9 +338,9 @@ func TestUnwrapBufferTooSmall(t *testing.T) {
 // supply a stripped wire; the helper must surface the malformation
 // as StatusBadInput rather than panicking.
 func TestUnwrapInPlaceShortWire(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	short := []byte{0x00, 0x01}
-	if _, st := UnwrapInPlace("aes", key, short); st != StatusBadInput {
+	if _, st := UnwrapInPlace("aescmac", key, short); st != StatusBadInput {
 		t.Errorf("UnwrapInPlace(short-wire): st=%v want StatusBadInput", st)
 	}
 }
@@ -348,7 +348,7 @@ func TestUnwrapInPlaceShortWire(t *testing.T) {
 // TestUnwrapInPlaceBadCipherName covers the unknown-name path on the
 // in-place variant.
 func TestUnwrapInPlaceBadCipherName(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	wire := make([]byte, 32)
 	if _, st := UnwrapInPlace("nope", key, wire); st != StatusBadInput {
 		t.Errorf("UnwrapInPlace(unknown cipher): st=%v want StatusBadInput", st)
@@ -358,9 +358,9 @@ func TestUnwrapInPlaceBadCipherName(t *testing.T) {
 // TestUnwrapInPlaceBadKeyLen covers the wrong-key-length branch on
 // the in-place variant.
 func TestUnwrapInPlaceBadKeyLen(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	wire := make([]byte, 32)
-	if _, st := UnwrapInPlace("aes", key[:4], wire); st != StatusBadInput {
+	if _, st := UnwrapInPlace("aescmac", key[:4], wire); st != StatusBadInput {
 		t.Errorf("UnwrapInPlace(short-key): st=%v want StatusBadInput", st)
 	}
 }
@@ -369,17 +369,17 @@ func TestUnwrapInPlaceBadKeyLen(t *testing.T) {
 // paths on WrapInPlace: unknown cipher name, wrong key length, and
 // out-nonce buffer too small.
 func TestWrapInPlaceErrors(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	blob := []byte("hello")
 	out := make([]byte, 16)
 	if _, st := WrapInPlace("nope", key, blob, out); st != StatusBadInput {
 		t.Errorf("WrapInPlace(unknown): st=%v want StatusBadInput", st)
 	}
-	if _, st := WrapInPlace("aes", key[:4], blob, out); st != StatusBadInput {
+	if _, st := WrapInPlace("aescmac", key[:4], blob, out); st != StatusBadInput {
 		t.Errorf("WrapInPlace(short-key): st=%v want StatusBadInput", st)
 	}
 	tiny := make([]byte, 2)
-	n, st := WrapInPlace("aes", key, blob, tiny)
+	n, st := WrapInPlace("aescmac", key, blob, tiny)
 	if st != StatusBufferTooSmall {
 		t.Errorf("WrapInPlace(short-nonce-buf): st=%v want StatusBufferTooSmall", st)
 	}
@@ -393,16 +393,16 @@ func TestWrapInPlaceErrors(t *testing.T) {
 // wrong key length, and out-nonce buffer too small. Symmetric to
 // TestWrapInPlaceErrors but on the handle-constructor entry point.
 func TestNewWrapStreamWriterErrors(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	out := make([]byte, 16)
 	if _, _, st := NewWrapStreamWriter("nope", key, out); st != StatusBadInput {
 		t.Errorf("NewWrapStreamWriter(unknown): st=%v", st)
 	}
-	if _, _, st := NewWrapStreamWriter("aes", key[:4], out); st != StatusBadInput {
+	if _, _, st := NewWrapStreamWriter("aescmac", key[:4], out); st != StatusBadInput {
 		t.Errorf("NewWrapStreamWriter(short-key): st=%v", st)
 	}
 	tiny := make([]byte, 2)
-	_, n, st := NewWrapStreamWriter("aes", key, tiny)
+	_, n, st := NewWrapStreamWriter("aescmac", key, tiny)
 	if st != StatusBufferTooSmall {
 		t.Errorf("NewWrapStreamWriter(tiny-nonce): st=%v", st)
 	}
@@ -415,15 +415,15 @@ func TestNewWrapStreamWriterErrors(t *testing.T) {
 // rejection paths on NewUnwrapStreamReader: unknown cipher name,
 // wrong key length, and wrong-size nonce slice.
 func TestNewUnwrapStreamReaderErrors(t *testing.T) {
-	key := mustGenerateKey(t, "aes")
+	key := mustGenerateKey(t, "aescmac")
 	nonce := make([]byte, 16)
 	if _, st := NewUnwrapStreamReader("nope", key, nonce); st != StatusBadInput {
 		t.Errorf("NewUnwrapStreamReader(unknown): st=%v", st)
 	}
-	if _, st := NewUnwrapStreamReader("aes", key[:4], nonce); st != StatusBadInput {
+	if _, st := NewUnwrapStreamReader("aescmac", key[:4], nonce); st != StatusBadInput {
 		t.Errorf("NewUnwrapStreamReader(short-key): st=%v", st)
 	}
-	if _, st := NewUnwrapStreamReader("aes", key, nonce[:8]); st != StatusBadInput {
+	if _, st := NewUnwrapStreamReader("aescmac", key, nonce[:8]); st != StatusBadInput {
 		t.Errorf("NewUnwrapStreamReader(short-nonce): st=%v", st)
 	}
 }

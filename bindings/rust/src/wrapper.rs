@@ -68,7 +68,7 @@ use crate::ffi;
 
 /// Outer keystream cipher selected per wrap session. Each variant
 /// maps to one of the three `cipher_name` strings the underlying
-/// FFI accepts: `"aes"` / `"chacha"` / `"siphash"`. The Go-side
+/// FFI accepts: `"aescmac"` / `"chacha20"` / `"siphash24"`. The Go-side
 /// constants are `wrapper.CipherAES128CTR` / `wrapper.CipherChaCha20`
 /// / `wrapper.CipherSipHash24`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -89,9 +89,9 @@ impl Cipher {
     /// Returns the FFI cipher-name string used by every entry point.
     pub fn as_str(self) -> &'static str {
         match self {
-            Cipher::Aes128Ctr => "aes",
-            Cipher::ChaCha20 => "chacha",
-            Cipher::SipHash24 => "siphash",
+            Cipher::Aes128Ctr => "aescmac",
+            Cipher::ChaCha20 => "chacha20",
+            Cipher::SipHash24 => "siphash24",
         }
     }
 

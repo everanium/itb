@@ -534,8 +534,8 @@ export const ITB_Easy_DecryptStreamAuth = lib.func(
 
 // ──────────────────────────────────────────────────────────────────
 // Format-deniability wrapper — outer cipher envelope over an ITB
-// ciphertext / bytestream. Three outer ciphers are supported (`"aes"`
-// / `"chacha"` / `"siphash"`); the wire format is
+// ciphertext / bytestream. Three outer ciphers are supported (`"aescmac"`
+// / `"chacha20"` / `"siphash24"`); the wire format is
 // `nonce || keystream-XOR(blob)`. See bindings/nodejs/src/wrapper.ts
 // for the typed-idiomatic surface.
 // ──────────────────────────────────────────────────────────────────

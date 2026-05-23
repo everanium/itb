@@ -1398,8 +1398,8 @@ typedef enum itb_wrapper_cipher {
 } itb_wrapper_cipher_t;
 
 /*
- * Returns the canonical short name of the named outer cipher ("aes" /
- * "chacha" / "siphash") as an interned NUL-terminated C string. The
+ * Returns the canonical short name of the named outer cipher ("aescmac" /
+ * "chacha20" / "siphash24") as an interned NUL-terminated C string. The
  * pointer is owned by libitb_c and stays valid for the lifetime of the
  * process; callers MUST NOT free it. Returns NULL for any value not in
  * itb_wrapper_cipher_t.

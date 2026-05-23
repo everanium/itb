@@ -54,9 +54,9 @@ package body Itb.Wrapper is
    function Ffi_Name (C : Cipher_Type) return String is
    begin
       case C is
-         when Aes_128_Ctr => return "aes";
-         when Cha_Cha_20  => return "chacha";
-         when Sip_Hash_24 => return "siphash";
+         when Aes_128_Ctr => return "aescmac";
+         when Cha_Cha_20  => return "chacha20";
+         when Sip_Hash_24 => return "siphash24";
       end case;
    end Ffi_Name;
 
@@ -65,9 +65,9 @@ package body Itb.Wrapper is
    --  and avoid the per-call Strings.New_String / Strings.Free
    --  bracket — leaks across an exception-raising path are then
    --  structurally impossible.
-   Cipher_Names_Aes  : aliased Interfaces.C.char_array := Interfaces.C.To_C ("aes", True);
-   Cipher_Names_Cha  : aliased Interfaces.C.char_array := Interfaces.C.To_C ("chacha", True);
-   Cipher_Names_Sip  : aliased Interfaces.C.char_array := Interfaces.C.To_C ("siphash", True);
+   Cipher_Names_Aes  : aliased Interfaces.C.char_array := Interfaces.C.To_C ("aescmac", True);
+   Cipher_Names_Cha  : aliased Interfaces.C.char_array := Interfaces.C.To_C ("chacha20", True);
+   Cipher_Names_Sip  : aliased Interfaces.C.char_array := Interfaces.C.To_C ("siphash24", True);
 
    function Cipher_Name_Ptr
      (C : Cipher_Type) return Interfaces.C.Strings.chars_ptr is
