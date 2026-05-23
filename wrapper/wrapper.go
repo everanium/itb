@@ -16,9 +16,9 @@ import (
 
 // Cipher names accepted by the Make* helpers and the cmd/-flag parsing.
 const (
-	CipherAES128CTR = "aes"
-	CipherChaCha20  = "chacha"
-	CipherSipHash24 = "siphash"
+	CipherAES128CTR = "aescmac"
+	CipherChaCha20  = "chacha20"
+	CipherSipHash24 = "siphash24"
 )
 
 // CipherNames lists every supported outer cipher in iteration order.

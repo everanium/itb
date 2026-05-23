@@ -37,15 +37,15 @@ No length-prefix or other framing byte appears in cleartext on the wire in any w
 
 ### Binding asymmetry
 
-The Python binding exposes Streaming AEAD as a file-like object surface (`Encryptor.encrypt_stream_auth` / `decrypt_stream_auth`). The Streaming No MAC path has **no** file-like / stream-like wrapper writer or reader pair. This asymmetry is intentional. The Non-AEAD streaming arm in the Python wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)`, frames `u32_LE_len || ct`, and pushes through the streaming wrapper handle. See CLAUDE.md.
+The Python binding exposes Streaming AEAD as a file-like object surface (`Encryptor.encrypt_stream_auth` / `decrypt_stream_auth`). The Streaming No MAC path has **no** file-like / stream-like wrapper writer or reader pair. This asymmetry is intentional. The Non-AEAD streaming arm in the Python wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)`, frames `u32_LE_len || ct`, and pushes through the streaming wrapper handle. See the project guidelines.
 
 ## Outer ciphers
 
 | Cipher | Constant | Key | Nonce | Notes |
 |---|---|---|---|---|
-| AES-128-CTR | `wrapper.CIPHER_AES128_CTR` (`"aes"`) | 16 B | 16 B | libitb stdlib path with AES-NI. |
-| ChaCha20 (RFC 8439) | `wrapper.CIPHER_CHACHA20` (`"chacha"`) | 32 B | 12 B | `golang.org/x/crypto/chacha20`. No AES-NI dependency. |
-| SipHash-2-4 in CTR mode | `wrapper.CIPHER_SIPHASH24` (`"siphash"`) | 16 B | 16 B | `github.com/dchest/siphash` PRF. Custom CTR construction; sound under standard PRF assumption. |
+| AES-128-CTR | `wrapper.CIPHER_AES128_CTR` (`"aescmac"`) | 16 B | 16 B | libitb stdlib path with AES-NI. |
+| ChaCha20 (RFC 8439) | `wrapper.CIPHER_CHACHA20` (`"chacha20"`) | 32 B | 12 B | `golang.org/x/crypto/chacha20`. No AES-NI dependency. |
+| SipHash-2-4 in CTR mode | `wrapper.CIPHER_SIPHASH24` (`"siphash24"`) | 16 B | 16 B | `github.com/dchest/siphash` PRF. Custom CTR construction; sound under standard PRF assumption. |
 
 The SipHash-CTR construction:
 - 16-byte SipHash key = wrapper key.
@@ -281,30 +281,30 @@ pt = itb.decrypt_auth(*seeds, mac, bytes(recovered_view))
 Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
 
 ```
-[PASS] aead-easy-io               + aes        pt=65536 wire=90208
-[PASS] aead-easy-io               + chacha     pt=65536 wire=90204
-[PASS] aead-easy-io               + siphash    pt=65536 wire=90208
-[PASS] aead-lowlevel-io           + aes        pt=65536 wire=90208
-[PASS] aead-lowlevel-io           + chacha     pt=65536 wire=90204
-[PASS] aead-lowlevel-io           + siphash    pt=65536 wire=90208
-[PASS] noaead-easy-userloop       + aes        pt=65536 wire=90192
-[PASS] noaead-easy-userloop       + chacha     pt=65536 wire=90188
-[PASS] noaead-easy-userloop       + siphash    pt=65536 wire=90192
-[PASS] noaead-lowlevel-userloop   + aes        pt=65536 wire=90192
-[PASS] noaead-lowlevel-userloop   + chacha     pt=65536 wire=90188
-[PASS] noaead-lowlevel-userloop   + siphash    pt=65536 wire=90192
-[PASS] message-easy-nomac         + aes        pt=1024 wire=4316
-[PASS] message-easy-nomac         + chacha     pt=1024 wire=4312
-[PASS] message-easy-nomac         + siphash    pt=1024 wire=4316
-[PASS] message-easy-auth          + aes        pt=1024 wire=8276
-[PASS] message-easy-auth          + chacha     pt=1024 wire=8272
-[PASS] message-easy-auth          + siphash    pt=1024 wire=8276
-[PASS] message-lowlevel-nomac     + aes        pt=1024 wire=4316
-[PASS] message-lowlevel-nomac     + chacha     pt=1024 wire=4312
-[PASS] message-lowlevel-nomac     + siphash    pt=1024 wire=4316
-[PASS] message-lowlevel-auth      + aes        pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + chacha     pt=1024 wire=8272
-[PASS] message-lowlevel-auth      + siphash    pt=1024 wire=8276
+[PASS] aead-easy-io               + aescmac    pt=65536 wire=90208
+[PASS] aead-easy-io               + chacha20   pt=65536 wire=90204
+[PASS] aead-easy-io               + siphash24  pt=65536 wire=90208
+[PASS] aead-lowlevel-io           + aescmac    pt=65536 wire=90208
+[PASS] aead-lowlevel-io           + chacha20   pt=65536 wire=90204
+[PASS] aead-lowlevel-io           + siphash24  pt=65536 wire=90208
+[PASS] noaead-easy-userloop       + aescmac    pt=65536 wire=90192
+[PASS] noaead-easy-userloop       + chacha20   pt=65536 wire=90188
+[PASS] noaead-easy-userloop       + siphash24  pt=65536 wire=90192
+[PASS] noaead-lowlevel-userloop   + aescmac    pt=65536 wire=90192
+[PASS] noaead-lowlevel-userloop   + chacha20   pt=65536 wire=90188
+[PASS] noaead-lowlevel-userloop   + siphash24  pt=65536 wire=90192
+[PASS] message-easy-nomac         + aescmac    pt=1024 wire=4316
+[PASS] message-easy-nomac         + chacha20   pt=1024 wire=4312
+[PASS] message-easy-nomac         + siphash24  pt=1024 wire=4316
+[PASS] message-easy-auth          + aescmac    pt=1024 wire=8276
+[PASS] message-easy-auth          + chacha20   pt=1024 wire=8272
+[PASS] message-easy-auth          + siphash24  pt=1024 wire=8276
+[PASS] message-lowlevel-nomac     + aescmac    pt=1024 wire=4316
+[PASS] message-lowlevel-nomac     + chacha20   pt=1024 wire=4312
+[PASS] message-lowlevel-nomac     + siphash24  pt=1024 wire=4316
+[PASS] message-lowlevel-auth      + aescmac    pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + chacha20   pt=1024 wire=8272
+[PASS] message-lowlevel-auth      + siphash24  pt=1024 wire=8276
 
 === Summary: 24 PASS, 0 FAIL ===
 ```

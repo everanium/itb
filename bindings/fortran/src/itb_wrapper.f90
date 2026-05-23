@@ -138,9 +138,9 @@ contains
     integer, intent(in) :: cipher
     character(:), allocatable :: name
     select case (cipher)
-    case (ITB_WRAPPER_CIPHER_AES_128_CTR); name = "aes"
-    case (ITB_WRAPPER_CIPHER_CHACHA20);    name = "chacha"
-    case (ITB_WRAPPER_CIPHER_SIPHASH24);   name = "siphash"
+    case (ITB_WRAPPER_CIPHER_AES_128_CTR); name = "aescmac"
+    case (ITB_WRAPPER_CIPHER_CHACHA20);    name = "chacha20"
+    case (ITB_WRAPPER_CIPHER_SIPHASH24);   name = "siphash24"
     case default;                          name = ""
     end select
   end function

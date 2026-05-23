@@ -2437,7 +2437,7 @@ func ITB_Easy_DecryptStreamAuth(
 // outer keystream ciphers (AES-128-CTR / ChaCha20 / SipHash-CTR)
 // so the wire bytes carry no header / magic the receiver could
 // match against. Every entry point dispatches off a `cipher_name`
-// string ("aes" / "chacha" / "siphash"), mirroring the MAC-factory
+// string ("aescmac" / "chacha20" / "siphash24"), mirroring the MAC-factory
 // pattern: one unified ABI per operation rather than one per
 // cipher. The Go-side implementation lives in
 // github.com/everanium/itb/wrapper; the helpers in capi/wrapper.go
@@ -2453,7 +2453,7 @@ func ITB_Easy_DecryptStreamAuth(
 // and the nonce buffer.
 
 // Reports the byte length of the keystream-cipher key for the named
-// outer cipher (16 / 32 / 16 for "aes" / "chacha" / "siphash").
+// outer cipher (16 / 32 / 16 for "aescmac" / "chacha20" / "siphash24").
 // Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
 //
 //export ITB_WrapperKeySize
@@ -2471,7 +2471,7 @@ func ITB_WrapperKeySize(cipherName *C.char, outSize *C.size_t) C.int {
 }
 
 // Reports the on-wire nonce length the named outer cipher emits
-// per stream (16 / 12 / 16 for "aes" / "chacha" / "siphash").
+// per stream (16 / 12 / 16 for "aescmac" / "chacha20" / "siphash24").
 // Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
 //
 //export ITB_WrapperNonceSize

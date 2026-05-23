@@ -284,7 +284,7 @@ extern int ITB_Easy_DecryptStreamAuth(
  * 12 raw libitb exports that back the public-facing itb_wrap* /
  * itb_unwrap* / itb_wrap_stream_writer_* / itb_unwrap_stream_reader_*
  * surface declared in itb.h. The cipherName argument is a UTF-8
- * NUL-terminated string ("aes" / "chacha" / "siphash"); see
+ * NUL-terminated string ("aescmac" / "chacha20" / "siphash24"); see
  * `wrapper/wrapper.go` for the source-of-truth construction.
  */
 extern int ITB_WrapperKeySize(char *cipher_name, size_t *out_size);

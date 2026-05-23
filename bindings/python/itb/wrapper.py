@@ -40,10 +40,10 @@ prefixes also XOR through):
     ...     ww.update(b"chunk-2")
     ...     wire = ww.nonce + ww.update(b"...")  # accumulator pattern
 
-The cipher_name argument selects one of three outer ciphers: "aes"
+The cipher_name argument selects one of three outer ciphers: "aescmac"
 (AES-128-CTR — 16-byte key + 16-byte nonce, AES-NI accelerated),
-"chacha" (ChaCha20 (RFC8439) — 32-byte key + 12-byte nonce), or
-"siphash" (SipHash-2-4 in CTR mode — 16-byte key + 16-byte nonce,
+"chacha20" (ChaCha20 (RFC8439) — 32-byte key + 12-byte nonce), or
+"siphash24" (SipHash-2-4 in CTR mode — 16-byte key + 16-byte nonce,
 custom CTR construction over the SipHash-2-4 PRF).
 
 Threading. Each :class:`WrapStreamWriter` / :class:`UnwrapStreamReader`
@@ -74,9 +74,9 @@ from ._ffi import (
 # Canonical outer cipher names accepted by the wrap surface. Match
 # the ``CipherAES128CTR`` / ``CipherChaCha20`` / ``CipherSipHash24``
 # constants in github.com/everanium/itb/wrapper.
-CIPHER_AES128_CTR = "aes"
-CIPHER_CHACHA20 = "chacha"
-CIPHER_SIPHASH24 = "siphash"
+CIPHER_AES128_CTR = "aescmac"
+CIPHER_CHACHA20 = "chacha20"
+CIPHER_SIPHASH24 = "siphash24"
 
 CIPHER_NAMES = (CIPHER_AES128_CTR, CIPHER_CHACHA20, CIPHER_SIPHASH24)
 
@@ -91,8 +91,8 @@ class WrapperError(ITBError):
 
 
 class InvalidCipherError(WrapperError):
-    """Raised when ``cipher_name`` is not one of "aes" / "chacha" /
-    "siphash". Carries :data:`itb.STATUS_BAD_INPUT`."""
+    """Raised when ``cipher_name`` is not one of "aescmac" / "chacha20" /
+    "siphash24". Carries :data:`itb.STATUS_BAD_INPUT`."""
 
     def __init__(self, cipher_name: str):
         super().__init__(
@@ -142,8 +142,8 @@ def _raise_wrapper(code: int) -> None:
 
 def key_size(cipher_name: str) -> int:
     """Returns the byte length of the keystream-cipher key for the
-    named outer cipher (16 / 32 / 16 for "aes" / "chacha" /
-    "siphash"). Raises :class:`InvalidCipherError` for any other
+    named outer cipher (16 / 32 / 16 for "aescmac" / "chacha20" /
+    "siphash24"). Raises :class:`InvalidCipherError` for any other
     name."""
     cn = _validate_cipher_name(cipher_name)
     out = _ffi.new("size_t*")
@@ -155,7 +155,7 @@ def key_size(cipher_name: str) -> int:
 
 def nonce_size(cipher_name: str) -> int:
     """Returns the on-wire nonce length the named outer cipher emits
-    per stream (16 / 12 / 16 for "aes" / "chacha" / "siphash").
+    per stream (16 / 12 / 16 for "aescmac" / "chacha20" / "siphash24").
     Raises :class:`InvalidCipherError` for any other name."""
     cn = _validate_cipher_name(cipher_name)
     out = _ffi.new("size_t*")
@@ -167,8 +167,8 @@ def nonce_size(cipher_name: str) -> int:
 
 def generate_key(cipher_name: str) -> bytes:
     """Returns a fresh CSPRNG key of the size required by
-    ``cipher_name`` (16 / 32 / 16 bytes for "aes" / "chacha" /
-    "siphash"). Uses Python's :func:`secrets.token_bytes`. The
+    ``cipher_name`` (16 / 32 / 16 bytes for "aescmac" / "chacha20" /
+    "siphash24"). Uses Python's :func:`secrets.token_bytes`. The
     returned key is opaque bytes; the caller stores or shares it
     out-of-band.
     """

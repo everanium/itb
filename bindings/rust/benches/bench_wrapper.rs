@@ -28,7 +28,7 @@
 //! expose a `Read` / `Write` adapter pair for the No MAC streaming
 //! path. The Non-AEAD streaming arm therefore covers the User-Driven
 //! Loop variant only (per-chunk encrypt + caller-side u32_LE
-//! framing pushed through one wrap-stream session). See CLAUDE.md.
+//! framing pushed through one wrap-stream session). See the project guidelines.
 //!
 //! Run with::
 //!
@@ -74,9 +74,9 @@ const CIPHERS: [Cipher; 3] = [Cipher::Aes128Ctr, Cipher::ChaCha20, Cipher::SipHa
 
 fn cipher_tag(c: Cipher) -> &'static str {
     match c {
-        Cipher::Aes128Ctr => "aes",
-        Cipher::ChaCha20 => "chacha",
-        Cipher::SipHash24 => "siphash",
+        Cipher::Aes128Ctr => "aescmac",
+        Cipher::ChaCha20 => "chacha20",
+        Cipher::SipHash24 => "siphash24",
     }
 }
 
