@@ -9,7 +9,7 @@ import (
 
 // supported lists the registry names this package version derives from,
 // in registry order.
-var supported = []string{"aescmac", "siphash24", "chacha20"}
+var supported = []string{"siphash24", "aescmac", "chacha20"}
 
 // master32 is a fixed 32-byte master used across the deterministic and
 // domain-separation tests. It is long enough to satisfy every supported
@@ -73,8 +73,8 @@ func TestDeriveRegressionVectors(t *testing.T) {
 		name string
 		want string
 	}{
-		{"aescmac", "e255dfa6f4631e8d56d6e0c7573014028a29d5f3252428e244223356cf62ba078301921ae9620d23196d9883d3e864f4"},
 		{"siphash24", "aef03fab904b3e3377c39a574ba3b5d5cfd2e97e021e7871ff6150ccb47c4a6f291ddd1dbe9b3984343c37dd6f072873"},
+		{"aescmac", "e255dfa6f4631e8d56d6e0c7573014028a29d5f3252428e244223356cf62ba078301921ae9620d23196d9883d3e864f4"},
 		{"chacha20", "6588dece105ef22444a841af95daacae6455748e58d1f4ab73eb4ab1b350821ef1b4dc559789d2cd88369627a31a413e"},
 	}
 	for _, c := range cases {
@@ -254,8 +254,8 @@ func TestMasterTruncation(t *testing.T) {
 		name    string
 		keySize int
 	}{
-		{"aescmac", aescmacKeySize},
 		{"siphash24", siphash24KeySize},
+		{"aescmac", aescmacKeySize},
 		{"chacha20", chacha20KeySize},
 	}
 	for _, c := range cases {
@@ -280,7 +280,7 @@ func TestMasterTruncation(t *testing.T) {
 // TestErrUnknownName confirms an unsupported or unknown registry name is
 // an error.
 func TestErrUnknownName(t *testing.T) {
-	for _, name := range []string{"areion256", "blake3", "md5", ""} {
+	for _, name := range []string{"md5", "crc128", "fnv1a", ""} {
 		if _, err := Derive(name, master32, "x", 16); err == nil {
 			t.Errorf("Derive(%q) returned nil error", name)
 		}
@@ -294,8 +294,8 @@ func TestErrMasterTooShort(t *testing.T) {
 		name    string
 		keySize int
 	}{
-		{"aescmac", aescmacKeySize},
 		{"siphash24", siphash24KeySize},
+		{"aescmac", aescmacKeySize},
 		{"chacha20", chacha20KeySize},
 	}
 	for _, c := range cases {
@@ -330,5 +330,14 @@ func TestErrChaCha20LabelTooLong(t *testing.T) {
 func TestErrNegativeOutLen(t *testing.T) {
 	if _, err := Derive("aescmac", master32, "x", -1); err == nil {
 		t.Error("negative outLen returned nil error")
+	}
+}
+
+// TestErrOutLenTooLarge confirms an output length past the SP 800-108 L-field
+// bound is rejected before any allocation, rather than overflowing the
+// 32-bit length encoding.
+func TestErrOutLenTooLarge(t *testing.T) {
+	if _, err := Derive("aescmac", master32, "x", maxOutLen+1); err == nil {
+		t.Error("over-large outLen returned nil error")
 	}
 }

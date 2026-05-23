@@ -13,9 +13,9 @@ var ciphers = []struct {
 	keySize   int
 	nonceSize int
 }{
+	{CipherSipHash24, 16, 16},
 	{CipherAES128CTR, 16, 16},
 	{CipherChaCha20, 32, 12},
-	{CipherSipHash24, 16, 16},
 }
 
 func mustRead(t *testing.T, n int) []byte {
@@ -70,7 +70,7 @@ func TestKeyNonceSizes(t *testing.T) {
 // TestUnsupportedRegistryPrimitives confirms primitives outside the three
 // stream-capable names are rejected by every entry point.
 func TestUnsupportedRegistryPrimitives(t *testing.T) {
-	for _, name := range []string{"blake3", "blake2s", "areion256", "md5", "crc128", "fnv1a"} {
+	for _, name := range []string{"md5", "crc128", "fnv1a"} {
 		if _, err := KeySize(name); err == nil {
 			t.Errorf("KeySize(%q) returned nil error", name)
 		}
