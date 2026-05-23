@@ -1,16 +1,12 @@
 package wrapper
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
-	"encoding/binary"
 	"fmt"
 	"io"
 
-	"github.com/dchest/siphash"
+	"github.com/everanium/itb/ctr"
 	"github.com/everanium/itb/kdf"
-	"golang.org/x/crypto/chacha20"
 )
 
 // Cipher names accepted by the Make* helpers and the cmd/-flag parsing.
@@ -23,78 +19,27 @@ const (
 // CipherNames lists every supported outer cipher in iteration order.
 var CipherNames = []string{CipherAES128CTR, CipherChaCha20, CipherSipHash24}
 
-// Keystream is the minimal interface the wrap helpers consume from an outer
-// cipher. The contract matches crypto/cipher.Stream — XORKeyStream xors a
-// keystream segment over src into dst, advancing the internal counter.
-//
-// All three concrete implementations (AES-128-CTR, ChaCha20, SipHash-CTR)
-// satisfy this signature. The interface stays decoupled from cipher. Stream so
-// the SipHash wrapper does not have to pretend to be a stdlib type.
-type Keystream interface {
-	XORKeyStream(dst, src []byte)
-}
+// Keystream is the outer cipher keystream the wrap helpers consume. It
+// aliases ctr.Keystream; the contract matches crypto/cipher.Stream —
+// XORKeyStream xors a keystream segment over src into dst, advancing the
+// internal counter.
+type Keystream = ctr.Keystream
 
 // KeySize returns the byte length of the key for the named outer cipher.
 func KeySize(name string) (int, error) {
-	switch name {
-	case CipherAES128CTR:
-		return 16, nil
-	case CipherChaCha20:
-		return chacha20.KeySize, nil // 32
-	case CipherSipHash24:
-		return 16, nil
-	default:
-		return 0, fmt.Errorf("wrapper: unknown cipher %q", name)
-	}
+	return ctr.KeySize(name)
 }
 
 // NonceSize returns the on-wire nonce length for the named outer cipher.
-//
-// The nonce is emitted as a single prefix per Wrap entry point. AES-CTR uses
-// a 16-byte block-sized IV; ChaCha20 (RFC8439) uses a 12-byte nonce; SipHash-CTR
-// uses a 16-byte construction-defined nonce (the SipHash key is the wrapper
-// key; the nonce gets concatenated with the 64-bit counter under the PRF).
 func NonceSize(name string) (int, error) {
-	switch name {
-	case CipherAES128CTR:
-		return aes.BlockSize, nil // 16
-	case CipherChaCha20:
-		return chacha20.NonceSize, nil // 12
-	case CipherSipHash24:
-		return 16, nil
-	default:
-		return 0, fmt.Errorf("wrapper: unknown cipher %q", name)
-	}
+	return ctr.NonceSize(name)
 }
 
 // MakeKeystream constructs an outer cipher Keystream from the named cipher,
 // the caller-provided key, and a per-stream nonce. The key length must equal
 // KeySize(name); the nonce length must equal NonceSize(name).
 func MakeKeystream(name string, key, nonce []byte) (Keystream, error) {
-	switch name {
-	case CipherAES128CTR:
-		if len(key) != 16 {
-			return nil, fmt.Errorf("wrapper: aes-128-ctr key must be 16 bytes, got %d", len(key))
-		}
-		if len(nonce) != aes.BlockSize {
-			return nil, fmt.Errorf("wrapper: aes-128-ctr nonce must be %d bytes, got %d", aes.BlockSize, len(nonce))
-		}
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			return nil, err
-		}
-		return cipher.NewCTR(block, nonce), nil
-	case CipherChaCha20:
-		c, err := chacha20.NewUnauthenticatedCipher(key, nonce)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	case CipherSipHash24:
-		return newSipHashCTR(key, nonce)
-	default:
-		return nil, fmt.Errorf("wrapper: unknown cipher %q", name)
-	}
+	return ctr.New(name, key, nonce)
 }
 
 // GenerateKey returns a fresh CSPRNG key sized for the named outer cipher.
@@ -121,108 +66,6 @@ func generateNonce(name string) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
-}
-
-// SipHash-2-4 in CTR mode.
-//
-// SipHash-2-4 is a 128-bit-keyed PRF / MAC; the 128-bit-output variant
-// (SipHash-2-4-128) drives the keystream. Building a keystream from a PRF is
-// the standard CTR construction:
-//
-//	keystream_block_i = SipHash128(K, nonce || counter_i)   (16 bytes per call)
-//
-// The combined PRF input is 16 bytes (a 16-byte nonce split into two 8-byte
-// halves, counter increments folded into the lower half). The construction is
-// sound under the same PRF assumption that justifies AES-CTR — XORing PRF
-// output with plaintext is the canonical PRF-secure stream. The 128-bit
-// output places the keystream-block collision birthday at 2^64.
-//
-// The nonce is 16 bytes wide, partitioned as (nonce_hi||nonce_lo). Each
-// keystream block hashes a 16-byte input formed from
-// (nonce_hi || nonce_lo XOR counter_le). This binds every block to the
-// stream's nonce while injecting unique 64-bit counter material per block.
-
-type sipCTR struct {
-	k0, k1   uint64
-	nonceHi  uint64
-	nonceLo  uint64
-	counter  uint64
-	keystrm  [16]byte
-	keystrmN int // number of unconsumed bytes in keystrm[16-keystrmN:]
-}
-
-func newSipHashCTR(key, nonce []byte) (Keystream, error) {
-	if len(key) != 16 {
-		return nil, fmt.Errorf("wrapper: siphash key must be 16 bytes, got %d", len(key))
-	}
-	if len(nonce) != 16 {
-		return nil, fmt.Errorf("wrapper: siphash nonce must be 16 bytes, got %d", len(nonce))
-	}
-	c := &sipCTR{
-		k0:      binary.LittleEndian.Uint64(key[:8]),
-		k1:      binary.LittleEndian.Uint64(key[8:]),
-		nonceHi: binary.LittleEndian.Uint64(nonce[:8]),
-		nonceLo: binary.LittleEndian.Uint64(nonce[8:]),
-	}
-	return c, nil
-}
-
-func (c *sipCTR) refill() {
-	var buf [16]byte
-	binary.LittleEndian.PutUint64(buf[:8], c.nonceHi)
-	binary.LittleEndian.PutUint64(buf[8:], c.nonceLo^c.counter)
-	lo, hi := siphash.Hash128(c.k0, c.k1, buf[:])
-	binary.LittleEndian.PutUint64(c.keystrm[:8], lo)
-	binary.LittleEndian.PutUint64(c.keystrm[8:], hi)
-	c.counter++
-	c.keystrmN = 16
-}
-
-func (c *sipCTR) XORKeyStream(dst, src []byte) {
-	if len(dst) < len(src) {
-		panic("wrapper/siphash: short dst")
-	}
-	n := len(src)
-	i := 0
-
-	// Drain leftover bytes from a previous partial refill, byte by byte.
-	if c.keystrmN > 0 {
-		off := 16 - c.keystrmN
-		take := c.keystrmN
-		if take > n {
-			take = n
-		}
-		for j := 0; j < take; j++ {
-			dst[i+j] = src[i+j] ^ c.keystrm[off+j]
-		}
-		i += take
-		c.keystrmN -= take
-	}
-
-	// Bulk path: hash one 16-byte input per 16-byte keystream block, XOR
-	// directly via two uint64 — skips the keystrm[16]byte buffer entirely.
-	var nonceBuf [16]byte
-	binary.LittleEndian.PutUint64(nonceBuf[:8], c.nonceHi)
-	for n-i >= 16 {
-		binary.LittleEndian.PutUint64(nonceBuf[8:], c.nonceLo^c.counter)
-		ksLo, ksHi := siphash.Hash128(c.k0, c.k1, nonceBuf[:])
-		srcLo := binary.LittleEndian.Uint64(src[i:])
-		srcHi := binary.LittleEndian.Uint64(src[i+8:])
-		binary.LittleEndian.PutUint64(dst[i:], srcLo^ksLo)
-		binary.LittleEndian.PutUint64(dst[i+8:], srcHi^ksHi)
-		c.counter++
-		i += 16
-	}
-
-	// Tail (<8 bytes): refill keystrm buffer and consume the leading bytes.
-	if i < n {
-		c.refill()
-		rem := n - i
-		for j := 0; j < rem; j++ {
-			dst[i+j] = src[i+j] ^ c.keystrm[j]
-		}
-		c.keystrmN -= rem
-	}
 }
 
 // Wrap helpers.
