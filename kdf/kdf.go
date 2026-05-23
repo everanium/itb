@@ -6,15 +6,20 @@
 // supported registry primitive maps to a standard, separately analysable
 // construction:
 //
-//   - "aescmac"   — NIST SP 800-108 KDF in Counter Mode, PRF = AES-CMAC
-//                   over AES-128.
+//   - "areion256", "areion512" — SP 800-108 KDF in Counter Mode, PRF = the
+//     registry Areion-SoEM keyed hash. areion512 needs a
+//     64-byte PRF key; a 32-byte master is deterministically
+//     stretched to 64 bytes via areion256 first.
 //   - "siphash24" — NIST SP 800-108 KDF in Counter Mode, PRF =
-//                   SipHash-2-4 with 128-bit output.
+//     SipHash-2-4 with 128-bit output.
+//   - "aescmac"   — NIST SP 800-108 KDF in Counter Mode, PRF = AES-CMAC
+//     over AES-128.
+//   - "blake2b256", "blake2b512", "blake2s", "blake3" — SP 800-108 KDF in
+//     Counter Mode, PRF = the primitive's native keyed hash.
 //   - "chacha20"  — XChaCha20 keystream KDF with the public label as the
-//                   24-byte nonce.
+//     24-byte nonce.
 //
-// The remaining registry primitives are not supported by this package
-// version; Derive returns an error for any name outside the three above.
+// Derive returns an error for any other name.
 //
 // A public domain-separation label keeps independent derivations from the
 // same master distinct. Labels need only be unique per intended subkey;
@@ -32,8 +37,8 @@ import (
 
 // Key sizes per supported primitive, in bytes.
 const (
-	aescmacKeySize   = 16 // AES-128
 	siphash24KeySize = 16 // (k0, k1) little-endian halves
+	aescmacKeySize   = 16 // AES-128
 	chacha20KeySize  = 32 // XChaCha20 key
 )
 
@@ -41,11 +46,18 @@ const (
 // selects the XChaCha20 variant of chacha20.NewUnauthenticatedCipher.
 const chacha20NonceSize = 24
 
+// maxOutLen caps the requested output length. The SP 800-108 counter-mode
+// constructions encode the output length in bits as a 32-bit big-endian L
+// field, so outLen*8 must fit in a uint32; the cap keeps every construction
+// well within that bound (real subkeys are a few dozen bytes).
+const maxOutLen = (1<<32)/8 - 1
+
 // Derive produces an outLen-byte subkey from master under the public
 // domain-separation label, using the construction selected by name.
 //
-// name selects the construction; supported values are "aescmac",
-// "chacha20", and "siphash24". Any other value is an error.
+// name selects the construction; supported values are "areion256",
+// "areion512", "siphash24", "aescmac", "blake2b256", "blake2b512", "blake2s",
+// "blake3", "chacha20". Any other value is an error.
 //
 // master is the key-derivation key. When master is longer than the
 // selected primitive's key size it is truncated to that size (a uniform
@@ -64,6 +76,9 @@ func Derive(name string, master []byte, label string, outLen int) ([]byte, error
 	if outLen < 0 {
 		return nil, fmt.Errorf("kdf: negative output length %d", outLen)
 	}
+	if outLen > maxOutLen {
+		return nil, fmt.Errorf("kdf: output length %d exceeds maximum %d", outLen, maxOutLen)
+	}
 	switch name {
 	case "aescmac":
 		return deriveAESCMAC(master, label, outLen)
@@ -71,6 +86,10 @@ func Derive(name string, master []byte, label string, outLen int) ([]byte, error
 		return deriveSipHash24(master, label, outLen)
 	case "chacha20":
 		return deriveChaCha20(master, label, outLen)
+	case hashAreion256, hashBLAKE2b256, hashBLAKE2b512, hashBLAKE2s, hashBLAKE3:
+		return deriveHashPRF(name, master, label, outLen)
+	case hashAreion512:
+		return deriveAreion512(master, label, outLen)
 	default:
 		return nil, fmt.Errorf("kdf: unsupported primitive %q", name)
 	}

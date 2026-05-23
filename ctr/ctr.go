@@ -1,6 +1,9 @@
-// Package ctr provides counter-mode keystream constructions over the three
-// stream-capable ITB registry primitives: AES-128-CTR ("aescmac"),
-// ChaCha20 ("chacha20"), and SipHash-2-4 in CTR mode ("siphash24").
+// Package ctr provides counter-mode keystream constructions over the nine
+// PRF-grade ITB registry primitives. AES-128-CTR ("aescmac") and ChaCha20
+// ("chacha20") use their native cipher modes; the other seven ("areion256",
+// "areion512", "siphash24", "blake2b256", "blake2b512", "blake2s", "blake3")
+// run in PRF-counter mode, where a keystream block is the primitive's
+// keyed-PRF output over the nonce concatenated with the block counter.
 //
 // The package is the single source of truth for cipher key and nonce sizes.
 // Each keystream satisfies the Keystream interface, whose XORKeyStream method
@@ -16,24 +19,27 @@ import (
 
 	"github.com/dchest/siphash"
 	"golang.org/x/crypto/chacha20"
+
+	"github.com/everanium/itb/internal/hashprf"
 )
 
-// Cipher names accepted by New, KeySize, and NonceSize. The names match the
-// ITB registry identifiers for the three stream-capable primitives.
+// Cipher names for the native-mode primitives, matching the ITB registry
+// identifiers. The remaining PRF-counter-mode names are defined alongside
+// their construction.
 const (
+	CipherSipHash24 = "siphash24"
 	CipherAES128CTR = "aescmac"
 	CipherChaCha20  = "chacha20"
-	CipherSipHash24 = "siphash24"
 )
 
 // Keystream is the minimal interface a counter-mode cipher exposes. The
 // contract matches crypto/cipher.Stream — XORKeyStream xors a keystream
 // segment over src into dst, advancing the internal counter.
 //
-// All three concrete implementations (AES-128-CTR, ChaCha20, SipHash-CTR)
-// satisfy this signature. The interface stays decoupled from
-// crypto/cipher.Stream so the SipHash construction does not have to pretend to
-// be a stdlib type.
+// Every concrete implementation — the native AES-128-CTR and ChaCha20 and the
+// PRF-counter-mode constructions — satisfies this signature. The interface
+// stays decoupled from crypto/cipher.Stream so the PRF-counter constructions
+// do not have to pretend to be a stdlib type.
 type Keystream interface {
 	XORKeyStream(dst, src []byte)
 }
@@ -44,12 +50,14 @@ type Keystream interface {
 // siphash24 uses a 16-byte SipHash key.
 func KeySize(name string) (int, error) {
 	switch name {
+	case CipherSipHash24:
+		return 16, nil
 	case CipherAES128CTR:
 		return 16, nil
 	case CipherChaCha20:
 		return chacha20.KeySize, nil // 32
-	case CipherSipHash24:
-		return 16, nil
+	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+		return hashprf.KeySize(name)
 	default:
 		return 0, fmt.Errorf("ctr: unknown cipher %q", name)
 	}
@@ -62,12 +70,14 @@ func KeySize(name string) (int, error) {
 // is the cipher key; the nonce is mixed with the 64-bit counter under the PRF).
 func NonceSize(name string) (int, error) {
 	switch name {
+	case CipherSipHash24:
+		return 16, nil
 	case CipherAES128CTR:
 		return aes.BlockSize, nil // 16
 	case CipherChaCha20:
 		return chacha20.NonceSize, nil // 12
-	case CipherSipHash24:
-		return 16, nil
+	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+		return hashCTRNonceSize, nil // 16
 	default:
 		return 0, fmt.Errorf("ctr: unknown cipher %q", name)
 	}
@@ -77,10 +87,12 @@ func NonceSize(name string) (int, error) {
 // and a per-stream nonce. The key length must equal KeySize(name); the nonce
 // length must equal NonceSize(name).
 //
-// The three remaining ITB registry primitives are not stream-capable through
-// this package and yield an unknown-cipher error.
+// Names outside the nine PRF-grade registry primitives yield an
+// unknown-cipher error.
 func New(name string, key, nonce []byte) (Keystream, error) {
 	switch name {
+	case CipherSipHash24:
+		return newSipHashCTR(key, nonce)
 	case CipherAES128CTR:
 		if len(key) != 16 {
 			return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
@@ -105,8 +117,8 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 			return nil, err
 		}
 		return c, nil
-	case CipherSipHash24:
-		return newSipHashCTR(key, nonce)
+	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+		return newPrfHashCTR(name, key, nonce)
 	default:
 		return nil, fmt.Errorf("ctr: unknown cipher %q", name)
 	}
