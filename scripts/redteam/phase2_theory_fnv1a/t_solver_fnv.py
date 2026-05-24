@@ -60,9 +60,28 @@ from __future__ import annotations
 
 from typing import List, Sequence, Tuple
 
-from fnv_chain_lo_concrete import fnv_chain_lo_concrete  # type: ignore
-
 MASK64 = (1 << 64) - 1
+P_LO = 0x13B  # low 64 bits of FNV_PRIME_128 (the only part reaching hLo)
+
+
+def _chain_fast(seed, data: bytes, rounds: int) -> int:
+    """Bit-exact, fast forward of the FNV-1a lo-lane ChainHash.
+
+    Mirrors fnv_chain_lo_concrete but uses the native modular multiply
+    `s * 0x13B mod 2^64` instead of the shift-and-add decomposition that
+    module carries for the z3 symbolic encoding, and inlines the byte loop
+    with no per-call assert. The shift-add and native forms are equal mod
+    2^64 (verified by fnv_chain_lo_concrete._check_mul_equivalence), so the
+    solver output is identical; the calibration's match / holdout checks are
+    the parity gate.
+    """
+    h = 0
+    for r in range(rounds):
+        s = seed[r] & MASK64 if r == 0 else (seed[r] ^ h) & MASK64
+        for b in data:
+            s = ((s ^ b) * P_LO) & MASK64
+        h = s
+    return h
 
 # Default ceiling on DFS nodes visited before giving up. Generous enough for a
 # small branch factor across 64 planes; trips only if the carries fail to prune.
@@ -89,7 +108,7 @@ def solve_via_tsolver(
     def rec(t: int) -> bool:
         if t == 64:
             return all(
-                fnv_chain_lo_concrete(seed, d, rounds) == tg for d, tg in obs
+                _chain_fast(seed, d, rounds) == tg for d, tg in obs
             )
         nodes[0] += 1
         if nodes[0] > node_budget:
@@ -99,7 +118,7 @@ def solve_via_tsolver(
         # observation's affine constant and require a single XOR value V.
         V = -1
         for d, tg in obs:
-            c = (fnv_chain_lo_concrete(seed, d, rounds) >> t) & 1
+            c = (_chain_fast(seed, d, rounds) >> t) & 1
             v = ((tg >> t) & 1) ^ c
             if V == -1:
                 V = v
@@ -117,6 +136,79 @@ def solve_via_tsolver(
                 return True
             for j in range(rounds):
                 seed[j] &= ~(1 << t)
+        return False
+
+    if rec(0):
+        return "sat", [s & MASK64 for s in seed]
+    return "unknown", []
+
+
+def solve_via_tsolver_masked(
+    rounds: int, observations: Sequence, node_budget: int = DEFAULT_NODE_BUDGET
+) -> Tuple[str, List[int]]:
+    """Masked variant for the ITB barrier hybrid (Level 2).
+
+    Each observation carries only PART of its hLo: the ITB channel projection
+    `hLo >> 3 & 0x7F` per channel reveals dataHash bits 3..58 (for the known
+    channels of a crib pixel) but not bits 0..2 (used by rotation = dataHash %
+    7, not the xorMask) nor, cleanly, the kernel bit 63. So an observation is
+    `(data_bytes, target_hlo, known_mask)`: `known_mask` has a 1 in every hLo
+    bit position the barrier layer recovered.
+
+    The plane solve is the same LSB -> MSB DFS, with two changes:
+      - At plane t, only observations with bit t known (`known_mask >> t & 1`)
+        contribute to the agreement check.
+      - A plane where NO observation knows bit t is vacuous: the XOR value V is
+        unconstrained, so both V = 0 and V = 1 are tried (the low bits 0..2 are
+        such planes; higher planes are richly covered and prune the fan-out).
+
+    At the leaf the candidate seed is verified on the KNOWN bits of every
+    observation. Functional equivalence (reproducing future ciphertext) is the
+    caller's concern; bit 63 of a lane may differ — it is architecturally
+    unobservable through the channel projection.
+    """
+    obs = [
+        (o.data_bytes, o.target_hlo, o.known_mask) for o in observations
+    ]
+    seed = [0] * rounds
+    nodes = [0]
+
+    def rec(t: int) -> bool:
+        if t == 64:
+            for d, tg, km in obs:
+                if (_chain_fast(seed, d, rounds) ^ tg) & km:
+                    return False
+            return True
+        nodes[0] += 1
+        if nodes[0] > node_budget:
+            return False
+
+        # Agreement over observations that know bit t. Vacuous if none do.
+        bit = 1 << t
+        Vs: List[int]
+        V = -1
+        for d, tg, km in obs:
+            if not (km & bit):
+                continue
+            c = (_chain_fast(seed, d, rounds) >> t) & 1
+            v = ((tg >> t) & 1) ^ c
+            if V == -1:
+                V = v
+            elif V != v:
+                return False  # dead branch
+        Vs = [0, 1] if V == -1 else [V]
+
+        for Vval in Vs:
+            for bits in range(1 << rounds):
+                if (bin(bits).count("1") & 1) != Vval:
+                    continue
+                for j in range(rounds):
+                    if (bits >> j) & 1:
+                        seed[j] |= bit
+                if rec(t + 1):
+                    return True
+                for j in range(rounds):
+                    seed[j] &= ~bit
         return False
 
     if rec(0):
