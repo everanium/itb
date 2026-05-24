@@ -145,7 +145,7 @@ def solve_via_tsolver(
 
 def solve_via_tsolver_masked(
     rounds: int, observations: Sequence, node_budget: int = DEFAULT_NODE_BUDGET,
-    leaf_check=None,
+    leaf_check=None, max_plane: int = 64,
 ) -> Tuple[str, List[int]]:
     """Masked variant for the ITB barrier hybrid (Level 2).
 
@@ -175,9 +175,14 @@ def solve_via_tsolver_masked(
     nodes = [0]
 
     def rec(t: int) -> bool:
-        if t == 64:
+        if t == max_plane:
+            # Stopping before plane 64 is a sound consistency check: if a seed
+            # prefix reaches max_plane satisfying every known bit below it, the
+            # unset higher bits are free, so a full seed exists. The propagator
+            # uses max_plane = 59 (just past the observed channel range 3..58)
+            # to test feasibility without enumerating the unobserved high bits.
             for d, tg, km in obs:
-                if (_chain_fast(seed, d, rounds) ^ tg) & km:
+                if (_chain_fast(seed, d, rounds) ^ tg) & km & ((1 << max_plane) - 1):
                     return False
             # leaf_check (optional) pins the bits the channel projection leaves
             # unobserved — e.g. the rotation = dataHash % 7 constraint, which
