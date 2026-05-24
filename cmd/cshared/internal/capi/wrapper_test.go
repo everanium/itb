@@ -479,7 +479,7 @@ func TestWrapperDeriveKey(t *testing.T) {
 	if _, st := WrapperDeriveKey("nonexistent", master, make([]byte, 32)); st != StatusBadInput {
 		t.Fatalf("WrapperDeriveKey(unknown): st=%v", st)
 	}
-	// Too-short master (below the primitive's key size) is rejected.
+	// Too-short master (below the wrapper's uniform 32-byte floor) is rejected.
 	if _, st := WrapperDeriveKey("aescmac", make([]byte, 8), make([]byte, 16)); st != StatusBadInput {
 		t.Fatalf("WrapperDeriveKey(short master): st=%v", st)
 	}

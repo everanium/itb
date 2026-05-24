@@ -230,7 +230,8 @@ func UnwrapInPlace(name string, key, wire []byte) (n int, st Status) {
 // per-cipher key with no separate key storage. Same caller-allocated-
 // buffer convention as Wrap: returned n carries the bytes written on
 // success or the required capacity (KeySize(name)) on
-// StatusBufferTooSmall. master must be at least KeySize(name) bytes.
+// StatusBufferTooSmall. master must be at least 32 bytes (the wrapper's
+// uniform security floor); a shorter master returns StatusBadInput.
 func WrapperDeriveKey(name string, master, out []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusInternal)
 

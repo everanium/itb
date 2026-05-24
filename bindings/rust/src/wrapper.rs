@@ -67,10 +67,13 @@ use crate::error::{check, ITBError};
 use crate::ffi;
 
 /// Outer keystream cipher selected per wrap session. Each variant
-/// maps to one of the three `cipher_name` strings the underlying
-/// FFI accepts: `"aescmac"` / `"chacha20"` / `"siphash24"`. The Go-side
-/// constants are `wrapper.CipherAES128CTR` / `wrapper.CipherChaCha20`
-/// / `wrapper.CipherSipHash24`.
+/// maps to one of the nine `cipher_name` strings the underlying
+/// FFI accepts: `"aescmac"` / `"chacha20"` / `"siphash24"` /
+/// `"areion256"` / `"areion512"` / `"blake2b256"` / `"blake2b512"` /
+/// `"blake2s"` / `"blake3"`. The Go-side constants are
+/// `wrapper.CipherAES128CTR` / `wrapper.CipherChaCha20` /
+/// `wrapper.CipherSipHash24` and the matching `wrapper.Cipher*`
+/// values for the remaining six.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Cipher {
     /// AES-128-CTR — 16-byte key, 16-byte nonce, AES-NI accelerated
@@ -83,6 +86,24 @@ pub enum Cipher {
     /// CTR construction over the SipHash-2-4 PRF; sound under the
     /// standard PRF assumption that justifies AES-CTR.
     SipHash24,
+    /// Areion-SoEM-256 in CTR mode. Custom CTR construction over the
+    /// Areion-SoEM-256 PRF; sound under the standard PRF assumption.
+    Areion256,
+    /// Areion-SoEM-512 in CTR mode. Custom CTR construction over the
+    /// Areion-SoEM-512 PRF; sound under the standard PRF assumption.
+    Areion512,
+    /// BLAKE2b-256 in CTR mode. Custom CTR construction over the
+    /// BLAKE2b-256 PRF; sound under the standard PRF assumption.
+    Blake2b256,
+    /// BLAKE2b-512 in CTR mode. Custom CTR construction over the
+    /// BLAKE2b-512 PRF; sound under the standard PRF assumption.
+    Blake2b512,
+    /// BLAKE2s in CTR mode. Custom CTR construction over the BLAKE2s
+    /// PRF; sound under the standard PRF assumption.
+    Blake2s,
+    /// BLAKE3 in CTR mode. Custom CTR construction over the BLAKE3
+    /// PRF; sound under the standard PRF assumption.
+    Blake3,
 }
 
 impl Cipher {
@@ -92,12 +113,28 @@ impl Cipher {
             Cipher::Aes128Ctr => "aescmac",
             Cipher::ChaCha20 => "chacha20",
             Cipher::SipHash24 => "siphash24",
+            Cipher::Areion256 => "areion256",
+            Cipher::Areion512 => "areion512",
+            Cipher::Blake2b256 => "blake2b256",
+            Cipher::Blake2b512 => "blake2b512",
+            Cipher::Blake2s => "blake2s",
+            Cipher::Blake3 => "blake3",
         }
     }
 
-    /// Iteration order over all three supported outer ciphers.
-    pub fn all() -> [Cipher; 3] {
-        [Cipher::Aes128Ctr, Cipher::ChaCha20, Cipher::SipHash24]
+    /// Iteration order over all nine supported outer ciphers.
+    pub fn all() -> [Cipher; 9] {
+        [
+            Cipher::Areion256,
+            Cipher::Areion512,
+            Cipher::SipHash24,
+            Cipher::Aes128Ctr,
+            Cipher::Blake2b256,
+            Cipher::Blake2b512,
+            Cipher::Blake2s,
+            Cipher::Blake3,
+            Cipher::ChaCha20,
+        ]
     }
 }
 
@@ -213,22 +250,16 @@ fn fill_random(buf: &mut [u8]) -> Result<(), ITBError> {
 /// result is a deterministic function of `(cipher, master)`, so both
 /// endpoints derive the same key from a shared master.
 ///
-/// `master` must be at least [`key_size`]`(cipher)` bytes; the returned
-/// key has length `key_size(cipher)` (16 / 32 / 16 for AES / ChaCha /
-/// SipHash). Returns [`ITBError`] with [`ffi::STATUS_BAD_INPUT`] for a
-/// too-short master.
+/// `master` must be at least 32 bytes (the wrapper's uniform security
+/// floor — a 256-bit master matching an ML-KEM shared secret). The
+/// kdf layer truncates / stretches that master to the per-cipher key
+/// length internally, so a single 32-byte master keys every outer
+/// cipher. The returned key has length `key_size(cipher)` (16 / 32 / 16
+/// for AES / ChaCha / SipHash). Returns [`ITBError`] with
+/// [`ffi::STATUS_BAD_INPUT`] for a master shorter than 32 bytes.
 pub fn derive_key(cipher: Cipher, master: &[u8]) -> Result<Vec<u8>, ITBError> {
     let cn = cipher_cstring(cipher)?;
     let klen = key_size(cipher)?;
-    if master.len() < klen {
-        return Err(ITBError::with_message(
-            ffi::STATUS_BAD_INPUT,
-            format!(
-                "wrapper {cipher}: master must be at least {klen} bytes, got {}",
-                master.len()
-            ),
-        ));
-    }
     let mut out = vec![0u8; klen];
     let mut out_len: usize = 0;
     let lib = ffi::lib();
