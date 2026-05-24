@@ -144,7 +144,8 @@ def solve_via_tsolver(
 
 
 def solve_via_tsolver_masked(
-    rounds: int, observations: Sequence, node_budget: int = DEFAULT_NODE_BUDGET
+    rounds: int, observations: Sequence, node_budget: int = DEFAULT_NODE_BUDGET,
+    leaf_check=None,
 ) -> Tuple[str, List[int]]:
     """Masked variant for the ITB barrier hybrid (Level 2).
 
@@ -178,6 +179,14 @@ def solve_via_tsolver_masked(
             for d, tg, km in obs:
                 if (_chain_fast(seed, d, rounds) ^ tg) & km:
                     return False
+            # leaf_check (optional) pins the bits the channel projection leaves
+            # unobserved — e.g. the rotation = dataHash % 7 constraint, which
+            # constrains the low bits 0..2. Without it the seed reproduces the
+            # channel projection but not the rotation, so a full decrypt would
+            # rotate wrong; with it the recovered lo-lane matches bitwuzla's
+            # bits 0..62.
+            if leaf_check is not None:
+                return leaf_check(seed)
             return True
         nodes[0] += 1
         if nodes[0] > node_budget:
