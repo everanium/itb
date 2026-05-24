@@ -2433,11 +2433,12 @@ func ITB_Easy_DecryptStreamAuth(
 
 // ─── Format-deniability wrapper (outer CTR cipher) ─────────────────
 //
-// The wrapper surface seals an ITB ciphertext inside one of three
-// outer keystream ciphers (AES-128-CTR / ChaCha20 / SipHash-CTR)
-// so the wire bytes carry no header / magic the receiver could
-// match against. Every entry point dispatches off a `cipher_name`
-// string ("aescmac" / "chacha20" / "siphash24"), mirroring the MAC-factory
+// The wrapper surface seals an ITB ciphertext inside one of the nine
+// PRF-grade outer keystream ciphers so the wire bytes carry no header /
+// magic the receiver could match against. Every entry point dispatches off
+// a `cipher_name` string naming any PRF-grade ITB registry primitive
+// (areion256 / areion512 / siphash24 / aescmac / blake2b256 / blake2b512 /
+// blake2s / blake3 / chacha20), mirroring the MAC-factory
 // pattern: one unified ABI per operation rather than one per
 // cipher. The Go-side implementation lives in
 // github.com/everanium/itb/wrapper; the helpers in capi/wrapper.go
@@ -2453,7 +2454,8 @@ func ITB_Easy_DecryptStreamAuth(
 // and the nonce buffer.
 
 // Reports the byte length of the keystream-cipher key for the named
-// outer cipher (16 / 32 / 16 for "aescmac" / "chacha20" / "siphash24").
+// outer cipher (16 for aescmac / siphash24, 32 for areion256 / chacha20 /
+// blake2b256 / blake2b512 / blake2s / blake3, 64 for areion512).
 // Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
 //
 //export ITB_WrapperKeySize
@@ -2471,7 +2473,7 @@ func ITB_WrapperKeySize(cipherName *C.char, outSize *C.size_t) C.int {
 }
 
 // Reports the on-wire nonce length the named outer cipher emits
-// per stream (16 / 12 / 16 for "aescmac" / "chacha20" / "siphash24").
+// per stream (12 for chacha20, 16 for every other cipher).
 // Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
 //
 //export ITB_WrapperNonceSize
@@ -2494,7 +2496,8 @@ func ITB_WrapperNonceSize(cipherName *C.char, outSize *C.size_t) C.int {
 // function of (name, master), so both endpoints derive the same key
 // from a shared master. Same caller-allocated-buffer convention as
 // ITB_Wrap: on ITB_ERR_BUFFER_TOO_SMALL *out_len receives the required
-// size (KeySize(name)). master_len must be at least KeySize(name).
+// size (KeySize(name)). master_len must be at least 32 (the wrapper's
+// uniform security floor); a shorter master returns ITB_ERR_BAD_INPUT.
 //
 //export ITB_WrapperDeriveKey
 func ITB_WrapperDeriveKey(

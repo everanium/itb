@@ -1082,6 +1082,20 @@ offending JSON field name into the error message on
 with `ITBError(STATUS_ENCRYPT_FAILED)` ("itb: empty data") on every
 cipher entry point. Pass at least one byte.
 
+### Wrapper (`itb::wrapper`)
+
+| Symbol | Purpose |
+|---|---|
+| `Cipher::Aes128Ctr / ChaCha20 / SipHash24 / Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3` | Cipher enum |
+| `Cipher::all()` | Canonical cipher list |
+| `wrapper::key_size(cipher) / wrapper::nonce_size(cipher)` | Cipher dimension accessors |
+| `wrapper::generate_key(cipher) -> Vec<u8>` | CSPRNG-fresh wrapper key |
+| `wrapper::derive_key(cipher, master) -> Vec<u8>` | Deterministic wrapper key from a master secret (>= 32 bytes, e.g. an ML-KEM shared secret) |
+| `wrapper::wrap(cipher, key, blob) -> Vec<u8>` / `wrapper::unwrap(cipher, key, wire) -> Vec<u8>` | Single Message Wrap / Unwrap |
+| `wrapper::wrap_in_place(cipher, key, blob) -> Vec<u8>` / `wrapper::unwrap_in_place(cipher, key, wire) -> &mut [u8]` | In-place Wrap / Unwrap |
+| `WrapStreamWriter::new(cipher, key)` / `UnwrapStreamReader::new(cipher, key, wire_nonce)` | Streaming wrap writer / unwrap reader |
+| `ITBError` (with `STATUS_BAD_INPUT` / `STATUS_BAD_HANDLE`) | Typed errors |
+
 ### Status codes
 
 | Code | Name | Description |
