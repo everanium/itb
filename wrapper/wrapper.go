@@ -276,8 +276,20 @@ func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) 
 // the key material is bound to that primitive and no fixed hash is imposed.
 // The cipher name doubles as the derivation label, so one master yields
 // independent keys for different outer ciphers. The returned key has length
-// KeySize(name); master must be at least that primitive's key size.
+// KeySize(name).
+//
+// master must be at least 32 bytes — the wrapper's uniform security floor, a
+// 256-bit master matching an ML-KEM shared secret. A single 32-byte master
+// keys every supported cipher: the kdf package takes the leading 16 bytes for
+// aescmac / siphash24, the leading 32 bytes for chacha20 / areion256 / the
+// BLAKE family, and deterministically stretches the leading 32 bytes to the
+// 64-byte areion512 key. A longer master is accepted and truncated the same
+// way, so both endpoints derive an identical key from any master of 32 bytes
+// or more.
 func DeriveKey(name string, master []byte) ([]byte, error) {
+	if len(master) < 32 {
+		return nil, fmt.Errorf("wrapper: DeriveKey master must be at least 32 bytes, got %d", len(master))
+	}
 	n, err := KeySize(name)
 	if err != nil {
 		return nil, err

@@ -42,19 +42,26 @@ fn assert_key_nonce_sizes(cipher: Cipher, want_key: usize, want_nonce: usize) {
 // Cipher metadata
 // --------------------------------------------------------------------
 
-#[test]
-fn metadata_aes() {
-    assert_key_nonce_sizes(Cipher::Aes128Ctr, 16, 16);
+fn expected_key_nonce(cipher: Cipher) -> (usize, usize) {
+    match cipher {
+        Cipher::Aes128Ctr => (16, 16),
+        Cipher::ChaCha20 => (32, 12),
+        Cipher::SipHash24 => (16, 16),
+        Cipher::Areion256 => (32, 16),
+        Cipher::Areion512 => (64, 16),
+        Cipher::Blake2b256 => (32, 16),
+        Cipher::Blake2b512 => (32, 16),
+        Cipher::Blake2s => (32, 16),
+        Cipher::Blake3 => (32, 16),
+    }
 }
 
 #[test]
-fn metadata_chacha() {
-    assert_key_nonce_sizes(Cipher::ChaCha20, 32, 12);
-}
-
-#[test]
-fn metadata_siphash() {
-    assert_key_nonce_sizes(Cipher::SipHash24, 16, 16);
+fn metadata_all_ciphers() {
+    for cipher in Cipher::all() {
+        let (want_key, want_nonce) = expected_key_nonce(cipher);
+        assert_key_nonce_sizes(cipher, want_key, want_nonce);
+    }
 }
 
 #[test]
@@ -69,8 +76,10 @@ fn generate_key_size_matches_cipher() {
 #[test]
 fn derive_key_deterministic_and_roundtrips() {
     // 32 random bytes as the master secret (stand-in for an ML-KEM
-    // shared secret; the binding ships no KEM). Use a fresh CSPRNG
-    // 32-byte draw via the ChaCha20 key path, which sizes to 32.
+    // shared secret; the binding ships no KEM). 32 bytes is the
+    // wrapper's uniform security floor; the kdf layer truncates /
+    // stretches it to each cipher's key size, so a single 32-byte
+    // master keys every outer cipher.
     let master = wrapper::generate_key(Cipher::ChaCha20).unwrap();
     assert_eq!(master.len(), 32);
 
@@ -87,6 +96,23 @@ fn derive_key_deterministic_and_roundtrips() {
         let wire = wrapper::wrap(cipher, &k1, &blob).unwrap();
         let recovered = wrapper::unwrap(cipher, &k1, &wire).unwrap();
         assert_eq!(recovered, blob, "{cipher}");
+    }
+}
+
+#[test]
+fn derive_key_master_floor_boundary() {
+    // The wrapper enforces a uniform 32-byte master floor for every
+    // cipher (not the per-cipher key size): 31 bytes is rejected, 32
+    // bytes is accepted.
+    for cipher in Cipher::all() {
+        let short_master = vec![0u8; 31];
+        assert!(
+            wrapper::derive_key(cipher, &short_master).is_err(),
+            "{cipher}: 31-byte master must be rejected"
+        );
+        let floor_master = vec![0u8; 32];
+        let k = wrapper::derive_key(cipher, &floor_master).unwrap();
+        assert_eq!(k.len(), wrapper::key_size(cipher).unwrap(), "{cipher}");
     }
 }
 
