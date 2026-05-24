@@ -15,13 +15,13 @@ ITB encrypts content into RGBWYOPA pixel containers. The construction provides *
 - Non-AEAD path: per-chunk header carries width / height / container layout.
 - Streaming AEAD path: a once per-stream 32-byte streamID prefix plus per-chunk `nonce || W || H || container || flag_byte`.
 
-A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher: AES-128-CTR, ChaCha20 (RFC8439), or SipHash-2-4 in CTR mode. After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
+A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher — any of the nine PRF-grade ITB registry primitives (Areion-SoEM-256/512, SipHash-2-4 in CTR mode, AES-128-CTR, BLAKE2b-256/512, BLAKE2s, BLAKE3, ChaCha20 (RFC8439)). After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
 
 This is **not** a random-oracle indistinguishability claim. It is a "looks like a different well-known cipher" claim. The wrap exists for format-deniability ONLY; ITB already provides confidentiality (content-deniability) and the AEAD path already provides per-stream and per-chunk integrity. The Non-AEAD streaming path has no integrity by design and the wrap does not add any.
 
 ## Wrapper API
 
-The wrapper package exposes one `Keystream` interface satisfied by all three outer ciphers, plus two wrap-shape helpers:
+The wrapper package exposes one `Keystream` interface satisfied by all nine outer ciphers, plus two wrap-shape helpers:
 
 | Helper | Wire format | Use case |
 |---|---|---|
@@ -40,9 +40,15 @@ delegates `MakeKeystream` / `KeySize` / `NonceSize` to it.
 
 | Cipher | Key | Nonce |
 |---|---|---|
-| AES-128-CTR | 16 B | 16 B |
-| ChaCha20 (RFC 8439) | 32 B | 12 B |
+| Areion-SoEM-256 | 32 B | 16 B |
+| Areion-SoEM-512 | 64 B | 16 B |
 | SipHash-2-4 in CTR mode | 16 B | 16 B |
+| AES-128-CTR | 16 B | 16 B |
+| BLAKE2b-256 | 32 B | 16 B |
+| BLAKE2b-512 | 32 B | 16 B |
+| BLAKE2s | 32 B | 16 B |
+| BLAKE3 | 32 B | 16 B |
+| ChaCha20 (RFC 8439) | 32 B | 12 B |
 
 For the per-cipher construction detail (including the SipHash-CTR PRF-counter
 keystream), see [`ctr/CONSTRUCTIONS.md`](../ctr/CONSTRUCTIONS.md).

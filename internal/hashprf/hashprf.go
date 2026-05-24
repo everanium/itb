@@ -11,6 +11,11 @@
 //     keyed via the upstream keyed-hash mode. The PRF output is the
 //     leading blockSize bytes of the keyed digest over the input.
 //
+// The Areion family additionally exposes a 4-wide batched PRF via NewBatch:
+// it hashes four inputs in one SIMD batch (bit-exact with the single-input
+// PRF), which the ctr keystream uses to amortise per-block dispatch. The
+// BLAKE family has no batch path, and NewBatch reports none for those names.
+//
 // The package is a shared dependency of the ctr and kdf packages, which
 // import it for their keyed-PRF and SP 800-108 counter-mode constructions
 // respectively. It imports the BLAKE upstream packages and the ITB hashes
@@ -30,7 +35,7 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// Registry names accepted by New, KeySize, and BlockSize.
+// Registry names accepted by New, NewBatch, KeySize, and BlockSize.
 const (
 	Areion256  = "areion256"
 	Areion512  = "areion512"
@@ -184,19 +189,93 @@ func newBlake2sPRF(key []byte) func(dst, in []byte) {
 	}
 }
 
-// newBlake3PRF builds a keyed BLAKE3 template and returns a PRF that
-// clones the template per call (the clone idiom from hashes/blake3.go),
-// avoiding a Reset() data race and re-keying cost.
+// newBlake3PRF keys a BLAKE3 hasher once and returns a PRF over the
+// reset/re-hash cycle, mirroring the blake2b / blake2s closures above.
+//
+// The registry HashFunc in hashes/blake3.go clones a shared template per
+// call because that closure is shared across the goroutines that process
+// ITB pixels in parallel, where Reset() on a shared hasher would race. The
+// PRF returned here is bound to one keystream / KDF instance and is driven
+// strictly sequentially (the prfHashCTR keystream and the SP 800-108
+// counter loop are both single-threaded), so Reset() on a captured hasher
+// is safe and avoids the per-call 8 KiB state copy that Clone() incurs.
+// zeebo/blake3 Reset() preserves the keyed state — it clears len / chunks /
+// stack but not key / flags — so the keystream output is byte-identical to
+// the clone path.
 func newBlake3PRF(key []byte) func(dst, in []byte) {
-	template, err := blake3.NewKeyed(key)
+	h, err := blake3.NewKeyed(key)
 	if err != nil {
 		panic(fmt.Sprintf("hashprf: blake3 keying: %v", err))
 	}
+	var buf [32]byte
 	return func(dst, in []byte) {
-		h := template.Clone()
+		h.Reset()
 		h.Write(in)
-		var buf [32]byte
 		h.Sum(buf[:0])
 		copy(dst[:32], buf[:])
+	}
+}
+
+// NewBatch returns a 4-wide batched keyed PRF for the primitives that expose a
+// SIMD batch path, together with the per-lane output block size. ok reports
+// whether a batch path exists for name: only the Areion family does (via the
+// registry BatchHashFunc factories, which are bit-exact with the single-input
+// HashFunc), so a batched keystream over those primitives produces output
+// byte-identical to the single-block PRF. ok is false for the BLAKE family,
+// whose registry factories expose no 4-wide batch; callers fall back to New.
+//
+// The returned batch closure fills dst[0..3] (each at least blockSize bytes)
+// from in[0..3]. It is bound to one keystream / KDF instance and driven
+// sequentially, like the New closures.
+func NewBatch(name string, key []byte) (batch func(dst, in *[4][]byte), blockSize int, ok bool, err error) {
+	s, exists := specs[name]
+	if !exists {
+		return nil, 0, false, fmt.Errorf("hashprf: unknown primitive %q", name)
+	}
+	if len(key) != s.keySize {
+		return nil, 0, false, fmt.Errorf("hashprf: %s key must be %d bytes, got %d", name, s.keySize, len(key))
+	}
+	switch name {
+	case Areion256:
+		return newAreion256BatchPRF(key), s.blockSize, true, nil
+	case Areion512:
+		return newAreion512BatchPRF(key), s.blockSize, true, nil
+	default:
+		return nil, 0, false, nil
+	}
+}
+
+// newAreion256BatchPRF builds a keyed Areion-SoEM-256 BatchHashFunc256 and
+// returns a 4-wide PRF: it hashes four inputs under a zero seed in one SIMD
+// batch and serialises each four-word result little-endian into 32 bytes.
+func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
+	var k [32]byte
+	copy(k[:], key)
+	_, bhf := hashes.Areion256PairWithKey(k)
+	var zero [4][4]uint64
+	return func(dst, in *[4][]byte) {
+		out := bhf(in, zero)
+		for lane := 0; lane < 4; lane++ {
+			for i := 0; i < 4; i++ {
+				binary.LittleEndian.PutUint64(dst[lane][i*8:], out[lane][i])
+			}
+		}
+	}
+}
+
+// newAreion512BatchPRF is the Areion-SoEM-512 counterpart: four inputs per
+// SIMD batch, each eight-word result serialised into 64 bytes.
+func newAreion512BatchPRF(key []byte) func(dst, in *[4][]byte) {
+	var k [64]byte
+	copy(k[:], key)
+	_, bhf := hashes.Areion512PairWithKey(k)
+	var zero [4][8]uint64
+	return func(dst, in *[4][]byte) {
+		out := bhf(in, zero)
+		for lane := 0; lane < 4; lane++ {
+			for i := 0; i < 8; i++ {
+				binary.LittleEndian.PutUint64(dst[lane][i*8:], out[lane][i])
+			}
+		}
 	}
 }

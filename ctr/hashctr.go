@@ -36,6 +36,14 @@ func newPrfHashCTR(name string, key, nonce []byte) (Keystream, error) {
 	if len(nonce) != hashCTRNonceSize {
 		return nil, fmt.Errorf("ctr: %s nonce must be %d bytes, got %d", name, hashCTRNonceSize, len(nonce))
 	}
+	// Primitives with a SIMD batch path (the Areion family) use the 4-wide
+	// batched keystream, which emits a byte-identical keystream four blocks at
+	// a time. Others fall through to the single-block path below.
+	if ks, ok, batchErr := tryNewPrfHashCTRBatch(name, key, nonce); batchErr != nil {
+		return nil, batchErr
+	} else if ok {
+		return ks, nil
+	}
 	prf, blockSize, err := hashprf.New(name, key)
 	if err != nil {
 		return nil, fmt.Errorf("ctr: %w", err)
