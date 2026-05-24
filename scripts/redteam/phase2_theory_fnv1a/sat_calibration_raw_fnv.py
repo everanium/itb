@@ -60,6 +60,7 @@ from fnv_chain_lo_concrete import (  # type: ignore
     fnv_chain_lo_z3,
 )
 from sat_solver_bitwuzla import solve_via_bitwuzla  # type: ignore
+from t_solver_fnv import solve_via_tsolver  # type: ignore
 
 
 @dataclass
@@ -126,25 +127,29 @@ def _run_cell(
     wall-clock cap honoured across every solver phase. See
     `sat_solver_bitwuzla.solve_via_bitwuzla` for the export details.
     """
-    import z3
+    # The tsolver backend is structure-aware and pure-Python; it needs no z3
+    # context or symbolic formula, so the z3 build is skipped for it (and z3
+    # need not even be installed to run it).
+    if solver_backend != "tsolver":
+        import z3
 
-    BitVec = z3.BitVec
-    BitVecVal = z3.BitVecVal
+        BitVec = z3.BitVec
+        BitVecVal = z3.BitVecVal
 
-    # Fresh solver context — used for constraint building under either
-    # backend. Z3's in-process timeout is set only when we actually
-    # call `solver.check()` (i.e. the Z3 path); under bitwuzla the
-    # subprocess timeout is the operative cap.
-    solver = z3.Solver()
-    if solver_backend == "z3":
-        solver.set("timeout", int(timeout_sec * 1000))  # ms
+        # Fresh solver context — used for constraint building under either
+        # backend. Z3's in-process timeout is set only when we actually
+        # call `solver.check()` (i.e. the Z3 path); under bitwuzla the
+        # subprocess timeout is the operative cap.
+        solver = z3.Solver()
+        if solver_backend == "z3":
+            solver.set("timeout", int(timeout_sec * 1000))  # ms
 
-    seed_syms = [BitVec(f"s_lo_{i}", 64) for i in range(rounds)]
+        seed_syms = [BitVec(f"s_lo_{i}", 64) for i in range(rounds)]
 
-    # One constraint per observation: chain_lo(syms, data_i) == target_i.
-    for obs in observations:
-        expr = fnv_chain_lo_z3(z3, seed_syms, obs.data_bytes, rounds)
-        solver.add(expr == BitVecVal(obs.target_hlo, 64))
+        # One constraint per observation: chain_lo(syms, data_i) == target_i.
+        for obs in observations:
+            expr = fnv_chain_lo_z3(z3, seed_syms, obs.data_bytes, rounds)
+            solver.add(expr == BitVecVal(obs.target_hlo, 64))
 
     rusage_before = resource.getrusage(resource.RUSAGE_SELF)
     t0 = time.perf_counter()
@@ -153,7 +158,14 @@ def _run_cell(
     stats_dict: dict = {}
     status: str
 
-    if solver_backend == "bitwuzla":
+    if solver_backend == "tsolver":
+        ts_status, ts_values = solve_via_tsolver(rounds, observations)
+        wall_clock = time.perf_counter() - t0
+        rusage_after = resource.getrusage(resource.RUSAGE_SELF)
+        status = ts_status
+        if ts_status == "sat":
+            recovered = [int(v) & MASK64 for v in ts_values]
+    elif solver_backend == "bitwuzla":
         smt2_text = solver.to_smt2()
         seed_names = [f"s_lo_{i}" for i in range(rounds)]
         bw_status, bw_values = solve_via_bitwuzla(
@@ -293,14 +305,18 @@ def main() -> int:
     )
     ap.add_argument(
         "--solver",
-        choices=["z3", "bitwuzla"],
+        choices=["z3", "bitwuzla", "tsolver"],
         default="z3",
-        help="SAT backend. 'bitwuzla' exports the Z3-built formula as "
+        help="Backend. 'bitwuzla' exports the Z3-built formula as "
              "SMT-LIB2 and ships it to the `bitwuzla` CLI via subprocess "
              "(`yay -S bitwuzla` on Arch). The subprocess boundary is "
              "the only mechanism that gives a HARD wall-clock cap "
              "across every solver phase (Z3's in-process `timeout` "
-             "halts only CDCL, not bit-blasting).",
+             "halts only CDCL, not bit-blasting). 'tsolver' is the "
+             "structure-aware T-function solver (t_solver_fnv.py): "
+             "pure-Python, no z3 needed, polynomial in rounds — it "
+             "exploits FNV-1a's carry-up-only triangular structure that "
+             "generic SAT rediscovers slowly.",
     )
     args = ap.parse_args()
 

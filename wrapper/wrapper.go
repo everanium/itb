@@ -10,14 +10,31 @@ import (
 )
 
 // Cipher names accepted by the Make* helpers and the cmd/-flag parsing.
+// The string values mirror the ctr/ package's primitive identifiers; every
+// name routes through ctr.New / kdf.Derive, so all nine PRF-grade ITB
+// registry primitives are supported as outer ciphers.
 const (
-	CipherSipHash24 = "siphash24"
-	CipherAES128CTR = "aescmac"
-	CipherChaCha20  = "chacha20"
+	CipherAreion256  = "areion256"
+	CipherAreion512  = "areion512"
+	CipherSipHash24  = "siphash24"
+	CipherAES128CTR  = "aescmac"
+	CipherBLAKE2b256 = "blake2b256"
+	CipherBLAKE2b512 = "blake2b512"
+	CipherBLAKE2s    = "blake2s"
+	CipherBLAKE3     = "blake3"
+	CipherChaCha20   = "chacha20"
 )
 
-// CipherNames lists every supported outer cipher in iteration order.
-var CipherNames = []string{CipherSipHash24, CipherAES128CTR, CipherChaCha20}
+// CipherNames lists every supported outer cipher in iteration order, in the
+// project's canonical primitive order matching the ctr/ and kdf/ packages:
+// Areion-SoEM-256/512, SipHash-2-4, AES-128-CTR, BLAKE2b-256/512, BLAKE2s,
+// BLAKE3, ChaCha20.
+var CipherNames = []string{
+	CipherAreion256, CipherAreion512,
+	CipherSipHash24, CipherAES128CTR,
+	CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3,
+	CipherChaCha20,
+}
 
 // Keystream is the outer cipher keystream the wrap helpers consume. It
 // aliases ctr.Keystream; the contract matches crypto/cipher.Stream —
@@ -101,13 +118,11 @@ func Wrap(name string, key, blob []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	ks, err := MakeKeystream(name, key, nonce)
-	if err != nil {
-		return nil, err
-	}
 	out := make([]byte, len(nonce)+len(blob))
 	copy(out, nonce)
-	ks.XORKeyStream(out[len(nonce):], blob)
+	if err := xorParallel(name, key, nonce, out[len(nonce):], blob); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -123,12 +138,10 @@ func Unwrap(name string, key, wire []byte) ([]byte, error) {
 	}
 	nonce := wire[:nlen]
 	body := wire[nlen:]
-	ks, err := MakeKeystream(name, key, nonce)
-	if err != nil {
+	out := make([]byte, len(body))
+	if err := xorParallel(name, key, nonce, out, body); err != nil {
 		return nil, err
 	}
-	out := make([]byte, len(body))
-	ks.XORKeyStream(out, body)
 	return out, nil
 }
 
@@ -145,11 +158,9 @@ func WrapInPlace(name string, key, blob []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	ks, err := MakeKeystream(name, key, nonce)
-	if err != nil {
+	if err := xorParallel(name, key, nonce, blob, blob); err != nil {
 		return nil, err
 	}
-	ks.XORKeyStream(blob, blob)
 	return nonce, nil
 }
 
@@ -166,11 +177,9 @@ func UnwrapInPlace(name string, key, wire []byte) ([]byte, error) {
 	}
 	nonce := wire[:nlen]
 	body := wire[nlen:]
-	ks, err := MakeKeystream(name, key, nonce)
-	if err != nil {
+	if err := xorParallel(name, key, nonce, body, body); err != nil {
 		return nil, err
 	}
-	ks.XORKeyStream(body, body)
 	return body, nil
 }
 

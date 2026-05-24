@@ -48,7 +48,7 @@ type Keystream interface {
 | `blake3` | native keyed BLAKE3 PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 32-byte keystream blocks, keystream-block collision bound 2^128. See CONSTRUCTIONS.md. |
 | `chacha20` | ChaCha20 (RFC8439) keystream (`golang.org/x/crypto/chacha20`) | 32 bytes | 12 bytes | Standard RFC8439 ChaCha20 keystream. |
 
-All nine registry primitives are supported; every entry point (`New`, `KeySize`, `NonceSize`) returns an error for any name outside the nine above.
+All nine registry primitives are supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside the nine above. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
 
 ## Usage
 
