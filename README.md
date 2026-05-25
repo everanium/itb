@@ -308,8 +308,8 @@ All nine primitives are PRF-grade and accept ITB key sizes up to **2048 bits** (
 | **Areion-SoEM-512** | `HashFunc512` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion512Pair()` | `github.com/jedisct1/go-aes` |
 | **SipHash-2-4** | `HashFunc128` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPROLQ, 4-lane) | `hashes.SipHash24Pair()` | `github.com/dchest/siphash` |
 | **AES-CMAC** | `HashFunc128` | VAES + AVX-512 ZMM (4-lane CBC-MAC) · AES-NI scalar | `hashes.AESCMACPair()` | `crypto/aes` (stdlib) |
-| **BLAKE2b-512** | `HashFunc512` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b512Pair()` | `golang.org/x/crypto/blake2b` |
 | **BLAKE2b-256** | `HashFunc256` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b256Pair()` | `golang.org/x/crypto/blake2b` |
+| **BLAKE2b-512** | `HashFunc512` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b512Pair()` | `golang.org/x/crypto/blake2b` |
 | **BLAKE2s** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane) | `hashes.BLAKE2s256Pair()` | `golang.org/x/crypto/blake2s` |
 | **BLAKE3** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane keyed-mode) | `hashes.BLAKE3256Pair()` | `github.com/zeebo/blake3` |
 | **ChaCha20** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPROLD, 4-lane) | `hashes.ChaCha20256Pair()` | `golang.org/x/crypto/chacha20` |
