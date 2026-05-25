@@ -27,6 +27,17 @@ MX3_C = 0xBEA225F9EB34556D
 
 N_SEED_COMPONENTS = 16  # 8 rounds × 2 components per round at 128-bit wrap
 
+# INVERTIBLE: mx3 is a bijection — every step (xorshift `x ^= x >> n`, multiply
+# by the odd constant MX3_C) is individually invertible, so the seed -> output
+# map is reversible given the output. That is the round-1 weakness: at rounds=1
+# the chain is a single mx3_hash call and SAT inverts it in seconds. NOTE the
+# `inv = Y` flag is a ROUND-1 signal only — mx3's right-shifts (>>32 / >>29 /
+# >>39) push high bits into low, so there is NO carry-up T-function triangularity
+# (unlike fnv1a's ×0x13B). At rounds>=2 the ChainHash feedforward masks the
+# intermediate and there is no triangular shortcut, so mx3 resists like
+# splitmix64 — invertibility alone is not a SAT hook under the feedforward.
+INVERTIBLE = True
+
 
 def _mix(x: int) -> int:
     """4-multiply XOR-shift mixer. Matches jonmaiga/mx3 mix()."""

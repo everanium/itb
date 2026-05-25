@@ -50,6 +50,24 @@ THREE METRICS, PER ROUND COUNT
                   REAL primitive, not a scaled-down toy. Saturated mixer ->
                   ~m already at round 1; GF(2)-affine -> 1. --degree-bits 0
                   disables it.
+  * inv         — STRUCTURAL "cheap inverse" flag, declared by the primitive
+                  module's `INVERTIBLE` attribute (Y when set, ? when absent).
+                  Y marks a primitive whose round map hands a solver a CHEAP
+                  structural inverse — a triangular carry-up T-function
+                  (FNV-1a) or a by-design invertible mixer composed of
+                  word-level bijections (splitmix64). Such a primitive is
+                  solver-tractable at the primitive layer no matter how clean
+                  its lin/sac/deg columns read: splitmix64 saturates every
+                  diffusion and degree column yet is peeled step-by-step,
+                  FNV-1a reads weak on diffusion but is inverted plane-by-
+                  plane — opposite statistical profiles, same cheap-inverse
+                  root cause. This is the one axis the Monte-Carlo columns
+                  CANNOT see, and it is structural knowledge, not a
+                  measurement: mere bijectivity of the seed map (true of most
+                  mixers for a fixed short input) is NOT the property that
+                  helps a solver, so a by-design one-way hash with no
+                  documented shortcut is left ? — the screen makes no claim
+                  and defers to the SAT calibration.
   * worst       — the single (input_bit -> output_bit) pair carrying the
                   largest SAC bias (the sac_max argmax). Surfaces a lane bit
                   that never mixes even when sac_mean looks healthy — the
@@ -102,7 +120,13 @@ MASK64 = (1 << 64) - 1
 # Default non-crypto candidates that ship a 2-lane adapter. crc128 is omitted:
 # it has no `_*_128` adapter and is GF(2)-linear by construction, so its
 # lin_score is analytically 1.0 (it collapses without any measurement).
-DEFAULT_PRIMITIVES = ["mx3", "t1ha1", "seahash", "siphash13", "fnv1a"]
+# splitmix64 / fnv1a are listed last as the two INVERTIBLE controls — their
+# round map is a bijection in the seed, so they read ideal on every diffusion
+# / degree column yet stay solver-tractable (see the `inv` column below).
+DEFAULT_PRIMITIVES = [
+    "mx3", "t1ha1", "seahash", "siphash13", "murmur3", "xxhash64",
+    "splitmix64", "fnv1a",
+]
 
 
 def _popcount(x: int) -> int:
@@ -295,8 +319,8 @@ def main() -> int:
     deg_hdr = f"deg@{args.degree_bits}" if args.degree_bits else "deg"
     print(f"{'primitive':<12}{'rounds':>7}{'lin_score':>11}"
           f"{'sac_mean':>11}{'sac_max':>10}{'avw/64':>9}"
-          f"{deg_hdr:>9}{'worst':>12}")
-    print("-" * 81)
+          f"{deg_hdr:>9}{'inv':>5}{'worst':>12}")
+    print("-" * 86)
 
     for name in names:
         try:
@@ -309,6 +333,8 @@ def main() -> int:
             print(f"{name:<12}  no 2-lane adapter (GF(2)-linear collapse, "
                   f"lin_score=1.0 by construction) — skipped")
             continue
+        inv = getattr(mod, "INVERTIBLE", None)
+        inv_s = "Y" if inv is True else "N" if inv is False else "?"
         for r in range(1, args.rounds_max + 1):
             m = screen(prim, r, data, args.samples, args.probe_bits, rng)
             if args.degree_bits:
@@ -319,7 +345,7 @@ def main() -> int:
             worst_s = f"{wi}->{wo}"
             print(f"{name:<12}{r:>7}{m['lin_score']:>11.3f}"
                   f"{m['sac_mean']:>11.4f}{m['sac_max']:>10.3f}"
-                  f"{m['avw_mean']:>9.1f}{deg_s}{worst_s:>12}")
+                  f"{m['avw_mean']:>9.1f}{deg_s}{inv_s:>5}{worst_s:>12}")
     return 0
 
 
