@@ -340,7 +340,6 @@ All 8 components are consumed in every case — no key material is skipped. A 25
 
 **Bottom line:** prefer the widest available PRF variant — it's both faster and provides a wider MITM bottleneck.
 
-
 ### ASIC Scalability
 
 **FPGA proof-of-concept is planned** using open-source Verilog IP cores for SipHash and ChaCha20 DRBG, with a custom ITB pixel pipeline. Target: full encrypt/decrypt roundtrip on a single FPGA chip.
@@ -404,6 +403,39 @@ entry and a mid-flight change breaks the running invariants — same plaintext
 shipped through two halves of the call under different settings will not
 round-trip on the receiver. Treat the global knobs as set-once-at-startup;
 rare runtime updates need external sequencing against active cipher calls.
+
+## ChainHash: Local Key Evolution
+
+ChainHash is the small construction that sits between ITB's seed material and the underlying PRF. It is what lets a fixed-width hash (128 / 256 / 512-bit native state) be keyed by an arbitrarily wide key — the source of ITB's advertised **512 / 1024 / 2048-bit** key sizes. ChainHash is almost independent of the rest of ITB: it takes a key (the seed components) and one fixed input (the per-pixel buffer) and returns a single fixed-width block.
+
+In plain terms: the key is a list of 64-bit components, consumed a round at a time. The first round hashes the input under the first group of components. Every later round re-hashes **the same input** under the next group of components, each component first XORed with the matching word of the previous round's output. After the last group, the final block is the result.
+
+```
+h = Hash(data, S[0 .. w-1])                 # round 1
+h = Hash(data, S[w .. 2w-1]  XOR  h)        # round 2 (feedforward)
+h = Hash(data, S[2w .. 3w-1] XOR  h)        # round 3
+...                                          # w = native words per round (2 / 4 / 8)
+```
+
+Two properties matter. First, the input `data` never changes across rounds; only the effective key changes. Second, each round's key is the next slice of fresh key material XORed with the entire previous output — a **feedforward** step. The output therefore depends on every key component conjunctively, and recovering an intermediate state would require guessing a full native-width block: a meet-in-the-middle barrier the width of the primitive at every round.
+
+This is best read as **local key evolution** — each round derives a fresh effective key from the previous state plus new key material and re-keys the same PRF over the same input. The number of rounds is the key width divided by the native state width, so a 2048-bit key folds into 16 rounds at 128-bit, 8 rounds at 256-bit, or 4 rounds at 512-bit. The wider the primitive, the fewer rounds — which is why a wider PRF is both faster and gives a wider MITM bottleneck (see [Why Wider Hash = Faster](#why-wider-hash--faster-with-wider-mitm-bottleneck)).
+
+**How this differs from other chained constructions.** ChainHash superficially resembles several well-known key-derivation and hashing chains, but its purpose runs in the opposite direction. The neighbours below all **expand** one secret into a stream or **absorb** a growing message; ChainHash **folds** a wide key down into one block for a fixed input.
+
+| Construction | Fixed across the chain | Varies / chains in | Output | Primary purpose |
+|---|---|---|---|---|
+| **ITB ChainHash** | the input `data` (pixel buffer) | key material, one slice per round, XOR-folded with the previous output (feedforward) | one fixed-width block per pixel | fold a wide key (up to 2048-bit) into a single narrow-PRF evaluation |
+| **HKDF-Expand** (RFC 5869) | the PRK (the secret) | a counter plus the info label | a stream of output blocks (OKM) | expand one secret into many key bytes |
+| **SP 800-108 KDF, feedback mode** | the key `KI` | a counter plus the previous output | a stream of output blocks | derive several keys from one |
+| **PBKDF2** (RFC 8018) | salt and password | an iteration counter, XOR-accumulated | one block per output word | deliberate slowness (password stretching) |
+| **Merkle–Damgård** (SHA-2 family) | the IV / compression key | message blocks, absorbed sequentially | one digest | hash an arbitrary-length message |
+
+The closest relative is SP 800-108 feedback mode, which also chains the previous output back in — but it chains to **lengthen** the output (more counter values produce more key bytes), whereas ChainHash chains to **absorb more key** (more components widen the key behind the same single output). The combination of a fixed input, key material folded in with output feedforward, and a single consumed block is the part that does not map onto an existing named construction.
+
+**What ChainHash does and does not include.** ChainHash returns the full native-width block — the complete `(hLo, hHi)` pair at 128-bit, the full `[4]uint64` at 256-bit, the full `[8]uint64` at 512-bit. The narrowing to 64 bits is **not** part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, and the optional **Lock Soup** permutation overlay likewise keys its per-chunk step from the low word only. So the 50 % / 25 % / 12.5 % output narrowing at 128 / 256 / 512-bit (see [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security)) is an encoder-layer and overlay-layer choice layered on top of ChainHash, not a property of ChainHash itself.
+
+Discarding the upper bits is a conservative defense-in-depth margin, not a security requirement: under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits, so the discarded portion carries no information the encoder needs. Lock Soup makes the point concrete: it keys a single PRF call per 24-bit chunk (the per-chunk mask call, distinct from the once-per-nonce ChainHash that derives the lock seed) and currently reads only the low word of that call's output. A planned `SetLockBatch(1)` mode will instead consume the full native-width output of that per-chunk call — one mask per 64-bit lane, so **2 / 4 / 8** masks from a single call at 128 / 256 / 512-bit native width — cutting the per-mask call count by the same factor while keeping formal PRF-conditional security. That mode is not yet shipped; the current overlay derives one mask per call from the low word.
 
 ## Streaming AEAD
 
