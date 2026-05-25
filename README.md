@@ -426,7 +426,7 @@ This is best read as **local key evolution** — each round derives a fresh effe
 | Construction | Fixed across the chain | Varies / chains in | Output | Primary purpose |
 |---|---|---|---|---|
 | **ITB ChainHash** | the input `data` (pixel buffer) | key material, one slice per round, XOR-folded with the previous output (feedforward) | one fixed-width block per pixel | fold a wide key (up to 2048-bit) into a single narrow-PRF evaluation |
-| **SP 800-108 KDF, feedback mode** | the key `KI` | a counter plus the previous output | a stream of output blocks | derive several keys from one |
+| **SP 800-108 KDF (feedback mode)** | the key `KI` | a counter plus the previous output | a stream of output blocks | derive several keys from one |
 | **HKDF-Expand** (RFC 5869) | the PRK (the secret) | a counter plus the info label | a stream of output blocks (OKM) | expand one secret into many key bytes |
 | **PBKDF2** (RFC 8018) | salt and password | the previous PRF output, XOR-accumulated over the iteration count | a fixed-length derived key | deliberate slowness (password stretching) |
 | **Merkle–Damgård** (SHA-2 family) | the IV / compression key | message blocks, absorbed sequentially | one digest | hash an arbitrary-length message |
