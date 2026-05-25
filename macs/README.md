@@ -6,6 +6,8 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
+> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-MAC construction descriptions.** Two names are exact (`kmac256` per NIST SP 800-185, `hmac-sha256` per RFC 2104); `hmac-blake3` is BLAKE3 native keyed mode, **not** RFC 2104 HMAC — the `hmac-` name is kept for registry symmetry with `hmac-sha256` and for FFI stability. Read CONSTRUCTIONS.md before assuming a particular standard's exact construction.
+
 Drop-in factories that produce `itb.MACFunc` closures for the three
 shipped MAC primitives. All three produce a 32-byte tag and accept
 a 32-byte (or longer for the HMAC variants) key. The fixed 32-byte
