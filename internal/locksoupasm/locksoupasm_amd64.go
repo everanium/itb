@@ -81,3 +81,79 @@ var HasAVX512Permute = cpu.X86.HasAVX512F &&
 //
 //go:noescape
 func Permute24Avx512(x uint32, perm *[32]byte) (y uint32)
+
+// HasAVX512RankMask caches whether the runtime CPU supports the AVX-512F
+// feature set used by the batched Lock Soup Triple mask-derivation kernel
+// (VPERMD / VPCMPUD / VPSRLVD / mask-merged VPSUBD on ZMM). Resolved once at
+// init time from CPUID. Available on Intel Skylake-X / Ice Lake / Rocket
+// Lake / Sapphire Rapids+, AMD Zen 4 / Zen 5. Broader than the VBMI gate of
+// HasAVX512Permute — only base AVX-512F is required.
+var HasAVX512RankMask = cpu.X86.HasAVX512F
+
+// cRowTable[p] holds C(p, 0..8) in dword lanes 0..8 (lanes 9..15 zero) — the
+// per-position binomial row the kernel selects from by remaining-count. The
+// combinatorial-number-system unrank reads C(p, krem) at descending position
+// p; krem in [0,8] indexes within the row via VPERMD (register permute, no
+// secret-indexed memory).
+var cRowTable [25][16]uint32
+
+func init() {
+	var c [25][9]uint64
+	for n := 0; n <= 24; n++ {
+		c[n][0] = 1
+		for k := 1; k <= 8 && k <= n; k++ {
+			c[n][k] = c[n-1][k-1] + c[n-1][k]
+		}
+	}
+	for p := 0; p <= 24; p++ {
+		for k := 0; k <= 8; k++ {
+			cRowTable[p][k] = uint32(c[p][k])
+		}
+	}
+}
+
+// RankToMaskTripleUnrankBatch derives 8 balanced (m0, m1, m2) 24-bit mask
+// triples in parallel from 8 precomputed combinadic index pairs. idx0[j] in
+// [0, C(24,8)) selects the 8-of-24 mask m0; idx1[j] in [0, C(16,8)) selects
+// the 8-of-16 mask remapped onto the positions m0 leaves free, giving m1; m2
+// is the complement. The index split (the division) is computed caller-side
+// in Go; this kernel does only the two unranks and the remap. Output:
+// out[0]=m0 lanes, out[1]=m1, out[2]=m2.
+//
+// Constant-time: C(p, krem) is selected by VPERMD (register permute, no
+// secret-indexed memory) and the per-position pick is applied via mask
+// registers, so neither the memory-access pattern nor the control flow
+// depends on the secret indices. Caller gates on [HasAVX512RankMask].
+func RankToMaskTripleUnrankBatch(idx0, idx1 *[8]uint32, out *[3][8]uint32) {
+	rankToMaskTripleUnrankAVX512(idx0, idx1, &cRowTable, out)
+}
+
+//go:noescape
+func rankToMaskTripleUnrankAVX512(idx0, idx1 *[8]uint32, crow *[25][16]uint32, out *[3][8]uint32)
+
+// HasAVX512RankPerm caches whether the runtime CPU supports the feature set
+// used by the batched Single Lock Soup permutation-derivation kernel: base
+// AVX-512F plus AVX-512 VPOPCNTDQ (per-lane VPOPCNTD for the d-th-free-slot
+// binary search). Narrower than HasAVX512RankMask — available on Intel Ice
+// Lake / Tiger Lake / Rocket Lake / Sapphire Rapids+, AMD Zen 4 / Zen 5;
+// absent on Skylake-X / Cascade Lake (which carry AVX-512F but not
+// VPOPCNTDQ). Caller falls back to the scalar derivePermutation otherwise.
+var HasAVX512RankPerm = cpu.X86.HasAVX512F && cpu.X86.HasAVX512VPOPCNTDQ
+
+// DerivePermPositions computes, for 8 lanes in parallel, the 24-element Lehmer
+// expansion of precomputed factoradic digit columns. digits[i] holds the
+// i-th Lehmer digit of all 8 lanes (digit i in [0, 24-i)); out[i] receives
+// the chosen 0..23 position for output index i of each lane. The factoradic
+// digit extraction (the division) is done caller-side in Go; this kernel does
+// the free-slot expansion: at each step the d-th still-free position is found
+// by a 5-level VPOPCNTD binary search and then cleared from the free mask.
+// The caller marshals out[i][lane] into per-lane perm/invPerm byte arrays.
+//
+// Constant-time: the search reads no secret-indexed memory and branches only
+// via mask registers. Caller gates on [HasAVX512RankPerm].
+func DerivePermPositions(digits, out *[24][8]uint32) {
+	derivePermPosAVX512(digits, out)
+}
+
+//go:noescape
+func derivePermPosAVX512(digits, out *[24][8]uint32)
