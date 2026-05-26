@@ -30,3 +30,23 @@ const HasAVX512Permute = false
 func Permute24Avx512(x uint32, perm *[32]byte) (y uint32) {
 	panic("locksoupasm: Permute24Avx512 unavailable on non-amd64 build")
 }
+
+// HasAVX512RankMask is always false on non-amd64 / purego / noitbasm builds.
+const HasAVX512RankMask = false
+
+// RankToMaskTripleUnrankBatch should never be called when HasAVX512RankMask
+// is false — the parent package's dispatch routes to the scalar
+// rankToMaskTriple. Kept as a callable stub so the import resolves cleanly.
+func RankToMaskTripleUnrankBatch(idx0, idx1 *[8]uint32, out *[3][8]uint32) {
+	panic("locksoupasm: RankToMaskTripleUnrankBatch unavailable on this build")
+}
+
+// HasAVX512RankPerm is always false on non-amd64 / purego / noitbasm builds.
+const HasAVX512RankPerm = false
+
+// DerivePermPositions should never be called when HasAVX512RankPerm is false —
+// the parent package's dispatch routes to the scalar derivePermutation. Kept
+// as a callable stub so the import resolves cleanly.
+func DerivePermPositions(digits, out *[24][8]uint32) {
+	panic("locksoupasm: DerivePermPositions unavailable on this build")
+}

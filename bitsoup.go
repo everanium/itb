@@ -1707,6 +1707,106 @@ type permBatchPRF struct {
 	fill   func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte)
 }
 
+// fillLockPerms fills perms/invPerms[0..count-1] from count PRF lanes in prf.
+// When the AVX-512 VPOPCNTDQ kernel is available it derives all lanes in one
+// pass: the factoradic digits are extracted here in Go (unrolled constant
+// divisors → reciprocal-multiply), the kernel does the lane-parallel free-slot
+// expansion, and the per-lane perm/invPerm byte arrays are marshalled from the
+// returned positions. Without the kernel it falls back to the per-lane scalar
+// derivePermutation, leaving non-VPOPCNTDQ hosts unchanged.
+func fillLockPerms(prf *[8]uint64, count int, perms, invPerms *[lockBatchFactorMax][32]byte) {
+	if locksoupasm.HasAVX512RankPerm {
+		var digits, positions [24][8]uint32
+		for j := 0; j < count; j++ {
+			p := prf[j]
+			digits[0][j] = uint32(p % 24)
+			p /= 24
+			digits[1][j] = uint32(p % 23)
+			p /= 23
+			digits[2][j] = uint32(p % 22)
+			p /= 22
+			digits[3][j] = uint32(p % 21)
+			p /= 21
+			digits[4][j] = uint32(p % 20)
+			p /= 20
+			digits[5][j] = uint32(p % 19)
+			p /= 19
+			digits[6][j] = uint32(p % 18)
+			p /= 18
+			digits[7][j] = uint32(p % 17)
+			p /= 17
+			digits[8][j] = uint32(p % 16)
+			p /= 16
+			digits[9][j] = uint32(p % 15)
+			p /= 15
+			digits[10][j] = uint32(p % 14)
+			p /= 14
+			digits[11][j] = uint32(p % 13)
+			p /= 13
+			digits[12][j] = uint32(p % 12)
+			p /= 12
+			digits[13][j] = uint32(p % 11)
+			p /= 11
+			digits[14][j] = uint32(p % 10)
+			p /= 10
+			digits[15][j] = uint32(p % 9)
+			p /= 9
+			digits[16][j] = uint32(p % 8)
+			p /= 8
+			digits[17][j] = uint32(p % 7)
+			p /= 7
+			digits[18][j] = uint32(p % 6)
+			p /= 6
+			digits[19][j] = uint32(p % 5)
+			p /= 5
+			digits[20][j] = uint32(p % 4)
+			p /= 4
+			digits[21][j] = uint32(p % 3)
+			p /= 3
+			digits[22][j] = uint32(p % 2)
+			// digits[23] is identically 0.
+		}
+		locksoupasm.DerivePermPositions(&digits, &positions)
+		for j := 0; j < count; j++ {
+			for i := 0; i < 24; i++ {
+				pos := byte(positions[i][j])
+				perms[j][i] = pos
+				invPerms[j][pos] = byte(i)
+			}
+		}
+		return
+	}
+	for j := 0; j < count; j++ {
+		derivePermutation(prf[j], &perms[j], &invPerms[j])
+	}
+}
+
+// fillLockMasksTriple fills masks[0..count-1] from count PRF lanes in prf.
+// When the AVX-512 batch unrank kernel is available it derives all lanes in
+// one constant-time pass; the combinadic index split (the division) is done
+// here in Go — idx1 = prf % C(16,8), idx0 = (prf / C(16,8)) % C(24,8) — which
+// is equivalent to the scalar prf % maskSpaceProduct split because
+// maskSpaceProduct = C(24,8)·C(16,8). Without the kernel it falls back to the
+// per-lane scalar rankToMaskTriple, leaving non-AVX-512 hosts unchanged.
+func fillLockMasksTriple(prf *[8]uint64, count int, masks *[lockBatchFactorMax][3]uint32) {
+	if locksoupasm.HasAVX512RankMask {
+		var idx0, idx1 [8]uint32
+		for j := 0; j < count; j++ {
+			idx1[j] = uint32(prf[j] % 12870)            // % C(16,8)
+			idx0[j] = uint32((prf[j] / 12870) % 735471) // / C(16,8) then % C(24,8)
+		}
+		var out [3][8]uint32
+		locksoupasm.RankToMaskTripleUnrankBatch(&idx0, &idx1, &out)
+		for j := 0; j < count; j++ {
+			masks[j][0], masks[j][1], masks[j][2] = out[0][j], out[1][j], out[2][j]
+		}
+		return
+	}
+	for j := 0; j < count; j++ {
+		masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(prf[j])
+	}
+}
+
 // buildLockBatchPRF128 is the batched counterpart of [buildLockPRF128]. One
 // Hash call per group yields 2 mask triples from the (lo, hi) output lanes.
 func buildLockBatchPRF128(noiseSeed *Seed128, nonce []byte) lockBatchPRF {
@@ -1725,8 +1825,8 @@ func buildLockBatchPRF128(noiseSeed *Seed128, nonce []byte) lockBatchPRF {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			lo, hi := h(buf, lockLo, lockHi)
-			masks[0][0], masks[0][1], masks[0][2] = rankToMaskTriple(lo)
-			masks[1][0], masks[1][1], masks[1][2] = rankToMaskTriple(hi)
+			prf := [8]uint64{lo, hi}
+			fillLockMasksTriple(&prf, lockBatchFactor128, masks)
 		},
 	}
 }
@@ -1749,9 +1849,9 @@ func buildLockBatchPRF256(noiseSeed *Seed256, nonce []byte) lockBatchPRF {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor256; j++ {
-				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
-			}
+			var prf [8]uint64
+			copy(prf[:], out[:])
+			fillLockMasksTriple(&prf, lockBatchFactor256, masks)
 		},
 	}
 }
@@ -1774,9 +1874,7 @@ func buildLockBatchPRF512(noiseSeed *Seed512, nonce []byte) lockBatchPRF {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor512; j++ {
-				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
-			}
+			fillLockMasksTriple(&out, lockBatchFactor512, masks)
 		},
 	}
 }
@@ -1796,8 +1894,8 @@ func buildLockBatchPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lock
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			lo, hi := h(buf, lockLo, lockHi)
-			masks[0][0], masks[0][1], masks[0][2] = rankToMaskTriple(lo)
-			masks[1][0], masks[1][1], masks[1][2] = rankToMaskTriple(hi)
+			prf := [8]uint64{lo, hi}
+			fillLockMasksTriple(&prf, lockBatchFactor128, masks)
 		},
 	}
 }
@@ -1817,9 +1915,9 @@ func buildLockBatchPRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lock
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor256; j++ {
-				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
-			}
+			var prf [8]uint64
+			copy(prf[:], out[:])
+			fillLockMasksTriple(&prf, lockBatchFactor256, masks)
 		},
 	}
 }
@@ -1839,9 +1937,7 @@ func buildLockBatchPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lock
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor512; j++ {
-				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
-			}
+			fillLockMasksTriple(&out, lockBatchFactor512, masks)
 		},
 	}
 }
@@ -1864,8 +1960,8 @@ func buildPermuteBatchPRF128(noiseSeed *Seed128, nonce []byte) permBatchPRF {
 			buf[0] = 0x04
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			lo, hi := h(buf, lockLo, lockHi)
-			derivePermutation(lo, &perms[0], &invPerms[0])
-			derivePermutation(hi, &perms[1], &invPerms[1])
+			prf := [8]uint64{lo, hi}
+			fillLockPerms(&prf, lockBatchFactor128, perms, invPerms)
 		},
 	}
 }
@@ -1888,9 +1984,9 @@ func buildPermuteBatchPRF256(noiseSeed *Seed256, nonce []byte) permBatchPRF {
 			buf[0] = 0x04
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor256; j++ {
-				derivePermutation(out[j], &perms[j], &invPerms[j])
-			}
+			var prf [8]uint64
+			copy(prf[:], out[:])
+			fillLockPerms(&prf, lockBatchFactor256, perms, invPerms)
 		},
 	}
 }
@@ -1913,9 +2009,7 @@ func buildPermuteBatchPRF512(noiseSeed *Seed512, nonce []byte) permBatchPRF {
 			buf[0] = 0x04
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor512; j++ {
-				derivePermutation(out[j], &perms[j], &invPerms[j])
-			}
+			fillLockPerms(&out, lockBatchFactor512, perms, invPerms)
 		},
 	}
 }
@@ -1935,8 +2029,8 @@ func buildPermuteBatchPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) p
 			buf[0] = 0x04
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			lo, hi := h(buf, lockLo, lockHi)
-			derivePermutation(lo, &perms[0], &invPerms[0])
-			derivePermutation(hi, &perms[1], &invPerms[1])
+			prf := [8]uint64{lo, hi}
+			fillLockPerms(&prf, lockBatchFactor128, perms, invPerms)
 		},
 	}
 }
@@ -1956,9 +2050,9 @@ func buildPermuteBatchPRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) p
 			buf[0] = 0x04
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor256; j++ {
-				derivePermutation(out[j], &perms[j], &invPerms[j])
-			}
+			var prf [8]uint64
+			copy(prf[:], out[:])
+			fillLockPerms(&prf, lockBatchFactor256, perms, invPerms)
 		},
 	}
 }
@@ -1978,9 +2072,7 @@ func buildPermuteBatchPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) p
 			buf[0] = 0x04
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockSeed)
-			for j := 0; j < lockBatchFactor512; j++ {
-				derivePermutation(out[j], &perms[j], &invPerms[j])
-			}
+			fillLockPerms(&out, lockBatchFactor512, perms, invPerms)
 		},
 	}
 }
