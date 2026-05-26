@@ -220,11 +220,14 @@ loop2:
 // func derivePermPosAVX512(digits, out *[24][8]uint32)
 //
 // Single Lock Soup permutation expansion for 8 lanes (low 256 bits of ZMM;
-// upper lanes carry harmless garbage and are never stored). For each output
-// index i in 0..23: the digits[i][lane]-th still-free position is located by a
-// 5-level popcount binary search over the per-lane free mask, written to
-// out[i][lane], then cleared from the free mask. The factoradic digit
-// extraction (the division) is done caller-side.
+// upper lanes carry harmless garbage and are never stored). For output index
+// i in 0..16 the digits[i][lane]-th still-free position is located by a 5-level
+// popcount binary search over the per-lane free mask, written to out[i][lane],
+// then cleared. Indices 17..23 carry an identically-zero factoradic digit
+// (24! exceeds 2^64, so the quotient for those positions is zero for every
+// 64-bit input); their position is the lowest free bit, emitted directly with
+// VPOPCNTD of the isolated-low-bit minus one. The digit extraction (the
+// division) is done caller-side.
 //
 // Per level the d-th-free search counts set bits in the low `lvl` bits of the
 // working value (VPOPCNTD), and where that count is below the rank target
@@ -300,7 +303,27 @@ permloop:
 	VPANDND Z2, Z6, Z2          // free = ~bit & free
 
 	INCQ R10
-	CMPQ R10, $24
+	CMPQ R10, $17                // steps 0..16 carry real digits
 	JLT permloop
+
+	// Steps 17..23 carry an identically-zero digit (24! > 2^64, so the
+	// factoradic quotient for these positions is 0 for every 64-bit input);
+	// the d-th free slot is then the lowest free bit. Emit the seven
+	// remaining free positions in ascending order with VPOPCNTD of the
+	// isolated-low-bit minus one — no binary search.
+tailloop:
+	MOVQ R10, R11
+	SHLQ $5, R11                  // i * 32
+	VPXORD Z7, Z7, Z7
+	VPSUBD Z2, Z7, Z6            // Z6 = -free
+	VPANDD Z2, Z6, Z6            // Z6 = free & -free = lowest set bit
+	VPSUBD Z20, Z6, Z5          // Z5 = iso - 1
+	VPOPCNTD Z5, Z4              // Z4 = pos = popcount(iso-1)
+	VMOVDQU Y4, (DI)(R11*1)       // out[i] = pos
+	VPXORD Z6, Z2, Z2            // free ^= iso (clear lowest bit)
+	INCQ R10
+	CMPQ R10, $24
+	JLT tailloop
+
 	VZEROUPPER
 	RET
