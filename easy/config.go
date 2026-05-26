@@ -115,6 +115,28 @@ func (e *Encryptor) SetLockSoup(mode int32) {
 	}
 }
 
+// SetLockBatch overrides Lock Soup per-chunk PRF batching for this
+// encryptor. 0 = off (default; one PRF call per 24-bit chunk);
+// non-zero = on (one call per group of chunks, reusing the
+// primitive's wide output across 2 / 4 / 8 lanes at 128 / 256 /
+// 512-bit hash width). Mutates only the encryptor's own [itb.Config]
+// copy.
+//
+// LockBatch is independent of bit soup and the Lock Soup overlay and
+// carries no auto-couple cascade: it is read only on the keyed Lock
+// Soup path, so it is inert when the overlay is off. Batched and
+// non-batched masks differ, so both endpoints must use the same mode
+// — a mismatch yields wrong-seed-style garbage with no error oracle.
+//
+// Panics with [ErrClosed] when called after [Encryptor.Close].
+func (e *Encryptor) SetLockBatch(mode int32) {
+	if e.closed {
+		panic(ErrClosed)
+	}
+	e.cfg.LockBatch = mode
+	e.lockBatchExplicit = true
+}
+
 // SetLockSeed enables or disables the dedicated lockSeed for
 // bit-permutation derivation on this encryptor. Valid values:
 // 0 = off (default; bit-permutation derives from noiseSeed),

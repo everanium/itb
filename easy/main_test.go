@@ -8,8 +8,8 @@ import (
 	"github.com/everanium/itb"
 )
 
-// TestMain honours the ITB_BITSOUP / ITB_LOCKSOUP / ITB_LOCKSEED /
-// ITB_NONCE_BITS environment variables. Each non-empty / non-"0"
+// TestMain honours the ITB_BITSOUP / ITB_LOCKSOUP / ITB_LOCKBATCH /
+// ITB_LOCKSEED / ITB_NONCE_BITS environment variables. Each non-empty / non-"0"
 // value flips the corresponding process-global setter on the itb
 // root package before any test or benchmark runs; subsequent
 // easy.New / easy.New3 calls in this suite snapshot the global
@@ -20,6 +20,7 @@ import (
 //	go test ./easy/                    # default config
 //	ITB_BITSOUP=1 go test ./easy/      # bit-soup overlay engaged
 //	ITB_LOCKSOUP=1 go test ./easy/     # Lock Soup overlay engaged
+//	ITB_LOCKSOUP=1 ITB_LOCKBATCH=1 go test -bench=. ./easy/  # + batched per-chunk PRF
 //	ITB_LOCKSEED=1 go test ./easy/     # dedicated lockSeed allocated by
 //	                                   # every easy.New / easy.New3
 //	ITB_NONCE_BITS=512 go test ./easy/ # 512-bit nonces
@@ -34,6 +35,9 @@ func TestMain(m *testing.M) {
 	}
 	if v := os.Getenv("ITB_LOCKSOUP"); v != "" && v != "0" {
 		itb.SetLockSoup(1)
+	}
+	if v := os.Getenv("ITB_LOCKBATCH"); v != "" && v != "0" {
+		itb.SetLockBatch(1)
 	}
 	if v := os.Getenv("ITB_LOCKSEED"); v != "" && v != "0" {
 		itb.SetLockSeed(1)
