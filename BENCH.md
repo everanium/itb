@@ -14,6 +14,7 @@ Reproduction:
 
 ```sh
 ITB_NONCE_BITS=128 go test -bench='BenchmarkExtSingle*' -run='^$' -benchtime=5s -count=1
+ITB_NONCE_BITS=128 ITB_LOCKSOUP=1 ITB_LOCKBATCH=1 go test -bench='BenchmarkExtSingle*' -run='^$' -benchtime=5s -count=1
 ITB_NONCE_BITS=128 ITB_LOCKSOUP=1 go test -bench='BenchmarkExtSingle*' -run='^$' -benchtime=5s -count=1
 ```
 
@@ -154,6 +155,50 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE2s** | 256 | 2048 | PRF | 21 | 23 | 23 | 25 | 30 | 23 |
 | **BLAKE3** | 256 | 2048 | PRF | 8 | 10 | 9 | 11 | 9 | 11 |
 | **ChaCha20** | 256 | 2048 | PRF | 5 | 13 | 15 | 5 | 13 | 15 |
+
+## Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup + Lock Batch mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 97 | 102 | 100 | 128 | 139 | 141 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 104 | 114 | 109 | 150 | 161 | 159 |
+| **SipHash-2-4** | 128 | 512 | PRF | 80 | 86 | 85 | 107 | 114 | 114 |
+| **AES-CMAC** | 128 | 512 | PRF | 94 | 97 | 99 | 118 | 121 | 127 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 112 | 113 | 112 | 132 | 139 | 142 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 76 | 83 | 82 | 98 | 102 | 106 |
+| **BLAKE2s** | 256 | 512 | PRF | 80 | 82 | 83 | 100 | 105 | 106 |
+| **BLAKE3** | 256 | 512 | PRF | 78 | 80 | 81 | 93 | 100 | 102 |
+| **ChaCha20** | 256 | 512 | PRF | 78 | 83 | 84 | 93 | 98 | 101 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 88 | 95 | 92 | 120 | 125 | 129 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 99 | 106 | 103 | 138 | 148 | 149 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 68 | 76 | 77 | 92 | 95 | 98 |
+| **AES-CMAC** | 128 | 1024 | PRF | 86 | 90 | 91 | 104 | 108 | 112 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 93 | 91 | 92 | 109 | 112 | 114 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 62 | 63 | 62 | 72 | 76 | 77 |
+| **BLAKE2s** | 256 | 1024 | PRF | 65 | 65 | 66 | 77 | 78 | 82 |
+| **BLAKE3** | 256 | 1024 | PRF | 65 | 67 | 68 | 79 | 84 | 83 |
+| **ChaCha20** | 256 | 1024 | PRF | 45 | 62 | 63 | 74 | 75 | 77 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 80 | 84 | 85 | 102 | 108 | 110 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 89 | 93 | 93 | 121 | 126 | 128 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 58 | 62 | 62 | 72 | 75 | 76 |
+| **AES-CMAC** | 128 | 2048 | PRF | 70 | 73 | 72 | 87 | 92 | 92 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 67 | 66 | 66 | 77 | 77 | 80 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 46 | 46 | 46 | 49 | 47 | 51 |
+| **BLAKE2s** | 256 | 2048 | PRF | 47 | 47 | 49 | 50 | 53 | 54 |
+| **BLAKE3** | 256 | 2048 | PRF | 51 | 52 | 52 | 58 | 61 | 62 |
+| **ChaCha20** | 256 | 2048 | PRF | 48 | 46 | 47 | 52 | 52 | 55 |
 
 ## Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup mode)
 
