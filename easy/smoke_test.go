@@ -98,9 +98,14 @@ func TestSmokeGettersDefensiveCopy(t *testing.T) {
 	enc := easy.New()
 	defer enc.Close()
 
+	// Single mode has 3 base seed slots; a dedicated lockSeed (active
+	// when ITB_LOCKSEED=1 is snapshotted at construction) appends a
+	// 4th. SeedComponents tracks the live slot count, so the expected
+	// PRFKeys length is derived from it rather than hardcoded.
+	wantSlots := len(enc.SeedComponents())
 	prfKeys := enc.PRFKeys()
-	if len(prfKeys) != 3 {
-		t.Fatalf("PRFKeys: got %d entries, want 3", len(prfKeys))
+	if len(prfKeys) != wantSlots {
+		t.Fatalf("PRFKeys: got %d entries, want %d", len(prfKeys), wantSlots)
 	}
 	for i := range prfKeys {
 		if len(prfKeys[i]) == 0 {
@@ -125,8 +130,8 @@ func TestSmokeGettersDefensiveCopy(t *testing.T) {
 	}
 
 	seedComps := enc.SeedComponents()
-	if len(seedComps) != 3 {
-		t.Errorf("SeedComponents: got %d entries, want 3", len(seedComps))
+	if len(seedComps) != wantSlots {
+		t.Errorf("SeedComponents: got %d entries, want %d", len(seedComps), wantSlots)
 	}
 
 	macKey := enc.MACKey()

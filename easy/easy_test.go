@@ -308,9 +308,20 @@ func TestEasyImportElevatesLockSeed(t *testing.T) {
 			defer receiver.Close()
 			receiver.SetLockSoup(1)
 
-			// Pre-Import sanity: receiver has the base seed count.
-			if got := len(receiver.SeedComponents()); got != baseSeeds {
-				t.Fatalf("receiver pre-Import: got %d seed slots, want %d", got, baseSeeds)
+			// When ITB_LOCKSEED=1 is snapshotted at construction, a
+			// fresh encryptor already carries a dedicated lockSeed
+			// (base+1 slots); probe one of matching shape to learn
+			// the default offset rather than reading the env.
+			probe := newEncryptorFor("areion512", 1024, m.mode)
+			defaultSlots := len(probe.SeedComponents())
+			probe.Close()
+			defaultLockSeed := defaultSlots - baseSeeds
+
+			// Pre-Import sanity: receiver has the base seed count plus
+			// whatever the default construction allocated.
+			if got := len(receiver.SeedComponents()); got != baseSeeds+defaultLockSeed {
+				t.Fatalf("receiver pre-Import: got %d seed slots, want %d",
+					got, baseSeeds+defaultLockSeed)
 			}
 
 			// Import — adopts LockSeed=1 from the blob.
@@ -318,8 +329,9 @@ func TestEasyImportElevatesLockSeed(t *testing.T) {
 				t.Fatalf("receiver Import: %v", err)
 			}
 
-			// Post-Import: receiver now has one extra seed slot
-			// (base + 1 dedicated lockSeed adopted from the blob).
+			// Post-Import: receiver has exactly one dedicated lockSeed
+			// slot (base + 1), whether adopted from the blob or
+			// already present from default construction.
 			if got := len(receiver.SeedComponents()); got != baseSeeds+1 {
 				t.Errorf("receiver post-Import: got %d seed slots, want %d (LockSeed elevated)",
 					got, baseSeeds+1)

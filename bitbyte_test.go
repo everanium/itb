@@ -21,8 +21,8 @@ var equivalenceSizes = []int{
 	1 << 20,
 }
 
-// TestMain honours the ITB_BITSOUP / ITB_LOCKSOUP / ITB_LOCKSEED /
-// ITB_NONCE_BITS environment variables. Each non-empty / non-"0"
+// TestMain honours the ITB_BITSOUP / ITB_LOCKSOUP / ITB_LOCKBATCH /
+// ITB_LOCKSEED / ITB_NONCE_BITS environment variables. Each non-empty / non-"0"
 // value flips the corresponding process-global setter before any
 // test or benchmark runs; the entire test suite then sees that
 // configuration uniformly.
@@ -31,6 +31,7 @@ var equivalenceSizes = []int{
 //	ITB_BITSOUP=1 go test ./...      # bit-soup Triple Ouroboros
 //	ITB_BITSOUP=1 go test -bench=.   # bit-soup Triple Ouroboros
 //	ITB_LOCKSOUP=1 go test ./...     # Lock Soup Single / Triple Ouroboros
+//	ITB_LOCKSOUP=1 ITB_LOCKBATCH=1 go test -bench=.  # Lock Soup + batched per-chunk PRF
 //	ITB_NONCE_BITS=128 go test ./... # 128-bit nonces
 //	ITB_NONCE_BITS=256 go test ./... # 256-bit nonces
 //	ITB_NONCE_BITS=512 go test ./... # 512-bit nonces
@@ -45,6 +46,9 @@ func TestMain(m *testing.M) {
 	}
 	if v := os.Getenv("ITB_LOCKSOUP"); v != "" && v != "0" {
 		SetLockSoup(1)
+	}
+	if v := os.Getenv("ITB_LOCKBATCH"); v != "" && v != "0" {
+		SetLockBatch(1)
 	}
 	if v := os.Getenv("ITB_NONCE_BITS"); v != "" {
 		switch v {
@@ -370,14 +374,14 @@ func TestLockSoup_DisabledIdentity(t *testing.T) {
 		refP0, refP1, refP2 := splitForTripleParallel(data)
 
 		// Subject under test: locked dispatcher with Lock Soup off.
-		gotP0, gotP1, gotP2 := splitForTripleParallelLocked(data, prf)
+		gotP0, gotP1, gotP2 := splitForTripleParallelLocked(data, prf, lockBatchPRF{})
 
 		if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
 			t.Fatalf("size=%d: SetLockSoup(0) split not bit-identical to plain bit-soup", n)
 		}
 
 		refOut := interleaveForTripleParallel(refP0, refP1, refP2)
-		gotOut := interleaveForTripleParallelLocked(gotP0, gotP1, gotP2, prf)
+		gotOut := interleaveForTripleParallelLocked(gotP0, gotP1, gotP2, prf, lockBatchPRF{})
 		if !bytes.Equal(refOut, gotOut) {
 			t.Fatalf("size=%d: SetLockSoup(0) interleave not bit-identical to plain bit-soup", n)
 		}
@@ -418,8 +422,9 @@ func TestLockSoup_AutoEnablesBitSoup(t *testing.T) {
 			t.Fatalf("rand.Read(%d): %v", n, err)
 		}
 
-		p0, p1, p2 := splitForTripleParallelLocked(data, prf)
-		out := interleaveForTripleParallelLocked(p0, p1, p2, prf)
+		bp := buildLockBatchPRF128(noiseSeed, nonce)
+		p0, p1, p2 := splitForTripleParallelLocked(data, prf, bp)
+		out := interleaveForTripleParallelLocked(p0, p1, p2, prf, bp)
 
 		if !bytes.Equal(data, out) {
 			t.Fatalf("size=%d: round-trip failed under SetLockSoup(1) auto-enable", n)
@@ -446,8 +451,9 @@ func TestLockSoup_LockedRoundTrip(t *testing.T) {
 			t.Fatalf("rand.Read(%d): %v", n, err)
 		}
 
-		p0, p1, p2 := splitForTripleParallelLocked(data, prf)
-		out := interleaveForTripleParallelLocked(p0, p1, p2, prf)
+		bp := buildLockBatchPRF128(noiseSeed, nonce)
+		p0, p1, p2 := splitForTripleParallelLocked(data, prf, bp)
+		out := interleaveForTripleParallelLocked(p0, p1, p2, prf, bp)
 
 		if !bytes.Equal(data, out) {
 			t.Fatalf("size=%d: round-trip failed under SetLockSoup(1)", n)
@@ -573,12 +579,12 @@ func TestSingleLockSoup_DisabledIdentity(t *testing.T) {
 			t.Fatalf("rand.Read(%d): %v", n, err)
 		}
 
-		got := splitForSingle(data, prf)
+		got := splitForSingle(data, prf, permBatchPRF{})
 		if &got[0] != &data[0] || len(got) != len(data) {
 			t.Fatalf("size=%d: splitForSingle returned a copy under both-off — must pass-through", n)
 		}
 
-		gotOut := interleaveForSingle(got, prf)
+		gotOut := interleaveForSingle(got, prf, permBatchPRF{})
 		if !bytes.Equal(data, gotOut) {
 			t.Fatalf("size=%d: identity round-trip failed under both-off", n)
 		}
@@ -624,7 +630,7 @@ func TestSingleLockSoup_CouplingDispatch(t *testing.T) {
 	for i, c := range cases {
 		SetBitSoup(c.bit)
 		SetLockSoup(c.lck)
-		got := splitForSingle(data, prf)
+		got := splitForSingle(data, prf, buildPermuteBatchPRF128(noiseSeed, nonce))
 		if i == 0 {
 			ref = make([]byte, len(got))
 			copy(ref, got)
@@ -659,6 +665,7 @@ func benchSplitForSingle(b *testing.B, sizeBytes int) {
 		b.Fatal(err)
 	}
 	prf := buildPermutePRF128(noiseSeed, nonce)
+	bp := buildPermuteBatchPRF128(noiseSeed, nonce)
 
 	data := make([]byte, sizeBytes)
 	if _, err := rand.Read(data); err != nil {
@@ -667,7 +674,7 @@ func benchSplitForSingle(b *testing.B, sizeBytes int) {
 	b.ResetTimer()
 	b.SetBytes(int64(sizeBytes))
 	for i := 0; i < b.N; i++ {
-		_ = splitForSingle(data, prf)
+		_ = splitForSingle(data, prf, bp)
 	}
 }
 

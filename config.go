@@ -20,6 +20,7 @@ import (
 //   - BarrierFill: 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32.
 //   - BitSoup: -1 = inherit; 0 = off; non-zero = on.
 //   - LockSoup: -1 = inherit; 0 = off; non-zero = on.
+//   - LockBatch: -1 = inherit; 0 = off; non-zero = on.
 //   - LockSeed: -1 = inherit; 0 = off; 1 = on (dedicated lockSeed
 //     drives bit-permutation derivation instead of noiseSeed).
 //
@@ -39,6 +40,7 @@ type Config struct {
 	BarrierFill    int         // 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32
 	BitSoup        int32       // -1 = inherit; 0 = off; non-zero = on
 	LockSoup       int32       // -1 = inherit; 0 = off; non-zero = on
+	LockBatch      int32       // -1 = inherit; 0 = off; non-zero = on
 	LockSeed       int32       // -1 = inherit; 0 = off; 1 = on
 	LockSeedHandle interface{} // nil unless LockSeed == 1; *Seed{128,256,512}
 }
@@ -64,6 +66,7 @@ func SnapshotGlobals() *Config {
 		BarrierFill: GetBarrierFill(),
 		BitSoup:     GetBitSoup(),
 		LockSoup:    GetLockSoup(),
+		LockBatch:   GetLockBatch(),
 		LockSeed:    GetLockSeed(),
 	}
 }
@@ -114,6 +117,17 @@ func isLockSoupEnabledCfg(cfg *Config) bool {
 		return cfg.LockSoup != 0
 	}
 	return isLockSoupEnabled()
+}
+
+// isLockBatchEnabledCfg reports whether Lock Soup batching is enabled
+// for the caller. Cfg variant of isLockBatchEnabled: consults cfg when
+// non-nil and the LockBatch field is non-sentinel (>= 0); otherwise
+// falls through to isLockBatchEnabled.
+func isLockBatchEnabledCfg(cfg *Config) bool {
+	if cfg != nil && cfg.LockBatch >= 0 {
+		return cfg.LockBatch != 0
+	}
+	return isLockBatchEnabled()
 }
 
 // isLockSeedActiveCfg reports whether the dedicated lockSeed for

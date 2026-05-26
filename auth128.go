@@ -39,7 +39,7 @@ func EncryptAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, data []byt
 		return nil, err
 	}
 
-	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce)))
+	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce), buildPermuteBatchPRF128(noiseSeed, nonce)))
 
 	width, height := containerSizeAuth128(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
 	totalPixels := width * height
@@ -162,7 +162,7 @@ func DecryptAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, fileData [
 		return nil, fmt.Errorf("itb: COBS decode produced empty output")
 	}
 
-	return interleaveForSingle(original, buildPermutePRF128(noiseSeed, nonce)), nil
+	return interleaveForSingle(original, buildPermutePRF128(noiseSeed, nonce), buildPermuteBatchPRF128(noiseSeed, nonce)), nil
 }
 
 // EncryptAuthenticated3x128 encrypts data with integrity using Triple Ouroboros (128-bit variant).
@@ -190,7 +190,7 @@ func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce))
+	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce), buildLockBatchPRF128(noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -467,7 +467,7 @@ func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, start
 		}
 	}
 
-	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce)), nil
+	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce), buildLockBatchPRF128(noiseSeed, nonce)), nil
 }
 
 // EncryptAuthenticated128Cfg is the Cfg variant of
@@ -499,7 +499,7 @@ func EncryptAuthenticated128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *See
 		return nil, err
 	}
 
-	encoded := cobsEncode(splitForSingleCfg(cfg, data, buildPermutePRF128Cfg(cfg, noiseSeed, nonce)))
+	encoded := cobsEncode(splitForSingleCfg(cfg, data, buildPermutePRF128Cfg(cfg, noiseSeed, nonce), buildPermuteBatchPRF128Cfg(cfg, noiseSeed, nonce)))
 
 	width, height := containerSizeAuth128Cfg(cfg, noiseSeed, dataSeed, startSeed, len(encoded)+tagSize)
 	totalPixels := width * height
@@ -624,7 +624,7 @@ func DecryptAuthenticated128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *See
 		return nil, fmt.Errorf("itb: COBS decode produced empty output")
 	}
 
-	return interleaveForSingleCfg(cfg, original, buildPermutePRF128Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForSingleCfg(cfg, original, buildPermutePRF128Cfg(cfg, noiseSeed, nonce), buildPermuteBatchPRF128Cfg(cfg, noiseSeed, nonce)), nil
 }
 
 // EncryptAuthenticated3x128Cfg is the Cfg variant of
@@ -657,7 +657,7 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF128Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF128Cfg(cfg, noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -936,7 +936,7 @@ func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 		}
 	}
 
-	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF128Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF128Cfg(cfg, noiseSeed, nonce)), nil
 }
 
 // EncryptStreamAuthenticated128 encrypts a single Streaming AEAD chunk
@@ -981,7 +981,7 @@ func EncryptStreamAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, data
 		return nil, err
 	}
 
-	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce)))
+	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce), buildPermuteBatchPRF128(noiseSeed, nonce)))
 
 	width, height := containerSizeAuth128(noiseSeed, dataSeed, startSeed, len(encoded)+tagSize+1)
 	totalPixels := width * height
@@ -1144,7 +1144,7 @@ func DecryptStreamAuthenticated128(noiseSeed, dataSeed, startSeed *Seed128, chun
 		return []byte{}, true, nil
 	}
 
-	return interleaveForSingle(original, buildPermutePRF128(noiseSeed, nonce)), finalFlag, nil
+	return interleaveForSingle(original, buildPermutePRF128(noiseSeed, nonce), buildPermuteBatchPRF128(noiseSeed, nonce)), finalFlag, nil
 }
 
 // EncryptStreamAuthenticated3x128 encrypts a single Streaming AEAD
@@ -1177,7 +1177,7 @@ func EncryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3,
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce))
+	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce), buildLockBatchPRF128(noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -1496,7 +1496,7 @@ func DecryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3,
 		return []byte{}, true, nil
 	}
 
-	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce)), finalFlag, nil
+	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce), buildLockBatchPRF128(noiseSeed, nonce)), finalFlag, nil
 }
 
 // EncryptStreamAuthenticated128Cfg is the Cfg variant of
@@ -1529,7 +1529,7 @@ func EncryptStreamAuthenticated128Cfg(cfg *Config, noiseSeed, dataSeed, startSee
 		return nil, err
 	}
 
-	encoded := cobsEncode(splitForSingleCfg(cfg, data, buildPermutePRF128Cfg(cfg, noiseSeed, nonce)))
+	encoded := cobsEncode(splitForSingleCfg(cfg, data, buildPermutePRF128Cfg(cfg, noiseSeed, nonce), buildPermuteBatchPRF128Cfg(cfg, noiseSeed, nonce)))
 
 	width, height := containerSizeAuth128Cfg(cfg, noiseSeed, dataSeed, startSeed, len(encoded)+tagSize+1)
 	totalPixels := width * height
@@ -1684,7 +1684,7 @@ func DecryptStreamAuthenticated128Cfg(cfg *Config, noiseSeed, dataSeed, startSee
 		return []byte{}, true, nil
 	}
 
-	return interleaveForSingleCfg(cfg, original, buildPermutePRF128Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
+	return interleaveForSingleCfg(cfg, original, buildPermutePRF128Cfg(cfg, noiseSeed, nonce), buildPermuteBatchPRF128Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
 }
 
 // EncryptStreamAuthenticated3x128Cfg is the Cfg variant of
@@ -1716,7 +1716,7 @@ func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF128Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF128Cfg(cfg, noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -2031,5 +2031,5 @@ func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 		return []byte{}, true, nil
 	}
 
-	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF128Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
+	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF128Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
 }

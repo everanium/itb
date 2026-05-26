@@ -124,8 +124,9 @@ type blobV1 struct {
 
 // blobGlobalsV1 captures the sender's process-wide bit-permutation
 // / nonce / barrier configuration at the moment of Export. Import
-// applies all four fields unconditionally via [SetNonceBits] /
-// [SetBarrierFill] / [SetBitSoup] / [SetLockSoup]. [SetMaxWorkers]
+// applies all five fields unconditionally via [SetNonceBits] /
+// [SetBarrierFill] / [SetBitSoup] / [SetLockSoup] / [SetLockBatch].
+// [SetMaxWorkers]
 // is excluded — the worker count is a deployment-side decision
 // (CPU budget on the receiver host), not a per-message property.
 // The global LockSeed flag is also excluded — the native path
@@ -136,6 +137,7 @@ type blobGlobalsV1 struct {
 	BarrierFill int   `json:"barrier_fill"`
 	BitSoup     int32 `json:"bit_soup"`
 	LockSoup    int32 `json:"lock_soup"`
+	LockBatch   int32 `json:"lock_batch"`
 }
 
 // componentsToStrings encodes a uint64 slice as decimal-string
@@ -211,11 +213,13 @@ func snapshotGlobalsV1() blobGlobalsV1 {
 		BarrierFill: GetBarrierFill(),
 		BitSoup:     GetBitSoup(),
 		LockSoup:    GetLockSoup(),
+		LockBatch:   GetLockBatch(),
 	}
 }
 
 // applyGlobalsV1 validates and writes the captured globals via
-// [SetNonceBits] / [SetBarrierFill] / [SetBitSoup] / [SetLockSoup].
+// [SetNonceBits] / [SetBarrierFill] / [SetBitSoup] / [SetLockSoup] /
+// [SetLockBatch].
 // Any out-of-range value yields [ErrBlobMalformed] before any
 // global is mutated, so a malformed blob does not leave a partial
 // process-wide state behind.
@@ -236,10 +240,14 @@ func applyGlobalsV1(g blobGlobalsV1) error {
 	if g.LockSoup != 0 && g.LockSoup != 1 {
 		return ErrBlobMalformed
 	}
+	if g.LockBatch != 0 && g.LockBatch != 1 {
+		return ErrBlobMalformed
+	}
 	SetNonceBits(g.NonceBits)
 	SetBarrierFill(g.BarrierFill)
 	SetBitSoup(g.BitSoup)
 	SetLockSoup(g.LockSoup)
+	SetLockBatch(g.LockBatch)
 	return nil
 }
 

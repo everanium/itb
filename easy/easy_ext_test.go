@@ -395,9 +395,11 @@ func TestEasyMixedSetLockSeedZeroPrimitivesShrunk(t *testing.T) {
 	}
 	blob := sender.Export()
 
-	// Receiver must construct a 3-slot mixed encryptor (no
-	// PrimitiveL), since SetLockSeed(0) shrunk the sender's slot
-	// count from 4 to 3.
+	// Receiver must be a 3-slot mixed encryptor to match the sender's
+	// SetLockSeed(0)-shrunk 4→3 slot count. SetLockSeed(0) on the
+	// receiver drops the dedicated lockSeed a global ITB_LOCKSEED would
+	// otherwise add (no-op when none is active), pinning it to 3 slots
+	// regardless of the process-wide lockSeed state.
 	receiver := easy.NewMixed(easy.MixedSpec{
 		PrimitiveN: "blake3",
 		PrimitiveD: "blake2s",
@@ -406,6 +408,7 @@ func TestEasyMixedSetLockSeedZeroPrimitivesShrunk(t *testing.T) {
 		MACName:    "kmac256",
 	})
 	defer receiver.Close()
+	receiver.SetLockSeed(0)
 
 	if err := receiver.Import(blob); err != nil {
 		t.Fatalf("Import after sender SetLockSeed(0): %v", err)
