@@ -227,6 +227,15 @@ type Encryptor struct {
 	bitSoupExplicit     bool
 	lockSoupExplicit    bool
 
+	// lockBatchExplicit tracks whether cfg.LockBatch was set by an
+	// explicit [Encryptor.SetLockBatch] call (or restored from a
+	// state blob). [SnapshotGlobals] pins cfg.LockBatch to the
+	// process-global state at construction, so the cfg value alone
+	// does not distinguish "user set" from "snapshot of global"; this
+	// flag does. [Encryptor.Export] consults it to decide whether to
+	// emit the optional lock_batch field in the blob.
+	lockBatchExplicit bool
+
 	// primitives holds per-slot canonical hash primitive names for
 	// encryptors built via [NewMixed] / [NewMixed3] — one entry per
 	// seed slot, parallel to seeds. nil for encryptors built via

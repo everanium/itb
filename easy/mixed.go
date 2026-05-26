@@ -218,11 +218,23 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 		_ = i
 	}
 
-	// Optional lockSeed slot: allocate, attach to noiseSeed, and
-	// auto-couple BitSoup + LockSoup so the bit-permutation overlay
-	// has wire effect immediately. Mirrors the on-direction of
-	// [Encryptor.SetLockSeed] but routes through the
-	// caller-specified PrimitiveL instead of the noiseSeed primitive.
+	// Dedicated lockSeed without an explicit primitive: when the
+	// snapshotted global flag enabled it (cfg.LockSeed > 0), adopt the
+	// noiseSeed primitive (slot 0). This mirrors [New]'s constructor —
+	// the slot is allocated but the overlay is left as snapshotted (no
+	// auto-couple), so a faithful snapshot is reproduced. An explicit
+	// PrimitiveL is instead a deliberate lockSeed request and auto-couples
+	// the overlay, like [Encryptor.SetLockSeed](1).
+	snapshotLockSeed := lockPrim == "" && cfg.LockSeed > 0
+	if snapshotLockSeed {
+		lockPrim = slotPrims[0]
+	}
+
+	// Optional lockSeed slot: allocate, record the handle, and attach to
+	// the noiseSeed (slot 0). For an explicit PrimitiveL the BitSoup /
+	// LockSoup overlay is auto-coupled so the bit-permutation has wire
+	// effect immediately; for the snapshot-driven case the overlay keeps
+	// whatever the global flags snapshotted, matching [New].
 	if lockPrim != "" {
 		lockSeed, lockKey := allocSeed(lockPrim, keyBits, width)
 		seeds = append(seeds, lockSeed)
@@ -231,14 +243,16 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 
 		cfg.LockSeed = 1
 		cfg.LockSeedHandle = lockSeed
-		if cfg.BitSoup <= 0 {
-			cfg.BitSoup = 1
+		if !snapshotLockSeed {
+			if cfg.BitSoup <= 0 {
+				cfg.BitSoup = 1
+			}
+			if cfg.LockSoup <= 0 {
+				cfg.LockSoup = 1
+			}
+			enc.bitSoupExplicit = true
+			enc.lockSoupExplicit = true
 		}
-		if cfg.LockSoup <= 0 {
-			cfg.LockSoup = 1
-		}
-		enc.bitSoupExplicit = true
-		enc.lockSoupExplicit = true
 
 		// Wire the dedicated lockSeed onto the noiseSeed (slot 0).
 		// Type-switch is necessary because seeds is []interface{};

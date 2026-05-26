@@ -155,7 +155,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE3** | 256 | 2048 | PRF | 8 | 10 | 9 | 11 | 9 | 11 |
 | **ChaCha20** | 256 | 2048 | PRF | 5 | 13 | 15 | 5 | 13 | 15 |
 
-## Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup + Lock Soup mode)
+## Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup mode)
 
 ### ITB Single 512-bit (security: P × 2^512)
 
@@ -199,7 +199,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE3** | 256 | 2048 | PRF | 36 | 39 | 39 | 39 | 42 | 42 |
 | **ChaCha20** | 256 | 2048 | PRF | 25 | 37 | 39 | 28 | 40 | 41 |
 
-## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Bit Soup + Lock Soup mode)
+## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup mode)
 
 ### ITB Single 512-bit (security: P × 2^512)
 
@@ -243,7 +243,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE3** | 256 | 2048 | PRF | 116 | 132 | 157 | 167 | 210 | 251 |
 | **ChaCha20** | 256 | 2048 | PRF | 33 | 67 | 94 | 38 | 88 | 134 |
 
-## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Bit Soup + Lock Soup mode)
+## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup mode)
 
 ### ITB Single 512-bit (security: P × 2^512)
 

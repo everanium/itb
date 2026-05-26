@@ -50,6 +50,7 @@ type stateBlobV1 struct {
 	BarrierFill int        `json:"barrier_fill,omitempty"`
 	BitSoup     *int32     `json:"bit_soup,omitempty"`
 	LockSoup    *int32     `json:"lock_soup,omitempty"`
+	LockBatch   *int32     `json:"lock_batch,omitempty"`
 
 	// Mixed signals that the blob carries per-slot primitive names.
 	// Encoded as the literal `true` when the encryptor was built via
@@ -180,6 +181,10 @@ func (e *Encryptor) Export() []byte {
 	if e.lockSoupExplicit {
 		v := e.cfg.LockSoup
 		blob.LockSoup = &v
+	}
+	if e.lockBatchExplicit {
+		v := e.cfg.LockBatch
+		blob.LockBatch = &v
 	}
 
 	out, err := json.Marshal(blob)
@@ -536,6 +541,10 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 	if blob.LockSoup != nil {
 		e.cfg.LockSoup = *blob.LockSoup
 		e.lockSoupExplicit = true
+	}
+	if blob.LockBatch != nil {
+		e.cfg.LockBatch = *blob.LockBatch
+		e.lockBatchExplicit = true
 	}
 
 	if rawLockSeed {

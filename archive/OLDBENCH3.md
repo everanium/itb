@@ -182,7 +182,7 @@
 | **BLAKE3** | 256 | 2048 | PRF | 58 | 82 | 87 | 70 | 94 | 90 |
 | **ChaCha20** | 256 | 2048 | PRF | 134 | 184 | 212 | 177 | 256 | 276 |
 
-## Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup + Lock Soup mode)
+## Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup mode)
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -226,7 +226,7 @@
 | **BLAKE3** | 256 | 2048 | PRF | 13 | 13 | 13 | 13 | 13 | 13 |
 | **ChaCha20** | 256 | 2048 | PRF | 19 | 21 | 21 | 20 | 21 | 22 |
 
-## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Bit Soup + Lock Soup mode)
+## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup mode)
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 

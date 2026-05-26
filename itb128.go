@@ -113,7 +113,7 @@ func Encrypt128(noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, e
 		return nil, err
 	}
 
-	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce)))
+	encoded := cobsEncode(splitForSingle(data, buildPermutePRF128(noiseSeed, nonce), buildPermuteBatchPRF128(noiseSeed, nonce)))
 
 	width, height := containerSize128(noiseSeed, dataSeed, startSeed, len(encoded))
 	totalPixels := width * height
@@ -218,7 +218,7 @@ func Decrypt128(noiseSeed, dataSeed, startSeed *Seed128, fileData []byte) ([]byt
 	if nullPos < 0 {
 		nullPos = len(decoded)
 	}
-	return interleaveForSingle(cobsDecode(decoded[:nullPos]), buildPermutePRF128(noiseSeed, nonce)), nil
+	return interleaveForSingle(cobsDecode(decoded[:nullPos]), buildPermutePRF128(noiseSeed, nonce), buildPermuteBatchPRF128(noiseSeed, nonce)), nil
 }
 
 // checkSevenSeeds128 verifies all 7 seeds are distinct pointers (seven-seed isolation).
@@ -270,7 +270,7 @@ func Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce))
+	p0, p1, p2 := splitForTripleParallelLocked(data, buildLockPRF128(noiseSeed, nonce), buildLockBatchPRF128(noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -490,7 +490,7 @@ func Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 		wg.Wait()
 	}
 
-	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce)), nil
+	return interleaveForTripleParallelLocked(parts[0], parts[1], parts[2], buildLockPRF128(noiseSeed, nonce), buildLockBatchPRF128(noiseSeed, nonce)), nil
 }
 
 // process128Cfg is the Cfg variant of [process128]: threads cfg through
@@ -602,7 +602,7 @@ func Encrypt128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, data []
 		return nil, err
 	}
 
-	encoded := cobsEncode(splitForSingleCfg(cfg, data, buildPermutePRF128Cfg(cfg, noiseSeed, nonce)))
+	encoded := cobsEncode(splitForSingleCfg(cfg, data, buildPermutePRF128Cfg(cfg, noiseSeed, nonce), buildPermuteBatchPRF128Cfg(cfg, noiseSeed, nonce)))
 
 	width, height := containerSize128Cfg(cfg, noiseSeed, dataSeed, startSeed, len(encoded))
 	totalPixels := width * height
@@ -706,7 +706,7 @@ func Decrypt128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, fileDat
 	if nullPos < 0 {
 		nullPos = len(decoded)
 	}
-	return interleaveForSingleCfg(cfg, cobsDecode(decoded[:nullPos]), buildPermutePRF128Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForSingleCfg(cfg, cobsDecode(decoded[:nullPos]), buildPermutePRF128Cfg(cfg, noiseSeed, nonce), buildPermuteBatchPRF128Cfg(cfg, noiseSeed, nonce)), nil
 }
 
 // Encrypt3x128Cfg is the Cfg variant of [Encrypt3x128]: threads cfg
@@ -730,7 +730,7 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF128Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF128Cfg(cfg, noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -951,5 +951,5 @@ func Decrypt3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 		wg.Wait()
 	}
 
-	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF128Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF128Cfg(cfg, noiseSeed, nonce)), nil
 }

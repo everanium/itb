@@ -488,6 +488,36 @@ func GetLockSoup() int32 { return lockSoupEnabled.Load() }
 // per-chunk loop branches on the local, not on this function.
 func isLockSoupEnabled() bool { return lockSoupEnabled.Load() != 0 }
 
+// lockBatchEnabled controls Lock Soup per-chunk PRF batching. Default
+// 0 = off (one PRF call per 24-bit chunk). Non-zero = on (one call per
+// group of chunks, reusing the primitive's wide output across lanes:
+// 2 / 4 / 8 masks per call at 128 / 256 / 512-bit hash width).
+//
+// Atomic for race-free reads from parallel encrypt / decrypt
+// goroutines; loaded once per call at dispatch.
+var lockBatchEnabled atomic.Int32
+
+// SetLockBatch configures Lock Soup per-chunk PRF batching for the
+// whole process.
+//
+//	mode == 0 → off (default; one PRF call per chunk).
+//	mode != 0 → on (2 / 4 / 8× fewer PRF calls at 128 / 256 / 512-bit
+//	            hash width).
+//
+// Read only on the keyed Lock Soup path; with Lock Soup off it is
+// inert. Batched and non-batched masks differ, so both sides of the
+// channel must use the same mode — a mismatch yields wrong-seed-style
+// garbage with no error oracle. Set once at process startup.
+func SetLockBatch(mode int32) { lockBatchEnabled.Store(mode) }
+
+// GetLockBatch returns the current Lock Soup batching mode (0 = off,
+// non-zero = on). See [SetLockBatch].
+func GetLockBatch() int32 { return lockBatchEnabled.Load() }
+
+// isLockBatchEnabled is the internal dispatch check read inside the
+// keyed Lock Soup kernels.
+func isLockBatchEnabled() bool { return lockBatchEnabled.Load() != 0 }
+
 // binomialC holds C(n, k) for n in [0, 24], k in [0, 8] — the table needed
 // for combinatorial unrank in [rankToMaskTriple]. Computed once at package
 // init time via Pascal's recurrence.
@@ -796,12 +826,16 @@ func interleaveTripleBitsParallelLocked(p0, p1, p2 []byte, totalBits int, prf lo
 //
 // Dispatch order: byte-level (bit-soup off) → plain bit-soup (bit-soup on
 // + lock-soup off) → locked bit-soup (bit-soup on + lock-soup on).
-func splitForTripleParallelLocked(data []byte, prf lockPRF) (p0, p1, p2 []byte) {
+func splitForTripleParallelLocked(data []byte, prf lockPRF, bp lockBatchPRF) (p0, p1, p2 []byte) {
 	if !isBitSoupEnabled() {
 		return splitTripleParallel(data)
 	}
 	if !isLockSoupEnabled() {
 		p0, p1, p2, _ = splitTripleBitsParallel(prependTripleLen(data))
+		return
+	}
+	if isLockBatchEnabled() {
+		p0, p1, p2, _ = splitTripleBitsParallelLockedBatch(prependTripleLen(data), bp)
 		return
 	}
 	p0, p1, p2, _ = splitTripleBitsParallelLocked(prependTripleLen(data), prf)
@@ -814,7 +848,7 @@ func splitForTripleParallelLocked(data []byte, prf lockPRF) (p0, p1, p2 []byte) 
 // [interleaveForTripleParallel] — never errors, returns wrong-seed-style
 // garbage clamped to the recovered payload extent on mismatched-mode
 // decrypt or wrong-seed brute-force.
-func interleaveForTripleParallelLocked(p0, p1, p2 []byte, prf lockPRF) []byte {
+func interleaveForTripleParallelLocked(p0, p1, p2 []byte, prf lockPRF, bp lockBatchPRF) []byte {
 	if !isBitSoupEnabled() {
 		return interleaveTripleParallel(p0, p1, p2)
 	}
@@ -822,6 +856,8 @@ func interleaveForTripleParallelLocked(p0, p1, p2 []byte, prf lockPRF) []byte {
 	var framed []byte
 	if !isLockSoupEnabled() {
 		framed = interleaveTripleBitsParallel(p0, p1, p2, totalBits)
+	} else if isLockBatchEnabled() {
+		framed = interleaveTripleBitsParallelLockedBatch(p0, p1, p2, totalBits, bp)
 	} else {
 		framed = interleaveTripleBitsParallelLocked(p0, p1, p2, totalBits, prf)
 	}
@@ -1055,9 +1091,12 @@ type permPRF func(buf []byte, globalChunkIdx uint64, perm, invPerm *[32]byte)
 // Coupling rule (Single only): SetBitSoup(1) || SetLockSoup(1) → overlay
 // active. Both flags off → pass-through. The Triple dispatchers continue
 // to read the two flags independently; the coupling does not leak across.
-func splitForSingle(data []byte, prf permPRF) []byte {
+func splitForSingle(data []byte, prf permPRF, bp permBatchPRF) []byte {
 	if !isBitSoupEnabled() && !isLockSoupEnabled() {
 		return data
+	}
+	if isLockBatchEnabled() {
+		return splitForSingleBatch(prependTripleLen(data), bp)
 	}
 	framed := prependTripleLen(data)
 	L := len(framed)
@@ -1117,47 +1156,55 @@ func splitForSingle(data []byte, prf permPRF) []byte {
 // mismatched-mode decrypt feeds garbage chunks here; the function returns
 // garbage bytes (clamped to the recovered payload extent) instead of
 // distinguishing wrong-seed attempts via an error oracle.
-func interleaveForSingle(permuted []byte, prf permPRF) []byte {
+func interleaveForSingle(permuted []byte, prf permPRF, bp permBatchPRF) []byte {
 	if !isBitSoupEnabled() && !isLockSoupEnabled() {
 		return permuted
 	}
-	L := len(permuted)
-	M := L / 3
-	if M == 0 {
-		return nil
-	}
-	framed := make([]byte, M*3)
+	var framed []byte
+	if isLockBatchEnabled() {
+		framed = interleaveForSingleBatch(permuted, bp)
+		if framed == nil {
+			return nil
+		}
+	} else {
+		L := len(permuted)
+		M := L / 3
+		if M == 0 {
+			return nil
+		}
+		framed = make([]byte, M*3)
 
-	G := runtime.NumCPU()
-	if G > M {
-		G = M
-	}
-	chunksPerWorker := (M + G - 1) / G
-	var wg sync.WaitGroup
-	for w := 0; w < G; w++ {
-		start := w * chunksPerWorker
-		end := start + chunksPerWorker
-		if end > M {
-			end = M
+		G := runtime.NumCPU()
+		if G > M {
+			G = M
 		}
-		if start >= end {
-			continue
-		}
-		wg.Add(1)
-		go func(s, e int) {
-			defer wg.Done()
-			var buf [13]byte
-			var perm, invPerm [32]byte
-			for k := s; k < e; k++ {
-				prf(buf[:], uint64(k), &perm, &invPerm)
-				a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerm)
-				framed[3*k] = a
-				framed[3*k+1] = b
-				framed[3*k+2] = c
+		chunksPerWorker := (M + G - 1) / G
+		var wg sync.WaitGroup
+		for w := 0; w < G; w++ {
+			start := w * chunksPerWorker
+			end := start + chunksPerWorker
+			if end > M {
+				end = M
 			}
-		}(start, end)
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				var buf [13]byte
+				var perm, invPerm [32]byte
+				for k := s; k < e; k++ {
+					prf(buf[:], uint64(k), &perm, &invPerm)
+					a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerm)
+					framed[3*k] = a
+					framed[3*k+1] = b
+					framed[3*k+2] = c
+				}
+			}(start, end)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 
 	if len(framed) < 4 {
 		return framed
@@ -1432,12 +1479,16 @@ func buildPermutePRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) permPR
 // [splitForTripleParallelLocked]: consults [isBitSoupEnabledCfg] /
 // [isLockSoupEnabledCfg] so the dispatch honours per-encryptor
 // BitSoup / LockSoup overrides. Body otherwise identical.
-func splitForTripleParallelLockedCfg(cfg *Config, data []byte, prf lockPRF) (p0, p1, p2 []byte) {
+func splitForTripleParallelLockedCfg(cfg *Config, data []byte, prf lockPRF, bp lockBatchPRF) (p0, p1, p2 []byte) {
 	if !isBitSoupEnabledCfg(cfg) {
 		return splitTripleParallel(data)
 	}
 	if !isLockSoupEnabledCfg(cfg) {
 		p0, p1, p2, _ = splitTripleBitsParallel(prependTripleLen(data))
+		return
+	}
+	if isLockBatchEnabledCfg(cfg) {
+		p0, p1, p2, _ = splitTripleBitsParallelLockedBatch(prependTripleLen(data), bp)
 		return
 	}
 	p0, p1, p2, _ = splitTripleBitsParallelLocked(prependTripleLen(data), prf)
@@ -1450,7 +1501,7 @@ func splitForTripleParallelLockedCfg(cfg *Config, data []byte, prf lockPRF) (p0,
 // plausible-decryption invariant — never errors, returns wrong-seed-
 // style garbage clamped to the recovered payload extent on
 // mismatched-mode decrypt or wrong-seed brute-force.
-func interleaveForTripleParallelLockedCfg(cfg *Config, p0, p1, p2 []byte, prf lockPRF) []byte {
+func interleaveForTripleParallelLockedCfg(cfg *Config, p0, p1, p2 []byte, prf lockPRF, bp lockBatchPRF) []byte {
 	if !isBitSoupEnabledCfg(cfg) {
 		return interleaveTripleParallel(p0, p1, p2)
 	}
@@ -1458,6 +1509,8 @@ func interleaveForTripleParallelLockedCfg(cfg *Config, p0, p1, p2 []byte, prf lo
 	var framed []byte
 	if !isLockSoupEnabledCfg(cfg) {
 		framed = interleaveTripleBitsParallel(p0, p1, p2, totalBits)
+	} else if isLockBatchEnabledCfg(cfg) {
+		framed = interleaveTripleBitsParallelLockedBatch(p0, p1, p2, totalBits, bp)
 	} else {
 		framed = interleaveTripleBitsParallelLocked(p0, p1, p2, totalBits, prf)
 	}
@@ -1476,9 +1529,12 @@ func interleaveForTripleParallelLockedCfg(cfg *Config, p0, p1, p2 []byte, prf lo
 // [isBitSoupEnabledCfg] / [isLockSoupEnabledCfg]. Body otherwise
 // identical, including the SetBitSoup(1) || SetLockSoup(1) Single-
 // only coupling rule and the parallel chunk-permute kernel.
-func splitForSingleCfg(cfg *Config, data []byte, prf permPRF) []byte {
+func splitForSingleCfg(cfg *Config, data []byte, prf permPRF, bp permBatchPRF) []byte {
 	if !isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
 		return data
+	}
+	if isLockBatchEnabledCfg(cfg) {
+		return splitForSingleBatch(prependTripleLen(data), bp)
 	}
 	framed := prependTripleLen(data)
 	L := len(framed)
@@ -1535,47 +1591,55 @@ func splitForSingleCfg(cfg *Config, data []byte, prf permPRF) []byte {
 // — never errors, returns garbage bytes clamped to the recovered
 // payload extent on wrong-seed brute-force or mismatched-mode
 // decrypt.
-func interleaveForSingleCfg(cfg *Config, permuted []byte, prf permPRF) []byte {
+func interleaveForSingleCfg(cfg *Config, permuted []byte, prf permPRF, bp permBatchPRF) []byte {
 	if !isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
 		return permuted
 	}
-	L := len(permuted)
-	M := L / 3
-	if M == 0 {
-		return nil
-	}
-	framed := make([]byte, M*3)
+	var framed []byte
+	if isLockBatchEnabledCfg(cfg) {
+		framed = interleaveForSingleBatch(permuted, bp)
+		if framed == nil {
+			return nil
+		}
+	} else {
+		L := len(permuted)
+		M := L / 3
+		if M == 0 {
+			return nil
+		}
+		framed = make([]byte, M*3)
 
-	G := runtime.NumCPU()
-	if G > M {
-		G = M
-	}
-	chunksPerWorker := (M + G - 1) / G
-	var wg sync.WaitGroup
-	for w := 0; w < G; w++ {
-		start := w * chunksPerWorker
-		end := start + chunksPerWorker
-		if end > M {
-			end = M
+		G := runtime.NumCPU()
+		if G > M {
+			G = M
 		}
-		if start >= end {
-			continue
-		}
-		wg.Add(1)
-		go func(s, e int) {
-			defer wg.Done()
-			var buf [13]byte
-			var perm, invPerm [32]byte
-			for k := s; k < e; k++ {
-				prf(buf[:], uint64(k), &perm, &invPerm)
-				a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerm)
-				framed[3*k] = a
-				framed[3*k+1] = b
-				framed[3*k+2] = c
+		chunksPerWorker := (M + G - 1) / G
+		var wg sync.WaitGroup
+		for w := 0; w < G; w++ {
+			start := w * chunksPerWorker
+			end := start + chunksPerWorker
+			if end > M {
+				end = M
 			}
-		}(start, end)
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				var buf [13]byte
+				var perm, invPerm [32]byte
+				for k := s; k < e; k++ {
+					prf(buf[:], uint64(k), &perm, &invPerm)
+					a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerm)
+					framed[3*k] = a
+					framed[3*k+1] = b
+					framed[3*k+2] = c
+				}
+			}(start, end)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 
 	if len(framed) < 4 {
 		return framed
@@ -1586,4 +1650,583 @@ func interleaveForSingleCfg(cfg *Config, permuted []byte, prf permPRF) []byte {
 		end = uint64(len(framed))
 	}
 	return framed[4:int(end)]
+}
+
+// ============================================================================
+// Lock Soup per-chunk PRF batching — one Hash call per group of chunks
+// ============================================================================
+//
+// The per-chunk lockPRF / permPRF closures perform one Hash call per 24-bit
+// chunk and consume only out[0] (the lo lane at 128-bit). A PRF-grade
+// primitive's output is already a full hash width — 128 / 256 / 512 bits — so
+// the remaining lanes are unused entropy. Batching folds a GROUP index (not a
+// chunk index) into the Hash input and harvests one mask / permutation per
+// output lane: factor = 2 at 128-bit (lo, hi), 4 at 256-bit (out[0..3]),
+// 8 at 512-bit (out[0..7]). The chunk at position j within a group draws its
+// mask / permutation from lane j.
+//
+// The lockSeed derivation and Hash function are identical to the per-chunk
+// builders — only the per-call output consumption changes (lanes instead of
+// out[0]). Batched masks differ from per-chunk masks, so both endpoints must
+// agree on the mode; this is enforced by the shared LockBatch flag, not by an
+// error oracle.
+
+// lockBatchFactor is the number of chunks a single batched Hash call masks at
+// each native hash width.
+const (
+	lockBatchFactor128 = 2
+	lockBatchFactor256 = 4
+	lockBatchFactor512 = 8
+	lockBatchFactorMax = 8
+)
+
+// lockBatchPRF is the closure-form interface used by the batched Triple Lock
+// Soup kernels. One call per group fills masks[0..factor-1] with the lane
+// mask triples for that group; factor reports how many lanes the underlying
+// hash width yields. The buf parameter has the same per-goroutine reuse
+// contract as [lockPRF]; the group index is folded into buf the same way the
+// per-chunk builders fold the chunk index. Buffer layout:
+//
+//	buf[0]    = 0x03   (Lock Soup keystream domain tag)
+//	buf[1:9]  = uint64-LE(groupIdx)
+//	buf[9:13] = (unused)
+type lockBatchPRF struct {
+	factor int
+	fill   func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32)
+}
+
+// permBatchPRF is the batched counterpart of [permPRF] for Single Lock Soup.
+// One call per group fills perms[0..factor-1] and invPerms[0..factor-1] with
+// the lane permutation pairs for that group. Buffer layout:
+//
+//	buf[0]    = 0x04   (Single Lock Soup keystream domain tag)
+//	buf[1:9]  = uint64-LE(groupIdx)
+//	buf[9:13] = (unused)
+type permBatchPRF struct {
+	factor int
+	fill   func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte)
+}
+
+// buildLockBatchPRF128 is the batched counterpart of [buildLockPRF128]. One
+// Hash call per group yields 2 mask triples from the (lo, hi) output lanes.
+func buildLockBatchPRF128(noiseSeed *Seed128, nonce []byte) lockBatchPRF {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return lockBatchPRF{
+		factor: lockBatchFactor128,
+		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			lo, hi := h(buf, lockLo, lockHi)
+			masks[0][0], masks[0][1], masks[0][2] = rankToMaskTriple(lo)
+			masks[1][0], masks[1][1], masks[1][2] = rankToMaskTriple(hi)
+		},
+	}
+}
+
+// buildLockBatchPRF256 is the batched counterpart of [buildLockPRF256]. One
+// Hash call per group yields 4 mask triples from output lanes out[0..3].
+func buildLockBatchPRF256(noiseSeed *Seed256, nonce []byte) lockBatchPRF {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return lockBatchPRF{
+		factor: lockBatchFactor256,
+		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor256; j++ {
+				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
+			}
+		},
+	}
+}
+
+// buildLockBatchPRF512 is the batched counterpart of [buildLockPRF512]. One
+// Hash call per group yields 8 mask triples from output lanes out[0..7].
+func buildLockBatchPRF512(noiseSeed *Seed512, nonce []byte) lockBatchPRF {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return lockBatchPRF{
+		factor: lockBatchFactor512,
+		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor512; j++ {
+				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
+			}
+		},
+	}
+}
+
+// buildLockBatchPRF128Cfg is the Cfg variant of [buildLockBatchPRF128].
+func buildLockBatchPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockBatchPRF {
+	src := permSeedCfg128(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return lockBatchPRF{
+		factor: lockBatchFactor128,
+		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			lo, hi := h(buf, lockLo, lockHi)
+			masks[0][0], masks[0][1], masks[0][2] = rankToMaskTriple(lo)
+			masks[1][0], masks[1][1], masks[1][2] = rankToMaskTriple(hi)
+		},
+	}
+}
+
+// buildLockBatchPRF256Cfg is the Cfg variant of [buildLockBatchPRF256].
+func buildLockBatchPRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockBatchPRF {
+	src := permSeedCfg256(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return lockBatchPRF{
+		factor: lockBatchFactor256,
+		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor256; j++ {
+				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
+			}
+		},
+	}
+}
+
+// buildLockBatchPRF512Cfg is the Cfg variant of [buildLockBatchPRF512].
+func buildLockBatchPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockBatchPRF {
+	src := permSeedCfg512(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return lockBatchPRF{
+		factor: lockBatchFactor512,
+		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactorMax][3]uint32) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor512; j++ {
+				masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple(out[j])
+			}
+		},
+	}
+}
+
+// buildPermuteBatchPRF128 is the batched counterpart of [buildPermutePRF128].
+// One Hash call per group yields 2 permutation pairs from the (lo, hi) lanes.
+func buildPermuteBatchPRF128(noiseSeed *Seed128, nonce []byte) permBatchPRF {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return permBatchPRF{
+		factor: lockBatchFactor128,
+		fill: func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte) {
+			buf[0] = 0x04
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			lo, hi := h(buf, lockLo, lockHi)
+			derivePermutation(lo, &perms[0], &invPerms[0])
+			derivePermutation(hi, &perms[1], &invPerms[1])
+		},
+	}
+}
+
+// buildPermuteBatchPRF256 is the batched counterpart of [buildPermutePRF256].
+// One Hash call per group yields 4 permutation pairs from out[0..3].
+func buildPermuteBatchPRF256(noiseSeed *Seed256, nonce []byte) permBatchPRF {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return permBatchPRF{
+		factor: lockBatchFactor256,
+		fill: func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte) {
+			buf[0] = 0x04
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor256; j++ {
+				derivePermutation(out[j], &perms[j], &invPerms[j])
+			}
+		},
+	}
+}
+
+// buildPermuteBatchPRF512 is the batched counterpart of [buildPermutePRF512].
+// One Hash call per group yields 8 permutation pairs from out[0..7].
+func buildPermuteBatchPRF512(noiseSeed *Seed512, nonce []byte) permBatchPRF {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		if !isBitSoupEnabled() && !isLockSoupEnabled() {
+			panic(ErrLockSeedOverlayOff)
+		}
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return permBatchPRF{
+		factor: lockBatchFactor512,
+		fill: func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte) {
+			buf[0] = 0x04
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor512; j++ {
+				derivePermutation(out[j], &perms[j], &invPerms[j])
+			}
+		},
+	}
+}
+
+// buildPermuteBatchPRF128Cfg is the Cfg variant of [buildPermuteBatchPRF128].
+func buildPermuteBatchPRF128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) permBatchPRF {
+	src := permSeedCfg128(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return permBatchPRF{
+		factor: lockBatchFactor128,
+		fill: func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte) {
+			buf[0] = 0x04
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			lo, hi := h(buf, lockLo, lockHi)
+			derivePermutation(lo, &perms[0], &invPerms[0])
+			derivePermutation(hi, &perms[1], &invPerms[1])
+		},
+	}
+}
+
+// buildPermuteBatchPRF256Cfg is the Cfg variant of [buildPermuteBatchPRF256].
+func buildPermuteBatchPRF256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) permBatchPRF {
+	src := permSeedCfg256(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return permBatchPRF{
+		factor: lockBatchFactor256,
+		fill: func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte) {
+			buf[0] = 0x04
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor256; j++ {
+				derivePermutation(out[j], &perms[j], &invPerms[j])
+			}
+		},
+	}
+}
+
+// buildPermuteBatchPRF512Cfg is the Cfg variant of [buildPermuteBatchPRF512].
+func buildPermuteBatchPRF512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) permBatchPRF {
+	src := permSeedCfg512(cfg, noiseSeed)
+	if noiseSeed.AttachedLockSeed() != nil &&
+		!isBitSoupEnabledCfg(cfg) && !isLockSoupEnabledCfg(cfg) {
+		panic(ErrLockSeedOverlayOff)
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return permBatchPRF{
+		factor: lockBatchFactor512,
+		fill: func(buf []byte, groupIdx uint64, perms, invPerms *[lockBatchFactorMax][32]byte) {
+			buf[0] = 0x04
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockSeed)
+			for j := 0; j < lockBatchFactor512; j++ {
+				derivePermutation(out[j], &perms[j], &invPerms[j])
+			}
+		},
+	}
+}
+
+// splitTripleBitsParallelLockedBatch is the batched counterpart of
+// [splitTripleBitsParallelLocked]. Chunks are processed in groups of
+// bp.factor; each group costs one bp.fill call producing factor lane mask
+// triples applied to the factor chunks of the group. The parallel work split
+// is at GROUP granularity (workers take disjoint group ranges, writing
+// disjoint output chunk indices). The final group is short when M is not a
+// multiple of factor; only the needed low lanes are consumed.
+func splitTripleBitsParallelLockedBatch(data []byte, bp lockBatchPRF) (p0, p1, p2 []byte, totalBits int) {
+	L := len(data)
+	LPad := ((L + 2) / 3) * 3
+	var padded []byte
+	if LPad == L {
+		padded = data
+	} else {
+		padded = make([]byte, LPad)
+		copy(padded, data)
+	}
+
+	totalBits = LPad * 8
+	M := LPad / 3
+
+	p0 = make([]byte, M)
+	p1 = make([]byte, M)
+	p2 = make([]byte, M)
+
+	if M == 0 {
+		return
+	}
+
+	factor := bp.factor
+	numGroups := (M + factor - 1) / factor
+
+	G := runtime.NumCPU()
+	if G > numGroups {
+		G = numGroups
+	}
+	groupsPerWorker := (numGroups + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		gStart := w * groupsPerWorker
+		gEnd := gStart + groupsPerWorker
+		if gEnd > numGroups {
+			gEnd = numGroups
+		}
+		if gStart >= gEnd {
+			continue
+		}
+		wg.Add(1)
+		go func(gs, ge int) {
+			defer wg.Done()
+			var buf [13]byte
+			var masks [lockBatchFactorMax][3]uint32
+			for g := gs; g < ge; g++ {
+				bp.fill(buf[:], uint64(g), &masks)
+				base := g * factor
+				for j := 0; j < factor; j++ {
+					k := base + j
+					if k >= M {
+						break
+					}
+					m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+					l0, l1, l2 := chunk24lock(padded[3*k], padded[3*k+1], padded[3*k+2], m0, m1, m2)
+					p0[k] = l0
+					p1[k] = l1
+					p2[k] = l2
+				}
+			}
+		}(gStart, gEnd)
+	}
+	wg.Wait()
+	return
+}
+
+// interleaveTripleBitsParallelLockedBatch is the inverse of
+// [splitTripleBitsParallelLockedBatch], mirroring its group-granular work
+// split and short-final-group handling.
+func interleaveTripleBitsParallelLockedBatch(p0, p1, p2 []byte, totalBits int, bp lockBatchPRF) []byte {
+	M := totalBits / 24
+	result := make([]byte, M*3)
+
+	if M == 0 {
+		return result
+	}
+
+	factor := bp.factor
+	numGroups := (M + factor - 1) / factor
+
+	G := runtime.NumCPU()
+	if G > numGroups {
+		G = numGroups
+	}
+	groupsPerWorker := (numGroups + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		gStart := w * groupsPerWorker
+		gEnd := gStart + groupsPerWorker
+		if gEnd > numGroups {
+			gEnd = numGroups
+		}
+		if gStart >= gEnd {
+			continue
+		}
+		wg.Add(1)
+		go func(gs, ge int) {
+			defer wg.Done()
+			var buf [13]byte
+			var masks [lockBatchFactorMax][3]uint32
+			for g := gs; g < ge; g++ {
+				bp.fill(buf[:], uint64(g), &masks)
+				base := g * factor
+				for j := 0; j < factor; j++ {
+					k := base + j
+					if k >= M {
+						break
+					}
+					m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+					a, b, c := unchunk24lock(p0[k], p1[k], p2[k], m0, m1, m2)
+					result[3*k] = a
+					result[3*k+1] = b
+					result[3*k+2] = c
+				}
+			}
+		}(gStart, gEnd)
+	}
+	wg.Wait()
+	return result
+}
+
+// splitForSingleBatch is the batched counterpart of the active overlay path in
+// [splitForSingle]. The framed (length-prefixed) input is padded to a multiple
+// of 3 bytes, then chunks are processed in groups of bp.factor with one
+// bp.fill call per group; the work split is group-granular and the final
+// group is short when M is not a multiple of factor.
+func splitForSingleBatch(framed []byte, bp permBatchPRF) []byte {
+	L := len(framed)
+	LPad := ((L + 2) / 3) * 3
+	var padded []byte
+	if LPad == L {
+		padded = framed
+	} else {
+		padded = make([]byte, LPad)
+		copy(padded, framed)
+	}
+	M := LPad / 3
+	out := make([]byte, LPad)
+	if M == 0 {
+		return out
+	}
+
+	factor := bp.factor
+	numGroups := (M + factor - 1) / factor
+
+	G := runtime.NumCPU()
+	if G > numGroups {
+		G = numGroups
+	}
+	groupsPerWorker := (numGroups + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		gStart := w * groupsPerWorker
+		gEnd := gStart + groupsPerWorker
+		if gEnd > numGroups {
+			gEnd = numGroups
+		}
+		if gStart >= gEnd {
+			continue
+		}
+		wg.Add(1)
+		go func(gs, ge int) {
+			defer wg.Done()
+			var buf [13]byte
+			var perms, invPerms [lockBatchFactorMax][32]byte
+			for g := gs; g < ge; g++ {
+				bp.fill(buf[:], uint64(g), &perms, &invPerms)
+				base := g * factor
+				for j := 0; j < factor; j++ {
+					k := base + j
+					if k >= M {
+						break
+					}
+					a, b, c := chunk24permute(padded[3*k], padded[3*k+1], padded[3*k+2], &perms[j])
+					out[3*k] = a
+					out[3*k+1] = b
+					out[3*k+2] = c
+				}
+			}
+		}(gStart, gEnd)
+	}
+	wg.Wait()
+	return out
+}
+
+// interleaveForSingleBatch is the inverse of [splitForSingleBatch]: returns
+// the raw framed (length-prefixed, padded) bytes for the caller to strip,
+// mirroring the group-granular split and short-final-group handling.
+func interleaveForSingleBatch(permuted []byte, bp permBatchPRF) []byte {
+	L := len(permuted)
+	M := L / 3
+	if M == 0 {
+		return nil
+	}
+	framed := make([]byte, M*3)
+
+	factor := bp.factor
+	numGroups := (M + factor - 1) / factor
+
+	G := runtime.NumCPU()
+	if G > numGroups {
+		G = numGroups
+	}
+	groupsPerWorker := (numGroups + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		gStart := w * groupsPerWorker
+		gEnd := gStart + groupsPerWorker
+		if gEnd > numGroups {
+			gEnd = numGroups
+		}
+		if gStart >= gEnd {
+			continue
+		}
+		wg.Add(1)
+		go func(gs, ge int) {
+			defer wg.Done()
+			var buf [13]byte
+			var perms, invPerms [lockBatchFactorMax][32]byte
+			for g := gs; g < ge; g++ {
+				bp.fill(buf[:], uint64(g), &perms, &invPerms)
+				base := g * factor
+				for j := 0; j < factor; j++ {
+					k := base + j
+					if k >= M {
+						break
+					}
+					a, b, c := unchunk24permute(permuted[3*k], permuted[3*k+1], permuted[3*k+2], &invPerms[j])
+					framed[3*k] = a
+					framed[3*k+1] = b
+					framed[3*k+2] = c
+				}
+			}
+		}(gStart, gEnd)
+	}
+	wg.Wait()
+	return framed
 }
