@@ -172,6 +172,22 @@ SipHash-1-3, murmur3, and xxhash64 are clean on all four axes with `inv = ?` —
 
 **The two screens are complementary.** SAT calibration targets seed recovery (invertibility / T-function) and so catches fnv1a (and mx3 / splitmix64 at rounds = 1), but TIMES OUT on t1ha1, SeaHash, and SipHash-1-3 — they carry no invertibility hook. The differential screen targets a different attack class and catches what SAT misses: **t1ha1** (a persistent biased low-byte differential, ddt8_max ≈ 0.10–0.22 across rounds) and **SeaHash** (a round-dependent differential up to 1.0 plus partial GF(2)-affinity, const8 = 0.031, lin_score = 0.021) are **differential-only** — SAT-resistant yet differentially flagged. **SipHash-1-3** is clean on both (only the Axis A reduced-round avalanche signature marks it). No differential attack is pursued: [Axis B](#33-axis-b--itb-wrapped-raw-mode-bias) already shows ITB's encoding (rotation + noise barrier + COBS) neutralises these raw-primitive differential biases on the attacker-observable ciphertext surface (`|Δ50| < 1 %`), so the hook does not reach a deployed ciphertext. The screen's value is cheap triage of the raw primitive, not an exploit path.
 
+### 3.6. Trapdoor-primitive control — BEA-1 partition backdoor through ChainHash
+
+[§3.4](#34-axis-c--sat-kpa-seed-recovery-resistance) measures seed-recovery resistance for below-spec primitives (CRC128 / FNV-1a — weak by accident). This control goes further: it plugs in a primitive with a **deliberate, published, working** mathematical backdoor and asks whether ChainHash neutralises it. The primitive is **BEA-1** (Bannier & Filiol, arXiv:1702.06475; partition-trapdoor theory in IACR ePrint 2016/493) — an 80-bit-block AES-like cipher whose S-boxes and diffusion layer hide a linear partition that lets the designer recover the 120-bit key from chosen (plaintext, ciphertext) pairs while the cipher still passes standard differential / linear / statistical tests. The trapdoor is re-derived here purely from the published constants (the S-boxes carry a max |LAT| = 256 against the paper's claimed ≤ 128; the partition is a structural property of the design, not the secret key).
+
+Methodology is the Axis-C lab style of §3.4 — synthetic `(data, ChainHash-lo)` pairs under a fixed secret seed — with a **partial discard (truncate 80 → 64)** because the 80-bit primitive output is packed into the 64-bit lane. The attacker is granted generous lab access (chosen `data`, the full published partition) so that any failure is attributable to the construction, not to a weak attacker.
+
+| Stage | Construction | Trapdoor outcome |
+|:------|:-------------|:-----------------|
+| Pure BEA-1 | the cipher alone, no ChainHash | **Full 120-bit key recovered** from chosen (plaintext, ciphertext) pairs — confirms the backdoor is real and reproduced. |
+| ChainHash, rounds = 1 | 2×BEA-1 lane, truncate 80 → 64, no feedforward | **Full lo-lane seed recovered.** The truncation drops 2 of the 8 partition lanes, yet the attack clusters on the surviving 30 of 40 coset-label bits and still succeeds. Rounds = 1 offers no protection — consistent with §3.4 / §3.5 (structured primitives fall at rounds = 1). |
+| ChainHash, rounds ≥ 2 | feedforward `k = seed[r] ⊕ extend(lo_{r-1})` | **The same engine fails — structurally.** The feedforward makes the effective last-round key **data-dependent** (one fixed key at rounds = 1 → all-distinct at rounds ≥ 2), so the dominant-coset concentration the partition attack rides **collapses to the noise floor** (peak / noise ≈ 1.0 versus ≈ 25 at rounds = 1). With no coset peak there is nothing to recover. |
+
+A structure-aware SMT solver — the partition-quotient analogue of the §3.5 T-function solver — was also tried against the feedforward. It inverts a single S-box layer but gains **no algebraic shortcut through a full BEA-1 round**: the per-S-box partition quotient is only probabilistic (no exact quotient cipher to lift), and the round feedforward breaks the coset homomorphism the trapdoor relies on, so the structure offers the solver nothing the plain composition does not.
+
+**Conclusion.** At rounds = 1 the trapdoor survives the 80 → 64 truncation untouched; at rounds ≥ 2 ChainHash's feedforward **neutralises it** — the same intermediate-masking mechanism that walls invertible primitives in §3.4 / §3.5, here dissolving the fixed-key coset structure a working partition backdoor requires, with the partial discard as a secondary barrier. The wrap is deliberately generous to the attacker (chosen plaintext, minimum-scrambling feedforward leaving 56 of 120 key bits untouched), so the result is conservatively framed: it is the published BEA-1 partition attack and a structure-aware solver that are neutralised at rounds ≥ 2, not a proof that no exploitation path exists.
+
 ## 4. Primitive shelf
 
 Provenance and the published SMHasher weakness each primitive is selected to stress. The per-axis measured results are in [§3](#3-results); the consolidated Axis C seed-recovery verdicts (with the rounds = 1 vs rounds ≥ 2 split) are in the [§3.4 table](#34-axis-c--sat-kpa-seed-recovery-resistance).
@@ -371,4 +387,25 @@ python3 scripts/redteam/phase2_theory_splitmix64/splitmix64_chain_lo_concrete.py
     --rounds 1,2,4 --vectors 8
 python3 scripts/redteam/phase2_theory_splitmix64/sat_calibration_raw_splitmix64.py \
     --rounds 1 --obs 8 --timeout-sec 300 --solver bitwuzla
+```
+
+### 5.7. Trapdoor-primitive control (BEA-1, §3.6)
+
+The BEA-1 cipher and its trapdoor are a clean-room reimplementation transcribed from arXiv:1702.06475 (Bannier & Filiol) / IACR ePrint 2016/493; `bea1_validate.py` self-checks the transcription and `bea1_trapdoor.py` re-derives the partition from the published constants.
+
+```bash
+# Experiment 1 — pure BEA-1: reproduce the published partition trapdoor
+# (full 120-bit key recovery from chosen plaintext/ciphertext pairs).
+python3 scripts/redteam/phase2_theory_bea1/exp1_pure_bea1.py
+
+# Experiment 2 — BEA-1 through ChainHash, rounds = 1, partial discard 80->64
+# (the trapdoor still recovers the lo-lane seed).
+python3 scripts/redteam/phase2_theory_bea1/exp2_chainhash_r1.py
+
+# Experiment 3 — BEA-1 through ChainHash, rounds = 2,3,4 (feedforward):
+# the same engine fails; the instrumentation shows the coset signal collapses.
+python3 scripts/redteam/phase2_theory_bea1/exp3_chainhash_feedforward.py
+
+# Experiment 3, structure-aware SMT solver (partition-quotient analogue).
+python3 scripts/redteam/phase2_theory_bea1/exp3_structure_solver.py
 ```
