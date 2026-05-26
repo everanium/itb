@@ -1709,11 +1709,13 @@ type permBatchPRF struct {
 
 // fillLockPerms fills perms/invPerms[0..count-1] from count PRF lanes in prf.
 // When the AVX-512 VPOPCNTDQ kernel is available it derives all lanes in one
-// pass: the factoradic digits are extracted here in Go (unrolled constant
-// divisors → reciprocal-multiply), the kernel does the lane-parallel free-slot
-// expansion, and the per-lane perm/invPerm byte arrays are marshalled from the
-// returned positions. Without the kernel it falls back to the per-lane scalar
-// derivePermutation, leaving non-VPOPCNTDQ hosts unchanged.
+// pass: the factoradic digits feeding positions 0..16 are extracted here in Go
+// (unrolled constant divisors → reciprocal-multiply), the kernel does the
+// lane-parallel free-slot expansion, and the per-lane perm/invPerm byte arrays
+// are marshalled from the returned positions. Positions 17..23 take a
+// zero digit (handled by the kernel's tail), so they are not computed here.
+// Without the kernel it falls back to the per-lane scalar derivePermutation,
+// leaving non-VPOPCNTDQ hosts unchanged.
 func fillLockPerms(prf *[8]uint64, count int, perms, invPerms *[lockBatchFactorMax][32]byte) {
 	if locksoupasm.HasAVX512RankPerm {
 		var digits, positions [24][8]uint32
@@ -1752,19 +1754,10 @@ func fillLockPerms(prf *[8]uint64, count int, perms, invPerms *[lockBatchFactorM
 			digits[15][j] = uint32(p % 9)
 			p /= 9
 			digits[16][j] = uint32(p % 8)
-			p /= 8
-			digits[17][j] = uint32(p % 7)
-			p /= 7
-			digits[18][j] = uint32(p % 6)
-			p /= 6
-			digits[19][j] = uint32(p % 5)
-			p /= 5
-			digits[20][j] = uint32(p % 4)
-			p /= 4
-			digits[21][j] = uint32(p % 3)
-			p /= 3
-			digits[22][j] = uint32(p % 2)
-			// digits[23] is identically 0.
+			// Positions 17..23 carry an identically-zero factoradic digit
+			// (24! exceeds 2^64, so the quotient feeding them is zero for every
+			// 64-bit input) and are handled by the lowest-free-bit tail of the
+			// expansion kernel, so digits[17..23] keep their zero initialisation.
 		}
 		locksoupasm.DerivePermPositions(&digits, &positions)
 		for j := 0; j < count; j++ {
