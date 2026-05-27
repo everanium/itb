@@ -28,7 +28,7 @@
 //!
 //! Worker count defaults to `itb::set_max_workers(0)` (auto-detect),
 //! matching the Go bench default. Bench scripts may override before
-//! calling [`run_all`].
+//! calling [`measure_and_print`].
 //!
 //! This module is shared via `#[path = "common.rs"] mod common;`
 //! includes from `bench_single.rs` / `bench_triple.rs` rather than as
@@ -220,37 +220,9 @@ fn measure(case: &mut BenchCase, min_seconds: f64) {
     );
 }
 
-/// Run every case in `cases` and print one Go-bench-style line per
-/// case to stdout. Honours `ITB_BENCH_FILTER` for substring scoping
-/// and `ITB_BENCH_MIN_SEC` for per-case wall-clock budget.
-pub fn run_all(cases: Vec<BenchCase>) {
-    let flt = env_filter();
-    let min_seconds = env_min_seconds();
-
-    let total = cases.len();
-    let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
-
-    let mut selected: Vec<BenchCase> = match &flt {
-        Some(s) => cases.into_iter().filter(|c| c.name.contains(s)).collect(),
-        None => cases,
-    };
-    if selected.is_empty() {
-        eprintln!(
-            "no bench cases match filter {:?}; available: {:?}",
-            flt, names,
-        );
-        return;
-    }
-
-    let payload_bytes = selected[0].payload_bytes;
-    println!(
-        "# benchmarks={} payload_bytes={} min_seconds={}",
-        selected.len(),
-        payload_bytes,
-        min_seconds,
-    );
-    let _ = total; // total kept for symmetry with the Python harness's available-cases reporting
-    for case in selected.iter_mut() {
-        measure(case, min_seconds);
-    }
+/// Measure a pre-built case at the given `min_seconds` threshold and
+/// emit one Go-bench-style line. Called by the lazy wrapper bench
+/// runner after filtering has already been applied.
+pub fn measure_and_print(case: &mut BenchCase, min_seconds: f64) {
+    measure(case, min_seconds);
 }

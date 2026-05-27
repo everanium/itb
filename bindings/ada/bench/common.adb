@@ -406,4 +406,9 @@ package body Common is
       end loop;
    end Run_All;
 
+   procedure Measure_One (B : Bench_Case; Min_Seconds : Float) is
+   begin
+      Measure (B, Min_Seconds);
+   end Measure_One;
+
 end Common;

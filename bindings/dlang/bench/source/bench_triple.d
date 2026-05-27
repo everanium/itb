@@ -39,11 +39,13 @@ import bench.common :
     BenchFn,
     PAYLOAD_16MB,
     PRIMITIVES_CANONICAL,
+    envFilter,
     envLockBatch,
     envLockSeed,
+    envMinSeconds,
     envNonceBits,
-    randomBytes,
-    runAll;
+    measureAndPrint,
+    randomBytes;
 
 // Mixed-primitive composition for Triple Ouroboros - the same four
 // 256-bit-wide names used by bench_single's Mixed case are cycled
@@ -160,37 +162,44 @@ private BenchCase makeDecryptAuthCase(string name, EncBox* box) @trusted
     return BenchCase(name, run, PAYLOAD_BYTES);
 }
 
-/// Assemble the full case list: 9 single-primitive entries x 4 ops
-/// plus 1 mixed entry x 4 ops = 40 cases. Order is primitive-major /
-/// op-minor so a filter on a primitive name keeps all four ops
-/// grouped together in the output.
-private BenchCase[] buildCases() @trusted
+/// One lazy factory entry: case name + a delegate that builds the
+/// BenchCase on demand. Factories are called one at a time just
+/// before measurement so peak RSS is bounded to roughly one case.
+private alias CaseFactory = BenchCase delegate() @trusted;
+private struct LazyEntry { string name; CaseFactory factory; }
+
+/// Assemble the full lazy factory list: 9 single-primitive entries ×
+/// 4 ops plus 1 mixed entry × 4 ops = 40 message cases, plus 8
+/// streaming cases appended at the end. Each factory builds one
+/// BenchCase on demand.
+private LazyEntry[] buildLazyFactories() @trusted
 {
-    BenchCase[] cases;
-    cases.reserve(48);
+    LazyEntry[] facs;
+    facs.reserve(48);
     foreach (prim; PRIMITIVES_CANONICAL)
     {
-        string base = format("bench_triple_%s_%dbit", prim, KEY_BITS);
-        cases ~= makeEncryptCase(
-            format("%s_encrypt_16mb", base), buildTriple(prim));
-        cases ~= makeDecryptCase(
-            format("%s_decrypt_16mb", base), buildTriple(prim));
-        cases ~= makeEncryptAuthCase(
-            format("%s_encrypt_auth_16mb", base), buildTriple(prim));
-        cases ~= makeDecryptAuthCase(
-            format("%s_decrypt_auth_16mb", base), buildTriple(prim));
+        string p = prim;
+        string bp = format("bench_triple_%s_%dbit", p, KEY_BITS);
+        string en  = format("%s_encrypt_16mb", bp);
+        string dn  = format("%s_decrypt_16mb", bp);
+        string ean = format("%s_encrypt_auth_16mb", bp);
+        string dan = format("%s_decrypt_auth_16mb", bp);
+        facs ~= LazyEntry(en,  () @trusted { return makeEncryptCase(en,  buildTriple(p)); });
+        facs ~= LazyEntry(dn,  () @trusted { return makeDecryptCase(dn,  buildTriple(p)); });
+        facs ~= LazyEntry(ean, () @trusted { return makeEncryptAuthCase(ean, buildTriple(p)); });
+        facs ~= LazyEntry(dan, () @trusted { return makeDecryptAuthCase(dan, buildTriple(p)); });
     }
-    string base = format("bench_triple_mixed_%dbit", KEY_BITS);
-    cases ~= makeEncryptCase(
-        format("%s_encrypt_16mb", base), buildMixedTriple());
-    cases ~= makeDecryptCase(
-        format("%s_decrypt_16mb", base), buildMixedTriple());
-    cases ~= makeEncryptAuthCase(
-        format("%s_encrypt_auth_16mb", base), buildMixedTriple());
-    cases ~= makeDecryptAuthCase(
-        format("%s_decrypt_auth_16mb", base), buildMixedTriple());
-    appendStreamCasesTriple(cases);
-    return cases;
+    string bm  = format("bench_triple_mixed_%dbit", KEY_BITS);
+    string men  = format("%s_encrypt_16mb", bm);
+    string mdn  = format("%s_decrypt_16mb", bm);
+    string mean = format("%s_encrypt_auth_16mb", bm);
+    string mdan = format("%s_decrypt_auth_16mb", bm);
+    facs ~= LazyEntry(men,  () @trusted { return makeEncryptCase(men,  buildMixedTriple()); });
+    facs ~= LazyEntry(mdn,  () @trusted { return makeDecryptCase(mdn,  buildMixedTriple()); });
+    facs ~= LazyEntry(mean, () @trusted { return makeEncryptAuthCase(mean, buildMixedTriple()); });
+    facs ~= LazyEntry(mdan, () @trusted { return makeDecryptAuthCase(mdan, buildMixedTriple()); });
+    appendStreamLazyTriple(facs);
+    return facs;
 }
 
 void main() @trusted
@@ -207,8 +216,42 @@ void main() @trusted
         nonceBits,
         envLockSeed() ? "on" : "off"));
 
-    auto cases = buildCases();
-    runAll(cases);
+    auto facs = buildLazyFactories();
+    string flt = envFilter();
+    double minSeconds = envMinSeconds();
+
+    LazyEntry[] selected;
+    if (flt is null)
+        selected = facs;
+    else
+        foreach (ref e; facs)
+            if (e.name.length >= flt.length)
+            {
+                bool found = false;
+                foreach (i; 0 .. e.name.length - flt.length + 1)
+                    if (e.name[i .. i + flt.length] == flt) { found = true; break; }
+                if (found)
+                    selected ~= e;
+            }
+
+    if (selected.length == 0)
+    {
+        import std.stdio : stderr;
+        string[] names;
+        foreach (ref e; facs) names ~= e.name;
+        stderr.writefln(
+            "no bench cases match filter %s; available: %s",
+            flt is null ? "<unset>" : flt, names);
+        return;
+    }
+
+    writeln(format("# benchmarks=%d payload_bytes=%d min_seconds=%g",
+        selected.length, PAYLOAD_BYTES, minSeconds));
+    foreach (ref e; selected)
+    {
+        auto c = e.factory();
+        measureAndPrint(c, minSeconds);
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -601,27 +644,27 @@ private BenchCase makeLowLevelStreamDecryptUserLoopCase(string name) @trusted
     return BenchCase(name, run, STREAM_TOTAL_BYTES);
 }
 
-/// Appends the eight Triple-Ouroboros streaming benches to the
-/// running case list. Naming convention matches bench_single's
-/// `appendStreamCasesSingle` shape with the `triple` token.
-private void appendStreamCasesTriple(ref BenchCase[] cases) @trusted
+/// Appends the eight Triple-Ouroboros streaming lazy factory entries to
+/// the running factory list. Naming convention matches bench_single's
+/// `appendStreamLazySingle` shape with the `triple` token.
+private void appendStreamLazyTriple(ref LazyEntry[] facs) @trusted
 {
     string base = format("bench_triple_stream_%s_%dbit_64mb",
         STREAM_PRIMITIVE, KEY_BITS);
-    cases ~= makeEasyStreamEncryptAeadIoCase(
-        format("%s_easy_encrypt_aead_io", base));
-    cases ~= makeEasyStreamDecryptAeadIoCase(
-        format("%s_easy_decrypt_aead_io", base));
-    cases ~= makeEasyStreamEncryptUserLoopCase(
-        format("%s_easy_encrypt_userloop", base));
-    cases ~= makeEasyStreamDecryptUserLoopCase(
-        format("%s_easy_decrypt_userloop", base));
-    cases ~= makeLowLevelStreamEncryptAeadIoCase(
-        format("%s_lowlevel_encrypt_aead_io", base));
-    cases ~= makeLowLevelStreamDecryptAeadIoCase(
-        format("%s_lowlevel_decrypt_aead_io", base));
-    cases ~= makeLowLevelStreamEncryptUserLoopCase(
-        format("%s_lowlevel_encrypt_userloop", base));
-    cases ~= makeLowLevelStreamDecryptUserLoopCase(
-        format("%s_lowlevel_decrypt_userloop", base));
+    string n0 = format("%s_easy_encrypt_aead_io", base);
+    string n1 = format("%s_easy_decrypt_aead_io", base);
+    string n2 = format("%s_easy_encrypt_userloop", base);
+    string n3 = format("%s_easy_decrypt_userloop", base);
+    string n4 = format("%s_lowlevel_encrypt_aead_io", base);
+    string n5 = format("%s_lowlevel_decrypt_aead_io", base);
+    string n6 = format("%s_lowlevel_encrypt_userloop", base);
+    string n7 = format("%s_lowlevel_decrypt_userloop", base);
+    facs ~= LazyEntry(n0, () @trusted { return makeEasyStreamEncryptAeadIoCase(n0); });
+    facs ~= LazyEntry(n1, () @trusted { return makeEasyStreamDecryptAeadIoCase(n1); });
+    facs ~= LazyEntry(n2, () @trusted { return makeEasyStreamEncryptUserLoopCase(n2); });
+    facs ~= LazyEntry(n3, () @trusted { return makeEasyStreamDecryptUserLoopCase(n3); });
+    facs ~= LazyEntry(n4, () @trusted { return makeLowLevelStreamEncryptAeadIoCase(n4); });
+    facs ~= LazyEntry(n5, () @trusted { return makeLowLevelStreamDecryptAeadIoCase(n5); });
+    facs ~= LazyEntry(n6, () @trusted { return makeLowLevelStreamEncryptUserLoopCase(n6); });
+    facs ~= LazyEntry(n7, () @trusted { return makeLowLevelStreamDecryptUserLoopCase(n7); });
 }

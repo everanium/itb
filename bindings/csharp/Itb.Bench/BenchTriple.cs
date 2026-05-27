@@ -145,28 +145,39 @@ internal static class BenchTriple
     }
 
     /// <summary>
-    /// Assemble the full case list: 9 single-primitive entries × 4 ops
-    /// plus 1 mixed entry × 4 ops = 40 cases. Order is primitive-major /
-    /// op-minor so a filter on a primitive name keeps all four ops
-    /// grouped together in the output.
+    /// Assemble the full lazy factory list: 9 single-primitive entries ×
+    /// 4 ops plus 1 mixed entry × 4 ops = 40 message cases, plus 8
+    /// streaming cases appended at the end. Each factory builds one
+    /// <see cref="BenchCase"/> on demand so peak RSS is bounded to
+    /// roughly one case at a time.
     /// </summary>
-    private static List<BenchCase> BuildCases()
+    private static List<(string Name, Func<BenchCase> Factory)> BuildLazyCases()
     {
-        var cases = new List<BenchCase>(40);
+        var facs = new List<(string, Func<BenchCase>)>(48);
         foreach (var prim in PrimitivesCanonical)
         {
-            var basePrefix = $"bench_triple_{prim}_{Common.KeyBits}bit";
-            cases.Add(MakeEncryptCase($"{basePrefix}_encrypt_16mb", BuildTriple(prim)));
-            cases.Add(MakeDecryptCase($"{basePrefix}_decrypt_16mb", BuildTriple(prim)));
-            cases.Add(MakeEncryptAuthCase($"{basePrefix}_encrypt_auth_16mb", BuildTriple(prim)));
-            cases.Add(MakeDecryptAuthCase($"{basePrefix}_decrypt_auth_16mb", BuildTriple(prim)));
+            var p = prim;
+            var bp = $"bench_triple_{p}_{Common.KeyBits}bit";
+            var en  = $"{bp}_encrypt_16mb";
+            var dn  = $"{bp}_decrypt_16mb";
+            var ean = $"{bp}_encrypt_auth_16mb";
+            var dan = $"{bp}_decrypt_auth_16mb";
+            facs.Add((en,  () => MakeEncryptCase(en,  BuildTriple(p))));
+            facs.Add((dn,  () => MakeDecryptCase(dn,  BuildTriple(p))));
+            facs.Add((ean, () => MakeEncryptAuthCase(ean, BuildTriple(p))));
+            facs.Add((dan, () => MakeDecryptAuthCase(dan, BuildTriple(p))));
         }
-        var baseMixed = $"bench_triple_mixed_{Common.KeyBits}bit";
-        cases.Add(MakeEncryptCase($"{baseMixed}_encrypt_16mb", BuildMixedTriple()));
-        cases.Add(MakeDecryptCase($"{baseMixed}_decrypt_16mb", BuildMixedTriple()));
-        cases.Add(MakeEncryptAuthCase($"{baseMixed}_encrypt_auth_16mb", BuildMixedTriple()));
-        cases.Add(MakeDecryptAuthCase($"{baseMixed}_decrypt_auth_16mb", BuildMixedTriple()));
-        return cases;
+        var bm  = $"bench_triple_mixed_{Common.KeyBits}bit";
+        var men  = $"{bm}_encrypt_16mb";
+        var mdn  = $"{bm}_decrypt_16mb";
+        var mean = $"{bm}_encrypt_auth_16mb";
+        var mdan = $"{bm}_decrypt_auth_16mb";
+        facs.Add((men,  () => MakeEncryptCase(men,  BuildMixedTriple())));
+        facs.Add((mdn,  () => MakeDecryptCase(mdn,  BuildMixedTriple())));
+        facs.Add((mean, () => MakeEncryptAuthCase(mean, BuildMixedTriple())));
+        facs.Add((mdan, () => MakeDecryptAuthCase(mdan, BuildMixedTriple())));
+        facs.AddRange(BenchStream.BuildStreamLazyCasesTriple());
+        return facs;
     }
 
     /// <summary>Bench entry point invoked by <see cref="Program"/>.</summary>
@@ -188,8 +199,34 @@ internal static class BenchTriple
                 nonceBits, Common.EnvLockSeed() ? "on" : "off"));
         Console.Out.Flush();
 
-        var cases = BuildCases();
-        cases.AddRange(BenchStream.BuildStreamCasesTriple());
-        Common.RunAll(cases);
+        var lazyCases = BuildLazyCases();
+        var flt = Common.EnvBenchFilter();
+        var minSeconds = Common.EnvMinSeconds();
+
+        var allNames = lazyCases.Select(p => p.Name).ToArray();
+        var selected = flt is null
+            ? lazyCases
+            : lazyCases.Where(p =>
+                p.Name.Contains(flt, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        if (selected.Count == 0)
+        {
+            Console.Error.WriteLine(
+                $"no bench cases match filter \"{flt}\"; available: [{string.Join(", ", allNames)}]");
+            return;
+        }
+
+        Console.WriteLine(
+            string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "# benchmarks={0} payload_bytes={1} min_seconds={2}",
+                selected.Count, Common.Payload16MB, minSeconds));
+        Console.Out.Flush();
+
+        foreach (var (_, factory) in selected)
+        {
+            var bench = factory();
+            Common.MeasureOne(bench, minSeconds);
+        }
     }
 }

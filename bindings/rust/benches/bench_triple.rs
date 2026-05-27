@@ -173,50 +173,45 @@ fn make_decrypt_auth_case(name: String, mut enc: Encryptor) -> BenchCase {
     }
 }
 
-/// Assemble the full case list: 9 single-primitive entries × 4 ops
-/// plus 1 mixed entry × 4 ops = 40 cases. Order is primitive-major /
-/// op-minor so a filter on a primitive name keeps all four ops
-/// grouped together in the output.
-fn build_cases() -> Vec<BenchCase> {
-    let mut cases: Vec<BenchCase> = Vec::with_capacity(40);
-    for prim in PRIMITIVES_CANONICAL {
+// Cheap factory type — builds one BenchCase on demand.
+type CaseFactory = Box<dyn Fn() -> BenchCase>;
+
+/// Return a list of (name, factory) pairs covering the full 40-case
+/// message suite (9 triple-primitive × 4 ops + 1 mixed × 4 ops) plus
+/// the 8 streaming cases. No payload or Encryptor is allocated here.
+fn case_factories() -> Vec<(String, CaseFactory)> {
+    let mut facs: Vec<(String, CaseFactory)> = Vec::with_capacity(48);
+
+    for &prim in PRIMITIVES_CANONICAL {
         let base = format!("bench_triple_{prim}_{KEY_BITS}bit");
-        cases.push(make_encrypt_case(
-            format!("{base}_encrypt_16mb"),
-            build_triple(prim),
-        ));
-        cases.push(make_decrypt_case(
-            format!("{base}_decrypt_16mb"),
-            build_triple(prim),
-        ));
-        cases.push(make_encrypt_auth_case(
-            format!("{base}_encrypt_auth_16mb"),
-            build_triple(prim),
-        ));
-        cases.push(make_decrypt_auth_case(
-            format!("{base}_decrypt_auth_16mb"),
-            build_triple(prim),
-        ));
+        let p = prim.to_owned();
+        let n = format!("{base}_encrypt_16mb");
+        facs.push((n.clone(), Box::new(move || make_encrypt_case(n.clone(), build_triple(&p)))));
+        let p = prim.to_owned();
+        let n = format!("{base}_decrypt_16mb");
+        facs.push((n.clone(), Box::new(move || make_decrypt_case(n.clone(), build_triple(&p)))));
+        let p = prim.to_owned();
+        let n = format!("{base}_encrypt_auth_16mb");
+        facs.push((n.clone(), Box::new(move || make_encrypt_auth_case(n.clone(), build_triple(&p)))));
+        let p = prim.to_owned();
+        let n = format!("{base}_decrypt_auth_16mb");
+        facs.push((n.clone(), Box::new(move || make_decrypt_auth_case(n.clone(), build_triple(&p)))));
     }
-    let base = format!("bench_triple_mixed_{KEY_BITS}bit");
-    cases.push(make_encrypt_case(
-        format!("{base}_encrypt_16mb"),
-        build_mixed_triple(),
-    ));
-    cases.push(make_decrypt_case(
-        format!("{base}_decrypt_16mb"),
-        build_mixed_triple(),
-    ));
-    cases.push(make_encrypt_auth_case(
-        format!("{base}_encrypt_auth_16mb"),
-        build_mixed_triple(),
-    ));
-    cases.push(make_decrypt_auth_case(
-        format!("{base}_decrypt_auth_16mb"),
-        build_mixed_triple(),
-    ));
-    append_stream_cases_triple(&mut cases);
-    cases
+
+    {
+        let base = format!("bench_triple_mixed_{KEY_BITS}bit");
+        let n = format!("{base}_encrypt_16mb");
+        facs.push((n.clone(), Box::new(move || make_encrypt_case(n.clone(), build_mixed_triple()))));
+        let n = format!("{base}_decrypt_16mb");
+        facs.push((n.clone(), Box::new(move || make_decrypt_case(n.clone(), build_mixed_triple()))));
+        let n = format!("{base}_encrypt_auth_16mb");
+        facs.push((n.clone(), Box::new(move || make_encrypt_auth_case(n.clone(), build_mixed_triple()))));
+        let n = format!("{base}_decrypt_auth_16mb");
+        facs.push((n.clone(), Box::new(move || make_decrypt_auth_case(n.clone(), build_mixed_triple()))));
+    }
+
+    append_stream_factories_triple(&mut facs);
+    facs
 }
 
 fn main() {
@@ -233,8 +228,38 @@ fn main() {
         if common::env_lock_seed() { "on" } else { "off" },
     );
 
-    let cases = build_cases();
-    common::run_all(cases);
+    let facs = case_factories();
+    let flt = common::env_filter();
+    let min_seconds = common::env_min_seconds();
+
+    let selected: Vec<&(String, CaseFactory)> = facs
+        .iter()
+        .filter(|(name, _)| match &flt {
+            Some(f) => name.contains(f.as_str()),
+            None => true,
+        })
+        .collect();
+
+    if selected.is_empty() {
+        eprintln!(
+            "no bench cases match filter {}; available: {}",
+            flt.as_deref().unwrap_or("<unset>"),
+            facs.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(" "),
+        );
+        return;
+    }
+
+    println!(
+        "# benchmarks={} payload_bytes={} min_seconds={}",
+        selected.len(),
+        PAYLOAD_BYTES,
+        min_seconds,
+    );
+
+    for (_, factory) in &selected {
+        let mut case = factory();
+        common::measure_and_print(&mut case, min_seconds);
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -541,36 +566,28 @@ fn make_lowlevel_stream_decrypt_userloop_case_triple(name: String) -> BenchCase 
     BenchCase { name, run, payload_bytes: STREAM_TOTAL_BYTES }
 }
 
-/// Appends the eight Triple-Ouroboros streaming benches to the
-/// running case list. Naming convention parallels the Single side:
+/// Appends eight Triple-Ouroboros streaming factories to `facs`.
+/// Naming convention parallels the Single side:
 ///
 ///     bench_triple_stream_<mode>_<op>_<variant>_<primitive>_<bits>bit_<size>mb
-fn append_stream_cases_triple(cases: &mut Vec<BenchCase>) {
+fn append_stream_factories_triple(facs: &mut Vec<(String, CaseFactory)>) {
     let base = format!(
         "bench_triple_stream_{STREAM_PRIMITIVE}_{KEY_BITS}bit_64mb"
     );
-    cases.push(make_easy_stream_encrypt_aead_io_case_triple(
-        format!("{base}_easy_encrypt_aead_io"),
-    ));
-    cases.push(make_easy_stream_decrypt_aead_io_case_triple(
-        format!("{base}_easy_decrypt_aead_io"),
-    ));
-    cases.push(make_easy_stream_encrypt_userloop_case_triple(
-        format!("{base}_easy_encrypt_userloop"),
-    ));
-    cases.push(make_easy_stream_decrypt_userloop_case_triple(
-        format!("{base}_easy_decrypt_userloop"),
-    ));
-    cases.push(make_lowlevel_stream_encrypt_aead_io_case_triple(
-        format!("{base}_lowlevel_encrypt_aead_io"),
-    ));
-    cases.push(make_lowlevel_stream_decrypt_aead_io_case_triple(
-        format!("{base}_lowlevel_decrypt_aead_io"),
-    ));
-    cases.push(make_lowlevel_stream_encrypt_userloop_case_triple(
-        format!("{base}_lowlevel_encrypt_userloop"),
-    ));
-    cases.push(make_lowlevel_stream_decrypt_userloop_case_triple(
-        format!("{base}_lowlevel_decrypt_userloop"),
-    ));
+    let n = format!("{base}_easy_encrypt_aead_io");
+    facs.push((n.clone(), Box::new(move || make_easy_stream_encrypt_aead_io_case_triple(n.clone()))));
+    let n = format!("{base}_easy_decrypt_aead_io");
+    facs.push((n.clone(), Box::new(move || make_easy_stream_decrypt_aead_io_case_triple(n.clone()))));
+    let n = format!("{base}_easy_encrypt_userloop");
+    facs.push((n.clone(), Box::new(move || make_easy_stream_encrypt_userloop_case_triple(n.clone()))));
+    let n = format!("{base}_easy_decrypt_userloop");
+    facs.push((n.clone(), Box::new(move || make_easy_stream_decrypt_userloop_case_triple(n.clone()))));
+    let n = format!("{base}_lowlevel_encrypt_aead_io");
+    facs.push((n.clone(), Box::new(move || make_lowlevel_stream_encrypt_aead_io_case_triple(n.clone()))));
+    let n = format!("{base}_lowlevel_decrypt_aead_io");
+    facs.push((n.clone(), Box::new(move || make_lowlevel_stream_decrypt_aead_io_case_triple(n.clone()))));
+    let n = format!("{base}_lowlevel_encrypt_userloop");
+    facs.push((n.clone(), Box::new(move || make_lowlevel_stream_encrypt_userloop_case_triple(n.clone()))));
+    let n = format!("{base}_lowlevel_decrypt_userloop");
+    facs.push((n.clone(), Box::new(move || make_lowlevel_stream_decrypt_userloop_case_triple(n.clone()))));
 }
