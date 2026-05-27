@@ -76,6 +76,7 @@ through loss of inlining and runtime checks. Both binaries land in
 | Variable             | Default | Purpose |
 |----------------------|---------|---------|
 | `ITB_NONCE_BITS`     | `128`   | Process-wide nonce width — `128`, `256`, or `512`. Maps to `Itb.Set_Nonce_Bits` before any encryptor is constructed. Mirrors `ITB_NONCE_BITS` from `bitbyte_test.go`. |
+| `ITB_LOCKBATCH`      | unset   | Non-empty / non-`0` enables Lock Batch (the performance Lock Soup mode); set with `ITB_LOCKSEED`. Every encryptor additionally calls `Set_Lock_Batch (Enc, 1)`. Inert unless Lock Soup is engaged via `ITB_LOCKSEED`. |
 | `ITB_LOCKSEED`       | unset   | When set to a non-empty / non-`0` value, every encryptor in the run calls `Set_Lock_Seed (Enc, 1)` AND `Itb.Set_Lock_Soup (1)` is invoked at start. Easy Mode auto-couples `Set_Bit_Soup (1)` + `Set_Lock_Soup (1)`, so no separate flags are needed. The mixed-primitive cases attach a dedicated lockSeed primitive (via `Prim_L`) only under this flag; otherwise `Prim_L` is `""` so the no-LockSeed bench arm measures the plain mixed-primitive cost. |
 | `ITB_BENCH_FILTER`   | unset   | Substring filter on bench-case names — only cases whose name contains the filter are run. Useful when iterating on one primitive / op. |
 | `ITB_BENCH_MIN_SEC`  | `5.0`   | Minimum measured wall-clock seconds per case. The runner keeps doubling iteration count until the measured batch reaches the threshold, mirroring Go's `-benchtime=Ns`. The 5-second default absorbs the cold-cache / warm-up transient that distorts shorter measurement windows on the 16 MiB encrypt / decrypt path. |
@@ -95,8 +96,12 @@ Whole grid, default settings (128-bit nonces, no lockSeed):
 overlay:
 
 ```bash
+ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./obj-bench/bench_triple
 ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./obj-bench/bench_triple
 ```
+
+The `ITB_LOCKBATCH=1` form selects the Lock Batch performance
+variant of Lock Soup.
 
 Just the BLAKE3 row of the Single grid:
 

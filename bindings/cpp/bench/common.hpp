@@ -18,6 +18,11 @@
 //   ITB_NONCE_BITS    process-wide nonce width override; valid values
 //                     128 / 256 / 512. Maps to itb::set_nonce_bits
 //                     before any encryptor is constructed. Default 128.
+//   ITB_LOCKBATCH     non-empty / non-`0` enables Lock Batch (performance
+//                     Lock Soup mode); set with ITB_LOCKSEED. Every Easy
+//                     Mode encryptor additionally calls
+//                     enc.set_lock_batch(1). Inert unless Lock Soup is
+//                     engaged via ITB_LOCKSEED. Default off.
 //   ITB_LOCKSEED      when set to a non-empty / non-`0` value, every
 //                     Easy Mode encryptor in this run calls
 //                     enc.set_lock_seed(1). The Go side's auto-couple
@@ -89,6 +94,20 @@ inline int env_nonce_bits(int default_value) {
                  "ITB_NONCE_BITS=%s invalid (expected 128/256/512); using %d\n",
                  v, default_value);
     return default_value;
+}
+
+// Returns true when ITB_LOCKBATCH is set to a non-empty / non-`0`
+// value. Enables the Lock Batch performance Lock Soup mode; inert
+// unless Lock Soup is engaged via ITB_LOCKSEED.
+inline bool env_lock_batch() {
+    const char* v = std::getenv("ITB_LOCKBATCH");
+    if (v == nullptr || v[0] == '\0') {
+        return false;
+    }
+    if (std::strcmp(v, "0") == 0) {
+        return false;
+    }
+    return true;
 }
 
 inline bool env_lock_seed() {

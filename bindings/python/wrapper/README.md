@@ -80,6 +80,7 @@ from itb import wrapper
 enc = itb.Encryptor("areion512", 1024, "hmac-blake3", mode=1)
 enc.set_nonce_bits(512); enc.set_barrier_fill(4)
 enc.set_bit_soup(1); enc.set_lock_soup(1)
+enc.set_lock_batch(1)  # Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 outer_key = wrapper.generate_key(cipher_name)
 
@@ -135,6 +136,7 @@ import struct
 enc = itb.Encryptor("areion512", 1024, mac=None, mode=1)
 enc.set_nonce_bits(512); enc.set_barrier_fill(4)
 enc.set_bit_soup(1); enc.set_lock_soup(1)
+enc.set_lock_batch(1)  # Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 outer_key = wrapper.generate_key(cipher_name)
 wire_buf = io.BytesIO()
@@ -201,6 +203,7 @@ ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — 
 enc = itb.Encryptor("areion512", 2048, mac=None, mode=1)
 enc.set_nonce_bits(512); enc.set_barrier_fill(4)
 enc.set_bit_soup(1); enc.set_lock_soup(1)
+enc.set_lock_batch(1)  # Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 encrypted = enc.encrypt(plaintext)
 
@@ -227,6 +230,7 @@ ITB Call: `enc.encrypt_auth` / `enc.decrypt_auth`. Wrap shape: `wrap` (or `wrap_
 enc = itb.Encryptor("areion512", 2048, "hmac-blake3", mode=1)
 enc.set_nonce_bits(512); enc.set_barrier_fill(4)
 enc.set_bit_soup(1); enc.set_lock_soup(1)
+enc.set_lock_batch(1)  # Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 encrypted = enc.encrypt_auth(plaintext)
 

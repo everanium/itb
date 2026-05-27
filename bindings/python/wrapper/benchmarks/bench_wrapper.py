@@ -5,13 +5,15 @@ for the Python binding asymmetry: the Streaming No MAC arm covers
 only the User-Driven Loop variant (the binding does not expose a
 file-like Streaming No MAC writer / reader pair).
 
-Total sub-bench count: **102**.
+The outer-cipher palette covers all 9 ciphers in
+PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
+blake2b512, blake2s, blake3, aescmac, siphash24, chacha20):
 
-  - Wrapper Only round-trip (16 MiB blob)              :  6  ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
-  - Message Single — 4 modes × 3 ciphers × 2 dirs      : 24
-  - Message Triple — 4 modes × 3 ciphers × 2 dirs      : 24
-  - Streaming Single — 4 modes × 3 ciphers × 2 dirs    : 24
-  - Streaming Triple — 4 modes × 3 ciphers × 2 dirs    : 24
+  - Wrapper Only round-trip (16 MiB blob)              : 2 variants {Wrap, WrapInPlace} per cipher
+  - Message Single — 4 modes × 2 dirs per cipher
+  - Message Triple — 4 modes × 2 dirs per cipher
+  - Streaming Single — 4 modes × 2 dirs per cipher
+  - Streaming Triple — 4 modes × 2 dirs per cipher
 
 The 4 streaming modes are:
 
@@ -56,10 +58,19 @@ from . import _common
 # Configuration
 # --------------------------------------------------------------------
 
+# Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+# (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+# aescmac, siphash24, chacha20).
 CIPHERS: Tuple[str, ...] = (
+    wrapper.CIPHER_AREION256,
+    wrapper.CIPHER_AREION512,
+    wrapper.CIPHER_BLAKE2B256,
+    wrapper.CIPHER_BLAKE2B512,
+    wrapper.CIPHER_BLAKE2S,
+    wrapper.CIPHER_BLAKE3,
     wrapper.CIPHER_AES128_CTR,
-    wrapper.CIPHER_CHACHA20,
     wrapper.CIPHER_SIPHASH24,
+    wrapper.CIPHER_CHACHA20,
 )
 
 PRIMITIVE = "areion512"

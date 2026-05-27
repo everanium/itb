@@ -583,7 +583,7 @@ func containerSizeAuth3_512Cfg(cfg *Config, noiseSeed *Seed512, dataSeed1, dataS
 // Encrypt512Cfg is the Cfg variant of [Encrypt512]: threads cfg through
 // generateNonceCfg, the PRF builder, splitForSingleCfg, the container-
 // sizing helper, process512Cfg, and headerSizeCfg so per-encryptor
-// NonceBits / BarrierFill / BitSoup / LockSoup / LockSeed overrides
+// NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch / LockSeed overrides
 // are honoured. Body otherwise identical to Encrypt512, including
 // every error-path message and the COBS-plus-null-fill payload layout.
 func Encrypt512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, data []byte) ([]byte, error) {

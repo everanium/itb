@@ -11,6 +11,7 @@
 --
 --      gprbuild -P itb_bench.gpr
 --      ./obj-bench/bench_single
+--      ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./obj-bench/bench_single
 --      ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./obj-bench/bench_single
 --      ITB_BENCH_FILTER=blake3_encrypt ./obj-bench/bench_single
 --
@@ -271,6 +272,18 @@ begin
       Common.Apply_Lock_Seed_If_Requested (Enc_Aescmac);
       Common.Apply_Lock_Seed_If_Requested (Enc_Siphash24);
       Common.Apply_Lock_Seed_If_Requested (Enc_Chacha20);
+
+      --  ITB_LOCKBATCH layers the Lock Batch performance mode on top;
+      --  inert unless Lock Soup is engaged via the lockSeed flag above.
+      Common.Apply_Lock_Batch_If_Requested (Enc_Areion256);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Areion512);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Blake2b256);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Blake2b512);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Blake2s);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Blake3);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Aescmac);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Siphash24);
+      Common.Apply_Lock_Batch_If_Requested (Enc_Chacha20);
    end if;
 
    declare

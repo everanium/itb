@@ -7,21 +7,23 @@
 //!     16 MiB random buffer (no ITB call). Two shapes: `wrap` (alloc
 //!     fresh wire) and `wrap_in_place` (mutate caller's buffer).
 //!     Encrypt + decrypt timed together — one round-trip per iter.
-//!     6 sub-benches = 3 ciphers × 2 shapes.
+//!     2 shapes per outer cipher.
 //!
 //!   * Message — full ITB encrypt-then-wrap and unwrap-then-decrypt
 //!     timed separately on a 16 MiB plaintext. 4 modes (Easy No MAC,
-//!     Easy Auth, Low-Level No MAC, Low-Level Auth) × 3 ciphers × 2
-//!     directions = 24 per Single, 24 per Triple = 48 sub-benches.
+//!     Easy Auth, Low-Level No MAC, Low-Level Auth) × 2 directions,
+//!     per Single and per Triple.
 //!
 //!   * Streaming — full ITB streaming encrypt-then-wrap and
 //!     unwrap-then-decrypt timed separately on a 64 MiB plaintext
 //!     through 16 MiB chunks. 4 modes (AEAD Easy IO-Driven, AEAD
 //!     Low-Level IO-Driven, No MAC Easy User-Driven Loop, No MAC
-//!     Low-Level User-Driven Loop) × 3 ciphers × 2 directions = 24
-//!     per Single, 24 per Triple = 48 sub-benches.
+//!     Low-Level User-Driven Loop) × 2 directions, per Single and
+//!     per Triple.
 //!
-//! Total: 6 + 48 + 48 = 102 sub-benches.
+//! The outer-cipher palette covers all 9 ciphers in
+//! PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
+//! blake2b512, blake2s, blake3, aescmac, siphash24, chacha20).
 //!
 //! Binding asymmetry — the Rust binding exposes Streaming AEAD
 //! (`encrypt_stream_auth` / `decrypt_stream_auth`) but does NOT
@@ -70,13 +72,32 @@ const MAC_KEY: [u8; 32] = [
     0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0x01,
 ];
 
-const CIPHERS: [Cipher; 3] = [Cipher::Aes128Ctr, Cipher::ChaCha20, Cipher::SipHash24];
+// Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+// (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+// aescmac, siphash24, chacha20).
+const CIPHERS: [Cipher; 9] = [
+    Cipher::Areion256,
+    Cipher::Areion512,
+    Cipher::Blake2b256,
+    Cipher::Blake2b512,
+    Cipher::Blake2s,
+    Cipher::Blake3,
+    Cipher::Aes128Ctr,
+    Cipher::SipHash24,
+    Cipher::ChaCha20,
+];
 
 fn cipher_tag(c: Cipher) -> &'static str {
     match c {
         Cipher::Aes128Ctr => "aescmac",
         Cipher::ChaCha20 => "chacha20",
         Cipher::SipHash24 => "siphash24",
+        Cipher::Areion256 => "areion256",
+        Cipher::Areion512 => "areion512",
+        Cipher::Blake2b256 => "blake2b256",
+        Cipher::Blake2b512 => "blake2b512",
+        Cipher::Blake2s => "blake2s",
+        Cipher::Blake3 => "blake3",
     }
 }
 
@@ -1175,15 +1196,15 @@ fn make_stream_triple_noaead_lowlevel_userloop_decrypt(cipher: Cipher) -> BenchC
 // --------------------------------------------------------------------
 
 fn build_cases() -> Vec<BenchCase> {
-    let mut cases: Vec<BenchCase> = Vec::with_capacity(102);
+    let mut cases: Vec<BenchCase> = Vec::with_capacity(CIPHERS.len() * 34);
 
-    // Wrapper Only — 6 cases.
+    // Wrapper Only — 2 cases per cipher.
     for c in CIPHERS {
         cases.push(make_wrapper_only_alloc(c));
         cases.push(make_wrapper_only_inplace(c));
     }
 
-    // Message Single — 24 cases (4 modes × 3 ciphers × 2 dirs).
+    // Message Single — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
         cases.push(make_msg_single_easy_nomac_encrypt(c));
         cases.push(make_msg_single_easy_nomac_decrypt(c));
@@ -1195,7 +1216,7 @@ fn build_cases() -> Vec<BenchCase> {
         cases.push(make_msg_single_lowlevel_auth_decrypt(c));
     }
 
-    // Message Triple — 24 cases.
+    // Message Triple — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
         cases.push(make_msg_triple_easy_nomac_encrypt(c));
         cases.push(make_msg_triple_easy_nomac_decrypt(c));
@@ -1207,7 +1228,7 @@ fn build_cases() -> Vec<BenchCase> {
         cases.push(make_msg_triple_lowlevel_auth_decrypt(c));
     }
 
-    // Streaming Single — 24 cases (4 modes × 3 ciphers × 2 dirs).
+    // Streaming Single — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
         cases.push(make_stream_single_aead_easy_io_encrypt(c));
         cases.push(make_stream_single_aead_easy_io_decrypt(c));
@@ -1219,7 +1240,7 @@ fn build_cases() -> Vec<BenchCase> {
         cases.push(make_stream_single_noaead_lowlevel_userloop_decrypt(c));
     }
 
-    // Streaming Triple — 24 cases.
+    // Streaming Triple — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
         cases.push(make_stream_triple_aead_easy_io_encrypt(c));
         cases.push(make_stream_triple_aead_easy_io_decrypt(c));

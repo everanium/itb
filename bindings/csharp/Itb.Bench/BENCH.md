@@ -23,10 +23,16 @@ The harness lives in this directory; reproduction:
 cd bindings/csharp
 dotnet build -c Release
 ITB_BENCH_MIN_SEC=5 dotnet run --project Itb.Bench -c Release -- single
+ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 dotnet run --project Itb.Bench -c Release -- single
 ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 dotnet run --project Itb.Bench -c Release -- single
 ITB_BENCH_MIN_SEC=5 dotnet run --project Itb.Bench -c Release -- triple
+ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 dotnet run --project Itb.Bench -c Release -- triple
 ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 dotnet run --project Itb.Bench -c Release -- triple
 ```
+
+The `ITB_LOCKSEED=1 ITB_LOCKBATCH=1` lines select the Lock Batch
+performance variant of Lock Soup (the preferred arm); the plain
+`ITB_LOCKSEED=1` lines retain the baseline Lock Soup arm.
 
 The default measurement window is 5 seconds per case
 (`ITB_BENCH_MIN_SEC=5`), wide enough to absorb the cold-cache /

@@ -204,6 +204,7 @@ func TestConfigSetters(t *testing.T) {
 	}{
 		{"BitSoup", SetBitSoup, GetBitSoup, 1},
 		{"LockSoup", SetLockSoup, GetLockSoup, 1},
+		{"LockBatch", SetLockBatch, GetLockBatch, 1},
 		{"MaxWorkers", SetMaxWorkers, GetMaxWorkers, 4},
 		{"NonceBits", SetNonceBits, GetNonceBits, 256},
 		{"BarrierFill", SetBarrierFill, GetBarrierFill, 8},

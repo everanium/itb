@@ -15,6 +15,11 @@
  *   ITB_NONCE_BITS    process-wide nonce width override; valid values
  *                     128 / 256 / 512. Maps to itb_set_nonce_bits
  *                     before any encryptor is constructed. Default 128.
+ *   ITB_LOCKBATCH     non-empty / non-`0` enables Lock Batch (performance
+ *                     Lock Soup mode); set with ITB_LOCKSEED. Every Easy
+ *                     Mode encryptor additionally calls
+ *                     itb_encryptor_set_lock_batch(e, 1). Inert unless
+ *                     Lock Soup is engaged via ITB_LOCKSEED. Default off.
  *   ITB_LOCKSEED      when set to a non-empty / non-`0` value, every
  *                     Easy Mode encryptor in this run calls
  *                     itb_encryptor_set_lock_seed(e, 1). The Go side's
@@ -73,6 +78,11 @@ typedef struct bench_case {
  * default_value on missing / invalid input (with a stderr diagnostic
  * for the invalid case). */
 int env_nonce_bits(int default_value);
+
+/* Returns 1 when ITB_LOCKBATCH is set to a non-empty / non-`0` value, 0
+ * otherwise. Enables the Lock Batch performance Lock Soup mode; inert
+ * unless Lock Soup is engaged via ITB_LOCKSEED. */
+int env_lock_batch(void);
 
 /* Returns 1 when ITB_LOCKSEED is set to a non-empty / non-`0` value, 0
  * otherwise. */

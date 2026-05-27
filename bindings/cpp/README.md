@@ -406,6 +406,11 @@ enc.set_bit_soup(1);        // bit-level split ("bit-soup"; default: 0 = byte-le
 enc.set_lock_soup(1);       // Insane Interlocked Mode: per-chunk PRF-keyed
                             // bit-permutation overlay on top of bit-soup
                             // (auto-couples with bit_soup for Single)
+enc.set_lock_batch(1);      // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
 // enc.set_lock_seed(1);    // optional dedicated lockSeed — separates
                             // bit-permutation PRF keying from the
@@ -481,6 +486,7 @@ dec.set_nonce_bits(512);
 dec.set_barrier_fill(4);
 dec.set_bit_soup(1);
 dec.set_lock_soup(1);
+dec.set_lock_batch(1);      // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 // dec.set_lock_seed(1);   // optional — import below restores it from the blob.
 
 dec.import_state(blob);
@@ -505,7 +511,7 @@ try {
 
 Each `Encryptor` is single-thread by construction. Cipher methods,
 per-instance setters (`set_nonce_bits` / `set_barrier_fill` /
-`set_bit_soup` / `set_lock_soup` / `set_lock_seed` / `set_chunk_size`),
+`set_bit_soup` / `set_lock_soup` / `set_lock_batch` / `set_lock_seed` / `set_chunk_size`),
 and persistence (`export_state` / `import_state`) all mutate
 per-instance state without locking — concurrent use against the same
 encryptor requires external synchronisation. Distinct `Encryptor`
@@ -680,6 +686,11 @@ itb::set_barrier_fill(4);    // default: 1, valid: 1, 2, 4, 8, 16, 32
 itb::set_bit_soup(1);        // bit-level split ("bit-soup"; default: 0)
 itb::set_lock_soup(1);       // per-chunk PRF-keyed bit-permutation overlay
                              // (auto-couples with bit_soup for Single)
+itb::set_lock_batch(1);      // Lock Batch is the performance Lock Soup mode: recommended
+                             // in every case when the configured hash is PRF-grade, since
+                             // security is preserved under the PRF assumption while
+                             // throughput rises. Symmetric option — set identically on
+                             // the encrypt and decrypt sides.
 
 // Three independent CSPRNG-keyed Areion-SoEM-512 seeds. Each Seed
 // pre-keys its primitive once at construction.
@@ -902,7 +913,7 @@ with bitwise OR and pass to `export_blob` / `export_triple`.
 
 `export_blob` packs Single, `export_triple` packs Triple; importers
 reject the wrong shape with `ItbBlobModeMismatchError`. Globals
-(NonceBits / BarrierFill / BitSoup / LockSoup) are captured at export
+(NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch) are captured at export
 and applied process-wide on import via `itb::set_*`.
 
 ## Hash primitives (Single / Triple)
@@ -1003,6 +1014,7 @@ in the process. Out-of-range values throw
 | `itb::set_barrier_fill(n)` | 1, 2, 4, 8, 16, 32 | 1 |
 | `itb::set_bit_soup(mode)` | 0 (off), non-zero (on) | 0 |
 | `itb::set_lock_soup(mode)` | 0 (off), non-zero (on) | 0 |
+| `itb::set_lock_batch(mode)` | 0 (off), non-zero (on) | 0 |
 
 Read-only accessors: `itb::max_key_bits()`, `itb::channels()`,
 `itb::header_size()`, `itb::version()`. Each setter has a paired

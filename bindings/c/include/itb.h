@@ -248,6 +248,8 @@ itb_status_t itb_set_bit_soup(int mode);
 int          itb_get_bit_soup(void);
 itb_status_t itb_set_lock_soup(int mode);
 int          itb_get_lock_soup(void);
+itb_status_t itb_set_lock_batch(int mode);
+int          itb_get_lock_batch(void);
 itb_status_t itb_set_max_workers(int n);
 int          itb_get_max_workers(void);
 
@@ -735,6 +737,10 @@ itb_status_t itb_encryptor_set_bit_soup(itb_encryptor_t *e, int mode);
  * this encryptor (always, both modes — Lock Soup layers on top of
  * bit soup). */
 itb_status_t itb_encryptor_set_lock_soup(itb_encryptor_t *e, int mode);
+
+/* `0` = off (default); non-zero = on. Per-chunk PRF batching for the
+ * Lock Soup overlay; inert unless Lock Soup is engaged. */
+itb_status_t itb_encryptor_set_lock_batch(itb_encryptor_t *e, int mode);
 
 /* `0` = off; `1` = on (allocates a dedicated lockSeed and routes the
  * bit-permutation overlay through it; auto-couples LockSoup=1 +

@@ -107,6 +107,7 @@ fn build_easy(mac: Option<&str>, key_bits: i32) -> Encryptor {
     enc.set_barrier_fill(4).expect("set_barrier_fill");
     enc.set_bit_soup(1).expect("set_bit_soup");
     enc.set_lock_soup(1).expect("set_lock_soup");
+    enc.set_lock_batch(1).expect("set_lock_batch");
     enc
 }
 
@@ -123,6 +124,7 @@ fn apply_lowlevel_config() {
     itb::set_barrier_fill(4).expect("set_barrier_fill");
     itb::set_bit_soup(1).expect("set_bit_soup");
     itb::set_lock_soup(1).expect("set_lock_soup");
+    itb::set_lock_batch(1).expect("set_lock_batch");
 }
 
 // --------------------------------------------------------------------

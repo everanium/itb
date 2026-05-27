@@ -14,6 +14,11 @@
 //! * `ITB_NONCE_BITS` — process-wide nonce width override; valid
 //!   values 128 / 256 / 512. Maps to [`itb::set_nonce_bits`] before
 //!   any encryptor is constructed. Default 128.
+//! * `ITB_LOCKBATCH` — non-empty / non-`0` enables Lock Batch (the
+//!   performance Lock Soup mode); set with `ITB_LOCKSEED`. Every Easy
+//!   Mode encryptor in this run calls
+//!   [`itb::Encryptor::set_lock_batch`] with mode=1. Inert unless Lock
+//!   Soup is engaged via `ITB_LOCKSEED`. Default off.
 //! * `ITB_LOCKSEED` — when set to a non-empty / non-`0` value, every
 //!   Easy Mode encryptor in this run calls
 //!   [`itb::Encryptor::set_lock_seed`] with mode=1. The Go side's
@@ -61,6 +66,16 @@ pub fn env_nonce_bits(default: i32) -> i32 {
             );
             default
         }
+    }
+}
+
+/// `true` when `ITB_LOCKBATCH` is set to a non-empty / non-`0` value.
+/// Triggers `Encryptor::set_lock_batch(1)` on every encryptor; inert
+/// unless Lock Soup is engaged via `ITB_LOCKSEED`.
+pub fn env_lock_batch() -> bool {
+    match env::var("ITB_LOCKBATCH") {
+        Ok(s) => !(s.is_empty() || s == "0"),
+        Err(_) => false,
     }
 }
 

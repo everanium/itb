@@ -12,6 +12,10 @@ Run with::
     python -m bindings.python.easy.benchmarks.bench_single
 
     ITB_NONCE_BITS=512 \
+    ITB_LOCKSEED=1 ITB_LOCKBATCH=1 \
+        python -m bindings.python.easy.benchmarks.bench_single
+
+    ITB_NONCE_BITS=512 \
     ITB_LOCKSEED=1 \
         python -m bindings.python.easy.benchmarks.bench_single
 
@@ -71,9 +75,12 @@ def _apply_lockseed_if_requested(enc: itb.Encryptor) -> None:
     """When ``ITB_LOCKSEED`` is set the harness flips the dedicated
     lockSeed channel on every encryptor. Easy Mode auto-couples
     BitSoup + LockSoup as a side effect, so no separate calls are
-    issued."""
+    issued. When ``ITB_LOCKBATCH`` is also set, enable the Lock Batch
+    performance Lock Soup mode on the same encryptor."""
     if _common.env_lock_seed():
         enc.set_lock_seed(1)
+    if _common.env_lock_batch():
+        enc.set_lock_batch(1)
 
 
 def _build_single(primitive: str) -> itb.Encryptor:

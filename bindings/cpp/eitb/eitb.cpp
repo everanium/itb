@@ -139,6 +139,7 @@ void apply_global_knobs() {
     itb::set_barrier_fill(4);
     itb::set_bit_soup(1);
     itb::set_lock_soup(1);
+    itb::set_lock_batch(1);
 }
 
 itb::Encryptor make_easy_encryptor(bool with_mac, int key_bits) {
@@ -150,6 +151,7 @@ itb::Encryptor make_easy_encryptor(bool with_mac, int key_bits) {
     enc.set_barrier_fill(4);
     enc.set_bit_soup(1);
     enc.set_lock_soup(1);
+    enc.set_lock_batch(1);
     return enc;
 }
 

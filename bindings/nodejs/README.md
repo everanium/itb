@@ -501,6 +501,11 @@ enc.setBitSoup(1);        // optional bit-level split ("bit-soup"; default: 0 = 
 enc.setLockSoup(1);       // optional Insane Interlocked Mode: per-chunk PRF-keyed
                           // bit-permutation overlay on top of bit-soup;
                           // auto-enabled for Single Ouroboros if setBitSoup(1) is on
+enc.setLockBatch(1);      // Lock Batch is the performance Lock Soup mode: recommended
+                          // in every case when the configured hash is PRF-grade, since
+                          // security is preserved under the PRF assumption while
+                          // throughput rises. Symmetric option — set identically on
+                          // the encrypt and decrypt sides.
 
 // enc.setLockSeed(1);    // optional dedicated lockSeed for the bit-permutation
                           // derivation channel — separates that PRF's keying
@@ -566,10 +571,11 @@ dec.setNonceBits(512);
 dec.setBarrierFill(4);
 dec.setBitSoup(1);
 dec.setLockSoup(1);
+dec.setLockBatch(1);      // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 // Restore PRF keys, seed components, MAC key, and the per-instance
 // configuration overrides (NonceBits / BarrierFill / BitSoup /
-// LockSoup / LockSeed) from the saved blob.
+// LockSoup / LockBatch / LockSeed) from the saved blob.
 dec.importState(blob);
 
 // Strip the per-stream nonce, recover the inner ITB ciphertext.
@@ -765,6 +771,7 @@ import { randomBytes } from 'node:crypto';
 // flags on every encrypt / decrypt call.
 setBitSoup(1);
 setLockSoup(1);
+setLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 // Three Single-Ouroboros seeds and one MAC handle. Seeds are
 // CSPRNG-keyed; persistence-restore would use Seed.fromComponents.
@@ -1007,6 +1014,7 @@ do not consult these globals after construction.
 | `setBarrierFill(n)` | 1, 2, 4, 8, 16, 32 | 1 |
 | `setBitSoup(mode)` | 0 (off), non-zero (on) | 0 |
 | `setLockSoup(mode)` | 0 (off), non-zero (on) | 0 |
+| `setLockBatch(mode)` | 0 (off), non-zero (on) | 0 |
 
 Read-only accessors: `maxKeyBits()`, `channels()`, `headerSize()`,
 `version()`.
@@ -1177,6 +1185,7 @@ JavaScript callers see the same identifiers on the imported module.
 |---|---|
 | `setBitSoup(mode: number)` / `getBitSoup(): number` | Bit Soup mode toggle |
 | `setLockSoup(mode: number)` / `getLockSoup(): number` | Lock Soup mode toggle |
+| `setLockBatch(mode: number)` / `getLockBatch(): number` | Lock Batch mode toggle (performance variant of Lock Soup; recommended under the PRF assumption; symmetric; inert unless Lock Soup is engaged) |
 | `setMaxWorkers(n: number)` / `getMaxWorkers(): number` | Worker pool cap |
 | `setNonceBits(n: number)` / `getNonceBits(): number` | Nonce width (128 / 256 / 512) |
 | `setBarrierFill(n: number)` / `getBarrierFill(): number` | Barrier-fill factor |
@@ -1209,7 +1218,7 @@ JavaScript callers see the same identifiers on the imported module.
 | `Encryptor.mixed(primitives, keyBits, opts?)` / `Encryptor.mixed3(primitives, keyBits, opts?)` | Mixed-primitive Single / Triple |
 | `enc.encrypt(pt)` / `enc.decrypt(ct)` | Cipher entry points |
 | `enc.encryptAuth(pt)` / `enc.decryptAuth(ct)` | MAC-authenticated cipher entry points |
-| `enc.setNonceBits / setBarrierFill / setBitSoup / setLockSoup / setLockSeed / setChunkSize` | Per-instance setters |
+| `enc.setNonceBits / setBarrierFill / setBitSoup / setLockSoup / setLockBatch / setLockSeed / setChunkSize` | Per-instance setters |
 | `enc.primitive / macName / keyBits / mode / nonceBits / headerSize / hasPRFKeys / isMixed / seedCount` | Accessors |
 | `enc.prfKey(slot)` / `enc.macKey()` / `enc.seedComponents(slot)` | Key-material accessors |
 | `enc.export()` / `enc.importState(blob)` | State-blob persistence |

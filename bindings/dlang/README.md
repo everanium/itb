@@ -400,6 +400,11 @@ enc.setBitSoup(1);        // optional bit-level split ("bit-soup"; default: 0 = 
 enc.setLockSoup(1);       // optional Insane Interlocked Mode: per-chunk PRF-keyed
                           // bit-permutation overlay on top of bit-soup;
                           // auto-enabled for Single Ouroboros if setBitSoup(1) is on
+enc.setLockBatch(1);      // Lock Batch is the performance Lock Soup mode: recommended
+                          // in every case when the configured hash is PRF-grade, since
+                          // security is preserved under the PRF assumption while
+                          // throughput rises. Symmetric option — set identically on
+                          // the encrypt and decrypt sides.
 
 // enc.setLockSeed(1);    // optional dedicated lockSeed for the bit-permutation
                           // derivation channel — separates that PRF's keying
@@ -482,6 +487,7 @@ dec.setNonceBits(512);
 dec.setBarrierFill(4);
 dec.setBitSoup(1);
 dec.setLockSoup(1);
+dec.setLockBatch(1);      // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 // dec.setLockSeed(1);   // optional — Import below restores the dedicated
                          // lockSeed slot from the blob's lock_seed:true.
 
@@ -519,7 +525,7 @@ Each `Encryptor` is single-thread by construction. Cipher methods
 the per-instance output-buffer cache and are not safe to invoke
 concurrently against the same encryptor. Per-instance setters
 (`setNonceBits` / `setBarrierFill` / `setBitSoup` / `setLockSoup`
-/ `setLockSeed` / `setChunkSize`) and persistence (`exportState`
+/ `setLockBatch` / `setLockSeed` / `setChunkSize`) and persistence (`exportState`
 / `importState`) likewise require external synchronisation when
 invoked against the same encryptor from multiple threads.
 Distinct `Encryptor` values, each owned by one thread, run
@@ -711,6 +717,11 @@ itb.setLockSoup(1);       // optional Insane Interlocked Mode: per-chunk PRF-key
                           // bit-permutation overlay on top of bit-soup;
                           // automatically enabled for Single Ouroboros if
                           // itb.setBitSoup(1) is enabled or vice versa
+itb.setLockBatch(1);      // Lock Batch is the performance Lock Soup mode: recommended
+                          // in every case when the configured hash is PRF-grade, since
+                          // security is preserved under the PRF assumption while
+                          // throughput rises. Symmetric option — set identically on
+                          // the encrypt and decrypt sides.
 
 // Three independent CSPRNG-keyed Areion-SoEM-512 seeds. Each Seed
 // pre-keys its primitive once at construction; the C ABI / FFI
@@ -1050,6 +1061,7 @@ calls in the process. Out-of-range values surface as
 | `setBarrierFill(n)` | 1, 2, 4, 8, 16, 32 | 1 |
 | `setBitSoup(mode)` | 0 (off), non-zero (on) | 0 |
 | `setLockSoup(mode)` | 0 (off), non-zero (on) | 0 |
+| `setLockBatch(mode)` | 0 (off), non-zero (on) | 0 |
 
 Read-only constants: `itb.maxKeyBits()`, `itb.channels()`,
 `itb.headerSize()`, `itb.version_()` (the trailing underscore
@@ -1232,6 +1244,7 @@ are preferred.
 |---|---|
 | `void setBitSoup(int mode)` / `int getBitSoup()` | Bit Soup mode toggle |
 | `void setLockSoup(int mode)` / `int getLockSoup()` | Lock Soup mode toggle |
+| `void setLockBatch(int mode)` / `int getLockBatch()` | Lock Batch mode toggle (performance variant of Lock Soup; recommended under the PRF assumption; symmetric; inert unless Lock Soup is engaged) |
 | `void setMaxWorkers(int n)` / `int getMaxWorkers()` | Worker pool cap |
 | `void setNonceBits(int n)` / `int getNonceBits()` | Nonce width (128 / 256 / 512) |
 | `void setBarrierFill(int n)` / `int getBarrierFill()` | Barrier-fill factor |
@@ -1262,7 +1275,7 @@ are preferred.
 | `Encryptor(string primitive, int keyBits, string mac = null, string mode = "single")` | Single-primitive constructor |
 | `Encryptor.mixed(primitives, keyBits, mac)` / `Encryptor.mixed3(primitives, keyBits, mac)` | Mixed-primitive Single / Triple |
 | `enc.encrypt(pt) / decrypt(ct) / encryptAuth(pt) / decryptAuth(ct)` | Cipher entry points |
-| `enc.setNonceBits / setBarrierFill / setBitSoup / setLockSoup / setLockSeed / setChunkSize` | Per-instance setters |
+| `enc.setNonceBits / setBarrierFill / setBitSoup / setLockSoup / setLockBatch / setLockSeed / setChunkSize` | Per-instance setters |
 | `enc.primitive / macName / keyBits / mode / nonceBits / headerSize / hasPRFKeys / isMixed / seedCount` | Accessors |
 | `enc.prfKey(slot) / macKey() / seedComponents(slot)` | Key-material accessors |
 | `enc.exportState() / importState(blob)` | State-blob persistence |

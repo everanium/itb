@@ -117,6 +117,18 @@ pub fn get_lock_soup() -> i32 {
     unsafe { (ffi::lib().ITB_GetLockSoup)() }
 }
 
+/// Sets the process-wide Lock Batch mode (0 = off, non-zero = on).
+/// Per-chunk PRF batching for the Lock Soup overlay; same lifecycle
+/// rules as `set_lock_soup`; inert unless Lock Soup is engaged.
+pub fn set_lock_batch(mode: i32) -> Result<(), ITBError> {
+    let rc = unsafe { (ffi::lib().ITB_SetLockBatch)(mode) };
+    check(rc)
+}
+
+pub fn get_lock_batch() -> i32 {
+    unsafe { (ffi::lib().ITB_GetLockBatch)() }
+}
+
 pub fn set_max_workers(n: i32) -> Result<(), ITBError> {
     let rc = unsafe { (ffi::lib().ITB_SetMaxWorkers)(n) };
     check(rc)

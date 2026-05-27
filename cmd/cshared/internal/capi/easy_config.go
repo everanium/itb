@@ -3,7 +3,7 @@ package capi
 // Per-instance configuration setters mirroring the Encryptor.Set*
 // methods on the easy side. Each call mutates only the encryptor's
 // own itb.Config copy; the process-global setters (SetBitSoup,
-// SetLockSoup, SetLockSeed, SetNonceBits, SetBarrierFill) are not
+// SetLockSoup, SetLockBatch, SetLockSeed, SetNonceBits, SetBarrierFill) are not
 // touched and other encryptors built before / after this call are
 // not affected.
 //
@@ -58,6 +58,18 @@ func EasySetLockSoup(id EasyHandleID, mode int) (st Status) {
 		return st
 	}
 	h.enc.SetLockSoup(int32(mode))
+	return StatusOK
+}
+
+// EasySetLockBatch forwards to Encryptor.SetLockBatch. Non-zero enables
+// Lock Soup per-chunk PRF batching; inert unless Lock Soup is engaged.
+func EasySetLockBatch(id EasyHandleID, mode int) (st Status) {
+	defer recoverEasyPanic(&st, StatusBadInput)
+	h, st := resolveEasy(id)
+	if st != StatusOK {
+		return st
+	}
+	h.enc.SetLockBatch(int32(mode))
 	return StatusOK
 }
 

@@ -257,6 +257,8 @@ itb_status_t itb_set_bit_soup(int mode);
 int          itb_get_bit_soup(void);
 itb_status_t itb_set_lock_soup(int mode);
 int          itb_get_lock_soup(void);
+itb_status_t itb_set_lock_batch(int mode);
+int          itb_get_lock_batch(void);
 itb_status_t itb_set_max_workers(int n);
 int          itb_get_max_workers(void);
 
@@ -744,6 +746,10 @@ itb_status_t itb_encryptor_set_bit_soup(itb_encryptor_t *e, int mode);
  * this encryptor (always, both modes — Lock Soup layers on top of
  * bit soup). */
 itb_status_t itb_encryptor_set_lock_soup(itb_encryptor_t *e, int mode);
+
+/* `0` = off (default); non-zero = on. Per-chunk PRF batching for the
+ * Lock Soup overlay; inert unless Lock Soup is engaged. */
+itb_status_t itb_encryptor_set_lock_batch(itb_encryptor_t *e, int mode);
 
 /* `0` = off; `1` = on (allocates a dedicated lockSeed and routes the
  * bit-permutation overlay through it; auto-couples LockSoup=1 +
@@ -1458,9 +1464,9 @@ itb_status_t itb_wrapper_generate_key(itb_wrapper_cipher_t cipher,
  * reported by itb_wrapper_key_size). On failure *out_key is NULL and
  * *out_key_len is 0; itb_last_error() carries the diagnostic.
  *
- * `master` must be at least itb_wrapper_key_size(cipher) bytes; a
- * shorter master returns ITB_BAD_INPUT. Returns ITB_BAD_INPUT for an
- * unknown cipher value.
+ * `master` must be at least 32 bytes (the wrapper's uniform security
+ * floor); a shorter master returns ITB_BAD_INPUT. Returns ITB_BAD_INPUT
+ * for an unknown cipher value.
  */
 itb_status_t itb_wrapper_derive_key(itb_wrapper_cipher_t cipher,
                                     const uint8_t *master, size_t master_len,

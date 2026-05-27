@@ -22,11 +22,11 @@ import (
 //     is off; when on, the field is encoded as the literal `true`.
 //     No other value is canonical, and the v1 reader rejects any
 //     non-true encoding.
-//   - nonce_bits / barrier_fill / bit_soup / lock_soup carry the
+//   - nonce_bits / barrier_fill / bit_soup / lock_soup / lock_batch carry the
 //     encryptor's per-instance configuration overrides. Each is
 //     omitted when the encryptor never explicitly set it (cfg
 //     sentinel "inherit": NonceBits == 0 / BarrierFill == 0 /
-//     BitSoup == -1 / LockSoup == -1). On Import the corresponding
+//     BitSoup == -1 / LockSoup == -1 / LockBatch == -1). On Import the corresponding
 //     setter is called for each present field; missing fields keep
 //     the receiver's existing cfg state (legacy mirror-manually
 //     behaviour).
@@ -105,9 +105,10 @@ func modeFromString(s string) (int, bool) {
 // material if active.
 //
 // Per-encryptor configuration knobs (NonceBits, BarrierFill,
-// BitSoup, LockSoup) are NOT carried in the v1 blob — both sides
-// communicate them via deployment config. LockSeed is carried
-// because activating it changes the structural seed count.
+// BitSoup, LockSoup, LockBatch) are carried in the v1 blob as optional
+// fields when the sender set them explicitly, and restored on Import; a
+// receiver may still override them before Import. LockSeed presence is
+// carried because activating it changes the structural seed count.
 //
 // Infallible — JSON marshal of a validated internal struct cannot
 // fail under normal operation; a nil-receiver / closed-encryptor

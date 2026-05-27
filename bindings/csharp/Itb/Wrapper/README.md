@@ -79,6 +79,7 @@ ITB Call: `Encryptor.EncryptStreamAuth` / `DecryptStreamAuth`. Wrap shape: `Wrap
 using var enc = new Encryptor("areion512", 1024, "hmac-blake3", "single");
 enc.SetNonceBits(512); enc.SetBarrierFill(4);
 enc.SetBitSoup(1); enc.SetLockSoup(1);
+enc.SetLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 var outerKey = Wrapper.GenerateKey(cipher);
 
@@ -134,6 +135,7 @@ The "Alternative — User-Driven Loop" pattern: each chunk is one independent `e
 using var enc = new Encryptor("areion512", 1024, mac: null, "single");
 enc.SetNonceBits(512); enc.SetBarrierFill(4);
 enc.SetBitSoup(1); enc.SetLockSoup(1);
+enc.SetLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 var outerKey = Wrapper.GenerateKey(cipher);
 using var ww = new WrapStreamWriter(cipher, outerKey);
@@ -199,6 +201,7 @@ ITB Call: `enc.Encrypt(plaintext)` returns one ITB blob. Wrap shape: `Wrap` — 
 using var enc = new Encryptor("areion512", 2048, mac: null, "single");
 enc.SetNonceBits(512); enc.SetBarrierFill(4);
 enc.SetBitSoup(1); enc.SetLockSoup(1);
+enc.SetLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 var encrypted = enc.Encrypt(plaintext);
 
@@ -224,6 +227,7 @@ ITB Call: `enc.EncryptAuth` / `enc.DecryptAuth`. Wrap shape: `Wrap` (or `WrapInP
 using var enc = new Encryptor("areion512", 2048, "hmac-blake3", "single");
 enc.SetNonceBits(512); enc.SetBarrierFill(4);
 enc.SetBitSoup(1); enc.SetLockSoup(1);
+enc.SetLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 var encrypted = enc.EncryptAuth(plaintext);
 

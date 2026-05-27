@@ -848,6 +848,15 @@ impl Encryptor {
         easy_check(rc)
     }
 
+    /// 0 = off (default); non-zero = on. Per-chunk PRF batching for the
+    /// Lock Soup overlay; inert unless Lock Soup is engaged.
+    pub fn set_lock_batch(&self, mode: i32) -> Result<(), ITBError> {
+        self.check_open()?;
+        let lib = ffi::lib();
+        let rc = unsafe { (lib.ITB_Easy_SetLockBatch)(self.handle, mode) };
+        easy_check(rc)
+    }
+
     /// 0 = off; 1 = on (allocates a dedicated lockSeed and routes the
     /// bit-permutation overlay through it; auto-couples
     /// `LockSoup=1 + BitSoup=1` on this encryptor). Calling after the

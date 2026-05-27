@@ -453,7 +453,7 @@ func (b *Blob512) Export3(
 // resets the receiver, and populates Mode + KeyN/KeyD/KeyS + NS/DS/SS
 // + optional KeyL/LS + optional MACKey/MACName. Captured globals
 // are applied unconditionally via [SetNonceBits] / [SetBarrierFill]
-// / [SetBitSoup] / [SetLockSoup] before populating the struct.
+// / [SetBitSoup] / [SetLockSoup] / [SetLockBatch] before populating the struct.
 //
 // Returns [ErrBlobModeMismatch] when the blob carries Mode=3 (call
 // Import3 instead), [ErrBlobMalformed] on parse / shape failure,
