@@ -722,173 +722,6 @@ procedure Bench_Wrapper is
       return Wire;
    end Build_Pristine_Wrap_Stream;
 
-   --  Pre-compute pristine wires for every decrypt-direction case.
-   --  Each wire holds wrap_in_place(ITB_encrypt(plain)) (Single
-   --  Message) or wrap_stream_writer(stream-encrypt(plain))
-   --  (Streaming). The timed decrypt loop refreshes a working copy
-   --  from the pristine buffer per iter; encrypt-direction cases do
-   --  NOT use these pre-computed buffers — their timed loop runs the
-   --  full encrypt + wrap pipeline end-to-end on each iter.
-   procedure Pre_Compute is
-   begin
-      for C in Outer_Cipher loop
-         declare
-            Key : constant Byte_Array := Cipher_Keys (C).Key.all;
-         begin
-            --  Single Message — Single Ouroboros wires.
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Encryptor.Encrypt (Enc_Easy_Single, Single_Plain.all);
-            begin
-               Single_Easy_Nomac_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Encryptor.Encrypt_Auth
-                   (Enc_Easy_Single, Single_Plain.all);
-            begin
-               Single_Easy_Auth_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Cipher.Encrypt
-                   (Seed_Noise, Seed_Data1, Seed_Start1,
-                    Single_Plain.all);
-            begin
-               Single_Low_Nomac_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Cipher.Encrypt_Auth
-                   (Seed_Noise, Seed_Data1, Seed_Start1,
-                    Mac_Handle, Single_Plain.all);
-            begin
-               Single_Low_Auth_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-
-            --  Single Message — Triple Ouroboros wires.
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Encryptor.Encrypt (Enc_Easy_Triple, Single_Plain.all);
-            begin
-               Triple_Easy_Nomac_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Encryptor.Encrypt_Auth
-                   (Enc_Easy_Triple, Single_Plain.all);
-            begin
-               Triple_Easy_Auth_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Cipher.Encrypt_Triple
-                   (Seed_Noise,
-                    Seed_Data1, Seed_Data2, Seed_Data3,
-                    Seed_Start1, Seed_Start2, Seed_Start3,
-                    Single_Plain.all);
-            begin
-               Triple_Low_Nomac_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-            declare
-               CT : constant Byte_Array :=
-                 Itb.Cipher.Encrypt_Auth_Triple
-                   (Seed_Noise,
-                    Seed_Data1, Seed_Data2, Seed_Data3,
-                    Seed_Start1, Seed_Start2, Seed_Start3,
-                    Mac_Handle, Single_Plain.all);
-            begin
-               Triple_Low_Auth_Wires (C).Wire :=
-                 Build_Pristine_Wrap (C, Key, CT);
-            end;
-
-            --  Streaming AEAD wires (Easy + Low-Level, Single + Triple).
-            declare
-               Src : aliased Memory_Stream;
-               Sink : aliased Memory_Stream;
-            begin
-               Src.Write (Stream_Plain.all);
-
-               Reset_Read (Src);
-               Itb.Encryptor.Encrypt_Stream_Auth
-                 (Enc_Easy_Single, Src'Access, Sink'Access,
-                  Stream_Chunk_Size);
-               Stream_Easy_AEAD_Single_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream
-                   (C, Key, Sink.Buf (1 .. Sink.Used));
-               Sink.Used := 0;
-
-               Reset_Read (Src);
-               Itb.Encryptor.Encrypt_Stream_Auth
-                 (Enc_Easy_Triple, Src'Access, Sink'Access,
-                  Stream_Chunk_Size);
-               Stream_Easy_AEAD_Triple_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream
-                   (C, Key, Sink.Buf (1 .. Sink.Used));
-               Sink.Used := 0;
-
-               Reset_Read (Src);
-               Itb.Streams.Encrypt_Stream_Auth
-                 (Seed_Noise, Seed_Data1, Seed_Start1, Mac_Handle,
-                  Src'Access, Sink'Access, Stream_Chunk_Size);
-               Stream_Low_AEAD_Single_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream
-                   (C, Key, Sink.Buf (1 .. Sink.Used));
-               Sink.Used := 0;
-
-               Reset_Read (Src);
-               Itb.Streams.Encrypt_Stream_Auth_Triple
-                 (Seed_Noise,
-                  Seed_Data1, Seed_Data2, Seed_Data3,
-                  Seed_Start1, Seed_Start2, Seed_Start3,
-                  Mac_Handle, Src'Access, Sink'Access,
-                  Stream_Chunk_Size);
-               Stream_Low_AEAD_Triple_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream
-                   (C, Key, Sink.Buf (1 .. Sink.Used));
-               Sink.Used := 0;
-
-               Free (Src);
-               Free (Sink);
-            end;
-
-            --  User-Loop wires (no-MAC) — easy + lowlevel × single +
-            --  triple. Builds the inner User-Loop transcript then
-            --  wraps it.
-            declare
-               UL : Byte_Buf_Access;
-            begin
-               UL := Build_UL_Easy (Enc_Easy_Single'Access);
-               Stream_Easy_UL_Single_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream (C, Key, UL.all);
-               Free_Buf (UL);
-
-               UL := Build_UL_Easy (Enc_Easy_Triple'Access);
-               Stream_Easy_UL_Triple_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream (C, Key, UL.all);
-               Free_Buf (UL);
-
-               UL := Build_UL_Low_Single;
-               Stream_Low_UL_Single_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream (C, Key, UL.all);
-               Free_Buf (UL);
-
-               UL := Build_UL_Low_Triple;
-               Stream_Low_UL_Triple_Wires (C).Wire :=
-                 Build_Pristine_Wrap_Stream (C, Key, UL.all);
-               Free_Buf (UL);
-            end;
-         end;
-      end loop;
-   end Pre_Compute;
-
    ---------------------------------------------------------------------
    --  Per-case Run_Once bodies. Each case binds (cipher, mode, op).
    --
@@ -1709,224 +1542,81 @@ procedure Bench_Wrapper is
       Itb.Wrapper.Sip_Hash_24,
       Itb.Wrapper.Cha_Cha_20];
 
-   procedure Run_Wrapper_Only_Cases is
-   begin
-      for C of Bench_Ciphers loop
-         Bench_Cipher := C;
-         Measure
-           ("bench_wrapper_only_alloc_" & Cipher_Slug (C) & "_16mb",
-            Run_Wrap_Only_Alloc'Access,
-            Wrapper_Only_Bytes, Min_Seconds);
-         Measure
-           ("bench_wrapper_only_inplace_" & Cipher_Slug (C) & "_16mb",
-            Run_Wrap_Only_In_Place'Access,
-            Wrapper_Only_Bytes, Min_Seconds);
-      end loop;
-   end Run_Wrapper_Only_Cases;
+   ---------------------------------------------------------------------
+   --  Lazy per-cipher helpers — build only the wires needed for one
+   --  cipher at a time, run those cases, then free before the next
+   --  cipher. Peak RSS: one cipher's message wires (8 × ~16 MB) or
+   --  one cipher's streaming wires (8 × ~80 MB), not all 9 × 16 at once.
+   ---------------------------------------------------------------------
 
-   procedure Run_Single_Message_Cases is
-      type Msg_Case is record
-         Tag    : access constant String;
-         Single : Msg_Mode_Tag;
-         Triple : Msg_Mode_Tag;
-      end record;
-      Easy_Nomac_Tag    : aliased constant String := "easy_nomac";
-      Easy_Auth_Tag     : aliased constant String := "easy_auth";
-      Low_Nomac_Tag     : aliased constant String := "lowlevel_nomac";
-      Low_Auth_Tag      : aliased constant String := "lowlevel_auth";
+   --  Build message-mode wires for a single cipher.
+   procedure Pre_Compute_Msg_Cipher (C : Outer_Cipher) is
+      Key : constant Byte_Array := Cipher_Keys (C).Key.all;
    begin
       declare
-         Modes : constant array (1 .. 4) of Msg_Case :=
-           [(Easy_Nomac_Tag'Access, Easy_NoMAC_Single, Easy_NoMAC_Triple),
-            (Easy_Auth_Tag'Access,  Easy_Auth_Single,  Easy_Auth_Triple),
-            (Low_Nomac_Tag'Access,  Low_NoMAC_Single,  Low_NoMAC_Triple),
-            (Low_Auth_Tag'Access,   Low_Auth_Single,   Low_Auth_Triple)];
+         CT : constant Byte_Array :=
+           Itb.Encryptor.Encrypt (Enc_Easy_Single, Single_Plain.all);
       begin
-         for C of Bench_Ciphers loop
-            Bench_Cipher := C;
-            for M of Modes loop
-               --  Single Ouroboros (encrypt + decrypt — full pipeline)
-               Active_Msg_Mode := M.Single;
-               Measure
-                 ("bench_message_single_" & M.Tag.all & "_"
-                  & Cipher_Slug (C) & "_encrypt_16mb",
-                  Run_Msg_Encrypt'Access,
-                  Single_Message_Bytes, Min_Seconds);
-               Measure
-                 ("bench_message_single_" & M.Tag.all & "_"
-                  & Cipher_Slug (C) & "_decrypt_16mb",
-                  Run_Msg_Decrypt'Access,
-                  Single_Message_Bytes, Min_Seconds);
-               --  Triple Ouroboros (encrypt + decrypt — full pipeline)
-               Active_Msg_Mode := M.Triple;
-               Measure
-                 ("bench_message_triple_" & M.Tag.all & "_"
-                  & Cipher_Slug (C) & "_encrypt_16mb",
-                  Run_Msg_Encrypt'Access,
-                  Single_Message_Bytes, Min_Seconds);
-               Measure
-                 ("bench_message_triple_" & M.Tag.all & "_"
-                  & Cipher_Slug (C) & "_decrypt_16mb",
-                  Run_Msg_Decrypt'Access,
-                  Single_Message_Bytes, Min_Seconds);
-            end loop;
-         end loop;
+         Single_Easy_Nomac_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
       end;
-   end Run_Single_Message_Cases;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Encryptor.Encrypt_Auth (Enc_Easy_Single, Single_Plain.all);
+      begin
+         Single_Easy_Auth_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Cipher.Encrypt
+             (Seed_Noise, Seed_Data1, Seed_Start1, Single_Plain.all);
+      begin
+         Single_Low_Nomac_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Cipher.Encrypt_Auth
+             (Seed_Noise, Seed_Data1, Seed_Start1,
+              Mac_Handle, Single_Plain.all);
+      begin
+         Single_Low_Auth_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Encryptor.Encrypt (Enc_Easy_Triple, Single_Plain.all);
+      begin
+         Triple_Easy_Nomac_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Encryptor.Encrypt_Auth (Enc_Easy_Triple, Single_Plain.all);
+      begin
+         Triple_Easy_Auth_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Cipher.Encrypt_Triple
+             (Seed_Noise,
+              Seed_Data1, Seed_Data2, Seed_Data3,
+              Seed_Start1, Seed_Start2, Seed_Start3,
+              Single_Plain.all);
+      begin
+         Triple_Low_Nomac_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+      declare
+         CT : constant Byte_Array :=
+           Itb.Cipher.Encrypt_Auth_Triple
+             (Seed_Noise,
+              Seed_Data1, Seed_Data2, Seed_Data3,
+              Seed_Start1, Seed_Start2, Seed_Start3,
+              Mac_Handle, Single_Plain.all);
+      begin
+         Triple_Low_Auth_Wires (C).Wire := Build_Pristine_Wrap (C, Key, CT);
+      end;
+   end Pre_Compute_Msg_Cipher;
 
-   procedure Run_Streaming_Cases is
-      type Stream_Mode_Tag is
-        (AEAD_Easy_IO, AEAD_Low_IO, NoAEAD_Easy_UL, NoAEAD_Low_UL);
-      type Mode_Slug_Access is access constant String;
-      AEAD_Easy_Tag   : aliased constant String := "aead_easy_io";
-      AEAD_Low_Tag    : aliased constant String := "aead_lowlevel_io";
-      Noaead_Easy_Tag : aliased constant String :=
-        "noaead_easy_userloop";
-      Noaead_Low_Tag  : aliased constant String :=
-        "noaead_lowlevel_userloop";
-
-      Tags : constant array (Stream_Mode_Tag) of Mode_Slug_Access :=
-        [AEAD_Easy_IO   => AEAD_Easy_Tag'Access,
-         AEAD_Low_IO    => AEAD_Low_Tag'Access,
-         NoAEAD_Easy_UL => Noaead_Easy_Tag'Access,
-         NoAEAD_Low_UL  => Noaead_Low_Tag'Access];
+   --  Free message-mode wires for a single cipher.
+   procedure Free_Msg_Wires_Cipher (C : Outer_Cipher) is
    begin
-      for C of Bench_Ciphers loop
-         Bench_Cipher := C;
-         for Tag in Stream_Mode_Tag loop
-            case Tag is
-               when AEAD_Easy_IO =>
-                  Active_Stream := AEAD_Easy_IO_Single;
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Active_Stream := AEAD_Easy_IO_Triple;
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-               when AEAD_Low_IO =>
-                  Active_Stream := AEAD_Low_IO_Single;
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Active_Stream := AEAD_Low_IO_Triple;
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-               when NoAEAD_Easy_UL =>
-                  Active_Stream := UL_Easy_Single;
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Active_Stream := UL_Easy_Triple;
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-               when NoAEAD_Low_UL =>
-                  Active_Stream := UL_Low_Single;
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_single_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Active_Stream := UL_Low_Triple;
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_encrypt_64mb",
-                     Run_Stream_Encrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-                  Measure
-                    ("bench_stream_triple_" & Tags (Tag).all & "_"
-                     & Cipher_Slug (C) & "_decrypt_64mb",
-                     Run_Stream_Decrypt'Access,
-                     Stream_Payload_Bytes, Min_Seconds);
-            end case;
-         end loop;
-      end loop;
-   end Run_Streaming_Cases;
-
-begin
-   Itb.Set_Max_Workers (0);
-   Itb.Set_Nonce_Bits (128);
-
-   declare
-      Min_S_Img : constant String :=
-        Ada.Strings.Fixed.Trim
-          (Integer'Image (Integer (Min_Seconds)), Ada.Strings.Both);
-   begin
-      Ada.Text_IO.Put_Line
-        ("# wrapper primitive=" & Stream_Primitive
-         & " key_bits=1024 mac=" & Mac_Name
-         & " single_message_bytes=16777216"
-         & " stream_payload_bytes=67108864"
-         & " stream_chunk_size=16777216"
-         & " min_seconds=" & Min_S_Img
-         & " workers=auto");
-      Ada.Text_IO.Put_Line ("# benchmarks=306 min_seconds=" & Min_S_Img);
-   end;
-
-   Build_Cipher_Keys;
-   Pre_Compute;
-
-   Run_Wrapper_Only_Cases;     --  2 per cipher
-   Run_Single_Message_Cases;   --  16 per cipher (8 single + 8 triple)
-   Run_Streaming_Cases;        --  16 per cipher (8 single + 8 triple)
-
-   --  Cleanup heap allocations.
-   Free_Buf (Wrap_Plain);
-   Free_Buf (Single_Plain);
-   Free_Buf (Stream_Plain);
-   for C in Outer_Cipher loop
-      if Cipher_Keys (C).Key /= null then
-         Free_Buf (Cipher_Keys (C).Key);
-      end if;
       if Single_Easy_Nomac_Wires (C).Wire /= null then
          Free_Buf (Single_Easy_Nomac_Wires (C).Wire);
       end if;
@@ -1951,6 +1641,82 @@ begin
       if Triple_Low_Auth_Wires (C).Wire /= null then
          Free_Buf (Triple_Low_Auth_Wires (C).Wire);
       end if;
+   end Free_Msg_Wires_Cipher;
+
+   --  Build streaming wires for a single cipher.
+   procedure Pre_Compute_Stream_Cipher (C : Outer_Cipher) is
+      Key : constant Byte_Array := Cipher_Keys (C).Key.all;
+   begin
+      declare
+         Src  : aliased Memory_Stream;
+         Sink : aliased Memory_Stream;
+      begin
+         Src.Write (Stream_Plain.all);
+
+         Reset_Read (Src);
+         Itb.Encryptor.Encrypt_Stream_Auth
+           (Enc_Easy_Single, Src'Access, Sink'Access, Stream_Chunk_Size);
+         Stream_Easy_AEAD_Single_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, Sink.Buf (1 .. Sink.Used));
+         Sink.Used := 0;
+
+         Reset_Read (Src);
+         Itb.Encryptor.Encrypt_Stream_Auth
+           (Enc_Easy_Triple, Src'Access, Sink'Access, Stream_Chunk_Size);
+         Stream_Easy_AEAD_Triple_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, Sink.Buf (1 .. Sink.Used));
+         Sink.Used := 0;
+
+         Reset_Read (Src);
+         Itb.Streams.Encrypt_Stream_Auth
+           (Seed_Noise, Seed_Data1, Seed_Start1, Mac_Handle,
+            Src'Access, Sink'Access, Stream_Chunk_Size);
+         Stream_Low_AEAD_Single_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, Sink.Buf (1 .. Sink.Used));
+         Sink.Used := 0;
+
+         Reset_Read (Src);
+         Itb.Streams.Encrypt_Stream_Auth_Triple
+           (Seed_Noise,
+            Seed_Data1, Seed_Data2, Seed_Data3,
+            Seed_Start1, Seed_Start2, Seed_Start3,
+            Mac_Handle, Src'Access, Sink'Access, Stream_Chunk_Size);
+         Stream_Low_AEAD_Triple_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, Sink.Buf (1 .. Sink.Used));
+         Sink.Used := 0;
+
+         Free (Src);
+         Free (Sink);
+      end;
+
+      declare
+         UL : Byte_Buf_Access;
+      begin
+         UL := Build_UL_Easy (Enc_Easy_Single'Access);
+         Stream_Easy_UL_Single_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, UL.all);
+         Free_Buf (UL);
+
+         UL := Build_UL_Easy (Enc_Easy_Triple'Access);
+         Stream_Easy_UL_Triple_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, UL.all);
+         Free_Buf (UL);
+
+         UL := Build_UL_Low_Single;
+         Stream_Low_UL_Single_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, UL.all);
+         Free_Buf (UL);
+
+         UL := Build_UL_Low_Triple;
+         Stream_Low_UL_Triple_Wires (C).Wire :=
+           Build_Pristine_Wrap_Stream (C, Key, UL.all);
+         Free_Buf (UL);
+      end;
+   end Pre_Compute_Stream_Cipher;
+
+   --  Free streaming wires for a single cipher.
+   procedure Free_Stream_Wires_Cipher (C : Outer_Cipher) is
+   begin
       if Stream_Easy_AEAD_Single_Wires (C).Wire /= null then
          Free_Buf (Stream_Easy_AEAD_Single_Wires (C).Wire);
       end if;
@@ -1974,6 +1740,204 @@ begin
       end if;
       if Stream_Low_UL_Triple_Wires (C).Wire /= null then
          Free_Buf (Stream_Low_UL_Triple_Wires (C).Wire);
+      end if;
+   end Free_Stream_Wires_Cipher;
+
+   --  Run wrapper-only cases for a single cipher.
+   procedure Run_Wrapper_Only_Single_Cipher (C : Outer_Cipher) is
+   begin
+      Bench_Cipher := C;
+      Measure
+        ("bench_wrapper_only_alloc_" & Cipher_Slug (C) & "_16mb",
+         Run_Wrap_Only_Alloc'Access,
+         Wrapper_Only_Bytes, Min_Seconds);
+      Measure
+        ("bench_wrapper_only_inplace_" & Cipher_Slug (C) & "_16mb",
+         Run_Wrap_Only_In_Place'Access,
+         Wrapper_Only_Bytes, Min_Seconds);
+   end Run_Wrapper_Only_Single_Cipher;
+
+   --  Run Single Message + Triple Message cases for a single cipher.
+   --  Wires for this cipher must have been pre-built via
+   --  Pre_Compute_Msg_Cipher before this call.
+   procedure Run_Single_Message_Single_Cipher (C : Outer_Cipher) is
+      type Msg_Case is record
+         Tag    : access constant String;
+         Single : Msg_Mode_Tag;
+         Triple : Msg_Mode_Tag;
+      end record;
+      Easy_Nomac_Tag    : aliased constant String := "easy_nomac";
+      Easy_Auth_Tag     : aliased constant String := "easy_auth";
+      Low_Nomac_Tag     : aliased constant String := "lowlevel_nomac";
+      Low_Auth_Tag      : aliased constant String := "lowlevel_auth";
+      Modes : constant array (1 .. 4) of Msg_Case :=
+        [(Easy_Nomac_Tag'Access, Easy_NoMAC_Single, Easy_NoMAC_Triple),
+         (Easy_Auth_Tag'Access,  Easy_Auth_Single,  Easy_Auth_Triple),
+         (Low_Nomac_Tag'Access,  Low_NoMAC_Single,  Low_NoMAC_Triple),
+         (Low_Auth_Tag'Access,   Low_Auth_Single,   Low_Auth_Triple)];
+   begin
+      Bench_Cipher := C;
+      for M of Modes loop
+         Active_Msg_Mode := M.Single;
+         Measure
+           ("bench_message_single_" & M.Tag.all & "_"
+            & Cipher_Slug (C) & "_encrypt_16mb",
+            Run_Msg_Encrypt'Access,
+            Single_Message_Bytes, Min_Seconds);
+         Measure
+           ("bench_message_single_" & M.Tag.all & "_"
+            & Cipher_Slug (C) & "_decrypt_16mb",
+            Run_Msg_Decrypt'Access,
+            Single_Message_Bytes, Min_Seconds);
+         Active_Msg_Mode := M.Triple;
+         Measure
+           ("bench_message_triple_" & M.Tag.all & "_"
+            & Cipher_Slug (C) & "_encrypt_16mb",
+            Run_Msg_Encrypt'Access,
+            Single_Message_Bytes, Min_Seconds);
+         Measure
+           ("bench_message_triple_" & M.Tag.all & "_"
+            & Cipher_Slug (C) & "_decrypt_16mb",
+            Run_Msg_Decrypt'Access,
+            Single_Message_Bytes, Min_Seconds);
+      end loop;
+   end Run_Single_Message_Single_Cipher;
+
+   --  Run Streaming AEAD + User-Loop cases for a single cipher.
+   --  Wires for this cipher must have been pre-built via
+   --  Pre_Compute_Stream_Cipher before this call.
+   procedure Run_Streaming_Single_Cipher (C : Outer_Cipher) is
+   begin
+      Bench_Cipher := C;
+      --  AEAD Easy IO.
+      Active_Stream := AEAD_Easy_IO_Single;
+      Measure
+        ("bench_stream_single_aead_easy_io_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_single_aead_easy_io_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Active_Stream := AEAD_Easy_IO_Triple;
+      Measure
+        ("bench_stream_triple_aead_easy_io_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_triple_aead_easy_io_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      --  AEAD Low IO.
+      Active_Stream := AEAD_Low_IO_Single;
+      Measure
+        ("bench_stream_single_aead_lowlevel_io_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_single_aead_lowlevel_io_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Active_Stream := AEAD_Low_IO_Triple;
+      Measure
+        ("bench_stream_triple_aead_lowlevel_io_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_triple_aead_lowlevel_io_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      --  No-AEAD Easy User-Loop.
+      Active_Stream := UL_Easy_Single;
+      Measure
+        ("bench_stream_single_noaead_easy_userloop_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_single_noaead_easy_userloop_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Active_Stream := UL_Easy_Triple;
+      Measure
+        ("bench_stream_triple_noaead_easy_userloop_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_triple_noaead_easy_userloop_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      --  No-AEAD Low-Level User-Loop.
+      Active_Stream := UL_Low_Single;
+      Measure
+        ("bench_stream_single_noaead_lowlevel_userloop_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_single_noaead_lowlevel_userloop_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Active_Stream := UL_Low_Triple;
+      Measure
+        ("bench_stream_triple_noaead_lowlevel_userloop_"
+         & Cipher_Slug (C) & "_encrypt_64mb",
+         Run_Stream_Encrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+      Measure
+        ("bench_stream_triple_noaead_lowlevel_userloop_"
+         & Cipher_Slug (C) & "_decrypt_64mb",
+         Run_Stream_Decrypt'Access, Stream_Payload_Bytes, Min_Seconds);
+   end Run_Streaming_Single_Cipher;
+
+begin
+   Itb.Set_Max_Workers (0);
+   Itb.Set_Nonce_Bits (128);
+
+   declare
+      Min_S_Img : constant String :=
+        Ada.Strings.Fixed.Trim
+          (Integer'Image (Integer (Min_Seconds)), Ada.Strings.Both);
+   begin
+      Ada.Text_IO.Put_Line
+        ("# wrapper primitive=" & Stream_Primitive
+         & " key_bits=1024 mac=" & Mac_Name
+         & " single_message_bytes=16777216"
+         & " stream_payload_bytes=67108864"
+         & " stream_chunk_size=16777216"
+         & " min_seconds=" & Min_S_Img
+         & " workers=auto");
+      Ada.Text_IO.Put_Line ("# benchmarks=306 min_seconds=" & Min_S_Img);
+   end;
+
+   Build_Cipher_Keys;
+
+   --  Lazy per-cipher loop: build wires for one cipher, run all cases
+   --  bound to that cipher, then free those wires before processing the
+   --  next cipher. Peak RSS is bounded to one cipher's wire set
+   --  (~8 × 16 MB message or ~8 × 80 MB streaming) rather than 9 ×
+   --  all of the above simultaneously.
+   for C of Bench_Ciphers loop
+
+      --  Wrapper Only cases need no pre-built wires.
+      Run_Wrapper_Only_Single_Cipher (C);
+
+      --  Message cases: build msg wires → run → free.
+      Pre_Compute_Msg_Cipher (C);
+      Run_Single_Message_Single_Cipher (C);
+      Free_Msg_Wires_Cipher (C);
+
+      --  Streaming cases: build stream wires → run → free.
+      Pre_Compute_Stream_Cipher (C);
+      Run_Streaming_Single_Cipher (C);
+      Free_Stream_Wires_Cipher (C);
+
+   end loop;
+
+   --  Cleanup shared heap allocations.
+   Free_Buf (Wrap_Plain);
+   Free_Buf (Single_Plain);
+   Free_Buf (Stream_Plain);
+   for C in Outer_Cipher loop
+      if Cipher_Keys (C).Key /= null then
+         Free_Buf (Cipher_Keys (C).Key);
       end if;
    end loop;
    if Wrap_Only_Scratch /= null then

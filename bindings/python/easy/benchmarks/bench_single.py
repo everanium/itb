@@ -171,27 +171,36 @@ def _make_decrypt_auth_case(name: str, builder: Callable[[], itb.Encryptor]) -> 
     return (name, fn, PAYLOAD_BYTES)
 
 
-def _build_cases() -> List[_common.BenchCase]:
-    """Assemble the full case list: 9 single-primitive entries
-    × 4 ops + 1 mixed entry × 4 ops = 40 cases. Order is
-    primitive-major / op-minor so a filter on a primitive name
-    keeps all four ops grouped together in the output."""
-    cases: List[_common.BenchCase] = []
+def _case_factories() -> List[_common.LazyCase]:
+    """Return a list of (name, factory) pairs covering the full 40-case
+    message suite (9 single-primitive × 4 ops + 1 mixed × 4 ops) plus
+    the 8 streaming cases. No payload or Encryptor is allocated here;
+    those are deferred until each factory is called."""
+    facs: List[_common.LazyCase] = []
     for prim in PRIMITIVES_CANONICAL:
         builder = (lambda p=prim: _build_single(p))
         base = f"bench_single_{prim}_{KEY_BITS}bit"
-        cases.append(_make_encrypt_case(f"{base}_encrypt_16mb", builder))
-        cases.append(_make_decrypt_case(f"{base}_decrypt_16mb", builder))
-        cases.append(_make_encrypt_auth_case(f"{base}_encrypt_auth_16mb", builder))
-        cases.append(_make_decrypt_auth_case(f"{base}_decrypt_auth_16mb", builder))
+        n = f"{base}_encrypt_16mb"
+        facs.append((n, lambda name=n, b=builder: _make_encrypt_case(name, b)))
+        n = f"{base}_decrypt_16mb"
+        facs.append((n, lambda name=n, b=builder: _make_decrypt_case(name, b)))
+        n = f"{base}_encrypt_auth_16mb"
+        facs.append((n, lambda name=n, b=builder: _make_encrypt_auth_case(name, b)))
+        n = f"{base}_decrypt_auth_16mb"
+        facs.append((n, lambda name=n, b=builder: _make_decrypt_auth_case(name, b)))
 
     base = f"bench_single_mixed_{KEY_BITS}bit"
-    cases.append(_make_encrypt_case(f"{base}_encrypt_16mb", _build_mixed_single))
-    cases.append(_make_decrypt_case(f"{base}_decrypt_16mb", _build_mixed_single))
-    cases.append(_make_encrypt_auth_case(f"{base}_encrypt_auth_16mb", _build_mixed_single))
-    cases.append(_make_decrypt_auth_case(f"{base}_decrypt_auth_16mb", _build_mixed_single))
+    n = f"{base}_encrypt_16mb"
+    facs.append((n, lambda name=n: _make_encrypt_case(name, _build_mixed_single)))
+    n = f"{base}_decrypt_16mb"
+    facs.append((n, lambda name=n: _make_decrypt_case(name, _build_mixed_single)))
+    n = f"{base}_encrypt_auth_16mb"
+    facs.append((n, lambda name=n: _make_encrypt_auth_case(name, _build_mixed_single)))
+    n = f"{base}_decrypt_auth_16mb"
+    facs.append((n, lambda name=n: _make_decrypt_auth_case(name, _build_mixed_single)))
 
-    return cases
+    _append_stream_factories(facs)
+    return facs
 
 
 def main() -> None:
@@ -208,9 +217,7 @@ def main() -> None:
         flush=True,
     )
 
-    cases = _build_cases()
-    cases.extend(_build_stream_cases())
-    _common.run_all(cases)
+    _common.run_lazy(_case_factories())
 
 
 # ─── Streaming benchmarks (Single Ouroboros) ─────────────────────────
@@ -441,30 +448,28 @@ def _make_lowlevel_user_loop_decrypt_case(name: str) -> _common.BenchCase:
     return (name, fn, STREAM_PAYLOAD_BYTES)
 
 
-def _build_stream_cases() -> List[_common.BenchCase]:
-    """Assemble the eight Single-Ouroboros streaming cases. Order is
+def _append_stream_factories(facs: List[_common.LazyCase]) -> None:
+    """Append eight Single-Ouroboros streaming factories to ``facs``. Order is
     (Mode × Variant × Op) — Easy / Low-Level outer, AEAD-IO /
     user-loop middle, encrypt / decrypt inner — so a substring filter
     on the variant name groups the four ops together."""
     base = f"bench_single_{STREAM_PRIMITIVE}_{KEY_BITS}bit"
-    cases: List[_common.BenchCase] = []
-    cases.append(_make_easy_stream_auth_encrypt_case(
-        f"{base}_easy_stream_auth_io_encrypt_64mb"))
-    cases.append(_make_easy_stream_auth_decrypt_case(
-        f"{base}_easy_stream_auth_io_decrypt_64mb"))
-    cases.append(_make_easy_user_loop_encrypt_case(
-        f"{base}_easy_stream_user_loop_encrypt_64mb"))
-    cases.append(_make_easy_user_loop_decrypt_case(
-        f"{base}_easy_stream_user_loop_decrypt_64mb"))
-    cases.append(_make_lowlevel_stream_auth_encrypt_case(
-        f"{base}_lowlevel_stream_auth_io_encrypt_64mb"))
-    cases.append(_make_lowlevel_stream_auth_decrypt_case(
-        f"{base}_lowlevel_stream_auth_io_decrypt_64mb"))
-    cases.append(_make_lowlevel_user_loop_encrypt_case(
-        f"{base}_lowlevel_stream_user_loop_encrypt_64mb"))
-    cases.append(_make_lowlevel_user_loop_decrypt_case(
-        f"{base}_lowlevel_stream_user_loop_decrypt_64mb"))
-    return cases
+    n = f"{base}_easy_stream_auth_io_encrypt_64mb"
+    facs.append((n, lambda name=n: _make_easy_stream_auth_encrypt_case(name)))
+    n = f"{base}_easy_stream_auth_io_decrypt_64mb"
+    facs.append((n, lambda name=n: _make_easy_stream_auth_decrypt_case(name)))
+    n = f"{base}_easy_stream_user_loop_encrypt_64mb"
+    facs.append((n, lambda name=n: _make_easy_user_loop_encrypt_case(name)))
+    n = f"{base}_easy_stream_user_loop_decrypt_64mb"
+    facs.append((n, lambda name=n: _make_easy_user_loop_decrypt_case(name)))
+    n = f"{base}_lowlevel_stream_auth_io_encrypt_64mb"
+    facs.append((n, lambda name=n: _make_lowlevel_stream_auth_encrypt_case(name)))
+    n = f"{base}_lowlevel_stream_auth_io_decrypt_64mb"
+    facs.append((n, lambda name=n: _make_lowlevel_stream_auth_decrypt_case(name)))
+    n = f"{base}_lowlevel_stream_user_loop_encrypt_64mb"
+    facs.append((n, lambda name=n: _make_lowlevel_user_loop_encrypt_case(name)))
+    n = f"{base}_lowlevel_stream_user_loop_decrypt_64mb"
+    facs.append((n, lambda name=n: _make_lowlevel_user_loop_decrypt_case(name)))
 
 
 if __name__ == "__main__":

@@ -170,4 +170,11 @@ package Common is
    --  and ITB_BENCH_MIN_SEC for the per-case wall-clock budget.
    procedure Run_All (Cases : Bench_Case_Array);
 
+   --  Measure a single pre-built case at the given Min_Seconds threshold
+   --  and emit one Go-bench-style report line. Used by the lazy bench
+   --  runners in bench_single.adb / bench_triple.adb — the caller
+   --  handles filtering and the header line; this procedure handles only
+   --  measurement and output for one case.
+   procedure Measure_One (B : Bench_Case; Min_Seconds : Float);
+
 end Common;

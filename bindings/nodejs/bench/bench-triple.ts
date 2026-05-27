@@ -44,10 +44,10 @@ import {
   envLockBatch,
   envLockSeed,
   envNonceBits,
-  runAll,
+  runLazy,
 } from './common.js';
-import type { BenchCase } from './common.js';
-import { buildStreamCasesTriple } from './bench-stream.js';
+import type { BenchCase, LazyCase } from './common.js';
+import { buildStreamLazyCasesTriple } from './bench-stream.js';
 
 const PAYLOAD_BYTES = PAYLOAD_16MB;
 
@@ -157,40 +157,25 @@ function makeDecryptAuthCase(name: string, enc: Encryptor): BenchCase {
 }
 
 /**
- * Assemble the full case list: 9 single-primitive entries × 4 ops
- * plus 1 mixed entry × 4 ops = 40 cases. Order is primitive-major /
- * op-minor so a filter on a primitive name keeps all four ops
- * grouped together in the output.
+ * Build lazy factories for the 40 message cases + 8 streaming cases.
  */
-function buildCases(): BenchCase[] {
-  const cases: BenchCase[] = [];
+function buildLazyCases(): LazyCase[] {
+  const facs: LazyCase[] = [];
   for (const prim of PRIMITIVES_CANONICAL) {
     const base = `bench_triple_${prim}_${KEY_BITS}bit`;
-    cases.push(makeEncryptCase(`${base}_encrypt_16mb`, buildTriple(prim)));
-    cases.push(makeDecryptCase(`${base}_decrypt_16mb`, buildTriple(prim)));
-    cases.push(
-      makeEncryptAuthCase(`${base}_encrypt_auth_16mb`, buildTriple(prim)),
-    );
-    cases.push(
-      makeDecryptAuthCase(`${base}_decrypt_auth_16mb`, buildTriple(prim)),
-    );
+    const p = prim;
+    facs.push([`${base}_encrypt_16mb`, () => makeEncryptCase(`${base}_encrypt_16mb`, buildTriple(p))]);
+    facs.push([`${base}_decrypt_16mb`, () => makeDecryptCase(`${base}_decrypt_16mb`, buildTriple(p))]);
+    facs.push([`${base}_encrypt_auth_16mb`, () => makeEncryptAuthCase(`${base}_encrypt_auth_16mb`, buildTriple(p))]);
+    facs.push([`${base}_decrypt_auth_16mb`, () => makeDecryptAuthCase(`${base}_decrypt_auth_16mb`, buildTriple(p))]);
   }
   const baseMixed = `bench_triple_mixed_${KEY_BITS}bit`;
-  cases.push(makeEncryptCase(`${baseMixed}_encrypt_16mb`, buildMixedTriple()));
-  cases.push(makeDecryptCase(`${baseMixed}_decrypt_16mb`, buildMixedTriple()));
-  cases.push(
-    makeEncryptAuthCase(
-      `${baseMixed}_encrypt_auth_16mb`,
-      buildMixedTriple(),
-    ),
-  );
-  cases.push(
-    makeDecryptAuthCase(
-      `${baseMixed}_decrypt_auth_16mb`,
-      buildMixedTriple(),
-    ),
-  );
-  return cases;
+  facs.push([`${baseMixed}_encrypt_16mb`, () => makeEncryptCase(`${baseMixed}_encrypt_16mb`, buildMixedTriple())]);
+  facs.push([`${baseMixed}_decrypt_16mb`, () => makeDecryptCase(`${baseMixed}_decrypt_16mb`, buildMixedTriple())]);
+  facs.push([`${baseMixed}_encrypt_auth_16mb`, () => makeEncryptAuthCase(`${baseMixed}_encrypt_auth_16mb`, buildMixedTriple())]);
+  facs.push([`${baseMixed}_decrypt_auth_16mb`, () => makeDecryptAuthCase(`${baseMixed}_decrypt_auth_16mb`, buildMixedTriple())]);
+  facs.push(...buildStreamLazyCasesTriple());
+  return facs;
 }
 
 /** Bench entry point invoked by `main.ts`. */
@@ -203,7 +188,5 @@ export async function runTriple(): Promise<void> {
     `# easy_triple primitives=${PRIMITIVES_CANONICAL.length} key_bits=${KEY_BITS} mac=${MAC_NAME} nonce_bits=${nonceBits} lockseed=${envLockSeed() ? 'on' : 'off'} workers=auto`,
   );
 
-  const cases = buildCases();
-  cases.push(...buildStreamCasesTriple());
-  await runAll(cases);
+  await runLazy(buildLazyCases());
 }

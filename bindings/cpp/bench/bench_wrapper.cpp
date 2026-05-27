@@ -537,23 +537,42 @@ bench::BenchCase make_stream_decrypt_case(int mode, StreamKind kind,
     return bench::BenchCase{namebuf, std::move(run), kStreamPayloadBytes};
 }
 
-// ----- Case-list assembly -------------------------------------------
+// ----- Lazy descriptor ----------------------------------------------
 
 // 34 sub-benches per cipher (2 wrapper only + 16 message + 16
 // streaming) × 9 ciphers = 306.
 constexpr std::size_t kTotalCases = 34 * kCipherCount;
 
-std::vector<bench::BenchCase> build_cases() {
-    std::vector<bench::BenchCase> cases;
-    cases.reserve(kTotalCases);
+// One lazy descriptor: cheap to store (no payload allocation), holds
+// the knobs needed to build one BenchCase on demand.
+enum class CaseKind {
+    WrapOnly,
+    MsgEnc,
+    MsgDec,
+    StreamEnc,
+    StreamDec,
+};
 
-    // Wrapper Only — 6 cases.
-    for (std::size_t ci = 0; ci < kCipherCount; ++ci) {
-        cases.push_back(make_wrapper_only_wrap_case(kCiphers[ci], kCipherNames[ci]));
-        cases.push_back(make_wrapper_only_inplace_case(kCiphers[ci], kCipherNames[ci]));
-    }
+struct LazyDesc {
+    CaseKind    kind;
+    std::size_t ci;       // CIPHERS / kCipherNames index
+    int         mode;     // 1=Single, 3=Triple
+    bool        auth;
+    StreamKind  stream_k;
+    const char* label;    // interned literal
+};
 
-    // Message — 4 modes × 3 ciphers × 2 dirs × {Single, Triple} = 48.
+using CaseFactory = std::function<bench::BenchCase()>;
+
+struct NamedFactory {
+    std::string  name;
+    CaseFactory  factory;
+};
+
+std::vector<NamedFactory> build_lazy_factories() {
+    std::vector<NamedFactory> facs;
+    facs.reserve(kTotalCases);
+
     struct MsgLabel { const char* label; bool auth; };
     static const MsgLabel kMsgLabels[] = {
         { "easy-nomac",      false },
@@ -561,19 +580,6 @@ std::vector<bench::BenchCase> build_cases() {
         { "lowlevel-nomac",  false },
         { "lowlevel-auth",   true  },
     };
-    static const int kModes[] = { 1, 3 };
-    for (int mode : kModes) {
-        for (const auto& m : kMsgLabels) {
-            for (std::size_t ci = 0; ci < kCipherCount; ++ci) {
-                cases.push_back(make_message_encrypt_case(
-                    mode, m.auth, kCiphers[ci], kCipherNames[ci], m.label));
-                cases.push_back(make_message_decrypt_case(
-                    mode, m.auth, kCiphers[ci], kCipherNames[ci], m.label));
-            }
-        }
-    }
-
-    // Streaming — 4 modes × 3 ciphers × 2 dirs × {Single, Triple} = 48.
     struct StreamLabel { const char* label; StreamKind kind; };
     static const StreamLabel kStreamLabels[] = {
         { "aead-easy-io",             StreamKind::AeadEasyIo             },
@@ -581,18 +587,72 @@ std::vector<bench::BenchCase> build_cases() {
         { "noaead-easy-userloop",     StreamKind::NoAeadEasyUserloop     },
         { "noaead-lowlevel-userloop", StreamKind::NoAeadLowLevelUserloop },
     };
+    static const int kModes[] = { 1, 3 };
+
+    // Wrapper Only — 2 per cipher.
+    for (std::size_t ci = 0; ci < kCipherCount; ++ci) {
+        char nm[128];
+        std::snprintf(nm, sizeof(nm),
+                      "BenchmarkWrapperOnlyWrap/%s", kCipherNames[ci]);
+        facs.push_back({nm, [ci]() {
+            return make_wrapper_only_wrap_case(kCiphers[ci], kCipherNames[ci]);
+        }});
+        std::snprintf(nm, sizeof(nm),
+                      "BenchmarkWrapperOnlyInPlace/%s", kCipherNames[ci]);
+        facs.push_back({nm, [ci]() {
+            return make_wrapper_only_inplace_case(kCiphers[ci], kCipherNames[ci]);
+        }});
+    }
+
+    // Message — 2 ouroboros × 4 labels × 9 ciphers × 2 dirs = 144.
     for (int mode : kModes) {
-        for (const auto& s : kStreamLabels) {
+        const char* mode_name = (mode == 1) ? "Single" : "Triple";
+        for (const auto& m : kMsgLabels) {
             for (std::size_t ci = 0; ci < kCipherCount; ++ci) {
-                cases.push_back(make_stream_encrypt_case(
-                    mode, s.kind, kCiphers[ci], kCipherNames[ci], s.label));
-                cases.push_back(make_stream_decrypt_case(
-                    mode, s.kind, kCiphers[ci], kCipherNames[ci], s.label));
+                char nm[128];
+                std::snprintf(nm, sizeof(nm),
+                    "BenchmarkMessage%s/%s/%s/encrypt",
+                    mode_name, m.label, kCipherNames[ci]);
+                facs.push_back({nm, [mode, auth = m.auth, ci, label = m.label]() {
+                    return make_message_encrypt_case(
+                        mode, auth, kCiphers[ci], kCipherNames[ci], label);
+                }});
+                std::snprintf(nm, sizeof(nm),
+                    "BenchmarkMessage%s/%s/%s/decrypt",
+                    mode_name, m.label, kCipherNames[ci]);
+                facs.push_back({nm, [mode, auth = m.auth, ci, label = m.label]() {
+                    return make_message_decrypt_case(
+                        mode, auth, kCiphers[ci], kCipherNames[ci], label);
+                }});
             }
         }
     }
 
-    return cases;
+    // Streaming — 2 ouroboros × 4 labels × 9 ciphers × 2 dirs = 144.
+    for (int mode : kModes) {
+        const char* mode_name = (mode == 1) ? "Single" : "Triple";
+        for (const auto& s : kStreamLabels) {
+            for (std::size_t ci = 0; ci < kCipherCount; ++ci) {
+                char nm[128];
+                std::snprintf(nm, sizeof(nm),
+                    "BenchmarkStreaming%s/%s/%s/encrypt",
+                    mode_name, s.label, kCipherNames[ci]);
+                facs.push_back({nm, [mode, kind = s.kind, ci, label = s.label]() {
+                    return make_stream_encrypt_case(
+                        mode, kind, kCiphers[ci], kCipherNames[ci], label);
+                }});
+                std::snprintf(nm, sizeof(nm),
+                    "BenchmarkStreaming%s/%s/%s/decrypt",
+                    mode_name, s.label, kCipherNames[ci]);
+                facs.push_back({nm, [mode, kind = s.kind, ci, label = s.label]() {
+                    return make_stream_decrypt_case(
+                        mode, kind, kCiphers[ci], kCipherNames[ci], label);
+                }});
+            }
+        }
+    }
+
+    return facs;
 }
 
 } // namespace
@@ -603,20 +663,47 @@ int main() {
         itb::set_max_workers(0);
         itb::set_nonce_bits(nonce_bits);
 
+        auto facs = build_lazy_factories(); // cheap: no payload allocs
+
         std::printf("# wrapper bench primitive=%s key_bits=%d mac=%s "
                     "ciphers=%zu cases=%zu nonce_bits=%d workers=auto\n",
                     kBenchPrimitive, kBenchKeyBits, kBenchMacName,
-                    kCipherCount, kTotalCases, nonce_bits);
+                    kCipherCount, facs.size(), nonce_bits);
         std::fflush(stdout);
 
-        auto cases = build_cases();
-        if (cases.size() != kTotalCases) {
-            std::fprintf(stderr,
-                         "build_cases yielded %zu, expected %zu\n",
-                         cases.size(), kTotalCases);
-            return 1;
+        // Filter + header line.
+        const char* flt = bench::env_filter();
+        double min_seconds = bench::env_min_seconds();
+
+        std::vector<const NamedFactory*> selected;
+        selected.reserve(facs.size());
+        for (const auto& nf : facs) {
+            if (flt == nullptr || bench::contains(nf.name, flt))
+                selected.push_back(&nf);
         }
-        bench::run_all(cases);
+        if (selected.empty()) {
+            std::fprintf(stderr,
+                         "no bench cases match filter %s; available:",
+                         flt == nullptr ? "<unset>" : flt);
+            for (const auto& nf : facs)
+                std::fprintf(stderr, " %s", nf.name.c_str());
+            std::fprintf(stderr, "\n");
+            return 0;
+        }
+
+        std::printf("# benchmarks=%zu payload_bytes=%zu min_seconds=%g\n",
+                    selected.size(),
+                    static_cast<std::size_t>(kMessagePayloadBytes),
+                    min_seconds);
+        std::fflush(stdout);
+
+        // Lazy loop: build one case, measure it, drop it.
+        for (const auto* nf : selected) {
+            auto c = nf->factory();
+            // ctx_registry() is also cleared per-case by destructing c
+            // (unique_ptr destructors run when c goes out of scope).
+            bench::measure_one(c, min_seconds);
+        }
     } catch (const itb::ItbError& e) {
         std::fprintf(stderr, "itb error (code=%d): %s\n",
                      e.code(), e.what());

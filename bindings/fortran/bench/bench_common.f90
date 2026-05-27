@@ -62,6 +62,8 @@ module bench_common
   public :: bench_case_t
   public :: bench_run_iface
   public :: run_all
+  public :: measure_one
+  public :: contains_substr
 
   ! Default 16 MiB CSPRNG-filled payload, matching the Go bench /
   ! Python bench / Rust bench / D bench / C bench surfaces.
@@ -414,6 +416,17 @@ contains
         call measure_case(cases(i), min_seconds)
       end if
     end do
+  end subroutine
+
+  ! Measure a single pre-built case at the given min_seconds threshold
+  ! and emit one Go-bench-style report line.  Used by the lazy bench
+  ! runner in bench_wrapper.f90 — the caller handles filtering and the
+  ! header line; this subroutine handles only measurement + output for
+  ! one case.
+  subroutine measure_one(c, min_seconds)
+    type(bench_case_t), intent(in) :: c
+    real(real64),       intent(in) :: min_seconds
+    call measure_case(c, min_seconds)
   end subroutine
 
 end module bench_common

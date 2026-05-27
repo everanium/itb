@@ -321,4 +321,14 @@ inline void run_all(std::vector<BenchCase>& cases) {
     }
 }
 
+// ----- Single-case public measurement --------------------------------
+//
+// Measure a pre-built case at the given `min_seconds` threshold and
+// emit one Go-bench-style line.  Used by the lazy bench runner in
+// bench_wrapper.cpp — the caller handles filtering and the header
+// line; this function handles only measurement + output for one case.
+inline void measure_one(BenchCase& c, double min_seconds) {
+    measure(c, min_seconds);
+}
+
 } // namespace bench
