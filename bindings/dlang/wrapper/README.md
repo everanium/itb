@@ -28,7 +28,7 @@ The D module exposes Single Message helpers (immutable + in-place mutation) and 
 | Helper | Wire format | Use case |
 |---|---|---|
 | `wrap` / `unwrap` | `nonce \|\| keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output, immutable plaintext path. |
-| `wrapInPlace` / `unwrapInPlace` | same as `wrap` / `unwrap` | Single Message, zero-allocation steady state. Mutates the caller's `ubyte[]` slice. |
+| `wrapInPlace` / `unwrapInPlace` | same as `wrap` / `unwrap` | Single Message, no output-buffer allocation. Mutates the caller's `ubyte[]` slice. |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — Streaming AEAD wraps the entire bytestream end-to-end; User-Driven Loop emits per-chunk caller-side framing (`u32_LE` length prefix) through the wrap-writer so the framing bytes also pass through the keystream XOR. |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
@@ -203,7 +203,7 @@ while (off < plaintext.length)
 
 ### 5. Easy: Areion-SoEM-512 (No MAC, Single Message)
 
-ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — `nonce || ks-XOR(blob)`. The `wrapInPlace` / `unwrapInPlace` variant is shown — mutates the caller's `ubyte[]` slice in place to skip the steady-state allocation.
+ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — `nonce || ks-XOR(blob)`. The `wrapInPlace` / `unwrapInPlace` variant is shown — mutates the caller's `ubyte[]` slice in place to skip the output-buffer allocation.
 
 ```d
 auto enc = Encryptor("areion512", 2048, null, 1);

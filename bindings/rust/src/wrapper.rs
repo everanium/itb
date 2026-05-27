@@ -23,7 +23,7 @@
 //! assert_eq!(recovered, blob);
 //! ```
 //!
-//! Single Message in-place mutation (zero-allocation steady state):
+//! Single Message in-place mutation (no output-buffer allocation):
 //!
 //! ```no_run
 //! use itb::wrapper::{self, Cipher};
@@ -306,8 +306,8 @@ fn check_key_len(cipher: Cipher, key: &[u8]) -> Result<(), ITBError> {
 /// `nonce || keystream-XOR(blob)`.
 ///
 /// Allocates a fresh output buffer of size
-/// `nonce_size(cipher) + blob.len()` per call. For zero-allocation
-/// steady state on the hot path use [`wrap_in_place`].
+/// `nonce_size(cipher) + blob.len()` per call. For no output-buffer
+/// allocation on the hot path use [`wrap_in_place`].
 pub fn wrap(cipher: Cipher, key: &[u8], blob: &[u8]) -> Result<Vec<u8>, ITBError> {
     check_key_len(cipher, key)?;
     let cn = cipher_cstring(cipher)?;
@@ -341,8 +341,8 @@ pub fn wrap(cipher: Cipher, key: &[u8], blob: &[u8]) -> Result<Vec<u8>, ITBError
 /// under `(key, nonce)` and returns the recovered blob.
 ///
 /// Allocates a fresh output buffer of size
-/// `wire.len() - nonce_size(cipher)` per call. For zero-allocation
-/// steady state use [`unwrap_in_place`].
+/// `wire.len() - nonce_size(cipher)` per call. For no output-buffer
+/// allocation use [`unwrap_in_place`].
 pub fn unwrap(cipher: Cipher, key: &[u8], wire: &[u8]) -> Result<Vec<u8>, ITBError> {
     check_key_len(cipher, key)?;
     let cn = cipher_cstring(cipher)?;
@@ -564,7 +564,7 @@ impl WrapStreamWriter {
 
     /// XOR-encrypts `buf` in place through the keystream. The
     /// keystream counter advances by `buf.len()` bytes. The
-    /// zero-allocation alternative to [`WrapStreamWriter::update`]
+    /// no-output-buffer-allocation alternative to [`WrapStreamWriter::update`]
     /// for callers that already own a writable buffer.
     ///
     /// Returns `Err` with code `STATUS_BAD_HANDLE` after
@@ -717,7 +717,7 @@ impl UnwrapStreamReader {
     }
 
     /// XOR-decrypts `buf` in place through the keystream. The
-    /// zero-allocation alternative to [`UnwrapStreamReader::update`]
+    /// no-output-buffer-allocation alternative to [`UnwrapStreamReader::update`]
     /// for callers that already own a writable buffer carrying the
     /// wire bytes.
     pub fn update_in_place(&mut self, buf: &mut [u8]) -> Result<(), ITBError> {

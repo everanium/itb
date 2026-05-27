@@ -17,13 +17,14 @@ import (
 // presents caller-allocated C buffers to these helpers as Go
 // []byte aliases via goBytesView / goBytesViewMut. The helpers
 // pass those aliases directly to the wrapper package; the
-// keystream XOR mutates the C-side buffer in place. The single
-// allocation in the path is the per-call nonce (16 bytes for
-// AES / SipHash, 12 bytes for ChaCha20) plus, on the allocating
-// Wrap / Unwrap variants, the wrapper package's own output slice.
-// The InPlace variants avoid both — only the nonce is allocated,
-// and on the encrypt side the nonce lands in a caller-supplied
-// out buffer rather than being heap-allocated and copied.
+// keystream XOR mutates the C-side buffer in place. The only
+// output-buffer allocation is on the Wrap / Unwrap variants (the
+// wrapper package's own output slice); the InPlace variants write
+// directly into the caller's buffer with no output-buffer
+// allocation. All four variants allocate per-worker keystream
+// state on the parallel XOR path for buffers at or above the
+// 256 KiB threshold. A fresh nonce is allocated per call on the
+// encrypt side.
 
 // WrapperKeySize reports the byte length of the keystream-cipher
 // key for the named outer cipher. Returns StatusBadInput on an
@@ -89,13 +90,11 @@ func Wrap(name string, key, blob, out []byte) (n int, st Status) {
 		setLastErr(StatusInternal)
 		return 0, StatusInternal
 	}
-	ks, err := wrapper.MakeKeystream(name, key, nonce)
-	if err != nil {
+	body := out[nonceSz : nonceSz+len(blob)]
+	if err := wrapper.XORParallel(name, key, nonce, body, blob); err != nil {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	body := out[nonceSz : nonceSz+len(blob)]
-	ks.XORKeyStream(body, blob)
 	return need, StatusOK
 }
 
@@ -133,12 +132,10 @@ func Unwrap(name string, key, wire, out []byte) (n int, st Status) {
 
 	nonce := wire[:nonceSz]
 	body := wire[nonceSz:]
-	ks, err := wrapper.MakeKeystream(name, key, nonce)
-	if err != nil {
+	if err := wrapper.XORParallel(name, key, nonce, out[:bodyLen], body); err != nil {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	ks.XORKeyStream(out[:bodyLen], body)
 	return bodyLen, StatusOK
 }
 
@@ -177,12 +174,10 @@ func WrapInPlace(name string, key, blob, outNonce []byte) (n int, st Status) {
 		setLastErr(StatusInternal)
 		return 0, StatusInternal
 	}
-	ks, err := wrapper.MakeKeystream(name, key, nonce)
-	if err != nil {
+	if err := wrapper.XORParallel(name, key, nonce, blob, blob); err != nil {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	ks.XORKeyStream(blob, blob)
 	return nonceSz, StatusOK
 }
 
@@ -213,12 +208,10 @@ func UnwrapInPlace(name string, key, wire []byte) (n int, st Status) {
 
 	nonce := wire[:nonceSz]
 	body := wire[nonceSz:]
-	ks, err := wrapper.MakeKeystream(name, key, nonce)
-	if err != nil {
+	if err := wrapper.XORParallel(name, key, nonce, body, body); err != nil {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	ks.XORKeyStream(body, body)
 	return len(body), StatusOK
 }
 

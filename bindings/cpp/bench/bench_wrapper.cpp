@@ -135,7 +135,7 @@ CaseCtx* register_ctx(std::unique_ptr<CaseCtx> ctx) {
 // ----- Wrapper Only sub-benches -------------------------------------
 //
 // Pure outer cipher cost — no ITB call. Two variants per cipher:
-// Wrap (alloc) and WrapInPlace (zero alloc).
+// Wrap (alloc) and WrapInPlace (no output-buffer alloc).
 //
 // Each iter performs one wrap + one unwrap (encrypt + decrypt timed
 // together, mirroring the Go BenchmarkWrapperOnlyWrap / InPlace

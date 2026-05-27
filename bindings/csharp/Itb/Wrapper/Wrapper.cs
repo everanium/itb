@@ -19,7 +19,7 @@
 //     byte[] recovered = Wrapper.Unwrap(Cipher.Aes128Ctr, key, wire);
 //     Debug.Assert(recovered.SequenceEqual(blob));
 //
-// Single Message in-place mutation (zero-allocation steady state):
+// Single Message in-place mutation (no output-buffer allocation):
 //
 //     Span<byte> mutable = blob.ToArray();
 //     byte[] nonce = Wrapper.WrapInPlace(Cipher.ChaCha20, key, mutable);

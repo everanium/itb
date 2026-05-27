@@ -10,16 +10,16 @@ The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ci
 
 The numbers below isolate the **outer cipher cost** that the wrapper layer adds on top of ITB. Two test scopes:
 
-* **Wrapper Only** — 16 MiB random buffer, no ITB call. Pure outer cipher round-trip throughput. The `WrapInPlace` row mutates the caller's buffer (zero allocation steady state); the `Wrap` row allocates a fresh output buffer per call.
+* **Wrapper Only** — 16 MiB random buffer, no ITB call. Pure outer cipher round-trip throughput. The `WrapInPlace` row mutates the caller's buffer (no output-buffer allocation); the `Wrap` row allocates a fresh output buffer per call.
 * **Full ITB + wrapper** — encrypt and decrypt are timed **separately** (split sub-benches `…/encrypt` and `…/decrypt`) so the per-direction breakdown is visible. Both Single Ouroboros and Triple Ouroboros are reported. Single-message benches process a 16 MiB plaintext under one encrypt / wrap call (or one unwrap / decrypt call). Streaming benches process a 64 MiB plaintext through 16 MiB chunks via either ITB's callback-driven Streaming AEAD API or a User-Driven Loop emitting framed chunks through the wrap-stream writer.
 
 The wrapper bench now covers all 9 outer ciphers in PRIMITIVES_CANONICAL order — Areion-SoEM-256, Areion-SoEM-512, BLAKE2b-256, BLAKE2b-512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4, ChaCha20 (RFC8439) — each in CTR mode. The result tables below cover AES-128-CTR / ChaCha20 / SipHash-2-4 and are rerun against the full palette in a separate pass.
 
-### Concurrency note — outer cipher single-thread bottleneck on big-iron
+### Concurrency note — outer cipher throughput on big-iron
 
-Outer-cipher overhead on a 16 HT host with hardware AES-NI is effectively zero — the AES-CTR keystream finishes well ahead of every ITB-encrypt slot, and the `WrapInPlace` path adds no allocation pressure. **On larger Triple Ouroboros hosts (e.g. AMD EPYC 9655P, 192 HT) the picture inverts for the non-AES outer ciphers**: ITB's per-pixel hashing scales across all available HT, while the wrapper's keystream XOR runs single-threaded on one core. ChaCha20 (~700 MB/s peak on a single core via `x/crypto/chacha20`) and SipHash-CTR (~250–280 MB/s peak via the `dchest/siphash` PRF + 16-byte refill loop) become the bottleneck once ITB's Triple decrypt path approaches ~1 GB/s on big-iron. AES-128-CTR retains hardware acceleration on every HT thread the underlying goroutine lands on and stays out of the critical path even there.
+Outer-cipher overhead on a 16 HT host with hardware AES-NI is effectively zero — the AES-CTR keystream finishes well ahead of every ITB-encrypt slot, and the `WrapInPlace` path avoids output-buffer allocation. **On larger Triple Ouroboros hosts (e.g. AMD EPYC 9655P, 192 HT) the picture inverts for the non-AES outer ciphers**: ITB's per-pixel hashing scales across all available HT, while the wrapper's keystream XOR splits across up to 32 worker goroutines (`min(32, GOMAXPROCS, chunks)`) inside libitb for buffers at or above the 256 KiB threshold, each worker seeking its own keystream to its chunk offset via `ctr.NewAt`; buffers below the threshold run serially.
 
-The C++ binding's wrapper layer routes XOR through the libitb FFI — it neither parallelises the keystream itself nor offloads to a different thread pool. The single-thread ceiling is therefore the wrapper-layer bottleneck on hosts where ITB outpaces the chosen outer cipher.
+The C++ binding routes XOR through a single libitb FFI call; the parallelisation across up to 32 goroutines happens inside libitb for buffers at or above the 256 KiB threshold, so the binding adds only per-call FFI-crossing overhead on top of the parallel XOR.
 
 ## Reproduction
 
@@ -55,7 +55,7 @@ Sub-bench count: **102**. (6 wrapper only round-trip + 24 Message Single + 24 Me
 
 ### Wrapper only round-trip (16 MiB plaintext, encrypt + decrypt timed together)
 
-| Outer cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (zero alloc) MB/s |
+| Outer cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (no output-buffer alloc) MB/s |
 |---|---|---|
 | **AES-128-CTR** | 2157 | **2918** |
 | **ChaCha20** | 316 | **323** |

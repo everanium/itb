@@ -26,7 +26,7 @@ The C++ binding exposes the wrap surface in `include/itb/wrapper.hpp` under `nam
 | Helper | Wire format | Use case |
 |---|---|---|
 | `wrap` / `unwrap` | `nonce` + keystream-XOR(blob) | Single Message Encrypt / EncryptAuth output (separately allocated wire buffer) |
-| `wrap_in_place` / `unwrap_in_place` | `nonce` separate, body XORed in place | zero-allocation steady state on the hot path; mutates the caller's blob / wire |
+| `wrap_in_place` / `unwrap_in_place` | `nonce` separate, body XORed in place | no output-buffer allocation on the hot path; mutates the caller's blob / wire |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — AEAD IO-Driven, or User-Driven Loop where caller-side framing (e.g. per-chunk `u32_LE` length prefixes) is written through the wrap-writer so the framing bytes also pass through the keystream XOR |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.

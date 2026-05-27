@@ -22,7 +22,7 @@ Quick start (Single Message Wrap / Unwrap):
     >>> recovered = wrapper.unwrap(wrapper.CIPHER_AES128_CTR, key, wire)
     >>> assert recovered == blob
 
-Single Message in-place mutation (zero-allocation steady state):
+Single Message in-place mutation (no output-buffer allocation):
 
     >>> mutable = bytearray(blob)
     >>> nonce = wrapper.wrap_in_place(wrapper.CIPHER_CHACHA20, key, mutable)
@@ -235,8 +235,8 @@ def wrap(cipher_name: str, key: bytes, blob: bytes) -> bytes:
     ``nonce || keystream-XOR(blob)``.
 
     Allocates a fresh output buffer of size
-    ``nonce_size(cipher_name) + len(blob)`` per call. For zero-
-    allocation steady state on the hot path use :func:`wrap_in_place`.
+    ``nonce_size(cipher_name) + len(blob)`` per call. For no output-buffer
+    allocation on the hot path use :func:`wrap_in_place`.
     """
     cn = _validate_cipher_name(cipher_name)
     key_b = _bytes_view(key)
@@ -267,8 +267,8 @@ def unwrap(cipher_name: str, key: bytes, wire: bytes) -> bytes:
     remainder under ``(key, nonce)`` and returns the recovered blob.
 
     Allocates a fresh output buffer of size
-    ``len(wire) - nonce_size(cipher_name)`` per call. For zero-
-    allocation steady state use :func:`unwrap_in_place`.
+    ``len(wire) - nonce_size(cipher_name)`` per call. For no output-buffer
+    allocation use :func:`unwrap_in_place`.
     """
     cn = _validate_cipher_name(cipher_name)
     key_b = _bytes_view(key)
