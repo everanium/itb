@@ -23,10 +23,16 @@ The harness lives in this directory; reproduction:
 cd bindings/ada
 alr exec -- gprbuild -P itb_bench.gpr
 ITB_BENCH_MIN_SEC=5 ./obj-bench/bench_single
+ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./obj-bench/bench_single
 ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 ./obj-bench/bench_single
 ITB_BENCH_MIN_SEC=5 ./obj-bench/bench_triple
+ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./obj-bench/bench_triple
 ITB_BENCH_MIN_SEC=5 ITB_LOCKSEED=1 ./obj-bench/bench_triple
 ```
+
+The `ITB_LOCKSEED=1 ITB_LOCKBATCH=1` lines select the Lock Batch
+performance variant of Lock Soup; the `ITB_LOCKSEED=1` lines retain
+the baseline Lock Soup arm.
 
 The default measurement window is 5 seconds per case
 (`ITB_BENCH_MIN_SEC=5`), wide enough to absorb the cold-cache /

@@ -27,6 +27,7 @@ import {
   encryptTriple,
   getBarrierFill,
   getBitSoup,
+  getLockBatch,
   getLockSoup,
   getMaxWorkers,
   getNonceBits,
@@ -36,6 +37,7 @@ import {
   Seed,
   setBarrierFill,
   setBitSoup,
+  setLockBatch,
   setLockSoup,
   setMaxWorkers,
   setNonceBits,
@@ -245,6 +247,16 @@ describe('test_roundtrip', () => {
       assert.equal(getLockSoup(), 1);
     } finally {
       setLockSoup(orig);
+    }
+  });
+
+  test('lock batch roundtrip', () => {
+    const orig = getLockBatch();
+    try {
+      setLockBatch(1);
+      assert.equal(getLockBatch(), 1);
+    } finally {
+      setLockBatch(orig);
     }
   });
 

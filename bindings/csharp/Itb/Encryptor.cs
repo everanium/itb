@@ -810,6 +810,16 @@ public sealed class Encryptor : IDisposable
     }
 
     /// <summary>
+    /// 0 = off (default); non-zero = on. Per-chunk PRF batching for the
+    /// Lock Soup overlay; inert unless Lock Soup is engaged.
+    /// </summary>
+    public void SetLockBatch(int mode)
+    {
+        ThrowIfClosed();
+        ItbException.Check(ItbNative.ITB_Easy_SetLockBatch(_handle, mode));
+    }
+
+    /// <summary>
     /// 0 = off; 1 = on. When engaged, allocates a dedicated lockSeed
     /// and routes the bit-permutation overlay through it; this
     /// auto-couples <c>LockSoup=1 + BitSoup=1</c> on this encryptor

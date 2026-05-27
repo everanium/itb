@@ -11,6 +11,7 @@
 //
 //   npm run bench:single
 //
+//   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 npm run bench:single
 //   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 npm run bench:single
 //
 //   ITB_BENCH_FILTER=blake3_encrypt npm run bench:single
@@ -35,6 +36,7 @@ import {
   MIXED_START,
   PAYLOAD_16MB,
   PRIMITIVES_CANONICAL,
+  envLockBatch,
   envLockSeed,
   envNonceBits,
   runAll,
@@ -48,11 +50,15 @@ const PAYLOAD_BYTES = PAYLOAD_16MB;
  * When `ITB_LOCKSEED` is set the harness flips the dedicated
  * lockSeed channel on every encryptor. Easy Mode auto-couples
  * BitSoup + LockSoup as a side effect, so no separate calls are
- * issued.
+ * issued. When `ITB_LOCKBATCH` is also set, enable the Lock Batch
+ * performance Lock Soup mode on the same encryptor.
  */
 function applyLockSeedIfRequested(enc: Encryptor): void {
   if (envLockSeed()) {
     enc.setLockSeed(1);
+  }
+  if (envLockBatch()) {
+    enc.setLockBatch(1);
   }
 }
 

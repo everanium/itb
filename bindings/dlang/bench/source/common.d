@@ -14,6 +14,10 @@
 /// * `ITB_NONCE_BITS` - process-wide nonce width override; valid
 ///   values 128 / 256 / 512. Maps to `itb.setNonceBits` before any
 ///   encryptor is constructed. Default 128.
+/// * `ITB_LOCKBATCH` - non-empty / non-`0` enables Lock Batch (the
+///   performance Lock Soup mode); set with `ITB_LOCKSEED`. Every Easy
+///   Mode encryptor additionally calls `Encryptor.setLockBatch(1)`.
+///   Inert unless Lock Soup is engaged via `ITB_LOCKSEED`. Default off.
 /// * `ITB_LOCKSEED` - when set to a non-empty / non-`0` value, every
 ///   Easy Mode encryptor in this run calls `Encryptor.setLockSeed`
 ///   with mode=1. The Go side's auto-couple invariant then engages
@@ -44,7 +48,7 @@ enum size_t PAYLOAD_16MB = 16 << 20;
 
 /// Canonical PRF-grade primitive order. Mirrored verbatim across
 /// every binding's bench harness so cross-language diff comparisons
-/// align row-for-row. Per CLAUDE.md "binding-side canonical order"
+/// align row-for-row. Per the project guidelines "binding-side canonical order"
 /// exception under "Primitive ordering ...".
 immutable string[] PRIMITIVES_CANONICAL = [
     "areion256",
@@ -78,6 +82,15 @@ int envNonceBits(int defaultValue) @trusted
                 v, defaultValue);
             return defaultValue;
     }
+}
+
+/// `true` when `ITB_LOCKBATCH` is set to a non-empty / non-`0` value.
+/// Triggers `Encryptor.setLockBatch(1)` on every encryptor. Inert
+/// unless Lock Soup is engaged via `ITB_LOCKSEED`.
+bool envLockBatch() @trusted
+{
+    string v = environment.get("ITB_LOCKBATCH", "");
+    return !(v.length == 0 || v == "0");
 }
 
 /// `true` when `ITB_LOCKSEED` is set to a non-empty / non-`0` value.

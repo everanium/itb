@@ -148,6 +148,20 @@ int getLockSoup() @trusted @nogc nothrow
     return ITB_GetLockSoup();
 }
 
+/// Enables (`mode = 1`) or disables (`mode = 0`) lock-batch mode
+/// process-wide. Per-chunk PRF batching for the Lock Soup overlay;
+/// inert unless Lock Soup is engaged. Same lifecycle rules as
+/// `setLockSoup`.
+void setLockBatch(int mode) @trusted
+{
+    check(ITB_SetLockBatch(mode));
+}
+
+int getLockBatch() @trusted @nogc nothrow
+{
+    return ITB_GetLockBatch();
+}
+
 /// Sets the worker-pool cap for parallelised cipher operations. `n` of
 /// 0 lets libitb pick (one worker per logical CPU); positive `n`
 /// caps at that count.

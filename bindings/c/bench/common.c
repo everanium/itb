@@ -57,6 +57,17 @@ int env_nonce_bits(int default_value) {
     return default_value;
 }
 
+int env_lock_batch(void) {
+    const char *v = getenv("ITB_LOCKBATCH");
+    if (v == NULL || v[0] == '\0') {
+        return 0;
+    }
+    if (strcmp(v, "0") == 0) {
+        return 0;
+    }
+    return 1;
+}
+
 int env_lock_seed(void) {
     const char *v = getenv("ITB_LOCKSEED");
     if (v == NULL || v[0] == '\0') {

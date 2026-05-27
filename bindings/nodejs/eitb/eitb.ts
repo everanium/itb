@@ -58,6 +58,7 @@ import {
   setBarrierFill,
   setBitSoup,
   setLockSoup,
+  setLockBatch,
   setMaxWorkers,
   setNonceBits,
   unwrapInPlace,
@@ -104,6 +105,7 @@ function buildEasy(macName: string | null, keyBits: number): Encryptor {
   enc.setBarrierFill(4);
   enc.setBitSoup(1);
   enc.setLockSoup(1);
+  enc.setLockBatch(1);
   return enc;
 }
 
@@ -120,6 +122,7 @@ function applyLowLevelConfig(): void {
   setBarrierFill(4);
   setBitSoup(1);
   setLockSoup(1);
+  setLockBatch(1);
 }
 
 function disposeSeeds(seeds: Seed[]): void {

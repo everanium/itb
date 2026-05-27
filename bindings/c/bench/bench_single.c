@@ -14,6 +14,8 @@
  *   make bench
  *   ./bench/build/bench_single
  *
+ *   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./bench/build/bench_single
+ *
  *   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/build/bench_single
  *
  *   ITB_BENCH_FILTER=blake3_encrypt ./bench/build/bench_single
@@ -102,12 +104,20 @@ static void ctx_free_all(void) {
 
 /* Apply the dedicated lockSeed slot when ITB_LOCKSEED is set. Easy
  * Mode auto-couples BitSoup + LockSoup as a side effect, so no
- * separate calls are issued. */
+ * separate calls are issued. When ITB_LOCKBATCH is also set, enable the
+ * Lock Batch performance Lock Soup mode on the same encryptor. */
 static void apply_lockseed_if_requested(itb_encryptor_t *enc) {
     if (env_lock_seed()) {
         itb_status_t s = itb_encryptor_set_lock_seed(enc, 1);
         if (s != ITB_OK) {
             fprintf(stderr, "set_lock_seed(1) failed: %s\n", itb_last_error());
+            abort();
+        }
+    }
+    if (env_lock_batch()) {
+        itb_status_t s = itb_encryptor_set_lock_batch(enc, 1);
+        if (s != ITB_OK) {
+            fprintf(stderr, "set_lock_batch(1) failed: %s\n", itb_last_error());
             abort();
         }
     }

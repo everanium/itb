@@ -65,7 +65,8 @@ binding rather than wrapping raw libitb directly.
 
 The dedicated lockSeed channel (`enc.set_lock_seed(1)` / `ITB_LOCKSEED=1`)
 auto-couples Bit Soup + Lock Soup. Numbers below run with all three overlays
-active.
+active. Adding `ITB_LOCKBATCH=1` (`enc.set_lock_batch(1)`) before
+`ITB_LOCKSEED=1` selects the Lock Batch performance variant of Lock Soup.
 
 ### ITB Single 1024-bit (security: P × 2^1024)
 

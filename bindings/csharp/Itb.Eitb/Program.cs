@@ -60,6 +60,7 @@ internal static class Program
         enc.SetBarrierFill(4);
         enc.SetBitSoup(1);
         enc.SetLockSoup(1);
+        enc.SetLockBatch(1);
         return enc;
     }
 
@@ -87,6 +88,7 @@ internal static class Program
         Library.BarrierFill = 4;
         Library.BitSoup = 1;
         Library.LockSoup = 1;
+        Library.LockBatch = 1;
     }
 
     // ----------------------------------------------------------------

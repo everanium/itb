@@ -237,6 +237,8 @@ extern int ITB_SetBitSoup(int mode);
 extern int ITB_GetBitSoup(void);
 extern int ITB_SetLockSoup(int mode);
 extern int ITB_GetLockSoup(void);
+extern int ITB_SetLockBatch(int mode);
+extern int ITB_GetLockBatch(void);
 extern int ITB_SetMaxWorkers(int n);
 extern int ITB_GetMaxWorkers(void);
 extern int ITB_SetNonceBits(int n);
@@ -295,6 +297,7 @@ extern int ITB_Easy_SetNonceBits(uintptr_t handle, int n);
 extern int ITB_Easy_SetBarrierFill(uintptr_t handle, int n);
 extern int ITB_Easy_SetBitSoup(uintptr_t handle, int mode);
 extern int ITB_Easy_SetLockSoup(uintptr_t handle, int mode);
+extern int ITB_Easy_SetLockBatch(uintptr_t handle, int mode);
 extern int ITB_Easy_SetLockSeed(uintptr_t handle, int mode);
 extern int ITB_Easy_SetChunkSize(uintptr_t handle, int n);
 
@@ -767,6 +770,20 @@ def set_lock_soup(mode: int) -> None:
 def get_lock_soup() -> int:
     """Returns the current process-global Lock Soup mode (0 / non-zero)."""
     return int(_lib.ITB_GetLockSoup())
+
+
+def set_lock_batch(mode: int) -> None:
+    """0 = off (default); non-zero = on. Process-global. Per-chunk PRF
+    batching for the Lock Soup overlay; same lifecycle rules as
+    :func:`set_lock_soup`; inert unless Lock Soup is engaged."""
+    rc = _lib.ITB_SetLockBatch(int(mode))
+    if rc != STATUS_OK:
+        _raise(rc)
+
+
+def get_lock_batch() -> int:
+    """Returns the current process-global Lock Batch mode (0 / non-zero)."""
+    return int(_lib.ITB_GetLockBatch())
 
 
 def set_max_workers(n: int) -> None:

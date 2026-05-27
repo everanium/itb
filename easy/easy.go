@@ -119,7 +119,7 @@ const (
 // undefined behaviour; reads are safe. Subsequent configuration
 // changes go through the [Encryptor.SetNonceBits],
 // [Encryptor.SetBarrierFill], [Encryptor.SetBitSoup],
-// [Encryptor.SetLockSoup], [Encryptor.SetLockSeed], and
+// [Encryptor.SetLockSoup], [Encryptor.SetLockBatch], [Encryptor.SetLockSeed], and
 // [Encryptor.SetChunkSize] methods, which mutate the encryptor's own
 // config copy without touching process globals or other encryptors.
 //
@@ -221,7 +221,7 @@ type Encryptor struct {
 	// alone does not distinguish "user set" from "snapshot of
 	// global"; the flags do. [Encryptor.Export] consults them to
 	// decide whether to emit the optional nonce_bits /
-	// barrier_fill / bit_soup / lock_soup fields in the blob.
+	// barrier_fill / bit_soup / lock_soup / lock_batch fields in the blob.
 	nonceBitsExplicit   bool
 	barrierFillExplicit bool
 	bitSoupExplicit     bool

@@ -14,6 +14,8 @@
 //   make bench
 //   ./bench/build/bench_triple
 //
+//   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./bench/build/bench_triple
+//
 //   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/build/bench_triple
 //
 //   ITB_BENCH_FILTER=blake3_encrypt ./bench/build/bench_triple
@@ -53,6 +55,11 @@ constexpr std::size_t kPayload   = bench::kPayload16MB;
 void apply_lockseed_if_requested(itb::Encryptor& enc) {
     if (bench::env_lock_seed()) {
         enc.set_lock_seed(1);
+    }
+    // When ITB_LOCKBATCH is also set, enable the Lock Batch performance
+    // Lock Soup mode on the same encryptor.
+    if (bench::env_lock_batch()) {
+        enc.set_lock_batch(1);
     }
 }
 

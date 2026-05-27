@@ -83,6 +83,7 @@ use itb::wrapper::{self, Cipher, UnwrapStreamReader, WrapStreamWriter};
 let mut enc = Encryptor::new(Some("areion512"), Some(1024), Some("hmac-blake3"), 1)?;
 enc.set_nonce_bits(512)?; enc.set_barrier_fill(4)?;
 enc.set_bit_soup(1)?; enc.set_lock_soup(1)?;
+enc.set_lock_batch(1)?;  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 let outer_key = wrapper::generate_key(cipher)?;
 
@@ -131,6 +132,7 @@ The "Alternative — User-Driven Loop" pattern: each chunk is one independent `e
 let mut enc = Encryptor::new(Some("areion512"), Some(1024), None, 1)?;
 enc.set_nonce_bits(512)?; enc.set_barrier_fill(4)?;
 enc.set_bit_soup(1)?; enc.set_lock_soup(1)?;
+enc.set_lock_batch(1)?;  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 let outer_key = wrapper::generate_key(cipher)?;
 let mut writer = WrapStreamWriter::new(cipher, &outer_key)?;
@@ -193,6 +195,7 @@ ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — 
 let mut enc = Encryptor::new(Some("areion512"), Some(2048), None, 1)?;
 enc.set_nonce_bits(512)?; enc.set_barrier_fill(4)?;
 enc.set_bit_soup(1)?; enc.set_lock_soup(1)?;
+enc.set_lock_batch(1)?;  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 let mut encrypted = enc.encrypt(&plaintext)?;
 
@@ -218,6 +221,7 @@ ITB Call: `enc.encrypt_auth` / `enc.decrypt_auth`. Wrap shape: `wrap` (or `wrap_
 let mut enc = Encryptor::new(Some("areion512"), Some(2048), Some("hmac-blake3"), 1)?;
 enc.set_nonce_bits(512)?; enc.set_barrier_fill(4)?;
 enc.set_bit_soup(1)?; enc.set_lock_soup(1)?;
+enc.set_lock_batch(1)?;  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 let mut encrypted = enc.encrypt_auth(&plaintext)?;
 

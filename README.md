@@ -393,7 +393,7 @@ mutations on a Config that other goroutines are reading must be
 serialised by the caller.
 
 **Caveat — Process-wide `itb.Set*` setters (`SetNonceBits` /
-`SetBarrierFill` / `SetMaxWorkers` / `SetBitSoup` / `SetLockSoup`)
+`SetBarrierFill` / `SetMaxWorkers` / `SetBitSoup` / `SetLockSoup` / `SetLockBatch`)
 are atomic and safe to call from any goroutine. Atomic, but not logically
 race-free.** Each setter performs a single `atomic.Int32.Store`, so
 concurrent setter calls race-free by themselves; but mutating any of
@@ -435,7 +435,7 @@ The closest relative is SP 800-108 feedback mode, which also chains the previous
 
 **What ChainHash does and does not include.** ChainHash returns the full native-width block — the complete `(hLo, hHi)` pair at 128-bit, the full `[4]uint64` at 256-bit, the full `[8]uint64` at 512-bit. The narrowing to 64 bits is **not** part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, and the optional **Lock Soup** permutation overlay likewise keys its per-chunk step from the low word only. So the 50 % / 25 % / 12.5 % output narrowing at 128 / 256 / 512-bit (see [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security)) is an encoder-layer and overlay-layer choice layered on top of ChainHash, not a property of ChainHash itself.
 
-Discarding the upper bits is a conservative defense-in-depth margin, not a security requirement: under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits, so the discarded portion carries no information the encoder needs. Empirically, deliberately weak non-cryptographic primitives plugged into ChainHash have their documented biases neutralised on the attacker-observable ciphertext surface and, at minimum ITB deployment (ChainHash with four rounds), resist SAT/SMT seed recovery at the tested budgets — the hi-half discard and the round feedforward are among the contributing barriers (characterised primitive by primitive, at rounds = 1 vs rounds ≥ 2, in [HARNESS.md §3.4](HARNESS.md#34-axis-c--sat-kpa-seed-recovery-resistance)). Lock Soup makes the point concrete: it keys a single PRF call per 24-bit chunk (the per-chunk mask call, distinct from the once-per-nonce ChainHash that derives the lock seed) and currently reads only the low word of that call's output. A planned `SetLockBatch(1)` mode will instead consume the full native-width output of that per-chunk call — one mask per 64-bit lane, so **2 / 4 / 8** masks from a single call at 128 / 256 / 512-bit native width — cutting the per-mask call count by the same factor while keeping formal PRF-conditional security. That mode is not yet shipped; the current overlay derives one mask per call from the low word.
+Discarding the upper bits is a conservative defense-in-depth margin, not a security requirement: under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits, so the discarded portion carries no information the encoder needs. Empirically, deliberately weak non-cryptographic primitives plugged into ChainHash have their documented biases neutralised on the attacker-observable ciphertext surface and, at minimum ITB deployment (ChainHash with four rounds), resist SAT/SMT seed recovery at the tested budgets — the hi-half discard and the round feedforward are among the contributing barriers (characterised primitive by primitive, at rounds = 1 vs rounds ≥ 2, in [HARNESS.md §3.4](HARNESS.md#34-axis-c--sat-kpa-seed-recovery-resistance)). Lock Soup makes the point concrete: it keys a single PRF call per 24-bit chunk (the per-chunk mask call, distinct from the once-per-nonce ChainHash that derives the lock seed) and by default reads only the low word of that call's output. The opt-in `SetLockBatch(1)` mode instead consumes the full native-width output of that per-chunk call — one mask per 64-bit lane, so **2 / 4 / 8** masks from a single call at 128 / 256 / 512-bit native width — cutting the per-mask call count by the same factor while keeping formal PRF-conditional security.
 
 ## Streaming AEAD
 
@@ -502,6 +502,7 @@ func main() {
     enc.SetBarrierFill(4)            // CSPRNG fill margin
     enc.SetBitSoup(1)                // bit-level split
     enc.SetLockSoup(1)               // Insane Interlocked Mode
+    enc.SetLockBatch(1)              // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -571,6 +572,7 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The batched arm wires the AVX-512 +
@@ -661,6 +663,7 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -729,6 +732,7 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -807,6 +811,7 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The batched arm wires the AVX-512 +
@@ -891,6 +896,7 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The batched arm wires the AVX-512 +
@@ -1017,6 +1023,11 @@ func main() {
     enc.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
                             // bit-permutation overlay on top of bit-soup;
                             // auto-enabled for Single Ouroboros if SetBitSoup(1) is on
+    enc.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
     //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
                             // derivation channel — separates that PRF's keying material
@@ -1107,12 +1118,13 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
+    dec.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
     // Restore PRF keys, seed components, MAC key, and the per-instance
     // configuration overrides (nonce_bits / barrier_fill / bit_soup /
-    // lock_soup / lock_seed) from the saved blob.
+    // lock_soup / lock_batch / lock_seed) from the saved blob.
     if err := dec.Import(blob); err != nil {
         panic(err)
     }
@@ -1168,6 +1180,7 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
                             // derivation channel — auto-couples SetLockSoup(1) +
@@ -1243,6 +1256,7 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
+    dec.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
@@ -1303,6 +1317,7 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
     //enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples LockSoup +
                             // BitSoup. Adds one extra seed slot. Must be called
@@ -1370,6 +1385,7 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
+    dec.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
@@ -1565,6 +1581,11 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -1662,7 +1683,7 @@ func main() {
     // var wire, blob, outerKey []byte = ..., ..., ...
 
     // Restore everything from the blob — Blob512.Import applies the
-    // sender's NonceBits / BarrierFill / BitSoup / LockSoup globals
+    // sender's NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch globals
     // unconditionally, then populates Mode + KeyN / KeyD / KeyS /
     // KeyL plus NS / DS / SS / LS with .Components filled in. Hash
     // and BatchHash on the seeds stay nil — caller wires them from
@@ -1737,6 +1758,11 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -1901,6 +1927,11 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
     // Four independent CSPRNG-keyed BLAKE2b-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -2054,6 +2085,11 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
     // SipHash-2-4 has no internal fixed key — the seed components themselves
     // are the entire keying material. Three independent factory calls paired
@@ -2135,6 +2171,10 @@ itb.SetBitSoup(1)       // optional mode: bit-level split ("bit soup"), opt-in S
 // Most secure bit-permutation mode with performance trade-off ~2×-7× slower
 itb.SetLockSoup(1)      // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
                         // automatically engages itb.SetBitSoup(1)
+itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended in every case
+                        // when the configured hash is PRF-grade, since security is preserved under
+                        // the PRF assumption while throughput rises. Symmetric option — set
+                        // identically on the encrypt and decrypt sides.
 
 // Eight independent CSPRNG-keyed Areion-SoEM-512 paired closures
 // (1 noise + 3 data + 3 start + 1 lock).
@@ -2334,6 +2374,11 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
+    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
 
     // Four independent CSPRNG-keyed Areion-SoEM-256 paired closures

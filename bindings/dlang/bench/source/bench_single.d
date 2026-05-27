@@ -13,6 +13,7 @@
 /// dub build :single --compiler=dmd --build=release
 /// ./bench/bin/itb-bench-single
 ///
+/// ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./bench/bin/itb-bench-single
 /// ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/bin/itb-bench-single
 ///
 /// ITB_BENCH_FILTER=blake3_encrypt ./bench/bin/itb-bench-single
@@ -33,6 +34,7 @@ import bench.common :
     BenchFn,
     PAYLOAD_16MB,
     PRIMITIVES_CANONICAL,
+    envLockBatch,
     envLockSeed,
     envNonceBits,
     randomBytes,
@@ -69,6 +71,14 @@ private void applyLockSeedIfRequested(Encryptor* enc) @trusted
         enc.setLockSeed(1);
 }
 
+/// Apply the Lock Batch performance mode when `ITB_LOCKBATCH` is set.
+/// Inert unless Lock Soup is engaged via `ITB_LOCKSEED`.
+private void applyLockBatchIfRequested(Encryptor* enc) @trusted
+{
+    if (envLockBatch())
+        enc.setLockBatch(1);
+}
+
 /// Construct a single-primitive 1024-bit Single-Ouroboros encryptor
 /// with HMAC-BLAKE3 authentication. Stored on the heap-resident
 /// registry so the closure can reach it through a stable pointer.
@@ -77,6 +87,7 @@ private EncBox* buildSingle(string primitive) @trusted
     auto box = new EncBox;
     box.enc = Encryptor(primitive, KEY_BITS, MAC_NAME, 1);
     applyLockSeedIfRequested(&box.enc);
+    applyLockBatchIfRequested(&box.enc);
     _encryptorRegistry ~= box;
     return box;
 }
@@ -297,6 +308,7 @@ private EncBox* buildStreamSingleEasy() @trusted
     auto box = new EncBox;
     box.enc = Encryptor(STREAM_PRIMITIVE, KEY_BITS, MAC_NAME, 1);
     applyLockSeedIfRequested(&box.enc);
+    applyLockBatchIfRequested(&box.enc);
     _encryptorRegistry ~= box;
     return box;
 }

@@ -78,6 +78,7 @@ under-report throughput.
 | Variable             | Default | Purpose |
 |----------------------|---------|---------|
 | `ITB_NONCE_BITS`     | `128`   | Process-wide nonce width — `128`, `256`, or `512`. Maps to `Library.NonceBits` before any `Encryptor` is constructed. Mirrors `ITB_NONCE_BITS` from `bitbyte_test.go`. |
+| `ITB_LOCKBATCH`      | unset   | Non-empty / non-`0` enables Lock Batch (performance Lock Soup mode); set with `ITB_LOCKSEED`. Every encryptor additionally calls `Encryptor.SetLockBatch(1)`. Inert unless Lock Soup is engaged via `ITB_LOCKSEED`. |
 | `ITB_LOCKSEED`       | unset   | When set to a non-empty / non-`0` value, every encryptor in the run calls `Encryptor.SetLockSeed(1)` AND `Library.LockSoup` is set to `1` at start. Easy Mode auto-couples `SetBitSoup(1)` + `SetLockSoup(1)`, so no separate flags are needed. The mixed-primitive cases attach a dedicated lockSeed primitive (via `primL`) only under this flag; otherwise `primL` is `null` so the no-LockSeed bench arm measures the plain mixed-primitive cost. |
 | `ITB_BENCH_FILTER`   | unset   | Case-insensitive substring filter on bench-case names — only cases whose name contains the filter are run. Useful when iterating on one primitive / op. |
 | `ITB_BENCH_MIN_SEC`  | `5.0`   | Minimum measured wall-clock seconds per case. The runner keeps doubling iteration count until the measured batch reaches the threshold, mirroring Go's `-benchtime=Ns`. The 5-second default absorbs the cold-cache / warm-up transient that distorts shorter measurement windows on the 16 MiB encrypt / decrypt path. |
@@ -94,9 +95,12 @@ dotnet run --project Itb.Bench -c Release -- single
 ```
 
 512-bit nonces with the dedicated lockSeed channel + auto-coupled
-overlay:
+overlay (the `ITB_LOCKBATCH=1` form selects the Lock Batch performance
+variant of Lock Soup):
 
 ```bash
+ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 \
+    dotnet run --project Itb.Bench -c Release -- triple
 ITB_NONCE_BITS=512 ITB_LOCKSEED=1 \
     dotnet run --project Itb.Bench -c Release -- triple
 ```

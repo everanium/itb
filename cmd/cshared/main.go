@@ -697,6 +697,12 @@ func ITB_SetLockSoup(mode C.int) C.int { return C.int(capi.SetLockSoup(int(mode)
 //export ITB_GetLockSoup
 func ITB_GetLockSoup() C.int { return C.int(capi.GetLockSoup()) }
 
+//export ITB_SetLockBatch
+func ITB_SetLockBatch(mode C.int) C.int { return C.int(capi.SetLockBatch(int(mode))) }
+
+//export ITB_GetLockBatch
+func ITB_GetLockBatch() C.int { return C.int(capi.GetLockBatch()) }
+
 //export ITB_SetMaxWorkers
 func ITB_SetMaxWorkers(n C.int) C.int { return C.int(capi.SetMaxWorkers(int(n))) }
 
@@ -959,6 +965,11 @@ func ITB_Easy_SetBitSoup(handle C.uintptr_t, mode C.int) C.int {
 //export ITB_Easy_SetLockSoup
 func ITB_Easy_SetLockSoup(handle C.uintptr_t, mode C.int) C.int {
 	return C.int(capi.EasySetLockSoup(capi.EasyHandleID(handle), int(mode)))
+}
+
+//export ITB_Easy_SetLockBatch
+func ITB_Easy_SetLockBatch(handle C.uintptr_t, mode C.int) C.int {
+	return C.int(capi.EasySetLockBatch(capi.EasyHandleID(handle), int(mode)))
 }
 
 // 0 = off; 1 = on (allocates a dedicated lockSeed and routes the

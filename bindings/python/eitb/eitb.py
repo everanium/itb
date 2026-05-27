@@ -98,6 +98,7 @@ def run_aead_easy_io(cipher_name: str, plaintext: bytes):
     enc.set_barrier_fill(4)
     enc.set_bit_soup(1)
     enc.set_lock_soup(1)
+    enc.set_lock_batch(1)
 
     outer_key = wrapper.generate_key(cipher_name)
 
@@ -140,6 +141,7 @@ def run_aead_lowlevel_io(cipher_name: str, plaintext: bytes):
     itb.set_barrier_fill(4)
     itb.set_bit_soup(1)
     itb.set_lock_soup(1)
+    itb.set_lock_batch(1)
 
     seeds = _seeds_512(3)
     mac_key = secrets.token_bytes(32)
@@ -187,6 +189,7 @@ def run_noaead_easy_userloop(cipher_name: str, plaintext: bytes):
     enc.set_barrier_fill(4)
     enc.set_bit_soup(1)
     enc.set_lock_soup(1)
+    enc.set_lock_batch(1)
 
     outer_key = wrapper.generate_key(cipher_name)
 
@@ -238,6 +241,7 @@ def run_noaead_lowlevel_userloop(cipher_name: str, plaintext: bytes):
     itb.set_barrier_fill(4)
     itb.set_bit_soup(1)
     itb.set_lock_soup(1)
+    itb.set_lock_batch(1)
 
     seeds = _seeds_512(3)
     outer_key = wrapper.generate_key(cipher_name)
@@ -292,6 +296,7 @@ def run_message_easy_nomac(cipher_name: str, plaintext: bytes):
     enc.set_barrier_fill(4)
     enc.set_bit_soup(1)
     enc.set_lock_soup(1)
+    enc.set_lock_batch(1)
 
     outer_key = wrapper.generate_key(cipher_name)
 
@@ -329,6 +334,7 @@ def run_message_easy_auth(cipher_name: str, plaintext: bytes):
     enc.set_barrier_fill(4)
     enc.set_bit_soup(1)
     enc.set_lock_soup(1)
+    enc.set_lock_batch(1)
 
     outer_key = wrapper.generate_key(cipher_name)
 
@@ -364,6 +370,7 @@ def run_message_lowlevel_nomac(cipher_name: str, plaintext: bytes):
     itb.set_barrier_fill(4)
     itb.set_bit_soup(1)
     itb.set_lock_soup(1)
+    itb.set_lock_batch(1)
 
     seeds = [itb.Seed("areion512", 2048) for _ in range(3)]
     outer_key = wrapper.generate_key(cipher_name)
@@ -400,6 +407,7 @@ def run_message_lowlevel_auth(cipher_name: str, plaintext: bytes):
     itb.set_barrier_fill(4)
     itb.set_bit_soup(1)
     itb.set_lock_soup(1)
+    itb.set_lock_batch(1)
 
     seeds = [itb.Seed("areion512", 2048) for _ in range(3)]
     mac_key = secrets.token_bytes(32)

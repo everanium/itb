@@ -8,14 +8,15 @@
  * FILE* / file-like wrapper writer / reader pair for Non-AEAD
  * streaming).
  *
- * Total sub-bench count: **102**.
+ * The outer-cipher palette covers all 9 ciphers in
+ * PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
+ * blake2b512, blake2s, blake3, aescmac, siphash24, chacha20):
  *
- *   - Wrapper Only round-trip (16 MiB blob)              :  6
- *     ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
- *   - Message Single — 4 modes × 3 ciphers × 2 dirs      : 24
- *   - Message Triple — 4 modes × 3 ciphers × 2 dirs      : 24
- *   - Streaming Single — 4 modes × 3 ciphers × 2 dirs    : 24
- *   - Streaming Triple — 4 modes × 3 ciphers × 2 dirs    : 24
+ *   - Wrapper Only round-trip (16 MiB blob)              : 2 variants {Wrap, WrapInPlace} per cipher
+ *   - Message Single — 4 modes × 2 dirs per cipher
+ *   - Message Triple — 4 modes × 2 dirs per cipher
+ *   - Streaming Single — 4 modes × 2 dirs per cipher
+ *   - Streaming Triple — 4 modes × 2 dirs per cipher
  *
  * 4 message modes: easy-nomac / easy-auth / lowlevel-nomac /
  * lowlevel-auth.
@@ -50,13 +51,25 @@
 
 /* ----- Configuration ------------------------------------------------ */
 
+/* Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+ * (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+ * aescmac, siphash24, chacha20). */
 static const itb_wrapper_cipher_t CIPHERS[] = {
+    ITB_WRAPPER_CIPHER_AREION_256,
+    ITB_WRAPPER_CIPHER_AREION_512,
+    ITB_WRAPPER_CIPHER_BLAKE2B_256,
+    ITB_WRAPPER_CIPHER_BLAKE2B_512,
+    ITB_WRAPPER_CIPHER_BLAKE2S,
+    ITB_WRAPPER_CIPHER_BLAKE3,
     ITB_WRAPPER_CIPHER_AES_128_CTR,
-    ITB_WRAPPER_CIPHER_CHACHA20,
     ITB_WRAPPER_CIPHER_SIPHASH24,
+    ITB_WRAPPER_CIPHER_CHACHA20,
 };
-static const char *const CIPHER_NAMES[] = { "aescmac", "chacha20", "siphash24" };
-#define CIPHER_COUNT 3
+static const char *const CIPHER_NAMES[] = {
+    "areion256", "areion512", "blake2b256", "blake2b512", "blake2s",
+    "blake3", "aescmac", "siphash24", "chacha20",
+};
+#define CIPHER_COUNT 9
 
 #define WRAPPER_PAYLOAD_BYTES BENCH_PAYLOAD_16MB
 #define MESSAGE_PAYLOAD_BYTES BENCH_PAYLOAD_16MB
@@ -849,7 +862,9 @@ static bench_case_t make_stream_decrypt_case(int mode, int auth,
 
 /* ----- Case-list assembly ------------------------------------------ */
 
-#define TOTAL_CASES 102
+/* 34 sub-benches per cipher (2 wrapper only + 16 message + 16
+ * streaming) × 9 ciphers = 306. */
+#define TOTAL_CASES (34 * CIPHER_COUNT)
 
 static size_t build_cases(bench_case_t *cases)
 {
@@ -934,9 +949,9 @@ int main(void)
     }
 
     printf("# wrapper bench primitive=%s key_bits=%d mac=%s "
-           "ciphers=3 cases=%d nonce_bits=%d workers=auto\n",
+           "ciphers=%d cases=%d nonce_bits=%d workers=auto\n",
            BENCH_PRIMITIVE, BENCH_KEY_BITS, BENCH_MAC_NAME,
-           TOTAL_CASES, nonce_bits);
+           CIPHER_COUNT, TOTAL_CASES, nonce_bits);
     fflush(stdout);
 
     bench_case_t cases[TOTAL_CASES];

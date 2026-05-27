@@ -28,8 +28,13 @@ Reproduction (from `bindings/fortran/`):
 ./build.sh            # builds libitb.so + the binding's src tree
 make bench            # builds bench/bin/itb-bench-{single,triple}
 ./run_bench.sh        # full 4-pass canonical sweep
+ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./run_bench.sh   # Lock Batch performance variant
 ITB_LOCKSEED=1 ./run_bench.sh   # equivalent to passes 3 + 4 alone
 ```
+
+The `ITB_LOCKSEED=1 ITB_LOCKBATCH=1` line selects the Lock Batch
+performance variant of Lock Soup; the `ITB_LOCKSEED=1` line retains
+the baseline Lock Soup arm.
 
 Pass `FC=ifx` to drive Intel's compiler instead of gfortran:
 

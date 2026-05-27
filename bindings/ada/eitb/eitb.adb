@@ -228,6 +228,7 @@ procedure Eitb is
          Itb.Encryptor.Set_Barrier_Fill (E, 4);
          Itb.Encryptor.Set_Bit_Soup (E, 1);
          Itb.Encryptor.Set_Lock_Soup (E, 1);
+         Itb.Encryptor.Set_Lock_Batch (E, 1);
       end return;
    end Build_Easy;
 
@@ -237,6 +238,7 @@ procedure Eitb is
       Itb.Set_Barrier_Fill (4);
       Itb.Set_Bit_Soup (1);
       Itb.Set_Lock_Soup (1);
+      Itb.Set_Lock_Batch (1);
    end Apply_Low_Level_Config;
 
    ---------------------------------------------------------------------

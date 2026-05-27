@@ -12,6 +12,7 @@
 !   make bench
 !   ./bench/bin/itb-bench-triple
 !
+!   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./bench/bin/itb-bench-triple
 !   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/bin/itb-bench-triple
 !
 !   ITB_BENCH_FILTER=blake3_encrypt ./bench/bin/itb-bench-triple
@@ -88,7 +89,8 @@ program bench_triple
   use itb_encryptor, only: itb_encryptor_t, new_itb_encryptor, &
                            itb_encryptor_mixed_triple
   use bench_common,  only: PAYLOAD_16MB, PRIMITIVES_CANONICAL, &
-                           PRIMITIVES_CANONICAL_LEN, env_lock_seed, &
+                           PRIMITIVES_CANONICAL_LEN, env_lock_batch, &
+                           env_lock_seed, &
                            env_nonce_bits, random_bytes, run_all, &
                            bench_case_t
   use bench_triple_state, only: cases_state, alloc_state, state_destroy_all
@@ -140,6 +142,13 @@ contains
     if (env_lock_seed()) call enc%set_lock_seed(1)
   end subroutine
 
+  ! Apply the Lock Batch performance mode when ITB_LOCKBATCH is set.
+  ! Inert unless Lock Soup is engaged via ITB_LOCKSEED.
+  subroutine apply_lockbatch_if_requested(enc)
+    type(itb_encryptor_t), intent(inout) :: enc
+    if (env_lock_batch()) call enc%set_lock_batch(1)
+  end subroutine
+
   ! Construct a single-primitive 1024-bit Triple Ouroboros encryptor
   ! with HMAC-BLAKE3 authentication (mode = 3, 7 seed slots).
   subroutine build_triple_enc(idx, primitive)
@@ -147,6 +156,7 @@ contains
     character(*), intent(in) :: primitive
     call new_itb_encryptor(cases_state(idx)%enc, primitive, KEY_BITS, MAC_NAME, 3)
     call apply_lockseed_if_requested(cases_state(idx)%enc)
+    call apply_lockbatch_if_requested(cases_state(idx)%enc)
   end subroutine
 
   ! Construct a mixed-primitive Triple Ouroboros encryptor across
@@ -165,6 +175,7 @@ contains
                                        MIXED_START1, MIXED_START2, MIXED_START3, &
                                        KEY_BITS, MAC_NAME)
     end if
+    call apply_lockbatch_if_requested(cases_state(idx)%enc)
   end subroutine
 
   subroutine fill_payload(idx)

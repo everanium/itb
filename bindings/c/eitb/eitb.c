@@ -201,6 +201,7 @@ static int apply_global_knobs(void)
     if (itb_set_barrier_fill(4) != ITB_OK) return -1;
     if (itb_set_bit_soup(1) != ITB_OK) return -1;
     if (itb_set_lock_soup(1) != ITB_OK) return -1;
+    if (itb_set_lock_batch(1) != ITB_OK) return -1;
     return 0;
 }
 
@@ -217,6 +218,7 @@ static int make_easy_encryptor(int with_mac, int key_bits, itb_encryptor_t **out
     if (itb_encryptor_set_barrier_fill(*out, 4) != ITB_OK) return -1;
     if (itb_encryptor_set_bit_soup(*out, 1) != ITB_OK) return -1;
     if (itb_encryptor_set_lock_soup(*out, 1) != ITB_OK) return -1;
+    if (itb_encryptor_set_lock_batch(*out, 1) != ITB_OK) return -1;
     return 0;
 }
 

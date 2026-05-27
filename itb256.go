@@ -583,7 +583,7 @@ func containerSizeAuth3_256Cfg(cfg *Config, noiseSeed *Seed256, dataSeed1, dataS
 // Encrypt256Cfg is the Cfg variant of [Encrypt256]: threads cfg through
 // generateNonceCfg, the PRF builder, splitForSingleCfg, the container-
 // sizing helper, process256Cfg, and headerSizeCfg so per-encryptor
-// NonceBits / BarrierFill / BitSoup / LockSoup / LockSeed overrides
+// NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch / LockSeed overrides
 // are honoured. Body otherwise identical to Encrypt256, including
 // every error-path message and the COBS-plus-null-fill payload layout.
 func Encrypt256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, data []byte) ([]byte, error) {

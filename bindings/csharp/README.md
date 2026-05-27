@@ -468,6 +468,11 @@ enc.SetBitSoup(1);        // optional bit-level split ("bit-soup"; default: 0 = 
 enc.SetLockSoup(1);       // optional Insane Interlocked Mode: per-chunk PRF-keyed
                           // bit-permutation overlay on top of bit-soup;
                           // auto-enabled for Single Ouroboros if SetBitSoup(1) is on
+enc.SetLockBatch(1);      // Lock Batch is the performance Lock Soup mode: recommended
+                          // in every case when the configured hash is PRF-grade, since
+                          // security is preserved under the PRF assumption while
+                          // throughput rises. Symmetric option — set identically on
+                          // the encrypt and decrypt sides.
 
 // enc.SetLockSeed(1);    // optional dedicated lockSeed for the bit-permutation
                           // derivation channel — separates that PRF's keying
@@ -539,10 +544,11 @@ dec.SetNonceBits(512);
 dec.SetBarrierFill(4);
 dec.SetBitSoup(1);
 dec.SetLockSoup(1);
+dec.SetLockBatch(1);      // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 // Restore PRF keys, seed components, MAC key, and the per-instance
 // configuration overrides (NonceBits / BarrierFill / BitSoup /
-// LockSoup / LockSeed) from the saved blob.
+// LockSoup / LockBatch / LockSeed) from the saved blob.
 dec.Import(blob);
 
 // Strip the leading nonce, unwrap the body, then decrypt.
@@ -738,6 +744,11 @@ Library.LockSoup = 1;       // optional Insane Interlocked Mode: per-chunk PRF-k
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // Library.BitSoup = 1 or vice versa
+Library.LockBatch = 1;      // Lock Batch is the performance Lock Soup mode: recommended
+                            // in every case when the configured hash is PRF-grade, since
+                            // security is preserved under the PRF assumption while
+                            // throughput rises. Symmetric option — set identically on
+                            // the encrypt and decrypt sides.
 
 // Three independent CSPRNG-keyed Areion-SoEM-512 seeds. Each Seed
 // pre-keys its primitive once at construction; the C ABI / FFI
@@ -1029,6 +1040,7 @@ all-CPUs default.
 | `Library.BarrierFill` | 1, 2, 4, 8, 16, 32 | 1 | yes (`BadInput` on miss) |
 | `Library.BitSoup` | 0 (off), non-zero (on) | 0 | forwarded |
 | `Library.LockSoup` | 0 (off), non-zero (on) | 0 | forwarded |
+| `Library.LockBatch` | 0 (off), non-zero (on) | 0 | forwarded |
 
 Read-only properties: `Library.MaxKeyBits`, `Library.Channels`,
 `Library.HeaderSize`, `Library.Version`.
@@ -1049,7 +1061,7 @@ MAC names available via `Library.ListMacs()`: `kmac256`,
 The libitb shared library exposes process-wide configuration
 through a small set of atomics (`Library.NonceBits`,
 `Library.BarrierFill`, `Library.BitSoup`, `Library.LockSoup`,
-`Library.MaxWorkers`). Multiple threads calling these setters
+`Library.LockBatch`, `Library.MaxWorkers`). Multiple threads calling these setters
 concurrently without external coordination will race for the
 final value visible to subsequent encrypt / decrypt calls —
 serialise the mutators behind a `lock` (or set them once at
@@ -1208,6 +1220,7 @@ Every public symbol lives in the `Itb` namespace. The wrapper
 |---|---|
 | `Library.BitSoup { get; set; }` | Bit Soup mode toggle |
 | `Library.LockSoup { get; set; }` | Lock Soup mode toggle |
+| `Library.LockBatch { get; set; }` | Lock Batch mode toggle (performance variant of Lock Soup; recommended under the PRF assumption; symmetric; inert unless Lock Soup is engaged) |
 | `Library.MaxWorkers { get; set; }` | Worker pool cap |
 | `Library.NonceBits { get; set; }` | Nonce width (128 / 256 / 512) |
 | `Library.BarrierFill { get; set; }` | Barrier-fill factor |
@@ -1239,7 +1252,7 @@ Every public symbol lives in the `Itb` namespace. The wrapper
 | `new Encryptor(primitive, keyBits, mac=null, mode="single")` | Single-primitive constructor |
 | `Encryptor.Mixed(primitives, keyBits, mac=null)` / `Encryptor.Mixed3(primitives, keyBits, mac=null)` | Mixed-primitive Single / Triple |
 | `enc.Encrypt(pt) / Decrypt(ct) / EncryptAuth(pt) / DecryptAuth(ct)` | Cipher entry points |
-| `enc.SetNonceBits / SetBarrierFill / SetBitSoup / SetLockSoup / SetLockSeed / SetChunkSize` | Per-instance setters |
+| `enc.SetNonceBits / SetBarrierFill / SetBitSoup / SetLockSoup / SetLockBatch / SetLockSeed / SetChunkSize` | Per-instance setters |
 | `enc.Primitive / KeyBits / Mode / MacName / SeedCount / NonceBits / HeaderSize / IsMixed / HasPRFKeys / PrimitiveAt(slot)` | Accessors |
 | `enc.PRFKey(slot) / MacKey() / SeedComponents(slot) / ParseChunkLen(header)` | Key-material + per-instance chunk-length parser |
 | `enc.Export() / Import(blob)` | State-blob persistence |

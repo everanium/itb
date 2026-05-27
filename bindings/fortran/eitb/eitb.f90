@@ -358,6 +358,7 @@ contains
     call enc%set_barrier_fill(4)
     call enc%set_bit_soup(1)
     call enc%set_lock_soup(1)
+    call enc%set_lock_batch(1)
   end subroutine
 
   ! ----------------------------------------------------------------
@@ -555,6 +556,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 1024)
     call new_itb_seed(data_seed,  "areion512", 1024)
@@ -870,6 +872,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 1024)
     call new_itb_seed(data_seed,  "areion512", 1024)
@@ -1179,6 +1182,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 2048)
     call new_itb_seed(data_seed,  "areion512", 2048)
@@ -1253,6 +1257,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 2048)
     call new_itb_seed(data_seed,  "areion512", 2048)

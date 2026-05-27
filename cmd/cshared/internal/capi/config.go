@@ -30,6 +30,13 @@ func SetLockSoup(mode int) Status {
 
 func GetLockSoup() int { return int(itb.GetLockSoup()) }
 
+func SetLockBatch(mode int) Status {
+	itb.SetLockBatch(int32(mode))
+	return StatusOK
+}
+
+func GetLockBatch() int { return int(itb.GetLockBatch()) }
+
 func SetMaxWorkers(n int) Status {
 	itb.SetMaxWorkers(n)
 	return StatusOK

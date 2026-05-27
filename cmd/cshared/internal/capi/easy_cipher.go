@@ -14,7 +14,7 @@ import (
 // StatusBufferTooSmall.
 //
 // The encryptor's per-instance Config snapshot (BitSoup, LockSoup,
-// LockSeed, NonceBits, BarrierFill, ChunkSize) is consumed
+// LockBatch, LockSeed, NonceBits, BarrierFill, ChunkSize) is consumed
 // automatically — process-wide setters do not affect a constructed
 // encryptor, which is the whole point of the easy package.
 func EasyEncrypt(id EasyHandleID, plaintext, out []byte) (n int, st Status) {

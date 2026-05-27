@@ -27,9 +27,14 @@ Reproduction (from `bindings/c/`):
 
 ```bash
 make bench
-./run_bench.sh                  # full 4-pass canonical sweep
-ITB_LOCKSEED=1 ./run_bench.sh   # equivalent to passes 3 + 4 alone
+./run_bench.sh                                # full 4-pass canonical sweep
+ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./run_bench.sh # Lock Batch performance variant
+ITB_LOCKSEED=1 ./run_bench.sh                 # equivalent to passes 3 + 4 alone
 ```
+
+The `ITB_LOCKSEED=1 ITB_LOCKBATCH=1` line selects the Lock Batch
+performance variant of Lock Soup (the preferred arm); plain
+`ITB_LOCKSEED=1` retains the baseline Lock Soup arm.
 
 ## FFI overhead vs. native Go
 
