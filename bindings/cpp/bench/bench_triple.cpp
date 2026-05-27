@@ -89,19 +89,11 @@ std::unique_ptr<itb::Encryptor> build_mixed_triple() {
     return enc;
 }
 
-std::vector<std::unique_ptr<itb::Encryptor>>& encryptor_registry() {
-    static std::vector<std::unique_ptr<itb::Encryptor>> reg;
-    return reg;
-}
+// ----- Per-case constructors (factory-friendly, each builds own Encryptor)
 
-itb::Encryptor* register_encryptor(std::unique_ptr<itb::Encryptor> enc) {
-    encryptor_registry().push_back(std::move(enc));
-    return encryptor_registry().back().get();
-}
-
-// ----- Per-case constructors --------------------------------------
-
-bench::BenchCase make_encrypt_case(std::string name, itb::Encryptor* enc) {
+bench::BenchCase make_encrypt_case(std::string name,
+                                   std::unique_ptr<itb::Encryptor> enc_owner) {
+    auto enc = std::shared_ptr<itb::Encryptor>(std::move(enc_owner));
     auto payload = std::make_shared<std::vector<std::uint8_t>>(
         bench::random_bytes_vec(kPayload));
     bench::BenchFn run = [enc, payload](std::uint64_t iters) {
@@ -112,7 +104,9 @@ bench::BenchCase make_encrypt_case(std::string name, itb::Encryptor* enc) {
     return bench::BenchCase{std::move(name), std::move(run), kPayload};
 }
 
-bench::BenchCase make_decrypt_case(std::string name, itb::Encryptor* enc) {
+bench::BenchCase make_decrypt_case(std::string name,
+                                   std::unique_ptr<itb::Encryptor> enc_owner) {
+    auto enc = std::shared_ptr<itb::Encryptor>(std::move(enc_owner));
     auto payload = bench::random_bytes_vec(kPayload);
     auto ciphertext = std::make_shared<std::vector<std::uint8_t>>(
         enc->encrypt(payload.data(), payload.size()));
@@ -125,7 +119,8 @@ bench::BenchCase make_decrypt_case(std::string name, itb::Encryptor* enc) {
 }
 
 bench::BenchCase make_encrypt_auth_case(std::string name,
-                                        itb::Encryptor* enc) {
+                                        std::unique_ptr<itb::Encryptor> enc_owner) {
+    auto enc = std::shared_ptr<itb::Encryptor>(std::move(enc_owner));
     auto payload = std::make_shared<std::vector<std::uint8_t>>(
         bench::random_bytes_vec(kPayload));
     bench::BenchFn run = [enc, payload](std::uint64_t iters) {
@@ -137,7 +132,8 @@ bench::BenchCase make_encrypt_auth_case(std::string name,
 }
 
 bench::BenchCase make_decrypt_auth_case(std::string name,
-                                        itb::Encryptor* enc) {
+                                        std::unique_ptr<itb::Encryptor> enc_owner) {
+    auto enc = std::shared_ptr<itb::Encryptor>(std::move(enc_owner));
     auto payload = bench::random_bytes_vec(kPayload);
     auto ciphertext = std::make_shared<std::vector<std::uint8_t>>(
         enc->encrypt_auth(payload.data(), payload.size()));
@@ -149,47 +145,55 @@ bench::BenchCase make_decrypt_auth_case(std::string name,
     return bench::BenchCase{std::move(name), std::move(run), kPayload};
 }
 
-std::vector<bench::BenchCase> build_cases() {
-    std::vector<bench::BenchCase> cases;
-    cases.reserve(40);
+using CaseFactory = std::function<bench::BenchCase()>;
+struct NamedFactory {
+    std::string  name;
+    CaseFactory  factory;
+};
+
+std::vector<NamedFactory> build_lazy_factories() {
+    std::vector<NamedFactory> facs;
+    facs.reserve(40);
+
     for (std::size_t i = 0; i < bench::kPrimitivesCanonicalLen; i++) {
-        const char* prim = bench::kPrimitivesCanonical[i];
+        std::string prim(bench::kPrimitivesCanonical[i]);
         char buf[128];
+
         std::snprintf(buf, sizeof(buf),
-                      "bench_triple_%s_%dbit_encrypt_16mb", prim, kKeyBits);
-        cases.push_back(make_encrypt_case(buf,
-            register_encryptor(build_triple(prim))));
+                      "bench_triple_%s_%dbit_encrypt_16mb", prim.c_str(), kKeyBits);
+        facs.push_back({buf, [prim]{ return make_encrypt_case(
+            std::string("bench_triple_") + prim + "_" + std::to_string(kKeyBits) + "bit_encrypt_16mb",
+            build_triple(prim.c_str())); }});
+
         std::snprintf(buf, sizeof(buf),
-                      "bench_triple_%s_%dbit_decrypt_16mb", prim, kKeyBits);
-        cases.push_back(make_decrypt_case(buf,
-            register_encryptor(build_triple(prim))));
+                      "bench_triple_%s_%dbit_decrypt_16mb", prim.c_str(), kKeyBits);
+        facs.push_back({buf, [prim]{ return make_decrypt_case(
+            std::string("bench_triple_") + prim + "_" + std::to_string(kKeyBits) + "bit_decrypt_16mb",
+            build_triple(prim.c_str())); }});
+
         std::snprintf(buf, sizeof(buf),
-                      "bench_triple_%s_%dbit_encrypt_auth_16mb", prim, kKeyBits);
-        cases.push_back(make_encrypt_auth_case(buf,
-            register_encryptor(build_triple(prim))));
+                      "bench_triple_%s_%dbit_encrypt_auth_16mb", prim.c_str(), kKeyBits);
+        facs.push_back({buf, [prim]{ return make_encrypt_auth_case(
+            std::string("bench_triple_") + prim + "_" + std::to_string(kKeyBits) + "bit_encrypt_auth_16mb",
+            build_triple(prim.c_str())); }});
+
         std::snprintf(buf, sizeof(buf),
-                      "bench_triple_%s_%dbit_decrypt_auth_16mb", prim, kKeyBits);
-        cases.push_back(make_decrypt_auth_case(buf,
-            register_encryptor(build_triple(prim))));
+                      "bench_triple_%s_%dbit_decrypt_auth_16mb", prim.c_str(), kKeyBits);
+        facs.push_back({buf, [prim]{ return make_decrypt_auth_case(
+            std::string("bench_triple_") + prim + "_" + std::to_string(kKeyBits) + "bit_decrypt_auth_16mb",
+            build_triple(prim.c_str())); }});
     }
-    char buf[128];
-    std::snprintf(buf, sizeof(buf),
-                  "bench_triple_mixed_%dbit_encrypt_16mb", kKeyBits);
-    cases.push_back(make_encrypt_case(buf,
-        register_encryptor(build_mixed_triple())));
-    std::snprintf(buf, sizeof(buf),
-                  "bench_triple_mixed_%dbit_decrypt_16mb", kKeyBits);
-    cases.push_back(make_decrypt_case(buf,
-        register_encryptor(build_mixed_triple())));
-    std::snprintf(buf, sizeof(buf),
-                  "bench_triple_mixed_%dbit_encrypt_auth_16mb", kKeyBits);
-    cases.push_back(make_encrypt_auth_case(buf,
-        register_encryptor(build_mixed_triple())));
-    std::snprintf(buf, sizeof(buf),
-                  "bench_triple_mixed_%dbit_decrypt_auth_16mb", kKeyBits);
-    cases.push_back(make_decrypt_auth_case(buf,
-        register_encryptor(build_mixed_triple())));
-    return cases;
+
+    std::string en  = std::string("bench_triple_mixed_") + std::to_string(kKeyBits) + "bit_encrypt_16mb";
+    std::string dn  = std::string("bench_triple_mixed_") + std::to_string(kKeyBits) + "bit_decrypt_16mb";
+    std::string ean = std::string("bench_triple_mixed_") + std::to_string(kKeyBits) + "bit_encrypt_auth_16mb";
+    std::string dan = std::string("bench_triple_mixed_") + std::to_string(kKeyBits) + "bit_decrypt_auth_16mb";
+    facs.push_back({en,  [en]  { return make_encrypt_case(en,  build_mixed_triple()); }});
+    facs.push_back({dn,  [dn]  { return make_decrypt_case(dn,  build_mixed_triple()); }});
+    facs.push_back({ean, [ean] { return make_encrypt_auth_case(ean, build_mixed_triple()); }});
+    facs.push_back({dan, [dan] { return make_decrypt_auth_case(dan, build_mixed_triple()); }});
+
+    return facs;
 }
 
 } // namespace
@@ -209,8 +213,36 @@ int main() {
                     bench::env_lock_seed() ? "on" : "off");
         std::fflush(stdout);
 
-        auto cases = build_cases();
-        bench::run_all(cases);
+        auto facs = build_lazy_factories();
+        const char* flt = bench::env_filter();
+        double min_seconds = bench::env_min_seconds();
+
+        std::vector<const NamedFactory*> selected;
+        for (const auto& nf : facs) {
+            if (flt == nullptr || nf.name.find(flt) != std::string::npos) {
+                selected.push_back(&nf);
+            }
+        }
+
+        if (selected.empty()) {
+            std::fprintf(stderr,
+                         "no bench cases match filter %s; available:",
+                         flt == nullptr ? "<unset>" : flt);
+            for (const auto& nf : facs) {
+                std::fprintf(stderr, " %s", nf.name.c_str());
+            }
+            std::fprintf(stderr, "\n");
+            return 0;
+        }
+
+        std::printf("# benchmarks=%zu payload_bytes=%zu min_seconds=%g\n",
+                    selected.size(), kPayload, min_seconds);
+        std::fflush(stdout);
+
+        for (const auto* nf : selected) {
+            auto c = nf->factory();
+            bench::measure_one(c, min_seconds);
+        }
     } catch (const itb::ItbError& e) {
         std::fprintf(stderr, "itb error (code=%d): %s\n",
                      e.code(), e.what());

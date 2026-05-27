@@ -1192,67 +1192,108 @@ fn make_stream_triple_noaead_lowlevel_userloop_decrypt(cipher: Cipher) -> BenchC
 }
 
 // --------------------------------------------------------------------
-// Case assembly
+// Case assembly — lazy construction.
+//
+// Returns a Vec of (name, factory) pairs where the factory closure
+// builds the BenchCase on demand. Peak memory is bounded to one case
+// at a time (a few × 16 MiB payload + pre-encrypted wire) regardless
+// of the total cipher count.
 // --------------------------------------------------------------------
 
-fn build_cases() -> Vec<BenchCase> {
-    let mut cases: Vec<BenchCase> = Vec::with_capacity(CIPHERS.len() * 34);
+type CaseFactory = Box<dyn Fn() -> BenchCase>;
+
+fn case_factories() -> Vec<(String, CaseFactory)> {
+    let mut facs: Vec<(String, CaseFactory)> = Vec::with_capacity(CIPHERS.len() * 34);
 
     // Wrapper Only — 2 cases per cipher.
     for c in CIPHERS {
-        cases.push(make_wrapper_only_alloc(c));
-        cases.push(make_wrapper_only_inplace(c));
+        facs.push((format!("bench_wrapper_only_alloc/{}", cipher_tag(c)),
+                   Box::new(move || make_wrapper_only_alloc(c))));
+        facs.push((format!("bench_wrapper_only_inplace/{}", cipher_tag(c)),
+                   Box::new(move || make_wrapper_only_inplace(c))));
     }
 
     // Message Single — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
-        cases.push(make_msg_single_easy_nomac_encrypt(c));
-        cases.push(make_msg_single_easy_nomac_decrypt(c));
-        cases.push(make_msg_single_easy_auth_encrypt(c));
-        cases.push(make_msg_single_easy_auth_decrypt(c));
-        cases.push(make_msg_single_lowlevel_nomac_encrypt(c));
-        cases.push(make_msg_single_lowlevel_nomac_decrypt(c));
-        cases.push(make_msg_single_lowlevel_auth_encrypt(c));
-        cases.push(make_msg_single_lowlevel_auth_decrypt(c));
+        facs.push((format!("bench_msg_single_easy_nomac/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_easy_nomac_encrypt(c))));
+        facs.push((format!("bench_msg_single_easy_nomac/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_easy_nomac_decrypt(c))));
+        facs.push((format!("bench_msg_single_easy_auth/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_easy_auth_encrypt(c))));
+        facs.push((format!("bench_msg_single_easy_auth/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_easy_auth_decrypt(c))));
+        facs.push((format!("bench_msg_single_lowlevel_nomac/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_lowlevel_nomac_encrypt(c))));
+        facs.push((format!("bench_msg_single_lowlevel_nomac/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_lowlevel_nomac_decrypt(c))));
+        facs.push((format!("bench_msg_single_lowlevel_auth/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_lowlevel_auth_encrypt(c))));
+        facs.push((format!("bench_msg_single_lowlevel_auth/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_single_lowlevel_auth_decrypt(c))));
     }
 
     // Message Triple — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
-        cases.push(make_msg_triple_easy_nomac_encrypt(c));
-        cases.push(make_msg_triple_easy_nomac_decrypt(c));
-        cases.push(make_msg_triple_easy_auth_encrypt(c));
-        cases.push(make_msg_triple_easy_auth_decrypt(c));
-        cases.push(make_msg_triple_lowlevel_nomac_encrypt(c));
-        cases.push(make_msg_triple_lowlevel_nomac_decrypt(c));
-        cases.push(make_msg_triple_lowlevel_auth_encrypt(c));
-        cases.push(make_msg_triple_lowlevel_auth_decrypt(c));
+        facs.push((format!("bench_msg_triple_easy_nomac/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_easy_nomac_encrypt(c))));
+        facs.push((format!("bench_msg_triple_easy_nomac/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_easy_nomac_decrypt(c))));
+        facs.push((format!("bench_msg_triple_easy_auth/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_easy_auth_encrypt(c))));
+        facs.push((format!("bench_msg_triple_easy_auth/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_easy_auth_decrypt(c))));
+        facs.push((format!("bench_msg_triple_lowlevel_nomac/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_lowlevel_nomac_encrypt(c))));
+        facs.push((format!("bench_msg_triple_lowlevel_nomac/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_lowlevel_nomac_decrypt(c))));
+        facs.push((format!("bench_msg_triple_lowlevel_auth/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_lowlevel_auth_encrypt(c))));
+        facs.push((format!("bench_msg_triple_lowlevel_auth/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_msg_triple_lowlevel_auth_decrypt(c))));
     }
 
     // Streaming Single — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
-        cases.push(make_stream_single_aead_easy_io_encrypt(c));
-        cases.push(make_stream_single_aead_easy_io_decrypt(c));
-        cases.push(make_stream_single_aead_lowlevel_io_encrypt(c));
-        cases.push(make_stream_single_aead_lowlevel_io_decrypt(c));
-        cases.push(make_stream_single_noaead_easy_userloop_encrypt(c));
-        cases.push(make_stream_single_noaead_easy_userloop_decrypt(c));
-        cases.push(make_stream_single_noaead_lowlevel_userloop_encrypt(c));
-        cases.push(make_stream_single_noaead_lowlevel_userloop_decrypt(c));
+        facs.push((format!("bench_stream_single_aead_easy_io/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_aead_easy_io_encrypt(c))));
+        facs.push((format!("bench_stream_single_aead_easy_io/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_aead_easy_io_decrypt(c))));
+        facs.push((format!("bench_stream_single_aead_lowlevel_io/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_aead_lowlevel_io_encrypt(c))));
+        facs.push((format!("bench_stream_single_aead_lowlevel_io/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_aead_lowlevel_io_decrypt(c))));
+        facs.push((format!("bench_stream_single_noaead_easy_userloop/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_noaead_easy_userloop_encrypt(c))));
+        facs.push((format!("bench_stream_single_noaead_easy_userloop/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_noaead_easy_userloop_decrypt(c))));
+        facs.push((format!("bench_stream_single_noaead_lowlevel_userloop/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_noaead_lowlevel_userloop_encrypt(c))));
+        facs.push((format!("bench_stream_single_noaead_lowlevel_userloop/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_single_noaead_lowlevel_userloop_decrypt(c))));
     }
 
     // Streaming Triple — 4 modes × 2 dirs per cipher.
     for c in CIPHERS {
-        cases.push(make_stream_triple_aead_easy_io_encrypt(c));
-        cases.push(make_stream_triple_aead_easy_io_decrypt(c));
-        cases.push(make_stream_triple_aead_lowlevel_io_encrypt(c));
-        cases.push(make_stream_triple_aead_lowlevel_io_decrypt(c));
-        cases.push(make_stream_triple_noaead_easy_userloop_encrypt(c));
-        cases.push(make_stream_triple_noaead_easy_userloop_decrypt(c));
-        cases.push(make_stream_triple_noaead_lowlevel_userloop_encrypt(c));
-        cases.push(make_stream_triple_noaead_lowlevel_userloop_decrypt(c));
+        facs.push((format!("bench_stream_triple_aead_easy_io/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_aead_easy_io_encrypt(c))));
+        facs.push((format!("bench_stream_triple_aead_easy_io/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_aead_easy_io_decrypt(c))));
+        facs.push((format!("bench_stream_triple_aead_lowlevel_io/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_aead_lowlevel_io_encrypt(c))));
+        facs.push((format!("bench_stream_triple_aead_lowlevel_io/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_aead_lowlevel_io_decrypt(c))));
+        facs.push((format!("bench_stream_triple_noaead_easy_userloop/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_noaead_easy_userloop_encrypt(c))));
+        facs.push((format!("bench_stream_triple_noaead_easy_userloop/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_noaead_easy_userloop_decrypt(c))));
+        facs.push((format!("bench_stream_triple_noaead_lowlevel_userloop/{}/encrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_noaead_lowlevel_userloop_encrypt(c))));
+        facs.push((format!("bench_stream_triple_noaead_lowlevel_userloop/{}/decrypt", cipher_tag(c)),
+                   Box::new(move || make_stream_triple_noaead_lowlevel_userloop_decrypt(c))));
     }
 
-    cases
+    facs
 }
 
 fn main() {
@@ -1260,10 +1301,12 @@ fn main() {
     itb::set_max_workers(0).expect("set_max_workers(0)");
     itb::set_nonce_bits(nonce_bits).expect("set_nonce_bits");
 
-    let cases = build_cases();
+    // Build only the (name, factory) list — no payload allocations yet.
+    let facs = case_factories();
+
     println!(
         "# wrapper benchmarks={} primitive={} key_bits_single={} key_bits_triple={} mac={} nonce_bits={}",
-        cases.len(),
+        facs.len(),
         PRIMITIVE,
         KEY_BITS_SINGLE,
         KEY_BITS_TRIPLE,
@@ -1271,5 +1314,42 @@ fn main() {
         nonce_bits,
     );
 
-    common::run_all(cases);
+    // Apply the filter to the name list (cheap), print the run header,
+    // then build + run cases one at a time so peak memory is bounded to
+    // one case regardless of the total cipher count.
+    let flt = common::env_filter();
+    let min_seconds = common::env_min_seconds();
+
+    let selected: Vec<&(String, CaseFactory)> = match &flt {
+        Some(s) => facs.iter().filter(|(name, _)| name.contains(s.as_str())).collect(),
+        None    => facs.iter().collect(),
+    };
+
+    if selected.is_empty() {
+        let names: Vec<&str> = facs.iter().map(|(n, _)| n.as_str()).collect();
+        eprintln!(
+            "no bench cases match filter {:?}; available: {:?}",
+            flt, names,
+        );
+        return;
+    }
+
+    // Print the run header. Use MESSAGE_BYTES as the canonical
+    // payload_bytes for the header line (matches the first case in the
+    // unfiltered run — always a Wrapper Only case using SingleSize).
+    println!(
+        "# benchmarks={} payload_bytes={} min_seconds={}",
+        selected.len(),
+        MESSAGE_BYTES,
+        min_seconds,
+    );
+
+    // Build + run each selected case one at a time. Each factory
+    // allocates its payload (16–64 MiB) and pre-encrypted wire, the
+    // case runs to convergence, then it is dropped before the next
+    // factory is called. Peak RSS is bounded to ~one case.
+    for (_, factory) in &selected {
+        let mut case = factory();
+        common::measure_and_print(&mut case, min_seconds);
+    }
 }

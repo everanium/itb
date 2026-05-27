@@ -124,4 +124,12 @@ char *bench_strdup_fmt(const char *fmt, ...);
  * caller must not reference it after the call returns. */
 void run_all(bench_case_t *cases, size_t n_cases);
 
+/* Measure a single pre-built case at `min_seconds` threshold and emit
+ * one Go-bench-style report line.  Used by the lazy bench runner in
+ * bench_wrapper.c — the caller filters and prints the header line
+ * itself; this function handles only the measurement + output for one
+ * case.  The case's `name` field is NOT freed by this function; the
+ * caller owns the lifetime of the case. */
+void bench_measure_one(bench_case_t *c, double min_seconds);
+
 #endif /* ITB_C_BENCH_COMMON_H */

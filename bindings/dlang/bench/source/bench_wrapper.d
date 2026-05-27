@@ -64,7 +64,8 @@ import itb.wrapper :
 
 import bench.common :
     BenchCase, BenchFn,
-    randomBytes, runAll;
+    randomBytes,
+    measureAndPrint, envFilter, envMinSeconds;
 
 private enum string PRIMITIVE = "areion512";
 private enum int KEY_BITS = 1024;
@@ -1030,22 +1031,218 @@ private void appendStreamTriple(ref BenchCase[] cases) @trusted
     }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Lazy factory list.
+//
+// Each entry is a (name, factory) pair.  The factory is a zero-arg
+// delegate that allocates the payload + context and returns exactly
+// one BenchCase.  Building the list is O(1) in memory; each factory
+// is called immediately before timing and the resulting BenchCase is
+// discarded after the measurement, bounding peak RSS to roughly one
+// case at a time.
+// ────────────────────────────────────────────────────────────────────
+
+private alias CaseFac = BenchCase delegate() @trusted;
+
+private struct LazyCase
+{
+    string  name;
+    CaseFac factory;
+}
+
+private LazyCase[] buildLazyFactories() @trusted
+{
+    LazyCase[] facs;
+    facs.reserve(102);
+
+    // Wrapper Only — 2 per cipher.
+    foreach (cipher; CIPHER_NAMES)
+    {
+        string cn = ffiName(cipher);
+        Cipher c = cipher;
+        facs ~= LazyCase(
+            format("bench_wrapper_only_alloc_%s_16mb", cn),
+            () => makeWrapperOnlyAlloc(
+                format("bench_wrapper_only_alloc_%s_16mb", cn), c));
+        facs ~= LazyCase(
+            format("bench_wrapper_only_inplace_%s_16mb", cn),
+            () => makeWrapperOnlyInPlace(
+                format("bench_wrapper_only_inplace_%s_16mb", cn), c));
+    }
+
+    // Message Single — 4 modes × 3 ciphers × 2 dirs = 24.
+    foreach (cipher; CIPHER_NAMES)
+    {
+        string cn = ffiName(cipher);
+        Cipher c = cipher;
+        facs ~= LazyCase(format("bench_msg_single_easy_nomac_%s_encrypt_16mb", cn),
+            () => makeMsgEasyNoMACEncSingle(
+                format("bench_msg_single_easy_nomac_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_easy_nomac_%s_decrypt_16mb", cn),
+            () => makeMsgEasyNoMACDecSingle(
+                format("bench_msg_single_easy_nomac_%s_decrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_easy_auth_%s_encrypt_16mb", cn),
+            () => makeMsgEasyAuthEncSingle(
+                format("bench_msg_single_easy_auth_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_easy_auth_%s_decrypt_16mb", cn),
+            () => makeMsgEasyAuthDecSingle(
+                format("bench_msg_single_easy_auth_%s_decrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_low_nomac_%s_encrypt_16mb", cn),
+            () => makeMsgLowNoMACEncSingle(
+                format("bench_msg_single_low_nomac_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_low_nomac_%s_decrypt_16mb", cn),
+            () => makeMsgLowNoMACDecSingle(
+                format("bench_msg_single_low_nomac_%s_decrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_low_auth_%s_encrypt_16mb", cn),
+            () => makeMsgLowAuthEncSingle(
+                format("bench_msg_single_low_auth_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_single_low_auth_%s_decrypt_16mb", cn),
+            () => makeMsgLowAuthDecSingle(
+                format("bench_msg_single_low_auth_%s_decrypt_16mb", cn), c));
+    }
+
+    // Message Triple — 4 modes × 3 ciphers × 2 dirs = 24.
+    foreach (cipher; CIPHER_NAMES)
+    {
+        string cn = ffiName(cipher);
+        Cipher c = cipher;
+        facs ~= LazyCase(format("bench_msg_triple_easy_nomac_%s_encrypt_16mb", cn),
+            () => makeMsgEasyNoMACEncTriple(
+                format("bench_msg_triple_easy_nomac_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_easy_nomac_%s_decrypt_16mb", cn),
+            () => makeMsgEasyNoMACDecTriple(
+                format("bench_msg_triple_easy_nomac_%s_decrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_easy_auth_%s_encrypt_16mb", cn),
+            () => makeMsgEasyAuthEncTriple(
+                format("bench_msg_triple_easy_auth_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_easy_auth_%s_decrypt_16mb", cn),
+            () => makeMsgEasyAuthDecTriple(
+                format("bench_msg_triple_easy_auth_%s_decrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_low_nomac_%s_encrypt_16mb", cn),
+            () => makeMsgLowNoMACEncTriple(
+                format("bench_msg_triple_low_nomac_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_low_nomac_%s_decrypt_16mb", cn),
+            () => makeMsgLowNoMACDecTriple(
+                format("bench_msg_triple_low_nomac_%s_decrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_low_auth_%s_encrypt_16mb", cn),
+            () => makeMsgLowAuthEncTriple(
+                format("bench_msg_triple_low_auth_%s_encrypt_16mb", cn), c));
+        facs ~= LazyCase(format("bench_msg_triple_low_auth_%s_decrypt_16mb", cn),
+            () => makeMsgLowAuthDecTriple(
+                format("bench_msg_triple_low_auth_%s_decrypt_16mb", cn), c));
+    }
+
+    // Streaming Single — 4 modes × 3 ciphers × 2 dirs = 24.
+    foreach (cipher; CIPHER_NAMES)
+    {
+        string cn = ffiName(cipher);
+        Cipher c = cipher;
+        facs ~= LazyCase(format("bench_stream_single_aead_easy_io_%s_encrypt_64mb", cn),
+            () => makeStreamAeadEasyEnc(1,
+                format("bench_stream_single_aead_easy_io_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_aead_easy_io_%s_decrypt_64mb", cn),
+            () => makeStreamAeadEasyDec(1,
+                format("bench_stream_single_aead_easy_io_%s_decrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_aead_low_io_%s_encrypt_64mb", cn),
+            () => makeStreamAeadLowEnc(false,
+                format("bench_stream_single_aead_low_io_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_aead_low_io_%s_decrypt_64mb", cn),
+            () => makeStreamAeadLowDec(false,
+                format("bench_stream_single_aead_low_io_%s_decrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_easy_userloop_%s_encrypt_64mb", cn),
+            () => makeStreamUserloopEasyEnc(1,
+                format("bench_stream_single_easy_userloop_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_easy_userloop_%s_decrypt_64mb", cn),
+            () => makeStreamUserloopEasyDec(1,
+                format("bench_stream_single_easy_userloop_%s_decrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_low_userloop_%s_encrypt_64mb", cn),
+            () => makeStreamUserloopLowEnc(false,
+                format("bench_stream_single_low_userloop_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_single_low_userloop_%s_decrypt_64mb", cn),
+            () => makeStreamUserloopLowDec(false,
+                format("bench_stream_single_low_userloop_%s_decrypt_64mb", cn), c));
+    }
+
+    // Streaming Triple — 4 modes × 3 ciphers × 2 dirs = 24.
+    foreach (cipher; CIPHER_NAMES)
+    {
+        string cn = ffiName(cipher);
+        Cipher c = cipher;
+        facs ~= LazyCase(format("bench_stream_triple_aead_easy_io_%s_encrypt_64mb", cn),
+            () => makeStreamAeadEasyEnc(3,
+                format("bench_stream_triple_aead_easy_io_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_aead_easy_io_%s_decrypt_64mb", cn),
+            () => makeStreamAeadEasyDec(3,
+                format("bench_stream_triple_aead_easy_io_%s_decrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_aead_low_io_%s_encrypt_64mb", cn),
+            () => makeStreamAeadLowEnc(true,
+                format("bench_stream_triple_aead_low_io_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_aead_low_io_%s_decrypt_64mb", cn),
+            () => makeStreamAeadLowDec(true,
+                format("bench_stream_triple_aead_low_io_%s_decrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_easy_userloop_%s_encrypt_64mb", cn),
+            () => makeStreamUserloopEasyEnc(3,
+                format("bench_stream_triple_easy_userloop_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_easy_userloop_%s_decrypt_64mb", cn),
+            () => makeStreamUserloopEasyDec(3,
+                format("bench_stream_triple_easy_userloop_%s_decrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_low_userloop_%s_encrypt_64mb", cn),
+            () => makeStreamUserloopLowEnc(true,
+                format("bench_stream_triple_low_userloop_%s_encrypt_64mb", cn), c));
+        facs ~= LazyCase(format("bench_stream_triple_low_userloop_%s_decrypt_64mb", cn),
+            () => makeStreamUserloopLowDec(true,
+                format("bench_stream_triple_low_userloop_%s_decrypt_64mb", cn), c));
+    }
+
+    return facs;
+}
+
 void main() @trusted
 {
     setMaxWorkers(0);
     setNonceBits(128);
 
-    BenchCase[] cases;
-    cases.reserve(120);
-    appendWrapperOnly(cases);
-    appendMessageSingle(cases);
-    appendMessageTriple(cases);
-    appendStreamSingle(cases);
-    appendStreamTriple(cases);
+    auto facs = buildLazyFactories();
 
     writeln(format(
         "# wrapper bench primitive=%s key_bits=%d mac=%s msg_bytes=%d stream_bytes=%d cases=%d",
-        PRIMITIVE, KEY_BITS, MAC_NAME, MSG_BYTES, STREAM_BYTES, cases.length));
+        PRIMITIVE, KEY_BITS, MAC_NAME, MSG_BYTES, STREAM_BYTES, facs.length));
 
-    runAll(cases);
+    // Filter + header line.
+    string flt = envFilter();
+    double minSeconds = envMinSeconds();
+
+    string[] allNames;
+    allNames.length = facs.length;
+    foreach (i, ref lc; facs)
+        allNames[i] = lc.name;
+
+    LazyCase[] selected;
+    if (flt is null)
+        selected = facs;
+    else
+        foreach (ref lc; facs)
+            if (lc.name.length >= flt.length)
+            {
+                import std.algorithm : canFind;
+                if (lc.name.canFind(flt))
+                    selected ~= lc;
+            }
+
+    if (selected.length == 0)
+    {
+        import std.stdio : stderr;
+        stderr.writefln("no bench cases match filter %s; available: %s",
+            flt is null ? "<unset>" : flt, allNames);
+        return;
+    }
+
+    writeln(format("# benchmarks=%d min_seconds=%g", selected.length, minSeconds));
+
+    // Lazy loop: build one case, measure it, drop it.
+    foreach (ref lc; selected)
+    {
+        auto bc = lc.factory();
+        measureAndPrint(bc, minSeconds);
+    }
 }

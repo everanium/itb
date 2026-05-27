@@ -83,8 +83,8 @@ import {
 } from '../src/index.js';
 import type { CipherName } from '../src/index.js';
 
-import { runAll } from './common.js';
-import type { BenchCase } from './common.js';
+import { runLazy } from './common.js';
+import type { BenchCase, LazyCase } from './common.js';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -888,6 +888,304 @@ async function buildStreamCases(modes: StreamMode[]): Promise<BenchCase[]> {
   return cases;
 }
 
+// ─── Lazy case list ──────────────────────────────────────────────
+
+// Build a list of (name, factory) pairs. Each factory allocates its
+// payload (16–64 MiB) and pre-encrypted wire only when called.
+// Peak RSS is bounded to roughly one case at a time.
+function buildLazyCases(): LazyCase[] {
+  const lazy: LazyCase[] = [];
+
+  // Wrapper Only — 2 cases per cipher (18 total for 9 ciphers).
+  for (const cipher of CIPHER_NAMES) {
+    lazy.push([
+      `bench_wrapper_only/${cipher}/wrap`,
+      () => {
+        const key = wrapperGenerateKey(cipher);
+        const blob = randomBytes(MESSAGE_BYTES);
+        return {
+          name: `bench_wrapper_only/${cipher}/wrap`,
+          payloadBytes: MESSAGE_BYTES,
+          run: (iters: number) => {
+            for (let i = 0; i < iters; i++) {
+              const wire = wrap(cipher, key, blob);
+              const recovered = unwrap(cipher, key, wire);
+              if (recovered.length !== blob.length) throw new Error(`len mismatch`);
+            }
+          },
+        };
+      },
+    ]);
+    lazy.push([
+      `bench_wrapper_only/${cipher}/wrap_in_place`,
+      () => {
+        const key = wrapperGenerateKey(cipher);
+        const blob = randomBytes(MESSAGE_BYTES);
+        return {
+          name: `bench_wrapper_only/${cipher}/wrap_in_place`,
+          payloadBytes: MESSAGE_BYTES,
+          run: (iters: number) => {
+            for (let i = 0; i < iters; i++) {
+              const buf = Buffer.from(blob);
+              const nonce = wrapInPlace(cipher, key, buf);
+              const wire = Buffer.concat([nonce, buf]);
+              unwrapInPlace(cipher, key, wire);
+            }
+          },
+        };
+      },
+    ]);
+  }
+
+  // Message Single — 4 modes × 9 ciphers × 2 dirs = 72 cases.
+  const msgSingleDefs: Array<{
+    label: string;
+    auth: boolean;
+    buildCt: (payload: Buffer) => Buffer;
+    makeState: () => { runEnc: (c: CipherName, p: Buffer) => void; runDec: (c: CipherName, wire: Buffer) => void };
+  }> = [];
+  {
+    msgSingleDefs.push({
+      label: 'msg_single_easy_nomac',
+      auth: false,
+      buildCt: (p) => { const e = buildEncryptorSingle(null); return Buffer.from(e.encrypt(p)); },
+      makeState: () => {
+        const enc = buildEncryptorSingle(null);
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(enc.encrypt(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decrypt(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+    msgSingleDefs.push({
+      label: 'msg_single_easy_auth',
+      auth: true,
+      buildCt: (p) => { const e = buildEncryptorSingle(MAC_NAME); return Buffer.from(e.encryptAuth(p)); },
+      makeState: () => {
+        const enc = buildEncryptorSingle(MAC_NAME);
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(enc.encryptAuth(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decryptAuth(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+    msgSingleDefs.push({
+      label: 'msg_single_lowlevel_nomac',
+      auth: false,
+      buildCt: (p) => { const [s0, s1, s2] = buildSeedsSingle(); return Buffer.from(itbEncrypt(s0, s1, s2, p)); },
+      makeState: () => {
+        const [s0, s1, s2] = buildSeedsSingle();
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(itbEncrypt(s0, s1, s2, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); itbDecrypt(s0, s1, s2, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+    msgSingleDefs.push({
+      label: 'msg_single_lowlevel_auth',
+      auth: true,
+      buildCt: (p) => { const [s0, s1, s2] = buildSeedsSingle(); const mac = new MAC(MAC_NAME, MAC_KEY); return Buffer.from(encryptAuth(s0, s1, s2, mac, p)); },
+      makeState: () => {
+        const [s0, s1, s2] = buildSeedsSingle();
+        const mac = new MAC(MAC_NAME, MAC_KEY);
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(encryptAuth(s0, s1, s2, mac, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); decryptAuth(s0, s1, s2, mac, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+  }
+  for (const def of msgSingleDefs) {
+    for (const cipher of CIPHER_NAMES) {
+      lazy.push([
+        `bench_${def.label}/${cipher}/encrypt`,
+        () => {
+          const payload = randomBytes(MESSAGE_BYTES);
+          const st = def.makeState();
+          return {
+            name: `bench_${def.label}/${cipher}/encrypt`,
+            payloadBytes: MESSAGE_BYTES,
+            run: (iters) => { for (let i = 0; i < iters; i++) st.runEnc(cipher, payload); },
+          };
+        },
+      ]);
+      lazy.push([
+        `bench_${def.label}/${cipher}/decrypt`,
+        () => {
+          const payload = randomBytes(MESSAGE_BYTES);
+          const st = def.makeState();
+          const ctPristine = def.buildCt(payload);
+          const wirePristine = wrap(cipher, _outerKeyFor(cipher), ctPristine);
+          return {
+            name: `bench_${def.label}/${cipher}/decrypt`,
+            payloadBytes: MESSAGE_BYTES,
+            run: (iters) => { for (let i = 0; i < iters; i++) st.runDec(cipher, wirePristine); },
+          };
+        },
+      ]);
+    }
+  }
+
+  // Message Triple — 4 modes × 9 ciphers × 2 dirs = 72 cases.
+  const msgTripleDefs: typeof msgSingleDefs = [];
+  {
+    msgTripleDefs.push({
+      label: 'msg_triple_easy_nomac',
+      auth: false,
+      buildCt: (p) => { const e = buildEncryptorTriple(null); return Buffer.from(e.encrypt(p)); },
+      makeState: () => {
+        const enc = buildEncryptorTriple(null);
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(enc.encrypt(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decrypt(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+    msgTripleDefs.push({
+      label: 'msg_triple_easy_auth',
+      auth: true,
+      buildCt: (p) => { const e = buildEncryptorTriple(MAC_NAME); return Buffer.from(e.encryptAuth(p)); },
+      makeState: () => {
+        const enc = buildEncryptorTriple(MAC_NAME);
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(enc.encryptAuth(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decryptAuth(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+    msgTripleDefs.push({
+      label: 'msg_triple_lowlevel_nomac',
+      auth: false,
+      buildCt: (p) => {
+        const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
+        return Buffer.from(encryptTriple(s0, s1, s2, s3, s4, s5, s6, p));
+      },
+      makeState: () => {
+        const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(encryptTriple(s0, s1, s2, s3, s4, s5, s6, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); decryptTriple(s0, s1, s2, s3, s4, s5, s6, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+    msgTripleDefs.push({
+      label: 'msg_triple_lowlevel_auth',
+      auth: true,
+      buildCt: (p) => {
+        const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
+        const mac = new MAC(MAC_NAME, MAC_KEY);
+        return Buffer.from(encryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, p));
+      },
+      makeState: () => {
+        const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
+        const mac = new MAC(MAC_NAME, MAC_KEY);
+        return {
+          runEnc: (c, p) => { const ct = Buffer.from(encryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
+          runDec: (c, wire) => { const buf = Buffer.from(wire); decryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+        };
+      },
+    });
+  }
+  for (const def of msgTripleDefs) {
+    for (const cipher of CIPHER_NAMES) {
+      lazy.push([
+        `bench_${def.label}/${cipher}/encrypt`,
+        () => {
+          const payload = randomBytes(MESSAGE_BYTES);
+          const st = def.makeState();
+          return {
+            name: `bench_${def.label}/${cipher}/encrypt`,
+            payloadBytes: MESSAGE_BYTES,
+            run: (iters) => { for (let i = 0; i < iters; i++) st.runEnc(cipher, payload); },
+          };
+        },
+      ]);
+      lazy.push([
+        `bench_${def.label}/${cipher}/decrypt`,
+        () => {
+          const payload = randomBytes(MESSAGE_BYTES);
+          const st = def.makeState();
+          const ctPristine = def.buildCt(payload);
+          const wirePristine = wrap(cipher, _outerKeyFor(cipher), ctPristine);
+          return {
+            name: `bench_${def.label}/${cipher}/decrypt`,
+            payloadBytes: MESSAGE_BYTES,
+            run: (iters) => { for (let i = 0; i < iters; i++) st.runDec(cipher, wirePristine); },
+          };
+        },
+      ]);
+    }
+  }
+
+  // Streaming Single — 4 modes × 9 ciphers × 2 dirs = 72 cases (async factories).
+  for (const streamMode of buildStreamModesSingle()) {
+    for (const cipher of CIPHER_NAMES) {
+      lazy.push([
+        `bench_${streamMode.tag}/${cipher}/encrypt`,
+        async () => {
+          const payload = randomBytes(STREAM_TOTAL_BYTES);
+          return {
+            name: `bench_${streamMode.tag}/${cipher}/encrypt`,
+            payloadBytes: STREAM_TOTAL_BYTES,
+            run: async (iters: number) => {
+              for (let i = 0; i < iters; i++) await streamMode.runEncrypt(cipher, payload);
+            },
+          };
+        },
+      ]);
+      lazy.push([
+        `bench_${streamMode.tag}/${cipher}/decrypt`,
+        async () => {
+          const payload = randomBytes(STREAM_TOTAL_BYTES);
+          const wirePristine = await streamMode.buildWire(cipher, payload);
+          return {
+            name: `bench_${streamMode.tag}/${cipher}/decrypt`,
+            payloadBytes: STREAM_TOTAL_BYTES,
+            run: async (iters: number) => {
+              for (let i = 0; i < iters; i++) await streamMode.runDecrypt(cipher, wirePristine);
+            },
+          };
+        },
+      ]);
+    }
+  }
+
+  // Streaming Triple — 4 modes × 9 ciphers × 2 dirs = 72 cases (async factories).
+  for (const streamMode of buildStreamModesTriple()) {
+    for (const cipher of CIPHER_NAMES) {
+      lazy.push([
+        `bench_${streamMode.tag}/${cipher}/encrypt`,
+        async () => {
+          const payload = randomBytes(STREAM_TOTAL_BYTES);
+          return {
+            name: `bench_${streamMode.tag}/${cipher}/encrypt`,
+            payloadBytes: STREAM_TOTAL_BYTES,
+            run: async (iters: number) => {
+              for (let i = 0; i < iters; i++) await streamMode.runEncrypt(cipher, payload);
+            },
+          };
+        },
+      ]);
+      lazy.push([
+        `bench_${streamMode.tag}/${cipher}/decrypt`,
+        async () => {
+          const payload = randomBytes(STREAM_TOTAL_BYTES);
+          const wirePristine = await streamMode.buildWire(cipher, payload);
+          return {
+            name: `bench_${streamMode.tag}/${cipher}/decrypt`,
+            payloadBytes: STREAM_TOTAL_BYTES,
+            run: async (iters: number) => {
+              for (let i = 0; i < iters; i++) await streamMode.runDecrypt(cipher, wirePristine);
+            },
+          };
+        },
+      ]);
+    }
+  }
+
+  return lazy;
+}
+
 // ─── Entry point ──────────────────────────────────────────────────
 
 export async function runWrapperBench(): Promise<void> {
@@ -904,27 +1202,19 @@ export async function runWrapperBench(): Promise<void> {
       `stream_chunk=${STREAM_CHUNK_BYTES} workers=auto`,
   );
 
-  const cases: BenchCase[] = [];
-  cases.push(...buildWrapperOnlyCases());
+  // Build the (name, factory) list — no payload allocations yet.
+  const lazyCases = buildLazyCases();
 
-  const msgSingle = buildMessageModesSingle();
-  const msgTriple = buildMessageModesTriple();
-  cases.push(...buildMessageCases(msgSingle));
-  cases.push(...buildMessageCases(msgTriple));
-
-  const streamSingle = buildStreamModesSingle();
-  const streamTriple = buildStreamModesTriple();
-  cases.push(...(await buildStreamCases(streamSingle)));
-  cases.push(...(await buildStreamCases(streamTriple)));
-
-  // Sanity assertion: 6 + 24 + 24 + 24 + 24 = 102.
-  if (cases.length !== 102) {
+  // Sanity assertion: 18 + 72 + 72 + 72 + 72 = 306 for 9 ciphers.
+  if (lazyCases.length !== 306) {
     console.error(
-      `bench-wrapper: case count mismatch — expected 102, got ${cases.length}`,
+      `bench-wrapper: case count mismatch — expected 306, got ${lazyCases.length}`,
     );
   }
 
-  await runAll(cases);
+  // Run cases one at a time — each factory builds its payload just
+  // before timing, then it is eligible for GC before the next case.
+  await runLazy(lazyCases);
 }
 
 // `main.ts`-style direct invocation when run as a standalone module.

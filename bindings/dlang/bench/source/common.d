@@ -32,7 +32,7 @@
 ///
 /// Worker count defaults to `itb.setMaxWorkers(0)` (auto-detect),
 /// matching the Go bench default. Bench scripts may override before
-/// calling `runAll`.
+/// calling `measureAndPrint`.
 module bench.common;
 
 import core.atomic : atomicOp;
@@ -240,48 +240,14 @@ private void measure(ref BenchCase c, double minSeconds) @trusted
         c.name, iters, nsPerOp, mbPerS));
 }
 
-/// Run every case in `cases` and print one Go-bench-style line per
-/// case to stdout. Honours `ITB_BENCH_FILTER` for substring scoping
-/// and `ITB_BENCH_MIN_SEC` for per-case wall-clock budget.
-void runAll(BenchCase[] cases) @trusted
+/// Measure a single pre-built case at the given `minSeconds` threshold
+/// and emit one Go-bench-style report line.  Used by the lazy bench
+/// runner in bench_wrapper.d — the caller handles filtering and the
+/// header line; this function handles only measurement + output for one
+/// case.
+void measureAndPrint(ref BenchCase c, double minSeconds) @trusted
 {
-    string flt = envFilter();
-    double minSeconds = envMinSeconds();
-
-    string[] names;
-    names.length = cases.length;
-    foreach (i, ref c; cases)
-        names[i] = c.name;
-
-    BenchCase[] selected;
-    if (flt is null)
-    {
-        selected = cases;
-    }
-    else
-    {
-        foreach (ref c; cases)
-        {
-            // Substring containment - same semantics as Rust's
-            // `String::contains` and Python's `in` operator.
-            if (_contains(c.name, flt))
-                selected ~= c;
-        }
-    }
-
-    if (selected.length == 0)
-    {
-        stderr.writefln(
-            "no bench cases match filter %s; available: %s",
-            flt is null ? "<unset>" : flt, names);
-        return;
-    }
-
-    size_t payloadBytes = selected[0].payloadBytes;
-    writeln(format("# benchmarks=%d payload_bytes=%d min_seconds=%g",
-        selected.length, payloadBytes, minSeconds));
-    foreach (ref c; selected)
-        measure(c, minSeconds);
+    measure(c, minSeconds);
 }
 
 /// Pure D substring containment. Returns `true` iff `needle` occurs

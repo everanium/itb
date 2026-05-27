@@ -307,3 +307,10 @@ void run_all(bench_case_t *cases, size_t n_cases) {
         cases[i].name = NULL;
     }
 }
+
+/* ----- Single-case public measurement ------------------------------- */
+
+void bench_measure_one(bench_case_t *c, double min_seconds)
+{
+    measure(c, min_seconds);
+}

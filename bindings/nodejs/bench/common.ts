@@ -236,18 +236,30 @@ async function measure(bench: BenchCase, minSeconds: number): Promise<void> {
   );
 }
 
+/** A lazy bench case descriptor: (name, factory). The factory
+ *  callable builds the BenchCase on demand; it is called immediately
+ *  before timing so peak memory is bounded to one case at a time. */
+export type LazyCase = readonly [string, () => BenchCase | Promise<BenchCase>];
+
 /**
- * Run every case in `cases` and print one Go-bench-style line per
- * case to stdout. Honours `ITB_BENCH_FILTER` for substring scoping
- * and `ITB_BENCH_MIN_SEC` for the per-case wall-clock budget.
+ * Run bench cases one at a time, building each just before timing.
+ *
+ * Accepts a list of (name, factory) pairs where ``factory()`` builds
+ * the BenchCase on demand. This bounds peak RSS to roughly one case
+ * regardless of the total number of cases — the 16–64 MiB payload
+ * allocated by ``factory()`` is eligible for GC before the next
+ * factory is called.
+ *
+ * Honours `ITB_BENCH_FILTER` for substring scoping and
+ * `ITB_BENCH_MIN_SEC` for the per-case wall-clock budget.
  */
-export async function runAll(cases: BenchCase[]): Promise<void> {
+export async function runLazy(lazyCases: LazyCase[]): Promise<void> {
   const flt = envBenchFilter();
   const minSeconds = envBenchMinSec();
 
-  const allNames = cases.map((c) => c.name);
+  const allNames = lazyCases.map(([n]) => n);
   const selected =
-    flt === null ? cases : cases.filter((c) => c.name.includes(flt));
+    flt === null ? lazyCases : lazyCases.filter(([n]) => n.includes(flt));
   if (selected.length === 0) {
     console.error(
       `no bench cases match filter "${flt}"; available: ${JSON.stringify(allNames)}`,
@@ -255,11 +267,14 @@ export async function runAll(cases: BenchCase[]): Promise<void> {
     return;
   }
 
-  const first = selected[0]!;
+  // Use MESSAGE_BYTES as the canonical payload_bytes for the header
+  // (the first case in an unfiltered run is always a wrapper-only case
+  // which uses MESSAGE_BYTES).
   console.log(
-    `# benchmarks=${selected.length} payload_bytes=${first.payloadBytes} min_seconds=${minSeconds}`,
+    `# benchmarks=${selected.length} payload_bytes=${PAYLOAD_16MB} min_seconds=${minSeconds}`,
   );
-  for (const bench of selected) {
+  for (const [, factory] of selected) {
+    const bench = await factory();
     await measure(bench, minSeconds);
   }
 }
