@@ -23,7 +23,7 @@
 !   8. message-lowlevel-auth      Low-Level Single Message (MAC Authenticated)
 !
 ! Default behaviour applies `itb_wrap_in_place` / `itb_unwrap_in_place`
-! on the message-* examples (zero-allocation steady state); the
+! on the message-* examples (no output-buffer allocation); the
 ! immutable-input alternatives `itb_wrap` / `itb_unwrap` are kept as
 ! commented-out blocks alongside each call site so the tradeoff stays
 ! visible at the source.
@@ -1003,7 +1003,7 @@ contains
 
   ! ----------------------------------------------------------------
   ! 5. message-easy-nomac -- Easy Single Message, No MAC.
-  ! Default: itb_wrap_in_place + itb_unwrap_in_place (zero allocation).
+  ! Default: itb_wrap_in_place + itb_unwrap_in_place (no output-buffer allocation).
   ! Immutable alternative: itb_wrap + itb_unwrap (commented).
   ! ----------------------------------------------------------------
   subroutine run_message_easy_nomac(cipher, plaintext, recovered, wire_n, ok, err_msg)

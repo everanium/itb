@@ -10,7 +10,7 @@ The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ci
 
 The numbers below isolate the **outer cipher cost** that the wrapper layer adds on top of ITB. Two test scopes:
 
-* **Wrapper Only** — 16 MiB random buffer, no ITB call. Pure outer cipher round-trip throughput. The `WrapInPlace` row mutates the caller's buffer (zero allocation steady state); the `Wrap` row allocates a fresh output buffer per call.
+* **Wrapper Only** — 16 MiB random buffer, no ITB call. Pure outer cipher round-trip throughput. The `WrapInPlace` row mutates the caller's buffer (no output-buffer allocation); the `Wrap` row allocates a fresh output buffer per call.
 * **Full ITB + wrapper** — encrypt and decrypt are timed **separately** (split sub-benches `…/encrypt` and `…/decrypt`) so the per-direction breakdown is visible. Both Single Ouroboros and Triple Ouroboros are reported. Single Message benches process a 16 MiB plaintext under one encrypt / wrap call (or one unwrap / decrypt call). Streaming benches process a 64 MiB plaintext through 16 MiB chunks via either ITB's `io.Reader` / `io.Writer` API or a User-Driven Loop emitting framed chunks through the wrapped writer.
 
 The blob `Wrap` / `Unwrap` paths split the keystream XOR across up to 32 worker goroutines (the effective count is `min(32, GOMAXPROCS, chunks)`), each seeking its own keystream to its chunk's byte offset via `ctr.NewAt`. One logical CTR stream is therefore evaluated in disjoint ranges concurrently, byte-identical to a serial pass. With this, the slowest outer cipher keystream in the Wrapper Only round-trip (BLAKE2b-256, ~546 MB/s) stays ahead of ITB's combined per-direction throughput on this host (~130–350 MB/s), so no outer cipher is the wrapper-path bottleneck. AES-128-CTR with hardware AES-NI remains the fastest of the nine. The worker cap is fixed, not user-configurable: ITB's own per-pixel hashing already saturates every core, so the wrapper's secondary, partly memory-bound XOR must not over-subscribe by spawning a goroutine per core a second time.
@@ -47,7 +47,7 @@ Column abbreviations in the Full ITB + wrapper tables: **LL** = Low-Level, **Loo
 
 ### Wrapper Only round-trip (16 MiB plaintext, encrypt + decrypt timed together)
 
-| Cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (zero alloc) MB/s |
+| Cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (no output-buffer alloc) MB/s |
 |---|---|---|
 | **Areion-SoEM-256** | 1541 | 1935 |
 | **Areion-SoEM-512** | 1615 | 1928 |
@@ -59,7 +59,7 @@ Column abbreviations in the Full ITB + wrapper tables: **LL** = Low-Level, **Loo
 | **BLAKE3** | 1069 | 1336 |
 | **ChaCha20** | 1985 | 2717 |
 
-`WrapInPlace` mutates the caller's blob and returns the per-stream nonce; the steady-state allocation is one nonce buffer (~16 bytes) per call. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call. The AES-128-CTR delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; the PRF-counter ciphers are more compute-bound and the allocation savings are a smaller fraction of the total.
+`WrapInPlace` mutates the caller's blob and returns the per-stream nonce; no output buffer is allocated. A fresh nonce (~16 bytes) is allocated per call on the encrypt side, and the parallel XOR path additionally allocates per-worker keystream state for buffers at or above the 256 KiB threshold. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call. The AES-128-CTR delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; the PRF-counter ciphers are more compute-bound and the allocation savings are a smaller fraction of the total.
 
 ### Single Message — Single Ouroboros (16 MiB plaintext)
 

@@ -1354,7 +1354,7 @@ itb_status_t itb_encryptor_stream_decrypt_auth(itb_encryptor_t *e,
  *      single-message Encrypt / EncryptAuth output. Wire =
  *      `nonce || keystream-XOR(blob)`.
  *
- *      itb_wrap_in_place / itb_unwrap_in_place are zero-allocation
+ *      itb_wrap_in_place / itb_unwrap_in_place are no-output-buffer-allocation
  *      variants that XOR the caller's blob / wire buffer in place.
  *      Suitable for hot paths where the caller has just produced an
  *      ITB ciphertext and will not re-read it.

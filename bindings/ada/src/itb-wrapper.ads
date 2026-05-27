@@ -22,7 +22,7 @@
 --        pragma Assert (Recovered = Blob);
 --     end;
 --
---  Single Message in-place mutation (zero-allocation steady state):
+--  Single Message in-place mutation (no output-buffer allocation):
 --
 --     declare
 --        N_Len     : constant Natural :=
@@ -142,8 +142,8 @@ package Itb.Wrapper is
    --  Seals one ITB ciphertext blob under C with a fresh CSPRNG
    --  nonce; returns the wire bytes nonce || keystream-XOR(blob).
    --  Allocates a fresh output buffer of size
-   --  Nonce_Size(C) + Blob'Length per call. For zero-allocation steady
-   --  state on the hot path use Wrap_In_Place.
+   --  Nonce_Size(C) + Blob'Length per call. For no output-buffer
+   --  allocation on the hot path use Wrap_In_Place.
    function Wrap
      (Cipher : Cipher_Type;
       Key    : Byte_Array;
@@ -153,7 +153,7 @@ package Itb.Wrapper is
    --  the per-stream nonce, XOR-decrypts the remainder under
    --  (Key, nonce), returns the recovered blob. Allocates a fresh
    --  output buffer of size Wire'Length - Nonce_Size(C) per call.
-   --  For zero-allocation steady state use Unwrap_In_Place.
+   --  For no output-buffer allocation use Unwrap_In_Place.
    function Unwrap
      (Cipher : Cipher_Type;
       Key    : Byte_Array;

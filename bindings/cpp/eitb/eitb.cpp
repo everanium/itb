@@ -36,7 +36,7 @@
 //     ./eitb/build/eitb -v
 //
 // Defaults to wrap_in_place / unwrap_in_place for the message-mode
-// examples (zero allocation, mutates the ciphertext / wire buffer
+// examples (no output-buffer allocation, mutates the ciphertext / wire buffer
 // directly). Commented `wrap` / `unwrap` alternatives respect
 // immutability of the caller's input at the cost of one extra
 // allocation per call.

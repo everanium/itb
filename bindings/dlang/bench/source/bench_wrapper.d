@@ -152,7 +152,7 @@ private Seed3Box* makeSeed3(bool authMac) @trusted
 // Wrapper Only round-trip (16 MiB random blob, no ITB call).
 //
 // Three outer ciphers × two surfaces (`wrap` allocating + `wrapInPlace`
-// zero-alloc) = 6 sub-benches. Round-trip = encrypt + decrypt timed
+// no output-buffer alloc) = 6 sub-benches. Round-trip = encrypt + decrypt timed
 // together because the keystream cipher is symmetric (same XOR pass
 // reverses).
 // ────────────────────────────────────────────────────────────────────

@@ -20,8 +20,8 @@
 //     const wire = wrap(Cipher.Aes128Ctr, key, blob);
 //     const recovered = unwrap(Cipher.Aes128Ctr, key, wire);
 //
-// Quick start — Single Message in-place mutation (zero-allocation
-// steady state):
+// Quick start — Single Message in-place mutation (no output-buffer
+// allocation):
 //
 //     import { wrapInPlace, unwrapInPlace } from 'itb';
 //     const buf = Buffer.from(blob);
@@ -312,8 +312,8 @@ export function deriveKey(cipher: CipherName, master: Buffer): Buffer {
  * `nonce || keystream-XOR(blob)`.
  *
  * Allocates a fresh output buffer of size
- * ``nonceSize(cipher) + blob.length`` per call. For zero-allocation
- * steady state on the hot path use {@link wrapInPlace}.
+ * ``nonceSize(cipher) + blob.length`` per call. For no output-buffer
+ * allocation on the hot path use {@link wrapInPlace}.
  */
 export function wrap(cipher: CipherName, key: Buffer, blob: Buffer): Buffer {
   const cn = validateCipher(cipher);
@@ -344,7 +344,7 @@ export function wrap(cipher: CipherName, key: Buffer, blob: Buffer): Buffer {
  * under ``(key, nonce)`` and returns the recovered blob.
  *
  * Allocates a fresh output buffer of size ``wire.length -
- * nonceSize(cipher)`` per call. For zero-allocation steady state use
+ * nonceSize(cipher)`` per call. For no output-buffer allocation use
  * {@link unwrapInPlace}.
  */
 export function unwrap(cipher: CipherName, key: Buffer, wire: Buffer): Buffer {
