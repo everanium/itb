@@ -175,6 +175,9 @@ func TestEasySetters(t *testing.T) {
 	if st := EasySetLockSoup(id, 1); st != StatusOK {
 		t.Errorf("SetLockSoup(1): status=%v", st)
 	}
+	if st := EasySetLockBatch(id, 1); st != StatusOK {
+		t.Errorf("SetLockBatch(1): status=%v", st)
+	}
 	if st := EasySetLockSeed(id, 1); st != StatusOK {
 		t.Errorf("SetLockSeed(1): status=%v", st)
 	}

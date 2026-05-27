@@ -159,6 +159,7 @@ func runAEADEasyIO(cipherName string, plaintext []byte) ([]byte, int, error) {
 	enc.SetBarrierFill(4)
 	enc.SetBitSoup(1)
 	enc.SetLockSoup(1)
+	enc.SetLockBatch(1)
 
 	outerKey, err := wrapper.GenerateKey(cipherName)
 	if err != nil {
@@ -201,6 +202,7 @@ func runAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error)
 	itb.SetBarrierFill(4)
 	itb.SetBitSoup(1)
 	itb.SetLockSoup(1)
+	itb.SetLockBatch(1)
 
 	hashFn, _, _ := hashes.Make512("areion512")
 	noise, err := itb.NewSeed512(1024, hashFn)
@@ -267,6 +269,7 @@ func runNoAEADEasyIO(cipherName string, plaintext []byte) ([]byte, int, error) {
 	enc.SetBarrierFill(4)
 	enc.SetBitSoup(1)
 	enc.SetLockSoup(1)
+	enc.SetLockBatch(1)
 
 	outerKey, err := wrapper.GenerateKey(cipherName)
 	if err != nil {
@@ -313,6 +316,7 @@ func runNoAEADEasyUserLoop(cipherName string, plaintext []byte) ([]byte, int, er
 	enc.SetBarrierFill(4)
 	enc.SetBitSoup(1)
 	enc.SetLockSoup(1)
+	enc.SetLockBatch(1)
 
 	outerKey, err := wrapper.GenerateKey(cipherName)
 	if err != nil {
@@ -390,6 +394,7 @@ func runNoAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, erro
 	itb.SetBarrierFill(4)
 	itb.SetBitSoup(1)
 	itb.SetLockSoup(1)
+	itb.SetLockBatch(1)
 
 	hashFn, _, _ := hashes.Make512("areion512")
 	noise, _ := itb.NewSeed512(1024, hashFn)
@@ -437,6 +442,7 @@ func runNoAEADLowLevelUserLoop(cipherName string, plaintext []byte) ([]byte, int
 	itb.SetBarrierFill(4)
 	itb.SetBitSoup(1)
 	itb.SetLockSoup(1)
+	itb.SetLockBatch(1)
 
 	hashFn, _, _ := hashes.Make512("areion512")
 	noise, _ := itb.NewSeed512(1024, hashFn)
@@ -525,6 +531,7 @@ func runMessageEasyNoMAC(cipherName string, plaintext []byte) ([]byte, int, erro
 	enc.SetBarrierFill(4)
 	enc.SetBitSoup(1)
 	enc.SetLockSoup(1)
+	enc.SetLockBatch(1)
 
 	encrypted, err := enc.Encrypt(plaintext)
 	if err != nil {
@@ -579,6 +586,7 @@ func runMessageEasyAuth(cipherName string, plaintext []byte) ([]byte, int, error
 	enc.SetBarrierFill(4)
 	enc.SetBitSoup(1)
 	enc.SetLockSoup(1)
+	enc.SetLockBatch(1)
 
 	encrypted, err := enc.EncryptAuth(plaintext)
 	if err != nil {
@@ -630,6 +638,7 @@ func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, 
 	itb.SetBarrierFill(4)
 	itb.SetBitSoup(1)
 	itb.SetLockSoup(1)
+	itb.SetLockBatch(1)
 
 	hashFn, _, _ := hashes.Make512("areion512")
 	noise, err := itb.NewSeed512(2048, hashFn)
@@ -698,6 +707,7 @@ func runMessageLowLevelAuth(cipherName string, plaintext []byte) ([]byte, int, e
 	itb.SetBarrierFill(4)
 	itb.SetBitSoup(1)
 	itb.SetLockSoup(1)
+	itb.SetLockBatch(1)
 
 	hashFn, _, _ := hashes.Make512("areion512")
 	noise, err := itb.NewSeed512(2048, hashFn)

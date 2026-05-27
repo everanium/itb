@@ -753,7 +753,7 @@ func DecryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 
 // EncryptStreamAuth128Cfg is the Cfg variant of [EncryptStreamAuth128]:
 // drives each chunk through [EncryptStreamAuthenticated128Cfg] so
-// per-encryptor NonceBits / BarrierFill / BitSoup / LockSoup / LockSeed
+// per-encryptor NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch / LockSeed
 // overrides are honoured chunk-by-chunk. Body otherwise identical.
 func EncryptStreamAuth128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {

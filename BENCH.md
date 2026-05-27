@@ -8,6 +8,8 @@
 
 Results below were collected at `ITB_NONCE_BITS=128`. All nine PRF-grade hash primitives in the registry — Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC, BLAKE2b-512, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20 — dispatch through hand-written ZMM AVX-512 chain-absorb ASM kernels at the per-pixel hash hot path on x86_64 hosts with AVX-512 SIMD support; the AArch64 production path (AWS Graviton 2+ / Apple M1+ / Neoverse N1+/V1+/V2+) uses ARM Crypto Extension `AESE`/`AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 primitives and the upstream library NEON / ARM Crypto Extension paths for the AES-CMAC / BLAKE / ChaCha20 / SipHash family (`jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE / ChaCha20 family, `dchest/siphash` portable Go for SipHash-2-4). The C ABI and Python FFI stacks populate the batched arm automatically.
 
+Lock Soup + Lock Batch is the faster Lock Soup variant: the per-chunk overlay derivation is amortised across a group of chunks. On x86 hosts carrying AVX-512F (plus AVX-512 VPOPCNTDQ for the permutation kernel) it runs through hand-written lane-parallel AVX-512 kernels — on the Intel i7-11700K this lifts Single Lock Soup throughput by roughly 1.1–2× over plain Lock Soup, and on AMD EPYC 9655P (Zen 5) more, with most primitives approaching their plain-path rates. AArch64 hosts (AWS Graviton 4) do not engage these kernels — Go's assembler carries no SVE2 support — so there Lock Batch amortises only the per-chunk hash call, a more modest ≈1.1–1.3× lift.
+
 Lock Soup derives a fresh PRF-keyed bit-permutation mask per chunk, so per-byte primitive call rate is ~10× higher than the plain / Bit-Soup-only paths and the hash hot path becomes throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT + full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width.
 
 Reproduction:
@@ -244,6 +246,50 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE3** | 256 | 2048 | PRF | 36 | 39 | 39 | 39 | 42 | 42 |
 | **ChaCha20** | 256 | 2048 | PRF | 25 | 37 | 39 | 28 | 40 | 41 |
 
+## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup + Lock Batch mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 222 | 256 | 286 | 366 | 467 | 527 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 233 | 249 | 295 | 384 | 488 | 552 |
+| **SipHash-2-4** | 128 | 512 | PRF | 206 | 230 | 260 | 328 | 420 | 475 |
+| **AES-CMAC** | 128 | 512 | PRF | 180 | 229 | 265 | 331 | 431 | 483 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 221 | 238 | 275 | 355 | 461 | 517 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 186 | 215 | 251 | 307 | 401 | 466 |
+| **BLAKE2s** | 256 | 512 | PRF | 197 | 220 | 250 | 311 | 401 | 461 |
+| **BLAKE3** | 256 | 512 | PRF | 178 | 195 | 236 | 298 | 377 | 449 |
+| **ChaCha20** | 256 | 512 | PRF | 202 | 229 | 187 | 72 | 240 | 333 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 214 | 236 | 273 | 347 | 442 | 494 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 225 | 236 | 276 | 370 | 467 | 512 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 191 | 216 | 245 | 303 | 371 | 445 |
+| **AES-CMAC** | 128 | 1024 | PRF | 199 | 222 | 252 | 313 | 398 | 459 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 207 | 228 | 261 | 323 | 411 | 479 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 175 | 196 | 226 | 262 | 334 | 405 |
+| **BLAKE2s** | 256 | 1024 | PRF | 182 | 200 | 236 | 277 | 347 | 413 |
+| **BLAKE3** | 256 | 1024 | PRF | 177 | 193 | 233 | 275 | 334 | 410 |
+| **ChaCha20** | 256 | 1024 | PRF | 61 | 146 | 178 | 71 | 221 | 315 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 198 | 207 | 262 | 317 | 399 | 469 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 212 | 224 | 265 | 336 | 407 | 452 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 172 | 183 | 228 | 264 | 309 | 390 |
+| **AES-CMAC** | 128 | 2048 | PRF | 181 | 196 | 240 | 283 | 353 | 414 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 176 | 195 | 235 | 279 | 328 | 426 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 146 | 171 | 198 | 220 | 257 | 324 |
+| **BLAKE2s** | 256 | 2048 | PRF | 150 | 182 | 206 | 230 | 270 | 342 |
+| **BLAKE3** | 256 | 2048 | PRF | 159 | 175 | 208 | 240 | 277 | 358 |
+| **ChaCha20** | 256 | 2048 | PRF | 59 | 132 | 164 | 68 | 195 | 270 |
+
 ## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup mode)
 
 ### ITB Single 512-bit (security: P × 2^512)
@@ -287,6 +333,50 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH.md](https://github.com/everani
 | **BLAKE2s** | 256 | 2048 | PRF | 120 | 140 | 177 | 186 | 235 | 269 |
 | **BLAKE3** | 256 | 2048 | PRF | 116 | 132 | 157 | 167 | 210 | 251 |
 | **ChaCha20** | 256 | 2048 | PRF | 33 | 67 | 94 | 38 | 88 | 134 |
+
+## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup + Lock Batch mode)
+
+### ITB Single 512-bit (security: P × 2^512)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 65 | 64 | 64 | 87 | 86 | 87 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 65 | 64 | 63 | 87 | 84 | 87 |
+| **SipHash-2-4** | 128 | 512 | PRF | 65 | 73 | 72 | 92 | 102 | 103 |
+| **AES-CMAC** | 128 | 512 | PRF | 63 | 70 | 69 | 87 | 95 | 97 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 50 | 54 | 53 | 64 | 68 | 71 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 37 | 40 | 41 | 48 | 49 | 55 |
+| **BLAKE2s** | 256 | 512 | PRF | 40 | 39 | 43 | 49 | 57 | 46 |
+| **BLAKE3** | 256 | 512 | PRF | 24 | 26 | 26 | 26 | 29 | 25 |
+| **ChaCha20** | 256 | 512 | PRF | 15 | 31 | 35 | 16 | 35 | 40 |
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 53 | 52 | 53 | 69 | 68 | 69 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 53 | 52 | 52 | 69 | 66 | 68 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 57 | 63 | 63 | 80 | 85 | 87 |
+| **AES-CMAC** | 128 | 1024 | PRF | 53 | 60 | 59 | 74 | 78 | 80 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 37 | 40 | 39 | 51 | 53 | 47 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 27 | 29 | 27 | 28 | 33 | 32 |
+| **BLAKE2s** | 256 | 1024 | PRF | 27 | 32 | 29 | 33 | 33 | 32 |
+| **BLAKE3** | 256 | 1024 | PRF | 15 | 16 | 16 | 16 | 18 | 17 |
+| **ChaCha20** | 256 | 1024 | PRF | 9 | 20 | 22 | 9 | 21 | 24 |
+
+### ITB Single 2048-bit (security: P × 2^2048)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 40 | 40 | 41 | 49 | 48 | 49 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 40 | 39 | 40 | 48 | 48 | 49 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 46 | 51 | 51 | 61 | 64 | 66 |
+| **AES-CMAC** | 128 | 2048 | PRF | 42 | 47 | 47 | 54 | 58 | 59 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 26 | 26 | 26 | 31 | 31 | 30 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 19 | 17 | 17 | 21 | 19 | 23 |
+| **BLAKE2s** | 256 | 2048 | PRF | 19 | 19 | 20 | 22 | 19 | 24 |
+| **BLAKE3** | 256 | 2048 | PRF | 9 | 9 | 9 | 9 | 10 | 8 |
+| **ChaCha20** | 256 | 2048 | PRF | 5 | 12 | 13 | 5 | 11 | 13 |
 
 ## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup mode)
 

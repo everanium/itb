@@ -1,18 +1,19 @@
 ! bench_wrapper.f90 -- format-deniability wrapper benchmarks for the
 ! Fortran binding.
 !
-! Mirrors the cross-binding wrapper bench shape:
+! Mirrors the cross-binding wrapper bench shape. The outer-cipher
+! palette covers all 9 ciphers in PRIMITIVES_CANONICAL order
+! (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+! aescmac, siphash24, chacha20):
 !
-!   * 6 wrapper only round-trip cases   (3 ciphers x { Wrap, WrapInPlace })
-!   * 24 Message Single                  (4 modes x 3 ciphers x 2 dirs)
-!   * 24 Message Triple                  (4 modes x 3 ciphers x 2 dirs)
-!   * 24 Streaming Single                (4 modes x 3 ciphers x 2 dirs)
-!   * 24 Streaming Triple                (4 modes x 3 ciphers x 2 dirs)
+!   * wrapper only round-trip cases   ({ Wrap, WrapInPlace } per cipher)
+!   * Message Single                  (4 modes x 2 dirs per cipher)
+!   * Message Triple                  (4 modes x 2 dirs per cipher)
+!   * Streaming Single                (4 modes x 2 dirs per cipher)
+!   * Streaming Triple                (4 modes x 2 dirs per cipher)
 !
-!   Total: 102 sub-benches.
-!
-! Streaming sub-bench inventory per direction = 4 modes x 3 ciphers
-! = 12 (no `noaead-*-io` mode -- the Fortran binding has no
+! Streaming sub-bench inventory per direction = 4 modes per cipher
+! (no `noaead-*-io` mode -- the Fortran binding has no
 ! unit-IO analogue for Non-AEAD streaming). Modes:
 !
 !   1. Streaming AEAD Easy IO-Driven       (MAC Authenticated)
@@ -122,7 +123,7 @@ module bench_wrapper_state
     integer(itb_byte_kind), allocatable  :: work_buf(:)
   end type
 
-  integer, parameter :: MAX_CASES = 128
+  integer, parameter :: MAX_CASES = 320
   type(case_state_t), save :: cases_state(MAX_CASES)
   integer,            save :: cases_state_len = 0
 
@@ -182,13 +183,23 @@ program bench_wrapper
   implicit none
 
   ! Cipher constants in canonical order.
-  integer, parameter :: NUM_CIPHERS = 3
+  ! Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+  ! (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+  ! aescmac, siphash24, chacha20).
+  integer, parameter :: NUM_CIPHERS = 9
   integer, parameter :: CIPHERS(NUM_CIPHERS) = [                              &
+      ITB_WRAPPER_CIPHER_AREION_256,                                           &
+      ITB_WRAPPER_CIPHER_AREION_512,                                           &
+      ITB_WRAPPER_CIPHER_BLAKE2B_256,                                          &
+      ITB_WRAPPER_CIPHER_BLAKE2B_512,                                          &
+      ITB_WRAPPER_CIPHER_BLAKE2S,                                              &
+      ITB_WRAPPER_CIPHER_BLAKE3,                                               &
       ITB_WRAPPER_CIPHER_AES_128_CTR,                                          &
-      ITB_WRAPPER_CIPHER_CHACHA20,                                             &
-      ITB_WRAPPER_CIPHER_SIPHASH24]
-  character(len=9), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
-      [character(len=9) :: "aescmac", "chacha20", "siphash24"]
+      ITB_WRAPPER_CIPHER_SIPHASH24,                                            &
+      ITB_WRAPPER_CIPHER_CHACHA20]
+  character(len=10), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
+      [character(len=10) :: "areion256", "areion512", "blake2b256",           &
+       "blake2b512", "blake2s", "blake3", "aescmac", "siphash24", "chacha20"]
 
   ! Per-mode label tables -- indexed by mode 1..4 in the canonical
   ! Easy-NoMAC / Easy-Auth / LowLevel-NoMAC / LowLevel-Auth order
@@ -213,10 +224,10 @@ program bench_wrapper
   character(*),         parameter :: PIPELINE_MAC_NAME  = "hmac-blake3"
 
   integer(int64), parameter :: WRAPPER_PAYLOAD_BYTES = PAYLOAD_16MB
-  ! Total cases:
-  !   6 wrapper only + 24 msg-single + 24 msg-triple +
-  !   24 stream-single + 24 stream-triple = 102.
-  integer, parameter :: TOTAL_CASES = 102
+  ! Total cases: 34 per cipher (2 wrapper only + 8 msg-single +
+  !   8 msg-triple + 8 stream-single + 8 stream-triple) × 9 ciphers
+  !   = 306.
+  integer, parameter :: TOTAL_CASES = 34 * NUM_CIPHERS
 
   type(bench_case_t) :: cases(TOTAL_CASES)
   integer            :: nonce_bits, n

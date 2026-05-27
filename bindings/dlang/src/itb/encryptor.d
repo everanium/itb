@@ -840,6 +840,14 @@ struct Encryptor
         check(ITB_Easy_SetLockSoup(_handle, mode));
     }
 
+    /// 0 = off (default); non-zero = on. Per-chunk PRF batching for the
+    /// Lock Soup overlay; inert unless Lock Soup is engaged.
+    void setLockBatch(int mode) @trusted
+    {
+        _checkOpen();
+        check(ITB_Easy_SetLockBatch(_handle, mode));
+    }
+
     /// 0 = off; 1 = on (allocates a dedicated lockSeed and routes the
     /// bit-permutation overlay through it; auto-couples
     /// `LockSoup=1 + BitSoup=1` on this encryptor). Calling after the

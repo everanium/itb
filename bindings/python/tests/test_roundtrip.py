@@ -194,6 +194,14 @@ class TestConfig(unittest.TestCase):
         finally:
             itb.set_lock_soup(orig)
 
+    def test_lock_batch_roundtrip(self):
+        orig = itb.get_lock_batch()
+        try:
+            itb.set_lock_batch(1)
+            self.assertEqual(itb.get_lock_batch(), 1)
+        finally:
+            itb.set_lock_batch(orig)
+
     def test_max_workers_roundtrip(self):
         orig = itb.get_max_workers()
         try:

@@ -4,14 +4,17 @@
 --  bindings/csharp/Itb.Bench/BenchWrapper.cs +
 --  bindings/rust/benches/bench_wrapper.rs.
 --
---  Sub-bench inventory (102 cases):
---    * 6   wrapper only round-trip   (Wrap / Wrap_In_Place × 3 ciphers)
---    * 24  Message Single Ouroboros  (4 modes × 3 ciphers × 2 dirs)
---    * 24  Message Triple Ouroboros  (4 modes × 3 ciphers × 2 dirs)
---    * 24  Streaming Single Ouroboros (4 modes × 3 ciphers × 2 dirs,
+--  Sub-bench inventory — the outer-cipher palette covers all nine
+--  ciphers in PRIMITIVES_CANONICAL order (areion256, areion512,
+--  blake2b256, blake2b512, blake2s, blake3, aescmac, siphash24,
+--  chacha20):
+--    * wrapper only round-trip   (Wrap / Wrap_In_Place per cipher)
+--    * Message Single Ouroboros  (4 modes × 2 dirs per cipher)
+--    * Message Triple Ouroboros  (4 modes × 2 dirs per cipher)
+--    * Streaming Single Ouroboros (4 modes × 2 dirs per cipher,
 --          excludes noaead-*-io: Ada has no IO-Driven Non-AEAD wrap
 --          surface — only User-Driven Loop on the no-MAC arm)
---    * 24  Streaming Triple Ouroboros
+--    * Streaming Triple Ouroboros
 --
 --  Modes covered (consistent with the eitb 8-example matrix):
 --    Single Message: easy-nomac, easy-auth, lowlevel-nomac, lowlevel-auth
@@ -1674,20 +1677,41 @@ procedure Bench_Wrapper is
 
    Min_Seconds : constant Float := Env_Min_Seconds;
 
-   --  Cipher-name slug for case-name composition. Cycle these strings
-   --  in canonical order: aes / chacha / siphash.
+   --  Cipher-name slug for case-name composition. Covers all nine
+   --  outer ciphers; the slug is the primitive name.
    function Cipher_Slug (C : Outer_Cipher) return String is
    begin
       case C is
          when Itb.Wrapper.Aes_128_Ctr => return "aescmac";
          when Itb.Wrapper.Cha_Cha_20  => return "chacha20";
          when Itb.Wrapper.Sip_Hash_24 => return "siphash24";
+         when Itb.Wrapper.Areion_256  => return "areion256";
+         when Itb.Wrapper.Areion_512  => return "areion512";
+         when Itb.Wrapper.Blake_2b_256 => return "blake2b256";
+         when Itb.Wrapper.Blake_2b_512 => return "blake2b512";
+         when Itb.Wrapper.Blake_2s    => return "blake2s";
+         when Itb.Wrapper.Blake_3     => return "blake3";
       end case;
    end Cipher_Slug;
 
+   --  Outer-cipher palette in PRIMITIVES_CANONICAL order (areion256,
+   --  areion512, blake2b256, blake2b512, blake2s, blake3, aescmac,
+   --  siphash24, chacha20). The per-cipher case loops iterate this
+   --  array so the bench rows match the cross-binding canonical order.
+   Bench_Ciphers : constant array (1 .. 9) of Outer_Cipher :=
+     [Itb.Wrapper.Areion_256,
+      Itb.Wrapper.Areion_512,
+      Itb.Wrapper.Blake_2b_256,
+      Itb.Wrapper.Blake_2b_512,
+      Itb.Wrapper.Blake_2s,
+      Itb.Wrapper.Blake_3,
+      Itb.Wrapper.Aes_128_Ctr,
+      Itb.Wrapper.Sip_Hash_24,
+      Itb.Wrapper.Cha_Cha_20];
+
    procedure Run_Wrapper_Only_Cases is
    begin
-      for C in Outer_Cipher loop
+      for C of Bench_Ciphers loop
          Bench_Cipher := C;
          Measure
            ("bench_wrapper_only_alloc_" & Cipher_Slug (C) & "_16mb",
@@ -1718,7 +1742,7 @@ procedure Bench_Wrapper is
             (Low_Nomac_Tag'Access,  Low_NoMAC_Single,  Low_NoMAC_Triple),
             (Low_Auth_Tag'Access,   Low_Auth_Single,   Low_Auth_Triple)];
       begin
-         for C in Outer_Cipher loop
+         for C of Bench_Ciphers loop
             Bench_Cipher := C;
             for M of Modes loop
                --  Single Ouroboros (encrypt + decrypt — full pipeline)
@@ -1767,7 +1791,7 @@ procedure Bench_Wrapper is
          NoAEAD_Easy_UL => Noaead_Easy_Tag'Access,
          NoAEAD_Low_UL  => Noaead_Low_Tag'Access];
    begin
-      for C in Outer_Cipher loop
+      for C of Bench_Ciphers loop
          Bench_Cipher := C;
          for Tag in Stream_Mode_Tag loop
             case Tag is
@@ -1885,15 +1909,15 @@ begin
          & " stream_chunk_size=16777216"
          & " min_seconds=" & Min_S_Img
          & " workers=auto");
-      Ada.Text_IO.Put_Line ("# benchmarks=102 min_seconds=" & Min_S_Img);
+      Ada.Text_IO.Put_Line ("# benchmarks=306 min_seconds=" & Min_S_Img);
    end;
 
    Build_Cipher_Keys;
    Pre_Compute;
 
-   Run_Wrapper_Only_Cases;     --  6 cases
-   Run_Single_Message_Cases;   --  48 cases (24 single + 24 triple)
-   Run_Streaming_Cases;        --  48 cases (24 single + 24 triple)
+   Run_Wrapper_Only_Cases;     --  2 per cipher
+   Run_Single_Message_Cases;   --  16 per cipher (8 single + 8 triple)
+   Run_Streaming_Cases;        --  16 per cipher (8 single + 8 triple)
 
    --  Cleanup heap allocations.
    Free_Buf (Wrap_Plain);

@@ -276,6 +276,8 @@ pub type FnSetBitSoup = unsafe extern "C" fn(c_int) -> c_int;
 pub type FnGetBitSoup = unsafe extern "C" fn() -> c_int;
 pub type FnSetLockSoup = unsafe extern "C" fn(c_int) -> c_int;
 pub type FnGetLockSoup = unsafe extern "C" fn() -> c_int;
+pub type FnSetLockBatch = unsafe extern "C" fn(c_int) -> c_int;
+pub type FnGetLockBatch = unsafe extern "C" fn() -> c_int;
 pub type FnSetMaxWorkers = unsafe extern "C" fn(c_int) -> c_int;
 pub type FnGetMaxWorkers = unsafe extern "C" fn() -> c_int;
 pub type FnSetNonceBits = unsafe extern "C" fn(c_int) -> c_int;
@@ -343,6 +345,7 @@ pub type FnEasySetNonceBits = unsafe extern "C" fn(usize, c_int) -> c_int;
 pub type FnEasySetBarrierFill = unsafe extern "C" fn(usize, c_int) -> c_int;
 pub type FnEasySetBitSoup = unsafe extern "C" fn(usize, c_int) -> c_int;
 pub type FnEasySetLockSoup = unsafe extern "C" fn(usize, c_int) -> c_int;
+pub type FnEasySetLockBatch = unsafe extern "C" fn(usize, c_int) -> c_int;
 pub type FnEasySetLockSeed = unsafe extern "C" fn(usize, c_int) -> c_int;
 pub type FnEasySetChunkSize = unsafe extern "C" fn(usize, c_int) -> c_int;
 pub type FnEasyPrimitive = unsafe extern "C" fn(usize, *mut c_char, usize, *mut usize) -> c_int;
@@ -530,6 +533,8 @@ pub(crate) struct LibItb {
     pub(crate) ITB_GetBitSoup: FnGetBitSoup,
     pub(crate) ITB_SetLockSoup: FnSetLockSoup,
     pub(crate) ITB_GetLockSoup: FnGetLockSoup,
+    pub(crate) ITB_SetLockBatch: FnSetLockBatch,
+    pub(crate) ITB_GetLockBatch: FnGetLockBatch,
     pub(crate) ITB_SetMaxWorkers: FnSetMaxWorkers,
     pub(crate) ITB_GetMaxWorkers: FnGetMaxWorkers,
     pub(crate) ITB_SetNonceBits: FnSetNonceBits,
@@ -560,6 +565,7 @@ pub(crate) struct LibItb {
     pub(crate) ITB_Easy_SetBarrierFill: FnEasySetBarrierFill,
     pub(crate) ITB_Easy_SetBitSoup: FnEasySetBitSoup,
     pub(crate) ITB_Easy_SetLockSoup: FnEasySetLockSoup,
+    pub(crate) ITB_Easy_SetLockBatch: FnEasySetLockBatch,
     pub(crate) ITB_Easy_SetLockSeed: FnEasySetLockSeed,
     pub(crate) ITB_Easy_SetChunkSize: FnEasySetChunkSize,
     pub(crate) ITB_Easy_Primitive: FnEasyPrimitive,
@@ -714,6 +720,8 @@ impl LibItb {
                 ITB_GetBitSoup: sym!(b"ITB_GetBitSoup"),
                 ITB_SetLockSoup: sym!(b"ITB_SetLockSoup"),
                 ITB_GetLockSoup: sym!(b"ITB_GetLockSoup"),
+                ITB_SetLockBatch: sym!(b"ITB_SetLockBatch"),
+                ITB_GetLockBatch: sym!(b"ITB_GetLockBatch"),
                 ITB_SetMaxWorkers: sym!(b"ITB_SetMaxWorkers"),
                 ITB_GetMaxWorkers: sym!(b"ITB_GetMaxWorkers"),
                 ITB_SetNonceBits: sym!(b"ITB_SetNonceBits"),
@@ -744,6 +752,7 @@ impl LibItb {
                 ITB_Easy_SetBarrierFill: sym!(b"ITB_Easy_SetBarrierFill"),
                 ITB_Easy_SetBitSoup: sym!(b"ITB_Easy_SetBitSoup"),
                 ITB_Easy_SetLockSoup: sym!(b"ITB_Easy_SetLockSoup"),
+                ITB_Easy_SetLockBatch: sym!(b"ITB_Easy_SetLockBatch"),
                 ITB_Easy_SetLockSeed: sym!(b"ITB_Easy_SetLockSeed"),
                 ITB_Easy_SetChunkSize: sym!(b"ITB_Easy_SetChunkSize"),
                 ITB_Easy_Primitive: sym!(b"ITB_Easy_Primitive"),

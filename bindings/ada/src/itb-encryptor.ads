@@ -228,6 +228,10 @@ package Itb.Encryptor is
    --  modes — Lock Soup layers on top of bit soup).
    procedure Set_Lock_Soup (Self : Encryptor; Mode : Integer);
 
+   --  0 = off (default); non-zero = on. Per-chunk PRF batching for the
+   --  Lock Soup overlay; inert unless Lock Soup is engaged.
+   procedure Set_Lock_Batch (Self : Encryptor; Mode : Integer);
+
    --  0 = off; 1 = on (allocates a dedicated lockSeed and routes the
    --  bit-permutation overlay through it; auto-couples Lock_Soup = 1
    --  + Bit_Soup = 1 on this encryptor). Calling after the first

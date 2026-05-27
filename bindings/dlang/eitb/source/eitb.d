@@ -111,6 +111,7 @@ Cell runAEADEasyIO(Cipher cipher, const(ubyte)[] plaintext) @trusted
         enc.setBarrierFill(4);
         enc.setBitSoup(1);
         enc.setLockSoup(1);
+        enc.setLockBatch(1);
 
         auto outerKey = wrapperGenerateKey(cipher);
 
@@ -194,6 +195,7 @@ Cell runAEADLowLevelIO(Cipher cipher, const(ubyte)[] plaintext) @trusted
         setBarrierFill(4);
         setBitSoup(1);
         setLockSoup(1);
+        setLockBatch(1);
 
         auto noise = Seed("areion512", 1024);
         auto data  = Seed("areion512", 1024);
@@ -287,6 +289,7 @@ Cell runNoAEADEasyUserLoop(Cipher cipher, const(ubyte)[] plaintext) @trusted
         enc.setBarrierFill(4);
         enc.setBitSoup(1);
         enc.setLockSoup(1);
+        enc.setLockBatch(1);
 
         auto outerKey = wrapperGenerateKey(cipher);
 
@@ -358,6 +361,7 @@ Cell runNoAEADLowLevelUserLoop(Cipher cipher, const(ubyte)[] plaintext) @trusted
         setBarrierFill(4);
         setBitSoup(1);
         setLockSoup(1);
+        setLockBatch(1);
 
         auto noise = Seed("areion512", 1024);
         auto data  = Seed("areion512", 1024);
@@ -438,6 +442,7 @@ Cell runMessageEasyNoMAC(Cipher cipher, const(ubyte)[] plaintext) @trusted
         enc.setBarrierFill(4);
         enc.setBitSoup(1);
         enc.setLockSoup(1);
+        enc.setLockBatch(1);
 
         auto encrypted = enc.encrypt(plaintext).dup;
 
@@ -488,6 +493,7 @@ Cell runMessageEasyAuth(Cipher cipher, const(ubyte)[] plaintext) @trusted
         enc.setBarrierFill(4);
         enc.setBitSoup(1);
         enc.setLockSoup(1);
+        enc.setLockBatch(1);
 
         auto encrypted = enc.encryptAuth(plaintext).dup;
 
@@ -536,6 +542,7 @@ Cell runMessageLowLevelNoMAC(Cipher cipher, const(ubyte)[] plaintext) @trusted
         setBarrierFill(4);
         setBitSoup(1);
         setLockSoup(1);
+        setLockBatch(1);
 
         auto noise = Seed("areion512", 2048);
         auto data  = Seed("areion512", 2048);
@@ -587,6 +594,7 @@ Cell runMessageLowLevelAuth(Cipher cipher, const(ubyte)[] plaintext) @trusted
         setBarrierFill(4);
         setBitSoup(1);
         setLockSoup(1);
+        setLockBatch(1);
 
         auto noise = Seed("areion512", 2048);
         auto data  = Seed("areion512", 2048);

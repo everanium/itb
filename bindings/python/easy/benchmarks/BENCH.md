@@ -80,7 +80,9 @@ for the `-tags=noitbasm` opt-outs.
 
 The dedicated lockSeed channel (`set_lock_seed(1)` / `ITB_LOCKSEED=1`)
 auto-couples bit-soup + lock-soup on the on-direction. Numbers
-below run with all three overlays active.
+below run with all three overlays active. Adding `ITB_LOCKBATCH=1`
+(`set_lock_batch(1)`) before `ITB_LOCKSEED=1` selects the Lock Batch
+performance variant of Lock Soup.
 
 ### ITB Single 1024-bit (security: P × 2^1024)
 

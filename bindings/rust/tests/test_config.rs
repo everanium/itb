@@ -33,6 +33,15 @@ fn lock_soup_roundtrip() {
 }
 
 #[test]
+fn lock_batch_roundtrip() {
+    let _g = common::serial_lock();
+    let orig = itb::get_lock_batch();
+    itb::set_lock_batch(1).unwrap();
+    assert_eq!(itb::get_lock_batch(), 1);
+    itb::set_lock_batch(orig).unwrap();
+}
+
+#[test]
 fn max_workers_roundtrip() {
     let _g = common::serial_lock();
     let orig = itb::get_max_workers();

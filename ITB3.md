@@ -243,6 +243,8 @@ Applies uniformly to `Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*`
 
 **Cost.** End-to-end throughput is ~2×-7× slower than plain Bit Soup depending on platform; the BMI2 PEXT/PDEP path on x86 (Haswell+, Excavator+/Zen 1+) sits near the lower bound, the Pure Go fallback near the upper. The mode trades throughput for the strongest architectural barrier the construction can express. Intended for deployments where the barrier is the deployment priority and throughput is secondary — long-term archive encryption, high-value off-line ciphertexts, defense-in-depth layering above already-strong PRF guarantees.
 
+**Lock Batch.** `SetLockBatch(1)` is the performance variant of Lock Soup: instead of one PRF call per chunk it derives the per-chunk overlays for a whole group of chunks from a single primitive call, raising Triple throughput several-fold. On x86 hosts with AVX-512 (F, plus VPOPCNTDQ for the permutation kernel) the derivation runs through lane-parallel AVX-512 kernels; other hosts fall back to a scalar path, so the lift is largest on x86 and modest elsewhere (Go's assembler carries no SVE2, so AArch64 gets hash-call batching only). It is recommended in every case **under the PRF assumption** — for PRF-grade primitives the batched lanes remain independently keyed, so no security is lost; the default one-mask-per-chunk Lock Soup keeps the stronger claim that holds even for below-spec primitives. The flag is symmetric — batched and non-batched per-chunk masks differ, so it must be set identically on the encrypt and decrypt sides — and inert unless Lock Soup is engaged.
+
 **How to enable:**
 
 ```go

@@ -583,7 +583,7 @@ func containerSizeAuth3_128Cfg(cfg *Config, noiseSeed *Seed128, dataSeed1, dataS
 // Encrypt128Cfg is the Cfg variant of [Encrypt128]: threads cfg through
 // generateNonceCfg, the PRF builder, splitForSingleCfg, the container-
 // sizing helper, process128Cfg, and headerSizeCfg so per-encryptor
-// NonceBits / BarrierFill / BitSoup / LockSoup / LockSeed overrides
+// NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch / LockSeed overrides
 // are honoured. Body otherwise identical to Encrypt128, including
 // every error-path message and the COBS-plus-null-fill payload layout.
 func Encrypt128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, data []byte) ([]byte, error) {

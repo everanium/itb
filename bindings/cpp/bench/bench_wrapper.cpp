@@ -7,14 +7,15 @@
 // `std::ostream` / `std::istream` wrapper writer / reader pair for
 // Non-AEAD streaming).
 //
-// Total sub-bench count: **102**.
+// The outer-cipher palette covers all 9 ciphers in
+// PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
+// blake2b512, blake2s, blake3, aescmac, siphash24, chacha20):
 //
-//   - Wrapper Only round-trip (16 MiB blob)              :  6
-//     ( 3 ciphers × 2 variants {Wrap, WrapInPlace} )
-//   - Message Single — 4 modes × 3 ciphers × 2 dirs      : 24
-//   - Message Triple — 4 modes × 3 ciphers × 2 dirs      : 24
-//   - Streaming Single — 4 modes × 3 ciphers × 2 dirs    : 24
-//   - Streaming Triple — 4 modes × 3 ciphers × 2 dirs    : 24
+//   - Wrapper Only round-trip (16 MiB blob)              : 2 variants {Wrap, WrapInPlace} per cipher
+//   - Message Single — 4 modes × 2 dirs per cipher
+//   - Message Triple — 4 modes × 2 dirs per cipher
+//   - Streaming Single — 4 modes × 2 dirs per cipher
+//   - Streaming Triple — 4 modes × 2 dirs per cipher
 //
 // 4 message modes: easy-nomac / easy-auth / lowlevel-nomac /
 // lowlevel-auth.
@@ -54,13 +55,25 @@ namespace {
 
 // ----- Configuration ------------------------------------------------
 
+// Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+// (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+// aescmac, siphash24, chacha20).
 constexpr itb::wrapper::Cipher kCiphers[] = {
+    itb::wrapper::Cipher::Areion256,
+    itb::wrapper::Cipher::Areion512,
+    itb::wrapper::Cipher::Blake2b256,
+    itb::wrapper::Cipher::Blake2b512,
+    itb::wrapper::Cipher::Blake2s,
+    itb::wrapper::Cipher::Blake3,
     itb::wrapper::Cipher::Aes128Ctr,
-    itb::wrapper::Cipher::ChaCha20,
     itb::wrapper::Cipher::SipHash24,
+    itb::wrapper::Cipher::ChaCha20,
 };
-constexpr const char* kCipherNames[] = { "aescmac", "chacha20", "siphash24" };
-constexpr std::size_t kCipherCount = 3;
+constexpr const char* kCipherNames[] = {
+    "areion256", "areion512", "blake2b256", "blake2b512", "blake2s",
+    "blake3", "aescmac", "siphash24", "chacha20",
+};
+constexpr std::size_t kCipherCount = 9;
 
 constexpr std::size_t kWrapperPayloadBytes = bench::kPayload16MB;
 constexpr std::size_t kMessagePayloadBytes = bench::kPayload16MB;
@@ -526,7 +539,9 @@ bench::BenchCase make_stream_decrypt_case(int mode, StreamKind kind,
 
 // ----- Case-list assembly -------------------------------------------
 
-constexpr std::size_t kTotalCases = 102;
+// 34 sub-benches per cipher (2 wrapper only + 16 message + 16
+// streaming) × 9 ciphers = 306.
+constexpr std::size_t kTotalCases = 34 * kCipherCount;
 
 std::vector<bench::BenchCase> build_cases() {
     std::vector<bench::BenchCase> cases;

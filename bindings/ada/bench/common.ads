@@ -16,6 +16,10 @@
 --    * ITB_NONCE_BITS   — process-wide nonce width override; valid
 --      values 128 / 256 / 512. Maps to Itb.Set_Nonce_Bits before any
 --      Encryptor is constructed. Default 128.
+--    * ITB_LOCKBATCH    — non-empty / non-"0" enables Lock Batch (the
+--      performance Lock Soup mode); set with ITB_LOCKSEED. Every Easy
+--      Mode encryptor additionally calls Set_Lock_Batch (1). Inert
+--      unless Lock Soup is engaged via ITB_LOCKSEED. Default off.
 --    * ITB_LOCKSEED     — when set to a non-empty / non-"0" value,
 --      every Easy Mode encryptor in this run calls Set_Lock_Seed (1)
 --      AND Itb.Set_Lock_Soup (1) is invoked at start. Mixed-primitive
@@ -113,6 +117,11 @@ package Common is
    --  diagnostic for the invalid case).
    function Env_Nonce_Bits (Default : Integer := 128) return Integer;
 
+   --  True when ITB_LOCKBATCH is set to a non-empty / non-"0" value.
+   --  Triggers Encryptor.Set_Lock_Batch (1) on every encryptor. Inert
+   --  unless Lock Soup is engaged via ITB_LOCKSEED.
+   function Env_Lock_Batch return Boolean;
+
    --  True when ITB_LOCKSEED is set to a non-empty / non-"0" value.
    --  Triggers Encryptor.Set_Lock_Seed (1) on every encryptor; Easy
    --  Mode auto-couples Bit Soup + Lock Soup as a side effect.
@@ -142,6 +151,12 @@ package Common is
    --  collapse on a constant input.
    function Random_Bytes
      (N : Ada.Streams.Stream_Element_Offset) return Itb.Byte_Array;
+
+   --  Apply the ITB_LOCKBATCH per-encryptor flag. Calling
+   --  Encryptor.Set_Lock_Batch with mode 1 selects the Lock Batch
+   --  performance Lock Soup mode; inert unless Lock Soup is engaged
+   --  via ITB_LOCKSEED.
+   procedure Apply_Lock_Batch_If_Requested (Enc : Itb.Encryptor.Encryptor);
 
    --  Apply the ITB_LOCKSEED per-encryptor flag. Calling
    --  Encryptor.Set_Lock_Seed with mode 1 auto-couples Bit Soup +

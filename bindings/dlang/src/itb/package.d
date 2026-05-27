@@ -57,6 +57,8 @@ public import itb.registry :
     getBitSoup,
     setLockSoup,
     getLockSoup,
+    setLockBatch,
+    getLockBatch,
     setMaxWorkers,
     getMaxWorkers,
     setNonceBits,

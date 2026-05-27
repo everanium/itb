@@ -12,6 +12,9 @@
 //
 //     dotnet run --project Itb.Bench -c Release -- triple
 //
+//     ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 \
+//         dotnet run --project Itb.Bench -c Release -- triple
+//
 //     ITB_NONCE_BITS=512 ITB_LOCKSEED=1 \
 //         dotnet run --project Itb.Bench -c Release -- triple
 //

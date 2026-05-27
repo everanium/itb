@@ -434,7 +434,7 @@ func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 
 // EncryptStream128Cfg is the Cfg variant of [EncryptStream128]: drives
 // each chunk through [Encrypt128Cfg] so per-encryptor NonceBits /
-// BarrierFill / BitSoup / LockSoup / LockSeed overrides are honoured
+// BarrierFill / BitSoup / LockSoup / LockBatch / LockSeed overrides are honoured
 // chunk-by-chunk. Body otherwise identical.
 func EncryptStream128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
 	if noiseSeed == dataSeed || noiseSeed == startSeed || dataSeed == startSeed {

@@ -107,6 +107,7 @@ import {
   ITB_Easy_SetChunkSize,
   ITB_Easy_SetLockSeed,
   ITB_Easy_SetLockSoup,
+  ITB_Easy_SetLockBatch,
   ITB_Easy_SetNonceBits,
 } from './native.js';
 import {
@@ -1038,6 +1039,15 @@ export class Encryptor implements Disposable {
   setLockSoup(mode: number): void {
     this._checkOpen();
     check(ITB_Easy_SetLockSoup(this._handle, mode | 0));
+  }
+
+  /**
+   * 0 = off (default); non-zero = on. Per-chunk PRF batching for the
+   * Lock Soup overlay; inert unless Lock Soup is engaged.
+   */
+  setLockBatch(mode: number): void {
+    this._checkOpen();
+    check(ITB_Easy_SetLockBatch(this._handle, mode | 0));
   }
 
   /**

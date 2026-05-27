@@ -11,6 +11,9 @@
 //!
 //!     cargo bench --bench bench_single
 //!
+//!     ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 \
+//!         cargo bench --bench bench_single
+//!
 //!     ITB_NONCE_BITS=512 ITB_LOCKSEED=1 \
 //!         cargo bench --bench bench_single
 //!
@@ -61,10 +64,14 @@ const PAYLOAD_BYTES: usize = PAYLOAD_16MB;
 /// When `ITB_LOCKSEED` is set the harness flips the dedicated
 /// lockSeed channel on every encryptor. Easy Mode auto-couples
 /// BitSoup + LockSoup as a side effect, so no separate calls are
-/// issued.
+/// issued. When `ITB_LOCKBATCH` is also set, enable the Lock Batch
+/// performance Lock Soup mode on the same encryptor.
 fn apply_lockseed_if_requested(enc: &Encryptor) {
     if common::env_lock_seed() {
         enc.set_lock_seed(1).expect("set_lock_seed(1)");
+    }
+    if common::env_lock_batch() {
+        enc.set_lock_batch(1).expect("set_lock_batch(1)");
     }
 }
 

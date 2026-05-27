@@ -57,6 +57,7 @@ PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_trip
 | Variable             | Default | Purpose |
 |----------------------|---------|---------|
 | `ITB_NONCE_BITS`     | `128`   | Process-wide nonce width — `128`, `256`, or `512`. Mirrors `ITB_NONCE_BITS` from `bitbyte_test.go`. |
+| `ITB_LOCKBATCH`      | unset   | Non-empty / non-`0` enables Lock Batch (performance Lock Soup mode); set with `ITB_LOCKSEED`. Every encryptor additionally calls `set_lock_batch(1)`. Inert unless Lock Soup is engaged via `ITB_LOCKSEED`. |
 | `ITB_LOCKSEED`       | unset   | When set to a non-empty / non-`0` value, every encryptor in the run calls `set_lock_seed(1)`. Easy Mode auto-couples `set_bit_soup(1)` + `set_lock_soup(1)`, so no separate flags are needed. The mixed-primitive cases already attach a dedicated lockSeed at construction (via `primitive_l`) and ignore this knob. |
 | `ITB_BENCH_FILTER`   | unset   | Substring filter on bench-function names — only cases whose name contains the filter are run. Useful when iterating on one primitive / op. |
 | `ITB_BENCH_MIN_SEC`  | `2.0`   | Minimum measured wall-clock seconds per case. The runner keeps doubling iteration count until the measured batch reaches the threshold, mirroring Go's `-benchtime=Ns`. |
@@ -73,9 +74,12 @@ PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_sing
 ```
 
 512-bit nonces with the dedicated lockSeed channel + auto-coupled
-overlay:
+overlay (the `ITB_LOCKBATCH=1` form selects the Lock Batch performance
+variant of Lock Soup):
 
 ```bash
+ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 \
+    PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_triple
 ITB_NONCE_BITS=512 ITB_LOCKSEED=1 \
     PYTHONPATH=bindings/python python3 -m bindings.python.easy.benchmarks.bench_triple
 ```

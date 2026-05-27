@@ -146,7 +146,7 @@ func main() {
 
 	// Blob512.Import restores per-slot hash keys + Components, the
 	// MAC key + name, AND applies the captured globals (NonceBits /
-	// BarrierFill / BitSoup / LockSoup) via the process-wide setters.
+	// BarrierFill / BitSoup / LockSoup / LockBatch) via the process-wide setters.
 	// Hash / BatchHash on each restored seed stay nil so the caller
 	// wires them from the saved Key* bytes through the matching
 	// factory.

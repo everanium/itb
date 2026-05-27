@@ -14,6 +14,11 @@
 // * ``ITB_NONCE_BITS`` — process-wide nonce width override; valid
 //   values 128 / 256 / 512. Maps to `setNonceBits` before any
 //   encryptor is constructed. Default 128.
+// * ``ITB_LOCKBATCH`` — non-empty / non-``0`` enables Lock Batch (the
+//   performance Lock Soup mode); set with ``ITB_LOCKSEED``. Every Easy
+//   Mode encryptor in this run calls `Encryptor.setLockBatch(1)`.
+//   Inert unless Lock Soup is engaged via ``ITB_LOCKSEED``. Default
+//   off.
 // * ``ITB_LOCKSEED`` — when set to a non-empty / non-``0`` value,
 //   every Easy Mode encryptor in this run calls
 //   `Encryptor.setLockSeed(1)`. The Go side's auto-couple invariant
@@ -118,6 +123,19 @@ export function envNonceBits(defaultBits = 128): number {
     `ITB_NONCE_BITS="${v}" invalid (expected 128/256/512); using ${defaultBits}`,
   );
   return defaultBits;
+}
+
+/**
+ * `true` when `ITB_LOCKBATCH` is set to a non-empty / non-`0` value.
+ * Triggers `Encryptor.setLockBatch(1)` on every encryptor; inert
+ * unless Lock Soup is engaged via `ITB_LOCKSEED`.
+ */
+export function envLockBatch(): boolean {
+  const v = process.env['ITB_LOCKBATCH'];
+  if (v === undefined || v === '' || v === '0') {
+    return false;
+  }
+  return true;
 }
 
 /**

@@ -85,6 +85,7 @@ enc.setNonceBits(512);
 enc.setBarrierFill(4);
 enc.setBitSoup(1);
 enc.setLockSoup(1);
+enc.setLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 auto outerKey = wrapperGenerateKey(cipher);
 
@@ -134,6 +135,7 @@ auto enc = Encryptor("areion512", 1024, null, 1);
 scope(exit) enc.close();
 enc.setNonceBits(512); enc.setBarrierFill(4);
 enc.setBitSoup(1); enc.setLockSoup(1);
+enc.setLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 auto outerKey = wrapperGenerateKey(cipher);
 ubyte[] wireBuf;
@@ -208,6 +210,7 @@ auto enc = Encryptor("areion512", 2048, null, 1);
 scope(exit) enc.close();
 enc.setNonceBits(512); enc.setBarrierFill(4);
 enc.setBitSoup(1); enc.setLockSoup(1);
+enc.setLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 auto encrypted = enc.encrypt(plaintext).dup;
 
@@ -234,6 +237,7 @@ auto enc = Encryptor("areion512", 2048, "hmac-blake3", 1);
 scope(exit) enc.close();
 enc.setNonceBits(512); enc.setBarrierFill(4);
 enc.setBitSoup(1); enc.setLockSoup(1);
+enc.setLockBatch(1);  // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
 auto encrypted = enc.encryptAuth(plaintext).dup;
 
