@@ -22,17 +22,24 @@ import (
 // Once the keystream is keyed, Update is the same XOR-in-place
 // operation on either side.
 
-// WrapStreamHandle wraps a single outer cipher Keystream behind
-// an opaque uintptr crossing the cgo boundary. The keystream
-// counter advances monotonically across Update calls until the
-// handle is freed; no per-Update reinit cost.
+// WrapStreamHandle wraps one outer cipher stream behind an opaque
+// uintptr crossing the cgo boundary. It carries the cipher name,
+// key, nonce and a running byte offset so each Update can XOR its
+// chunk under one logical keystream: a chunk at or above
+// wrapper.ParallelThreshold is XORed across workers (seeking to the
+// running offset), then the serial keystream ks is re-seated to the
+// new offset; a smaller chunk advances ks directly, so the common
+// small-Update path pays no per-chunk reseed keying.
 //
 // Mirrors the SeedHandle / MACHandle pattern in handles.go and
-// macs.go — the cgo.Handle pins the value so the *Keystream stays
+// macs.go — the cgo.Handle pins the value so the handle stays
 // rooted on the Go heap until FreeWrapStream is called.
 type WrapStreamHandle struct {
-	name string
-	ks   wrapper.Keystream
+	name  string
+	key   []byte
+	nonce []byte
+	ks    wrapper.Keystream // serial keystream, positioned at byte offset off
+	off   int               // cumulative bytes XORed so far
 }
 
 // WrapStreamHandleID is the opaque uintptr passed across the C
@@ -89,7 +96,12 @@ func NewWrapStreamWriter(name string, key, outNonce []byte) (id WrapStreamHandle
 		return 0, 0, StatusBadInput
 	}
 
-	h := &WrapStreamHandle{name: name, ks: ks}
+	h := &WrapStreamHandle{
+		name:  name,
+		key:   append([]byte(nil), key...),
+		nonce: append([]byte(nil), nonce...),
+		ks:    ks,
+	}
 	return WrapStreamHandleID(cgo.NewHandle(h)), nonceSz, StatusOK
 }
 
@@ -130,7 +142,12 @@ func NewUnwrapStreamReader(name string, key, wireNonce []byte) (id WrapStreamHan
 		return 0, StatusBadInput
 	}
 
-	h := &WrapStreamHandle{name: name, ks: ks}
+	h := &WrapStreamHandle{
+		name:  name,
+		key:   append([]byte(nil), key...),
+		nonce: append([]byte(nil), wireNonce...),
+		ks:    ks,
+	}
 	return WrapStreamHandleID(cgo.NewHandle(h)), StatusOK
 }
 
@@ -178,7 +195,21 @@ func WrapStreamUpdate(id WrapStreamHandleID, src, dst []byte) (n int, st Status)
 	if len(src) == 0 {
 		return 0, StatusOK
 	}
-	h.ks.XORKeyStream(dst[:len(src)], src)
+	if len(src) >= wrapper.ParallelThreshold {
+		if err := wrapper.XORParallelAt(h.name, h.key, h.nonce, h.off, dst[:len(src)], src); err != nil {
+			setLastErr(StatusInternal)
+			return 0, StatusInternal
+		}
+		ks, err := wrapper.MakeKeystreamAt(h.name, h.key, h.nonce, h.off+len(src))
+		if err != nil {
+			setLastErr(StatusInternal)
+			return 0, StatusInternal
+		}
+		h.ks = ks
+	} else {
+		h.ks.XORKeyStream(dst[:len(src)], src)
+	}
+	h.off += len(src)
 	return len(src), StatusOK
 }
 
@@ -210,6 +241,8 @@ func FreeWrapStream(id WrapStreamHandleID) (st Status) {
 	if h, ok := cgo.Handle(id).Value().(*WrapStreamHandle); ok && h != nil {
 		h.ks = nil
 		h.name = ""
+		h.key = nil
+		h.nonce = nil
 	}
 	cgo.Handle(id).Delete()
 	return StatusOK

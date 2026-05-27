@@ -143,7 +143,7 @@ internal static class BenchWrapper
                 },
                 SingleSize);
 
-            // wrap_in_place: zero-allocation steady state on the wrap path
+            // wrap_in_place: no output-buffer allocation on the wrap path
             // (a fresh wire copy is rebuilt per iter so the next wrap has
             // a clean blob).
             var nlen = WrapperCore.NonceSize(cipher);

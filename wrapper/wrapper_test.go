@@ -448,3 +448,72 @@ func TestDeriveKeyFromMLKEM(t *testing.T) {
 		}
 	}
 }
+
+// TestWrapStreamReaderWriterLargeChunks drives the parallel reseed path: a
+// payload streamed in 1 MiB chunks (each well above ParallelThreshold) plus a
+// small tail, read back with different chunk boundaries. Every large chunk is
+// XORed across workers and the serial keystream re-seated afterwards, so the
+// recovered plaintext must match regardless of how either side splits the
+// stream — proving the one logical keystream stays continuous across the
+// parallel / serial split points.
+func TestWrapStreamReaderWriterLargeChunks(t *testing.T) {
+	const chunk = 1 << 20 // 1 MiB, > ParallelThreshold
+	for _, name := range CipherNames {
+		t.Run(name, func(t *testing.T) {
+			key, err := GenerateKey(name)
+			if err != nil {
+				t.Fatalf("GenerateKey(%s): %v", name, err)
+			}
+			total := 4*chunk + 333 // 4 MiB + small tail
+			plaintext := make([]byte, total)
+			if _, err := rand.Read(plaintext); err != nil {
+				t.Fatalf("rand: %v", err)
+			}
+
+			var wireBuf bytes.Buffer
+			ww, err := NewWrapWriter(name, key, &wireBuf)
+			if err != nil {
+				t.Fatalf("NewWrapWriter(%s): %v", name, err)
+			}
+			// Encrypt in 1 MiB chunks (parallel) then the small tail.
+			for off := 0; off < total; off += chunk {
+				end := off + chunk
+				if end > total {
+					end = total
+				}
+				if _, err := ww.Write(plaintext[off:end]); err != nil {
+					t.Fatalf("Write[%d:%d]: %v", off, end, err)
+				}
+			}
+
+			// Decrypt with different boundaries (~1.33 MiB) so keystream
+			// continuity is split-independent.
+			rr, err := NewUnwrapReader(name, key, bytes.NewReader(wireBuf.Bytes()))
+			if err != nil {
+				t.Fatalf("NewUnwrapReader(%s): %v", name, err)
+			}
+			recovered := make([]byte, total)
+			dchunk := chunk + chunk/3
+			for off := 0; off < total; off += dchunk {
+				end := off + dchunk
+				if end > total {
+					end = total
+				}
+				dst := recovered[off:end]
+				for got := 0; got < len(dst); {
+					n, rerr := rr.Read(dst[got:])
+					got += n
+					if n == 0 && rerr == nil {
+						t.Fatalf("Read[%d:%d]: zero-length read without error", off, end)
+					}
+					if rerr != nil && got < len(dst) {
+						t.Fatalf("Read[%d:%d]: %v", off, end, rerr)
+					}
+				}
+			}
+			if !bytes.Equal(recovered, plaintext) {
+				t.Fatalf("%s: large-chunk stream round-trip mismatch", name)
+			}
+		})
+	}
+}

@@ -25,7 +25,7 @@
 /// assert(recovered == blob);
 /// ---
 ///
-/// Single Message in-place mutation (zero-allocation steady state):
+/// Single Message in-place mutation (no output-buffer allocation):
 ///
 /// ---
 /// auto mutable = blob.dup;
@@ -380,8 +380,8 @@ private void _checkNonceLen(Cipher cipher, size_t nlen) @trusted
 /// `nonce || keystream-XOR(blob)`.
 ///
 /// Allocates a fresh output buffer of size
-/// `nonceSize(cipher) + blob.length` per call. For zero-allocation
-/// steady state on the hot path use `wrapInPlace`.
+/// `nonceSize(cipher) + blob.length` per call. For no output-buffer
+/// allocation on the hot path use `wrapInPlace`.
 ubyte[] wrap(Cipher cipher, const(ubyte)[] key, const(ubyte)[] blob) @trusted
 {
     _checkKeyLen(cipher, key.length);
@@ -407,8 +407,8 @@ ubyte[] wrap(Cipher cipher, const(ubyte)[] key, const(ubyte)[] blob) @trusted
 /// under `(key, nonce)` and returns the recovered blob.
 ///
 /// Allocates a fresh output buffer of size
-/// `wire.length - nonceSize(cipher)` per call. For zero-allocation
-/// steady state use `unwrapInPlace`.
+/// `wire.length - nonceSize(cipher)` per call. For no output-buffer
+/// allocation use `unwrapInPlace`.
 ubyte[] unwrap(Cipher cipher, const(ubyte)[] key, const(ubyte)[] wire) @trusted
 {
     _checkKeyLen(cipher, key.length);

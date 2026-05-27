@@ -59,6 +59,15 @@ func MakeKeystream(name string, key, nonce []byte) (Keystream, error) {
 	return ctr.New(name, key, nonce)
 }
 
+// MakeKeystreamAt is MakeKeystream positioned at an arbitrary byte offset: the
+// returned keystream's first XORKeyStream byte is keystream byte offset of the
+// (name, key, nonce) stream. The streaming helpers use it to re-seat their
+// serial keystream after a chunk was XORed in parallel, so the next chunk
+// continues the one logical stream the matching reader expects.
+func MakeKeystreamAt(name string, key, nonce []byte, offset int) (Keystream, error) {
+	return ctr.NewAt(name, key, nonce, offset)
+}
+
 // GenerateKey returns a fresh CSPRNG key sized for the named outer cipher.
 func GenerateKey(name string) ([]byte, error) {
 	n, err := KeySize(name)
@@ -96,11 +105,11 @@ func generateNonce(name string) ([]byte, error) {
 //      chunk) is sealed as one blob — the receiver unwraps to recover the
 //      raw ITB stream then feeds it to ITB's stream decoder.
 //
-//      WrapInPlace / UnwrapInPlace are zero-allocation variants that XOR the
+//      WrapInPlace / UnwrapInPlace are no-output-buffer-allocation variants that XOR the
 //      caller's blob / wire buffer in place. Use when the caller has just
 //      produced an ITB ciphertext and will not re-read it, e.g. on the hot
-//      write-to-wire path where the allocation cost of a fresh output buffer
-//      dominates over the keystream XOR itself.
+//      write-to-wire path where the output-buffer allocation cost of the non-in-place helpers dominates
+//      over the keystream XOR itself.
 //
 //   2. NewWrapWriter / NewUnwrapReader — io.Writer / io.Reader pipeline.
 //      Emits the nonce once at stream start, then XORs the entire bytestream
@@ -192,10 +201,21 @@ func UnwrapInPlace(name string, key, wire []byte) ([]byte, error) {
 // panics on a misuse pattern). Wrapping by hand keeps the one-method
 // contract explicit and works equally for the SipHash-CTR construction.
 
+// keystreamWriter / keystreamReader carry the cipher name, key, nonce and a
+// running byte offset so each Write / Read can XOR its chunk under one logical
+// keystream. A chunk at or above ParallelThreshold is XORed across workers via
+// xorParallelAt seeking to the running offset, after which the serial keystream
+// ks is re-seated to the new offset; a smaller chunk advances ks directly so
+// the common small-write path pays no per-chunk reseed keying.
+
 type keystreamWriter struct {
 	w       io.Writer
-	ks      Keystream
-	scratch []byte // reused across Writes; grows to the largest p seen
+	name    string
+	key     []byte
+	nonce   []byte
+	ks      Keystream // serial keystream, positioned at byte offset off
+	off     int       // cumulative bytes XORed so far
+	scratch []byte    // reused across Writes; grows to the largest p seen
 }
 
 func (kw *keystreamWriter) Write(p []byte) (int, error) {
@@ -203,19 +223,47 @@ func (kw *keystreamWriter) Write(p []byte) (int, error) {
 		kw.scratch = make([]byte, len(p))
 	}
 	out := kw.scratch[:len(p)]
-	kw.ks.XORKeyStream(out, p)
+	if len(p) >= parallelThreshold {
+		if err := xorParallelAt(kw.name, kw.key, kw.nonce, kw.off, out, p); err != nil {
+			return 0, err
+		}
+		ks, err := MakeKeystreamAt(kw.name, kw.key, kw.nonce, kw.off+len(p))
+		if err != nil {
+			return 0, err
+		}
+		kw.ks = ks
+	} else {
+		kw.ks.XORKeyStream(out, p)
+	}
+	kw.off += len(p)
 	return kw.w.Write(out)
 }
 
 type keystreamReader struct {
-	r  io.Reader
-	ks Keystream
+	r     io.Reader
+	name  string
+	key   []byte
+	nonce []byte
+	ks    Keystream
+	off   int
 }
 
 func (kr *keystreamReader) Read(p []byte) (int, error) {
 	n, err := kr.r.Read(p)
 	if n > 0 {
-		kr.ks.XORKeyStream(p[:n], p[:n])
+		if n >= parallelThreshold {
+			if e := xorParallelAt(kr.name, kr.key, kr.nonce, kr.off, p[:n], p[:n]); e != nil {
+				return 0, e
+			}
+			ks, e := MakeKeystreamAt(kr.name, kr.key, kr.nonce, kr.off+n)
+			if e != nil {
+				return 0, e
+			}
+			kr.ks = ks
+		} else {
+			kr.ks.XORKeyStream(p[:n], p[:n])
+		}
+		kr.off += n
 	}
 	return n, err
 }
@@ -239,7 +287,13 @@ func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &keystreamWriter{w: dst, ks: ks}, nil
+	return &keystreamWriter{
+		w:     dst,
+		name:  name,
+		key:   append([]byte(nil), key...),
+		nonce: append([]byte(nil), nonce...),
+		ks:    ks,
+	}, nil
 }
 
 // NewUnwrapReader returns an io.Reader that consumes the per-stream nonce
@@ -260,7 +314,13 @@ func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &keystreamReader{r: src, ks: ks}, nil
+	return &keystreamReader{
+		r:     src,
+		name:  name,
+		key:   append([]byte(nil), key...),
+		nonce: nonce,
+		ks:    ks,
+	}, nil
 }
 
 // DeriveKey deterministically derives an outer cipher key from a caller-

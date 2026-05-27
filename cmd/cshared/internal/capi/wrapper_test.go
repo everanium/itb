@@ -205,7 +205,7 @@ func TestWrapStream(t *testing.T) {
 
 // TestWrapStreamInPlace exercises the dst==src case to confirm the
 // FFI Update path supports in-place XOR (no internal scratch
-// buffer that would defeat the zero-allocation contract).
+// buffer that would defeat the no-output-buffer-allocation contract).
 func TestWrapStreamInPlace(t *testing.T) {
 	for _, name := range wrapper.CipherNames {
 		t.Run(name, func(t *testing.T) {
@@ -482,5 +482,75 @@ func TestWrapperDeriveKey(t *testing.T) {
 	// Too-short master (below the wrapper's uniform 32-byte floor) is rejected.
 	if _, st := WrapperDeriveKey("aescmac", make([]byte, 8), make([]byte, 16)); st != StatusBadInput {
 		t.Fatalf("WrapperDeriveKey(short master): st=%v", st)
+	}
+}
+
+// TestWrapStreamLargeChunks drives the streaming handle's parallel reseed
+// path: 1 MiB Update spans (each above wrapper.ParallelThreshold) plus a small
+// tail, reversed with different span boundaries. Every large span is XORed
+// across workers and the serial keystream re-seated afterwards, so the
+// recovered plaintext must match regardless of how either side splits the
+// stream — confirming the keystream stays continuous across the parallel /
+// serial split points.
+func TestWrapStreamLargeChunks(t *testing.T) {
+	const chunk = 1 << 20 // 1 MiB, > wrapper.ParallelThreshold
+	for _, name := range wrapper.CipherNames {
+		t.Run(name, func(t *testing.T) {
+			keySz, _ := wrapper.KeySize(name)
+			key := make([]byte, keySz)
+			if _, err := rand.Read(key); err != nil {
+				t.Fatal(err)
+			}
+			nonceSz, _ := wrapper.NonceSize(name)
+			outNonce := make([]byte, nonceSz)
+
+			total := 4*chunk + 333 // 4 MiB + small tail
+			plain := make([]byte, total)
+			if _, err := rand.Read(plain); err != nil {
+				t.Fatal(err)
+			}
+			cipher := make([]byte, total)
+
+			wid, _, st := NewWrapStreamWriter(name, key, outNonce)
+			if st != StatusOK {
+				t.Fatalf("NewWrapStreamWriter(%s): st=%v", name, st)
+			}
+			// Encrypt in 1 MiB spans (parallel) plus the small tail.
+			for off := 0; off < total; off += chunk {
+				end := off + chunk
+				if end > total {
+					end = total
+				}
+				if _, st := WrapStreamUpdate(wid, plain[off:end], cipher[off:end]); st != StatusOK {
+					t.Fatalf("WrapStreamUpdate[%d:%d]: st=%v", off, end, st)
+				}
+			}
+			if st := FreeWrapStream(wid); st != StatusOK {
+				t.Fatalf("FreeWrapStream(enc): st=%v", st)
+			}
+
+			// Decrypt with different span boundaries (~1.33 MiB).
+			rid, st := NewUnwrapStreamReader(name, key, outNonce)
+			if st != StatusOK {
+				t.Fatalf("NewUnwrapStreamReader(%s): st=%v", name, st)
+			}
+			recovered := make([]byte, total)
+			dchunk := chunk + chunk/3
+			for off := 0; off < total; off += dchunk {
+				end := off + dchunk
+				if end > total {
+					end = total
+				}
+				if _, st := WrapStreamUpdate(rid, cipher[off:end], recovered[off:end]); st != StatusOK {
+					t.Fatalf("WrapStreamUpdate.decrypt[%d:%d]: st=%v", off, end, st)
+				}
+			}
+			if st := FreeWrapStream(rid); st != StatusOK {
+				t.Fatalf("FreeWrapStream(dec): st=%v", st)
+			}
+			if !bytes.Equal(recovered, plain) {
+				t.Fatalf("%s: large-chunk handle round-trip mismatch", name)
+			}
+		})
 	}
 }

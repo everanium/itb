@@ -28,7 +28,7 @@ The Rust module exposes Single Message helpers (immutable + in-place mutation) a
 | Helper | Wire format | Use case |
 |---|---|---|
 | `wrap` / `unwrap` | `nonce \|\| keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output, immutable plaintext path. |
-| `wrap_in_place` / `unwrap_in_place` | same as `wrap` / `unwrap` | Single Message, zero-allocation steady state. Mutates the caller's `&mut [u8]`. |
+| `wrap_in_place` / `unwrap_in_place` | same as `wrap` / `unwrap` | Single Message, no output-buffer allocation. Mutates the caller's `&mut [u8]`. |
 | `WrapStreamWriter` / `UnwrapStreamReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — Streaming AEAD wraps the entire bytestream end-to-end; User-Driven Loop emits per-chunk caller-side framing (`u32_LE` length prefix) through the wrap-writer so the framing bytes also pass through the keystream XOR. |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
@@ -189,7 +189,7 @@ writer.close()?;
 
 ### 5. Easy: Areion-SoEM-512 (No MAC, Single Message)
 
-ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — `nonce || ks-XOR(blob)`. The `wrap_in_place` / `unwrap_in_place` variant is shown — mutates the caller's `Vec<u8>` in place to skip the steady-state allocation.
+ITB Call: `enc.encrypt(plaintext)` returns one ITB blob. Wrap shape: `wrap` — `nonce || ks-XOR(blob)`. The `wrap_in_place` / `unwrap_in_place` variant is shown — mutates the caller's `Vec<u8>` in place to skip the output-buffer allocation.
 
 ```rust
 let mut enc = Encryptor::new(Some("areion512"), Some(2048), None, 1)?;

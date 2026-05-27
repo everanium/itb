@@ -26,7 +26,7 @@ The `Itb.Wrapper` package exposes one `Cipher_Type` enumeration plus three usage
 | Helper | Wire format | Use case |
 |---|---|---|
 | `Wrap` / `Unwrap` | `nonce` + keystream-XOR(blob) | Single Message Encrypt / Encrypt_Auth output, immutable inputs |
-| `Wrap_In_Place` / `Unwrap_In_Place` | `nonce` + keystream-XOR(blob) | zero-allocation steady state on the hot path; mutates the caller's buffer |
+| `Wrap_In_Place` / `Unwrap_In_Place` | `nonce` + keystream-XOR(blob) | no output-buffer allocation on the hot path; mutates the caller's buffer |
 | `Wrap_Stream_Writer` / `Unwrap_Stream_Reader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — IO-Driven Streaming AEAD or User-Driven Loop where caller-side framing (`u32_LE` length prefix + body) is written through the wrap-writer so the framing bytes also pass through the keystream XOR |
 
 The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session on the libitb side; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
