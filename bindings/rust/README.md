@@ -378,11 +378,9 @@ enc.set_bit_soup(1).unwrap();       // optional bit-level split ("bit-soup"; def
 enc.set_lock_soup(1).unwrap();      // optional Insane Interlocked Mode: per-chunk PRF-keyed
                                     // bit-permutation overlay on top of bit-soup;
                                     // auto-enabled for Single Ouroboros if set_bit_soup(1) is on
-enc.set_lock_batch(1).unwrap();     // Lock Batch is the performance Lock Soup mode: recommended
-                                    // in every case when the configured hash is PRF-grade, since
-                                    // security is preserved under the PRF assumption while
-                                    // throughput rises. Symmetric option — set identically on
-                                    // the encrypt and decrypt sides.
+enc.set_lock_batch(1).unwrap();     // Recommended under the PRF assumption,
+                                    // the performance Lock Soup mode.
+                                    // Symmetric, set on both sides.
 
 // enc.set_lock_seed(1).unwrap();   // optional dedicated lockSeed for the bit-permutation
                                     // derivation channel — separates that PRF's keying
@@ -472,7 +470,9 @@ dec.set_nonce_bits(512).unwrap();
 dec.set_barrier_fill(4).unwrap();
 dec.set_bit_soup(1).unwrap();
 dec.set_lock_soup(1).unwrap();
-dec.set_lock_batch(1).unwrap();     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+dec.set_lock_batch(1).unwrap();     // Recommended under the PRF assumption,
+                                    // the performance Lock Soup mode.
+                                    // Symmetric, set on both sides.
 // dec.set_lock_seed(1).unwrap();   // optional — Import below restores the dedicated
                                     // lockSeed slot from the blob's lock_seed:true.
 
@@ -712,11 +712,9 @@ itb::set_lock_soup(1).unwrap();      // optional Insane Interlocked Mode: per-ch
                                      // bit-permutation overlay on top of bit-soup;
                                      // automatically enabled for Single Ouroboros if
                                      // itb::set_bit_soup(1) is enabled or vice versa
-itb::set_lock_batch(1).unwrap();     // Lock Batch is the performance Lock Soup mode: recommended
-                                     // in every case when the configured hash is PRF-grade, since
-                                     // security is preserved under the PRF assumption while
-                                     // throughput rises. Symmetric option — set identically on
-                                     // the encrypt and decrypt sides.
+itb::set_lock_batch(1).unwrap();     // Recommended under the PRF assumption,
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
 
 // Three independent CSPRNG-keyed Areion-SoEM-512 seeds. Each Seed
 // pre-keys its primitive once at construction; the C ABI / FFI
