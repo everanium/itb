@@ -6,14 +6,10 @@
 /// random blob through `wrap` / `wrapInPlace` per outer cipher) plus
 /// 288 full-ITB cases split across:
 ///
-///   * Message Single Ouroboros — 4 modes × 9 ciphers × 2 directions
-///     = 72 sub-benches.
-///   * Message Triple Ouroboros — 4 modes × 9 ciphers × 2 directions
-///     = 72 sub-benches.
-///   * Streaming Single Ouroboros — 4 modes × 9 ciphers × 2 directions
-///     = 72 sub-benches.
-///   * Streaming Triple Ouroboros — 4 modes × 9 ciphers × 2 directions
-///     = 72 sub-benches.
+///   * Message Single Ouroboros — 4 modes × every cipher × 2 directions.
+///   * Message Triple Ouroboros — 4 modes × every cipher × 2 directions.
+///   * Streaming Single Ouroboros — 4 modes × every cipher × 2 directions.
+///   * Streaming Triple Ouroboros — 4 modes × every cipher × 2 directions.
 ///
 /// Total: 18 + 288 = **306 sub-benches** when run end-to-end.
 ///
@@ -198,7 +194,7 @@ private BenchCase makeWrapperOnlyInPlace(string name, Cipher cipher) @trusted
 // ────────────────────────────────────────────────────────────────────
 // Single-message ITB + wrapper sub-benches.
 //
-// 4 modes × 9 ciphers × 2 directions = 72 cases per Ouroboros. The
+// 4 modes × every cipher × 2 directions, per Ouroboros. The
 // modes are:
 //
 //   * Easy No MAC                -> Encryptor.encrypt / decrypt
@@ -357,7 +353,7 @@ private BenchCase makeMsgLowAuthDecSingle(string name, Cipher cipher) @trusted
 
 // ────────────────────────────────────────────────────────────────────
 // Triple Ouroboros message variants — 7-seed Triple wrapped against
-// 4 modes × 9 ciphers × 2 directions = 72 sub-benches.
+// 4 modes × every cipher × 2 directions.
 // ────────────────────────────────────────────────────────────────────
 
 private BenchCase makeMsgEasyNoMACEncTriple(string name, Cipher cipher) @trusted
@@ -519,7 +515,7 @@ private BenchCase makeMsgLowAuthDecTriple(string name, Cipher cipher) @trusted
 // ────────────────────────────────────────────────────────────────────
 // Streaming sub-benches.
 //
-// Per-Ouroboros: 4 modes × 9 ciphers × 2 directions = 72 sub-benches.
+// Per-Ouroboros: 4 modes × every cipher × 2 directions.
 // The four streaming modes:
 //
 //   * Streaming AEAD Easy   IO-Driven (Encryptor.encryptStreamAuth /
@@ -1145,7 +1141,7 @@ private LazyCase[] buildLazyFactories() @trusted
     LazyCase[] facs;
     facs.reserve(306);
 
-    // Wrapper Only — 2 per cipher × 9 ciphers = 18.
+    // Wrapper Only — 2 per cipher across every cipher in the palette.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
@@ -1155,7 +1151,7 @@ private LazyCase[] buildLazyFactories() @trusted
             format("bench_wrapper_only_inplace_%s_16mb", cn), cipher);
     }
 
-    // Message Single — 4 modes × 9 ciphers × 2 dirs = 72.
+    // Message Single — 4 modes × every cipher × 2 dirs.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
@@ -1177,7 +1173,7 @@ private LazyCase[] buildLazyFactories() @trusted
             format("bench_msg_single_low_auth_%s_decrypt_16mb", cn), cipher);
     }
 
-    // Message Triple — 4 modes × 9 ciphers × 2 dirs = 72.
+    // Message Triple — 4 modes × every cipher × 2 dirs.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
@@ -1199,7 +1195,7 @@ private LazyCase[] buildLazyFactories() @trusted
             format("bench_msg_triple_low_auth_%s_decrypt_16mb", cn), cipher);
     }
 
-    // Streaming Single — 4 modes × 9 ciphers × 2 dirs = 72.
+    // Streaming Single — 4 modes × every cipher × 2 dirs.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
@@ -1221,7 +1217,7 @@ private LazyCase[] buildLazyFactories() @trusted
             format("bench_stream_single_low_userloop_%s_decrypt_64mb", cn), cipher);
     }
 
-    // Streaming Triple — 4 modes × 9 ciphers × 2 dirs = 72.
+    // Streaming Triple — 4 modes × every cipher × 2 dirs.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);

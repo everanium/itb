@@ -5,7 +5,7 @@ for the Python binding asymmetry: the Streaming No MAC arm covers
 only the User-Driven Loop variant (the binding does not expose a
 file-like Streaming No MAC writer / reader pair).
 
-The outer-cipher palette covers all 9 ciphers in
+The outer-cipher palette covers every cipher in
 PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
 blake2b512, blake2s, blake3, aescmac, siphash24, chacha20):
 
@@ -58,7 +58,7 @@ from . import _common
 # Configuration
 # --------------------------------------------------------------------
 
-# Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+# Full outer-keystream palette in PRIMITIVES_CANONICAL order
 # (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
 # aescmac, siphash24, chacha20).
 CIPHERS: Tuple[str, ...] = (

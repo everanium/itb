@@ -1123,10 +1123,9 @@ module itb_sys
     ! These twelve declarations bind to the libitb wrapper exports
     ! defined in `cmd/cshared/main.go` under the
     ! "Format-deniability wrapper" section. Every entry point
-    ! dispatches off a `cipher_name` NUL-terminated string
-    ! ("aescmac" / "chacha20" / "siphash24"). The Fortran-side wrapper
-    ! module `itb_wrapper` layers a derived-type / subroutine
-    ! surface on top.
+    ! dispatches off a `cipher_name` NUL-terminated string.
+    ! The Fortran-side wrapper module `itb_wrapper` layers
+    ! a derived-type / subroutine surface on top.
     ! --------------------------------------------------------------
 
     function itb_wrapper_key_size_c(cipherName, outSize) &

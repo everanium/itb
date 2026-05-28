@@ -18,8 +18,8 @@ Usage:
     python3 scripts/redteam/phase2_theory/kl_massive_single.py <hash>
 
 Valid <hash> values match the 10 dirnames used elsewhere:
-    fnv1a, md5, aescmac, siphash24, chacha20, areion256,
-    blake2s, blake3, blake2b, areion512
+    fnv1a, md5, areion256, areion512, blake2b,
+    blake2s, blake3, aescmac, siphash24, chacha20
 """
 
 from __future__ import annotations

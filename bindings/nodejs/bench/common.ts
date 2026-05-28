@@ -89,7 +89,7 @@ export const MIXED_START2 = 'blake2b256';
 export const MIXED_START3 = 'blake3';
 export const MIXED_LOCK_T = 'areion256';
 
-/** Canonical 9-primitive PRF-grade order, mirroring bench_single.py
+/** Canonical PRF-grade order, mirroring bench_single.py
  *  / bench_single.rs. The three below-spec lab primitives (CRC128,
  *  FNV-1a, MD5) are not exposed through the libitb registry and are
  *  therefore absent here by construction. */
