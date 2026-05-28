@@ -48,10 +48,10 @@ func TestRegistry(t *testing.T) {
 }
 
 // TestRoundtripAllHashes runs Encrypt → Decrypt over every shipped
-// primitive at every supported ITB key width (9 × 3 = 27 cases),
-// using the FFI-shaped capi entry points with caller-allocated
-// output buffers. This is the central regression test for the C
-// ABI surface; every binding in turn exercises the same code path.
+// primitive at every supported ITB key width, using the FFI-shaped
+// capi entry points with caller-allocated output buffers. This is
+// the central regression test for the C ABI surface; every binding
+// in turn exercises the same code path.
 func TestRoundtripAllHashes(t *testing.T) {
 	plaintext := make([]byte, 4096)
 	if _, err := rand.Read(plaintext); err != nil {
@@ -264,9 +264,9 @@ func TestReadOnlyConstants(t *testing.T) {
 
 // TestRoundtripTripleAllHashes covers Triple Ouroboros (Encrypt3 /
 // Decrypt3) over every shipped primitive at every supported ITB key
-// width — 9 × 3 = 27 cases. Same caller-allocated-buffer convention
-// as the Single Ouroboros TestRoundtripAllHashes, but with seven
-// distinct seed handles per case.
+// width. Same caller-allocated-buffer convention as the Single
+// Ouroboros TestRoundtripAllHashes, but with seven distinct seed
+// handles per case.
 func TestRoundtripTripleAllHashes(t *testing.T) {
 	plaintext := make([]byte, 4096)
 	if _, err := rand.Read(plaintext); err != nil {

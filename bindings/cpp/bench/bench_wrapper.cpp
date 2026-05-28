@@ -7,7 +7,7 @@
 // `std::ostream` / `std::istream` wrapper writer / reader pair for
 // Non-AEAD streaming).
 //
-// The outer-cipher palette covers all 9 ciphers in
+// The outer-cipher palette covers every cipher in
 // PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
 // blake2b512, blake2s, blake3, aescmac, siphash24, chacha20):
 //
@@ -55,7 +55,7 @@ namespace {
 
 // ----- Configuration ------------------------------------------------
 
-// Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+// Full outer-keystream palette in PRIMITIVES_CANONICAL order
 // (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
 // aescmac, siphash24, chacha20).
 constexpr itb::wrapper::Cipher kCiphers[] = {
@@ -540,7 +540,7 @@ bench::BenchCase make_stream_decrypt_case(int mode, StreamKind kind,
 // ----- Lazy descriptor ----------------------------------------------
 
 // 34 sub-benches per cipher (2 wrapper only + 16 message + 16
-// streaming) × 9 ciphers = 306.
+// streaming) across every cipher in the palette.
 constexpr std::size_t kTotalCases = 34 * kCipherCount;
 
 // One lazy descriptor: cheap to store (no payload allocation), holds
@@ -604,7 +604,7 @@ std::vector<NamedFactory> build_lazy_factories() {
         }});
     }
 
-    // Message — 2 ouroboros × 4 labels × 9 ciphers × 2 dirs = 144.
+    // Message — 2 ouroboros × 4 labels × every cipher × 2 dirs.
     for (int mode : kModes) {
         const char* mode_name = (mode == 1) ? "Single" : "Triple";
         for (const auto& m : kMsgLabels) {
@@ -628,7 +628,7 @@ std::vector<NamedFactory> build_lazy_factories() {
         }
     }
 
-    // Streaming — 2 ouroboros × 4 labels × 9 ciphers × 2 dirs = 144.
+    // Streaming — 2 ouroboros × 4 labels × every cipher × 2 dirs.
     for (int mode : kModes) {
         const char* mode_name = (mode == 1) ? "Single" : "Triple";
         for (const auto& s : kStreamLabels) {

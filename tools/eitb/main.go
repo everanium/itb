@@ -53,7 +53,7 @@ type example struct {
 
 func main() {
 	exampleFilter := flag.String("example", "", "run only examples whose name contains this substring")
-	cipherFilter := flag.String("cipher", "", "run only the given outer cipher (aes|chacha|siphash)")
+	cipherFilter := flag.String("cipher", "", "run only the given outer cipher")
 	verbose := flag.Bool("v", false, "print per-run details")
 	flag.Parse()
 

@@ -10,9 +10,9 @@ import (
 
 // wrapper_test.go — round-trip parity tests for the FFI-side
 // format-deniability surface. Each test runs every shipped outer
-// cipher (aes / chacha / siphash) through one of the four single-
-// shot variants plus the streaming Init / Update / Free path, and
-// confirms the recovered plaintext matches the input.
+// cipher through one of the four single-message variants plus the
+// streaming Init / Update / Free path, and confirms the recovered
+// plaintext matches the input.
 //
 // Cross-checks against the Go-native wrapper package: where the
 // FFI helper takes a caller-allocated buffer, the matching
@@ -38,8 +38,8 @@ func TestWrapperSizes(t *testing.T) {
 		key, nonce int
 	}{
 		"aescmac":     {16, 16},
-		"chacha20":  {32, 12},
 		"siphash24": {16, 16},
+		"chacha20":  {32, 12},
 	}
 	for name, exp := range want {
 		k, st := WrapperKeySize(name)

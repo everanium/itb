@@ -16,9 +16,7 @@ Authenticated variants take an additional MAC handle:
     >>> ct = itb.encrypt_auth(*seeds, mac, b"integrity-protected")
     >>> pt = itb.decrypt_auth(*seeds, mac, ct)
 
-Hash names match the canonical FFI registry (see hashes/registry.go):
-``areion256``, ``areion512``, ``blake2b256``, ``blake2b512``,
-``blake2s``, ``blake3``, ``aescmac``, ``siphash24``, ``chacha20``.
+Hash names match the canonical FFI registry (see hashes/registry.go).
 
 MAC names: ``kmac256``, ``hmac-sha256``, ``hmac-blake3``.
 """

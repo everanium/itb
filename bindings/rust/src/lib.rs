@@ -29,9 +29,7 @@
 //! let pt = itb::decrypt_auth(&n, &d, &s, &mac, &ct).unwrap();
 //! ```
 //!
-//! Hash names match the canonical FFI registry (see `hashes/registry.go`):
-//! `areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`,
-//! `blake3`, `aescmac`, `siphash24`, `chacha20`.
+//! Hash names match the canonical FFI registry (see `hashes/registry.go`).
 //!
 //! MAC names: `kmac256`, `hmac-sha256`, `hmac-blake3`.
 

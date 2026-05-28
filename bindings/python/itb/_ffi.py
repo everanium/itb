@@ -529,8 +529,7 @@ extern int ITB_Easy_DecryptStreamAuth(
 /* Format-deniability wrapper (outer CTR cipher). Mirrors the
  * 12 entry points exported by cmd/cshared/main.go for the
  * github.com/everanium/itb/wrapper Go package. The cipher_name
- * argument selects one of three outer keystream ciphers
- * ("aescmac" / "chacha20" / "siphash24"). */
+ * argument selects one of outer keystream ciphers */
 
 extern int ITB_WrapperKeySize(char* cipherName, size_t* outSize);
 extern int ITB_WrapperNonceSize(char* cipherName, size_t* outSize);
@@ -947,10 +946,8 @@ class Seed:
 
         ``components`` accepts any iterable of int (length 8..32,
         multiple of 8). ``hash_key`` length, when non-empty, must
-        match the primitive's native fixed-key size: 16 (aescmac),
-        32 (areion256 / blake2{s,b256} / blake3 / chacha20),
-        64 (areion512 / blake2b512). Pass ``b""`` for ``siphash24``
-        (no internal fixed key)."""
+        match the primitive's native fixed-key size. Pass ``b""``
+        for ``siphash24`` (no internal fixed key)."""
         comps = list(components)
         comps_arr = _ffi.new("unsigned long long[]", comps)
         if len(hash_key) > 0:

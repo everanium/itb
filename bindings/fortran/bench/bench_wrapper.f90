@@ -2,7 +2,7 @@
 ! Fortran binding.
 !
 ! Mirrors the cross-binding wrapper bench shape. The outer-cipher
-! palette covers all 9 ciphers in PRIMITIVES_CANONICAL order
+! palette covers every cipher in PRIMITIVES_CANONICAL order
 ! (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
 ! aescmac, siphash24, chacha20):
 !
@@ -185,7 +185,7 @@ program bench_wrapper
   implicit none
 
   ! Cipher constants in canonical order.
-  ! Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+  ! Full outer-keystream palette in PRIMITIVES_CANONICAL order
   ! (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
   ! aescmac, siphash24, chacha20).
   integer, parameter :: NUM_CIPHERS = 9
@@ -227,8 +227,7 @@ program bench_wrapper
 
   integer(int64), parameter :: WRAPPER_PAYLOAD_BYTES = PAYLOAD_16MB
   ! Total cases: 34 per cipher (2 wrapper only + 8 msg-single +
-  !   8 msg-triple + 8 stream-single + 8 stream-triple) × 9 ciphers
-  !   = 306.
+  !   8 msg-triple + 8 stream-single + 8 stream-triple) across every cipher.
   integer, parameter :: TOTAL_CASES = 34 * NUM_CIPHERS
 
   integer               :: nonce_bits

@@ -773,8 +773,8 @@ func hashWidthForName(name string) (int, error) {
 	case "blake2b", "areion512":
 		return 512, nil
 	default:
-		return 0, fmt.Errorf("unknown hash %q; supported: fnv1a, md5, aescmac, siphash24, "+
-			"crc128 (test-only), chacha20, areion256, blake2s, blake3, blake2b256, blake2b, areion512", name)
+		return 0, fmt.Errorf("unknown hash %q; supported: crc128 (test-only), fnv1a, md5, areion256, areion512, "+
+			"blake2b256, blake2b, blake2s, blake3, aescmac, siphash24, chacha20", name)
 	}
 }
 

@@ -648,7 +648,7 @@ internal static class BenchWrapper
     {
         var lazy = new List<(string, Func<BenchCase>)>(306);
 
-        // Wrapper Only — 9 ciphers × 2 shapes = 18.
+        // Wrapper Only — every cipher × 2 shapes (alloc + in-place).
         foreach (var cipher in AllCiphers)
         {
             var c = cipher; // capture
@@ -692,7 +692,7 @@ internal static class BenchWrapper
                 }));
         }
 
-        // Message Single and Triple — 4 modes × 9 ciphers × 2 dirs × 2 ouroboros = 144.
+        // Message Single and Triple — 4 modes × every cipher × 2 dirs × 2 ouroboros.
         foreach (var mode in new[] { MsgMode.EasyNomac, MsgMode.EasyAuth, MsgMode.LowLevelNomac, MsgMode.LowLevelAuth })
         {
             foreach (var triple in new[] { false, true })
@@ -758,7 +758,7 @@ internal static class BenchWrapper
             }
         }
 
-        // Streaming Single and Triple — 4 modes × 9 ciphers × 2 dirs × 2 ouroboros = 144.
+        // Streaming Single and Triple — 4 modes × every cipher × 2 dirs × 2 ouroboros.
         foreach (var mode in new[] { StreamMode.AeadEasyIo, StreamMode.AeadLowLevelIo, StreamMode.NoaeadEasyUserloop, StreamMode.NoaeadLowLevelUserloop })
         {
             foreach (var triple in new[] { false, true })

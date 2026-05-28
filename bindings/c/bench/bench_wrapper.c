@@ -8,7 +8,7 @@
  * FILE* / file-like wrapper writer / reader pair for Non-AEAD
  * streaming).
  *
- * The outer-cipher palette covers all 9 ciphers in
+ * The outer-cipher palette covers every cipher in
  * PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
  * blake2b512, blake2s, blake3, aescmac, siphash24, chacha20):
  *
@@ -51,7 +51,7 @@
 
 /* ----- Configuration ------------------------------------------------ */
 
-/* Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+/* Full outer-keystream palette in PRIMITIVES_CANONICAL order
  * (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
  * aescmac, siphash24, chacha20). */
 static const itb_wrapper_cipher_t CIPHERS[] = {
@@ -934,7 +934,7 @@ int main(void)
         descs[n_descs++] = (lazy_desc_t){ KIND_WRAP_INPLACE, ci, 0, 0, 0, NULL };
     }
 
-    /* Message — 2 ouroboros × 4 labels × 9 ciphers × 2 dirs = 144. */
+    /* Message — 2 ouroboros × 4 labels × every cipher × 2 dirs. */
     for (size_t mi = 0; mi < sizeof(MODES)/sizeof(MODES[0]); mi++) {
         int mode = MODES[mi];
         for (size_t li = 0; li < sizeof(MSG_LABELS)/sizeof(MSG_LABELS[0]); li++) {
@@ -949,7 +949,7 @@ int main(void)
         }
     }
 
-    /* Streaming — 2 ouroboros × 4 labels × 9 ciphers × 2 dirs = 144. */
+    /* Streaming — 2 ouroboros × 4 labels × every cipher × 2 dirs. */
     for (size_t mi = 0; mi < sizeof(MODES)/sizeof(MODES[0]); mi++) {
         int mode = MODES[mi];
         for (size_t li = 0; li < sizeof(STREAM_LABELS)/sizeof(STREAM_LABELS[0]); li++) {

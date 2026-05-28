@@ -13,7 +13,7 @@
 # wall-clock at PARALLEL=8 on a 16-core box for the default 512 KB.
 #
 # Env overrides:
-#   PRIMITIVES   default: "crc128 fnv1a md5 aescmac siphash24 chacha20 areion256 blake2s blake3 blake2b areion512"
+#   PRIMITIVES   default: "crc128 fnv1a md5 areion256 areion512 blake2b blake2s blake3 aescmac siphash24 chacha20"
 #   AXES         default: "noise data start"
 #   DELTA_KINDS  default: "bit0 bit_mid512 bit_high1023 rand_1 rand_2 rand_3 zero_low_half"
 #   PT_KINDS     default: "random ascii"
@@ -30,7 +30,7 @@
 #     matrix_progress.log   — human-readable per-cell progress
 set -euo pipefail
 
-PRIMITIVES=${PRIMITIVES:-"crc128 fnv1a md5 aescmac siphash24 chacha20 areion256 blake2s blake2b256 blake3 blake2b areion512"}
+PRIMITIVES=${PRIMITIVES:-"crc128 fnv1a md5 areion256 areion512 blake2b256 blake2b blake2s blake3 aescmac siphash24 chacha20"}
 AXES=${AXES:-"noise data start"}
 DELTA_KINDS=${DELTA_KINDS:-"bit0 bit_mid512 bit_high1023 rand_1 rand_2 rand_3 zero_low_half"}
 PT_KINDS=${PT_KINDS:-"random ascii"}
