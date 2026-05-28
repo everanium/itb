@@ -39,12 +39,12 @@ from itb._ffi import STATUS_BAD_INPUT, STATUS_BAD_HANDLE  # noqa: E402
 CIPHERS = (
     wrapper.CIPHER_AREION256,
     wrapper.CIPHER_AREION512,
-    wrapper.CIPHER_SIPHASH24,
-    wrapper.CIPHER_AES128_CTR,
     wrapper.CIPHER_BLAKE2B256,
     wrapper.CIPHER_BLAKE2B512,
     wrapper.CIPHER_BLAKE2S,
     wrapper.CIPHER_BLAKE3,
+    wrapper.CIPHER_AES128_CTR,
+    wrapper.CIPHER_SIPHASH24,
     wrapper.CIPHER_CHACHA20,
 )
 
@@ -52,12 +52,12 @@ CIPHERS = (
 EXPECTED_SHAPE = {
     wrapper.CIPHER_AREION256: (32, 16),
     wrapper.CIPHER_AREION512: (64, 16),
-    wrapper.CIPHER_SIPHASH24: (16, 16),
-    wrapper.CIPHER_AES128_CTR: (16, 16),
     wrapper.CIPHER_BLAKE2B256: (32, 16),
     wrapper.CIPHER_BLAKE2B512: (32, 16),
     wrapper.CIPHER_BLAKE2S: (32, 16),
     wrapper.CIPHER_BLAKE3: (32, 16),
+    wrapper.CIPHER_AES128_CTR: (16, 16),
+    wrapper.CIPHER_SIPHASH24: (16, 16),
     wrapper.CIPHER_CHACHA20: (32, 12),
 }
 
@@ -69,12 +69,12 @@ class TestWrapperConstants(unittest.TestCase):
             (
                 wrapper.CIPHER_AREION256,
                 wrapper.CIPHER_AREION512,
-                wrapper.CIPHER_SIPHASH24,
-                wrapper.CIPHER_AES128_CTR,
                 wrapper.CIPHER_BLAKE2B256,
                 wrapper.CIPHER_BLAKE2B512,
                 wrapper.CIPHER_BLAKE2S,
                 wrapper.CIPHER_BLAKE3,
+                wrapper.CIPHER_AES128_CTR,
+                wrapper.CIPHER_SIPHASH24,
                 wrapper.CIPHER_CHACHA20,
             ),
         )

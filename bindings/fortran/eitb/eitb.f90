@@ -2,7 +2,7 @@
 !
 ! Mirrors `tools/eitb/main.go` for the Fortran binding. Eight examples
 ! crossed with three outer ciphers (aes / chacha / siphash) yields a
-! 24-cell PASS/FAIL matrix. Every cell encrypts a CSPRNG plaintext
+! matrix. Every cell encrypts a CSPRNG plaintext
 ! (1024 bytes for single-message; 65536 bytes for streaming),
 ! seals the resulting ITB ciphertext under the chosen outer cipher,
 ! decrypts back through the wrap layer + the inner ITB layer, and
@@ -200,16 +200,16 @@ program eitb
   integer, parameter :: CIPHERS(NUM_CIPHERS) = &
     [ITB_WRAPPER_CIPHER_AREION_256,                      &
      ITB_WRAPPER_CIPHER_AREION_512,                      &
-     ITB_WRAPPER_CIPHER_SIPHASH24,                       &
-     ITB_WRAPPER_CIPHER_AES_128_CTR,                     &
      ITB_WRAPPER_CIPHER_BLAKE2B_256,                     &
      ITB_WRAPPER_CIPHER_BLAKE2B_512,                     &
      ITB_WRAPPER_CIPHER_BLAKE2S,                         &
      ITB_WRAPPER_CIPHER_BLAKE3,                          &
+     ITB_WRAPPER_CIPHER_AES_128_CTR,                     &
+     ITB_WRAPPER_CIPHER_SIPHASH24,                       &
      ITB_WRAPPER_CIPHER_CHACHA20]
   character(len=10), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
-    [character(len=10) :: "areion256", "areion512", "siphash24", &
-     "aescmac", "blake2b256", "blake2b512", "blake2s", "blake3",  &
+    [character(len=10) :: "areion256", "areion512", "blake2b256", &
+     "blake2b512", "blake2s", "blake3", "aescmac", "siphash24",   &
      "chacha20"]
 
   character(len=26), parameter :: EXAMPLE_NAMES(NUM_EXAMPLES) = &

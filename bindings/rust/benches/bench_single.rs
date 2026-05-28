@@ -1,10 +1,9 @@
 //! Easy Mode Single-Ouroboros benchmarks for the Rust binding.
 //!
-//! Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
-//! nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+//! Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+//! PRF-grade primitives, locked at 1024-bit ITB key width and 16
 //! MiB CSPRNG-filled payload. One mixed-primitive variant
-//! ([`itb::Encryptor::mixed_single`] with BLAKE3 / BLAKE2s /
-//! BLAKE2b-256 + Areion-SoEM-256 dedicated lockSeed) covers the
+//! ([`itb::Encryptor::mixed_single`] + dedicated lockSeed) covers the
 //! Easy Mode Mixed surface alongside the single-primitive grid.
 //!
 //! Run with::
@@ -31,10 +30,7 @@ use itb::Encryptor;
 
 use crate::common::{BenchCase, BenchFn, PAYLOAD_16MB};
 
-// Canonical 9-primitive PRF-grade order, mirroring bench_single.py.
-// The three below-spec lab primitives (CRC128, FNV-1a, MD5) are not
-// exposed through the libitb registry and are therefore absent here
-// by construction.
+// Canonical primitive PRF-grade order.
 const PRIMITIVES_CANONICAL: &[&str] = &[
     "areion256",
     "areion512",
@@ -49,7 +45,7 @@ const PRIMITIVES_CANONICAL: &[&str] = &[
 
 // Mixed-primitive composition used by the bench_single_mixed_*
 // cases. noise / data / start cycle through the BLAKE family while
-// Areion-SoEM-256 takes the dedicated lockSeed slot — every name
+// Areion takes the dedicated lockSeed slot — every name
 // resolves to a 256-bit native hash width so the
 // Encryptor::mixed_single width-check passes.
 const MIXED_NOISE: &str = "blake3";
@@ -87,7 +83,7 @@ fn build_single(primitive: &str) -> Encryptor {
 
 /// Construct a mixed-primitive Single-Ouroboros encryptor matching
 /// the README Quick Start composition (BLAKE3 noise / BLAKE2s data /
-/// BLAKE2b-256 start). The dedicated Areion-SoEM-256 lockSeed slot
+/// BLAKE2b-256 start). The dedicated lockSeed slot
 /// is allocated only when `ITB_LOCKSEED` is set, so the no-LockSeed
 /// bench arm measures the plain mixed-primitive cost without the
 /// BitSoup + LockSoup auto-couple. The four primitive names share
@@ -186,7 +182,7 @@ fn make_decrypt_auth_case(name: String, mut enc: Encryptor) -> BenchCase {
 type CaseFactory = Box<dyn Fn() -> BenchCase>;
 
 /// Return a list of (name, factory) pairs covering the full 40-case
-/// message suite (9 single-primitive × 4 ops + 1 mixed × 4 ops) plus
+/// message suite (single-primitives × 4 ops + 1 mixed × 4 ops) plus
 /// the 8 streaming cases. No payload or Encryptor is allocated here;
 /// those are deferred until each factory is called.
 fn case_factories() -> Vec<(String, CaseFactory)> {

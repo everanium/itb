@@ -10,10 +10,9 @@ import (
 )
 
 // TestRegistryRoundtrip exercises every (hash, ITB key width) pair
-// shipped through this package. Eight of the nine primitives (every
-// width except 128) have separate Triple Ouroboros tests in the main
-// itb_test.go and redteam_test.go suites; here we cover the simple
-// Single Ouroboros encrypt/decrypt round trip across all 9 × 3 = 27
+// shipped through this package. Primitives have separate Triple Ouroboros
+// tests in the main itb_test.go and redteam_test.go suites; here we cover
+// the simple Single Ouroboros encrypt/decrypt round trip across all
 // combinations to confirm:
 //
 //   - the canonical name in Registry maps to the right Make{N}
@@ -166,14 +165,13 @@ func newSeed512(name string, keyBits int) (*itb.Seed512, error) {
 }
 
 // TestRegistryStable verifies that Registry ordering matches the
-// canonical FFI contract (areion256, areion512, siphash24, aescmac,
-// blake2b256, blake2b512, blake2s, blake3, chacha20). The order is
-// stable because index 0..8 is exposed through ITB_HashName and any
-// reordering is an ABI-breaking change.
+// canonical FFI contract. The order is stable because index
+// is exposed through ITB_HashName and any reordering is an
+// ABI-breaking change.
 func TestRegistryStable(t *testing.T) {
 	want := []string{
-		"areion256", "areion512", "siphash24", "aescmac",
-		"blake2b256", "blake2b512", "blake2s", "blake3", "chacha20",
+		"areion256", "areion512", "blake2b256", "blake2b512",
+		"blake2s", "blake3", "aescmac", "siphash24", "chacha20",
 	}
 	if len(Registry) != len(want) {
 		t.Fatalf("Registry len = %d, want %d", len(Registry), len(want))
@@ -259,7 +257,7 @@ func TestMake128WrongWidth(t *testing.T) {
 // "has width N, not 256" error distinguishable from the unknown-name
 // path.
 func TestMake256WrongWidth(t *testing.T) {
-	for _, name := range []string{"areion512", "siphash24", "aescmac", "blake2b512"} {
+	for _, name := range []string{"areion512", "blake2b512", "aescmac", "siphash24"} {
 		_, _, err := Make256(name)
 		if err == nil {
 			t.Errorf("Make256(%q): nil error, want wrong-width error", name)
@@ -276,7 +274,7 @@ func TestMake256WrongWidth(t *testing.T) {
 // "has width N, not 512" error distinguishable from the unknown-name
 // path.
 func TestMake512WrongWidth(t *testing.T) {
-	for _, name := range []string{"areion256", "siphash24", "aescmac", "blake2b256", "blake2s", "blake3", "chacha20"} {
+	for _, name := range []string{"areion256", "blake2b256", "blake2s", "blake3", "aescmac", "siphash24", "chacha20"} {
 		_, _, err := Make512(name)
 		if err == nil {
 			t.Errorf("Make512(%q): nil error, want wrong-width error", name)

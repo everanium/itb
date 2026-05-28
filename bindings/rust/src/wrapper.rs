@@ -3,8 +3,7 @@
 //! Rust-idiomatic surface over the 12 `ITB_Wrap*` / `ITB_Unwrap*` /
 //! `ITB_WrapStream*` / `ITB_UnwrapStream*` / `ITB_WrapperKeySize` /
 //! `ITB_WrapperNonceSize` exports in `cmd/cshared/main.go`. Wraps an
-//! ITB ciphertext under one of three outer keystream ciphers
-//! (AES-128-CTR / ChaCha20 / SipHash-2-4 in CTR mode) so the on-wire
+//! ITB ciphertext under one of outer keystream ciphers, so the on-wire
 //! bytes carry no ITB-specific format pattern (W / H / container
 //! layout for Non-AEAD; 32-byte streamID prefix + per-chunk metadata
 //! for Streaming AEAD). The wrap exists for format-deniability
@@ -67,25 +66,10 @@ use crate::error::{check, ITBError};
 use crate::ffi;
 
 /// Outer keystream cipher selected per wrap session. Each variant
-/// maps to one of the nine `cipher_name` strings the underlying
-/// FFI accepts: `"aescmac"` / `"chacha20"` / `"siphash24"` /
-/// `"areion256"` / `"areion512"` / `"blake2b256"` / `"blake2b512"` /
-/// `"blake2s"` / `"blake3"`. The Go-side constants are
-/// `wrapper.CipherAES128CTR` / `wrapper.CipherChaCha20` /
-/// `wrapper.CipherSipHash24` and the matching `wrapper.Cipher*`
-/// values for the remaining six.
+/// maps to one of `cipher_name` strings the underlying
+/// FFI accepts. The Go-side constants are `wrapper.Cipher*`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Cipher {
-    /// AES-128-CTR — 16-byte key, 16-byte nonce, AES-NI accelerated
-    /// on the libitb side via the Go stdlib `crypto/cipher.NewCTR`.
-    Aes128Ctr,
-    /// ChaCha20 (RFC 8439) — 32-byte key, 12-byte nonce. No AES-NI
-    /// dependency.
-    ChaCha20,
-    /// SipHash-2-4 in CTR mode — 16-byte key, 16-byte nonce. Custom
-    /// CTR construction over the SipHash-2-4 PRF; sound under the
-    /// standard PRF assumption that justifies AES-CTR.
-    SipHash24,
     /// Areion-SoEM-256 in CTR mode. Custom CTR construction over the
     /// Areion-SoEM-256 PRF; sound under the standard PRF assumption.
     Areion256,
@@ -104,35 +88,45 @@ pub enum Cipher {
     /// BLAKE3 in CTR mode. Custom CTR construction over the BLAKE3
     /// PRF; sound under the standard PRF assumption.
     Blake3,
+    /// AES-128-CTR — 16-byte key, 16-byte nonce, AES-NI accelerated
+    /// on the libitb side via the Go stdlib `crypto/cipher.NewCTR`.
+    Aes128Ctr,
+    /// SipHash-2-4 in CTR mode — 16-byte key, 16-byte nonce. Custom
+    /// CTR construction over the SipHash-2-4 PRF; sound under the
+    /// standard PRF assumption that justifies AES-CTR.
+    SipHash24,
+    /// ChaCha20 (RFC 8439) — 32-byte key, 12-byte nonce. No AES-NI
+    /// dependency.
+    ChaCha20,
 }
 
 impl Cipher {
     /// Returns the FFI cipher-name string used by every entry point.
     pub fn as_str(self) -> &'static str {
         match self {
-            Cipher::Aes128Ctr => "aescmac",
-            Cipher::ChaCha20 => "chacha20",
-            Cipher::SipHash24 => "siphash24",
             Cipher::Areion256 => "areion256",
             Cipher::Areion512 => "areion512",
             Cipher::Blake2b256 => "blake2b256",
             Cipher::Blake2b512 => "blake2b512",
             Cipher::Blake2s => "blake2s",
             Cipher::Blake3 => "blake3",
+            Cipher::Aes128Ctr => "aescmac",
+            Cipher::SipHash24 => "siphash24",
+            Cipher::ChaCha20 => "chacha20",
         }
     }
 
-    /// Iteration order over all nine supported outer ciphers.
+    /// Iteration order over all supported outer ciphers.
     pub fn all() -> [Cipher; 9] {
         [
             Cipher::Areion256,
             Cipher::Areion512,
-            Cipher::SipHash24,
-            Cipher::Aes128Ctr,
             Cipher::Blake2b256,
             Cipher::Blake2b512,
             Cipher::Blake2s,
             Cipher::Blake3,
+            Cipher::Aes128Ctr,
+            Cipher::SipHash24,
             Cipher::ChaCha20,
         ]
     }
@@ -145,7 +139,7 @@ impl std::fmt::Display for Cipher {
 }
 
 /// Returns the byte length of the keystream-cipher key for the named
-/// outer cipher (16 / 32 / 16 for AES / ChaCha / SipHash).
+/// outer cipher (16 / 32 / 64).
 pub fn key_size(cipher: Cipher) -> Result<usize, ITBError> {
     let lib = ffi::lib();
     let cn = CString::new(cipher.as_str()).map_err(|e| {
@@ -158,7 +152,7 @@ pub fn key_size(cipher: Cipher) -> Result<usize, ITBError> {
 }
 
 /// Returns the on-wire nonce length the named outer cipher emits
-/// per stream (16 / 12 / 16 for AES / ChaCha / SipHash).
+/// per stream (12 for ChaCha20; 16 for other outer ciphers).
 pub fn nonce_size(cipher: Cipher) -> Result<usize, ITBError> {
     let lib = ffi::lib();
     let cn = CString::new(cipher.as_str()).map_err(|e| {
@@ -254,8 +248,7 @@ fn fill_random(buf: &mut [u8]) -> Result<(), ITBError> {
 /// floor — a 256-bit master matching an ML-KEM shared secret). The
 /// kdf layer truncates / stretches that master to the per-cipher key
 /// length internally, so a single 32-byte master keys every outer
-/// cipher. The returned key has length `key_size(cipher)` (16 / 32 / 16
-/// for AES / ChaCha / SipHash). Returns [`ITBError`] with
+/// cipher. The returned key has length `key_size(cipher)`. Returns [`ITBError`] with
 /// [`ffi::STATUS_BAD_INPUT`] for a master shorter than 32 bytes.
 pub fn derive_key(cipher: Cipher, master: &[u8]) -> Result<Vec<u8>, ITBError> {
     let cn = cipher_cstring(cipher)?;

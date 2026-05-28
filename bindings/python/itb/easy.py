@@ -173,8 +173,8 @@ class Encryptor:
     ----------
     primitive:
         Canonical hash name from :func:`itb.list_hashes` —
-        "areion256", "areion512", "siphash24", "aescmac",
-        "blake2b256", "blake2b512", "blake2s", "blake3", "chacha20".
+        "areion256", "areion512", "blake2b256", "blake2b512",
+        "blake2s", "blake3", "aescmac", "siphash24", "chacha20".
         Default ``None`` selects the package default ("areion512").
     key_bits:
         ITB key width in bits (512, 1024, 2048; multiple of the

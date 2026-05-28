@@ -10,11 +10,10 @@ Two scripts cover the Easy Mode encryption / decryption surface
 exposed by the Node.js binding:
 
 * `bench-single.ts` — Single Ouroboros (mode=1, 3 seeds + optional
-  dedicated lockSeed). Walks the nine PRF-grade primitives plus
+  dedicated lockSeed). Walks PRF-grade primitives plus
   one mixed-primitive variant.
 * `bench-triple.ts` — Triple Ouroboros (mode=3, 7 seeds + optional
-  dedicated lockSeed). Same nine + one mixed grid as the Single
-  script.
+  dedicated lockSeed).
 
 Both scripts pin **1024-bit ITB key width** and **16 MiB
 CSPRNG-filled payload**, run four ops per case (`encrypt`,
@@ -145,8 +144,8 @@ libitb call path.
 
 ## Expected runtime
 
-At the default `ITB_BENCH_MIN_SEC=5`, each pass walks 40 cases (9
-single-primitive + 1 mixed × 4 ops) and converges per case in 5–15
+At the default `ITB_BENCH_MIN_SEC=5`, each pass walks 40 cases (
+single-primitives + 1 mixed × 4 ops) and converges per case in 5–15
 wall-clock seconds depending on the primitive's per-byte cost. A
 full pass therefore lands at 5–10 minutes; the four canonical
 passes (Single ±LockSeed, Triple ±LockSeed) fill BENCH.md in

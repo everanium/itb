@@ -11,11 +11,10 @@ encryption / decryption surface exposed by the C++ binding through the
 C binding's static archive (`-litb_c -litb`):
 
 * `bench_single.cpp` — Single Ouroboros (mode = 1, 3 seeds + optional
-  dedicated lockSeed). Walks the nine PRF-grade primitives plus one
+  dedicated lockSeed). Walks PRF-grade primitives plus one
   mixed-primitive variant.
 * `bench_triple.cpp` — Triple Ouroboros (mode = 3, 7 seeds + optional
-  dedicated lockSeed). Same nine + one mixed grid as the Single
-  binary.
+  dedicated lockSeed).
 
 Both binaries pin **1024-bit ITB key width** and **16 MiB CSPRNG-filled
 payload**, run four ops per case (`encrypt`, `decrypt`, `encrypt_auth`,
@@ -137,16 +136,16 @@ bench_single_aescmac_1024bit_decrypt_16mb               64    488104225.0 ns/op 
 
 The four columns are:
 
-1. Bench-case name (snake-cased; `mixed` is the 10th case appended
-   after the 9-primitive loop).
+1. Bench-case name (snake-cased; `mixed` is the case appended
+   after the primitive loop).
 2. Iteration count chosen to reach `ITB_BENCH_MIN_SEC`.
 3. Per-iter wall-clock cost in nanoseconds.
 4. Throughput in MB/s, derived from `payload_bytes / ns_per_op`.
 
 ## Expected runtime
 
-At the default `ITB_BENCH_MIN_SEC=5`, each pass walks 40 cases (9
-single-primitive + 1 mixed × 4 ops) and converges per case in 5-15
+At the default `ITB_BENCH_MIN_SEC=5`, each pass walks 40 cases (
+single-primitives + 1 mixed × 4 ops) and converges per case in 5-15
 wall-clock seconds depending on the primitive's per-byte cost. A full
 pass therefore lands at 5-10 minutes; the four canonical passes
 (Single ±LockSeed, Triple ±LockSeed) fill BENCH.md in ~30 minutes of

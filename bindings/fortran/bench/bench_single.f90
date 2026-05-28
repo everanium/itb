@@ -1,7 +1,7 @@
 ! bench_single.f90 -- Easy Mode Single Ouroboros benchmarks for the
 ! Fortran binding.
 !
-! Mirrors the cross-binding bench_single cohort for the nine PRF-grade
+! Mirrors the cross-binding bench_single cohort for PRF-grade
 ! primitives, locked at 1024-bit ITB key width and 16 MiB CSPRNG-filled
 ! payload. One mixed-primitive variant cycles the BLAKE family across
 ! the noise / data / start slots with a dedicated lockSeed slot only
@@ -55,7 +55,7 @@ module bench_single_state
   end type
 
   ! Heap-resident registry of per-case state. The Single bench has 40
-  ! cases (9 PRF + 1 Mixed) x 4 ops, so `cases_state` is sized at 40
+  ! cases (primitives PRF + 1 Mixed) x 4 ops, so `cases_state` is sized at 40
   ! and `cases_state_len` tracks how many slots have been populated.
   integer, parameter :: MAX_CASES = 64
   type(case_state_t), save :: cases_state(MAX_CASES)
@@ -107,7 +107,7 @@ program bench_single
 
   ! Mixed-primitive composition matching the cross-binding Mixed
   ! Single recipe: noise / data / start cycle through the BLAKE
-  ! family while Areion-SoEM-256 takes the dedicated lockSeed slot
+  ! family while Areion takes the dedicated lockSeed slot
   ! when ITB_LOCKSEED is set. Every name resolves to a 256-bit
   ! native hash width so the mixed-constructor width-check passes.
   character(*), parameter :: MIXED_NOISE = "blake3"

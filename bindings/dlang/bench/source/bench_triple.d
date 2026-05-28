@@ -1,12 +1,10 @@
 /// Easy Mode Triple-Ouroboros benchmarks for the D binding.
 ///
-/// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
-/// nine PRF-grade primitives, locked at 1024-bit ITB key width and
+/// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+/// PRF-grade primitives, locked at 1024-bit ITB key width and
 /// 16 MiB CSPRNG-filled payload. One mixed-primitive variant
-/// (`Encryptor.newMixed3` cycling the same BLAKE family +
-/// Areion-SoEM-256 dedicated lockSeed used by bench_single's mixed
-/// case) covers the Easy Mode Mixed surface alongside the
-/// single-primitive grid.
+/// (`Encryptor.newMixed3` + dedicated lockSeed) covers the
+/// Easy Mode Mixed surface alongside the single-primitive grid.
 ///
 /// Run with:
 ///
@@ -50,7 +48,7 @@ import bench.common :
 // Mixed-primitive composition for Triple Ouroboros - the same four
 // 256-bit-wide names used by bench_single's Mixed case are cycled
 // across the seven seed slots (noise + 3 data + 3 start) plus
-// Areion-SoEM-256 on the dedicated lockSeed slot.
+// one on the dedicated lockSeed slot.
 private enum string MIXED_NOISE = "blake3";
 private enum string MIXED_DATA1 = "blake2s";
 private enum string MIXED_DATA2 = "blake2b256";
@@ -102,7 +100,7 @@ private EncBox* buildTriple(string primitive) @trusted
 
 /// Construct a mixed-primitive Triple-Ouroboros encryptor with the
 /// four-name BLAKE family across the seven middle slots. The
-/// dedicated Areion-SoEM-256 lockSeed slot is allocated only when
+/// dedicated lockSeed slot is allocated only when
 /// `ITB_LOCKSEED` is set, so the no-LockSeed bench arm measures the
 /// plain mixed-primitive cost without the BitSoup + LockSoup
 /// auto-couple. The four primitive names share the same native hash
@@ -168,7 +166,31 @@ private BenchCase makeDecryptAuthCase(string name, EncBox* box) @trusted
 private alias CaseFactory = BenchCase delegate() @trusted;
 private struct LazyEntry { string name; CaseFactory factory; }
 
-/// Assemble the full lazy factory list: 9 single-primitive entries ×
+// ────────────────────────────────────────────────────────────────────
+// Per-primitive factory helpers.
+//
+// D closures capture variables by reference (heap-allocated when the
+// closure escapes the stack). In a `foreach` loop the compiler reuses
+// the same heap cell for the same variable name across all iterations,
+// so every closure ends up referencing the last iteration's value.
+// Wrapping each closure in a function that receives `string` by value
+// forces a fresh copy per call-site, giving each returned delegate its
+// own binding.
+// ────────────────────────────────────────────────────────────────────
+
+private LazyEntry tripleEncFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeEncryptCase(n, buildTriple(p)); }); }
+
+private LazyEntry tripleDecFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeDecryptCase(n, buildTriple(p)); }); }
+
+private LazyEntry tripleEncAuthFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeEncryptAuthCase(n, buildTriple(p)); }); }
+
+private LazyEntry tripleDecAuthFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeDecryptAuthCase(n, buildTriple(p)); }); }
+
+/// Assemble the full lazy factory list: single-primitive entries ×
 /// 4 ops plus 1 mixed entry × 4 ops = 40 message cases, plus 8
 /// streaming cases appended at the end. Each factory builds one
 /// BenchCase on demand.
@@ -184,10 +206,10 @@ private LazyEntry[] buildLazyFactories() @trusted
         string dn  = format("%s_decrypt_16mb", bp);
         string ean = format("%s_encrypt_auth_16mb", bp);
         string dan = format("%s_decrypt_auth_16mb", bp);
-        facs ~= LazyEntry(en,  () @trusted { return makeEncryptCase(en,  buildTriple(p)); });
-        facs ~= LazyEntry(dn,  () @trusted { return makeDecryptCase(dn,  buildTriple(p)); });
-        facs ~= LazyEntry(ean, () @trusted { return makeEncryptAuthCase(ean, buildTriple(p)); });
-        facs ~= LazyEntry(dan, () @trusted { return makeDecryptAuthCase(dan, buildTriple(p)); });
+        facs ~= tripleEncFac(en,   p);
+        facs ~= tripleDecFac(dn,   p);
+        facs ~= tripleEncAuthFac(ean, p);
+        facs ~= tripleDecAuthFac(dan, p);
     }
     string bm  = format("bench_triple_mixed_%dbit", KEY_BITS);
     string men  = format("%s_encrypt_16mb", bm);

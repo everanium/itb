@@ -1,11 +1,10 @@
 /// Easy Mode Single-Ouroboros benchmarks for the D binding.
 ///
-/// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
-/// nine PRF-grade primitives, locked at 1024-bit ITB key width and
+/// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+/// PRF-grade primitives, locked at 1024-bit ITB key width and
 /// 16 MiB CSPRNG-filled payload. One mixed-primitive variant
-/// (`Encryptor.newMixed` with BLAKE3 / BLAKE2s / BLAKE2b-256 +
-/// Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
-/// surface alongside the single-primitive grid.
+/// (`Encryptor.newMixed` + dedicated lockSeed) covers the
+/// Easy Mode Mixed surface alongside the single-primitive grid.
 ///
 /// Run with:
 ///
@@ -44,7 +43,7 @@ import bench.common :
 
 // Mixed-primitive composition used by the Mixed Single bench cases.
 // noise / data / start cycle through the BLAKE family while
-// Areion-SoEM-256 takes the dedicated lockSeed slot - every name
+// Areion takes the dedicated lockSeed slot - every name
 // resolves to a 256-bit native hash width so the Encryptor.newMixed
 // width-check passes.
 private enum string MIXED_NOISE = "blake3";
@@ -96,7 +95,7 @@ private EncBox* buildSingle(string primitive) @trusted
 
 /// Construct a mixed-primitive Single-Ouroboros encryptor matching
 /// the README Quick Start composition (BLAKE3 noise / BLAKE2s data /
-/// BLAKE2b-256 start). The dedicated Areion-SoEM-256 lockSeed slot
+/// BLAKE2b-256 start). The dedicated lockSeed slot
 /// is allocated only when `ITB_LOCKSEED` is set, so the no-LockSeed
 /// bench arm measures the plain mixed-primitive cost without the
 /// BitSoup + LockSoup auto-couple. The four primitive names share
@@ -173,6 +172,30 @@ private BenchCase makeDecryptAuthCase(string name, EncBox* box) @trusted
 private alias CaseFactory = BenchCase delegate() @trusted;
 private struct LazyEntry { string name; CaseFactory factory; }
 
+// ────────────────────────────────────────────────────────────────────
+// Per-primitive factory helpers.
+//
+// D closures capture variables by reference (heap-allocated when the
+// closure escapes the stack). In a `foreach` loop the compiler reuses
+// the same heap cell for the same variable name across all iterations,
+// so every closure ends up referencing the last iteration's value.
+// Wrapping each closure in a function that receives `string` by value
+// forces a fresh copy per call-site, giving each returned delegate its
+// own binding.
+// ────────────────────────────────────────────────────────────────────
+
+private LazyEntry singleEncFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeEncryptCase(n, buildSingle(p)); }); }
+
+private LazyEntry singleDecFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeDecryptCase(n, buildSingle(p)); }); }
+
+private LazyEntry singleEncAuthFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeEncryptAuthCase(n, buildSingle(p)); }); }
+
+private LazyEntry singleDecAuthFac(string n, string p) @trusted
+{ return LazyEntry(n, () @trusted { return makeDecryptAuthCase(n, buildSingle(p)); }); }
+
 /// Assemble the full lazy factory list: 9 single-primitive entries ×
 /// 4 ops plus 1 mixed entry × 4 ops = 40 message cases, plus 8
 /// streaming cases appended at the end. Each factory builds one
@@ -189,10 +212,10 @@ private LazyEntry[] buildLazyFactories() @trusted
         string dn  = format("%s_decrypt_16mb", bp);
         string ean = format("%s_encrypt_auth_16mb", bp);
         string dan = format("%s_decrypt_auth_16mb", bp);
-        facs ~= LazyEntry(en,  () @trusted { return makeEncryptCase(en,  buildSingle(p)); });
-        facs ~= LazyEntry(dn,  () @trusted { return makeDecryptCase(dn,  buildSingle(p)); });
-        facs ~= LazyEntry(ean, () @trusted { return makeEncryptAuthCase(ean, buildSingle(p)); });
-        facs ~= LazyEntry(dan, () @trusted { return makeDecryptAuthCase(dan, buildSingle(p)); });
+        facs ~= singleEncFac(en,   p);
+        facs ~= singleDecFac(dn,   p);
+        facs ~= singleEncAuthFac(ean, p);
+        facs ~= singleDecAuthFac(dan, p);
     }
     string bm  = format("bench_single_mixed_%dbit", KEY_BITS);
     string men  = format("%s_encrypt_16mb", bm);

@@ -202,8 +202,8 @@ struct Encryptor
     /// Constructs a fresh encryptor.
     ///
     /// `primitive` is a canonical hash name from `listHashes` —
-    /// `"areion256"`, `"areion512"`, `"siphash24"`, `"aescmac"`,
-    /// `"blake2b256"`, `"blake2b512"`, `"blake2s"`, `"blake3"`,
+    /// `"areion256"`, `"areion512"`, `"blake2b256"`, `"blake2b512"`,
+    /// `"blake2s"`, `"blake3"`, `"aescmac"`, `"siphash24"`,
     /// `"chacha20"`. Empty / `null` selects the libitb default
     /// (`"areion512"`).
     ///

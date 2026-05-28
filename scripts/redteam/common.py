@@ -13,7 +13,7 @@ Display names match BENCH.md.
 # Ordered list of (dirname, display_name, width_bits).
 #
 # Canonical order: below-spec lab-helper primitives first (CRC128, FNV-1a, MD5),
-# then PRF-grade primitives by width 128 → 256 → 512. See CLAUDE.md.
+# then PRF-grade primitives by width 128 → 256 → 512.
 #
 # CRC128 is a GF(2)-linear stress control — ChainHash<CRC128> collapses to a
 # Gaussian-elimination-solvable system. Not exported to any public API.

@@ -1,12 +1,10 @@
 //! Easy Mode Triple-Ouroboros benchmarks for the Rust binding.
 //!
-//! Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
-//! nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+//! Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+//! PRF-grade primitives, locked at 1024-bit ITB key width and 16
 //! MiB CSPRNG-filled payload. One mixed-primitive variant
-//! ([`itb::Encryptor::mixed_triple`] cycling the same BLAKE family +
-//! Areion-SoEM-256 dedicated lockSeed used by bench_single_mixed)
-//! covers the Easy Mode Mixed surface alongside the single-primitive
-//! grid.
+//! ([`itb::Encryptor::mixed_triple`] + dedicated lockSeed) covers the
+//! Easy Mode Mixed surface alongside the single-primitive grid.
 //!
 //! Run with::
 //!
@@ -36,7 +34,7 @@ use itb::Encryptor;
 
 use crate::common::{BenchCase, BenchFn, PAYLOAD_16MB};
 
-// Canonical 9-primitive PRF-grade order, mirroring bench_triple.py.
+// Canonical primitives PRF-grade order.
 const PRIMITIVES_CANONICAL: &[&str] = &[
     "areion256",
     "areion512",
@@ -52,7 +50,7 @@ const PRIMITIVES_CANONICAL: &[&str] = &[
 // Mixed-primitive composition for Triple Ouroboros — the same four
 // 256-bit-wide names used by bench_single_mixed are cycled across
 // the seven seed slots (noise + 3 data + 3 start) plus
-// Areion-SoEM-256 on the dedicated lockSeed slot.
+// one on the dedicated lockSeed slot.
 const MIXED_NOISE: &str = "blake3";
 const MIXED_DATA1: &str = "blake2s";
 const MIXED_DATA2: &str = "blake2b256";
@@ -91,7 +89,7 @@ fn build_triple(primitive: &str) -> Encryptor {
 
 /// Construct a mixed-primitive Triple-Ouroboros encryptor with the
 /// four-name BLAKE family across the seven middle slots. The
-/// dedicated Areion-SoEM-256 lockSeed slot is allocated only when
+/// dedicated lockSeed slot is allocated only when
 /// `ITB_LOCKSEED` is set, so the no-LockSeed bench arm measures the
 /// plain mixed-primitive cost without the BitSoup + LockSoup
 /// auto-couple. The four primitive names share the same native hash
@@ -177,7 +175,7 @@ fn make_decrypt_auth_case(name: String, mut enc: Encryptor) -> BenchCase {
 type CaseFactory = Box<dyn Fn() -> BenchCase>;
 
 /// Return a list of (name, factory) pairs covering the full 40-case
-/// message suite (9 triple-primitive × 4 ops + 1 mixed × 4 ops) plus
+/// message suite (triple-primitives × 4 ops + 1 mixed × 4 ops) plus
 /// the 8 streaming cases. No payload or Encryptor is allocated here.
 fn case_factories() -> Vec<(String, CaseFactory)> {
     let mut facs: Vec<(String, CaseFactory)> = Vec::with_capacity(48);

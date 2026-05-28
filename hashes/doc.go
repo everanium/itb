@@ -1,4 +1,4 @@
-// Package hashes provides cached, pre-keyed wrappers around the nine
+// Package hashes provides cached, pre-keyed wrappers around
 // PRF-grade hash primitives that ITB ships with as built-in factories
 // for the C / FFI / mobile shared-library distribution.
 //
@@ -14,15 +14,12 @@
 // every primitive's keyed state on every call, which is the dominant
 // cost in ITB's encrypt / decrypt path. The factories are taken
 // directly from the bench-validated reference wrappers — see BENCH.md
-// for measured throughput across all nine primitives × three ITB key
+// for measured throughput across all primitives × three ITB key
 // widths (512 / 1024 / 2048).
 //
 // Canonical names and ordering (used by [Registry], [Find], [Make128],
 // [Make256], [Make512] and exposed through the FFI surface as the
-// public hash identifier):
-//
-//	areion256, areion512, siphash24, aescmac,
-//	blake2b256, blake2b512, blake2s, blake3, chacha20
+// public hash identifier.
 //
 // Each factory has an optional WithKey variant accepting a fixed key
 // of the primitive's native key length, intended for serialization /
@@ -38,7 +35,7 @@
 //
 // # Custom-primitive builders
 //
-// Beyond the nine shipped primitives, the package exposes three
+// Beyond shipped primitives, the package exposes three
 // builder families for safely wrapping user-supplied PRFs:
 //
 //   - [BuildCBCMACChainAbsorb128] / [BuildCBCMACChainAbsorb256] /
@@ -70,7 +67,7 @@
 // callbacks and []byte state buffers, losing 5-15% throughput vs the
 // inline per-primitive closures shipped in this package. The trade
 // is correctness-by-construction for any user primitive vs peak
-// throughput for the nine built-in primitives. See [CONSTRUCTIONS.md]
+// throughput for built-in primitives. See [CONSTRUCTIONS.md]
 // "Why use builders for custom user primitives" for the silent-
 // truncation failure modes the builders prevent.
 package hashes

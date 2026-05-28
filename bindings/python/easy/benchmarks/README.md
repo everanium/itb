@@ -10,11 +10,10 @@ Two scripts cover the Easy Mode encryption / decryption surface
 exposed by the Python binding:
 
 * `bench_single.py` — Single Ouroboros (mode=1, 3 seeds + optional
-  dedicated lockSeed). Walks the nine PRF-grade primitives plus
+  dedicated lockSeed). Walks PRF-grade primitives plus
   one mixed-primitive variant.
 * `bench_triple.py` — Triple Ouroboros (mode=3, 7 seeds + optional
-  dedicated lockSeed). Same nine + one mixed grid as the Single
-  script.
+  dedicated lockSeed).
 
 Both scripts pin **1024-bit ITB key width** and **16 MiB
 CSPRNG-filled payload**, run four ops per case (`encrypt`,

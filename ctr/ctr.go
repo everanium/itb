@@ -1,8 +1,6 @@
-// Package ctr provides counter-mode keystream constructions over the nine
-// PRF-grade ITB registry primitives. AES-128-CTR ("aescmac") and ChaCha20
-// ("chacha20") use their native cipher modes; the other seven ("areion256",
-// "areion512", "siphash24", "blake2b256", "blake2b512", "blake2s", "blake3")
-// run in PRF-counter mode, where a keystream block is the primitive's
+// Package ctr provides counter-mode keystream constructions over
+// PRF-grade ITB registry primitives. Supports primitives with native cipher mode
+// and PRF-counter mode, where a keystream block is the primitive's
 // keyed-PRF output over the nonce concatenated with the block counter.
 //
 // The package is the single source of truth for cipher key and nonce sizes.
@@ -27,8 +25,8 @@ import (
 // identifiers. The remaining PRF-counter-mode names are defined alongside
 // their construction.
 const (
-	CipherSipHash24 = "siphash24"
 	CipherAES128CTR = "aescmac"
+	CipherSipHash24 = "siphash24"
 	CipherChaCha20  = "chacha20"
 )
 
@@ -45,14 +43,11 @@ type Keystream interface {
 }
 
 // KeySize returns the byte length of the key for the named cipher.
-//
-// aescmac uses a 16-byte AES-128 key; chacha20 uses a 32-byte key;
-// siphash24 uses a 16-byte SipHash key.
 func KeySize(name string) (int, error) {
 	switch name {
-	case CipherSipHash24:
-		return 16, nil
 	case CipherAES128CTR:
+		return 16, nil
+	case CipherSipHash24:
 		return 16, nil
 	case CipherChaCha20:
 		return chacha20.KeySize, nil // 32
@@ -64,10 +59,6 @@ func KeySize(name string) (int, error) {
 }
 
 // NonceSize returns the nonce length for the named cipher.
-//
-// aescmac uses a 16-byte block-sized IV; chacha20 (RFC8439) uses a 12-byte
-// nonce; siphash24 uses a 16-byte construction-defined nonce (the SipHash key
-// is the cipher key; the nonce is mixed with the 64-bit counter under the PRF).
 func NonceSize(name string) (int, error) {
 	switch name {
 	case CipherSipHash24:
@@ -87,7 +78,7 @@ func NonceSize(name string) (int, error) {
 // and a per-stream nonce. The key length must equal KeySize(name); the nonce
 // length must equal NonceSize(name).
 //
-// Names outside the nine PRF-grade registry primitives yield an
+// Names outside PRF-grade registry primitives yield an
 // unknown-cipher error.
 func New(name string, key, nonce []byte) (Keystream, error) {
 	switch name {

@@ -1,4 +1,4 @@
-// Construction-regression KAT vectors for the nine PRF-grade
+// Construction-regression KAT vectors for PRF-grade
 // primitives in the registry. Each primitive has one frozen
 // (key, data, seed) triple and one frozen hex digest; the test
 // verifies the production single-arm closure reproduces the digest
@@ -8,14 +8,12 @@
 // chunk size, lenTag positioning, key-prepend vs key-XOR order,
 // seed-mix arithmetic, length-pad bytes, output byte order. Any
 // production change that yields a different digest for the same
-// input fails the test even when the underlying primitive (BLAKE,
-// AES, SipHash, ChaCha20, Areion-SoEM) remains intact.
+// input fails the test even when the underlying primitive
+// remains intact.
 //
 // Out of scope. These vectors do NOT certify conformance with RFC /
 // NIST canonical primitives. The constructions wrapped here are
-// described in hashes/CONSTRUCTIONS.md; they deviate from RFC 7693
-// keyed BLAKE2, NIST SP 800-38B CMAC, and RFC 7539 ChaCha20-Poly1305
-// in deliberate, documented ways. For primitive math conformance
+// described in hashes/CONSTRUCTIONS.md. For primitive math conformance
 // against the canonical RFCs / NIST specs, refer to the upstream
 // library tests:
 //
@@ -74,15 +72,15 @@ type fixedKATVector struct {
 // seedFlavor=3 (high-entropy pseudo-random) stresses every state slot
 // of every width.
 var fixedKATVectors = []fixedKATVector{
+	{"areion256", 36, 3, "4ad4a7418c8bfc445c0ccfb20045e58b2ff7ef62f8ac170db67c9037fd06de41"},
+	{"areion512", 36, 3, "3c4ede253cc64c33f54734d69047741b6b9dde34dd31e7237bfd603f6b1a3833ba4e47c78759dd9dd49d86af64732559fd972104eea03f951034254162cca2e2"},
+	{"blake2b256", 36, 3, "fa255838d97272b1303d7dcff33268499ea0adf108f9b421891bef38b8b38211"},
+	{"blake2b512", 36, 3, "aff41328166cef8f4b1ef8f246cf9fd00c3094ffa0bfb2b78a7d8055fad14cbb53935f074e7f57f03c45660cc64ca4c37903f5c20085b3768738a25821a3164a"},
+	{"blake2s", 36, 3, "2086005154f33d8292797b7951fea69b2805d7de82a534e3f09ec7ad04a88e88"},
+	{"blake3", 36, 3, "83b2dd6bfa674378681acec053aa4da70b1a830f4d09a6fb767bc76f90d407bc"},
 	{"aescmac", 36, 3, "78c789d0614ce11c4af42e3cf358ab03"},
 	{"siphash24", 36, 3, "9b6300d1be6dad7001187452459eb8b6"},
 	{"chacha20", 36, 3, "6683213fb17e72c7a77e01e73d43386de84c4f85574238171b292d214e39acf4"},
-	{"areion256", 36, 3, "4ad4a7418c8bfc445c0ccfb20045e58b2ff7ef62f8ac170db67c9037fd06de41"},
-	{"blake2s", 36, 3, "2086005154f33d8292797b7951fea69b2805d7de82a534e3f09ec7ad04a88e88"},
-	{"blake3", 36, 3, "83b2dd6bfa674378681acec053aa4da70b1a830f4d09a6fb767bc76f90d407bc"},
-	{"blake2b256", 36, 3, "fa255838d97272b1303d7dcff33268499ea0adf108f9b421891bef38b8b38211"},
-	{"blake2b512", 36, 3, "aff41328166cef8f4b1ef8f246cf9fd00c3094ffa0bfb2b78a7d8055fad14cbb53935f074e7f57f03c45660cc64ca4c37903f5c20085b3768738a25821a3164a"},
-	{"areion512", 36, 3, "3c4ede253cc64c33f54734d69047741b6b9dde34dd31e7237bfd603f6b1a3833ba4e47c78759dd9dd49d86af64732559fd972104eea03f951034254162cca2e2"},
 }
 
 // TestFixedKAT runs each frozen vector through the production single
@@ -133,6 +131,36 @@ func TestFixedKATGenerate(t *testing.T) {
 // each primitive.
 func computeFixedKATSingle(name string, data []byte, seedFlavor int) []byte {
 	switch name {
+	case "areion256":
+		k := canonicalKey32()
+		single, _ := Areion256PairWithKey(k)
+		s := canonicalSeed4(seedFlavor)
+		return fixedKATMarshal4(single(data, s))
+	case "areion512":
+		k := canonicalKey64()
+		single, _ := Areion512PairWithKey(k)
+		s := canonicalSeed8(seedFlavor)
+		return fixedKATMarshal8(single(data, s))
+	case "blake2b256":
+		k := canonicalKey32()
+		single := BLAKE2b256WithKey(k)
+		s := canonicalSeed4(seedFlavor)
+		return fixedKATMarshal4(single(data, s))
+	case "blake2b512":
+		k := canonicalKey64()
+		single := BLAKE2b512WithKey(k)
+		s := canonicalSeed8(seedFlavor)
+		return fixedKATMarshal8(single(data, s))
+	case "blake2s":
+		k := canonicalKey32()
+		single := BLAKE2sWithKey(k)
+		s := canonicalSeed4(seedFlavor)
+		return fixedKATMarshal4(single(data, s))
+	case "blake3":
+		k := canonicalKey32()
+		single := BLAKE3WithKey(k)
+		s := canonicalSeed4(seedFlavor)
+		return fixedKATMarshal4(single(data, s))
 	case "aescmac":
 		full := canonicalKey32()
 		var k [16]byte
@@ -157,36 +185,6 @@ func computeFixedKATSingle(name string, data []byte, seedFlavor int) []byte {
 		single := ChaCha20WithKey(k)
 		s := canonicalSeed4(seedFlavor)
 		return fixedKATMarshal4(single(data, s))
-	case "areion256":
-		k := canonicalKey32()
-		single, _ := Areion256PairWithKey(k)
-		s := canonicalSeed4(seedFlavor)
-		return fixedKATMarshal4(single(data, s))
-	case "blake2s":
-		k := canonicalKey32()
-		single := BLAKE2sWithKey(k)
-		s := canonicalSeed4(seedFlavor)
-		return fixedKATMarshal4(single(data, s))
-	case "blake3":
-		k := canonicalKey32()
-		single := BLAKE3WithKey(k)
-		s := canonicalSeed4(seedFlavor)
-		return fixedKATMarshal4(single(data, s))
-	case "blake2b256":
-		k := canonicalKey32()
-		single := BLAKE2b256WithKey(k)
-		s := canonicalSeed4(seedFlavor)
-		return fixedKATMarshal4(single(data, s))
-	case "blake2b512":
-		k := canonicalKey64()
-		single := BLAKE2b512WithKey(k)
-		s := canonicalSeed8(seedFlavor)
-		return fixedKATMarshal8(single(data, s))
-	case "areion512":
-		k := canonicalKey64()
-		single, _ := Areion512PairWithKey(k)
-		s := canonicalSeed8(seedFlavor)
-		return fixedKATMarshal8(single(data, s))
 	}
 	panic("unknown primitive: " + name)
 }

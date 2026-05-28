@@ -7,8 +7,7 @@
 // / `std::istream` wrapper writer / reader pair for Non-AEAD
 // streaming. The Non-AEAD streaming arm is the User-Driven Loop only.
 //
-// Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
-// 24 PASS/FAIL cells.
+// Matrix: 8 examples × outer ciphers.
 //
 // Examples covered:
 //
@@ -70,12 +69,12 @@ constexpr std::size_t kStreamChunkSize    = 16 * 1024;
 constexpr itb::wrapper::Cipher kCiphers[] = {
     itb::wrapper::Cipher::Areion256,
     itb::wrapper::Cipher::Areion512,
-    itb::wrapper::Cipher::SipHash24,
-    itb::wrapper::Cipher::Aes128Ctr,
     itb::wrapper::Cipher::Blake2b256,
     itb::wrapper::Cipher::Blake2b512,
     itb::wrapper::Cipher::Blake2s,
     itb::wrapper::Cipher::Blake3,
+    itb::wrapper::Cipher::Aes128Ctr,
+    itb::wrapper::Cipher::SipHash24,
     itb::wrapper::Cipher::ChaCha20,
 };
 
@@ -638,7 +637,7 @@ bool contains_substring(std::string_view haystack, std::string_view needle) {
 
 void usage(const char* prog) {
     std::fprintf(stderr,
-                 "usage: %s [--example SUBSTR] [--cipher aes|chacha|siphash] [-v]\n",
+                 "usage: %s [--example SUBSTR] [--cipher ciphername] [-v]\n",
                  prog);
 }
 

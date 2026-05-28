@@ -155,7 +155,7 @@ ITB_TEST_FILTER='[blake3]' ./run_tests.sh
 Throughput numbers live in [`bench/BENCH.md`](bench/BENCH.md); see
 [`bench/README.md`](bench/README.md) for invocation, environment
 variables, and per-case output format. The harness covers four ops
-across the nine PRF-grade primitives plus one mixed variant for both
+across PRF-grade primitives plus one mixed variant for both
 Single and Triple at 1024-bit ITB key width and 16 MiB payload.
 Four-pass sweep:
 
@@ -918,13 +918,6 @@ and applied process-wide on import via `itb::set_*`.
 
 ## Hash primitives (Single / Triple)
 
-Binding-side PRF-only order — **Areion-SoEM-256**, **Areion-SoEM-512**,
-**BLAKE2b-256**, **BLAKE2b-512**, **BLAKE2s**, **BLAKE3**, **AES-CMAC**,
-**SipHash-2-4**, **ChaCha20**. FFI names: `areion256`, `areion512`,
-`blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`,
-`chacha20`. Below-spec lab primitives (CRC128, FNV-1a, MD5) are absent
-by construction — the libitb registry does not expose them.
-
 Single Ouroboros — three seeds (`noiseSeed`, `dataSeed`, `startSeed`)
 via `itb::encrypt` / `decrypt` / `encrypt_auth` / `decrypt_auth`.
 Triple Ouroboros (3× security: P × 2^(3×key_bits)) — seven seeds (one
@@ -1185,7 +1178,7 @@ Header-only RAII surface in `<itb/wrapper.hpp>`.
 
 | Symbol | Purpose |
 |---|---|
-| `wrapper::Cipher::Aes128Ctr / ChaCha20 / SipHash24 / Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3` | Cipher enum |
+| `wrapper::Cipher::Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3 / Aes128Ctr / SipHash24 / ChaCha20 / etc...` | Cipher enum |
 | `wrapper::ffi_name(cipher)` | Canonical cipher name |
 | `wrapper::key_size(cipher) / wrapper::nonce_size(cipher)` | Cipher dimension accessors |
 | `wrapper::generate_key(cipher) -> std::vector<std::uint8_t>` | CSPRNG-fresh wrapper key |

@@ -1,11 +1,10 @@
 --  Easy Mode Single-Ouroboros benchmarks for the Ada binding.
 --
---  Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
---  nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+--  Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+--  PRF-grade primitives, locked at 1024-bit ITB key width and 16
 --  MiB CSPRNG-flavoured payload. One mixed-primitive variant
---  (Itb.Encryptor.Mixed_Single with BLAKE3 / BLAKE2s / BLAKE2b-256 +
---  Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
---  surface alongside the single-primitive grid.
+--  (Itb.Encryptor.Mixed_Single + dedicated lockSeed) covers the
+--  Easy Mode Mixed surface alongside the single-primitive grid.
 --
 --  Run with::
 --
@@ -23,8 +22,7 @@
 --  Limited_Controlled type; Ada cannot copy / aggregate / array-store
 --  it. The Rust / C# / Node.js sources keep one freshly-constructed
 --  encryptor per (primitive, op) tuple — 40 encryptors total. This
---  Ada port keeps one encryptor per primitive shape (10 total —
---  9 single-primitive + 1 mixed) and reuses it across the four ops
+--  Ada port keeps one encryptor per primitive shape and reuses it across the four ops
 --  (encrypt / decrypt / encrypt_auth / decrypt_auth). The cipher
 --  methods are stateless w.r.t. per-call carry on Easy Mode (fresh
 --  nonce per encrypt), so reusing one encryptor per primitive
@@ -53,7 +51,7 @@ procedure Bench_Single is
    procedure Free_Bytes is new Ada.Unchecked_Deallocation
      (Object => Itb.Byte_Array, Name => Common.Byte_Array_Access);
 
-   --  Canonical 9-primitive PRF-grade order, mirroring bench_single.rs
+   --  Canonical primitive PRF-grade order, mirroring bench_single.rs
    --  / bench_single.cs / bench-single.ts. The three below-spec lab
    --  primitives (CRC128, FNV-1a, MD5) are not exposed through the
    --  libitb registry and are therefore absent here by construction.
@@ -82,7 +80,7 @@ procedure Bench_Single is
 
    --  Mixed-primitive composition used by the bench_single_mixed_*
    --  cases. Noise / data / start cycle through the BLAKE family
-   --  while Areion-SoEM-256 takes the dedicated lockSeed slot — every
+   --  while Areion takes the dedicated lockSeed slot — every
    --  name resolves to a 256-bit native hash width so the
    --  Itb.Encryptor.Mixed_Single width-check passes.
    Mixed_Noise : constant String := "blake3";
@@ -90,7 +88,7 @@ procedure Bench_Single is
    Mixed_Start : constant String := "blake2b256";
 
    ---------------------------------------------------------------------
-   --  Encryptor pool — 10 encryptors total, one per primitive shape.
+   --  Encryptor pool — one per primitive shape.
    --  Each encryptor's lifetime spans the whole bench run; the
    --  finalizer releases the libitb handle at scope exit when main
    --  returns.

@@ -111,7 +111,7 @@ chunked I/O, error paths, lockSeed lifecycle.
 
 A custom Go-bench-style harness lives under `Itb.Bench/` and
 covers the four ops (`encrypt`, `decrypt`, `encrypt_auth`,
-`decrypt_auth`) across the nine PRF-grade primitives plus one
+`decrypt_auth`) across PRF-grade primitives plus one
 mixed-primitive variant for both Single and Triple Ouroboros at
 1024-bit ITB key width and 16 MiB payload. Run via:
 
@@ -991,13 +991,7 @@ reject the wrong importer with `ItbBlobModeMismatchException`.
 
 ## Hash primitives (Single / Triple)
 
-Names match the canonical `hashes/` registry. Listed below in the
-canonical primitive ordering used across ITB documentation —
-`AES-CMAC`, `SipHash-2-4`, `ChaCha20`, `Areion-SoEM-256`,
-`BLAKE2s`, `BLAKE3`, `BLAKE2b-256`, `BLAKE2b-512`,
-`Areion-SoEM-512` — the FFI names are `aescmac`, `siphash24`,
-`chacha20`, `areion256`, `blake2s`, `blake3`, `blake2b256`,
-`blake2b512`, `areion512`. Triple Ouroboros (3× security) takes
+Names match the canonical `hashes/` registry. Triple Ouroboros takes
 seven seeds (one shared `noiseSeed` plus three `dataSeed` and three
 `startSeed`) via `Cipher.EncryptTriple` / `Cipher.DecryptTriple`
 and the authenticated counterparts `Cipher.EncryptAuthTriple` /
@@ -1286,7 +1280,7 @@ Every public symbol lives in the `Itb` namespace. The wrapper
 
 | Symbol | Purpose |
 |---|---|
-| `Cipher.Aes128Ctr / ChaCha20 / SipHash24 / Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3` | Cipher enum |
+| `Cipher.Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3 / Aes128Ctr / SipHash24 / ChaCha20 / etc...` | Cipher enum |
 | `Wrapper.AllCiphers` | Canonical cipher list |
 | `Wrapper.KeySize(cipher) / NonceSize(cipher)` | Cipher dimension accessors |
 | `Wrapper.GenerateKey(cipher) -> byte[]` | CSPRNG-fresh wrapper key |

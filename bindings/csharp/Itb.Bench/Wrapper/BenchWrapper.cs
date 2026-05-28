@@ -796,8 +796,7 @@ internal static class BenchWrapper
                         {
                             var key = BenchOuterKey(c);
                             var plaintext = RandBytes(StreamSize);
-                            Func<byte[], byte[]> encFn = BuildStreamingEncryptFn(c, key, sm, t);
-                            Func<byte[], byte[]> decFn = BuildStreamingDecryptFn(c, key, sm, t);
+                            var (encFn, decFn) = BuildStreamingPair(c, key, sm, t);
                             var initialWire = encFn(plaintext);
                             return new BenchCase(
                                 $"{tag}/{modeTag}/{c.ToFfiName()}/decrypt",
@@ -815,6 +814,167 @@ internal static class BenchWrapper
         }
 
         return lazy;
+    }
+
+    // Helper: build a matched (encFn, decFn) pair sharing the SAME ITB keying
+    // material so that initialWire = encFn(pt) can be correctly fed into decFn.
+    private static (Func<byte[], byte[]> encFn, Func<byte[], byte[]> decFn) BuildStreamingPair(
+        OuterCipher cipher, byte[] key, StreamMode mode, bool triple)
+    {
+        switch (mode)
+        {
+            case StreamMode.AeadEasyIo:
+            {
+                var enc = triple ? BenchEasyTriple(true) : BenchEasySingle(true);
+                Func<byte[], byte[]> encFn = pt =>
+                {
+                    using var inner = new MemoryStream();
+                    enc.EncryptStreamAuth(new MemoryStream(pt), inner, StreamChunk);
+                    var innerBytes = inner.ToArray();
+                    using var ww = new WrapStreamWriter(cipher, key);
+                    var nonce = ww.Nonce;
+                    var body = ww.Update(innerBytes);
+                    var wire = new byte[nonce.Length + body.Length];
+                    Buffer.BlockCopy(nonce, 0, wire, 0, nonce.Length);
+                    Buffer.BlockCopy(body, 0, wire, nonce.Length, body.Length);
+                    return wire;
+                };
+                Func<byte[], byte[]> decFn = wire =>
+                {
+                    var nlen = WrapperCore.NonceSize(cipher);
+                    using var ur = new UnwrapStreamReader(cipher, key, wire.AsSpan(0, nlen));
+                    var innerWire = ur.Update(wire.AsSpan(nlen));
+                    using var outBuf = new MemoryStream();
+                    enc.DecryptStreamAuth(new MemoryStream(innerWire), outBuf);
+                    return outBuf.ToArray();
+                };
+                return (encFn, decFn);
+            }
+            case StreamMode.AeadLowLevelIo:
+            {
+                var seedCount = triple ? 7 : 3;
+                var seeds = BenchLowLevelMakeSeeds(seedCount);
+                var mac = new Mac(MacName, RandBytes(32));
+                Func<byte[], byte[]> encFn = pt =>
+                {
+                    using var inner = new MemoryStream();
+                    if (triple)
+                        StreamPipeline.EncryptStreamAuthTriple(
+                            seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], mac,
+                            new MemoryStream(pt), inner, StreamChunk);
+                    else
+                        StreamPipeline.EncryptStreamAuth(seeds[0], seeds[1], seeds[2], mac,
+                            new MemoryStream(pt), inner, StreamChunk);
+                    var innerBytes = inner.ToArray();
+                    using var ww = new WrapStreamWriter(cipher, key);
+                    var nonce = ww.Nonce;
+                    var body = ww.Update(innerBytes);
+                    var wire = new byte[nonce.Length + body.Length];
+                    Buffer.BlockCopy(nonce, 0, wire, 0, nonce.Length);
+                    Buffer.BlockCopy(body, 0, wire, nonce.Length, body.Length);
+                    return wire;
+                };
+                Func<byte[], byte[]> decFn = wire =>
+                {
+                    var nlen = WrapperCore.NonceSize(cipher);
+                    using var ur = new UnwrapStreamReader(cipher, key, wire.AsSpan(0, nlen));
+                    var innerWire = ur.Update(wire.AsSpan(nlen));
+                    using var outBuf = new MemoryStream();
+                    if (triple)
+                        StreamPipeline.DecryptStreamAuthTriple(
+                            seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], mac,
+                            new MemoryStream(innerWire), outBuf);
+                    else
+                        StreamPipeline.DecryptStreamAuth(seeds[0], seeds[1], seeds[2], mac,
+                            new MemoryStream(innerWire), outBuf);
+                    return outBuf.ToArray();
+                };
+                return (encFn, decFn);
+            }
+            case StreamMode.NoaeadEasyUserloop:
+            {
+                var enc = triple ? BenchEasyTriple(false) : BenchEasySingle(false);
+                Func<byte[], byte[]> encFn = pt =>
+                {
+                    using var ww = new WrapStreamWriter(cipher, key);
+                    using var wireBuf = new MemoryStream();
+                    wireBuf.Write(ww.Nonce);
+                    var off = 0;
+                    while (off < pt.Length)
+                    {
+                        var take = Math.Min(StreamChunk, pt.Length - off);
+                        var ct = enc.Encrypt(pt.AsSpan(off, take));
+                        wireBuf.Write(ww.Update(BitConverter.GetBytes((uint)ct.Length)));
+                        wireBuf.Write(ww.Update(ct));
+                        off += take;
+                    }
+                    return wireBuf.ToArray();
+                };
+                Func<byte[], byte[]> decFn = wire =>
+                {
+                    var nlen = WrapperCore.NonceSize(cipher);
+                    using var ur = new UnwrapStreamReader(cipher, key, wire.AsSpan(0, nlen));
+                    var decrypted = ur.Update(wire.AsSpan(nlen));
+                    using var outBuf = new MemoryStream();
+                    var pos = 0;
+                    while (pos < decrypted.Length)
+                    {
+                        var clen = (int)BitConverter.ToUInt32(decrypted, pos);
+                        pos += 4;
+                        var pt = enc.Decrypt(decrypted.AsSpan(pos, clen));
+                        outBuf.Write(pt);
+                        pos += clen;
+                    }
+                    return outBuf.ToArray();
+                };
+                return (encFn, decFn);
+            }
+            case StreamMode.NoaeadLowLevelUserloop:
+            {
+                var seedCount = triple ? 7 : 3;
+                var seeds = BenchLowLevelMakeSeeds(seedCount);
+                Func<byte[], byte[]> encFn = pt =>
+                {
+                    using var ww = new WrapStreamWriter(cipher, key);
+                    using var wireBuf = new MemoryStream();
+                    wireBuf.Write(ww.Nonce);
+                    var off = 0;
+                    while (off < pt.Length)
+                    {
+                        var take = Math.Min(StreamChunk, pt.Length - off);
+                        byte[] ct = triple
+                            ? ItbCipher.EncryptTriple(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], pt.AsSpan(off, take))
+                            : ItbCipher.Encrypt(seeds[0], seeds[1], seeds[2], pt.AsSpan(off, take));
+                        wireBuf.Write(ww.Update(BitConverter.GetBytes((uint)ct.Length)));
+                        wireBuf.Write(ww.Update(ct));
+                        off += take;
+                    }
+                    return wireBuf.ToArray();
+                };
+                Func<byte[], byte[]> decFn = wire =>
+                {
+                    var nlen = WrapperCore.NonceSize(cipher);
+                    using var ur = new UnwrapStreamReader(cipher, key, wire.AsSpan(0, nlen));
+                    var decrypted = ur.Update(wire.AsSpan(nlen));
+                    using var outBuf = new MemoryStream();
+                    var pos = 0;
+                    while (pos < decrypted.Length)
+                    {
+                        var clen = (int)BitConverter.ToUInt32(decrypted, pos);
+                        pos += 4;
+                        byte[] ptChunk = triple
+                            ? ItbCipher.DecryptTriple(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], decrypted.AsSpan(pos, clen))
+                            : ItbCipher.Decrypt(seeds[0], seeds[1], seeds[2], decrypted.AsSpan(pos, clen));
+                        outBuf.Write(ptChunk);
+                        pos += clen;
+                    }
+                    return outBuf.ToArray();
+                };
+                return (encFn, decFn);
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mode));
+        }
     }
 
     // Helper: build a streaming encrypt function for (cipher, key, streamMode, triple).

@@ -7,9 +7,7 @@ matrix), because the Python binding does not expose a file-like /
 stream-like wrapper writer/reader pair for Non-AEAD streaming. The
 Non-AEAD streaming arm is the User-Driven Loop only.
 
-Matrix: 8 examples × 9 outer ciphers (areion256 / areion512 /
-siphash24 / aescmac / blake2b256 / blake2b512 / blake2s / blake3 /
-chacha20) = 72 PASS/FAIL cells.
+Matrix: 8 examples × outer ciphers.
 
 Examples covered:
 
@@ -464,9 +462,7 @@ def main(argv=None):
     )
     parser.add_argument(
         "--cipher", default="",
-        help="run only the given outer cipher (one of CIPHER_NAMES, "
-             "e.g. areion256|areion512|siphash24|aescmac|blake2b256|"
-             "blake2b512|blake2s|blake3|chacha20)",
+        help="run only the given outer cipher (one of CIPHER_NAMES)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true",
