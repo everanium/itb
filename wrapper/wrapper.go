@@ -11,28 +11,26 @@ import (
 
 // Cipher names accepted by the Make* helpers and the cmd/-flag parsing.
 // The string values mirror the ctr/ package's primitive identifiers; every
-// name routes through ctr.New / kdf.Derive, so all nine PRF-grade ITB
+// name routes through ctr.New / kdf.Derive, so all PRF-grade ITB
 // registry primitives are supported as outer ciphers.
 const (
 	CipherAreion256  = "areion256"
 	CipherAreion512  = "areion512"
-	CipherSipHash24  = "siphash24"
-	CipherAES128CTR  = "aescmac"
 	CipherBLAKE2b256 = "blake2b256"
 	CipherBLAKE2b512 = "blake2b512"
 	CipherBLAKE2s    = "blake2s"
 	CipherBLAKE3     = "blake3"
+	CipherAES128CTR  = "aescmac"
+	CipherSipHash24  = "siphash24"
 	CipherChaCha20   = "chacha20"
 )
 
 // CipherNames lists every supported outer cipher in iteration order, in the
-// project's canonical primitive order matching the ctr/ and kdf/ packages:
-// Areion-SoEM-256/512, SipHash-2-4, AES-128-CTR, BLAKE2b-256/512, BLAKE2s,
-// BLAKE3, ChaCha20.
+// project's canonical primitive order.
 var CipherNames = []string{
 	CipherAreion256, CipherAreion512,
-	CipherSipHash24, CipherAES128CTR,
 	CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3,
+	CipherAES128CTR, CipherSipHash24,
 	CipherChaCha20,
 }
 
@@ -341,11 +339,11 @@ func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) 
 // master must be at least 32 bytes — the wrapper's uniform security floor, a
 // 256-bit master matching an ML-KEM shared secret. A single 32-byte master
 // keys every supported cipher: the kdf package takes the leading 16 bytes for
-// aescmac / siphash24, the leading 32 bytes for chacha20 / areion256 / the
-// BLAKE family, and deterministically stretches the leading 32 bytes to the
-// 64-byte areion512 key. A longer master is accepted and truncated the same
-// way, so both endpoints derive an identical key from any master of 32 bytes
-// or more.
+// 128-bit primitives, the leading 32 bytes for 256-bit primitives and for
+// 512-bit primitives like BLAKE2b-512, and deterministically stretches the
+// leading 32 bytes to the 64 bytes for 512-bit primitives like Areion-SoEM-512.
+// A longer master is accepted and truncated the same way, so both endpoints
+// derive an identical key from any master of 32 bytes or more.
 func DeriveKey(name string, master []byte) ([]byte, error) {
 	if len(master) < 32 {
 		return nil, fmt.Errorf("wrapper: DeriveKey master must be at least 32 bytes, got %d", len(master))

@@ -1,12 +1,10 @@
 // Easy Mode Triple-Ouroboros benchmarks for the Node.js binding.
 //
-// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
-// nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+// PRF-grade primitives, locked at 1024-bit ITB key width and 16
 // MiB CSPRNG-filled payload. One mixed-primitive variant
-// (`Encryptor.mixedTriple` cycling the same BLAKE family +
-// Areion-SoEM-256 dedicated lockSeed used by bench_single's mixed
-// case) covers the Easy Mode Mixed surface alongside the
-// single-primitive grid.
+// (`Encryptor.mixedTriple` + dedicated lockSeed) covers the
+// Easy Mode Mixed surface alongside the single-primitive grid.
 //
 // Run with:
 //
@@ -80,7 +78,7 @@ function buildTriple(primitive: string): Encryptor {
 /**
  * Construct a mixed-primitive Triple-Ouroboros encryptor with the
  * four-name BLAKE family across the seven middle slots. The
- * dedicated Areion-SoEM-256 lockSeed slot is allocated only when
+ * dedicated lockSeed slot is allocated only when
  * `ITB_LOCKSEED` is set, so the no-LockSeed bench arm measures the
  * plain mixed-primitive cost without the BitSoup + LockSoup
  * auto-couple. The four primitive names share the same native hash

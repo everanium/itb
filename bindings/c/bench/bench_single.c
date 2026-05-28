@@ -2,12 +2,11 @@
  * bench_single.c — Easy Mode Single-Ouroboros benchmarks for the C
  * binding.
  *
- * Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
- * nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+ * Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+ * PRF-grade primitives, locked at 1024-bit ITB key width and 16
  * MiB CSPRNG-filled payload. One mixed-primitive variant
- * (itb_encryptor_new_mixed with BLAKE3 / BLAKE2s / BLAKE2b-256 +
- * ChaCha20 dedicated lockSeed) covers the Easy Mode Mixed surface
- * alongside the single-primitive grid.
+ * (itb_encryptor_new_mixed + dedicated lockSeed) covers the
+ * Easy Mode Mixed surface alongside the single-primitive grid.
  *
  * Run with:
  *
@@ -35,7 +34,7 @@
 #include "itb.h"
 
 /* Mixed-primitive composition used by the bench_single_mixed_* cases.
- * noise / data / start cycle through the BLAKE family while ChaCha20
+ * noise / data / start cycle through the BLAKE family while Areion
  * takes the dedicated lockSeed slot — every name resolves to a 256-bit
  * native hash width so the itb_encryptor_new_mixed width-check passes. */
 static const char *const MIXED_NOISE = "blake3";
@@ -140,7 +139,7 @@ static itb_encryptor_t *build_single(const char *primitive) {
 
 /* Construct a mixed-primitive Single-Ouroboros encryptor matching the
  * README Quick Start composition (BLAKE3 noise / BLAKE2s data /
- * BLAKE2b-256 start). The dedicated ChaCha20 lockSeed slot is allocated
+ * BLAKE2b-256 start). The dedicated lockSeed slot is allocated
  * only when ITB_LOCKSEED is set, so the no-LockSeed bench arm measures
  * the plain mixed-primitive cost without the BitSoup + LockSoup
  * auto-couple. */

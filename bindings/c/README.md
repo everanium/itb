@@ -140,7 +140,7 @@ state.
 
 A custom Go-bench-style harness lives under `bench/` and covers the
 four ops (`encrypt`, `decrypt`, `encrypt_auth`, `decrypt_auth`) across
-the nine PRF-grade primitives plus one mixed-primitive variant for
+PRF-grade primitives plus one mixed-primitive variant for
 both Single and Triple Ouroboros at 1024-bit ITB key width and 16 MiB
 payload. See [`bench/README.md`](bench/README.md) for invocation /
 environment variables / output format and [`bench/BENCH.md`](bench/BENCH.md)
@@ -1193,15 +1193,7 @@ setters.
 
 ## Hash primitives (Single / Triple)
 
-Names match the canonical `hashes/` registry. Listed below in the
-binding-side canonical PRF-only ordering — **Areion-SoEM-256**,
-**Areion-SoEM-512**, **BLAKE2b-256**, **BLAKE2b-512**, **BLAKE2s**,
-**BLAKE3**, **AES-CMAC**, **SipHash-2-4**, **ChaCha20** — the FFI names
-are `areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`,
-`blake3`, `aescmac`, `siphash24`, `chacha20`. The below-spec lab
-primitives in the documentation's canonical ordering (CRC128, FNV-1a,
-MD5) are not exposed through the libitb registry and are absent from
-the C binding by construction. Triple Ouroboros (3× security) takes
+Names match the canonical `hashes/` registry. Triple Ouroboros takes
 seven seeds (one shared `noiseSeed` plus three `dataSeed` and three
 `startSeed`) via `itb_encrypt_triple` / `itb_decrypt_triple` and the
 authenticated counterparts `itb_encrypt_auth_triple` /
@@ -1505,11 +1497,12 @@ and `_width` / `_mode`.
 | `itb_status_t itb_unwrap_stream_reader_new(cipher, key, wire_nonce, ...)` / `..._update(...)` / `void ..._free(r)` | Streaming unwrap reader |
 
 The wrapper cipher enum (`itb_wrapper_cipher_t`) covers
-`ITB_WRAPPER_CIPHER_AES_128_CTR`, `ITB_WRAPPER_CIPHER_CHACHA20`,
-`ITB_WRAPPER_CIPHER_SIPHASH24`, `ITB_WRAPPER_CIPHER_AREION_256`,
-`ITB_WRAPPER_CIPHER_AREION_512`, `ITB_WRAPPER_CIPHER_BLAKE2B_256`,
-`ITB_WRAPPER_CIPHER_BLAKE2B_512`, `ITB_WRAPPER_CIPHER_BLAKE2S`, and
-`ITB_WRAPPER_CIPHER_BLAKE3`.
+
+`ITB_WRAPPER_CIPHER_AREION_256`, `ITB_WRAPPER_CIPHER_AREION_512`,
+`ITB_WRAPPER_CIPHER_BLAKE2B_256`, `ITB_WRAPPER_CIPHER_BLAKE2B_512`,
+`ITB_WRAPPER_CIPHER_BLAKE2S`, `ITB_WRAPPER_CIPHER_BLAKE3`,
+`ITB_WRAPPER_CIPHER_AES_128_CTR`, `ITB_WRAPPER_CIPHER_SIPHASH24`,
+`ITB_WRAPPER_CIPHER_CHACHA20`, etc...
 
 ### Error handling
 

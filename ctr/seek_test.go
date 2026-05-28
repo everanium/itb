@@ -15,8 +15,8 @@ import (
 func TestNewAtParity(t *testing.T) {
 	const total = 8192
 	for _, name := range []string{
-		CipherAreion256, CipherAreion512, CipherSipHash24, CipherAES128CTR,
-		CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3,
+		CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512,
+		CipherBLAKE2s, CipherBLAKE3, CipherAES128CTR, CipherSipHash24,
 		CipherChaCha20,
 	} {
 		ksize, err := KeySize(name)

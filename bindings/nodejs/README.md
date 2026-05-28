@@ -120,7 +120,7 @@ lifecycle. `npm test` compiles the source + tests through
 
 A custom Go-bench-style harness lives under `bench/` and covers
 the four ops (`encrypt`, `decrypt`, `encrypt_auth`, `decrypt_auth`)
-across the nine PRF-grade primitives plus one mixed-primitive
+across PRF-grade primitives plus one mixed-primitive
 variant for both Single and Triple Ouroboros at 1024-bit ITB key
 width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
 for invocation / environment variables / output format and
@@ -973,9 +973,7 @@ dedicated lockSeed slot), `Mac=2` (include the MAC key + name).
 
 ## Hash primitives (Single / Triple)
 
-Names match the canonical `hashes/` registry: `areion256`,
-`areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`,
-`blake2s`, `blake3`, `chacha20`. Triple Ouroboros (3× security)
+Names match the canonical `hashes/` registry. Triple Ouroboros
 takes seven seeds (one shared `noiseSeed` plus three `dataSeed`
 and three `startSeed`) via `encryptTriple` / `decryptTriple` and
 the authenticated counterparts `encryptAuthTriple` /
@@ -1252,7 +1250,7 @@ JavaScript callers see the same identifiers on the imported module.
 
 | Symbol | Purpose |
 |---|---|
-| `Cipher.Aes128Ctr / ChaCha20 / SipHash24 / Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3` | Cipher enum |
+| `Cipher.Areion256 / Areion512 / Blake2b256 / Blake2b512 / Blake2s / Blake3 / Aes128Ctr / SipHash24 / ChaCha20 / etc...` | Cipher enum |
 | `CIPHER_NAMES: readonly CipherName[]` | Canonical name list |
 | `wrapperKeySize(cipher): number` / `wrapperNonceSize(cipher): number` | Cipher dimension accessors |
 | `wrapperGenerateKey(cipher): Uint8Array` | CSPRNG-fresh wrapper key |

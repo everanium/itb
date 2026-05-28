@@ -48,12 +48,12 @@ build-tag table in [`../README.md`](../README.md) for the
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 188 | 286 | 182 | 264 |
 | **Areion-SoEM-512** | 512 | PRF | 201 | 292 | 184 | 270 |
-| **SipHash-2-4** | 128 | PRF | 153 | 190 | 141 | 183 |
-| **AES-CMAC** | 128 | PRF | 186 | 266 | 174 | 247 |
-| **BLAKE2b-512** | 512 | PRF | 133 | 165 | 128 | 159 |
 | **BLAKE2b-256** | 256 | PRF | 91 | 106 | 88 | 102 |
+| **BLAKE2b-512** | 512 | PRF | 133 | 165 | 128 | 159 |
 | **BLAKE2s** | 256 | PRF | 100 | 117 | 97 | 114 |
 | **BLAKE3** | 256 | PRF | 120 | 148 | 117 | 143 |
+| **AES-CMAC** | 128 | PRF | 186 | 266 | 174 | 247 |
+| **SipHash-2-4** | 128 | PRF | 153 | 190 | 141 | 183 |
 | **ChaCha20** | 256 | PRF | 109 | 129 | 103 | 126 |
 | **Mixed** | 256 | PRF | 106 | 128 | 104 | 123 |
 
@@ -63,14 +63,52 @@ build-tag table in [`../README.md`](../README.md) for the
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 271 | 316 | 242 | 285 |
 | **Areion-SoEM-512** | 512 | PRF | 282 | 338 | 248 | 314 |
-| **SipHash-2-4** | 128 | PRF | 189 | 210 | 175 | 198 |
-| **AES-CMAC** | 128 | PRF | 251 | 286 | 223 | 274 |
-| **BLAKE2b-512** | 512 | PRF | 165 | 177 | 153 | 172 |
 | **BLAKE2b-256** | 256 | PRF | 105 | 111 | 101 | 110 |
+| **BLAKE2b-512** | 512 | PRF | 165 | 177 | 153 | 172 |
 | **BLAKE2s** | 256 | PRF | 115 | 123 | 110 | 119 |
 | **BLAKE3** | 256 | PRF | 143 | 155 | 136 | 144 |
+| **AES-CMAC** | 128 | PRF | 251 | 286 | 223 | 274 |
+| **SipHash-2-4** | 128 | PRF | 189 | 210 | 175 | 198 |
 | **ChaCha20** | 256 | PRF | 124 | 135 | 120 | 129 |
 | **Mixed** | 256 | PRF | 125 | 133 | 116 | 130 |
+
+## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, Lock Seed + Lock Batch mode)
+
+The Lock Batch performance variant (`ITB_LOCKSEED=1 ITB_LOCKBATCH=1` /
+`set_lock_batch(1)`) batches the per-chunk Lock Soup overlay derivation,
+reducing per-chunk PRF invocations without affecting security under the
+PRF assumption. Numbers below run with `ITB_LOCKSEED=1 ITB_LOCKBATCH=1`,
+default nonce, 16 MiB payload, `ITB_BENCH_MIN_SEC=5`.
+
+### ITB Single 1024-bit (security: P × 2^1024)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 96 | 128 | 102 | 125 |
+| **Areion-SoEM-512** | 512 | PRF | 117 | 143 | 112 | 137 |
+| **BLAKE2b-256** | 256 | PRF | 65 | 72 | 63 | 71 |
+| **BLAKE2b-512** | 512 | PRF | 92 | 106 | 88 | 102 |
+| **BLAKE2s** | 256 | PRF | 67 | 75 | 66 | 75 |
+| **BLAKE3** | 256 | PRF | 73 | 82 | 71 | 78 |
+| **AES-CMAC** | 128 | PRF | 93 | 110 | 89 | 107 |
+| **SipHash-2-4** | 128 | PRF | 83 | 94 | 80 | 92 |
+| **ChaCha20** | 256 | PRF | 68 | 75 | 66 | 74 |
+| **Mixed** | 256 | PRF | 52 | 57 | 51 | 56 |
+
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 156 | 200 | 166 | 193 |
+| **Areion-SoEM-512** | 512 | PRF | 197 | 223 | 183 | 214 |
+| **BLAKE2b-256** | 256 | PRF | 83 | 87 | 80 | 86 |
+| **BLAKE2b-512** | 512 | PRF | 130 | 139 | 125 | 137 |
+| **BLAKE2s** | 256 | PRF | 89 | 94 | 86 | 92 |
+| **BLAKE3** | 256 | PRF | 99 | 106 | 94 | 104 |
+| **AES-CMAC** | 128 | PRF | 155 | 168 | 145 | 162 |
+| **SipHash-2-4** | 128 | PRF | 126 | 136 | 120 | 132 |
+| **ChaCha20** | 256 | PRF | 90 | 95 | 87 | 93 |
+| **Mixed** | 256 | PRF | 52 | 54 | 51 | 54 |
 
 ## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, LockSeed mode)
 
@@ -86,12 +124,12 @@ performance variant of Lock Soup.
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 59 | 71 | 61 | 70 |
 | **Areion-SoEM-512** | 512 | PRF | 52 | 57 | 51 | 57 |
-| **SipHash-2-4** | 128 | PRF | 69 | 76 | 67 | 73 |
-| **AES-CMAC** | 128 | PRF | 75 | 86 | 74 | 85 |
-| **BLAKE2b-512** | 512 | PRF | 47 | 51 | 47 | 50 |
 | **BLAKE2b-256** | 256 | PRF | 43 | 46 | 42 | 46 |
+| **BLAKE2b-512** | 512 | PRF | 47 | 51 | 47 | 50 |
 | **BLAKE2s** | 256 | PRF | 45 | 48 | 44 | 47 |
 | **BLAKE3** | 256 | PRF | 45 | 47 | 44 | 46 |
+| **AES-CMAC** | 128 | PRF | 75 | 86 | 74 | 85 |
+| **SipHash-2-4** | 128 | PRF | 69 | 76 | 67 | 73 |
 | **ChaCha20** | 256 | PRF | 46 | 49 | 45 | 48 |
 | **Mixed** | 256 | PRF | 47 | 54 | 48 | 54 |
 
@@ -101,11 +139,11 @@ performance variant of Lock Soup.
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 58 | 63 | 60 | 65 |
 | **Areion-SoEM-512** | 512 | PRF | 53 | 54 | 52 | 54 |
-| **SipHash-2-4** | 128 | PRF | 72 | 75 | 69 | 72 |
-| **AES-CMAC** | 128 | PRF | 80 | 83 | 77 | 82 |
-| **BLAKE2b-512** | 512 | PRF | 48 | 49 | 47 | 49 |
 | **BLAKE2b-256** | 256 | PRF | 42 | 42 | 41 | 44 |
+| **BLAKE2b-512** | 512 | PRF | 48 | 49 | 47 | 49 |
 | **BLAKE2s** | 256 | PRF | 46 | 47 | 45 | 46 |
 | **BLAKE3** | 256 | PRF | 44 | 46 | 44 | 46 |
+| **AES-CMAC** | 128 | PRF | 80 | 83 | 77 | 82 |
+| **SipHash-2-4** | 128 | PRF | 72 | 75 | 69 | 72 |
 | **ChaCha20** | 256 | PRF | 48 | 50 | 40 | 44 |
 | **Mixed** | 256 | PRF | 48 | 52 | 48 | 51 |

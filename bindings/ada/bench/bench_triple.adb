@@ -1,11 +1,10 @@
 --  Easy Mode Triple-Ouroboros benchmarks for the Ada binding.
 --
---  Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
---  nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+--  Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+--  PRF-grade primitives, locked at 1024-bit ITB key width and 16
 --  MiB CSPRNG-flavoured payload. One mixed-primitive variant
---  (Itb.Encryptor.Mixed_Triple cycling the same BLAKE family +
---  Areion-SoEM-256 dedicated lockSeed used by bench_single) covers
---  the Easy Mode Mixed surface alongside the single-primitive grid.
+--  (Itb.Encryptor.Mixed_Triple + dedicated lockSeed covers the
+--  Easy Mode Mixed surface alongside the single-primitive grid.
 --
 --  Run with::
 --
@@ -25,7 +24,7 @@
 --
 --  Limited-type design note. See bench_single.adb's header for the
 --  one-encryptor-per-primitive-shape rationale; Triple Ouroboros
---  reuses the same pool layout (10 encryptors × 4 ops = 40 cases).
+--  reuses the same pool layout.
 --
 --  Lazy layout. The encryptors are still allocated at elaboration
 --  (they are small handles). The payload buffers (16 MiB each) are
@@ -48,7 +47,7 @@ procedure Bench_Triple is
    procedure Free_Bytes is new Ada.Unchecked_Deallocation
      (Object => Itb.Byte_Array, Name => Common.Byte_Array_Access);
 
-   --  Canonical 9-primitive PRF-grade order, mirroring bench_triple.rs
+   --  Canonical primitive PRF-grade order, mirroring bench_triple.rs
    --  / bench_triple.cs / bench-triple.ts.
    Areion256_Name  : aliased constant String := "areion256";
    Areion512_Name  : aliased constant String := "areion512";
@@ -76,7 +75,7 @@ procedure Bench_Triple is
    --  Mixed-primitive composition for Triple Ouroboros — the same
    --  four 256-bit-wide names used by bench_single_mixed are cycled
    --  across the seven seed slots (noise + 3 data + 3 start) plus
-   --  Areion-SoEM-256 on the dedicated lockSeed slot.
+   --  one on the dedicated lockSeed slot.
    Mixed_Noise  : constant String := "blake3";
    Mixed_Data1  : constant String := "blake2s";
    Mixed_Data2  : constant String := "blake2b256";
@@ -86,7 +85,7 @@ procedure Bench_Triple is
    Mixed_Start3 : constant String := "blake3";
 
    ---------------------------------------------------------------------
-   --  Encryptor pool — 10 Triple encryptors total. Mode = 3 throughout.
+   --  Encryptor pool. Mode = 3 throughout.
    ---------------------------------------------------------------------
 
    Mixed_Lock_Active : constant Boolean := Common.Env_Lock_Seed;

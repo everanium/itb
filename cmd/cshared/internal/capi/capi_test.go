@@ -21,12 +21,12 @@ func TestRegistry(t *testing.T) {
 	}{
 		{"areion256", 256},
 		{"areion512", 512},
-		{"siphash24", 128},
-		{"aescmac", 128},
 		{"blake2b256", 256},
 		{"blake2b512", 512},
 		{"blake2s", 256},
 		{"blake3", 256},
+		{"aescmac", 128},
+		{"siphash24", 128},
 		{"chacha20", 256},
 	}
 	for i, exp := range want {

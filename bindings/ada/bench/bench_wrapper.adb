@@ -4,10 +4,8 @@
 --  bindings/csharp/Itb.Bench/BenchWrapper.cs +
 --  bindings/rust/benches/bench_wrapper.rs.
 --
---  Sub-bench inventory — the outer-cipher palette covers all nine
---  ciphers in PRIMITIVES_CANONICAL order (areion256, areion512,
---  blake2b256, blake2b512, blake2s, blake3, aescmac, siphash24,
---  chacha20):
+--  Sub-bench inventory — the outer-cipher palette covers all
+--  ciphers:
 --    * wrapper only round-trip   (Wrap / Wrap_In_Place per cipher)
 --    * Message Single Ouroboros  (4 modes × 2 dirs per cipher)
 --    * Message Triple Ouroboros  (4 modes × 2 dirs per cipher)
@@ -1510,7 +1508,7 @@ procedure Bench_Wrapper is
 
    Min_Seconds : constant Float := Env_Min_Seconds;
 
-   --  Cipher-name slug for case-name composition. Covers all nine
+   --  Cipher-name slug for case-name composition. Covers all
    --  outer ciphers; the slug is the primitive name.
    function Cipher_Slug (C : Outer_Cipher) return String is
    begin
@@ -1546,7 +1544,7 @@ procedure Bench_Wrapper is
    --  Lazy per-cipher helpers — build only the wires needed for one
    --  cipher at a time, run those cases, then free before the next
    --  cipher. Peak RSS: one cipher's message wires (8 × ~16 MB) or
-   --  one cipher's streaming wires (8 × ~80 MB), not all 9 × 16 at once.
+   --  one cipher's streaming wires (8 × ~80 MB), not all at once.
    ---------------------------------------------------------------------
 
    --  Build message-mode wires for a single cipher.
@@ -1912,7 +1910,7 @@ begin
    --  Lazy per-cipher loop: build wires for one cipher, run all cases
    --  bound to that cipher, then free those wires before processing the
    --  next cipher. Peak RSS is bounded to one cipher's wire set
-   --  (~8 × 16 MB message or ~8 × 80 MB streaming) rather than 9 ×
+   --  (~8 × 16 MB message or ~8 × 80 MB streaming) rather than
    --  all of the above simultaneously.
    for C of Bench_Ciphers loop
 

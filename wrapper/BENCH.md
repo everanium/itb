@@ -6,14 +6,14 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ciphertext under one of nine outer keystream ciphers, one per PRF-grade ITB registry primitive: Areion-SoEM-256/512, SipHash-2-4 in CTR mode, AES-128-CTR, BLAKE2b-256/512, BLAKE2s, BLAKE3, and ChaCha20 (RFC8439). The keystream construction is delegated to the [`ctr`](../ctr/) package; AES-128-CTR and ChaCha20 use their native modes, the others run in PRF-counter mode. The wire format becomes `nonce || keystream-XOR(bytestream)`, indistinguishable from any generic stream-cipher payload by surface pattern; ITB's own content-deniability is unchanged.
+The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ciphertext under one of outer keystream ciphers, one per PRF-grade ITB registry primitive: Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4 in CTR mode, ChaCha20 (RFC8439). The keystream construction is delegated to the [`ctr`](../ctr/) package; AES-128-CTR and ChaCha20 use their native modes, the others run in PRF-counter mode. The wire format becomes `nonce || keystream-XOR(bytestream)`, indistinguishable from any generic stream-cipher payload by surface pattern; ITB's own content-deniability is unchanged.
 
 The numbers below isolate the **outer cipher cost** that the wrapper layer adds on top of ITB. Two test scopes:
 
 * **Wrapper Only** — 16 MiB random buffer, no ITB call. Pure outer cipher round-trip throughput. The `WrapInPlace` row mutates the caller's buffer (no output-buffer allocation); the `Wrap` row allocates a fresh output buffer per call.
 * **Full ITB + wrapper** — encrypt and decrypt are timed **separately** (split sub-benches `…/encrypt` and `…/decrypt`) so the per-direction breakdown is visible. Both Single Ouroboros and Triple Ouroboros are reported. Single Message benches process a 16 MiB plaintext under one encrypt / wrap call (or one unwrap / decrypt call). Streaming benches process a 64 MiB plaintext through 16 MiB chunks via either ITB's `io.Reader` / `io.Writer` API or a User-Driven Loop emitting framed chunks through the wrapped writer.
 
-The blob `Wrap` / `Unwrap` paths split the keystream XOR across up to 32 worker goroutines (the effective count is `min(32, GOMAXPROCS, chunks)`), each seeking its own keystream to its chunk's byte offset via `ctr.NewAt`. One logical CTR stream is therefore evaluated in disjoint ranges concurrently, byte-identical to a serial pass. With this, the slowest outer cipher keystream in the Wrapper Only round-trip (BLAKE2b-256, ~546 MB/s) stays ahead of ITB's combined per-direction throughput on this host (~130–350 MB/s), so no outer cipher is the wrapper-path bottleneck. AES-128-CTR with hardware AES-NI remains the fastest of the nine. The worker cap is fixed, not user-configurable: ITB's own per-pixel hashing already saturates every core, so the wrapper's secondary, partly memory-bound XOR must not over-subscribe by spawning a goroutine per core a second time.
+The blob `Wrap` / `Unwrap` paths split the keystream XOR across up to 32 worker goroutines (the effective count is `min(32, GOMAXPROCS, chunks)`), each seeking its own keystream to its chunk's byte offset via `ctr.NewAt`. One logical CTR stream is therefore evaluated in disjoint ranges concurrently, byte-identical to a serial pass. With this, the slowest outer cipher keystream in the Wrapper Only round-trip (BLAKE2b-256, ~546 MB/s) stays ahead of ITB's combined per-direction throughput on this host (~130–350 MB/s), so no outer cipher is the wrapper-path bottleneck. AES-128-CTR with hardware AES-NI remains the fastest. The worker cap is fixed, not user-configurable: ITB's own per-pixel hashing already saturates every core, so the wrapper's secondary, partly memory-bound XOR must not over-subscribe by spawning a goroutine per core a second time.
 
 Reproduction:
 
@@ -33,7 +33,7 @@ go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -co
 
 ### Configuration
 
-* Outer cipher path: all nine PRF-grade registry primitives (Areion-SoEM-256/512, SipHash-2-4, AES-128-CTR, BLAKE2b-256/512, BLAKE2s, BLAKE3, ChaCha20 (RFC8439)), keystream built by the `ctr` package; blob XOR parallelised across up to 32 workers.
+* Outer cipher path: all PRF-grade registry primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4, ChaCha20 (RFC8439)), keystream built by the `ctr` package; blob XOR parallelised across up to 32 workers.
 * ITB primitive: Areion-SoEM-512.
 * ITB seed width: 1024 bits.
 * ITB cipher config: `NonceBits=128`, `BarrierFill=1`, `BitSoup=0`, `LockSoup=0` (minimum config so the outer cipher delta is not masked by per-pixel feature cost).
@@ -51,12 +51,12 @@ Column abbreviations in the Full ITB + wrapper tables: **LL** = Low-Level, **Loo
 |---|---|---|
 | **Areion-SoEM-256** | 1541 | 1935 |
 | **Areion-SoEM-512** | 1615 | 1928 |
-| **SipHash-2-4** | 1847 | 2924 |
-| **AES-128-CTR** | 2870 | 10638 |
 | **BLAKE2b-256** | 546 | 630 |
 | **BLAKE2b-512** | 924 | 1100 |
 | **BLAKE2s** | 611 | 713 |
 | **BLAKE3** | 1069 | 1336 |
+| **AES-128-CTR** | 2870 | 10638 |
+| **SipHash-2-4** | 1847 | 2924 |
 | **ChaCha20** | 1985 | 2717 |
 
 `WrapInPlace` mutates the caller's blob and returns the per-stream nonce; no output buffer is allocated. A fresh nonce (~16 bytes) is allocated per call on the encrypt side, and the parallel XOR path additionally allocates per-worker keystream state for buffers at or above the 256 KiB threshold. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call. The AES-128-CTR delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; the PRF-counter ciphers are more compute-bound and the allocation savings are a smaller fraction of the total.
@@ -65,85 +65,85 @@ Column abbreviations in the Full ITB + wrapper tables: **LL** = Low-Level, **Loo
 
 | Cipher | Easy NoMAC Enc | Easy NoMAC Dec | Easy MAC Enc | Easy MAC Dec | LL NoMAC Enc | LL NoMAC Dec | LL MAC Enc | LL MAC Dec |
 |---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 191 | 276 | 174 | 254 | 186 | 281 | 177 | 259 |
-| **Areion-SoEM-512** | 188 | 269 | 176 | 253 | 189 | 278 | 177 | 260 |
-| **SipHash-2-4** | 190 | 279 | 178 | 254 | 198 | 296 | 178 | 264 |
-| **AES-128-CTR** | 197 | 286 | 173 | 262 | 187 | 283 | 177 | 265 |
-| **BLAKE2b-256** | 167 | 230 | 158 | 219 | 172 | 239 | 163 | 229 |
-| **BLAKE2b-512** | 185 | 266 | 172 | 246 | 190 | 273 | 172 | 246 |
-| **BLAKE2s** | 176 | 244 | 165 | 230 | 178 | 248 | 167 | 233 |
-| **BLAKE3** | 189 | 274 | 175 | 253 | 191 | 276 | 176 | 257 |
-| **ChaCha20** | 196 | 286 | 180 | 265 | 195 | 287 | 183 | 270 |
+| **Areion-SoEM-256** | 194 | 285 | 172 | 255 | 194 | 276 | 177 | 256 |
+| **Areion-SoEM-512** | 192 | 272 | 178 | 255 | 193 | 295 | 177 | 257 |
+| **BLAKE2b-256** | 169 | 235 | 162 | 224 | 173 | 241 | 162 | 225 |
+| **BLAKE2b-512** | 184 | 263 | 173 | 246 | 185 | 264 | 171 | 245 |
+| **BLAKE2s** | 172 | 238 | 164 | 236 | 176 | 254 | 163 | 232 |
+| **BLAKE3** | 187 | 269 | 175 | 248 | 185 | 265 | 175 | 252 |
+| **AES-128-CTR** | 199 | 288 | 182 | 265 | 201 | 298 | 183 | 267 |
+| **SipHash-2-4** | 194 | 281 | 179 | 254 | 193 | 284 | 178 | 261 |
+| **ChaCha20** | 194 | 284 | 180 | 262 | 192 | 262 | 166 | 257 |
 
 ### Single Message — Triple Ouroboros (16 MiB plaintext)
 
 | Cipher | Easy NoMAC Enc | Easy NoMAC Dec | Easy MAC Enc | Easy MAC Dec | LL NoMAC Enc | LL NoMAC Dec | LL MAC Enc | LL MAC Dec |
 |---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 272 | 328 | 238 | 291 | 277 | 327 | 246 | 301 |
-| **Areion-SoEM-512** | 276 | 320 | 244 | 299 | 279 | 321 | 244 | 298 |
-| **SipHash-2-4** | 278 | 324 | 248 | 301 | 283 | 331 | 250 | 309 |
-| **AES-128-CTR** | 283 | 333 | 255 | 313 | 292 | 350 | 255 | 316 |
-| **BLAKE2b-256** | 232 | 263 | 206 | 246 | 232 | 265 | 207 | 242 |
-| **BLAKE2b-512** | 253 | 294 | 229 | 272 | 256 | 297 | 229 | 277 |
-| **BLAKE2s** | 235 | 269 | 208 | 254 | 237 | 268 | 212 | 253 |
-| **BLAKE3** | 258 | 299 | 233 | 278 | 263 | 305 | 235 | 287 |
-| **ChaCha20** | 274 | 325 | 247 | 302 | 285 | 332 | 251 | 309 |
+| **Areion-SoEM-256** | 271 | 330 | 237 | 298 | 276 | 322 | 243 | 295 |
+| **Areion-SoEM-512** | 274 | 321 | 245 | 300 | 277 | 322 | 246 | 299 |
+| **BLAKE2b-256** | 236 | 266 | 212 | 252 | 232 | 268 | 213 | 247 |
+| **BLAKE2b-512** | 253 | 285 | 217 | 265 | 258 | 301 | 232 | 279 |
+| **BLAKE2s** | 240 | 268 | 214 | 256 | 242 | 274 | 217 | 255 |
+| **BLAKE3** | 261 | 308 | 237 | 286 | 267 | 305 | 238 | 288 |
+| **AES-128-CTR** | 287 | 343 | 253 | 318 | 291 | 350 | 259 | 315 |
+| **SipHash-2-4** | 281 | 325 | 246 | 286 | 274 | 329 | 248 | 310 |
+| **ChaCha20** | 280 | 328 | 248 | 306 | 281 | 330 | 250 | 305 |
 
 ### Streaming — Single Ouroboros (64 MiB plaintext, 16 MiB chunk) — AEAD
 
 | Cipher | AEAD Easy IO Enc | AEAD Easy IO Dec | AEAD LL IO Enc | AEAD LL IO Dec |
 |---|---|---|---|---|
-| **Areion-SoEM-256** | 127 | 160 | 130 | 161 |
-| **Areion-SoEM-512** | 125 | 155 | 124 | 155 |
-| **SipHash-2-4** | 126 | 169 | 135 | 172 |
-| **AES-128-CTR** | 167 | 232 | 169 | 237 |
-| **BLAKE2b-256** | 67 | 71 | 67 | 71 |
-| **BLAKE2b-512** | 90 | 106 | 90 | 106 |
-| **BLAKE2s** | 72 | 61 | 57 | 59 |
-| **BLAKE3** | 97 | 113 | 94 | 114 |
-| **ChaCha20** | 122 | 129 | 120 | 151 |
+| **Areion-SoEM-256** | 163 | 224 | 168 | 223 |
+| **Areion-SoEM-512** | 165 | 219 | 168 | 229 |
+| **BLAKE2b-256** | 148 | 202 | 151 | 202 |
+| **BLAKE2b-512** | 159 | 214 | 162 | 216 |
+| **BLAKE2s** | 149 | 203 | 156 | 193 |
+| **BLAKE3** | 165 | 224 | 166 | 227 |
+| **AES-128-CTR** | 173 | 242 | 171 | 244 |
+| **SipHash-2-4** | 171 | 233 | 170 | 234 |
+| **ChaCha20** | 170 | 232 | 171 | 236 |
 
 ### Streaming — Single Ouroboros (64 MiB plaintext, 16 MiB chunk) — Non-AEAD
 
 | Cipher | Easy IO Enc | Easy IO Dec | Easy Loop Enc | Easy Loop Dec | LL IO Enc | LL IO Dec | LL Loop Enc | LL Loop Dec |
 |---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 132 | 160 | 138 | 168 | 141 | 167 | 138 | 174 |
-| **Areion-SoEM-512** | 139 | 163 | 140 | 170 | 141 | 172 | 141 | 171 |
-| **SipHash-2-4** | 147 | 183 | 148 | 185 | 151 | 188 | 152 | 192 |
-| **AES-128-CTR** | 188 | 256 | 188 | 259 | 191 | 261 | 189 | 260 |
-| **BLAKE2b-256** | 66 | 75 | 68 | 75 | 67 | 74 | 68 | 74 |
-| **BLAKE2b-512** | 95 | 110 | 95 | 109 | 95 | 111 | 96 | 110 |
-| **BLAKE2s** | 53 | 64 | 70 | 81 | 71 | 72 | 71 | 80 |
-| **BLAKE3** | 103 | 123 | 105 | 125 | 105 | 121 | 105 | 125 |
-| **ChaCha20** | 135 | 167 | 136 | 169 | 135 | 167 | 135 | 170 |
+| **Areion-SoEM-256** | 190 | 259 | 190 | 258 | 191 | 250 | 190 | 258 |
+| **Areion-SoEM-512** | 188 | 258 | 188 | 253 | 188 | 261 | 190 | 257 |
+| **BLAKE2b-256** | 168 | 217 | 172 | 215 | 172 | 216 | 169 | 215 |
+| **BLAKE2b-512** | 179 | 239 | 180 | 231 | 180 | 232 | 175 | 234 |
+| **BLAKE2s** | 168 | 229 | 172 | 221 | 175 | 227 | 174 | 224 |
+| **BLAKE3** | 186 | 252 | 185 | 250 | 188 | 247 | 188 | 251 |
+| **AES-128-CTR** | 195 | 272 | 193 | 268 | 196 | 272 | 197 | 269 |
+| **SipHash-2-4** | 191 | 263 | 191 | 262 | 195 | 269 | 194 | 265 |
+| **ChaCha20** | 195 | 267 | 192 | 264 | 190 | 266 | 196 | 265 |
 
 ### Streaming — Triple Ouroboros (64 MiB plaintext, 16 MiB chunk) — AEAD
 
 | Cipher | AEAD Easy IO Enc | AEAD Easy IO Dec | AEAD LL IO Enc | AEAD LL IO Dec |
 |---|---|---|---|---|
-| **Areion-SoEM-256** | 144 | 169 | 149 | 169 |
-| **Areion-SoEM-512** | 157 | 188 | 161 | 183 |
-| **SipHash-2-4** | 166 | 201 | 174 | 201 |
-| **AES-128-CTR** | 227 | 274 | 232 | 271 |
-| **BLAKE2b-256** | 68 | 71 | 70 | 73 |
-| **BLAKE2b-512** | 101 | 99 | 102 | 110 |
-| **BLAKE2s** | 81 | 88 | 81 | 88 |
-| **BLAKE3** | 122 | 132 | 120 | 132 |
-| **ChaCha20** | 172 | 193 | 172 | 196 |
+| **Areion-SoEM-256** | 223 | 280 | 231 | 280 |
+| **Areion-SoEM-512** | 206 | 223 | 184 | 245 |
+| **BLAKE2b-256** | 203 | 234 | 205 | 234 |
+| **BLAKE2b-512** | 210 | 240 | 212 | 257 |
+| **BLAKE2s** | 196 | 231 | 202 | 237 |
+| **BLAKE3** | 214 | 257 | 219 | 259 |
+| **AES-128-CTR** | 237 | 298 | 238 | 296 |
+| **SipHash-2-4** | 223 | 288 | 234 | 284 |
+| **ChaCha20** | 224 | 272 | 231 | 275 |
 
 ### Streaming — Triple Ouroboros (64 MiB plaintext, 16 MiB chunk) — Non-AEAD
 
 | Cipher | Easy IO Enc | Easy IO Dec | Easy Loop Enc | Easy Loop Dec | LL IO Enc | LL IO Dec | LL Loop Enc | LL Loop Dec |
 |---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 166 | 178 | 164 | 172 | 169 | 189 | 175 | 193 |
-| **Areion-SoEM-512** | 176 | 189 | 178 | 187 | 181 | 191 | 172 | 178 |
-| **SipHash-2-4** | 193 | 209 | 195 | 212 | 198 | 217 | 196 | 213 |
-| **AES-128-CTR** | 242 | 278 | 242 | 266 | 245 | 276 | 243 | 271 |
-| **BLAKE2b-256** | 73 | 74 | 73 | 74 | 72 | 76 | 74 | 76 |
-| **BLAKE2b-512** | 110 | 112 | 112 | 114 | 113 | 117 | 113 | 117 |
-| **BLAKE2s** | 83 | 88 | 86 | 89 | 87 | 90 | 87 | 87 |
-| **BLAKE3** | 133 | 142 | 139 | 146 | 140 | 149 | 142 | 150 |
-| **ChaCha20** | 190 | 209 | 191 | 205 | 192 | 212 | 197 | 211 |
+| **Areion-SoEM-256** | 265 | 286 | 244 | 261 | 240 | 280 | 237 | 244 |
+| **Areion-SoEM-512** | 240 | 291 | 264 | 292 | 265 | 299 | 276 | 298 |
+| **BLAKE2b-256** | 229 | 248 | 232 | 251 | 233 | 253 | 234 | 253 |
+| **BLAKE2b-512** | 244 | 268 | 246 | 267 | 249 | 276 | 246 | 270 |
+| **BLAKE2s** | 226 | 249 | 224 | 232 | 226 | 242 | 224 | 248 |
+| **BLAKE3** | 246 | 266 | 250 | 271 | 251 | 277 | 254 | 278 |
+| **AES-128-CTR** | 277 | 316 | 274 | 311 | 278 | 319 | 282 | 314 |
+| **SipHash-2-4** | 272 | 301 | 275 | 300 | 277 | 310 | 278 | 303 |
+| **ChaCha20** | 263 | 293 | 265 | 295 | 264 | 291 | 267 | 293 |
 
 The Easy and Low-Level paths land within run-to-run noise on every cipher × direction cell. Triple Ouroboros consistently outpaces Single by 30-40% — the three parallel encryption pipes saturate more of the available HT. Decrypt outperforms Encrypt by 20-50% because the encrypt path runs additional per-pixel work that decrypt does not (nonce derivation + barrier prefill). Within the full ITB + wrapper tables the AES-NI and PRF-counter outer ciphers land close together: ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin.
 

@@ -15,13 +15,13 @@ ITB encrypts content into RGBWYOPA pixel containers. The construction provides *
 - Non-AEAD path: per-chunk header carries width / height / container layout.
 - Streaming AEAD path: a once per-stream 32-byte streamID prefix plus per-chunk `nonce || W || H || container || flag_byte`.
 
-A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher — any of the nine PRF-grade ITB registry primitives (Areion-SoEM-256/512, SipHash-2-4 in CTR mode, AES-128-CTR, BLAKE2b-256/512, BLAKE2s, BLAKE3, ChaCha20 (RFC8439)). After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
+A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher — any of PRF-grade ITB registry primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4 in CTR mode, ChaCha20 (RFC8439)). After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
 
 This is **not** a random-oracle indistinguishability claim. It is a "looks like a different well-known cipher" claim. The wrap exists for format-deniability ONLY; ITB already provides confidentiality (content-deniability) and the AEAD path already provides per-stream and per-chunk integrity. The Non-AEAD streaming path has no integrity by design and the wrap does not add any.
 
 ## Wrapper API
 
-The wrapper package exposes one `Keystream` interface satisfied by all nine outer ciphers, plus two wrap-shape helpers:
+The wrapper package exposes one `Keystream` interface satisfied by all outer ciphers, plus two wrap-shape helpers:
 
 | Helper | Wire format | Use case |
 |---|---|---|
@@ -42,12 +42,12 @@ delegates `MakeKeystream` / `KeySize` / `NonceSize` to it.
 |---|---|---|
 | Areion-SoEM-256 | 32 B | 16 B |
 | Areion-SoEM-512 | 64 B | 16 B |
-| SipHash-2-4 in CTR mode | 16 B | 16 B |
-| AES-128-CTR | 16 B | 16 B |
 | BLAKE2b-256 | 32 B | 16 B |
 | BLAKE2b-512 | 32 B | 16 B |
 | BLAKE2s | 32 B | 16 B |
 | BLAKE3 | 32 B | 16 B |
+| AES-128-CTR | 16 B | 16 B |
+| SipHash-2-4 in CTR mode | 16 B | 16 B |
 | ChaCha20 (RFC 8439) | 32 B | 12 B |
 
 For the per-cipher construction detail (including the SipHash-CTR PRF-counter
@@ -316,38 +316,25 @@ pt, _ := itb.DecryptAuth(noise, data, start, recovered, macFunc)
 Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
 
 ```
-[PASS] aead-easy-io                + aescmac    pt=65536 wire=90208
-[PASS] aead-easy-io                + chacha20   pt=65536 wire=90204
-[PASS] aead-easy-io                + siphash24  pt=65536 wire=90208
-[PASS] aead-lowlevel-io            + aescmac    pt=65536 wire=90208
-[PASS] aead-lowlevel-io            + chacha20   pt=65536 wire=90204
-[PASS] aead-lowlevel-io            + siphash24  pt=65536 wire=90208
-[PASS] noaead-easy-io              + aescmac    pt=65536 wire=90176
-[PASS] noaead-easy-io              + chacha20   pt=65536 wire=90172
-[PASS] noaead-easy-io              + siphash24  pt=65536 wire=90176
-[PASS] noaead-easy-userloop        + aescmac    pt=65536 wire=90192
-[PASS] noaead-easy-userloop        + chacha20   pt=65536 wire=90188
-[PASS] noaead-easy-userloop        + siphash24  pt=65536 wire=90192
-[PASS] noaead-lowlevel-io          + aescmac    pt=65536 wire=90176
-[PASS] noaead-lowlevel-io          + chacha20   pt=65536 wire=90172
-[PASS] noaead-lowlevel-io          + siphash24  pt=65536 wire=90176
-[PASS] noaead-lowlevel-userloop    + aescmac    pt=65536 wire=90192
-[PASS] noaead-lowlevel-userloop    + chacha20   pt=65536 wire=90188
-[PASS] noaead-lowlevel-userloop    + siphash24  pt=65536 wire=90192
-[PASS] message-easy-nomac          + aescmac    pt=1024 wire=4316
-[PASS] message-easy-nomac          + chacha20   pt=1024 wire=4312
-[PASS] message-easy-nomac          + siphash24  pt=1024 wire=4316
-[PASS] message-easy-auth           + aescmac    pt=1024 wire=8276
-[PASS] message-easy-auth           + chacha20   pt=1024 wire=8272
-[PASS] message-easy-auth           + siphash24  pt=1024 wire=8276
-[PASS] message-lowlevel-nomac      + aescmac    pt=1024 wire=4316
-[PASS] message-lowlevel-nomac      + chacha20   pt=1024 wire=4312
-[PASS] message-lowlevel-nomac      + siphash24  pt=1024 wire=4316
-[PASS] message-lowlevel-auth       + aescmac    pt=1024 wire=8276
-[PASS] message-lowlevel-auth       + chacha20   pt=1024 wire=8272
-[PASS] message-lowlevel-auth       + siphash24  pt=1024 wire=8276
-
-=== Summary: 30 PASS, 0 FAIL ===
+[PASS] aead-easy-io               + areion256   pt=65536 wire=90208
+[PASS] aead-easy-io               + areion512   pt=65536 wire=90208
+[PASS] aead-easy-io               + blake2b256   pt=65536 wire=90208
+[PASS] aead-easy-io               + blake2b512   pt=65536 wire=90208
+[PASS] aead-easy-io               + blake2s    pt=65536 wire=90208
+[PASS] aead-easy-io               + blake3     pt=65536 wire=90208
+[PASS] aead-easy-io               + aescmac    pt=65536 wire=90208
+[PASS] aead-easy-io               + siphash24   pt=65536 wire=90208
+[PASS] aead-easy-io               + chacha20   pt=65536 wire=90204
+...
+[PASS] message-lowlevel-auth      + areion256   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + areion512   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake2b256   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake2b512   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake2s    pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake3     pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + aescmac    pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + siphash24   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + chacha20   pt=1024 wire=8272
 ```
 
 The wire-byte difference between cipher columns is exactly the per-stream nonce-size delta (16 vs 12 vs 16 bytes); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.

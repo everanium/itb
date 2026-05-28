@@ -1,12 +1,10 @@
 // Easy Mode Single-Ouroboros benchmarks for the C# binding.
 //
-// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
-// nine PRF-grade primitives, locked at 1024-bit ITB key width and
+// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+// PRF-grade primitives, locked at 1024-bit ITB key width and
 // 16 MiB CSPRNG-filled payload. One mixed-primitive variant
-// (Encryptor.Mixed with BLAKE3 / Areion-SoEM-256 / ChaCha20 across the
-// noise / data / start slots, plus an optional dedicated lockSeed)
-// covers the Easy Mode Mixed surface alongside the single-primitive
-// grid.
+// (Encryptor.Mixed + dedicated lockSeed) covers the
+// Easy Mode Mixed surface alongside the single-primitive grid.
 //
 // Run with:
 //
@@ -28,15 +26,12 @@
 namespace Itb.Bench;
 
 /// <summary>
-/// Single-Ouroboros bench cases for the nine shipping PRF-grade
+/// Single-Ouroboros bench cases for shipping PRF-grade
 /// primitives plus one mixed-primitive variant.
 /// </summary>
 internal static class BenchSingle
 {
-    // Canonical 9-primitive PRF-grade order, mirroring bench_single.rs
-    // / bench_single.py. The three below-spec lab primitives (CRC128,
-    // FNV-1a, MD5) are not exposed through the libitb registry and are
-    // therefore absent here by construction.
+    // Canonical primitive PRF-grade order.
     private static readonly string[] PrimitivesCanonical =
     {
         "areion256",
@@ -141,7 +136,7 @@ internal static class BenchSingle
     }
 
     /// <summary>
-    /// Assemble the full lazy factory list: 9 single-primitive entries ×
+    /// Assemble the full lazy factory list: single-primitive entries ×
     /// 4 ops plus 1 mixed entry × 4 ops = 40 message cases, plus 8
     /// streaming cases appended at the end. Each factory builds one
     /// <see cref="BenchCase"/> on demand so peak RSS is bounded to

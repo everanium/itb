@@ -83,7 +83,7 @@ chunked I/O, error paths, lockSeed lifecycle.
 
 A custom Go-bench-style harness lives under `easy/benchmarks/`
 and covers the four ops (`encrypt`, `decrypt`, `encrypt_auth`,
-`decrypt_auth`) across the nine PRF-grade primitives plus one
+`decrypt_auth`) across PRF-grade primitives plus one
 mixed-primitive variant for both Single and Triple Ouroboros at
 1024-bit ITB key width and 16 MiB payload. See
 [`easy/benchmarks/README.md`](easy/benchmarks/README.md) for
@@ -1017,9 +1017,7 @@ finally:
 
 ## Hash primitives (Single / Triple)
 
-Names match the canonical `hashes/` registry: `areion256`,
-`areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`,
-`blake2s`, `blake3`, `chacha20`. Triple Ouroboros (3× security)
+Names match the canonical `hashes/` registry. Triple Ouroboros
 takes seven seeds (one shared `noiseSeed` plus three `dataSeed`
 and three `startSeed`) via `itb.encrypt_triple` /
 `itb.decrypt_triple` and the authenticated counterparts
@@ -1297,7 +1295,7 @@ format-deniability outer-cipher surface and is imported on demand
 | `wrapper.wrap_in_place(cipher_name, key, buf) -> bytes` / `wrapper.unwrap_in_place(cipher_name, key, wire) -> memoryview` | In-place Wrap / Unwrap |
 | `wrapper.WrapStreamWriter(cipher_name, key)` / `wrapper.UnwrapStreamReader(cipher_name, key, wire_nonce)` | Streaming wrap writer / unwrap reader |
 
-Wrapper cipher names: `areion256`, `areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `chacha20`.
+Wrapper cipher names: `areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`.
 
 ### Error model
 

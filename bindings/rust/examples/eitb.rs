@@ -11,8 +11,7 @@
 //! frames `u32_LE_len || ct`, and pushes through the wrap-stream
 //! writer.
 //!
-//! Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
-//! 24 PASS/FAIL cells.
+//! Matrix: 8 examples × outer ciphers.
 //!
 //! Examples covered:
 //!
@@ -558,7 +557,7 @@ fn parse_args() -> (String, String, bool) {
                 verbose = true;
             }
             "-h" | "--help" => {
-                eprintln!("Usage: eitb [--example NAME] [--cipher aes|chacha|siphash] [-v]");
+                eprintln!("Usage: eitb [--example NAME] [--cipher ciphername] [-v]");
                 std::process::exit(0);
             }
             other if other.starts_with("--example=") => {

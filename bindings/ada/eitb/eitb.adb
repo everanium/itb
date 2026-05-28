@@ -9,8 +9,7 @@
 --  ITB transcript to a Memory_Stream that is then wrapped through a
 --  single Wrap_Stream_Writer session.
 --
---  Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
---  24 PASS/FAIL cells.
+--  Matrix: 8 examples × outer ciphers.
 --
 --  Usage:
 --      ./eitb               # run every example × every cipher
@@ -958,7 +957,7 @@ procedure Eitb is
             elsif Arg = "-h" or else Arg = "--help" then
                Ada.Text_IO.Put_Line
                  ("Usage: eitb [--example NAME] "
-                  & "[--cipher aes|chacha|siphash] [-v]");
+                  & "[--cipher ciphername] [-v]");
                Ada.Command_Line.Set_Exit_Status
                  (Ada.Command_Line.Success);
                return;

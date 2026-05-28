@@ -1,7 +1,7 @@
 ! bench_triple.f90 -- Easy Mode Triple Ouroboros benchmarks for the
 ! Fortran binding.
 !
-! Mirrors the cross-binding bench_triple cohort for the nine PRF-grade
+! Mirrors the cross-binding bench_triple cohort for PRF-grade
 ! primitives, locked at 1024-bit ITB key width and 16 MiB CSPRNG-filled
 ! payload. One mixed-primitive variant cycles the BLAKE family across
 ! the seven seed slots (noise + 3 data + 3 start) plus a dedicated
@@ -100,7 +100,7 @@ program bench_triple
 
   ! Mixed-primitive composition for Triple Ouroboros. The same four
   ! 256-bit-wide names from the Single bench's Mixed case are cycled
-  ! across the seven seed slots, with Areion-SoEM-256 on the dedicated
+  ! across the seven seed slots, with Areion on the dedicated
   ! lockSeed slot when ITB_LOCKSEED is set.
   character(*), parameter :: MIXED_NOISE  = "blake3"
   character(*), parameter :: MIXED_DATA1  = "blake2s"
