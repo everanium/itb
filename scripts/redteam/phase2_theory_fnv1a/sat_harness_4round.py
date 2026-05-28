@@ -31,7 +31,7 @@ Strictly attacker-realistic inputs in the decision path:
     access to the defender's data.
   - Nonces (attacker-visible in ciphertext header).
 
-NOT used in decision path (forbidden by CLAUDE.md attacker-realism):
+NOT used in decision path (forbidden by attacker-realism discipline):
 
   - `noise_seed` / `data_seed` / `start_seed` components from
     summary.json / cell.meta.json. These are read ONLY for the

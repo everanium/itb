@@ -1,11 +1,10 @@
 // Easy Mode Single-Ouroboros benchmarks for the Node.js binding.
 //
-// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
-// nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+// PRF-grade primitives, locked at 1024-bit ITB key width and 16
 // MiB CSPRNG-filled payload. One mixed-primitive variant
-// (`Encryptor.mixedSingle` with BLAKE3 / BLAKE2s / BLAKE2b-256 +
-// Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
-// surface alongside the single-primitive grid.
+// (`Encryptor.mixedSingle` + dedicated lockSeed) covers the
+// Easy Mode Mixed surface alongside the single-primitive grid.
 //
 // Run with:
 //
@@ -76,7 +75,7 @@ function buildSingle(primitive: string): Encryptor {
 /**
  * Construct a mixed-primitive Single-Ouroboros encryptor matching
  * the README Quick Start composition (BLAKE3 noise / BLAKE2s data /
- * BLAKE2b-256 start). The dedicated Areion-SoEM-256 lockSeed slot is
+ * BLAKE2b-256 start). The dedicated lockSeed slot is
  * allocated only when `ITB_LOCKSEED` is set, so the no-LockSeed
  * bench arm measures the plain mixed-primitive cost without the
  * BitSoup + LockSoup auto-couple. The four primitive names share

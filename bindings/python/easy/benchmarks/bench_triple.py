@@ -1,10 +1,9 @@
 """Easy Mode Triple-Ouroboros benchmarks for the Python binding.
 
-Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
-nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+PRF-grade primitives, locked at 1024-bit ITB key width and 16
 MiB CSPRNG-filled payload. One mixed-primitive variant
-(:meth:`itb.Encryptor.mixed_triple` cycling the same BLAKE family +
-Areion-SoEM-256 dedicated lockSeed used by bench_single_mixed)
+(:meth:`itb.Encryptor.mixed_triple` + dedicated lockSeed)
 covers the Easy Mode Mixed surface alongside the single-primitive
 grid.
 
@@ -45,8 +44,7 @@ import itb
 from . import _common
 
 
-# Canonical 9-primitive PRF-grade order from CLAUDE.md (positions
-# 4 through 12).
+# Canonical primitive PRF-grade order.
 PRIMITIVES_CANONICAL: List[str] = [
     "areion256",
     "areion512",
@@ -62,7 +60,7 @@ PRIMITIVES_CANONICAL: List[str] = [
 # Mixed-primitive composition for Triple Ouroboros — the same four
 # 256-bit-wide names used by bench_single_mixed are cycled across
 # the seven seed slots (noise + 3 data + 3 start) plus
-# Areion-SoEM-256 on the dedicated lockSeed slot.
+# one on the dedicated lockSeed slot.
 MIXED_NOISE = "blake3"
 MIXED_DATA1 = "blake2s"
 MIXED_DATA2 = "blake2b256"
@@ -101,7 +99,7 @@ def _build_triple(primitive: str) -> itb.Encryptor:
 def _build_mixed_triple() -> itb.Encryptor:
     """Construct a mixed-primitive Triple-Ouroboros encryptor with
     the four-name BLAKE family across the seven middle slots. The
-    dedicated Areion-SoEM-256 lockSeed slot is allocated only when
+    dedicated lockSeed slot is allocated only when
     ``ITB_LOCKSEED`` is set, so the no-LockSeed bench arm measures
     the plain mixed-primitive cost without the BitSoup + LockSoup
     auto-couple. The four primitive names share the same native hash
@@ -170,7 +168,7 @@ def _make_decrypt_auth_case(name: str, builder: Callable[[], itb.Encryptor]) -> 
 
 def _case_factories() -> List[_common.LazyCase]:
     """Return a list of (name, factory) pairs covering the full 40-case
-    message suite (9 triple-primitive × 4 ops + 1 mixed × 4 ops) plus
+    message suite (triple-primitives × 4 ops + 1 mixed × 4 ops) plus
     the 8 streaming cases. No payload or Encryptor is allocated here;
     those are deferred until each factory is called."""
     facs: List[_common.LazyCase] = []

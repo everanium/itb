@@ -11,8 +11,7 @@
 // Cipher.Encrypt), frames u32_LE_len || ct, and pushes through the
 // wrap-stream writer.
 //
-// Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
-// 24 PASS/FAIL cells.
+// Matrix: 8 examples × outer ciphers.
 //
 // Usage:
 //
@@ -513,7 +512,7 @@ internal static class Program
             else if (a == "-v" || a == "--verbose") { verbose = true; }
             else if (a == "-h" || a == "--help")
             {
-                Console.Error.WriteLine("Usage: Itb.Eitb [--example NAME] [--cipher aes|chacha|siphash] [-v]");
+                Console.Error.WriteLine("Usage: Itb.Eitb [--example NAME] [--cipher ciphername] [-v]");
                 Environment.Exit(0);
             }
             else

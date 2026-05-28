@@ -24,16 +24,17 @@ type Spec struct {
 
 // Registry lists every shippable PRF-grade primitive in canonical order.
 // The same order is used by the FFI iteration surface (ITB_HashName,
-// ITB_HashWidth) so that index 0..8 is stable across releases.
+// ITB_HashWidth) — callers iterating the registry receive primitives in
+// this order.
 var Registry = [9]Spec{
 	{"areion256", W256},
 	{"areion512", W512},
-	{"siphash24", W128},
-	{"aescmac", W128},
 	{"blake2b256", W256},
 	{"blake2b512", W512},
 	{"blake2s", W256},
 	{"blake3", W256},
+	{"aescmac", W128},
+	{"siphash24", W128},
 	{"chacha20", W256},
 }
 

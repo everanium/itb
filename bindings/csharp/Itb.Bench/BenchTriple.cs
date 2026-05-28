@@ -1,12 +1,10 @@
 // Easy Mode Triple-Ouroboros benchmarks for the C# binding.
 //
-// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
-// nine PRF-grade primitives, locked at 1024-bit ITB key width and
+// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+// PRF-grade primitives, locked at 1024-bit ITB key width and
 // 16 MiB CSPRNG-filled payload. One mixed-primitive variant
-// (Encryptor.Mixed3 cycling the same BLAKE3 / Areion-SoEM-256 /
-// ChaCha20 family + optional dedicated lockSeed used by bench_single_mixed)
-// covers the Easy Mode Mixed surface alongside the single-primitive
-// grid.
+// (Encryptor.Mixed3 + dedicated lockSeed) covers the
+// Easy Mode Mixed surface alongside the single-primitive grid.
 //
 // Run with:
 //
@@ -32,13 +30,12 @@
 namespace Itb.Bench;
 
 /// <summary>
-/// Triple-Ouroboros bench cases for the nine shipping PRF-grade
+/// Triple-Ouroboros bench cases for shipping PRF-grade
 /// primitives plus one mixed-primitive variant.
 /// </summary>
 internal static class BenchTriple
 {
-    // Canonical 9-primitive PRF-grade order, mirroring bench_triple.rs
-    // / bench_triple.py.
+    // Canonical primitive PRF-grade order.
     private static readonly string[] PrimitivesCanonical =
     {
         "areion256",
@@ -145,7 +142,7 @@ internal static class BenchTriple
     }
 
     /// <summary>
-    /// Assemble the full lazy factory list: 9 single-primitive entries ×
+    /// Assemble the full lazy factory list: single-primitive entries ×
     /// 4 ops plus 1 mixed entry × 4 ops = 40 message cases, plus 8
     /// streaming cases appended at the end. Each factory builds one
     /// <see cref="BenchCase"/> on demand so peak RSS is bounded to

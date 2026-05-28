@@ -31,7 +31,7 @@
 // of the wrap surface for Non-AEAD streaming. The Non-AEAD streaming
 // arm therefore covers the User-Driven Loop variant only (per-chunk
 // encrypt + caller-side u32_LE framing pushed through one wrap-stream
-// session). See CLAUDE.md.
+// session).
 //
 // Run with:
 //
@@ -434,6 +434,326 @@ interface StreamMode {
   readonly buildWire: (cipher: CipherName, payload: Buffer) => Promise<Buffer>;
   readonly runEncrypt: (cipher: CipherName, payload: Buffer) => Promise<void>;
   readonly runDecrypt: (cipher: CipherName, wire: Buffer) => Promise<void>;
+}
+
+// ─── Streaming decrypt-pair helpers ──────────────────────────────
+//
+// Each helper creates keying state (Encryptor or seeds+mac) ONCE and
+// returns a matched (buildWire, runDecrypt) pair that shares that
+// state.  Calling the helper inside the lazy decrypt-case factory
+// ensures that the wire built during factory setup and the decrypt
+// called during the timing loop always use the same keying material.
+// Mirrors C# BuildStreamingPair in Itb.Bench/Wrapper/BenchWrapper.cs.
+
+interface StreamDecryptPair {
+  readonly buildWire: (cipher: CipherName, payload: Buffer) => Promise<Buffer>;
+  readonly runDecrypt: (cipher: CipherName, wire: Buffer) => Promise<void>;
+}
+
+function makeStreamDecryptPairSingle(tag: string): StreamDecryptPair {
+  switch (tag) {
+    case 'stream_single_aead_easy_io': {
+      const enc = buildEncryptorSingle(MAC_NAME);
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const innerOut = new PassThrough();
+        const innerIn = new PassThrough();
+        innerIn.end(payload);
+        await enc.encryptStreamAuth(innerIn, innerOut, STREAM_CHUNK_BYTES);
+        innerOut.end();
+        const innerBytes = await drain(innerOut);
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        try {
+          const body = ww.update(innerBytes);
+          return Buffer.concat([ww.nonce, body]);
+        } finally {
+          ww.close();
+        }
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let inner: Buffer;
+          try { inner = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          const ptIn = new PassThrough();
+          ptIn.end(inner);
+          const ptOut = new PassThrough();
+          await enc.decryptStreamAuth(ptIn, ptOut);
+          ptOut.end();
+          await drain(ptOut);
+        },
+      };
+    }
+    case 'stream_single_aead_lowlevel_io': {
+      const seeds = buildSeedsSingle();
+      const [s0, s1, s2] = seeds;
+      const mac = new MAC(MAC_NAME, MAC_KEY);
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const innerOut = new PassThrough();
+        const innerIn = new PassThrough();
+        innerIn.end(payload);
+        await encryptStreamAuth(s0, s1, s2, mac, innerIn, innerOut, STREAM_CHUNK_BYTES);
+        innerOut.end();
+        const innerBytes = await drain(innerOut);
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        try {
+          const body = ww.update(innerBytes);
+          return Buffer.concat([ww.nonce, body]);
+        } finally {
+          ww.close();
+        }
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let inner: Buffer;
+          try { inner = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          const ptIn = new PassThrough();
+          ptIn.end(inner);
+          const ptOut = new PassThrough();
+          await decryptStreamAuth(s0, s1, s2, mac, ptIn, ptOut);
+          ptOut.end();
+          await drain(ptOut);
+        },
+      };
+    }
+    case 'stream_single_noaead_easy_userloop': {
+      const enc = buildEncryptorSingle(null);
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        const parts: Buffer[] = [ww.nonce];
+        try {
+          let off = 0;
+          while (off < payload.length) {
+            const take = Math.min(STREAM_CHUNK_BYTES, payload.length - off);
+            const ct = enc.encrypt(payload.subarray(off, off + take));
+            const lenLe = Buffer.alloc(4);
+            lenLe.writeUInt32LE(ct.length, 0);
+            parts.push(ww.update(lenLe));
+            parts.push(ww.update(Buffer.from(ct)));
+            off += take;
+          }
+        } finally {
+          ww.close();
+        }
+        return Buffer.concat(parts);
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let decrypted: Buffer;
+          try { decrypted = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          let pos = 0;
+          while (pos < decrypted.length) {
+            const clen = decrypted.readUInt32LE(pos);
+            pos += 4;
+            enc.decrypt(decrypted.subarray(pos, pos + clen));
+            pos += clen;
+          }
+        },
+      };
+    }
+    case 'stream_single_noaead_lowlevel_userloop': {
+      const seeds = buildSeedsSingle();
+      const [s0, s1, s2] = seeds;
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        const parts: Buffer[] = [ww.nonce];
+        try {
+          let off = 0;
+          while (off < payload.length) {
+            const take = Math.min(STREAM_CHUNK_BYTES, payload.length - off);
+            const ct = itbEncrypt(s0, s1, s2, payload.subarray(off, off + take));
+            const lenLe = Buffer.alloc(4);
+            lenLe.writeUInt32LE(ct.length, 0);
+            parts.push(ww.update(lenLe));
+            parts.push(ww.update(Buffer.from(ct)));
+            off += take;
+          }
+        } finally {
+          ww.close();
+        }
+        return Buffer.concat(parts);
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let decrypted: Buffer;
+          try { decrypted = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          let pos = 0;
+          while (pos < decrypted.length) {
+            const clen = decrypted.readUInt32LE(pos);
+            pos += 4;
+            itbDecrypt(s0, s1, s2, decrypted.subarray(pos, pos + clen));
+            pos += clen;
+          }
+        },
+      };
+    }
+    default:
+      throw new Error(`makeStreamDecryptPairSingle: unknown tag ${tag}`);
+  }
+}
+
+function makeStreamDecryptPairTriple(tag: string): StreamDecryptPair {
+  switch (tag) {
+    case 'stream_triple_aead_easy_io': {
+      const enc = buildEncryptorTriple(MAC_NAME);
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const innerOut = new PassThrough();
+        const innerIn = new PassThrough();
+        innerIn.end(payload);
+        await enc.encryptStreamAuth(innerIn, innerOut, STREAM_CHUNK_BYTES);
+        innerOut.end();
+        const innerBytes = await drain(innerOut);
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        try {
+          const body = ww.update(innerBytes);
+          return Buffer.concat([ww.nonce, body]);
+        } finally {
+          ww.close();
+        }
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let inner: Buffer;
+          try { inner = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          const ptIn = new PassThrough();
+          ptIn.end(inner);
+          const ptOut = new PassThrough();
+          await enc.decryptStreamAuth(ptIn, ptOut);
+          ptOut.end();
+          await drain(ptOut);
+        },
+      };
+    }
+    case 'stream_triple_aead_lowlevel_io': {
+      const seeds = buildSeedsTriple();
+      const [n, d1, d2, d3, s1, s2, s3] = seeds;
+      const mac = new MAC(MAC_NAME, MAC_KEY);
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const innerOut = new PassThrough();
+        const innerIn = new PassThrough();
+        innerIn.end(payload);
+        await encryptStreamAuthTriple(n, d1, d2, d3, s1, s2, s3, mac, innerIn, innerOut, STREAM_CHUNK_BYTES);
+        innerOut.end();
+        const innerBytes = await drain(innerOut);
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        try {
+          const body = ww.update(innerBytes);
+          return Buffer.concat([ww.nonce, body]);
+        } finally {
+          ww.close();
+        }
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let inner: Buffer;
+          try { inner = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          const ptIn = new PassThrough();
+          ptIn.end(inner);
+          const ptOut = new PassThrough();
+          await decryptStreamAuthTriple(n, d1, d2, d3, s1, s2, s3, mac, ptIn, ptOut);
+          ptOut.end();
+          await drain(ptOut);
+        },
+      };
+    }
+    case 'stream_triple_noaead_easy_userloop': {
+      const enc = buildEncryptorTriple(null);
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        const parts: Buffer[] = [ww.nonce];
+        try {
+          let off = 0;
+          while (off < payload.length) {
+            const take = Math.min(STREAM_CHUNK_BYTES, payload.length - off);
+            const ct = enc.encrypt(payload.subarray(off, off + take));
+            const lenLe = Buffer.alloc(4);
+            lenLe.writeUInt32LE(ct.length, 0);
+            parts.push(ww.update(lenLe));
+            parts.push(ww.update(Buffer.from(ct)));
+            off += take;
+          }
+        } finally {
+          ww.close();
+        }
+        return Buffer.concat(parts);
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let decrypted: Buffer;
+          try { decrypted = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          let pos = 0;
+          while (pos < decrypted.length) {
+            const clen = decrypted.readUInt32LE(pos);
+            pos += 4;
+            enc.decrypt(decrypted.subarray(pos, pos + clen));
+            pos += clen;
+          }
+        },
+      };
+    }
+    case 'stream_triple_noaead_lowlevel_userloop': {
+      const seeds = buildSeedsTriple();
+      const [n, d1, d2, d3, s1, s2, s3] = seeds;
+      const wireOf = async (cipher: CipherName, payload: Buffer): Promise<Buffer> => {
+        const ww = new WrapStreamWriter(cipher, _outerKeyFor(cipher));
+        const parts: Buffer[] = [ww.nonce];
+        try {
+          let off = 0;
+          while (off < payload.length) {
+            const take = Math.min(STREAM_CHUNK_BYTES, payload.length - off);
+            const ct = encryptTriple(
+              n, d1, d2, d3, s1, s2, s3, payload.subarray(off, off + take),
+            );
+            const lenLe = Buffer.alloc(4);
+            lenLe.writeUInt32LE(ct.length, 0);
+            parts.push(ww.update(lenLe));
+            parts.push(ww.update(Buffer.from(ct)));
+            off += take;
+          }
+        } finally {
+          ww.close();
+        }
+        return Buffer.concat(parts);
+      };
+      return {
+        buildWire: wireOf,
+        runDecrypt: async (cipher, wire) => {
+          const nlen = wrapperNonceSize(cipher);
+          const ur = new UnwrapStreamReader(cipher, _outerKeyFor(cipher), wire.subarray(0, nlen));
+          let decrypted: Buffer;
+          try { decrypted = ur.update(wire.subarray(nlen)); } finally { ur.close(); }
+          let pos = 0;
+          while (pos < decrypted.length) {
+            const clen = decrypted.readUInt32LE(pos);
+            pos += 4;
+            decryptTriple(n, d1, d2, d3, s1, s2, s3, decrypted.subarray(pos, pos + clen));
+            pos += clen;
+          }
+        },
+      };
+    }
+    default:
+      throw new Error(`makeStreamDecryptPairTriple: unknown tag ${tag}`);
+  }
 }
 
 function buildStreamModesSingle(): StreamMode[] {
@@ -938,59 +1258,72 @@ function buildLazyCases(): LazyCase[] {
   }
 
   // Message Single — 4 modes × 9 ciphers × 2 dirs = 72 cases.
+  //
+  // Each def carries a makeState() factory that creates one keying
+  // object (Encryptor or seeds+mac) and returns both runEnc and
+  // runDec plus a buildCtFromState helper that encrypts the payload
+  // with the SAME keying material.  The decrypt lazy factory calls
+  // makeState() once, uses buildCtFromState to build the wire, then
+  // passes runDec the wire — guaranteeing the ciphertext and the
+  // decrypt call share the same MAC key.  Using a separate buildCt
+  // that constructs its own fresh Encryptor/MAC would produce a
+  // mismatch and cause status=10 MAC failures on every decrypt iter.
   const msgSingleDefs: Array<{
     label: string;
     auth: boolean;
-    buildCt: (payload: Buffer) => Buffer;
-    makeState: () => { runEnc: (c: CipherName, p: Buffer) => void; runDec: (c: CipherName, wire: Buffer) => void };
+    makeState: () => {
+      runEnc: (c: CipherName, p: Buffer) => void;
+      runDec: (c: CipherName, wire: Buffer) => void;
+      buildCtFromState: (p: Buffer) => Buffer;
+    };
   }> = [];
   {
     msgSingleDefs.push({
       label: 'msg_single_easy_nomac',
       auth: false,
-      buildCt: (p) => { const e = buildEncryptorSingle(null); return Buffer.from(e.encrypt(p)); },
       makeState: () => {
         const enc = buildEncryptorSingle(null);
         return {
           runEnc: (c, p) => { const ct = Buffer.from(enc.encrypt(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decrypt(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(enc.encrypt(p)),
         };
       },
     });
     msgSingleDefs.push({
       label: 'msg_single_easy_auth',
       auth: true,
-      buildCt: (p) => { const e = buildEncryptorSingle(MAC_NAME); return Buffer.from(e.encryptAuth(p)); },
       makeState: () => {
         const enc = buildEncryptorSingle(MAC_NAME);
         return {
           runEnc: (c, p) => { const ct = Buffer.from(enc.encryptAuth(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decryptAuth(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(enc.encryptAuth(p)),
         };
       },
     });
     msgSingleDefs.push({
       label: 'msg_single_lowlevel_nomac',
       auth: false,
-      buildCt: (p) => { const [s0, s1, s2] = buildSeedsSingle(); return Buffer.from(itbEncrypt(s0, s1, s2, p)); },
       makeState: () => {
         const [s0, s1, s2] = buildSeedsSingle();
         return {
           runEnc: (c, p) => { const ct = Buffer.from(itbEncrypt(s0, s1, s2, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); itbDecrypt(s0, s1, s2, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(itbEncrypt(s0, s1, s2, p)),
         };
       },
     });
     msgSingleDefs.push({
       label: 'msg_single_lowlevel_auth',
       auth: true,
-      buildCt: (p) => { const [s0, s1, s2] = buildSeedsSingle(); const mac = new MAC(MAC_NAME, MAC_KEY); return Buffer.from(encryptAuth(s0, s1, s2, mac, p)); },
       makeState: () => {
         const [s0, s1, s2] = buildSeedsSingle();
         const mac = new MAC(MAC_NAME, MAC_KEY);
         return {
           runEnc: (c, p) => { const ct = Buffer.from(encryptAuth(s0, s1, s2, mac, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); decryptAuth(s0, s1, s2, mac, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(encryptAuth(s0, s1, s2, mac, p)),
         };
       },
     });
@@ -1013,8 +1346,11 @@ function buildLazyCases(): LazyCase[] {
         `bench_${def.label}/${cipher}/decrypt`,
         () => {
           const payload = randomBytes(MESSAGE_BYTES);
+          // Fresh keying pair: makeState() creates the Encryptor/seeds+mac
+          // once; buildCtFromState encrypts with that SAME state so the wire
+          // and the decrypt call share the same MAC key.
           const st = def.makeState();
-          const ctPristine = def.buildCt(payload);
+          const ctPristine = st.buildCtFromState(payload);
           const wirePristine = wrap(cipher, _outerKeyFor(cipher), ctPristine);
           return {
             name: `bench_${def.label}/${cipher}/decrypt`,
@@ -1032,56 +1368,49 @@ function buildLazyCases(): LazyCase[] {
     msgTripleDefs.push({
       label: 'msg_triple_easy_nomac',
       auth: false,
-      buildCt: (p) => { const e = buildEncryptorTriple(null); return Buffer.from(e.encrypt(p)); },
       makeState: () => {
         const enc = buildEncryptorTriple(null);
         return {
           runEnc: (c, p) => { const ct = Buffer.from(enc.encrypt(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decrypt(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(enc.encrypt(p)),
         };
       },
     });
     msgTripleDefs.push({
       label: 'msg_triple_easy_auth',
       auth: true,
-      buildCt: (p) => { const e = buildEncryptorTriple(MAC_NAME); return Buffer.from(e.encryptAuth(p)); },
       makeState: () => {
         const enc = buildEncryptorTriple(MAC_NAME);
         return {
           runEnc: (c, p) => { const ct = Buffer.from(enc.encryptAuth(p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); enc.decryptAuth(unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(enc.encryptAuth(p)),
         };
       },
     });
     msgTripleDefs.push({
       label: 'msg_triple_lowlevel_nomac',
       auth: false,
-      buildCt: (p) => {
-        const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
-        return Buffer.from(encryptTriple(s0, s1, s2, s3, s4, s5, s6, p));
-      },
       makeState: () => {
         const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
         return {
           runEnc: (c, p) => { const ct = Buffer.from(encryptTriple(s0, s1, s2, s3, s4, s5, s6, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); decryptTriple(s0, s1, s2, s3, s4, s5, s6, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(encryptTriple(s0, s1, s2, s3, s4, s5, s6, p)),
         };
       },
     });
     msgTripleDefs.push({
       label: 'msg_triple_lowlevel_auth',
       auth: true,
-      buildCt: (p) => {
-        const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
-        const mac = new MAC(MAC_NAME, MAC_KEY);
-        return Buffer.from(encryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, p));
-      },
       makeState: () => {
         const [s0, s1, s2, s3, s4, s5, s6] = buildSeedsTriple();
         const mac = new MAC(MAC_NAME, MAC_KEY);
         return {
           runEnc: (c, p) => { const ct = Buffer.from(encryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, p)); wrapInPlace(c, _outerKeyFor(c), ct); },
           runDec: (c, wire) => { const buf = Buffer.from(wire); decryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, unwrapInPlace(c, _outerKeyFor(c), buf)); },
+          buildCtFromState: (p) => Buffer.from(encryptAuthTriple(s0, s1, s2, s3, s4, s5, s6, mac, p)),
         };
       },
     });
@@ -1104,8 +1433,10 @@ function buildLazyCases(): LazyCase[] {
         `bench_${def.label}/${cipher}/decrypt`,
         () => {
           const payload = randomBytes(MESSAGE_BYTES);
+          // Fresh keying pair: same pattern as Single — makeState() once,
+          // buildCtFromState encrypts with that state, runDec decrypts it.
           const st = def.makeState();
-          const ctPristine = def.buildCt(payload);
+          const ctPristine = st.buildCtFromState(payload);
           const wirePristine = wrap(cipher, _outerKeyFor(cipher), ctPristine);
           return {
             name: `bench_${def.label}/${cipher}/decrypt`,
@@ -1118,6 +1449,10 @@ function buildLazyCases(): LazyCase[] {
   }
 
   // Streaming Single — 4 modes × 9 ciphers × 2 dirs = 72 cases (async factories).
+  // Encrypt cases share state via buildStreamModesSingle() (safe for encrypt-only
+  // direction). Decrypt cases build a fresh keying pair per factory invocation via
+  // makeStreamDecryptPairSingle so that the wire pre-built inside the factory and
+  // the runDecrypt called during timing always use the same keying material.
   for (const streamMode of buildStreamModesSingle()) {
     for (const cipher of CIPHER_NAMES) {
       lazy.push([
@@ -1137,12 +1472,16 @@ function buildLazyCases(): LazyCase[] {
         `bench_${streamMode.tag}/${cipher}/decrypt`,
         async () => {
           const payload = randomBytes(STREAM_TOTAL_BYTES);
-          const wirePristine = await streamMode.buildWire(cipher, payload);
+          // Fresh keying pair: encFn and decFn share the same Encryptor /
+          // seeds+mac created inside makeStreamDecryptPairSingle so the
+          // pre-built wire decrypts correctly under the same keying state.
+          const pair = makeStreamDecryptPairSingle(streamMode.tag);
+          const wirePristine = await pair.buildWire(cipher, payload);
           return {
             name: `bench_${streamMode.tag}/${cipher}/decrypt`,
             payloadBytes: STREAM_TOTAL_BYTES,
             run: async (iters: number) => {
-              for (let i = 0; i < iters; i++) await streamMode.runDecrypt(cipher, wirePristine);
+              for (let i = 0; i < iters; i++) await pair.runDecrypt(cipher, wirePristine);
             },
           };
         },
@@ -1170,12 +1509,15 @@ function buildLazyCases(): LazyCase[] {
         `bench_${streamMode.tag}/${cipher}/decrypt`,
         async () => {
           const payload = randomBytes(STREAM_TOTAL_BYTES);
-          const wirePristine = await streamMode.buildWire(cipher, payload);
+          // Fresh keying pair: same pattern as the Single Ouroboros decrypt
+          // factories above — shares keying state within the factory call only.
+          const pair = makeStreamDecryptPairTriple(streamMode.tag);
+          const wirePristine = await pair.buildWire(cipher, payload);
           return {
             name: `bench_${streamMode.tag}/${cipher}/decrypt`,
             payloadBytes: STREAM_TOTAL_BYTES,
             run: async (iters: number) => {
-              for (let i = 0; i < iters; i++) await streamMode.runDecrypt(cipher, wirePristine);
+              for (let i = 0; i < iters; i++) await pair.runDecrypt(cipher, wirePristine);
             },
           };
         },

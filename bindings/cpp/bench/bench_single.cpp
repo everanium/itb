@@ -1,12 +1,11 @@
 // bench_single.cpp — Easy Mode Single-Ouroboros benchmarks for the C++
 // binding.
 //
-// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the nine
+// Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
 // PRF-grade primitives, locked at 1024-bit ITB key width and 16 MiB
 // CSPRNG-filled payload. One mixed-primitive variant
-// (itb::Encryptor::Mixed with BLAKE3 / BLAKE2s / BLAKE2b-256 +
-// Areion-SoEM-256 dedicated lockSeed) covers the Easy Mode Mixed
-// surface alongside the single-primitive grid.
+// (itb::Encryptor::Mixed + dedicated lockSeed) covers
+// the Easy Mode Mixed surface alongside the single-primitive grid.
 //
 // Run with:
 //
@@ -34,7 +33,7 @@
 
 // Mixed-primitive composition used by the bench_single_mixed_* cases.
 // noise / data / start cycle through the BLAKE family while
-// Areion-SoEM-256 takes the dedicated lockSeed slot — every name
+// Areion takes the dedicated lockSeed slot — every name
 // resolves to a 256-bit native hash width so the Mixed factory's
 // width-check passes.
 namespace {
@@ -73,7 +72,7 @@ std::unique_ptr<itb::Encryptor> build_single(const char* primitive) {
 
 // Construct a mixed-primitive Single-Ouroboros encryptor matching the
 // README Quick Start composition (BLAKE3 noise / BLAKE2s data /
-// BLAKE2b-256 start). The dedicated Areion-SoEM-256 lockSeed slot is
+// BLAKE2b-256 start). The dedicated lockSeed slot is
 // allocated only when ITB_LOCKSEED is set, so the no-LockSeed bench
 // arm measures the plain mixed-primitive cost without the BitSoup +
 // LockSoup auto-couple. The four primitive names share the 256-bit

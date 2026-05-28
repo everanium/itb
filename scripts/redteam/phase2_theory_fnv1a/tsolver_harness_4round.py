@@ -35,7 +35,7 @@ COBS-rejection, as in decrypt_full_fnv1a.py).
 For now `--noise-source gt` derives (noise_pos, rotation) from the lab
 ground-truth seeds (summary.json) — a DEVELOPMENT SCAFFOLD that proves the
 barrier-decode + masked tsolver recover the real seed on the real corpus. It
-is a CLAUDE.md attacker-realism violation and MUST be replaced by
+is an attacker-realism violation and MUST be replaced by
 `--noise-source search` (not yet implemented) before any reported result.
 The ground-truth seeds are also read for the terminal audit line only.
 
@@ -132,7 +132,7 @@ def main() -> int:
     nonce = ctx.nonce
 
     # --- DEV SCAFFOLD: ground-truth seeds for (noise_pos, rotation) ---------
-    # CLAUDE.md attacker-realism violation; replace with a noise_pos search.
+    # Attacker-realism violation; replace with a noise_pos search.
     data_lo = [int(h, 16) for h in summary["data_lo_lane_hex"]]
     noise_lo = [int(h, 16) for h in summary["noise_lo_lane_hex"]]
 

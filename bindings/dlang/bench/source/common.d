@@ -48,8 +48,7 @@ enum size_t PAYLOAD_16MB = 16 << 20;
 
 /// Canonical PRF-grade primitive order. Mirrored verbatim across
 /// every binding's bench harness so cross-language diff comparisons
-/// align row-for-row. Per CLAUDE.md "binding-side canonical order"
-/// exception under "Primitive ordering ...".
+/// align row-for-row.
 immutable string[] PRIMITIVES_CANONICAL = [
     "areion256",
     "areion512",

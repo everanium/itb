@@ -2,11 +2,10 @@
  * bench_triple.c — Easy Mode Triple-Ouroboros benchmarks for the C
  * binding.
  *
- * Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
- * nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+ * Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+ * PRF-grade primitives, locked at 1024-bit ITB key width and 16
  * MiB CSPRNG-filled payload. One mixed-primitive variant
- * (itb_encryptor_new_mixed3 cycling the same BLAKE family + ChaCha20
- * dedicated lockSeed used by bench_single's mixed case) covers the
+ * (itb_encryptor_new_mixed3 + dedicated lockSeed) covers the
  * Easy Mode Mixed surface alongside the single-primitive grid.
  *
  * Run with:
@@ -36,7 +35,7 @@
 
 /* Mixed-primitive composition for Triple Ouroboros — the same four
  * 256-bit-wide names used by bench_single's Mixed case are cycled
- * across the seven seed slots (noise + 3 data + 3 start) plus ChaCha20
+ * across the seven seed slots (noise + 3 data + 3 start) plus one
  * on the dedicated lockSeed slot. */
 static const char *const MIXED_NOISE  = "blake3";
 static const char *const MIXED_DATA1  = "blake2s";
@@ -136,7 +135,7 @@ static itb_encryptor_t *build_triple(const char *primitive) {
 
 /* Construct a mixed-primitive Triple-Ouroboros encryptor with the
  * four-name BLAKE family across the seven middle slots. The dedicated
- * ChaCha20 lockSeed slot is allocated only when ITB_LOCKSEED is set. */
+ * lockSeed slot is allocated only when ITB_LOCKSEED is set. */
 static itb_encryptor_t *build_mixed_triple(void) {
     const char *prim_l = env_lock_seed() ? MIXED_LOCK : NULL;
     itb_encryptor_t *e = NULL;

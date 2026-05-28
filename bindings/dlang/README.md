@@ -140,7 +140,7 @@ Filter to a subset by passing test names as positional arguments:
 
 A custom Go-bench-style harness lives under `bench/` and covers
 the four ops (`encrypt`, `decrypt`, `encryptAuth`, `decryptAuth`)
-across the nine PRF-grade primitives plus one mixed-primitive
+across PRF-grade primitives plus one mixed-primitive
 variant for both Single and Triple Ouroboros at 1024-bit ITB key
 width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
 for invocation / environment variables / output format and
@@ -1019,16 +1019,10 @@ receivers reject the wrong importer with
 
 ## Hash primitives (Single / Triple)
 
-Names match the canonical `hashes/` registry. Listed below in the
-binding-side canonical PRF-only ordering — `Areion-SoEM-256`,
-`Areion-SoEM-512`, `BLAKE2b-256`, `BLAKE2b-512`, `BLAKE2s`,
-`BLAKE3`, `AES-CMAC`, `SipHash-2-4`, `ChaCha20` — the FFI names
-are `areion256`, `areion512`, `blake2b256`, `blake2b512`,
-`blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`. Triple
-Ouroboros (3× security) takes seven seeds (one shared `noiseSeed`
-plus three `dataSeed` and three `startSeed`) via `encryptTriple` /
-`decryptTriple` and the authenticated counterparts
-`encryptAuthTriple` / `decryptAuthTriple`. Streaming counterparts:
+Names match the canonical `hashes/` registry. Triple Ouroboros takes
+seven seeds (one shared `noiseSeed` plus three `dataSeed` and three
+`startSeed`) via `encryptTriple` / `decryptTriple` and the authenticated
+counterparts `encryptAuthTriple` / `decryptAuthTriple`. Streaming counterparts:
 `StreamEncryptor3` / `StreamDecryptor3` / `encryptStreamTriple` /
 `decryptStreamTriple`.
 
@@ -1307,7 +1301,7 @@ are preferred.
 
 | Symbol | Purpose |
 |---|---|
-| `Cipher.aes128Ctr / chaCha20 / siphash24 / areion256 / areion512 / blake2b256 / blake2b512 / blake2s / blake3` | Cipher enum |
+| `Cipher.areion256 / areion512 / blake2b256 / blake2b512 / blake2s / blake3 / aes128Ctr / sipHash24 / chaCha20 / etc...` | Cipher enum |
 | `CIPHER_NAMES` | Canonical name list |
 | `string ffiName(Cipher c)` / `Cipher cipherFromName(string s)` | Enum ↔ string converters |
 | `size_t keySize(Cipher c)` / `size_t nonceSize(Cipher c)` | Cipher dimension accessors |

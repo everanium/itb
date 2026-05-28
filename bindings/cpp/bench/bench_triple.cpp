@@ -1,13 +1,11 @@
 // bench_triple.cpp — Easy Mode Triple-Ouroboros benchmarks for the C++
 // binding.
 //
-// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for the
-// nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+// Mirrors the BenchmarkTriple* cohort from itb3_ext_test.go for
+// PRF-grade primitives, locked at 1024-bit ITB key width and 16
 // MiB CSPRNG-filled payload. One mixed-primitive variant
-// (itb::Encryptor::Mixed3 cycling the same BLAKE family +
-// Areion-SoEM-256 dedicated lockSeed used by bench_single's mixed
-// case) covers the Easy Mode Mixed surface alongside the
-// single-primitive grid.
+// (itb::Encryptor::Mixed3 + dedicated lockSeed) covers the
+// Easy Mode Mixed surface alongside the single-primitive grid.
 //
 // Run with:
 //
@@ -38,7 +36,7 @@ namespace {
 // Mixed-primitive composition for Triple Ouroboros — the same four
 // 256-bit-wide names used by bench_single's Mixed case are cycled
 // across the seven seed slots (noise + 3 data + 3 start) plus
-// Areion-SoEM-256 on the dedicated lockSeed slot.
+// one on the dedicated lockSeed slot.
 constexpr const char* kMixedNoise  = "blake3";
 constexpr const char* kMixedData1  = "blake2s";
 constexpr const char* kMixedData2  = "blake2b256";
@@ -74,8 +72,7 @@ std::unique_ptr<itb::Encryptor> build_triple(const char* primitive) {
 
 // Construct a mixed-primitive Triple-Ouroboros encryptor with the
 // four-name BLAKE family across the seven middle slots. The dedicated
-// Areion-SoEM-256 lockSeed slot is allocated only when ITB_LOCKSEED is
-// set.
+// lockSeed slot is allocated only when ITB_LOCKSEED is set.
 std::unique_ptr<itb::Encryptor> build_mixed_triple() {
     std::string_view prim_l = bench::env_lock_seed()
                                   ? std::string_view{kMixedLock}

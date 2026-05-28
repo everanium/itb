@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-This document describes how each supported `Derive` construction turns a key-derivation key (the **master**) and a public **label** into an `outLen`-byte subkey. Each registry name maps to a standard, separately analysable construction. The names (`areion256`, `areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `chacha20`) are short identifiers; this document states the exact byte layout each one computes.
+This document describes how each supported `Derive` construction turns a key-derivation key (the **master**) and a public **label** into an `outLen`-byte subkey. Each registry name maps to a standard, separately analysable construction. The names (`areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`) are short identifiers; this document states the exact byte layout each one computes.
 
 Audience: external auditors, paper reviewers, downstream integrators reading the code wanting to know what is actually computed when `Derive` is called.
 
@@ -26,12 +26,12 @@ For the standards' own conformance, refer to the upstream specifications and lib
 |---|---|---|---|
 | `areion256` | registry Areion-SoEM-256 keyed hash, 32-byte output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 32 bytes |
 | `areion512` | registry Areion-SoEM-512 keyed hash, 64-byte output | NIST SP 800-108 KDF in Counter Mode (representation r1); 32 → 64 key stretch via `areion256` | 32 bytes |
-| `siphash24` | SipHash-2-4, 128-bit output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 16 bytes |
-| `aescmac` | AES-128 CMAC (RFC 4493) | NIST SP 800-108 KDF in Counter Mode (representation r1) | 16 bytes |
 | `blake2b256` | native keyed BLAKE2b-256 (RFC 7693), 32-byte output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 32 bytes |
 | `blake2b512` | native keyed BLAKE2b-512 (RFC 7693), 64-byte output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 32 bytes |
 | `blake2s` | native keyed BLAKE2s-256 (RFC 7693), 32-byte output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 32 bytes |
 | `blake3` | native keyed BLAKE3, 32-byte output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 32 bytes |
+| `aescmac` | AES-128 CMAC (RFC 4493) | NIST SP 800-108 KDF in Counter Mode (representation r1) | 16 bytes |
+| `siphash24` | SipHash-2-4, 128-bit output | NIST SP 800-108 KDF in Counter Mode (representation r1) | 16 bytes |
 | `chacha20` | XChaCha20 stream (24-byte nonce) | Keystream KDF — label as nonce, leading `outLen` keystream bytes | 32 bytes |
 
 ## SP 800-108 Counter Mode over Areion-SoEM (registry: `areion256`, `areion512`)
@@ -113,8 +113,8 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 
 **Master sizing.** Every construction truncates the master **down** to its primitive key size when the master is longer (16 bytes for `aescmac` / `siphash24`, 32 bytes for the rest); a uniform master remains uniform under truncation. A master **shorter** than the required key size is an error — the package does not stretch or pad short masters into key material. The sole exception is `areion512`'s internal 32 → 64 key stretch: that is a deterministic expansion of the already-uniform 32-byte master into the wider family key, applied after the master length check, not a way to fabricate entropy from a too-short master.
 
-**Determinism.** All nine constructions are deterministic in `(name, master, label, outLen)`. The same four inputs always produce the same output bytes; there is no internal randomness.
+**Determinism.** All constructions are deterministic in `(name, master, label, outLen)`. The same four inputs always produce the same output bytes; there is no internal randomness.
 
-**Labels are public.** In all nine constructions the label is a public domain-separation input. It feeds the SP 800-108 Label field (`aescmac`, `siphash24`, the four BLAKE names, `areion256`, `areion512`) or the XChaCha20 nonce (`chacha20`). Its only requirement is distinctness per intended subkey; it carries no secrecy requirement.
+**Labels are public.** In all constructions the label is a public domain-separation input. It feeds the SP 800-108 Label field (`aescmac`, `siphash24`, the four BLAKE names, `areion256`, `areion512`) or the XChaCha20 nonce (`chacha20`). Its only requirement is distinctness per intended subkey; it carries no secrecy requirement.
 
-**Standards posture.** Of the nine, only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The four BLAKE names, `areion256`, `areion512`, and `siphash24` use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.
+**Standards posture.** Only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The four BLAKE names, `areion256`, `areion512`, and `siphash24` use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.

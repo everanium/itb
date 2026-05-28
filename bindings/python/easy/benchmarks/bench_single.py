@@ -1,10 +1,9 @@
 """Easy Mode Single-Ouroboros benchmarks for the Python binding.
 
-Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for the
-nine PRF-grade primitives, locked at 1024-bit ITB key width and 16
+Mirrors the BenchmarkSingle* cohort from itb_ext_test.go for
+PRF-grade primitives, locked at 1024-bit ITB key width and 16
 MiB CSPRNG-filled payload. One mixed-primitive variant
-(:meth:`itb.Encryptor.mixed_single` with BLAKE3 / BLAKE2s /
-BLAKE2b-256 + Areion-SoEM-256 dedicated lockSeed) covers the
+(:meth:`itb.Encryptor.mixed_single` + dedicated lockSeed) covers the
 Easy Mode Mixed surface alongside the single-primitive grid.
 
 Run with::
@@ -40,10 +39,7 @@ import itb
 from . import _common
 
 
-# Canonical 9-primitive PRF-grade order from CLAUDE.md (positions
-# 4 through 12). The three below-spec lab primitives (CRC128,
-# FNV-1a, MD5) are not exposed through the libitb registry and are
-# therefore absent here by construction.
+# Canonical primitive PRF-grade order.
 PRIMITIVES_CANONICAL: List[str] = [
     "areion256",
     "areion512",
@@ -58,7 +54,7 @@ PRIMITIVES_CANONICAL: List[str] = [
 
 # Mixed-primitive composition used by the bench_single_mixed_*
 # cases. noise / data / start cycle through the BLAKE family while
-# Areion-SoEM-256 takes the dedicated lockSeed slot — every name
+# Areion takes the dedicated lockSeed slot — every name
 # resolves to a 256-bit native hash width so the
 # Encryptor.mixed_single width-check passes.
 MIXED_NOISE = "blake3"
@@ -95,7 +91,7 @@ def _build_single(primitive: str) -> itb.Encryptor:
 def _build_mixed_single() -> itb.Encryptor:
     """Construct a mixed-primitive Single-Ouroboros encryptor
     matching the README Quick Start composition (BLAKE3 noise /
-    BLAKE2s data / BLAKE2b-256 start). The dedicated Areion-SoEM-256
+    BLAKE2s data / BLAKE2b-256 start). The dedicated
     lockSeed slot is allocated only when ``ITB_LOCKSEED`` is set, so
     the no-LockSeed bench arm measures the plain mixed-primitive
     cost without the BitSoup + LockSoup auto-couple. The four
@@ -173,7 +169,7 @@ def _make_decrypt_auth_case(name: str, builder: Callable[[], itb.Encryptor]) -> 
 
 def _case_factories() -> List[_common.LazyCase]:
     """Return a list of (name, factory) pairs covering the full 40-case
-    message suite (9 single-primitive × 4 ops + 1 mixed × 4 ops) plus
+    message suite (single-primitives × 4 ops + 1 mixed × 4 ops) plus
     the 8 streaming cases. No payload or Encryptor is allocated here;
     those are deferred until each factory is called."""
     facs: List[_common.LazyCase] = []

@@ -29,8 +29,8 @@
 /// ---
 ///
 /// Hash names match the canonical FFI registry: `areion256`,
-/// `areion512`, `siphash24`, `aescmac`, `blake2b256`, `blake2b512`,
-/// `blake2s`, `blake3`, `chacha20`. MAC names: `kmac256`,
+/// `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`,
+/// `aescmac`, `siphash24`, `chacha20`. MAC names: `kmac256`,
 /// `hmac-sha256`, `hmac-blake3`.
 module itb;
 

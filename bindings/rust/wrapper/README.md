@@ -37,22 +37,18 @@ No length-prefix or other framing byte appears in cleartext on the wire in any w
 
 The streaming structs are RAII — dropping them releases the underlying libitb stream handle best-effort. `close()` is the explicit release path that surfaces release-time errors to the caller.
 
-### Binding asymmetry
-
-The Rust binding exposes Streaming AEAD as a `Read` / `Write` pair (`Encryptor::encrypt_stream_auth` / `decrypt_stream_auth`, plus the free-function `itb::encrypt_stream_auth` / `itb::decrypt_stream_auth`). The Streaming No MAC path has **no** equivalent `std::io::Read` / `std::io::Write` adapter pair for Non-AEAD streaming. This asymmetry is intentional. The Non-AEAD streaming arm in the Rust wrapper covers the **User-Driven Loop** variant only — caller produces an ITB ciphertext per chunk via `enc.encrypt(chunk)` (or `itb::encrypt(...)`), frames `u32_LE_len || ct`, and pushes through the streaming wrap handle. See CLAUDE.md.
-
 ## Outer ciphers
 
 | Cipher | Constant | Key | Nonce | Notes |
 |---|---|---|---|---|
 | Areion-SoEM-256 in CTR mode | `Cipher::Areion256` (`"areion256"`) | 32 B | 16 B | Areion-SoEM-256 PRF. Custom CTR construction; sound under standard PRF assumption. |
 | Areion-SoEM-512 in CTR mode | `Cipher::Areion512` (`"areion512"`) | 64 B | 16 B | Areion-SoEM-512 PRF. Custom CTR construction; sound under standard PRF assumption. |
-| SipHash-2-4 in CTR mode | `Cipher::SipHash24` (`"siphash24"`) | 16 B | 16 B | `github.com/dchest/siphash` PRF. Custom CTR construction; sound under standard PRF assumption. |
-| AES-128-CTR | `Cipher::Aes128Ctr` (`"aescmac"`) | 16 B | 16 B | libitb-side stdlib path with AES-NI. |
 | BLAKE2b-256 in CTR mode | `Cipher::Blake2b256` (`"blake2b256"`) | 32 B | 16 B | BLAKE2b-256 PRF. Custom CTR construction; sound under standard PRF assumption. |
 | BLAKE2b-512 in CTR mode | `Cipher::Blake2b512` (`"blake2b512"`) | 32 B | 16 B | BLAKE2b-512 PRF. Custom CTR construction; sound under standard PRF assumption. |
 | BLAKE2s in CTR mode | `Cipher::Blake2s` (`"blake2s"`) | 32 B | 16 B | BLAKE2s PRF. Custom CTR construction; sound under standard PRF assumption. |
 | BLAKE3 in CTR mode | `Cipher::Blake3` (`"blake3"`) | 32 B | 16 B | BLAKE3 PRF. Custom CTR construction; sound under standard PRF assumption. |
+| AES-128-CTR | `Cipher::Aes128Ctr` (`"aescmac"`) | 16 B | 16 B | libitb-side stdlib path with AES-NI. |
+| SipHash-2-4 in CTR mode | `Cipher::SipHash24` (`"siphash24"`) | 16 B | 16 B | `github.com/dchest/siphash` PRF. Custom CTR construction; sound under standard PRF assumption. |
 | ChaCha20 (RFC 8439) | `Cipher::ChaCha20` (`"chacha20"`) | 32 B | 12 B | `golang.org/x/crypto/chacha20`. No AES-NI dependency. |
 
 The SipHash-CTR construction:
@@ -282,35 +278,28 @@ let pt = itb::decrypt_auth(&seeds[0], &seeds[1], &seeds[2], &mac, recovered)?;
 Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with byte-equality. Sample run:
 
 ```
+[PASS] aead-easy-io               + areion256   pt=65536 wire=90208
+[PASS] aead-easy-io               + areion512   pt=65536 wire=90208
+[PASS] aead-easy-io               + blake2b256   pt=65536 wire=90208
+[PASS] aead-easy-io               + blake2b512   pt=65536 wire=90208
+[PASS] aead-easy-io               + blake2s    pt=65536 wire=90208
+[PASS] aead-easy-io               + blake3     pt=65536 wire=90208
 [PASS] aead-easy-io               + aescmac    pt=65536 wire=90208
+[PASS] aead-easy-io               + siphash24   pt=65536 wire=90208
 [PASS] aead-easy-io               + chacha20   pt=65536 wire=90204
-[PASS] aead-easy-io               + siphash24  pt=65536 wire=90208
-[PASS] aead-lowlevel-io           + aescmac    pt=65536 wire=90208
-[PASS] aead-lowlevel-io           + chacha20   pt=65536 wire=90204
-[PASS] aead-lowlevel-io           + siphash24  pt=65536 wire=90208
-[PASS] noaead-easy-userloop       + aescmac    pt=65536 wire=90192
-[PASS] noaead-easy-userloop       + chacha20   pt=65536 wire=90188
-[PASS] noaead-easy-userloop       + siphash24  pt=65536 wire=90192
-[PASS] noaead-lowlevel-userloop   + aescmac    pt=65536 wire=90192
-[PASS] noaead-lowlevel-userloop   + chacha20   pt=65536 wire=90188
-[PASS] noaead-lowlevel-userloop   + siphash24  pt=65536 wire=90192
-[PASS] message-easy-nomac         + aescmac    pt=1024 wire=4316
-[PASS] message-easy-nomac         + chacha20   pt=1024 wire=4312
-[PASS] message-easy-nomac         + siphash24  pt=1024 wire=4316
-[PASS] message-easy-auth          + aescmac    pt=1024 wire=8276
-[PASS] message-easy-auth          + chacha20   pt=1024 wire=8272
-[PASS] message-easy-auth          + siphash24  pt=1024 wire=8276
-[PASS] message-lowlevel-nomac     + aescmac    pt=1024 wire=4316
-[PASS] message-lowlevel-nomac     + chacha20   pt=1024 wire=4312
-[PASS] message-lowlevel-nomac     + siphash24  pt=1024 wire=4316
+...
+[PASS] message-lowlevel-auth      + areion256   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + areion512   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake2b256   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake2b512   pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake2s    pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + blake3     pt=1024 wire=8276
 [PASS] message-lowlevel-auth      + aescmac    pt=1024 wire=8276
+[PASS] message-lowlevel-auth      + siphash24   pt=1024 wire=8276
 [PASS] message-lowlevel-auth      + chacha20   pt=1024 wire=8272
-[PASS] message-lowlevel-auth      + siphash24  pt=1024 wire=8276
-
-=== Summary: 24 PASS, 0 FAIL ===
 ```
 
-The wire-byte difference between cipher columns is exactly the per-stream nonce-size delta (16 vs 12 vs 16 bytes); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk. The wire byte counts match the Python binding's matrix exactly under the same plaintext sizes.
+The wire-byte difference between cipher columns is exactly the per-stream nonce-size delta (16 bytes for every cipher except ChaCha20 (RFC8439), which uses a 12-byte nonce); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk. The wire byte counts match the Python / Node.js / C# bindings' matrices exactly under the same plaintext sizes.
 
 ## Performance
 

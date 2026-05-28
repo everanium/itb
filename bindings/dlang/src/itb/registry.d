@@ -33,8 +33,8 @@ struct HashInfo
 }
 
 /// Returns the list of PRF-grade hashes libitb knows about, in
-/// canonical FFI order: `areion256`, `areion512`, `siphash24`,
-/// `aescmac`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`,
+/// canonical FFI order: `areion256`, `areion512`, `blake2b256`,
+/// `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`,
 /// `chacha20`. The below-spec lab primitives `crc128` / `fnv1a` /
 /// `md5` are not exposed through this surface and never appear here.
 HashInfo[] listHashes() @trusted

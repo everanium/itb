@@ -56,8 +56,8 @@ const maxOutLen = (1<<32)/8 - 1
 // domain-separation label, using the construction selected by name.
 //
 // name selects the construction; supported values are "areion256",
-// "areion512", "siphash24", "aescmac", "blake2b256", "blake2b512", "blake2s",
-// "blake3", "chacha20". Any other value is an error.
+// "areion512", "blake2b256", "blake2b512", "blake2s", "blake3",
+// "aescmac", "siphash24", "chacha20". Any other value is an error.
 //
 // master is the key-derivation key. When master is longer than the
 // selected primitive's key size it is truncated to that size (a uniform

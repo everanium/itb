@@ -10,11 +10,10 @@ Two binaries cover the Easy Mode encryption / decryption surface
 exposed by the Rust binding:
 
 * `bench_single.rs` — Single Ouroboros (mode=1, 3 seeds + optional
-  dedicated lockSeed). Walks the nine PRF-grade primitives plus
+  dedicated lockSeed). Walks PRF-grade primitives plus
   one mixed-primitive variant.
 * `bench_triple.rs` — Triple Ouroboros (mode=3, 7 seeds + optional
-  dedicated lockSeed). Same nine + one mixed grid as the Single
-  binary.
+  dedicated lockSeed).
 
 Both binaries pin **1024-bit ITB key width** and **16 MiB
 non-deterministic-fill payload**, run four ops per case (`encrypt`,

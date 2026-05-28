@@ -15,12 +15,12 @@ use itb::Seed;
 const CANONICAL_HASHES: &[(&str, i32)] = &[
     ("areion256", 256),
     ("areion512", 512),
-    ("siphash24", 128),
-    ("aescmac", 128),
     ("blake2b256", 256),
     ("blake2b512", 512),
     ("blake2s", 256),
     ("blake3", 256),
+    ("aescmac", 128),
+    ("siphash24", 128),
     ("chacha20", 256),
 ];
 
@@ -31,12 +31,12 @@ fn expected_hash_key_len(name: &str) -> usize {
     match name {
         "areion256" => 32,
         "areion512" => 64,
-        "siphash24" => 0,
-        "aescmac" => 16,
         "blake2b256" => 32,
         "blake2b512" => 64,
         "blake2s" => 32,
         "blake3" => 32,
+        "aescmac" => 16,
+        "siphash24" => 0,
         "chacha20" => 32,
         _ => panic!("unexpected primitive {}", name),
     }

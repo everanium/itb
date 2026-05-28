@@ -43,24 +43,24 @@ func generateDataEasy(n int) []byte {
 // primitiveSpec lists every shipped (primitive name, key_bits
 // widths) combination the round-trip matrix exercises. The
 // universally-valid {512, 1024, 2048} triple is used across all
-// nine primitives — the lower 256-bit key_bits corner is omitted
+// primitives — the lower 256-bit key_bits corner is omitted
 // because the Seed{128,256,512} constructors in the itb root
 // require bits >= 512 (see itb/seed{128,256,512}.go), so a
-// theoretical "9 × 4 widths × 2 modes = 72" matrix degrades to a
-// runtime-valid 54 per matrix function. The 512-bit floor mirrors
-// the bench coverage of itb_ext_test.go.
+// theoretical 72  matrix degrades to a runtime-valid 54 per
+// matrix function. The 512-bit floor mirrors the bench coverage
+// of itb_ext_test.go. 4096 bits ITB mode now is not supported.
 var primitiveSpec = []struct {
 	name   string
 	widths []int
 }{
 	{"areion256", []int{512, 1024, 2048}},
 	{"areion512", []int{512, 1024, 2048}},
-	{"siphash24", []int{512, 1024, 2048}},
-	{"aescmac", []int{512, 1024, 2048}},
 	{"blake2b256", []int{512, 1024, 2048}},
 	{"blake2b512", []int{512, 1024, 2048}},
 	{"blake2s", []int{512, 1024, 2048}},
 	{"blake3", []int{512, 1024, 2048}},
+	{"aescmac", []int{512, 1024, 2048}},
+	{"siphash24", []int{512, 1024, 2048}},
 	{"chacha20", []int{512, 1024, 2048}},
 }
 

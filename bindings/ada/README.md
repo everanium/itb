@@ -174,7 +174,7 @@ default invocation iterates every test executable in `obj-tests/`.
 
 A custom Go-bench-style harness lives under `bench/` and covers the
 four ops (`Encrypt`, `Decrypt`, `Encrypt_Auth`, `Decrypt_Auth`)
-across the nine PRF-grade primitives plus one mixed-primitive
+across PRF-grade primitives plus one mixed-primitive
 variant for both Single and Triple Ouroboros at 1024-bit ITB key
 width and 16 MiB payload. See [`bench/README.md`](bench/README.md)
 for invocation / environment variables / output format and
@@ -1185,13 +1185,7 @@ importer with `Itb.Errors.Itb_Blob_Mode_Mismatch_Error`.
 
 ## Hash primitives (Single / Triple)
 
-Names match the canonical `hashes/` registry. Listed below in the
-canonical primitive ordering used across ITB documentation —
-**AES-CMAC**, **SipHash-2-4**, **ChaCha20**, **Areion-SoEM-256**,
-**BLAKE2s**, **BLAKE3**, **BLAKE2b-256**, **BLAKE2b-512**,
-**Areion-SoEM-512** — the FFI names are `aescmac`, `siphash24`,
-`chacha20`, `areion256`, `blake2s`, `blake3`, `blake2b256`,
-`blake2b512`, `areion512`. Triple Ouroboros (3× security) takes
+Names match the canonical `hashes/` registry. Triple Ouroboros takes
 seven seeds (one shared `noiseSeed` plus three `dataSeed` and three
 `startSeed`) via `Itb.Cipher.Encrypt_Triple` /
 `Itb.Cipher.Decrypt_Triple` and the authenticated counterparts
@@ -1200,18 +1194,6 @@ seven seeds (one shared `noiseSeed` plus three `dataSeed` and three
 `Itb.Streams.Stream_Encryptor_Triple` / `Stream_Decryptor_Triple` /
 `Itb.Streams.Encrypt_Stream_Triple` /
 `Itb.Streams.Decrypt_Stream_Triple`.
-
-| Primitive | FFI name | Native width (bits) | Fixed key size (bytes) |
-|---|---|---|---|
-| **AES-CMAC** | `aescmac` | 128 | 16 |
-| **SipHash-2-4** | `siphash24` | 128 | 0 (no internal fixed key) |
-| **ChaCha20** | `chacha20` | 256 | 32 |
-| **Areion-SoEM-256** | `areion256` | 256 | 32 |
-| **BLAKE2s** | `blake2s` | 256 | 32 |
-| **BLAKE3** | `blake3` | 256 | 32 |
-| **BLAKE2b-256** | `blake2b256` | 256 | 32 |
-| **BLAKE2b-512** | `blake2b512` | 512 | 64 |
-| **Areion-SoEM-512** | `areion512` | 512 | 64 |
 
 SipHash-2-4 is the one primitive without an internal fixed key —
 its keying material is the seed components themselves. `Itb.Seed.
@@ -1531,7 +1513,7 @@ configuration; sibling packages carry the rest.
 
 | Subprogram | Purpose |
 |---|---|
-| `type Cipher_Type is (Aes_128_Ctr, Cha_Cha_20, Sip_Hash_24, Areion_256, Areion_512, Blake_2b_256, Blake_2b_512, Blake_2s, Blake_3)` | Cipher enum |
+| `type Cipher_Type is (Areion_256, Areion_512, Blake_2b_256, Blake_2b_512, Blake_2s, Blake_3, Aes_128_Ctr, Sip_Hash_24, Cha_Cha_20, etc...)` | Cipher enum |
 | `function Ffi_Name (C : Cipher_Type) return String` | Canonical FFI name |
 | `function Key_Size (C : Cipher_Type) return Natural` / `function Nonce_Size (C : Cipher_Type) return Natural` | Cipher dimension accessors |
 | `function Generate_Key (C : Cipher_Type) return Byte_Array` | CSPRNG-fresh wrapper key |

@@ -116,8 +116,8 @@ package Itb.Encryptor is
    ---------------------------------------------------------------------
 
    --  Single-primitive constructor. Primitive is a canonical hash name
-   --  from Itb.List_Hashes ("areion256", "areion512", "siphash24",
-   --  "aescmac", "blake2b256", "blake2b512", "blake2s", "blake3",
+   --  from Itb.List_Hashes ("areion256", "areion512", "blake2b256",
+   --  "blake2b512", "blake2s", "blake3", "aescmac", "siphash24",
    --  "chacha20"). Key_Bits is the ITB key width in bits (512, 1024,
    --  2048; multiple of the primitive's native digest width).
    --

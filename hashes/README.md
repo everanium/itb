@@ -9,8 +9,8 @@
 > **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** Several wrappers diverge from the canonical RFC / NIST form of the underlying primitive in deliberate, documented ways — the registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifiers, not assertions of conformance with the RFC / NIST specification of the same name. Read CONSTRUCTIONS.md before assuming RFC compatibility.
 
 Drop-in factories that produce `itb.HashFunc{128|256|512}` closures
-for the nine PRF-grade primitives ITB ships with as built-in
-factories for the C / FFI / mobile shared-library distribution.
+for PRF-grade primitives ITB ships with as built-in factories for
+the C / FFI / mobile shared-library distribution.
 
 Every factory pre-keys its primitive once at construction, reuses a
 `sync.Pool` of scratch buffers, and is safe to call concurrently from
@@ -35,12 +35,12 @@ In FFI-stable index order:
 |---|---|---|---|
 | 0 | `areion256` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
 | 1 | `areion512` | 512 | `HashFunc512` (paired with `BatchHashFunc512`) |
-| 2 | `siphash24` | 128 | `HashFunc128` (uncached — pure function) |
-| 3 | `aescmac` | 128 | `HashFunc128` (cached AES-NI block) |
-| 4 | `blake2b256` | 256 | `HashFunc256` |
-| 5 | `blake2b512` | 512 | `HashFunc512` |
-| 6 | `blake2s` | 256 | `HashFunc256` |
-| 7 | `blake3` | 256 | `HashFunc256` |
+| 2 | `blake2b256` | 256 | `HashFunc256` |
+| 3 | `blake2b512` | 512 | `HashFunc512` |
+| 4 | `blake2s` | 256 | `HashFunc256` |
+| 5 | `blake3` | 256 | `HashFunc256` |
+| 6 | `aescmac` | 128 | `HashFunc128` (cached AES-NI block) |
+| 7 | `siphash24` | 128 | `HashFunc128` (uncached — pure function) |
 | 8 | `chacha20` | 256 | `HashFunc256` |
 
 The order is FFI-stable; index 0..8 is exposed through
@@ -703,12 +703,12 @@ closure (no key tuple element):
 |-------------------------------|---------------------------------|
 | `Areion256Pair(...key)`       | `Areion256PairWithKey(key)`     |
 | `Areion512Pair(...key)`       | `Areion512PairWithKey(key)`     |
-| `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
-| `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
 | `BLAKE2s(...key)`             | `BLAKE2sWithKey(key)`           |
 | `BLAKE2b256(...key)`          | `BLAKE2b256WithKey(key)`        |
 | `BLAKE2b512(...key)`          | `BLAKE2b512WithKey(key)`        |
 | `BLAKE3(...key)`              | `BLAKE3WithKey(key)`            |
+| `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
+| `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
 
 The variadic short form delegates to `WithKey` (Go inliner removes
 the wrapper at compile time), so semantics are identical. Pick

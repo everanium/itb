@@ -30,7 +30,7 @@
 //! expose a `Read` / `Write` adapter pair for the No MAC streaming
 //! path. The Non-AEAD streaming arm therefore covers the User-Driven
 //! Loop variant only (per-chunk encrypt + caller-side u32_LE
-//! framing pushed through one wrap-stream session). See CLAUDE.md.
+//! framing pushed through one wrap-stream session).
 //!
 //! Run with::
 //!

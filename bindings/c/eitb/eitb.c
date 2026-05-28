@@ -8,8 +8,7 @@
  * pair for Non-AEAD streaming. The Non-AEAD streaming arm is the
  * User-Driven Loop only.
  *
- * Matrix: 8 examples × 3 outer ciphers (aes / chacha / siphash) =
- * 24 PASS/FAIL cells.
+ * Matrix: 8 examples × outer ciphers.
  *
  * Examples covered:
  *
@@ -61,12 +60,12 @@
 static const itb_wrapper_cipher_t CIPHERS[] = {
     ITB_WRAPPER_CIPHER_AREION_256,
     ITB_WRAPPER_CIPHER_AREION_512,
-    ITB_WRAPPER_CIPHER_SIPHASH24,
-    ITB_WRAPPER_CIPHER_AES_128_CTR,
     ITB_WRAPPER_CIPHER_BLAKE2B_256,
     ITB_WRAPPER_CIPHER_BLAKE2B_512,
     ITB_WRAPPER_CIPHER_BLAKE2S,
     ITB_WRAPPER_CIPHER_BLAKE3,
+    ITB_WRAPPER_CIPHER_AES_128_CTR,
+    ITB_WRAPPER_CIPHER_SIPHASH24,
     ITB_WRAPPER_CIPHER_CHACHA20,
 };
 #define CIPHER_COUNT (sizeof(CIPHERS) / sizeof(CIPHERS[0]))
@@ -1485,7 +1484,7 @@ static int contains_substring(const char *haystack, const char *needle)
 static void usage(const char *prog)
 {
     fprintf(stderr,
-            "usage: %s [--example SUBSTR] [--cipher aes|chacha|siphash] [-v]\n",
+            "usage: %s [--example SUBSTR] [--cipher ciphername] [-v]\n",
             prog);
 }
 

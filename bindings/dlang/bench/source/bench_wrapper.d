@@ -2,20 +2,20 @@
 ///
 /// Mirrors `wrapper/bench_test.go` on the Go-native side and
 /// `bindings/{python,rust,csharp,nodejs}/.../bench_wrapper*` on the
-/// peer-binding side. Six wrapper only round-trip cases (16 MiB random
-/// blob through `wrap` / `wrapInPlace` per outer cipher) plus 96
-/// full-ITB cases split across:
+/// peer-binding side. Eighteen wrapper only round-trip cases (16 MiB
+/// random blob through `wrap` / `wrapInPlace` per outer cipher) plus
+/// 288 full-ITB cases split across:
 ///
-///   * Message Single Ouroboros — 4 modes × 3 ciphers × 2 directions
-///     = 24 sub-benches.
-///   * Message Triple Ouroboros — 4 modes × 3 ciphers × 2 directions
-///     = 24 sub-benches.
-///   * Streaming Single Ouroboros — 4 modes × 3 ciphers × 2 directions
-///     = 24 sub-benches.
-///   * Streaming Triple Ouroboros — 4 modes × 3 ciphers × 2 directions
-///     = 24 sub-benches.
+///   * Message Single Ouroboros — 4 modes × 9 ciphers × 2 directions
+///     = 72 sub-benches.
+///   * Message Triple Ouroboros — 4 modes × 9 ciphers × 2 directions
+///     = 72 sub-benches.
+///   * Streaming Single Ouroboros — 4 modes × 9 ciphers × 2 directions
+///     = 72 sub-benches.
+///   * Streaming Triple Ouroboros — 4 modes × 9 ciphers × 2 directions
+///     = 72 sub-benches.
 ///
-/// Total: 6 + 96 = **102 sub-benches** when run end-to-end.
+/// Total: 18 + 288 = **306 sub-benches** when run end-to-end.
 ///
 /// Streaming sub-benches do NOT include `noaead-*-io` cells. The D
 /// binding's Non-AEAD streaming surface is User-Driven Loop only —
@@ -37,7 +37,7 @@
 ///     ./bench/bin/itb-bench-wrapper
 /// ---
 ///
-/// Per CLAUDE.md voice / naming discipline: streaming = "Streaming
+/// Naming discipline: streaming = "Streaming
 /// AEAD" / "Streaming Easy" / "Streaming Low-Level"; modes = "Easy" /
 /// "Low-Level" / "MAC Authenticated" / "No MAC" / "Single Ouroboros" /
 /// "Triple Ouroboros"; outer cipher arms = AES-128-CTR / ChaCha20 /
@@ -198,7 +198,7 @@ private BenchCase makeWrapperOnlyInPlace(string name, Cipher cipher) @trusted
 // ────────────────────────────────────────────────────────────────────
 // Single-message ITB + wrapper sub-benches.
 //
-// 4 modes × 3 ciphers × 2 directions = 24 cases per Ouroboros. The
+// 4 modes × 9 ciphers × 2 directions = 72 cases per Ouroboros. The
 // modes are:
 //
 //   * Easy No MAC                -> Encryptor.encrypt / decrypt
@@ -357,7 +357,7 @@ private BenchCase makeMsgLowAuthDecSingle(string name, Cipher cipher) @trusted
 
 // ────────────────────────────────────────────────────────────────────
 // Triple Ouroboros message variants — 7-seed Triple wrapped against
-// 4 modes × 3 ciphers × 2 directions = 24 sub-benches.
+// 4 modes × 9 ciphers × 2 directions = 72 sub-benches.
 // ────────────────────────────────────────────────────────────────────
 
 private BenchCase makeMsgEasyNoMACEncTriple(string name, Cipher cipher) @trusted
@@ -519,7 +519,7 @@ private BenchCase makeMsgLowAuthDecTriple(string name, Cipher cipher) @trusted
 // ────────────────────────────────────────────────────────────────────
 // Streaming sub-benches.
 //
-// Per-Ouroboros: 4 modes × 3 ciphers × 2 directions = 24 sub-benches.
+// Per-Ouroboros: 4 modes × 9 ciphers × 2 directions = 72 sub-benches.
 // The four streaming modes:
 //
 //   * Streaming AEAD Easy   IO-Driven (Encryptor.encryptStreamAuth /
@@ -534,8 +534,8 @@ private BenchCase makeMsgLowAuthDecTriple(string name, Cipher cipher) @trusted
 //   * Streaming Low-Level   No MAC, User-Driven Loop (free-function
 //                            encrypt per chunk + u32_LE_len framing).
 //
-// `noaead-*-io` cells are absent — see CLAUDE.md binding asymmetry
-// note. The D Non-AEAD streaming surface is User-Driven Loop only.
+// `noaead-*-io` cells are absent — the D Non-AEAD streaming surface
+// is User-Driven Loop only.
 // ────────────────────────────────────────────────────────────────────
 
 // --- Streaming AEAD Easy IO-Driven (encrypt) -----------------------
@@ -1050,148 +1050,197 @@ private struct LazyCase
     CaseFac factory;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Per-cipher factory helpers.
+//
+// D closures capture variables by reference (heap-allocated when the
+// closure escapes the stack). In a `foreach` loop the compiler reuses
+// the same heap cell for the same variable name across all iterations,
+// so every closure ends up referencing the last iteration's value.
+// Wrapping each closure in a function that receives `Cipher` by value
+// forces a fresh copy per call-site, giving each returned delegate its
+// own binding.
+// ────────────────────────────────────────────────────────────────────
+
+private LazyCase wrapOnlyAllocFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeWrapperOnlyAlloc(n, c)); }
+
+private LazyCase wrapOnlyInPlaceFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeWrapperOnlyInPlace(n, c)); }
+
+private LazyCase msgEasyNoMACEncSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyNoMACEncSingle(n, c)); }
+
+private LazyCase msgEasyNoMACDecSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyNoMACDecSingle(n, c)); }
+
+private LazyCase msgEasyAuthEncSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyAuthEncSingle(n, c)); }
+
+private LazyCase msgEasyAuthDecSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyAuthDecSingle(n, c)); }
+
+private LazyCase msgLowNoMACEncSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowNoMACEncSingle(n, c)); }
+
+private LazyCase msgLowNoMACDecSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowNoMACDecSingle(n, c)); }
+
+private LazyCase msgLowAuthEncSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowAuthEncSingle(n, c)); }
+
+private LazyCase msgLowAuthDecSingleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowAuthDecSingle(n, c)); }
+
+private LazyCase msgEasyNoMACEncTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyNoMACEncTriple(n, c)); }
+
+private LazyCase msgEasyNoMACDecTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyNoMACDecTriple(n, c)); }
+
+private LazyCase msgEasyAuthEncTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyAuthEncTriple(n, c)); }
+
+private LazyCase msgEasyAuthDecTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgEasyAuthDecTriple(n, c)); }
+
+private LazyCase msgLowNoMACEncTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowNoMACEncTriple(n, c)); }
+
+private LazyCase msgLowNoMACDecTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowNoMACDecTriple(n, c)); }
+
+private LazyCase msgLowAuthEncTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowAuthEncTriple(n, c)); }
+
+private LazyCase msgLowAuthDecTripleFac(string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeMsgLowAuthDecTriple(n, c)); }
+
+private LazyCase streamAeadEasyEncFac(int mode, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamAeadEasyEnc(mode, n, c)); }
+
+private LazyCase streamAeadEasyDecFac(int mode, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamAeadEasyDec(mode, n, c)); }
+
+private LazyCase streamAeadLowEncFac(bool triple, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamAeadLowEnc(triple, n, c)); }
+
+private LazyCase streamAeadLowDecFac(bool triple, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamAeadLowDec(triple, n, c)); }
+
+private LazyCase streamUserloopEasyEncFac(int mode, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamUserloopEasyEnc(mode, n, c)); }
+
+private LazyCase streamUserloopEasyDecFac(int mode, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamUserloopEasyDec(mode, n, c)); }
+
+private LazyCase streamUserloopLowEncFac(bool triple, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamUserloopLowEnc(triple, n, c)); }
+
+private LazyCase streamUserloopLowDecFac(bool triple, string n, Cipher c) @trusted
+{ return LazyCase(n, () => makeStreamUserloopLowDec(triple, n, c)); }
+
 private LazyCase[] buildLazyFactories() @trusted
 {
     LazyCase[] facs;
-    facs.reserve(102);
+    facs.reserve(306);
 
-    // Wrapper Only — 2 per cipher.
+    // Wrapper Only — 2 per cipher × 9 ciphers = 18.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
-        Cipher c = cipher;
-        facs ~= LazyCase(
-            format("bench_wrapper_only_alloc_%s_16mb", cn),
-            () => makeWrapperOnlyAlloc(
-                format("bench_wrapper_only_alloc_%s_16mb", cn), c));
-        facs ~= LazyCase(
-            format("bench_wrapper_only_inplace_%s_16mb", cn),
-            () => makeWrapperOnlyInPlace(
-                format("bench_wrapper_only_inplace_%s_16mb", cn), c));
+        facs ~= wrapOnlyAllocFac(
+            format("bench_wrapper_only_alloc_%s_16mb", cn), cipher);
+        facs ~= wrapOnlyInPlaceFac(
+            format("bench_wrapper_only_inplace_%s_16mb", cn), cipher);
     }
 
-    // Message Single — 4 modes × 3 ciphers × 2 dirs = 24.
+    // Message Single — 4 modes × 9 ciphers × 2 dirs = 72.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
-        Cipher c = cipher;
-        facs ~= LazyCase(format("bench_msg_single_easy_nomac_%s_encrypt_16mb", cn),
-            () => makeMsgEasyNoMACEncSingle(
-                format("bench_msg_single_easy_nomac_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_easy_nomac_%s_decrypt_16mb", cn),
-            () => makeMsgEasyNoMACDecSingle(
-                format("bench_msg_single_easy_nomac_%s_decrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_easy_auth_%s_encrypt_16mb", cn),
-            () => makeMsgEasyAuthEncSingle(
-                format("bench_msg_single_easy_auth_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_easy_auth_%s_decrypt_16mb", cn),
-            () => makeMsgEasyAuthDecSingle(
-                format("bench_msg_single_easy_auth_%s_decrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_low_nomac_%s_encrypt_16mb", cn),
-            () => makeMsgLowNoMACEncSingle(
-                format("bench_msg_single_low_nomac_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_low_nomac_%s_decrypt_16mb", cn),
-            () => makeMsgLowNoMACDecSingle(
-                format("bench_msg_single_low_nomac_%s_decrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_low_auth_%s_encrypt_16mb", cn),
-            () => makeMsgLowAuthEncSingle(
-                format("bench_msg_single_low_auth_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_single_low_auth_%s_decrypt_16mb", cn),
-            () => makeMsgLowAuthDecSingle(
-                format("bench_msg_single_low_auth_%s_decrypt_16mb", cn), c));
+        facs ~= msgEasyNoMACEncSingleFac(
+            format("bench_msg_single_easy_nomac_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgEasyNoMACDecSingleFac(
+            format("bench_msg_single_easy_nomac_%s_decrypt_16mb", cn), cipher);
+        facs ~= msgEasyAuthEncSingleFac(
+            format("bench_msg_single_easy_auth_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgEasyAuthDecSingleFac(
+            format("bench_msg_single_easy_auth_%s_decrypt_16mb", cn), cipher);
+        facs ~= msgLowNoMACEncSingleFac(
+            format("bench_msg_single_low_nomac_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgLowNoMACDecSingleFac(
+            format("bench_msg_single_low_nomac_%s_decrypt_16mb", cn), cipher);
+        facs ~= msgLowAuthEncSingleFac(
+            format("bench_msg_single_low_auth_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgLowAuthDecSingleFac(
+            format("bench_msg_single_low_auth_%s_decrypt_16mb", cn), cipher);
     }
 
-    // Message Triple — 4 modes × 3 ciphers × 2 dirs = 24.
+    // Message Triple — 4 modes × 9 ciphers × 2 dirs = 72.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
-        Cipher c = cipher;
-        facs ~= LazyCase(format("bench_msg_triple_easy_nomac_%s_encrypt_16mb", cn),
-            () => makeMsgEasyNoMACEncTriple(
-                format("bench_msg_triple_easy_nomac_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_easy_nomac_%s_decrypt_16mb", cn),
-            () => makeMsgEasyNoMACDecTriple(
-                format("bench_msg_triple_easy_nomac_%s_decrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_easy_auth_%s_encrypt_16mb", cn),
-            () => makeMsgEasyAuthEncTriple(
-                format("bench_msg_triple_easy_auth_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_easy_auth_%s_decrypt_16mb", cn),
-            () => makeMsgEasyAuthDecTriple(
-                format("bench_msg_triple_easy_auth_%s_decrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_low_nomac_%s_encrypt_16mb", cn),
-            () => makeMsgLowNoMACEncTriple(
-                format("bench_msg_triple_low_nomac_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_low_nomac_%s_decrypt_16mb", cn),
-            () => makeMsgLowNoMACDecTriple(
-                format("bench_msg_triple_low_nomac_%s_decrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_low_auth_%s_encrypt_16mb", cn),
-            () => makeMsgLowAuthEncTriple(
-                format("bench_msg_triple_low_auth_%s_encrypt_16mb", cn), c));
-        facs ~= LazyCase(format("bench_msg_triple_low_auth_%s_decrypt_16mb", cn),
-            () => makeMsgLowAuthDecTriple(
-                format("bench_msg_triple_low_auth_%s_decrypt_16mb", cn), c));
+        facs ~= msgEasyNoMACEncTripleFac(
+            format("bench_msg_triple_easy_nomac_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgEasyNoMACDecTripleFac(
+            format("bench_msg_triple_easy_nomac_%s_decrypt_16mb", cn), cipher);
+        facs ~= msgEasyAuthEncTripleFac(
+            format("bench_msg_triple_easy_auth_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgEasyAuthDecTripleFac(
+            format("bench_msg_triple_easy_auth_%s_decrypt_16mb", cn), cipher);
+        facs ~= msgLowNoMACEncTripleFac(
+            format("bench_msg_triple_low_nomac_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgLowNoMACDecTripleFac(
+            format("bench_msg_triple_low_nomac_%s_decrypt_16mb", cn), cipher);
+        facs ~= msgLowAuthEncTripleFac(
+            format("bench_msg_triple_low_auth_%s_encrypt_16mb", cn), cipher);
+        facs ~= msgLowAuthDecTripleFac(
+            format("bench_msg_triple_low_auth_%s_decrypt_16mb", cn), cipher);
     }
 
-    // Streaming Single — 4 modes × 3 ciphers × 2 dirs = 24.
+    // Streaming Single — 4 modes × 9 ciphers × 2 dirs = 72.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
-        Cipher c = cipher;
-        facs ~= LazyCase(format("bench_stream_single_aead_easy_io_%s_encrypt_64mb", cn),
-            () => makeStreamAeadEasyEnc(1,
-                format("bench_stream_single_aead_easy_io_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_aead_easy_io_%s_decrypt_64mb", cn),
-            () => makeStreamAeadEasyDec(1,
-                format("bench_stream_single_aead_easy_io_%s_decrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_aead_low_io_%s_encrypt_64mb", cn),
-            () => makeStreamAeadLowEnc(false,
-                format("bench_stream_single_aead_low_io_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_aead_low_io_%s_decrypt_64mb", cn),
-            () => makeStreamAeadLowDec(false,
-                format("bench_stream_single_aead_low_io_%s_decrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_easy_userloop_%s_encrypt_64mb", cn),
-            () => makeStreamUserloopEasyEnc(1,
-                format("bench_stream_single_easy_userloop_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_easy_userloop_%s_decrypt_64mb", cn),
-            () => makeStreamUserloopEasyDec(1,
-                format("bench_stream_single_easy_userloop_%s_decrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_low_userloop_%s_encrypt_64mb", cn),
-            () => makeStreamUserloopLowEnc(false,
-                format("bench_stream_single_low_userloop_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_single_low_userloop_%s_decrypt_64mb", cn),
-            () => makeStreamUserloopLowDec(false,
-                format("bench_stream_single_low_userloop_%s_decrypt_64mb", cn), c));
+        facs ~= streamAeadEasyEncFac(1,
+            format("bench_stream_single_aead_easy_io_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamAeadEasyDecFac(1,
+            format("bench_stream_single_aead_easy_io_%s_decrypt_64mb", cn), cipher);
+        facs ~= streamAeadLowEncFac(false,
+            format("bench_stream_single_aead_low_io_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamAeadLowDecFac(false,
+            format("bench_stream_single_aead_low_io_%s_decrypt_64mb", cn), cipher);
+        facs ~= streamUserloopEasyEncFac(1,
+            format("bench_stream_single_easy_userloop_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamUserloopEasyDecFac(1,
+            format("bench_stream_single_easy_userloop_%s_decrypt_64mb", cn), cipher);
+        facs ~= streamUserloopLowEncFac(false,
+            format("bench_stream_single_low_userloop_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamUserloopLowDecFac(false,
+            format("bench_stream_single_low_userloop_%s_decrypt_64mb", cn), cipher);
     }
 
-    // Streaming Triple — 4 modes × 3 ciphers × 2 dirs = 24.
+    // Streaming Triple — 4 modes × 9 ciphers × 2 dirs = 72.
     foreach (cipher; CIPHER_NAMES)
     {
         string cn = ffiName(cipher);
-        Cipher c = cipher;
-        facs ~= LazyCase(format("bench_stream_triple_aead_easy_io_%s_encrypt_64mb", cn),
-            () => makeStreamAeadEasyEnc(3,
-                format("bench_stream_triple_aead_easy_io_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_aead_easy_io_%s_decrypt_64mb", cn),
-            () => makeStreamAeadEasyDec(3,
-                format("bench_stream_triple_aead_easy_io_%s_decrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_aead_low_io_%s_encrypt_64mb", cn),
-            () => makeStreamAeadLowEnc(true,
-                format("bench_stream_triple_aead_low_io_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_aead_low_io_%s_decrypt_64mb", cn),
-            () => makeStreamAeadLowDec(true,
-                format("bench_stream_triple_aead_low_io_%s_decrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_easy_userloop_%s_encrypt_64mb", cn),
-            () => makeStreamUserloopEasyEnc(3,
-                format("bench_stream_triple_easy_userloop_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_easy_userloop_%s_decrypt_64mb", cn),
-            () => makeStreamUserloopEasyDec(3,
-                format("bench_stream_triple_easy_userloop_%s_decrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_low_userloop_%s_encrypt_64mb", cn),
-            () => makeStreamUserloopLowEnc(true,
-                format("bench_stream_triple_low_userloop_%s_encrypt_64mb", cn), c));
-        facs ~= LazyCase(format("bench_stream_triple_low_userloop_%s_decrypt_64mb", cn),
-            () => makeStreamUserloopLowDec(true,
-                format("bench_stream_triple_low_userloop_%s_decrypt_64mb", cn), c));
+        facs ~= streamAeadEasyEncFac(3,
+            format("bench_stream_triple_aead_easy_io_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamAeadEasyDecFac(3,
+            format("bench_stream_triple_aead_easy_io_%s_decrypt_64mb", cn), cipher);
+        facs ~= streamAeadLowEncFac(true,
+            format("bench_stream_triple_aead_low_io_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamAeadLowDecFac(true,
+            format("bench_stream_triple_aead_low_io_%s_decrypt_64mb", cn), cipher);
+        facs ~= streamUserloopEasyEncFac(3,
+            format("bench_stream_triple_easy_userloop_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamUserloopEasyDecFac(3,
+            format("bench_stream_triple_easy_userloop_%s_decrypt_64mb", cn), cipher);
+        facs ~= streamUserloopLowEncFac(true,
+            format("bench_stream_triple_low_userloop_%s_encrypt_64mb", cn), cipher);
+        facs ~= streamUserloopLowDecFac(true,
+            format("bench_stream_triple_low_userloop_%s_decrypt_64mb", cn), cipher);
     }
 
     return facs;

@@ -151,7 +151,7 @@ func ITB_Version(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	return C.int(writeCString(libitbVersion, unsafe.Pointer(out), capBytes, outLen))
 }
 
-// Returns the number of PRF-grade hash primitives shipped (currently 9).
+// Returns the number of PRF-grade hash primitives shipped.
 //
 //export ITB_HashCount
 func ITB_HashCount() C.int { return C.int(capi.HashCount()) }
@@ -276,9 +276,8 @@ func ITB_SeedHashName(handle C.uintptr_t, out *C.char, capBytes C.size_t, outLen
 // primitive's native fixed-key size for the persistence-restore path.
 //
 // componentsLen must be in [8, MaxKeyBits/64] and a multiple of 8.
-// hashKeyLen, if non-zero, must match the primitive's fixed-key size:
-// 16 (aescmac), 32 (areion256/blake2{s,b256}/blake3/chacha20),
-// 64 (areion512/blake2b512). hashKey is ignored for "siphash24".
+// hashKeyLen, if non-zero, must match the primitive's fixed-key size,
+// hashKey is ignored for "siphash24".
 //
 //export ITB_NewSeedFromComponents
 func ITB_NewSeedFromComponents(
@@ -2444,14 +2443,12 @@ func ITB_Easy_DecryptStreamAuth(
 
 // ─── Format-deniability wrapper (outer CTR cipher) ─────────────────
 //
-// The wrapper surface seals an ITB ciphertext inside one of the nine
+// The wrapper surface seals an ITB ciphertext inside one of 
 // PRF-grade outer keystream ciphers so the wire bytes carry no header /
 // magic the receiver could match against. Every entry point dispatches off
-// a `cipher_name` string naming any PRF-grade ITB registry primitive
-// (areion256 / areion512 / siphash24 / aescmac / blake2b256 / blake2b512 /
-// blake2s / blake3 / chacha20), mirroring the MAC-factory
-// pattern: one unified ABI per operation rather than one per
-// cipher. The Go-side implementation lives in
+// a `cipher_name` string naming any PRF-grade ITB registry primitive,
+// mirroring the MAC-factory pattern: one unified ABI per operation rather
+// than one per cipher. The Go-side implementation lives in
 // github.com/everanium/itb/wrapper; the helpers in capi/wrapper.go
 // and capi/wrapper_handles.go bridge the C ABI to that package
 // without copying the body bytes.
@@ -2465,9 +2462,8 @@ func ITB_Easy_DecryptStreamAuth(
 // and the nonce buffer.
 
 // Reports the byte length of the keystream-cipher key for the named
-// outer cipher (16 for aescmac / siphash24, 32 for areion256 / chacha20 /
-// blake2b256 / blake2b512 / blake2s / blake3, 64 for areion512).
-// Returns ITB_ERR_BAD_INPUT for an unknown cipher name.
+// outer cipher (16 / 32 / 64). Returns ITB_ERR_BAD_INPUT for an
+// unknown cipher name.
 //
 //export ITB_WrapperKeySize
 func ITB_WrapperKeySize(cipherName *C.char, outSize *C.size_t) C.int {

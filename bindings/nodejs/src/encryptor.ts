@@ -204,8 +204,8 @@ export class Encryptor implements Disposable {
    * Constructs a fresh encryptor.
    *
    * @param primitive Canonical hash name from `listHashes()` —
-   *   `"areion256"`, `"areion512"`, `"siphash24"`, `"aescmac"`,
-   *   `"blake2b256"`, `"blake2b512"`, `"blake2s"`, `"blake3"`,
+   *   `"areion256"`, `"areion512"`, `"blake2b256"`, `"blake2b512"`,
+   *   `"blake2s"`, `"blake3"`, `"aescmac"`, `"siphash24"`,
    *   `"chacha20"`. Pass an empty string is not accepted — use a
    *   non-empty hash name.
    * @param keyBits ITB key width in bits (512, 1024, 2048; multiple

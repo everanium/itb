@@ -62,8 +62,7 @@ inline constexpr std::size_t kPayload16MB = static_cast<std::size_t>(16) << 20;
 
 // Canonical PRF-grade primitive order. Mirrored verbatim across every
 // binding's bench harness so cross-language diff comparisons align
-// row-for-row. Per CLAUDE.md "binding-side canonical order" exception
-// under "Primitive ordering ...". The three below-spec lab primitives
+// row-for-row. The three below-spec lab primitives
 // (CRC128, FNV-1a, MD5) are not exposed through the libitb registry
 // and are absent here by construction.
 inline constexpr const char* kPrimitivesCanonical[] = {
