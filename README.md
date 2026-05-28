@@ -504,7 +504,9 @@ func main() {
     enc.SetBarrierFill(4)            // CSPRNG fill margin
     enc.SetBitSoup(1)                // bit-level split
     enc.SetLockSoup(1)               // Insane Interlocked Mode
-    enc.SetLockBatch(1)              // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    enc.SetLockBatch(1)              // Recommended under the PRF assumption,
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -574,7 +576,9 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    itb.SetLockBatch(1)              // Recommended under the PRF assumption
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The batched arm wires the AVX-512 +
@@ -665,7 +669,9 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    enc.SetLockBatch(1)              // Recommended under the PRF assumption,
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -734,7 +740,10 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    enc.SetLockBatch(1)              // Recommended under the PRF assumption,
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
+
 
     // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
     // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
@@ -813,7 +822,9 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    itb.SetLockBatch(1)              // Recommended under the PRF assumption,
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The batched arm wires the AVX-512 +
@@ -898,7 +909,9 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    itb.SetLockBatch(1)              // Recommended under the PRF assumption,
+                                     // the performance Lock Soup mode.
+                                     // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The batched arm wires the AVX-512 +
@@ -1120,7 +1133,10 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
-    dec.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    dec.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
+
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
@@ -1182,7 +1198,9 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
                             // derivation channel — auto-couples SetLockSoup(1) +
@@ -1258,7 +1276,10 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
-    dec.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    dec.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
+
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
@@ -1319,7 +1340,9 @@ func main() {
     enc.SetBarrierFill(4)
     enc.SetBitSoup(1)
     enc.SetLockSoup(1)
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     //enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples LockSoup +
                             // BitSoup. Adds one extra seed slot. Must be called
@@ -1387,7 +1410,10 @@ func main() {
     dec.SetBarrierFill(4)
     dec.SetBitSoup(1)
     dec.SetLockSoup(1)
-    dec.SetLockBatch(1)     // Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+    dec.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
+
     //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
                             // lockSeed slot from the blob's lock_seed:true.
 
@@ -2381,7 +2407,6 @@ func main() {
                             // security is preserved under the PRF assumption while
                             // throughput rises. Symmetric option — set identically on
                             // the encrypt and decrypt sides.
-
 
     // Four independent CSPRNG-keyed Areion-SoEM-256 paired closures
     // (3 main seeds + 1 optional dedicated lockSeed). The third return
