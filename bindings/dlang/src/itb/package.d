@@ -28,10 +28,8 @@
 /// auto pt = decryptAuth(noise, data, start, mac, ct);
 /// ---
 ///
-/// Hash names match the canonical FFI registry: `areion256`,
-/// `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`,
-/// `aescmac`, `siphash24`, `chacha20`. MAC names: `kmac256`,
-/// `hmac-sha256`, `hmac-blake3`.
+/// Hash names match the canonical FFI registry.
+/// MAC names: `kmac256`, `hmac-sha256`, `hmac-blake3`.
 module itb;
 
 public import itb.status : Status;

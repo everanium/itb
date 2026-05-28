@@ -1216,7 +1216,7 @@ async function buildStreamCases(modes: StreamMode[]): Promise<BenchCase[]> {
 function buildLazyCases(): LazyCase[] {
   const lazy: LazyCase[] = [];
 
-  // Wrapper Only — 2 cases per cipher (18 total for 9 ciphers).
+  // Wrapper Only — 2 cases per cipher across every cipher in the palette.
   for (const cipher of CIPHER_NAMES) {
     lazy.push([
       `bench_wrapper_only/${cipher}/wrap`,
@@ -1257,7 +1257,7 @@ function buildLazyCases(): LazyCase[] {
     ]);
   }
 
-  // Message Single — 4 modes × 9 ciphers × 2 dirs = 72 cases.
+  // Message Single — 4 modes × every cipher × 2 dirs.
   //
   // Each def carries a makeState() factory that creates one keying
   // object (Encryptor or seeds+mac) and returns both runEnc and
@@ -1362,7 +1362,7 @@ function buildLazyCases(): LazyCase[] {
     }
   }
 
-  // Message Triple — 4 modes × 9 ciphers × 2 dirs = 72 cases.
+  // Message Triple — 4 modes × every cipher × 2 dirs.
   const msgTripleDefs: typeof msgSingleDefs = [];
   {
     msgTripleDefs.push({
@@ -1448,7 +1448,7 @@ function buildLazyCases(): LazyCase[] {
     }
   }
 
-  // Streaming Single — 4 modes × 9 ciphers × 2 dirs = 72 cases (async factories).
+  // Streaming Single — 4 modes × every cipher × 2 dirs (async factories).
   // Encrypt cases share state via buildStreamModesSingle() (safe for encrypt-only
   // direction). Decrypt cases build a fresh keying pair per factory invocation via
   // makeStreamDecryptPairSingle so that the wire pre-built inside the factory and
@@ -1489,7 +1489,7 @@ function buildLazyCases(): LazyCase[] {
     }
   }
 
-  // Streaming Triple — 4 modes × 9 ciphers × 2 dirs = 72 cases (async factories).
+  // Streaming Triple — 4 modes × every cipher × 2 dirs (async factories).
   for (const streamMode of buildStreamModesTriple()) {
     for (const cipher of CIPHER_NAMES) {
       lazy.push([
@@ -1547,7 +1547,7 @@ export async function runWrapperBench(): Promise<void> {
   // Build the (name, factory) list — no payload allocations yet.
   const lazyCases = buildLazyCases();
 
-  // Sanity assertion: 18 + 72 + 72 + 72 + 72 = 306 for 9 ciphers.
+  // Sanity assertion: expected total across the cipher palette.
   if (lazyCases.length !== 306) {
     console.error(
       `bench-wrapper: case count mismatch — expected 306, got ${lazyCases.length}`,

@@ -21,7 +21,7 @@
 //!     Low-Level User-Driven Loop) × 2 directions, per Single and
 //!     per Triple.
 //!
-//! The outer-cipher palette covers all 9 ciphers in
+//! The outer-cipher palette covers every cipher in
 //! PRIMITIVES_CANONICAL order (areion256, areion512, blake2b256,
 //! blake2b512, blake2s, blake3, aescmac, siphash24, chacha20).
 //!
@@ -72,7 +72,7 @@ const MAC_KEY: [u8; 32] = [
     0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0x01,
 ];
 
-// Full 9-cipher outer-keystream palette in PRIMITIVES_CANONICAL order
+// Full outer-keystream palette in PRIMITIVES_CANONICAL order
 // (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
 // aescmac, siphash24, chacha20).
 const CIPHERS: [Cipher; 9] = [

@@ -3,12 +3,12 @@
 
 Coverage mirrors the cross-binding contract for the wrapper surface:
 
-- 9 PRF-grade outer ciphers × 4 Single Message variants (wrap /
+- Every PRF-grade outer cipher × 4 Single Message variants (wrap /
   unwrap / wrap_in_place / unwrap_in_place) — round-trip + nonce
   hygiene.
-- 9 PRF-grade outer ciphers × streaming WrapStreamWriter /
+- Every PRF-grade outer cipher × streaming WrapStreamWriter /
   UnwrapStreamReader multi-chunk round-trip.
-- 9 PRF-grade outer ciphers × cross-FFI parity: Python ``wrapper.wrap`` output
+- Every PRF-grade outer cipher × cross-FFI parity: Python ``wrapper.wrap`` output
   is byte-recovered by the Go-native ``wrapper.Unwrap`` via a
   helper binary (``$ITB_WRAPPER_PARITY_BIN`` — optional; tests skip
   cleanly when the helper is not available).
@@ -332,7 +332,7 @@ class TestCrossFFIParity(unittest.TestCase):
     def setUpClass(cls):
         path = os.environ.get(
             "ITB_WRAPPER_PARITY_BIN",
-            "$HOME/scratch/wrapper_parity/parity_helper",
+            "/home/andrew/scratch/wrapper_parity/parity_helper",
         )
         cls.parity_bin = path if shutil.which(path) or Path(path).is_file() else None
 
