@@ -21,6 +21,29 @@ var prims = []struct {
 	{BLAKE3, 32, 32},
 }
 
+// batchPrims lists the primitives that expose a 4-wide batch PRF (only the
+// Areion family; BLAKE has no native SIMD batch path).
+var batchPrims = []struct {
+	name      string
+	keySize   int
+	blockSize int
+}{
+	{Areion256, 32, 32},
+	{Areion512, 64, 64},
+}
+
+// nonBatchPrims lists primitives that do NOT expose a batch path; NewBatch
+// must report ok=false with no error for each.
+var nonBatchPrims = []struct {
+	name    string
+	keySize int
+}{
+	{BLAKE2b256, 32},
+	{BLAKE2b512, 32},
+	{BLAKE2s, 32},
+	{BLAKE3, 32},
+}
+
 // TestKeyBlockSizes verifies the declared key and block sizes and the
 // unknown-name error paths.
 func TestKeyBlockSizes(t *testing.T) {
@@ -124,5 +147,149 @@ func TestPRFRegression(t *testing.T) {
 				t.Errorf("%s PRF = %s, want %s", c.name, got, c.want)
 			}
 		})
+	}
+}
+
+// TestNewBatchShape verifies NewBatch returns the declared block size and
+// ok=true for batch-capable primitives, and writes exactly blockSize bytes
+// into each of the four lanes.
+func TestNewBatchShape(t *testing.T) {
+	for _, p := range batchPrims {
+		key := bytes.Repeat([]byte{0xa5}, p.keySize)
+		batch, bs, ok, err := NewBatch(p.name, key)
+		if err != nil {
+			t.Fatalf("NewBatch(%q): %v", p.name, err)
+		}
+		if !ok {
+			t.Fatalf("NewBatch(%q) ok = false, want true", p.name)
+		}
+		if bs != p.blockSize {
+			t.Errorf("NewBatch(%q) blockSize = %d, want %d", p.name, bs, p.blockSize)
+		}
+		var in [4][]byte
+		var dst [4][]byte
+		for lane := 0; lane < 4; lane++ {
+			in[lane] = []byte("batch-input-lane-X")
+			in[lane][len(in[lane])-1] = byte('0' + lane)
+			dst[lane] = make([]byte, bs)
+		}
+		batch(&dst, &in)
+		// Per-lane output is non-zero (PRF over a non-trivial key/input).
+		zero := make([]byte, bs)
+		for lane := 0; lane < 4; lane++ {
+			if bytes.Equal(dst[lane], zero) {
+				t.Errorf("%s lane %d: PRF output is all zero", p.name, lane)
+			}
+		}
+		// Distinct lane inputs produce distinct outputs.
+		for i := 0; i < 4; i++ {
+			for j := i + 1; j < 4; j++ {
+				if bytes.Equal(dst[i], dst[j]) {
+					t.Errorf("%s: lane %d and lane %d produced equal output", p.name, i, j)
+				}
+			}
+		}
+	}
+}
+
+// TestNewBatchEqualsSingle is the load-bearing security claim of the batch
+// path: each lane's batched output must equal the single-input PRF over the
+// same key and input, byte-for-byte. The CTR keystream's batched code path
+// relies on this equivalence to remain interoperable with the single-block
+// path under the same (key, nonce, counter).
+func TestNewBatchEqualsSingle(t *testing.T) {
+	for _, p := range batchPrims {
+		key := make([]byte, p.keySize)
+		for i := range key {
+			key[i] = byte(0x10 + i)
+		}
+		// Build the batched and the single-input PRF over the same key.
+		batch, bs, ok, err := NewBatch(p.name, key)
+		if err != nil || !ok {
+			t.Fatalf("NewBatch(%q): err=%v ok=%v", p.name, err, ok)
+		}
+		single, sbs, err := New(p.name, key)
+		if err != nil {
+			t.Fatalf("New(%q): %v", p.name, err)
+		}
+		if bs != sbs {
+			t.Fatalf("%s: batch blockSize %d != single blockSize %d", p.name, bs, sbs)
+		}
+		// Four distinct inputs of equal length across the batch. The Areion
+		// SIMD batch path requires every lane to feed an input of the same
+		// length (it interleaves the lanes through one shared permutation
+		// pipeline); the canonical caller - the ctr PRF-counter keystream -
+		// always supplies four 24-byte (nonce || counter) inputs, so this
+		// equivalence test exercises the same regime.
+		base := bytes.Repeat([]byte{0x00}, 24)
+		inputs := [4][]byte{}
+		for lane := 0; lane < 4; lane++ {
+			b := append([]byte(nil), base...)
+			b[0] = byte(0xa0 + lane) // distinct per lane
+			b[8] = byte(lane)        // distinct counter-shaped tail
+			inputs[lane] = b
+		}
+		var batchIn [4][]byte
+		var batchOut [4][]byte
+		for lane := 0; lane < 4; lane++ {
+			batchIn[lane] = inputs[lane]
+			batchOut[lane] = make([]byte, bs)
+		}
+		batch(&batchOut, &batchIn)
+		// Single-input PRF over each lane's input.
+		for lane := 0; lane < 4; lane++ {
+			singleOut := make([]byte, bs)
+			single(singleOut, inputs[lane])
+			if !bytes.Equal(batchOut[lane], singleOut) {
+				t.Errorf("%s lane %d: batched output differs from single-input PRF\n  batch:  %x\n  single: %x",
+					p.name, lane, batchOut[lane], singleOut)
+			}
+		}
+	}
+}
+
+// TestNewBatchUnsupported verifies NewBatch returns ok=false with no error
+// for primitives lacking a SIMD batch path (the BLAKE family). Callers fall
+// back to four independent New() invocations in that case.
+func TestNewBatchUnsupported(t *testing.T) {
+	for _, p := range nonBatchPrims {
+		key := bytes.Repeat([]byte{0x42}, p.keySize)
+		batch, bs, ok, err := NewBatch(p.name, key)
+		if err != nil {
+			t.Errorf("NewBatch(%q): unexpected error %v", p.name, err)
+		}
+		if ok {
+			t.Errorf("NewBatch(%q): ok = true, want false (no batch path for this primitive)", p.name)
+		}
+		if batch != nil {
+			t.Errorf("NewBatch(%q): batch != nil for unsupported primitive", p.name)
+		}
+		if bs != 0 {
+			t.Errorf("NewBatch(%q): blockSize = %d, want 0 for unsupported primitive", p.name, bs)
+		}
+	}
+}
+
+// TestNewBatchErrors verifies the unknown-name and wrong-key-length error
+// paths of NewBatch.
+func TestNewBatchErrors(t *testing.T) {
+	if _, _, _, err := NewBatch("nope", make([]byte, 32)); err == nil {
+		t.Error("NewBatch(unknown): expected error, got nil")
+	}
+	for _, p := range batchPrims {
+		for _, bad := range []int{0, p.keySize - 1, p.keySize + 1} {
+			if _, _, _, err := NewBatch(p.name, make([]byte, bad)); err == nil {
+				t.Errorf("NewBatch(%q): accepted key length %d (want %d)", p.name, bad, p.keySize)
+			}
+		}
+	}
+	// Unknown-name error path on the BLAKE family side too - NewBatch must
+	// reject the name before reaching the ok=false branch.
+	for _, p := range nonBatchPrims {
+		for _, bad := range []int{0, p.keySize - 1, p.keySize + 1} {
+			if _, _, _, err := NewBatch(p.name, make([]byte, bad)); err == nil {
+				t.Errorf("NewBatch(%q): accepted key length %d (want %d)", p.name, bad, p.keySize)
+			}
+		}
 	}
 }
