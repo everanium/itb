@@ -576,7 +576,7 @@ func main() {
     itb.SetBarrierFill(4)
     itb.SetBitSoup(1)
     itb.SetLockSoup(1)
-    itb.SetLockBatch(1)              // Recommended under the PRF assumption
+    itb.SetLockBatch(1)              // Recommended under the PRF assumption,
                                      // the performance Lock Soup mode.
                                      // Symmetric, set on both sides.
 
@@ -1038,11 +1038,9 @@ func main() {
     enc.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
                             // bit-permutation overlay on top of bit-soup;
                             // auto-enabled for Single Ouroboros if SetBitSoup(1) is on
-    enc.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
-                            // in every case when the configured hash is PRF-grade, since
-                            // security is preserved under the PRF assumption while
-                            // throughput rises. Symmetric option — set identically on
-                            // the encrypt and decrypt sides.
+    enc.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
                             // derivation channel — separates that PRF's keying material
@@ -1609,11 +1607,9 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
-                            // in every case when the configured hash is PRF-grade, since
-                            // security is preserved under the PRF assumption while
-                            // throughput rises. Symmetric option — set identically on
-                            // the encrypt and decrypt sides.
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -1786,11 +1782,9 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
-                            // in every case when the configured hash is PRF-grade, since
-                            // security is preserved under the PRF assumption while
-                            // throughput rises. Symmetric option — set identically on
-                            // the encrypt and decrypt sides.
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -1955,11 +1949,9 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
-                            // in every case when the configured hash is PRF-grade, since
-                            // security is preserved under the PRF assumption while
-                            // throughput rises. Symmetric option — set identically on
-                            // the encrypt and decrypt sides.
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed BLAKE2b-512 paired closures
     // (noise / data / start / lock). The third return value
@@ -2113,11 +2105,9 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
-                            // in every case when the configured hash is PRF-grade, since
-                            // security is preserved under the PRF assumption while
-                            // throughput rises. Symmetric option — set identically on
-                            // the encrypt and decrypt sides.
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     // SipHash-2-4 has no internal fixed key — the seed components themselves
     // are the entire keying material. Three independent factory calls paired
@@ -2199,10 +2189,9 @@ itb.SetBitSoup(1)       // optional mode: bit-level split ("bit soup"), opt-in S
 // Most secure bit-permutation mode with performance trade-off ~2×-7× slower
 itb.SetLockSoup(1)      // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
                         // automatically engages itb.SetBitSoup(1)
-itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended in every case
-                        // when the configured hash is PRF-grade, since security is preserved under
-                        // the PRF assumption while throughput rises. Symmetric option — set
-                        // identically on the encrypt and decrypt sides.
+itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+                        // the performance Lock Soup mode.
+                        // Symmetric, set on both sides.
 
 // Eight independent CSPRNG-keyed Areion-SoEM-512 paired closures
 // (1 noise + 3 data + 3 start + 1 lock).
@@ -2402,11 +2391,9 @@ func main() {
                             // bit-permutation overlay on top of bit-soup;
                             // automatically enabled for Single Ouroboros if
                             // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Lock Batch is the performance Lock Soup mode: recommended
-                            // in every case when the configured hash is PRF-grade, since
-                            // security is preserved under the PRF assumption while
-                            // throughput rises. Symmetric option — set identically on
-                            // the encrypt and decrypt sides.
+    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+                            // the performance Lock Soup mode.
+                            // Symmetric, set on both sides.
 
     // Four independent CSPRNG-keyed Areion-SoEM-256 paired closures
     // (3 main seeds + 1 optional dedicated lockSeed). The third return
