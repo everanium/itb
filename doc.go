@@ -212,9 +212,9 @@
 //	enc.SetBarrierFill(4)
 //	enc.SetBitSoup(1);
 //	enc.SetLockSoup(1)
-//	enc.SetLockBatch(1)     // performance Lock Soup mode;
-//	                        // recommended under the PRF assumption,
-//	                        // symmetric, set on both sides.
+//	enc.SetLockBatch(1)     // Recommended under the PRF assumption,
+//	                        // the performance Lock Soup mode.
+//	                        // Symmetric, set on both sides.
 //	
 //	//enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples
 //	                        // LockSoup + BitSoup. Adds one extra seed slot.
@@ -238,9 +238,9 @@
 //	dec.SetBarrierFill(4)
 //	dec.SetBitSoup(1)
 //	dec.SetLockSoup(1)
-//	dec.SetLockBatch(1)     // performance Lock Soup mode;
-//	                        // recommended under the PRF assumption,
-//	                        // symmetric, set on both sides.
+//	dec.SetLockBatch(1)     // Recommended under the PRF assumption,
+//	                        // the performance Lock Soup mode.
+//	                        // Symmetric, set on both sides.
 //	
 //	dec.Import(blob)
 //	decrypted, _ := dec.Decrypt(encrypted)
@@ -252,9 +252,9 @@
 //	defer enc.Close()
 //	enc.SetBitSoup(1)
 //	enc.SetLockSoup(1)
-//	enc.SetLockBatch(1)     // performance Lock Soup mode;
-//	                        // recommended under the PRF assumption,
-//	                        // symmetric, set on both sides.
+//	enc.SetLockBatch(1)     // Recommended under the PRF assumption,
+//	                        // the performance Lock Soup mode.
+//	                        // Symmetric, set on both sides.
 //	
 //	encrypted, _ = enc.EncryptAuth(plaintext)
 //	// dec.DecryptAuth surfaces tampering as a non-nil error rather
@@ -267,9 +267,9 @@
 //	defer enc.Close()
 //	enc.SetBitSoup(1)
 //	enc.SetLockSoup(1)
-//	enc.SetLockBatch(1)     // performance Lock Soup mode;
-//	                        // recommended under the PRF assumption,
-//	                        // symmetric, set on both sides.
+//	enc.SetLockBatch(1)     // Recommended under the PRF assumption,
+//	                        // the performance Lock Soup mode.
+//	                        // Symmetric, set on both sides.
 //	
 //	encrypted, _ = enc.EncryptAuth(plaintext)
 //
@@ -320,9 +320,9 @@
 //	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation overlay on top of bit-soup;
 //	                        // ~2×-7× slower, raises SAT cryptanalysis to information-theoretic instance-formulation
 //	                        // automatically enabled for Single Ouroboros if itb.SetBitSoup(1) is enabled or vice versa
-//	itb.SetLockBatch(1)     // performance Lock Soup mode: batches the per-chunk overlay derivation. Recommended in every
-//	                        // case under the PRF assumption (no security loss for PRF-grade hashes); symmetric —
-//	                        // set on both the encrypt and decrypt sides
+//	itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+//	                        // the performance Lock Soup mode.
+//	                        // Symmetric, set on both sides.
 //
 //	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
 //	// PRF wiring, recommended default. The paired factory returns (single,
@@ -698,8 +698,9 @@
 //	                    // (Single) automatically engages Lock Soup overlay
 //	itb.SetLockSoup(1)  // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed
 //	                    // bit-permutation; ~2×-7× slower; auto-enables SetBitSoup(1)
-//	itb.SetLockBatch(1) // performance Lock Soup mode; recommended under the PRF assumption,
-//	                    // symmetric, set on both sides.
+//	itb.SetLockBatch(1) // Recommended under the PRF assumption,
+//	                    // the performance Lock Soup mode.
+//	                    // Symmetric, set on both sides.
 //
 // [SetLockSoup] is the keyed-bit-permutation overlay. It replaces the
 // public fixed bit-permutation with a per-chunk PRF-keyed bijection
@@ -810,9 +811,9 @@
 // would break decryptability of pre-switch chunks).
 //
 //	itb.SetLockSoup(1)      // engage overlay BEFORE attach
-//	itb.SetLockBatch(1)     // performance Lock Soup mode;
-//	                        // recommended under the PRF assumption,
-//	                        // symmetric, set on both sides.
+//	itb.SetLockBatch(1)     // Recommended under the PRF assumption,
+//	                        // the performance Lock Soup mode.
+//	                        // Symmetric, set on both sides.
 //	
 //	fnN, batchN, _ := itb.MakeAreionSoEM512Hash()
 //	fnL, batchL, _ := itb.MakeAreionSoEM512Hash()
