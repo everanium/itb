@@ -517,3 +517,195 @@ func TestWrapStreamReaderWriterLargeChunks(t *testing.T) {
 		})
 	}
 }
+
+// TestXORParallelMatchesSerial drives XORParallel at a buffer size
+// well above ParallelThreshold and verifies the output is byte-equal
+// to a single serial keystream of the same (name, key, nonce). This
+// exercises the C-ABI public entry as well as the parallel chunking
+// path inside xorParallelAt that the wire-format tests touch only
+// transitively.
+func TestXORParallelMatchesSerial(t *testing.T) {
+	const n = 4 * ParallelThreshold
+	for _, name := range CipherNames {
+		t.Run(name, func(t *testing.T) {
+			key, err := GenerateKey(name)
+			if err != nil {
+				t.Fatalf("GenerateKey: %v", err)
+			}
+			nonce, err := generateNonce(name)
+			if err != nil {
+				t.Fatalf("generateNonce: %v", err)
+			}
+			src := make([]byte, n)
+			if _, err := rand.Read(src); err != nil {
+				t.Fatalf("rand: %v", err)
+			}
+
+			gotParallel := make([]byte, n)
+			if err := XORParallel(name, key, nonce, gotParallel, src); err != nil {
+				t.Fatalf("XORParallel: %v", err)
+			}
+
+			ks, err := MakeKeystream(name, key, nonce)
+			if err != nil {
+				t.Fatalf("MakeKeystream: %v", err)
+			}
+			wantSerial := make([]byte, n)
+			ks.XORKeyStream(wantSerial, src)
+
+			if !bytes.Equal(gotParallel, wantSerial) {
+				t.Fatalf("XORParallel output differs from serial keystream")
+			}
+
+			// Inverse round-trip - XORing the parallel output a second
+			// time recovers the plaintext bit-exactly.
+			back := make([]byte, n)
+			if err := XORParallel(name, key, nonce, back, gotParallel); err != nil {
+				t.Fatalf("XORParallel inverse: %v", err)
+			}
+			if !bytes.Equal(back, src) {
+				t.Fatalf("XORParallel round-trip mismatch")
+			}
+		})
+	}
+}
+
+// TestXORParallelAtBaseOffset drives XORParallelAt at a non-zero base
+// offset and verifies the output matches a single serial keystream
+// advanced to the same offset. Exposes the streaming-continuity contract
+// of the C-ABI entry point.
+func TestXORParallelAtBaseOffset(t *testing.T) {
+	const head = 1024
+	const body = 4 * ParallelThreshold
+	for _, name := range CipherNames {
+		t.Run(name, func(t *testing.T) {
+			key, err := GenerateKey(name)
+			if err != nil {
+				t.Fatalf("GenerateKey: %v", err)
+			}
+			nonce, err := generateNonce(name)
+			if err != nil {
+				t.Fatalf("generateNonce: %v", err)
+			}
+
+			full := make([]byte, head+body)
+			if _, err := rand.Read(full); err != nil {
+				t.Fatalf("rand: %v", err)
+			}
+
+			// Serial reference: one keystream over the whole buffer.
+			ks, err := MakeKeystream(name, key, nonce)
+			if err != nil {
+				t.Fatalf("MakeKeystream: %v", err)
+			}
+			want := make([]byte, head+body)
+			ks.XORKeyStream(want, full)
+
+			// Two-stage parallel: first XOR the head at offset 0, then
+			// the body at offset head via XORParallelAt. The combined
+			// output must equal the single-keystream reference.
+			got := make([]byte, head+body)
+			if err := XORParallelAt(name, key, nonce, 0, got[:head], full[:head]); err != nil {
+				t.Fatalf("XORParallelAt head: %v", err)
+			}
+			if err := XORParallelAt(name, key, nonce, head, got[head:], full[head:]); err != nil {
+				t.Fatalf("XORParallelAt body: %v", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("XORParallelAt two-stage output differs from one-stage serial keystream")
+			}
+		})
+	}
+}
+
+// TestXORParallelInPlace verifies that XORParallel accepts dst and
+// src aliasing the same slice - the documented in-place mode.
+func TestXORParallelInPlace(t *testing.T) {
+	const n = 2 * ParallelThreshold
+	key, err := GenerateKey(CipherBLAKE3)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	nonce, err := generateNonce(CipherBLAKE3)
+	if err != nil {
+		t.Fatalf("generateNonce: %v", err)
+	}
+	original := make([]byte, n)
+	if _, err := rand.Read(original); err != nil {
+		t.Fatalf("rand: %v", err)
+	}
+	buf := append([]byte(nil), original...)
+	if err := XORParallel(CipherBLAKE3, key, nonce, buf, buf); err != nil {
+		t.Fatalf("XORParallel in-place encrypt: %v", err)
+	}
+	if bytes.Equal(buf, original) {
+		t.Fatalf("XORParallel in-place: buffer unchanged")
+	}
+	// XOR again - recovers the original.
+	if err := XORParallel(CipherBLAKE3, key, nonce, buf, buf); err != nil {
+		t.Fatalf("XORParallel in-place decrypt: %v", err)
+	}
+	if !bytes.Equal(buf, original) {
+		t.Fatalf("XORParallel in-place round-trip mismatch")
+	}
+}
+
+// The wrapWorkers w > maxWrapWorkers cap, the rand.Read failure
+// branches in GenerateKey / generateNonce, and the "if err != nil"
+// arms guarding ctr.New / ctr.NewAt failure for a name that already
+// passed the name-validation step are intentionally left untested -
+// they require either >32 logical CPUs visible to the runtime or a
+// crypto/rand environment failure, neither of which a unit test can
+// trigger portably.
+
+// TestWrapUnknownCipher exercises the unknown-cipher error path in
+// Wrap. The leading generateNonce call fails with a NonceSize lookup
+// error before any keystream work runs.
+func TestWrapUnknownCipher(t *testing.T) {
+	if out, err := Wrap("nonexistent", make([]byte, 16), []byte("payload")); err == nil || out != nil {
+		t.Fatalf("Wrap(nonexistent): got (%v, %v), want (nil, non-nil)", out, err)
+	}
+}
+
+// TestUnwrapUnknownCipher exercises the unknown-cipher error path in
+// Unwrap. The NonceSize lookup fails before any wire-length check.
+func TestUnwrapUnknownCipher(t *testing.T) {
+	if out, err := Unwrap("nonexistent", make([]byte, 16), make([]byte, 64)); err == nil || out != nil {
+		t.Fatalf("Unwrap(nonexistent): got (%v, %v), want (nil, non-nil)", out, err)
+	}
+}
+
+// TestUnwrapShortWire exercises the wire-shorter-than-nonce branch on
+// Unwrap (the in-place variant is already tested by the existing
+// suite; the allocating Unwrap path is not).
+func TestUnwrapShortWire(t *testing.T) {
+	for _, name := range CipherNames {
+		t.Run(name, func(t *testing.T) {
+			key, err := GenerateKey(name)
+			if err != nil {
+				t.Fatalf("GenerateKey: %v", err)
+			}
+			wire := []byte{0x00, 0x01, 0x02}
+			if out, err := Unwrap(name, key, wire); err == nil || out != nil {
+				t.Fatalf("%s: expected error on short wire, got (%v, %v)", name, out, err)
+			}
+		})
+	}
+}
+
+// TestWrapInPlaceUnknownCipher exercises the unknown-cipher error path
+// in WrapInPlace. The leading generateNonce call fails first.
+func TestWrapInPlaceUnknownCipher(t *testing.T) {
+	if nonce, err := WrapInPlace("nonexistent", make([]byte, 16), make([]byte, 64)); err == nil || nonce != nil {
+		t.Fatalf("WrapInPlace(nonexistent): got (%v, %v), want (nil, non-nil)", nonce, err)
+	}
+}
+
+// TestUnwrapInPlaceUnknownCipher mirrors the in-place variant of the
+// unknown-cipher rejection path - the NonceSize lookup fails before
+// the wire-length check.
+func TestUnwrapInPlaceUnknownCipher(t *testing.T) {
+	if out, err := UnwrapInPlace("nonexistent", make([]byte, 16), make([]byte, 64)); err == nil || out != nil {
+		t.Fatalf("UnwrapInPlace(nonexistent): got (%v, %v), want (nil, non-nil)", out, err)
+	}
+}
