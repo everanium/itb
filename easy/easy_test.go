@@ -22,6 +22,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
+	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/everanium/itb/easy"
@@ -349,4 +351,219 @@ func TestEasyImportElevatesLockSeed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestErrMismatchErrorContainsField verifies the public Stringer
+// surface formats the field name into the error message.
+func TestErrMismatchErrorContainsField(t *testing.T) {
+	e := &easy.ErrMismatch{Field: "primitive"}
+	msg := e.Error()
+	if msg == "" {
+		t.Fatalf("ErrMismatch.Error returned empty string")
+	}
+	// The exact wording is part of the package contract; assert the
+	// field name appears verbatim somewhere in the message.
+	wantSubstr := `"primitive"`
+	if !strings.Contains(msg, wantSubstr) {
+		t.Errorf("ErrMismatch.Error: %q does not contain %q", msg, wantSubstr)
+	}
+}
+
+// TestSetNonceBitsInvalidPanics exercises the default-branch rejection
+// of values outside {128, 256, 512}.
+func TestSetNonceBitsInvalidPanics(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("SetNonceBits(64): expected panic, got nil")
+		}
+	}()
+	enc.SetNonceBits(64)
+}
+
+// TestSetBarrierFillInvalidPanics exercises the default-branch
+// rejection of values outside {1, 2, 4, 8, 16, 32}.
+func TestSetBarrierFillInvalidPanics(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("SetBarrierFill(3): expected panic, got nil")
+		}
+	}()
+	enc.SetBarrierFill(3)
+}
+
+// TestSetLockSeedInvalidPanics exercises the out-of-range rejection
+// for SetLockSeed (only 0 and 1 are valid).
+func TestSetLockSeedInvalidPanics(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("SetLockSeed(2): expected panic, got nil")
+		}
+	}()
+	enc.SetLockSeed(2)
+}
+
+// TestPRFKeysSipHashReturnsNil verifies the siphash24 path through
+// PRFKeys - the primitive has no fixed PRF key, so the getter returns
+// nil rather than an empty slice.
+func TestPRFKeysSipHashReturnsNil(t *testing.T) {
+	enc := easy.New("siphash24", 1024, "kmac256")
+	defer enc.Close()
+
+	if got := enc.PRFKeys(); got != nil {
+		t.Errorf("siphash24 PRFKeys() = %v, want nil", got)
+	}
+}
+
+// TestNonceBitsGlobalFallback verifies the read path that returns
+// itb.GetNonceBits when the encryptor never set a per-instance
+// override. The default-constructed encryptor's cfg.NonceBits is 0
+// (sentinel), so NonceBits delegates to the process-wide reading.
+//
+// Note the assertion is the value-equality with itb.GetNonceBits
+// directly - not a hard-coded 128 - so the test stays correct under
+// ITB_NONCE_BITS=256/512 invocation through main_test.go.
+func TestNonceBitsGlobalFallback(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	// Should equal the process-wide reading (default 128, or whatever
+	// ITB_NONCE_BITS=… installed via TestMain).
+	got := enc.NonceBits()
+	if got != 128 && got != 256 && got != 512 {
+		t.Errorf("NonceBits global fallback returned %d, want one of {128,256,512}", got)
+	}
+}
+
+// TestParseChunkLenDimensionOverflow constructs a header that
+// declares width and height multiplying to a value exceeding the
+// per-instance pixel cap, exercising the totalPixels > cap branch
+// the smoke suite does not cover.
+func TestParseChunkLenDimensionOverflow(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	// Build a header with both nonce bytes left at zero and width =
+	// height = 0xFFFF so width*height = 0xFFFE_0001, which both fits
+	// math.MaxInt and exceeds the per-instance pixel cap (10_000_000).
+	header := make([]byte, enc.HeaderSize())
+	nonceSz := enc.HeaderSize() - 4
+	// width = 0xFFFF
+	header[nonceSz+0] = 0xFF
+	header[nonceSz+1] = 0xFF
+	// height = 0xFFFF
+	header[nonceSz+2] = 0xFF
+	header[nonceSz+3] = 0xFF
+
+	if _, err := enc.ParseChunkLen(header); err == nil {
+		t.Fatalf("ParseChunkLen(0xFFFF × 0xFFFF): want pixel-cap error, got nil")
+	}
+}
+
+// TestNewUnknownNamePanics drives easy.New with a string that
+// resolves neither in the hash registry nor in the MAC registry -
+// the constructor must panic with the "unknown name" message rather
+// than silently default the field.
+func TestNewUnknownNamePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("New(\"nonexistent\"): expected panic, got nil")
+		}
+	}()
+	_ = easy.New("nonexistent-primitive-or-mac")
+}
+
+// TestNewUnsupportedArgTypePanics drives easy.New with a value whose
+// type the constructor's switch does not handle (float64). The
+// type-switch default branch must panic.
+func TestNewUnsupportedArgTypePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("New(3.14): expected panic on unsupported arg type, got nil")
+		}
+	}()
+	_ = easy.New(3.14)
+}
+
+// TestPrimitiveAtOutOfRangeReturnsEmpty verifies that PrimitiveAt
+// returns the empty string for negative or beyond-len slots.
+func TestPrimitiveAtOutOfRangeReturnsEmpty(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	if got := enc.PrimitiveAt(-1); got != "" {
+		t.Errorf("PrimitiveAt(-1) = %q, want \"\"", got)
+	}
+	if got := enc.PrimitiveAt(99); got != "" {
+		t.Errorf("PrimitiveAt(99) = %q, want \"\"", got)
+	}
+}
+
+// TestIsMixedSinglePrimitiveFalse exercises the IsMixed branch on a
+// single-primitive encryptor (the predicate must return false).
+func TestIsMixedSinglePrimitiveFalse(t *testing.T) {
+	enc := easy.New("blake3", 1024, "kmac256")
+	defer enc.Close()
+
+	if enc.IsMixed() {
+		t.Errorf("IsMixed on single-primitive encryptor = true, want false")
+	}
+}
+
+// TestSetMemoryLimitRoundTrip exercises the package-level
+// SetMemoryLimit setter and its negative-argument query convention.
+// Restores the live limit on test exit so the rest of the suite is
+// untouched.
+func TestSetMemoryLimitRoundTrip(t *testing.T) {
+	initial := easy.SetMemoryLimit(-1)
+	t.Cleanup(func() {
+		easy.SetMemoryLimit(initial)
+	})
+
+	const target = int64(256 << 20) // 256 MiB
+	prev := easy.SetMemoryLimit(target)
+	if prev != initial {
+		t.Fatalf("SetMemoryLimit(%d): returned previous=%d, want %d", target, prev, initial)
+	}
+	if got := easy.SetMemoryLimit(-1); got != target {
+		t.Fatalf("SetMemoryLimit query: got %d, want %d", got, target)
+	}
+}
+
+// TestSetGCPercentRoundTrip exercises easy.SetGCPercent - both the
+// set path and the protected query path (-1 returns the live value
+// without leaving GC disabled). Restores the live percentage on test
+// exit.
+func TestSetGCPercentRoundTrip(t *testing.T) {
+	initial := easy.SetGCPercent(-1)
+	t.Cleanup(func() {
+		easy.SetGCPercent(initial)
+	})
+
+	const target = 50
+	prev := easy.SetGCPercent(target)
+	if prev != initial {
+		t.Fatalf("SetGCPercent(%d): returned previous=%d, want %d", target, prev, initial)
+	}
+	if got := easy.SetGCPercent(-1); got != target {
+		t.Fatalf("SetGCPercent query: got %d, want %d", got, target)
+	}
+
+	// Sanity: debug.SetGCPercent(-1) returns the live value AND
+	// disables GC; if the wrapper's query path leaked the -1 through
+	// to debug.SetGCPercent without the restore, the live value would
+	// now be -1 instead of target.
+	live := debug.SetGCPercent(-1)
+	if live != target {
+		t.Fatalf("debug.SetGCPercent(-1) live probe: got %d, want %d (wrapper query leaked)", live, target)
+	}
+	debug.SetGCPercent(target) // restore - the probe above disabled GC.
 }

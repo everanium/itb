@@ -37,7 +37,7 @@ func TestWrapperSizes(t *testing.T) {
 	want := map[string]struct {
 		key, nonce int
 	}{
-		"aescmac":     {16, 16},
+		"aescmac":   {16, 16},
 		"siphash24": {16, 16},
 		"chacha20":  {32, 12},
 	}
