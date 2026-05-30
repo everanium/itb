@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ciphertext under one of outer keystream ciphers, one per PRF-grade ITB registry primitive: Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4 in CTR mode, ChaCha20 (RFC8439). The keystream construction is delegated to the [`ctr`](../ctr/) package; AES-128-CTR and ChaCha20 use their native modes, the others run in PRF-counter mode. The wire format becomes `nonce || keystream-XOR(bytestream)`, indistinguishable from any generic stream-cipher payload by surface pattern; ITB's own content-deniability is unchanged.
+The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ciphertext under one of outer keystream ciphers, one per PRF-grade ITB registry primitive: Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4 in CTR mode, ChaCha20 (RFC 8439). The keystream construction is delegated to the [`ctr`](../ctr/) package; AES-128-CTR and ChaCha20 use their native modes, the others run in PRF-counter mode. The wire format becomes `nonce || keystream-XOR(bytestream)`, indistinguishable from any generic stream-cipher payload by surface pattern; ITB's own content-deniability is unchanged.
 
 The numbers below isolate the **outer cipher cost** that the wrapper layer adds on top of ITB. Two test scopes:
 
@@ -33,7 +33,7 @@ go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -co
 
 ### Configuration
 
-* Outer cipher path: all PRF-grade registry primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4, ChaCha20 (RFC8439)), keystream built by the `ctr` package; blob XOR parallelised across up to 32 workers.
+* Outer cipher path: all PRF-grade registry primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4, ChaCha20 (RFC 8439)), keystream built by the `ctr` package; blob XOR parallelised across up to 32 workers.
 * ITB primitive: Areion-SoEM-512.
 * ITB seed width: 1024 bits.
 * ITB cipher config: `NonceBits=128`, `BarrierFill=1`, `BitSoup=0`, `LockSoup=0` (minimum config so the outer cipher delta is not masked by per-pixel feature cost).

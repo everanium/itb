@@ -9,7 +9,7 @@ import (
 
 // supported lists the registry names this package version derives from,
 // in registry order.
-var supported = []string{"siphash24", "aescmac", "chacha20"}
+var supported = []string{"aescmac", "siphash24", "chacha20"}
 
 // master32 is a fixed 32-byte master used across the deterministic and
 // domain-separation tests. It is long enough to satisfy every supported
@@ -73,8 +73,8 @@ func TestDeriveRegressionVectors(t *testing.T) {
 		name string
 		want string
 	}{
-		{"siphash24", "aef03fab904b3e3377c39a574ba3b5d5cfd2e97e021e7871ff6150ccb47c4a6f291ddd1dbe9b3984343c37dd6f072873"},
 		{"aescmac", "e255dfa6f4631e8d56d6e0c7573014028a29d5f3252428e244223356cf62ba078301921ae9620d23196d9883d3e864f4"},
+		{"siphash24", "aef03fab904b3e3377c39a574ba3b5d5cfd2e97e021e7871ff6150ccb47c4a6f291ddd1dbe9b3984343c37dd6f072873"},
 		{"chacha20", "6588dece105ef22444a841af95daacae6455748e58d1f4ab73eb4ab1b350821ef1b4dc559789d2cd88369627a31a413e"},
 	}
 	for _, c := range cases {
@@ -254,8 +254,8 @@ func TestMasterTruncation(t *testing.T) {
 		name    string
 		keySize int
 	}{
-		{"siphash24", siphash24KeySize},
 		{"aescmac", aescmacKeySize},
+		{"siphash24", siphash24KeySize},
 		{"chacha20", chacha20KeySize},
 	}
 	for _, c := range cases {
@@ -294,8 +294,8 @@ func TestErrMasterTooShort(t *testing.T) {
 		name    string
 		keySize int
 	}{
-		{"siphash24", siphash24KeySize},
 		{"aescmac", aescmacKeySize},
+		{"siphash24", siphash24KeySize},
 		{"chacha20", chacha20KeySize},
 	}
 	for _, c := range cases {
