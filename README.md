@@ -59,6 +59,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Camellia-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
 | SM4-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
 | ARIA-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
+| Kuznyechik-OMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
 | KT128 | 128 | Planned | KangarooTwelve | — | Own (Go) | TBD |
 | Areion-SoEM-256 | 256 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
 | BLAKE2b-256 | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
@@ -68,7 +69,6 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Haraka-256 | 256 | Planned | Davies-Meyer / MD | — | `jedisct1/go-aes` | TBD |
 | HMAC-SM3 | 256 | Deferred | Merkle-Damgård | — | Own (Go) | TBD |
 | KT256 | 256 | Planned | KangarooTwelve | — | Own (Go) | TBD |
-| Kuznyechik-CMAC | 256 | Planned | CBC-MAC | — | Own (Go) | TBD |
 | Streebog-S-256 | 256 | Planned | Sandwich-MAC | — | Own (Go) | TBD |
 | HMAC-Streebog-256 | 256 | Planned | Merkle-Damgård | — | Own (Go) | TBD |
 | HMAC-SHA256 | 256 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
