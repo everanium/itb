@@ -20,10 +20,10 @@ type prfHashCTRBatch struct {
 	blockSize int
 	counter   uint64
 	inStore   [4][hashCTRNonceSize + 8]byte // nonce(16) || LE64(counter) per lane
-	in        [4][]byte                      // slices into inStore
-	out       [4][]byte                      // slices into keystrm (one block each)
-	keystrm   []byte                         // 4*blockSize; lane k at [k*blockSize:]
-	keystrmN  int                            // unconsumed trailing bytes of keystrm
+	in        [4][]byte                     // slices into inStore
+	out       [4][]byte                     // slices into keystrm (one block each)
+	keystrm   []byte                        // 4*blockSize; lane k at [k*blockSize:]
+	keystrmN  int                           // unconsumed trailing bytes of keystrm
 }
 
 // newPrfHashCTRBatch validates lengths, builds the batch PRF, and wires the

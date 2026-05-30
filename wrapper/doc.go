@@ -29,7 +29,7 @@
 //   - AES-128-CTR (16-byte nonce) — stdlib, AES-NI accelerated.
 //   - BLAKE2b-256 / BLAKE2b-512 / BLAKE2s / BLAKE3 (16-byte nonce) — upstream
 //     keyed-hash mode driving a PRF-CTR keystream.
-//   - ChaCha20 (RFC8439) (12-byte nonce) — golang.org/x/crypto/chacha20.
+//   - ChaCha20 (RFC 8439) (12-byte nonce) — golang.org/x/crypto/chacha20.
 //
 // Per-stream nonce hygiene: every Wrap entry point generates a fresh CSPRNG
 // nonce and emits it once at stream start. Each byte position of a stream maps

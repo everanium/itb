@@ -46,7 +46,7 @@ type Keystream interface {
 | `blake3` | native keyed BLAKE3 PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 32-byte keystream blocks, keystream-block collision bound 2^128. See CONSTRUCTIONS.md. |
 | `aescmac` | AES-128 in CTR mode (`crypto/cipher.NewCTR` over `crypto/aes`) | 16 bytes | 16 bytes | Standard NIST CTR mode; AES-NI accelerated on supported hosts. The 16-byte nonce is the CTR initial counter block. |
 | `siphash24` | SipHash-2-4 PRF in counter mode, 128-bit output | 16 bytes | 16 bytes | PRF-counter construction; keystream-block collision bound is 2^64. See CONSTRUCTIONS.md. |
-| `chacha20` | ChaCha20 (RFC8439) keystream (`golang.org/x/crypto/chacha20`) | 32 bytes | 12 bytes | Standard RFC8439 ChaCha20 keystream. |
+| `chacha20` | ChaCha20 (RFC 8439) keystream (`golang.org/x/crypto/chacha20`) | 32 bytes | 12 bytes | Standard RFC 8439 ChaCha20 keystream. |
 
 All registry primitives are supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside of supported primitives above. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
 

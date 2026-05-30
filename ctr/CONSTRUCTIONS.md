@@ -32,7 +32,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 | `blake3` | native keyed BLAKE3, 32-byte output | PRF-counter mode, 32-byte keystream blocks | 32 bytes | 16 bytes |
 | `aescmac` | AES-128 (`crypto/aes`) | AES-128 in CTR mode (`crypto/cipher.NewCTR`) | 16 bytes | 16 bytes |
 | `siphash24` | SipHash-2-4, 128-bit output (`github.com/dchest/siphash`) | PRF-counter mode, 16-byte keystream blocks | 16 bytes | 16 bytes |
-| `chacha20` | ChaCha20 (RFC8439) (`golang.org/x/crypto/chacha20`) | RFC8439 ChaCha20 keystream | 32 bytes | 12 bytes |
+| `chacha20` | ChaCha20 (RFC 8439) (`golang.org/x/crypto/chacha20`) | RFC 8439 ChaCha20 keystream | 32 bytes | 12 bytes |
 
 ## Areion-CTR (registry: `areion256`, `areion512`)
 
@@ -122,7 +122,7 @@ Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) a
 
 **Underlying primitive.** ChaCha20 stream cipher, RFC 8439 variant (`golang.org/x/crypto/chacha20.NewUnauthenticatedCipher`).
 
-**Construction.** The ChaCha20 (RFC8439) keystream directly.
+**Construction.** The ChaCha20 (RFC 8439) keystream directly.
 
 1. The 32-byte key is the ChaCha20 key.
 2. The 12-byte nonce is the RFC 8439 nonce.
@@ -142,4 +142,4 @@ Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) a
 
 **Nonce-reuse caveat.** As with every counter-mode keystream, reusing a `(key, nonce)` pair across two distinct messages reuses the same keystream and is a confidentiality break (the XOR of the two ciphertexts equals the XOR of the two plaintexts). A distinct per-stream nonce under a fixed key is required for all constructions.
 
-**Standards posture.** `aescmac` (AES-128-CTR) and `chacha20` (RFC8439 ChaCha20) are standard, widely analysed keystreams. `siphash24`, the four BLAKE names, `areion256`, and `areion512` are sound PRF-counter constructions over non-NIST PRFs: `siphash24` inherits SipHash-2-4's PRF argument, the BLAKE names inherit the keyed-BLAKE PRF argument, and the Areion names inherit the SoEM-PRP argument behind the Areion-SoEM keyed hash. None of the seven PRF-counter constructions is a NIST-approved cipher. These distinctions are stated so an integrator selecting a construction for a regulated context knows which keystreams are standard and which are PRF-counter constructions.
+**Standards posture.** `aescmac` (AES-128-CTR) and `chacha20` (RFC 8439 ChaCha20) are standard, widely analysed keystreams. `siphash24`, the four BLAKE names, `areion256`, and `areion512` are sound PRF-counter constructions over non-NIST PRFs: `siphash24` inherits SipHash-2-4's PRF argument, the BLAKE names inherit the keyed-BLAKE PRF argument, and the Areion names inherit the SoEM-PRP argument behind the Areion-SoEM keyed hash. None of the seven PRF-counter constructions is a NIST-approved cipher. These distinctions are stated so an integrator selecting a construction for a regulated context knows which keystreams are standard and which are PRF-counter constructions.
