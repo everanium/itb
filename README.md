@@ -68,12 +68,17 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | Haraka-256 | 256 | Planned | Davies-Meyer / MD | — | `jedisct1/go-aes` | TBD |
 | HMAC-SM3 | 256 | Deferred | Merkle-Damgård | — | Own (Go) | TBD |
 | KT256 | 256 | Planned | KangarooTwelve | — | Own (Go) | TBD |
+| Kuznyechik-CMAC | 256 | Planned | CBC-MAC | — | Own (Go) | TBD |
+| Streebog-S-256 | 256 | Planned | Sandwich-MAC | — | Own (Go) | TBD |
+| HMAC-Streebog-256 | 256 | Planned | Merkle-Damgård | — | Own (Go) | TBD |
 | HMAC-SHA256 | 256 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
 | Areion-SoEM-512 | 512 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
 | BLAKE2b-512 | 512 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
 | Vistrutah-MP-512 | 512 | Planned | Miyaguchi-Preneel | — | `jedisct1/go-aes` | TBD |
 | Haraka-512 | 512 | Planned | Davies-Meyer / MD (Dual-Chain) | — | `jedisct1/go-aes` | TBD |
 | KT256-XOF-512 | 512 | Planned | KangarooTwelve | — | Own (Go) | TBD |
+| Streebog-S-512 | 512 | Planned | Sandwich-MAC | — | Own (Go) | TBD |
+| HMAC-Streebog-512 | 512 | Planned | Merkle-Damgård | — | Own (Go) | TBD |
 | HMAC-SHA512 | 512 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
 
 ## Bindings
