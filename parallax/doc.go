@@ -4,13 +4,23 @@
 // chosen from the palette by a per-message keyed schedule.
 //
 // Honest framing. The construction does NOT strengthen any individual
-// cipher: the security floor is min(palette). The value is vendor and
-// jurisdictional diversity — keying material flows through more than one
-// algorithm family per message, so a deployed pipeline can avoid baking
-// in a single foreign primitive — and defense-in-depth that is only
-// multiplicative against an adversary capable of breaking the inner ITB
-// barrier. Treat parallax as a transparent envelope, not as a
-// cryptographic upgrade.
+// cipher's per-segment keystream: where slot-k is the assigned
+// keystream for a segment, the adversary's task on that segment is no
+// harder than breaking cipher k in isolation. The value is vendor and
+// jurisdictional diversity — keying material flows through more than
+// one algorithm family per message, so a deployed pipeline can avoid
+// baking in a single foreign primitive — and multiplicative
+// defense-in-depth across the palette: recovery of one slot's subkey
+// through a key-recovery attack on the corresponding cipher does NOT
+// yield the master, the scheduling subkey, or any other slot's
+// subkey under the PRF assumption on the anchor primitive's KDF.
+// Plaintext recovery from a single recovered slot subkey is therefore
+// bounded by the schedule permutation entropy (log_2(N!) bits)
+// combined with the attacker's plaintext-validity oracle, and even
+// then exposes only the segments that fall on the recovered slot.
+// Treat parallax as a transparent envelope that dilutes exposure to a
+// single primitive's catastrophic break across the full palette, not
+// as a cryptographic upgrade over a single strong primitive.
 //
 // The keystream layer routes through the registry primitives exposed by
 // the ctr and kdf packages; any name accepted by ctr.NewResettable is a
