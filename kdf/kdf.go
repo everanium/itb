@@ -37,8 +37,8 @@ import (
 
 // Key sizes per supported primitive, in bytes.
 const (
-	siphash24KeySize = 16 // (k0, k1) little-endian halves
 	aescmacKeySize   = 16 // AES-128
+	siphash24KeySize = 16 // (k0, k1) little-endian halves
 	chacha20KeySize  = 32 // XChaCha20 key
 )
 

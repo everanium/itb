@@ -13,8 +13,8 @@ var ciphers = []struct {
 	keySize   int
 	nonceSize int
 }{
-	{CipherSipHash24, 16, 16},
 	{CipherAES128CTR, 16, 16},
+	{CipherSipHash24, 16, 16},
 	{CipherChaCha20, 32, 12},
 }
 

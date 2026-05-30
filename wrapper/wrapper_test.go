@@ -194,8 +194,8 @@ func TestMakeKeystreamBadKeyLen(t *testing.T) {
 		badKey  []byte
 		nonceOK []byte
 	}{
-		{CipherSipHash24, make([]byte, 15), make([]byte, 16)},
 		{CipherAES128CTR, make([]byte, 15), make([]byte, 16)},
+		{CipherSipHash24, make([]byte, 15), make([]byte, 16)},
 		{CipherChaCha20, make([]byte, 31), make([]byte, 12)},
 	}
 	for _, c := range cases {
@@ -215,8 +215,8 @@ func TestMakeKeystreamBadNonceLen(t *testing.T) {
 		keyOK    []byte
 		badNonce []byte
 	}{
-		{CipherSipHash24, make([]byte, 16), make([]byte, 15)},
 		{CipherAES128CTR, make([]byte, 16), make([]byte, 15)},
+		{CipherSipHash24, make([]byte, 16), make([]byte, 15)},
 		{CipherChaCha20, make([]byte, 32), make([]byte, 11)},
 	}
 	for _, c := range cases {
@@ -385,11 +385,11 @@ func TestDeriveKey(t *testing.T) {
 func TestDeriveKeyDomainSeparation(t *testing.T) {
 	master := make([]byte, 32)
 	rand.Read(master)
-	ks, err := DeriveKey(CipherSipHash24, master)
+	ka, err := DeriveKey(CipherAES128CTR, master)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ka, err := DeriveKey(CipherAES128CTR, master)
+	ks, err := DeriveKey(CipherSipHash24, master)
 	if err != nil {
 		t.Fatal(err)
 	}

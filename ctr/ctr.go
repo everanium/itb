@@ -61,10 +61,10 @@ func KeySize(name string) (int, error) {
 // NonceSize returns the nonce length for the named cipher.
 func NonceSize(name string) (int, error) {
 	switch name {
-	case CipherSipHash24:
-		return 16, nil
 	case CipherAES128CTR:
 		return aes.BlockSize, nil // 16
+	case CipherSipHash24:
+		return 16, nil
 	case CipherChaCha20:
 		return chacha20.NonceSize, nil // 12
 	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
@@ -82,8 +82,6 @@ func NonceSize(name string) (int, error) {
 // unknown-cipher error.
 func New(name string, key, nonce []byte) (Keystream, error) {
 	switch name {
-	case CipherSipHash24:
-		return newSipHashCTR(key, nonce)
 	case CipherAES128CTR:
 		if len(key) != 16 {
 			return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
@@ -96,6 +94,8 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 			return nil, err
 		}
 		return cipher.NewCTR(block, nonce), nil
+	case CipherSipHash24:
+		return newSipHashCTR(key, nonce)
 	case CipherChaCha20:
 		if len(key) != chacha20.KeySize {
 			return nil, fmt.Errorf("ctr: chacha20 key must be %d bytes, got %d", chacha20.KeySize, len(key))
