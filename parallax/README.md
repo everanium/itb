@@ -1,4 +1,4 @@
-# parallax — Horizontal cipher multiplexing over a configurable palette
+# ITB Parallax Horizontal-Multiplexing
 
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
 >
@@ -92,11 +92,10 @@ Segment size `S` must satisfy `0 < S ≤ MaxSegmentSize` (65535) and `gcd(S, 504
 | S | gcd(S, 504) | accepted |
 |---|---:|:---:|
 | 4093 (`DefaultSegmentSize`) | 1 | yes |
-| 11, 13, 17, 19, 23, 251 | 1 | yes |
-| 16381, 65521 | 1 | yes |
-| 14, 15, 18, 21 | >1 | no |
+| 17, 19, 23, 127, 131, 251, 16381, 65521 | 1 | yes |
+| 14, 15, 18, 21, 128, 252, 16382, 65535 | >1 | no |
 
-Any positive coprime value within the upper bound is accepted; prime choices in the 17–64 range are reasonable when a tighter per-segment cipher granularity is needed than the default offers.
+Any positive coprime value within the upper bound is accepted; prime choices in the 17–131 range are reasonable when a tighter per-segment cipher granularity is needed than the default offers.
 
 ### Streaming chunk size
 
@@ -166,11 +165,7 @@ func main() {
     if err != nil {
         panic(err)
     }
-    // After NewCipherset returns, cs holds only the derived per-slot
-    // subkeys and the scheduling subkey; the master itself is no longer
-    // needed. Zeroize it before it leaves scope to keep its bytes off the
-    // heap residue:
-    // for i := range master { master[i] = 0 }
+    clear(master) // wipe master once cs holds the derived subkeys
 
     plaintext := []byte("any text or binary data — including 0x00 bytes")
 
@@ -190,7 +185,7 @@ func main() {
     // (palette + segment size) is deployment-config and survives rotation:
     // newMaster := nextSharedSecret // e.g. a follow-up ML-KEM encapsulation
     // csRotated, _ := parallax.NewCipherset(newMaster, schedule)
-    // for i := range newMaster { newMaster[i] = 0 }
+    // clear(newMaster)
 
     fmt.Printf("round-trip ok: %t\n", string(recovered) == string(plaintext))
 }

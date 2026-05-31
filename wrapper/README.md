@@ -1,4 +1,4 @@
-# ITB Examples Code
+# ITB Format-Deniability Wrapper
 
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
 >
@@ -72,7 +72,7 @@ defer enc.Close()
 enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup(1)
 
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
 // Sender
@@ -100,7 +100,7 @@ macKey := make([]byte, 32); rand.Read(macKey)
 macFunc, _ := macs.Make("hmac-blake3", macKey)
 
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
 _ = itb.EncryptStreamAuth(noise, data, start, plaintextReader, wrapWriter, macFunc, chunkSize)
@@ -130,7 +130,7 @@ The README's "Alternative — User-Driven Loop" pattern: each chunk is one indep
 
 ```go
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
 // Sender
@@ -186,7 +186,7 @@ Per-chunk `itb.Encrypt` / `itb.Decrypt` with caller-side framing. Wrap shape: `N
 
 ```go
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
 var wireBuf bytes.Buffer
@@ -230,7 +230,7 @@ enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup
 encrypted, _ := enc.Encrypt(plaintext)
 
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
@@ -251,7 +251,7 @@ enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup
 encrypted, _ := enc.EncryptAuth(plaintext)
 
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
@@ -275,7 +275,7 @@ start, _ := itb.NewSeed512(2048, hashFn)
 encrypted, _ := itb.Encrypt(noise, data, start, plaintext)
 
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
@@ -302,7 +302,7 @@ macFunc, _ := macs.Make("hmac-blake3", macKey)
 encrypted, _ := itb.EncryptAuth(noise, data, start, plaintext, macFunc)
 
 // Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master)
+// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
