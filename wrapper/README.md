@@ -77,13 +77,6 @@ The blob wire is `nonce(NonceSize(name)) || keystream-XOR(blob)`; total length i
 
 No length-prefix or other framing byte appears in cleartext on the wire in any wrap shape. The User-Driven Loop variant emits per-chunk length prefixes through the wrap writer so the framing bytes also pass through the keystream XOR alongside the chunk bodies.
 
-### Wrap-shape pairs
-
-| Helper pair | Wire format | Use case |
-|---|---|---|
-| `Wrap` / `Unwrap` (+ `WrapInPlace` / `UnwrapInPlace`) | `nonce || keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output |
-| `NewWrapWriter` / `NewUnwrapReader` | `nonce || keystream-XOR(continuous bytestream)` | streaming — IO-Driven, or User-Driven Loop where caller-side framing (e.g. per-chunk `u32_LE` length prefixes) is written through the wrap writer so the framing bytes also pass through the keystream XOR |
-
 ## Outer ciphers
 
 The keystream for each outer cipher is built by the [`ctr`](../ctr/) package,
