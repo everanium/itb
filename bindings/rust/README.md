@@ -156,7 +156,7 @@ let mut enc = itb::Encryptor::new(Some("areion512"), Some(1024),
 
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr)?;
-// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?;
+// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?; master.fill(0);
 
 // Sender — encrypt to an intermediate file, then wrap end-to-end
 // through one keystream session.
@@ -260,7 +260,7 @@ let mac = itb::MAC::new("hmac-blake3", &mac_key)?;
 
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr)?;
-// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?;
+// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?; master.fill(0);
 
 // Sender — encrypt to an intermediate file, then wrap end-to-end.
 {
@@ -357,7 +357,7 @@ use itb::wrapper::{self, Cipher, UnwrapStreamReader, WrapStreamWriter};
 
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
-// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?;
+// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?; master.fill(0);
 
 // Per-instance configuration — mutates only this encryptor's
 // Config. Two encryptors built side-by-side carry independent
@@ -541,7 +541,7 @@ use itb::wrapper::{self, Cipher};
 
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
-// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?;
+// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?; master.fill(0);
 
 // Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
 // Every name must share the same native hash width — mixing widths
@@ -651,7 +651,7 @@ use itb::wrapper::{self, Cipher};
 
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
-// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?;
+// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?; master.fill(0);
 
 // mode=3 selects Triple Ouroboros. All other constructor arguments
 // behave identically to the Single (mode=1) case shown above.
@@ -743,7 +743,7 @@ let mac = MAC::new("hmac-blake3", &mac_key).unwrap();
 
 // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
 let outer_key = wrapper::generate_key(Cipher::Aes128Ctr).unwrap();
-// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?;
+// let outer_key = wrapper::derive_key(Cipher::Aes128Ctr, &master)?; master.fill(0);
 
 let plaintext = b"any text or binary data - including 0x00 bytes";
 
