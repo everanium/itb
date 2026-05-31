@@ -19,18 +19,70 @@ A passive observer who knows ITB ships with an 8-channel pixel container and a 3
 
 This is **not** a random-oracle indistinguishability claim. It is a "looks like a different well-known cipher" claim. The wrap exists for format-deniability ONLY; ITB already provides confidentiality (content-deniability) and the AEAD path already provides per-stream and per-chunk integrity. The Non-AEAD streaming path has no integrity by design and the wrap does not add any.
 
-## Wrapper API
+## Public API
 
-The wrapper package exposes one `Keystream` interface satisfied by all outer ciphers, plus two wrap-shape helpers:
+```go
+type Keystream = ctr.Keystream
 
-| Helper | Wire format | Use case |
+const (
+    CipherAreion256  = "areion256"
+    CipherAreion512  = "areion512"
+    CipherBLAKE2b256 = "blake2b256"
+    CipherBLAKE2b512 = "blake2b512"
+    CipherBLAKE2s    = "blake2s"
+    CipherBLAKE3     = "blake3"
+    CipherAES128CTR  = "aescmac"
+    CipherSipHash24  = "siphash24"
+    CipherChaCha20   = "chacha20"
+
+    ParallelThreshold = 256 * 1024
+)
+
+var CipherNames []string
+
+func KeySize(name string) (int, error)
+func NonceSize(name string) (int, error)
+func GenerateKey(name string) ([]byte, error)
+func DeriveKey(name string, master []byte) ([]byte, error)
+func MakeKeystream(name string, key, nonce []byte) (Keystream, error)
+func MakeKeystreamAt(name string, key, nonce []byte, offset int) (Keystream, error)
+
+func Wrap(name string, key, blob []byte) ([]byte, error)
+func Unwrap(name string, key, wire []byte) ([]byte, error)
+func WrapInPlace(name string, key, blob []byte) ([]byte, error)
+func UnwrapInPlace(name string, key, wire []byte) ([]byte, error)
+
+func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error)
+func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error)
+
+func XORParallel(name string, key, nonce, dst, src []byte) error
+func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) error
+```
+
+- **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` xors one keystream segment over `src` into `dst` and advances the internal counter.
+- **Cipher constants** (`CipherAreion256` ... `CipherChaCha20`) name every outer cipher the wrapper accepts. `CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry). `CipherNames` enumerates all of them in canonical primitive order; it is the iteration source for cross-cipher tests and benchmarks.
+- **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
+- **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
+- **`GenerateKey`** draws a fresh CSPRNG outer-cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
+- **`DeriveKey`** derives a deterministic outer-cipher key from a high-entropy master via [`kdf.Derive`](../kdf/) under a wrapper-specific label. Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer-cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
+- **`MakeKeystream` / `MakeKeystreamAt`** construct a `Keystream` ready to XOR data. `MakeKeystreamAt(name, key, nonce, offset)` is the byte-offset positioned variant; it returns a keystream as if `MakeKeystream` had been called and then advanced by `offset` bytes — used by the worker pool to split one logical keystream into disjoint parallel chunks that re-concatenate byte-identical to a serial pass.
+- **`Wrap` / `Unwrap`** are the blob (Single Message) round-trip pair. `Wrap` allocates a fresh `nonce(NonceSize(name)) || keystream-XOR(blob)` wire, drawing the nonce from `crypto/rand`. `Unwrap` reverses it.
+- **`WrapInPlace` / `UnwrapInPlace`** are the zero-body-allocation counterparts. `WrapInPlace` mutates `blob` to its ciphertext form and returns the assembled wire; on error `blob` is left unchanged.
+- **`NewWrapWriter` / `NewUnwrapReader`** are the streaming wrap surface. The wrap writer emits the nonce on its first underlying `dst.Write` then XORs every subsequent byte through the keystream; the unwrap reader is symmetric. One stream session uses one nonce and the keystream counter advances monotonically across every byte written.
+- **`XORParallel` / `XORParallelAt`** are the low-level parallel XOR helpers exposed for callers that want the wrap-style worker-pool split without the surrounding wrap envelope. `XORParallelAt(name, key, nonce, base, dst, src)` accepts a `base` byte offset so the leading chunk is positioned at the caller's intended starting point and the result stays byte-identical to a serial XOR over the same `(key, nonce, base, src)` tuple.
+
+### Wire format
+
+The blob wire is `nonce(NonceSize(name)) || keystream-XOR(blob)`; total length is `NonceSize(name) + len(blob)`. The streaming wire is `nonce(NonceSize(name)) || keystream-XOR(continuous bytestream)` where the continuous bytestream is the concatenation of every byte the caller writes through the wrap writer. The single keystream advances monotonically across all bytes within one wrap session; a fresh CSPRNG nonce is generated per session, emitted once at stream start, and never reused across sessions. This is standard CTR mode usage — within one stream, one nonce plus counter is correct.
+
+No length-prefix or other framing byte appears in cleartext on the wire in any wrap shape. The User-Driven Loop variant emits per-chunk length prefixes through the wrap writer so the framing bytes also pass through the keystream XOR alongside the chunk bodies.
+
+### Wrap-shape pairs
+
+| Helper pair | Wire format | Use case |
 |---|---|---|
-| `Wrap` / `Unwrap` | `nonce` + keystream-XOR(blob) | Single Message Encrypt / EncryptAuth output |
-| `NewWrapWriter` / `NewUnwrapReader` | `nonce` + keystream-XOR(continuous bytestream) | streaming use — IO-Driven, or User-Driven Loop where caller-side framing (e.g. per-chunk `u32_LE` length prefixes) is written through the wrap-writer so the framing bytes also pass through the keystream XOR |
-
-The single keystream advances monotonically across all bytes within one wrap session. A fresh CSPRNG nonce is generated per session; emitted once at stream start; never reused across sessions. This is standard CTR mode usage — within one stream, one nonce + counter is correct.
-
-No length-prefix or other framing byte appears in cleartext on the wire in any wrap shape. The User-Driven Loop emits length prefixes through the wrap-writer so they get XORed into the keystream alongside the chunk bodies.
+| `Wrap` / `Unwrap` (+ `WrapInPlace` / `UnwrapInPlace`) | `nonce || keystream-XOR(blob)` | Single Message Encrypt / EncryptAuth output |
+| `NewWrapWriter` / `NewUnwrapReader` | `nonce || keystream-XOR(continuous bytestream)` | streaming — IO-Driven, or User-Driven Loop where caller-side framing (e.g. per-chunk `u32_LE` length prefixes) is written through the wrap writer so the framing bytes also pass through the keystream XOR |
 
 ## Outer ciphers
 
