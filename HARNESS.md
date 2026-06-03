@@ -188,6 +188,22 @@ A structure-aware SMT solver — the partition-quotient analogue of the §3.5 T-
 
 **Conclusion.** At rounds = 1 the trapdoor survives the 80 → 64 truncation untouched; at rounds ≥ 2 ChainHash's feedforward **neutralises it** — the same intermediate-masking mechanism that walls invertible primitives in §3.4 / §3.5, here dissolving the fixed-key coset structure a working partition backdoor requires, with the partial discard as a secondary barrier. The wrap is deliberately generous to the attacker (chosen plaintext, minimum-scrambling feedforward leaving 56 of 120 key bits untouched), so the result is conservatively framed: it is the published BEA-1 partition attack and a structure-aware solver that are neutralised at rounds ≥ 2, not a proof that no exploitation path exists.
 
+### 3.7. Reduced-round-primitive control — 2-round AES integral break through ChainHash
+
+[§3.4](#34-axis-c--sat-kpa-seed-recovery-resistance) probes primitives weak by accident (CRC128 / FNV-1a) and [§3.6](#36-trapdoor-primitive-control--bea-1-partition-backdoor-through-chainhash) one with a hidden partition trapdoor (BEA-1). This control plugs in a **strong** primitive deliberately crippled by **round reduction** — **AES cut to 2 rounds** — and asks whether ChainHash neutralises its textbook break. 2-round AES is integral-broken: a Λ-set (256 chosen `data` values, one active byte) makes every output byte balanced (XOR-sum over the set = 0), and because the final round omits MixColumns each active output byte obeys `SB(a·SB(pt⊕k0)⊕C)⊕k2` (a ∈ {1, 2, 3}, C constant), peeled to a unique master-key byte in ≈ 2¹⁶. The break is the **integral (chosen-plaintext structure), not a SAT invertibility hook**: the AES S-box is not a carry-up T-function, so generic z3 / CryptoMiniSat seed recovery from known-plaintext pairs times out even at rounds = 1 (group (C) of §3.4), and the §3.5 pre-screen reads aes2r as clean on the avalanche battery (`lin_score` = 0, full algebraic degree) — neither instrument sees the integral.
+
+Methodology is the Axis-C lab style — synthetic `(data, ChainHash-lo)` pairs under a fixed secret seed, the attacker granted chosen `data` (the Λ-set) and the full integral structure — with the standard lo-lane discard (128 → 64, "discard hHi"). The inner primitive is `chainhashes/aes2r.py` (FIPS-197-validated building blocks); `rounds` is the ChainHash call count (rounds = 1 = one 2-round-AES call, no feedforward = the raw primitive).
+
+| Stage | Construction | Integral outcome |
+|:------|:-------------|:-----------------|
+| rounds = 1 | one AES2R call (= raw 2-round AES), discard hHi, no feedforward | **Key recovered.** One Λ-set recovers a master-key byte uniquely (≈ 2¹⁶). The lo-lane discard drops 2 of the 4 active output bytes; the surviving 2 still carry the balance. Rounds = 1 offers no protection — consistent with §3.4 / §3.6 (structured primitives fall at rounds = 1). |
+| rounds = 2 | feedforward `k = seed[r] ⊕ h_{r-1}` active | **Distinguisher survives; key recovery fails.** A Λ-set still leaves balanced output bytes — 1st order 4 (discard off) / 2 (on), 2nd order 12 / 6 — against a random floor ≈ 0.06 / 0.03, a strong PRF distinguisher. But the feedforward makes the round-1 key `K₁ = seed₁ ⊕ ct₀` **data-dependent** (distinct across the Λ-set), so the integral's last-round peel has no fixed key to guess and **recovery fails** (0 / 5, both discard modes). The data-differential is already dead at this depth (per-byte differential probability at the max-of-buckets noise floor). |
+| rounds = 4 (deployment) | ChainHash-4 | **The integral is neutralised entirely.** 1st-, 2nd-, and 3rd-order Λ-sets all return **0 balanced output bytes** (both discard on and off) — at the random floor. No distinguisher, no recovery. |
+
+**Mechanism — the feedforward dissolves the fixed-key balance the integral requires.** The same intermediate-masking that walls invertible primitives in §3.4 and the partition trapdoor in §3.6: at rounds ≥ 2 the round key is data-dependent, so the integral's "fixed key, structured plaintext" premise breaks. The decisive contrast with FNV-1a is that the integral structure is **not** compatible with the feedforward — it degrades to a distinguisher at rounds = 2 and vanishes by rounds = 4 — whereas FNV-1a's carry-up T-function **is** compatible and survives into deployment ([§3.4](#34-axis-c--sat-kpa-seed-recovery-resistance)). Which reduced-round / below-spec primitive ChainHash neutralises is decided by whether its structured attack survives the data-dependent key, not by the primitive's pedigree. The hi-lane discard is a **secondary** barrier — it halves the surviving rounds = 2 signal (4 → 2, 12 → 6 balanced bytes) — but the feedforward **depth** is what closes the channel: at rounds = 4 the discard is irrelevant (0 either way).
+
+**Conclusion.** At rounds = 1 the integral key-recovery survives the lo-lane truncation untouched; at rounds = 2 only a non-recovering PRF distinguisher survives; at rounds ≥ 4 ChainHash's feedforward neutralises the integral (orders 1–3) and the data-differential entirely. The result is conservatively framed: it is the integral / higher-order integral (orders 1–3), the data-differential, and the no-hook SAT seed-recovery routes that are neutralised at deployment depth, not a proof that no exploitation path exists for so weak a primitive.
+
 ## 4. Primitive shelf
 
 Provenance and the published SMHasher weakness each primitive is selected to stress. The per-axis measured results are in [§3](#3-results); the consolidated Axis C seed-recovery verdicts (with the rounds = 1 vs rounds ≥ 2 split) are in the [§3.4 table](#34-axis-c--sat-kpa-seed-recovery-resistance).
@@ -408,4 +424,38 @@ python3 scripts/redteam/phase2_theory_bea1/exp3_chainhash_feedforward.py
 
 # Experiment 3, structure-aware SMT solver (partition-quotient analogue).
 python3 scripts/redteam/phase2_theory_bea1/exp3_structure_solver.py
+```
+
+### 5.8. Reduced-round-primitive control (2-round AES, §3.7)
+
+`chainhashes/aes2r.py` is the 2-round-AES inner primitive (FIPS-197-validated, self-tested on import). The scripts below are in `scripts/redteam/phase2_theory_aes2r/`.
+
+```bash
+cd scripts/redteam/phase2_theory_aes2r
+
+# Raw 2-round AES is integral-broken: unique master-key byte from one Λ-set.
+python3 integral_aes2r.py
+
+# Pre-screen the aes2r primitive — avalanche reads clean, differential flags it (§3.5 style).
+python3 ../phase2_theory/chainhashes/avalanche_screen.py    --primitive aes2r --rounds-max 4
+python3 ../phase2_theory/chainhashes/differential_screen.py --primitive aes2r --rounds-max 4
+
+# Integral distinguisher survival through ChainHash (rounds 1/2/4 × discard on/off).
+python3 distinguisher_chainhash.py      # 1st order
+python3 higher_order_chainhash.py       # 2nd order
+python3 order3_chainhash.py             # 3rd order at rounds = 4 (slow, ~1-2 h)
+
+# Integral KEY-RECOVERY fails at rounds = 2 (feedforward); rounds = 1 control recovers.
+python3 keyrecover_r2.py
+
+# Data-differential dies at rounds = 2.
+python3 differential_chainhash.py
+
+# Generic seed recovery has no hook: z3 and CryptoMiniSat both time out at rounds = 1.
+python3 sat_calibration_aes2r.py
+python3 cms_xor_aes2r.py
+
+# Word-level guess-and-determine model for the ChainHash composition (autoguess backend).
+python3 gd_chainhash_aes2r.py     # emits relationfile_chainhash_r{1,2}_discard{0,1}.txt
+# autoguess -i relationfile_chainhash_r1_discard0.txt -s sat -sats cadical195 -mg 12 -ms 20
 ```
