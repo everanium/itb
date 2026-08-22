@@ -47,25 +47,23 @@ func TestRegistryRoundtrip(t *testing.T) {
 
 func roundtrip128(t *testing.T, name string, keyBits int, plaintext []byte) {
 	t.Helper()
-	ns, err := newSeed128(name, keyBits)
-	if err != nil {
-		t.Fatalf("newSeed128 noise: %v", err)
+	mk := func(role string) *itb.Seed128 {
+		s, err := newSeed128(name, keyBits)
+		if err != nil {
+			t.Fatalf("newSeed128 %s: %v", role, err)
+		}
+		return s
 	}
-	ds, err := newSeed128(name, keyBits)
+	ns := mk("noise")
+	d1, d2, d3 := mk("data1"), mk("data2"), mk("data3")
+	s1, s2, s3 := mk("start1"), mk("start2"), mk("start3")
+	encrypted, err := itb.Encrypt3x128(ns, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
-		t.Fatalf("newSeed128 data: %v", err)
+		t.Fatalf("Encrypt3x128: %v", err)
 	}
-	ss, err := newSeed128(name, keyBits)
+	decrypted, err := itb.Decrypt3x128(ns, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
-		t.Fatalf("newSeed128 start: %v", err)
-	}
-	encrypted, err := itb.Encrypt128(ns, ds, ss, plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt128: %v", err)
-	}
-	decrypted, err := itb.Decrypt128(ns, ds, ss, encrypted)
-	if err != nil {
-		t.Fatalf("Decrypt128: %v", err)
+		t.Fatalf("Decrypt3x128: %v", err)
 	}
 	if !bytes.Equal(plaintext, decrypted) {
 		t.Fatalf("%s/%dbit: plaintext mismatch", name, keyBits)
@@ -74,25 +72,23 @@ func roundtrip128(t *testing.T, name string, keyBits int, plaintext []byte) {
 
 func roundtrip256(t *testing.T, name string, keyBits int, plaintext []byte) {
 	t.Helper()
-	ns, err := newSeed256(name, keyBits)
-	if err != nil {
-		t.Fatalf("newSeed256 noise: %v", err)
+	mk := func(role string) *itb.Seed256 {
+		s, err := newSeed256(name, keyBits)
+		if err != nil {
+			t.Fatalf("newSeed256 %s: %v", role, err)
+		}
+		return s
 	}
-	ds, err := newSeed256(name, keyBits)
+	ns := mk("noise")
+	d1, d2, d3 := mk("data1"), mk("data2"), mk("data3")
+	s1, s2, s3 := mk("start1"), mk("start2"), mk("start3")
+	encrypted, err := itb.Encrypt3x256(ns, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
-		t.Fatalf("newSeed256 data: %v", err)
+		t.Fatalf("Encrypt3x256: %v", err)
 	}
-	ss, err := newSeed256(name, keyBits)
+	decrypted, err := itb.Decrypt3x256(ns, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
-		t.Fatalf("newSeed256 start: %v", err)
-	}
-	encrypted, err := itb.Encrypt256(ns, ds, ss, plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt256: %v", err)
-	}
-	decrypted, err := itb.Decrypt256(ns, ds, ss, encrypted)
-	if err != nil {
-		t.Fatalf("Decrypt256: %v", err)
+		t.Fatalf("Decrypt3x256: %v", err)
 	}
 	if !bytes.Equal(plaintext, decrypted) {
 		t.Fatalf("%s/%dbit: plaintext mismatch", name, keyBits)
@@ -101,25 +97,23 @@ func roundtrip256(t *testing.T, name string, keyBits int, plaintext []byte) {
 
 func roundtrip512(t *testing.T, name string, keyBits int, plaintext []byte) {
 	t.Helper()
-	ns, err := newSeed512(name, keyBits)
-	if err != nil {
-		t.Fatalf("newSeed512 noise: %v", err)
+	mk := func(role string) *itb.Seed512 {
+		s, err := newSeed512(name, keyBits)
+		if err != nil {
+			t.Fatalf("newSeed512 %s: %v", role, err)
+		}
+		return s
 	}
-	ds, err := newSeed512(name, keyBits)
+	ns := mk("noise")
+	d1, d2, d3 := mk("data1"), mk("data2"), mk("data3")
+	s1, s2, s3 := mk("start1"), mk("start2"), mk("start3")
+	encrypted, err := itb.Encrypt3x512(ns, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
-		t.Fatalf("newSeed512 data: %v", err)
+		t.Fatalf("Encrypt3x512: %v", err)
 	}
-	ss, err := newSeed512(name, keyBits)
+	decrypted, err := itb.Decrypt3x512(ns, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
-		t.Fatalf("newSeed512 start: %v", err)
-	}
-	encrypted, err := itb.Encrypt512(ns, ds, ss, plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt512: %v", err)
-	}
-	decrypted, err := itb.Decrypt512(ns, ds, ss, encrypted)
-	if err != nil {
-		t.Fatalf("Decrypt512: %v", err)
+		t.Fatalf("Decrypt3x512: %v", err)
 	}
 	if !bytes.Equal(plaintext, decrypted) {
 		t.Fatalf("%s/%dbit: plaintext mismatch", name, keyBits)
@@ -315,108 +309,6 @@ func TestMake128AESCMACBadKeySize(t *testing.T) {
 	}
 }
 
-// TestMake256SingleArm iterates every 256-bit registry entry through
-// the single-arm Make256 wrapper (not Make256Pair) and confirms a small
-// plaintext roundtrips through Encrypt256 / Decrypt256. Make256 is the
-// path FFI consumers hit when they want a HashFunc256 without paying
-// for batched dispatch wiring; covering every primitive ensures every
-// switch arm of Make256 returns a usable closure.
-func TestMake256SingleArm(t *testing.T) {
-	plaintext := make([]byte, 256)
-	if _, err := rand.Read(plaintext); err != nil {
-		t.Fatal(err)
-	}
-	for _, spec := range Registry {
-		if spec.Width != W256 {
-			continue
-		}
-		t.Run(spec.Name, func(t *testing.T) {
-			h, retKey, err := Make256(spec.Name)
-			if err != nil {
-				t.Fatalf("Make256(%q): %v", spec.Name, err)
-			}
-			if h == nil {
-				t.Fatalf("Make256(%q): nil closure", spec.Name)
-			}
-			if len(retKey) != 32 {
-				t.Errorf("Make256(%q) returned key len = %d, want 32", spec.Name, len(retKey))
-			}
-			ns, err := itb.NewSeed256(1024, h)
-			if err != nil {
-				t.Fatalf("NewSeed256 noise: %v", err)
-			}
-			ds, err := itb.NewSeed256(1024, h)
-			if err != nil {
-				t.Fatalf("NewSeed256 data: %v", err)
-			}
-			ss, err := itb.NewSeed256(1024, h)
-			if err != nil {
-				t.Fatalf("NewSeed256 start: %v", err)
-			}
-			ct, err := itb.Encrypt256(ns, ds, ss, plaintext)
-			if err != nil {
-				t.Fatalf("Encrypt256: %v", err)
-			}
-			pt, err := itb.Decrypt256(ns, ds, ss, ct)
-			if err != nil {
-				t.Fatalf("Decrypt256: %v", err)
-			}
-			if !bytes.Equal(plaintext, pt) {
-				t.Fatalf("%s: plaintext mismatch", spec.Name)
-			}
-		})
-	}
-}
-
-// TestMake512SingleArm iterates every 512-bit registry entry through
-// the single-arm Make512 wrapper (not Make512Pair). Mirror of
-// TestMake256SingleArm at width 512.
-func TestMake512SingleArm(t *testing.T) {
-	plaintext := make([]byte, 256)
-	if _, err := rand.Read(plaintext); err != nil {
-		t.Fatal(err)
-	}
-	for _, spec := range Registry {
-		if spec.Width != W512 {
-			continue
-		}
-		t.Run(spec.Name, func(t *testing.T) {
-			h, retKey, err := Make512(spec.Name)
-			if err != nil {
-				t.Fatalf("Make512(%q): %v", spec.Name, err)
-			}
-			if h == nil {
-				t.Fatalf("Make512(%q): nil closure", spec.Name)
-			}
-			if len(retKey) != 64 {
-				t.Errorf("Make512(%q) returned key len = %d, want 64", spec.Name, len(retKey))
-			}
-			ns, err := itb.NewSeed512(1024, h)
-			if err != nil {
-				t.Fatalf("NewSeed512 noise: %v", err)
-			}
-			ds, err := itb.NewSeed512(1024, h)
-			if err != nil {
-				t.Fatalf("NewSeed512 data: %v", err)
-			}
-			ss, err := itb.NewSeed512(1024, h)
-			if err != nil {
-				t.Fatalf("NewSeed512 start: %v", err)
-			}
-			ct, err := itb.Encrypt512(ns, ds, ss, plaintext)
-			if err != nil {
-				t.Fatalf("Encrypt512: %v", err)
-			}
-			pt, err := itb.Decrypt512(ns, ds, ss, ct)
-			if err != nil {
-				t.Fatalf("Decrypt512: %v", err)
-			}
-			if !bytes.Equal(plaintext, pt) {
-				t.Fatalf("%s: plaintext mismatch", spec.Name)
-			}
-		})
-	}
-}
 
 // TestMake256ExplicitKeyRoundtrip exercises the explicit-key arm of
 // each Make256 case for cross-process persistence: the key is supplied

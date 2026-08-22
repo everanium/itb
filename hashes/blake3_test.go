@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/blake3asm"
 )
 
@@ -173,48 +172,6 @@ func TestBLAKE3MakePairBadKeySize(t *testing.T) {
 	}
 }
 
-// TestBLAKE3MakePairITBRoundtrip exercises the full Make256Pair →
-// Seed256.BatchHash → Encrypt/Decrypt path on a non-trivial
-// plaintext. The Seed.BatchHash field is populated from the
-// Make256Pair batched arm; itb.processChunk routes through the
-// batched dispatch when both noiseSeed.BatchHash and
-// dataSeed.BatchHash are non-nil. A successful roundtrip with
-// byte-equal plaintext confirms (a) the registry dispatch wires
-// the batched arm into the seed correctly, and (b) the batched
-// arm produces lane-correct outputs at every chunk boundary.
-func TestBLAKE3MakePairITBRoundtrip(t *testing.T) {
-	plaintext := make([]byte, 4096)
-	if _, err := rand.Read(plaintext); err != nil {
-		t.Fatal(err)
-	}
-
-	ns, err := newSeed256("blake3", 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ds, err := newSeed256("blake3", 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ss, err := newSeed256("blake3", 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ns.BatchHash == nil || ds.BatchHash == nil {
-		t.Skip("batched arm unavailable on this host")
-	}
-	encrypted, err := itb.Encrypt256(ns, ds, ss, plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt256: %v", err)
-	}
-	decrypted, err := itb.Decrypt256(ns, ds, ss, encrypted)
-	if err != nil {
-		t.Fatalf("Decrypt256: %v", err)
-	}
-	if !bytes.Equal(plaintext, decrypted) {
-		t.Fatal("plaintext mismatch after Encrypt256/Decrypt256 via blake3 batched dispatch")
-	}
-}
 
 // TestBLAKE3SingleArmDirect exercises the BLAKE3() entry point that
 // returns only the single-arm closure (no batched dispatch). Calling

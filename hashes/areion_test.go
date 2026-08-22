@@ -189,27 +189,27 @@ func TestAreionEndToEndItb(t *testing.T) {
 			t.Run(name+"/"+itoa(keyBits), func(t *testing.T) {
 				switch name {
 				case "areion256":
-					ns, ds, ss := mkAreion256Trio(t, keyBits)
-					ct, err := itb.Encrypt256(ns, ds, ss, plaintext)
+					ns, d1, d2, d3, s1, s2, s3 := mkAreion256Seven(t, keyBits)
+					ct, err := itb.Encrypt3x256(ns, d1, d2, d3, s1, s2, s3, plaintext)
 					if err != nil {
-						t.Fatalf("Encrypt256: %v", err)
+						t.Fatalf("Encrypt3x256: %v", err)
 					}
-					pt, err := itb.Decrypt256(ns, ds, ss, ct)
+					pt, err := itb.Decrypt3x256(ns, d1, d2, d3, s1, s2, s3, ct)
 					if err != nil {
-						t.Fatalf("Decrypt256: %v", err)
+						t.Fatalf("Decrypt3x256: %v", err)
 					}
 					if string(pt) != string(plaintext) {
 						t.Fatalf("plaintext mismatch")
 					}
 				case "areion512":
-					ns, ds, ss := mkAreion512Trio(t, keyBits)
-					ct, err := itb.Encrypt512(ns, ds, ss, plaintext)
+					ns, d1, d2, d3, s1, s2, s3 := mkAreion512Seven(t, keyBits)
+					ct, err := itb.Encrypt3x512(ns, d1, d2, d3, s1, s2, s3, plaintext)
 					if err != nil {
-						t.Fatalf("Encrypt512: %v", err)
+						t.Fatalf("Encrypt3x512: %v", err)
 					}
-					pt, err := itb.Decrypt512(ns, ds, ss, ct)
+					pt, err := itb.Decrypt3x512(ns, d1, d2, d3, s1, s2, s3, ct)
 					if err != nil {
-						t.Fatalf("Decrypt512: %v", err)
+						t.Fatalf("Decrypt3x512: %v", err)
 					}
 					if string(pt) != string(plaintext) {
 						t.Fatalf("plaintext mismatch")
@@ -220,7 +220,7 @@ func TestAreionEndToEndItb(t *testing.T) {
 	}
 }
 
-func mkAreion256Trio(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *itb.Seed256) {
+func mkAreion256Seven(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *itb.Seed256, *itb.Seed256, *itb.Seed256, *itb.Seed256, *itb.Seed256) {
 	t.Helper()
 	mk := func() *itb.Seed256 {
 		h, b, _ := Areion256Pair()
@@ -231,10 +231,10 @@ func mkAreion256Trio(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *it
 		s.BatchHash = b
 		return s
 	}
-	return mk(), mk(), mk()
+	return mk(), mk(), mk(), mk(), mk(), mk(), mk()
 }
 
-func mkAreion512Trio(t *testing.T, keyBits int) (*itb.Seed512, *itb.Seed512, *itb.Seed512) {
+func mkAreion512Seven(t *testing.T, keyBits int) (*itb.Seed512, *itb.Seed512, *itb.Seed512, *itb.Seed512, *itb.Seed512, *itb.Seed512, *itb.Seed512) {
 	t.Helper()
 	mk := func() *itb.Seed512 {
 		h, b, _ := Areion512Pair()
@@ -245,7 +245,7 @@ func mkAreion512Trio(t *testing.T, keyBits int) (*itb.Seed512, *itb.Seed512, *it
 		s.BatchHash = b
 		return s
 	}
-	return mk(), mk(), mk()
+	return mk(), mk(), mk(), mk(), mk(), mk(), mk()
 }
 
 func itoa(n int) string {

@@ -44,54 +44,6 @@ func constantTimeEqual(a, b []byte) bool {
 	return v == 0
 }
 
-// EncryptAuth is the width-less Single Message authenticated Encrypt
-// entry point. Dispatches to [EncryptAuthenticated128] /
-// [EncryptAuthenticated256] / [EncryptAuthenticated512] based on the
-// concrete pointer type of the supplied seeds. Every seed must carry
-// the same concrete *SeedN type; mixing widths returns an itb-wrapped
-// error.
-//
-// Accepts seeds typed as any (interface{}) so a single signature
-// covers all three primitive widths. The internal type-switch
-// resolves the width once and forwards verbatim to the matching
-// width-suffixed implementation; the supplied [MACFunc] closure is
-// passed through unchanged.
-func EncryptAuth(noiseSeed, dataSeed, startSeed any, data []byte, macFunc MACFunc) ([]byte, error) {
-	w, err := dispatchWidthSingle(noiseSeed, dataSeed, startSeed)
-	if err != nil {
-		return nil, err
-	}
-	switch w {
-	case 128:
-		return EncryptAuthenticated128(noiseSeed.(*Seed128), dataSeed.(*Seed128), startSeed.(*Seed128), data, macFunc)
-	case 256:
-		return EncryptAuthenticated256(noiseSeed.(*Seed256), dataSeed.(*Seed256), startSeed.(*Seed256), data, macFunc)
-	case 512:
-		return EncryptAuthenticated512(noiseSeed.(*Seed512), dataSeed.(*Seed512), startSeed.(*Seed512), data, macFunc)
-	}
-	return nil, errSeedWidthMix
-}
-
-// DecryptAuth is the width-less Single Message authenticated Decrypt
-// entry point. Mirrors [EncryptAuth]; dispatches to
-// [DecryptAuthenticated128] / [DecryptAuthenticated256] /
-// [DecryptAuthenticated512].
-func DecryptAuth(noiseSeed, dataSeed, startSeed any, fileData []byte, macFunc MACFunc) ([]byte, error) {
-	w, err := dispatchWidthSingle(noiseSeed, dataSeed, startSeed)
-	if err != nil {
-		return nil, err
-	}
-	switch w {
-	case 128:
-		return DecryptAuthenticated128(noiseSeed.(*Seed128), dataSeed.(*Seed128), startSeed.(*Seed128), fileData, macFunc)
-	case 256:
-		return DecryptAuthenticated256(noiseSeed.(*Seed256), dataSeed.(*Seed256), startSeed.(*Seed256), fileData, macFunc)
-	case 512:
-		return DecryptAuthenticated512(noiseSeed.(*Seed512), dataSeed.(*Seed512), startSeed.(*Seed512), fileData, macFunc)
-	}
-	return nil, errSeedWidthMix
-}
-
 // EncryptAuth3x is the width-less Single Message Triple-Ouroboros
 // authenticated Encrypt entry point. Dispatches to
 // [EncryptAuthenticated3x128] / [EncryptAuthenticated3x256] /
