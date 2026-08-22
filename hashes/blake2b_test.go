@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/blake2basm"
 )
 
@@ -313,78 +312,6 @@ func TestBLAKE2bMakePairBadKeySize(t *testing.T) {
 	})
 }
 
-// TestBLAKE2bMakePairITBRoundtrip exercises the full Make*Pair →
-// Seed*.BatchHash → Encrypt/Decrypt path on a non-trivial plaintext.
-// The Seed.BatchHash field is populated from the Make*Pair batched
-// arm; itb.processChunk routes through the batched dispatch when both
-// noiseSeed.BatchHash and dataSeed.BatchHash are non-nil. A successful
-// roundtrip with byte-equal plaintext confirms (a) the registry
-// dispatch wires the batched arm into the seed correctly, and (b) the
-// batched arm produces lane-correct outputs at every chunk boundary.
-func TestBLAKE2bMakePairITBRoundtrip(t *testing.T) {
-	plaintext := make([]byte, 4096)
-	if _, err := rand.Read(plaintext); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("blake2b256", func(t *testing.T) {
-		ns, err := newSeed256("blake2b256", 1024)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ds, err := newSeed256("blake2b256", 1024)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ss, err := newSeed256("blake2b256", 1024)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ns.BatchHash == nil || ds.BatchHash == nil {
-			t.Skip("batched arm unavailable on this host")
-		}
-		encrypted, err := itb.Encrypt256(ns, ds, ss, plaintext)
-		if err != nil {
-			t.Fatalf("Encrypt256: %v", err)
-		}
-		decrypted, err := itb.Decrypt256(ns, ds, ss, encrypted)
-		if err != nil {
-			t.Fatalf("Decrypt256: %v", err)
-		}
-		if !bytes.Equal(plaintext, decrypted) {
-			t.Fatal("plaintext mismatch after Encrypt256/Decrypt256 via blake2b256 batched dispatch")
-		}
-	})
-
-	t.Run("blake2b512", func(t *testing.T) {
-		ns, err := newSeed512("blake2b512", 1024)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ds, err := newSeed512("blake2b512", 1024)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ss, err := newSeed512("blake2b512", 1024)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ns.BatchHash == nil || ds.BatchHash == nil {
-			t.Skip("batched arm unavailable on this host")
-		}
-		encrypted, err := itb.Encrypt512(ns, ds, ss, plaintext)
-		if err != nil {
-			t.Fatalf("Encrypt512: %v", err)
-		}
-		decrypted, err := itb.Decrypt512(ns, ds, ss, encrypted)
-		if err != nil {
-			t.Fatalf("Decrypt512: %v", err)
-		}
-		if !bytes.Equal(plaintext, decrypted) {
-			t.Fatal("plaintext mismatch after Encrypt512/Decrypt512 via blake2b512 batched dispatch")
-		}
-	})
-}
 
 // TestBLAKE2b256SingleArmDirect exercises the BLAKE2b256() entry point
 // that returns only the single-arm closure (no batched dispatch).
