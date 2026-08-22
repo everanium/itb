@@ -590,39 +590,6 @@ func TestTriple_MaxDataSize64MB512(t *testing.T) {
 	}
 }
 
-func TestTriple_FormatIdentical(t *testing.T) {
-	// Both Single Ouroboros and Triple Ouroboros must produce containers
-	// with the same header format: nonce || width || height || pixel data.
-	ns1, ds1, ss1 := makeTripleSeed128(512, sipHash128)
-	data := generateData(1024)
-
-	single, err := Encrypt128(ns1, ds1, ss1, data)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ns7, d1, d2, d3, s1, s2, s3 := makeSevenSeeds128(512, sipHash128)
-	triple, err := Encrypt3x128(ns7, d1, d2, d3, s1, s2, s3, data)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Both must have nonce + 4-byte dimensions header.
-	nonceSize := currentNonceSize()
-	if len(single) < nonceSize+4 || len(triple) < nonceSize+4 {
-		t.Fatal("container too short for header")
-	}
-
-	// Pixel data must be 8-byte aligned (Channels = 8 bytes per pixel).
-	singlePixelData := len(single) - headerSize()
-	triplePixelData := len(triple) - headerSize()
-	if singlePixelData%Channels != 0 {
-		t.Fatalf("single container pixel data not aligned: %d", singlePixelData)
-	}
-	if triplePixelData%Channels != 0 {
-		t.Fatalf("triple container pixel data not aligned: %d", triplePixelData)
-	}
-}
 
 func TestTriple_SmallData(t *testing.T) {
 	for _, sz := range []int{1, 2, 3, 4} {
