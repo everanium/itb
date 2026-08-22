@@ -211,30 +211,19 @@ type Encryptor struct {
 	// ciphertext.
 	firstEncryptCalled bool
 
-	// nonceBitsExplicit / barrierFillExplicit / bitSoupExplicit /
-	// lockSoupExplicit track whether the corresponding cfg field
-	// was set by an explicit [Encryptor.SetNonceBits] /
-	// [Encryptor.SetBarrierFill] / [Encryptor.SetBitSoup] /
-	// [Encryptor.SetLockSoup] call (or restored from a state blob
-	// that carried the field). [SnapshotGlobals] pins cfg.* to
-	// the process-global state at construction, so the cfg value
-	// alone does not distinguish "user set" from "snapshot of
-	// global"; the flags do. [Encryptor.Export] consults them to
-	// decide whether to emit the optional nonce_bits /
-	// barrier_fill / bit_soup / lock_soup / lock_batch fields in the blob.
+	// nonceBitsExplicit / barrierFillExplicit / lockSoupExplicit
+	// track whether the corresponding cfg field was set by an
+	// explicit [Encryptor.SetNonceBits] / [Encryptor.SetBarrierFill]
+	// / [Encryptor.SetLockSoup] call (or restored from a state blob
+	// that carried the field). [SnapshotGlobals] pins cfg.* to the
+	// process-global state at construction, so the cfg value alone
+	// does not distinguish "user set" from "snapshot of global"; the
+	// flags do. [Encryptor.Export] consults them to decide whether
+	// to emit the optional nonce_bits / barrier_fill / lock_soup
+	// fields in the blob.
 	nonceBitsExplicit   bool
 	barrierFillExplicit bool
-	bitSoupExplicit     bool
 	lockSoupExplicit    bool
-
-	// lockBatchExplicit tracks whether cfg.LockBatch was set by an
-	// explicit [Encryptor.SetLockBatch] call (or restored from a
-	// state blob). [SnapshotGlobals] pins cfg.LockBatch to the
-	// process-global state at construction, so the cfg value alone
-	// does not distinguish "user set" from "snapshot of global"; this
-	// flag does. [Encryptor.Export] consults it to decide whether to
-	// emit the optional lock_batch field in the blob.
-	lockBatchExplicit bool
 
 	// primitives holds per-slot canonical hash primitive names for
 	// encryptors built via [NewMixed] / [NewMixed3] — one entry per
@@ -246,8 +235,9 @@ type Encryptor struct {
 	primitives []string
 }
 
-// New constructs an [Encryptor] configured for Single Ouroboros
-// (3 seeds — noise, data, start). args may include any of:
+// New3 constructs an [Encryptor] configured for Triple Ouroboros
+// (7 seeds — noise plus three pairs of (data, start)). args may
+// include any of:
 //
 //   - One string matching [hashes.Registry] — selects the PRF
 //     primitive; default "areion512".
@@ -269,21 +259,13 @@ type Encryptor struct {
 // The returned Encryptor's exported fields (Primitive, KeyBits,
 // Mode, MACName) are read-only after construction; configuration
 // changes go through the per-encryptor setters.
-func New(args ...any) *Encryptor {
-	return newEncryptor(1, args...)
-}
-
-// New3 constructs an [Encryptor] configured for Triple Ouroboros
-// (7 seeds — noise plus three pairs of (data, start)). Variadic
-// argument shape matches [New].
 func New3(args ...any) *Encryptor {
-	return newEncryptor(3, args...)
+	return newEncryptor(args...)
 }
 
-// newEncryptor is the shared body of [New] and [New3], parameterised
-// on the seed-count mode (1 = Single / 3 seeds; 3 = Triple / 7
-// seeds).
-func newEncryptor(mode int, args ...any) *Encryptor {
+// newEncryptor is the shared body of [New3]. Constructs the Triple
+// Ouroboros encryptor (7 seeds) with the parsed constructor args.
+func newEncryptor(args ...any) *Encryptor {
 	primitive, keyBits, macName := parseConstructorArgs(args)
 
 	spec, ok := hashes.Find(primitive)
@@ -305,10 +287,8 @@ func newEncryptor(mode int, args ...any) *Encryptor {
 		panic(fmt.Sprintf("itb/easy: unknown MAC %q", macName))
 	}
 
-	nSeeds := 3
-	if mode == 3 {
-		nSeeds = 7
-	}
+	const mode = 3
+	nSeeds := 7
 
 	cfg := itb.SnapshotGlobals()
 

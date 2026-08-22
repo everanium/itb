@@ -20,8 +20,7 @@ type ChunkFunc func(chunk []byte) error
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 // Returns the first non-nil error from the chunk emitter or from
-// the underlying [itb.EncryptStream{N}Cfg] /
-// [itb.EncryptStream3x{N}Cfg] entry point.
+// the underlying [itb.EncryptStream3x{N}Cfg] entry point.
 func (e *Encryptor) EncryptStream(plaintext []byte, emit ChunkFunc) error {
 	if e.closed {
 		panic(ErrClosed)
@@ -30,33 +29,18 @@ func (e *Encryptor) EncryptStream(plaintext []byte, emit ChunkFunc) error {
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.EncryptStream128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				plaintext, e.chunk, emit)
-		}
 		return itb.EncryptStream3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			plaintext, e.chunk, emit)
 	case 256:
-		if e.Mode == 1 {
-			return itb.EncryptStream256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				plaintext, e.chunk, emit)
-		}
 		return itb.EncryptStream3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			plaintext, e.chunk, emit)
 	case 512:
-		if e.Mode == 1 {
-			return itb.EncryptStream512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				plaintext, e.chunk, emit)
-		}
 		return itb.EncryptStream3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
@@ -74,11 +58,10 @@ func (e *Encryptor) EncryptStream(plaintext []byte, emit ChunkFunc) error {
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 // Returns the first non-nil error from the chunk emitter or from
-// the underlying [itb.DecryptStream{N}Cfg] /
-// [itb.DecryptStream3x{N}Cfg] entry point. Wrong-seed input on
-// non-authenticated streams produces random-looking plaintext per
-// chunk rather than an error — non-Auth mode has no failure signal
-// by design.
+// the underlying [itb.DecryptStream3x{N}Cfg] entry point. Wrong-seed
+// input on non-authenticated streams produces random-looking
+// plaintext per chunk rather than an error — non-Auth mode has no
+// failure signal by design.
 func (e *Encryptor) DecryptStream(ciphertext []byte, emit ChunkFunc) error {
 	if e.closed {
 		panic(ErrClosed)
@@ -86,33 +69,18 @@ func (e *Encryptor) DecryptStream(ciphertext []byte, emit ChunkFunc) error {
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.DecryptStream128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				ciphertext, emit)
-		}
 		return itb.DecryptStream3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			ciphertext, emit)
 	case 256:
-		if e.Mode == 1 {
-			return itb.DecryptStream256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				ciphertext, emit)
-		}
 		return itb.DecryptStream3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			ciphertext, emit)
 	case 512:
-		if e.Mode == 1 {
-			return itb.DecryptStream512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				ciphertext, emit)
-		}
 		return itb.DecryptStream3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
@@ -126,10 +94,7 @@ func (e *Encryptor) DecryptStream(ciphertext []byte, emit ChunkFunc) error {
 // by io.Reader / io.Writer. Reads up-to-chunkSize-byte windows from
 // src, encrypts each non-empty window through the matching
 // width-suffixed per-chunk path on the encryptor, and writes the
-// resulting wire chunk to dst. Empty src input emits nothing — the
-// underlying Single Message path rejects empty plaintext, and the
-// streaming helper preserves that semantic by simply not emitting any
-// chunk.
+// resulting wire chunk to dst. Empty src input emits nothing.
 //
 // chunkSize must be > 0; a zero or negative value yields a BadInput-
 // equivalent error before any byte is consumed from src. Plaintext is
@@ -175,7 +140,7 @@ func (e *Encryptor) EncryptStreamIO(src io.Reader, dst io.Writer, chunkSize int)
 
 // DecryptStreamIO decrypts a plain stream produced by
 // [Encryptor.EncryptStreamIO] (or any wire-format-compatible producer
-// such as [Encryptor.EncryptStream] / the top-level [itb.EncryptStream]
+// such as [Encryptor.EncryptStream] / the top-level [itb.EncryptStream3x]
 // family). Reads one chunk at a time using the per-instance header
 // size, dispatches the chunk through the matching width-suffixed
 // per-chunk decrypt path, and writes the recovered plaintext to dst.
