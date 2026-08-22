@@ -34,7 +34,12 @@ func TestBatchKeystreamParity(t *testing.T) {
 			t.Fatalf("%s: New: %v", name, err)
 		}
 		if _, ok := ks.(*prfHashCTRBatch); !ok {
-			t.Fatalf("%s: expected *prfHashCTRBatch, got %T", name, ks)
+			// No batched arm on this host (non-VAES / -tags noitbasm):
+			// New routes Areion through the single-block prfHashCTR,
+			// which is the batch path's bit-exact fallback. The batch
+			// parity test has nothing to compare against here.
+			t.Logf("%s: no batched path on this host (%T); skipping parity check", name, ks)
+			continue
 		}
 		const total = 4096 // not a multiple of 64 — exercises the tail drain
 		got := make([]byte, total)
