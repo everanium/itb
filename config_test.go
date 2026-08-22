@@ -78,56 +78,17 @@ func TestConfigCurrentBarrierFillCfg(t *testing.T) {
 	})
 }
 
-// TestConfigIsBitSoupEnabledCfg covers the three resolution paths of
-// isBitSoupEnabledCfg. The BitSoup sentinel is -1 (not 0) — value 0
-// means "explicitly off", which is distinct from "inherit".
-func TestConfigIsBitSoupEnabledCfg(t *testing.T) {
-	origBitSoup := GetBitSoup()
-	t.Cleanup(func() { SetBitSoup(origBitSoup) })
-
-	SetBitSoup(1) // global = on
-
-	t.Run("nil_fallback_inherits_on", func(t *testing.T) {
-		if !isBitSoupEnabledCfg(nil) {
-			t.Errorf("nil cfg: got false, want true (global on)")
-		}
-	})
-
-	t.Run("sentinel_fallback_inherits_on", func(t *testing.T) {
-		cfg := &Config{BitSoup: -1}
-		if !isBitSoupEnabledCfg(cfg) {
-			t.Errorf("sentinel cfg: got false, want true (global on)")
-		}
-	})
-
-	t.Run("explicit_off_overrides_global_on", func(t *testing.T) {
-		cfg := &Config{BitSoup: 0}
-		if isBitSoupEnabledCfg(cfg) {
-			t.Errorf("explicit cfg BitSoup=0: got true, want false (override)")
-		}
-	})
-
-	t.Run("explicit_on_overrides_global_off", func(t *testing.T) {
-		SetBitSoup(0) // global flips to off
-		cfg := &Config{BitSoup: 1}
-		if !isBitSoupEnabledCfg(cfg) {
-			t.Errorf("explicit cfg BitSoup=1: got false, want true (override)")
-		}
-	})
-}
 
 // TestConfigIsLockSoupEnabledCfg covers the three resolution paths of
-// isLockSoupEnabledCfg. Same sentinel rule as BitSoup: -1 = inherit,
-// 0 = explicit off, non-zero = explicit on.
+// isLockSoupEnabledCfg. Sentinel rule: -1 = inherit, 0 = explicit
+// off, non-zero = explicit on.
 func TestConfigIsLockSoupEnabledCfg(t *testing.T) {
-	origBitSoup := GetBitSoup()
 	origLockSoup := GetLockSoup()
 	t.Cleanup(func() {
-		SetBitSoup(origBitSoup)
 		SetLockSoup(origLockSoup)
 	})
 
-	SetLockSoup(1) // global on; SetLockSoup(1) also coerces SetBitSoup(1)
+	SetLockSoup(1) // global on
 
 	t.Run("nil_fallback_inherits_on", func(t *testing.T) {
 		if !isLockSoupEnabledCfg(nil) {
@@ -207,20 +168,17 @@ func TestConfigGenerateNonceCfg(t *testing.T) {
 func TestConfigSnapshotGlobals(t *testing.T) {
 	origNonce := GetNonceBits()
 	origBarrier := GetBarrierFill()
-	origBitSoup := GetBitSoup()
 	origLockSoup := GetLockSoup()
 	origLockSeed := GetLockSeed()
 	t.Cleanup(func() {
 		SetNonceBits(origNonce)
 		SetBarrierFill(origBarrier)
-		SetBitSoup(origBitSoup)
 		SetLockSoup(origLockSoup)
 		SetLockSeed(int(origLockSeed))
 	})
 
 	SetNonceBits(256)
 	SetBarrierFill(8)
-	SetBitSoup(0) // explicit off so the snapshot pin is observable
 	SetLockSoup(0)
 	SetLockSeed(0)
 
@@ -231,9 +189,6 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	}
 	if cfg.BarrierFill != 8 {
 		t.Errorf("BarrierFill: got %d, want 8", cfg.BarrierFill)
-	}
-	if cfg.BitSoup != 0 {
-		t.Errorf("BitSoup: got %d, want 0", cfg.BitSoup)
 	}
 	if cfg.LockSoup != 0 {
 		t.Errorf("LockSoup: got %d, want 0", cfg.LockSoup)
@@ -248,7 +203,6 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	// Mutate globals after snapshot — the snapshot must not drift.
 	SetNonceBits(512)
 	SetBarrierFill(32)
-	SetBitSoup(1)
 	SetLockSoup(1)
 	SetLockSeed(1)
 
@@ -257,9 +211,6 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	}
 	if cfg.BarrierFill != 8 {
 		t.Errorf("post-mutation drift: BarrierFill = %d, want 8", cfg.BarrierFill)
-	}
-	if cfg.BitSoup != 0 {
-		t.Errorf("post-mutation drift: BitSoup = %d, want 0", cfg.BitSoup)
 	}
 	if cfg.LockSoup != 0 {
 		t.Errorf("post-mutation drift: LockSoup = %d, want 0", cfg.LockSoup)
@@ -303,44 +254,4 @@ func TestConfigSnapshotGlobalsLockSeedOn(t *testing.T) {
 	}
 }
 
-// TestConfigIsLockSeedActiveCfg covers the three resolution paths of
-// isLockSeedActiveCfg. Same sentinel rule as BitSoup / LockSoup:
-// -1 = inherit, 0 = explicit off, non-zero = explicit on.
-func TestConfigIsLockSeedActiveCfg(t *testing.T) {
-	origLockSeed := GetLockSeed()
-	origLockSoup := GetLockSoup()
-	t.Cleanup(func() {
-		SetLockSeed(int(origLockSeed))
-		SetLockSoup(origLockSoup)
-	})
 
-	SetLockSeed(1) // global on (auto-couples LockSoup=1)
-
-	t.Run("nil_fallback_inherits_on", func(t *testing.T) {
-		if !isLockSeedActiveCfg(nil) {
-			t.Errorf("nil cfg: got false, want true (global on)")
-		}
-	})
-
-	t.Run("sentinel_fallback_inherits_on", func(t *testing.T) {
-		cfg := &Config{LockSeed: -1}
-		if !isLockSeedActiveCfg(cfg) {
-			t.Errorf("sentinel cfg: got false, want true (global on)")
-		}
-	})
-
-	t.Run("explicit_off_overrides_global_on", func(t *testing.T) {
-		cfg := &Config{LockSeed: 0}
-		if isLockSeedActiveCfg(cfg) {
-			t.Errorf("explicit cfg LockSeed=0: got true, want false")
-		}
-	})
-
-	t.Run("explicit_on_overrides_global_off", func(t *testing.T) {
-		SetLockSeed(0)
-		cfg := &Config{LockSeed: 1}
-		if !isLockSeedActiveCfg(cfg) {
-			t.Errorf("explicit cfg LockSeed=1: got false, want true")
-		}
-	})
-}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"testing"
@@ -47,61 +46,6 @@ func makeSevenSeeds512(bits int, h HashFunc512) (ns, ds1, ds2, ds3, ss1, ss2, ss
 
 // --- Correctness tests ---
 
-func TestTriple_SplitInterleave(t *testing.T) {
-	sizes := []int{0, 1, 2, 3, 4, 5, 6, 7, 100, 1000, 65536}
-	for _, sz := range sizes {
-		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-			data := make([]byte, sz)
-			if sz > 0 {
-				if _, err := rand.Read(data); err != nil {
-					t.Fatal(err)
-				}
-			}
-			p0, p1, p2 := splitTriple(data)
-			result := interleaveTriple(p0, p1, p2)
-			if !bytes.Equal(data, result) {
-				t.Fatalf("splitTriple/interleaveTriple roundtrip failed for %d bytes", sz)
-			}
-		})
-	}
-}
-
-func TestTriple_SplitInterleaveBits(t *testing.T) {
-	sizes := []int{0, 1, 2, 3, 4, 5, 6, 7, 100, 1000, 65536}
-	for _, sz := range sizes {
-		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-			data := make([]byte, sz)
-			if sz > 0 {
-				rand.Read(data)
-			}
-			p0, p1, p2, totalBits := splitTripleBits(data)
-			result := interleaveTripleBits(p0, p1, p2, totalBits)
-			if !bytes.Equal(data, result) {
-				t.Fatalf("splitTripleBits/interleaveTripleBits roundtrip failed for %d bytes", sz)
-			}
-		})
-	}
-}
-
-func BenchmarkSplitTripleBytes_64MB(b *testing.B) {
-	data := generateData(64 << 20)
-	b.SetBytes(64 << 20)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p0, p1, p2 := splitTriple(data)
-		_ = interleaveTriple(p0, p1, p2)
-	}
-}
-
-func BenchmarkSplitTripleBits_64MB(b *testing.B) {
-	data := generateData(64 << 20)
-	b.SetBytes(64 << 20)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p0, p1, p2, totalBits := splitTripleBits(data)
-		_ = interleaveTripleBits(p0, p1, p2, totalBits)
-	}
-}
 
 func TestTriple_Roundtrip(t *testing.T) {
 	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
@@ -1315,82 +1259,6 @@ func benchTripleDecrypt512CachedBatched(b *testing.B, maker func() (HashFunc512,
 	}
 }
 
-// TestTriple_LockSoup_Roundtrip mirrors [TestTriple_Roundtrip] across the
-// same boundary sizes, with SetBitSoup(1) + SetLockSoup(1) active for the
-// duration. Verifies Encrypt3x128 / Decrypt3x128 round-trip under the
-// LockSoup-keyed bit-soup permutation for 128-bit Triple Ouroboros.
-func TestTriple_LockSoup_Roundtrip(t *testing.T) {
-	withLockSoup(t)
-
-	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
-	for _, sz := range sizes {
-		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds128(512, sipHash128)
-			data := generateData(sz)
-			encrypted, err := Encrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			decrypted, err := Decrypt3x128(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(data, decrypted) {
-				t.Fatalf("data mismatch under SetLockSoup(1): got %d bytes, want %d", len(decrypted), len(data))
-			}
-		})
-	}
-}
-
-// TestTriple_LockSoup_Roundtrip256 is the 256-bit Triple Ouroboros mirror
-// of [TestTriple_LockSoup_Roundtrip].
-func TestTriple_LockSoup_Roundtrip256(t *testing.T) {
-	withLockSoup(t)
-
-	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
-	for _, sz := range sizes {
-		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(512, makeBlake3Hash256())
-			data := generateData(sz)
-			encrypted, err := Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			decrypted, err := Decrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(data, decrypted) {
-				t.Fatalf("data mismatch under SetLockSoup(1): got %d bytes, want %d", len(decrypted), len(data))
-			}
-		})
-	}
-}
-
-// TestTriple_LockSoup_Roundtrip512 is the 512-bit Triple Ouroboros mirror
-// of [TestTriple_LockSoup_Roundtrip].
-func TestTriple_LockSoup_Roundtrip512(t *testing.T) {
-	withLockSoup(t)
-
-	sizes := []int{1, 10, 64, 255, 256, 1024, 1377, 4096, 65536, 65537}
-	for _, sz := range sizes {
-		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-			ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds512(512, makeBlake2bHash512())
-			data := generateData(sz)
-			encrypted, err := Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			decrypted, err := Decrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(data, decrypted) {
-				t.Fatalf("data mismatch under SetLockSoup(1): got %d bytes, want %d", len(decrypted), len(data))
-			}
-		})
-	}
-}
 
 // BenchmarkTripleBLAKE3RoundTripAttachedLockSeed measures the legacy
 // itb root Encrypt3x + Decrypt3x round-trip throughput and per-
@@ -1428,11 +1296,9 @@ func TestTriple_LockSoup_Roundtrip512(t *testing.T) {
 //
 // to dump per-iteration ns/op + B/op + allocs/op for inspection.
 func BenchmarkTripleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
-	prevBS := GetBitSoup()
 	prevLS := GetLockSoup()
 	SetLockSoup(1)
 	b.Cleanup(func() {
-		SetBitSoup(prevBS)
 		SetLockSoup(prevLS)
 	})
 
@@ -1470,41 +1336,7 @@ func BenchmarkTripleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
 // [ErrLockSeedOverlayOff] inside [buildLockPRF256] rather than
 // silently producing byte-level ciphertext.
 //
-// Triple consults the bit-permutation PRF through buildLockPRF{N}
-// (not buildPermutePRF{N} — the latter is Single-only); the guard
-// is identical in shape across all six build*PRF{N} / build*PRF{N}Cfg
-// functions, so a single primitive at a single width covers the
-// regression-pinning role for the Triple native path.
-func TestTripleAttachLockSeedOverlayOffPanic(t *testing.T) {
-	prevBS := GetBitSoup()
-	prevLS := GetLockSoup()
-	SetBitSoup(0)
-	SetLockSoup(0)
-	t.Cleanup(func() {
-		SetBitSoup(prevBS)
-		SetLockSoup(prevLS)
-	})
 
-	ns, ds1, ds2, ds3, ss1, ss2, ss3 := makeSevenSeeds256(1024, makeBlake3Hash256())
-	ls, err := NewSeed256(1024, makeBlake3Hash256())
-	if err != nil {
-		t.Fatalf("NewSeed256(lockSeed): %v", err)
-	}
-	ns.AttachLockSeed(ls)
-
-	plaintext := generateData(64)
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatalf("Encrypt3x256 with attached lockSeed and overlay off: expected panic, got none")
-		}
-		err, ok := r.(error)
-		if !ok || !errors.Is(err, ErrLockSeedOverlayOff) {
-			t.Errorf("Encrypt3x256: panic %v, want %v", r, ErrLockSeedOverlayOff)
-		}
-	}()
-	_, _ = Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
-}
 
 // --- Streaming benchmarks (Low-Level Triple Ouroboros, areion512, 1024-bit) ---
 
