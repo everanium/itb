@@ -16,26 +16,12 @@ import "github.com/everanium/itb"
 // translate to StatusBadInput, returning a clean error code that
 // the C caller can inspect via ITB_LastError.
 
-func SetBitSoup(mode int) Status {
-	itb.SetBitSoup(int32(mode))
-	return StatusOK
-}
-
-func GetBitSoup() int { return int(itb.GetBitSoup()) }
-
 func SetLockSoup(mode int) Status {
 	itb.SetLockSoup(int32(mode))
 	return StatusOK
 }
 
 func GetLockSoup() int { return int(itb.GetLockSoup()) }
-
-func SetLockBatch(mode int) Status {
-	itb.SetLockBatch(int32(mode))
-	return StatusOK
-}
-
-func GetLockBatch() int { return int(itb.GetLockBatch()) }
 
 func SetMaxWorkers(n int) Status {
 	itb.SetMaxWorkers(n)

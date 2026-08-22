@@ -36,21 +36,8 @@ func EasySetBarrierFill(id EasyHandleID, n int) (st Status) {
 	return StatusOK
 }
 
-// EasySetBitSoup forwards to Encryptor.SetBitSoup. 0 = byte-level
-// split (default); non-zero = bit-level Bit Soup split.
-func EasySetBitSoup(id EasyHandleID, mode int) (st Status) {
-	defer recoverEasyPanic(&st, StatusBadInput)
-	h, st := resolveEasy(id)
-	if st != StatusOK {
-		return st
-	}
-	h.enc.SetBitSoup(int32(mode))
-	return StatusOK
-}
-
-// EasySetLockSoup forwards to Encryptor.SetLockSoup. Non-zero values
-// auto-couple BitSoup=1 on the encryptor (mirroring the global
-// itb.SetLockSoup contract).
+// EasySetLockSoup forwards to Encryptor.SetLockSoup. Non-zero engages
+// the 48-bit interlock overlay on the encryptor.
 func EasySetLockSoup(id EasyHandleID, mode int) (st Status) {
 	defer recoverEasyPanic(&st, StatusBadInput)
 	h, st := resolveEasy(id)
@@ -58,18 +45,6 @@ func EasySetLockSoup(id EasyHandleID, mode int) (st Status) {
 		return st
 	}
 	h.enc.SetLockSoup(int32(mode))
-	return StatusOK
-}
-
-// EasySetLockBatch forwards to Encryptor.SetLockBatch. Non-zero enables
-// Lock Soup per-chunk PRF batching; inert unless Lock Soup is engaged.
-func EasySetLockBatch(id EasyHandleID, mode int) (st Status) {
-	defer recoverEasyPanic(&st, StatusBadInput)
-	h, st := resolveEasy(id)
-	if st != StatusOK {
-		return st
-	}
-	h.enc.SetLockBatch(int32(mode))
 	return StatusOK
 }
 
