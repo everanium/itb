@@ -283,7 +283,11 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 // subsequent global mutation back to 0.
 func TestConfigSnapshotGlobalsLockSeedOn(t *testing.T) {
 	origLockSeed := GetLockSeed()
-	t.Cleanup(func() { SetLockSeed(int(origLockSeed)) })
+	origLockSoup := GetLockSoup()
+	t.Cleanup(func() {
+		SetLockSeed(int(origLockSeed))
+		SetLockSoup(origLockSoup)
+	})
 
 	SetLockSeed(1)
 	cfg := SnapshotGlobals()
@@ -304,9 +308,13 @@ func TestConfigSnapshotGlobalsLockSeedOn(t *testing.T) {
 // -1 = inherit, 0 = explicit off, non-zero = explicit on.
 func TestConfigIsLockSeedActiveCfg(t *testing.T) {
 	origLockSeed := GetLockSeed()
-	t.Cleanup(func() { SetLockSeed(int(origLockSeed)) })
+	origLockSoup := GetLockSoup()
+	t.Cleanup(func() {
+		SetLockSeed(int(origLockSeed))
+		SetLockSoup(origLockSoup)
+	})
 
-	SetLockSeed(1) // global on
+	SetLockSeed(1) // global on (auto-couples LockSoup=1)
 
 	t.Run("nil_fallback_inherits_on", func(t *testing.T) {
 		if !isLockSeedActiveCfg(nil) {
