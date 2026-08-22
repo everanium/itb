@@ -19,37 +19,11 @@ import (
 var ErrEasyMixedWidth = errors.New("itb/easy: mixed-mode primitives must share the same native hash width")
 
 // MixedPrimitive is the canonical [Encryptor.Primitive] string for
-// encryptors built via [NewMixed] / [NewMixed3]. Single-primitive
-// encryptors built via [New] / [New3] carry the primitive name
-// directly in this field; mixed-mode encryptors set it to the
-// "mixed" literal and expose the per-slot primitive through
-// [Encryptor.PrimitiveAt].
+// encryptors built via [NewMixed3]. Single-primitive encryptors
+// built via [New3] carry the primitive name directly in this field;
+// mixed-mode encryptors set it to the "mixed" literal and expose the
+// per-slot primitive through [Encryptor.PrimitiveAt].
 const MixedPrimitive = "mixed"
-
-// MixedSpec describes the per-slot primitive selection for a
-// Single-Ouroboros encryptor built via [NewMixed]. PrimitiveN /
-// PrimitiveD / PrimitiveS are the canonical [hashes.Registry] names
-// for the noise / data / start seed slots; PrimitiveL is the
-// optional dedicated lockSeed primitive (empty string = no lockSeed
-// allocation, behaves like [New] without [Encryptor.SetLockSeed]).
-//
-// All four primitive names must resolve to the same native hash
-// width — mixing widths in one Encryptor is forbidden by Go's seed
-// type system and rejected with [ErrEasyMixedWidth] before any
-// allocation runs.
-//
-// KeyBits selects the per-seed key width in bits (one of 512, 1024,
-// 2048; multiple of the resolved native width). MACName selects the
-// MAC primitive across the encryptor (one MAC per encryptor, same
-// as [New] / [New3]).
-type MixedSpec struct {
-	PrimitiveN string
-	PrimitiveD string
-	PrimitiveS string
-	PrimitiveL string
-	KeyBits    int
-	MACName    string
-}
 
 // MixedSpec3 describes the per-slot primitive selection for a
 // Triple-Ouroboros encryptor built via [NewMixed3]. PrimitiveN
@@ -77,40 +51,28 @@ type MixedSpec3 struct {
 	MACName     string
 }
 
-// NewMixed constructs a Single-Ouroboros [Encryptor] with per-slot
+// NewMixed3 constructs a Triple-Ouroboros [Encryptor] with per-slot
 // PRF primitive selection. Allows the noise / data / start seeds to
-// run different PRFs within the same native hash width — the
-// freedom the lower-level [itb.Encrypt256] path already supports,
-// surfaced through Easy Mode without forcing the caller off the
-// high-level API.
+// run different PRFs within the same native hash width — surfaced
+// through Easy Mode without forcing the caller off the high-level
+// API.
 //
 // The optional dedicated lockSeed (PrimitiveL non-empty) is
-// allocated as a 4th seed slot under its own primitive choice;
-// BitSoup / LockSoup are auto-coupled on the on-direction and the
+// allocated as an 8th seed slot under its own primitive choice;
+// LockSoup is auto-coupled on the on-direction and the
 // noiseSeed [itb.Seed{N}.AttachLockSeed] mutator is invoked so the
 // bit-permutation overlay routes through the dedicated seed
 // immediately. Empty PrimitiveL leaves the encryptor in the same
-// 3-slot state [New] would produce.
+// 7-slot state [New3] would produce.
 //
-// Validation panics on the same conditions as [New] (unknown
+// Validation panics on the same conditions as [New3] (unknown
 // primitive / MAC, invalid KeyBits, KeyBits not divisible by
 // primitive width) plus [ErrEasyMixedWidth] when slot primitives
 // disagree on native width. crypto/rand failures during PRF / seed
 // / MAC key generation panic with the standard "itb/easy:
 // crypto/rand: ..." prefix.
-func NewMixed(spec MixedSpec) *Encryptor {
-	return newEncryptorMixed(1,
-		[]string{spec.PrimitiveN, spec.PrimitiveD, spec.PrimitiveS},
-		spec.PrimitiveL, spec.KeyBits, spec.MACName,
-	)
-}
-
-// NewMixed3 constructs a Triple-Ouroboros [Encryptor] with per-slot
-// PRF primitive selection. See [NewMixed] for the construction
-// contract; the slot count grows from 3 to 7 (1 noise + 3 data + 3
-// start) plus the optional dedicated lockSeed slot.
 func NewMixed3(spec MixedSpec3) *Encryptor {
-	return newEncryptorMixed(3,
+	return newEncryptorMixed(
 		[]string{
 			spec.PrimitiveN,
 			spec.PrimitiveD1, spec.PrimitiveD2, spec.PrimitiveD3,
@@ -120,17 +82,18 @@ func NewMixed3(spec MixedSpec3) *Encryptor {
 	)
 }
 
-// newEncryptorMixed is the shared constructor body. mode is 1
-// (Single, 3 main slots) or 3 (Triple, 7 main slots); slotPrims
-// carries one canonical primitive name per slot in canonical order;
-// lockPrim is the optional dedicated lockSeed primitive (empty
-// string = no lockSeed allocation).
+// newEncryptorMixed is the shared constructor body for
+// [NewMixed3]. slotPrims carries one canonical primitive name per
+// slot in canonical order (1 noiseSeed + 3 dataSeeds + 3 startSeeds
+// = 7 entries); lockPrim is the optional dedicated lockSeed
+// primitive (empty string = no lockSeed allocation).
 //
 // Width is taken from the noiseSeed primitive (slotPrims[0]) and
 // every other slot — including the optional lockSeed — must agree.
 // The MAC primitive is independent and may belong to a different
 // width family.
-func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits int, macName string) *Encryptor {
+func newEncryptorMixed(slotPrims []string, lockPrim string, keyBits int, macName string) *Encryptor {
+	const mode = 3
 	// Resolve the noiseSeed primitive first to pin the expected
 	// native width; every other slot is validated against it.
 	if len(slotPrims) == 0 {
@@ -183,13 +146,10 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 		panic(fmt.Sprintf("itb/easy: NewMixed: unknown MAC %q", macName))
 	}
 
-	expectedMain := 3
-	if mode == 3 {
-		expectedMain = 7
-	}
+	const expectedMain = 7
 	if len(slotPrims) != expectedMain {
-		panic(fmt.Sprintf("itb/easy: NewMixed: mode %d expects %d slot primitives, got %d",
-			mode, expectedMain, len(slotPrims)))
+		panic(fmt.Sprintf("itb/easy: NewMixed: expects %d slot primitives, got %d",
+			expectedMain, len(slotPrims)))
 	}
 
 	cfg := itb.SnapshotGlobals()
@@ -220,7 +180,7 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 
 	// Dedicated lockSeed without an explicit primitive: when the
 	// snapshotted global flag enabled it (cfg.LockSeed > 0), adopt the
-	// noiseSeed primitive (slot 0). This mirrors [New]'s constructor —
+	// noiseSeed primitive (slot 0). This mirrors [New3]'s constructor —
 	// the slot is allocated but the overlay is left as snapshotted (no
 	// auto-couple), so a faithful snapshot is reproduced. An explicit
 	// PrimitiveL is instead a deliberate lockSeed request and auto-couples
@@ -231,10 +191,10 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 	}
 
 	// Optional lockSeed slot: allocate, record the handle, and attach to
-	// the noiseSeed (slot 0). For an explicit PrimitiveL the BitSoup /
-	// LockSoup overlay is auto-coupled so the bit-permutation has wire
-	// effect immediately; for the snapshot-driven case the overlay keeps
-	// whatever the global flags snapshotted, matching [New].
+	// the noiseSeed (slot 0). For an explicit PrimitiveL the LockSoup
+	// overlay is auto-coupled so the bit-permutation has wire effect
+	// immediately; for the snapshot-driven case the overlay keeps
+	// whatever the global flag snapshotted, matching [New3].
 	if lockPrim != "" {
 		lockSeed, lockKey := allocSeed(lockPrim, keyBits, width)
 		seeds = append(seeds, lockSeed)
@@ -244,13 +204,9 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 		cfg.LockSeed = 1
 		cfg.LockSeedHandle = lockSeed
 		if !snapshotLockSeed {
-			if cfg.BitSoup <= 0 {
-				cfg.BitSoup = 1
-			}
 			if cfg.LockSoup <= 0 {
 				cfg.LockSoup = 1
 			}
-			enc.bitSoupExplicit = true
 			enc.lockSoupExplicit = true
 		}
 
@@ -288,18 +244,14 @@ func newEncryptorMixed(mode int, slotPrims []string, lockPrim string, keyBits in
 
 // PrimitiveAt returns the canonical [hashes.Registry] name bound to
 // the seed at the given slot index. Slot ordering is canonical
-// across the package:
+// across the package: 0 = noiseSeed, 1..3 = dataSeed1..3, 4..6 =
+// startSeed1..3, with the optional dedicated lockSeed (when active)
+// at the last index — len(seeds)-1.
 //
-//   - Single mode: 0 = noiseSeed, 1 = dataSeed, 2 = startSeed.
-//   - Triple mode: 0 = noiseSeed, 1..3 = dataSeed1..3, 4..6 =
-//     startSeed1..3.
-//   - Optional dedicated lockSeed (when active) sits at the last
-//     index — len(seeds)-1.
-//
-// For encryptors built via [New] / [New3] every slot returns the
-// same name [Encryptor.Primitive] is bound to. For encryptors built
-// via [NewMixed] / [NewMixed3] each slot can carry an independently
-// chosen primitive within the shared native hash width.
+// For encryptors built via [New3] every slot returns the same name
+// [Encryptor.Primitive] is bound to. For encryptors built via
+// [NewMixed3] each slot can carry an independently chosen primitive
+// within the shared native hash width.
 //
 // Out-of-range slot indices return the empty string. Closed
 // encryptors panic with [ErrClosed], matching the rest of the
@@ -319,8 +271,8 @@ func (e *Encryptor) PrimitiveAt(slot int) string {
 }
 
 // IsMixed reports whether the encryptor was constructed via
-// [NewMixed] / [NewMixed3] (per-slot primitive selection) or via
-// [New] / [New3] (single primitive across all slots).
+// [NewMixed3] (per-slot primitive selection) or via [New3] (single
+// primitive across all slots).
 //
 // Equivalent to checking [Encryptor.Primitive] == [MixedPrimitive],
 // surfaced as a typed predicate for code that prefers a boolean

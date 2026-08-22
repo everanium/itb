@@ -59,45 +59,15 @@ func (e *Encryptor) SetBarrierFill(n int) {
 	}
 }
 
-// SetBitSoup overrides the bit-soup mode for this encryptor.
-// 0 = byte-level split (default); non-zero = bit-level "bit soup"
-// split. Mutates only the encryptor's own [itb.Config] copy.
+// SetLockSoup overrides the Lock Soup overlay for this encryptor.
+// 0 = off (default); non-zero = on — engages the keyed interlock
+// bit-permutation overlay.
 //
 // Auto-couple guard: when a dedicated lockSeed is active on this
-// encryptor (cfg.LockSeed == 1, set either by
-// [Encryptor.SetLockSeed](1) or by [NewMixed] / [NewMixed3] with a
-// non-empty PrimitiveL), passing mode == 0 is silently overridden
-// to mode == 1. The bit-permutation overlay must stay engaged
-// while the dedicated lockSeed is allocated; allowing
-// SetBitSoup(0) here would let a subsequent encrypt panic with
-// ErrLockSeedOverlayOff inside the build-PRF closure when LockSoup
-// is also off. Drop the dedicated lockSeed via [Encryptor.SetLockSeed](0)
-// first if a fully-overlay-off configuration is the goal.
-//
-// Panics with [ErrClosed] when called after [Encryptor.Close].
-func (e *Encryptor) SetBitSoup(mode int32) {
-	if e.closed {
-		panic(ErrClosed)
-	}
-	if mode == 0 && e.cfg.LockSeed == 1 {
-		mode = 1
-	}
-	e.cfg.BitSoup = mode
-	e.bitSoupExplicit = true
-}
-
-// SetLockSoup overrides the Lock Soup overlay for this encryptor.
-// 0 = off (default); non-zero = on. A non-zero value also coerces
-// BitSoup to 1 on this encryptor, mirroring the existing global
-// [itb.SetLockSoup] behaviour: the Lock Soup overlay layers on top
-// of bit soup, so engaging the overlay engages bit soup as well.
-//
-// Auto-couple guard mirrors [Encryptor.SetBitSoup]: when a
-// dedicated lockSeed is active on this encryptor, passing mode == 0
-// is silently overridden to mode == 1 so the bit-permutation
-// overlay stays engaged. Drop the dedicated lockSeed via
-// [Encryptor.SetLockSeed](0) first if a fully-overlay-off
-// configuration is the goal.
+// encryptor, passing mode == 0 is silently overridden to mode == 1
+// so the bit-permutation overlay stays engaged. Drop the dedicated
+// lockSeed via [Encryptor.SetLockSeed](0) first if a fully-overlay-
+// off configuration is the goal.
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 func (e *Encryptor) SetLockSoup(mode int32) {
@@ -109,32 +79,6 @@ func (e *Encryptor) SetLockSoup(mode int32) {
 	}
 	e.cfg.LockSoup = mode
 	e.lockSoupExplicit = true
-	if mode != 0 {
-		e.cfg.BitSoup = 1
-		e.bitSoupExplicit = true
-	}
-}
-
-// SetLockBatch overrides Lock Soup per-chunk PRF batching for this
-// encryptor. 0 = off (default; one PRF call per 24-bit chunk);
-// non-zero = on (one call per group of chunks, reusing the
-// primitive's wide output across 2 / 4 / 8 lanes at 128 / 256 /
-// 512-bit hash width). Mutates only the encryptor's own [itb.Config]
-// copy.
-//
-// LockBatch is independent of bit soup and the Lock Soup overlay and
-// carries no auto-couple cascade: it is read only on the keyed Lock
-// Soup path, so it is inert when the overlay is off. Batched and
-// non-batched masks differ, so both endpoints must use the same mode
-// — a mismatch yields wrong-seed-style garbage with no error oracle.
-//
-// Panics with [ErrClosed] when called after [Encryptor.Close].
-func (e *Encryptor) SetLockBatch(mode int32) {
-	if e.closed {
-		panic(ErrClosed)
-	}
-	e.cfg.LockBatch = mode
-	e.lockBatchExplicit = true
 }
 
 // SetLockSeed enables or disables the dedicated lockSeed for
@@ -146,15 +90,13 @@ func (e *Encryptor) SetLockBatch(mode int32) {
 // instead). Panics on any other value.
 //
 // Auto-couples Lock Soup on the on-direction: when mode == 1 this
-// also calls [Encryptor.SetLockSoup](1) on the same encryptor,
-// which through its own coupling engages BitSoup=1 — the
-// dedicated lockSeed has no observable effect on the wire output
-// unless the bit-permutation overlay is engaged, so coupling the
-// two flags spares callers a second setter call. The off-
+// also engages [Encryptor.SetLockSoup](1) on the same encryptor —
+// the dedicated lockSeed has no observable effect on the wire
+// output unless the bit-permutation overlay is engaged, so coupling
+// the two flags spares callers a second setter call. The off-
 // direction does not auto-disable the overlay; callers that want
 // to drop only the dedicated seed but keep the overlay engaged
-// call SetLockSeed(0) without losing the Lock Soup / Bit Soup
-// settings.
+// call SetLockSeed(0) without losing the Lock Soup setting.
 //
 // Calling SetLockSeed after the encryptor has produced its first
 // ciphertext panics with [ErrLockSeedAfterEncrypt] — the bit-
@@ -201,16 +143,13 @@ func (e *Encryptor) SetLockSeed(mode int32) {
 			}
 		}
 		e.cfg.LockSeed = 1
-		// Auto-couple Lock Soup (which itself couples Bit Soup) so
-		// the bit-permutation overlay is actually engaged and
-		// consumes the dedicated lockSeed. The auto-couple is an
-		// explicit user-driven choice — flag both overlays as
-		// explicit so [Encryptor.Export] emits them in the state
-		// blob alongside the mandatory lock_seed:true field.
+		// Auto-couple Lock Soup so the bit-permutation overlay is
+		// actually engaged and consumes the dedicated lockSeed. The
+		// auto-couple is an explicit user-driven choice — flag the
+		// overlay as explicit so [Encryptor.Export] emits it in the
+		// state blob alongside the mandatory lock_seed:true field.
 		e.cfg.LockSoup = 1
-		e.cfg.BitSoup = 1
 		e.lockSoupExplicit = true
-		e.bitSoupExplicit = true
 	} else {
 		// Deactivate: zero dedicated lockSeed material and shrink
 		// slices back to the Single / Triple base shape.
@@ -236,10 +175,9 @@ func (e *Encryptor) SetLockSeed(mode int32) {
 		// so the bit-permutation overlay's build-PRF closure sees
 		// AttachedLockSeed() == nil on subsequent Encrypt calls.
 		// Without this detach a Mixed-mode SetLockSeed(0) followed
-		// by SetBitSoup(0) + SetLockSoup(0) panics with
-		// ErrLockSeedOverlayOff inside the build-PRF closure
-		// because the noiseSeed still carries the attach from
-		// NewMixed / NewMixed3 construction time.
+		// by SetLockSoup(0) panics with ErrLockSeedOverlayOff
+		// inside the build-PRF closure because the noiseSeed still
+		// carries the attach from NewMixed3 construction time.
 		if len(e.seeds) > 0 {
 			detachNoiseSeedLockSeed(e.seeds[0], e.width)
 		}

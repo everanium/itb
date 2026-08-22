@@ -214,11 +214,14 @@ func setLastErrMessage(s Status, msg string) {
 	lastErr.Store(&v)
 }
 
-// NewEasy builds a fresh easy.Encryptor handle for the given primitive
-// / key_bits / MAC / mode combination. Empty primitive ("") and
-// keyBits == 0 select the package defaults ("areion512" / 1024) on
-// the easy side; empty macName ("") selects "kmac256". Mode must be
-// 1 (Single Ouroboros) or 3 (Triple Ouroboros).
+// NewEasy builds a fresh Triple-Ouroboros easy.Encryptor handle for
+// the given primitive / key_bits / MAC combination. Empty primitive
+// ("") and keyBits == 0 select the package defaults ("areion512" /
+// 1024) on the easy side; empty macName ("") selects "kmac256".
+//
+// The mode argument is accepted for ABI compatibility but only
+// mode == 3 (Triple Ouroboros) is supported. Any other value yields
+// StatusBadInput.
 //
 // The deferred recoverEasyPanic translates any easy-side panic
 // (unknown primitive, invalid key_bits, crypto/rand failure during
@@ -227,7 +230,7 @@ func setLastErrMessage(s Status, msg string) {
 func NewEasy(primitive string, keyBits int, macName string, mode int) (id EasyHandleID, st Status) {
 	defer recoverEasyPanic(&st, StatusInternal)
 
-	if mode != 1 && mode != 3 {
+	if mode != 3 {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
@@ -250,48 +253,23 @@ func NewEasy(primitive string, keyBits int, macName string, mode int) (id EasyHa
 		args = append(args, macName)
 	}
 
-	var enc *easy.Encryptor
-	if mode == 1 {
-		enc = easy.New(args...)
-	} else {
-		enc = easy.New3(args...)
-	}
+	enc := easy.New3(args...)
 
 	h := &EasyHandle{enc: enc}
 	return EasyHandleID(cgo.NewHandle(h)), StatusOK
 }
 
-// NewEasyMixed builds a Single-Ouroboros [easy.Encryptor] with
-// per-slot PRF primitive selection across the noise / data / start
-// trio plus an optional dedicated lockSeed. Surfaces [easy.NewMixed]
-// across the FFI boundary; mirrors [NewEasy]'s panic-to-Status
-// recovery for unknown primitive / invalid key_bits / mixed-width /
-// crypto/rand failure.
+// NewEasyMixed3 is the Triple-Ouroboros mixed-primitive constructor:
+// accepts 7 per-slot primitive names (noise + 3 data + 3 start) plus
+// the optional dedicated lockSeed primitive. Surfaces
+// [easy.NewMixed3] across the FFI boundary; mirrors [NewEasy]'s
+// panic-to-Status recovery for unknown primitive / invalid key_bits /
+// mixed-width / crypto/rand failure.
 //
-// Empty primL signals "no dedicated lockSeed" (3-slot encryptor).
-// Non-empty primL allocates a 4th slot under that primitive and
-// auto-couples BitSoup + LockSoup on the on-direction, matching
-// [easy.NewMixed]'s constructor contract.
-func NewEasyMixed(primN, primD, primS, primL string, keyBits int, macName string) (id EasyHandleID, st Status) {
-	defer recoverEasyPanic(&st, StatusInternal)
-
-	spec := easy.MixedSpec{
-		PrimitiveN: primN,
-		PrimitiveD: primD,
-		PrimitiveS: primS,
-		PrimitiveL: primL,
-		KeyBits:    keyBits,
-		MACName:    macName,
-	}
-	enc := easy.NewMixed(spec)
-	h := &EasyHandle{enc: enc}
-	return EasyHandleID(cgo.NewHandle(h)), StatusOK
-}
-
-// NewEasyMixed3 is the Triple-Ouroboros counterpart of [NewEasyMixed]
-// — accepts 7 per-slot primitive names (noise + 3 data + 3 start)
-// plus the optional dedicated lockSeed primitive. See [NewEasyMixed]
-// for the construction contract.
+// Empty primL signals "no dedicated lockSeed" (7-slot encryptor).
+// Non-empty primL allocates an 8th slot under that primitive and
+// auto-couples LockSoup on the on-direction, matching
+// [easy.NewMixed3]'s constructor contract.
 func NewEasyMixed3(primN, primD1, primD2, primD3, primS1, primS2, primS3, primL string, keyBits int, macName string) (id EasyHandleID, st Status) {
 	defer recoverEasyPanic(&st, StatusInternal)
 
