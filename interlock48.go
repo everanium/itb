@@ -875,3 +875,72 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 	wg.Wait()
 	return result
 }
+
+// ============================================================================
+// Top-level dispatcher — Cfg-aware routing between byte-level and overlay paths.
+// ============================================================================
+//
+// splitForTriple48LockedCfg mirrors the shape of splitForTripleParallelLockedCfg
+// but consumes the 48-bit PRF closures and dispatches into the 48-bit
+// keyed overlay. Non-overlay callers (LockSoup off) fall through to the
+// byte-level splitTripleParallel, unchanged.
+//
+// Both the per-chunk (lockPRF48) and batched (lockBatchPRF48) closures are
+// supplied by the caller — the closure actually consumed is determined by
+// isLockBatchEnabledCfg. Callers build both once at Encrypt* entry; the
+// unused one is discarded cheaply.
+//
+// Plausible-decryption invariant: never errors. Wrong-seed brute-force
+// feeds garbage p0/p1/p2 into the inverse; interleaveForTriple48LockedCfg
+// returns garbage bytes clamped to the recovered payload extent, no
+// error oracle.
+
+// splitForTriple48LockedCfg dispatches plaintext splitting through the
+// 48-bit interlock overlay path. The caller-supplied prf / bp closures
+// carry the shared lockSeed and Hash function derived once at Encrypt*
+// entry; only one of them is actually invoked (per the isLockBatchEnabled
+// dispatch). The 4-byte big-endian length prefix is prepended inside
+// this function on the overlay branches so recoverers can slice back
+// exactly to the original payload extent.
+func splitForTriple48LockedCfg(cfg *Config, data []byte, prf lockPRF48, bp lockBatchPRF48) (p0, p1, p2 []byte) {
+	if !isLockSoupEnabledCfg(cfg) {
+		return splitTripleParallel(data)
+	}
+	if isLockBatchEnabledCfg(cfg) {
+		return splitTriple48LockedBatch(prependTripleLen(data), bp)
+	}
+	return splitTriple48Locked(prependTripleLen(data), prf)
+}
+
+// interleaveForTriple48LockedCfg is the inverse of
+// [splitForTriple48LockedCfg]. The same dispatch rules apply. On the
+// overlay branches, the raw padded framed bytes returned by the
+// underlying interleave are stripped down to the original payload
+// via the 4-byte length prefix that splitForTriple48LockedCfg
+// prepended on the corresponding encode.
+//
+// Plausible-decryption invariant: never errors. Wrong-seed brute-force
+// or mismatched-mode decrypt feeds garbage into the inverse; this
+// function returns garbage bytes clamped to the recovered payload
+// extent instead of distinguishing wrong-seed attempts from valid ones
+// via an error oracle.
+func interleaveForTriple48LockedCfg(cfg *Config, p0, p1, p2 []byte, prf lockPRF48, bp lockBatchPRF48) []byte {
+	if !isLockSoupEnabledCfg(cfg) {
+		return interleaveTripleParallel(p0, p1, p2)
+	}
+	var framed []byte
+	if isLockBatchEnabledCfg(cfg) {
+		framed = interleaveTriple48LockedBatch(p0, p1, p2, bp)
+	} else {
+		framed = interleaveTriple48Locked(p0, p1, p2, prf)
+	}
+	if len(framed) < 4 {
+		return framed
+	}
+	length := binary.BigEndian.Uint32(framed[:4])
+	end := uint64(length) + 4
+	if end > uint64(len(framed)) {
+		end = uint64(len(framed))
+	}
+	return framed[4:int(end)]
+}
