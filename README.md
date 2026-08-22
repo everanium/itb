@@ -55,31 +55,13 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 |---|---|---|---|---|---|---|
 | AES-CMAC | 128 | Frozen | CBC-MAC | ASM ZMM + VAES | Go stdlib | 13 May 2026 |
 | SipHash-2-4 | 128 | Frozen | Direct PRF | ASM ZMM | `dchest/siphash` | 13 May 2026 |
-| AES-PRF | 128 | Planned | Feed-forward PRF | — | `jedisct1/go-aes` | TBD |
-| Camellia-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
-| SM4-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
-| ARIA-CMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
-| Kuznyechik-OMAC | 128 | Planned | CBC-MAC | — | Own (Go) | TBD |
-| KT128 | 128 | Planned | KangarooTwelve | — | Own (Go) | TBD |
 | Areion-SoEM-256 | 256 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
 | BLAKE2b-256 | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
 | BLAKE2s | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
 | BLAKE3 | 256 | Frozen | Native-keyed | ASM ZMM | `zeebo/blake3` | 13 May 2026 |
 | ChaCha20 | 256 | Frozen | CBC-MAC (Stream) | ASM ZMM | `x/crypto` | 13 May 2026 |
-| Haraka-256 | 256 | Planned | Davies-Meyer / MD | — | `jedisct1/go-aes` | TBD |
-| HMAC-SM3 | 256 | Deferred | Merkle-Damgård | — | Own (Go) | TBD |
-| KT256 | 256 | Planned | KangarooTwelve | — | Own (Go) | TBD |
-| Streebog-S-256 | 256 | Planned | Sandwich-MAC | — | Own (Go) | TBD |
-| HMAC-Streebog-256 | 256 | Planned | Merkle-Damgård | — | Own (Go) | TBD |
-| HMAC-SHA256 | 256 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
 | Areion-SoEM-512 | 512 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
 | BLAKE2b-512 | 512 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
-| Vistrutah-MP-512 | 512 | Planned | Miyaguchi-Preneel | — | `jedisct1/go-aes` | TBD |
-| Haraka-512 | 512 | Planned | Davies-Meyer / MD (Dual-Chain) | — | `jedisct1/go-aes` | TBD |
-| KT256-XOF-512 | 512 | Planned | KangarooTwelve | — | Own (Go) | TBD |
-| Streebog-S-512 | 512 | Planned | Sandwich-MAC | — | Own (Go) | TBD |
-| HMAC-Streebog-512 | 512 | Planned | Merkle-Damgård | — | Own (Go) | TBD |
-| HMAC-SHA512 | 512 | Deferred | Merkle-Damgård | — | Go stdlib | TBD |
 
 ## Bindings
 
@@ -96,35 +78,6 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 | C#      | Direct | Frozen | Fully completed | 368/368 PASS  | 13 May 2026 | TBD | [README.md](bindings/csharp/README.md)  |
 | Python  | Direct | Frozen | Fully completed | 285/285 PASS  | 13 May 2026 | TBD | [README.md](bindings/python/README.md)  |
 | Node.js | Direct | Frozen | Fully completed | 288/288 PASS  | 13 May 2026 | TBD | [README.md](bindings/nodejs/README.md)  |
-| Java    | Direct | None   | In development  | 0/0           | TBD         | TBD | TBD |
-| Scala   | Java   | None   | In development  | 0/0           | TBD         | TBD | TBD |
-| Kotlin  | Java   | None   | In development  | 0/0           | TBD         | TBD | TBD |
-| Swift   | C      | None   | In development  | 0/0           | TBD         | TBD | TBD |
-| Zig     | C      | None   | In development  | 0/0           | TBD         | TBD | TBD |
-
-### Tier 2 - Relay
-
-| Binding    | Relay | Status | Features | Tests | Release | Packages | Docs |
-|---|---|---|---|---|---|---|---|
-| Erlang     | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Elixir     | BEAM | None | In development | 0/0 | TBD | TBD | TBD |
-| Gleam      | BEAM | None | In development | 0/0 | TBD | TBD | TBD |
-| LFE        | BEAM | None | In development | 0/0 | TBD | TBD | TBD |
-| Groovy     | Java | None | In development | 0/0 | TBD | TBD | TBD |
-| Clojure    | Java | None | In development | 0/0 | TBD | TBD | TBD |
-| F#         | C#   | None | In development | 0/0 | TBD | TBD | TBD |
-| VB.NET     | C#   | None | In development | 0/0 | TBD | TBD | TBD |
-| PowerShell | C#   | None | In development | 0/0 | TBD | TBD | TBD |
-| Crystal    | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Dart       | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Haskell    | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Julia      | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Lua        | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Nim        | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| OCaml      | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| PHP        | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| R          | C    | None | In development | 0/0 | TBD | TBD | TBD |
-| Ruby       | C    | None | In development | 0/0 | TBD | TBD | TBD |
 
 **Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86_64 (Intel / AMD) and AArch64 (Graviton 4).
 
