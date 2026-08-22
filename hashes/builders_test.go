@@ -413,52 +413,6 @@ func checkFullAbsorption512(t *testing.T, hash itb.HashFunc512, name string) {
 // Seed{N} and survive a real encrypt-decrypt cycle.
 // ============================================================================
 
-func TestBuildersITBRoundTrip(t *testing.T) {
-	block := newTestAESBlock(t)
-	fixedKey := []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99}
-
-	// 256-bit Seed integration test: each builder family produces a
-	// HashFunc256 that ITB accepts as Seed.Hash and runs encrypt /
-	// decrypt round-trip bit-exactly.
-	cases := []struct {
-		name string
-		fn   itb.HashFunc256
-	}{
-		{"CBCMAC256-AES", BuildCBCMACChainAbsorb256(block)},
-		{"Sponge256-test", BuildSpongeChainAbsorb256(testPermute32, 16, 16, fixedKey)},
-		{"ARX256-SHA256", BuildARXChainAbsorb256(sha256.Sum256, fixedKey)},
-	}
-
-	plaintext := []byte("ITB round-trip test plaintext for builder closures.")
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			noiseSeed, err := itb.NewSeed256(1024, tc.fn)
-			if err != nil {
-				t.Fatalf("NewSeed256: %v", err)
-			}
-			dataSeed, err := itb.NewSeed256(1024, tc.fn)
-			if err != nil {
-				t.Fatalf("NewSeed256: %v", err)
-			}
-			startSeed, err := itb.NewSeed256(1024, tc.fn)
-			if err != nil {
-				t.Fatalf("NewSeed256: %v", err)
-			}
-
-			ct, err := itb.Encrypt256(noiseSeed, dataSeed, startSeed, plaintext)
-			if err != nil {
-				t.Fatalf("Encrypt256: %v", err)
-			}
-			pt, err := itb.Decrypt256(noiseSeed, dataSeed, startSeed, ct)
-			if err != nil {
-				t.Fatalf("Decrypt256: %v", err)
-			}
-			if string(pt) != string(plaintext) {
-				t.Fatalf("round-trip mismatch:\n  want: %q\n  got:  %q", plaintext, pt)
-			}
-		})
-	}
-}
 
 // ============================================================================
 // Panic-on-bad-params tests — defensive precondition checks

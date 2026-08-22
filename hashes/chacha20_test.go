@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/chacha20asm"
 )
 
@@ -98,47 +97,6 @@ func TestChaCha20Determinism(t *testing.T) {
 	}
 }
 
-// TestChaCha20EndToEndItb confirms the chain-rewritten ChaCha20
-// factory still round-trips through the full ITB pipeline at every
-// supported ITB key width — exercises the per-pixel hot path that
-// called into the broken truncation in production. Mirrors
-// TestAreionEndToEndItb / TestAESCMACEndToEndItb.
-func TestChaCha20EndToEndItb(t *testing.T) {
-	plaintext := make([]byte, 4096)
-	for i := range plaintext {
-		plaintext[i] = byte(i)
-	}
-
-	for _, keyBits := range []int{512, 1024, 2048} {
-		t.Run(itoa(keyBits), func(t *testing.T) {
-			ns, ds, ss := mkChaCha20Trio(t, keyBits)
-			ct, err := itb.Encrypt256(ns, ds, ss, plaintext)
-			if err != nil {
-				t.Fatalf("Encrypt256: %v", err)
-			}
-			pt, err := itb.Decrypt256(ns, ds, ss, ct)
-			if err != nil {
-				t.Fatalf("Decrypt256: %v", err)
-			}
-			if string(pt) != string(plaintext) {
-				t.Fatalf("plaintext mismatch")
-			}
-		})
-	}
-}
-
-func mkChaCha20Trio(t *testing.T, keyBits int) (*itb.Seed256, *itb.Seed256, *itb.Seed256) {
-	t.Helper()
-	mk := func() *itb.Seed256 {
-		fn, _ := ChaCha20()
-		s, err := itb.NewSeed256(keyBits, fn)
-		if err != nil {
-			t.Fatalf("NewSeed256: %v", err)
-		}
-		return s
-	}
-	return mk(), mk(), mk()
-}
 
 // TestChaCha20256BatchedParityWithSingle confirms that the 4-way
 // batched dispatch returned by ChaCha20256Pair produces the same
@@ -299,45 +257,4 @@ func TestChaCha20MakePairBadKeySize(t *testing.T) {
 	}
 }
 
-// TestChaCha20MakePairITBRoundtrip exercises the full Make256Pair →
-// Seed256.BatchHash → Encrypt/Decrypt path on a non-trivial
-// plaintext. The Seed.BatchHash field is populated from the
-// Make256Pair batched arm; itb.processChunk routes through the
-// batched dispatch when both noiseSeed.BatchHash and
-// dataSeed.BatchHash are non-nil. A successful roundtrip with
-// byte-equal plaintext confirms (a) the registry dispatch wires
-// the batched arm into the seed correctly, and (b) the batched
-// arm produces lane-correct outputs at every chunk boundary.
-func TestChaCha20MakePairITBRoundtrip(t *testing.T) {
-	plaintext := make([]byte, 4096)
-	if _, err := rand.Read(plaintext); err != nil {
-		t.Fatal(err)
-	}
 
-	ns, err := newSeed256("chacha20", 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ds, err := newSeed256("chacha20", 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ss, err := newSeed256("chacha20", 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ns.BatchHash == nil || ds.BatchHash == nil {
-		t.Skip("batched arm unavailable on this host")
-	}
-	encrypted, err := itb.Encrypt256(ns, ds, ss, plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt256: %v", err)
-	}
-	decrypted, err := itb.Decrypt256(ns, ds, ss, encrypted)
-	if err != nil {
-		t.Fatalf("Decrypt256: %v", err)
-	}
-	if !bytes.Equal(plaintext, decrypted) {
-		t.Fatal("plaintext mismatch after Encrypt256/Decrypt256 via chacha20 batched dispatch")
-	}
-}

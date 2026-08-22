@@ -118,14 +118,14 @@ func TestAESCMACEndToEndItb(t *testing.T) {
 
 	for _, keyBits := range []int{512, 1024, 2048} {
 		t.Run(itoa(keyBits), func(t *testing.T) {
-			ns, ds, ss := mkAESCMACTrio(t, keyBits)
-			ct, err := itb.Encrypt128(ns, ds, ss, plaintext)
+			ns, d1, d2, d3, s1, s2, s3 := mkAESCMACSeven(t, keyBits)
+			ct, err := itb.Encrypt3x128(ns, d1, d2, d3, s1, s2, s3, plaintext)
 			if err != nil {
-				t.Fatalf("Encrypt128: %v", err)
+				t.Fatalf("Encrypt3x128: %v", err)
 			}
-			pt, err := itb.Decrypt128(ns, ds, ss, ct)
+			pt, err := itb.Decrypt3x128(ns, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
-				t.Fatalf("Decrypt128: %v", err)
+				t.Fatalf("Decrypt3x128: %v", err)
 			}
 			if string(pt) != string(plaintext) {
 				t.Fatalf("plaintext mismatch")
@@ -134,7 +134,7 @@ func TestAESCMACEndToEndItb(t *testing.T) {
 	}
 }
 
-func mkAESCMACTrio(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb.Seed128) {
+func mkAESCMACSeven(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128) {
 	t.Helper()
 	mk := func() *itb.Seed128 {
 		fn, _ := AESCMAC()
@@ -144,7 +144,7 @@ func mkAESCMACTrio(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb.
 		}
 		return s
 	}
-	return mk(), mk(), mk()
+	return mk(), mk(), mk(), mk(), mk(), mk(), mk()
 }
 
 // TestAESCMAC128BatchedParityWithSingle confirms that the 4-way
@@ -336,20 +336,20 @@ func TestAESCMACMakePairITBRoundtrip(t *testing.T) {
 		return s
 	}
 	ns := mkSeed()
-	ds := mkSeed()
-	ss := mkSeed()
-	if ns.BatchHash == nil || ds.BatchHash == nil {
+	d1, d2, d3 := mkSeed(), mkSeed(), mkSeed()
+	s1, s2, s3 := mkSeed(), mkSeed(), mkSeed()
+	if ns.BatchHash == nil || d1.BatchHash == nil {
 		t.Skip("batched arm unavailable on this host")
 	}
-	encrypted, err := itb.Encrypt128(ns, ds, ss, plaintext)
+	encrypted, err := itb.Encrypt3x128(ns, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
-		t.Fatalf("Encrypt128: %v", err)
+		t.Fatalf("Encrypt3x128: %v", err)
 	}
-	decrypted, err := itb.Decrypt128(ns, ds, ss, encrypted)
+	decrypted, err := itb.Decrypt3x128(ns, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
-		t.Fatalf("Decrypt128: %v", err)
+		t.Fatalf("Decrypt3x128: %v", err)
 	}
 	if !bytes.Equal(plaintext, decrypted) {
-		t.Fatal("plaintext mismatch after Encrypt128/Decrypt128 via aescmac batched dispatch")
+		t.Fatal("plaintext mismatch after Encrypt3x128/Decrypt3x128 via aescmac batched dispatch")
 	}
 }

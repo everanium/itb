@@ -262,22 +262,10 @@ func seedWidth(s any) int {
 	}
 }
 
-// dispatchWidthSingle confirms that noise / data / start carry the
-// same concrete *SeedN pointer type and returns the resolved width.
-// Returns 0 + errSeedWidthMix on any type mismatch or an unsupported
-// pointer type.
-func dispatchWidthSingle(noise, data, start any) (int, error) {
-	w := seedWidth(noise)
-	if w == 0 || seedWidth(data) != w || seedWidth(start) != w {
-		return 0, errSeedWidthMix
-	}
-	return w, nil
-}
-
 // dispatchWidthTriple confirms that all seven Triple-Ouroboros seeds
 // (noise, three data, three start) share one concrete pointer type
-// and returns the resolved width. Same error semantics as
-// [dispatchWidthSingle].
+// and returns the resolved width. Returns 0 + errSeedWidthMix on any
+// type mismatch or an unsupported pointer type.
 func dispatchWidthTriple(noise, data1, data2, data3, start1, start2, start3 any) (int, error) {
 	w := seedWidth(noise)
 	if w == 0 {
@@ -290,52 +278,6 @@ func dispatchWidthTriple(noise, data1, data2, data3, start1, start2, start3 any)
 		return 0, errSeedWidthMix
 	}
 	return w, nil
-}
-
-// Encrypt is the width-less Single Message plain Encrypt entry point.
-// Dispatches to [Encrypt128] / [Encrypt256] / [Encrypt512] based on
-// the concrete pointer type of the supplied seeds. Every seed must
-// carry the same concrete *SeedN type; mixing widths returns an
-// itb-wrapped error matching the existing low-level error shape.
-//
-// Accepts seeds typed as any (interface{}) so a single signature
-// covers all three primitive widths. The internal type-switch
-// resolves the width once and forwards verbatim — the helper is
-// allocation-free beyond the dispatch overhead and the underlying
-// width-suffixed call's return slice.
-func Encrypt(noiseSeed, dataSeed, startSeed any, data []byte) ([]byte, error) {
-	w, err := dispatchWidthSingle(noiseSeed, dataSeed, startSeed)
-	if err != nil {
-		return nil, err
-	}
-	switch w {
-	case 128:
-		return Encrypt128(noiseSeed.(*Seed128), dataSeed.(*Seed128), startSeed.(*Seed128), data)
-	case 256:
-		return Encrypt256(noiseSeed.(*Seed256), dataSeed.(*Seed256), startSeed.(*Seed256), data)
-	case 512:
-		return Encrypt512(noiseSeed.(*Seed512), dataSeed.(*Seed512), startSeed.(*Seed512), data)
-	}
-	return nil, errSeedWidthMix
-}
-
-// Decrypt is the width-less Single Message plain Decrypt entry point.
-// Mirrors [Encrypt]; dispatches to [Decrypt128] / [Decrypt256] /
-// [Decrypt512].
-func Decrypt(noiseSeed, dataSeed, startSeed any, fileData []byte) ([]byte, error) {
-	w, err := dispatchWidthSingle(noiseSeed, dataSeed, startSeed)
-	if err != nil {
-		return nil, err
-	}
-	switch w {
-	case 128:
-		return Decrypt128(noiseSeed.(*Seed128), dataSeed.(*Seed128), startSeed.(*Seed128), fileData)
-	case 256:
-		return Decrypt256(noiseSeed.(*Seed256), dataSeed.(*Seed256), startSeed.(*Seed256), fileData)
-	case 512:
-		return Decrypt512(noiseSeed.(*Seed512), dataSeed.(*Seed512), startSeed.(*Seed512), fileData)
-	}
-	return nil, errSeedWidthMix
 }
 
 // Encrypt3x is the width-less Single Message Triple-Ouroboros Encrypt
