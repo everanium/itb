@@ -13,10 +13,10 @@ import (
 // reports bytes written on success or required capacity on
 // StatusBufferTooSmall.
 //
-// The encryptor's per-instance Config snapshot (BitSoup, LockSoup,
-// LockBatch, LockSeed, NonceBits, BarrierFill, ChunkSize) is consumed
-// automatically — process-wide setters do not affect a constructed
-// encryptor, which is the whole point of the easy package.
+// The encryptor's per-instance Config snapshot (LockSeed, NonceBits,
+// BarrierFill, ChunkSize) is consumed automatically — process-wide
+// setters do not affect a constructed encryptor, which is the whole
+// point of the easy package.
 func EasyEncrypt(id EasyHandleID, plaintext, out []byte) (n int, st Status) {
 	defer recoverEasyPanic(&st, StatusEncryptFailed)
 

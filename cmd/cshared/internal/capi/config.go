@@ -16,13 +16,6 @@ import "github.com/everanium/itb"
 // translate to StatusBadInput, returning a clean error code that
 // the C caller can inspect via ITB_LastError.
 
-func SetLockSoup(mode int) Status {
-	itb.SetLockSoup(int32(mode))
-	return StatusOK
-}
-
-func GetLockSoup() int { return int(itb.GetLockSoup()) }
-
 func SetMaxWorkers(n int) Status {
 	itb.SetMaxWorkers(n)
 	return StatusOK

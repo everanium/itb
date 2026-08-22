@@ -744,9 +744,9 @@ func BlobExport3(id BlobHandleID, optsBitmask int, out []byte) (n int, st Status
 
 // BlobImport parses a Single-Ouroboros JSON blob produced by a prior
 // Export call (Go-side or FFI-side), populates the handle's slots,
-// and applies the captured globals via SetNonceBits / SetBarrierFill
-// / SetBitSoup / SetLockSoup / SetLockBatch. Mirrors itb.Blob{N}.Import — same
-// transactional semantics: on error the pre-Import state is preserved.
+// and applies the captured globals via SetNonceBits / SetBarrierFill.
+// Mirrors itb.Blob{N}.Import — same transactional semantics: on error
+// the pre-Import state is preserved.
 //
 // Returns StatusBlobModeMismatch when the blob is mode=3 (call
 // BlobImport3 instead), StatusBlobMalformed on parse / shape failure,

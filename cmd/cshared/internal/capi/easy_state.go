@@ -17,8 +17,8 @@ import (
 // The blob shape is documented in easy/state.go (stateBlobV1). v1
 // carries the structural state (primitive / key_bits / mode / mac /
 // seeds / prf_keys / mac_key / lock_seed); per-instance configuration
-// knobs (NonceBits, BarrierFill, BitSoup, LockSoup, LockBatch, ChunkSize) are
-// not serialised — both sides communicate them via deployment config.
+// knobs (NonceBits, BarrierFill, ChunkSize) are not serialised —
+// both sides communicate them via deployment config.
 func EasyExport(id EasyHandleID, out []byte) (n int, st Status) {
 	defer recoverEasyPanic(&st, StatusInternal)
 

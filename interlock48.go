@@ -379,9 +379,6 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 func buildLockPRF48_128(noiseSeed *Seed128, nonce []byte) lockPRF48 {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		if !isLockSoupEnabled() {
-			panic(ErrLockSeedOverlayOff)
-		}
 		src = ls
 	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
@@ -400,9 +397,6 @@ func buildLockPRF48_128(noiseSeed *Seed128, nonce []byte) lockPRF48 {
 func buildLockPRF48_256(noiseSeed *Seed256, nonce []byte) lockPRF48 {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		if !isLockSoupEnabled() {
-			panic(ErrLockSeedOverlayOff)
-		}
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
@@ -421,9 +415,6 @@ func buildLockPRF48_256(noiseSeed *Seed256, nonce []byte) lockPRF48 {
 func buildLockPRF48_512(noiseSeed *Seed512, nonce []byte) lockPRF48 {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		if !isLockSoupEnabled() {
-			panic(ErrLockSeedOverlayOff)
-		}
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
@@ -442,10 +433,6 @@ func buildLockPRF48_512(noiseSeed *Seed512, nonce []byte) lockPRF48 {
 // per-chunk PRF keying material AND the Hash function.
 func buildLockPRF48_128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockPRF48 {
 	src := permSeedCfg128(cfg, noiseSeed)
-	if noiseSeed.AttachedLockSeed() != nil &&
-		!isLockSoupEnabledCfg(cfg) {
-		panic(ErrLockSeedOverlayOff)
-	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
 	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
@@ -459,10 +446,6 @@ func buildLockPRF48_128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockPR
 // buildLockPRF48_256Cfg — Cfg variant of [buildLockPRF48_256].
 func buildLockPRF48_256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockPRF48 {
 	src := permSeedCfg256(cfg, noiseSeed)
-	if noiseSeed.AttachedLockSeed() != nil &&
-		!isLockSoupEnabledCfg(cfg) {
-		panic(ErrLockSeedOverlayOff)
-	}
 	lockSeed := src.deriveInterLockSeed(nonce)
 	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
@@ -476,10 +459,6 @@ func buildLockPRF48_256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockPR
 // buildLockPRF48_512Cfg — Cfg variant of [buildLockPRF48_512].
 func buildLockPRF48_512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockPRF48 {
 	src := permSeedCfg512(cfg, noiseSeed)
-	if noiseSeed.AttachedLockSeed() != nil &&
-		!isLockSoupEnabledCfg(cfg) {
-		panic(ErrLockSeedOverlayOff)
-	}
 	lockSeed := src.deriveInterLockSeed(nonce)
 	h := src.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
@@ -497,9 +476,6 @@ func buildLockPRF48_512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockPR
 func buildLockBatchPRF48_128(noiseSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		if !isLockSoupEnabled() {
-			panic(ErrLockSeedOverlayOff)
-		}
 		src = ls
 	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
@@ -522,9 +498,6 @@ func buildLockBatchPRF48_128(noiseSeed *Seed128, nonce []byte) lockBatchPRF48 {
 func buildLockBatchPRF48_256(noiseSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		if !isLockSoupEnabled() {
-			panic(ErrLockSeedOverlayOff)
-		}
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
@@ -547,9 +520,6 @@ func buildLockBatchPRF48_256(noiseSeed *Seed256, nonce []byte) lockBatchPRF48 {
 func buildLockBatchPRF48_512(noiseSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	src := noiseSeed
 	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		if !isLockSoupEnabled() {
-			panic(ErrLockSeedOverlayOff)
-		}
 		src = ls
 	}
 	lockSeed := src.deriveInterLockSeed(nonce)
@@ -568,10 +538,6 @@ func buildLockBatchPRF48_512(noiseSeed *Seed512, nonce []byte) lockBatchPRF48 {
 // buildLockBatchPRF48_128Cfg — Cfg variant of [buildLockBatchPRF48_128].
 func buildLockBatchPRF48_128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	src := permSeedCfg128(cfg, noiseSeed)
-	if noiseSeed.AttachedLockSeed() != nil &&
-		!isLockSoupEnabledCfg(cfg) {
-		panic(ErrLockSeedOverlayOff)
-	}
 	lockLo, lockHi := src.deriveInterLockSeed(nonce)
 	h := src.Hash
 	return lockBatchPRF48{
@@ -590,10 +556,6 @@ func buildLockBatchPRF48_128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) l
 // buildLockBatchPRF48_256Cfg — Cfg variant of [buildLockBatchPRF48_256].
 func buildLockBatchPRF48_256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	src := permSeedCfg256(cfg, noiseSeed)
-	if noiseSeed.AttachedLockSeed() != nil &&
-		!isLockSoupEnabledCfg(cfg) {
-		panic(ErrLockSeedOverlayOff)
-	}
 	lockSeed := src.deriveInterLockSeed(nonce)
 	h := src.Hash
 	return lockBatchPRF48{
@@ -612,10 +574,6 @@ func buildLockBatchPRF48_256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) l
 // buildLockBatchPRF48_512Cfg — Cfg variant of [buildLockBatchPRF48_512].
 func buildLockBatchPRF48_512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	src := permSeedCfg512(cfg, noiseSeed)
-	if noiseSeed.AttachedLockSeed() != nil &&
-		!isLockSoupEnabledCfg(cfg) {
-		panic(ErrLockSeedOverlayOff)
-	}
 	lockSeed := src.deriveInterLockSeed(nonce)
 	h := src.Hash
 	return lockBatchPRF48{
@@ -634,9 +592,9 @@ func buildLockBatchPRF48_512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) l
 // ============================================================================
 //
 // The caller prepends a 4-byte big-endian length prefix to the plaintext
-// before invoking splitTriple48Locked{,Batch} (see [prependTripleLen] in
-// the byte-level bit-soup path). The framed buffer is then padded up to
-// a multiple of 6 bytes (zero-fill); every 48-bit chunk is processed
+// before invoking splitTriple48Locked{,Batch} (see [prependTripleLen]).
+// The framed buffer is then padded up to a multiple of 6 bytes
+// (zero-fill); every 48-bit chunk is processed
 // independently under masks derived from the per-chunk or batched PRF.
 // Padding bytes appear as garbage on the decoder side and are stripped
 // by the length-prefix slice in the caller's dispatcher.
@@ -877,19 +835,16 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 }
 
 // ============================================================================
-// Top-level dispatcher — Cfg-aware routing between byte-level and overlay paths.
+// Top-level dispatcher — Cfg-aware routing through the 48-bit interlock overlay.
 // ============================================================================
 //
-// splitForTriple48LockedCfg dispatches into the 48-bit keyed overlay
-// when LockSoup is engaged on the active cfg; non-overlay callers
-// (LockSoup off) fall through to the byte-level splitTripleParallel,
-// unchanged.
-//
-// The caller-supplied batched (lockBatchPRF48) closure carries the
-// shared lockSeed and Hash function derived once at Encrypt* entry.
-// Only the batched dispatch is shipped in production — the per-chunk
-// lockPRF48 counterpart survives in the test suite as the parity
-// oracle against which the batched kernel is validated.
+// splitForTriple48LockedCfg drives every Triple plaintext through the
+// 48-bit keyed overlay path. The caller-supplied batched
+// (lockBatchPRF48) closure carries the shared lockSeed and Hash
+// function derived once at Encrypt* entry. Only the batched dispatch
+// is shipped in production — the per-chunk lockPRF48 counterpart
+// survives in the test suite as the parity oracle against which the
+// batched kernel is validated.
 //
 // Plausible-decryption invariant: never errors. Wrong-seed brute-force
 // feeds garbage p0/p1/p2 into the inverse; interleaveForTriple48LockedCfg
@@ -900,19 +855,15 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 // 48-bit interlock overlay path. The caller-supplied bp closure
 // carries the shared lockSeed and Hash function derived once at
 // Encrypt* entry. The 4-byte big-endian length prefix is prepended
-// inside this function on the overlay branch so recoverers can slice
-// back exactly to the original payload extent.
-func splitForTriple48LockedCfg(cfg *Config, data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
-	if !isLockSoupEnabledCfg(cfg) {
-		return splitTripleParallel(data)
-	}
+// inside this function so recoverers can slice back exactly to the
+// original payload extent.
+func splitForTriple48LockedCfg(_ *Config, data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
 	return splitTriple48LockedBatch(prependTripleLen(data), bp)
 }
 
 // interleaveForTriple48LockedCfg is the inverse of
-// [splitForTriple48LockedCfg]. The same dispatch rules apply. On the
-// overlay branch, the raw padded framed bytes returned by the
-// underlying interleave are stripped down to the original payload
+// [splitForTriple48LockedCfg]. The raw padded framed bytes returned by
+// the underlying interleave are stripped down to the original payload
 // via the 4-byte length prefix that splitForTriple48LockedCfg
 // prepended on the corresponding encode.
 //
@@ -921,10 +872,15 @@ func splitForTriple48LockedCfg(cfg *Config, data []byte, bp lockBatchPRF48) (p0,
 // function returns garbage bytes clamped to the recovered payload
 // extent instead of distinguishing wrong-seed attempts from valid ones
 // via an error oracle.
-func interleaveForTriple48LockedCfg(cfg *Config, p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
-	if !isLockSoupEnabledCfg(cfg) {
-		return interleaveTripleParallel(p0, p1, p2)
-	}
+func interleaveForTriple48LockedCfg(_ *Config, p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
+	// Wrong-seed decrypt paths pass unequal-length lanes (each COBS-
+	// decoded stream truncates at whatever spurious 0x00 the garbage
+	// bytes contained). Pad every lane to the longest even length so
+	// the underlying interleave never indexes past a lane end — the
+	// plausible-decryption invariant is preserved (garbage bytes, no
+	// panic). Correct-seed decrypt has bit-exact matching lengths and
+	// the padding is a no-op.
+	p0, p1, p2 = padLanesToEqualEven(p0, p1, p2)
 	framed := interleaveTriple48LockedBatch(p0, p1, p2, bp)
 	if len(framed) < 4 {
 		return framed
@@ -935,4 +891,31 @@ func interleaveForTriple48LockedCfg(cfg *Config, p0, p1, p2 []byte, bp lockBatch
 		end = uint64(len(framed))
 	}
 	return framed[4:int(end)]
+}
+
+// padLanesToEqualEven returns copies of p0/p1/p2 padded with trailing
+// zero bytes to the largest even length across the three. Called from
+// [interleaveForTriple48LockedCfg] to keep the batched interleave
+// safe under wrong-seed inputs whose COBS-decoded lane lengths would
+// otherwise disagree.
+func padLanesToEqualEven(p0, p1, p2 []byte) ([]byte, []byte, []byte) {
+	target := len(p0)
+	if len(p1) > target {
+		target = len(p1)
+	}
+	if len(p2) > target {
+		target = len(p2)
+	}
+	if target%2 != 0 {
+		target++
+	}
+	pad := func(p []byte) []byte {
+		if len(p) == target {
+			return p
+		}
+		out := make([]byte, target)
+		copy(out, p)
+		return out
+	}
+	return pad(p0), pad(p1), pad(p2)
 }

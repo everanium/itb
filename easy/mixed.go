@@ -58,8 +58,7 @@ type MixedSpec3 struct {
 // API.
 //
 // The optional dedicated lockSeed (PrimitiveL non-empty) is
-// allocated as an 8th seed slot under its own primitive choice;
-// LockSoup is auto-coupled on the on-direction and the
+// allocated as an 8th seed slot under its own primitive choice; the
 // noiseSeed [itb.Seed{N}.AttachLockSeed] mutator is invoked so the
 // bit-permutation overlay routes through the dedicated seed
 // immediately. Empty PrimitiveL leaves the encryptor in the same
@@ -181,20 +180,14 @@ func newEncryptorMixed(slotPrims []string, lockPrim string, keyBits int, macName
 	// Dedicated lockSeed without an explicit primitive: when the
 	// snapshotted global flag enabled it (cfg.LockSeed > 0), adopt the
 	// noiseSeed primitive (slot 0). This mirrors [New3]'s constructor —
-	// the slot is allocated but the overlay is left as snapshotted (no
-	// auto-couple), so a faithful snapshot is reproduced. An explicit
-	// PrimitiveL is instead a deliberate lockSeed request and auto-couples
-	// the overlay, like [Encryptor.SetLockSeed](1).
-	snapshotLockSeed := lockPrim == "" && cfg.LockSeed > 0
-	if snapshotLockSeed {
+	// the slot is allocated for a faithful snapshot. An explicit
+	// PrimitiveL is a deliberate lockSeed request.
+	if lockPrim == "" && cfg.LockSeed > 0 {
 		lockPrim = slotPrims[0]
 	}
 
 	// Optional lockSeed slot: allocate, record the handle, and attach to
-	// the noiseSeed (slot 0). For an explicit PrimitiveL the LockSoup
-	// overlay is auto-coupled so the bit-permutation has wire effect
-	// immediately; for the snapshot-driven case the overlay keeps
-	// whatever the global flag snapshotted, matching [New3].
+	// the noiseSeed (slot 0).
 	if lockPrim != "" {
 		lockSeed, lockKey := allocSeed(lockPrim, keyBits, width)
 		seeds = append(seeds, lockSeed)
@@ -203,12 +196,6 @@ func newEncryptorMixed(slotPrims []string, lockPrim string, keyBits int, macName
 
 		cfg.LockSeed = 1
 		cfg.LockSeedHandle = lockSeed
-		if !snapshotLockSeed {
-			if cfg.LockSoup <= 0 {
-				cfg.LockSoup = 1
-			}
-			enc.lockSoupExplicit = true
-		}
 
 		// Wire the dedicated lockSeed onto the noiseSeed (slot 0).
 		// Type-switch is necessary because seeds is []interface{};

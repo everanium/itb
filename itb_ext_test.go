@@ -147,15 +147,3 @@ func makeBlake2b512SeedAttachExt(t *testing.T, bits int) *itb.Seed512 {
 	return s
 }
 
-// withLockSoupAttachExt enables SetLockSoup(1) for the duration of the
-// test, restoring the previous LockSoup state via t.Cleanup. The
-// bit-permutation overlay must be on for AttachLockSeed to have an
-// observable effect on the wire output.
-func withLockSoupAttachExt(t *testing.T) {
-	t.Helper()
-	prevLS := itb.GetLockSoup()
-	itb.SetLockSoup(1)
-	t.Cleanup(func() {
-		itb.SetLockSoup(prevLS)
-	})
-}
