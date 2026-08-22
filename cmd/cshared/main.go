@@ -27,7 +27,7 @@
 // threads after seed handles are constructed; concurrent
 // ITB_NewSeed / ITB_FreeSeed calls are also safe (cgo.Handle is
 // internally synchronised). Process-wide config setters
-// (ITB_SetBitSoup etc.) take effect for all subsequent
+// (ITB_SetNonceBits etc.) take effect for all subsequent
 // Encrypt / Decrypt calls and are atomic.
 package main
 
@@ -577,12 +577,6 @@ func ITB_DecryptAuth3(
 
 // ─── Process-wide configuration ────────────────────────────────────
 
-//export ITB_SetLockSoup
-func ITB_SetLockSoup(mode C.int) C.int { return C.int(capi.SetLockSoup(int(mode))) }
-
-//export ITB_GetLockSoup
-func ITB_GetLockSoup() C.int { return C.int(capi.GetLockSoup()) }
-
 //export ITB_SetMaxWorkers
 func ITB_SetMaxWorkers(n C.int) C.int { return C.int(capi.SetMaxWorkers(int(n))) }
 
@@ -831,17 +825,9 @@ func ITB_Easy_SetBarrierFill(handle C.uintptr_t, n C.int) C.int {
 	return C.int(capi.EasySetBarrierFill(capi.EasyHandleID(handle), int(n)))
 }
 
-// 0 = off (default); non-zero = on.
-//
-//export ITB_Easy_SetLockSoup
-func ITB_Easy_SetLockSoup(handle C.uintptr_t, mode C.int) C.int {
-	return C.int(capi.EasySetLockSoup(capi.EasyHandleID(handle), int(mode)))
-}
-
 // 0 = off; 1 = on (allocates a dedicated lockSeed and routes the
-// bit-permutation overlay through it; auto-couples LockSoup=1 on
-// this encryptor). Calling after the first Encrypt yields
-// ITB_ERR_EASY_LOCKSEED_AFTER_ENCRYPT (status code 18).
+// bit-permutation overlay through it). Calling after the first
+// Encrypt yields ITB_ERR_EASY_LOCKSEED_AFTER_ENCRYPT (status code 18).
 //
 //export ITB_Easy_SetLockSeed
 func ITB_Easy_SetLockSeed(handle C.uintptr_t, mode C.int) C.int {
@@ -1209,12 +1195,9 @@ func ITB_Easy_ParseChunkLen(
 // primitive within the same native width — keying-material isolation
 // plus algorithm diversity for defence-in-depth on the overlay path.
 // Both handles must share the same native hash width — mixing widths
-// returns ITB_ERR_SEED_WIDTH_MIX. The dedicated lockSeed has no
-// observable effect on the wire output unless the bit-permutation
-// overlay is engaged via ITB_SetBitSoup(1) or ITB_SetLockSoup(1)
-// before the first encrypt; the overlay-off guard inside the build-PRF
-// closure raises a panic on encrypt-time when an attach is present
-// without either flag.
+// returns ITB_ERR_SEED_WIDTH_MIX. The 48-bit interlock overlay is
+// always engaged, so an attached dedicated lockSeed is consumed on
+// every subsequent encrypt call.
 //
 // Misuse paths surface as ITB_ERR_BAD_INPUT: self-attach (passing
 // the same handle for noise and lock), component-array aliasing
@@ -1604,9 +1587,8 @@ func ITB_Blob_Import3(
 // ITB_ERR_INTERNAL with the panic message captured in
 // ITB_LastError. Empty primL signals "no dedicated lockSeed" (3-slot
 // or 7-slot encryptor). A non-empty primL allocates the trailing
-// slot under that primitive and auto-couples BitSoup + LockSoup on
-// the on-direction, mirroring ITB_Easy_SetLockSeed(handle, 1) but
-// routing the bit-permutation derivation through the
+// slot under that primitive, mirroring ITB_Easy_SetLockSeed(handle, 1)
+// but routing the bit-permutation derivation through the
 // caller-specified primitive instead of the noiseSeed primitive.
 //
 // Per-slot enumeration: ITB_Easy_PrimitiveAt(handle, slot) reads

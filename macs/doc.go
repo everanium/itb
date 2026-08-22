@@ -35,8 +35,8 @@
 // Why these three. ITB's MAC-Inside-Encrypt construction places the
 // 32-byte tag inside the encrypted container, where the barrier
 // dispersal (process256 / process128 / process512) already destroys
-// any plaintext / tag boundary the attacker could see; under
-// SetLockSoup(1) the bit-permutation layer further obscures the
+// any plaintext / tag boundary the attacker could see, and the
+// Triple Ouroboros 48-bit interlock overlay further obscures the
 // payload region. Combined, this means the MAC primitive itself
 // only has to be a sound keyed PRF — the surrounding ITB
 // construction takes care of placement-hiding, replay-resistance

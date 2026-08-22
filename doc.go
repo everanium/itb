@@ -210,14 +210,7 @@
 //	defer enc.Close()
 //	enc.SetNonceBits(512)
 //	enc.SetBarrierFill(4)
-//	enc.SetBitSoup(1);
-//	enc.SetLockSoup(1)
-//	enc.SetLockBatch(1)     // Recommended under the PRF assumption,
-//	                        // the performance Lock Soup mode.
-//	                        // Symmetric, set on both sides.
-//	
-//	//enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples
-//	                        // LockSoup + BitSoup. Adds one extra seed slot.
+//	//enc.SetLockSeed(1)    // optional dedicated lockSeed; adds one extra seed slot.
 //	blob := enc.Export()                          // ship to receiver
 //	encrypted, _ := enc.Encrypt(plaintext)
 //
@@ -226,22 +219,15 @@
 //	if mode == 1 { dec = easy.New(prim, kb, mac) } else { dec = easy.New3(prim, kb, mac) }
 //	defer dec.Close()
 //	// dec.Import(blob) below automatically restores the full
-//	// per-instance configuration (nonce_bits, barrier_fill,
-//	// bit_soup, lock_soup, lock_batch, and the dedicated lockSeed material
-//	// when sender's SetLockSeed(1) was active). The Set* lines
-//	// below are kept for documentation — they show the knobs
-//	// available for explicit pre-Import override. BarrierFill is
-//	// asymmetric: a receiver-set value > 1 takes priority over
-//	// the blob's barrier_fill (the receiver's heavier CSPRNG
-//	// margin is preserved).
+//	// per-instance configuration (nonce_bits, barrier_fill, and the
+//	// dedicated lockSeed material when sender's SetLockSeed(1) was
+//	// active). The Set* lines below are kept for documentation — they
+//	// show the knobs available for explicit pre-Import override.
+//	// BarrierFill is asymmetric: a receiver-set value > 1 takes
+//	// priority over the blob's barrier_fill (the receiver's heavier
+//	// CSPRNG margin is preserved).
 //	dec.SetNonceBits(512)
 //	dec.SetBarrierFill(4)
-//	dec.SetBitSoup(1)
-//	dec.SetLockSoup(1)
-//	dec.SetLockBatch(1)     // Recommended under the PRF assumption,
-//	                        // the performance Lock Soup mode.
-//	                        // Symmetric, set on both sides.
-//	
 //	dec.Import(blob)
 //	decrypted, _ := dec.Decrypt(encrypted)
 //
@@ -250,12 +236,6 @@
 //	// decrypt_auth attach a 32-byte tag inside the container.
 //	enc = easy.New("areion512", 2048, "hmac-blake3")
 //	defer enc.Close()
-//	enc.SetBitSoup(1)
-//	enc.SetLockSoup(1)
-//	enc.SetLockBatch(1)     // Recommended under the PRF assumption,
-//	                        // the performance Lock Soup mode.
-//	                        // Symmetric, set on both sides.
-//	
 //	encrypted, _ = enc.EncryptAuth(plaintext)
 //	// dec.DecryptAuth surfaces tampering as a non-nil error rather
 //	// than corrupted plaintext.
@@ -265,12 +245,6 @@
 //	// per-call PRF / batched-arm / MAC-factory wiring.
 //	enc = easy.New("blake2b512", 2048, "hmac-blake3")
 //	defer enc.Close()
-//	enc.SetBitSoup(1)
-//	enc.SetLockSoup(1)
-//	enc.SetLockBatch(1)     // Recommended under the PRF assumption,
-//	                        // the performance Lock Soup mode.
-//	                        // Symmetric, set on both sides.
-//	
 //	encrypted, _ = enc.EncryptAuth(plaintext)
 //
 //	// (4) Mixed primitives — different PRF per seed slot.
@@ -278,9 +252,9 @@
 //	// [github.com/everanium/itb/easy.NewMixed3] take a
 //	// per-slot spec; every name must share the same native hash
 //	// width. The optional PrimitiveL field allocates a dedicated
-//	// lockSeed slot under its own primitive choice and auto-couples
-//	// BitSoup + LockSoup. PrimitiveAt(slot) reads the per-slot
-//	// canonical name; IsMixed() is the typed predicate.
+//	// lockSeed slot under its own primitive choice.
+//	// PrimitiveAt(slot) reads the per-slot canonical name;
+//	// IsMixed() is the typed predicate.
 //	enc = easy.NewMixed(easy.MixedSpec{
 //		PrimitiveN: "blake3", PrimitiveD: "blake2s",
 //		PrimitiveS: "areion256", PrimitiveL: "blake2b256",
@@ -311,18 +285,9 @@
 //	itb.SetMaxWorkers(4)    // limit to 4 CPU cores (default: all CPUs)
 //	itb.SetNonceBits(256)   // 256-bit nonce (default: 128-bit)
 //	itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-
-//	Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
-//	itb.SetBitSoup(1)       // Triple Ouroboros bit-level split ("bit soup"; default: 0 = byte-level)
-//	                        // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
 //
-//	Most secure bit-permutation mode with performance trade-off ~2×-7× slower
-//	itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed bit-permutation overlay on top of bit-soup;
-//	                        // ~2×-7× slower, raises SAT cryptanalysis to information-theoretic instance-formulation
-//	                        // automatically enabled for Single Ouroboros if itb.SetBitSoup(1) is enabled or vice versa
-//	itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-//	                        // the performance Lock Soup mode.
-//	                        // Symmetric, set on both sides.
+//	// The 48-bit interlock overlay is always engaged for Triple
+//	// Ouroboros and non-disableable by construction.
 //
 //	// Areion-SoEM-256 with built-in batched VAES dispatch — fastest 256-bit
 //	// PRF wiring, recommended default. The paired factory returns (single,
@@ -656,84 +621,38 @@
 // (3 × 512), stronger than Single 1024-bit, while ChainHash runs at 512-bit
 // speed. See [ITB3.md] for accessible explanation and [BENCH3.md] for benchmarks.
 //
-// # Bit Soup (opt-in)
+// # 48-bit Interlock Overlay (Triple Ouroboros)
 //
-// [SetBitSoup] configures plaintext split granularity for the whole
-// process. Default mode 0 is byte-level (shipped behaviour). Mode 1
-// enables bit-level split ("bit soup").
+// Every Triple Ouroboros plaintext is driven through a 48-bit
+// interlock overlay: each 6-byte chunk is split into three disjoint
+// 16-of-48 balanced masks derived from a per-chunk PRF output keyed by
+// the noiseSeed-derived (or, when attached, the dedicated lockSeed-
+// derived) inter-lock seed and the nonce. The overlay is a
+// non-disableable part of the Triple kernel — there is no engage knob
+// and no off-branch.
 //
-// On Triple Ouroboros, mode 1 routes every third bit of the plaintext
-// to a different snake, so no snake carries a real plaintext byte —
-// each snake's payload is a fixed public bit-permutation across three
-// consecutive plaintext bytes. On Single Ouroboros, mode 1 engages
-// the Lock Soup overlay (the public fixed bit-permutation alone gives
-// no architectural barrier on a single snake, so the Single bit-level
-// path is keyed by construction; see [SetLockSoup]).
-//
-// Bit soup relocates the SAT-cryptanalysis barrier from the computational
-// layer to the instance-formulation layer. Standard cryptanalytic intuition
-// pictures SAT recovery as a solver-speed problem: "given a defined NP
-// instance, how fast can the attacker solve it." Bit soup targets the prior
-// question: "does the attacker have enough observation to define the
-// instance." Under Partial KPA + realistic protocol traffic, the per-snake
-// SAT instance is information-theoretically under-determined at typical
+// The overlay relocates the SAT-cryptanalysis barrier from the
+// computational layer to the instance-formulation layer. Standard
+// cryptanalytic intuition pictures SAT recovery as a solver-speed
+// problem: "given a defined NP instance, how fast can the attacker
+// solve it." The overlay targets the prior question: "does the
+// attacker have enough observation to define the instance." Under
+// Partial KPA + realistic protocol traffic, the per-snake SAT
+// instance is information-theoretically under-determined at typical
 // crib coverage — multiple joint (seed, startPixel) tuples satisfy the
-// sparse constraint set. Faster solvers, including any hypothetical shortcut
-// to PRF inversion, do not widen the crib or convert under-determination
-// into determination. This is orthogonal to, not stronger than, computational
-// hardness.
+// sparse constraint set. Faster solvers, including any hypothetical
+// shortcut to PRF inversion, do not widen the crib or convert
+// under-determination into determination. This is orthogonal to, not
+// stronger than, computational hardness.
 //
 // Applies uniformly to every Triple Ouroboros variant — [Encrypt3x128] /
 // [Decrypt3x128], the 256- / 512-bit mirrors, [EncryptAuthenticated3x128] /
 // [DecryptAuthenticated3x128] and their mirrors, and [EncryptStream3x128] /
-// [DecryptStream3x128] and mirrors — and to every Single Ouroboros
-// variant: [Encrypt128] / [Decrypt128], the 256/512 mirrors,
-// authenticated and streaming counterparts. The ciphertext wire format
-// is identical in all modes. Callers must set the same mode on both
-// encrypt and decrypt sides of the channel. Each variant's Cfg
-// counterpart honours BitSoup / LockSoup / LockBatch as a per-instance override
-// — see [Config] / [SnapshotGlobals].
-//
-//	itb.SetBitSoup(1)   // whole-process opt-in; default 0 = byte-level
-//	                    // (Single) automatically engages Lock Soup overlay
-//	itb.SetLockSoup(1)  // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed
-//	                    // bit-permutation; ~2×-7× slower; auto-enables SetBitSoup(1)
-//	itb.SetLockBatch(1) // Recommended under the PRF assumption,
-//	                    // the performance Lock Soup mode.
-//	                    // Symmetric, set on both sides.
-//
-// [SetLockSoup] is the keyed-bit-permutation overlay. It replaces the
-// public fixed bit-permutation with a per-chunk PRF-keyed bijection
-// drawn from a 2^33-mask space (Triple, balanced 8-of-24 partition) or
-// 2^64 permutation space (Single, full S_24 via Lehmer-code unrank),
-// derived deterministically per chunk from the encrypt-side noiseSeed
-// and nonce. Each crib chunk multiplies attacker enumeration by the
-// per-chunk mask space size with no shared algebraic structure to
-// couple chunks across, making the joint SAT instance under-determined
-// under any realistic crib coverage. Performance cost is ~2×–7× over
-// plain Bit Soup depending on platform — the BMI2 PEXT/PDEP path on
-// x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB
-// path on x86 (Ice Lake+, Zen 4+) on Single, sit near the lower
-// bound; Pure Go fallbacks near the upper. The trade-off is acceptable
-// only where the architectural barrier is the deployment priority.
-// Default [SetLockSoup](0) leaves Bit Soup behaviour unchanged.
-//
-// Setting SetLockSoup(1) automatically engages SetBitSoup(1) — the
-// overlay layers on top of bit soup, so the two flags are coupled in
-// the on-direction. SetBitSoup remains independent in the off-direction.
-//
-// [SetLockBatch] is the performance mode for the Lock Soup overlay: it
-// derives the per-chunk overlays for a whole group of chunks from one
-// primitive call instead of one call per chunk, lifting Lock Soup
-// throughput several-fold. It is recommended in every case under the PRF
-// assumption — security is preserved for PRF-grade hashes — and is inert
-// unless Lock Soup is engaged. Like the other overlay switches it is
-// symmetric: it must be set identically on the encrypt and decrypt sides
-// (the batched and non-batched per-chunk masks differ). [GetLockBatch]
-// reports the current mode. Default [SetLockBatch](0) is one mask per chunk.
+// [DecryptStream3x128] and mirrors. The ciphertext wire format is
+// identical in all configurations.
 //
 // See [ITB.md] / [ITB3.md] for accessible explanation and [REDTEAM.md]
-// Phase 2g for the defensive framing in the SAT attack context.
+// for the defensive framing in the SAT attack context.
 //
 // # Per-instance configuration ([Config], Cfg variants)
 //
@@ -745,9 +664,9 @@
 // and [ParseChunkLenCfg]. A nil cfg falls through to the
 // process-global setter state, preserving the legacy entry-point
 // behaviour bit-exactly. A non-nil cfg overrides NonceBits /
-// BarrierFill / BitSoup / LockSoup / LockBatch / LockSeed on a per-call basis
-// without mutating the process globals — multiple encryptors with
-// distinct configurations can coexist in one process.
+// BarrierFill / LockSeed on a per-call basis without mutating the
+// process globals — multiple encryptors with distinct configurations
+// can coexist in one process.
 //
 // [SnapshotGlobals] returns a fresh [Config] initialised from the
 // current global setter state, pinning the per-instance value to
@@ -765,8 +684,8 @@
 // process-wide configuration into one self-describing JSON blob.
 // Export / Export3 produce the blob; Import / Import3 reverse it,
 // applying the captured globals via [SetNonceBits] /
-// [SetBarrierFill] / [SetBitSoup] / [SetLockSoup] / [SetLockBatch] before
-// populating the struct's public Key* / Components fields. The
+// [SetBarrierFill] before populating the struct's public
+// Key* / Components fields. The
 // receiver wires Hash / BatchHash from the saved key bytes through
 // the matching factory (e.g. [MakeAreionSoEM512HashWithKey]),
 // keeping the pluggable-PRF philosophy of the native API. Optional
@@ -795,12 +714,9 @@
 // data / start trio. With no dedicated lockSeed attached, the
 // overlay falls through to the noiseSeed's Components and Hash.
 //
-// The bit-permutation overlay must be engaged via [SetBitSoup] (1)
-// or [SetLockSoup] (1) before the first Encrypt call — the build-PRF
-// guard panics with [ErrLockSeedOverlayOff] on encrypt-time when an
-// attach is present without either flag, surfacing the misuse loudly
-// rather than silently producing byte-level ciphertext that ignores
-// the dedicated lockSeed entirely.
+// The 48-bit interlock overlay is always engaged, so an attached
+// dedicated lockSeed is consumed on every subsequent Encrypt call
+// without any additional setter.
 //
 // Three attach-time misuse paths panic with their own sentinels:
 // [ErrLockSeedSelfAttach] (passing the same handle for noise and
@@ -810,11 +726,6 @@
 // that has already produced ciphertext — switching mid-session
 // would break decryptability of pre-switch chunks).
 //
-//	itb.SetLockSoup(1)      // engage overlay BEFORE attach
-//	itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-//	                        // the performance Lock Soup mode.
-//	                        // Symmetric, set on both sides.
-//	
 //	fnN, batchN, _ := itb.MakeAreionSoEM512Hash()
 //	fnL, batchL, _ := itb.MakeAreionSoEM512Hash()
 //	ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
@@ -825,11 +736,10 @@
 //	// components / hash key.
 //
 // The [easy.Encryptor] surface auto-allocates and wires the
-// dedicated lockSeed when [easy.Encryptor.SetLockSeed] is called,
-// auto-couples LockSoup + BitSoup, and persists the dedicated seed
-// material across [easy.Encryptor.Export] / [easy.Encryptor.Import]
-// — no caller-side AttachLockSeed bookkeeping required on the
-// high-level path.
+// dedicated lockSeed when [easy.Encryptor.SetLockSeed] is called and
+// persists the dedicated seed material across
+// [easy.Encryptor.Export] / [easy.Encryptor.Import] — no caller-side
+// AttachLockSeed bookkeeping required on the high-level path.
 //
 // # Parallelism Control
 //

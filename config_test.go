@@ -78,47 +78,6 @@ func TestConfigCurrentBarrierFillCfg(t *testing.T) {
 	})
 }
 
-
-// TestConfigIsLockSoupEnabledCfg covers the three resolution paths of
-// isLockSoupEnabledCfg. Sentinel rule: -1 = inherit, 0 = explicit
-// off, non-zero = explicit on.
-func TestConfigIsLockSoupEnabledCfg(t *testing.T) {
-	origLockSoup := GetLockSoup()
-	t.Cleanup(func() {
-		SetLockSoup(origLockSoup)
-	})
-
-	SetLockSoup(1) // global on
-
-	t.Run("nil_fallback_inherits_on", func(t *testing.T) {
-		if !isLockSoupEnabledCfg(nil) {
-			t.Errorf("nil cfg: got false, want true (global on)")
-		}
-	})
-
-	t.Run("sentinel_fallback_inherits_on", func(t *testing.T) {
-		cfg := &Config{LockSoup: -1}
-		if !isLockSoupEnabledCfg(cfg) {
-			t.Errorf("sentinel cfg: got false, want true (global on)")
-		}
-	})
-
-	t.Run("explicit_off_overrides_global_on", func(t *testing.T) {
-		cfg := &Config{LockSoup: 0}
-		if isLockSoupEnabledCfg(cfg) {
-			t.Errorf("explicit cfg LockSoup=0: got true, want false")
-		}
-	})
-
-	t.Run("explicit_on_overrides_global_off", func(t *testing.T) {
-		SetLockSoup(0)
-		cfg := &Config{LockSoup: 1}
-		if !isLockSoupEnabledCfg(cfg) {
-			t.Errorf("explicit cfg LockSoup=1: got false, want true")
-		}
-	})
-}
-
 // TestConfigGenerateNonceCfg verifies that generateNonceCfg honours
 // the cfg-side NonceBits override and falls back to the global when
 // cfg is nil or the field is the inherit sentinel.
@@ -168,18 +127,15 @@ func TestConfigGenerateNonceCfg(t *testing.T) {
 func TestConfigSnapshotGlobals(t *testing.T) {
 	origNonce := GetNonceBits()
 	origBarrier := GetBarrierFill()
-	origLockSoup := GetLockSoup()
 	origLockSeed := GetLockSeed()
 	t.Cleanup(func() {
 		SetNonceBits(origNonce)
 		SetBarrierFill(origBarrier)
-		SetLockSoup(origLockSoup)
 		SetLockSeed(int(origLockSeed))
 	})
 
 	SetNonceBits(256)
 	SetBarrierFill(8)
-	SetLockSoup(0)
 	SetLockSeed(0)
 
 	cfg := SnapshotGlobals()
@@ -189,9 +145,6 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	}
 	if cfg.BarrierFill != 8 {
 		t.Errorf("BarrierFill: got %d, want 8", cfg.BarrierFill)
-	}
-	if cfg.LockSoup != 0 {
-		t.Errorf("LockSoup: got %d, want 0", cfg.LockSoup)
 	}
 	if cfg.LockSeed != 0 {
 		t.Errorf("LockSeed: got %d, want 0 (snapshot of global)", cfg.LockSeed)
@@ -203,7 +156,6 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	// Mutate globals after snapshot — the snapshot must not drift.
 	SetNonceBits(512)
 	SetBarrierFill(32)
-	SetLockSoup(1)
 	SetLockSeed(1)
 
 	if cfg.NonceBits != 256 {
@@ -211,9 +163,6 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	}
 	if cfg.BarrierFill != 8 {
 		t.Errorf("post-mutation drift: BarrierFill = %d, want 8", cfg.BarrierFill)
-	}
-	if cfg.LockSoup != 0 {
-		t.Errorf("post-mutation drift: LockSoup = %d, want 0", cfg.LockSoup)
 	}
 	if cfg.LockSeed != 0 {
 		t.Errorf("post-mutation drift: LockSeed = %d, want 0", cfg.LockSeed)
@@ -234,10 +183,8 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 // subsequent global mutation back to 0.
 func TestConfigSnapshotGlobalsLockSeedOn(t *testing.T) {
 	origLockSeed := GetLockSeed()
-	origLockSoup := GetLockSoup()
 	t.Cleanup(func() {
 		SetLockSeed(int(origLockSeed))
-		SetLockSoup(origLockSoup)
 	})
 
 	SetLockSeed(1)
@@ -253,5 +200,3 @@ func TestConfigSnapshotGlobalsLockSeedOn(t *testing.T) {
 		t.Errorf("post-mutation drift: LockSeed = %d, want 1", cfg.LockSeed)
 	}
 }
-
-

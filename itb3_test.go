@@ -1282,12 +1282,9 @@ func benchTripleDecrypt512CachedBatched(b *testing.B, maker func() (HashFunc512,
 //     in-package and would hit the import cycle).
 //   - Triple Ouroboros (1 noise + 3 data + 3 start = 7 seeds)
 //     plus an 8th dedicated lockSeed attached via
-//     ns.AttachLockSeed(ls).
-//   - SetLockSoup(1) engaged so the bit-permutation overlay
-//     actually consumes the attached lockSeed; otherwise the
-//     attach call is a no-op and the bench measures plain
-//     Encrypt3x + Decrypt3x without exercising the LockSeed
-//     path.
+//     ns.AttachLockSeed(ls). The 48-bit interlock overlay is
+//     always engaged, so the attached lockSeed is consumed on
+//     every encrypt call.
 //
 // Run as:
 //
@@ -1296,12 +1293,6 @@ func benchTripleDecrypt512CachedBatched(b *testing.B, maker func() (HashFunc512,
 //
 // to dump per-iteration ns/op + B/op + allocs/op for inspection.
 func BenchmarkTripleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
-	prevLS := GetLockSoup()
-	SetLockSoup(1)
-	b.Cleanup(func() {
-		SetLockSoup(prevLS)
-	})
-
 	const (
 		bits     = 1024
 		dataSize = 64 << 20
@@ -1327,16 +1318,6 @@ func BenchmarkTripleBLAKE3RoundTripAttachedLockSeed(b *testing.B) {
 		}
 	}
 }
-
-// TestTripleAttachLockSeedOverlayOffPanic — Triple Ouroboros (7-seed)
-// counterpart of [TestSingleAttachLockSeedOverlayOffPanic]. Verifies
-// that a noiseSeed carrying an attached dedicated lockSeed but
-// reaching the bit-permutation PRF builder with neither global
-// BitSoup nor global LockSoup engaged panics with
-// [ErrLockSeedOverlayOff] inside [buildLockPRF256] rather than
-// silently producing byte-level ciphertext.
-//
-
 
 // --- Streaming benchmarks (Low-Level Triple Ouroboros, areion512, 1024-bit) ---
 

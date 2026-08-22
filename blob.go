@@ -122,19 +122,17 @@ type blobV1 struct {
 	Globals blobGlobalsV1 `json:"globals"`
 }
 
-// blobGlobalsV1 captures the sender's process-wide interlock overlay
-// / nonce / barrier configuration at the moment of Export. Import
-// applies all three fields unconditionally via [SetNonceBits] /
-// [SetBarrierFill] / [SetLockSoup]. [SetMaxWorkers] is excluded — the
-// worker count is a deployment-side decision (CPU budget on the
-// receiver host), not a per-message property. The global LockSeed
-// flag is also excluded — the native path consults
-// [Seed128.AttachedLockSeed] / [Seed256.AttachedLockSeed] /
-// [Seed512.AttachedLockSeed] directly, bypassing that flag.
+// blobGlobalsV1 captures the sender's process-wide nonce / barrier
+// configuration at the moment of Export. Import applies both fields
+// unconditionally via [SetNonceBits] / [SetBarrierFill].
+// [SetMaxWorkers] is excluded — the worker count is a deployment-side
+// decision (CPU budget on the receiver host), not a per-message
+// property. The global LockSeed flag is also excluded — the native
+// path consults [Seed128.AttachedLockSeed] / [Seed256.AttachedLockSeed]
+// / [Seed512.AttachedLockSeed] directly, bypassing that flag.
 type blobGlobalsV1 struct {
-	NonceBits   int   `json:"nonce_bits"`
-	BarrierFill int   `json:"barrier_fill"`
-	LockSoup    int32 `json:"lock_soup"`
+	NonceBits   int `json:"nonce_bits"`
+	BarrierFill int `json:"barrier_fill"`
 }
 
 // componentsToStrings encodes a uint64 slice as decimal-string
@@ -201,21 +199,20 @@ func hexToBytes(s string) ([]byte, error) {
 	return decoded, nil
 }
 
-// snapshotGlobalsV1 reads the current process-wide interlock overlay
-// / nonce / barrier configuration. Called from Export at blob-build
-// time; the receiver's [applyGlobalsV1] reverses the read.
+// snapshotGlobalsV1 reads the current process-wide nonce / barrier
+// configuration. Called from Export at blob-build time; the receiver's
+// [applyGlobalsV1] reverses the read.
 func snapshotGlobalsV1() blobGlobalsV1 {
 	return blobGlobalsV1{
 		NonceBits:   GetNonceBits(),
 		BarrierFill: GetBarrierFill(),
-		LockSoup:    GetLockSoup(),
 	}
 }
 
 // applyGlobalsV1 validates and writes the captured globals via
-// [SetNonceBits] / [SetBarrierFill] / [SetLockSoup]. Any out-of-range
-// value yields [ErrBlobMalformed] before any global is mutated, so a
-// malformed blob does not leave a partial process-wide state behind.
+// [SetNonceBits] / [SetBarrierFill]. Any out-of-range value yields
+// [ErrBlobMalformed] before any global is mutated, so a malformed blob
+// does not leave a partial process-wide state behind.
 func applyGlobalsV1(g blobGlobalsV1) error {
 	switch g.NonceBits {
 	case 128, 256, 512:
@@ -227,12 +224,8 @@ func applyGlobalsV1(g blobGlobalsV1) error {
 	default:
 		return ErrBlobMalformed
 	}
-	if g.LockSoup != 0 && g.LockSoup != 1 {
-		return ErrBlobMalformed
-	}
 	SetNonceBits(g.NonceBits)
 	SetBarrierFill(g.BarrierFill)
-	SetLockSoup(g.LockSoup)
 	return nil
 }
 
@@ -438,7 +431,7 @@ func (b *Blob512) Export3(
 // resets the receiver, and populates Mode + KeyN/KeyD/KeyS + NS/DS/SS
 // + optional KeyL/LS + optional MACKey/MACName. Captured globals
 // are applied unconditionally via [SetNonceBits] / [SetBarrierFill]
-// / [SetBitSoup] / [SetLockSoup] / [SetLockBatch] before populating the struct.
+// before populating the struct.
 //
 // Returns [ErrBlobModeMismatch] when the blob carries Mode=3 (call
 // Import3 instead), [ErrBlobMalformed] on parse / shape failure,

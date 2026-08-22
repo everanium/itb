@@ -267,9 +267,8 @@ func NewEasy(primitive string, keyBits int, macName string, mode int) (id EasyHa
 // mixed-width / crypto/rand failure.
 //
 // Empty primL signals "no dedicated lockSeed" (7-slot encryptor).
-// Non-empty primL allocates an 8th slot under that primitive and
-// auto-couples LockSoup on the on-direction, matching
-// [easy.NewMixed3]'s constructor contract.
+// Non-empty primL allocates an 8th slot under that primitive,
+// matching [easy.NewMixed3]'s constructor contract.
 func NewEasyMixed3(primN, primD1, primD2, primD3, primS1, primS2, primS3, primL string, keyBits int, macName string) (id EasyHandleID, st Status) {
 	defer recoverEasyPanic(&st, StatusInternal)
 

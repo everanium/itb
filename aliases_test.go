@@ -145,19 +145,6 @@ func makeAreionSoEM512() HashFunc512 {
 	return h
 }
 
-// withLockSoup engages the process-global Lock Soup overlay for the
-// duration of the test / subtest, restoring the prior mode via
-// t.Cleanup. Preferred over manual defer because it composes with
-// t.Run subtests.
-func withLockSoup(t testing.TB) {
-	t.Helper()
-	prev := GetLockSoup()
-	SetLockSoup(1)
-	t.Cleanup(func() {
-		SetLockSoup(prev)
-	})
-}
-
 // newHMACBlake3Bench returns a keyed-BLAKE3 [MACFunc] backed by a
 // process-scoped 32-byte fixed key. Used by streaming AEAD benchmark
 // harnesses that need a stable MAC without a per-iteration setup
