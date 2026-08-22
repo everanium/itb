@@ -161,7 +161,13 @@ func TestNewBatchShape(t *testing.T) {
 			t.Fatalf("NewBatch(%q): %v", p.name, err)
 		}
 		if !ok {
-			t.Fatalf("NewBatch(%q) ok = false, want true", p.name)
+			// The Areion batched arm is unavailable on hosts without any
+			// VAES-capable asm path (purego / non-amd64 / no-AESNI /
+			// -tags noitbasm builds). NewBatch reports ok=false there so
+			// callers fall through to the single-block PRF; the batch
+			// shape contract only applies when the batch path exists.
+			t.Logf("NewBatch(%q): no batch path on this host; skipping shape check", p.name)
+			continue
 		}
 		if bs != p.blockSize {
 			t.Errorf("NewBatch(%q) blockSize = %d, want %d", p.name, bs, p.blockSize)
@@ -205,8 +211,14 @@ func TestNewBatchEqualsSingle(t *testing.T) {
 		}
 		// Build the batched and the single-input PRF over the same key.
 		batch, bs, ok, err := NewBatch(p.name, key)
-		if err != nil || !ok {
-			t.Fatalf("NewBatch(%q): err=%v ok=%v", p.name, err, ok)
+		if err != nil {
+			t.Fatalf("NewBatch(%q): %v", p.name, err)
+		}
+		if !ok {
+			// No batch path on this host (non-VAES / -tags noitbasm) —
+			// the batched-vs-single equivalence is vacuous there.
+			t.Logf("NewBatch(%q): no batch path on this host; skipping equivalence check", p.name)
+			continue
 		}
 		single, sbs, err := New(p.name, key)
 		if err != nil {
