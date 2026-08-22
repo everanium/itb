@@ -146,7 +146,7 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockPRF48_128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -367,5 +367,5 @@ func Decrypt3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 		wg.Wait()
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF48_128Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce)), nil
 }
