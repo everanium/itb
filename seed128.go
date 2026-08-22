@@ -139,28 +139,21 @@ func (s *Seed128) Bits() int {
 	return len(s.Components) * 64
 }
 
-// MinPixels returns minimum pixel count ensuring encoding ambiguity (56^P)
-// exceeds key space (2^keyBits). Formula: ceil(keyBits / log2(56)).
-// Used by Encrypt/Decrypt and Stream functions (Core ITB / MAC + Silent Drop).
+// MinPixels returns the minimum pixel count ensuring encoding ambiguity
+// exceeds the key space (2^keyBits). Aliases [MinPixelsAuth]'s CCA-
+// resistant formula (ceil(keyBits / log2(7))) so plain and
+// MAC-authenticated modes share one small-message container envelope
+// — the envelope no longer distinguishes mode on tiny payloads.
 func (s *Seed128) MinPixels() int {
-	return (s.Bits()*minPixelsScale + minPixelsDivisor56 - 1) / minPixelsDivisor56
+	return s.MinPixelsAuth()
 }
 
-// MinPixelsAuth returns minimum pixel count ensuring encoding ambiguity (7^P)
-// exceeds key space (2^keyBits) even under CCA. Formula: ceil(keyBits / log2(7)).
-// Used by EncryptAuthenticated/DecryptAuthenticated (MAC + Reveal possible).
+// MinPixelsAuth returns the CCA-resistant minimum pixel count. Formula:
+// ceil(keyBits / log2(7)). Used by EncryptAuthenticated/DecryptAuthenticated
+// (MAC + Reveal possible) and, since the plain-mode floor was unified,
+// also by Encrypt/Decrypt and Stream.
 func (s *Seed128) MinPixelsAuth() int {
 	return (s.Bits()*minPixelsScale + minPixelsDivisor7 - 1) / minPixelsDivisor7
-}
-
-// MinSide returns minimum square container side length.
-func (s *Seed128) MinSide() int {
-	mp := s.MinPixels()
-	side := 1
-	for side*side < mp {
-		side++
-	}
-	return side
 }
 
 // ChainHash128 computes chained hash across all seed components with 128-bit state.

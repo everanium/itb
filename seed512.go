@@ -128,26 +128,18 @@ func (s *Seed512) Bits() int {
 	return len(s.Components) * 64
 }
 
-// MinPixels returns minimum pixel count ensuring encoding ambiguity (56^P)
-// exceeds key space (2^keyBits). Formula: ceil(keyBits / log2(56)).
+// MinPixels returns the minimum pixel count ensuring encoding ambiguity
+// exceeds the key space (2^keyBits). Aliases [MinPixelsAuth]'s CCA-
+// resistant formula so plain and MAC-authenticated modes share one
+// container envelope on small messages.
 func (s *Seed512) MinPixels() int {
-	return (s.Bits()*minPixelsScale + minPixelsDivisor56 - 1) / minPixelsDivisor56
+	return s.MinPixelsAuth()
 }
 
-// MinPixelsAuth returns minimum pixel count ensuring encoding ambiguity (7^P)
-// exceeds key space (2^keyBits) even under CCA. Formula: ceil(keyBits / log2(7)).
+// MinPixelsAuth returns the CCA-resistant minimum pixel count. Formula:
+// ceil(keyBits / log2(7)).
 func (s *Seed512) MinPixelsAuth() int {
 	return (s.Bits()*minPixelsScale + minPixelsDivisor7 - 1) / minPixelsDivisor7
-}
-
-// MinSide returns minimum square container side length.
-func (s *Seed512) MinSide() int {
-	mp := s.MinPixels()
-	side := 1
-	for side*side < mp {
-		side++
-	}
-	return side
 }
 
 // ChainHash512 computes chained hash across all seed components with 512-bit state.

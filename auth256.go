@@ -67,7 +67,7 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF256Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF256Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_256Cfg(cfg, noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -346,7 +346,7 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 		}
 	}
 
-	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF256Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF256Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_256Cfg(cfg, noiseSeed, nonce)), nil
 }
 
 // [EncryptStreamAuthenticated3x256]: threads cfg through every
@@ -377,7 +377,7 @@ func EncryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTripleParallelLockedCfg(cfg, data, buildLockPRF256Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF256Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_256Cfg(cfg, noiseSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -692,5 +692,5 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 		return []byte{}, true, nil
 	}
 
-	return interleaveForTripleParallelLockedCfg(cfg, parts[0], parts[1], parts[2], buildLockPRF256Cfg(cfg, noiseSeed, nonce), buildLockBatchPRF256Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_256Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
 }

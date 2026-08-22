@@ -39,13 +39,14 @@ const (
 	DataConfigBits = DataRotationBits + DataBitsPerPixel // 59 — rotation + per-bit XOR
 )
 
-// minPixelsDivisor56 and minPixelsDivisor7 are scaled integer divisors for
-// ceil(keyBits / log2(56)) and ceil(keyBits / log2(7)) respectively.
-// log2(56) ≈ 5.8074, log2(7) ≈ 2.8074. Scaled by 10000 for integer arithmetic.
+// minPixelsDivisor7 is the scaled integer divisor for
+// ceil(keyBits / log2(7)) — the CCA-resistant container floor used by
+// both plain and MAC-authenticated modes since the small-message
+// envelope was unified across the two. log2(7) ≈ 2.8074, scaled by
+// 10000 for integer arithmetic.
 const (
-	minPixelsDivisor56 = 58074 // log2(56) * 10000, rounded up
-	minPixelsDivisor7  = 28074 // log2(7) * 10000, rounded up
-	minPixelsScale     = 10000
+	minPixelsDivisor7 = 28074 // log2(7) * 10000, rounded up
+	minPixelsScale    = 10000
 )
 
 // calcContainerSize computes square container dimensions from payload and minimum pixel counts.
