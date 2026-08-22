@@ -1,10 +1,12 @@
 package itb
 
 import (
+	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"math/big"
 	"math/bits"
-	"math/rand"
+	mathrand "math/rand"
 	"testing"
 )
 
@@ -109,7 +111,7 @@ func TestUnrankCombination48Invariants(t *testing.T) {
 	for _, tc := range cases {
 		// Sample dense boundaries + a random sweep.
 		samples := []uint64{0, 1, tc.card / 2, tc.card - 2, tc.card - 1}
-		rng := rand.New(rand.NewSource(int64(tc.n*100 + tc.k)))
+		rng := mathrand.New(mathrand.NewSource(int64(tc.n*100 + tc.k)))
 		for i := 0; i < 10000; i++ {
 			samples = append(samples, rng.Uint64()%tc.card)
 		}
@@ -133,7 +135,7 @@ func TestUnrankCombination48Invariants(t *testing.T) {
 // ============================================================================
 
 func TestRankToMaskTriple48Invariants(t *testing.T) {
-	rng := rand.New(rand.NewSource(1))
+	rng := mathrand.New(mathrand.NewSource(1))
 	const N = 1 << 15
 	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
 	for i := 0; i < N; i++ {
@@ -214,7 +216,7 @@ func TestRankToMaskTriple48ReductionBoundary(t *testing.T) {
 
 func TestRankToMaskTriple48ReductionGcdTrap(t *testing.T) {
 	const gcd = 66861
-	rng := rand.New(rand.NewSource(1))
+	rng := mathrand.New(mathrand.NewSource(1))
 	const N = 100000
 	onDiag := 0
 	for i := 0; i < N; i++ {
@@ -245,7 +247,7 @@ func TestRankToMaskTriple48ReductionGcdTrap(t *testing.T) {
 // the classes are exercised independently.
 func TestRankToMaskTriple48ReductionResidueCoverage(t *testing.T) {
 	primes := []uint64{9, 17, 19, 23}
-	rng := rand.New(rand.NewSource(1))
+	rng := mathrand.New(mathrand.NewSource(1))
 	seen := make([]map[uint64]bool, len(primes))
 	for i := range primes {
 		seen[i] = make(map[uint64]bool)
@@ -276,7 +278,7 @@ func TestRankToMaskTriple48ReductionResidueCoverage(t *testing.T) {
 // ============================================================================
 
 func TestChunk48LockRoundTrip(t *testing.T) {
-	rng := rand.New(rand.NewSource(1))
+	rng := mathrand.New(mathrand.NewSource(1))
 	const N = 20000
 	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
 	for i := 0; i < N; i++ {
@@ -320,7 +322,7 @@ func TestChunk48LockDirectedInputs(t *testing.T) {
 // ============================================================================
 
 func TestSoftPEXT48PDEP48Inverse(t *testing.T) {
-	rng := rand.New(rand.NewSource(1))
+	rng := mathrand.New(mathrand.NewSource(1))
 	const N = 10000
 	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
 	for i := 0; i < N; i++ {
@@ -346,6 +348,283 @@ func TestSoftPEXT48PDEP48Inverse(t *testing.T) {
 		if uint64(compressed) != uint64(compressed)&0xFFFF {
 			t.Fatalf("iter=%d: softPEXT48 result %04x has bits beyond bit 15",
 				i, compressed)
+		}
+	}
+}
+
+// ============================================================================
+// High-level split / interleave — round-trip across widths and driver paths.
+// ============================================================================
+
+// interlock48Sizes covers every (4 + len(data)) mod 6 residue class so that
+// LPad exercises each of the six padding lengths, then several sizes where the
+// parallel workers actually spawn.
+var interlock48Sizes = []int{
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+	23, 24, 25, 47, 48, 49,
+	100, 255, 256, 257,
+	1023, 1024, 1025,
+	4095, 4096, 4097,
+	65535, 65536, 65537,
+	1 << 20,
+}
+
+func interlock48RandomBytes(n int) []byte {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// interlock48Nonce returns a deterministic nonce so PRF-derived masks are
+// reproducible across encoder / decoder invocations within one test.
+func interlock48Nonce() []byte {
+	nonce := make([]byte, 16)
+	for i := range nonce {
+		nonce[i] = byte(i * 37)
+	}
+	return nonce
+}
+
+// perChunkRoundTrip48 encodes framed via splitTriple48Locked and decodes back
+// via interleaveTriple48Locked using the supplied PRF pair (encoder / decoder
+// derive identical masks from the same lockSeed). Returns the recovered bytes
+// including any padding the encoder added — the caller compares against the
+// framed prefix of appropriate length.
+func perChunkRoundTrip48(framed []byte, prf lockPRF48) []byte {
+	p0, p1, p2 := splitTriple48Locked(framed, prf)
+	return interleaveTriple48Locked(p0, p1, p2, prf)
+}
+
+func batchRoundTrip48(framed []byte, bp lockBatchPRF48) []byte {
+	p0, p1, p2 := splitTriple48LockedBatch(framed, bp)
+	return interleaveTriple48LockedBatch(p0, p1, p2, bp)
+}
+
+func TestSplitInterleaveTriple48LockedRoundTrip(t *testing.T) {
+	nonce := interlock48Nonce()
+
+	widthCases := []struct {
+		label string
+		build func() lockPRF48
+	}{
+		{"128-sip", func() lockPRF48 {
+			ns, _ := NewSeed128(512, sipHash128)
+			return buildLockPRF48_128(ns, nonce)
+		}},
+		{"256-blake3", func() lockPRF48 {
+			ns, _ := NewSeed256(512, makeBlake3Hash256())
+			return buildLockPRF48_256(ns, nonce)
+		}},
+		{"512-areion", func() lockPRF48 {
+			ns, _ := NewSeed512(512, makeAreionSoEM512())
+			return buildLockPRF48_512(ns, nonce)
+		}},
+	}
+	for _, wc := range widthCases {
+		wc := wc
+		t.Run(wc.label, func(t *testing.T) {
+			prf := wc.build()
+			for _, sz := range interlock48Sizes {
+				framed := interlock48RandomBytes(sz)
+				out := perChunkRoundTrip48(framed, prf)
+				if len(out) < len(framed) {
+					t.Fatalf("size %d: interleave shorter than input (%d < %d)", sz, len(out), len(framed))
+				}
+				if !bytes.Equal(out[:len(framed)], framed) {
+					t.Fatalf("size %d: round-trip mismatch", sz)
+				}
+			}
+		})
+	}
+}
+
+func TestSplitInterleaveTriple48LockedBatchRoundTrip(t *testing.T) {
+	nonce := interlock48Nonce()
+
+	widthCases := []struct {
+		label string
+		build func() lockBatchPRF48
+	}{
+		{"128-sip", func() lockBatchPRF48 {
+			ns, _ := NewSeed128(512, sipHash128)
+			return buildLockBatchPRF48_128(ns, nonce)
+		}},
+		{"256-blake3", func() lockBatchPRF48 {
+			ns, _ := NewSeed256(512, makeBlake3Hash256())
+			return buildLockBatchPRF48_256(ns, nonce)
+		}},
+		{"512-areion", func() lockBatchPRF48 {
+			ns, _ := NewSeed512(512, makeAreionSoEM512())
+			return buildLockBatchPRF48_512(ns, nonce)
+		}},
+	}
+	for _, wc := range widthCases {
+		wc := wc
+		t.Run(wc.label, func(t *testing.T) {
+			bp := wc.build()
+			for _, sz := range interlock48Sizes {
+				framed := interlock48RandomBytes(sz)
+				out := batchRoundTrip48(framed, bp)
+				if len(out) < len(framed) {
+					t.Fatalf("size %d: interleave shorter than input (%d < %d)", sz, len(out), len(framed))
+				}
+				if !bytes.Equal(out[:len(framed)], framed) {
+					t.Fatalf("size %d: round-trip mismatch", sz)
+				}
+			}
+		})
+	}
+}
+
+// TestBatchVsPerChunkFactor1 checks that at the single-chunk-per-group
+// width (128-bit hash, factor == 1), the batched wire is bit-identical
+// to the per-chunk wire under the same shared seed. This is the only
+// width where the equivalence holds: at factor > 1 the batched closure
+// consumes multiple 128-bit rank slices from ONE hash call (harvesting
+// lane pairs 2j, 2j+1 for chunk j of the group), whereas the per-chunk
+// closure runs one hash call per chunk with its own globalChunkIdx —
+// the two paths derive different masks past factor 1, by design. The
+// wire is not a compatibility surface across driver paths; both sides
+// of a channel must choose the same driver and stick to it.
+func TestBatchVsPerChunkFactor1(t *testing.T) {
+	nonce := interlock48Nonce()
+	ns128, _ := NewSeed128(512, sipHash128)
+	perChunk := buildLockPRF48_128(ns128, nonce)
+	batched := buildLockBatchPRF48_128(ns128, nonce)
+	for _, sz := range interlock48Sizes {
+		framed := interlock48RandomBytes(sz)
+		pcP0, pcP1, pcP2 := splitTriple48Locked(framed, perChunk)
+		btP0, btP1, btP2 := splitTriple48LockedBatch(framed, batched)
+		if !bytes.Equal(pcP0, btP0) || !bytes.Equal(pcP1, btP1) || !bytes.Equal(pcP2, btP2) {
+			t.Fatalf("size %d: factor=1 batch vs per-chunk lane bytes diverge", sz)
+		}
+	}
+}
+
+// TestBatchClosureLaneOracle verifies that at each width, the batched
+// closure's per-lane mask output matches an independent reference
+// derivation: manually invoke the underlying hash on the group buffer,
+// take lane pairs (out[2j], out[2j+1]) as chunk j's 128-bit rank, and
+// call rankToMaskTriple48 on each. This anchors the closure's wiring
+// (lane pair layout, group index in buf[1:9], domain tag in buf[0])
+// against a formula that has no closure-side arithmetic to hide behind.
+func TestBatchClosureLaneOracle(t *testing.T) {
+	nonce := interlock48Nonce()
+
+	// 128-bit: 1 lane pair per hash call.
+	{
+		ns, _ := NewSeed128(512, sipHash128)
+		bp := buildLockBatchPRF48_128(ns, nonce)
+		var masks [lockBatchFactor48Max][3]uint64
+		var buf [13]byte
+		for groupIdx := uint64(0); groupIdx < 5; groupIdx++ {
+			bp.fill(buf[:], groupIdx, &masks)
+
+			// Independent reference: reconstruct the buf and call hash directly.
+			var refBuf [13]byte
+			refBuf[0] = 0x03
+			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
+			lockLo, lockHi := ns.deriveInterLockSeed(nonce)
+			lo, hi := ns.Hash(refBuf[:], lockLo, lockHi)
+			wantM0, wantM1, wantM2 := rankToMaskTriple48(lo, hi)
+			if masks[0][0] != wantM0 || masks[0][1] != wantM1 || masks[0][2] != wantM2 {
+				t.Fatalf("128 group=%d: batched (%012x, %012x, %012x), reference (%012x, %012x, %012x)",
+					groupIdx, masks[0][0], masks[0][1], masks[0][2], wantM0, wantM1, wantM2)
+			}
+		}
+	}
+
+	// 256-bit: 2 lane pairs per hash call (chunk j uses out[2j], out[2j+1]).
+	{
+		ns, _ := NewSeed256(512, makeBlake3Hash256())
+		bp := buildLockBatchPRF48_256(ns, nonce)
+		var masks [lockBatchFactor48Max][3]uint64
+		var buf [13]byte
+		for groupIdx := uint64(0); groupIdx < 5; groupIdx++ {
+			bp.fill(buf[:], groupIdx, &masks)
+
+			var refBuf [13]byte
+			refBuf[0] = 0x03
+			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
+			lockSeed := ns.deriveInterLockSeed(nonce)
+			out := ns.Hash(refBuf[:], lockSeed)
+			for j := 0; j < 2; j++ {
+				wantM0, wantM1, wantM2 := rankToMaskTriple48(out[2*j], out[2*j+1])
+				if masks[j][0] != wantM0 || masks[j][1] != wantM1 || masks[j][2] != wantM2 {
+					t.Fatalf("256 group=%d lane=%d: batched vs reference divergence",
+						groupIdx, j)
+				}
+			}
+		}
+	}
+
+	// 512-bit: 4 lane pairs per hash call.
+	{
+		ns, _ := NewSeed512(512, makeAreionSoEM512())
+		bp := buildLockBatchPRF48_512(ns, nonce)
+		var masks [lockBatchFactor48Max][3]uint64
+		var buf [13]byte
+		for groupIdx := uint64(0); groupIdx < 5; groupIdx++ {
+			bp.fill(buf[:], groupIdx, &masks)
+
+			var refBuf [13]byte
+			refBuf[0] = 0x03
+			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
+			lockSeed := ns.deriveInterLockSeed(nonce)
+			out := ns.Hash(refBuf[:], lockSeed)
+			for j := 0; j < 4; j++ {
+				wantM0, wantM1, wantM2 := rankToMaskTriple48(out[2*j], out[2*j+1])
+				if masks[j][0] != wantM0 || masks[j][1] != wantM1 || masks[j][2] != wantM2 {
+					t.Fatalf("512 group=%d lane=%d: batched vs reference divergence",
+						groupIdx, j)
+				}
+			}
+		}
+	}
+}
+
+// TestSplitTriple48LockedPaddingEdges hits every LPad residue class explicitly.
+func TestSplitTriple48LockedPaddingEdges(t *testing.T) {
+	ns, _ := NewSeed128(512, sipHash128)
+	prf := buildLockPRF48_128(ns, interlock48Nonce())
+
+	// LPad = ((L+5)/6)*6; test residues 0..5 through the boundary at 6, 12, 48.
+	sizes := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 47, 48, 49}
+	for _, sz := range sizes {
+		framed := interlock48RandomBytes(sz)
+		p0, p1, p2 := splitTriple48Locked(framed, prf)
+		expectedM := (sz + 5) / 6
+		wantLen := 2 * expectedM
+		if len(p0) != wantLen || len(p1) != wantLen || len(p2) != wantLen {
+			t.Fatalf("size %d: lane length (%d, %d, %d), want %d each",
+				sz, len(p0), len(p1), len(p2), wantLen)
+		}
+		out := interleaveTriple48Locked(p0, p1, p2, prf)
+		wantOutLen := expectedM * 6
+		if len(out) != wantOutLen {
+			t.Fatalf("size %d: interleave length %d, want %d", sz, len(out), wantOutLen)
+		}
+		if !bytes.Equal(out[:sz], framed) {
+			t.Fatalf("size %d: recovered prefix differs from framed", sz)
+		}
+	}
+}
+
+// TestSplitTriple48LockedBatchShortFinalGroup exercises the tail-group
+// break-out path when M is not a multiple of the batch factor. For
+// 512-bit width factor == 4, so M mod 4 in {1, 2, 3} all need coverage.
+func TestSplitTriple48LockedBatchShortFinalGroup(t *testing.T) {
+	ns, _ := NewSeed512(512, makeAreionSoEM512())
+	bp := buildLockBatchPRF48_512(ns, interlock48Nonce())
+	// framed sizes tuned so M = 5, 6, 7 → tail = 1, 2, 3.
+	for _, framedLen := range []int{30, 36, 42} {
+		framed := interlock48RandomBytes(framedLen)
+		out := batchRoundTrip48(framed, bp)
+		if !bytes.Equal(out[:framedLen], framed) {
+			t.Fatalf("framedLen %d (M=%d, tail=%d): round-trip mismatch",
+				framedLen, framedLen/6, (framedLen/6)%bp.factor)
 		}
 	}
 }
