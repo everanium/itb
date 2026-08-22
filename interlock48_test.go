@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"math/bits"
 	mathrand "math/rand"
+	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -627,4 +629,179 @@ func TestSplitTriple48LockedBatchShortFinalGroup(t *testing.T) {
 				framedLen, framedLen/6, (framedLen/6)%bp.factor)
 		}
 	}
+}
+
+// ============================================================================
+// Per-chunk PRF oracle — test-only reference for the batched production path.
+// ============================================================================
+//
+// Production dispatches only through the batched closure surface: encrypt /
+// decrypt call splitTriple48LockedBatch / interleaveTriple48LockedBatch with
+// a lockBatchPRF48 built by buildLockBatchPRF48_{128,256,512}. The per-chunk
+// closure lives here in _test.go as the oracle against which the batched
+// closure's factor > 1 lane layout is verified (TestBatchClosureLaneOracle,
+// TestBatchVsPerChunkFactor1). It is not reachable from any production code.
+//
+// The buffer layout matches the batched closure so scratch reuse is
+// symmetric:
+//
+//	buf[0]    = 0x03   (Triple lock domain tag)
+//	buf[1:9]  = uint64-LE(globalChunkIdx)
+//	buf[9:13] = reserved
+
+// lockPRF48 is the per-chunk PRF closure type consumed by
+// splitTriple48Locked / interleaveTriple48Locked.
+type lockPRF48 func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64)
+
+// buildLockPRF48_128 constructs a per-chunk lockPRF48 closure for the
+// 128-bit Triple context. When the noiseSeed has a dedicated lockSeed
+// installed via [Seed128.AttachLockSeed], that attached seed supplies
+// BOTH the per-chunk PRF keying material AND the Hash function.
+func buildLockPRF48_128(noiseSeed *Seed128, nonce []byte) lockPRF48 {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		src = ls
+	}
+	lockLo, lockHi := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		lo, hi := h(buf, lockLo, lockHi)
+		return rankToMaskTriple48(lo, hi)
+	}
+}
+
+// buildLockPRF48_256 — 256-bit counterpart of [buildLockPRF48_128].
+func buildLockPRF48_256(noiseSeed *Seed256, nonce []byte) lockPRF48 {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		return rankToMaskTriple48(out[0], out[1])
+	}
+}
+
+// buildLockPRF48_512 — 512-bit counterpart of [buildLockPRF48_128].
+func buildLockPRF48_512(noiseSeed *Seed512, nonce []byte) lockPRF48 {
+	src := noiseSeed
+	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
+		src = ls
+	}
+	lockSeed := src.deriveInterLockSeed(nonce)
+	h := src.Hash
+	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		out := h(buf, lockSeed)
+		return rankToMaskTriple48(out[0], out[1])
+	}
+}
+
+// splitTriple48Locked splits framed into three lane buffers of 2*M
+// bytes each, applying the PRF-derived mask triple to every 48-bit
+// chunk. Input is padded up to a multiple of 6 bytes; the caller
+// strips the framing length prefix on the way back out.
+func splitTriple48Locked(data []byte, prf lockPRF48) (p0, p1, p2 []byte) {
+	L := len(data)
+	LPad := ((L + 5) / 6) * 6
+	var padded []byte
+	if LPad == L {
+		padded = data
+	} else {
+		padded = make([]byte, LPad)
+		copy(padded, data)
+	}
+	M := LPad / 6
+
+	p0 = make([]byte, 2*M)
+	p1 = make([]byte, 2*M)
+	p2 = make([]byte, 2*M)
+
+	if M == 0 {
+		return
+	}
+
+	G := runtime.NumCPU()
+	if G > M {
+		G = M
+	}
+	chunksPerWorker := (M + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		start := w * chunksPerWorker
+		end := start + chunksPerWorker
+		if end > M {
+			end = M
+		}
+		if start >= end {
+			continue
+		}
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			var buf [13]byte
+			for k := s; k < e; k++ {
+				m0, m1, m2 := prf(buf[:], uint64(k))
+				x := readChunk48(padded, 6*k)
+				l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+				binary.LittleEndian.PutUint16(p0[2*k:], l0)
+				binary.LittleEndian.PutUint16(p1[2*k:], l1)
+				binary.LittleEndian.PutUint16(p2[2*k:], l2)
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	return
+}
+
+// interleaveTriple48Locked is the inverse of [splitTriple48Locked].
+// Lane buffers must be equal length (2*M bytes each). Result includes
+// any padding bytes the encoder added; the caller strips them via the
+// framing length prefix.
+func interleaveTriple48Locked(p0, p1, p2 []byte, prf lockPRF48) []byte {
+	M := len(p0) / 2
+	result := make([]byte, M*6)
+
+	if M == 0 {
+		return result
+	}
+
+	G := runtime.NumCPU()
+	if G > M {
+		G = M
+	}
+	chunksPerWorker := (M + G - 1) / G
+	var wg sync.WaitGroup
+	for w := 0; w < G; w++ {
+		start := w * chunksPerWorker
+		end := start + chunksPerWorker
+		if end > M {
+			end = M
+		}
+		if start >= end {
+			continue
+		}
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			var buf [13]byte
+			for k := s; k < e; k++ {
+				m0, m1, m2 := prf(buf[:], uint64(k))
+				l0 := binary.LittleEndian.Uint16(p0[2*k:])
+				l1 := binary.LittleEndian.Uint16(p1[2*k:])
+				l2 := binary.LittleEndian.Uint16(p2[2*k:])
+				x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+				writeChunk48(result, 6*k, x)
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	return result
 }
