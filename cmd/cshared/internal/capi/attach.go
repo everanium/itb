@@ -19,12 +19,8 @@ import (
 // The two handles must share the same native hash width; mixing
 // widths returns StatusSeedWidthMix. The underlying seed mutator
 // panics in three documented misuse cases — self-attach, component-
-// array aliasing, and post-Encrypt switching — plus the bit-soup-
-// builder ErrLockSeedOverlayOff guard fires later on Encrypt time
-// if neither BitSoup nor LockSoup is engaged on the active dispatch
-// path. The deferred recover here translates the three attach-time
-// panics to StatusBadInput; the overlay-off guard panics elsewhere
-// (build*PRF) and is not visible from this entry point.
+// array aliasing, and post-Encrypt switching — which the deferred
+// recover here translates to StatusBadInput.
 //
 // The lockSeed handle remains owned by the caller — AttachLockSeed
 // only records the pointer on the noise seed; releasing the lockSeed
@@ -32,12 +28,8 @@ import (
 // derivation path. The standard pairing is: keep lockSeed alive for
 // the lifetime of the noise seed.
 //
-// Bindings exposing AttachLockSeed must engage the bit-permutation
-// overlay (set_bit_soup(1) or set_lock_soup(1) at the global setter
-// level for the legacy entry points; cfg.LockSoup / cfg.BitSoup for
-// the Cfg variants) before the first Encrypt call, otherwise the
-// overlay-off guard inside the build-PRF closure raises
-// itb.ErrLockSeedOverlayOff.
+// The 48-bit interlock overlay is always engaged, so an attached
+// dedicated lockSeed is consumed on every subsequent Encrypt call.
 func AttachLockSeed(noise, lock HandleID) (st Status) {
 	defer func() {
 		if r := recover(); r != nil {

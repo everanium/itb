@@ -190,8 +190,8 @@ func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
 // the same domain-tagged buffer used by [Seed128.deriveStartPixel].
 // deriveStartPixel truncates to a pixel index (~13 bits) of hLo;
 // deriveInterLockSeed exposes the full (hLo, hHi) pair for consumers that
-// need it as PRF seed material — e.g. Lock Soup's per-chunk keystream
-// when SetLockSoup(1) is in effect.
+// need it as PRF seed material — e.g. the interlock overlay's per-chunk
+// keystream.
 //
 // Typically called on noiseSeed in the Triple Ouroboros context — the
 // only shared seed across the 3 snakes, used as the keying source for

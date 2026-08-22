@@ -6,11 +6,11 @@ import (
 )
 
 // Config carries per-encryptor overrides for the global-state settings
-// that are safe to scope per encryptor: nonce size, barrier fill,
-// lock soup, and lock seed. The MaxWorkers global stays process-wide
-// and is not represented here — effectiveWorkers is consulted from
-// many internal paths and threading per-encryptor would expand the
-// refactor without proportional benefit.
+// that are safe to scope per encryptor: nonce size, barrier fill, and
+// lock seed. The MaxWorkers global stays process-wide and is not
+// represented here — effectiveWorkers is consulted from many internal
+// paths and threading per-encryptor would expand the refactor without
+// proportional benefit.
 //
 // Sentinel-valued fields signal "inherit the current global state at
 // access time"; non-sentinel values signal that the encryptor has
@@ -18,16 +18,15 @@ import (
 //
 //   - NonceBits: 0 = inherit; otherwise 128 / 256 / 512 (in bits).
 //   - BarrierFill: 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32.
-//   - LockSoup: -1 = inherit; 0 = off; non-zero = on.
 //   - LockSeed: -1 = inherit; 0 = off; 1 = on (dedicated lockSeed
 //     drives bit-permutation derivation instead of noiseSeed).
 //
 // LockSeedHandle is not a Config knob in the value sense — it is the
 // pointer to the dedicated lockSeed object the encryptor constructor
-// allocates when LockSeed becomes 1. Internal Cfg-suffixed bit-soup
-// accessors consult this handle to route bit-permutation derivation
-// to the dedicated seed; the value-typed LockSeed flag indicates
-// only whether the dedicated seed is active.
+// allocates when LockSeed becomes 1. Internal Cfg-suffixed
+// bit-permutation accessors consult this handle to route
+// bit-permutation derivation to the dedicated seed; the value-typed
+// LockSeed flag indicates only whether the dedicated seed is active.
 //
 // The struct is unexported. The legacy public entry points
 // (Encrypt3x512 etc.) pass nil to the Cfg-variant entry points and
@@ -36,7 +35,6 @@ import (
 type Config struct {
 	NonceBits      int         // 0 = inherit; otherwise 128 / 256 / 512
 	BarrierFill    int         // 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32
-	LockSoup       int32       // -1 = inherit; 0 = off; non-zero = on
 	LockSeed       int32       // -1 = inherit; 0 = off; 1 = on
 	LockSeedHandle interface{} // nil unless LockSeed == 1; *Seed{128,256,512}
 }
@@ -60,7 +58,6 @@ func SnapshotGlobals() *Config {
 	return &Config{
 		NonceBits:   GetNonceBits(),
 		BarrierFill: GetBarrierFill(),
-		LockSoup:    GetLockSoup(),
 		LockSeed:    GetLockSeed(),
 	}
 }
@@ -89,17 +86,6 @@ func currentBarrierFillCfg(cfg *Config) int {
 		return cfg.BarrierFill
 	}
 	return currentBarrierFill()
-}
-
-// isLockSoupEnabledCfg reports whether the lock-soup overlay is
-// enabled for the caller. Cfg variant of isLockSoupEnabled: consults
-// cfg when non-nil and the LockSoup field is non-sentinel (>= 0);
-// otherwise falls through to isLockSoupEnabled.
-func isLockSoupEnabledCfg(cfg *Config) bool {
-	if cfg != nil && cfg.LockSoup >= 0 {
-		return cfg.LockSoup != 0
-	}
-	return isLockSoupEnabled()
 }
 
 // generateNonceCfg returns a fresh cryptographic nonce of the

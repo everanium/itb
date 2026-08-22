@@ -118,8 +118,7 @@ const (
 // read-only after construction. Mutating them directly produces
 // undefined behaviour; reads are safe. Subsequent configuration
 // changes go through the [Encryptor.SetNonceBits],
-// [Encryptor.SetBarrierFill], [Encryptor.SetBitSoup],
-// [Encryptor.SetLockSoup], [Encryptor.SetLockBatch], [Encryptor.SetLockSeed], and
+// [Encryptor.SetBarrierFill], [Encryptor.SetLockSeed], and
 // [Encryptor.SetChunkSize] methods, which mutate the encryptor's own
 // config copy without touching process globals or other encryptors.
 //
@@ -211,19 +210,17 @@ type Encryptor struct {
 	// ciphertext.
 	firstEncryptCalled bool
 
-	// nonceBitsExplicit / barrierFillExplicit / lockSoupExplicit
-	// track whether the corresponding cfg field was set by an
-	// explicit [Encryptor.SetNonceBits] / [Encryptor.SetBarrierFill]
-	// / [Encryptor.SetLockSoup] call (or restored from a state blob
-	// that carried the field). [SnapshotGlobals] pins cfg.* to the
-	// process-global state at construction, so the cfg value alone
-	// does not distinguish "user set" from "snapshot of global"; the
-	// flags do. [Encryptor.Export] consults them to decide whether
-	// to emit the optional nonce_bits / barrier_fill / lock_soup
-	// fields in the blob.
+	// nonceBitsExplicit / barrierFillExplicit track whether the
+	// corresponding cfg field was set by an explicit
+	// [Encryptor.SetNonceBits] / [Encryptor.SetBarrierFill] call (or
+	// restored from a state blob that carried the field).
+	// [SnapshotGlobals] pins cfg.* to the process-global state at
+	// construction, so the cfg value alone does not distinguish "user
+	// set" from "snapshot of global"; the flags do. [Encryptor.Export]
+	// consults them to decide whether to emit the optional nonce_bits
+	// / barrier_fill fields in the blob.
 	nonceBitsExplicit   bool
 	barrierFillExplicit bool
-	lockSoupExplicit    bool
 
 	// primitives holds per-slot canonical hash primitive names for
 	// encryptors built via [NewMixed] / [NewMixed3] — one entry per

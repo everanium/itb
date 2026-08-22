@@ -22,13 +22,13 @@ import (
 //     is off; when on, the field is encoded as the literal `true`.
 //     No other value is canonical, and the v1 reader rejects any
 //     non-true encoding.
-//   - nonce_bits / barrier_fill / lock_soup carry the encryptor's
-//     per-instance configuration overrides. Each is omitted when the
-//     encryptor never explicitly set it (cfg sentinel "inherit":
-//     NonceBits == 0 / BarrierFill == 0 / LockSoup == -1). On Import
-//     the corresponding setter is called for each present field;
-//     missing fields keep the receiver's existing cfg state (legacy
-//     mirror-manually behaviour).
+//   - nonce_bits / barrier_fill carry the encryptor's per-instance
+//     configuration overrides. Each is omitted when the encryptor
+//     never explicitly set it (cfg sentinel "inherit":
+//     NonceBits == 0 / BarrierFill == 0). On Import the corresponding
+//     setter is called for each present field; missing fields keep
+//     the receiver's existing cfg state (legacy mirror-manually
+//     behaviour).
 //   - seeds inner arrays carry decimal uint64 strings (base 10) so
 //     cross-language consumers do not hit the JSON 53-bit number
 //     precision limit.
@@ -47,7 +47,6 @@ type stateBlobV1 struct {
 	LockSeed    bool       `json:"lock_seed,omitempty"`
 	NonceBits   int        `json:"nonce_bits,omitempty"`
 	BarrierFill int        `json:"barrier_fill,omitempty"`
-	LockSoup    *int32     `json:"lock_soup,omitempty"`
 
 	// Mixed signals that the blob carries per-slot primitive names.
 	// Encoded as the literal `true` when the encryptor was built via
@@ -95,11 +94,11 @@ func modeFromString(s string) (int, bool) {
 // same seed components, same MAC key, same dedicated lockSeed
 // material if active.
 //
-// Per-encryptor configuration knobs (NonceBits, BarrierFill,
-// LockSoup) are carried in the v1 blob as optional fields when the
-// sender set them explicitly, and restored on Import; a receiver
-// may still override them before Import. LockSeed presence is
-// carried because activating it changes the structural seed count.
+// Per-encryptor configuration knobs (NonceBits, BarrierFill) are
+// carried in the v1 blob as optional fields when the sender set
+// them explicitly, and restored on Import; a receiver may still
+// override them before Import. LockSeed presence is carried because
+// activating it changes the structural seed count.
 //
 // Infallible — JSON marshal of a validated internal struct cannot
 // fail under normal operation; a nil-receiver / closed-encryptor
@@ -165,10 +164,6 @@ func (e *Encryptor) Export() []byte {
 	}
 	if e.barrierFillExplicit {
 		blob.BarrierFill = e.cfg.BarrierFill
-	}
-	if e.lockSoupExplicit {
-		v := e.cfg.LockSoup
-		blob.LockSoup = &v
 	}
 
 	out, err := json.Marshal(blob)
@@ -518,48 +513,20 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		e.cfg.BarrierFill = blob.BarrierFill
 		e.barrierFillExplicit = true
 	}
-	if blob.LockSoup != nil {
-		e.cfg.LockSoup = *blob.LockSoup
-		e.lockSoupExplicit = true
-	}
 
 	if rawLockSeed {
 		e.cfg.LockSeed = 1
 		e.cfg.LockSeedHandle = newSeeds[nSeeds-1]
 		// Wire the dedicated lockSeed onto the noiseSeed via the
 		// width-typed AttachLockSeed mutator, mirroring NewMixed /
-		// NewMixed3 construction. Without this attach, post-Import
-		// SetLockSeed(0) followed by overlay-off setters would not
-		// release the noiseSeed's lockSeed pointer — symmetric with
-		// the construction-time path so SetLockSeed lifecycle
-		// behaves identically regardless of how the encryptor was
-		// born.
+		// NewMixed3 construction so SetLockSeed lifecycle behaves
+		// identically regardless of how the encryptor was born.
 		attachNoiseSeedLockSeed(newSeeds[0], newSeeds[nSeeds-1], e.width)
-		// Auto-couple Lock Soup on the on-direction, mirroring
-		// [Encryptor.SetLockSeed]'s coupling behaviour: a dedicated
-		// lockSeed has no observable effect on the wire output
-		// unless the bit-permutation overlay is engaged. Sender
-		// reached this state through SetLockSeed(1) which couples
-		// the overlay; Import on the receiver must reach the same
-		// state or the pre-permuted ciphertext decodes as garbage
-		// (MAC verification over the encrypted payload still passes
-		// — the key material survives the round-trip — but the
-		// recovered plaintext is wrong). The auto-couple runs after
-		// the blob's LockSoup field applies, so a sender that
-		// explicitly wrote LockSoup=0 plus lock_seed:true (an
-		// inconsistent blob) is normalised to the consistent
-		// on-direction state here.
-		e.cfg.LockSoup = 1
-		e.lockSoupExplicit = true
 	} else {
 		e.cfg.LockSeed = 0
 		e.cfg.LockSeedHandle = nil
-		// Off-direction: do NOT auto-disable the overlay, mirroring
-		// SetLockSeed off-direction behaviour. Callers that want to
-		// drop only LockSeed but keep the underlying overlay engaged
-		// retain their pre-Import LockSoup setting. Detach the
-		// noiseSeed's lockSeed pointer (if any) symmetric with the
-		// rawLockSeed branch above.
+		// Detach the noiseSeed's lockSeed pointer (if any) symmetric
+		// with the rawLockSeed branch above.
 		if len(newSeeds) > 0 {
 			detachNoiseSeedLockSeed(newSeeds[0], e.width)
 		}

@@ -35,32 +35,12 @@ var ErrLockSeedComponentAliasing = errors.New("itb: AttachLockSeed: noiseSeed an
 // shipping silently-wrong ciphertext.
 var ErrLockSeedAfterEncrypt = errors.New("itb: AttachLockSeed: cannot attach lockSeed after first Encrypt")
 
-// ErrLockSeedOverlayOff is the panic value raised by the bit-
-// permutation PRF builders ([buildPermutePRF128] / [buildPermutePRF256]
-// / [buildPermutePRF512] for Single Ouroboros, [buildLockPRF128] /
-// [buildLockPRF256] / [buildLockPRF512] for Triple Ouroboros, plus the
-// matching Cfg-suffixed variants) when the noiseSeed carries an
-// attached dedicated lockSeed but neither the bit-soup nor the
-// lock-soup overlay is engaged on the active dispatch path. The
-// dedicated lockSeed has no observable effect on the wire output
-// without one of the overlays — derivation is consulted only inside
-// [splitForSingle] / [splitForTriple] / their Cfg counterparts, both
-// of which short-circuit to an unchanged-data pass-through when both
-// flags are off. Silently producing byte-level ciphertext while the
-// caller has explicitly attached a dedicated lockSeed is an action-
-// at-a-distance bug; the guard panics so callers either turn on the
-// overlay (via [SetLockSoup] / [SetBitSoup] for the legacy path,
-// per-encryptor cfg.LockSoup / cfg.BitSoup for the Cfg path, or
-// [github.com/everanium/itb/easy.Encryptor.SetLockSeed] for the
-// high-level surface which auto-couples both overlays) or remove the
-// AttachLockSeed call.
-//
-// On-encrypt rather than on-attach: the guard fires every time a
-// build-PRF function is invoked, so it catches the misuse regardless
-// of call ordering — attach before SetLockSoup, attach after, or
-// SetLockSoup(0) toggled between attach and Encrypt all surface as
-// the same panic at the same point in the pipeline.
-var ErrLockSeedOverlayOff = errors.New("itb: AttachedLockSeed installed but neither BitSoup nor LockSoup overlay is engaged")
+// ErrLockSeedOverlayOff is retained as a stable exported sentinel for
+// callers that still reference it. The 48-bit interlock overlay is
+// always engaged, so the underlying condition can no longer arise from
+// production dispatch; the value is preserved to keep the exported
+// error surface backward-compatible.
+var ErrLockSeedOverlayOff = errors.New("itb: AttachedLockSeed installed but the interlock overlay is not engaged")
 
 // testNonceOverride is set only by test code (see setTestNonce in *_test.go).
 // Production callers never set this — generateNonce falls through to crypto/rand.
@@ -196,16 +176,6 @@ var lockSeedEnabled atomic.Int32
 // bit-permutation derives from noiseSeed), 1 = on. Panics on any
 // other value.
 //
-// Auto-couples Lock Soup on the on-direction: when n == 1 this also
-// calls [SetLockSoup](1), which through its existing coupling
-// engages [SetBitSoup](1) too — the dedicated lockSeed has no
-// observable effect on the wire output unless the bit-permutation
-// overlay is engaged, so coupling the two flags spares callers a
-// second setter call. The off-direction does not auto-disable the
-// overlay; callers that explicitly enabled Lock Soup / Bit Soup
-// alongside LockSeed and want to drop only LockSeed call
-// SetLockSeed(0) without losing the underlying overlay.
-//
 // Two-tier consumption:
 //
 //   - The encryptor constructor in the easy sub-package reads this
@@ -218,10 +188,7 @@ var lockSeedEnabled atomic.Int32
 //     / [Seed256.AttachedLockSeed] / [Seed512.AttachedLockSeed] for
 //     the dedicated-seed path. Callers that want LockSeed on the
 //     legacy path call [Seed128.AttachLockSeed] / etc. on the
-//     noiseSeed; the global flag still auto-enables the
-//     bit-permutation overlay (so the output IS bit-soup-permuted)
-//     but the keying material falls back to noiseSeed when no
-//     attach has happened.
+//     noiseSeed.
 //
 // Thread-safe (atomic). Affects encryptors constructed AFTER this
 // call; existing encryptors are pinned at their construction
@@ -232,9 +199,6 @@ func SetLockSeed(n int) {
 		lockSeedEnabled.Store(int32(n))
 	default:
 		panic(fmt.Sprintf("itb: SetLockSeed(%d): valid values are 0, 1", n))
-	}
-	if n == 1 {
-		SetLockSoup(1)
 	}
 }
 
