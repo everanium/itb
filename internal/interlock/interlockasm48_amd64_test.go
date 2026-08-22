@@ -183,3 +183,123 @@ func TestChunk48LockAsmRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// refUnrank48 — pure-Go combinatorial unrank restricted to the ranges
+// consumed by the batch kernel (k <= 16, n <= 48). Used only as an
+// independent oracle in this file's parity test.
+func refUnrank48(rank uint64, k, n int) uint64 {
+	var mask uint64
+	for k > 0 {
+		c := k - 1
+		for c+1 <= n-1 && crow48Table[c+1][k] <= rank {
+			c++
+		}
+		mask |= uint64(1) << uint(c)
+		rank -= crow48Table[c][k]
+		k--
+	}
+	return mask
+}
+
+// refTriple48 — bit-exact scalar reference for RankToMaskTripleUnrank48.
+// Splits already occurred caller-side; this reproduces the two unranks
+// plus the remap that the kernel implements in vector form.
+func refTriple48(idx0 uint64, idx1 uint32) (m0, m1, m2 uint64) {
+	m0 = refUnrank48(idx0, 16, 48)
+	m1Local := refUnrank48(uint64(idx1), 16, 32)
+	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
+	remaining := domain & ^m0
+	var posIdx uint
+	for bit := uint(0); bit < 48; bit++ {
+		if (remaining>>bit)&1 == 1 {
+			if (m1Local>>posIdx)&1 == 1 {
+				m1 |= uint64(1) << bit
+			}
+			posIdx++
+		}
+	}
+	m2 = remaining & ^m1
+	return
+}
+
+// TestRankToMaskTripleUnrank48VsScalar sweeps random (idx0, idx1) pair
+// batches through the batched AVX-512 kernel and compares each lane's
+// (m0, m1, m2) triple against the scalar refTriple48 reference.
+// Byte-level check via memcmp of the packed lane serialisation catches
+// any per-lane endianness / VPERMI2Q index / mask-merge slip that a
+// value-level compare would miss.
+func TestRankToMaskTripleUnrank48VsScalar(t *testing.T) {
+	if !HasAVX512RankMask {
+		t.Skip("AVX-512F not available")
+	}
+	const A = 2254848913647
+	const B = 601080390
+	rng := rand.New(rand.NewSource(4))
+	const N = 20000
+	for iter := 0; iter < N; iter++ {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < 8; j++ {
+			idx0[j] = rng.Uint64() % A
+			idx1[j] = uint32(rng.Uint64() % B)
+		}
+		var out [3][8]uint64
+		RankToMaskTripleUnrank48(&idx0, &idx1, &out)
+		for j := 0; j < 8; j++ {
+			e0, e1, e2 := refTriple48(idx0[j], idx1[j])
+			if out[0][j] != e0 || out[1][j] != e1 || out[2][j] != e2 {
+				t.Fatalf("iter=%d lane=%d idx0=%d idx1=%d:\n got (%012x, %012x, %012x)\nwant (%012x, %012x, %012x)",
+					iter, j, idx0[j], idx1[j], out[0][j], out[1][j], out[2][j], e0, e1, e2)
+			}
+			// Byte-level: serialise both triples LE-per-uint64 into 24 bytes.
+			var gotBytes, wantBytes [24]byte
+			for i, v := range []uint64{out[0][j], out[1][j], out[2][j]} {
+				for b := 0; b < 8; b++ {
+					gotBytes[i*8+b] = byte(v >> (8 * b))
+				}
+			}
+			for i, v := range []uint64{e0, e1, e2} {
+				for b := 0; b < 8; b++ {
+					wantBytes[i*8+b] = byte(v >> (8 * b))
+				}
+			}
+			if gotBytes != wantBytes {
+				t.Fatalf("iter=%d lane=%d: byte-level triple divergence:\n got %x\nwant %x",
+					iter, j, gotBytes, wantBytes)
+			}
+		}
+	}
+}
+
+// TestRankToMaskTripleUnrank48Boundary hits the (idx0, idx1) corner
+// values: 0, 1, one-below-max, max-minus-one across all 8 lanes.
+// These stress the row-lookup at every p in the unrank loops and the
+// mask-merge broadcast of C(p, 16) at loop entry.
+func TestRankToMaskTripleUnrank48Boundary(t *testing.T) {
+	if !HasAVX512RankMask {
+		t.Skip("AVX-512F not available")
+	}
+	const A = uint64(2254848913647)
+	const B = uint32(601080390)
+	i0s := []uint64{0, 1, A / 2, A - 2, A - 1}
+	i1s := []uint32{0, 1, B / 2, B - 2, B - 1}
+	for _, v0 := range i0s {
+		for _, v1 := range i1s {
+			var idx0 [8]uint64
+			var idx1 [8]uint32
+			for j := 0; j < 8; j++ {
+				idx0[j] = v0
+				idx1[j] = v1
+			}
+			var out [3][8]uint64
+			RankToMaskTripleUnrank48(&idx0, &idx1, &out)
+			e0, e1, e2 := refTriple48(v0, v1)
+			for j := 0; j < 8; j++ {
+				if out[0][j] != e0 || out[1][j] != e1 || out[2][j] != e2 {
+					t.Fatalf("v0=%d v1=%d lane=%d: got (%012x, %012x, %012x), want (%012x, %012x, %012x)",
+						v0, v1, j, out[0][j], out[1][j], out[2][j], e0, e1, e2)
+				}
+			}
+		}
+	}
+}

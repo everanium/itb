@@ -328,11 +328,38 @@ type lockBatchPRF48 struct {
 }
 
 // fillLockMasksTriple48 fills masks[0..count-1] from count 128-bit ranks
-// packed into prf as pairs (prf[2*j], prf[2*j+1]). Count must be <=
-// lockBatchFactor48Max. The scalar implementation defers to
-// rankToMaskTriple48 per lane; a batched AVX-512 kernel replaces the body
-// when the corresponding internal package is wired at dispatch time.
+// packed into prf as pairs (prf[2*j], prf[2*j+1]). count must be <=
+// lockBatchFactor48Max.
+//
+// When the AVX-512F batch kernel is available it derives all 8 lanes in
+// one constant-time pass; the 128-bit-rank divmod (Barrett-substitute
+// via bits.Div64) is done here in Go, then idx0[]/idx1[] are handed to
+// the asm entry. Only the first count triples are copied back into the
+// caller's output — the remaining kernel lanes carry garbage that is
+// never observed. Without the kernel it falls back to the per-lane
+// scalar rankToMaskTriple48, leaving non-AVX-512F hosts unchanged.
 func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48Max][3]uint64) {
+	if interlock.HasAVX512RankMask {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < count; j++ {
+			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
+			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
+			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
+			_, hiMod := bits.Div64(0, qHi, interlockA48)
+			_, m := bits.Div64(hiMod, qLo, interlockA48)
+			idx0[j] = m
+			idx1[j] = uint32(r)
+		}
+		var out [3][8]uint64
+		interlock.RankToMaskTripleUnrank48(&idx0, &idx1, &out)
+		for j := 0; j < count; j++ {
+			masks[j][0] = out[0][j]
+			masks[j][1] = out[1][j]
+			masks[j][2] = out[2][j]
+		}
+		return
+	}
 	for j := 0; j < count; j++ {
 		masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple48(prf[2*j], prf[2*j+1])
 	}
