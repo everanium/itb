@@ -237,9 +237,20 @@ func NewBatch(name string, key []byte) (batch func(dst, in *[4][]byte), blockSiz
 	}
 	switch name {
 	case Areion256:
-		return newAreion256BatchPRF(key), s.blockSize, true, nil
+		if b := newAreion256BatchPRF(key); b != nil {
+			return b, s.blockSize, true, nil
+		}
+		// Host lacks a VAES / AVX-512 (or ARM AES-batched) asm path:
+		// hashes.Areion256PairWithKey returns a nil batched arm and
+		// nothing here to wrap. Report ok=false so callers fall
+		// through to the single-block PRF path; the ctr keystream's
+		// prfHashCTR variant is bit-exact with the batched keystream.
+		return nil, 0, false, nil
 	case Areion512:
-		return newAreion512BatchPRF(key), s.blockSize, true, nil
+		if b := newAreion512BatchPRF(key); b != nil {
+			return b, s.blockSize, true, nil
+		}
+		return nil, 0, false, nil
 	default:
 		return nil, 0, false, nil
 	}
@@ -248,10 +259,17 @@ func NewBatch(name string, key []byte) (batch func(dst, in *[4][]byte), blockSiz
 // newAreion256BatchPRF builds a keyed Areion-SoEM-256 BatchHashFunc256 and
 // returns a 4-wide PRF: it hashes four inputs under a zero seed in one SIMD
 // batch and serialises each four-word result little-endian into 32 bytes.
+//
+// Returns nil on hosts where hashes.Areion256PairWithKey reports no batched
+// arm (non-VAES x86 / non-ARM-AES arm64 / -tags noitbasm builds). Callers
+// (NewBatch) treat nil as "no batch path" and route to the single-block PRF.
 func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	var k [32]byte
 	copy(k[:], key)
 	_, bhf := hashes.Areion256PairWithKey(k)
+	if bhf == nil {
+		return nil
+	}
 	var zero [4][4]uint64
 	return func(dst, in *[4][]byte) {
 		out := bhf(in, zero)
@@ -264,11 +282,15 @@ func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
 }
 
 // newAreion512BatchPRF is the Areion-SoEM-512 counterpart: four inputs per
-// SIMD batch, each eight-word result serialised into 64 bytes.
+// SIMD batch, each eight-word result serialised into 64 bytes. Returns nil
+// on hosts without a batched arm, per the SoEM-256 rationale above.
 func newAreion512BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	var k [64]byte
 	copy(k[:], key)
 	_, bhf := hashes.Areion512PairWithKey(k)
+	if bhf == nil {
+		return nil
+	}
 	var zero [4][8]uint64
 	return func(dst, in *[4][]byte) {
 		out := bhf(in, zero)

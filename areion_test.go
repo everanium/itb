@@ -809,9 +809,16 @@ func TestAreion512Permutex4CrossPath(t *testing.T) {
 // digest bit-exact via MakeAreionSoEM256HashWithKey.
 func TestMakeAreionSoEM256HashRandom(t *testing.T) {
 	hRand, bRand, key := MakeAreionSoEM256Hash()
-	if hRand == nil || bRand == nil {
-		t.Fatalf("MakeAreionSoEM256Hash returned nil hash/batch")
+	if hRand == nil {
+		t.Fatalf("MakeAreionSoEM256Hash returned nil scalar hash")
 	}
+	// bRand may be nil on hosts without any VAES-capable asm path
+	// (purego / non-amd64 / no-AESNI / -tags noitbasm builds). This
+	// is the documented fall-through contract of MakeAreionSoEM256Hash
+	// — the caller drives per-pixel hashing through the scalar arm in
+	// that regime. The rest of this test only exercises hRand, so the
+	// batched arm's absence is not a defect to fail on.
+	_ = bRand
 	var allZero [32]byte
 	if key == allZero {
 		t.Fatalf("MakeAreionSoEM256Hash returned all-zero key (random source failed)")
