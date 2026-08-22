@@ -5,6 +5,8 @@ import (
 	"math/bits"
 	"runtime"
 	"sync"
+
+	"github.com/everanium/itb/internal/interlock"
 )
 
 // ============================================================================
@@ -205,16 +207,22 @@ func softPDEP48(v uint16, mask uint64) uint64 {
 // [rankToMaskTriple48] from a per-chunk PRF output). Each lane
 // receives exactly 16 bits compressed by its mask.
 //
-// The pure-Go fallback path uses three [softPEXT48] calls. The BMI2
-// hardware path lives under [internal/interlock] and is wired at
-// commit time by the dispatcher; this file supplies only the reference
-// implementation.
+// On amd64 with BMI2 (Haswell+, Excavator+), dispatches to the
+// [interlock.Chunk48Lock] hardware path — three PEXTQ instructions
+// total, ~10 cycles per chunk. On other platforms or when BMI2 is
+// unavailable, falls back to three [softPEXT48] calls. The branch
+// predicts perfectly because [interlock.HasBMI2] is a
+// process-lifetime constant.
 //
 // Caller-side packing convention: x = uint64(b0) | uint64(b1)<<8 | ... |
 // uint64(b5)<<40, so the low 48 bits carry the six chunk bytes in
 // little-endian order. The three lane outputs each fit in a uint16
 // (popcount(m_i) == 16 by construction).
 func chunk48lock(x, m0, m1, m2 uint64) (l0, l1, l2 uint16) {
+	if interlock.HasBMI2 {
+		L0, L1, L2 := interlock.Chunk48Lock(x, m0, m1, m2)
+		return uint16(L0), uint16(L1), uint16(L2)
+	}
 	l0 = softPEXT48(x, m0)
 	l1 = softPEXT48(x, m1)
 	l2 = softPEXT48(x, m2)
@@ -227,11 +235,15 @@ func chunk48lock(x, m0, m1, m2 uint64) (l0, l1, l2 uint16) {
 // used by chunk48lock — encoder and decoder agree by deriving
 // identical masks from the shared lockSeed and chunk index.
 //
-// The three PDEP-expansions land in disjoint bit positions
-// (m0|m1|m2 covers all 48 bits with no overlap), so OR-ing them
-// reconstructs x. The pure-Go fallback path uses three [softPDEP48]
-// calls; the BMI2 hardware path lives under [internal/interlock].
+// On amd64 with BMI2, dispatches to the [interlock.Unchunk48Lock]
+// hardware path (three PDEPQ plus two ORs); otherwise falls back to
+// three [softPDEP48] calls. The three PDEP-expansions land in
+// disjoint bit positions (m0|m1|m2 covers all 48 bits with no
+// overlap), so OR-ing them reconstructs x.
 func unchunk48lock(l0, l1, l2 uint16, m0, m1, m2 uint64) uint64 {
+	if interlock.HasBMI2 {
+		return interlock.Unchunk48Lock(uint64(l0), uint64(l1), uint64(l2), m0, m1, m2)
+	}
 	return softPDEP48(l0, m0) | softPDEP48(l1, m1) | softPDEP48(l2, m2)
 }
 
