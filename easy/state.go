@@ -22,14 +22,13 @@ import (
 //     is off; when on, the field is encoded as the literal `true`.
 //     No other value is canonical, and the v1 reader rejects any
 //     non-true encoding.
-//   - nonce_bits / barrier_fill / bit_soup / lock_soup / lock_batch carry the
-//     encryptor's per-instance configuration overrides. Each is
-//     omitted when the encryptor never explicitly set it (cfg
-//     sentinel "inherit": NonceBits == 0 / BarrierFill == 0 /
-//     BitSoup == -1 / LockSoup == -1 / LockBatch == -1). On Import the corresponding
-//     setter is called for each present field; missing fields keep
-//     the receiver's existing cfg state (legacy mirror-manually
-//     behaviour).
+//   - nonce_bits / barrier_fill / lock_soup carry the encryptor's
+//     per-instance configuration overrides. Each is omitted when the
+//     encryptor never explicitly set it (cfg sentinel "inherit":
+//     NonceBits == 0 / BarrierFill == 0 / LockSoup == -1). On Import
+//     the corresponding setter is called for each present field;
+//     missing fields keep the receiver's existing cfg state (legacy
+//     mirror-manually behaviour).
 //   - seeds inner arrays carry decimal uint64 strings (base 10) so
 //     cross-language consumers do not hit the JSON 53-bit number
 //     precision limit.
@@ -48,9 +47,7 @@ type stateBlobV1 struct {
 	LockSeed    bool       `json:"lock_seed,omitempty"`
 	NonceBits   int        `json:"nonce_bits,omitempty"`
 	BarrierFill int        `json:"barrier_fill,omitempty"`
-	BitSoup     *int32     `json:"bit_soup,omitempty"`
 	LockSoup    *int32     `json:"lock_soup,omitempty"`
-	LockBatch   *int32     `json:"lock_batch,omitempty"`
 
 	// Mixed signals that the blob carries per-slot primitive names.
 	// Encoded as the literal `true` when the encryptor was built via
@@ -71,14 +68,11 @@ type stateBlobV1 struct {
 	Primitives []string `json:"primitives,omitempty"`
 }
 
-// modeToString maps the integer Mode encoding (1 = Single, 3 =
-// Triple) to its JSON string form. Panics on unknown values — the
-// internal struct should never carry any other Mode.
+// modeToString maps the integer Mode encoding to its JSON string
+// form. Only Triple Ouroboros (Mode == 3) is a valid production
+// value; the string "triple" is emitted. Any other value panics.
 func modeToString(m int) string {
-	switch m {
-	case 1:
-		return "single"
-	case 3:
+	if m == 3 {
 		return "triple"
 	}
 	panic(fmt.Sprintf("itb/easy: invalid Mode %d", m))
@@ -88,10 +82,7 @@ func modeToString(m int) string {
 // encoding. Returns (mode, true) on a known value, (0, false) on
 // any other string.
 func modeFromString(s string) (int, bool) {
-	switch s {
-	case "single":
-		return 1, true
-	case "triple":
+	if s == "triple" {
 		return 3, true
 	}
 	return 0, false
@@ -105,9 +96,9 @@ func modeFromString(s string) (int, bool) {
 // material if active.
 //
 // Per-encryptor configuration knobs (NonceBits, BarrierFill,
-// BitSoup, LockSoup, LockBatch) are carried in the v1 blob as optional
-// fields when the sender set them explicitly, and restored on Import; a
-// receiver may still override them before Import. LockSeed presence is
+// LockSoup) are carried in the v1 blob as optional fields when the
+// sender set them explicitly, and restored on Import; a receiver
+// may still override them before Import. LockSeed presence is
 // carried because activating it changes the structural seed count.
 //
 // Infallible — JSON marshal of a validated internal struct cannot
@@ -175,17 +166,9 @@ func (e *Encryptor) Export() []byte {
 	if e.barrierFillExplicit {
 		blob.BarrierFill = e.cfg.BarrierFill
 	}
-	if e.bitSoupExplicit {
-		v := e.cfg.BitSoup
-		blob.BitSoup = &v
-	}
 	if e.lockSoupExplicit {
 		v := e.cfg.LockSoup
 		blob.LockSoup = &v
-	}
-	if e.lockBatchExplicit {
-		v := e.cfg.LockBatch
-		blob.LockBatch = &v
 	}
 
 	out, err := json.Marshal(blob)
@@ -535,17 +518,9 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		e.cfg.BarrierFill = blob.BarrierFill
 		e.barrierFillExplicit = true
 	}
-	if blob.BitSoup != nil {
-		e.cfg.BitSoup = *blob.BitSoup
-		e.bitSoupExplicit = true
-	}
 	if blob.LockSoup != nil {
 		e.cfg.LockSoup = *blob.LockSoup
 		e.lockSoupExplicit = true
-	}
-	if blob.LockBatch != nil {
-		e.cfg.LockBatch = *blob.LockBatch
-		e.lockBatchExplicit = true
 	}
 
 	if rawLockSeed {
@@ -560,33 +535,31 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		// behaves identically regardless of how the encryptor was
 		// born.
 		attachNoiseSeedLockSeed(newSeeds[0], newSeeds[nSeeds-1], e.width)
-		// Auto-couple Lock Soup + Bit Soup on the on-direction,
-		// mirroring [Encryptor.SetLockSeed]'s coupling behaviour: a
-		// dedicated lockSeed has no observable effect on the wire
-		// output unless the bit-permutation overlay is engaged.
-		// Sender reached this state through SetLockSeed(1) which
-		// couples both overlays; Import on the receiver must reach
-		// the same state or the pre-permuted ciphertext decodes as
-		// garbage (MAC verification over the encrypted payload still
-		// passes — the key material survives the round-trip — but
-		// the recovered plaintext is wrong). The auto-couple runs
-		// after the blob's BitSoup / LockSoup fields apply, so a
-		// sender that explicitly wrote BitSoup=0 / LockSoup=0 plus
-		// lock_seed:true (an inconsistent blob) is normalised to
-		// the consistent on-direction state here.
+		// Auto-couple Lock Soup on the on-direction, mirroring
+		// [Encryptor.SetLockSeed]'s coupling behaviour: a dedicated
+		// lockSeed has no observable effect on the wire output
+		// unless the bit-permutation overlay is engaged. Sender
+		// reached this state through SetLockSeed(1) which couples
+		// the overlay; Import on the receiver must reach the same
+		// state or the pre-permuted ciphertext decodes as garbage
+		// (MAC verification over the encrypted payload still passes
+		// — the key material survives the round-trip — but the
+		// recovered plaintext is wrong). The auto-couple runs after
+		// the blob's LockSoup field applies, so a sender that
+		// explicitly wrote LockSoup=0 plus lock_seed:true (an
+		// inconsistent blob) is normalised to the consistent
+		// on-direction state here.
 		e.cfg.LockSoup = 1
-		e.cfg.BitSoup = 1
 		e.lockSoupExplicit = true
-		e.bitSoupExplicit = true
 	} else {
 		e.cfg.LockSeed = 0
 		e.cfg.LockSeedHandle = nil
 		// Off-direction: do NOT auto-disable the overlay, mirroring
 		// SetLockSeed off-direction behaviour. Callers that want to
 		// drop only LockSeed but keep the underlying overlay engaged
-		// retain their pre-Import LockSoup / BitSoup setting. Detach
-		// the noiseSeed's lockSeed pointer (if any) symmetric with
-		// the rawLockSeed branch above.
+		// retain their pre-Import LockSoup setting. Detach the
+		// noiseSeed's lockSeed pointer (if any) symmetric with the
+		// rawLockSeed branch above.
 		if len(newSeeds) > 0 {
 			detachNoiseSeedLockSeed(newSeeds[0], e.width)
 		}

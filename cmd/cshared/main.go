@@ -1613,49 +1613,8 @@ func ITB_Blob_Import3(
 // the per-slot canonical name; ITB_Easy_IsMixed(handle) reports
 // whether the encryptor uses per-slot mixing.
 
-// Constructs a Single-Ouroboros Encryptor with per-slot PRF
-// primitive selection. primN / primD / primS cover the noise /
-// data / start slots; primL is the optional dedicated lockSeed
-// primitive (NULL or empty = no lockSeed allocation). All four
-// names must share the same native hash width via the hashes
-// registry.
-//
-//export ITB_Easy_NewMixed
-func ITB_Easy_NewMixed(
-	primN, primD, primS, primL *C.char,
-	keyBits C.int, macName *C.char,
-	outHandle *C.uintptr_t,
-) C.int {
-	if outHandle == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	var pN, pD, pS, pL, mac string
-	if primN != nil {
-		pN = C.GoString(primN)
-	}
-	if primD != nil {
-		pD = C.GoString(primD)
-	}
-	if primS != nil {
-		pS = C.GoString(primS)
-	}
-	if primL != nil {
-		pL = C.GoString(primL)
-	}
-	if macName != nil {
-		mac = C.GoString(macName)
-	}
-	id, st := capi.NewEasyMixed(pN, pD, pS, pL, int(keyBits), mac)
-	if st == capi.StatusOK {
-		*outHandle = C.uintptr_t(id)
-	} else {
-		*outHandle = 0
-	}
-	return C.int(st)
-}
-
-// Triple-Ouroboros counterpart of ITB_Easy_NewMixed. Accepts seven
-// per-slot primitive names (noise + 3 data + 3 start) plus the
+// Triple-Ouroboros mixed-primitive Easy Mode constructor. Accepts
+// seven per-slot primitive names (noise + 3 data + 3 start) plus the
 // optional lockSeed primitive (primL; NULL or empty = no lockSeed
 // allocation). All eight names must share the same native hash
 // width.

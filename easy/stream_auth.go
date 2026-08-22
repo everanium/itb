@@ -24,8 +24,7 @@ import (
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 // Returns the first non-nil error from the chunk emitter or from
-// the underlying [itb.EncryptStreamAuth{N}Cfg] /
-// [itb.EncryptStreamAuth3x{N}Cfg] entry point.
+// the underlying [itb.EncryptStreamAuth3x{N}Cfg] entry point.
 func (e *Encryptor) EncryptStreamAuth(plaintext []byte, emit ChunkFunc) error {
 	if e.closed {
 		panic(ErrClosed)
@@ -34,33 +33,18 @@ func (e *Encryptor) EncryptStreamAuth(plaintext []byte, emit ChunkFunc) error {
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.EncryptStreamAuth128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				plaintext, e.chunk, e.macFunc, emit)
-		}
 		return itb.EncryptStreamAuth3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			plaintext, e.chunk, e.macFunc, emit)
 	case 256:
-		if e.Mode == 1 {
-			return itb.EncryptStreamAuth256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				plaintext, e.chunk, e.macFunc, emit)
-		}
 		return itb.EncryptStreamAuth3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			plaintext, e.chunk, e.macFunc, emit)
 	case 512:
-		if e.Mode == 1 {
-			return itb.EncryptStreamAuth512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				plaintext, e.chunk, e.macFunc, emit)
-		}
 		return itb.EncryptStreamAuth3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
@@ -83,8 +67,7 @@ func (e *Encryptor) EncryptStreamAuth(plaintext []byte, emit ChunkFunc) error {
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 // Returns the first non-nil error from the chunk emitter, a MAC
 // verification failure, or any structural error reported by the
-// underlying [itb.DecryptStreamAuth{N}Cfg] /
-// [itb.DecryptStreamAuth3x{N}Cfg] entry point.
+// underlying [itb.DecryptStreamAuth3x{N}Cfg] entry point.
 func (e *Encryptor) DecryptStreamAuth(ciphertext []byte, emit ChunkFunc) error {
 	if e.closed {
 		panic(ErrClosed)
@@ -92,33 +75,18 @@ func (e *Encryptor) DecryptStreamAuth(ciphertext []byte, emit ChunkFunc) error {
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.DecryptStreamAuth128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				ciphertext, e.macFunc, emit)
-		}
 		return itb.DecryptStreamAuth3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			ciphertext, e.macFunc, emit)
 	case 256:
-		if e.Mode == 1 {
-			return itb.DecryptStreamAuth256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				ciphertext, e.macFunc, emit)
-		}
 		return itb.DecryptStreamAuth3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			ciphertext, e.macFunc, emit)
 	case 512:
-		if e.Mode == 1 {
-			return itb.DecryptStreamAuth512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				ciphertext, e.macFunc, emit)
-		}
 		return itb.DecryptStreamAuth3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),

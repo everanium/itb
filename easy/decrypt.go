@@ -23,33 +23,18 @@ func (e *Encryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.Decrypt128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				ciphertext)
-		}
 		return itb.Decrypt3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			ciphertext)
 	case 256:
-		if e.Mode == 1 {
-			return itb.Decrypt256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				ciphertext)
-		}
 		return itb.Decrypt3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			ciphertext)
 	case 512:
-		if e.Mode == 1 {
-			return itb.Decrypt512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				ciphertext)
-		}
 		return itb.Decrypt3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
@@ -63,8 +48,7 @@ func (e *Encryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 // [Encryptor.EncryptAuth]. The MAC tag is checked against the
 // encryptor's bound MAC closure; mismatch yields the standard
 // "MAC verification failed" error from the underlying
-// [itb.DecryptAuthenticated{N}] / [itb.DecryptAuthenticated3x{N}]
-// entry point.
+// [itb.DecryptAuthenticated3x{N}] entry point.
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 func (e *Encryptor) DecryptAuth(ciphertext []byte) ([]byte, error) {
@@ -74,33 +58,18 @@ func (e *Encryptor) DecryptAuth(ciphertext []byte) ([]byte, error) {
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.DecryptAuthenticated128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				ciphertext, e.macFunc)
-		}
 		return itb.DecryptAuthenticated3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			ciphertext, e.macFunc)
 	case 256:
-		if e.Mode == 1 {
-			return itb.DecryptAuthenticated256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				ciphertext, e.macFunc)
-		}
 		return itb.DecryptAuthenticated3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			ciphertext, e.macFunc)
 	case 512:
-		if e.Mode == 1 {
-			return itb.DecryptAuthenticated512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				ciphertext, e.macFunc)
-		}
 		return itb.DecryptAuthenticated3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
@@ -120,8 +89,7 @@ func (e *Encryptor) DecryptAuth(ciphertext []byte) ([]byte, error) {
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 // Returns an error on MAC verification failure or the same failure
-// paths as [itb.DecryptStreamAuthenticated{N}] /
-// [itb.DecryptStreamAuthenticated3x{N}].
+// paths as [itb.DecryptStreamAuthenticated3x{N}].
 func (e *Encryptor) DecryptStreamAuthenticated(
 	chunkData []byte,
 	streamID [32]byte,
@@ -133,33 +101,18 @@ func (e *Encryptor) DecryptStreamAuthenticated(
 
 	switch e.width {
 	case 128:
-		if e.Mode == 1 {
-			return itb.DecryptStreamAuthenticated128Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128),
-				chunkData, e.macFunc, streamID, cumulativePixelOffset)
-		}
 		return itb.DecryptStreamAuthenticated3x128Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed128),
 			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
 			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
 			chunkData, e.macFunc, streamID, cumulativePixelOffset)
 	case 256:
-		if e.Mode == 1 {
-			return itb.DecryptStreamAuthenticated256Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256),
-				chunkData, e.macFunc, streamID, cumulativePixelOffset)
-		}
 		return itb.DecryptStreamAuthenticated3x256Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed256),
 			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
 			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
 			chunkData, e.macFunc, streamID, cumulativePixelOffset)
 	case 512:
-		if e.Mode == 1 {
-			return itb.DecryptStreamAuthenticated512Cfg(e.cfg,
-				e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512),
-				chunkData, e.macFunc, streamID, cumulativePixelOffset)
-		}
 		return itb.DecryptStreamAuthenticated3x512Cfg(e.cfg,
 			e.seeds[0].(*itb.Seed512),
 			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),

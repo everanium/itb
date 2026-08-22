@@ -1251,7 +1251,7 @@ func BenchmarkExtEasySingleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *test
 		dataSize  = 64 << 20
 		chunkSize = 16 << 20
 	)
-	enc := easy.New("areion512", 1024, "hmac-blake3")
+	enc := easy.New3("areion512", 1024, "hmac-blake3")
 	defer enc.Close()
 	src := streamEasyPlaintextExt(b, dataSize)
 
@@ -1274,7 +1274,7 @@ func BenchmarkExtEasySingleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *test
 		dataSize  = 64 << 20
 		chunkSize = 16 << 20
 	)
-	enc := easy.New("areion512", 1024, "hmac-blake3")
+	enc := easy.New3("areion512", 1024, "hmac-blake3")
 	defer enc.Close()
 	src := streamEasyPlaintextExt(b, dataSize)
 
@@ -1304,7 +1304,7 @@ func BenchmarkExtEasySingleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.
 		dataSize  = 64 << 20
 		chunkSize = 16 << 20
 	)
-	enc := easy.New("areion512", 1024)
+	enc := easy.New3("areion512", 1024)
 	defer enc.Close()
 	src := streamEasyPlaintextExt(b, dataSize)
 
@@ -1327,7 +1327,7 @@ func BenchmarkExtEasySingleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.
 		dataSize  = 64 << 20
 		chunkSize = 16 << 20
 	)
-	enc := easy.New("areion512", 1024)
+	enc := easy.New3("areion512", 1024)
 	defer enc.Close()
 	src := streamEasyPlaintextExt(b, dataSize)
 
@@ -1362,7 +1362,7 @@ func BenchmarkExtEasySingleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *te
 		dataSize  = 64 << 20
 		chunkSize = 16 << 20
 	)
-	enc := easy.New("areion512", 1024)
+	enc := easy.New3("areion512", 1024)
 	defer enc.Close()
 	src := streamEasyPlaintextExt(b, dataSize)
 
@@ -1405,7 +1405,7 @@ func BenchmarkExtEasySingleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *te
 		dataSize  = 64 << 20
 		chunkSize = 16 << 20
 	)
-	enc := easy.New("areion512", 1024)
+	enc := easy.New3("areion512", 1024)
 	defer enc.Close()
 	src := streamEasyPlaintextExt(b, dataSize)
 
