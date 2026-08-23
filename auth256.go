@@ -84,8 +84,13 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		wg.Wait()
 	}
 
-	// part2 COBS length increased by tagSize for container sizing
-	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagSize}
+	// part2 COBS length increased by tagSize + 1 for container sizing:
+	// the +1 mirrors the streaming AEAD flag-byte slot so the single
+	// message wire envelope matches the No-MAC Encrypt3x envelope
+	// (which reserves nomacTagStubSize = tagSize + 1 for the same
+	// mode-ambiguity reason). Single messages carry a fixed 0x00 in
+	// that slot — there is no finalFlag semantic on this path.
+	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagSize + 1}
 	width, height := containerSizeAuth3_256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 	totalPixels := width * height
 	third := totalPixels / 3
@@ -96,14 +101,15 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-	payloadLens := [3]int{caps[0], caps[1], caps[2] - tagSize}
+	payloadLens := [3]int{caps[0], caps[1], caps[2] - tagSize - 1}
 	for i := 0; i < 3; i++ {
 		if len(encs[i])+1 > payloadLens[i] {
 			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
 		}
 	}
 
-	// Build payloads: part0 and part1 full capacity, part2 reserves tagSize
+	// Build payloads: part0 and part1 full capacity, part2 reserves
+	// tagSize + 1 (tag slot + fixed 0x00 dummy flag slot).
 	// Phase 2: 3 parallel payload-build
 	var payloadPtrs [3]*[]byte
 	payloads := [3][]byte{}
@@ -152,11 +158,12 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	copy(macInput[len(payloads[0])+len(payloads[1]):], payloads[2])
 	tag := macFunc(macInput)
 
-	// full2 = payload2 + tag
+	// full2 = payload2 || tag || 0x00 (single-message dummy flag slot)
 	full2Ptr, full2 := acquireBuffer(caps[2])
 	defer releaseBuffer(full2Ptr, full2)
 	copy(full2, payloads[2])
 	copy(full2[len(payloads[2]):], tag)
+	full2[len(payloads[2])+tagSize] = 0x00
 
 	// 3×CSPRNG parallel generation
 	container := make([]byte, totalPixels*Channels)
@@ -256,7 +263,7 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-	if caps[2] <= tagSize {
+	if caps[2] <= tagSize+1 {
 		return nil, fmt.Errorf("itb: container too small for MAC tag")
 	}
 
@@ -296,10 +303,13 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	}()
 	wg.Wait()
 
-	// Split part2 into payload + tag
-	payloadLen2 := caps[2] - tagSize
+	// Split part2 into payload || tag || dummy-flag-byte. The trailing
+	// byte carries a fixed 0x00 on the encrypt side and is discarded
+	// here; the null-search skips well before it (the COBS terminator
+	// lives ahead of the tag region).
+	payloadLen2 := caps[2] - tagSize - 1
 	payload2 := decoded[2][:payloadLen2]
-	tag := decoded[2][payloadLen2:]
+	tag := decoded[2][payloadLen2 : payloadLen2+tagSize]
 
 	// Verify MAC over concatenated payloads
 	macInputLen := len(decoded[0]) + len(decoded[1]) + payloadLen2
