@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Companion code for the ITB Quick Start. The examples below layer a thin outer-cipher envelope over ITB's Triple 8-seed ciphertext so the on-wire bytes look like generic stream cipher output rather than ITB format pixel containers + per-chunk prefix.
+Companion code for the ITB Quick Start. The examples below layer a thin outer cipher envelope over ITB's Triple 8-seed ciphertext so the on-wire bytes look like generic stream cipher output rather than ITB format pixel containers + per-chunk prefix.
 
 ## Threat model
 
@@ -63,8 +63,8 @@ func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 - **Cipher constants** (`CipherAreion256` ... `CipherChaCha20`) name every outer cipher the wrapper accepts. `CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry). `CipherNames` enumerates the outer cipher palette in canonical primitive order; it is the iteration source for cross-cipher tests and benchmarks.
 - **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
 - **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
-- **`GenerateKey`** draws a fresh CSPRNG outer-cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
-- **`DeriveKey`** derives a deterministic outer-cipher key from a high-entropy master via [`kdf.Derive`](../kdf/) under a wrapper-specific label. Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer-cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
+- **`GenerateKey`** draws a fresh CSPRNG outer cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
+- **`DeriveKey`** derives a deterministic outer cipher key from a high-entropy master via [`kdf.Derive`](../kdf/) under a wrapper-specific label. Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
 - **`MakeKeystream` / `MakeKeystreamAt`** construct a `Keystream` ready to XOR data. `MakeKeystreamAt(name, key, nonce, offset)` is the byte-offset positioned variant; it returns a keystream as if `MakeKeystream` had been called and then advanced by `offset` bytes — used by the worker pool to split one logical keystream into disjoint parallel chunks that re-concatenate byte-identical to a serial pass.
 - **`Wrap` / `Unwrap`** are the blob (Single Message) round-trip pair. `Wrap` allocates a fresh `nonce(NonceSize(name)) || keystream-XOR(blob)` wire, drawing the nonce from `crypto/rand`. `Unwrap` reverses it.
 - **`WrapInPlace` / `UnwrapInPlace`** are the zero-body-allocation counterparts. `WrapInPlace` mutates `blob` to its ciphertext form and returns the assembled wire; on error `blob` is left unchanged.
@@ -120,7 +120,7 @@ defer sender.Close()
 
 encrypted, _ := sender.EncryptMessage(plaintext)
 
-// Fresh outer-cipher key per test; in a real deployment derive from a
+// Fresh outer cipher key per test; in a real deployment derive from a
 // shared master via wrapper.DeriveKey(cipherName, master).
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
