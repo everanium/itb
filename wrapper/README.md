@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Companion code for the ITB Quick Start. Every example mirrors one configuration from the [ITB README](https://github.com/everanium/itb#readme) and adds a thin user-side outer cipher envelope so the on-wire bytes look like generic stream cipher output rather than ITB format pixel containers + per-chunk prefix.
+Companion code for the ITB Quick Start. The examples below layer a thin outer-cipher envelope over ITB's Triple 8-seed ciphertext so the on-wire bytes look like generic stream cipher output rather than ITB format pixel containers + per-chunk prefix.
 
 ## Threat model
 
@@ -15,7 +15,7 @@ ITB encrypts content into RGBWYOPA pixel containers. The construction provides *
 - Non-AEAD path: per-chunk header carries width / height / container layout.
 - Streaming AEAD path: a once per-stream 32-byte streamID prefix plus per-chunk `nonce || W || H || container || flag_byte`.
 
-A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher — any of PRF-grade ITB registry primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4 in CTR mode, ChaCha20 (RFC 8439)). After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
+A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher — any of the PRF-grade ITB registry primitives (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-128-CTR, SipHash-2-4 in CTR mode, ChaCha20 (RFC 8439)). After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
 
 This is **not** a random-oracle indistinguishability claim. It is a "looks like a different well-known cipher" claim. The wrap exists for format-deniability ONLY; ITB already provides confidentiality (content-deniability) and the AEAD path already provides per-stream and per-chunk integrity. The Non-AEAD streaming path has no integrity by design and the wrap does not add any.
 
@@ -60,7 +60,7 @@ func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 ```
 
 - **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` xors one keystream segment over `src` into `dst` and advances the internal counter.
-- **Cipher constants** (`CipherAreion256` ... `CipherChaCha20`) name every outer cipher the wrapper accepts. `CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry). `CipherNames` enumerates all of them in canonical primitive order; it is the iteration source for cross-cipher tests and benchmarks.
+- **Cipher constants** (`CipherAreion256` ... `CipherChaCha20`) name every outer cipher the wrapper accepts. `CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry). `CipherNames` enumerates the outer cipher palette in canonical primitive order; it is the iteration source for cross-cipher tests and benchmarks.
 - **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
 - **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
 - **`GenerateKey`** draws a fresh CSPRNG outer-cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
@@ -100,293 +100,80 @@ keystream), see [`ctr/CONSTRUCTIONS.md`](../ctr/CONSTRUCTIONS.md).
 
 ## Quick Start
 
-Code paths under `tools/eitb/main.go`. Run the matrix:
+The wrapper composes on top of ITB's Triple 8-seed surface. Two canonical wrap shapes cover the surface:
 
-```sh
-go run ./tools/eitb       # run every example × every cipher
-go run ./tools/eitb -help # print help
-```
+- **Blob wrap** (`Wrap` / `Unwrap`) — the Single Message pair. Wraps one ITB blob returned from `triple.Pipeline.EncryptMessage` (or the Low-Level `Encrypt3xNNNCfg`) with `nonce || keystream-XOR(blob)`.
+- **Stream wrap** (`NewWrapWriter` / `NewUnwrapReader`) — the streaming pair. Sits between the caller and the ITB Streaming AEAD / Streaming Non-AEAD reader / writer so every byte of the ITB wire passes through the outer keystream.
 
-### 1. Streaming AEAD Easy (MAC Authenticated, IO-Driven)
+Full end-to-end examples covering the canonical 4-triple / 2-Low-Level example set live in the [top-level ITB README](https://github.com/everanium/itb#readme); the two shapes below are the wrap-side snippets those examples plug in.
 
-ITB Call: `easy.Encryptor.EncryptStreamAuthIO` / `DecryptStreamAuthIO`. Wrap shape: `NewWrapWriter` / `NewUnwrapReader` over the continuous bytestream ITB emits.
+### Blob wrap — Single Message
 
 ```go
-enc := easy.New("areion512", 1024, "hmac-blake3")
-defer enc.Close()
-enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup(1)
+import (
+    "github.com/everanium/itb/triple"
+    "github.com/everanium/itb/wrapper"
+)
 
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
+sender, blob, _ := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{})
+defer sender.Close()
+
+encrypted, _ := sender.EncryptMessage(plaintext)
+
+// Fresh outer-cipher key per test; in a real deployment derive from a
+// shared master via wrapper.DeriveKey(cipherName, master).
 outerKey, _ := wrapper.GenerateKey(cipherName)
-
-// Sender
-var wireBuf bytes.Buffer
-wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-_ = enc.EncryptStreamAuthIO(plaintextReader, wrapWriter, chunkSize)
+wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
 // Receiver
+receiver, _ := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, triple.Opts{})
+defer receiver.Close()
+
+recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
+pt, _ := receiver.DecryptMessage(recovered)
+```
+
+### Stream wrap — Streaming AEAD IO-Driven
+
+```go
+import (
+    "bytes"
+
+    "github.com/everanium/itb/triple"
+    "github.com/everanium/itb/wrapper"
+)
+
+sender, blob, _ := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{})
+defer sender.Close()
+
+outerKey, _ := wrapper.GenerateKey(cipherName)
+
+var wireBuf bytes.Buffer
+wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
+_ = sender.EncryptStream(plaintextReader, wrapWriter)
+
+// Receiver
+receiver, _ := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{})
+defer receiver.Close()
+
 unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
 var dst bytes.Buffer
-_ = enc.DecryptStreamAuthIO(unwrapReader, &dst)
+_ = receiver.DecryptStream(unwrapReader, &dst)
 ```
 
-### 2. Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)
+Non-AEAD streaming picks `triple.ProfileStreamingNoAEADTripleV1` at `triple.Init`. Both cipher shapes accept the same wrap shape — the outer cipher is oblivious to whether ITB is producing AEAD or Non-AEAD wire underneath.
 
-ITB Call: `itb.EncryptStreamAuth` / `itb.DecryptStreamAuth` with three explicit `*Seed512` handles plus `macs.Make("hmac-blake3", key)`. Wrap shape: `NewWrapWriter` / `NewUnwrapReader`.
+### Low-Level wrap
 
-```go
-hashFn, _, _ := hashes.Make512("areion512")
-noise, _ := itb.NewSeed512(1024, hashFn)
-data,  _ := itb.NewSeed512(1024, hashFn)
-start, _ := itb.NewSeed512(1024, hashFn)
-
-macKey := make([]byte, 32); rand.Read(macKey)
-macFunc, _ := macs.Make("hmac-blake3", macKey)
-
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-_ = itb.EncryptStreamAuth(noise, data, start, plaintextReader, wrapWriter, macFunc, chunkSize)
-
-// receiver
-unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
-_ = itb.DecryptStreamAuth(noise, data, start, unwrapReader, &dst, macFunc)
-```
-
-### 3. Streaming Easy (No MAC, IO-Driven)
-
-ITB Call: `easy.Encryptor.EncryptStreamIO` / `DecryptStreamIO`. Wrap shape: `NewWrapWriter` / `NewUnwrapReader`. The outer cipher contributes format-deniability only — does not retro-fit integrity onto the No MAC ITB path.
-
-```go
-enc := easy.New("areion512", 1024)
-// Set* configuration unchanged from authenticated variant.
-wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-_ = enc.EncryptStreamIO(plaintextReader, wrapWriter, chunkSize)
-
-unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
-_ = enc.DecryptStreamIO(unwrapReader, &dst)
-```
-
-### 4. Streaming Easy (No MAC, User-Driven Loop)
-
-The README's "Alternative — User-Driven Loop" pattern: each chunk is one independent `enc.Encrypt(buf[:n])` call. Wrap shape: `NewWrapWriter` / `NewUnwrapReader` driven by a caller loop that emits `u32_LE_len || ct` per chunk through the wrapped writer. Length prefix and chunk body both pass through the keystream XOR — no length appears in cleartext on the wire.
-
-```go
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-
-// Sender
-var wireBuf bytes.Buffer
-wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-
-buf := make([]byte, chunkSize)
-for {
-    n, rerr := io.ReadFull(plaintextReader, buf)
-    if rerr == io.EOF { break }
-    ct, _ := enc.Encrypt(buf[:n])
-    _ = binary.Write(wrapWriter, binary.LittleEndian, uint32(len(ct)))
-    _, _ = wrapWriter.Write(ct)
-    if rerr == io.ErrUnexpectedEOF { break }
-}
-
-// Receiver — read u32_LE length then body through the unwrap-reader, looping until EOF.
-unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
-for {
-    var ctLen uint32
-    if err := binary.Read(unwrapReader, binary.LittleEndian, &ctLen); err == io.EOF {
-        break
-    } else if err != nil {
-        panic(err)
-    }
-    ctBuf := make([]byte, ctLen)
-    _, _ = io.ReadFull(unwrapReader, ctBuf)
-    pt, _ := enc.Decrypt(ctBuf)
-    out.Write(pt)
-}
-```
-
-### 5. Streaming Low-Level (No MAC, IO-Driven)
-
-ITB Call: `itb.EncryptStream` / `itb.DecryptStream`. Wrap shape: `NewWrapWriter` / `NewUnwrapReader`.
-
-```go
-hashFn, _, _ := hashes.Make512("areion512")
-noise, _ := itb.NewSeed512(1024, hashFn)
-data,  _ := itb.NewSeed512(1024, hashFn)
-start, _ := itb.NewSeed512(1024, hashFn)
-
-wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-_ = itb.EncryptStream(noise, data, start, plaintextReader, wrapWriter, chunkSize)
-
-unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
-_ = itb.DecryptStream(noise, data, start, unwrapReader, &dst)
-```
-
-### 6. Streaming Low-Level (No MAC, User-Driven Loop)
-
-Per-chunk `itb.Encrypt` / `itb.Decrypt` with caller-side framing. Wrap shape: `NewWrapWriter` / `NewUnwrapReader`. Each chunk is emitted as `u32_LE_len || ct` through the wrap-writer; the length and the body both pass through the keystream XOR.
-
-```go
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-
-var wireBuf bytes.Buffer
-wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-
-buf := make([]byte, chunkSize)
-for {
-    n, rerr := io.ReadFull(plaintextReader, buf)
-    if rerr == io.EOF { break }
-    ct, _ := itb.Encrypt(noise, data, start, buf[:n])
-    _ = binary.Write(wrapWriter, binary.LittleEndian, uint32(len(ct)))
-    _, _ = wrapWriter.Write(ct)
-    if rerr == io.ErrUnexpectedEOF { break }
-}
-
-// Receiver
-unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
-for {
-    var ctLen uint32
-    if err := binary.Read(unwrapReader, binary.LittleEndian, &ctLen); err == io.EOF {
-        break
-    } else if err != nil {
-        panic(err)
-    }
-    ctBuf := make([]byte, ctLen)
-    _, _ = io.ReadFull(unwrapReader, ctBuf)
-    pt, _ := itb.Decrypt(noise, data, start, ctBuf)
-    out.Write(pt)
-}
-```
-
-### 7. Easy: Areion-SoEM-512 (No MAC, Single Message)
-
-ITB Call: `enc.Encrypt(plaintext)` returns one ITB blob. Wrap shape: `Wrap` — `nonce || ks-XOR(blob)`. Wire shape mirrors any "outer cipher with a fresh nonce and an opaque payload" pattern.
-
-```go
-enc := easy.New("areion512", 2048)
-defer enc.Close()
-enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup(1)
-
-encrypted, _ := enc.Encrypt(plaintext)
-
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
-
-// receiver
-recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
-pt, _ := enc.Decrypt(recovered)
-```
-
-### 8. Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
-
-ITB Call: `enc.EncryptAuth` / `enc.DecryptAuth`. Wrap shape: `Wrap`. The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
-
-```go
-enc := easy.New("areion512", 2048, "hmac-blake3")
-defer enc.Close()
-enc.SetNonceBits(512); enc.SetBarrierFill(4); enc.SetBitSoup(1); enc.SetLockSoup(1)
-
-encrypted, _ := enc.EncryptAuth(plaintext)
-
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
-
-// receiver
-recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
-pt, _ := enc.DecryptAuth(recovered)
-```
-
-### 9. Low-Level: Areion-SoEM-512 (No MAC, Single Message)
-
-ITB Call: width-less `itb.Encrypt(noise, data, start, plaintext)` / `itb.Decrypt(...)` with three explicit `*Seed512` handles built from `hashes.Make512("areion512")`. Wrap shape: `Wrap` — `nonce || ks-XOR(blob)`. Wire shape matches example 7; the difference is that the seed material is held by caller-side handles rather than by an `easy.Encryptor` instance.
-
-```go
-itb.SetNonceBits(512); itb.SetBarrierFill(4); itb.SetBitSoup(1); itb.SetLockSoup(1)
-
-hashFn, _, _ := hashes.Make512("areion512")
-noise, _ := itb.NewSeed512(2048, hashFn)
-data,  _ := itb.NewSeed512(2048, hashFn)
-start, _ := itb.NewSeed512(2048, hashFn)
-
-encrypted, _ := itb.Encrypt(noise, data, start, plaintext)
-
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
-
-// receiver
-recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
-pt, _ := itb.Decrypt(noise, data, start, recovered)
-```
-
-### 10. Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)
-
-ITB Call: width-less `itb.EncryptAuth(noise, data, start, plaintext, macFunc)` / `itb.DecryptAuth(...)` with the MAC closure constructed via `macs.Make("hmac-blake3", macKey)`. Wrap shape: `Wrap`. The ITB-internal 32-byte MAC tag remains inside the RGBWYOPA container; outer cipher is format-deniability only.
-
-```go
-itb.SetNonceBits(512); itb.SetBarrierFill(4); itb.SetBitSoup(1); itb.SetLockSoup(1)
-
-hashFn, _, _ := hashes.Make512("areion512")
-noise, _ := itb.NewSeed512(2048, hashFn)
-data,  _ := itb.NewSeed512(2048, hashFn)
-start, _ := itb.NewSeed512(2048, hashFn)
-
-macKey := make([]byte, 32); rand.Read(macKey)
-macFunc, _ := macs.Make("hmac-blake3", macKey)
-
-encrypted, _ := itb.EncryptAuth(noise, data, start, plaintext, macFunc)
-
-// Alternative — derive deterministically from an external master (e.g. an ML-KEM shared secret):
-// outerKey, _ := wrapper.DeriveKey(cipherName, master); clear(master)
-outerKey, _ := wrapper.GenerateKey(cipherName)
-wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
-
-// receiver
-recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
-pt, _ := itb.DecryptAuth(noise, data, start, recovered, macFunc)
-```
+Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` entry points directly compose the same wrap shapes above around the caller-produced byte slice or `io.Reader` / `io.Writer` — the wrapper sees only bytes and does not care whether the source is the facade or the Low-Level entry points. The eight-seed constellation (`noiseSeed, lockSeed, dataSeed1..3, startSeed1..3`) is threaded through the Low-Level call in the usual way.
 
 ## Verification matrix
 
-Every example × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality. Sample run:
-
-```
-[PASS] aead-easy-io               + areion256   pt=65536 wire=90208
-[PASS] aead-easy-io               + areion512   pt=65536 wire=90208
-[PASS] aead-easy-io               + blake2b256   pt=65536 wire=90208
-[PASS] aead-easy-io               + blake2b512   pt=65536 wire=90208
-[PASS] aead-easy-io               + blake2s    pt=65536 wire=90208
-[PASS] aead-easy-io               + blake3     pt=65536 wire=90208
-[PASS] aead-easy-io               + aescmac    pt=65536 wire=90208
-[PASS] aead-easy-io               + siphash24   pt=65536 wire=90208
-[PASS] aead-easy-io               + chacha20   pt=65536 wire=90204
-...
-[PASS] message-lowlevel-auth      + areion256   pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + areion512   pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + blake2b256   pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + blake2b512   pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + blake2s    pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + blake3     pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + aescmac    pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + siphash24   pt=1024 wire=8276
-[PASS] message-lowlevel-auth      + chacha20   pt=1024 wire=8272
-```
-
-The wire-byte difference between cipher columns is exactly the per-stream nonce-size delta (16 vs 12 vs 16 bytes); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.
+Every wrap shape × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality inside the wrapper's test suite. The wire-byte delta between cipher columns is exactly the per-stream nonce-size delta (16 vs 12 vs 16 bytes); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.
 
 ## Performance
 
-Bench numbers across Single Ouroboros and Triple Ouroboros, message and streaming, encrypt and decrypt (split sub-benches) are tracked in [BENCH.md](BENCH.md).
+Bench numbers across the wrapper only round-trip and the Full ITB + wrapper (Single Message and Streaming, encrypt / decrypt split sub-benches) are tracked in [BENCH.md](BENCH.md).
 
 ## Notes on outer cipher key management
 
