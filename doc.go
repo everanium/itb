@@ -7,15 +7,16 @@
 // ITB is an experimental construction without peer review or formal certification.
 // The information-theoretic barrier is a SOFTWARE-LEVEL property, reinforced by
 // two independent barrier mechanisms: noise absorption from CSPRNG, and
-// encoding ambiguity (56^P without CCA, 7^P under CCA) from triple-seed
-// isolation. Architectural layers deny the point of application: independent
-// startSeed and 8-noisePos ambiguity from independent noiseSeed under Full
-// KPA, plus gcd(7,8)=1 byte-splitting under Partial KPA. Full KPA defense is
-// 3-factor under PRF assumption (4-factor under Partial KPA) — see PROOFS.md
-// Proof 4a. It provides NO guarantees against hardware-level attacks
-// including: power analysis (DPA/SPA), microarchitectural side-channels
-// (Spectre, Meltdown, Rowhammer, cache timing), undiscovered side-channel
-// leakages, or CSPRNG implementation weaknesses.
+// encoding ambiguity (7^P under the unified CCA-resistant envelope) from
+// 8-seed isolation. Architectural layers deny the point of application:
+// independent startSeeds and 8-noisePos ambiguity from an independent
+// noiseSeed under Full KPA, plus gcd(7,8)=1 byte-splitting under Partial
+// KPA. Full KPA defense is 3-factor under PRF assumption (4-factor under
+// Partial KPA) — see PROOFS.md Proof 4a. It provides NO guarantees against
+// hardware-level attacks including: power analysis (DPA/SPA),
+// microarchitectural side-channels (Spectre, Meltdown, Rowhammer, cache
+// timing), undiscovered side-channel leakages, or CSPRNG implementation
+// weaknesses.
 //
 // PRF-grade hash functions are required. No warranty is provided.
 //
@@ -32,8 +33,8 @@
 // The random container creates an information-theoretic barrier: hash output
 // is consumed by a modification of a random pixel, making it unobservable.
 // PRF required. PRF closes the candidate-verification step; under Full KPA,
-// barrier and architectural layers (triple-seed isolation, encoding
-// ambiguity, independent startSeed) deny the point of application — 3-factor
+// barrier and architectural layers (8-seed isolation, encoding ambiguity,
+// independent startSeeds) deny the point of application — 3-factor
 // combination under PRF assumption; gcd(7,8)=1 byte-splitting adds a 4th
 // factor under Partial KPA (see PROOFS.md Proof 4a).
 //
@@ -96,10 +97,12 @@
 //   - 1 noise bit per channel (8 noise bits per pixel)
 //   - Overhead: 64/56 = 1.14×
 //
-// Triple-seed architecture: noiseSeed determines the noise bit position
-// (any of 0-7), dataSeed determines data rotation (0-6) and per-bit
-// XOR masks, startSeed determines pixel start offset. All three seeds
-// are independent — compromise of one does not reveal the others.
+// 8-seed architecture: noiseSeed determines the noise bit position
+// (any of 0-7), each dataSeed determines data rotation (0-6) and per-bit
+// XOR masks for its 3-snake slot, each startSeed determines that slot's
+// pixel start offset, and lockSeed keys the always-on 48-bit Interlocked
+// Barrier overlay. All eight seeds are independent — compromise of one
+// does not reveal the others.
 // dataSeed has zero software-observable side-channel exposure (register-only operations).
 // Config per pixel: 3 bits from noiseSeed + 59 bits from dataSeed
 // (3 rotation + 56 XOR) = 62 total.
@@ -125,7 +128,7 @@
 //     original container pixel values are unknown (crypto/rand, never
 //     transmitted). Under Full KPA, defense is 3-factor: PRF non-invertibility
 //
-//   - independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity.
+//   - independent startSeeds + 7-rotation × 8-noisePos per-pixel ambiguity.
 //     gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial
 //     KPA (see PROOFS.md Proof 4a).
 //
@@ -139,20 +142,20 @@
 //     256-bit, ~2^256 at 512-bit. Practically safe collision probability
 //     (~2^{-33}): ~2^48 / ~2^112 / ~2^240 messages respectively.
 //
-//   - Triple-seed isolation: CCA reveals noiseSeed config only (MAC + Reveal
+//   - 8-seed isolation: CCA reveals noiseSeed config only (MAC + Reveal
 //     only) (noise positions), cache side-channel reveals startPixel only
-//     (pixel offset derived from startSeed). dataSeed config (rotation + XOR) is completely
+//     (pixel offset derived from each startSeed). dataSeed config (rotation + XOR) is completely
 //     independent, register-only, and unobservable. After CCA removes noise bits,
 //     guaranteed CSPRNG residue in data positions preserves ambiguity (Proof 10).
 //
 //   - Information-theoretic barrier of 2^(8P) where P = pixel count.
 //     Minimum container sized so encoding ambiguity exceeds key space:
-//     [MinPixels] = ceil(keyBits / log2(56)) for plain-mode entry points
-//     (56^P > 2^keyBits); [MinPixelsAuth] = ceil(keyBits / log2(7)) for
-//     authenticated variants (7^P > 2^keyBits, CCA-resistant).
-//     At 1024-bit: MinPixels=177, MinPixelsAuth=365.
-//     Noise barrier at MinPixels=177 (P=196 after square rounding): 2^(8×196) = 2^1568,
-//     far beyond the Landauer limit of ~2^306.
+//     [MinPixels] = ceil(keyBits / log2(7)) (aliases [MinPixelsAuth]) —
+//     the plain and authenticated envelopes share one unified CCA-resistant
+//     floor so the container no longer distinguishes mode on tiny payloads.
+//     At 1024-bit: MinPixels = 365 (P = 400 after square rounding).
+//     Noise barrier at MinPixels = 365 (P = 400 after square rounding):
+//     2^(8×400) = 2^3200, far beyond the Landauer limit of ~2^306.
 //
 // # Quick Start (Recommended) — triple.Pipeline
 //
@@ -434,7 +437,7 @@
 // [Decrypt3x128Cfg], [Decrypt3x256Cfg], [Decrypt3x512Cfg].
 //
 // For best throughput, use 512-bit ITB key — security becomes P × 2^1536
-// (3 × 512), while ChainHash runs at 512-bit speed. See ITB3.md for the
+// (3 × 512), while ChainHash runs at 512-bit speed. See ITB.md for the
 // accessible explanation and BENCH3.md for benchmarks.
 //
 // # 48-bit Interlocked Barrier (Triple Ouroboros)
@@ -466,8 +469,8 @@
 // mirrors, and [EncryptStream3x128Cfg] / [DecryptStream3x128Cfg] and mirrors.
 // The ciphertext wire format is identical in all configurations.
 //
-// See ITB.md / ITB3.md for accessible explanation and REDTEAM.md
-// for the defensive framing in the SAT attack context.
+// See ITB.md for accessible explanation and REDTEAM.md for the
+// defensive framing in the SAT attack context.
 //
 // # Per-instance configuration ([Config])
 //
