@@ -74,7 +74,7 @@ The builders close the silent-truncation trap **constructively**, but they are n
 1. The primitive has **native variable-length absorb** (Merkle-Damgard tree like BLAKE3, MD chaining like SHA-256/512, sponge with internal absorb loop like Keccak/Ascon — i.e. the primitive's own API accepts arbitrary input length and processes every byte).
 2. The primitive's **native output width is at least the required HashFunc width** (32 bytes for `HashFunc256`, 64 bytes for `HashFunc512`).
 
-The existing custom-factory pattern in the main repo [README — "Custom factory pattern (advanced)"](../README.md#custom-factory-pattern-advanced) is the canonical reference for this case: BLAKE3 via `blake3.NewKeyed` + `h.Write(mixed)` satisfies both conditions, so all four seed components are XOR'd into a zero-padded data buffer that BLAKE3 absorbs natively. No chain-absorb needed. The same pattern transfers to BLAKE2b/2s, SHA-256 (for HashFunc256), SHA-512 (for HashFunc512), KangarooTwelve, etc.
+The custom-primitive pattern in the main repo [README — "Custom user-supplied primitives"](../README.md#custom-user-supplied-primitives) is the canonical reference for this case: BLAKE3 via `blake3.NewKeyed` + `h.Write(mixed)` satisfies both conditions, so all four seed components are XOR'd into a zero-padded data buffer that BLAKE3 absorbs natively. No chain-absorb needed. The same pattern transfers to BLAKE2b/2s, SHA-256 (for HashFunc256), SHA-512 (for HashFunc512), KangarooTwelve, etc.
 
 A user primitive **requires** a builder when **at least one** of these holds:
 

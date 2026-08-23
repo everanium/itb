@@ -39,7 +39,7 @@ The nonce guarantees that the same message with the same seeds produces each tim
 
 Repeated transmissions of the same plaintext under fresh nonces produce independent containers. No observable correlation between them; two-time-pad structure appears only under a birthday-bound nonce collision.
 
-The mandatory internal nonce derivation from crypto/rand at every call is API-side discipline, not a construction-level guarantee: the barrier does not architecturally absorb reused-nonce exposure; closure of the CPA / KPA families is conditional on fresh nonces (§8).
+The mandatory internal nonce derivation from crypto/rand at every call is API-side discipline, not a construction-level guarantee: the barrier does not architecturally absorb reused-nonce exposure; closure of the CPA / KPA families is conditional on fresh nonces (§9).
 
 ## 4. Eight-Seed Isolation
 
