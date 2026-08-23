@@ -18,9 +18,7 @@ ITB_NONCE_BITS=128 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s 
 
 Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512+VL chain-absorb kernels are not engaged:
 
-* `-tags=noitbasm` — disables only the chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; throughput tracks the OLDBENCH3 single-Func numbers below.
-
-Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everanium/itb/blob/main/archive/OLDBENCH3.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations. Numerically these also serve as the expected ballpark under `-tags=noitbasm` (the encrypt path runs 4× single arm via upstream asm — the pre-ZMM dispatch shape).
+* `-tags=noitbasm` — disables only the chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; the encrypt path runs 4× the single arm via upstream asm.
 
 ## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-23)
 
