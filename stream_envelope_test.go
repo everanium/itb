@@ -475,6 +475,132 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 	}
 }
 
+// TestSingleMessageEnvelopeParityAEADvsNoMAC asserts the on-wire byte
+// length of a Single Message AEAD ciphertext equals the byte length
+// of the corresponding Single Message No-MAC ciphertext for the same
+// plaintext, seeds and nonce. Both paths reserve tagSize + 1 bytes in
+// the third snake's container capacity (AEAD: real tag + fixed 0x00
+// dummy flag; No-MAC: pure CSPRNG stub via nomacTagStubSize), so the
+// two containers round to the identical square and the resulting
+// wire byte counts are equal.
+func TestSingleMessageEnvelopeParityAEADvsNoMAC(t *testing.T) {
+	const plaintextSize = 1024
+	for _, wCfg := range []struct {
+		width, nonceLen int
+	}{{128, 16}, {256, 32}, {512, 64}} {
+		wCfg := wCfg
+		t.Run(fmt.Sprintf("w%d", wCfg.width), func(t *testing.T) {
+			installNonceBits(t, wCfg.nonceLen*8)
+			installTestNonce(t, nonceFixture(wCfg.nonceLen))
+			plaintext := randomPlaintext(t, plaintextSize)
+
+			var aeadWire, plainWire []byte
+			var err error
+			switch wCfg.width {
+			case 128:
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
+				aeadWire, err = EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+				if err != nil {
+					t.Fatalf("AEAD SM encrypt: %v", err)
+				}
+				plainWire, err = Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+				if err != nil {
+					t.Fatalf("No-MAC SM encrypt: %v", err)
+				}
+			case 256:
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
+				aeadWire, err = EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+				if err != nil {
+					t.Fatalf("AEAD SM encrypt: %v", err)
+				}
+				plainWire, err = Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+				if err != nil {
+					t.Fatalf("No-MAC SM encrypt: %v", err)
+				}
+			case 512:
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
+				aeadWire, err = EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+				if err != nil {
+					t.Fatalf("AEAD SM encrypt: %v", err)
+				}
+				plainWire, err = Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+				if err != nil {
+					t.Fatalf("No-MAC SM encrypt: %v", err)
+				}
+			}
+			if len(aeadWire) != len(plainWire) {
+				t.Fatalf("SM envelope byte-length mismatch on w%d: aead=%d nomac=%d (diff=%d)",
+					wCfg.width, len(aeadWire), len(plainWire), len(aeadWire)-len(plainWire))
+			}
+		})
+	}
+}
+
+// TestSingleMessageAEADRoundTripAfterStubReservation confirms
+// Encrypt then Decrypt on the Single Message AEAD path recovers the
+// original plaintext byte-exact across all three widths, catching any
+// tag-position or dummy-byte off-by-one introduced by the stub
+// reservation.
+func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
+	sizes := []int{1, 6, 63, 64, 65, 1024, 8192, 1 << 20}
+	for _, wCfg := range []struct {
+		width, nonceLen int
+	}{{128, 16}, {256, 32}, {512, 64}} {
+		wCfg := wCfg
+		t.Run(fmt.Sprintf("w%d", wCfg.width), func(t *testing.T) {
+			installNonceBits(t, wCfg.nonceLen*8)
+			installTestNonce(t, nonceFixture(wCfg.nonceLen))
+			for _, sz := range sizes {
+				sz := sz
+				t.Run(fmt.Sprintf("size=%d", sz), func(t *testing.T) {
+					plaintext := randomPlaintext(t, sz)
+					switch wCfg.width {
+					case 128:
+						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
+						ct, err := EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+						if err != nil {
+							t.Fatalf("encrypt: %v", err)
+						}
+						pt, err := DecryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
+						if err != nil {
+							t.Fatalf("decrypt: %v", err)
+						}
+						if !bytes.Equal(pt, plaintext) {
+							t.Fatalf("recovered plaintext mismatch: got %d bytes, want %d", len(pt), len(plaintext))
+						}
+					case 256:
+						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
+						ct, err := EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+						if err != nil {
+							t.Fatalf("encrypt: %v", err)
+						}
+						pt, err := DecryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
+						if err != nil {
+							t.Fatalf("decrypt: %v", err)
+						}
+						if !bytes.Equal(pt, plaintext) {
+							t.Fatalf("recovered plaintext mismatch: got %d bytes, want %d", len(pt), len(plaintext))
+						}
+					case 512:
+						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
+						ct, err := EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+						if err != nil {
+							t.Fatalf("encrypt: %v", err)
+						}
+						pt, err := DecryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
+						if err != nil {
+							t.Fatalf("decrypt: %v", err)
+						}
+						if !bytes.Equal(pt, plaintext) {
+							t.Fatalf("recovered plaintext mismatch: got %d bytes, want %d", len(pt), len(plaintext))
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestStreamEnvelopeNonceWidths exercises each supported nonce width
 // (128 / 256 / 512) through a small round-trip on both modes so a
 // header-width or nonce-offset regression surfaces on every branch of
