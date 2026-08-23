@@ -35,24 +35,24 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 	return nil
 }
 
-// Blob — native-API counterpart to the easy.Encryptor state-blob
-// surface. Three width-specific types ([Blob128], [Blob256],
-// [Blob512]) pack the low-level encryptor material (hash keys +
-// seed components + optional dedicated lockSeed + optional MAC
-// material) plus the sender's process-wide bit-permutation /
-// nonce / barrier configuration into one JSON blob. The receiver
-// calls Import / Import3, which applies the captured globals
-// unconditionally and populates the struct's public fields.
+// Blob — native-API session-bundle surface. Three width-specific
+// types ([Blob128], [Blob256], [Blob512]) pack the low-level
+// encryptor material (hash keys + seed components + optional
+// dedicated lockSeed + optional MAC material) plus the sender's
+// process-wide bit-permutation / nonce / barrier configuration into
+// one JSON blob. The receiver calls Import / Import3, which applies
+// the captured globals unconditionally and populates the struct's
+// public fields.
 //
 // Hash function closures and BatchHash batched-arm wrappers are
 // NOT stored — the caller picks factories at restore time and
 // wires Hash / BatchHash from the saved Key* bytes via the
 // matching factory (e.g. [MakeAreionSoEM512HashWithKey],
-// hashes.BLAKE2b512PairWithKey). This keeps the same pluggable-PRF
-// philosophy native-API users already rely on.
+// hashes.BLAKE2b512PairWithKey). This keeps the pluggable-PRF
+// philosophy consistent with the rest of the native API.
 //
-// Cross-reference: [github.com/everanium/itb/easy.Encryptor.Export]
-// is the high-level alternative for callers that prefer one
+// Cross-reference: the [github.com/everanium/itb/triple] facade is
+// the high-level alternative for callers that prefer one
 // constructor call + auto-coupling + per-instance Config snapshot.
 // The native Blob API trades that convenience for explicit factory
 // control and global-Set-based configuration.

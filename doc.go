@@ -172,105 +172,72 @@
 //     Noise barrier at MinPixels=177 (P=196 after square rounding): 2^(8×196) = 2^1568,
 //     far beyond the Landauer limit of ~2^306.
 //
-// # Quick Start (Recommended) — easy.Encryptor
+// # Quick Start (Recommended) — triple.Pipeline
 //
-// The high-level [github.com/everanium/itb/easy.Encryptor] replaces
+// The high-level [github.com/everanium/itb/triple.Pipeline] replaces
 // the low-level setup ceremony (per-seed PRF closures, BatchHash
-// wiring, MAC factory) with one constructor call. The encryptor
-// allocates its own seeds + MAC closure,
-// snapshots the global configuration into a per-instance [Config],
-// and exposes setters that mutate only its own state without
-// touching the process-wide [SetMaxWorkers] / [SetNonceBits] etc.
-// Cross-process persistence is one method on each side:
-// [github.com/everanium/itb/easy.Encryptor.Export] returns a JSON
-// blob, [github.com/everanium/itb/easy.PeekConfig] inspects it,
-// [github.com/everanium/itb/easy.Encryptor.Import] restores the
-// state on the receiver.
+// wiring, MAC factory, parallax + wrapper masters) with one
+// [github.com/everanium/itb/triple.Init] call. The Pipeline
+// allocates the eight ITB seeds + optional parallax layer + optional
+// wrapper layer + MAC closure, snapshots the global configuration
+// into a per-instance [Config], and exposes the two cipher shapes
+// (message, stream) plus a lifecycle
+// (Init / Open / Rekey / Close). Cross-process persistence is one
+// method call per side: [github.com/everanium/itb/triple.Init]
+// returns the session blob, [github.com/everanium/itb/triple.Open]
+// reconstructs the receiver.
 //
-// A single easy.Encryptor is NOT safe for concurrent use from
-// multiple goroutines — cipher methods, per-instance setters, and
-// Close / Import all mutate per-instance state without locking.
-// Sharing one Encryptor across goroutines requires external
-// synchronisation. Distinct Encryptor values, each owned by one
-// goroutine, run independently against the libitb worker pool. The
-// low-level free functions [Encrypt128Cfg] / [EncryptAuthenticated128Cfg]
-// (and the 256 / 512 width counterparts) take read-only Seed
-// pointers and allocate output per call — they are thread-safe
-// under concurrent invocation on the same seeds; only the shared
-// [Config] pointer requires caller-side serialisation when setters
-// race with readers.
+// A single triple.Pipeline is safe for concurrent
+// [github.com/everanium/itb/triple.Pipeline.EncryptStream] /
+// [github.com/everanium/itb/triple.Pipeline.EncryptMessage] calls
+// from multiple goroutines; per-call state lives on the caller's
+// stack. Rekey mutates Pipeline state and must be serialised against
+// concurrent cipher-path calls. The low-level free functions
+// [Encrypt128Cfg] / [EncryptAuthenticated128Cfg] (and the 256 / 512
+// width counterparts) take read-only Seed pointers and allocate
+// output per call — they are thread-safe under concurrent invocation
+// on the same seeds; only the shared [Config] pointer requires
+// caller-side serialisation when setters race with readers.
 //
 //	import "github.com/everanium/itb"
-//	import "github.com/everanium/itb/easy"
+//	import "github.com/everanium/itb/triple"
 //
-//	itb.SetMaxWorkers(8)    // limit to 4 CPU cores (default: all CPUs)
+//	itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
 //
-//	// (1) Areion-SoEM-512, no MAC.
-//	enc := easy.New("areion512", 2048, "hmac-blake3")
-//	defer enc.Close()
-//	enc.SetNonceBits(512)
-//	enc.SetBarrierFill(4)
-//	blob := enc.Export()                          // ship to receiver
-//	encrypted, _ := enc.Encrypt(plaintext)
-//
-//	prim, kb, mode, mac := easy.PeekConfig(blob)  // receiver side
-//	var dec *easy.Encryptor
-//	if mode == 1 { dec = easy.New(prim, kb, mac) } else { dec = easy.New3(prim, kb, mac) }
-//	defer dec.Close()
-//	// dec.Import(blob) below automatically restores the full
-//	// per-instance configuration (nonce_bits, barrier_fill). The
-//	// Set* lines below are kept for documentation — they show the
-//	// knobs available for explicit pre-Import override.
-//	// BarrierFill is asymmetric: a receiver-set value > 1 takes
-//	// priority over the blob's barrier_fill (the receiver's heavier
-//	// CSPRNG margin is preserved).
-//	dec.SetNonceBits(512)
-//	dec.SetBarrierFill(4)
-//	dec.Import(blob)
-//	decrypted, _ := dec.Decrypt(encrypted)
-//
-//	// (2) Areion-SoEM-512 + HMAC-BLAKE3, authenticated. The MAC
-//	// primitive is bound at construction time; encrypt_auth /
-//	// decrypt_auth attach a 32-byte tag inside the container.
-//	enc = easy.New("areion512", 2048, "hmac-blake3")
-//	defer enc.Close()
-//	encrypted, _ = enc.EncryptAuth(plaintext)
-//	// dec.DecryptAuth surfaces tampering as a non-nil error rather
-//	// than corrupted plaintext.
-//
-//	// (3) BLAKE2b-512 + HMAC-BLAKE3, authenticated, 2048-bit seeds.
-//	// Mixing primitive + MAC is a one-line constructor change — no
-//	// per-call PRF / batched-arm / MAC-factory wiring.
-//	enc = easy.New("blake2b512", 2048, "hmac-blake3")
-//	defer enc.Close()
-//	encrypted, _ = enc.EncryptAuth(plaintext)
-//
-//	// (4) Mixed primitives — different PRF per seed slot.
-//	// [github.com/everanium/itb/easy.NewMixed] /
-//	// [github.com/everanium/itb/easy.NewMixed3] take a
-//	// per-slot spec; every name must share the same native hash
-//	// width. The optional PrimitiveL field allocates a dedicated
-//	// lockSeed slot under its own primitive choice.
-//	// PrimitiveAt(slot) reads the per-slot canonical name;
-//	// IsMixed() is the typed predicate.
-//	enc = easy.NewMixed(easy.MixedSpec{
-//		PrimitiveN: "blake3", PrimitiveD: "blake2s",
-//		PrimitiveS: "areion256", PrimitiveL: "blake2b256",
-//		KeyBits: 1024, MACName: "hmac-blake3",
+//	// Full-stack Streaming AEAD Triple (MAC Authenticated, parallax + wrapper on).
+//	sender, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
+//		NonceBits: 512, BarrierFill: 4,
 //	})
-//	defer enc.Close()
-//	encrypted, _ = enc.EncryptAuth(plaintext)
+//	if err != nil {
+//		panic(err)
+//	}
+//	defer sender.Close()
 //
-// Streaming on the easy surface lives entirely on the caller side:
-// slice plaintext into chunks of the desired size and call
-// [github.com/everanium/itb/easy.Encryptor.Encrypt] per chunk; on
-// the decrypt side walk the concatenated stream by reading
-// [github.com/everanium/itb/easy.Encryptor.HeaderSize] bytes,
-// calling [github.com/everanium/itb/easy.Encryptor.ParseChunkLen]
-// to learn the chunk's body length, reading the remaining bytes,
-// and feeding the full chunk to [github.com/everanium/itb/easy.Encryptor.Decrypt].
-// Both per-instance accessors track the encryptor's own NonceBits
-// without consulting the process-wide [GetNonceBits] / [ParseChunkLen].
+//	receiver, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{})
+//	if err != nil {
+//		panic(err)
+//	}
+//	defer receiver.Close()
+//
+//	wire, _ := sender.EncryptMessage(plaintext)
+//	recovered, _ := receiver.DecryptMessage(wire)
+//
+//	// Streaming shape (io.Reader / io.Writer) is available on the
+//	// same Pipeline via triple.Pipeline.EncryptStream /
+//	// triple.Pipeline.DecryptStream.
+//
+// Streaming on the triple surface is driven end-to-end by the
+// Pipeline: hand
+// [github.com/everanium/itb/triple.Pipeline.EncryptStream] an
+// [io.Reader] over the plaintext and an [io.Writer] over the wire
+// and it drives the chunk loop internally (parallax
+// encrypt-Reader → itb Triple 8-seed Streaming AEAD → wrapper
+// wrap-Writer). The receiver mirrors with
+// [github.com/everanium/itb/triple.Pipeline.DecryptStream]. Callers
+// that only have a byte slice at hand use
+// [github.com/everanium/itb/triple.Pipeline.EncryptMessage] /
+// [github.com/everanium/itb/triple.Pipeline.DecryptMessage] — the
+// byte shape is identical when the plaintext fits in one chunk.
 //
 // # Quick Start (low-level)
 //
@@ -583,10 +550,10 @@
 // # Streaming bindings asymmetry
 //
 // For the No-MAC paths, the Go core and the
-// [github.com/everanium/itb/easy] package expose [io.Reader] /
+// [github.com/everanium/itb/triple] package expose [io.Reader] /
 // [io.Writer] entry points ([EncryptStream] / [DecryptStream] and
-// the corresponding [github.com/everanium/itb/easy.Encryptor.EncryptStreamIO] /
-// [github.com/everanium/itb/easy.Encryptor.DecryptStreamIO] methods)
+// the corresponding [github.com/everanium/itb/triple.Pipeline.EncryptStream] /
+// [github.com/everanium/itb/triple.Pipeline.DecryptStream] methods)
 // that drive the read/write loop internally. The official bindings
 // to other languages expose the No-MAC stream surface as per-chunk
 // free functions only and let the caller drive the loop. The two
@@ -671,8 +638,9 @@
 // the global at snapshot time. Subsequent global mutations do not
 // leak into a previously-snapshotted [Config]; subsequent mutations
 // of a snapshotted [Config] do not leak back into the globals. The
-// [github.com/everanium/itb/easy.Encryptor] surface uses this at
-// New / New3 time to seed each encryptor's own [Config] copy.
+// [github.com/everanium/itb/triple.Pipeline] surface uses this at
+// [github.com/everanium/itb/triple.Init] time to seed each
+// Pipeline's own [Config] copy.
 //
 // # State persistence — Blob
 //
@@ -689,9 +657,9 @@
 // keeping the pluggable-PRF philosophy of the native API. Optional
 // LockSeed and MAC slots ride in the trailing [Blob128Opts] /
 // [Blob256Opts] / [Blob512Opts] options struct. The
-// [github.com/everanium/itb/easy.Encryptor.Export] surface is the
-// high-level alternative for callers that prefer constructor-bound
-// primitive selection plus auto-coupling.
+// [github.com/everanium/itb/triple] facade is the high-level
+// alternative for callers that prefer constructor-bound primitive
+// selection plus auto-coupling of parallax + wrapper masters.
 //
 // # Dedicated lockSeed
 //
@@ -720,10 +688,12 @@
 //	// ... ds1..3, ss1..3 as usual, all independently allocated.
 //	ct, _ := itb.Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 //
-// The [easy.Encryptor] surface auto-allocates the lockSeed slot at
-// construction time (New3 / NewMixed3) and persists it across
-// [easy.Encryptor.Export] / [easy.Encryptor.Import] — no caller-side
-// bookkeeping required on the high-level path.
+// The [github.com/everanium/itb/triple.Pipeline] surface
+// auto-allocates the lockSeed slot at
+// [github.com/everanium/itb/triple.Init] time and persists it
+// across the exported blob so
+// [github.com/everanium/itb/triple.Open] reconstructs the same
+// slot — no caller-side bookkeeping required on the high-level path.
 //
 // # Parallelism Control
 //
