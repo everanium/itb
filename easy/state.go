@@ -18,10 +18,6 @@ import (
 //
 //   - prf_keys is omitted entirely when the primitive has no fixed
 //     PRF key (siphash24).
-//   - lock_seed is omitted when the encryptor's dedicated lockSeed
-//     is off; when on, the field is encoded as the literal `true`.
-//     No other value is canonical, and the v1 reader rejects any
-//     non-true encoding.
 //   - nonce_bits / barrier_fill carry the encryptor's per-instance
 //     configuration overrides. Each is omitted when the encryptor
 //     never explicitly set it (cfg sentinel "inherit":
@@ -31,7 +27,9 @@ import (
 //     behaviour).
 //   - seeds inner arrays carry decimal uint64 strings (base 10) so
 //     cross-language consumers do not hit the JSON 53-bit number
-//     precision limit.
+//     precision limit. Every blob carries eight seed entries in
+//     canonical order: [noise, lockSeed, data1, data2, data3,
+//     start1, start2, start3].
 //   - prf_keys entries and mac_key are lowercase hex without any
 //     "0x" prefix.
 type stateBlobV1 struct {
@@ -44,26 +42,21 @@ type stateBlobV1 struct {
 	PRFKeys     []string   `json:"prf_keys,omitempty"`
 	Seeds       [][]string `json:"seeds"`
 	MACKey      string     `json:"mac_key"`
-	LockSeed    bool       `json:"lock_seed,omitempty"`
 	NonceBits   int        `json:"nonce_bits,omitempty"`
 	BarrierFill int        `json:"barrier_fill,omitempty"`
 
 	// Mixed signals that the blob carries per-slot primitive names.
 	// Encoded as the literal `true` when the encryptor was built via
-	// [NewMixed] / [NewMixed3]; omitted (false) for single-primitive
-	// encryptors built via [New] / [New3]. The Primitive field on a
-	// mixed blob carries [MixedPrimitive] ("mixed") and the
-	// per-slot names live in Primitives instead.
+	// [NewMixed3]; omitted (false) for single-primitive encryptors
+	// built via [New3]. The Primitive field on a mixed blob carries
+	// [MixedPrimitive] ("mixed") and the per-slot names live in
+	// Primitives instead.
 	Mixed bool `json:"mixed,omitempty"`
 
 	// Primitives carries one canonical [hashes.Registry] name per
-	// seed slot in canonical order: 0 = noiseSeed, then dataSeed
-	// (Single) or dataSeed1..3 (Triple), then startSeed (Single)
-	// or startSeed1..3 (Triple), with the optional dedicated
-	// lockSeed at the trailing slot when LockSeed is true. Length
-	// matches len(Seeds). Omitted entirely on single-primitive
-	// blobs; readers must treat `Mixed: false` and an empty
-	// Primitives slice as the legacy single-primitive shape.
+	// seed slot in canonical order (8 entries). Omitted entirely on
+	// single-primitive blobs; readers treat `Mixed: false` and an
+	// empty Primitives slice as the single-primitive shape.
 	Primitives []string `json:"primitives,omitempty"`
 }
 
@@ -137,7 +130,6 @@ func (e *Encryptor) Export() []byte {
 	}
 
 	blob.MACKey = hex.EncodeToString(e.macKey)
-	blob.LockSeed = e.cfg.LockSeed > 0
 
 	// Mixed-mode encryptors carry [MixedPrimitive] in Primitive (set
 	// at construction), and the per-slot primitive names ride
@@ -181,20 +173,10 @@ func (e *Encryptor) Export() []byte {
 // validation failure; on error the encryptor's pre-Import state is
 // unchanged.
 //
-// The blob carries the authoritative LockSeed setting. The
-// receiver's pre-Import LockSeed state is silently overridden — a
-// blob with lock_seed:true elevates a default-LockSeed=0 receiver
-// to LockSeed=1 (and the imported lockSeed material populates the
-// 4th/8th seed slot); a blob without lock_seed demotes a pre-Import
-// LockSeed=1 receiver to LockSeed=0 (and the receiver's pre-Import
-// dedicated-lockSeed material is zeroed and discarded). The four
-// other configuration dimensions (primitive, key_bits, mode, mac)
-// reject on mismatch because the receiver's hash / MAC factories
-// were bound at New / New3 time.
-//
-// firstEncryptCalled is reset to false on every successful Import —
-// the encryptor is conceptually reborn, so [Encryptor.SetLockSeed]
-// is allowed again until the next first-Encrypt-on-this-state.
+// The blob carries all eight seed slots (noise + lockSeed + 3 data
+// + 3 start). The four configuration dimensions (primitive,
+// key_bits, mode, mac) reject on mismatch because the receiver's
+// hash / MAC factories were bound at New3 time.
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 func (e *Encryptor) Import(blobBytes []byte) error {
@@ -202,9 +184,8 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		panic(ErrClosed)
 	}
 
-	// First pass — parse into a RawMessage map so kind / version /
-	// non-canonical lock_seed values can be diagnosed before any
-	// field-level decoding.
+	// First pass — parse into a RawMessage map so kind / version
+	// can be diagnosed before any field-level decoding.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(blobBytes, &raw); err != nil {
 		return ErrMalformed
@@ -230,17 +211,6 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 	}
 	if kind != kindEasy {
 		return ErrMalformed
-	}
-
-	// lock_seed canonical-encoding check: absent OR literal true.
-	// Any other value (false, null, number, string, ...) is non-
-	// canonical and rejected.
-	rawLockSeed := false
-	if rls, ok := raw["lock_seed"]; ok {
-		if string(rls) != "true" {
-			return ErrMalformed
-		}
-		rawLockSeed = true
 	}
 
 	// Second pass — full struct unmarshal with DisallowUnknownFields
@@ -339,13 +309,8 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		return &ErrMismatch{Field: "mac"}
 	}
 
-	nSeeds := 3
-	if mode == 3 {
-		nSeeds = 7
-	}
-	if rawLockSeed {
-		nSeeds++
-	}
+	const nSeeds = 8
+	_ = mode
 
 	// PRFKeys validation. In single-primitive mode the field is
 	// either entirely absent (siphash24) or fully populated. In
@@ -513,27 +478,6 @@ func (e *Encryptor) Import(blobBytes []byte) error {
 		e.cfg.BarrierFill = blob.BarrierFill
 		e.barrierFillExplicit = true
 	}
-
-	if rawLockSeed {
-		e.cfg.LockSeed = 1
-		e.cfg.LockSeedHandle = newSeeds[nSeeds-1]
-		// Wire the dedicated lockSeed onto the noiseSeed via the
-		// width-typed AttachLockSeed mutator, mirroring NewMixed /
-		// NewMixed3 construction so SetLockSeed lifecycle behaves
-		// identically regardless of how the encryptor was born.
-		attachNoiseSeedLockSeed(newSeeds[0], newSeeds[nSeeds-1], e.width)
-	} else {
-		e.cfg.LockSeed = 0
-		e.cfg.LockSeedHandle = nil
-		// Detach the noiseSeed's lockSeed pointer (if any) symmetric
-		// with the rawLockSeed branch above.
-		if len(newSeeds) > 0 {
-			detachNoiseSeedLockSeed(newSeeds[0], e.width)
-		}
-	}
-
-	// Conceptually a fresh encryptor — re-allow SetLockSeed.
-	e.firstEncryptCalled = false
 
 	return nil
 }

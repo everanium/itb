@@ -68,10 +68,9 @@ func LastMismatchField() string {
 //
 // Three layers of mapping run in order:
 //
-//   - Typed sentinels via errors.Is — easy.ErrClosed,
-//     easy.ErrLockSeedAfterEncrypt, and easy.ErrEasyMixedWidth map
-//     directly to their FFI codes (StatusEasyClosed,
-//     StatusEasyLockSeedAfterEncrypt, StatusBadInput respectively).
+//   - Typed sentinels via errors.Is — easy.ErrClosed and
+//     easy.ErrEasyMixedWidth map directly to their FFI codes
+//     (StatusEasyClosed and StatusBadInput respectively).
 //
 //   - Panic message prefix matching — easy.New / easy.NewMixed
 //     panic with formatted strings like "itb/easy: unknown
@@ -100,10 +99,6 @@ func recoverEasyPanic(st *Status, fallback Status) {
 		case errors.Is(err, easy.ErrClosed):
 			setLastErr(StatusEasyClosed)
 			*st = StatusEasyClosed
-			return
-		case errors.Is(err, easy.ErrLockSeedAfterEncrypt):
-			setLastErr(StatusEasyLockSeedAfterEncrypt)
-			*st = StatusEasyLockSeedAfterEncrypt
 			return
 		case errors.Is(err, easy.ErrEasyMixedWidth):
 			setLastErrMessage(StatusBadInput, err.Error())

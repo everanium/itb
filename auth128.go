@@ -13,29 +13,29 @@ import (
 // Ouroboros (128-bit variant). Delegates to [EncryptAuthenticated3x128Cfg]
 // with a nil cfg so per-encryptor overrides fall through to the
 // process-global setter state.
-func EncryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc) ([]byte, error) {
-	return EncryptAuthenticated3x128Cfg(nil, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc)
+func EncryptAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc) ([]byte, error) {
+	return EncryptAuthenticated3x128Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc)
 }
 
 // DecryptAuthenticated3x128 decrypts data encrypted by
 // [EncryptAuthenticated3x128]. Delegates to
 // [DecryptAuthenticated3x128Cfg] with a nil cfg.
-func DecryptAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, fileData []byte, macFunc MACFunc) ([]byte, error) {
-	return DecryptAuthenticated3x128Cfg(nil, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData, macFunc)
+func DecryptAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, fileData []byte, macFunc MACFunc) ([]byte, error) {
+	return DecryptAuthenticated3x128Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData, macFunc)
 }
 
 // EncryptStreamAuthenticated3x128 encrypts a single Streaming AEAD
-// chunk under Triple Ouroboros with 7 seeds (128-bit variant).
+// chunk under Triple Ouroboros with 8 seeds (128-bit variant).
 // Delegates to [EncryptStreamAuthenticated3x128Cfg] with a nil cfg.
-func EncryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
-	return EncryptStreamAuthenticated3x128Cfg(nil, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, cumulativePixelOffset, finalFlag)
+func EncryptStreamAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
+	return EncryptStreamAuthenticated3x128Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, cumulativePixelOffset, finalFlag)
 }
 
 // DecryptStreamAuthenticated3x128 decrypts a single Streaming AEAD
 // chunk produced by [EncryptStreamAuthenticated3x128]. Delegates to
 // [DecryptStreamAuthenticated3x128Cfg] with a nil cfg.
-func DecryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, chunkData []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
-	return DecryptStreamAuthenticated3x128Cfg(nil, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunkData, macFunc, streamID, cumulativePixelOffset)
+func DecryptStreamAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, chunkData []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
+	return DecryptStreamAuthenticated3x128Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunkData, macFunc, streamID, cumulativePixelOffset)
 }
 
 // [EncryptAuthenticated3x128]: threads cfg through every Cfg-aware
@@ -43,8 +43,8 @@ func DecryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3,
 // otherwise identical to EncryptAuthenticated3x128, including the
 // part2-reserves-tag layout and the MAC-over-concatenated-payloads
 // invariant.
-func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc) ([]byte, error) {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc) ([]byte, error) {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
 	if len(data) == 0 {
@@ -67,7 +67,7 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -207,8 +207,8 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 
 // DecryptAuthenticated3x128Cfg is the Cfg variant of
 // [DecryptAuthenticated3x128].
-func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, fileData []byte, macFunc MACFunc) ([]byte, error) {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, fileData []byte, macFunc MACFunc) ([]byte, error) {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
 	if macFunc == nil {
@@ -346,15 +346,15 @@ func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, 
 		}
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, lockSeed, nonce)), nil
 }
 
 // [EncryptStreamAuthenticated3x128]: threads cfg through every
 // Cfg-aware accessor in the Triple Ouroboros Streaming AEAD pipeline.
 // Body otherwise identical, including the part2-reserves-tag-and-flag
 // layout and the MAC-over-concatenated-payloads-plus-binding invariant.
-func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
 	if len(data) == 0 && !finalFlag {
@@ -377,7 +377,7 @@ func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -528,8 +528,8 @@ func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 
 // DecryptStreamAuthenticated3x128Cfg is the Cfg variant of
 // [DecryptStreamAuthenticated3x128].
-func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, chunkData []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, chunkData []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, false, err
 	}
 	if macFunc == nil {
@@ -692,5 +692,5 @@ func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataS
 		return []byte{}, true, nil
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, noiseSeed, nonce)), finalFlag, nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, lockSeed, nonce)), finalFlag, nil
 }

@@ -59,91 +59,6 @@ func (e *Encryptor) SetBarrierFill(n int) {
 	}
 }
 
-// SetLockSeed enables or disables the dedicated lockSeed for
-// bit-permutation derivation on this encryptor. Valid values:
-// 0 = off (default; bit-permutation derives from noiseSeed),
-// 1 = on (a dedicated lockSeed of the same primitive / width is
-// allocated lazily on the first SetLockSeed(1) call after
-// construction; bit-permutation derives from the dedicated seed
-// instead). Panics on any other value.
-//
-// Calling SetLockSeed after the encryptor has produced its first
-// ciphertext panics with [ErrLockSeedAfterEncrypt] — the bit-
-// permutation derivation path cannot change mid-session without
-// breaking decryptability of pre-switch ciphertext. Pre-Encrypt
-// switching is allowed; mode toggles freely until the first encrypt.
-//
-// Activating from the off state allocates a fresh CSPRNG-backed
-// seed via the same factory used at New / New3 time and appends it
-// to the encryptor's seeds + prfKeys slices. Deactivating zeroes
-// the dedicated seed's components and PRF key, drops the
-// LockSeedHandle from the [itb.Config], and shrinks the slices
-// back to 3 (Single) or 7 (Triple).
-//
-// Panics with [ErrClosed] when called after [Encryptor.Close].
-func (e *Encryptor) SetLockSeed(mode int32) {
-	if e.closed {
-		panic(ErrClosed)
-	}
-	if mode != 0 && mode != 1 {
-		panic(fmt.Sprintf("itb/easy: SetLockSeed(%d): valid values are 0, 1", mode))
-	}
-	if e.firstEncryptCalled {
-		panic(ErrLockSeedAfterEncrypt)
-	}
-
-	if mode == 1 {
-		// Activate: allocate a dedicated lockSeed if not already
-		// present, and wire it onto the noiseSeed via the width-
-		// typed AttachLockSeed mutator so the build-PRF closure
-		// sees AttachedLockSeed() != nil for both the cfg-driven
-		// (Easy Mode) and the seed-driven (native) dispatch paths.
-		// The native attach is symmetric with the Mixed-mode path
-		// which already attaches at construction.
-		if e.cfg.LockSeedHandle == nil {
-			seed, key := allocSeed(e.Primitive, e.KeyBits, e.width)
-			e.seeds = append(e.seeds, seed)
-			if e.prfKeys != nil {
-				e.prfKeys = append(e.prfKeys, key)
-			}
-			e.cfg.LockSeedHandle = seed
-			if len(e.seeds) > 0 {
-				attachNoiseSeedLockSeed(e.seeds[0], seed, e.width)
-			}
-		}
-		e.cfg.LockSeed = 1
-	} else {
-		// Deactivate: zero dedicated lockSeed material and shrink
-		// slices back to the Single / Triple base shape.
-		if e.cfg.LockSeedHandle != nil {
-			zeroSeedComponents(e.cfg.LockSeedHandle, e.width)
-			if e.prfKeys != nil && len(e.prfKeys) > 0 {
-				clear(e.prfKeys[len(e.prfKeys)-1])
-				e.prfKeys = e.prfKeys[:len(e.prfKeys)-1]
-			}
-			if len(e.seeds) > 0 {
-				e.seeds = e.seeds[:len(e.seeds)-1]
-			}
-			// Mixed-mode encryptors track per-slot primitive names
-			// in e.primitives parallel to e.seeds; shrink alongside
-			// so post-deactivation Export does not emit a stale
-			// trailing primitive entry that the receiver would
-			// reject as a length mismatch.
-			if len(e.primitives) > len(e.seeds) {
-				e.primitives = e.primitives[:len(e.seeds)]
-			}
-		}
-		// Detach the dedicated lockSeed pointer from the noiseSeed
-		// so the bit-permutation overlay's build-PRF closure sees
-		// AttachedLockSeed() == nil on subsequent Encrypt calls.
-		if len(e.seeds) > 0 {
-			detachNoiseSeedLockSeed(e.seeds[0], e.width)
-		}
-		e.cfg.LockSeedHandle = nil
-		e.cfg.LockSeed = 0
-	}
-}
-
 // SetChunkSize overrides the streaming chunk size for this
 // encryptor's subsequent [Encryptor.EncryptStream] calls. 0 selects
 // the auto-detect heuristic from [itb.ChunkSize]. The value is
@@ -159,10 +74,8 @@ func (e *Encryptor) SetChunkSize(n int) {
 }
 
 // PRFKeys returns a defensive copy of the per-seed fixed PRF keys.
-// One entry per seed slot in canonical order: Single =
-// [noise, data, start]; Triple = [noise, data1, data2, data3,
-// start1, start2, start3]; with the dedicated lockSeed appended at
-// the end when [Encryptor.SetLockSeed](1) is active.
+// One entry per seed slot in canonical order:
+// [noise, lockSeed, data1, data2, data3, start1, start2, start3].
 //
 // Returns nil for siphash24 — the primitive has no fixed PRF key
 // (its keying material is the per-call seed components themselves).
@@ -231,11 +144,7 @@ func (e *Encryptor) MACKey() []byte {
 // The internal Config field cfg.NonceBits is unexported and stays
 // that way — callers read the value through this getter, mirroring
 // the read-only [Encryptor.Primitive] / [Encryptor.KeyBits] /
-// [Encryptor.Mode] / [Encryptor.MACName] surface. Read-only access
-// only; the exported field-level path through cfg would let a
-// caller mutate cfg.LockSeedHandle / cfg.LockSeed directly and
-// break the bit-permutation derivation invariants enforced by
-// [Encryptor.SetLockSeed].
+// [Encryptor.Mode] / [Encryptor.MACName] surface.
 //
 // Panics with [ErrClosed] when called after [Encryptor.Close].
 func (e *Encryptor) NonceBits() int {
@@ -342,8 +251,7 @@ const maxParseChunkPixels = 10_000_000
 
 // zeroSeedComponents clears the Components slice of a typed seed
 // pointer of the given primitive width. Used by [Encryptor.Close]
-// and by SetLockSeed(0) to wipe key material before the encryptor
-// drops its handle.
+// to wipe key material before the encryptor drops its handle.
 func zeroSeedComponents(handle interface{}, width int) {
 	switch width {
 	case 128:
@@ -357,58 +265,6 @@ func zeroSeedComponents(handle interface{}, width int) {
 	case 512:
 		if s, ok := handle.(*itb.Seed512); ok {
 			clear(s.Components)
-		}
-	}
-}
-
-// detachNoiseSeedLockSeed clears the attached-lockSeed pointer on a
-// noiseSeed via the width-typed [itb.Seed{N}.DetachLockSeed]
-// mutator. Used by [Encryptor.SetLockSeed](0) to keep the
-// noiseSeed's attach state in sync with the cfg.LockSeedHandle
-// drop. No-op when the handle is the wrong type or the seed has no
-// attach to begin with.
-func detachNoiseSeedLockSeed(handle interface{}, width int) {
-	switch width {
-	case 128:
-		if s, ok := handle.(*itb.Seed128); ok {
-			s.DetachLockSeed()
-		}
-	case 256:
-		if s, ok := handle.(*itb.Seed256); ok {
-			s.DetachLockSeed()
-		}
-	case 512:
-		if s, ok := handle.(*itb.Seed512); ok {
-			s.DetachLockSeed()
-		}
-	}
-}
-
-// attachNoiseSeedLockSeed wires the lockSeed pointer onto the
-// noiseSeed via the width-typed [itb.Seed{N}.AttachLockSeed]
-// mutator. Used by [Encryptor.SetLockSeed](1) and by Import on
-// the rawLockSeed branch to keep the noiseSeed's attach state in
-// sync with the cfg.LockSeedHandle field. No-op when either
-// handle is the wrong type for the supplied width.
-func attachNoiseSeedLockSeed(noise, lock interface{}, width int) {
-	switch width {
-	case 128:
-		ns, nsOK := noise.(*itb.Seed128)
-		ls, lsOK := lock.(*itb.Seed128)
-		if nsOK && lsOK {
-			ns.AttachLockSeed(ls)
-		}
-	case 256:
-		ns, nsOK := noise.(*itb.Seed256)
-		ls, lsOK := lock.(*itb.Seed256)
-		if nsOK && lsOK {
-			ns.AttachLockSeed(ls)
-		}
-	case 512:
-		ns, nsOK := noise.(*itb.Seed512)
-		ls, lsOK := lock.(*itb.Seed512)
-		if nsOK && lsOK {
-			ns.AttachLockSeed(ls)
 		}
 	}
 }

@@ -29,26 +29,25 @@ func (e *Encryptor) EncryptStreamAuth(plaintext []byte, emit ChunkFunc) error {
 	if e.closed {
 		panic(ErrClosed)
 	}
-	e.firstEncryptCalled = true
 
 	switch e.width {
 	case 128:
 		return itb.EncryptStreamAuth3x128Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed128),
-			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
-			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
+			e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128),
+			e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128), e.seeds[4].(*itb.Seed128),
+			e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128), e.seeds[7].(*itb.Seed128),
 			plaintext, e.chunk, e.macFunc, emit)
 	case 256:
 		return itb.EncryptStreamAuth3x256Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed256),
-			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
-			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
+			e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256),
+			e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256), e.seeds[4].(*itb.Seed256),
+			e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256), e.seeds[7].(*itb.Seed256),
 			plaintext, e.chunk, e.macFunc, emit)
 	case 512:
 		return itb.EncryptStreamAuth3x512Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed512),
-			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
-			e.seeds[4].(*itb.Seed512), e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512),
+			e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512),
+			e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512), e.seeds[4].(*itb.Seed512),
+			e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512), e.seeds[7].(*itb.Seed512),
 			plaintext, e.chunk, e.macFunc, emit)
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
@@ -76,21 +75,21 @@ func (e *Encryptor) DecryptStreamAuth(ciphertext []byte, emit ChunkFunc) error {
 	switch e.width {
 	case 128:
 		return itb.DecryptStreamAuth3x128Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed128),
-			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
-			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
+			e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128),
+			e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128), e.seeds[4].(*itb.Seed128),
+			e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128), e.seeds[7].(*itb.Seed128),
 			ciphertext, e.macFunc, emit)
 	case 256:
 		return itb.DecryptStreamAuth3x256Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed256),
-			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
-			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
+			e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256),
+			e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256), e.seeds[4].(*itb.Seed256),
+			e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256), e.seeds[7].(*itb.Seed256),
 			ciphertext, e.macFunc, emit)
 	case 512:
 		return itb.DecryptStreamAuth3x512Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed512),
-			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
-			e.seeds[4].(*itb.Seed512), e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512),
+			e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512),
+			e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512), e.seeds[4].(*itb.Seed512),
+			e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512), e.seeds[7].(*itb.Seed512),
 			ciphertext, e.macFunc, emit)
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
@@ -177,7 +176,6 @@ func (e *Encryptor) EncryptStreamAuthIO(src io.Reader, dst io.Writer, chunkSize 
 		return fmt.Errorf("itb/easy: chunkSize must be > 0")
 	}
 	cs := chunkSize
-	e.firstEncryptCalled = true
 
 	var streamID [32]byte
 	if _, err := rand.Read(streamID[:]); err != nil {

@@ -106,12 +106,12 @@ func makeAreion512Hash512PairExt() (itb.HashFunc512, itb.BatchHashFunc512) {
 	return h, b
 }
 
-// --- LockSeed-attach fixtures -----------------------------------------------
+// --- LockSeed fixtures ------------------------------------------------------
 //
-// The AttachLockSeed pattern installs a dedicated lockSeed as the
-// bit-permutation entropy source for the overlay path. These helpers
-// build fresh Seed{128,256,512} instances suitable for use as either
-// the noiseSeed or the attached lockSeed; each call yields an
+// The lockSeed slot supplies keying material for the 48-bit
+// interlock overlay's bit-permutation derivation. These helpers
+// build fresh Seed{128,256,512} instances suitable for use as any
+// slot in the Triple 8-seed constellation; each call yields an
 // independently-keyed hasher via the corresponding Pair factory.
 
 func makeBlake3SeedAttachExt(t *testing.T, bits int) *itb.Seed256 {

@@ -6,10 +6,10 @@ import (
 )
 
 // Config carries per-encryptor overrides for the global-state settings
-// that are safe to scope per encryptor: nonce size, barrier fill, and
-// lock seed. The MaxWorkers global stays process-wide and is not
-// represented here — effectiveWorkers is consulted from many internal
-// paths and threading per-encryptor would expand the refactor without
+// that are safe to scope per encryptor: nonce size and barrier fill.
+// The MaxWorkers global stays process-wide and is not represented
+// here — effectiveWorkers is consulted from many internal paths and
+// threading per-encryptor would expand the refactor without
 // proportional benefit.
 //
 // Sentinel-valued fields signal "inherit the current global state at
@@ -18,25 +18,14 @@ import (
 //
 //   - NonceBits: 0 = inherit; otherwise 128 / 256 / 512 (in bits).
 //   - BarrierFill: 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32.
-//   - LockSeed: -1 = inherit; 0 = off; 1 = on (dedicated lockSeed
-//     drives bit-permutation derivation instead of noiseSeed).
-//
-// LockSeedHandle is not a Config knob in the value sense — it is the
-// pointer to the dedicated lockSeed object the encryptor constructor
-// allocates when LockSeed becomes 1. Internal Cfg-suffixed
-// bit-permutation accessors consult this handle to route
-// bit-permutation derivation to the dedicated seed; the value-typed
-// LockSeed flag indicates only whether the dedicated seed is active.
 //
 // The struct is unexported. The legacy public entry points
 // (Encrypt3x512 etc.) pass nil to the Cfg-variant entry points and
 // inherit the global state, preserving pre-refactor behaviour
 // bit-exactly.
 type Config struct {
-	NonceBits      int         // 0 = inherit; otherwise 128 / 256 / 512
-	BarrierFill    int         // 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32
-	LockSeed       int32       // -1 = inherit; 0 = off; 1 = on
-	LockSeedHandle interface{} // nil unless LockSeed == 1; *Seed{128,256,512}
+	NonceBits   int // 0 = inherit; otherwise 128 / 256 / 512
+	BarrierFill int // 0 = inherit; otherwise 1 / 2 / 4 / 8 / 16 / 32
 }
 
 // SnapshotGlobals returns a Config initialised from the current
@@ -45,9 +34,6 @@ type Config struct {
 // global state at construction. Subsequent mutations of either side
 // (global setters or encryptor setters) do not cross — the encryptor
 // owns its own Config copy and mutates only that.
-//
-// LockSeedHandle is left nil; the constructor populates it after
-// snapshotting when the resulting LockSeed flag is 1.
 //
 // Every snapshotted field carries the global's actual value (not the
 // inherit sentinel) — pinning the encryptor to the global state at
@@ -58,7 +44,6 @@ func SnapshotGlobals() *Config {
 	return &Config{
 		NonceBits:   GetNonceBits(),
 		BarrierFill: GetBarrierFill(),
-		LockSeed:    GetLockSeed(),
 	}
 }
 

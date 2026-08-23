@@ -74,8 +74,8 @@ func ParseChunkLen(data []byte) (int, error) {
 // --- Triple Ouroboros streaming (7-seed) ---
 
 // EncryptStream3x128 encrypts data in chunks using Triple Ouroboros (128-bit variant).
-func EncryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -92,7 +92,7 @@ func EncryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := Encrypt3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -104,8 +104,8 @@ func EncryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 }
 
 // DecryptStream3x128 decrypts concatenated chunks produced by EncryptStream3x128.
-func DecryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for off := 0; off < len(data); {
@@ -113,7 +113,7 @@ func DecryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := Decrypt3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -126,8 +126,8 @@ func DecryptStream3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 }
 
 // EncryptStream3x256 encrypts data in chunks using Triple Ouroboros (256-bit variant).
-func EncryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -144,7 +144,7 @@ func EncryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := Encrypt3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -156,8 +156,8 @@ func EncryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 }
 
 // DecryptStream3x256 decrypts concatenated chunks produced by EncryptStream3x256.
-func DecryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for off := 0; off < len(data); {
@@ -165,7 +165,7 @@ func DecryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := Decrypt3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -178,8 +178,8 @@ func DecryptStream3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 }
 
 // EncryptStream3x512 encrypts data in chunks using Triple Ouroboros (512-bit variant).
-func EncryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStream3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -196,7 +196,7 @@ func EncryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := Encrypt3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -208,8 +208,8 @@ func EncryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 }
 
 // DecryptStream3x512 decrypts concatenated chunks produced by EncryptStream3x512.
-func DecryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for off := 0; off < len(data); {
@@ -217,7 +217,7 @@ func DecryptStream3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, 
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := Decrypt3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -265,8 +265,8 @@ func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 }
 
 // EncryptStream3x128Cfg is the Cfg variant of [EncryptStream3x128].
-func EncryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -283,7 +283,7 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := Encrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -295,8 +295,8 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 }
 
 // DecryptStream3x128Cfg is the Cfg variant of [DecryptStream3x128].
-func DecryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for off := 0; off < len(data); {
@@ -304,7 +304,7 @@ func DecryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := Decrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -317,8 +317,8 @@ func DecryptStream3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 }
 
 // EncryptStream3x256Cfg is the Cfg variant of [EncryptStream3x256].
-func EncryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -335,7 +335,7 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := Encrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -347,8 +347,8 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 }
 
 // DecryptStream3x256Cfg is the Cfg variant of [DecryptStream3x256].
-func DecryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for off := 0; off < len(data); {
@@ -356,7 +356,7 @@ func DecryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := Decrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -369,8 +369,8 @@ func DecryptStream3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 }
 
 // EncryptStream3x512Cfg is the Cfg variant of [EncryptStream3x512].
-func EncryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -387,7 +387,7 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := Encrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -399,8 +399,8 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 }
 
 // DecryptStream3x512Cfg is the Cfg variant of [DecryptStream3x512].
-func DecryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for off := 0; off < len(data); {
@@ -408,7 +408,7 @@ func DecryptStream3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSee
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := Decrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
