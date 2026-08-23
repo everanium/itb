@@ -30,45 +30,45 @@ Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Lin
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 512 | PRF | 134 | 143 | 152 | 147 | 166 | 163 |
-| **Areion-SoEM-512** | 512 | 512 | PRF | 160 | 171 | 189 | 173 | 197 | 217 |
-| **BLAKE2b-256** | 256 | 512 | PRF | 91 | 103 | 82 | 53 | 73 | 96 |
-| **BLAKE2b-512** | 512 | 512 | PRF | 86 | 110 | 120 | 81 | 106 | 120 |
-| **BLAKE2s** | 256 | 512 | PRF | 45 | 64 | 68 | 49 | 67 | 78 |
-| **BLAKE3** | 256 | 512 | PRF | 45 | 66 | 74 | 52 | 73 | 78 |
-| **AES-CMAC** | 128 | 512 | PRF | 47 | 63 | 67 | 48 | 74 | 76 |
-| **SipHash-2-4** | 128 | 512 | PRF | 46 | 61 | 58 | 44 | 66 | 72 |
-| **ChaCha20** | 256 | 512 | PRF | 47 | 55 | 66 | 36 | 63 | 76 |
+| **Areion-SoEM-256** | 256 | 512 | PRF | 211 | 228 | 233 | 243 | 279 | 289 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 214 | 233 | 244 | 242 | 286 | 290 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 119 | 133 | 142 | 134 | 153 | 154 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 167 | 187 | 182 | 181 | 208 | 220 |
+| **BLAKE2s** | 256 | 512 | PRF | 131 | 139 | 144 | 143 | 155 | 157 |
+| **BLAKE3** | 256 | 512 | PRF | 134 | 144 | 152 | 149 | 160 | 166 |
+| **AES-CMAC** | 128 | 512 | PRF | 214 | 242 | 256 | 259 | 317 | 324 |
+| **SipHash-2-4** | 128 | 512 | PRF | 192 | 220 | 214 | 216 | 253 | 262 |
+| **ChaCha20** | 256 | 512 | PRF | 123 | 121 | 134 | 92 | 140 | 151 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 1024 | PRF | 121 | 129 | 134 | 133 | 144 | 150 |
-| **Areion-SoEM-512** | 512 | 1024 | PRF | 145 | 170 | 173 | 169 | 192 | 199 |
-| **BLAKE2b-256** | 256 | 1024 | PRF | 36 | 55 | 61 | 49 | 61 | 58 |
-| **BLAKE2b-512** | 512 | 1024 | PRF | 47 | 73 | 73 | 53 | 81 | 92 |
-| **BLAKE2s** | 256 | 1024 | PRF | 35 | 48 | 55 | 37 | 56 | 59 |
-| **BLAKE3** | 256 | 1024 | PRF | 38 | 53 | 60 | 41 | 58 | 64 |
-| **AES-CMAC** | 128 | 1024 | PRF | 40 | 59 | 67 | 47 | 65 | 65 |
-| **SipHash-2-4** | 128 | 1024 | PRF | 38 | 52 | 59 | 42 | 56 | 62 |
-| **ChaCha20** | 256 | 1024 | PRF | 27 | 47 | 54 | 30 | 50 | 59 |
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 186 | 199 | 210 | 206 | 237 | 245 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 182 | 203 | 212 | 215 | 238 | 245 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 85 | 92 | 94 | 91 | 97 | 100 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 125 | 139 | 142 | 139 | 150 | 157 |
+| **BLAKE2s** | 256 | 1024 | PRF | 92 | 96 | 99 | 99 | 104 | 107 |
+| **BLAKE3** | 256 | 1024 | PRF | 103 | 109 | 112 | 109 | 117 | 122 |
+| **AES-CMAC** | 128 | 1024 | PRF | 192 | 210 | 201 | 215 | 244 | 247 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 144 | 167 | 164 | 164 | 174 | 190 |
+| **ChaCha20** | 256 | 1024 | PRF | 88 | 91 | 98 | 94 | 104 | 106 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 2048 | PRF | 104 | 107 | 117 | 110 | 120 | 125 |
-| **Areion-SoEM-512** | 512 | 2048 | PRF | 125 | 139 | 142 | 121 | 146 | 160 |
-| **BLAKE2b-256** | 256 | 2048 | PRF | 24 | 33 | 35 | 25 | 35 | 37 |
-| **BLAKE2b-512** | 512 | 2048 | PRF | 37 | 50 | 58 | 40 | 56 | 63 |
-| **BLAKE2s** | 256 | 2048 | PRF | 27 | 36 | 39 | 27 | 36 | 39 |
-| **BLAKE3** | 256 | 2048 | PRF | 29 | 39 | 43 | 29 | 41 | 45 |
-| **AES-CMAC** | 128 | 2048 | PRF | 34 | 50 | 53 | 38 | 55 | 57 |
-| **SipHash-2-4** | 128 | 2048 | PRF | 31 | 44 | 47 | 31 | 46 | 72 |
-| **ChaCha20** | 256 | 2048 | PRF | 26 | 33 | 37 | 28 | 33 | 41 |
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 146 | 155 | 152 | 155 | 170 | 184 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 155 | 163 | 170 | 171 | 188 | 194 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 52 | 57 | 57 | 56 | 58 | 60 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 85 | 89 | 92 | 90 | 98 | 100 |
+| **BLAKE2s** | 256 | 2048 | PRF | 57 | 61 | 62 | 60 | 64 | 65 |
+| **BLAKE3** | 256 | 2048 | PRF | 67 | 67 | 72 | 72 | 76 | 76 |
+| **AES-CMAC** | 128 | 2048 | PRF | 139 | 154 | 153 | 155 | 169 | 169 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 100 | 108 | 111 | 110 | 118 | 119 |
+| **ChaCha20** | 256 | 2048 | PRF | 59 | 61 | 63 | 62 | 66 | 67 |
 
-Cost-delta vs pre-v0.3.0 (see historical baseline below): the always-on 48-bit Interlocked Barrier overlay carries an unconditional per-chunk PRF-mask derivation cost that the pre-v0.3.0 line paid only when Lock Soup was engaged. Against the pre-v0.3.0 no-overlay column, v0.3.0 throughput at Triple 512-bit Encrypt 16 MB is roughly 40–80% lower per primitive — the widest gaps landing on the lightweight PRF tier where the fixed per-chunk overlay cost dominates the amortised primitive cost. Against the pre-v0.3.0 Lock Soup + Lock Batch column (the closest apples-to-apples comparison, since v0.3.0's overlay is always-on and always batched per chunk group), the gap narrows to roughly 10–60%; the residual reflects the widening from a 24-bit to a 48-bit chunk width and the associated growth of the mask space to ≈ 2^70.20. AES-heavy primitives (Areion-SoEM-256/512, AES-CMAC) retain the strongest absolute throughput at every width because the shipped AVX-512 VAES kernels amortise well through the batched dispatch. Further rows for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
+Cost-delta vs pre-v0.3.0 (see historical baseline below): the always-on 48-bit Interlocked Barrier overlay carries an unconditional per-chunk PRF-mask derivation cost that the pre-v0.3.0 line paid only when Lock Soup was engaged. Against the pre-v0.3.0 no-overlay column, v0.3.0 throughput at Triple 512-bit Encrypt 16 MB is roughly 23–45% lower per primitive — the residual reflecting the always-on rather than opt-in per-chunk PRF-mask derivation the barrier performs unconditionally. Against the pre-v0.3.0 Lock Soup + Lock Batch column (the closest apples-to-apples comparison, since v0.3.0's overlay is always-on and always batched per chunk group), v0.3.0 lands roughly +8–48% ahead at 128-bit and 256-bit hash-width primitives and within ±5% of parity at 512-bit hash-width primitives (Areion-SoEM-512, BLAKE2b-512); the widening from a 24-bit to a 48-bit chunk width lifts the mask space to ≈ 2^70.20 per chunk while the derivation cost amortises over the wider chunk. AES-heavy primitives (Areion-SoEM-256/512, AES-CMAC) retain the strongest absolute throughput at every width because the shipped AVX-512 VAES kernels amortise well through the batched dispatch. Further rows for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
 
 
 ## Pre-v0.3.0 baseline (historical, retained for cost-delta comparison)
