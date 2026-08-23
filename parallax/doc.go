@@ -49,7 +49,9 @@
 // integrity check on the ciphertext body; the streaming wire's 4-byte
 // length prefix is unauthenticated, so a single-bit modification to
 // any prefix desynchronises every subsequent frame on the stream.
-// parallax composes under ITB's authenticated transport (Easy Mode or
-// Streaming AEAD) when wire integrity is required; standalone use
-// assumes integrity is provided by the surrounding channel.
+// parallax composes under ITB's authenticated transport (the
+// [github.com/everanium/itb/triple.Pipeline] authenticated surface or
+// the Low-Level Streaming AEAD entry points) when wire integrity is
+// required; standalone use assumes integrity is provided by the
+// surrounding channel.
 package parallax

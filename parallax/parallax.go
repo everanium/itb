@@ -71,8 +71,9 @@ const (
 	// wire layout (u32 little-endian length prefix) well inside the
 	// u32 range. The cap is independent of the surrounding transport's
 	// own chunk-size cap; for parallax composed under an authenticated
-	// transport (ITB Easy Mode or Streaming AEAD), the effective
-	// ceiling is min(parallax.MaxChunkSize, transport.MaxChunkSize).
+	// transport (the triple.Pipeline authenticated surface or the
+	// Low-Level Streaming AEAD entry points), the effective ceiling
+	// is min(parallax.MaxChunkSize, transport.MaxChunkSize).
 	// The two layers exchange a byte stream — parallax frame boundaries
 	// are invisible to the outer transport — so the chunk sizes do not
 	// need to match.
@@ -302,9 +303,10 @@ func (s *Schedule) Encrypt(plaintext []byte, cs *Cipherset) ([]byte, error) {
 // different palette, segment size, master, or in-flight modification
 // returns garbage rather than an error. The single-message wire and
 // the streaming wire are both Non-AEAD by design; callers compose
-// parallax under ITB's authenticated transport (Easy Mode or Streaming
-// AEAD) when wire integrity is required, or wrap the wire in an
-// external MAC when parallax is used standalone.
+// parallax under ITB's authenticated transport (the triple.Pipeline
+// authenticated surface or the Low-Level Streaming AEAD entry points)
+// when wire integrity is required, or wrap the wire in an external MAC
+// when parallax is used standalone.
 func (s *Schedule) Decrypt(ciphertext []byte, cs *Cipherset) ([]byte, error) {
 	if err := s.checkCipherset(cs); err != nil {
 		return nil, err

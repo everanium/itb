@@ -12,7 +12,7 @@ Parallax does **not** strengthen any individual cipher's per-segment keystream. 
 
 The defense-in-depth contribution is **multiplicative across the palette**. The anchor primitive `palette[0]` drives the KDF that derives every per-slot subkey and the scheduling subkey from the master; under the PRF assumption on the anchor's KDF, a key-recovery attack against one palette cipher recovers only that slot's subkey — not the master, not the scheduling subkey, not any other slot's subkey. The recovered slot then exposes only the segments that fall on it, and identifying those segments requires brute-forcing the schedule permutation (`log₂(N!)` bits — small but non-zero) combined with a plaintext-validity oracle. Parallax is best understood as a transparent envelope that dilutes exposure to a single primitive's catastrophic break across the full palette, not as a cryptographic upgrade over a single strong primitive.
 
-Parallax is **Non-AEAD** by design. The single-message wire is `nonce(16) ‖ ciphertext_body`; the streaming wire is a concatenation of per-chunk frames whose 4-byte length prefix is unauthenticated. MAC composition is an upstream concern; compose parallax under ITB's authenticated transport (Easy Mode or Streaming AEAD) when wire integrity is required.
+Parallax is **Non-AEAD** by design. The single-message wire is `nonce(16) ‖ ciphertext_body`; the streaming wire is a concatenation of per-chunk frames whose 4-byte length prefix is unauthenticated. MAC composition is an upstream concern; compose parallax under ITB's authenticated transport (the `triple.Pipeline` authenticated surface or the Low-Level Streaming AEAD entry points) when wire integrity is required.
 
 ## No baked foreign algorithm
 
@@ -101,7 +101,7 @@ Any positive coprime value within the upper bound is accepted; prime choices in 
 
 The streaming surface operates as a loop over the Single Message path: each chunk is independently encrypted via `EncryptInPlace` and framed on the wire as a 4-byte little-endian body-length prefix followed by the 16-byte nonce and the encrypted body. The plaintext budget per chunk is the Schedule's `ChunkSize`, initialised to `DefaultChunkSize` (16 MiB) to mirror ITB's `DefaultChunkSize`. `SetChunkSize(n)` swaps the value for subsequently-constructed streams; in-flight streams keep the value captured at construction time, and `n` must satisfy `0 < n ≤ MaxChunkSize` (256 MiB). Each frame self-describes its body length, so the decrypt side does not need to know the encrypter's chunk size — a stream produced under any chunk size decrypts under any chunk size on the receiving Schedule.
 
-`MaxChunkSize` is a parallax-internal sanity cap and is independent of any surrounding transport's chunk-size limit. The two layers exchange a byte stream — parallax frame boundaries are invisible to the outer transport — so the chunk sizes do not need to match. For parallax composed under an authenticated transport (ITB Easy Mode or Streaming AEAD), the effective ceiling is `min(parallax.MaxChunkSize, transport.MaxChunkSize)`; setting parallax's chunk size above the transport's cap pays memory pressure on the parallax writer's accumulator with no observable benefit downstream. A practical default for the composed case is to match parallax's chunk size to the surrounding transport's chunk size.
+`MaxChunkSize` is a parallax-internal sanity cap and is independent of any surrounding transport's chunk-size limit. The two layers exchange a byte stream — parallax frame boundaries are invisible to the outer transport — so the chunk sizes do not need to match. For parallax composed under an authenticated transport (the `triple.Pipeline` authenticated surface or the Low-Level Streaming AEAD entry points), the effective ceiling is `min(parallax.MaxChunkSize, transport.MaxChunkSize)`; setting parallax's chunk size above the transport's cap pays memory pressure on the parallax writer's accumulator with no observable benefit downstream. A practical default for the composed case is to match parallax's chunk size to the surrounding transport's chunk size.
 
 ## Palette size
 
@@ -217,29 +217,30 @@ Four `io.ReadCloser` / `io.WriteCloser` constructors layer a per-chunk framing o
 `Close` on the writer variants flushes any pending partial chunk and releases pooled scratch space; it must be called whenever the total plaintext is not a multiple of the chunk size. A second `Close` returns nil (idempotent). Once a writer surfaces an underlying error (encrypt failure, length-prefix outside the accepted range, `dst.Write` failure), it enters a sticky-failed state: every subsequent `Write` and the first `Close` return the same error and no further frames are emitted. `Close` on the reader variants releases pool buffers; callers that always read to `io.EOF` may omit it, but early-termination callers must call `Close` to avoid pool-buffer pressure. Repeated calls to `Close` are idempotent.
 
 ```go
-// Pre-inner ITB compose — Reader-side encrypt feeds an outer
-// (*easy.Encryptor).EncryptStreamAuthIO src argument; parallax wraps the plaintext
-// side so each segment hits one cipher from the palette before the inner
-// construction sees it.
+// Pre-inner ITB compose — Reader-side encrypt feeds a
+// triple.Pipeline.EncryptStream src argument; parallax wraps the
+// plaintext side so each segment hits one cipher from the palette
+// before the inner construction sees it.
 src := bytes.NewReader(plaintext)
 encReader, err := schedule.NewEncryptReader(cs, src)
 if err != nil {
     panic(err)
 }
 defer encReader.Close() // releases pool buffers; harmless to call after EOF
-// Pass encReader as the src to enc.EncryptStreamAuthIO(..., encReader, &dst, ...),
-// where enc is an *easy.Encryptor constructed earlier in the program.
+// Pass encReader as the src to pipe.EncryptStream(encReader, &dst),
+// where pipe is a *triple.Pipeline constructed earlier in the program.
 
-// Pre-inner ITB compose — Writer-side decrypt drains the recovered plaintext from
-// (*easy.Encryptor).DecryptStreamAuthIO into a parallax decrypt writer; the writer
-// reverses the per-segment XOR and forwards the original plaintext to dst.
+// Pre-inner ITB compose — Writer-side decrypt drains the recovered
+// plaintext from triple.Pipeline.DecryptStream into a parallax decrypt
+// writer; the writer reverses the per-segment XOR and forwards the
+// original plaintext to dst.
 var dst bytes.Buffer
 decWriter, err := schedule.NewDecryptWriter(cs, &dst)
 if err != nil {
     panic(err)
 }
 defer decWriter.Close() // required to flush the trailing partial-chunk tail
-// Pass decWriter as the dst to enc.DecryptStreamAuthIO(..., src, decWriter, ...).
+// Pass decWriter as the dst to pipe.DecryptStream(src, decWriter).
 ```
 
 ## Notes on master-key management
