@@ -41,7 +41,8 @@ import (
 // any prefix on the wire desynchronises every subsequent frame, not
 // only the frame whose prefix was modified. Callers who need wire
 // integrity compose parallax under ITB's authenticated transport
-// (Easy Mode or Streaming AEAD); standalone use of the parallax
+// (the triple.Pipeline authenticated surface or the Low-Level
+// Streaming AEAD entry points); standalone use of the parallax
 // streaming surface assumes integrity is provided by the surrounding
 // channel.
 //
