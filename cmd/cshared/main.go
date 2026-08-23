@@ -1787,3 +1787,28 @@ func ITB_Triple_DecryptMessage(
 	*outLen = C.size_t(n)
 	return C.int(st)
 }
+
+// Installs a user-defined Triple Pipeline profile under name so
+// subsequent ITB_Triple_Init / ITB_Triple_Open calls resolve name to
+// the newly-registered record. opts is a URL-query-encoded profile-
+// shape string (see capi.parseTripleRegisterOpts for the accepted
+// keys). Returns ITB_ERR_PROFILE_EXISTS when the name is already in
+// the catalogue, ITB_ERR_BAD_INPUT on any validation failure, and
+// ITB_OK on success.
+//
+// Name rules mirror triple.RegisterProfile: must match
+// `^[a-z][a-z0-9-]{2,63}$` and must not start with one of the
+// reserved shipped-catalogue prefixes (streaming- / singlemsg- /
+// blob-).
+//
+//export ITB_Triple_RegisterProfile
+func ITB_Triple_RegisterProfile(name *C.char, opts *C.char) C.int {
+	if name == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	var optsStr string
+	if opts != nil {
+		optsStr = C.GoString(opts)
+	}
+	return C.int(capi.TripleRegisterProfile(C.GoString(name), optsStr))
+}
