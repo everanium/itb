@@ -506,6 +506,82 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
 
 `WithParallax` and `WithWrapper` are `*bool` so a nil pointer defers to the profile default while a non-nil pointer forces the chosen setting. Every other field takes its zero value to mean "inherit the profile default".
 
+### Full Opts override — every knob in one block
+
+The 4 examples above pass `triple.Opts{}` (all profile defaults). Every `triple.Opts` field can be set explicitly on a single `Init` (mirrored on `Open`); this one block collects the whole override surface in one place so the full knob set is visible from a single reference:
+
+```go
+enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
+    // Externally-supplied masters (e.g. ML-KEM decapsulation output);
+    // nil = auto-generate via crypto/rand.
+    PermMaster: permKeyFromKEM, // 32+ bytes
+    WrapMaster: wrapKeyFromKEM, // 32+ bytes
+
+    // Per-Pipeline Config overrides:
+    NonceBits:   512,          // 128 / 256 / 512
+    BarrierFill: 8,            // profile default varies
+    MaxWorkers:  4,            // cap goroutines for this instance
+
+    // Cryptographic knob overrides:
+    MacName:      "hmac-blake3",
+    InnerHash:    "areion512",
+    KeyBits:      1024,        // integer multiple of the primitive's native hash width
+    OuterCipher:  "chacha20",
+
+    // Parallax knob overrides:
+    ParallaxPalette:     []string{"aescmac", "areion512", "blake3"},
+    ParallaxSegmentSize: 4093,
+
+    // Layer toggles (three-state; nil = profile default, non-nil = force):
+    WithParallax: nil, // stay with profile default (on)
+    WithWrapper:  nil, // stay with profile default (on)
+
+    // Streaming knob:
+    ChunkSize: 1 << 20,        // 1 MiB (default 16 MiB per profile)
+})
+```
+
+Any field left at its zero value defers to the resolved profile's default; a nil `*bool` toggle defers to the profile default while a non-nil pointer forces the chosen setting. `Open` accepts the same `Opts` shape — on the receiver side the non-toggle structural overrides (`InnerHash`, `KeyBits`, `ParallaxPalette`, etc.) are informational only, because the inner Blob{N} carries the seed material and per-instance `*itb.Config` snapshot; the two layer toggles remain effective.
+
+### Accepted values per Opts field
+
+| Field | Accepted value | Notes |
+|---|---|---|
+| `PermMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied parallax master (e.g. ML-KEM output); nil = crypto/rand auto-generate. |
+| `WrapMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied wrapper master; nil = crypto/rand auto-generate. |
+| `WithParallax` | `*bool` (nil / &false / &true) | Three-state override; nil = profile default (on for every shipped profile). |
+| `WithWrapper` | `*bool` (nil / &false / &true) | Three-state override; nil = profile default. |
+| `MaxWorkers` | `int` (0 or 1 .. `runtime.NumCPU`) | 0 = runtime.NumCPU fallback; positive = per-Pipeline goroutine cap. |
+| `NonceBits` | `128` / `256` / `512` (or 0 = default) | On-wire nonce width. Default per profile. |
+| `BarrierFill` | `int > 0` (or 0 = default) | CSPRNG barrier fill margin; profile default varies. |
+| `ChunkSize` | `int > 0` bytes (or 0 = default) | Streaming chunk-size budget; default `itb.DefaultChunkSize` = 16 MiB. |
+| `MacName` | `"kmac256"` \| `"hmac-sha256"` \| `"hmac-blake3"` | The shipped MACs (see `macs/registry.go`). Empty = profile default. Non-MAC profiles ignore. |
+| `InnerHash` | one of the shipped primitive names below | Empty = profile default. |
+| `KeyBits` | `512` / `1024` / `2048` (or 0 = default) | Integer multiple of the primitive's native hash width (128 / 256 / 512). |
+| `OuterCipher` | one of the shipped primitive names below | Empty = profile default. Wrapper-off profiles ignore. |
+| `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
+| `ParallaxSegmentSize` | `int > 0` bytes (or 0 = default) | Parallax segment size; default 4093. |
+
+**Shipped primitive names.** The single canonical registry (see `hashes/registry.go` + `wrapper/wrapper.go` `CipherNames`) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry:
+
+```
+areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash24  chacha20
+```
+
+The order above is the canonical registry order used identically across the Go core, the FFI iteration surface, and every binding; copy it verbatim into palette overrides — do not re-order primitive names in prose.
+
+**Profile-name constants.** The shipped profiles live in [`triple/profile.go`](triple/profile.go) as string constants; call sites should use the constants rather than raw strings:
+
+| Constant | String value |
+|---|---|
+| `triple.ProfileStreamingAEADTripleMACV1` | `"streaming-aead-triple-mac-v1"` |
+| `triple.ProfileStreamingNoAEADTripleV1` | `"streaming-noaead-triple-v1"` |
+| `triple.ProfileSingleMsgTripleMACV1` | `"singlemsg-triple-mac-v1"` |
+| `triple.ProfileSingleMsgTripleNoMACV1` | `"singlemsg-triple-nomac-v1"` |
+| `triple.ProfileBlobTripleMACV1` | `"blob-triple-mac-v1"` |
+
+The shipped profiles are populated at package init. Callers who need a configuration outside the shipped set today combine a shipped profile with `Opts` field-by-field overrides; a runtime `triple.RegisterProfile(name, p)` API for user-defined profiles is scheduled to land post-docs-sync (queued as task #27), until which time the shipped profiles plus `Opts` overrides are the available surface.
+
 ## Advanced — Low-Level `*Cfg` surface
 
 The `triple/` facade is the recommended entry point. Callers who need the raw eight-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); the process-wide setter surface has been retired.
@@ -681,6 +757,18 @@ func main() {
 
 The shipped `hashes/` registry does not accept runtime registrations. Users who want to plug their own inner primitive construct `itb.HashFunc{N}` (single-call) and `itb.BatchHashFunc{N}` (batched-arm) closures per seed slot and pass them directly to the `*Cfg` Low-Level entry point. The primitive is responsible for its own keying and pooling; ITB's per-pixel dispatcher wires both arms through the seed's `Hash` and `BatchHash` fields.
 
+### Runtime tuning (memory / GC)
+
+Go-native callers reach the Go runtime memory / GC pacing knobs through `itb.SetMemoryLimit(N)` and `itb.SetGCPercent(P)`. Both are **process-global** — they call directly into `runtime/debug.SetMemoryLimit` and `runtime/debug.SetGCPercent` and therefore affect the entire Go runtime, including every concurrently-running `triple.Pipeline` (or Low-Level `*Cfg` call) in the same process. They are orthogonal to any per-Pipeline configuration on `*itb.Config` / `triple.Opts`; the Pipeline knobs govern per-instance encryption behaviour, not the runtime's heap-size or GC-trigger pacing. Pass `-1` to either setter to query the current value without changing it.
+
+Bindings drive the same knobs over the C ABI via `ITB_SetMemoryLimit` and `ITB_SetGCPercent` (see `cmd/cshared/main.go`). Both mirror the Go signatures — `int64` limit in bytes, `int` percent — and negative arguments query without mutating.
+
+Both knobs are additionally readable from the environment at libitb load time via `ITB_GOMEMLIMIT` (byte count, supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes) and `ITB_GOGC` (integer percent). Any subsequent programmatic setter call from Go-native code or a binding overrides the env-set value; the env vars are the compile-in defaults for the process, not a hard ceiling.
+
+**Per-Pipeline memory / GC control is not available.** The Go runtime does not expose per-goroutine or per-object memory-limit / GC-percent scopes, so the setters cannot be scoped to one `Pipeline` while another Pipeline in the same process observes a different setting. Applications that need distinct heap regimes for distinct workloads run them in separate processes.
+
+The `triple/` package does not currently re-export these setters; Go-native users who wire a `triple.Pipeline` and want the runtime tuners in the same call site `import "github.com/everanium/itb"` alongside `import "github.com/everanium/itb/triple"` to reach `itb.SetMemoryLimit` / `itb.SetGCPercent` directly. A thin `triple.SetMemoryLimit` / `triple.SetGCPercent` re-export is queued as task #28.
+
 ## Hash primitives (`hashes/`)
 
 The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive on the FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction and returns a `(single, batched, key)` triple. The batched arm wires the AVX-512 ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically; a `sync.Pool` amortises per-call scratch allocation. A `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for explicit-key call sites.
@@ -846,15 +934,15 @@ All three approaches use standard mathematics. The formal relationship between I
 
 ## Bindings
 
-The binding surface is the **eight `ITB_Triple_*` capi exports** (see `cmd/cshared/main.go`). Every binding is a thin proxy over that surface: an FFI-stable handle table on top of `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Close` plus the four cipher entry points (`ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`), an error-code mapping, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw eight-seed handoff.
+The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`) — nine entries today: the lifecycle quad `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Rekey` / `ITB_Triple_Close`, the handle-helper `ITB_Triple_Free`, and the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The runtime-`triple.RegisterProfile` API queued as task #27 adds a tenth entry (`ITB_Triple_RegisterProfile`) once it lands. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw eight-seed handoff.
 
 ### Fleet plan (33 bindings)
 
-The binding fleet lands in three logical bands. Every band consumes the same eight-export surface; the differentiation is only in transport (in-process CGO vs a small out-of-process relay).
+The binding fleet lands in three logical bands. Every band consumes the same `ITB_Triple_*` shim surface; the differentiation is only in transport (in-process CGO vs a small out-of-process relay).
 
-- **Tier 1 Native (9 bindings)** — direct in-process consumers of the C shared library. C, C++, Fortran, Ada, D, Rust, C#, Python, Node.js. Each binding owns its own idiomatic surface (Streams / async / GC integration) on top of the same eight exports.
+- **Tier 1 Native (9 bindings)** — direct in-process consumers of the C shared library. C, C++, Fortran, Ada, D, Rust, C#, Python, Node.js. Each binding owns its own idiomatic surface (Streams / async / GC integration) on top of the same `ITB_Triple_*` shim.
 - **Tier 1 Thin (5 bindings)** — thin object-based facades over one of the Tier 1 Native bindings, adding a language-idiomatic surface with no extra ITB logic. Includes the primary BEAM binding (Erlang) plus four small companion facades.
-- **Tier 2 Relay (19 bindings)** — a small out-of-process relay speaks the eight exports over one of four backends (C / Java / C# / BEAM) and hands them to a language runtime that cannot embed the C shared library directly. Every relay is a thin proxy; ITB's construction logic never lives outside the shipped Go core.
+- **Tier 2 Relay (19 bindings)** — a small out-of-process relay speaks the `ITB_Triple_*` shim over one of four backends (C / Java / C# / BEAM) and hands it to a language runtime that cannot embed the C shared library directly. Every relay is a thin proxy; ITB's construction logic never lives outside the shipped Go core.
 
 Docs describe the fleet at the architectural level while the per-binding rework lands. Every binding's public surface will read as "call Init to receive a `Pipeline` handle plus a blob byte slice, ship the blob to the receiver, both sides encrypt / decrypt" — the same user-story the Go `triple/` facade tells. Per-binding examples ship in each binding's own directory once the rework lands.
 
