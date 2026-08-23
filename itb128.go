@@ -106,10 +106,9 @@ func containerSizeAuth3_128Cfg(cfg *Config, noiseSeed *Seed128, dataSeed1, dataS
 // interlock overlay's per-chunk bit-permutation derivation. Output
 // format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
 //
-// cfg threads per-encryptor overrides (NonceBits / BarrierFill /
-// MaxWorkers) through every Cfg-aware accessor in the pipeline; nil
-// cfg falls back to [DefaultNonceBits] / [DefaultBarrierFill] /
-// runtime.NumCPU.
+// cfg threads per-encryptor overrides through every Cfg-aware
+// accessor in the pipeline; nil cfg falls back to [DefaultNonceBits] /
+// [DefaultBarrierFill] / runtime.NumCPU.
 func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte) ([]byte, error) {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err

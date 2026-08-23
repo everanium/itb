@@ -333,10 +333,10 @@ func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 
 // EncryptStreamAuthenticated3x128Cfg encrypts a single Streaming AEAD
 // chunk under Triple Ouroboros with 8 seeds (128-bit variant).
-// Threads cfg through every Cfg-aware accessor. Includes the
-// part2-reserves-tag-and-flag layout and the
-// MAC-over-concatenated-payloads-plus-binding invariant. nil cfg
-// falls back to the compile-in defaults.
+// Threads cfg through every
+// Cfg-aware accessor in the Triple Ouroboros Streaming AEAD pipeline.
+// Body otherwise identical, including the part2-reserves-tag-and-flag
+// layout and the MAC-over-concatenated-payloads-plus-binding invariant.
 func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
