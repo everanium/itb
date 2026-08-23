@@ -96,18 +96,18 @@ Every cell within noise envelope. Under fixed seed + varying structured input, t
 
 ### 3.3. Axis B — ITB-wrapped raw-mode bias
 
-| Primitive | size | format | \|Δ50\| | shelf verdict |
-|:----------|-----:|:-------|--------:|:--------------|
-| **t1ha1_64le** | 512 KB | ascii | **0.607 %** ✓ | **neutralized ✓** |
-| **t1ha1_64le** | 1 MB   | ascii | **0.244 %** ✓ | **neutralized ✓** |
-| **SeaHash**    | 512 KB | ascii | **0.816 %** ✓ | **neutralized ✓** |
-| **SeaHash**    | 1 MB   | ascii | **0.140 %** ✓ | **neutralized ✓** |
-| **mx3**        | 512 KB | ascii | **0.363 %** ✓ | **neutralized ✓** |
-| **mx3**        | 1 MB   | ascii | **0.119 %** ✓ | **neutralized ✓** |
-| **SipHash-1-3** | 512 KB | ascii | **0.559 %** ✓ | **neutralized ✓** |
-| **SipHash-1-3** | 1 MB   | ascii | **0.489 %** ✓ | **neutralized ✓** |
+| Primitive | size | format | Single \|Δ50\| | Triple Byte Level \|Δ50\| | Triple Bit Soup \|Δ50\| | shelf verdict |
+|:----------|-----:|:-------|---------------:|--------------------------:|------------------------:|:--------------|
+| **t1ha1_64le** | 512 KB | ascii | **0.607 %** ✓ | — | — | **neutralized ✓** on Single |
+| **t1ha1_64le** | 1 MB   | ascii | **0.244 %** ✓ | — | — | **neutralized ✓** on Single |
+| **SeaHash**    | 512 KB | ascii | **0.816 %** ✓ | — | — | **neutralized ✓** on Single |
+| **SeaHash**    | 1 MB   | ascii | **0.140 %** ✓ | — | — | **neutralized ✓** on Single |
+| **mx3**        | 512 KB | ascii | **0.363 %** ✓ | — | — | **neutralized ✓** on Single |
+| **mx3**        | 1 MB   | ascii | **0.119 %** ✓ | — | — | **neutralized ✓** on Single |
+| **SipHash-1-3** | 512 KB | ascii | **0.559 %** ✓ | — | — | **neutralized ✓** on Single |
+| **SipHash-1-3** | 1 MB   | ascii | **0.489 %** ✓ | — | — | **neutralized ✓** on Single |
 
-The raw-mode bias-audit probe measures the per-shift conflict-rate distribution on the attacker-observable ciphertext surface; the `|Δ50|` column is the deviation of that distribution from the 50 % mid-point. All measured primitives `neutralized ✓` at the 1 % threshold on both corpus sizes. The published SMHasher weaknesses (avalanche-scaling for t1ha1, PerlinNoise for SeaHash and mx3, reduced-round avalanche for SipHash-1-3) do not reach the attacker-observable ITB ciphertext surface. The absorption is a property of ITB's encoding pipeline (rotation + noise barrier + COBS framing + CSPRNG fill under the always-on 48-bit Interlocked Barrier), independent of the primitive that keys it.
+`—` in Triple columns: not measured because Single already established absorption. All measured primitives `neutralized ✓` at the 1 % threshold on both corpus sizes. The published SMHasher weaknesses (avalanche-scaling for t1ha1, PerlinNoise for SeaHash and mx3, reduced-round avalanche for SipHash-1-3) do not reach the attacker-observable ITB ciphertext surface.
 
 ### 3.4. Axis C — SAT KPA seed-recovery resistance
 
@@ -126,7 +126,7 @@ Axis C asks whether commodity-scale Bitwuzla / Z3 KPA recovers a primitive's see
 
 **(A) Invertible round maps fall at rounds = 1; only a carry-up T-function carries the break into deployment.** splitmix64, mx3, and fnv1a are all `inv = Y` ([§3.5](#35-sat-free-algebraic--differential-pre-screen)) — a single round is a bijection the solver inverts directly: splitmix64 ≈ 20 s (Z3) / ≈ 25 s (Bitwuzla); mx3 ≈ 2–5 s, where the rounds = 1 chain degenerates to one `mx3_hash` call with the hi-lane seed unconstrained and the lo-lane seed recovered functionally-equivalent to ground truth. At rounds ≥ 2 the feedforward masks the intermediate output, so the solver can no longer peel round-by-round; the seed must be solved through the whole composition, which is tractable only when the round map is a **carry-up T-function** (output bit t depends on input bits 0..t, solvable plane-by-plane LSB → MSB). fnv1a's ×0x13B lo-lane has exactly that structure and stays solvable — the isolated ChainHash falls even at rounds = 4 in ≈ 146 s (Bitwuzla) / ≈ 0.16 s (the structure-aware T-function solver). splitmix64 and mx3 lack it: mix64's right-shifts (`z ^ (z>>30 / >>27 / >>31)`) push high bits down into low, destroying the triangularity, so both resist at the 24 h budget at rounds = 2 despite equal invertibility. splitmix64 is the clean control — its lo lane is literally splitmix64 (the hi lane is only a parallel second instance to fit the 128-bit two-lane interface, and the discard drops it), so its rounds ≥ 2 resistance is a property of splitmix64's own internal structure, not of any lane interaction. This is the decisive evidence that fnv1a's SAT-tractability is its carry-up triangular structure, not invertibility or round count. (The ≈ 8 h figure cited for fnv1a elsewhere is the FULL Phase 2g ITB break — ChainHash + the ~90-bit per-pixel noise_pos barrier + 4 public-schema cribs — not this isolated chain inversion.)
 
-**(B) The hi-lane discard walls a lane-mixing primitive with no round structure required.** murmur3 (MurmurHash3_x64_128) is the only primitive here with a genuine 128-bit internal state whose halves cross-mix in finalisation: the full-128 seed recovers in ≈ 2.1 s, but ITB observes only the lo lane — a 128 → 64 projection of the already-mixed state — and that projection alone times out, walling murmur3 at rounds = 1 before the feedforward contributes anything. For the lane-parallel primitives (every other row) the hi-lane discard is **off**: the lo lane is computed independently of the hi lane, so dropping the hi lane removes no constraint a lo-lane attacker could have used. The two barriers are independent, and real ITB stacks both plus the per-pixel noise_pos / rotation barrier and the always-on 48-bit Interlocked Barrier permutation on top.
+**(B) The hi-lane discard walls a lane-mixing primitive with no round structure required.** murmur3 (MurmurHash3_x64_128) is the only primitive here with a genuine 128-bit internal state whose halves cross-mix in finalisation: the full-128 seed recovers in ≈ 2.1 s, but ITB observes only the lo lane — a 128 → 64 projection of the already-mixed state — and that projection alone times out, walling murmur3 at rounds = 1 before the feedforward contributes anything. For the lane-parallel primitives (every other row) the hi-lane discard is **off**: the lo lane is computed independently of the hi lane, so dropping the hi lane removes no constraint a lo-lane attacker could have used. The two barriers are independent, and real ITB stacks both plus the per-pixel noise_pos / rotation barrier and the optional Lock Soup overlay on top.
 
 **(C) No invertibility hook makes seed-recovery SAT structurally inapplicable.** For t1ha1, SeaHash, and SipHash-1-3 the SAT budget is not the meaningful axis: they carry no invertibility hook, so seed-recovery SAT times out at the 24 h budget (SeaHash across all 4 encodings — `{native, explicit}` × `{native, case-split}` — on both backends, 8 cells), not for want of compute. A larger budget does not change the verdict, which is why it is reported as a structural property, not a budget-bounded timeout. Their only surfaced weakness is differential (t1ha1 persistent, SeaHash round-dependent) — see [§3.5](#35-sat-free-algebraic--differential-pre-screen); SipHash-1-3 is clean on every axis. "Resistant at tested budget" for this group is better read as "no SAT invertibility hook"; the differential hook lives in a separate attack class the SAT axis structurally cannot reach (and, per [Axis B](#33-axis-b--itb-wrapped-raw-mode-bias), ITB's encoding neutralises it before it reaches a ciphertext anyway).
 
@@ -211,46 +211,6 @@ Methodology is the Axis-C lab style — synthetic `(data, ChainHash-lo)` pairs u
 
 **Conclusion.** At rounds = 1 the integral key-recovery survives the lo-lane truncation untouched; at rounds = 2 only a non-recovering PRF distinguisher survives; at rounds ≥ 4 ChainHash's feedforward neutralises the integral (orders 1–3) and the data-differential entirely. The result is conservatively framed: it is the integral / higher-order integral (orders 1–3), the data-differential, and the no-hook SAT seed-recovery routes that are neutralised at deployment depth, not a proof that no exploitation path exists for so weak a primitive.
 
-### 3.8. Construction-level structural harness — barrier core, primitive-agnostic
-
-§3.1–§3.7 measure the inner primitive through `ChainHash128`. A separate,
-primitive-agnostic harness measures the **48-bit Interlocked Barrier core**
-directly — the mask-space cardinality and lane-independence the KPA closure
-argument rests on — and the wire the Triple facade produces. It ships as Go
-tests (`harness_test.go` in the root package for the barrier kernels;
-`triple/harness_wire_test.go` for the facade wire) and is characterised in
-[REDTEAM.md Phase 4](REDTEAM.md#phase-4--construction-level-creative-probes-triple--interlocked-barrier).
-The full-sample statistical loops gate behind `ITB_HARNESS_FULL=1`; the default
-`go test ./...` run exercises every assertion on a small sample.
-
-The barrier-core measurements are independent of which primitive keys the
-lockSeed, so they belong once at the construction layer rather than per shelf
-primitive:
-
-- **Mask-space uniformity + balance.** The per-chunk mask-triple derivation
-  produces balanced 16-of-48 lane partitions on 100 % of draws (union covers
-  all 48 bits, lanes pairwise disjoint); each bit lands in lane 0 at 16/48 ±
-  the sampling floor (max 2.05 sigma at N = 200 000), and the reduced indices
-  are uniform (chi-square 294 / 243 over 256 bins, band [142, 368]).
-- **gcd anti-collapse trap.** The shipped two-step reduction spreads the reduced
-  indices across the full residue grid: the fraction on the diagonal
-  `idx0 ≡ idx1 (mod 66861)` is 1.60 × 10⁻⁵, matching the full-space expectation
-  `1/66861 ≈ 1.50 × 10⁻⁵`, where the rejected same-rank double-mod would confine
-  every draw to that diagonal (fraction 1.0).
-- **Lane independence.** Cross-lane Pearson correlation at the barrier kernel
-  sits at the sampling floor (max |r| 0.00294 vs floor 0.00224 at N = 200 000).
-
-One wire-level finding from that harness bears on this shelf's Axis B reading:
-the Triple + Interlocked Barrier layer alone (outer cipher off) produces a
-COBS-framed container whose byte histogram carries a fixed signature (the
-terminator `0x00` over-represented ≈ +4.75 %), while entropy stays ≈ 8 bits/byte
-and the wire is incompressible. Engaging the outer-cipher wrapper whitens the
-byte histogram to the uniform floor. Axis B's `|Δ50|` conflict-rate metric is
-insensitive to this marginal byte-value signature (it measures a per-shift
-distribution, not the raw histogram), so the `neutralized ✓` verdicts stand; the
-wire-level format-deniability property is the outer cipher's, scoped in
-[REDTEAM.md Phase 4](REDTEAM.md#phase-4--construction-level-creative-probes-triple--interlocked-barrier).
-
 ## 4. Primitive shelf
 
 Provenance and the published SMHasher weakness each primitive is selected to stress. The per-axis measured results are in [§3](#3-results); the consolidated Axis C seed-recovery verdicts (with the rounds = 1 vs rounds ≥ 2 split) are in the [§3.4 table](#34-axis-c--sat-kpa-seed-recovery-resistance).
@@ -264,7 +224,7 @@ Provenance and the published SMHasher weakness each primitive is selected to str
 
 Shelf verdict labels:
 
-- **neutralized ✓** — Axis B passes (`|Δ50| < 1 %`); the published SMHasher weakness does not reach the attacker-observable ciphertext surface.
+- **neutralized ✓** — Axis B passes (`|Δ50| < 1 %`) on Single Ouroboros; Triple modes redundant once Single absorption is established.
 - **Resistant at tested budget** — Axis C SAT KPA timed out across all tested encodings × backends within the budget. The weakest positive label this shelf emits — always qualified with the measured budget.
 - **Dangerous** — the bare or rounds = 1 chain is SAT-broken in commodity time; the deployment-depth (rounds ≥ 2) behaviour is recorded separately in the [§3.4 table](#34-axis-c--sat-kpa-seed-recovery-resistance).
 - **Fully broken** — Axis C produced functionally-equivalent K at rounds = 1 AND the rounds ≥ 2 chain is breakable in the same regime.
