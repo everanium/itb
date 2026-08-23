@@ -85,7 +85,7 @@
 //     Targets: Areion-SoEM-512, BLAKE2b-512 (native 512-bit key and output).
 //
 // All three variants share the same RGBWYOPA pixel format, COBS framing,
-// triple-seed architecture, and security properties. The wider hash output
+// eight-seed architecture, and security properties. The wider hash output
 // is truncated to uint64 for per-pixel config extraction (only 62 bits needed).
 // The benefit is in ChainHash intermediate state width, not per-pixel extraction.
 //
