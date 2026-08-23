@@ -211,7 +211,7 @@ This is the only registry primitive whose construction is verbatim its upstream 
 
 ## Nonce-width preservation across all primitives
 
-ITB advertises configurable nonce widths of 128 / 256 / 512 bits, exposed via `SetNonceBits`. The per-call buffer presented to each hash closure carries a domain-tag byte plus the configured nonce material — 20 / 36 / 68 byte shapes for the three nonce widths respectively. Every primitive in the registry must absorb that full buffer into the digest with **no silent truncation hidden inside the primitive composition**.
+ITB advertises configurable nonce widths of 128 / 256 / 512 bits, selected per-instance via `Config.NonceBits` on the Cfg-suffixed entry points (with `itb.DefaultNonceBits` supplying the compile-in default). The per-call buffer presented to each hash closure carries a domain-tag byte plus the configured nonce material — 20 / 36 / 68 byte shapes for the three nonce widths respectively. Every primitive in the registry must absorb that full buffer into the digest with **no silent truncation hidden inside the primitive composition**.
 
 **The trap to avoid.** Most modern primitives carry a fixed-width "nonce" or "IV" slot — AES-CMAC standard usage takes a 16-byte IV, ChaCha20-RFC7539 takes a 12-byte nonce. A naive composition that routes the ITB nonce into such a slot would silently truncate a 512-bit advertised property into 96 or 128 effective bits, with passing KAT tests, passing uniformity tests, and a still-valid (but reduced) PRF claim. The downgrade would be undetectable from outside the wrapper.
 
@@ -256,7 +256,7 @@ The builders exist to close a specific silent-failure mode in pluggable PRF inte
 
 ### The trap — silent nonce truncation
 
-ITB supports configurable nonce widths via [`SetNonceBits`](https://pkg.go.dev/github.com/everanium/itb#SetNonceBits): 128, 256, or 512 bits. The per-call buffer presented to a `HashFunc{128|256|512}` closure carries the configured nonce material — 20, 36, or 68 bytes for the three widths respectively (4 bytes of pixel index + the configured nonce width).
+ITB supports configurable nonce widths via [`Config.NonceBits`](https://pkg.go.dev/github.com/everanium/itb#Config): 128, 256, or 512 bits, threaded through any Cfg-suffixed entry point (with [`itb.DefaultNonceBits`](https://pkg.go.dev/github.com/everanium/itb#DefaultNonceBits) as the compile-in default). The per-call buffer presented to a `HashFunc{128|256|512}` closure carries the configured nonce material — 20, 36, or 68 bytes for the three widths respectively (4 bytes of pixel index + the configured nonce width).
 
 For ITB's advertised nonce width property to hold, **every byte** of the `data` parameter must reach the digest. Three concrete ways a naive user wrapper can silently break this invariant:
 
@@ -288,7 +288,7 @@ func myBrokenAESCMAC(data []byte, seed0, seed1 uint64) (uint64, uint64) {
     block, _ := aes.NewCipher(key[:])
     block.Encrypt(iv[:], iv[:])
     // ... return iv as (lo, hi) ...
-    // SetNonceBits(512) → effective 128-bit nonce. PRF property still
+    // Config.NonceBits=512 → effective 128-bit nonce. PRF property still
     // holds at the reduced width, but the advertised "512-bit nonce"
     // is broken silently.
 }
