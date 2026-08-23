@@ -14,70 +14,87 @@
 
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
 
-> **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
+> **v0.3.0 development snapshot — at a glance.** This is the one place in
+> the corpus where the v0.2 → v0.3 pivot is framed historically. Every
+> other section of this README (and every other Markdown file) reads as
+> if the current construction was always the case.
+>
+> 1. **Triple-only Ouroboros.** The Single Ouroboros mode has been
+>    retired; the 3-snake payload split is the only cipher mode. Every
+>    encrypt / decrypt entry point takes the eight-seed bundle.
+> 2. **Always-on non-disableable Interlocked Barrier.** A 48-bit-chunk
+>    keyed permutation over three snakes is engaged unconditionally on
+>    every call. Per-chunk mask space is roughly 2^70.20 balanced
+>    partitions.
+> 3. **Eight mandatory seeds per session.** noiseSeed, lockSeed,
+>    dataSeed1..3, startSeed1..3. Pointer-identity distinctness is
+>    enforced at the API surface.
+> 4. **`triple/` package facade.** The shipped user-facing entry point.
+>    One `Pipeline` bundles the eight-seed state, an optional parallax
+>    layer, an optional wrapper (Outer cipher) layer, and an optional
+>    MAC into a small lifecycle API.
+> 5. **Cfg-only Low-Level surface.** Every Low-Level entry takes an
+>    explicit `*itb.Config`. The pre-v0.3.0 process-wide setter surface
+>    is gone; per-Pipeline configuration replaces it.
+> 6. **Five shipped profiles with parallax + wrapper on by default.**
+>    Toggle via `triple.Opts`. See the [Quick Start](#quick-start).
+> 7. **Wire hard-fork.** The v0.3.0 wire format is not backwards
+>    compatible: v0.2.x ciphertexts do not decrypt on v0.3.0 and vice
+>    versa. Both sides of every deployment upgrade together.
+> 8. **capi ABI break.** `ITB_HeaderSize` / `ITB_ParseChunkLen` take a
+>    `nonce_bytes` parameter; the retired setter surface is gone; new
+>    `ITB_Triple_*` exports carry the shipped surface.
+> 9. **33-binding fleet plan.** Bindings are being reworked as thin
+>    proxies over the `ITB_Triple_*` exports (nine Tier 1 Native, five
+>    Thin, nineteen Tier 2 relays over four backends — C / Java / C# /
+>    BEAM). Docs describe them at the architectural level while the
+>    rework lands.
+> 10. **Empirical suite re-run planned.** REDTEAM.md and HARNESS.md
+>     updates ship separately after the adversarial re-verification
+>     phase against the 48-bit always-on line. The barrier's KPA / CPA
+>     closure is currently an architectural claim under the PRF
+>     assumption, corroborated by pre-v0.3.0 empirical evidence for the
+>     shared pixel construction.
+
+---
+
+> **Security notice.** ITB is an experimental symmetric cipher
+> construction without prior peer review, independent cryptanalysis, or
+> formal certification. The construction's security properties have
+> **not been verified** by independent cryptographers or mathematicians.
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through two independent barrier mechanisms: **noise absorption** (CSPRNG random container makes hash output unobservable) and **encoding ambiguity** (secret rotation creates 7^P unverifiable configurations surviving CCA). Triple-seed isolation ensures compromise of any domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a CSPRNG random container makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three snakes, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). Eight-seed isolation ensures compromise of any one domain provides zero information about the others.
 
-**Ambiguity-Based Security**: uncertainty about the correct configuration grows exponentially with data size, inverting Shannon's classical relationship. Above ~1.2 KB (no CCA) or ~2.5 KB (CCA) for 1024-bit keys, encoding ambiguity exceeds the key space. At 64 KB: 2^26,414 equally valid configurations — no computational model can enumerate them.
+**Ambiguity-Based Security.** Uncertainty about the correct configuration grows with data size, inverting Shannon's classical relationship. The Interlocked Barrier converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.
 
 **[How the barrier works — accessible explanation](ITB.md)**
 
-**[Triple Ouroboros — 7-seed variant with 3× security](ITB3.md)**
+**[Why known-plaintext and advanced attacks are addressed by the barrier](SCIENCE.md)**
 
-**[Why known-plaintext and advanced attacks do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)**
+**[Empirical Red-Team validation](REDTEAM.md)** — 12 hash primitives (including CRC128, FNV-1a lo-lane and MD5 for positive control) exercised across structural / FFT / Markov, per-pixel candidate distinguisher, startPixel enumeration, ChainHash SAT-cost analysis + hash-agnostic bias audit, Direct Crib KPA SAT-cost analysis, nonce-reuse demasker with 96-cell Partial KPA matrix, 1008-cell related-seed differential, and rotation-invariant edge case surfaces. All PRF-grade primitives held under the tested conditions on the shared pixel construction; the 48-bit always-on line's empirical re-verification is a separate phase.
 
-**[Empirical Red-Team validation](REDTEAM.md)** — 12 hash primitives (including CRC128, FNV-1a lo-lane and MD5 for positive control) × 2×2 configuration matrix (Single + Triple Ouroboros × BF=1 + BF=32). Multiple empirical phases — structural / FFT / Markov, per-pixel candidate distinguisher, startPixel enumeration, ChainHash SAT-cost analysis + hash-agnostic bias audit, Direct Crib KPA SAT-cost analysis, nonce-reuse demasker with 96-cell Partial KPA matrix, 1008-cell related-seed differential, rotation-invariant edge case - all PRF-grade primitives held under the tested conditions.
-
-**[Discord](https://discord.gg/wRYF8shHpd)** - invite to chat with developer.
+**[Discord](https://discord.gg/wRYF8shHpd)** — invite to chat with developer.
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
-**Hash direct external dependencies** beyond ABI contracts and fallbacks with standard PRF primitives (BLAKE2/3, ChaCha20, AES-CMAC, SipHash-2-4, Areion-SoEM); the chain-absorb hot path is hand-written ZMM AVX-512 ASM.
+**No direct external dependencies** beyond ABI contracts and fallbacks with standard PRF primitives; the chain-absorb hot path is hand-written ZMM AVX-512 assembly and the barrier's per-chunk rank-unrank kernel is hand-written BMI2 / AVX-512F assembly.
 
 ## Status
 
-**ITB is approaching stable release.** The core API and the Go C ABI are frozen; subsequent work is bug fixes, documentation updates, and additional binding rollouts. No new cipher modes / constructions / API surfaces are planned for the open-source release.
+The core API and the Go C ABI are being consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The construction is being validated afresh against the 48-bit always-on barrier; the paper-facing empirical suite is scheduled to re-run after the follow-up push.
 
 ### Library
 
-| Native | Status | Features | Tests | Release | Packages |
-|---|---|---|---|---|---|
-| Go Native | Frozen | Fully completed | All passing | 13 May 2026 | TBD |
-| C ABI (`cmd/cshared`) | Frozen | Fully completed | All passing | 13 May 2026 | TBD |
+| Native | Status | Features | Tests | Packages |
+|---|---|---|---|---|
+| Go Native | Under consolidation for v0.3.0 | `triple/` facade + Cfg-only Low-Level | Passing on Intel Rocket Lake reference host | TBD |
+| C ABI (`cmd/cshared`) | Under consolidation for v0.3.0 | `ITB_Triple_*` exports + Cfg-aware capi header | Passing on Intel Rocket Lake reference host | TBD |
 
-### Hashes
-
-| Hash | Slot | Status | Construction | Backend | Fallback | Release |
-|---|---|---|---|---|---|---|
-| AES-CMAC | 128 | Frozen | CBC-MAC | ASM ZMM + VAES | Go stdlib | 13 May 2026 |
-| SipHash-2-4 | 128 | Frozen | Direct PRF | ASM ZMM | `dchest/siphash` | 13 May 2026 |
-| Areion-SoEM-256 | 256 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
-| BLAKE2b-256 | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
-| BLAKE2s | 256 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
-| BLAKE3 | 256 | Frozen | Native-keyed | ASM ZMM | `zeebo/blake3` | 13 May 2026 |
-| ChaCha20 | 256 | Frozen | CBC-MAC (Stream) | ASM ZMM | `x/crypto` | 13 May 2026 |
-| Areion-SoEM-512 | 512 | Frozen | CBC-MAC (SoEM) | ASM ZMM + VAES + AVX2 | `jedisct1/go-aes` | 13 May 2026 |
-| BLAKE2b-512 | 512 | Frozen | Prepend-key HAIFA | ASM ZMM | `x/crypto` | 13 May 2026 |
-
-## Bindings
-
-### Tier 1 - Native & Thin
-
-| Binding | Backend | Status | Features | Tests | Release | Packages | Docs |
-|---|---|---|---|---|---|---|---|
-| C       | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/c/README.md)       |
-| C++     | C      | Frozen | Fully completed | 44/44 PASS    | 13 May 2026 | TBD | [README.md](bindings/cpp/README.md)     |
-| Fortran | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/fortran/README.md) |
-| Ada     | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/ada/README.md)     |
-| D       | Direct | Frozen | Fully completed | 33/33 PASS    | 13 May 2026 | TBD | [README.md](bindings/dlang/README.md)   |
-| Rust    | Direct | Frozen | Fully completed | 25/25 PASS    | 13 May 2026 | TBD | [README.md](bindings/rust/README.md)    |
-| C#      | Direct | Frozen | Fully completed | 368/368 PASS  | 13 May 2026 | TBD | [README.md](bindings/csharp/README.md)  |
-| Python  | Direct | Frozen | Fully completed | 285/285 PASS  | 13 May 2026 | TBD | [README.md](bindings/python/README.md)  |
-| Node.js | Direct | Frozen | Fully completed | 288/288 PASS  | 13 May 2026 | TBD | [README.md](bindings/nodejs/README.md)  |
+<!-- preserved-verbatim: cross-platform verification block; do not paraphrase; re-runs after bindings rework produce fresh numbers -->
 
 **Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86_64 (Intel / AMD) and AArch64 (Graviton 4).
 
@@ -93,26 +110,36 @@ Full matrix:
 
 **Maintenance path.** Subsequent open-source work covers bug fixes, documentation, and additional bindings only. Custom closed encryption constructions and downstream software stacks are available on commercial request.
 
-## Why ITB: Inverted Approach to Cryptography
+<!-- /preserved-verbatim -->
+
+## Why ITB
 
 Traditional symmetric ciphers (AES, ChaCha20) place all security burden on the mathematical strength of their core primitive. The keystream is XOR'd directly with plaintext — any weakness in the primitive is immediately exploitable because the attacker observes the primitive's output.
 
-ITB inverts this approach. Instead of relying solely on the primitive's strength, the construction interposes a **random container** (generated from `crypto/rand`) between the hash output and the observer. The hash output is consumed by modifying random bytes that the attacker never sees — the original container values are never transmitted. This creates an information-theoretic barrier: no computational power can extract information that does not exist in the observation.
+ITB inverts this approach. The construction interposes a **random container** (generated from `crypto/rand`) between the hash output and the observer, then re-maps each 48-bit chunk of the interleaved payload through a per-chunk PRF-keyed permutation drawn from a space of roughly 2^70.20 balanced partitions. The hash output is consumed by modifying random bytes that the attacker never sees; the mapping from plaintext bit to observed lane is itself a per-chunk secret. Two structural facts follow, both conditional on the PRF assumption and fresh per-message nonces:
 
-**Why the math is simple.** The construction uses only elementary operations: XOR, bitwise AND, modulo, bit shifts. There are no Galois fields, no S-boxes, no polynomial multiplication. This is not a weakness — it is a consequence of the design. The security comes from the **architecture** (random container, triple-seed isolation, per-bit XOR, noise embedding), not from the complexity of the math. Each architectural layer addresses a specific attack vector:
+- **Under the PRF assumption and with fresh per-message nonces, each 48-bit chunk of the payload is re-mapped by a per-chunk, PRF-keyed mask triple drawn from a space of roughly 2^70.20 balanced partitions, so a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.** The Interlocked Barrier is the always-on primary component of the construction.
+- **Because the mask of each chunk is keyed independently of every other chunk, additional crib chunks multiply the attacker's enumeration rather than contributing constraints that couple chunks — the known-plaintext instance stays under-determined regardless of how much plaintext the attacker holds.** The Interlocked Barrier is designed to turn known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one: under the PRF assumption there is no unique solution for a faster solver to discover.
 
-- **Random container** — hash output unobservable under passive observation (COA, KPA)
-- **Per-bit XOR (1:1)** — 56 independent mask bits per pixel, every observation consistent with any plaintext
-- **Triple-seed isolation** — CCA leaks only noiseSeed (3 bits/pixel, MAC + Reveal only); dataSeed and startSeed remain independent
-- **Noise bit embedding** — no bit position is deterministically data from the public format
+**Why the math is simple.** The construction uses only elementary operations: XOR, bitwise AND, modulo, bit shifts, and the per-chunk rank-unrank pair that produces the mask triple. There are no Galois fields, no S-boxes, no polynomial multiplication. This is not a weakness — it is a consequence of the design. The security comes from the **architecture** — random container, eight-seed isolation, per-bit XOR, noise embedding, and the per-chunk keyed permutation — not from the complexity of the math. Each architectural layer addresses a specific attack vector:
 
-**Why triple-seed is necessary.** Without three independent seeds, a leak in one domain cascades: CCA reveals noise positions → same seed gives rotation and XOR → full configuration recovered. Triple-seed isolation ensures each leak is contained: CCA → only noiseSeed, cache side-channel → only startSeed, dataSeed → zero software-observable exposure. This is the minimum configuration where every leak is architecturally isolated.
+- **Random container** — hash output unobservable under passive observation (COA, KPA).
+- **Per-bit XOR (1:1)** — 56 independent mask bits per pixel; every observation consistent with any plaintext.
+- **Interlocked Barrier** — per-chunk PRF-keyed 48-bit permutation over three snakes; ≈ 2^70.20 mask space per chunk.
+- **Eight-seed isolation** — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 drawn as independent CSPRNG components and keyed into separate channels, so a structural shortcut against one primitive channel cannot leak into another's derivation.
+- **Noise bit embedding** — no bit position is deterministically data from the public format.
 
-**Why the Barrier and PRF are Complementary.** In traditional ciphers, the attacker directly observes the primitive's output (keystream XOR plaintext). Any weakness in the primitive is immediately exploitable. In ITB, the hash output is absorbed by a random container modification — the attacker sees modified random bytes, not hash outputs. Under the random-container model, every observed byte value is compatible with every possible hash output. PRF closes the candidate-verification step; barrier and architectural layers (triple-seed isolation, encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application — 3-factor combination under PRF assumption (4-factor under Partial KPA). Neither is sufficient alone: architectural layers cannot resist an invertible hash, and without the barrier the attacker observes the keystream directly (as in AES-CTR, ChaCha20), making any PRF weakness immediately exploitable. See [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance).
+**Why the barrier and the PRF are complementary.** In traditional ciphers the attacker directly observes the primitive's output (keystream XOR plaintext), so any weakness in the primitive is immediately exploitable. In ITB the hash output is absorbed by a random-container modification, and each 48-bit chunk of the interleaved payload is re-mapped through the barrier's keyed permutation — the attacker sees modified random bytes routed through a hidden per-chunk permutation, not hash outputs. PRF closes the candidate-verification step; the barrier and the surrounding architectural layers deny the point of application. Neither is sufficient alone: the architectural layers cannot resist total inversion of the primitive, and without the barrier the attacker would observe the keystream directly.
 
-**Why quantum structural attacks are conjectured mitigated.** Quantum algorithms like Simon (periodicity), BHT (collisions), and quantum differential/linear analysis require observable structural relations between inputs and outputs. The random container makes these relations unobservable — the attacker cannot build the algebraic structures that quantum algorithms exploit. Additionally, ITB's MAC oracle (when present) is inherently classical: it accepts concrete bytes over a network, not quantum superposition queries (Q2 model inapplicable). This is an architectural observation that has not been independently verified.
+**The two-step reduction and the gcd anti-collapse trap.** The two-step reduction that draws each mask triple reaches the full partition space; the rejected same-rank alternative would have confined the draw to 1 / 66861 of that space, so full-space coverage is a deliberate property of the construction, not an accident. The reduction is deterministic and constant-time, carrying a fixed, publicly-known per-chunk deviation of about 2^-57.8 that accumulates to about 2^-34.4 over a maximum-size message; distinguishing this granularity would require on the order of 2^115.6 chunk samples, well beyond any attainable budget.
 
-> **Important.** ITB is an experimental construction without peer review or independent cryptanalysis. The information-theoretic barrier is a **software-level property**, reinforced by two independent barrier mechanisms: noise absorption from CSPRNG, and encoding ambiguity (56^P without CCA, 7^P under CCA) from triple-seed isolation. Architectural layers deny the point of application: independent startSeed and 8-noisePos ambiguity from independent noiseSeed under Full KPA, plus gcd(7,8)=1 byte-splitting under Partial KPA. Full KPA defense is 3-factor under PRF assumption (4-factor under Partial KPA) — see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance). It provides no guarantees against hardware-level attacks. All security claims are under the random-container model and have not been independently verified.
+**Triple Ouroboros split.** The plaintext is split across three interleaved snakes with independent per-snake offsets and configurations, so a single known crib maps onto three unknown-offset streams whose per-snake boundaries are not recoverable from the interleaved container. This is a distinct, composable barrier from the per-chunk mask space: the split raises the enumeration dimension while the mask space raises the per-chunk floor.
+
+**Empirical footing.** Across a broad primitive spectrum spanning deliberately broken lab controls through paper-grade PRFs, the underlying pixel construction produced ciphertext with no distinguishable signal at the tested sample sizes on every statistical surface measured — evidence for the barrier's absorption of primitive weakness on the shared pixel construction, not a proof that no distinguisher exists.
+
+**Threat model boundary.** The closure of the known-plaintext and chosen-plaintext families is conditional on the configured primitive behaving as a secure PRF and on fresh per-message nonces; total inversion of the primitive, or a reused nonce, is outside what the barrier is designed to close. The security properties described here are architectural arguments and self-audit evidence, not independent cryptanalysis: ITB has had no external review or formal certification, and the strong claims are stated conditionally for that reason. See [PROOFS.md](PROOFS.md), [SCIENCE.md](SCIENCE.md), and [SECURITY.md](SECURITY.md) for the full treatment.
+
+> **Important.** ITB is an experimental construction without peer review or independent cryptanalysis. The information-theoretic barrier is a **software-level property**, reinforced by the noise absorption channel, the always-on Interlocked Barrier, and the encoding-ambiguity channel; the CCA leak surface is bounded to the noise-position channel under MAC + Reveal (see [Proof 6](PROOFS.md)). It provides no guarantees against hardware-level attacks. All security claims are under the random-container plus PRF model and have not been independently verified.
 
 ## Installation
 
@@ -122,31 +149,35 @@ go get github.com/everanium/itb@latest
 
 ## Building
 
-ITB ships with two pixel-processing backends selected automatically at compile time:
+ITB ships two pixel-processing backends selected automatically at compile time, plus a fallback build tag for hosts that lack the assembly kernels' baseline features:
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | <code>-buildmode=c-shared</code> | C with SIMD auto-vectorization | C compiler (GCC/Clang) + AVX-512 |
-| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization, ITB chain-absorb / Lock Soup / Areion permutation ASM disabled — upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
+| **CGO (default)** | <code>-buildmode=c-shared</code> | C with SIMD auto-vectorization | C compiler (GCC/Clang) + AVX-512 baseline |
+| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB chain-absorb / Interlocked Barrier / Areion permutation ASM disabled; upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
+| **Pure Go** | `CGO_ENABLED=0 ...` | Portable Go pipeline (`process_generic.go`) | None (any GOOS / GOARCH the Go compiler supports) |
 
-On AVX-512 hosts, hand-written ZMM-batched chain-absorb ASM kernels accelerate the per-pixel hash hot path **2×-7×** over the per-call `-tags=noitbasm` fallback across all PRF-grade primitives — see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md) for measured numbers on Intel Rocket Lake and AMD EPYC 9655P (Zen 5). CGO mode (default) layers a C per-pixel kernel on top of the hash dispatch; building with `CGO_ENABLED=0` swaps that for a portable Go pixel pipeline while the Go-assembly ZMM chain-absorb hash kernels stay engaged when AVX-512 is present. Per-pixel kernel uses three runtime-dispatched tiers:
+### CPU baseline for the shipped assembly kernels
 
-- **Tier A — AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI:** 8-pixel ZMM batch. Phase 1 (extract 8×56 bits) fuses VPERMB + VPSRLQ + VPMULTISHIFTQB into 5 ZMM ops. Phase 4 (per-pixel rotate) and Phase 5 (per-pixel noise-bit insert) lower to single VGF2P8AFFINEQB ZMM ops. Insane Interlocked Mode (`SetLockSoup(1)`) on Single Ouroboros lowers its per-chunk bit-permutation to a native AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB ASM kernel, with a Pure Go bit-shift gather fallback on hosts without AVX-512 VBMI. Active on Intel Rocket Lake / Tiger Lake / Sapphire Rapids+ and AMD Zen 4 / Zen 5.
-- **Tier B — AVX2 + GFNI:** 4-pixel YMM batch. Same five-phase shape, halved width. Phase 3-5 use VPXOR / VGF2P8AFFINEQB / VPAND / VPOR on YMM. Active on Intel Coffee Lake+ and AMD Zen 3+ (covers Alder Lake E-cores and similar AVX-512-disabled deployments). Insane Interlocked Mode (`SetLockSoup(1)`) lowers its per-chunk bit-permutation to a native BMI2 PEXTL/PDEPL ASM kernel, with a Pure Go fallback on hosts without BMI2.
-- **Tier C — Fallback:** 4-pixel batched scalar loop, same memory layout as Tier B with no SIMD intrinsics. Runs on every host GCC supports — IFUNC is not used, so macOS Mach-O and Windows COFF builds reach this path through the same runtime branch as Linux/FreeBSD ELF. ARM64 (NEON) intrinsics are not yet implemented and currently route through this tier; GCC `-O3` still auto-vectorizes byte-parallel phases to NEON in a limited form.
+The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU feature each kernel needs is detected once at package init via `golang.org/x/sys/cpu` and dispatched from there:
 
-CGO speedup also covers L1-cache-friendly micro-batching (512 pixels per C call), parallel noise/data hash computation through `BatchHashFunc` factories, `sync.Pool` for hash array reuse, and `__builtin_prefetch` 8 pixels ahead of the current iteration.
-
-| Platform | Per-pixel kernel | Areion-SoEM batched dispatch |
+| Kernel | Required CPU feature | Runtime capability flag |
 |---|---|---|
-| amd64 + AVX-512+GFNI+VBMI (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) | Tier A (ZMM, 8-pixel batch) | AVX-512+VAES ASM, 4-lane batch + SoEM two-half ILP interleaving (`internal/areionasm/areion_amd64.s`) |
-| amd64 + AVX2+GFNI (AMD Zen 3+, Coffee Lake+) | Tier B (YMM, 4-pixel batch) | AVX2+VAES ASM, 4-lane per-half permute (no SoEM ILP — AVX-512-only) |
-| amd64 without VAES / older | Tier C — Fallback | Go fallback via `aes.Round4HW` |
-| arm64 + ARM Crypto Extension (Graviton 2+, Apple M1+, Neoverse N1+/V1+/V2+) | Tier C — Fallback | ARM Crypto Extension AArch64 ASM, 4-lane parallel `AESE`/`AESMC` (`internal/areionasm/areion_arm64.s`) |
-| other GCC targets (RISC-V, PowerPC, MIPS, …) | Tier C — Fallback | Go fallback via `aes.Round4HW` |
-| `CGO_ENABLED=0` | Pure Go (`process_generic.go`) | Go fallback |
+| Interlocked Barrier — scalar rank-unrank | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
+| Interlocked Barrier — batched rank-unrank | AVX-512F (VPERMI2Q, VPCMPUQ, VPSRLVQ, mask-merged VPSUBQ on ZMM) | `interlock.HasAVX512RankMask` |
+| Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
+| Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
+| AES-CMAC — batched CBC-MAC / fused chain | VAES + AVX-512 | `aescmacasm.HasVAESAVX512` |
+| BLAKE2b / BLAKE2s / BLAKE3 / ChaCha20 — 4-lane ZMM chain-absorb + fused chain | AVX-512F | primitive-local `HasAVX512Fused` |
+| SipHash-2-4 — 4-lane ZMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
 
-Hash computation remains in Go in both modes (pluggable hash functions); the C pixel kernel is platform-portable through `__attribute__((target(...)))` per-helper feature gates rather than IFUNC, so non-Linux/non-FreeBSD targets degrade gracefully.
+Cross-referenced to shipping x86 microarchitectures:
+
+- **Intel** — the assembly kernels are exercised end-to-end from **Rocket Lake (11th-gen, e.g. i7-11700K)** onward. Ice Lake mobile parts carry the required flags but are not the reference host.
+- **AMD** — exercised end-to-end from **Zen 3+** onward (Ryzen 5000 desktop, Zen 4 / Zen 5 servers). VAES on Zen 3 activates the mid-tier per-half permute path; the top-tier fused chain requires AVX-512, i.e. Zen 4+ or newer.
+- **Older or narrower x86_64 hosts** — build with `-tags noitbasm` to skip the ITB-native assembly entirely; the upstream primitive libraries' own ASM (`crypto/aes`, `dchest/siphash`, `golang.org/x/crypto`, `zeebo/blake3`) stays engaged.
+- **ARM64** — scalar path only today. The construction runs correctly on aarch64 (Graviton 4 has been the reference validation host); no Go assembly for NEON / SVE2 ships yet. The upstream primitive libraries' own ARM Crypto Extension assembly stays engaged where present (Areion-SoEM's `internal/areionasm/areion_arm64.s` uses `AESE`/`AESMC`).
+- **Every other Go target** — the pure-Go pipeline via `CGO_ENABLED=0` runs on any GOOS / GOARCH the Go compiler supports; throughput drops but correctness is preserved.
 
 ### Usage
 
@@ -157,7 +188,7 @@ git clone https://github.com/everanium/itb && cd itb
 # CGO backend (default)
 cd cmd/cshared && go build -buildmode=c-shared -o ../../dist/linux-amd64/libitb.so .
 
-# CGO backend (most portable, audit-grade deterministic)
+# CGO backend without ITB-native ASM (portable, audit-grade deterministic)
 cd cmd/cshared && go build -buildmode=c-shared -tags=noitbasm -o ../../dist/linux-amd64/libitb.so .
 ```
 
@@ -175,18 +206,22 @@ itb.SetMemoryLimit(512 << 20)
 itb.SetGCPercent(20)
 ```
 
+### Nonce width
+
+`ITB_NONCE_BITS=256` sets the default on-wire nonce width in bits at process init (accepted values: `128` / `256` / `512`). It is the sole surviving pre-v0.3.0 env knob. Per-Pipeline overrides live in `triple.Opts.NonceBits` on the facade side and in the `*itb.Config.NonceBits` field on the Low-Level side; the env value is the compile-in default when neither override is supplied.
+
 ### Tests
 
 ```bash
 # CGO backend (default)
 go test -timeout=3600s -race ./...
 
-# CGO backend (most portable, audit-grade deterministic)
+# CGO backend without ITB-native ASM
 go test -tags=noitbasm -timeout=3600s -race ./...
 
 # Pure Go
-CGO_ENABLED=0 go test -timeout=3600s . ./easy ./hashes ./macs ./internal/...
-CGO_ENABLED=0 go test -tags=noitbasm -timeout=3600s . ./easy ./hashes ./macs ./internal/...
+CGO_ENABLED=0 go test -timeout=3600s . ./triple ./hashes ./macs ./internal/...
+CGO_ENABLED=0 go test -tags=noitbasm -timeout=3600s . ./triple ./hashes ./macs ./internal/...
 ```
 
 ### Benchmarks
@@ -195,12 +230,11 @@ CGO_ENABLED=0 go test -tags=noitbasm -timeout=3600s . ./easy ./hashes ./macs ./i
 # CGO backend (default)
 go test -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 
-# CGO backend (most portable, audit-grade deterministic)
+# CGO backend without ITB-native ASM
 go test -tags=noitbasm -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 
-# Pure Go backend
+# Pure Go
 CGO_ENABLED=0 go test -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
-CGO_ENABLED=0 go test -tags=noitbasm -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 ```
 
 ### Coverage
@@ -211,2293 +245,450 @@ go test -coverprofile=coverage.out $(go list ./... | grep -vE 'tools/eitb|cmd/cs
 
 ### Performance
 
-Full benchmark results across all ITB key sizes (512, 1024, 2048 bit), hash functions, and CPUs: **[BENCH.md](BENCH.md)**
-Triple Ouroboros benchmarks (7-seed, 3× security): **[BENCH3.md](BENCH3.md)**
+Full benchmark results across ITB key sizes, hash primitives, and CPUs: **[BENCH3.md](BENCH3.md)**.
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses three runtime-dispatched per-pixel kernel tiers (AVX-512+GFNI+VBMI 8-pixel ZMM, AVX2+GFNI 4-pixel YMM, Tier C scalar) plus AVX-512 ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM). `CGO_ENABLED=0` alone swaps only the C pixel kernel for the portable Go pipeline; the ZMM-batched hash ASM and upstream stdlib ASM stay engaged via Go assembly, so end-to-end throughput stays close to the CGO default on AVX-512 hosts. The full scalar fallback is not usable with ITB (`-tags=purego`, where every upstream module honours the convention) is **~20×–100× slower** when the ZMM hash kernels fall back to per-call scalar references — every primitive picks up a measurable ZMM uplift, but the relative gap is widest on the BLAKE / ARX primitives (heavier per-call closure overhead amortised across four lanes) and narrowest on AES-CMAC / SipHash-2-4, whose scalar paths already run AES-NI-accelerated through `crypto/aes` and the hand-tuned `dchest/siphash` assembly so the batched arm has less headroom to recover. The middle ground is `-tags=noitbasm` — disables the ITB chain-absorb wrapper while leaving upstream hash ASM engaged; throughput tracks the OLDBENCH single-Func numbers on hosts without AVX-512+VL where the 4-lane batched wrapper would be dead weight. Decrypt does not require crypto/rand and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses the C pixel kernel on top of ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM); `CGO_ENABLED=0` swaps only the C pixel kernel for the portable Go pipeline, while the ZMM-batched hash ASM stays engaged via Go assembly. Decrypt does not require `crypto/rand` and scales further on high-core-count CPUs.
 
-### Parallelism Control
+### Concurrency
 
-```go
-itb.SetMaxWorkers(4) // limit to 4 CPU cores for pixel processing
-```
+A single `triple.Pipeline` is safe for concurrent `EncryptStream` / `DecryptStream` / `EncryptMessage` / `DecryptMessage` calls: post-`Init` and post-`Open`, all Pipeline state relevant to encryption is read-only, and per-call state (readers, writers, per-chunk scratch inside the itb IO entry) lives on the caller's stack. `Rekey` mutates Pipeline state and must be serialised against concurrent cipher calls by the caller (see [`triple/rekey.go`](triple/rekey.go)); `Close` wipes secret material atomically and subsequent method calls return `triple.ErrClosed`.
 
-By default, ITB uses all available CPU cores. On shared servers, use `SetMaxWorkers` to limit CPU usage. Pass 0 to use all CPUs (default). Valid range: 0–256. Thread-safe (atomic). Query with `itb.GetMaxWorkers()`.
-
-### Nonce Configuration
-
-```go
-itb.SetNonceBits(256) // 256-bit nonce (~2^128 birthday bound)
-```
-
-Default nonce is 128 bits (birthday collision at ~2^64 messages). For higher collision resistance, use `SetNonceBits`. Valid values: 128, 256, 512. Panics on invalid input. Both sender and receiver must use the same nonce size. Query with `itb.GetNonceBits()`.
-
-### Barrier Fill (CSPRNG Margin)
-
-```go
-itb.SetBarrierFill(4) // side += 4 instead of default side += 1
-```
-
-Controls the CSPRNG fill margin added to the container side dimension. The construction guarantees that every container has strictly more pixel capacity than the payload requires — the excess capacity is filled with `crypto/rand` data encrypted by dataSeed. This CSPRNG residue is indistinguishable from encrypted plaintext and provides information-theoretic ambiguity within the data channel ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
-
-Valid values: 1, 2, 4, 8, 16, 32. Default: 1. Panics on invalid input. Thread-safe (atomic). Query with `itb.GetBarrierFill()`.
-
-**Why this matters after CCA.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container), bypassing mechanism 1 (noise absorption). But CSPRNG fill bytes remain in the data bit positions — encrypted identically to plaintext by dataSeed (rotation + XOR). COBS decoding stops at the `0x00` null terminator and never reaches the fill region, so the fill content is never constrained by the plaintext structure. The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill without the correct dataSeed. Although CCA reveals noise bit positions (bypassing the noise-position uncertainty of mechanism 1), CSPRNG residue in data positions provides independent information-theoretic ambiguity that persists regardless of CCA.
-
-The rotation barrier (7^P from [Proof 4](PROOFS.md#proof-4-rotation-barrier)) remains complemented by this reduced information-theoretic barrier from CSPRNG fill. Three layers operate in every scenario:
-
-| Layer | Core ITB | After CCA (MAC + Reveal) |
-|---|---|---|
-| Noise absorption (mechanism 1) | Full (8 noise bits/pixel) | Partial — noise bits removed, CSPRNG fill in data positions survives |
-| Encoding ambiguity (mechanism 2) | 56^P | 7^P (rotation only) |
-| Brute-force cost | P × 2^(2×keyBits) | P × 2^keyBits |
-
-**Asymmetric property.** The receiver does not need the same `SetBarrierFill` value as the sender. Encrypt writes the container dimensions (W×H) into the header; Decrypt reads W×H from the header and processes whatever pixels are present. A larger fill margin on the sender side increases CSPRNG residue without requiring any configuration change on the receiver. This confirms the configurable nature of the information-theoretic barrier — the sender can independently tune the CSPRNG fill margin.
-
-## Hash Function Selection
-
-ITB accepts pluggable hash functions at three widths. Requirements: the hash must process all input bytes with non-invertible, non-affine, avalanche mixing that survives the ChainHash XOR-chain. PRF required. Under PRF assumption, Full KPA resistance is 3-factor: PRF non-invertibility, independent startSeed, and per-pixel 1:1 ambiguity — all combine conjunctively. gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. Note: complete PRF inversion would collapse the architectural layers via seed recovery; the multi-factor property protects against partial PRF weakness, not total failure.
-
-All primitives are PRF-grade and accept ITB key sizes up to **2048 bits** (`itb.MaxKeyBits`); the per-width minimum is 512 bits and the bit count must be a multiple of the hash's native state width (128 / 256 / 512). The **Public Pair API** column lists the `hashes.<Primitive>Pair()` factory which returns the (single, batched) closure pair; the batched arm wires the ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically.
-
-| Hash | Type | ASM Acceleration | Public Pair API | Upstream Library |
-|---|---|---|---|---|
-| **Areion-SoEM-256** | `HashFunc256` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion256Pair()` | `github.com/jedisct1/go-aes` |
-| **Areion-SoEM-512** | `HashFunc512` | VAES + AVX-512 ZMM (4-lane chain-absorb) · VAES + AVX-2 YMM fallback · AES-NI scalar | `hashes.Areion512Pair()` | `github.com/jedisct1/go-aes` |
-| **BLAKE2b-256** | `HashFunc256` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b256Pair()` | `golang.org/x/crypto/blake2b` |
-| **BLAKE2b-512** | `HashFunc512` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPRORQ, 4-lane) | `hashes.BLAKE2b512Pair()` | `golang.org/x/crypto/blake2b` |
-| **BLAKE2s** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane) | `hashes.BLAKE2s256Pair()` | `golang.org/x/crypto/blake2s` |
-| **BLAKE3** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPRORD, 4-lane keyed-mode) | `hashes.BLAKE3256Pair()` | `github.com/zeebo/blake3` |
-| **AES-CMAC** | `HashFunc128` | VAES + AVX-512 ZMM (4-lane CBC-MAC) · AES-NI scalar | `hashes.AESCMACPair()` | `crypto/aes` (stdlib) |
-| **SipHash-2-4** | `HashFunc128` | AVX-512 ZMM ARX (VPADDQ / VPXORQ / VPROLQ, 4-lane) | `hashes.SipHash24Pair()` | `github.com/dchest/siphash` |
-| **ChaCha20** | `HashFunc256` | AVX-512 ZMM ARX (VPADDD / VPXORD / VPROLD, 4-lane) | `hashes.ChaCha20256Pair()` | `golang.org/x/crypto/chacha20` |
-
-### Choosing the Right Hash Width
-
-The effective key size is determined by the **seed input width** of the hash function — not its output width. This is a critical distinction:
-
-```
-Effective max key = min(keyBits, seedInputWidth × numRounds)
-```
-
-### Why Wider Hash = Faster with Wider MITM Bottleneck
-
-With a 512-bit key (8 components), ChainHash processes components in groups matching the hash width:
-
-| Hash width | Components/round | Rounds | Hash calls/pixel |
-|---|---|---|---|
-| 128-bit | 2 | 4 | 4 |
-| 256-bit | 4 | **2** | **2** |
-| 512-bit | 8 | **1** | **1** |
-
-All 8 components are consumed in every case — no key material is skipped. A 256-bit hash simply processes 4 components per call instead of 1.
-
-**Faster:** each hash call has overhead (state initialization, finalization). For heavy hash functions (BLAKE3: ~300ns/call, BLAKE2b: ~200ns/call), fewer calls = proportionally faster.
-
-**Wider MITM bottleneck:** the wider intermediate state makes meet-in-the-middle attacks harder. With 256-bit state, an attacker must enumerate 2^256 possible intermediate values (vs 2^128 for a 128-bit hash). Additionally, fewer chain rounds means fewer potential split points for the attacker.
-
-**Bottom line:** prefer the widest available PRF variant — it's both faster and provides a wider MITM bottleneck.
-
-### ASIC Scalability
-
-**FPGA proof-of-concept is planned** using open-source Verilog IP cores for SipHash and ChaCha20 DRBG, with a custom ITB pixel pipeline. Target: full encrypt/decrypt roundtrip on a single FPGA chip.
-
-ITB's elementary operations (XOR, bitwise AND, modulo, bit shift, rotate) are trivial to implement in hardware. The construction's per-pixel parallelism (each pixel is independent) enables linear scalability through parallel processing units.
-
-**Pixel processing in ASIC:**
-- All operations are combinational logic: XOR gates, barrel shifters, adders
-- No S-box ROM, no lookup tables, no GF(2^8) multiplier required
-- Each pixel can be processed by an independent hardware unit
-- 8 channels per pixel can be processed in parallel (8-wide datapath)
-- No DPA attack surface — register-only operations in silicon
-
-**Hash engine:**
-- ARX-based PRF hash functions (BLAKE3) are pipeline-friendly in hardware
-- Multiple hash engines can run in parallel (one per pixel pipeline)
-- No S-box in silicon — no DPA attack surface at the hardware level
-
-**Primary engineering challenge — PRNG throughput:**
-- Container generation (crypto/rand) is the throughput bottleneck in software (~735 MB/s on modern CPUs)
-- In ASIC, a custom ChaCha20-based DRBG (ARX, DPA-free) seeded from a certified TRNG IP core generates random container fill, not cryptographic keys
-- Seeds (triple-seed) are external pre-shared inputs, not generated by the DRBG — they are loaded into ASIC secure registers via external key exchange
-- A single ChaCha20 DRBG core at ~4 GB/s may be sufficient — the pixel processing pipeline (2 hash calls per pixel) becomes the bottleneck before DRBG does
-- Scaling is achieved by adding parallel pixel pipelines, not additional DRBG cores
-- Decrypt does not require PRNG (no container generation) — decrypt throughput is limited only by hash engine and memory bandwidth
-
-**DPA-free full stack:**
-- TRNG (certified IP core) → ChaCha20 DRBG streaming (custom, ARX) → ARX hash engine (BLAKE3) → pixel processing (XOR, shift, rotate) — zero table lookups from PRNG to output, no DPA attack surface at any level
-
-**Theoretical throughput:**
-- With ChaCha20 DRBG + parallel hash engines + parallel pixel processing, ASIC implementations could theoretically achieve >1-2 GB/s for both encrypt and decrypt — the problem is purely engineering, not architectural
-- Decrypt throughput could exceed encrypt due to absence of PRNG overhead
-
-## Concurrency
-
-A single `easy.Encryptor` is NOT safe for concurrent use from
-multiple goroutines — cipher methods (`Encrypt` / `Decrypt` /
-`EncryptAuth` / `DecryptAuth`), per-instance setters, and `Close` /
-`Import` all mutate per-instance state without locking. Sharing one
-`Encryptor` across goroutines requires external synchronisation;
-distinct `Encryptor` values, each owned by one goroutine, run
-independently against the libitb worker pool.
-
-By contrast, the low-level cipher free functions
-(`itb.Encrypt128` / `itb.Decrypt128` / `itb.EncryptAuthenticated128` /
-`itb.DecryptAuthenticated128` and **Cfg** variants plus the 256 / 512 width
-counterparts) take read-only Seed pointers and allocate output per
-call — they are thread-safe under concurrent invocation on the same
-seeds. The exception is the shared `*itb.Config`: concurrent setter
-mutations on a Config that other goroutines are reading must be
-serialised by the caller.
-
-**Caveat — Process-wide `itb.Set*` setters (`SetNonceBits` /
-`SetBarrierFill` / `SetMaxWorkers` / `SetBitSoup` / `SetLockSoup` / `SetLockBatch`)
-are atomic and safe to call from any goroutine. Atomic, but not logically
-race-free.** Each setter performs a single `atomic.Int32.Store`, so
-concurrent setter calls race-free by themselves; but mutating any of
-these knobs **while an encrypt or decrypt call is in flight** corrupts
-the running operation. The cipher snapshots its configuration at call
-entry and a mid-flight change breaks the running invariants — same plaintext
-shipped through two halves of the call under different settings will not
-round-trip on the receiver. Treat the global knobs as set-once-at-startup;
-rare runtime updates need external sequencing against active cipher calls.
-
-## ChainHash: Local Key Evolution
-
-**Warning: a 512-bit wide primitive keyed with a 512-bit ITB width mode folds into a single ChainHash round, so the feedforward chain is absent and the primitive output is used directly. Recommended to use minimum 1024-bit ITB mode**
-
-ChainHash is the small construction that sits between ITB's seed material and the underlying PRF. It is what lets a fixed-width hash (128 / 256 / 512-bit native state) be keyed by an arbitrarily wide key — the source of ITB's advertised **512 / 1024 / 2048-bit** key sizes. ChainHash is almost independent of the rest of ITB: it takes a key (the seed components) and one fixed input (the per-pixel buffer) and returns a single fixed-width block.
-
-In plain terms: the key is a list of 64-bit components, consumed a round at a time. The first round hashes the input under the first group of components. Every later round re-hashes **the same input** under the next group of components, each component first XORed with the matching word of the previous round's output. After the last group, the final block is the result.
-
-```
-h = Hash(data, S[0 .. w-1])                 # round 1
-h = Hash(data, S[w .. 2w-1]  XOR  h)        # round 2 (feedforward)
-h = Hash(data, S[2w .. 3w-1] XOR  h)        # round 3
-...                                          # w = native words per round (2 / 4 / 8)
-```
-
-Two properties matter. First, the input `data` never changes across rounds; only the effective key changes. Second, each round's key is the next slice of fresh key material XORed with the entire previous output — a **feedforward** step — and the intermediate blocks between rounds are never emitted: ChainHash returns only the final block, so every `h` before the last is an internal value the attacker never observes. The output depends on every key component conjunctively, and because each round's effective key embeds the previous, unobserved block, the chain cannot be peeled one round at a time. Even with an invertible primitive, inverting the last round recovers only the XOR of that round's key slice with the hidden previous block — neither operand on its own — which leaves the rest of the chain intact; reconstructing a hidden intermediate by search instead means enumerating a full native-width block, a meet-in-the-middle barrier the width of the primitive at every round.
-
-This is best read as **local key evolution** — each round derives a fresh effective key from the previous state plus new key material and re-keys the same PRF over the same input. The number of rounds is the key width divided by the native state width, so a 2048-bit key folds into 16 rounds at 128-bit, 8 rounds at 256-bit, or 4 rounds at 512-bit. The wider the primitive, the fewer rounds — which is why a wider PRF is both faster and gives a wider MITM bottleneck (see [Why Wider Hash = Faster](#why-wider-hash--faster-with-wider-mitm-bottleneck)).
-
-**How this differs from other chained constructions.** ChainHash superficially resembles several well-known key-derivation and hashing chains, but its purpose runs in the opposite direction. The neighbours below all **expand** one secret into a stream or **absorb** a growing message; ChainHash **folds** a wide key down into one block for a fixed input.
-
-| Construction | Fixed across the chain | Varies / chains in | Output | Primary purpose |
-|---|---|---|---|---|
-| **ITB ChainHash** | the input `data` (pixel buffer) | key material, one slice per round, XOR-folded with the previous output (feedforward) | one fixed-width block per pixel | fold a wide key (up to 2048-bit) into a single narrow-PRF evaluation |
-| **SP 800-108 KDF (feedback mode)** | the key `KI` | a counter plus the previous output | a stream of output blocks | derive several keys from one |
-| **HKDF-Expand** (RFC 5869) | the PRK (the secret) | a counter plus the info label | a stream of output blocks (OKM) | expand one secret into many key bytes |
-| **PBKDF2** (RFC 8018) | salt and password | the previous PRF output, XOR-accumulated over the iteration count | a fixed-length derived key | deliberate slowness (password stretching) |
-| **Merkle–Damgård** (SHA-2 family) | the IV / compression key | message blocks, absorbed sequentially | one digest | hash an arbitrary-length message |
-
-The closest relative is SP 800-108 feedback mode, which also chains the previous output back in — but it chains to **lengthen** the output (more counter values produce more key bytes), whereas ChainHash chains to **absorb more key** (more components widen the key behind the same single output). The combination of a fixed input, key material folded in with output feedforward, and a single consumed block is the part that does not map onto an existing named construction.
-
-**What ChainHash does and does not include.** ChainHash returns the full native-width block — the complete `(hLo, hHi)` pair at 128-bit, the full `[4]uint64` at 256-bit, the full `[8]uint64` at 512-bit. The narrowing to 64 bits is **not** part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, and the optional **Lock Soup** permutation overlay likewise keys its per-chunk step from the low word only. So the 50 % / 25 % / 12.5 % output narrowing at 128 / 256 / 512-bit (see [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security)) is an encoder-layer and overlay-layer choice layered on top of ChainHash, not a property of ChainHash itself.
-
-Discarding the upper bits is a conservative defense-in-depth margin, not a security requirement: under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits, so the discarded portion carries no information the encoder needs. Empirically, deliberately weak non-cryptographic primitives plugged into ChainHash have their documented biases neutralised on the attacker-observable ciphertext surface and, at minimum ITB deployment (ChainHash with four rounds), resist SAT/SMT seed recovery at the tested budgets — the hi-half discard and the round feedforward are among the contributing barriers (characterised primitive by primitive, at rounds = 1 vs rounds ≥ 2, in [HARNESS.md §3.4](HARNESS.md#34-axis-c--sat-kpa-seed-recovery-resistance)). Lock Soup makes the point concrete: it keys a single PRF call per 24-bit chunk (the per-chunk mask call, distinct from the once-per-nonce ChainHash that derives the lock seed) and by default reads only the low word of that call's output. The opt-in `SetLockBatch(1)` mode instead consumes the full native-width output of that per-chunk call — one mask per 64-bit lane, so **2 / 4 / 8** masks from a single call at 128 / 256 / 512-bit native width — cutting the per-mask call count by the same factor while keeping formal PRF-conditional security.
-
-## Streaming AEAD
-
-**Streaming AEAD** authenticates a chunked stream end-to-end while preserving the deniability of the per-chunk MAC-Inside-Encrypt container. Each chunk's MAC binds the encrypted payload to a 32-byte CSPRNG stream anchor (written as a once-per-stream wire prefix), the cumulative pixel offset of preceding chunks, and a final-flag bit — defending against chunk reorder, replay within or across streams sharing the PRF / MAC key, silent mid-stream drop, and truncate-tail. The wire format adds 32 bytes of stream prefix plus one byte of encrypted trailing flag per chunk; no externally visible MAC tag.
-
-All four examples below encrypt a 64 MiB random source file in 16 MiB chunks
-and verify sha256 round-trip on the decrypted output. The Easy paths drive
-the cipher through `easy.Encryptor` (per-instance configuration snapshot,
-internal MAC key allocation); the Low-Level paths drive the same cipher
-through the top-level free functions `itb.EncryptStream` /
-`itb.EncryptStreamAuth` and decrypt counterparts (process-wide configuration
-via `itb.Set*`, explicit seed + MAC handles).
-
-### Streaming Bindings Asymmetry
-
-The Go core and the `easy` package expose `io.Reader` / `io.Writer` entry
-points for both the Streaming AEAD path and the plain (No Mac) stream path.
-The official language bindings (Ada, C, C++, C#, D, Fortran, Rust, Node.js,
-Python and other bindings) expose IO-Driven helpers for the Streaming AEAD path only;
-their plain-stream surface is a per-chunk free-function call with the caller
-driving the read/write loop. The two patterns produce identical on-wire
-bytes — the **Alternative** examples in the No Mac subsections below mirror
-the binding-side idiom for callers who prefer external control over chunk
-granularity and back-pressure.
+The Low-Level free functions (`itb.EncryptAuthenticated3x{128,256,512}Cfg`, `itb.EncryptStreamAuth3x{128,256,512}Cfg`, `itb.EncryptStreamAuth3xCfg`, and the decrypt counterparts) take read-only seed pointers and a `*itb.Config` and allocate output per call — they are thread-safe under concurrent invocation on the same seeds. Concurrent mutation of the shared `*itb.Config` by other goroutines must be serialised by the caller.
 
 ## Quick Start
 
-### Streaming AEAD Easy (MAC Authenticated)
+Six worked examples cover the surface. Four use the `triple/` facade (the shipped user-facing entry point); two use the Low-Level `*Cfg` free functions directly. Every example runs against one of the five shipped profiles listed in [`triple/profile.go`](triple/profile.go):
 
-The high-level `easy.Encryptor.EncryptStreamAuthIO` consumes an `io.Reader`
-plus an explicit chunk size, generates the 32-byte `stream_id` prefix
-internally, drains the reader in chunkSize-byte windows, and writes each
-on-wire chunk to the supplied `io.Writer` in stream order. The matching
-`DecryptStreamAuthIO` reads the prefix, walks the wire bytes one chunk at a
-time, and writes recovered plaintext to the output writer. The MAC key is
-allocated CSPRNG-fresh inside the encryptor at construction time and is not
-exposed to the caller.
+- `singlemsg-triple-mac-v1` — Single Message Triple with MAC.
+- `singlemsg-triple-nomac-v1` — Single Message Triple No MAC.
+- `streaming-aead-triple-mac-v1` — Streaming AEAD Triple with MAC.
+- `streaming-noaead-triple-v1` — Streaming Non-AEAD Triple.
+- `blob-triple-mac-v1` — MAC-authenticated blob-only bundle (no cipher surface; used by `Init` / `Rekey` to bundle session state).
+
+All shipped profiles default to **parallax on + wrapper (Outer cipher) on**; both toggles are opt-out via `triple.Opts`. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
+
+**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — profile identifier, both masters, and the inner Blob{N} carrying the eight seed components + per-slot PRF keys + optional MAC material. Ship the blob to the receiver out-of-band; the receiver calls `triple.Open(profile, blob, opts)` and reconstructs the same Pipeline. Both sides then encrypt / decrypt against their Pipeline.
+
+### Triple 1 — Single Message with MAC
 
 ```go
 package main
 
 import (
-    "bufio"
-    "os"
+    "bytes"
+    "fmt"
 
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-const (
-    srcPath   = "/tmp/64mb.src"
-    encPath   = "/tmp/64mb.enc"
-    dstPath   = "/tmp/64mb.dst"
-    chunkSize = 16 * 1024 * 1024
+    "github.com/everanium/itb/triple"
 )
 
 func main() {
-    itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
-
-    enc := easy.New("areion512", 1024, "hmac-blake3")
+    // Sender.
+    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
     defer enc.Close()
-    enc.SetNonceBits(512)            // 512-bit nonce
-    enc.SetBarrierFill(4)            // CSPRNG fill margin
-    enc.SetBitSoup(1)                // bit-level split
-    enc.SetLockSoup(1)               // Insane Interlocked Mode
-    enc.SetLockBatch(1)              // Recommended under the PRF assumption,
-                                     // the performance Lock Soup mode.
-                                     // Symmetric, set on both sides.
 
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
+    wire, err := enc.EncryptMessage([]byte("any text or binary data - including 0x00 bytes"))
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("blob: %d bytes; wire: %d bytes\n", len(blob), len(wire))
 
-    {
-        fin, _ := os.Open(srcPath)
-        fout, _ := os.Create(encPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-        // ~0% overhead (Recommended in every case).
-        wrapWriter, _ := wrapper.NewWrapWriter(wrapper.CipherAES128CTR, outerKey, bw)
-        if err := enc.EncryptStreamAuthIO(br, wrapWriter, chunkSize); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
+    // Receiver — ship the blob out-of-band, then reconstruct.
+    dec, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, triple.Opts{})
+    if err != nil {
+        panic(err)
     }
-    {
-        fin, _ := os.Open(encPath)
-        fout, _ := os.Create(dstPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        unwrapReader, _ := wrapper.NewUnwrapReader(wrapper.CipherAES128CTR, outerKey, br)
-        if err := enc.DecryptStreamAuthIO(unwrapReader, bw); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
+    defer dec.Close()
+
+    plain, err := dec.DecryptMessage(wire)
+    if err != nil {
+        panic(err)
     }
+    if !bytes.Equal(plain, []byte("any text or binary data - including 0x00 bytes")) {
+        panic("round-trip mismatch")
+    }
+    fmt.Printf("decrypted: %s\n", string(plain))
 }
 ```
 
-### Streaming AEAD Low-Level (MAC Authenticated)
+### Triple 2 — Single Message No MAC
 
-Top-level free functions `itb.EncryptStreamAuth` / `itb.DecryptStreamAuth`
-take three explicit `*Seed{N}` handles plus a `MACFunc` closure built from
-the `macs/` factory and stream through the same chunked-AEAD construction
-directly over `io.Reader` / `io.Writer`. The seeds are constructed via
-`itb.NewSeed512` paired with the matching hash factory from the `hashes/`
-registry; the MAC closure is built from a 32-byte CSPRNG key plus
-`macs.Make("hmac-blake3", key)`. Process-wide setters configure the cipher;
-no per-instance Config snapshot exists at the low-level surface.
+```go
+package main
+
+import (
+    "bytes"
+    "fmt"
+
+    "github.com/everanium/itb/triple"
+)
+
+func main() {
+    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleNoMACV1, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer enc.Close()
+
+    wire, err := enc.EncryptMessage([]byte("plaintext bytes"))
+    if err != nil {
+        panic(err)
+    }
+
+    dec, err := triple.Open(triple.ProfileSingleMsgTripleNoMACV1, blob, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer dec.Close()
+
+    plain, err := dec.DecryptMessage(wire)
+    if err != nil {
+        panic(err)
+    }
+    if !bytes.Equal(plain, []byte("plaintext bytes")) {
+        panic("round-trip mismatch")
+    }
+    fmt.Printf("decrypted: %s\n", string(plain))
+}
+```
+
+### Triple 3 — Streaming AEAD (MAC Authenticated, IO-Driven)
+
+The Streaming AEAD IO-Driven surface is the primary use case for bulk payloads. `EncryptStream` reads plaintext from an `io.Reader` and writes wire bytes to an `io.Writer`; `DecryptStream` mirrors the direction.
 
 ```go
 package main
 
 import (
     "bufio"
-    "crypto/rand"
     "os"
+
+    "github.com/everanium/itb/triple"
+)
+
+func main() {
+    const (
+        srcPath = "/tmp/64mb.src"
+        encPath = "/tmp/64mb.enc"
+        dstPath = "/tmp/64mb.dst"
+    )
+
+    enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer enc.Close()
+
+    // Encrypt: plainSrc -> wireDst.
+    fin, _ := os.Open(srcPath)
+    fout, _ := os.Create(encPath)
+    br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
+    if err := enc.EncryptStream(br, bw); err != nil {
+        panic(err)
+    }
+    bw.Flush()
+    fin.Close()
+    fout.Close()
+
+    // Ship blob out-of-band, then reconstruct on the receiver.
+    dec, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer dec.Close()
+
+    fin, _ = os.Open(encPath)
+    fout, _ = os.Create(dstPath)
+    br, bw = bufio.NewReader(fin), bufio.NewWriter(fout)
+    if err := dec.DecryptStream(br, bw); err != nil {
+        panic(err)
+    }
+    bw.Flush()
+    fin.Close()
+    fout.Close()
+}
+```
+
+### Triple 4 — Streaming Non-AEAD (No MAC, IO-Driven)
+
+Same shape as the AEAD variant; the profile switch replaces the MAC-bearing pipeline with the plain (unauthenticated) one. Wrong-seed input produces random-looking plaintext rather than an error; truncate-tail / reorder are not detected on this surface.
+
+```go
+package main
+
+import (
+    "bufio"
+    "os"
+
+    "github.com/everanium/itb/triple"
+)
+
+func main() {
+    const (
+        srcPath = "/tmp/64mb.src"
+        encPath = "/tmp/64mb.enc"
+        dstPath = "/tmp/64mb.dst"
+    )
+
+    enc, blob, err := triple.Init(triple.ProfileStreamingNoAEADTripleV1, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer enc.Close()
+
+    fin, _ := os.Open(srcPath)
+    fout, _ := os.Create(encPath)
+    br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
+    if err := enc.EncryptStream(br, bw); err != nil {
+        panic(err)
+    }
+    bw.Flush()
+    fin.Close()
+    fout.Close()
+
+    dec, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer dec.Close()
+
+    fin, _ = os.Open(encPath)
+    fout, _ = os.Create(dstPath)
+    br, bw = bufio.NewReader(fin), bufio.NewWriter(fout)
+    if err := dec.DecryptStream(br, bw); err != nil {
+        panic(err)
+    }
+    bw.Flush()
+    fin.Close()
+    fout.Close()
+}
+```
+
+### Overriding profile defaults via `Opts`
+
+Every profile-supplied default is overridable on both `Init` and `Open`. Typical overrides:
+
+```go
+withParallax := false
+withWrapper := true
+
+enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
+    NonceBits:    256,          // per-Pipeline nonce width (default: itb.DefaultNonceBits)
+    BarrierFill:  4,            // per-Pipeline CSPRNG barrier fill margin
+    MaxWorkers:   8,            // per-Pipeline worker cap
+    ChunkSize:    16 << 20,     // streaming chunk-size budget
+    WithParallax: &withParallax, // opt out of parallax
+    WithWrapper:  &withWrapper,  // keep wrapper on (would default on anyway)
+    OuterCipher:  "aes128ctr",   // pick a specific outer cipher
+})
+```
+
+`WithParallax` and `WithWrapper` are `*bool` so a nil pointer defers to the profile default while a non-nil pointer forces the chosen setting. Every other field takes its zero value to mean "inherit the profile default".
+
+## Advanced — Low-Level `*Cfg` surface
+
+The `triple/` facade is the recommended entry point. Callers who need the raw eight-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); the process-wide setter surface has been retired.
+
+### Low-Level 1 — Message-shape, MAC Authenticated
+
+Message-shape variant using `itb.EncryptAuthenticated3x256Cfg` / `itb.DecryptAuthenticated3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. Eight typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pointer-identity distinctness is enforced at the call site.
+
+```go
+package main
+
+import (
+    "bytes"
+    "crypto/rand"
+    "fmt"
 
     "github.com/everanium/itb"
     "github.com/everanium/itb/hashes"
     "github.com/everanium/itb/macs"
-    "github.com/everanium/itb/wrapper"
-)
-
-const (
-    srcPath   = "/tmp/64mb.src"
-    encPath   = "/tmp/64mb.enc"
-    dstPath   = "/tmp/64mb.dst"
-    chunkSize = 16 * 1024 * 1024
 )
 
 func main() {
-    itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
-    itb.SetLockBatch(1)              // Recommended under the PRF assumption,
-                                     // the performance Lock Soup mode.
-                                     // Symmetric, set on both sides.
+    cfg := &itb.Config{NonceBits: 256, BarrierFill: 4}
 
-    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
-    // (noise / data / start / lock). The batched arm wires the AVX-512 +
-    // VAES + ZMM chain-absorb dispatch through Seed.BatchHash — without
-    // it dispatch falls back to the legacy single-call path.
-    fnN, batchN, _, _ := hashes.Make512Pair("areion512")
-    fnD, batchD, _, _ := hashes.Make512Pair("areion512")
-    fnS, batchS, _, _ := hashes.Make512Pair("areion512")
-    fnL, batchL, _, _ := hashes.Make512Pair("areion512")
+    // Eight independent CSPRNG-keyed Areion-SoEM-256 paired closures.
+    // Each *Pair() returns (single, batched, [32]byte-key, error).
+    fnN,  batchN,  _, _ := hashes.Areion256Pair()
+    fnL,  batchL,  _, _ := hashes.Areion256Pair()
+    fnD1, batchD1, _, _ := hashes.Areion256Pair()
+    fnD2, batchD2, _, _ := hashes.Areion256Pair()
+    fnD3, batchD3, _, _ := hashes.Areion256Pair()
+    fnS1, batchS1, _, _ := hashes.Areion256Pair()
+    fnS2, batchS2, _, _ := hashes.Areion256Pair()
+    fnS3, batchS3, _, _ := hashes.Areion256Pair()
 
-    noise, _ := itb.NewSeed512(1024, fnN); noise.BatchHash = batchN
-    data,  _ := itb.NewSeed512(1024, fnD); data.BatchHash  = batchD
-    start, _ := itb.NewSeed512(1024, fnS); start.BatchHash = batchS
-    lock,  _ := itb.NewSeed512(1024, fnL); lock.BatchHash  = batchL
-
-    // Optional dedicated lockSeed for the Lock Soup bit-permutation
-    // channel — keying-material isolation plus algorithm-diversity
-    // defence-in-depth on top of the per-chunk keyed-permutation floor,
-    // without changing the public Encrypt / Decrypt signatures.
-    noise.AttachLockSeed(lock)
+    ns,  _ := itb.NewSeed256(1024, fnN);  ns.BatchHash  = batchN
+    ls,  _ := itb.NewSeed256(1024, fnL);  ls.BatchHash  = batchL
+    ds1, _ := itb.NewSeed256(1024, fnD1); ds1.BatchHash = batchD1
+    ds2, _ := itb.NewSeed256(1024, fnD2); ds2.BatchHash = batchD2
+    ds3, _ := itb.NewSeed256(1024, fnD3); ds3.BatchHash = batchD3
+    ss1, _ := itb.NewSeed256(1024, fnS1); ss1.BatchHash = batchS1
+    ss2, _ := itb.NewSeed256(1024, fnS2); ss2.BatchHash = batchS2
+    ss3, _ := itb.NewSeed256(1024, fnS3); ss3.BatchHash = batchS3
 
     macKey := make([]byte, 32)
     rand.Read(macKey)
     macFunc, err := macs.Make("hmac-blake3", macKey)
-    if err != nil { panic(err) }
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-
-    {
-        fin, _ := os.Open(srcPath)
-        fout, _ := os.Create(encPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-        // ~0% overhead (Recommended in every case).
-        wrapWriter, _ := wrapper.NewWrapWriter(wrapper.CipherAES128CTR, outerKey, bw)
-        if err := itb.EncryptStreamAuth(noise, data, start, br, wrapWriter, macFunc, chunkSize); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-    {
-        fin, _ := os.Open(encPath)
-        fout, _ := os.Create(dstPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        unwrapReader, _ := wrapper.NewUnwrapReader(wrapper.CipherAES128CTR, outerKey, br)
-        if err := itb.DecryptStreamAuth(noise, data, start, unwrapReader, bw, macFunc); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-}
-```
-
-### Streaming Easy (No MAC)
-
-The plain (non-authenticated) cipher path through `easy.Encryptor`.
-`EncryptStreamIO` walks the reader in chunkSize-byte windows and emits each
-ITB wire chunk verbatim; `DecryptStreamIO` recovers chunk extents from the
-on-wire `W` / `H` header per chunk, so no length prefix is needed at the
-application layer. No `stream_id` prefix and no per-chunk MAC tag — wrong-
-seed input produces random-looking plaintext rather than an error, and
-truncate-tail / reorder are not detected.
-
-```go
-package main
-
-import (
-    "bufio"
-    "os"
-
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-const encPlainPath = "/tmp/64mb_plain.enc"
-const dstPlainPath = "/tmp/64mb_plain.dst"
-
-func main() {
-    itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
-
-    enc := easy.New("areion512", 1024)
-    defer enc.Close()
-    enc.SetNonceBits(512)
-    enc.SetBarrierFill(4)
-    enc.SetBitSoup(1)
-    enc.SetLockSoup(1)
-    enc.SetLockBatch(1)              // Recommended under the PRF assumption,
-                                     // the performance Lock Soup mode.
-                                     // Symmetric, set on both sides.
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-
-    {
-        fin, _ := os.Open(srcPath)
-        fout, _ := os.Create(encPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-        // ~0% overhead (Recommended in every case).
-        wrapWriter, _ := wrapper.NewWrapWriter(wrapper.CipherAES128CTR, outerKey, bw)
-        if err := enc.EncryptStreamIO(br, wrapWriter, chunkSize); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-    {
-        fin, _ := os.Open(encPlainPath)
-        fout, _ := os.Create(dstPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        unwrapReader, _ := wrapper.NewUnwrapReader(wrapper.CipherAES128CTR, outerKey, br)
-        if err := enc.DecryptStreamIO(unwrapReader, bw); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-}
-```
-
-**Alternative — User-Driven Loop (No memory residency):**
-
-The same `easy.Encryptor` exposes per-chunk `Encrypt` / `Decrypt` methods.
-Driving the read / write loop in caller code mirrors the per-chunk shape
-exposed by the official language bindings — useful when the caller wants
-explicit control over chunk granularity, back-pressure, or interleaved work
-between chunks. The on-wire bytes are wire-format-compatible with the IO
-method's output above: each on-wire chunk's own `W` / `H` header carries its
-length, so the decrypter walks the stream by reading `enc.HeaderSize()`
-bytes, calling `enc.ParseChunkLen` to learn the chunk's total wire length,
-then reading the body — no application-level length prefix required.
-
-```go
-package main
-
-import (
-    "bufio"
-    "io"
-    "os"
-
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-const encPlainPath = "/tmp/64mb_plain.enc"
-const dstPlainPath = "/tmp/64mb_plain.dst"
-
-func main() {
-    itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
-
-    enc := easy.New("areion512", 1024)
-    defer enc.Close()
-    enc.SetNonceBits(512)
-    enc.SetBarrierFill(4)
-    enc.SetBitSoup(1)
-    enc.SetLockSoup(1)
-    enc.SetLockBatch(1)              // Recommended under the PRF assumption,
-                                     // the performance Lock Soup mode.
-                                     // Symmetric, set on both sides.
-
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-
-    {
-        fin, _ := os.Open(srcPath)
-        fout, _ := os.Create(encPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-        // ~0% overhead (Recommended in every case).
-        wrapWriter, _ := wrapper.NewWrapWriter(wrapper.CipherAES128CTR, outerKey, bw)
-        buf := make([]byte, chunkSize)
-        for {
-            n, rerr := io.ReadFull(br, buf)
-            if rerr == io.EOF { break }
-            if rerr != nil && rerr != io.ErrUnexpectedEOF { panic(rerr) }
-            ct, err := enc.Encrypt(buf[:n])
-            if err != nil { panic(err) }
-            wrapWriter.Write(ct)
-            if rerr == io.ErrUnexpectedEOF { break }
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-    {
-        fin, _ := os.Open(encPlainPath)
-        fout, _ := os.Create(dstPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        unwrapReader, _ := wrapper.NewUnwrapReader(wrapper.CipherAES128CTR, outerKey, br)
-        header := make([]byte, enc.HeaderSize())
-        for {
-            _, rerr := io.ReadFull(unwrapReader, header)
-            if rerr == io.EOF { break }
-            if rerr != nil { panic(rerr) }
-            chunkLen, err := enc.ParseChunkLen(header)
-            if err != nil { panic(err) }
-            body := make([]byte, chunkLen-len(header))
-            io.ReadFull(unwrapReader, body)
-            chunk := append(append(make([]byte, 0, chunkLen), header...), body...)
-            pt, err := enc.Decrypt(chunk)
-            if err != nil { panic(err) }
-            bw.Write(pt)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-}
-```
-
-### Streaming Low-Level (No MAC)
-
-Top-level free functions `itb.EncryptStream` / `itb.DecryptStream` take three
-explicit `*Seed{N}` handles (no MAC argument) and stream through the
-plain-Single-Ouroboros chunk pipeline directly over `io.Reader` /
-`io.Writer`. On-wire format = standard ITB chunk concatenation with no
-`stream_id` prefix and no per-chunk MAC tag.
-
-```go
-package main
-
-import (
-    "bufio"
-    "os"
-
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/hashes"
-    "github.com/everanium/itb/wrapper"
-)
-
-const encPlainPath = "/tmp/64mb_plain.enc"
-const dstPlainPath = "/tmp/64mb_plain.dst"
-
-func main() {
-    itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
-    itb.SetLockBatch(1)              // Recommended under the PRF assumption,
-                                     // the performance Lock Soup mode.
-                                     // Symmetric, set on both sides.
-
-    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
-    // (noise / data / start / lock). The batched arm wires the AVX-512 +
-    // VAES + ZMM chain-absorb dispatch through Seed.BatchHash — without
-    // it dispatch falls back to the legacy single-call path.
-    fnN, batchN, _, _ := hashes.Make512Pair("areion512")
-    fnD, batchD, _, _ := hashes.Make512Pair("areion512")
-    fnS, batchS, _, _ := hashes.Make512Pair("areion512")
-    fnL, batchL, _, _ := hashes.Make512Pair("areion512")
-
-    noise, _ := itb.NewSeed512(1024, fnN); noise.BatchHash = batchN
-    data,  _ := itb.NewSeed512(1024, fnD); data.BatchHash  = batchD
-    start, _ := itb.NewSeed512(1024, fnS); start.BatchHash = batchS
-    lock,  _ := itb.NewSeed512(1024, fnL); lock.BatchHash  = batchL
-
-    // Optional dedicated lockSeed for the Lock Soup bit-permutation
-    // channel — keying-material isolation plus algorithm-diversity
-    // defence-in-depth on top of the per-chunk keyed-permutation floor,
-    // without changing the public Encrypt / Decrypt signatures.
-    noise.AttachLockSeed(lock)
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-
-    {
-        fin, _ := os.Open(srcPath)
-        fout, _ := os.Create(encPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-        // ~0% overhead (Recommended in every case).
-        wrapWriter, _ := wrapper.NewWrapWriter(wrapper.CipherAES128CTR, outerKey, bw)
-        if err := itb.EncryptStream(noise, data, start, br, wrapWriter, chunkSize); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-    {
-        fin, _ := os.Open(encPlainPath)
-        fout, _ := os.Create(dstPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        unwrapReader, _ := wrapper.NewUnwrapReader(wrapper.CipherAES128CTR, outerKey, br)
-        if err := itb.DecryptStream(noise, data, start, unwrapReader, bw); err != nil {
-            panic(err)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-}
-```
-
-**Alternative — User-Driven Loop (No memory residency):**
-
-The Go-core width-less `itb.Encrypt` / `itb.Decrypt` helpers operate on a
-single chunk at a time. Driving the read / write loop in caller code mirrors
-the per-chunk shape exposed by the official language bindings' No Mac
-plain-stream surface — useful when the caller wants explicit control over
-chunk granularity, back-pressure, or interleaved work between chunks. Each
-chunk's wire bytes are framed with a 4-byte big-endian length prefix
-(binding-style framing) so the decrypter can read one chunk's worth of bytes
-into a fresh buffer per iteration without parsing the on-wire ITB header.
-
-```go
-package main
-
-import (
-    "bufio"
-    "io"
-    "os"
-
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/hashes"
-    "github.com/everanium/itb/wrapper"
-)
-
-const encPlainPath = "/tmp/64mb_plain.enc"
-const dstPlainPath = "/tmp/64mb_plain.dst"
-
-func main() {
-    itb.SetMaxWorkers(8)             // process-wide: limit to 8 CPU cores
-    itb.SetNonceBits(512)
-    itb.SetBarrierFill(4)
-    itb.SetBitSoup(1)
-    itb.SetLockSoup(1)
-    itb.SetLockBatch(1)              // Recommended under the PRF assumption,
-                                     // the performance Lock Soup mode.
-                                     // Symmetric, set on both sides.
-
-    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
-    // (noise / data / start / lock). The batched arm wires the AVX-512 +
-    // VAES + ZMM chain-absorb dispatch through Seed.BatchHash — without
-    // it dispatch falls back to the legacy single-call path.
-    fnN, batchN, _, _ := hashes.Make512Pair("areion512")
-    fnD, batchD, _, _ := hashes.Make512Pair("areion512")
-    fnS, batchS, _, _ := hashes.Make512Pair("areion512")
-    fnL, batchL, _, _ := hashes.Make512Pair("areion512")
-
-    noise, _ := itb.NewSeed512(1024, fnN); noise.BatchHash = batchN
-    data,  _ := itb.NewSeed512(1024, fnD); data.BatchHash  = batchD
-    start, _ := itb.NewSeed512(1024, fnS); start.BatchHash = batchS
-    lock,  _ := itb.NewSeed512(1024, fnL); lock.BatchHash  = batchL
-
-    // Optional dedicated lockSeed for the Lock Soup bit-permutation
-    // channel — keying-material isolation plus algorithm-diversity
-    // defence-in-depth on top of the per-chunk keyed-permutation floor,
-    // without changing the public Encrypt / Decrypt signatures.
-    noise.AttachLockSeed(lock)
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-
-    {
-        fin, _ := os.Open(srcPath)
-        fout, _ := os.Create(encPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-        // ~0% overhead (Recommended in every case).
-        wrapWriter, _ := wrapper.NewWrapWriter(wrapper.CipherAES128CTR, outerKey, bw)
-        buf := make([]byte, chunkSize)
-        var lenBuf [4]byte
-        for {
-            n, rerr := io.ReadFull(br, buf)
-            if rerr == io.EOF { break }
-            if rerr != nil && rerr != io.ErrUnexpectedEOF { panic(rerr) }
-            ct, err := itb.Encrypt(noise, data, start, buf[:n])
-            if err != nil { panic(err) }
-            lenBuf[0] = byte(len(ct) >> 24)
-            lenBuf[1] = byte(len(ct) >> 16)
-            lenBuf[2] = byte(len(ct) >> 8)
-            lenBuf[3] = byte(len(ct))
-            wrapWriter.Write(lenBuf[:])
-            wrapWriter.Write(ct)
-            if rerr == io.ErrUnexpectedEOF { break }
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-    {
-        fin, _ := os.Open(encPlainPath)
-        fout, _ := os.Create(dstPlainPath)
-        br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
-        unwrapReader, _ := wrapper.NewUnwrapReader(wrapper.CipherAES128CTR, outerKey, br)
-        var lenBuf [4]byte
-        for {
-            _, rerr := io.ReadFull(unwrapReader, lenBuf[:])
-            if rerr == io.EOF { break }
-            if rerr != nil { panic(rerr) }
-            chunkLen := int(lenBuf[0])<<24 | int(lenBuf[1])<<16 | int(lenBuf[2])<<8 | int(lenBuf[3])
-            ct := make([]byte, chunkLen)
-            io.ReadFull(unwrapReader, ct)
-            pt, err := itb.Decrypt(noise, data, start, ct)
-            if err != nil { panic(err) }
-            bw.Write(pt)
-        }
-        bw.Flush(); fin.Close(); fout.Close()
-    }
-}
-```
-
-### Single Message Examples
-
-Three configurations covering the most common usage patterns. Every key and
-every seed component is CSPRNG-generated; no master key, no key-derivation
-step. Cross-process persistence (encrypt today, decrypt tomorrow / on a
-different host) is documented in [hashes/README.md](hashes/README.md) and
-[macs/README.md](macs/README.md).
-
-### Easy: Areion-SoEM-512 (No MAC)
-
-The high-level [`easy.Encryptor`](easy/) replaces the seven-line setup
-ceremony of the lower-level path with one constructor call. The
-encryptor allocates its own three (Single) or seven (Triple) seeds +
-MAC closure, snapshots the global configuration into a per-instance
-`*itb.Config`, and exposes setters that mutate only its own state
-without touching the process-wide `itb.Set*` accessors. Two
-encryptors with different settings can run concurrently without
-cross-contamination.
-
-```go
-
-// Sender
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Single-Ouroboros (3 seeds) constructor — variadic args by type:
-    // string matching hashes.Registry → primitive, string matching
-    // macs.Registry → MAC, int → key_bits. Defaults: "areion512" /
-    // 1024 / "hmac-blake3". Triple Ouroboros (7 seeds) → easy.New3(...).
-    enc := easy.New("areion512", 2048, "hmac-blake3")
-    defer enc.Close()
-
-    // Per-instance configuration — mutates only this encryptor's
-    // *itb.Config snapshot. Two encryptors built side-by-side carry
-    // independent settings; process-wide itb.Set* accessors are NOT
-    // consulted after construction.
-    enc.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
-    enc.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1, 2, 4, 8, 16, 32)
-    enc.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                            // auto-enabled for Single Ouroboros if SetLockSoup(1) is on
-    enc.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                            // bit-permutation overlay on top of bit-soup;
-                            // auto-enabled for Single Ouroboros if SetBitSoup(1) is on
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
-                            // derivation channel — separates that PRF's keying material
-                            // from the noiseSeed-driven noise-injection channel; auto-
-                            // couples SetLockSoup(1) + SetBitSoup(1). Adds one extra
-                            // seed slot (3 → 4 for Single, 7 → 8 for Triple). Must be
-                            // called BEFORE the first Encrypt — switching mid-session
-                            // panics with easy.ErrLockSeedAfterEncrypt.
-
-    // For cross-process persistence: enc.Export() returns a single
-    // JSON blob carrying PRF keys, seed components, MAC key, and
-    // (when active) the dedicated lockSeed material. Ship it
-    // alongside the ciphertext or out-of-band.
-    blob := enc.Export()
-    fmt.Printf("state blob: %d bytes\n", len(blob))
-    fmt.Printf("primitive: %s, key_bits: %d, mode: %d, mac: %s\n",
-        enc.Primitive, enc.KeyBits, enc.Mode, enc.MACName)
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-    //chunkSize := 4 * 1024 * 1024 // 4 MB - bulk local crypto, not small-frame network streaming
-
-    // One-shot encrypt into RGBWYOPA container.
-    encrypted, err := enc.Encrypt(plaintext)
-    if err != nil {
-        panic(err)
-    }
-    //var ciphertext []byte
-    //err := enc.EncryptStream(plaintext, func(chunk []byte) error {
-    //    ciphertext = append(ciphertext, chunk...)
-    //    return nil
-    //})
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Send wire payload + state blob + outerKey (out-of-band)
-}
-
-// Receiver
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + state blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    // Optional: peek at the blob's metadata before constructing a
-    // matching encryptor. Useful when the receiver multiplexes blobs
-    // of different shapes (different primitive / mode / MAC choices).
-    prim, keyBits, mode, mac := easy.PeekConfig(blob)
-    fmt.Printf("peek: primitive=%s, key_bits=%d, mode=%d, mac=%s\n",
-        prim, keyBits, mode, mac)
-
-    var dec *easy.Encryptor
-    if mode == 1 {
-        dec = easy.New(prim, keyBits, mac)
-    } else {
-        dec = easy.New3(prim, keyBits, mac)
-    }
-    defer dec.Close()
-
-    // dec.Import(blob) below automatically restores the full
-    // per-instance configuration (NonceBits, BarrierFill, BitSoup,
-    // LockSoup, and the dedicated lockSeed material when sender's
-    // SetLockSeed(1) was active). The Set* lines below are kept for
-    // documentation — they show the knobs available for explicit
-    // pre-Import override. BarrierFill is asymmetric: a receiver-set
-    // value > 1 takes priority over the blob's barrier_fill (the
-    // receiver's heavier CSPRNG margin is preserved across Import).
-    dec.SetNonceBits(512)
-    dec.SetBarrierFill(4)
-    dec.SetBitSoup(1)
-    dec.SetLockSoup(1)
-    dec.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
-                            // lockSeed slot from the blob's lock_seed:true.
-
-    // Restore PRF keys, seed components, MAC key, and the per-instance
-    // configuration overrides (nonce_bits / barrier_fill / bit_soup /
-    // lock_soup / lock_batch / lock_seed) from the saved blob.
-    if err := dec.Import(blob); err != nil {
-        panic(err)
-    }
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
     if err != nil {
         panic(err)
     }
 
-    // One-shot decrypt from RGBWYOPA container.
-    decrypted, err := dec.Decrypt(encrypted)
-    if err != nil {
-        panic(err)
-    }
-    //var decrypted []byte
-    //err = dec.DecryptStream(ciphertext, func(chunk []byte) error {
-    //    decrypted = append(decrypted, chunk...)
-    //    return nil
-    //})
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-### Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated)
-
-The MAC primitive is bound at construction time — the third
-positional argument selects one of the registry names (`kmac256`,
-`hmac-sha256`, `hmac-blake3`). The encryptor allocates a fresh
-32-byte CSPRNG MAC key alongside the per-seed PRF keys; `Export()`
-carries all of them in a single JSON blob.
-
-```go
-
-// Sender
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    enc := easy.New("areion512", 2048, "hmac-blake3")
-    defer enc.Close()
-
-    enc.SetNonceBits(512)
-    enc.SetBarrierFill(4)
-    enc.SetBitSoup(1)
-    enc.SetLockSoup(1)
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    //enc.SetLockSeed(1)    // optional dedicated lockSeed for the bit-permutation
-                            // derivation channel — auto-couples SetLockSoup(1) +
-                            // SetBitSoup(1). Adds one extra seed slot. Must be
-                            // called BEFORE the first EncryptAuth.
-
-    // Persistence blob — carries seeds + PRF keys + MAC key (and
-    // the dedicated lockSeed material when SetLockSeed(1) is active).
-    blob := enc.Export()
-    fmt.Printf("state blob: %d bytes\n", len(blob))
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-
-    // Authenticated encrypt — 32-byte tag is computed across the
-    // entire decrypted capacity and embedded inside the RGBWYOPA
-    // container, preserving oracle-free deniability.
-    encrypted, err := enc.EncryptAuth(plaintext)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Send wire payload + state blob + outerKey (out-of-band)
-}
-
-// Receiver
-
-package main
-
-import (
-    "errors"
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + state blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    prim, keyBits, mode, mac := easy.PeekConfig(blob)
-
-    var dec *easy.Encryptor
-    if mode == 1 {
-        dec = easy.New(prim, keyBits, mac)
-    } else {
-        dec = easy.New3(prim, keyBits, mac)
-    }
-    defer dec.Close()
-
-    // dec.Import(blob) below automatically restores the full
-    // per-instance configuration (NonceBits, BarrierFill, BitSoup,
-    // LockSoup, and the dedicated lockSeed material when sender's
-    // SetLockSeed(1) was active). The Set* lines below are kept for
-    // documentation — they show the knobs available for explicit
-    // pre-Import override. BarrierFill is asymmetric: a receiver-set
-    // value > 1 takes priority over the blob's barrier_fill (the
-    // receiver's heavier CSPRNG margin is preserved across Import).
-    dec.SetNonceBits(512)
-    dec.SetBarrierFill(4)
-    dec.SetBitSoup(1)
-    dec.SetLockSoup(1)
-    dec.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
-                            // lockSeed slot from the blob's lock_seed:true.
-
-    if err := dec.Import(blob); err != nil {
-        panic(err)
-    }
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-    if err != nil {
-        panic(err)
-    }
-
-    // Authenticated decrypt — any single-bit tamper triggers MAC
-    // failure (no oracle leak about which byte was tampered).
-    decrypted, err := dec.DecryptAuth(encrypted)
-    if err != nil {
-        if errors.Is(err, easy.ErrClosed) {
-            panic("encryptor was closed")
-        }
-        // The underlying itb.DecryptAuthenticated* returns a fixed-text
-        // error on MAC verification failure; check the error string or
-        // use the structural difference between MAC failure and other
-        // decrypt errors.
-        panic(err)
-    }
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-### Easy: BLAKE2b-512 + HMAC-BLAKE3 (MAC Authenticated, 2048-bit Seeds)
-
-Same flow as the previous example, swapping the primitive name
-("blake2b512") and the MAC name ("hmac-blake3") at construction
-time. Mixing primitives at the encryptor level is one constructor
-argument away — no per-call PRF / batched-arm wiring.
-
-```go
-
-// Sender
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    enc := easy.New("blake2b512", 2048, "hmac-blake3")
-    defer enc.Close()
-
-    enc.SetNonceBits(512)
-    enc.SetBarrierFill(4)
-    enc.SetBitSoup(1)
-    enc.SetLockSoup(1)
-    enc.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    //enc.SetLockSeed(1)    // optional dedicated lockSeed; auto-couples LockSoup +
-                            // BitSoup. Adds one extra seed slot. Must be called
-                            // BEFORE the first EncryptAuth.
-
-    blob := enc.Export()
-    fmt.Printf("state blob: %d bytes\n", len(blob))
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-    encrypted, err := enc.EncryptAuth(plaintext)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Send wire payload + state blob + outerKey (out-of-band)
-}
-
-// Receiver
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + state blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    prim, keyBits, mode, mac := easy.PeekConfig(blob)
-
-    var dec *easy.Encryptor
-    if mode == 1 {
-        dec = easy.New(prim, keyBits, mac)
-    } else {
-        dec = easy.New3(prim, keyBits, mac)
-    }
-    defer dec.Close()
-
-    // dec.Import(blob) below automatically restores the full
-    // per-instance configuration (NonceBits, BarrierFill, BitSoup,
-    // LockSoup, and the dedicated lockSeed material when sender's
-    // SetLockSeed(1) was active). The Set* lines below are kept for
-    // documentation — they show the knobs available for explicit
-    // pre-Import override. BarrierFill is asymmetric: a receiver-set
-    // value > 1 takes priority over the blob's barrier_fill (the
-    // receiver's heavier CSPRNG margin is preserved across Import).
-    dec.SetNonceBits(512)
-    dec.SetBarrierFill(4)
-    dec.SetBitSoup(1)
-    dec.SetLockSoup(1)
-    dec.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    //dec.SetLockSeed(1)    // optional — Import below restores the dedicated
-                            // lockSeed slot from the blob's lock_seed:true.
-
-    if err := dec.Import(blob); err != nil {
-        panic(err)
-    }
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-    if err != nil {
-        panic(err)
-    }
-
-    decrypted, err := dec.DecryptAuth(encrypted)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-### Easy: Mixed primitives — different PRF per seed slot
-
-`easy.NewMixed` and `easy.NewMixed3` accept a per-slot primitive
-spec, allowing the noise / data / start (and optional dedicated
-lockSeed) seed slots to use different PRF primitives within the
-same native hash width. The mix-and-match-PRF freedom of the
-lower-level path, surfaced through Easy Mode without forcing the
-caller off the high-level constructor. The state blob carries
-per-slot primitives + per-slot PRF keys; the receiver constructs a
-matching encryptor with the same spec and calls `Import` to
-restore.
-
-```go
-
-// Sender
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Per-slot primitive selection (Single Ouroboros, 3 + 1 slots).
-    // Every name must share the same native hash width — mixing
-    // widths is rejected at construction with easy.ErrEasyMixedWidth.
-    // Triple Ouroboros mirror — easy.NewMixed3(easy.MixedSpec3{...})
-    // takes seven per-slot names (noise + 3 data + 3 start) plus
-    // the optional PrimitiveL lockSeed.
-    enc := easy.NewMixed(easy.MixedSpec{
-        PrimitiveN: "blake3",      // noiseSeed:  BLAKE3
-        PrimitiveD: "blake2s",     // dataSeed:   BLAKE2s
-        PrimitiveS: "areion256",   // startSeed:  Areion-SoEM-256
-        PrimitiveL: "blake2b256",  // dedicated lockSeed (optional;
-                                   //   empty = no lockSeed slot)
-        KeyBits:    1024,
-        MACName:    "hmac-blake3",
-    })
-    defer enc.Close()
-
-    // Per-instance configuration applies as for easy.New.
-    enc.SetNonceBits(512)
-    enc.SetBarrierFill(4)
-    // BitSoup + LockSoup are auto-coupled on the on-direction by
-    // PrimitiveL above; explicit calls below are unnecessary but
-    // harmless if added.
-    //enc.SetBitSoup(1)
-    //enc.SetLockSoup(1)
-
-    // Per-slot introspection — Primitive returns the "mixed"
-    // literal, PrimitiveAt(slot) returns each slot's name,
-    // IsMixed() is the typed predicate. Slot ordering is canonical:
-    // 0 = noiseSeed, 1 = dataSeed, 2 = startSeed, 3 = lockSeed
-    // (Single); Triple grows the middle range to 7 slots + lockSeed.
-    fmt.Printf("mixed=%v primitive=%s\n", enc.IsMixed(), enc.Primitive)
-    for i := 0; i < 4; i++ {
-        fmt.Printf("  slot %d: %s\n", i, enc.PrimitiveAt(i))
-    }
-
-    blob := enc.Export()
-    fmt.Printf("state blob: %d bytes\n", len(blob))
-
-    plaintext := []byte("mixed-primitive Easy Mode payload")
-
-    // Authenticated encrypt — 32-byte tag is computed across the
-    // entire decrypted capacity and embedded inside the RGBWYOPA
-    // container, preserving oracle-free deniability.
-    encrypted, err := enc.EncryptAuth(plaintext)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Send wire payload + state blob + outerKey (out-of-band)
-}
-
-// Receiver
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/easy"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + state blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    // Receiver constructs a matching mixed encryptor — every per-
-    // slot primitive name plus key_bits and mac must agree with the
-    // sender. Import validates each per-slot primitive against the
-    // receiver's bound spec; mismatches surface as
-    // easy.ErrMismatch{Field: "primitive"}.
-    dec := easy.NewMixed(easy.MixedSpec{
-        PrimitiveN: "blake3",
-        PrimitiveD: "blake2s",
-        PrimitiveS: "areion256",
-        PrimitiveL: "blake2b256",
-        KeyBits:    1024,
-        MACName:    "hmac-blake3",
-    })
-    defer dec.Close()
-
-    // Restore PRF keys, seed components, MAC key, and the per-
-    // instance configuration overrides from the saved blob. Mixed
-    // blobs carry mixed:true plus a primitives array; Import on a
-    // single-primitive receiver (or vice versa) is rejected as a
-    // primitive mismatch.
-    if err := dec.Import(blob); err != nil {
-        panic(err)
-    }
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-    if err != nil {
-        panic(err)
-    }
-
-    decrypted, err := dec.DecryptAuth(encrypted)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-### Areion-SoEM-512 (Low-Level, No MAC)
-
-```go
-
-// Sender
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-
-    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetLockSoup(1) is enabled or vice versa
-
-    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                            // bit-permutation overlay on top of bit-soup;
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
-    // (noise / data / start / lock). The third return value
-    // (keyN/keyD/keyS/keyL) is the [64]byte fixed key — capture it
-    // per seed for cross-process persistence. The batched arm
-    // (batchN/batchD/batchS/batchL) wires the AVX-512 + VAES + ILP +
-    // ZMM-batched chain-absorb dispatch through Seed.BatchHash.
-    fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
-    fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
-    fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
-    fnL, batchL, keyL := itb.MakeAreionSoEM512Hash() // random lock hash key generated
-    //fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN) // [64]byte saved noise hash key
-    //fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD) // [64]byte saved data hash key
-    //fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS) // [64]byte saved start hash key
-    //fnL, batchL := itb.MakeAreionSoEM512HashWithKey(keyL) // [64]byte saved lock hash key
-
-    // Four independent CSPRNG-generated 2048-bit seeds.
-    ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
-    ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
-    ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
-    ls, _ := itb.NewSeed512(2048, fnL) // random lock CSPRNG seeds generated
-
-    ns.BatchHash = batchN // must enable batch
-    ds.BatchHash = batchD // must enable batch
-    ss.BatchHash = batchS // must enable batch
-    ls.BatchHash = batchL // must enable batch
-
-    // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel. Separates that PRF's keying material from the noiseSeed-
-    // driven noise-injection channel without changing the public Encrypt
-    // / Decrypt signatures. The bit-permutation overlay must be engaged
-    // (itb.SetBitSoup(1) or itb.SetLockSoup(1) — both already on above)
-    // before the first Encrypt; the build-PRF guard panics on encrypt-
-    // time with itb.ErrLockSeedOverlayOff when an attach is present
-    // without either flag.
-    ns.AttachLockSeed(ls)
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-    //chunkSize := 4 * 1024 * 1024 // 4 MB - bulk local crypto, not small-frame network streaming
-
-    // Encrypt into RGBWYOPA container
-    encrypted, err := itb.Encrypt512(ns, ds, ss, plaintext)
-    if err != nil {
-        panic(err)
-    }
-    //var ciphertext []byte
-    //err := itb.EncryptStream512(ns, ds, ss, plaintext, chunkSize, func(chunk []byte) error {
-    //    ciphertext = append(ciphertext, chunk...)
-    //    return nil
-    //})
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Cross-process persistence — Blob512 packs every PRF fixed key
-    // ([64]byte each) plus every seed's Components ([]uint64) plus the
-    // captured itb.Set* globals (NonceBits / BarrierFill / BitSoup /
-    // LockSoup) into one self-describing JSON blob. Triple-Ouroboros
-    // counterparts are Export3 / Import3 below; the lockSeed slot
-    // rides in Blob512Opts.
-    bSrc := &itb.Blob512{}
-    blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
-        itb.Blob512Opts{KeyL: keyL, LS: ls},
+    plaintext := []byte("Low-Level Message-shape round-trip")
+
+    wire, err := itb.EncryptAuthenticated3x256Cfg(
+        cfg,
+        ns, ls, ds1, ds2, ds3, ss1, ss2, ss3,
+        plaintext, macFunc,
     )
     if err != nil {
         panic(err)
     }
-    fmt.Printf("blob: %d bytes\n", len(blob))
 
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Send wire payload + blob + outerKey (out-of-band)
-}
-
-// Receiver
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    // Restore everything from the blob — Blob512.Import applies the
-    // sender's NonceBits / BarrierFill / BitSoup / LockSoup / LockBatch globals
-    // unconditionally, then populates Mode + KeyN / KeyD / KeyS /
-    // KeyL plus NS / DS / SS / LS with .Components filled in. Hash
-    // and BatchHash on the seeds stay nil — caller wires them from
-    // the saved key bytes through the matching factory.
-    bDst := &itb.Blob512{}
-    if err := bDst.Import(blob); err != nil {
-        panic(err)
-    }
-
-    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(bDst.KeyN)
-    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD)
-    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS)
-    fnL, batchL := itb.MakeAreionSoEM512HashWithKey(bDst.KeyL)
-
-    bDst.NS.Hash, bDst.NS.BatchHash = fnN, batchN
-    bDst.DS.Hash, bDst.DS.BatchHash = fnD, batchD
-    bDst.SS.Hash, bDst.SS.BatchHash = fnS, batchS
-    bDst.LS.Hash, bDst.LS.BatchHash = fnL, batchL
-
-    // Mirror the sender's AttachLockSeed wire-up — the bit-permutation
-    // derivation channel must consult the same dedicated lockSeed
-    // material on both sides.
-    bDst.NS.AttachLockSeed(bDst.LS)
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
+    plain, err := itb.DecryptAuthenticated3x256Cfg(
+        cfg,
+        ns, ls, ds1, ds2, ds3, ss1, ss2, ss3,
+        wire, macFunc,
+    )
     if err != nil {
         panic(err)
     }
-
-    // Decrypt from RGBWYOPA container
-    decrypted, err := itb.Decrypt512(bDst.NS, bDst.DS, bDst.SS, encrypted)
-    if err != nil {
-        panic(err)
+    if !bytes.Equal(plain, plaintext) {
+        panic("round-trip mismatch")
     }
-    //var decrypted []byte
-    //err = itb.DecryptStream512(bDst.NS, bDst.DS, bDst.SS, ciphertext, func(chunk []byte) error {
-    //    decrypted = append(decrypted, chunk...)
-    //    return nil
-    //})
-    fmt.Printf("decrypted: %s\n", string(decrypted))
+    fmt.Printf("wire: %d bytes; plain: %s\n", len(wire), string(plain))
 }
 ```
 
-### Areion-SoEM-512 + HMAC-BLAKE3 (Low-Level, MAC Authenticated)
+### Low-Level 2 — IO-Driven Stream-shape, MAC Authenticated
+
+Stream-shape variant using the `any`-seed IO-Driven entry `itb.EncryptStreamAuth3xCfg` / `itb.DecryptStreamAuth3xCfg`. The eight seeds pass in as `any` handles — the entry point dispatches on width internally, so `*itb.Seed128`, `*itb.Seed256`, and `*itb.Seed512` seeds all flow through the same IO surface.
 
 ```go
-
-// Sender
-
 package main
 
 import (
+    "bufio"
     "crypto/rand"
-    "fmt"
+    "os"
+
     "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
     "github.com/everanium/itb/macs"
-    "github.com/everanium/itb/wrapper"
 )
 
 func main() {
-    // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-
-    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetLockSoup(1) is enabled or vice versa
-
-    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                            // bit-permutation overlay on top of bit-soup;
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    // Four independent CSPRNG-keyed Areion-SoEM-512 paired closures
-    // (noise / data / start / lock). The third return value
-    // (keyN/keyD/keyS/keyL) is the [64]byte fixed key — capture it
-    // per seed for cross-process persistence.
-    fnN, batchN, keyN := itb.MakeAreionSoEM512Hash() // random noise hash key generated
-    fnD, batchD, keyD := itb.MakeAreionSoEM512Hash() // random data hash key generated
-    fnS, batchS, keyS := itb.MakeAreionSoEM512Hash() // random start hash key generated
-    fnL, batchL, keyL := itb.MakeAreionSoEM512Hash() // random lock hash key generated
-    //fnN, batchN := itb.MakeAreionSoEM512HashWithKey(keyN) // [64]byte saved noise hash key
-    //fnD, batchD := itb.MakeAreionSoEM512HashWithKey(keyD) // [64]byte saved data hash key
-    //fnS, batchS := itb.MakeAreionSoEM512HashWithKey(keyS) // [64]byte saved start hash key
-    //fnL, batchL := itb.MakeAreionSoEM512HashWithKey(keyL) // [64]byte saved lock hash key
-
-    ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
-    ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
-    ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
-    ls, _ := itb.NewSeed512(2048, fnL) // random lock CSPRNG seeds generated
-
-    ns.BatchHash = batchN // must enable batch
-    ds.BatchHash = batchD // must enable batch
-    ss.BatchHash = batchS // must enable batch
-    ls.BatchHash = batchL // must enable batch
-
-    // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel — same pattern as the No Mac quick-start above.
-    ns.AttachLockSeed(ls)
-
-    // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
-    var macKey [32]byte
-    rand.Read(macKey[:])
-    mac, _ := macs.HMACBLAKE3(macKey[:])
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-
-    // Authenticated encrypt — 32-byte tag is computed across the entire
-    // decrypted capacity and embedded inside the RGBWYOPA container,
-    // preserving oracle-free deniability.
-    encrypted, err := itb.EncryptAuthenticated512(ns, ds, ss, plaintext, mac)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Cross-process persistence — Blob512 packs every PRF fixed key,
-    // every seed's Components, the dedicated lockSeed material, the
-    // captured itb.Set* globals, and the MAC key + name into one
-    // self-describing JSON blob.
-    bSrc := &itb.Blob512{}
-    blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
-        itb.Blob512Opts{
-            KeyL: keyL, LS: ls,
-            MACKey: macKey[:], MACName: "hmac-blake3",
-        },
+    const (
+        srcPath   = "/tmp/64mb.src"
+        encPath   = "/tmp/64mb.enc"
+        dstPath   = "/tmp/64mb.dst"
+        chunkSize = 16 * 1024 * 1024
     )
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("blob: %d bytes\n", len(blob))
 
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
+    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
 
-    // Send wire payload + blob + outerKey (out-of-band)
-}
+    fnN,  batchN,  _, _ := hashes.Areion512Pair()
+    fnL,  batchL,  _, _ := hashes.Areion512Pair()
+    fnD1, batchD1, _, _ := hashes.Areion512Pair()
+    fnD2, batchD2, _, _ := hashes.Areion512Pair()
+    fnD3, batchD3, _, _ := hashes.Areion512Pair()
+    fnS1, batchS1, _, _ := hashes.Areion512Pair()
+    fnS2, batchS2, _, _ := hashes.Areion512Pair()
+    fnS3, batchS3, _, _ := hashes.Areion512Pair()
 
-// Receiver
+    ns,  _ := itb.NewSeed512(1024, fnN);  ns.BatchHash  = batchN
+    ls,  _ := itb.NewSeed512(1024, fnL);  ls.BatchHash  = batchL
+    ds1, _ := itb.NewSeed512(1024, fnD1); ds1.BatchHash = batchD1
+    ds2, _ := itb.NewSeed512(1024, fnD2); ds2.BatchHash = batchD2
+    ds3, _ := itb.NewSeed512(1024, fnD3); ds3.BatchHash = batchD3
+    ss1, _ := itb.NewSeed512(1024, fnS1); ss1.BatchHash = batchS1
+    ss2, _ := itb.NewSeed512(1024, fnS2); ss2.BatchHash = batchS2
+    ss3, _ := itb.NewSeed512(1024, fnS3); ss3.BatchHash = batchS3
 
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/macs"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    // Restore everything from the blob — Import applies the sender's
-    // globals + populates seeds + Key* fields + MACKey / MACName.
-    bDst := &itb.Blob512{}
-    if err := bDst.Import(blob); err != nil {
-        panic(err)
-    }
-
-    fnN, batchN := itb.MakeAreionSoEM512HashWithKey(bDst.KeyN)
-    fnD, batchD := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD)
-    fnS, batchS := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS)
-    fnL, batchL := itb.MakeAreionSoEM512HashWithKey(bDst.KeyL)
-
-    bDst.NS.Hash, bDst.NS.BatchHash = fnN, batchN
-    bDst.DS.Hash, bDst.DS.BatchHash = fnD, batchD
-    bDst.SS.Hash, bDst.SS.BatchHash = fnS, batchS
-    bDst.LS.Hash, bDst.LS.BatchHash = fnL, batchL
-    bDst.NS.AttachLockSeed(bDst.LS)
-
-    // Rebuild the MAC closure from the saved name + key. macs.Make
-    // routes through the registry, so any of the shipped MAC primitives
-    // (kmac256 / hmac-sha256 / hmac-blake3) restores via the same call.
-    mac, _ := macs.Make(bDst.MACName, bDst.MACKey)
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
+    macKey := make([]byte, 32)
+    rand.Read(macKey)
+    macFunc, err := macs.Make("hmac-blake3", macKey)
     if err != nil {
         panic(err)
     }
 
-    // Authenticated decrypt — any single-bit tamper triggers MAC failure
-    // (no oracle leak about which byte was tampered).
-    decrypted, err := itb.DecryptAuthenticated512(bDst.NS, bDst.DS, bDst.SS, encrypted, mac)
-    if err != nil {
+    // Encrypt IO-Driven.
+    fin, _ := os.Open(srcPath)
+    fout, _ := os.Create(encPath)
+    br, bw := bufio.NewReader(fin), bufio.NewWriter(fout)
+    if err := itb.EncryptStreamAuth3xCfg(
+        cfg,
+        ns, ls, ds1, ds2, ds3, ss1, ss2, ss3,
+        br, bw, macFunc, chunkSize,
+    ); err != nil {
         panic(err)
     }
-    fmt.Printf("decrypted: %s\n", string(decrypted))
+    bw.Flush()
+    fin.Close()
+    fout.Close()
+
+    // Decrypt IO-Driven mirror.
+    fin, _ = os.Open(encPath)
+    fout, _ = os.Create(dstPath)
+    br, bw = bufio.NewReader(fin), bufio.NewWriter(fout)
+    if err := itb.DecryptStreamAuth3xCfg(
+        cfg,
+        ns, ls, ds1, ds2, ds3, ss1, ss2, ss3,
+        br, bw, macFunc,
+    ); err != nil {
+        panic(err)
+    }
+    bw.Flush()
+    fin.Close()
+    fout.Close()
 }
 ```
 
-Other shipped MACs: `macs.HMACSHA256(key)`, `macs.KMAC256(key)` — all
-three produce 32-byte tags. See [macs/README.md](macs/README.md) for the
-full MAC matrix.
+**User-Driven Loop counterpart.** Callers who prefer to drive the read / write loop from their own code (external control over chunk granularity, back-pressure, or interleaved work between chunks) use the typed User-Driven Loop entries `itb.EncryptStreamAuth3x{128,256,512}Cfg(cfg, 8 seeds, data, chunkSize, mac, emit func([]byte) error)` and their decrypt counterparts. The `emit` callback receives each wire chunk as it lands; the caller is responsible for framing, back-pressure, and disposition. The IO-Driven and User-Driven Loop variants produce identical on-wire bytes.
 
-### BLAKE2b-512 + HMAC-BLAKE3 (Low-Level, MAC Authenticated, 2048-bit Seeds)
+### Custom user-supplied primitives
 
-```go
+The shipped `hashes/` registry does not accept runtime registrations. Users who want to plug their own inner primitive construct `itb.HashFunc{N}` (single-call) and `itb.BatchHashFunc{N}` (batched-arm) closures per seed slot and pass them directly to the `*Cfg` Low-Level entry point. The primitive is responsible for its own keying and pooling; ITB's per-pixel dispatcher wires both arms through the seed's `Hash` and `BatchHash` fields.
 
-// Sender
+## Hash primitives (`hashes/`)
 
-package main
+The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive on the FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction and returns a `(single, batched, key)` triple. The batched arm wires the AVX-512 ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically; a `sync.Pool` amortises per-call scratch allocation. A `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for explicit-key call sites.
 
-import (
-    "crypto/rand"
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/hashes"
-    "github.com/everanium/itb/macs"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-
-    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetLockSoup(1) is enabled or vice versa
-
-    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                            // bit-permutation overlay on top of bit-soup;
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    // Four independent CSPRNG-keyed BLAKE2b-512 paired closures
-    // (noise / data / start / lock). The third return value
-    // (keyN/keyD/keyS/keyL) is the [64]byte fixed key — capture it
-    // per seed for cross-process persistence. The batched arm
-    // (batchN/batchD/batchS/batchL) wires the AVX-512 + ZMM-batched
-    // chain-absorb dispatch through Seed.BatchHash.
-    fnN, batchN, keyN := hashes.BLAKE2b512Pair() // random noise hash key generated
-    fnD, batchD, keyD := hashes.BLAKE2b512Pair() // random data hash key generated
-    fnS, batchS, keyS := hashes.BLAKE2b512Pair() // random start hash key generated
-    fnL, batchL, keyL := hashes.BLAKE2b512Pair() // random lock hash key generated
-    //fnN, batchN := hashes.BLAKE2b512PairWithKey(keyN) // [64]byte saved noise hash key
-    //fnD, batchD := hashes.BLAKE2b512PairWithKey(keyD) // [64]byte saved data hash key
-    //fnS, batchS := hashes.BLAKE2b512PairWithKey(keyS) // [64]byte saved start hash key
-    //fnL, batchL := hashes.BLAKE2b512PairWithKey(keyL) // [64]byte saved lock hash key
-
-    // 2048-bit seeds — 32 components × 64 bits, multiple of 8 for Seed512.
-    ns, _ := itb.NewSeed512(2048, fnN) // random noise CSPRNG seeds generated
-    ds, _ := itb.NewSeed512(2048, fnD) // random data CSPRNG seeds generated
-    ss, _ := itb.NewSeed512(2048, fnS) // random start CSPRNG seeds generated
-    ls, _ := itb.NewSeed512(2048, fnL) // random lock CSPRNG seeds generated
-
-    ns.BatchHash = batchN // must enable batch
-    ds.BatchHash = batchD // must enable batch
-    ss.BatchHash = batchS // must enable batch
-    ls.BatchHash = batchL // must enable batch
-
-    // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel — same pattern as the No Mac quick-start above.
-    ns.AttachLockSeed(ls)
-
-    // HMAC-BLAKE3 — 32-byte CSPRNG key, 32-byte tag.
-    var macKey [32]byte
-    rand.Read(macKey[:])
-    mac, _ := macs.HMACBLAKE3(macKey[:])
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-
-    // Authenticated encrypt — 32-byte tag is computed across the entire
-    // decrypted capacity and embedded inside the RGBWYOPA container,
-    // preserving oracle-free deniability.
-    encrypted, err := itb.EncryptAuthenticated512(ns, ds, ss, plaintext, mac)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Cross-process persistence — Blob512 packs PRF fixed keys, seed
-    // components, dedicated lockSeed material, captured itb.Set*
-    // globals, and MAC key + name into one self-describing JSON blob.
-    bSrc := &itb.Blob512{}
-    blob, err := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
-        itb.Blob512Opts{
-            KeyL: keyL, LS: ls,
-            MACKey: macKey[:], MACName: "hmac-blake3",
-        },
-    )
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("blob: %d bytes\n", len(blob))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Send wire payload + blob + outerKey (out-of-band)
-}
-
-// Receiver
-
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/hashes"
-    "github.com/everanium/itb/macs"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-    // Receive wire payload + blob + outerKey (out-of-band)
-    // var wire, blob, outerKey []byte = ..., ..., ...
-
-    bDst := &itb.Blob512{}
-    if err := bDst.Import(blob); err != nil {
-        panic(err)
-    }
-
-    fnN, batchN := hashes.BLAKE2b512PairWithKey(bDst.KeyN)
-    fnD, batchD := hashes.BLAKE2b512PairWithKey(bDst.KeyD)
-    fnS, batchS := hashes.BLAKE2b512PairWithKey(bDst.KeyS)
-    fnL, batchL := hashes.BLAKE2b512PairWithKey(bDst.KeyL)
-
-    bDst.NS.Hash, bDst.NS.BatchHash = fnN, batchN
-    bDst.DS.Hash, bDst.DS.BatchHash = fnD, batchD
-    bDst.SS.Hash, bDst.SS.BatchHash = fnS, batchS
-    bDst.LS.Hash, bDst.LS.BatchHash = fnL, batchL
-    bDst.NS.AttachLockSeed(bDst.LS)
-
-    mac, _ := macs.Make(bDst.MACName, bDst.MACKey)
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    encrypted, err := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-    if err != nil {
-        panic(err)
-    }
-
-    // Authenticated decrypt — any single-bit tamper triggers MAC failure
-    // (no oracle leak about which byte was tampered).
-    decrypted, err := itb.DecryptAuthenticated512(bDst.NS, bDst.DS, bDst.SS, encrypted, mac)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-### SipHash-2-4 (lightweight, 128-bit hash, no internal fixed key)
-
-```go
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/hashes"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-
-    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetLockSoup(1) is enabled or vice versa
-
-    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                            // bit-permutation overlay on top of bit-soup;
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    // SipHash-2-4 has no internal fixed key — the seed components themselves
-    // are the entire keying material. Three independent factory calls paired
-    // with three CSPRNG-generated seeds give three independent 1024-bit
-    // effective keys. The batched arm (batchN/batchD/batchS) wires the
-    // AVX-512 ZMM-batched chain-absorb dispatch through Seed.BatchHash.
-    fnN, batchN := hashes.SipHash24Pair()
-    fnD, batchD := hashes.SipHash24Pair()
-    fnS, batchS := hashes.SipHash24Pair()
-
-    ns, _ := itb.NewSeed128(1024, fnN); ns.BatchHash = batchN // random noise CSPRNG seeds generated, batch enabled
-    ds, _ := itb.NewSeed128(1024, fnD); ds.BatchHash = batchD // random data CSPRNG seeds generated, batch enabled
-    ss, _ := itb.NewSeed128(1024, fnS); ss.BatchHash = batchS // random start CSPRNG seeds generated, batch enabled
-
-    // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel — same flow as the Areion-SoEM-512 quick-starts above.
-    fnL, batchL := hashes.SipHash24Pair()
-    ls, _ := itb.NewSeed128(1024, fnL); ls.BatchHash = batchL
-    ns.AttachLockSeed(ls)
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-
-    encrypted, _ := itb.Encrypt128(ns, ds, ss, plaintext)
-    fmt.Printf("encrypted: %d bytes\n", len(encrypted))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-    wire := append(nonce, encrypted...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Cross-process persistence — Blob128 packs every seed's Components
-    // (SipHash-2-4 has no fixed PRF key; the seed components are the
-    // entire keying material — KeyN/KeyD/KeyS/KeyL stay nil) plus the
-    // optional dedicated lockSeed and the captured itb.Set* globals
-    // into one self-describing JSON blob.
-    bSrc := &itb.Blob128{}
-    blob, _ := bSrc.Export(nil, nil, nil, ns, ds, ss,
-        itb.Blob128Opts{LS: ls})
-
-    // Receiver — Import reverses Export. Globals are restored
-    // unconditionally; Hash / BatchHash on each seed stay nil so the
-    // caller wires SipHash-2-4 closures from a fresh factory call.
-    bDst := &itb.Blob128{}
-    _ = bDst.Import(blob)
-
-    fnN2, batchN2 := hashes.SipHash24Pair()
-    fnD2, batchD2 := hashes.SipHash24Pair()
-    fnS2, batchS2 := hashes.SipHash24Pair()
-    fnL2, batchL2 := hashes.SipHash24Pair()
-    bDst.NS.Hash, bDst.NS.BatchHash = fnN2, batchN2
-    bDst.DS.Hash, bDst.DS.BatchHash = fnD2, batchD2
-    bDst.SS.Hash, bDst.SS.BatchHash = fnS2, batchS2
-    bDst.LS.Hash, bDst.LS.BatchHash = fnL2, batchL2
-    bDst.NS.AttachLockSeed(bDst.LS)
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    recovered, _ := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-    decrypted, _ := itb.Decrypt128(bDst.NS, bDst.DS, bDst.SS, recovered)
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-### Triple Ouroboros (7 seeds, 3× security)
-
-```go
-// Triple Ouroboros: 7 seeds (1 noise + 3 data + 3 start) plus an
-// optional 8th dedicated lockSeed, 512-bit for speed.
-
-itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-
-// Light secure bit-permutation mode without performance trade-off (Recommended to use with Triple Ouroboros)
-itb.SetBitSoup(1)       // optional mode: bit-level split ("bit soup"), opt-in SAT-resistance reserve (default: 0 = byte-level)
-                        // automatically enabled for Single Ouroboros if itb.SetLockSoup(1) is enabled or vice versa
-// Most secure bit-permutation mode with performance trade-off ~2×-7× slower
-itb.SetLockSoup(1)      // optional Insane Interlocked Mode overlay: per-chunk PRF-keyed bit-permutation; ~2×-7× slower
-                        // automatically engages itb.SetBitSoup(1)
-itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-                        // the performance Lock Soup mode.
-                        // Symmetric, set on both sides.
-
-// Eight independent CSPRNG-keyed Areion-SoEM-512 paired closures
-// (1 noise + 3 data + 3 start + 1 lock).
-fnN,  batchN,  keyN  := itb.MakeAreionSoEM512Hash()
-fnD1, batchD1, keyD1 := itb.MakeAreionSoEM512Hash()
-fnD2, batchD2, keyD2 := itb.MakeAreionSoEM512Hash()
-fnD3, batchD3, keyD3 := itb.MakeAreionSoEM512Hash()
-fnS1, batchS1, keyS1 := itb.MakeAreionSoEM512Hash()
-fnS2, batchS2, keyS2 := itb.MakeAreionSoEM512Hash()
-fnS3, batchS3, keyS3 := itb.MakeAreionSoEM512Hash()
-fnL,  batchL,  keyL  := itb.MakeAreionSoEM512Hash()
-
-ns,  _ := itb.NewSeed512(2048, fnN);  ns.BatchHash  = batchN
-ds1, _ := itb.NewSeed512(2048, fnD1); ds1.BatchHash = batchD1
-ds2, _ := itb.NewSeed512(2048, fnD2); ds2.BatchHash = batchD2
-ds3, _ := itb.NewSeed512(2048, fnD3); ds3.BatchHash = batchD3
-ss1, _ := itb.NewSeed512(2048, fnS1); ss1.BatchHash = batchS1
-ss2, _ := itb.NewSeed512(2048, fnS2); ss2.BatchHash = batchS2
-ss3, _ := itb.NewSeed512(2048, fnS3); ss3.BatchHash = batchS3
-ls,  _ := itb.NewSeed512(2048, fnL);  ls.BatchHash  = batchL
-
-// Optional: dedicated lockSeed for the bit-permutation derivation
-// channel — same flow as the Single Ouroboros quick-starts above.
-ns.AttachLockSeed(ls)
-
-encrypted, _ := itb.Encrypt3x512(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
-
-// Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-// in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-// outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-// Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-// ~0% overhead (Recommended in every case).
-nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, encrypted)
-wire := append(nonce, encrypted...)
-
-// Cross-process persistence — Blob512.Export3 packs the 7 seeds, the
-// 7 hash keys, the dedicated lockSeed material, and the captured
-// itb.Set* globals into one self-describing JSON blob. Add MACKey /
-// MACName to Blob512Opts when an authenticated variant is in use.
-bSrc := &itb.Blob512{}
-blob, _ := bSrc.Export3(
-    keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
-    ns, ds1, ds2, ds3, ss1, ss2, ss3,
-    itb.Blob512Opts{KeyL: keyL, LS: ls},
-)
-
-// Receiver — Import3 reverses Export3. Globals are restored
-// unconditionally; Hash / BatchHash on each seed stay nil so the
-// caller wires them from the saved Key* bytes.
-bDst := &itb.Blob512{}
-_ = bDst.Import3(blob)
-
-fnN2,  batchN2  := itb.MakeAreionSoEM512HashWithKey(bDst.KeyN)
-fnD1b, batchD1b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD1)
-fnD2b, batchD2b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD2)
-fnD3b, batchD3b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyD3)
-fnS1b, batchS1b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS1)
-fnS2b, batchS2b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS2)
-fnS3b, batchS3b := itb.MakeAreionSoEM512HashWithKey(bDst.KeyS3)
-fnLb,  batchLb  := itb.MakeAreionSoEM512HashWithKey(bDst.KeyL)
-
-bDst.NS.Hash,  bDst.NS.BatchHash  = fnN2,  batchN2
-bDst.DS1.Hash, bDst.DS1.BatchHash = fnD1b, batchD1b
-bDst.DS2.Hash, bDst.DS2.BatchHash = fnD2b, batchD2b
-bDst.DS3.Hash, bDst.DS3.BatchHash = fnD3b, batchD3b
-bDst.SS1.Hash, bDst.SS1.BatchHash = fnS1b, batchS1b
-bDst.SS2.Hash, bDst.SS2.BatchHash = fnS2b, batchS2b
-bDst.SS3.Hash, bDst.SS3.BatchHash = fnS3b, batchS3b
-bDst.LS.Hash,  bDst.LS.BatchHash  = fnLb,  batchLb
-bDst.NS.AttachLockSeed(bDst.LS)
-
-// Strip the outer cipher envelope, recovering the ITB blob.
-recovered, _ := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-decrypted, _ := itb.Decrypt3x512(
-    bDst.NS, bDst.DS1, bDst.DS2, bDst.DS3, bDst.SS1, bDst.SS2, bDst.SS3, recovered,
-)
-// Security: P × 2^(3×512) = P × 2^1536. Faster than Single 1024-bit, stronger security.
-```
-
-### Mixing PRF Primitives
-
-Each seed has its own hash function — different PRF implementations are allowed for different seeds within the same hash width, including the dedicated lockSeed when one is attached via `AttachLockSeed`. The receiver must use the same assignment. Both arms of the `*Pair()` factory propagate to the seed via `BatchHash` so the AVX-512 ZMM-batched dispatch stays active per primitive. The Lock Soup overlay's per-chunk derivation captures the attached lockSeed's `Hash` (and components) — primitive divergence between the noise-injection channel and the bit-permutation channel is observable end-to-end and offers algorithm-diversity defence-in-depth on top of the independent keying material.
-
-**Single Ouroboros (3 seeds + optional dedicated lockSeed):**
-```go
-fnN, batchN, _ := hashes.BLAKE3256Pair()   // noiseSeed: BLAKE3
-fnD, batchD, _ := hashes.BLAKE2s256Pair()  // dataSeed:  BLAKE2s
-fnS, batchS, _ := hashes.BLAKE3256Pair()   // startSeed: BLAKE3
-
-ns, _ := itb.NewSeed256(1024, fnN)
-ds, _ := itb.NewSeed256(1024, fnD)
-ss, _ := itb.NewSeed256(1024, fnS)
-ns.BatchHash, ds.BatchHash, ss.BatchHash = batchN, batchD, batchS
-
-// Optional: dedicated lockSeed for the bit-permutation derivation
-// channel — pick any 256-bit primitive; the Lock Soup overlay
-// honestly routes its per-chunk PRF through ls.Hash and ls.Components,
-// so the lockSeed primitive may legitimately differ from the
-// noiseSeed primitive.
-fnL, batchL, _ := hashes.BLAKE2s256Pair()  // lockSeed: BLAKE2s
-ls, _ := itb.NewSeed256(1024, fnL); ls.BatchHash = batchL
-ns.AttachLockSeed(ls)
-
-encrypted, _ := itb.Encrypt256(ns, ds, ss, plaintext)
-```
-
-**Triple Ouroboros (7 seeds + optional dedicated lockSeed):**
-```go
-fnN,  batchN,  _ := hashes.BLAKE3256Pair()   // shared noise: BLAKE3
-fnD1, batchD1, _ := hashes.BLAKE2s256Pair()  // ring 1 data:  BLAKE2s
-fnD2, batchD2, _ := hashes.BLAKE3256Pair()   // ring 2 data:  BLAKE3
-fnD3, batchD3, _ := hashes.BLAKE2s256Pair()  // ring 3 data:  BLAKE2s
-fnS1, batchS1, _ := hashes.BLAKE3256Pair()   // ring 1 start: BLAKE3
-fnS2, batchS2, _ := hashes.BLAKE2s256Pair()  // ring 2 start: BLAKE2s
-fnS3, batchS3, _ := hashes.BLAKE3256Pair()   // ring 3 start: BLAKE3
-
-ns,  _ := itb.NewSeed256(512, fnN)
-ds1, _ := itb.NewSeed256(512, fnD1)
-ds2, _ := itb.NewSeed256(512, fnD2)
-ds3, _ := itb.NewSeed256(512, fnD3)
-ss1, _ := itb.NewSeed256(512, fnS1)
-ss2, _ := itb.NewSeed256(512, fnS2)
-ss3, _ := itb.NewSeed256(512, fnS3)
-ns.BatchHash, ds1.BatchHash, ds2.BatchHash, ds3.BatchHash = batchN, batchD1, batchD2, batchD3
-ss1.BatchHash, ss2.BatchHash, ss3.BatchHash = batchS1, batchS2, batchS3
-
-// Optional: dedicated lockSeed for the bit-permutation derivation
-// channel — same mixing rule as the Single Ouroboros block above.
-// ls.Hash and ls.Components both flow through the Lock Soup overlay,
-// so a primitive choice for ls is meaningful and not just keying-
-// material isolation.
-fnL, batchL, _ := hashes.BLAKE3256Pair()    // lockSeed: BLAKE3
-ls, _ := itb.NewSeed256(512, fnL); ls.BatchHash = batchL
-ns.AttachLockSeed(ls)
-
-encrypted, _ := itb.Encrypt3x256(ns, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
-```
-
-For Triple Ouroboros, use the most performance-balanced PRF primitives across the three dataSeed rings — this ensures all three parallel goroutines finish at similar times. BLAKE3 / BLAKE2s sit close on the AVX-512 ZMM throughput envelope (see [BENCH.md](BENCH.md) / [BENCH3.md](BENCH3.md)) and are a natural balanced pair.
-
-## How It Works
-
-ITB encrypts data into raw RGBWYOPA pixel containers (8 channels per pixel: Red, Green, Blue, White, Yellow, Orange, Purple, Alpha — mnemonic labels for an 8-byte unit; the format is not tied to image processing) generated from `crypto/rand`. Each 8-bit channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead. Each pixel's bit-plane selection and per-channel XOR masks are derived from a chained hash of the seed and a per-message nonce. The random container creates an information-theoretic barrier: hash outputs are absorbed by modifications of random pixel values — the original container bytes are never transmitted, so the modifications are unknown, and the hash output is unobservable.
-
-The data is embedded starting at a seed-dependent pixel offset with wrap-around — the physical layout in the container is completely non-sequential. An observer sees uniformly random pixel values with no way to determine which pixels carry data, in what order, or what bit-plane is used.
-
-## Hash Width Variants
-
-The library provides three parallel API sets for different hash output widths. All share the same pixel format, framing, and security properties — the difference is in ChainHash intermediate state width.
-
-| API | Seeds | Hash Type | State | Effective Max Key | Target Hash Functions |
-|---|---|---|---|---|---|
-| `Encrypt256` / `Decrypt256` | 3 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20 |
-| `Encrypt512` / `Decrypt512` | 3 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
-| `Encrypt128` / `Decrypt128` | 3 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | AES-CMAC, SipHash-2-4 |
-| `Encrypt3x256` / `Decrypt3x256` | 7 | `HashFunc256` (256-bit) | 256-bit | 1024 bits | **Areion-SoEM-256**, BLAKE2b-256, BLAKE2s, BLAKE3, ChaCha20 |
-| `Encrypt3x512` / `Decrypt3x512` | 7 | `HashFunc512` (512-bit) | 512-bit | 2048 bits | **Areion-SoEM-512**, BLAKE2b-512 |
-| `Encrypt3x128` / `Decrypt3x128` | 7 | `HashFunc128` (128-bit) | 128-bit | 1024 bits | AES-CMAC, SipHash-2-4 |
-
-Each variant also has authenticated versions (`EncryptAuthenticated128`/`DecryptAuthenticated128`, `EncryptAuthenticated3x128`/`DecryptAuthenticated3x128`, etc.) and streaming versions (`EncryptStream128`/`DecryptStream128`, `EncryptStream3x128`/`DecryptStream3x128`, etc.).
-
-## Optimized Hash Wrappers
-
-Hash functions like AES and BLAKE3 have expensive key setup. Creating a new cipher/hasher on every call wastes time on initialization. The **cached wrapper** pattern fixes this: create the cipher once with a fixed random key, mix seed components into the data instead. Each of the three seeds must get its own wrapper instance (independent key).
-
-The `hashes/` subpackage ships ready cached factories — `hashes.{PrimitiveName}` — each returning a closure with a freshly-generated random key. For the recommended default Areion-SoEM, use the flagship factories shipped directly from the `itb` root package (see below). A `WithKey` variant is also exported for every primitive (`hashes.AESCMACWithKey(key)` etc...) for serialization paths where the fixed key must persist across processes.
-
-### Areion-SoEM (256/512-bit, VAES-accelerated batched dispatch — Recommended)
-
-Areion-SoEM is a formally proven beyond-birthday-bound PRF based on AES round functions. ITB ships a built-in 4-way batched implementation (`AreionSoEM256x4` / `AreionSoEM512x4`) that runs ~2× faster than four serial calls on x86_64 hardware with VAES + AVX-512 (Intel Rocket Lake / Tiger Lake+, AMD Zen 4+) and ~1.3× over scalar AES-NI on hosts with VAES + AVX2 but no AVX-512 (AMD Zen 3, Intel Alder Lake P/E-cores). The paired-factory helpers `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` return `(HashFunc, BatchHashFunc, fixedKey)` so each seed wires both arms with the same fixed key — ITB's `processChunk{256,512}` then dispatches per-pixel hashing four pixels per batched call. Pass nothing for a CSPRNG-generated `fixedKey` (returned for cross-process persistence — save it!) or pass a saved `[32]byte` / `[64]byte` on the restore path.
-
-Recent ASM work in `internal/areionasm/` lifts both arms substantially: the SoEM batched dispatch interleaves four VAES lanes per round for 3-4× over the prior sequential layout, and fused Single Message AVX-512 chain kernels (`areion_chain{256,512}_{20,36,68}_amd64.s`) collapse a full per-pixel ChainHash into one ASM call for 5-10× over the per-call Go path. The 20 / 36 / 68 byte specialisations cover `SetNonceBits(128 / 256 / 512)` respectively; state is held in ZMM registers across all CBC-MAC absorb rounds with zero memory round-trips.
-
-The example below pairs Areion-SoEM-256 with the streaming API (`EncryptStream256` / `DecryptStream256`) at a deliberately modest 1024-bit seed width — same Quick Start shape, just one tier down on key size and routed through the chunk-emitting callback variant suitable for socket / pipe / file delivery:
-
-```go
-package main
-
-import (
-    "fmt"
-    "github.com/everanium/itb"
-    "github.com/everanium/itb/wrapper"
-)
-
-func main() {
-    // Optional: global configuration (all thread-safe, atomic)
-    itb.SetMaxWorkers(8)    // limit to 8 CPU cores (default: all CPUs)
-    itb.SetNonceBits(512)   // 512-bit nonce (default: 128-bit)
-    itb.SetBarrierFill(4)   // CSPRNG fill margin (default: 1, valid: 1,2,4,8,16,32)
-
-    itb.SetBitSoup(1)       // optional bit-level split ("bit-soup"; default: 0 = byte-level)
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetLockSoup(1) is enabled or vice versa
-
-    itb.SetLockSoup(1)      // optional Insane Interlocked Mode: per-chunk PRF-keyed
-                            // bit-permutation overlay on top of bit-soup;
-                            // automatically enabled for Single Ouroboros if
-                            // itb.SetBitSoup(1) is enabled or vice versa
-    itb.SetLockBatch(1)     // Recommended under the PRF assumption,
-                            // the performance Lock Soup mode.
-                            // Symmetric, set on both sides.
-
-    // Four independent CSPRNG-keyed Areion-SoEM-256 paired closures
-    // (3 main seeds + 1 optional dedicated lockSeed). The third return
-    // value (keyN/keyD/keyS/keyL) is the [32]byte fixed key — capture
-    // it per seed for cross-process persistence. The batched arm
-    // (batchN/batchD/batchS/batchL) wires the AVX-512 + VAES + ILP +
-    // ZMM-batched chain-absorb dispatch through Seed.BatchHash.
-    fnN, batchN, keyN := itb.MakeAreionSoEM256Hash() // random noise hash key generated
-    fnD, batchD, keyD := itb.MakeAreionSoEM256Hash() // random data hash key generated
-    fnS, batchS, keyS := itb.MakeAreionSoEM256Hash() // random start hash key generated
-    fnL, batchL, keyL := itb.MakeAreionSoEM256Hash() // random lock hash key generated
-    //fnN, batchN := itb.MakeAreionSoEM256HashWithKey(keyN) // [32]byte saved noise hash key
-    //fnD, batchD := itb.MakeAreionSoEM256HashWithKey(keyD) // [32]byte saved data hash key
-    //fnS, batchS := itb.MakeAreionSoEM256HashWithKey(keyS) // [32]byte saved start hash key
-    //fnL, batchL := itb.MakeAreionSoEM256HashWithKey(keyL) // [32]byte saved lock hash key
-
-    // 1024-bit seeds — 16 components × 64 bits, multiple of 4 for Seed256.
-    ns, _ := itb.NewSeed256(1024, fnN); ns.BatchHash = batchN // random noise CSPRNG seeds, batch enabled
-    ds, _ := itb.NewSeed256(1024, fnD); ds.BatchHash = batchD // random data CSPRNG seeds, batch enabled
-    ss, _ := itb.NewSeed256(1024, fnS); ss.BatchHash = batchS // random start CSPRNG seeds, batch enabled
-    ls, _ := itb.NewSeed256(1024, fnL); ls.BatchHash = batchL // random lock CSPRNG seeds, batch enabled
-
-    // Optional: dedicated lockSeed for the bit-permutation derivation
-    // channel — same flow as the Areion-SoEM-512 quick-starts above.
-    ns.AttachLockSeed(ls)
-
-    plaintext := []byte("any text or binary data - including 0x00 bytes")
-    chunkSize := 4 * 1024 * 1024 // 4 MB — bulk local crypto, not small-frame network streaming
-
-    // EncryptStream256 — emits successive ciphertext chunks via callback.
-    // Useful for file-sized payloads that shouldn't materialise in memory.
-    var ciphertext []byte
-    err := itb.EncryptStream256(ns, ds, ss, plaintext, chunkSize, func(chunk []byte) error {
-        ciphertext = append(ciphertext, chunk...)
-        return nil
-    })
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("encrypted: %d bytes\n", len(ciphertext))
-
-    // Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy
-    // in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
-    outerKey, _ := wrapper.GenerateKey(wrapper.CipherAES128CTR)
-    // outerKey, _ := wrapper.DeriveKey(wrapper.CipherAES128CTR, master); clear(master)
-    // Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR)
-    // ~0% overhead (Recommended in every case).
-    nonce, _ := wrapper.WrapInPlace(wrapper.CipherAES128CTR, outerKey, ciphertext)
-    wire := append(nonce, ciphertext...)
-    fmt.Printf("wire: %d bytes\n", len(wire))
-
-    // Cross-process persistence — Blob256 packs every seed's hash key
-    // ([32]byte for Areion-SoEM-256) and Components ([]uint64) plus
-    // the optional dedicated lockSeed and the captured itb.Set* globals
-    // into one self-describing JSON blob.
-    bSrc := &itb.Blob256{}
-    blob, _ := bSrc.Export(keyN, keyD, keyS, ns, ds, ss,
-        itb.Blob256Opts{KeyL: keyL, LS: ls})
-
-    // Receiver — Import reverses Export. Globals are restored
-    // unconditionally; Hash / BatchHash on each seed stay nil so the
-    // caller wires them from the saved Key* bytes.
-    bDst := &itb.Blob256{}
-    _ = bDst.Import(blob)
-
-    fnN2, batchN2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyN)
-    fnD2, batchD2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyD)
-    fnS2, batchS2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyS)
-    fnL2, batchL2 := itb.MakeAreionSoEM256HashWithKey(bDst.KeyL)
-    bDst.NS.Hash, bDst.NS.BatchHash = fnN2, batchN2
-    bDst.DS.Hash, bDst.DS.BatchHash = fnD2, batchD2
-    bDst.SS.Hash, bDst.SS.BatchHash = fnS2, batchS2
-    bDst.LS.Hash, bDst.LS.BatchHash = fnL2, batchL2
-    bDst.NS.AttachLockSeed(bDst.LS)
-
-    // Strip the outer cipher envelope, recovering the ITB blob.
-    recovered, _ := wrapper.UnwrapInPlace(wrapper.CipherAES128CTR, outerKey, wire)
-
-    // DecryptStream256 — emits successive plaintext chunks via callback.
-    // Production callers drive emit from a file / mapped-region read loop.
-    var decrypted []byte
-    err = itb.DecryptStream256(bDst.NS, bDst.DS, bDst.SS, recovered, func(chunk []byte) error {
-        decrypted = append(decrypted, chunk...)
-        return nil
-    })
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("decrypted: %s\n", string(decrypted))
-}
-```
-
-The Areion-SoEM-512 variant uses `MakeAreionSoEM512Hash()` paired with `itb.Encrypt512` / `itb.Decrypt512` and is wired identically. The batched arm of the returned pair shares the same internally-generated random fixed key as the single arm, so per-pixel hashes match bit-exact between the two dispatch paths (verified by the parity test suite). Triple Ouroboros wires the same way: each of the seven seeds receives an independent paired factory call.
-
-**Backward compatibility — no VAES required.** The same code works on every platform; only the throughput tier changes:
-
-| CPU / build | Path | Throughput tier |
-|---|---|---|
-| amd64 + VAES + AVX-512 (Intel Ice Lake+, AMD Zen 4+) | SoEM batched: `internal/areionasm/areion_soem{256,512}_amd64.s` + fused chain: `internal/areionasm/areion_chain{256,512}_{20,36,68}_amd64.s` | Top tier: 4-way VAES interleaved on ZMM **and** fused-state chain kernel (one ASM call per pixel; no memory round-trips between absorb rounds) |
-| amd64 + VAES + AVX2 only (AMD Zen 3, Alder Lake E-cores) | Per-half permute: `internal/areionasm/areion_amd64.s` (`Areion256Permutex4Avx2` / `Areion512Permutex4Avx2`); SoEM XOR finalize on the Go side | 4-way VAES on YMM (2 AES blocks per VAESENC × 2 sequential lane pairs = 4 blocks per state half), ~2× over scalar AES-NI; SoEM-state interleaving and fused chain kernel are AVX-512-only and fall back to per-call Go path |
-| amd64 without VAES (older Intel / AMD) | Go fallback via `aes.Round4HW(state, zeroKey)` (`internal/areionasm/areion_amd64.s` base permutation) | 4× sequential AES-NI per round (no SIMD width gain, still hardware-accelerated) |
-| Pure software / `CGO_ENABLED=0` | Same Go fallback (`process_generic.go` batched dispatch wired) | Slowest tier, correct output preserved |
-
-Runtime CPU detection (`areionasm.HasVAESAVX512` and `areionasm.HasVAESAVX2NoAVX512`) selects the right path once at package init via the upstream `github.com/jedisct1/go-aes` CPUID checks — no per-call branching cost. The bit-exact parity invariant `BatchHash(data)[i] == Hash(data[i])` holds on every platform; ITB's parity test suite (`TestAreionSoEM{256,512}x4Parity` plus the direct-call parity tests for each tier and a 3-way cross-path parity test on hosts where all three implementations are runnable) verifies this on every test run.
-
-If the underlying primitive must be wired manually (custom key management, keyless probe, etc.) call `aes.AreionSoEM256` / `aes.AreionSoEM512` from `github.com/jedisct1/go-aes` directly — same primitive, no batched dispatch, useful only when the paired-factory pattern does not fit the deployment.
-
-### Pluggable PRF primitives via `hashes/`
-
-The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive ITB exposes through its FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction, returns a `(single, batched, key)` triple — the batched arm wires the AVX-512 ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically — reuses a `sync.Pool` of scratch buffers, and is safe to call concurrently. Pass nothing for a CSPRNG-generated key (returned for cross-process persistence — capture and save it); pass a saved key on the restore path. The `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for unambiguously explicit-key call sites. SipHash-2-4 is the one exception — its keying material is the seed components themselves, no internal fixed key, so `SipHash24Pair()` takes no arguments and returns a `(single, batched)` pair without a third key element.
-
-In FFI-stable index order:
-
-| # | Variadic factory | Explicit-key counterpart | Returns (variadic form) | Native width |
-|---|---|---|---|---|
-| 0 | `Areion256Pair(key ...[32]byte)` | `Areion256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
-| 1 | `Areion512Pair(key ...[64]byte)` | `Areion512PairWithKey(key [64]byte)` | `(HashFunc512, BatchHashFunc512, [64]byte)` | 512 |
-| 2 | `BLAKE2b256Pair(key ...[32]byte)` | `BLAKE2b256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
-| 3 | `BLAKE2b512Pair(key ...[64]byte)` | `BLAKE2b512PairWithKey(key [64]byte)` | `(HashFunc512, BatchHashFunc512, [64]byte)` | 512 |
-| 4 | `BLAKE2s256Pair(key ...[32]byte)` | `BLAKE2s256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
-| 5 | `BLAKE3256Pair(key ...[32]byte)` | `BLAKE3256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
-| 6 | `AESCMACPair(key ...[16]byte)` | `AESCMACPairWithKey(key [16]byte)` | `(HashFunc128, BatchHashFunc128, [16]byte)` | 128 |
-| 7 | `SipHash24Pair()` | — (seed components are the entire key) | `(HashFunc128, BatchHashFunc128)` | 128 |
-| 8 | `ChaCha20256Pair(key ...[32]byte)` | `ChaCha20256PairWithKey(key [32]byte)` | `(HashFunc256, BatchHashFunc256, [32]byte)` | 256 |
-
-Name-keyed dispatch (used by the FFI layer; works for any code that selects the primitive at runtime). The key is `[]byte`, size validated against the primitive's native length. `Make<N>Pair` returns the batched arm alongside the single arm; `Make<N>` (no `Pair` suffix) is the single-arm-only convenience that drops the batched arm:
+Name-keyed dispatch is used by the FFI layer and by any code that selects the primitive at runtime. `Make<N>Pair` returns the batched arm alongside the single arm; `Make<N>` (no `Pair` suffix) is the single-arm-only convenience:
 
 | Function | Returns | Covers |
 |---|---|---|
-| `Make128(name, key ...[]byte)` | `(HashFunc128, []byte, error)` |
-| `Make128Pair(name, key ...[]byte)` | `(HashFunc128, BatchHashFunc128, []byte, error)` |
-| `Make256(name, key ...[]byte)` | `(HashFunc256, []byte, error)` |
-| `Make256Pair(name, key ...[]byte)` | `(HashFunc256, BatchHashFunc256, []byte, error)` |
-| `Make512(name, key ...[]byte)` | `(HashFunc512, []byte, error)` |
-| `Make512Pair(name, key ...[]byte)` | `(HashFunc512, BatchHashFunc512, []byte, error)` |
+| `Make128(name, key ...[]byte)` | `(HashFunc128, []byte, error)` | 128-bit primitives |
+| `Make128Pair(name, key ...[]byte)` | `(HashFunc128, BatchHashFunc128, []byte, error)` | 128-bit primitives |
+| `Make256(name, key ...[]byte)` | `(HashFunc256, []byte, error)` | 256-bit primitives |
+| `Make256Pair(name, key ...[]byte)` | `(HashFunc256, BatchHashFunc256, []byte, error)` | 256-bit primitives |
+| `Make512(name, key ...[]byte)` | `(HashFunc512, []byte, error)` | 512-bit primitives |
+| `Make512Pair(name, key ...[]byte)` | `(HashFunc512, BatchHashFunc512, []byte, error)` | 512-bit primitives |
 | `Find(name)` | `(Spec, bool)` | Spec lookup for key-size / native-width metadata |
 
-### Authenticated MACs via `macs/`
+Per-primitive technical notes:
 
-The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. The factory takes the key as `[]byte` (no variadic random-key path — the caller generates the key via `crypto/rand.Read` and passes it explicitly):
+- **Areion-SoEM-256** and **Areion-SoEM-512** are formally-proven beyond-birthday-bound PRFs built over the AES round function. ITB ships a 4-way batched dispatch that runs on x86_64 hardware with VAES + AVX-512 (top tier) or VAES + AVX2 (mid tier); on hosts without VAES the primitive falls back to scalar AES-NI via `github.com/jedisct1/go-aes`. `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` (root-package convenience) return `(HashFunc, BatchHashFunc, fixedKey)`.
+- **BLAKE2b-256**, **BLAKE2b-512**, **BLAKE2s**, and **BLAKE3** ship AVX-512 ZMM ARX kernels (4-lane chain-absorb) and fall back to the upstream `golang.org/x/crypto` / `github.com/zeebo/blake3` scalar paths on hosts without AVX-512F.
+- **AES-CMAC** ships a VAES + AVX-512 ZMM 4-lane CBC-MAC kernel and falls back to `crypto/aes` scalar on hosts without VAES.
+- **SipHash-2-4** is the one primitive with no internal fixed key — its keying material is the seed components themselves. `SipHash24Pair()` takes no arguments and returns a `(single, batched)` pair without a third key element.
+- **ChaCha20** ships a 4-lane AVX-512 ZMM ARX kernel and falls back to `golang.org/x/crypto/chacha20` on hosts without AVX-512F.
+
+See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why).
+
+## MACs (`macs/`)
+
+The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently:
 
 | # | Factory | Returns | Key size | Tag size |
 |---|---|---|---|---|
-| 0 | `KMAC256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
-|   | `KMAC256WithCustomization(key, customization []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
-| 1 | `HMACSHA256(key []byte)` | `(MACFunc, error)` | ≥16 B | 32 B |
+| 0 | `KMAC256(key []byte)` | `(MACFunc, error)` | ≥ 16 B | 32 B |
+|   | `KMAC256WithCustomization(key, customization []byte)` | `(MACFunc, error)` | ≥ 16 B | 32 B |
+| 1 | `HMACSHA256(key []byte)` | `(MACFunc, error)` | ≥ 16 B | 32 B |
 | 2 | `HMACBLAKE3(key []byte)` | `(MACFunc, error)` | 32 B | 32 B |
 
 Name-keyed dispatch:
@@ -2507,202 +698,154 @@ Name-keyed dispatch:
 | `Make(name, key []byte)` | `(MACFunc, error)` | Name-keyed dispatch (FFI / runtime selection) |
 | `Find(name)` | `(Spec, bool)` | Spec lookup for key-size metadata |
 
-See [macs/README.md](macs/README.md) for full authenticated-encryption examples (`EncryptAuthenticated{128,256,512}` / `DecryptAuthenticated{128,256,512}`) and the MAC-Inside-Encrypt placement-hiding rationale.
+See [macs/CONSTRUCTIONS.md](macs/CONSTRUCTIONS.md) for per-MAC construction descriptions and the MAC-Inside-Encrypt placement-hiding rationale.
 
-### Custom factory pattern (advanced)
+## ChainHash — local key evolution
 
-Write your own `HashFunc` when you need a primitive not covered by the `hashes/` subpackage, or want a different keying / pooling strategy. The pattern below is what `hashes.BLAKE3()` itself ships, kept here as a reference. Three techniques worth noting:
+**Warning.** A 512-bit primitive keyed with a 512-bit ITB width mode folds into a single ChainHash round, so the feedforward chain is absent and the primitive output is used directly. Recommended minimum: 1024-bit ITB mode.
 
-- `sync.Pool` amortises per-call allocation of the scratch buffer
-- `blake3.NewKeyed` produces a hasher template; `Clone()` per call sidesteps the data race that `Reset()` on a shared hasher would cause under ITB's parallel goroutines in `process256`
-- the payload region is zero-padded out to `seedInjectBytes` (32) so all four seed `uint64`'s contribute even when `len(data)` is shorter than 32 (a 20-byte ITB pixel input would otherwise drop `seed[2..3]` silently)
+ChainHash is the small construction that sits between ITB's seed material and the underlying PRF. It is what lets a fixed-width hash (128 / 256 / 512-bit native state) be keyed by an arbitrarily wide key — the source of ITB's advertised **512 / 1024 / 2048-bit** key sizes. ChainHash takes a key (the seed components) and one fixed input (the per-pixel buffer) and returns a single fixed-width block.
 
-```go
-func makeBlake3Hash() itb.HashFunc256 {
-    var key [32]byte
-    rand.Read(key[:])
-    template, _ := blake3.NewKeyed(key[:])
-    pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
+In plain terms: the key is a list of 64-bit components, consumed a round at a time. The first round hashes the input under the first group of components. Every later round re-hashes the same input under the next group of components, each component first XORed with the matching word of the previous round's output.
 
-    return func(data []byte, seed [4]uint64) [4]uint64 {
-        h := template.Clone()
-        const seedInjectBytes = 32
-        payloadLen := len(data)
-        if payloadLen < seedInjectBytes { payloadLen = seedInjectBytes }
-        ptr := pool.Get().(*[]byte)
-        mixed := *ptr
-        if cap(mixed) < payloadLen { mixed = make([]byte, payloadLen) } else { mixed = mixed[:payloadLen] }
-        for i := len(data); i < payloadLen; i++ { mixed[i] = 0 }
-        copy(mixed[:len(data)], data)
-        for i := 0; i < 4; i++ {
-            off := i * 8
-            binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
-        }
-        h.Write(mixed)
-        *ptr = mixed; pool.Put(ptr)
-        var buf [32]byte
-        h.Sum(buf[:0])
-        return [4]uint64{
-            binary.LittleEndian.Uint64(buf[0:]),  binary.LittleEndian.Uint64(buf[8:]),
-            binary.LittleEndian.Uint64(buf[16:]), binary.LittleEndian.Uint64(buf[24:]),
-        }
-    }
-}
-
-ns, _ := itb.NewSeed256(2048, makeBlake3Hash())
-ds, _ := itb.NewSeed256(2048, makeBlake3Hash())
-ss, _ := itb.NewSeed256(2048, makeBlake3Hash())
+```
+h = Hash(data, S[0 .. w-1])                 # round 1
+h = Hash(data, S[w .. 2w-1]  XOR  h)        # round 2 (feedforward)
+h = Hash(data, S[2w .. 3w-1] XOR  h)        # round 3
+...                                          # w = native words per round (2 / 4 / 8)
 ```
 
-### Hash Function Wrappers
+Two properties matter. First, the input `data` never changes across rounds; only the effective key changes. Second, each round's key is the next slice of fresh key material XORed with the entire previous output — a **feedforward** step — and the intermediate blocks between rounds are never emitted. The output depends on every key component conjunctively, and because each round's effective key embeds the previous, unobserved block, the chain cannot be peeled one round at a time. Even with an invertible primitive, inverting the last round recovers only the XOR of that round's key slice with the hidden previous block; reconstructing a hidden intermediate by search instead means enumerating a full native-width block, a meet-in-the-middle barrier the width of the primitive at every round.
 
-```go
-// 128-bit: HashFunc128 = func(data []byte, seed0, seed1 uint64) (lo, hi uint64)
-// 256-bit: HashFunc256 = func(data []byte, seed [4]uint64) [4]uint64
-// 512-bit: HashFunc512 = func(data []byte, seed [8]uint64) [8]uint64
-```
+This is best read as **local key evolution** — each round derives a fresh effective key from the previous state plus new key material and re-keys the same PRF over the same input. The number of rounds is the key width divided by the native state width, so a 2048-bit key folds into 16 rounds at 128-bit, 8 rounds at 256-bit, or 4 rounds at 512-bit. The wider the primitive, the fewer rounds — which is why a wider PRF is both faster and gives a wider MITM bottleneck.
 
-## Key Size Selection (Recommended Minimum 1024-bit)
-
-```go
-// 128-bit hash: up to 1024-bit keys
-ns128, _ := itb.NewSeed128(1024, hashes.{PrimitiveName}())
-ds128, _ := itb.NewSeed128(1024, hashes.{PrimitiveName}())
-ss128, _ := itb.NewSeed128(1024, hashes.{PrimitiveName}())
-
-// 256-bit hash: up to 1024-bit keys
-ns256, _ := itb.NewSeed256(1024, hashes.{PrimitiveName}())
-ds256, _ := itb.NewSeed256(1024, hashes.{PrimitiveName}())
-ss256, _ := itb.NewSeed256(1024, hashes.{PrimitiveName}())
-
-// 512-bit hash: up to 1024-bit keys
-ns512, _ := itb.NewSeed512(1024, hashes.{PrimitiveName}())
-ds512, _ := itb.NewSeed512(1024, hashes.{PrimitiveName}())
-ss512, _ := itb.NewSeed512(1024, hashes.{PrimitiveName}())
-
-// Any of NewSeed{128,256,512} + primitives supports any ITB width modes (512)
-
-// 128/256/512-bit hash: up to {512,1024,2048,4096}-bit keys (4096 now is not supported)
-ns{128,256,512}, _ := itb.NewSeed{128,256,512}({512,1024,2048,4096}, hashes.{PrimitiveName}())
-ds{128,256,512}, _ := itb.NewSeed{128,256,512}({512,1024,2048,4096}, hashes.{PrimitiveName}())
-ss{128,256,512}, _ := itb.NewSeed{128,256,512}({512,1024,2048,4096}, hashes.{PrimitiveName}())
-```
-
-## Minimum Container Size
-
-Minimum container size depends on the API mode. Encrypt/Stream uses `ceil(keyBits / log₂(56))` pixels,
-ensuring encoding ambiguity (56^P) exceeds the key space. Auth uses `ceil(keyBits / log₂(7))` pixels,
-ensuring CCA ambiguity (7^P) exceeds the key space:
-
-| Key Size | Mode | Min Pixels → Container | Noise Barrier |
+| Hash width | Components/round | Rounds (at 512-bit key) | Hash calls/pixel |
 |---|---|---|---|
-| 1024 bits | Encrypt/Stream | 177 → 196 (14×14) | 2^1568 ≥ 2^1024 |
-| 1024 bits | Auth | 365 → 400 (20×20) | 2^3200 ≥ 2^1024 |
-| 2048 bits | Encrypt/Stream | 353 → 361 (19×19) | 2^2888 ≥ 2^2048 |
-| 2048 bits | Auth | 730 → 784 (28×28) | 2^6272 ≥ 2^2048 |
-| 4096 bits | Encrypt/Stream | — | — |
-| 4096 bits | Auth | — | — |
+| 128-bit | 2 | 4 | 4 |
+| 256-bit | 4 | **2** | **2** |
+| 512-bit | 8 | **1** | **1** |
 
-## Output Format
+**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing to 64 bits is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, and the Interlocked Barrier's per-chunk mask draw likewise keys its per-chunk PRF from the low word only. So the output narrowing at 128 / 256 / 512-bit is an encoder-layer and barrier-layer choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits; the discarded portion carries no information the encoder needs.
+
+## How it works
+
+ITB encrypts data into raw RGBWYOPA pixel containers (8 channels per pixel: Red, Green, Blue, White, Yellow, Orange, Purple, Alpha — mnemonic labels for an 8-byte unit; the format is not tied to image processing) generated from `crypto/rand`. Each 8-bit channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead. Each pixel's bit-plane selection and per-channel XOR masks are derived from a ChainHash of the seed and a per-message nonce.
+
+The data is embedded starting at a seed-dependent pixel offset with wrap-around — the physical layout in the container is completely non-sequential. The interleaved payload is then routed through the Interlocked Barrier: every 48-bit (6-byte) chunk of the payload is re-mapped into three 16-of-48 lanes by a per-chunk mask triple drawn from the ≈ 2^70.20 balanced-partition space, keyed by the lockSeed and the nonce. An observer sees uniformly random pixel values with no way to determine which pixels carry data, in what order, what bit-plane is used, or which bits of a given chunk feed which snake.
+
+## Hash width variants
+
+The library provides three parallel API sets for different hash output widths. All share the same pixel format, framing, and security properties — the difference is in ChainHash intermediate state width.
+
+| API | Seeds | Hash Type | State | Effective Max Key |
+|---|---|---|---|---|
+| `EncryptAuthenticated3x256Cfg` / `DecryptAuthenticated3x256Cfg` | 8 | `HashFunc256` (256-bit) | 256-bit | 1024 bits |
+| `EncryptAuthenticated3x512Cfg` / `DecryptAuthenticated3x512Cfg` | 8 | `HashFunc512` (512-bit) | 512-bit | 2048 bits |
+| `EncryptAuthenticated3x128Cfg` / `DecryptAuthenticated3x128Cfg` | 8 | `HashFunc128` (128-bit) | 128-bit | 1024 bits |
+
+Streaming counterparts follow the same shape with a `Stream` prefix; the width-agnostic `EncryptStreamAuth3xCfg` / `DecryptStreamAuth3xCfg` and `EncryptStream3xCfg` / `DecryptStream3xCfg` accept `any`-typed seeds and dispatch on width internally.
+
+## Wire format
 
 ```
 Offset  Size     Content
 0       N        Nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
 N       2        Width (uint16 big-endian)
 N+2     2        Height (uint16 big-endian)
-N+4     W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload
+N+4     W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
+                 routed through the Interlocked Barrier
 ```
 
-Default nonce size is 128-bit (16 bytes). Configurable to 256-bit (32 bytes) or 512-bit (64 bytes) via `SetNonceBits`. The output format is identical across all three hash width variants.
+Default nonce size is 128 bits (16 bytes). Configurable to 256 or 512 bits via `triple.Opts.NonceBits` or `*itb.Config.NonceBits`; the process-wide default lives in `itb.DefaultNonceBits` (compile-in) and is optionally overridden at process init by `ITB_NONCE_BITS`. The wire format is identical across all three hash width variants and across Single Message vs Streaming shapes at the byte level — a single-chunk stream is byte-shape-identical to a Single Message wire.
 
-## Security Summary
+## Minimum container size
+
+The unified CCA-resistant envelope floor `MinPixels := MinPixelsAuth` applies across both the authenticated and non-authenticated surfaces: the minimum container is `ceil(keyBits / log₂(7))` pixels, so the 7^P encoding-ambiguity floor exceeds the key space at the smallest container size. This unification removes the pre-v0.3.0 asymmetry between the non-auth and auth envelope floors.
+
+| Key size | Min pixels → container | Noise barrier |
+|---|---|---|
+| 1024 bits | 365 → 400 (20×20) | 2^3200 ≥ 2^1024 |
+| 2048 bits | 730 → 784 (28×28) | 2^6272 ≥ 2^2048 |
+
+## Integrity (MAC-Inside-Encrypt)
+
+The core construction provides confidentiality only. For integrity protection against bit-flipping attacks, use the MAC-Inside-Encrypt pattern — the MAC is encrypted inside the container, preserving oracle-free deniability. On the `triple/` facade this is opt-in by profile selection (`singlemsg-triple-mac-v1` or `streaming-aead-triple-mac-v1`); on the Low-Level surface it is opt-in by choosing the `EncryptAuthenticated*` entry over the plain `Encrypt*` one.
+
+**Important.** Never place a MAC outside the encrypted container in cleartext — this creates a verification oracle that breaks deniability.
+
+## Eight-seed isolation
+
+The eight mandatory seeds are drawn as independent CSPRNG components; the API surface enforces pointer-identity distinctness across all eight slots. Passing the same seed handle in two positions returns an error at call entry. The eight-seed layout is what lets the security argument treat each channel's entropy source as disjoint: mutual information between independently-drawn seeds is zero, so a structural shortcut against one primitive channel cannot leak into another's derivation.
+
+## Security summary
 
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
-| Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
-| Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue adds independent ambiguity in data positions, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
-| Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
-| Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop; MAC + Reveal has CCA oracle limited to noise positions |
-| Known-plaintext resistance | 3-factor under PRF assumption for Full KPA: PRF non-invertibility + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. gcd(7,8) byte-splitting is a 4th factor effective only under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) |
-| Chosen-plaintext resistance | Independent maps |
-| Noise absorption | ✓ Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
-| Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
-| Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)) |
-| Nonce reuse protection | 128/256/512-bit per-message nonce (default 128-bit) |
-| Nonce misuse resistance | **Local** only: at most 2–3 colliding messages theoretically affected. In practice ITB's per-encryption noise + rotation + channelXOR mean `C1 ⊕ C2` does NOT reduce to `plaintext_1 ⊕ plaintext_2` as in a stream cipher — plaintext recovery requires the full demasker pipeline whose output is the hash stream, not plaintext bits (see [ITB.md §8](ITB.md#8-nonce-reuse-only-if-every-condition-holds)). Seeds remain secret (PRF non-invertibility), future messages safe, no key rotation required. Single collision too few observations for Simon / structural / quantum algebraic attacks. Unlike AES-GCM where nonce reuse leaks H and enables forgery until key rotation (global catastrophe) |
+| Grover resistance | √P × 2^keyBits (Core / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
+| Plausible deniability | Every mode (wrong seed → garbage indistinguishable from valid plaintext) |
+| Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; CSPRNG residue adds independent ambiguity in data positions) |
+| Interlocked Barrier | Always on; per-chunk 48-bit keyed permutation over three snakes; per-chunk mask space ≈ 2^70.20 balanced partitions |
+| Eight-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
+| Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
+| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-snake enumeration dimension + 8-seed isolation (architectural claim; empirical re-verification against the 48-bit line pending) |
+| Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (corroborated by the pre-v0.3.0 empirical record on the shared pixel construction; empirical re-verification against the 48-bit line pending) |
+| Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives) |
+| Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone |
+| Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 128-bit) |
+| Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 
-## Integrity (MAC-Inside-Encrypt)
-
-The core construction provides confidentiality only. For integrity protection against bit-flipping attacks, use the MAC-Inside-Encrypt pattern — the MAC is encrypted inside the container, preserving oracle-free deniability:
-
-```go
-// 128-bit variant
-encrypted, err := itb.EncryptAuthenticated128(ns128, ds128, ss128, plaintext, myMACFunc)
-original, err = itb.DecryptAuthenticated128(ns128, ds128, ss128, encrypted, myMACFunc)
-
-// 256-bit variant
-encrypted, err = itb.EncryptAuthenticated256(ns256, ds256, ss256, plaintext, myMACFunc)
-original, err = itb.DecryptAuthenticated256(ns256, ds256, ss256, encrypted, myMACFunc)
-
-// 512-bit variant
-encrypted, err = itb.EncryptAuthenticated512(ns512, ds512, ss512, plaintext, myMACFunc)
-original, err = itb.DecryptAuthenticated512(ns512, ds512, ss512, encrypted, myMACFunc)
-```
-
-**Important:** never place a MAC outside the encrypted container in cleartext — this creates a verification oracle that breaks deniability.
-
-## Triple-Seed Isolation
-
-All three seeds must be distinct pointers — passing the same seed as multiple parameters returns an error:
-
-```go
-// This will fail:
-encrypted, err := itb.Encrypt128(seed, seed, seed, data)
-// Error: "itb: all three seeds must be different (triple-seed isolation)"
-
-// Correct usage: three independent seeds
-encrypted, err := itb.Encrypt128(noiseSeed, dataSeed, startSeed, data)
-```
-
-## Formal Security Model
+## Formal security model
 
 A simulation-based proof is a purely mathematical construction: "for every adversary A in the real world, there exists a simulator S in the ideal world such that the outputs of A and S are indistinguishable." This is proven logically, not computationally. It is independent of hardware, logic system, or computational model.
 
 ITB does not fit cleanly into the standard binary security model:
 
-- **Standard model:** the adversary either distinguishes (break) or does not (secure). Binary.
-- **ITB:** the adversary always receives output. The output is always "valid." There is no point where the system returns accept/reject. Instead, the result is a **spectrum of plausibility** — every key produces output, and there is no way to rank candidates without external context.
+- **Standard model.** The adversary either distinguishes (break) or does not (secure). Binary.
+- **ITB.** The adversary always receives output. The output is always "valid." There is no point where the system returns accept/reject. Instead, the result is a **spectrum of plausibility** — every key produces output, and there is no way to rank candidates without external context.
 
 The semantics of decryption are ternary:
-1. Correct key → correct plaintext
-2. Wrong key → garbage indistinguishable from plaintext
-3. Observer → cannot determine which of the two cases is present
+1. Correct key → correct plaintext.
+2. Wrong key → garbage indistinguishable from plaintext.
+3. Observer → cannot determine which of the two cases is present.
 
 Possible formalization paths:
-- **Indistinguishability-based** definitions (standard in cryptography, binary logic — sufficient)
-- **Simulation-based** proof with an ideal functionality that always returns random bytes (this is the "ideal world" of ITB — the real-world output is indistinguishable from random)
-- **Quantitative information flow** (how many bits leak — the per-byte barrier shows 0 bits leaked per observation)
+- **Indistinguishability-based** definitions (standard in cryptography, binary logic — sufficient).
+- **Simulation-based** proof with an ideal functionality that always returns random bytes (this is the "ideal world" of ITB — the real-world output is indistinguishable from random).
+- **Quantitative information flow** (how many bits leak — the per-byte barrier shows 0 bits leaked per observation).
 
-All three approaches use standard mathematics. The formal relationship between ITB's Ambiguity-Based Security and Shannon's framework remains an open research question (see [SCIENCE.md §7](SCIENCE.md#7-research-directions)).
+All three approaches use standard mathematics. The formal relationship between ITB's Ambiguity-Based Security and Shannon's framework remains an open research question (see [SCIENCE.md](SCIENCE.md)).
 
-## See Also
+## Bindings
 
-- [ITB.md](ITB.md) — How the barrier works (accessible explanation)
-- [ITB3.md](ITB3.md) — Triple Ouroboros (7-seed variant, 3× security)
-- [FEATURES.md](FEATURES.md) — Complete feature list and security properties
-- [PROOFS.md](PROOFS.md) — Formal security proofs
-- [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments
-- [SECURITY.md](SECURITY.md) — Security reference tables
-- [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.)
-- [HARNESS.md](HARNESS.md) — Additional analysis of non-crypto hashes within barrier bias absorption and SAT calibration.
-- [REDTEAM.md](REDTEAM.md) — Empirical Red Team validation (12-primitive hash matrix, multiple statistical / structural distinguishers, 2×2 Ouroboros × BarrierFill matrix)
-- [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) — Per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why)
-- [macs/CONSTRUCTIONS.md](macs/CONSTRUCTIONS.md) — Per-MAC construction descriptions (KMAC256, HMAC-SHA256, and the BLAKE3-keyed `hmac-blake3` whose name diverges from RFC 2104 HMAC), the uniform 32-byte tag, and the MAC-Inside-Encrypt placement argument
-- [ctr/CONSTRUCTIONS.md](ctr/CONSTRUCTIONS.md) — Per-primitive counter-mode keystream constructions (the exact keystream each `New(...).XORKeyStream` computes, with key / nonce sizes)
-- [kdf/CONSTRUCTIONS.md](kdf/CONSTRUCTIONS.md) — Per-primitive subkey-derivation constructions (the SP 800-108 Counter Mode byte layout each `Derive` computes, including the areion512 32 → 64 key stretch)
+The binding surface is the **eight `ITB_Triple_*` capi exports** (see `cmd/cshared/main.go`). Every binding is a thin proxy over that surface: an FFI-stable handle table on top of `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Close` plus the four cipher entry points (`ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`), an error-code mapping, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw eight-seed handoff.
+
+### Fleet plan (33 bindings)
+
+The binding fleet lands in three logical bands. Every band consumes the same eight-export surface; the differentiation is only in transport (in-process CGO vs a small out-of-process relay).
+
+- **Tier 1 Native (9 bindings)** — direct in-process consumers of the C shared library. C, C++, Fortran, Ada, D, Rust, C#, Python, Node.js. Each binding owns its own idiomatic surface (Streams / async / GC integration) on top of the same eight exports.
+- **Tier 1 Thin (5 bindings)** — thin object-based facades over one of the Tier 1 Native bindings, adding a language-idiomatic surface with no extra ITB logic. Includes the primary BEAM binding (Erlang) plus four small companion facades.
+- **Tier 2 Relay (19 bindings)** — a small out-of-process relay speaks the eight exports over one of four backends (C / Java / C# / BEAM) and hands them to a language runtime that cannot embed the C shared library directly. Every relay is a thin proxy; ITB's construction logic never lives outside the shipped Go core.
+
+Docs describe the fleet at the architectural level while the per-binding rework lands. Every binding's public surface will read as "call Init to receive a `Pipeline` handle plus a blob byte slice, ship the blob to the receiver, both sides encrypt / decrypt" — the same user-story the Go `triple/` facade tells. Per-binding examples ship in each binding's own directory once the rework lands.
+
+## See also
+
+- [ITB.md](ITB.md) — How the barrier works (accessible explanation).
+- [FEATURES.md](FEATURES.md) — Complete feature list and security properties.
+- [PROOFS.md](PROOFS.md) — Formal security proofs.
+- [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
+- [SECURITY.md](SECURITY.md) — Security reference tables.
+- [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.).
+- [HARNESS.md](HARNESS.md) — Adversarial testing methodology and calibration.
+- [REDTEAM.md](REDTEAM.md) — Empirical Red Team validation.
+- [BENCH3.md](BENCH3.md) — Benchmark tables across primitives and CPUs.
+- [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) — Per-primitive construction descriptions.
+- [macs/CONSTRUCTIONS.md](macs/CONSTRUCTIONS.md) — Per-MAC construction descriptions and the MAC-Inside-Encrypt placement argument.
+- [ctr/CONSTRUCTIONS.md](ctr/CONSTRUCTIONS.md) — Per-primitive counter-mode keystream constructions.
+- [kdf/CONSTRUCTIONS.md](kdf/CONSTRUCTIONS.md) — Per-primitive subkey-derivation constructions.
 
 ## License
 
