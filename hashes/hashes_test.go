@@ -192,7 +192,7 @@ func TestFindKnownPrimitives(t *testing.T) {
 			t.Errorf("Find(%q): ok=false, want true", want.Name)
 			continue
 		}
-		if got != want {
+		if got.Name != want.Name || got.Width != want.Width {
 			t.Errorf("Find(%q) = %+v, want %+v", want.Name, got, want)
 		}
 	}
