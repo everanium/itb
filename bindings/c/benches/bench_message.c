@@ -51,7 +51,7 @@ int main(void)
     itb_opts_free(opts);
     bench_header();
     static const size_t sizes[] = {
-        (size_t)1 << 10, (size_t)1 << 16, (size_t)1 << 20, (size_t)16 << 20,
+        (size_t)1 << 20, (size_t)16 << 20, (size_t)64 << 20,
     };
     for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
         uint8_t *plain = malloc(sizes[i]);

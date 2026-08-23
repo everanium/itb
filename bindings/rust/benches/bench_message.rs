@@ -7,8 +7,8 @@
 //!
 //! | env var            | default   | notes                                      |
 //! |--------------------|-----------|--------------------------------------------|
-//! | ITB_NONCE_BITS     | 128       | matches BENCH3.md pin                      |
-//! | ITB_KEY_BITS       | 1024      | matches old bindings/rust/benches/BENCH.md |
+//! | ITB_NONCE_BITS     | 512       | v0.3.0 secure default                      |
+//! | ITB_KEY_BITS       | 1024      | matches root Go BENCH3.md 1024-bit table   |
 //! | ITB_WITH_PARALLAX  | false     | root Go bench runs without parallax        |
 //! | ITB_WITH_WRAPPER   | false     | root Go bench runs without the wrapper     |
 //! | ITB_INNER_HASH     | (profile) | opaque hash name                           |
@@ -23,7 +23,7 @@ fn build_opts() -> OptsBuilder {
     let nonce_bits = env::var("ITB_NONCE_BITS")
         .ok()
         .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(128);
+        .unwrap_or(512);
     let key_bits = env::var("ITB_KEY_BITS")
         .ok()
         .and_then(|v| v.parse::<i64>().ok())
@@ -63,7 +63,7 @@ fn bench_message(c: &mut Criterion) {
     group
         .sample_size(10)
         .measurement_time(Duration::from_secs(5));
-    for size in [1usize << 10, 1 << 16, 1 << 20, 16 << 20] {
+    for size in [1usize << 20, 16 << 20, 64 << 20] {
         let plain = vec![0xA5u8; size];
         group.throughput(Throughput::Bytes(size as u64));
         group.bench_function(format!("{size}B"), |b| {
