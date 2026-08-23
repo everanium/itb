@@ -127,23 +127,28 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 
 **lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (§13 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
 
-## Proof 3a: Triple-Seed Isolation Minimality
+<a name="proof-3a-triple-seed-isolation-minimality"></a>
+## Proof 3a: Eight-Seed Isolation Minimality
 
-**Theorem.** Three independent seeds are the minimum configuration such that compromise of any single configuration domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixel). This has not been independently verified.
+**Theorem.** Eight independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-snake leakage. This has not been independently verified.
 
 **Proof.**
 
-*Part 1: Three configuration domains.*
+*Part 1: Eight derivation domains.*
 
-The construction defines three disjoint configuration domains:
+The construction defines eight disjoint derivation domains, each keyed by its own seed:
 - **N** (noise): noise bit position per pixel (3 bits/pixel), derived from noiseSeed
-- **D** (data): rotation (3 bits) + per-bit XOR masks (56 bits) per pixel, derived from dataSeed
-- **S** (start): pixel embedding offset (one per message), derived from startSeed
+- **L** (lock): per-chunk Interlocked Barrier mask triple, derived from lockSeed
+- **D₁, D₂, D₃** (data): rotation (3 bits) + per-bit XOR masks (56 bits) per pixel, derived from the per-snake dataSeed_i
+- **S₁, S₂, S₃** (start): per-snake pixel embedding offset (one per message), derived from the per-snake startSeed_i
 
-Each domain has a documented attack surface:
+Each domain has a documented attack surface (see [Proof 3](#proof-3-triple-seed-isolation)):
 - N is recoverable via CCA with MAC-reveal (bit-flip → accept = noise bit)
-- S is observable via cache side-channel (memory access pattern)
-- D has zero software-observable side-channel (register-only operations)
+- each S_i is observable via cache side-channel (memory access pattern)
+- each D_i has zero software-observable side-channel (register-only operations)
+- L has zero software-observable side-channel (fixed-pattern table lookups, constant-time kernels)
+
+Parts 2–4 establish minimality for the pixel-layer domain types (N, D, S) on one snake; Part 5 lifts the argument to the full eight-domain layout.
 
 *Part 2: Single seed — complete break.*
 
@@ -162,9 +167,9 @@ CCA reveals N from Seed₁. Cache reveals S from Seed₁. Both attack surfaces t
 **(c) Seed₁ = {N, D}, Seed₂ = {S}:**
 CCA reveals N from Seed₁ (3 bits/pixel). Since N and D share Seed₁, CCA-derived N constraints reduce the effective key space of Seed₁. With KPA, the attacker knows plaintext and N configuration → 7 candidate D configurations per pixel (rotation 0-6), each fully determining the hash output → verification oracle for Seed₁. Cross-domain leak: N → D. This is the most severe pairing.
 
-*Part 4: Three seeds — pairwise independence.*
+*Part 4: Three pixel-layer domain types — pairwise independence.*
 
-With three seeds generated independently from crypto/rand:
+With the three pixel-layer seeds generated independently from crypto/rand:
 
 ```
 I(noiseSeed ; dataSeed) = 0
@@ -178,7 +183,17 @@ Cache reveals S (startSeed → startPixel). Since startSeed is independent of bo
 
 D has zero software-observable side-channel. Even combined CCA + cache + KPA provides: N configuration (from noiseSeed) + start pixel (from startSeed) + known plaintext. Per-bit XOR (1:1) ensures 7 candidate rotations per pixel remain valid ([Section 2.9 in SCIENCE.md](SCIENCE.md#29-per-bit-xor-and-known-plaintext-resistance)). Without information about dataSeed, the attacker cannot distinguish candidates → security reduces to brute-force over dataSeed key space.
 
-Three seeds is therefore the minimum: fewer creates cross-domain leakage in every possible pairing; three achieves pairwise independence through CSPRNG-generated independent keys. ∎
+Within the pixel-layer domain types, three independent seeds are therefore minimal: fewer creates cross-domain leakage in every possible pairing.
+
+*Part 5: Lifting to the eight-domain layout.*
+
+The shipped construction instantiates the D and S domain types once per snake and adds the barrier domain L. Merging any two of the eight domains onto one seed reproduces one of the Part 3 leakage patterns:
+
+- **Observable + unobservable** (N or any S_i merged with L or any D_j): the observable domain's attack surface (CCA for N, cache for S_i) constrains the shared seed, leaking information about the unobservable domain — the pattern of pairings (a) and (c).
+- **Observable + observable** (N merged with an S_i, or S_i with S_j): two attack surfaces target one seed, and observations from one surface reduce the search space for the other domain — the pattern of pairing (b). For S_i + S_j the leak is additionally cross-snake: one snake's observed startPixel constrains another snake's offset.
+- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one snake's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-triple-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) treat as disjoint entropy sources.
+
+Every layout with at most seven seeds merges at least two of the eight domains (pigeonhole) and therefore contains at least one of the three patterns. Eight independent seeds are the minimum: any merge creates cross-domain or cross-snake leakage, while eight CSPRNG-generated independent keys achieve the pairwise independence of [Proof 3](#proof-3-triple-seed-isolation). ∎
 
 ## Proof 3b: ChainHash Full Component Utilization
 
