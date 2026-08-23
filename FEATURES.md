@@ -32,7 +32,7 @@
 
 ## Shipped Profiles (`triple/` facade)
 
-The `triple.Pipeline` facade ships five profiles; every user-facing example instantiates a pipeline from one of them, and all default to the parallax multiplexer plus the format-deniability wrapper engaged.
+The `triple.Pipeline` facade ships a catalogue of named profiles covering single-primitive and mixed-primitive constellations; every user-facing example instantiates a pipeline from one of them, and all default to the parallax multiplexer plus the format-deniability wrapper engaged.
 
 1. `streaming-aead-triple-mac-v1` — Streaming AEAD Triple with MAC.
 2. `streaming-noaead-triple-v1` — Streaming Non-AEAD Triple.

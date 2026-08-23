@@ -36,8 +36,9 @@
 > 5. **Cfg-only Low-Level surface.** Every Low-Level entry takes an
 >    explicit `*itb.Config`. The pre-v0.3.0 process-wide setter surface
 >    is gone; per-Pipeline configuration replaces it.
-> 6. **Five shipped profiles with parallax + wrapper on by default.**
->    Toggle via `triple.Opts`. See the [Quick Start](#quick-start).
+> 6. **Shipped profiles with parallax + wrapper on by default,** both
+>    single-primitive and mixed-primitive constellations. Toggle via
+>    `triple.Opts`. See the [Quick Start](#quick-start).
 > 7. **Wire hard-fork.** The v0.3.0 wire format is not backwards
 >    compatible: v0.2.x ciphertexts do not decrypt on v0.3.0 and vice
 >    versa. Both sides of every deployment upgrade together.
@@ -257,13 +258,22 @@ The Low-Level free functions (`itb.EncryptAuthenticated3x{128,256,512}Cfg`, `itb
 
 ## Quick Start
 
-Six worked examples cover the surface. Four use the `triple/` facade (the shipped user-facing entry point); two use the Low-Level `*Cfg` free functions directly. Every example runs against one of the five shipped profiles listed in [`triple/profile.go`](triple/profile.go):
+Six worked examples cover the surface. Four use the `triple/` facade (the shipped user-facing entry point); two use the Low-Level `*Cfg` free functions directly. Every example runs against one of the shipped profiles listed in [`triple/profile.go`](triple/profile.go):
+
+Single-primitive profiles (one inner hash across every seed slot):
 
 - `singlemsg-triple-mac-v1` — Single Message Triple with MAC.
 - `singlemsg-triple-nomac-v1` — Single Message Triple No MAC.
 - `streaming-aead-triple-mac-v1` — Streaming AEAD Triple with MAC.
 - `streaming-noaead-triple-v1` — Streaming Non-AEAD Triple.
 - `blob-triple-mac-v1` — MAC-authenticated blob-only bundle (no cipher surface; used by `Init` / `Rekey` to bundle session state).
+
+Mixed-primitive profiles (per-slot primitive constellation, uniform width per profile):
+
+- `singlemsg-triple-mac-mixed-v1` — Single Message Triple with MAC, width 128 (alternates aescmac / siphash24).
+- `singlemsg-triple-nomac-mixed-v1` — Single Message Triple No MAC, width 512 (alternates areion512 / blake2b512).
+- `streaming-aead-triple-mac-mixed-v1` — Streaming AEAD Triple with MAC, width 256 (spread across every shipped width-256 primitive).
+- `streaming-noaead-triple-mixed-v1` — Streaming Non-AEAD Triple, width 256 (different balance from the AEAD mixed profile so paired mixed streams stay slot-distinguishable).
 
 All shipped profiles default to **parallax on + wrapper (Outer cipher) on**; both toggles are opt-out via `triple.Opts`. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
 
@@ -500,7 +510,7 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
     ChunkSize:    16 << 20,     // streaming chunk-size budget
     WithParallax: &withParallax, // opt out of parallax
     WithWrapper:  &withWrapper,  // keep wrapper on (would default on anyway)
-    OuterCipher:  "aes128ctr",   // pick a specific outer cipher
+    OuterCipher:  "aescmac",     // "aescmac" = AES-128-CTR outer cipher (legacy shared-alphabet string; see wrapper/README.md)
 })
 ```
 
@@ -560,7 +570,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `KeyBits` | `512` / `1024` / `2048` (or 0 = default) | Integer multiple of the primitive's native hash width (128 / 256 / 512). |
 | `OuterCipher` | one of the shipped primitive names below | Empty = profile default. Wrapper-off profiles ignore. |
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
-| `ParallaxSegmentSize` | `int > 0` bytes (or 0 = default) | Parallax segment size; default 4093. |
+| `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093` (prime). Sensible values: primes like `4093` / `4099` / `4111` / `4127`; any composite is fine iff coprime to 504. Parallax segment size. |
 
 **Shipped primitive names.** The single canonical registry (see `hashes/registry.go` + `wrapper/wrapper.go` `CipherNames`) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry:
 
@@ -570,15 +580,26 @@ areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash2
 
 The order above is the canonical registry order used identically across the Go core, the FFI iteration surface, and every binding; copy it verbatim into palette overrides — do not re-order primitive names in prose.
 
+**Name reuse — legacy.** The string `"aescmac"` names two different primitives depending on which field it appears in:
+
+- `InnerHash: "aescmac"` → **AES-CMAC** (the MAC-family primitive, `hashes/registry.go`).
+- `OuterCipher: "aescmac"` → **AES-128-CTR** (the stream cipher, `wrapper/wrapper.go`; the Go constant is `wrapper.CipherAES128CTR` — the same string value is retained for historical binding compatibility).
+
+Every other name in the registry maps 1:1 across fields (a `blake3` `InnerHash` and a `blake3` `OuterCipher` denote the same construction — a BLAKE3 keystream). Users who reach for AES on the outer cipher path get AES-128-CTR whether they type `"aescmac"` or use the `wrapper.CipherAES128CTR` constant.
+
 **Profile-name constants.** The shipped profiles live in [`triple/profile.go`](triple/profile.go) as string constants; call sites should use the constants rather than raw strings:
 
-| Constant | String value |
-|---|---|
-| `triple.ProfileStreamingAEADTripleMACV1` | `"streaming-aead-triple-mac-v1"` |
-| `triple.ProfileStreamingNoAEADTripleV1` | `"streaming-noaead-triple-v1"` |
-| `triple.ProfileSingleMsgTripleMACV1` | `"singlemsg-triple-mac-v1"` |
-| `triple.ProfileSingleMsgTripleNoMACV1` | `"singlemsg-triple-nomac-v1"` |
-| `triple.ProfileBlobTripleMACV1` | `"blob-triple-mac-v1"` |
+| Constant | String value | Notes |
+|---|---|---|
+| `triple.ProfileStreamingAEADTripleMACV1` | `"streaming-aead-triple-mac-v1"` | Single-primitive, width 512 |
+| `triple.ProfileStreamingNoAEADTripleV1` | `"streaming-noaead-triple-v1"` | Single-primitive, width 512 |
+| `triple.ProfileSingleMsgTripleMACV1` | `"singlemsg-triple-mac-v1"` | Single-primitive, width 512 |
+| `triple.ProfileSingleMsgTripleNoMACV1` | `"singlemsg-triple-nomac-v1"` | Single-primitive, width 512 |
+| `triple.ProfileBlobTripleMACV1` | `"blob-triple-mac-v1"` | Single-primitive, width 512, blob-only |
+| `triple.ProfileStreamingAEADTripleMACMixedV1` | `"streaming-aead-triple-mac-mixed-v1"` | Mixed-primitive, width 256 |
+| `triple.ProfileStreamingNoAEADTripleMixedV1` | `"streaming-noaead-triple-mixed-v1"` | Mixed-primitive, width 256 |
+| `triple.ProfileSingleMsgTripleMACMixedV1` | `"singlemsg-triple-mac-mixed-v1"` | Mixed-primitive, width 128 |
+| `triple.ProfileSingleMsgTripleNoMACMixedV1` | `"singlemsg-triple-nomac-mixed-v1"` | Mixed-primitive, width 512 |
 
 The shipped profiles are populated at package init. Callers who need a configuration outside the shipped set install a user-defined `triple.Profile` at process init via `triple.RegisterProfile(name, p)` and reference the registered name from `triple.Init` / `triple.Open` like any shipped profile. The registered name is a wire contract with the receiver, so a profile bound to a name cannot be silently rebound — evolving a profile's shape picks a new name (typically appending `-v2`, `-v3`, …).
 
@@ -588,7 +609,7 @@ Name rules for `RegisterProfile`:
 - Must not start with one of the reserved shipped-catalogue prefixes: `streaming-`, `singlemsg-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
 - Must not already be registered; re-registration returns `triple.ErrProfileExists`.
 
-Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped five (`streaming-aead` / `streaming-noaead` / `singlemsg-mac` / `singlemsg-nomac` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width`; `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default). `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`streaming-aead` / `streaming-noaead` / `singlemsg-mac` / `singlemsg-nomac` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all eight slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default). `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
 
 Worked example — installing a 256-bit BLAKE3 Streaming AEAD variant and using it identically to a shipped profile:
 

@@ -19,13 +19,17 @@
 // Low-Level surface consume the corresponding *Cfg-bearing free
 // functions in the itb root package.
 //
-// Five profiles ship in the initial catalogue: two Streaming shapes
-// (MAC Authenticated and Non-AEAD, both parallax on + wrapper on), two
-// Single Message shapes (MAC Authenticated and No MAC, both parallax
-// on + wrapper on), and one blob-only bundle profile that carries
-// session state without exposing a cipher surface. Users select a
-// profile by name at [Init]; every profile-supplied default is
-// overridable via [Opts] on both [Init] and [Open].
+// The shipped catalogue covers both single-primitive and
+// mixed-primitive constellations. Single-primitive profiles bind one
+// [github.com/everanium/itb/hashes.Registry] entry to every seed
+// slot; mixed-primitive profiles bind a per-slot constellation via
+// [Profile.MixedHashes] with uniform width per profile (repeats
+// permitted). The catalogue spans every combination of streaming vs
+// single-message shape and MAC vs No MAC posture, both dispatch
+// paths, plus one blob-only bundle profile that carries session
+// state without exposing a cipher surface. Users select a profile
+// by name at [Init]; every profile-supplied default is overridable
+// via [Opts] on both [Init] and [Open].
 //
 // Under N-concurrent-instance construction, contention-safety is
 // by-design; individual per-instance encryption strength inherits the
