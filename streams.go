@@ -132,7 +132,10 @@ func validateChunkSize(chunkSize int) (int, error) {
 
 // EncryptStream3x is the width-less Triple-Ouroboros plain-stream
 // Encrypt entry point. Behaviour parity with [EncryptStream] modulo
-// the 8-seed dispatch path.
+// the 8-seed dispatch path. When at least one chunk arrives from src,
+// emits a 32-byte CSPRNG dummy prefix ahead of the chunk stream so a
+// wire observer cannot distinguish this envelope from the Streaming
+// AEAD path's streamID prefix. An empty src emits nothing.
 func EncryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, chunkSize int) error {
 	if _, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -142,6 +145,7 @@ func EncryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, start
 		return err
 	}
 	buf := make([]byte, cs)
+	var prefixEmitted bool
 	for {
 		n, err := readUpTo(src, buf)
 		if err == io.EOF {
@@ -149,6 +153,16 @@ func EncryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, start
 		}
 		if err != nil {
 			return err
+		}
+		if !prefixEmitted {
+			var prefix [streamIDPrefixLen]byte
+			if _, rerr := rand.Read(prefix[:]); rerr != nil {
+				return fmt.Errorf("itb: crypto/rand: %w", rerr)
+			}
+			if _, werr := dst.Write(prefix[:]); werr != nil {
+				return werr
+			}
+			prefixEmitted = true
 		}
 		ct, encErr := Encrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
 		if encErr != nil {
@@ -161,10 +175,23 @@ func EncryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, start
 }
 
 // DecryptStream3x is the width-less Triple-Ouroboros plain-stream
-// Decrypt entry point.
+// Decrypt entry point. Reads and discards the 32-byte envelope
+// prefix emitted by [EncryptStream3x] at stream open; an empty src is
+// treated as a clean end-of-stream even before the prefix arrives.
 func DecryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
 	if _, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
+	}
+	var prefix [streamIDPrefixLen]byte
+	n, perr := io.ReadFull(src, prefix[:])
+	if perr == io.EOF && n == 0 {
+		return nil
+	}
+	if perr == io.ErrUnexpectedEOF || (perr == io.EOF && n != streamIDPrefixLen) {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	if perr != nil {
+		return perr
 	}
 	for {
 		chunk, err := readChunkParse(src)
