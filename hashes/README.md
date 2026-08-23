@@ -147,7 +147,50 @@ Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]by
 
 ## Runtime primitive selection
 
-There is no runtime `hashes.Register()` API today. Users plug custom primitives at the Low-Level surface by constructing their own `itb.HashFunc{N}` (and optional `itb.BatchHashFunc{N}`) closures — for instance via the builders above — and threading the resulting `*itb.Seed{N}` handles through the Cfg-suffixed entry points. The `triple.Pipeline` facade selects primitives by name from the shipped registry and does not expose custom-primitive injection; callers that need custom PRFs use the Low-Level surface.
+A user primitive is pluggable at the Low-Level surface in two shapes:
+
+- **Closure-directly-passed.** Construct the `itb.HashFunc{N}` (and optional `itb.BatchHashFunc{N}`) closures — for instance via the builders above — and pass the resulting `*itb.Seed{N}` handles through the Cfg-suffixed entry points. Nothing is registered; only the caller holds a reference to the primitive.
+- **Registered by name via `hashes.Register(spec Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register(sameName)` returns `hashes.ErrHashExists`. The Spec is validated on entry (non-empty lowercase-alphanumeric-plus-underscore name, `Width` of W128 / W256 / W512, exactly one `Make{N}Pair` factory field matching the Width).
+
+```go
+import (
+    "crypto/sha256"
+
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+func init() {
+    // One-shot at process init. The factory follows the same
+    // variadic-key contract as the shipped Make{N}Pair functions:
+    // no key argument for a fresh random key, one 32-byte []byte
+    // for explicit-key restoration.
+    factory := func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
+        var fixedKey [32]byte
+        if len(key) > 0 {
+            copy(fixedKey[:], key[0])
+        } // else fill from crypto/rand.Read(fixedKey[:])
+        h := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
+        return h, nil, fixedKey[:], nil
+    }
+    _ = hashes.Register(hashes.Spec{
+        Name:        "sha256_arx",
+        Width:       hashes.W256,
+        Make256Pair: factory,
+    })
+}
+
+// Elsewhere — the registered name resolves through the standard
+// name-keyed dispatcher exactly like a shipped primitive.
+h, _, keyBytes, _ := hashes.Make256Pair("sha256_arx")
+seed, _ := itb.NewSeed256(1024, h)
+_ = keyBytes // persist alongside the seed for cross-process restore
+_ = seed
+```
+
+The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_HashName` / `ITB_HashWidth`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
+
+The `triple.Pipeline` facade selects primitives by name from `hashes.Find`, so a registered primitive is reachable through `triple.Init(profile, opts)` provided the profile's chosen inner-hash name resolves to the registered Spec. Custom primitives supplied directly as closures do not appear in `Find` and are not reachable through the Pipeline facade; use either the Register path or the Low-Level `*Cfg` entry points depending on which shape the surrounding call site prefers.
 
 ## Usage
 

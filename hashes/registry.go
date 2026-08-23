@@ -1,7 +1,9 @@
 package hashes
 
 import (
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/everanium/itb"
 )
@@ -16,32 +18,185 @@ const (
 	W512 Width = 512
 )
 
-// Spec describes one PRF-grade hash primitive shipped with this package.
+// Spec describes one PRF-grade hash primitive. Shipped primitives live
+// in [Registry] with all factory fields nil; their factory closures are
+// dispatched through the switch statements in [Make128] / [Make256] /
+// [Make512] and their Pair counterparts. User-registered custom
+// primitives (added via [Register]) populate the factory field matching
+// the primitive's Width so the same Make{N}(Pair) name-keyed dispatch
+// resolves them uniformly.
 type Spec struct {
 	Name  string // canonical, FFI-stable identifier (no dashes)
 	Width Width  // native intermediate-state width
+
+	// Make128Pair, Make256Pair, Make512Pair are the paired
+	// (single, batched, fixedKey) factory functions for a user-
+	// registered custom primitive. Exactly one field must be
+	// non-nil, matching Width: W128 → Make128Pair, W256 →
+	// Make256Pair, W512 → Make512Pair. The factory follows the
+	// same variadic-key contract as the top-level Make{N}Pair
+	// functions: pass no key for a random-key primitive, or one
+	// []byte of the primitive's native key length for explicit-
+	// key restoration. The returned batched arm may be nil when
+	// the primitive has no batched implementation.
+	//
+	// Shipped Registry entries leave all three fields nil.
+	Make128Pair func(key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error) `json:"-"`
+	Make256Pair func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) `json:"-"`
+	Make512Pair func(key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc512, []byte, error) `json:"-"`
 }
 
 // Registry lists every shippable PRF-grade primitive in canonical order.
 // The same order is used by the FFI iteration surface (ITB_HashName,
 // ITB_HashWidth) — callers iterating the registry receive primitives in
 // this order.
+//
+// Registry is immutable after package init. User-registered custom
+// primitives added via [Register] live in a separate mutex-guarded
+// slice and are exposed together with Registry via [AllPrimitives].
+// The FFI iteration surface deliberately observes only Registry so
+// bindings — which are triple-only and cannot themselves call Register
+// — see a stable primitive set.
 var Registry = [9]Spec{
-	{"areion256", W256},
-	{"areion512", W512},
-	{"blake2b256", W256},
-	{"blake2b512", W512},
-	{"blake2s", W256},
-	{"blake3", W256},
-	{"aescmac", W128},
-	{"siphash24", W128},
-	{"chacha20", W256},
+	{Name: "areion256", Width: W256},
+	{Name: "areion512", Width: W512},
+	{Name: "blake2b256", Width: W256},
+	{Name: "blake2b512", Width: W512},
+	{Name: "blake2s", Width: W256},
+	{Name: "blake3", Width: W256},
+	{Name: "aescmac", Width: W128},
+	{Name: "siphash24", Width: W128},
+	{Name: "chacha20", Width: W256},
+}
+
+// ErrHashExists is returned by [Register] when the supplied Spec.Name
+// is already present in [Registry] or has been registered previously.
+// Once registered, a primitive cannot be re-registered under the same
+// name — immutability matches [triple.RegisterProfile] semantics so a
+// caller cannot silently swap the factory a downstream Find/Make call
+// resolves.
+var ErrHashExists = errors.New("hashes: primitive already registered")
+
+var (
+	customsMu sync.Mutex
+	customs   []Spec // append-only, guarded by customsMu
+)
+
+// Register adds a user-supplied custom hash primitive to the runtime
+// registry. The Spec must carry a non-empty Name (lowercase letters,
+// digits, underscores only — no dashes, matching the FFI-stable
+// identifier convention of shipped primitives), a Width of W128 /
+// W256 / W512, and exactly one non-nil Make{N}Pair factory field
+// matching the Width.
+//
+// The registered primitive becomes visible through [Find] and the
+// [Make128] / [Make256] / [Make512] / Pair name-keyed dispatchers.
+// [Registry] itself is not extended — user entries live in a
+// separate mutex-guarded slice — so the FFI iteration surface
+// (ITB_HashName / ITB_HashWidth) is unaffected.
+//
+// Errors:
+//
+//   - [ErrHashExists] when the name is already present in [Registry] or
+//     among prior Register() calls.
+//   - a validation error when Name is empty, uses disallowed characters,
+//     Width is not W128 / W256 / W512, or the matching factory field is
+//     nil (or a non-matching factory field is non-nil).
+//
+// Register is safe for concurrent use with itself and with [Find] /
+// [AllPrimitives] / [Make128] / [Make256] / [Make512] and their Pair
+// counterparts.
+func Register(spec Spec) error {
+	if err := validateRegisterSpec(spec); err != nil {
+		return err
+	}
+	customsMu.Lock()
+	defer customsMu.Unlock()
+	for _, s := range Registry {
+		if s.Name == spec.Name {
+			return fmt.Errorf("hashes: %q shadows shipped primitive: %w", spec.Name, ErrHashExists)
+		}
+	}
+	for _, s := range customs {
+		if s.Name == spec.Name {
+			return fmt.Errorf("hashes: %q: %w", spec.Name, ErrHashExists)
+		}
+	}
+	customs = append(customs, spec)
+	return nil
+}
+
+// validateRegisterSpec checks the fields of a Spec presented to
+// Register. Kept separate so unit tests can exercise the validation
+// paths without racing on the customs mutex.
+func validateRegisterSpec(spec Spec) error {
+	if spec.Name == "" {
+		return fmt.Errorf("hashes: Register: Spec.Name is empty")
+	}
+	for i := 0; i < len(spec.Name); i++ {
+		c := spec.Name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= '0' && c <= '9':
+		case c == '_':
+		default:
+			return fmt.Errorf("hashes: Register: Spec.Name %q contains illegal character %q (lowercase letters, digits, underscores only)", spec.Name, c)
+		}
+	}
+	switch spec.Width {
+	case W128:
+		if spec.Make128Pair == nil {
+			return fmt.Errorf("hashes: Register: Spec.Make128Pair required for Width=W128")
+		}
+		if spec.Make256Pair != nil || spec.Make512Pair != nil {
+			return fmt.Errorf("hashes: Register: only Make128Pair may be set for Width=W128")
+		}
+	case W256:
+		if spec.Make256Pair == nil {
+			return fmt.Errorf("hashes: Register: Spec.Make256Pair required for Width=W256")
+		}
+		if spec.Make128Pair != nil || spec.Make512Pair != nil {
+			return fmt.Errorf("hashes: Register: only Make256Pair may be set for Width=W256")
+		}
+	case W512:
+		if spec.Make512Pair == nil {
+			return fmt.Errorf("hashes: Register: Spec.Make512Pair required for Width=W512")
+		}
+		if spec.Make128Pair != nil || spec.Make256Pair != nil {
+			return fmt.Errorf("hashes: Register: only Make512Pair may be set for Width=W512")
+		}
+	default:
+		return fmt.Errorf("hashes: Register: Spec.Width=%d must be W128, W256, or W512", spec.Width)
+	}
+	return nil
+}
+
+// AllPrimitives returns a snapshot slice containing every entry in
+// [Registry] in canonical order followed by every user-registered
+// custom primitive in registration order. The returned slice is a
+// fresh copy; the caller may mutate it freely without affecting
+// subsequent snapshots.
+func AllPrimitives() []Spec {
+	customsMu.Lock()
+	defer customsMu.Unlock()
+	out := make([]Spec, 0, len(Registry)+len(customs))
+	out = append(out, Registry[:]...)
+	out = append(out, customs...)
+	return out
 }
 
 // Find returns the Spec for a canonical name and reports whether a match
-// was found.
+// was found. Shipped [Registry] entries are consulted first, then any
+// user-registered custom primitives added via [Register].
 func Find(name string) (Spec, bool) {
 	for _, s := range Registry {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	customsMu.Lock()
+	defer customsMu.Unlock()
+	for _, s := range customs {
 		if s.Name == name {
 			return s, true
 		}
@@ -95,8 +250,14 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 		fn, ret := AESCMAC()
 		return fn, ret[:], nil
 	}
-	if s, ok := Find(name); ok && s.Width != W128 {
-		return nil, nil, fmt.Errorf("hashes: %q has width %d, not 128", name, s.Width)
+	if s, ok := Find(name); ok {
+		if s.Width != W128 {
+			return nil, nil, fmt.Errorf("hashes: %q has width %d, not 128", name, s.Width)
+		}
+		if s.Make128Pair != nil {
+			h, _, ret, err := s.Make128Pair(key...)
+			return h, ret, err
+		}
 	}
 	return nil, nil, fmt.Errorf("hashes: unknown 128-bit primitive %q", name)
 }
@@ -135,11 +296,15 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 		h, b, ret := AESCMACPair()
 		return h, b, ret[:], nil
 	}
-	h, ret, err := Make128(name, key...)
-	if err != nil {
-		return nil, nil, nil, err
+	if s, ok := Find(name); ok {
+		if s.Width != W128 {
+			return nil, nil, nil, fmt.Errorf("hashes: %q has width %d, not 128", name, s.Width)
+		}
+		if s.Make128Pair != nil {
+			return s.Make128Pair(key...)
+		}
 	}
-	return h, nil, ret, nil
+	return nil, nil, nil, fmt.Errorf("hashes: unknown 128-bit primitive %q", name)
 }
 
 // Make256 returns a fresh cached HashFunc256 for the named primitive
@@ -220,8 +385,14 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 		fn, ret := ChaCha20()
 		return fn, ret[:], nil
 	}
-	if s, ok := Find(name); ok && s.Width != W256 {
-		return nil, nil, fmt.Errorf("hashes: %q has width %d, not 256", name, s.Width)
+	if s, ok := Find(name); ok {
+		if s.Width != W256 {
+			return nil, nil, fmt.Errorf("hashes: %q has width %d, not 256", name, s.Width)
+		}
+		if s.Make256Pair != nil {
+			h, _, ret, err := s.Make256Pair(key...)
+			return h, ret, err
+		}
 	}
 	return nil, nil, fmt.Errorf("hashes: unknown 256-bit primitive %q", name)
 }
@@ -309,11 +480,15 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 		h, b, ret := ChaCha20256Pair()
 		return h, b, ret[:], nil
 	}
-	h, ret, err := Make256(name, key...)
-	if err != nil {
-		return nil, nil, nil, err
+	if s, ok := Find(name); ok {
+		if s.Width != W256 {
+			return nil, nil, nil, fmt.Errorf("hashes: %q has width %d, not 256", name, s.Width)
+		}
+		if s.Make256Pair != nil {
+			return s.Make256Pair(key...)
+		}
 	}
-	return h, nil, ret, nil
+	return nil, nil, nil, fmt.Errorf("hashes: unknown 256-bit primitive %q", name)
 }
 
 // Make512 returns a fresh cached HashFunc512 for the named primitive
@@ -354,8 +529,14 @@ func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
 		fn, ret := BLAKE2b512()
 		return fn, ret[:], nil
 	}
-	if s, ok := Find(name); ok && s.Width != W512 {
-		return nil, nil, fmt.Errorf("hashes: %q has width %d, not 512", name, s.Width)
+	if s, ok := Find(name); ok {
+		if s.Width != W512 {
+			return nil, nil, fmt.Errorf("hashes: %q has width %d, not 512", name, s.Width)
+		}
+		if s.Make512Pair != nil {
+			h, _, ret, err := s.Make512Pair(key...)
+			return h, ret, err
+		}
 	}
 	return nil, nil, fmt.Errorf("hashes: unknown 512-bit primitive %q", name)
 }
@@ -397,9 +578,13 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 		h, b, ret := BLAKE2b512Pair()
 		return h, b, ret[:], nil
 	}
-	h, ret, err := Make512(name, key...)
-	if err != nil {
-		return nil, nil, nil, err
+	if s, ok := Find(name); ok {
+		if s.Width != W512 {
+			return nil, nil, nil, fmt.Errorf("hashes: %q has width %d, not 512", name, s.Width)
+		}
+		if s.Make512Pair != nil {
+			return s.Make512Pair(key...)
+		}
 	}
-	return h, nil, ret, nil
+	return nil, nil, nil, fmt.Errorf("hashes: unknown 512-bit primitive %q", name)
 }

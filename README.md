@@ -755,7 +755,37 @@ func main() {
 
 ### Custom user-supplied primitives
 
-The shipped `hashes/` registry does not accept runtime registrations. Users who want to plug their own inner primitive construct `itb.HashFunc{N}` (single-call) and `itb.BatchHashFunc{N}` (batched-arm) closures per seed slot and pass them directly to the `*Cfg` Low-Level entry point. The primitive is responsible for its own keying and pooling; ITB's per-pixel dispatcher wires both arms through the seed's `Hash` and `BatchHash` fields.
+A user primitive is pluggable at the Low-Level surface in two shapes.
+
+- **Closure-directly-passed.** Construct `itb.HashFunc{N}` (single-call) and `itb.BatchHashFunc{N}` (batched-arm) closures per seed slot and pass them directly to the `*Cfg` Low-Level entry point. The primitive is responsible for its own keying and pooling; ITB's per-pixel dispatcher wires both arms through the seed's `Hash` and `BatchHash` fields. The primitive stays local to the constructing call site — `hashes.Find` does not resolve it.
+- **Registered by name via `hashes.Register(spec hashes.Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores), `Width` (`W128` / `W256` / `W512`), and exactly one `Make{N}Pair` factory field matching the width. Registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register` for the same name returns `hashes.ErrHashExists`. The shipped `hashes.Registry` itself is untouched, so the FFI iteration surface (`ITB_HashName` / `ITB_HashWidth`) is unaffected. `hashes.Register` is a Go-native API only; bindings are triple-only and do not expose custom-primitive plug.
+
+The registered path composes with the `triple.Pipeline` facade: `triple.Init(profile, opts)` selects primitives by name via `hashes.Find`, so a registered name is reachable through the same facade the shipped primitives use. Closure-directly-passed primitives are reachable only through the Low-Level `*Cfg` entry points.
+
+```go
+import (
+    "crypto/sha256"
+
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+func init() {
+    factory := func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
+        var fixedKey [32]byte
+        if len(key) > 0 {
+            copy(fixedKey[:], key[0])
+        } // else fill from crypto/rand.Read(fixedKey[:])
+        h := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
+        return h, nil, fixedKey[:], nil
+    }
+    _ = hashes.Register(hashes.Spec{
+        Name:        "sha256_arx",
+        Width:       hashes.W256,
+        Make256Pair: factory,
+    })
+}
+```
 
 ### Runtime tuning (memory / GC)
 

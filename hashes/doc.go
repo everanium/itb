@@ -70,4 +70,16 @@
 // throughput for built-in primitives. See [CONSTRUCTIONS.md]
 // "Why use builders for custom user primitives" for the silent-
 // truncation failure modes the builders prevent.
+//
+// # Runtime registration
+//
+// A user primitive can be plugged as a closure directly (constructed
+// via one of the builders above and passed to a Cfg-suffixed Low-Level
+// entry point) or registered by name via [Register] so the standard
+// name-keyed dispatchers ([Find], [Make128], [Make256], [Make512] and
+// their Pair counterparts) resolve it alongside shipped entries. The
+// shipped [Registry] itself is immutable — registrations live in a
+// separate mutex-guarded slice exposed via [AllPrimitives] — so the
+// FFI iteration surface is unaffected. See the package README for the
+// full end-to-end registration example.
 package hashes
