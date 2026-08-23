@@ -152,7 +152,7 @@
 //     Minimum container sized so encoding ambiguity exceeds key space:
 //     [MinPixels] = ceil(keyBits / log2(7)) (aliases [MinPixelsAuth]) —
 //     the plain and authenticated envelopes share one unified CCA-resistant
-//     floor so the container no longer distinguishes mode on tiny payloads.
+//     floor so the container does not distinguish mode on tiny payloads.
 //     At 1024-bit: MinPixels = 365 (P = 400 after square rounding).
 //     Noise barrier at MinPixels = 365 (P = 400 after square rounding):
 //     2^(8×400) = 2^3200, far beyond the Landauer limit of ~2^306.
