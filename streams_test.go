@@ -245,3 +245,74 @@ func TestEncryptStream3xCfgRoundtrip512(t *testing.T) {
 		t.Fatalf("EncryptStream3x512Cfg round-trip mismatch")
 	}
 }
+
+// --- Triple Ouroboros IO-Driven Cfg round-trip sweep (Phase 2) ---
+//
+// The width-less [EncryptStream3xCfg] / [DecryptStream3xCfg] IO-Driven
+// helpers accept a per-encryptor *Config so cfg.MaxWorkers /
+// cfg.NonceBits / cfg.BarrierFill flow through the chunked path
+// without touching the process globals. This sweep exercises every
+// Triple width (128 / 256 / 512), every MaxWorkers cap {1, 2, 4, 8},
+// and every chunk-boundary plaintext size {0, 1, chunkSize-1,
+// chunkSize, chunkSize+1, 1 MiB} at a modest chunkSize=4096 override,
+// flat t.Run per combination.
+func TestEncryptStream3xCfgRoundTripAllWidths(t *testing.T) {
+	const chunk = 4096
+	widths := []int{128, 256, 512}
+	workers := []int{1, 2, 4, 8}
+	sizes := []int{0, 1, chunk - 1, chunk, chunk + 1, 1 << 20}
+
+	for _, w := range widths {
+		w := w
+		for _, mw := range workers {
+			mw := mw
+			for _, sz := range sizes {
+				sz := sz
+				name := fmt.Sprintf("w%d/mw%d/sz%d", w, mw, sz)
+				t.Run(name, func(t *testing.T) {
+					cfg := &Config{MaxWorkers: mw}
+					pt := genTestPlaintext(t, sz)
+					var ctBuf bytes.Buffer
+					switch w {
+					case 128:
+						n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+						if err := EncryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
+							t.Fatalf("EncryptStream3xCfg: %v", err)
+						}
+						var ptBuf bytes.Buffer
+						if err := DecryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+							t.Fatalf("DecryptStream3xCfg: %v", err)
+						}
+						if !bytes.Equal(pt, ptBuf.Bytes()) {
+							t.Fatalf("128-bit Cfg round-trip mismatch at %d bytes", sz)
+						}
+					case 256:
+						n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
+						if err := EncryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
+							t.Fatalf("EncryptStream3xCfg: %v", err)
+						}
+						var ptBuf bytes.Buffer
+						if err := DecryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+							t.Fatalf("DecryptStream3xCfg: %v", err)
+						}
+						if !bytes.Equal(pt, ptBuf.Bytes()) {
+							t.Fatalf("256-bit Cfg round-trip mismatch at %d bytes", sz)
+						}
+					case 512:
+						n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
+						if err := EncryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
+							t.Fatalf("EncryptStream3xCfg: %v", err)
+						}
+						var ptBuf bytes.Buffer
+						if err := DecryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+							t.Fatalf("DecryptStream3xCfg: %v", err)
+						}
+						if !bytes.Equal(pt, ptBuf.Bytes()) {
+							t.Fatalf("512-bit Cfg round-trip mismatch at %d bytes", sz)
+						}
+					}
+				})
+			}
+		}
+	}
+}

@@ -601,6 +601,118 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 	}
 }
 
+// TestStreamCfgEnvelopeParity_NoMACvsAEAD ratifies the D18
+// mode-ambiguity envelope invariants (items 1/2/3) via the new Cfg
+// IO-Driven path from Phase 2. With a fixed plaintext + fixed 8 seeds
+// + fixed nonce + fixed chunkSize, encrypt through both
+// [EncryptStream3xCfg] (No-MAC) and [EncryptStreamAuth3xCfg] (AEAD)
+// using the same *Config and assert:
+//
+//  1. Per-chunk byte lengths are identical across the two modes.
+//  2. Full-stream byte lengths are identical across the two modes.
+//
+// The dummy32MAC yields 32-byte tags, matching the No-MAC
+// nomacTagStubSize convention; a fixed nonce is injected via
+// testNonceOverride so the mask-driven byte distribution across the
+// three snakes is identical on both paths, which in turn makes
+// COBS-encoded lengths and container sizes identical.
+func TestStreamCfgEnvelopeParity_NoMACvsAEAD(t *testing.T) {
+	sizes := []int{1, 6, 63, 64, 65, 1024, 8192, 1 << 20}
+	widths := []struct {
+		name     string
+		bits     int
+		nonceLen int
+	}{
+		{"128", 128, 16},
+		{"256", 256, 32},
+		{"512", 512, 64},
+	}
+
+	for _, w := range widths {
+		w := w
+		t.Run("w"+w.name, func(t *testing.T) {
+			installTestNonce(t, nonceFixture(w.nonceLen))
+			cfg := &Config{NonceBits: w.bits}
+
+			for _, sz := range sizes {
+				sz := sz
+				t.Run(fmt.Sprintf("plaintext=%d", sz), func(t *testing.T) {
+					plaintext := randomPlaintext(t, sz)
+					chunkSize := 4096
+
+					var aeadWire, plainWire bytes.Buffer
+					switch w.bits {
+					case 128:
+						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
+						if err := EncryptStreamAuth3xCfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, chunkSize); err != nil {
+							t.Fatalf("AEAD Cfg encrypt: %v", err)
+						}
+						if err := EncryptStream3xCfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &plainWire, chunkSize); err != nil {
+							t.Fatalf("No-MAC Cfg encrypt: %v", err)
+						}
+					case 256:
+						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
+						if err := EncryptStreamAuth3xCfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, chunkSize); err != nil {
+							t.Fatalf("AEAD Cfg encrypt: %v", err)
+						}
+						if err := EncryptStream3xCfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &plainWire, chunkSize); err != nil {
+							t.Fatalf("No-MAC Cfg encrypt: %v", err)
+						}
+					case 512:
+						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
+						if err := EncryptStreamAuth3xCfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, chunkSize); err != nil {
+							t.Fatalf("AEAD Cfg encrypt: %v", err)
+						}
+						if err := EncryptStream3xCfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &plainWire, chunkSize); err != nil {
+							t.Fatalf("No-MAC Cfg encrypt: %v", err)
+						}
+					}
+
+					// Full-stream length parity.
+					if aeadWire.Len() != plainWire.Len() {
+						t.Fatalf("Cfg envelope byte-length mismatch at plaintext=%d: aead=%d nomac=%d (diff=%d)",
+							sz, aeadWire.Len(), plainWire.Len(), aeadWire.Len()-plainWire.Len())
+					}
+
+					// Per-chunk length parity. Both wires carry a
+					// streamIDPrefixLen prefix (streamID on AEAD, dummy
+					// prefix on No-MAC) then a sequence of chunks whose
+					// header layout ParseChunkLenCfg can walk.
+					aeadBytes := aeadWire.Bytes()
+					plainBytes := plainWire.Bytes()
+					if len(aeadBytes) < streamIDPrefixLen || len(plainBytes) < streamIDPrefixLen {
+						// Empty-plaintext-with-No-MAC edge is not in the
+						// sizes list; nothing to walk.
+						return
+					}
+					aOff := streamIDPrefixLen
+					pOff := streamIDPrefixLen
+					for aOff < len(aeadBytes) && pOff < len(plainBytes) {
+						aLen, err := ParseChunkLenCfg(cfg, aeadBytes[aOff:])
+						if err != nil {
+							t.Fatalf("ParseChunkLenCfg (aead) at %d: %v", aOff, err)
+						}
+						pLen, err := ParseChunkLenCfg(cfg, plainBytes[pOff:])
+						if err != nil {
+							t.Fatalf("ParseChunkLenCfg (nomac) at %d: %v", pOff, err)
+						}
+						if aLen != pLen {
+							t.Fatalf("per-chunk length mismatch at aead=%d nomac=%d: aead=%d nomac=%d",
+								aOff, pOff, aLen, pLen)
+						}
+						aOff += aLen
+						pOff += pLen
+					}
+					if aOff != len(aeadBytes) || pOff != len(plainBytes) {
+						t.Fatalf("wire tail mismatch: aead consumed=%d/%d nomac consumed=%d/%d",
+							aOff, len(aeadBytes), pOff, len(plainBytes))
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestStreamEnvelopeNonceWidths exercises each supported nonce width
 // (128 / 256 / 512) through a small round-trip on both modes so a
 // header-width or nonce-offset regression surfaces on every branch of
