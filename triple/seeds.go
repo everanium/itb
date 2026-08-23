@@ -8,8 +8,8 @@ import (
 )
 
 // allocEightSeeds builds the 8-seed Interlocked Barrier Triple bundle
-// for the (innerHash, keyBits, width) combination. The layout mirrors
-// the easy package's canonical order:
+// for the (innerHash, keyBits, width) combination. The canonical slot
+// ordering is:
 //
 //	[0] noiseSeed
 //	[1] lockSeed
@@ -56,9 +56,9 @@ func allocEightSeeds(innerHash string, keyBits int) ([8]any, [8][]byte, int, err
 }
 
 // allocOneSeed produces one typed seed + its fixed PRF key for the
-// (primitive, keyBits, width) combination. Structural mirror of
-// easy.allocSeed but returns errors instead of panicking so [Init] can
-// bubble the failure through its error-returning signature.
+// (primitive, keyBits, width) combination. Returns errors instead of
+// panicking so [Init] can bubble the failure through its
+// error-returning signature.
 func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte, err error) {
 	switch width {
 	case 128:

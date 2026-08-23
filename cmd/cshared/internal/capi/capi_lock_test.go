@@ -3,8 +3,6 @@ package capi
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/json"
-	"fmt"
 	"testing"
 )
 
@@ -12,9 +10,7 @@ import (
 // (the Blob128 / Blob256 MAC and slot variants), MAC-registry
 // out-of-range probes for KeySize / TagSize, the low-level
 // DecryptAuth3 buffer-too-small probe path, the WrapStreamUpdate
-// empty-src early return, additional classifyPanicMessage classifier
-// branches via NewEasyMixed3 misuse, and the easy.Import sentinel
-// mapping for ErrUnknownPrimitive / ErrUnknownMAC / ErrBadKeyBits.
+// empty-src early return, and defensive-status-branch coverage.
 
 // ───────────────────────────────────────────────────────────────────
 // Blob128 / Blob256 — MAC key + name width-arm coverage
@@ -337,88 +333,6 @@ func mustGenerateKeyAdded(t *testing.T, cipher string) []byte {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// classifyPanicMessage — additional substring-match branches
-// ───────────────────────────────────────────────────────────────────
-
-// TestNewEasyMixed3UnknownLockSeedPrimitive triggers the "unknown
-// lockSeed primitive" panic path in easy.NewMixed3. The panic text
-// classifies via the "lockSeed primitive" arm surfacing
-// StatusBadInput.
-func TestNewEasyMixed3UnknownLockSeedPrimitive(t *testing.T) {
-	// All seven slot primitives valid; lockSeed primitive is not.
-	_, st := NewEasyMixed3(
-		"blake3",
-		"blake3", "blake3", "blake3",
-		"blake3", "blake3", "blake3",
-		"no-such-prim",
-		1024, "kmac256",
-	)
-	if st != StatusBadInput {
-		t.Errorf("status=%v, want StatusBadInput", st)
-	}
-}
-
-// TestNewEasyMixed3UnknownMAC drives NewEasyMixed3 with an unknown
-// MAC name — landing on the "unknown MAC" classifier branch via the
-// NewMixed3 path.
-func TestNewEasyMixed3UnknownMAC(t *testing.T) {
-	_, st := NewEasyMixed3(
-		"blake3",
-		"blake3", "blake3", "blake3",
-		"blake3", "blake3", "blake3",
-		"",
-		1024, "nonsense-mac",
-	)
-	if st != StatusEasyUnknownMAC {
-		t.Errorf("status=%v, want StatusEasyUnknownMAC", st)
-	}
-}
-
-// TestNewEasyMixed3BadKeyBits triggers the key_bits panic path in
-// easy.NewMixed3. classifyPanicMessage matches via the "key_bits"
-// substring, surfacing StatusEasyBadKeyBits.
-func TestNewEasyMixed3BadKeyBits(t *testing.T) {
-	_, st := NewEasyMixed3(
-		"blake3",
-		"blake3", "blake3", "blake3",
-		"blake3", "blake3", "blake3",
-		"",
-		999, "kmac256",
-	)
-	if st != StatusEasyBadKeyBits {
-		t.Errorf("status=%v, want StatusEasyBadKeyBits", st)
-	}
-}
-
-// ───────────────────────────────────────────────────────────────────
-// mapImportError — ErrUnknownPrimitive / ErrUnknownMAC / ErrBadKeyBits
-// ───────────────────────────────────────────────────────────────────
-
-// TestEasyImportSentinelErrorsLock crafts state blobs that trigger
-// each of the sentinel branches in mapImportError.
-func TestEasyImportSentinelErrorsLock(t *testing.T) {
-	id, _ := NewEasy("blake3", 1024, "kmac256", 3)
-	defer FreeEasy(id)
-
-	// Unknown primitive on Import.
-	blob := map[string]any{
-		"v":         1,
-		"kind":      "itb-easy",
-		"primitive": "nonsense-primitive",
-		"key_bits":  1024,
-		"mode":      "triple",
-		"mac":       "kmac256",
-		"prf_keys":  []string{"00", "00", "00", "00", "00", "00", "00", "00"},
-		"seeds":     [][]string{{"0"}, {"0"}, {"0"}, {"0"}, {"0"}, {"0"}, {"0"}, {"0"}},
-		"mac_key":   "",
-	}
-	data, _ := json.Marshal(blob)
-	if st := EasyImport(id, data); st != StatusEasyUnknownPrimitive {
-		t.Errorf("unknown primitive: status=%v, want StatusEasyUnknownPrimitive", st)
-	}
-}
-
-// ───────────────────────────────────────────────────────────────────
 // Status.String — defensive default branch
 // ───────────────────────────────────────────────────────────────────
 
@@ -473,24 +387,3 @@ func TestMACNameAndTagSizeBadHandle(t *testing.T) {
 	}
 }
 
-// ───────────────────────────────────────────────────────────────────
-// EasySeedCount smoke coverage across primitives
-// ───────────────────────────────────────────────────────────────────
-
-// TestEasyFreshSeedCountAcrossPrimitives makes sure SeedCount lands
-// on 8 for every shipped primitive.
-func TestEasyFreshSeedCountAcrossPrimitives(t *testing.T) {
-	for _, prim := range []string{"siphash24", "blake3", "areion512"} {
-		t.Run(fmt.Sprintf("%s", prim), func(t *testing.T) {
-			id, st := NewEasy(prim, 1024, "kmac256", 3)
-			if st != StatusOK {
-				t.Fatalf("NewEasy: %v", st)
-			}
-			defer FreeEasy(id)
-			n, _ := EasySeedCount(id)
-			if n != 8 {
-				t.Errorf("SeedCount = %d, want 8", n)
-			}
-		})
-	}
-}

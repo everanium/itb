@@ -45,16 +45,13 @@ const (
 // the surrounding packages so a fresh Pipeline reads back the same
 // numbers a manual composition would produce.
 const (
-	// defaultInnerHash mirrors easy's default primitive
-	// (easy/easy.go: defaultPrimitive).
+	// defaultInnerHash is the shipped ITB PRF primitive.
 	defaultInnerHash = "areion512"
 
-	// defaultKeyBits mirrors easy's default per-seed key width
-	// (easy/easy.go: defaultKeyBits).
+	// defaultKeyBits is the shipped per-seed key width.
 	defaultKeyBits = 1024
 
-	// defaultMacName mirrors easy's default MAC
-	// (easy/easy.go: defaultMAC).
+	// defaultMacName is the shipped MAC primitive.
 	defaultMacName = "hmac-blake3"
 
 	// defaultOuterCipher picks the wrapper's Streaming-friendly PRF-

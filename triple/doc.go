@@ -38,12 +38,10 @@
 // explicit fallback consulted when the corresponding [Opts] field is
 // left at zero.
 //
-// Reader notice — this package supersedes the earlier
-// [github.com/everanium/itb/easy] facade with a stricter surface. The
-// The Interlocked Barrier is always on and non-disableable; the
-// Triple 3-snake payload split is the only cipher mode. There are no
-// runtime overlay toggles, no engage/disengage knobs, and no Single
-// Message legacy surface — the package exposes one lifecycle
-// (Init/Open/Rekey/Close) plus one cipher pair per shape (message,
-// stream).
+// Reader notice — the Interlocked Barrier is always on and
+// non-disableable; the Triple 3-snake payload split is the only
+// cipher mode. There are no runtime overlay toggles, no
+// engage/disengage knobs, and no Single Message legacy surface — the
+// package exposes one lifecycle (Init/Open/Rekey/Close) plus one
+// cipher pair per shape (message, stream).
 package triple

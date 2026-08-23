@@ -18,19 +18,18 @@ const (
 	StatusBadMAC         Status = 9
 	StatusMACFailure     Status = 10
 
-	// Easy encryptor (itb/easy sub-package) sentinel codes. The
-	// numeric block 11..17 is dedicated to the Encryptor surface so
-	// the lower codes 0..10 remain reserved for the low-level
-	// Encrypt / Decrypt path. Bindings translate each code into a
-	// distinct exception class (or sentinel attribute) on the
-	// language-side wrapper.
-	StatusEasyClosed           Status = 11
-	StatusEasyMalformed        Status = 12
-	StatusEasyVersionTooNew    Status = 13
-	StatusEasyUnknownPrimitive Status = 14
-	StatusEasyUnknownMAC       Status = 15
-	StatusEasyBadKeyBits       Status = 16
-	StatusEasyMismatch         Status = 17
+	// Reserved sentinel block 11..17 — previously carried the
+	// retired Easy encryptor surface's per-facade sentinel codes.
+	// The numeric slots stay reserved so no future addition
+	// re-uses them and shifts a wire-numeric error identifier
+	// bindings may still be reading from a legacy log.
+	StatusReserved11 Status = 11
+	StatusReserved12 Status = 12
+	StatusReserved13 Status = 13
+	StatusReserved14 Status = 14
+	StatusReserved15 Status = 15
+	StatusReserved16 Status = 16
+	StatusReserved17 Status = 17
 
 	// Native Blob (itb.Blob128 / Blob256 / Blob512) sentinel codes.
 	// The numeric block 19..22 is dedicated to the low-level state-
@@ -49,6 +48,14 @@ const (
 	// by the per-chunk ABI handlers.
 	StatusStreamTruncated  Status = 23
 	StatusStreamAfterFinal Status = 24
+
+	// Triple Pipeline (itb/triple) sentinel — returned by every
+	// [TripleEncryptStream] / [TripleDecryptStream] /
+	// [TripleEncryptMessage] / [TripleDecryptMessage] / [TripleRekey]
+	// call after [TripleClose] has run. Distinct from
+	// StatusEasyClosed so bindings can map the two facades to
+	// distinct language-side exception classes.
+	StatusTripleClosed Status = 25
 
 	StatusInternal Status = 99
 )
@@ -80,20 +87,14 @@ func (s Status) String() string {
 		return "unknown MAC name or invalid MAC handle"
 	case StatusMACFailure:
 		return "MAC verification failed (tampered ciphertext or wrong key)"
-	case StatusEasyClosed:
-		return "encryptor is closed"
-	case StatusEasyMalformed:
-		return "malformed state blob"
-	case StatusEasyVersionTooNew:
-		return "state blob version too new"
-	case StatusEasyUnknownPrimitive:
-		return "unknown primitive in state blob"
-	case StatusEasyUnknownMAC:
-		return "unknown MAC in state blob"
-	case StatusEasyBadKeyBits:
-		return "invalid key_bits in state blob"
-	case StatusEasyMismatch:
-		return "state blob disagrees with encryptor configuration (read field via ITB_Easy_LastMismatchField)"
+	case StatusReserved11,
+		StatusReserved12,
+		StatusReserved13,
+		StatusReserved14,
+		StatusReserved15,
+		StatusReserved16,
+		StatusReserved17:
+		return "reserved status (retired Easy facade)"
 	case StatusBlobModeMismatch:
 		return "blob mode mismatch (Single Import on Triple blob, or vice versa)"
 	case StatusBlobMalformed:
@@ -106,6 +107,8 @@ func (s Status) String() string {
 		return "Streaming AEAD transcript truncated before terminator"
 	case StatusStreamAfterFinal:
 		return "Streaming AEAD chunk after terminator"
+	case StatusTripleClosed:
+		return "Triple Pipeline is closed"
 	case StatusInternal:
 		return "internal error"
 	}
