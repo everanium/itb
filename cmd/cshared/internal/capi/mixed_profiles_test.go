@@ -64,8 +64,8 @@ func TestTripleInitShippedMixedProfilesCapi(t *testing.T) {
 // round-trips a message through the FFI cipher path.
 func TestTripleRegisterProfileMixedCapiRoundTrip(t *testing.T) {
 	const name = "capitest-triple-mixed-roundtrip-v1"
-	// Width-256 mixed constellation using all five shipped
-	// width-256 primitives with two-slot repeats.
+	// Width-256 mixed constellation using every shipped width-256
+	// primitive with two-slot repeats.
 	opts := strings.Join([]string{
 		"mode=singlemsg-mac",
 		"width=256",
