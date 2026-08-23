@@ -7,7 +7,10 @@
 // ([Init] / [Open] / [Pipeline.Rekey] / [Pipeline.Close]) and four
 // cipher entry points ([Pipeline.EncryptStream] /
 // [Pipeline.DecryptStream] / [Pipeline.EncryptMessage] /
-// [Pipeline.DecryptMessage]).
+// [Pipeline.DecryptMessage]). Callers who need a configuration outside
+// the shipped catalogue install a [Profile] literal at process init
+// via [RegisterProfile] and reference the registered name at [Init]
+// like any shipped profile.
 //
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
