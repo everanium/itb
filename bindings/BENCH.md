@@ -45,40 +45,49 @@ Go native number.
 | Binding                              | 1 MB | 16 MB | 64 MB |
 |--------------------------------------|-----:|------:|------:|
 | **Go native** (`Encrypt3x512Cfg`)    |   77 |   161 |   171 |
-| **Rust** (thin proxy)                |   86 |   142 |   143 |
-| **C** (thin proxy)                   |   76 |   141 |   144 |
+| **Rust** (thin proxy)                |   90 |   149 |   155 |
+| **C** (thin proxy)                   |   85 |   148 |   155 |
 
 ### Stream pump shape (multi-call session — Begin / Write / End / Read / Free)
 
 | Binding                              | 1 MB | 16 MB | 64 MB |
 |--------------------------------------|-----:|------:|------:|
 | **Go native** (`Encrypt3x512Cfg`)    |   77 |   161 |   171 |
-| **Rust** (stream pump)               |   72 |   142 |   141 |
-| **C** (stream pump)                  |   82 |   137 |   143 |
+| **Rust** (stream pump)               |   75 |   143 |   136 |
+| **C** (stream pump)                  |   82 |   139 |   144 |
 
 Throughput in MB/s. Go native row is [BENCH3.md](../BENCH3.md)
 Triple 1024-bit Areion-SoEM-512 Encrypt at `ITB_NONCE_BITS=512`
-with the same heap caps applied. The 1 MB column carries visible
-GC-cycle noise across reruns; the 16 MB and 64 MB columns are
-stable.
+with the same heap caps applied. Plaintext is CSPRNG-filled on
+both sides (`crypto/rand` for Go, `rand::rng().fill_bytes` for
+Rust, `getrandom(2)` for C) so the COBS path handles identical
+byte-content distributions across all rows. The 1 MB column
+carries visible GC-cycle noise across reruns; the 16 MB and
+64 MB columns are stable.
 
 ## FFI overhead
 
-Rust and C both sit at 84–88% of native Go throughput at 16 MB
-and 64 MB, and roughly at parity or better at 1 MB (where Go
-carries GC-cycle overhead the alloc-friendly binding runtimes do
-not). Rust vs C parity within measurement noise confirms the
-thin-proxy shape adds no measurable language-side overhead on
-top of the shared FFI boundary — both languages hit the same
-capi + `triple.Pipeline` cost floor.
+Message shape: Rust 91%, C 90% of native Go throughput at 64 MB.
+Stream pump: Rust 80%, C 84% at 64 MB. Rust vs C parity within
+measurement noise on both shapes confirms the thin-proxy design
+adds no measurable language-side overhead on top of the shared
+FFI boundary — both languages hit the same capi +
+`triple.Pipeline` cost floor.
 
-The ~15% shortfall vs native Go at large payloads is not
-FFI-crossing overhead alone: the binding path traverses
-`triple.Pipeline.EncryptMessage`, which is an extra Go-side
-layer over the raw `Encrypt3x512Cfg` entry the root Go bench
-drives directly. That layer has no direct bench in the shipped Go
-suite and is the subject of a dedicated pre-Phase-3 performance
-investigation.
+The residual ~10–15% shortfall vs native Go splits into two
+roughly equal halves: half comes from the `triple.Pipeline`
+layer (an extra Go-side wrap over the raw `Encrypt3x512Cfg`
+entry the root Go bench drives directly), addressed by the
+wire-buffer pre-sizing patch already in the shipped
+`triple/message.go` + `capi/triple.go`; the other half comes
+from the c-shared / cgo runtime itself (signal + scheduler
+mechanics plus GC work when the main thread is external) and
+is not addressable with a minimal Go-side patch — it is the
+intrinsic cost of the FFI surface. Stream pump paths carry an
+additional spool-side allocation ladder in
+`capi/triple_stream.go` not covered by the Pipeline-layer
+patch; a follow-up pre-sizing of the session spool is a
+candidate to close another ~5–8% on the stream shape.
 
 ## Reproduction
 

@@ -15,6 +15,7 @@ libloading = "0.9"
 
 [dev-dependencies]
 criterion = "0.5"
+rand = "0.9"
 
 [lib]
 name = "itb"
