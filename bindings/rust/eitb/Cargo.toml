@@ -1,0 +1,19 @@
+[package]
+name = "eitb"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Command-line demonstrator for the ITB Rust binding"
+publish = false
+
+[dependencies]
+itb = { path = ".." }
+libloading = "0.9"
+
+[[bin]]
+name = "eitb"
+path = "src/main.rs"
+
+# Standalone package — stop cargo's workspace inference at this dir.
+[workspace]

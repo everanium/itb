@@ -1,0 +1,31 @@
+[package]
+name = "itb"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Rust thin-proxy binding for ITB via the libitb shared library"
+repository = "https://github.com/everanium/itb"
+readme = "README.md"
+keywords = ["cryptography", "cipher", "ouroboros", "ffi"]
+categories = ["cryptography", "external-ffi-bindings", "api-bindings"]
+
+[dependencies]
+libloading = "0.9"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[lib]
+name = "itb"
+path = "src/lib.rs"
+
+[[bench]]
+name = "bench_message"
+path = "benches/bench_message.rs"
+harness = false
+
+[[bench]]
+name = "bench_stream"
+path = "benches/bench_stream.rs"
+harness = false
