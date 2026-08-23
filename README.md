@@ -580,7 +580,59 @@ The order above is the canonical registry order used identically across the Go c
 | `triple.ProfileSingleMsgTripleNoMACV1` | `"singlemsg-triple-nomac-v1"` |
 | `triple.ProfileBlobTripleMACV1` | `"blob-triple-mac-v1"` |
 
-The shipped profiles are populated at package init. Callers who need a configuration outside the shipped set today combine a shipped profile with `Opts` field-by-field overrides; a runtime `triple.RegisterProfile(name, p)` API for user-defined profiles is scheduled to land post-docs-sync (queued as task #27), until which time the shipped profiles plus `Opts` overrides are the available surface.
+The shipped profiles are populated at package init. Callers who need a configuration outside the shipped set install a user-defined `triple.Profile` at process init via `triple.RegisterProfile(name, p)` and reference the registered name from `triple.Init` / `triple.Open` like any shipped profile. The registered name is a wire contract with the receiver, so a profile bound to a name cannot be silently rebound — evolving a profile's shape picks a new name (typically appending `-v2`, `-v3`, …).
+
+Name rules for `RegisterProfile`:
+
+- Matches `^[a-z][a-z0-9-]{2,63}$` — lowercase ASCII letter start; 2–63 further ASCII lowercase letters, digits, or hyphens.
+- Must not start with one of the reserved shipped-catalogue prefixes: `streaming-`, `singlemsg-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
+- Must not already be registered; re-registration returns `triple.ErrProfileExists`.
+
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped five (`streaming-aead` / `streaming-noaead` / `singlemsg-mac` / `singlemsg-nomac` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width`; `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default). `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
+
+Worked example — installing a 256-bit BLAKE3 Streaming AEAD variant and using it identically to a shipped profile:
+
+```go
+package main
+
+import (
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/parallax"
+    "github.com/everanium/itb/triple"
+)
+
+func init() {
+    // Register once at process init — a profile name is a wire
+    // contract with the receiver, so both sides register the same
+    // (name, Profile) pair before any Init / Open call fires.
+    if err := triple.RegisterProfile("acme-triple-b3-256-v1", triple.Profile{
+        Mode:                "streaming-aead",
+        Width:               256,
+        InnerHash:           "blake3",
+        KeyBits:             1024,
+        MacName:             "hmac-blake3",
+        OuterCipher:         "chacha20",
+        ParallaxPalette:     []string{"aescmac", "chacha20", "blake3"},
+        ParallaxSegmentSize: parallax.DefaultSegmentSize,
+        ChunkSize:           itb.DefaultChunkSize,
+        ParallaxOn:          true,
+        WrapperOn:           true,
+    }); err != nil {
+        panic(err)
+    }
+}
+
+func main() {
+    enc, blob, err := triple.Init("acme-triple-b3-256-v1", triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer enc.Close()
+    _ = blob // ship the blob out-of-band; receiver calls triple.Open on the same name.
+}
+```
+
+C-ABI callers install the same profile via `ITB_Triple_RegisterProfile(name, opts)` — `opts` is a URL-query-encoded profile-shape string with the same keys the shipped opts parser accepts, plus profile-only fields (`mode`, `width`, `parallaxOn`, `wrapperOn`). The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`.
 
 ## Advanced — Low-Level `*Cfg` surface
 
@@ -964,7 +1016,7 @@ All three approaches use standard mathematics. The formal relationship between I
 
 ## Bindings
 
-The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`) — nine entries today: the lifecycle quad `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Rekey` / `ITB_Triple_Close`, the handle-helper `ITB_Triple_Free`, and the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The runtime-`triple.RegisterProfile` API queued as task #27 adds a tenth entry (`ITB_Triple_RegisterProfile`) once it lands. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw eight-seed handoff.
+The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`) — ten entries today: the lifecycle quad `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Rekey` / `ITB_Triple_Close`, the handle-helper `ITB_Triple_Free`, the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`, and the profile-registry entry `ITB_Triple_RegisterProfile` that installs a user-defined profile shape via a URL-query opts string. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw eight-seed handoff.
 
 ### Fleet plan (33 bindings)
 
