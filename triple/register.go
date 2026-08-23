@@ -160,14 +160,24 @@ func validateProfileFields(p Profile) error {
 	default:
 		return fmt.Errorf("triple: RegisterProfile: Width %d not in {128, 256, 512}", p.Width)
 	}
-	spec, ok := hashes.Find(p.InnerHash)
-	if !ok {
-		return fmt.Errorf("triple: RegisterProfile: InnerHash %q not in hashes.Registry",
-			p.InnerHash)
-	}
-	if int(spec.Width) != p.Width {
-		return fmt.Errorf("triple: RegisterProfile: InnerHash %q has width %d, profile Width is %d",
-			p.InnerHash, int(spec.Width), p.Width)
+	// Mixed vs single-primitive dispatch. A mixed constellation
+	// populates every [Profile.MixedHashes] slot and leaves
+	// [Profile.InnerHash] empty; single-primitive profiles do the
+	// opposite. The two fields are mutually exclusive.
+	if isMixedProfile(p) {
+		if err := validateMixedHashes(p); err != nil {
+			return err
+		}
+	} else {
+		spec, ok := hashes.Find(p.InnerHash)
+		if !ok {
+			return fmt.Errorf("triple: RegisterProfile: InnerHash %q not in hashes.Registry",
+				p.InnerHash)
+		}
+		if int(spec.Width) != p.Width {
+			return fmt.Errorf("triple: RegisterProfile: InnerHash %q has width %d, profile Width is %d",
+				p.InnerHash, int(spec.Width), p.Width)
+		}
 	}
 	if p.KeyBits <= 0 {
 		return fmt.Errorf("triple: RegisterProfile: KeyBits %d must be > 0", p.KeyBits)
@@ -227,4 +237,47 @@ func isKnownWrapperCipher(name string) bool {
 		}
 	}
 	return false
+}
+
+// validateMixedHashes enforces the per-slot rules for a mixed-primitive
+// constellation. Runs from [validateProfileFields] when
+// [isMixedProfile] reports true.
+//
+// Rules:
+//
+//   - [Profile.InnerHash] must be empty. Mixed and single-primitive
+//     are mutually exclusive dispatch paths; setting both is refused
+//     so a downstream reader cannot silently pick the wrong one.
+//   - Every [Profile.MixedHashes] slot must be non-empty. Any partial
+//     population (some slots set, others zero) is refused rather than
+//     silently substituting a default per slot.
+//   - Every slot's primitive must resolve via
+//     [github.com/everanium/itb/hashes.Find].
+//   - Every slot's primitive width must equal [Profile.Width]. Uniform
+//     width per profile keeps the seed-allocation path a single width
+//     class; mixing widths within one profile is not supported.
+//
+// Repeats across slots are permitted — the constraint is uniform
+// width, not eight-distinct primitives.
+func validateMixedHashes(p Profile) error {
+	if p.InnerHash != "" {
+		return fmt.Errorf("triple: RegisterProfile: InnerHash %q must be empty when MixedHashes is populated (mixed and single-primitive dispatch are mutually exclusive)",
+			p.InnerHash)
+	}
+	for i, name := range p.MixedHashes {
+		if name == "" {
+			return fmt.Errorf("triple: RegisterProfile: MixedHashes[%d] is empty (populate all 8 slots or leave every slot empty for single-primitive dispatch)",
+				i)
+		}
+		spec, ok := hashes.Find(name)
+		if !ok {
+			return fmt.Errorf("triple: RegisterProfile: MixedHashes[%d] = %q not in hashes.Registry",
+				i, name)
+		}
+		if int(spec.Width) != p.Width {
+			return fmt.Errorf("triple: RegisterProfile: MixedHashes[%d] = %q has width %d, profile Width is %d",
+				i, name, int(spec.Width), p.Width)
+		}
+	}
+	return nil
 }
