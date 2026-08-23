@@ -1,7 +1,7 @@
 //go:build amd64 && !purego && !noitbasm
 
 // Fused chained-absorb VAES kernel for Areion-SoEM-256 with 36-byte
-// per-lane data input (the ITB SetNonceBits(256) buf shape).
+// per-lane data input (the ITB Config.NonceBits=256 buf shape).
 //
 // Replaces the Go closure path that builds keys[4][64]byte +
 // states[4][32]byte in stack memory, calls AreionSoEM256x4 twice (once

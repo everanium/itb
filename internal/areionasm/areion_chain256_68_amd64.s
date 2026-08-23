@@ -1,7 +1,7 @@
 //go:build amd64 && !purego && !noitbasm
 
 // Fused chained-absorb VAES kernel for Areion-SoEM-256 with 68-byte
-// per-lane data input (the ITB SetNonceBits(512) buf shape).
+// per-lane data input (the ITB Config.NonceBits=512 buf shape).
 //
 // 68 bytes > 24-byte chunkSize, so the absorb runs as 3 SoEM rounds
 // with state held in (Z14, Z15) ZMM registers across all rounds.
