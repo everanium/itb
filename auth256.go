@@ -56,7 +56,7 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	}
 
 	// part2 COBS length increased by tagSize + 1 for container sizing:
-	// the +1 mirrors the streaming AEAD flag-byte slot so the single
+	// the +1 mirrors the Streaming AEAD flag-byte slot so the single
 	// message wire envelope matches the No-MAC Encrypt3x envelope
 	// (which reserves nomacTagStubSize = tagSize + 1 for the same
 	// mode-ambiguity reason). Single messages carry a fixed 0x00 in
