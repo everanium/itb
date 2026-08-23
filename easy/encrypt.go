@@ -15,11 +15,6 @@ import (
 // Returns an error for all other failure paths (CSPRNG failure,
 // data too large, internal sizing error) — same error shape as the
 // underlying [itb.Encrypt3x{N}] entry points.
-//
-// Marks the encryptor as having produced ciphertext on the first
-// successful call, after which [Encryptor.SetLockSeed] is rejected
-// (the bit-permutation derivation path cannot change mid-session
-// without breaking decryptability of pre-switch ciphertext).
 func (e *Encryptor) Encrypt(plaintext []byte) ([]byte, error) {
 	if e.closed {
 		panic(ErrClosed)
