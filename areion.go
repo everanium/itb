@@ -237,7 +237,7 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	// SoA destinations → permute → 16 uint64 XORs unpack-and-XOR
 	// in one pass). Each Areion256x4 batched call drops ~5-10 ns
 	// of Go-side overhead — measurable on slow-path
-	// SetNonceBits(256/512) workloads where the closure dispatches
+	// 256-bit / 512-bit ITB nonce workloads where the closure dispatches
 	// 2-3 batched calls per ChainHash round.
 	const domainSepU64 = uint64(0x01) // = areionSoEM256DomainSepX4 first u64 word
 	keysU64 := (*[4][8]uint64)(unsafe.Pointer(keys))
@@ -510,7 +510,7 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// being capped at the SoEM-256 block size.
 	//
 	// Hot-path optimisations: ITB feeds 20-, 36-, or 68-byte buf
-	// shapes per pixel (one of the three SetNonceBits configs).
+	// shapes per pixel (one of the three per-pixel buf shapes).
 	// The 20-byte case takes the single-round fast path below
 	// (zero loop overhead); the 36- and 68-byte cases run 2 or 3
 	// chained rounds. Absorb XOR is done in 8-byte uint64 chunks
@@ -586,7 +586,7 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 		commonLen := len(data[0])
 
 		// Hot-path fast track: ITB feeds 20-, 36-, or 68-byte buf shapes
-		// per batched call (one of the three SetNonceBits configs).
+		// per batched call (one of the three per-pixel buf shapes).
 		// Specialised AVX-512 kernels for each length keep the SoEM
 		// state in ZMM registers across all CBC-MAC absorb rounds and
 		// skip the keys[4][64] / states[4][32] memory roundtrips that
@@ -736,7 +736,7 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])
 
-		// Hot-path fast track for ITB's three SetNonceBits buf shapes.
+		// Hot-path fast track for ITB's three per-pixel buf shapes.
 		// Mirrors the Areion-SoEM-256 dispatch — specialised AVX-512
 		// kernels per length keep the SoEM state in ZMM across all
 		// CBC-MAC absorb rounds.

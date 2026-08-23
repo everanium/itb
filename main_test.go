@@ -15,11 +15,9 @@ var testNonceBitsOverride int
 
 // testCfg returns a *Config with NonceBits populated from
 // [testNonceBitsOverride] when the ITB_NONCE_BITS environment variable
-// selected a specific width, or nil otherwise. Tests threading nonce
-// width through the *Cfg entry points call testCfg() where they used
-// to rely on the retired [SetNonceBits] process-global; tests that
-// pass nil to *Cfg see the compile-in default regardless of the env
-// var.
+// selected a specific width, or nil otherwise. Tests thread nonce
+// width through the *Cfg entry points via testCfg(); tests that pass
+// nil to *Cfg see the compile-in default regardless of the env var.
 func testCfg() *Config {
 	if testNonceBitsOverride == 0 {
 		return nil

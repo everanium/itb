@@ -4,7 +4,7 @@ package blake3asm
 
 // Blake3256ChainAbsorb20x4 is the public 4-pixel-batched entry
 // point for the BLAKE3-256 chain-absorb at the 20-byte data shape
-// (ITB SetNonceBits(128) buf shape).
+// (128-bit ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused ZMM-batched ASM kernel; otherwise falls through to
@@ -54,7 +54,7 @@ func blake3256ChainAbsorb20x4Asm(
 )
 
 // Blake3256ChainAbsorb36x4 — 36-byte BLAKE3-256 batched dispatcher
-// (ITB SetNonceBits(256) buf shape). Single compression block per
+// (256-bit ITB nonce buf shape). Single compression block per
 // lane (mixed=36 ≤ 64-byte BLAKE3 block size); same flag set as
 // the 20-byte case but block_len=36 and the m-pack covers 9 dwords
 // of data (m[0..8]) instead of 5.
@@ -80,7 +80,7 @@ func blake3256ChainAbsorb36x4Asm(
 )
 
 // Blake3256ChainAbsorb68x4 — 68-byte BLAKE3-256 batched dispatcher
-// (ITB SetNonceBits(512) buf shape). Two compression blocks per
+// (512-bit ITB nonce buf shape). Two compression blocks per
 // lane (mixed=68 > 64):
 //
 //	Block 1 (block_len=64, flags=KEYED_HASH|CHUNK_START):

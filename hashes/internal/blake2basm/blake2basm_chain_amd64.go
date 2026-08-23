@@ -4,7 +4,7 @@ package blake2basm
 
 // Blake2b512ChainAbsorb20x4 is the public 4-pixel-batched entry point
 // for the BLAKE2b-512 chain-absorb at the 20-byte data shape (ITB
-// SetNonceBits(128) buf shape).
+// 128-bit ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused ZMM-batched ASM kernel which holds four lane-isolated
@@ -68,7 +68,7 @@ func blake2b512ChainAbsorb20x4Asm(
 )
 
 // Blake2b512ChainAbsorb36x4 — 36-byte BLAKE2b-512 batched dispatcher
-// (ITB SetNonceBits(256) buf shape). Same single-compression structure
+// (256-bit ITB nonce buf shape). Same single-compression structure
 // as the 20-byte path; only the data-region length differs.
 func Blake2b512ChainAbsorb36x4(
 	h0 *[8]uint64,
@@ -94,7 +94,7 @@ func blake2b512ChainAbsorb36x4Asm(
 )
 
 // Blake2b512ChainAbsorb68x4 — 68-byte BLAKE2b-512 batched dispatcher
-// (ITB SetNonceBits(512) buf shape). Two compression blocks per lane:
+// (512-bit ITB nonce buf shape). Two compression blocks per lane:
 //
 //	Block 1 (t=128, f=0): buf[0:128]   = b2key + (data[0:64] ⊕ seed)
 //	Block 2 (t=132, f=^0): buf[128:132] = data[64:68] + 124 zero pad
@@ -127,7 +127,7 @@ func blake2b512ChainAbsorb68x4Asm(
 )
 
 // Blake2b256ChainAbsorb20x4 — BLAKE2b-256 batched dispatcher for the
-// 20-byte data shape (ITB SetNonceBits(128) buf shape). The 256-bit
+// 20-byte data shape (128-bit ITB nonce buf shape). The 256-bit
 // kernels use a 32-byte prefix-MAC key and 4 seed components (vs 64 /
 // 8 in the 512-bit kernels). One BLAKE2b compression per lane with
 // t = key_len + max(data_len, 32) (= 64 for 20-byte data), f=^0.
@@ -158,7 +158,7 @@ func blake2b256ChainAbsorb20x4Asm(
 )
 
 // Blake2b256ChainAbsorb36x4 — 36-byte BLAKE2b-256 batched dispatcher
-// (SetNonceBits(256)). t=68, single compression block per lane.
+// (256-bit ITB nonce). t=68, single compression block per lane.
 func Blake2b256ChainAbsorb36x4(
 	h0 *[8]uint64,
 	b2key *[32]byte,
@@ -183,7 +183,7 @@ func blake2b256ChainAbsorb36x4Asm(
 )
 
 // Blake2b256ChainAbsorb68x4 — 68-byte BLAKE2b-256 batched dispatcher
-// (SetNonceBits(512)). t=100, single compression block per lane (the
+// (512-bit ITB nonce). t=100, single compression block per lane (the
 // per-lane buf is 100 bytes ≤ 128, so no inter-block fold like the
 // 512-bit counterpart's two-block kernel).
 func Blake2b256ChainAbsorb68x4(

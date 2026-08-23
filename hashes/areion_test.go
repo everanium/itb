@@ -9,9 +9,9 @@ import (
 // TestAreion256DigestDependsOnEveryByte locks in the CBC-MAC chained
 // absorb fix for Areion-SoEM-256. The previous closure copy-truncated
 // `data` to the SoEM-256 input width (32 bytes), so anything past byte
-// 31 was silently dropped. Under SetNonceBits(256) the resulting buf
+// 31 was silently dropped. Under a 256-bit ITB nonce the resulting buf
 // shape is 36 bytes (4 blockIdx + 32 nonce) — the last 4 nonce bytes
-// were lost. Under SetNonceBits(512) the resulting buf shape is 68
+// were lost. Under a 512-bit ITB nonce the resulting buf shape is 68
 // bytes — 36 nonce bytes were lost. The new chained absorb feeds
 // every input byte into the digest regardless of length.
 //
@@ -44,7 +44,7 @@ func TestAreion256DigestDependsOnEveryByte(t *testing.T) {
 
 // TestAreion512DigestDependsOnEveryByte: same regression test for the
 // 512-bit variant. SoEM-512 input width is 64 bytes; pre-fix this
-// silently dropped bytes past offset 64 (so SetNonceBits(512) lost
+// silently dropped bytes past offset 64 (so a 512-bit ITB nonce lost
 // the last 4 nonce bytes). The new chained absorb covers every byte
 // at every nonce-bit configuration.
 func TestAreion512DigestDependsOnEveryByte(t *testing.T) {

@@ -4,7 +4,7 @@ package aescmacasm
 
 // AESCMAC128ChainAbsorb20x4 is the public 4-pixel-batched entry
 // point for the AES-CMAC-128 chain-absorb at the 20-byte data shape
-// (ITB SetNonceBits(128) buf shape — the default config).
+// (128-bit ITB nonce buf shape — the default config).
 //
 // On amd64 + VAES + AVX-512 hosts (HasVAESAVX512 == true), dispatches
 // to the fused ZMM-batched ASM kernel; otherwise falls through to
@@ -57,7 +57,7 @@ func aesCMAC128ChainAbsorb20x4Asm(
 )
 
 // AESCMAC128ChainAbsorb36x4 — 36-byte AES-CMAC-128 batched
-// dispatcher (ITB SetNonceBits(256) buf shape). Three CBC-MAC
+// dispatcher (256-bit ITB nonce buf shape). Three CBC-MAC
 // absorb rounds per lane:
 //
 //	state[0:16]  = (seed0 ^ 36) || (seed1 ^ 36)
@@ -90,7 +90,7 @@ func aesCMAC128ChainAbsorb36x4Asm(
 )
 
 // AESCMAC128ChainAbsorb68x4 — 68-byte AES-CMAC-128 batched
-// dispatcher (ITB SetNonceBits(512) buf shape). Five CBC-MAC absorb
+// dispatcher (512-bit ITB nonce buf shape). Five CBC-MAC absorb
 // rounds per lane:
 //
 //	state[0:16]  = (seed0 ^ 68) || (seed1 ^ 68)

@@ -139,7 +139,7 @@ func aesEncryptNoescape(block cipher.Block, buf *[16]byte) {
 // bit-exact (the parity invariant required by itb.BatchHashFunc128).
 //
 // On amd64 with VAES + AVX-512 the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three SetNonceBits buf
+// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
 // shapes (20 / 36 / 68 byte inputs) — VAESENC on ZMM operates on
 // four independent AES blocks per instruction, so the per-pixel
 // AES-CMAC chain advances four lanes through one VAESENC instead of
