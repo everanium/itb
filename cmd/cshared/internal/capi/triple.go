@@ -2,8 +2,10 @@ package capi
 
 import (
 	"bytes"
+	"errors"
 	"runtime/cgo"
 
+	itb "github.com/everanium/itb"
 	"github.com/everanium/itb/triple"
 )
 
@@ -293,6 +295,9 @@ func mapTripleError(err error) Status {
 		err == triple.ErrProfileNoCipher:
 		setLastErrMessageTriple(msg)
 		return StatusBadInput
+	case errors.Is(err, itb.ErrMACFailure):
+		setLastErrMessageTriple(msg)
+		return StatusMACFailure
 	}
 	setLastErrMessageTriple(msg)
 	return StatusInternal

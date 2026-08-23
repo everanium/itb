@@ -1,6 +1,6 @@
 //! A decrypt session fed a tampered wire fails with a sticky error.
 
-use itb::{OptsBuilder, Pipeline};
+use itb::{ItbStatus, OptsBuilder, Pipeline};
 
 #[test]
 fn tampered_wire_sticky_failure() {
@@ -36,6 +36,11 @@ fn tampered_wire_sticky_failure() {
     }
     let first = first_err.expect("tampered wire must fail authentication / decryption");
     let first_status = first.status().expect("error carries a status code");
+    assert_eq!(
+        first_status,
+        ItbStatus::MacFailure,
+        "expected MAC failure status on tampered wire, got {first_status:?}",
+    );
 
     // Sticky: a subsequent read reports the same status.
     let again = sess.read(&mut buf).unwrap_err();
