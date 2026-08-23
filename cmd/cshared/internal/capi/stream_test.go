@@ -30,7 +30,7 @@ func TestParseChunkLen(t *testing.T) {
 	// Header-only probe: pass exactly the fixed header (20 bytes by
 	// default) and confirm the parser reports the full chunk length.
 	header := ctBuf[:20]
-	gotLen, st := ParseChunkLen(header)
+	gotLen, st := ParseChunkLen(header, 16)
 	if st != StatusOK {
 		t.Fatalf("ParseChunkLen: %v", st)
 	}
@@ -39,14 +39,14 @@ func TestParseChunkLen(t *testing.T) {
 	}
 
 	// Short header: must be rejected.
-	if _, st := ParseChunkLen(ctBuf[:10]); st != StatusBadInput {
+	if _, st := ParseChunkLen(ctBuf[:10], 16); st != StatusBadInput {
 		t.Errorf("short header: %v, want StatusBadInput", st)
 	}
 
 	// Zero-dimension header: handcraft 20 bytes with width=0 and
 	// confirm the parser rejects it.
 	zeroDim := make([]byte, 20)
-	if _, st := ParseChunkLen(zeroDim); st != StatusBadInput {
+	if _, st := ParseChunkLen(zeroDim, 16); st != StatusBadInput {
 		t.Errorf("zero-dim header: %v, want StatusBadInput", st)
 	}
 }

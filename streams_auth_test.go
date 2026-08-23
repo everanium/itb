@@ -114,11 +114,11 @@ func TestEncryptStreamAuth3xRoundtripExt(t *testing.T) {
 				mac := macForStreamTest(t)
 				pt := genTestPlaintextExt(t, sz)
 				var ctBuf bytes.Buffer
-				if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+				if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
 					t.Fatalf("EncryptStreamAuth3x: %v", err)
 				}
 				var ptBuf bytes.Buffer
-				if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+				if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
 					t.Fatalf("DecryptStreamAuth3x: %v", err)
 				}
 				if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -135,11 +135,11 @@ func TestEncryptStreamAuth3xRoundtripExt(t *testing.T) {
 				mac := macForStreamTest(t)
 				pt := genTestPlaintextExt(t, sz)
 				var ctBuf bytes.Buffer
-				if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+				if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
 					t.Fatalf("EncryptStreamAuth3x: %v", err)
 				}
 				var ptBuf bytes.Buffer
-				if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+				if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
 					t.Fatalf("DecryptStreamAuth3x: %v", err)
 				}
 				if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -156,11 +156,11 @@ func TestEncryptStreamAuth3xRoundtripExt(t *testing.T) {
 				mac := macForStreamTest(t)
 				pt := genTestPlaintextExt(t, sz)
 				var ctBuf bytes.Buffer
-				if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+				if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
 					t.Fatalf("EncryptStreamAuth3x: %v", err)
 				}
 				var ptBuf bytes.Buffer
-				if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+				if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
 					t.Fatalf("DecryptStreamAuth3x: %v", err)
 				}
 				if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -176,11 +176,11 @@ func TestEncryptStreamAuth3xEmptyInputExt(t *testing.T) {
 	mac := macForStreamTest(t)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ctBuf, mac, 4096); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ctBuf, mac, 4096); err != nil {
 		t.Fatalf("EncryptStreamAuth3x(empty): %v", err)
 	}
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
 		t.Fatalf("DecryptStreamAuth3x(empty): %v", err)
 	}
 	if ptBuf.Len() != 0 {
@@ -194,11 +194,11 @@ func TestEncryptStreamAuth3xChunkSize1Ext(t *testing.T) {
 	pt := genTestPlaintextExt(t, 8)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 1); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 1); err != nil {
 		t.Fatalf("EncryptStreamAuth3x(chunkSize=1): %v", err)
 	}
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
 		t.Fatalf("DecryptStreamAuth3x: %v", err)
 	}
 	if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -216,14 +216,14 @@ func TestEncryptStreamAuth3xTruncatedTailExt(t *testing.T) {
 	pt := genTestPlaintextExt(t, 3*chunk+50)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	full := ctBuf.Bytes()
 	off := streamIDPrefixLenExt
 	var lastOff int
 	for off < len(full) {
-		clen, err := itb.ParseChunkLen(full[off:])
+		clen, err := itb.ParseChunkLenCfg(nil, full[off:])
 		if err != nil {
 			t.Fatalf("ParseChunkLen: %v", err)
 		}
@@ -233,7 +233,7 @@ func TestEncryptStreamAuth3xTruncatedTailExt(t *testing.T) {
 	truncated := full[:lastOff]
 
 	var ptBuf bytes.Buffer
-	err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(truncated), &ptBuf, mac)
+	err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(truncated), &ptBuf, mac)
 	if !errors.Is(err, itb.ErrStreamTruncated) {
 		t.Fatalf("DecryptStreamAuth3x(truncated): want ErrStreamTruncated, got %v", err)
 	}
@@ -247,7 +247,7 @@ func TestEncryptStreamAuth3xWidthMixRejectedExt(t *testing.T) {
 	_, _, d256, _, _, _, _, _ := mkTriple256Ext(t)
 	pt := genTestPlaintextExt(t, 64)
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n128, l128, d128, d256, d128, s128, s128, s128, bytes.NewReader(pt), &ctBuf, mac, 4096); err == nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n128, l128, d128, d256, d128, s128, s128, s128, bytes.NewReader(pt), &ctBuf, mac, 4096); err == nil {
 		t.Fatalf("EncryptStreamAuth3x(mixed widths): want error, got nil")
 	}
 }
@@ -258,10 +258,10 @@ func TestEncryptStreamAuth3xMissingMACExt(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128Ext(t)
 	pt := genTestPlaintextExt(t, 64)
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, nil, 4096); err == nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, nil, 4096); err == nil {
 		t.Fatalf("EncryptStreamAuth3x(nil mac): want error, got nil")
 	}
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, nil); err == nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, nil); err == nil {
 		t.Fatalf("DecryptStreamAuth3x(nil mac): want error, got nil")
 	}
 }
@@ -281,7 +281,7 @@ func TestDecryptStreamAuth3xShortPrefixMessageExt(t *testing.T) {
 		t.Run(fmt.Sprintf("%dbytes", sz), func(t *testing.T) {
 			short := bytes.Repeat([]byte{0xAB}, sz)
 			var ptBuf bytes.Buffer
-			err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(short), &ptBuf, mac)
+			err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(short), &ptBuf, mac)
 			if err == nil {
 				t.Fatalf("DecryptStreamAuth3x(%d-byte): want error, got nil", sz)
 			}
@@ -303,14 +303,14 @@ func TestDecryptStreamAuth3xAfterFinalExt(t *testing.T) {
 	pt := genTestPlaintextExt(t, 2*chunk+50)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	full := ctBuf.Bytes()
 	off := streamIDPrefixLenExt
 	var lastOff, lastEnd int
 	for off < len(full) {
-		clen, err := itb.ParseChunkLen(full[off:])
+		clen, err := itb.ParseChunkLenCfg(nil, full[off:])
 		if err != nil {
 			t.Fatalf("ParseChunkLen at %d: %v", off, err)
 		}
@@ -322,7 +322,7 @@ func TestDecryptStreamAuth3xAfterFinalExt(t *testing.T) {
 	transcript := append(append([]byte(nil), full...), tail...)
 
 	var ptBuf bytes.Buffer
-	err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(transcript), &ptBuf, mac)
+	err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(transcript), &ptBuf, mac)
 	if !errors.Is(err, itb.ErrStreamAfterFinal) {
 		t.Fatalf("DecryptStreamAuth3x(after-final): want ErrStreamAfterFinal, got %v", err)
 	}
@@ -339,7 +339,7 @@ func TestDecryptStreamAuth3xAfterFinalExt(t *testing.T) {
 func TestEncryptStreamAuth3x256CfgRoundtripExt(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple256Ext(t)
 	mac := macForStreamTest(t)
-	cfg := itb.SnapshotGlobals()
+	var cfg *itb.Config
 	pt := genTestPlaintextExt(t, 5000)
 
 	var ct bytes.Buffer
@@ -367,7 +367,7 @@ func TestEncryptStreamAuth3x256CfgRoundtripExt(t *testing.T) {
 func TestEncryptStreamAuth3x512CfgRoundtripExt(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple512Ext(t)
 	mac := macForStreamTest(t)
-	cfg := itb.SnapshotGlobals()
+	var cfg *itb.Config
 	pt := genTestPlaintextExt(t, 5000)
 
 	var ct bytes.Buffer
@@ -400,7 +400,7 @@ func TestDecryptStreamAuth3xCfgTamperExt(t *testing.T) {
 	t.Run("256_Triple", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := mkTriple256Ext(t)
 		mac := macForStreamTest(t)
-		cfg := itb.SnapshotGlobals()
+		var cfg *itb.Config
 		pt := genTestPlaintextExt(t, 3000)
 
 		var ct bytes.Buffer
@@ -426,7 +426,7 @@ func TestDecryptStreamAuth3xCfgTamperExt(t *testing.T) {
 	t.Run("512_Triple", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := mkTriple512Ext(t)
 		mac := macForStreamTest(t)
-		cfg := itb.SnapshotGlobals()
+		var cfg *itb.Config
 		pt := genTestPlaintextExt(t, 3000)
 
 		var ct bytes.Buffer
@@ -461,7 +461,7 @@ func TestEncryptStreamAuth3xReorderDetectedExt(t *testing.T) {
 	pt := genTestPlaintextExt(t, 3*chunk)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	full := ctBuf.Bytes()
@@ -469,7 +469,7 @@ func TestEncryptStreamAuth3xReorderDetectedExt(t *testing.T) {
 	var spans []span
 	off := streamIDPrefixLenExt
 	for off < len(full) {
-		clen, err := itb.ParseChunkLen(full[off:])
+		clen, err := itb.ParseChunkLenCfg(nil, full[off:])
 		if err != nil {
 			t.Fatalf("ParseChunkLen: %v", err)
 		}
@@ -489,7 +489,7 @@ func TestEncryptStreamAuth3xReorderDetectedExt(t *testing.T) {
 	copy(rearr[spans[1].off:spans[1].end], c0)
 
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(rearr), &ptBuf, mac); err == nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(rearr), &ptBuf, mac); err == nil {
 		t.Fatalf("DecryptStreamAuth3x(reordered): want error, got nil")
 	}
 }
@@ -504,26 +504,26 @@ func TestEncryptStreamAuth3xCrossStreamReplayExt(t *testing.T) {
 	pt := genTestPlaintextExt(t, 2*chunk)
 
 	var ct1, ct2 bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ct1, mac, chunk); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ct1, mac, chunk); err != nil {
 		t.Fatalf("EncryptStreamAuth3x #1: %v", err)
 	}
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ct2, mac, chunk); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ct2, mac, chunk); err != nil {
 		t.Fatalf("EncryptStreamAuth3x #2: %v", err)
 	}
 	c1Bytes := ct1.Bytes()
 	c2Bytes := ct2.Bytes()
 	off := streamIDPrefixLenExt
-	clen0, err := itb.ParseChunkLen(c1Bytes[off:])
+	clen0, err := itb.ParseChunkLenCfg(nil, c1Bytes[off:])
 	if err != nil {
 		t.Fatalf("ParseChunkLen: %v", err)
 	}
 	off2 := streamIDPrefixLenExt
-	clen0b, err := itb.ParseChunkLen(c2Bytes[off2:])
+	clen0b, err := itb.ParseChunkLenCfg(nil, c2Bytes[off2:])
 	if err != nil {
 		t.Fatalf("ParseChunkLen: %v", err)
 	}
 	off2 += clen0b
-	clen1b, err := itb.ParseChunkLen(c2Bytes[off2:])
+	clen1b, err := itb.ParseChunkLenCfg(nil, c2Bytes[off2:])
 	if err != nil {
 		t.Fatalf("ParseChunkLen: %v", err)
 	}
@@ -534,7 +534,7 @@ func TestEncryptStreamAuth3xCrossStreamReplayExt(t *testing.T) {
 	spliced.Write(splicedTail)
 
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(spliced.Bytes()), &ptBuf, mac); err == nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(spliced.Bytes()), &ptBuf, mac); err == nil {
 		t.Fatalf("DecryptStreamAuth3x(cross-stream replay): want error, got nil")
 	}
 }
@@ -675,14 +675,14 @@ func TestEncryptStreamAuth3xPrefixTamperExt(t *testing.T) {
 	pt := genTestPlaintextExt(t, 4096)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 4096); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 4096); err != nil {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	tampered := append([]byte(nil), ctBuf.Bytes()...)
 	tampered[0] ^= 0xFF
 
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(tampered), &ptBuf, mac); err == nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(tampered), &ptBuf, mac); err == nil {
 		t.Fatalf("DecryptStreamAuth3x(prefix-tampered): want error, got nil")
 	}
 }
@@ -696,11 +696,11 @@ func TestEncryptStreamAuth3xSingleChunkExt(t *testing.T) {
 	pt := genTestPlaintextExt(t, 100)
 
 	var ctBuf bytes.Buffer
-	if err := itb.EncryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 4096); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 4096); err != nil {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
 		t.Fatalf("DecryptStreamAuth3x: %v", err)
 	}
 	if !bytes.Equal(pt, ptBuf.Bytes()) {

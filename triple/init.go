@@ -87,16 +87,16 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		BarrierFill: opts.BarrierFill,
 		MaxWorkers:  opts.MaxWorkers,
 	}
-	// Backfill fields left at zero from the current process globals so
-	// the Cfg-aware Blob export path (which requires a valid nonce /
-	// barrier width) always emits well-formed globals — the per-Pipeline
-	// override semantic is preserved: any field the caller left at zero
-	// simply inherits the process-global at Init time.
+	// Backfill fields left at zero from the compile-in defaults so the
+	// Cfg-aware Blob export path (which requires a valid nonce /
+	// barrier width) always emits well-formed globals — the
+	// per-Pipeline override semantic is preserved: any field the caller
+	// left at zero simply picks up the compile-in default at Init time.
 	if cfg.NonceBits == 0 {
-		cfg.NonceBits = itb.GetNonceBits()
+		cfg.NonceBits = itb.DefaultNonceBits
 	}
 	if cfg.BarrierFill == 0 {
-		cfg.BarrierFill = itb.GetBarrierFill()
+		cfg.BarrierFill = itb.DefaultBarrierFill
 	}
 
 	// Parallax build.

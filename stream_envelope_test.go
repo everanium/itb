@@ -23,15 +23,22 @@ func installTestNonce(t *testing.T, nonce []byte) {
 	})
 }
 
-// installNonceBits switches the process-wide nonce width for the
-// test's scope. Cleanup restores the previous width on test exit so
-// concurrent tests observe a consistent view.
+// testStreamNonceCfg carries the test-scoped nonce width the stream
+// envelope tests thread through their Cfg-suffixed calls. Populated by
+// [installNonceBits] and reset by that fixture's t.Cleanup. Zero
+// (nil) means "no override; use the compile-in default".
+var testStreamNonceCfg *Config
+
+// installNonceBits switches the test-scoped nonce width for the
+// caller's scope, populating [testStreamNonceCfg] so that tests can
+// pass it to *Cfg entry points. Cleanup restores the previous value
+// on test exit.
 func installNonceBits(t *testing.T, bits int) {
 	t.Helper()
-	old := GetNonceBits()
-	SetNonceBits(bits)
+	old := testStreamNonceCfg
+	testStreamNonceCfg = &Config{NonceBits: bits}
 	t.Cleanup(func() {
-		SetNonceBits(old)
+		testStreamNonceCfg = old
 	})
 }
 
@@ -168,9 +175,9 @@ func TestStreamEnvelopeParityAEADvsNoMAC(t *testing.T) {
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
 				var err error
 				if doAEAD {
-					err = EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, mac, chunkSize)
+					err = EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, mac, chunkSize)
 				} else {
-					err = EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, chunkSize)
+					err = EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, chunkSize)
 				}
 				if err != nil {
 					t.Fatalf("encrypt (aead=%v): %v", doAEAD, err)
@@ -184,9 +191,9 @@ func TestStreamEnvelopeParityAEADvsNoMAC(t *testing.T) {
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
 				var err error
 				if doAEAD {
-					err = EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, mac, chunkSize)
+					err = EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, mac, chunkSize)
 				} else {
-					err = EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, chunkSize)
+					err = EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, chunkSize)
 				}
 				if err != nil {
 					t.Fatalf("encrypt (aead=%v): %v", doAEAD, err)
@@ -200,9 +207,9 @@ func TestStreamEnvelopeParityAEADvsNoMAC(t *testing.T) {
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
 				var err error
 				if doAEAD {
-					err = EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, mac, chunkSize)
+					err = EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, mac, chunkSize)
 				} else {
-					err = EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, chunkSize)
+					err = EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, src, dst, chunkSize)
 				}
 				if err != nil {
 					t.Fatalf("encrypt (aead=%v): %v", doAEAD, err)
@@ -252,51 +259,51 @@ func TestStreamEnvelopeRoundTripByteExact(t *testing.T) {
 		case 128:
 			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
 			if doAEAD {
-				if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, dummy32MAC, 4096); err != nil {
+				if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, dummy32MAC, 4096); err != nil {
 					t.Fatalf("AEAD encrypt: %v", err)
 				}
-				if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered, dummy32MAC); err != nil {
+				if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered, dummy32MAC); err != nil {
 					t.Fatalf("AEAD decrypt: %v", err)
 				}
 			} else {
-				if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, 4096); err != nil {
+				if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, 4096); err != nil {
 					t.Fatalf("No-MAC encrypt: %v", err)
 				}
-				if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered); err != nil {
+				if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered); err != nil {
 					t.Fatalf("No-MAC decrypt: %v", err)
 				}
 			}
 		case 256:
 			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
 			if doAEAD {
-				if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, dummy32MAC, 4096); err != nil {
+				if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, dummy32MAC, 4096); err != nil {
 					t.Fatalf("AEAD encrypt: %v", err)
 				}
-				if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered, dummy32MAC); err != nil {
+				if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered, dummy32MAC); err != nil {
 					t.Fatalf("AEAD decrypt: %v", err)
 				}
 			} else {
-				if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, 4096); err != nil {
+				if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, 4096); err != nil {
 					t.Fatalf("No-MAC encrypt: %v", err)
 				}
-				if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered); err != nil {
+				if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered); err != nil {
 					t.Fatalf("No-MAC decrypt: %v", err)
 				}
 			}
 		case 512:
 			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
 			if doAEAD {
-				if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, dummy32MAC, 4096); err != nil {
+				if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, dummy32MAC, 4096); err != nil {
 					t.Fatalf("AEAD encrypt: %v", err)
 				}
-				if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered, dummy32MAC); err != nil {
+				if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered, dummy32MAC); err != nil {
 					t.Fatalf("AEAD decrypt: %v", err)
 				}
 			} else {
-				if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, 4096); err != nil {
+				if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wire, 4096); err != nil {
 					t.Fatalf("No-MAC encrypt: %v", err)
 				}
-				if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered); err != nil {
+				if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wire, &recovered); err != nil {
 					t.Fatalf("No-MAC decrypt: %v", err)
 				}
 			}
@@ -358,26 +365,26 @@ func TestStreamEnvelopeEdgeCases(t *testing.T) {
 					switch wCfg.width {
 					case 128:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
-						if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &nomacWire, 4096); err != nil {
+						if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &nomacWire, 4096); err != nil {
 							t.Fatalf("No-MAC encrypt: %v", err)
 						}
-						if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &nomacWire, &nomacBack); err != nil {
+						if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &nomacWire, &nomacBack); err != nil {
 							t.Fatalf("No-MAC decrypt: %v", err)
 						}
 					case 256:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
-						if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &nomacWire, 4096); err != nil {
+						if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &nomacWire, 4096); err != nil {
 							t.Fatalf("No-MAC encrypt: %v", err)
 						}
-						if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &nomacWire, &nomacBack); err != nil {
+						if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &nomacWire, &nomacBack); err != nil {
 							t.Fatalf("No-MAC decrypt: %v", err)
 						}
 					case 512:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
-						if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &nomacWire, 4096); err != nil {
+						if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &nomacWire, 4096); err != nil {
 							t.Fatalf("No-MAC encrypt: %v", err)
 						}
-						if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &nomacWire, &nomacBack); err != nil {
+						if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &nomacWire, &nomacBack); err != nil {
 							t.Fatalf("No-MAC decrypt: %v", err)
 						}
 					}
@@ -392,26 +399,26 @@ func TestStreamEnvelopeEdgeCases(t *testing.T) {
 					switch wCfg.width {
 					case 128:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
-						if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, 4096); err != nil {
+						if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, 4096); err != nil {
 							t.Fatalf("AEAD encrypt: %v", err)
 						}
-						if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &aeadWire, &aeadBack, dummy32MAC); err != nil {
+						if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &aeadWire, &aeadBack, dummy32MAC); err != nil {
 							t.Fatalf("AEAD decrypt: %v", err)
 						}
 					case 256:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
-						if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, 4096); err != nil {
+						if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, 4096); err != nil {
 							t.Fatalf("AEAD encrypt: %v", err)
 						}
-						if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &aeadWire, &aeadBack, dummy32MAC); err != nil {
+						if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &aeadWire, &aeadBack, dummy32MAC); err != nil {
 							t.Fatalf("AEAD decrypt: %v", err)
 						}
 					case 512:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
-						if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, 4096); err != nil {
+						if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &aeadWire, dummy32MAC, 4096); err != nil {
 							t.Fatalf("AEAD encrypt: %v", err)
 						}
-						if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &aeadWire, &aeadBack, dummy32MAC); err != nil {
+						if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &aeadWire, &aeadBack, dummy32MAC); err != nil {
 							t.Fatalf("AEAD decrypt: %v", err)
 						}
 					}
@@ -449,10 +456,10 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 
 				// No-MAC round-trip
 				var wireA, backA bytes.Buffer
-				if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireA, cs); err != nil {
+				if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireA, cs); err != nil {
 					t.Fatalf("No-MAC encrypt: %v", err)
 				}
-				if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireA, &backA); err != nil {
+				if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireA, &backA); err != nil {
 					t.Fatalf("No-MAC decrypt: %v", err)
 				}
 				if !bytes.Equal(backA.Bytes(), plaintext) {
@@ -461,10 +468,10 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 
 				// AEAD round-trip
 				var wireB, backB bytes.Buffer
-				if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireB, dummy32MAC, cs); err != nil {
+				if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireB, dummy32MAC, cs); err != nil {
 					t.Fatalf("AEAD encrypt: %v", err)
 				}
-				if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireB, &backB, dummy32MAC); err != nil {
+				if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireB, &backB, dummy32MAC); err != nil {
 					t.Fatalf("AEAD decrypt: %v", err)
 				}
 				if !bytes.Equal(backB.Bytes(), plaintext) {
@@ -499,31 +506,31 @@ func TestSingleMessageEnvelopeParityAEADvsNoMAC(t *testing.T) {
 			switch wCfg.width {
 			case 128:
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
-				aeadWire, err = EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+				aeadWire, err = EncryptAuthenticated3x128Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
 				if err != nil {
 					t.Fatalf("AEAD SM encrypt: %v", err)
 				}
-				plainWire, err = Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+				plainWire, err = Encrypt3x128Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 				if err != nil {
 					t.Fatalf("No-MAC SM encrypt: %v", err)
 				}
 			case 256:
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
-				aeadWire, err = EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+				aeadWire, err = EncryptAuthenticated3x256Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
 				if err != nil {
 					t.Fatalf("AEAD SM encrypt: %v", err)
 				}
-				plainWire, err = Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+				plainWire, err = Encrypt3x256Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 				if err != nil {
 					t.Fatalf("No-MAC SM encrypt: %v", err)
 				}
 			case 512:
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
-				aeadWire, err = EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+				aeadWire, err = EncryptAuthenticated3x512Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
 				if err != nil {
 					t.Fatalf("AEAD SM encrypt: %v", err)
 				}
-				plainWire, err = Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+				plainWire, err = Encrypt3x512Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 				if err != nil {
 					t.Fatalf("No-MAC SM encrypt: %v", err)
 				}
@@ -557,11 +564,11 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 					switch wCfg.width {
 					case 128:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
-						ct, err := EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+						ct, err := EncryptAuthenticated3x128Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
 						if err != nil {
 							t.Fatalf("encrypt: %v", err)
 						}
-						pt, err := DecryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
+						pt, err := DecryptAuthenticated3x128Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
 						if err != nil {
 							t.Fatalf("decrypt: %v", err)
 						}
@@ -570,11 +577,11 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 						}
 					case 256:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures256(t, 512)
-						ct, err := EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+						ct, err := EncryptAuthenticated3x256Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
 						if err != nil {
 							t.Fatalf("encrypt: %v", err)
 						}
-						pt, err := DecryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
+						pt, err := DecryptAuthenticated3x256Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
 						if err != nil {
 							t.Fatalf("decrypt: %v", err)
 						}
@@ -583,11 +590,11 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 						}
 					case 512:
 						ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
-						ct, err := EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
+						ct, err := EncryptAuthenticated3x512Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, dummy32MAC)
 						if err != nil {
 							t.Fatalf("encrypt: %v", err)
 						}
-						pt, err := DecryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
+						pt, err := DecryptAuthenticated3x512Cfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, dummy32MAC)
 						if err != nil {
 							t.Fatalf("decrypt: %v", err)
 						}
@@ -728,10 +735,10 @@ func TestStreamEnvelopeNonceWidths(t *testing.T) {
 			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
 
 			var wireA, backA bytes.Buffer
-			if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireA, 4096); err != nil {
+			if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireA, 4096); err != nil {
 				t.Fatalf("No-MAC encrypt: %v", err)
 			}
-			if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireA, &backA); err != nil {
+			if err := DecryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireA, &backA); err != nil {
 				t.Fatalf("No-MAC decrypt: %v", err)
 			}
 			if !bytes.Equal(backA.Bytes(), plaintext) {
@@ -739,10 +746,10 @@ func TestStreamEnvelopeNonceWidths(t *testing.T) {
 			}
 
 			var wireB, backB bytes.Buffer
-			if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireB, dummy32MAC, 4096); err != nil {
+			if err := EncryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireB, dummy32MAC, 4096); err != nil {
 				t.Fatalf("AEAD encrypt: %v", err)
 			}
-			if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireB, &backB, dummy32MAC); err != nil {
+			if err := DecryptStreamAuth3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, &wireB, &backB, dummy32MAC); err != nil {
 				t.Fatalf("AEAD decrypt: %v", err)
 			}
 			if !bytes.Equal(backB.Bytes(), plaintext) {

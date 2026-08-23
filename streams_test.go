@@ -29,11 +29,11 @@ func TestEncryptStream3xRoundtrip(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 				pt := genTestPlaintext(t, sz)
 				var ctBuf bytes.Buffer
-				if err := EncryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
+				if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
 					t.Fatalf("EncryptStream3x: %v", err)
 				}
 				var ptBuf bytes.Buffer
-				if err := DecryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+				if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
 					t.Fatalf("DecryptStream3x: %v", err)
 				}
 				if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -49,11 +49,11 @@ func TestEncryptStream3xRoundtrip(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
 				pt := genTestPlaintext(t, sz)
 				var ctBuf bytes.Buffer
-				if err := EncryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
+				if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
 					t.Fatalf("EncryptStream3x: %v", err)
 				}
 				var ptBuf bytes.Buffer
-				if err := DecryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+				if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
 					t.Fatalf("DecryptStream3x: %v", err)
 				}
 				if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -69,11 +69,11 @@ func TestEncryptStream3xRoundtrip(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
 				pt := genTestPlaintext(t, sz)
 				var ctBuf bytes.Buffer
-				if err := EncryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
+				if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, chunk); err != nil {
 					t.Fatalf("EncryptStream3x: %v", err)
 				}
 				var ptBuf bytes.Buffer
-				if err := DecryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+				if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
 					t.Fatalf("DecryptStream3x: %v", err)
 				}
 				if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -93,11 +93,11 @@ func TestEncryptStream3xChunkSize1(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 	pt := genTestPlaintext(t, 32)
 	var ctBuf bytes.Buffer
-	if err := EncryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, 1); err != nil {
-		t.Fatalf("EncryptStream3x(chunkSize=1): %v", err)
+	if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, 1); err != nil {
+		t.Fatalf("EncryptStream3xCfg(nil, chunkSize=1): %v", err)
 	}
 	var ptBuf bytes.Buffer
-	if err := DecryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+	if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
 		t.Fatalf("DecryptStream3x: %v", err)
 	}
 	if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -112,18 +112,18 @@ func TestEncryptStream3xChunkSize1(t *testing.T) {
 func TestEncryptStream3xEmptyInput(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 	var ctBuf bytes.Buffer
-	if err := EncryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ctBuf, 4096); err != nil {
-		t.Fatalf("EncryptStream3x(empty): %v", err)
+	if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ctBuf, 4096); err != nil {
+		t.Fatalf("EncryptStream3xCfg(nil, empty): %v", err)
 	}
 	if ctBuf.Len() != 0 {
-		t.Fatalf("EncryptStream3x(empty): want 0-byte wire, got %d bytes", ctBuf.Len())
+		t.Fatalf("EncryptStream3xCfg(nil, empty): want 0-byte wire, got %d bytes", ctBuf.Len())
 	}
 	var ptBuf bytes.Buffer
-	if err := DecryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ptBuf); err != nil {
-		t.Fatalf("DecryptStream3x(empty): %v", err)
+	if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ptBuf); err != nil {
+		t.Fatalf("DecryptStream3xCfg(nil, empty): %v", err)
 	}
 	if ptBuf.Len() != 0 {
-		t.Fatalf("DecryptStream3x(empty): want 0-byte plaintext, got %d bytes", ptBuf.Len())
+		t.Fatalf("DecryptStream3xCfg(nil, empty): want 0-byte plaintext, got %d bytes", ptBuf.Len())
 	}
 }
 
@@ -131,11 +131,11 @@ func TestEncryptStream3xSingleChunk(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 	pt := genTestPlaintext(t, 100)
 	var ctBuf bytes.Buffer
-	if err := EncryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, 4096); err != nil {
+	if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, 4096); err != nil {
 		t.Fatalf("EncryptStream3x: %v", err)
 	}
 	var ptBuf bytes.Buffer
-	if err := DecryptStream3x(n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
+	if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf); err != nil {
 		t.Fatalf("DecryptStream3x: %v", err)
 	}
 	if !bytes.Equal(pt, ptBuf.Bytes()) {
@@ -152,8 +152,8 @@ func TestEncryptStream3xWidthMixRejected(t *testing.T) {
 	_, _, d256, _, _, _, _, _ := mkTriple256(t)
 	pt := genTestPlaintext(t, 64)
 	var ctBuf bytes.Buffer
-	if err := EncryptStream3x(n128, l128, d128, d256, d128, s128, s128, s128, bytes.NewReader(pt), &ctBuf, 4096); err == nil {
-		t.Fatalf("EncryptStream3x(mixed widths): want error, got nil")
+	if err := EncryptStream3xCfg(nil, n128, l128, d128, d256, d128, s128, s128, s128, bytes.NewReader(pt), &ctBuf, 4096); err == nil {
+		t.Fatalf("EncryptStream3xCfg(nil, mixed widths): want error, got nil")
 	}
 }
 
@@ -167,7 +167,7 @@ func TestEncryptStream3xWidthMixRejected(t *testing.T) {
 
 func TestEncryptStream3xCfgRoundtrip128(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
-	cfg := SnapshotGlobals()
+	var cfg *Config
 	pt := genTestPlaintext(t, 5000)
 
 	var ct bytes.Buffer
@@ -194,7 +194,7 @@ func TestEncryptStream3xCfgRoundtrip128(t *testing.T) {
 
 func TestEncryptStream3xCfgRoundtrip256(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
-	cfg := SnapshotGlobals()
+	var cfg *Config
 	pt := genTestPlaintext(t, 5000)
 
 	var ct bytes.Buffer
@@ -221,7 +221,7 @@ func TestEncryptStream3xCfgRoundtrip256(t *testing.T) {
 
 func TestEncryptStream3xCfgRoundtrip512(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
-	cfg := SnapshotGlobals()
+	var cfg *Config
 	pt := genTestPlaintext(t, 5000)
 
 	var ct bytes.Buffer

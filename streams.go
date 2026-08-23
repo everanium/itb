@@ -1,7 +1,7 @@
 // streams.go — width-less io.Reader / io.Writer streaming helpers
 // for plain and authenticated stream cipher modes. The width is
 // determined by the supplied seed type via the same any-typed
-// dispatch path used by the Single Message helpers in itb.go / auth.go.
+// dispatch path used by the Single Message helpers.
 //
 // Each helper drains src to EOF, encrypts or decrypts chunk-by-chunk,
 // and writes the resulting wire chunks (encrypt) or recovered
@@ -9,13 +9,11 @@
 // chunkSize parameter; the decrypt-side helpers recover chunk extents
 // from the on-wire header per chunk.
 //
-// Behaviour parity with the binding-side stream helpers (e.g. the
-// Rust binding's encrypt_stream / decrypt_stream / encrypt_stream_auth
-// / decrypt_stream_auth functions in bindings/rust/src/streams.rs):
-// streamID 32-byte CSPRNG prefix on the auth path, cumulative pixel
-// offset bound into every per-chunk MAC input, finalFlag flipped on
-// the terminating chunk, ErrStreamTruncated / ErrStreamAfterFinal
-// surfaced verbatim from the underlying single-chunk path.
+// Behaviour parity with the binding-side stream helpers: streamID
+// 32-byte CSPRNG prefix on the auth path, cumulative pixel offset
+// bound into every per-chunk MAC input, finalFlag flipped on the
+// terminating chunk, ErrStreamTruncated / ErrStreamAfterFinal surfaced
+// verbatim from the underlying single-chunk path.
 
 package itb
 
@@ -62,64 +60,8 @@ func readUpTo(src io.Reader, buf []byte) (int, error) {
 	return n, err
 }
 
-// readChunkParse drains a header window from src, parses W / H to
-// compute the announced chunk length, and reads the remaining body
-// to assemble a single complete wire chunk. Returns io.EOF on a
-// clean end-of-stream when no header bytes are available.
-func readChunkParse(src io.Reader) ([]byte, error) {
-	hdrLen := headerSize()
-	hdr := make([]byte, hdrLen)
-	n, err := readExact(src, hdr)
-	if err == io.EOF {
-		return nil, io.EOF
-	}
-	if err != nil {
-		return nil, err
-	}
-	if n != hdrLen {
-		return nil, fmt.Errorf("itb: short header read: %d of %d bytes", n, hdrLen)
-	}
-
-	nonceLen := currentNonceSize()
-	width := int(binary.BigEndian.Uint16(hdr[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(hdr[nonceLen+2:]))
-	if width <= 0 || height <= 0 {
-		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
-	}
-	if width > math.MaxInt/height {
-		return nil, fmt.Errorf("itb: dimensions %dx%d overflow", width, height)
-	}
-	totalPixels := width * height
-	if totalPixels > math.MaxInt/Channels {
-		return nil, fmt.Errorf("itb: container too large: %d pixels", totalPixels)
-	}
-	if totalPixels > maxTotalPixels {
-		return nil, fmt.Errorf("itb: chunk too large: %d pixels exceeds maximum %d", totalPixels, maxTotalPixels)
-	}
-
-	bodyLen := totalPixels * Channels
-	full := make([]byte, hdrLen+bodyLen)
-	copy(full, hdr)
-	body := full[hdrLen:]
-	nb, berr := readExact(src, body)
-	if berr != nil && berr != io.EOF {
-		return nil, berr
-	}
-	if nb != bodyLen {
-		return nil, fmt.Errorf("itb: short body read: %d of %d bytes", nb, bodyLen)
-	}
-	// Re-validate the assembled chunk so any future ParseChunkLen
-	// invariant is enforced consistently.
-	if _, err := ParseChunkLen(full); err != nil {
-		return nil, err
-	}
-	return full, nil
-}
-
 // validateChunkSize centralises the chunk-size precondition for the
-// streaming-encrypt helpers. Returns errSeedWidthMix-shaped output is
-// out of scope; this guard surfaces the same fmt.Errorf shape as the
-// existing stream.go / stream_auth.go paths.
+// streaming-encrypt helpers.
 func validateChunkSize(chunkSize int) (int, error) {
 	if chunkSize <= 0 {
 		chunkSize = DefaultChunkSize
@@ -130,251 +72,12 @@ func validateChunkSize(chunkSize int) (int, error) {
 	return chunkSize, nil
 }
 
-// EncryptStream3x is the width-less Triple-Ouroboros plain-stream
-// Encrypt entry point. Behaviour parity with [EncryptStream] modulo
-// the 8-seed dispatch path. When at least one chunk arrives from src,
-// emits a 32-byte CSPRNG dummy prefix ahead of the chunk stream so a
-// wire observer cannot distinguish this envelope from the Streaming
-// AEAD path's streamID prefix. An empty src emits nothing.
-func EncryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, chunkSize int) error {
-	if _, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
-		return err
-	}
-	cs, err := validateChunkSize(chunkSize)
-	if err != nil {
-		return err
-	}
-	buf := make([]byte, cs)
-	var prefixEmitted bool
-	for {
-		n, err := readUpTo(src, buf)
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !prefixEmitted {
-			var prefix [streamIDPrefixLen]byte
-			if _, rerr := rand.Read(prefix[:]); rerr != nil {
-				return fmt.Errorf("itb: crypto/rand: %w", rerr)
-			}
-			if _, werr := dst.Write(prefix[:]); werr != nil {
-				return werr
-			}
-			prefixEmitted = true
-		}
-		ct, encErr := Encrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
-		if encErr != nil {
-			return encErr
-		}
-		if _, werr := dst.Write(ct); werr != nil {
-			return werr
-		}
-	}
-}
-
-// DecryptStream3x is the width-less Triple-Ouroboros plain-stream
-// Decrypt entry point. Reads and discards the 32-byte envelope
-// prefix emitted by [EncryptStream3x] at stream open; an empty src is
-// treated as a clean end-of-stream even before the prefix arrives.
-func DecryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
-	if _, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
-		return err
-	}
-	var prefix [streamIDPrefixLen]byte
-	n, perr := io.ReadFull(src, prefix[:])
-	if perr == io.EOF && n == 0 {
-		return nil
-	}
-	if perr == io.ErrUnexpectedEOF || (perr == io.EOF && n != streamIDPrefixLen) {
-		return fmt.Errorf("itb: stream too short for stream prefix")
-	}
-	if perr != nil {
-		return perr
-	}
-	for {
-		chunk, err := readChunkParse(src)
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		pt, decErr := Decrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk)
-		if decErr != nil {
-			return decErr
-		}
-		if _, werr := dst.Write(pt); werr != nil {
-			return werr
-		}
-	}
-}
-
-// streamAuthEncryptTriple is the per-chunk dispatch helper for the
-// Triple-Ouroboros Streaming AEAD encrypt path.
-func streamAuthEncryptTriple(width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64, finalFlag bool) ([]byte, error) {
-	switch width {
-	case 128:
-		return EncryptStreamAuthenticated3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), plaintext, mac, streamID, cumulative, finalFlag)
-	case 256:
-		return EncryptStreamAuthenticated3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), plaintext, mac, streamID, cumulative, finalFlag)
-	case 512:
-		return EncryptStreamAuthenticated3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), plaintext, mac, streamID, cumulative, finalFlag)
-	}
-	return nil, errSeedWidthMix
-}
-
-// streamAuthDecryptTriple is the per-chunk dispatch helper for the
-// Triple-Ouroboros Streaming AEAD decrypt path.
-func streamAuthDecryptTriple(width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64) ([]byte, bool, error) {
-	switch width {
-	case 128:
-		return DecryptStreamAuthenticated3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk, mac, streamID, cumulative)
-	case 256:
-		return DecryptStreamAuthenticated3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk, mac, streamID, cumulative)
-	case 512:
-		return DecryptStreamAuthenticated3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk, mac, streamID, cumulative)
-	}
-	return nil, false, errSeedWidthMix
-}
-
-// EncryptStreamAuth3x is the width-less Triple-Ouroboros Streaming AEAD
-// Encrypt entry point. Generates a fresh 32-byte CSPRNG streamID,
-// writes it as the wire prefix, then drains src in chunkSize windows
-// and emits each encrypted chunk through the 8-seed per-chunk
-// dispatch path.
-func EncryptStreamAuth3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc, chunkSize int) error {
-	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
-	if err != nil {
-		return err
-	}
-	if mac == nil {
-		return fmt.Errorf("itb: macFunc must not be nil")
-	}
-	cs, err := validateChunkSize(chunkSize)
-	if err != nil {
-		return err
-	}
-
-	var streamID [streamIDPrefixLen]byte
-	if _, err := rand.Read(streamID[:]); err != nil {
-		return fmt.Errorf("itb: crypto/rand: %w", err)
-	}
-	if _, werr := dst.Write(streamID[:]); werr != nil {
-		return werr
-	}
-
-	stage := make([]byte, cs)
-	var pending []byte
-	var cumulative uint64
-
-	for {
-		n, rerr := readUpTo(src, stage)
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return rerr
-		}
-		if pending != nil {
-			chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, false)
-			if encErr != nil {
-				return encErr
-			}
-			pixels, pxErr := chunkPixelCount(chunk)
-			if pxErr != nil {
-				return pxErr
-			}
-			if _, werr := dst.Write(chunk); werr != nil {
-				return werr
-			}
-			cumulative += pixels
-		}
-		held := make([]byte, n)
-		copy(held, stage[:n])
-		pending = held
-	}
-
-	if pending == nil {
-		chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, mac, streamID, 0, true)
-		if encErr != nil {
-			return encErr
-		}
-		if _, werr := dst.Write(chunk); werr != nil {
-			return werr
-		}
-		return nil
-	}
-	chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, true)
-	if encErr != nil {
-		return encErr
-	}
-	if _, werr := dst.Write(chunk); werr != nil {
-		return werr
-	}
-	return nil
-}
-
-// DecryptStreamAuth3x is the width-less Triple-Ouroboros
-// Streaming AEAD Decrypt entry point.
-func DecryptStreamAuth3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc) error {
-	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
-	if err != nil {
-		return err
-	}
-	if mac == nil {
-		return fmt.Errorf("itb: macFunc must not be nil")
-	}
-
-	var streamID [streamIDPrefixLen]byte
-	n, perr := io.ReadFull(src, streamID[:])
-	if perr == io.EOF || perr == io.ErrUnexpectedEOF || n != streamIDPrefixLen {
-		return fmt.Errorf("itb: stream too short for stream prefix")
-	}
-	if perr != nil {
-		return perr
-	}
-
-	var cumulative uint64
-	seenFinal := false
-	for {
-		chunk, cerr := readChunkParse(src)
-		if cerr == io.EOF {
-			break
-		}
-		if cerr != nil {
-			return cerr
-		}
-		if seenFinal {
-			return ErrStreamAfterFinal
-		}
-		plain, finalFlag, decErr := streamAuthDecryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, mac, streamID, cumulative)
-		if decErr != nil {
-			return decErr
-		}
-		pixels, pixErr := chunkPixelCount(chunk)
-		if pixErr != nil {
-			return pixErr
-		}
-		if _, werr := dst.Write(plain); werr != nil {
-			return werr
-		}
-		cumulative += pixels
-		if finalFlag {
-			seenFinal = true
-		}
-	}
-	if !seenFinal {
-		return ErrStreamTruncated
-	}
-	return nil
-}
-
-// readChunkParseCfg is the Cfg variant of [readChunkParse]. Consults
-// [headerSizeCfg] / [currentNonceSizeCfg] / [ParseChunkLenCfg] so a
-// non-nil cfg with an explicit NonceBits override is honoured at the
-// chunk-header parse site; body otherwise identical.
+// readChunkParseCfg drains a header window from src, parses W / H to
+// compute the announced chunk length, and reads the remaining body
+// to assemble a single complete wire chunk. Consults cfg for the
+// per-encryptor nonce-bits override so a non-nil cfg with an explicit
+// NonceBits is honoured. Returns io.EOF on a clean end-of-stream when
+// no header bytes are available.
 func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 	hdrLen := headerSizeCfg(cfg)
 	hdr := make([]byte, hdrLen)
@@ -425,8 +128,7 @@ func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 
 // singleMessageEncryptTripleCfg is the per-chunk dispatch helper for
 // the width-less No-MAC Triple-Ouroboros Encrypt path when a Config
-// override is threaded per Pipeline. Mirrors the switch in
-// [Encrypt3x] but forwards to the width-suffixed *Cfg variants.
+// override is threaded per Pipeline.
 func singleMessageEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
 	switch width {
 	case 128:
@@ -441,8 +143,7 @@ func singleMessageEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, 
 
 // singleMessageDecryptTripleCfg is the per-chunk dispatch helper for
 // the width-less No-MAC Triple-Ouroboros Decrypt path when a Config
-// override is threaded per Pipeline. Mirrors the switch in
-// [Decrypt3x] but forwards to the width-suffixed *Cfg variants.
+// override is threaded per Pipeline.
 func singleMessageDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte) ([]byte, error) {
 	switch width {
 	case 128:
@@ -457,8 +158,7 @@ func singleMessageDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, 
 
 // streamAuthEncryptTripleCfg is the per-chunk dispatch helper for the
 // Triple-Ouroboros Streaming AEAD encrypt path when a Config override
-// is threaded per Pipeline. Mirrors [streamAuthEncryptTriple] but
-// forwards to the width-suffixed *Cfg variants.
+// is threaded per Pipeline.
 func streamAuthEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64, finalFlag bool) ([]byte, error) {
 	switch width {
 	case 128:
@@ -473,8 +173,7 @@ func streamAuthEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dat
 
 // streamAuthDecryptTripleCfg is the per-chunk dispatch helper for the
 // Triple-Ouroboros Streaming AEAD decrypt path when a Config override
-// is threaded per Pipeline. Mirrors [streamAuthDecryptTriple] but
-// forwards to the width-suffixed *Cfg variants.
+// is threaded per Pipeline.
 func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64) ([]byte, bool, error) {
 	switch width {
 	case 128:
@@ -488,13 +187,7 @@ func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dat
 }
 
 // EncryptStream3xCfg is the width-less Triple-Ouroboros plain-stream
-// Encrypt entry point with a per-encryptor Config override. Full
-// straight-line duplicate of [EncryptStream3x]; the only differences
-// are the extra cfg parameter and the per-chunk dispatch through
-// [singleMessageEncryptTripleCfg]. When cfg is nil, behaviour matches
-// [EncryptStream3x] bit-for-bit; when cfg carries explicit
-// NonceBits / BarrierFill / MaxWorkers, those values reach the
-// per-chunk encrypt path without touching the process globals.
+// Encrypt entry point with a per-encryptor Config override.
 func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, chunkSize int) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
@@ -535,12 +228,7 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 }
 
 // DecryptStream3xCfg is the width-less Triple-Ouroboros plain-stream
-// Decrypt entry point with a per-encryptor Config override. Full
-// straight-line duplicate of [DecryptStream3x]; the only differences
-// are the extra cfg parameter, the per-chunk dispatch through
-// [singleMessageDecryptTripleCfg], and the Cfg-aware chunk header
-// parser [readChunkParseCfg]. When cfg is nil, behaviour matches
-// [DecryptStream3x] bit-for-bit.
+// Decrypt entry point with a per-encryptor Config override.
 func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
@@ -576,11 +264,7 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 }
 
 // EncryptStreamAuth3xCfg is the width-less Triple-Ouroboros Streaming
-// AEAD Encrypt entry point with a per-encryptor Config override. Full
-// straight-line duplicate of [EncryptStreamAuth3x]; the only
-// differences are the extra cfg parameter and the per-chunk dispatch
-// through [streamAuthEncryptTripleCfg] / [chunkPixelCountCfg]. When
-// cfg is nil, behaviour matches [EncryptStreamAuth3x] bit-for-bit.
+// AEAD Encrypt entry point with a per-encryptor Config override.
 func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc, chunkSize int) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
@@ -654,12 +338,7 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 }
 
 // DecryptStreamAuth3xCfg is the width-less Triple-Ouroboros Streaming
-// AEAD Decrypt entry point with a per-encryptor Config override. Full
-// straight-line duplicate of [DecryptStreamAuth3x]; the only
-// differences are the extra cfg parameter, the per-chunk dispatch
-// through [streamAuthDecryptTripleCfg] / [chunkPixelCountCfg], and
-// the Cfg-aware chunk header parser [readChunkParseCfg]. When cfg is
-// nil, behaviour matches [DecryptStreamAuth3x] bit-for-bit.
+// AEAD Decrypt entry point with a per-encryptor Config override.
 func DecryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {

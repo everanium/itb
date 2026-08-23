@@ -26,10 +26,14 @@ const (
 	benchBarrierFill = 1
 )
 
-func init() {
-	itb.SetMaxWorkers(0)
-	itb.SetNonceBits(benchNonceBits)
-	itb.SetBarrierFill(benchBarrierFill)
+// benchCfg is the per-encryptor Config the benchmark suite pins every
+// low-level call to. Bench harness invariant: NonceBits / BarrierFill
+// / MaxWorkers pinned at the same values across every entry point so
+// throughput comparisons are apples-to-apples.
+var benchCfg = &itb.Config{
+	NonceBits:   benchNonceBits,
+	BarrierFill: benchBarrierFill,
+	MaxWorkers:  0,
 }
 
 func benchRandom(b *testing.B, n int) []byte {
@@ -202,7 +206,7 @@ func runMessageLowLevelTripleNoMACEncrypt(b *testing.B, plaintext []byte, cn str
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encrypted, err := itb.Encrypt3x(noise, lock, d1, d2, d3, s1, s2, s3, plaintext)
+		encrypted, err := itb.Encrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext)
 		if err != nil {
 			b.Fatalf("Encrypt3x: %v", err)
 		}
@@ -218,7 +222,7 @@ func runMessageLowLevelTripleNoMACDecrypt(b *testing.B, plaintext []byte, cn str
 	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
 	outerKey := benchOuterKey(b, cn)
 
-	encrypted, err := itb.Encrypt3x(noise, lock, d1, d2, d3, s1, s2, s3, plaintext)
+	encrypted, err := itb.Encrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		b.Fatalf("Encrypt3x setup: %v", err)
 	}
@@ -237,7 +241,7 @@ func runMessageLowLevelTripleNoMACDecrypt(b *testing.B, plaintext []byte, cn str
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
-		pt, err := itb.Decrypt3x(noise, lock, d1, d2, d3, s1, s2, s3, body)
+		pt, err := itb.Decrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, body)
 		if err != nil {
 			b.Fatalf("Decrypt3x: %v", err)
 		}
@@ -255,7 +259,7 @@ func runMessageLowLevelTripleAuthEncrypt(b *testing.B, plaintext []byte, cn stri
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encrypted, err := itb.EncryptAuth3x(noise, lock, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
+		encrypted, err := itb.EncryptAuth3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
 		if err != nil {
 			b.Fatalf("EncryptAuth3x: %v", err)
 		}
@@ -272,7 +276,7 @@ func runMessageLowLevelTripleAuthDecrypt(b *testing.B, plaintext []byte, cn stri
 	macFunc := benchMACFunc(b)
 	outerKey := benchOuterKey(b, cn)
 
-	encrypted, err := itb.EncryptAuth3x(noise, lock, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
+	encrypted, err := itb.EncryptAuth3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
 	if err != nil {
 		b.Fatalf("EncryptAuth3x setup: %v", err)
 	}
@@ -291,7 +295,7 @@ func runMessageLowLevelTripleAuthDecrypt(b *testing.B, plaintext []byte, cn stri
 		if err != nil {
 			b.Fatalf("UnwrapInPlace: %v", err)
 		}
-		pt, err := itb.DecryptAuth3x(noise, lock, d1, d2, d3, s1, s2, s3, body, macFunc)
+		pt, err := itb.DecryptAuth3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, body, macFunc)
 		if err != nil {
 			b.Fatalf("DecryptAuth3x: %v", err)
 		}
@@ -344,7 +348,7 @@ func runAEADLowLevelIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
 		}
-		if err := itb.EncryptStreamAuth3x(noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
+		if err := itb.EncryptStreamAuth3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStreamAuth3x: %v", err)
 		}
 	}
@@ -360,7 +364,7 @@ func runAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
 	if err != nil {
 		b.Fatalf("NewWrapWriter setup: %v", err)
 	}
-	if err := itb.EncryptStreamAuth3x(noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
 		b.Fatalf("EncryptStreamAuth3x setup: %v", err)
 	}
 	pristineWire := pristineBuf.Bytes()
@@ -373,7 +377,7 @@ func runAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
 		var dst bytes.Buffer
-		if err := itb.DecryptStreamAuth3x(noise, lock, d1, d2, d3, s1, s2, s3, unwrapReader, &dst, macFunc); err != nil {
+		if err := itb.DecryptStreamAuth3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, unwrapReader, &dst, macFunc); err != nil {
 			b.Fatalf("DecryptStreamAuth3x: %v", err)
 		}
 		if dst.Len() != len(plaintext) {
@@ -396,7 +400,7 @@ func runNoAEADLowLevelIOTripleEncrypt(b *testing.B, plaintext []byte, cn string)
 		if err != nil {
 			b.Fatalf("NewWrapWriter: %v", err)
 		}
-		if err := itb.EncryptStream3x(noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
+		if err := itb.EncryptStream3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
 			b.Fatalf("EncryptStream3x: %v", err)
 		}
 	}
@@ -411,7 +415,7 @@ func runNoAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string)
 	if err != nil {
 		b.Fatalf("NewWrapWriter setup: %v", err)
 	}
-	if err := itb.EncryptStream3x(noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
+	if err := itb.EncryptStream3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
 		b.Fatalf("EncryptStream3x setup: %v", err)
 	}
 	pristineWire := pristineBuf.Bytes()
@@ -424,7 +428,7 @@ func runNoAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string)
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
 		var dst bytes.Buffer
-		if err := itb.DecryptStream3x(noise, lock, d1, d2, d3, s1, s2, s3, unwrapReader, &dst); err != nil {
+		if err := itb.DecryptStream3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, unwrapReader, &dst); err != nil {
 			b.Fatalf("DecryptStream3x: %v", err)
 		}
 		if dst.Len() != len(plaintext) {
@@ -448,7 +452,7 @@ func runNoAEADLowLevelUserLoopTripleEncrypt(b *testing.B, plaintext []byte, cn s
 			b.Fatalf("NewWrapWriter: %v", err)
 		}
 		if err := encryptUserLoop(plaintext, wrapWriter, func(buf []byte) ([]byte, error) {
-			return itb.Encrypt3x(noise, lock, d1, d2, d3, s1, s2, s3, buf)
+			return itb.Encrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, buf)
 		}); err != nil {
 			b.Fatalf("encryptUserLoop: %v", err)
 		}
@@ -465,7 +469,7 @@ func runNoAEADLowLevelUserLoopTripleDecrypt(b *testing.B, plaintext []byte, cn s
 		b.Fatalf("NewWrapWriter setup: %v", err)
 	}
 	if err := encryptUserLoop(plaintext, wrapWriter, func(buf []byte) ([]byte, error) {
-		return itb.Encrypt3x(noise, lock, d1, d2, d3, s1, s2, s3, buf)
+		return itb.Encrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, buf)
 	}); err != nil {
 		b.Fatalf("encryptUserLoop setup: %v", err)
 	}
@@ -479,7 +483,7 @@ func runNoAEADLowLevelUserLoopTripleDecrypt(b *testing.B, plaintext []byte, cn s
 			b.Fatalf("NewUnwrapReader: %v", err)
 		}
 		got, err := decryptUserLoop(unwrapReader, func(ct []byte) ([]byte, error) {
-			return itb.Decrypt3x(noise, lock, d1, d2, d3, s1, s2, s3, ct)
+			return itb.Decrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, ct)
 		})
 		if err != nil {
 			b.Fatalf("decryptUserLoop: %v", err)

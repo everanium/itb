@@ -3,11 +3,7 @@ package itb
 import (
 	"fmt"
 	"runtime"
-	"sync/atomic"
 )
-
-// headerSize returns the container header size: nonce + width(2) + height(2).
-func headerSize() int { return currentNonceSize() + 4 }
 
 const (
 	// Channels is the number of channels per pixel (RGBWYOPA:
@@ -49,30 +45,6 @@ const (
 	minPixelsScale    = 10000
 )
 
-// calcContainerSize computes square container dimensions from payload and minimum pixel counts.
-func calcContainerSize(payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (width, height int) {
-	needed := payloadCOBSLen + 1 // +1 for null terminator
-	pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
-
-	minPx := minPxNoise
-	if minPxData > minPx {
-		minPx = minPxData
-	}
-	if minPxStart > minPx {
-		minPx = minPxStart
-	}
-	if pixels < minPx {
-		pixels = minPx
-	}
-
-	side := 1
-	for side*side < pixels {
-		side++
-	}
-	side += currentBarrierFill() // guaranteed CSPRNG fill (Proof 10)
-	return side, side
-}
-
 // minParallelPixels is the threshold for parallel processing.
 // Below this, goroutine overhead exceeds the benefit.
 const minParallelPixels = 256
@@ -90,112 +62,32 @@ func rotateBits7(v byte, r uint) byte {
 // and aligns with the maximum streaming chunk size.
 const maxDataSize = 64 << 20
 
-// calcContainerSize3 computes square container dimensions for Triple Ouroboros.
-// Each third must hold its part's COBS data and satisfy MinPixels independently.
-func calcContainerSize3(cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
-	maxThirdPixels := 0
-	for i := 0; i < 3; i++ {
-		needed := cobsLens[i] + 1 // +1 for null terminator
-		pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
-
-		minPx := minPxNoise
-		if minPxData[i] > minPx {
-			minPx = minPxData[i]
-		}
-		if minPxStart[i] > minPx {
-			minPx = minPxStart[i]
-		}
-		if pixels < minPx {
-			pixels = minPx
-		}
-		if pixels > maxThirdPixels {
-			maxThirdPixels = pixels
-		}
-	}
-
-	totalPixels := 3 * maxThirdPixels
-
-	side := 1
-	for side*side < totalPixels {
-		side++
-	}
-	side += currentBarrierFill()
-	return side, side
-}
-
 // maxTotalPixels is the maximum container pixel count for decrypt validation.
 // Covers maxDataSize + COBS overhead + square rounding (~9.6M pixels for 64 MB).
 // Well below uint32 max (4.3B) with 429× headroom.
 const maxTotalPixels = 10_000_000
 
-// maxWorkers controls the maximum number of parallel workers for pixel processing.
-// 0 means use runtime.NumCPU() (default). Valid range: 1-256.
-var maxWorkers atomic.Int32
-
-// SetMaxWorkers sets the maximum number of parallel workers for pixel processing.
-// Pass 0 to use all available CPUs (default). Valid range: 0 to 256.
-// Values above 256 are clamped. Negative values are treated as 0 (all CPUs).
-// This affects all subsequent Encrypt/Decrypt calls across all hash widths.
-func SetMaxWorkers(n int) {
-	if n < 0 {
-		n = 0
-	}
-	if n > 256 {
-		n = 256
-	}
-	maxWorkers.Store(int32(n))
-}
-
-// GetMaxWorkers returns the current maximum worker limit.
-// Returns 0 if no limit is set (default: uses all available CPUs).
-func GetMaxWorkers() int {
-	return int(maxWorkers.Load())
-}
-
-// effectiveWorkers returns the number of workers to use for parallel processing.
-func effectiveWorkers(dataPixels int) int {
+// effectiveWorkersCfg is the per-instance worker-count resolver.
+// Consults cfg.MaxWorkers when cfg is non-nil and the field carries a
+// non-zero value; otherwise falls back to runtime.NumCPU. Values above
+// 256 are clamped. A per-instance cap of 1 forces the serial path in
+// [process128Cfg] / [process256Cfg] / [process512Cfg].
+//
+// nil cfg is permitted — every Cfg-suffixed entry point accepts nil
+// and resolves to the runtime.NumCPU fallback via this path.
+func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
 	if dataPixels < minParallelPixels {
 		return 1
 	}
-	numWorkers := runtime.NumCPU()
-	if limit := int(maxWorkers.Load()); limit > 0 {
-		if numWorkers > limit {
-			numWorkers = limit
+	limit := 0
+	if cfg != nil && cfg.MaxWorkers > 0 {
+		limit = cfg.MaxWorkers
+		if limit > 256 {
+			limit = 256
 		}
 	}
-	if numWorkers > dataPixels/64 {
-		numWorkers = dataPixels / 64
-	}
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
-	return numWorkers
-}
-
-// effectiveWorkersCfg is the Cfg variant of [effectiveWorkers]:
-// consults cfg.MaxWorkers when cfg is non-nil and the field carries a
-// non-zero value; otherwise falls through to [effectiveWorkers] (the
-// process-global accessor). Values above 256 are clamped to match the
-// [SetMaxWorkers] contract. A per-encryptor cap of 1 forces the
-// serial path in [process128Cfg] / [process256Cfg] / [process512Cfg]
-// without mutating the process-global — the concurrent-instance
-// isolation guarantee the triple package depends on.
-//
-// nil cfg is permitted — the legacy public entry points pass nil to
-// inherit the global, preserving pre-refactor behaviour bit-exactly.
-func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
-	if cfg == nil || cfg.MaxWorkers <= 0 {
-		return effectiveWorkers(dataPixels)
-	}
-	if dataPixels < minParallelPixels {
-		return 1
-	}
-	limit := cfg.MaxWorkers
-	if limit > 256 {
-		limit = 256
-	}
 	numWorkers := runtime.NumCPU()
-	if numWorkers > limit {
+	if limit > 0 && numWorkers > limit {
 		numWorkers = limit
 	}
 	if numWorkers > dataPixels/64 {
@@ -207,15 +99,16 @@ func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
 	return numWorkers
 }
 
-// headerSizeCfg is the Cfg variant of [headerSize]: consults
-// [currentNonceSizeCfg] so a non-nil cfg with an explicit NonceBits
-// override is honoured at the header-layout site.
+// headerSizeCfg returns the container header size for the given cfg:
+// nonce + width(2) + height(2). Consults [currentNonceSizeCfg] so a
+// non-nil cfg with an explicit NonceBits override is honoured at the
+// header-layout site.
 func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
 
-// calcContainerSizeCfg is the Cfg variant of [calcContainerSize]:
-// consults [currentBarrierFillCfg] for the CSPRNG barrier margin so
-// a non-nil cfg with an explicit BarrierFill override is honoured at
-// the container-sizing site. Body otherwise identical.
+// calcContainerSizeCfg computes square container dimensions from
+// payload and minimum pixel counts. Consults [currentBarrierFillCfg]
+// for the CSPRNG barrier margin so a non-nil cfg with an explicit
+// BarrierFill override is honoured.
 func calcContainerSizeCfg(cfg *Config, payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (width, height int) {
 	needed := payloadCOBSLen + 1 // +1 for null terminator
 	pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
@@ -239,9 +132,10 @@ func calcContainerSizeCfg(cfg *Config, payloadCOBSLen, minPxNoise, minPxData, mi
 	return side, side
 }
 
-// calcContainerSize3Cfg is the Cfg variant of [calcContainerSize3]:
-// consults [currentBarrierFillCfg] for the CSPRNG barrier margin.
-// Body otherwise identical.
+// calcContainerSize3Cfg computes square container dimensions for
+// Triple Ouroboros. Each third must hold its part's COBS data and
+// satisfy MinPixels independently. Consults [currentBarrierFillCfg]
+// for the CSPRNG barrier margin.
 func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
 	maxThirdPixels := 0
 	for i := 0; i < 3; i++ {
@@ -273,12 +167,11 @@ func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxDa
 	return side, side
 }
 
-// errSeedWidthMix is returned by the width-less Encrypt / Decrypt /
-// Encrypt3x / Decrypt3x dispatchers (and their authenticated /
-// streaming counterparts) when the supplied seeds do not share a
-// single concrete width. Mixing a *Seed128 with a *Seed256 cannot be
-// resolved to one of the width-suffixed implementations, so the
-// helper rejects the call rather than guessing a width.
+// errSeedWidthMix is returned by the width-less streaming Cfg
+// dispatchers when the supplied seeds do not share a single concrete
+// width. Mixing a *Seed128 with a *Seed256 cannot be resolved to one of
+// the width-suffixed implementations, so the helper rejects the call
+// rather than guessing a width.
 var errSeedWidthMix = fmt.Errorf("itb: seed width mix")
 
 // seedWidth returns 128 / 256 / 512 for *Seed128 / *Seed256 / *Seed512
@@ -317,44 +210,4 @@ func dispatchWidthTriple(noise, lock, data1, data2, data3, start1, start2, start
 		return 0, errSeedWidthMix
 	}
 	return w, nil
-}
-
-// Encrypt3x is the width-less Single Message Triple-Ouroboros Encrypt
-// entry point. Dispatches to [Encrypt3x128] / [Encrypt3x256] /
-// [Encrypt3x512] based on the concrete pointer type of the supplied
-// seeds. All eight seeds must share one concrete *SeedN type; mixing
-// widths returns an itb-wrapped error.
-func Encrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
-	w, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
-	if err != nil {
-		return nil, err
-	}
-	switch w {
-	case 128:
-		return Encrypt3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data)
-	case 256:
-		return Encrypt3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data)
-	case 512:
-		return Encrypt3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data)
-	}
-	return nil, errSeedWidthMix
-}
-
-// Decrypt3x is the width-less Single Message Triple-Ouroboros Decrypt
-// entry point. Mirrors [Encrypt3x]; dispatches to [Decrypt3x128] /
-// [Decrypt3x256] / [Decrypt3x512].
-func Decrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, fileData []byte) ([]byte, error) {
-	w, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
-	if err != nil {
-		return nil, err
-	}
-	switch w {
-	case 128:
-		return Decrypt3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), fileData)
-	case 256:
-		return Decrypt3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), fileData)
-	case 512:
-		return Decrypt3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), fileData)
-	}
-	return nil, errSeedWidthMix
 }

@@ -157,34 +157,27 @@ func TestNewSeedFromComponentsBatchedDispatchWired(t *testing.T) {
 	}
 }
 
-// TestBatchedRoundtripAcrossNonceSizes drives the C ABI Encrypt3 /
-// Decrypt3 path for every batched-capable primitive across
-// plaintext sizes that exercise every ITB SetNonceBits buf shape
-// (the per-pixel hash input is 20 / 36 / 68 bytes for nonce_bits
-// ∈ {128, 256, 512}). The length-specialised batched kernels — VAES
-// Areion256/512x4 and AVX-512 BLAKE2b256/512 chain-absorb — must
-// produce the same ciphertext at every (nonce_bits, plaintext_size)
-// corner; running encrypt + decrypt at sizes that span chunk
-// boundaries surfaces any bug in the chunk-batched dispatch where
-// the trailing chunk is shorter than the four-lane batch factor.
+// TestBatchedRoundtripAcrossPlaintextSizes drives the C ABI Encrypt3 /
+// Decrypt3 path for every batched-capable primitive across plaintext
+// sizes that stress the four-lane batched dispatch. The
+// length-specialised batched kernels — VAES Areion256/512x4 and
+// AVX-512 BLAKE2b256/512 chain-absorb — must produce the same
+// ciphertext at every plaintext_size corner; running encrypt +
+// decrypt at sizes that span chunk boundaries surfaces any bug in
+// the chunk-batched dispatch where the trailing chunk is shorter
+// than the four-lane batch factor.
 //
-// Each (primitive, nonce_bits, plaintext_size) combination must
-// roundtrip to bit-identical plaintext. nonce_bits is the
-// process-wide global, so the test brackets each setting with a
-// SetNonceBits / restore pair.
+// The capi Encrypt3 / Decrypt3 wrappers use the compile-in default
+// nonce width (128 bits); explicit per-instance nonce widths ride
+// through the Cfg-aware itb entries on the Go side.
 func TestBatchedRoundtripAcrossNonceSizes(t *testing.T) {
-	origNonce := GetNonceBits()
-	defer SetNonceBits(origNonce)
-
+	const nonceBits = 128
 	for _, name := range batchedPrimitives {
-		for _, nonceBits := range []int{128, 256, 512} {
-			for _, ptSize := range []int{4096, 65536, 1 << 20} {
+		for _, ptSize := range []int{4096, 65536, 1 << 20} {
+			{
 				t.Run(
 					fmtCase(name, nonceBits, ptSize),
 					func(t *testing.T) {
-						if st := SetNonceBits(nonceBits); st != StatusOK {
-							t.Fatalf("SetNonceBits(%d): %v", nonceBits, st)
-						}
 						plaintext := make([]byte, ptSize)
 						if _, err := rand.Read(plaintext); err != nil {
 							t.Fatal(err)

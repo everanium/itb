@@ -82,15 +82,15 @@ func encryptAuthTripleDispatch(
 ) ([]byte, error) {
 	switch ns.width {
 	case hashes.W128:
-		return itb.EncryptAuthenticated3x128(
+		return itb.EncryptAuthenticated3x128Cfg(nil,
 			ns.seed128, ls.seed128, ds1.seed128, ds2.seed128, ds3.seed128,
 			ss1.seed128, ss2.seed128, ss3.seed128, plaintext, mac)
 	case hashes.W256:
-		return itb.EncryptAuthenticated3x256(
+		return itb.EncryptAuthenticated3x256Cfg(nil,
 			ns.seed256, ls.seed256, ds1.seed256, ds2.seed256, ds3.seed256,
 			ss1.seed256, ss2.seed256, ss3.seed256, plaintext, mac)
 	case hashes.W512:
-		return itb.EncryptAuthenticated3x512(
+		return itb.EncryptAuthenticated3x512Cfg(nil,
 			ns.seed512, ls.seed512, ds1.seed512, ds2.seed512, ds3.seed512,
 			ss1.seed512, ss2.seed512, ss3.seed512, plaintext, mac)
 	}
@@ -103,15 +103,15 @@ func decryptAuthTripleDispatch(
 ) ([]byte, error) {
 	switch ns.width {
 	case hashes.W128:
-		return itb.DecryptAuthenticated3x128(
+		return itb.DecryptAuthenticated3x128Cfg(nil,
 			ns.seed128, ls.seed128, ds1.seed128, ds2.seed128, ds3.seed128,
 			ss1.seed128, ss2.seed128, ss3.seed128, ciphertext, mac)
 	case hashes.W256:
-		return itb.DecryptAuthenticated3x256(
+		return itb.DecryptAuthenticated3x256Cfg(nil,
 			ns.seed256, ls.seed256, ds1.seed256, ds2.seed256, ds3.seed256,
 			ss1.seed256, ss2.seed256, ss3.seed256, ciphertext, mac)
 	case hashes.W512:
-		return itb.DecryptAuthenticated3x512(
+		return itb.DecryptAuthenticated3x512Cfg(nil,
 			ns.seed512, ls.seed512, ds1.seed512, ds2.seed512, ds3.seed512,
 			ss1.seed512, ss2.seed512, ss3.seed512, ciphertext, mac)
 	}
@@ -211,17 +211,17 @@ func encryptStreamAuthTripleDispatch(
 ) ([]byte, error) {
 	switch ns.width {
 	case hashes.W128:
-		return itb.EncryptStreamAuthenticated3x128(
+		return itb.EncryptStreamAuthenticated3x128Cfg(nil,
 			ns.seed128, ls.seed128, ds1.seed128, ds2.seed128, ds3.seed128,
 			ss1.seed128, ss2.seed128, ss3.seed128, plaintext, mac,
 			streamID, cumulativePixelOffset, finalFlag)
 	case hashes.W256:
-		return itb.EncryptStreamAuthenticated3x256(
+		return itb.EncryptStreamAuthenticated3x256Cfg(nil,
 			ns.seed256, ls.seed256, ds1.seed256, ds2.seed256, ds3.seed256,
 			ss1.seed256, ss2.seed256, ss3.seed256, plaintext, mac,
 			streamID, cumulativePixelOffset, finalFlag)
 	case hashes.W512:
-		return itb.EncryptStreamAuthenticated3x512(
+		return itb.EncryptStreamAuthenticated3x512Cfg(nil,
 			ns.seed512, ls.seed512, ds1.seed512, ds2.seed512, ds3.seed512,
 			ss1.seed512, ss2.seed512, ss3.seed512, plaintext, mac,
 			streamID, cumulativePixelOffset, finalFlag)
@@ -236,17 +236,17 @@ func decryptStreamAuthTripleDispatch(
 ) ([]byte, bool, error) {
 	switch ns.width {
 	case hashes.W128:
-		return itb.DecryptStreamAuthenticated3x128(
+		return itb.DecryptStreamAuthenticated3x128Cfg(nil,
 			ns.seed128, ls.seed128, ds1.seed128, ds2.seed128, ds3.seed128,
 			ss1.seed128, ss2.seed128, ss3.seed128, ciphertext, mac,
 			streamID, cumulativePixelOffset)
 	case hashes.W256:
-		return itb.DecryptStreamAuthenticated3x256(
+		return itb.DecryptStreamAuthenticated3x256Cfg(nil,
 			ns.seed256, ls.seed256, ds1.seed256, ds2.seed256, ds3.seed256,
 			ss1.seed256, ss2.seed256, ss3.seed256, ciphertext, mac,
 			streamID, cumulativePixelOffset)
 	case hashes.W512:
-		return itb.DecryptStreamAuthenticated3x512(
+		return itb.DecryptStreamAuthenticated3x512Cfg(nil,
 			ns.seed512, ls.seed512, ds1.seed512, ds2.seed512, ds3.seed512,
 			ss1.seed512, ss2.seed512, ss3.seed512, ciphertext, mac,
 			streamID, cumulativePixelOffset)
