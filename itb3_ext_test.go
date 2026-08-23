@@ -18,11 +18,31 @@ package itb_test
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 )
+
+// extTripleBenchCfg returns the *itb.Config every ExtTriple bench
+// driver threads through the Cfg-suffixed entry points. The ITB_NONCE_BITS
+// environment variable selects the nonce width (128 / 256 / 512); when
+// unset or invalid the config pins the compile-in [itb.DefaultNonceBits]
+// explicitly. The external test package cannot reach the root package's
+// testCfg helper, so the env var is read here directly — same contract,
+// same accepted values.
+func extTripleBenchCfg() *itb.Config {
+	switch os.Getenv("ITB_NONCE_BITS") {
+	case "128":
+		return &itb.Config{NonceBits: 128}
+	case "256":
+		return &itb.Config{NonceBits: 256}
+	case "512":
+		return &itb.Config{NonceBits: 512}
+	}
+	return &itb.Config{NonceBits: itb.DefaultNonceBits}
+}
 
 // makeEightSeeds128Ext is the external-test counterpart of
 // itb_test.go:makeEightSeeds128. Constructs the eight independent
@@ -95,10 +115,11 @@ func benchEncrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
+	cfg := extTripleBenchCfg()
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = itb.Encrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -121,11 +142,12 @@ func benchDecrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	encrypted, _ := itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	cfg := extTripleBenchCfg()
+	encrypted, _ := itb.Encrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = itb.Decrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -152,10 +174,11 @@ func benchEncrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc2
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
+	cfg := extTripleBenchCfg()
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = itb.Encrypt3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -178,11 +201,12 @@ func benchDecrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc2
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	encrypted, _ := itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	cfg := extTripleBenchCfg()
+	encrypted, _ := itb.Encrypt3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = itb.Decrypt3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -208,10 +232,11 @@ func benchEncrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
+	cfg := extTripleBenchCfg()
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -234,11 +259,12 @@ func benchDecrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	encrypted, _ := itb.Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	cfg := extTripleBenchCfg()
+	encrypted, _ := itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = itb.Decrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
