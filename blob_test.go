@@ -479,3 +479,389 @@ func wireSeed256(s *itb.Seed256, key [32]byte) {
 	s.Hash = fn
 	s.BatchHash = batch
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Phase 3 — Cfg-aware Blob Export3Cfg / Import3Cfg round-trips
+// ───────────────────────────────────────────────────────────────────
+
+// saveGlobals3 captures the current process-global nonce / barrier /
+// worker settings and returns a restorer that undoes any mutations
+// performed by a test region. Paired with an outer defer or t.Cleanup
+// so the process-global state at the end of the test matches its
+// start regardless of the Import / Import3Cfg path exercised.
+func saveGlobals3(t *testing.T) func() {
+	t.Helper()
+	n := itb.GetNonceBits()
+	b := itb.GetBarrierFill()
+	w := itb.GetMaxWorkers()
+	return func() {
+		itb.SetNonceBits(n)
+		itb.SetBarrierFill(b)
+		itb.SetMaxWorkers(w)
+	}
+}
+
+// TestBlob512ExportImport3CfgRoundTrip exercises the Cfg-aware
+// Export3Cfg / Import3Cfg surface at the 512-bit width. Assertions:
+//
+//	(a) the round-tripped Cfg carries the ORIGINAL cfg values,
+//	(b) process globals are NOT mutated by Import3Cfg even when the
+//	    blob captured cfg values distinct from the current globals,
+//	(c) a MaxWorkers-zero cfg produces wire byte-identical to the
+//	    legacy Export3 taken under matching process globals — the
+//	    per-instance path is a straight pass-through of the process-
+//	    global path when Cfg carries no MaxWorkers override.
+func TestBlob512ExportImport3CfgRoundTrip(t *testing.T) {
+	restore := saveGlobals3(t)
+	t.Cleanup(restore)
+
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+
+	t.Run("cfg_carries_maxworkers", func(t *testing.T) {
+		// Pick cfg values distinct from BOTH defaults and the values
+		// step (b) below will set on the process globals.
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
+
+		bSrc := &itb.Blob512{}
+		opts := itb.Blob512Opts{KeyL: ks[1], LS: ls}
+		data, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts,
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+
+		// Distinguishable other values on the process globals.
+		itb.SetNonceBits(128)
+		itb.SetBarrierFill(1)
+		itb.SetMaxWorkers(1)
+
+		fresh := &itb.Config{}
+		bDst := &itb.Blob512{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+
+		// (a) Cfg fields land verbatim.
+		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 4 {
+			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:4}", fresh)
+		}
+		// (b) Process globals unchanged from the step above.
+		if g := itb.GetNonceBits(); g != 128 {
+			t.Errorf("Import3Cfg mutated NonceBits: got %d, want 128", g)
+		}
+		if g := itb.GetBarrierFill(); g != 1 {
+			t.Errorf("Import3Cfg mutated BarrierFill: got %d, want 1", g)
+		}
+		if g := itb.GetMaxWorkers(); g != 1 {
+			t.Errorf("Import3Cfg mutated MaxWorkers: got %d, want 1", g)
+		}
+	})
+
+	t.Run("nomax_wire_parity_with_export3", func(t *testing.T) {
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+
+		bSrc := &itb.Blob512{}
+		opts := itb.Blob512Opts{KeyL: ks[1], LS: ls}
+		cfgBlob, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts,
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+
+		// Reference: Export3 taken under matching process globals.
+		itb.SetNonceBits(256)
+		itb.SetBarrierFill(8)
+		bRef := &itb.Blob512{}
+		refBlob, err := bRef.Export3(
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts,
+		)
+		if err != nil {
+			t.Fatalf("Export3: %v", err)
+		}
+
+		if !bytes.Equal(cfgBlob, refBlob) {
+			t.Fatalf("wire divergence:\n  Export3Cfg = %s\n  Export3    = %s", cfgBlob, refBlob)
+		}
+	})
+
+	t.Run("nil_cfg_rejected", func(t *testing.T) {
+		bSrc := &itb.Blob512{}
+		if _, err := bSrc.Export3Cfg(nil,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		); !errors.Is(err, itb.ErrBlobNilCfg) {
+			t.Errorf("Export3Cfg(nil): got %v, want ErrBlobNilCfg", err)
+		}
+
+		// Build a legit blob to feed into a nil-cfg Import3Cfg.
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+		data, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+		bDst := &itb.Blob512{}
+		if err := bDst.Import3Cfg(data, nil); !errors.Is(err, itb.ErrBlobNilCfg) {
+			t.Errorf("Import3Cfg(nil): got %v, want ErrBlobNilCfg", err)
+		}
+	})
+}
+
+// TestBlob256ExportImport3CfgRoundTrip mirrors the 512-bit round-trip
+// at the 256-bit width using BLAKE3.
+func TestBlob256ExportImport3CfgRoundTrip(t *testing.T) {
+	restore := saveGlobals3(t)
+	t.Cleanup(restore)
+
+	mkSeed := func() (*itb.Seed256, [32]byte) {
+		fn, batch, key := hashes.BLAKE3256Pair()
+		s, _ := itb.NewSeed256(1024, fn)
+		s.BatchHash = batch
+		return s, key
+	}
+	ns, keyN := mkSeed()
+	ls, keyL := mkSeed()
+	ds1, keyD1 := mkSeed()
+	ds2, keyD2 := mkSeed()
+	ds3, keyD3 := mkSeed()
+	ss1, keyS1 := mkSeed()
+	ss2, keyS2 := mkSeed()
+	ss3, keyS3 := mkSeed()
+
+	t.Run("cfg_carries_maxworkers", func(t *testing.T) {
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
+
+		bSrc := &itb.Blob256{}
+		opts := itb.Blob256Opts{KeyL: keyL, LS: ls}
+		data, err := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+
+		itb.SetNonceBits(128)
+		itb.SetBarrierFill(1)
+		itb.SetMaxWorkers(1)
+
+		fresh := &itb.Config{}
+		bDst := &itb.Blob256{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+
+		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 4 {
+			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:4}", fresh)
+		}
+		if g := itb.GetNonceBits(); g != 128 {
+			t.Errorf("Import3Cfg mutated NonceBits: got %d, want 128", g)
+		}
+		if g := itb.GetBarrierFill(); g != 1 {
+			t.Errorf("Import3Cfg mutated BarrierFill: got %d, want 1", g)
+		}
+		if g := itb.GetMaxWorkers(); g != 1 {
+			t.Errorf("Import3Cfg mutated MaxWorkers: got %d, want 1", g)
+		}
+	})
+
+	t.Run("nomax_wire_parity_with_export3", func(t *testing.T) {
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+
+		bSrc := &itb.Blob256{}
+		opts := itb.Blob256Opts{KeyL: keyL, LS: ls}
+		cfgBlob, err := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+
+		itb.SetNonceBits(256)
+		itb.SetBarrierFill(8)
+		bRef := &itb.Blob256{}
+		refBlob, err := bRef.Export3(keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts)
+		if err != nil {
+			t.Fatalf("Export3: %v", err)
+		}
+
+		if !bytes.Equal(cfgBlob, refBlob) {
+			t.Fatalf("wire divergence:\n  Export3Cfg = %s\n  Export3    = %s", cfgBlob, refBlob)
+		}
+	})
+
+	t.Run("nil_cfg_rejected", func(t *testing.T) {
+		bSrc := &itb.Blob256{}
+		if _, err := bSrc.Export3Cfg(nil, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		); !errors.Is(err, itb.ErrBlobNilCfg) {
+			t.Errorf("Export3Cfg(nil): got %v, want ErrBlobNilCfg", err)
+		}
+
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+		data, err := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+		bDst := &itb.Blob256{}
+		if err := bDst.Import3Cfg(data, nil); !errors.Is(err, itb.ErrBlobNilCfg) {
+			t.Errorf("Import3Cfg(nil): got %v, want ErrBlobNilCfg", err)
+		}
+	})
+}
+
+// TestBlob128ExportImport3CfgRoundTrip mirrors the 512-bit round-trip
+// at the 128-bit width using AES-CMAC (a 16-byte fixed-key primitive
+// on this width — exercises the []byte key path).
+func TestBlob128ExportImport3CfgRoundTrip(t *testing.T) {
+	restore := saveGlobals3(t)
+	t.Cleanup(restore)
+
+	mkSeed := func() (*itb.Seed128, []byte) {
+		fn, key := hashes.AESCMAC()
+		s, _ := itb.NewSeed128(1024, fn)
+		return s, key[:]
+	}
+	ns, keyN := mkSeed()
+	ls, keyL := mkSeed()
+	ds1, keyD1 := mkSeed()
+	ds2, keyD2 := mkSeed()
+	ds3, keyD3 := mkSeed()
+	ss1, keyS1 := mkSeed()
+	ss2, keyS2 := mkSeed()
+	ss3, keyS3 := mkSeed()
+
+	t.Run("cfg_carries_maxworkers", func(t *testing.T) {
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
+
+		bSrc := &itb.Blob128{}
+		opts := itb.Blob128Opts{KeyL: keyL, LS: ls}
+		data, err := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+
+		itb.SetNonceBits(128)
+		itb.SetBarrierFill(1)
+		itb.SetMaxWorkers(1)
+
+		fresh := &itb.Config{}
+		bDst := &itb.Blob128{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+
+		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 4 {
+			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:4}", fresh)
+		}
+		if g := itb.GetNonceBits(); g != 128 {
+			t.Errorf("Import3Cfg mutated NonceBits: got %d, want 128", g)
+		}
+		if g := itb.GetBarrierFill(); g != 1 {
+			t.Errorf("Import3Cfg mutated BarrierFill: got %d, want 1", g)
+		}
+		if g := itb.GetMaxWorkers(); g != 1 {
+			t.Errorf("Import3Cfg mutated MaxWorkers: got %d, want 1", g)
+		}
+	})
+
+	t.Run("nomax_wire_parity_with_export3", func(t *testing.T) {
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+
+		bSrc := &itb.Blob128{}
+		opts := itb.Blob128Opts{KeyL: keyL, LS: ls}
+		cfgBlob, err := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+
+		itb.SetNonceBits(256)
+		itb.SetBarrierFill(8)
+		bRef := &itb.Blob128{}
+		refBlob, err := bRef.Export3(keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, opts)
+		if err != nil {
+			t.Fatalf("Export3: %v", err)
+		}
+
+		if !bytes.Equal(cfgBlob, refBlob) {
+			t.Fatalf("wire divergence:\n  Export3Cfg = %s\n  Export3    = %s", cfgBlob, refBlob)
+		}
+	})
+
+	t.Run("nil_cfg_rejected", func(t *testing.T) {
+		bSrc := &itb.Blob128{}
+		if _, err := bSrc.Export3Cfg(nil, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		); !errors.Is(err, itb.ErrBlobNilCfg) {
+			t.Errorf("Export3Cfg(nil): got %v, want ErrBlobNilCfg", err)
+		}
+
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+		data, err := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+		bDst := &itb.Blob128{}
+		if err := bDst.Import3Cfg(data, nil); !errors.Is(err, itb.ErrBlobNilCfg) {
+			t.Errorf("Import3Cfg(nil): got %v, want ErrBlobNilCfg", err)
+		}
+	})
+}
+
+// TestBlobV1MaxWorkersFieldBackCompat exercises the wire back-compat
+// contract: a JSON blob that omits the "max_workers" key entirely
+// (pre-Phase-3 shape) is accepted by Import3Cfg and lands as
+// cfg.MaxWorkers == 0. Hand-crafted JSON is used so the "field
+// missing from wire" path is exercised directly, independent of the
+// Export3 snapshotter's zero-omitempty behaviour.
+func TestBlobV1MaxWorkersFieldBackCompat(t *testing.T) {
+	restore := saveGlobals3(t)
+	t.Cleanup(restore)
+
+	// Build a legit 512-width Triple blob via Export3Cfg, then verify
+	// the raw JSON has no "max_workers" key (Cfg carries MaxWorkers=0
+	// so omitempty drops the field). This exercises the wire path a
+	// pre-Phase-3 producer would emit.
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+	cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+	bSrc := &itb.Blob512{}
+	data, err := bSrc.Export3Cfg(cfg,
+		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+		ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		itb.Blob512Opts{KeyL: ks[1], LS: ls},
+	)
+	if err != nil {
+		t.Fatalf("Export3Cfg: %v", err)
+	}
+	if bytes.Contains(data, []byte("max_workers")) {
+		t.Fatalf("wire unexpectedly carries max_workers key: %s", data)
+	}
+
+	// Round-trip the field-missing blob through Import3Cfg.
+	fresh := &itb.Config{}
+	bDst := &itb.Blob512{}
+	if err := bDst.Import3Cfg(data, fresh); err != nil {
+		t.Fatalf("Import3Cfg: %v", err)
+	}
+	if fresh.MaxWorkers != 0 {
+		t.Errorf("field-missing blob decoded MaxWorkers = %d, want 0", fresh.MaxWorkers)
+	}
+	if fresh.NonceBits != 256 || fresh.BarrierFill != 8 {
+		t.Errorf("field-missing blob decoded NonceBits/BarrierFill = %d/%d, want 256/8",
+			fresh.NonceBits, fresh.BarrierFill)
+	}
+}

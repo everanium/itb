@@ -125,12 +125,19 @@ type blobV1 struct {
 // blobGlobalsV1 captures the sender's process-wide nonce / barrier
 // configuration at the moment of Export. Import applies both fields
 // unconditionally via [SetNonceBits] / [SetBarrierFill].
-// [SetMaxWorkers] is excluded — the worker count is a deployment-side
-// decision (CPU budget on the receiver host), not a per-message
-// property.
+//
+// MaxWorkers is an optional per-instance override consumed only by
+// the Cfg-aware Export3Cfg / Import3Cfg surface — see
+// [Blob512.Export3Cfg] / [Blob512.Import3Cfg] and their 128/256-bit
+// counterparts. The legacy Export3 / Import3 path never populates
+// this slot (its snapshotter reads only NonceBits + BarrierFill from
+// the process globals); the `omitempty` tag drops the zero value from
+// the wire, so pre-Phase-3 blobs remain byte-identical to their
+// current shape and receive MaxWorkers == 0 on decode.
 type blobGlobalsV1 struct {
 	NonceBits   int `json:"nonce_bits"`
 	BarrierFill int `json:"barrier_fill"`
+	MaxWorkers  int `json:"max_workers,omitempty"`
 }
 
 // componentsToStrings encodes a uint64 slice as decimal-string
@@ -1401,6 +1408,736 @@ func (b *Blob128) Import3(data []byte) error {
 	}
 
 	if err := applyGlobalsV1(blob.Globals); err != nil {
+		return err
+	}
+
+	*b = Blob128{
+		Mode:    3,
+		KeyN:    keyN,
+		KeyD1:   keyD1,
+		KeyD2:   keyD2,
+		KeyD3:   keyD3,
+		KeyS1:   keyS1,
+		KeyS2:   keyS2,
+		KeyS3:   keyS3,
+		NS:      &Seed128{Components: ns},
+		DS1:     &Seed128{Components: ds1},
+		DS2:     &Seed128{Components: ds2},
+		DS3:     &Seed128{Components: ds3},
+		SS1:     &Seed128{Components: ss1},
+		SS2:     &Seed128{Components: ss2},
+		SS3:     &Seed128{Components: ss3},
+		MACKey:  macKey,
+		MACName: blob.MACName,
+	}
+	if hasLS {
+		b.KeyL = keyL
+		b.LS = &Seed128{Components: ls}
+	}
+	return nil
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Cfg-aware Blob Import / Export (per-instance isolation)
+// ───────────────────────────────────────────────────────────────────
+
+// ErrBlobNilCfg is returned by [Blob128.Export3Cfg] /
+// [Blob256.Export3Cfg] / [Blob512.Export3Cfg] and by their
+// Import3Cfg counterparts when a nil *Config is supplied. The
+// Cfg-aware entry points exist specifically to give callers
+// per-instance isolation from process-wide setters; nil is not a
+// permitted stand-in for "inherit process globals" — the legacy
+// Export3 / Import3 methods already provide that semantic.
+var ErrBlobNilCfg = errors.New("itb: blob: Cfg entry point requires non-nil *Config")
+
+// snapshotGlobalsV1FromCfg mirrors [snapshotGlobalsV1] but reads from
+// a caller-supplied *Config instead of the process globals. No global
+// atomic is touched.
+//
+// A nil cfg falls back to [snapshotGlobalsV1] so that internal
+// callers threading a nil Config through Export3Cfg-shaped helpers
+// still produce a byte-identical wire to the legacy Export3 path.
+// The public Export3Cfg entry points reject nil before reaching this
+// helper — see [ErrBlobNilCfg].
+//
+// MaxWorkers rides in the returned struct only when non-zero (the
+// omitempty tag on [blobGlobalsV1.MaxWorkers] drops the field from
+// the JSON wire in the zero case). A cfg with MaxWorkers == 0
+// therefore produces wire byte-identical to the legacy Export3 path
+// when its NonceBits / BarrierFill match the process globals.
+func snapshotGlobalsV1FromCfg(cfg *Config) blobGlobalsV1 {
+	if cfg == nil {
+		return snapshotGlobalsV1()
+	}
+	return blobGlobalsV1{
+		NonceBits:   cfg.NonceBits,
+		BarrierFill: cfg.BarrierFill,
+		MaxWorkers:  cfg.MaxWorkers,
+	}
+}
+
+// applyGlobalsV1ToCfg validates the captured globals identically to
+// [applyGlobalsV1] and writes them into a caller-supplied *Config
+// instead of the process globals. No process-wide state is mutated.
+//
+// The NonceBits / BarrierFill slots follow the same value-set
+// discipline as [applyGlobalsV1]: any out-of-range value yields
+// [ErrBlobMalformed] before any field is written, so a malformed
+// blob does not leave a partially-populated Config behind.
+//
+// MaxWorkers is optional. When the blob carries a non-zero value it
+// is copied into cfg.MaxWorkers verbatim; when zero (pre-Phase-3
+// blobs, or blobs built from a Config with the field unset) the
+// receiver's cfg.MaxWorkers is left at 0 so the per-Pipeline
+// fallback semantic (inherit the process-global at consumption)
+// continues to hold.
+func applyGlobalsV1ToCfg(g blobGlobalsV1, cfg *Config) error {
+	if cfg == nil {
+		return ErrBlobNilCfg
+	}
+	switch g.NonceBits {
+	case 128, 256, 512:
+	default:
+		return ErrBlobMalformed
+	}
+	switch g.BarrierFill {
+	case 1, 2, 4, 8, 16, 32:
+	default:
+		return ErrBlobMalformed
+	}
+	cfg.NonceBits = g.NonceBits
+	cfg.BarrierFill = g.BarrierFill
+	if g.MaxWorkers > 0 {
+		cfg.MaxWorkers = g.MaxWorkers
+	}
+	return nil
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Blob512 — Cfg-aware Triple Ouroboros Export / Import
+// ───────────────────────────────────────────────────────────────────
+
+// Export3Cfg is the Cfg-aware counterpart of [Blob512.Export3]. The
+// leading cfg argument replaces the process-global snapshot with a
+// per-instance Config snapshot; every other argument matches
+// [Blob512.Export3] and the packed blob shape is byte-identical to
+// the legacy path when cfg's NonceBits / BarrierFill match the
+// current process globals AND cfg.MaxWorkers == 0 (the legacy path
+// never populates the max_workers slot; a non-zero cfg.MaxWorkers
+// adds it to the wire).
+//
+// A nil cfg returns [ErrBlobNilCfg] — the Cfg-aware entry points
+// exist for per-instance isolation, so the caller must supply a
+// non-nil Config; the legacy [Blob512.Export3] remains available for
+// callers that accept process-global semantics.
+func (b *Blob512) Export3Cfg(
+	cfg *Config,
+	keyN [64]byte,
+	keyD1, keyD2, keyD3 [64]byte,
+	keyS1, keyS2, keyS3 [64]byte,
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512,
+	opts ...Blob512Opts,
+) ([]byte, error) {
+	if cfg == nil {
+		return nil, ErrBlobNilCfg
+	}
+	if len(opts) > 1 {
+		return nil, ErrBlobTooManyOpts
+	}
+	var o Blob512Opts
+	if len(opts) == 1 {
+		o = opts[0]
+	}
+	seeds := [7]*Seed512{ns, ds1, ds2, ds3, ss1, ss2, ss3}
+	for i, s := range seeds {
+		if s == nil {
+			return nil, fmt.Errorf("itb: Blob512.Export3Cfg: nil seed at slot %d", i)
+		}
+	}
+	n := len(ns.Components)
+	if n == 0 {
+		return nil, fmt.Errorf("itb: Blob512.Export3Cfg: empty noiseSeed components")
+	}
+	for i, s := range seeds[1:] {
+		if len(s.Components) != n {
+			return nil, fmt.Errorf("itb: Blob512.Export3Cfg: seed slot %d component count differs from noiseSeed", i+1)
+		}
+	}
+
+	blob := blobV1{
+		Version: blobVersionV1,
+		Mode:    3,
+		KeyBits: n * 64,
+		KeyN:    hex.EncodeToString(keyN[:]),
+		KeyD1:   hex.EncodeToString(keyD1[:]),
+		KeyD2:   hex.EncodeToString(keyD2[:]),
+		KeyD3:   hex.EncodeToString(keyD3[:]),
+		KeyS1:   hex.EncodeToString(keyS1[:]),
+		KeyS2:   hex.EncodeToString(keyS2[:]),
+		KeyS3:   hex.EncodeToString(keyS3[:]),
+		NS:      componentsToStrings(ns.Components),
+		DS1:     componentsToStrings(ds1.Components),
+		DS2:     componentsToStrings(ds2.Components),
+		DS3:     componentsToStrings(ds3.Components),
+		SS1:     componentsToStrings(ss1.Components),
+		SS2:     componentsToStrings(ss2.Components),
+		SS3:     componentsToStrings(ss3.Components),
+		Globals: snapshotGlobalsV1FromCfg(cfg),
+	}
+
+	if o.LS != nil {
+		if len(o.LS.Components) != n {
+			return nil, fmt.Errorf("itb: Blob512.Export3Cfg: lockSeed component count differs from noiseSeed")
+		}
+		blob.KeyL = hex.EncodeToString(o.KeyL[:])
+		blob.LS = componentsToStrings(o.LS.Components)
+	}
+	if len(o.MACKey) > 0 {
+		blob.MACKey = hex.EncodeToString(o.MACKey)
+		blob.MACName = o.MACName
+	}
+	b.Mode = 3
+	return json.Marshal(blob)
+}
+
+// Import3Cfg is the Cfg-aware counterpart of [Blob512.Import3]. The
+// captured globals are written into the caller-supplied *Config via
+// [applyGlobalsV1ToCfg] instead of the process globals; no
+// process-wide state is mutated. Every other step matches
+// [Blob512.Import3] verbatim, including the strict-shape decoder,
+// the version / mode / key_bits / component-count validation, and
+// the final receiver population.
+//
+// A nil cfg returns [ErrBlobNilCfg]. The legacy [Blob512.Import3]
+// remains available for callers that accept process-global semantics.
+func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
+	if cfg == nil {
+		return ErrBlobNilCfg
+	}
+	var blob blobV1
+	if err := decodeBlobStrict(data, &blob); err != nil {
+		return ErrBlobMalformed
+	}
+	if blob.Version > blobVersionV1 {
+		return ErrBlobVersionTooNew
+	}
+	if blob.Mode != 3 {
+		return ErrBlobModeMismatch
+	}
+
+	keyN, err := hexToFixed64(blob.KeyN)
+	if err != nil {
+		return err
+	}
+	keyD1, err := hexToFixed64(blob.KeyD1)
+	if err != nil {
+		return err
+	}
+	keyD2, err := hexToFixed64(blob.KeyD2)
+	if err != nil {
+		return err
+	}
+	keyD3, err := hexToFixed64(blob.KeyD3)
+	if err != nil {
+		return err
+	}
+	keyS1, err := hexToFixed64(blob.KeyS1)
+	if err != nil {
+		return err
+	}
+	keyS2, err := hexToFixed64(blob.KeyS2)
+	if err != nil {
+		return err
+	}
+	keyS3, err := hexToFixed64(blob.KeyS3)
+	if err != nil {
+		return err
+	}
+	ns, err := componentsFromStrings(blob.NS)
+	if err != nil {
+		return err
+	}
+	ds1, err := componentsFromStrings(blob.DS1)
+	if err != nil {
+		return err
+	}
+	ds2, err := componentsFromStrings(blob.DS2)
+	if err != nil {
+		return err
+	}
+	ds3, err := componentsFromStrings(blob.DS3)
+	if err != nil {
+		return err
+	}
+	ss1, err := componentsFromStrings(blob.SS1)
+	if err != nil {
+		return err
+	}
+	ss2, err := componentsFromStrings(blob.SS2)
+	if err != nil {
+		return err
+	}
+	ss3, err := componentsFromStrings(blob.SS3)
+	if err != nil {
+		return err
+	}
+	want := blob.KeyBits / 64
+	for _, comps := range [][]uint64{ns, ds1, ds2, ds3, ss1, ss2, ss3} {
+		if err := validateSeedComponentsLen(len(comps), want); err != nil {
+			return err
+		}
+	}
+
+	var keyL [64]byte
+	var ls []uint64
+	hasLS := blob.KeyL != "" || len(blob.LS) > 0
+	if hasLS {
+		keyL, err = hexToFixed64(blob.KeyL)
+		if err != nil {
+			return err
+		}
+		ls, err = componentsFromStrings(blob.LS)
+		if err != nil {
+			return err
+		}
+		if err := validateSeedComponentsLen(len(ls), want); err != nil {
+			return err
+		}
+	}
+
+	var macKey []byte
+	if blob.MACKey != "" {
+		macKey, err = hex.DecodeString(blob.MACKey)
+		if err != nil {
+			return ErrBlobMalformed
+		}
+	}
+
+	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
+		return err
+	}
+
+	*b = Blob512{
+		Mode:    3,
+		KeyN:    keyN,
+		KeyD1:   keyD1,
+		KeyD2:   keyD2,
+		KeyD3:   keyD3,
+		KeyS1:   keyS1,
+		KeyS2:   keyS2,
+		KeyS3:   keyS3,
+		NS:      &Seed512{Components: ns},
+		DS1:     &Seed512{Components: ds1},
+		DS2:     &Seed512{Components: ds2},
+		DS3:     &Seed512{Components: ds3},
+		SS1:     &Seed512{Components: ss1},
+		SS2:     &Seed512{Components: ss2},
+		SS3:     &Seed512{Components: ss3},
+		MACKey:  macKey,
+		MACName: blob.MACName,
+	}
+	if hasLS {
+		b.KeyL = keyL
+		b.LS = &Seed512{Components: ls}
+	}
+	return nil
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Blob256 — Cfg-aware Triple Ouroboros Export / Import
+// ───────────────────────────────────────────────────────────────────
+
+// Export3Cfg — Triple Ouroboros, 256-bit width. See
+// [Blob512.Export3Cfg] for the full contract; wire shape mirrors
+// [Blob256.Export3] with the added per-instance-globals semantic.
+func (b *Blob256) Export3Cfg(
+	cfg *Config,
+	keyN [32]byte,
+	keyD1, keyD2, keyD3 [32]byte,
+	keyS1, keyS2, keyS3 [32]byte,
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256,
+	opts ...Blob256Opts,
+) ([]byte, error) {
+	if cfg == nil {
+		return nil, ErrBlobNilCfg
+	}
+	if len(opts) > 1 {
+		return nil, ErrBlobTooManyOpts
+	}
+	var o Blob256Opts
+	if len(opts) == 1 {
+		o = opts[0]
+	}
+	seeds := [7]*Seed256{ns, ds1, ds2, ds3, ss1, ss2, ss3}
+	for i, s := range seeds {
+		if s == nil {
+			return nil, fmt.Errorf("itb: Blob256.Export3Cfg: nil seed at slot %d", i)
+		}
+	}
+	n := len(ns.Components)
+	if n == 0 {
+		return nil, fmt.Errorf("itb: Blob256.Export3Cfg: empty noiseSeed components")
+	}
+	for i, s := range seeds[1:] {
+		if len(s.Components) != n {
+			return nil, fmt.Errorf("itb: Blob256.Export3Cfg: seed slot %d component count differs from noiseSeed", i+1)
+		}
+	}
+
+	blob := blobV1{
+		Version: blobVersionV1,
+		Mode:    3,
+		KeyBits: n * 64,
+		KeyN:    hex.EncodeToString(keyN[:]),
+		KeyD1:   hex.EncodeToString(keyD1[:]),
+		KeyD2:   hex.EncodeToString(keyD2[:]),
+		KeyD3:   hex.EncodeToString(keyD3[:]),
+		KeyS1:   hex.EncodeToString(keyS1[:]),
+		KeyS2:   hex.EncodeToString(keyS2[:]),
+		KeyS3:   hex.EncodeToString(keyS3[:]),
+		NS:      componentsToStrings(ns.Components),
+		DS1:     componentsToStrings(ds1.Components),
+		DS2:     componentsToStrings(ds2.Components),
+		DS3:     componentsToStrings(ds3.Components),
+		SS1:     componentsToStrings(ss1.Components),
+		SS2:     componentsToStrings(ss2.Components),
+		SS3:     componentsToStrings(ss3.Components),
+		Globals: snapshotGlobalsV1FromCfg(cfg),
+	}
+	if o.LS != nil {
+		if len(o.LS.Components) != n {
+			return nil, fmt.Errorf("itb: Blob256.Export3Cfg: lockSeed component count differs from noiseSeed")
+		}
+		blob.KeyL = hex.EncodeToString(o.KeyL[:])
+		blob.LS = componentsToStrings(o.LS.Components)
+	}
+	if len(o.MACKey) > 0 {
+		blob.MACKey = hex.EncodeToString(o.MACKey)
+		blob.MACName = o.MACName
+	}
+	b.Mode = 3
+	return json.Marshal(blob)
+}
+
+// Import3Cfg — Triple Ouroboros, 256-bit width. See
+// [Blob512.Import3Cfg] for the full contract; behaviour mirrors
+// [Blob256.Import3] with the per-instance-globals write path.
+func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
+	if cfg == nil {
+		return ErrBlobNilCfg
+	}
+	var blob blobV1
+	if err := decodeBlobStrict(data, &blob); err != nil {
+		return ErrBlobMalformed
+	}
+	if blob.Version > blobVersionV1 {
+		return ErrBlobVersionTooNew
+	}
+	if blob.Mode != 3 {
+		return ErrBlobModeMismatch
+	}
+
+	keyN, err := hexToFixed32(blob.KeyN)
+	if err != nil {
+		return err
+	}
+	keyD1, err := hexToFixed32(blob.KeyD1)
+	if err != nil {
+		return err
+	}
+	keyD2, err := hexToFixed32(blob.KeyD2)
+	if err != nil {
+		return err
+	}
+	keyD3, err := hexToFixed32(blob.KeyD3)
+	if err != nil {
+		return err
+	}
+	keyS1, err := hexToFixed32(blob.KeyS1)
+	if err != nil {
+		return err
+	}
+	keyS2, err := hexToFixed32(blob.KeyS2)
+	if err != nil {
+		return err
+	}
+	keyS3, err := hexToFixed32(blob.KeyS3)
+	if err != nil {
+		return err
+	}
+	ns, err := componentsFromStrings(blob.NS)
+	if err != nil {
+		return err
+	}
+	ds1, err := componentsFromStrings(blob.DS1)
+	if err != nil {
+		return err
+	}
+	ds2, err := componentsFromStrings(blob.DS2)
+	if err != nil {
+		return err
+	}
+	ds3, err := componentsFromStrings(blob.DS3)
+	if err != nil {
+		return err
+	}
+	ss1, err := componentsFromStrings(blob.SS1)
+	if err != nil {
+		return err
+	}
+	ss2, err := componentsFromStrings(blob.SS2)
+	if err != nil {
+		return err
+	}
+	ss3, err := componentsFromStrings(blob.SS3)
+	if err != nil {
+		return err
+	}
+	want := blob.KeyBits / 64
+	for _, comps := range [][]uint64{ns, ds1, ds2, ds3, ss1, ss2, ss3} {
+		if err := validateSeedComponentsLen(len(comps), want); err != nil {
+			return err
+		}
+	}
+
+	var keyL [32]byte
+	var ls []uint64
+	hasLS := blob.KeyL != "" || len(blob.LS) > 0
+	if hasLS {
+		keyL, err = hexToFixed32(blob.KeyL)
+		if err != nil {
+			return err
+		}
+		ls, err = componentsFromStrings(blob.LS)
+		if err != nil {
+			return err
+		}
+		if err := validateSeedComponentsLen(len(ls), want); err != nil {
+			return err
+		}
+	}
+
+	var macKey []byte
+	if blob.MACKey != "" {
+		macKey, err = hex.DecodeString(blob.MACKey)
+		if err != nil {
+			return ErrBlobMalformed
+		}
+	}
+
+	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
+		return err
+	}
+
+	*b = Blob256{
+		Mode:    3,
+		KeyN:    keyN,
+		KeyD1:   keyD1,
+		KeyD2:   keyD2,
+		KeyD3:   keyD3,
+		KeyS1:   keyS1,
+		KeyS2:   keyS2,
+		KeyS3:   keyS3,
+		NS:      &Seed256{Components: ns},
+		DS1:     &Seed256{Components: ds1},
+		DS2:     &Seed256{Components: ds2},
+		DS3:     &Seed256{Components: ds3},
+		SS1:     &Seed256{Components: ss1},
+		SS2:     &Seed256{Components: ss2},
+		SS3:     &Seed256{Components: ss3},
+		MACKey:  macKey,
+		MACName: blob.MACName,
+	}
+	if hasLS {
+		b.KeyL = keyL
+		b.LS = &Seed256{Components: ls}
+	}
+	return nil
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Blob128 — Cfg-aware Triple Ouroboros Export / Import
+// ───────────────────────────────────────────────────────────────────
+
+// Export3Cfg — Triple Ouroboros, 128-bit width. See
+// [Blob512.Export3Cfg] for the full contract; wire shape mirrors
+// [Blob128.Export3] with the added per-instance-globals semantic.
+func (b *Blob128) Export3Cfg(
+	cfg *Config,
+	keyN []byte,
+	keyD1, keyD2, keyD3 []byte,
+	keyS1, keyS2, keyS3 []byte,
+	ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128,
+	opts ...Blob128Opts,
+) ([]byte, error) {
+	if cfg == nil {
+		return nil, ErrBlobNilCfg
+	}
+	if len(opts) > 1 {
+		return nil, ErrBlobTooManyOpts
+	}
+	var o Blob128Opts
+	if len(opts) == 1 {
+		o = opts[0]
+	}
+	seeds := [7]*Seed128{ns, ds1, ds2, ds3, ss1, ss2, ss3}
+	for i, s := range seeds {
+		if s == nil {
+			return nil, fmt.Errorf("itb: Blob128.Export3Cfg: nil seed at slot %d", i)
+		}
+	}
+	n := len(ns.Components)
+	if n == 0 {
+		return nil, fmt.Errorf("itb: Blob128.Export3Cfg: empty noiseSeed components")
+	}
+	for i, s := range seeds[1:] {
+		if len(s.Components) != n {
+			return nil, fmt.Errorf("itb: Blob128.Export3Cfg: seed slot %d component count differs from noiseSeed", i+1)
+		}
+	}
+
+	blob := blobV1{
+		Version: blobVersionV1,
+		Mode:    3,
+		KeyBits: n * 64,
+		KeyN:    hex.EncodeToString(keyN),
+		KeyD1:   hex.EncodeToString(keyD1),
+		KeyD2:   hex.EncodeToString(keyD2),
+		KeyD3:   hex.EncodeToString(keyD3),
+		KeyS1:   hex.EncodeToString(keyS1),
+		KeyS2:   hex.EncodeToString(keyS2),
+		KeyS3:   hex.EncodeToString(keyS3),
+		NS:      componentsToStrings(ns.Components),
+		DS1:     componentsToStrings(ds1.Components),
+		DS2:     componentsToStrings(ds2.Components),
+		DS3:     componentsToStrings(ds3.Components),
+		SS1:     componentsToStrings(ss1.Components),
+		SS2:     componentsToStrings(ss2.Components),
+		SS3:     componentsToStrings(ss3.Components),
+		Globals: snapshotGlobalsV1FromCfg(cfg),
+	}
+	if o.LS != nil {
+		if len(o.LS.Components) != n {
+			return nil, fmt.Errorf("itb: Blob128.Export3Cfg: lockSeed component count differs from noiseSeed")
+		}
+		blob.KeyL = hex.EncodeToString(o.KeyL)
+		blob.LS = componentsToStrings(o.LS.Components)
+	}
+	if len(o.MACKey) > 0 {
+		blob.MACKey = hex.EncodeToString(o.MACKey)
+		blob.MACName = o.MACName
+	}
+	b.Mode = 3
+	return json.Marshal(blob)
+}
+
+// Import3Cfg — Triple Ouroboros, 128-bit width. See
+// [Blob512.Import3Cfg] for the full contract; behaviour mirrors
+// [Blob128.Import3] with the per-instance-globals write path.
+func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
+	if cfg == nil {
+		return ErrBlobNilCfg
+	}
+	var blob blobV1
+	if err := decodeBlobStrict(data, &blob); err != nil {
+		return ErrBlobMalformed
+	}
+	if blob.Version > blobVersionV1 {
+		return ErrBlobVersionTooNew
+	}
+	if blob.Mode != 3 {
+		return ErrBlobModeMismatch
+	}
+
+	keyN, err := hexToBytes(blob.KeyN)
+	if err != nil {
+		return err
+	}
+	keyD1, err := hexToBytes(blob.KeyD1)
+	if err != nil {
+		return err
+	}
+	keyD2, err := hexToBytes(blob.KeyD2)
+	if err != nil {
+		return err
+	}
+	keyD3, err := hexToBytes(blob.KeyD3)
+	if err != nil {
+		return err
+	}
+	keyS1, err := hexToBytes(blob.KeyS1)
+	if err != nil {
+		return err
+	}
+	keyS2, err := hexToBytes(blob.KeyS2)
+	if err != nil {
+		return err
+	}
+	keyS3, err := hexToBytes(blob.KeyS3)
+	if err != nil {
+		return err
+	}
+	ns, err := componentsFromStrings(blob.NS)
+	if err != nil {
+		return err
+	}
+	ds1, err := componentsFromStrings(blob.DS1)
+	if err != nil {
+		return err
+	}
+	ds2, err := componentsFromStrings(blob.DS2)
+	if err != nil {
+		return err
+	}
+	ds3, err := componentsFromStrings(blob.DS3)
+	if err != nil {
+		return err
+	}
+	ss1, err := componentsFromStrings(blob.SS1)
+	if err != nil {
+		return err
+	}
+	ss2, err := componentsFromStrings(blob.SS2)
+	if err != nil {
+		return err
+	}
+	ss3, err := componentsFromStrings(blob.SS3)
+	if err != nil {
+		return err
+	}
+	want := blob.KeyBits / 64
+	for _, comps := range [][]uint64{ns, ds1, ds2, ds3, ss1, ss2, ss3} {
+		if err := validateSeedComponentsLen(len(comps), want); err != nil {
+			return err
+		}
+	}
+
+	var keyL []byte
+	var ls []uint64
+	hasLS := blob.KeyL != "" || len(blob.LS) > 0
+	if hasLS {
+		keyL, err = hexToBytes(blob.KeyL)
+		if err != nil {
+			return err
+		}
+		ls, err = componentsFromStrings(blob.LS)
+		if err != nil {
+			return err
+		}
+		if err := validateSeedComponentsLen(len(ls), want); err != nil {
+			return err
+		}
+	}
+
+	var macKey []byte
+	if blob.MACKey != "" {
+		macKey, err = hex.DecodeString(blob.MACKey)
+		if err != nil {
+			return ErrBlobMalformed
+		}
+	}
+
+	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
 		return err
 	}
 
