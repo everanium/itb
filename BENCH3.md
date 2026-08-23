@@ -6,30 +6,78 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Results below were collected at `ITB_NONCE_BITS=128`. All PRF-grade hash primitives in the registry — Areion-SoEM-256, Areion-SoEM-512, BLAKE2b-256, BLAKE2b-512, BLAKE2s, BLAKE3, AES-CMAC, SipHash-2-4, ChaCha20 — dispatch through hand-written ZMM AVX-512 chain-absorb ASM kernels at the per-pixel hash hot path on x86_64 hosts with AVX-512 SIMD support; the AArch64 production path (AWS Graviton 2+ / Apple M1+ / Neoverse N1+/V1+/V2+) uses ARM Crypto Extension `AESE`/`AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 primitives and the upstream library NEON / ARM Crypto Extension paths for the AES-CMAC / BLAKE / ChaCha20 / SipHash family (`jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE / ChaCha20 family, `dchest/siphash` portable Go for SipHash-2-4). The C ABI and Python FFI stacks populate the batched arm automatically.
+Results below were collected at `ITB_NONCE_BITS=128`. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written ZMM AVX-512 chain-absorb ASM kernels at the per-pixel hash hot path on x86_64 hosts with AVX-512 SIMD support; the AArch64 production path (AWS Graviton 2+ / Apple M1+ / Neoverse N1+/V1+/V2+) uses ARM Crypto Extension `AESE`/`AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 primitives and the upstream library NEON / ARM Crypto Extension paths for the AES-CMAC / BLAKE / ChaCha20 / SipHash family (`jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE / ChaCha20 family, `dchest/siphash` portable Go for SipHash-2-4). The C ABI and Python FFI stacks populate the batched arm automatically.
 
-Lock Soup + Lock Batch is the faster Lock Soup variant: the per-chunk overlay derivation is amortised across a group of chunks. On x86 hosts carrying AVX-512F (plus AVX-512 VPOPCNTDQ for the permutation kernel) it runs through hand-written lane-parallel AVX-512 kernels — on the Intel i7-11700K this lifts Triple Lock Soup throughput by roughly 2–4× over plain Lock Soup (largest on the 512-bit-output primitives), and on AMD EPYC 9655P (Zen 5) more, with most primitives approaching their plain-path rates. AArch64 hosts (AWS Graviton 4) do not engage these kernels — Go's assembler carries no SVE2 support — so there Lock Batch amortises only the per-chunk hash call, a more modest ≈1.1–1.3× lift.
-
-Lock Soup derives a fresh PRF-keyed bit-permutation mask per chunk, so per-byte primitive call rate is ~10× higher than the plain / Bit-Soup-only paths and the hash hot path becomes throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT + full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width.
+The Interlocked Barrier overlay derives a fresh PRF-keyed 48-bit bit-permutation mask per chunk (drawn from ≈ 2^70.20 mask space via one PRF call per chunk group, BMI2 PEXT / PDEP hardware path on x86, pure-Go fallback elsewhere), so per-byte primitive call rate is substantially higher than a permutation-free construction and the hash hot path is throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT plus full-width 512-bit ALU plus absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width. AArch64 hosts run through the pure-Go path; a NEON / SVE2 kernel for the Interlocked Barrier is not currently shipped.
 
 Reproduction:
 
 ```sh
 ITB_NONCE_BITS=128 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
-ITB_NONCE_BITS=128 ITB_BITSOUP=1 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
-ITB_NONCE_BITS=128 ITB_LOCKSOUP=1 ITB_LOCKBATCH=1 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
-ITB_NONCE_BITS=128 ITB_LOCKSOUP=1 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
 ```
 
 Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512+VL chain-absorb kernels are not engaged:
 
-* `-tags=noitbasm` — disables only our chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; throughput tracks the OLDBENCH3 single-Func numbers below.
+* `-tags=noitbasm` — disables only the chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; throughput tracks the OLDBENCH3 single-Func numbers below.
 
 Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everanium/itb/blob/main/archive/OLDBENCH3.md) — old benchmark results without full ASM AVX-512 ZMM kernel optimisations. Numerically these also serve as the expected ballpark under `-tags=noitbasm` (the encrypt path runs 4× single arm via upstream asm — the pre-ZMM dispatch shape).
 
-## Intel Core i7-11700K (16 HT, VMware, CGO mode)
+## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-23)
+
+Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Linux kernel 7.1.3, Go 1.26.5, native execution (no VMware layer). Throughput in MB/s at `ITB_NONCE_BITS=128`. Bench sample size: `-benchtime=2s -count=1` (quick pass; full 5s pass pending maintainer confirmation). The 64 MB sizes cap at 2–3 iterations per bench under a 2 s budget, so individual cells at the 64 MB column carry higher noise than the 16 MB column.
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 134 | 143 | 152 | 147 | 166 | 163 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 160 | 171 | 189 | 173 | 197 | 217 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 91 | 103 | 82 | 53 | 73 | 96 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 86 | 110 | 120 | 81 | 106 | 120 |
+| **BLAKE2s** | 256 | 512 | PRF | 45 | 64 | 68 | 49 | 67 | 78 |
+| **BLAKE3** | 256 | 512 | PRF | 45 | 66 | 74 | 52 | 73 | 78 |
+| **AES-CMAC** | 128 | 512 | PRF | 47 | 63 | 67 | 48 | 74 | 76 |
+| **SipHash-2-4** | 128 | 512 | PRF | 46 | 61 | 58 | 44 | 66 | 72 |
+| **ChaCha20** | 256 | 512 | PRF | 47 | 55 | 66 | 36 | 63 | 76 |
+
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 121 | 129 | 134 | 133 | 144 | 150 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 145 | 170 | 173 | 169 | 192 | 199 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 36 | 55 | 61 | 49 | 61 | 58 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 47 | 73 | 73 | 53 | 81 | 92 |
+| **BLAKE2s** | 256 | 1024 | PRF | 35 | 48 | 55 | 37 | 56 | 59 |
+| **BLAKE3** | 256 | 1024 | PRF | 38 | 53 | 60 | 41 | 58 | 64 |
+| **AES-CMAC** | 128 | 1024 | PRF | 40 | 59 | 67 | 47 | 65 | 65 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 38 | 52 | 59 | 42 | 56 | 62 |
+| **ChaCha20** | 256 | 1024 | PRF | 27 | 47 | 54 | 30 | 50 | 59 |
+
+### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 104 | 107 | 117 | 110 | 120 | 125 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 125 | 139 | 142 | 121 | 146 | 160 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 24 | 33 | 35 | 25 | 35 | 37 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 37 | 50 | 58 | 40 | 56 | 63 |
+| **BLAKE2s** | 256 | 2048 | PRF | 27 | 36 | 39 | 27 | 36 | 39 |
+| **BLAKE3** | 256 | 2048 | PRF | 29 | 39 | 43 | 29 | 41 | 45 |
+| **AES-CMAC** | 128 | 2048 | PRF | 34 | 50 | 53 | 38 | 55 | 57 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 31 | 44 | 47 | 31 | 46 | 72 |
+| **ChaCha20** | 256 | 2048 | PRF | 26 | 33 | 37 | 28 | 33 | 41 |
+
+Cost-delta vs pre-v0.3.0 (see historical baseline below): the always-on 48-bit Interlocked Barrier overlay carries an unconditional per-chunk PRF-mask derivation cost that the pre-v0.3.0 line paid only when Lock Soup was engaged. Against the pre-v0.3.0 no-overlay column, v0.3.0 throughput at Triple 512-bit Encrypt 16 MB is roughly 40–80% lower per primitive — the widest gaps landing on the lightweight PRF tier where the fixed per-chunk overlay cost dominates the amortised primitive cost. Against the pre-v0.3.0 Lock Soup + Lock Batch column (the closest apples-to-apples comparison, since v0.3.0's overlay is always-on and always batched per chunk group), the gap narrows to roughly 10–60%; the residual reflects the widening from a 24-bit to a 48-bit chunk width and the associated growth of the mask space to ≈ 2^70.20. AES-heavy primitives (Areion-SoEM-256/512, AES-CMAC) retain the strongest absolute throughput at every width because the shipped AVX-512 VAES kernels amortise well through the batched dispatch. Further rows for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
+
+
+## Pre-v0.3.0 baseline (historical, retained for cost-delta comparison)
+
+These tables were measured against the pre-v0.3.0 24-bit Lock Soup / Lock Batch + Triple Ouroboros line. They are retained to let readers compare v0.3.0 costs against the earlier line. Column labels and column order preserved from the original measurement pass so the delta is readable side-by-side. Section headings that name Lock Soup / Lock Batch / Bit Soup mode toggles describe the pre-v0.3.0 runtime knobs — v0.3.0 replaces them with an always-on 48-bit Interlocked Barrier overlay measured in the v0.3.0 tables above.
+
+### Intel Core i7-11700K (16 HT, VMware, CGO mode)
+
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -43,7 +91,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 259 | 285 | 299 | 314 | 354 | 356 |
 | **ChaCha20** | 256 | 512 | PRF | 204 | 219 | 221 | 232 | 251 | 256 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -57,7 +105,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 193 | 206 | 206 | 211 | 230 | 234 |
 | **ChaCha20** | 256 | 1024 | PRF | 131 | 138 | 139 | 140 | 149 | 151 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -71,9 +119,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 120 | 126 | 127 | 129 | 135 | 138 |
 | **ChaCha20** | 256 | 2048 | PRF | 75 | 79 | 80 | 79 | 82 | 83 |
 
-## AMD EPYC 9655P (96-Core, Bare metal, CGO mode)
+### AMD EPYC 9655P (96-Core, Bare metal, CGO mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -87,7 +135,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 449 | 454 | 540 | 549 | 743 | 871 |
 | **ChaCha20** | 256 | 512 | PRF | 357 | 444 | 503 | 519 | 673 | 921 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -101,7 +149,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 365 | 394 | 485 | 490 | 641 | 825 |
 | **ChaCha20** | 256 | 1024 | PRF | 318 | 362 | 466 | 426 | 558 | 722 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -115,9 +163,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 306 | 348 | 452 | 401 | 495 | 667 |
 | **ChaCha20** | 256 | 2048 | PRF | 241 | 316 | 399 | 332 | 413 | 582 |
 
-## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode)
+### AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -131,7 +179,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 185 | 227 | 227 | 319 | 330 | 330 |
 | **ChaCha20** | 256 | 512 | PRF | 20 | 49 | 55 | 43 | 49 | 58 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -145,7 +193,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 132 | 158 | 158 | 181 | 198 | 197 |
 | **ChaCha20** | 256 | 1024 | PRF | 14 | 26 | 30 | 22 | 25 | 31 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -159,9 +207,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 84 | 98 | 96 | 111 | 112 | 112 |
 | **ChaCha20** | 256 | 2048 | PRF | 6 | 14 | 16 | 12 | 13 | 16 |
 
-## Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup mode)
+### Intel Core i7-11700K (16 HT, VMware, CGO mode, Bit Soup mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -175,7 +223,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 243 | 290 | 284 | 295 | 347 | 334 |
 | **ChaCha20** | 256 | 512 | PRF | 192 | 199 | 202 | 208 | 237 | 246 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -189,7 +237,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 172 | 180 | 183 | 199 | 223 | 224 |
 | **ChaCha20** | 256 | 1024 | PRF | 122 | 130 | 129 | 134 | 146 | 147 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -203,9 +251,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 112 | 124 | 121 | 123 | 131 | 134 |
 | **ChaCha20** | 256 | 2048 | PRF | 74 | 78 | 78 | 77 | 80 | 82 |
 
-## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Bit Soup mode)
+### AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Bit Soup mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -219,7 +267,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 450 | 439 | 532 | 756 | 886 | 1039 |
 | **ChaCha20** | 256 | 512 | PRF | 418 | 401 | 491 | 668 | 817 | 1004 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -233,7 +281,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 404 | 379 | 445 | 623 | 771 | 890 |
 | **ChaCha20** | 256 | 1024 | PRF | 361 | 338 | 425 | 514 | 656 | 810 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -247,9 +295,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 328 | 317 | 402 | 472 | 552 | 773 |
 | **ChaCha20** | 256 | 2048 | PRF | 273 | 298 | 358 | 377 | 487 | 625 |
 
-## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Bit Soup mode)
+### AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Bit Soup mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -263,7 +311,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 200 | 223 | 224 | 322 | 341 | 342 |
 | **ChaCha20** | 256 | 512 | PRF | 21 | 49 | 54 | 43 | 50 | 58 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -277,7 +325,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 142 | 153 | 157 | 193 | 202 | 203 |
 | **ChaCha20** | 256 | 1024 | PRF | 11 | 26 | 30 | 23 | 26 | 31 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -291,9 +339,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 88 | 97 | 98 | 109 | 112 | 114 |
 | **ChaCha20** | 256 | 2048 | PRF | 6 | 14 | 16 | 13 | 13 | 15 |
 
-## Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup + Lock Batch mode)
+### Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup + Lock Batch mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -307,7 +355,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 148 | 159 | 158 | 161 | 179 | 187 |
 | **ChaCha20** | 256 | 512 | PRF | 100 | 107 | 110 | 89 | 127 | 133 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -321,7 +369,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 119 | 127 | 126 | 128 | 138 | 143 |
 | **ChaCha20** | 256 | 1024 | PRF | 79 | 80 | 86 | 69 | 93 | 98 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -335,9 +383,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 85 | 90 | 90 | 90 | 96 | 98 |
 | **ChaCha20** | 256 | 2048 | PRF | 57 | 55 | 58 | 59 | 62 | 64 |
 
-## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup + Lock Batch mode)
+### AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup + Lock Batch mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -351,7 +399,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 339 | 423 | 465 | 524 | 685 | 791 |
 | **ChaCha20** | 256 | 512 | PRF | 291 | 204 | 258 | 80 | 301 | 448 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -365,7 +413,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 308 | 383 | 427 | 454 | 607 | 681 |
 | **ChaCha20** | 256 | 1024 | PRF | 119 | 193 | 241 | 80 | 273 | 407 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -379,9 +427,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 269 | 313 | 385 | 377 | 467 | 574 |
 | **ChaCha20** | 256 | 2048 | PRF | 68 | 173 | 221 | 73 | 232 | 342 |
 
-## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup + Lock Batch mode)
+### AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup + Lock Batch mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -395,7 +443,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 73 | 84 | 86 | 97 | 96 | 99 |
 | **ChaCha20** | 256 | 512 | PRF | 16 | 36 | 39 | 35 | 36 | 41 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -409,7 +457,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 63 | 72 | 73 | 80 | 80 | 83 |
 | **ChaCha20** | 256 | 1024 | PRF | 9 | 22 | 24 | 21 | 21 | 25 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -423,9 +471,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 50 | 55 | 57 | 62 | 61 | 62 |
 | **ChaCha20** | 256 | 2048 | PRF | 5 | 12 | 14 | 5 | 12 | 14 |
 
-## Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup mode)
+### Intel Core i7-11700K (16 HT, VMware, CGO mode, Lock Soup mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -439,7 +487,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 77 | 81 | 86 | 86 | 88 | 92 |
 | **ChaCha20** | 256 | 512 | PRF | 32 | 55 | 59 | 37 | 59 | 63 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -453,7 +501,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 69 | 74 | 77 | 74 | 79 | 82 |
 | **ChaCha20** | 256 | 1024 | PRF | 30 | 48 | 51 | 33 | 53 | 54 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -467,9 +515,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 58 | 61 | 62 | 62 | 65 | 63 |
 | **ChaCha20** | 256 | 2048 | PRF | 26 | 38 | 40 | 29 | 41 | 41 |
 
-## AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup mode)
+### AMD EPYC 9655P (96-Core, Bare metal, CGO mode, Lock Soup mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -483,7 +531,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 224 | 260 | 371 | 333 | 456 | 557 |
 | **ChaCha20** | 256 | 512 | PRF | 37 | 87 | 121 | 42 | 104 | 160 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -497,7 +545,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 211 | 270 | 333 | 307 | 396 | 518 |
 | **ChaCha20** | 256 | 1024 | PRF | 37 | 85 | 118 | 41 | 99 | 155 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -511,9 +559,9 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 2048 | PRF | 201 | 255 | 308 | 290 | 392 | 444 |
 | **ChaCha20** | 256 | 2048 | PRF | 35 | 80 | 112 | 38 | 96 | 133 |
 
-## AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup mode)
+### AWS Graviton 4 (c8g.4xlarge, 16 Cores, CGO mode, Lock Soup mode)
 
-### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+#### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -527,7 +575,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 512 | PRF | 70 | 80 | 86 | 93 | 94 | 97 |
 | **ChaCha20** | 256 | 512 | PRF | 12 | 28 | 31 | 12 | 29 | 33 |
 
-### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+#### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
@@ -541,7 +589,7 @@ Pre-ZMM-optimisation reference numbers: [OLDBENCH3.md](https://github.com/everan
 | **SipHash-2-4** | 128 | 1024 | PRF | 61 | 69 | 71 | 81 | 79 | 83 |
 | **ChaCha20** | 256 | 1024 | PRF | 8 | 19 | 21 | 8 | 19 | 22 |
 
-### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+#### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
