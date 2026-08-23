@@ -87,21 +87,44 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 		return nil, err
 	}
 
-	// Resolve inner hash width. resolveProfile carries the profile
-	// default (or Opts override) through resolved.innerHash; the
-	// inner blob itself does not tell us which width to use — the
-	// caller must have picked a profile whose innerHash matches the
+	// Resolve inner hash width. For single-primitive profiles the width
+	// comes from the resolved.innerHash primitive; for mixed-primitive
+	// profiles it comes from Profile.Width (carried through resolved.width).
+	// The inner blob itself does not tell us which width to use — the
+	// caller must have picked a profile whose shape matches the
 	// sender's, otherwise the width-typed Blob{N} decoder will fail.
-	spec, ok := hashes.Find(resolved.innerHash)
-	if !ok {
-		return nil, fmt.Errorf("triple: unknown inner hash primitive %q", resolved.innerHash)
+	var width int
+	if isMixedResolved(resolved) {
+		if resolved.width != 128 && resolved.width != 256 && resolved.width != 512 {
+			return nil, fmt.Errorf("triple: mixed profile width %d not in {128, 256, 512}", resolved.width)
+		}
+		width = resolved.width
+	} else {
+		spec, ok := hashes.Find(resolved.innerHash)
+		if !ok {
+			return nil, fmt.Errorf("triple: unknown inner hash primitive %q", resolved.innerHash)
+		}
+		width = int(spec.Width)
 	}
-	width := int(spec.Width)
 
 	// Decode the inner Blob{N} via the Cfg-aware Import3Cfg entry so
-	// no process-global mutation occurs during Open.
+	// no process-global mutation occurs during Open. Mixed-primitive
+	// profiles pass the per-slot constellation so each seed's hash
+	// closure is rebuilt with the correct primitive; single-primitive
+	// profiles pass an empty constellation and the importer uses
+	// resolved.innerHash for all 8 slots.
 	cfg := &itb.Config{}
-	seeds, prfKeys, macName, macKey, err := importInnerBlob(width, cfg, wrap.Inner, resolved.innerHash)
+	var (
+		seeds   [8]any
+		prfKeys [8][]byte
+		macName string
+		macKey  []byte
+	)
+	if isMixedResolved(resolved) {
+		seeds, prfKeys, macName, macKey, err = importInnerBlobMixed(width, cfg, wrap.Inner, resolved.mixedHashes)
+	} else {
+		seeds, prfKeys, macName, macKey, err = importInnerBlob(width, cfg, wrap.Inner, resolved.innerHash)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -300,6 +323,115 @@ func importInnerBlob512(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 		single, batched, _, err := hashes.Make512Pair(innerHash, keys[i])
 		if err != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make512Pair(%q): %w", innerHash, err)
+		}
+		rawSeeds[i].Hash = single
+		rawSeeds[i].BatchHash = batched
+		out[i] = rawSeeds[i]
+	}
+	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
+}
+
+// importInnerBlobMixed is the mixed-primitive counterpart to
+// [importInnerBlob]. Width-dispatches to the appropriate per-width
+// mixed importer; each per-slot hash closure is rebuilt from the
+// slot's own [Profile.MixedHashes] entry.
+func importInnerBlobMixed(width int, cfg *itb.Config, innerBytes []byte, mixedHashes [8]string) ([8]any, [8][]byte, string, []byte, error) {
+	switch width {
+	case 128:
+		return importInnerBlob128Mixed(cfg, innerBytes, mixedHashes)
+	case 256:
+		return importInnerBlob256Mixed(cfg, innerBytes, mixedHashes)
+	case 512:
+		return importInnerBlob512Mixed(cfg, innerBytes, mixedHashes)
+	}
+	return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: unsupported inner blob width %d", width)
+}
+
+// importInnerBlob128Mixed decodes a 128-bit-width inner blob and
+// rebuilds the eight typed seeds using per-slot primitive selection.
+// Follows the same pattern as [importInnerBlob128] but consults
+// mixedHashes[i] rather than a single innerHash.
+func importInnerBlob128Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]string) ([8]any, [8][]byte, string, []byte, error) {
+	var out [8]any
+	var keys [8][]byte
+	var b itb.Blob128
+	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
+		return out, keys, "", nil, fmt.Errorf("triple: Blob128.Import3Cfg: %w", err)
+	}
+	if b.LS == nil {
+		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
+	}
+	rawKeys := [8][]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawSeeds := [8]*itb.Seed128{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
+	for i := 0; i < 8; i++ {
+		name := mixedHashes[i]
+		keys[i] = append([]byte(nil), rawKeys[i]...)
+		single, batched, _, err := hashes.Make128Pair(name, keys[i])
+		if err != nil {
+			// Keyless primitives (siphash24) reject a fixed-key
+			// argument; retry with the no-key form since the seed's
+			// Components carry all state.
+			single, batched, _, err = hashes.Make128Pair(name)
+			if err != nil {
+				return out, keys, "", nil, fmt.Errorf("triple: hashes.Make128Pair(%q) slot %d: %w", name, i, err)
+			}
+			keys[i] = nil
+		}
+		rawSeeds[i].Hash = single
+		rawSeeds[i].BatchHash = batched
+		out[i] = rawSeeds[i]
+	}
+	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
+}
+
+// importInnerBlob256Mixed mirrors [importInnerBlob128Mixed] at the
+// 256-bit width.
+func importInnerBlob256Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]string) ([8]any, [8][]byte, string, []byte, error) {
+	var out [8]any
+	var keys [8][]byte
+	var b itb.Blob256
+	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
+		return out, keys, "", nil, fmt.Errorf("triple: Blob256.Import3Cfg: %w", err)
+	}
+	if b.LS == nil {
+		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
+	}
+	rawKeys := [8][32]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawSeeds := [8]*itb.Seed256{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
+	for i := 0; i < 8; i++ {
+		name := mixedHashes[i]
+		keys[i] = append([]byte(nil), rawKeys[i][:]...)
+		single, batched, _, err := hashes.Make256Pair(name, keys[i])
+		if err != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make256Pair(%q) slot %d: %w", name, i, err)
+		}
+		rawSeeds[i].Hash = single
+		rawSeeds[i].BatchHash = batched
+		out[i] = rawSeeds[i]
+	}
+	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
+}
+
+// importInnerBlob512Mixed mirrors [importInnerBlob128Mixed] at the
+// 512-bit width.
+func importInnerBlob512Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]string) ([8]any, [8][]byte, string, []byte, error) {
+	var out [8]any
+	var keys [8][]byte
+	var b itb.Blob512
+	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
+		return out, keys, "", nil, fmt.Errorf("triple: Blob512.Import3Cfg: %w", err)
+	}
+	if b.LS == nil {
+		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
+	}
+	rawKeys := [8][64]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawSeeds := [8]*itb.Seed512{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
+	for i := 0; i < 8; i++ {
+		name := mixedHashes[i]
+		keys[i] = append([]byte(nil), rawKeys[i][:]...)
+		single, batched, _, err := hashes.Make512Pair(name, keys[i])
+		if err != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make512Pair(%q) slot %d: %w", name, i, err)
 		}
 		rawSeeds[i].Hash = single
 		rawSeeds[i].BatchHash = batched

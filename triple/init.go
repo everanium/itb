@@ -75,8 +75,19 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		return nil, nil, err
 	}
 
-	// 8-seed allocation.
-	seeds, prfKeys, width, err := allocEightSeeds(resolved.innerHash, resolved.keyBits)
+	// 8-seed allocation. Mixed-primitive profiles route through the
+	// per-slot allocator; single-primitive profiles keep the original
+	// one-primitive-for-all-eight-slots path.
+	var (
+		seeds   [8]any
+		prfKeys [8][]byte
+		width   int
+	)
+	if isMixedResolved(resolved) {
+		seeds, prfKeys, width, err = allocEightSeedsMixed(resolved.mixedHashes, resolved.keyBits, resolved.width)
+	} else {
+		seeds, prfKeys, width, err = allocEightSeeds(resolved.innerHash, resolved.keyBits)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
