@@ -160,11 +160,11 @@ func TestSipHash24MakePairITBRoundtrip(t *testing.T) {
 	if ns.BatchHash == nil || d1.BatchHash == nil {
 		t.Skip("batched arm unavailable on this host")
 	}
-	encrypted, err := itb.Encrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
+	encrypted, err := itb.Encrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x128: %v", err)
 	}
-	decrypted, err := itb.Decrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, encrypted)
+	decrypted, err := itb.Decrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt3x128: %v", err)
 	}

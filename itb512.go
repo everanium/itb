@@ -99,31 +99,16 @@ func containerSizeAuth3_512Cfg(cfg *Config, noiseSeed *Seed512, dataSeed1, dataS
 		[3]int{startSeed1.MinPixelsAuth(), startSeed2.MinPixelsAuth(), startSeed3.MinPixelsAuth()})
 }
 
-// Encrypt3x512 encrypts data using Triple Ouroboros with 8 seeds (512-bit variant).
-// Plaintext is split into 3 parts (every 3rd byte), each encrypted into 1/3 of the
-// pixel data with independent dataSeed and startSeed, sharing noiseSeed. The lockSeed
-// keys the 48-bit interlock overlay's per-chunk bit-permutation derivation. Output
+// Encrypt3x512Cfg encrypts data using Triple Ouroboros with 8 seeds
+// (512-bit variant). Plaintext is split into 3 parts (every 3rd byte),
+// each encrypted into 1/3 of the pixel data with independent dataSeed
+// and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
+// interlock overlay's per-chunk bit-permutation derivation. Output
 // format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
 //
-// Delegates to [Encrypt3x512Cfg] with a nil cfg so per-encryptor
-// overrides fall through to the process-global setter state.
-func Encrypt3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
-	return Encrypt3x512Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data)
-}
-
-// Decrypt3x512 decrypts data encrypted by [Encrypt3x512] (Triple Ouroboros, 512-bit variant).
-//
-// Delegates to [Decrypt3x512Cfg] with a nil cfg so per-encryptor
-// overrides fall through to the process-global setter state.
-func Decrypt3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
-	return Decrypt3x512Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData)
-}
-
-// Encrypt3x512Cfg is the Cfg variant of [Encrypt3x512]: threads cfg
-// through every Cfg-aware accessor in the Triple Ouroboros pipeline.
-// Body otherwise identical to Encrypt3x512, including the
-// 3-goroutine COBS-encode / payload-build / CSPRNG-fill / process
-// stages and the per-third buffer-pool discipline.
+// cfg threads per-encryptor overrides through every Cfg-aware
+// accessor in the pipeline; nil cfg falls back to [DefaultNonceBits] /
+// [DefaultBarrierFill] / runtime.NumCPU.
 func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
@@ -267,7 +252,8 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	return out, nil
 }
 
-// Decrypt3x512Cfg is the Cfg variant of [Decrypt3x512].
+// Decrypt3x512Cfg is the inverse of [Encrypt3x512Cfg]. nil cfg falls
+// back to the compile-in defaults.
 func Decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err

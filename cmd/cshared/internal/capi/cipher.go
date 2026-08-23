@@ -105,15 +105,15 @@ func encryptTripleDispatch(
 ) ([]byte, error) {
 	switch ns.width {
 	case hashes.W128:
-		return itb.Encrypt3x128(
+		return itb.Encrypt3x128Cfg(nil,
 			ns.seed128, ls.seed128, ds1.seed128, ds2.seed128, ds3.seed128,
 			ss1.seed128, ss2.seed128, ss3.seed128, plaintext)
 	case hashes.W256:
-		return itb.Encrypt3x256(
+		return itb.Encrypt3x256Cfg(nil,
 			ns.seed256, ls.seed256, ds1.seed256, ds2.seed256, ds3.seed256,
 			ss1.seed256, ss2.seed256, ss3.seed256, plaintext)
 	case hashes.W512:
-		return itb.Encrypt3x512(
+		return itb.Encrypt3x512Cfg(nil,
 			ns.seed512, ls.seed512, ds1.seed512, ds2.seed512, ds3.seed512,
 			ss1.seed512, ss2.seed512, ss3.seed512, plaintext)
 	}
@@ -125,15 +125,15 @@ func decryptTripleDispatch(
 ) ([]byte, error) {
 	switch ns.width {
 	case hashes.W128:
-		return itb.Decrypt3x128(
+		return itb.Decrypt3x128Cfg(nil,
 			ns.seed128, ls.seed128, ds1.seed128, ds2.seed128, ds3.seed128,
 			ss1.seed128, ss2.seed128, ss3.seed128, ciphertext)
 	case hashes.W256:
-		return itb.Decrypt3x256(
+		return itb.Decrypt3x256Cfg(nil,
 			ns.seed256, ls.seed256, ds1.seed256, ds2.seed256, ds3.seed256,
 			ss1.seed256, ss2.seed256, ss3.seed256, ciphertext)
 	case hashes.W512:
-		return itb.Decrypt3x512(
+		return itb.Decrypt3x512Cfg(nil,
 			ns.seed512, ls.seed512, ds1.seed512, ds2.seed512, ds3.seed512,
 			ss1.seed512, ss2.seed512, ss3.seed512, ciphertext)
 	}

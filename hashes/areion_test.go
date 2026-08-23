@@ -190,11 +190,11 @@ func TestAreionEndToEndItb(t *testing.T) {
 				switch name {
 				case "areion256":
 					ns, ls, d1, d2, d3, s1, s2, s3 := mkAreion256Eight(t, keyBits)
-					ct, err := itb.Encrypt3x256(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
+					ct, err := itb.Encrypt3x256Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 					if err != nil {
 						t.Fatalf("Encrypt3x256: %v", err)
 					}
-					pt, err := itb.Decrypt3x256(ns, ls, d1, d2, d3, s1, s2, s3, ct)
+					pt, err := itb.Decrypt3x256Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 					if err != nil {
 						t.Fatalf("Decrypt3x256: %v", err)
 					}
@@ -203,11 +203,11 @@ func TestAreionEndToEndItb(t *testing.T) {
 					}
 				case "areion512":
 					ns, ls, d1, d2, d3, s1, s2, s3 := mkAreion512Eight(t, keyBits)
-					ct, err := itb.Encrypt3x512(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
+					ct, err := itb.Encrypt3x512Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 					if err != nil {
 						t.Fatalf("Encrypt3x512: %v", err)
 					}
-					pt, err := itb.Decrypt3x512(ns, ls, d1, d2, d3, s1, s2, s3, ct)
+					pt, err := itb.Decrypt3x512Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 					if err != nil {
 						t.Fatalf("Decrypt3x512: %v", err)
 					}

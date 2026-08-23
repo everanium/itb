@@ -98,7 +98,7 @@ func benchEncrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -121,11 +121,11 @@ func benchDecrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	encrypted, _ := itb.Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = itb.Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -155,7 +155,7 @@ func benchEncrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc2
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -178,11 +178,11 @@ func benchDecrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc2
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	encrypted, _ := itb.Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = itb.Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -211,7 +211,7 @@ func benchEncrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = itb.Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -234,11 +234,11 @@ func benchDecrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	encrypted, _ := itb.Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := itb.Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = itb.Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = itb.Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -832,11 +832,11 @@ func TestTripleLockSeedRoundtrip256(t *testing.T) {
 	ss3 := makeBlake3SeedAttachExt(t, 1024)
 
 	plaintext := generateDataExt(1024)
-	ct, err := itb.Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+	ct, err := itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x256: %v", err)
 	}
-	pt, err := itb.Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+	pt, err := itb.Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
 	if err != nil {
 		t.Fatalf("Decrypt3x256: %v", err)
 	}
@@ -894,11 +894,11 @@ func BenchmarkExtTripleBLAKE3RoundTripLockSeed(b *testing.B) {
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encrypted, err := itb.Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		encrypted, err := itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 		if err != nil {
 			b.Fatalf("Encrypt3x256: %v", err)
 		}
-		if _, err := itb.Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
+		if _, err := itb.Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
 			b.Fatalf("Decrypt3x256: %v", err)
 		}
 	}
@@ -928,11 +928,11 @@ func TestTripleLockSeedMixedPrimitive256(t *testing.T) {
 	ls.BatchHash = bL
 
 	plaintext := generateDataExt(2048)
-	ct, err := itb.Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
+	ct, err := itb.Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x256 (mixed-primitive lockSeed): %v", err)
 	}
-	pt, err := itb.Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+	pt, err := itb.Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
 	if err != nil {
 		t.Fatalf("Decrypt3x256 (mixed-primitive lockSeed): %v", err)
 	}
