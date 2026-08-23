@@ -15,11 +15,11 @@ func streamPlaintextSizes(chunk int) []int {
 // --- Triple Ouroboros plain-stream (io.Reader / io.Writer) round-trip ---
 
 // TestEncryptStream3xRoundtrip exercises the width-less
-// [EncryptStream3x] / [DecryptStream3x] io.Reader / io.Writer pair
+// [EncryptStream3xCfg] / [DecryptStream3xCfg] io.Reader / io.Writer pair
 // across chunk-boundary edge cases (1 byte, chunk-1, chunk, chunk+1,
 // 10*chunk) on every Triple width. The Triple round-trip covers all 8
-// seeds threaded through the plain-stream path — same 8-seed Encrypt3x
-// wire format on every chunk.
+// seeds threaded through the plain-stream path — same 8-seed
+// Encrypt3x*Cfg wire format on every chunk.
 func TestEncryptStream3xRoundtrip(t *testing.T) {
 	const chunk = 4096
 

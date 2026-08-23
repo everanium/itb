@@ -1357,9 +1357,9 @@ func streamTriplePlaintext(b *testing.B, n int) []byte {
 }
 
 // BenchmarkTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB measures
-// the throughput of [EncryptStreamAuth3x] (Triple Ouroboros, areion512
+// the throughput of [EncryptStreamAuth3xCfg] (Triple Ouroboros, areion512
 // PRF, 1024-bit ITB key width, hmac-blake3 MAC) on a 64 MiB plaintext
-// streamed in 16 MiB chunks. The 7-seed constellation and the MAC
+// streamed in 16 MiB chunks. The 8-seed constellation and the MAC
 // closure are constructed once outside the timer.
 func BenchmarkTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
@@ -1383,7 +1383,7 @@ func BenchmarkTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) 
 }
 
 // BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB measures
-// the throughput of [DecryptStreamAuth3x] on a transcript pre-built
+// the throughput of [DecryptStreamAuth3xCfg] on a transcript pre-built
 // once outside the timer.
 func BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
@@ -1413,7 +1413,7 @@ func BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) 
 }
 
 // BenchmarkTripleEncryptStreamIO_Areion512_1024_64MB_C16MB measures
-// the throughput of [EncryptStream3x] (no MAC) under the same Triple
+// the throughput of [EncryptStream3xCfg] (no MAC) under the same Triple
 // Ouroboros / areion512 / 1024-bit configuration.
 func BenchmarkTripleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
@@ -1436,7 +1436,7 @@ func BenchmarkTripleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 }
 
 // BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB measures
-// the throughput of [DecryptStream3x] on a transcript pre-built once.
+// the throughput of [DecryptStream3xCfg] on a transcript pre-built once.
 func BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
 		bits      = 1024

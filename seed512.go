@@ -163,12 +163,13 @@ func (s *Seed512) deriveStartPixel(nonce []byte, totalPixels int) int {
 // the same domain-tagged buffer used by [Seed512.deriveStartPixel].
 // deriveStartPixel truncates to a pixel index (~13 bits) of h[0];
 // deriveInterLockSeed exposes the full [8]uint64 for consumers that
-// need it as PRF seed material — e.g. the interlock overlay's per-chunk
-// keystream.
+// need it as PRF seed material — e.g. the Interlocked Barrier overlay's
+// per-chunk keystream.
 //
-// Typically called on noiseSeed in the Triple Ouroboros context — the
-// only shared seed across the 3 snakes, used as the keying source for
-// the cross-snake bit-soup permutation.
+// Called on the dedicated lockSeed slot of the Triple Ouroboros 8-seed
+// constellation, keying the 48-bit Interlocked Barrier overlay's
+// per-chunk bit-permutation derivation independently of the noiseSeed
+// material.
 func (s *Seed512) deriveInterLockSeed(nonce []byte) [8]uint64 {
 	buf := make([]byte, 1+len(nonce))
 	buf[0] = 0x02

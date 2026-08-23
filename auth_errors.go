@@ -3,11 +3,11 @@ package itb
 import "errors"
 
 // ErrMACFailure is returned by every authenticated-decrypt entry
-// point ([DecryptAuthenticated128] / [DecryptAuthenticated256] /
-// [DecryptAuthenticated512] and the Triple-Ouroboros mirrors
-// [DecryptAuthenticated3x128] / [DecryptAuthenticated3x256] /
-// [DecryptAuthenticated3x512]) when the embedded MAC tag does not
-// match the recomputed tag over the recovered plaintext.
+// point ([DecryptAuthenticated3x128Cfg] / [DecryptAuthenticated3x256Cfg] /
+// [DecryptAuthenticated3x512Cfg] and their [DecryptAuth3x128Cfg] /
+// [DecryptAuth3x256Cfg] / [DecryptAuth3x512Cfg] aliases) when the
+// embedded MAC tag does not match the recomputed tag over the recovered
+// plaintext.
 //
 // The sentinel value lets capi / FFI layers detect the integrity
 // failure with [errors.Is] rather than substring-matching the
