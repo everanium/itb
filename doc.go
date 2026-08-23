@@ -56,7 +56,7 @@
 //     [SeedFromComponents512] (deterministic).
 //
 //   - Nonce: configurable per-message nonce generated internally from
-//     crypto/rand. Default [NonceSize] = 128-bit; set [Config.NonceBits]
+//     crypto/rand. Default [NonceSize] = 512-bit; set [Config.NonceBits]
 //     to 128, 256, or 512 to select the width. Mandatory — prevents
 //     configuration reuse across messages. Birthday collision at
 //     ~2^(nonceBits/2) messages.
@@ -136,7 +136,7 @@
 //     terminator under encryption. Wrong seed produces random-looking output
 //     with no verification oracle for brute-force.
 //
-//   - Per-message nonce (default 128-bit, configurable to 256 or 512 via
+//   - Per-message nonce (default 512-bit, configurable to 128 or 256 via
 //     [Config.NonceBits]) prevents configuration reuse. Birthday collision
 //     bounds depend on nonce size: ~2^64 messages at 128-bit, ~2^128 at
 //     256-bit, ~2^256 at 512-bit. Practically safe collision probability
@@ -551,7 +551,7 @@
 //
 // # Nonce Configuration
 //
-// By default the nonce is 128 bits ([NonceSize] = 16 bytes). For higher
+// By default the nonce is 512 bits ([NonceSize] = 64 bytes). For lower
 // collision resistance, set [Config.NonceBits] on the [Config] threaded
 // through the Cfg-suffixed entry point:
 //

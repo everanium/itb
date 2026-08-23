@@ -27,10 +27,11 @@ func TestParseChunkLen(t *testing.T) {
 		t.Fatalf("Encrypt3: %v", st)
 	}
 
-	// Header-only probe: pass exactly the fixed header (20 bytes by
-	// default) and confirm the parser reports the full chunk length.
-	header := ctBuf[:20]
-	gotLen, st := ParseChunkLen(header, 16)
+	// Header-only probe: pass exactly the fixed header (68 bytes by
+	// default: 64-byte nonce + 4-byte width/height) and confirm the
+	// parser reports the full chunk length.
+	header := ctBuf[:68]
+	gotLen, st := ParseChunkLen(header, 64)
 	if st != StatusOK {
 		t.Fatalf("ParseChunkLen: %v", st)
 	}
@@ -39,7 +40,7 @@ func TestParseChunkLen(t *testing.T) {
 	}
 
 	// Short header: must be rejected.
-	if _, st := ParseChunkLen(ctBuf[:10], 16); st != StatusBadInput {
+	if _, st := ParseChunkLen(ctBuf[:10], 64); st != StatusBadInput {
 		t.Errorf("short header: %v, want StatusBadInput", st)
 	}
 

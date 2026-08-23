@@ -194,8 +194,8 @@ func TestEncryptAuth3RoundtripAllMACsAllWidths(t *testing.T) {
 				}
 
 				tampered := append([]byte(nil), ctBuf[:ctLen]...)
-				// Default-config header layout: nonce(16) + width(2) + height(2).
-				const tStart = 16 + 4
+				// Default-config header layout: nonce(64) + width(2) + height(2).
+				const tStart = 64 + 4
 				tEnd := tStart + 256
 				if tEnd > len(tampered) {
 					tEnd = len(tampered)

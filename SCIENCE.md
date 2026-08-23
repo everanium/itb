@@ -243,7 +243,7 @@ COBS (Consistent Overhead Byte Stuffing) encodes arbitrary binary data so that 0
 
 ### 1.4 Nonce Requirement
 
-The nonce is mandatory. Without it, two messages encrypted with the same seed produce identical pixel configuration maps. An attacker observing two containers can XOR corresponding extracted bits to cancel the per-pixel XOR masks, obtaining data1 ⊕ data2 — a two-time pad at the bit level. The per-message nonce ensures with overwhelming probability that each message receives a unique configuration map. Birthday collision bounds depend on nonce size: ~2^64 messages (default 128-bit), ~2^128 (256-bit), ~2^256 (512-bit).
+The nonce is mandatory. Without it, two messages encrypted with the same seed produce identical pixel configuration maps. An attacker observing two containers can XOR corresponding extracted bits to cancel the per-pixel XOR masks, obtaining data1 ⊕ data2 — a two-time pad at the bit level. The per-message nonce ensures with overwhelming probability that each message receives a unique configuration map. Birthday collision bounds depend on nonce size: ~2^256 messages (default 512-bit — mathematically unreachable), ~2^128 (256-bit), ~2^64 (128-bit).
 
 ## 2. Security Analysis
 
@@ -364,7 +364,7 @@ Partial PRF weakness alone becomes exploitable without architectural layers; an 
 
 ### 2.5 Nonce Reuse Analysis
 
-Each encryption generates a fresh nonce from crypto/rand (width `itb.DefaultNonceBits`; configurable per Pipeline via `*itb.Config{NonceBits: N}`). Two encryptions with the same seed but different nonces produce independent configuration maps. By the birthday bound, nonce collision probability reaches ~50% after 2^(n/2) messages, where n is the nonce size in bits: ~2^64 (128-bit), ~2^128 (256-bit), ~2^256 (512-bit). For practical safety margins at default 128-bit, ~2^48 messages keep collision probability below 2^(−32).
+Each encryption generates a fresh nonce from crypto/rand (width `itb.DefaultNonceBits`; configurable per Pipeline via `*itb.Config{NonceBits: N}`). Two encryptions with the same seed but different nonces produce independent configuration maps. By the birthday bound, nonce collision probability reaches ~50% after 2^(n/2) messages, where n is the nonce size in bits: ~2^256 (default 512-bit), ~2^128 (256-bit), ~2^64 (128-bit). At default 512-bit the collision bound is mathematically unreachable on any foreseeable hardware; at 128-bit ~2^48 messages keep collision probability below 2^(−32).
 
 **Impact of nonce collision:** attacker obtains two containers with the same hash configuration but different random containers. Per-pixel XOR masks cancel when comparing extracted bits — yielding data1 ⊕ data2. This is a two-time pad. The mandatory nonce prevents this.
 

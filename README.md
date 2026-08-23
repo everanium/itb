@@ -278,12 +278,18 @@ import (
     "bytes"
     "fmt"
 
+    "github.com/everanium/itb"
     "github.com/everanium/itb/triple"
 )
 
 func main() {
+    // Runtime tuning — process-global, one-shot at startup. Affects the
+    // whole Go runtime including any concurrent triple.Pipeline instances.
+    itb.SetMemoryLimit(512 << 20) // 512 MiB soft heap cap
+    itb.SetGCPercent(20)          // aggressive GC to keep working-set tight
+
     // Sender.
-    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{})
+    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -296,7 +302,7 @@ func main() {
     fmt.Printf("blob: %d bytes; wire: %d bytes\n", len(blob), len(wire))
 
     // Receiver — ship the blob out-of-band, then reconstruct.
-    dec, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, triple.Opts{})
+    dec, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -322,11 +328,16 @@ import (
     "bytes"
     "fmt"
 
+    "github.com/everanium/itb"
     "github.com/everanium/itb/triple"
 )
 
 func main() {
-    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleNoMACV1, triple.Opts{})
+    // Runtime tuning — process-global, one-shot at startup.
+    itb.SetMemoryLimit(512 << 20)
+    itb.SetGCPercent(20)
+
+    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleNoMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -337,7 +348,7 @@ func main() {
         panic(err)
     }
 
-    dec, err := triple.Open(triple.ProfileSingleMsgTripleNoMACV1, blob, triple.Opts{})
+    dec, err := triple.Open(triple.ProfileSingleMsgTripleNoMACV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -375,7 +386,11 @@ func main() {
         dstPath = "/tmp/64mb.dst"
     )
 
-    enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{})
+    // Runtime tuning — process-global, one-shot at startup.
+    itb.SetMemoryLimit(512 << 20)
+    itb.SetGCPercent(20)
+
+    enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -393,7 +408,7 @@ func main() {
     fout.Close()
 
     // Ship blob out-of-band, then reconstruct on the receiver.
-    dec, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{})
+    dec, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -432,7 +447,11 @@ func main() {
         dstPath = "/tmp/64mb.dst"
     )
 
-    enc, blob, err := triple.Init(triple.ProfileStreamingNoAEADTripleV1, triple.Opts{})
+    // Runtime tuning — process-global, one-shot at startup.
+    itb.SetMemoryLimit(512 << 20)
+    itb.SetGCPercent(20)
+
+    enc, blob, err := triple.Init(triple.ProfileStreamingNoAEADTripleV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -448,7 +467,7 @@ func main() {
     fin.Close()
     fout.Close()
 
-    dec, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, triple.Opts{})
+    dec, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
         panic(err)
     }
@@ -509,7 +528,11 @@ import (
 )
 
 func main() {
-    cfg := &itb.Config{NonceBits: 256, BarrierFill: 4}
+    // Runtime tuning — process-global, one-shot at startup.
+    itb.SetMemoryLimit(512 << 20) // 512 MiB soft heap cap
+    itb.SetGCPercent(20)          // aggressive GC to keep working-set tight
+
+    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 
     // Eight independent CSPRNG-keyed Areion-SoEM-256 paired closures.
     // Each *Pair() returns (single, batched, [32]byte-key, error).
@@ -589,7 +612,11 @@ func main() {
         chunkSize = 16 * 1024 * 1024
     )
 
-    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
+    // Runtime tuning — process-global, one-shot at startup.
+    itb.SetMemoryLimit(512 << 20) // 512 MiB soft heap cap
+    itb.SetGCPercent(20)          // aggressive GC to keep working-set tight
+
+    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 
     fnN,  batchN,  _, _ := hashes.Areion512Pair()
     fnL,  batchL,  _, _ := hashes.Areion512Pair()
@@ -756,7 +783,7 @@ N+4     W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
                  routed through the Interlocked Barrier
 ```
 
-Default nonce size is 128 bits (16 bytes). Configurable to 256 or 512 bits via `triple.Opts.NonceBits` or `*itb.Config.NonceBits`; the process-wide default lives in `itb.DefaultNonceBits` (compile-in) and is optionally overridden at process init by `ITB_NONCE_BITS`. The wire format is identical across all three hash width variants and across Single Message vs Streaming shapes at the byte level — a single-chunk stream is byte-shape-identical to a Single Message wire.
+Default nonce size is 512 bits (64 bytes) — chosen so the birthday-bound on collision is beyond any realistic deployment volume without the caller having to override. Configurable down to 128 or 256 bits via `triple.Opts.NonceBits` or `*itb.Config.NonceBits`; the process-wide default lives in `itb.DefaultNonceBits` (compile-in) and is optionally overridden at process init by `ITB_NONCE_BITS`. The wire format is identical across all three hash width variants and across Single Message vs Streaming shapes at the byte level — a single-chunk stream is byte-shape-identical to a Single Message wire.
 
 ## Minimum container size
 
@@ -792,7 +819,7 @@ The eight mandatory seeds are drawn as independent CSPRNG components; the API su
 | Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (corroborated by the pre-v0.3.0 empirical record on the shared pixel construction; empirical re-verification against the 48-bit line pending) |
 | Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone |
-| Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 128-bit) |
+| Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
 | Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 
