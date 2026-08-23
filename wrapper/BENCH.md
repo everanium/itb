@@ -63,7 +63,7 @@ Column abbreviations in the Full ITB + wrapper tables: **Facade** = `triple.Pipe
 
 ### Historical baseline — pre-Interlocked Barrier Triple Ouroboros
 
-The tables in this section were measured on the pre-v0.3.0 Triple Ouroboros construction — before the 48-bit Interlocked Barrier became a non-disableable core of every Triple encrypt / decrypt call, before the lockSeed slot became mandatory, and before the parallax / wrapper master-slot coupling landed on the `triple.Pipeline` facade. The numbers are retained as an orientation-scale reference for the outer-cipher cost added on top of ITB. Interlocked-Barrier bench numbers under the shipped v0.3.0 kernel will supersede these tables when the outer-cipher re-run lands.
+The tables in this section were measured on the pre-v0.3.0 Triple Ouroboros construction — before the 48-bit Interlocked Barrier became a non-disableable core of every Triple encrypt / decrypt call, before the lockSeed slot became mandatory, and before the parallax / wrapper master-slot coupling landed on the `triple.Pipeline` facade. The numbers are retained as an orientation-scale reference for the outer cipher cost added on top of ITB. Interlocked Barrier bench numbers under the shipped v0.3.0 kernel will supersede these tables when the outer cipher re-run lands.
 
 The Facade column measures the wrapper composed with the shipped high-level facade of its era (the retired Easy Encryptor for these historical rows; on the current line the equivalent is `triple.Pipeline` with parallax + wrapper masters wired by `triple.Init`). The LL column measures the wrapper composed with the Low-Level `*Cfg` entry points, which survive from pre-v0.3.0 to the current line.
 
