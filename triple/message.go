@@ -64,6 +64,10 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 	}
 
 	var wire bytes.Buffer
+	// Pre-size to the ciphertext-expansion upper bound so the wire
+	// accumulation never re-grows mid-encrypt; growth from zero
+	// capacity costs several allocation+copy cycles at MiB payloads.
+	wire.Grow(len(plaintext) + len(plaintext)/4 + 65536)
 	innerSrc, innerDst, closeFn, err := buildEncryptChain(p, bytes.NewReader(plaintext), &wire)
 	if err != nil {
 		return nil, err
@@ -120,6 +124,10 @@ func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
 	}
 
 	var plain bytes.Buffer
+	// Pre-size to the wire length — plaintext is always ≤ wire and
+	// the small overshoot avoids the bytes.Buffer doubling chain on
+	// MiB payloads.
+	plain.Grow(len(wire))
 	innerSrc, innerDst, closeFn, err := buildDecryptChain(p, bytes.NewReader(wire), &plain)
 	if err != nil {
 		return nil, err

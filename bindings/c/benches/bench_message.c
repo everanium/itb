@@ -4,6 +4,7 @@
 #define _POSIX_C_SOURCE 200809L /* clock_gettime under -std=c11 */
 
 #include <string.h>
+#include <sys/random.h>
 
 #include "bench_util.h"
 
@@ -59,7 +60,18 @@ int main(void)
             fprintf(stderr, "bench_message: out of memory\n");
             return 1;
         }
-        memset(plain, 0xA5, sizes[i]);
+        /* CSPRNG-fill so plaintext content matches the root Go bench
+         * (crypto/rand). getrandom returns at most ~33 MiB per call
+         * on Linux, so loop until the whole buffer is filled. Not in
+         * the timing loop. */
+        for (size_t o = 0; o < sizes[i];) {
+            ssize_t r = getrandom(plain + o, sizes[i] - o, 0);
+            if (r <= 0) {
+                fprintf(stderr, "bench_message: getrandom failed\n");
+                return 1;
+            }
+            o += (size_t)r;
+        }
         struct message_ctx ctx = { pipe, plain, sizes[i] };
         bench_case("message", sizes[i], run_message, &ctx);
         free(plain);
