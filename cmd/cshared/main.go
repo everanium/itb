@@ -1812,3 +1812,113 @@ func ITB_Triple_RegisterProfile(name *C.char, opts *C.char) C.int {
 	}
 	return C.int(capi.TripleRegisterProfile(C.GoString(name), optsStr))
 }
+
+// Opens an incremental encrypt session over an already-open Pipeline
+// handle. The returned session handle is distinct from the Pipeline
+// handle and lives until ITB_Triple_StreamFree releases it. Multiple
+// concurrent sessions per Pipeline are permitted; the Pipeline's
+// cipher path is concurrent-safe by construction. Only Streaming
+// profiles are accepted — a Single Message profile makes the session
+// error out on the first write with ITB_ERR_BAD_INPUT.
+//
+//export ITB_Triple_EncryptStreamBegin
+func ITB_Triple_EncryptStreamBegin(pipe C.uintptr_t, outStream *C.uintptr_t) C.int {
+	if outStream == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	id, st := capi.TripleEncryptStreamBegin(capi.TripleHandleID(pipe))
+	if st == capi.StatusOK {
+		*outStream = C.uintptr_t(id)
+	} else {
+		*outStream = 0
+	}
+	return C.int(st)
+}
+
+// Receive-side counterpart of ITB_Triple_EncryptStreamBegin.
+//
+//export ITB_Triple_DecryptStreamBegin
+func ITB_Triple_DecryptStreamBegin(pipe C.uintptr_t, outStream *C.uintptr_t) C.int {
+	if outStream == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	id, st := capi.TripleDecryptStreamBegin(capi.TripleHandleID(pipe))
+	if st == capi.StatusOK {
+		*outStream = C.uintptr_t(id)
+	} else {
+		*outStream = 0
+	}
+	return C.int(st)
+}
+
+// Feeds src[0..src_len) into an open session. Blocks until the
+// cipher chain accepts the bytes (bounded by chunk granularity — the
+// session's output spool never blocks the producer, so forward
+// progress is guaranteed while the session is live). src_len == 0
+// is a no-op returning ITB_OK. Returns the mapped cipher-chain error
+// if the session has already failed; the error is sticky.
+//
+//export ITB_Triple_StreamWrite
+func ITB_Triple_StreamWrite(stream C.uintptr_t, src unsafe.Pointer, srcLen C.size_t) C.int {
+	if !validateLen(srcLen) {
+		return C.int(capi.StatusBadInput)
+	}
+	buf := goBytesView(src, srcLen)
+	return C.int(capi.TripleStreamWrite(capi.TripleStreamID(stream), buf))
+}
+
+// Signals end-of-input to the cipher chain. The terminal chunk and
+// any MAC / envelope finalisation flow into the session spool and
+// become visible to subsequent ITB_Triple_StreamRead calls.
+// Idempotent — a second End on the same session returns ITB_OK
+// without re-closing the input pipe. After End, ITB_Triple_StreamWrite
+// on the same session returns ITB_ERR_BAD_INPUT.
+//
+//export ITB_Triple_StreamEnd
+func ITB_Triple_StreamEnd(stream C.uintptr_t) C.int {
+	return C.int(capi.TripleStreamEnd(capi.TripleStreamID(stream)))
+}
+
+// Drains up to out_cap produced bytes into out. *out_len receives the
+// byte count (0 when nothing is currently available). *finished
+// receives 1 once the session has ended AND the spool is fully
+// drained; 0 otherwise. Never returns ITB_ERR_BUFFER_TOO_SMALL —
+// partial drains are the normal mode, remaining bytes stay spooled.
+// After End, a Read with an empty spool blocks until the terminal
+// bytes arrive or the session errors, so the final drain loop never
+// busy-spins. The mapped cipher-chain error becomes sticky once the
+// failure point is reached.
+//
+//export ITB_Triple_StreamRead
+func ITB_Triple_StreamRead(
+	stream C.uintptr_t,
+	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t, finished *C.int,
+) C.int {
+	if outLen == nil || finished == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(outCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(out, outCap)
+	n, fin, st := capi.TripleStreamRead(capi.TripleStreamID(stream), dst)
+	*outLen = C.size_t(n)
+	if fin {
+		*finished = 1
+	} else {
+		*finished = 0
+	}
+	return C.int(st)
+}
+
+// Cancels (if still running) and releases the session. Safe to call
+// from any state — mid-flight, mid-error, or after a clean drain.
+// Wipes the session's output spool so key-adjacent plaintext or
+// wire fragments do not linger on the heap. A second Free on the
+// same id returns ITB_ERR_BAD_HANDLE, matching the other _Free
+// entries on this ABI.
+//
+//export ITB_Triple_StreamFree
+func ITB_Triple_StreamFree(stream C.uintptr_t) C.int {
+	return C.int(capi.TripleStreamFree(capi.TripleStreamID(stream)))
+}
