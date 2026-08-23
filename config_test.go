@@ -1,6 +1,8 @@
 package itb
 
 import (
+	"bytes"
+	"sync"
 	"testing"
 )
 
@@ -162,4 +164,117 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	if got := GetNonceBits(); got != 512 {
 		t.Errorf("snapshot mutation leaked into global: got %d, want 512", got)
 	}
+}
+
+// TestConfigMaxWorkersOverride verifies the per-encryptor MaxWorkers
+// field flows through the *Cfg entry points into effectiveWorkersCfg
+// without touching the process-global set via [SetMaxWorkers]. This is
+// the per-Pipeline isolation guarantee the triple package depends on
+// for its concurrent-instance construction.
+//
+// The test:
+//  1. Snapshots the process-global via [GetMaxWorkers] and asserts it
+//     is not perturbed after 8 concurrent goroutines each encrypt +
+//     decrypt through the authenticated Cfg entry point with
+//     cfg.MaxWorkers = 2.
+//  2. Confirms every round-trip matches the input byte-exact.
+//  3. Confirms decrypt-side worker-count invariance: the same
+//     ciphertext decrypted under cfg.MaxWorkers ∈ {1, 2, 4, 8, nil}
+//     produces bit-identical plaintext. Encrypt-side ciphertext
+//     equality across independent calls is not testable — every
+//     Triple encrypt injects fresh crypto/rand into the container
+//     background and the payload tail-fill, so two independent
+//     encrypts always diverge byte-wise regardless of worker count
+//     (this is Proof 10 material, not a worker-count artefact).
+func TestConfigMaxWorkersOverride(t *testing.T) {
+	prevGlobal := GetMaxWorkers()
+	t.Cleanup(func() { SetMaxWorkers(prevGlobal) })
+	// Pin the process-global to a distinct value so a bleed from the
+	// per-encryptor cfg into the global would be visible after the
+	// concurrent batch completes.
+	SetMaxWorkers(7)
+
+	cfg := &Config{MaxWorkers: 2}
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
+	plaintext := generateData(4 << 20) // 4 MiB
+	mac := macFuncForTest([32]byte{0x11, 0x22, 0x33, 0x44})
+
+	const workers = 8
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ct, err := EncryptAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, mac)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			pt, err := DecryptAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, mac)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			if !bytes.Equal(plaintext, pt) {
+				errs[idx] = errRoundTripMismatch
+				return
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("worker %d: %v", i, err)
+		}
+	}
+
+	// Assertion (b): per-Pipeline cap must not bleed into the global.
+	if got := GetMaxWorkers(); got != 7 {
+		t.Errorf("cfg.MaxWorkers=2 leaked into process-global: GetMaxWorkers()=%d, want 7", got)
+	}
+
+	// Assertion (c): decrypt-side worker-count invariance. One
+	// reference ciphertext, N decrypts under a sweep of MaxWorkers
+	// values — every recovered plaintext must be bit-identical.
+	refCT, err := EncryptAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, mac)
+	if err != nil {
+		t.Fatalf("reference encrypt: %v", err)
+	}
+	sweep := []*Config{
+		{MaxWorkers: 1},
+		{MaxWorkers: 2},
+		{MaxWorkers: 4},
+		{MaxWorkers: 8},
+		nil, // inherits process-global (7 for this test's scope)
+	}
+	for _, sweepCfg := range sweep {
+		pt, err := DecryptAuthenticated3x256Cfg(sweepCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, refCT, mac)
+		if err != nil {
+			t.Errorf("decrypt cfg=%+v: %v", sweepCfg, err)
+			continue
+		}
+		if !bytes.Equal(plaintext, pt) {
+			t.Errorf("decrypt cfg=%+v: recovered plaintext differs from input", sweepCfg)
+		}
+	}
+
+	// Final global-pinning assertion after the sweep, in case a decrypt
+	// path bled the per-Pipeline cap into the global.
+	if got := GetMaxWorkers(); got != 7 {
+		t.Errorf("post-sweep global drift: GetMaxWorkers()=%d, want 7", got)
+	}
+}
+
+// errRoundTripMismatch is a package-scoped sentinel used by
+// [TestConfigMaxWorkersOverride]'s per-worker error slot so the
+// worker goroutines can flag a plaintext mismatch without allocating
+// a fresh error per goroutine.
+var errRoundTripMismatch = errRoundTripMismatchType{}
+
+type errRoundTripMismatchType struct{}
+
+func (errRoundTripMismatchType) Error() string {
+	return "recovered plaintext differs from input"
 }

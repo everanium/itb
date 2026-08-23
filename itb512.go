@@ -36,7 +36,7 @@ func process512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce [
 	// writes to non-overlapping pixel regions in container[]. Decode
 	// accumulates all channels into a uint64 and writes 7 complete bytes
 	// per pixel — no byte-boundary overlap between adjacent pixels.
-	numWorkers := effectiveWorkers(dataPixels)
+	numWorkers := effectiveWorkersCfg(cfg, dataPixels)
 	if maxW > 0 && numWorkers > maxW {
 		numWorkers = maxW
 	}
