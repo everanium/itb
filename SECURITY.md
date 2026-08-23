@@ -10,13 +10,12 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 ## Security Policy
 
-**Supported versions.** Active development tracks `main`. Tagged releases starting from `v0.1.2`. Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
+**Supported versions.** Active development tracks `main` (v0.3.0 development snapshot). Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
 
 | Version | Supported |
 |---|---|
-| `main` (HEAD) | ✓ |
-| `v0.1.2` (latest tag) | ✓ |
-| pre-`v0.1.2` (no public tags) | — |
+| `main` (HEAD, v0.3.0 development snapshot) | ✓ |
+| pre-v0.3.0 tagged releases | — |
 
 **Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new). Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd). Email contact is intentionally not published — Discord and Security Advisories cover both informal triage and formal disclosure.
 
@@ -26,7 +25,7 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 **Out of scope.** Hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, fault injection), supply-chain attacks against dependencies, attacks against the host OS / language runtime / hardware platform itself. See the Disclaimer above.
 
-**Cryptographic context.** The deeper construction-level properties — composition modes, attack resistance, barrier metrics, byte-splitting, information-theoretic bounds, Bit Soup, Lock Soup — are catalogued in the numbered sections below. Refer there for the substantive cryptographic content; this section governs disclosure process only.
+**Cryptographic context.** The deeper construction-level properties — composition modes, attack resistance, barrier metrics, byte-splitting, information-theoretic bounds, the always-on Interlocked Barrier, threat-model boundary — are catalogued in the numbered sections below. Refer there for the substantive cryptographic content; this section governs disclosure process only.
 
 ## 1. ITB Composition Modes
 
@@ -47,7 +46,7 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 ## 2. Hash Function Requirements
 
-Triple-seed architecture: noiseSeed (noise positions), dataSeed (rotation + XOR, zero side-channel), startSeed (pixel offset).
+8-seed architecture: `noiseSeed` (noise positions), `lockSeed` (per-chunk Interlocked Barrier permutation, §18), `dataSeed1..3` (per-snake rotation + XOR, zero side-channel), `startSeed1..3` (per-snake pixel offset). Every seed is drawn as an independent CSPRNG component and enforced pairwise-distinct by pointer identity at the API surface.
 
 PRF-grade hash functions are required. PRF property guarantees all necessary sub-properties (input sensitivity, chain survival, non-affine mixing, avalanche, non-invertibility) by definition.
 
@@ -113,6 +112,8 @@ PRF weakness decomposes into three cases. **Total inversion** defeats the constr
 
 ## 7. Attack Resistance Summary
 
+The always-on Interlocked Barrier (§18) is a per-chunk 48-bit PRF-keyed permutation drawn from a ≈ 2^70.20 mask space. It applies uniformly across every column in the table below; the barrier's contribution to the KPA / Crib KPA / CPA columns is architectural and PRF-conditional, and stacks on top of the pixel-level obstacles listed per cell.
+
 | Attack | Core ITB | MAC + Silent Drop‡‡ | MAC + Reveal | MAC + Reveal + KPA |
 |---|---|---|---|---|
 | Ciphertext-only (COA) | ✓ IT barrier† | ✓ IT barrier† | ✓ IT barrier† | ✓ IT barrier† |
@@ -131,15 +132,15 @@ PRF weakness decomposes into three cases. **Total inversion** defeats the constr
 
 \* Per-bit XOR hides XOR masks under passive observation; with invertible hash, seed recoverable via inversion.
 
-\** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted). startPixel enumerated as [0, P). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys (P=400): classical ~2^1033, Grover ~2^516. With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Under PRF, Full KPA requires simultaneously three independent obstacles: (1) inverting ChainHash, AND (2) guessing startPixel from independent startSeed (no leak from noiseSeed/dataSeed), AND (3) resolving 7-rotation and 8-noisePos ambiguity per pixel at signal/noise 1:1 (all 56 candidates equally consistent with observation). Under Partial KPA, a 4th obstacle is effective: gcd(7,8)=1 byte-splitting blocks per-channel candidate formulation when adjacent bytes are unknown. PRF non-invertibility and the architectural layers combine conjunctively, not redundantly: an attacker with partial PRF inversion still faces P startPixel candidates to enumerate and 56-fold per-pixel ambiguity to disambiguate without a verification oracle.
+\** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted). startPixel enumerated as [0, P). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys under the unified `MinPixels` floor (P=400): classical ~2^1033, Grover ~2^516. With invertible hash under KPA: seed recoverable in ~56 × P hash inversions (P startPixel candidates × 56 configs per reference pixel, no CCA required). Under PRF, Full KPA requires simultaneously three independent obstacles at the pixel layer: (1) inverting ChainHash, AND (2) guessing startPixel from independent startSeed (no leak from noiseSeed/dataSeed), AND (3) resolving 7-rotation and 8-noisePos ambiguity per pixel at signal/noise 1:1 (all 56 candidates equally consistent with observation). Under Partial KPA, a 4th obstacle is effective: gcd(7,8)=1 byte-splitting blocks per-channel candidate formulation when adjacent bytes are unknown. The always-on Interlocked Barrier (§18) contributes a further per-chunk 2^70.20 mask-space enumeration under the PRF assumption. PRF non-invertibility and the architectural layers combine conjunctively, not redundantly: an attacker with partial PRF inversion still faces P startPixel candidates to enumerate and 56-fold per-pixel ambiguity to disambiguate without a verification oracle.
 
-††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2×keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2×keyBits). Grover: √P × 2^keyBits. At 1024-bit keys (P=196): classical ~2^2056, Grover ~2^1028.
+††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2×keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2×keyBits). Grover: √P × 2^keyBits. At 1024-bit keys under the unified `MinPixels` floor (P=400): classical ~2^2056, Grover ~2^1028.
 
 §§ CCA removes noise bits (12.5% of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 **Nonce reuse is local.** Two-time pad applies only to the colliding 2–3 messages (confidentiality of those messages compromised). Seeds remain secret (PRF non-invertibility blocks ChainHash inversion), so future messages with fresh nonces are unaffected — **no key rotation required**. A single nonce collision provides too few observations for Simon, BHT, or quantum structural algebraic attacks. Unlike AES-GCM where nonce reuse leaks the GHASH key H and enables forgery until key rotation (global catastrophe affecting all subsequent messages), ITB nonce collision is **strictly local** — ITB is nonce-misuse-resistant under the PRF assumption. For the five conditions that ALL must hold before nonce reuse extracts any signal at all, see [ITB.md § 8 Nonce Reuse](ITB.md#8-nonce-reuse-only-if-every-condition-holds); for the empirical 96-cell Partial KPA matrix + NIST STS PRF-separation, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
 
-†† Encoding-axis modifier. Under `SetLockSoup(1)`, the demask entry point on the colliding messages is removed: the per-chunk PRF-keyed bit-permutation is applied before COBS and the barrier, so the two-time-pad XOR yields `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))` rather than plaintext-aligned bits. Interpreting that output requires `lockSeed` (or `noiseSeed` in default routing) and is PRF-opaque under the PRF assumption. See §20 for the full per-encoding-mode cross-cut.
+†† Interlocked Barrier modifier. The always-on Interlocked Barrier removes the demask entry point on the colliding messages: the per-chunk PRF-keyed 48-bit mask triple is applied before COBS, so the two-time-pad XOR yields lane-compressed bits `l₀(P₁)‖l₁(P₁)‖l₂(P₁) ⊕ l₀(P₂)‖l₁(P₂)‖l₂(P₂)` interpretable only with `lockSeed` and PRF-opaque under the PRF assumption. See §18 for the full Interlocked Barrier construction.
 
 ‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2×keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
 
@@ -178,19 +179,18 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 
 ### Barrier Strength (1024-bit key)
 
+Every entry point applies the CCA-resistant `MinPixels` floor uniformly, so the auth-side envelope covers Core ITB, MAC + Silent Drop, and MAC + Reveal — one row per metric, no plain-vs-auth split.
+
 | Metric | Value |
 |---|---|
-| MinPixels (Encrypt/Stream) | 177 → 196 (14×14) |
-| MinPixels (Auth) | 365 → 400 (20×20) |
-| Noise barrier (P=196)‖ | 2^1568 |
-| Noise barrier (P=400)‖ | 2^3200 |
+| MinPixels | 365 → 400 (20×20) |
+| Noise barrier | 2^3200 |
 | Landauer limit | ~2^306 |
-| Beyond Landauer (P=196) | 5.1× (1568/306) |
-| Config map space (P=196) | 2^12152 |
-| Config map space (P=400) | 2^24800 |
+| Beyond Landauer | 10.5× (3200/306) |
+| Config map space | 2^24800 |
 | Key space | 2^1024 |
 
-‖ Noise barrier applies to Core ITB / MAC + Silent Drop. Under CCA (MAC + Reveal), noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)); the noise-barrier headline is stated at the unified `MinPixels` floor.
 
 ### Practical Value of 4.8% CCA Leak
 
@@ -206,22 +206,24 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 
 ## 10. Noise-Density Optimality (Why 8/1)
 
-| Format | Data/px | Noise/px | Overhead | CCA Config Leak | Barrier (1024-bit, min) |
+| Format | Data/px | Noise/px | Overhead | CCA Config Leak | Barrier (1024-bit, unified P) |
 |---|---|---|---|---|---|
-| 8/1 (ITB) | 56 | 8 | 1.14× | 4.8% | 2^1568 |
+| 8/1 (ITB) | 56 | 8 | 1.14× | 4.8% | 2^3200 |
 | 6/2 | 48 | 16 | 1.33× | 8.9% | 2^3136 |
 | 5/3 | 40 | 24 | 1.60× | 12.2% | 2^5400 |
 | 4/4 | 32 | 32 | 2.00× | 17.1% | 2^8192 |
 
-8/1 is Pareto-optimal among the analyzed noise-density configurations. All barriers exceed the Landauer limit.
+8/1 is Pareto-optimal among the analyzed noise-density configurations. The Barrier column for 8/1 is stated at the unified `MinPixels = 400` floor from §9; the other rows carry each format's own `data_bits × MinPixels(format)` for the illustrative comparison. All barriers exceed the Landauer limit.
 
-## 11. Effective Key Size by Hash Function
+## 11. Effective Key Size by Hash Width
 
-| Hash Function | Output Width | API | Components | Nominal Key | Effective Bound |
-|---|---|---|---|---|---|
-| SipHash-2-4, AES-CMAC | 128 bits | `Encrypt128` | 16 | 1024 bits | 1024 bits |
-| BLAKE2b-256, BLAKE2s, BLAKE3 | 256 bits | `Encrypt256` | 32 | 2048 bits | 2048 bits |
-| BLAKE2b-512 | 512 bits | `Encrypt512` | 32 | 2048 bits | 2048 bits |
+Nominal key is `Components × Width`; the effective security bound is the smaller of the nominal key and the register-arithmetic ceiling of the width. The three widths shipped by every native primitive appear below; the concrete primitives at each width follow the canonical registry order.
+
+| Native Width | Components per Seed | Nominal Key | Effective Bound |
+|---|---|---|---|
+| 128 bits | 16 | 1024 bits | 1024 bits |
+| 256 bits | 32 | 2048 bits | 2048 bits |
+| 512 bits | 32 | 2048 bits | 2048 bits |
 
 ### Seed Alignment by Width
 
@@ -240,7 +242,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Outside (header) | Yes | ✗ Broken | None | Verification oracle |
 | Inside (full container) | N/A | N/A | N/A | Tag invalidates itself |
 
-Implemented: Inside (full capacity) — `EncryptAuthenticated128` / `EncryptAuthenticated256` / `EncryptAuthenticated512`. Other placements are theoretical alternatives, not implemented.
+Implemented: Inside (full capacity) — every shipped MAC-authenticated Low-Level entry point (`EncryptAuthenticated3x{128,256,512}Cfg`) and every `triple.Pipeline` profile that enables MAC. Other placements are theoretical alternatives, not implemented.
 
 ## 13. Known Theoretical Threats
 
@@ -279,7 +281,7 @@ Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (P
 
 ## 14. Hash Function Compliance
 
-PRF-grade hash functions (Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMAC, BLAKE2b-256, BLAKE2s, BLAKE3, BLAKE2b-512) satisfy all requirements. Tests and benchmarks cover all listed hash functions across 128/256/512-bit widths.
+Every shipped registry primitive is a PRF-grade construction that satisfies the §2 requirements. Tests and benchmarks cover every registry entry across the 128 / 256 / 512-bit widths shipped by the ChainHash surface; the concrete registry list is authoritative in `hashes/registry.go`.
 
 ## 15. Security Properties Summary
 
@@ -290,12 +292,12 @@ PRF-grade hash functions (Areion-SoEM-256, Areion-SoEM-512, SipHash-2-4, AES-CMA
 | Grover resistance | √P × 2^keyBits (Core/Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal); O(P) full decryption per candidate (all modes) |
 | Plausible deniability | ✓ All modes (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue persists in data positions, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
-| Triple-seed isolation | ✓ All modes (noiseSeed / dataSeed / startSeed independent; CCA leaks noiseSeed only) |
+| 8-seed isolation | ✓ All modes (noiseSeed / lockSeed / dataSeed1..3 / startSeed1..3 independent CSPRNG components, pointer-distinct at the API surface; CCA leaks noiseSeed only) |
 | Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop (no oracle); MAC + Reveal has CCA oracle but limited to noise positions |
-| Known-plaintext resistance | 3-factor under PRF assumption for Full KPA: PRF non-invertibility (verification) + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. gcd(7,8) byte-splitting is a 4th factor effective only under Partial KPA; see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance), [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) |
+| Known-plaintext resistance | 3-factor under PRF assumption for Full KPA at the pixel layer: PRF non-invertibility (verification) + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. gcd(7,8) byte-splitting is a 4th factor effective only under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance), [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)). The always-on Interlocked Barrier (§18) contributes a further per-chunk 2^70.20 PRF-keyed mask-space enumeration and a 3-snake unknown-offset split. |
 | Chosen-plaintext resistance | Independent maps |
 | Noise absorption* | ✓ Core ITB / MAC + Silent Drop (CSPRNG noise bit at unknown position; noise bits bypassed by CCA in MAC + Reveal, but CSPRNG fill in data positions persists — [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
-| Noise barrier (min container) | 2^1568 (1024-bit, P=196) to 2^2888 (2048-bit, P=361) |
+| Noise barrier (min container) | 2^3200 (1024-bit, unified P=400) to 2^6272 (2048-bit, unified P=784) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
 | PRF output consumed per pixel | 64 bits per ChainHash call (architectural cap independent of native primitive width; 50 % / 25 % / 12.5 % of 128 / 256 / 512-bit output, the remainder discarded by the per-pixel encoder). Truncation preserves PRF-conditional security but does not strengthen it; the discarded portion is architecturally invisible to the encryption path, closing structural weaknesses concentrated in those bits (FNV-1a top-bit-isolation case empirically documented in [REDTEAM.md Phase 2e](REDTEAM.md#phase-2e--related-seed-differential)) — defense-in-depth against partial PRF-failure, not an upgrade of PRF-conditional security under PRF-grade primitives. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security). |
@@ -316,7 +318,7 @@ Approximate empirical example: 1024-bit key, ~10 ns/hash (average across PRF fun
 
 | Data size | P (pixels) | Hash calls per candidate | Time per candidate | vs AES (~1 ns/candidate) |
 |---|---|---|---|---|
-| 1 KB | 196 | 3,136 | ~31 µs | ~31,000× slower |
+| 1 KB | 400 (unified `MinPixels`) | 6,400 | ~64 µs | ~64,000× slower |
 | 4 MB | 602,176 | 9,634,816 | ~96 ms | ~96,000,000× slower |
 | 16 MB | 2,408,704 | 38,539,264 | ~385 ms | ~385,000,000× slower |
 | 64 MB | 9,628,609 | 154,057,744 | ~1.5 s | ~1,500,000,000× slower |
@@ -341,11 +343,11 @@ The fundamental difference between ITB and traditional ciphers under quantum att
 
 AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis. See also [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) for why KPA candidates do not break the barrier.
 
-At 1024-bit key: Core/Silent Drop (P=196) ~2^2056 classical, ~2^1028 Grover. MAC + Reveal (P=400): ~2^1033 classical, ~2^516 Grover. At 2048-bit key: Core/Silent Drop (P=361) ~2^4104/~2^2052, MAC + Reveal (P=784): ~2^2058/~2^1029.
+Under the unified `MinPixels` floor from §9 (every entry point applies the auth-side envelope), the joint-seed search covers both `noiseSeed` and `dataSeed`. At 1024-bit key (P=400): Core / MAC + Silent Drop ~2^2056 classical, ~2^1028 Grover; MAC + Reveal ~2^1033 classical, ~2^516 Grover. At 2048-bit key (P=784): Core / MAC + Silent Drop ~2^4104 / ~2^2052; MAC + Reveal ~2^2058 / ~2^1029.
 
 ## 17. Maturity and Scope
 
-ITB is a new construction without prior peer review or independent cryptanalysis. The contribution is theoretical: demonstrating that Full KPA resistance is 3-factor under PRF assumption (PRF non-invertibility + independent startSeed + per-pixel 1:1 ambiguity), with gcd(7,8)=1 byte-splitting as a 4th factor effective only under Partial KPA. PRF non-invertibility closes the candidate-verification step; architectural layers deny the attacker a usable reference pixel (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Performance is not a design goal.
+ITB is a new construction without prior peer review or independent cryptanalysis. The contribution is theoretical: demonstrating that Full KPA resistance at the pixel layer is 3-factor under the PRF assumption (PRF non-invertibility + independent startSeed + per-pixel 1:1 ambiguity), with gcd(7,8)=1 byte-splitting as a 4th factor effective only under Partial KPA. PRF non-invertibility closes the candidate-verification step; architectural layers deny the attacker a usable reference pixel (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). The always-on Interlocked Barrier (§18) contributes a per-chunk ≈ 2^70.20 mask-space enumeration and a 3-snake unknown-offset split on top of the pixel-layer factors. Performance is not a design goal.
 
 | Aspect | Status |
 |---|---|
@@ -355,50 +357,61 @@ ITB is a new construction without prior peer review or independent cryptanalysis
 | Implementation audit | Not performed |
 | Core barrier (∀v, ∀h : ∃c : embed(c,h,d)=v) | Noise absorption — compatibility proof, hash-independent ([Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)) |
 | Rotation barrier (7^P configurations) | Encoding ambiguity — 7 unverifiable rotations per pixel, PRF-dependent ([Proof 4](PROOFS.md#proof-4-rotation-barrier)) |
-| Triple-seed isolation (I(dataSeed ; noiseSeed, startSeed) = 0) | Independent CSPRNG seeds, CCA/cache leaks contained ([Proof 3](PROOFS.md#proof-3-triple-seed-isolation)) |
+| 8-seed isolation (independent CSPRNG components, pointer-distinct at API surface) | noiseSeed / lockSeed / dataSeed1..3 / startSeed1..3; CCA/cache leaks contained ([Proof 3](PROOFS.md#proof-3-triple-seed-isolation)) |
+| Interlocked Barrier (per-chunk 2^70.20 mask-space) | Architectural claim under the PRF assumption (§18) |
 | Active attack analysis (CCA, MITM) | Self-analysis, invites scrutiny |
 | Side-channel mitigations | Implemented, not independently audited |
 
 Potential vulnerability classes: (1) fundamental — barrier invalidation under unconsidered attack model (unlikely, barrier is probability-theoretic); (2) implementational — edge cases, timing, off-by-one (correctable). See [SCIENCE.md §4](SCIENCE.md#scope-and-maturity-disclaimer) "Scope and Maturity Disclaimer" for detailed discussion.
 
-## 18. Bit Soup (opt-in mode)
+## 18. Interlocked Barrier
 
-`SetBitSoup(1)` enables bit-granularity plaintext split. On Triple Ouroboros, applies to every variant (`Encrypt3x*`, `EncryptAuthenticated3x*`, `EncryptStream3x*`); no single snake holds a real plaintext byte — each snake's payload is a fixed public bit-permutation across three consecutive plaintext bytes. Bit Soup reduces SAT cryptanalysis to an under-determined instance under Partial KPA + realistic protocol traffic at the public-encoding layer; the barrier shifts the attack surface from solver speed to crib coverage available at the public bit-permutation. Default `SetBitSoup(0)` leaves byte-level shipped behaviour unchanged.
+The Interlocked Barrier is the always-on, non-disableable per-chunk keyed bit-permutation layered on top of the Triple Ouroboros split. Every 6-byte (48-bit) chunk of the interleaved payload is partitioned into three disjoint 16-of-48 lanes `(l₀, l₁, l₂)` by a balanced mask triple `(m₀, m₁, m₂)` with `popcount(mᵢ) = 16` and `m₀ ∪ m₁ ∪ m₂ = 2^48 − 1`. Every chunk draws its own mask triple via a per-chunk PRF call keyed by the `lockSeed` and the nonce; the mask is unobservable to the attacker without the `lockSeed`.
 
-On Single Ouroboros, `SetBitSoup(1)` engages the Lock Soup overlay path directly — the public fixed bit-permutation alone offers no architectural barrier on a single snake (the snake carries the whole plaintext, so a public fixed permutation of bits within the snake provides nothing beyond a public fixed permutation of bytes), so the Single bit-level path is keyed by construction. See §19.
+### Mask-space cardinality
 
-Ciphertext wire format is identical across all modes; no public header bit distinguishes them. See [ITB.md](ITB.md#lock-soup-insane-interlocked-mode-opt-in-overlay-on-bit-soup) / [ITB3.md](ITB3.md#bit-soup-bit-level-split-opt-in) for the accessible explanation and [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based) for the defensive framing in the SAT attack context.
+The count of balanced partitions per chunk is:
 
-## 19. Lock Soup (Insane Interlocked Mode, opt-in overlay on Bit Soup)
+- `A = C(48, 16) = 2,254,848,913,647` (log₂ ≈ 41.04) — choices for `m₀`
+- `B = C(32, 16) = 601,080,390` (log₂ ≈ 29.16) — choices for `m₁` from the 32 bits `m₀` leaves free (`m₂` is then determined)
+- `|mask triples| = A · B ≈ 2^70.20`
 
-`SetLockSoup(1)` is the keyed-bit-permutation overlay on top of bit soup; setting it automatically engages `SetBitSoup(1)` (the overlay layers on top of bit soup, so the two flags are coupled in the on-direction). An additional defense against KPA.
+Under the PRF assumption the per-chunk draws are computationally indistinguishable from independent uniform selections from the ≈ 2^70.20 mask space. Because the draw is per-chunk and PRF-keyed, the mask of one chunk carries no information about the mask of any other; a known-plaintext crib supplies plaintext bits but the mapping from those bits to observed lane positions is a fresh ≈ 2^70.20-way secret at each chunk. The solver has no fixed bit-position-to-lane anchor: every crib chunk multiplies attacker enumeration by ≈ 2^70.20 without contributing a constraint that couples across chunks. The known-plaintext instance stays under-determined regardless of crib density, and solver throughput cannot convert an under-determined instance into a determined one.
 
-On Triple Ouroboros, the overlay replaces the fixed public 24-bit chunk permutation of plain Bit Soup with a per-chunk PRF-keyed balanced 8-of-24 mask triple drawn from a 2^33 mask space, derived deterministically per chunk from the noiseSeed and nonce via a single PRF call. The mode strengthens the SAT-cryptanalysis barrier from the public-encoding layer (Bit Soup) to the keyed-encoding layer: each crib chunk multiplies attacker enumeration by ~2^33 with no shared algebraic structure across chunks, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. SAT cryptanalysis becomes an instance-formulation impossibility rather than a computational-hardness problem; solver throughput, including any hypothetical PRF-inversion shortcut, does not convert an under-determined instance into a determined one.
+### Exact-B reduction and the gcd anti-collapse trap
 
-On Single Ouroboros, `SetBitSoup(1)` and `SetLockSoup(1)` are coupled symmetrically — either flag activates the Lock Soup overlay (the two flags engage the same code path on Single, vice versa). The Single overlay replaces the 24-bit chunk identity with a per-chunk full S₂₄ permutation drawn from a 2^64 space (Lehmer-code unrank of `24!` ≈ 6.2 × 10²³ permutations, addressed by the low 64 bits of a per-chunk PRF output). Each crib chunk multiplies attacker enumeration by ~2^64 — substantially stronger per-chunk than the Triple variant's 2^33, because the single snake carries the whole plaintext and needs a higher floor to compensate for the absence of 3-way snake split.
+Each 128-bit PRF output reduces to a pair `(idx₀, idx₁)` via a two-step divmod: `idx₁ = rank mod B`, `idx₀ = ⌊rank / B⌋ mod A`. This reaches the full `[0, A) × [0, B)` space near-uniformly. The rejected alternative — reducing the same rank by both moduli directly, `(rank mod A, rank mod B)` — reaches only pairs `(a, b)` with `a ≡ b (mod gcd(A, B))`; here `gcd(A, B) = 66861 = 3² · 17 · 19 · 23`, so the same-rank double-mod would confine the draw to ≈ 1 / 66861 ≈ 1.5 × 10⁻⁵ of the pair space — a structured subset that would hand the attacker a 66861×-restricted mask space through the back door. Naming `gcd(A, B) = 66861` here is a good-faith showing that full-space coverage is a deliberate property of the construction, not an accident.
 
-Performance cost is approximately 2×–7× slower than plain Bit Soup depending on platform; the BMI2 PEXT/PDEP path on x86 (Haswell+, Excavator+/Zen 1+) on Triple, AVX-512 VBMI VPERMB + VPMOVM2B + VPTESTMB path on x86 (Rocket Lake / Tiger Lake / Sapphire Rapids+, Zen 4 / Zen 5) on Single, sit near the lower bound; Pure Go fallbacks near the upper. The trade-off is acceptable only where the architectural barrier is the deployment priority. Default `SetLockSoup(0)` leaves Bit Soup behaviour unchanged. Both flags must agree across the encrypt and decrypt sides of the channel; mismatched modes produce wrong-seed-style garbage with no error oracle (plausible-decryption invariant preserved). Ciphertext wire format is identical across all three modes (Byte Level / Bit Soup / Lock Soup).
+### Bias distribution — granularity, not a distinguisher
 
-`AttachLockSeed` on the native path (or `Encryptor.SetLockSeed(1)` on the Easy Mode path) routes the per-chunk permutation derivation through a dedicated lockSeed slot allocated alongside the standard noise / data / start trio. Both the keying material and the underlying PRF primitive are independent of the noise-injection channel within the same native hash width — algorithm-diversity defence-in-depth on top of the per-chunk 2³³ (Triple) / 2⁶⁴ (Single) Lock Soup floor. A structural shortcut against the noiseSeed primitive cannot leak into the lock-channel derivation, and vice versa. Default no attach leaves the overlay routing through the noiseSeed unchanged.
+The two-step reduction is deterministic and constant-time; rejection sampling is avoided precisely to keep the kernel branch-free under the constant-time discipline. It carries a small, fixed, publicly-known per-chunk deviation: the `2^128 mod (A · B)` lowest-indexed pairs receive one extra preimage, giving a per-chunk relative deviation ≈ **2^-57.8**. Accumulated over a maximum-size message of 2^23.42 chunks, the conservative linear bound is ≈ **2^-34.4** per message. Turning this granularity into a confident distinguisher would require ≈ `1/ε² ≈ 2^115.6` chunk samples, i.e. ≈ 2^92 maximum-size messages — well beyond any attainable sample budget. The biased event is a property of PRF output (one-way by assumption) and is unobservable beneath the barrier / noise / fill stack, so it exposes no key or plaintext channel even in principle. This figure is an **architectural constant** derived from the reduction arithmetic; the "no distinguisher" consequence is bounded by the attainable sample size and is phrased as such.
 
-`SetLockBatch(1)` is the performance variant of Lock Soup: the per-chunk overlays for a whole group of chunks are derived from a single primitive call instead of one call per chunk, raising throughput several-fold (on x86 hosts with AVX-512 — F plus VPOPCNTDQ for the Single permutation — through lane-parallel AVX-512 kernels; other hosts take a scalar fallback, so the lift is largest on x86 and modest elsewhere, with AArch64 limited to hash-call batching as Go's assembler carries no SVE2). The guarantee is **PRF-conditional**: the batched lanes are independently keyed only for PRF-grade primitives, so Lock Batch is recommended in every case **under the PRF assumption** with no security loss for PRF-grade hashes. The default one-mask-per-chunk Lock Soup retains the stronger claim that holds even for below-spec primitives, so Lock Batch is not unconditionally as strong as default Lock Soup. The flag is symmetric — batched and non-batched per-chunk masks differ, so it must be set identically on the encrypt and decrypt sides — and inert unless Lock Soup is engaged.
+### Algebraic under-determination at 48 known bits per chunk
 
-## 20. Encoding Mode Security Summary
+Even granting the attacker the 48 known plaintext bits of a chunk under Full KPA, the observation does not determine the chunk's mask: the number of preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80`, and any candidate mask is consistent with the observation. Combined with the per-pixel 1:1 signal/noise ambiguity of the underlying pixel construction ([Proof 1](PROOFS.md#proof-1-information-theoretic-barrier): `P(observed | hash) = 1/2`), the attacker has no ranking signal among the ≈ 2^70.20 masks. The barrier's contribution is structural: it adds a hidden per-chunk permutation whose knowledge is required before any per-bit constraint can even be written down.
 
-The §15 Security Properties Summary captures composition-axis claims (MAC placement) and applies uniformly to every encoding mode. The encoding-mode axis — **Byte Level** (default), **Bit Soup** (`SetBitSoup(1)`), **Lock Soup** (`SetLockSoup(1)`) with default `noiseSeed` routing, and **Lock Soup + dedicated `lockSeed`** via `AttachLockSeed` — adds an orthogonal layer of architectural barriers. The table below cross-cuts those modes; cells identical between the Lock Soup base column and the dedicated-`lockSeed` Δ column are marked `(same)` to keep the keying-variant distinction visible without duplicating rows.
+### Composition with the Triple split and the 8-seed hierarchy
 
-| Property | Byte Level | Bit Soup | Lock Soup | + dedicated `lockSeed` Δ |
-|---|---|---|---|---|
-| Per-chunk attacker enumeration multiplier | 1 | 1 (public fixed permutation, cryptanalytic 1) | 2³³ Triple / 2⁶⁴ Single | (same) |
-| SAT instance under-determination | None beyond Core ITB | Partial KPA + realistic protocol traffic only | Any crib density under the PRF assumption | (same) |
-| Nonce-reuse demask via two-time pad | Up to 100% recovery on the colliding pair under Full KPA | Same as Byte Level (public permutation does not anchor the demasker beyond the existing per-snake crib reduction) | Demask entry point removed: the two-time-pad XOR yields `cobsEncoded(π(P₁)) ⊕ cobsEncoded(π(P₂))`, interpretable only with `lockSeed` (default-routed via `noiseSeed`), PRF-opaque under the PRF assumption | (same) |
-| π-channel keying material | n/a | Public (fixed) | `noiseSeed.Components` via `deriveInterLockSeed(nonce)` | Independent `lockSeed.Components` |
-| π-channel PRF primitive | n/a | n/a | `noiseSeed.Hash` | May differ from `noiseSeed.Hash` (algorithm-diversity) |
-| Algorithm-diversity isolation between noise channel and π channel | n/a | n/a | ✗ | ✓ |
-| Per-chunk PRF calls added by the overlay | 0 | 0 (public permutation) | +1 (`LehmerUnrank` on a 64-bit PRF word on Single; combinadic `rankToMaskTriple` on a 64-bit PRF word on Triple) | +1 (different key from the noise channel) |
-| Wire-format identity across modes | ✓ | ✓ | ✓ | ✓ |
-| Throughput overhead vs Byte Level | 1× | ~1.1× | ~2×–7× (BMI2 PEXT/PDEP on Triple; AVX-512 VBMI on Single; Pure Go fallback near the upper bound) | ~2×–7× + ~5% (extra PRF schedule on the lock-channel) |
+Triple Ouroboros splits the plaintext across three interleaved snakes with independent per-snake offsets and configurations. A known crib maps onto three unknown-offset streams whose per-snake boundaries are not recoverable from the interleaved container. Compounding this, the 8 mandatory seeds — `noiseSeed`, `lockSeed`, `dataSeed1..3`, `startSeed1..3` — are drawn as independent CSPRNG components and enforced pairwise-distinct by pointer identity at the API surface. The `lockSeed` keys the barrier's permutation channel independently of the `noiseSeed` that keys the noise-position channel, so a structural shortcut against one primitive channel cannot leak into another's derivation. The barrier's mask-space cardinality, the 3-snake enumeration dimension, and the 8-seed isolation compose into an instance-formulation barrier under the PRF assumption.
 
-The Lock Soup column applies under the PRF assumption on `noiseSeed.Hash`; the dedicated-`lockSeed` column adds algorithm-diversity defence-in-depth without changing the per-chunk 2³³ / 2⁶⁴ floor (see §19 final paragraph). The wire-format-identity row preserves the plausible-decryption invariant across modes — no public bit distinguishes which encoding is active, and mismatched encrypt / decrypt modes produce wrong-seed-style garbage with no error oracle.
+### Wire-format neutrality and dispatch
 
-The §7 Attack Resistance Summary `Nonce reuse` row footnote †† surfaces the Lock Soup demask-entry-point removal to keep the encoding-axis behaviour visible from the composition-axis table; this section provides the full per-encoding-mode cross-cut. The under-determination claim in the SAT row is the architectural property described in §19 and [SCIENCE.md §1.2.1](SCIENCE.md#121-interlocked-mode); the dependency on the PRF assumption is repeated here to keep the encoding-mode claims aligned with the assumption-conditional discipline of §15.
+The ciphertext wire format is unaffected by the barrier — the outbound container is byte-identical to the un-barriered layout that would result from a hypothetical bypass. The barrier is symmetric: encrypt and decrypt derive identical masks from the shared `lockSeed` and chunk index. The barrier cannot be disabled; there is no runtime knob, no configuration, no environment variable, no compile-time flag that turns it off. The `lockSeed` slot is one of the 8 mandatory seeds at every entry point, and every Low-Level `*Cfg` entry (as well as every `triple.Pipeline` profile) takes the barrier as a construction invariant.
+
+## 19. Threat models NOT closed by the barrier
+
+Framed as "outside the barrier's threat model" where that is the honest description, and as "conditional" where the barrier's closure depends on a precondition. None of these is a claim that the barrier is weak — they are the boundary of what the barrier addresses. The full cryptographer verdict enumerating these classes appears in the pre-flight review; the summary sentence from that verdict is preserved here verbatim:
+
+> Closure of the KPA/CPA families is conditional on a secure PRF and fresh nonces; total inversion or a reused nonce is outside what the barrier closes.
+
+- **Total or systematic PRF inversion.** The barrier is explicitly PRF-conditional. Total inversion of the configured primitive lets the attacker resolve the per-chunk masks, the startPixels, and the seed components algorithmically, collapsing every architectural obstacle. Systematic partial PRF inversion is raised in cost but not eliminated. Outside the barrier's power to close.
+- **Nonce reuse.** Closure of the CPA / KPA families is conditional on fresh per-message nonces. The barrier's per-chunk masks repeat under a reused nonce, so the keystream-reuse structure is not removed. The shipped API generates the nonce internally per call, which prevents caller-side reuse, but that is an API-discipline property, not a construction-level guarantee. Conditional, not closed.
+- **Upstream key-management / related-seed supply.** The 8-seed API draws independent CSPRNG components and rejects pointer collisions, so related-seed differentials do not arise through the shipped surface. A defective upstream KDF that supplies correlated seeds is outside the construction's control. Threat-model boundary, not a barrier property.
+- **Physical side channels** (timing, power, EM, cache, speculative execution). Out of scope by construction — leakage is a property of the execution environment, not the algorithm. The barrier's own kernels are written to a constant-time discipline (mask-merge only, no secret-dependent branches or memory accesses; the deterministic reduction avoids rejection sampling precisely to stay branch-free), but a deployment-level side-channel evaluation is per-CPU, per-compiler, and orthogonal to the algorithm-level claims. See [HWTHREATS.md](HWTHREATS.md) for the per-instruction inventory.
+- **Key-material compromise.** If the seeds or the derived state leak through any channel, confidentiality is lost by definition. The barrier assumes secret seeds.
+- **Implementation defects in the shipped Go code.** The architectural argument assumes the code correctly implements the construction. Bugs in the unrank kernels, the reduction, the interleave, or the seed plumbing would be defects the architecture cannot self-correct. The test suite demands byte-level asm ↔ Go parity, directed reduction-boundary vectors at the exact gcd / preimage-cut points, and mask disjointness / popcount assertions rather than roundtrip tests alone.
+- **Fault injection.** Active perturbation of the running computation is a hardware-execution threat outside the algorithm's model.
+- **CCA via a deployment decryption oracle.** Core ITB and MAC + Silent Drop expose no oracle; MAC + Reveal is an optional deployment mode whose CCA behaviour is per-deployment and bounded by [Proof 6](PROOFS.md#proof-6-mac--reveal-cca-leak-bound-noise-position) (noise position, 3 bits per pixel). Whether an oracle exists at all is a protocol choice, not a barrier property.
+- **Quantum key recovery.** The seed-space search under Grover is a hypothetical upper-bound argument, not something the barrier addresses directly; the oracle-degradation framing applies (under Silent Drop there is no verification predicate for Grover to run against). Post-key quantum recovery is outside the barrier's threat model.
+- **Undiscovered cryptanalysis.** No finite argument, architectural or empirical, establishes resistance to techniques not yet known. The construction has had no external cryptanalysis or formal certification.
+- **Empirical re-verification of the 48-bit line.** The pre-existing empirical measurements were obtained on the shared pixel construction over a 12-primitive spectrum and support the pixel-layer ambiguity claims. The barrier's KPA closure is an architectural claim under the PRF assumption, corroborated by that pixel-layer evidence, not yet re-verified empirically end-to-end on the 48-bit line at the sample sizes that reached the pre-v0.3.0 KL floor.
