@@ -57,6 +57,15 @@ const (
 	// distinct language-side exception classes.
 	StatusTripleClosed Status = 25
 
+	// [TripleRegisterProfile] sentinel — returned when the caller
+	// attempts to register a name that is already in the profile
+	// catalogue (either from the shipped set installed at package
+	// init or a prior [TripleRegisterProfile] call). Distinct from
+	// StatusBadInput so bindings can map the duplicate-name path to
+	// a language-idiomatic "already exists" exception without
+	// conflating it with the validation-failure surface.
+	StatusProfileExists Status = 26
+
 	StatusInternal Status = 99
 )
 
@@ -109,6 +118,8 @@ func (s Status) String() string {
 		return "Streaming AEAD chunk after terminator"
 	case StatusTripleClosed:
 		return "Triple Pipeline is closed"
+	case StatusProfileExists:
+		return "profile name already registered"
 	case StatusInternal:
 		return "internal error"
 	}
