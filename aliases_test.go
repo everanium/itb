@@ -146,7 +146,7 @@ func makeAreionSoEM512() HashFunc512 {
 }
 
 // newHMACBlake3Bench returns a keyed-BLAKE3 [MACFunc] backed by a
-// process-scoped 32-byte fixed key. Used by streaming AEAD benchmark
+// process-scoped 32-byte fixed key. Used by Streaming AEAD benchmark
 // harnesses that need a stable MAC without a per-iteration setup
 // cost.
 func newHMACBlake3Bench(key []byte) MACFunc {

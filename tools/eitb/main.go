@@ -195,7 +195,7 @@ func lowLevelCfg512() *itb.Config {
 // full-stack profile (parallax on + wrapper on + MAC on) — the outer
 // cipher chosen here is what the Pipeline's built-in wrapper layer
 // uses, so no external Wrap step is needed. The Pipeline's wire bytes
-// already carry the outer-cipher keystream envelope.
+// already carry the outer cipher keystream envelope.
 // ---------------------------------------------------------------------------
 
 func runAEADTripleIO(cipherName string, plaintext []byte) ([]byte, int, error) {
@@ -283,7 +283,7 @@ func runAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error)
 // Streaming Non-AEAD Triple Pipeline with parallax on + wrapper on.
 // No MAC ITB has no integrity protection by design; the outer cipher
 // contributes format-deniability only. The Pipeline's own wrapper
-// layer produces the outer-cipher envelope.
+// layer produces the outer cipher envelope.
 // ---------------------------------------------------------------------------
 
 func runNoAEADTripleIO(cipherName string, plaintext []byte) ([]byte, int, error) {
