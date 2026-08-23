@@ -328,9 +328,19 @@ const (
 // lockBatchPRF48 is the batched counterpart of [lockPRF48]. One call per
 // group fills masks[0..factor-1] with the mask triples for that group's
 // chunks; factor reports how many the underlying hash width yields.
+//
+// fillRanks is the rank-producing variant of fill consumed by the
+// superblock worker loops: it performs the same Hash call over the same
+// buf layout but writes the raw 128-bit rank pairs into prf[0:2*factor]
+// and defers the mask derivation to the caller, which accumulates the
+// ranks of [superChunks48] chunks and derives all their mask triples in
+// one [fillLockMasksTriple48Super] pass. fill and fillRanks agree on
+// every (buf, groupIdx) input by construction — both closures wrap the
+// identical Hash invocation.
 type lockBatchPRF48 struct {
-	factor int
-	fill   func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64)
+	factor    int
+	fill      func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64)
+	fillRanks func(buf []byte, groupIdx uint64, prf []uint64)
 }
 
 // fillLockMasksTriple48 fills masks[0..count-1] from count 128-bit ranks
@@ -345,6 +355,50 @@ type lockBatchPRF48 struct {
 // never observed. Without the kernel it falls back to the per-lane
 // scalar rankToMaskTriple48, leaving non-AVX-512F hosts unchanged.
 func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48Max][3]uint64) {
+	if interlock.HasAVX512RankMask {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < count; j++ {
+			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
+			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
+			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
+			_, hiMod := bits.Div64(0, qHi, interlockA48)
+			_, m := bits.Div64(hiMod, qLo, interlockA48)
+			idx0[j] = m
+			idx1[j] = uint32(r)
+		}
+		var out [3][8]uint64
+		interlock.RankToMaskTripleUnrank48(&idx0, &idx1, &out)
+		for j := 0; j < count; j++ {
+			masks[j][0] = out[0][j]
+			masks[j][1] = out[1][j]
+			masks[j][2] = out[2][j]
+		}
+		return
+	}
+	for j := 0; j < count; j++ {
+		masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple48(prf[2*j], prf[2*j+1])
+	}
+}
+
+// superChunks48 is the number of chunks whose mask triples are derived
+// per batch-kernel invocation by the superblock worker loops — equal to
+// the AVX-512 kernel's 8 qword lanes. A superblock spans
+// superChunks48 / factor consecutive PRF groups (8 groups at 128-bit
+// hash width, 4 at 256, 2 at 512), so every kernel invocation runs with
+// all 8 lanes carrying payload regardless of hash width.
+const superChunks48 = 8
+
+// fillLockMasksTriple48Super fills masks[0..count-1] from count 128-bit
+// ranks packed into prf as pairs (prf[2*j], prf[2*j+1]). count must be
+// <= superChunks48. The mask derivation is identical to
+// [fillLockMasksTriple48] — same two-step divmod, same unrank — widened
+// to the kernel's full 8-lane capacity so one AVX-512 invocation serves
+// a whole superblock of chunks. A short superblock (count < 8) leaves
+// the upper kernel lanes on zero ranks; their outputs are never read.
+// Without the kernel it falls back to the per-rank scalar
+// rankToMaskTriple48, leaving non-AVX-512F hosts unchanged.
+func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks *[superChunks48][3]uint64) {
 	if interlock.HasAVX512RankMask {
 		var idx0 [8]uint64
 		var idx1 [8]uint32
@@ -392,6 +446,11 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 			prf[0], prf[1] = lo, hi
 			fillLockMasksTriple48(&prf, lockBatchFactor48_128, masks)
 		},
+		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			prf[0], prf[1] = h(buf, lockLo, lockHi)
+		},
 	}
 }
 
@@ -410,6 +469,12 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			copy(prf[:4], out[:])
 			fillLockMasksTriple48(&prf, lockBatchFactor48_256, masks)
 		},
+		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockKey)
+			copy(prf[:4], out[:])
+		},
 	}
 }
 
@@ -425,6 +490,12 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
 			out := h(buf, lockKey)
 			fillLockMasksTriple48(&out, lockBatchFactor48_512, masks)
+		},
+		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
+			buf[0] = 0x03
+			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			out := h(buf, lockKey)
+			copy(prf[:8], out[:])
 		},
 	}
 }
@@ -465,12 +536,24 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // cap on the group count M / factor.
 
 // splitTriple48LockedBatch is the parallel batched 48-bit encode kernel.
-// Chunks are processed in groups of bp.factor; each group costs one bp.fill
-// call producing factor lane mask triples applied to the factor chunks of the
-// group. The parallel work split is at GROUP granularity (workers take
-// disjoint group ranges, writing disjoint output chunk indices). The final
-// group is short when M is not a multiple of factor; only the needed low
-// lanes are consumed.
+// Chunks are processed in groups of bp.factor; each group costs one
+// bp.fillRanks call producing factor 128-bit rank pairs for the factor
+// chunks of the group. Workers accumulate the ranks of up to
+// [superChunks48] consecutive chunks (superChunks48 / factor groups)
+// and derive all their mask triples in a single
+// [fillLockMasksTriple48Super] pass, so the AVX-512 batch kernel runs
+// with every lane carrying payload. The parallel work split is at GROUP
+// granularity (workers take disjoint group ranges, writing disjoint
+// output chunk indices); a worker range whose length is not a multiple
+// of the superblock span simply ends on a short superblock. The final
+// group is short when M is not a multiple of factor; only the needed
+// low chunks are consumed.
+//
+// Mask derivation is a pure function of each chunk's rank pair, so the
+// superblock accumulation changes only the point at which the unrank
+// executes — the produced lane bytes are bit-identical to a per-group
+// derivation via bp.fill (asserted by test against the bp.fill
+// reference and by golden lane digests).
 func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
 	L := len(data)
 	LPad := ((L + 5) / 6) * 6
@@ -513,11 +596,22 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 		go func(gs, ge int) {
 			defer wg.Done()
 			var buf [13]byte
-			var masks [lockBatchFactor48Max][3]uint64
-			for g := gs; g < ge; g++ {
-				bp.fill(buf[:], uint64(g), &masks)
+			var prf [2 * superChunks48]uint64
+			var masks [superChunks48][3]uint64
+			groupsPerSuper := superChunks48 / factor
+			for g := gs; g < ge; {
+				gFlush := g + groupsPerSuper
+				if gFlush > ge {
+					gFlush = ge
+				}
 				base := g * factor
-				for j := 0; j < factor; j++ {
+				n := 0
+				for ; g < gFlush; g++ {
+					bp.fillRanks(buf[:], uint64(g), prf[2*n:])
+					n += factor
+				}
+				fillLockMasksTriple48Super(&prf, n, &masks)
+				for j := 0; j < n; j++ {
 					k := base + j
 					if k >= M {
 						break
@@ -568,11 +662,22 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 		go func(gs, ge int) {
 			defer wg.Done()
 			var buf [13]byte
-			var masks [lockBatchFactor48Max][3]uint64
-			for g := gs; g < ge; g++ {
-				bp.fill(buf[:], uint64(g), &masks)
+			var prf [2 * superChunks48]uint64
+			var masks [superChunks48][3]uint64
+			groupsPerSuper := superChunks48 / factor
+			for g := gs; g < ge; {
+				gFlush := g + groupsPerSuper
+				if gFlush > ge {
+					gFlush = ge
+				}
 				base := g * factor
-				for j := 0; j < factor; j++ {
+				n := 0
+				for ; g < gFlush; g++ {
+					bp.fillRanks(buf[:], uint64(g), prf[2*n:])
+					n += factor
+				}
+				fillLockMasksTriple48Super(&prf, n, &masks)
+				for j := 0; j < n; j++ {
 					k := base + j
 					if k >= M {
 						break
