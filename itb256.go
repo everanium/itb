@@ -157,7 +157,13 @@ func Encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		wg.Wait()
 	}
 
-	width, height := containerSize3_256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, [3]int{len(encs[0]), len(encs[1]), len(encs[2])})
+	// Reserve nomacTagStubSize bytes in the third snake's container
+	// capacity so a wire observer cannot distinguish this No-MAC chunk
+	// from the Streaming AEAD chunk (whose third snake carries
+	// payload || tag(32) || flag(1)). The reserved bytes are pure
+	// CSPRNG on the No-MAC side.
+	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + nomacTagStubSize}
+	width, height := containerSize3_256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 	totalPixels := width * height
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
@@ -167,8 +173,9 @@ func Encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
+	fitLimits := [3]int{caps[0], caps[1], caps[2] - nomacTagStubSize}
 	for i := 0; i < 3; i++ {
-		if len(encs[i])+1 > caps[i] {
+		if len(encs[i])+1 > fitLimits[i] {
 			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
 		}
 	}
