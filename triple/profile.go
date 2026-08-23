@@ -39,6 +39,37 @@ const (
 	// bundle profile: [Init] and [Pipeline.Rekey] produce blob wire,
 	// but the Pipeline exposes no cipher surface.
 	ProfileBlobTripleMACV1 = "blob-triple-mac-v1"
+
+	// ProfileStreamingAEADTripleMACMixedV1 is the width-256 mixed-
+	// primitive counterpart to [ProfileStreamingAEADTripleMACV1]. The
+	// per-slot constellation is
+	// [areion256, blake3, blake2b256, blake2s, chacha20,
+	//  areion256, blake3, blake2b256] — one full spread across the
+	// five shipped width-256 primitives, with the extra slots
+	// assigned to the highest-throughput members of the pool.
+	ProfileStreamingAEADTripleMACMixedV1 = "streaming-aead-triple-mac-mixed-v1"
+
+	// ProfileStreamingNoAEADTripleMixedV1 is the width-256 mixed-
+	// primitive counterpart to [ProfileStreamingNoAEADTripleV1]. The
+	// per-slot constellation permutes the width-256 pool so a pair of
+	// mixed streaming profiles stay wire-distinguishable at every
+	// slot:
+	// [blake3, chacha20, blake2s, areion256, blake2b256,
+	//  blake3, chacha20, blake2s].
+	ProfileStreamingNoAEADTripleMixedV1 = "streaming-noaead-triple-mixed-v1"
+
+	// ProfileSingleMsgTripleMACMixedV1 is the width-128 mixed-
+	// primitive counterpart to [ProfileSingleMsgTripleMACV1]. Only
+	// two shipped primitives sit at width 128 (aescmac + siphash24);
+	// the constellation alternates the pair across all eight slots.
+	ProfileSingleMsgTripleMACMixedV1 = "singlemsg-triple-mac-mixed-v1"
+
+	// ProfileSingleMsgTripleNoMACMixedV1 is the width-512 mixed-
+	// primitive counterpart to [ProfileSingleMsgTripleNoMACV1]. Only
+	// two shipped primitives sit at width 512 (areion512 +
+	// blake2b512); the constellation alternates the pair across all
+	// eight slots.
+	ProfileSingleMsgTripleNoMACMixedV1 = "singlemsg-triple-nomac-mixed-v1"
 )
 
 // Profile-default constants. Values reuse the shipped defaults from
@@ -308,6 +339,98 @@ func init() {
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
 		ParallaxOn:          true,
 		WrapperOn:           true,
+	}
+
+	// Mixed-primitive Streaming AEAD Triple, MAC-authenticated, parallax
+	// on + wrapper on. Width 256; slot roster spreads across every
+	// shipped width-256 primitive.
+	profileRegistry[ProfileStreamingAEADTripleMACMixedV1] = Profile{
+		Name:                ProfileStreamingAEADTripleMACMixedV1,
+		Mode:                modeStreamingAEAD,
+		Width:               256,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           "", // mixed dispatch — InnerHash inert
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
+		MixedHashes: [8]string{
+			"areion256", "blake3", "blake2b256", "blake2s",
+			"chacha20", "areion256", "blake3", "blake2b256",
+		},
+	}
+
+	// Mixed-primitive Streaming Non-AEAD Triple, parallax on +
+	// wrapper on. Width 256; different balance from the AEAD mixed
+	// profile so a pair of mixed streaming wires stay
+	// slot-distinguishable.
+	profileRegistry[ProfileStreamingNoAEADTripleMixedV1] = Profile{
+		Name:                ProfileStreamingNoAEADTripleMixedV1,
+		Mode:                modeStreamingNoAEAD,
+		Width:               256,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           "", // mixed dispatch — InnerHash inert
+		KeyBits:             defaultKeyBits,
+		MacName:             "", // No MAC by definition.
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
+		MixedHashes: [8]string{
+			"blake3", "chacha20", "blake2s", "areion256",
+			"blake2b256", "blake3", "chacha20", "blake2s",
+		},
+	}
+
+	// Mixed-primitive Single Message Triple, MAC-authenticated,
+	// parallax on + wrapper on. Width 128; alternates the two shipped
+	// width-128 primitives across every slot.
+	profileRegistry[ProfileSingleMsgTripleMACMixedV1] = Profile{
+		Name:                ProfileSingleMsgTripleMACMixedV1,
+		Mode:                modeSingleMsgMAC,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           "", // mixed dispatch — InnerHash inert
+		// KeyBits divides the width-128 primitive's native width and
+		// keeps the same total key material as the width-256 profiles
+		// (defaultKeyBits = 1024, which is a valid multiple of 128).
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
+		MixedHashes: [8]string{
+			"aescmac", "siphash24", "aescmac", "siphash24",
+			"aescmac", "siphash24", "aescmac", "siphash24",
+		},
+	}
+
+	// Mixed-primitive Single Message Triple, No MAC, parallax on +
+	// wrapper on. Width 512; alternates the two shipped width-512
+	// primitives across every slot.
+	profileRegistry[ProfileSingleMsgTripleNoMACMixedV1] = Profile{
+		Name:                ProfileSingleMsgTripleNoMACMixedV1,
+		Mode:                modeSingleMsgNoMAC,
+		Width:               512,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           "", // mixed dispatch — InnerHash inert
+		KeyBits:             defaultKeyBits,
+		MacName:             "", // No MAC by definition.
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
+		MixedHashes: [8]string{
+			"areion512", "blake2b512", "areion512", "blake2b512",
+			"areion512", "blake2b512", "areion512", "blake2b512",
+		},
 	}
 }
 

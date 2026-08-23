@@ -55,6 +55,51 @@ func allocEightSeeds(innerHash string, keyBits int) ([8]any, [8][]byte, int, err
 	return seeds, prfKeys, width, nil
 }
 
+// allocEightSeedsMixed is the mixed-primitive counterpart to
+// [allocEightSeeds]. Each of the 8 canonical slots is built with its
+// own per-slot primitive name from the mixedHashes array; every
+// primitive's native width must match width (RegisterProfile's
+// validator enforces this — the check here is defensive, catching
+// programmer mistakes on the raw entry point).
+//
+// The returned seeds / prfKeys / width arrays follow the same shape
+// as [allocEightSeeds]; the caller distinguishes mixed vs single by
+// looking at the source profile, not the returned arrays.
+func allocEightSeedsMixed(mixedHashes [8]string, keyBits, width int) ([8]any, [8][]byte, int, error) {
+	var seeds [8]any
+	var prfKeys [8][]byte
+
+	if width != 128 && width != 256 && width != 512 {
+		return seeds, prfKeys, 0, fmt.Errorf("triple: unsupported primitive width %d", width)
+	}
+	if keyBits <= 0 || keyBits%width != 0 {
+		return seeds, prfKeys, 0, fmt.Errorf("triple: key_bits=%d not divisible by width=%d",
+			keyBits, width)
+	}
+
+	for i := 0; i < 8; i++ {
+		name := mixedHashes[i]
+		if name == "" {
+			return seeds, prfKeys, 0, fmt.Errorf("triple: mixedHashes[%d] is empty", i)
+		}
+		spec, ok := hashes.Find(name)
+		if !ok {
+			return seeds, prfKeys, 0, fmt.Errorf("triple: mixedHashes[%d] = %q not in hashes.Registry", i, name)
+		}
+		if int(spec.Width) != width {
+			return seeds, prfKeys, 0, fmt.Errorf("triple: mixedHashes[%d] = %q width %d, profile width %d",
+				i, name, int(spec.Width), width)
+		}
+		seed, key, err := allocOneSeed(name, keyBits, width)
+		if err != nil {
+			return seeds, prfKeys, 0, err
+		}
+		seeds[i] = seed
+		prfKeys[i] = key
+	}
+	return seeds, prfKeys, width, nil
+}
+
 // allocOneSeed produces one typed seed + its fixed PRF key for the
 // (primitive, keyBits, width) combination. Returns errors instead of
 // panicking so [Init] can bubble the failure through its
