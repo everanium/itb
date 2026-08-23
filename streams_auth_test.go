@@ -539,6 +539,133 @@ func TestEncryptStreamAuth3xCrossStreamReplayExt(t *testing.T) {
 	}
 }
 
+// --- Triple Ouroboros IO-Driven AEAD Cfg round-trip sweep (Phase 2) ---
+//
+// The width-less [itb.EncryptStreamAuth3xCfg] /
+// [itb.DecryptStreamAuth3xCfg] IO-Driven helpers accept a per-encryptor
+// *itb.Config so cfg.MaxWorkers / cfg.NonceBits / cfg.BarrierFill flow
+// through the chunked authenticated path without touching the process
+// globals. This sweep exercises every Triple width (128 / 256 / 512),
+// every MaxWorkers cap {1, 2, 4, 8}, and every chunk-boundary
+// plaintext size {0, 1, chunkSize-1, chunkSize, chunkSize+1, 1 MiB}
+// at a modest chunkSize=4096 override, flat t.Run per combination.
+func TestEncryptStreamAuth3xCfgRoundTripAllWidths(t *testing.T) {
+	const chunk = 4096
+	widths := []int{128, 256, 512}
+	workers := []int{1, 2, 4, 8}
+	sizes := []int{0, 1, chunk - 1, chunk, chunk + 1, 1 << 20}
+
+	for _, w := range widths {
+		w := w
+		for _, mw := range workers {
+			mw := mw
+			for _, sz := range sizes {
+				sz := sz
+				name := fmt.Sprintf("w%d/mw%d/sz%d", w, mw, sz)
+				t.Run(name, func(t *testing.T) {
+					cfg := &itb.Config{MaxWorkers: mw}
+					mac := macForStreamTest(t)
+					pt := genTestPlaintextExt(t, sz)
+					var ctBuf bytes.Buffer
+					switch w {
+					case 128:
+						n, l, d1, d2, d3, s1, s2, s3 := mkTriple128Ext(t)
+						if err := itb.EncryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+							t.Fatalf("EncryptStreamAuth3xCfg: %v", err)
+						}
+						var ptBuf bytes.Buffer
+						if err := itb.DecryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+							t.Fatalf("DecryptStreamAuth3xCfg: %v", err)
+						}
+						if !bytes.Equal(pt, ptBuf.Bytes()) {
+							t.Fatalf("128-bit Cfg AEAD round-trip mismatch at %d bytes", sz)
+						}
+					case 256:
+						n, l, d1, d2, d3, s1, s2, s3 := mkTriple256Ext(t)
+						if err := itb.EncryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+							t.Fatalf("EncryptStreamAuth3xCfg: %v", err)
+						}
+						var ptBuf bytes.Buffer
+						if err := itb.DecryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+							t.Fatalf("DecryptStreamAuth3xCfg: %v", err)
+						}
+						if !bytes.Equal(pt, ptBuf.Bytes()) {
+							t.Fatalf("256-bit Cfg AEAD round-trip mismatch at %d bytes", sz)
+						}
+					case 512:
+						n, l, d1, d2, d3, s1, s2, s3 := mkTriple512Ext(t)
+						if err := itb.EncryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, chunk); err != nil {
+							t.Fatalf("EncryptStreamAuth3xCfg: %v", err)
+						}
+						var ptBuf bytes.Buffer
+						if err := itb.DecryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(ctBuf.Bytes()), &ptBuf, mac); err != nil {
+							t.Fatalf("DecryptStreamAuth3xCfg: %v", err)
+						}
+						if !bytes.Equal(pt, ptBuf.Bytes()) {
+							t.Fatalf("512-bit Cfg AEAD round-trip mismatch at %d bytes", sz)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestEncryptStreamAuth3xCfgNonceBitsOverride encrypts under
+// cfg.NonceBits = 256 and confirms:
+//
+//  1. A receiver with matching cfg.NonceBits = 256 decrypts the wire
+//     successfully.
+//  2. A receiver with mismatched cfg (default globals — nonce width
+//     differs from the encoder's 256-bit envelope) fails on the first
+//     chunk header parse, since the header parser reads the width /
+//     height uint16 values at a different offset. Any non-nil error
+//     satisfies the invariant; the specific error string is not part
+//     of the contract (the header parser surfaces one of "invalid
+//     dimensions", "chunk too large", or "short body read" depending
+//     on where the misaligned uint16 read lands).
+//
+// The process-global nonce width is pinned via installNonceBits inside
+// the encoder path (indirectly, since installNonceBits lives in the
+// package_internal test) — the external test can only assert the
+// mismatched-cfg failure, not swap the process global. To keep both
+// arms authoritative, the mismatched-cfg arm uses a distinct
+// cfg.NonceBits value that differs from the encoder's; both sides
+// override the same process global, so the outcome is deterministic.
+func TestEncryptStreamAuth3xCfgNonceBitsOverride(t *testing.T) {
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128Ext(t)
+	mac := macForStreamTest(t)
+	pt := genTestPlaintextExt(t, 4096)
+
+	// Encoder pins nonce width via cfg override.
+	sendCfg := &itb.Config{NonceBits: 256}
+	var ctBuf bytes.Buffer
+	if err := itb.EncryptStreamAuth3xCfg(sendCfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &ctBuf, mac, 1024); err != nil {
+		t.Fatalf("EncryptStreamAuth3xCfg(NonceBits=256): %v", err)
+	}
+	wire := ctBuf.Bytes()
+
+	t.Run("matching_cfg_decrypts", func(t *testing.T) {
+		recvCfg := &itb.Config{NonceBits: 256}
+		var out bytes.Buffer
+		if err := itb.DecryptStreamAuth3xCfg(recvCfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(wire), &out, mac); err != nil {
+			t.Fatalf("DecryptStreamAuth3xCfg(NonceBits=256): %v", err)
+		}
+		if !bytes.Equal(pt, out.Bytes()) {
+			t.Fatalf("matching cfg: recovered plaintext differs from input")
+		}
+	})
+
+	t.Run("mismatched_cfg_fails", func(t *testing.T) {
+		mismatched := &itb.Config{NonceBits: 128}
+		var out bytes.Buffer
+		err := itb.DecryptStreamAuth3xCfg(mismatched, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(wire), &out, mac)
+		if err == nil {
+			t.Fatalf("DecryptStreamAuth3xCfg(mismatched NonceBits): want error, got nil")
+		}
+	})
+}
+
 // TestEncryptStreamAuth3xPrefixTamperExt confirms that flipping a
 // byte in the streamID prefix breaks every per-chunk MAC binding on
 // the Triple path.
