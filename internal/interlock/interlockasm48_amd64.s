@@ -76,9 +76,10 @@ TEXT ·Unchunk48Lock(SB),NOSPLIT,$0-56
 // via mask registers throughout — neither memory access nor control flow
 // depends on secret indices — constant-time.
 //
-// Frame: 4 pointer args = 32 bytes.
+// Frame: 4 pointer args = 32 bytes; 128 bytes of locals spill the
+// remaining / m1Local lane vectors for the scalar-PDEPQ remap tail.
 //   idx0 +0(FP)  idx1 +8(FP)  crow +16(FP)  out +24(FP)
-TEXT ·rankToMaskTripleUnrank48AVX512(SB), NOSPLIT, $0-32
+TEXT ·rankToMaskTripleUnrank48AVX512(SB), NOSPLIT, $128-32
 	MOVQ idx0+0(FP), AX
 	MOVQ idx1+8(FP), BX
 	MOVQ crow+16(FP), R14
@@ -180,36 +181,87 @@ m1Loop:
 
 	VMOVDQA64 Z2, Z11               // Z11 = m1Local
 
-	// ---- remap: deposit m1Local's bits onto positions m0 leaves free ----
+	// ---- remap: m1 = PDEP(m1Local, remaining) — 8 scalar PDEPQ ----
+	//
+	// The per-lane deposit of m1Local's bits onto the positions m0
+	// leaves free is exactly BMI2 PDEP with mask = remaining: bit t of
+	// m1Local lands on the t-th set bit of remaining (ascending), the
+	// same walk a bit-serial formulation performs across all 48
+	// positions. The 8 qword lanes are spilled to the stack and each
+	// runs one scalar PDEPQ; m2 = remaining ^ m1 (m1 is a subset of
+	// remaining by construction, so the XOR clears exactly m1's bits).
+	//
+	// Constant-time: PDEP is data-oblivious (fixed latency) on Intel
+	// Haswell+ and AMD Zen 3+ — the microarchitectural floor already
+	// assumed by the PEXTQ / PDEPQ chunk kernels above. Pre-Zen 3 AMD
+	// executes PDEPQ in microcode with data-dependent latency; on such
+	// parts this is a performance caveat, not a new leakage surface
+	// relative to the rest of this path.
 	MOVQ $0x0000FFFFFFFFFFFF, R8
 	MOVQ R8, X14
 	VPBROADCASTQ X14, Z27           // Z27 = 0xFFFF_FFFF_FFFF (48-bit domain)
 	VPANDNQ Z27, Z10, Z0            // Z0 = remaining = (~m0) & domain
-	VPXORQ Z12, Z12, Z12            // Z12 = m1 = 0
-	VPXORQ Z13, Z13, Z13            // Z13 = posIdx = 0
-	XORQ R10, R10                   // bit = 0
-	// Remap temporaries use Z16..Z21 (their low halves X16..X21 never
-	// serve as scratch), so the shift-count xmm X15 is not clobbered
-	// mid-iteration. Z14/Z15 would alias X14/X15 — avoided.
-
-remapLoop:
-	MOVQ R10, X15
-	VPSRLQ X15, Z0, Z16             // remaining >> bit
-	VPANDQ Z6, Z16, Z17             // remBit = (...) & 1
-	VPSRLVQ Z13, Z11, Z18           // m1Local >> posIdx (per lane)
-	VPANDQ Z6, Z18, Z19             // mlBit = (...) & 1
-	VPANDQ Z17, Z19, Z20            // set = remBit & mlBit
-	VPSLLQ X15, Z20, Z21            // set << bit
-	VPORQ Z21, Z12, Z12             // m1 |= set << bit
-	VPADDQ Z17, Z13, Z13            // posIdx += remBit
-	INCQ R10
-	CMPQ R10, $48
-	JLT remapLoop
-
-	VPANDNQ Z0, Z12, Z8             // Z8 = m2 = (~m1) & remaining
-
 	VMOVDQU64 Z10, (DI)             // out[0] = m0
-	VMOVDQU64 Z12, 64(DI)           // out[1] = m1
-	VMOVDQU64 Z8, 128(DI)           // out[2] = m2
+	VMOVDQU64 Z0, rem-128(SP)       // spill remaining lanes 0..7
+	VMOVDQU64 Z11, ml-64(SP)        // spill m1Local lanes 0..7
+
+	// Per lane j: R8 = remaining[j], R9 = m1Local[j];
+	// R10 = m1 = PDEP(m1Local, remaining); R8 ^= R10 -> m2.
+	MOVQ rem-128(SP), R8
+	MOVQ ml-64(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 64(DI)                // out[1][0] = m1
+	MOVQ R8, 128(DI)                // out[2][0] = m2
+
+	MOVQ rem-120(SP), R8
+	MOVQ ml-56(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 72(DI)
+	MOVQ R8, 136(DI)
+
+	MOVQ rem-112(SP), R8
+	MOVQ ml-48(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 80(DI)
+	MOVQ R8, 144(DI)
+
+	MOVQ rem-104(SP), R8
+	MOVQ ml-40(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 88(DI)
+	MOVQ R8, 152(DI)
+
+	MOVQ rem-96(SP), R8
+	MOVQ ml-32(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 96(DI)
+	MOVQ R8, 160(DI)
+
+	MOVQ rem-88(SP), R8
+	MOVQ ml-24(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 104(DI)
+	MOVQ R8, 168(DI)
+
+	MOVQ rem-80(SP), R8
+	MOVQ ml-16(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 112(DI)
+	MOVQ R8, 176(DI)
+
+	MOVQ rem-72(SP), R8
+	MOVQ ml-8(SP), R9
+	PDEPQ R8, R9, R10
+	XORQ R10, R8
+	MOVQ R10, 120(DI)
+	MOVQ R8, 184(DI)
+
 	VZEROUPPER
 	RET
