@@ -13,13 +13,61 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include "itb.h"
 
-/* Per-case wall-clock budget (seconds) and iteration floor. */
-#define BENCH_MIN_SECONDS 2.0
-#define BENCH_MIN_ITERS   3
+/* Per-case wall-clock budget (seconds, env: ITB_BENCH_MIN_SEC)
+ * and iteration floor. */
+#define BENCH_MIN_ITERS 3
+
+static double bench_min_seconds(void)
+{
+    const char *raw = getenv("ITB_BENCH_MIN_SEC");
+    if (raw != NULL && *raw != '\0') {
+        double v = strtod(raw, NULL);
+        if (v > 0.0) {
+            return v;
+        }
+    }
+    return 5.0;
+}
+
+/* Reads the bench-shape env vars and builds an itb_opts. Defaults
+ * match root Go BENCH3.md so numbers are directly comparable. */
+static itb_opts *bench_build_opts(void)
+{
+    itb_opts *opts = itb_opts_new();
+    if (opts == NULL) {
+        return NULL;
+    }
+    const char *nb = getenv("ITB_NONCE_BITS");
+    (void)itb_opts_set(opts, "nonceBits", (nb && *nb) ? nb : "128");
+    const char *kb = getenv("ITB_KEY_BITS");
+    (void)itb_opts_set(opts, "keyBits", (kb && *kb) ? kb : "1024");
+    const char *wp = getenv("ITB_WITH_PARALLAX");
+    const char *wp_val = (wp && (strcmp(wp, "true") == 0 || strcmp(wp, "1") == 0))
+                             ? "true"
+                             : "false";
+    (void)itb_opts_set(opts, "withParallax", wp_val);
+    const char *ww = getenv("ITB_WITH_WRAPPER");
+    const char *ww_val = (ww && (strcmp(ww, "true") == 0 || strcmp(ww, "1") == 0))
+                             ? "true"
+                             : "false";
+    (void)itb_opts_set(opts, "withWrapper", ww_val);
+    const char *ih = getenv("ITB_INNER_HASH");
+    if (ih != NULL && *ih != '\0') {
+        (void)itb_opts_set(opts, "innerHash", ih);
+    }
+    return opts;
+}
+
+static const char *bench_profile_name(const char *fallback)
+{
+    const char *env = getenv("ITB_PROFILE");
+    return (env && *env) ? env : fallback;
+}
 
 static double bench_now(void)
 {
@@ -58,7 +106,8 @@ static void bench_case(const char *name, size_t size,
     double start = bench_now();
     double elapsed = 0.0;
     size_t iters = 0;
-    while (elapsed < BENCH_MIN_SECONDS || iters < BENCH_MIN_ITERS) {
+    double budget = bench_min_seconds();
+    while (elapsed < budget || iters < BENCH_MIN_ITERS) {
         if (fn(ctx) != 0) {
             fprintf(stderr, "bench %s @%zu: iteration failed: %s\n", name,
                     size, itb_last_error());
