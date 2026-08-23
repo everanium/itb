@@ -55,13 +55,14 @@ func roundtrip128(t *testing.T, name string, keyBits int, plaintext []byte) {
 		return s
 	}
 	ns := mk("noise")
+	ls := mk("lock")
 	d1, d2, d3 := mk("data1"), mk("data2"), mk("data3")
 	s1, s2, s3 := mk("start1"), mk("start2"), mk("start3")
-	encrypted, err := itb.Encrypt3x128(ns, d1, d2, d3, s1, s2, s3, plaintext)
+	encrypted, err := itb.Encrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x128: %v", err)
 	}
-	decrypted, err := itb.Decrypt3x128(ns, d1, d2, d3, s1, s2, s3, encrypted)
+	decrypted, err := itb.Decrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt3x128: %v", err)
 	}
@@ -80,13 +81,14 @@ func roundtrip256(t *testing.T, name string, keyBits int, plaintext []byte) {
 		return s
 	}
 	ns := mk("noise")
+	ls := mk("lock")
 	d1, d2, d3 := mk("data1"), mk("data2"), mk("data3")
 	s1, s2, s3 := mk("start1"), mk("start2"), mk("start3")
-	encrypted, err := itb.Encrypt3x256(ns, d1, d2, d3, s1, s2, s3, plaintext)
+	encrypted, err := itb.Encrypt3x256(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x256: %v", err)
 	}
-	decrypted, err := itb.Decrypt3x256(ns, d1, d2, d3, s1, s2, s3, encrypted)
+	decrypted, err := itb.Decrypt3x256(ns, ls, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt3x256: %v", err)
 	}
@@ -105,13 +107,14 @@ func roundtrip512(t *testing.T, name string, keyBits int, plaintext []byte) {
 		return s
 	}
 	ns := mk("noise")
+	ls := mk("lock")
 	d1, d2, d3 := mk("data1"), mk("data2"), mk("data3")
 	s1, s2, s3 := mk("start1"), mk("start2"), mk("start3")
-	encrypted, err := itb.Encrypt3x512(ns, d1, d2, d3, s1, s2, s3, plaintext)
+	encrypted, err := itb.Encrypt3x512(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x512: %v", err)
 	}
-	decrypted, err := itb.Decrypt3x512(ns, d1, d2, d3, s1, s2, s3, encrypted)
+	decrypted, err := itb.Decrypt3x512(ns, ls, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt3x512: %v", err)
 	}

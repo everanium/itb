@@ -80,25 +80,25 @@ func mkSeeds512(t *testing.T) (n, d, s *Seed512) {
 	return
 }
 
-func mkTriple128(t *testing.T) (n, d1, d2, d3, s1, s2, s3 *Seed128) {
+func mkTriple128(t *testing.T) (n, l, d1, d2, d3, s1, s2, s3 *Seed128) {
 	t.Helper()
-	n, d1, _ = mkSeeds128(t)
+	n, l, d1 = mkSeeds128(t)
 	d2, d3, s1 = mkSeeds128(t)
 	s2, s3, _ = mkSeeds128(t)
 	return
 }
 
-func mkTriple256(t *testing.T) (n, d1, d2, d3, s1, s2, s3 *Seed256) {
+func mkTriple256(t *testing.T) (n, l, d1, d2, d3, s1, s2, s3 *Seed256) {
 	t.Helper()
-	n, d1, _ = mkSeeds256(t)
+	n, l, d1 = mkSeeds256(t)
 	d2, d3, s1 = mkSeeds256(t)
 	s2, s3, _ = mkSeeds256(t)
 	return
 }
 
-func mkTriple512(t *testing.T) (n, d1, d2, d3, s1, s2, s3 *Seed512) {
+func mkTriple512(t *testing.T) (n, l, d1, d2, d3, s1, s2, s3 *Seed512) {
 	t.Helper()
-	n, d1, _ = mkSeeds512(t)
+	n, l, d1 = mkSeeds512(t)
 	d2, d3, s1 = mkSeeds512(t)
 	s2, s3, _ = mkSeeds512(t)
 	return
@@ -115,13 +115,13 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 	t.Run("128", func(t *testing.T) {
 		for _, sz := range sizes {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-				n, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+				n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := Encrypt3x(n, d1, d2, d3, s1, s2, s3, pt)
+				ct, err := Encrypt3x(n, l, d1, d2, d3, s1, s2, s3, pt)
 				if err != nil {
 					t.Fatalf("Encrypt3x: %v", err)
 				}
-				out, err := Decrypt3x(n, d1, d2, d3, s1, s2, s3, ct)
+				out, err := Decrypt3x(n, l, d1, d2, d3, s1, s2, s3, ct)
 				if err != nil {
 					t.Fatalf("Decrypt3x: %v", err)
 				}
@@ -135,13 +135,13 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 	t.Run("256", func(t *testing.T) {
 		for _, sz := range sizes {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-				n, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
+				n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := Encrypt3x(n, d1, d2, d3, s1, s2, s3, pt)
+				ct, err := Encrypt3x(n, l, d1, d2, d3, s1, s2, s3, pt)
 				if err != nil {
 					t.Fatalf("Encrypt3x: %v", err)
 				}
-				out, err := Decrypt3x(n, d1, d2, d3, s1, s2, s3, ct)
+				out, err := Decrypt3x(n, l, d1, d2, d3, s1, s2, s3, ct)
 				if err != nil {
 					t.Fatalf("Decrypt3x: %v", err)
 				}
@@ -155,13 +155,13 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 	t.Run("512", func(t *testing.T) {
 		for _, sz := range sizes {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-				n, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
+				n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := Encrypt3x(n, d1, d2, d3, s1, s2, s3, pt)
+				ct, err := Encrypt3x(n, l, d1, d2, d3, s1, s2, s3, pt)
 				if err != nil {
 					t.Fatalf("Encrypt3x: %v", err)
 				}
-				out, err := Decrypt3x(n, d1, d2, d3, s1, s2, s3, ct)
+				out, err := Decrypt3x(n, l, d1, d2, d3, s1, s2, s3, ct)
 				if err != nil {
 					t.Fatalf("Decrypt3x: %v", err)
 				}
@@ -178,7 +178,7 @@ func TestEncrypt3xWidthMixRejected(t *testing.T) {
 	_, d256, _ := mkSeeds256(t)
 	pt := genTestPlaintext(t, 64)
 	// Mix the second data seed only — every other slot is *Seed128.
-	if _, err := Encrypt3x(n128, d128, d256, d128, s128, s128, s128, pt); err == nil {
+	if _, err := Encrypt3x(n128, d128, d256, d128, s128, s128, s128, s128, pt); err == nil {
 		t.Fatalf("Encrypt3x(mixed widths): want error, got nil")
 	}
 }
@@ -199,13 +199,13 @@ func TestEncryptAuth3xDecryptAuth3xRoundtrip(t *testing.T) {
 	t.Run("128", func(t *testing.T) {
 		for _, sz := range sizes {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-				n, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+				n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := EncryptAuth3x(n, d1, d2, d3, s1, s2, s3, pt, mac)
+				ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 				if err != nil {
 					t.Fatalf("EncryptAuth3x: %v", err)
 				}
-				out, err := DecryptAuth3x(n, d1, d2, d3, s1, s2, s3, ct, mac)
+				out, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, ct, mac)
 				if err != nil {
 					t.Fatalf("DecryptAuth3x: %v", err)
 				}
@@ -219,13 +219,13 @@ func TestEncryptAuth3xDecryptAuth3xRoundtrip(t *testing.T) {
 	t.Run("256", func(t *testing.T) {
 		for _, sz := range sizes {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-				n, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
+				n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := EncryptAuth3x(n, d1, d2, d3, s1, s2, s3, pt, mac)
+				ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 				if err != nil {
 					t.Fatalf("EncryptAuth3x: %v", err)
 				}
-				out, err := DecryptAuth3x(n, d1, d2, d3, s1, s2, s3, ct, mac)
+				out, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, ct, mac)
 				if err != nil {
 					t.Fatalf("DecryptAuth3x: %v", err)
 				}
@@ -239,13 +239,13 @@ func TestEncryptAuth3xDecryptAuth3xRoundtrip(t *testing.T) {
 	t.Run("512", func(t *testing.T) {
 		for _, sz := range sizes {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
-				n, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
+				n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := EncryptAuth3x(n, d1, d2, d3, s1, s2, s3, pt, mac)
+				ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 				if err != nil {
 					t.Fatalf("EncryptAuth3x: %v", err)
 				}
-				out, err := DecryptAuth3x(n, d1, d2, d3, s1, s2, s3, ct, mac)
+				out, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, ct, mac)
 				if err != nil {
 					t.Fatalf("DecryptAuth3x: %v", err)
 				}
@@ -264,15 +264,15 @@ func TestEncryptAuth3xTamperDetected(t *testing.T) {
 	}
 	mac := macFuncForTest(key)
 
-	n, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 	pt := genTestPlaintext(t, 1024)
-	ct, err := EncryptAuth3x(n, d1, d2, d3, s1, s2, s3, pt, mac)
+	ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 	if err != nil {
 		t.Fatalf("EncryptAuth3x: %v", err)
 	}
 	tampered := append([]byte(nil), ct...)
 	tampered[len(tampered)/2] ^= 0xFF
-	if _, err := DecryptAuth3x(n, d1, d2, d3, s1, s2, s3, tampered, mac); err == nil {
+	if _, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, tampered, mac); err == nil {
 		t.Fatalf("DecryptAuth3x(tampered): want error, got nil")
 	}
 }

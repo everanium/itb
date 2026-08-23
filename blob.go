@@ -127,9 +127,7 @@ type blobV1 struct {
 // unconditionally via [SetNonceBits] / [SetBarrierFill].
 // [SetMaxWorkers] is excluded — the worker count is a deployment-side
 // decision (CPU budget on the receiver host), not a per-message
-// property. The global LockSeed flag is also excluded — the native
-// path consults [Seed128.AttachedLockSeed] / [Seed256.AttachedLockSeed]
-// / [Seed512.AttachedLockSeed] directly, bypassing that flag.
+// property.
 type blobGlobalsV1 struct {
 	NonceBits   int `json:"nonce_bits"`
 	BarrierFill int `json:"barrier_fill"`

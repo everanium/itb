@@ -70,13 +70,6 @@ var ErrUnknownMAC = errors.New("itb/easy: unknown MAC in state blob")
 // of the primitive's native width.
 var ErrBadKeyBits = errors.New("itb/easy: invalid key_bits in state blob")
 
-// ErrLockSeedAfterEncrypt indicates [Encryptor.SetLockSeed] was
-// called after the encryptor produced its first ciphertext. The
-// bit-permutation derivation path cannot change mid-session without
-// breaking decryptability of previously-emitted ciphertext, so the
-// switch is rejected.
-var ErrLockSeedAfterEncrypt = errors.New("itb/easy: SetLockSeed after first Encrypt is not allowed")
-
 // ErrMismatch indicates the state blob disagrees with the receiver's
 // bound configuration on a specific field. Field is the canonical
 // JSON field name that triggered the rejection.
@@ -152,9 +145,9 @@ type Encryptor struct {
 	// native hash width.
 	KeyBits int
 
-	// Mode selects Single Ouroboros (1, 3 seeds) or Triple Ouroboros
-	// (3, 7 seeds). The integer encoding mirrors the Encrypt /
-	// Encrypt3x distinction at the low-level API.
+	// Mode is the encryptor's mode discriminator. Only Triple Ouroboros
+	// (3, 8 seeds — noise + lockSeed + 3 data + 3 start) is supported.
+	// The integer encoding is retained for state-blob round-tripping.
 	Mode int
 
 	// MACName is the canonical [macs.Registry] name the bound MAC
@@ -173,11 +166,9 @@ type Encryptor struct {
 	// itb-package entry point.
 	cfg *itb.Config
 
-	// seeds holds 3 (Single), 7 (Triple), 4 (Single + LockSeed), or
-	// 8 (Triple + LockSeed) typed seed pointers in canonical order:
-	// Single = [noise, data, start]; Triple = [noise, data1, data2,
-	// data3, start1, start2, start3]; with LockSeed appended at the
-	// end. Each entry is *itb.Seed128, *itb.Seed256, or *itb.Seed512
+	// seeds holds 8 typed seed pointers in canonical order:
+	// [noise, lockSeed, data1, data2, data3, start1, start2, start3].
+	// Each entry is *itb.Seed128, *itb.Seed256, or *itb.Seed512
 	// matching the primitive's native width.
 	seeds []interface{}
 
@@ -202,13 +193,6 @@ type Encryptor struct {
 	// closed is the post-Close guard. Once Close has zeroed key
 	// material, every subsequent method call returns ErrClosed.
 	closed bool
-
-	// firstEncryptCalled tracks whether any Encrypt / EncryptAuth /
-	// EncryptStream call has succeeded on this encryptor. Used by
-	// SetLockSeed to reject mid-session bit-permutation path
-	// switches that would break decryptability of pre-switch
-	// ciphertext.
-	firstEncryptCalled bool
 
 	// nonceBitsExplicit / barrierFillExplicit track whether the
 	// corresponding cfg field was set by an explicit
@@ -285,7 +269,7 @@ func newEncryptor(args ...any) *Encryptor {
 	}
 
 	const mode = 3
-	nSeeds := 7
+	const nSeeds = 8
 
 	cfg := itb.SnapshotGlobals()
 
@@ -298,25 +282,14 @@ func newEncryptor(args ...any) *Encryptor {
 		cfg:       cfg,
 	}
 
-	// Generate one PRF key + one seed per slot.
-	seeds := make([]interface{}, 0, nSeeds+1)
-	prfKeysPerSlot := make([][]byte, 0, nSeeds+1)
+	// Generate one PRF key + one seed per slot in canonical order:
+	// [noise, lockSeed, data1, data2, data3, start1, start2, start3].
+	seeds := make([]interface{}, 0, nSeeds)
+	prfKeysPerSlot := make([][]byte, 0, nSeeds)
 	for i := 0; i < nSeeds; i++ {
 		seed, key := allocSeed(primitive, keyBits, int(spec.Width))
 		seeds = append(seeds, seed)
 		prfKeysPerSlot = append(prfKeysPerSlot, key)
-	}
-
-	// LockSeed: when active in the snapshotted cfg (or after a
-	// pre-Encrypt SetLockSeed(1) call processed by the setter), one
-	// extra seed of the same primitive / width is allocated and
-	// recorded as cfg.LockSeedHandle so the bit-permutation
-	// derivation routes through it instead of noiseSeed.
-	if cfg.LockSeed > 0 {
-		seed, key := allocSeed(primitive, keyBits, int(spec.Width))
-		seeds = append(seeds, seed)
-		prfKeysPerSlot = append(prfKeysPerSlot, key)
-		cfg.LockSeedHandle = seed
 	}
 
 	enc.seeds = seeds

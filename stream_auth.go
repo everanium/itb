@@ -93,8 +93,8 @@ func streamFlagByte(finalFlag bool) byte {
 
 // EncryptStreamAuth3x128 mirrors [EncryptStreamAuth128] for the
 // Triple Ouroboros (7-seed) variant at 128-bit hash width.
-func EncryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuth3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -120,7 +120,7 @@ func EncryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 	}
 
 	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
+		chunk, emitErr := EncryptStreamAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
 		if emitErr != nil {
 			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
 		}
@@ -134,7 +134,7 @@ func EncryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunk, chunkErr := EncryptStreamAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
@@ -152,8 +152,8 @@ func EncryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 
 // DecryptStreamAuth3x128 mirrors [DecryptStreamAuth128] for Triple
 // Ouroboros (7-seed) at 128-bit hash width.
-func DecryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuth3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -176,7 +176,7 @@ func DecryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		plain, finalFlag, err := DecryptStreamAuthenticated3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -201,8 +201,8 @@ func DecryptStreamAuth3x128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 
 // EncryptStreamAuth3x256 mirrors [EncryptStreamAuth128] for Triple
 // Ouroboros (7-seed) at 256-bit hash width.
-func EncryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuth3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -228,7 +228,7 @@ func EncryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 	}
 
 	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
+		chunk, emitErr := EncryptStreamAuthenticated3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
 		if emitErr != nil {
 			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
 		}
@@ -242,7 +242,7 @@ func EncryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunk, chunkErr := EncryptStreamAuthenticated3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
@@ -260,8 +260,8 @@ func EncryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 
 // DecryptStreamAuth3x256 mirrors [DecryptStreamAuth128] for Triple
 // Ouroboros (7-seed) at 256-bit hash width.
-func DecryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuth3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -284,7 +284,7 @@ func DecryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		plain, finalFlag, err := DecryptStreamAuthenticated3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -309,8 +309,8 @@ func DecryptStreamAuth3x256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 
 // EncryptStreamAuth3x512 mirrors [EncryptStreamAuth128] for Triple
 // Ouroboros (7-seed) at 512-bit hash width.
-func EncryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuth3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -336,7 +336,7 @@ func EncryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 	}
 
 	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
+		chunk, emitErr := EncryptStreamAuthenticated3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
 		if emitErr != nil {
 			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
 		}
@@ -350,7 +350,7 @@ func EncryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunk, chunkErr := EncryptStreamAuthenticated3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
@@ -368,8 +368,8 @@ func EncryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 
 // DecryptStreamAuth3x512 mirrors [DecryptStreamAuth128] for Triple
 // Ouroboros (7-seed) at 512-bit hash width.
-func DecryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuth3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -392,7 +392,7 @@ func DecryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		plain, finalFlag, err := DecryptStreamAuthenticated3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -422,8 +422,8 @@ func DecryptStreamAuth3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSee
 // per-encryptor NonceBits / BarrierFill / LockSeed
 
 // EncryptStreamAuth3x128Cfg is the Cfg variant of [EncryptStreamAuth3x128].
-func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -449,7 +449,7 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 	}
 
 	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
+		chunk, emitErr := EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
 		if emitErr != nil {
 			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
 		}
@@ -463,7 +463,7 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunk, chunkErr := EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
@@ -480,8 +480,8 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 }
 
 // DecryptStreamAuth3x128Cfg is the Cfg variant of [DecryptStreamAuth3x128].
-func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds128(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -504,7 +504,7 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		plain, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -528,8 +528,8 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 }
 
 // EncryptStreamAuth3x256Cfg is the Cfg variant of [EncryptStreamAuth3x256].
-func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -555,7 +555,7 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 	}
 
 	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
+		chunk, emitErr := EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
 		if emitErr != nil {
 			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
 		}
@@ -569,7 +569,7 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunk, chunkErr := EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
@@ -586,8 +586,8 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 }
 
 // DecryptStreamAuth3x256Cfg is the Cfg variant of [DecryptStreamAuth3x256].
-func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds256(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -610,7 +610,7 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		plain, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -634,8 +634,8 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 }
 
 // EncryptStreamAuth3x512Cfg is the Cfg variant of [EncryptStreamAuth3x512].
-func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -661,7 +661,7 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 	}
 
 	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
+		chunk, emitErr := EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
 		if emitErr != nil {
 			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
 		}
@@ -675,7 +675,7 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunk, chunkErr := EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
@@ -692,8 +692,8 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 }
 
 // DecryptStreamAuth3x512Cfg is the Cfg variant of [DecryptStreamAuth3x512].
-func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	if macFunc == nil {
@@ -716,7 +716,7 @@ func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dat
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		plain, finalFlag, err := DecryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}

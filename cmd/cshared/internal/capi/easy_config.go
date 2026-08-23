@@ -2,14 +2,14 @@ package capi
 
 // Per-instance configuration setters mirroring the Encryptor.Set*
 // methods on the easy side. Each call mutates only the encryptor's
-// own itb.Config copy; the process-global setters (SetLockSeed,
-// SetNonceBits, SetBarrierFill) are not touched and other encryptors
-// built before / after this call are not affected.
+// own itb.Config copy; the process-global setters (SetNonceBits,
+// SetBarrierFill) are not touched and other encryptors built
+// before / after this call are not affected.
 //
 // Every setter routes through recoverEasyPanic so that easy-side
-// panics on out-of-range input (SetNonceBits / SetBarrierFill /
-// SetLockSeed) translate cleanly into the matching FFI Status code
-// rather than tearing down the host process.
+// panics on out-of-range input (SetNonceBits / SetBarrierFill)
+// translate cleanly into the matching FFI Status code rather than
+// tearing down the host process.
 
 // EasySetNonceBits forwards to Encryptor.SetNonceBits. Valid values:
 // 128, 256, 512. Any other value yields StatusBadInput.
@@ -32,22 +32,6 @@ func EasySetBarrierFill(id EasyHandleID, n int) (st Status) {
 		return st
 	}
 	h.enc.SetBarrierFill(n)
-	return StatusOK
-}
-
-// EasySetLockSeed forwards to Encryptor.SetLockSeed. Valid values:
-// 0 (off), 1 (on). Any other value yields StatusBadInput. Calling
-// this method after the encryptor has produced its first ciphertext
-// yields StatusEasyLockSeedAfterEncrypt — the bit-permutation
-// derivation path cannot change mid-session without breaking
-// decryptability of pre-switch ciphertext.
-func EasySetLockSeed(id EasyHandleID, mode int) (st Status) {
-	defer recoverEasyPanic(&st, StatusBadInput)
-	h, st := resolveEasy(id)
-	if st != StatusOK {
-		return st
-	}
-	h.enc.SetLockSeed(int32(mode))
 	return StatusOK
 }
 

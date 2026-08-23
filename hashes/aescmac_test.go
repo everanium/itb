@@ -118,12 +118,12 @@ func TestAESCMACEndToEndItb(t *testing.T) {
 
 	for _, keyBits := range []int{512, 1024, 2048} {
 		t.Run(itoa(keyBits), func(t *testing.T) {
-			ns, d1, d2, d3, s1, s2, s3 := mkAESCMACSeven(t, keyBits)
-			ct, err := itb.Encrypt3x128(ns, d1, d2, d3, s1, s2, s3, plaintext)
+			ns, ls, d1, d2, d3, s1, s2, s3 := mkAESCMACEight(t, keyBits)
+			ct, err := itb.Encrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 			if err != nil {
 				t.Fatalf("Encrypt3x128: %v", err)
 			}
-			pt, err := itb.Decrypt3x128(ns, d1, d2, d3, s1, s2, s3, ct)
+			pt, err := itb.Decrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
 				t.Fatalf("Decrypt3x128: %v", err)
 			}
@@ -134,7 +134,7 @@ func TestAESCMACEndToEndItb(t *testing.T) {
 	}
 }
 
-func mkAESCMACSeven(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128) {
+func mkAESCMACEight(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128) {
 	t.Helper()
 	mk := func() *itb.Seed128 {
 		fn, _ := AESCMAC()
@@ -144,7 +144,7 @@ func mkAESCMACSeven(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb
 		}
 		return s
 	}
-	return mk(), mk(), mk(), mk(), mk(), mk(), mk()
+	return mk(), mk(), mk(), mk(), mk(), mk(), mk(), mk()
 }
 
 // TestAESCMAC128BatchedParityWithSingle confirms that the 4-way
@@ -336,16 +336,17 @@ func TestAESCMACMakePairITBRoundtrip(t *testing.T) {
 		return s
 	}
 	ns := mkSeed()
+	ls := mkSeed()
 	d1, d2, d3 := mkSeed(), mkSeed(), mkSeed()
 	s1, s2, s3 := mkSeed(), mkSeed(), mkSeed()
 	if ns.BatchHash == nil || d1.BatchHash == nil {
 		t.Skip("batched arm unavailable on this host")
 	}
-	encrypted, err := itb.Encrypt3x128(ns, d1, d2, d3, s1, s2, s3, plaintext)
+	encrypted, err := itb.Encrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x128: %v", err)
 	}
-	decrypted, err := itb.Decrypt3x128(ns, d1, d2, d3, s1, s2, s3, encrypted)
+	decrypted, err := itb.Decrypt3x128(ns, ls, d1, d2, d3, s1, s2, s3, encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt3x128: %v", err)
 	}

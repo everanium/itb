@@ -1,9 +1,9 @@
 package easy
 
 // Close zeroes the encryptor's PRF keys, MAC key, and seed
-// components, drops the bound MAC closure and any dedicated
-// LockSeedHandle, and marks the encryptor as closed. Subsequent
-// method calls on this instance panic with [ErrClosed].
+// components, drops the bound MAC closure, and marks the encryptor
+// as closed. Subsequent method calls on this instance panic with
+// [ErrClosed].
 //
 // Idempotent — multiple Close calls return nil without panic.
 //
@@ -30,10 +30,6 @@ func (e *Encryptor) Close() error {
 	e.seeds = nil
 
 	e.macFunc = nil
-
-	if e.cfg != nil {
-		e.cfg.LockSeedHandle = nil
-	}
 
 	e.closed = true
 	return nil
