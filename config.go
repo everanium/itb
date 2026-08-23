@@ -30,8 +30,9 @@ type Config struct {
 }
 
 // DefaultNonceBits is the nonce width in bits used when [Config.NonceBits]
-// is left at zero. Matches [NonceSize] * 8 for wire-compat with the
-// pre-Cfg default.
+// is left at zero. Derived from [NonceSize] * 8 = 512 bits — chosen so
+// the birthday-bound on collision under fresh-nonce generation is beyond
+// any realistic deployment volume without the caller having to override.
 const DefaultNonceBits = NonceSize * 8
 
 // DefaultBarrierFill is the CSPRNG barrier fill margin used when

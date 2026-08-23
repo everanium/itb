@@ -437,8 +437,8 @@ func TestNewSeedFromComponentsBadKeySize(t *testing.T) {
 // width matches the itb DefaultNonceBits constant (used by bindings
 // that need a sentinel for streaming without threading a Config).
 func TestDefaultNonceBits(t *testing.T) {
-	if got := DefaultNonceBits(); got != 128 {
-		t.Errorf("DefaultNonceBits() = %d, want 128", got)
+	if got := DefaultNonceBits(); got != 512 {
+		t.Errorf("DefaultNonceBits() = %d, want 512", got)
 	}
 }
 
