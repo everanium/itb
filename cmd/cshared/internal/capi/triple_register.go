@@ -24,7 +24,18 @@ import (
 //   - mode                 — one of streaming-aead / streaming-noaead
 //     / singlemsg-mac / singlemsg-nomac / blob-only.
 //   - width                — 128 / 256 / 512 decimal integer.
-//   - innerHash            — canonical ITB hash primitive name.
+//   - innerHash            — canonical ITB hash primitive name for
+//     the single-primitive dispatch path. Leave empty when
+//     innerHashes is supplied.
+//   - innerHashes          — comma-separated eight-entry per-slot
+//     primitive constellation for the mixed-primitive dispatch path.
+//     Slot ordering matches [triple.Profile.MixedHashes]:
+//     [noise, lock, data1, data2, data3, start1, start2, start3].
+//     Exactly 8 entries required; every entry must resolve via
+//     [hashes.Find] and every entry's primitive width must equal
+//     width. Repeats within a profile are permitted. Leave empty
+//     when innerHash is supplied; the two paths are mutually
+//     exclusive.
 //   - keyBits              — positive integer multiple of width.
 //   - macName              — canonical MAC primitive name (empty for
 //     No-MAC profiles).
@@ -98,6 +109,17 @@ func parseTripleRegisterOpts(query string) (triple.Profile, error) {
 			prof.Width = n
 		case "innerHash":
 			prof.InnerHash = v
+		case "innerHashes":
+			if v == "" {
+				continue
+			}
+			entries := strings.Split(v, ",")
+			if len(entries) != 8 {
+				return prof, fmt.Errorf("register-profile opts innerHashes: got %d entries, want exactly 8", len(entries))
+			}
+			for i, name := range entries {
+				prof.MixedHashes[i] = name
+			}
 		case "keyBits":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
