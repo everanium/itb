@@ -38,8 +38,8 @@
 //
 // Reader notice — the Interlocked Barrier is always on and
 // non-disableable; the Triple 3-snake payload split is the only
-// cipher mode. There are no runtime overlay toggles, no
-// engage/disengage knobs, and no Single Message legacy surface — the
-// package exposes one lifecycle (Init/Open/Rekey/Close) plus one
-// cipher pair per shape (message, stream).
+// cipher mode. There are no runtime overlay toggles and no
+// engage/disengage knobs — the package exposes one lifecycle
+// (Init/Open/Rekey/Close) plus one cipher pair per shape
+// (message, stream).
 package triple
