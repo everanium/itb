@@ -1,11 +1,18 @@
 package easy
 
 import (
+	"crypto/rand"
 	"fmt"
 	"io"
 
 	"github.com/everanium/itb"
 )
+
+// streamEnvelopePrefixLen is the on-wire length of the 32-byte CSPRNG
+// envelope prefix emitted at stream open. Mirrors the Streaming AEAD
+// path's streamID prefix bit-for-bit in length so a wire observer
+// cannot distinguish the No-MAC envelope from the AEAD envelope.
+const streamEnvelopePrefixLen = 32
 
 // ChunkFunc is the per-chunk callback driven by [Encryptor.EncryptStream]
 // and [Encryptor.DecryptStream]. The encryptor invokes ChunkFunc once
@@ -112,6 +119,7 @@ func (e *Encryptor) EncryptStreamIO(src io.Reader, dst io.Writer, chunkSize int)
 	}
 
 	stage := make([]byte, chunkSize)
+	var prefixEmitted bool
 	for {
 		n, rerr := io.ReadFull(src, stage)
 		if rerr == io.EOF {
@@ -122,6 +130,16 @@ func (e *Encryptor) EncryptStreamIO(src io.Reader, dst io.Writer, chunkSize int)
 		}
 		if n == 0 {
 			return nil
+		}
+		if !prefixEmitted {
+			prefix := make([]byte, streamEnvelopePrefixLen)
+			if _, err := rand.Read(prefix); err != nil {
+				return fmt.Errorf("itb/easy: crypto/rand: %w", err)
+			}
+			if _, werr := dst.Write(prefix); werr != nil {
+				return werr
+			}
+			prefixEmitted = true
 		}
 		ct, encErr := e.Encrypt(stage[:n])
 		if encErr != nil {
@@ -153,6 +171,18 @@ func (e *Encryptor) EncryptStreamIO(src io.Reader, dst io.Writer, chunkSize int)
 func (e *Encryptor) DecryptStreamIO(src io.Reader, dst io.Writer) error {
 	if e.closed {
 		panic(ErrClosed)
+	}
+
+	prefix := make([]byte, streamEnvelopePrefixLen)
+	n, perr := io.ReadFull(src, prefix)
+	if perr == io.EOF && n == 0 {
+		return nil
+	}
+	if perr == io.ErrUnexpectedEOF || (perr == io.EOF && n != streamEnvelopePrefixLen) {
+		return fmt.Errorf("itb/easy: stream too short for envelope prefix")
+	}
+	if perr != nil {
+		return perr
 	}
 
 	for {

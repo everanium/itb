@@ -1,5 +1,23 @@
 package itb
 
+import (
+	"crypto/rand"
+	"fmt"
+)
+
+// nomacStreamPrefix draws a fresh CSPRNG dummy stream anchor for the
+// No-MAC streaming path. Length matches [streamIDPrefixLen] so a wire
+// observer cannot distinguish the No-MAC envelope prefix from the
+// AEAD streamID prefix. The bytes are never re-consumed on either
+// side — the decoder just skips the same-length window.
+func nomacStreamPrefix() ([]byte, error) {
+	buf := make([]byte, streamIDPrefixLen)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
+	}
+	return buf, nil
+}
+
 // nomacTagStubSize is the number of bytes the No-MAC Encrypt3x pipeline
 // reserves at the tail of the third snake's container capacity so its
 // on-wire envelope matches the Streaming AEAD chunk envelope
