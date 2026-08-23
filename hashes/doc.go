@@ -13,8 +13,8 @@
 // Without these cached wrappers per-pixel hashing would re-derive
 // every primitive's keyed state on every call, which is the dominant
 // cost in ITB's encrypt / decrypt path. The factories are taken
-// directly from the bench-validated reference wrappers — see BENCH.md
-// for measured throughput across all primitives × three ITB key
+// directly from the bench-validated reference wrappers — see BENCH3.md
+// for measured throughput across the registry × three ITB key
 // widths (512 / 1024 / 2048).
 //
 // Canonical names and ordering (used by [Registry], [Find], [Make128],
