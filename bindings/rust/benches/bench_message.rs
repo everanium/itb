@@ -1,23 +1,68 @@
-//! EncryptMessage throughput vs plaintext size (Single Message
-//! profile).
+//! Message-shape throughput vs plaintext size.
+//!
+//! Bench configuration is driven by environment variables so a
+//! side-by-side comparison with the root Go bench harness is
+//! straightforward. All four override the shipped profile default;
+//! omitting them targets the Low-Level fair-comparison shape.
+//!
+//! | env var            | default   | notes                                      |
+//! |--------------------|-----------|--------------------------------------------|
+//! | ITB_NONCE_BITS     | 128       | matches BENCH3.md pin                      |
+//! | ITB_KEY_BITS       | 1024      | matches old bindings/rust/benches/BENCH.md |
+//! | ITB_WITH_PARALLAX  | false     | root Go bench runs without parallax        |
+//! | ITB_WITH_WRAPPER   | false     | root Go bench runs without the wrapper     |
+//! | ITB_INNER_HASH     | (profile) | opaque hash name                           |
 
+use std::env;
 use std::time::Duration;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use itb::{OptsBuilder, Pipeline, set_gc_percent, set_memory_limit};
 
+fn build_opts() -> OptsBuilder {
+    let nonce_bits = env::var("ITB_NONCE_BITS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(128);
+    let key_bits = env::var("ITB_KEY_BITS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(1024);
+    let with_parallax = env::var("ITB_WITH_PARALLAX")
+        .ok()
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+    let with_wrapper = env::var("ITB_WITH_WRAPPER")
+        .ok()
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    let mut opts = OptsBuilder::new()
+        .with_nonce_bits(nonce_bits)
+        .with_key_bits(key_bits)
+        .with_parallax(with_parallax)
+        .with_wrapper(with_wrapper);
+    if let Ok(name) = env::var("ITB_INNER_HASH") {
+        if !name.is_empty() {
+            opts = opts.with_inner_hash(&name);
+        }
+    }
+    opts
+}
+
+fn profile_name() -> String {
+    env::var("ITB_PROFILE").unwrap_or_else(|_| "singlemsg-triple-nomac-v1".to_string())
+}
+
 fn bench_message(c: &mut Criterion) {
-    // Cap the Go runtime's heap for bench-scale allocation churn.
-    // Without these, encrypting a 16 MiB plaintext in tight
-    // Criterion loops has the runtime hold arbitrarily large
-    // scratch heaps between GC cycles.
     let _ = set_memory_limit(512 << 20);
     let _ = set_gc_percent(20);
-    let pipe = Pipeline::init("singlemsg-triple-mac-v1", &OptsBuilder::new()).unwrap();
+    let opts = build_opts();
+    let pipe = Pipeline::init(&profile_name(), &opts).unwrap();
     let mut group = c.benchmark_group("encrypt_message");
     group
         .sample_size(10)
-        .measurement_time(Duration::from_secs(2));
+        .measurement_time(Duration::from_secs(5));
     for size in [1usize << 10, 1 << 16, 1 << 20, 16 << 20] {
         let plain = vec![0xA5u8; size];
         group.throughput(Throughput::Bytes(size as u64));

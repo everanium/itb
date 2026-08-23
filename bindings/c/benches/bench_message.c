@@ -35,12 +35,20 @@ int main(void)
     (void)itb_set_memory_limit(512LL << 20); /* 512 MiB soft cap */
     (void)itb_set_gc_percent(20);            /* aggressive GC */
 
-    itb_pipeline *pipe = NULL;
-    itb_status st = itb_pipeline_init("singlemsg-triple-mac-v1", NULL, &pipe);
-    if (st != ITB_STATUS_OK) {
-        fprintf(stderr, "bench_message: init failed: %s\n", itb_last_error());
+    itb_opts *opts = bench_build_opts();
+    if (opts == NULL) {
+        fprintf(stderr, "bench_message: opts alloc failed\n");
         return 1;
     }
+    itb_pipeline *pipe = NULL;
+    itb_status st = itb_pipeline_init(bench_profile_name("singlemsg-triple-nomac-v1"),
+                                      opts, &pipe);
+    if (st != ITB_STATUS_OK) {
+        fprintf(stderr, "bench_message: init failed: %s\n", itb_last_error());
+        itb_opts_free(opts);
+        return 1;
+    }
+    itb_opts_free(opts);
     bench_header();
     static const size_t sizes[] = {
         (size_t)1 << 10, (size_t)1 << 16, (size_t)1 << 20, (size_t)16 << 20,
