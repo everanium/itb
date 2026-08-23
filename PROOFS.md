@@ -233,7 +233,7 @@ The attacker cannot verify individual pixel rotations independently. The total c
 |{(r₁, r₂, ..., r_P) : rᵢ ∈ {0,...,6}}| = 7^P
 ```
 
-For P = 196 (minimum Encrypt/Stream container, 1024-bit key): 7^196 ≈ 10^166 ≈ 2^550 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^166 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. For P = 400 (minimum Auth container): 7^400 ≈ 2^1123. The noise barrier (2^1568 for 196 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer limit. ∎
+For P = 196 (the ⌈1024 / log₂(56)⌉-derived container at a 1024-bit key — a looser worked bound below the shipped floor; see the MinPixels unification note in [Proof 5](#proof-5-noise-barrier-bound)): 7^196 ≈ 10^166 ≈ 2^550 — exceeds the Landauer thermodynamic limit (~2^306 ≈ 10^92), and each of the 10^166 rotation configurations requires independent ChainHash evaluation to verify, making exhaustive search computationally infeasible with any foreseeable technology. For P = 400 (the unified shipped floor `MinPixels := MinPixelsAuth`, 1024-bit key): 7^400 ≈ 2^1123. The noise barrier (2^1568 for 196 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer limit. ∎
 
 This proof covers one layer (rotation barrier). For the complete multi-factor Full KPA defense, see [Proof 4a](#proof-4a-multi-factor-full-kpa-resistance).
 

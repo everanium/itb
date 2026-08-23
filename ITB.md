@@ -352,7 +352,7 @@ In AES or ChaCha20, testing one candidate key takes on the order of a nanosecond
 
 | Data size | P (pixels) | Time per attempt | vs AES |
 |---|---|---|---|
-| 1 KB | 196 | ~31 µs | ~31,000× slower |
+| Min container (~2.5 KB) | 400 | ~64 µs | ~64,000× slower |
 | 4 MB | 602,176 | ~96 ms | ~96 million× slower |
 | 16 MB | 2,408,704 | ~385 ms | ~385 million× slower |
 | 64 MB | 9,628,609 | ~1.5 s | ~1.5 billion× slower |
