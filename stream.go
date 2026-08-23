@@ -73,7 +73,10 @@ func ParseChunkLen(data []byte) (int, error) {
 
 // --- Triple Ouroboros streaming (7-seed) ---
 
-// EncryptStream3x128 encrypts data in chunks using Triple Ouroboros (128-bit variant).
+// EncryptStream3x128 encrypts data in chunks using Triple Ouroboros
+// (128-bit variant). Emits a 32-byte CSPRNG dummy prefix ahead of the
+// chunk stream so the envelope shape matches the Streaming AEAD
+// variant bit-for-bit — a wire observer cannot distinguish the two.
 func EncryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -86,6 +89,13 @@ func EncryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	prefix, err := nomacStreamPrefix()
+	if err != nil {
+		return err
+	}
+	if err := emit(prefix); err != nil {
+		return err
 	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
@@ -103,12 +113,21 @@ func EncryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	return nil
 }
 
-// DecryptStream3x128 decrypts concatenated chunks produced by EncryptStream3x128.
+// DecryptStream3x128 decrypts concatenated chunks produced by
+// EncryptStream3x128. Skips the 32-byte envelope prefix at the front
+// of data; an empty data slice is treated as a clean end-of-stream
+// before the prefix arrives.
 func DecryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
-	for off := 0; off < len(data); {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) < streamIDPrefixLen {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	for off := streamIDPrefixLen; off < len(data); {
 		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
@@ -125,7 +144,10 @@ func DecryptStream3x128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	return nil
 }
 
-// EncryptStream3x256 encrypts data in chunks using Triple Ouroboros (256-bit variant).
+// EncryptStream3x256 encrypts data in chunks using Triple Ouroboros
+// (256-bit variant). Emits a 32-byte CSPRNG dummy prefix ahead of the
+// chunk stream so the envelope shape matches the Streaming AEAD
+// variant bit-for-bit — a wire observer cannot distinguish the two.
 func EncryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -138,6 +160,13 @@ func EncryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	prefix, err := nomacStreamPrefix()
+	if err != nil {
+		return err
+	}
+	if err := emit(prefix); err != nil {
+		return err
 	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
@@ -155,12 +184,21 @@ func EncryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	return nil
 }
 
-// DecryptStream3x256 decrypts concatenated chunks produced by EncryptStream3x256.
+// DecryptStream3x256 decrypts concatenated chunks produced by
+// EncryptStream3x256. Skips the 32-byte envelope prefix at the front
+// of data; an empty data slice is treated as a clean end-of-stream
+// before the prefix arrives.
 func DecryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
-	for off := 0; off < len(data); {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) < streamIDPrefixLen {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	for off := streamIDPrefixLen; off < len(data); {
 		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
@@ -177,7 +215,10 @@ func DecryptStream3x256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	return nil
 }
 
-// EncryptStream3x512 encrypts data in chunks using Triple Ouroboros (512-bit variant).
+// EncryptStream3x512 encrypts data in chunks using Triple Ouroboros
+// (512-bit variant). Emits a 32-byte CSPRNG dummy prefix ahead of the
+// chunk stream so the envelope shape matches the Streaming AEAD
+// variant bit-for-bit — a wire observer cannot distinguish the two.
 func EncryptStream3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -190,6 +231,13 @@ func EncryptStream3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	prefix, err := nomacStreamPrefix()
+	if err != nil {
+		return err
+	}
+	if err := emit(prefix); err != nil {
+		return err
 	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
@@ -207,12 +255,21 @@ func EncryptStream3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, st
 	return nil
 }
 
-// DecryptStream3x512 decrypts concatenated chunks produced by EncryptStream3x512.
+// DecryptStream3x512 decrypts concatenated chunks produced by
+// EncryptStream3x512. Skips the 32-byte envelope prefix at the front
+// of data; an empty data slice is treated as a clean end-of-stream
+// before the prefix arrives.
 func DecryptStream3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
-	for off := 0; off < len(data); {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) < streamIDPrefixLen {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	for off := streamIDPrefixLen; off < len(data); {
 		chunkLen, err := ParseChunkLen(data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
@@ -278,6 +335,13 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
+	prefix, err := nomacStreamPrefix()
+	if err != nil {
+		return err
+	}
+	if err := emit(prefix); err != nil {
+		return err
+	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
@@ -299,7 +363,13 @@ func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
-	for off := 0; off < len(data); {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) < streamIDPrefixLen {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	for off := streamIDPrefixLen; off < len(data); {
 		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
@@ -330,6 +400,13 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
+	prefix, err := nomacStreamPrefix()
+	if err != nil {
+		return err
+	}
+	if err := emit(prefix); err != nil {
+		return err
+	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
@@ -351,7 +428,13 @@ func DecryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
-	for off := 0; off < len(data); {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) < streamIDPrefixLen {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	for off := streamIDPrefixLen; off < len(data); {
 		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
@@ -382,6 +465,13 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
+	prefix, err := nomacStreamPrefix()
+	if err != nil {
+		return err
+	}
+	if err := emit(prefix); err != nil {
+		return err
+	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
@@ -403,7 +493,13 @@ func DecryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
-	for off := 0; off < len(data); {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) < streamIDPrefixLen {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	for off := streamIDPrefixLen; off < len(data); {
 		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
