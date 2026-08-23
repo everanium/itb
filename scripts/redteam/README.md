@@ -1,33 +1,41 @@
 # scripts/redteam — Python attack tooling status
 
-This directory carries two distinct bands of tooling. Both live here in
-place; nothing is moved. What separates them is whether the shipped
-v0.3.0 documentation still references the script.
+Every script in this directory is functional. What differs between
+scripts is the range of ITB versions each is compatible with, because
+the v0.3.0 wire hard-fork (Triple-only, 48-bit Interlocked Barrier
+non-disableable, 8-seed API) changes what the attack surface looks
+like from Python's side.
 
-- **Live under v0.3.0** — cited by [HARNESS.md](../../HARNESS.md) (or
-  [REDTEAM.md](../../REDTEAM.md)) as a reproduction path a reader can
-  invoke today against the shipped construction. These scripts are the
+Nothing is moved. The scripts split into two compatibility bands:
+
+- **Compatible with v0.3.0+ (and also with ≤ v0.2.1)** — cited by
+  [HARNESS.md](../../HARNESS.md) as a reproduction path a reader can
+  invoke today against the shipped construction. These are the
   primitive-shelf validation surface (Axes A / A′ / B / C on
   non-cryptographic and reduced-round primitives) plus the SAT-free
   pre-screen. They characterise **individual hash primitives** and
   their `ChainHash128`-wrapped variants — the barrier layer is not in
-  scope, so the wire hard-fork at v0.3.0 does not invalidate them.
-- **Pre-v0.3.0 archived** — implements attacks that assumed **Single
+  scope for the measurement, so the wire hard-fork at v0.3.0 does not
+  invalidate them.
+- **Compatible with ≤ v0.2.1 only** — attacks that assumed **Single
   Ouroboros** or ran with the **overlay disengaged**. Both conditions
   are permanently gone in v0.3.0 (Triple is the only construction, the
   48-bit Interlocked Barrier is non-disableable), so these scripts
-  cannot be re-run against the shipped tree. Their historical results
-  are preserved verbatim in [archive/REDTEAM-v0.2.md](../../archive/REDTEAM-v0.2.md)
+  require a pre-v0.3.0 tree to run. Check out the last v0.2 commit
+  (the parent of the first v0.3.0 commit `2133136`, i.e. `git checkout
+  2133136^`) into a work tree and the scripts execute exactly as they
+  did on that release. Their historical results are also preserved
+  verbatim in [archive/REDTEAM-v0.2.md](../../archive/REDTEAM-v0.2.md)
   and [archive/HARNESS-v0.2.md](../../archive/HARNESS-v0.2.md). The
-  scripts remain in tree as reference — templates for future Python
-  probe sequences and the source `redteam_broken_test.go` cites when
-  attributing ported logic.
+  scripts remain in tree as templates for future Python probe
+  sequences and as the attribution source `redteam_broken_test.go`
+  cites when it ports logic.
 
 The v0.3.0 empirical validation itself is delivered as shipped Go
 tests, not Python. See the [Go test surface](#where-the-v030-empirical-validation-lives)
 section at the bottom.
 
-## Live under v0.3.0
+## Compatible with v0.3.0+ (and ≤ v0.2.1)
 
 Cited by HARNESS.md and reproducible against the shipped tree.
 
@@ -61,12 +69,14 @@ Cited by HARNESS.md and reproducible against the shipped tree.
 - `common.py`, `_bias_cell_emit.py`, `_matrix_cell_emit.py` — shelf-shared
   cell emit / config plumbing.
 
-## Pre-v0.3.0 archived (not reproducible against v0.3.0)
+## Compatible with ≤ v0.2.1 only
 
-Cited only from [archive/REDTEAM-v0.2.md](../../archive/REDTEAM-v0.2.md).
-Not runnable against the shipped tree: the attacks assumed Single Ouroboros
-and/or the overlay disengaged. Kept in tree as templates for future Python
-probe sequences and as attribution sources for the ported Go tests.
+Cited from [archive/REDTEAM-v0.2.md](../../archive/REDTEAM-v0.2.md).
+Reproducible against a checked-out pre-v0.3.0 tree (`git checkout 2133136^`);
+not against the shipped v0.3.0+ tree, where Single Ouroboros and the
+overlay-disengaged mode the attacks target no longer exist. Kept in
+tree as templates for future Python probe sequences and as attribution
+sources for the ported Go tests.
 
 ### Broken-primitive attack scripts
 
@@ -91,10 +101,10 @@ probe sequences and as attribution sources for the ported Go tests.
 ### Aggregation and matrix orchestrators
 
 - `aggregate_bias_audit.py` — Axis-B result aggregation across the
-  4-primitive matrix; still callable from live `harness_bias_audit_*.sh`
-  and lands here in the archived band because the historical
-  4-primitive matrix (crc128 / fnv1a / blake3 / md5) it aggregated is a
-  pre-v0.3.0 artefact.
+  4-primitive matrix; still callable from the v0.3.0+ `harness_bias_audit_*.sh`
+  and lands here in the ≤ v0.2.1-only band because the 4-primitive
+  matrix (crc128 / fnv1a / blake3 / md5) it aggregates is a pre-v0.3.0
+  artefact.
 - `aggregate_crc128_matrix.py`, `aggregate_partial_kpa_matrix.py`
 - `bias_audit_matrix.sh`, `bias_audit_matrix_triple.sh`
 - `crc128_compound_key_matrix.sh`, `partial_kpa_matrix.sh`
