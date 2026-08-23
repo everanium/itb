@@ -1,0 +1,63 @@
+/* encrypt_stream_pump throughput vs plaintext size (Streaming AEAD
+ * profile) at 1 KiB / 64 KiB / 1 MiB / 16 MiB. */
+
+#define _POSIX_C_SOURCE 200809L /* clock_gettime under -std=c11 */
+
+#include <string.h>
+
+#include "bench_util.h"
+
+struct stream_ctx {
+    itb_pipeline *pipe;
+    uint8_t *plain;
+    size_t size;
+};
+
+static int run_stream_pump(void *raw)
+{
+    struct stream_ctx *ctx = raw;
+    uint8_t *wire = NULL;
+    size_t wire_len = 0;
+    itb_status st = itb_pipeline_encrypt_stream_pump(ctx->pipe, ctx->plain,
+                                                     ctx->size, &wire,
+                                                     &wire_len);
+    if (st != ITB_STATUS_OK) {
+        return 1;
+    }
+    itb_bytes_free(wire);
+    return 0;
+}
+
+int main(void)
+{
+    /* Bench-scale allocation churn leaks Go scratch heap unboundedly
+     * without a soft memory cap + aggressive GC; the return values
+     * report the previous settings, not an error. */
+    (void)itb_set_memory_limit(512LL << 20); /* 512 MiB soft cap */
+    (void)itb_set_gc_percent(20);            /* aggressive GC */
+
+    itb_pipeline *pipe = NULL;
+    itb_status st = itb_pipeline_init("streaming-aead-triple-mac-v1", NULL,
+                                      &pipe);
+    if (st != ITB_STATUS_OK) {
+        fprintf(stderr, "bench_stream: init failed: %s\n", itb_last_error());
+        return 1;
+    }
+    bench_header();
+    static const size_t sizes[] = {
+        (size_t)1 << 10, (size_t)1 << 16, (size_t)1 << 20, (size_t)16 << 20,
+    };
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        uint8_t *plain = malloc(sizes[i]);
+        if (plain == NULL) {
+            fprintf(stderr, "bench_stream: out of memory\n");
+            return 1;
+        }
+        memset(plain, 0x5A, sizes[i]);
+        struct stream_ctx ctx = { pipe, plain, sizes[i] };
+        bench_case("stream_pump", sizes[i], run_stream_pump, &ctx);
+        free(plain);
+    }
+    itb_pipeline_free(pipe);
+    return 0;
+}
