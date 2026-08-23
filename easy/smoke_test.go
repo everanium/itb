@@ -98,10 +98,10 @@ func TestSmokeGettersDefensiveCopy(t *testing.T) {
 	enc := easy.New3()
 	defer enc.Close()
 
-	// Single mode has 3 base seed slots; a dedicated lockSeed (active
-	// when ITB_LOCKSEED=1 is snapshotted at construction) appends a
-	// 4th. SeedComponents tracks the live slot count, so the expected
-	// PRFKeys length is derived from it rather than hardcoded.
+	// Triple mode always carries 8 seed slots (noise + lockSeed +
+	// 3 data + 3 start). SeedComponents tracks the live slot count,
+	// so the expected PRFKeys length is derived from it rather than
+	// hardcoded.
 	wantSlots := len(enc.SeedComponents())
 	prfKeys := enc.PRFKeys()
 	if len(prfKeys) != wantSlots {
