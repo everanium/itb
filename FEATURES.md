@@ -26,7 +26,7 @@
 
 - **Dynamic Key Size.** 512 to 2048 bits. Alignment depends on hash width: 128-bit multiples for `Seed128`, 256-bit multiples for `Seed256`, 512-bit multiples for `Seed512`. Effective security upper-bounded by `min(keyBits, hashInternalState × numRounds)`. With BLAKE3 (256-bit internal state): 2048-bit effective security (no bottleneck). With AES-CMAC / SipHash-2-4 (128-bit): 1024 bits.
 
-- **Per-Message Nonce (128/256/512-bit).** Generated from `crypto/rand` on every encryption call. Default 128-bit (`itb.DefaultNonceBits`); configurable per-Pipeline via `*itb.Config{NonceBits: N}`. Mixed into every hash invocation. Mandatory — prevents pixel configuration reuse across messages. Birthday collision after ~2^64 messages (128-bit), ~2^128 (256-bit), ~2^256 (512-bit).
+- **Per-Message Nonce (128/256/512-bit).** Generated from `crypto/rand` on every encryption call. Default 512-bit (`itb.DefaultNonceBits`) — the birthday bound (~2^256 messages) is mathematically unreachable on any foreseeable hardware, so the safety-out-of-box is maximal without caller override; configurable down to 128 or 256 bits per-Pipeline via `*itb.Config{NonceBits: N}`. Mixed into every hash invocation. Mandatory — prevents pixel configuration reuse across messages.
 
 - **COBS Binary Framing.** Internal Consistent Overhead Byte Stuffing encodes arbitrary binary data (including 0x00 bytes) so that 0x00 never appears in encoded output. Overhead ~0.4%. Enables null terminator as unambiguous message boundary. Encrypt files, archives, images, executables, protocol buffers, or any binary format.
 

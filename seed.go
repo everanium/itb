@@ -13,10 +13,13 @@ import (
 // Probe 1 of the red-team plan.
 var testNonceOverride atomic.Pointer[[]byte]
 
-// NonceSize is the default per-message nonce size in bytes (128 bits).
+// NonceSize is the default per-message nonce size in bytes (512 bits).
+// 512-bit nonce eliminates the birthday-bound concern for any realistic
+// deployment volume; users who explicitly need 128 / 256 bits set
+// [Config.NonceBits] on the per-Pipeline Config.
 // The compile-in default surfaces through [DefaultNonceBits]. Birthday
 // collision at ~2^(nonceBits/2) messages.
-const NonceSize = 16
+const NonceSize = 64
 
 // MaxKeyBits is the maximum supported key size in bits.
 // Effective security depends on hash function's internal state width.
