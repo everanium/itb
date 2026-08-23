@@ -44,9 +44,9 @@ const (
 	// primitive counterpart to [ProfileStreamingAEADTripleMACV1]. The
 	// per-slot constellation is
 	// [areion256, blake3, blake2b256, blake2s, chacha20,
-	//  areion256, blake3, blake2b256] — one full spread across the
-	// five shipped width-256 primitives, with the extra slots
-	// assigned to the highest-throughput members of the pool.
+	//  areion256, blake3, blake2b256] — one full spread across every
+	// shipped width-256 primitive, with the extra slots assigned to
+	// the highest-throughput members of the pool.
 	ProfileStreamingAEADTripleMACMixedV1 = "streaming-aead-triple-mac-mixed-v1"
 
 	// ProfileStreamingNoAEADTripleMixedV1 is the width-256 mixed-

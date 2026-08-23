@@ -327,7 +327,7 @@ so the same-rank double-mod reaches only `1 / 66861 ≈ 1.5 × 10⁻⁵` of the 
 
 **Cost.** The barrier is a security/quality architecture, not a throughput optimisation. On x86 with BMI2 (Rocket Lake / Zen 3 and newer) the apply kernel uses three PEXT (forward) / three PDEP (inverse) instructions per chunk with 2–3-chunk ILP; the batch unrank uses AVX-512F kernels for the combinadic table lookup. On other platforms a pure-Go scalar path (`softPEXT48` / `softPDEP48`) covers correctness. End-to-end overlay throughput is parity-class with the pre-barrier pixel pipeline; the barrier's contribution is architectural, at parity of speed.
 
-Every entrypoint of the `itb.EncryptAuthenticated3x{128,256,512}Cfg` / `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptStreamAuth3xCfg` families routes through the barrier; there is no runtime knob to bypass it. The five shipped `triple` profiles (`streaming-aead-triple-mac-v1`, `streaming-noaead-triple-v1`, `singlemsg-triple-mac-v1`, `singlemsg-triple-nomac-v1`, `blob-triple-mac-v1`) all inherit the barrier by construction.
+Every entrypoint of the `itb.EncryptAuthenticated3x{128,256,512}Cfg` / `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptStreamAuth3xCfg` families routes through the barrier; there is no runtime knob to bypass it. Every shipped `triple` profile inherits the barrier by construction — both the single-primitive shipped entries and the mixed-primitive counterparts.
 
 ## 14. Quantum Resistance
 
@@ -377,6 +377,6 @@ See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-has
 
 ## 17. Custom Primitives at the Low-Level Surface
 
-ITB has no runtime `hashes.Register()` API. Users plug custom primitives at the Low-Level surface by constructing their own `itb.HashFunc{N}` + `itb.BatchHashFunc{N}` closures and passing them directly to `*Cfg` entrypoints. The `triple` facade does not expose custom-primitive injection — its five profiles bind to the shipped registry entries.
+ITB has no runtime `hashes.Register()` API. Users plug custom primitives at the Low-Level surface by constructing their own `itb.HashFunc{N}` + `itb.BatchHashFunc{N}` closures and passing them directly to `*Cfg` entrypoints. The `triple` facade does not expose custom-primitive injection — its shipped profiles bind to the shipped registry entries; the mixed-primitive profiles pick a per-slot constellation from the same registry.
 
 For worked examples of Low-Level `Cfg` usage and streaming shapes, see the README's Advanced Low-Level section.
