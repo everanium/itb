@@ -253,7 +253,8 @@ func exportInnerBlob128(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 	var b itb.Blob128
 	var opts itb.Blob128Opts
 	// The lockSeed slot rides as the dedicated LockSeed in the Blob
-	// opts, distinct from the 7-seed Triple entry point's arg list.
+	// opts alongside the other seven Triple 8-seed constellation
+	// entries packed into the blob's core fields.
 	opts.KeyL = append([]byte(nil), prfKeys[1]...)
 	opts.LS = seeds[1].(*itb.Seed128)
 	if len(macKey) > 0 {

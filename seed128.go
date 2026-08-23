@@ -42,7 +42,7 @@ type Seed128 struct {
 	Hash       HashFunc128
 	// BatchHash is the optional 4-way batched counterpart of Hash. When
 	// non-nil and ITB's runtime detects that both noiseSeed and dataSeed
-	// of an Encrypt128 / Decrypt128 invocation expose BatchHash,
+	// of an Encrypt3x128Cfg / Decrypt3x128Cfg invocation expose BatchHash,
 	// processChunk128 dispatches per-pixel hashing four pixels at a
 	// time via BatchChainHash128 instead of one pixel per ChainHash128
 	// call. The Hash field remains the bit-exact reference; BatchHash
@@ -167,12 +167,13 @@ func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
 // the same domain-tagged buffer used by [Seed128.deriveStartPixel].
 // deriveStartPixel truncates to a pixel index (~13 bits) of hLo;
 // deriveInterLockSeed exposes the full (hLo, hHi) pair for consumers that
-// need it as PRF seed material — e.g. the interlock overlay's per-chunk
-// keystream.
+// need it as PRF seed material — e.g. the Interlocked Barrier overlay's
+// per-chunk keystream.
 //
-// Typically called on noiseSeed in the Triple Ouroboros context — the
-// only shared seed across the 3 snakes, used as the keying source for
-// the cross-snake bit-soup permutation.
+// Called on the dedicated lockSeed slot of the Triple Ouroboros 8-seed
+// constellation, keying the 48-bit Interlocked Barrier overlay's
+// per-chunk bit-permutation derivation independently of the noiseSeed
+// material.
 func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	buf := make([]byte, 1+len(nonce))
 	buf[0] = 0x02
