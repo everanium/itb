@@ -176,7 +176,7 @@ func BenchmarkWrapperOnlyInPlace(b *testing.B) {
 }
 
 // ---------------------------------------------------------------------------
-// Single Message — Triple Ouroboros (4 modes × outer-cipher palette × 2 dirs).
+// Single Message — Triple Ouroboros (4 modes × outer cipher palette × 2 dirs).
 // ---------------------------------------------------------------------------
 
 func BenchmarkMessageTriple(b *testing.B) {
@@ -306,7 +306,7 @@ func runMessageLowLevelTripleAuthDecrypt(b *testing.B, plaintext []byte, cn stri
 }
 
 // ---------------------------------------------------------------------------
-// Streaming — Triple Ouroboros (6 modes × outer-cipher palette × 2 dirs).
+// Streaming — Triple Ouroboros (6 modes × outer cipher palette × 2 dirs).
 // ---------------------------------------------------------------------------
 
 func BenchmarkStreamingTriple(b *testing.B) {
