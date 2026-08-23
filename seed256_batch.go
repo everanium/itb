@@ -5,7 +5,7 @@ import "encoding/binary"
 // BatchHashFunc256 is the 4-way batched 256-bit hash interface
 // alongside [HashFunc256]. Primitives whose SIMD kernel processes
 // four independent (data, seed) tuples per call expose this — e.g.
-// the ZMM-batched Areion-SoEM-256 / BLAKE3 / BLAKE2s / ChaCha20
+// the ZMM-batched Areion-SoEM-256 / BLAKE2s / BLAKE3 / ChaCha20
 // kernels on amd64 with AVX-512 + VAES.
 //
 // Bit-exact parity invariant: each lane output

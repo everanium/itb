@@ -62,7 +62,7 @@ type fixedKATVector struct {
 //
 //   - it is one of the three batched fast-path lengths (20 / 36 / 68);
 //   - 36 > chunkSize=24 forces the multi-round CBC-MAC chain in
-//     Areion-SoEM-256, ChaCha20, and AES-CMAC (state-feedback path
+//     Areion-SoEM-256, AES-CMAC, and ChaCha20 (state-feedback path
 //     exercised);
 //   - 36 < chunkSize=56 keeps Areion-SoEM-512 in the single-round
 //     fast path;
