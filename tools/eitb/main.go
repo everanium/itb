@@ -1,8 +1,8 @@
-// Command eitb runs every example, also wrapping the ITB ciphertext
-// in one of the supported outer stream ciphers (see wrapper.CipherNames)
-// so the on-wire bytes look like generic outer cipher output rather than
-// ITB native output. Outer CTR mode cipher hides ITB nonce, WxH and 32-byte
-// streamID prefix under AEAD mode.
+// Command eitb runs every triple.Pipeline example, also wrapping the
+// ITB ciphertext in one of the supported outer stream ciphers (see
+// wrapper.CipherNames) so the on-wire bytes look like generic outer
+// cipher output rather than ITB native output. Outer CTR mode cipher
+// hides ITB nonce, WxH and 32-byte streamID prefix under AEAD mode.
 //
 // Usage:
 //
@@ -10,23 +10,25 @@
 //	./eitb -help # print help
 //
 // Every run encrypts a non-trivial random plaintext (~1 KiB or ~64 KiB
-// depending on the example), wraps the ITB ciphertext under the chosen outer
-// cipher, hands the wrapped bytes to a "receiver" path that unwraps and
-// decrypts, and verifies sha256 + byte-equality of the recovered plaintext
-// against the original plaintext.
+// depending on the example), wraps the ITB ciphertext under the chosen
+// outer cipher, hands the wrapped bytes to a "receiver" path that
+// unwraps and decrypts, and verifies sha256 + byte-equality of the
+// recovered plaintext against the original plaintext.
 //
-// The wrapping never modifies the ITB call sites - every example calls into
-// ITB exactly as the README.md documents. The wrap layer sits strictly between
-// the ITB output and the wire (or between the wire and the ITB input on the
-// receive side). ITB's content-deniability guarantee is unchanged; the wrap
-// adds the property that the wire looks like generic outer stream cipher
-// output rather than ITB format pixel containers.
+// The wrapping never modifies the ITB call sites - every example calls
+// into ITB exactly as the README.md documents. The wrap layer sits
+// strictly between the ITB output and the wire (or between the wire
+// and the ITB input on the receive side). ITB's content-deniability
+// guarantee is unchanged; the wrap adds the property that the wire
+// looks like generic outer stream cipher output rather than ITB
+// format pixel containers.
 //
-// The demo exercises the Triple Ouroboros surface only: every low-level call
-// threads the eight-seed shape (noiseSeed, lockSeed, dataSeed1..3,
-// startSeed1..3) into the Encrypt3x / Decrypt3x family and their
-// authenticated / streaming counterparts. The Interlocked Barrier overlay
-// is always on; there is no engage knob to toggle.
+// The demo exercises the Triple Ouroboros surface only through the
+// [triple.Pipeline] facade: every example call passes through
+// [triple.Init] / [triple.Open] against one of the shipped profiles,
+// with parallax and wrapper toggles chosen per example so the demo
+// covers both the toggle-off (pure Low-Level pass-through) and
+// toggle-on (full-stack) shapes.
 
 package main
 
@@ -44,15 +46,15 @@ import (
 	"strings"
 
 	"github.com/everanium/itb"
-	"github.com/everanium/itb/easy"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/macs"
+	"github.com/everanium/itb/triple"
 	"github.com/everanium/itb/wrapper"
 )
 
 // example is one example wrapped under one outer cipher.
 type example struct {
-	name        string // example identifier, e.g. "aead-easy-io"
+	name        string // example identifier, e.g. "aead-triple-io"
 	description string
 	plaintextN  int // bytes
 	run         func(cipherName string, plaintext []byte) (recovered []byte, wireBytes int, err error)
@@ -64,17 +66,16 @@ func main() {
 	verbose := flag.Bool("v", false, "print per-run details")
 	flag.Parse()
 
-	itb.SetMaxWorkers(0) // process-wide; harmless for the easy.Encryptor path too
+	itb.SetMaxWorkers(0) // process-wide; harmless for the triple.Pipeline path too
 
 	examples := []example{
-		{name: "aead-easy-io", description: "Streaming AEAD Easy (MAC Authenticated, IO-Driven)", plaintextN: 64 * 1024, run: runAEADEasyIO},
+		{name: "aead-triple-io", description: "Streaming AEAD Triple (MAC Authenticated, IO-Driven, full stack)", plaintextN: 64 * 1024, run: runAEADTripleIO},
 		{name: "aead-lowlevel-io", description: "Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)", plaintextN: 64 * 1024, run: runAEADLowLevelIO},
-		{name: "noaead-easy-io", description: "Streaming Easy (No MAC, IO-Driven)", plaintextN: 64 * 1024, run: runNoAEADEasyIO},
-		{name: "noaead-easy-userloop", description: "Streaming Easy (No MAC, User-Driven Loop)", plaintextN: 64 * 1024, run: runNoAEADEasyUserLoop},
+		{name: "noaead-triple-io", description: "Streaming Triple (No MAC, IO-Driven, full stack)", plaintextN: 64 * 1024, run: runNoAEADTripleIO},
 		{name: "noaead-lowlevel-io", description: "Streaming Low-Level (No MAC, IO-Driven)", plaintextN: 64 * 1024, run: runNoAEADLowLevelIO},
 		{name: "noaead-lowlevel-userloop", description: "Streaming Low-Level (No MAC, User-Driven Loop)", plaintextN: 64 * 1024, run: runNoAEADLowLevelUserLoop},
-		{name: "message-easy-nomac", description: "Easy: Areion-SoEM-512 (No MAC, Single Message)", plaintextN: 1024, run: runMessageEasyNoMAC},
-		{name: "message-easy-auth", description: "Easy: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", plaintextN: 1024, run: runMessageEasyAuth},
+		{name: "message-triple-nomac", description: "Triple: Areion-SoEM-512 (No MAC, Single Message)", plaintextN: 1024, run: runMessageTripleNoMAC},
+		{name: "message-triple-auth", description: "Triple: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", plaintextN: 1024, run: runMessageTripleAuth},
 		{name: "message-lowlevel-nomac", description: "Low-Level: Areion-SoEM-512 (No MAC, Single Message)", plaintextN: 1024, run: runMessageLowLevelNoMAC},
 		{name: "message-lowlevel-auth", description: "Low-Level: Areion-SoEM-512 + HMAC-BLAKE3 (MAC Authenticated, Single Message)", plaintextN: 1024, run: runMessageLowLevelAuth},
 	}
@@ -169,50 +170,54 @@ func eightSeeds512(primitive string, bits int) (noise, lock, data1, data2, data3
 	return seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], nil
 }
 
+// tripleOpts512 returns the [triple.Opts] shape the eitb demonstrator
+// runs pin: 512-bit nonce, barrier-fill 4, and the requested outer
+// cipher. Every eitb-side triple.Init call feeds the same knobs so the
+// wire shape matches the low-level runs' [itb.SetNonceBits](512) +
+// [itb.SetBarrierFill](4) configuration.
+func tripleOpts512(cipherName string) triple.Opts {
+	return triple.Opts{
+		NonceBits:   512,
+		BarrierFill: 4,
+		OuterCipher: cipherName,
+	}
+}
+
 // ---------------------------------------------------------------------------
-// Streaming AEAD Easy (MAC Authenticated) - IO-Driven.
+// Streaming AEAD Triple (MAC Authenticated) - IO-Driven, full stack.
 //
-// Sender uses easy.Encryptor.EncryptStreamAuthIO (writes the 32-byte stream
-// prefix + per-chunk wire to the inner io.Writer). The format-deniability
-// wrap intercepts via NewWrapWriter: ITB writes its bytestream into the
-// wrap-writer, which prefixes a fresh outer cipher nonce on the wire and
-// XOR-encrypts every byte under (key, nonce). Receiver reverses with
-// NewUnwrapReader feeding DecryptStreamAuthIO.
+// Sender builds a Streaming AEAD Triple Pipeline with the default
+// full-stack profile (parallax on + wrapper on + MAC on) — the outer
+// cipher chosen here is what the Pipeline's built-in wrapper layer
+// uses, so no external Wrap step is needed. The Pipeline's wire bytes
+// already carry the outer-cipher keystream envelope.
 // ---------------------------------------------------------------------------
 
-func runAEADEasyIO(cipherName string, plaintext []byte) ([]byte, int, error) {
-	enc := easy.New3("areion512", 1024, "hmac-blake3")
-	defer enc.Close()
-	enc.SetNonceBits(512)
-	enc.SetBarrierFill(4)
-
-	outerKey, err := wrapper.GenerateKey(cipherName)
+func runAEADTripleIO(cipherName string, plaintext []byte) ([]byte, int, error) {
+	opts := tripleOpts512(cipherName)
+	sender, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, opts)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer sender.Close()
 
-	// Encrypt + wrap
+	receiver, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer receiver.Close()
+
 	var wireBuf bytes.Buffer
-	wrapWriter, err := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-	if err != nil {
+	if err := sender.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {
 		return nil, 0, err
 	}
-	chunkSize := 16 * 1024
-	if err := enc.EncryptStreamAuthIO(bytes.NewReader(plaintext), wrapWriter, chunkSize); err != nil {
-		return nil, 0, err
-	}
+	wire := wireBuf.Bytes()
 
-	// Unwrap + decrypt
-	wrappedWire := wireBuf.Bytes()
-	unwrapReader, err := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wrappedWire))
-	if err != nil {
-		return nil, len(wrappedWire), err
-	}
 	var dstBuf bytes.Buffer
-	if err := enc.DecryptStreamAuthIO(unwrapReader, &dstBuf); err != nil {
-		return nil, len(wrappedWire), err
+	if err := receiver.DecryptStream(bytes.NewReader(wire), &dstBuf); err != nil {
+		return nil, len(wire), err
 	}
-	return dstBuf.Bytes(), len(wrappedWire), nil
+	return dstBuf.Bytes(), len(wire), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -269,128 +274,39 @@ func runAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error)
 }
 
 // ---------------------------------------------------------------------------
-// Streaming Easy (No MAC) - IO-Driven.
+// Streaming Triple (No MAC) - IO-Driven, full stack.
 //
-// easy.Encryptor.EncryptStreamIO / DecryptStreamIO with the wrap layer in
-// between. No MAC ITB has no integrity protection by design; the outer cipher
-// is for format-deniability ONLY - does not add integrity.
+// Streaming Non-AEAD Triple Pipeline with parallax on + wrapper on.
+// No MAC ITB has no integrity protection by design; the outer cipher
+// contributes format-deniability only. The Pipeline's own wrapper
+// layer produces the outer-cipher envelope.
 // ---------------------------------------------------------------------------
 
-func runNoAEADEasyIO(cipherName string, plaintext []byte) ([]byte, int, error) {
-	enc := easy.New3("areion512", 1024)
-	defer enc.Close()
-	enc.SetNonceBits(512)
-	enc.SetBarrierFill(4)
-
-	outerKey, err := wrapper.GenerateKey(cipherName)
+func runNoAEADTripleIO(cipherName string, plaintext []byte) ([]byte, int, error) {
+	opts := tripleOpts512(cipherName)
+	sender, blob, err := triple.Init(triple.ProfileStreamingNoAEADTripleV1, opts)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer sender.Close()
+
+	receiver, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer receiver.Close()
 
 	var wireBuf bytes.Buffer
-	wrapWriter, err := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-	if err != nil {
+	if err := sender.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {
 		return nil, 0, err
 	}
-	chunkSize := 16 * 1024
-	if err := enc.EncryptStreamIO(bytes.NewReader(plaintext), wrapWriter, chunkSize); err != nil {
-		return nil, 0, err
-	}
+	wire := wireBuf.Bytes()
 
-	wrappedWire := wireBuf.Bytes()
-	unwrapReader, err := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wrappedWire))
-	if err != nil {
-		return nil, len(wrappedWire), err
-	}
 	var dstBuf bytes.Buffer
-	if err := enc.DecryptStreamIO(unwrapReader, &dstBuf); err != nil {
-		return nil, len(wrappedWire), err
+	if err := receiver.DecryptStream(bytes.NewReader(wire), &dstBuf); err != nil {
+		return nil, len(wire), err
 	}
-	return dstBuf.Bytes(), len(wrappedWire), nil
-}
-
-// ---------------------------------------------------------------------------
-// Streaming Easy (No MAC) - User-Driven Loop.
-//
-// The README's "Alternative - User-Driven Loop" pattern: each chunk is one
-// independent enc.Encrypt() call. Format-deniability sends every chunk
-// through NewWrapWriter - the per-chunk u32_LE length prefix and the chunk
-// body are both written into the wrapped writer, so they pass through the
-// keystream XOR together. The receiver reads u32_LE then the body through
-// NewUnwrapReader; no length appears in cleartext on the wire.
-// ---------------------------------------------------------------------------
-
-func runNoAEADEasyUserLoop(cipherName string, plaintext []byte) ([]byte, int, error) {
-	enc := easy.New3("areion512", 1024)
-	defer enc.Close()
-	enc.SetNonceBits(512)
-	enc.SetBarrierFill(4)
-
-	outerKey, err := wrapper.GenerateKey(cipherName)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Sender - encrypt each chunk and emit `u32_LE_len || ct` through the
-	// wrap-writer so both the length and the body XOR through the keystream.
-	var wireBuf bytes.Buffer
-	wrapWriter, err := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
-	if err != nil {
-		return nil, 0, err
-	}
-	chunkSize := 16 * 1024
-	src := bytes.NewReader(plaintext)
-	buf := make([]byte, chunkSize)
-	for {
-		n, rerr := io.ReadFull(src, buf)
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil && rerr != io.ErrUnexpectedEOF {
-			return nil, 0, rerr
-		}
-		ct, err := enc.Encrypt(buf[:n])
-		if err != nil {
-			return nil, 0, err
-		}
-		if err := binary.Write(wrapWriter, binary.LittleEndian, uint32(len(ct))); err != nil {
-			return nil, 0, err
-		}
-		if _, err := wrapWriter.Write(ct); err != nil {
-			return nil, 0, err
-		}
-		if rerr == io.ErrUnexpectedEOF {
-			break
-		}
-	}
-
-	// Receiver - read u32_LE length then body through the unwrap-reader,
-	// looping until EOF on the length-prefix read.
-	wrappedWire := wireBuf.Bytes()
-	unwrapReader, err := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wrappedWire))
-	if err != nil {
-		return nil, len(wrappedWire), err
-	}
-	var pt bytes.Buffer
-	for {
-		var ctLen uint32
-		if err := binary.Read(unwrapReader, binary.LittleEndian, &ctLen); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, len(wrappedWire), err
-		}
-		ctBuf := make([]byte, ctLen)
-		if _, err := io.ReadFull(unwrapReader, ctBuf); err != nil {
-			return nil, len(wrappedWire), err
-		}
-		dec, err := enc.Decrypt(ctBuf)
-		if err != nil {
-			return nil, len(wrappedWire), err
-		}
-		pt.Write(dec)
-	}
-	return pt.Bytes(), len(wrappedWire), nil
+	return dstBuf.Bytes(), len(wire), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -519,50 +435,33 @@ func runNoAEADLowLevelUserLoop(cipherName string, plaintext []byte) ([]byte, int
 }
 
 // ---------------------------------------------------------------------------
-// Single Message - Easy: Areion-SoEM-512 (No MAC).
+// Single Message - Triple: Areion-SoEM-512 (No MAC), full stack.
 //
-// One enc.Encrypt() call -> one ITB blob. Wrap seals the whole blob:
-// nonce || ks-XOR(blob). Wire shape mirrors any "outer-CTR with a fresh nonce
-// and an opaque payload" pattern.
+// One EncryptMessage call -> one wire. The Pipeline runs with parallax
+// on + wrapper on + No MAC — the outer cipher chosen here is what the
+// Pipeline's internal wrapper layer keystream-XORs the wire with, so
+// no external Wrap step is needed.
 // ---------------------------------------------------------------------------
 
-func runMessageEasyNoMAC(cipherName string, plaintext []byte) ([]byte, int, error) {
-	enc := easy.New3("areion512", 2048)
-	defer enc.Close()
-	enc.SetNonceBits(512)
-	enc.SetBarrierFill(4)
-
-	encrypted, err := enc.Encrypt(plaintext)
+func runMessageTripleNoMAC(cipherName string, plaintext []byte) ([]byte, int, error) {
+	opts := tripleOpts512(cipherName)
+	sender, blob, err := triple.Init(triple.ProfileSingleMsgTripleNoMACV1, opts)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer sender.Close()
 
-	outerKey, err := wrapper.GenerateKey(cipherName)
+	receiver, err := triple.Open(triple.ProfileSingleMsgTripleNoMACV1, blob, opts)
 	if err != nil {
 		return nil, 0, err
 	}
-	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
-	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
-	// if err != nil {
-	// 	return nil, 0, err
-	// }
-	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
+	defer receiver.Close()
+
+	wire, err := sender.EncryptMessage(plaintext)
 	if err != nil {
 		return nil, 0, err
 	}
-	wire := append(nonce, encrypted...)
-
-	// Receiver
-	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
-	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
-	// if err != nil {
-	// 	return nil, len(wire), err
-	// }
-	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
-	if err != nil {
-		return nil, len(wire), err
-	}
-	pt, err := enc.Decrypt(recovered)
+	pt, err := receiver.DecryptMessage(wire)
 	if err != nil {
 		return nil, len(wire), err
 	}
@@ -570,50 +469,33 @@ func runMessageEasyNoMAC(cipherName string, plaintext []byte) ([]byte, int, erro
 }
 
 // ---------------------------------------------------------------------------
-// Single Message - Easy: Areion-SoEM-512 + HMAC-BLAKE3
-// (MAC Authenticated).
+// Single Message - Triple: Areion-SoEM-512 + HMAC-BLAKE3 (MAC), full stack.
 //
-// EncryptAuth / DecryptAuth pair, again Wrap over the whole ITB output.
-// ITB-internal MAC verifies on decrypt; outer cipher contributes
-// format-deniability only.
+// EncryptMessage / DecryptMessage on a Single Message MAC-authenticated
+// Triple Pipeline. The Pipeline's outer wrapper covers the wire in
+// exactly one keystream envelope; the internal MAC verifies on decrypt
+// as usual.
 // ---------------------------------------------------------------------------
 
-func runMessageEasyAuth(cipherName string, plaintext []byte) ([]byte, int, error) {
-	enc := easy.New3("areion512", 2048, "hmac-blake3")
-	defer enc.Close()
-	enc.SetNonceBits(512)
-	enc.SetBarrierFill(4)
-
-	encrypted, err := enc.EncryptAuth(plaintext)
+func runMessageTripleAuth(cipherName string, plaintext []byte) ([]byte, int, error) {
+	opts := tripleOpts512(cipherName)
+	sender, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, opts)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer sender.Close()
 
-	outerKey, err := wrapper.GenerateKey(cipherName)
+	receiver, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, opts)
 	if err != nil {
 		return nil, 0, err
 	}
-	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
-	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
-	// if err != nil {
-	// 	return nil, 0, err
-	// }
-	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
+	defer receiver.Close()
+
+	wire, err := sender.EncryptMessage(plaintext)
 	if err != nil {
 		return nil, 0, err
 	}
-	wire := append(nonce, encrypted...)
-
-	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
-	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
-	// if err != nil {
-	// 	return nil, len(wire), err
-	// }
-	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
-	if err != nil {
-		return nil, len(wire), err
-	}
-	pt, err := enc.DecryptAuth(recovered)
+	pt, err := receiver.DecryptMessage(wire)
 	if err != nil {
 		return nil, len(wire), err
 	}
@@ -626,7 +508,7 @@ func runMessageEasyAuth(cipherName string, plaintext []byte) ([]byte, int, error
 // Drives the width-less itb.Encrypt3x / itb.Decrypt3x helpers with eight
 // explicit *Seed512 handles (noise, lock, dataSeed1..3, startSeed1..3) built
 // from the Areion-SoEM-512 hash factory at the same 2048-bit seed width used
-// by the Easy Single Message variant. One Encrypt3x call -> one ITB blob;
+// by the Triple Single Message variant. One Encrypt3x call -> one ITB blob;
 // Wrap seals the whole blob: nonce || ks-XOR(blob).
 // ---------------------------------------------------------------------------
 
@@ -648,23 +530,12 @@ func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, 
 	if err != nil {
 		return nil, 0, err
 	}
-	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
-	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
-	// if err != nil {
-	// 	return nil, 0, err
-	// }
 	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
 	if err != nil {
 		return nil, 0, err
 	}
 	wire := append(nonce, encrypted...)
 
-	// Receiver
-	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
-	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
-	// if err != nil {
-	// 	return nil, len(wire), err
-	// }
 	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
 	if err != nil {
 		return nil, len(wire), err
@@ -714,23 +585,12 @@ func runMessageLowLevelAuth(cipherName string, plaintext []byte) ([]byte, int, e
 	if err != nil {
 		return nil, 0, err
 	}
-	// Wrap respects immutability of `encrypted` (allocates a fresh wire buffer).
-	// wire, err := wrapper.Wrap(cipherName, outerKey, encrypted)
-	// if err != nil {
-	// 	return nil, 0, err
-	// }
 	nonce, err := wrapper.WrapInPlace(cipherName, outerKey, encrypted)
 	if err != nil {
 		return nil, 0, err
 	}
 	wire := append(nonce, encrypted...)
 
-	// Receiver
-	// Unwrap respects immutability of `wire` (allocates a fresh recovered buffer).
-	// recovered, err := wrapper.Unwrap(cipherName, outerKey, wire)
-	// if err != nil {
-	// 	return nil, len(wire), err
-	// }
 	recovered, err := wrapper.UnwrapInPlace(cipherName, outerKey, wire)
 	if err != nil {
 		return nil, len(wire), err
