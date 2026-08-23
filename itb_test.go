@@ -816,3 +816,77 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigMaxWorkersRespected verifies the per-encryptor MaxWorkers
+// field is honoured on the low-level Cfg entry point across the full
+// range of caps (1 → forces the serial-fastpath branch of
+// process256Cfg; 8 → forces the parallel branch). Worker count must
+// not perturb the deterministic per-pixel logic — a change in worker
+// count changes only the goroutine partitioning, never the recovered
+// plaintext.
+//
+// Encrypt-side ciphertext equality across two independent calls is
+// not testable: every Triple encrypt injects fresh crypto/rand into
+// the container background and the payload tail-fill (the CSPRNG
+// residue is Proof 10 material, not a worker-count artefact). The
+// test asserts the meaningful invariance instead — decrypt-side
+// bit-identical plaintext recovery under a MaxWorkers sweep against
+// one shared reference ciphertext.
+func TestConfigMaxWorkersRespected(t *testing.T) {
+	prevGlobal := GetMaxWorkers()
+	t.Cleanup(func() { SetMaxWorkers(prevGlobal) })
+	SetMaxWorkers(0) // pin process-global to the "use all CPUs" default
+
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
+	plaintext := genTestPlaintext(t, 1<<20) // 1 MiB — enough pixels for the parallel branch of process256Cfg
+	mac := macFuncForTest([32]byte{0xAA, 0xBB, 0xCC, 0xDD})
+
+	cfg1 := &Config{MaxWorkers: 1}
+	cfg8 := &Config{MaxWorkers: 8}
+
+	// Encrypt under both caps and confirm each round-trips to the
+	// original plaintext under a matching cfg. The two ciphertexts
+	// are expected to differ byte-wise — every encrypt injects fresh
+	// crypto/rand into the container background and the payload
+	// tail-fill regardless of worker count.
+	ct1, err := EncryptAuthenticated3x256Cfg(cfg1, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, mac)
+	if err != nil {
+		t.Fatalf("encrypt with MaxWorkers=1: %v", err)
+	}
+	ct8, err := EncryptAuthenticated3x256Cfg(cfg8, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext, mac)
+	if err != nil {
+		t.Fatalf("encrypt with MaxWorkers=8: %v", err)
+	}
+
+	// Container size is a function of plaintext length + seeds +
+	// nonce width + barrier fill — worker count does not enter that
+	// arithmetic. Equal length is a structural invariant that would
+	// break loudly if MaxWorkers ever leaked into the sizing path.
+	if len(ct1) != len(ct8) {
+		t.Errorf("ciphertext lengths differ across MaxWorkers: cfg1=%d bytes, cfg8=%d bytes", len(ct1), len(ct8))
+	}
+
+	// Decrypt-side worker-count invariance: the same reference
+	// ciphertext under a sweep of MaxWorkers values (including cfg1,
+	// cfg8, and nil for the process-global fallback path) must yield
+	// bit-identical plaintext.
+	sweep := []*Config{cfg1, cfg8, nil}
+	for _, refCT := range [][]byte{ct1, ct8} {
+		for _, dCfg := range sweep {
+			pt, err := DecryptAuthenticated3x256Cfg(dCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, refCT, mac)
+			if err != nil {
+				t.Errorf("decrypt cfg=%+v: %v", dCfg, err)
+				continue
+			}
+			if !bytes.Equal(plaintext, pt) {
+				t.Errorf("decrypt cfg=%+v produced plaintext that differs from input (%d bytes)", dCfg, len(pt))
+			}
+		}
+	}
+
+	// Post-test global-drift check — a bug that wrote cfg.MaxWorkers
+	// through to the process-global would surface here.
+	if got := GetMaxWorkers(); got != 0 {
+		t.Errorf("post-test global drift: GetMaxWorkers()=%d, want 0 (default)", got)
+	}
+}
