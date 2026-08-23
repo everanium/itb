@@ -18,8 +18,8 @@ import "sync"
 //     null terminator + CSPRNG fill, consumed by `process*`)
 //   - decrypt-side `decoded` / `decoded[i]` (plaintext extracted from
 //     ciphertext, consumed by `cobsDecode`)
-//   - bit-soup split outputs `p0` / `p1` / `p2` (plaintext-derived bit
-//     permutations, consumed by `cobsEncode`)
+//   - Triple 3-snake split outputs `p0` / `p1` / `p2` (plaintext-derived
+//     per-snake byte streams, consumed by `cobsEncode`)
 //
 // The ciphertext output buffer returned to the caller is NOT pooled. It
 // is allocated separately and its lifetime extends past the encrypt

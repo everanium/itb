@@ -1,7 +1,7 @@
 // External-test-package helpers shared with itb3_ext_test.go. Both
 // files live in `package itb_test` so cross-file symbol reuse is free;
 // this file carries only the helper functions (seed builders, primitive
-// Pair factories, LockSeed-attach fixtures), and the Triple Ouroboros
+// Pair factories, lockSeed-slot fixtures), and the Triple Ouroboros
 // benchmarks + integration tests live in itb3_ext_test.go.
 package itb_test
 
@@ -106,7 +106,7 @@ func makeAreion512Hash512PairExt() (itb.HashFunc512, itb.BatchHashFunc512) {
 	return h, b
 }
 
-// --- LockSeed fixtures ------------------------------------------------------
+// --- Seed builders for the lockSeed slot -----------------------------------
 //
 // The lockSeed slot supplies keying material for the 48-bit
 // interlock overlay's bit-permutation derivation. These helpers
