@@ -29,10 +29,11 @@ export ITB_GOGC="${ITB_GOGC:-20}"
 # throughput numbers are directly comparable to the shipped Go
 # Encrypt3x{128,256,512}Cfg baseline. Override any of these before
 # calling the script to change the shape.
-export ITB_NONCE_BITS="${ITB_NONCE_BITS:-128}"
+export ITB_NONCE_BITS="${ITB_NONCE_BITS:-512}"
 export ITB_KEY_BITS="${ITB_KEY_BITS:-1024}"
 export ITB_WITH_PARALLAX="${ITB_WITH_PARALLAX:-false}"
 export ITB_WITH_WRAPPER="${ITB_WITH_WRAPPER:-false}"
+export ITB_INNER_HASH="${ITB_INNER_HASH:-areion512}"
 
 cargo bench --bench bench_message -- "$@"
 cargo bench --bench bench_stream -- "$@"
