@@ -78,47 +78,54 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 
 **Corollary.** The attacker cannot determine the start pixel from known plaintext: every pixel position produces a valid (d, m) pair, making all P positions indistinguishable. ∎
 
-## Proof 3: Triple-Seed Isolation
+<a name="proof-3-triple-seed-isolation"></a>
+## Proof 3: Eight-Seed Isolation
 
-**Theorem.** In the triple-seed architecture, compromise of noiseSeed (via CCA) and/or startSeed (via cache side-channel) provides zero information about dataSeed.
+**Theorem.** In the eight-seed architecture — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 — compromise of any proper subset of seeds provides zero information about the remaining seeds.
 
-**Proof.** The three seeds are generated independently from crypto/rand. By construction:
+**Proof.** The eight seeds are generated independently from crypto/rand and enforced pairwise-distinct by pointer identity at the API surface. By construction:
 
 1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
-2. **dataSeed → rotation, XOR**: `dataHash = ChainHash(counter||nonce, dataSeed)`
-3. **startSeed → startPixel**: `startPixel = ChainHash(0x02||nonce, startSeed) % totalPixels`
+2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce))`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
+3. **dataSeed_i → per-snake rotation, XOR** (i ∈ {1,2,3}): `dataHash_i = ChainHash(counter||nonce, dataSeed_i)`
+4. **startSeed_i → per-snake startPixel** (i ∈ {1,2,3}): `startPixel_i = ChainHash(0x02||nonce, startSeed_i) % totalPixels_i`
 
 Each seed's ChainHash uses only its own components. No seed's components participate in another seed's computation.
 
-**CCA compromise of noiseSeed:** The CCA oracle reveals noisePos for each pixel. This is a function of noiseSeed only. Since noiseSeed and dataSeed are independent random variables:
+**CCA compromise of noiseSeed:** The CCA oracle reveals noisePos for each pixel. This is a function of noiseSeed only. Since noiseSeed is independent of every other seed as a random variable:
 
 ```
-I(dataSeed ; noisePos₁, noisePos₂, ..., noisePos_P) = 0
+I(dataSeed_i ; noisePos₁, noisePos₂, ..., noisePos_P) = 0     for every i ∈ {1,2,3}
+I(startSeed_i ; noisePos₁, noisePos₂, ..., noisePos_P) = 0    for every i ∈ {1,2,3}
+I(lockSeed ; noisePos₁, noisePos₂, ..., noisePos_P) = 0
 ```
 
-where I denotes mutual information. The noise positions carry zero information about dataSeed.
+where I denotes mutual information. The noise positions carry zero information about any other seed.
 
-**Cache side-channel compromise of startSeed:** The memory access pattern reveals startPixel. This is a function of startSeed only:
-
-```
-I(dataSeed ; startPixel) = 0
-```
-
-**Combined compromise:** Even with both noiseSeed and startSeed fully known:
+**Cache side-channel compromise of a single startSeed_i:** The memory access pattern reveals startPixel_i. This is a function of startSeed_i only:
 
 ```
-I(dataSeed ; noiseSeed, startSeed) = 0
+I(dataSeed_j ; startPixel_i) = 0    for every j ∈ {1,2,3}
+I(startSeed_j ; startPixel_i) = 0   for every j ≠ i
 ```
 
-because all three are independently generated. The attacker knows the noise positions and data-to-pixel mapping, but dataSeed's rotation and XOR masks remain information-theoretically hidden.
+**Combined compromise:** Even with any strict subset S ⊊ {noiseSeed, lockSeed, dataSeed_{1..3}, startSeed_{1..3}} fully known:
 
-**dataSeed side-channel:** dataSeed's hash output is consumed only by:
+```
+I(seed ∈ ({all eight} \ S) ; S) = 0
+```
+
+because all eight are independently generated. The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-snake pixel offsets, and per-chunk barrier permutation remain information-theoretically hidden.
+
+**dataSeed_i side-channel:** each dataSeed's hash output is consumed only by:
 - `dataRotation = dataHash % 7` — register operation
 - `xorMask = dataHash >> 3` — register operation
 - `rotateBits7(dataBits, dataRotation)` — register-only shifts
 - `dataBits ^= channelXOR` — register XOR
 
-No memory access depends on dataSeed's values. No cache line, no memory pattern, no software-observable signal. ∎
+No memory access depends on dataSeed's values. No cache line, no memory pattern, no software-observable signal.
+
+**lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (§13 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
 
 ## Proof 3a: Triple-Seed Isolation Minimality
 
@@ -256,6 +263,8 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 ## Proof 5: Noise Barrier Bound
 
+**Note on MinPixels unification.** The shipped v0.3.0 line unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC-authenticated surfaces, so length-envelope indistinguishability holds across both streaming modes. The two worked examples below are both mathematically valid barrier bounds; the auth-side row is the one that describes the shipped floor.
+
 **Theorem.** With Channels = 8, MinPixels = ⌈keyBits / log₂(56)⌉ for Encrypt/Stream and MinPixelsAuth = ⌈keyBits / log₂(7)⌉ for Auth, the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits.
 
 **Proof.** For keyBits = 1024, Encrypt/Stream mode:
@@ -350,18 +359,22 @@ Without the ability to evaluate P(observed | r = r') (requires dataSeed), the Ba
 
 ## Proof 8: Oracle-Free Deniability
 
-**Theorem.** For any container C encrypted with seeds (nS, dS, sS) and any candidate seed tuple (nS', dS', sS') ≠ (nS, dS, sS), the output of Decrypt128/Decrypt256/Decrypt512(nS', dS', sS', C) is computationally indistinguishable from uniform random bytes.
+**Theorem.** For any container C encrypted with the eight-seed tuple (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3) and any candidate eight-seed tuple that differs on at least one component, the output of `itb.Decrypt3x{128,256,512}Cfg` on C under the candidate tuple is computationally indistinguishable from uniform random bytes.
 
-**Proof.** Decrypt128/256/512 extracts a byte sequence by:
-1. Computing startPixel from sS' (deterministic, different from true startPixel)
-2. Computing noisePos from nS' for each pixel (deterministic, different from true)
-3. Computing rotation and XOR from dS' for each pixel (deterministic, different from true)
-4. Extracting, un-rotating, and XOR-decrypting 56 data bits per pixel
+**Proof.** `Decrypt3x*Cfg` extracts a byte sequence by:
+1. Computing each snake's startPixel from its startSeed' (deterministic, different from the true startPixels).
+2. Computing noisePos from noiseSeed' for each pixel (deterministic, different from true).
+3. Computing rotation and XOR from each dataSeed_i' for each pixel of snake i (deterministic, different from true).
+4. Reversing the 48-bit Interlocked Barrier per-chunk mask triple derived from lockSeed' (deterministic, different from the true per-chunk permutation).
+5. Extracting, un-rotating, and XOR-decrypting 56 data bits per pixel.
+6. Interleaving the three snake outputs back into a byte stream.
 
-Since C was generated from crypto/rand (uniform bytes) and embedded using the true seeds (nS, dS, sS), the bits extracted with wrong seeds correspond to:
-- Wrong noise positions → extracting a mix of true noise and true data bits
-- Wrong rotation → un-rotating with incorrect r
-- Wrong XOR → XOR-decrypting with incorrect mask
+Since C was generated from crypto/rand (uniform bytes) and embedded using the true seeds, the bits extracted with wrong seeds correspond to:
+- Wrong noise positions → extracting a mix of true noise and true data bits.
+- Wrong rotation → un-rotating with incorrect r.
+- Wrong XOR → XOR-decrypting with incorrect mask.
+- Wrong lockSeed → inverting a wrong per-chunk permutation, so the pre-COBS byte stream is a scrambled reordering of the true post-barrier bits.
+- Wrong startPixel_i → reading each snake's data out of a wrong position.
 
 The extracted bytes are a deterministic but pseudorandom function of the wrong seeds applied to a random container. Without knowledge of the true seeds, the output is indistinguishable from uniform random.
 
@@ -406,7 +419,7 @@ P > k / 5.807
 | 1024-bit | P > 365 pixels (~2.5 KB) | P > 177 pixels (~1.2 KB) |
 | 2048-bit | P > 730 pixels (~5.0 KB) | P > 353 pixels (~2.4 KB) |
 
-For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The MinPixels formula now guarantees ambiguity dominance at minimum container in all modes: Encrypt/Stream (P=196, no CCA) uses MinPixels = ⌈keyBits / log₂(56)⌉ which guarantees 56^P > 2^keyBits; Auth (P=400, CCA possible) uses MinPixelsAuth = ⌈keyBits / log₂(7)⌉ which guarantees 7^P > 2^keyBits. ∎
+For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The MinPixels formula (unified in v0.3.0 to `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉`) guarantees ambiguity dominance at the minimum container size across both streaming modes: 7^P > 2^keyBits at the unified floor. The 56^P bound remains valid for any container above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
 
 ## Proof 10: Guaranteed CSPRNG Residue (No Perfect Fill)
 
@@ -463,13 +476,66 @@ The CSPRNG residue grows with data size: larger containers have proportionally m
 
 ---
 
+## Proof 11: 48-bit Interlocked Barrier Mask Space
+
+**Theorem.** For each 48-bit chunk of the interleaved payload, the Interlocked Barrier draws a mask triple `(m0, m1, m2)` of pairwise-disjoint 16-of-48 lanes from a per-chunk PRF-keyed space of
+
+- A = C(48, 16) = **2,254,848,913,647** (log₂ ≈ 41.04) — choices for `m0`,
+- B = C(32, 16) = **601,080,390** (log₂ ≈ 29.16) — choices for `m1` from the remaining 32 bits (`m2` is then determined),
+
+giving a per-chunk mask space of cardinality
+
+```
+|Ω_chunk| = A · B = 1,355,345,464,406,015,082,330  ≈  2^70.20 .
+```
+
+Under the PRF assumption, the per-chunk mask draws are computationally indistinguishable from independent uniform selections from Ω_chunk. A known-plaintext crib supplying 48 known bits of a chunk does not determine that chunk's mask; the number of preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80` and every candidate mask remains consistent with the observation.
+
+**Proof.** Balanced-partition counting. A partition of a 48-bit word into three disjoint 16-bit lanes is fully specified by choosing `m0` (`C(48, 16) = A` ways), then `m1` from the remaining 32 bits (`C(32, 16) = B` ways); `m2` is the complement. The product `A · B` is the cardinality of Ω_chunk.
+
+PRF independence. The barrier derives each chunk's mask triple by consuming a domain tag plus the little-endian group index as the PRF input under `deriveInterLockSeed(lockSeed, nonce)`. Distinct chunks receive distinct PRF inputs and therefore distinct, PRF-independent output ranks. Under the PRF assumption these ranks are computationally indistinguishable from independent uniform selections from `[0, 2^128)`.
+
+Preimage count. The unrank map `Ω_rank : [0, 2^128) → Ω_chunk` is the two-step `(idx0, idx1) = (⌊rank / B⌋ mod A, rank mod B)` applied to `rank`. Its preimage counts differ by at most 1: the `2^128 mod (A · B)` lowest-indexed pairs receive `⌈2^128 / (A · B)⌉ = ⌊2^128 / (A · B)⌋ + 1 ≈ 2^57.80` preimages, and the remainder receive `⌊2^128 / (A · B)⌋ ≈ 2^57.80` preimages (the two floors are equal at the 2^57.80 order). Every mask triple therefore has at least `⌊2^128 / (A · B)⌋ ≈ 2^57.80` PRF-output preimages, so any candidate mask triple is consistent with any observation.
+
+**Composition with pixel-layer ambiguity.** Combined with the per-pixel 1:1 signal/noise ambiguity of [Proof 1](#proof-1-information-theoretic-barrier) and the 7-rotation encoding ambiguity of [Proof 4](#proof-4-rotation-barrier), the attacker has no ranking signal among the ≈ 2^70.20 masks per chunk. The barrier's contribution is structural: it adds a hidden per-chunk permutation whose knowledge is required before any per-bit constraint can even be written down.
+
+**Bias — granularity, not distinguisher.** The two-step reduction is deterministic and constant-time; rejection sampling is avoided to preserve constant-time discipline. The reduction carries a fixed, publicly-known per-chunk relative deviation of **≈ 2^-57.8** (the `2^128 mod (A · B)` +1-preimage pairs vs the rest). Accumulated linearly over a maximum-size message of `2^23.42` chunks, the per-message deviation is bounded by **≈ 2^-34.4** (contract value; the tighter iid bound is ≈ 2^-36). Turning this granularity into a confident distinguisher would require on the order of `1 / ε² ≈ 2^115.6` chunk samples — outside any attainable sample budget. The biased event is a property of PRF output (one-way by assumption) and is unobservable beneath the barrier / noise / fill stack, so it exposes no key or plaintext channel in principle.
+
+The empirical statement is bounded: "no distinguisher reachable at attainable sample sizes", not "no bias". ∎
+
+## Proof 12: gcd(A, B) Anti-Collapse Trap
+
+**Theorem.** The rejected same-rank reduction `(rank mod A, rank mod B)` reaches only `1 / gcd(A, B)` of the joint `(m0, m1)` space, where
+
+```
+gcd(A, B) = gcd(C(48, 16), C(32, 16)) = 66861 = 3² · 17 · 19 · 23 .
+```
+
+The chosen two-step reduction `(⌊rank / B⌋ mod A, rank mod B)` reaches the full `A × B` space near-uniformly.
+
+**Proof.** For any fixed `d = gcd(A, B)`, the pair `(rank mod A, rank mod B)` is a function of `rank mod lcm(A, B) = A · B / d`, so its range is a subset of `[0, A) × [0, B)` of cardinality `A · B / d = A · B / 66861`. The pairs `(a, b)` reached by this reduction are exactly those satisfying `a ≡ b (mod d)`. The remaining `A · B · (d − 1) / d ≈ (A · B) · (1 − 1/66861)` pairs are unreachable.
+
+Concretely, the reachable fraction of `(m0, m1)` pairs under the rejected same-rank double-mod is
+
+```
+1 / 66861  ≈  1.5 × 10⁻⁵ ,
+```
+
+so ≈ 99.998 % of the `A × B` mask space would be structurally excluded. An attacker exploiting the reduction structure would face a 66861×-restricted mask space through the back door — a substantial `log₂ 66861 ≈ 16.03`-bit erosion of the [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space) floor.
+
+**Contrast with the chosen reduction.** The two-step map `rank ↦ (⌊rank / B⌋, rank mod B)` is a bijection `[0, 2^128) → [0, ⌊2^128 / B⌋) × [0, B)`. Reducing the first component `mod A` maps each pair `(a, b)` to `≈ ⌊2^128 / (A · B)⌋ = 2^57.80` preimages, differing by at most 1 — the deviation is granularity, not a distinguisher — so every pair in the full `[0, A) × [0, B)` is reached, with the near-uniformity bound of [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space). Full-space coverage is a deliberate property of the two-step reduction, not an accident.
+
+**Constant-time note.** The qmod accumulator `qmod = (qmod · 2^64 + limb) mod A` computes `⌊rank / B⌋ mod A` incrementally during schoolbook division. Reduction commutes with the Horner form of the quotient, so the two-step reduction introduces no skew beyond the documented ±1 preimage deviation. ∎
+
+---
+
 ## Additional Theorems
 
 The following theorems are well-known properties included for completeness. They are not numbered in the scientific paper.
 
 ## MAC-Inside-Encrypt Composition
 
-**Theorem.** `EncryptAuthenticated128`/`EncryptAuthenticated256`/`EncryptAuthenticated512` with MAC over full capacity (COBS + null + fill) is designed to prevent CCA spatial patterns and false null-terminator attacks (given a secure MAC function).
+**Theorem.** `itb.EncryptAuthenticated3x{128,256,512}Cfg` (and the streaming counterparts `itb.EncryptStreamAuth3xCfg`) with MAC over full capacity (COBS + null + fill) is designed to prevent CCA spatial patterns and false null-terminator attacks (given a secure MAC function).
 
 **Proof.**
 
@@ -484,10 +550,10 @@ Under CCA, flipping any bit:
 
 Every data bit position produces "reject." Only noise bits produce "accept." The response pattern is uniform across all pixels: 87.5% reject, 12.5% accept. No spatial pattern distinguishes COBS from fill regions.
 
-**Part B: False null-terminator prevention.** MAC is verified BEFORE null-terminator search in DecryptAuthenticated128/256/512:
+**Part B: False null-terminator prevention.** MAC is verified BEFORE null-terminator search in `itb.DecryptAuthenticated3x{128,256,512}Cfg`:
 
 ```
-1. Decrypt128/256/512 entire capacity → decoded[]
+1. Decrypt3x{128,256,512}Cfg entire capacity → decoded[]
 2. Verify: MAC(decoded[:payloadLen]) == decoded[payloadLen:]
 3. ONLY IF MAC passes: search for null terminator in decoded[:payloadLen]
 ```
@@ -496,24 +562,23 @@ Any bit modification (including creating a false 0x00) fails MAC verification at
 
 ## Nonce Uniqueness
 
-**Theorem.** With 128-bit nonces from crypto/rand, the birthday collision probability reaches ~50% at 2^64 messages and remains practically safe for up to ~2^48 messages (collision probability ~2^{-33}). A nonce collision affects only the colliding pair.
+**Theorem.** With nonces drawn from crypto/rand at up to the shipped default 512-bit width, the birthday collision probability at width w reaches ~50 % at 2^(w/2) messages and remains practically safe well below that threshold. A nonce collision affects only the colliding pair.
 
-**Proof.** By the birthday paradox, the probability of at least one collision among n nonces drawn uniformly from {0,1}^128:
+**Proof.** By the birthday paradox, the probability of at least one collision among n nonces drawn uniformly from {0,1}^w:
 
 ```
-P(collision) ≈ 1 - e^(-n²/2^129) ≈ n²/2^129
+P(collision) ≈ 1 - e^(-n²/2^(w+1)) ≈ n²/2^(w+1)
 ```
 
-For n = 2^64: P ≈ 2^128 / 2^129 = 1/2.
+At w = 512 (the shipped default): P reaches ~1/2 only at n ≈ 2^256, mathematically unreachable on foreseeable hardware. At w = 128 (the shortest supported width): P reaches ~1/2 at n ≈ 2^64.
 
-For n = 2^32 (4 billion messages): P ≈ 2^64 / 2^129 = 2^(-65) ≈ negligible.
+**Impact of collision:** If nonce N is reused with the same eight-seed tuple:
+- Same noiseSeed + N → identical noise positions for both messages.
+- Same lockSeed + N → identical per-chunk Interlocked Barrier permutations for both messages.
+- Same dataSeed_i + N → identical rotation and XOR masks per snake.
+- Same startSeed_i + N → identical per-snake startPixels.
+- Different crypto/rand containers (generated independently).
 
-**Impact of collision:** If nonce N is reused with the same seeds:
-- Same noiseSeed + N → identical noise positions for both messages
-- Same dataSeed + N → identical rotation and XOR masks
-- Same startSeed + N → identical start pixel
-- Different crypto/rand containers (generated independently)
+The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time-pad structure at the bit level, after per-snake reversal). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
 
-The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time pad at the bit level). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
-
-**Mitigation:** The nonce is mandatory and internally generated from crypto/rand on every Encrypt128/256/512 call. The caller cannot reuse nonces by design. ∎
+**Mitigation:** The nonce is mandatory and internally generated from crypto/rand on every `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptStream*3xCfg` / `triple.Pipeline.Encrypt*` call. The caller cannot reuse nonces by design. ∎
