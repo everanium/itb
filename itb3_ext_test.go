@@ -27,14 +27,13 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// makeSevenSeeds128Ext is the external-test counterpart of
-// itb_test.go:makeSevenSeeds128. Constructs the seven independent
+// makeEightSeeds128Ext is the external-test counterpart of
+// itb_test.go:makeEightSeeds128. Constructs the eight independent
 // 128-bit ITB seeds the Triple Ouroboros API consumes (1 noise +
-// 3 data + 3 start), all bound to the same single-call hash
-// function. The bench helpers below override per-seed Hash and
-// BatchHash fields with fresh maker() pairs so each seed carries
-// its own fixed key — same shape as the Single bench helpers in
-// itb_ext_test.go scale up for seven seeds.
+// 1 lockSeed + 3 data + 3 start), all bound to the same single-
+// call hash function. The bench helpers below override per-seed
+// Hash and BatchHash fields with fresh maker() pairs so each seed
+// carries its own fixed key.
 func makeEightSeeds128Ext(bits int, h itb.HashFunc128) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *itb.Seed128) {
 	ns, _ = itb.NewSeed128(bits, h)
 	ls, _ = itb.NewSeed128(bits, h)
@@ -47,7 +46,7 @@ func makeEightSeeds128Ext(bits int, h itb.HashFunc128) (ns, ls, ds1, ds2, ds3, s
 	return
 }
 
-// makeSevenSeeds256Ext is the 256-bit counterpart.
+// makeEightSeeds256Ext is the 256-bit counterpart.
 func makeEightSeeds256Ext(bits int, h itb.HashFunc256) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *itb.Seed256) {
 	ns, _ = itb.NewSeed256(bits, h)
 	ls, _ = itb.NewSeed256(bits, h)
@@ -60,7 +59,7 @@ func makeEightSeeds256Ext(bits int, h itb.HashFunc256) (ns, ls, ds1, ds2, ds3, s
 	return
 }
 
-// makeSevenSeeds512Ext is the 512-bit counterpart.
+// makeEightSeeds512Ext is the 512-bit counterpart.
 func makeEightSeeds512Ext(bits int, h itb.HashFunc512) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *itb.Seed512) {
 	ns, _ = itb.NewSeed512(bits, h)
 	ls, _ = itb.NewSeed512(bits, h)

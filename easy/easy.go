@@ -105,24 +105,23 @@ const (
 // [New] and [New3]. It owns a per-instance config snapshot taken at
 // construction time, fixed PRF keys and seed components for each
 // seed slot, a MAC closure bound to a fixed MAC key, and an optional
-// dedicated lockSeed when LockSeed is active.
+// dedicated lockSeed allocated automatically as the second slot.
 //
 // The four exported fields (Primitive, KeyBits, Mode, MACName) are
 // read-only after construction. Mutating them directly produces
 // undefined behaviour; reads are safe. Subsequent configuration
 // changes go through the [Encryptor.SetNonceBits],
-// [Encryptor.SetBarrierFill], [Encryptor.SetLockSeed], and
-// [Encryptor.SetChunkSize] methods, which mutate the encryptor's own
-// config copy without touching process globals or other encryptors.
+// [Encryptor.SetBarrierFill], and [Encryptor.SetChunkSize] methods,
+// which mutate the encryptor's own config copy without touching
+// process globals or other encryptors.
 //
 // Concurrency. A single Encryptor is NOT safe for concurrent use
 // from multiple goroutines: cipher methods ([Encryptor.Encrypt] /
 // [Encryptor.Decrypt] / [Encryptor.EncryptAuth] /
-// [Encryptor.DecryptAuth]) write the firstEncryptCalled flag and
-// allocate the output buffer through the shared cgo handle table,
-// per-instance setters mutate cfg fields and the *Explicit flags
-// without locking, and [Encryptor.Close] / [Encryptor.Import] mutate
-// the closed flag and seed material. Sharing one Encryptor across
+// [Encryptor.DecryptAuth]) allocate the output buffer through the
+// shared cgo handle table, per-instance setters mutate cfg fields
+// and the *Explicit flags without locking, and [Encryptor.Close] /
+// [Encryptor.Import] mutate the closed flag and seed material. Sharing one Encryptor across
 // goroutines requires external synchronisation (a sync.Mutex held
 // for the duration of every cipher call, or a single-owner channel
 // pattern). Distinct Encryptor values, each owned by one goroutine,
