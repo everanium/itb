@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use itb::{OptsBuilder, Pipeline, set_gc_percent, set_memory_limit};
+use rand::RngCore;
 
 fn build_opts() -> OptsBuilder {
     let nonce_bits = env::var("ITB_NONCE_BITS")
@@ -64,7 +65,10 @@ fn bench_message(c: &mut Criterion) {
         .sample_size(10)
         .measurement_time(Duration::from_secs(5));
     for size in [1usize << 20, 16 << 20, 64 << 20] {
-        let plain = vec![0xA5u8; size];
+        let mut plain = vec![0u8; size];
+        // CSPRNG-fill so plaintext content matches the root Go bench
+        // (crypto/rand). Not in the timing loop.
+        rand::rng().fill_bytes(&mut plain);
         group.throughput(Throughput::Bytes(size as u64));
         group.bench_function(format!("{size}B"), |b| {
             b.iter(|| pipe.encrypt_message(&plain).unwrap());

@@ -175,6 +175,9 @@ func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st
 		return 0, st
 	}
 	var wire bytes.Buffer
+	// Pre-size to the ciphertext-expansion upper bound so the wire
+	// accumulation never re-grows mid-encrypt.
+	wire.Grow(len(plainSrc) + len(plainSrc)/4 + 65536)
 	if err := h.pipe.EncryptStream(bytes.NewReader(plainSrc), &wire); err != nil {
 		s := mapTripleError(err)
 		setLastErr(s)
@@ -201,6 +204,8 @@ func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st
 		return 0, st
 	}
 	var plain bytes.Buffer
+	// Pre-size to the wire length — plaintext is always ≤ wire.
+	plain.Grow(len(wireSrc))
 	if err := h.pipe.DecryptStream(bytes.NewReader(wireSrc), &plain); err != nil {
 		s := mapTripleError(err)
 		setLastErr(s)
