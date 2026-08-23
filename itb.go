@@ -172,6 +172,41 @@ func effectiveWorkers(dataPixels int) int {
 	return numWorkers
 }
 
+// effectiveWorkersCfg is the Cfg variant of [effectiveWorkers]:
+// consults cfg.MaxWorkers when cfg is non-nil and the field carries a
+// non-zero value; otherwise falls through to [effectiveWorkers] (the
+// process-global accessor). Values above 256 are clamped to match the
+// [SetMaxWorkers] contract. A per-encryptor cap of 1 forces the
+// serial path in [process128Cfg] / [process256Cfg] / [process512Cfg]
+// without mutating the process-global — the concurrent-instance
+// isolation guarantee the triple package depends on.
+//
+// nil cfg is permitted — the legacy public entry points pass nil to
+// inherit the global, preserving pre-refactor behaviour bit-exactly.
+func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
+	if cfg == nil || cfg.MaxWorkers <= 0 {
+		return effectiveWorkers(dataPixels)
+	}
+	if dataPixels < minParallelPixels {
+		return 1
+	}
+	limit := cfg.MaxWorkers
+	if limit > 256 {
+		limit = 256
+	}
+	numWorkers := runtime.NumCPU()
+	if numWorkers > limit {
+		numWorkers = limit
+	}
+	if numWorkers > dataPixels/64 {
+		numWorkers = dataPixels / 64
+	}
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+	return numWorkers
+}
+
 // headerSizeCfg is the Cfg variant of [headerSize]: consults
 // [currentNonceSizeCfg] so a non-nil cfg with an explicit NonceBits
 // override is honoured at the header-layout site.
