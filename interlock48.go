@@ -289,6 +289,18 @@ func writeChunk48(result []byte, base int, x uint64) {
 	result[base+5] = byte(x >> 40)
 }
 
+// prependTripleLen returns [uint32_BE(len(data)):4] || data. The 4-byte
+// big-endian length prefix is carried inside the plaintext across the
+// chunk-level split; after decrypt-side interleave, the first 4 bytes
+// of the recovered stream give the exact plaintext length, enabling
+// deterministic slicing without a separate header widening.
+func prependTripleLen(data []byte) []byte {
+	out := make([]byte, 4+len(data))
+	binary.BigEndian.PutUint32(out[:4], uint32(len(data)))
+	copy(out[4:], data)
+	return out
+}
+
 // ============================================================================
 // PRF closures — batched, per hash width.
 // ============================================================================
