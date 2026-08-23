@@ -208,7 +208,7 @@ itb.SetGCPercent(20)
 
 ### Nonce width
 
-`ITB_NONCE_BITS=256` sets the default on-wire nonce width in bits at process init (accepted values: `128` / `256` / `512`). It is the sole surviving pre-v0.3.0 env knob. Per-Pipeline overrides live in `triple.Opts.NonceBits` on the facade side and in the `*itb.Config.NonceBits` field on the Low-Level side; the env value is the compile-in default when neither override is supplied.
+`ITB_NONCE_BITS=256` sets the default on-wire nonce width in bits at process init (accepted values: `128` / `256` / `512`). It is the sole environment-variable knob. Per-Pipeline overrides live in `triple.Opts.NonceBits` on the facade side and in the `*itb.Config.NonceBits` field on the Low-Level side; the env value is the compile-in default when neither override is supplied.
 
 ### Tests
 
@@ -760,7 +760,7 @@ Default nonce size is 128 bits (16 bytes). Configurable to 256 or 512 bits via `
 
 ## Minimum container size
 
-The unified CCA-resistant envelope floor `MinPixels := MinPixelsAuth` applies across both the authenticated and non-authenticated surfaces: the minimum container is `ceil(keyBits / log₂(7))` pixels, so the 7^P encoding-ambiguity floor exceeds the key space at the smallest container size. This unification removes the pre-v0.3.0 asymmetry between the non-auth and auth envelope floors.
+The unified CCA-resistant envelope floor `MinPixels := MinPixelsAuth` applies across both the authenticated and non-authenticated surfaces: the minimum container is `ceil(keyBits / log₂(7))` pixels, so the 7^P encoding-ambiguity floor exceeds the key space at the smallest container size, and envelope length does not distinguish the authenticated from the non-authenticated surface at the floor.
 
 | Key size | Min pixels → container | Noise barrier |
 |---|---|---|
