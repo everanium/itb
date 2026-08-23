@@ -149,6 +149,28 @@ type Profile struct {
 	// WrapperOn engages the wrapper (Outer cipher) layer for this
 	// profile.
 	WrapperOn bool
+
+	// MixedHashes selects a per-slot ITB hash primitive constellation
+	// for the eight-seed Interlocked Barrier Triple bundle. Slot
+	// ordering matches [allocEightSeeds]:
+	//
+	//	[0] noiseSeed  [1] lockSeed
+	//	[2] dataSeed1  [3] dataSeed2  [4] dataSeed3
+	//	[5] startSeed1 [6] startSeed2 [7] startSeed3
+	//
+	// When every entry is empty (zero-value), the profile falls back to
+	// the single-primitive path driven by [Profile.InnerHash]. When any
+	// entry is non-empty, ALL eight must be populated, each must resolve
+	// via [github.com/everanium/itb/hashes.Find], and every entry's
+	// primitive width must equal [Profile.Width]. Repeats within a
+	// single profile are permitted — the constraint is uniform width,
+	// not eight-distinct primitives.
+	//
+	// A mixed constellation and a single-primitive [Profile.InnerHash]
+	// are mutually exclusive: when [Profile.MixedHashes] is populated,
+	// [Profile.InnerHash] must be the empty string. The two paths are
+	// dispatched by [Init] and [Open] according to which field is set.
+	MixedHashes [8]string
 }
 
 // resolvedProfile is the Opts-merged effective profile shape actually
@@ -167,6 +189,36 @@ type resolvedProfile struct {
 	parallaxSegmentSize int
 	parallaxOn          bool
 	wrapperOn           bool
+
+	// mixedHashes carries the profile's per-slot primitive constellation
+	// when set. When any entry is non-empty, dispatch consults it per
+	// slot; when every entry is empty, dispatch falls back to
+	// innerHash. See [Profile.MixedHashes] for the slot ordering.
+	mixedHashes [8]string
+}
+
+// isMixedProfile reports whether p carries a mixed-primitive
+// constellation. Returns true when any [Profile.MixedHashes] slot is
+// populated; single-primitive profiles (the default) return false.
+func isMixedProfile(p Profile) bool {
+	for _, s := range p.MixedHashes {
+		if s != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isMixedResolved is the resolvedProfile-side counterpart to
+// [isMixedProfile]. Used by [Init] / [Open] dispatch to pick the
+// mixed-vs-single seed-allocation path.
+func isMixedResolved(r resolvedProfile) bool {
+	for _, s := range r.mixedHashes {
+		if s != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // profileRegistry maps profile name to [Profile] record. Populated in
@@ -295,6 +347,7 @@ func resolveProfile(prof Profile, opts Opts) resolvedProfile {
 		parallaxSegmentSize: prof.ParallaxSegmentSize,
 		parallaxOn:          prof.ParallaxOn,
 		wrapperOn:           prof.WrapperOn,
+		mixedHashes:         prof.MixedHashes,
 	}
 
 	if opts.ChunkSize > 0 {
