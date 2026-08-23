@@ -239,16 +239,17 @@ func deterministicPlaintext() []byte {
 // aliasFixture3x128 builds a deterministic Triple Ouroboros 128-bit seed
 // septuple. The 7 seeds must be distinct pointers; NewSeed128 returns
 // independent allocations per call.
-func aliasFixture3x128(t *testing.T) (ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) {
+func aliasFixture3x128(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) {
 	t.Helper()
 	ns, _ = NewSeed128(1024, sipHash128)
+	ls, _ = NewSeed128(1024, sipHash128)
 	ds1, _ = NewSeed128(1024, sipHash128)
 	ds2, _ = NewSeed128(1024, sipHash128)
 	ds3, _ = NewSeed128(1024, sipHash128)
 	ss1, _ = NewSeed128(1024, sipHash128)
 	ss2, _ = NewSeed128(1024, sipHash128)
 	ss3, _ = NewSeed128(1024, sipHash128)
-	if ns == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
+	if ns == nil || ls == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
 		t.Fatalf("aliasFixture3x128: nil seed")
 	}
 	return
@@ -257,17 +258,18 @@ func aliasFixture3x128(t *testing.T) (ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128)
 // aliasFixture3x256 builds a deterministic Triple Ouroboros 256-bit seed
 // septuple. All seven seeds share a single BLAKE3 hash factory but each
 // is allocated independently so the pointers compare unequal.
-func aliasFixture3x256(t *testing.T) (ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256) {
+func aliasFixture3x256(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256) {
 	t.Helper()
 	h := makeBlake3Hash256()
 	ns, _ = NewSeed256(1024, h)
+	ls, _ = NewSeed256(1024, h)
 	ds1, _ = NewSeed256(1024, h)
 	ds2, _ = NewSeed256(1024, h)
 	ds3, _ = NewSeed256(1024, h)
 	ss1, _ = NewSeed256(1024, h)
 	ss2, _ = NewSeed256(1024, h)
 	ss3, _ = NewSeed256(1024, h)
-	if ns == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
+	if ns == nil || ls == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
 		t.Fatalf("aliasFixture3x256: nil seed")
 	}
 	return
@@ -275,17 +277,18 @@ func aliasFixture3x256(t *testing.T) (ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256)
 
 // aliasFixture3x512 builds a deterministic Triple Ouroboros 512-bit seed
 // septuple via BLAKE2b-512.
-func aliasFixture3x512(t *testing.T) (ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) {
+func aliasFixture3x512(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) {
 	t.Helper()
 	h := makeBlake2bHash512()
 	ns, _ = NewSeed512(1024, h)
+	ls, _ = NewSeed512(1024, h)
 	ds1, _ = NewSeed512(1024, h)
 	ds2, _ = NewSeed512(1024, h)
 	ds3, _ = NewSeed512(1024, h)
 	ss1, _ = NewSeed512(1024, h)
 	ss2, _ = NewSeed512(1024, h)
 	ss3, _ = NewSeed512(1024, h)
-	if ns == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
+	if ns == nil || ls == nil || ds1 == nil || ds2 == nil || ds3 == nil || ss1 == nil || ss2 == nil || ss3 == nil {
 		t.Fatalf("aliasFixture3x512: nil seed")
 	}
 	return
@@ -299,12 +302,12 @@ func TestAliasesRoundtrip(t *testing.T) {
 
 	// --- 128-bit Triple ---
 	t.Run("EncryptAuth3x128_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
-		ct, err := EncryptAuth3x128(ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
+		ct, err := EncryptAuth3x128(ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x128: %v", err)
 		}
-		got, err := DecryptAuth3x128(ns, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
+		got, err := DecryptAuth3x128(ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("DecryptAuth3x128: %v", err)
 		}
@@ -314,13 +317,13 @@ func TestAliasesRoundtrip(t *testing.T) {
 	})
 
 	t.Run("EncryptAuth3x128Cfg_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
 		cfg := SnapshotGlobals()
-		ct, err := EncryptAuth3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ct, err := EncryptAuth3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x128Cfg: %v", err)
 		}
-		got, err := DecryptAuth3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
+		got, err := DecryptAuth3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("DecryptAuth3x128Cfg: %v", err)
 		}
@@ -331,12 +334,12 @@ func TestAliasesRoundtrip(t *testing.T) {
 
 	// --- 256-bit Triple ---
 	t.Run("EncryptAuth3x256_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
-		ct, err := EncryptAuth3x256(ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
+		ct, err := EncryptAuth3x256(ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x256: %v", err)
 		}
-		got, err := DecryptAuth3x256(ns, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
+		got, err := DecryptAuth3x256(ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("DecryptAuth3x256: %v", err)
 		}
@@ -346,13 +349,13 @@ func TestAliasesRoundtrip(t *testing.T) {
 	})
 
 	t.Run("EncryptAuth3x256Cfg_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
 		cfg := SnapshotGlobals()
-		ct, err := EncryptAuth3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ct, err := EncryptAuth3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x256Cfg: %v", err)
 		}
-		got, err := DecryptAuth3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
+		got, err := DecryptAuth3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("DecryptAuth3x256Cfg: %v", err)
 		}
@@ -363,12 +366,12 @@ func TestAliasesRoundtrip(t *testing.T) {
 
 	// --- 512-bit Triple ---
 	t.Run("EncryptAuth3x512_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
-		ct, err := EncryptAuth3x512(ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
+		ct, err := EncryptAuth3x512(ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x512: %v", err)
 		}
-		got, err := DecryptAuth3x512(ns, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
+		got, err := DecryptAuth3x512(ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("DecryptAuth3x512: %v", err)
 		}
@@ -378,13 +381,13 @@ func TestAliasesRoundtrip(t *testing.T) {
 	})
 
 	t.Run("EncryptAuth3x512Cfg_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
 		cfg := SnapshotGlobals()
-		ct, err := EncryptAuth3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ct, err := EncryptAuth3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x512Cfg: %v", err)
 		}
-		got, err := DecryptAuth3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
+		got, err := DecryptAuth3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("DecryptAuth3x512Cfg: %v", err)
 		}
@@ -415,72 +418,72 @@ func TestAliasesTampered(t *testing.T) {
 
 	// --- 128-bit Triple ---
 	t.Run("EncryptAuth3x128_Tampered", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
-		ct, err := EncryptAuth3x128(ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
+		ct, err := EncryptAuth3x128(ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x128: %v", err)
 		}
-		if _, err := DecryptAuth3x128(ns, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
+		if _, err := DecryptAuth3x128(ns, ls, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
 			t.Fatalf("DecryptAuth3x128: expected error on tampered ciphertext")
 		}
 	})
 
 	t.Run("EncryptAuth3x128Cfg_Tampered", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
 		cfg := SnapshotGlobals()
-		ct, err := EncryptAuth3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ct, err := EncryptAuth3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x128Cfg: %v", err)
 		}
-		if _, err := DecryptAuth3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
+		if _, err := DecryptAuth3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
 			t.Fatalf("DecryptAuth3x128Cfg: expected error on tampered ciphertext")
 		}
 	})
 
 	// --- 256-bit Triple ---
 	t.Run("EncryptAuth3x256_Tampered", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
-		ct, err := EncryptAuth3x256(ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
+		ct, err := EncryptAuth3x256(ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x256: %v", err)
 		}
-		if _, err := DecryptAuth3x256(ns, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
+		if _, err := DecryptAuth3x256(ns, ls, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
 			t.Fatalf("DecryptAuth3x256: expected error on tampered ciphertext")
 		}
 	})
 
 	t.Run("EncryptAuth3x256Cfg_Tampered", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
 		cfg := SnapshotGlobals()
-		ct, err := EncryptAuth3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ct, err := EncryptAuth3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x256Cfg: %v", err)
 		}
-		if _, err := DecryptAuth3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
+		if _, err := DecryptAuth3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
 			t.Fatalf("DecryptAuth3x256Cfg: expected error on tampered ciphertext")
 		}
 	})
 
 	// --- 512-bit Triple ---
 	t.Run("EncryptAuth3x512_Tampered", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
-		ct, err := EncryptAuth3x512(ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
+		ct, err := EncryptAuth3x512(ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x512: %v", err)
 		}
-		if _, err := DecryptAuth3x512(ns, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
+		if _, err := DecryptAuth3x512(ns, ls, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
 			t.Fatalf("DecryptAuth3x512: expected error on tampered ciphertext")
 		}
 	})
 
 	t.Run("EncryptAuth3x512Cfg_Tampered", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
 		cfg := SnapshotGlobals()
-		ct, err := EncryptAuth3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
+		ct, err := EncryptAuth3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt, simpleMACFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuth3x512Cfg: %v", err)
 		}
-		if _, err := DecryptAuth3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
+		if _, err := DecryptAuth3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, flipMidByte(ct), simpleMACFunc); err == nil {
 			t.Fatalf("DecryptAuth3x512Cfg: expected error on tampered ciphertext")
 		}
 	})
@@ -496,13 +499,13 @@ func TestEncrypt3xCfgRoundtrip(t *testing.T) {
 
 	// --- 128-bit Triple ---
 	t.Run("Encrypt3x128Cfg_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x128(t)
 		cfg := SnapshotGlobals()
-		ct, err := Encrypt3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt)
+		ct, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt)
 		if err != nil {
 			t.Fatalf("Encrypt3x128Cfg: %v", err)
 		}
-		got, err := Decrypt3x128Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct)
+		got, err := Decrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatalf("Decrypt3x128Cfg: %v", err)
 		}
@@ -513,13 +516,13 @@ func TestEncrypt3xCfgRoundtrip(t *testing.T) {
 
 	// --- 256-bit Triple ---
 	t.Run("Encrypt3x256Cfg_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x256(t)
 		cfg := SnapshotGlobals()
-		ct, err := Encrypt3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt)
+		ct, err := Encrypt3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt)
 		if err != nil {
 			t.Fatalf("Encrypt3x256Cfg: %v", err)
 		}
-		got, err := Decrypt3x256Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct)
+		got, err := Decrypt3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatalf("Decrypt3x256Cfg: %v", err)
 		}
@@ -530,13 +533,13 @@ func TestEncrypt3xCfgRoundtrip(t *testing.T) {
 
 	// --- 512-bit Triple ---
 	t.Run("Encrypt3x512Cfg_Roundtrip", func(t *testing.T) {
-		ns, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
+		ns, ls, d1, d2, d3, s1, s2, s3 := aliasFixture3x512(t)
 		cfg := SnapshotGlobals()
-		ct, err := Encrypt3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, pt)
+		ct, err := Encrypt3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt)
 		if err != nil {
 			t.Fatalf("Encrypt3x512Cfg: %v", err)
 		}
-		got, err := Decrypt3x512Cfg(cfg, ns, d1, d2, d3, s1, s2, s3, ct)
+		got, err := Decrypt3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatalf("Decrypt3x512Cfg: %v", err)
 		}

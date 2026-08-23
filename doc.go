@@ -176,8 +176,8 @@
 //
 // The high-level [github.com/everanium/itb/easy.Encryptor] replaces
 // the low-level setup ceremony (per-seed PRF closures, BatchHash
-// wiring, MAC factory, optional AttachLockSeed) with one constructor
-// call. The encryptor allocates its own seeds + MAC closure,
+// wiring, MAC factory) with one constructor call. The encryptor
+// allocates its own seeds + MAC closure,
 // snapshots the global configuration into a per-instance [Config],
 // and exposes setters that mutate only its own state without
 // touching the process-wide [SetMaxWorkers] / [SetNonceBits] etc.
@@ -210,7 +210,6 @@
 //	defer enc.Close()
 //	enc.SetNonceBits(512)
 //	enc.SetBarrierFill(4)
-//	//enc.SetLockSeed(1)    // optional dedicated lockSeed; adds one extra seed slot.
 //	blob := enc.Export()                          // ship to receiver
 //	encrypted, _ := enc.Encrypt(plaintext)
 //
@@ -219,10 +218,9 @@
 //	if mode == 1 { dec = easy.New(prim, kb, mac) } else { dec = easy.New3(prim, kb, mac) }
 //	defer dec.Close()
 //	// dec.Import(blob) below automatically restores the full
-//	// per-instance configuration (nonce_bits, barrier_fill, and the
-//	// dedicated lockSeed material when sender's SetLockSeed(1) was
-//	// active). The Set* lines below are kept for documentation — they
-//	// show the knobs available for explicit pre-Import override.
+//	// per-instance configuration (nonce_bits, barrier_fill). The
+//	// Set* lines below are kept for documentation — they show the
+//	// knobs available for explicit pre-Import override.
 //	// BarrierFill is asymmetric: a receiver-set value > 1 takes
 //	// priority over the blob's barrier_fill (the receiver's heavier
 //	// CSPRNG margin is preserved).
@@ -695,51 +693,37 @@
 // high-level alternative for callers that prefer constructor-bound
 // primitive selection plus auto-coupling.
 //
-// # AttachLockSeed (dedicated lockSeed)
+// # Dedicated lockSeed
 //
-// [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
-// [Seed512.AttachLockSeed] route the bit-permutation derivation
-// channel through a dedicated lockSeed instead of the noiseSeed,
-// without changing the public Encrypt / Decrypt signatures. The
-// per-chunk PRF closure captures BOTH the lockSeed's Components
+// Every Triple Ouroboros entry point takes an eight-seed
+// constellation: (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3).
+// The lockSeed slot keys the 48-bit interlock overlay's per-chunk
+// bit-permutation derivation, and its keying material stays
+// independent of the noiseSeed slot's material.
+//
+// The per-chunk PRF closure captures BOTH the lockSeed's Components
 // (independent keying material) AND its Hash function, so the
 // overlay channel may legitimately run a different PRF primitive
 // from the noise-injection channel within the same native width
-// (the [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
-// [Seed512.AttachLockSeed] type signatures enforce width match).
-// This yields keying-material isolation AND algorithm diversity
-// for defence-in-depth on the bit-permutation overlay. The
-// dedicated seed is a fourth (Single) or fifth-through-eighth
-// (Triple) seed slot allocated alongside the standard noise /
-// data / start trio. With no dedicated lockSeed attached, the
-// overlay falls through to the noiseSeed's Components and Hash.
+// (the *Seed{N} type signatures enforce width match). This yields
+// keying-material isolation AND algorithm diversity for
+// defence-in-depth on the bit-permutation overlay.
 //
-// The 48-bit interlock overlay is always engaged, so an attached
-// dedicated lockSeed is consumed on every subsequent Encrypt call
-// without any additional setter.
-//
-// Three attach-time misuse paths panic with their own sentinels:
-// [ErrLockSeedSelfAttach] (passing the same handle for noise and
-// lock), [ErrLockSeedComponentAliasing] (two distinct seed handles
-// whose Components slices share the same backing array), and
-// [ErrLockSeedAfterEncrypt] (calling AttachLockSeed on a noise seed
-// that has already produced ciphertext — switching mid-session
-// would break decryptability of pre-switch chunks).
+// The 48-bit interlock overlay is always engaged, so the lockSeed
+// argument is consumed on every Encrypt / Decrypt call — there is
+// no toggle to disable the overlay.
 //
 //	fnN, batchN, _ := itb.MakeAreionSoEM512Hash()
 //	fnL, batchL, _ := itb.MakeAreionSoEM512Hash()
 //	ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
 //	ls, _ := itb.NewSeed512(2048, fnL); ls.BatchHash = batchL
-//	ns.AttachLockSeed(ls)           // bit-permutation derivation now keyed by ls
-//	// ... ds, ss as usual; ns.AttachedLockSeed() returns ls.
-//	// Receiver mirrors the wire-up after rebuilding ls from saved
-//	// components / hash key.
+//	// ... ds1..3, ss1..3 as usual, all independently allocated.
+//	ct, _ := itb.Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, plaintext)
 //
-// The [easy.Encryptor] surface auto-allocates and wires the
-// dedicated lockSeed when [easy.Encryptor.SetLockSeed] is called and
-// persists the dedicated seed material across
+// The [easy.Encryptor] surface auto-allocates the lockSeed slot at
+// construction time (New3 / NewMixed3) and persists it across
 // [easy.Encryptor.Export] / [easy.Encryptor.Import] — no caller-side
-// AttachLockSeed bookkeeping required on the high-level path.
+// bookkeeping required on the high-level path.
 //
 // # Parallelism Control
 //

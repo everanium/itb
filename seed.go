@@ -2,45 +2,9 @@ package itb
 
 import (
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"sync/atomic"
 )
-
-// ErrLockSeedSelfAttach is the panic value raised by [Seed128.AttachLockSeed]
-// / [Seed256.AttachLockSeed] / [Seed512.AttachLockSeed] when the receiver
-// noiseSeed pointer is identical to the lockSeed argument. Self-attach
-// would defeat the entire entropy-isolation purpose of the dedicated
-// lockSeed (bit-permutation derivation would still consume noiseSeed
-// material) and is rejected loudly rather than silently degraded.
-var ErrLockSeedSelfAttach = errors.New("itb: AttachLockSeed: cannot attach a seed to itself")
-
-// ErrLockSeedComponentAliasing is the panic value raised by
-// [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
-// [Seed512.AttachLockSeed] when the noiseSeed and lockSeed share the
-// same Components backing array. Aliased Components carry identical
-// uint64 values, again defeating the entropy-isolation purpose; the
-// guard catches the case where a caller built lockSeed by copying
-// noiseSeed and then re-pointed lockSeed.Components at noiseSeed's
-// slice.
-var ErrLockSeedComponentAliasing = errors.New("itb: AttachLockSeed: noiseSeed and lockSeed share the same Components backing array")
-
-// ErrLockSeedAfterEncrypt is the panic value raised by
-// [Seed128.AttachLockSeed] / [Seed256.AttachLockSeed] /
-// [Seed512.AttachLockSeed] when AttachLockSeed is invoked on a
-// noiseSeed that has already been used in a successful Encrypt path.
-// Switching the dedicated lockSeed mid-session would break
-// decryptability of pre-switch ciphertext; the guard rejects the
-// switch loudly so callers correct the call ordering rather than
-// shipping silently-wrong ciphertext.
-var ErrLockSeedAfterEncrypt = errors.New("itb: AttachLockSeed: cannot attach lockSeed after first Encrypt")
-
-// ErrLockSeedOverlayOff is retained as a stable exported sentinel for
-// callers that still reference it. The 48-bit interlock overlay is
-// always engaged, so the underlying condition can no longer arise from
-// production dispatch; the value is preserved to keep the exported
-// error surface backward-compatible.
-var ErrLockSeedOverlayOff = errors.New("itb: AttachedLockSeed installed but the interlock overlay is not engaged")
 
 // testNonceOverride is set only by test code (see setTestNonce in *_test.go).
 // Production callers never set this — generateNonce falls through to crypto/rand.
@@ -153,60 +117,3 @@ func generateRandomBytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-// lockSeedEnabled controls whether the encryptor constructor
-// allocates a dedicated lockSeed for bit-permutation derivation,
-// separating that channel's entropy from the noiseSeed-driven
-// noise-injection channel. Default 0 = off (bit-permutation derives
-// from noiseSeed, the pre-LockSeed behaviour). Non-zero = on
-// (dedicated lockSeed generated at construction; bit-permutation
-// derives from it instead).
-//
-// Honoured only by the encryptor constructor. Low-level entry points
-// (Encrypt512 etc.) consult neither the global flag nor a dedicated
-// lockSeed — threading the extra seed through their signatures
-// would break the public API. Low-level callers seeking equivalent
-// entropy isolation use Triple Ouroboros.
-//
-// Stored in an atomic.Int32 so concurrent reads from parallel encrypt /
-// decrypt goroutines are race-free.
-var lockSeedEnabled atomic.Int32
-
-// SetLockSeed enables or disables the dedicated lockSeed for
-// bit-permutation derivation. Valid values: 0 = off (default,
-// bit-permutation derives from noiseSeed), 1 = on. Panics on any
-// other value.
-//
-// Two-tier consumption:
-//
-//   - The encryptor constructor in the easy sub-package reads this
-//     flag at New / New3 time via [SnapshotGlobals]; encryptors built
-//     after this call get a dedicated lockSeed allocated and wired
-//     into cfg.LockSeedHandle automatically.
-//   - The legacy itb root entry points (Encrypt{N} / Decrypt{N} /
-//     Encrypt3x{N} / Decrypt3x{N} and friends) do NOT consume this
-//     flag directly — they consult only [Seed128.AttachedLockSeed]
-//     / [Seed256.AttachedLockSeed] / [Seed512.AttachedLockSeed] for
-//     the dedicated-seed path. Callers that want LockSeed on the
-//     legacy path call [Seed128.AttachLockSeed] / etc. on the
-//     noiseSeed.
-//
-// Thread-safe (atomic). Affects encryptors constructed AFTER this
-// call; existing encryptors are pinned at their construction
-// snapshot.
-func SetLockSeed(n int) {
-	switch n {
-	case 0, 1:
-		lockSeedEnabled.Store(int32(n))
-	default:
-		panic(fmt.Sprintf("itb: SetLockSeed(%d): valid values are 0, 1", n))
-	}
-}
-
-// GetLockSeed returns the current dedicated-lockSeed activation flag
-// (0 = off, 1 = on). See [SetLockSeed].
-func GetLockSeed() int32 { return lockSeedEnabled.Load() }
-
-// isLockSeedActive is the internal dispatch check used by the
-// encryptor constructor and by [isLockSeedActiveCfg] when the
-// per-encryptor cfg field carries the "inherit" sentinel.
-func isLockSeedActive() bool { return lockSeedEnabled.Load() != 0 }

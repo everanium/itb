@@ -654,16 +654,11 @@ func TestSplitTriple48LockedBatchShortFinalGroup(t *testing.T) {
 type lockPRF48 func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64)
 
 // buildLockPRF48_128 constructs a per-chunk lockPRF48 closure for the
-// 128-bit Triple context. When the noiseSeed has a dedicated lockSeed
-// installed via [Seed128.AttachLockSeed], that attached seed supplies
-// BOTH the per-chunk PRF keying material AND the Hash function.
-func buildLockPRF48_128(noiseSeed *Seed128, nonce []byte) lockPRF48 {
-	src := noiseSeed
-	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		src = ls
-	}
-	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := src.Hash
+// 128-bit Triple context. The lockSeed argument supplies BOTH the
+// per-chunk PRF keying material AND the Hash function.
+func buildLockPRF48_128(lockSeed *Seed128, nonce []byte) lockPRF48 {
+	lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)
+	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
@@ -673,33 +668,25 @@ func buildLockPRF48_128(noiseSeed *Seed128, nonce []byte) lockPRF48 {
 }
 
 // buildLockPRF48_256 — 256-bit counterpart of [buildLockPRF48_128].
-func buildLockPRF48_256(noiseSeed *Seed256, nonce []byte) lockPRF48 {
-	src := noiseSeed
-	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		src = ls
-	}
-	lockSeed := src.deriveInterLockSeed(nonce)
-	h := src.Hash
+func buildLockPRF48_256(lockSeed *Seed256, nonce []byte) lockPRF48 {
+	lockKey := lockSeed.deriveInterLockSeed(nonce)
+	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
-		out := h(buf, lockSeed)
+		out := h(buf, lockKey)
 		return rankToMaskTriple48(out[0], out[1])
 	}
 }
 
 // buildLockPRF48_512 — 512-bit counterpart of [buildLockPRF48_128].
-func buildLockPRF48_512(noiseSeed *Seed512, nonce []byte) lockPRF48 {
-	src := noiseSeed
-	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		src = ls
-	}
-	lockSeed := src.deriveInterLockSeed(nonce)
-	h := src.Hash
+func buildLockPRF48_512(lockSeed *Seed512, nonce []byte) lockPRF48 {
+	lockKey := lockSeed.deriveInterLockSeed(nonce)
+	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
-		out := h(buf, lockSeed)
+		out := h(buf, lockKey)
 		return rankToMaskTriple48(out[0], out[1])
 	}
 }

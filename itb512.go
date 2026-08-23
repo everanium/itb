@@ -22,13 +22,6 @@ import (
 // so a non-nil cfg with an explicit NonceBits override is honoured at
 // the per-pixel buffer-allocation site.
 func process512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container []byte, width, height int, data []byte, encode bool, maxW int) {
-	if encode {
-		// Lock the AttachLockSeed safeguard: any subsequent
-		// re-attach attempt on noiseSeed will panic with
-		// ErrLockSeedAfterEncrypt to prevent breaking
-		// decryptability of pre-switch ciphertext.
-		noiseSeed.firstEncryptCalled.Store(true)
-	}
 	totalPixels := width * height
 	startPixel := startSeed.deriveStartPixel(nonce, totalPixels)
 	totalBits := len(data) * 8
@@ -72,13 +65,13 @@ func process512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce [
 	wg.Wait()
 }
 
-// checkSevenSeeds512 verifies all 7 seeds are distinct pointers (seven-seed isolation).
-func checkSevenSeeds512(ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) error {
-	seeds := [7]*Seed512{ns, ds1, ds2, ds3, ss1, ss2, ss3}
+// checkEightSeeds512 verifies all 8 seeds are distinct pointers (eight-seed isolation).
+func checkEightSeeds512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) error {
+	seeds := [8]*Seed512{ns, ls, ds1, ds2, ds3, ss1, ss2, ss3}
 	for i := 0; i < len(seeds); i++ {
 		for j := i + 1; j < len(seeds); j++ {
 			if seeds[i] == seeds[j] {
-				return fmt.Errorf("itb: all seven seeds must be different (seven-seed isolation)")
+				return fmt.Errorf("itb: all eight seeds must be different (eight-seed isolation)")
 			}
 		}
 	}
@@ -106,23 +99,24 @@ func containerSizeAuth3_512Cfg(cfg *Config, noiseSeed *Seed512, dataSeed1, dataS
 		[3]int{startSeed1.MinPixelsAuth(), startSeed2.MinPixelsAuth(), startSeed3.MinPixelsAuth()})
 }
 
-// Encrypt3x512 encrypts data using Triple Ouroboros with 7 seeds (512-bit variant).
+// Encrypt3x512 encrypts data using Triple Ouroboros with 8 seeds (512-bit variant).
 // Plaintext is split into 3 parts (every 3rd byte), each encrypted into 1/3 of the
-// pixel data with independent dataSeed and startSeed, sharing noiseSeed.
-// Output format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
+// pixel data with independent dataSeed and startSeed, sharing noiseSeed. The lockSeed
+// keys the 48-bit interlock overlay's per-chunk bit-permutation derivation. Output
+// format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
 //
 // Delegates to [Encrypt3x512Cfg] with a nil cfg so per-encryptor
 // overrides fall through to the process-global setter state.
-func Encrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
-	return Encrypt3x512Cfg(nil, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data)
+func Encrypt3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
+	return Encrypt3x512Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data)
 }
 
 // Decrypt3x512 decrypts data encrypted by [Encrypt3x512] (Triple Ouroboros, 512-bit variant).
 //
 // Delegates to [Decrypt3x512Cfg] with a nil cfg so per-encryptor
 // overrides fall through to the process-global setter state.
-func Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
-	return Decrypt3x512Cfg(nil, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData)
+func Decrypt3x512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
+	return Decrypt3x512Cfg(nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData)
 }
 
 // Encrypt3x512Cfg is the Cfg variant of [Encrypt3x512]: threads cfg
@@ -130,8 +124,8 @@ func Decrypt3x512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startS
 // Body otherwise identical to Encrypt3x512, including the
 // 3-goroutine COBS-encode / payload-build / CSPRNG-fill / process
 // stages and the per-third buffer-pool discipline.
-func Encrypt3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte) ([]byte, error) {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
 	if len(data) == 0 {
@@ -146,7 +140,7 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_512Cfg(cfg, noiseSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, nonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -267,8 +261,8 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 }
 
 // Decrypt3x512Cfg is the Cfg variant of [Decrypt3x512].
-func Decrypt3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
-	if err := checkSevenSeeds512(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func Decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
+	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
 	if len(fileData) < headerSizeCfg(cfg)+Channels {
@@ -367,5 +361,5 @@ func Decrypt3x512Cfg(cfg *Config, noiseSeed, dataSeed1, dataSeed2, dataSeed3, st
 		wg.Wait()
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_512Cfg(cfg, noiseSeed, nonce)), nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_512Cfg(cfg, lockSeed, nonce)), nil
 }

@@ -382,10 +382,10 @@ func ITB_GetSeedComponents(
 
 // ─── Encrypt / Decrypt ─────────────────────────────────────────────
 
-// Triple Ouroboros encrypt: takes seven seed handles (one shared
-// noise + three data + three start) and produces one ciphertext
-// that interleaves three snake payloads. Wire format:
-// [nonce || width(2) || height(2) || pixels]. All seven handles
+// Triple Ouroboros encrypt: takes eight seed handles (one shared
+// noise + one lockSeed + three data + three start) and produces one
+// ciphertext that interleaves three snake payloads. Wire format:
+// [nonce || width(2) || height(2) || pixels]. All eight handles
 // must share the same native hash width (mixing 128/256/512 returns
 // ITB_ERR_SEED_WIDTH_MIX). Caller-allocated output buffer; on
 // success *outLen receives the bytes written, on
@@ -393,7 +393,8 @@ func ITB_GetSeedComponents(
 //
 //export ITB_Encrypt3
 func ITB_Encrypt3(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -407,7 +408,7 @@ func ITB_Encrypt3(
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.Encrypt3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		pt, dst,
@@ -420,7 +421,8 @@ func ITB_Encrypt3(
 //
 //export ITB_Decrypt3
 func ITB_Decrypt3(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
 	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
@@ -434,7 +436,7 @@ func ITB_Decrypt3(
 	ct := goBytesView(ciphertext, ctlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.Decrypt3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		ct, dst,
@@ -518,12 +520,13 @@ func ITB_FreeMAC(handle C.uintptr_t) C.int {
 
 // ─── Authenticated Encrypt / Decrypt ───────────────────────────────
 
-// Authenticated Triple Ouroboros encrypt: 7 seed handles plus a
+// Authenticated Triple Ouroboros encrypt: 8 seed handles plus a
 // MAC handle.
 //
 //export ITB_EncryptAuth3
 func ITB_EncryptAuth3(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -538,7 +541,7 @@ func ITB_EncryptAuth3(
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EncryptAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), pt, dst,
@@ -551,7 +554,8 @@ func ITB_EncryptAuth3(
 //
 //export ITB_DecryptAuth3
 func ITB_DecryptAuth3(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -566,7 +570,7 @@ func ITB_DecryptAuth3(
 	ct := goBytesView(ciphertext, ctlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.DecryptAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), ct, dst,
@@ -823,15 +827,6 @@ func ITB_Easy_SetNonceBits(handle C.uintptr_t, n C.int) C.int {
 //export ITB_Easy_SetBarrierFill
 func ITB_Easy_SetBarrierFill(handle C.uintptr_t, n C.int) C.int {
 	return C.int(capi.EasySetBarrierFill(capi.EasyHandleID(handle), int(n)))
-}
-
-// 0 = off; 1 = on (allocates a dedicated lockSeed and routes the
-// bit-permutation overlay through it). Calling after the first
-// Encrypt yields ITB_ERR_EASY_LOCKSEED_AFTER_ENCRYPT (status code 18).
-//
-//export ITB_Easy_SetLockSeed
-func ITB_Easy_SetLockSeed(handle C.uintptr_t, mode C.int) C.int {
-	return C.int(capi.EasySetLockSeed(capi.EasyHandleID(handle), int(mode)))
 }
 
 // Per-instance streaming chunk-size override (0 = auto-detect).
@@ -1184,39 +1179,6 @@ func ITB_Easy_ParseChunkLen(
 		*outChunkLen = 0
 	}
 	return C.int(st)
-}
-
-// ─── Seed lifecycle — additional mutators ──────────────────────────
-
-// Wires a dedicated lockSeed handle onto an existing noise seed
-// handle. The per-chunk PRF closure for the bit-permutation overlay
-// captures BOTH the lockSeed's Components AND its Hash function, so
-// the lockSeed primitive may legitimately differ from the noise seed
-// primitive within the same native width — keying-material isolation
-// plus algorithm diversity for defence-in-depth on the overlay path.
-// Both handles must share the same native hash width — mixing widths
-// returns ITB_ERR_SEED_WIDTH_MIX. The 48-bit interlock overlay is
-// always engaged, so an attached dedicated lockSeed is consumed on
-// every subsequent encrypt call.
-//
-// Misuse paths surface as ITB_ERR_BAD_INPUT: self-attach (passing
-// the same handle for noise and lock), component-array aliasing
-// (two distinct handles whose components slices share the same
-// backing array), and post-Encrypt switching (calling AttachLockSeed
-// on a noise seed that has already produced ciphertext).
-//
-// The lockSeed handle remains owned by the caller — AttachLockSeed
-// only records the pointer on the noise seed; releasing the lockSeed
-// via ITB_FreeSeed before the noise seed is used invalidates the
-// dedicated derivation path. Standard pairing: keep the lockSeed
-// alive for the lifetime of the noise seed.
-//
-//export ITB_AttachLockSeed
-func ITB_AttachLockSeed(noiseHandle, lockHandle C.uintptr_t) C.int {
-	return C.int(capi.AttachLockSeed(
-		capi.HandleID(noiseHandle),
-		capi.HandleID(lockHandle),
-	))
 }
 
 // ─── Native Blob — low-level state persistence ────────────────────
@@ -1574,22 +1536,20 @@ func ITB_Blob_Import3(
 
 // ─── Easy Mode — per-slot PRF mixing ───────────────────────────────
 //
-// [easy.NewMixed] / [easy.NewMixed3] surface allows the noise / data
-// / start (and optional dedicated lockSeed) seed slots to use
-// different PRF primitives within the same native hash width — the
-// mix-and-match-PRF freedom the lower-level itb.Encrypt256 path
-// already supports, exposed through the high-level Easy Mode without
-// forcing the caller to plumb seven-line low-level setup per
-// encryptor.
+// [easy.NewMixed3] surface allows the noise / lockSeed / data /
+// start seed slots to use different PRF primitives within the same
+// native hash width — the mix-and-match-PRF freedom the low-level
+// itb.Encrypt3x{N} path already supports, exposed through the
+// high-level Easy Mode without forcing the caller to plumb
+// eight-line low-level setup per encryptor.
 //
 // All per-slot primitive names must resolve to the same native hash
 // width via the local hashes.Registry; mixing widths returns
 // ITB_ERR_INTERNAL with the panic message captured in
-// ITB_LastError. Empty primL signals "no dedicated lockSeed" (3-slot
-// or 7-slot encryptor). A non-empty primL allocates the trailing
-// slot under that primitive, mirroring ITB_Easy_SetLockSeed(handle, 1)
-// but routing the bit-permutation derivation through the
-// caller-specified primitive instead of the noiseSeed primitive.
+// ITB_LastError. Empty primL adopts the noiseSeed primitive for the
+// lockSeed slot; a non-empty primL keys the lockSeed slot
+// independently for algorithm diversity on the bit-permutation
+// channel.
 //
 // Per-slot enumeration: ITB_Easy_PrimitiveAt(handle, slot) reads
 // the per-slot canonical name; ITB_Easy_IsMixed(handle) reports
@@ -1693,7 +1653,8 @@ func streamIDFromC(p *C.uint8_t) (sid [32]byte, ok bool) {
 //
 //export ITB_EncryptStreamAuthenticated3x128
 func ITB_EncryptStreamAuthenticated3x128(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -1715,7 +1676,7 @@ func ITB_EncryptStreamAuthenticated3x128(
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EncryptStreamAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), pt, dst,
@@ -1731,7 +1692,8 @@ func ITB_EncryptStreamAuthenticated3x128(
 //
 //export ITB_EncryptStreamAuthenticated3x256
 func ITB_EncryptStreamAuthenticated3x256(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -1753,7 +1715,7 @@ func ITB_EncryptStreamAuthenticated3x256(
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EncryptStreamAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), pt, dst,
@@ -1769,7 +1731,8 @@ func ITB_EncryptStreamAuthenticated3x256(
 //
 //export ITB_EncryptStreamAuthenticated3x512
 func ITB_EncryptStreamAuthenticated3x512(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	plaintext unsafe.Pointer, ptlen C.size_t,
@@ -1791,7 +1754,7 @@ func ITB_EncryptStreamAuthenticated3x512(
 	pt := goBytesView(plaintext, ptlen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.EncryptStreamAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), pt, dst,
@@ -1807,7 +1770,8 @@ func ITB_EncryptStreamAuthenticated3x512(
 //
 //export ITB_DecryptStreamAuthenticated3x128
 func ITB_DecryptStreamAuthenticated3x128(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -1829,7 +1793,7 @@ func ITB_DecryptStreamAuthenticated3x128(
 	ct := goBytesView(ciphertext, ctlen)
 	dst := goBytesViewMut(out, outCap)
 	n, ff, st := capi.DecryptStreamAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), ct, dst,
@@ -1852,7 +1816,8 @@ func ITB_DecryptStreamAuthenticated3x128(
 //
 //export ITB_DecryptStreamAuthenticated3x256
 func ITB_DecryptStreamAuthenticated3x256(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -1874,7 +1839,7 @@ func ITB_DecryptStreamAuthenticated3x256(
 	ct := goBytesView(ciphertext, ctlen)
 	dst := goBytesViewMut(out, outCap)
 	n, ff, st := capi.DecryptStreamAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), ct, dst,
@@ -1897,7 +1862,8 @@ func ITB_DecryptStreamAuthenticated3x256(
 //
 //export ITB_DecryptStreamAuthenticated3x512
 func ITB_DecryptStreamAuthenticated3x512(
-	noiseHandle, dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
+	noiseHandle, lockHandle C.uintptr_t,
+	dataHandle1, dataHandle2, dataHandle3 C.uintptr_t,
 	startHandle1, startHandle2, startHandle3 C.uintptr_t,
 	macHandle C.uintptr_t,
 	ciphertext unsafe.Pointer, ctlen C.size_t,
@@ -1919,7 +1885,7 @@ func ITB_DecryptStreamAuthenticated3x512(
 	ct := goBytesView(ciphertext, ctlen)
 	dst := goBytesViewMut(out, outCap)
 	n, ff, st := capi.DecryptStreamAuth3(
-		capi.HandleID(noiseHandle),
+		capi.HandleID(noiseHandle), capi.HandleID(lockHandle),
 		capi.HandleID(dataHandle1), capi.HandleID(dataHandle2), capi.HandleID(dataHandle3),
 		capi.HandleID(startHandle1), capi.HandleID(startHandle2), capi.HandleID(startHandle3),
 		capi.MACHandleID(macHandle), ct, dst,

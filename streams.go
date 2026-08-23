@@ -132,9 +132,9 @@ func validateChunkSize(chunkSize int) (int, error) {
 
 // EncryptStream3x is the width-less Triple-Ouroboros plain-stream
 // Encrypt entry point. Behaviour parity with [EncryptStream] modulo
-// the 7-seed dispatch path.
-func EncryptStream3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, chunkSize int) error {
-	if _, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+// the 8-seed dispatch path.
+func EncryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, chunkSize int) error {
+	if _, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	cs, err := validateChunkSize(chunkSize)
@@ -150,7 +150,7 @@ func EncryptStream3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, sta
 		if err != nil {
 			return err
 		}
-		ct, encErr := Encrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
+		ct, encErr := Encrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
 		if encErr != nil {
 			return encErr
 		}
@@ -162,8 +162,8 @@ func EncryptStream3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, sta
 
 // DecryptStream3x is the width-less Triple-Ouroboros plain-stream
 // Decrypt entry point.
-func DecryptStream3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
-	if _, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+func DecryptStream3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
+	if _, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
 	}
 	for {
@@ -174,7 +174,7 @@ func DecryptStream3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, sta
 		if err != nil {
 			return err
 		}
-		pt, decErr := Decrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk)
+		pt, decErr := Decrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk)
 		if decErr != nil {
 			return decErr
 		}
@@ -186,28 +186,28 @@ func DecryptStream3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, sta
 
 // streamAuthEncryptTriple is the per-chunk dispatch helper for the
 // Triple-Ouroboros Streaming AEAD encrypt path.
-func streamAuthEncryptTriple(width int, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64, finalFlag bool) ([]byte, error) {
+func streamAuthEncryptTriple(width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64, finalFlag bool) ([]byte, error) {
 	switch width {
 	case 128:
-		return EncryptStreamAuthenticated3x128(noiseSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), plaintext, mac, streamID, cumulative, finalFlag)
+		return EncryptStreamAuthenticated3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), plaintext, mac, streamID, cumulative, finalFlag)
 	case 256:
-		return EncryptStreamAuthenticated3x256(noiseSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), plaintext, mac, streamID, cumulative, finalFlag)
+		return EncryptStreamAuthenticated3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), plaintext, mac, streamID, cumulative, finalFlag)
 	case 512:
-		return EncryptStreamAuthenticated3x512(noiseSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), plaintext, mac, streamID, cumulative, finalFlag)
+		return EncryptStreamAuthenticated3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), plaintext, mac, streamID, cumulative, finalFlag)
 	}
 	return nil, errSeedWidthMix
 }
 
 // streamAuthDecryptTriple is the per-chunk dispatch helper for the
 // Triple-Ouroboros Streaming AEAD decrypt path.
-func streamAuthDecryptTriple(width int, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64) ([]byte, bool, error) {
+func streamAuthDecryptTriple(width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64) ([]byte, bool, error) {
 	switch width {
 	case 128:
-		return DecryptStreamAuthenticated3x128(noiseSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk, mac, streamID, cumulative)
+		return DecryptStreamAuthenticated3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk, mac, streamID, cumulative)
 	case 256:
-		return DecryptStreamAuthenticated3x256(noiseSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk, mac, streamID, cumulative)
+		return DecryptStreamAuthenticated3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk, mac, streamID, cumulative)
 	case 512:
-		return DecryptStreamAuthenticated3x512(noiseSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk, mac, streamID, cumulative)
+		return DecryptStreamAuthenticated3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk, mac, streamID, cumulative)
 	}
 	return nil, false, errSeedWidthMix
 }
@@ -215,10 +215,10 @@ func streamAuthDecryptTriple(width int, noiseSeed, dataSeed1, dataSeed2, dataSee
 // EncryptStreamAuth3x is the width-less Triple-Ouroboros Streaming AEAD
 // Encrypt entry point. Generates a fresh 32-byte CSPRNG streamID,
 // writes it as the wire prefix, then drains src in chunkSize windows
-// and emits each encrypted chunk through the 7-seed per-chunk
+// and emits each encrypted chunk through the 8-seed per-chunk
 // dispatch path.
-func EncryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc, chunkSize int) error {
-	width, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
+func EncryptStreamAuth3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc, chunkSize int) error {
+	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func EncryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1,
 			return rerr
 		}
 		if pending != nil {
-			chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, false)
+			chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, false)
 			if encErr != nil {
 				return encErr
 			}
@@ -270,7 +270,7 @@ func EncryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1,
 	}
 
 	if pending == nil {
-		chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, mac, streamID, 0, true)
+		chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, mac, streamID, 0, true)
 		if encErr != nil {
 			return encErr
 		}
@@ -279,7 +279,7 @@ func EncryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1,
 		}
 		return nil
 	}
-	chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, true)
+	chunk, encErr := streamAuthEncryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, true)
 	if encErr != nil {
 		return encErr
 	}
@@ -291,8 +291,8 @@ func EncryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1,
 
 // DecryptStreamAuth3x is the width-less Triple-Ouroboros
 // Streaming AEAD Decrypt entry point.
-func DecryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc) error {
-	width, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
+func DecryptStreamAuth3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc) error {
+	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ func DecryptStreamAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1,
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, decErr := streamAuthDecryptTriple(width, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, mac, streamID, cumulative)
+		plain, finalFlag, decErr := streamAuthDecryptTriple(width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, mac, streamID, cumulative)
 		if decErr != nil {
 			return decErr
 		}

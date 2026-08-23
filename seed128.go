@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"sync/atomic"
 )
 
 // HashFunc128 is the pluggable 128-bit hash function interface.
@@ -51,28 +50,6 @@ type Seed128 struct {
 	// parity invariant). nil disables batched dispatch and preserves
 	// the legacy single-call code path.
 	BatchHash BatchHashFunc128
-
-	// attachedLockSeed is the optional dedicated lockSeed pointer
-	// installed via [Seed128.AttachLockSeed]. When non-nil, the
-	// bit-permutation derivation in [buildLockPRF128] /
-	// [buildPermutePRF128] (and their Cfg counterparts when no
-	// cfg-side lockSeed handle is set) routes through the attached
-	// lockSeed instead of the receiver, taking BOTH the lockSeed's
-	// Components AND its Hash function for the per-chunk PRF closure
-	// — keying-material isolation plus algorithm diversity for the
-	// bit-permutation channel relative to the noiseSeed-driven
-	// noise-injection channel, without changing any public Encrypt /
-	// Decrypt signature.
-	attachedLockSeed *Seed128
-
-	// firstEncryptCalled records whether this seed has been used in
-	// a successful Encrypt path (process128 marks it on the
-	// encode=true branch). The AttachLockSeed safeguard reads this
-	// flag and panics with [ErrLockSeedAfterEncrypt] if a re-attach
-	// attempt happens after the first encrypt — switching the
-	// dedicated lockSeed mid-session would break decryptability of
-	// pre-switch ciphertext.
-	firstEncryptCalled atomic.Bool
 }
 
 // NewSeed128 creates a new 128-bit seed with cryptographically random components.
@@ -203,90 +180,3 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	return s.ChainHash128(buf)
 }
 
-// AttachLockSeed installs ls as the dedicated lockSeed for this
-// noiseSeed. Subsequent Encrypt / Decrypt / EncryptAuthenticated /
-// DecryptAuthenticated / EncryptStream / DecryptStream calls that
-// take this seed as the noise slot route bit-permutation derivation
-// through ls instead of through the receiver — the noise-injection
-// channel still consumes the receiver's components and Hash, while
-// the bit-permutation channel consumes BOTH ls's Components AND
-// ls's Hash function, without changing any public Encrypt / Decrypt
-// signature. The PRF primitive on the bit-permutation channel may
-// therefore differ from the noise-injection channel's primitive
-// within the same native width (the *Seed128 type signature here
-// enforces width match), yielding keying-material isolation AND
-// algorithm diversity for defence-in-depth on the overlay path.
-//
-// Anti-conflation safeguards (each panics rather than silently
-// degrading the entropy isolation):
-//
-//   - Self-attach (ls == ns) panics with [ErrLockSeedSelfAttach]:
-//     bit-permutation derivation would still consume the receiver's
-//     state, defeating the isolation purpose.
-//   - Component-aliasing (ls.Components and the receiver's
-//     Components share the same backing array — typically because
-//     ls was built by copying the slice header rather than the
-//     underlying data) panics with [ErrLockSeedComponentAliasing]:
-//     a shared backing array means every encrypt-time mutation of
-//     either Components slice silently mutates the other, defeating
-//     the entropy isolation between the noise-injection and
-//     bit-permutation channels. The check is pointer-aliasing on
-//     the slice's first element, not value-equality — deep-copied
-//     slices that happen to carry identical uint64 values are not
-//     caught here.
-//   - Post-Encrypt re-attach (this seed has been used in a
-//     successful Encrypt) panics with [ErrLockSeedAfterEncrypt]:
-//     switching the dedicated lockSeed mid-session breaks
-//     decryptability of pre-switch ciphertext.
-//
-// Idempotent for the same ls (re-attaching the same pointer after
-// validation does not panic). Both seeds remain fully independent
-// objects — AttachLockSeed does not modify ls and does not copy
-// any state between the two; it merely records a single pointer
-// field on the receiver.
-//
-// Not safe for concurrent invocation with an in-flight Encrypt /
-// Decrypt on the same noiseSeed — caller serialises the attach
-// sequence before dispatching parallel encrypt traffic.
-func (s *Seed128) AttachLockSeed(ls *Seed128) {
-	if s.firstEncryptCalled.Load() {
-		panic(ErrLockSeedAfterEncrypt)
-	}
-	if ls == s {
-		panic(ErrLockSeedSelfAttach)
-	}
-	if len(s.Components) > 0 && len(ls.Components) > 0 &&
-		&s.Components[0] == &ls.Components[0] {
-		panic(ErrLockSeedComponentAliasing)
-	}
-	s.attachedLockSeed = ls
-}
-
-// AttachedLockSeed returns the dedicated lockSeed previously
-// installed via [Seed128.AttachLockSeed], or nil when no lockSeed
-// has been attached. Used internally by the bit-permutation
-// derivation builders to route through the dedicated seed when
-// present, and by serialization paths to extract the attached
-// lockSeed alongside the noiseSeed for persistence.
-func (s *Seed128) AttachedLockSeed() *Seed128 {
-	return s.attachedLockSeed
-}
-
-// DetachLockSeed removes a previously-installed dedicated lockSeed
-// pointer from this noiseSeed. After the call AttachedLockSeed
-// returns nil and the bit-permutation derivation falls back to
-// noiseSeed-driven keying material on subsequent encrypt calls.
-//
-// Panics with [ErrLockSeedAfterEncrypt] when called on a seed that
-// has already produced ciphertext — the post-Encrypt invariant
-// that protects pre-switch ciphertext from later detach is the
-// same one that protects against mid-session attach (mirrors
-// [Seed128.AttachLockSeed]).
-//
-// Safe to call when no lockSeed is attached (no-op).
-func (s *Seed128) DetachLockSeed() {
-	if s.firstEncryptCalled.Load() {
-		panic(ErrLockSeedAfterEncrypt)
-	}
-	s.attachedLockSeed = nil
-}

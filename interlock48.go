@@ -363,13 +363,13 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 // One Hash call per group yields 1 mask triple from the (lo, hi) output pair
 // (each 48-bit chunk consumes two 64-bit lanes for its 128-bit rank, so a
 // 128-bit hash width supplies material for exactly one chunk per call).
-func buildLockBatchPRF48_128(noiseSeed *Seed128, nonce []byte) lockBatchPRF48 {
-	src := noiseSeed
-	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		src = ls
-	}
-	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := src.Hash
+//
+// The closure captures the lockSeed's ChainHash-derived keying material and
+// the lockSeed's Hash function — the overlay's PRF keying is fully isolated
+// from the noiseSeed slot's material.
+func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
+	lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)
+	h := lockSeed.Hash
 	return lockBatchPRF48{
 		factor: lockBatchFactor48_128,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
@@ -383,21 +383,17 @@ func buildLockBatchPRF48_128(noiseSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	}
 }
 
-// buildLockBatchPRF48_256 is the batched counterpart of [buildLockPRF48_256].
+// buildLockBatchPRF48_256 is the 256-bit counterpart of [buildLockBatchPRF48_128].
 // One Hash call per group yields 2 mask triples from out[0..3].
-func buildLockBatchPRF48_256(noiseSeed *Seed256, nonce []byte) lockBatchPRF48 {
-	src := noiseSeed
-	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		src = ls
-	}
-	lockSeed := src.deriveInterLockSeed(nonce)
-	h := src.Hash
+func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
+	lockKey := lockSeed.deriveInterLockSeed(nonce)
+	h := lockSeed.Hash
 	return lockBatchPRF48{
 		factor: lockBatchFactor48_256,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
-			out := h(buf, lockSeed)
+			out := h(buf, lockKey)
 			var prf [8]uint64
 			copy(prf[:4], out[:])
 			fillLockMasksTriple48(&prf, lockBatchFactor48_256, masks)
@@ -405,76 +401,37 @@ func buildLockBatchPRF48_256(noiseSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	}
 }
 
-// buildLockBatchPRF48_512 is the batched counterpart of [buildLockPRF48_512].
+// buildLockBatchPRF48_512 is the 512-bit counterpart of [buildLockBatchPRF48_128].
 // One Hash call per group yields 4 mask triples from out[0..7].
-func buildLockBatchPRF48_512(noiseSeed *Seed512, nonce []byte) lockBatchPRF48 {
-	src := noiseSeed
-	if ls := noiseSeed.AttachedLockSeed(); ls != nil {
-		src = ls
-	}
-	lockSeed := src.deriveInterLockSeed(nonce)
-	h := src.Hash
+func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
+	lockKey := lockSeed.deriveInterLockSeed(nonce)
+	h := lockSeed.Hash
 	return lockBatchPRF48{
 		factor: lockBatchFactor48_512,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
-			out := h(buf, lockSeed)
+			out := h(buf, lockKey)
 			fillLockMasksTriple48(&out, lockBatchFactor48_512, masks)
 		},
 	}
 }
 
-// buildLockBatchPRF48_128Cfg — Cfg variant of [buildLockBatchPRF48_128].
-func buildLockBatchPRF48_128Cfg(cfg *Config, noiseSeed *Seed128, nonce []byte) lockBatchPRF48 {
-	src := permSeedCfg128(cfg, noiseSeed)
-	lockLo, lockHi := src.deriveInterLockSeed(nonce)
-	h := src.Hash
-	return lockBatchPRF48{
-		factor: lockBatchFactor48_128,
-		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
-			buf[0] = 0x03
-			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
-			lo, hi := h(buf, lockLo, lockHi)
-			var prf [8]uint64
-			prf[0], prf[1] = lo, hi
-			fillLockMasksTriple48(&prf, lockBatchFactor48_128, masks)
-		},
-	}
+// buildLockBatchPRF48_128Cfg — Cfg variant of [buildLockBatchPRF48_128]. The cfg
+// pointer is accepted only for symmetry with the surrounding Cfg-suffixed
+// helpers; no cfg field feeds into the derivation any more.
+func buildLockBatchPRF48_128Cfg(_ *Config, lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
+	return buildLockBatchPRF48_128(lockSeed, nonce)
 }
 
 // buildLockBatchPRF48_256Cfg — Cfg variant of [buildLockBatchPRF48_256].
-func buildLockBatchPRF48_256Cfg(cfg *Config, noiseSeed *Seed256, nonce []byte) lockBatchPRF48 {
-	src := permSeedCfg256(cfg, noiseSeed)
-	lockSeed := src.deriveInterLockSeed(nonce)
-	h := src.Hash
-	return lockBatchPRF48{
-		factor: lockBatchFactor48_256,
-		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
-			buf[0] = 0x03
-			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
-			out := h(buf, lockSeed)
-			var prf [8]uint64
-			copy(prf[:4], out[:])
-			fillLockMasksTriple48(&prf, lockBatchFactor48_256, masks)
-		},
-	}
+func buildLockBatchPRF48_256Cfg(_ *Config, lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
+	return buildLockBatchPRF48_256(lockSeed, nonce)
 }
 
 // buildLockBatchPRF48_512Cfg — Cfg variant of [buildLockBatchPRF48_512].
-func buildLockBatchPRF48_512Cfg(cfg *Config, noiseSeed *Seed512, nonce []byte) lockBatchPRF48 {
-	src := permSeedCfg512(cfg, noiseSeed)
-	lockSeed := src.deriveInterLockSeed(nonce)
-	h := src.Hash
-	return lockBatchPRF48{
-		factor: lockBatchFactor48_512,
-		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
-			buf[0] = 0x03
-			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
-			out := h(buf, lockSeed)
-			fillLockMasksTriple48(&out, lockBatchFactor48_512, masks)
-		},
-	}
+func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
+	return buildLockBatchPRF48_512(lockSeed, nonce)
 }
 
 // ============================================================================

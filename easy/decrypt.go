@@ -24,21 +24,21 @@ func (e *Encryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 	switch e.width {
 	case 128:
 		return itb.Decrypt3x128Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed128),
-			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
-			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
+			e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128),
+			e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128), e.seeds[4].(*itb.Seed128),
+			e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128), e.seeds[7].(*itb.Seed128),
 			ciphertext)
 	case 256:
 		return itb.Decrypt3x256Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed256),
-			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
-			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
+			e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256),
+			e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256), e.seeds[4].(*itb.Seed256),
+			e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256), e.seeds[7].(*itb.Seed256),
 			ciphertext)
 	case 512:
 		return itb.Decrypt3x512Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed512),
-			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
-			e.seeds[4].(*itb.Seed512), e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512),
+			e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512),
+			e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512), e.seeds[4].(*itb.Seed512),
+			e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512), e.seeds[7].(*itb.Seed512),
 			ciphertext)
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
@@ -59,21 +59,21 @@ func (e *Encryptor) DecryptAuth(ciphertext []byte) ([]byte, error) {
 	switch e.width {
 	case 128:
 		return itb.DecryptAuthenticated3x128Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed128),
-			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
-			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
+			e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128),
+			e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128), e.seeds[4].(*itb.Seed128),
+			e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128), e.seeds[7].(*itb.Seed128),
 			ciphertext, e.macFunc)
 	case 256:
 		return itb.DecryptAuthenticated3x256Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed256),
-			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
-			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
+			e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256),
+			e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256), e.seeds[4].(*itb.Seed256),
+			e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256), e.seeds[7].(*itb.Seed256),
 			ciphertext, e.macFunc)
 	case 512:
 		return itb.DecryptAuthenticated3x512Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed512),
-			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
-			e.seeds[4].(*itb.Seed512), e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512),
+			e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512),
+			e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512), e.seeds[4].(*itb.Seed512),
+			e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512), e.seeds[7].(*itb.Seed512),
 			ciphertext, e.macFunc)
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))
@@ -102,21 +102,21 @@ func (e *Encryptor) DecryptStreamAuthenticated(
 	switch e.width {
 	case 128:
 		return itb.DecryptStreamAuthenticated3x128Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed128),
-			e.seeds[1].(*itb.Seed128), e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128),
-			e.seeds[4].(*itb.Seed128), e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128),
+			e.seeds[0].(*itb.Seed128), e.seeds[1].(*itb.Seed128),
+			e.seeds[2].(*itb.Seed128), e.seeds[3].(*itb.Seed128), e.seeds[4].(*itb.Seed128),
+			e.seeds[5].(*itb.Seed128), e.seeds[6].(*itb.Seed128), e.seeds[7].(*itb.Seed128),
 			chunkData, e.macFunc, streamID, cumulativePixelOffset)
 	case 256:
 		return itb.DecryptStreamAuthenticated3x256Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed256),
-			e.seeds[1].(*itb.Seed256), e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256),
-			e.seeds[4].(*itb.Seed256), e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256),
+			e.seeds[0].(*itb.Seed256), e.seeds[1].(*itb.Seed256),
+			e.seeds[2].(*itb.Seed256), e.seeds[3].(*itb.Seed256), e.seeds[4].(*itb.Seed256),
+			e.seeds[5].(*itb.Seed256), e.seeds[6].(*itb.Seed256), e.seeds[7].(*itb.Seed256),
 			chunkData, e.macFunc, streamID, cumulativePixelOffset)
 	case 512:
 		return itb.DecryptStreamAuthenticated3x512Cfg(e.cfg,
-			e.seeds[0].(*itb.Seed512),
-			e.seeds[1].(*itb.Seed512), e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512),
-			e.seeds[4].(*itb.Seed512), e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512),
+			e.seeds[0].(*itb.Seed512), e.seeds[1].(*itb.Seed512),
+			e.seeds[2].(*itb.Seed512), e.seeds[3].(*itb.Seed512), e.seeds[4].(*itb.Seed512),
+			e.seeds[5].(*itb.Seed512), e.seeds[6].(*itb.Seed512), e.seeds[7].(*itb.Seed512),
 			chunkData, e.macFunc, streamID, cumulativePixelOffset)
 	}
 	panic(fmt.Sprintf("itb/easy: unsupported primitive width %d", e.width))

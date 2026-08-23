@@ -127,16 +127,13 @@ func TestConfigGenerateNonceCfg(t *testing.T) {
 func TestConfigSnapshotGlobals(t *testing.T) {
 	origNonce := GetNonceBits()
 	origBarrier := GetBarrierFill()
-	origLockSeed := GetLockSeed()
 	t.Cleanup(func() {
 		SetNonceBits(origNonce)
 		SetBarrierFill(origBarrier)
-		SetLockSeed(int(origLockSeed))
 	})
 
 	SetNonceBits(256)
 	SetBarrierFill(8)
-	SetLockSeed(0)
 
 	cfg := SnapshotGlobals()
 
@@ -146,26 +143,16 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	if cfg.BarrierFill != 8 {
 		t.Errorf("BarrierFill: got %d, want 8", cfg.BarrierFill)
 	}
-	if cfg.LockSeed != 0 {
-		t.Errorf("LockSeed: got %d, want 0 (snapshot of global)", cfg.LockSeed)
-	}
-	if cfg.LockSeedHandle != nil {
-		t.Errorf("LockSeedHandle: got %v, want nil", cfg.LockSeedHandle)
-	}
 
 	// Mutate globals after snapshot — the snapshot must not drift.
 	SetNonceBits(512)
 	SetBarrierFill(32)
-	SetLockSeed(1)
 
 	if cfg.NonceBits != 256 {
 		t.Errorf("post-mutation drift: NonceBits = %d, want 256", cfg.NonceBits)
 	}
 	if cfg.BarrierFill != 8 {
 		t.Errorf("post-mutation drift: BarrierFill = %d, want 8", cfg.BarrierFill)
-	}
-	if cfg.LockSeed != 0 {
-		t.Errorf("post-mutation drift: LockSeed = %d, want 0", cfg.LockSeed)
 	}
 
 	// Symmetric direction — mutating the snapshot must not affect
@@ -174,29 +161,5 @@ func TestConfigSnapshotGlobals(t *testing.T) {
 	cfg.NonceBits = 128
 	if got := GetNonceBits(); got != 512 {
 		t.Errorf("snapshot mutation leaked into global: got %d, want 512", got)
-	}
-}
-
-// TestConfigSnapshotGlobalsLockSeedOn complements
-// TestConfigSnapshotGlobals by exercising the LockSeed=1 snapshot
-// path: the snapshot captures global LockSeed=1 and pins it across a
-// subsequent global mutation back to 0.
-func TestConfigSnapshotGlobalsLockSeedOn(t *testing.T) {
-	origLockSeed := GetLockSeed()
-	t.Cleanup(func() {
-		SetLockSeed(int(origLockSeed))
-	})
-
-	SetLockSeed(1)
-	cfg := SnapshotGlobals()
-
-	if cfg.LockSeed != 1 {
-		t.Errorf("LockSeed: got %d, want 1 (snapshot of global on)", cfg.LockSeed)
-	}
-
-	SetLockSeed(0) // global flips off
-
-	if cfg.LockSeed != 1 {
-		t.Errorf("post-mutation drift: LockSeed = %d, want 1", cfg.LockSeed)
 	}
 }

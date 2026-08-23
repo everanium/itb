@@ -48,20 +48,20 @@ func constantTimeEqual(a, b []byte) bool {
 // authenticated Encrypt entry point. Dispatches to
 // [EncryptAuthenticated3x128] / [EncryptAuthenticated3x256] /
 // [EncryptAuthenticated3x512] based on the concrete pointer type of
-// the supplied seeds. All seven seeds must share one concrete *SeedN
+// the supplied seeds. All eight seeds must share one concrete *SeedN
 // type; mixing widths returns an itb-wrapped error.
-func EncryptAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte, macFunc MACFunc) ([]byte, error) {
-	w, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
+func EncryptAuth3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte, macFunc MACFunc) ([]byte, error) {
+	w, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
 		return nil, err
 	}
 	switch w {
 	case 128:
-		return EncryptAuthenticated3x128(noiseSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data, macFunc)
+		return EncryptAuthenticated3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data, macFunc)
 	case 256:
-		return EncryptAuthenticated3x256(noiseSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data, macFunc)
+		return EncryptAuthenticated3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data, macFunc)
 	case 512:
-		return EncryptAuthenticated3x512(noiseSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data, macFunc)
+		return EncryptAuthenticated3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data, macFunc)
 	}
 	return nil, errSeedWidthMix
 }
@@ -70,18 +70,18 @@ func EncryptAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, start
 // authenticated Decrypt entry point. Mirrors [EncryptAuth3x];
 // dispatches to [DecryptAuthenticated3x128] /
 // [DecryptAuthenticated3x256] / [DecryptAuthenticated3x512].
-func DecryptAuth3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, fileData []byte, macFunc MACFunc) ([]byte, error) {
-	w, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
+func DecryptAuth3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, fileData []byte, macFunc MACFunc) ([]byte, error) {
+	w, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
 		return nil, err
 	}
 	switch w {
 	case 128:
-		return DecryptAuthenticated3x128(noiseSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), fileData, macFunc)
+		return DecryptAuthenticated3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), fileData, macFunc)
 	case 256:
-		return DecryptAuthenticated3x256(noiseSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), fileData, macFunc)
+		return DecryptAuthenticated3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), fileData, macFunc)
 	case 512:
-		return DecryptAuthenticated3x512(noiseSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), fileData, macFunc)
+		return DecryptAuthenticated3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), fileData, macFunc)
 	}
 	return nil, errSeedWidthMix
 }

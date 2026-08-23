@@ -263,13 +263,16 @@ func seedWidth(s any) int {
 	}
 }
 
-// dispatchWidthTriple confirms that all seven Triple-Ouroboros seeds
-// (noise, three data, three start) share one concrete pointer type
+// dispatchWidthTriple confirms that all eight Triple-Ouroboros seeds
+// (noise, lock, three data, three start) share one concrete pointer type
 // and returns the resolved width. Returns 0 + errSeedWidthMix on any
 // type mismatch or an unsupported pointer type.
-func dispatchWidthTriple(noise, data1, data2, data3, start1, start2, start3 any) (int, error) {
+func dispatchWidthTriple(noise, lock, data1, data2, data3, start1, start2, start3 any) (int, error) {
 	w := seedWidth(noise)
 	if w == 0 {
+		return 0, errSeedWidthMix
+	}
+	if seedWidth(lock) != w {
 		return 0, errSeedWidthMix
 	}
 	if seedWidth(data1) != w || seedWidth(data2) != w || seedWidth(data3) != w {
@@ -284,20 +287,20 @@ func dispatchWidthTriple(noise, data1, data2, data3, start1, start2, start3 any)
 // Encrypt3x is the width-less Single Message Triple-Ouroboros Encrypt
 // entry point. Dispatches to [Encrypt3x128] / [Encrypt3x256] /
 // [Encrypt3x512] based on the concrete pointer type of the supplied
-// seeds. All seven seeds must share one concrete *SeedN type; mixing
+// seeds. All eight seeds must share one concrete *SeedN type; mixing
 // widths returns an itb-wrapped error.
-func Encrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
-	w, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
+func Encrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
+	w, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
 		return nil, err
 	}
 	switch w {
 	case 128:
-		return Encrypt3x128(noiseSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data)
+		return Encrypt3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data)
 	case 256:
-		return Encrypt3x256(noiseSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data)
+		return Encrypt3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data)
 	case 512:
-		return Encrypt3x512(noiseSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data)
+		return Encrypt3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data)
 	}
 	return nil, errSeedWidthMix
 }
@@ -305,18 +308,18 @@ func Encrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed
 // Decrypt3x is the width-less Single Message Triple-Ouroboros Decrypt
 // entry point. Mirrors [Encrypt3x]; dispatches to [Decrypt3x128] /
 // [Decrypt3x256] / [Decrypt3x512].
-func Decrypt3x(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, fileData []byte) ([]byte, error) {
-	w, err := dispatchWidthTriple(noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
+func Decrypt3x(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, fileData []byte) ([]byte, error) {
+	w, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
 		return nil, err
 	}
 	switch w {
 	case 128:
-		return Decrypt3x128(noiseSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), fileData)
+		return Decrypt3x128(noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), fileData)
 	case 256:
-		return Decrypt3x256(noiseSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), fileData)
+		return Decrypt3x256(noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), fileData)
 	case 512:
-		return Decrypt3x512(noiseSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), fileData)
+		return Decrypt3x512(noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), fileData)
 	}
 	return nil, errSeedWidthMix
 }
