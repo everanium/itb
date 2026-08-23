@@ -18,6 +18,16 @@ const (
 	W512 Width = 512
 )
 
+// MaxNameLen caps the length of a primitive name in [Spec.Name]. The
+// cap matches [github.com/everanium/itb/parallax.MaxCipherNameLen]: a
+// registered primitive that a caller wants to plug into a parallax
+// palette entry must fit the "<name>:<index>" derivation label inside
+// a 16-byte 128-bit-PRF input block. Enforcing the cap at [Register]
+// time catches the violation up-front rather than deferring the silent
+// breakage to a later parallax.NewSchedule call. All shipped
+// [Registry] entries fit well inside this cap (longest is 10).
+const MaxNameLen = 12
+
 // Spec describes one PRF-grade hash primitive. Shipped primitives live
 // in [Registry] with all factory fields nil; their factory closures are
 // dispatched through the switch statements in [Make128] / [Make256] /
@@ -132,6 +142,9 @@ func Register(spec Spec) error {
 func validateRegisterSpec(spec Spec) error {
 	if spec.Name == "" {
 		return fmt.Errorf("hashes: Register: Spec.Name is empty")
+	}
+	if len(spec.Name) > MaxNameLen {
+		return fmt.Errorf("hashes: Register: Spec.Name %q length %d exceeds [MaxNameLen] = %d (parallax palette-entry PRF-block budget)", spec.Name, len(spec.Name), MaxNameLen)
 	}
 	for i := 0; i < len(spec.Name); i++ {
 		c := spec.Name[i]

@@ -16,7 +16,7 @@ import (
 // customFactoryName is the base for unique Spec.Name identifiers used
 // in Register tests. Each test that mutates the customs slice appends
 // its own suffix so parallel `go test` runs do not collide.
-const customFactoryName = "reg_test_"
+const customFactoryName = "rt_"
 
 // makeCustom256PairFactory returns a Make256Pair-shaped factory that
 // wraps the ARX builder around a SHA-256 one-shot. The factory is
@@ -127,7 +127,7 @@ func TestRegisterRoundtrip(t *testing.T) {
 // primitive shows up in AllPrimitives() after the shipped Registry
 // entries and is absent from the immutable Registry itself.
 func TestRegisterAppearsInAllPrimitives(t *testing.T) {
-	name := customFactoryName + "allprimitives"
+	name := customFactoryName + "allp"
 	spec := Spec{
 		Name:        name,
 		Width:       W256,
@@ -200,13 +200,14 @@ func TestRegisterValidatesSpec(t *testing.T) {
 		spec  Spec
 	}{
 		{"empty-name", Spec{Name: "", Width: W256, Make256Pair: good256}},
+		{"name-too-long", Spec{Name: "abcdefghijklm", Width: W256, Make256Pair: good256}}, // 13 chars > MaxNameLen=12
 		{"dash-in-name", Spec{Name: "bad-name", Width: W256, Make256Pair: good256}},
 		{"uppercase-in-name", Spec{Name: "BadName", Width: W256, Make256Pair: good256}},
 		{"space-in-name", Spec{Name: "bad name", Width: W256, Make256Pair: good256}},
 		{"unsupported-width", Spec{Name: customFactoryName + "badwidth", Width: Width(64), Make256Pair: good256}},
-		{"missing-factory-w256", Spec{Name: customFactoryName + "nofactory256", Width: W256}},
-		{"missing-factory-w128", Spec{Name: customFactoryName + "nofactory128", Width: W128}},
-		{"missing-factory-w512", Spec{Name: customFactoryName + "nofactory512", Width: W512}},
+		{"missing-factory-w256", Spec{Name: customFactoryName + "nofac256", Width: W256}},
+		{"missing-factory-w128", Spec{Name: customFactoryName + "nofac128", Width: W128}},
+		{"missing-factory-w512", Spec{Name: customFactoryName + "nofac512", Width: W512}},
 		{"wrong-width-factory", Spec{Name: customFactoryName + "wrongwidth", Width: W128, Make256Pair: good256}},
 		{"cross-width-factory", Spec{Name: customFactoryName + "crosswidth", Width: W256, Make128Pair: func(key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error) {
 			return nil, nil, nil, nil
