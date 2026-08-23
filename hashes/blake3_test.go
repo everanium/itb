@@ -11,7 +11,7 @@ import (
 // TestBLAKE3256BatchedParityWithSingle confirms that the 4-way
 // batched dispatch returned by BLAKE3256Pair produces the same
 // digest as four single-call dispatches across all three ITB
-// SetNonceBits buf shapes (20 / 36 / 68 bytes). Mirrors
+// per-pixel buf shapes (20 / 36 / 68 bytes). Mirrors
 // TestBLAKE2s256BatchedParityWithSingle — the chain-absorb step
 // has to run in lock-step between the two dispatch paths, and any
 // divergence (different mixed-buffer packing, different state init,

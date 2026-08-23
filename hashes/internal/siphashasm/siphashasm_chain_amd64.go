@@ -4,7 +4,7 @@ package siphashasm
 
 // SipHash24Chain128Absorb20x4 is the public 4-pixel-batched entry
 // point for the SipHash-2-4-128 chain-absorb at the 20-byte data
-// shape (ITB SetNonceBits(128) buf shape — the default config).
+// shape (128-bit ITB nonce buf shape — the default config).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused ZMM-batched ASM kernel; otherwise falls through to
@@ -53,7 +53,7 @@ func sipHash24Chain128Absorb20x4Asm(
 )
 
 // SipHash24Chain128Absorb36x4 — 36-byte SipHash-2-4-128 batched
-// dispatcher (ITB SetNonceBits(256) buf shape). 4 full + 1 padded
+// dispatcher (256-bit ITB nonce buf shape). 4 full + 1 padded
 // compression blocks + 2-half finalization = 18 SipRounds total.
 func SipHash24Chain128Absorb36x4(
 	seeds *[4][2]uint64,
@@ -75,7 +75,7 @@ func sipHash24Chain128Absorb36x4Asm(
 )
 
 // SipHash24Chain128Absorb68x4 — 68-byte SipHash-2-4-128 batched
-// dispatcher (ITB SetNonceBits(512) buf shape). 8 full + 1 padded
+// dispatcher (512-bit ITB nonce buf shape). 8 full + 1 padded
 // compression blocks + 2-half finalization = 26 SipRounds total.
 func SipHash24Chain128Absorb68x4(
 	seeds *[4][2]uint64,

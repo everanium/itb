@@ -36,7 +36,7 @@ func areion256Permutex4SoA(b0, b1 *aes.Block4) {
 
 // areionSoEM256ChainAbsorbHot is the amd64 dispatcher for the
 // specialised fused chained-absorb VAES kernels covering ITB's three
-// SetNonceBits configs. Returns (digest, true) when the host has
+// per-pixel buf shapes. Returns (digest, true) when the host has
 // AVX-512 + VAES, all four lanes share commonLen, and commonLen is in
 // {20, 36, 68}; otherwise returns the zero value and false (falling
 // the caller back to its general CBC-MAC chain).
@@ -73,7 +73,7 @@ func areionSoEM256ChainAbsorbHot(
 
 // areionSoEM512ChainAbsorbHot is the amd64 dispatcher for the
 // specialised fused chained-absorb VAES kernels covering ITB's three
-// SetNonceBits configs at Areion-SoEM-512's 64-byte block scale. Same
+// per-pixel buf shapes at Areion-SoEM-512's 64-byte block scale. Same
 // shape as the SoEM-256 hot dispatcher.
 func areionSoEM512ChainAbsorbHot(
 	fixedKey *[64]byte,

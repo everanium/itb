@@ -32,11 +32,9 @@
 // A [Pipeline] carries a private [github.com/everanium/itb.Config] so
 // two Pipelines with distinct NonceBits / BarrierFill / MaxWorkers
 // overrides coexist in the same process without cross-contamination.
-// The process-global setters ([github.com/everanium/itb.SetNonceBits] /
-// [github.com/everanium/itb.SetBarrierFill] /
-// [github.com/everanium/itb.SetMaxWorkers]) remain in place as the
-// explicit fallback consulted when the corresponding [Opts] field is
-// left at zero.
+// When an [Opts] field is left at zero the corresponding compile-in
+// default applies (see [github.com/everanium/itb.DefaultNonceBits] /
+// [github.com/everanium/itb.DefaultBarrierFill]).
 //
 // Reader notice — the Interlocked Barrier is always on and
 // non-disableable; the Triple 3-snake payload split is the only

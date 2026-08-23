@@ -51,8 +51,8 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 // BuildCBCMACChainAbsorb, BuildSpongeChainAbsorb, BuildARXChainAbsorb —
 // that wrap a user-supplied primitive (cipher.Block, unkeyed permutation,
 // or full hash function) into an itb.HashFunc{128,256,512} closure with
-// correct ITB-nonce-width preservation across all SetNonceBits
-// configurations.
+// correct ITB-nonce-width preservation across every configured ITB
+// nonce width (128 / 256 / 512 bits).
 //
 // THESE BUILDERS ARE FOR USER-SUPPLIED PRIMITIVES, NOT REPLACEMENTS FOR
 // THE BUILT-IN CLOSURES. The built-in closures stay primitive-specific
@@ -68,10 +68,10 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 //
 // Why these matter for ITB security
 //
-// ITB supports nonce widths of 128, 256, or 512 bits via SetNonceBits.
-// The per-call buffer presented to a HashFunc closure carries a domain-
-// tag byte plus the configured nonce material — 20, 36, or 68 bytes for
-// the three nonce widths respectively. Every byte of the data parameter
+// ITB supports nonce widths of 128, 256, or 512 bits per [Config]. The
+// per-call buffer presented to a HashFunc closure carries a domain-tag
+// byte plus the configured nonce material — 20, 36, or 68 bytes for the
+// three nonce widths respectively. Every byte of the data parameter
 // must reach the digest for ITB's advertised nonce strength to hold.
 //
 // A naive user-written wrapper can silently truncate the ITB nonce in
@@ -86,8 +86,8 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 //
 //   - Wrapping `aes.NewCipher(key).Encrypt(iv, plaintext)` with the ITB
 //     nonce as `iv`: AES IV is 16 bytes regardless of how long the ITB
-//     nonce is. SetNonceBits(512) → effective 128-bit nonce. The PRF
-//     property still holds at the reduced width, but the advertised
+//     nonce is. A 512-bit ITB nonce → effective 128-bit AES nonce. The
+//     PRF property still holds at the reduced width, but the advertised
 //     property is broken silently.
 //
 //   - Wrapping `chacha20.NewUnauthenticatedCipher(key, nonce)` with the
@@ -192,7 +192,7 @@ func BuildCBCMACChainAbsorb256(block cipher.Block) itb.HashFunc256 {
 // the full nonce absorption property of BuildCBCMACChainAbsorb128 and
 // adds a 4x throughput cost.
 //
-// For 64-byte ITB nonce (SetNonceBits(512)) configurations, this
+// For 64-byte ITB nonce (512-bit nonce) configurations, this
 // closure runs 4 * ceil(68 / BlockSize()) block.Encrypt calls per
 // HashFunc512 invocation. For AES-128 (BlockSize=16) this is 20
 // Encrypt calls; for a hypothetical 32-byte block cipher 12 Encrypt

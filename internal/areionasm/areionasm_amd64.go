@@ -23,7 +23,7 @@
 //     final cyclic rotation) into the writeback.
 //   - Areion256ChainAbsorb20x4 / 36x4 / 68x4 (and the Areion-SoEM-512
 //     trio) — specialised CBC-MAC chained-absorb kernels for the three
-//     ITB SetNonceBits buf shapes (1, 2 or 3 absorb rounds on -256;
+//     ITB per-pixel buf shapes (1, 2 or 3 absorb rounds on -256;
 //     1, 1 or 2 on -512). State is held in ZMM registers across all
 //     absorb rounds; broadcast fixedKey and SoA-packed seedKey are
 //     loaded once at function entry.

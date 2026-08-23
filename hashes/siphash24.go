@@ -33,7 +33,7 @@ func SipHash24() itb.HashFunc128 {
 // W128 primitive in the registry.
 //
 // On amd64 with AVX-512+VL the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three SetNonceBits buf
+// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
 // shapes (20 / 36 / 68 byte inputs) — the 4 SipHash state words
 // (v0..v3) are held in qwords 0..3 of four ZMM registers (Z0..Z3),
 // and the SipRound body (VPADDQ / VPXORQ / VPROLQ on u64) advances

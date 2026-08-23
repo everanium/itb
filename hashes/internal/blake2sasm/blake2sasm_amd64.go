@@ -3,7 +3,7 @@
 // Package blake2sasm holds the AVX-512 + VL fused chain-absorb kernel
 // implementation of BLAKE2s for the parent hashes/ package. The chain
 // kernels are specialised at three input widths (20 / 36 / 68 bytes —
-// covering the ITB SetNonceBits 128 / 256 / 512 buf shapes) and hold
+// covering the ITB 128 / 256 / 512-bit nonce buf shapes) and hold
 // BLAKE2s state in ZMM registers across the absorb rounds, eliminating
 // the per-round memory round-trip taken by the upstream
 // `golang.org/x/crypto/blake2s` path.

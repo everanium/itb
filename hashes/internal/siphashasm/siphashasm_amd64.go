@@ -3,7 +3,7 @@
 // Package siphashasm holds the AVX-512 + VL fused chain-absorb
 // kernel implementation of SipHash-2-4-128 for the parent hashes/
 // package. The chain kernels are specialised at three input widths
-// (20 / 36 / 68 bytes — covering the ITB SetNonceBits 128 / 256 /
+// (20 / 36 / 68 bytes — covering the ITB 128 / 256 / 512-bit nonce
 // 512 buf shapes) and hold the 4-word SipHash state in just four
 // ZMM registers (Z0..Z3, qwords 0..3 active per ZMM = one qword
 // per lane).

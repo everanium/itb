@@ -4,7 +4,7 @@ package blake2sasm
 
 // Blake2s256ChainAbsorb20x4 is the public 4-pixel-batched entry point
 // for the BLAKE2s-256 chain-absorb at the 20-byte data shape (ITB
-// SetNonceBits(128) buf shape).
+// 128-bit ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused ZMM-batched ASM kernel which holds four lane-isolated
@@ -63,7 +63,7 @@ func blake2s256ChainAbsorb20x4Asm(
 )
 
 // Blake2s256ChainAbsorb36x4 — 36-byte BLAKE2s-256 batched dispatcher
-// (ITB SetNonceBits(256) buf shape). Two compression blocks per lane:
+// (256-bit ITB nonce buf shape). Two compression blocks per lane:
 //
 //	Block 1 (t=64,  f=0):  buf[0:64]   = b2key + (data[0:32] ⊕ seed)
 //	Block 2 (t=68,  f=^0): buf[64:128] = data[32:36] + 60 zero pad
@@ -96,7 +96,7 @@ func blake2s256ChainAbsorb36x4Asm(
 )
 
 // Blake2s256ChainAbsorb68x4 — 68-byte BLAKE2s-256 batched dispatcher
-// (ITB SetNonceBits(512) buf shape). Two compression blocks per lane:
+// (512-bit ITB nonce buf shape). Two compression blocks per lane:
 //
 //	Block 1 (t=64,  f=0):  buf[0:64]   = b2key + (data[0:32] ⊕ seed)
 //	Block 2 (t=100, f=^0): buf[64:128] = data[32:68] + 28 zero pad

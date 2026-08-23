@@ -93,7 +93,7 @@ func BLAKE2b512WithKey(b2key [64]byte) itb.HashFunc512 {
 // bit-exact (the parity invariant required by itb.BatchHashFunc512).
 //
 // On amd64 with AVX-512+VL the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three SetNonceBits buf
+// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
 // shapes (20 / 36 / 68 byte inputs), holding four lane-isolated
 // BLAKE2b states in 16 ZMM registers across all 12 mixing rounds.
 // On hosts without AVX-512+VL, and for non-{20,36,68} input lengths,

@@ -18,8 +18,8 @@ import (
 // 128 / 256 / 512-bit nonce configurations:
 //
 //	20 bytes  — default (16-byte nonce + 4-byte block index)
-//	36 bytes  — SetNonceBits(256) (32-byte nonce + 4-byte block index)
-//	68 bytes  — SetNonceBits(512) (64-byte nonce + 4-byte block index)
+//	36 bytes  — 256-bit nonce (32-byte nonce + 4-byte block index)
+//	68 bytes  — 512-bit nonce (64-byte nonce + 4-byte block index)
 func TestChaCha20DigestDependsOnEveryByte(t *testing.T) {
 	mac := ChaCha20WithKey([32]byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -101,7 +101,7 @@ func TestChaCha20Determinism(t *testing.T) {
 // TestChaCha20256BatchedParityWithSingle confirms that the 4-way
 // batched dispatch returned by ChaCha20256Pair produces the same
 // digest as four single-call dispatches across all three ITB
-// SetNonceBits buf shapes (20 / 36 / 68 bytes). Mirrors
+// per-pixel buf shapes (20 / 36 / 68 bytes). Mirrors
 // TestBLAKE3256BatchedParityWithSingle — the chain-absorb step has
 // to run in lock-step between the two dispatch paths, and any
 // divergence (different per-call key XOR, different state init,

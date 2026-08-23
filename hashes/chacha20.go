@@ -125,7 +125,7 @@ func ChaCha20WithKey(fixedKey [32]byte) itb.HashFunc256 {
 // bit-exact (the parity invariant required by itb.BatchHashFunc256).
 //
 // On amd64 with AVX-512+VL the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three SetNonceBits buf
+// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
 // shapes (20 / 36 / 68 byte inputs). On hosts without AVX-512+VL,
 // and for non-{20,36,68} input lengths, the batched arm falls back
 // to four single-call invocations and remains bit-exact.

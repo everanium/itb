@@ -12,7 +12,7 @@ import (
 // TestSipHash24BatchedParityWithSingle confirms that the 4-way
 // batched dispatch returned by SipHash24Pair produces the same
 // digest as four single-call dispatches across all three ITB
-// SetNonceBits buf shapes (20 / 36 / 68 bytes). Mirrors the
+// per-pixel buf shapes (20 / 36 / 68 bytes). Mirrors the
 // AES-CMAC equivalent — the SipHash chain has to run in lock-step
 // between the two dispatch paths, and any divergence (different
 // state init, different lenTag fold in the padded final block,
@@ -124,7 +124,7 @@ func TestSipHash24MakePairRejectsKey(t *testing.T) {
 }
 
 // TestSipHash24MakePairITBRoundtrip exercises the full Make128Pair
-// → Seed128.BatchHash → Encrypt128/Decrypt128 path on a non-trivial
+// → Seed128.BatchHash → Encrypt3x128Cfg/Decrypt3x128Cfg path on a non-trivial
 // plaintext. The Seed.BatchHash field is populated from the
 // Make128Pair batched arm; itb.processChunk128 routes through the
 // batched dispatch when both noiseSeed.BatchHash and
