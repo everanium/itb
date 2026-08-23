@@ -88,61 +88,30 @@ func TestFreeSeedIdempotent(t *testing.T) {
 	}
 }
 
-// TestConfigSetters round-trips every process-wide config setter to
-// confirm the FFI delegation reaches the underlying itb globals.
-// The values are reset to their starting values at the end to keep
-// the rest of the suite running with default config.
-func TestConfigSetters(t *testing.T) {
-	pairs := []struct {
-		name string
-		set  func(int) Status
-		get  func() int
-		want int
+// TestHeaderSize confirms the capi HeaderSize helper computes the
+// correct chunk header prefix for every valid nonce-byte value and
+// rejects out-of-range inputs with StatusBadInput.
+func TestHeaderSize(t *testing.T) {
+	cases := []struct {
+		nonceBytes int
+		want       int
+		wantStatus Status
 	}{
-		{"MaxWorkers", SetMaxWorkers, GetMaxWorkers, 4},
-		{"NonceBits", SetNonceBits, GetNonceBits, 256},
-		{"BarrierFill", SetBarrierFill, GetBarrierFill, 8},
+		{16, 20, StatusOK},
+		{32, 36, StatusOK},
+		{64, 68, StatusOK},
+		{0, 0, StatusBadInput},
+		{20, 0, StatusBadInput},
+		{128, 0, StatusBadInput},
 	}
-
-	for _, p := range pairs {
-		t.Run(p.name, func(t *testing.T) {
-			orig := p.get()
-			defer p.set(orig)
-			if st := p.set(p.want); st != StatusOK {
-				t.Fatalf("Set(%s, %d) = %v, want OK", p.name, p.want, st)
-			}
-			if got := p.get(); got != p.want {
-				t.Errorf("Set/Get(%s): got %d, want %d", p.name, got, p.want)
-			}
-		})
-	}
-}
-
-// TestConfigSetterValidation verifies that out-of-range values
-// produce StatusBadInput rather than panicking across the FFI
-// boundary. NonceBits accepts only {128, 256, 512}; BarrierFill
-// accepts only {1, 2, 4, 8, 16, 32}.
-func TestConfigSetterValidation(t *testing.T) {
-	origNonce := GetNonceBits()
-	defer SetNonceBits(origNonce)
-	for _, bad := range []int{0, 1, 64, 192, 1024} {
-		if st := SetNonceBits(bad); st != StatusBadInput {
-			t.Errorf("SetNonceBits(%d) = %v, want StatusBadInput", bad, st)
+	for _, c := range cases {
+		got, st := HeaderSize(c.nonceBytes)
+		if st != c.wantStatus {
+			t.Errorf("HeaderSize(%d) status = %v, want %v", c.nonceBytes, st, c.wantStatus)
 		}
-	}
-	if got := GetNonceBits(); got != origNonce {
-		t.Errorf("GetNonceBits after invalid input drifted: got %d, want %d", got, origNonce)
-	}
-
-	origBarrier := GetBarrierFill()
-	defer SetBarrierFill(origBarrier)
-	for _, bad := range []int{0, 3, 5, 64, 100} {
-		if st := SetBarrierFill(bad); st != StatusBadInput {
-			t.Errorf("SetBarrierFill(%d) = %v, want StatusBadInput", bad, st)
+		if got != c.want {
+			t.Errorf("HeaderSize(%d) = %d, want %d", c.nonceBytes, got, c.want)
 		}
-	}
-	if got := GetBarrierFill(); got != origBarrier {
-		t.Errorf("GetBarrierFill after invalid input drifted: got %d, want %d", got, origBarrier)
 	}
 }
 
@@ -464,27 +433,12 @@ func TestNewSeedFromComponentsBadKeySize(t *testing.T) {
 	}
 }
 
-// TestHeaderSizeMatchesNonce confirms HeaderSize tracks the active
-// NonceBits setting (nonce/8 + 4 dimension bytes). Restores the
-// process-wide setting at the end so neighbouring tests run with
-// their expected defaults.
-func TestHeaderSizeMatchesNonce(t *testing.T) {
-	orig := GetNonceBits()
-	defer SetNonceBits(orig)
-	for _, tc := range []struct {
-		bits int
-		want int
-	}{
-		{128, 16 + 4},
-		{256, 32 + 4},
-		{512, 64 + 4},
-	} {
-		if st := SetNonceBits(tc.bits); st != StatusOK {
-			t.Fatalf("SetNonceBits(%d): %v", tc.bits, st)
-		}
-		if got := HeaderSize(); got != tc.want {
-			t.Errorf("HeaderSize at NonceBits=%d = %d, want %d", tc.bits, got, tc.want)
-		}
+// TestDefaultNonceBits confirms the exported compile-in default nonce
+// width matches the itb DefaultNonceBits constant (used by bindings
+// that need a sentinel for streaming without threading a Config).
+func TestDefaultNonceBits(t *testing.T) {
+	if got := DefaultNonceBits(); got != 128 {
+		t.Errorf("DefaultNonceBits() = %d, want 128", got)
 	}
 }
 

@@ -579,51 +579,34 @@ func ITB_DecryptAuth3(
 	return C.int(st)
 }
 
-// ─── Process-wide configuration ────────────────────────────────────
-
-//export ITB_SetMaxWorkers
-func ITB_SetMaxWorkers(n C.int) C.int { return C.int(capi.SetMaxWorkers(int(n))) }
-
-//export ITB_GetMaxWorkers
-func ITB_GetMaxWorkers() C.int { return C.int(capi.GetMaxWorkers()) }
-
-// Accepts 128, 256, or 512. Other values return ITB_ERR_BAD_INPUT.
-//
-//export ITB_SetNonceBits
-func ITB_SetNonceBits(n C.int) C.int { return C.int(capi.SetNonceBits(int(n))) }
-
-//export ITB_GetNonceBits
-func ITB_GetNonceBits() C.int { return C.int(capi.GetNonceBits()) }
-
-// Accepts 1, 2, 4, 8, 16, 32. Other values return ITB_ERR_BAD_INPUT.
-//
-//export ITB_SetBarrierFill
-func ITB_SetBarrierFill(n C.int) C.int { return C.int(capi.SetBarrierFill(int(n))) }
-
-//export ITB_GetBarrierFill
-func ITB_GetBarrierFill() C.int { return C.int(capi.GetBarrierFill()) }
-
 // ─── Streaming helpers ─────────────────────────────────────────────
 
 // Reads a chunk header (the fixed-size
-// [nonce(N) || width(2) || height(2)] prefix where N comes from the
-// active ITB_GetNonceBits configuration; query ITB_HeaderSize for
-// the exact byte count) at the start of the supplied buffer and
-// writes the total chunk length on the wire to *outChunkLen. Used
-// by streaming consumers to walk a concatenated chunk stream one
-// chunk at a time without buffering the whole stream in memory:
-// read ITB_HeaderSize() bytes → call ITB_ParseChunkLen → read the
-// remaining (chunk_len - header_size) bytes → hand the full chunk
-// to ITB_Decrypt / ITB_Decrypt3 / ITB_DecryptAuth / etc., repeat.
+// [nonce(N) || width(2) || height(2)] prefix where N is
+// nonce_bytes — one of 16 / 32 / 64) at the start of the supplied
+// buffer and writes the total chunk length on the wire to
+// *outChunkLen. Used by streaming consumers to walk a concatenated
+// chunk stream one chunk at a time without buffering the whole
+// stream in memory: read (nonce_bytes+4) bytes → call
+// ITB_ParseChunkLen → read the remaining bytes → hand the full chunk
+// to ITB_Decrypt3 / ITB_DecryptAuth3 / etc., repeat.
 //
-// Returns ITB_OK on success, ITB_ERR_BAD_INPUT when the buffer is
-// shorter than the header, the dimensions are zero, the
-// width × height multiplication overflows, or the announced pixel
-// count exceeds the container pixel cap. The function does no
-// decryption work — it only parses the wire-format header.
+// Breaking ABI change: this function now takes a nonce_bytes
+// parameter. Previously the value came from the process-global
+// SetNonceBits state, but the setters have been retired in favour of
+// per-instance Config; the FFI surface exposes the parameter
+// explicitly so bindings can pass the value their Pipeline / Config
+// selected.
+//
+// Returns ITB_OK on success, ITB_ERR_BAD_INPUT when nonce_bytes is
+// not one of {16, 32, 64}, the buffer is shorter than the header,
+// the dimensions are zero, the width × height multiplication
+// overflows, or the announced pixel count exceeds the container
+// pixel cap. The function does no decryption work — it only parses
+// the wire-format header.
 //
 //export ITB_ParseChunkLen
-func ITB_ParseChunkLen(header unsafe.Pointer, headerLen C.size_t, outChunkLen *C.size_t) C.int {
+func ITB_ParseChunkLen(header unsafe.Pointer, headerLen C.size_t, nonceBytes C.uint32_t, outChunkLen *C.size_t) C.int {
 	if outChunkLen == nil {
 		return C.int(capi.StatusBadInput)
 	}
@@ -631,7 +614,7 @@ func ITB_ParseChunkLen(header unsafe.Pointer, headerLen C.size_t, outChunkLen *C
 		return C.int(capi.StatusBadInput)
 	}
 	hdr := goBytesView(header, headerLen)
-	n, st := capi.ParseChunkLen(hdr)
+	n, st := capi.ParseChunkLen(hdr, int(nonceBytes))
 	if st == capi.StatusOK {
 		*outChunkLen = C.size_t(n)
 	} else {
@@ -648,15 +631,35 @@ func ITB_MaxKeyBits() C.int { return C.int(capi.MaxKeyBits()) }
 //export ITB_Channels
 func ITB_Channels() C.int { return C.int(capi.Channels()) }
 
-// Returns the current ciphertext-chunk header size in bytes
-// (nonce + width(2) + height(2)). Tracks the active nonce-size
-// configuration: 20 by default (128-bit nonce), 36 under
-// ITB_SetNonceBits(256), 68 under ITB_SetNonceBits(512). Streaming
-// consumers must read this many bytes from the wire before calling
+// Returns the ciphertext-chunk header size in bytes for the given
+// nonce_bytes (nonce + width(2) + height(2)). Header size = 20 for
+// 16-byte nonce, 36 for 32-byte, 68 for 64-byte. Streaming consumers
+// must read this many bytes from the wire before calling
 // ITB_ParseChunkLen on each fresh chunk.
 //
+// Breaking ABI change: the parameter is now explicit rather than
+// implied by a process-global setter (the setters have been retired
+// in favour of per-instance Config). Bindings pass the value their
+// Pipeline / Config selected. Returns ITB_ERR_BAD_INPUT when
+// nonce_bytes is not one of {16, 32, 64}.
+//
+// ITB_DefaultNonceBits exposes the compile-in default in bits (128);
+// divide by 8 to get the byte count.
+//
 //export ITB_HeaderSize
-func ITB_HeaderSize() C.int { return C.int(capi.HeaderSize()) }
+func ITB_HeaderSize(nonceBytes C.uint32_t) C.int {
+	n, st := capi.HeaderSize(int(nonceBytes))
+	if st != capi.StatusOK {
+		return -1
+	}
+	return C.int(n)
+}
+
+// Returns the compile-in default nonce width in bits used when a
+// Config leaves NonceBits at zero.
+//
+//export ITB_DefaultNonceBits
+func ITB_DefaultNonceBits() C.int { return C.int(capi.DefaultNonceBits()) }
 // ─── Native Blob — low-level state persistence ────────────────────
 //
 // itb.Blob{128,256,512} pack the low-level encryptor material —
@@ -933,80 +936,6 @@ func ITB_Blob_GetMACName(
 		return C.int(st)
 	}
 	return C.int(writeCString(name, unsafe.Pointer(out), outCap, outLen))
-}
-
-// Serialises the handle's Single-Ouroboros state into a JSON blob.
-// The optsBitmask is a bitwise-OR of ITB_BLOB_OPT_* flags
-// (LOCKSEED=0x1, MAC=0x2). Probe-then-retry buffer convention.
-//
-//export ITB_Blob_Export
-func ITB_Blob_Export(
-	handle C.uintptr_t, optsBitmask C.int,
-	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
-) C.int {
-	if outLen == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	if !validateLen(outCap) {
-		return C.int(capi.StatusBadInput)
-	}
-	dst := goBytesViewMut(out, outCap)
-	n, st := capi.BlobExport(capi.BlobHandleID(handle), int(optsBitmask), dst)
-	*outLen = C.size_t(n)
-	return C.int(st)
-}
-
-// Serialises the handle's Triple-Ouroboros state into a JSON blob.
-// See ITB_Blob_Export for the bitmask + buffer convention.
-//
-//export ITB_Blob_Export3
-func ITB_Blob_Export3(
-	handle C.uintptr_t, optsBitmask C.int,
-	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
-) C.int {
-	if outLen == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	if !validateLen(outCap) {
-		return C.int(capi.StatusBadInput)
-	}
-	dst := goBytesViewMut(out, outCap)
-	n, st := capi.BlobExport3(capi.BlobHandleID(handle), int(optsBitmask), dst)
-	*outLen = C.size_t(n)
-	return C.int(st)
-}
-
-// Parses a Single-Ouroboros JSON blob, populates the handle's slots,
-// and applies the captured globals via the process-wide setters.
-// Returns ITB_ERR_BLOB_MODE_MISMATCH on mode=3 input (call
-// ITB_Blob_Import3 instead), ITB_ERR_BLOB_MALFORMED on parse / shape
-// failure, ITB_ERR_BLOB_VERSION_TOO_NEW on unsupported version.
-//
-//export ITB_Blob_Import
-func ITB_Blob_Import(
-	handle C.uintptr_t,
-	blob unsafe.Pointer, blobLen C.size_t,
-) C.int {
-	if !validateLen(blobLen) {
-		return C.int(capi.StatusBadInput)
-	}
-	in := goBytesView(blob, blobLen)
-	return C.int(capi.BlobImport(capi.BlobHandleID(handle), in))
-}
-
-// Triple-Ouroboros counterpart of ITB_Blob_Import. Same error
-// contract.
-//
-//export ITB_Blob_Import3
-func ITB_Blob_Import3(
-	handle C.uintptr_t,
-	blob unsafe.Pointer, blobLen C.size_t,
-) C.int {
-	if !validateLen(blobLen) {
-		return C.int(capi.StatusBadInput)
-	}
-	in := goBytesView(blob, blobLen)
-	return C.int(capi.BlobImport3(capi.BlobHandleID(handle), in))
 }
 
 // ─── Streaming AEAD Encrypt / Decrypt ──────────────────────────────

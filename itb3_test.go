@@ -56,11 +56,11 @@ func TestTriple_Roundtrip(t *testing.T) {
 		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 			data := generateData(sz)
-			encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			encrypted, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decrypted, err := Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			decrypted, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,11 +74,11 @@ func TestTriple_Roundtrip(t *testing.T) {
 func TestTriple_BinarySafety(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
-	encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,11 +92,11 @@ func TestTriple_BinarySafety256(t *testing.T) {
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
-	encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +110,11 @@ func TestTriple_BinarySafety512(t *testing.T) {
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := []byte{0x00, 0x01, 0x00, 0x00, 0xFF, 0x00, 0xAB, 0x00, 0x00}
-	encrypted, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,13 +126,13 @@ func TestTriple_BinarySafety512(t *testing.T) {
 func TestTriple_WrongSeed(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := []byte("secret message for wrong seed test")
-	encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Wrong seeds — may return error OR garbage data (oracle-free deniability)
 	wns, wls, wds1, wds2, wds3, wss1, wss2, wss3 := makeEightSeeds128(512, sipHash128)
-	decrypted, err := Decrypt3x128(wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
+	decrypted, err := Decrypt3x128Cfg(nil, wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
 	if err != nil {
 		return // expected
 	}
@@ -146,7 +146,7 @@ func TestTriple_WrongSeed256(t *testing.T) {
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := []byte("secret message for wrong seed test")
-	encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestTriple_WrongSeed256(t *testing.T) {
 	wns, wls, wds1, wds2, wds3, wss1, wss2, wss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	wh := makeBlake3Hash256()
 	wns.Hash, wls.Hash, wds1.Hash, wds2.Hash, wds3.Hash, wss1.Hash, wss2.Hash, wss3.Hash = wh, wh, wh, wh, wh, wh, wh, wh
-	decrypted, err := Decrypt3x256(wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
+	decrypted, err := Decrypt3x256Cfg(nil, wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
 	if err != nil {
 		return // expected
 	}
@@ -168,7 +168,7 @@ func TestTriple_WrongSeed512(t *testing.T) {
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := []byte("secret message for wrong seed test")
-	encrypted, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestTriple_WrongSeed512(t *testing.T) {
 	wns, wls, wds1, wds2, wds3, wss1, wss2, wss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	wh := makeBlake2bHash512()
 	wns.Hash, wls.Hash, wds1.Hash, wds2.Hash, wds3.Hash, wss1.Hash, wss2.Hash, wss3.Hash = wh, wh, wh, wh, wh, wh, wh, wh
-	decrypted, err := Decrypt3x512(wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
+	decrypted, err := Decrypt3x512Cfg(nil, wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted)
 	if err != nil {
 		return // expected
 	}
@@ -188,9 +188,9 @@ func TestTriple_WrongSeed512(t *testing.T) {
 func TestTriple_NonceUniqueness(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := []byte("same data, different nonce")
-	enc1, _ := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	enc2, _ := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+	enc1, _ := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	enc2, _ := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if bytes.Equal(enc1[:currentNonceSizeCfg(nil)], enc2[:currentNonceSizeCfg(nil)]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -200,9 +200,9 @@ func TestTriple_NonceUniqueness256(t *testing.T) {
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := []byte("same data, different nonce")
-	enc1, _ := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	enc2, _ := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+	enc1, _ := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	enc2, _ := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if bytes.Equal(enc1[:currentNonceSizeCfg(nil)], enc2[:currentNonceSizeCfg(nil)]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -212,9 +212,9 @@ func TestTriple_NonceUniqueness512(t *testing.T) {
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := []byte("same data, different nonce")
-	enc1, _ := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	enc2, _ := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	if bytes.Equal(enc1[:currentNonceSize()], enc2[:currentNonceSize()]) {
+	enc1, _ := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	enc2, _ := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	if bytes.Equal(enc1[:currentNonceSizeCfg(nil)], enc2[:currentNonceSizeCfg(nil)]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -246,7 +246,7 @@ func TestTriple_TripleSeedIsolationValidation(t *testing.T) {
 		alias, _ := NewSeed128(512, sipHash128)
 		seeds[i] = alias
 		seeds[j] = alias
-		_, err := Encrypt3x128(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], data)
+		_, err := Encrypt3x128Cfg(nil, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], data)
 		return err
 	}
 
@@ -259,7 +259,7 @@ func TestTriple_TripleSeedIsolationValidation(t *testing.T) {
 	}
 
 	// All eight same
-	if _, err := Encrypt3x128(s1, s1, s1, s1, s1, s1, s1, s1, data); err == nil {
+	if _, err := Encrypt3x128Cfg(nil, s1, s1, s1, s1, s1, s1, s1, s1, data); err == nil {
 		t.Fatal("expected error when all seeds same")
 	}
 }
@@ -289,7 +289,7 @@ func TestTriple_TripleSeedIsolationValidation256(t *testing.T) {
 		alias, _ := NewSeed256(512, makeBlake3Hash256())
 		seeds[i] = alias
 		seeds[j] = alias
-		_, err := Encrypt3x256(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], data)
+		_, err := Encrypt3x256Cfg(nil, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], data)
 		return err
 	}
 
@@ -301,7 +301,7 @@ func TestTriple_TripleSeedIsolationValidation256(t *testing.T) {
 		}
 	}
 
-	if _, err := Encrypt3x256(s1, s1, s1, s1, s1, s1, s1, s1, data); err == nil {
+	if _, err := Encrypt3x256Cfg(nil, s1, s1, s1, s1, s1, s1, s1, s1, data); err == nil {
 		t.Fatal("expected error when all seeds same")
 	}
 }
@@ -331,7 +331,7 @@ func TestTriple_TripleSeedIsolationValidation512(t *testing.T) {
 		alias, _ := NewSeed512(512, makeBlake2bHash512())
 		seeds[i] = alias
 		seeds[j] = alias
-		_, err := Encrypt3x512(seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], data)
+		_, err := Encrypt3x512Cfg(nil, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], data)
 		return err
 	}
 
@@ -343,7 +343,7 @@ func TestTriple_TripleSeedIsolationValidation512(t *testing.T) {
 		}
 	}
 
-	if _, err := Encrypt3x512(s1, s1, s1, s1, s1, s1, s1, s1, data); err == nil {
+	if _, err := Encrypt3x512Cfg(nil, s1, s1, s1, s1, s1, s1, s1, s1, data); err == nil {
 		t.Fatal("expected error when all seeds same")
 	}
 }
@@ -352,19 +352,19 @@ func TestTriple_CorruptedContainer(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := generateData(256)
 
-	encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Truncated container
-	_, err = Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted[:headerSize()+1])
+	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted[:headerSizeCfg(nil)+1])
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
 
 	// Too short
-	_, err = Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{1, 2, 3})
+	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected error for too-short data")
 	}
@@ -372,11 +372,11 @@ func TestTriple_CorruptedContainer(t *testing.T) {
 	// Zero dimensions
 	corrupted := make([]byte, len(encrypted))
 	copy(corrupted, encrypted)
-	corrupted[currentNonceSize()] = 0
-	corrupted[currentNonceSize()+1] = 0
-	corrupted[currentNonceSize()+2] = 0
-	corrupted[currentNonceSize()+3] = 0
-	_, err = Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, corrupted)
+	corrupted[currentNonceSizeCfg(nil)] = 0
+	corrupted[currentNonceSizeCfg(nil)+1] = 0
+	corrupted[currentNonceSizeCfg(nil)+2] = 0
+	corrupted[currentNonceSizeCfg(nil)+3] = 0
+	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, corrupted)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
 	}
@@ -386,11 +386,11 @@ func TestTriple_AuthRoundtrip(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := generateData(1024)
 
-	encrypted, err := EncryptAuthenticated3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := DecryptAuthenticated3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
+	decrypted, err := DecryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,18 +403,18 @@ func TestTriple_AuthTamperDetection(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := generateData(4096)
 
-	encrypted, err := EncryptAuthenticated3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSize(); i < len(tampered); i++ {
+	for i := headerSizeCfg(nil); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 
-	_, err = DecryptAuthenticated3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
+	_, err = DecryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
 	if err == nil {
 		t.Fatal("expected MAC verification failure on tampered data")
 	}
@@ -424,14 +424,14 @@ func TestTriple_AuthWrongSeed(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := []byte("authenticated wrong seed test")
 
-	encrypted, err := EncryptAuthenticated3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Wrong seeds — must fail MAC verification or produce garbage
 	wns, wls, wds1, wds2, wds3, wss1, wss2, wss3 := makeEightSeeds128(512, sipHash128)
-	_, err = DecryptAuthenticated3x128(wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted, simpleMACFunc)
+	_, err = DecryptAuthenticated3x128Cfg(nil, wns, wls, wds1, wds2, wds3, wss1, wss2, wss3, encrypted, simpleMACFunc)
 	if err == nil {
 		t.Fatal("expected error with wrong seed")
 	}
@@ -442,7 +442,7 @@ func TestTriple_StreamRoundtrip(t *testing.T) {
 	data := generateData(256 << 10) // 256 KB
 
 	var encrypted []byte
-	err := EncryptStream3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 64<<10, func(chunk []byte) error {
+	err := EncryptStream3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 64<<10, func(chunk []byte) error {
 		encrypted = append(encrypted, chunk...)
 		return nil
 	})
@@ -451,7 +451,7 @@ func TestTriple_StreamRoundtrip(t *testing.T) {
 	}
 
 	var decrypted []byte
-	err = DecryptStream3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, func(chunk []byte) error {
+	err = DecryptStream3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, func(chunk []byte) error {
 		decrypted = append(decrypted, chunk...)
 		return nil
 	})
@@ -473,11 +473,11 @@ func TestTriple_MaxDataSize64MB(t *testing.T) {
 	if _, err := rand.Read(data); err != nil {
 		t.Fatal(err)
 	}
-	encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,11 +497,11 @@ func TestTriple_MaxDataSize64MB256(t *testing.T) {
 	if _, err := rand.Read(data); err != nil {
 		t.Fatal(err)
 	}
-	encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,11 +521,11 @@ func TestTriple_MaxDataSize64MB512(t *testing.T) {
 	if _, err := rand.Read(data); err != nil {
 		t.Fatal(err)
 	}
-	encrypted, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,11 +540,11 @@ func TestTriple_SmallData(t *testing.T) {
 		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 			data := generateData(sz)
-			encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			encrypted, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decrypted, err := Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			decrypted, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -562,11 +562,11 @@ func TestTriple_SmallData256(t *testing.T) {
 			h := makeBlake3Hash256()
 			ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 			data := generateData(sz)
-			encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			encrypted, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decrypted, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			decrypted, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -584,11 +584,11 @@ func TestTriple_SmallData512(t *testing.T) {
 			h := makeBlake2bHash512()
 			ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 			data := generateData(sz)
-			encrypted, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			encrypted, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decrypted, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			decrypted, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -613,11 +613,11 @@ func TestTriple_Roundtrip256(t *testing.T) {
 			ss2.Hash = makeBlake3Hash256()
 			ss3.Hash = makeBlake3Hash256()
 			data := generateData(sz)
-			encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			encrypted, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decrypted, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			decrypted, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -642,11 +642,11 @@ func TestTriple_Roundtrip512(t *testing.T) {
 			ss2.Hash = makeBlake2bHash512()
 			ss3.Hash = makeBlake2bHash512()
 			data := generateData(sz)
-			encrypted, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			encrypted, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decrypted, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+			decrypted, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -661,7 +661,7 @@ func TestTriple_Roundtrip512(t *testing.T) {
 
 func TestTriple_EmptyData(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-	_, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
+	_, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
 	if err == nil {
 		t.Fatal("expected error for empty data")
 	}
@@ -671,7 +671,7 @@ func TestTriple_EmptyData256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	_, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
+	_, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
 	if err == nil {
 		t.Fatal("expected error for empty data")
 	}
@@ -681,7 +681,7 @@ func TestTriple_EmptyData512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	_, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
+	_, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{})
 	if err == nil {
 		t.Fatal("expected error for empty data")
 	}
@@ -690,11 +690,11 @@ func TestTriple_EmptyData512(t *testing.T) {
 func TestTriple_AuthRoundtrip256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	data := generateData(1024)
-	encrypted, err := EncryptAuthenticated3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := DecryptAuthenticated3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
+	decrypted, err := DecryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -706,11 +706,11 @@ func TestTriple_AuthRoundtrip256(t *testing.T) {
 func TestTriple_AuthRoundtrip512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	data := generateData(1024)
-	encrypted, err := EncryptAuthenticated3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := DecryptAuthenticated3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
+	decrypted, err := DecryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -722,16 +722,16 @@ func TestTriple_AuthRoundtrip512(t *testing.T) {
 func TestTriple_AuthTamperDetection256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	data := generateData(4096)
-	encrypted, err := EncryptAuthenticated3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSize(); i < len(tampered); i++ {
+	for i := headerSizeCfg(nil); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
-	_, err = DecryptAuthenticated3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
+	_, err = DecryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
 	if err == nil {
 		t.Fatal("expected MAC verification failure on tampered data")
 	}
@@ -740,16 +740,16 @@ func TestTriple_AuthTamperDetection256(t *testing.T) {
 func TestTriple_AuthTamperDetection512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	data := generateData(4096)
-	encrypted, err := EncryptAuthenticated3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSize(); i < len(tampered); i++ {
+	for i := headerSizeCfg(nil); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
-	_, err = DecryptAuthenticated3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
+	_, err = DecryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
 	if err == nil {
 		t.Fatal("expected MAC verification failure on tampered data")
 	}
@@ -758,12 +758,12 @@ func TestTriple_AuthTamperDetection512(t *testing.T) {
 func TestTriple_AuthWrongSeed256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	data := []byte("auth wrong seed 256")
-	encrypted, err := EncryptAuthenticated3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wds1, _ := NewSeed256(512, makeBlake3Hash256())
-	_, err = DecryptAuthenticated3x256(ns, ls, wds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
+	_, err = DecryptAuthenticated3x256Cfg(nil, ns, ls, wds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
 	if err == nil {
 		t.Fatal("expected error with wrong seed")
 	}
@@ -772,12 +772,12 @@ func TestTriple_AuthWrongSeed256(t *testing.T) {
 func TestTriple_AuthWrongSeed512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	data := []byte("auth wrong seed 512")
-	encrypted, err := EncryptAuthenticated3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
+	encrypted, err := EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wds1, _ := NewSeed512(512, makeBlake2bHash512())
-	_, err = DecryptAuthenticated3x512(ns, ls, wds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
+	_, err = DecryptAuthenticated3x512Cfg(nil, ns, ls, wds1, ds2, ds3, ss1, ss2, ss3, encrypted, simpleMACFunc)
 	if err == nil {
 		t.Fatal("expected error with wrong seed")
 	}
@@ -786,12 +786,12 @@ func TestTriple_AuthWrongSeed512(t *testing.T) {
 func TestTriple_CorruptedContainer256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	// Truncated
-	_, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSize()+1))
+	_, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+1))
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
 	// Too short
-	_, err = Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{1, 2, 3})
+	_, err = Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected error for too-short data")
 	}
@@ -800,12 +800,12 @@ func TestTriple_CorruptedContainer256(t *testing.T) {
 func TestTriple_CorruptedContainer512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	// Truncated
-	_, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSize()+1))
+	_, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+1))
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
 	// Too short
-	_, err = Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{1, 2, 3})
+	_, err = Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected error for too-short data")
 	}
@@ -815,7 +815,7 @@ func TestTriple_StreamRoundtrip256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	data := generateData(1 << 18)
 	var encrypted []byte
-	err := EncryptStream3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 64<<10, func(chunk []byte) error {
+	err := EncryptStream3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 64<<10, func(chunk []byte) error {
 		encrypted = append(encrypted, chunk...)
 		return nil
 	})
@@ -823,7 +823,7 @@ func TestTriple_StreamRoundtrip256(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decrypted []byte
-	err = DecryptStream3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, func(chunk []byte) error {
+	err = DecryptStream3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, func(chunk []byte) error {
 		decrypted = append(decrypted, chunk...)
 		return nil
 	})
@@ -839,7 +839,7 @@ func TestTriple_StreamRoundtrip512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	data := generateData(1 << 18)
 	var encrypted []byte
-	err := EncryptStream3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 64<<10, func(chunk []byte) error {
+	err := EncryptStream3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 64<<10, func(chunk []byte) error {
 		encrypted = append(encrypted, chunk...)
 		return nil
 	})
@@ -847,7 +847,7 @@ func TestTriple_StreamRoundtrip512(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decrypted []byte
-	err = DecryptStream3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, func(chunk []byte) error {
+	err = DecryptStream3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted, func(chunk []byte) error {
 		decrypted = append(decrypted, chunk...)
 		return nil
 	})
@@ -861,7 +861,7 @@ func TestTriple_StreamRoundtrip512(t *testing.T) {
 
 func TestTriple_MaxDataSizeExceeded(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-	if _, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
+	if _, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
 		t.Fatal("expected error for 64 MB + 1 byte")
 	}
 }
@@ -870,7 +870,7 @@ func TestTriple_MaxDataSizeExceeded256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	if _, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
+	if _, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
 		t.Fatal("expected error for 64 MB + 1 byte")
 	}
 }
@@ -879,20 +879,20 @@ func TestTriple_MaxDataSizeExceeded512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	if _, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
+	if _, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, 64<<20+1)); err == nil {
 		t.Fatal("expected error for 64 MB + 1 byte")
 	}
 }
 
 func TestTriple_DecryptRejectOversizeContainer(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-	header := make([]byte, headerSize()+Channels)
-	nonceSz := currentNonceSize()
+	header := make([]byte, headerSizeCfg(nil)+Channels)
+	nonceSz := currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
-	_, err := Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
+	_, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
 	if err == nil {
 		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
 	}
@@ -902,13 +902,13 @@ func TestTriple_DecryptRejectOversizeContainer256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	header := make([]byte, headerSize()+Channels)
-	nonceSz := currentNonceSize()
+	header := make([]byte, headerSizeCfg(nil)+Channels)
+	nonceSz := currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
-	_, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
+	_, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
 	if err == nil {
 		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
 	}
@@ -918,13 +918,13 @@ func TestTriple_DecryptRejectOversizeContainer512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	header := make([]byte, headerSize()+Channels)
-	nonceSz := currentNonceSize()
+	header := make([]byte, headerSizeCfg(nil)+Channels)
+	nonceSz := currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
-	_, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
+	_, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
 	if err == nil {
 		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
 	}
@@ -934,16 +934,15 @@ func TestTriple_BarrierFill32_64MB(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 64 MB + BarrierFill(32) Triple in short mode")
 	}
-	SetBarrierFill(32)
-	defer SetBarrierFill(1)
+	cfg := &Config{BarrierFill: 32}
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	data := make([]byte, 64<<20)
 	rand.Read(data)
-	encrypted, err := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -956,18 +955,17 @@ func TestTriple_BarrierFill32_64MB256(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 64 MB test in short mode")
 	}
-	SetBarrierFill(32)
-	defer SetBarrierFill(1)
+	cfg := &Config{BarrierFill: 32}
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := make([]byte, 64<<20)
 	rand.Read(data)
-	encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -980,18 +978,17 @@ func TestTriple_BarrierFill32_64MB512(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 64 MB test in short mode")
 	}
-	SetBarrierFill(32)
-	defer SetBarrierFill(1)
+	cfg := &Config{BarrierFill: 32}
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	data := make([]byte, 64<<20)
 	rand.Read(data)
-	encrypted, err := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypted, err := Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	decrypted, err := Decrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1008,18 +1005,18 @@ func benchTripleEncrypt128(b *testing.B, hashFunc HashFunc128, bits, dataSize in
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
 func benchTripleDecrypt128(b *testing.B, hashFunc HashFunc128, bits, dataSize int) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(bits, hashFunc)
 	data := generateData(dataSize)
-	encrypted, _ := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -1037,7 +1034,7 @@ func benchTripleEncrypt128Cached(b *testing.B, maker func() HashFunc128, bits, d
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -1052,11 +1049,11 @@ func benchTripleDecrypt128Cached(b *testing.B, maker func() HashFunc128, bits, d
 	ss2.Hash = h()
 	ss3.Hash = h()
 	data := generateData(dataSize)
-	encrypted, _ := Encrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Decrypt3x128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -1074,7 +1071,7 @@ func benchTripleEncrypt256Cached(b *testing.B, maker func() HashFunc256, bits, d
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -1089,11 +1086,11 @@ func benchTripleDecrypt256Cached(b *testing.B, maker func() HashFunc256, bits, d
 	ss2.Hash = h()
 	ss3.Hash = h()
 	data := generateData(dataSize)
-	encrypted, _ := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -1111,7 +1108,7 @@ func benchTripleEncrypt512Cached(b *testing.B, maker func() HashFunc512, bits, d
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -1126,11 +1123,11 @@ func benchTripleDecrypt512Cached(b *testing.B, maker func() HashFunc512, bits, d
 	ss2.Hash = h()
 	ss3.Hash = h()
 	data := generateData(dataSize)
-	encrypted, _ := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -1165,7 +1162,7 @@ func benchTripleEncrypt256CachedBatched(b *testing.B, maker func() (HashFunc256,
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -1192,11 +1189,11 @@ func benchTripleDecrypt256CachedBatched(b *testing.B, maker func() (HashFunc256,
 	ss3.Hash = ssH3
 	ss3.BatchHash = ssB3
 	data := generateData(dataSize)
-	encrypted, _ := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -1226,7 +1223,7 @@ func benchTripleEncrypt512CachedBatched(b *testing.B, maker func() (HashFunc512,
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		_, _ = Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	}
 }
 
@@ -1253,11 +1250,11 @@ func benchTripleDecrypt512CachedBatched(b *testing.B, maker func() (HashFunc512,
 	ss3.Hash = ssH3
 	ss3.BatchHash = ssB3
 	data := generateData(dataSize)
-	encrypted, _ := Encrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	encrypted, _ := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = Decrypt3x512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+		_, _ = Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
 	}
 }
 
@@ -1297,11 +1294,11 @@ func BenchmarkTripleBLAKE3RoundTripLockSeed(b *testing.B) {
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encrypted, err := Encrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		encrypted, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 		if err != nil {
 			b.Fatalf("Encrypt3x256: %v", err)
 		}
-		if _, err := Decrypt3x256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
+		if _, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
 			b.Fatalf("Decrypt3x256: %v", err)
 		}
 	}
@@ -1379,7 +1376,7 @@ func BenchmarkTripleEncryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) 
 	for i := 0; i < b.N; i++ {
 		r := bytes.NewReader(src)
 		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
-		if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, mac, chunkSize); err != nil {
+		if err := EncryptStreamAuth3xCfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, mac, chunkSize); err != nil {
 			b.Fatalf("EncryptStreamAuth3x: %v", err)
 		}
 	}
@@ -1399,7 +1396,7 @@ func BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) 
 	src := streamTriplePlaintext(b, dataSize)
 
 	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
-	if err := EncryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(src), encBuf, mac, chunkSize); err != nil {
+	if err := EncryptStreamAuth3xCfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(src), encBuf, mac, chunkSize); err != nil {
 		b.Fatalf("setup EncryptStreamAuth3x: %v", err)
 	}
 	ciphertext := encBuf.Bytes()
@@ -1409,7 +1406,7 @@ func BenchmarkTripleDecryptStreamAuthIO_Areion512_1024_64MB_C16MB(b *testing.B) 
 	for i := 0; i < b.N; i++ {
 		r := bytes.NewReader(ciphertext)
 		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
-		if err := DecryptStreamAuth3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, mac); err != nil {
+		if err := DecryptStreamAuth3xCfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, mac); err != nil {
 			b.Fatalf("DecryptStreamAuth3x: %v", err)
 		}
 	}
@@ -1432,7 +1429,7 @@ func BenchmarkTripleEncryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r := bytes.NewReader(src)
 		buf := bytes.NewBuffer(make([]byte, 0, 80<<20))
-		if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, chunkSize); err != nil {
+		if err := EncryptStream3xCfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf, chunkSize); err != nil {
 			b.Fatalf("EncryptStream3x: %v", err)
 		}
 	}
@@ -1450,7 +1447,7 @@ func BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	src := streamTriplePlaintext(b, dataSize)
 
 	encBuf := bytes.NewBuffer(make([]byte, 0, 80<<20))
-	if err := EncryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(src), encBuf, chunkSize); err != nil {
+	if err := EncryptStream3xCfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(src), encBuf, chunkSize); err != nil {
 		b.Fatalf("setup EncryptStream3x: %v", err)
 	}
 	ciphertext := encBuf.Bytes()
@@ -1460,7 +1457,7 @@ func BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r := bytes.NewReader(ciphertext)
 		buf := bytes.NewBuffer(make([]byte, 0, dataSize))
-		if err := DecryptStream3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf); err != nil {
+		if err := DecryptStream3xCfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, r, buf); err != nil {
 			b.Fatalf("DecryptStream3x: %v", err)
 		}
 	}
@@ -1496,7 +1493,7 @@ func BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B
 			if rerr != nil && rerr != io.ErrUnexpectedEOF {
 				b.Fatalf("ReadFull: %v", rerr)
 			}
-			ct, encErr := Encrypt3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, stage[:n])
+			ct, encErr := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, stage[:n])
 			if encErr != nil {
 				b.Fatalf("Encrypt3x: %v", encErr)
 			}
@@ -1543,7 +1540,7 @@ func BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B
 			if rerr != nil && rerr != io.ErrUnexpectedEOF {
 				b.Fatalf("setup ReadFull: %v", rerr)
 			}
-			ct, encErr := Encrypt3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, stage[:n])
+			ct, encErr := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, stage[:n])
 			if encErr != nil {
 				b.Fatalf("setup Encrypt3x: %v", encErr)
 			}
@@ -1579,7 +1576,7 @@ func BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B
 			if _, rerr2 := io.ReadFull(r, ct); rerr2 != nil {
 				b.Fatalf("ReadFull body: %v", rerr2)
 			}
-			pt, decErr := Decrypt3x(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+			pt, decErr := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
 			if decErr != nil {
 				b.Fatalf("Decrypt3x: %v", decErr)
 			}

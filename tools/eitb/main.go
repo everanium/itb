@@ -66,8 +66,6 @@ func main() {
 	verbose := flag.Bool("v", false, "print per-run details")
 	flag.Parse()
 
-	itb.SetMaxWorkers(0) // process-wide; harmless for the triple.Pipeline path too
-
 	examples := []example{
 		{name: "aead-triple-io", description: "Streaming AEAD Triple (MAC Authenticated, IO-Driven, full stack)", plaintextN: 64 * 1024, run: runAEADTripleIO},
 		{name: "aead-lowlevel-io", description: "Streaming AEAD Low-Level (MAC Authenticated, IO-Driven)", plaintextN: 64 * 1024, run: runAEADLowLevelIO},
@@ -173,14 +171,21 @@ func eightSeeds512(primitive string, bits int) (noise, lock, data1, data2, data3
 // tripleOpts512 returns the [triple.Opts] shape the eitb demonstrator
 // runs pin: 512-bit nonce, barrier-fill 4, and the requested outer
 // cipher. Every eitb-side triple.Init call feeds the same knobs so the
-// wire shape matches the low-level runs' [itb.SetNonceBits](512) +
-// [itb.SetBarrierFill](4) configuration.
+// wire shape matches the Low-Level runs' explicit [itb.Config]
+// (NonceBits=512, BarrierFill=4).
 func tripleOpts512(cipherName string) triple.Opts {
 	return triple.Opts{
 		NonceBits:   512,
 		BarrierFill: 4,
 		OuterCipher: cipherName,
 	}
+}
+
+// lowLevelCfg512 returns the *itb.Config the Low-Level demonstrator
+// paths pass to every Cfg-suffixed entry point so the wire shape
+// matches the triple.Pipeline runs' Opts (NonceBits=512, BarrierFill=4).
+func lowLevelCfg512() *itb.Config {
+	return &itb.Config{NonceBits: 512, BarrierFill: 4}
 }
 
 // ---------------------------------------------------------------------------
@@ -229,8 +234,7 @@ func runAEADTripleIO(cipherName string, plaintext []byte) ([]byte, int, error) {
 // ---------------------------------------------------------------------------
 
 func runAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error) {
-	itb.SetNonceBits(512)
-	itb.SetBarrierFill(4)
+	cfg := lowLevelCfg512()
 
 	noise, lock, data1, data2, data3, start1, start2, start3, err := eightSeeds512("areion512", 1024)
 	if err != nil {
@@ -257,7 +261,7 @@ func runAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error)
 		return nil, 0, err
 	}
 	chunkSize := 16 * 1024
-	if err := itb.EncryptStreamAuth3x(noise, lock, data1, data2, data3, start1, start2, start3, bytes.NewReader(plaintext), wrapWriter, macFunc, chunkSize); err != nil {
+	if err := itb.EncryptStreamAuth3xCfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, bytes.NewReader(plaintext), wrapWriter, macFunc, chunkSize); err != nil {
 		return nil, 0, err
 	}
 
@@ -267,7 +271,7 @@ func runAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error)
 		return nil, len(wrappedWire), err
 	}
 	var dstBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3x(noise, lock, data1, data2, data3, start1, start2, start3, unwrapReader, &dstBuf, macFunc); err != nil {
+	if err := itb.DecryptStreamAuth3xCfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, unwrapReader, &dstBuf, macFunc); err != nil {
 		return nil, len(wrappedWire), err
 	}
 	return dstBuf.Bytes(), len(wrappedWire), nil
@@ -314,8 +318,7 @@ func runNoAEADTripleIO(cipherName string, plaintext []byte) ([]byte, int, error)
 // ---------------------------------------------------------------------------
 
 func runNoAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, error) {
-	itb.SetNonceBits(512)
-	itb.SetBarrierFill(4)
+	cfg := lowLevelCfg512()
 
 	noise, lock, data1, data2, data3, start1, start2, start3, err := eightSeeds512("areion512", 1024)
 	if err != nil {
@@ -332,7 +335,7 @@ func runNoAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, erro
 		return nil, 0, err
 	}
 	chunkSize := 16 * 1024
-	if err := itb.EncryptStream3x(noise, lock, data1, data2, data3, start1, start2, start3, bytes.NewReader(plaintext), wrapWriter, chunkSize); err != nil {
+	if err := itb.EncryptStream3xCfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, bytes.NewReader(plaintext), wrapWriter, chunkSize); err != nil {
 		return nil, 0, err
 	}
 
@@ -342,7 +345,7 @@ func runNoAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, erro
 		return nil, len(wrappedWire), err
 	}
 	var dstBuf bytes.Buffer
-	if err := itb.DecryptStream3x(noise, lock, data1, data2, data3, start1, start2, start3, unwrapReader, &dstBuf); err != nil {
+	if err := itb.DecryptStream3xCfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, unwrapReader, &dstBuf); err != nil {
 		return nil, len(wrappedWire), err
 	}
 	return dstBuf.Bytes(), len(wrappedWire), nil
@@ -359,8 +362,7 @@ func runNoAEADLowLevelIO(cipherName string, plaintext []byte) ([]byte, int, erro
 // ---------------------------------------------------------------------------
 
 func runNoAEADLowLevelUserLoop(cipherName string, plaintext []byte) ([]byte, int, error) {
-	itb.SetNonceBits(512)
-	itb.SetBarrierFill(4)
+	cfg := lowLevelCfg512()
 
 	noise, lock, data1, data2, data3, start1, start2, start3, err := eightSeeds512("areion512", 1024)
 	if err != nil {
@@ -390,7 +392,7 @@ func runNoAEADLowLevelUserLoop(cipherName string, plaintext []byte) ([]byte, int
 		if rerr != nil && rerr != io.ErrUnexpectedEOF {
 			return nil, 0, rerr
 		}
-		ct, err := itb.Encrypt3x(noise, lock, data1, data2, data3, start1, start2, start3, buf[:n])
+		ct, err := itb.Encrypt3x512Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, buf[:n])
 		if err != nil {
 			return nil, 0, err
 		}
@@ -425,7 +427,7 @@ func runNoAEADLowLevelUserLoop(cipherName string, plaintext []byte) ([]byte, int
 		if _, err := io.ReadFull(unwrapReader, ctBuf); err != nil {
 			return nil, len(wrappedWire), err
 		}
-		dec, err := itb.Decrypt3x(noise, lock, data1, data2, data3, start1, start2, start3, ctBuf)
+		dec, err := itb.Decrypt3x512Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, ctBuf)
 		if err != nil {
 			return nil, len(wrappedWire), err
 		}
@@ -513,15 +515,14 @@ func runMessageTripleAuth(cipherName string, plaintext []byte) ([]byte, int, err
 // ---------------------------------------------------------------------------
 
 func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, error) {
-	itb.SetNonceBits(512)
-	itb.SetBarrierFill(4)
+	cfg := lowLevelCfg512()
 
 	noise, lock, data1, data2, data3, start1, start2, start3, err := eightSeeds512("areion512", 2048)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	encrypted, err := itb.Encrypt3x(noise, lock, data1, data2, data3, start1, start2, start3, plaintext)
+	encrypted, err := itb.Encrypt3x512Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, plaintext)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -540,7 +541,7 @@ func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, 
 	if err != nil {
 		return nil, len(wire), err
 	}
-	pt, err := itb.Decrypt3x(noise, lock, data1, data2, data3, start1, start2, start3, recovered)
+	pt, err := itb.Decrypt3x512Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, recovered)
 	if err != nil {
 		return nil, len(wire), err
 	}
@@ -559,8 +560,7 @@ func runMessageLowLevelNoMAC(cipherName string, plaintext []byte) ([]byte, int, 
 // ---------------------------------------------------------------------------
 
 func runMessageLowLevelAuth(cipherName string, plaintext []byte) ([]byte, int, error) {
-	itb.SetNonceBits(512)
-	itb.SetBarrierFill(4)
+	cfg := lowLevelCfg512()
 
 	noise, lock, data1, data2, data3, start1, start2, start3, err := eightSeeds512("areion512", 2048)
 	if err != nil {
@@ -576,7 +576,7 @@ func runMessageLowLevelAuth(cipherName string, plaintext []byte) ([]byte, int, e
 		return nil, 0, err
 	}
 
-	encrypted, err := itb.EncryptAuth3x(noise, lock, data1, data2, data3, start1, start2, start3, plaintext, macFunc)
+	encrypted, err := itb.EncryptAuth3x512Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, plaintext, macFunc)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -595,7 +595,7 @@ func runMessageLowLevelAuth(cipherName string, plaintext []byte) ([]byte, int, e
 	if err != nil {
 		return nil, len(wire), err
 	}
-	pt, err := itb.DecryptAuth3x(noise, lock, data1, data2, data3, start1, start2, start3, recovered, macFunc)
+	pt, err := itb.DecryptAuth3x512Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, recovered, macFunc)
 	if err != nil {
 		return nil, len(wire), err
 	}

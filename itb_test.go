@@ -19,11 +19,11 @@ func TestTripleSingleByte(t *testing.T) {
 
 	t.Run("128", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
-		ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -33,11 +33,11 @@ func TestTripleSingleByte(t *testing.T) {
 	})
 	t.Run("256", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds256(512, makeBlake3Hash256())
-		ct, err := Encrypt3x256(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x256(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,11 +47,11 @@ func TestTripleSingleByte(t *testing.T) {
 	})
 	t.Run("512", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds512(512, makeBlake2bHash512())
-		ct, err := Encrypt3x512(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x512(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,11 +69,11 @@ func TestTripleAllZeroBytes(t *testing.T) {
 
 	t.Run("128", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
-		ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,11 +83,11 @@ func TestTripleAllZeroBytes(t *testing.T) {
 	})
 	t.Run("256", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds256(512, makeBlake3Hash256())
-		ct, err := Encrypt3x256(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x256(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,11 +97,11 @@ func TestTripleAllZeroBytes(t *testing.T) {
 	})
 	t.Run("512", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds512(512, makeBlake2bHash512())
-		ct, err := Encrypt3x512(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x512(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,11 +119,11 @@ func TestTripleAllFFBytes(t *testing.T) {
 
 	t.Run("128", func(t *testing.T) {
 		n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
-		ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+		ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+		pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,11 +143,11 @@ func TestTriplePixelBoundary(t *testing.T) {
 		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 			n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
 			data := genTestPlaintext(t, sz)
-			ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+			ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+			pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,11 +166,11 @@ func TestTriplePixelBoundary(t *testing.T) {
 func TestTripleExactMinContainer(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
 	data := genTestPlaintext(t, 560)
-	ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+	ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+	pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,11 +190,11 @@ func TestTripleKeySizes(t *testing.T) {
 		t.Run(fmt.Sprintf("%d-bit", bits), func(t *testing.T) {
 			n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(bits, sipHash128)
 			data := genTestPlaintext(t, 256)
-			ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+			ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+			pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -210,11 +210,11 @@ func TestTripleKeySizes(t *testing.T) {
 func TestTripleMaxKeySize(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(1024, sipHash128)
 	data := genTestPlaintext(t, 1024)
-	ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+	ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+	pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +248,11 @@ func TestSeedFromComponents128(t *testing.T) {
 	s2, _ := NewSeed128(512, sipHash128)
 	s3, _ := NewSeed128(512, sipHash128)
 	data := genTestPlaintext(t, 1024)
-	ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+	ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 	if err != nil {
 		t.Fatalf("Encrypt3x128: %v", err)
 	}
-	pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+	pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil {
 		t.Fatalf("Decrypt3x128: %v", err)
 	}
@@ -282,11 +282,11 @@ func TestSeedFromComponents256Roundtrip(t *testing.T) {
 	s2, _ := NewSeed256(512, h)
 	s3, _ := NewSeed256(512, h)
 	data := genTestPlaintext(t, 1024)
-	ct, err := Encrypt3x256(n, l, d1, d2, d3, s1, s2, s3, data)
+	ct, err := Encrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 	if err != nil {
 		t.Fatalf("Encrypt3x256: %v", err)
 	}
-	pt, err := Decrypt3x256(n, l, d1, d2, d3, s1, s2, s3, ct)
+	pt, err := Decrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil {
 		t.Fatalf("Decrypt3x256: %v", err)
 	}
@@ -316,11 +316,11 @@ func TestSeedFromComponents512Roundtrip(t *testing.T) {
 	s2, _ := NewSeed512(512, h)
 	s3, _ := NewSeed512(512, h)
 	data := genTestPlaintext(t, 1024)
-	ct, err := Encrypt3x512(n, l, d1, d2, d3, s1, s2, s3, data)
+	ct, err := Encrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 	if err != nil {
 		t.Fatalf("Encrypt3x512: %v", err)
 	}
-	pt, err := Decrypt3x512(n, l, d1, d2, d3, s1, s2, s3, ct)
+	pt, err := Decrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil {
 		t.Fatalf("Decrypt3x512: %v", err)
 	}
@@ -410,131 +410,58 @@ func TestInvalidSeedSize(t *testing.T) {
 	}
 }
 
-// --- Runtime-configuration setter validation ---
+// --- Runtime-configuration override validation ---
 
-// TestNonceBitsSweep exercises the nonce-width setter across the
-// three permitted values (128 / 256 / 512) with a Triple round-trip
-// at each width. A width change must round-trip cleanly under every
-// primitive width the shipped registry supports.
+// TestNonceBitsSweep exercises the nonce-width per-instance Config
+// override across the three permitted values (128 / 256 / 512) with a
+// Triple round-trip at each width. A width change must round-trip
+// cleanly under every primitive width the shipped registry supports.
 func TestNonceBitsSweep(t *testing.T) {
 	for _, nonceBits := range []int{128, 256, 512} {
 		t.Run(fmt.Sprintf("%dbit", nonceBits), func(t *testing.T) {
-			prev := GetNonceBits()
-			SetNonceBits(nonceBits)
-			defer SetNonceBits(prev)
-
-			if got := GetNonceBits(); got != nonceBits {
-				t.Fatalf("GetNonceBits() = %d, want %d", got, nonceBits)
-			}
+			cfg := &Config{NonceBits: nonceBits}
 
 			data := genTestPlaintext(t, 1<<20)
 
 			n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(1024, sipHash128)
-			ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+			ct, err := Encrypt3x128Cfg(cfg, n, l, d1, d2, d3, s1, s2, s3, data)
 			if err != nil {
-				t.Fatalf("Encrypt3x128: %v", err)
+				t.Fatalf("Encrypt3x128Cfg: %v", err)
 			}
-			pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+			pt, err := Decrypt3x128Cfg(cfg, n, l, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
-				t.Fatalf("Decrypt3x128: %v", err)
+				t.Fatalf("Decrypt3x128Cfg: %v", err)
 			}
 			if !bytes.Equal(data, pt) {
 				t.Fatal("128 round-trip mismatch")
 			}
 
 			n2, l2, d21, d22, d23, s21, s22, s23 := makeEightSeeds256(512, makeBlake3Hash256())
-			ct2, err := Encrypt3x256(n2, l2, d21, d22, d23, s21, s22, s23, data)
+			ct2, err := Encrypt3x256Cfg(cfg, n2, l2, d21, d22, d23, s21, s22, s23, data)
 			if err != nil {
-				t.Fatalf("Encrypt3x256: %v", err)
+				t.Fatalf("Encrypt3x256Cfg: %v", err)
 			}
-			pt2, err := Decrypt3x256(n2, l2, d21, d22, d23, s21, s22, s23, ct2)
+			pt2, err := Decrypt3x256Cfg(cfg, n2, l2, d21, d22, d23, s21, s22, s23, ct2)
 			if err != nil {
-				t.Fatalf("Decrypt3x256: %v", err)
+				t.Fatalf("Decrypt3x256Cfg: %v", err)
 			}
 			if !bytes.Equal(data, pt2) {
 				t.Fatal("256 round-trip mismatch")
 			}
 
 			n5, l5, d51, d52, d53, s51, s52, s53 := makeEightSeeds512(512, makeBlake2bHash512())
-			ct5, err := Encrypt3x512(n5, l5, d51, d52, d53, s51, s52, s53, data)
+			ct5, err := Encrypt3x512Cfg(cfg, n5, l5, d51, d52, d53, s51, s52, s53, data)
 			if err != nil {
-				t.Fatalf("Encrypt3x512: %v", err)
+				t.Fatalf("Encrypt3x512Cfg: %v", err)
 			}
-			pt5, err := Decrypt3x512(n5, l5, d51, d52, d53, s51, s52, s53, ct5)
+			pt5, err := Decrypt3x512Cfg(cfg, n5, l5, d51, d52, d53, s51, s52, s53, ct5)
 			if err != nil {
-				t.Fatalf("Decrypt3x512: %v", err)
+				t.Fatalf("Decrypt3x512Cfg: %v", err)
 			}
 			if !bytes.Equal(data, pt5) {
 				t.Fatal("512 round-trip mismatch")
 			}
 		})
-	}
-}
-
-// TestSetNonceBitsPanic exercises the nonce-width setter's rejection
-// of every value outside the {128, 256, 512} permit-set.
-func TestSetNonceBitsPanic(t *testing.T) {
-	for _, invalid := range []int{0, 64, 137, 1024, -1} {
-		func() {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Errorf("SetNonceBits(%d) should panic", invalid)
-				}
-			}()
-			SetNonceBits(invalid)
-		}()
-	}
-}
-
-// TestSetMaxWorkers exercises the worker-cap setter's clamp behaviour:
-// zero and negative values fall to 0 (implicit runtime.NumCPU on
-// dispatch), values above 256 clamp to 256.
-func TestSetMaxWorkers(t *testing.T) {
-	prev := GetMaxWorkers()
-	defer SetMaxWorkers(prev)
-
-	SetMaxWorkers(4)
-	if got := GetMaxWorkers(); got != 4 {
-		t.Fatalf("GetMaxWorkers() = %d, want 4", got)
-	}
-
-	SetMaxWorkers(0)
-	if got := GetMaxWorkers(); got != 0 {
-		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(0) = %d, want 0", got)
-	}
-	SetMaxWorkers(-5)
-	if got := GetMaxWorkers(); got != 0 {
-		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(-5) = %d, want 0", got)
-	}
-
-	SetMaxWorkers(1000)
-	if got := GetMaxWorkers(); got != 256 {
-		t.Fatalf("GetMaxWorkers() after SetMaxWorkers(1000) = %d, want 256", got)
-	}
-}
-
-// TestSetBarrierFill exercises the barrier-fill setter's permit
-// set {1, 2, 4, 8, 16, 32} and its rejection of every other value.
-func TestSetBarrierFill(t *testing.T) {
-	prev := GetBarrierFill()
-	defer SetBarrierFill(prev)
-
-	for _, v := range []int{1, 2, 4, 8, 16, 32} {
-		SetBarrierFill(v)
-		if got := GetBarrierFill(); got != v {
-			t.Fatalf("GetBarrierFill() = %d, want %d", got, v)
-		}
-	}
-
-	for _, invalid := range []int{0, 3, 5, 7, 9, 15, 33, 64, -1} {
-		func() {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Errorf("SetBarrierFill(%d) should panic", invalid)
-				}
-			}()
-			SetBarrierFill(invalid)
-		}()
 	}
 }
 
@@ -577,18 +504,18 @@ func TestContainerSizes(t *testing.T) {
 	for _, sz := range []int{1, 10, 100, 1000, 10000, 100000} {
 		t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 			data := genTestPlaintext(t, sz)
-			ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+			ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+			pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !bytes.Equal(data, pt) {
 				t.Fatal("container-sizing round-trip mismatch")
 			}
-			containerSize := len(ct) - headerSize()
+			containerSize := len(ct) - headerSizeCfg(nil)
 			pixels := containerSize / Channels
 			capacity := (pixels * DataBitsPerPixel) / 8
 			t.Logf("container: %d pixels, capacity: %d bytes, output: %d bytes", pixels, capacity, len(ct))
@@ -715,30 +642,30 @@ func TestCOBS(t *testing.T) {
 // dimensions in the header, truncated payload after a valid header,
 // and the valid 1×1 case that must succeed.
 func TestParseChunkLenErrors(t *testing.T) {
-	if _, err := ParseChunkLen([]byte{1, 2, 3}); err == nil {
+	if _, err := ParseChunkLenCfg(nil, []byte{1, 2, 3}); err == nil {
 		t.Fatal("expected error for data too short for header")
 	}
 
-	buf := make([]byte, headerSize()+8)
-	if _, err := ParseChunkLen(buf); err == nil {
+	buf := make([]byte, headerSizeCfg(nil)+8)
+	if _, err := ParseChunkLenCfg(nil, buf); err == nil {
 		t.Fatal("expected error for zero dimensions")
 	}
 
-	binary.BigEndian.PutUint16(buf[currentNonceSize():], 1)
-	binary.BigEndian.PutUint16(buf[currentNonceSize()+2:], 1)
-	if _, err := ParseChunkLen(buf[:headerSize()+4]); err == nil {
+	binary.BigEndian.PutUint16(buf[currentNonceSizeCfg(nil):], 1)
+	binary.BigEndian.PutUint16(buf[currentNonceSizeCfg(nil)+2:], 1)
+	if _, err := ParseChunkLenCfg(nil, buf[:headerSizeCfg(nil)+4]); err == nil {
 		t.Fatal("expected error for truncated data")
 	}
 
-	fullBuf := make([]byte, headerSize()+Channels)
-	binary.BigEndian.PutUint16(fullBuf[currentNonceSize():], 1)
-	binary.BigEndian.PutUint16(fullBuf[currentNonceSize()+2:], 1)
-	n, err := ParseChunkLen(fullBuf)
+	fullBuf := make([]byte, headerSizeCfg(nil)+Channels)
+	binary.BigEndian.PutUint16(fullBuf[currentNonceSizeCfg(nil):], 1)
+	binary.BigEndian.PutUint16(fullBuf[currentNonceSizeCfg(nil)+2:], 1)
+	n, err := ParseChunkLenCfg(nil, fullBuf)
 	if err != nil {
 		t.Fatalf("unexpected error for valid 1x1: %v", err)
 	}
-	if n != headerSize()+Channels {
-		t.Fatalf("ParseChunkLen returned %d, want %d", n, headerSize()+Channels)
+	if n != headerSizeCfg(nil)+Channels {
+		t.Fatalf("ParseChunkLen returned %d, want %d", n, headerSizeCfg(nil)+Channels)
 	}
 }
 
@@ -750,14 +677,14 @@ func TestParseChunkLenErrors(t *testing.T) {
 func TestDecryptRejectOversizeContainer(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(1024, sipHash128)
 
-	header := make([]byte, headerSize()+Channels)
-	nonceSz := currentNonceSize()
+	header := make([]byte, headerSizeCfg(nil)+Channels)
+	nonceSz := currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 
-	if _, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, fakeContainer); err == nil {
+	if _, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, fakeContainer); err == nil {
 		t.Fatal("expected error for oversized container (3200x3200 > 10M pixels)")
 	}
 }
@@ -779,12 +706,12 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			ct, err := Encrypt3x128(n, l, d1, d2, d3, s1, s2, s3, data)
+			ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, data)
 			if err != nil {
 				errs[idx] = err
 				return
 			}
-			pt, err := Decrypt3x128(n, l, d1, d2, d3, s1, s2, s3, ct)
+			pt, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 			if err != nil {
 				errs[idx] = err
 				return
@@ -803,8 +730,8 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 			t.Errorf("worker %d: %v", i, err)
 		}
 	}
-	// Nonces (first currentNonceSize() bytes) must differ pairwise.
-	nonceSz := currentNonceSize()
+	// Nonces (first currentNonceSizeCfg(nil) bytes) must differ pairwise.
+	nonceSz := currentNonceSizeCfg(nil)
 	for i := 0; i < workers; i++ {
 		for j := i + 1; j < workers; j++ {
 			if results[i] == nil || results[j] == nil {
@@ -833,10 +760,6 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 // bit-identical plaintext recovery under a MaxWorkers sweep against
 // one shared reference ciphertext.
 func TestConfigMaxWorkersRespected(t *testing.T) {
-	prevGlobal := GetMaxWorkers()
-	t.Cleanup(func() { SetMaxWorkers(prevGlobal) })
-	SetMaxWorkers(0) // pin process-global to the "use all CPUs" default
-
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	plaintext := genTestPlaintext(t, 1<<20) // 1 MiB — enough pixels for the parallel branch of process256Cfg
 	mac := macFuncForTest([32]byte{0xAA, 0xBB, 0xCC, 0xDD})
@@ -868,7 +791,7 @@ func TestConfigMaxWorkersRespected(t *testing.T) {
 
 	// Decrypt-side worker-count invariance: the same reference
 	// ciphertext under a sweep of MaxWorkers values (including cfg1,
-	// cfg8, and nil for the process-global fallback path) must yield
+	// cfg8, and nil for the runtime.NumCPU fallback path) must yield
 	// bit-identical plaintext.
 	sweep := []*Config{cfg1, cfg8, nil}
 	for _, refCT := range [][]byte{ct1, ct8} {
@@ -882,11 +805,5 @@ func TestConfigMaxWorkersRespected(t *testing.T) {
 				t.Errorf("decrypt cfg=%+v produced plaintext that differs from input (%d bytes)", dCfg, len(pt))
 			}
 		}
-	}
-
-	// Post-test global-drift check — a bug that wrote cfg.MaxWorkers
-	// through to the process-global would surface here.
-	if got := GetMaxWorkers(); got != 0 {
-		t.Errorf("post-test global drift: GetMaxWorkers()=%d, want 0 (default)", got)
 	}
 }

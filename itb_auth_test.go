@@ -117,13 +117,13 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := Encrypt3x(n, l, d1, d2, d3, s1, s2, s3, pt)
+				ct, err := Encrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt)
 				if err != nil {
-					t.Fatalf("Encrypt3x: %v", err)
+					t.Fatalf("Encrypt3x128Cfg: %v", err)
 				}
-				out, err := Decrypt3x(n, l, d1, d2, d3, s1, s2, s3, ct)
+				out, err := Decrypt3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 				if err != nil {
-					t.Fatalf("Decrypt3x: %v", err)
+					t.Fatalf("Decrypt3x128Cfg: %v", err)
 				}
 				if !bytes.Equal(pt, out) {
 					t.Fatalf("128-bit Triple round-trip mismatch at %d bytes", sz)
@@ -137,13 +137,13 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := Encrypt3x(n, l, d1, d2, d3, s1, s2, s3, pt)
+				ct, err := Encrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt)
 				if err != nil {
-					t.Fatalf("Encrypt3x: %v", err)
+					t.Fatalf("Encrypt3x256Cfg: %v", err)
 				}
-				out, err := Decrypt3x(n, l, d1, d2, d3, s1, s2, s3, ct)
+				out, err := Decrypt3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 				if err != nil {
-					t.Fatalf("Decrypt3x: %v", err)
+					t.Fatalf("Decrypt3x256Cfg: %v", err)
 				}
 				if !bytes.Equal(pt, out) {
 					t.Fatalf("256-bit Triple round-trip mismatch at %d bytes", sz)
@@ -157,13 +157,13 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := Encrypt3x(n, l, d1, d2, d3, s1, s2, s3, pt)
+				ct, err := Encrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt)
 				if err != nil {
-					t.Fatalf("Encrypt3x: %v", err)
+					t.Fatalf("Encrypt3x512Cfg: %v", err)
 				}
-				out, err := Decrypt3x(n, l, d1, d2, d3, s1, s2, s3, ct)
+				out, err := Decrypt3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct)
 				if err != nil {
-					t.Fatalf("Decrypt3x: %v", err)
+					t.Fatalf("Decrypt3x512Cfg: %v", err)
 				}
 				if !bytes.Equal(pt, out) {
 					t.Fatalf("512-bit Triple round-trip mismatch at %d bytes", sz)
@@ -171,16 +171,6 @@ func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 			})
 		}
 	})
-}
-
-func TestEncrypt3xWidthMixRejected(t *testing.T) {
-	n128, d128, s128 := mkSeeds128(t)
-	_, d256, _ := mkSeeds256(t)
-	pt := genTestPlaintext(t, 64)
-	// Mix the second data seed only — every other slot is *Seed128.
-	if _, err := Encrypt3x(n128, d128, d256, d128, s128, s128, s128, s128, pt); err == nil {
-		t.Fatalf("Encrypt3x(mixed widths): want error, got nil")
-	}
 }
 
 // --- Authenticated Single Message helpers ---
@@ -201,13 +191,13 @@ func TestEncryptAuth3xDecryptAuth3xRoundtrip(t *testing.T) {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
+				ct, err := EncryptAuth3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 				if err != nil {
-					t.Fatalf("EncryptAuth3x: %v", err)
+					t.Fatalf("EncryptAuth3x128Cfg: %v", err)
 				}
-				out, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, ct, mac)
+				out, err := DecryptAuth3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct, mac)
 				if err != nil {
-					t.Fatalf("DecryptAuth3x: %v", err)
+					t.Fatalf("DecryptAuth3x128Cfg: %v", err)
 				}
 				if !bytes.Equal(pt, out) {
 					t.Fatalf("128-bit Triple-auth round-trip mismatch at %d bytes", sz)
@@ -221,13 +211,13 @@ func TestEncryptAuth3xDecryptAuth3xRoundtrip(t *testing.T) {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple256(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
+				ct, err := EncryptAuth3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 				if err != nil {
-					t.Fatalf("EncryptAuth3x: %v", err)
+					t.Fatalf("EncryptAuth3x256Cfg: %v", err)
 				}
-				out, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, ct, mac)
+				out, err := DecryptAuth3x256Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct, mac)
 				if err != nil {
-					t.Fatalf("DecryptAuth3x: %v", err)
+					t.Fatalf("DecryptAuth3x256Cfg: %v", err)
 				}
 				if !bytes.Equal(pt, out) {
 					t.Fatalf("256-bit Triple-auth round-trip mismatch at %d bytes", sz)
@@ -241,13 +231,13 @@ func TestEncryptAuth3xDecryptAuth3xRoundtrip(t *testing.T) {
 			t.Run(fmt.Sprintf("%d-bytes", sz), func(t *testing.T) {
 				n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
 				pt := genTestPlaintext(t, sz)
-				ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
+				ct, err := EncryptAuth3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 				if err != nil {
-					t.Fatalf("EncryptAuth3x: %v", err)
+					t.Fatalf("EncryptAuth3x512Cfg: %v", err)
 				}
-				out, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, ct, mac)
+				out, err := DecryptAuth3x512Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, ct, mac)
 				if err != nil {
-					t.Fatalf("DecryptAuth3x: %v", err)
+					t.Fatalf("DecryptAuth3x512Cfg: %v", err)
 				}
 				if !bytes.Equal(pt, out) {
 					t.Fatalf("512-bit Triple-auth round-trip mismatch at %d bytes", sz)
@@ -266,13 +256,13 @@ func TestEncryptAuth3xTamperDetected(t *testing.T) {
 
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 	pt := genTestPlaintext(t, 1024)
-	ct, err := EncryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, pt, mac)
+	ct, err := EncryptAuth3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt, mac)
 	if err != nil {
-		t.Fatalf("EncryptAuth3x: %v", err)
+		t.Fatalf("EncryptAuth3x128Cfg: %v", err)
 	}
 	tampered := append([]byte(nil), ct...)
 	tampered[len(tampered)/2] ^= 0xFF
-	if _, err := DecryptAuth3x(n, l, d1, d2, d3, s1, s2, s3, tampered, mac); err == nil {
-		t.Fatalf("DecryptAuth3x(tampered): want error, got nil")
+	if _, err := DecryptAuth3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, tampered, mac); err == nil {
+		t.Fatalf("DecryptAuth3x128Cfg(tampered): want error, got nil")
 	}
 }
