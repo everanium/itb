@@ -2,7 +2,7 @@
 
 This document records the **v0.3.0** adversarial re-verification of ITB. The shipped construction under test is **Triple Ouroboros** — the byte-level 3-snake split — over the **8-seed** constellation, with the **always-on 48-bit Interlocked Barrier** as its non-disableable core. There is no Single Ouroboros, no overlay toggle, and no Bit Soup mode; every pre-v0.3.0 measurement conditioned on "Single" or "overlay disengaged" describes a construction that no longer ships.
 
-The complete pre-v0.3.0 empirical record is preserved verbatim in **[REDTEAM-v0.2.md](REDTEAM-v0.2.md)** and is cross-referenced by phase throughout — the archived detail is not re-inlined here.
+The complete pre-v0.3.0 empirical record is preserved verbatim in **[REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md)** and is cross-referenced by phase throughout — the archived detail is not re-inlined here.
 
 The re-verification is organised as three tracks, each a self-contained adversarial pass:
 
@@ -62,7 +62,7 @@ wins.
 
 The pre-v0.3.0 empirical record broke both controls, but only under a
 construction that no longer ships: **Single Ouroboros with the overlay
-disengaged**. That evidence is preserved verbatim in **REDTEAM-v0.2.md**
+disengaged**. That evidence is preserved verbatim in **[REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md)**
 (CRC128: `## Phase 2f — Direct Crib KPA against GF(2)-linear primitives`;
 FNV-1a: `## Phase 2g — Multi Crib KPA against FNV-1a + ITB (SAT-based)`;
 mixed-algebra nonce-reuse stress: `### Phase 2a extension — empirical
@@ -348,7 +348,7 @@ lockSeed, dataSeed1..3, startSeed1..3), driven through the core
 Ouroboros fallback and no overlay toggle; every pre-v0.3.0 measurement
 conditioned on "overlay disengaged" or "Single" describes a
 construction that no longer ships and is retained only in
-`REDTEAM-v0.2.md`.
+[REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md).
 
 The honest headline, stated once and carried as a qualification on every
 claim below: **under the PRF assumption and with fresh per-message
@@ -368,7 +368,7 @@ The pre-v0.3.0 suite measured a spectrum spanning deliberately broken
 lab controls (CRC128, FNV-1a, MD5) through paper-grade PRFs, and the
 recurring structural fact was that **no PRF-grade primitive was broken
 at any phase, under any threat model, and no break survived engagement
-of the opt-in overlay** (see `REDTEAM-v0.2.md`, Phase 2 result tables).
+of the opt-in overlay** (see [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md), Phase 2 result tables).
 The plaintext-recovery breaks were obtained only against below-spec
 primitives, only against Single Ouroboros, and only with the overlay
 disengaged.
@@ -429,7 +429,7 @@ PRF-keyed from a space of roughly **2^70.20** balanced partitions, and a
 fresh nonce re-draws every mask, noise position, and startPixel — so the
 shared crib fixes no mapping a solver could anchor on. Pre-v0.3.0 Crib
 KPA detail against below-spec primitives is preserved in
-`REDTEAM-v0.2.md` (Phase 2f CRC128, Phase 2g FNV-1a); neither analogue
+[REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md) (Phase 2f CRC128, Phase 2g FNV-1a); neither analogue
 applies to a PRF-grade primitive under the keyed 48-bit permutation.
 
 #### Probe 2 — Nonce-reuse correlation (lab-only assumption)
@@ -437,7 +437,7 @@ applies to a PRF-grade primitive under the keyed 48-bit permutation.
 **Attack.** Nonce reuse is **not reachable through the shipped API** —
 the nonce is internally generated per call. Forced here via the
 test-only nonce override, this probe measures the one condition under
-which the pre-v0.3.0 suite saw any signal (`REDTEAM-v0.2.md`, Phase 2d).
+which the pre-v0.3.0 suite saw any signal ([REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md), Phase 2d).
 Two different plaintexts are encrypted under identical seeds AND an
 identical nonce.
 
@@ -454,7 +454,7 @@ under a reused nonce and the keystream-reuse structure persists beneath
 the permutation. Even so, the ciphertext-level correlation stays far
 below a usable plaintext-recovery channel — the nonce-independent CSPRNG
 tail fill and the plaintext-dependent bytes dominate — and a full demask
-of the colliding pair additionally requires Full KPA (`REDTEAM-v0.2.md`,
+of the colliding pair additionally requires Full KPA ([REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md),
 Phase 2d, where a forced collision let a demasker reconstruct the pure
 dataSeed stream; NIST STS on the reconstructed stream then passed
 188/188 for BLAKE3 and separated it from the below-spec primitives). The
@@ -489,7 +489,7 @@ influence is scoped to its own channel, and the barrier diffuses the
 delta rather than localising it. A differential attacker sees a
 decorrelated ciphertext, not a gradient. Pre-v0.3.0 related-seed matrix
 detail (the 1008-cell single-axis XOR-differential sweep) is preserved
-in `REDTEAM-v0.2.md`, Phase 2e, where the PRF-grade primitives were
+in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md), Phase 2e, where the PRF-grade primitives were
 neutralised on every primitive-attributable axis.
 
 #### Probe 4 — Full KPA at N derivations sharing state
@@ -530,7 +530,7 @@ barrier entirely.** The closure is conditional on the primitive behaving
 as a PRF. Pre-v0.3.0 Full KPA obstacle detail (Proof 4a's interlocking
 obstacles, the Phase 2b per-pixel KL floor at ≈ 1.4× the theoretical
 bins/N floor, the Phase 2c startPixel rank-fraction ≈ 0.5) is preserved
-in `REDTEAM-v0.2.md`.
+in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md).
 
 ### CPA (chosen-plaintext, fresh nonce)
 
@@ -540,7 +540,7 @@ the finite-sample statistical floor — indistinguishable from
 `/dev/urandom` within the tested tolerance — across the full primitive
 spectrum on every statistical surface measured (Phase 1 structural / FFT
 / Markov, Phase 2b per-pixel KL, Phase 3b NIST STS), including
-attacker-friendly rotation-invariant probes (`REDTEAM-v0.2.md`, Phase
+attacker-friendly rotation-invariant probes ([REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md), Phase
 3a). With fresh nonces each message draws fresh masks, noise positions,
 rotations, and startPixels; the always-on 48-bit permutation adds a
 further keyed re-mapping whose lane assignment is a hidden per-chunk
@@ -587,7 +587,7 @@ sample sizes — but reach it by two different mechanisms:**
   The primitive leaks in isolation, and the pre-v0.3.0 suite recovered a
   working key from CRC128 in about one second and from FNV-1a in about
   eight single-core hours — but **only** against Single Ouroboros with
-  the overlay disengaged (`REDTEAM-v0.2.md`, Phase 2f / 2g). Under the
+  the overlay disengaged ([REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md), Phase 2f / 2g). Under the
   always-on 48-bit barrier the attacker cannot formulate the linear or
   invertible system at all: the bit-position-to-lane mapping is a hidden
   per-chunk ≈ 2^70.20 secret, so the GF(2)-linear pixel-independent
@@ -970,29 +970,29 @@ Across the two primitive tracks and the construction-level probe phase, the v0.3
 
 The architectural closure narrative is that the always-on 48-bit Interlocked Barrier moves the KPA / CPA closure to the **instance-formulation layer**: a known crib no longer anchors a fixed bit-to-lane mapping, so the linear system a broken primitive would expose cannot be written down, and the mask has ≈ 2^57.80 preimages per chunk that no per-bit constraint can rank. The layer-attribution finding closes the pass with a scoping correction rather than a weakness: wire-level format deniability is a property of the outer-cipher wrapper, and every "indistinguishable from random" claim is scoped accordingly to the wrapped wire or the payload-channel probes.
 
-All verdicts are sample-bounded and, where they invoke primitive strength, PRF-conditional. The closure is an architectural claim corroborated by these measurements and by the pre-v0.3.0 evidence for the shared pixel construction, not an independently certified result. Total or systematic PRF inversion circumvents the barrier; nonce reuse re-exposes container structure the barrier does not remove; and upstream key-management, side channels, key compromise, implementation defects, and CCA via a deployment decryption oracle sit outside what the barrier itself closes and are treated at the construction level in SECURITY.md and PROOFS.md. The complete pre-v0.3.0 empirical detail remains in [REDTEAM-v0.2.md](REDTEAM-v0.2.md).
+All verdicts are sample-bounded and, where they invoke primitive strength, PRF-conditional. The closure is an architectural claim corroborated by these measurements and by the pre-v0.3.0 evidence for the shared pixel construction, not an independently certified result. Total or systematic PRF inversion circumvents the barrier; nonce reuse re-exposes container structure the barrier does not remove; and upstream key-management, side channels, key compromise, implementation defects, and CCA via a deployment decryption oracle sit outside what the barrier itself closes and are treated at the construction level in SECURITY.md and PROOFS.md. The complete pre-v0.3.0 empirical detail remains in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md).
 
 ## Pre-v0.3.0 empirical archive
 
-The complete pre-v0.3.0 empirical record — the full Phase 1 through Phase 3b suite, every result table, and every Single-Ouroboros / overlay-off measurement — is preserved verbatim in [REDTEAM-v0.2.md](REDTEAM-v0.2.md). The v0.3.0 re-verification above supersedes it for the shipped construction; the archive is retained for the pre-v0.3.0 evidence the tracks cross-reference. The retired phase headings below are anchor bridges that resolve inbound references from the sibling documentation to their archived location.
+The complete pre-v0.3.0 empirical record — the full Phase 1 through Phase 3b suite, every result table, and every Single-Ouroboros / overlay-off measurement — is preserved verbatim in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md). The v0.3.0 re-verification above supersedes it for the shipped construction; the archive is retained for the pre-v0.3.0 evidence the tracks cross-reference. The retired phase headings below are anchor bridges that resolve inbound references from the sibling documentation to their archived location.
 
 ### Phase 2a extension — hash-agnostic bias-neutralization audit (axis-1 + axis-2)
 
-Archived in [REDTEAM-v0.2.md](REDTEAM-v0.2.md) under the identically-named section. The primitive-shelf bias-neutralization methodology is carried forward in HARNESS.md.
+Archived in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md) under the identically-named section. The primitive-shelf bias-neutralization methodology is carried forward in HARNESS.md.
 
 ### Phase 2d — Nonce-Reuse
 
-Archived in [REDTEAM-v0.2.md](REDTEAM-v0.2.md) § Phase 2d — Nonce-Reuse: the 96-cell Partial KPA matrix, demasker validation, and NIST STS PRF-separation result. The v0.3.0 nonce-reuse verdicts are in the [broken-primitive](#crc128-nonce-reuse-two-ciphertexts) and [PRF-grade](#probe-2--nonce-reuse-correlation-lab-only-assumption) tracks above.
+Archived in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md) § Phase 2d — Nonce-Reuse: the 96-cell Partial KPA matrix, demasker validation, and NIST STS PRF-separation result. The v0.3.0 nonce-reuse verdicts are in the [broken-primitive](#crc128-nonce-reuse-two-ciphertexts) and [PRF-grade](#probe-2--nonce-reuse-correlation-lab-only-assumption) tracks above.
 
 ### What a successful Partial KPA demask actually gets the attacker
 
-Archived in [REDTEAM-v0.2.md](REDTEAM-v0.2.md) under the identically-named Phase 2d subsection: a successful demask yields the hash-output stream, never new plaintext beyond the attacker's own Full KPA input.
+Archived in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md) under the identically-named Phase 2d subsection: a successful demask yields the hash-output stream, never new plaintext beyond the attacker's own Full KPA input.
 
 ### Phase 2e — Related-seed differential
 
-Archived in [REDTEAM-v0.2.md](REDTEAM-v0.2.md) § Phase 2e — Related-seed differential: the 1008-cell single-axis XOR-differential sweep. The v0.3.0 related-seed verdict is in the [PRF-grade track](#prf-grade-primitive-re-verification) and the [broken-primitive track](#related-seed-differential).
+Archived in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md) § Phase 2e — Related-seed differential: the 1008-cell single-axis XOR-differential sweep. The v0.3.0 related-seed verdict is in the [PRF-grade track](#prf-grade-primitive-re-verification) and the [broken-primitive track](#related-seed-differential).
 
 ### Phase 2g — Multi Crib KPA against FNV-1a + ITB (SAT-based)
 
-Archived in [REDTEAM-v0.2.md](REDTEAM-v0.2.md) § Phase 2g — Multi Crib KPA against FNV-1a + ITB (SAT-based): the ≈ 8 h single-core SAT recovery against Single / overlay-off. The v0.3.0 FNV-1a verdict is in the [broken-primitive track](#fnv-1a-lo-lane-sat).
+Archived in [REDTEAM-v0.2.md](archive/REDTEAM-v0.2.md) § Phase 2g — Multi Crib KPA against FNV-1a + ITB (SAT-based): the ≈ 8 h single-core SAT recovery against Single / overlay-off. The v0.3.0 FNV-1a verdict is in the [broken-primitive track](#fnv-1a-lo-lane-sat).
 

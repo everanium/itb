@@ -8,6 +8,8 @@
 
 *(public sibling of [REDTEAM.md](REDTEAM.md) / [ITB.md](ITB.md) / [SCIENCE.md](SCIENCE.md) / [PROOFS.md](PROOFS.md). Three-axis empirical study of non-cryptographic hash primitives wrapped into ITB `ChainHash128` — bias-absorption (Axes A, A', B) and SAT KPA seed-recovery resistance (Axis C). Scope restricted to primitives whose Go reference and Python mirror each fit in ≤ ~500 LOC.)*
 
+*The pre-v0.3.0 harness record — the wider primitive shelf under Single Ouroboros with the overlay optional — is preserved verbatim in [archive/HARNESS-v0.2.md](archive/HARNESS-v0.2.md).*
+
 ## 1. Scope
 
 The shelf measures four non-cryptographic hash primitives plugged into ITB `ChainHash128` to validate two architectural properties:
