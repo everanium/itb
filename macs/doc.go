@@ -1,9 +1,9 @@
-// Package macs provides cached, pre-keyed wrappers around the three
+// Package macs provides cached, pre-keyed wrappers around the
 // PRF-grade Message Authentication Codes that ITB ships with as
 // built-in factories for the C / FFI / mobile shared-library
 // distribution.
 //
-// All three primitives produce a 32-byte tag and accept a 32-byte
+// Every shipped MAC produces a 32-byte tag and accepts a 32-byte
 // (or longer in the HMAC case) key. The shared 32-byte tag size
 // means consumers do not have to vary their authenticated-payload
 // layout based on which MAC was selected — a binding-friendly
