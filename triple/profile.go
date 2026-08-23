@@ -71,22 +71,84 @@ func defaultParallaxPalette() []string {
 	return []string{"aescmac", "chacha20", "blake3"}
 }
 
-// profile is the internal record for one shipped profile. Fields are
-// the defaults; user-side Opts overrides are folded in by
-// [resolveProfile] to build a [resolvedProfile].
-type profile struct {
-	name                string
-	mode                string
-	width               int
-	chunkSize           int
-	innerHash           string
-	keyBits             int
-	macName             string
-	outerCipher         string
-	parallaxPalette     []string
-	parallaxSegmentSize int
-	parallaxOn          bool
-	wrapperOn           bool
+// Profile is the record for one named profile in the registry. Every
+// field is the profile default; per-call [Opts] overrides are folded
+// in by the internal resolver to build the per-Pipeline effective
+// settings consumed by [Init] and [Open].
+//
+// Callers who need a configuration outside the shipped set construct
+// a Profile literal and hand it to [RegisterProfile]. The name is
+// supplied separately as the RegisterProfile argument; the Name field
+// is populated by RegisterProfile after validation.
+//
+// Field defaults left at their zero value inherit the corresponding
+// compile-in default at [Init] time: ChunkSize=0 defers to
+// [github.com/everanium/itb.DefaultChunkSize];
+// ParallaxSegmentSize=0 defers to
+// [github.com/everanium/itb/parallax.DefaultSegmentSize]. Every other
+// field must be supplied explicitly.
+type Profile struct {
+	// Name is the registered profile identifier. Populated by
+	// [RegisterProfile] after validation succeeds; callers construct
+	// Profile literals without a Name and pass the desired name as the
+	// separate RegisterProfile argument.
+	Name string
+
+	// Mode selects which cipher surface the Pipeline exposes. One of:
+	// "streaming-aead", "streaming-noaead", "singlemsg-mac",
+	// "singlemsg-nomac", "blob-only".
+	Mode string
+
+	// Width is the inner hash primitive's native intermediate-state
+	// width in bits. One of 128 / 256 / 512. Must match the width of
+	// InnerHash's [github.com/everanium/itb/hashes.Registry] entry.
+	Width int
+
+	// ChunkSize is the streaming chunk-size budget in bytes. Zero
+	// defers to [github.com/everanium/itb.DefaultChunkSize] at
+	// [Init] time.
+	ChunkSize int
+
+	// InnerHash is the ITB hash primitive name (e.g. "areion512"). Must
+	// resolve via [github.com/everanium/itb/hashes.Find] to a Spec
+	// whose Width matches Width.
+	InnerHash string
+
+	// KeyBits is the per-seed key width in bits. Must be a positive
+	// multiple of the primitive's native Width (typically 512 / 1024 /
+	// 2048).
+	KeyBits int
+
+	// MacName is the MAC primitive name (e.g. "hmac-blake3"). Empty
+	// for No MAC modes; otherwise must resolve via
+	// [github.com/everanium/itb/macs.Find].
+	MacName string
+
+	// OuterCipher is the wrapper (Outer cipher) primitive name (e.g.
+	// "chacha20"). Empty when WrapperOn is false; otherwise must be
+	// present in [github.com/everanium/itb/wrapper.CipherNames].
+	OuterCipher string
+
+	// ParallaxPalette is the parallax layer's per-segment cipher
+	// palette. Each entry must be a recognised wrapper cipher name;
+	// the palette size is bounded by
+	// [github.com/everanium/itb/parallax.MinPaletteSize] /
+	// [github.com/everanium/itb/parallax.MaxPaletteSize] when
+	// ParallaxOn is true.
+	ParallaxPalette []string
+
+	// ParallaxSegmentSize is the parallax layer's per-segment byte
+	// count. Zero defers to
+	// [github.com/everanium/itb/parallax.DefaultSegmentSize] at
+	// [Init] time.
+	ParallaxSegmentSize int
+
+	// ParallaxOn engages the parallax layer for this profile.
+	ParallaxOn bool
+
+	// WrapperOn engages the wrapper (Outer cipher) layer for this
+	// profile.
+	WrapperOn bool
 }
 
 // resolvedProfile is the Opts-merged effective profile shape actually
@@ -107,101 +169,105 @@ type resolvedProfile struct {
 	wrapperOn           bool
 }
 
-// profileRegistry maps profile name to profile record. Populated in
-// package init.
-var profileRegistry = map[string]profile{}
+// profileRegistry maps profile name to [Profile] record. Populated in
+// package init for the shipped profiles; user-defined additions land
+// via [RegisterProfile]. Access is serialised via profileRegistryMu.
+var profileRegistry = map[string]Profile{}
 
 func init() {
 	// Streaming AEAD Triple, MAC-authenticated, parallax on + wrapper on.
-	profileRegistry[ProfileStreamingAEADTripleMACV1] = profile{
-		name:                ProfileStreamingAEADTripleMACV1,
-		mode:                modeStreamingAEAD,
-		width:               512,
-		chunkSize:           itb.DefaultChunkSize,
-		innerHash:           defaultInnerHash,
-		keyBits:             defaultKeyBits,
-		macName:             defaultMacName,
-		outerCipher:         defaultOuterCipher,
-		parallaxPalette:     defaultParallaxPalette(),
-		parallaxSegmentSize: parallax.DefaultSegmentSize,
-		parallaxOn:          true,
-		wrapperOn:           true,
+	profileRegistry[ProfileStreamingAEADTripleMACV1] = Profile{
+		Name:                ProfileStreamingAEADTripleMACV1,
+		Mode:                modeStreamingAEAD,
+		Width:               512,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           defaultInnerHash,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
 	}
 
 	// Streaming Non-AEAD Triple (No MAC), parallax on + wrapper on.
-	profileRegistry[ProfileStreamingNoAEADTripleV1] = profile{
-		name:                ProfileStreamingNoAEADTripleV1,
-		mode:                modeStreamingNoAEAD,
-		width:               512,
-		chunkSize:           itb.DefaultChunkSize,
-		innerHash:           defaultInnerHash,
-		keyBits:             defaultKeyBits,
-		macName:             "", // No MAC by definition.
-		outerCipher:         defaultOuterCipher,
-		parallaxPalette:     defaultParallaxPalette(),
-		parallaxSegmentSize: parallax.DefaultSegmentSize,
-		parallaxOn:          true,
-		wrapperOn:           true,
+	profileRegistry[ProfileStreamingNoAEADTripleV1] = Profile{
+		Name:                ProfileStreamingNoAEADTripleV1,
+		Mode:                modeStreamingNoAEAD,
+		Width:               512,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           defaultInnerHash,
+		KeyBits:             defaultKeyBits,
+		MacName:             "", // No MAC by definition.
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
 	}
 
 	// Single Message Triple, MAC-authenticated, parallax on + wrapper on.
-	profileRegistry[ProfileSingleMsgTripleMACV1] = profile{
-		name:                ProfileSingleMsgTripleMACV1,
-		mode:                modeSingleMsgMAC,
-		width:               512,
-		chunkSize:           itb.DefaultChunkSize,
-		innerHash:           defaultInnerHash,
-		keyBits:             defaultKeyBits,
-		macName:             defaultMacName,
-		outerCipher:         defaultOuterCipher,
-		parallaxPalette:     defaultParallaxPalette(),
-		parallaxSegmentSize: parallax.DefaultSegmentSize,
-		parallaxOn:          true,
-		wrapperOn:           true,
+	profileRegistry[ProfileSingleMsgTripleMACV1] = Profile{
+		Name:                ProfileSingleMsgTripleMACV1,
+		Mode:                modeSingleMsgMAC,
+		Width:               512,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           defaultInnerHash,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
 	}
 
 	// Single Message Triple, No MAC, parallax on + wrapper on.
-	profileRegistry[ProfileSingleMsgTripleNoMACV1] = profile{
-		name:                ProfileSingleMsgTripleNoMACV1,
-		mode:                modeSingleMsgNoMAC,
-		width:               512,
-		chunkSize:           itb.DefaultChunkSize,
-		innerHash:           defaultInnerHash,
-		keyBits:             defaultKeyBits,
-		macName:             "", // No MAC by definition.
-		outerCipher:         defaultOuterCipher,
-		parallaxPalette:     defaultParallaxPalette(),
-		parallaxSegmentSize: parallax.DefaultSegmentSize,
-		parallaxOn:          true,
-		wrapperOn:           true,
+	profileRegistry[ProfileSingleMsgTripleNoMACV1] = Profile{
+		Name:                ProfileSingleMsgTripleNoMACV1,
+		Mode:                modeSingleMsgNoMAC,
+		Width:               512,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           defaultInnerHash,
+		KeyBits:             defaultKeyBits,
+		MacName:             "", // No MAC by definition.
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
 	}
 
 	// Blob-only bundle profile — MAC-authenticated inner Blob{N}
 	// with parallax + wrapper metadata carried through wrap-layer.
 	// No cipher surface: [Pipeline.EncryptStream] / friends return
 	// [ErrNotYetImplemented] regardless of implementation status.
-	profileRegistry[ProfileBlobTripleMACV1] = profile{
-		name:                ProfileBlobTripleMACV1,
-		mode:                modeBlobOnly,
-		width:               512,
-		chunkSize:           itb.DefaultChunkSize,
-		innerHash:           defaultInnerHash,
-		keyBits:             defaultKeyBits,
-		macName:             defaultMacName,
-		outerCipher:         defaultOuterCipher,
-		parallaxPalette:     defaultParallaxPalette(),
-		parallaxSegmentSize: parallax.DefaultSegmentSize,
-		parallaxOn:          true,
-		wrapperOn:           true,
+	profileRegistry[ProfileBlobTripleMACV1] = Profile{
+		Name:                ProfileBlobTripleMACV1,
+		Mode:                modeBlobOnly,
+		Width:               512,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           defaultInnerHash,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         defaultOuterCipher,
+		ParallaxPalette:     defaultParallaxPalette(),
+		ParallaxSegmentSize: parallax.DefaultSegmentSize,
+		ParallaxOn:          true,
+		WrapperOn:           true,
 	}
 }
 
-// lookupProfile returns the registered profile for name and
-// [ErrUnknownProfile] on miss.
-func lookupProfile(name string) (profile, error) {
+// lookupProfile returns the registered [Profile] for name and
+// [ErrUnknownProfile] on miss. Serialised via profileRegistryMu so a
+// concurrent [RegisterProfile] is race-free.
+func lookupProfile(name string) (Profile, error) {
+	profileRegistryMu.RLock()
 	p, ok := profileRegistry[name]
+	profileRegistryMu.RUnlock()
 	if !ok {
-		return profile{}, ErrUnknownProfile
+		return Profile{}, ErrUnknownProfile
 	}
 	return p, nil
 }
@@ -215,20 +281,20 @@ func lookupProfile(name string) (profile, error) {
 // Callers that supply parallax palette overrides receive a defensive
 // copy so future mutation of the caller's slice does not leak into
 // the Pipeline.
-func resolveProfile(prof profile, opts Opts) resolvedProfile {
+func resolveProfile(prof Profile, opts Opts) resolvedProfile {
 	out := resolvedProfile{
-		name:                prof.name,
-		mode:                prof.mode,
-		width:               prof.width,
-		chunkSize:           prof.chunkSize,
-		innerHash:           prof.innerHash,
-		keyBits:             prof.keyBits,
-		macName:             prof.macName,
-		outerCipher:         prof.outerCipher,
-		parallaxPalette:     append([]string(nil), prof.parallaxPalette...),
-		parallaxSegmentSize: prof.parallaxSegmentSize,
-		parallaxOn:          prof.parallaxOn,
-		wrapperOn:           prof.wrapperOn,
+		name:                prof.Name,
+		mode:                prof.Mode,
+		width:               prof.Width,
+		chunkSize:           prof.ChunkSize,
+		innerHash:           prof.InnerHash,
+		keyBits:             prof.KeyBits,
+		macName:             prof.MacName,
+		outerCipher:         prof.OuterCipher,
+		parallaxPalette:     append([]string(nil), prof.ParallaxPalette...),
+		parallaxSegmentSize: prof.ParallaxSegmentSize,
+		parallaxOn:          prof.ParallaxOn,
+		wrapperOn:           prof.WrapperOn,
 	}
 
 	if opts.ChunkSize > 0 {
