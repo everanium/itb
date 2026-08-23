@@ -338,7 +338,7 @@ Multi-bit flips yield a single binary response — no amplification beyond singl
 - dataRotation = dataHash % 7 → some rotations more frequent
 - channelXOR bits → some XOR values more probable
 
-**Unobservability:** The attacker cannot observe dataSeed's hash output ([Proof 3](#proof-3-triple-seed-isolation): triple-seed isolation). The bias manifests only in the encrypted data within the container:
+**Unobservability:** The attacker cannot observe dataSeed's hash output ([Proof 3](#proof-3-triple-seed-isolation): eight-seed isolation). The bias manifests only in the encrypted data within the container:
 
 ```
 container_data = insert(rotate(plaintext ⊕ biased_xor, biased_r), noise, noisePos)

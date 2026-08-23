@@ -167,7 +167,7 @@ This property is a structural consequence of the 8/1 noise format, not a deliber
 | Data bits | 56 | 87.5% |
 | Noise bits | 8 | 12.5% |
 
-### Configuration Bit Accounting (per pixel, triple-seed: noise + data)
+### Configuration Bit Accounting (per pixel: noiseSeed + dataSeed)
 
 | Source | Config bits | CCA leak | Protected |
 |---|---|---|---|
