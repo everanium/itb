@@ -16,7 +16,7 @@
 // provides that per chunk and per stream; the ITB Non-AEAD streaming path
 // intentionally has none).
 //
-// Nine outer ciphers are supplied via the Keystream interface, one per
+// The outer ciphers are supplied via the Keystream interface, one per
 // PRF-grade ITB registry primitive. The keystream construction is delegated to
 // the ctr/ package, the single source of truth for cipher key / nonce sizes:
 //
