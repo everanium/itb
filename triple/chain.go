@@ -11,7 +11,7 @@ import (
 // into the (inner reader, inner writer, close-fn) triple actually
 // handed to the itb-root IO-Driven Cfg entry.
 //
-// Chain shape (per `.TRIPLE.md` Streaming chain composition):
+// Chain shape:
 //
 //	plainSrc → [parallax.NewEncryptReader when parallax on] → innerSrc
 //	wireDst  ← [wrapper.NewWrapWriter    when wrapper  on] ← innerDst

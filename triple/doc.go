@@ -26,8 +26,8 @@
 //
 // Under N-concurrent-instance construction, contention-safety is
 // by-design; individual per-instance encryption strength inherits the
-// underlying Interlocked Barrier + Triple properties documented in
-// `.ITB-48.md §2 + §3`.
+// underlying Interlocked Barrier + Triple properties documented in the
+// project's PROOFS.md and SCIENCE.md.
 //
 // A [Pipeline] carries a private [github.com/everanium/itb.Config] so
 // two Pipelines with distinct NonceBits / BarrierFill / MaxWorkers
@@ -40,9 +40,10 @@
 //
 // Reader notice — this package supersedes the earlier
 // [github.com/everanium/itb/easy] facade with a stricter surface. The
-// pre-v0.3.0 Bit Soup / Lock Soup / Lock Batch overlay knobs +
-// AttachLockSeed dance + Single Message API + permSeedCfg helpers are
-// absent by construction, since v0.3.0 retired them from the itb root
-// (see the CLAUDE.md primary-terminology section for the current
-// canonical Interlocked Barrier naming).
+// The Interlocked Barrier is always on and non-disableable; the
+// Triple 3-snake payload split is the only cipher mode. There are no
+// runtime overlay toggles, no engage/disengage knobs, and no Single
+// Message legacy surface — the package exposes one lifecycle
+// (Init/Open/Rekey/Close) plus one cipher pair per shape (message,
+// stream).
 package triple

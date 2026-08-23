@@ -16,8 +16,7 @@ import (
 //
 // The sentinel lives beside its check site here rather than in
 // [pipeline.go]'s sentinel block since it is scoped to the streaming
-// surface — mirrors the `.TRIPLE.md` "cipher-path surface guards"
-// convention of colocating a guard's error with the guard itself.
+// surface — colocates a guard's error with the guard itself.
 var ErrProfileNotStreaming = errors.New("triple: profile does not expose a streaming cipher surface")
 
 // EncryptStream reads plaintext bytes from plainSrc, runs them through
@@ -26,7 +25,7 @@ var ErrProfileNotStreaming = errors.New("triple: profile does not expose a strea
 // wire bytes to wireDst. Blocks until plainSrc returns [io.EOF] or an
 // error surfaces.
 //
-// Chain composition (per `.TRIPLE.md`):
+// Chain composition:
 //
 //  1. plainSrc → [parallax.NewEncryptReader when parallax on] → innerSrc
 //  2. wireDst  ← [wrapper.NewWrapWriter    when wrapper  on] ← innerDst

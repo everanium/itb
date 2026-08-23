@@ -35,10 +35,10 @@ import (
 //  2. The blob's wp / ww fields — the sender's recorded shape.
 //  3. The profile default (only consulted when both above are absent).
 //
-// The Opts-over-blob-over-profile ordering matches the general
-// masters-resolution principle in `.TRIPLE.md` (an Opts field is
-// always the strongest authority when present) while preserving the
-// blob's ability to carry the sender's decision through to a receiver
+// The Opts-over-blob-over-profile ordering matches the same
+// masters-resolution principle used elsewhere in this package: an
+// Opts field is always the strongest authority when present, while
+// the blob still carries the sender's decision through to a receiver
 // that hands in an empty [Opts].
 func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline, error) {
 	prof, err := lookupProfile(profile)

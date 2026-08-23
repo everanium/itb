@@ -6,28 +6,26 @@ import (
 	"testing"
 )
 
-// TestStreamModeAmbiguityParityAEADvsNoMAC ratifies the D18
-// mode-ambiguity envelope invariants (`.ITB-48.md` §11 item 16
-// items 1/2/3) at the Pipeline layer. Encrypts a matched plaintext
-// through both the Streaming AEAD and Streaming Non-AEAD (No MAC)
-// Triple profiles and asserts full-stream byte-length identity
+// TestStreamModeAmbiguityParityAEADvsNoMAC ratifies the mode-ambiguity
+// envelope invariants at the Pipeline layer. Encrypts a matched
+// plaintext through both the Streaming AEAD and Streaming Non-AEAD
+// (No MAC) Triple profiles and asserts full-stream byte-length identity
 // between the two wires.
 //
 // Container-size determinism. For plaintexts small enough that the
 // per-Third pixel budget reaches the MinPixels floor (unified with
-// MinPixelsAuth as of the CCA-resistant floor sweep — see
-// `.ITB-48.md` §11 item 16 item 4), the itb container width/height
-// is a function only of the profile-resolved keyBits (via MinPixels)
-// and the barrier fill (from [itb.Config.BarrierFill]) — NOT of the
-// specific seed bytes, nonce bytes, or cobs-encoded byte distribution
-// on the wire. This lets the test compare two independent Pipelines
-// with independently-generated seeds / masters and still observe
-// identical wire byte-lengths at the floor.
+// MinPixelsAuth under the CCA-resistant floor for the shipped
+// construction), the itb container width/height is a function only of
+// the profile-resolved keyBits (via MinPixels) and the barrier fill
+// (from [itb.Config.BarrierFill]) — NOT of the specific seed bytes,
+// nonce bytes, or cobs-encoded byte distribution on the wire. This
+// lets the test compare two independent Pipelines with independently
+// generated seeds / masters and still observe identical wire
+// byte-lengths at the floor.
 //
 // The Streaming AEAD path prepends a 32-byte streamID; the No-MAC
-// path prepends a 32-byte dummy prefix (per `.ITB-48.md` §11 item 16
-// item 2). Both prefixes are the same length so full-stream lengths
-// remain comparable.
+// path prepends a 32-byte dummy prefix. Both prefixes are the same
+// length so full-stream lengths remain comparable.
 //
 // The test picks plaintext sizes that stay under the MinPixels
 // container floor at the shipped keyBits so per-Third pixel counts

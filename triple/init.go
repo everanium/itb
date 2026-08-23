@@ -19,8 +19,8 @@ import (
 // toggle-state booleans encode the parallax/wrapper posture so [Open]
 // reconstructs the same chain shape without matching Opts.
 //
-// Field naming matches the `.TRIPLE.md` design baseline: single-letter
-// keys keep the wrap-layer compact (~80–120 bytes plus the inner blob).
+// Single-letter JSON keys keep the wrap-layer compact
+// (~80–120 bytes plus the inner blob).
 type blobWrapV1 struct {
 	Profile    string `json:"p"`
 	Version    int    `json:"v"`
@@ -48,8 +48,7 @@ const wrapMasterSize = 32
 // needs — the profile name + wrap-layer version + both masters +
 // nested [itb.Blob{N}] with the eight seed components, per-slot PRF
 // keys, and MAC material. Distribution of the blob is the caller's
-// responsibility (see [Pipeline.Close] and `.TRIPLE.md` for the
-// "blob IS the key bundle" contract).
+// responsibility — treat the blob as the full key bundle.
 //
 // Master intake rules:
 //
@@ -202,9 +201,8 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 // its master will be dropped from the wire and never consumed.
 //
 // The [ErrIdenticalMasters] check runs whenever both masters are
-// present (non-nil), matching the sanity check documented in
-// `.TRIPLE.md` "Master handling + sanity" — protects callers from
-// accidentally passing the same byte slice to both master parameters.
+// present (non-nil) — protects callers from accidentally passing the
+// same byte slice to both master parameters.
 func prepareMasters(resolved resolvedProfile, opts Opts) (permMaster, wrapMaster []byte, err error) {
 	if resolved.parallaxOn {
 		if opts.PermMaster != nil {
