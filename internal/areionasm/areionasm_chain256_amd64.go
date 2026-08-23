@@ -4,7 +4,7 @@ package areionasm
 
 // Areion256ChainAbsorb20x4 is the single-round specialised fused
 // chained-absorb VAES kernel for Areion-SoEM-256 with 20-byte per-lane
-// data shape (the ITB SetNonceBits(128) buf shape — default config).
+// data shape (the 128-bit ITB nonce buf shape — default config).
 //
 // 20 bytes ≤ 24-byte Areion-SoEM-256 chunkSize, so the absorb is one
 // SoEM round; the kernel runs the 10-round Areion256 permutation
@@ -28,7 +28,7 @@ func Areion256ChainAbsorb20x4(
 )
 
 // Areion256ChainAbsorb36x4 — 2-round specialisation for the 36-byte
-// per-lane data shape (ITB SetNonceBits(256)). State is held in
+// per-lane data shape (256-bit ITB nonce). State is held in
 // (Z14, Z15) ZMM registers across both CBC-MAC absorb rounds — no
 // memory roundtrip between rounds.
 //
@@ -41,7 +41,7 @@ func Areion256ChainAbsorb36x4(
 )
 
 // Areion256ChainAbsorb68x4 — 3-round specialisation for the 68-byte
-// per-lane data shape (ITB SetNonceBits(512)). State is held in
+// per-lane data shape (512-bit ITB nonce). State is held in
 // (Z14, Z15) ZMM registers across all three CBC-MAC absorb rounds —
 // no memory roundtrip between rounds.
 //

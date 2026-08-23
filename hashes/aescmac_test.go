@@ -19,11 +19,11 @@ import (
 // state, and subsequent 16-byte blocks chain via CBC-MAC.
 //
 // The test runs at three input lengths matching the buf shapes
-// ITB uses with each SetNonceBits configuration:
+// ITB uses with each nonce-width configuration:
 //
 //	20 bytes  — default 128-bit nonce
-//	36 bytes  — SetNonceBits(256)
-//	68 bytes  — SetNonceBits(512)
+//	36 bytes  — 256-bit nonce
+//	68 bytes  — 512-bit nonce
 func TestAESCMACDigestDependsOnEveryByte(t *testing.T) {
 	hashFn := AESCMACWithKey([16]byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -149,7 +149,7 @@ func mkAESCMACEight(t *testing.T, keyBits int) (*itb.Seed128, *itb.Seed128, *itb
 
 // TestAESCMAC128BatchedParityWithSingle confirms that the 4-way
 // batched dispatch returned by AESCMACPair produces the same digest
-// as four single-call dispatches across all three ITB SetNonceBits
+// as four single-call dispatches across all three ITB per-pixel
 // buf shapes (20 / 36 / 68 bytes). Mirrors the W256 ports'
 // equivalent test — the AES-CMAC chain has to run in lock-step
 // between the two dispatch paths, and any divergence (different
@@ -306,7 +306,7 @@ func TestAESCMACMakePairBadKeySize(t *testing.T) {
 }
 
 // TestAESCMACMakePairITBRoundtrip exercises the full Make128Pair →
-// Seed128.BatchHash → Encrypt128/Decrypt128 path on a non-trivial
+// Seed128.BatchHash → Encrypt3x128Cfg/Decrypt3x128Cfg path on a non-trivial
 // plaintext. The Seed.BatchHash field is populated from the
 // Make128Pair batched arm; itb.processChunk128 routes through the
 // batched dispatch when both noiseSeed.BatchHash and

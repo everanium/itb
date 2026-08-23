@@ -26,9 +26,9 @@
 // Threading. The library is safe for concurrent use across OS
 // threads after seed handles are constructed; concurrent
 // ITB_NewSeed / ITB_FreeSeed calls are also safe (cgo.Handle is
-// internally synchronised). Process-wide config setters
-// (ITB_SetNonceBits etc.) take effect for all subsequent
-// Encrypt / Decrypt calls and are atomic.
+// internally synchronised). Per-instance configuration is passed
+// explicitly on each Encrypt / Decrypt call rather than through
+// process-wide setters.
 package main
 
 // #include <stdint.h>

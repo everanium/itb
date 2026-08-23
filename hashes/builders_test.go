@@ -20,7 +20,7 @@ import (
 //  4. Length-tag effective: empty input vs single-zero-byte input
 //     vs longer input produce distinct outputs.
 //  5. Full nonce absorption (the silent-truncation guard): for 64-byte
-//     input (matching the SetNonceBits(512) data shape after 4-byte
+//     input (matching the 512-bit ITB nonce data shape after 4-byte
 //     pixel index), changing any single byte at indices >= 16 must
 //     change output. A truncating wrapper would fail this for indices
 //     12+ (ChaCha20 nonce slot) or 16+ (AES IV slot).
@@ -348,10 +348,10 @@ func TestBuildARXChainAbsorb512_Properties(t *testing.T) {
 // ============================================================================
 
 // checkFullAbsorption128 verifies that the 128-bit builder absorbs
-// every byte of a 68-byte input (matching the SetNonceBits(512) ITB
-// data shape: 4-byte pixel index + 64-byte nonce). A truncating
-// wrapper that drops bytes at index >= 16 (AES IV slot) or index >=
-// 12 (ChaCha20 nonce slot) would fail this test.
+// every byte of a 68-byte input (matching the 512-bit ITB nonce data
+// shape: 4-byte pixel index + 64-byte nonce). A truncating wrapper
+// that drops bytes at index >= 16 (AES IV slot) or index >= 12
+// (ChaCha20 nonce slot) would fail this test.
 func checkFullAbsorption128(t *testing.T, hash itb.HashFunc128, name string) {
 	t.Helper()
 	base := make([]byte, 68)

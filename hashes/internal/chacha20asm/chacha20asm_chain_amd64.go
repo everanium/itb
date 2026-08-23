@@ -4,7 +4,7 @@ package chacha20asm
 
 // ChaCha20256ChainAbsorb20x4 is the public 4-pixel-batched entry
 // point for the ChaCha20-256 chain-absorb at the 20-byte data shape
-// (ITB SetNonceBits(128) buf shape — the default config).
+// (128-bit ITB nonce buf shape — the default config).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused ZMM-batched ASM kernel; otherwise falls through to
@@ -56,7 +56,7 @@ func chaCha20256ChainAbsorb20x4Asm(
 )
 
 // ChaCha20256ChainAbsorb36x4 — 36-byte ChaCha20-256 batched
-// dispatcher (ITB SetNonceBits(256) buf shape). Two CBC-MAC absorb
+// dispatcher (256-bit ITB nonce buf shape). Two CBC-MAC absorb
 // rounds per lane; both consume halves of the same compression
 // block (counter=0):
 //
@@ -90,7 +90,7 @@ func chaCha20256ChainAbsorb36x4Asm(
 )
 
 // ChaCha20256ChainAbsorb68x4 — 68-byte ChaCha20-256 batched
-// dispatcher (ITB SetNonceBits(512) buf shape). Three CBC-MAC absorb
+// dispatcher (512-bit ITB nonce buf shape). Three CBC-MAC absorb
 // rounds per lane; the first two consume halves of compression
 // block 0 (counter=0), the third consumes ks_lo of compression block
 // 1 (counter=1):
