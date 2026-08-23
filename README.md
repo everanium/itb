@@ -46,8 +46,8 @@
 >    `nonce_bytes` parameter; the retired setter surface is gone; new
 >    `ITB_Triple_*` exports carry the shipped surface.
 > 9. **33-binding fleet plan.** Bindings are being reworked as thin
->    proxies over the `ITB_Triple_*` exports (nine Tier 1 Native, five
->    Thin, nineteen Tier 2 relays over four backends — C / Java / C# /
+>    proxies over the `ITB_Triple_*` exports (fourteen Tier 1 Thin
+>    direct-cshared, nineteen Tier 2 Relay over four backends — C / Java / C# /
 >    BEAM). Docs describe them at the architectural level while the
 >    rework lands.
 > 10. **Empirical suite re-run planned.** REDTEAM.md and HARNESS.md
@@ -1043,11 +1043,10 @@ The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.g
 
 ### Fleet plan (33 bindings)
 
-The binding fleet lands in three logical bands. Every band consumes the same `ITB_Triple_*` shim surface; the differentiation is only in transport (in-process CGO vs a small out-of-process relay).
+The binding fleet lands in two logical bands. Every band is a thin proxy over the same `ITB_Triple_*` shim surface; the differentiation is only in transport (in-process CGO vs a small out-of-process relay).
 
-- **Tier 1 Native (9 bindings)** — direct in-process consumers of the C shared library. C, C++, Fortran, Ada, D, Rust, C#, Python, Node.js. Each binding owns its own idiomatic surface (Streams / async / GC integration) on top of the same `ITB_Triple_*` shim.
-- **Tier 1 Thin (5 bindings)** — thin object-based facades over one of the Tier 1 Native bindings, adding a language-idiomatic surface with no extra ITB logic. Includes the primary BEAM binding (Erlang) plus four small companion facades.
-- **Tier 2 Relay (19 bindings)** — a small out-of-process relay speaks the `ITB_Triple_*` shim over one of four backends (C / Java / C# / BEAM) and hands it to a language runtime that cannot embed the C shared library directly. Every relay is a thin proxy; ITB's construction logic never lives outside the shipped Go core.
+- **Tier 1 Thin (14 bindings)** — direct in-process consumers of the C shared library. C, C++, Fortran, Ada, D, Rust, C#, Python, Node.js plus four small companion facades and the primary BEAM binding (Erlang). Each binding is a thin proxy: a language-idiomatic handle-lifetime wrapper + Opts URL-query builder + FFI shims for the `ITB_Triple_*` exports + status-code table + language-native `io.Reader` / `io.Writer` adapters for the stream-pump surface. Zero ITB construction logic; every hash-name / MAC-name / cipher-name / profile-name is an opaque string passed through to Go for validation.
+- **Tier 2 Relay (19 bindings)** — a small out-of-process relay speaks the `ITB_Triple_*` shim over one of four backends (C / Java / C# / BEAM) and hands it to a language runtime that cannot embed the C shared library directly. Every relay is a thin proxy of a thin proxy; ITB's construction logic never lives outside the shipped Go core.
 
 Docs describe the fleet at the architectural level while the per-binding rework lands. Every binding's public surface will read as "call Init to receive a `Pipeline` handle plus a blob byte slice, ship the blob to the receiver, both sides encrypt / decrypt" — the same user-story the Go `triple/` facade tells. Per-binding examples ship in each binding's own directory once the rework lands.
 
