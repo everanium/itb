@@ -190,7 +190,7 @@ The pre-verification path: the attacker takes any pixel → 56 candidates (8 noi
 
 ## 9. Nonce Reuse: A Usage Precondition, Not an Absorbed Threat
 
-Nonce reuse is not a threat the barrier architecturally closes. Closure of the CPA / KPA families is conditional on fresh nonces. Under a birthday-bound nonce collision (`2^256` queries at the shipped default 512-bit nonce — mathematically unreachable on foreseeable hardware; shrinking to 128-bit is the gate the attacker cannot force open, only the user can) the following mitigating and non-mitigating facts apply:
+Nonce reuse is not a threat the barrier architecturally closes. Closure of the CPA / KPA families is conditional on fresh nonces. Under a birthday-bound nonce collision (~`2^64` messages at the default 128-bit nonce, ~`2^128` at 256-bit, ~`2^256` at the maximum 512-bit width — the width is a per-Pipeline choice the attacker cannot force open, only the user can) the following mitigating and non-mitigating facts apply:
 
 - The mandatory internal nonce derivation from crypto/rand on every call prevents caller-side reuse through the shipped API; this is an API-discipline property, not a construction-level guarantee.
 - The Interlocked Barrier's per-chunk masks are derived from the lockSeed and the nonce. Under nonce reuse with the same seeds, the mask draws are identical across the two messages — so the barrier does **not** add protection against nonce reuse; both messages receive the same permutation, and the keystream-reuse structure persists underneath it.
@@ -200,7 +200,7 @@ Empirically (pre-v0.3.0 record on the shared pixel construction), under a delibe
 
 **Disclaimer — what "demasking" means here.** The demasker is **not a decryption tool**. It does not recover plaintext from ciphertext. It strips ITB's masking layers (noise bit at `noisePos`, 7-bit rotation, channelXOR) off a nonce-reuse ciphertext pair, exposing the underlying raw `dataSeed.ChainHash(pixel, nonce)` hash-output bits — the clean PRF signal under a controlled (pixel, nonce) probe, not plaintext. That stream is ammunition for a downstream seed-recovery SAT attempt (feasible only under invertible primitives; infeasible under any PRF-grade primitive). Unlike a stream cipher where `C1 ⊕ C2` directly yields `plaintext_1 ⊕ plaintext_2`, ITB's per-encryption fresh-CSPRNG noise bits + per-pixel rotation + per-pixel channelXOR mean that raw ciphertext XOR does NOT reduce to plaintext XOR — extracting anything requires running the full demasker pipeline, and the pipeline's output is always the hash-output stream, never plaintext bits.
 
-The security gate is the user's choice of nonce size. At the default 512-bit nonce the attack is mathematically out of reach.
+The security gate is the user's choice of nonce width. At the maximum 512-bit width the collision bound (~`2^256` messages) is mathematically out of reach on foreseeable hardware; at the default 128-bit width the birthday bound is ~`2^64` messages.
 
 For the empirical stream-size and Clean-Signal data across `(format, coverage, plaintext size, primitive)` combinations, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
 
