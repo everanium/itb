@@ -6,67 +6,68 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, KCMVP in South Korea, OSCCA's SM-series in China, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Results below were collected at `ITB_NONCE_BITS=128`. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written ZMM AVX-512 chain-absorb ASM kernels at the per-pixel hash hot path on x86_64 hosts with AVX-512 SIMD support; the AArch64 production path (AWS Graviton 2+ / Apple M1+ / Neoverse N1+/V1+/V2+) uses ARM Crypto Extension `AESE`/`AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 primitives and the upstream library NEON / ARM Crypto Extension paths for the AES-CMAC / BLAKE / ChaCha20 / SipHash family (`jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE / ChaCha20 family, `dchest/siphash` portable Go for SipHash-2-4). The C ABI and Python FFI stacks populate the batched arm automatically.
+Results below were collected at `ITB_NONCE_BITS=512` (the v0.3.0 secure default) with `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` capping the Go runtime heap so numbers stay stable across the 64 MB rows and are directly comparable with the binding-side benchmark harness under the same caps. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written ZMM AVX-512 chain-absorb ASM kernels at the per-pixel hash hot path on x86_64 hosts with AVX-512 SIMD support; the AArch64 production path (AWS Graviton 2+ / Apple M1+ / Neoverse N1+/V1+/V2+) uses ARM Crypto Extension `AESE`/`AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 primitives and the upstream library NEON / ARM Crypto Extension paths for the AES-CMAC / BLAKE / ChaCha20 / SipHash family (`jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE / ChaCha20 family, `dchest/siphash` portable Go for SipHash-2-4). The C ABI and Python FFI stacks populate the batched arm automatically.
 
 The Interlocked Barrier overlay derives a fresh PRF-keyed 48-bit bit-permutation mask per chunk (drawn from ≈ 2^70.20 mask space via one PRF call per chunk group, BMI2 PEXT / PDEP hardware path on x86, pure-Go fallback elsewhere), so per-byte primitive call rate is substantially higher than a permutation-free construction and the hash hot path is throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT plus full-width 512-bit ALU plus absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width. AArch64 hosts run through the pure-Go path; a NEON / SVE2 kernel for the Interlocked Barrier is not currently shipped.
 
 Reproduction:
 
 ```sh
-ITB_NONCE_BITS=128 go test -bench='BenchmarkExtTriple*' -run='^$' -benchtime=5s -count=1
+ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
+  go test -bench='BenchmarkExtTriple.*_(1MB|16MB|64MB)$' -run='^$' -benchtime=5s -count=1
 ```
 
 Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512+VL chain-absorb kernels are not engaged:
 
 * `-tags=noitbasm` — disables only the chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; the encrypt path runs 4× the single arm via upstream asm.
 
-## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-23)
+## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-24)
 
-Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Linux kernel 7.1.3, Go 1.26.5, native execution (no VMware layer). Throughput in MB/s at `ITB_NONCE_BITS=128`. Bench sample size: `-benchtime=2s -count=1` (quick pass; full 5s pass pending maintainer confirmation). The 64 MB sizes cap at 2–3 iterations per bench under a 2 s budget, so individual cells at the 64 MB column carry higher noise than the 16 MB column.
+Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Linux kernel 7.1.3, Go 1.26.5, VMware CGO mode (identical host to the earlier tables below). Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` so allocation churn on the 64 MB rows does not artefact-drop throughput below the 16 MB rows. The 1 MB column is dominated by small-payload GC-cycle amortisation and carries measurable noise across reruns; the 16 MB and 64 MB columns are stable and are the primary reference points for cross-run comparison.
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 512 | PRF | 211 | 228 | 233 | 243 | 279 | 289 |
-| **Areion-SoEM-512** | 512 | 512 | PRF | 214 | 233 | 244 | 242 | 286 | 290 |
-| **BLAKE2b-256** | 256 | 512 | PRF | 119 | 133 | 142 | 134 | 153 | 154 |
-| **BLAKE2b-512** | 512 | 512 | PRF | 167 | 187 | 182 | 181 | 208 | 220 |
-| **BLAKE2s** | 256 | 512 | PRF | 131 | 139 | 144 | 143 | 155 | 157 |
-| **BLAKE3** | 256 | 512 | PRF | 134 | 144 | 152 | 149 | 160 | 166 |
-| **AES-CMAC** | 128 | 512 | PRF | 214 | 242 | 256 | 259 | 317 | 324 |
-| **SipHash-2-4** | 128 | 512 | PRF | 192 | 220 | 214 | 216 | 253 | 262 |
-| **ChaCha20** | 256 | 512 | PRF | 123 | 121 | 134 | 92 | 140 | 151 |
+| **Areion-SoEM-256** | 256 | 512 | PRF | 85 | 183 | 195 | 125 | 238 | 247 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 86 | 184 | 196 | 206 | 253 | 260 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 70 | 128 | 132 | 92 | 144 | 150 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 73 | 134 | 143 | 142 | 162 | 167 |
+| **BLAKE2s** | 256 | 512 | PRF | 61 | 96 | 99 | 79 | 108 | 110 |
+| **BLAKE3** | 256 | 512 | PRF | 63 | 106 | 111 | 83 | 119 | 125 |
+| **AES-CMAC** | 128 | 512 | PRF | 89 | 197 | 212 | 128 | 251 | 283 |
+| **SipHash-2-4** | 128 | 512 | PRF | 80 | 160 | 171 | 117 | 199 | 209 |
+| **ChaCha20** | 256 | 512 | PRF | 37 | 80 | 93 | 50 | 94 | 106 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 1024 | PRF | 186 | 199 | 210 | 206 | 237 | 245 |
-| **Areion-SoEM-512** | 512 | 1024 | PRF | 182 | 203 | 212 | 215 | 238 | 245 |
-| **BLAKE2b-256** | 256 | 1024 | PRF | 85 | 92 | 94 | 91 | 97 | 100 |
-| **BLAKE2b-512** | 512 | 1024 | PRF | 125 | 139 | 142 | 139 | 150 | 157 |
-| **BLAKE2s** | 256 | 1024 | PRF | 92 | 96 | 99 | 99 | 104 | 107 |
-| **BLAKE3** | 256 | 1024 | PRF | 103 | 109 | 112 | 109 | 117 | 122 |
-| **AES-CMAC** | 128 | 1024 | PRF | 192 | 210 | 201 | 215 | 244 | 247 |
-| **SipHash-2-4** | 128 | 1024 | PRF | 144 | 167 | 164 | 164 | 174 | 190 |
-| **ChaCha20** | 256 | 1024 | PRF | 88 | 91 | 98 | 94 | 104 | 106 |
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 78 | 147 | 156 | 107 | 179 | 189 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 77 | 161 | 171 | 116 | 200 | 213 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 57 | 85 | 88 | 84 | 96 | 97 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 61 | 89 | 94 | 92 | 102 | 104 |
+| **BLAKE2s** | 256 | 1024 | PRF | 44 | 61 | 62 | 54 | 66 | 67 |
+| **BLAKE3** | 256 | 1024 | PRF | 50 | 71 | 75 | 62 | 80 | 82 |
+| **AES-CMAC** | 128 | 1024 | PRF | 81 | 159 | 172 | 137 | 199 | 212 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 79 | 114 | 119 | 91 | 132 | 136 |
+| **ChaCha20** | 256 | 1024 | PRF | 31 | 56 | 63 | 39 | 62 | 68 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 2048 | PRF | 146 | 155 | 152 | 155 | 170 | 184 |
-| **Areion-SoEM-512** | 512 | 2048 | PRF | 155 | 163 | 170 | 171 | 188 | 194 |
-| **BLAKE2b-256** | 256 | 2048 | PRF | 52 | 57 | 57 | 56 | 58 | 60 |
-| **BLAKE2b-512** | 512 | 2048 | PRF | 85 | 89 | 92 | 90 | 98 | 100 |
-| **BLAKE2s** | 256 | 2048 | PRF | 57 | 61 | 62 | 60 | 64 | 65 |
-| **BLAKE3** | 256 | 2048 | PRF | 67 | 67 | 72 | 72 | 76 | 76 |
-| **AES-CMAC** | 128 | 2048 | PRF | 139 | 154 | 153 | 155 | 169 | 169 |
-| **SipHash-2-4** | 128 | 2048 | PRF | 100 | 108 | 111 | 110 | 118 | 119 |
-| **ChaCha20** | 256 | 2048 | PRF | 59 | 61 | 63 | 62 | 66 | 67 |
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 66 | 108 | 114 | 88 | 126 | 130 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 72 | 124 | 130 | 97 | 144 | 149 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 36 | 50 | 53 | 46 | 56 | 57 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 42 | 55 | 57 | 49 | 59 | 60 |
+| **BLAKE2s** | 256 | 2048 | PRF | 33 | 35 | 36 | 32 | 37 | 38 |
+| **BLAKE3** | 256 | 2048 | PRF | 35 | 44 | 46 | 40 | 47 | 48 |
+| **AES-CMAC** | 128 | 2048 | PRF | 67 | 111 | 119 | 91 | 132 | 134 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 51 | 72 | 74 | 62 | 78 | 80 |
+| **ChaCha20** | 256 | 2048 | PRF | 23 | 35 | 37 | 27 | 37 | 39 |
 
-Cost-delta vs pre-v0.3.0 (see historical baseline below): the always-on 48-bit Interlocked Barrier overlay carries an unconditional per-chunk PRF-mask derivation cost that the pre-v0.3.0 line paid only when Lock Soup was engaged. Against the pre-v0.3.0 no-overlay column, v0.3.0 throughput at Triple 512-bit Encrypt 16 MB is roughly 23–45% lower per primitive — the residual reflecting the always-on rather than opt-in per-chunk PRF-mask derivation the barrier performs unconditionally. Against the pre-v0.3.0 Lock Soup + Lock Batch column (the closest apples-to-apples comparison, since v0.3.0's overlay is always-on and always batched per chunk group), v0.3.0 lands roughly +8–48% ahead at 128-bit and 256-bit hash-width primitives and within ±5% of parity at 512-bit hash-width primitives (Areion-SoEM-512, BLAKE2b-512); the widening from a 24-bit to a 48-bit chunk width lifts the mask space to ≈ 2^70.20 per chunk while the derivation cost amortises over the wider chunk. AES-heavy primitives (Areion-SoEM-256/512, AES-CMAC) retain the strongest absolute throughput at every width because the shipped AVX-512 VAES kernels amortise well through the batched dispatch. Further rows for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
+Cost-delta vs pre-v0.3.0 (see historical baseline below): the always-on 48-bit Interlocked Barrier overlay carries an unconditional per-chunk PRF-mask derivation cost that the pre-v0.3.0 line paid only when Lock Soup was engaged, and the wider 512-bit nonce default adds a fixed envelope-derivation overhead the pre-v0.3.0 tables did not carry. Against the pre-v0.3.0 no-overlay + 128-bit nonce column, v0.3.0 throughput at Triple 512-bit Encrypt 16 MB is roughly 20–40% lower per primitive — the residual reflecting both the always-on rather than opt-in per-chunk PRF-mask derivation and the wider nonce envelope. AES-heavy primitives (Areion-SoEM-256/512, AES-CMAC) retain the strongest absolute throughput at every width because the shipped AVX-512 VAES kernels amortise well through the batched dispatch. Further rows for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
 
 
 ## Pre-v0.3.0 baseline (historical, retained for cost-delta comparison)

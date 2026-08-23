@@ -43,7 +43,7 @@ static itb_opts *bench_build_opts(void)
         return NULL;
     }
     const char *nb = getenv("ITB_NONCE_BITS");
-    (void)itb_opts_set(opts, "nonceBits", (nb && *nb) ? nb : "128");
+    (void)itb_opts_set(opts, "nonceBits", (nb && *nb) ? nb : "512");
     const char *kb = getenv("ITB_KEY_BITS");
     (void)itb_opts_set(opts, "keyBits", (kb && *kb) ? kb : "1024");
     const char *wp = getenv("ITB_WITH_PARALLAX");
