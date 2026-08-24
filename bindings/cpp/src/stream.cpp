@@ -89,6 +89,13 @@ std::size_t pump_into(Stream &session, std::span<const std::byte> src,
 
     const auto drain_one = [&]() -> StreamRead {
         if (used == dst.size()) {
+            /* dst has no free tail — the produced output is larger
+             * than the caller-supplied buffer. The Go-side
+             * TripleStreamRead synchronises the finished flag with
+             * the cipher goroutine's close(done) teardown step, so
+             * the read that consumes the last bytes reports
+             * finished == true in the same call; an exact-size dst
+             * therefore never lands here on a well-formed pump. */
             throw std::invalid_argument(
                 "itb: stream pump dst too small for the produced output; "
                 "size it via itb::out_bound");
