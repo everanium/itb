@@ -69,6 +69,35 @@ assert_eq!(plain, b"any text or binary data");
 # Ok::<(), itb::ItbError>(())
 ```
 
+`OptsBuilder` overrides the profile default per call (chunk size,
+outer cipher, parallax on/off, wrapper on/off, MAC name, palette):
+
+```rust,no_run
+# use itb::{OptsBuilder, Pipeline};
+let opts = OptsBuilder::new()
+    .with_chunk_size(65536)
+    .with_wrapper(false);
+let mut sender = Pipeline::init("singlemsg-triple-mac-v1", &opts)?;
+let _receiver = Pipeline::open("singlemsg-triple-mac-v1", sender.blob(), &opts, None)?;
+# Ok::<(), itb::ItbError>(())
+```
+
+`Pipeline::rekey` rotates the parallax + wrapper masters mid-session
+(the eight ITB seeds and MAC key are fixed for the session lifetime
+by design); the receiver picks up the new masters via a fresh
+`sender.blob()` handshake:
+
+```rust,no_run
+# use itb::{OptsBuilder, Pipeline};
+# let opts = OptsBuilder::new();
+# let mut sender = Pipeline::init("singlemsg-triple-mac-v1", &opts)?;
+let perm = [0x11u8; 32];
+let wrap = [0x22u8; 32];
+sender.rekey(&perm, &wrap)?;
+let _receiver = Pipeline::open("singlemsg-triple-mac-v1", sender.blob(), &opts, None)?;
+# Ok::<(), itb::ItbError>(())
+```
+
 Runnable version: `cargo run --example round_trip --release`. For
 bounded-memory streaming, `encrypt_stream_pump` / `decrypt_stream_pump`
 move any `io::Read` source into any `io::Write` sink through an

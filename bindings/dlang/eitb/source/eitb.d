@@ -11,8 +11,10 @@
 /// back to `decrypt` on the receiving side.
 module eitb;
 
-import std.file : read, write;
+import std.algorithm : startsWith;
+import std.file : mkdirRecurse, read, write;
 import std.format : format;
+import std.path : dirName;
 import std.stdio : stderr, writefln, writeln;
 
 import itb;
@@ -70,11 +72,30 @@ int cmdVersion()
     return 0;
 }
 
+// Profiles whose canonical name begins with "streaming-" route
+// through the one-shot streaming buffered pair instead of the Single
+// Message pair.
+bool isStreamingProfile(string profile) @safe pure nothrow
+{
+    return profile.startsWith("streaming-");
+}
+
+// Recursively create the parent directory of `path` (mkdir -p).
+void ensureParentDir(string path)
+{
+    auto parent = dirName(path);
+    if (parent.length > 0 && parent != ".")
+        mkdirRecurse(parent);
+}
+
 int cmdEncrypt(string profile, string infile, string outfile)
 {
     auto plain = cast(ubyte[]) read(infile);
     auto pipe = Pipeline.create(profile);
-    auto wire = pipe.encryptMessage(plain);
+    auto wire = isStreamingProfile(profile)
+        ? pipe.encryptStreamOneShot(plain)
+        : pipe.encryptMessage(plain);
+    ensureParentDir(outfile);
     write(outfile, wire);
     stderr.writeln(hexEncode(pipe.blob));
     writefln("encrypted %s -> %s (%d -> %d bytes)",
@@ -87,7 +108,10 @@ int cmdDecrypt(string profile, string blobHex, string infile, string outfile)
     auto blob = hexDecode(blobHex);
     auto wire = cast(ubyte[]) read(infile);
     auto pipe = Pipeline.open(profile, blob);
-    auto plain = pipe.decryptMessage(wire);
+    auto plain = isStreamingProfile(profile)
+        ? pipe.decryptStreamOneShot(wire)
+        : pipe.decryptMessage(wire);
+    ensureParentDir(outfile);
     write(outfile, plain);
     writefln("decrypted %s -> %s (%d -> %d bytes)",
         infile, outfile, wire.length, plain.length);

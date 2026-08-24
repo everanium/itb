@@ -82,6 +82,28 @@ begin
 end Round_Trip;
 ```
 
+`Itb.Opts` overrides the profile default per call (chunk size, outer
+cipher, parallax on/off, wrapper on/off, MAC name, palette); every
+setter mutates the `Opts` record in place:
+
+```ada
+Itb.Opts.Set_Chunk_Size (Options, 65536);
+Itb.Opts.Set_With_Wrapper (Options, False);
+Sender.Init ("singlemsg-triple-mac-v1", Options);
+Receiver.Open ("singlemsg-triple-mac-v1", Sender.Blob, Options);
+```
+
+`Itb.Pipeline.Rekey` rotates the parallax + wrapper masters
+mid-session (the eight ITB seeds and MAC key are fixed for the
+session lifetime by design); the receiver picks up the new masters
+through a fresh `Sender.Blob` handshake:
+
+```ada
+Sender.Rekey (Perm_Master => (1 .. 32 => 16#11#),
+              Wrap_Master => (1 .. 32 => 16#22#));
+Receiver.Open ("singlemsg-triple-mac-v1", Sender.Blob, Options);
+```
+
 For bounded-memory streaming, `Itb.Stream` exposes incremental
 sessions (`Begin_Encrypt` / `Begin_Decrypt`, then `Write` / `Finish`
 / `Read` in a caller-driven loop); `Encrypt_Stream_One_Shot` /

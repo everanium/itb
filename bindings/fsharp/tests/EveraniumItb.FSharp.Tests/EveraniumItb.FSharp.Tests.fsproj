@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>EveraniumItb.FSharp.Tests</RootNamespace>
+    <AssemblyName>EveraniumItb.FSharp.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="TestSupport.fs" />
+    <Compile Include="SmokeTests.fs" />
+    <Compile Include="MessageTests.fs" />
+    <Compile Include="OptsTests.fs" />
+    <Compile Include="ErrorTests.fs" />
+    <Compile Include="RekeyTests.fs" />
+    <Compile Include="StreamPumpTests.fs" />
+    <Compile Include="StreamIncrementalTests.fs" />
+    <Compile Include="StreamStickyTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EveraniumItb.FSharp\EveraniumItb.FSharp.fsproj" />
+  </ItemGroup>
+
+</Project>

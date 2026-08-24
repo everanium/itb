@@ -375,6 +375,64 @@ func main() {
 }
 ```
 
+### Rekey — Rotating Parallax + Wrapper Masters
+
+`Rekey` rotates the parallax and wrapper master keys mid-session
+without touching the eight inner seeds (which stay fixed for a
+session's lifetime by construction). Only meaningful when
+`opts.ParallaxOn` or `opts.WrapperOn` is set (the shipped
+profiles enable both by default). Pass explicit 32-byte masters or
+`nil` for CSPRNG generation; the receiver picks up the new masters
+through a fresh `Pipeline.Blob()` handshake.
+
+```go
+package main
+
+import (
+    "crypto/rand"
+
+    "github.com/everanium/itb/triple"
+)
+
+func main() {
+    enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer enc.Close()
+
+    // ... some traffic through enc ...
+
+    // Rotate masters. Pass nil for CSPRNG-generated masters, or
+    // supply 32-byte slices from application key management.
+    newPerm := make([]byte, 32)
+    newWrap := make([]byte, 32)
+    if _, err := rand.Read(newPerm); err != nil {
+        panic(err)
+    }
+    if _, err := rand.Read(newWrap); err != nil {
+        panic(err)
+    }
+    if err := enc.Rekey(newPerm, newWrap); err != nil {
+        panic(err)
+    }
+
+    // Receiver reconstructs against the refreshed session blob.
+    refreshed := enc.Blob()
+    dec, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, refreshed, triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer dec.Close()
+
+    _ = blob // discard the pre-rekey blob; the refreshed one supersedes it
+}
+```
+
+Serialise `Rekey` against concurrent cipher calls on the same
+`Pipeline` — the eight inner seeds are read-only, but the parallax
+and wrapper master slots are mutated.
+
 ### Triple 3 — Streaming AEAD (MAC Authenticated, IO-Driven)
 
 The Streaming AEAD IO-Driven surface is the primary use case for bulk payloads. `EncryptStream` reads plaintext from an `io.Reader` and writes wire bytes to an `io.Writer`; `DecryptStream` mirrors the direction.

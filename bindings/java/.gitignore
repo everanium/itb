@@ -1,0 +1,19 @@
+# Gradle build output
+build/
+.gradle/
+
+# Compiled classes / archives outside the build tree
+*.class
+bin/
+out/
+
+# IDE / tooling
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Compiled JNI artefacts outside the build tree
+*.so

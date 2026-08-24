@@ -14,6 +14,7 @@ back to ``decrypt`` on the receiving side.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from pathlib import Path
 
@@ -65,10 +66,28 @@ def cmd_hashes() -> None:
         print(f"{i:2}  {name:<12} {width} bits")
 
 
+def _ensure_parent_dir(out: str) -> None:
+    """Create the parent directory of out recursively (mkdir -p)."""
+    parent = os.path.dirname(out)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def _is_streaming_profile(profile: str) -> bool:
+    """Profiles whose canonical name begins with ``streaming-`` route
+    through the one-shot streaming buffered pair instead of the
+    Single Message pair."""
+    return profile.startswith("streaming-")
+
+
 def cmd_encrypt(profile: str, infile: str, outfile: str) -> None:
     plain = Path(infile).read_bytes()
     with itb.Pipeline.init(profile) as pipe:
-        wire = pipe.encrypt_message(plain)
+        if _is_streaming_profile(profile):
+            wire = pipe.encrypt_stream_one_shot(plain)
+        else:
+            wire = pipe.encrypt_message(plain)
+        _ensure_parent_dir(outfile)
         Path(outfile).write_bytes(wire)
         print(pipe.blob.hex(), file=sys.stderr)
     print(f"encrypted {infile} -> {outfile} ({len(plain)} -> {len(wire)} bytes)")
@@ -81,7 +100,11 @@ def cmd_decrypt(profile: str, blob_hex: str, infile: str, outfile: str) -> None:
         raise itb.ItbError(f"blob hex: {exc}") from exc
     wire = Path(infile).read_bytes()
     with itb.Pipeline.open(profile, blob) as pipe:
-        plain = pipe.decrypt_message(wire)
+        if _is_streaming_profile(profile):
+            plain = pipe.decrypt_stream_one_shot(wire)
+        else:
+            plain = pipe.decrypt_message(wire)
+    _ensure_parent_dir(outfile)
     Path(outfile).write_bytes(plain)
     print(f"decrypted {infile} -> {outfile} ({len(wire)} -> {len(plain)} bytes)")
 

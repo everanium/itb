@@ -88,6 +88,34 @@ itb_pipeline_free(receiver);
 itb_pipeline_free(sender);
 ```
 
+`itb_opts` overrides the profile default per call (chunk size, outer
+cipher, parallax on/off, wrapper on/off, MAC name, palette); every
+setter goes through `itb_opts_set(opts, key, value)`:
+
+```c
+itb_opts *opts = itb_opts_new();
+itb_opts_set(opts, "chunkSize", "65536");
+itb_opts_set(opts, "withWrapper", "false");
+itb_pipeline_init("singlemsg-triple-mac-v1", opts, &sender);
+itb_pipeline_open("singlemsg-triple-mac-v1",
+                  itb_pipeline_blob(sender), itb_pipeline_blob_len(sender),
+                  opts, NULL, 0, NULL, 0, &receiver);
+itb_opts_free(opts);
+```
+
+`itb_pipeline_rekey` rotates the parallax + wrapper masters
+mid-session (the eight ITB seeds and MAC key are fixed for the
+session lifetime by design); the receiver picks up the new masters
+through a fresh `itb_pipeline_blob(sender)` handshake:
+
+```c
+uint8_t perm[32] = { /* fresh */ }, wrap[32] = { /* fresh */ };
+itb_pipeline_rekey(sender, perm, sizeof perm, wrap, sizeof wrap);
+itb_pipeline_open("singlemsg-triple-mac-v1",
+                  itb_pipeline_blob(sender), itb_pipeline_blob_len(sender),
+                  NULL, NULL, 0, NULL, 0, &receiver);
+```
+
 For bounded-memory streaming, `itb_pipeline_encrypt_stream_pump` /
 `itb_pipeline_decrypt_stream_pump` move a whole buffer through an
 incremental session; the explicit `itb_pipeline_encrypt_stream_begin`

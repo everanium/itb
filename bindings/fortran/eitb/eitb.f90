@@ -97,6 +97,34 @@ contains
     end do
   end subroutine
 
+  ! Profiles whose canonical name begins with "streaming-" route
+  ! through the one-shot streaming buffered pair instead of the
+  ! Single Message pair.
+  function is_streaming_profile(profile) result(flag)
+    character(*), intent(in) :: profile
+    logical :: flag
+    character(len=10), parameter :: prefix = "streaming-"
+
+    flag = len(profile) >= len(prefix) .and. profile(1:min(len(profile), len(prefix))) == prefix
+  end function
+
+  ! Recursively create the parent directory of `path` (mkdir -p).
+  ! Fortran has no stdlib mkdir; shell out to `mkdir -p`.
+  subroutine ensure_parent_dir(path)
+    character(*), intent(in) :: path
+    integer :: slash, stat
+
+    slash = index(path, "/", back=.true.)
+    if (slash <= 1) return
+    call execute_command_line("mkdir -p '"//path(:slash - 1)//"'", &
+        wait=.true., exitstat=stat)
+    if (stat /= 0) then
+      write (error_unit, '(a,i0,a)') &
+          "eitb: mkdir -p failed for "//path(:slash - 1)//" (status ", stat, ")"
+      error stop 1
+    end if
+  end subroutine
+
   subroutine cmd_encrypt(profile, infile, outfile)
     character(*), intent(in) :: profile, infile, outfile
     type(itb_opts_t)     :: opts
@@ -107,8 +135,13 @@ contains
     call read_file(infile, plain)
     call itb_pipeline_init(pipe, profile, opts, err)
     if (.not. itb_ok(err)) call fail("init", err)
-    call itb_encrypt_message(pipe, plain, wire, err)
+    if (is_streaming_profile(profile)) then
+      call itb_encrypt_stream_one_shot(pipe, plain, wire, err)
+    else
+      call itb_encrypt_message(pipe, plain, wire, err)
+    end if
     if (.not. itb_ok(err)) call fail("encrypt", err)
+    call ensure_parent_dir(outfile)
     call write_file(outfile, wire)
     write (error_unit, '(a)') hex_encode(pipe%blob)
     print '(a,i0,a,i0,a)', "encrypted "//infile//" -> "//outfile// &
@@ -127,8 +160,13 @@ contains
     call read_file(infile, wire)
     call itb_pipeline_open(pipe, profile, blob, opts, err)
     if (.not. itb_ok(err)) call fail("open", err)
-    call itb_decrypt_message(pipe, wire, plain, err)
+    if (is_streaming_profile(profile)) then
+      call itb_decrypt_stream_one_shot(pipe, wire, plain, err)
+    else
+      call itb_decrypt_message(pipe, wire, plain, err)
+    end if
     if (.not. itb_ok(err)) call fail("decrypt", err)
+    call ensure_parent_dir(outfile)
     call write_file(outfile, plain)
     print '(a,i0,a,i0,a)', "decrypted "//infile//" -> "//outfile// &
         " (", size(wire), " -> ", size(plain), " bytes)"

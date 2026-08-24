@@ -1,0 +1,9 @@
+/vendor/
+composer.lock
+.phpunit.cache/
+.phpunit.result.cache
+/tools/
+# The root .gitignore drops **/eitb/eitb (compiled binaries in other
+# bindings); the PHP eitb entry-point is a committed shell launcher —
+# re-include it so git tracks it.
+!/eitb/eitb

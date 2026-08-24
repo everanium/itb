@@ -1,0 +1,166 @@
+//! Triple Pipeline session over the C binding's `itb_pipeline` handle.
+
+const std = @import("std");
+const ffi = @import("ffi.zig").c;
+const err = @import("error.zig");
+const opts_mod = @import("opts.zig");
+const stream = @import("stream.zig");
+
+const Allocator = std.mem.Allocator;
+const Opts = opts_mod.Opts;
+
+/// Explicit master override pair for `Pipeline.open`. Both slices
+/// must be non-empty (a half-supplied pair is rejected Go-side).
+pub const Masters = struct {
+    perm: []const u8,
+    wrap: []const u8,
+};
+
+/// A Triple Pipeline session. Every output buffer the cipher calls
+/// return is owned by the caller and allocated from the `Allocator`
+/// handed to `init` / `open` — release with `allocator.free`. Buffer
+/// sizing and the BufferTooSmall retry-once dance live entirely in
+/// the C layer; the Zig side performs no sizing of its own.
+///
+/// The wrapper adds no synchronisation: the Go-side Pipeline is safe
+/// for concurrent cipher calls, and the Zig calls proxy straight
+/// through, so the same posture holds — except `rekey` and `deinit`,
+/// which must not run concurrently with cipher calls or open stream
+/// sessions on the same Pipeline.
+///
+/// Streaming-decrypt caveat: chunked Streaming AEAD verifies per
+/// chunk, so plaintext of verified chunks is released before a later
+/// chunk can fail authentication.
+pub const Pipeline = struct {
+    allocator: Allocator,
+    handle: *ffi.itb_pipeline,
+
+    /// Constructs a fresh Pipeline against the named profile. `opts`
+    /// is `null` for pure profile defaults. Release with `deinit`.
+    pub fn init(allocator: Allocator, profile: [:0]const u8, opts: ?Opts) err.Error!Pipeline {
+        var handle: ?*ffi.itb_pipeline = null;
+        try err.check(ffi.itb_pipeline_init(profile.ptr, optsHandle(opts), &handle));
+        return .{ .allocator = allocator, .handle = handle.? };
+    }
+
+    /// Reconstructs a Pipeline from a blob produced by a sender's
+    /// `init` / `rekey`. `masters` is `null` to use the blob-embedded
+    /// masters, or a non-empty pair to override them.
+    pub fn open(
+        allocator: Allocator,
+        profile: [:0]const u8,
+        blob_bytes: []const u8,
+        opts: ?Opts,
+        masters: ?Masters,
+    ) err.Error!Pipeline {
+        const m = masters orelse Masters{ .perm = &.{}, .wrap = &.{} };
+        var handle: ?*ffi.itb_pipeline = null;
+        try err.check(ffi.itb_pipeline_open(
+            profile.ptr,
+            blob_bytes.ptr,
+            blob_bytes.len,
+            optsHandle(opts),
+            m.perm.ptr,
+            m.perm.len,
+            m.wrap.ptr,
+            m.wrap.len,
+            &handle,
+        ));
+        return .{ .allocator = allocator, .handle = handle.? };
+    }
+
+    /// Closes (zeroing key material Go-side) and releases the handle.
+    /// Call exactly once; the Pipeline must not be used afterwards,
+    /// and no stream session may outlive it.
+    pub fn deinit(self: *Pipeline) void {
+        ffi.itb_pipeline_free(self.handle);
+        self.handle = undefined;
+    }
+
+    /// The exported session-bundle blob for the receiver side. The
+    /// bytes are owned by the C layer and stay valid until the next
+    /// `rekey` or `deinit` on this Pipeline.
+    pub fn blob(self: *const Pipeline) []const u8 {
+        const n = ffi.itb_pipeline_blob_len(self.handle);
+        if (n == 0) return &.{};
+        return ffi.itb_pipeline_blob(self.handle)[0..n];
+    }
+
+    /// Rotates the parallax + wrapper masters and refreshes `blob`.
+    /// Must not run concurrently with cipher calls or open stream
+    /// sessions on the same Pipeline.
+    pub fn rekey(self: *Pipeline, perm: []const u8, wrap: []const u8) err.Error!void {
+        try err.check(ffi.itb_pipeline_rekey(
+            self.handle,
+            perm.ptr,
+            perm.len,
+            wrap.ptr,
+            wrap.len,
+        ));
+    }
+
+    /// Single Message encrypt: one call, one self-contained wire.
+    /// Caller owns the result — release with `allocator.free`.
+    pub fn encryptMessage(self: *const Pipeline, plain: []const u8) err.Error![]u8 {
+        return self.cipher(ffi.itb_pipeline_encrypt_message, plain);
+    }
+
+    /// Receive-side counterpart of `encryptMessage`.
+    pub fn decryptMessage(self: *const Pipeline, wire: []const u8) err.Error![]u8 {
+        return self.cipher(ffi.itb_pipeline_decrypt_message, wire);
+    }
+
+    /// Pumps the whole plaintext through an incremental encrypt
+    /// session with bounded feed / drain slices C-side and returns
+    /// the concatenated wire. Caller owns the result.
+    pub fn encryptStreamPump(self: *const Pipeline, plain: []const u8) err.Error![]u8 {
+        return self.cipher(ffi.itb_pipeline_encrypt_stream_pump, plain);
+    }
+
+    /// Receive-side counterpart of `encryptStreamPump`.
+    pub fn decryptStreamPump(self: *const Pipeline, wire: []const u8) err.Error![]u8 {
+        return self.cipher(ffi.itb_pipeline_decrypt_stream_pump, wire);
+    }
+
+    /// Opens an incremental encrypt session (plaintext in, wire out).
+    /// Release with the session's `deinit` before this Pipeline's.
+    pub fn encryptStream(self: *Pipeline) err.Error!stream.EncryptStream {
+        return stream.EncryptStream.begin(self);
+    }
+
+    /// Opens an incremental decrypt session (wire in, plaintext out).
+    pub fn decryptStream(self: *Pipeline) err.Error!stream.DecryptStream {
+        return stream.DecryptStream.begin(self);
+    }
+
+    /// Shared body for the four buffer-in / buffer-out cipher
+    /// entries: run the C call (which allocates the output and
+    /// handles retry-once internally), copy into an allocator-owned
+    /// slice, release the C buffer.
+    fn cipher(
+        self: *const Pipeline,
+        func: CipherFn,
+        src: []const u8,
+    ) err.Error![]u8 {
+        var out: [*c]u8 = null;
+        var out_len: usize = 0;
+        const rc = func(self.handle, src.ptr, src.len, &out, &out_len);
+        defer ffi.itb_bytes_free(out); // NULL-safe; out is NULL on failure
+        try err.check(rc);
+        const copy = try self.allocator.alloc(u8, out_len);
+        if (out_len > 0) @memcpy(copy, out[0..out_len]);
+        return copy;
+    }
+};
+
+const CipherFn = *const fn (
+    ?*const ffi.itb_pipeline,
+    [*c]const u8,
+    usize,
+    [*c][*c]u8,
+    [*c]usize,
+) callconv(.c) ffi.itb_status;
+
+fn optsHandle(opts: ?Opts) ?*const ffi.itb_opts {
+    return if (opts) |o| o.handle else null;
+}

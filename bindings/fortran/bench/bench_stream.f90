@@ -2,7 +2,7 @@
 ! 1 MiB / 16 MiB / 64 MiB.
 
 program bench_stream
-  use, intrinsic :: iso_c_binding, only: c_int64_t, c_int
+  use, intrinsic :: iso_c_binding, only: c_int64_t, c_int, c_size_t
   use, intrinsic :: iso_fortran_env, only: error_unit, int64, real64
   use itb
   use bench_common
@@ -13,7 +13,12 @@ program bench_stream
   type(itb_opts_t)     :: opts
   type(itb_pipeline_t) :: pipe
   type(itb_error_t)    :: err
-  integer(c_int8_t), allocatable :: plain(:)
+  ! wire is reusable scratch shared by every iteration of a size
+  ! case: itb_encrypt_stream_pump_into grows it once to the
+  ! expansion bound, then the drain loop rewrites it in place -- no
+  ! per-iteration allocation.
+  integer(c_int8_t), allocatable :: plain(:), wire(:)
+  integer(c_size_t) :: n_wire
   integer(c_int64_t) :: prev_limit
   integer(c_int)     :: prev_gc
   integer :: i
@@ -75,10 +80,9 @@ contains
 
   subroutine run_stream_pump(ok)
     logical, intent(out) :: ok
-    integer(c_int8_t), allocatable :: wire(:)
     type(itb_error_t) :: run_err
 
-    call itb_encrypt_stream_pump(pipe, plain, wire, run_err)
+    call itb_encrypt_stream_pump_into(pipe, plain, wire, n_wire, run_err)
     ok = itb_ok(run_err)
   end subroutine
 

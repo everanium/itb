@@ -1,0 +1,45 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Itb", "..\csharp\Itb\Itb.csproj", "{D8588713-98C8-438D-97E2-EFC583E5F867}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "EveraniumItb.FSharp", "src\EveraniumItb.FSharp\EveraniumItb.FSharp.fsproj", "{8C57CD09-4B16-4AE6-9637-356379F69231}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "EveraniumItb.FSharp.Tests", "tests\EveraniumItb.FSharp.Tests\EveraniumItb.FSharp.Tests.fsproj", "{AE3A1873-4849-452D-8D43-0EAE7CF89FAD}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "EveraniumItb.FSharp.Bench", "bench\EveraniumItb.FSharp.Bench\EveraniumItb.FSharp.Bench.fsproj", "{E2C643FC-D12C-4574-8D59-0A9AE373BF3C}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "EveraniumItb.FSharp.Eitb", "eitb\EveraniumItb.FSharp.Eitb\EveraniumItb.FSharp.Eitb.fsproj", "{2798605B-D0BC-457A-926F-F24AFC716308}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C57CD09-4B16-4AE6-9637-356379F69231}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C57CD09-4B16-4AE6-9637-356379F69231}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C57CD09-4B16-4AE6-9637-356379F69231}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C57CD09-4B16-4AE6-9637-356379F69231}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AE3A1873-4849-452D-8D43-0EAE7CF89FAD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AE3A1873-4849-452D-8D43-0EAE7CF89FAD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AE3A1873-4849-452D-8D43-0EAE7CF89FAD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AE3A1873-4849-452D-8D43-0EAE7CF89FAD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2C643FC-D12C-4574-8D59-0A9AE373BF3C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2C643FC-D12C-4574-8D59-0A9AE373BF3C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2C643FC-D12C-4574-8D59-0A9AE373BF3C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2C643FC-D12C-4574-8D59-0A9AE373BF3C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2798605B-D0BC-457A-926F-F24AFC716308}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2798605B-D0BC-457A-926F-F24AFC716308}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2798605B-D0BC-457A-926F-F24AFC716308}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2798605B-D0BC-457A-926F-F24AFC716308}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

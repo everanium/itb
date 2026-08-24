@@ -70,6 +70,26 @@ sender.free();
 receiver.free();
 ```
 
+The `Opts` builder overrides the profile default per call (chunk
+size, outer cipher, parallax on/off, wrapper on/off, MAC name,
+palette); every setter mutates and returns the same instance:
+
+```ts
+const opts = new Opts().withChunkSize(65536).withWrapper(false);
+const sender = Pipeline.init('singlemsg-triple-mac-v1', opts);
+const receiver = Pipeline.open('singlemsg-triple-mac-v1', sender.blob, opts);
+```
+
+`Pipeline.rekey` rotates the parallax + wrapper masters mid-session
+(the eight ITB seeds and MAC key are fixed for the session lifetime
+by design); the receiver picks up the new masters through a fresh
+`sender.blob` handshake:
+
+```ts
+sender.rekey(Buffer.alloc(32, 0x11), Buffer.alloc(32, 0x22));
+const receiver2 = Pipeline.open('singlemsg-triple-mac-v1', sender.blob, opts);
+```
+
 For bounded-memory streaming, `encryptStreamPump` /
 `decryptStreamPump` move any iterable of byte chunks into a sink
 callback through an incremental session; the explicit

@@ -1,0 +1,46 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Itb", "..\csharp\Itb\Itb.csproj", "{D8588713-98C8-438D-97E2-EFC583E5F867}"
+EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "EveraniumItb.VisualBasic", "src\EveraniumItb.VisualBasic\EveraniumItb.VisualBasic.vbproj", "{08BA5F62-D8F9-4243-A2C0-FADA33147E28}"
+EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "EveraniumItb.VisualBasic.Tests", "tests\EveraniumItb.VisualBasic.Tests\EveraniumItb.VisualBasic.Tests.vbproj", "{0407E135-1FBD-42EB-BAFE-EB2DADB76F80}"
+EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "EveraniumItb.VisualBasic.Bench", "bench\EveraniumItb.VisualBasic.Bench\EveraniumItb.VisualBasic.Bench.vbproj", "{E4BB65F4-3950-47D8-89BF-28593E1DAB04}"
+EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "EveraniumItb.VisualBasic.Eitb", "eitb\EveraniumItb.VisualBasic.Eitb\EveraniumItb.VisualBasic.Eitb.vbproj", "{16E17AF2-7BBB-47E6-91D3-EB51C1B77E05}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8588713-98C8-438D-97E2-EFC583E5F867}.Release|Any CPU.Build.0 = Release|Any CPU
+		{08BA5F62-D8F9-4243-A2C0-FADA33147E28}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08BA5F62-D8F9-4243-A2C0-FADA33147E28}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08BA5F62-D8F9-4243-A2C0-FADA33147E28}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08BA5F62-D8F9-4243-A2C0-FADA33147E28}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0407E135-1FBD-42EB-BAFE-EB2DADB76F80}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0407E135-1FBD-42EB-BAFE-EB2DADB76F80}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0407E135-1FBD-42EB-BAFE-EB2DADB76F80}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0407E135-1FBD-42EB-BAFE-EB2DADB76F80}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E4BB65F4-3950-47D8-89BF-28593E1DAB04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E4BB65F4-3950-47D8-89BF-28593E1DAB04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E4BB65F4-3950-47D8-89BF-28593E1DAB04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E4BB65F4-3950-47D8-89BF-28593E1DAB04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16E17AF2-7BBB-47E6-91D3-EB51C1B77E05}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16E17AF2-7BBB-47E6-91D3-EB51C1B77E05}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16E17AF2-7BBB-47E6-91D3-EB51C1B77E05}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16E17AF2-7BBB-47E6-91D3-EB51C1B77E05}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
