@@ -1,0 +1,37 @@
+{
+  "name": "itb",
+  "version": "0.3.0",
+  "description": "Node.js / TypeScript binding for libitb (ITB Triple Pipeline)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist dist-test dist-bench dist-eitb *.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test 'dist-test/tests/**/*.test.js'",
+    "bench:build": "tsc -p tsconfig.bench.json",
+    "eitb:build": "tsc -p tsconfig.eitb.json"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "koffi": "^2.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
+  }
+}
