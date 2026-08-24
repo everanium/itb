@@ -72,11 +72,30 @@ internal static class Program
         return 0;
     }
 
+    // Profiles whose canonical name begins with "streaming-" route
+    // through the one-shot streaming buffered pair instead of the
+    // Single Message pair.
+    private static bool IsStreamingProfile(string profile) =>
+        profile.StartsWith("streaming-", StringComparison.Ordinal);
+
+    // Recursively create the parent directory of `path` (mkdir -p).
+    private static void EnsureParentDir(string path)
+    {
+        string? parent = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+    }
+
     private static int CmdEncrypt(string profile, string inFile, string outFile)
     {
         var plain = File.ReadAllBytes(inFile);
         using var pipe = Pipeline.Init(profile);
-        var wire = pipe.EncryptMessage(plain);
+        var wire = IsStreamingProfile(profile)
+            ? pipe.EncryptStreamOneShot(plain)
+            : pipe.EncryptMessage(plain);
+        EnsureParentDir(outFile);
         File.WriteAllBytes(outFile, wire);
         Console.Error.WriteLine(Convert.ToHexStringLower(pipe.Blob));
         Console.WriteLine(
@@ -90,7 +109,10 @@ internal static class Program
         var blob = Convert.FromHexString(blobHex);
         var wire = File.ReadAllBytes(inFile);
         using var pipe = Pipeline.Open(profile, blob);
-        var plain = pipe.DecryptMessage(wire);
+        var plain = IsStreamingProfile(profile)
+            ? pipe.DecryptStreamOneShot(wire)
+            : pipe.DecryptMessage(wire);
+        EnsureParentDir(outFile);
         File.WriteAllBytes(outFile, plain);
         Console.WriteLine(
             $"decrypted {inFile} -> {outFile} ({wire.Length} -> {plain.Length} bytes)");

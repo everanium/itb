@@ -46,6 +46,25 @@ fn cmd_version() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Create the parent directory of `out` recursively (analogue of
+/// `mkdir -p $(dirname out)`). Silent if the directory already
+/// exists; propagates the error otherwise.
+fn ensure_parent_dir(out: &str) -> std::io::Result<()> {
+    if let Some(parent) = std::path::Path::new(out).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    Ok(())
+}
+
+/// Profiles whose canonical name begins with `streaming-` route
+/// through the one-shot streaming buffered pair instead of the
+/// Single Message pair.
+fn is_streaming_profile(profile: &str) -> bool {
+    profile.starts_with("streaming-")
+}
+
 fn cmd_encrypt(
     profile: &str,
     infile: &str,
@@ -53,7 +72,12 @@ fn cmd_encrypt(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plain = std::fs::read(infile)?;
     let pipe = Pipeline::init(profile, &OptsBuilder::new())?;
-    let wire = pipe.encrypt_message(&plain)?;
+    let wire = if is_streaming_profile(profile) {
+        pipe.encrypt_stream_one_shot(&plain)?
+    } else {
+        pipe.encrypt_message(&plain)?
+    };
+    ensure_parent_dir(outfile)?;
     std::fs::write(outfile, &wire)?;
     eprintln!("{}", hex_encode(pipe.blob()));
     println!(
@@ -75,7 +99,12 @@ fn cmd_decrypt(
     let blob = hex_decode(blob_hex)?;
     let wire = std::fs::read(infile)?;
     let pipe = Pipeline::open(profile, &blob, &OptsBuilder::new(), None)?;
-    let plain = pipe.decrypt_message(&wire)?;
+    let plain = if is_streaming_profile(profile) {
+        pipe.decrypt_stream_one_shot(&wire)?
+    } else {
+        pipe.decrypt_message(&wire)?
+    };
+    ensure_parent_dir(outfile)?;
     std::fs::write(outfile, &plain)?;
     println!(
         "decrypted {} -> {} ({} -> {} bytes)",

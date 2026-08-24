@@ -77,6 +77,32 @@ std::vector<std::uint8_t> plain =
 // throws itb::Error on any non-OK status
 ```
 
+The `itb::Opts` builder overrides the profile default per call
+(chunk size, outer cipher, parallax on/off, wrapper on/off, MAC name,
+palette); every setter goes through `set(key, value)`:
+
+```cpp
+itb::Opts opts;
+opts.set("chunkSize", "65536").set("withWrapper", "false");
+itb::Pipeline sender =
+    itb::Pipeline::init("singlemsg-triple-mac-v1", opts);
+itb::Pipeline receiver =
+    itb::Pipeline::open("singlemsg-triple-mac-v1", sender.blob(), opts);
+```
+
+`Pipeline::rekey` rotates the parallax + wrapper masters mid-session
+(the eight ITB seeds and MAC key are fixed for the session lifetime
+by design); the receiver picks up the new masters through a fresh
+`sender.blob()` handshake:
+
+```cpp
+std::array<std::byte, 32> perm{}, wrap{};
+perm.fill(std::byte{0x11}); wrap.fill(std::byte{0x22});
+sender.rekey(perm, wrap);
+itb::Pipeline receiver2 =
+    itb::Pipeline::open("singlemsg-triple-mac-v1", sender.blob());
+```
+
 For bounded-memory streaming, `encrypt_stream_pump` /
 `decrypt_stream_pump` move a whole buffer through an incremental
 session; the explicit `encrypt_stream_begin` / `decrypt_stream_begin`
@@ -84,6 +110,16 @@ sessions expose `write` / `end` / `read` for caller-driven loops.
 Byte inputs cross the API as `std::span<const std::byte>`; the
 `itb::as_bytes` adaptors build such views over `std::vector`,
 `std::span<const std::uint8_t>`, and `std::string_view` carriers.
+
+Allocation-sensitive callers use the reusable-buffer variants:
+`encrypt_message_into` / `decrypt_message_into` and
+`encrypt_stream_pump_into` / `decrypt_stream_pump_into` write into a
+caller-owned `std::span<std::byte>` (sized via
+`itb::out_bound(payload)`, adapted from a `std::vector` via
+`itb::as_writable_bytes`) and return the byte count written — one
+buffer allocated once and rewritten in place across calls, no
+per-call allocation or trim copy. The vector-returning entries above
+remain the convenience surface.
 
 Profile names, opts keys, and every primitive name are validated by
 the Go side; a rejected string surfaces as a thrown `itb::Error` whose
@@ -144,9 +180,11 @@ model; errors in the binding's own C++ frames are never suppressed.
 ./bindings/cpp/run_bench.sh
 ```
 
-Micro-benches: `message` (encrypt_message) and `stream_pump`
-(encrypt stream pump) throughput at 1 MiB / 16 MiB / 64 MiB, reported
-as an MB/s table on stdout. The runner exports `ITB_GOMEMLIMIT=512MiB`
+Micro-benches: `message` (`encrypt_message_into`) and `stream_pump`
+(`encrypt_stream_pump_into`) throughput at 1 MiB / 16 MiB / 64 MiB,
+reported as an MB/s table on stdout. Each size case drives the
+reusable-buffer entry with one scratch buffer sized to the expansion
+bound, so the measurement excludes per-iteration allocation churn. The runner exports `ITB_GOMEMLIMIT=512MiB`
 + `ITB_GOGC=20` defaults (respecting caller overrides) and the bench
 binaries apply the same caps programmatically.
 

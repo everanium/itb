@@ -32,4 +32,26 @@ export ITB_WITH_WRAPPER="${ITB_WITH_WRAPPER:-false}"
 export ITB_INNER_HASH="${ITB_INNER_HASH:-areion512}"
 export ITB_BENCH_MIN_SEC="${ITB_BENCH_MIN_SEC:-5}"
 
-make bench
+# ITB_WITH_MAC=true derives MAC/AEAD profile counterparts. When
+# ITB_PROFILE is set explicitly by the caller, it wins over the
+# derivation and applies to both shapes (expert override).
+: "${ITB_WITH_MAC:=false}"
+if [ -n "${ITB_PROFILE:-}" ]; then
+    ITB_MSG_PROFILE_DEFAULT="${ITB_PROFILE}"
+    ITB_STREAM_PROFILE_DEFAULT="${ITB_PROFILE}"
+elif [ "${ITB_WITH_MAC}" = "true" ]; then
+    ITB_MSG_PROFILE_DEFAULT="singlemsg-triple-mac-v1"
+    ITB_STREAM_PROFILE_DEFAULT="streaming-aead-triple-mac-v1"
+else
+    ITB_MSG_PROFILE_DEFAULT="singlemsg-triple-nomac-v1"
+    ITB_STREAM_PROFILE_DEFAULT="streaming-noaead-triple-v1"
+fi
+
+# Build both bench binaries via make (no run), then invoke each with
+# its shape-appropriate ITB_PROFILE so the two shapes can carry
+# independent MAC / no-MAC profiles in a single script pass.
+make benches/build/bench_message benches/build/bench_stream
+export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+./benches/build/bench_message
+export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+./benches/build/bench_stream

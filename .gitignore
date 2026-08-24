@@ -7,6 +7,26 @@
 /itb.test
 /cshared
 **/eitb/eitb
+# Bindings whose eitb entry-point is a committed shell launcher
+# (not a compiled binary) — re-include those so git tracks them.
+!bindings/clojure/eitb/eitb
+!bindings/crystal/eitb/eitb
+!bindings/dart/eitb/eitb
+!bindings/elixir/eitb/eitb
+!bindings/gleam/eitb/eitb
+!bindings/groovy/eitb/eitb
+!bindings/haskell/eitb/eitb
+!bindings/java/eitb/eitb
+!bindings/julia/eitb/eitb
+!bindings/kotlin/eitb/eitb
+!bindings/lfe/eitb/eitb
+!bindings/lua/eitb/eitb
+!bindings/nim/eitb/eitb
+!bindings/nodejs/eitb/eitb
+!bindings/ocaml/eitb/eitb
+!bindings/r/eitb/eitb
+!bindings/ruby/eitb/eitb
+!bindings/scala/eitb/eitb
 /eitb
 /tools/eitb/eitb
 *.test

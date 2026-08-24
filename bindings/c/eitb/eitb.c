@@ -12,9 +12,12 @@
  * back to `decrypt` on the receiving side.
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "itb.h"
 
@@ -88,9 +91,56 @@ static uint8_t *read_file(const char *path, size_t *len_out)
     return buf;
 }
 
+/* Profiles whose canonical name begins with "streaming-" route
+ * through the one-shot streaming buffered pair instead of the Single
+ * Message pair. */
+static int is_streaming_profile(const char *profile)
+{
+    return strncmp(profile, "streaming-", 10) == 0;
+}
+
+/* Recursively creates the parent directory of `out` (analogue of
+ * `mkdir -p $(dirname out)`). Silent when the directory already
+ * exists; returns 0 on success and -1 on genuine filesystem failure. */
+static int ensure_parent_dir(const char *out)
+{
+    /* Locate the last '/' in `out`; anything before it is the parent
+     * directory. Nothing to do if there is no parent component. */
+    const char *slash = strrchr(out, '/');
+    if (slash == NULL || slash == out) {
+        return 0;
+    }
+    size_t parent_len = (size_t)(slash - out);
+    char *parent = malloc(parent_len + 1);
+    if (parent == NULL) {
+        return -1;
+    }
+    memcpy(parent, out, parent_len);
+    parent[parent_len] = '\0';
+    /* Walk the path, creating each intermediate directory. */
+    for (size_t i = 1; i <= parent_len; i++) {
+        if (parent[i] == '/' || parent[i] == '\0') {
+            char saved = parent[i];
+            parent[i] = '\0';
+            if (mkdir(parent, 0755) != 0 && errno != EEXIST) {
+                fprintf(stderr, "eitb: mkdir %s: %s\n", parent,
+                        strerror(errno));
+                free(parent);
+                return -1;
+            }
+            parent[i] = saved;
+        }
+    }
+    free(parent);
+    return 0;
+}
+
 /* Writes a whole buffer to a file. Returns 0 on success. */
 static int write_file(const char *path, const uint8_t *buf, size_t len)
 {
+    if (ensure_parent_dir(path) != 0) {
+        return 1;
+    }
     FILE *f = fopen(path, "wb");
     if (f == NULL) {
         fprintf(stderr, "eitb: cannot create %s\n", path);
@@ -161,8 +211,13 @@ static int cmd_encrypt(const char *profile, const char *infile,
     }
     uint8_t *wire = NULL;
     size_t wire_len = 0;
-    st = itb_pipeline_encrypt_message(pipe, plain, plain_len,
-                                      &wire, &wire_len);
+    if (is_streaming_profile(profile)) {
+        st = itb_pipeline_encrypt_stream_pump(pipe, plain, plain_len,
+                                              &wire, &wire_len);
+    } else {
+        st = itb_pipeline_encrypt_message(pipe, plain, plain_len,
+                                          &wire, &wire_len);
+    }
     if (st != ITB_STATUS_OK) {
         free(plain);
         itb_pipeline_free(pipe);
@@ -240,8 +295,13 @@ static int cmd_decrypt(const char *profile, const char *blob_hex,
     }
     uint8_t *plain = NULL;
     size_t plain_len = 0;
-    st = itb_pipeline_decrypt_message(pipe, wire, wire_len,
-                                      &plain, &plain_len);
+    if (is_streaming_profile(profile)) {
+        st = itb_pipeline_decrypt_stream_pump(pipe, wire, wire_len,
+                                              &plain, &plain_len);
+    } else {
+        st = itb_pipeline_decrypt_message(pipe, wire, wire_len,
+                                          &plain, &plain_len);
+    }
     if (st != ITB_STATUS_OK) {
         free(wire);
         itb_pipeline_free(pipe);

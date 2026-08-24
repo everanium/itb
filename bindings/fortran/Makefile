@@ -32,7 +32,7 @@ ifeq ($(origin FC),default)
   FC = gfortran
 endif
 LIBITB_DIR ?= ../../dist/linux-amd64
-FCFLAGS    ?= -std=f2008 -Wall -Wextra -Werror -pedantic -O2
+FCFLAGS    ?= -std=f2008 -Wall -Wextra -Werror -pedantic -O3 -funroll-loops
 BUILD_DIR  ?= build
 MOD_FLAG    = -J $(BUILD_DIR)
 
@@ -144,6 +144,6 @@ help:
 	@echo ""
 	@echo "Variables (override via FC=... etc):"
 	@echo "  FC          Fortran compiler [default: gfortran]"
-	@echo "  FCFLAGS     Compiler flags   [default: -std=f2008 -Wall -Wextra -Werror -pedantic -O2]"
+	@echo "  FCFLAGS     Compiler flags   [default: -std=f2008 -Wall -Wextra -Werror -pedantic -O3 -funroll-loops]"
 	@echo "  LIBITB_DIR  libitb.so dir    [default: ../../dist/linux-amd64]"
 	@echo "  BUILD_DIR   .mod / .o output [default: build]"

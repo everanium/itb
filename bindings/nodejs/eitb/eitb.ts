@@ -11,7 +11,8 @@
 // back to `decrypt` on the receiving side. Argument parsing is
 // hand-rolled over process.argv.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 import { lib } from '../src/ffi.js';
 import {
@@ -65,10 +66,28 @@ function cmdHashes(): void {
   }
 }
 
+// Profiles whose canonical name begins with "streaming-" route
+// through the one-shot streaming buffered pair instead of the Single
+// Message pair.
+function isStreamingProfile(profile: string): boolean {
+  return profile.startsWith('streaming-');
+}
+
+// Recursively create the parent directory of `path` (mkdir -p).
+function ensureParentDir(path: string): void {
+  const parent = dirname(path);
+  if (parent && parent !== '.') {
+    mkdirSync(parent, { recursive: true });
+  }
+}
+
 function cmdEncrypt(profile: string, infile: string, outfile: string): void {
   const plain = readFileSync(infile);
   const pipe = Pipeline.init(profile, new Opts());
-  const wire = pipe.encryptMessage(plain);
+  const wire = isStreamingProfile(profile)
+    ? pipe.encryptStreamOneShot(plain)
+    : pipe.encryptMessage(plain);
+  ensureParentDir(outfile);
   writeFileSync(outfile, wire);
   console.error(pipe.blob.toString('hex'));
   console.log(`encrypted ${infile} -> ${outfile} (${plain.length} -> ${wire.length} bytes)`);
@@ -82,7 +101,10 @@ function cmdDecrypt(profile: string, blobHex: string, infile: string, outfile: s
   const blob = Buffer.from(blobHex, 'hex');
   const wire = readFileSync(infile);
   const pipe = Pipeline.open(profile, blob, new Opts());
-  const plain = pipe.decryptMessage(wire);
+  const plain = isStreamingProfile(profile)
+    ? pipe.decryptStreamOneShot(wire)
+    : pipe.decryptMessage(wire);
+  ensureParentDir(outfile);
   writeFileSync(outfile, plain);
   console.log(`decrypted ${infile} -> ${outfile} (${wire.length} -> ${plain.length} bytes)`);
   pipe.free();

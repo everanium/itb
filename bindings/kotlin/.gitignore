@@ -1,0 +1,10 @@
+.gradle/
+build/
+.kotlin/
+kotlin-js-store/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+.idea/
+*.iml
+out/

@@ -9,6 +9,7 @@
  */
 
 #include <algorithm>
+#include <memory>
 
 #include "internal.hpp"
 
@@ -74,14 +75,33 @@ void Stream::close() noexcept
 
 namespace {
 
-/* Canonical pump: begin session → feed bounded slices, draining the
- * spool after each write → end → drain until finished. The whole
- * output lands in one vector handed to the caller; the session is
- * RAII-released even on a thrown error. */
-std::vector<std::uint8_t> pump(Stream &session, std::span<const std::byte> src)
+/* Canonical pump: feed bounded slices, draining the spool after each
+ * write straight into dst's free tail → end → drain until finished.
+ * Zero intermediate copies — every read lands directly in the
+ * caller-owned dst; the byte count written is returned. A dst too
+ * small for the produced output throws std::invalid_argument (the
+ * bound check doubles as the write ceiling: every read's cap is the
+ * remaining tail of dst, never more). */
+std::size_t pump_into(Stream &session, std::span<const std::byte> src,
+                      std::span<std::byte> dst)
 {
-    std::vector<std::uint8_t> out;
-    std::vector<std::byte> scratch(detail::kPumpBuf);
+    std::size_t used = 0;
+
+    const auto drain_one = [&]() -> StreamRead {
+        if (used == dst.size()) {
+            throw std::invalid_argument(
+                "itb: stream pump dst too small for the produced output; "
+                "size it via itb::out_bound");
+        }
+        const StreamRead r = session.read(dst.subspan(used));
+        if (r.n > dst.size() - used) {
+            /* Bounds sanity on the FFI-reported drain length; an
+             * out-of-range count must never advance the cursor. */
+            detail::fail(static_cast<int>(Status::Internal), "stream pump read");
+        }
+        used += r.n;
+        return r;
+    };
 
     std::size_t offset = 0;
     while (offset < src.size()) {
@@ -90,40 +110,66 @@ std::vector<std::uint8_t> pump(Stream &session, std::span<const std::byte> src)
         offset += slice;
         /* Drain whatever the chain has produced so far; a read before
          * end never blocks. */
-        for (;;) {
-            const StreamRead r = session.read(scratch);
-            if (r.n == 0) {
-                break;
-            }
-            const auto *first = reinterpret_cast<const std::uint8_t *>(scratch.data());
-            out.insert(out.end(), first, first + r.n);
+        while (drain_one().n != 0) {
         }
     }
 
     session.end();
-    for (;;) {
-        const StreamRead r = session.read(scratch);
-        const auto *first = reinterpret_cast<const std::uint8_t *>(scratch.data());
-        out.insert(out.end(), first, first + r.n);
-        if (r.finished) {
-            break;
+    while (!drain_one().finished) {
+    }
+    return used;
+}
+
+/* Exact-size wrapper over pump_into: uninitialised scratch at the
+ * expansion bound, one full pump, one exact-length copy into the
+ * returned vector. Should libitb ever outproduce the bound, the
+ * whole pump is retried on a fresh session with a doubled buffer (a
+ * never-in-practice fallback; nothing has been handed out yet, so
+ * the restart is invisible to the caller). */
+template <typename BeginFn>
+std::vector<std::uint8_t> pump_alloc(BeginFn &&begin, std::span<const std::byte> src)
+{
+    std::size_t cap = detail::out_cap(src.size());
+    for (int attempt = 0;; ++attempt) {
+        auto buf = std::make_unique_for_overwrite<std::uint8_t[]>(cap);
+        auto session = begin();
+        try {
+            const std::size_t n = pump_into(
+                session, src, {reinterpret_cast<std::byte *>(buf.get()), cap});
+            return std::vector<std::uint8_t>(buf.get(), buf.get() + n);
+        } catch (const std::invalid_argument &) {
+            if (attempt >= 2 || cap > (SIZE_MAX >> 1)) {
+                throw;
+            }
+            cap *= 2;
         }
     }
-    return out;
 }
 
 } // namespace
 
 std::vector<std::uint8_t> Pipeline::encrypt_stream_pump(std::span<const std::byte> plain) const
 {
-    EncryptStream session = encrypt_stream_begin();
-    return pump(session, plain);
+    return pump_alloc([this] { return encrypt_stream_begin(); }, plain);
 }
 
 std::vector<std::uint8_t> Pipeline::decrypt_stream_pump(std::span<const std::byte> wire) const
 {
+    return pump_alloc([this] { return decrypt_stream_begin(); }, wire);
+}
+
+std::size_t Pipeline::encrypt_stream_pump_into(std::span<const std::byte> plain,
+                                               std::span<std::byte> dst) const
+{
+    EncryptStream session = encrypt_stream_begin();
+    return pump_into(session, plain, dst);
+}
+
+std::size_t Pipeline::decrypt_stream_pump_into(std::span<const std::byte> wire,
+                                               std::span<std::byte> dst) const
+{
     DecryptStream session = decrypt_stream_begin();
-    return pump(session, wire);
+    return pump_into(session, wire, dst);
 }
 
 } // namespace itb

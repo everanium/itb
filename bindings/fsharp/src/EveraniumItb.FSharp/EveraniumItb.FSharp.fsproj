@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>EveraniumItb.FSharp</RootNamespace>
+    <AssemblyName>EveraniumItb.FSharp</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package metadata">
+    <PackageId>EveraniumItb.FSharp</PackageId>
+    <Version>0.3.0</Version>
+    <Authors>everanium</Authors>
+    <Description>F# binding for ITB (information-theoretic barrier) cipher — idiomatic Result-based layer over the C# binding's Triple Pipeline surface (CLR bytecode interop, no FFI hop of its own).</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>cryptography;cipher;ouroboros;fsharp;itb</PackageTags>
+    <RepositoryUrl>https://github.com/everanium/itb</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Status.fs" />
+    <Compile Include="Error.fs" />
+    <Compile Include="Opts.fs" />
+    <Compile Include="Pipeline.fs" />
+    <Compile Include="Stream.fs" />
+    <Compile Include="Runtime.fs" />
+    <Compile Include="Library.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\csharp\Itb\Itb.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -131,6 +131,18 @@ inline std::span<const std::byte> as_bytes(std::string_view s) noexcept
     return {reinterpret_cast<const std::byte *>(s.data()), s.size()};
 }
 
+/* Writable-view adaptor for the *_into entries' dst parameter. */
+inline std::span<std::byte> as_writable_bytes(std::vector<std::uint8_t> &v) noexcept
+{
+    return std::as_writable_bytes(std::span<std::uint8_t>(v));
+}
+
+/* Upper bound on the produced-output size for a payload of the given
+ * length, on both the Single Message and whole-buffer pump paths
+ * (wire expansion plus envelope overhead). Sizes the caller-owned
+ * dst buffer for the *_into entries. */
+std::size_t out_bound(std::size_t payload) noexcept;
+
 /* ------------------------------------------------------------------ */
 /* Opts builder                                                        */
 /* ------------------------------------------------------------------ */
@@ -288,6 +300,22 @@ public:
     /* Receive-side counterpart of encrypt_message. */
     std::vector<std::uint8_t> decrypt_message(std::span<const std::byte> wire) const;
 
+    /* Reusable-buffer Single Message encrypt: writes the wire into
+     * the caller-owned dst and returns the byte count written. The
+     * FFI write ceiling is dst.size() itself — size dst via
+     * itb::out_bound(plain.size()) and reuse it across calls. An
+     * undersized dst throws Error with Status::BufferTooSmall (no
+     * retry — the caller owns sizing). plain and dst must not
+     * overlap; bytes beyond the returned count are undefined. */
+    std::size_t encrypt_message_into(std::span<const std::byte> plain,
+                                     std::span<std::byte> dst) const;
+
+    /* Receive-side counterpart of encrypt_message_into (same buffer
+     * contract). After a failed call — MAC failure included — the
+     * contents of dst are unspecified and must not be interpreted. */
+    std::size_t decrypt_message_into(std::span<const std::byte> wire,
+                                     std::span<std::byte> dst) const;
+
     /* Pumps the whole plaintext through an incremental encrypt
      * session (begin → write slices → end → drain → free) and returns
      * the concatenated wire. Bounded feed / drain slices internally. */
@@ -295,6 +323,22 @@ public:
 
     /* Receive-side counterpart of encrypt_stream_pump. */
     std::vector<std::uint8_t> decrypt_stream_pump(std::span<const std::byte> wire) const;
+
+    /* Reusable-buffer whole-plaintext pump: runs a full incremental
+     * encrypt session, draining every produced byte straight into the
+     * caller-owned dst (no intermediate copies), and returns the byte
+     * count written. Size dst via itb::out_bound(plain.size()) and
+     * reuse it across calls. A dst too small for the produced output
+     * throws std::invalid_argument. plain and dst must not overlap;
+     * bytes beyond the returned count are undefined; after a failed
+     * call the contents of dst are unspecified. */
+    std::size_t encrypt_stream_pump_into(std::span<const std::byte> plain,
+                                         std::span<std::byte> dst) const;
+
+    /* Receive-side counterpart of encrypt_stream_pump_into (same
+     * buffer contract). */
+    std::size_t decrypt_stream_pump_into(std::span<const std::byte> wire,
+                                         std::span<std::byte> dst) const;
 
     /* Opens an incremental encrypt session (plaintext in, wire out).
      * The session must not outlive its Pipeline. */

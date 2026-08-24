@@ -39,4 +39,41 @@ export ITB_WITH_WRAPPER="${ITB_WITH_WRAPPER:-false}"
 export ITB_INNER_HASH="${ITB_INNER_HASH:-areion512}"
 export ITB_BENCH_MIN_SEC="${ITB_BENCH_MIN_SEC:-5}"
 
-exec dotnet run -c Release --no-build --project Itb.Bench -- "${1:-all}"
+# ITB_WITH_MAC=true derives MAC/AEAD profile counterparts. When
+# ITB_PROFILE is set explicitly by the caller, it wins over the
+# derivation and applies to both shapes (expert override).
+: "${ITB_WITH_MAC:=false}"
+if [ -n "${ITB_PROFILE:-}" ]; then
+    ITB_MSG_PROFILE_DEFAULT="${ITB_PROFILE}"
+    ITB_STREAM_PROFILE_DEFAULT="${ITB_PROFILE}"
+elif [ "${ITB_WITH_MAC}" = "true" ]; then
+    ITB_MSG_PROFILE_DEFAULT="singlemsg-triple-mac-v1"
+    ITB_STREAM_PROFILE_DEFAULT="streaming-aead-triple-mac-v1"
+else
+    ITB_MSG_PROFILE_DEFAULT="singlemsg-triple-nomac-v1"
+    ITB_STREAM_PROFILE_DEFAULT="streaming-noaead-triple-v1"
+fi
+
+# Split at the shell layer so each shape carries its own ITB_PROFILE
+# in a single script pass (the Itb.Bench C# entry point handles
+# "message", "stream", and "all" arguments individually).
+case "${1:-all}" in
+    message)
+        export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+        exec dotnet run -c Release --no-build --project Itb.Bench -- message
+        ;;
+    stream)
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        exec dotnet run -c Release --no-build --project Itb.Bench -- stream
+        ;;
+    all)
+        export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+        dotnet run -c Release --no-build --project Itb.Bench -- message
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        exec dotnet run -c Release --no-build --project Itb.Bench -- stream
+        ;;
+    *)
+        echo "usage: $0 [message|stream|all]" >&2
+        exit 2
+        ;;
+esac

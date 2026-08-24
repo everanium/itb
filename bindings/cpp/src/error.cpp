@@ -103,4 +103,9 @@ std::size_t out_cap(std::size_t payload) noexcept
 
 } // namespace detail
 
+std::size_t out_bound(std::size_t payload) noexcept
+{
+    return detail::out_cap(payload);
+}
+
 } // namespace itb

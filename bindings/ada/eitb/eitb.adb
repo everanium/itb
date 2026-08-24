@@ -11,6 +11,7 @@
 --  back to `decrypt` on the receiving side.
 
 with Ada.Command_Line;
+with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Streams.Stream_IO;
 with Ada.Text_IO;
@@ -77,10 +78,39 @@ procedure Eitb is
       end;
    end Read_File;
 
+   --  Profiles whose canonical name begins with "streaming-" route
+   --  through the one-shot streaming buffered pair instead of the
+   --  Single Message pair.
+   function Is_Streaming_Profile (Profile : String) return Boolean is
+      Prefix : constant String := "streaming-";
+   begin
+      return Profile'Length >= Prefix'Length
+        and then Profile
+                   (Profile'First .. Profile'First + Prefix'Length - 1) =
+                 Prefix;
+   end Is_Streaming_Profile;
+
+   --  Recursively creates the parent directory of Name (analogue of
+   --  `mkdir -p $(dirname Name)`). Silent when the directory already
+   --  exists.
+   procedure Ensure_Parent_Dir (Name : String) is
+      Dir : constant String := Ada.Directories.Containing_Directory (Name);
+   begin
+      if Dir'Length > 0
+        and then not Ada.Directories.Exists (Dir)
+      then
+         Ada.Directories.Create_Path (Dir);
+      end if;
+   exception
+      when Ada.Directories.Name_Error =>
+         null;
+   end Ensure_Parent_Dir;
+
    procedure Write_File (Name : String; Content : Itb.Byte_Array) is
       use Ada.Streams.Stream_IO;
       F : Ada.Streams.Stream_IO.File_Type;
    begin
+      Ensure_Parent_Dir (Name);
       Create (F, Out_File, Name);
       Write (F, Content);
       Close (F);
@@ -210,7 +240,10 @@ procedure Eitb is
       Pipe.Init (Profile, O);
       declare
          Wire : Itb.Byte_Array_Access :=
-           new Itb.Byte_Array'(Pipe.Encrypt_Message (Plain.all));
+           (if Is_Streaming_Profile (Profile) then
+               new Itb.Byte_Array'(Pipe.Encrypt_Stream_One_Shot (Plain.all))
+            else
+               new Itb.Byte_Array'(Pipe.Encrypt_Message (Plain.all)));
       begin
          Write_File (Out_File, Wire.all);
          Put_Line (Standard_Error, Hex_Encode (Pipe.Blob));
@@ -239,7 +272,10 @@ procedure Eitb is
       Pipe.Open (Profile, Blob.all, O);
       declare
          Plain : Itb.Byte_Array_Access :=
-           new Itb.Byte_Array'(Pipe.Decrypt_Message (Wire.all));
+           (if Is_Streaming_Profile (Profile) then
+               new Itb.Byte_Array'(Pipe.Decrypt_Stream_One_Shot (Wire.all))
+            else
+               new Itb.Byte_Array'(Pipe.Decrypt_Message (Wire.all)));
       begin
          Write_File (Out_File, Plain.all);
          Put_Line

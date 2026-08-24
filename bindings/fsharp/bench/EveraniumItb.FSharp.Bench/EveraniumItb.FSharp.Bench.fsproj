@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>EveraniumItb.FSharp.Bench</RootNamespace>
+    <AssemblyName>EveraniumItb.FSharp.Bench</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="BenchUtil.fs" />
+    <Compile Include="BenchMessage.fs" />
+    <Compile Include="BenchStream.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EveraniumItb.FSharp\EveraniumItb.FSharp.fsproj" />
+  </ItemGroup>
+
+</Project>

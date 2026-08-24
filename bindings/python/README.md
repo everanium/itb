@@ -69,6 +69,26 @@ plain = receiver.decrypt_message(wire)
 assert plain == b"any text or binary data"
 ```
 
+The `Opts` builder overrides the profile default per call (chunk
+size, outer cipher, parallax on/off, wrapper on/off, MAC name,
+palette):
+
+```python
+opts = itb.Opts().with_chunk_size(65536).with_wrapper(False)
+sender = itb.Pipeline.init("singlemsg-triple-mac-v1", opts)
+receiver = itb.Pipeline.open("singlemsg-triple-mac-v1", sender.blob, opts)
+```
+
+`Pipeline.rekey` rotates the parallax + wrapper masters mid-session
+(the eight ITB seeds and MAC key are fixed for the session lifetime
+by design); the receiver picks up the new masters through a fresh
+`sender.blob` handshake:
+
+```python
+sender.rekey(b"\x11" * 32, b"\x22" * 32)
+receiver = itb.Pipeline.open("singlemsg-triple-mac-v1", sender.blob)
+```
+
 `Pipeline` and the stream sessions are context managers, so a `with`
 block frees the Go-side handle deterministically (garbage collection
 via `__del__` covers the non-`with` path). For bounded-memory

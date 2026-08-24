@@ -37,6 +37,23 @@ export ITB_WITH_WRAPPER="${ITB_WITH_WRAPPER:-false}"
 export ITB_INNER_HASH="${ITB_INNER_HASH:-areion512}"
 export ITB_BENCH_MIN_SEC="${ITB_BENCH_MIN_SEC:-5}"
 
+# ITB_WITH_MAC=true derives MAC/AEAD profile counterparts. When
+# ITB_PROFILE is set explicitly by the caller, it wins over the
+# derivation and applies to both shapes (expert override).
+: "${ITB_WITH_MAC:=false}"
+if [ -n "${ITB_PROFILE:-}" ]; then
+    ITB_MSG_PROFILE_DEFAULT="${ITB_PROFILE}"
+    ITB_STREAM_PROFILE_DEFAULT="${ITB_PROFILE}"
+elif [ "${ITB_WITH_MAC}" = "true" ]; then
+    ITB_MSG_PROFILE_DEFAULT="singlemsg-triple-mac-v1"
+    ITB_STREAM_PROFILE_DEFAULT="streaming-aead-triple-mac-v1"
+else
+    ITB_MSG_PROFILE_DEFAULT="singlemsg-triple-nomac-v1"
+    ITB_STREAM_PROFILE_DEFAULT="streaming-noaead-triple-v1"
+fi
+
 npm run bench:build
+export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
 node dist-bench/benches/bench_message.js
+export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
 node dist-bench/benches/bench_stream.js

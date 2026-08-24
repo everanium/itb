@@ -30,6 +30,8 @@ module itb_pipeline
   public :: itb_pipeline_close, itb_pipeline_free
   public :: itb_encrypt_message, itb_decrypt_message
   public :: itb_encrypt_stream_one_shot, itb_decrypt_stream_one_shot
+  public :: itb_encrypt_message_into, itb_decrypt_message_into
+  public :: itb_encrypt_stream_one_shot_into, itb_decrypt_stream_one_shot_into
   public :: itb_register_profile
 
   type :: itb_pipeline_t
@@ -237,6 +239,65 @@ contains
     call cipher(pipe, OP_DECRYPT_STREAM, wire, plain, err)
   end subroutine
 
+  ! Reusable-buffer Single Message encrypt: dst is caller-owned
+  ! scratch, grown once to the wire-expansion bound and reused
+  ! verbatim across calls; dst(1:n_out) holds the wire on success.
+  ! No exact-size trim copy -- the hot path is one FFI call writing
+  ! straight into dst via c_loc.
+  ! The plain and wire arrays must not overlap; in-place operation
+  ! is not supported. Bytes beyond n_out are undefined and may hold
+  ! prior-call material; the caller must not read them. After a
+  ! failed call the contents of wire are unspecified.
+  subroutine itb_encrypt_message_into(pipe, plain, wire, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer(c_int8_t), intent(in), target, contiguous     :: plain(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: wire(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    call cipher_into(pipe, OP_ENCRYPT_MESSAGE, plain, wire, n_out, err)
+  end subroutine
+
+  ! Receive-side counterpart of itb_encrypt_message_into (same
+  ! buffer contract: wire and plain must not overlap; bytes beyond
+  ! n_out are undefined). After a failed call -- MAC failure
+  ! included -- the contents of plain are unspecified and must not
+  ! be interpreted.
+  subroutine itb_decrypt_message_into(pipe, wire, plain, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer(c_int8_t), intent(in), target, contiguous     :: wire(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: plain(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    call cipher_into(pipe, OP_DECRYPT_MESSAGE, wire, plain, n_out, err)
+  end subroutine
+
+  ! Reusable-buffer one-shot stream encrypt (see
+  ! itb_encrypt_message_into for the buffer contract: plain and
+  ! wire must not overlap; bytes beyond n_out are undefined; after
+  ! a failed call the contents of wire are unspecified).
+  subroutine itb_encrypt_stream_one_shot_into(pipe, plain, wire, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer(c_int8_t), intent(in), target, contiguous     :: plain(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: wire(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    call cipher_into(pipe, OP_ENCRYPT_STREAM, plain, wire, n_out, err)
+  end subroutine
+
+  ! Receive-side counterpart of itb_encrypt_stream_one_shot_into
+  ! (same buffer contract: wire and plain must not overlap; bytes
+  ! beyond n_out are undefined). After a failed call -- MAC failure
+  ! included -- the contents of plain are unspecified and must not
+  ! be interpreted.
+  subroutine itb_decrypt_stream_one_shot_into(pipe, wire, plain, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer(c_int8_t), intent(in), target, contiguous     :: wire(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: plain(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    call cipher_into(pipe, OP_DECRYPT_STREAM, wire, plain, n_out, err)
+  end subroutine
+
   ! Installs a user-defined profile under name; subsequent Init /
   ! Open calls resolve it. Duplicate names return
   ! ITB_STATUS_PROFILE_EXISTS.
@@ -294,6 +355,50 @@ contains
     ! not silently narrow through the default 32-bit integer and
     ! return success with an empty dst.
     dst = buf(1_c_size_t:out_len)
+  end subroutine
+
+  ! Reusable-buffer body shared by the four *_into cipher entries:
+  ! size dst once to max(131072, n + n/4 + 131072), keep it across
+  ! calls, retry once on ITB_STATUS_BUFFER_TOO_SMALL with the exact
+  ! size the FFI reported. libitb writes straight into dst; the
+  ! caller reads dst(1:n_out).
+  subroutine cipher_into(pipe, op, src, dst, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer, intent(in)                                   :: op
+    integer(c_int8_t), intent(in), target, contiguous     :: src(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: dst(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    type(c_ptr)       :: src_p
+    integer(c_size_t) :: out_len, src_len, cap
+    integer(c_int)    :: rc
+
+    n_out = 0_c_size_t
+    src_p = c_null_ptr
+    src_len = size(src, kind=c_size_t)
+    if (src_len > 0) src_p = c_loc(src(1))
+    cap = max(131072_c_size_t, src_len + src_len / 4_c_size_t + 131072_c_size_t)
+    if (.not. allocated(dst)) then
+      allocate (dst(cap))
+    else if (size(dst, kind=c_size_t) < cap) then
+      deallocate (dst)
+      allocate (dst(cap))
+    end if
+    cap = size(dst, kind=c_size_t)
+    out_len = 0_c_size_t
+    rc = dispatch(op, pipe%handle, src_p, src_len, c_loc(dst(1)), cap, out_len)
+    ! Guard on len > cap so a stray BUFFER_TOO_SMALL report with
+    ! out_len == 0 cannot shrink dst to a zero-sized allocation.
+    if (rc == ITB_STATUS_BUFFER_TOO_SMALL .and. out_len > cap) then
+      deallocate (dst)
+      cap = out_len
+      allocate (dst(cap))
+      out_len = 0_c_size_t
+      rc = dispatch(op, pipe%handle, src_p, src_len, c_loc(dst(1)), cap, out_len)
+    end if
+    call itb_error_set(err, rc)
+    if (.not. itb_ok(err)) return
+    n_out = out_len
   end subroutine
 
   function dispatch(op, handle, src_p, src_len, out_p, out_cap, &

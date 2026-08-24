@@ -9,6 +9,8 @@
  * wire format, MAC handling — is Go's job.
  */
 
+#include <memory>
+
 #include "internal.hpp"
 
 namespace itb {
@@ -157,17 +159,46 @@ std::vector<std::uint8_t> cipher_call(uintptr_t handle, CipherFn fn,
                                       std::span<const std::byte> src,
                                       const char *what)
 {
-    std::vector<std::uint8_t> buf(detail::out_cap(src.size()));
+    /* Uninitialised scratch at the expansion bound: the cap-wide
+     * zero-fill a std::vector constructor would perform is pure waste
+     * (libitb overwrites the prefix, the tail is discarded). One
+     * exact-size copy into the returned vector at the end. */
+    std::size_t cap = detail::out_cap(src.size());
+    auto buf = std::make_unique_for_overwrite<std::uint8_t[]>(cap);
     std::size_t n = 0;
-    int rc = fn(handle, ffi_bytes(src), src.size(), buf.data(), buf.size(), &n);
-    if (rc == static_cast<int>(Status::BufferTooSmall) && n > buf.size()) {
-        buf.resize(n);
-        rc = fn(handle, ffi_bytes(src), src.size(), buf.data(), buf.size(), &n);
+    int rc = fn(handle, ffi_bytes(src), src.size(), buf.get(), cap, &n);
+    if (rc == static_cast<int>(Status::BufferTooSmall) && n > cap) {
+        cap = n;
+        buf = std::make_unique_for_overwrite<std::uint8_t[]>(cap);
+        rc = fn(handle, ffi_bytes(src), src.size(), buf.get(), cap, &n);
     }
     check(rc, what);
-    buf.resize(n);
-    buf.shrink_to_fit();
-    return buf;
+    if (n > cap) {
+        fail(static_cast<int>(Status::Internal), what);
+    }
+    return std::vector<std::uint8_t>(buf.get(), buf.get() + n);
+}
+
+/* Reusable-buffer body shared by the *_into cipher entries: one FFI
+ * call writing straight into the caller-owned dst. The FFI write
+ * ceiling (out_cap argument) is dst.size() itself, so the call can
+ * never write past the caller's buffer; an undersized dst surfaces
+ * as Status::BufferTooSmall relayed through check (no retry — the
+ * caller owns sizing via itb::out_bound). */
+std::size_t cipher_call_into(uintptr_t handle, CipherFn fn,
+                             std::span<const std::byte> src,
+                             std::span<std::byte> dst, const char *what)
+{
+    std::size_t n = 0;
+    int rc = fn(handle, ffi_bytes(src), src.size(),
+                detail::ffi_bytes(dst), dst.size(), &n);
+    check(rc, what);
+    if (n > dst.size()) {
+        /* Bounds sanity on the FFI-reported length; an out-of-range
+         * count must never reach the caller. */
+        fail(static_cast<int>(Status::Internal), what);
+    }
+    return n;
 }
 
 } // namespace
@@ -182,6 +213,20 @@ std::vector<std::uint8_t> Pipeline::decrypt_message(std::span<const std::byte> w
 {
     return cipher_call(handle_, ITB_Triple_DecryptMessage, wire,
                        "Pipeline::decrypt_message");
+}
+
+std::size_t Pipeline::encrypt_message_into(std::span<const std::byte> plain,
+                                           std::span<std::byte> dst) const
+{
+    return cipher_call_into(handle_, ITB_Triple_EncryptMessage, plain, dst,
+                            "Pipeline::encrypt_message_into");
+}
+
+std::size_t Pipeline::decrypt_message_into(std::span<const std::byte> wire,
+                                           std::span<std::byte> dst) const
+{
+    return cipher_call_into(handle_, ITB_Triple_DecryptMessage, wire, dst,
+                            "Pipeline::decrypt_message_into");
 }
 
 /* ------------------------------------------------------------------ */
