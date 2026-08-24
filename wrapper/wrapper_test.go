@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/mlkem"
 	"crypto/rand"
+	"io"
 	"testing"
 )
 
@@ -707,5 +708,99 @@ func TestWrapInPlaceUnknownCipher(t *testing.T) {
 func TestUnwrapInPlaceUnknownCipher(t *testing.T) {
 	if out, err := UnwrapInPlace("nonexistent", make([]byte, 16), make([]byte, 64)); err == nil || out != nil {
 		t.Fatalf("UnwrapInPlace(nonexistent): got (%v, %v), want (nil, non-nil)", out, err)
+	}
+}
+
+// dropIfNonceLen is a Writer that silently swallows a Write whose
+// payload length equals a target dropLen — once. Models the exact
+// pattern a BEAM drain_ready caller hits when the wrapper emits its
+// per-stream nonce as a standalone dst.Write: the concurrent drain
+// consumes the nonce-sized Write, discards it, and the receiving
+// side's wire is nonce-length bytes short.
+type dropIfNonceLen struct {
+	inner   *bytes.Buffer
+	dropLen int
+	dropped bool
+}
+
+func (d *dropIfNonceLen) Write(p []byte) (int, error) {
+	if !d.dropped && len(p) == d.dropLen {
+		d.dropped = true
+		// Report the payload as accepted so the caller does not
+		// short-write-error out; the byte just never lands.
+		return len(p), nil
+	}
+	return d.inner.Write(p)
+}
+
+// TestWrapperNonceConcurrentDrain is the permanent regression gate
+// against the wrapper's nonce/first-inner-body split-write race under
+// a concurrent-drain caller pattern. The dropIfNonceLen sink models
+// the exact byte-loss window the BEAM bench harnesses see when
+// drain_ready lands between a standalone nonce write and the first
+// encoder write: any dst.Write whose payload happens to equal the
+// nonce length is silently swallowed once.
+//
+// With the batching fix, the first dst.Write from NewWrapWriter
+// carries both the nonce AND the first inner body — its payload is
+// strictly larger than the nonce, so the drop condition never fires
+// and the round-trip decodes back to the original plaintext.
+//
+// Without the fix (pre-patch shape), NewWrapWriter emits the nonce as
+// a standalone Write of exactly nonce length — the drop fires, the
+// wire loses its leading nonce, and NewUnwrapReader parses the first
+// nonce-length bytes of the XOR-encoded body as if they were the
+// nonce (or fails outright on siphash / aescmac / areion where the
+// wire is body-only). The recovered plaintext then diverges from the
+// original, catching the regression.
+func TestWrapperNonceConcurrentDrain(t *testing.T) {
+	for _, name := range CipherNames {
+		t.Run(name, func(t *testing.T) {
+			key, err := GenerateKey(name)
+			if err != nil {
+				t.Fatalf("GenerateKey: %v", err)
+			}
+			nlen, err := NonceSize(name)
+			if err != nil {
+				t.Fatalf("NonceSize: %v", err)
+			}
+
+			pt := make([]byte, 4096)
+			if _, err := rand.Read(pt); err != nil {
+				t.Fatalf("rand: %v", err)
+			}
+
+			sink := &dropIfNonceLen{inner: new(bytes.Buffer), dropLen: nlen}
+			ww, err := NewWrapWriter(name, key, sink)
+			if err != nil {
+				t.Fatalf("NewWrapWriter: %v", err)
+			}
+			// Multiple modest-sized inner writes exercise the batched
+			// first Write plus subsequent non-batched Writes on one
+			// keystreamWriter instance.
+			const slice = 1024
+			for off := 0; off < len(pt); off += slice {
+				end := off + slice
+				if end > len(pt) {
+					end = len(pt)
+				}
+				if _, err := ww.Write(pt[off:end]); err != nil {
+					t.Fatalf("Write[%d:%d]: %v", off, end, err)
+				}
+			}
+
+			rr, err := NewUnwrapReader(name, key, bytes.NewReader(sink.inner.Bytes()))
+			if err != nil {
+				t.Fatalf("NewUnwrapReader on drained wire: %v", err)
+			}
+			recovered := make([]byte, len(pt))
+			if _, err := io.ReadFull(rr, recovered); err != nil {
+				t.Fatalf("ReadFull on drained wire: %v", err)
+			}
+			if !bytes.Equal(pt, recovered) {
+				t.Fatalf("%s: plaintext mismatch after nonce-length-drop drain — "+
+					"the wrapper's standalone nonce write regressed", name)
+			}
+		})
 	}
 }
