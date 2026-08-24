@@ -11,7 +11,11 @@
     (doseq [size u/sizes]
       (let [plain (byte-array size)]
         (u/csprng-fill plain)
-        (u/bench-case "message" size #(itb/encrypt-message pipe plain))))))
+        (u/bench-case "message" size #(itb/encrypt-message pipe plain))
+        ;; Pre-encrypt one wire outside the decrypt timing loop.
+        (let [dec-wire (itb/encrypt-message pipe plain)]
+          (u/bench-case "message-dec" size
+                        #(itb/decrypt-message pipe dec-wire)))))))
 
 (defn -main [& _]
   (u/apply-runtime-caps!)

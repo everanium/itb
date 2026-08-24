@@ -42,7 +42,11 @@ main(_Args) ->
               %% bench (crypto/rand). Not in the timing loop.
               Plain = crypto:strong_rand_bytes(Size),
               Run = fun() -> pump(Pipe, Plain) end,
-              bench_case("stream_pump", Size, Run)
+              bench_case("stream_pump", Size, Run),
+              %% Pre-encrypt one wire outside the decrypt timing loop.
+              DecWire = pump_all(Pipe, Plain),
+              RunDec = fun() -> pump_dec(Pipe, DecWire) end,
+              bench_case("stream_pump-dec", Size, RunDec)
       end, [1 bsl 20, 16 bsl 20, 64 bsl 20]),
     ok = itb:free(Pipe).
 
@@ -80,6 +84,44 @@ drain(Stream) ->
         {ok, _, true} -> ok;
         {ok, _, false} -> drain(Stream)
     end.
+
+%% Encrypt whole plain, collecting wire. Uses feed_noread so no bytes
+%% are lost to a drain_ready race: for plaintexts that fit in a single
+%% chunk (16 MiB DefaultChunkSize) the encoder emits the 32-byte stream
+%% prefix immediately after consuming the last plaintext slice, so a
+%% mid-feed drain_ready lands between the prefix write and the chunk
+%% body write, consumes and discards the prefix, and drain_collect at
+%% the end sees a wire missing its prefix. feed_noread lets everything
+%% buffer in the spool and drain_collect pulls the whole wire out.
+pump_all(Pipe, Plain) ->
+    {ok, Stream} = itb:encrypt_stream(Pipe),
+    ok = feed_noread(Stream, Plain),
+    ok = itb:stream_end(Stream),
+    Wire = drain_collect(Stream, []),
+    ok = itb:stream_free(Stream),
+    Wire.
+
+feed_noread(_Stream, <<>>) ->
+    ok;
+feed_noread(Stream, Data) ->
+    N = min(byte_size(Data), ?PUMP_BUF),
+    <<Slice:N/binary, Rest/binary>> = Data,
+    ok = itb:stream_write(Stream, Slice),
+    feed_noread(Stream, Rest).
+
+drain_collect(Stream, Acc) ->
+    case itb:stream_read(Stream, ?PUMP_BUF) of
+        {ok, Chunk, true} -> iolist_to_binary(lists:reverse([Chunk | Acc]));
+        {ok, Chunk, false} -> drain_collect(Stream, [Chunk | Acc])
+    end.
+
+%% Decrypt whole wire.
+pump_dec(Pipe, Wire) ->
+    {ok, Stream} = itb:decrypt_stream(Pipe),
+    ok = feed(Stream, Wire),
+    ok = itb:stream_end(Stream),
+    ok = drain(Stream),
+    ok = itb:stream_free(Stream).
 
 %% ------------------------------------------------------------------
 %% Timing loop: one untimed warm-up, then iterate until the wall-clock

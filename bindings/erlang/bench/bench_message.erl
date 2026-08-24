@@ -42,7 +42,14 @@ main(_Args) ->
                             {ok, _Wire} = itb:encrypt_message(Pipe, Plain),
                             ok
                     end,
-              bench_case("message", Size, Run)
+              bench_case("message", Size, Run),
+              %% Pre-encrypt one wire outside the decrypt timing loop.
+              {ok, DecWire} = itb:encrypt_message(Pipe, Plain),
+              RunDec = fun() ->
+                               {ok, _Plain} = itb:decrypt_message(Pipe, DecWire),
+                               ok
+                       end,
+              bench_case("message-dec", Size, RunDec)
       end, [1 bsl 20, 16 bsl 20, 64 bsl 20]),
     ok = itb:free(Pipe).
 

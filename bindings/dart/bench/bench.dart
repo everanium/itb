@@ -110,6 +110,11 @@ void benchMessage() {
     // place — no per-iteration Dart-heap allocation.
     final wire = Uint8List(size + (size >> 2) + 65536);
     benchCase('message', size, () => pipe.encryptMessageInto(plain, wire));
+    // Pre-encrypt one wire outside the decrypt timing loop.
+    final decWire = pipe.encryptMessage(plain);
+    final decOut = Uint8List(size + 65536);
+    benchCase('message-dec', size,
+        () => pipe.decryptMessageInto(decWire, decOut));
   }
   pipe.free();
 }
@@ -145,6 +150,45 @@ void benchStream() {
     }
 
     benchCase('stream_pump', size, run);
+    // Pre-encrypt one wire outside the decrypt timing loop.
+    final builder = BytesBuilder();
+    final encSess = pipe.encryptStream();
+    for (var off = 0; off < plain.length; off += chunk) {
+      encSess.write(Uint8List.sublistView(
+          plain, off, (off + chunk).clamp(0, plain.length)));
+      for (;;) {
+        final r = encSess.read(out);
+        if (r.n == 0) break;
+        builder.add(out.sublist(0, r.n));
+      }
+    }
+    encSess.end();
+    for (;;) {
+      final r = encSess.read(out);
+      if (r.n > 0) builder.add(out.sublist(0, r.n));
+      if (r.finished) break;
+    }
+    encSess.free();
+    final decWire = builder.toBytes();
+    void runDec() {
+      final sess = pipe.decryptStream();
+      for (var off = 0; off < decWire.length; off += chunk) {
+        sess.write(Uint8List.sublistView(
+            decWire, off, (off + chunk).clamp(0, decWire.length)));
+        for (;;) {
+          final r = sess.read(out);
+          if (r.n == 0) break;
+        }
+      }
+      sess.end();
+      for (;;) {
+        final r = sess.read(out);
+        if (r.finished) break;
+      }
+      sess.free();
+    }
+
+    benchCase('stream_pump-dec', size, runDec);
   }
   pipe.free();
 }

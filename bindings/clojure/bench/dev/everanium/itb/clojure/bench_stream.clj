@@ -17,7 +17,18 @@
                         (let [wire (ByteArrayOutputStream.
                                     (+ (long size) (quot (long size) 4) 131072))]
                           (itb/encrypt-stream-pump
-                           pipe (ByteArrayInputStream. plain) wire))))))))
+                           pipe (ByteArrayInputStream. plain) wire))))
+        ;; Pre-encrypt one wire outside the decrypt timing loop.
+        (let [setup-wire (ByteArrayOutputStream.
+                          (+ (long size) (quot (long size) 4) 131072))]
+          (itb/encrypt-stream-pump pipe (ByteArrayInputStream. plain) setup-wire)
+          (let [dec-wire (.toByteArray setup-wire)]
+            (u/bench-case "stream_pump-dec" size
+                          (fn []
+                            (let [out (ByteArrayOutputStream.
+                                       (+ (long size) 131072))]
+                              (itb/decrypt-stream-pump
+                               pipe (ByteArrayInputStream. dec-wire) out))))))))))
 
 (defn -main [& _]
   (u/apply-runtime-caps!)

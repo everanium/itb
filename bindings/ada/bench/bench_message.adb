@@ -32,6 +32,8 @@ begin
            new Itb.Byte_Array
              (1 .. Ada.Streams.Stream_Element_Offset (Size));
 
+         Dec_Wire : Itb.Byte_Array_Access;
+
          procedure Run is
             --  Build-in-place into a heap object — a stack-declared
             --  result would overflow the primary stack at 64 MiB.
@@ -40,9 +42,21 @@ begin
          begin
             Itb.Free (Wire);
          end Run;
+
+         procedure Run_Dec is
+            Plain_Out : Itb.Byte_Array_Access :=
+              new Itb.Byte_Array'(Pipe.Decrypt_Message (Dec_Wire.all));
+         begin
+            Itb.Free (Plain_Out);
+         end Run_Dec;
       begin
          Common.Fill_Random (Plain.all);
          Common.Bench_Case ("message", Size, Run'Access);
+         --  Pre-encrypt one wire outside the decrypt timing loop.
+         Dec_Wire :=
+           new Itb.Byte_Array'(Pipe.Encrypt_Message (Plain.all));
+         Common.Bench_Case ("message-dec", Size, Run_Dec'Access);
+         Itb.Free (Dec_Wire);
          Itb.Free (Plain);
       end;
    end loop;

@@ -44,6 +44,14 @@ defmodule BenchMessage do
       end
 
       BenchUtil.bench_case("message", size, @min_iters, run)
+
+      # Pre-encrypt one wire outside the decrypt timing loop.
+      {:ok, dec_wire} = ITB.encrypt_message(pipe, plain)
+      run_dec = fn ->
+        {:ok, _plain} = ITB.decrypt_message(pipe, dec_wire)
+        :ok
+      end
+      BenchUtil.bench_case("message-dec", size, @min_iters, run_dec)
     end
 
     :ok = ITB.free(pipe)

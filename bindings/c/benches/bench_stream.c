@@ -14,6 +14,12 @@ struct stream_ctx {
     size_t size;
 };
 
+struct stream_dec_ctx {
+    itb_pipeline *pipe;
+    const uint8_t *wire;
+    size_t wire_len;
+};
+
 static int run_stream_pump(void *raw)
 {
     struct stream_ctx *ctx = raw;
@@ -26,6 +32,21 @@ static int run_stream_pump(void *raw)
         return 1;
     }
     itb_bytes_free(wire);
+    return 0;
+}
+
+static int run_stream_pump_decrypt(void *raw)
+{
+    struct stream_dec_ctx *ctx = raw;
+    uint8_t *plain = NULL;
+    size_t plain_len = 0;
+    itb_status st = itb_pipeline_decrypt_stream_pump(ctx->pipe, ctx->wire,
+                                                     ctx->wire_len, &plain,
+                                                     &plain_len);
+    if (st != ITB_STATUS_OK) {
+        return 1;
+    }
+    itb_bytes_free(plain);
     return 0;
 }
 
@@ -75,6 +96,18 @@ int main(void)
         }
         struct stream_ctx ctx = { pipe, plain, sizes[i] };
         bench_case("stream_pump", sizes[i], run_stream_pump, &ctx);
+        /* Pre-encrypt one wire for the decrypt timing loop. */
+        uint8_t *dec_wire = NULL;
+        size_t dec_wire_len = 0;
+        if (itb_pipeline_encrypt_stream_pump(pipe, plain, sizes[i], &dec_wire,
+                                             &dec_wire_len) != ITB_STATUS_OK) {
+            fprintf(stderr, "bench_stream: dec setup encrypt failed: %s\n",
+                    itb_last_error());
+            return 1;
+        }
+        struct stream_dec_ctx dctx = { pipe, dec_wire, dec_wire_len };
+        bench_case("stream_pump-dec", sizes[i], run_stream_pump_decrypt, &dctx);
+        itb_bytes_free(dec_wire);
         free(plain);
     }
     itb_pipeline_free(pipe);

@@ -22,10 +22,10 @@ if [[ ! -f "$DIST_DIR/libitb.so" ]]; then
 fi
 
 BENCH_BIN_DIR="bench/bin"
-if [[ ! -x "$BENCH_BIN_DIR/bench_message" || ! -x "$BENCH_BIN_DIR/bench_stream" ]]; then
-    echo "==> building bench binaries (FC=${FC:-gfortran})"
-    make bench
-fi
+# Always invoke `make bench` so timestamp-driven rebuilds pick up any
+# bench source changes; make itself no-ops when everything is fresh.
+echo "==> building bench binaries (FC=${FC:-gfortran})"
+make bench
 
 # Embedded RPATH should already point at libitb.so, but export
 # LD_LIBRARY_PATH as a fallback for cases where the Linux loader

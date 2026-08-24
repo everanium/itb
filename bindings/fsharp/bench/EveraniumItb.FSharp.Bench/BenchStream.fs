@@ -18,3 +18,10 @@ let run () : unit =
         BenchUtil.benchCase "stream_pump" size (fun () ->
             use wire = new MemoryStream(size + size / 4 + 131_072)
             ItbError.get (Stream.pumpEncrypt pipe (new MemoryStream(plain, false)) wire))
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        use setupWire = new MemoryStream(size + size / 4 + 131_072)
+        ItbError.get (Stream.pumpEncrypt pipe (new MemoryStream(plain, false)) setupWire)
+        let decWire = setupWire.ToArray()
+        BenchUtil.benchCase "stream_pump-dec" size (fun () ->
+            use out = new MemoryStream(size + 131_072)
+            ItbError.get (Stream.pumpDecrypt pipe (new MemoryStream(decWire, false)) out))

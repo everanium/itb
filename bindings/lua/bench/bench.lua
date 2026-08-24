@@ -118,6 +118,46 @@ local function stream_pass(pipe, plain)
     sess:free()
 end
 
+-- Decrypt counterpart.
+local function stream_dec_pass(pipe, wire)
+    local sess = pipe:decrypt_stream()
+    for off = 1, #wire, PUMP_SLICE do
+        sess:write(wire:sub(off, off + PUMP_SLICE - 1))
+        while true do
+            local chunk = sess:read()
+            if #chunk == 0 then break end
+        end
+    end
+    sess:finish()
+    while true do
+        local _, finished = sess:read()
+        if finished then break end
+    end
+    sess:free()
+end
+
+-- Pre-encrypt one wire outside the decrypt timing loop.
+local function stream_encrypt_all(pipe, plain)
+    local parts = {}
+    local sess = pipe:encrypt_stream()
+    for off = 1, #plain, PUMP_SLICE do
+        sess:write(plain:sub(off, off + PUMP_SLICE - 1))
+        while true do
+            local chunk = sess:read()
+            if #chunk == 0 then break end
+            parts[#parts + 1] = chunk
+        end
+    end
+    sess:finish()
+    while true do
+        local chunk, finished = sess:read()
+        if chunk and #chunk > 0 then parts[#parts + 1] = chunk end
+        if finished then break end
+    end
+    sess:free()
+    return table.concat(parts)
+end
+
 local function main()
     -- Bench-scale allocation churn leaks Go scratch heap unboundedly
     -- without a soft memory cap + aggressive GC; the return values
@@ -136,7 +176,12 @@ local function main()
             bench_case("message", size, function()
                 pipe:encrypt_message(plain)
             end)
+            local dec_wire = pipe:encrypt_message(plain)
+            bench_case("message-dec", size, function()
+                pipe:decrypt_message(dec_wire)
+            end)
             plain = nil
+            dec_wire = nil
             collectgarbage("collect")
         end
     end
@@ -149,7 +194,12 @@ local function main()
             bench_case("stream", size, function()
                 stream_pass(pipe, plain)
             end)
+            local dec_wire = stream_encrypt_all(pipe, plain)
+            bench_case("stream-dec", size, function()
+                stream_dec_pass(pipe, dec_wire)
+            end)
             plain = nil
+            dec_wire = nil
             collectgarbage("collect")
         end
     end

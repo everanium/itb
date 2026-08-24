@@ -154,7 +154,7 @@ ITB ships two pixel-processing backends selected automatically at compile time, 
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | <code>-buildmode=c-shared</code> | C with SIMD auto-vectorization | C compiler (GCC/Clang) + AVX-512 baseline |
+| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | C compiler (GCC/Clang); no minimum SIMD requirement — Tier A (AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI, 8-pixel batch) and Tier B (AVX2 + GFNI, 4-pixel batch) are selected via `__builtin_cpu_supports` at first call; hosts below both tiers fall through to the portable scalar C path (Tier C) |
 | **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB chain-absorb / Interlocked Barrier / Areion permutation ASM disabled; upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
 | **Pure Go** | `CGO_ENABLED=0 ...` | Portable Go pipeline (`process_generic.go`) | None (any GOOS / GOARCH the Go compiler supports) |
 
@@ -165,7 +165,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Kernel | Required CPU feature | Runtime capability flag |
 |---|---|---|
 | Interlocked Barrier — scalar rank-unrank | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
-| Interlocked Barrier — batched rank-unrank | AVX-512F (VPERMI2Q, VPCMPUQ, VPSRLVQ, mask-merged VPSUBQ on ZMM) | `interlock.HasAVX512RankMask` |
+| Interlocked Barrier — batched rank-unrank | AVX-512F (VPERMI2Q, VPCMPUQ, VPTESTMQ, KANDW, mask-merged VPSUBQ / VPORQ / VPBROADCASTQ on ZMM) | `interlock.HasAVX512RankMask` |
 | Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
 | AES-CMAC — batched CBC-MAC / fused chain | VAES + AVX-512 | `aescmacasm.HasVAESAVX512` |
@@ -1107,6 +1107,10 @@ The binding fleet lands in two logical bands. Every band is a thin proxy over th
 - **Tier 2 Relay (19 bindings)** — a small out-of-process relay speaks the `ITB_Triple_*` shim over one of four backends (C / Java / C# / BEAM) and hands it to a language runtime that cannot embed the C shared library directly. Every relay is a thin proxy of a thin proxy; ITB's construction logic never lives outside the shipped Go core.
 
 Docs describe the fleet at the architectural level while the per-binding rework lands. Every binding's public surface will read as "call Init to receive a `Pipeline` handle plus a blob byte slice, ship the blob to the receiver, both sides encrypt / decrypt" — the same user-story the Go `triple/` facade tells. Per-binding examples ship in each binding's own directory once the rework lands.
+
+### Fleet listing
+
+The complete per-language fleet listing — 34 rows with directory paths, tiers, target package registries, and future install commands — lives in [`bindings/README.md#fleet-listing`](bindings/README.md#fleet-listing) to keep the root README compact.
 
 ## See also
 

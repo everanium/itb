@@ -125,7 +125,12 @@ function main(): void
         bench_case('message', $size, static function () use ($pipe, $plain, $out, $cap): void {
             $pipe->encryptMessageInto($plain, $out, $cap);
         });
-        unset($plain, $out);
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        $dec_wire = $pipe->encryptMessage($plain);
+        bench_case('message-dec', $size, static function () use ($pipe, $dec_wire): void {
+            $pipe->decryptMessage($dec_wire);
+        });
+        unset($plain, $out, $dec_wire);
     }
     $pipe->free();
 
@@ -146,7 +151,28 @@ function main(): void
             }
             $sess->free();
         });
-        unset($plain);
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        $enc_sess = $pipe->encryptStream();
+        $enc_sess->write($plain);
+        $enc_sess->end();
+        $wire_parts = [];
+        while (!$enc_sess->isFinished()) {
+            $data = $enc_sess->read(StreamSession::READ_BUF);
+            if ($data !== '') { $wire_parts[] = $data; }
+        }
+        $enc_sess->free();
+        $dec_wire = implode('', $wire_parts);
+        bench_case('stream_session-dec', $size, static function () use ($pipe, $dec_wire, $slice): void {
+            $sess = $pipe->decryptStream();
+            $sess->write($dec_wire);
+            $sess->end();
+            $finished = false;
+            while (!$finished) {
+                [, $finished] = $sess->readInto($slice, StreamSession::READ_BUF);
+            }
+            $sess->free();
+        });
+        unset($plain, $dec_wire, $wire_parts);
     }
     unset($slice);
     $pipe->free();

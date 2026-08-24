@@ -16,6 +16,11 @@ func runMessageBench() {
             benchCase("message", size) {
                 _ = try pipe.encryptMessage(plain)
             }
+            // Pre-encrypt one wire outside the decrypt timing loop.
+            let decWire = try pipe.encryptMessage(plain)
+            benchCase("message-dec", size) {
+                _ = try pipe.decryptMessage(decWire)
+            }
         }
     } catch {
         FileHandle.standardError.write(

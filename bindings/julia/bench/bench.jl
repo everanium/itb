@@ -85,6 +85,11 @@ function bench_message()
         bench_case("message", size) do
             encrypt_message(pipe, plain)
         end
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        dec_wire = encrypt_message(pipe, plain)
+        bench_case("message-dec", size) do
+            decrypt_message(pipe, dec_wire)
+        end
     end
     free!(pipe)
 end
@@ -116,6 +121,47 @@ function bench_stream()
                 end_stream!(enc)
                 while true
                     n, finished = read_into!(enc, out)
+                    finished && break
+                end
+            end
+        end
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        parts = UInt8[]
+        encrypt_stream(pipe) do enc
+            off = 0
+            while off < length(plain)
+                hi = min(off + slice, length(plain))
+                write!(enc, view(plain, (off + 1):hi))
+                off = hi
+                while true
+                    n, _ = read_into!(enc, out)
+                    n == 0 && break
+                    append!(parts, view(out, 1:n))
+                end
+            end
+            end_stream!(enc)
+            while true
+                n, finished = read_into!(enc, out)
+                n > 0 && append!(parts, view(out, 1:n))
+                finished && break
+            end
+        end
+        dec_wire = parts
+        bench_case("stream-dec", size) do
+            decrypt_stream(pipe) do dec
+                off = 0
+                while off < length(dec_wire)
+                    hi = min(off + slice, length(dec_wire))
+                    write!(dec, view(dec_wire, (off + 1):hi))
+                    off = hi
+                    while true
+                        n, _ = read_into!(dec, out)
+                        n == 0 && break
+                    end
+                end
+                end_stream!(dec)
+                while true
+                    n, finished = read_into!(dec, out)
                     finished && break
                 end
             end

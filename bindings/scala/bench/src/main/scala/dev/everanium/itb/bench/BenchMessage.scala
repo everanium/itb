@@ -20,4 +20,9 @@ object BenchMessage:
         BenchUtil.benchCase("message", size) {
           pipe.encryptMessage(plain).fold(e => throw e, _ => ())
         }
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        val decWire = pipe.encryptMessage(plain).fold(e => throw e, identity)
+        BenchUtil.benchCase("message-dec", size) {
+          pipe.decryptMessage(decWire).fold(e => throw e, _ => ())
+        }
     }
