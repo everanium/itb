@@ -105,6 +105,59 @@ def stream_pass(pipe : ITB::Pipeline, plain : Bytes, outbuf : Bytes) : Nil
   sess.free
 end
 
+# Decrypt counterpart: feed slices from wire, drain available plain.
+def stream_pass_dec(pipe : ITB::Pipeline, wire : Bytes, outbuf : Bytes) : Nil
+  sess = pipe.decrypt_stream
+  off = 0
+  while off < wire.size
+    n = Math.min(PUMP_SLICE, wire.size - off)
+    sess.write(wire[off, n])
+    off += n
+    loop do
+      m, _ = sess.read_into(outbuf)
+      break if m == 0
+    end
+  end
+  sess.end_stream
+  loop do
+    _, finished = sess.read_into(outbuf)
+    break if finished
+  end
+  sess.free
+end
+
+# Pre-encrypt one wire outside the decrypt timing loop.
+def stream_encrypt_all(pipe : ITB::Pipeline, plain : Bytes, outbuf : Bytes) : Bytes
+  parts = [] of Bytes
+  sess = pipe.encrypt_stream
+  off = 0
+  while off < plain.size
+    n = Math.min(PUMP_SLICE, plain.size - off)
+    sess.write(plain[off, n])
+    off += n
+    loop do
+      m, _ = sess.read_into(outbuf)
+      break if m == 0
+      parts << outbuf[0, m].clone
+    end
+  end
+  sess.end_stream
+  loop do
+    m, finished = sess.read_into(outbuf)
+    parts << outbuf[0, m].clone if m > 0
+    break if finished
+  end
+  sess.free
+  total = parts.sum(&.size)
+  wire = Bytes.new(total)
+  off = 0
+  parts.each do |p|
+    p.copy_to(wire[off, p.size])
+    off += p.size
+  end
+  wire
+end
+
 # Bench-scale allocation churn leaks Go scratch heap unboundedly
 # without a soft memory cap + aggressive GC; the return values report
 # the previous settings, not an error.
@@ -121,6 +174,9 @@ begin
     # (crypto/rand). Not in the timing loop.
     plain = Random::Secure.random_bytes(size)
     bench_case("message", size) { pipe.encrypt_message(plain) }
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    dec_wire = pipe.encrypt_message(plain)
+    bench_case("message-dec", size) { pipe.decrypt_message(dec_wire) }
     GC.collect
   end
   pipe.free
@@ -132,6 +188,8 @@ begin
   SIZES.each do |size|
     plain = Random::Secure.random_bytes(size)
     bench_case("stream", size) { stream_pass(pipe, plain, outbuf) }
+    dec_wire = stream_encrypt_all(pipe, plain, outbuf)
+    bench_case("stream-dec", size) { stream_pass_dec(pipe, dec_wire, outbuf) }
     GC.collect
   end
   pipe.free

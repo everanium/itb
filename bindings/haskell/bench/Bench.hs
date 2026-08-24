@@ -53,6 +53,9 @@ main = do
   forM_ sizes $ \size -> do
     plain <- csprngBytes size
     benchCase "message" size minSec (void (encryptMessage msgPipe plain))
+    -- Pre-encrypt one wire outside the decrypt timing loop.
+    decWire <- encryptMessage msgPipe plain
+    benchCase "message-dec" size minSec (void (decryptMessage msgPipe decWire))
   freePipeline msgPipe
 
   streamProfile <- profileEnv "ITB_STREAM_PROFILE" "streaming-noaead-triple-v1"
@@ -60,6 +63,9 @@ main = do
   forM_ sizes $ \size -> do
     plain <- csprngBytes size
     benchCase "stream" size minSec (streamOnce streamPipe plain)
+    -- Pre-encrypt one wire outside the decrypt timing loop.
+    decWire <- streamEncryptAll streamPipe plain
+    benchCase "stream-dec" size minSec (streamDecryptOnce streamPipe decWire)
   freePipeline streamPipe
 
 -- | One incremental stream encrypt pass: Begin \/ Write (4 MiB
@@ -82,6 +88,53 @@ streamOnce pipe plain = do
   where
     -- Before endStream a read never blocks; drain whatever the chain
     -- has produced so far to keep the session spool bounded.
+    drainAvailable sess sink = do
+      (chunk, _) <- readStream sess (4 * 1024 * 1024)
+      if BS.null chunk
+        then pure ()
+        else do
+          modifyIORef' sink (+ BS.length chunk)
+          drainAvailable sess sink
+
+-- | Encrypt one plaintext and collect all wire bytes.
+streamEncryptAll :: Pipeline -> BS.ByteString -> IO BS.ByteString
+streamEncryptAll pipe plain = do
+  sess <- encryptStream pipe
+  parts <- newIORef ([] :: [BS.ByteString])
+  forM_ (chunksOf (4 * 1024 * 1024) plain) $ \piece -> do
+    writeStream sess piece
+    let drain = do
+          (chunk, _) <- readStream sess (4 * 1024 * 1024)
+          if BS.null chunk then pure ()
+            else do modifyIORef' parts (chunk :); drain
+    drain
+  endStream sess
+  let finalDrain = do
+        (chunk, fin) <- readStream sess (4 * 1024 * 1024)
+        modifyIORef' parts (chunk :)
+        if fin then pure () else finalDrain
+  finalDrain
+  xs <- readIORef parts
+  freeStream sess
+  pure (BS.concat (reverse xs))
+
+-- | One incremental stream decrypt pass over pre-encrypted wire.
+streamDecryptOnce :: Pipeline -> BS.ByteString -> IO ()
+streamDecryptOnce pipe wire = do
+  sess <- decryptStream pipe
+  sink <- newIORef (0 :: Int)
+  forM_ (chunksOf (4 * 1024 * 1024) wire) $ \piece -> do
+    writeStream sess piece
+    drainAvailable sess sink
+  endStream sess
+  let finalDrain = do
+        (chunk, fin) <- readStream sess (4 * 1024 * 1024)
+        modifyIORef' sink (+ BS.length chunk)
+        if fin then pure () else finalDrain
+  finalDrain
+  void (readIORef sink)
+  freeStream sess
+  where
     drainAvailable sess sink = do
       (chunk, _) <- readStream sess (4 * 1024 * 1024)
       if BS.null chunk

@@ -94,6 +94,9 @@ def bench_message
     # that per-call copy for a reusable buffer; its throughput is
     # not part of the canonical table.
     bench_case("message", size) { pipe.encrypt_message(plain) }
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    dec_wire = pipe.encrypt_message(plain)
+    bench_case("message-dec", size) { pipe.decrypt_message(dec_wire) }
   end
   pipe.free
 end
@@ -122,6 +125,45 @@ def bench_stream
         enc.end_stream
         loop do
           _n, finished = enc.read_into(scratch)
+          break if finished
+        end
+      end
+    end
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    dec_wire_parts = []
+    pipe.encrypt_stream do |enc|
+      off = 0
+      while off < plain.bytesize
+        enc.write(plain.byteslice(off, slice))
+        off += slice
+        loop do
+          n, = enc.read_into(scratch)
+          break if n.zero?
+          dec_wire_parts << scratch.read_bytes(n)
+        end
+      end
+      enc.end_stream
+      loop do
+        n, finished = enc.read_into(scratch)
+        dec_wire_parts << scratch.read_bytes(n) if n.positive?
+        break if finished
+      end
+    end
+    dec_wire = dec_wire_parts.join
+    bench_case("stream-dec", size) do
+      pipe.decrypt_stream do |dec|
+        off = 0
+        while off < dec_wire.bytesize
+          dec.write(dec_wire.byteslice(off, slice))
+          off += slice
+          loop do
+            n, = dec.read_into(scratch)
+            break if n.zero?
+          end
+        end
+        dec.end_stream
+        loop do
+          _n, finished = dec.read_into(scratch)
           break if finished
         end
       end

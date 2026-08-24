@@ -16,6 +16,11 @@ func runStreamBench() {
             benchCase("stream_pump", size) {
                 _ = try pipe.encryptStreamPump(plain)
             }
+            // Pre-encrypt one wire outside the decrypt timing loop.
+            let decWire = try pipe.encryptStreamPump(plain)
+            benchCase("stream_pump-dec", size) {
+                _ = try pipe.decryptStreamPump(decWire)
+            }
         }
     } catch {
         FileHandle.standardError.write(

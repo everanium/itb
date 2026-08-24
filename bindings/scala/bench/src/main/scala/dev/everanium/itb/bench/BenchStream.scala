@@ -25,4 +25,16 @@ object BenchStream:
             .encryptStreamPump(new ByteArrayInputStream(plain), wire)
             .fold(e => throw e, _ => ())
         }
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        val setupWire = new ByteArrayOutputStream(size + size / 4 + 131_072)
+        pipe
+          .encryptStreamPump(new ByteArrayInputStream(plain), setupWire)
+          .fold(e => throw e, _ => ())
+        val decWire = setupWire.toByteArray
+        BenchUtil.benchCase("stream_pump-dec", size) {
+          val out = new ByteArrayOutputStream(size + 131_072)
+          pipe
+            .decryptStreamPump(new ByteArrayInputStream(decWire), out)
+            .fold(e => throw e, _ => ())
+        }
     }

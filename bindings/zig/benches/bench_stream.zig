@@ -10,9 +10,19 @@ const Ctx = struct {
     plain: []const u8,
 };
 
+const DecCtx = struct {
+    pipe: *const itb.Pipeline,
+    wire: []const u8,
+};
+
 fn runStreamPump(ctx: *const Ctx) !void {
     const wire = try ctx.pipe.encryptStreamPump(ctx.plain);
     ctx.pipe.allocator.free(wire);
+}
+
+fn runStreamPumpDec(ctx: *const DecCtx) !void {
+    const plain = try ctx.pipe.decryptStreamPump(ctx.wire);
+    ctx.pipe.allocator.free(plain);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -44,5 +54,9 @@ pub fn main(init: std.process.Init) !void {
         try util.randomFill(plain); // not in the timing loop
         const ctx = Ctx{ .pipe = &pipe, .plain = plain };
         try util.benchCase(init.io, budget, "stream_pump", size, &ctx, runStreamPump);
+        const dec_wire = try pipe.encryptStreamPump(plain);
+        defer gpa.free(dec_wire);
+        const dctx = DecCtx{ .pipe = &pipe, .wire = dec_wire };
+        try util.benchCase(init.io, budget, "stream_pump-dec", size, &dctx, runStreamPumpDec);
     }
 }

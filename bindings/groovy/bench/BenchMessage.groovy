@@ -22,6 +22,11 @@ final class BenchMessage {
                 BenchUtil.benchCase('message', size) {
                     pipe.encryptMessage(plain)
                 }
+                // Pre-encrypt one wire outside the decrypt timing loop.
+                byte[] decWire = pipe.encryptMessage(plain)
+                BenchUtil.benchCase('message-dec', size) {
+                    pipe.decryptMessage(decWire)
+                }
             }
         }
     }

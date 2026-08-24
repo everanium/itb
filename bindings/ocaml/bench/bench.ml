@@ -88,7 +88,10 @@ let bench_message () =
   List.iter
     (fun size ->
       let plain = random_bytes size in
-      bench_case "message" size (fun () -> ignore (Itb.encrypt_message pipe plain)))
+      bench_case "message" size (fun () -> ignore (Itb.encrypt_message pipe plain));
+      (* Pre-encrypt one wire outside the decrypt timing loop. *)
+      let dec_wire = Itb.encrypt_message pipe plain in
+      bench_case "message-dec" size (fun () -> ignore (Itb.decrypt_message pipe dec_wire)))
     sizes;
   Itb.close pipe
 
@@ -123,6 +126,48 @@ let bench_stream () =
           Itb.end_ enc;
           let rec final () =
             let _n, finished = Itb.read_into enc out out_cap in
+            if not finished then final ()
+          in
+          final ());
+      (* Pre-encrypt one wire outside the decrypt timing loop. *)
+      let parts = Buffer.create (size + 65536) in
+      let enc = Itb.encrypt_stream pipe in
+      let off = ref 0 in
+      while !off < size do
+        let len = min slice (size - !off) in
+        Itb.write_sub enc plain !off len;
+        off := !off + len;
+        let rec drain () =
+          let n, _ = Itb.read_into enc out out_cap in
+          if n > 0 then (Buffer.add_subbytes parts out 0 n; drain ())
+        in
+        drain ()
+      done;
+      Itb.end_ enc;
+      let rec final () =
+        let n, finished = Itb.read_into enc out out_cap in
+        if n > 0 then Buffer.add_subbytes parts out 0 n;
+        if not finished then final ()
+      in
+      final ();
+      let dec_wire = Buffer.to_bytes parts in
+      let dec_size = Bytes.length dec_wire in
+      bench_case "stream-dec" size (fun () ->
+          let dec = Itb.decrypt_stream pipe in
+          let off = ref 0 in
+          while !off < dec_size do
+            let len = min slice (dec_size - !off) in
+            Itb.write_sub dec dec_wire !off len;
+            off := !off + len;
+            let rec drain () =
+              let n, _ = Itb.read_into dec out out_cap in
+              if n > 0 then drain ()
+            in
+            drain ()
+          done;
+          Itb.end_ dec;
+          let rec final () =
+            let _n, finished = Itb.read_into dec out out_cap in
             if not finished then final ()
           in
           final ()))

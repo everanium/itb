@@ -122,6 +122,28 @@ stream_pass <- function(pipe, plain, scratch) {
   stream_free(sess)
 }
 
+# Decrypt counterpart.
+stream_dec_pass <- function(pipe, wire, scratch) {
+  sess <- stream_decryptor(pipe)
+  off <- 0
+  n <- length(wire)
+  while (off < n) {
+    take <- min(PUMP_SLICE, n - off)
+    stream_write_slice(sess, wire, off, take)
+    repeat {
+      r <- stream_read_into(sess, scratch)
+      if (r[1L] == 0L) break
+    }
+    off <- off + take
+  }
+  stream_end(sess)
+  repeat {
+    r <- stream_read_into(sess, scratch)
+    if (r[2L] == 1L) break
+  }
+  stream_free(sess)
+}
+
 main <- function() {
   # Bench-scale allocation churn leaks Go scratch heap unboundedly
   # without a soft memory cap + aggressive GC; the return values
@@ -138,7 +160,11 @@ main <- function() {
     bench_case("message", size, function() {
       pipeline_encrypt_message(pipe, plain)
     })
-    rm(plain)
+    dec_wire <- pipeline_encrypt_message(pipe, plain)
+    bench_case("message-dec", size, function() {
+      pipeline_decrypt_message(pipe, dec_wire)
+    })
+    rm(plain, dec_wire)
     gc(full = TRUE)
   }
   pipeline_free(pipe)
@@ -150,7 +176,11 @@ main <- function() {
     bench_case("stream", size, function() {
       stream_pass(pipe, plain, scratch)
     })
-    rm(plain)
+    dec_wire <- pipeline_encrypt_stream_one_shot(pipe, plain)
+    bench_case("stream-dec", size, function() {
+      stream_dec_pass(pipe, dec_wire, scratch)
+    })
+    rm(plain, dec_wire)
     gc(full = TRUE)
   }
   pipeline_free(pipe)

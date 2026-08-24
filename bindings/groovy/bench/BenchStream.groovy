@@ -23,6 +23,14 @@ final class BenchStream {
                     def wire = new ByteArrayOutputStream(size + size.intdiv(4) + 131_072)
                     pipe.encryptStreamPump(new ByteArrayInputStream(plain), wire)
                 }
+                // Pre-encrypt one wire outside the decrypt timing loop.
+                def setupWire = new ByteArrayOutputStream(size + size.intdiv(4) + 131_072)
+                pipe.encryptStreamPump(new ByteArrayInputStream(plain), setupWire)
+                byte[] decWire = setupWire.toByteArray()
+                BenchUtil.benchCase('stream_pump-dec', size) {
+                    def out = new ByteArrayOutputStream(size + 131_072)
+                    pipe.decryptStreamPump(new ByteArrayInputStream(decWire), out)
+                }
             }
         }
     }

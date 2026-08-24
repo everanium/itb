@@ -58,7 +58,13 @@
           (bench-case "message" size
             (lambda ()
               (let ((`#(ok ,_wire) (itb-lfe:encrypt-message pipe plain)))
-                'ok)))))
+                'ok)))
+          ;; Pre-encrypt one wire outside the decrypt timing loop.
+          (let ((`#(ok ,dec-wire) (itb-lfe:encrypt-message pipe plain)))
+            (bench-case "message-dec" size
+              (lambda ()
+                (let ((`#(ok ,_p) (itb-lfe:decrypt-message pipe dec-wire)))
+                  'ok))))))
       (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
     (let ((`ok (itb-lfe:free pipe)))
       'ok)))
@@ -73,7 +79,11 @@
       (lambda (size)
         (let ((plain (crypto:strong_rand_bytes size)))
           (bench-case "stream_pump" size
-            (lambda () (pump pipe plain)))))
+            (lambda () (pump pipe plain)))
+          ;; Pre-encrypt one wire outside the decrypt timing loop.
+          (let ((dec-wire (pump-all pipe plain)))
+            (bench-case "stream_pump-dec" size
+              (lambda () (pump-dec pipe dec-wire))))))
       (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
     (let ((`ok (itb-lfe:free pipe)))
       'ok)))
@@ -123,6 +133,44 @@
   (case (itb-lfe:stream-read stream (PUMP-BUF))
     (`#(ok ,_ true) 'ok)
     (`#(ok ,_ false) (drain stream))))
+
+;; Encrypt whole plain, collecting wire. Uses feed-noread so no bytes
+;; are lost to a drain-ready race: for plaintexts that fit in a single
+;; chunk (16 MiB DefaultChunkSize) the encoder emits the 32-byte stream
+;; prefix immediately after consuming the last plaintext slice, so a
+;; mid-feed drain-ready lands between the prefix write and the chunk
+;; body write, consumes and discards the prefix, and drain-collect at
+;; the end sees a wire missing its prefix. feed-noread lets everything
+;; buffer in the spool and drain-collect pulls the whole wire out.
+(defun pump-all (pipe plain)
+  (let* ((`#(ok ,stream) (itb-lfe:encrypt-stream pipe))
+         (`ok (feed-noread stream plain))
+         (`ok (itb-lfe:stream-end stream))
+         (wire (drain-collect stream '())))
+    (itb-lfe:stream-free stream)
+    wire))
+
+(defun feed-noread (stream data)
+  (if (=:= data #"")
+    'ok
+    (let* ((n (erlang:min (byte_size data) (PUMP-BUF)))
+           (slice (binary:part data 0 n))
+           (rest (binary:part data n (- (byte_size data) n)))
+           (`ok (itb-lfe:stream-write stream slice)))
+      (feed-noread stream rest))))
+
+(defun drain-collect (stream acc)
+  (case (itb-lfe:stream-read stream (PUMP-BUF))
+    (`#(ok ,chunk true) (erlang:iolist_to_binary (lists:reverse (cons chunk acc))))
+    (`#(ok ,chunk false) (drain-collect stream (cons chunk acc)))))
+
+(defun pump-dec (pipe wire)
+  (let* ((`#(ok ,stream) (itb-lfe:decrypt-stream pipe))
+         (`ok (feed stream wire))
+         (`ok (itb-lfe:stream-end stream))
+         (`ok (drain stream))
+         (`ok (itb-lfe:stream-free stream)))
+    'ok))
 
 ;;; ------------------------------------------------------------------
 ;;; Timing loop: one untimed warm-up, then iterate until the

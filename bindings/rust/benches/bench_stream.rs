@@ -78,6 +78,30 @@ fn bench_stream(c: &mut Criterion) {
         });
     }
     group.finish();
+
+    // Decrypt-side counterpart: pre-encrypt one wire per size outside
+    // the timing loop, then time decrypt_stream_pump on that wire.
+    let mut dec_group = c.benchmark_group("decrypt_stream_pump");
+    dec_group
+        .sample_size(10)
+        .measurement_time(Duration::from_secs(5));
+    for size in [1usize << 20, 16 << 20, 64 << 20] {
+        let mut plain = vec![0u8; size];
+        rand::rng().fill_bytes(&mut plain);
+        let mut wire = Vec::with_capacity(size + size / 4 + 131_072);
+        pipe.encrypt_stream_pump(Cursor::new(&plain), &mut wire)
+            .unwrap();
+        dec_group.throughput(Throughput::Bytes(size as u64));
+        dec_group.bench_function(format!("{size}B"), |b| {
+            b.iter(|| {
+                let mut out = Vec::with_capacity(size + 131_072);
+                pipe.decrypt_stream_pump(Cursor::new(&wire), &mut out)
+                    .unwrap();
+                out
+            });
+        });
+    }
+    dec_group.finish();
 }
 
 criterion_group!(benches, bench_stream);

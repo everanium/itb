@@ -37,5 +37,12 @@ void main()
         benchCase("message", size, {
             cast(void) pipe.encryptMessage(plain);
         });
+        // Pre-encrypt one wire for the decrypt timing loop; a copy is
+        // taken so the borrowed slice never overlaps subsequent calls.
+        auto wireBorrowed = pipe.encryptMessage(plain);
+        auto wire = wireBorrowed.dup;
+        benchCase("message-dec", size, {
+            cast(void) pipe.decryptMessage(wire);
+        });
     }
 }

@@ -16,6 +16,9 @@ internal object BenchMessage {
                 val plain = ByteArray(size)
                 BenchUtil.csprngFill(plain)
                 BenchUtil.case("message", size) { pipe.encryptMessage(plain) }
+                // Pre-encrypt one wire outside the decrypt timing loop.
+                val decWire = pipe.encryptMessage(plain)
+                BenchUtil.case("message-dec", size) { pipe.decryptMessage(decWire) }
             }
         }
     }

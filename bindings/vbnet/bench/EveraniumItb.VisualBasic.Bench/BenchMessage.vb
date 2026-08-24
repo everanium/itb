@@ -16,6 +16,9 @@ Friend Module BenchMessage
                 ' bench (crypto/rand). Not in the timing loop.
                 RandomNumberGenerator.Fill(plain)
                 [Case]("message", size, Sub() pipe.EncryptMessage(plain))
+                ' Pre-encrypt one wire outside the decrypt timing loop.
+                Dim decWire As Byte() = pipe.EncryptMessage(plain)
+                [Case]("message-dec", size, Sub() pipe.DecryptMessage(decWire))
             Next
         End Using
     End Sub
