@@ -94,6 +94,12 @@ fn bench_message() -> Nil {
       let assert Ok(_wire) = pipeline.encrypt_message(pipe, plain)
       Nil
     })
+    // Pre-encrypt one wire outside the decrypt timing loop.
+    let assert Ok(dec_wire) = pipeline.encrypt_message(pipe, plain)
+    bench_case("message-dec", size, fn() {
+      let assert Ok(_plain) = pipeline.decrypt_message(pipe, dec_wire)
+      Nil
+    })
   })
   pipeline.free(pipe)
 }
@@ -105,6 +111,9 @@ fn bench_stream() -> Nil {
   list.each([mib, 16 * mib, 64 * mib], fn(size) {
     let plain = rand_bytes(size)
     bench_case("stream_pump", size, fn() { pump(pipe, plain) })
+    // Pre-encrypt one wire outside the decrypt timing loop.
+    let dec_wire = pump_all(pipe, plain)
+    bench_case("stream_pump-dec", size, fn() { pump_dec(pipe, dec_wire) })
   })
   pipeline.free(pipe)
 }
@@ -148,6 +157,53 @@ fn drain(session: stream.Session) -> Nil {
     True -> Nil
     False -> drain(session)
   }
+}
+
+// Encrypt whole plain, collecting wire. Uses feed_noread so no bytes
+// are lost to a drain_ready race: for plaintexts that fit in a single
+// chunk (16 MiB DefaultChunkSize) the encoder emits the 32-byte stream
+// prefix immediately after consuming the last plaintext slice, so a
+// mid-feed drain_ready lands between the prefix write and the chunk
+// body write, consumes and discards the prefix, and drain_collect at
+// the end sees a wire missing its prefix. feed_noread lets everything
+// buffer in the spool and drain_collect pulls the whole wire out.
+fn pump_all(pipe: Pipeline, plain: BitArray) -> BitArray {
+  let assert Ok(session) = stream.encrypt(pipe)
+  feed_noread(session, plain)
+  let assert Ok(Nil) = stream.finish(session)
+  let wire = drain_collect(session, <<>>)
+  stream.free(session)
+  wire
+}
+
+fn feed_noread(session: stream.Session, data: BitArray) -> Nil {
+  case bit_array.byte_size(data) {
+    0 -> Nil
+    size -> {
+      let n = int.min(size, mib)
+      let assert Ok(slice) = bit_array.slice(data, 0, n)
+      let assert Ok(rest) = bit_array.slice(data, n, size - n)
+      let assert Ok(Nil) = stream.write(session, slice)
+      feed_noread(session, rest)
+    }
+  }
+}
+
+fn drain_collect(session: stream.Session, acc: BitArray) -> BitArray {
+  let assert Ok(#(piece, finished)) = stream.read(session, mib)
+  let next = bit_array.concat([acc, piece])
+  case finished {
+    True -> next
+    False -> drain_collect(session, next)
+  }
+}
+
+fn pump_dec(pipe: Pipeline, wire: BitArray) -> Nil {
+  let assert Ok(session) = stream.decrypt(pipe)
+  feed(session, wire)
+  let assert Ok(Nil) = stream.finish(session)
+  drain(session)
+  stream.free(session)
 }
 
 // ------------------------------------------------------------------

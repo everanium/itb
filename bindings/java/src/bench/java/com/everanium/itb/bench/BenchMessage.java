@@ -38,6 +38,13 @@ public final class BenchMessage {
                     wire.clear();
                     pipe.encryptMessageInto(plain, wire);
                 });
+                // Pre-encrypt one wire outside the decrypt timing loop.
+                byte[] decWire = pipe.encryptMessage(plain);
+                ByteBuffer decOut = ByteBuffer.allocateDirect(size + 131_072);
+                BenchUtil.benchCase("message-dec", size, () -> {
+                    decOut.clear();
+                    pipe.decryptMessageInto(decWire, decOut);
+                });
             }
         }
     }

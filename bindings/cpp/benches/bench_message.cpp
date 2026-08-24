@@ -33,6 +33,17 @@ int main()
                 (void)pipe.encrypt_message_into(itb::as_bytes(plain),
                                                 itb::as_writable_bytes(wire));
             });
+            /* Pre-encrypt once outside the decrypt timing loop so only
+             * the decrypt call is measured; dec_out is reusable scratch. */
+            std::size_t dec_wire_len = pipe.encrypt_message_into(
+                itb::as_bytes(plain), itb::as_writable_bytes(wire));
+            std::vector<std::uint8_t> dec_out(size);
+            bench_case("message-dec", size, [&] {
+                (void)pipe.decrypt_message_into(
+                    itb::as_bytes(std::span<const std::uint8_t>(wire.data(),
+                                                                dec_wire_len)),
+                    itb::as_writable_bytes(dec_out));
+            });
         }
         return 0;
     } catch (const std::exception &e) {

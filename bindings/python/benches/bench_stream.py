@@ -30,6 +30,16 @@ def main() -> None:
             pipe.encrypt_stream_pump(io.BytesIO(p), io.BytesIO())
 
         bench_util.bench_case("stream_pump", size, run)
+
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        enc_buf = io.BytesIO()
+        pipe.encrypt_stream_pump(io.BytesIO(plain), enc_buf)
+        dec_wire = enc_buf.getvalue()
+
+        def run_dec(w: bytes = dec_wire) -> None:
+            pipe.decrypt_stream_pump(io.BytesIO(w), io.BytesIO())
+
+        bench_util.bench_case("stream_pump-dec", size, run_dec)
     pipe.free()
 
 

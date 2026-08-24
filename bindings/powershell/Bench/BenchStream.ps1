@@ -16,6 +16,17 @@ try {
             $pipe.EncryptStreamPump(
                 [System.IO.MemoryStream]::new($plain, $false), $wire)
         }.GetNewClosure()
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        $setupWire = [System.IO.MemoryStream]::new(
+            [int]($size + ($size -shr 2) + 131072))
+        $pipe.EncryptStreamPump(
+            [System.IO.MemoryStream]::new($plain, $false), $setupWire)
+        $decWire = $setupWire.ToArray()
+        Invoke-BenchCase -Name 'stream_pump-dec' -Size $size -Body {
+            $out = [System.IO.MemoryStream]::new([int]($size + 131072))
+            $pipe.DecryptStreamPump(
+                [System.IO.MemoryStream]::new($decWire, $false), $out)
+        }.GetNewClosure()
     }
 }
 finally {

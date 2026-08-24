@@ -17,6 +17,12 @@ int main()
         itb::Pipeline pipe = itb::Pipeline::init(
             bench_profile_name("streaming-noaead-triple-v1"),
             bench_build_opts());
+        /* A separate pipe for the decrypt setup pre-encrypt, so its
+         * fresh session state is never intermixed with the timed
+         * encrypt loop's session state on `pipe`. */
+        itb::Pipeline setup_pipe = itb::Pipeline::init(
+            bench_profile_name("streaming-noaead-triple-v1"),
+            bench_build_opts());
         bench_header();
         static const std::size_t sizes[] = {
             std::size_t{1} << 20, std::size_t{16} << 20, std::size_t{64} << 20,
@@ -32,6 +38,18 @@ int main()
             bench_case("stream_pump", size, [&] {
                 (void)pipe.encrypt_stream_pump_into(itb::as_bytes(plain),
                                                     itb::as_writable_bytes(wire));
+            });
+            /* Pre-encrypt once for the decrypt timing loop. Uses the
+             * allocating variant to avoid any pre-sized dst races —
+             * this call is outside the timing loop so the extra
+             * allocation is invisible to the decrypt throughput. */
+            std::vector<std::uint8_t> dec_wire = setup_pipe.encrypt_stream_pump(
+                itb::as_bytes(plain));
+            std::vector<std::uint8_t> dec_out(size);
+            bench_case("stream_pump-dec", size, [&] {
+                (void)pipe.decrypt_stream_pump_into(
+                    itb::as_bytes(std::span<const std::uint8_t>(dec_wire)),
+                    itb::as_writable_bytes(dec_out));
             });
         }
         return 0;

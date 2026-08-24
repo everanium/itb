@@ -16,3 +16,7 @@ let run () : unit =
 
         BenchUtil.benchCase "message" size (fun () ->
             ItbError.get (Pipeline.encryptMessage pipe plain) |> ignore)
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        let decWire = ItbError.get (Pipeline.encryptMessage pipe plain)
+        BenchUtil.benchCase "message-dec" size (fun () ->
+            ItbError.get (Pipeline.decryptMessage pipe decWire) |> ignore)

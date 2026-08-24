@@ -21,6 +21,15 @@ Friend Module BenchStream
                         Dim wire As New MemoryStream(size + size \ 4 + 131072)
                         pipe.EncryptStreamPump(New MemoryStream(plain, writable:=False), wire)
                     End Sub)
+                ' Pre-encrypt one wire outside the decrypt timing loop.
+                Dim setupWire As New MemoryStream(size + size \ 4 + 131072)
+                pipe.EncryptStreamPump(New MemoryStream(plain, writable:=False), setupWire)
+                Dim decWire As Byte() = setupWire.ToArray()
+                [Case]("stream_pump-dec", size,
+                    Sub()
+                        Dim out As New MemoryStream(size + 131072)
+                        pipe.DecryptStreamPump(New MemoryStream(decWire, writable:=False), out)
+                    End Sub)
             Next
         End Using
     End Sub

@@ -14,6 +14,12 @@ struct message_ctx {
     size_t size;
 };
 
+struct message_dec_ctx {
+    itb_pipeline *pipe;
+    const uint8_t *wire;
+    size_t wire_len;
+};
+
 static int run_message(void *raw)
 {
     struct message_ctx *ctx = raw;
@@ -25,6 +31,21 @@ static int run_message(void *raw)
         return 1;
     }
     itb_bytes_free(wire);
+    return 0;
+}
+
+static int run_message_decrypt(void *raw)
+{
+    struct message_dec_ctx *ctx = raw;
+    uint8_t *plain = NULL;
+    size_t plain_len = 0;
+    itb_status st = itb_pipeline_decrypt_message(ctx->pipe, ctx->wire,
+                                                 ctx->wire_len, &plain,
+                                                 &plain_len);
+    if (st != ITB_STATUS_OK) {
+        return 1;
+    }
+    itb_bytes_free(plain);
     return 0;
 }
 
@@ -74,6 +95,20 @@ int main(void)
         }
         struct message_ctx ctx = { pipe, plain, sizes[i] };
         bench_case("message", sizes[i], run_message, &ctx);
+        /* Pre-encrypt one wire for the decrypt timing loop; wire is
+         * kept alive across the loop and freed after. Only the decrypt
+         * call is timed. */
+        uint8_t *dec_wire = NULL;
+        size_t dec_wire_len = 0;
+        if (itb_pipeline_encrypt_message(pipe, plain, sizes[i], &dec_wire,
+                                         &dec_wire_len) != ITB_STATUS_OK) {
+            fprintf(stderr, "bench_message: dec setup encrypt failed: %s\n",
+                    itb_last_error());
+            return 1;
+        }
+        struct message_dec_ctx dctx = { pipe, dec_wire, dec_wire_len };
+        bench_case("message-dec", sizes[i], run_message_decrypt, &dctx);
+        itb_bytes_free(dec_wire);
         free(plain);
     }
     itb_pipeline_free(pipe);

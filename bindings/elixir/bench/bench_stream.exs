@@ -42,6 +42,11 @@ defmodule BenchStream do
       plain = :crypto.strong_rand_bytes(size)
       run = fn -> pump(pipe, plain) end
       BenchUtil.bench_case("stream_pump", size, @min_iters, run)
+
+      # Pre-encrypt one wire outside the decrypt timing loop.
+      dec_wire = pump_all(pipe, plain)
+      run_dec = fn -> pump_dec(pipe, dec_wire) end
+      BenchUtil.bench_case("stream_pump-dec", size, @min_iters, run_dec)
     end
 
     :ok = ITB.free(pipe)
@@ -81,6 +86,47 @@ defmodule BenchStream do
       {:ok, _, true} -> :ok
       {:ok, _, false} -> drain(session)
     end
+  end
+
+  # Encrypt whole plain, collecting wire. Uses feed_noread so no bytes
+  # are lost to a drain_ready race: for plaintexts that fit in a single
+  # chunk (16 MiB DefaultChunkSize) the encoder emits the 32-byte stream
+  # prefix immediately after consuming the last plaintext slice, so a
+  # mid-feed drain_ready lands between the prefix write and the chunk
+  # body write, consumes and discards the prefix, and drain_collect at
+  # the end sees a wire missing its prefix. feed_noread lets everything
+  # buffer in the spool and drain_collect pulls the whole wire out.
+  defp pump_all(pipe, plain) do
+    {:ok, session} = ITB.encrypt_stream(pipe)
+    :ok = feed_noread(session, plain)
+    :ok = ITB.stream_end(session)
+    wire = drain_collect(session, [])
+    :ok = ITB.stream_free(session)
+    wire
+  end
+
+  defp feed_noread(_session, <<>>), do: :ok
+
+  defp feed_noread(session, data) do
+    n = min(byte_size(data), @pump_buf)
+    <<slice::binary-size(^n), rest::binary>> = data
+    :ok = ITB.stream_write(session, slice)
+    feed_noread(session, rest)
+  end
+
+  defp drain_collect(session, acc) do
+    case ITB.stream_read(session, @pump_buf) do
+      {:ok, chunk, true} -> IO.iodata_to_binary(Enum.reverse([chunk | acc]))
+      {:ok, chunk, false} -> drain_collect(session, [chunk | acc])
+    end
+  end
+
+  defp pump_dec(pipe, wire) do
+    {:ok, session} = ITB.decrypt_stream(pipe)
+    :ok = feed(session, wire)
+    :ok = ITB.stream_end(session)
+    :ok = drain(session)
+    :ok = ITB.stream_free(session)
   end
 end
 

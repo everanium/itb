@@ -36,5 +36,10 @@ void main()
         benchCase("stream_pump", size, {
             cast(void) pipe.encryptStreamPump(plain);
         });
+        auto wireBorrowed = pipe.encryptStreamPump(plain);
+        auto wire = wireBorrowed.dup;
+        benchCase("stream_pump-dec", size, {
+            cast(void) pipe.decryptStreamPump(wire);
+        });
     }
 }

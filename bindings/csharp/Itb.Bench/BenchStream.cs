@@ -23,6 +23,15 @@ internal static class BenchStream
                 var wire = new MemoryStream(size + size / 4 + 131_072);
                 pipe.EncryptStreamPump(new MemoryStream(plain, writable: false), wire);
             });
+            // Pre-encrypt one wire outside the decrypt timing loop.
+            var setupWire = new MemoryStream(size + size / 4 + 131_072);
+            pipe.EncryptStreamPump(new MemoryStream(plain, writable: false), setupWire);
+            var decWire = setupWire.ToArray();
+            BenchUtil.Case("stream_pump-dec", size, () =>
+            {
+                var outbuf = new MemoryStream(size + 131_072);
+                pipe.DecryptStreamPump(new MemoryStream(decWire, writable: false), outbuf);
+            });
         }
     }
 }

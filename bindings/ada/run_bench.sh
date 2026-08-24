@@ -14,12 +14,9 @@ set -o pipefail
 
 cd "$(dirname "$0")"
 
-for bin in obj-bench/bench_message obj-bench/bench_stream; do
-    if [ ! -x "$bin" ]; then
-        echo "error: $bin not found -- run ./build.sh first" >&2
-        exit 2
-    fi
-done
+# Always invoke build.sh so bench binaries pick up any source changes
+# (build.sh itself no-ops when the Alire cache is fresh).
+./build.sh
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains

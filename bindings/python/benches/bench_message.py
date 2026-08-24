@@ -29,6 +29,14 @@ def main() -> None:
             pipe.encrypt_message(p)
 
         bench_util.bench_case("message", size, run)
+
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        dec_wire = pipe.encrypt_message(plain)
+
+        def run_dec(w: bytes = dec_wire) -> None:
+            pipe.decrypt_message(w)
+
+        bench_util.bench_case("message-dec", size, run_dec)
     pipe.free()
 
 

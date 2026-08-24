@@ -67,5 +67,10 @@ for (const size of [1 << 20, 16 << 20, 64 << 20]) {
   measure(`  ${size >> 20} MiB`, size, () => {
     pipe.encryptMessage(plain);
   });
+  // Pre-encrypt one wire outside the decrypt timing loop.
+  const decWire = pipe.encryptMessage(plain);
+  measure(`  ${size >> 20} MiB dec`, size, () => {
+    pipe.decryptMessage(decWire);
+  });
 }
 pipe.free();

@@ -19,6 +19,9 @@ internal static class BenchMessage
             // bench (crypto/rand). Not in the timing loop.
             RandomNumberGenerator.Fill(plain);
             BenchUtil.Case("message", size, () => pipe.EncryptMessage(plain));
+            // Pre-encrypt one wire outside the decrypt timing loop.
+            var decWire = pipe.EncryptMessage(plain);
+            BenchUtil.Case("message-dec", size, () => pipe.DecryptMessage(decWire));
         }
     }
 }

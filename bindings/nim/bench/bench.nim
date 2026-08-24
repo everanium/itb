@@ -94,6 +94,11 @@ proc benchMessage() =
     var wire: seq[byte]
     benchCase("message", size, proc () =
       discard pipe.encryptMessageInto(plain, wire))
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    let decWire = pipe.encryptMessage(plain)
+    var decOut: seq[byte]
+    benchCase("message-dec", size, proc () =
+      discard pipe.decryptMessageInto(decWire, decOut))
   pipe.free()
 
 proc benchStream() =
@@ -123,6 +128,41 @@ proc benchStream() =
         if finished:
           break
       enc.free())
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    var wireParts: seq[byte]
+    block:
+      let enc = pipe.encryptStream()
+      var off = 0
+      while off < plain.len:
+        let upto = min(off + PumpBuf, plain.len)
+        enc.write(plain.toOpenArray(off, upto - 1))
+        off = upto
+        while true:
+          let (n, _) = enc.readInto(chunk)
+          if n == 0: break
+          wireParts.add(chunk[0 ..< n])
+      enc.endStream()
+      while true:
+        let (n, finished) = enc.readInto(chunk)
+        if n > 0: wireParts.add(chunk[0 ..< n])
+        if finished: break
+      enc.free()
+    let decWire = wireParts
+    benchCase("stream-dec", size, proc () =
+      let dec = pipe.decryptStream()
+      var off = 0
+      while off < decWire.len:
+        let upto = min(off + PumpBuf, decWire.len)
+        dec.write(decWire.toOpenArray(off, upto - 1))
+        off = upto
+        while true:
+          let (n, _) = dec.readInto(chunk)
+          if n == 0: break
+      dec.endStream()
+      while true:
+        let (_, finished) = dec.readInto(chunk)
+        if finished: break
+      dec.free())
   pipe.free()
 
 when isMainModule:

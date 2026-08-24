@@ -10,8 +10,10 @@
 
 package com.everanium.itb.bench;
 
+import com.everanium.itb.DecryptStream;
 import com.everanium.itb.EncryptStream;
 import com.everanium.itb.Pipeline;
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 
@@ -51,6 +53,57 @@ public final class BenchStream {
                             sess.write(src);
                             // Drain whatever the chain has produced so
                             // far; a read before end() never blocks.
+                            out.clear();
+                            while (sess.readInto(out) > 0) {
+                                out.clear();
+                            }
+                        }
+                        sess.end();
+                        while (!sess.isFinished()) {
+                            out.clear();
+                            sess.readInto(out);
+                        }
+                    }
+                });
+                // Pre-encrypt one wire outside the decrypt timing loop.
+                ByteArrayOutputStream wireBuf = new ByteArrayOutputStream();
+                try (EncryptStream sess = pipe.encryptStream()) {
+                    for (int off = 0; off < size; off += CHUNK) {
+                        int n = Math.min(CHUNK, size - off);
+                        src.limit(off + n).position(off);
+                        sess.write(src);
+                        out.clear();
+                        int m;
+                        while ((m = sess.readInto(out)) > 0) {
+                            byte[] tmp = new byte[m];
+                            out.flip();
+                            out.get(tmp);
+                            wireBuf.write(tmp, 0, m);
+                            out.clear();
+                        }
+                    }
+                    sess.end();
+                    while (!sess.isFinished()) {
+                        out.clear();
+                        int m = sess.readInto(out);
+                        if (m > 0) {
+                            byte[] tmp = new byte[m];
+                            out.flip();
+                            out.get(tmp);
+                            wireBuf.write(tmp, 0, m);
+                        }
+                    }
+                }
+                byte[] decWire = wireBuf.toByteArray();
+                ByteBuffer decSrc = ByteBuffer.allocateDirect(decWire.length);
+                decSrc.put(decWire);
+                int decLen = decWire.length;
+                BenchUtil.benchCase("stream_pump-dec", size, () -> {
+                    try (DecryptStream sess = pipe.decryptStream()) {
+                        for (int off = 0; off < decLen; off += CHUNK) {
+                            int n = Math.min(CHUNK, decLen - off);
+                            decSrc.limit(off + n).position(off);
+                            sess.write(decSrc);
                             out.clear();
                             while (sess.readInto(out) > 0) {
                                 out.clear();

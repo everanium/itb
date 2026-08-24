@@ -81,5 +81,20 @@ for (const size of [1 << 20, 16 << 20, 64 << 20]) {
       throw new Error('empty wire');
     }
   });
+  // Pre-encrypt one wire outside the decrypt timing loop.
+  const wireChunks: Buffer[] = [];
+  pipe.encryptStreamPump(chunked(plain), (w) => {
+    wireChunks.push(Buffer.from(w));
+  });
+  const decWire = Buffer.concat(wireChunks);
+  measure(`  ${size >> 20} MiB dec`, size, () => {
+    let plainBytes = 0;
+    pipe.decryptStreamPump(chunked(decWire), (p) => {
+      plainBytes += p.length;
+    });
+    if (plainBytes === 0) {
+      throw new Error('empty plain');
+    }
+  });
 }
 pipe.free();

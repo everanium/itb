@@ -16,6 +16,11 @@ try {
         Invoke-BenchCase -Name 'message' -Size $size -Body {
             [void]$pipe.EncryptMessage($plain)
         }.GetNewClosure()
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        $decWire = $pipe.EncryptMessage($plain)
+        Invoke-BenchCase -Name 'message-dec' -Size $size -Body {
+            [void]$pipe.DecryptMessage($decWire)
+        }.GetNewClosure()
     }
 }
 finally {
