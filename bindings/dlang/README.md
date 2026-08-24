@@ -67,6 +67,27 @@ auto plain = receiver.decryptMessage(wire);
 assert(plain == cast(const(ubyte)[]) "any text or binary data");
 ```
 
+`Opts` overrides the profile default per call (chunk size, outer
+cipher, parallax on/off, wrapper on/off, MAC name, palette); every
+setter returns a fresh value that composes without aliasing:
+
+```d
+auto opts = Opts().withChunkSize(65536).withWrapper(false);
+auto sender = Pipeline.create("singlemsg-triple-mac-v1", opts);
+auto receiver = Pipeline.open("singlemsg-triple-mac-v1", sender.blob, opts);
+```
+
+`Pipeline.rekey` rotates the parallax + wrapper masters mid-session
+(the eight ITB seeds and MAC key are fixed for the session lifetime
+by design); the receiver picks up the new masters through a fresh
+`sender.blob` handshake:
+
+```d
+ubyte[32] perm = 0x11; ubyte[32] wrap = 0x22;
+sender.rekey(perm[], wrap[]);
+auto receiver2 = Pipeline.open("singlemsg-triple-mac-v1", sender.blob);
+```
+
 `Pipeline.create` takes the role of the `init` constructor on the
 other bindings (`init` is a reserved property name in D). For
 streaming, `encryptStreamPump` / `decryptStreamPump` move a byte

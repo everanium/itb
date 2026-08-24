@@ -24,8 +24,14 @@ int main()
         for (std::size_t size : sizes) {
             std::vector<std::uint8_t> plain(size);
             bench_csprng_fill(plain);
+            /* wire is reusable scratch shared by every iteration of a
+             * size case: sized once to the expansion bound, then the
+             * drain loop rewrites it in place — no per-iteration
+             * allocation. */
+            std::vector<std::uint8_t> wire(itb::out_bound(size));
             bench_case("stream_pump", size, [&] {
-                (void)pipe.encrypt_stream_pump(itb::as_bytes(plain));
+                (void)pipe.encrypt_stream_pump_into(itb::as_bytes(plain),
+                                                    itb::as_writable_bytes(wire));
             });
         }
         return 0;

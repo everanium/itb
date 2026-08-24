@@ -67,6 +67,26 @@ byte[] wire = sender.EncryptMessage("any text or binary data"u8);
 byte[] plain = receiver.DecryptMessage(wire);
 ```
 
+The `Opts` builder overrides the profile default per call (chunk
+size, outer cipher, parallax on/off, wrapper on/off, MAC name,
+palette):
+
+```csharp
+var opts = new Opts().WithChunkSize(65536).WithWrapper(false);
+using var sender = Pipeline.Init("singlemsg-triple-mac-v1", opts);
+using var receiver = Pipeline.Open("singlemsg-triple-mac-v1", sender.Blob, opts);
+```
+
+`Pipeline.Rekey` rotates the parallax + wrapper masters mid-session
+(the eight ITB seeds and MAC key are fixed for the session lifetime
+by design); the receiver picks up the new masters through a fresh
+`sender.Blob` handshake:
+
+```csharp
+sender.Rekey(new byte[32] { /* fresh perm */ }, new byte[32] { /* fresh wrap */ });
+using var receiver2 = Pipeline.Open("singlemsg-triple-mac-v1", sender.Blob);
+```
+
 For bounded-memory streaming, `EncryptStreamPump` /
 `DecryptStreamPump` move any `System.IO.Stream` source into any
 `System.IO.Stream` sink through an incremental session; the explicit

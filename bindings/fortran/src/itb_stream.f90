@@ -19,6 +19,7 @@
 module itb_stream
   use, intrinsic :: iso_c_binding, only: c_int, c_int8_t, c_size_t, &
       c_intptr_t, c_ptr, c_loc, c_null_ptr
+  use, intrinsic :: iso_fortran_env, only: int64
   use itb_status
   use itb_ffi
   use itb_error
@@ -31,6 +32,7 @@ module itb_stream
   public :: itb_stream_write, itb_stream_end, itb_stream_read
   public :: itb_stream_drain_all, itb_stream_free
   public :: itb_encrypt_stream_pump, itb_decrypt_stream_pump
+  public :: itb_encrypt_stream_pump_into, itb_decrypt_stream_pump_into
 
   type :: itb_stream_t
     integer(c_intptr_t) :: handle = 0_c_intptr_t
@@ -39,6 +41,13 @@ module itb_stream
 
   ! Feed / drain slice size used by the pump loops.
   integer, parameter :: PUMP_BUF = 2**20
+
+  ! The pump bound arithmetic (used / cap / size) is default integer;
+  ! inputs above this 1.5 GiB ceiling are rejected up front so the
+  ! sizing bound PUMP_MAX_SRC + PUMP_MAX_SRC / 4 + 131072 (and the
+  ! used / cap counters downstream) can never wrap. Larger payloads
+  ! go through the incremental sessions.
+  integer, parameter :: PUMP_MAX_SRC = 3 * 2**29
 
 contains
 
@@ -179,18 +188,95 @@ contains
     call pump(pipe, .false., src, dst, err)
   end subroutine
 
+  ! Reusable-buffer pump: dst is caller-owned scratch, grown once to
+  ! the wire-expansion bound and reused verbatim across calls;
+  ! dst(1:n_out) holds the produced bytes on success (no trim, no
+  ! exact-size copy). The drain reads land directly in dst via
+  ! c_loc on the tail slice -- zero intermediate copies.
+  ! The src and dst arrays must not overlap; in-place operation is
+  ! not supported. Bytes beyond n_out are undefined and may hold
+  ! prior-call material; the caller must not read them. After a
+  ! failed call the contents of dst are unspecified.
+  ! Inputs larger than PUMP_MAX_SRC are rejected with
+  ! ITB_STATUS_BAD_INPUT; use the incremental sessions instead.
+  subroutine itb_encrypt_stream_pump_into(pipe, src, dst, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer(c_int8_t), intent(in), target, contiguous     :: src(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: dst(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    integer :: used
+
+    call pump_into(pipe, .true., src, dst, used, err)
+    n_out = int(used, c_size_t)
+  end subroutine
+
+  ! Receive-side counterpart of itb_encrypt_stream_pump_into (same
+  ! buffer contract: src and dst must not overlap; bytes beyond
+  ! n_out are undefined; after a failed call the contents of dst
+  ! are unspecified and must not be interpreted).
+  subroutine itb_decrypt_stream_pump_into(pipe, src, dst, n_out, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    integer(c_int8_t), intent(in), target, contiguous     :: src(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: dst(:)
+    integer(c_size_t), intent(out)                        :: n_out
+    type(itb_error_t), intent(out)                        :: err
+    integer :: used
+
+    call pump_into(pipe, .false., src, dst, used, err)
+    n_out = int(used, c_size_t)
+  end subroutine
+
+  ! Exact-size wrapper over pump_into: one scratch pump, then a
+  ! single exact-length copy into the callee-allocated dst.
   subroutine pump(pipe, encrypt, src, dst, err)
     type(itb_pipeline_t), intent(in)                  :: pipe
     logical, intent(in)                               :: encrypt
     integer(c_int8_t), intent(in), target, contiguous :: src(:)
     integer(c_int8_t), allocatable, intent(out)       :: dst(:)
     type(itb_error_t), intent(out)                    :: err
-    type(itb_stream_t)                     :: sess
     integer(c_int8_t), allocatable, target :: buf(:)
-    integer :: lo, hi, n, used
+    integer :: used
+
+    call pump_into(pipe, encrypt, src, buf, used, err)
+    if (.not. itb_ok(err)) return
+    dst = buf(1:used)
+  end subroutine
+
+  ! Shared body for the whole-buffer pumps. dst is sized up front to
+  ! the wire-expansion upper bound (the same bound the Single Message
+  ! path uses), so the drain loop appends in place with no growth
+  ! copies on the hot path; ensure_room is a never-in-practice
+  ! fallback should libitb outproduce the bound.
+  subroutine pump_into(pipe, encrypt, src, dst, used, err)
+    type(itb_pipeline_t), intent(in)                      :: pipe
+    logical, intent(in)                                   :: encrypt
+    integer(c_int8_t), intent(in), target, contiguous     :: src(:)
+    integer(c_int8_t), allocatable, intent(inout), target :: dst(:)
+    integer, intent(out)                                  :: used
+    type(itb_error_t), intent(out)                        :: err
+    type(itb_stream_t) :: sess
+    integer :: lo, hi, n, cap
     logical :: fin
 
-    allocate (buf(PUMP_BUF))
+    used = 0
+    ! Reject inputs whose default-integer bound arithmetic below (and
+    ! the used / cap counters downstream) could wrap; every size on
+    ! the pump path is then provably inside the 32-bit bound.
+    if (size(src, kind=c_size_t) > int(PUMP_MAX_SRC, c_size_t)) then
+      err%status = ITB_STATUS_BAD_INPUT
+      err%message = "stream pump input exceeds the whole-buffer bound; "// &
+          "use the incremental stream sessions"
+      return
+    end if
+    cap = max(131072, size(src) + size(src) / 4 + 131072)
+    if (.not. allocated(dst)) then
+      allocate (dst(cap))
+    else if (size(dst) < cap) then
+      deallocate (dst)
+      allocate (dst(cap))
+    end if
+
     if (encrypt) then
       call itb_encrypt_stream_begin(pipe, sess, err)
     else
@@ -198,8 +284,6 @@ contains
     end if
     if (.not. itb_ok(err)) return
 
-    allocate (dst(0))
-    used = 0
     lo = 1
     do while (lo <= size(src))
       hi = min(lo + PUMP_BUF - 1, size(src))
@@ -209,16 +293,21 @@ contains
         return
       end if
       lo = hi + 1
-      ! Drain whatever the chain has produced so far; a read before
-      ! end never blocks.
+      ! Drain whatever the chain has produced so far straight into
+      ! dst's free tail; a read before end never blocks.
       do
-        call itb_stream_read(sess, buf, n, fin, err)
+        call ensure_room(dst, used)
+        call itb_stream_read(sess, dst(used + 1:), n, fin, err)
+        ! Bounds sanity on the FFI-reported drain length; an
+        ! out-of-range n would corrupt the next ensure_room copy.
+        if (itb_ok(err) .and. (n < 0 .or. n > size(dst) - used)) &
+            call itb_error_set(err, ITB_STATUS_INTERNAL)
         if (.not. itb_ok(err)) then
           call itb_stream_free(sess)
           return
         end if
         if (n == 0) exit
-        call append_bytes(dst, used, buf, n)
+        used = used + n
       end do
     end do
 
@@ -228,16 +317,45 @@ contains
       return
     end if
     do
-      call itb_stream_read(sess, buf, n, fin, err)
+      call ensure_room(dst, used)
+      call itb_stream_read(sess, dst(used + 1:), n, fin, err)
+      ! Bounds sanity on the FFI-reported drain length; an
+      ! out-of-range n would corrupt the next ensure_room copy.
+      if (itb_ok(err) .and. (n < 0 .or. n > size(dst) - used)) &
+          call itb_error_set(err, ITB_STATUS_INTERNAL)
       if (.not. itb_ok(err)) then
         call itb_stream_free(sess)
         return
       end if
-      call append_bytes(dst, used, buf, n)
+      used = used + n
       if (fin) exit
     end do
     call itb_stream_free(sess)
-    call trim_bytes(dst, used)
+  end subroutine
+
+  ! Guarantees at least 64 KiB of free tail in dst so the drain slice
+  ! dst(used+1:) is never zero-sized. On the hot path the up-front
+  ! wire-expansion bound already covers the whole run and this is a
+  ! branch-not-taken; the growth arm exists only as a safety valve.
+  subroutine ensure_room(dst, used)
+    integer(c_int8_t), allocatable, intent(inout), target :: dst(:)
+    integer, intent(in)                                   :: used
+    integer(c_int8_t), allocatable :: grown(:)
+    integer :: cap
+    integer(int64) :: cap64
+
+    if (size(dst) - used >= 65536) return
+    ! Growth arithmetic in 64-bit so the sizing can never wrap; the
+    ! pump input guard keeps every reachable size inside the 32-bit
+    ! bound, so the trap below is a safety valve, not a code path.
+    cap64 = max(int(size(dst), int64) * 3_int64 / 2_int64, &
+        int(used, int64) + int(PUMP_BUF, int64))
+    if (cap64 > int(huge(0), int64)) &
+        error stop "itb_stream: pump buffer exceeds the 32-bit bound"
+    cap = int(cap64)
+    allocate (grown(cap))
+    if (used > 0) grown(1:used) = dst(1:used)
+    call move_alloc(grown, dst)
   end subroutine
 
   ! Amortised append: dst holds `used` valid bytes and grows by

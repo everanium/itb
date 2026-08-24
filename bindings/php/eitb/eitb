@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# eitb -- launcher for the ITB PHP binding's CLI demonstrator.
+# Enables the FFI extension for the invocation when the host PHP does
+# not load it by default, then dispatches to itb.php.
+
+set -eu
+
+PHP_ARGS=()
+if ! php -m 2>/dev/null | grep -qix ffi; then
+    PHP_ARGS+=(-d extension=ffi)
+fi
+PHP_ARGS+=(-d ffi.enable=1)
+
+exec php "${PHP_ARGS[@]}" "$(dirname "$0")/itb.php" "$@"

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# eitb -- launcher for the Java binding's eitb CLI. Builds the jar on
+# first use (via ../build.sh), then execs `java -jar eitb.jar`.
+
+set -eu
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+JAR="$HERE/../build/libs/eitb.jar"
+JNI="$HERE/../build/jni/libitb_jni.so"
+
+if [ ! -f "$JAR" ] || [ ! -f "$JNI" ]; then
+    "$HERE/../build.sh" >&2
+fi
+
+export ITB_JNI_PATH="${ITB_JNI_PATH:-$JNI}"
+exec java -jar "$JAR" "$@"

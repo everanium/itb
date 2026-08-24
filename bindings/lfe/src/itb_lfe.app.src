@@ -1,0 +1,10 @@
+{application, itb_lfe, [
+    {description, "ITB LFE binding - thin proxy over the ITB Erlang "
+                  "binding via BEAM bytecode interop"},
+    {vsn, "0.3.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, itb]},
+    {env, []},
+    {licenses, ["MIT"]},
+    {links, []}
+]}.

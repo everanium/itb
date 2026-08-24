@@ -109,6 +109,31 @@ program round_trip
 end program
 ```
 
+`itb_opts_t` overrides the profile default per call (chunk size,
+outer cipher, parallax on/off, wrapper on/off, MAC name, palette);
+every setter goes through `itb_opts_set(opts, key, value)`:
+
+```fortran
+call itb_opts_set(opts, "chunkSize", "65536")
+call itb_opts_set(opts, "withWrapper", "false")
+call itb_pipeline_init(sender, "singlemsg-triple-mac-v1", opts, err)
+call itb_pipeline_open(receiver, "singlemsg-triple-mac-v1", &
+    sender%blob, opts, err)
+```
+
+`itb_pipeline_rekey` rotates the parallax + wrapper masters
+mid-session (the eight ITB seeds and MAC key are fixed for the
+session lifetime by design); the receiver picks up the new masters
+through a fresh `sender%blob` handshake:
+
+```fortran
+integer(c_int8_t) :: perm(32), wrap(32)
+perm = 17_c_int8_t; wrap = 34_c_int8_t
+call itb_pipeline_rekey(sender, perm, wrap, err)
+call itb_pipeline_open(receiver, "singlemsg-triple-mac-v1", &
+    sender%blob, opts, err)
+```
+
 Bytes cross the surface as `integer(c_int8_t)` arrays; output arrays
 are allocated by the callee to the exact produced length. For
 bounded-Go-side-spooling streaming, `itb_encrypt_stream_pump` /

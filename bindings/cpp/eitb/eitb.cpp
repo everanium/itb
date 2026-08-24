@@ -15,7 +15,10 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "itb.hpp"
@@ -59,9 +62,39 @@ bool read_file(const char *path, std::vector<std::uint8_t> &out)
     return true;
 }
 
+/* Profiles whose canonical name begins with "streaming-" route
+ * through the one-shot streaming buffered pair instead of the Single
+ * Message pair. */
+bool is_streaming_profile(const char *profile)
+{
+    return std::string_view(profile).starts_with("streaming-");
+}
+
+/* Recursively creates the parent directory of `out` (analogue of
+ * `mkdir -p $(dirname out)`). Silent when the directory already
+ * exists; returns 0 on success and 1 on genuine filesystem failure. */
+int ensure_parent_dir(const char *out)
+{
+    std::filesystem::path parent = std::filesystem::path(out).parent_path();
+    if (parent.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(parent, ec);
+    if (ec) {
+        std::fprintf(stderr, "eitb: mkdir %s: %s\n", parent.c_str(),
+                     ec.message().c_str());
+        return 1;
+    }
+    return 0;
+}
+
 /* Writes a whole buffer to a file. Returns 0 on success. */
 int write_file(const char *path, const std::vector<std::uint8_t> &buf)
 {
+    if (ensure_parent_dir(path) != 0) {
+        return 1;
+    }
     std::FILE *f = std::fopen(path, "wb");
     if (f == nullptr) {
         std::fprintf(stderr, "eitb: cannot create %s\n", path);
@@ -114,7 +147,9 @@ int cmd_encrypt(const char *profile, const char *infile, const char *outfile)
         return 1;
     }
     itb::Pipeline pipe = itb::Pipeline::init(profile);
-    std::vector<std::uint8_t> wire = pipe.encrypt_message(itb::as_bytes(plain));
+    std::vector<std::uint8_t> wire = is_streaming_profile(profile)
+        ? pipe.encrypt_stream_pump(itb::as_bytes(plain))
+        : pipe.encrypt_message(itb::as_bytes(plain));
     int rc = write_file(outfile, wire);
     if (rc == 0) {
         for (std::byte b : pipe.blob()) {
@@ -165,7 +200,9 @@ int cmd_decrypt(const char *profile, const char *blob_hex,
         return 1;
     }
     itb::Pipeline pipe = itb::Pipeline::open(profile, itb::as_bytes(blob));
-    std::vector<std::uint8_t> plain = pipe.decrypt_message(itb::as_bytes(wire));
+    std::vector<std::uint8_t> plain = is_streaming_profile(profile)
+        ? pipe.decrypt_stream_pump(itb::as_bytes(wire))
+        : pipe.decrypt_message(itb::as_bytes(wire));
     int rc = write_file(outfile, plain);
     if (rc == 0) {
         std::printf("decrypted %s -> %s (%zu -> %zu bytes)\n", infile, outfile,

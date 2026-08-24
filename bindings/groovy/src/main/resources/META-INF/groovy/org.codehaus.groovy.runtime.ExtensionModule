@@ -1,0 +1,3 @@
+moduleName=itb-groovy
+moduleVersion=0.3.0
+extensionClasses=dev.everanium.itb.groovy.Extensions

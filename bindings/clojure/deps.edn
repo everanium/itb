@@ -1,0 +1,16 @@
+{;; Thin proxy over the sibling Java binding: the library classpath is
+ ;; the Java binding jar (JVM bytecode interop, no FFI layer of its
+ ;; own). Build ../java first (build.sh chains it) so the jar exists
+ ;; when the classpath is computed.
+ :paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.5"}
+        everanium/itb-java {:local/root "../java/build/libs/itb-java-0.3.0.jar"}}
+ :aliases
+ {;; clojure.test suite: clojure -M:test -m dev.everanium.itb.clojure.test-runner
+  :test {:extra-paths ["test"]}
+  ;; micro-benchmarks: clojure -M:bench -m dev.everanium.itb.clojure.bench-message
+  :bench {:extra-paths ["bench"]}
+  ;; eitb CLI script: clojure -M:eitb eitb/main.clj <args>
+  ;; (the extra jar carries the Java binding's HashRoster diagnostic
+  ;; bridge for the `hashes` subcommand)
+  :eitb {:extra-deps {everanium/itb-java-eitb {:local/root "../java/build/libs/eitb.jar"}}}}}
