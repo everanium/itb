@@ -1,4 +1,4 @@
-# Valgrind suppressions for the ITB C binding test suite.
+# Valgrind suppressions for the ITB C++ binding test suite.
 #
 # Every rule matches errors whose faulting frame lies inside
 # libitb.so — the Go runtime manages its own stacks and heap in ways
@@ -6,7 +6,7 @@
 # arena memory, uninitialised spill slots around asm kernels), so
 # memcheck reports large volumes of Cond / Value / Addr noise from
 # Go-side code. The binding's own C frames are never suppressed: an
-# error whose faulting frame is in libitb_c.a, a test binary, or
+# error whose faulting frame is in libitb_cpp.a, a test binary, or
 # libc still fails the run.
 
 {
