@@ -99,13 +99,13 @@ The core API and the Go C ABI are being consolidated around the `triple/` facade
 
 **Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86_64 (Intel / AMD) and AArch64 (Graviton 4).
 
-**Cross-binding interop verified.** All 10 implementations (Go Core + 9 bindings) produce byte-identical wire format and decrypt every other implementation's output.
+**Cross-binding interop verified.** All 34 implementations (Go Core + 33 bindings) produce byte-identical wire format and decrypt every other implementation's output.
 
 Full matrix:
-- 10 × 10 (Go Core + 9 bindings) = 100 pairs
-- 16 modes (8 base + 8 outer cipher wraps AES-128-CTR)
-- 3 sizes (1 B / 1 MiB / 64 MiB)
-- **4000 cells PASS**
+- 34 × 34 (Go Core + 33 bindings) = 1156 pairs
+- 9 shipped profiles (4 Single Message, 4 Streaming, 1 blob-only)
+- 1 sample file (`tools/eitb/in-file.txt`, 4 KiB, deterministic)
+- **9248 cells PASS** (8 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface)
 
 **All features fully implemented.** Where a binding's surface diverges from the Go Native library (e.g. no `io.Reader` / `io.Writer` adapter for Non-AEAD streaming — only User-Driven Loop), the asymmetry is intentional and follows per-language idiom rather than incomplete coverage.
 
