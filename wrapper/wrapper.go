@@ -207,16 +207,60 @@ func UnwrapInPlace(name string, key, wire []byte) ([]byte, error) {
 // the common small-write path pays no per-chunk reseed keying.
 
 type keystreamWriter struct {
-	w       io.Writer
-	name    string
-	key     []byte
-	nonce   []byte
-	ks      Keystream // serial keystream, positioned at byte offset off
-	off     int       // cumulative bytes XORed so far
-	scratch []byte    // reused across Writes; grows to the largest p seen
+	w            io.Writer
+	name         string
+	key          []byte
+	nonce        []byte
+	ks           Keystream // serial keystream, positioned at byte offset off
+	off          int       // cumulative bytes XORed so far
+	scratch      []byte    // reused across Writes; grows to the largest emission seen
+	noncePending bool      // true until the first non-empty Write batches the nonce out
 }
 
+// Write XORs p under the wrapper's outer cipher keystream and forwards
+// the result to the underlying writer. On the FIRST non-empty Write of
+// this writer's lifetime, the leading nonce is prepended into the same
+// scratch buffer as the XORed body so that nonce and first inner body
+// leave as a single atomic dst.Write call. Batching closes a race
+// where a concurrent reader draining the destination between two
+// separate writes could consume-and-discard the standalone nonce
+// independently, leaving the receiving side's wire nlen bytes short
+// and unable to parse the outer cipher's per-stream nonce.
+//
+// Empty writes are a no-op — they do not force the nonce out on their
+// own, so a caller emitting a zero-length Write followed by real data
+// still gets the batched first emission on the real Write.
 func (kw *keystreamWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if kw.noncePending {
+		need := len(kw.nonce) + len(p)
+		if cap(kw.scratch) < need {
+			kw.scratch = make([]byte, need)
+		}
+		buf := kw.scratch[:need]
+		copy(buf, kw.nonce)
+		tail := buf[len(kw.nonce):]
+		if len(p) >= parallelThreshold {
+			if err := xorParallelAt(kw.name, kw.key, kw.nonce, kw.off, tail, p); err != nil {
+				return 0, err
+			}
+			ks, err := MakeKeystreamAt(kw.name, kw.key, kw.nonce, kw.off+len(p))
+			if err != nil {
+				return 0, err
+			}
+			kw.ks = ks
+		} else {
+			kw.ks.XORKeyStream(tail, p)
+		}
+		kw.off += len(p)
+		kw.noncePending = false
+		if _, err := kw.w.Write(buf); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
 	if cap(kw.scratch) < len(p) {
 		kw.scratch = make([]byte, len(p))
 	}
@@ -266,19 +310,25 @@ func (kr *keystreamReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// NewWrapWriter returns an io.Writer that emits the per-stream nonce on
-// construction, then XOR-encrypts every subsequent byte through to dst. The
-// matching reader is NewUnwrapReader. Useful when the caller needs an
-// io.Writer to pass to ITB's EncryptStreamIO / EncryptStreamAuthIO, or to
-// drive a user-side loop that emits caller-framed chunks (e.g. a u32_LE
-// length prefix followed by the chunk body) through a single keystream so
-// the framing bytes also pass through the XOR.
+// NewWrapWriter returns an io.Writer that XOR-encrypts every byte
+// through to dst under a fresh per-stream outer cipher keystream. The
+// per-stream nonce is prepended into the first non-empty Write's
+// output as one atomic dst.Write call — nonce and first inner body
+// leave the wrapper together — so a concurrent reader draining the
+// destination between separate writes cannot strand the nonce on its
+// own. The matching reader is NewUnwrapReader. Useful when the caller
+// needs an io.Writer to pass to ITB's EncryptStreamIO /
+// EncryptStreamAuthIO, or to drive a user-side loop that emits
+// caller-framed chunks (e.g. a u32_LE length prefix followed by the
+// chunk body) through a single keystream so the framing bytes also
+// pass through the XOR.
+//
+// If Write is never called, no bytes reach dst — an empty wire is
+// still an empty wire, and no standalone nonce is emitted. This
+// mirrors the itb-root stream encoders' empty-input behaviour.
 func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error) {
 	nonce, err := generateNonce(name)
 	if err != nil {
-		return nil, err
-	}
-	if _, err := dst.Write(nonce); err != nil {
 		return nil, err
 	}
 	ks, err := MakeKeystream(name, key, nonce)
@@ -286,11 +336,12 @@ func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error) {
 		return nil, err
 	}
 	return &keystreamWriter{
-		w:     dst,
-		name:  name,
-		key:   append([]byte(nil), key...),
-		nonce: append([]byte(nil), nonce...),
-		ks:    ks,
+		w:            dst,
+		name:         name,
+		key:          append([]byte(nil), key...),
+		nonce:        append([]byte(nil), nonce...),
+		ks:           ks,
+		noncePending: true,
 	}, nil
 }
 
@@ -299,13 +350,28 @@ func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error) {
 // Useful when the caller needs an io.Reader to pass to ITB's
 // DecryptStreamIO / DecryptStreamAuthIO, or to read caller-framed chunks
 // emitted through NewWrapWriter back out of the keystream XOR.
+//
+// A fully empty src (zero bytes) is accepted symmetrically with
+// NewWrapWriter's zero-Write-emits-nothing behaviour: the returned
+// io.Reader yields an immediate EOF on first Read so an empty encrypted
+// stream decodes to an empty plaintext without a spurious "missing
+// nonce" error at construction. A partial src (below nlen bytes but
+// above zero) is still a wire-truncation error surfaced here.
 func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) {
 	nlen, err := NonceSize(name)
 	if err != nil {
 		return nil, err
 	}
 	nonce := make([]byte, nlen)
-	if _, err := io.ReadFull(src, nonce); err != nil {
+	n, err := io.ReadFull(src, nonce)
+	if n == 0 && err == io.EOF {
+		// Empty wire — matches the NewWrapWriter side's "no Write
+		// means no bytes emitted" contract. Return a reader whose
+		// first Read yields EOF; no keystream is needed because no
+		// bytes will be XORed.
+		return emptyUnwrapReader{}, nil
+	}
+	if err != nil {
 		return nil, err
 	}
 	ks, err := MakeKeystream(name, key, nonce)
@@ -320,6 +386,13 @@ func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) 
 		ks:    ks,
 	}, nil
 }
+
+// emptyUnwrapReader is the reader returned by NewUnwrapReader when src
+// is fully empty. Every Read yields (0, io.EOF), matching the semantics
+// of an empty wrapped stream.
+type emptyUnwrapReader struct{}
+
+func (emptyUnwrapReader) Read(p []byte) (int, error) { return 0, io.EOF }
 
 // DeriveKey deterministically derives an outer cipher key from a caller-
 // supplied master secret, sized for the named outer cipher, via the kdf

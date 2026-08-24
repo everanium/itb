@@ -85,21 +85,26 @@ drain(Stream) ->
         {ok, _, false} -> drain(Stream)
     end.
 
-%% Encrypt whole plain, collecting wire. Uses feed_noread so no bytes
-%% are lost to a drain_ready race: with the format-deniability wrapper
-%% on (ITB_WITH_WRAPPER=true), wrapper.NewWrapWriter emits the outer
-%% cipher's per-stream nonce to the wire on constructor entry BEFORE
-%% the itb encoder produces its first batched (streamID prefix ||
-%% first chunk) write, so a mid-feed drain_ready can land between the
-%% wrapper-nonce write and the first encoder write, consume-and-discard
-%% the wrapper nonce, and drain_collect at the end sees a wire missing
-%% the outer cipher's nonce (decrypt then fails with `internal error`
-%% at the first pump_dec stream_write). feed_noread defers every read
-%% until stream_end so the concurrent-drain window never opens; the
-%% itb encoder's own prefix batching (streams.go
-%% EncryptStreamAuth3xCfg / EncryptStream3xCfg) closes the inner
-%% race, but the wrapper's separate nonce write remains a distinct
-%% wire boundary and requires feed_noread here for correctness.
+%% Encrypt whole plain, collecting wire. Uses feed_noread so no
+%% encoder-produced bytes are lost to drain_ready's read-and-discard
+%% pattern: drain_ready's job in the `pump` shape is to bound the
+%% Go-side spool during a throwaway encrypt, so it reads chunks off the
+%% spool and drops them. In `pump_all` the wire needs to be preserved,
+%% so any drain_ready call landing after a real encoder chunk has been
+%% produced would silently drop that chunk. At small plaintext sizes
+%% (single-chunk plaintexts fitting in the 16 MiB DefaultChunkSize) the
+%% encoder emits nothing until stream_end and drain_ready during feed
+%% is a no-op — but at multi-chunk sizes (64 MiB and above) the
+%% encoder produces one output per full chunk consumed, and drain_ready
+%% between feed slices can catch and drop those chunks before
+%% drain_collect at end sees them.
+%%
+%% Go core wrapper-nonce batching fix (streams.go +
+%% wrapper.NewWrapWriter) closes the earlier wrapper-nonce split-write
+%% race so a single-chunk pump_all with plain feed would now produce a
+%% wire whose nonce is not stranded, but drain_ready's byte-dropping
+%% behaviour remains fundamentally incompatible with wire collection
+%% across chunk boundaries.
 pump_all(Pipe, Plain) ->
     {ok, Stream} = itb:encrypt_stream(Pipe),
     ok = feed_noread(Stream, Plain),
