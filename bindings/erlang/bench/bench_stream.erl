@@ -86,13 +86,20 @@ drain(Stream) ->
     end.
 
 %% Encrypt whole plain, collecting wire. Uses feed_noread so no bytes
-%% are lost to a drain_ready race: for plaintexts that fit in a single
-%% chunk (16 MiB DefaultChunkSize) the encoder emits the 32-byte stream
-%% prefix immediately after consuming the last plaintext slice, so a
-%% mid-feed drain_ready lands between the prefix write and the chunk
-%% body write, consumes and discards the prefix, and drain_collect at
-%% the end sees a wire missing its prefix. feed_noread lets everything
-%% buffer in the spool and drain_collect pulls the whole wire out.
+%% are lost to a drain_ready race: with the format-deniability wrapper
+%% on (ITB_WITH_WRAPPER=true), wrapper.NewWrapWriter emits the outer
+%% cipher's per-stream nonce to the wire on constructor entry BEFORE
+%% the itb encoder produces its first batched (streamID prefix ||
+%% first chunk) write, so a mid-feed drain_ready can land between the
+%% wrapper-nonce write and the first encoder write, consume-and-discard
+%% the wrapper nonce, and drain_collect at the end sees a wire missing
+%% the outer cipher's nonce (decrypt then fails with `internal error`
+%% at the first pump_dec stream_write). feed_noread defers every read
+%% until stream_end so the concurrent-drain window never opens; the
+%% itb encoder's own prefix batching (streams.go
+%% EncryptStreamAuth3xCfg / EncryptStream3xCfg) closes the inner
+%% race, but the wrapper's separate nonce write remains a distinct
+%% wire boundary and requires feed_noread here for correctness.
 pump_all(Pipe, Plain) ->
     {ok, Stream} = itb:encrypt_stream(Pipe),
     ok = feed_noread(Stream, Plain),
