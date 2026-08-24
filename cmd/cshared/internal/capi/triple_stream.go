@@ -234,9 +234,37 @@ func TripleStreamRead(id TripleStreamID, dst []byte) (n int, finished bool, st S
 		return 0, done, StatusOK
 	}
 	sess.mu.Lock()
-	waitForBytes := sess.endCalled
+	endedFlag := sess.endCalled
 	sess.mu.Unlock()
-	got, drained := sess.spool.read(dst, waitForBytes)
+	got, drained := sess.spool.read(dst, endedFlag)
+	// If end-of-input has been signalled and we consumed the spool's
+	// currently-visible bytes, sync with the cipher goroutine's
+	// close(done) teardown step so `finished` accurately reflects
+	// reality. The goroutine's tail runs
+	// `spool.close() → close(done)` as two distinct steps, and even
+	// before spool.close() there is a bounded window between the
+	// final produced byte and the goroutine's return: without this
+	// sync, a Read that consumed the last spooled bytes can see
+	// `isDone() == false` because `close(done)` has not fired yet,
+	// forcing an exact-size-dst caller to issue an extra probe Read
+	// (or throw) to pick up the lagging finished flag.
+	//
+	// The wait is bounded to a single trailing chunk's compute +
+	// teardown time — once endCalled is true the goroutine is on its
+	// exit path. Waiting is skipped while endCalled is false (a
+	// mid-stream drain of an open spool must not block on teardown
+	// that has not started); it is also skipped when the drain
+	// returned drained == false (the spool still holds bytes, so the
+	// caller loops for another Read without any teardown to sync).
+	//
+	// After the wait, the spool may have gained more bytes (the
+	// goroutine could have produced its final chunk while we were
+	// blocked). Re-check emptiness before reporting finished so the
+	// caller does not treat a mid-stream drain as end-of-stream and
+	// drop bytes that are still in the spool.
+	if drained && endedFlag {
+		<-sess.done
+	}
 	sess.mu.Lock()
 	if sess.err != nil {
 		e := sess.err
@@ -245,7 +273,7 @@ func TripleStreamRead(id TripleStreamID, dst []byte) (n int, finished bool, st S
 		setLastErr(s)
 		return got, false, s
 	}
-	fin := sess.endCalled && drained && sess.isDone()
+	fin := sess.endCalled && drained && sess.spool.empty() && sess.isDone()
 	sess.mu.Unlock()
 	return got, fin, StatusOK
 }

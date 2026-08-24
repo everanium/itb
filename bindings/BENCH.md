@@ -50,7 +50,7 @@ on wire pre-produced outside the timing loop.
 | **Go native** (`Encrypt3x512Cfg`)    |     77 |     161 |     171 |     77 |     161 |     171 |
 | **Rust** (thin proxy)                |     86 |     150 |     152 |     95 |     176 |     178 |
 | **C** (thin proxy)                   |     82 |     147 |     150 |     91 |     177 |     175 |
-| **C++** (thin proxy)                 |     88 |     147 |     152 |     94 |     174 |     176 |
+| **C++** (thin proxy)                 |     84 |     145 |     155 |     94 |     184 |     179 |
 | **Ada** (thin proxy)                 |     85 |     142 |     143 |     95 |     173 |     167 |
 | **D** (thin proxy)                   |     89 |     141 |     150 |     93 |     175 |     170 |
 | **C#** (thin proxy)                  |     81 |     140 |     146 |     91 |     173 |     173 |
@@ -92,7 +92,7 @@ on wire pre-produced outside the timing loop.
 | **Go native** (`Encrypt3x512Cfg`)    |     77 |     161 |     171 |     77 |     161 |     171 |
 | **Rust** (stream pump)               |     74 |     141 |     142 |     89 |     166 |     166 |
 | **C** (stream pump)                  |     81 |     132 |     143 |     91 |     169 |     166 |
-| **C++** (stream pump)                |     88 |     136 |     144 |    176 |     291 |     286 |
+| **C++** (stream pump)                |     86 |     143 |     149 |     93 |     176 |     178 |
 | **Ada** (stream pump)                |     86 |     142 |     143 |     89 |     165 |     161 |
 | **D** (stream pump)                  |     81 |     144 |     144 |     92 |     169 |     167 |
 | **C#** (stream pump)                 |     79 |     138 |     144 |     85 |     162 |     164 |
@@ -133,7 +133,7 @@ Same 34 rows under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=tr
 | **Go native** (`Encrypt3x512Cfg`)    |     77 |     161 |     171 |     77 |     161 |     171 |
 | **Rust** (thin proxy)                |     53 |     112 |     120 |     73 |     145 |     153 |
 | **C** (thin proxy)                   |     50 |     112 |     121 |     68 |     149 |     147 |
-| **C++** (thin proxy)                 |     53 |     114 |     122 |     71 |     150 |     153 |
+| **C++** (thin proxy)                 |     49 |     112 |     124 |     73 |     153 |     155 |
 | **Ada** (thin proxy)                 |     54 |     111 |     118 |     71 |     148 |     146 |
 | **D** (thin proxy)                   |     55 |     114 |     122 |     72 |     147 |     149 |
 | **C#** (thin proxy)                  |     52 |     112 |     119 |     71 |     145 |     148 |
@@ -174,7 +174,7 @@ Same 34 rows under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=tr
 | **Go native** (`Encrypt3x512Cfg`)    |     77 |     161 |     171 |     77 |     161 |     171 |
 | **Rust** (stream pump)               |     50 |     109 |     117 |     70 |     138 |     144 |
 | **C** (stream pump)                  |     47 |     106 |     117 |     72 |     139 |     141 |
-| **C++** (stream pump)                |     48 |     114 |     122 |     71 |     150 |     153 |
+| **C++** (stream pump)                |     50 |     113 |     122 |     72 |     144 |     148 |
 | **Ada** (stream pump)                |     49 |     105 |     108 |     70 |     130 |     143 |
 | **D** (stream pump)                  |     50 |     110 |     119 |     69 |     141 |     146 |
 | **C#** (stream pump)                 |     50 |     107 |     117 |     68 |     139 |     140 |
@@ -205,8 +205,6 @@ Same 34 rows under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=tr
 | **OCaml** (stream)                   |     48 |     111 |     118 |     70 |     139 |     146 |
 | **Haskell** (stream)                 |     49 |     108 |     118 |     66 |     139 |     146 |
 | **R** (stream)                       |     49 |     107 |     119 |     69 |     141 |     143 |
-
-C++ production stream row shows the log's 1 MB encrypt sample only — the harness raised an internal error mid-run after emitting the first size. E columns at 16 MB / 64 MB and every D column are carried over from the closest analogue (C++ production message decrypt column and the prior sweep's E numbers).
 
 Production shape throughputs sit at ~68–75% of the canonical (non-authenticated / no-overlay) numbers — the parallax and wrapper overlays add per-chunk cost on both encrypt and decrypt paths; ~25–30% of the canonical FFI-only throughput is the composite overhead of the full production wire.
 
