@@ -107,10 +107,10 @@
 (defun drain-stream (session acc)
   (case (itb-lfe:stream-read session)
     (`#(error ,reason) `#(error ,reason))
-    (`#(ok ,piece 'true)
-      `#(ok ,(erlang:iolist_to_binary (lists:reverse (cons piece acc)))))
-    (`#(ok ,piece 'false)
-      (drain-stream session (cons piece acc)))))
+    (`#(ok ,piece ,finished)
+      (case finished
+        ('true `#(ok ,(erlang:iolist_to_binary (lists:reverse (cons piece acc)))))
+        (_    (drain-stream session (cons piece acc)))))))
 
 (defun cmd-encrypt (profile in-file out-file)
   (cap-go-runtime)
