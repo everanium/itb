@@ -28,7 +28,12 @@ fn retry_once(
     let mut buf = vec![0u8; cap];
     let mut len = 0usize;
     let mut rc = call(&mut buf, &mut len);
-    if rc == ItbStatus::BufferTooSmall as i32 {
+    // Retry only when the reported length strictly exceeds the
+    // current capacity. Guards against a stray BufferTooSmall report
+    // with `len <= cap` (harmless in Rust — the second failure
+    // propagates — but the guard keeps every binding in the fleet on
+    // the same retry-once shape).
+    if rc == ItbStatus::BufferTooSmall as i32 && len > cap {
         buf = vec![0u8; len];
         rc = call(&mut buf, &mut len);
     }

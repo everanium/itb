@@ -1,0 +1,12 @@
+{
+    "name": "itb",
+    "version": "0.3.0",
+    "description": "ITB encryption - D language thin proxy over libitb's Triple Pipeline C ABI.",
+    "license": "MIT",
+    "authors": ["ITB project"],
+
+    "targetType": "library",
+    "targetPath": "lib",
+    "sourcePaths": ["source"],
+    "importPaths": ["source"]
+}
