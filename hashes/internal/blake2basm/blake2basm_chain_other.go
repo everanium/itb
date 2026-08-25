@@ -84,3 +84,15 @@ func Blake2b256ChainAbsorb13x4(
 ) {
 	scalarBatch256ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
 }
+
+// Blake2b512ChainAbsorb13x4 — non-amd64 / purego dispatcher for the
+// Interlocked Barrier PRF fill shape.
+func Blake2b512ChainAbsorb13x4(
+	h0 *[8]uint64,
+	b2key *[64]byte,
+	seeds *[4][8]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint64,
+) {
+	scalarBatch512ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
+}

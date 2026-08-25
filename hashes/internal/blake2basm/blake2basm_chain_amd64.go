@@ -50,6 +50,34 @@ func Blake2b512ChainAbsorb20x4(
 	scalarBatch512ChainAbsorb20(h0, b2key, seeds, dataPtrs, out)
 }
 
+// Blake2b512ChainAbsorb13x4 — 13-byte BLAKE2b-512 batched dispatcher,
+// the Interlocked Barrier PRF fill message shape. The per-lane buf is
+// 128 bytes (64 key + 64 data region) regardless of the 13-byte data,
+// so t=128 and one final-block compression exactly as the 20-byte
+// case. The .s kernel reads exactly 13 data bytes per lane.
+func Blake2b512ChainAbsorb13x4(
+	h0 *[8]uint64,
+	b2key *[64]byte,
+	seeds *[4][8]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint64,
+) {
+	if HasAVX512Fused {
+		blake2b512ChainAbsorb13x4Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
+	scalarBatch512ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
+}
+
+//go:noescape
+func blake2b512ChainAbsorb13x4Asm(
+	h0 *[8]uint64,
+	b2key *[64]byte,
+	seeds *[4][8]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint64,
+)
+
 // blake2b512ChainAbsorb20x4Asm is the AVX-512 YMM-batched fused
 // chain-absorb kernel implemented in blake2b_chain512_20_amd64.s.
 // State across four lane-isolated BLAKE2b compressions is held in
