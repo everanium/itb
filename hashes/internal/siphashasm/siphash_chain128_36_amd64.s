@@ -29,10 +29,10 @@ DATA sipSeedDeint<>+0x38(SB)/8, $7
 GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
 
 #define SIP_ROUND \
-	VPADDQ Z1, Z0, Z0; VPROLQ $13, Z1, Z1; VPXORQ Z0, Z1, Z1; VPROLQ $32, Z0, Z0; \
-	VPADDQ Z3, Z2, Z2; VPROLQ $16, Z3, Z3; VPXORQ Z2, Z3, Z3;                      \
-	VPADDQ Z3, Z0, Z0; VPROLQ $21, Z3, Z3; VPXORQ Z0, Z3, Z3;                      \
-	VPADDQ Z1, Z2, Z2; VPROLQ $17, Z1, Z1; VPXORQ Z2, Z1, Z1; VPROLQ $32, Z2, Z2
+	VPADDQ Y1, Y0, Y0; VPROLQ $13, Y1, Y1; VPXORQ Y0, Y1, Y1; VPROLQ $32, Y0, Y0; \
+	VPADDQ Y3, Y2, Y2; VPROLQ $16, Y3, Y3; VPXORQ Y2, Y3, Y3;                      \
+	VPADDQ Y3, Y0, Y0; VPROLQ $21, Y3, Y3; VPXORQ Y0, Y3, Y3;                      \
+	VPADDQ Y1, Y2, Y2; VPROLQ $17, Y1, Y1; VPXORQ Y2, Y1, Y1; VPROLQ $32, Y2, Y2
 
 #define PACK_M_QWORD(off) \
 	MOVQ off(R8),  R12; \
@@ -46,10 +46,10 @@ GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
 	VINSERTI64X2 $1, X5, Y4, Y4
 
 #define SIP_ABSORB \
-	VPXORQ Z4, Z3, Z3; \
+	VPXORQ Y4, Y3, Y3; \
 	SIP_ROUND;         \
 	SIP_ROUND;         \
-	VPXORQ Z4, Z0, Z0
+	VPXORQ Y4, Y0, Y0
 
 TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 	MOVQ seeds+0(FP),     BX
@@ -61,10 +61,10 @@ TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 	MOVQ 16(CX), R10
 	MOVQ 24(CX), R11
 
-	// Pack seeds → Z16 (K0), Z17 (K1). One qword permute
-	// de-interleaves straight from memory: Z16 = [K0 lanes 0..3 |
+	// Pack seeds → Y16 (K0), Y17 (K1). One qword permute
+	// de-interleaves straight from memory: Y16 = [K0 lanes 0..3 |
 	// K1 lanes 0..3]; the K1 half is extracted into Y17 (upper
-	// Z17 zeroed by the EVEX Y-form write). Z16 qwords 4..7 carry
+	// Y17 zeroed by the EVEX Y-form write). Y16 qwords 4..7 carry
 	// the K1 copies — don't-care lanes: every state op is
 	// element-wise and the writeback reads qwords 0..3 only.
 	VMOVDQU64 sipSeedDeint<>(SB), Z19
@@ -73,20 +73,20 @@ TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 
 	// State init.
 	MOVQ $0x736f6d6570736575, R12
-	VPBROADCASTQ R12, Z0
-	VPXORQ Z16, Z0, Z0
+	VPBROADCASTQ R12, Y0
+	VPXORQ Y16, Y0, Y0
 
 	MOVQ $0x646f72616e646f83, R12  // Const1 ^ 0xee
-	VPBROADCASTQ R12, Z1
-	VPXORQ Z17, Z1, Z1
+	VPBROADCASTQ R12, Y1
+	VPXORQ Y17, Y1, Y1
 
 	MOVQ $0x6c7967656e657261, R12
-	VPBROADCASTQ R12, Z2
-	VPXORQ Z16, Z2, Z2
+	VPBROADCASTQ R12, Y2
+	VPXORQ Y16, Y2, Y2
 
 	MOVQ $0x7465646279746573, R12
-	VPBROADCASTQ R12, Z3
-	VPXORQ Z17, Z3, Z3
+	VPBROADCASTQ R12, Y3
+	VPXORQ Y17, Y3, Y3
 
 	// 4 full compression blocks at offsets 0, 8, 16, 24.
 	PACK_M_QWORD(0)
@@ -109,31 +109,31 @@ TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 	VPINSRQ $1, R12, X5, X5
 	VINSERTI64X2 $1, X5, Y4, Y4
 	MOVQ $0x2400000000000000, R12  // 36 << 56
-	VPBROADCASTQ R12, Z5
-	VPXORQ Z5, Z4, Z4
+	VPBROADCASTQ R12, Y5
+	VPXORQ Y5, Y4, Y4
 	SIP_ABSORB
 
 	// Finalization first half.
 	MOVQ $0xee, R12
-	VPBROADCASTQ R12, Z18
-	VPXORQ Z18, Z2, Z2
+	VPBROADCASTQ R12, Y18
+	VPXORQ Y18, Y2, Y2
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
-	VPXORQ Z1, Z0, Z18
-	VPTERNLOGQ $0x96, Z3, Z2, Z18
+	VPXORQ Y1, Y0, Y18
+	VPTERNLOGQ $0x96, Y3, Y2, Y18
 
 	// Finalization second half.
 	MOVQ $0xdd, R12
-	VPBROADCASTQ R12, Z19
-	VPXORQ Z19, Z1, Z1
+	VPBROADCASTQ R12, Y19
+	VPXORQ Y19, Y1, Y1
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
-	VPXORQ Z1, Z0, Z19
-	VPTERNLOGQ $0x96, Z3, Z2, Z19
+	VPXORQ Y1, Y0, Y19
+	VPTERNLOGQ $0x96, Y3, Y2, Y19
 
 	// Writeback.
 	VPEXTRQ $0, X18, 0(DX)
@@ -141,8 +141,8 @@ TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 	VPEXTRQ $1, X18, 16(DX)
 	VPEXTRQ $1, X19, 24(DX)
 
-	VEXTRACTI64X2 $1, Z18, X18
-	VEXTRACTI64X2 $1, Z19, X19
+	VEXTRACTI64X2 $1, Y18, X18
+	VEXTRACTI64X2 $1, Y19, X19
 	VPEXTRQ $0, X18, 32(DX)
 	VPEXTRQ $0, X19, 40(DX)
 	VPEXTRQ $1, X18, 48(DX)
