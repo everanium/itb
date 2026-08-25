@@ -52,6 +52,30 @@ func sipHash24Chain128Absorb20x4Asm(
 	out *[4][2]uint64,
 )
 
+// SipHash24Chain128Absorb13x4 — 13-byte SipHash-2-4-128 batched
+// dispatcher, the Interlocked Barrier PRF fill message shape. 13 bytes
+// = one full 8-byte compression block plus the final padded block
+// (5 tail bytes + lenTag 13), one fewer block than the 20-byte kernel.
+// The .s kernel reads exactly 13 data bytes per lane.
+func SipHash24Chain128Absorb13x4(
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+) {
+	if HasAVX512Fused {
+		sipHash24Chain128Absorb13x4Asm(seeds, dataPtrs, out)
+		return
+	}
+	scalarBatch128ChainAbsorb13(seeds, dataPtrs, out)
+}
+
+//go:noescape
+func sipHash24Chain128Absorb13x4Asm(
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+)
+
 // SipHash24Chain128Absorb36x4 — 36-byte SipHash-2-4-128 batched
 // dispatcher (256-bit ITB nonce buf shape). 4 full + 1 padded
 // compression blocks + 2-half finalization = 18 SipRounds total.

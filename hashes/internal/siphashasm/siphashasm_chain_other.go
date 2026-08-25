@@ -32,3 +32,13 @@ func SipHash24Chain128Absorb68x4(
 ) {
 	scalarBatch128ChainAbsorb68(seeds, dataPtrs, out)
 }
+
+// SipHash24Chain128Absorb13x4 — non-amd64 / purego dispatcher for the
+// Interlocked Barrier PRF fill shape.
+func SipHash24Chain128Absorb13x4(
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+) {
+	scalarBatch128ChainAbsorb13(seeds, dataPtrs, out)
+}
