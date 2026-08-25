@@ -1,6 +1,25 @@
 #include <stdint.h>
 #include <string.h>
 
+#ifdef ITB_PARITY_TIER_OVERRIDE
+#include <stdlib.h>
+// Parity-only tier downgrade knob. Compiled in only when the parity
+// helper is built with CGO_CFLAGS="-DITB_PARITY_TIER_OVERRIDE"; production
+// builds compile it out entirely. Reads ITB_FORCE_PIXEL_TIER once at first
+// dispatch resolve and masks the cached support flag to 0 for the tiers
+// above the requested cap. Downgrade-only by construction — the mask
+// cannot enable a tier the CPU lacks.
+static int itb_parity_tier_cap(void) {
+    const char *tier = getenv("ITB_FORCE_PIXEL_TIER");
+    if (!tier || !*tier) return 0;
+    char c = tier[0];
+    if (c == 'a' || c == 'A') return 0; // no cap
+    if (c == 'b' || c == 'B') return 1; // AVX-512 disabled
+    if (c == 'c' || c == 'C') return 2; // AVX-512 + AVX2 disabled (Tier C)
+    return 0;
+}
+#endif
+
 // AVX2 auto-vectorization is enabled via cgo CFLAGS (-mavx2 on amd64).
 // On x86_64 with GFNI present, the per-pixel kernel additionally dispatches
 // to a 4-pixel SIMD batch using vgf2p8affineqb for Phase 4 rotation and
@@ -302,6 +321,9 @@ static inline int itb_check_avx2_gfni(void) {
     int v = itb_simd_avx2_gfni_supported;
     if (v < 0) {
         v = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("gfni") ? 1 : 0;
+#ifdef ITB_PARITY_TIER_OVERRIDE
+        if (itb_parity_tier_cap() >= 2) v = 0;
+#endif
         itb_simd_avx2_gfni_supported = v;
     }
     return v;
@@ -547,6 +569,9 @@ static inline int itb_check_avx512_gfni(void) {
             && __builtin_cpu_supports("avx512vl")
             && __builtin_cpu_supports("gfni")
             && __builtin_cpu_supports("avx512vbmi") ? 1 : 0;
+#ifdef ITB_PARITY_TIER_OVERRIDE
+        if (itb_parity_tier_cap() >= 1) v = 0;
+#endif
         itb_simd_avx512_gfni_supported = v;
     }
     return v;
