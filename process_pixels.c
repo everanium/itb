@@ -291,6 +291,66 @@ static inline void process4PixelsEncodeAVX2GFNI(
     }
 }
 
+// pack56bitsX4AVX2 packs 4 pixels' 8x7-bit channel values (one YMM
+// register laid out as [pixel 0..3] x [field 0..7] — the exact output
+// layout of the decode phases) into 28 contiguous data bytes starting at
+// data + bitIndex / 8. YMM-width counterpart of the Tier A
+// pack56bitsX8AVX512VBMI helper; replaces 4 scalar pack56bits calls plus
+// the store-forwarding-blocked YMM-to-stack round trip they required.
+//
+// Packing pipeline per qword lane (= pixel) mirrors the Tier A helper:
+// VPMADDUBSW {1, 128} then VPMADDWD {1, 2^14} reduce the eight 7-bit
+// channel bytes to two 28-bit dword halves, and a qword shift-OR joins
+// them into a 56-bit packed value. AVX2 has no VPERMB or masked byte
+// store, so the four packed qwords are extracted and written as four
+// overlapping 8-byte stores: q0 at byteStart, q1 at +7, q2 at +14 (each
+// store's top byte is zero — bits 56..63 of a packed qword — and is
+// overwritten by the next store), and the final store at +20 carries
+// ((q2 >> 48) | (q3 << 8)) so every write stays inside
+// [byteStart, byteStart + 28) with no trailing-byte overrun past the
+// batch span.
+//
+// The batched decode dispatch guarantees bitIndex + 4 * 56 <= totalBits =
+// dataLen * 8, so the fast path always applies there; the scalar
+// per-pixel calls remain as the bounds fallback to keep the semantics of
+// 4 pack56bits calls exact for any caller without that guarantee. Like
+// pack56bits, bitIndex % 8 is ignored — the batched loops advance
+// bitIndex in 56-bit steps from a byte-aligned start, so bitIndex is
+// always a multiple of 8 here.
+//
+// Constant-time posture: the store addresses derive only from public
+// geometry (bitIndex, dataLen); the packed data values are secret but
+// every instruction in the pipeline has data-independent latency.
+__attribute__((target("avx2,gfni")))
+static inline void pack56bitsX4AVX2(uint8_t *data, int dataLen, int bitIndex, __m256i vals) {
+    int byteStart = bitIndex / 8;
+    if (byteStart + 28 <= dataLen) {
+        __m256i v = _mm256_and_si256(vals, _mm256_set1_epi8(0x7F));
+        __m256i w = _mm256_maddubs_epi16(_mm256_set1_epi16((short)0x8001), v);
+        __m256i d = _mm256_madd_epi16(w, _mm256_set1_epi32(0x40000001));
+        __m256i lo = _mm256_and_si256(d, _mm256_set1_epi64x(0xFFFFFFFFLL));
+        __m256i packed = _mm256_or_si256(lo,
+            _mm256_slli_epi64(_mm256_srli_epi64(d, 32), 28));
+        __m128i loLane = _mm256_castsi256_si128(packed);
+        __m128i hiLane = _mm256_extracti128_si256(packed, 1);
+        uint64_t q0 = (uint64_t)_mm_cvtsi128_si64(loLane);
+        uint64_t q1 = (uint64_t)_mm_extract_epi64(loLane, 1);
+        uint64_t q2 = (uint64_t)_mm_cvtsi128_si64(hiLane);
+        uint64_t q3 = (uint64_t)_mm_extract_epi64(hiLane, 1);
+        uint64_t last = (q2 >> 48) | (q3 << 8);
+        memcpy(data + byteStart,      &q0, 8);
+        memcpy(data + byteStart + 7,  &q1, 8);
+        memcpy(data + byteStart + 14, &q2, 8);
+        memcpy(data + byteStart + 20, &last, 8);
+    } else {
+        uint8_t valsBuf[32] __attribute__((aligned(32)));
+        _mm256_store_si256((__m256i *)valsBuf, vals);
+        for (int b = 0; b < 4; b++) {
+            pack56bits(data, dataLen, bitIndex + b * 56, &valsBuf[b * 8], 8);
+        }
+    }
+}
+
 // process4PixelsDecodeAVX2GFNI processes one 4-pixel batch in decode direction.
 // basePixel carries the same contract as in process4PixelsEncodeAVX2GFNI,
 // including the batch-entry consecutive fast path for the container load.
