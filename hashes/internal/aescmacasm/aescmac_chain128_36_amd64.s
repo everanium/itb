@@ -65,10 +65,8 @@ TEXT ·aesCMAC128ChainAbsorb36x4Asm(SB), NOSPLIT, $64-32
 	MOVQ 24(CX), R11
 
 	// ===== State init: seeds ⊕ broadcast(lenTag) ⊕ data[0:16] =====
-	VMOVDQU 0(BX),    X0
-	VINSERTI64X2 $1, 16(BX), Y0, Y0
-	VINSERTI64X2 $2, 32(BX), Z0, Z0
-	VINSERTI64X2 $3, 48(BX), Z0, Z0
+	// seeds is a contiguous *[4][2]uint64 = 64 bytes → one Z-load.
+	VMOVDQU64 0(BX), Z0
 
 	MOVQ $36, R12
 	VPBROADCASTQ R12, Z12
