@@ -48,6 +48,32 @@ func AESCMAC128ChainAbsorb20x4(
 // reference is verified by the x4 parity tests in
 // aescmacasm_chain_test.go.
 //
+// AESCMAC128ChainAbsorb13x4 — 13-byte AES-CMAC-128 batched dispatcher,
+// the Interlocked Barrier PRF fill message shape. 13 < 16, so the
+// CBC-MAC chain is a single block (one AES round). The .s kernel reads
+// exactly 13 data bytes per lane.
+func AESCMAC128ChainAbsorb13x4(
+	roundKeys *[176]byte,
+	key *[16]byte,
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+) {
+	if HasVAESAVX512 {
+		aesCMAC128ChainAbsorb13x4Asm(roundKeys, seeds, dataPtrs, out)
+		return
+	}
+	scalarBatch128ChainAbsorb13(key, seeds, dataPtrs, out)
+}
+
+//go:noescape
+func aesCMAC128ChainAbsorb13x4Asm(
+	roundKeys *[176]byte,
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+)
+
 //go:noescape
 func aesCMAC128ChainAbsorb20x4Asm(
 	roundKeys *[176]byte,

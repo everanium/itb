@@ -115,3 +115,18 @@ func scalarBatch128ChainAbsorb68(
 		out[lane][0], out[lane][1] = scalar128ChainAbsorb(block, data[:], seeds[lane][0], seeds[lane][1])
 	}
 }
+
+// scalarBatch128ChainAbsorb13 — 4-lane scalar reference for the 13-byte
+// AES-CMAC-128 chain-absorb (single CBC-MAC block, one AES round).
+func scalarBatch128ChainAbsorb13(
+	key *[16]byte,
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+) {
+	block := newScalarBlock(key)
+	for lane := 0; lane < 4; lane++ {
+		data := (*[13]byte)(unsafe.Pointer(dataPtrs[lane]))
+		out[lane][0], out[lane][1] = scalar128ChainAbsorb(block, data[:], seeds[lane][0], seeds[lane][1])
+	}
+}
