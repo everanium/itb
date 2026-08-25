@@ -132,7 +132,7 @@ func blake3KeyedSum(key *[32]byte, mixed []byte, out []byte) {
 // Loops the per-lane scalar reference; each lane is bit-exact
 // equivalent to the public hashes.BLAKE3 closure on the same input.
 // Used as the production fallback on hosts without AVX-512+VL and
-// as the parity baseline for the ZMM-batched ASM kernel.
+// as the parity baseline for the XMM-batched ASM kernel.
 func scalarBatch256ChainAbsorb20(
 	key *[32]byte,
 	seeds *[4][4]uint64,
