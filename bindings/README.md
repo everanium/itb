@@ -50,46 +50,45 @@ to reproduce its build.
 
 ## Fleet listing
 
-| Language | Directory | Tier | Approx. Registry Target | Install (post-registry-publish) |
-|----------|-----------|:----:|-------------------------|---------------------------------|
-| Go (core) | [`../`](../) (root Go module) | native | pkg.go.dev | `go get github.com/everanium/itb` |
-| Rust | [`rust/`](rust/) | 1 native | crates.io | `cargo add itb` |
-| C | [`c/`](c/) | 1 native | source only (Conan / vcpkg recipe TBD) | make from source |
-| C++ | [`cpp/`](cpp/) | 1 native | source only | make from source |
-| Ada | [`ada/`](ada/) | 1 native | Alire (`alire.ada.dev`) | `alr with itb` |
-| D | [`dlang/`](dlang/) | 1 native | dub registry (`code.dlang.org`) | `dub add itb` |
-| C# | [`csharp/`](csharp/) | 1 native | NuGet | `dotnet add package Everanium.Itb` |
-| Python | [`python/`](python/) | 1 native | PyPI | `pip install itb` |
-| Node.js | [`nodejs/`](nodejs/) | 1 native | npm | `npm install itb` |
-| Fortran | [`fortran/`](fortran/) | 1 native | Fortran Package Manager (fpm) | `fpm add itb` |
-| Swift | [`swift/`](swift/) | 1 native | SwiftPM (git URL, no central registry) | Package.swift dep on the git URL |
-| Java | [`java/`](java/) | 1 native | Maven Central (Sonatype OSSRH) | `com.everanium:itb-java` |
-| Zig | [`zig/`](zig/) | 1 native | zon (build.zig.zon, no central registry) | `zig fetch --save` |
-| Kotlin | [`kotlin/`](kotlin/) | 2 relay (over Java jar) | Maven Central | `dev.everanium:itb-kotlin` |
-| Erlang | [`erlang/`](erlang/) | 1 native (NIF) | Hex.pm | `rebar.config` `{itb, "~> 0.3"}` |
-| Scala | [`scala/`](scala/) | 2 relay (over Java jar) | Maven Central | `dev.everanium %% itb-scala` |
-| Groovy | [`groovy/`](groovy/) | 2 relay (over Java jar) | Maven Central | `dev.everanium:itb-groovy` |
-| Elixir | [`elixir/`](elixir/) | 2 relay (over Erlang NIF) | Hex.pm | `{:itb, "~> 0.3"}` |
-| PowerShell | [`powershell/`](powershell/) | 2 relay (over C# Itb.dll) | PowerShell Gallery | `Install-Module Itb` |
-| Clojure | [`clojure/`](clojure/) | 2 relay (over Java jar) | Clojars | `dev.everanium/itb {:mvn/version "0.3.0"}` |
-| F# | [`fsharp/`](fsharp/) | 2 relay (over C# Itb.dll) | NuGet | `dotnet add package EveraniumItb.FSharp` |
-| VB.NET | [`vbnet/`](vbnet/) | 2 relay (over C# Itb.dll) | NuGet | `dotnet add package EveraniumItb.VisualBasic` |
-| Gleam | [`gleam/`](gleam/) | 2 relay (over Erlang NIF) | Hex.pm | `gleam add itb_gleam` |
-| LFE | [`lfe/`](lfe/) | 2 relay (over Erlang NIF) | Hex.pm | `rebar.config` `{itb_lfe, "~> 0.3"}` |
-| PHP | [`php/`](php/) | 2 relay (over C FFI) | Packagist | `composer require everanium/itb` |
-| Ruby | [`ruby/`](ruby/) | 2 relay (over C FFI via `ffi` gem) | RubyGems | `gem install itb` |
-| Dart | [`dart/`](dart/) | 2 relay (over C FFI via `dart:ffi`) | pub.dev | `dart pub add itb` |
-| Lua | [`lua/`](lua/) | 2 relay (C module for Lua 5.4) | LuaRocks | `luarocks install itb` |
-| Nim | [`nim/`](nim/) | 1 native (`{.importc, dynlib.}`) | nimble | `nimble install itb` |
-| Crystal | [`crystal/`](crystal/) | 1 native | shards.info (git tag, no central registry) | `shards.yml` `dev.everanium/itb` |
-| Julia | [`julia/`](julia/) | 2 relay (ccall) | Julia General Registry | `Pkg.add("ITB")` |
-| OCaml | [`ocaml/`](ocaml/) | 1 native (ocaml-ctypes) | opam-repository | `opam install itb` |
-| Haskell | [`haskell/`](haskell/) | 1 native (`foreign import ccall`) | Hackage | `cabal install itb` |
-| R | [`r/`](r/) | 2 relay (`.Call` C shim) | CRAN or GitHub source | `install.packages("itb")` |
+| Language | Directory | Tier |
+|----------|-----------|:----:|
+| Go (core) | [`../`](../) (root Go module) | native |
+| Rust | [`rust/`](rust/) | 1 native |
+| C | [`c/`](c/) | 1 native |
+| C++ | [`cpp/`](cpp/) | 1 native |
+| Ada | [`ada/`](ada/) | 1 native |
+| D | [`dlang/`](dlang/) | 1 native |
+| C# | [`csharp/`](csharp/) | 1 native |
+| Python | [`python/`](python/) | 1 native |
+| Node.js | [`nodejs/`](nodejs/) | 1 native |
+| Fortran | [`fortran/`](fortran/) | 1 native |
+| Swift | [`swift/`](swift/) | 1 native |
+| Java | [`java/`](java/) | 1 native |
+| Zig | [`zig/`](zig/) | 1 native |
+| Kotlin | [`kotlin/`](kotlin/) | 2 relay (over Java jar) |
+| Erlang | [`erlang/`](erlang/) | 1 native (NIF) |
+| Scala | [`scala/`](scala/) | 2 relay (over Java jar) |
+| Groovy | [`groovy/`](groovy/) | 2 relay (over Java jar) |
+| Elixir | [`elixir/`](elixir/) | 2 relay (over Erlang NIF) |
+| PowerShell | [`powershell/`](powershell/) | 2 relay (over C# Itb.dll) |
+| Clojure | [`clojure/`](clojure/) | 2 relay (over Java jar) |
+| F# | [`fsharp/`](fsharp/) | 2 relay (over C# Itb.dll) |
+| VB.NET | [`vbnet/`](vbnet/) | 2 relay (over C# Itb.dll) |
+| Gleam | [`gleam/`](gleam/) | 2 relay (over Erlang NIF) |
+| LFE | [`lfe/`](lfe/) | 2 relay (over Erlang NIF) |
+| PHP | [`php/`](php/) | 2 relay (over C FFI) |
+| Ruby | [`ruby/`](ruby/) | 2 relay (over C FFI via `ffi` gem) |
+| Dart | [`dart/`](dart/) | 2 relay (over C FFI via `dart:ffi`) |
+| Lua | [`lua/`](lua/) | 2 relay (C module for Lua 5.4) |
+| Nim | [`nim/`](nim/) | 1 native (`{.importc, dynlib.}`) |
+| Crystal | [`crystal/`](crystal/) | 1 native |
+| Julia | [`julia/`](julia/) | 2 relay (ccall) |
+| OCaml | [`ocaml/`](ocaml/) | 1 native (ocaml-ctypes) |
+| Haskell | [`haskell/`](haskell/) | 1 native (`foreign import ccall`) |
+| R | [`r/`](r/) | 2 relay (`.Call` C shim) |
 
 34 rows total (Go core + 33 language bindings).
 
-**Registry status**: no binding is published to its native package
-registry yet. The `Install` column shows what the install command
-will look like once each registry publish lands; the publish plan
-is a follow-up milestone.
+Each binding ships as source in this repository; build via the
+per-binding `build.sh` script under its directory. No binding is
+published to a package registry yet — that is a future milestone.
