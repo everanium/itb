@@ -58,6 +58,10 @@ func areionSoEM256ChainAbsorbHot(
 	dataPtrs[2] = &data[2][0]
 	dataPtrs[3] = &data[3][0]
 	switch commonLen {
+	case 13:
+		// Interlocked Barrier PRF fill shape (Lift 2 batched fill path).
+		areionasm.Areion256ChainAbsorb13x4(fixedKey, seeds, &dataPtrs, &out)
+		return out, true
 	case 20:
 		areionasm.Areion256ChainAbsorb20x4(fixedKey, seeds, &dataPtrs, &out)
 		return out, true
