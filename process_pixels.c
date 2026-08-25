@@ -176,10 +176,17 @@ static const uint64_t itb_gfni_gather_matrices[8] __attribute__((aligned(64))) =
 //
 // basePixel is the wrapped linear index of pixel p — the caller maintains
 // (startPixel + startP + p) % totalPixels as a loop-carried counter, so
-// basePixel is always in [0, totalPixels). The per-pixel wrap inside the
-// batch is a single branchless conditional subtract: the callers guarantee
-// totalPixels >= totalP >= 4 whenever this helper runs, so
-// basePixel + b < 2 * totalPixels and one subtract always lands in range.
+// basePixel is always in [0, totalPixels). Wrap handling is decided once
+// at batch entry: when basePixel + 4 <= totalPixels the batch's 4 pixels
+// occupy 32 consecutive container bytes, so the container load and store
+// each collapse to a single unaligned YMM access (consecutive fast path).
+// Otherwise the batch straddles the container end and the per-pixel wrap
+// falls back to a branchless conditional subtract per lane plus 8-byte
+// memcpys: the callers guarantee totalPixels >= totalP >= 4 whenever this
+// helper runs, so basePixel + b < 2 * totalPixels and one subtract always
+// lands in range. The fast-path predicate derives from basePixel (a
+// startPixel-derived value) — the same state the container access pattern
+// already exposes; see the wrap-handling note in HWTHREATS.md.
 __attribute__((target("avx2,gfni")))
 static inline void process4PixelsEncodeAVX2GFNI(
     const uint64_t *noiseHashes,
@@ -197,16 +204,24 @@ static inline void process4PixelsEncodeAVX2GFNI(
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
 
+    // Batch-entry wrap check. Consecutive batches skip the per-lane wrap
+    // subtracts entirely and address the container linearly.
+    const int consecutive = (basePixel + 4 <= totalPixels);
     int pixelOffset[4];
+    if (!consecutive) {
+        for (int b = 0; b < 4; b++) {
+            int linearIdx = basePixel + b;
+            linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
+            pixelOffset[b] = linearIdx * Channels;
+        }
+    }
+
     uint8_t noiseMaskArr[4];
     uint64_t rotMatrices[4] __attribute__((aligned(32)));
     uint64_t spreadMatrices[4] __attribute__((aligned(32)));
     uint64_t xorMaskArr[4];
 
     for (int b = 0; b < 4; b++) {
-        int linearIdx = basePixel + b;
-        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
-        pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
@@ -245,11 +260,16 @@ static inline void process4PixelsEncodeAVX2GFNI(
     __m256i spreadMat = _mm256_load_si256((const __m256i *)spreadMatrices);
     __m256i spreadVals = _mm256_gf2p8affine_epi64_epi8(vals, spreadMat, 0);
 
-    uint8_t origBuf[32] __attribute__((aligned(32)));
-    for (int b = 0; b < 4; b++) {
-        memcpy(&origBuf[b * Channels], &container[pixelOffset[b]], Channels);
+    __m256i orig;
+    if (consecutive) {
+        orig = _mm256_loadu_si256((const __m256i *)&container[basePixel * Channels]);
+    } else {
+        uint8_t origBuf[32] __attribute__((aligned(32)));
+        for (int b = 0; b < 4; b++) {
+            memcpy(&origBuf[b * Channels], &container[pixelOffset[b]], Channels);
+        }
+        orig = _mm256_load_si256((const __m256i *)origBuf);
     }
-    __m256i orig = _mm256_load_si256((const __m256i *)origBuf);
 
     // Broadcast per-pixel noiseMask byte to all 8 lanes within each pixel.
     __m256i noiseMaskV = _mm256_set_epi64x(
@@ -260,15 +280,20 @@ static inline void process4PixelsEncodeAVX2GFNI(
 
     __m256i result = _mm256_or_si256(spreadVals, _mm256_and_si256(orig, noiseMaskV));
 
-    uint8_t outBuf[32] __attribute__((aligned(32)));
-    _mm256_store_si256((__m256i *)outBuf, result);
-    for (int b = 0; b < 4; b++) {
-        memcpy(&container[pixelOffset[b]], &outBuf[b * Channels], Channels);
+    if (consecutive) {
+        _mm256_storeu_si256((__m256i *)&container[basePixel * Channels], result);
+    } else {
+        uint8_t outBuf[32] __attribute__((aligned(32)));
+        _mm256_store_si256((__m256i *)outBuf, result);
+        for (int b = 0; b < 4; b++) {
+            memcpy(&container[pixelOffset[b]], &outBuf[b * Channels], Channels);
+        }
     }
 }
 
 // process4PixelsDecodeAVX2GFNI processes one 4-pixel batch in decode direction.
-// basePixel carries the same contract as in process4PixelsEncodeAVX2GFNI.
+// basePixel carries the same contract as in process4PixelsEncodeAVX2GFNI,
+// including the batch-entry consecutive fast path for the container load.
 __attribute__((target("avx2,gfni")))
 static inline void process4PixelsDecodeAVX2GFNI(
     const uint64_t *noiseHashes,
@@ -286,15 +311,14 @@ static inline void process4PixelsDecodeAVX2GFNI(
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
 
-    int pixelOffset[4];
+    // Batch-entry wrap check — same contract as the encode helper.
+    const int consecutive = (basePixel + 4 <= totalPixels);
+
     uint64_t invRotMatrices[4] __attribute__((aligned(32)));
     uint64_t gatherMatrices[4] __attribute__((aligned(32)));
     uint64_t xorMaskArr[4];
 
     for (int b = 0; b < 4; b++) {
-        int linearIdx = basePixel + b;
-        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
-        pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
@@ -307,11 +331,18 @@ static inline void process4PixelsDecodeAVX2GFNI(
     }
 
     // Phase 1: load 4 pixels' container bytes, gather data bits via GFNI.
-    uint8_t origBuf[32] __attribute__((aligned(32)));
-    for (int b = 0; b < 4; b++) {
-        memcpy(&origBuf[b * Channels], &container[pixelOffset[b]], Channels);
+    __m256i orig;
+    if (consecutive) {
+        orig = _mm256_loadu_si256((const __m256i *)&container[basePixel * Channels]);
+    } else {
+        uint8_t origBuf[32] __attribute__((aligned(32)));
+        for (int b = 0; b < 4; b++) {
+            int linearIdx = basePixel + b;
+            linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
+            memcpy(&origBuf[b * Channels], &container[linearIdx * Channels], Channels);
+        }
+        orig = _mm256_load_si256((const __m256i *)origBuf);
     }
-    __m256i orig = _mm256_load_si256((const __m256i *)origBuf);
     __m256i gatherMat = _mm256_load_si256((const __m256i *)gatherMatrices);
     __m256i vals = _mm256_gf2p8affine_epi64_epi8(orig, gatherMat, 0);
 
@@ -425,10 +456,17 @@ static inline __m512i deriveXorsX8AVX512VBMI(const uint64_t *xorMaskArr) {
 //
 // basePixel is the wrapped linear index of pixel p — the caller maintains
 // (startPixel + startP + p) % totalPixels as a loop-carried counter, so
-// basePixel is always in [0, totalPixels). The per-pixel wrap inside the
-// batch is a single branchless conditional subtract: the callers guarantee
-// totalPixels >= totalP >= 8 whenever this helper runs, so
-// basePixel + b < 2 * totalPixels and one subtract always lands in range.
+// basePixel is always in [0, totalPixels). Wrap handling is decided once
+// at batch entry: when basePixel + 8 <= totalPixels the batch's 8 pixels
+// occupy 64 consecutive container bytes, so the container load and store
+// each collapse to a single unaligned ZMM access (consecutive fast path).
+// Otherwise the batch straddles the container end and the per-pixel wrap
+// falls back to a branchless conditional subtract per lane plus 8-byte
+// memcpys: the callers guarantee totalPixels >= totalP >= 8 whenever this
+// helper runs, so basePixel + b < 2 * totalPixels and one subtract always
+// lands in range. The fast-path predicate derives from basePixel (a
+// startPixel-derived value) — the same state the container access pattern
+// already exposes; see the wrap-handling note in HWTHREATS.md.
 __attribute__((target("avx512f,avx512bw,avx512vl,gfni,avx512vbmi")))
 static inline void process8PixelsEncodeAVX512GFNI(
     const uint64_t *noiseHashes,
@@ -446,16 +484,24 @@ static inline void process8PixelsEncodeAVX512GFNI(
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
 
+    // Batch-entry wrap check. Consecutive batches skip the per-lane wrap
+    // subtracts entirely and address the container linearly.
+    const int consecutive = (basePixel + 8 <= totalPixels);
     int pixelOffset[8];
+    if (!consecutive) {
+        for (int b = 0; b < 8; b++) {
+            int linearIdx = basePixel + b;
+            linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
+            pixelOffset[b] = linearIdx * Channels;
+        }
+    }
+
     uint8_t noiseMaskArr[8];
     uint64_t rotMatrices[8] __attribute__((aligned(64)));
     uint64_t spreadMatrices[8] __attribute__((aligned(64)));
     uint64_t xorMaskArr[8];
 
     for (int b = 0; b < 8; b++) {
-        int linearIdx = basePixel + b;
-        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
-        pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
@@ -491,11 +537,16 @@ static inline void process8PixelsEncodeAVX512GFNI(
     __m512i spreadMat = _mm512_loadu_si512((const void *)spreadMatrices);
     __m512i spreadVals = _mm512_gf2p8affine_epi64_epi8(vals, spreadMat, 0);
 
-    uint8_t origBuf[64] __attribute__((aligned(64)));
-    for (int b = 0; b < 8; b++) {
-        memcpy(&origBuf[b * Channels], &container[pixelOffset[b]], Channels);
+    __m512i orig;
+    if (consecutive) {
+        orig = _mm512_loadu_si512((const void *)&container[basePixel * Channels]);
+    } else {
+        uint8_t origBuf[64] __attribute__((aligned(64)));
+        for (int b = 0; b < 8; b++) {
+            memcpy(&origBuf[b * Channels], &container[pixelOffset[b]], Channels);
+        }
+        orig = _mm512_loadu_si512((const void *)origBuf);
     }
-    __m512i orig = _mm512_loadu_si512((const void *)origBuf);
 
     // Broadcast each pixel's noiseMask byte across its 8-byte qword lane
     // with a single VPERMB: index byte i selects source byte (i / 8), so
@@ -522,15 +573,20 @@ static inline void process8PixelsEncodeAVX512GFNI(
 
     __m512i result = _mm512_or_si512(spreadVals, _mm512_and_si512(orig, noiseMaskV));
 
-    uint8_t outBuf[64] __attribute__((aligned(64)));
-    _mm512_storeu_si512((void *)outBuf, result);
-    for (int b = 0; b < 8; b++) {
-        memcpy(&container[pixelOffset[b]], &outBuf[b * Channels], Channels);
+    if (consecutive) {
+        _mm512_storeu_si512((void *)&container[basePixel * Channels], result);
+    } else {
+        uint8_t outBuf[64] __attribute__((aligned(64)));
+        _mm512_storeu_si512((void *)outBuf, result);
+        for (int b = 0; b < 8; b++) {
+            memcpy(&container[pixelOffset[b]], &outBuf[b * Channels], Channels);
+        }
     }
 }
 
 // process8PixelsDecodeAVX512GFNI processes one 8-pixel batch in decode direction.
-// basePixel carries the same contract as in process8PixelsEncodeAVX512GFNI.
+// basePixel carries the same contract as in process8PixelsEncodeAVX512GFNI,
+// including the batch-entry consecutive fast path for the container load.
 __attribute__((target("avx512f,avx512bw,avx512vl,gfni,avx512vbmi")))
 static inline void process8PixelsDecodeAVX512GFNI(
     const uint64_t *noiseHashes,
@@ -548,15 +604,14 @@ static inline void process8PixelsDecodeAVX512GFNI(
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
 
-    int pixelOffset[8];
+    // Batch-entry wrap check — same contract as the encode helper.
+    const int consecutive = (basePixel + 8 <= totalPixels);
+
     uint64_t invRotMatrices[8] __attribute__((aligned(64)));
     uint64_t gatherMatrices[8] __attribute__((aligned(64)));
     uint64_t xorMaskArr[8];
 
     for (int b = 0; b < 8; b++) {
-        int linearIdx = basePixel + b;
-        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
-        pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
@@ -568,11 +623,18 @@ static inline void process8PixelsDecodeAVX512GFNI(
     }
 
     // Phase 1: load 8 pixels' container bytes, gather data bits via GFNI.
-    uint8_t origBuf[64] __attribute__((aligned(64)));
-    for (int b = 0; b < 8; b++) {
-        memcpy(&origBuf[b * Channels], &container[pixelOffset[b]], Channels);
+    __m512i orig;
+    if (consecutive) {
+        orig = _mm512_loadu_si512((const void *)&container[basePixel * Channels]);
+    } else {
+        uint8_t origBuf[64] __attribute__((aligned(64)));
+        for (int b = 0; b < 8; b++) {
+            int linearIdx = basePixel + b;
+            linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
+            memcpy(&origBuf[b * Channels], &container[linearIdx * Channels], Channels);
+        }
+        orig = _mm512_loadu_si512((const void *)origBuf);
     }
-    __m512i orig = _mm512_loadu_si512((const void *)origBuf);
     __m512i gatherMat = _mm512_loadu_si512((const void *)gatherMatrices);
     __m512i vals = _mm512_gf2p8affine_epi64_epi8(orig, gatherMat, 0);
 
