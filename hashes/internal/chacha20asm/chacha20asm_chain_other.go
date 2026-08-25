@@ -35,3 +35,14 @@ func ChaCha20256ChainAbsorb68x4(
 ) {
 	scalarBatch256ChainAbsorb68(fixedKey, seeds, dataPtrs, out)
 }
+
+// ChaCha20256ChainAbsorb13x4 — non-amd64 / purego dispatcher for the
+// Interlocked Barrier PRF fill shape.
+func ChaCha20256ChainAbsorb13x4(
+	fixedKey *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][4]uint64,
+) {
+	scalarBatch256ChainAbsorb13(fixedKey, seeds, dataPtrs, out)
+}
