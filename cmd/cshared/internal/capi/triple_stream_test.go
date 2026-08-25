@@ -337,8 +337,15 @@ func TestTripleStreamStickyError(t *testing.T) {
 	if st != StatusOK {
 		t.Fatalf("TripleEncryptStream: %v", st)
 	}
-	// Tamper — flip the last byte so MAC verification fails.
-	wireBuf[wLen-1] ^= 0x01
+	// Tamper — invert every bit of the last byte so MAC verification
+	// fails deterministically. A single-bit flip is not sufficient
+	// here: each container byte carries seven authenticated data bits
+	// plus one noise bit at a per-pixel keyed position, and noise bits
+	// are discarded by decode before the MAC input is assembled — so a
+	// one-bit tamper lands on the noise bit with probability ~1/8 and
+	// the wire decrypts cleanly. Inverting the full byte flips all
+	// seven data bits regardless of where the noise bit sits.
+	wireBuf[wLen-1] ^= 0xFF
 
 	decID, st := TripleDecryptStreamBegin(rID)
 	if st != StatusOK {
