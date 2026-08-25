@@ -40,14 +40,6 @@ per-language naming variations:
   (C / Java / C# / BEAM) for language runtimes that cannot embed
   the shared library directly.
 
-The pre-rework bindings tree — larger surface, per-binding Low-
-Level + wrapper + parallax exports — is preserved verbatim under
-[`../bindings-old/`](../bindings-old/) as a reference for style,
-tests, benchmarks, and build scripts during the fleet rework. It
-does not compile against the current shipped Go core (wire
-hard-fork at v0.3.0 changed the ABI); check out a pre-v0.3.0 tree
-to reproduce its build.
-
 ## Fleet listing
 
 | Language | Directory | Tier |
