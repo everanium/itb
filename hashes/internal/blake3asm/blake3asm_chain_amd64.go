@@ -7,7 +7,7 @@ package blake3asm
 // (128-bit ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
-// to the fused ZMM-batched ASM kernel; otherwise falls through to
+// to the fused XMM-batched ASM kernel; otherwise falls through to
 // the scalar batched reference path (which delegates to upstream
 // github.com/zeebo/blake3).
 //
@@ -40,7 +40,7 @@ func Blake3256ChainAbsorb20x4(
 	scalarBatch256ChainAbsorb20(key, seeds, dataPtrs, out)
 }
 
-// blake3256ChainAbsorb20x4Asm is the AVX-512 ZMM-batched fused
+// blake3256ChainAbsorb20x4Asm is the AVX-512 XMM-batched fused
 // chain-absorb kernel implemented in blake3_chain256_20_amd64.s.
 // Bit-exact parity against the scalar reference is verified by the
 // x4 parity tests in blake3asm_chain_test.go.

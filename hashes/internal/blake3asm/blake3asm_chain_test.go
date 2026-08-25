@@ -192,7 +192,7 @@ func TestBlake3IV_RFC(t *testing.T) {
 // match the per-lane scalar reference bit-exactly. This drives the
 // 4-lane scalar batched chain-absorb path that serves as the fallback
 // on hosts without AVX-512+VL and as the parity baseline for the
-// ZMM-batched ASM kernels.
+// XMM-batched ASM kernels.
 func runScalarBatch256Test(
 	t *testing.T,
 	name string,

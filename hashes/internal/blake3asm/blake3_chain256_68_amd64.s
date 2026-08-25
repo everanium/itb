@@ -1,14 +1,15 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for BLAKE3-256 with 68-byte
+// XMM-batched fused chain-absorb kernel for BLAKE3-256 with 68-byte
 // per-lane data input (the ITB SetNonceBits(512) buf shape). Two
 // 64-byte BLAKE3 compression blocks per lane, with state-residency
-// in ZMM registers between the two compressions:
+// in XMM registers between the two compressions (the 4 × 32-bit
+// lane dwords fill one XMM register exactly):
 //
 //	Block 1 (block_len=64, flags=0x11 = KEYED_HASH | CHUNK_START):
 //	    m[0..7]  = data[0:32] ⊕ seed
 //	    m[8..15] = data[32:64]    (no seed XOR — past byte 32)
-//	    Output cv1[k] = v[k] ⊕ v[k+8] (k in 0..7), in Z0..Z7 in-place.
+//	    Output cv1[k] = v[k] ⊕ v[k+8] (k in 0..7), in X0..X7 in-place.
 //
 //	Block 2 (block_len=4,  flags=0x1A = KEYED_HASH | CHUNK_END | ROOT):
 //	    v[0..7] = cv1 (from block 1; chunk-internal blocks chain
@@ -20,7 +21,7 @@
 // Unlike the BLAKE2{b,s} two-block kernels, NO cv1 stack spill is
 // required: BLAKE3's final fold is `v[k] ⊕ v[k+8]` alone (no ⊕ cv1
 // term that would need cv1 reloaded after block-2 rounds mutate
-// Z0..Z7). The stack frame is therefore $0-32 instead of $512-32.
+// X0..X7). The stack frame is therefore $0-32 instead of $512-32.
 //
 //	blake3256ChainAbsorb68x4Asm(
 //	    key      *[32]byte,
@@ -47,14 +48,14 @@
 	VPRORD $7,  b, b
 
 #define BLAKE3_ROUND(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15) \
-	BLAKE3_G(Z0, Z4, Z8,  Z12, s0,  s1); \
-	BLAKE3_G(Z1, Z5, Z9,  Z13, s2,  s3); \
-	BLAKE3_G(Z2, Z6, Z10, Z14, s4,  s5); \
-	BLAKE3_G(Z3, Z7, Z11, Z15, s6,  s7); \
-	BLAKE3_G(Z0, Z5, Z10, Z15, s8,  s9); \
-	BLAKE3_G(Z1, Z6, Z11, Z12, s10, s11); \
-	BLAKE3_G(Z2, Z7, Z8,  Z13, s12, s13); \
-	BLAKE3_G(Z3, Z4, Z9,  Z14, s14, s15)
+	BLAKE3_G(X0, X4, X8,  X12, s0,  s1); \
+	BLAKE3_G(X1, X5, X9,  X13, s2,  s3); \
+	BLAKE3_G(X2, X6, X10, X14, s4,  s5); \
+	BLAKE3_G(X3, X7, X11, X15, s6,  s7); \
+	BLAKE3_G(X0, X5, X10, X15, s8,  s9); \
+	BLAKE3_G(X1, X6, X11, X12, s10, s11); \
+	BLAKE3_G(X2, X7, X8,  X13, s12, s13); \
+	BLAKE3_G(X3, X4, X9,  X14, s14, s15)
 
 #define PACK_M_LANES(l0, l1, l2, l3, x_dst) \
 	VMOVD  l0, x_dst; \
@@ -91,12 +92,11 @@
 	MOVL data_off(R11), DI; \
 	PACK_M_LANES(R12, R13, R14, DI, x_dst)
 
-#define STORE_LANE_DW(z_src, off) \
-	VEXTRACTI32X4 $0, z_src, X16; \
-	VPEXTRD $0, X16, off(R8); \
-	VPEXTRD $1, X16, off(R9); \
-	VPEXTRD $2, X16, off(R10); \
-	VPEXTRD $3, X16, off(R11)
+#define STORE_LANE_DW(x_src, off) \
+	VPEXTRD $0, x_src, off(R8); \
+	VPEXTRD $1, x_src, off(R9); \
+	VPEXTRD $2, x_src, off(R10); \
+	VPEXTRD $3, x_src, off(R11)
 
 // func blake3256ChainAbsorb68x4Asm(
 //     key      *[32]byte,
@@ -116,29 +116,29 @@ TEXT ·blake3256ChainAbsorb68x4Asm(SB), NOSPLIT, $0-32
 
 	// ===== Block 1 state init =====
 	// v[0..7] = KEY broadcast (chunk-start: chaining value = key).
-	VPBROADCASTD 0(AX),  Z0
-	VPBROADCASTD 4(AX),  Z1
-	VPBROADCASTD 8(AX),  Z2
-	VPBROADCASTD 12(AX), Z3
-	VPBROADCASTD 16(AX), Z4
-	VPBROADCASTD 20(AX), Z5
-	VPBROADCASTD 24(AX), Z6
-	VPBROADCASTD 28(AX), Z7
+	VPBROADCASTD 0(AX),  X0
+	VPBROADCASTD 4(AX),  X1
+	VPBROADCASTD 8(AX),  X2
+	VPBROADCASTD 12(AX), X3
+	VPBROADCASTD 16(AX), X4
+	VPBROADCASTD 20(AX), X5
+	VPBROADCASTD 24(AX), X6
+	VPBROADCASTD 28(AX), X7
 
-	VPBROADCASTD ·Blake3IV+0(SB),  Z8
-	VPBROADCASTD ·Blake3IV+4(SB),  Z9
-	VPBROADCASTD ·Blake3IV+8(SB),  Z10
-	VPBROADCASTD ·Blake3IV+12(SB), Z11
+	VPBROADCASTD ·Blake3IV+0(SB),  X8
+	VPBROADCASTD ·Blake3IV+4(SB),  X9
+	VPBROADCASTD ·Blake3IV+8(SB),  X10
+	VPBROADCASTD ·Blake3IV+12(SB), X11
 
 	// t_lo = 0, t_hi = 0 (single chunk, counter=0).
-	VPXORD Z12, Z12, Z12
-	VPXORD Z13, Z13, Z13
+	VPXORD X12, X12, X12
+	VPXORD X13, X13, X13
 
 	// Block 1: block_len = 64, flags = KEYED_HASH | CHUNK_START = 0x11.
 	MOVL $64, R12
-	VPBROADCASTD R12, Z14
+	VPBROADCASTD R12, X14
 	MOVL $0x11, R12
-	VPBROADCASTD R12, Z15
+	VPBROADCASTD R12, X15
 
 	// ===== Block 1 message-word build =====
 	// m[0..7] = data[0:32] ⊕ seed.
@@ -161,85 +161,85 @@ TEXT ·blake3256ChainAbsorb68x4Asm(SB), NOSPLIT, $0-32
 	EMIT_M_FROM_DATA(60, X31)            // m[15]
 
 	// ===== Block 1: 7 mixing rounds =====
-	BLAKE3_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE3_ROUND(Z18, Z22, Z19, Z26, Z23, Z16, Z20, Z29, Z17, Z27, Z28, Z21, Z25, Z30, Z31, Z24)
-	BLAKE3_ROUND(Z19, Z20, Z26, Z28, Z29, Z18, Z23, Z30, Z22, Z21, Z25, Z16, Z27, Z31, Z24, Z17)
-	BLAKE3_ROUND(Z26, Z23, Z28, Z25, Z30, Z19, Z29, Z31, Z20, Z16, Z27, Z18, Z21, Z24, Z17, Z22)
-	BLAKE3_ROUND(Z28, Z29, Z25, Z27, Z31, Z26, Z30, Z24, Z23, Z18, Z21, Z19, Z16, Z17, Z22, Z20)
-	BLAKE3_ROUND(Z25, Z30, Z27, Z21, Z24, Z28, Z31, Z17, Z29, Z19, Z16, Z26, Z18, Z22, Z20, Z23)
-	BLAKE3_ROUND(Z27, Z31, Z21, Z16, Z17, Z25, Z24, Z22, Z30, Z26, Z18, Z28, Z19, Z20, Z23, Z29)
+	BLAKE3_ROUND(X16, X17, X18, X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31)
+	BLAKE3_ROUND(X18, X22, X19, X26, X23, X16, X20, X29, X17, X27, X28, X21, X25, X30, X31, X24)
+	BLAKE3_ROUND(X19, X20, X26, X28, X29, X18, X23, X30, X22, X21, X25, X16, X27, X31, X24, X17)
+	BLAKE3_ROUND(X26, X23, X28, X25, X30, X19, X29, X31, X20, X16, X27, X18, X21, X24, X17, X22)
+	BLAKE3_ROUND(X28, X29, X25, X27, X31, X26, X30, X24, X23, X18, X21, X19, X16, X17, X22, X20)
+	BLAKE3_ROUND(X25, X30, X27, X21, X24, X28, X31, X17, X29, X19, X16, X26, X18, X22, X20, X23)
+	BLAKE3_ROUND(X27, X31, X21, X16, X17, X25, X24, X22, X30, X26, X18, X28, X19, X20, X23, X29)
 
-	// ===== Block 1 fold: cv1[k] = v[k] ⊕ v[k+8] in-place into Z0..Z7.
+	// ===== Block 1 fold: cv1[k] = v[k] ⊕ v[k+8] in-place into X0..X7.
 	// (BLAKE3 does NOT XOR with the input chaining value here —
 	// that's the difference from BLAKE2 that lets us skip the cv1
 	// stack spill. The chaining value for block 2's state init is
 	// just the lower-half output of block 1's compression.)
-	VPXORD Z8,  Z0, Z0
-	VPXORD Z9,  Z1, Z1
-	VPXORD Z10, Z2, Z2
-	VPXORD Z11, Z3, Z3
-	VPXORD Z12, Z4, Z4
-	VPXORD Z13, Z5, Z5
-	VPXORD Z14, Z6, Z6
-	VPXORD Z15, Z7, Z7
+	VPXORD X8,  X0, X0
+	VPXORD X9,  X1, X1
+	VPXORD X10, X2, X2
+	VPXORD X11, X3, X3
+	VPXORD X12, X4, X4
+	VPXORD X13, X5, X5
+	VPXORD X14, X6, X6
+	VPXORD X15, X7, X7
 
 	// ===== Block 2 state init =====
-	// v[0..7] = cv1 (already in Z0..Z7).
+	// v[0..7] = cv1 (already in X0..X7).
 	// v[8..11] = IV[0..3] (re-init).
-	VPBROADCASTD ·Blake3IV+0(SB),  Z8
-	VPBROADCASTD ·Blake3IV+4(SB),  Z9
-	VPBROADCASTD ·Blake3IV+8(SB),  Z10
-	VPBROADCASTD ·Blake3IV+12(SB), Z11
+	VPBROADCASTD ·Blake3IV+0(SB),  X8
+	VPBROADCASTD ·Blake3IV+4(SB),  X9
+	VPBROADCASTD ·Blake3IV+8(SB),  X10
+	VPBROADCASTD ·Blake3IV+12(SB), X11
 
-	// t_lo / t_hi unchanged at 0 (Z12 / Z13). But Z12 was rotated
+	// t_lo / t_hi unchanged at 0 (X12 / X13). But X12 was rotated
 	// through the mix above — re-zero it.
-	VPXORD Z12, Z12, Z12
-	VPXORD Z13, Z13, Z13
+	VPXORD X12, X12, X12
+	VPXORD X13, X13, X13
 
 	// Block 2: block_len = 4, flags = KEYED_HASH | CHUNK_END | ROOT = 0x1A.
 	MOVL $4, R12
-	VPBROADCASTD R12, Z14
+	VPBROADCASTD R12, X14
 	MOVL $0x1A, R12
-	VPBROADCASTD R12, Z15
+	VPBROADCASTD R12, X15
 
 	// ===== Block 2 message-word build =====
 	// m[0] = data[64:68] (no seed XOR).
 	EMIT_M_FROM_DATA(64, X16)
 	// m[1..15] = 0.
-	VPXORD Z17, Z17, Z17
-	VPXORD Z18, Z18, Z18
-	VPXORD Z19, Z19, Z19
-	VPXORD Z20, Z20, Z20
-	VPXORD Z21, Z21, Z21
-	VPXORD Z22, Z22, Z22
-	VPXORD Z23, Z23, Z23
-	VPXORD Z24, Z24, Z24
-	VPXORD Z25, Z25, Z25
-	VPXORD Z26, Z26, Z26
-	VPXORD Z27, Z27, Z27
-	VPXORD Z28, Z28, Z28
-	VPXORD Z29, Z29, Z29
-	VPXORD Z30, Z30, Z30
-	VPXORD Z31, Z31, Z31
+	VPXORD X17, X17, X17
+	VPXORD X18, X18, X18
+	VPXORD X19, X19, X19
+	VPXORD X20, X20, X20
+	VPXORD X21, X21, X21
+	VPXORD X22, X22, X22
+	VPXORD X23, X23, X23
+	VPXORD X24, X24, X24
+	VPXORD X25, X25, X25
+	VPXORD X26, X26, X26
+	VPXORD X27, X27, X27
+	VPXORD X28, X28, X28
+	VPXORD X29, X29, X29
+	VPXORD X30, X30, X30
+	VPXORD X31, X31, X31
 
 	// ===== Block 2: 7 mixing rounds =====
-	BLAKE3_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE3_ROUND(Z18, Z22, Z19, Z26, Z23, Z16, Z20, Z29, Z17, Z27, Z28, Z21, Z25, Z30, Z31, Z24)
-	BLAKE3_ROUND(Z19, Z20, Z26, Z28, Z29, Z18, Z23, Z30, Z22, Z21, Z25, Z16, Z27, Z31, Z24, Z17)
-	BLAKE3_ROUND(Z26, Z23, Z28, Z25, Z30, Z19, Z29, Z31, Z20, Z16, Z27, Z18, Z21, Z24, Z17, Z22)
-	BLAKE3_ROUND(Z28, Z29, Z25, Z27, Z31, Z26, Z30, Z24, Z23, Z18, Z21, Z19, Z16, Z17, Z22, Z20)
-	BLAKE3_ROUND(Z25, Z30, Z27, Z21, Z24, Z28, Z31, Z17, Z29, Z19, Z16, Z26, Z18, Z22, Z20, Z23)
-	BLAKE3_ROUND(Z27, Z31, Z21, Z16, Z17, Z25, Z24, Z22, Z30, Z26, Z18, Z28, Z19, Z20, Z23, Z29)
+	BLAKE3_ROUND(X16, X17, X18, X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31)
+	BLAKE3_ROUND(X18, X22, X19, X26, X23, X16, X20, X29, X17, X27, X28, X21, X25, X30, X31, X24)
+	BLAKE3_ROUND(X19, X20, X26, X28, X29, X18, X23, X30, X22, X21, X25, X16, X27, X31, X24, X17)
+	BLAKE3_ROUND(X26, X23, X28, X25, X30, X19, X29, X31, X20, X16, X27, X18, X21, X24, X17, X22)
+	BLAKE3_ROUND(X28, X29, X25, X27, X31, X26, X30, X24, X23, X18, X21, X19, X16, X17, X22, X20)
+	BLAKE3_ROUND(X25, X30, X27, X21, X24, X28, X31, X17, X29, X19, X16, X26, X18, X22, X20, X23)
+	BLAKE3_ROUND(X27, X31, X21, X16, X17, X25, X24, X22, X30, X26, X18, X28, X19, X20, X23, X29)
 
 	// ===== Block 2 final fold: out[k] = v[k] ⊕ v[k+8] =====
-	VPXORD Z8,  Z0, Z0
-	VPXORD Z9,  Z1, Z1
-	VPXORD Z10, Z2, Z2
-	VPXORD Z11, Z3, Z3
-	VPXORD Z12, Z4, Z4
-	VPXORD Z13, Z5, Z5
-	VPXORD Z14, Z6, Z6
-	VPXORD Z15, Z7, Z7
+	VPXORD X8,  X0, X0
+	VPXORD X9,  X1, X1
+	VPXORD X10, X2, X2
+	VPXORD X11, X3, X3
+	VPXORD X12, X4, X4
+	VPXORD X13, X5, X5
+	VPXORD X14, X6, X6
+	VPXORD X15, X7, X7
 
 	// ===== Writeback =====
 	MOVQ R15, R8
@@ -247,14 +247,14 @@ TEXT ·blake3256ChainAbsorb68x4Asm(SB), NOSPLIT, $0-32
 	LEAQ 64(R15), R10
 	LEAQ 96(R15), R11
 
-	STORE_LANE_DW(Z0, 0)
-	STORE_LANE_DW(Z1, 4)
-	STORE_LANE_DW(Z2, 8)
-	STORE_LANE_DW(Z3, 12)
-	STORE_LANE_DW(Z4, 16)
-	STORE_LANE_DW(Z5, 20)
-	STORE_LANE_DW(Z6, 24)
-	STORE_LANE_DW(Z7, 28)
+	STORE_LANE_DW(X0, 0)
+	STORE_LANE_DW(X1, 4)
+	STORE_LANE_DW(X2, 8)
+	STORE_LANE_DW(X3, 12)
+	STORE_LANE_DW(X4, 16)
+	STORE_LANE_DW(X5, 20)
+	STORE_LANE_DW(X6, 24)
+	STORE_LANE_DW(X7, 28)
 
 	VZEROUPPER
 	RET
