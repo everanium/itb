@@ -278,35 +278,14 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 ## Proof 5: Noise Barrier Bound
 
-**Note on MinPixels unification.** The shipped v0.3.0 line unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC-authenticated surfaces, so length-envelope indistinguishability holds across both streaming modes. The two worked examples below are both mathematically valid barrier bounds; the auth-side row is the one that describes the shipped floor.
+**Note on MinPixels unification.** The shipped v0.3.0 line unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC-authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). This closes an Auth-vs-Non-AEAD distinguisher: before unification the plain floor `⌈keyBits / log₂(56)⌉` produced a smaller minimum container than the auth floor, so the minimum-message container size betrayed which mode was in use — a small length-envelope leak. With one floor for both modes, the minimum-size envelope is mode-independent.
 
-**Theorem.** With Channels = 8, MinPixels = ⌈keyBits / log₂(56)⌉ for Encrypt/Stream and MinPixelsAuth = ⌈keyBits / log₂(7)⌉ for Auth, the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits.
+**Theorem.** With Channels = 8 and the unified shipped floor `MinPixels = MinPixelsAuth = ⌈keyBits / log₂(7)⌉` (both plain and Auth surfaces), the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits. The looser `⌈keyBits / log₂(56)⌉` quantity — the no-CCA ambiguity-dominance count of [Proof 9](#proof-9-ambiguity-dominance-threshold), which sits below the shipped floor and never ships as a container minimum — gives a second, weaker worked bound and is retained only for illustration.
 
-**Proof.** For keyBits = 1024, Encrypt/Stream mode:
-
-```
-MinPixels = ⌈1024 / log₂(56)⌉ = ⌈1024 / 5.807⌉ = 177
-```
-
-Square container: side = ⌈√177⌉ = 14, P = 196.
-
-Noise barrier:
-```
-2^(8 × 196) = 2^1568
-```
-
-Key space: 2^1024.
+**Proof.** For keyBits = 1024, the shipped unified floor (both modes):
 
 ```
-1568 > 1024  ⟹  2^1568 > 2^1024  ✓
-```
-
-The barrier strictly exceeds the key space by a factor of 2^544.
-
-For keyBits = 1024, Auth mode:
-
-```
-MinPixelsAuth = ⌈1024 / log₂(7)⌉ = ⌈1024 / 2.807⌉ = 365
+MinPixels = MinPixelsAuth = ⌈1024 / log₂(7)⌉ = ⌈1024 / 2.807⌉ = 365
 ```
 
 Square container: side = ⌈√365⌉ = 20, P = 400.
@@ -316,9 +295,23 @@ Noise barrier:
 2^(8 × 400) = 2^3200
 ```
 
+Key space: 2^1024.
+
+```
+3200 > 1024  ⟹  2^3200 > 2^1024  ✓
+```
+
 The barrier strictly exceeds the key space by a factor of 2^2176.
 
-**General:** For Encrypt/Stream, P ≥ ⌈keyBits / log₂(56)⌉. Since 8 / log₂(56) = 8 / 5.807 ≈ 1.378 > 1, we have 8P > keyBits. For Auth, P ≥ ⌈keyBits / log₂(7)⌉. Since 8 / log₂(7) = 8 / 2.807 ≈ 2.850 > 1, we have 8P > keyBits. ∎
+For keyBits = 1024, the looser no-CCA bound (below the shipped floor, illustrative only):
+
+```
+P_noCCA = ⌈1024 / log₂(56)⌉ = ⌈1024 / 5.807⌉ = 177
+```
+
+Square container: side = ⌈√177⌉ = 14, P = 196; noise barrier 2^(8 × 196) = 2^1568 > 2^1024, exceeding the key space by 2^544. This bound is weaker than the shipped floor and is never instantiated as a container minimum.
+
+**General:** For the shipped floor (both modes), P ≥ ⌈keyBits / log₂(7)⌉; since 8 / log₂(7) = 8 / 2.807 ≈ 2.850 > 1, we have 8P > keyBits. The looser no-CCA quantity P ≥ ⌈keyBits / log₂(56)⌉ satisfies 8 / log₂(56) = 8 / 5.807 ≈ 1.378 > 1, so 8P > keyBits there too. ∎
 
 ## Proof 6: CCA Leak Upper Bound
 
@@ -481,8 +474,8 @@ Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot
 
 | Data size | Side (s) | Min fill = 7×(2s+1) |
 |---|---|---|
-| MinPixels 1024-bit | 14 | 203 bytes |
-| MinPixelsAuth 1024-bit | 20 | 287 bytes |
+| no-CCA bound 1024-bit (illustrative, below shipped floor) | 14 | 203 bytes |
+| shipped floor 1024-bit (MinPixels = MinPixelsAuth) | 20 | 287 bytes |
 | 16 KB | 49 | 693 bytes |
 | 1 MB | 388 | 5,439 bytes |
 | 64 MB | 3,103 | 43,449 bytes |
