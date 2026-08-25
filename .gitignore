@@ -29,6 +29,9 @@
 !bindings/scala/eitb/eitb
 /eitb
 /tools/eitb/eitb
+# Parity helper compiled binaries (built by scripts/parity/cross-build-parity.sh)
+/tools/parity/parity-cgo
+/tools/parity/parity-nocgo
 *.test
 
 # CPU/memory profiles
