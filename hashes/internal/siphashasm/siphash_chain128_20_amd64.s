@@ -157,11 +157,10 @@ TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
-	// out0 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Z18.
-	VMOVDQA64 Z0, Z18
-	VPXORQ Z1, Z18, Z18
-	VPXORQ Z2, Z18, Z18
-	VPXORQ Z3, Z18, Z18
+	// out0 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Z18
+	// (three-operand XOR + three-way-XOR ternlog, truth table 0x96).
+	VPXORQ Z1, Z0, Z18
+	VPTERNLOGQ $0x96, Z3, Z2, Z18
 
 	// ===== Finalization second half =====
 	MOVQ $0xdd, R12
@@ -171,11 +170,10 @@ TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
-	// out1 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Z19.
-	VMOVDQA64 Z0, Z19
-	VPXORQ Z1, Z19, Z19
-	VPXORQ Z2, Z19, Z19
-	VPXORQ Z3, Z19, Z19
+	// out1 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Z19
+	// (three-operand XOR + three-way-XOR ternlog, truth table 0x96).
+	VPXORQ Z1, Z0, Z19
+	VPTERNLOGQ $0x96, Z3, Z2, Z19
 
 	// ===== Writeback =====
 	// out *[4][2]uint64: lane k at byte offset k*16,
