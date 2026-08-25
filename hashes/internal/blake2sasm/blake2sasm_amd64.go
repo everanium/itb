@@ -4,7 +4,7 @@
 // implementation of BLAKE2s for the parent hashes/ package. The chain
 // kernels are specialised at three input widths (20 / 36 / 68 bytes —
 // covering the ITB 128 / 256 / 512-bit nonce buf shapes) and hold
-// BLAKE2s state in ZMM registers across the absorb rounds, eliminating
+// BLAKE2s state in XMM registers across the absorb rounds, eliminating
 // the per-round memory round-trip taken by the upstream
 // `golang.org/x/crypto/blake2s` path.
 //
@@ -13,7 +13,7 @@
 // scalar paths. No AVX2 / SSE4 / SSSE3 ASM is provided here — the
 // upstream library already covers those tiers, and the fused
 // chain-absorb trick that motivates this package is AVX-512-only by
-// construction (state-residency requires ZMM; VPRORD requires
+// construction (state-residency uses the EVEX register file; VPRORD requires
 // AVX-512 + VL).
 //
 // Reference layout: github.com/saucecontrol/Blake2Fast (MIT) —

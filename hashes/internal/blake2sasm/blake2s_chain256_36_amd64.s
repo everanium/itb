@@ -1,9 +1,10 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for BLAKE2s-256 with 36-byte
+// XMM-batched fused chain-absorb kernel for BLAKE2s-256 with 36-byte
 // per-lane data input (the ITB SetNonceBits(256) buf shape). Two
 // 64-byte BLAKE2s compression blocks per lane, with state-residency
-// in ZMM registers between the two compressions:
+// in XMM registers between the two compressions (the 4 × 32-bit
+// lane dwords fill one XMM register exactly):
 //
 //	Block 1 (t=64,  f=0):  buf[0:64]   = b2key + (data[0:32] ⊕ seed)
 //	Block 2 (t=68,  f=^0): buf[64:128] = data[32:36] + 60 zero pad
@@ -11,9 +12,9 @@
 // Unlike BLAKE2b at the 36-byte data shape (which is single-block
 // since 32+36=68 ≤ 128 block size), BLAKE2s at 36 bytes spills past
 // the 64-byte block size and requires a second compression. Four
-// pixels processed lane-parallel: 16 ZMM registers hold v[0..15]
+// pixels processed lane-parallel: 16 XMM registers hold v[0..15]
 // across both compressions; the post-block-1 chaining hash
-// h_after_block1 is held in Z0..Z7 (= the v[0..7] init for block 2)
+// h_after_block1 is held in X0..X7 (= the v[0..7] init for block 2)
 // and also saved to stack so the final block-2 fold can XOR it back.
 //
 //	blake2s256ChainAbsorb36x4Asm(
@@ -23,9 +24,7 @@
 //	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
 //	    out      *[4][8]uint32)     // output: 32 bytes per lane
 //
-// Stack frame: 512 bytes for h_after_block1 spill (8 ZMMs × 64 bytes,
-// upper 12 dwords of each ZMM are garbage but the full ZMM is saved
-// with VMOVDQU64 for register-port efficiency).
+// Stack frame: 128 bytes for h_after_block1 spill (8 XMMs × 16 bytes).
 
 #include "textflag.h"
 
@@ -46,14 +45,14 @@
 	VPRORD $7,  b, b
 
 #define BLAKE2S_ROUND(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15) \
-	BLAKE2S_G(Z0, Z4, Z8,  Z12, s0,  s1); \
-	BLAKE2S_G(Z1, Z5, Z9,  Z13, s2,  s3); \
-	BLAKE2S_G(Z2, Z6, Z10, Z14, s4,  s5); \
-	BLAKE2S_G(Z3, Z7, Z11, Z15, s6,  s7); \
-	BLAKE2S_G(Z0, Z5, Z10, Z15, s8,  s9); \
-	BLAKE2S_G(Z1, Z6, Z11, Z12, s10, s11); \
-	BLAKE2S_G(Z2, Z7, Z8,  Z13, s12, s13); \
-	BLAKE2S_G(Z3, Z4, Z9,  Z14, s14, s15)
+	BLAKE2S_G(X0, X4, X8,  X12, s0,  s1); \
+	BLAKE2S_G(X1, X5, X9,  X13, s2,  s3); \
+	BLAKE2S_G(X2, X6, X10, X14, s4,  s5); \
+	BLAKE2S_G(X3, X7, X11, X15, s6,  s7); \
+	BLAKE2S_G(X0, X5, X10, X15, s8,  s9); \
+	BLAKE2S_G(X1, X6, X11, X12, s10, s11); \
+	BLAKE2S_G(X2, X7, X8,  X13, s12, s13); \
+	BLAKE2S_G(X3, X4, X9,  X14, s14, s15)
 
 #define PACK_M_LANES(l0, l1, l2, l3, x_dst) \
 	VMOVD  l0, x_dst; \
@@ -97,12 +96,11 @@
 	MOVL data_off(R11), DI; \
 	PACK_M_LANES(R12, R13, R14, DI, x_dst)
 
-#define STORE_LANE_DW(z_src, off) \
-	VEXTRACTI32X4 $0, z_src, X16; \
-	VPEXTRD $0, X16, off(R8); \
-	VPEXTRD $1, X16, off(R9); \
-	VPEXTRD $2, X16, off(R10); \
-	VPEXTRD $3, X16, off(R11)
+#define STORE_LANE_DW(x_src, off) \
+	VPEXTRD $0, x_src, off(R8); \
+	VPEXTRD $1, x_src, off(R9); \
+	VPEXTRD $2, x_src, off(R10); \
+	VPEXTRD $3, x_src, off(R11)
 
 // func blake2s256ChainAbsorb36x4Asm(
 //     h0       *[8]uint32,
@@ -110,7 +108,7 @@
 //     seeds    *[4][4]uint64,
 //     dataPtrs *[4]*byte,
 //     out      *[4][8]uint32)
-TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $512-40
+TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $128-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX
 	MOVQ seeds+16(FP),   CX
@@ -123,28 +121,28 @@ TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $512-40
 	MOVQ 24(DX), R11
 
 	// ===== Block 1 state init =====
-	VPBROADCASTD 0(AX),  Z0
-	VPBROADCASTD 4(AX),  Z1
-	VPBROADCASTD 8(AX),  Z2
-	VPBROADCASTD 12(AX), Z3
-	VPBROADCASTD 16(AX), Z4
-	VPBROADCASTD 20(AX), Z5
-	VPBROADCASTD 24(AX), Z6
-	VPBROADCASTD 28(AX), Z7
+	VPBROADCASTD 0(AX),  X0
+	VPBROADCASTD 4(AX),  X1
+	VPBROADCASTD 8(AX),  X2
+	VPBROADCASTD 12(AX), X3
+	VPBROADCASTD 16(AX), X4
+	VPBROADCASTD 20(AX), X5
+	VPBROADCASTD 24(AX), X6
+	VPBROADCASTD 28(AX), X7
 
-	VPBROADCASTD ·Blake2sIV+0(SB),  Z8
-	VPBROADCASTD ·Blake2sIV+4(SB),  Z9
-	VPBROADCASTD ·Blake2sIV+8(SB),  Z10
-	VPBROADCASTD ·Blake2sIV+12(SB), Z11
-	VPBROADCASTD ·Blake2sIV+16(SB), Z12
-	VPBROADCASTD ·Blake2sIV+20(SB), Z13
-	VPBROADCASTD ·Blake2sIV+24(SB), Z14
-	VPBROADCASTD ·Blake2sIV+28(SB), Z15
+	VPBROADCASTD ·Blake2sIV+0(SB),  X8
+	VPBROADCASTD ·Blake2sIV+4(SB),  X9
+	VPBROADCASTD ·Blake2sIV+8(SB),  X10
+	VPBROADCASTD ·Blake2sIV+12(SB), X11
+	VPBROADCASTD ·Blake2sIV+16(SB), X12
+	VPBROADCASTD ·Blake2sIV+20(SB), X13
+	VPBROADCASTD ·Blake2sIV+24(SB), X14
+	VPBROADCASTD ·Blake2sIV+28(SB), X15
 
 	// Block 1: t_lo = 64. f = 0 (NOT final).
 	MOVL $64, R12
-	VPBROADCASTD R12, Z16
-	VPXORD Z16, Z12, Z12
+	VPBROADCASTD R12, X16
+	VPXORD X16, X12, X12
 
 	// ===== Block 1 message-word build =====
 	// m[8..15] = (data[0:32] ⊕ seed[0..3]) split into 8 dwords.
@@ -158,116 +156,116 @@ TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $512-40
 	EMIT_M_FROM_DATAXSEEDHI(28, 3, X31)  // m[15]
 
 	// m[0..7] = b2key dwords, broadcast.
-	VPBROADCASTD 0(BX),  Z16
-	VPBROADCASTD 4(BX),  Z17
-	VPBROADCASTD 8(BX),  Z18
-	VPBROADCASTD 12(BX), Z19
-	VPBROADCASTD 16(BX), Z20
-	VPBROADCASTD 20(BX), Z21
-	VPBROADCASTD 24(BX), Z22
-	VPBROADCASTD 28(BX), Z23
+	VPBROADCASTD 0(BX),  X16
+	VPBROADCASTD 4(BX),  X17
+	VPBROADCASTD 8(BX),  X18
+	VPBROADCASTD 12(BX), X19
+	VPBROADCASTD 16(BX), X20
+	VPBROADCASTD 20(BX), X21
+	VPBROADCASTD 24(BX), X22
+	VPBROADCASTD 28(BX), X23
 
 	// ===== Block 1: 10 rounds =====
-	BLAKE2S_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2S_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
-	BLAKE2S_ROUND(Z27, Z24, Z28, Z16, Z21, Z18, Z31, Z29, Z26, Z30, Z19, Z22, Z23, Z17, Z25, Z20)
-	BLAKE2S_ROUND(Z23, Z25, Z19, Z17, Z29, Z28, Z27, Z30, Z18, Z22, Z21, Z26, Z20, Z16, Z31, Z24)
-	BLAKE2S_ROUND(Z25, Z16, Z21, Z23, Z18, Z20, Z26, Z31, Z30, Z17, Z27, Z28, Z22, Z24, Z19, Z29)
-	BLAKE2S_ROUND(Z18, Z28, Z22, Z26, Z16, Z27, Z24, Z19, Z20, Z29, Z23, Z21, Z31, Z30, Z17, Z25)
-	BLAKE2S_ROUND(Z28, Z21, Z17, Z31, Z30, Z29, Z20, Z26, Z16, Z23, Z22, Z19, Z25, Z18, Z24, Z27)
-	BLAKE2S_ROUND(Z29, Z27, Z23, Z30, Z28, Z17, Z19, Z25, Z21, Z16, Z31, Z20, Z24, Z22, Z18, Z26)
-	BLAKE2S_ROUND(Z22, Z31, Z30, Z25, Z27, Z19, Z16, Z24, Z28, Z18, Z29, Z23, Z17, Z20, Z26, Z21)
-	BLAKE2S_ROUND(Z26, Z18, Z24, Z20, Z23, Z22, Z17, Z21, Z31, Z27, Z25, Z30, Z19, Z28, Z29, Z16)
+	BLAKE2S_ROUND(X16, X17, X18, X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31)
+	BLAKE2S_ROUND(X30, X26, X20, X24, X25, X31, X29, X22, X17, X28, X16, X18, X27, X23, X21, X19)
+	BLAKE2S_ROUND(X27, X24, X28, X16, X21, X18, X31, X29, X26, X30, X19, X22, X23, X17, X25, X20)
+	BLAKE2S_ROUND(X23, X25, X19, X17, X29, X28, X27, X30, X18, X22, X21, X26, X20, X16, X31, X24)
+	BLAKE2S_ROUND(X25, X16, X21, X23, X18, X20, X26, X31, X30, X17, X27, X28, X22, X24, X19, X29)
+	BLAKE2S_ROUND(X18, X28, X22, X26, X16, X27, X24, X19, X20, X29, X23, X21, X31, X30, X17, X25)
+	BLAKE2S_ROUND(X28, X21, X17, X31, X30, X29, X20, X26, X16, X23, X22, X19, X25, X18, X24, X27)
+	BLAKE2S_ROUND(X29, X27, X23, X30, X28, X17, X19, X25, X21, X16, X31, X20, X24, X22, X18, X26)
+	BLAKE2S_ROUND(X22, X31, X30, X25, X27, X19, X16, X24, X28, X18, X29, X23, X17, X20, X26, X21)
+	BLAKE2S_ROUND(X26, X18, X24, X20, X23, X22, X17, X21, X31, X27, X25, X30, X19, X28, X29, X16)
 
 	// ===== Block 1 fold: h_after_block1[k] = h0[k] ⊕ v[k] ⊕ v[k+8]
-	// Result lives in Z0..Z7 (= v[0..7] init for block 2).
+	// Result lives in X0..X7 (= v[0..7] init for block 2).
 	// Single VPTERNLOGD per word with truth table 0x96 (three-way XOR),
 	// h0[k] re-read from (AX) via the embedded-broadcast memory operand.
-	VPTERNLOGD.BCST $0x96, 0(AX),  Z8,  Z0
-	VPTERNLOGD.BCST $0x96, 4(AX),  Z9,  Z1
-	VPTERNLOGD.BCST $0x96, 8(AX),  Z10, Z2
-	VPTERNLOGD.BCST $0x96, 12(AX), Z11, Z3
-	VPTERNLOGD.BCST $0x96, 16(AX), Z12, Z4
-	VPTERNLOGD.BCST $0x96, 20(AX), Z13, Z5
-	VPTERNLOGD.BCST $0x96, 24(AX), Z14, Z6
-	VPTERNLOGD.BCST $0x96, 28(AX), Z15, Z7
+	VPTERNLOGD.BCST $0x96, 0(AX),  X8,  X0
+	VPTERNLOGD.BCST $0x96, 4(AX),  X9,  X1
+	VPTERNLOGD.BCST $0x96, 8(AX),  X10, X2
+	VPTERNLOGD.BCST $0x96, 12(AX), X11, X3
+	VPTERNLOGD.BCST $0x96, 16(AX), X12, X4
+	VPTERNLOGD.BCST $0x96, 20(AX), X13, X5
+	VPTERNLOGD.BCST $0x96, 24(AX), X14, X6
+	VPTERNLOGD.BCST $0x96, 28(AX), X15, X7
 
 	// Save h_after_block1 to stack so we can XOR it into the final
-	// block-2 fold (Z0..Z7 will be mutated by the block-2 rounds).
-	VMOVDQU64 Z0, 0(SP)
-	VMOVDQU64 Z1, 64(SP)
-	VMOVDQU64 Z2, 128(SP)
-	VMOVDQU64 Z3, 192(SP)
-	VMOVDQU64 Z4, 256(SP)
-	VMOVDQU64 Z5, 320(SP)
-	VMOVDQU64 Z6, 384(SP)
-	VMOVDQU64 Z7, 448(SP)
+	// block-2 fold (X0..X7 will be mutated by the block-2 rounds).
+	VMOVDQU64 X0, 0(SP)
+	VMOVDQU64 X1, 16(SP)
+	VMOVDQU64 X2, 32(SP)
+	VMOVDQU64 X3, 48(SP)
+	VMOVDQU64 X4, 64(SP)
+	VMOVDQU64 X5, 80(SP)
+	VMOVDQU64 X6, 96(SP)
+	VMOVDQU64 X7, 112(SP)
 
 	// ===== Block 2 state init =====
-	// v[0..7] = h_after_block1 (already in Z0..Z7).
-	// v[8..15] = IV broadcast (re-init Z8..Z15).
-	VPBROADCASTD ·Blake2sIV+0(SB),  Z8
-	VPBROADCASTD ·Blake2sIV+4(SB),  Z9
-	VPBROADCASTD ·Blake2sIV+8(SB),  Z10
-	VPBROADCASTD ·Blake2sIV+12(SB), Z11
-	VPBROADCASTD ·Blake2sIV+16(SB), Z12
-	VPBROADCASTD ·Blake2sIV+20(SB), Z13
-	VPBROADCASTD ·Blake2sIV+24(SB), Z14
-	VPBROADCASTD ·Blake2sIV+28(SB), Z15
+	// v[0..7] = h_after_block1 (already in X0..X7).
+	// v[8..15] = IV broadcast (re-init X8..X15).
+	VPBROADCASTD ·Blake2sIV+0(SB),  X8
+	VPBROADCASTD ·Blake2sIV+4(SB),  X9
+	VPBROADCASTD ·Blake2sIV+8(SB),  X10
+	VPBROADCASTD ·Blake2sIV+12(SB), X11
+	VPBROADCASTD ·Blake2sIV+16(SB), X12
+	VPBROADCASTD ·Blake2sIV+20(SB), X13
+	VPBROADCASTD ·Blake2sIV+24(SB), X14
+	VPBROADCASTD ·Blake2sIV+28(SB), X15
 
 	// Block 2: t_lo = 68 (= 64 + 4 trailing data bytes).
 	MOVL $68, R12
-	VPBROADCASTD R12, Z16
-	VPXORD Z16, Z12, Z12
+	VPBROADCASTD R12, X16
+	VPXORD X16, X12, X12
 
 	// f = ^0 (final block).
-	VPTERNLOGD $0xff, Z16, Z16, Z16
-	VPXORD Z16, Z14, Z14
+	VPTERNLOGD $0xff, X16, X16, X16
+	VPXORD X16, X14, X14
 
 	// ===== Block 2 message-word build =====
 	// m[0] = data[32:36] (no seed XOR; seed only covers buf[32:64]
 	// which is entirely in block 1).
 	EMIT_M_FROM_DATA(32, X16)
 	// m[1..15] = 0 (zero pad in buf[68:128]).
-	VPXORD Z17, Z17, Z17
-	VPXORD Z18, Z18, Z18
-	VPXORD Z19, Z19, Z19
-	VPXORD Z20, Z20, Z20
-	VPXORD Z21, Z21, Z21
-	VPXORD Z22, Z22, Z22
-	VPXORD Z23, Z23, Z23
-	VPXORD Z24, Z24, Z24
-	VPXORD Z25, Z25, Z25
-	VPXORD Z26, Z26, Z26
-	VPXORD Z27, Z27, Z27
-	VPXORD Z28, Z28, Z28
-	VPXORD Z29, Z29, Z29
-	VPXORD Z30, Z30, Z30
-	VPXORD Z31, Z31, Z31
+	VPXORD X17, X17, X17
+	VPXORD X18, X18, X18
+	VPXORD X19, X19, X19
+	VPXORD X20, X20, X20
+	VPXORD X21, X21, X21
+	VPXORD X22, X22, X22
+	VPXORD X23, X23, X23
+	VPXORD X24, X24, X24
+	VPXORD X25, X25, X25
+	VPXORD X26, X26, X26
+	VPXORD X27, X27, X27
+	VPXORD X28, X28, X28
+	VPXORD X29, X29, X29
+	VPXORD X30, X30, X30
+	VPXORD X31, X31, X31
 
 	// ===== Block 2: 10 rounds =====
-	BLAKE2S_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2S_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
-	BLAKE2S_ROUND(Z27, Z24, Z28, Z16, Z21, Z18, Z31, Z29, Z26, Z30, Z19, Z22, Z23, Z17, Z25, Z20)
-	BLAKE2S_ROUND(Z23, Z25, Z19, Z17, Z29, Z28, Z27, Z30, Z18, Z22, Z21, Z26, Z20, Z16, Z31, Z24)
-	BLAKE2S_ROUND(Z25, Z16, Z21, Z23, Z18, Z20, Z26, Z31, Z30, Z17, Z27, Z28, Z22, Z24, Z19, Z29)
-	BLAKE2S_ROUND(Z18, Z28, Z22, Z26, Z16, Z27, Z24, Z19, Z20, Z29, Z23, Z21, Z31, Z30, Z17, Z25)
-	BLAKE2S_ROUND(Z28, Z21, Z17, Z31, Z30, Z29, Z20, Z26, Z16, Z23, Z22, Z19, Z25, Z18, Z24, Z27)
-	BLAKE2S_ROUND(Z29, Z27, Z23, Z30, Z28, Z17, Z19, Z25, Z21, Z16, Z31, Z20, Z24, Z22, Z18, Z26)
-	BLAKE2S_ROUND(Z22, Z31, Z30, Z25, Z27, Z19, Z16, Z24, Z28, Z18, Z29, Z23, Z17, Z20, Z26, Z21)
-	BLAKE2S_ROUND(Z26, Z18, Z24, Z20, Z23, Z22, Z17, Z21, Z31, Z27, Z25, Z30, Z19, Z28, Z29, Z16)
+	BLAKE2S_ROUND(X16, X17, X18, X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31)
+	BLAKE2S_ROUND(X30, X26, X20, X24, X25, X31, X29, X22, X17, X28, X16, X18, X27, X23, X21, X19)
+	BLAKE2S_ROUND(X27, X24, X28, X16, X21, X18, X31, X29, X26, X30, X19, X22, X23, X17, X25, X20)
+	BLAKE2S_ROUND(X23, X25, X19, X17, X29, X28, X27, X30, X18, X22, X21, X26, X20, X16, X31, X24)
+	BLAKE2S_ROUND(X25, X16, X21, X23, X18, X20, X26, X31, X30, X17, X27, X28, X22, X24, X19, X29)
+	BLAKE2S_ROUND(X18, X28, X22, X26, X16, X27, X24, X19, X20, X29, X23, X21, X31, X30, X17, X25)
+	BLAKE2S_ROUND(X28, X21, X17, X31, X30, X29, X20, X26, X16, X23, X22, X19, X25, X18, X24, X27)
+	BLAKE2S_ROUND(X29, X27, X23, X30, X28, X17, X19, X25, X21, X16, X31, X20, X24, X22, X18, X26)
+	BLAKE2S_ROUND(X22, X31, X30, X25, X27, X19, X16, X24, X28, X18, X29, X23, X17, X20, X26, X21)
+	BLAKE2S_ROUND(X26, X18, X24, X20, X23, X22, X17, X21, X31, X27, X25, X30, X19, X28, X29, X16)
 
 	// ===== Block 2 final fold: out[k] = h_after_block1[k] ⊕ v[k] ⊕ v[k+8]
 	// Single VPTERNLOGD per word with truth table 0x96 (three-way XOR);
 	// h_after_block1 reloaded from stack via the full-width memory operand.
-	VPTERNLOGD $0x96, 0(SP),   Z8,  Z0
-	VPTERNLOGD $0x96, 64(SP),  Z9,  Z1
-	VPTERNLOGD $0x96, 128(SP), Z10, Z2
-	VPTERNLOGD $0x96, 192(SP), Z11, Z3
-	VPTERNLOGD $0x96, 256(SP), Z12, Z4
-	VPTERNLOGD $0x96, 320(SP), Z13, Z5
-	VPTERNLOGD $0x96, 384(SP), Z14, Z6
-	VPTERNLOGD $0x96, 448(SP), Z15, Z7
+	VPTERNLOGD $0x96, 0(SP),   X8,  X0
+	VPTERNLOGD $0x96, 16(SP),  X9,  X1
+	VPTERNLOGD $0x96, 32(SP), X10, X2
+	VPTERNLOGD $0x96, 48(SP), X11, X3
+	VPTERNLOGD $0x96, 64(SP), X12, X4
+	VPTERNLOGD $0x96, 80(SP), X13, X5
+	VPTERNLOGD $0x96, 96(SP), X14, X6
+	VPTERNLOGD $0x96, 112(SP), X15, X7
 
 	// ===== Writeback to out[4][8]uint32 =====
 	MOVQ R15, R8
@@ -275,14 +273,14 @@ TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $512-40
 	LEAQ 64(R15), R10
 	LEAQ 96(R15), R11
 
-	STORE_LANE_DW(Z0, 0)
-	STORE_LANE_DW(Z1, 4)
-	STORE_LANE_DW(Z2, 8)
-	STORE_LANE_DW(Z3, 12)
-	STORE_LANE_DW(Z4, 16)
-	STORE_LANE_DW(Z5, 20)
-	STORE_LANE_DW(Z6, 24)
-	STORE_LANE_DW(Z7, 28)
+	STORE_LANE_DW(X0, 0)
+	STORE_LANE_DW(X1, 4)
+	STORE_LANE_DW(X2, 8)
+	STORE_LANE_DW(X3, 12)
+	STORE_LANE_DW(X4, 16)
+	STORE_LANE_DW(X5, 20)
+	STORE_LANE_DW(X6, 24)
+	STORE_LANE_DW(X7, 28)
 
 	VZEROUPPER
 	RET
