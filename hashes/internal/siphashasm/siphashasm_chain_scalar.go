@@ -64,3 +64,16 @@ func scalarBatch128ChainAbsorb68(
 		out[lane][0], out[lane][1] = scalar128ChainAbsorb(data[:], seeds[lane][0], seeds[lane][1])
 	}
 }
+
+// scalarBatch128ChainAbsorb13 — 4-lane scalar reference for the 13-byte
+// SipHash-2-4-128 chain-absorb (Interlocked Barrier PRF fill shape).
+func scalarBatch128ChainAbsorb13(
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+) {
+	for lane := 0; lane < 4; lane++ {
+		data := (*[13]byte)(unsafe.Pointer(dataPtrs[lane]))
+		out[lane][0], out[lane][1] = scalar128ChainAbsorb(data[:], seeds[lane][0], seeds[lane][1])
+	}
+}

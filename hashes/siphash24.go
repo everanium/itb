@@ -59,7 +59,7 @@ func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 	}
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		commonLen := len(data[0])
-		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&
+		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
 			len(data[1]) == commonLen &&
 			len(data[2]) == commonLen &&
 			len(data[3]) == commonLen {
@@ -71,6 +71,13 @@ func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 			var out [4][2]uint64
 			seedsCopy := seeds
 			switch commonLen {
+			case 13:
+				// Interlocked Barrier PRF fill shape (Lift 2).
+				siphashasm.SipHash24Chain128Absorb13x4(
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
 			case 20:
 				siphashasm.SipHash24Chain128Absorb20x4(
 					&seedsCopy,
