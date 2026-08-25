@@ -23,6 +23,7 @@ import (
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/triple"
 )
 
 // extTripleBenchCfg returns the *itb.Config every ExtTriple bench
@@ -966,4 +967,223 @@ func TestTripleLockSeedMixedPrimitive256(t *testing.T) {
 		t.Errorf("Triple mixed-primitive lockSeed roundtrip mismatch: got %d bytes, want %d",
 			len(pt), len(plaintext))
 	}
+}
+
+// --- Fleet-shape benches: triple facade Pipeline, binding-comparable ---
+//
+// The BenchmarkFleetGoNative_* cohort measures the Go-native triple
+// facade at the exact layer the binding shims drive: profile-based
+// [triple.Init] plus [triple.Pipeline.EncryptMessage] /
+// [triple.Pipeline.DecryptMessage] / [triple.Pipeline.EncryptStream] /
+// [triple.Pipeline.DecryptStream]. The numbers are therefore directly
+// comparable with binding-fleet bench output minus the FFI hop. Two
+// configurations, matching the binding-fleet bench shape:
+//
+//   - Canonical:  No MAC profiles (Single Message / Streaming
+//     Non-AEAD), parallax off, wrapper off — the fair-comparison
+//     floor every binding bench targets by default.
+//   - Production: MAC profiles (Single Message MAC / Streaming AEAD),
+//     parallax on, wrapper on — the shipped production shape.
+//
+// Both configurations pin Areion-SoEM-512 inner hash, 1024-bit keys,
+// and a 512-bit nonce.
+
+// fleetBenchOpts builds the [triple.Opts] for the fleet-shape bench
+// cohort. production toggles the parallax + wrapper layers; the
+// remaining knobs pin the canonical binding bench configuration
+// explicitly so profile-default drift cannot silently change the
+// measured shape.
+func fleetBenchOpts(production bool) triple.Opts {
+	parallaxOn := production
+	wrapperOn := production
+	return triple.Opts{
+		InnerHash:    "areion512",
+		KeyBits:      1024,
+		NonceBits:    512,
+		WithParallax: &parallaxOn,
+		WithWrapper:  &wrapperOn,
+	}
+}
+
+// fleetBenchPipeline constructs the bench [triple.Pipeline] against
+// the named profile with the fleet-shape Opts, registering Close via
+// [testing.B.Cleanup]. Construction (seed generation, layer key
+// derivation) happens once per bench function, outside the timed loop.
+func fleetBenchPipeline(b *testing.B, profile string, production bool) *triple.Pipeline {
+	b.Helper()
+	pipe, _, err := triple.Init(profile, fleetBenchOpts(production))
+	if err != nil {
+		b.Fatalf("triple.Init(%s): %v", profile, err)
+	}
+	b.Cleanup(func() { _ = pipe.Close() })
+	return pipe
+}
+
+// benchFleetMessageEncrypt drives [triple.Pipeline.EncryptMessage]
+// over a CSPRNG-filled plaintext of dataSize bytes. One untimed call
+// precedes the timed loop, mirroring the binding bench harnesses'
+// warm-up round.
+func benchFleetMessageEncrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline(b, profile, production)
+	data := generateDataExt(dataSize)
+	if _, err := pipe.EncryptMessage(data); err != nil {
+		b.Fatalf("EncryptMessage warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.EncryptMessage(data); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
+		}
+	}
+}
+
+// benchFleetMessageDecrypt pre-encrypts one wire outside the timed
+// loop, then drives [triple.Pipeline.DecryptMessage] on that wire.
+// The pre-encrypt doubles as the warm-up round.
+func benchFleetMessageDecrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline(b, profile, production)
+	data := generateDataExt(dataSize)
+	wire, err := pipe.EncryptMessage(data)
+	if err != nil {
+		b.Fatalf("EncryptMessage (pre-encrypt): %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.DecryptMessage(wire); err != nil {
+			b.Fatalf("DecryptMessage: %v", err)
+		}
+	}
+}
+
+// benchFleetStreamEncrypt drives [triple.Pipeline.EncryptStream]
+// through the same reader/buffer pump the binding stream shims use:
+// [bytes.NewReader] on the plaintext feeding a wire [bytes.Buffer].
+// The buffer is reset (not reallocated) per iteration; the untimed
+// first pump warms the dispatch path and sizes the buffer.
+func benchFleetStreamEncrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline(b, profile, production)
+	data := generateDataExt(dataSize)
+	var wire bytes.Buffer
+	wire.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+		b.Fatalf("EncryptStream warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wire.Reset()
+		if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+// benchFleetStreamDecrypt pre-encrypts one wire outside the timed
+// loop, then drives [triple.Pipeline.DecryptStream] on that wire into
+// a reset-per-iteration plaintext [bytes.Buffer].
+func benchFleetStreamDecrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline(b, profile, production)
+	data := generateDataExt(dataSize)
+	var wireBuf bytes.Buffer
+	wireBuf.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream (pre-encrypt): %v", err)
+	}
+	wire := wireBuf.Bytes()
+	var plain bytes.Buffer
+	plain.Grow(dataSize + 65536)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plain.Reset()
+		if err := pipe.DecryptStream(bytes.NewReader(wire), &plain); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
+// --- Fleet Canonical Message: Single Message No MAC, parallax off, wrapper off ---
+
+func BenchmarkFleetGoNative_Canonical_Message_Encrypt_1MB(b *testing.B) {
+	benchFleetMessageEncrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Message_Encrypt_16MB(b *testing.B) {
+	benchFleetMessageEncrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Message_Encrypt_64MB(b *testing.B) {
+	benchFleetMessageEncrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 64<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Message_Decrypt_1MB(b *testing.B) {
+	benchFleetMessageDecrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Message_Decrypt_16MB(b *testing.B) {
+	benchFleetMessageDecrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Message_Decrypt_64MB(b *testing.B) {
+	benchFleetMessageDecrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 64<<20)
+}
+
+// --- Fleet Canonical Stream: Streaming Non-AEAD, parallax off, wrapper off ---
+
+func BenchmarkFleetGoNative_Canonical_Stream_Encrypt_1MB(b *testing.B) {
+	benchFleetStreamEncrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Stream_Encrypt_16MB(b *testing.B) {
+	benchFleetStreamEncrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Stream_Encrypt_64MB(b *testing.B) {
+	benchFleetStreamEncrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 64<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Stream_Decrypt_1MB(b *testing.B) {
+	benchFleetStreamDecrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Stream_Decrypt_16MB(b *testing.B) {
+	benchFleetStreamDecrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_Stream_Decrypt_64MB(b *testing.B) {
+	benchFleetStreamDecrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 64<<20)
+}
+
+// --- Fleet Production Message: Single Message MAC, parallax on, wrapper on ---
+
+func BenchmarkFleetGoNative_Production_Message_Encrypt_1MB(b *testing.B) {
+	benchFleetMessageEncrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_Message_Encrypt_16MB(b *testing.B) {
+	benchFleetMessageEncrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_Message_Encrypt_64MB(b *testing.B) {
+	benchFleetMessageEncrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 64<<20)
+}
+func BenchmarkFleetGoNative_Production_Message_Decrypt_1MB(b *testing.B) {
+	benchFleetMessageDecrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_Message_Decrypt_16MB(b *testing.B) {
+	benchFleetMessageDecrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_Message_Decrypt_64MB(b *testing.B) {
+	benchFleetMessageDecrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 64<<20)
+}
+
+// --- Fleet Production Stream: Streaming AEAD MAC, parallax on, wrapper on ---
+
+func BenchmarkFleetGoNative_Production_Stream_Encrypt_1MB(b *testing.B) {
+	benchFleetStreamEncrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_Stream_Encrypt_16MB(b *testing.B) {
+	benchFleetStreamEncrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_Stream_Encrypt_64MB(b *testing.B) {
+	benchFleetStreamEncrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
+}
+func BenchmarkFleetGoNative_Production_Stream_Decrypt_1MB(b *testing.B) {
+	benchFleetStreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_Stream_Decrypt_16MB(b *testing.B) {
+	benchFleetStreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_Stream_Decrypt_64MB(b *testing.B) {
+	benchFleetStreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
 }
