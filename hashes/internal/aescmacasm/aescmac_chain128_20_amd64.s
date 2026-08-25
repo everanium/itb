@@ -100,10 +100,9 @@ TEXT ·aesCMAC128ChainAbsorb20x4Asm(SB), NOSPLIT, $64-32
 
 	// ===== State init =====
 	// Z0 = seeds[lane] per lane (16 bytes each = (seed0, seed1)).
-	VMOVDQU 0(BX),    X0
-	VINSERTI64X2 $1, 16(BX), Y0, Y0
-	VINSERTI64X2 $2, 32(BX), Z0, Z0
-	VINSERTI64X2 $3, 48(BX), Z0, Z0
+	// seeds is a contiguous *[4][2]uint64 = 64 bytes, so a single
+	// unaligned Z-load fills all four lanes in one instruction.
+	VMOVDQU64 0(BX), Z0
 
 	// Z0 ^= broadcast(uint64(20)) per qword.
 	// VPBROADCASTQ broadcasts an 8-byte value to all 8 qwords of Z12;
