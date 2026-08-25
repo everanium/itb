@@ -221,31 +221,16 @@ TEXT ·blake2s256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
 
 	// ===== Output XOR fold =====
 	// out[k] = h0[k] ⊕ v[k] ⊕ v[k+8]  for k in 0..7.
-	VPBROADCASTD 0(AX),  Z16
-	VPXORD Z16, Z0, Z0
-	VPBROADCASTD 4(AX),  Z16
-	VPXORD Z16, Z1, Z1
-	VPBROADCASTD 8(AX),  Z16
-	VPXORD Z16, Z2, Z2
-	VPBROADCASTD 12(AX), Z16
-	VPXORD Z16, Z3, Z3
-	VPBROADCASTD 16(AX), Z16
-	VPXORD Z16, Z4, Z4
-	VPBROADCASTD 20(AX), Z16
-	VPXORD Z16, Z5, Z5
-	VPBROADCASTD 24(AX), Z16
-	VPXORD Z16, Z6, Z6
-	VPBROADCASTD 28(AX), Z16
-	VPXORD Z16, Z7, Z7
-
-	VPXORD Z8,  Z0, Z0
-	VPXORD Z9,  Z1, Z1
-	VPXORD Z10, Z2, Z2
-	VPXORD Z11, Z3, Z3
-	VPXORD Z12, Z4, Z4
-	VPXORD Z13, Z5, Z5
-	VPXORD Z14, Z6, Z6
-	VPXORD Z15, Z7, Z7
+	// Single VPTERNLOGD per word with truth table 0x96 (three-way XOR),
+	// h0[k] re-read from (AX) via the embedded-broadcast memory operand.
+	VPTERNLOGD.BCST $0x96, 0(AX),  Z8,  Z0
+	VPTERNLOGD.BCST $0x96, 4(AX),  Z9,  Z1
+	VPTERNLOGD.BCST $0x96, 8(AX),  Z10, Z2
+	VPTERNLOGD.BCST $0x96, 12(AX), Z11, Z3
+	VPTERNLOGD.BCST $0x96, 16(AX), Z12, Z4
+	VPTERNLOGD.BCST $0x96, 20(AX), Z13, Z5
+	VPTERNLOGD.BCST $0x96, 24(AX), Z14, Z6
+	VPTERNLOGD.BCST $0x96, 28(AX), Z15, Z7
 
 	// ===== Writeback =====
 	// out is *[4][8]uint32 = 4 lanes × 32 bytes; per-lane stride 32 bytes.
