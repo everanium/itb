@@ -1,11 +1,12 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for BLAKE2s-256 with 20-byte
+// XMM-batched fused chain-absorb kernel for BLAKE2s-256 with 20-byte
 // per-lane data input (the ITB SetNonceBits(128) buf shape — default
-// config). Lane-parallel layout across 4 pixels: 16 ZMM registers
-// hold v[0..15] across all rounds, 16 more hold m[0..15]. No
-// DIAG/UNDIAG permutations — column G uses Z[0,4,8,12], diagonal G
-// uses Z[0,5,10,15]. BLAKE2s differs from BLAKE2b in word size
+// config). Lane-parallel layout across 4 pixels: the 4 × 32-bit lane
+// dwords fill one XMM register exactly, so 16 XMM registers hold
+// v[0..15] across all rounds, 16 more hold m[0..15]. No DIAG/UNDIAG
+// permutations — column G uses X[0,4,8,12], diagonal G
+// uses X[0,5,10,15]. BLAKE2s differs from BLAKE2b in word size
 // (u32 vs u64), block size (64 vs 128), round count (10 vs 12), and
 // G rotates (16, 12, 8, 7 vs 32, 24, 16, 63).
 //
@@ -52,20 +53,19 @@
 	VPRORD $7,  b, b
 
 #define BLAKE2S_ROUND(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15) \
-	BLAKE2S_G(Z0, Z4, Z8,  Z12, s0,  s1); \
-	BLAKE2S_G(Z1, Z5, Z9,  Z13, s2,  s3); \
-	BLAKE2S_G(Z2, Z6, Z10, Z14, s4,  s5); \
-	BLAKE2S_G(Z3, Z7, Z11, Z15, s6,  s7); \
-	BLAKE2S_G(Z0, Z5, Z10, Z15, s8,  s9); \
-	BLAKE2S_G(Z1, Z6, Z11, Z12, s10, s11); \
-	BLAKE2S_G(Z2, Z7, Z8,  Z13, s12, s13); \
-	BLAKE2S_G(Z3, Z4, Z9,  Z14, s14, s15)
+	BLAKE2S_G(X0, X4, X8,  X12, s0,  s1); \
+	BLAKE2S_G(X1, X5, X9,  X13, s2,  s3); \
+	BLAKE2S_G(X2, X6, X10, X14, s4,  s5); \
+	BLAKE2S_G(X3, X7, X11, X15, s6,  s7); \
+	BLAKE2S_G(X0, X5, X10, X15, s8,  s9); \
+	BLAKE2S_G(X1, X6, X11, X12, s10, s11); \
+	BLAKE2S_G(X2, X7, X8,  X13, s12, s13); \
+	BLAKE2S_G(X3, X4, X9,  X14, s14, s15)
 
 // PACK_M_LANES — pack 4 × 32-bit values (one per lane) into dwords
-// 0..3 of x_dst. EVEX VMOVD zeros upper ZMM lanes automatically, so
-// the resulting Z(x_dst) has dwords 0..3 = (l0, l1, l2, l3) and
-// dwords 4..15 = 0. Unlike the BLAKE2b counterpart, no X16/X17
-// scratch is required (4 dwords fit in a single XMM).
+// 0..3 of x_dst, filling the XMM exactly. Unlike the BLAKE2b
+// counterpart, no X16/X17 scratch is required (4 dwords fit in a
+// single XMM).
 #define PACK_M_LANES(l0, l1, l2, l3, x_dst) \
 	VMOVD  l0, x_dst; \
 	VPINSRD $1, l1, x_dst, x_dst; \
@@ -121,14 +121,14 @@
 	MOVL seed_idx*8 + 3*32 + 4(CX), DI; \
 	PACK_M_LANES(R12, R13, R14, DI, x_dst)
 
-// STORE_LANE_DW — extract one dword per lane from Z_src and store at
+// STORE_LANE_DW — extract one dword per lane from x_src and store at
 // out[lane]+off. Per-lane stride 32 bytes (out is *[4][8]uint32).
-#define STORE_LANE_DW(z_src, off) \
-	VEXTRACTI32X4 $0, z_src, X16; \
-	VPEXTRD $0, X16, off(R8); \
-	VPEXTRD $1, X16, off(R9); \
-	VPEXTRD $2, X16, off(R10); \
-	VPEXTRD $3, X16, off(R11)
+// Direct VPEXTRD from the XMM state — no VEXTRACTI32X4 hop.
+#define STORE_LANE_DW(x_src, off) \
+	VPEXTRD $0, x_src, off(R8); \
+	VPEXTRD $1, x_src, off(R9); \
+	VPEXTRD $2, x_src, off(R10); \
+	VPEXTRD $3, x_src, off(R11)
 
 // func blake2s256ChainAbsorb20x4Asm(...)
 TEXT ·blake2s256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
@@ -145,34 +145,34 @@ TEXT ·blake2s256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
 
 	// ===== State init =====
 	// v[0..7] = h0 (paramBlock-XOR'd IV), broadcast to 4 dword lanes.
-	VPBROADCASTD 0(AX),  Z0
-	VPBROADCASTD 4(AX),  Z1
-	VPBROADCASTD 8(AX),  Z2
-	VPBROADCASTD 12(AX), Z3
-	VPBROADCASTD 16(AX), Z4
-	VPBROADCASTD 20(AX), Z5
-	VPBROADCASTD 24(AX), Z6
-	VPBROADCASTD 28(AX), Z7
+	VPBROADCASTD 0(AX),  X0
+	VPBROADCASTD 4(AX),  X1
+	VPBROADCASTD 8(AX),  X2
+	VPBROADCASTD 12(AX), X3
+	VPBROADCASTD 16(AX), X4
+	VPBROADCASTD 20(AX), X5
+	VPBROADCASTD 24(AX), X6
+	VPBROADCASTD 28(AX), X7
 
 	// v[8..15] = Blake2sIV
-	VPBROADCASTD ·Blake2sIV+0(SB),  Z8
-	VPBROADCASTD ·Blake2sIV+4(SB),  Z9
-	VPBROADCASTD ·Blake2sIV+8(SB),  Z10
-	VPBROADCASTD ·Blake2sIV+12(SB), Z11
-	VPBROADCASTD ·Blake2sIV+16(SB), Z12
-	VPBROADCASTD ·Blake2sIV+20(SB), Z13
-	VPBROADCASTD ·Blake2sIV+24(SB), Z14
-	VPBROADCASTD ·Blake2sIV+28(SB), Z15
+	VPBROADCASTD ·Blake2sIV+0(SB),  X8
+	VPBROADCASTD ·Blake2sIV+4(SB),  X9
+	VPBROADCASTD ·Blake2sIV+8(SB),  X10
+	VPBROADCASTD ·Blake2sIV+12(SB), X11
+	VPBROADCASTD ·Blake2sIV+16(SB), X12
+	VPBROADCASTD ·Blake2sIV+20(SB), X13
+	VPBROADCASTD ·Blake2sIV+24(SB), X14
+	VPBROADCASTD ·Blake2sIV+28(SB), X15
 
 	// t_lo = 64 (low 32 bits of the BLAKE2s 64-bit counter).
 	MOVL $64, R12
-	VPBROADCASTD R12, Z16
-	VPXORD Z16, Z12, Z12
-	// t_hi = 0 — Z13 unchanged.
+	VPBROADCASTD R12, X16
+	VPXORD X16, X12, X12
+	// t_hi = 0 — X13 unchanged.
 
-	// f0 = ^0 (final block flag), into v[14]. f1 = 0 — Z15 unchanged.
-	VPTERNLOGD $0xff, Z16, Z16, Z16
-	VPXORD Z16, Z14, Z14
+	// f0 = ^0 (final block flag), into v[14]. f1 = 0 — X15 unchanged.
+	VPTERNLOGD $0xff, X16, X16, X16
+	VPXORD X16, X14, X14
 
 	// ===== Build message words m[0..15] =====
 	// Per-lane m[8..15] FIRST (PACK_M_LANES writes only into x_dst,
@@ -198,39 +198,39 @@ TEXT ·blake2s256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
 	EMIT_M_FROM_SEEDHI(3, X31)
 
 	// m[0..7] = b2key dwords, broadcast to all 4 lanes.
-	VPBROADCASTD 0(BX),  Z16
-	VPBROADCASTD 4(BX),  Z17
-	VPBROADCASTD 8(BX),  Z18
-	VPBROADCASTD 12(BX), Z19
-	VPBROADCASTD 16(BX), Z20
-	VPBROADCASTD 20(BX), Z21
-	VPBROADCASTD 24(BX), Z22
-	VPBROADCASTD 28(BX), Z23
+	VPBROADCASTD 0(BX),  X16
+	VPBROADCASTD 4(BX),  X17
+	VPBROADCASTD 8(BX),  X18
+	VPBROADCASTD 12(BX), X19
+	VPBROADCASTD 16(BX), X20
+	VPBROADCASTD 20(BX), X21
+	VPBROADCASTD 24(BX), X22
+	VPBROADCASTD 28(BX), X23
 
 	// ===== 10 mixing rounds (BLAKE2s uses sigma[0..9] only) =====
-	BLAKE2S_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2S_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
-	BLAKE2S_ROUND(Z27, Z24, Z28, Z16, Z21, Z18, Z31, Z29, Z26, Z30, Z19, Z22, Z23, Z17, Z25, Z20)
-	BLAKE2S_ROUND(Z23, Z25, Z19, Z17, Z29, Z28, Z27, Z30, Z18, Z22, Z21, Z26, Z20, Z16, Z31, Z24)
-	BLAKE2S_ROUND(Z25, Z16, Z21, Z23, Z18, Z20, Z26, Z31, Z30, Z17, Z27, Z28, Z22, Z24, Z19, Z29)
-	BLAKE2S_ROUND(Z18, Z28, Z22, Z26, Z16, Z27, Z24, Z19, Z20, Z29, Z23, Z21, Z31, Z30, Z17, Z25)
-	BLAKE2S_ROUND(Z28, Z21, Z17, Z31, Z30, Z29, Z20, Z26, Z16, Z23, Z22, Z19, Z25, Z18, Z24, Z27)
-	BLAKE2S_ROUND(Z29, Z27, Z23, Z30, Z28, Z17, Z19, Z25, Z21, Z16, Z31, Z20, Z24, Z22, Z18, Z26)
-	BLAKE2S_ROUND(Z22, Z31, Z30, Z25, Z27, Z19, Z16, Z24, Z28, Z18, Z29, Z23, Z17, Z20, Z26, Z21)
-	BLAKE2S_ROUND(Z26, Z18, Z24, Z20, Z23, Z22, Z17, Z21, Z31, Z27, Z25, Z30, Z19, Z28, Z29, Z16)
+	BLAKE2S_ROUND(X16, X17, X18, X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31)
+	BLAKE2S_ROUND(X30, X26, X20, X24, X25, X31, X29, X22, X17, X28, X16, X18, X27, X23, X21, X19)
+	BLAKE2S_ROUND(X27, X24, X28, X16, X21, X18, X31, X29, X26, X30, X19, X22, X23, X17, X25, X20)
+	BLAKE2S_ROUND(X23, X25, X19, X17, X29, X28, X27, X30, X18, X22, X21, X26, X20, X16, X31, X24)
+	BLAKE2S_ROUND(X25, X16, X21, X23, X18, X20, X26, X31, X30, X17, X27, X28, X22, X24, X19, X29)
+	BLAKE2S_ROUND(X18, X28, X22, X26, X16, X27, X24, X19, X20, X29, X23, X21, X31, X30, X17, X25)
+	BLAKE2S_ROUND(X28, X21, X17, X31, X30, X29, X20, X26, X16, X23, X22, X19, X25, X18, X24, X27)
+	BLAKE2S_ROUND(X29, X27, X23, X30, X28, X17, X19, X25, X21, X16, X31, X20, X24, X22, X18, X26)
+	BLAKE2S_ROUND(X22, X31, X30, X25, X27, X19, X16, X24, X28, X18, X29, X23, X17, X20, X26, X21)
+	BLAKE2S_ROUND(X26, X18, X24, X20, X23, X22, X17, X21, X31, X27, X25, X30, X19, X28, X29, X16)
 
 	// ===== Output XOR fold =====
 	// out[k] = h0[k] ⊕ v[k] ⊕ v[k+8]  for k in 0..7.
 	// Single VPTERNLOGD per word with truth table 0x96 (three-way XOR),
 	// h0[k] re-read from (AX) via the embedded-broadcast memory operand.
-	VPTERNLOGD.BCST $0x96, 0(AX),  Z8,  Z0
-	VPTERNLOGD.BCST $0x96, 4(AX),  Z9,  Z1
-	VPTERNLOGD.BCST $0x96, 8(AX),  Z10, Z2
-	VPTERNLOGD.BCST $0x96, 12(AX), Z11, Z3
-	VPTERNLOGD.BCST $0x96, 16(AX), Z12, Z4
-	VPTERNLOGD.BCST $0x96, 20(AX), Z13, Z5
-	VPTERNLOGD.BCST $0x96, 24(AX), Z14, Z6
-	VPTERNLOGD.BCST $0x96, 28(AX), Z15, Z7
+	VPTERNLOGD.BCST $0x96, 0(AX),  X8,  X0
+	VPTERNLOGD.BCST $0x96, 4(AX),  X9,  X1
+	VPTERNLOGD.BCST $0x96, 8(AX),  X10, X2
+	VPTERNLOGD.BCST $0x96, 12(AX), X11, X3
+	VPTERNLOGD.BCST $0x96, 16(AX), X12, X4
+	VPTERNLOGD.BCST $0x96, 20(AX), X13, X5
+	VPTERNLOGD.BCST $0x96, 24(AX), X14, X6
+	VPTERNLOGD.BCST $0x96, 28(AX), X15, X7
 
 	// ===== Writeback =====
 	// out is *[4][8]uint32 = 4 lanes × 32 bytes; per-lane stride 32 bytes.
@@ -239,14 +239,14 @@ TEXT ·blake2s256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
 	LEAQ 64(R15),  R10
 	LEAQ 96(R15),  R11
 
-	STORE_LANE_DW(Z0, 0)
-	STORE_LANE_DW(Z1, 4)
-	STORE_LANE_DW(Z2, 8)
-	STORE_LANE_DW(Z3, 12)
-	STORE_LANE_DW(Z4, 16)
-	STORE_LANE_DW(Z5, 20)
-	STORE_LANE_DW(Z6, 24)
-	STORE_LANE_DW(Z7, 28)
+	STORE_LANE_DW(X0, 0)
+	STORE_LANE_DW(X1, 4)
+	STORE_LANE_DW(X2, 8)
+	STORE_LANE_DW(X3, 12)
+	STORE_LANE_DW(X4, 16)
+	STORE_LANE_DW(X5, 20)
+	STORE_LANE_DW(X6, 24)
+	STORE_LANE_DW(X7, 28)
 
 	VZEROUPPER
 	RET

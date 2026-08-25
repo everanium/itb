@@ -102,7 +102,7 @@ func pack256Buf(buf []byte, b2key *[32]byte, data []byte, seed *[4]uint64) {
 // over the four lanes; each lane is bit-exact equivalent to the
 // public hashes.BLAKE2s256 closure on the same input. Used as the
 // production fallback on hosts without AVX-512+VL and as the parity
-// baseline for the ZMM-batched ASM kernel.
+// baseline for the XMM-batched ASM kernel.
 func scalarBatch256ChainAbsorb20(
 	h0 *[8]uint32,
 	b2key *[32]byte,

@@ -7,8 +7,8 @@ package blake2sasm
 // 128-bit ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
-// to the fused ZMM-batched ASM kernel which holds four lane-isolated
-// BLAKE2s states in 16 ZMM registers (one ZMM per v[k], 4 of 16 dword
+// to the fused XMM-batched ASM kernel which holds four lane-isolated
+// BLAKE2s states in 16 XMM registers (one XMM per v[k], all 4 dword
 // lanes used) across all 10 internal mixing rounds. No DIAG/UNDIAG
 // permutations are required since the four states are lane-parallel
 // rather than shuffled-into-one. On hosts without AVX-512+VL, falls
@@ -45,10 +45,10 @@ func Blake2s256ChainAbsorb20x4(
 	scalarBatch256ChainAbsorb20(h0, b2key, seeds, dataPtrs, out)
 }
 
-// blake2s256ChainAbsorb20x4Asm is the AVX-512 ZMM-batched fused
+// blake2s256ChainAbsorb20x4Asm is the AVX-512 XMM-batched fused
 // chain-absorb kernel implemented in blake2s_chain256_20_amd64.s.
 // State across four lane-isolated BLAKE2s compressions is held in
-// 16 ZMM registers across all 10 mixing rounds; one 64-byte BLAKE2s
+// 16 XMM registers across all 10 mixing rounds; one 64-byte BLAKE2s
 // compression per lane with t=64, f=^0 (final). Bit-exact parity
 // against the scalar reference is verified by the x4 parity tests in
 // blake2sasm_chain_test.go.
@@ -68,7 +68,7 @@ func blake2s256ChainAbsorb20x4Asm(
 //	Block 1 (t=64,  f=0):  buf[0:64]   = b2key + (data[0:32] ⊕ seed)
 //	Block 2 (t=68,  f=^0): buf[64:128] = data[32:36] + 60 zero pad
 //
-// The ASM kernel holds all four lanes' BLAKE2s states in ZMM
+// The ASM kernel holds all four lanes' BLAKE2s states in XMM
 // registers across both compressions; the inter-block fold runs
 // in-register lane-parallel, with the block-1 chaining hash spilled
 // to stack so the block-2 final fold can reload it.
