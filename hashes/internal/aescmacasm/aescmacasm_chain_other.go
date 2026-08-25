@@ -40,3 +40,15 @@ func AESCMAC128ChainAbsorb68x4(
 ) {
 	scalarBatch128ChainAbsorb68(key, seeds, dataPtrs, out)
 }
+
+// AESCMAC128ChainAbsorb13x4 — non-amd64 / purego dispatcher for the
+// Interlocked Barrier PRF fill shape.
+func AESCMAC128ChainAbsorb13x4(
+	roundKeys *[176]byte,
+	key *[16]byte,
+	seeds *[4][2]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][2]uint64,
+) {
+	scalarBatch128ChainAbsorb13(key, seeds, dataPtrs, out)
+}
