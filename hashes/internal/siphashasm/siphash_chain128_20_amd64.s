@@ -3,7 +3,7 @@
 // ZMM-batched fused chain-absorb kernel for SipHash-2-4-128 with
 // 20-byte per-lane data input (the ITB SetNonceBits(128) buf shape —
 // default config). Lane-parallel layout: 4 lanes × 4 SipHash state
-// words held in qwords 0..3 of Z0..Z3 (one ZMM per state word, lane
+// words held in qwords 0..3 of Y0..Y3 (one ZMM per state word, lane
 // = qword index).
 //
 // Per-lane absorb construction (matches the public hashes.SipHash24
@@ -29,10 +29,10 @@
 //	  v1 ^= 0xdd; SipRound × 4
 //	  out1 = v0 ^ v1 ^ v2 ^ v3
 //
-// 14 SipRounds total per pixel. Z0..Z3 hold the state across all
-// rounds; Z4 holds the current message word (per-lane LE u64);
-// Z16 / Z17 hold the per-lane (K0, K1) seed pack (used at state
-// init only); Z18 / Z19 hold the per-half output during finalization.
+// 14 SipRounds total per pixel. Y0..Y3 hold the state across all
+// rounds; Y4 holds the current message word (per-lane LE u64);
+// Y16 / Y17 hold the per-lane (K0, K1) seed pack (used at state
+// init only); Y18 / Y19 hold the per-half output during finalization.
 //
 //	sipHash24Chain128Absorb20x4Asm(
 //	    seeds    *[4][2]uint64,
@@ -58,13 +58,13 @@ GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
 // SIP_ROUND — one full SipHash round, lane-parallel on 4 pixels.
 // Spec rotates: 13, 32, 16, 21, 17, 32 (left rotates — VPROLQ).
 #define SIP_ROUND \
-	VPADDQ Z1, Z0, Z0; VPROLQ $13, Z1, Z1; VPXORQ Z0, Z1, Z1; VPROLQ $32, Z0, Z0; \
-	VPADDQ Z3, Z2, Z2; VPROLQ $16, Z3, Z3; VPXORQ Z2, Z3, Z3;                      \
-	VPADDQ Z3, Z0, Z0; VPROLQ $21, Z3, Z3; VPXORQ Z0, Z3, Z3;                      \
-	VPADDQ Z1, Z2, Z2; VPROLQ $17, Z1, Z1; VPXORQ Z2, Z1, Z1; VPROLQ $32, Z2, Z2
+	VPADDQ Y1, Y0, Y0; VPROLQ $13, Y1, Y1; VPXORQ Y0, Y1, Y1; VPROLQ $32, Y0, Y0; \
+	VPADDQ Y3, Y2, Y2; VPROLQ $16, Y3, Y3; VPXORQ Y2, Y3, Y3;                      \
+	VPADDQ Y3, Y0, Y0; VPROLQ $21, Y3, Y3; VPXORQ Y0, Y3, Y3;                      \
+	VPADDQ Y1, Y2, Y2; VPROLQ $17, Y1, Y1; VPXORQ Y2, Y1, Y1; VPROLQ $32, Y2, Y2
 
 // PACK_M_QWORD — load LE u64 from each lane data ptr at offset
-// `off` into Z4 qwords 0..3. Upper qwords 4..7 of Z4 are zeroed
+// `off` into Y4 qwords 0..3. Upper qwords 4..7 of Y4 are zeroed
 // implicitly by the VINSERTI64X2 Y-form write semantics.
 #define PACK_M_QWORD(off) \
 	MOVQ off(R8),  R12; \
@@ -78,12 +78,12 @@ GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
 	VINSERTI64X2 $1, X5, Y4, Y4
 
 // SIP_ABSORB — one full SipHash compression block: v3 ^= m;
-// SipRound × 2; v0 ^= m. Caller pre-loads m into Z4.
+// SipRound × 2; v0 ^= m. Caller pre-loads m into Y4.
 #define SIP_ABSORB \
-	VPXORQ Z4, Z3, Z3; \
+	VPXORQ Y4, Y3, Y3; \
 	SIP_ROUND;         \
 	SIP_ROUND;         \
-	VPXORQ Z4, Z0, Z0
+	VPXORQ Y4, Y0, Y0
 
 TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	MOVQ seeds+0(FP),     BX
@@ -95,12 +95,12 @@ TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	MOVQ 16(CX), R10
 	MOVQ 24(CX), R11
 
-	// ===== Pack per-lane seeds into Z16 (K0) / Z17 (K1) =====
+	// ===== Pack per-lane seeds into Y16 (K0) / Y17 (K1) =====
 	// seeds is a contiguous *[4][2]uint64 = 8 interleaved qwords.
 	// One qword permute de-interleaves straight from memory:
-	// Z16 = [K0 lanes 0..3 | K1 lanes 0..3]; the K1 half is then
-	// extracted into Y17 (upper Z17 zeroed by the EVEX Y-form
-	// write). Z16 qwords 4..7 carry the K1 copies — don't-care
+	// Y16 = [K0 lanes 0..3 | K1 lanes 0..3]; the K1 half is then
+	// extracted into Y17 (upper Y17 zeroed by the EVEX Y-form
+	// write). Y16 qwords 4..7 carry the K1 copies — don't-care
 	// lanes: every state op is element-wise and the writeback
 	// reads qwords 0..3 only.
 	VMOVDQU64 sipSeedDeint<>(SB), Z19
@@ -109,20 +109,20 @@ TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 
 	// ===== Initialize state v0..v3 =====
 	MOVQ $0x736f6d6570736575, R12
-	VPBROADCASTQ R12, Z0
-	VPXORQ Z16, Z0, Z0
+	VPBROADCASTQ R12, Y0
+	VPXORQ Y16, Y0, Y0
 
 	MOVQ $0x646f72616e646f83, R12  // Const1 ^ 0xee
-	VPBROADCASTQ R12, Z1
-	VPXORQ Z17, Z1, Z1
+	VPBROADCASTQ R12, Y1
+	VPXORQ Y17, Y1, Y1
 
 	MOVQ $0x6c7967656e657261, R12
-	VPBROADCASTQ R12, Z2
-	VPXORQ Z16, Z2, Z2
+	VPBROADCASTQ R12, Y2
+	VPXORQ Y16, Y2, Y2
 
 	MOVQ $0x7465646279746573, R12
-	VPBROADCASTQ R12, Z3
-	VPXORQ Z17, Z3, Z3
+	VPBROADCASTQ R12, Y3
+	VPXORQ Y17, Y3, Y3
 
 	// ===== Compression block 1: data[0:8] =====
 	PACK_M_QWORD(0)
@@ -145,35 +145,35 @@ TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	VPINSRQ $1, R12, X5, X5
 	VINSERTI64X2 $1, X5, Y4, Y4
 	MOVQ $0x1400000000000000, R12  // 20 << 56
-	VPBROADCASTQ R12, Z5
-	VPXORQ Z5, Z4, Z4
+	VPBROADCASTQ R12, Y5
+	VPXORQ Y5, Y4, Y4
 	SIP_ABSORB
 
 	// ===== Finalization first half =====
 	MOVQ $0xee, R12
-	VPBROADCASTQ R12, Z18
-	VPXORQ Z18, Z2, Z2
+	VPBROADCASTQ R12, Y18
+	VPXORQ Y18, Y2, Y2
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
-	// out0 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Z18
+	// out0 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Y18
 	// (three-operand XOR + three-way-XOR ternlog, truth table 0x96).
-	VPXORQ Z1, Z0, Z18
-	VPTERNLOGQ $0x96, Z3, Z2, Z18
+	VPXORQ Y1, Y0, Y18
+	VPTERNLOGQ $0x96, Y3, Y2, Y18
 
 	// ===== Finalization second half =====
 	MOVQ $0xdd, R12
-	VPBROADCASTQ R12, Z19
-	VPXORQ Z19, Z1, Z1
+	VPBROADCASTQ R12, Y19
+	VPXORQ Y19, Y1, Y1
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
 	SIP_ROUND
-	// out1 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Z19
+	// out1 per lane = v0 ^ v1 ^ v2 ^ v3, capture in Y19
 	// (three-operand XOR + three-way-XOR ternlog, truth table 0x96).
-	VPXORQ Z1, Z0, Z19
-	VPTERNLOGQ $0x96, Z3, Z2, Z19
+	VPXORQ Y1, Y0, Y19
+	VPTERNLOGQ $0x96, Y3, Y2, Y19
 
 	// ===== Writeback =====
 	// out *[4][2]uint64: lane k at byte offset k*16,
@@ -183,8 +183,8 @@ TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	VPEXTRQ $1, X18, 16(DX)
 	VPEXTRQ $1, X19, 24(DX)
 
-	VEXTRACTI64X2 $1, Z18, X18
-	VEXTRACTI64X2 $1, Z19, X19
+	VEXTRACTI64X2 $1, Y18, X18
+	VEXTRACTI64X2 $1, Y19, X19
 	VPEXTRQ $0, X18, 32(DX)
 	VPEXTRQ $0, X19, 40(DX)
 	VPEXTRQ $1, X18, 48(DX)
