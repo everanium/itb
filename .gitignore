@@ -32,6 +32,7 @@
 # Parity helper compiled binaries (built by scripts/parity/cross-build-parity.sh)
 /tools/parity/parity-cgo
 /tools/parity/parity-nocgo
+/tools/parity/parity-cgo-tiered
 *.test
 
 # CPU/memory profiles
