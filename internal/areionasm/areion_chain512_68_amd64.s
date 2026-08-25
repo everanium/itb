@@ -190,23 +190,13 @@ TEXT ·Areion512ChainAbsorb68x4(SB), NOSPLIT, $256-32
 	MOVQ 48(R11), R12
 	MOVQ R12, 248(SP)
 
-	// Pack staging → SoA Block4.
-	VMOVDQU 0(SP), X14
-	VINSERTI64X2 $1, 16(SP), Y14, Y14
-	VINSERTI64X2 $2, 32(SP), Z14, Z14
-	VINSERTI64X2 $3, 48(SP), Z14, Z14
-	VMOVDQU 64(SP), X15
-	VINSERTI64X2 $1, 80(SP), Y15, Y15
-	VINSERTI64X2 $2, 96(SP), Z15, Z15
-	VINSERTI64X2 $3, 112(SP), Z15, Z15
-	VMOVDQU64 128(SP), X16
-	VINSERTI64X2 $1, 144(SP), Y16, Y16
-	VINSERTI64X2 $2, 160(SP), Z16, Z16
-	VINSERTI64X2 $3, 176(SP), Z16, Z16
-	VMOVDQU64 192(SP), X17
-	VINSERTI64X2 $1, 208(SP), Y17, Y17
-	VINSERTI64X2 $2, 224(SP), Z17, Z17
-	VINSERTI64X2 $3, 240(SP), Z17, Z17
+	// Pack staging → SoA Block4. Each 64-byte staging pack is
+	// contiguous, so a single full-width load replaces the insert
+	// chain.
+	VMOVDQU64 0(SP),   Z14
+	VMOVDQU64 64(SP),  Z15
+	VMOVDQU64 128(SP), Z16
+	VMOVDQU64 192(SP), Z17
 
 	// SoEM state setup for round 0.
 	VPXORD Z18, Z14, Z0
@@ -272,15 +262,11 @@ TEXT ·Areion512ChainAbsorb68x4(SB), NOSPLIT, $256-32
 	MOVL R12, 116(SP)
 	MOVQ R12, 120(SP)
 
-	// Pack to (Z2, Z6) — scratch (no permute in flight).
-	VMOVDQU 0(SP), X2
-	VINSERTI64X2 $1, 16(SP), Y2, Y2
-	VINSERTI64X2 $2, 32(SP), Z2, Z2
-	VINSERTI64X2 $3, 48(SP), Z2, Z2
-	VMOVDQU 64(SP), X4
-	VINSERTI64X2 $1, 80(SP), Y4, Y4
-	VINSERTI64X2 $2, 96(SP), Z4, Z4
-	VINSERTI64X2 $3, 112(SP), Z4, Z4
+	// Pack to (Z2, Z4) — scratch (no permute in flight). Each 64-byte
+	// staging pack is contiguous, so a single full-width load replaces
+	// the insert chain.
+	VMOVDQU64 0(SP),  Z2
+	VMOVDQU64 64(SP), Z4
 
 	// XOR data into state.
 	VPXORD Z2, Z14, Z14
