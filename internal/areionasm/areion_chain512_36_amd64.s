@@ -152,19 +152,12 @@ TEXT ·Areion512ChainAbsorb36x4(SB), NOSPLIT, $192-32
 	MOVL R12, 184(SP)
 	MOVL $0, 188(SP)
 
-	// Pack staging → SoA Block4.
-	VMOVDQU 0(SP), X14
-	VINSERTI64X2 $1, 16(SP), Y14, Y14
-	VINSERTI64X2 $2, 32(SP), Z14, Z14
-	VINSERTI64X2 $3, 48(SP), Z14, Z14
-	VMOVDQU 64(SP), X15
-	VINSERTI64X2 $1, 80(SP), Y15, Y15
-	VINSERTI64X2 $2, 96(SP), Z15, Z15
-	VINSERTI64X2 $3, 112(SP), Z15, Z15
-	VMOVDQU64 128(SP), X16
-	VINSERTI64X2 $1, 144(SP), Y16, Y16
-	VINSERTI64X2 $2, 160(SP), Z16, Z16
-	VINSERTI64X2 $3, 176(SP), Z16, Z16
+	// Pack staging → SoA Block4. Each 64-byte staging pack is
+	// contiguous, so a single full-width load replaces the insert
+	// chain.
+	VMOVDQU64 0(SP),   Z14
+	VMOVDQU64 64(SP),  Z15
+	VMOVDQU64 128(SP), Z16
 
 	VPXORD Z17, Z17, Z17
 
