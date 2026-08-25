@@ -1,9 +1,10 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for BLAKE2b-512 with 68-byte
+// YMM-batched fused chain-absorb kernel for BLAKE2b-512 with 68-byte
 // per-lane data input (the ITB SetNonceBits(512) buf shape). Two
 // 128-byte BLAKE2b compression blocks per lane, with state-residency
-// in ZMM registers between the two compressions:
+// in YMM registers between the two compressions (the 4 × 64-bit
+// lane qwords fill one YMM register exactly):
 //
 //	Block 1 (t=128, f=0):  buf[0:128]   = b2key + (data[0:64] ⊕ seed)
 //	Block 2 (t=132, f=^0): buf[128:132] = data[64:68] (no seed XOR;
@@ -11,12 +12,12 @@
 //	                                       buf[64:128] lives entirely
 //	                                       in block 1)
 //
-// Four pixels processed lane-parallel: 16 ZMM registers hold v[0..15]
-// across both compressions (lanes 0..3 active, 4..7 padding); the
-// remaining 16 ZMMs hold m[0..15] for the active block. Between the
-// blocks, the post-block-1 chaining hash h_after_block1 is held in
-// Z0..Z7 (= the v[0..7] init for block 2) and also saved to stack so
-// the final block-2 fold can XOR it back in.
+// Four pixels processed lane-parallel: 16 YMM registers hold v[0..15]
+// across both compressions; the remaining 16 YMMs hold m[0..15] for
+// the active block. Between the blocks, the post-block-1 chaining
+// hash h_after_block1 is held in Y0..Y7 (= the v[0..7] init for
+// block 2) and also saved to stack so the final block-2 fold can
+// XOR it back in.
 //
 // Function signature (Go-side prototype in blake2basm_chain_amd64.go):
 //
@@ -27,7 +28,7 @@
 //	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥68 bytes
 //	    out      *[4][8]uint64)     // output: 4 lanes × 8 uint64
 //
-// Stack frame: 512 bytes for h_after_block1 save (8 ZMMs × 64 bytes).
+// Stack frame: 256 bytes for h_after_block1 save (8 YMMs × 32 bytes).
 
 #include "textflag.h"
 
@@ -48,14 +49,14 @@
 	VPRORQ $63, b, b
 
 #define BLAKE2B_ROUND(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15) \
-	BLAKE2B_G(Z0, Z4, Z8,  Z12, s0,  s1); \
-	BLAKE2B_G(Z1, Z5, Z9,  Z13, s2,  s3); \
-	BLAKE2B_G(Z2, Z6, Z10, Z14, s4,  s5); \
-	BLAKE2B_G(Z3, Z7, Z11, Z15, s6,  s7); \
-	BLAKE2B_G(Z0, Z5, Z10, Z15, s8,  s9); \
-	BLAKE2B_G(Z1, Z6, Z11, Z12, s10, s11); \
-	BLAKE2B_G(Z2, Z7, Z8,  Z13, s12, s13); \
-	BLAKE2B_G(Z3, Z4, Z9,  Z14, s14, s15)
+	BLAKE2B_G(Y0, Y4, Y8,  Y12, s0,  s1); \
+	BLAKE2B_G(Y1, Y5, Y9,  Y13, s2,  s3); \
+	BLAKE2B_G(Y2, Y6, Y10, Y14, s4,  s5); \
+	BLAKE2B_G(Y3, Y7, Y11, Y15, s6,  s7); \
+	BLAKE2B_G(Y0, Y5, Y10, Y15, s8,  s9); \
+	BLAKE2B_G(Y1, Y6, Y11, Y12, s10, s11); \
+	BLAKE2B_G(Y2, Y7, Y8,  Y13, s12, s13); \
+	BLAKE2B_G(Y3, Y4, Y9,  Y14, s14, s15)
 
 #define PACK_M_LANES_FROM_GPRS(l0, l1, l2, l3, y_dst) \
 	VMOVQ l0, X16; \
@@ -101,7 +102,7 @@
 //     seeds    *[4][8]uint64,
 //     dataPtrs *[4]*byte,
 //     out      *[4][8]uint64)
-TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
+TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $256-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX
 	MOVQ seeds+16(FP),   CX
@@ -116,33 +117,33 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
 	// ===== Block 1 state init =====
 	// v[0..7] = h0 broadcast (Blake2bIV512Param: paramBlock pre-XOR'd
 	// into h0[0]).
-	VPBROADCASTQ 0(AX),  Z0
-	VPBROADCASTQ 8(AX),  Z1
-	VPBROADCASTQ 16(AX), Z2
-	VPBROADCASTQ 24(AX), Z3
-	VPBROADCASTQ 32(AX), Z4
-	VPBROADCASTQ 40(AX), Z5
-	VPBROADCASTQ 48(AX), Z6
-	VPBROADCASTQ 56(AX), Z7
+	VPBROADCASTQ 0(AX),  Y0
+	VPBROADCASTQ 8(AX),  Y1
+	VPBROADCASTQ 16(AX), Y2
+	VPBROADCASTQ 24(AX), Y3
+	VPBROADCASTQ 32(AX), Y4
+	VPBROADCASTQ 40(AX), Y5
+	VPBROADCASTQ 48(AX), Y6
+	VPBROADCASTQ 56(AX), Y7
 
 	// v[8..15] = IV[0..7] broadcast.
-	VPBROADCASTQ ·Blake2bIV+0(SB),  Z8
-	VPBROADCASTQ ·Blake2bIV+8(SB),  Z9
-	VPBROADCASTQ ·Blake2bIV+16(SB), Z10
-	VPBROADCASTQ ·Blake2bIV+24(SB), Z11
-	VPBROADCASTQ ·Blake2bIV+32(SB), Z12
-	VPBROADCASTQ ·Blake2bIV+40(SB), Z13
-	VPBROADCASTQ ·Blake2bIV+48(SB), Z14
-	VPBROADCASTQ ·Blake2bIV+56(SB), Z15
+	VPBROADCASTQ ·Blake2bIV+0(SB),  Y8
+	VPBROADCASTQ ·Blake2bIV+8(SB),  Y9
+	VPBROADCASTQ ·Blake2bIV+16(SB), Y10
+	VPBROADCASTQ ·Blake2bIV+24(SB), Y11
+	VPBROADCASTQ ·Blake2bIV+32(SB), Y12
+	VPBROADCASTQ ·Blake2bIV+40(SB), Y13
+	VPBROADCASTQ ·Blake2bIV+48(SB), Y14
+	VPBROADCASTQ ·Blake2bIV+56(SB), Y15
 
 	// Block 1: t = 128 (cumulative byte count after this block).
 	// f = 0 (NOT final — block 2 follows).
 	MOVQ $128, R12
-	VPBROADCASTQ R12, Z16
-	VPXORQ Z16, Z12, Z12
+	VPBROADCASTQ R12, Y16
+	VPXORQ Y16, Y12, Y12
 
 	// ===== Block 1 message-word build (m[8..15] before m[0..7] to
-	// avoid X16/X17 scratch clobbering Z16/Z17 message broadcasts).
+	// avoid X16/X17 scratch clobbering Y16/Y17 message broadcasts).
 	EMIT_M_FROM_DATAXSEED(0,  0, Y24)
 	EMIT_M_FROM_DATAXSEED(8,  1, Y25)
 	EMIT_M_FROM_DATAXSEED(16, 2, Y26)
@@ -152,73 +153,73 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
 	EMIT_M_FROM_DATAXSEED(48, 6, Y30)
 	EMIT_M_FROM_DATAXSEED(56, 7, Y31)
 
-	VPBROADCASTQ 0(BX),  Z16
-	VPBROADCASTQ 8(BX),  Z17
-	VPBROADCASTQ 16(BX), Z18
-	VPBROADCASTQ 24(BX), Z19
-	VPBROADCASTQ 32(BX), Z20
-	VPBROADCASTQ 40(BX), Z21
-	VPBROADCASTQ 48(BX), Z22
-	VPBROADCASTQ 56(BX), Z23
+	VPBROADCASTQ 0(BX),  Y16
+	VPBROADCASTQ 8(BX),  Y17
+	VPBROADCASTQ 16(BX), Y18
+	VPBROADCASTQ 24(BX), Y19
+	VPBROADCASTQ 32(BX), Y20
+	VPBROADCASTQ 40(BX), Y21
+	VPBROADCASTQ 48(BX), Y22
+	VPBROADCASTQ 56(BX), Y23
 
 	// ===== Block 1: 12 rounds =====
-	BLAKE2B_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2B_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
-	BLAKE2B_ROUND(Z27, Z24, Z28, Z16, Z21, Z18, Z31, Z29, Z26, Z30, Z19, Z22, Z23, Z17, Z25, Z20)
-	BLAKE2B_ROUND(Z23, Z25, Z19, Z17, Z29, Z28, Z27, Z30, Z18, Z22, Z21, Z26, Z20, Z16, Z31, Z24)
-	BLAKE2B_ROUND(Z25, Z16, Z21, Z23, Z18, Z20, Z26, Z31, Z30, Z17, Z27, Z28, Z22, Z24, Z19, Z29)
-	BLAKE2B_ROUND(Z18, Z28, Z22, Z26, Z16, Z27, Z24, Z19, Z20, Z29, Z23, Z21, Z31, Z30, Z17, Z25)
-	BLAKE2B_ROUND(Z28, Z21, Z17, Z31, Z30, Z29, Z20, Z26, Z16, Z23, Z22, Z19, Z25, Z18, Z24, Z27)
-	BLAKE2B_ROUND(Z29, Z27, Z23, Z30, Z28, Z17, Z19, Z25, Z21, Z16, Z31, Z20, Z24, Z22, Z18, Z26)
-	BLAKE2B_ROUND(Z22, Z31, Z30, Z25, Z27, Z19, Z16, Z24, Z28, Z18, Z29, Z23, Z17, Z20, Z26, Z21)
-	BLAKE2B_ROUND(Z26, Z18, Z24, Z20, Z23, Z22, Z17, Z21, Z31, Z27, Z25, Z30, Z19, Z28, Z29, Z16)
-	BLAKE2B_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2B_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
+	BLAKE2B_ROUND(Y16, Y17, Y18, Y19, Y20, Y21, Y22, Y23, Y24, Y25, Y26, Y27, Y28, Y29, Y30, Y31)
+	BLAKE2B_ROUND(Y30, Y26, Y20, Y24, Y25, Y31, Y29, Y22, Y17, Y28, Y16, Y18, Y27, Y23, Y21, Y19)
+	BLAKE2B_ROUND(Y27, Y24, Y28, Y16, Y21, Y18, Y31, Y29, Y26, Y30, Y19, Y22, Y23, Y17, Y25, Y20)
+	BLAKE2B_ROUND(Y23, Y25, Y19, Y17, Y29, Y28, Y27, Y30, Y18, Y22, Y21, Y26, Y20, Y16, Y31, Y24)
+	BLAKE2B_ROUND(Y25, Y16, Y21, Y23, Y18, Y20, Y26, Y31, Y30, Y17, Y27, Y28, Y22, Y24, Y19, Y29)
+	BLAKE2B_ROUND(Y18, Y28, Y22, Y26, Y16, Y27, Y24, Y19, Y20, Y29, Y23, Y21, Y31, Y30, Y17, Y25)
+	BLAKE2B_ROUND(Y28, Y21, Y17, Y31, Y30, Y29, Y20, Y26, Y16, Y23, Y22, Y19, Y25, Y18, Y24, Y27)
+	BLAKE2B_ROUND(Y29, Y27, Y23, Y30, Y28, Y17, Y19, Y25, Y21, Y16, Y31, Y20, Y24, Y22, Y18, Y26)
+	BLAKE2B_ROUND(Y22, Y31, Y30, Y25, Y27, Y19, Y16, Y24, Y28, Y18, Y29, Y23, Y17, Y20, Y26, Y21)
+	BLAKE2B_ROUND(Y26, Y18, Y24, Y20, Y23, Y22, Y17, Y21, Y31, Y27, Y25, Y30, Y19, Y28, Y29, Y16)
+	BLAKE2B_ROUND(Y16, Y17, Y18, Y19, Y20, Y21, Y22, Y23, Y24, Y25, Y26, Y27, Y28, Y29, Y30, Y31)
+	BLAKE2B_ROUND(Y30, Y26, Y20, Y24, Y25, Y31, Y29, Y22, Y17, Y28, Y16, Y18, Y27, Y23, Y21, Y19)
 
 	// ===== Block 1 fold: h_after_block1[k] = h0[k] ⊕ v[k] ⊕ v[k+8]
-	// for k in 0..7. Result lives in Z0..Z7 (= v[0..7] init for block 2).
+	// for k in 0..7. Result lives in Y0..Y7 (= v[0..7] init for block 2).
 	// Single VPTERNLOGQ per word with truth table 0x96 (three-way XOR),
 	// h0[k] re-read from (AX) via the embedded-broadcast memory operand.
-	VPTERNLOGQ.BCST $0x96, 0(AX),  Z8,  Z0
-	VPTERNLOGQ.BCST $0x96, 8(AX),  Z9,  Z1
-	VPTERNLOGQ.BCST $0x96, 16(AX), Z10, Z2
-	VPTERNLOGQ.BCST $0x96, 24(AX), Z11, Z3
-	VPTERNLOGQ.BCST $0x96, 32(AX), Z12, Z4
-	VPTERNLOGQ.BCST $0x96, 40(AX), Z13, Z5
-	VPTERNLOGQ.BCST $0x96, 48(AX), Z14, Z6
-	VPTERNLOGQ.BCST $0x96, 56(AX), Z15, Z7
+	VPTERNLOGQ.BCST $0x96, 0(AX),  Y8,  Y0
+	VPTERNLOGQ.BCST $0x96, 8(AX),  Y9,  Y1
+	VPTERNLOGQ.BCST $0x96, 16(AX), Y10, Y2
+	VPTERNLOGQ.BCST $0x96, 24(AX), Y11, Y3
+	VPTERNLOGQ.BCST $0x96, 32(AX), Y12, Y4
+	VPTERNLOGQ.BCST $0x96, 40(AX), Y13, Y5
+	VPTERNLOGQ.BCST $0x96, 48(AX), Y14, Y6
+	VPTERNLOGQ.BCST $0x96, 56(AX), Y15, Y7
 
 	// Save h_after_block1 to stack so we can XOR it into the final
-	// block-2 fold (Z0..Z7 will be mutated by the block-2 rounds).
-	VMOVDQU64 Z0, 0(SP)
-	VMOVDQU64 Z1, 64(SP)
-	VMOVDQU64 Z2, 128(SP)
-	VMOVDQU64 Z3, 192(SP)
-	VMOVDQU64 Z4, 256(SP)
-	VMOVDQU64 Z5, 320(SP)
-	VMOVDQU64 Z6, 384(SP)
-	VMOVDQU64 Z7, 448(SP)
+	// block-2 fold (Y0..Y7 will be mutated by the block-2 rounds).
+	VMOVDQU64 Y0, 0(SP)
+	VMOVDQU64 Y1, 32(SP)
+	VMOVDQU64 Y2, 64(SP)
+	VMOVDQU64 Y3, 96(SP)
+	VMOVDQU64 Y4, 128(SP)
+	VMOVDQU64 Y5, 160(SP)
+	VMOVDQU64 Y6, 192(SP)
+	VMOVDQU64 Y7, 224(SP)
 
 	// ===== Block 2 state init =====
-	// v[0..7] = h_after_block1 (already in Z0..Z7 from the block-1 fold).
-	// v[8..15] = IV broadcast (re-init Z8..Z15).
-	VPBROADCASTQ ·Blake2bIV+0(SB),  Z8
-	VPBROADCASTQ ·Blake2bIV+8(SB),  Z9
-	VPBROADCASTQ ·Blake2bIV+16(SB), Z10
-	VPBROADCASTQ ·Blake2bIV+24(SB), Z11
-	VPBROADCASTQ ·Blake2bIV+32(SB), Z12
-	VPBROADCASTQ ·Blake2bIV+40(SB), Z13
-	VPBROADCASTQ ·Blake2bIV+48(SB), Z14
-	VPBROADCASTQ ·Blake2bIV+56(SB), Z15
+	// v[0..7] = h_after_block1 (already in Y0..Y7 from the block-1 fold).
+	// v[8..15] = IV broadcast (re-init Y8..Y15).
+	VPBROADCASTQ ·Blake2bIV+0(SB),  Y8
+	VPBROADCASTQ ·Blake2bIV+8(SB),  Y9
+	VPBROADCASTQ ·Blake2bIV+16(SB), Y10
+	VPBROADCASTQ ·Blake2bIV+24(SB), Y11
+	VPBROADCASTQ ·Blake2bIV+32(SB), Y12
+	VPBROADCASTQ ·Blake2bIV+40(SB), Y13
+	VPBROADCASTQ ·Blake2bIV+48(SB), Y14
+	VPBROADCASTQ ·Blake2bIV+56(SB), Y15
 
 	// Block 2: t = 132 (= 128 + 4 trailing data bytes).
 	MOVQ $132, R12
-	VPBROADCASTQ R12, Z16
-	VPXORQ Z16, Z12, Z12
+	VPBROADCASTQ R12, Y16
+	VPXORQ Y16, Y12, Y12
 
 	// f = ^0 (final block).
-	VPTERNLOGQ $0xff, Z16, Z16, Z16
-	VPXORQ Z16, Z14, Z14
+	VPTERNLOGQ $0xff, Y16, Y16, Y16
+	VPXORQ Y16, Y14, Y14
 
 	// ===== Block 2 message-word build =====
 	// m[0] = (data[lane][64:68] || zero[0:4]). No seed XOR (seed only
@@ -226,47 +227,47 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
 	EMIT_M_FROM_DATAEXT4(64, Y16)
 	// m[1..15] = 0. Block 2's payload region buf[128+8:256] is pure
 	// zero pad.
-	VPXORQ Z17, Z17, Z17
-	VPXORQ Z18, Z18, Z18
-	VPXORQ Z19, Z19, Z19
-	VPXORQ Z20, Z20, Z20
-	VPXORQ Z21, Z21, Z21
-	VPXORQ Z22, Z22, Z22
-	VPXORQ Z23, Z23, Z23
-	VPXORQ Z24, Z24, Z24
-	VPXORQ Z25, Z25, Z25
-	VPXORQ Z26, Z26, Z26
-	VPXORQ Z27, Z27, Z27
-	VPXORQ Z28, Z28, Z28
-	VPXORQ Z29, Z29, Z29
-	VPXORQ Z30, Z30, Z30
-	VPXORQ Z31, Z31, Z31
+	VPXORQ Y17, Y17, Y17
+	VPXORQ Y18, Y18, Y18
+	VPXORQ Y19, Y19, Y19
+	VPXORQ Y20, Y20, Y20
+	VPXORQ Y21, Y21, Y21
+	VPXORQ Y22, Y22, Y22
+	VPXORQ Y23, Y23, Y23
+	VPXORQ Y24, Y24, Y24
+	VPXORQ Y25, Y25, Y25
+	VPXORQ Y26, Y26, Y26
+	VPXORQ Y27, Y27, Y27
+	VPXORQ Y28, Y28, Y28
+	VPXORQ Y29, Y29, Y29
+	VPXORQ Y30, Y30, Y30
+	VPXORQ Y31, Y31, Y31
 
 	// ===== Block 2: 12 rounds =====
-	BLAKE2B_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2B_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
-	BLAKE2B_ROUND(Z27, Z24, Z28, Z16, Z21, Z18, Z31, Z29, Z26, Z30, Z19, Z22, Z23, Z17, Z25, Z20)
-	BLAKE2B_ROUND(Z23, Z25, Z19, Z17, Z29, Z28, Z27, Z30, Z18, Z22, Z21, Z26, Z20, Z16, Z31, Z24)
-	BLAKE2B_ROUND(Z25, Z16, Z21, Z23, Z18, Z20, Z26, Z31, Z30, Z17, Z27, Z28, Z22, Z24, Z19, Z29)
-	BLAKE2B_ROUND(Z18, Z28, Z22, Z26, Z16, Z27, Z24, Z19, Z20, Z29, Z23, Z21, Z31, Z30, Z17, Z25)
-	BLAKE2B_ROUND(Z28, Z21, Z17, Z31, Z30, Z29, Z20, Z26, Z16, Z23, Z22, Z19, Z25, Z18, Z24, Z27)
-	BLAKE2B_ROUND(Z29, Z27, Z23, Z30, Z28, Z17, Z19, Z25, Z21, Z16, Z31, Z20, Z24, Z22, Z18, Z26)
-	BLAKE2B_ROUND(Z22, Z31, Z30, Z25, Z27, Z19, Z16, Z24, Z28, Z18, Z29, Z23, Z17, Z20, Z26, Z21)
-	BLAKE2B_ROUND(Z26, Z18, Z24, Z20, Z23, Z22, Z17, Z21, Z31, Z27, Z25, Z30, Z19, Z28, Z29, Z16)
-	BLAKE2B_ROUND(Z16, Z17, Z18, Z19, Z20, Z21, Z22, Z23, Z24, Z25, Z26, Z27, Z28, Z29, Z30, Z31)
-	BLAKE2B_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
+	BLAKE2B_ROUND(Y16, Y17, Y18, Y19, Y20, Y21, Y22, Y23, Y24, Y25, Y26, Y27, Y28, Y29, Y30, Y31)
+	BLAKE2B_ROUND(Y30, Y26, Y20, Y24, Y25, Y31, Y29, Y22, Y17, Y28, Y16, Y18, Y27, Y23, Y21, Y19)
+	BLAKE2B_ROUND(Y27, Y24, Y28, Y16, Y21, Y18, Y31, Y29, Y26, Y30, Y19, Y22, Y23, Y17, Y25, Y20)
+	BLAKE2B_ROUND(Y23, Y25, Y19, Y17, Y29, Y28, Y27, Y30, Y18, Y22, Y21, Y26, Y20, Y16, Y31, Y24)
+	BLAKE2B_ROUND(Y25, Y16, Y21, Y23, Y18, Y20, Y26, Y31, Y30, Y17, Y27, Y28, Y22, Y24, Y19, Y29)
+	BLAKE2B_ROUND(Y18, Y28, Y22, Y26, Y16, Y27, Y24, Y19, Y20, Y29, Y23, Y21, Y31, Y30, Y17, Y25)
+	BLAKE2B_ROUND(Y28, Y21, Y17, Y31, Y30, Y29, Y20, Y26, Y16, Y23, Y22, Y19, Y25, Y18, Y24, Y27)
+	BLAKE2B_ROUND(Y29, Y27, Y23, Y30, Y28, Y17, Y19, Y25, Y21, Y16, Y31, Y20, Y24, Y22, Y18, Y26)
+	BLAKE2B_ROUND(Y22, Y31, Y30, Y25, Y27, Y19, Y16, Y24, Y28, Y18, Y29, Y23, Y17, Y20, Y26, Y21)
+	BLAKE2B_ROUND(Y26, Y18, Y24, Y20, Y23, Y22, Y17, Y21, Y31, Y27, Y25, Y30, Y19, Y28, Y29, Y16)
+	BLAKE2B_ROUND(Y16, Y17, Y18, Y19, Y20, Y21, Y22, Y23, Y24, Y25, Y26, Y27, Y28, Y29, Y30, Y31)
+	BLAKE2B_ROUND(Y30, Y26, Y20, Y24, Y25, Y31, Y29, Y22, Y17, Y28, Y16, Y18, Y27, Y23, Y21, Y19)
 
 	// ===== Block 2 final fold: out[k] = h_after_block1[k] ⊕ v[k] ⊕ v[k+8]
 	// Single VPTERNLOGQ per word with truth table 0x96 (three-way XOR);
 	// h_after_block1 reloaded from stack via the full-width memory operand.
-	VPTERNLOGQ $0x96, 0(SP),   Z8,  Z0
-	VPTERNLOGQ $0x96, 64(SP),  Z9,  Z1
-	VPTERNLOGQ $0x96, 128(SP), Z10, Z2
-	VPTERNLOGQ $0x96, 192(SP), Z11, Z3
-	VPTERNLOGQ $0x96, 256(SP), Z12, Z4
-	VPTERNLOGQ $0x96, 320(SP), Z13, Z5
-	VPTERNLOGQ $0x96, 384(SP), Z14, Z6
-	VPTERNLOGQ $0x96, 448(SP), Z15, Z7
+	VPTERNLOGQ $0x96, 0(SP),   Y8,  Y0
+	VPTERNLOGQ $0x96, 32(SP),  Y9,  Y1
+	VPTERNLOGQ $0x96, 64(SP), Y10, Y2
+	VPTERNLOGQ $0x96, 96(SP), Y11, Y3
+	VPTERNLOGQ $0x96, 128(SP), Y12, Y4
+	VPTERNLOGQ $0x96, 160(SP), Y13, Y5
+	VPTERNLOGQ $0x96, 192(SP), Y14, Y6
+	VPTERNLOGQ $0x96, 224(SP), Y15, Y7
 
 	// ===== Writeback to out[4][8]uint64 =====
 	MOVQ R15, R8
@@ -274,14 +275,14 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
 	LEAQ 128(R15), R10
 	LEAQ 192(R15), R11
 
-	STORE_LANE_QW(Z0, 0)
-	STORE_LANE_QW(Z1, 8)
-	STORE_LANE_QW(Z2, 16)
-	STORE_LANE_QW(Z3, 24)
-	STORE_LANE_QW(Z4, 32)
-	STORE_LANE_QW(Z5, 40)
-	STORE_LANE_QW(Z6, 48)
-	STORE_LANE_QW(Z7, 56)
+	STORE_LANE_QW(Y0, 0)
+	STORE_LANE_QW(Y1, 8)
+	STORE_LANE_QW(Y2, 16)
+	STORE_LANE_QW(Y3, 24)
+	STORE_LANE_QW(Y4, 32)
+	STORE_LANE_QW(Y5, 40)
+	STORE_LANE_QW(Y6, 48)
+	STORE_LANE_QW(Y7, 56)
 
 	VZEROUPPER
 	RET
