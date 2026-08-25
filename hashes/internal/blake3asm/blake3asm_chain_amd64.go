@@ -53,6 +53,33 @@ func blake3256ChainAbsorb20x4Asm(
 	out *[4][8]uint32,
 )
 
+// Blake3256ChainAbsorb13x4 — 13-byte BLAKE3-256 batched dispatcher,
+// the Interlocked Barrier PRF fill message shape. mixed is still 32
+// bytes (data || zero pad, then seed XOR), so block_len=32 and the
+// compression matches the 20-byte case; only the message-word pack
+// differs (data fills m[0..2] plus one byte of m[3], m[4..7] are
+// seed-only). The .s kernel reads exactly 13 data bytes per lane.
+func Blake3256ChainAbsorb13x4(
+	key *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint32,
+) {
+	if HasAVX512Fused {
+		blake3256ChainAbsorb13x4Asm(key, seeds, dataPtrs, out)
+		return
+	}
+	scalarBatch256ChainAbsorb13(key, seeds, dataPtrs, out)
+}
+
+//go:noescape
+func blake3256ChainAbsorb13x4Asm(
+	key *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint32,
+)
+
 // Blake3256ChainAbsorb36x4 — 36-byte BLAKE3-256 batched dispatcher
 // (256-bit ITB nonce buf shape). Single compression block per
 // lane (mixed=36 ≤ 64-byte BLAKE3 block size); same flag set as
