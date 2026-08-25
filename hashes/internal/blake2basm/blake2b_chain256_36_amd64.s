@@ -191,19 +191,12 @@ TEXT ·blake2b256ChainAbsorb36x4Asm(SB), NOSPLIT, $0-40
 	BLAKE2B_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
 
 	// ===== Output XOR fold (only Z0..Z3 needed for 32-byte digest) =====
-	VPBROADCASTQ 0(AX),  Z16
-	VPXORQ Z16, Z0, Z0
-	VPBROADCASTQ 8(AX),  Z16
-	VPXORQ Z16, Z1, Z1
-	VPBROADCASTQ 16(AX), Z16
-	VPXORQ Z16, Z2, Z2
-	VPBROADCASTQ 24(AX), Z16
-	VPXORQ Z16, Z3, Z3
-
-	VPXORQ Z8,  Z0, Z0
-	VPXORQ Z9,  Z1, Z1
-	VPXORQ Z10, Z2, Z2
-	VPXORQ Z11, Z3, Z3
+	// Single VPTERNLOGQ per word with truth table 0x96 (three-way XOR),
+	// h0[k] re-read from (AX) via the embedded-broadcast memory operand.
+	VPTERNLOGQ.BCST $0x96, 0(AX),  Z8,  Z0
+	VPTERNLOGQ.BCST $0x96, 8(AX),  Z9,  Z1
+	VPTERNLOGQ.BCST $0x96, 16(AX), Z10, Z2
+	VPTERNLOGQ.BCST $0x96, 24(AX), Z11, Z3
 
 	// ===== Writeback (only out[lane][0..4] = 32 bytes) =====
 	// out is *[4][8]uint64; per-lane stride still 64 bytes since the
