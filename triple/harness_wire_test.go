@@ -270,6 +270,7 @@ func TestHarnessC3TailFillResidue(t *testing.T) {
 	sizes := []int{1, 6, 32, 4096}
 
 	var zeroDevs []float64
+	var minTotal int64
 	for _, sz := range sizes {
 		sz := sz
 		pool, hist, total := encPool(t, ProfileStreamingNoAEADTripleV1, false, n, sz)
@@ -278,6 +279,9 @@ func TestHarnessC3TailFillResidue(t *testing.T) {
 		lz := lzRatio(t, pool)
 		zdev := zeroDevPct(hist, total)
 		zeroDevs = append(zeroDevs, zdev)
+		if minTotal == 0 || total < minTotal {
+			minTotal = total
+		}
 		t.Logf("C3 size=%d: bytes=%d entropy=%.5f chi2=%.1f lz=%.4f 0x00dev=%+.2f%%", sz, total, ent, chi, lz, zdev)
 		if ent < 7.998 {
 			t.Errorf("C3 size=%d: entropy=%.5f < 7.998", sz, ent)
@@ -288,6 +292,17 @@ func TestHarnessC3TailFillResidue(t *testing.T) {
 	}
 	// Size-stability: every size must show the same container terminator
 	// signature within a tight spread — no size-dependent fill anomaly.
+	// The bound is derived from the sampling floor, not fixed: each
+	// per-size 0x00 deviation is a binomial sample around the common
+	// signature with sigma = 100*sqrt(255/total) percent (~0.80% at
+	// smoke N, ~0.18% at full N). The spread statistic below is the
+	// range of the four per-size samples, and the range of four iid
+	// normals exceeds 6.5 sigma with probability < 1e-4 per run (upper
+	// quantiles of the four-sample range distribution: q0.999 = 5.31
+	// sigma, q0.9999 = 6.08 sigma) — so 6.5 sigma keeps the assertion
+	// non-flaky at smoke N while a genuine size-dependent fill artefact
+	// shifts the per-size means and lands far above the bound.
+	rangeMax := 6.5 * 100 * math.Sqrt(255/float64(minTotal))
 	minZ, maxZ := zeroDevs[0], zeroDevs[0]
 	for _, z := range zeroDevs {
 		if z < minZ {
@@ -297,9 +312,9 @@ func TestHarnessC3TailFillResidue(t *testing.T) {
 			maxZ = z
 		}
 	}
-	t.Logf("C3 size-stability: 0x00dev range [%.2f%%, %.2f%%] across sizes %v", minZ, maxZ, sizes)
-	if maxZ-minZ > 2.0 {
-		t.Errorf("C3: 0x00 signature varies %.2f%% across plaintext sizes (>2%%) — size-dependent fill artefact", maxZ-minZ)
+	t.Logf("C3 size-stability: 0x00dev range [%.2f%%, %.2f%%] across sizes %v (bound %.2f%%)", minZ, maxZ, sizes, rangeMax)
+	if maxZ-minZ > rangeMax {
+		t.Errorf("C3: 0x00 signature varies %.2f%% across plaintext sizes (>%.2f%%) — size-dependent fill artefact", maxZ-minZ, rangeMax)
 	}
 }
 
