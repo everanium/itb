@@ -287,36 +287,20 @@ TEXT ·blake2b512ChainAbsorb36x4Asm(SB), NOSPLIT, $0-40
 	// BLAKE2b spec final state update is:
 	//   h_new[k] = h_old[k] ⊕ v[k] ⊕ v[k+8]  for k in 0..7
 	//
-	// The original h_old is what was loaded from h0 before round 1. We
-	// reload that via VPBROADCASTQ from (AX) and XOR into Z0..Z7,
-	// which currently hold v[0..7]. Then XOR Z0..Z7 with Z8..Z15
-	// (= v[8..15]) — the result in Z0..Z7 is h_new[0..7], the kernel
-	// output per BLAKE2b spec.
-	VPBROADCASTQ 0(AX),  Z16
-	VPXORQ Z16, Z0, Z0
-	VPBROADCASTQ 8(AX),  Z16
-	VPXORQ Z16, Z1, Z1
-	VPBROADCASTQ 16(AX), Z16
-	VPXORQ Z16, Z2, Z2
-	VPBROADCASTQ 24(AX), Z16
-	VPXORQ Z16, Z3, Z3
-	VPBROADCASTQ 32(AX), Z16
-	VPXORQ Z16, Z4, Z4
-	VPBROADCASTQ 40(AX), Z16
-	VPXORQ Z16, Z5, Z5
-	VPBROADCASTQ 48(AX), Z16
-	VPXORQ Z16, Z6, Z6
-	VPBROADCASTQ 56(AX), Z16
-	VPXORQ Z16, Z7, Z7
-
-	VPXORQ Z8,  Z0, Z0
-	VPXORQ Z9,  Z1, Z1
-	VPXORQ Z10, Z2, Z2
-	VPXORQ Z11, Z3, Z3
-	VPXORQ Z12, Z4, Z4
-	VPXORQ Z13, Z5, Z5
-	VPXORQ Z14, Z6, Z6
-	VPXORQ Z15, Z7, Z7
+	// The original h_old is what was loaded from h0 before round 1;
+	// it is re-read from (AX) via the embedded-broadcast memory
+	// operand of VPTERNLOGQ with truth table 0x96 (three-way XOR):
+	// Z_k = Z_k ⊕ Z_{k+8} ⊕ bcast(h0[k]), where Z0..Z7 hold v[0..7]
+	// and Z8..Z15 hold v[8..15]. The result in Z0..Z7 is h_new[0..7],
+	// the kernel output per BLAKE2b spec.
+	VPTERNLOGQ.BCST $0x96, 0(AX),  Z8,  Z0
+	VPTERNLOGQ.BCST $0x96, 8(AX),  Z9,  Z1
+	VPTERNLOGQ.BCST $0x96, 16(AX), Z10, Z2
+	VPTERNLOGQ.BCST $0x96, 24(AX), Z11, Z3
+	VPTERNLOGQ.BCST $0x96, 32(AX), Z12, Z4
+	VPTERNLOGQ.BCST $0x96, 40(AX), Z13, Z5
+	VPTERNLOGQ.BCST $0x96, 48(AX), Z14, Z6
+	VPTERNLOGQ.BCST $0x96, 56(AX), Z15, Z7
 
 	// ===== Writeback to out[4][8]uint64 =====
 	// Compute per-lane output base addresses. Each lane occupies 64
