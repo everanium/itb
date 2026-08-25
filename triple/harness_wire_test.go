@@ -13,10 +13,19 @@ package triple
 //   - itb Triple + 48-bit Interlocked Barrier (always on). Taken alone, its
 //     wire is a COBS-framed pixel container whose byte histogram carries a
 //     characteristic, publicly-explained signature (an over-representation of
-//     the COBS terminator 0x00 and one companion value), not a uniform-random
-//     byte law. Entropy stays ≈ 8 bits/byte and the wire is incompressible;
-//     the signature is a low-mass, two-value bias that a byte-histogram
-//     chi-square detects but that carries no plaintext or key channel.
+//     the two byte values that appear in the fixed 4-byte container
+//     dimension header W‖H at the head of every wire — the high byte of a
+//     small dimension is 0x00 and the low byte is the dimension value
+//     itself, so 0x00 and one companion value spike as a header-attributable
+//     artefact that duplicates `len(wire)` and carries no confidentiality
+//     channel), not a uniform-random byte law. Entropy stays ≈ 8 bits/byte
+//     and the wire is incompressible; the signature is a low-mass, two-value
+//     bias that a byte-histogram chi-square detects but that carries no
+//     plaintext or key channel. The COBS terminator itself, being encoded
+//     inside a barrier-passed pixel, is not what surfaces here — the barrier
+//     rotates / XOR-masks / noise-inserts every byte inside the container
+//     before it reaches the wire, so the actual terminator byte value is
+//     indistinguishable from the surrounding container bytes.
 //   - the outer-cipher wrapper (format-deniability layer). Engaging it whitens
 //     the container signature to the finite-sample uniform floor.
 //
@@ -261,7 +270,9 @@ func TestHarnessC1CrossProfileWireDistinguishability(t *testing.T) {
 
 // TestHarnessC3TailFillResidue drives small container-floor-dominated
 // plaintexts through the barrier-only wire and confirms the container
-// signature is size-stable: the 0x00 over-representation and the byte
+// signature is size-stable: the 0x00 over-representation (attributable to
+// the fixed 4-byte dimension header at the head of every wire — see the
+// package-level comment for the full mechanism explanation) and the byte
 // chi-square do not vary with plaintext size (beyond the length the wire
 // already reveals), so a size-dependent fill artefact is ruled out. Entropy
 // stays ≈ 8 and the wire stays incompressible at every size.
