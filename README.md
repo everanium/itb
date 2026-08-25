@@ -82,7 +82,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
-**No direct external dependencies** beyond ABI contracts and fallbacks with standard PRF primitives; the chain-absorb hot path is hand-written ZMM AVX-512 assembly and the barrier's per-chunk rank-unrank kernel is hand-written BMI2 / AVX-512F assembly.
+**No direct external dependencies** beyond ABI contracts and fallbacks with standard PRF primitives; the chain-absorb hot path is hand-written AVX-512 assembly (each primitive family at its natural active register width) and the barrier's per-chunk rank-unrank kernel is hand-written BMI2 / AVX-512F assembly.
 
 ## Status
 
@@ -107,7 +107,7 @@ Full matrix:
 - 1 sample file (`tools/eitb/in-file.txt`, 4 KiB, deterministic)
 - **9248 cells PASS** (8 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface)
 
-**All features fully implemented.** Where a binding's surface diverges from the Go Native library (e.g. no `io.Reader` / `io.Writer` adapter for Non-AEAD streaming — only User-Driven Loop), the asymmetry is intentional and follows per-language idiom rather than incomplete coverage.
+**All features fully implemented.** Every binding is a thin proxy over the same `ITB_Triple_*` FFI surface and exposes both shapes uniformly — Single Message and Streaming, AEAD and Non-AEAD alike (the latter via the `streaming-noaead-triple-v1` profile) — with the stream pump adapted to each language's native IO idiom (`io.Reader` / `io.Writer` in Go, the equivalent stream abstraction per language).
 
 **Maintenance path.** Subsequent open-source work covers bug fixes, documentation, and additional bindings only. Custom closed encryption constructions and downstream software stacks are available on commercial request.
 
@@ -169,8 +169,11 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
 | AES-CMAC — batched CBC-MAC / fused chain | VAES + AVX-512 | `aescmacasm.HasVAESAVX512` |
-| BLAKE2b / BLAKE2s / BLAKE3 / ChaCha20 — 4-lane ZMM chain-absorb + fused chain | AVX-512F | primitive-local `HasAVX512Fused` |
-| SipHash-2-4 — 4-lane ZMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
+| BLAKE2b — 4-lane YMM chain-absorb + fused chain | AVX-512F | `blake2basm.HasAVX512Fused` |
+| BLAKE2s / BLAKE3 / ChaCha20 — 4-lane XMM chain-absorb + fused chain (the ChaCha20 68-byte chain fuses two compressions per YMM register) | AVX-512F | primitive-local `HasAVX512Fused` |
+| SipHash-2-4 — 4-lane YMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
+
+Every chain-absorb family additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) that batches the Interlocked Barrier per-group PRF fill derivation — four sequential group indices per call — under the same capability flag as the family's pixel-shape kernels.
 
 Cross-referenced to shipping x86 microarchitectures:
 
@@ -248,7 +251,7 @@ go test -coverprofile=coverage.out $(go list ./... | grep -vE 'tools/eitb|cmd/cs
 
 Full benchmark results across ITB key sizes, hash primitives, and CPUs: **[BENCH3.md](BENCH3.md)**.
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses the C pixel kernel on top of ZMM-batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM); `CGO_ENABLED=0` swaps only the C pixel kernel for the portable Go pipeline, while the ZMM-batched hash ASM stays engaged via Go assembly. Decrypt does not require `crypto/rand` and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses the C pixel kernel on top of AVX-512 batched chain-absorb hash kernels for every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM); `CGO_ENABLED=0` swaps only the C pixel kernel for the portable Go pipeline, while the batched hash ASM stays engaged via Go assembly. Decrypt does not require `crypto/rand` and scales further on high-core-count CPUs.
 
 ### Concurrency
 
@@ -934,7 +937,7 @@ The `triple/` package does not currently re-export these setters; Go-native user
 
 ## Hash primitives (`hashes/`)
 
-The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive on the FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction and returns a `(single, batched, key)` triple. The batched arm wires the AVX-512 ZMM-batched chain-absorb dispatch through `Seed.BatchHash` automatically; a `sync.Pool` amortises per-call scratch allocation. A `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for explicit-key call sites.
+The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive on the FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction and returns a `(single, batched, key)` triple. The batched arm wires the AVX-512 batched chain-absorb dispatch through `Seed.BatchHash` automatically; a `sync.Pool` amortises per-call scratch allocation. A `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for explicit-key call sites.
 
 Name-keyed dispatch is used by the FFI layer and by any code that selects the primitive at runtime. `Make<N>Pair` returns the batched arm alongside the single arm; `Make<N>` (no `Pair` suffix) is the single-arm-only convenience:
 
@@ -951,10 +954,10 @@ Name-keyed dispatch is used by the FFI layer and by any code that selects the pr
 Per-primitive technical notes:
 
 - **Areion-SoEM-256** and **Areion-SoEM-512** are formally-proven beyond-birthday-bound PRFs built over the AES round function. ITB ships a 4-way batched dispatch that runs on x86_64 hardware with VAES + AVX-512 (top tier) or VAES + AVX2 (mid tier); on hosts without VAES the primitive falls back to scalar AES-NI via `github.com/jedisct1/go-aes`. `MakeAreionSoEM256Hash` / `MakeAreionSoEM512Hash` (root-package convenience) return `(HashFunc, BatchHashFunc, fixedKey)`.
-- **BLAKE2b-256**, **BLAKE2b-512**, **BLAKE2s**, and **BLAKE3** ship AVX-512 ZMM ARX kernels (4-lane chain-absorb) and fall back to the upstream `golang.org/x/crypto` / `github.com/zeebo/blake3` scalar paths on hosts without AVX-512F.
+- **BLAKE2b-256**, **BLAKE2b-512**, **BLAKE2s**, and **BLAKE3** ship AVX-512 ARX kernels (4-lane chain-absorb; YMM active width for the 64-bit-word BLAKE2b state, XMM for the 32-bit-word BLAKE2s / BLAKE3 state) and fall back to the upstream `golang.org/x/crypto` / `github.com/zeebo/blake3` scalar paths on hosts without AVX-512F.
 - **AES-CMAC** ships a VAES + AVX-512 ZMM 4-lane CBC-MAC kernel and falls back to `crypto/aes` scalar on hosts without VAES.
 - **SipHash-2-4** is the one primitive with no internal fixed key — its keying material is the seed components themselves. `SipHash24Pair()` takes no arguments and returns a `(single, batched)` pair without a third key element.
-- **ChaCha20** ships a 4-lane AVX-512 ZMM ARX kernel and falls back to `golang.org/x/crypto/chacha20` on hosts without AVX-512F.
+- **ChaCha20** ships a 4-lane AVX-512 ARX kernel (XMM active width; the 68-byte chain kernel fuses two independent compressions per YMM register) and falls back to `golang.org/x/crypto/chacha20` on hosts without AVX-512F.
 
 See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why).
 
