@@ -25,9 +25,12 @@
 //   Z0..Z3  state1.a/b/c/d              Z18..Z21 fixedKey b0..b3 broadcast
 //   Z4,Z5   state1 temps                 Z22..Z25 seedKey b0..b3 SoA
 //   Z6      zero (FinalRoundNoKey)       Z26      domain separation
-//   Z8..Z11 state2.a/b/c/d              Z27      current RC (loaded per round)
-//   Z12,Z13 state2 temps                 Z14..Z17 state SoA (then b2/b3 zeroed
-//                                                  for 20-byte; b0/b1 carry data)
+//   Z8..Z11 state2.a/b/c/d              Z14..Z17 state SoA (then b2/b3 zeroed
+//   Z12,Z13 state2 temps                          for 20-byte; b0/b1 carry data)
+//
+// Z14..Z26 are dead once the SoEM state-setup XORs complete (single-block
+// kernel — nothing re-reads keys or staging), so RC[0..14] are preloaded
+// into Z14..Z28 after setup and referenced directly per round.
 
 #include "textflag.h"
 
@@ -184,55 +187,60 @@ TEXT ·Areion512ChainAbsorb20x4(SB), NOSPLIT, $128-32
 	VPXORD Z24, Z16, Z10
 	VPXORD Z25, Z17, Z11
 
+	// Z14..Z28: Areion512 round constants RC[0..14] (4-broadcast form).
+	// Z14..Z26 are dead after the state-setup XORs above (single-block
+	// kernel); Z27/Z28 are otherwise unused. Preloading takes the RC
+	// loads off the per-round instruction stream entirely.
+	VMOVDQU64 ·AreionRC4x+0(SB),   Z14
+	VMOVDQU64 ·AreionRC4x+64(SB),  Z15
+	VMOVDQU64 ·AreionRC4x+128(SB), Z16
+	VMOVDQU64 ·AreionRC4x+192(SB), Z17
+	VMOVDQU64 ·AreionRC4x+256(SB), Z18
+	VMOVDQU64 ·AreionRC4x+320(SB), Z19
+	VMOVDQU64 ·AreionRC4x+384(SB), Z20
+	VMOVDQU64 ·AreionRC4x+448(SB), Z21
+	VMOVDQU64 ·AreionRC4x+512(SB), Z22
+	VMOVDQU64 ·AreionRC4x+576(SB), Z23
+	VMOVDQU64 ·AreionRC4x+640(SB), Z24
+	VMOVDQU64 ·AreionRC4x+704(SB), Z25
+	VMOVDQU64 ·AreionRC4x+768(SB), Z26
+	VMOVDQU64 ·AreionRC4x+832(SB), Z27
+	VMOVDQU64 ·AreionRC4x+896(SB), Z28
+
 	// 15-round Areion512 permutation, interleaved on (Z0..Z3) and
-	// (Z8..Z11). RC loaded dynamically into Z27 before each round.
+	// (Z8..Z11). RC[i] referenced directly from its preloaded register.
 	// (a,b,c,d) rotates per round following i%4 (existing convention).
 	//
 	// === Round 0  (i%4=0): a=x0, b=x1, c=x2, d=x3
-	VMOVDQU64 ·AreionRC4x+0(SB), Z27
-	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z27)
+	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z14)
 	// === Round 1  (i%4=1): a=x1, b=x2, c=x3, d=x0
-	VMOVDQU64 ·AreionRC4x+64(SB), Z27
-	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z27)
+	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z15)
 	// === Round 2  (i%4=2): a=x2, b=x3, c=x0, d=x1
-	VMOVDQU64 ·AreionRC4x+128(SB), Z27
-	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z27)
+	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z16)
 	// === Round 3  (i%4=3): a=x3, b=x0, c=x1, d=x2
-	VMOVDQU64 ·AreionRC4x+192(SB), Z27
-	AREION512_FUSED_ROUND(Z3, Z0, Z1, Z2, Z11, Z8,  Z9,  Z10, Z27)
+	AREION512_FUSED_ROUND(Z3, Z0, Z1, Z2, Z11, Z8,  Z9,  Z10, Z17)
 	// === Round 4
-	VMOVDQU64 ·AreionRC4x+256(SB), Z27
-	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z27)
+	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z18)
 	// === Round 5
-	VMOVDQU64 ·AreionRC4x+320(SB), Z27
-	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z27)
+	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z19)
 	// === Round 6
-	VMOVDQU64 ·AreionRC4x+384(SB), Z27
-	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z27)
+	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z20)
 	// === Round 7
-	VMOVDQU64 ·AreionRC4x+448(SB), Z27
-	AREION512_FUSED_ROUND(Z3, Z0, Z1, Z2, Z11, Z8,  Z9,  Z10, Z27)
+	AREION512_FUSED_ROUND(Z3, Z0, Z1, Z2, Z11, Z8,  Z9,  Z10, Z21)
 	// === Round 8
-	VMOVDQU64 ·AreionRC4x+512(SB), Z27
-	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z27)
+	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z22)
 	// === Round 9
-	VMOVDQU64 ·AreionRC4x+576(SB), Z27
-	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z27)
+	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z23)
 	// === Round 10
-	VMOVDQU64 ·AreionRC4x+640(SB), Z27
-	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z27)
+	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z24)
 	// === Round 11
-	VMOVDQU64 ·AreionRC4x+704(SB), Z27
-	AREION512_FUSED_ROUND(Z3, Z0, Z1, Z2, Z11, Z8,  Z9,  Z10, Z27)
+	AREION512_FUSED_ROUND(Z3, Z0, Z1, Z2, Z11, Z8,  Z9,  Z10, Z25)
 	// === Round 12 (first of final 3)
-	VMOVDQU64 ·AreionRC4x+768(SB), Z27
-	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z27)
+	AREION512_FUSED_ROUND(Z0, Z1, Z2, Z3, Z8,  Z9,  Z10, Z11, Z26)
 	// === Round 13
-	VMOVDQU64 ·AreionRC4x+832(SB), Z27
 	AREION512_FUSED_ROUND(Z1, Z2, Z3, Z0, Z9,  Z10, Z11, Z8,  Z27)
 	// === Round 14
-	VMOVDQU64 ·AreionRC4x+896(SB), Z27
-	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z27)
+	AREION512_FUSED_ROUND(Z2, Z3, Z0, Z1, Z10, Z11, Z8,  Z9,  Z28)
 
 	// ===== Final cyclic rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)`
 	// fused with SoEM XOR `state1' ⊕ state2'` and writeback. Same
