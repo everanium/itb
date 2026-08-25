@@ -140,7 +140,7 @@ func BLAKE2b256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFun
 	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
-		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&
+		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
 			len(data[1]) == commonLen &&
 			len(data[2]) == commonLen &&
 			len(data[3]) == commonLen {
@@ -152,6 +152,15 @@ func BLAKE2b256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFun
 			var out8 [4][8]uint64
 			seedsCopy := seeds
 			switch commonLen {
+			case 13:
+				// Interlocked Barrier PRF fill shape (Lift 2).
+				blake2basm.Blake2b256ChainAbsorb13x4(
+					&blake2basm.Blake2bIV256Param,
+					&fixedKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out8,
+				)
 			case 20:
 				blake2basm.Blake2b256ChainAbsorb20x4(
 					&blake2basm.Blake2bIV256Param,
