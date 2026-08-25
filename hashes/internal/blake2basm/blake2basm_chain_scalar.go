@@ -53,7 +53,7 @@ func scalar512ChainAbsorb36(
 //	Block 1 (t=128, f=0): buf[0:128]   = b2key + (data[0:64] ⊕ seed)
 //	Block 2 (t=132, f=1): buf[128:132] = data[64:68] + 124 zero pad
 //
-// On the AVX-512 fused path the BLAKE2b state is held in ZMM
+// On the AVX-512 fused path the BLAKE2b state is held in YMM
 // registers across both compressions. The scalar reference
 // delegates to the upstream blake2b.Sum* driver, which iterates
 // blocks naturally.
@@ -212,7 +212,7 @@ func pack256Buf(buf []byte, b2key *[32]byte, data []byte, seed *[4]uint64) {
 // over the four lanes; each lane is bit-exact equivalent to the
 // public hashes.BLAKE2b512 closure on the same input. Used as the
 // production fallback on hosts without AVX-512+VL and as the parity
-// baseline for the ZMM-batched ASM kernel.
+// baseline for the YMM-batched ASM kernel.
 func scalarBatch512ChainAbsorb20(
 	h0 *[8]uint64,
 	b2key *[64]byte,
