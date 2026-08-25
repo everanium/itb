@@ -341,6 +341,33 @@ type lockBatchPRF48 struct {
 	factor    int
 	fill      func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64)
 	fillRanks func(buf []byte, groupIdx uint64, prf []uint64)
+
+	// fillRanksX4 is the optional 4-group batched counterpart of
+	// fillRanks, present when the lockSeed exposes a BatchHash arm. One
+	// call performs the PRF fill for 4 consecutive groups
+	// (groupIdx .. groupIdx+3) through a single 4-lane batched Hash
+	// invocation: every lane carries the identical lockKey with a
+	// distinct per-lane groupIdx buf, so the call yields 4 distinct
+	// rank sources exactly matching 4 sequential fillRanks calls. The
+	// call writes 4 * 2 * factor rank words into prf[0 : 8*factor] in
+	// chunk order. s provides per-worker scratch for the 4 lane bufs so
+	// the batched call performs no per-invocation allocation. fillRanks
+	// and fillRanksX4 agree on every group index by the BatchHash
+	// parity invariant (BatchHash must agree with Hash on every input;
+	// see seed256_batch.go).
+	fillRanksX4 func(s *lockFillScratch48, groupIdx uint64, prf []uint64)
+}
+
+// lockFillScratch48 is the per-worker scratch consumed by
+// lockBatchPRF48.fillRanksX4 — four domain-tagged 13-byte fill bufs
+// plus the slice-header array handed to the seed's BatchHash arm.
+// Declared once per worker goroutine; the BatchHash indirection makes
+// the buffers escape, so worker-scoped reuse keeps the batched fill
+// allocation-free per invocation. The bufs' reserved bytes [9:13] stay
+// zero for the struct's lifetime, matching the scalar fill buf layout.
+type lockFillScratch48 struct {
+	bufs [4][13]byte
+	data [4][]byte
 }
 
 // fillLockMasksTriple48 fills masks[0..count-1] from count 128-bit ranks
@@ -436,7 +463,7 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)
 	h := lockSeed.Hash
-	return lockBatchPRF48{
+	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_128,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
@@ -452,6 +479,24 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 			prf[0], prf[1] = h(buf, lockLo, lockHi)
 		},
 	}
+	if bh := lockSeed.BatchHash; bh != nil {
+		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
+			for i := range s.bufs {
+				s.bufs[i][0] = 0x03
+				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				s.data[i] = s.bufs[i][:]
+			}
+			out := bh(&s.data, [4][2]uint64{
+				{lockLo, lockHi}, {lockLo, lockHi},
+				{lockLo, lockHi}, {lockLo, lockHi},
+			})
+			for i := 0; i < 4; i++ {
+				prf[2*i] = out[i][0]
+				prf[2*i+1] = out[i][1]
+			}
+		}
+	}
+	return bp
 }
 
 // buildLockBatchPRF48_256 is the 256-bit counterpart of [buildLockBatchPRF48_128].
@@ -459,7 +504,7 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	lockKey := lockSeed.deriveInterLockSeed(nonce)
 	h := lockSeed.Hash
-	return lockBatchPRF48{
+	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_256,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
@@ -476,6 +521,20 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			copy(prf[:4], out[:])
 		},
 	}
+	if bh := lockSeed.BatchHash; bh != nil {
+		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
+			for i := range s.bufs {
+				s.bufs[i][0] = 0x03
+				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				s.data[i] = s.bufs[i][:]
+			}
+			out := bh(&s.data, [4][4]uint64{lockKey, lockKey, lockKey, lockKey})
+			for i := 0; i < 4; i++ {
+				copy(prf[4*i:4*i+4], out[i][:])
+			}
+		}
+	}
+	return bp
 }
 
 // buildLockBatchPRF48_512 is the 512-bit counterpart of [buildLockBatchPRF48_128].
@@ -483,7 +542,7 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	lockKey := lockSeed.deriveInterLockSeed(nonce)
 	h := lockSeed.Hash
-	return lockBatchPRF48{
+	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_512,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
@@ -498,6 +557,20 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			copy(prf[:8], out[:])
 		},
 	}
+	if bh := lockSeed.BatchHash; bh != nil {
+		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
+			for i := range s.bufs {
+				s.bufs[i][0] = 0x03
+				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				s.data[i] = s.bufs[i][:]
+			}
+			out := bh(&s.data, [4][8]uint64{lockKey, lockKey, lockKey, lockKey})
+			for i := 0; i < 4; i++ {
+				copy(prf[8*i:8*i+8], out[i][:])
+			}
+		}
+	}
+	return bp
 }
 
 // buildLockBatchPRF48_128Cfg — Cfg variant of [buildLockBatchPRF48_128]. The cfg
@@ -554,6 +627,14 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // executes — the produced lane bytes are bit-identical to a per-group
 // derivation via bp.fill (asserted by test against the bp.fill
 // reference and by golden lane digests).
+//
+// When bp.fillRanksX4 is present, full blocks of max(groupsPerSuper, 4)
+// groups route their PRF fills through the 4-lane batched arm — one
+// batched Hash call per 4 consecutive groups instead of 4 sequential
+// fillRanks calls. The batched arm agrees with fillRanks on every group
+// index (BatchHash parity invariant), so the produced lane bytes stay
+// bit-identical; worker tails shorter than a block fall back to the
+// scalar fillRanks path.
 func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
 	L := len(data)
 	LPad := ((L + 5) / 6) * 6
@@ -596,10 +677,47 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 		go func(gs, ge int) {
 			defer wg.Done()
 			var buf [13]byte
-			var prf [2 * superChunks48]uint64
+			var scratch lockFillScratch48
+			var prf [8 * lockBatchFactor48Max]uint64
 			var masks [superChunks48][3]uint64
 			groupsPerSuper := superChunks48 / factor
+			// x4 block sizing: fillRanksX4 covers 4 consecutive groups
+			// per call; a block of max(groupsPerSuper, 4) groups keeps
+			// the chunk count a multiple of superChunks48 so every
+			// unrank pass runs with all lanes carrying payload.
+			x4Groups := 0
+			if bp.fillRanksX4 != nil {
+				x4Groups = groupsPerSuper
+				if x4Groups < 4 {
+					x4Groups = 4
+				}
+			}
 			for g := gs; g < ge; {
+				if x4Groups != 0 && ge-g >= x4Groups {
+					base := g * factor
+					for c := 0; c < x4Groups; c += 4 {
+						bp.fillRanksX4(&scratch, uint64(g+c), prf[2*c*factor:])
+					}
+					nChunks := x4Groups * factor
+					for off := 0; off < nChunks; off += superChunks48 {
+						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
+						fillLockMasksTriple48Super(p, superChunks48, &masks)
+						for j := 0; j < superChunks48; j++ {
+							k := base + off + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+							x := readChunk48(padded, 6*k)
+							l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+							binary.LittleEndian.PutUint16(p0[2*k:], l0)
+							binary.LittleEndian.PutUint16(p1[2*k:], l1)
+							binary.LittleEndian.PutUint16(p2[2*k:], l2)
+						}
+					}
+					g += x4Groups
+					continue
+				}
 				gFlush := g + groupsPerSuper
 				if gFlush > ge {
 					gFlush = ge
@@ -610,7 +728,7 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 					bp.fillRanks(buf[:], uint64(g), prf[2*n:])
 					n += factor
 				}
-				fillLockMasksTriple48Super(&prf, n, &masks)
+				fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[0:2*superChunks48]), n, &masks)
 				for j := 0; j < n; j++ {
 					k := base + j
 					if k >= M {
@@ -662,10 +780,44 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 		go func(gs, ge int) {
 			defer wg.Done()
 			var buf [13]byte
-			var prf [2 * superChunks48]uint64
+			var scratch lockFillScratch48
+			var prf [8 * lockBatchFactor48Max]uint64
 			var masks [superChunks48][3]uint64
 			groupsPerSuper := superChunks48 / factor
+			// x4 block sizing: mirrors splitTriple48LockedBatch.
+			x4Groups := 0
+			if bp.fillRanksX4 != nil {
+				x4Groups = groupsPerSuper
+				if x4Groups < 4 {
+					x4Groups = 4
+				}
+			}
 			for g := gs; g < ge; {
+				if x4Groups != 0 && ge-g >= x4Groups {
+					base := g * factor
+					for c := 0; c < x4Groups; c += 4 {
+						bp.fillRanksX4(&scratch, uint64(g+c), prf[2*c*factor:])
+					}
+					nChunks := x4Groups * factor
+					for off := 0; off < nChunks; off += superChunks48 {
+						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
+						fillLockMasksTriple48Super(p, superChunks48, &masks)
+						for j := 0; j < superChunks48; j++ {
+							k := base + off + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+							l0 := binary.LittleEndian.Uint16(p0[2*k:])
+							l1 := binary.LittleEndian.Uint16(p1[2*k:])
+							l2 := binary.LittleEndian.Uint16(p2[2*k:])
+							x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+							writeChunk48(result, 6*k, x)
+						}
+					}
+					g += x4Groups
+					continue
+				}
 				gFlush := g + groupsPerSuper
 				if gFlush > ge {
 					gFlush = ge
@@ -676,7 +828,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 					bp.fillRanks(buf[:], uint64(g), prf[2*n:])
 					n += factor
 				}
-				fillLockMasksTriple48Super(&prf, n, &masks)
+				fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[0:2*superChunks48]), n, &masks)
 				for j := 0; j < n; j++ {
 					k := base + j
 					if k >= M {
