@@ -14,6 +14,20 @@
 
 #include "textflag.h"
 
+// sipSeedDeint<> — VPERMQ qword indices de-interleaving the
+// contiguous seeds block [K0 K1 K0 K1 K0 K1 K0 K1] (lane-major)
+// into [K0 K0 K0 K0 | K1 K1 K1 K1]. Public compile-time constant;
+// the permute is data-oblivious.
+DATA sipSeedDeint<>+0x00(SB)/8, $0
+DATA sipSeedDeint<>+0x08(SB)/8, $2
+DATA sipSeedDeint<>+0x10(SB)/8, $4
+DATA sipSeedDeint<>+0x18(SB)/8, $6
+DATA sipSeedDeint<>+0x20(SB)/8, $1
+DATA sipSeedDeint<>+0x28(SB)/8, $3
+DATA sipSeedDeint<>+0x30(SB)/8, $5
+DATA sipSeedDeint<>+0x38(SB)/8, $7
+GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
+
 #define SIP_ROUND \
 	VPADDQ Z1, Z0, Z0; VPROLQ $13, Z1, Z1; VPXORQ Z0, Z1, Z1; VPROLQ $32, Z0, Z0; \
 	VPADDQ Z3, Z2, Z2; VPROLQ $16, Z3, Z3; VPXORQ Z2, Z3, Z3;                      \
@@ -47,26 +61,15 @@ TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 	MOVQ 16(CX), R10
 	MOVQ 24(CX), R11
 
-	// Pack seeds → Z16 (K0), Z17 (K1).
-	MOVQ 0(BX),  R12
-	VMOVQ R12, X16
-	MOVQ 16(BX), R12
-	VPINSRQ $1, R12, X16, X16
-	MOVQ 32(BX), R12
-	VMOVQ R12, X18
-	MOVQ 48(BX), R12
-	VPINSRQ $1, R12, X18, X18
-	VINSERTI64X2 $1, X18, Y16, Y16
-
-	MOVQ 8(BX),  R12
-	VMOVQ R12, X17
-	MOVQ 24(BX), R12
-	VPINSRQ $1, R12, X17, X17
-	MOVQ 40(BX), R12
-	VMOVQ R12, X18
-	MOVQ 56(BX), R12
-	VPINSRQ $1, R12, X18, X18
-	VINSERTI64X2 $1, X18, Y17, Y17
+	// Pack seeds → Z16 (K0), Z17 (K1). One qword permute
+	// de-interleaves straight from memory: Z16 = [K0 lanes 0..3 |
+	// K1 lanes 0..3]; the K1 half is extracted into Y17 (upper
+	// Z17 zeroed by the EVEX Y-form write). Z16 qwords 4..7 carry
+	// the K1 copies — don't-care lanes: every state op is
+	// element-wise and the writeback reads qwords 0..3 only.
+	VMOVDQU64 sipSeedDeint<>(SB), Z19
+	VPERMQ 0(BX), Z19, Z16
+	VEXTRACTI64X4 $1, Z16, Y17
 
 	// State init.
 	MOVQ $0x736f6d6570736575, R12
