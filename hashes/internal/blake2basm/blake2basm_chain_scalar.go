@@ -349,3 +349,36 @@ func scalarBatch256ChainAbsorb13(
 		out[lane] = laneOut
 	}
 }
+
+// scalar512ChainAbsorb13 — 13-byte counterpart for BLAKE2b-512, the
+// Interlocked Barrier PRF fill shape. buf is 128 bytes (key 64 + data
+// 13 + zero pad, then seed XOR); single-block compression with t=128,
+// identical to scalar512ChainAbsorb20.
+func scalar512ChainAbsorb13(
+	h0 *[8]uint64,
+	b2key *[64]byte,
+	data *[13]byte,
+	seed *[8]uint64,
+	out *[8]uint64,
+) {
+	var buf [128]byte
+	packBuf128(&buf, b2key, data[:], seed)
+	scalarSum(buf[:], h0, out)
+}
+
+// scalarBatch512ChainAbsorb13 — 4-lane scalar reference for the 13-byte
+// BLAKE2b-512 chain-absorb.
+func scalarBatch512ChainAbsorb13(
+	h0 *[8]uint64,
+	b2key *[64]byte,
+	seeds *[4][8]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint64,
+) {
+	for lane := 0; lane < 4; lane++ {
+		data := (*[13]byte)(unsafe.Pointer(dataPtrs[lane]))
+		var laneOut [8]uint64
+		scalar512ChainAbsorb13(h0, b2key, data, &seeds[lane], &laneOut)
+		out[lane] = laneOut
+	}
+}
