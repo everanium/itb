@@ -497,15 +497,28 @@ static inline void process8PixelsEncodeAVX512GFNI(
     }
     __m512i orig = _mm512_loadu_si512((const void *)origBuf);
 
-    __m512i noiseMaskV = _mm512_set_epi64(
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[7]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[6]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[5]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[4]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[3]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[2]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[1]),
-        (long long)((uint64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[0]));
+    // Broadcast each pixel's noiseMask byte across its 8-byte qword lane
+    // with a single VPERMB: index byte i selects source byte (i / 8), so
+    // qword b holds 8 copies of noiseMaskArr[b]. Replaces the scalar
+    // _mm512_set_epi64 construction (8 multiplies + a register insert
+    // chain) with one 8-byte load and one permute. The permutation
+    // indices are public compile-time constants; only bytes 0..7 of the
+    // source are referenced, so the undefined upper lanes of the
+    // 128→512 cast are never selected.
+    static const uint8_t noiseBcastIdx[64] __attribute__((aligned(64))) = {
+        0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 1, 1, 1,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        4, 4, 4, 4, 4, 4, 4, 4,
+        5, 5, 5, 5, 5, 5, 5, 5,
+        6, 6, 6, 6, 6, 6, 6, 6,
+        7, 7, 7, 7, 7, 7, 7, 7,
+    };
+    __m128i noiseMasks8 = _mm_loadl_epi64((const __m128i *)noiseMaskArr);
+    __m512i noiseMaskV = _mm512_permutexvar_epi8(
+        _mm512_load_si512((const void *)noiseBcastIdx),
+        _mm512_castsi128_si512(noiseMasks8));
 
     __m512i result = _mm512_or_si512(spreadVals, _mm512_and_si512(orig, noiseMaskV));
 
