@@ -27,6 +27,21 @@ func Areion512ChainAbsorb20x4(
 	out *[4][8]uint64,
 )
 
+// Areion512ChainAbsorb13x4 — single-round specialisation for the
+// 13-byte per-lane data shape, the Interlocked Barrier PRF fill
+// message (0x03 || uint64-LE(groupIdx) || 4 reserved). 13 ≤ 56-byte
+// chunkSize so one SoEM round; the b1 staging loads exactly
+// data[8..13] via MOVL + MOVBLZX so a lane data pointer to an
+// exactly-13-byte buffer is never over-read (see the .s file).
+//
+//go:noescape
+func Areion512ChainAbsorb13x4(
+	fixedKey *[64]byte,
+	seeds *[4][8]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint64,
+)
+
 // Areion512ChainAbsorb36x4 — single-round specialisation for the
 // 36-byte per-lane data shape (256-bit ITB nonce). 36 ≤ 56-byte
 // chunkSize so still one round; only the data layout in the initial

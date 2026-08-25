@@ -232,3 +232,69 @@ func BenchmarkAreion512ChainAbsorb68x4_Reference(b *testing.B) {
 func BenchmarkAreion512ChainAbsorb68x4_Fused(b *testing.B) {
 	benchChainAbsorb512Reference(b, 68, Areion512ChainAbsorb68x4)
 }
+
+// TestAreion512ChainAbsorb13x4_Parity checks the Interlocked Barrier
+// fill kernel against the generic CBC-MAC reference at the 13-byte
+// data shape.
+func TestAreion512ChainAbsorb13x4_Parity(t *testing.T) {
+	testChainAbsorb512Parity(t, 13, Areion512ChainAbsorb13x4)
+}
+
+// TestAreion512ChainAbsorb13x4_BitSensitivity flips every one of the
+// 104 bits of the 13-byte input (per lane, independently) and requires
+// the digest for that lane to change — confirming all 13 fill bytes
+// reach the output.
+func TestAreion512ChainAbsorb13x4_BitSensitivity(t *testing.T) {
+	if !HasVAESAVX512 {
+		t.Skip("requires VAES + AVX-512")
+	}
+	var fixedKey [64]byte
+	if _, err := rand.Read(fixedKey[:]); err != nil {
+		t.Fatal(err)
+	}
+	var seeds [4][8]uint64
+	var seedBytes [256]byte
+	if _, err := rand.Read(seedBytes[:]); err != nil {
+		t.Fatal(err)
+	}
+	seedsBytes := (*[256]byte)(unsafe.Pointer(&seeds))
+	copy(seedsBytes[:], seedBytes[:])
+
+	base := make([][]byte, 4)
+	for i := 0; i < 4; i++ {
+		base[i] = make([]byte, 13)
+		if _, err := rand.Read(base[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(d [][]byte) [4][8]uint64 {
+		var dp [4]*byte
+		for i := 0; i < 4; i++ {
+			dp[i] = &d[i][0]
+		}
+		var out [4][8]uint64
+		Areion512ChainAbsorb13x4(&fixedKey, &seeds, &dp, &out)
+		return out
+	}
+	baseOut := run(base)
+	for lane := 0; lane < 4; lane++ {
+		for bit := 0; bit < 13*8; bit++ {
+			flipped := make([][]byte, 4)
+			for i := 0; i < 4; i++ {
+				flipped[i] = append([]byte(nil), base[i]...)
+			}
+			flipped[lane][bit/8] ^= 1 << (bit % 8)
+			out := run(flipped)
+			if out[lane] == baseOut[lane] {
+				t.Fatalf("lane %d bit %d flip produced identical digest", lane, bit)
+			}
+		}
+	}
+}
+
+func BenchmarkAreion512ChainAbsorb13x4_Reference(b *testing.B) {
+	benchChainAbsorb512Reference(b, 13, nil)
+}
+func BenchmarkAreion512ChainAbsorb13x4_Fused(b *testing.B) {
+	benchChainAbsorb512Reference(b, 13, Areion512ChainAbsorb13x4)
+}
