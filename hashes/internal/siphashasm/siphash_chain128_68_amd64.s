@@ -1,6 +1,6 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for SipHash-2-4-128 with
+// YMM-batched fused chain-absorb kernel for SipHash-2-4-128 with
 // 68-byte per-lane data input (the ITB SetNonceBits(512) buf shape).
 // Same lane-parallel layout as the 20- / 36-byte kernels; 8 full +
 // 1 padded compression blocks = 9 absorbs × 2 SipRounds = 18 + 8
