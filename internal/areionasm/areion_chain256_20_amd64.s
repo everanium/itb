@@ -74,59 +74,58 @@ TEXT ·Areion256ChainAbsorb20x4(SB), NOSPLIT, $128-32
 
 	// ===== Build state from lengthTag(20) + data[0..20] + zero pad =====
 	//
-	// Per lane stack[lane*32]:
-	//   [0..8]   = 20 (length tag)
-	//   [8..16]  = data[0..8]
-	//   [16..28] = data[8..20]
-	//   [28..32] = 0
+	// SoA staging (per lane stride 16, two contiguous 64-byte packs):
+	//   SP+0..64   = Z14 staging (b0): per lane
+	//                  [0..8]  = 20 (length tag)
+	//                  [8..16] = data[0..8]
+	//   SP+64..128 = Z15 staging (b1): per lane
+	//                  [0..8]   = data[8..16]
+	//                  [8..12]  = data[16..20]
+	//                  [12..16] = 0
 	MOVQ $20, R12
 	MOVQ R12, 0(SP)
+	MOVQ R12, 16(SP)
 	MOVQ R12, 32(SP)
-	MOVQ R12, 64(SP)
-	MOVQ R12, 96(SP)
+	MOVQ R12, 48(SP)
 
 	// Lane 0.
 	MOVQ 0(R8),  R12
 	MOVQ R12, 8(SP)
 	MOVQ 8(R8),  R12
-	MOVQ R12, 16(SP)
+	MOVQ R12, 64(SP)
 	MOVL 16(R8), R12
-	MOVL R12, 24(SP)
-	MOVL $0, 28(SP)
+	MOVL R12, 72(SP)
+	MOVL $0, 76(SP)
 	// Lane 1.
 	MOVQ 0(R9),  R12
-	MOVQ R12, 40(SP)
+	MOVQ R12, 24(SP)
 	MOVQ 8(R9),  R12
-	MOVQ R12, 48(SP)
-	MOVL 16(R9), R12
-	MOVL R12, 56(SP)
-	MOVL $0, 60(SP)
-	// Lane 2.
-	MOVQ 0(R10), R12
-	MOVQ R12, 72(SP)
-	MOVQ 8(R10), R12
 	MOVQ R12, 80(SP)
-	MOVL 16(R10), R12
+	MOVL 16(R9), R12
 	MOVL R12, 88(SP)
 	MOVL $0, 92(SP)
+	// Lane 2.
+	MOVQ 0(R10), R12
+	MOVQ R12, 40(SP)
+	MOVQ 8(R10), R12
+	MOVQ R12, 96(SP)
+	MOVL 16(R10), R12
+	MOVL R12, 104(SP)
+	MOVL $0, 108(SP)
 	// Lane 3.
 	MOVQ 0(R11), R12
-	MOVQ R12, 104(SP)
+	MOVQ R12, 56(SP)
 	MOVQ 8(R11), R12
 	MOVQ R12, 112(SP)
 	MOVL 16(R11), R12
 	MOVL R12, 120(SP)
 	MOVL $0, 124(SP)
 
-	// Pack stack AoS → SoA Block4 in (Z14, Z15).
-	VMOVDQU 0(SP), X14
-	VINSERTI64X2 $1, 32(SP), Y14, Y14
-	VINSERTI64X2 $2, 64(SP), Z14, Z14
-	VINSERTI64X2 $3, 96(SP), Z14, Z14
-	VMOVDQU 16(SP), X15
-	VINSERTI64X2 $1, 48(SP), Y15, Y15
-	VINSERTI64X2 $2, 80(SP), Z15, Z15
-	VINSERTI64X2 $3, 112(SP), Z15, Z15
+	// Pack staging → SoA Block4 in (Z14, Z15). Each 64-byte staging
+	// pack is contiguous, so a single full-width load replaces the
+	// insert chain.
+	VMOVDQU64 0(SP),  Z14
+	VMOVDQU64 64(SP), Z15
 
 	// SoEM state setup.
 	VPXORD Z8,  Z14, Z0

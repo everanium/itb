@@ -74,49 +74,53 @@ TEXT ·Areion256ChainAbsorb68x4(SB), NOSPLIT, $128-32
 	VMOVDQU64 ·AreionRC4x+576(SB), Z25
 
 	// ===== Round 0: build state from lengthTag(68) + data[0..24] =====
+	//
+	// SoA staging (per lane stride 16, two contiguous 64-byte packs):
+	//   SP+0..64   = Z14 staging (b0): per lane
+	//                  [0..8]  = 68 (length tag)
+	//                  [8..16] = data[0..8]
+	//   SP+64..128 = Z15 staging (b1): per lane
+	//                  [0..16] = data[8..24]
 	MOVQ $68, R12
 	MOVQ R12, 0(SP)
+	MOVQ R12, 16(SP)
 	MOVQ R12, 32(SP)
-	MOVQ R12, 64(SP)
-	MOVQ R12, 96(SP)
+	MOVQ R12, 48(SP)
 
 	// Lane 0.
 	MOVQ 0(R8),  R12
 	MOVQ R12, 8(SP)
 	MOVQ 8(R8),  R12
-	MOVQ R12, 16(SP)
+	MOVQ R12, 64(SP)
 	MOVQ 16(R8), R12
-	MOVQ R12, 24(SP)
+	MOVQ R12, 72(SP)
 	// Lane 1.
 	MOVQ 0(R9),  R12
-	MOVQ R12, 40(SP)
+	MOVQ R12, 24(SP)
 	MOVQ 8(R9),  R12
-	MOVQ R12, 48(SP)
+	MOVQ R12, 80(SP)
 	MOVQ 16(R9), R12
-	MOVQ R12, 56(SP)
+	MOVQ R12, 88(SP)
 	// Lane 2.
 	MOVQ 0(R10), R12
-	MOVQ R12, 72(SP)
+	MOVQ R12, 40(SP)
 	MOVQ 8(R10), R12
-	MOVQ R12, 80(SP)
+	MOVQ R12, 96(SP)
 	MOVQ 16(R10), R12
-	MOVQ R12, 88(SP)
+	MOVQ R12, 104(SP)
 	// Lane 3.
 	MOVQ 0(R11), R12
-	MOVQ R12, 104(SP)
+	MOVQ R12, 56(SP)
 	MOVQ 8(R11), R12
 	MOVQ R12, 112(SP)
 	MOVQ 16(R11), R12
 	MOVQ R12, 120(SP)
 
-	VMOVDQU 0(SP), X14
-	VINSERTI64X2 $1, 32(SP), Y14, Y14
-	VINSERTI64X2 $2, 64(SP), Z14, Z14
-	VINSERTI64X2 $3, 96(SP), Z14, Z14
-	VMOVDQU 16(SP), X15
-	VINSERTI64X2 $1, 48(SP), Y15, Y15
-	VINSERTI64X2 $2, 80(SP), Z15, Z15
-	VINSERTI64X2 $3, 112(SP), Z15, Z15
+	// Pack staging → SoA Block4 in (Z14, Z15). Each 64-byte staging
+	// pack is contiguous, so a single full-width load replaces the
+	// insert chain.
+	VMOVDQU64 0(SP),  Z14
+	VMOVDQU64 64(SP), Z15
 
 	VPXORD Z8,  Z14, Z0
 	VPXORD Z9,  Z15, Z1
@@ -140,51 +144,52 @@ TEXT ·Areion256ChainAbsorb68x4(SB), NOSPLIT, $128-32
 
 	// ===== Round 1: XOR data[24..48] (24 bytes — full chunk) into state[8..32] =====
 	//
-	// Per lane stack[lane*32]:
-	//   [0..8]   = 0
-	//   [8..32]  = data[24..48]
+	// SoA staging for the XOR pattern (per lane stride 16, two
+	// contiguous 64-byte packs):
+	//   SP+0..64   = Z2 staging (b0): per lane
+	//                  [0..8]  = 0
+	//                  [8..16] = data[24..32]
+	//   SP+64..128 = Z6 staging (b1): per lane
+	//                  [0..16] = data[32..48]
 	XORQ R12, R12
 	// Lane 0.
 	MOVQ R12, 0(SP)
 	MOVQ 24(R8), R13
 	MOVQ R13, 8(SP)
 	MOVQ 32(R8), R13
-	MOVQ R13, 16(SP)
+	MOVQ R13, 64(SP)
 	MOVQ 40(R8), R13
-	MOVQ R13, 24(SP)
-	// Lane 1.
-	MOVQ R12, 32(SP)
-	MOVQ 24(R9), R13
-	MOVQ R13, 40(SP)
-	MOVQ 32(R9), R13
-	MOVQ R13, 48(SP)
-	MOVQ 40(R9), R13
-	MOVQ R13, 56(SP)
-	// Lane 2.
-	MOVQ R12, 64(SP)
-	MOVQ 24(R10), R13
 	MOVQ R13, 72(SP)
-	MOVQ 32(R10), R13
+	// Lane 1.
+	MOVQ R12, 16(SP)
+	MOVQ 24(R9), R13
+	MOVQ R13, 24(SP)
+	MOVQ 32(R9), R13
 	MOVQ R13, 80(SP)
-	MOVQ 40(R10), R13
+	MOVQ 40(R9), R13
 	MOVQ R13, 88(SP)
-	// Lane 3.
-	MOVQ R12, 96(SP)
-	MOVQ 24(R11), R13
+	// Lane 2.
+	MOVQ R12, 32(SP)
+	MOVQ 24(R10), R13
+	MOVQ R13, 40(SP)
+	MOVQ 32(R10), R13
+	MOVQ R13, 96(SP)
+	MOVQ 40(R10), R13
 	MOVQ R13, 104(SP)
+	// Lane 3.
+	MOVQ R12, 48(SP)
+	MOVQ 24(R11), R13
+	MOVQ R13, 56(SP)
 	MOVQ 32(R11), R13
 	MOVQ R13, 112(SP)
 	MOVQ 40(R11), R13
 	MOVQ R13, 120(SP)
 
-	VMOVDQU 0(SP), X2
-	VINSERTI64X2 $1, 32(SP), Y2, Y2
-	VINSERTI64X2 $2, 64(SP), Z2, Z2
-	VINSERTI64X2 $3, 96(SP), Z2, Z2
-	VMOVDQU 16(SP), X6
-	VINSERTI64X2 $1, 48(SP), Y6, Y6
-	VINSERTI64X2 $2, 80(SP), Z6, Z6
-	VINSERTI64X2 $3, 112(SP), Z6, Z6
+	// Pack XOR pattern to (Z2, Z6) — scratch (no permute in flight).
+	// Each 64-byte staging pack is contiguous, so a single full-width
+	// load replaces the insert chain.
+	VMOVDQU64 0(SP),  Z2
+	VMOVDQU64 64(SP), Z6
 
 	VPXORD Z2, Z14, Z14
 	VPXORD Z6, Z15, Z15
@@ -211,57 +216,58 @@ TEXT ·Areion256ChainAbsorb68x4(SB), NOSPLIT, $128-32
 
 	// ===== Round 2: XOR data[48..68] (20 bytes) into state[8..28] =====
 	//
-	// Per lane stack[lane*32]:
-	//   [0..8]   = 0
-	//   [8..16]  = data[48..56]
-	//   [16..28] = data[56..68]
-	//   [28..32] = 0
+	// SoA staging for the XOR pattern (per lane stride 16, two
+	// contiguous 64-byte packs):
+	//   SP+0..64   = Z2 staging (b0): per lane
+	//                  [0..8]  = 0
+	//                  [8..16] = data[48..56]
+	//   SP+64..128 = Z6 staging (b1): per lane
+	//                  [0..8]   = data[56..64]
+	//                  [8..12]  = data[64..68]
+	//                  [12..16] = 0
 	XORQ R12, R12
 	// Lane 0.
 	MOVQ R12, 0(SP)
 	MOVQ 48(R8), R13
 	MOVQ R13, 8(SP)
 	MOVQ 56(R8), R13
-	MOVQ R13, 16(SP)
+	MOVQ R13, 64(SP)
 	MOVL 64(R8), R13
-	MOVL R13, 24(SP)
-	MOVL R12, 28(SP)
+	MOVL R13, 72(SP)
+	MOVL R12, 76(SP)
 	// Lane 1.
-	MOVQ R12, 32(SP)
+	MOVQ R12, 16(SP)
 	MOVQ 48(R9), R13
-	MOVQ R13, 40(SP)
+	MOVQ R13, 24(SP)
 	MOVQ 56(R9), R13
-	MOVQ R13, 48(SP)
-	MOVL 64(R9), R13
-	MOVL R13, 56(SP)
-	MOVL R12, 60(SP)
-	// Lane 2.
-	MOVQ R12, 64(SP)
-	MOVQ 48(R10), R13
-	MOVQ R13, 72(SP)
-	MOVQ 56(R10), R13
 	MOVQ R13, 80(SP)
-	MOVL 64(R10), R13
+	MOVL 64(R9), R13
 	MOVL R13, 88(SP)
 	MOVL R12, 92(SP)
+	// Lane 2.
+	MOVQ R12, 32(SP)
+	MOVQ 48(R10), R13
+	MOVQ R13, 40(SP)
+	MOVQ 56(R10), R13
+	MOVQ R13, 96(SP)
+	MOVL 64(R10), R13
+	MOVL R13, 104(SP)
+	MOVL R12, 108(SP)
 	// Lane 3.
-	MOVQ R12, 96(SP)
+	MOVQ R12, 48(SP)
 	MOVQ 48(R11), R13
-	MOVQ R13, 104(SP)
+	MOVQ R13, 56(SP)
 	MOVQ 56(R11), R13
 	MOVQ R13, 112(SP)
 	MOVL 64(R11), R13
 	MOVL R13, 120(SP)
 	MOVL R12, 124(SP)
 
-	VMOVDQU 0(SP), X2
-	VINSERTI64X2 $1, 32(SP), Y2, Y2
-	VINSERTI64X2 $2, 64(SP), Z2, Z2
-	VINSERTI64X2 $3, 96(SP), Z2, Z2
-	VMOVDQU 16(SP), X6
-	VINSERTI64X2 $1, 48(SP), Y6, Y6
-	VINSERTI64X2 $2, 80(SP), Z6, Z6
-	VINSERTI64X2 $3, 112(SP), Z6, Z6
+	// Pack XOR pattern to (Z2, Z6) — scratch (no permute in flight).
+	// Each 64-byte staging pack is contiguous, so a single full-width
+	// load replaces the insert chain.
+	VMOVDQU64 0(SP),  Z2
+	VMOVDQU64 64(SP), Z6
 
 	VPXORD Z2, Z14, Z14
 	VPXORD Z6, Z15, Z15
