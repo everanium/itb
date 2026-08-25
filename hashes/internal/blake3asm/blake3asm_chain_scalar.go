@@ -176,3 +176,38 @@ func scalarBatch256ChainAbsorb68(
 		out[lane] = laneOut
 	}
 }
+
+// scalar256ChainAbsorb13 — 13-byte counterpart for BLAKE3-256, the
+// Interlocked Barrier PRF fill shape. mixed is 32 bytes (data[0:13]
+// || zero-pad, then seed XOR); single-block compression identical to
+// scalar256ChainAbsorb20 with block_len=32.
+func scalar256ChainAbsorb13(
+	key *[32]byte,
+	data *[13]byte,
+	seed *[4]uint64,
+	out *[8]uint32,
+) {
+	var mixed [32]byte
+	pack256Buf(mixed[:], data[:], seed)
+	var digest [32]byte
+	blake3KeyedSum(key, mixed[:], digest[:])
+	for i := 0; i < 8; i++ {
+		out[i] = binary.LittleEndian.Uint32(digest[i*4:])
+	}
+}
+
+// scalarBatch256ChainAbsorb13 — 4-lane scalar reference for the
+// 13-byte BLAKE3-256 chain-absorb.
+func scalarBatch256ChainAbsorb13(
+	key *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][8]uint32,
+) {
+	for lane := 0; lane < 4; lane++ {
+		data := (*[13]byte)(unsafe.Pointer(dataPtrs[lane]))
+		var laneOut [8]uint32
+		scalar256ChainAbsorb13(key, data, &seeds[lane], &laneOut)
+		out[lane] = laneOut
+	}
+}
