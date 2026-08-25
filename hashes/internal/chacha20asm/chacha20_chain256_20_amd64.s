@@ -1,9 +1,11 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for ChaCha20-256 with 20-byte
+// XMM-batched fused chain-absorb kernel for ChaCha20-256 with 20-byte
 // per-lane data input (the ITB SetNonceBits(128) buf shape — default
 // config). Lane-parallel layout across 4 pixels, mirroring the
-// blake2{b,s}asm / blake3asm ZMM scaffold.
+// blake2{b,s}asm / blake3asm ZMM scaffold narrowed to XMM width: the
+// 4 × 32-bit lane dwords fill one XMM register exactly, so the upper
+// 384 bits of the ZMM layout carried no data.
 //
 // Per-lane absorb construction (matches the public hashes.ChaCha20
 // closure bit-exactly):
@@ -31,9 +33,9 @@
 //	R8..R11   per-lane data ptrs (loaded at entry)
 //	R12..R14, DI    scratch GPRs for PACK_M_LANES_FROM_GPRS
 //	R15       out ptr (saved through the round body, used at writeback)
-//	Z0..Z15   ChaCha20 state v[0..15] across 20 rounds
-//	Z16..Z31  v_init save (used at end for keystream `+ v_init`),
-//	          then repurposed as absorb_state (Z16..Z23)
+//	X0..X15   ChaCha20 state v[0..15] across 20 rounds
+//	X16..X31  v_init save (used at end for keystream `+ v_init`),
+//	          then repurposed as absorb_state (X16..X23)
 //
 //	chaCha20256ChainAbsorb20x4Asm(
 //	    fixedKey *[32]byte,         // shared 32-byte fixed key
@@ -55,14 +57,14 @@
 // CHACHA_DR — one ChaCha20 doubleround = 4 column QRs + 4 diagonal
 // QRs. 10 doublerounds = 20 rounds.
 #define CHACHA_DR \
-	CHACHA_QR(Z0, Z4, Z8,  Z12); \
-	CHACHA_QR(Z1, Z5, Z9,  Z13); \
-	CHACHA_QR(Z2, Z6, Z10, Z14); \
-	CHACHA_QR(Z3, Z7, Z11, Z15); \
-	CHACHA_QR(Z0, Z5, Z10, Z15); \
-	CHACHA_QR(Z1, Z6, Z11, Z12); \
-	CHACHA_QR(Z2, Z7, Z8,  Z13); \
-	CHACHA_QR(Z3, Z4, Z9,  Z14)
+	CHACHA_QR(X0, X4, X8,  X12); \
+	CHACHA_QR(X1, X5, X9,  X13); \
+	CHACHA_QR(X2, X6, X10, X14); \
+	CHACHA_QR(X3, X7, X11, X15); \
+	CHACHA_QR(X0, X5, X10, X15); \
+	CHACHA_QR(X1, X6, X11, X12); \
+	CHACHA_QR(X2, X7, X8,  X13); \
+	CHACHA_QR(X3, X4, X9,  X14)
 
 // PACK_M_LANES_FROM_GPRS — 4 × 32-bit values (one per lane) into XMM
 // dwords 0..3. EVEX writes zero upper ZMM lanes automatically.
@@ -99,16 +101,15 @@
 
 // STORE_LANE_DW — extract one dword from Z_src per lane and store at
 // out[lane]+off. Same shape as the BLAKE2/3 STORE_LANE_DW macro;
-// X16 scratch self-overwrites within Z16's lower 128 bits which is
-// fine since Z16 is read into X16 as part of the same instruction
-// (and Z16's data has already been written to memory by the time
+// X16 scratch self-overwrites within X16's lower 128 bits which is
+// fine since X16 is read into X16 as part of the same instruction
+// (and X16's data has already been written to memory by the time
 // X16 is overwritten on the next STORE call).
-#define STORE_LANE_DW(z_src, off) \
-	VEXTRACTI32X4 $0, z_src, X16; \
-	VPEXTRD $0, X16, off(R8); \
-	VPEXTRD $1, X16, off(R9); \
-	VPEXTRD $2, X16, off(R10); \
-	VPEXTRD $3, X16, off(R11)
+#define STORE_LANE_DW(x_src, off) \
+	VPEXTRD $0, x_src, off(R8); \
+	VPEXTRD $1, x_src, off(R9); \
+	VPEXTRD $2, x_src, off(R10); \
+	VPEXTRD $3, x_src, off(R11)
 
 // func chaCha20256ChainAbsorb20x4Asm(
 //     fixedKey *[32]byte,
@@ -128,10 +129,10 @@ TEXT ·chaCha20256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-32
 
 	// ===== State init =====
 	// v[0..3] = sigma constants (broadcast across all 4 lanes).
-	VPBROADCASTD ·ChaCha20Sigma+0(SB),  Z0
-	VPBROADCASTD ·ChaCha20Sigma+4(SB),  Z1
-	VPBROADCASTD ·ChaCha20Sigma+8(SB),  Z2
-	VPBROADCASTD ·ChaCha20Sigma+12(SB), Z3
+	VPBROADCASTD ·ChaCha20Sigma+0(SB),  X0
+	VPBROADCASTD ·ChaCha20Sigma+4(SB),  X1
+	VPBROADCASTD ·ChaCha20Sigma+8(SB),  X2
+	VPBROADCASTD ·ChaCha20Sigma+12(SB), X3
 
 	// v[4..11] = per-lane ChaCha20 key (fixedKey ⊕ seed, 8 dwords).
 	PACK_KEY_DWORD(0, X4)
@@ -145,31 +146,31 @@ TEXT ·chaCha20256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-32
 
 	// v[12..15] = 0 (counter=0 for the only compression block;
 	// nonce is the zero nonce per the closure).
-	VPXORD Z12, Z12, Z12
-	VPXORD Z13, Z13, Z13
-	VPXORD Z14, Z14, Z14
-	VPXORD Z15, Z15, Z15
+	VPXORD X12, X12, X12
+	VPXORD X13, X13, X13
+	VPXORD X14, X14, X14
+	VPXORD X15, X15, X15
 
-	// ===== Save v_init to Z16..Z31 =====
+	// ===== Save v_init to X16..X31 =====
 	// Used at end-of-rounds for the `state += v_init` keystream
-	// add. After that the same ZMMs are repurposed as the
-	// absorb_state holders Z16..Z23.
-	VMOVDQA64 Z0,  Z16
-	VMOVDQA64 Z1,  Z17
-	VMOVDQA64 Z2,  Z18
-	VMOVDQA64 Z3,  Z19
-	VMOVDQA64 Z4,  Z20
-	VMOVDQA64 Z5,  Z21
-	VMOVDQA64 Z6,  Z22
-	VMOVDQA64 Z7,  Z23
-	VMOVDQA64 Z8,  Z24
-	VMOVDQA64 Z9,  Z25
-	VMOVDQA64 Z10, Z26
-	VMOVDQA64 Z11, Z27
-	VMOVDQA64 Z12, Z28
-	VMOVDQA64 Z13, Z29
-	VMOVDQA64 Z14, Z30
-	VMOVDQA64 Z15, Z31
+	// add. After that the same XMMs are repurposed as the
+	// absorb_state holders X16..X23.
+	VMOVDQA64 X0,  X16
+	VMOVDQA64 X1,  X17
+	VMOVDQA64 X2,  X18
+	VMOVDQA64 X3,  X19
+	VMOVDQA64 X4,  X20
+	VMOVDQA64 X5,  X21
+	VMOVDQA64 X6,  X22
+	VMOVDQA64 X7,  X23
+	VMOVDQA64 X8,  X24
+	VMOVDQA64 X9,  X25
+	VMOVDQA64 X10, X26
+	VMOVDQA64 X11, X27
+	VMOVDQA64 X12, X28
+	VMOVDQA64 X13, X29
+	VMOVDQA64 X14, X30
+	VMOVDQA64 X15, X31
 
 	// ===== 10 doublerounds = 20 ChaCha20 rounds =====
 	CHACHA_DR
@@ -184,50 +185,50 @@ TEXT ·chaCha20256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-32
 	CHACHA_DR
 
 	// ===== keystream = state + v_init =====
-	VPADDD Z16, Z0,  Z0
-	VPADDD Z17, Z1,  Z1
-	VPADDD Z18, Z2,  Z2
-	VPADDD Z19, Z3,  Z3
-	VPADDD Z20, Z4,  Z4
-	VPADDD Z21, Z5,  Z5
-	VPADDD Z22, Z6,  Z6
-	VPADDD Z23, Z7,  Z7
-	VPADDD Z24, Z8,  Z8
-	VPADDD Z25, Z9,  Z9
-	VPADDD Z26, Z10, Z10
-	VPADDD Z27, Z11, Z11
-	VPADDD Z28, Z12, Z12
-	VPADDD Z29, Z13, Z13
-	VPADDD Z30, Z14, Z14
-	VPADDD Z31, Z15, Z15
+	VPADDD X16, X0,  X0
+	VPADDD X17, X1,  X1
+	VPADDD X18, X2,  X2
+	VPADDD X19, X3,  X3
+	VPADDD X20, X4,  X4
+	VPADDD X21, X5,  X5
+	VPADDD X22, X6,  X6
+	VPADDD X23, X7,  X7
+	VPADDD X24, X8,  X8
+	VPADDD X25, X9,  X9
+	VPADDD X26, X10, X10
+	VPADDD X27, X11, X11
+	VPADDD X28, X12, X12
+	VPADDD X29, X13, X13
+	VPADDD X30, X14, X14
+	VPADDD X31, X15, X15
 
-	// Now Z0..Z7 = ks_lo (the half of the keystream consumed by the
-	// single XKS call); Z8..Z15 = ks_hi (unused for 20-byte buf).
+	// Now X0..X7 = ks_lo (the half of the keystream consumed by the
+	// single XKS call); X8..X15 = ks_hi (unused for 20-byte buf).
 
-	// ===== Build absorb_state into Z16..Z23 =====
+	// ===== Build absorb_state into X16..X23 =====
 	// state[0:8]   = uint64(20) (LE)         → absorb_state[0]=20, [1]=0
 	// state[8:28]  = data[lane][0:20]        → absorb_state[2..6]
 	// state[28:32] = 0                       → absorb_state[7]=0
 	MOVL $20, R12
-	VPBROADCASTD R12, Z16   // absorb_state[0] = lenTag low 32 = 20
-	VPXORD Z17, Z17, Z17    // absorb_state[1] = lenTag high 32 = 0
+	VPBROADCASTD R12, X16   // absorb_state[0] = lenTag low 32 = 20
+	VPXORD X17, X17, X17    // absorb_state[1] = lenTag high 32 = 0
 	PACK_DATA_DWORD( 0, X18) // absorb_state[2] = data[0:4] per lane
 	PACK_DATA_DWORD( 4, X19) // absorb_state[3] = data[4:8]
 	PACK_DATA_DWORD( 8, X20) // absorb_state[4] = data[8:12]
 	PACK_DATA_DWORD(12, X21) // absorb_state[5] = data[12:16]
 	PACK_DATA_DWORD(16, X22) // absorb_state[6] = data[16:20]
-	VPXORD Z23, Z23, Z23    // absorb_state[7] = state[28:32] = 0
+	VPXORD X23, X23, X23    // absorb_state[7] = state[28:32] = 0
 
 	// ===== XOR ks_lo into absorb_state =====
 	// state[k] ^= ks_lo[k] for k in 0..7.
-	VPXORD Z0, Z16, Z16
-	VPXORD Z1, Z17, Z17
-	VPXORD Z2, Z18, Z18
-	VPXORD Z3, Z19, Z19
-	VPXORD Z4, Z20, Z20
-	VPXORD Z5, Z21, Z21
-	VPXORD Z6, Z22, Z22
-	VPXORD Z7, Z23, Z23
+	VPXORD X0, X16, X16
+	VPXORD X1, X17, X17
+	VPXORD X2, X18, X18
+	VPXORD X3, X19, X19
+	VPXORD X4, X20, X20
+	VPXORD X5, X21, X21
+	VPXORD X6, X22, X22
+	VPXORD X7, X23, X23
 
 	// ===== Writeback =====
 	// out is *[4][4]uint64 = 4 lanes × 32 bytes; per-lane stride 32 bytes.
@@ -236,14 +237,14 @@ TEXT ·chaCha20256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-32
 	LEAQ 64(R15), R10
 	LEAQ 96(R15), R11
 
-	STORE_LANE_DW(Z16, 0)
-	STORE_LANE_DW(Z17, 4)
-	STORE_LANE_DW(Z18, 8)
-	STORE_LANE_DW(Z19, 12)
-	STORE_LANE_DW(Z20, 16)
-	STORE_LANE_DW(Z21, 20)
-	STORE_LANE_DW(Z22, 24)
-	STORE_LANE_DW(Z23, 28)
+	STORE_LANE_DW(X16, 0)
+	STORE_LANE_DW(X17, 4)
+	STORE_LANE_DW(X18, 8)
+	STORE_LANE_DW(X19, 12)
+	STORE_LANE_DW(X20, 16)
+	STORE_LANE_DW(X21, 20)
+	STORE_LANE_DW(X22, 24)
+	STORE_LANE_DW(X23, 28)
 
 	VZEROUPPER
 	RET
