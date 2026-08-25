@@ -126,3 +126,19 @@ func scalarBatch256ChainAbsorb68(
 		out[lane] = scalar256ChainAbsorb(fixedKey, data[:], &seeds[lane])
 	}
 }
+
+// scalarBatch256ChainAbsorb13 is the scalar 4-lane reference for the
+// ChaCha20-256 batched chain-absorb at the 13-byte Interlocked Barrier
+// PRF fill shape. Each lane is bit-exact equivalent to the public
+// hashes.ChaCha20 closure on the same input.
+func scalarBatch256ChainAbsorb13(
+	fixedKey *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][4]uint64,
+) {
+	for lane := 0; lane < 4; lane++ {
+		data := (*[13]byte)(unsafe.Pointer(dataPtrs[lane]))
+		out[lane] = scalar256ChainAbsorb(fixedKey, data[:], &seeds[lane])
+	}
+}

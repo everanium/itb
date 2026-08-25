@@ -182,7 +182,7 @@ func ChaCha20256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFu
 	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
-		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&
+		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
 			len(data[1]) == commonLen &&
 			len(data[2]) == commonLen &&
 			len(data[3]) == commonLen {
@@ -194,6 +194,14 @@ func ChaCha20256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFu
 			var out [4][4]uint64
 			seedsCopy := seeds
 			switch commonLen {
+			case 13:
+				// Interlocked Barrier PRF fill shape (Lift 2).
+				chacha20asm.ChaCha20256ChainAbsorb13x4(
+					&fixedKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
 			case 20:
 				chacha20asm.ChaCha20256ChainAbsorb20x4(
 					&fixedKey,

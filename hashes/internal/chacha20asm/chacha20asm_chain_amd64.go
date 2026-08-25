@@ -55,6 +55,32 @@ func chaCha20256ChainAbsorb20x4Asm(
 	out *[4][4]uint64,
 )
 
+// ChaCha20256ChainAbsorb13x4 — 13-byte ChaCha20-256 batched
+// dispatcher, the Interlocked Barrier PRF fill message shape. One
+// CBC-MAC absorb round per lane (13 ≤ 24-byte chunkSize), identical
+// in structure to the 20-byte kernel; the .s kernel reads exactly 13
+// data bytes per lane.
+func ChaCha20256ChainAbsorb13x4(
+	fixedKey *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][4]uint64,
+) {
+	if HasAVX512Fused {
+		chaCha20256ChainAbsorb13x4Asm(fixedKey, seeds, dataPtrs, out)
+		return
+	}
+	scalarBatch256ChainAbsorb13(fixedKey, seeds, dataPtrs, out)
+}
+
+//go:noescape
+func chaCha20256ChainAbsorb13x4Asm(
+	fixedKey *[32]byte,
+	seeds *[4][4]uint64,
+	dataPtrs *[4]*byte,
+	out *[4][4]uint64,
+)
+
 // ChaCha20256ChainAbsorb36x4 — 36-byte ChaCha20-256 batched
 // dispatcher (256-bit ITB nonce buf shape). Two CBC-MAC absorb
 // rounds per lane; both consume halves of the same compression
