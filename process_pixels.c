@@ -100,62 +100,86 @@ static inline void pack56bits(uint8_t *data, int dataLen, int bitIndex, const ui
 #pragma GCC target("avx2,gfni")
 #include <immintrin.h>
 
-// gfniRotMatrix builds the 8x8 GF(2) matrix that maps a 7-bit input value to
-// rotateBits7(value, r). Output bit j (j in [0..6]) takes input bit
-// (j - r) mod 7; output bit 7 is zero so bit 7 of the result is always
-// cleared.
+// GFNI matrix lookup tables. Every 8x8 GF(2) matrix consumed by
+// vgf2p8affineqb in the batched kernels is a pure function of a 3-bit
+// secret-derived selector (dataRotation for the rotation matrices,
+// noisePos for the spread / gather matrices), so all possible matrices
+// are materialised at compile time and each batched pixel fetches its
+// matrices with a single indexed load instead of constructing them at
+// runtime.
 //
 // Intel encoding (vgf2p8affineqb): output bit k of each result byte uses
 // matrix qword byte (7 - k); the bit index within that matrix byte selects
 // which input bit contributes to output bit k.
-static inline uint64_t gfniRotMatrix(unsigned int r) {
-    uint64_t m = 0;
-    for (unsigned int j = 0; j < 7; j++) {
-        unsigned int srcBit = (j + 7u - r) % 7u;
-        m |= (uint64_t)1 << ((7u - j) * 8u + srcBit);
-    }
-    return m;
-}
+//
+// Constant-time posture: each table occupies a single 64-byte cache line
+// (aligned(64); the rotation table is 56 bytes, the spread / gather
+// tables 64 bytes), so the secret-derived index selects within one line.
+// The lookup is branch-free and its cache-line footprint is
+// index-independent.
 
-// gfniSpreadMatrix maps the 7-bit data value to the encode-side noise-bit
-// insertion: output bits below noisePos copy input bits 0..(noisePos-1)
-// directly; output bit at noisePos is zero (noise bit OR'd in afterwards);
-// output bits above noisePos copy input bits (noisePos..6) shifted up by one.
-static inline uint64_t gfniSpreadMatrix(unsigned int noisePos) {
-    uint64_t m = 0;
-    for (unsigned int j = 0; j < 8; j++) {
-        if (j == noisePos) {
-            continue;
-        }
-        unsigned int srcBit;
-        if (j < noisePos) {
-            srcBit = j;
-        } else {
-            srcBit = j - 1u;
-        }
-        m |= (uint64_t)1 << ((7u - j) * 8u + srcBit);
-    }
-    return m;
-}
+// ITB_GFNI_ROT(r): matrix mapping a 7-bit value v to rotateBits7(v, r).
+// Output bit j (j in [0..6]) takes input bit (j - r) mod 7; output bit 7
+// is zero so bit 7 of the result is always cleared.
+#define ITB_GFNI_ROT_BIT(j, r) \
+    ((uint64_t)1 << ((7u - (j)) * 8u + (((j) + 7u - (r)) % 7u)))
+#define ITB_GFNI_ROT(r) \
+    (ITB_GFNI_ROT_BIT(0u, r) | ITB_GFNI_ROT_BIT(1u, r) | \
+     ITB_GFNI_ROT_BIT(2u, r) | ITB_GFNI_ROT_BIT(3u, r) | \
+     ITB_GFNI_ROT_BIT(4u, r) | ITB_GFNI_ROT_BIT(5u, r) | \
+     ITB_GFNI_ROT_BIT(6u, r))
 
-// gfniGatherMatrix is the decode-side counterpart of gfniSpreadMatrix:
-// removes the noise bit at noisePos and packs the remaining 7 bits into
-// the bottom 7 output bits. Output bit 7 is zero.
-static inline uint64_t gfniGatherMatrix(unsigned int noisePos) {
-    uint64_t m = 0;
-    for (unsigned int j = 0; j < 7; j++) {
-        unsigned int srcBit;
-        if (j < noisePos) {
-            srcBit = j;
-        } else {
-            srcBit = j + 1u;
-        }
-        m |= (uint64_t)1 << ((7u - j) * 8u + srcBit);
-    }
-    return m;
-}
+// ITB_GFNI_SPREAD(np): encode-side noise-bit insertion matrix. Output
+// bits below np copy input bits 0..(np-1) directly; output bit np is
+// zero (the noise bit is OR'd in afterwards); output bits above np copy
+// input bits (np..6) shifted up by one.
+#define ITB_GFNI_SPREAD_BIT(j, np) \
+    ((j) == (np) ? (uint64_t)0 \
+                 : (uint64_t)1 << ((7u - (j)) * 8u + ((j) < (np) ? (j) : (j) - 1u)))
+#define ITB_GFNI_SPREAD(np) \
+    (ITB_GFNI_SPREAD_BIT(0u, np) | ITB_GFNI_SPREAD_BIT(1u, np) | \
+     ITB_GFNI_SPREAD_BIT(2u, np) | ITB_GFNI_SPREAD_BIT(3u, np) | \
+     ITB_GFNI_SPREAD_BIT(4u, np) | ITB_GFNI_SPREAD_BIT(5u, np) | \
+     ITB_GFNI_SPREAD_BIT(6u, np) | ITB_GFNI_SPREAD_BIT(7u, np))
+
+// ITB_GFNI_GATHER(np): decode-side counterpart of ITB_GFNI_SPREAD —
+// removes the noise bit at np and packs the remaining 7 bits into the
+// bottom 7 output bits. Output bit 7 is zero.
+#define ITB_GFNI_GATHER_BIT(j, np) \
+    ((uint64_t)1 << ((7u - (j)) * 8u + ((j) < (np) ? (j) : (j) + 1u)))
+#define ITB_GFNI_GATHER(np) \
+    (ITB_GFNI_GATHER_BIT(0u, np) | ITB_GFNI_GATHER_BIT(1u, np) | \
+     ITB_GFNI_GATHER_BIT(2u, np) | ITB_GFNI_GATHER_BIT(3u, np) | \
+     ITB_GFNI_GATHER_BIT(4u, np) | ITB_GFNI_GATHER_BIT(5u, np) | \
+     ITB_GFNI_GATHER_BIT(6u, np))
+
+// Indexed by dataRotation in [0, 7). The decode-side inverse rotation is
+// served by the same table at index (7 - dataRotation) % 7.
+static const uint64_t itb_gfni_rot_matrices[7] __attribute__((aligned(64))) = {
+    ITB_GFNI_ROT(0u), ITB_GFNI_ROT(1u), ITB_GFNI_ROT(2u), ITB_GFNI_ROT(3u),
+    ITB_GFNI_ROT(4u), ITB_GFNI_ROT(5u), ITB_GFNI_ROT(6u),
+};
+
+// Indexed by noisePos in [0, 8).
+static const uint64_t itb_gfni_spread_matrices[8] __attribute__((aligned(64))) = {
+    ITB_GFNI_SPREAD(0u), ITB_GFNI_SPREAD(1u), ITB_GFNI_SPREAD(2u), ITB_GFNI_SPREAD(3u),
+    ITB_GFNI_SPREAD(4u), ITB_GFNI_SPREAD(5u), ITB_GFNI_SPREAD(6u), ITB_GFNI_SPREAD(7u),
+};
+
+// Indexed by noisePos in [0, 8).
+static const uint64_t itb_gfni_gather_matrices[8] __attribute__((aligned(64))) = {
+    ITB_GFNI_GATHER(0u), ITB_GFNI_GATHER(1u), ITB_GFNI_GATHER(2u), ITB_GFNI_GATHER(3u),
+    ITB_GFNI_GATHER(4u), ITB_GFNI_GATHER(5u), ITB_GFNI_GATHER(6u), ITB_GFNI_GATHER(7u),
+};
 
 // process4PixelsEncodeAVX2GFNI processes one 4-pixel batch in encode direction.
+//
+// basePixel is the wrapped linear index of pixel p — the caller maintains
+// (startPixel + startP + p) % totalPixels as a loop-carried counter, so
+// basePixel is always in [0, totalPixels). The per-pixel wrap inside the
+// batch is a single branchless conditional subtract: the callers guarantee
+// totalPixels >= totalP >= 4 whenever this helper runs, so
+// basePixel + b < 2 * totalPixels and one subtract always lands in range.
 __attribute__((target("avx2,gfni")))
 static inline void process4PixelsEncodeAVX2GFNI(
     const uint64_t *noiseHashes,
@@ -163,11 +187,10 @@ static inline void process4PixelsEncodeAVX2GFNI(
     uint8_t *container,
     const uint8_t *data,
     int dataLen,
-    int startPixel,
+    int basePixel,
     int totalPixels,
     int p,
-    int bitIndex,
-    int startP
+    int bitIndex
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -181,15 +204,16 @@ static inline void process4PixelsEncodeAVX2GFNI(
     uint64_t xorMaskArr[4];
 
     for (int b = 0; b < 4; b++) {
-        int linearIdx = (startPixel + startP + p + b) % totalPixels;
+        int linearIdx = basePixel + b;
+        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
         pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
         noiseMaskArr[b] = (uint8_t)(1u << np);
-        rotMatrices[b] = gfniRotMatrix(dr);
-        spreadMatrices[b] = gfniSpreadMatrix(np);
+        rotMatrices[b] = itb_gfni_rot_matrices[dr];
+        spreadMatrices[b] = itb_gfni_spread_matrices[np];
         xorMaskArr[b] = dh >> DataRotationBits;
     }
 
@@ -244,6 +268,7 @@ static inline void process4PixelsEncodeAVX2GFNI(
 }
 
 // process4PixelsDecodeAVX2GFNI processes one 4-pixel batch in decode direction.
+// basePixel carries the same contract as in process4PixelsEncodeAVX2GFNI.
 __attribute__((target("avx2,gfni")))
 static inline void process4PixelsDecodeAVX2GFNI(
     const uint64_t *noiseHashes,
@@ -251,11 +276,10 @@ static inline void process4PixelsDecodeAVX2GFNI(
     const uint8_t *container,
     uint8_t *data,
     int dataLen,
-    int startPixel,
+    int basePixel,
     int totalPixels,
     int p,
-    int bitIndex,
-    int startP
+    int bitIndex
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -268,7 +292,8 @@ static inline void process4PixelsDecodeAVX2GFNI(
     uint64_t xorMaskArr[4];
 
     for (int b = 0; b < 4; b++) {
-        int linearIdx = (startPixel + startP + p + b) % totalPixels;
+        int linearIdx = basePixel + b;
+        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
         pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
@@ -276,8 +301,8 @@ static inline void process4PixelsDecodeAVX2GFNI(
         unsigned int dr = (unsigned int)(dh % 7u);
         // Inverse rotation amount for decode: 7 - r (mod 7).
         unsigned int dri = (7u - dr) % 7u;
-        invRotMatrices[b] = gfniRotMatrix(dri);
-        gatherMatrices[b] = gfniGatherMatrix(np);
+        invRotMatrices[b] = itb_gfni_rot_matrices[dri];
+        gatherMatrices[b] = itb_gfni_gather_matrices[np];
         xorMaskArr[b] = dh >> DataRotationBits;
     }
 
@@ -335,10 +360,10 @@ static inline int itb_check_avx2_gfni(void) {
 // AVX-512 + GFNI 8-pixel SIMD batch (Tier A)
 //
 // Doubles the batch width to 8 pixels (= 64 bytes = one ZMM register). The
-// GFNI 8x8 GF(2) matrices encoded by gfniRotMatrix / gfniSpreadMatrix /
-// gfniGatherMatrix are reused verbatim — vgf2p8affineqb operates per qword
-// regardless of register width, so the same per-pixel matrix layout extends
-// to ZMM unchanged.
+// GFNI 8x8 GF(2) matrix tables (itb_gfni_rot_matrices /
+// itb_gfni_spread_matrices / itb_gfni_gather_matrices) are reused verbatim —
+// vgf2p8affineqb operates per qword regardless of register width, so the
+// same per-pixel matrix layout extends to ZMM unchanged.
 // =============================================================================
 
 #pragma GCC push_options
@@ -397,6 +422,13 @@ static inline __m512i deriveXorsX8AVX512VBMI(const uint64_t *xorMaskArr) {
 }
 
 // process8PixelsEncodeAVX512GFNI processes one 8-pixel batch in encode direction.
+//
+// basePixel is the wrapped linear index of pixel p — the caller maintains
+// (startPixel + startP + p) % totalPixels as a loop-carried counter, so
+// basePixel is always in [0, totalPixels). The per-pixel wrap inside the
+// batch is a single branchless conditional subtract: the callers guarantee
+// totalPixels >= totalP >= 8 whenever this helper runs, so
+// basePixel + b < 2 * totalPixels and one subtract always lands in range.
 __attribute__((target("avx512f,avx512bw,avx512vl,gfni,avx512vbmi")))
 static inline void process8PixelsEncodeAVX512GFNI(
     const uint64_t *noiseHashes,
@@ -404,11 +436,10 @@ static inline void process8PixelsEncodeAVX512GFNI(
     uint8_t *container,
     const uint8_t *data,
     int dataLen,
-    int startPixel,
+    int basePixel,
     int totalPixels,
     int p,
-    int bitIndex,
-    int startP
+    int bitIndex
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -422,15 +453,16 @@ static inline void process8PixelsEncodeAVX512GFNI(
     uint64_t xorMaskArr[8];
 
     for (int b = 0; b < 8; b++) {
-        int linearIdx = (startPixel + startP + p + b) % totalPixels;
+        int linearIdx = basePixel + b;
+        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
         pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
         noiseMaskArr[b] = (uint8_t)(1u << np);
-        rotMatrices[b] = gfniRotMatrix(dr);
-        spreadMatrices[b] = gfniSpreadMatrix(np);
+        rotMatrices[b] = itb_gfni_rot_matrices[dr];
+        spreadMatrices[b] = itb_gfni_spread_matrices[np];
         xorMaskArr[b] = dh >> DataRotationBits;
     }
 
@@ -485,6 +517,7 @@ static inline void process8PixelsEncodeAVX512GFNI(
 }
 
 // process8PixelsDecodeAVX512GFNI processes one 8-pixel batch in decode direction.
+// basePixel carries the same contract as in process8PixelsEncodeAVX512GFNI.
 __attribute__((target("avx512f,avx512bw,avx512vl,gfni,avx512vbmi")))
 static inline void process8PixelsDecodeAVX512GFNI(
     const uint64_t *noiseHashes,
@@ -492,11 +525,10 @@ static inline void process8PixelsDecodeAVX512GFNI(
     const uint8_t *container,
     uint8_t *data,
     int dataLen,
-    int startPixel,
+    int basePixel,
     int totalPixels,
     int p,
-    int bitIndex,
-    int startP
+    int bitIndex
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -509,15 +541,16 @@ static inline void process8PixelsDecodeAVX512GFNI(
     uint64_t xorMaskArr[8];
 
     for (int b = 0; b < 8; b++) {
-        int linearIdx = (startPixel + startP + p + b) % totalPixels;
+        int linearIdx = basePixel + b;
+        linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
         pixelOffset[b] = linearIdx * Channels;
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
         unsigned int dri = (7u - dr) % 7u;
-        invRotMatrices[b] = gfniRotMatrix(dri);
-        gatherMatrices[b] = gfniGatherMatrix(np);
+        invRotMatrices[b] = itb_gfni_rot_matrices[dri];
+        gatherMatrices[b] = itb_gfni_gather_matrices[np];
         xorMaskArr[b] = dh >> DataRotationBits;
     }
 
@@ -623,6 +656,17 @@ void itb_process_pixels(
     int p = 0;
     const int totalP = endP - startP;
 
+    // Loop-carried linear pixel index. basePixel tracks
+    // (startPixel + startP + p) % totalPixels across every loop below with
+    // a single division at function entry; each subsequent wrap is a
+    // branchless conditional subtract. Exactness of the single subtract:
+    // the Go callers guarantee totalPixels >= endP - startP (dataPixels
+    // never exceeds totalPixels), each batched loop requires totalP >= its
+    // batch width, and the prefetch increment is guarded by
+    // p + PrefetchDistance < totalP, so every increment added to a value
+    // in [0, totalPixels) stays below 2 * totalPixels.
+    int basePixel = (startPixel + startP) % totalPixels;
+
     // SIMD dispatch flags — hoisted once before the hot loop. On x86_64 with
     // GFNI the per-pixel kernel routes into the AVX-512+GFNI 8-pixel helpers
     // first (when available), then the AVX2+GFNI 4-pixel helpers for any
@@ -652,24 +696,30 @@ void itb_process_pixels(
             while (p + 8 <= totalP && bitIndex + 8 * DataBitsPerPixel <= totalBits
                    && bitIndex / 8 + 64 <= dataLen) {
                 if (p + PrefetchDistance < totalP) {
-                    int prefetchIdx = (startPixel + startP + p + PrefetchDistance) % totalPixels;
+                    int prefetchIdx = basePixel + PrefetchDistance;
+                    prefetchIdx -= totalPixels & -(int)(prefetchIdx >= totalPixels);
                     __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
                 }
                 process8PixelsEncodeAVX512GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                startPixel, totalPixels, p, bitIndex, startP);
+                                                basePixel, totalPixels, p, bitIndex);
                 p += 8;
                 bitIndex += 8 * DataBitsPerPixel;
+                basePixel += 8;
+                basePixel -= totalPixels & -(int)(basePixel >= totalPixels);
             }
         } else {
             while (p + 8 <= totalP && bitIndex + 8 * DataBitsPerPixel <= totalBits) {
                 if (p + PrefetchDistance < totalP) {
-                    int prefetchIdx = (startPixel + startP + p + PrefetchDistance) % totalPixels;
+                    int prefetchIdx = basePixel + PrefetchDistance;
+                    prefetchIdx -= totalPixels & -(int)(prefetchIdx >= totalPixels);
                     __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
                 }
                 process8PixelsDecodeAVX512GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                startPixel, totalPixels, p, bitIndex, startP);
+                                                basePixel, totalPixels, p, bitIndex);
                 p += 8;
                 bitIndex += 8 * DataBitsPerPixel;
+                basePixel += 8;
+                basePixel -= totalPixels & -(int)(basePixel >= totalPixels);
             }
         }
     }
@@ -682,7 +732,8 @@ void itb_process_pixels(
     // phases on amd64+AVX2 (and to NEON on ARM via the same auto-vec path).
     while (p + 4 <= totalP && bitIndex + 4 * DataBitsPerPixel <= totalBits) {
         if (p + PrefetchDistance < totalP) {
-            int prefetchIdx = (startPixel + startP + p + PrefetchDistance) % totalPixels;
+            int prefetchIdx = basePixel + PrefetchDistance;
+            prefetchIdx -= totalPixels & -(int)(prefetchIdx >= totalPixels);
             __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
         }
 
@@ -690,13 +741,15 @@ void itb_process_pixels(
         if (useAVX2GFNI) {
             if (encode) {
                 process4PixelsEncodeAVX2GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                              startPixel, totalPixels, p, bitIndex, startP);
+                                              basePixel, totalPixels, p, bitIndex);
             } else {
                 process4PixelsDecodeAVX2GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                              startPixel, totalPixels, p, bitIndex, startP);
+                                              basePixel, totalPixels, p, bitIndex);
             }
             p += 4;
             bitIndex += 4 * DataBitsPerPixel;
+            basePixel += 4;
+            basePixel -= totalPixels & -(int)(basePixel >= totalPixels);
             continue;
         }
 #endif
@@ -710,7 +763,8 @@ void itb_process_pixels(
         uint64_t xorMask[4];
 
         for (int b = 0; b < 4; b++) {
-            int linearIdx = (startPixel + startP + p + b) % totalPixels;
+            int linearIdx = basePixel + b;
+            linearIdx -= totalPixels & -(int)(linearIdx >= totalPixels);
             pixelOffset[b] = linearIdx * Channels;
             uint64_t nh = noiseHashes[p + b];
             uint64_t dh = dataHashes[p + b];
@@ -833,18 +887,22 @@ void itb_process_pixels(
 
         p += 4;
         bitIndex += 4 * DataBitsPerPixel;
+        basePixel += 4;
+        basePixel -= totalPixels & -(int)(basePixel >= totalPixels);
     }
 
     // Tail: scalar per-pixel loop for the remaining 0-3 pixels (or pixels with
-    // partial chCount). Verbatim copy of the historic per-pixel kernel.
+    // partial chCount). Same phase structure as the batched kernels, one
+    // pixel at a time; the linear index comes from the shared loop-carried
+    // basePixel counter.
     for (; p < totalP && bitIndex < totalBits; p++) {
         if (p + PrefetchDistance < totalP) {
-            int prefetchIdx = (startPixel + startP + p + PrefetchDistance) % totalPixels;
+            int prefetchIdx = basePixel + PrefetchDistance;
+            prefetchIdx -= totalPixels & -(int)(prefetchIdx >= totalPixels);
             __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
         }
 
-        int linearIdx = (startPixel + startP + p) % totalPixels;
-        int pixelOffset = linearIdx * Channels;
+        int pixelOffset = basePixel * Channels;
 
         uint64_t noiseHash = noiseHashes[p];
         uint64_t dataHash = dataHashes[p];
@@ -923,6 +981,9 @@ void itb_process_pixels(
 
             bitIndex += chCount * DataBitsPerChannel;
         }
+
+        basePixel += 1;
+        basePixel -= totalPixels & -(int)(basePixel >= totalPixels);
     }
 }
 #pragma GCC diagnostic pop
