@@ -201,7 +201,7 @@ func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128)
 	roundKeys := aescmacasm.ExpandKeyAES128(aesKey)
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		commonLen := len(data[0])
-		if (commonLen == 20 || commonLen == 36 || commonLen == 68) &&
+		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
 			len(data[1]) == commonLen &&
 			len(data[2]) == commonLen &&
 			len(data[3]) == commonLen {
@@ -213,6 +213,15 @@ func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128)
 			var out [4][2]uint64
 			seedsCopy := seeds
 			switch commonLen {
+			case 13:
+				// Interlocked Barrier PRF fill shape (Lift 2).
+				aescmacasm.AESCMAC128ChainAbsorb13x4(
+					&roundKeys,
+					&aesKey,
+					&seedsCopy,
+					&dataPtrs,
+					&out,
+				)
 			case 20:
 				aescmacasm.AESCMAC128ChainAbsorb20x4(
 					&roundKeys,
