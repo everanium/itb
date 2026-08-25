@@ -452,6 +452,71 @@ static inline __m512i deriveXorsX8AVX512VBMI(const uint64_t *xorMaskArr) {
     return _mm512_and_si512(extracted, _mm512_set1_epi8(0x7F));
 }
 
+// pack56bitsX8AVX512VBMI packs 8 pixels' 8x7-bit channel values (one ZMM
+// register laid out as [pixel 0..7] x [field 0..7] — the exact output
+// layout of the decode phases) into 56 contiguous data bytes starting at
+// data + bitIndex / 8. Store-side inverse of extract56bitsX8AVX512VBMI;
+// replaces 8 scalar pack56bits calls plus the store-forwarding-blocked
+// ZMM-to-stack round trip they required.
+//
+// Per qword lane (= pixel), input bytes v0..v7 each hold a 7-bit value.
+// The GFNI gather and rotation matrices clear output bit 7 and the xor
+// lanes are 0x7F-masked, so vals is 7-bit-clean by construction; the input
+// is masked with 0x7F anyway to mirror the scalar pack56bits
+// (vals[ch] & 0x7F) semantics exactly. Packing pipeline per lane:
+//
+//   VPMADDUBSW {1, 128}:     word_j  = v_{2j} + (v_{2j+1} << 7)   (14-bit)
+//   VPMADDWD {1, 2^14}:      dword_k = w_{2k} + (w_{2k+1} << 14)  (28-bit)
+//   qword shift-OR:          packed  = lo28 | (hi28 << 28)        (56-bit)
+//   VPERMB compaction:       out byte i (0..55) = lane (i/7) byte (i%7)
+//   one masked 56-byte store.
+//
+// VPMADDUBSW treats the second operand as signed bytes; 7-bit-clean values
+// are <= 0x7F, so no saturation or sign issue arises. Bounds semantics
+// match 8 scalar pack56bits calls: pixel b's 7 bytes are stored iff the
+// full 7-byte span fits inside dataLen, expressed by clamping the store
+// k-mask to the fitting prefix. The batched decode dispatch guarantees
+// bitIndex + 8 * 56 <= totalBits = dataLen * 8, so the hot path always
+// stores all 56 bytes. Like pack56bits, bitIndex % 8 is ignored — the
+// batched loops advance bitIndex in 56-bit steps from a byte-aligned
+// start, so bitIndex is always a multiple of 8 here.
+//
+// Constant-time posture: the store address and k-mask derive only from
+// public geometry (bitIndex, dataLen); the packed data values are secret
+// but every instruction in the pipeline has data-independent latency.
+__attribute__((target("avx512f,avx512bw,avx512vl,gfni,avx512vbmi")))
+static inline void pack56bitsX8AVX512VBMI(uint8_t *data, int dataLen, int bitIndex, __m512i vals) {
+    // Compaction control: output byte i = source byte (i / 7) * 8 + (i % 7)
+    // — the low 7 bytes of each packed qword, concatenated. Bytes 56..63
+    // are masked out of the store.
+    static const uint8_t packCompactIdx[64] __attribute__((aligned(64))) = {
+         0,  1,  2,  3,  4,  5,  6,
+         8,  9, 10, 11, 12, 13, 14,
+        16, 17, 18, 19, 20, 21, 22,
+        24, 25, 26, 27, 28, 29, 30,
+        32, 33, 34, 35, 36, 37, 38,
+        40, 41, 42, 43, 44, 45, 46,
+        48, 49, 50, 51, 52, 53, 54,
+        56, 57, 58, 59, 60, 61, 62,
+         0,  0,  0,  0,  0,  0,  0,  0,
+    };
+    int byteStart = bitIndex / 8;
+    int nfit = (dataLen - byteStart) / 7;
+    if (nfit <= 0) return;
+    if (nfit > 8) nfit = 8;
+    __mmask64 kmask = (nfit == 8) ? 0x00FFFFFFFFFFFFFFULL
+                                  : (((__mmask64)1 << (nfit * 7)) - 1);
+
+    __m512i v = _mm512_and_si512(vals, _mm512_set1_epi8(0x7F));
+    __m512i w = _mm512_maddubs_epi16(_mm512_set1_epi16((short)0x8001), v);
+    __m512i d = _mm512_madd_epi16(w, _mm512_set1_epi32(0x40000001));
+    __m512i lo = _mm512_and_si512(d, _mm512_set1_epi64(0xFFFFFFFFLL));
+    __m512i packed = _mm512_or_si512(lo, _mm512_slli_epi64(_mm512_srli_epi64(d, 32), 28));
+    __m512i compact = _mm512_permutexvar_epi8(
+        _mm512_load_si512((const void *)packCompactIdx), packed);
+    _mm512_mask_storeu_epi8((void *)(data + byteStart), kmask, compact);
+}
+
 // process8PixelsEncodeAVX512GFNI processes one 8-pixel batch in encode direction.
 //
 // basePixel is the wrapped linear index of pixel p — the caller maintains
@@ -647,12 +712,9 @@ static inline void process8PixelsDecodeAVX512GFNI(
     __m512i xors = deriveXorsX8AVX512VBMI(xorMaskArr);
     vals = _mm512_xor_si512(vals, xors);
 
-    // Phase 4: pack 8×7-bit values per pixel back into the data byte stream.
-    uint8_t valsBuf[64] __attribute__((aligned(64)));
-    _mm512_storeu_si512((void *)valsBuf, vals);
-    for (int b = 0; b < 8; b++) {
-        pack56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, &valsBuf[b * Channels], Channels);
-    }
+    // Phase 4: pack 8×7-bit values per pixel back into the data byte
+    // stream — batched store-side inverse of extract56bitsX8AVX512VBMI.
+    pack56bitsX8AVX512VBMI(data, dataLen, bitIndex, vals);
 }
 
 // itb_simd_avx512_gfni_supported caches the AVX-512+GFNI feature detection.
