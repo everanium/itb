@@ -177,31 +177,16 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
 
 	// ===== Block 1 fold: h_after_block1[k] = h0[k] ⊕ v[k] ⊕ v[k+8]
 	// for k in 0..7. Result lives in Z0..Z7 (= v[0..7] init for block 2).
-	VPXORQ Z8,  Z0, Z0
-	VPXORQ Z9,  Z1, Z1
-	VPXORQ Z10, Z2, Z2
-	VPXORQ Z11, Z3, Z3
-	VPXORQ Z12, Z4, Z4
-	VPXORQ Z13, Z5, Z5
-	VPXORQ Z14, Z6, Z6
-	VPXORQ Z15, Z7, Z7
-
-	VPBROADCASTQ 0(AX),  Z16
-	VPXORQ Z16, Z0, Z0
-	VPBROADCASTQ 8(AX),  Z16
-	VPXORQ Z16, Z1, Z1
-	VPBROADCASTQ 16(AX), Z16
-	VPXORQ Z16, Z2, Z2
-	VPBROADCASTQ 24(AX), Z16
-	VPXORQ Z16, Z3, Z3
-	VPBROADCASTQ 32(AX), Z16
-	VPXORQ Z16, Z4, Z4
-	VPBROADCASTQ 40(AX), Z16
-	VPXORQ Z16, Z5, Z5
-	VPBROADCASTQ 48(AX), Z16
-	VPXORQ Z16, Z6, Z6
-	VPBROADCASTQ 56(AX), Z16
-	VPXORQ Z16, Z7, Z7
+	// Single VPTERNLOGQ per word with truth table 0x96 (three-way XOR),
+	// h0[k] re-read from (AX) via the embedded-broadcast memory operand.
+	VPTERNLOGQ.BCST $0x96, 0(AX),  Z8,  Z0
+	VPTERNLOGQ.BCST $0x96, 8(AX),  Z9,  Z1
+	VPTERNLOGQ.BCST $0x96, 16(AX), Z10, Z2
+	VPTERNLOGQ.BCST $0x96, 24(AX), Z11, Z3
+	VPTERNLOGQ.BCST $0x96, 32(AX), Z12, Z4
+	VPTERNLOGQ.BCST $0x96, 40(AX), Z13, Z5
+	VPTERNLOGQ.BCST $0x96, 48(AX), Z14, Z6
+	VPTERNLOGQ.BCST $0x96, 56(AX), Z15, Z7
 
 	// Save h_after_block1 to stack so we can XOR it into the final
 	// block-2 fold (Z0..Z7 will be mutated by the block-2 rounds).
@@ -272,24 +257,16 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $512-40
 	BLAKE2B_ROUND(Z30, Z26, Z20, Z24, Z25, Z31, Z29, Z22, Z17, Z28, Z16, Z18, Z27, Z23, Z21, Z19)
 
 	// ===== Block 2 final fold: out[k] = h_after_block1[k] ⊕ v[k] ⊕ v[k+8]
-	// h_after_block1 reloaded from stack via memory-source VPXORQ.
-	VPXORQ Z8,  Z0, Z0
-	VPXORQ Z9,  Z1, Z1
-	VPXORQ Z10, Z2, Z2
-	VPXORQ Z11, Z3, Z3
-	VPXORQ Z12, Z4, Z4
-	VPXORQ Z13, Z5, Z5
-	VPXORQ Z14, Z6, Z6
-	VPXORQ Z15, Z7, Z7
-
-	VPXORQ 0(SP),   Z0, Z0
-	VPXORQ 64(SP),  Z1, Z1
-	VPXORQ 128(SP), Z2, Z2
-	VPXORQ 192(SP), Z3, Z3
-	VPXORQ 256(SP), Z4, Z4
-	VPXORQ 320(SP), Z5, Z5
-	VPXORQ 384(SP), Z6, Z6
-	VPXORQ 448(SP), Z7, Z7
+	// Single VPTERNLOGQ per word with truth table 0x96 (three-way XOR);
+	// h_after_block1 reloaded from stack via the full-width memory operand.
+	VPTERNLOGQ $0x96, 0(SP),   Z8,  Z0
+	VPTERNLOGQ $0x96, 64(SP),  Z9,  Z1
+	VPTERNLOGQ $0x96, 128(SP), Z10, Z2
+	VPTERNLOGQ $0x96, 192(SP), Z11, Z3
+	VPTERNLOGQ $0x96, 256(SP), Z12, Z4
+	VPTERNLOGQ $0x96, 320(SP), Z13, Z5
+	VPTERNLOGQ $0x96, 384(SP), Z14, Z6
+	VPTERNLOGQ $0x96, 448(SP), Z15, Z7
 
 	// ===== Writeback to out[4][8]uint64 =====
 	MOVQ R15, R8
