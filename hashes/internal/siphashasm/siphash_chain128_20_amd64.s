@@ -1,9 +1,9 @@
 //go:build amd64 && !purego && !noitbasm
 
-// ZMM-batched fused chain-absorb kernel for SipHash-2-4-128 with
+// YMM-batched fused chain-absorb kernel for SipHash-2-4-128 with
 // 20-byte per-lane data input (the ITB SetNonceBits(128) buf shape —
 // default config). Lane-parallel layout: 4 lanes × 4 SipHash state
-// words held in qwords 0..3 of Y0..Y3 (one ZMM per state word, lane
+// words held in qwords 0..3 of Y0..Y3 (one YMM per state word, lane
 // = qword index).
 //
 // Per-lane absorb construction (matches the public hashes.SipHash24
