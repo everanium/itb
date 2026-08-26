@@ -113,16 +113,16 @@ on wire pre-produced outside the timing loop.
 | **VB.NET** (stream pump)             |     89 |     158 |     167 |     94 |     201 |     207 |
 | **Gleam** (stream pump)              |     92 |     164 |     170 |    105 |     207 |     210 |
 | **LFE** (stream pump)                |     90 |     163 |     170 |    104 |     204 |     211 |
-| **PHP** (stream session)             |    110 |     171 |     176 |     98 |     218 |     217 |
-| **Ruby** (stream)                    |    102 |     139 |     135 |    101 |     177 |     183 |
+| **PHP** (stream pump)                |    110 |     171 |     176 |     98 |     218 |     217 |
+| **Ruby** (stream pump)               |    102 |     139 |     135 |    101 |     177 |     183 |
 | **Dart** (stream pump)               |    111 |     164 |     173 |     97 |     206 |     210 |
-| **Lua** (stream)                     |    109 |     164 |     163 |    100 |     197 |     198 |
-| **Nim** (stream)                     |    111 |     168 |     174 |    104 |     211 |     211 |
-| **Crystal** (stream)                 |     93 |     169 |     177 |    102 |     213 |     213 |
-| **Julia** (stream)                   |     94 |     169 |     176 |    102 |     216 |     218 |
-| **OCaml** (stream)                   |    108 |     163 |     174 |    106 |     212 |     210 |
-| **Haskell** (stream)                 |    100 |     169 |     178 |    100 |     209 |     215 |
-| **R** (stream)                       |    106 |     165 |     171 |    101 |     210 |     211 |
+| **Lua** (stream pump)                |    109 |     164 |     163 |    100 |     197 |     198 |
+| **Nim** (stream pump)                |    111 |     168 |     174 |    104 |     211 |     211 |
+| **Crystal** (stream pump)            |     93 |     169 |     177 |    102 |     213 |     213 |
+| **Julia** (stream pump)              |     94 |     169 |     176 |    102 |     216 |     218 |
+| **OCaml** (stream pump)              |    108 |     163 |     174 |    106 |     212 |     210 |
+| **Haskell** (stream pump)            |    100 |     169 |     178 |    100 |     209 |     215 |
+| **R** (stream pump)                  |    106 |     165 |     171 |    101 |     210 |     211 |
 
 ### Message shape — full production (MAC on, parallax on, wrapper on)
 
@@ -195,16 +195,16 @@ Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAP
 | **VB.NET** (stream pump)             |     50 |     115 |     130 |     69 |     163 |     169 |
 | **Gleam** (stream pump)              |     53 |     120 |     132 |     78 |     166 |     170 |
 | **LFE** (stream pump)                |     52 |     119 |     130 |     76 |     165 |     175 |
-| **PHP** (stream session)             |     58 |     123 |     136 |     79 |     174 |     182 |
-| **Ruby** (stream)                    |     42 |      96 |     114 |     75 |     150 |     160 |
+| **PHP** (stream pump)                |     58 |     123 |     136 |     79 |     174 |     182 |
+| **Ruby** (stream pump)               |     42 |      96 |     114 |     75 |     150 |     160 |
 | **Dart** (stream pump)               |     52 |     121 |     134 |     75 |     172 |     176 |
-| **Lua** (stream)                     |     51 |     116 |     132 |     74 |     158 |     172 |
-| **Nim** (stream)                     |     50 |     116 |     132 |     75 |     159 |     176 |
-| **Crystal** (stream)                 |     57 |     124 |     135 |     78 |     170 |     175 |
-| **Julia** (stream)                   |     55 |     125 |     136 |     78 |     169 |     176 |
-| **OCaml** (stream)                   |     50 |     125 |     136 |     77 |     168 |     175 |
-| **Haskell** (stream)                 |     57 |     122 |     133 |     78 |     168 |     176 |
-| **R** (stream)                       |     54 |     123 |     134 |     77 |     170 |     175 |
+| **Lua** (stream pump)                |     51 |     116 |     132 |     74 |     158 |     172 |
+| **Nim** (stream pump)                |     50 |     116 |     132 |     75 |     159 |     176 |
+| **Crystal** (stream pump)            |     57 |     124 |     135 |     78 |     170 |     175 |
+| **Julia** (stream pump)              |     55 |     125 |     136 |     78 |     169 |     176 |
+| **OCaml** (stream pump)              |     50 |     125 |     136 |     77 |     168 |     175 |
+| **Haskell** (stream pump)            |     57 |     122 |     133 |     78 |     168 |     176 |
+| **R** (stream pump)                  |     54 |     123 |     134 |     77 |     170 |     175 |
 
 Production shape throughputs sit below the canonical (non-authenticated / no-overlay) numbers across the fleet — the parallax and wrapper overlays plus the MAC composition add per-chunk cost on both encrypt and decrypt paths.
 
