@@ -67,6 +67,54 @@ Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Lin
 | **SipHash-2-4** | 128 | 2048 | PRF | 57 | 82 | 84 | 73 | 92 | 94 |
 | **ChaCha20** | 256 | 2048 | PRF | 54 | 78 | 80 | 79 | 85 | 87 |
 
+## v0.3.0 benchmarks (AMD EPYC 9655P 96-Core, 2026-08-26)
+
+Measured on an AMD EPYC 9655P (Zen 5, 96 cores / 192 hardware threads, single NUMA node — no CPU affinity pinning applied), Linux, Go 1.27. Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20`. Observed CPU utilisation during the run: ~2000-2500% on encrypt (~20-25 cores active), ~5000-6000% on decrypt (~50-60 cores). The 96-core silicon is not saturated by three-snake parallelism at 16 / 64 MB — throughput scales into cache + memory bandwidth rather than into additional cores, and small-payload rows carry more Go-runtime setup than the 16-core i7-11700K where a smaller pool warms up faster.
+
+### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 512 | PRF | 58 | 320 | 442 | 144 | 660 | 958 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 68 | 334 | 455 | 173 | 698 | 925 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 61 | 287 | 405 | 107 | 507 | 795 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 58 | 292 | 406 | 120 | 513 | 853 |
+| **BLAKE2s** | 256 | 512 | PRF | 57 | 267 | 376 | 94 | 458 | 712 |
+| **BLAKE3** | 256 | 512 | PRF | 59 | 287 | 395 | 109 | 497 | 787 |
+| **AES-CMAC** | 128 | 512 | PRF | 54 | 315 | 431 | 126 | 632 | 924 |
+| **SipHash-2-4** | 128 | 512 | PRF | 54 | 299 | 421 | 114 | 587 | 844 |
+| **ChaCha20** | 256 | 512 | PRF | 55 | 298 | 407 | 115 | 541 | 836 |
+
+### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 54 | 295 | 408 | 120 | 560 | 829 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 58 | 316 | 420 | 140 | 605 | 829 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 55 | 240 | 364 | 90 | 418 | 657 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 56 | 249 | 363 | 91 | 427 | 688 |
+| **BLAKE2s** | 256 | 1024 | PRF | 52 | 218 | 326 | 85 | 364 | 539 |
+| **BLAKE3** | 256 | 1024 | PRF | 55 | 240 | 350 | 88 | 409 | 640 |
+| **AES-CMAC** | 128 | 1024 | PRF | 52 | 283 | 381 | 102 | 534 | 799 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 51 | 266 | 379 | 99 | 475 | 739 |
+| **ChaCha20** | 256 | 1024 | PRF | 52 | 259 | 367 | 94 | 447 | 696 |
+
+### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
+
+| Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 54 | 253 | 367 | 91 | 451 | 676 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 55 | 278 | 384 | 110 | 492 | 746 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 51 | 201 | 295 | 81 | 322 | 485 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 51 | 204 | 305 | 82 | 328 | 507 |
+| **BLAKE2s** | 256 | 2048 | PRF | 46 | 179 | 255 | 71 | 269 | 364 |
+| **BLAKE3** | 256 | 2048 | PRF | 50 | 196 | 286 | 80 | 314 | 448 |
+| **AES-CMAC** | 128 | 2048 | PRF | 49 | 236 | 341 | 89 | 424 | 620 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 49 | 216 | 319 | 87 | 370 | 539 |
+| **ChaCha20** | 256 | 2048 | PRF | 48 | 208 | 307 | 85 | 350 | 513 |
+
+**Zen 5 performance profile.** At 512-bit width Decrypt 64 MB Areion-SoEM-256 leads at 958 MB/s and Areion-SoEM-512 follows at 925 MB/s (Zen 5's full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher per-byte primitive call rate that Rocket Lake pays); AES-CMAC hits 924 MB/s at the same point. BLAKE family sustains 712-853 MB/s Decrypt 64 MB 512-bit. Every primitive except the four narrowest-ITB-width / smallest-payload rows exceeds 100 MB/s Decrypt, and the whole fleet exceeds 400 MB/s at 64 MB Decrypt 512-bit width — silicon is bandwidth-bound rather than compute-bound at that point. Small-payload 1 MB rows carry visible Go-runtime warmup cost on the 192-thread machine and are not directly comparable to the 16-thread i7-11700K's 1 MB column.
+
 ## v0.3.0 benchmarks (AWS Graviton 4 c8g.4xlarge, 2026-08-26)
 
 Measured on an AWS Graviton 4 c8g.4xlarge (Neoverse V2, 16 vCPU, ARM64 aarch64), Ubuntu 26.04 LTS, kernel 7.0.0-1011-aws, Go 1.27.0, direct pure-Go pipeline (no CGO on the ITB pixel kernel — the C encoder / decoder is an x86-only path). Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20`.
