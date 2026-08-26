@@ -61,7 +61,9 @@ final class BenchUtil {
                 .withParallax(envBool('ITB_WITH_PARALLAX'))
                 .withWrapper(envBool('ITB_WITH_WRAPPER'))
         String hash = env('ITB_INNER_HASH')
-        hash == null ? opts : opts.withInnerHash(hash)
+        opts = hash == null ? opts : opts.withInnerHash(hash)
+        String macName = env('ITB_MAC_NAME')
+        macName == null ? opts : opts.withMacName(macName)
     }
 
     static String profileName(String fallback) {

@@ -62,6 +62,10 @@ local function build_opts()
     if inner ~= "" then
         t.inner_hash = inner
     end
+    local mac = env("ITB_MAC_NAME", "")
+    if mac ~= "" then
+        t.mac_name = mac
+    end
     return itb.opts(t)
 end
 

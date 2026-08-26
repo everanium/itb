@@ -239,9 +239,12 @@
                        (flag (env "ITB_WITH_PARALLAX" "false")))
                 (tuple #"withWrapper"
                        (flag (env "ITB_WITH_WRAPPER" "false"))))))
-    (case (env "ITB_INNER_HASH" "")
-      ("" base)
-      (hash (cons (tuple #"innerHash" (list_to_binary hash)) base)))))
+    (let ((base1 (case (env "ITB_INNER_HASH" "")
+                   ("" base)
+                   (hash (cons (tuple #"innerHash" (list_to_binary hash)) base)))))
+      (case (env "ITB_MAC_NAME" "")
+        ("" base1)
+        (mac (cons (tuple #"macName" (list_to_binary mac)) base1))))))
 
 (defun flag
   (("true") #"true")

@@ -30,6 +30,10 @@ function buildOpts(): Opts {
   if (innerHash) {
     opts.withInnerHash(innerHash);
   }
+  const macName = env['ITB_MAC_NAME'];
+  if (macName) {
+    opts.withMacName(macName);
+  }
   return opts;
 }
 

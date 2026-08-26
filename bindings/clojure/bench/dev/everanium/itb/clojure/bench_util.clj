@@ -53,7 +53,8 @@
            :key-bits (env-long "ITB_KEY_BITS" 1024)
            :parallax? (env-bool "ITB_WITH_PARALLAX")
            :wrapper? (env-bool "ITB_WITH_WRAPPER")}
-    (env "ITB_INNER_HASH") (assoc :inner-hash (env "ITB_INNER_HASH"))))
+    (env "ITB_INNER_HASH") (assoc :inner-hash (env "ITB_INNER_HASH"))
+    (env "ITB_MAC_NAME") (assoc :mac-name (env "ITB_MAC_NAME"))))
 
 (defn profile-name [fallback]
   (or (env "ITB_PROFILE") fallback))

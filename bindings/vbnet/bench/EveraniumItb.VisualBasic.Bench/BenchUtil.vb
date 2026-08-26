@@ -54,6 +54,10 @@ Friend Module BenchUtil
         If Not String.IsNullOrEmpty(innerHash) Then
             opts = opts.WithInnerHash(innerHash)
         End If
+        Dim macName As String = Environment.GetEnvironmentVariable("ITB_MAC_NAME")
+        If Not String.IsNullOrEmpty(macName) Then
+            opts = opts.WithMacName(macName)
+        End If
         Return opts
     End Function
 

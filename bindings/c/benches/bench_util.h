@@ -60,6 +60,10 @@ static itb_opts *bench_build_opts(void)
     if (ih != NULL && *ih != '\0') {
         (void)itb_opts_set(opts, "innerHash", ih);
     }
+    const char *mn = getenv("ITB_MAC_NAME");
+    if (mn != NULL && *mn != '\0') {
+        (void)itb_opts_set(opts, "macName", mn);
+    }
     return opts;
 }
 

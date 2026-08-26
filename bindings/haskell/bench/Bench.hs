@@ -178,12 +178,14 @@ benchOpts = do
   wp <- envBool "ITB_WITH_PARALLAX" False
   ww <- envBool "ITB_WITH_WRAPPER" False
   ih <- envStr "ITB_INNER_HASH" ""
+  mn <- envStr "ITB_MAC_NAME" ""
   pure $ mconcat
     [ nonceBits nb
     , keyBits kb
     , withParallax wp
     , withWrapper ww
     , if null ih then mempty else innerHash ih
+    , if null mn then mempty else macName mn
     ]
 
 envStr :: String -> String -> IO String

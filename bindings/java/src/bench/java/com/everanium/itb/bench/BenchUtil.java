@@ -62,6 +62,10 @@ final class BenchUtil {
         if (innerHash != null && !innerHash.isEmpty()) {
             opts = opts.withInnerHash(innerHash);
         }
+        String macName = System.getenv("ITB_MAC_NAME");
+        if (macName != null && !macName.isEmpty()) {
+            opts = opts.withMacName(macName);
+        }
         return opts;
     }
 

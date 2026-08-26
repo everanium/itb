@@ -46,6 +46,8 @@ def build_opts
   }
   inner = ENV["ITB_INNER_HASH"].to_s
   opts["innerHash"] = inner unless inner.empty?
+  mac = ENV["ITB_MAC_NAME"].to_s
+  opts["macName"] = mac unless mac.empty?
   opts
 end
 

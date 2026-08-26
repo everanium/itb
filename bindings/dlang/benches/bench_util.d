@@ -54,6 +54,9 @@ Opts benchBuildOpts()
     auto innerHash = environment.get("ITB_INNER_HASH", "");
     if (innerHash.length > 0)
         opts = opts.withInnerHash(innerHash);
+    auto macName = environment.get("ITB_MAC_NAME", "");
+    if (macName.length > 0)
+        opts = opts.withMacName(macName);
     return opts;
 }
 

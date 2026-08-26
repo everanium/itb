@@ -42,6 +42,7 @@ package body Common is
    function Build_Opts return Itb.Opts.Opts is
       O          : Itb.Opts.Opts;
       Inner_Hash : constant String := Env ("ITB_INNER_HASH", "");
+      Mac_Name   : constant String := Env ("ITB_MAC_NAME", "");
    begin
       O.Set ("nonceBits", Env ("ITB_NONCE_BITS", "512"));
       O.Set ("keyBits", Env ("ITB_KEY_BITS", "1024"));
@@ -49,6 +50,9 @@ package body Common is
       O.Set_With_Wrapper (Env_True ("ITB_WITH_WRAPPER"));
       if Inner_Hash /= "" then
          O.Set_Inner_Hash (Inner_Hash);
+      end if;
+      if Mac_Name /= "" then
+         O.Set ("macName", Mac_Name);
       end if;
       return O;
    end Build_Opts;
