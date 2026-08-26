@@ -36,6 +36,11 @@ CGO_ENABLED=1 go build -o tools/parity/parity-cgo         ./tools/parity
 CGO_ENABLED=0 go build -o tools/parity/parity-nocgo       ./tools/parity
 CGO_ENABLED=1 CGO_CFLAGS="-DITB_PARITY_TIER_OVERRIDE" \
     go build -o tools/parity/parity-cgo-tiered            ./tools/parity
+# Fourth arm: pure-Go pixels AND scalar hash/MAC kernels (-tags noitbasm).
+# Used by the KMAC256 MAC section to force tag agreement across the
+# vendored AVX-512 Keccak-f[1600] tier and the scalar tier.
+CGO_ENABLED=0 go build -tags noitbasm \
+    -o tools/parity/parity-nocgo-noasm                    ./tools/parity
 
 # Fixture matrix. Covers sub-pixel (1), single-pixel (6, 7), single-8-pixel
 # batch boundary (56), and multi-chunk transitions (65535, 1048576,
@@ -149,10 +154,62 @@ for TIER in "${TIER_MATRIX[@]}"; do
     done
 done
 
+# KMAC256 MAC Authenticated section. One canonical inner hash
+# (areion512) under the parity-mac-* profile (MAC pinned to kmac256);
+# two arm pairings per size:
+#   (1) cgo (AVX-512 Keccak tier on capable hosts) <-> nocgo-noasm
+#       (scalar tier) — forces asm/scalar tag agreement both ways;
+#   (2) cgo <-> nocgo (both natural-tier) — MAC'd wire across the
+#       C / pure-Go pixel arms.
+MAC_HASH="areion512"
+MAC_PROFILE="parity-mac-${MAC_HASH}-v1"
+MAC_SEED="$WORKDIR/seed-mac-${MAC_HASH}.blob"
+MAC_CELLS=$(( ${#SIZES[@]} * 4 ))
+
+./tools/parity/parity-cgo -mode=init \
+    -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED"
+
+for SIZE in "${SIZES[@]}"; do
+    PLAIN="$WORKDIR/plain-mac-${SIZE}.bin"
+    head -c "$SIZE" /dev/urandom > "$PLAIN"
+    PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+    for PAIR in "parity-cgo:parity-nocgo-noasm" "parity-cgo:parity-nocgo"; do
+        ENC_ARM="${PAIR%%:*}"
+        DEC_ARM="${PAIR##*:}"
+
+        WIRE1="$WORKDIR/wire-mac-${SIZE}-${ENC_ARM}.bin"
+        BACK1="$WORKDIR/back-mac-${SIZE}-${DEC_ARM}.bin"
+        ./tools/parity/$ENC_ARM -mode=encrypt \
+            -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED" \
+            -in="$PLAIN" -out="$WIRE1"
+        ./tools/parity/$DEC_ARM -mode=decrypt \
+            -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED" \
+            -in="$WIRE1" -out="$BACK1"
+        if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+            echo "FAIL: kmac encrypt=$ENC_ARM decrypt=$DEC_ARM size=$SIZE"
+            FAIL=$((FAIL + 1))
+        fi
+
+        WIRE2="$WORKDIR/wire-mac-${SIZE}-${DEC_ARM}.bin"
+        BACK2="$WORKDIR/back-mac-${SIZE}-${ENC_ARM}.bin"
+        ./tools/parity/$DEC_ARM -mode=encrypt \
+            -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED" \
+            -in="$PLAIN" -out="$WIRE2"
+        ./tools/parity/$ENC_ARM -mode=decrypt \
+            -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED" \
+            -in="$WIRE2" -out="$BACK2"
+        if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+            echo "FAIL: kmac encrypt=$DEC_ARM decrypt=$ENC_ARM size=$SIZE"
+            FAIL=$((FAIL + 1))
+        fi
+    done
+done
+
 echo "---"
-TOTAL=$(( CELLS + TIER_CELLS ))
+TOTAL=$(( CELLS + TIER_CELLS + MAC_CELLS ))
 if [ "$FAIL" -eq 0 ]; then
-    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-tier = $TOTAL cells"
+    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-tier + $MAC_CELLS kmac-mac = $TOTAL cells"
     exit 0
 fi
 echo "FAIL: $FAIL of $TOTAL cells failed"
