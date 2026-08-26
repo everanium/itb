@@ -30,8 +30,8 @@ var messageModeCases = []messageModeCase{
 
 // messagePlaintextSizes covers the empty-input case, sub-chunk sizes,
 // and up to 1 MiB — mirroring the Phase 5 streaming matrix's size
-// dimension minus the giant tail. 0 is included to lock the empty
-// plaintext contract.
+// dimension minus the giant tail. 0 is included to lock the
+// empty-input rejection contract ([ErrEmptyInput]) inside the matrix.
 var messagePlaintextSizes = []int{0, 1, 6, 64, 1024, 65536, 1 << 20}
 
 // TestEncryptMessageDecryptMessageRoundTripMatrix walks every
@@ -85,6 +85,13 @@ func runMessageRoundTrip(t *testing.T, w widthCase, n nonceCase, tog toggleCase,
 	plaintext := freshBytes(t, sz)
 
 	wire, err := pipe.EncryptMessage(plaintext)
+	if sz == 0 {
+		if !errors.Is(err, ErrEmptyInput) {
+			t.Fatalf("EncryptMessage on empty plaintext: got err=%v, want %v",
+				err, ErrEmptyInput)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatalf("EncryptMessage: %v", err)
 	}
@@ -236,11 +243,12 @@ func TestEncryptMessageClosed(t *testing.T) {
 	}
 }
 
-// TestEncryptMessageEmptyInput ratifies the empty-plaintext contract
-// spelled out in the [Pipeline.EncryptMessage] doc-comment. The
-// round-trip matrix already exercises sz=0, but a dedicated test
+// TestEncryptMessageEmptyInput ratifies the empty-input rejection
+// contract spelled out in the [Pipeline.EncryptMessage] doc-comment.
+// The round-trip matrix already exercises sz=0, but a dedicated test
 // surfaces the intent cleanly: both the nil and the zero-length slice
-// forms round-trip to an empty plaintext.
+// forms are rejected with [ErrEmptyInput] on both message-shape entry
+// points.
 func TestEncryptMessageEmptyInput(t *testing.T) {
 	for _, in := range []struct {
 		name string
@@ -262,16 +270,11 @@ func TestEncryptMessageEmptyInput(t *testing.T) {
 			}
 			defer rx.Close()
 
-			wire, err := pipe.EncryptMessage(in.body)
-			if err != nil {
-				t.Fatalf("EncryptMessage: %v", err)
+			if _, err := pipe.EncryptMessage(in.body); !errors.Is(err, ErrEmptyInput) {
+				t.Fatalf("EncryptMessage: got err=%v, want %v", err, ErrEmptyInput)
 			}
-			recovered, err := rx.DecryptMessage(wire)
-			if err != nil {
-				t.Fatalf("DecryptMessage: %v", err)
-			}
-			if len(recovered) != 0 {
-				t.Fatalf("recovered non-empty: len=%d", len(recovered))
+			if _, err := rx.DecryptMessage(in.body); !errors.Is(err, ErrEmptyInput) {
+				t.Fatalf("DecryptMessage: got err=%v, want %v", err, ErrEmptyInput)
 			}
 		})
 	}

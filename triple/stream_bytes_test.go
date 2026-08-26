@@ -10,7 +10,8 @@ import (
 // streamBytesSizes covers the empty-input case, sub-chunk sizes, and a
 // 1 MiB tail — the single-chunk direct-path regime under the default
 // chunkSize. The multi-chunk regime is exercised separately via a
-// ChunkSize override so the matrix stays fast.
+// ChunkSize override so the matrix stays fast. The 0 row locks the
+// empty-input rejection contract ([ErrEmptyInput]) inside the matrix.
 var streamBytesSizes = []int{0, 1, 6, 64, 1024, 65536, 1 << 20}
 
 // TestEncryptStreamBytesRoundTripMatrix walks every
@@ -64,6 +65,13 @@ func runStreamBytesRoundTrip(t *testing.T, w widthCase, n nonceCase, tog toggleC
 	plaintext := freshBytes(t, sz)
 
 	wire, err := pipe.EncryptStreamBytes(plaintext)
+	if sz == 0 {
+		if !errors.Is(err, ErrEmptyInput) {
+			t.Fatalf("EncryptStreamBytes on empty plaintext: got err=%v, want %v",
+				err, ErrEmptyInput)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatalf("EncryptStreamBytes: %v", err)
 	}

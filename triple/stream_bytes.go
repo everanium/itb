@@ -44,13 +44,19 @@ import (
 // Same concurrency posture as [Pipeline.EncryptStream]: safe for
 // concurrent invocation on one [*Pipeline]. Returns [ErrClosed] when
 // [Pipeline.Close] has already run; [ErrProfileNotStreaming] when the
-// resolved profile mode is Single Message or blob-only.
+// resolved profile mode is Single Message or blob-only;
+// [ErrEmptyInput] on empty plaintext (nil or zero-length) — rejected
+// before any wire is produced, matching every other Pipeline cipher
+// entry point.
 func (p *Pipeline) EncryptStreamBytes(plaintext []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
 	if !isStreamingMode(p.resolved.mode) {
 		return nil, ErrProfileNotStreaming
+	}
+	if len(plaintext) == 0 {
+		return nil, ErrEmptyInput
 	}
 	if p.resolved.parallaxOn {
 		return p.encryptMessageStreaming(plaintext)
@@ -91,13 +97,18 @@ func (p *Pipeline) EncryptStreamBytes(plaintext []byte) ([]byte, error) {
 // Same concurrency posture as [Pipeline.DecryptStream]: safe for
 // concurrent invocation on one [*Pipeline]. Returns [ErrClosed] when
 // [Pipeline.Close] has already run; [ErrProfileNotStreaming] when the
-// resolved profile mode is Single Message or blob-only.
+// resolved profile mode is Single Message or blob-only;
+// [ErrEmptyInput] on empty wire (nil or zero-length) — rejected
+// before any parse, since no valid Pipeline wire is empty.
 func (p *Pipeline) DecryptStreamBytes(wire []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
 	if !isStreamingMode(p.resolved.mode) {
 		return nil, ErrProfileNotStreaming
+	}
+	if len(wire) == 0 {
+		return nil, ErrEmptyInput
 	}
 	if p.resolved.parallaxOn {
 		return p.decryptMessageStreaming(wire)
