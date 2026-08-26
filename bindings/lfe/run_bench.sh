@@ -3,14 +3,15 @@
 # run_bench.sh -- micro-benchmark runner for the LFE binding. Builds
 # libitb.so + the C binding archive + the Erlang backend + the LFE
 # application via build.sh, compiles the bench module with the
-# hex-fetched LFE compiler, then runs the message and stream shapes:
-# encrypt-message and stream-pump throughput at 1 MiB / 16 MiB /
-# 64 MiB.
+# hex-fetched LFE compiler, then runs the message, stream and
+# stream_one_shot shapes: encrypt-message, stream-pump and
+# whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
-#   ./run_bench.sh              # both shapes
-#   ./run_bench.sh message      # message shape only
-#   ./run_bench.sh stream       # stream-pump shape only
+#   ./run_bench.sh                        # all shapes
+#   ./run_bench.sh message                # Single Message shape only
+#   ./run_bench.sh stream                 # stream-pump shape only
+#   ./run_bench.sh stream_one_shot        # whole-buffer stream shape only
 
 set -eu
 set -o pipefail
@@ -69,13 +70,18 @@ run_one() {
 }
 
 case "$WHAT" in
-    message) export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             run_one message;;
-    stream)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             run_one stream;;
-    all)     export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             run_one message
-             export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             run_one stream;;
-    *)       echo "usage: $0 [message|stream|all]" >&2; exit 2;;
+    message)        export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    run_one message;;
+    stream)         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    run_one stream;;
+    stream_one_shot)
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    run_one stream_one_shot;;
+    all)            export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    run_one message
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    run_one stream
+                    run_one stream_one_shot;;
+    *)              echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
+                    exit 2;;
 esac

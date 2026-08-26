@@ -1,11 +1,15 @@
 //// itb_bench — Message + Stream throughput micro-benchmarks.
 ////
 //// Shapes:
-////   message      encrypt_message throughput vs plaintext size
-////                (Single Message profile)
-////   stream_pump  incremental encrypt session throughput (begin ->
-////                write 1 MiB slices, draining the spool after each
-////                write -> finish -> drain until finished -> free)
+////   message          encrypt_message throughput vs plaintext size
+////                    (Single Message profile)
+////   stream_pump      incremental encrypt session throughput (begin ->
+////                    write 1 MiB slices, draining the spool after each
+////                    write -> finish -> drain until finished -> free)
+////   stream_one_shot  whole-buffer stream throughput (one
+////                    encrypt_stream_one_shot / decrypt_stream_one_shot
+////                    call per iteration; the FFI whole-buffer fast
+////                    path for callers holding the full payload)
 ////
 //// Sizes: 1 MiB / 16 MiB / 64 MiB; one table row per size.
 ////
@@ -67,12 +71,17 @@ pub fn main() {
   case argv() {
     ["message"] -> bench_message()
     ["stream"] -> bench_stream()
+    ["stream_one_shot"] -> bench_stream_one_shot()
     [] | ["all"] -> {
       bench_message()
       bench_stream()
+      bench_stream_one_shot()
     }
     _ -> {
-      io.println_error("usage: gleam run -m itb_bench -- [message|stream|all]")
+      io.println_error(
+        "usage: gleam run -m itb_bench -- "
+        <> "[message|stream|stream_one_shot|all]",
+      )
       halt(2)
     }
   }
@@ -114,6 +123,28 @@ fn bench_stream() -> Nil {
     // Pre-encrypt one wire outside the decrypt timing loop.
     let dec_wire = pump_all(pipe, plain)
     bench_case("stream_pump-dec", size, fn() { pump_dec(pipe, dec_wire) })
+  })
+  pipeline.free(pipe)
+}
+
+// Whole-buffer stream: one FFI round trip through
+// encrypt_stream_one_shot / decrypt_stream_one_shot per iteration.
+fn bench_stream_one_shot() -> Nil {
+  let profile = env("ITB_PROFILE", "streaming-noaead-triple-v1")
+  let assert Ok(pipe) = pipeline.new(profile, bench_opts())
+  header()
+  list.each([mib, 16 * mib, 64 * mib], fn(size) {
+    let plain = rand_bytes(size)
+    bench_case("stream_one_shot", size, fn() {
+      let assert Ok(_wire) = pipeline.encrypt_stream_one_shot(pipe, plain)
+      Nil
+    })
+    // Pre-encrypt one wire outside the decrypt timing loop.
+    let assert Ok(dec_wire) = pipeline.encrypt_stream_one_shot(pipe, plain)
+    bench_case("stream_one_shot-dec", size, fn() {
+      let assert Ok(_plain) = pipeline.decrypt_stream_one_shot(pipe, dec_wire)
+      Nil
+    })
   })
   pipeline.free(pipe)
 }

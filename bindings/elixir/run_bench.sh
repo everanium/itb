@@ -2,14 +2,15 @@
 #
 # run_bench.sh -- micro-benchmark runner for the Elixir binding.
 # Builds libitb.so + the C binding archive + the Erlang backend +
-# the Mix project via build.sh, then runs bench_message and
-# bench_stream: encrypt_message and stream-pump throughput at
-# 1 MiB / 16 MiB / 64 MiB.
+# the Mix project via build.sh, then runs bench_message, bench_stream
+# and bench_stream_one_shot: encrypt_message, stream-pump and
+# whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
-#   ./run_bench.sh              # both shapes
-#   ./run_bench.sh message      # message shape only
-#   ./run_bench.sh stream       # stream-pump shape only
+#   ./run_bench.sh                        # all shapes
+#   ./run_bench.sh message                # Single Message shape only
+#   ./run_bench.sh stream                 # stream-pump shape only
+#   ./run_bench.sh stream_one_shot        # whole-buffer stream shape only
 
 set -eu
 set -o pipefail
@@ -57,13 +58,18 @@ fi
 WHAT="${1:-all}"
 
 case "$WHAT" in
-    message) export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             mix run bench/bench_message.exs;;
-    stream)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             mix run bench/bench_stream.exs;;
-    all)     export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             mix run bench/bench_message.exs
-             export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             mix run bench/bench_stream.exs;;
-    *)       echo "usage: $0 [message|stream|all]" >&2; exit 2;;
+    message)        export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    mix run bench/bench_message.exs;;
+    stream)         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    mix run bench/bench_stream.exs;;
+    stream_one_shot)
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    mix run bench/bench_stream_one_shot.exs;;
+    all)            export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    mix run bench/bench_message.exs
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    mix run bench/bench_stream.exs
+                    mix run bench/bench_stream_one_shot.exs;;
+    *)              echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
+                    exit 2;;
 esac
