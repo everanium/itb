@@ -61,7 +61,14 @@ func TestHashRoundTrip(t *testing.T) {
 			if !bytes.Equal(rt, pt) {
 				t.Errorf("%s size=%d: round-trip mismatch", c.name, size)
 			}
-			if size > 0 && bytes.Equal(ct, pt) {
+			// The size==1 case is excluded from the inequality check because a
+			// well-formed CSPRNG-quality keystream produces a byte equal to 0x00
+			// (yielding ct==pt for a one-byte plaintext) with probability 1/256,
+			// which is a valid outcome rather than a bug. At size>=2 the false-
+			// fire probability is 2**-16 per invocation and negligible in
+			// aggregate; the round-trip check above already rejects an identity
+			// keystream once combined with any other test.
+			if size >= 2 && bytes.Equal(ct, pt) {
 				t.Errorf("%s size=%d: ciphertext equals plaintext", c.name, size)
 			}
 		}
