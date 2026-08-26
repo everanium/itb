@@ -187,9 +187,13 @@ bench_opts() ->
             {<<"keyBits">>, list_to_binary(env("ITB_KEY_BITS", "1024"))},
             {<<"withParallax">>, flag(env("ITB_WITH_PARALLAX", "false"))},
             {<<"withWrapper">>, flag(env("ITB_WITH_WRAPPER", "false"))}],
-    case env("ITB_INNER_HASH", "") of
+    Base1 = case env("ITB_INNER_HASH", "") of
         "" -> Base;
         Hash -> [{<<"innerHash">>, list_to_binary(Hash)} | Base]
+    end,
+    case env("ITB_MAC_NAME", "") of
+        "" -> Base1;
+        Mac -> [{<<"macName">>, list_to_binary(Mac)} | Base1]
     end.
 
 flag(Raw) when Raw =:= "true"; Raw =:= "1" -> <<"true">>;

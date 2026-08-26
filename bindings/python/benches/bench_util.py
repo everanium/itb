@@ -65,6 +65,9 @@ def build_opts() -> itb.Opts:
     inner = os.environ.get("ITB_INNER_HASH", "")
     if inner:
         opts = opts.with_inner_hash(inner)
+    mac_name = os.environ.get("ITB_MAC_NAME", "")
+    if mac_name:
+        opts = opts.with_mac_name(mac_name)
     return opts
 
 

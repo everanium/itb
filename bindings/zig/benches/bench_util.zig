@@ -42,6 +42,8 @@ pub fn buildOpts(arena: std.mem.Allocator, env: *const std.process.Environ.Map) 
     try opts.set("withWrapper", boolStr(env, "ITB_WITH_WRAPPER"));
     const hash = envOr(env, "ITB_INNER_HASH", "");
     if (hash.len > 0) try opts.set("innerHash", try arena.dupeZ(u8, hash));
+    const mac_name = envOr(env, "ITB_MAC_NAME", "");
+    if (mac_name.len > 0) try opts.set("macName", try arena.dupeZ(u8, mac_name));
     return opts;
 }
 

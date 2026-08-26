@@ -56,6 +56,10 @@ build_opts <- function() {
   if (nzchar(inner)) {
     args$inner_hash <- inner
   }
+  mac <- env("ITB_MAC_NAME", "")
+  if (nzchar(mac)) {
+    args$mac_name <- mac
+  }
   itb_opts(args)
 }
 

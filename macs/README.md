@@ -129,6 +129,13 @@ and `HMAC-BLAKE3` take the key as their only argument — there is
 no separate `WithKey` variant since the key is already the only
 state the factory holds.
 
+On amd64 hosts with the AVX-512 F/BW/VL/DQ baseline, `KMAC256`
+routes through a vendored AVX-512 Keccak-f[1600] kernel in
+`macs/internal/keccakasm/` (Tier A only; other hosts and
+`-tags noitbasm` builds keep the stdlib-backed scalar cSHAKE256).
+Both tiers produce byte-identical tags — pinned by a 200-fixture
+parity oracle and the bit-exact KAT.
+
 ## High-level facade — `triple.Pipeline`
 
 Callers who want the eight-seed constellation, MAC, parallax layer, and outer cipher wrapper composed for them in one step use the [`triple.Pipeline`](../triple/) facade. `triple.Init(profileName, opts)` allocates the full stack around one primitive selected by name; the MAC choice rides in `triple.Opts.MacName` (defaults to `hmac-blake3`). The [top-level ITB README](https://github.com/everanium/itb#readme) hosts the canonical Pipeline examples across the four cipher shapes (Single Message MAC / Single Message No MAC / Streaming AEAD / Streaming Non-AEAD).

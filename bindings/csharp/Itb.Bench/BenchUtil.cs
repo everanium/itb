@@ -58,6 +58,11 @@ internal static class BenchUtil
         {
             opts = opts.WithInnerHash(innerHash);
         }
+        var macName = Environment.GetEnvironmentVariable("ITB_MAC_NAME");
+        if (!string.IsNullOrEmpty(macName))
+        {
+            opts = opts.WithMacName(macName);
+        }
         return opts;
     }
 

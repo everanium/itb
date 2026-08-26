@@ -45,6 +45,9 @@ proc buildOpts(): Opts =
   let inner = getEnv("ITB_INNER_HASH")
   if inner.len > 0:
     result = result.withInnerHash(inner)
+  let macName = getEnv("ITB_MAC_NAME")
+  if macName.len > 0:
+    result = result.withMacName(macName)
 
 proc profileName(shapeEnv, fallback: string): string =
   let s = getEnv(shapeEnv)

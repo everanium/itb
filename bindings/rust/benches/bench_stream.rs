@@ -46,6 +46,11 @@ fn build_opts() -> OptsBuilder {
             opts = opts.with_inner_hash(&name);
         }
     }
+    if let Ok(name) = env::var("ITB_MAC_NAME") {
+        if !name.is_empty() {
+            opts = opts.with_mac_name(&name);
+        }
+    }
     opts
 }
 

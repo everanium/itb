@@ -43,9 +43,14 @@ let build_opts () =
       ("withWrapper", if truthy (env "ITB_WITH_WRAPPER") then "true" else "false");
     ]
   in
-  match env "ITB_INNER_HASH" with
+  let base =
+    match env "ITB_INNER_HASH" with
+    | "" -> base
+    | inner -> base @ [ ("innerHash", inner) ]
+  in
+  match env "ITB_MAC_NAME" with
   | "" -> base
-  | inner -> base @ [ ("innerHash", inner) ]
+  | mac -> base @ [ ("macName", mac) ]
 
 let profile_name shape_env fallback =
   match env shape_env with

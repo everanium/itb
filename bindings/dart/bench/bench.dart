@@ -50,6 +50,10 @@ Opts buildOpts() {
   if (inner.isNotEmpty) {
     opts.withInnerHash(inner);
   }
+  final macName = env['ITB_MAC_NAME'] ?? '';
+  if (macName.isNotEmpty) {
+    opts.withMacName(macName);
+  }
   return opts;
 }
 

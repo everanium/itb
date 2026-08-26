@@ -95,6 +95,8 @@ contains
         trim(merge("true ", "false", v == "true" .or. v == "1")))
     v = env_or("ITB_INNER_HASH", "")
     if (len(v) > 0) call itb_opts_set(opts, "innerHash", v)
+    v = env_or("ITB_MAC_NAME", "")
+    if (len(v) > 0) call itb_opts_set(opts, "macName", v)
   end subroutine
 
   ! ITB_PROFILE env override, or the per-binary fallback.

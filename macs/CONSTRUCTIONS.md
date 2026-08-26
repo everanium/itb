@@ -51,6 +51,8 @@ The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kma
 
 **Security claim.** Inherits KMAC256's PRF / MAC security argument verbatim (cSHAKE256 modelled as a random oracle / sponge-PRF).
 
+**AVX-512 tier.** On amd64 hosts with the AVX-512 F/BW/VL/DQ baseline the factory routes through the vendored Keccak-f[1600] kernel in `macs/internal/keccakasm/` (one lane per XMM register, VPTERNLOGQ theta/chi folds, VPROLQ rho, pi as register renaming, fused rate-block absorb). The NIST SP 800-185 framing above is tier-independent; the two tiers emit byte-identical tags.
+
 ### HMAC-SHA256 (registry: `hmac-sha256`)
 
 **Underlying primitive.** SHA-256 (`crypto/sha256`).

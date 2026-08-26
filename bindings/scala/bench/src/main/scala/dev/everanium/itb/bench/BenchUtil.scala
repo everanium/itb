@@ -45,7 +45,8 @@ object BenchUtil:
       .withKeyBits(envLong("ITB_KEY_BITS", 1024))
       .withParallax(envBool("ITB_WITH_PARALLAX"))
       .withWrapper(envBool("ITB_WITH_WRAPPER"))
-    env("ITB_INNER_HASH").fold(base)(base.withInnerHash)
+    val hashed = env("ITB_INNER_HASH").fold(base)(base.withInnerHash)
+    env("ITB_MAC_NAME").fold(hashed)(hashed.withMacName)
 
   def profileName(fallback: String): String =
     env("ITB_PROFILE").getOrElse(fallback)

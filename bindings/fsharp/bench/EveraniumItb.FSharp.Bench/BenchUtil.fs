@@ -69,9 +69,14 @@ let buildOpts () : Opts =
         |> Opts.withParallax (envBool "ITB_WITH_PARALLAX")
         |> Opts.withWrapper (envBool "ITB_WITH_WRAPPER")
 
-    match env "ITB_INNER_HASH" with
-    | Some name -> baseOpts |> Opts.withInnerHash name
-    | None -> baseOpts
+    let hashOpts =
+        match env "ITB_INNER_HASH" with
+        | Some name -> baseOpts |> Opts.withInnerHash name
+        | None -> baseOpts
+
+    match env "ITB_MAC_NAME" with
+    | Some name -> hashOpts |> Opts.withMacName name
+    | None -> hashOpts
 
 let profileName (fallback: string) : string =
     env "ITB_PROFILE" |> Option.defaultValue fallback

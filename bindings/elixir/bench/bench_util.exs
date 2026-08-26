@@ -53,9 +53,15 @@ defmodule BenchUtil do
       "withWrapper" => flag(env("ITB_WITH_WRAPPER", "false"))
     }
 
-    case env("ITB_INNER_HASH", "") do
+    base =
+      case env("ITB_INNER_HASH", "") do
+        "" -> base
+        hash -> Map.put(base, "innerHash", hash)
+      end
+
+    case env("ITB_MAC_NAME", "") do
       "" -> base
-      hash -> Map.put(base, "innerHash", hash)
+      mac -> Map.put(base, "macName", mac)
     end
   end
 
