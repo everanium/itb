@@ -10,8 +10,9 @@
 // operation runs on four lanes simultaneously via VAES instead of
 // per-lane AES-NI.
 //
-// Round constants live in `·AreionRC4x(SB)` (defined in `areion.go`'s
-// `init()`), pre-broadcast to four 128-bit copies per ZMM register.
+// Round constants live in `·AreionRC4x(SB)` (populated by
+// `areionasm_amd64.go`'s `init()`), pre-broadcast to four 128-bit
+// copies per ZMM register.
 //
 // The optimization fusing `RoundNoKey + XOR(rc)` into a single
 // `VAESENC RC, state, state` instruction (because `AESENC(s, k) =
@@ -21,7 +22,7 @@
 
 #include "textflag.h"
 
-// func areion256Permutex4Asm(x0, x1 *aes.Block4)
+// func Areion256Permutex4(x0, x1 *aes.Block4)
 //
 // Applies the 10-round Areion256 permutation to four lanes packed in
 // SoA layout: `*x0` holds the four lanes' first-half AES blocks
