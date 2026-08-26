@@ -2,9 +2,10 @@
 #
 # run_bench.sh -- Criterion bench runner for the Rust binding.
 # Builds libitb.so + the crate via build.sh, points ITB_LIBITB_PATH
-# at the freshly-built shared library, then runs both bench binaries
-# (bench_message + bench_stream). Positional arguments are forwarded
-# to the Criterion harness (e.g. `./run_bench.sh --measurement-time 2`).
+# at the freshly-built shared library, then runs every bench binary
+# (bench_message + bench_stream + bench_stream_one_shot). Positional
+# arguments are forwarded to the Criterion harness
+# (e.g. `./run_bench.sh --measurement-time 2`).
 
 set -eu
 set -o pipefail
@@ -54,3 +55,4 @@ export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
 cargo bench --bench bench_message -- "$@"
 export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
 cargo bench --bench bench_stream -- "$@"
+cargo bench --bench bench_stream_one_shot -- "$@"

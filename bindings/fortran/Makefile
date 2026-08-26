@@ -7,8 +7,8 @@
 #   tests:         compile every tests/test_*.f90 into a standalone
 #                  binary under tests/build/, linked against the src
 #                  object tree + libitb.so.
-#   bench:         compile bench/bench_{message,stream}.f90 into
-#                  bench/bin/.
+#   bench:         compile bench/bench_{message,stream,stream_one_shot}.f90
+#                  into bench/bin/.
 #   eitb:          compile the eitb CLI at eitb/eitb.
 #   clean:         remove every generated artefact.
 #   help:          list targets.
@@ -71,7 +71,8 @@ HELPER_OBJ = $(TESTS_BUILD)/itb_test_helpers.o
 all: src
 src: $(SRC_OBJS)
 tests: src $(HELPER_OBJ) $(TEST_BINS)
-bench: src $(BENCH_BIN)/bench_message $(BENCH_BIN)/bench_stream
+bench: src $(BENCH_BIN)/bench_message $(BENCH_BIN)/bench_stream \
+       $(BENCH_BIN)/bench_stream_one_shot
 eitb: src eitb/eitb
 
 # Pattern rule: src/%.f90 -> build/%.o + build/%.mod. Module files
@@ -138,7 +139,7 @@ help:
 	@echo "  all (default) -- compile src/*.f90 into \$$(BUILD_DIR)/."
 	@echo "  src           -- same as 'all'."
 	@echo "  tests         -- src + every tests/test_*.f90 binary."
-	@echo "  bench         -- src + bench/bin/bench_{message,stream}."
+	@echo "  bench         -- src + bench/bin/bench_{message,stream,stream_one_shot}."
 	@echo "  eitb          -- src + the eitb CLI at eitb/eitb."
 	@echo "  clean         -- remove every generated artefact."
 	@echo ""
