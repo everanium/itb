@@ -1,7 +1,6 @@
 package capi
 
 import (
-	"bytes"
 	"errors"
 	"runtime/cgo"
 
@@ -162,10 +161,13 @@ func FreeTriple(id TripleHandleID) (st Status) {
 // buffer with capacity; the returned n reports bytes written on
 // success or the required capacity on StatusBufferTooSmall.
 //
-// The destination-buffer capacity is measured by feeding the
-// Pipeline's chain through a [bytes.Buffer]; the growth budget is
-// bounded by the plaintext length plus the fixed per-stream + per-
-// chunk envelope overheads. Bindings sizing their buffer via
+// The whole plaintext is available up front on this surface, so the
+// call routes through [triple.Pipeline.EncryptStreamBytes] — the
+// whole-buffer Streaming entry whose direct path composes a
+// single-chunk emission via the itb-root Cfg-aware entries when the
+// parallax layer is disengaged and the plaintext fits the itb-root
+// single-message cap, bypassing the per-chunk io.Reader / io.Writer
+// machinery. Bindings sizing their buffer via
 // max(plain_len * 2, 65536) hit the fast path in practice.
 func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusEncryptFailed)
@@ -174,28 +176,28 @@ func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st
 	if st != StatusOK {
 		return 0, st
 	}
-	var wire bytes.Buffer
-	// Pre-size to the ciphertext-expansion upper bound so the wire
-	// accumulation never re-grows mid-encrypt.
-	wire.Grow(len(plainSrc) + len(plainSrc)/4 + 65536)
-	if err := h.pipe.EncryptStream(bytes.NewReader(plainSrc), &wire); err != nil {
+	wire, err := h.pipe.EncryptStreamBytes(plainSrc)
+	if err != nil {
 		s := mapTripleError(err)
 		setLastErr(s)
 		return 0, s
 	}
-	if wire.Len() > len(wireDst) {
+	if len(wire) > len(wireDst) {
 		setLastErr(StatusBufferTooSmall)
-		return wire.Len(), StatusBufferTooSmall
+		return len(wire), StatusBufferTooSmall
 	}
-	copy(wireDst, wire.Bytes())
-	return wire.Len(), StatusOK
+	copy(wireDst, wire)
+	return len(wire), StatusOK
 }
 
 // TripleDecryptStream is the receive-side counterpart of
-// [TripleEncryptStream]. Reverses the Pipeline chain: wrapper
-// unwrap-Reader → itb Triple 8-seed Streaming AEAD (or Non-AEAD)
-// decrypt → parallax decrypt-Writer. Same caller-allocated-buffer
-// convention.
+// [TripleEncryptStream]. Routes through
+// [triple.Pipeline.DecryptStreamBytes], whose direct path decodes
+// single-chunk wires via the itb-root Cfg-aware entries and whose
+// wrapper posture unwraps the wire in one in-place keystream pass;
+// multi-chunk and parallax-on wires take the full reverse chain. Same
+// caller-allocated-buffer convention; the caller's wireSrc bytes are
+// never mutated.
 func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusDecryptFailed)
 
@@ -203,20 +205,18 @@ func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st
 	if st != StatusOK {
 		return 0, st
 	}
-	var plain bytes.Buffer
-	// Pre-size to the wire length — plaintext is always ≤ wire.
-	plain.Grow(len(wireSrc))
-	if err := h.pipe.DecryptStream(bytes.NewReader(wireSrc), &plain); err != nil {
+	plain, err := h.pipe.DecryptStreamBytes(wireSrc)
+	if err != nil {
 		s := mapTripleError(err)
 		setLastErr(s)
 		return 0, s
 	}
-	if plain.Len() > len(plainDst) {
+	if len(plain) > len(plainDst) {
 		setLastErr(StatusBufferTooSmall)
-		return plain.Len(), StatusBufferTooSmall
+		return len(plain), StatusBufferTooSmall
 	}
-	copy(plainDst, plain.Bytes())
-	return plain.Len(), StatusOK
+	copy(plainDst, plain)
+	return len(plain), StatusOK
 }
 
 // TripleEncryptMessage runs a Single Message encrypt across the
