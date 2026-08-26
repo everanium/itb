@@ -20,10 +20,14 @@ let main args =
     | "stream" ->
         BenchStream.run ()
         0
+    | "stream_one_shot" ->
+        BenchStreamOneShot.run ()
+        0
     | "all" ->
         BenchMessage.run ()
         BenchStream.run ()
+        BenchStreamOneShot.run ()
         0
     | _ ->
-        eprintfn "usage: EveraniumItb.FSharp.Bench [message|stream|all]"
+        eprintfn "usage: EveraniumItb.FSharp.Bench [message|stream|stream_one_shot|all]"
         2

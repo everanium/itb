@@ -13,11 +13,15 @@ object Main:
     val _ = Runtime.setMemoryLimit(512L * 1024 * 1024)
     val _ = Runtime.setGCPercent(20)
     args.headOption.getOrElse("all") match
-      case "message" => BenchMessage.run()
-      case "stream"  => BenchStream.run()
+      case "message"         => BenchMessage.run()
+      case "stream"          => BenchStream.run()
+      case "stream_one_shot" => BenchStreamOneShot.run()
       case "all" =>
         BenchMessage.run()
         BenchStream.run()
+        BenchStreamOneShot.run()
       case other =>
-        System.err.println(s"usage: bench [message|stream|all] (got: $other)")
+        System.err.println(
+          s"usage: bench [message|stream|stream_one_shot|all] (got: $other)"
+        )
         sys.exit(2)

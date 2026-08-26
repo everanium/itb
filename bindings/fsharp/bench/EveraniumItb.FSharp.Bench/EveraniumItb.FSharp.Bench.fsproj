@@ -13,6 +13,7 @@
     <Compile Include="BenchUtil.fs" />
     <Compile Include="BenchMessage.fs" />
     <Compile Include="BenchStream.fs" />
+    <Compile Include="BenchStreamOneShot.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
