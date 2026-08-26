@@ -136,7 +136,23 @@ The recovery is ported from the pre-v0.3.0 CRC128 Crib KPA (`crib_crc128_kpa.py`
 
 ### FNV-1a lo-lane SAT — architecturally foreclosed
 
-**Budget — mathematically closed, not run.** The pre-v0.3.0 SAT break needed ≈ 8 h single-core against Single/barrier-off. Re-running it against the v0.3.0 barrier is foreclosed upstream of solver speed: the FNV-1a lo lane is invertible by a solver **only when the crib anchors a fixed bit-to-lane mapping** so the instance can be written down, and Part 1 removes that anchor. This is an instance-formulation closure, not a solver-throughput one — no amount of SAT horsepower converts an unformulable instance into a solvable one.
+**Threat model — fresh nonce Full KPA, FNV-1a on every seed role.** Each of the 8 mandatory seeds (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3) is keyed by FNV-1a with independent random key material; nonces are fresh per message. The pre-v0.3.0 record recovered a functional FNV-1a lo-lane compound key in ≈ 8 h single-core against Single Ouroboros with the overlay disengaged, yielding 83–85 % byte-level plaintext recovery on JSON / HTML holdouts (v0.2 `Phase 2g`; archived detail in [REDTEAM-v0.2.md § Phase 2g](archive/REDTEAM-v0.2.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based)).
+
+**Verdict — null anchoring at every candidate startPixel across every attacker regime, sample-bounded.** The `redteam_broken_fnv1a_sat_test.go` probes drive FNV-1a on all 8 seeds through `Encrypt3x128Cfg` on a 157-byte JSON crib (public-schema prefix — identifier field, ISO timestamp) and measure the naive-crib SAT anchoring at three regimes:
+
+| Probe | Regime | Sample | Observable | Verdict |
+|---|---|---|---|---|
+| F1 pre-anchor structure | attacker-realistic (no seed peek) | 3 snakes × 208 candidate startPixels × 6 crib pixels | per-pixel achievable xor_mask56 set size mean ≈ **55.8**; max cross-pixel set intersection over every candidate startPixel: **0 / 0 / 0** | pre-v0.3.0 CRC128-style compound-K intersection filter yields no anchor reduction; discriminator moves to SAT |
+| F2 true-anchor upper bound | `[lab-peek: true_seeds]` noiseSeed + dataSeed_i granted | 3 snakes × 208 startPixels × 6 crib pixels × 8 channels | full-channel anchor shifts **0 / 208, 0 / 208, 0 / 209**; max per-shift channel matches **3 / 48** against chance floor **0.375** | even the oracle attacker with (np, r) handed over fails at chance floor; naive-crib xor_mask56 never equals the true dataHash prefix |
+| F4 startPixel-peek | `[lab-peek: sp_i]` + `[lab-peek: true_seeds]` | 3 snakes at disclosed sp_i | channel matches at true sp = **0, 4, 0 / 48**; shift-averaged floor = **0.32, 0.41, 0.39** | disclosing per-snake startPixel does not restore the anchor; match count at sp_i is at the same floor as any other shift |
+
+The mechanism is **multi-seed joint coupling**: every attacker-visible byte is the composition of independent contributions from noiseSeed (per-pixel noisePos), lockSeed (per-chunk 48-bit mask triple over ≈ 2^70.20 space), dataSeed_i (per-pixel channel-XOR + rotation), and startSeed_i (per-snake sp_i). No per-chain observation channel exists. Even granting 5–6 of the 8 chains as lab peek (F2 + F4 posture, corresponding to a hypothetical break of noiseSeed + dataSeed_i + startSeed_i) leaves the joint constraint under-determined by the interlock permutation, which continues to move the crib bytes off every attacker-predicted position.
+
+**Instance-formulation closure, not solver-throughput closure.** The pre-v0.3.0 SAT harness (`sat_harness_4round.py`) anchored on the Single Ouroboros mapping "plaintext byte K → container pixel (startPixel + K/7) mod totalPixels, channel K%7". Under the v0.3.0 barrier that mapping does not hold: the 48-bit interlock permutation displaces the assumed crib bytes at nearly every position, corroborated by the F5 displacement measurement on the same JSON crib (per-snake fractions **1/53, 0/52, 1/52**, at or below the ≈ 1/40 same-symbol coincidence rate of the 40-symbol JSON alphabet). The pre-v0.3.0 SAT instance thus **cannot be written down against the shipped construction** — no amount of Bitwuzla throughput converts an unformulable instance into a solvable one.
+
+**Bitwuzla SAT run corroborates.** A compact adaptation of the pre-v0.3.0 harness under `scripts/redteam/itb/fnv1a_sat/sat_probe.py` encodes the naive-crib SAT anchor as a symbolic FNV-1a 4-round chain (256-bit dataSeed_i lo-lane unknown) plus per-pixel disjunction over the 56 (np, r) tuples chained through the bit-slice + rotation constraint. Under the maximum-peek attacker regime (true (np, r) granted via lab peek — 5 of 8 chains inverted for free — and true sp_i disclosed as the Layer 3 exception), Bitwuzla 0.9.1 returns **UNSAT** on all 3 snakes at N = 2 crib pixels in ≈ 7–10 s per snake. Even the strongest-attacker single-chain SAT — attacker granted every seed except the dataSeed_i lo lane — fails to find a satisfying dataSeed_i under the naive-crib anchoring premise. The full coupled-8-chain SAT (all 8 chains unknown plus the ≈ 2^70.20 per-chunk interlock mask triples symbolic) is trivially harder; the isolated-chain UNSAT is a strict upper bound.
+
+**Positive control corroborated.** `TestRedTeamBrokenFNV1aCribKPAControl` drives the same 8-seed FNV-1a configuration through the low-level `process128Cfg` encoder (Single Ouroboros, barrier off — not reachable through the shipped API) and confirms the anchor logic recovers the true xor_mask56 at every one of the first 6 crib pixels under true (sp, np, r), matching the pre-v0.3.0 SAT anchoring premise bit-exact. The barrier null is contrasted against a filter that IS sensitive on the retired configuration.
 
 ### Barrier crib-anchor displacement (both controls)
 
@@ -145,13 +161,15 @@ A structural probe (`TestRedTeamBrokenBarrierDisplacement`, ≈ 0.07 s; holds tr
 ### Reproduction
 
 ```
-go test -run TestRedTeamBroken -v ./              # all broken-primitive probes
+go test -run TestRedTeamBroken -v ./                  # all broken-primitive probes
 go test -run TestRedTeamBrokenCRC128CribKPA -v ./
 go test -run TestRedTeamBrokenBarrierDisplacement -v ./
 go test -run TestRedTeamBrokenCRC128NonceReuse -v ./
+go test -run TestRedTeamBrokenFNV1a -v ./             # FNV-1a lo-lane SAT probes F1..F6
+./scripts/redteam/itb/fnv1a_sat/run.sh                # aggregate the FNV-1a probes + optional Bitwuzla SAT
 ```
 
-The harness is `redteam_broken_test.go` (package `itb`); the CRC128 / FNV-1a adapters and the ported filter carry inline provenance comments pointing at the retired lab scaffolds and the Python arsenal routines they adapt.
+The harness is `redteam_broken_test.go` (CRC128 + shared adapters) and `redteam_broken_fnv1a_sat_test.go` (FNV-1a probes F1..F6), package `itb`; the CRC128 / FNV-1a adapters and the ported filter carry inline provenance comments pointing at the retired lab scaffolds and the Python arsenal routines they adapt. The compact Bitwuzla harness lives at `scripts/redteam/itb/fnv1a_sat/sat_probe.py`; it consumes the corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus` under `tmp/redteam/fnv1a_sat/f6_corpus_bundle.json` and runs against the maximum-peek attacker regime described above.
 
 ## PRF-grade versus broken-primitive equivalence
 
