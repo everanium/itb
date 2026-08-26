@@ -230,6 +230,39 @@ std::size_t Pipeline::decrypt_message_into(std::span<const std::byte> wire,
 }
 
 /* ------------------------------------------------------------------ */
+/* One-shot stream encrypt / decrypt                                   */
+/* ------------------------------------------------------------------ */
+/* Whole-buffer stream entries in a single FFI round trip: the
+ * streaming wiring runs inside libitb, so the buffer-in / buffer-out
+ * dispatch is identical to the Single Message pair. */
+
+std::vector<std::uint8_t> Pipeline::encrypt_stream_one_shot(std::span<const std::byte> plain) const
+{
+    return cipher_call(handle_, ITB_Triple_EncryptStream, plain,
+                       "Pipeline::encrypt_stream_one_shot");
+}
+
+std::vector<std::uint8_t> Pipeline::decrypt_stream_one_shot(std::span<const std::byte> wire) const
+{
+    return cipher_call(handle_, ITB_Triple_DecryptStream, wire,
+                       "Pipeline::decrypt_stream_one_shot");
+}
+
+std::size_t Pipeline::encrypt_stream_one_shot_into(std::span<const std::byte> plain,
+                                                   std::span<std::byte> dst) const
+{
+    return cipher_call_into(handle_, ITB_Triple_EncryptStream, plain, dst,
+                            "Pipeline::encrypt_stream_one_shot_into");
+}
+
+std::size_t Pipeline::decrypt_stream_one_shot_into(std::span<const std::byte> wire,
+                                                   std::span<std::byte> dst) const
+{
+    return cipher_call_into(handle_, ITB_Triple_DecryptStream, wire, dst,
+                            "Pipeline::decrypt_stream_one_shot_into");
+}
+
+/* ------------------------------------------------------------------ */
 /* Profile registration                                                */
 /* ------------------------------------------------------------------ */
 

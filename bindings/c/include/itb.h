@@ -194,6 +194,22 @@ itb_status itb_pipeline_decrypt_stream_pump(const itb_pipeline *pipe,
                                             const uint8_t *wire, size_t wire_len,
                                             uint8_t **plain_out, size_t *plain_len_out);
 
+/* One-shot stream encrypt for callers holding the whole plaintext in
+ * memory: a single FFI round trip through the Pipeline's stream
+ * chain. For bounded-memory streaming use
+ * itb_pipeline_encrypt_stream_pump or the incremental
+ * itb_pipeline_encrypt_stream_begin session. *wire_out is allocated
+ * (release with itb_bytes_free); on failure it is NULL and
+ * *wire_len_out is 0. */
+itb_status itb_pipeline_encrypt_stream_one_shot(const itb_pipeline *pipe,
+                                                const uint8_t *plain, size_t plain_len,
+                                                uint8_t **wire_out, size_t *wire_len_out);
+
+/* Receive-side counterpart of itb_pipeline_encrypt_stream_one_shot. */
+itb_status itb_pipeline_decrypt_stream_one_shot(const itb_pipeline *pipe,
+                                                const uint8_t *wire, size_t wire_len,
+                                                uint8_t **plain_out, size_t *plain_len_out);
+
 /* Opens an incremental encrypt session (plaintext in, wire out). The
  * session must be released with itb_stream_free() and must not
  * outlive its Pipeline. */
@@ -281,8 +297,8 @@ int itb_hash_width(size_t index);
 /* Bytes helper                                                        */
 /* ------------------------------------------------------------------ */
 
-/* Releases a buffer allocated by the *_message / *_stream_pump
- * entries. NULL-safe. */
+/* Releases a buffer allocated by the *_message / *_stream_pump /
+ * *_stream_one_shot entries. NULL-safe. */
 void itb_bytes_free(uint8_t *bytes);
 
 #ifdef __cplusplus

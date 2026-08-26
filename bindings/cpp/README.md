@@ -103,7 +103,9 @@ itb::Pipeline receiver2 =
     itb::Pipeline::open("singlemsg-triple-mac-v1", sender.blob());
 ```
 
-For bounded-memory streaming, `encrypt_stream_pump` /
+`encrypt_stream_one_shot` / `decrypt_stream_one_shot` put a whole
+in-memory payload through the stream chain in a single call. For
+bounded-memory streaming, `encrypt_stream_pump` /
 `decrypt_stream_pump` move a whole buffer through an incremental
 session; the explicit `encrypt_stream_begin` / `decrypt_stream_begin`
 sessions expose `write` / `end` / `read` for caller-driven loops.
@@ -112,7 +114,8 @@ Byte inputs cross the API as `std::span<const std::byte>`; the
 `std::span<const std::uint8_t>`, and `std::string_view` carriers.
 
 Allocation-sensitive callers use the reusable-buffer variants:
-`encrypt_message_into` / `decrypt_message_into` and
+`encrypt_message_into` / `decrypt_message_into`,
+`encrypt_stream_one_shot_into` / `decrypt_stream_one_shot_into`, and
 `encrypt_stream_pump_into` / `decrypt_stream_pump_into` write into a
 caller-owned `std::span<std::byte>` (sized via
 `itb::out_bound(payload)`, adapted from a `std::vector` via

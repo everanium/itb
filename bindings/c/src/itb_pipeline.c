@@ -277,6 +277,29 @@ itb_status itb_pipeline_decrypt_message(const itb_pipeline *pipe,
 }
 
 /* ------------------------------------------------------------------ */
+/* One-shot stream encrypt / decrypt                                   */
+/* ------------------------------------------------------------------ */
+/* Whole-buffer stream entries in a single FFI round trip: the
+ * streaming wiring runs inside libitb, so the buffer-in / buffer-out
+ * dispatch is identical to the Single Message pair. */
+
+itb_status itb_pipeline_encrypt_stream_one_shot(const itb_pipeline *pipe,
+                                                const uint8_t *plain, size_t plain_len,
+                                                uint8_t **wire_out, size_t *wire_len_out)
+{
+    return cipher_call(pipe, ITB_Triple_EncryptStream,
+                       plain, plain_len, wire_out, wire_len_out);
+}
+
+itb_status itb_pipeline_decrypt_stream_one_shot(const itb_pipeline *pipe,
+                                                const uint8_t *wire, size_t wire_len,
+                                                uint8_t **plain_out, size_t *plain_len_out)
+{
+    return cipher_call(pipe, ITB_Triple_DecryptStream,
+                       wire, wire_len, plain_out, plain_len_out);
+}
+
+/* ------------------------------------------------------------------ */
 /* Profile registration                                                */
 /* ------------------------------------------------------------------ */
 
