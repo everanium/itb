@@ -4,7 +4,8 @@
 //!   zig build          — eitb CLI + bench binaries into zig-out/bin/
 //!   zig build test     — the tests/*.zig integration suite (one
 //!                        process per test file, run sequentially)
-//!   zig build bench    — runs bench_message + bench_stream
+//!   zig build bench    — runs bench_message + bench_stream +
+//!                        bench_stream_one_shot
 //!
 //! Prerequisites (built by build.sh): dist/linux-amd64/libitb.so
 //! (Go c-shared) and bindings/c/build/libitb_c.a (the C binding
@@ -26,7 +27,7 @@ const test_names = [_][]const u8{
     "stream_sticky",
 };
 
-const bench_names = [_][]const u8{ "bench_message", "bench_stream" };
+const bench_names = [_][]const u8{ "bench_message", "bench_stream", "bench_stream_one_shot" };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});

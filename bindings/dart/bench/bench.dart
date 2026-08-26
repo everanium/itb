@@ -1,8 +1,9 @@
 // Micro-benchmarks for the Dart binding: encryptMessageInto (Single
-// Message shape, caller-buffer variant) and incremental stream pump
-// (Streaming Non-AEAD shape, reusable drain scratch) throughput at
-// 1 MiB / 16 MiB / 64 MiB. Wall-clock via
-// Stopwatch; output is a fixed-width table:
+// Message shape, caller-buffer variant), incremental stream pump
+// (Streaming Non-AEAD shape, reusable drain scratch), and stream
+// one-shot (whole-buffer path, single FFI round trip through the
+// Pipeline's stream chain) throughput at 1 MiB / 16 MiB / 64 MiB.
+// Wall-clock via Stopwatch; output is a fixed-width table:
 //
 //   bench             size     mb_per_sec
 //   message           1 MiB    <n>
@@ -197,6 +198,23 @@ void benchStream() {
   pipe.free();
 }
 
+void benchStreamOneShot() {
+  final pipe =
+      Itb.create(profileName('ITB_STREAM_PROFILE', 'streaming-noaead-triple-v1'), buildOpts());
+  for (final size in sizes) {
+    final plain = payload(size, size + 2);
+    benchCase('stream_one_shot', size, () {
+      pipe.encryptStreamOneShot(plain);
+    });
+    // Pre-encrypt one wire outside the decrypt timing loop.
+    final decWire = pipe.encryptStreamOneShot(plain);
+    benchCase('stream_one_shot-dec', size, () {
+      pipe.decryptStreamOneShot(decWire);
+    });
+  }
+  pipe.free();
+}
+
 void main() {
   // Bench-scale allocation churn leaks Go scratch heap unboundedly
   // without a soft memory cap + aggressive GC; the return values
@@ -207,4 +225,5 @@ void main() {
   benchHeader();
   benchMessage();
   benchStream();
+  benchStreamOneShot();
 }

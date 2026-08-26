@@ -2,8 +2,9 @@
 #
 # run_bench.sh -- bench runner for the Node.js / TypeScript binding.
 # Builds libitb.so + the binding via build.sh, points ITB_LIBITB_PATH
-# at the freshly-built shared library, then runs both bench scripts
-# (bench_message + bench_stream) at 1 / 16 / 64 MiB.
+# at the freshly-built shared library, then runs every bench script
+# (bench_message + bench_stream + bench_stream_one_shot) at
+# 1 / 16 / 64 MiB.
 
 set -eu
 set -o pipefail
@@ -57,3 +58,4 @@ export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
 node dist-bench/benches/bench_message.js
 export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
 node dist-bench/benches/bench_stream.js
+node dist-bench/benches/bench_stream_one_shot.js
