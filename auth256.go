@@ -121,13 +121,7 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	}
 
 	// MAC over concatenated payloads (covers all fill bytes)
-	macInputLen := len(payloads[0]) + len(payloads[1]) + len(payloads[2])
-	macInputPtr, macInput := acquireBuffer(macInputLen)
-	defer releaseBuffer(macInputPtr, macInput)
-	copy(macInput, payloads[0])
-	copy(macInput[len(payloads[0]):], payloads[1])
-	copy(macInput[len(payloads[0])+len(payloads[1]):], payloads[2])
-	tag := macFunc(macInput)
+	tag := macTagCfg(cfg, macFunc, payloads[0], payloads[1], payloads[2])
 
 	// full2 = payload2 || tag || 0x00 (single-message dummy flag slot)
 	full2Ptr, full2 := acquireBuffer(caps[2])
@@ -284,13 +278,7 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	tag := decoded[2][payloadLen2 : payloadLen2+tagSize]
 
 	// Verify MAC over concatenated payloads
-	macInputLen := len(decoded[0]) + len(decoded[1]) + payloadLen2
-	macInputPtr, macInput := acquireBuffer(macInputLen)
-	copy(macInput, decoded[0])
-	copy(macInput[len(decoded[0]):], decoded[1])
-	copy(macInput[len(decoded[0])+len(decoded[1]):], payload2)
-	expected := macFunc(macInput)
-	releaseBuffer(macInputPtr, macInput)
+	expected := macTagCfg(cfg, macFunc, decoded[0], decoded[1], payload2)
 
 	if !constantTimeEqual(tag, expected) {
 		return nil, ErrMACFailure
@@ -439,22 +427,10 @@ func EncryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 	// MAC over concatenated payloads || streamID || uint64_le(offset) || flag
 	flag := streamFlagByte(finalFlag)
-	macInputLen := len(payloads[0]) + len(payloads[1]) + len(payloads[2]) + 32 + 8 + 1
-	macInputPtr, macInput := acquireBuffer(macInputLen)
-	defer releaseBuffer(macInputPtr, macInput)
-	off := 0
-	copy(macInput[off:], payloads[0])
-	off += len(payloads[0])
-	copy(macInput[off:], payloads[1])
-	off += len(payloads[1])
-	copy(macInput[off:], payloads[2])
-	off += len(payloads[2])
-	copy(macInput[off:], streamID[:])
-	off += 32
-	binary.LittleEndian.PutUint64(macInput[off:], cumulativePixelOffset)
-	off += 8
-	macInput[off] = flag
-	tag := macFunc(macInput[:macInputLen])
+	var offsetLE [8]byte
+	binary.LittleEndian.PutUint64(offsetLE[:], cumulativePixelOffset)
+	tag := macTagCfg(cfg, macFunc,
+		payloads[0], payloads[1], payloads[2], streamID[:], offsetLE[:], []byte{flag})
 
 	// full2 = payload2 || tag || flag
 	full2Ptr, full2 := acquireBuffer(caps[2])
@@ -609,22 +585,10 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	flag := decoded[2][payloadLen2+tagSize]
 
 	// Verify MAC over concatenated payloads || streamID || uint64_le(offset) || flag
-	macInputLen := len(decoded[0]) + len(decoded[1]) + payloadLen2 + 32 + 8 + 1
-	macInputPtr, macInput := acquireBuffer(macInputLen)
-	off := 0
-	copy(macInput[off:], decoded[0])
-	off += len(decoded[0])
-	copy(macInput[off:], decoded[1])
-	off += len(decoded[1])
-	copy(macInput[off:], payload2)
-	off += payloadLen2
-	copy(macInput[off:], streamID[:])
-	off += 32
-	binary.LittleEndian.PutUint64(macInput[off:], cumulativePixelOffset)
-	off += 8
-	macInput[off] = flag
-	expected := macFunc(macInput[:macInputLen])
-	releaseBuffer(macInputPtr, macInput)
+	var offsetLE [8]byte
+	binary.LittleEndian.PutUint64(offsetLE[:], cumulativePixelOffset)
+	expected := macTagCfg(cfg, macFunc,
+		decoded[0], decoded[1], payload2, streamID[:], offsetLE[:], []byte{flag})
 
 	if !constantTimeEqual(tag, expected) {
 		return nil, false, ErrMACFailure

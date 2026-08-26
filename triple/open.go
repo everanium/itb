@@ -171,6 +171,13 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 		if err != nil {
 			return nil, fmt.Errorf("triple: macs.Make(%q): %w", macName, err)
 		}
+		// Multi-slice MAC arm: lets the authenticated entry points
+		// absorb the MAC input parts without the concatenation copy.
+		// Same primitive, same key — tags are byte-identical.
+		cfg.MACIncremental, err = macs.MakeIncremental(macName, macKey)
+		if err != nil {
+			return nil, fmt.Errorf("triple: macs.MakeIncremental(%q): %w", macName, err)
+		}
 	} else {
 		// No-MAC profile — drop any blob-side MAC material to keep
 		// the Pipeline shape consistent with the resolved profile.

@@ -123,6 +123,16 @@ validated against the primitive's minimum / fixed length):
 mac, _ := macs.Make("hmac-sha256", key)
 ```
 
+Every shipped MAC additionally provides an incremental constructor
+(`KMAC256Incremental` / `HMACSHA256Incremental` / `HMACBLAKE3Incremental`,
+name-keyed via `macs.MakeIncremental`) returning an
+`itb.MACIncrementalFunc` — the multi-slice arm accepting the MAC input
+as ordered chunks. The authenticated entry points consume it through
+`itb.Config.MACIncremental` to skip the payload-concatenation copy;
+the tag is byte-for-byte identical to the `itb.MACFunc` over the
+concatenation (pinned per primitive by a 100-fixture parity test).
+`MACFunc` remains the primary type; the incremental arm is additive.
+
 `KMAC256` has a `WithCustomization` counterpart for domain
 separation across distinct usages of the same key. `HMAC-SHA256`
 and `HMAC-BLAKE3` take the key as their only argument — there is

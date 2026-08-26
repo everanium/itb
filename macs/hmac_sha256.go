@@ -50,6 +50,39 @@ func HMACSHA256(key []byte) (itb.MACFunc, error) {
 	}, nil
 }
 
+// HMACSHA256Incremental returns the multi-slice arm of [HMACSHA256]:
+// an itb.MACIncrementalFunc absorbing its chunks in order and
+// emitting the same tag as the HMAC-SHA256 itb.MACFunc over the
+// concatenation of those chunks, byte-for-byte. Same pooled pre-keyed
+// hasher strategy — only the concat copy disappears.
+func HMACSHA256Incremental(key []byte) (itb.MACIncrementalFunc, error) {
+	if len(key) == 0 {
+		return nil, errKey
+	}
+	keyCopy := append([]byte(nil), key...)
+
+	pool := &sync.Pool{
+		New: func() any {
+			h := hmac.New(sha256.New, keyCopy)
+			return h
+		},
+	}
+
+	return func(chunks ...[]byte) []byte {
+		h := pool.Get().(hash.Hash)
+		h.Reset()
+		for _, c := range chunks {
+			h.Write(c)
+		}
+		var sum [32]byte
+		h.Sum(sum[:0])
+		pool.Put(h)
+		out := make([]byte, 32)
+		copy(out, sum[:])
+		return out
+	}, nil
+}
+
 // errKey is the sentinel returned when a factory receives an empty
 // key. The Make dispatcher applies a stricter MinKeyBytes check
 // before reaching the per-primitive factories; this guard exists
