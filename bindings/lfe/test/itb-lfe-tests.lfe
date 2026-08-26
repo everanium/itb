@@ -83,13 +83,20 @@
         (is-equal 'ok (itb-lfe:free sender))))))
 
 (deftestgen stream-zero-length-payload
-  ;; The Non-AEAD stream wire is body-only: a zero-length payload
-  ;; yields a zero-length wire, and the round trip still holds.
+  ;; Empty input is rejected at the triple.Pipeline layer before any
+  ;; wire is produced: an encrypt session ended without a single
+  ;; write surfaces bad_input on the drain, and the one-shot decrypt
+  ;; entry rejects a zero-length wire directly.
   (tuple 'timeout 120
     (lambda ()
       (let ((`#(,sender ,receiver) (pair #"streaming-noaead-triple-v1")))
-        (let ((wire (pump sender 'encrypt #"")))
-          (is-equal #"" (pump receiver 'decrypt wire)))
+        (let* ((`#(ok ,stream) (itb-lfe:encrypt-stream sender))
+               (`ok (itb-lfe:stream-end stream))
+               (`#(error #(bad_input ,_)) (itb-lfe:stream-read stream (SLICE))))
+          (is-equal 'ok (itb-lfe:stream-free stream)))
+        (let ((`#(error #(bad_input ,_))
+                (itb-lfe:decrypt-stream-one-shot receiver #"")))
+          'ok)
         (is-equal 'ok (itb-lfe:free receiver))
         (is-equal 'ok (itb-lfe:free sender))))))
 

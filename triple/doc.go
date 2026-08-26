@@ -43,6 +43,15 @@
 // default applies (see [github.com/everanium/itb.DefaultNonceBits] /
 // [github.com/everanium/itb.DefaultBarrierFill]).
 //
+// Empty input (nil or zero-length plaintext / wire) is rejected
+// uniformly with [ErrEmptyInput] across every Pipeline cipher entry
+// point — Encrypt and Decrypt, Message and Stream shapes alike —
+// before any wire is produced or parsed. An empty message has no
+// cover story in any cryptographic construction: it is always
+// distinguishable at some layer (wire length, timing, traffic count),
+// so no zero-payload wire exists on this surface. Callers for whom an
+// empty signal is meaningful send a marker byte instead.
+//
 // Reader notice — the Interlocked Barrier is always on and
 // non-disableable; the Triple 3-snake payload split is the only
 // cipher mode. There are no runtime overlay toggles and no

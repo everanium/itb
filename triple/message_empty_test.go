@@ -2,34 +2,32 @@ package triple
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
 // emptyPayloadToggleCases spans the four parallax × wrapper postures
-// for the empty-payload wire-envelope tests below. wantEnvelope holds
-// for every wrapper-on posture: the wire must carry at least the
-// outer cipher nonce even when the payload is empty, so a receiver
-// can distinguish an empty message from no message at all. With the
-// wrapper disengaged the No MAC arm's empty-payload wire is empty by
-// contract (mirrors the itb-root stream encoders' empty-input
-// behaviour); only the round-trip is asserted there.
+// for the empty-input rejection tests below. The rejection contract
+// is posture-independent: every Pipeline cipher entry point returns
+// [ErrEmptyInput] on empty input before any wire is produced or
+// parsed, so no zero-payload wire exists to distinguish across
+// profiles or toggle postures.
 var emptyPayloadToggleCases = []struct {
-	name         string
-	parallax     bool
-	wrapper      bool
-	wantEnvelope bool
+	name     string
+	parallax bool
+	wrapper  bool
 }{
-	{"parallaxOn_wrapperOn", true, true, true},
-	{"parallaxOff_wrapperOn", false, true, true},
-	{"parallaxOn_wrapperOff", true, false, false},
-	{"parallaxOff_wrapperOff", false, false, false},
+	{"parallaxOn_wrapperOn", true, true},
+	{"parallaxOff_wrapperOn", false, true},
+	{"parallaxOn_wrapperOff", true, false},
+	{"parallaxOff_wrapperOff", false, false},
 }
 
-// runEmptyMessageRoundTrip Init/Opens the profile at the given
-// toggles, encrypts an empty payload via [Pipeline.EncryptMessage],
-// asserts the wire-envelope expectation, and asserts the wire
-// decrypts back to an empty plaintext via [Pipeline.DecryptMessage].
-func runEmptyMessageRoundTrip(t *testing.T, profile string, parallax, wrapper, wantEnvelope bool) {
+// runEmptyMessageRejection Init/Opens the profile at the given
+// toggles and asserts both message-shape entry points reject empty
+// input with [ErrEmptyInput] — encrypt side on an empty plaintext,
+// decrypt side on an empty wire.
+func runEmptyMessageRejection(t *testing.T, profile string, parallax, wrapper bool) {
 	t.Helper()
 	opts := Opts{
 		WithParallax: boolPtrHelper(parallax),
@@ -46,57 +44,52 @@ func runEmptyMessageRoundTrip(t *testing.T, profile string, parallax, wrapper, w
 	}
 	defer rx.Close()
 
-	wire, err := pipe.EncryptMessage(nil)
-	if err != nil {
-		t.Fatalf("EncryptMessage: %v", err)
+	if _, err := pipe.EncryptMessage(nil); !errors.Is(err, ErrEmptyInput) {
+		t.Fatalf("EncryptMessage(nil): got err=%v, want %v", err, ErrEmptyInput)
 	}
-	if wantEnvelope && len(wire) == 0 {
-		t.Fatalf("empty payload produced an empty wire; want the outer cipher envelope")
+	if _, err := pipe.EncryptMessage([]byte{}); !errors.Is(err, ErrEmptyInput) {
+		t.Fatalf("EncryptMessage(empty): got err=%v, want %v", err, ErrEmptyInput)
 	}
-	recovered, err := rx.DecryptMessage(wire)
-	if err != nil {
-		t.Fatalf("DecryptMessage: %v", err)
+	if _, err := rx.DecryptMessage(nil); !errors.Is(err, ErrEmptyInput) {
+		t.Fatalf("DecryptMessage(nil): got err=%v, want %v", err, ErrEmptyInput)
 	}
-	if len(recovered) != 0 {
-		t.Fatalf("recovered non-empty plaintext: len=%d", len(recovered))
+	if _, err := rx.DecryptMessage([]byte{}); !errors.Is(err, ErrEmptyInput) {
+		t.Fatalf("DecryptMessage(empty): got err=%v, want %v", err, ErrEmptyInput)
 	}
 }
 
-// TestEncryptMessageEmptyPayloadNoMAC pins the empty-payload wire
-// contract on the Single Message No MAC profile: under every
-// wrapper-on posture the wire is non-empty (at least the outer cipher
-// nonce) and decrypts back to an empty plaintext.
+// TestEncryptMessageEmptyPayloadNoMAC pins the empty-input rejection
+// contract on the Single Message No MAC profile across every toggle
+// posture.
 func TestEncryptMessageEmptyPayloadNoMAC(t *testing.T) {
 	for _, tc := range emptyPayloadToggleCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			runEmptyMessageRoundTrip(t, ProfileSingleMsgTripleNoMACV1,
-				tc.parallax, tc.wrapper, tc.wantEnvelope)
+			runEmptyMessageRejection(t, ProfileSingleMsgTripleNoMACV1,
+				tc.parallax, tc.wrapper)
 		})
 	}
 }
 
 // TestEncryptMessageEmptyPayloadMAC is the MAC-arm counterpart of
-// [TestEncryptMessageEmptyPayloadNoMAC]. The MAC arm always emits the
-// streamID prefix plus a final-flag chunk, so the wire is non-empty
-// under every posture.
+// [TestEncryptMessageEmptyPayloadNoMAC] — same rejection contract on
+// the Single Message MAC profile.
 func TestEncryptMessageEmptyPayloadMAC(t *testing.T) {
 	for _, tc := range emptyPayloadToggleCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			runEmptyMessageRoundTrip(t, ProfileSingleMsgTripleMACV1,
-				tc.parallax, tc.wrapper, true)
+			runEmptyMessageRejection(t, ProfileSingleMsgTripleMACV1,
+				tc.parallax, tc.wrapper)
 		})
 	}
 }
 
-// TestEncryptStreamEmptyPayloadNoMAC pins the same empty-payload wire
-// contract on the Streaming Non-AEAD surfaces: the IO-Driven
-// [Pipeline.EncryptStream] and the whole-buffer
-// [Pipeline.EncryptStreamBytes] both emit the outer cipher envelope
-// for an empty input under every wrapper-on posture, and the wire
-// decrypts back to an empty plaintext through both receive-side
-// counterparts.
+// TestEncryptStreamEmptyPayloadNoMAC pins the same empty-input
+// rejection contract on the Streaming Non-AEAD surfaces: the
+// IO-Driven [Pipeline.EncryptStream] / [Pipeline.DecryptStream] pair
+// and the whole-buffer [Pipeline.EncryptStreamBytes] /
+// [Pipeline.DecryptStreamBytes] pair all return [ErrEmptyInput] for
+// empty input under every toggle posture, with no wire byte written.
 func TestEncryptStreamEmptyPayloadNoMAC(t *testing.T) {
 	for _, tc := range emptyPayloadToggleCases {
 		tc := tc
@@ -116,47 +109,29 @@ func TestEncryptStreamEmptyPayloadNoMAC(t *testing.T) {
 			}
 			defer rx.Close()
 
-			// IO-Driven direction.
+			// IO-Driven direction: rejection surfaces before any wire
+			// byte reaches the destination.
 			var wire bytes.Buffer
-			if err := pipe.EncryptStream(bytes.NewReader(nil), &wire); err != nil {
-				t.Fatalf("EncryptStream: %v", err)
+			if err := pipe.EncryptStream(bytes.NewReader(nil), &wire); !errors.Is(err, ErrEmptyInput) {
+				t.Fatalf("EncryptStream(empty): got err=%v, want %v", err, ErrEmptyInput)
 			}
-			if tc.wantEnvelope && wire.Len() == 0 {
-				t.Fatalf("EncryptStream: empty input produced an empty wire; want the outer cipher envelope")
+			if wire.Len() != 0 {
+				t.Fatalf("EncryptStream(empty) wrote %d wire bytes; want 0", wire.Len())
 			}
 			var plain bytes.Buffer
-			if err := rx.DecryptStream(bytes.NewReader(wire.Bytes()), &plain); err != nil {
-				t.Fatalf("DecryptStream: %v", err)
+			if err := rx.DecryptStream(bytes.NewReader(nil), &plain); !errors.Is(err, ErrEmptyInput) {
+				t.Fatalf("DecryptStream(empty): got err=%v, want %v", err, ErrEmptyInput)
 			}
 			if plain.Len() != 0 {
-				t.Fatalf("DecryptStream recovered non-empty plaintext: len=%d", plain.Len())
+				t.Fatalf("DecryptStream(empty) wrote %d plaintext bytes; want 0", plain.Len())
 			}
 
 			// Whole-buffer direction.
-			wireBytes, err := pipe.EncryptStreamBytes(nil)
-			if err != nil {
-				t.Fatalf("EncryptStreamBytes: %v", err)
+			if _, err := pipe.EncryptStreamBytes(nil); !errors.Is(err, ErrEmptyInput) {
+				t.Fatalf("EncryptStreamBytes(nil): got err=%v, want %v", err, ErrEmptyInput)
 			}
-			if tc.wantEnvelope && len(wireBytes) == 0 {
-				t.Fatalf("EncryptStreamBytes: empty input produced an empty wire; want the outer cipher envelope")
-			}
-			recovered, err := rx.DecryptStreamBytes(wireBytes)
-			if err != nil {
-				t.Fatalf("DecryptStreamBytes: %v", err)
-			}
-			if len(recovered) != 0 {
-				t.Fatalf("DecryptStreamBytes recovered non-empty plaintext: len=%d", len(recovered))
-			}
-
-			// Cross-decode: the IO-Driven wire through the whole-buffer
-			// receive entry and vice versa.
-			crossA, err := rx.DecryptStreamBytes(wire.Bytes())
-			if err != nil || len(crossA) != 0 {
-				t.Fatalf("cross-decode stream→bytes: len=%d err=%v", len(crossA), err)
-			}
-			var crossB bytes.Buffer
-			if err := rx.DecryptStream(bytes.NewReader(wireBytes), &crossB); err != nil || crossB.Len() != 0 {
-				t.Fatalf("cross-decode bytes→stream: len=%d err=%v", crossB.Len(), err)
+			if _, err := rx.DecryptStreamBytes(nil); !errors.Is(err, ErrEmptyInput) {
+				t.Fatalf("DecryptStreamBytes(nil): got err=%v, want %v", err, ErrEmptyInput)
 			}
 		})
 	}
@@ -164,19 +139,17 @@ func TestEncryptStreamEmptyPayloadNoMAC(t *testing.T) {
 
 // TestEncryptMessageSmallPayloadBoundaryMatrix walks small payload
 // sizes around chunk-header and block boundaries across both Single
-// Message profiles and every parallax × wrapper posture, asserting a
-// byte-exact round-trip and — for every combination whose wire must
-// carry an envelope (any non-empty payload, any MAC arm, any
-// wrapper-on posture) — a non-empty wire.
+// Message profiles and every parallax × wrapper posture. The size=0
+// row asserts the [ErrEmptyInput] rejection; every non-zero size
+// asserts a byte-exact round-trip with a non-empty wire.
 func TestEncryptMessageSmallPayloadBoundaryMatrix(t *testing.T) {
 	sizes := []int{0, 1, 4, 15, 16, 4095, 4096}
 	profiles := []struct {
 		name    string
 		profile string
-		mac     bool
 	}{
-		{"MAC", ProfileSingleMsgTripleMACV1, true},
-		{"NoMAC", ProfileSingleMsgTripleNoMACV1, false},
+		{"MAC", ProfileSingleMsgTripleMACV1},
+		{"NoMAC", ProfileSingleMsgTripleNoMACV1},
 	}
 	for _, pr := range profiles {
 		for _, tc := range emptyPayloadToggleCases {
@@ -200,11 +173,17 @@ func TestEncryptMessageSmallPayloadBoundaryMatrix(t *testing.T) {
 				for _, sz := range sizes {
 					plaintext := freshBytes(t, sz)
 					wire, err := pipe.EncryptMessage(plaintext)
+					if sz == 0 {
+						if !errors.Is(err, ErrEmptyInput) {
+							t.Fatalf("sz=0: EncryptMessage: got err=%v, want %v",
+								err, ErrEmptyInput)
+						}
+						continue
+					}
 					if err != nil {
 						t.Fatalf("sz=%d: EncryptMessage: %v", sz, err)
 					}
-					wantEnvelope := sz > 0 || pr.mac || tc.wrapper
-					if wantEnvelope && len(wire) == 0 {
+					if len(wire) == 0 {
 						t.Fatalf("sz=%d: empty wire; want an envelope", sz)
 					}
 					recovered, err := rx.DecryptMessage(wire)

@@ -8,7 +8,7 @@ import (
 
 // tripleEmptyPair Init/Opens a sender + receiver handle pair on the
 // given profile with default opts (full stack: parallax on + wrapper
-// on) and registers cleanup. Shared by the empty-payload tests below.
+// on) and registers cleanup. Shared by the empty-input tests below.
 func tripleEmptyPair(t *testing.T, profile string) (TripleHandleID, TripleHandleID) {
 	t.Helper()
 	blobBuf := make([]byte, 1<<15)
@@ -25,11 +25,11 @@ func tripleEmptyPair(t *testing.T, profile string) (TripleHandleID, TripleHandle
 	return sID, rID
 }
 
-// TestTripleEncryptMessageEmptyPayload pins the empty-payload wire
+// TestTripleEncryptMessageEmptyPayload pins the empty-input rejection
 // contract on the FFI Single Message surface: for both Single Message
-// profiles the wire is non-empty (the shipped profiles engage the
-// wrapper layer, so at minimum the outer cipher nonce is on the wire)
-// and decrypts back to an empty plaintext.
+// profiles an empty plaintext (encrypt side) and an empty wire
+// (decrypt side) are rejected with StatusBadInput — the mapping of
+// [triple.ErrEmptyInput] — and no wire bytes are reported.
 func TestTripleEncryptMessageEmptyPayload(t *testing.T) {
 	profiles := []string{
 		triple.ProfileSingleMsgTripleMACV1,
@@ -41,19 +41,19 @@ func TestTripleEncryptMessageEmptyPayload(t *testing.T) {
 
 			wireBuf := make([]byte, 64<<10)
 			wLen, st := TripleEncryptMessage(sID, nil, wireBuf)
-			if st != StatusOK {
-				t.Fatalf("TripleEncryptMessage: %v", st)
+			if st != StatusBadInput {
+				t.Fatalf("TripleEncryptMessage(empty): got %v, want %v", st, StatusBadInput)
 			}
-			if wLen == 0 {
-				t.Fatalf("empty payload produced an empty wire; want the outer cipher envelope")
+			if wLen != 0 {
+				t.Fatalf("TripleEncryptMessage(empty): reported %d wire bytes; want 0", wLen)
 			}
 			ptOut := make([]byte, 1024)
-			pLen, st := TripleDecryptMessage(rID, wireBuf[:wLen], ptOut)
-			if st != StatusOK {
-				t.Fatalf("TripleDecryptMessage: %v", st)
+			pLen, st := TripleDecryptMessage(rID, nil, ptOut)
+			if st != StatusBadInput {
+				t.Fatalf("TripleDecryptMessage(empty): got %v, want %v", st, StatusBadInput)
 			}
 			if pLen != 0 {
-				t.Fatalf("recovered non-empty plaintext: len=%d", pLen)
+				t.Fatalf("TripleDecryptMessage(empty): reported %d plaintext bytes; want 0", pLen)
 			}
 		})
 	}
@@ -61,8 +61,8 @@ func TestTripleEncryptMessageEmptyPayload(t *testing.T) {
 
 // TestTripleEncryptStreamEmptyPayload is the Streaming counterpart of
 // [TestTripleEncryptMessageEmptyPayload]: the whole-buffer FFI stream
-// entries emit a non-empty wire for an empty input on both Streaming
-// profiles and decrypt back to an empty plaintext.
+// entries reject empty input with StatusBadInput on both Streaming
+// profiles, symmetric across encrypt and decrypt.
 func TestTripleEncryptStreamEmptyPayload(t *testing.T) {
 	profiles := []string{
 		triple.ProfileStreamingAEADTripleMACV1,
@@ -74,19 +74,19 @@ func TestTripleEncryptStreamEmptyPayload(t *testing.T) {
 
 			wireBuf := make([]byte, 64<<10)
 			wLen, st := TripleEncryptStream(sID, nil, wireBuf)
-			if st != StatusOK {
-				t.Fatalf("TripleEncryptStream: %v", st)
+			if st != StatusBadInput {
+				t.Fatalf("TripleEncryptStream(empty): got %v, want %v", st, StatusBadInput)
 			}
-			if wLen == 0 {
-				t.Fatalf("empty payload produced an empty wire; want the outer cipher envelope")
+			if wLen != 0 {
+				t.Fatalf("TripleEncryptStream(empty): reported %d wire bytes; want 0", wLen)
 			}
 			ptOut := make([]byte, 1024)
-			pLen, st := TripleDecryptStream(rID, wireBuf[:wLen], ptOut)
-			if st != StatusOK {
-				t.Fatalf("TripleDecryptStream: %v", st)
+			pLen, st := TripleDecryptStream(rID, nil, ptOut)
+			if st != StatusBadInput {
+				t.Fatalf("TripleDecryptStream(empty): got %v, want %v", st, StatusBadInput)
 			}
 			if pLen != 0 {
-				t.Fatalf("recovered non-empty plaintext: len=%d", pLen)
+				t.Fatalf("TripleDecryptStream(empty): reported %d plaintext bytes; want 0", pLen)
 			}
 		})
 	}
@@ -94,9 +94,10 @@ func TestTripleEncryptStreamEmptyPayload(t *testing.T) {
 
 // TestTripleStreamSessionEmptyPayload drives the incremental session
 // surface (Begin → End → Read, no Write at all) on both Streaming
-// profiles and asserts the same contract: the drained wire is
-// non-empty and the receive-side session decodes it back to an empty
-// plaintext.
+// profiles and asserts the same contract: the underlying Pipeline
+// rejects the empty stream with [triple.ErrEmptyInput], which
+// surfaces on the drain as the sticky StatusBadInput — no wire byte
+// is ever produced. Symmetric on the decrypt session.
 func TestTripleStreamSessionEmptyPayload(t *testing.T) {
 	profiles := []string{
 		triple.ProfileStreamingAEADTripleMACV1,
@@ -106,54 +107,43 @@ func TestTripleStreamSessionEmptyPayload(t *testing.T) {
 		t.Run(prof, func(t *testing.T) {
 			sID, rID := tripleEmptyPair(t, prof)
 
-			encID, st := TripleEncryptStreamBegin(sID)
-			if st != StatusOK {
-				t.Fatalf("TripleEncryptStreamBegin: %v", st)
-			}
-			defer TripleStreamFree(encID)
-			if st := TripleStreamEnd(encID); st != StatusOK {
-				t.Fatalf("TripleStreamEnd: %v", st)
-			}
-			var wire []byte
-			buf := make([]byte, 64<<10)
-			for {
-				n, fin, st := TripleStreamRead(encID, buf)
+			for _, dir := range []struct {
+				name  string
+				id    TripleHandleID
+				begin func(TripleHandleID) (TripleStreamID, Status)
+			}{
+				{"encrypt", sID, TripleEncryptStreamBegin},
+				{"decrypt", rID, TripleDecryptStreamBegin},
+			} {
+				sessID, st := dir.begin(dir.id)
 				if st != StatusOK {
-					t.Fatalf("TripleStreamRead: %v", st)
+					t.Fatalf("%s Begin: %v", dir.name, st)
 				}
-				wire = append(wire, buf[:n]...)
-				if fin {
-					break
+				if st := TripleStreamEnd(sessID); st != StatusOK {
+					t.Fatalf("%s TripleStreamEnd: %v", dir.name, st)
 				}
-			}
-			if len(wire) == 0 {
-				t.Fatalf("empty session produced an empty wire; want the outer cipher envelope")
-			}
-
-			decID, st := TripleDecryptStreamBegin(rID)
-			if st != StatusOK {
-				t.Fatalf("TripleDecryptStreamBegin: %v", st)
-			}
-			defer TripleStreamFree(decID)
-			if st := TripleStreamWrite(decID, wire); st != StatusOK {
-				t.Fatalf("TripleStreamWrite: %v", st)
-			}
-			if st := TripleStreamEnd(decID); st != StatusOK {
-				t.Fatalf("TripleStreamEnd: %v", st)
-			}
-			var plain []byte
-			for {
-				n, fin, st := TripleStreamRead(decID, buf)
-				if st != StatusOK {
-					t.Fatalf("TripleStreamRead (decrypt): %v", st)
+				buf := make([]byte, 4096)
+				var got int
+				var readSt Status
+				for {
+					n, fin, st := TripleStreamRead(sessID, buf)
+					got += n
+					readSt = st
+					if st != StatusOK || fin {
+						break
+					}
 				}
-				plain = append(plain, buf[:n]...)
-				if fin {
-					break
+				if readSt != StatusBadInput {
+					t.Fatalf("%s drain after empty End: got %v, want %v",
+						dir.name, readSt, StatusBadInput)
 				}
-			}
-			if len(plain) != 0 {
-				t.Fatalf("recovered non-empty plaintext: len=%d", len(plain))
+				if got != 0 {
+					t.Fatalf("%s drain after empty End produced %d bytes; want 0",
+						dir.name, got)
+				}
+				if st := TripleStreamFree(sessID); st != StatusOK {
+					t.Fatalf("%s TripleStreamFree: %v", dir.name, st)
+				}
 			}
 		})
 	}

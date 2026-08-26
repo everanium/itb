@@ -129,11 +129,44 @@ func TestTripleStreamPumpTinyChunks(t *testing.T) {
 
 // TestTripleStreamPumpEmptyPlaintext verifies the End-drain path
 // with no fed bytes — a common corner case for streaming callers
-// that hit an immediate EOF on the input source.
+// that hit an immediate EOF on the input source. The underlying
+// Pipeline rejects the empty stream with [triple.ErrEmptyInput], so
+// the drain surfaces the sticky StatusBadInput and no wire byte is
+// produced.
 func TestTripleStreamPumpEmptyPlaintext(t *testing.T) {
-	got := tripleStreamRoundTrip(t, triple.ProfileStreamingAEADTripleMACV1, nil, 64, 64)
-	if len(got) != 0 {
-		t.Fatalf("recovered plaintext non-empty: %d bytes", len(got))
+	blob := make([]byte, 1<<15)
+	sID, blobLen, st := TripleInit(triple.ProfileStreamingAEADTripleMACV1, "", blob)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(sID)
+	_ = blobLen
+
+	encID, st := TripleEncryptStreamBegin(sID)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptStreamBegin: %v", st)
+	}
+	defer TripleStreamFree(encID)
+
+	if st := TripleStreamEnd(encID); st != StatusOK {
+		t.Fatalf("TripleStreamEnd: %v", st)
+	}
+	buf := make([]byte, 4096)
+	var got int
+	var readSt Status
+	for {
+		n, fin, st := TripleStreamRead(encID, buf)
+		got += n
+		readSt = st
+		if st != StatusOK || fin {
+			break
+		}
+	}
+	if readSt != StatusBadInput {
+		t.Fatalf("drain after empty End: got %v, want %v", readSt, StatusBadInput)
+	}
+	if got != 0 {
+		t.Fatalf("drain after empty End produced %d bytes; want 0", got)
 	}
 }
 
