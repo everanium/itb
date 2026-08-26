@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // worker is one stress goroutine's private state. The plaintext buffer
@@ -20,9 +21,11 @@ type worker struct {
 	plainBuf  bytes.Buffer
 
 	// Counters read concurrently by the monitor goroutine.
-	iters    atomic.Int64
-	bytesEnc atomic.Int64
-	bytesDec atomic.Int64
+	iters      atomic.Int64
+	bytesEnc   atomic.Int64
+	bytesDec   atomic.Int64
+	nanosEnc   atomic.Int64 // wall time this worker spent inside Encrypt calls
+	nanosDec   atomic.Int64 // wall time this worker spent inside Decrypt calls
 }
 
 // runLoop is the worker goroutine body: one warmup iteration, the
@@ -77,23 +80,31 @@ func (w *worker) iterate(r *runState, iter int64) error {
 	switch shape {
 	case shapeStream:
 		w.wireBuf.Reset()
+		encStart := time.Now()
 		if err := r.streamPipe.EncryptStream(bytes.NewReader(w.plaintext), &w.wireBuf); err != nil {
 			return fmt.Errorf("g%d iter %d: EncryptStream: %w", w.id, iter, err)
 		}
+		w.nanosEnc.Add(time.Since(encStart).Nanoseconds())
 		w.plainBuf.Reset()
+		decStart := time.Now()
 		if err := r.streamPipe.DecryptStream(bytes.NewReader(w.wireBuf.Bytes()), &w.plainBuf); err != nil {
 			return fmt.Errorf("g%d iter %d: DecryptStream: %w", w.id, iter, err)
 		}
+		w.nanosDec.Add(time.Since(decStart).Nanoseconds())
 		got = w.plainBuf.Bytes()
 	case shapeMessage:
+		encStart := time.Now()
 		wire, err := r.msgPipe.EncryptMessage(w.plaintext)
 		if err != nil {
 			return fmt.Errorf("g%d iter %d: EncryptMessage: %w", w.id, iter, err)
 		}
+		w.nanosEnc.Add(time.Since(encStart).Nanoseconds())
+		decStart := time.Now()
 		out, err := r.msgPipe.DecryptMessage(wire)
 		if err != nil {
 			return fmt.Errorf("g%d iter %d: DecryptMessage: %w", w.id, iter, err)
 		}
+		w.nanosDec.Add(time.Since(decStart).Nanoseconds())
 		got = out
 	}
 
