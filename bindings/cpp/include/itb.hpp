@@ -138,9 +138,9 @@ inline std::span<std::byte> as_writable_bytes(std::vector<std::uint8_t> &v) noex
 }
 
 /* Upper bound on the produced-output size for a payload of the given
- * length, on both the Single Message and whole-buffer pump paths
- * (wire expansion plus envelope overhead). Sizes the caller-owned
- * dst buffer for the *_into entries. */
+ * length, on the Single Message, one-shot stream, and whole-buffer
+ * pump paths (wire expansion plus envelope overhead). Sizes the
+ * caller-owned dst buffer for the *_into entries. */
 std::size_t out_bound(std::size_t payload) noexcept;
 
 /* ------------------------------------------------------------------ */
@@ -339,6 +339,29 @@ public:
      * buffer contract). */
     std::size_t decrypt_stream_pump_into(std::span<const std::byte> wire,
                                          std::span<std::byte> dst) const;
+
+    /* One-shot stream encrypt for callers holding the whole plaintext
+     * in memory: a single FFI round trip through the Pipeline's
+     * stream chain. For bounded-memory streaming use
+     * encrypt_stream_pump or the incremental encrypt_stream_begin
+     * session. */
+    std::vector<std::uint8_t> encrypt_stream_one_shot(std::span<const std::byte> plain) const;
+
+    /* Receive-side counterpart of encrypt_stream_one_shot. */
+    std::vector<std::uint8_t> decrypt_stream_one_shot(std::span<const std::byte> wire) const;
+
+    /* Reusable-buffer one-shot stream encrypt: writes the wire into
+     * the caller-owned dst and returns the byte count written (same
+     * buffer contract as encrypt_message_into). */
+    std::size_t encrypt_stream_one_shot_into(std::span<const std::byte> plain,
+                                             std::span<std::byte> dst) const;
+
+    /* Receive-side counterpart of encrypt_stream_one_shot_into (same
+     * buffer contract). After a failed call — MAC failure included —
+     * the contents of dst are unspecified and must not be
+     * interpreted. */
+    std::size_t decrypt_stream_one_shot_into(std::span<const std::byte> wire,
+                                             std::span<std::byte> dst) const;
 
     /* Opens an incremental encrypt session (plaintext in, wire out).
      * The session must not outlive its Pipeline. */

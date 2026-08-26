@@ -116,7 +116,10 @@ itb_pipeline_open("singlemsg-triple-mac-v1",
                   NULL, NULL, 0, NULL, 0, &receiver);
 ```
 
-For bounded-memory streaming, `itb_pipeline_encrypt_stream_pump` /
+`itb_pipeline_encrypt_stream_one_shot` /
+`itb_pipeline_decrypt_stream_one_shot` put a whole in-memory payload
+through the stream chain in a single call. For bounded-memory
+streaming, `itb_pipeline_encrypt_stream_pump` /
 `itb_pipeline_decrypt_stream_pump` move a whole buffer through an
 incremental session; the explicit `itb_pipeline_encrypt_stream_begin`
 / `itb_pipeline_decrypt_stream_begin` sessions expose
