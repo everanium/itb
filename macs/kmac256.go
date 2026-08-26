@@ -6,6 +6,7 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/macs/internal/keccakasm"
 )
 
 // KMAC256 returns a cached KMAC256 itb.MACFunc keyed by key.
@@ -51,6 +52,29 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 
 	custom := append([]byte(nil), customization...)
 
+	// AVX-512 tier: route through the vendored Keccak-f[1600] kernel
+	// in macs/internal/keccakasm. The cSHAKE256 header block
+	// bytepad(encode_string("KMAC") || encode_string(S), 136) is
+	// absorbed explicitly (x/crypto's constructor does the same
+	// internally); the keyed prefix and per-call message/suffix flow
+	// through the identical sponge schedule, so the tag is
+	// byte-for-byte the same as the scalar arm below.
+	if keccakasm.HasAVX512Fused {
+		header := bytepad(
+			append(encodeString([]byte("KMAC")), encodeString(custom)...), rate)
+		tmpl := keccakasm.NewCShake256()
+		tmpl.Write(header)
+		tmpl.Write(prefix)
+		return func(data []byte) []byte {
+			h := tmpl.Clone()
+			h.Write(data)
+			h.Write(suffix)
+			out := h.Sum256()
+			return append([]byte(nil), out[:]...)
+		}, nil
+	}
+
+	// Scalar tier: stdlib-backed x/crypto cSHAKE256.
 	// Pre-absorb the keyed prefix into a template cSHAKE256.
 	// NewCShake256 takes function-name N = "KMAC" and customization S;
 	// per NIST SP 800-185, the cSHAKE256 padding bookkeeping happens
