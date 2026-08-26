@@ -1,6 +1,7 @@
 package triple
 
 import (
+	"bytes"
 	"errors"
 	"io"
 
@@ -46,15 +47,26 @@ var ErrProfileNotStreaming = errors.New("triple: profile does not expose a strea
 // itb IO entry) lives on this call's stack. Multiple goroutines may
 // call EncryptStream against the same [*Pipeline] simultaneously.
 //
+// An empty plaintext stream (plainSrc yields [io.EOF] before any
+// byte) is rejected with [ErrEmptyInput] before any wire byte is
+// written — no zero-payload wire exists on the Pipeline surface. The
+// check probes plainSrc for its first byte and, when one arrives,
+// re-chains it ahead of the remaining reader, so a non-empty source
+// is consumed exactly as supplied.
+//
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
 // [ErrProfileNotStreaming] when the resolved profile mode is Single
-// Message or blob-only.
+// Message or blob-only; [ErrEmptyInput] on an empty plaintext stream.
 func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 	if p.isClosed() {
 		return ErrClosed
 	}
 	if !isStreamingMode(p.resolved.mode) {
 		return ErrProfileNotStreaming
+	}
+	plainSrc, err := rejectEmptySource(plainSrc)
+	if err != nil {
+		return err
 	}
 
 	innerSrc, innerDst, closeFn, err := buildEncryptChain(p, plainSrc, wireDst)
@@ -112,16 +124,27 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 //     releases pool scratch); wrapper reader has no per-call state
 //     that needs an explicit close.
 //
+// An empty wire stream (wireSrc yields [io.EOF] before any byte) is
+// rejected with [ErrEmptyInput] before any parse — symmetric with
+// [Pipeline.EncryptStream]'s empty-plaintext rejection, since no
+// valid Pipeline wire is empty. Same first-byte probe + re-chain as
+// the encrypt side.
+//
 // Same concurrency posture as [Pipeline.EncryptStream]: safe for
 // concurrent invocation on one [*Pipeline]. Returns [ErrClosed] when
 // [Pipeline.Close] has already run; [ErrProfileNotStreaming] when the
-// resolved profile mode is Single Message or blob-only.
+// resolved profile mode is Single Message or blob-only;
+// [ErrEmptyInput] on an empty wire stream.
 func (p *Pipeline) DecryptStream(wireSrc io.Reader, plainDst io.Writer) error {
 	if p.isClosed() {
 		return ErrClosed
 	}
 	if !isStreamingMode(p.resolved.mode) {
 		return ErrProfileNotStreaming
+	}
+	wireSrc, err := rejectEmptySource(wireSrc)
+	if err != nil {
+		return err
 	}
 
 	innerSrc, innerDst, closeFn, err := buildDecryptChain(p, wireSrc, plainDst)
@@ -156,4 +179,23 @@ func (p *Pipeline) DecryptStream(wireSrc io.Reader, plainDst io.Writer) error {
 // and [DecryptStream] share the guard branch verbatim.
 func isStreamingMode(mode string) bool {
 	return mode == modeStreamingAEAD || mode == modeStreamingNoAEAD
+}
+
+// rejectEmptySource probes src for its first byte. An immediate
+// [io.EOF] maps to [ErrEmptyInput]; any other read error is returned
+// as-is. On a successful probe the byte is re-chained ahead of the
+// remaining reader via [io.MultiReader], so the returned reader
+// yields exactly the bytes src would have yielded. Shared by
+// [Pipeline.EncryptStream] and [Pipeline.DecryptStream] so both IO
+// entry points enforce the empty-input rejection contract before any
+// chain layer is composed.
+func rejectEmptySource(src io.Reader) (io.Reader, error) {
+	var first [1]byte
+	if _, err := io.ReadFull(src, first[:]); err != nil {
+		if err == io.EOF {
+			return nil, ErrEmptyInput
+		}
+		return nil, err
+	}
+	return io.MultiReader(bytes.NewReader(first[:]), src), nil
 }

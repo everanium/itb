@@ -297,7 +297,8 @@ func mapTripleError(err error) Status {
 		setLastErrMessageTriple(msg)
 		return StatusBadInput
 	case err == triple.ErrProfileNotStreaming,
-		err == triple.ErrProfileNoCipher:
+		err == triple.ErrProfileNoCipher,
+		err == triple.ErrEmptyInput:
 		setLastErrMessageTriple(msg)
 		return StatusBadInput
 	case errors.Is(err, itb.ErrMACFailure):

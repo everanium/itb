@@ -80,20 +80,24 @@ const messageFastPathMaxBytes = 64 << 20
 // is read-only. Multiple goroutines may call EncryptMessage against
 // the same [*Pipeline] simultaneously.
 //
-// Empty plaintext is accepted: on the No MAC arm the wire carries no
-// inner bytes — nonce-only when the wrapper layer is engaged, empty
-// when it is not (mirrors the underlying stream helpers' empty-input
-// contract); on the MAC arm the wire is the streamID prefix followed
-// by a final-flag chunk carrying no payload bytes.
+// Empty plaintext (nil or zero-length) is rejected with
+// [ErrEmptyInput] before any wire is produced — no zero-payload wire
+// exists on the Pipeline surface, so wire length never separates the
+// MAC and No MAC arms on an empty message. Callers for whom an empty
+// signal is meaningful send a marker byte instead.
 //
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
-// [ErrProfileNoCipher] when the resolved profile mode is blob-only.
+// [ErrProfileNoCipher] when the resolved profile mode is blob-only;
+// [ErrEmptyInput] on empty plaintext.
 func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
 	if hasNoCipherSurface(p.resolved.mode) {
 		return nil, ErrProfileNoCipher
+	}
+	if len(plaintext) == 0 {
+		return nil, ErrEmptyInput
 	}
 	if !p.resolved.parallaxOn && len(plaintext) <= messageFastPathMaxBytes {
 		return p.encryptMessageDirect(plaintext)
@@ -128,14 +132,22 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 // Message profiles reject [Pipeline.DecryptStream] with
 // [ErrProfileNotStreaming]).
 //
+// Empty wire (nil or zero-length) is rejected with [ErrEmptyInput]
+// before any parse — symmetric with [Pipeline.EncryptMessage]'s
+// empty-plaintext rejection, since no valid Pipeline wire is empty.
+//
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
-// [ErrProfileNoCipher] when the resolved profile mode is blob-only.
+// [ErrProfileNoCipher] when the resolved profile mode is blob-only;
+// [ErrEmptyInput] on empty wire.
 func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
 	if hasNoCipherSurface(p.resolved.mode) {
 		return nil, ErrProfileNoCipher
+	}
+	if len(wire) == 0 {
+		return nil, ErrEmptyInput
 	}
 	if !p.resolved.parallaxOn {
 		plain, ok, err := p.decryptMessageDirect(wire)

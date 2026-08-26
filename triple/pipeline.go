@@ -56,6 +56,19 @@ var (
 	// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage]) until
 	// their implementations land in the follow-up phases.
 	ErrNotYetImplemented = errors.New("triple: cipher path not yet implemented")
+
+	// ErrEmptyInput is returned by every [Pipeline] cipher entry point
+	// ([Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] /
+	// [Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
+	// [Pipeline.EncryptStreamBytes] / [Pipeline.DecryptStreamBytes])
+	// when the plaintext or wire input is empty (nil or zero-length),
+	// before any wire is produced or parsed. An empty message has no
+	// cover story in any cryptographic construction — it is always
+	// distinguishable at some layer (wire length, timing, traffic
+	// count) — so no zero-payload wire exists on this surface; callers
+	// for whom an empty signal is meaningful send a marker byte
+	// instead.
+	ErrEmptyInput = errors.New("triple: empty input")
 )
 
 // Opts carries per-call overrides for [Init] and [Open]. Every field
