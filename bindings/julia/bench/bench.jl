@@ -178,6 +178,25 @@ end
 set_memory_limit(512 << 20)
 set_gc_percent(20)
 
+function bench_stream_one_shot()
+    # Whole-buffer stream: one FFI round trip through
+    # encrypt_stream_one_shot / decrypt_stream_one_shot per iteration.
+    pipe = Pipeline(profile_name("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"); opts=build_opts())
+    for size in SIZES
+        plain = rand(RandomDevice(), UInt8, size)
+        bench_case("stream_one_shot", size) do
+            encrypt_stream_one_shot(pipe, plain)
+        end
+        # Pre-encrypt one wire outside the decrypt timing loop.
+        dec_wire = encrypt_stream_one_shot(pipe, plain)
+        bench_case("stream_one_shot-dec", size) do
+            decrypt_stream_one_shot(pipe, dec_wire)
+        end
+    end
+    free!(pipe)
+end
+
 println(rpad("bench", 18), rpad("size", 9), "mb_per_sec")
 bench_message()
 bench_stream()
+bench_stream_one_shot()

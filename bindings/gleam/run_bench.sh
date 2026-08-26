@@ -2,14 +2,15 @@
 #
 # run_bench.sh -- micro-benchmark runner for the Gleam binding.
 # Builds libitb.so + the C binding archive + the Erlang backend +
-# the Gleam project via build.sh, then runs the message and
-# stream_pump shapes: encrypt_message and incremental-session
-# throughput at 1 MiB / 16 MiB / 64 MiB.
+# the Gleam project via build.sh, then runs the message, stream_pump
+# and stream_one_shot shapes: encrypt_message, incremental-session and
+# whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
-#   ./run_bench.sh              # both shapes
-#   ./run_bench.sh message      # message shape only
-#   ./run_bench.sh stream       # stream-pump shape only
+#   ./run_bench.sh                        # all shapes
+#   ./run_bench.sh message                # Single Message shape only
+#   ./run_bench.sh stream                 # stream-pump shape only
+#   ./run_bench.sh stream_one_shot        # whole-buffer stream shape only
 
 set -eu
 set -o pipefail
@@ -53,13 +54,20 @@ fi
 WHAT="${1:-all}"
 
 case "$WHAT" in
-    message) export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             exec gleam run --no-print-progress -m itb_bench -- message;;
-    stream)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             exec gleam run --no-print-progress -m itb_bench -- stream;;
-    all)     export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             gleam run --no-print-progress -m itb_bench -- message
-             export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             exec gleam run --no-print-progress -m itb_bench -- stream;;
-    *)       echo "usage: $0 [message|stream|all]" >&2; exit 2;;
+    message)        export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    exec gleam run --no-print-progress -m itb_bench -- message;;
+    stream)         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    exec gleam run --no-print-progress -m itb_bench -- stream;;
+    stream_one_shot)
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    exec gleam run --no-print-progress -m itb_bench -- \
+                         stream_one_shot;;
+    all)            export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    gleam run --no-print-progress -m itb_bench -- message
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    gleam run --no-print-progress -m itb_bench -- stream
+                    exec gleam run --no-print-progress -m itb_bench -- \
+                         stream_one_shot;;
+    *)              echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
+                    exit 2;;
 esac

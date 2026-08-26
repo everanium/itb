@@ -68,6 +68,19 @@ main = do
     benchCase "stream-dec" size minSec (streamDecryptOnce streamPipe decWire)
   freePipeline streamPipe
 
+  -- Whole-buffer stream: one FFI round trip through
+  -- encryptStreamOneShot / decryptStreamOneShot per iteration.
+  oneShotPipe <- initPipeline streamProfile opts
+  forM_ sizes $ \size -> do
+    plain <- csprngBytes size
+    benchCase "stream_one_shot" size minSec
+      (void (encryptStreamOneShot oneShotPipe plain))
+    -- Pre-encrypt one wire outside the decrypt timing loop.
+    decWire <- encryptStreamOneShot oneShotPipe plain
+    benchCase "stream_one_shot-dec" size minSec
+      (void (decryptStreamOneShot oneShotPipe decWire))
+  freePipeline oneShotPipe
+
 -- | One incremental stream encrypt pass: Begin \/ Write (4 MiB
 -- slices, draining opportunistically) \/ End \/ final drain \/ Free.
 streamOnce :: Pipeline -> BS.ByteString -> IO ()

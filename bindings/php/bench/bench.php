@@ -180,6 +180,23 @@ function main(): void
     }
     unset($slice);
     $pipe->free();
+
+    // Whole-buffer stream: one FFI round trip through
+    // encryptStreamOneShot / decryptStreamOneShot per iteration.
+    $pipe = Itb::create(profile_name('ITB_STREAM_PROFILE', 'streaming-noaead-triple-v1'), build_opts());
+    foreach (SIZES as $size) {
+        $plain = random_bytes($size);
+        bench_case('stream_one_shot', $size, static function () use ($pipe, $plain): void {
+            $pipe->encryptStreamOneShot($plain);
+        });
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        $dec_wire = $pipe->encryptStreamOneShot($plain);
+        bench_case('stream_one_shot-dec', $size, static function () use ($pipe, $dec_wire): void {
+            $pipe->decryptStreamOneShot($dec_wire);
+        });
+        unset($plain, $dec_wire);
+    }
+    $pipe->free();
 }
 
 main();

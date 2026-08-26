@@ -188,6 +188,24 @@ main <- function() {
     gc(full = TRUE)
   }
   pipeline_free(pipe)
+
+  # Whole-buffer stream: one FFI round trip through
+  # pipeline_encrypt_stream_one_shot / pipeline_decrypt_stream_one_shot
+  # per iteration.
+  pipe <- pipeline_create(profile_env("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), opts = opts)
+  for (size in SIZES) {
+    plain <- random_bytes(size)
+    bench_case("stream_one_shot", size, function() {
+      pipeline_encrypt_stream_one_shot(pipe, plain)
+    })
+    dec_wire <- pipeline_encrypt_stream_one_shot(pipe, plain)
+    bench_case("stream_one_shot-dec", size, function() {
+      pipeline_decrypt_stream_one_shot(pipe, dec_wire)
+    })
+    rm(plain, dec_wire)
+    gc(full = TRUE)
+  }
+  pipeline_free(pipe)
 }
 
 main()

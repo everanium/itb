@@ -2,14 +2,15 @@
 #
 # run_bench.sh -- micro-benchmark runner for the Erlang binding.
 # Builds libitb.so + the C binding archive + the OTP application via
-# build.sh, compiles the bench modules, then runs bench_message and
-# bench_stream: encrypt_message and stream-pump throughput at
-# 1 MiB / 16 MiB / 64 MiB.
+# build.sh, compiles the bench modules, then runs bench_message,
+# bench_stream and bench_stream_one_shot: encrypt_message, stream-pump
+# and whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
-#   ./run_bench.sh              # both shapes
-#   ./run_bench.sh message      # message shape only
-#   ./run_bench.sh stream       # stream-pump shape only
+#   ./run_bench.sh                        # all shapes
+#   ./run_bench.sh message                # Single Message shape only
+#   ./run_bench.sh stream                 # stream-pump shape only
+#   ./run_bench.sh stream_one_shot        # whole-buffer stream shape only
 
 set -eu
 set -o pipefail
@@ -38,7 +39,8 @@ export ITB_BENCH_MIN_SEC="${ITB_BENCH_MIN_SEC:-5}"
 EBIN="_build/default/lib/itb/ebin"
 
 echo "==> compiling bench modules"
-erlc -o bench bench/bench_message.erl bench/bench_stream.erl
+erlc -o bench bench/bench_message.erl bench/bench_stream.erl \
+              bench/bench_stream_one_shot.erl
 
 # ITB_WITH_MAC=true derives MAC/AEAD profile counterparts. When
 # ITB_PROFILE is set explicitly by the caller, it wins over the
@@ -63,13 +65,18 @@ run_one() {
 }
 
 case "$WHAT" in
-    message) export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             run_one bench_message;;
-    stream)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             run_one bench_stream;;
-    all)     export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-             run_one bench_message
-             export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             run_one bench_stream;;
-    *)       echo "usage: $0 [message|stream|all]" >&2; exit 2;;
+    message)        export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    run_one bench_message;;
+    stream)         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    run_one bench_stream;;
+    stream_one_shot)
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    run_one bench_stream_one_shot;;
+    all)            export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
+                    run_one bench_message
+                    export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+                    run_one bench_stream
+                    run_one bench_stream_one_shot;;
+    *)              echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
+                    exit 2;;
 esac

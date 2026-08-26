@@ -179,6 +179,23 @@ let bench_stream () =
     sizes;
   Itb.close pipe
 
+(* Whole-buffer stream: one FFI round trip through
+   Itb.encrypt_stream_one_shot / Itb.decrypt_stream_one_shot per
+   iteration. *)
+let bench_stream_one_shot () =
+  let pipe = Itb.create (profile_name "ITB_STREAM_PROFILE" "streaming-noaead-triple-v1") ~opts:(build_opts ()) () in
+  List.iter
+    (fun size ->
+      let plain = random_bytes size in
+      bench_case "stream_one_shot" size
+        (fun () -> ignore (Itb.encrypt_stream_one_shot pipe plain));
+      (* Pre-encrypt one wire outside the decrypt timing loop. *)
+      let dec_wire = Itb.encrypt_stream_one_shot pipe plain in
+      bench_case "stream_one_shot-dec" size
+        (fun () -> ignore (Itb.decrypt_stream_one_shot pipe dec_wire)))
+    sizes;
+  Itb.close pipe
+
 let () =
   (* Bench-scale allocation churn leaks Go scratch heap unboundedly
      without a soft memory cap + aggressive GC. *)
@@ -186,4 +203,5 @@ let () =
   Itb.set_gc_percent 20;
   Printf.printf "%-17s %-8s %s\n%!" "bench" "size" "mb_per_sec";
   bench_message ();
-  bench_stream ()
+  bench_stream ();
+  bench_stream_one_shot ()
