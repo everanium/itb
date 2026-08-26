@@ -106,6 +106,17 @@ design); the receiver picks up the new masters through a fresh
   (itb-lfe:open #"singlemsg-triple-mac-v1" blob2))
 ```
 
+### One-shot streams
+
+`encrypt-stream-one-shot/2` / `decrypt-stream-one-shot/2` put a
+whole in-memory payload through the stream chain in a single call:
+
+```lisp
+(let* ((`#(ok ,wire) (itb-lfe:encrypt-stream-one-shot sender plain))
+       (`#(ok ,back) (itb-lfe:decrypt-stream-one-shot receiver wire)))
+  back)
+```
+
 ### Caller-driven stream sessions
 
 ```lisp

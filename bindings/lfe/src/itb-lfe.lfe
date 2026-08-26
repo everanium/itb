@@ -46,6 +46,9 @@
     ;; Single Message encrypt / decrypt
     (encrypt-message 2)
     (decrypt-message 2)
+    ;; One-shot stream encrypt / decrypt
+    (encrypt-stream-one-shot 2)
+    (decrypt-stream-one-shot 2)
     ;; Incremental stream sessions
     (encrypt-stream 1)
     (decrypt-stream 1)
@@ -122,6 +125,21 @@
 (defun decrypt-message (pipeline wire)
   "Receive-side counterpart of encrypt-message/2."
   (itb:decrypt_message pipeline wire))
+
+;;; ------------------------------------------------------------------
+;;; One-shot stream encrypt / decrypt
+;;; ------------------------------------------------------------------
+
+(defun encrypt-stream-one-shot (pipeline plain)
+  "One-shot stream encrypt for callers holding the whole plaintext in
+  memory: a single call through the Pipeline's stream chain. For
+  bounded-memory streaming use the incremental encrypt-stream/1
+  session."
+  (itb:encrypt_stream_one_shot pipeline plain))
+
+(defun decrypt-stream-one-shot (pipeline wire)
+  "Receive-side counterpart of encrypt-stream-one-shot/2."
+  (itb:decrypt_stream_one_shot pipeline wire))
 
 ;;; ------------------------------------------------------------------
 ;;; Incremental stream sessions
