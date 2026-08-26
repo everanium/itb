@@ -44,23 +44,34 @@ func sample(r *runState) {
 	}
 
 	var (
-		iterParts          []string
-		totalEnc, totalDec int64
+		iterParts                          []string
+		totalEnc, totalDec                 int64
+		totalNanosEnc, totalNanosDec       int64
 	)
 	for _, w := range r.workers {
 		iterParts = append(iterParts, fmt.Sprintf("g%d:%d", w.id, w.iters.Load()))
 		totalEnc += w.bytesEnc.Load()
 		totalDec += w.bytesDec.Load()
+		totalNanosEnc += w.nanosEnc.Load()
+		totalNanosDec += w.nanosDec.Load()
 	}
 
-	// Throughput split into encrypt / decrypt lanes so a per-direction
-	// asymmetry (typically encrypt lagging decrypt due to the noise-
-	// injection CSPRNG cost) is visible in the progress line. The
-	// combined figure is retained for a one-glance total.
+	// Per-direction throughput uses average per-worker wall-time in that
+	// direction (sum-of-nanos ÷ N workers) rather than total elapsed —
+	// otherwise the split trivially collapses to combined/2 since each
+	// iteration processes equal encrypt + decrypt bytes. The average
+	// per-worker time-in-direction yields the true aggregate throughput
+	// each direction sustains under N-worker parallelism: each direction
+	// typically runs faster than combined/2 because the other direction
+	// consumes part of the elapsed wall time. The combined figure below
+	// still uses total elapsed as a one-glance overall rate.
+	workerCount := int64(len(r.workers))
+	avgEncTime := avgWorkerTime(totalNanosEnc, workerCount)
+	avgDecTime := avgWorkerTime(totalNanosDec, workerCount)
 	logf("+%s: iters=[%s] heap=%s objects=%d goroutines=%d gcs=%d tput=enc:%s dec:%s combined:%s",
 		elapsed.Round(time.Second), strings.Join(iterParts, " "),
 		humanBytes(int64(ms.HeapAlloc)), ms.HeapObjects, goroutines, ms.NumGC,
-		humanRateBare(totalEnc, elapsed), humanRateBare(totalDec, elapsed),
+		humanRateBare(totalEnc, avgEncTime), humanRateBare(totalDec, avgDecTime),
 		humanRate(totalEnc+totalDec, elapsed))
 
 	// Anomaly thresholds calibrated for mid-flight sampling. The itb
@@ -93,9 +104,10 @@ func sample(r *runState) {
 // baseline.
 func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int, workerErrs []error) int {
 	var (
-		iterParts          []string
-		totalIters         int64
-		totalEnc, totalDec int64
+		iterParts                          []string
+		totalIters                         int64
+		totalEnc, totalDec                 int64
+		totalNanosEnc, totalNanosDec       int64
 	)
 	for _, w := range r.workers {
 		n := w.iters.Load()
@@ -103,6 +115,8 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 		totalIters += n
 		totalEnc += w.bytesEnc.Load()
 		totalDec += w.bytesDec.Load()
+		totalNanosEnc += w.nanosEnc.Load()
+		totalNanosDec += w.nanosDec.Load()
 	}
 	if finalHeap > r.peakHeap {
 		r.peakHeap = finalHeap
@@ -122,11 +136,15 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 		growthPct = 100 * float64(heapDelta) / float64(r.warmupHeap)
 	}
 
+	workerCount := int64(len(r.workers))
+	avgEncTime := avgWorkerTime(totalNanosEnc, workerCount)
+	avgDecTime := avgWorkerTime(totalNanosDec, workerCount)
+
 	logf("=== FINAL ===")
 	logf("  duration: %s", elapsed.Round(time.Millisecond))
 	logf("  iterations: %s = %d total", strings.Join(iterParts, " + "), totalIters)
 	logf("  throughput: encrypt %s, decrypt %s, combined %s",
-		humanRate(totalEnc, elapsed), humanRate(totalDec, elapsed),
+		humanRate(totalEnc, avgEncTime), humanRate(totalDec, avgDecTime),
 		humanRate(totalEnc+totalDec, elapsed))
 	logf("  bytes: %s encrypted, %s decrypted", humanBytes(totalEnc), humanBytes(totalDec))
 	logf("  data integrity: %d/%d PASS", totalIters, totalIters)
@@ -157,4 +175,19 @@ func stableLabel(ok bool) string {
 		return "stable"
 	}
 	return "UNSTABLE"
+}
+
+// avgWorkerTime returns the average per-worker wall time (as a Duration)
+// spent inside a given direction (encrypt or decrypt), computed as the
+// sum of per-worker time-in-direction nanoseconds divided by the worker
+// count. Dividing by workerCount converts the CPU-worker-time sum into
+// the equivalent single-worker-parallel wall time so that
+// bytes/avgTime yields aggregate throughput sustained by the direction
+// under N-worker concurrency. Returns 0 when either operand is zero
+// (humanRate handles the guard and prints n/a).
+func avgWorkerTime(nanosSum, workerCount int64) time.Duration {
+	if nanosSum <= 0 || workerCount <= 0 {
+		return 0
+	}
+	return time.Duration(nanosSum / workerCount)
 }
