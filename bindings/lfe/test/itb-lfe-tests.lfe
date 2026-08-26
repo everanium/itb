@@ -83,12 +83,35 @@
         (is-equal 'ok (itb-lfe:free sender))))))
 
 (deftestgen stream-zero-length-payload
+  ;; The Non-AEAD stream wire is body-only: a zero-length payload
+  ;; yields a zero-length wire, and the round trip still holds.
   (tuple 'timeout 120
     (lambda ()
       (let ((`#(,sender ,receiver) (pair #"streaming-noaead-triple-v1")))
         (let ((wire (pump sender 'encrypt #"")))
-          (is (> (byte_size wire) 0))
           (is-equal #"" (pump receiver 'decrypt wire)))
+        (is-equal 'ok (itb-lfe:free receiver))
+        (is-equal 'ok (itb-lfe:free sender))))))
+
+;;; ------------------------------------------------------------------
+;;; One-shot stream round trip (Streaming AEAD profile)
+;;; ------------------------------------------------------------------
+
+(deftestgen stream-one-shot-round-trip
+  (tuple 'timeout 240
+    (lambda ()
+      (let ((`#(,sender ,receiver) (pair #"streaming-aead-triple-mac-v1"))
+            (plain (crypto:strong_rand_bytes (+ (bsl 1 18) 12345))))
+        ;; One-shot both ways, then cross-check against the
+        ;; incremental session path in each direction.
+        (let ((`#(ok ,wire) (itb-lfe:encrypt-stream-one-shot sender plain)))
+          (is (> (byte_size wire) (byte_size plain)))
+          (let ((`#(ok ,back) (itb-lfe:decrypt-stream-one-shot receiver wire)))
+            (is-equal plain back))
+          (is-equal plain (pump receiver 'decrypt wire)))
+        (let* ((wire2 (pump sender 'encrypt plain))
+               (`#(ok ,back2) (itb-lfe:decrypt-stream-one-shot receiver wire2)))
+          (is-equal plain back2))
         (is-equal 'ok (itb-lfe:free receiver))
         (is-equal 'ok (itb-lfe:free sender))))))
 
