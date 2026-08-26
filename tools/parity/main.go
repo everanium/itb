@@ -174,6 +174,14 @@ func ensureProfile(profileName, hashName string) error {
 		ParallaxOn: false,
 		WrapperOn:  false,
 	}
+	// parity-mac-* names register the MAC Authenticated variant with
+	// the MAC pinned to kmac256, so the cross-build matrix also forces
+	// tag agreement across the vendored AVX-512 Keccak-f[1600] tier
+	// and the scalar tier (-tags noitbasm arm).
+	if strings.HasPrefix(profileName, "parity-mac-") {
+		prof.Mode = "singlemsg-mac"
+		prof.MacName = "kmac256"
+	}
 	err := triple.RegisterProfile(profileName, prof)
 	if err != nil && !errors.Is(err, triple.ErrProfileExists) {
 		return err

@@ -33,6 +33,7 @@
 /tools/parity/parity-cgo
 /tools/parity/parity-nocgo
 /tools/parity/parity-cgo-tiered
+/tools/parity/parity-nocgo-noasm
 *.test
 
 # CPU/memory profiles
