@@ -28,7 +28,7 @@
 // Usage:
 //
 //	loop --duration 5m --goroutines 3 --shape stream --hash areion512 \
-//	     --mac kmac256 --payload-size 16MB --memlimit auto \
+//	     --mac hmac-blake3 --payload-size 16MB --memlimit auto \
 //	     --parallax on --wrapper on
 //
 // Ctrl-C triggers a graceful shutdown: in-flight iterations complete,
@@ -272,7 +272,7 @@ func parseFlags(argv []string) (config, error) {
 		workers     = fs.Int("goroutines", 3, fmt.Sprintf("concurrent worker goroutines (1..%d)", maxWorkersFlag))
 		shape       = fs.String("shape", shapeStream, "cipher surface to exercise: stream | message | both")
 		hash        = fs.String("hash", "areion512", "inner ITB hash primitive name")
-		mac         = fs.String("mac", "kmac256", "MAC primitive name")
+		mac         = fs.String("mac", "hmac-blake3", "MAC primitive name")
 		payloadStr  = fs.String("payload-size", "16MB", "per-iteration plaintext size (e.g. 1MB / 16MB / 64MB)")
 		memlimitStr = fs.String("memlimit", "auto", "Go heap soft limit: auto (1GiB when goroutines <= 3, else 256MiB) or a size (e.g. 512MB)")
 		gogc        = fs.Int("gogc", 0, "GC trigger percentage; 0 = leave the runtime default")
