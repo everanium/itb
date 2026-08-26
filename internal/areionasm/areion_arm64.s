@@ -1,3 +1,5 @@
+//go:build arm64 && !purego && !noitbasm
+
 // Plan9 AArch64 assembly — 4-way parallel Areion permute kernels
 // using ARM Crypto Extension (AES) instructions.
 //
@@ -5,27 +7,30 @@
 //   func Areion256Permutex4(x0, x1 *aes.Block4)
 //   func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4)
 //
-// Each `aes.Block4` is 64 bytes = 4 Ã 16-byte AES blocks. SoA layout:
+// Each `aes.Block4` is 64 bytes = 4 × 16-byte AES blocks. SoA layout:
 // for lane i (0..3), the i-th 16-byte block of every Block4 buffer
 // belongs to lane i. Concretely, lane i's full Areion state is
 // composed of `b0[i*16:i*16+16]`, `b1[i*16:i*16+16]`, ... per state
 // position.
 //
-// The kernel runs 4 independent state chains in parallel â Neoverse V2
+// The kernel runs 4 independent state chains in parallel — Neoverse V2
 // dispatches AESE/AESMC at 1 instr/cycle with 2-cycle latency, so 4
 // independent chains hide latency completely.
 //
-// ARM AESE semantics: AESE V_KEY, V_STATE  â  V_STATE = SubBytes(ShiftRows(V_STATE XOR V_KEY))
+// Instruction footprint: baseline ARMv8-A NEON (VLD1 / VST1 / VMOV /
+// VEOR) plus the AES Crypto Extension (AESE / AESMC), gated at runtime
+// by `aes.CPU.HasARMCrypto`. No SVE / SVE2 and no other optional
+// extension is used.
+//
+// ARM AESE semantics: AESE V_KEY, V_STATE  ⇒  V_STATE = SubBytes(ShiftRows(V_STATE XOR V_KEY))
 // For RoundNoKey (no key XOR): use V_KEY = zero, then AESMC.
 // For FinalRoundNoKey: same but skip the AESMC.
-
-//go:build arm64 && !purego && !noitbasm
 
 #include "textflag.h"
 
 // ----------------------------------------------------------------------
-// Round-constant table â mirrors `Constants` in areionasm_amd64.go
-// (digits of pi, little-endian). 15 entries Ã 16 B.
+// Round-constant table — mirrors `Constants` in areionasm_amd64.go
+// (digits of pi, little-endian). 15 entries × 16 B.
 // ----------------------------------------------------------------------
 
 DATA areionRC<>+0x000(SB)/8, $0x13198a2e03707344
@@ -62,14 +67,14 @@ DATA areionRC<>+0x0e8(SB)/8, $0x5748986263e81440
 GLOBL areionRC<>(SB), RODATA|NOPTR, $240
 
 // ----------------------------------------------------------------------
-// Areion256Permutex4(x0, x1 *aes.Block4) â 10 rounds.
+// Areion256Permutex4(x0, x1 *aes.Block4) — 10 rounds.
 //
 // Layout:
-//   v0..v3   â state pos 0 across lanes 0..3   (was *x0)
-//   v4..v7   â state pos 1 across lanes 0..3   (was *x1)
-//   v8..v11  â temp across lanes 0..3
-//   v15      â zero (key arg for AESE under RoundNoKey)
-//   v16..v25 â rc[0..9] pre-loaded
+//   v0..v3   — state pos 0 across lanes 0..3   (was *x0)
+//   v4..v7   — state pos 1 across lanes 0..3   (was *x1)
+//   v8..v11  — temp across lanes 0..3
+//   v15      — zero (key arg for AESE under RoundNoKey)
+//   v16..v25 — rc[0..9] pre-loaded
 // ----------------------------------------------------------------------
 
 TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
@@ -479,7 +484,7 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 	RET
 
 // ----------------------------------------------------------------------
-// Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) â 15 rounds + final rotation.
+// Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) — 15 rounds + final rotation.
 //
 // Per-round structure (areion512Roundx4):
 //   temp1 = a; RoundNoKey(temp1); b ^= temp1
@@ -492,14 +497,14 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 // ASM mirrors that by rotating the *register role* each round.
 //
 // Layout:
-//   v0..v3   â x0 across lanes 0..3
-//   v4..v7   â x1
-//   v8..v11  â x2
-//   v12..v15 â x3
-//   v16..v19 â temp1
-//   v20..v23 â temp2
-//   v24      â round-constant (loaded once, separate scratch reg)
-//   v25      â zero (AESE key arg)
+//   v0..v3   — x0 across lanes 0..3
+//   v4..v7   — x1
+//   v8..v11  — x2
+//   v12..v15 — x3
+//   v16..v19 — temp1
+//   v20..v23 — temp2
+//   v24      — round-constant (loaded once, separate scratch reg)
+//   v25      — zero (AESE key arg)
 //
 // rc storage: scratch reg V24 reloaded each round via ADD/VLD1.
 // ----------------------------------------------------------------------
@@ -1346,7 +1351,7 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 	AESMC	V2.B16, V2.B16
 	AESMC	V3.B16, V3.B16
 
-	// Final rotation: x0 â x3, x1 â x0, x2 â x1, x3 â x2
+	// Final rotation: x0 ← x3, x1 ← x0, x2 ← x1, x3 ← x2
 	VST1	[V12.B16, V13.B16, V14.B16, V15.B16], (R0)
 	VST1	[V0.B16, V1.B16, V2.B16, V3.B16],     (R1)
 	VST1	[V4.B16, V5.B16, V6.B16, V7.B16],     (R2)
