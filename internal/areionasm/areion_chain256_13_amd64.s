@@ -5,8 +5,8 @@
 // (0x03 || uint64-LE(groupIdx) || 4 reserved). 13 bytes ≤ 24-byte
 // chunkSize, so the absorb is a single SoEM round.
 //
-// Mechanical copy of the 20-byte kernel (areion_chain256_20_amd64.s)
-// with lengthTag 20 -> 13 and the b1 staging loading exactly
+// Identical to the 20-byte kernel (areion_chain256_20_amd64.s) except
+// lengthTag = 13 and the b1 staging loads exactly
 // data[8..13] (5 bytes) via MOVL + MOVBLZX rather than the 20-byte
 // kernel's MOVQ 8(Rx) + MOVL 16(Rx). The lane data pointers reference
 // exactly-13-byte scratch buffers packed adjacently ([4][13]byte); a
@@ -20,7 +20,8 @@
 
 #include "textflag.h"
 
-// AREION256_FUSED_ROUND — identical to the 20-byte kernel's round body.
+// AREION256_FUSED_ROUND — see areion_chain256_36_amd64.s for the
+// canonical description of this round-body macro.
 #define AREION256_FUSED_ROUND(s1a, s1b, s2a, s2b, rc) \
 	VMOVDQA64 s1a, Z2; \
 	VMOVDQA64 s2a, Z6; \

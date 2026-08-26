@@ -8,9 +8,9 @@
 // (same ILP pattern as the 20-byte fused kernel) and writes the final
 // 64-byte digest per lane.
 //
-// This is a mechanical copy of the 20-byte kernel
-// (areion_chain512_20_amd64.s) with two adjustments:
-//   - lengthTag 20 -> 13
+// Identical to the 20-byte kernel (areion_chain512_20_amd64.s) except
+// for two adjustments:
+//   - lengthTag = 13
 //   - the b1 staging loads exactly data[8..13] (5 bytes) via MOVL +
 //     MOVBLZX rather than the 20-byte kernel's MOVQ 8(Rx) + MOVL 16(Rx).
 //     The 4 lane data pointers reference exactly-13-byte scratch buffers
@@ -33,7 +33,8 @@
 
 #include "textflag.h"
 
-// AREION512_FUSED_ROUND — identical to the 20-byte kernel's round body.
+// AREION512_FUSED_ROUND — see areion_chain512_20_amd64.s for the
+// canonical description of this round-body macro.
 #define AREION512_FUSED_ROUND(s1a, s1b, s1c, s1d, s2a, s2b, s2c, s2d, rc) \
 	VMOVDQA64 s1a, Z4; \
 	VMOVDQA64 s2a, Z12; \

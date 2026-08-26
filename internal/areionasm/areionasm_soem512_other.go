@@ -6,11 +6,13 @@ import "github.com/jedisct1/go-aes"
 
 // Areion512SoEMPermutex4Interleaved is the non-amd64 / purego fallback
 // for the fused 512-bit kernel. Mirrors the Areion-SoEM-256 fallback
-// shape: same callable-stub forwarding to `Areion512Permutex4` (a
-// panic stub on non-amd64 — see `areionasm_other.go`); kept so the
-// import resolves cleanly across platforms. Production dispatch on
-// non-amd64 routes through the parent itb package's portable Go
-// fallback before this function would ever be reached.
+// shape: same callable-stub forwarding to `Areion512Permutex4` (the
+// real NEON kernel on arm64; a panic stub otherwise — see
+// `areionasm_other.go`); kept so the import resolves cleanly across
+// platforms. The parent itb package's production dispatch never
+// reaches it on these builds — non-amd64/non-arm64 hosts route through
+// the portable Go fallback path, and arm64 hosts use the parent
+// package's own per-half fold (`areion_arm64.go`).
 func Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
 	Areion512Permutex4(a1, b1, c1, d1)
 	Areion512Permutex4(a2, b2, c2, d2)
