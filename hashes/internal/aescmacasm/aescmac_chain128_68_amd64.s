@@ -1,8 +1,12 @@
 //go:build amd64 && !purego && !noitbasm
 
 // ZMM-batched fused chain-absorb kernel for AES-CMAC-128 with 68-byte
-// per-lane data input (the ITB SetNonceBits(512) buf shape). Five
-// AES-CMAC rounds per lane:
+// per-lane data input (the ITB SetNonceBits(512) buf shape).
+// Lane-parallel across 4 pixels; VAESENC on ZMM advances four
+// independent AES blocks per instruction.
+//
+// Per-lane absorb construction (matches the public hashes.AESCMAC
+// closure bit-exactly) — five CBC-MAC absorb rounds per lane:
 //
 //	state[0:8]  = seeds[lane][0] ^ uint64(68)
 //	state[8:16] = seeds[lane][1] ^ uint64(68)
@@ -16,11 +20,11 @@
 // 16-byte state ZMM); the 11 round keys K0..K10 stay broadcast in
 // Z1..Z11 across all five rounds (no reload needed).
 //
-//	aesCMAC128ChainAbsorb68x4Asm(
-//	    roundKeys *[176]byte,
-//	    seeds     *[4][2]uint64,
-//	    dataPtrs  *[4]*byte,
-//	    out       *[4][2]uint64)
+// Register allocation: identical to the 20-byte kernel
+// (aescmac_chain128_20_amd64.s).
+//
+// Stack frame: 64 bytes of scratch for the 4-byte tail staging of
+// round 5 (zero-padded to 16 bytes per lane, loaded into Z12).
 
 #include "textflag.h"
 
@@ -56,6 +60,11 @@
 	VINSERTI64X2 $2, off(R10), z_dst, z_dst; \
 	VINSERTI64X2 $3, off(R11), z_dst, z_dst
 
+// func aesCMAC128ChainAbsorb68x4Asm(
+//     roundKeys *[176]byte,       // 11 × 16-byte AES round keys
+//     seeds     *[4][2]uint64,    // per-lane (seed0, seed1)
+//     dataPtrs  *[4]*byte,        // 4 pointers, each to ≥68 bytes
+//     out       *[4][2]uint64)    // output: 16 bytes per lane
 TEXT ·aesCMAC128ChainAbsorb68x4Asm(SB), NOSPLIT, $64-32
 	MOVQ roundKeys+0(FP), AX
 	MOVQ seeds+8(FP),     BX

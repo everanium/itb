@@ -8,6 +8,7 @@
 // block_len stays 32 and the compression is identical to the 20-byte
 // kernel.
 //
+// Per-lane absorb construction (matches hashes.BLAKE3 bit-exactly).
 // Mechanical copy of the 20-byte kernel (blake3_chain256_20_amd64.s):
 // only the message-word construction changes. For 20 bytes, m[0..4]
 // are data-derived (5 dwords = 20 bytes). For 13 bytes, data fills
@@ -25,6 +26,9 @@
 // data is read at offsets 0, 4, 8 (MOVL, 12 bytes) + offset 12
 // (MOVBLZX, 1 byte) = exactly 13 bytes; a full MOVL at offset 12 would
 // read past the 13-byte scratch buffer into the adjacent lane.
+//
+// Register allocation: identical to the 20-byte kernel
+// (blake3_chain256_20_amd64.s).
 
 #include "textflag.h"
 
@@ -116,10 +120,10 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func blake3256ChainAbsorb13x4Asm(
-//     key      *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint32)
+//     key      *[32]byte,         // shared 32-byte BLAKE3 keyed-hash key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥13 bytes
+//     out      *[4][8]uint32)     // output: 32 bytes per lane
 TEXT ·blake3256ChainAbsorb13x4Asm(SB), NOSPLIT, $0-32
 	MOVQ key+0(FP),       AX
 	MOVQ seeds+8(FP),     CX

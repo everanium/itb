@@ -2,15 +2,15 @@
 
 // YMM-batched fused chain-absorb kernel for SipHash-2-4-128 with
 // 36-byte per-lane data input (the ITB SetNonceBits(256) buf shape).
-// Same lane-parallel layout as the 20-byte kernel; differs only in
-// the number of compression blocks: 4 full + 1 padded = 5 absorbs ×
-// 2 SipRounds = 10 + 8 finalization SipRounds = 18 SipRounds total
-// per pixel.
+// Same lane-parallel layout as the 20-byte kernel.
 //
-//	sipHash24Chain128Absorb36x4Asm(
-//	    seeds    *[4][2]uint64,
-//	    dataPtrs *[4]*byte,
-//	    out      *[4][2]uint64)
+// Per-lane absorb construction: identical to the 20-byte kernel
+// (siphash_chain128_20_amd64.s) except the block count — 4 full +
+// 1 padded compression blocks = 5 absorbs × 2 SipRounds = 10 + 8
+// finalization SipRounds = 18 SipRounds total per pixel.
+//
+// Register allocation: identical to the 20-byte kernel
+// (siphash_chain128_20_amd64.s).
 
 #include "textflag.h"
 
@@ -51,6 +51,10 @@ GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
 	SIP_ROUND;         \
 	VPXORQ Y4, Y0, Y0
 
+// func sipHash24Chain128Absorb36x4Asm(
+//     seeds    *[4][2]uint64,    // per-lane (K0, K1) SipHash key
+//     dataPtrs *[4]*byte,        // 4 pointers, each to ≥36 bytes
+//     out      *[4][2]uint64)    // output: 16 bytes per lane
 TEXT ·sipHash24Chain128Absorb36x4Asm(SB), NOSPLIT, $0-24
 	MOVQ seeds+0(FP),     BX
 	MOVQ dataPtrs+8(FP),  CX

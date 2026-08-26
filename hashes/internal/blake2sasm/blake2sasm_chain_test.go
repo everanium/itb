@@ -273,9 +273,11 @@ func TestPack256Buf_Layout(t *testing.T) {
 	}
 }
 
-// TestDispatcher_ScalarFallback drives the three public dispatchers
-// through their scalar fallback path by temporarily clearing the
-// HasAVX512Fused capability flag. Verifies that the scalar branch of
+// TestDispatcher_ScalarFallback drives the 20 / 36 / 68-byte public
+// dispatchers through their scalar fallback path by temporarily
+// clearing the HasAVX512Fused capability flag (the 13-byte dispatcher's
+// fallback is exercised by the chain13 parity tests). Verifies
+// that the scalar branch of
 // each dispatcher produces output bit-identical to the per-lane
 // reference closure.
 func TestDispatcher_ScalarFallback(t *testing.T) {

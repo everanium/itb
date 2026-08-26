@@ -3,8 +3,8 @@
 package blake2basm
 
 // Blake2b512ChainAbsorb20x4 is the public 4-pixel-batched entry point
-// for the BLAKE2b-512 chain-absorb at the 20-byte data shape (ITB
-// 128-bit ITB nonce buf shape).
+// for the BLAKE2b-512 chain-absorb at the 20-byte data shape (128-bit
+// ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused YMM-batched ASM kernel which holds four lane-isolated
@@ -69,6 +69,9 @@ func Blake2b512ChainAbsorb13x4(
 	scalarBatch512ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b512ChainAbsorb13x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in blake2b_chain512_13_amd64.s.
+//
 //go:noescape
 func blake2b512ChainAbsorb13x4Asm(
 	h0 *[8]uint64,
@@ -112,6 +115,9 @@ func Blake2b512ChainAbsorb36x4(
 	scalarBatch512ChainAbsorb36(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b512ChainAbsorb36x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in blake2b_chain512_36_amd64.s.
+//
 //go:noescape
 func blake2b512ChainAbsorb36x4Asm(
 	h0 *[8]uint64,
@@ -145,6 +151,9 @@ func Blake2b512ChainAbsorb68x4(
 	scalarBatch512ChainAbsorb68(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b512ChainAbsorb68x4Asm is the YMM-batched fused two-block
+// chain-absorb kernel implemented in blake2b_chain512_68_amd64.s.
+//
 //go:noescape
 func blake2b512ChainAbsorb68x4Asm(
 	h0 *[8]uint64,
@@ -176,6 +185,9 @@ func Blake2b256ChainAbsorb20x4(
 	scalarBatch256ChainAbsorb20(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b256ChainAbsorb20x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in blake2b_chain256_20_amd64.s.
+//
 //go:noescape
 func blake2b256ChainAbsorb20x4Asm(
 	h0 *[8]uint64,
@@ -203,6 +215,9 @@ func Blake2b256ChainAbsorb13x4(
 	scalarBatch256ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b256ChainAbsorb13x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in blake2b_chain256_13_amd64.s.
+//
 //go:noescape
 func blake2b256ChainAbsorb13x4Asm(
 	h0 *[8]uint64,
@@ -228,6 +243,9 @@ func Blake2b256ChainAbsorb36x4(
 	scalarBatch256ChainAbsorb36(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b256ChainAbsorb36x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in blake2b_chain256_36_amd64.s.
+//
 //go:noescape
 func blake2b256ChainAbsorb36x4Asm(
 	h0 *[8]uint64,
@@ -255,6 +273,9 @@ func Blake2b256ChainAbsorb68x4(
 	scalarBatch256ChainAbsorb68(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2b256ChainAbsorb68x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in blake2b_chain256_68_amd64.s.
+//
 //go:noescape
 func blake2b256ChainAbsorb68x4Asm(
 	h0 *[8]uint64,

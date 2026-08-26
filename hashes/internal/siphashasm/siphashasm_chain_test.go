@@ -125,7 +125,7 @@ func TestSipHash24Chain128Absorb68x4(t *testing.T) {
 // must match the per-lane scalar reference bit-exactly. This drives the
 // 4-lane scalar batched chain-absorb path that serves as the fallback
 // on hosts without AVX-512+VL and as the parity baseline for the
-// ZMM-batched ASM kernels.
+// YMM-batched ASM kernels.
 func runScalarBatchChainAbsorb128Test(
 	t *testing.T,
 	name string,
@@ -171,9 +171,11 @@ func TestScalarBatch128ChainAbsorb68_Parity(t *testing.T) {
 	runScalarBatchChainAbsorb128Test(t, "scalarBatch128ChainAbsorb68", 68, scalarBatch128ChainAbsorb68)
 }
 
-// TestDispatcher_ScalarFallback drives the three public dispatchers
-// through their scalar fallback path by temporarily clearing the
-// HasAVX512Fused capability flag. Verifies that the scalar branch of
+// TestDispatcher_ScalarFallback drives the 20 / 36 / 68-byte public
+// dispatchers through their scalar fallback path by temporarily
+// clearing the HasAVX512Fused capability flag (the 13-byte dispatcher's
+// fallback is exercised by the chain13 parity tests). Verifies
+// that the scalar branch of
 // each dispatcher produces output bit-identical to the per-lane
 // reference closure.
 func TestDispatcher_ScalarFallback(t *testing.T) {

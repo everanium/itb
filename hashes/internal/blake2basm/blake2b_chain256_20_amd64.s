@@ -6,7 +6,7 @@
 // differences: 32-byte key prefix (4 broadcasts), 4-component seed
 // (per-lane stride 32 bytes), and 32-byte output (only Y0..Y3 stored).
 //
-// Per-lane buffer construction (matches the public hashes.BLAKE2b256
+// Per-lane absorb construction (matches the public hashes.BLAKE2b256
 // closure bit-exactly):
 //
 //	buf[0:32]   = b2key                (shared across all 4 lanes)
@@ -19,12 +19,20 @@
 // internally; one compression with t=64 (= 32 key + 32 max(data,32)),
 // f=^0 (final block).
 //
-//	blake2b256ChainAbsorb20x4Asm(
-//	    h0       *[8]uint64,        // Blake2bIV256Param (paramBlock 0x01010020)
-//	    b2key    *[32]byte,         // shared 32-byte fixed key
-//	    seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
-//	    out      *[4][8]uint64)     // output: only out[lane][0..4] meaningful
+// Register allocation:
+//
+//	AX        h0 ptr       (Blake2bIV256Param)
+//	BX        b2key ptr    (32-byte shared key)
+//	CX        seeds ptr    (4 lanes × 4 uint64; per-lane stride 32 bytes)
+//	DX        dataPtrs ptr (4 lane pointers)
+//	R8..R11   per-lane data ptrs (loaded at entry)
+//	R12..R14, DI    scratch GPRs for lane packing
+//	R15       out ptr (saved through the round body, used at writeback)
+//	Y0..Y7    state v[0..7]   (initialised from h0 broadcast)
+//	Y8..Y15   state v[8..15]  (initialised from IV, then v[12] ^= t, v[14] ^= ^0)
+//	Y16..Y19  m[0..3]  (32-byte key prefix broadcast to all 4 lanes)
+//	Y20..Y23  m[4..7]  (per-lane data ⊕ seed / seed-only)
+//	Y24..Y31  m[8..15] (zero pad region after seed-injection)
 
 #include "textflag.h"
 
@@ -100,7 +108,12 @@
 	VPEXTRQ $0, X17, off(R10); \
 	VPEXTRQ $1, X17, off(R11)
 
-// func blake2b256ChainAbsorb20x4Asm(...)
+// func blake2b256ChainAbsorb20x4Asm(
+//     h0       *[8]uint64,        // Blake2bIV256Param (paramBlock 0x01010020)
+//     b2key    *[32]byte,         // shared 32-byte fixed key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
+//     out      *[4][8]uint64)     // output: only out[lane][0:4] meaningful
 TEXT ·blake2b256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX

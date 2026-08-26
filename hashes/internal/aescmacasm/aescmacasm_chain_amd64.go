@@ -42,12 +42,6 @@ func AESCMAC128ChainAbsorb20x4(
 	scalarBatch128ChainAbsorb20(key, seeds, dataPtrs, out)
 }
 
-// aesCMAC128ChainAbsorb20x4Asm is the VAES + AVX-512 ZMM-batched
-// fused chain-absorb kernel implemented in
-// aescmac_chain128_20_amd64.s. Bit-exact parity against the scalar
-// reference is verified by the x4 parity tests in
-// aescmacasm_chain_test.go.
-//
 // AESCMAC128ChainAbsorb13x4 — 13-byte AES-CMAC-128 batched dispatcher,
 // the Interlocked Barrier PRF fill message shape. 13 < 16, so the
 // CBC-MAC chain is a single block (one AES round). The .s kernel reads
@@ -66,6 +60,9 @@ func AESCMAC128ChainAbsorb13x4(
 	scalarBatch128ChainAbsorb13(key, seeds, dataPtrs, out)
 }
 
+// aesCMAC128ChainAbsorb13x4Asm is the VAES + AVX-512 ZMM-batched fused
+// chain-absorb kernel implemented in aescmac_chain128_13_amd64.s.
+//
 //go:noescape
 func aesCMAC128ChainAbsorb13x4Asm(
 	roundKeys *[176]byte,
@@ -74,6 +71,12 @@ func aesCMAC128ChainAbsorb13x4Asm(
 	out *[4][2]uint64,
 )
 
+// aesCMAC128ChainAbsorb20x4Asm is the VAES + AVX-512 ZMM-batched
+// fused chain-absorb kernel implemented in
+// aescmac_chain128_20_amd64.s. Bit-exact parity against the scalar
+// reference is verified by the x4 parity tests in
+// aescmacasm_chain_test.go.
+//
 //go:noescape
 func aesCMAC128ChainAbsorb20x4Asm(
 	roundKeys *[176]byte,
@@ -107,6 +110,9 @@ func AESCMAC128ChainAbsorb36x4(
 	scalarBatch128ChainAbsorb36(key, seeds, dataPtrs, out)
 }
 
+// aesCMAC128ChainAbsorb36x4Asm is the VAES + AVX-512 ZMM-batched fused
+// chain-absorb kernel implemented in aescmac_chain128_36_amd64.s.
+//
 //go:noescape
 func aesCMAC128ChainAbsorb36x4Asm(
 	roundKeys *[176]byte,
@@ -139,6 +145,9 @@ func AESCMAC128ChainAbsorb68x4(
 	scalarBatch128ChainAbsorb68(key, seeds, dataPtrs, out)
 }
 
+// aesCMAC128ChainAbsorb68x4Asm is the VAES + AVX-512 ZMM-batched fused
+// chain-absorb kernel implemented in aescmac_chain128_68_amd64.s.
+//
 //go:noescape
 func aesCMAC128ChainAbsorb68x4Asm(
 	roundKeys *[176]byte,

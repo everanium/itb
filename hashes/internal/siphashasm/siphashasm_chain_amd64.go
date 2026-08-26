@@ -7,7 +7,7 @@ package siphashasm
 // shape (128-bit ITB nonce buf shape — the default config).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
-// to the fused ZMM-batched ASM kernel; otherwise falls through to
+// to the fused YMM-batched ASM kernel; otherwise falls through to
 // the scalar batched reference path (which delegates to upstream
 // github.com/dchest/siphash).
 //
@@ -40,7 +40,7 @@ func SipHash24Chain128Absorb20x4(
 	scalarBatch128ChainAbsorb20(seeds, dataPtrs, out)
 }
 
-// sipHash24Chain128Absorb20x4Asm is the AVX-512 ZMM-batched fused
+// sipHash24Chain128Absorb20x4Asm is the AVX-512 YMM-batched fused
 // chain-absorb kernel implemented in siphash_chain128_20_amd64.s.
 // Bit-exact parity against the scalar reference is verified by
 // the x4 parity tests in siphashasm_chain_test.go.
@@ -69,6 +69,9 @@ func SipHash24Chain128Absorb13x4(
 	scalarBatch128ChainAbsorb13(seeds, dataPtrs, out)
 }
 
+// sipHash24Chain128Absorb13x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in siphash_chain128_13_amd64.s.
+//
 //go:noescape
 func sipHash24Chain128Absorb13x4Asm(
 	seeds *[4][2]uint64,
@@ -91,6 +94,9 @@ func SipHash24Chain128Absorb36x4(
 	scalarBatch128ChainAbsorb36(seeds, dataPtrs, out)
 }
 
+// sipHash24Chain128Absorb36x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in siphash_chain128_36_amd64.s.
+//
 //go:noescape
 func sipHash24Chain128Absorb36x4Asm(
 	seeds *[4][2]uint64,
@@ -113,6 +119,9 @@ func SipHash24Chain128Absorb68x4(
 	scalarBatch128ChainAbsorb68(seeds, dataPtrs, out)
 }
 
+// sipHash24Chain128Absorb68x4Asm is the YMM-batched fused chain-absorb
+// kernel implemented in siphash_chain128_68_amd64.s.
+//
 //go:noescape
 func sipHash24Chain128Absorb68x4Asm(
 	seeds *[4][2]uint64,

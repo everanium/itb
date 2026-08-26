@@ -36,15 +36,9 @@
 //	Z1..Z11   broadcast round keys K0..K10
 //	Z12       absorb data scratch
 //
-// $64-32: 64 bytes of stack scratch are used to assemble the partial
-// 4-byte tail XOR for round 2 (zero-padded to 16 bytes per lane,
-// loaded into Z12 and XOR'd into Z0).
-//
-//	aesCMAC128ChainAbsorb20x4Asm(
-//	    roundKeys *[176]byte,       // 11 × 16-byte AES round keys
-//	    seeds     *[4][2]uint64,    // per-lane (seed0, seed1)
-//	    dataPtrs  *[4]*byte,        // 4 pointers, each to ≥20 bytes
-//	    out       *[4][2]uint64)    // output: 16 bytes per lane
+// Stack frame: 64 bytes of scratch for the 4-byte tail staging of
+// round 2 (zero-padded to 16 bytes per lane, loaded into Z12 and
+// XOR'd into Z0).
 
 #include "textflag.h"
 

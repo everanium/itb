@@ -17,7 +17,7 @@ import (
 // On non-amd64 / purego builds and on amd64 hosts without
 // AVX-512+VL, this serves as the production fallback path. On AVX-
 // 512+VL hosts it serves as the parity baseline for the
-// blake2b_chain_20_amd64.s ASM kernel — any divergence between the
+// blake2b_chain512_20_amd64.s ASM kernel — any divergence between the
 // two would surface as a different digest from the public
 // hashes.BLAKE2b{256,512} factories, which the porting work
 // explicitly forbids.
@@ -51,7 +51,7 @@ func scalar512ChainAbsorb36(
 // scalar512ChainAbsorb68 — 68-byte counterpart. Two compression blocks:
 //
 //	Block 1 (t=128, f=0): buf[0:128]   = b2key + (data[0:64] ⊕ seed)
-//	Block 2 (t=132, f=1): buf[128:132] = data[64:68] + 124 zero pad
+//	Block 2 (t=132, f=^0): buf[128:132] = data[64:68] + 124 zero pad
 //
 // On the AVX-512 fused path the BLAKE2b state is held in YMM
 // registers across both compressions. The scalar reference
