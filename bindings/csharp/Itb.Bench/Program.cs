@@ -21,12 +21,17 @@ internal static class Program
             case "stream":
                 BenchStream.Run();
                 return 0;
+            case "stream_one_shot":
+                BenchStreamOneShot.Run();
+                return 0;
             case "all":
                 BenchMessage.Run();
                 BenchStream.Run();
+                BenchStreamOneShot.Run();
                 return 0;
             default:
-                Console.Error.WriteLine("usage: Itb.Bench [message|stream|all]");
+                Console.Error.WriteLine(
+                    "usage: Itb.Bench [message|stream|stream_one_shot|all]");
                 return 2;
         }
     }

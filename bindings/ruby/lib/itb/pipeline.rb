@@ -145,6 +145,19 @@ module ITB
       end
     end
 
+    # One-shot stream encrypt for callers holding the whole plaintext
+    # in memory: routes the payload through the Pipeline's stream
+    # chain in a single FFI round trip and returns the wire. Prefer
+    # #encrypt_stream for bounded-memory streaming.
+    def encrypt_stream_one_shot(plaintext)
+      cipher(:ITB_Triple_EncryptStream, plaintext)
+    end
+
+    # Receive-side counterpart of #encrypt_stream_one_shot.
+    def decrypt_stream_one_shot(wire)
+      cipher(:ITB_Triple_DecryptStream, wire)
+    end
+
     # Releases the Pipeline handle (libitb closes and zeroes key
     # material first). Safe to call more than once.
     def free

@@ -207,6 +207,24 @@ local function main()
             collectgarbage("collect")
         end
     end
+
+    do
+        local pipe <close> = itb.create(
+            profile_env("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), opts)
+        for _, size in ipairs(SIZES) do
+            local plain = random_bytes(size)
+            bench_case("stream_one_shot", size, function()
+                pipe:encrypt_stream_one_shot(plain)
+            end)
+            local dec_wire = pipe:encrypt_stream_one_shot(plain)
+            bench_case("stream_one_shot-dec", size, function()
+                pipe:decrypt_stream_one_shot(dec_wire)
+            end)
+            plain = nil
+            dec_wire = nil
+            collectgarbage("collect")
+        end
+    end
 end
 
 main()

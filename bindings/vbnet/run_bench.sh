@@ -68,16 +68,23 @@ case "${1:-all}" in
         exec dotnet run -c Release --no-build \
             --project bench/EveraniumItb.VisualBasic.Bench -- stream
         ;;
+    stream_one_shot)
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        exec dotnet run -c Release --no-build \
+            --project bench/EveraniumItb.VisualBasic.Bench -- stream_one_shot
+        ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
         dotnet run -c Release --no-build \
             --project bench/EveraniumItb.VisualBasic.Bench -- message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec dotnet run -c Release --no-build \
+        dotnet run -c Release --no-build \
             --project bench/EveraniumItb.VisualBasic.Bench -- stream
+        exec dotnet run -c Release --no-build \
+            --project bench/EveraniumItb.VisualBasic.Bench -- stream_one_shot
         ;;
     *)
-        echo "usage: $0 [message|stream|all]" >&2
+        echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
         exit 2
         ;;
 esac
