@@ -309,6 +309,10 @@
 // [MACFunc] is defined as func([]byte) []byte — any function that takes data
 // and returns a fixed-size tag. The MAC covers the entire decrypted capacity
 // (COBS + null terminator + fill), preventing CCA spatial pattern leaks.
+// [MACIncrementalFunc] is the optional multi-slice arm of the same
+// interface: set on [Config.MACIncremental], it lets the authenticated
+// entry points absorb the MAC input parts without a concatenation copy;
+// MACFunc remains the primary type.
 //
 // Authenticated Triple Ouroboros variants (8 seeds):
 // [EncryptAuthenticated3x128Cfg], [EncryptAuthenticated3x256Cfg],

@@ -158,6 +158,13 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: macs.Make(%q): %w", resolved.macName, err)
 		}
+		// Multi-slice MAC arm: lets the authenticated entry points
+		// absorb the MAC input parts without the concatenation copy.
+		// Same primitive, same key — tags are byte-identical.
+		cfg.MACIncremental, err = macs.MakeIncremental(resolved.macName, macKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("triple: macs.MakeIncremental(%q): %w", resolved.macName, err)
+		}
 	}
 
 	// Inner Blob{N} export via the Cfg-aware Phase 3 API.
