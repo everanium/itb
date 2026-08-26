@@ -2,9 +2,9 @@
 #
 # run_bench.sh -- micro-benchmark runner for the Zig binding. Builds
 # libitb.so + the C binding archive + the Zig binaries via build.sh,
-# then runs bench_message + bench_stream (zig build bench, always
-# ReleaseFast): encryptMessage and encryptStreamPump throughput at
-# 1 MiB / 16 MiB / 64 MiB.
+# then runs bench_message + bench_stream + bench_stream_one_shot (zig
+# build bench, always ReleaseFast): encryptMessage, encryptStreamPump,
+# and encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh
@@ -48,7 +48,7 @@ else
     ITB_STREAM_PROFILE_DEFAULT="streaming-noaead-triple-v1"
 fi
 
-# `zig build` compiles and installs bench_message + bench_stream into
+# `zig build` compiles and installs every bench binary into
 # zig-out/bin/; running each binary directly (rather than `zig build
 # bench`) lets the two shapes carry independent MAC / no-MAC profiles
 # in a single script pass.
@@ -57,3 +57,4 @@ export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
 ./zig-out/bin/bench_message
 export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
 ./zig-out/bin/bench_stream
+./zig-out/bin/bench_stream_one_shot

@@ -2,8 +2,8 @@
 #
 # run_bench.sh -- micro-benchmark runner for the Python binding.
 # Builds libitb.so via build.sh, then runs the benches/bench_*.py
-# scripts: encrypt_message and encrypt_stream_pump throughput at
-# 1 MiB / 16 MiB / 64 MiB.
+# scripts: encrypt_message, encrypt_stream_pump, and
+# encrypt_stream_one_shot throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh
@@ -55,3 +55,4 @@ export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
 python3 benches/bench_message.py
 export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
 python3 benches/bench_stream.py
+python3 benches/bench_stream_one_shot.py

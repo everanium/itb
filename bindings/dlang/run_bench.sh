@@ -2,8 +2,8 @@
 #
 # run_bench.sh -- micro-benchmark runner for the D binding. Builds
 # libitb.so + the binding via build.sh, then compiles and runs the
-# benches/bench_*.d binaries: encryptMessage and encryptStreamPump
-# throughput at 1 MiB / 16 MiB / 64 MiB.
+# benches/bench_*.d binaries: encryptMessage, encryptStreamPump, and
+# encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh
@@ -55,7 +55,7 @@ COMPILER="${COMPILER:-ldc2}"
 BUILD_DIR="benches/build"
 mkdir -p "$BUILD_DIR"
 
-for bench in bench_message bench_stream; do
+for bench in bench_message bench_stream bench_stream_one_shot; do
     echo "==> compiling $bench"
     # DMD accepts `-inline`; LDC2 inlines under `-O` and rejects the
     # DMD-only flag. Split the two compilers' flag lines.
@@ -69,10 +69,11 @@ for bench in bench_message bench_stream; do
         -L-L"$DIST_DIR" -L-litb "-L-rpath=$DIST_DIR"
 done
 
-for bench in bench_message bench_stream; do
+for bench in bench_message bench_stream bench_stream_one_shot; do
     case "$bench" in
-        bench_message) export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}" ;;
-        bench_stream)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}" ;;
+        bench_message)          export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"    ;;
+        bench_stream)           export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}" ;;
+        bench_stream_one_shot)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}" ;;
     esac
     echo
     echo "==> running $bench (ITB_BENCH_MIN_SEC=$ITB_BENCH_MIN_SEC)"

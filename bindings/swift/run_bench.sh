@@ -2,11 +2,12 @@
 #
 # run_bench.sh -- micro-benchmark runner for the Swift binding.
 # Builds libitb.so + the C binding library + the Swift package, then
-# runs the ItbBench executable: encryptMessage and encryptStreamPump
-# throughput at 1 MiB / 16 MiB / 64 MiB as an MB/s table on stdout.
+# runs the ItbBench executable: encryptMessage, encryptStreamPump,
+# and encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB as
+# an MB/s table on stdout.
 #
 # Usage:
-#   ./run_bench.sh [message|stream|all]   # default: all
+#   ./run_bench.sh [message|stream|stream_one_shot|all]   # default: all
 
 set -eu
 set -o pipefail
@@ -59,14 +60,19 @@ case "${1:-all}" in
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
         exec .build/release/ItbBench stream
         ;;
+    stream_one_shot)
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        exec .build/release/ItbBench stream_one_shot
+        ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
         .build/release/ItbBench message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec .build/release/ItbBench stream
+        .build/release/ItbBench stream
+        exec .build/release/ItbBench stream_one_shot
         ;;
     *)
-        echo "usage: $0 [message|stream|all]" >&2
+        echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
         exit 2
         ;;
 esac
