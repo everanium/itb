@@ -117,6 +117,17 @@ let assert Ok(blob2) = pipeline.blob(sender)
 let assert Ok(receiver2) = pipeline.open("singlemsg-triple-mac-v1", blob2, [])
 ```
 
+### One-shot streams
+
+`pipeline.encrypt_stream_one_shot` /
+`pipeline.decrypt_stream_one_shot` put a whole in-memory payload
+through the stream chain in a single call:
+
+```gleam
+let assert Ok(wire) = pipeline.encrypt_stream_one_shot(sender, plain)
+let assert Ok(back) = pipeline.decrypt_stream_one_shot(receiver, wire)
+```
+
 ### Incremental stream sessions
 
 For chunked payloads, the session surface mirrors the Erlang

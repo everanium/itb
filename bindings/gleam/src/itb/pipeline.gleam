@@ -77,3 +77,19 @@ pub fn decrypt_message(
   pipeline: Pipeline,
   wire: BitArray,
 ) -> Result(BitArray, ItbError)
+
+/// One-shot stream encrypt for callers holding the whole plaintext
+/// in memory: a single call through the Pipeline's stream chain. For
+/// bounded-memory streaming use the incremental `itb/stream` session.
+@external(erlang, "itb_gleam_ffi", "encrypt_stream_one_shot")
+pub fn encrypt_stream_one_shot(
+  pipeline: Pipeline,
+  plain: BitArray,
+) -> Result(BitArray, ItbError)
+
+/// Receive-side counterpart of `encrypt_stream_one_shot`.
+@external(erlang, "itb_gleam_ffi", "decrypt_stream_one_shot")
+pub fn decrypt_stream_one_shot(
+  pipeline: Pipeline,
+  wire: BitArray,
+) -> Result(BitArray, ItbError)

@@ -152,6 +152,27 @@ fn drain(session: stream.Session, acc: BitArray) -> BitArray {
 }
 
 // ------------------------------------------------------------------
+// One-shot stream round trip (Streaming AEAD profile)
+// ------------------------------------------------------------------
+
+pub fn stream_one_shot_round_trip_test() {
+  let #(sender, receiver) = pair("streaming-aead-triple-mac-v1")
+  let plain = rand_bytes(262_151)
+  // One-shot both ways, then cross-check against the incremental
+  // session path in each direction.
+  let assert Ok(wire) = pipeline.encrypt_stream_one_shot(sender, plain)
+  assert bit_array.byte_size(wire) > bit_array.byte_size(plain)
+  let assert Ok(back) = pipeline.decrypt_stream_one_shot(receiver, wire)
+  assert back == plain
+  assert run_session(stream.decrypt, receiver, wire, 65_536) == plain
+  let wire2 = run_session(stream.encrypt, sender, plain, 60_000)
+  let assert Ok(back2) = pipeline.decrypt_stream_one_shot(receiver, wire2)
+  assert back2 == plain
+  pipeline.free(receiver)
+  pipeline.free(sender)
+}
+
+// ------------------------------------------------------------------
 // Error mapping
 // ------------------------------------------------------------------
 

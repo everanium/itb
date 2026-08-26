@@ -26,6 +26,7 @@
 
 -export([init/2, open/5, blob/1, rekey/3, free/1,
          encrypt_message/2, decrypt_message/2,
+         encrypt_stream_one_shot/2, decrypt_stream_one_shot/2,
          encrypt_stream/1, decrypt_stream/1,
          stream_write/2, stream_end/1, stream_read/2, stream_free/1,
          register_profile/2, version/0, hashes/0, last_error/0,
@@ -64,6 +65,16 @@ encrypt_message(Pipeline, Plain) ->
 
 decrypt_message(Pipeline, Wire) ->
     norm(itb:decrypt_message(Pipeline, Wire)).
+
+%% ------------------------------------------------------------------
+%% One-shot stream encrypt / decrypt
+%% ------------------------------------------------------------------
+
+encrypt_stream_one_shot(Pipeline, Plain) ->
+    norm(itb:encrypt_stream_one_shot(Pipeline, Plain)).
+
+decrypt_stream_one_shot(Pipeline, Wire) ->
+    norm(itb:decrypt_stream_one_shot(Pipeline, Wire)).
 
 %% ------------------------------------------------------------------
 %% Incremental stream sessions
