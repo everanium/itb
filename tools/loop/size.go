@@ -71,3 +71,14 @@ func humanRate(n int64, d time.Duration) string {
 	}
 	return fmt.Sprintf("%.1fMB/s", float64(n)/float64(1<<20)/d.Seconds())
 }
+
+// humanRateBare renders a bytes-over-duration throughput as a bare
+// MiB/s figure with no unit suffix. Used by the mid-run progress line
+// to compose "enc:X dec:Y combined:ZMB/s" — the suffix appears once at
+// the end.
+func humanRateBare(n int64, d time.Duration) string {
+	if d <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f", float64(n)/float64(1<<20)/d.Seconds())
+}

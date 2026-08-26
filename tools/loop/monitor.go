@@ -44,18 +44,24 @@ func sample(r *runState) {
 	}
 
 	var (
-		iterParts []string
-		totalProc int64
+		iterParts          []string
+		totalEnc, totalDec int64
 	)
 	for _, w := range r.workers {
 		iterParts = append(iterParts, fmt.Sprintf("g%d:%d", w.id, w.iters.Load()))
-		totalProc += w.bytesEnc.Load() + w.bytesDec.Load()
+		totalEnc += w.bytesEnc.Load()
+		totalDec += w.bytesDec.Load()
 	}
 
-	logf("+%s: iters=[%s] heap=%s objects=%d goroutines=%d gcs=%d tput=%s",
+	// Throughput split into encrypt / decrypt lanes so a per-direction
+	// asymmetry (typically encrypt lagging decrypt due to the noise-
+	// injection CSPRNG cost) is visible in the progress line. The
+	// combined figure is retained for a one-glance total.
+	logf("+%s: iters=[%s] heap=%s objects=%d goroutines=%d gcs=%d tput=enc:%s dec:%s combined:%s",
 		elapsed.Round(time.Second), strings.Join(iterParts, " "),
 		humanBytes(int64(ms.HeapAlloc)), ms.HeapObjects, goroutines, ms.NumGC,
-		humanRate(totalProc, elapsed))
+		humanRateBare(totalEnc, elapsed), humanRateBare(totalDec, elapsed),
+		humanRate(totalEnc+totalDec, elapsed))
 
 	// Anomaly thresholds calibrated for mid-flight sampling. The itb
 	// core spawns transient internal worker goroutines per in-flight
@@ -118,8 +124,10 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 
 	logf("=== FINAL ===")
 	logf("  duration: %s", elapsed.Round(time.Millisecond))
-	logf("  iterations: %s = %d total (throughput %s aggregate encrypt+decrypt)",
-		strings.Join(iterParts, " + "), totalIters, humanRate(totalEnc+totalDec, elapsed))
+	logf("  iterations: %s = %d total", strings.Join(iterParts, " + "), totalIters)
+	logf("  throughput: encrypt %s, decrypt %s, combined %s",
+		humanRate(totalEnc, elapsed), humanRate(totalDec, elapsed),
+		humanRate(totalEnc+totalDec, elapsed))
 	logf("  bytes: %s encrypted, %s decrypted", humanBytes(totalEnc), humanBytes(totalDec))
 	logf("  data integrity: %d/%d PASS", totalIters, totalIters)
 	logf("  goroutines: idle baseline %d, warmup %d, peak %d, final %d (%s)",
