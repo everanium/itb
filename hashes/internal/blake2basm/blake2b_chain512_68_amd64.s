@@ -4,7 +4,10 @@
 // per-lane data input (the ITB SetNonceBits(512) buf shape). Two
 // 128-byte BLAKE2b compression blocks per lane, with state-residency
 // in YMM registers between the two compressions (the 4 × 64-bit
-// lane qwords fill one YMM register exactly):
+// lane qwords fill one YMM register exactly).
+//
+// Per-lane absorb construction (matches the public hashes.BLAKE2b512
+// closure bit-exactly):
 //
 //	Block 1 (t=128, f=0):  buf[0:128]   = b2key + (data[0:64] ⊕ seed)
 //	Block 2 (t=132, f=^0): buf[128:132] = data[64:68] (no seed XOR;
@@ -19,14 +22,9 @@
 // block 2) and also saved to stack so the final block-2 fold can
 // XOR it back in.
 //
-// Function signature (Go-side prototype in blake2basm_chain_amd64.go):
-//
-//	blake2b512ChainAbsorb68x4Asm(
-//	    h0       *[8]uint64,        // param-XOR'd IV (broadcast to 4 lanes)
-//	    b2key    *[64]byte,         // shared 64-byte fixed key
-//	    seeds    *[4][8]uint64,     // per-lane 8 seed components
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥68 bytes
-//	    out      *[4][8]uint64)     // output: 4 lanes × 8 uint64
+// Register allocation: identical to the 20-byte kernel
+// (blake2b_chain512_20_amd64.s); the m-register set Y16..Y31 is
+// rebuilt per block.
 //
 // Stack frame: 256 bytes for h_after_block1 save (8 YMMs × 32 bytes).
 
@@ -97,11 +95,11 @@
 	VPEXTRQ $1, X17, off(R11)
 
 // func blake2b512ChainAbsorb68x4Asm(
-//     h0       *[8]uint64,
-//     b2key    *[64]byte,
-//     seeds    *[4][8]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint64)
+//     h0       *[8]uint64,        // param-XOR'd IV (broadcast to 4 lanes)
+//     b2key    *[64]byte,         // shared 64-byte fixed key
+//     seeds    *[4][8]uint64,     // per-lane 8 seed components (stride 64)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥68 bytes
+//     out      *[4][8]uint64)     // output: 4 lanes × 8 uint64
 TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $256-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX
@@ -189,8 +187,8 @@ TEXT ·blake2b512ChainAbsorb68x4Asm(SB), NOSPLIT, $256-40
 	VPTERNLOGQ.BCST $0x96, 48(AX), Y14, Y6
 	VPTERNLOGQ.BCST $0x96, 56(AX), Y15, Y7
 
-	// Save h_after_block1 to stack so we can XOR it into the final
-	// block-2 fold (Y0..Y7 will be mutated by the block-2 rounds).
+	// Save h_after_block1 to stack so the final block-2 fold can XOR
+	// it back in (Y0..Y7 will be mutated by the block-2 rounds).
 	VMOVDQU64 Y0, 0(SP)
 	VMOVDQU64 Y1, 32(SP)
 	VMOVDQU64 Y2, 64(SP)

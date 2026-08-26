@@ -2,9 +2,10 @@
 
 // Package aescmacasm holds the AVX-512 + VAES fused chain-absorb
 // kernel implementation of AES-CMAC for the parent hashes/ package.
-// The chain kernels are specialised at three input widths
-// (20 / 36 / 68 bytes — covering the ITB 128 / 256 / 512-bit nonce
-// buf shapes) and hold the AES-CMAC state in a single ZMM register
+// The chain kernels are specialised at four input widths
+// (13 / 20 / 36 / 68 bytes — the 13-byte Interlocked Barrier PRF
+// fill shape plus the ITB 128 / 256 / 512-bit nonce buf shapes)
+// and hold the AES-CMAC state in a single ZMM register
 // (4 lanes × 16-byte AES blocks per ZMM) across the absorb rounds,
 // eliminating the per-round memory round-trip taken by the upstream
 // crypto/aes.cipher.Block.Encrypt path.

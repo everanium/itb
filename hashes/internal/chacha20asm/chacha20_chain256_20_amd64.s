@@ -3,9 +3,9 @@
 // XMM-batched fused chain-absorb kernel for ChaCha20-256 with 20-byte
 // per-lane data input (the ITB SetNonceBits(128) buf shape — default
 // config). Lane-parallel layout across 4 pixels, mirroring the
-// blake2{b,s}asm / blake3asm ZMM scaffold narrowed to XMM width: the
-// 4 × 32-bit lane dwords fill one XMM register exactly, so the upper
-// 384 bits of the ZMM layout carried no data.
+// blake2sasm / blake3asm XMM scaffold: the 4 × 32-bit lane dwords
+// fill one XMM register exactly — the XMM active width for the
+// 32-bit word state.
 //
 // Per-lane absorb construction (matches the public hashes.ChaCha20
 // closure bit-exactly):
@@ -36,12 +36,6 @@
 //	X0..X15   ChaCha20 state v[0..15] across 20 rounds
 //	X16..X31  v_init save (used at end for keystream `+ v_init`),
 //	          then repurposed as absorb_state (X16..X23)
-//
-//	chaCha20256ChainAbsorb20x4Asm(
-//	    fixedKey *[32]byte,         // shared 32-byte fixed key
-//	    seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
-//	    out      *[4][4]uint64)     // output: 32 bytes per lane
 
 #include "textflag.h"
 
@@ -112,10 +106,10 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func chaCha20256ChainAbsorb20x4Asm(
-//     fixedKey *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][4]uint64)
+//     fixedKey *[32]byte,         // shared 32-byte fixed key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
+//     out      *[4][4]uint64)     // output: 32 bytes per lane
 TEXT ·chaCha20256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-32
 	MOVQ fixedKey+0(FP),  AX
 	MOVQ seeds+8(FP),     CX

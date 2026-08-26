@@ -5,9 +5,8 @@ package chacha20asm
 // the start of every compression (RFC 7539 §2.3). Stored as the
 // little-endian uint32 representation of the ASCII bytes; the
 // compression block uses VPBROADCASTD over each entry to fan one
-// constant across all 16 dword lanes of a ZMM (lanes 4..15 are
-// ignored downstream — the kernel only writes back lanes 0..3 to
-// out[]).
+// constant across the 4 dword lanes of an XMM (the YMM-batched
+// 68-byte kernel broadcasts across both counter halves).
 var ChaCha20Sigma = [4]uint32{
 	0x61707865, // "expa"
 	0x3320646e, // "nd 3"

@@ -2,11 +2,12 @@
 
 // Package blake2basm holds the AVX-512 + VL fused chain-absorb kernel
 // implementation of BLAKE2b for the parent hashes/ package. The chain
-// kernels are specialised at three input widths (20 / 36 / 68 bytes —
-// covering the ITB 128 / 256 / 512-bit nonce buf shapes) and hold
-// BLAKE2b state in YMM registers across the absorb rounds, eliminating
-// the per-round memory round-trip taken by the upstream
-// `golang.org/x/crypto/blake2b` path.
+// kernels are specialised at four input widths (13 / 20 / 36 / 68
+// bytes — the 13-byte Interlocked Barrier PRF fill shape plus the ITB
+// 128 / 256 / 512-bit nonce buf shapes) and hold BLAKE2b state in YMM
+// registers across the absorb rounds — the YMM active width for the
+// 64-bit word state — eliminating the per-round memory round-trip
+// taken by the upstream `golang.org/x/crypto/blake2b` path.
 //
 // One ASM kernel set covers both the 256-bit and 512-bit BLAKE2b
 // factories in the parent hashes/ package. BLAKE2b's compression
@@ -15,7 +16,7 @@
 // and -256 truncates the 64-byte output to 32 bytes. Both adjustments
 // happen in the calling Go closure, not in ASM.
 //
-// Below the AVX-512 + VL + VAES tier, the parent package's dispatch
+// Below the AVX-512 + VL tier, the parent package's dispatch
 // falls through to the existing `golang.org/x/crypto/blake2b` AVX2 /
 // SSE2 / scalar paths. No AVX2 / SSE4 / SSSE3 ASM is provided here —
 // the upstream library already covers those tiers, and the fused
@@ -26,8 +27,7 @@
 // Reference layout: github.com/saucecontrol/Blake2Fast (MIT) —
 // specifically src/Blake2Fast/Blake2b/Blake2bAvx512.g.cs. Bernstein
 // 4×YMM row layout with VPRORQ for all four ARX rotates per G
-// function. Per-file attribution lives in the corresponding
-// blake2b_chain_*_amd64.s headers when the kernels land.
+// function.
 package blake2basm
 
 import "golang.org/x/sys/cpu"

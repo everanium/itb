@@ -32,9 +32,10 @@ import (
 //
 // On non-amd64 / purego builds and on amd64 hosts without
 // AVX-512+VL, this serves as the production fallback. On AVX-512+VL
-// hosts it is the parity baseline for the ZMM-batched ASM kernels —
-// divergence between scalar and ASM output would observably change
-// the digest emitted by hashes.ChaCha20256.
+// hosts it is the parity baseline for the XMM-batched ASM kernels
+// (YMM-batched at the 68-byte shape) — divergence between scalar and
+// ASM output would observably change the digest emitted by
+// hashes.ChaCha20256.
 func scalar256ChainAbsorb(
 	fixedKey *[32]byte,
 	data []byte,
@@ -88,7 +89,7 @@ func scalar256ChainAbsorb(
 // the per-lane scalar reference; each lane is bit-exact equivalent
 // to the public hashes.ChaCha20 closure on the same input. Used as
 // the production fallback on hosts without AVX-512+VL and as the
-// parity baseline for the ZMM-batched ASM kernel.
+// parity baseline for the XMM-batched ASM kernel.
 func scalarBatch256ChainAbsorb20(
 	fixedKey *[32]byte,
 	seeds *[4][4]uint64,

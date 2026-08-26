@@ -6,7 +6,7 @@
 // dwords fill one XMM register exactly, mirroring the blake2sasm
 // XMM scaffold.
 //
-// Per-lane mixed buffer construction (matches the public hashes.BLAKE3
+// Per-lane absorb construction (matches the public hashes.BLAKE3
 // closure bit-exactly):
 //
 //	mixed[0:20]  = data[lane]                 (per-lane, 20 bytes)
@@ -18,16 +18,22 @@
 //
 // The 32-byte keyed-hash key (shared across all 4 lanes) goes into
 // the BLAKE3 state init as v[0..7] — NOT into the mixed buffer
-// (different from BLAKE2{b,s} where the key was a literal payload
+// (different from BLAKE2{b,s} where the key is a literal payload
 // prefix). One BLAKE3 compression with block_len=32, flags=0x1B
 // (KEYED_HASH | CHUNK_START | CHUNK_END | ROOT). Single-block kernel
 // since mixed (32 bytes) fits in a single 64-byte BLAKE3 block.
 //
-//	blake3256ChainAbsorb20x4Asm(
-//	    key      *[32]byte,         // shared 32-byte BLAKE3 key
-//	    seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
-//	    out      *[4][8]uint32)     // output: 32 bytes per lane
+// Register allocation:
+//
+//	AX        key ptr      (32-byte shared BLAKE3 key)
+//	CX        seeds ptr    (4 lanes × 4 uint64; per-lane stride 32 bytes)
+//	DX        dataPtrs ptr (4 lane pointers)
+//	R8..R11   per-lane data ptrs (loaded at entry)
+//	R12..R14, DI    scratch GPRs for lane packing
+//	R15       out ptr (saved through the round body, used at writeback)
+//	X0..X15   BLAKE3 state v[0..15] across all 7 rounds
+//	X16..X31  message words m[0..15] (m[0..7] per-lane data ⊕ seed /
+//	          seed-only; m[8..15] zero — past the 32-byte mixed buffer)
 
 #include "textflag.h"
 
@@ -110,10 +116,10 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func blake3256ChainAbsorb20x4Asm(
-//     key      *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint32)
+//     key      *[32]byte,         // shared 32-byte BLAKE3 keyed-hash key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
+//     out      *[4][8]uint32)     // output: 32 bytes per lane
 TEXT ·blake3256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-32
 	MOVQ key+0(FP),       AX
 	MOVQ seeds+8(FP),     CX

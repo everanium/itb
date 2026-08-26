@@ -8,7 +8,7 @@
 // produces a 36-byte mixed buffer (no key prefix) which fits in a
 // single 64-byte BLAKE3 block.
 //
-// Per-lane mixed buffer construction (matches the public hashes.BLAKE3
+// Per-lane absorb construction (matches the public hashes.BLAKE3
 // closure bit-exactly):
 //
 //	mixed[0:36] = data[lane]                  (per-lane, 36 bytes)
@@ -18,11 +18,9 @@
 //
 // One BLAKE3 compression with block_len=36, flags=0x1B.
 //
-//	blake3256ChainAbsorb36x4Asm(
-//	    key      *[32]byte,
-//	    seeds    *[4][4]uint64,
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
-//	    out      *[4][8]uint32)
+// Register allocation: identical to the 20-byte kernel
+// (blake3_chain256_20_amd64.s); m[0..8] are data-derived here
+// (9 dwords = 36 bytes) instead of m[0..4].
 
 #include "textflag.h"
 
@@ -97,10 +95,10 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func blake3256ChainAbsorb36x4Asm(
-//     key      *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint32)
+//     key      *[32]byte,         // shared 32-byte BLAKE3 keyed-hash key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
+//     out      *[4][8]uint32)     // output: 32 bytes per lane
 TEXT ·blake3256ChainAbsorb36x4Asm(SB), NOSPLIT, $0-32
 	MOVQ key+0(FP),       AX
 	MOVQ seeds+8(FP),     CX

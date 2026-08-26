@@ -6,7 +6,7 @@
 // 20-byte kernel; only the two data-carrying message words at the tail
 // of the seed-injection region differ.
 //
-// Per-lane buffer construction (matches hashes.BLAKE2b512 bit-exactly):
+// Per-lane absorb construction (matches hashes.BLAKE2b512 bit-exactly):
 //
 //	buf[0:64]   = b2key                (shared across all 4 lanes)
 //	buf[64:77]  = data[lane]           (per-lane, 13 bytes)
@@ -26,6 +26,9 @@
 // data is read at offset 0 (MOVQ, 8 bytes) and offset 8 (MOVL 4 bytes +
 // MOVBLZX 1 byte) = exactly 13 bytes; a MOVQ at offset 8 would read
 // past the 13-byte scratch buffer into the adjacent lane.
+//
+// Register allocation: identical to the 20-byte kernel
+// (blake2b_chain512_20_amd64.s).
 
 #include "textflag.h"
 
@@ -101,11 +104,11 @@
 	VPEXTRQ $1, X17, off(R11)
 
 // func blake2b512ChainAbsorb13x4Asm(
-//     h0       *[8]uint64,
-//     b2key    *[64]byte,
-//     seeds    *[4][8]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint64)
+//     h0       *[8]uint64,        // param-XOR'd IV (broadcast to 4 lanes)
+//     b2key    *[64]byte,         // shared 64-byte fixed key
+//     seeds    *[4][8]uint64,     // per-lane 8 seed components (stride 64)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥13 bytes
+//     out      *[4][8]uint64)     // output: 4 lanes × 8 uint64
 TEXT ·blake2b512ChainAbsorb13x4Asm(SB), NOSPLIT, $0-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX

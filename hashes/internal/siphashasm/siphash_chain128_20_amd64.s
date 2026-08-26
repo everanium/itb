@@ -29,15 +29,21 @@
 //	  v1 ^= 0xdd; SipRound × 4
 //	  out1 = v0 ^ v1 ^ v2 ^ v3
 //
-// 14 SipRounds total per pixel. Y0..Y3 hold the state across all
-// rounds; Y4 holds the current message word (per-lane LE u64);
-// Y16 / Y17 hold the per-lane (K0, K1) seed pack (used at state
-// init only); Y18 / Y19 hold the per-half output during finalization.
+// 14 SipRounds total per pixel.
 //
-//	sipHash24Chain128Absorb20x4Asm(
-//	    seeds    *[4][2]uint64,
-//	    dataPtrs *[4]*byte,
-//	    out      *[4][2]uint64)
+// Register allocation:
+//
+//	BX        seeds ptr    (4 lanes × 2 uint64; per-lane stride 16 bytes)
+//	CX        dataPtrs ptr (4 lane pointers)
+//	DX        out ptr
+//	R8..R11   per-lane data ptrs (loaded at entry)
+//	R12       scratch GPR (constants, message packing)
+//	Y0..Y3    SipHash state v0..v3 (one YMM per state word, lane = qword index)
+//	Y4        current message word m (per-lane LE u64, packed via X4/X5)
+//	Y5        lenTag broadcast for the final padded block
+//	Y16, Y17  per-lane (K0, K1) seed packs (state init only; Z16 receives
+//	          the seed de-interleave permute, Z19 holds its indices)
+//	Y18, Y19  per-half outputs during finalization
 
 #include "textflag.h"
 
@@ -85,6 +91,10 @@ GLOBL sipSeedDeint<>(SB), RODATA|NOPTR, $64
 	SIP_ROUND;         \
 	VPXORQ Y4, Y0, Y0
 
+// func sipHash24Chain128Absorb20x4Asm(
+//     seeds    *[4][2]uint64,    // per-lane (K0, K1) SipHash key
+//     dataPtrs *[4]*byte,        // 4 pointers, each to ≥20 bytes
+//     out      *[4][2]uint64)    // output: 16 bytes per lane
 TEXT ·sipHash24Chain128Absorb20x4Asm(SB), NOSPLIT, $0-24
 	MOVQ seeds+0(FP),     BX
 	MOVQ dataPtrs+8(FP),  CX
