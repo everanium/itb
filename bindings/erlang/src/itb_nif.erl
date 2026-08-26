@@ -10,6 +10,7 @@
 
 -export([init_nif/2, open_nif/5, blob_nif/1, rekey_nif/3, free_nif/1,
          encrypt_message_nif/2, decrypt_message_nif/2,
+         encrypt_stream_one_shot_nif/2, decrypt_stream_one_shot_nif/2,
          encrypt_stream_begin_nif/1, decrypt_stream_begin_nif/1,
          stream_write_nif/2, stream_end_nif/1, stream_read_nif/2,
          stream_free_nif/1, register_profile_nif/2,
@@ -50,6 +51,12 @@ encrypt_message_nif(_Pipeline, _Plain) ->
     erlang:nif_error(itb_nif_not_loaded).
 
 decrypt_message_nif(_Pipeline, _Wire) ->
+    erlang:nif_error(itb_nif_not_loaded).
+
+encrypt_stream_one_shot_nif(_Pipeline, _Plain) ->
+    erlang:nif_error(itb_nif_not_loaded).
+
+decrypt_stream_one_shot_nif(_Pipeline, _Wire) ->
     erlang:nif_error(itb_nif_not_loaded).
 
 encrypt_stream_begin_nif(_Pipeline) ->

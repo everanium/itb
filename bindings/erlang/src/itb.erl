@@ -37,6 +37,7 @@
 
 -export([init/2, open/3, open/5, blob/1, rekey/3, free/1,
          encrypt_message/2, decrypt_message/2,
+         encrypt_stream_one_shot/2, decrypt_stream_one_shot/2,
          encrypt_stream/1, decrypt_stream/1,
          stream_write/2, stream_end/1, stream_read/1, stream_read/2,
          stream_free/1,
@@ -133,6 +134,25 @@ encrypt_message(Pipeline, Plain) ->
           {ok, binary()} | {error, reason()}.
 decrypt_message(Pipeline, Wire) ->
     itb_nif:decrypt_message_nif(Pipeline, Wire).
+
+%% ------------------------------------------------------------------
+%% One-shot stream encrypt / decrypt
+%% ------------------------------------------------------------------
+
+%% One-shot stream encrypt for callers holding the whole plaintext in
+%% memory: a single call through the Pipeline's stream chain. For
+%% bounded-memory streaming use the incremental encrypt_stream/1
+%% session.
+-spec encrypt_stream_one_shot(pipeline(), iodata()) ->
+          {ok, binary()} | {error, reason()}.
+encrypt_stream_one_shot(Pipeline, Plain) ->
+    itb_nif:encrypt_stream_one_shot_nif(Pipeline, Plain).
+
+%% Receive-side counterpart of encrypt_stream_one_shot/2.
+-spec decrypt_stream_one_shot(pipeline(), iodata()) ->
+          {ok, binary()} | {error, reason()}.
+decrypt_stream_one_shot(Pipeline, Wire) ->
+    itb_nif:decrypt_stream_one_shot_nif(Pipeline, Wire).
 
 %% ------------------------------------------------------------------
 %% Incremental stream sessions
