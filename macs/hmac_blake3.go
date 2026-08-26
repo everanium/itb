@@ -39,3 +39,27 @@ func HMACBLAKE3(key []byte) (itb.MACFunc, error) {
 		return append([]byte(nil), out[:]...)
 	}, nil
 }
+
+// HMACBLAKE3Incremental returns the multi-slice arm of [HMACBLAKE3]:
+// an itb.MACIncrementalFunc absorbing its chunks in order and
+// emitting the same tag as the BLAKE3-keyed itb.MACFunc over the
+// concatenation of those chunks, byte-for-byte. Same keyed-template
+// clone strategy — only the concat copy disappears.
+func HMACBLAKE3Incremental(key []byte) (itb.MACIncrementalFunc, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("macs: hmac-blake3 key must be exactly 32 bytes, got %d", len(key))
+	}
+	template, err := blake3.NewKeyed(key)
+	if err != nil {
+		return nil, fmt.Errorf("macs: blake3.NewKeyed: %w", err)
+	}
+	return func(chunks ...[]byte) []byte {
+		h := template.Clone()
+		for _, c := range chunks {
+			h.Write(c)
+		}
+		var out [32]byte
+		h.Sum(out[:0])
+		return append([]byte(nil), out[:]...)
+	}, nil
+}

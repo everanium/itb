@@ -94,6 +94,61 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 	}, nil
 }
 
+// KMAC256Incremental returns the multi-slice arm of [KMAC256]: an
+// itb.MACIncrementalFunc absorbing its chunks in order and emitting
+// the same tag as the KMAC256 itb.MACFunc over the concatenation of
+// those chunks, byte-for-byte. The sponge template flow is identical
+// — only the concat copy disappears.
+func KMAC256Incremental(key []byte) (itb.MACIncrementalFunc, error) {
+	return KMAC256IncrementalWithCustomization(key, nil)
+}
+
+// KMAC256IncrementalWithCustomization is [KMAC256Incremental] with a
+// non-empty customization string S.
+func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncrementalFunc, error) {
+	if len(key) < 16 {
+		return nil, fmt.Errorf("macs: kmac256 key too short: %d bytes (min 16)", len(key))
+	}
+	const rate = 136
+	const outputBits = 256
+
+	prefix := bytepad(encodeString(key), rate)
+	suffix := rightEncode(uint64(outputBits))
+	custom := append([]byte(nil), customization...)
+
+	if keccakasm.HasAVX512Fused {
+		header := bytepad(
+			append(encodeString([]byte("KMAC")), encodeString(custom)...), rate)
+		tmpl := keccakasm.NewCShake256()
+		tmpl.Write(header)
+		tmpl.Write(prefix)
+		return func(chunks ...[]byte) []byte {
+			h := tmpl.Clone()
+			for _, c := range chunks {
+				h.Write(c)
+			}
+			h.Write(suffix)
+			out := h.Sum256()
+			return append([]byte(nil), out[:]...)
+		}, nil
+	}
+
+	template := sha3.NewCShake256([]byte("KMAC"), custom)
+	if _, err := template.Write(prefix); err != nil {
+		return nil, fmt.Errorf("macs: cshake256.Write(prefix): %w", err)
+	}
+	return func(chunks ...[]byte) []byte {
+		h := template.Clone()
+		for _, c := range chunks {
+			_, _ = h.Write(c)
+		}
+		_, _ = h.Write(suffix)
+		var out [32]byte
+		_, _ = h.Read(out[:])
+		return append([]byte(nil), out[:]...)
+	}, nil
+}
+
 // leftEncode implements NIST SP 800-185 Algorithm 5: the variable-
 // length integer encoding used as a length prefix. Returns
 // `n || big-endian(x)` where n is the byte length of the

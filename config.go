@@ -27,6 +27,15 @@ type Config struct {
 	NonceBits   int // 0 = inherit DefaultNonceBits; otherwise 128 / 256 / 512
 	BarrierFill int // 0 = inherit DefaultBarrierFill; otherwise 1 / 2 / 4 / 8 / 16 / 32
 	MaxWorkers  int // 0 = runtime.NumCPU; otherwise 1..256
+
+	// MACIncremental is the optional multi-slice MAC arm consulted by
+	// the authenticated entry points. When non-nil it must compute the
+	// same tag as the macFunc passed to the same call, per the
+	// [MACIncrementalFunc] contract; the entry points then absorb the
+	// MAC input parts directly instead of concatenating them into a
+	// scratch buffer first. nil (the zero value) keeps the legacy
+	// concatenate-then-MAC path.
+	MACIncremental MACIncrementalFunc
 }
 
 // DefaultNonceBits is the nonce width in bits used when [Config.NonceBits]

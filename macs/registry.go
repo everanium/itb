@@ -57,3 +57,28 @@ func Make(name string, key []byte) (itb.MACFunc, error) {
 	}
 	return nil, fmt.Errorf("macs: dispatcher missing %q", name)
 }
+
+// MakeIncremental returns the multi-slice arm for the named primitive
+// keyed by key: an itb.MACIncrementalFunc emitting the same tag as
+// the Make-built itb.MACFunc over the concatenation of its chunks,
+// byte-for-byte. Same name and key validation as [Make]. Every
+// shipped primitive provides the incremental arm.
+func MakeIncremental(name string, key []byte) (itb.MACIncrementalFunc, error) {
+	spec, ok := Find(name)
+	if !ok {
+		return nil, fmt.Errorf("macs: unknown MAC %q", name)
+	}
+	if len(key) < spec.MinKeyBytes {
+		return nil, fmt.Errorf("macs: %s key too short: %d bytes (min %d)",
+			name, len(key), spec.MinKeyBytes)
+	}
+	switch name {
+	case "kmac256":
+		return KMAC256Incremental(key)
+	case "hmac-sha256":
+		return HMACSHA256Incremental(key)
+	case "hmac-blake3":
+		return HMACBLAKE3Incremental(key)
+	}
+	return nil, fmt.Errorf("macs: dispatcher missing %q", name)
+}
