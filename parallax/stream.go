@@ -152,26 +152,26 @@ func (w *chunkedEncryptWriter) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// flushChunk encrypts w.buf via EncryptInPlace and emits the frame
-// (u32_LE length, then nonce-prefixed body) to dst. Resets the
-// accumulator to length 0 on success; on failure leaves w.buf
-// unchanged and returns the error. Caller (Write / Close) is
-// responsible for promoting the error to sticky state.
+// flushChunk encrypts w.buf via EncryptInto into a frame buffer
+// (u32_LE length, then nonce-prefixed body) and emits it to dst as a
+// single Write. The ciphertext body is written directly into the
+// frame's body region, so no copy-back into the accumulator is
+// performed. Resets the accumulator to length 0 on success; on
+// failure leaves w.buf unchanged and returns the error. Caller
+// (Write / Close) is responsible for promoting the error to sticky
+// state.
 func (w *chunkedEncryptWriter) flushChunk() error {
 	if len(w.buf) == 0 {
 		return nil
 	}
-	wire, err := w.schedule.EncryptInPlace(w.buf, w.cs)
+	frame := make([]byte, frameLenSize+NonceSize+len(w.buf))
+	nonce, err := w.schedule.EncryptInto(frame[frameLenSize+NonceSize:], w.buf, w.cs)
 	if err != nil {
 		return err
 	}
-	bodyLen := uint32(len(wire) - NonceSize)
-	var prefix [frameLenSize]byte
-	binary.LittleEndian.PutUint32(prefix[:], bodyLen)
-	if _, err := w.dst.Write(prefix[:]); err != nil {
-		return err
-	}
-	if _, err := w.dst.Write(wire); err != nil {
+	binary.LittleEndian.PutUint32(frame[:frameLenSize], uint32(len(w.buf)))
+	copy(frame[frameLenSize:frameLenSize+NonceSize], nonce)
+	if _, err := w.dst.Write(frame); err != nil {
 		return err
 	}
 	w.buf = w.buf[:0]
@@ -452,14 +452,14 @@ func (r *chunkedEncryptReader) Read(p []byte) (int, error) {
 	return total, nil
 }
 
-// encodeFrame encrypts r.plainBuf via EncryptInPlace and packs the
-// resulting frame (length prefix + nonce + body) into r.outBuf.
+// encodeFrame encrypts r.plainBuf via EncryptInto and packs the
+// resulting frame (length prefix + nonce + body) into r.outBuf. The
+// ciphertext body is written directly into r.outBuf's body region, so
+// no intermediate wire buffer is allocated and only the 4-byte prefix
+// and the 16-byte nonce are staged separately.
 func (r *chunkedEncryptReader) encodeFrame() error {
-	wire, err := r.schedule.EncryptInPlace(r.plainBuf, r.cs)
-	if err != nil {
-		return err
-	}
-	frameSize := frameLenSize + len(wire)
+	bodyLen := len(r.plainBuf)
+	frameSize := frameLenSize + NonceSize + bodyLen
 	if cap(r.outBuf) < frameSize {
 		if r.outBufPtr != nil {
 			releaseChunkBuffer(r.outBufPtr, r.outBuf)
@@ -467,8 +467,16 @@ func (r *chunkedEncryptReader) encodeFrame() error {
 		r.outBufPtr, r.outBuf = acquireChunkBuffer(frameSize)
 	}
 	r.outBuf = r.outBuf[:frameSize]
-	binary.LittleEndian.PutUint32(r.outBuf[:frameLenSize], uint32(len(wire)-NonceSize))
-	copy(r.outBuf[frameLenSize:], wire)
+	nonce, err := r.schedule.EncryptInto(r.outBuf[frameLenSize+NonceSize:], r.plainBuf, r.cs)
+	if err != nil {
+		// Drop the staged frame so a caller that retries Read after an
+		// error cannot be served a partially transformed body.
+		r.outBuf = r.outBuf[:0]
+		r.outOff = 0
+		return err
+	}
+	binary.LittleEndian.PutUint32(r.outBuf[:frameLenSize], uint32(bodyLen))
+	copy(r.outBuf[frameLenSize:frameLenSize+NonceSize], nonce)
 	r.outOff = 0
 	return nil
 }
