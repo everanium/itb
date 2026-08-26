@@ -119,18 +119,18 @@ Traditional symmetric ciphers (AES, ChaCha20) place all security burden on the m
 
 ITB inverts this approach. The construction interposes a **random container** (generated from `crypto/rand`) between the hash output and the observer, then re-maps each 48-bit chunk of the interleaved payload through a per-chunk PRF-keyed permutation drawn from a space of roughly 2^70.20 balanced partitions. The hash output is consumed by modifying random bytes that the attacker never sees; the mapping from plaintext bit to observed lane is itself a per-chunk secret. Two structural facts follow, both conditional on the PRF assumption and fresh per-message nonces:
 
-- **Under the PRF assumption and with fresh per-message nonces, each 48-bit chunk of the payload is re-mapped by a per-chunk, PRF-keyed mask triple drawn from a space of roughly 2^70.20 balanced partitions, so a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.** The Interlocked Barrier is the always-on primary component of the construction.
-- **Because the mask of each chunk is keyed independently of every other chunk, additional crib chunks multiply the attacker's enumeration rather than contributing constraints that couple chunks — the known-plaintext instance stays under-determined regardless of how much plaintext the attacker holds.** The Interlocked Barrier is designed to turn known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one: under the PRF assumption there is no unique solution for a faster solver to discover.
+- **A known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.**
+- **Because the mask of each chunk is keyed independently of every other chunk, additional crib chunks multiply the attacker's enumeration rather than contributing constraints that couple chunks — the known-plaintext instance stays under-determined regardless of how much plaintext the attacker holds.** This turns known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one: under the PRF assumption there is no unique solution for a faster solver to discover.
 
-**Why the math is simple.** The construction uses only elementary operations: XOR, bitwise AND, modulo, bit shifts, and the per-chunk rank-unrank pair that produces the mask triple. There are no Galois fields, no S-boxes, no polynomial multiplication. This is not a weakness — it is a consequence of the design. The security comes from the **architecture** — random container, eight-seed isolation, per-bit XOR, noise embedding, and the per-chunk keyed permutation — not from the complexity of the math. Each architectural layer addresses a specific attack vector:
+**Why the math is simple.** The construction uses only elementary operations: XOR, bitwise AND, modulo, bit shifts, and the per-chunk rank-unrank pair that produces the mask triple. There are no Galois fields, no S-boxes, no polynomial multiplication. The security comes from the **architecture**, not from the complexity of the math. Each architectural layer addresses a specific attack vector:
 
 - **Random container** — hash output unobservable under passive observation (COA, KPA).
 - **Per-bit XOR (1:1)** — 56 independent mask bits per pixel; every observation consistent with any plaintext.
-- **Interlocked Barrier** — per-chunk PRF-keyed 48-bit permutation over three snakes; ≈ 2^70.20 mask space per chunk.
+- **Interlocked Barrier** — always-on; per-chunk PRF-keyed 48-bit permutation over three snakes; ≈ 2^70.20 mask space per chunk.
 - **Eight-seed isolation** — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 drawn as independent CSPRNG components and keyed into separate channels, so a structural shortcut against one primitive channel cannot leak into another's derivation.
 - **Noise bit embedding** — no bit position is deterministically data from the public format.
 
-**Why the barrier and the PRF are complementary.** In traditional ciphers the attacker directly observes the primitive's output (keystream XOR plaintext), so any weakness in the primitive is immediately exploitable. In ITB the hash output is absorbed by a random-container modification, and each 48-bit chunk of the interleaved payload is re-mapped through the barrier's keyed permutation — the attacker sees modified random bytes routed through a hidden per-chunk permutation, not hash outputs. PRF closes the candidate-verification step; the barrier and the surrounding architectural layers deny the point of application. Neither is sufficient alone: the architectural layers cannot resist total inversion of the primitive, and without the barrier the attacker would observe the keystream directly.
+**Why the barrier and the PRF are complementary.** The PRF closes the candidate-verification step; the barrier and the surrounding architectural layers deny the point of application. Neither is sufficient alone: the architectural layers cannot resist total inversion of the primitive, and without the barrier the attacker would observe the keystream directly.
 
 **The two-step reduction and the gcd anti-collapse trap.** The two-step reduction that draws each mask triple reaches the full partition space; the rejected same-rank alternative would have confined the draw to 1 / 66861 of that space, so full-space coverage is a deliberate property of the construction, not an accident. The reduction is deterministic and constant-time, carrying a fixed, publicly-known per-chunk deviation of about 2^-57.8 that accumulates to about 2^-34.4 over a maximum-size message; distinguishing this granularity would require on the order of 2^115.6 chunk samples, well beyond any attainable budget.
 
@@ -929,11 +929,11 @@ Go-native callers reach the Go runtime memory / GC pacing knobs through `itb.Set
 
 Bindings drive the same knobs over the C ABI via `ITB_SetMemoryLimit` and `ITB_SetGCPercent` (see `cmd/cshared/main.go`). Both mirror the Go signatures — `int64` limit in bytes, `int` percent — and negative arguments query without mutating.
 
-Both knobs are additionally readable from the environment at libitb load time via `ITB_GOMEMLIMIT` (byte count, supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes) and `ITB_GOGC` (integer percent). Any subsequent programmatic setter call from Go-native code or a binding overrides the env-set value; the env vars are the compile-in defaults for the process, not a hard ceiling.
+Both knobs are additionally readable from the environment at libitb load time via `ITB_GOMEMLIMIT` and `ITB_GOGC` (see [Memory](#memory)); any subsequent programmatic setter call from Go-native code or a binding overrides the env-set value.
 
 **Per-Pipeline memory / GC control is not available.** The Go runtime does not expose per-goroutine or per-object memory-limit / GC-percent scopes, so the setters cannot be scoped to one `Pipeline` while another Pipeline in the same process observes a different setting. Applications that need distinct heap regimes for distinct workloads run them in separate processes.
 
-The `triple/` package does not currently re-export these setters; Go-native users who wire a `triple.Pipeline` and want the runtime tuners in the same call site `import "github.com/everanium/itb"` alongside `import "github.com/everanium/itb/triple"` to reach `itb.SetMemoryLimit` / `itb.SetGCPercent` directly. A thin `triple.SetMemoryLimit` / `triple.SetGCPercent` re-export is queued as task #28.
+The `triple/` package does not re-export these setters; Go-native users who wire a `triple.Pipeline` and want the runtime tuners in the same call site `import "github.com/everanium/itb"` alongside `import "github.com/everanium/itb/triple"` to reach `itb.SetMemoryLimit` / `itb.SetGCPercent` directly.
 
 ## Hash primitives (`hashes/`)
 
@@ -963,7 +963,7 @@ See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive constru
 
 ## MACs (`macs/`)
 
-The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently:
+The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. Each MAC also carries an incremental multi-slice arm (`MACIncrementalFunc`, name-keyed via `macs.MakeIncremental`) that the authenticated entry points use to absorb the MAC input parts directly instead of concatenating them into a scratch buffer first — wired automatically by `triple.Init` / `triple.Open`, worth roughly +7.5% end-to-end decrypt throughput on the hmac-blake3 default profile at 16 MB.
 
 | # | Factory | Returns | Key size | Tag size |
 |---|---|---|---|---|
