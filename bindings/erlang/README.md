@@ -100,6 +100,14 @@ ok = itb:rekey(Sender, binary:copy(<<16#11>>, 32), binary:copy(<<16#22>>, 32)),
 {ok, Receiver2} = itb:open(<<"singlemsg-triple-mac-v1">>, Blob2, #{}).
 ```
 
+`itb:encrypt_stream_one_shot/2` / `itb:decrypt_stream_one_shot/2` put
+a whole in-memory payload through the stream chain in a single call:
+
+```erlang
+{ok, Wire} = itb:encrypt_stream_one_shot(Sender, Plain),
+{ok, Plain} = itb:decrypt_stream_one_shot(Receiver, Wire).
+```
+
 For bounded-memory streaming, the explicit `itb:encrypt_stream/1` /
 `itb:decrypt_stream/1` sessions expose `itb:stream_write/2` /
 `itb:stream_end/1` / `itb:stream_read/2` for caller-driven loops:

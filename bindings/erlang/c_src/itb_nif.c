@@ -413,6 +413,54 @@ static ERL_NIF_TERM decrypt_message_nif(ErlNifEnv *env, int argc,
     return message_call(env, argv, 0);
 }
 
+/* Shared body for the one-shot stream cipher entries: whole buffer
+ * in, whole buffer out, a single FFI round trip through the
+ * Pipeline's stream chain. */
+static ERL_NIF_TERM stream_one_shot_call(ErlNifEnv *env,
+                                         const ERL_NIF_TERM argv[],
+                                         int encrypt)
+{
+    pipeline_res *r = NULL;
+    ErlNifBinary src;
+    if (!get_pipeline(env, argv[0], &r) ||
+        !enif_inspect_iolist_as_binary(env, argv[1], &src)) {
+        return enif_make_badarg(env);
+    }
+    itb_pipeline *pipe = pipeline_ptr(r);
+    if (pipe == NULL) {
+        return make_error_msg(env, ITB_STATUS_BAD_HANDLE, FREED_PIPELINE_MSG);
+    }
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    itb_status st =
+        encrypt ? itb_pipeline_encrypt_stream_one_shot(pipe, src.data,
+                                                       src.size, &out,
+                                                       &out_len)
+                : itb_pipeline_decrypt_stream_one_shot(pipe, src.data,
+                                                       src.size, &out,
+                                                       &out_len);
+    if (st != ITB_STATUS_OK) {
+        return make_error(env, st);
+    }
+    ERL_NIF_TERM bin = make_bin(env, out, out_len);
+    itb_bytes_free(out);
+    return make_ok(env, bin);
+}
+
+static ERL_NIF_TERM encrypt_stream_one_shot_nif(ErlNifEnv *env, int argc,
+                                                const ERL_NIF_TERM argv[])
+{
+    (void)argc;
+    return stream_one_shot_call(env, argv, 1);
+}
+
+static ERL_NIF_TERM decrypt_stream_one_shot_nif(ErlNifEnv *env, int argc,
+                                                const ERL_NIF_TERM argv[])
+{
+    (void)argc;
+    return stream_one_shot_call(env, argv, 0);
+}
+
 /* ------------------------------------------------------------------ */
 /* Stream session entries                                              */
 /* ------------------------------------------------------------------ */
@@ -703,6 +751,10 @@ static ErlNifFunc nif_funcs[] = {
     {"free_nif", 1, free_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"encrypt_message_nif", 2, encrypt_message_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"decrypt_message_nif", 2, decrypt_message_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"encrypt_stream_one_shot_nif", 2, encrypt_stream_one_shot_nif,
+     ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"decrypt_stream_one_shot_nif", 2, decrypt_stream_one_shot_nif,
+     ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"encrypt_stream_begin_nif", 1, encrypt_stream_begin_nif,
      ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"decrypt_stream_begin_nif", 1, decrypt_stream_begin_nif,
