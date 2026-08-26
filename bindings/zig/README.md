@@ -16,7 +16,8 @@ string passed through to Go for validation; the binding carries no
 ITB construction logic, and buffer sizing plus the BufferTooSmall
 retry-once dance live in the C layer. The public surface is an
 allocator-parametric `Pipeline` (init / open / rekey / deinit, Single
-Message encrypt / decrypt, whole-buffer stream pumps, incremental
+Message encrypt / decrypt, whole-buffer stream entries
+(`encryptStreamOneShot` and the pumps), incremental
 `EncryptStream` / `DecryptStream` sessions with write / end / read /
 drainAll), an `Opts` query-string builder, `registerProfile`, a Zig
 `error{...}` set mirroring the C status codes, and the Go runtime
@@ -116,7 +117,9 @@ var receiver2 = try itb.Pipeline.open(
 
 Every cipher output is allocated from the `Allocator` handed to
 `Pipeline.init` / `Pipeline.open` and owned by the caller — release
-with `allocator.free`. For bounded-memory streaming,
+with `allocator.free`. `encryptStreamOneShot` /
+`decryptStreamOneShot` put a whole in-memory payload through the
+stream chain in a single call. For bounded-memory streaming,
 `encryptStreamPump` / `decryptStreamPump` move a whole buffer through
 an incremental session; the explicit `encryptStream` /
 `decryptStream` sessions expose `write` / `end` / `read` /
