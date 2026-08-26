@@ -21,8 +21,9 @@ on `BUFFER_TOO_SMALL`) lives in the C layer; the Swift layer moves
 opaque bytes and relays status codes.
 
 The public surface is one `Pipeline` class (init / open / rekey,
-Single Message encrypt / decrypt, whole-buffer stream pumps,
-incremental `EncryptStream` / `DecryptStream` sessions with
+Single Message encrypt / decrypt, whole-buffer stream entries
+(`encryptStreamOneShot` and the pumps), incremental
+`EncryptStream` / `DecryptStream` sessions with
 write / end / read), an `Opts` query-string builder,
 `registerProfile`, and the Go runtime knobs under `ItbRuntime`.
 Every fallible entry `throws ItbError`; `Result`-shaped and
@@ -109,7 +110,9 @@ sender.encryptMessage(...)`) that hop the blocking FFI call onto a
 background task, and `Result`-shaped variants
 (`encryptMessageResult` returning `Result<Data, ItbError>`).
 
-For bounded-memory streaming, `encryptStreamPump` /
+`encryptStreamOneShot` / `decryptStreamOneShot` put a whole
+in-memory payload through the stream chain in a single call. For
+bounded-memory streaming, `encryptStreamPump` /
 `decryptStreamPump` move a whole buffer through an incremental
 session; the explicit `encryptStream()` / `decryptStream()`
 sessions expose `write` / `end` / `read` for caller-driven loops

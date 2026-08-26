@@ -127,6 +127,39 @@ public final class Pipeline: @unchecked Sendable {
         try await offBlocking { try self.decryptMessage(wire) }
     }
 
+    // MARK: Whole-buffer stream one-shot
+
+    /// One-shot stream encrypt for callers holding the whole
+    /// plaintext in memory: a single FFI round trip through the
+    /// Pipeline's stream chain. For bounded-memory streaming use
+    /// `encryptStream()` / `encryptStreamPump`.
+    public func encryptStreamOneShot(_ plain: Data) throws -> Data {
+        try plain.withItbBytes { ptr, len in
+            try takeBytes { out, outLen in
+                itb_pipeline_encrypt_stream_one_shot(raw, ptr, len, out, outLen)
+            }
+        }
+    }
+
+    /// Receive-side counterpart of `encryptStreamOneShot`.
+    public func decryptStreamOneShot(_ wire: Data) throws -> Data {
+        try wire.withItbBytes { ptr, len in
+            try takeBytes { out, outLen in
+                itb_pipeline_decrypt_stream_one_shot(raw, ptr, len, out, outLen)
+            }
+        }
+    }
+
+    /// Async variant of `encryptStreamOneShot`.
+    public func encryptStreamOneShot(_ plain: Data) async throws -> Data {
+        try await offBlocking { try self.encryptStreamOneShot(plain) }
+    }
+
+    /// Async variant of `decryptStreamOneShot`.
+    public func decryptStreamOneShot(_ wire: Data) async throws -> Data {
+        try await offBlocking { try self.decryptStreamOneShot(wire) }
+    }
+
     // MARK: Whole-buffer stream pumps
 
     /// Pumps the whole plaintext through an incremental encrypt

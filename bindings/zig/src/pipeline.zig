@@ -110,6 +110,20 @@ pub const Pipeline = struct {
         return self.cipher(ffi.itb_pipeline_decrypt_message, wire);
     }
 
+    /// One-shot stream encrypt for callers holding the whole
+    /// plaintext in memory: a single buffer-in / buffer-out FFI round
+    /// trip through the Pipeline's stream chain. For bounded-memory
+    /// streaming use `encryptStream` / `encryptStreamPump`. Caller
+    /// owns the result — release with `allocator.free`.
+    pub fn encryptStreamOneShot(self: *const Pipeline, plain: []const u8) err.Error![]u8 {
+        return self.cipher(ffi.itb_pipeline_encrypt_stream_one_shot, plain);
+    }
+
+    /// Receive-side counterpart of `encryptStreamOneShot`.
+    pub fn decryptStreamOneShot(self: *const Pipeline, wire: []const u8) err.Error![]u8 {
+        return self.cipher(ffi.itb_pipeline_decrypt_stream_one_shot, wire);
+    }
+
     /// Pumps the whole plaintext through an incremental encrypt
     /// session with bounded feed / drain slices C-side and returns
     /// the concatenated wire. Caller owns the result.
@@ -133,7 +147,7 @@ pub const Pipeline = struct {
         return stream.DecryptStream.begin(self);
     }
 
-    /// Shared body for the four buffer-in / buffer-out cipher
+    /// Shared body for the six buffer-in / buffer-out cipher
     /// entries: run the C call (which allocates the output and
     /// handles retry-once internally), copy into an allocator-owned
     /// slice, release the C buffer.
