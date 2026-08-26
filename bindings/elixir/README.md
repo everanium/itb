@@ -114,6 +114,17 @@ sender = ITB.init!("singlemsg-triple-mac-v1")
 wire = ITB.encrypt_message!(sender, "payload")
 ```
 
+### One-shot streams
+
+`ITB.encrypt_stream_one_shot/2` / `ITB.decrypt_stream_one_shot/2`
+(plus bang variants) put a whole in-memory payload through the
+stream chain in a single call:
+
+```elixir
+{:ok, wire} = ITB.encrypt_stream_one_shot(sender, plain)
+{:ok, plain} = ITB.decrypt_stream_one_shot(receiver, wire)
+```
+
 ### Lazy Stream adapters
 
 `ITB.stream_encrypt/3` / `ITB.stream_decrypt/3` (sugar over

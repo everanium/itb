@@ -152,6 +152,37 @@ defmodule ITB do
   def decrypt_message!(pipeline, wire), do: bang(decrypt_message(pipeline, wire))
 
   # ------------------------------------------------------------------
+  # One-shot stream encrypt / decrypt
+  # ------------------------------------------------------------------
+
+  @doc """
+  One-shot stream encrypt for callers holding the whole plaintext in
+  memory: a single call through the Pipeline's stream chain. For
+  bounded-memory streaming use the lazy `stream_encrypt/3` adapter or
+  the incremental `encrypt_stream/1` session.
+  """
+  @spec encrypt_stream_one_shot(pipeline(), iodata()) ::
+          {:ok, binary()} | {:error, reason()}
+  def encrypt_stream_one_shot(pipeline, plain),
+    do: :itb.encrypt_stream_one_shot(pipeline, plain)
+
+  @doc "As `encrypt_stream_one_shot/2`, unwrapping the wire or raising `ITB.Error`."
+  @spec encrypt_stream_one_shot!(pipeline(), iodata()) :: binary()
+  def encrypt_stream_one_shot!(pipeline, plain),
+    do: bang(encrypt_stream_one_shot(pipeline, plain))
+
+  @doc "Receive-side counterpart of `encrypt_stream_one_shot/2`."
+  @spec decrypt_stream_one_shot(pipeline(), iodata()) ::
+          {:ok, binary()} | {:error, reason()}
+  def decrypt_stream_one_shot(pipeline, wire),
+    do: :itb.decrypt_stream_one_shot(pipeline, wire)
+
+  @doc "As `decrypt_stream_one_shot/2`, unwrapping the plaintext or raising `ITB.Error`."
+  @spec decrypt_stream_one_shot!(pipeline(), iodata()) :: binary()
+  def decrypt_stream_one_shot!(pipeline, wire),
+    do: bang(decrypt_stream_one_shot(pipeline, wire))
+
+  # ------------------------------------------------------------------
   # Incremental stream sessions
   # ------------------------------------------------------------------
 
