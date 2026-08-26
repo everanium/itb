@@ -15,12 +15,14 @@ fun main(args: Array<String>) {
     when (args.firstOrNull() ?: "all") {
         "message" -> BenchMessage.run()
         "stream" -> BenchStream.run()
+        "stream_one_shot" -> BenchStreamOneShot.run()
         "all" -> {
             BenchMessage.run()
             BenchStream.run()
+            BenchStreamOneShot.run()
         }
         else -> {
-            System.err.println("usage: bench [message|stream|all]")
+            System.err.println("usage: bench [message|stream|stream_one_shot|all]")
             exitProcess(2)
         }
     }

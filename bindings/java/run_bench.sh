@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- bench runner for the Java binding. Builds
-# libitb.so + the binding via build.sh, then runs both bench mains
-# (BenchMessage + BenchStream). Positional arguments select the shape:
-# `message`, `stream`, or `all` (default).
+# libitb.so + the binding via build.sh, then runs the bench mains
+# (BenchMessage + BenchStream + BenchStreamOneShot). Positional
+# arguments select the shape: `message`, `stream`, `stream_one_shot`,
+# or `all` (default).
 
 set -eu
 set -o pipefail
@@ -58,14 +59,19 @@ case "$SHAPE" in
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
         java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStream
         ;;
+    stream_one_shot)
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStreamOneShot
+        ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
         java -cp build/libs/bench.jar com.everanium.itb.bench.BenchMessage
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
         java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStream
+        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStreamOneShot
         ;;
     *)
-        echo "usage: $0 [message|stream|all]" >&2
+        echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
         exit 2
         ;;
 esac

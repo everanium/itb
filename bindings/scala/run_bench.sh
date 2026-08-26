@@ -65,14 +65,19 @@ case "${1:-all}" in
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
         exec sbt --batch --error "bench/run stream"
         ;;
+    stream_one_shot)
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        exec sbt --batch --error "bench/run stream_one_shot"
+        ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
         sbt --batch --error "bench/run message"
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec sbt --batch --error "bench/run stream"
+        sbt --batch --error "bench/run stream"
+        exec sbt --batch --error "bench/run stream_one_shot"
         ;;
     *)
-        echo "usage: $0 [message|stream|all]" >&2
+        echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
         exit 2
         ;;
 esac

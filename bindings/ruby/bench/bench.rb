@@ -103,6 +103,18 @@ def bench_message
   pipe.free
 end
 
+def bench_stream_one_shot
+  pipe = ITB.create(profile_name("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), build_opts)
+  SIZES.each do |size|
+    plain = SecureRandom.random_bytes(size)
+    bench_case("stream_one_shot", size) { pipe.encrypt_stream_one_shot(plain) }
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    dec_wire = pipe.encrypt_stream_one_shot(plain)
+    bench_case("stream_one_shot-dec", size) { pipe.decrypt_stream_one_shot(dec_wire) }
+  end
+  pipe.free
+end
+
 def bench_stream
   pipe = ITB.create(profile_name("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), build_opts)
   slice = ITB::StreamSession::PUMP_BUF
@@ -183,3 +195,4 @@ ITB.set_gc_percent(20)
 printf("%-17s %-8s %s\n", "bench", "size", "mb_per_sec")
 bench_message
 bench_stream
+bench_stream_one_shot

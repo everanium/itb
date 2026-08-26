@@ -19,12 +19,17 @@ Friend Module Program
             Case "stream"
                 BenchStream.Run()
                 Return 0
+            Case "stream_one_shot"
+                BenchStreamOneShot.Run()
+                Return 0
             Case "all"
                 BenchMessage.Run()
                 BenchStream.Run()
+                BenchStreamOneShot.Run()
                 Return 0
             Case Else
-                Console.Error.WriteLine("usage: EveraniumItb.VisualBasic.Bench [message|stream|all]")
+                Console.Error.WriteLine(
+                    "usage: EveraniumItb.VisualBasic.Bench [message|stream|stream_one_shot|all]")
                 Return 2
         End Select
     End Function

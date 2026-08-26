@@ -63,6 +63,10 @@ case "${1:-all}" in
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
         exec ./gradlew --console=plain runBench --args=stream
         ;;
+    stream_one_shot)
+        export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+        exec ./gradlew --console=plain runBench --args=stream_one_shot
+        ;;
     all)
         # --no-daemon forces a fresh Gradle process for each invocation
         # so the second runBench call does not inherit the first call's
@@ -72,10 +76,11 @@ case "${1:-all}" in
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
         ./gradlew --no-daemon --console=plain runBench --args=message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec ./gradlew --no-daemon --console=plain runBench --args=stream
+        ./gradlew --no-daemon --console=plain runBench --args=stream
+        exec ./gradlew --no-daemon --console=plain runBench --args=stream_one_shot
         ;;
     *)
-        echo "usage: $0 [message|stream|all]" >&2
+        echo "usage: $0 [message|stream|stream_one_shot|all]" >&2
         exit 2
         ;;
 esac

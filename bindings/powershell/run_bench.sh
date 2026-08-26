@@ -59,9 +59,13 @@ case "${1:-all}" in
              exec pwsh -NoProfile -File Bench/BenchMessage.ps1;;
     stream)  export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
              exec pwsh -NoProfile -File Bench/BenchStream.ps1;;
+    stream_one_shot)
+             export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
+             exec pwsh -NoProfile -File Bench/BenchStreamOneShot.ps1;;
     all)     export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
              pwsh -NoProfile -File Bench/BenchMessage.ps1
              export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-             exec pwsh -NoProfile -File Bench/BenchStream.ps1;;
-    *)       echo "usage: $0 [message|stream|all]" >&2; exit 2;;
+             pwsh -NoProfile -File Bench/BenchStream.ps1
+             exec pwsh -NoProfile -File Bench/BenchStreamOneShot.ps1;;
+    *)       echo "usage: $0 [message|stream|stream_one_shot|all]" >&2; exit 2;;
 esac

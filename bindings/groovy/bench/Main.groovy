@@ -27,12 +27,17 @@ final class Main {
             case 'stream':
                 BenchStream.run()
                 break
+            case 'stream_one_shot':
+                BenchStreamOneShot.run()
+                break
             case 'all':
                 BenchMessage.run()
                 BenchStream.run()
+                BenchStreamOneShot.run()
                 break
             default:
-                System.err.println("usage: bench [message|stream|all] (got: $shape)")
+                System.err.println(
+                    "usage: bench [message|stream|stream_one_shot|all] (got: $shape)")
                 System.exit(2)
         }
     }
