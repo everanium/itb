@@ -80,10 +80,11 @@ const messageFastPathMaxBytes = 64 << 20
 // is read-only. Multiple goroutines may call EncryptMessage against
 // the same [*Pipeline] simultaneously.
 //
-// Empty plaintext is accepted: on the No-MAC arm the wire is empty
-// (no streamID prefix — mirrors the underlying stream helpers'
-// empty-input contract); on the MAC arm the wire is the streamID
-// prefix followed by a final-flag chunk carrying no payload bytes.
+// Empty plaintext is accepted: on the No MAC arm the wire carries no
+// inner bytes — nonce-only when the wrapper layer is engaged, empty
+// when it is not (mirrors the underlying stream helpers' empty-input
+// contract); on the MAC arm the wire is the streamID prefix followed
+// by a final-flag chunk carrying no payload bytes.
 //
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
 // [ErrProfileNoCipher] when the resolved profile mode is blob-only.
@@ -150,9 +151,20 @@ func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
 // within [messageFastPathMaxBytes]. Produces the same wire envelope as
 // the streaming fallback when the plaintext fits in a single chunk.
 func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
-	// Empty plaintext on the No-MAC arm mirrors the streaming helpers'
-	// empty-input contract: the wire is empty, no streamID prefix.
+	// Empty plaintext on the No MAC arm carries no inner bytes: the
+	// wire is the outer cipher envelope alone when the wrapper layer
+	// is engaged (nonce-only — [wrapper.UnwrapInPlace] and
+	// [wrapper.NewUnwrapReader] decode it back to an empty inner
+	// stream), or empty when it is not (mirrors the underlying stream
+	// helpers' empty-input contract).
 	if len(plaintext) == 0 && p.macFunc == nil {
+		if p.resolved.wrapperOn {
+			nonce, err := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, nil)
+			if err != nil {
+				return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", err)
+			}
+			return nonce, nil
+		}
 		return []byte{}, nil
 	}
 
@@ -434,6 +446,14 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 		)
 	}
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
+		return nil, err
+	}
+	// An inner stream that produced no bytes (empty plaintext on the
+	// No MAC arm) leaves the wrapper writer's nonce pending; finalize
+	// so the wire still carries the outer cipher envelope. No-op when
+	// the wrapper layer is disengaged or any body byte has been
+	// emitted.
+	if err := wrapper.FinishWrapStream(innerDst); err != nil {
 		return nil, err
 	}
 	return wire.Bytes(), nil
