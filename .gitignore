@@ -34,6 +34,8 @@
 /tools/parity/parity-nocgo
 /tools/parity/parity-cgo-tiered
 /tools/parity/parity-nocgo-noasm
+# Concurrency stress harness compiled binary
+/tools/loop/loop
 *.test
 
 # CPU/memory profiles
