@@ -204,6 +204,31 @@ proc encryptMessage*(p: Pipeline, plain: string): seq[byte] =
   ## ``string`` convenience overload of ``encryptMessage``.
   p.encryptMessage(plain.toOpenArrayByte(0, plain.high))
 
+proc encryptStreamOneShot*(p: Pipeline, plain: openArray[byte]): seq[byte] =
+  ## One-shot stream encrypt for callers holding the whole plaintext
+  ## in memory: a single FFI call through the Pipeline's stream chain.
+  ## For bounded-memory streaming use the incremental ``encryptStream``
+  ## session.
+  cipherCall(p, ITB_Triple_EncryptStream, plain)
+
+proc encryptStreamOneShotInto*(p: Pipeline, plain: openArray[byte],
+                               dst: var seq[byte]): int =
+  ## ``encryptStreamOneShot`` into a caller-owned buffer: ``dst`` is
+  ## grown (never shrunk) as needed and ``dst[0 ..< result]`` is the
+  ## wire. Reusing one buffer across calls avoids the per-call output
+  ## allocation of ``encryptStreamOneShot``.
+  cipherCallInto(p, ITB_Triple_EncryptStream, plain, dst)
+
+proc decryptStreamOneShot*(p: Pipeline, wire: openArray[byte]): seq[byte] =
+  ## Receive-side counterpart of ``encryptStreamOneShot``.
+  cipherCall(p, ITB_Triple_DecryptStream, wire)
+
+proc decryptStreamOneShotInto*(p: Pipeline, wire: openArray[byte],
+                               dst: var seq[byte]): int =
+  ## Receive-side counterpart of ``encryptStreamOneShotInto``:
+  ## ``dst[0 ..< result]`` is the plaintext.
+  cipherCallInto(p, ITB_Triple_DecryptStream, wire, dst)
+
 proc registerProfile*(name: string, opts: Opts) =
   ## Registers a user-defined Triple profile under ``name`` so
   ## subsequent ``initPipeline`` / ``openPipeline`` calls resolve it.

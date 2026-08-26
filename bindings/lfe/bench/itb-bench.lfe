@@ -35,9 +35,12 @@
 (defun main
   (('("message")) (run-message))
   (('("stream")) (run-stream))
-  (('("all")) (run-message) (run-stream))
+  (('("stream_one_shot")) (run-stream-one-shot))
+  (('("all")) (run-message) (run-stream) (run-stream-one-shot))
   ((_)
-    (io:format 'standard_error "usage: itb-bench [message|stream|all]~n" '())
+    (io:format 'standard_error
+               "usage: itb-bench [message|stream|stream_one_shot|all]~n"
+               '())
     (erlang:halt 2)))
 
 ;;; ------------------------------------------------------------------
@@ -84,6 +87,34 @@
           (let ((dec-wire (pump-all pipe plain)))
             (bench-case "stream_pump-dec" size
               (lambda () (pump-dec pipe dec-wire))))))
+      (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
+    (let ((`ok (itb-lfe:free pipe)))
+      'ok)))
+
+;; Whole-buffer stream: one FFI round trip through
+;; encrypt-stream-one-shot / decrypt-stream-one-shot per iteration.
+(defun run-stream-one-shot ()
+  (cap-go-runtime)
+  (let* ((profile (env "ITB_PROFILE" "streaming-noaead-triple-v1"))
+         (`#(ok ,pipe) (itb-lfe:init (list_to_binary profile)
+                                     (bench-opts))))
+    (header)
+    (lists:foreach
+      (lambda (size)
+        (let ((plain (crypto:strong_rand_bytes size)))
+          (bench-case "stream_one_shot" size
+            (lambda ()
+              (let ((`#(ok ,_wire)
+                      (itb-lfe:encrypt-stream-one-shot pipe plain)))
+                'ok)))
+          ;; Pre-encrypt one wire outside the decrypt timing loop.
+          (let ((`#(ok ,dec-wire)
+                  (itb-lfe:encrypt-stream-one-shot pipe plain)))
+            (bench-case "stream_one_shot-dec" size
+              (lambda ()
+                (let ((`#(ok ,_p)
+                        (itb-lfe:decrypt-stream-one-shot pipe dec-wire)))
+                  'ok))))))
       (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
     (let ((`ok (itb-lfe:free pipe)))
       'ok)))

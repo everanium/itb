@@ -196,3 +196,17 @@ begin
   end
   pipe.free
 end
+
+# Whole-buffer stream: one FFI round trip through
+# encrypt_stream_one_shot / decrypt_stream_one_shot per iteration.
+begin
+  pipe = ITB::Pipeline.new(profile_env("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), opts: opts)
+  SIZES.each do |size|
+    plain = Random::Secure.random_bytes(size)
+    bench_case("stream_one_shot", size) { pipe.encrypt_stream_one_shot(plain) }
+    dec_wire = pipe.encrypt_stream_one_shot(plain)
+    bench_case("stream_one_shot-dec", size) { pipe.decrypt_stream_one_shot(dec_wire) }
+    GC.collect
+  end
+  pipe.free
+end

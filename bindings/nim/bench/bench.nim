@@ -104,6 +104,27 @@ proc benchMessage() =
       discard pipe.decryptMessageInto(decWire, decOut))
   pipe.free()
 
+proc benchStreamOneShot() =
+  ## Whole-buffer stream: one FFI round trip through
+  ## encryptStreamOneShot / decryptStreamOneShot per iteration.
+  let pipe = initPipeline(profileName("ITB_STREAM_PROFILE",
+                                      "streaming-noaead-triple-v1"),
+                          buildOpts())
+  for size in Sizes:
+    let plain = randomPayload(size)
+    # Pooled output buffer: encryptStreamOneShotInto grows it once
+    # during warm-up, then every timed iteration reuses it
+    # allocation-free.
+    var wire: seq[byte]
+    benchCase("stream_one_shot", size, proc () =
+      discard pipe.encryptStreamOneShotInto(plain, wire))
+    # Pre-encrypt one wire outside the decrypt timing loop.
+    let decWire = pipe.encryptStreamOneShot(plain)
+    var decOut: seq[byte]
+    benchCase("stream_one_shot-dec", size, proc () =
+      discard pipe.decryptStreamOneShotInto(decWire, decOut))
+  pipe.free()
+
 proc benchStream() =
   let pipe = initPipeline(profileName("ITB_STREAM_PROFILE",
                                       "streaming-noaead-triple-v1"),
@@ -178,3 +199,4 @@ when isMainModule:
   echo &"""{"bench":<17} {"size":<8} mb_per_sec"""
   benchMessage()
   benchStream()
+  benchStreamOneShot()
