@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/wrapper"
 )
 
 // ErrProfileNotStreaming is returned by [Pipeline.EncryptStream] /
@@ -32,8 +33,10 @@ var ErrProfileNotStreaming = errors.New("triple: profile does not expose a strea
 //  3. Dispatch on MAC presence:
 //     MAC     → itb.EncryptStreamAuth3xCfg(cfg, seeds, innerSrc, innerDst, mac, chunkSize)
 //     No-MAC  → itb.EncryptStream3xCfg    (cfg, seeds, innerSrc, innerDst,      chunkSize)
-//  4. Close parallax reader (releases pool scratch); wrapper writer
-//     has no per-call state that needs an explicit flush.
+//  4. Close parallax reader (releases pool scratch); finalize the
+//     wrapper writer via [wrapper.FinishWrapStream] so an inner
+//     stream that produced no bytes still emits its outer cipher
+//     nonce.
 //
 // When a layer is disabled the corresponding boundary is an identity
 // substitution — no wrapper [io.Reader] / [io.Writer] allocated on
@@ -80,7 +83,15 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 			innerSrc, innerDst, p.resolved.chunkSize,
 		)
 	}
-	return joinCloseError(cipherErr, closeFn())
+	if err := joinCloseError(cipherErr, closeFn()); err != nil {
+		return err
+	}
+	// An inner stream that produced no bytes (empty plaintext on the
+	// No MAC arm) leaves the wrapper writer's nonce pending; finalize
+	// so the wire still carries the outer cipher envelope. No-op when
+	// the wrapper layer is disengaged or any body byte has been
+	// emitted.
+	return wrapper.FinishWrapStream(innerDst)
 }
 
 // DecryptStream is the receive-side counterpart of

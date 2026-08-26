@@ -30,7 +30,9 @@ import (
 //
 // The wrapper writer is not an [io.Closer]; its per-call state is a
 // single keystream and per-stream nonce, both fully drained on every
-// Write call. No flush is required post-encrypt.
+// Write call. Callers finalize it via [wrapper.FinishWrapStream]
+// after a successful encrypt so an inner stream that produced no
+// bytes still emits its outer cipher nonce.
 func buildEncryptChain(p *Pipeline, plainSrc io.Reader, wireDst io.Writer) (innerSrc io.Reader, innerDst io.Writer, closeFn func() error, err error) {
 	innerDst = wireDst
 	if p.resolved.wrapperOn {
