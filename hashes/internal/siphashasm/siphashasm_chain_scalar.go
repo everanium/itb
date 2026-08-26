@@ -18,7 +18,7 @@ import (
 // The closure is a direct call into siphash.Hash128.
 //
 // Used as the production fallback on hosts without AVX-512+VL and
-// as the parity baseline for the ZMM-batched ASM kernels.
+// as the parity baseline for the YMM-batched ASM kernels.
 func scalar128ChainAbsorb(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 	return siphash.Hash128(seed0, seed1, data)
 }
@@ -28,7 +28,7 @@ func scalar128ChainAbsorb(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 // shape. Loops the per-lane scalar reference; each lane is bit-
 // exact equivalent to the public hashes.SipHash24 closure on the
 // same input. Used as the production fallback on hosts without
-// AVX-512+VL and as the parity baseline for the ZMM-batched ASM
+// AVX-512+VL and as the parity baseline for the YMM-batched ASM
 // kernel.
 func scalarBatch128ChainAbsorb20(
 	seeds *[4][2]uint64,

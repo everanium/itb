@@ -22,11 +22,11 @@
 // pointer to an exactly-13-byte buffer is never over-read; a 16-byte
 // VMOVDQU as in the 20-byte kernel would read 3 bytes past the buffer.
 //
-//	aesCMAC128ChainAbsorb13x4Asm(
-//	    roundKeys *[176]byte,       // 11 × 16-byte AES round keys
-//	    seeds     *[4][2]uint64,    // per-lane (seed0, seed1)
-//	    dataPtrs  *[4]*byte,        // 4 pointers, each to ≥13 bytes
-//	    out       *[4][2]uint64)    // output: 16 bytes per lane
+// Register allocation: identical to the 20-byte kernel
+// (aescmac_chain128_20_amd64.s).
+//
+// Stack frame: 64 bytes of scratch for the per-lane 13-byte data
+// staging (zero-padded to 16 bytes per lane, loaded into Z12).
 
 #include "textflag.h"
 

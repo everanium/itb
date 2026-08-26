@@ -2,10 +2,12 @@
 
 // Package blake3asm holds the AVX-512 + VL fused chain-absorb kernel
 // implementation of BLAKE3 for the parent hashes/ package. The chain
-// kernels are specialised at three input widths (20 / 36 / 68 bytes —
-// covering the ITB 128 / 256 / 512-bit nonce buf shapes) and hold
-// BLAKE3 state in XMM registers across the absorb rounds, eliminating
-// the per-round memory round-trip taken by the upstream BLAKE3 path.
+// kernels are specialised at four input widths (13 / 20 / 36 / 68
+// bytes — the 13-byte Interlocked Barrier PRF fill shape plus the ITB
+// 128 / 256 / 512-bit nonce buf shapes) and hold BLAKE3 state in XMM
+// registers across the absorb rounds — the XMM active width for the
+// 32-bit word state — eliminating the per-round memory round-trip
+// taken by the upstream BLAKE3 path.
 //
 // The 4-pixel-batched lane-parallel layout matches blake2{b,s}asm —
 // 16 XMMs hold v[0..15] across all rounds (the 4 lane dwords fill

@@ -4,7 +4,10 @@
 // per-lane data input (the ITB SetNonceBits(256) buf shape). Two
 // 64-byte BLAKE2s compression blocks per lane, with state-residency
 // in XMM registers between the two compressions (the 4 × 32-bit
-// lane dwords fill one XMM register exactly):
+// lane dwords fill one XMM register exactly).
+//
+// Per-lane absorb construction (matches the public hashes.BLAKE2s256
+// closure bit-exactly):
 //
 //	Block 1 (t=64,  f=0):  buf[0:64]   = b2key + (data[0:32] ⊕ seed)
 //	Block 2 (t=68,  f=^0): buf[64:128] = data[32:36] + 60 zero pad
@@ -17,12 +20,9 @@
 // h_after_block1 is held in X0..X7 (= the v[0..7] init for block 2)
 // and also saved to stack so the final block-2 fold can XOR it back.
 //
-//	blake2s256ChainAbsorb36x4Asm(
-//	    h0       *[8]uint32,        // Blake2sIV256Param
-//	    b2key    *[32]byte,         // shared 32-byte fixed key
-//	    seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
-//	    out      *[4][8]uint32)     // output: 32 bytes per lane
+// Register allocation: identical to the 20-byte kernel
+// (blake2s_chain256_20_amd64.s); the m-register set X16..X31 is
+// rebuilt per block.
 //
 // Stack frame: 128 bytes for h_after_block1 spill (8 XMMs × 16 bytes).
 
@@ -103,11 +103,11 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func blake2s256ChainAbsorb36x4Asm(
-//     h0       *[8]uint32,
-//     b2key    *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint32)
+//     h0       *[8]uint32,        // Blake2sIV256Param (paramBlock 0x01010020)
+//     b2key    *[32]byte,         // shared 32-byte fixed key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
+//     out      *[4][8]uint32)     // output: 32 bytes per lane
 TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $128-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX
@@ -190,8 +190,8 @@ TEXT ·blake2s256ChainAbsorb36x4Asm(SB), NOSPLIT, $128-40
 	VPTERNLOGD.BCST $0x96, 24(AX), X14, X6
 	VPTERNLOGD.BCST $0x96, 28(AX), X15, X7
 
-	// Save h_after_block1 to stack so we can XOR it into the final
-	// block-2 fold (X0..X7 will be mutated by the block-2 rounds).
+	// Save h_after_block1 to stack so the final block-2 fold can XOR
+	// it back in (X0..X7 will be mutated by the block-2 rounds).
 	VMOVDQU64 X0, 0(SP)
 	VMOVDQU64 X1, 16(SP)
 	VMOVDQU64 X2, 32(SP)

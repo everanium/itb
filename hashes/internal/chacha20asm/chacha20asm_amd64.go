@@ -2,17 +2,20 @@
 
 // Package chacha20asm holds the AVX-512 + VL fused chain-absorb kernel
 // implementation of ChaCha20 for the parent hashes/ package. The chain
-// kernels are specialised at three input widths (20 / 36 / 68 bytes —
-// covering the ITB 128 / 256 / 512-bit nonce buf shapes) and hold
-// ChaCha20 state in ZMM registers across the absorb rounds, eliminating
-// the per-round memory round-trip taken by the upstream
-// golang.org/x/crypto/chacha20 path.
+// kernels are specialised at four input widths (13 / 20 / 36 / 68
+// bytes — the 13-byte Interlocked Barrier PRF fill shape plus the ITB
+// 128 / 256 / 512-bit nonce buf shapes) and hold ChaCha20 state in XMM
+// registers across the absorb rounds — the XMM active width for the
+// 32-bit word state — eliminating the per-round memory round-trip
+// taken by the upstream golang.org/x/crypto/chacha20 path.
 //
-// The 4-pixel-batched lane-parallel layout matches blake2{b,s}asm /
-// blake3asm — 16 ZMMs hold v[0..15] across all rounds (lanes 0..3
-// active in dword positions 0..3), with additional ZMMs holding the
+// The 4-pixel-batched lane-parallel layout matches blake2sasm /
+// blake3asm — 16 XMMs hold v[0..15] across all rounds (the 4 lane
+// dwords fill each XMM exactly), with additional XMMs holding the
 // v_init copy used at the keystream `+ v_init` add and the absorb
-// state held across compression boundaries. The round body uses
+// state held across compression boundaries. The 68-byte kernel is the
+// exception: its two compressions (counter=0 and counter=1) run
+// together in one YMM-batched round body. The round body uses
 // VPADDD / VPXORD / VPROLD with ChaCha20's left-rotation schedule
 // (16, 12, 8, 7) — distinct from BLAKE2/3's right-rotation schedule.
 //
@@ -20,7 +23,7 @@
 // golang.org/x/crypto/chacha20, which already carries hand-written
 // AVX-512 assembly for the keystream block. The 4-pixel-batched arm
 // wins primarily through 4-lane parallelism — four independent
-// ChaCha20 state evolutions advance through one ZMM dispatch
+// ChaCha20 state evolutions advance through one vector instruction
 // instead of four serial scalar calls.
 package chacha20asm
 

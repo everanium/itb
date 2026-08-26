@@ -218,8 +218,8 @@ func TestScalarBatch128ChainAbsorb68_Parity(t *testing.T) {
 }
 
 // TestScalar128ChainAbsorb_Parity drives the single-pixel scalar
-// chain-absorb across a variety of data lengths covering the three
-// production shapes (20 / 36 / 68 bytes) and additional boundary lengths
+// chain-absorb across a variety of data lengths covering the
+// 20 / 36 / 68-byte production shapes and additional boundary lengths
 // (0, 1, 15, 16, 17, 32, 33) that exercise the single-block / multi-
 // block branches inside the loop. The expected output is the bit-exact
 // reference closure on the same input.
@@ -269,9 +269,11 @@ func TestNewScalarBlock_Roundtrip(t *testing.T) {
 	}
 }
 
-// TestDispatcher_ScalarFallback drives the three public dispatchers
-// through their scalar fallback path by temporarily clearing the
-// HasVAESAVX512 capability flag. Verifies that the scalar branch of
+// TestDispatcher_ScalarFallback drives the 20 / 36 / 68-byte public
+// dispatchers through their scalar fallback path by temporarily
+// clearing the HasVAESAVX512 capability flag (the 13-byte dispatcher's
+// fallback is exercised by the chain13 parity tests). Verifies
+// that the scalar branch of
 // each dispatcher (which would otherwise be unreachable on a host that
 // reports VAES + AVX-512 support) produces output bit-identical to
 // the per-lane reference closure.

@@ -72,6 +72,9 @@ func Blake3256ChainAbsorb13x4(
 	scalarBatch256ChainAbsorb13(key, seeds, dataPtrs, out)
 }
 
+// blake3256ChainAbsorb13x4Asm is the XMM-batched fused chain-absorb
+// kernel implemented in blake3_chain256_13_amd64.s.
+//
 //go:noescape
 func blake3256ChainAbsorb13x4Asm(
 	key *[32]byte,
@@ -98,6 +101,9 @@ func Blake3256ChainAbsorb36x4(
 	scalarBatch256ChainAbsorb36(key, seeds, dataPtrs, out)
 }
 
+// blake3256ChainAbsorb36x4Asm is the XMM-batched fused chain-absorb
+// kernel implemented in blake3_chain256_36_amd64.s.
+//
 //go:noescape
 func blake3256ChainAbsorb36x4Asm(
 	key *[32]byte,
@@ -134,6 +140,9 @@ func Blake3256ChainAbsorb68x4(
 	scalarBatch256ChainAbsorb68(key, seeds, dataPtrs, out)
 }
 
+// blake3256ChainAbsorb68x4Asm is the XMM-batched fused two-block
+// chain-absorb kernel implemented in blake3_chain256_68_amd64.s.
+//
 //go:noescape
 func blake3256ChainAbsorb68x4Asm(
 	key *[32]byte,

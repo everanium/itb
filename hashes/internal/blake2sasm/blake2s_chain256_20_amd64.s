@@ -10,7 +10,7 @@
 // (u32 vs u64), block size (64 vs 128), round count (10 vs 12), and
 // G rotates (16, 12, 8, 7 vs 32, 24, 16, 63).
 //
-// Per-lane buffer construction (matches the public hashes.BLAKE2s256
+// Per-lane absorb construction (matches the public hashes.BLAKE2s256
 // closure bit-exactly):
 //
 //	buf[0:32]   = b2key                (shared across all 4 lanes)
@@ -25,12 +25,18 @@
 // f=^0 (final block). The 64-byte buf fits in exactly one BLAKE2s
 // 64-byte block — no inter-block fold required (single-block kernel).
 //
-//	blake2s256ChainAbsorb20x4Asm(
-//	    h0       *[8]uint32,        // Blake2sIV256Param (paramBlock 0x01010020)
-//	    b2key    *[32]byte,         // shared 32-byte fixed key
-//	    seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
-//	    out      *[4][8]uint32)     // output: 32 bytes per lane
+// Register allocation:
+//
+//	AX        h0 ptr       (Blake2sIV256Param)
+//	BX        b2key ptr    (32-byte shared key)
+//	CX        seeds ptr    (4 lanes × 4 uint64; per-lane stride 32 bytes)
+//	DX        dataPtrs ptr (4 lane pointers)
+//	R8..R11   per-lane data ptrs (loaded at entry)
+//	R12..R14, DI    scratch GPRs for lane packing
+//	R15       out ptr (saved through the round body, used at writeback)
+//	X0..X15   BLAKE2s state v[0..15] across all 10 rounds
+//	X16..X23  m[0..7]  (key dwords broadcast to all 4 lanes)
+//	X24..X31  m[8..15] (per-lane data ⊕ seed / seed-only)
 
 #include "textflag.h"
 
@@ -130,7 +136,12 @@
 	VPEXTRD $2, x_src, off(R10); \
 	VPEXTRD $3, x_src, off(R11)
 
-// func blake2s256ChainAbsorb20x4Asm(...)
+// func blake2s256ChainAbsorb20x4Asm(
+//     h0       *[8]uint32,        // Blake2sIV256Param (paramBlock 0x01010020)
+//     b2key    *[32]byte,         // shared 32-byte fixed key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥20 bytes
+//     out      *[4][8]uint32)     // output: 32 bytes per lane
 TEXT ·blake2s256ChainAbsorb20x4Asm(SB), NOSPLIT, $0-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX

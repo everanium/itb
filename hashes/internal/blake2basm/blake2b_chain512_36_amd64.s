@@ -5,7 +5,7 @@
 // single-compression structure as the 20-byte kernel; only the data
 // region length changes. Four pixels processed lane-parallel.
 //
-// Per-lane buffer construction (matches the public hashes.BLAKE2b512
+// Per-lane absorb construction (matches the public hashes.BLAKE2b512
 // closure bit-exactly):
 //
 //	buf[0:64]   = b2key                (shared across all 4 lanes)
@@ -15,15 +15,6 @@
 //	  buf[64+i*8 : 72+i*8] ^= seeds[lane][i]   (LE)
 //
 // Single 128-byte BLAKE2b compression with t=128, f=^0 (final block).
-//
-// Function signature (Go-side prototype in blake2basm_chain_amd64.go):
-//
-//	blake2b512ChainAbsorb36x4Asm(
-//	    h0       *[8]uint64,        // param-XOR'd IV (broadcast to 4 lanes)
-//	    b2key    *[64]byte,         // shared 64-byte fixed key
-//	    seeds    *[4][8]uint64,     // per-lane 8 seed components
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
-//	    out      *[4][8]uint64)     // output: 4 lanes × 8 uint64
 //
 // Register allocation:
 //
@@ -37,7 +28,7 @@
 //	CX        seeds ptr (base of [4][8]uint64; per-lane stride 64 bytes)
 //	DX        dataPtrs ptr (base of [4]*byte)
 //	R8..R11   per-lane data pointers (loaded once)
-//	R12..R14  scratch GPRs
+//	R12..R14, DI    scratch GPRs for lane packing
 //	R15       out ptr (saved through the round body, used at writeback)
 
 #include "textflag.h"
@@ -163,11 +154,11 @@
 	VPEXTRQ $1, X17, off(R11)
 
 // func blake2b512ChainAbsorb36x4Asm(
-//     h0       *[8]uint64,
-//     b2key    *[64]byte,
-//     seeds    *[4][8]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint64)
+//     h0       *[8]uint64,        // param-XOR'd IV (broadcast to 4 lanes)
+//     b2key    *[64]byte,         // shared 64-byte fixed key
+//     seeds    *[4][8]uint64,     // per-lane 8 seed components (stride 64)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
+//     out      *[4][8]uint64)     // output: 4 lanes × 8 uint64
 TEXT ·blake2b512ChainAbsorb36x4Asm(SB), NOSPLIT, $0-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX

@@ -16,11 +16,8 @@
 //	XKS call 2: state[i] ^= ks_hi_dword[i]  for i in 0..7
 //	output:    state[0:32] (4 × LE uint64)
 //
-//	chaCha20256ChainAbsorb36x4Asm(
-//	    fixedKey *[32]byte,
-//	    seeds    *[4][4]uint64,
-//	    dataPtrs *[4]*byte,
-//	    out      *[4][4]uint64)
+// Register allocation: identical to the 20-byte kernel
+// (chacha20_chain256_20_amd64.s).
 
 #include "textflag.h"
 
@@ -67,10 +64,10 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func chaCha20256ChainAbsorb36x4Asm(
-//     fixedKey *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][4]uint64)
+//     fixedKey *[32]byte,         // shared 32-byte fixed key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
+//     out      *[4][4]uint64)     // output: 32 bytes per lane
 TEXT ·chaCha20256ChainAbsorb36x4Asm(SB), NOSPLIT, $0-32
 	MOVQ fixedKey+0(FP),  AX
 	MOVQ seeds+8(FP),     CX

@@ -3,8 +3,8 @@
 package blake2sasm
 
 // Blake2s256ChainAbsorb20x4 is the public 4-pixel-batched entry point
-// for the BLAKE2s-256 chain-absorb at the 20-byte data shape (ITB
-// 128-bit ITB nonce buf shape).
+// for the BLAKE2s-256 chain-absorb at the 20-byte data shape (128-bit
+// ITB nonce buf shape).
 //
 // On amd64 + AVX-512 + VL hosts (HasAVX512Fused == true), dispatches
 // to the fused XMM-batched ASM kernel which holds four lane-isolated
@@ -80,6 +80,9 @@ func Blake2s256ChainAbsorb13x4(
 	scalarBatch256ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2s256ChainAbsorb13x4Asm is the XMM-batched fused chain-absorb
+// kernel implemented in blake2s_chain256_13_amd64.s.
+//
 //go:noescape
 func blake2s256ChainAbsorb13x4Asm(
 	h0 *[8]uint32,
@@ -113,6 +116,9 @@ func Blake2s256ChainAbsorb36x4(
 	scalarBatch256ChainAbsorb36(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2s256ChainAbsorb36x4Asm is the XMM-batched fused two-block
+// chain-absorb kernel implemented in blake2s_chain256_36_amd64.s.
+//
 //go:noescape
 func blake2s256ChainAbsorb36x4Asm(
 	h0 *[8]uint32,
@@ -145,6 +151,9 @@ func Blake2s256ChainAbsorb68x4(
 	scalarBatch256ChainAbsorb68(h0, b2key, seeds, dataPtrs, out)
 }
 
+// blake2s256ChainAbsorb68x4Asm is the XMM-batched fused two-block
+// chain-absorb kernel implemented in blake2s_chain256_68_amd64.s.
+//
 //go:noescape
 func blake2s256ChainAbsorb68x4Asm(
 	h0 *[8]uint32,

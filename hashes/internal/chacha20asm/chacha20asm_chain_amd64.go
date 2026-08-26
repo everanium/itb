@@ -56,8 +56,8 @@ func chaCha20256ChainAbsorb20x4Asm(
 )
 
 // ChaCha20256ChainAbsorb13x4 — 13-byte ChaCha20-256 batched
-// dispatcher, the Interlocked Barrier PRF fill message shape. One
-// CBC-MAC absorb round per lane (13 ≤ 24-byte chunkSize), identical
+// dispatcher, the Interlocked Barrier PRF fill message shape. A
+// single absorb round per lane (13 ≤ 24-byte chunkSize), identical
 // in structure to the 20-byte kernel; the .s kernel reads exactly 13
 // data bytes per lane.
 func ChaCha20256ChainAbsorb13x4(
@@ -73,6 +73,9 @@ func ChaCha20256ChainAbsorb13x4(
 	scalarBatch256ChainAbsorb13(fixedKey, seeds, dataPtrs, out)
 }
 
+// chaCha20256ChainAbsorb13x4Asm is the XMM-batched fused chain-absorb
+// kernel implemented in chacha20_chain256_13_amd64.s.
+//
 //go:noescape
 func chaCha20256ChainAbsorb13x4Asm(
 	fixedKey *[32]byte,
@@ -82,9 +85,9 @@ func chaCha20256ChainAbsorb13x4Asm(
 )
 
 // ChaCha20256ChainAbsorb36x4 — 36-byte ChaCha20-256 batched
-// dispatcher (256-bit ITB nonce buf shape). Two CBC-MAC absorb
-// rounds per lane; both consume halves of the same compression
-// block (counter=0):
+// dispatcher (256-bit ITB nonce buf shape). Two absorb rounds
+// per lane (CBC-MAC-style keystream chaining); both consume halves
+// of the same compression block (counter=0):
 //
 //	state[0:8]  = uint64(36) (LE)
 //	state[8:32] = data[lane][0:24]
@@ -107,6 +110,9 @@ func ChaCha20256ChainAbsorb36x4(
 	scalarBatch256ChainAbsorb36(fixedKey, seeds, dataPtrs, out)
 }
 
+// chaCha20256ChainAbsorb36x4Asm is the XMM-batched fused chain-absorb
+// kernel implemented in chacha20_chain256_36_amd64.s.
+//
 //go:noescape
 func chaCha20256ChainAbsorb36x4Asm(
 	fixedKey *[32]byte,
@@ -116,7 +122,7 @@ func chaCha20256ChainAbsorb36x4Asm(
 )
 
 // ChaCha20256ChainAbsorb68x4 — 68-byte ChaCha20-256 batched
-// dispatcher (512-bit ITB nonce buf shape). Three CBC-MAC absorb
+// dispatcher (512-bit ITB nonce buf shape). Three absorb
 // rounds per lane; the first two consume halves of compression
 // block 0 (counter=0), the third consumes ks_lo of compression block
 // 1 (counter=1):
@@ -145,6 +151,10 @@ func ChaCha20256ChainAbsorb68x4(
 	scalarBatch256ChainAbsorb68(fixedKey, seeds, dataPtrs, out)
 }
 
+// chaCha20256ChainAbsorb68x4Asm is the YMM-batched fused
+// dual-compression chain-absorb kernel implemented in
+// chacha20_chain256_68_amd64.s.
+//
 //go:noescape
 func chaCha20256ChainAbsorb68x4Asm(
 	fixedKey *[32]byte,

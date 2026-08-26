@@ -6,9 +6,11 @@
 // Lane-parallel: 4 lanes × 4 SipHash state words in qwords 0..3 of
 // Y0..Y3.
 //
-// 13 bytes = one full 8-byte compression block (data[0:8]) plus the
-// final padded block (data[8:13], 5 bytes, with lenTag 13 in the top
-// byte) — one fewer block than the 20-byte kernel:
+// Per-lane absorb construction (matches the public hashes.SipHash24
+// closure / dchest/siphash.Hash128 bit-exactly). 13 bytes = one full
+// 8-byte compression block (data[0:8]) plus the final padded block
+// (data[8:13], 5 bytes, with lenTag 13 in the top byte) — one fewer
+// block than the 20-byte kernel:
 //
 //	K0, K1 = seeds[lane][0], seeds[lane][1]
 //	v0 = K0 ^ 0x736f6d6570736575
@@ -27,10 +29,9 @@
 // MOVBLZX 12(Rx)); block 1 reads data[0:8]. Total 13 bytes read, so a
 // lane data pointer to an exactly-13-byte buffer is never over-read.
 //
-//	sipHash24Chain128Absorb13x4Asm(
-//	    seeds    *[4][2]uint64,
-//	    dataPtrs *[4]*byte,
-//	    out      *[4][2]uint64)
+// Register allocation: identical to the 20-byte kernel
+// (siphash_chain128_20_amd64.s); R13 additionally serves as a scratch
+// GPR for the 5-byte tail pack of the final padded block.
 
 #include "textflag.h"
 
@@ -67,6 +68,10 @@ GLOBL sipSeedDeint13<>(SB), RODATA|NOPTR, $64
 	SIP_ROUND;         \
 	VPXORQ Y4, Y0, Y0
 
+// func sipHash24Chain128Absorb13x4Asm(
+//     seeds    *[4][2]uint64,    // per-lane (K0, K1) SipHash key
+//     dataPtrs *[4]*byte,        // 4 pointers, each to ≥13 bytes
+//     out      *[4][2]uint64)    // output: 16 bytes per lane
 TEXT ·sipHash24Chain128Absorb13x4Asm(SB), NOSPLIT, $0-24
 	MOVQ seeds+0(FP),     BX
 	MOVQ dataPtrs+8(FP),  CX

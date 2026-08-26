@@ -3,7 +3,7 @@
 // YMM-batched fused chain-absorb kernel for BLAKE2b-256 with 36-byte
 // per-lane data input (the ITB SetNonceBits(256) buf shape).
 //
-// Per-lane buffer construction (matches the public hashes.BLAKE2b256
+// Per-lane absorb construction (matches the public hashes.BLAKE2b256
 // closure bit-exactly):
 //
 //	buf[0:32]   = b2key                (shared across all 4 lanes)
@@ -14,12 +14,8 @@
 // The 68-byte buf is zero-padded to a 128-byte block by blake2b
 // internally; one compression with t=68 (= 32 key + 36 data), f=^0.
 //
-//	blake2b256ChainAbsorb36x4Asm(
-//	    h0       *[8]uint64,        // Blake2bIV256Param (paramBlock 0x01010020)
-//	    b2key    *[32]byte,         // shared 32-byte fixed key
-//	    seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
-//	    out      *[4][8]uint64)     // output: only out[lane][0..4] meaningful
+// Register allocation: identical to the 20-byte kernel
+// (blake2b_chain256_20_amd64.s).
 
 #include "textflag.h"
 
@@ -105,7 +101,12 @@
 	VPEXTRQ $0, X17, off(R10); \
 	VPEXTRQ $1, X17, off(R11)
 
-// func blake2b256ChainAbsorb36x4Asm(...)
+// func blake2b256ChainAbsorb36x4Asm(
+//     h0       *[8]uint64,        // Blake2bIV256Param (paramBlock 0x01010020)
+//     b2key    *[32]byte,         // shared 32-byte fixed key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥36 bytes
+//     out      *[4][8]uint64)     // output: only out[lane][0:4] meaningful
 TEXT ·blake2b256ChainAbsorb36x4Asm(SB), NOSPLIT, $0-40
 	MOVQ h0+0(FP),       AX
 	MOVQ b2key+8(FP),    BX

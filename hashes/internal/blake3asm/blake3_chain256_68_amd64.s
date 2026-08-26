@@ -4,7 +4,10 @@
 // per-lane data input (the ITB SetNonceBits(512) buf shape). Two
 // 64-byte BLAKE3 compression blocks per lane, with state-residency
 // in XMM registers between the two compressions (the 4 × 32-bit
-// lane dwords fill one XMM register exactly):
+// lane dwords fill one XMM register exactly).
+//
+// Per-lane absorb construction (matches the public hashes.BLAKE3
+// closure bit-exactly):
 //
 //	Block 1 (block_len=64, flags=0x11 = KEYED_HASH | CHUNK_START):
 //	    m[0..7]  = data[0:32] ⊕ seed
@@ -23,11 +26,9 @@
 // term that would need cv1 reloaded after block-2 rounds mutate
 // X0..X7). The stack frame is therefore $0-32 instead of $512-32.
 //
-//	blake3256ChainAbsorb68x4Asm(
-//	    key      *[32]byte,
-//	    seeds    *[4][4]uint64,
-//	    dataPtrs *[4]*byte,         // 4 pointers, each to ≥68 bytes
-//	    out      *[4][8]uint32)
+// Register allocation: identical to the 20-byte kernel
+// (blake3_chain256_20_amd64.s); the m-register set X16..X31 is
+// rebuilt per block as described above.
 
 #include "textflag.h"
 
@@ -99,10 +100,10 @@
 	VPEXTRD $3, x_src, off(R11)
 
 // func blake3256ChainAbsorb68x4Asm(
-//     key      *[32]byte,
-//     seeds    *[4][4]uint64,
-//     dataPtrs *[4]*byte,
-//     out      *[4][8]uint32)
+//     key      *[32]byte,         // shared 32-byte BLAKE3 keyed-hash key
+//     seeds    *[4][4]uint64,     // per-lane 4 seed components (stride 32)
+//     dataPtrs *[4]*byte,         // 4 pointers, each to ≥68 bytes
+//     out      *[4][8]uint32)     // output: 32 bytes per lane
 TEXT ·blake3256ChainAbsorb68x4Asm(SB), NOSPLIT, $0-32
 	MOVQ key+0(FP),       AX
 	MOVQ seeds+8(FP),     CX
@@ -171,8 +172,8 @@ TEXT ·blake3256ChainAbsorb68x4Asm(SB), NOSPLIT, $0-32
 
 	// ===== Block 1 fold: cv1[k] = v[k] ⊕ v[k+8] in-place into X0..X7.
 	// (BLAKE3 does NOT XOR with the input chaining value here —
-	// that's the difference from BLAKE2 that lets us skip the cv1
-	// stack spill. The chaining value for block 2's state init is
+	// the difference from BLAKE2 that makes the cv1 stack spill
+	// unnecessary. The chaining value for block 2's state init is
 	// just the lower-half output of block 1's compression.)
 	VPXORD X8,  X0, X0
 	VPXORD X9,  X1, X1
