@@ -19,6 +19,8 @@ package itb_test
 import (
 	"bytes"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/everanium/itb"
@@ -1187,3 +1189,312 @@ func BenchmarkFleetGoNative_Production_Stream_Decrypt_16MB(b *testing.B) {
 func BenchmarkFleetGoNative_Production_Stream_Decrypt_64MB(b *testing.B) {
 	benchFleetStreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
 }
+
+// --- Production-shape benches: full env-var surface, triple facade ---
+//
+// The BenchmarkExtProduction_* cohort exercises the shipped triple
+// facade ([triple.Pipeline.EncryptMessage] / [triple.Pipeline.DecryptMessage]
+// / [triple.Pipeline.EncryptStream] / [triple.Pipeline.DecryptStream])
+// at whatever shape the ITB_* environment variables select, so a
+// production shape (parallax on, wrapper on, MAC on, KMAC256 or any
+// other registered MAC primitive) can be measured without touching
+// either the Low-Level [BenchmarkExtTriple*] baselines or the
+// binding-comparable [BenchmarkFleetGoNative_*] cohort — both of which
+// pin their own configuration by construction.
+//
+// Environment surface (defaults in parentheses; every variable is
+// optional):
+//
+//	ITB_INNER_HASH    (areion512)   inner ITB hash primitive name
+//	ITB_KEY_BITS      (1024)        per-seed key width in bits
+//	ITB_NONCE_BITS    (512)         on-wire nonce width in bits
+//	ITB_WITH_PARALLAX (true)        parallax layer toggle
+//	ITB_WITH_WRAPPER  (true)        wrapper (Outer cipher) toggle
+//	ITB_WITH_MAC      (true)        MAC toggle (drives profile choice)
+//	ITB_MAC_NAME      (profile def) MAC primitive name; inert under WITH_MAC=false
+//	ITB_PROFILE       (auto)        explicit profile override; empty = derived
+//
+// When ITB_PROFILE is empty the profile is picked from the
+// (surface, WITH_MAC) pair:
+//
+//	Message + MAC  -> ProfileSingleMsgTripleMACV1
+//	Message + none -> ProfileSingleMsgTripleNoMACV1
+//	Stream  + MAC  -> ProfileStreamingAEADTripleMACV1
+//	Stream  + none -> ProfileStreamingNoAEADTripleV1
+//
+// The applied configuration is logged once at bench init via
+// [testing.B.Logf] so the recorded shape is unambiguous in the bench
+// output. To keep the log line at exactly one emission per bench
+// function (rather than one per B.N iteration), the log fires only
+// on the first invocation of a given bench function per process.
+//
+// Run as:
+//
+//	ITB_WITH_MAC=true ITB_MAC_NAME=kmac256 ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true \
+//	    go test -bench='^BenchmarkExtProduction' -run=^$ -benchtime=1x -count=1
+//
+// The BenchmarkExtTriple* and BenchmarkFleetGoNative_* cohorts are
+// unaffected — they read only ITB_NONCE_BITS (ExtTriple) or nothing at
+// all (Fleet), preserving their baselines against BENCH3.md /
+// bindings/BENCH.md.
+
+// extProductionEnv carries the resolved production-shape configuration
+// for the [BenchmarkExtProduction_*] cohort. Every field is derived
+// from the corresponding ITB_* environment variable, with a full-
+// production-shape default when the variable is unset.
+type extProductionEnv struct {
+	profile      string
+	innerHash    string
+	keyBits      int
+	nonceBits    int
+	withParallax bool
+	withWrapper  bool
+	withMAC      bool
+	macName      string
+}
+
+// extProductionEnvBool parses a boolean environment variable via
+// [strconv.ParseBool]; empty or unparseable values fall back to dflt so
+// a typo does not silently flip a shape knob.
+func extProductionEnvBool(name string, dflt bool) bool {
+	v := os.Getenv(name)
+	if v == "" {
+		return dflt
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return dflt
+	}
+	return parsed
+}
+
+// extProductionEnvInt parses an integer environment variable; empty or
+// unparseable values fall back to dflt.
+func extProductionEnvInt(name string, dflt int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return dflt
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return dflt
+	}
+	return n
+}
+
+// extProductionEnvString returns the environment variable's value or
+// dflt when it is unset / empty.
+func extProductionEnvString(name, dflt string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return dflt
+}
+
+// resolveExtProductionEnv derives the effective production-shape
+// configuration for the given surface ("message" or "stream") from the
+// ITB_* environment variables. Defaults land on the shipped production
+// shape: MAC on, parallax on, wrapper on, Areion-SoEM-512 inner hash,
+// 1024-bit keys, 512-bit nonce.
+func resolveExtProductionEnv(surface string) extProductionEnv {
+	env := extProductionEnv{
+		innerHash:    extProductionEnvString("ITB_INNER_HASH", "areion512"),
+		keyBits:      extProductionEnvInt("ITB_KEY_BITS", 1024),
+		nonceBits:    extProductionEnvInt("ITB_NONCE_BITS", 512),
+		withParallax: extProductionEnvBool("ITB_WITH_PARALLAX", true),
+		withWrapper:  extProductionEnvBool("ITB_WITH_WRAPPER", true),
+		withMAC:      extProductionEnvBool("ITB_WITH_MAC", true),
+		macName:      extProductionEnvString("ITB_MAC_NAME", ""),
+	}
+	if p := os.Getenv("ITB_PROFILE"); p != "" {
+		env.profile = p
+	} else {
+		switch {
+		case surface == "message" && env.withMAC:
+			env.profile = triple.ProfileSingleMsgTripleMACV1
+		case surface == "message" && !env.withMAC:
+			env.profile = triple.ProfileSingleMsgTripleNoMACV1
+		case surface == "stream" && env.withMAC:
+			env.profile = triple.ProfileStreamingAEADTripleMACV1
+		default:
+			env.profile = triple.ProfileStreamingNoAEADTripleV1
+		}
+	}
+	return env
+}
+
+// opts renders the resolved production-shape configuration as a
+// [triple.Opts] suitable for [triple.Init]. Empty MacName defers to the
+// profile default (No MAC profiles ignore it either way).
+func (e extProductionEnv) opts() triple.Opts {
+	parallaxOn := e.withParallax
+	wrapperOn := e.withWrapper
+	return triple.Opts{
+		InnerHash:    e.innerHash,
+		KeyBits:      e.keyBits,
+		NonceBits:    e.nonceBits,
+		WithParallax: &parallaxOn,
+		WithWrapper:  &wrapperOn,
+		MacName:      e.macName,
+	}
+}
+
+// extProductionLogged guards a single [testing.B.Logf] emission per
+// bench function per process so the config line does not repeat once
+// per B.N iteration. Keyed by bench function name.
+var extProductionLogged sync.Map // map[string]struct{}
+
+// logf emits the resolved configuration line at most once per bench
+// function name, keyed on [testing.B.Name]. Subsequent B.N invocations
+// of the same bench function skip the log to keep bench output clean.
+func (e extProductionEnv) logf(b *testing.B) {
+	name := b.Name()
+	if _, dup := extProductionLogged.LoadOrStore(name, struct{}{}); dup {
+		return
+	}
+	b.Logf("ExtProduction cfg: profile=%s inner=%s keyBits=%d nonceBits=%d parallax=%v wrapper=%v mac=%v macName=%q",
+		e.profile, e.innerHash, e.keyBits, e.nonceBits,
+		e.withParallax, e.withWrapper, e.withMAC, e.macName)
+}
+
+// extProductionPipeline constructs the bench [triple.Pipeline] against
+// the environment-derived profile + Opts, registering Close via
+// [testing.B.Cleanup]. Construction happens once per bench function,
+// outside the timed loop.
+func extProductionPipeline(b *testing.B, surface string) *triple.Pipeline {
+	b.Helper()
+	env := resolveExtProductionEnv(surface)
+	env.logf(b)
+	pipe, _, err := triple.Init(env.profile, env.opts())
+	if err != nil {
+		b.Fatalf("triple.Init(%s): %v", env.profile, err)
+	}
+	b.Cleanup(func() { _ = pipe.Close() })
+	return pipe
+}
+
+// benchExtProductionMessageEncrypt drives
+// [triple.Pipeline.EncryptMessage] under the env-derived production
+// shape. One untimed warm-up call precedes the timed loop.
+func benchExtProductionMessageEncrypt(b *testing.B, dataSize int) {
+	pipe := extProductionPipeline(b, "message")
+	data := generateDataExt(dataSize)
+	if _, err := pipe.EncryptMessage(data); err != nil {
+		b.Fatalf("EncryptMessage warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.EncryptMessage(data); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
+		}
+	}
+}
+
+// benchExtProductionMessageDecrypt pre-encrypts one wire outside the
+// timed loop, then drives [triple.Pipeline.DecryptMessage] on that
+// wire. The pre-encrypt doubles as the warm-up round.
+func benchExtProductionMessageDecrypt(b *testing.B, dataSize int) {
+	pipe := extProductionPipeline(b, "message")
+	data := generateDataExt(dataSize)
+	wire, err := pipe.EncryptMessage(data)
+	if err != nil {
+		b.Fatalf("EncryptMessage (pre-encrypt): %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.DecryptMessage(wire); err != nil {
+			b.Fatalf("DecryptMessage: %v", err)
+		}
+	}
+}
+
+// benchExtProductionStreamEncrypt drives [triple.Pipeline.EncryptStream]
+// through a reset-per-iteration wire buffer. The buffer is grown once
+// (dataSize + 25% + a small padding for framing) and reused across
+// iterations so the steady-state allocation profile stays flat.
+func benchExtProductionStreamEncrypt(b *testing.B, dataSize int) {
+	pipe := extProductionPipeline(b, "stream")
+	data := generateDataExt(dataSize)
+	var wire bytes.Buffer
+	wire.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+		b.Fatalf("EncryptStream warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wire.Reset()
+		if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+// benchExtProductionStreamDecrypt pre-encrypts one wire outside the
+// timed loop, then drives [triple.Pipeline.DecryptStream] on that wire
+// into a reset-per-iteration plaintext buffer.
+func benchExtProductionStreamDecrypt(b *testing.B, dataSize int) {
+	pipe := extProductionPipeline(b, "stream")
+	data := generateDataExt(dataSize)
+	var wireBuf bytes.Buffer
+	wireBuf.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream (pre-encrypt): %v", err)
+	}
+	wire := wireBuf.Bytes()
+	var plain bytes.Buffer
+	plain.Grow(dataSize + 65536)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plain.Reset()
+		if err := pipe.DecryptStream(bytes.NewReader(wire), &plain); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
+// --- ExtProduction Message: env-derived Single Message profile ---
+
+func BenchmarkExtProductionMessage_Encrypt_1MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 1<<20)
+}
+func BenchmarkExtProductionMessage_Encrypt_16MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 16<<20)
+}
+func BenchmarkExtProductionMessage_Encrypt_64MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 64<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_1MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 1<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_16MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 16<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_64MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 64<<20)
+}
+
+// --- ExtProduction Stream: env-derived Streaming profile ---
+
+func BenchmarkExtProductionStream_Encrypt_1MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 1<<20)
+}
+func BenchmarkExtProductionStream_Encrypt_16MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 16<<20)
+}
+func BenchmarkExtProductionStream_Encrypt_64MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 64<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_1MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 1<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_16MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 16<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_64MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 64<<20)
+}
+
