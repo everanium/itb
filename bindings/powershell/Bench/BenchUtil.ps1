@@ -59,6 +59,9 @@ function Get-BenchOpts {
     if ($env:ITB_INNER_HASH) {
         $opts.innerHash = $env:ITB_INNER_HASH
     }
+    if ($env:ITB_MAC_NAME) {
+        $opts.macName = $env:ITB_MAC_NAME
+    }
     New-ItbOpts -Options $opts
 }
 

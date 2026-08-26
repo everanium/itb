@@ -291,9 +291,13 @@ fn bench_opts() -> Opts {
     #("withParallax", flag(env("ITB_WITH_PARALLAX", "false"))),
     #("withWrapper", flag(env("ITB_WITH_WRAPPER", "false"))),
   ]
-  case env("ITB_INNER_HASH", "") {
+  let base = case env("ITB_INNER_HASH", "") {
     "" -> base
     hash -> [#("innerHash", hash), ..base]
+  }
+  case env("ITB_MAC_NAME", "") {
+    "" -> base
+    mac -> [#("macName", mac), ..base]
   }
 }
 

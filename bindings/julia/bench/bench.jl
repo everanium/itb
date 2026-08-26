@@ -43,6 +43,8 @@ function build_opts()::Opts
               get(ENV, "ITB_WITH_WRAPPER", "false") in ("true", "1") ? "true" : "false")
     inner = get(ENV, "ITB_INNER_HASH", "")
     isempty(inner) || with_raw!(o, "innerHash", inner)
+    mac = get(ENV, "ITB_MAC_NAME", "")
+    isempty(mac) || with_raw!(o, "macName", mac)
     return o
 end
 

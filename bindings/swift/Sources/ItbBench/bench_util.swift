@@ -43,6 +43,10 @@ func benchBuildOpts() throws -> Opts {
     if !innerHash.isEmpty {
         try opts.set("innerHash", innerHash)
     }
+    let macName = env("ITB_MAC_NAME", "")
+    if !macName.isEmpty {
+        try opts.set("macName", macName)
+    }
     return opts
 }
 

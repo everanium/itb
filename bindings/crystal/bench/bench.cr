@@ -59,6 +59,8 @@ def build_opts : ITB::Opts
     .with_wrapper(env("ITB_WITH_WRAPPER", "false") == "true")
   inner = env("ITB_INNER_HASH", "")
   opts = opts.with_inner_hash(inner) unless inner.empty?
+  mac = env("ITB_MAC_NAME", "")
+  opts = opts.with_mac_name(mac) unless mac.empty?
   opts
 end
 

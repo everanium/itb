@@ -58,6 +58,10 @@ inline itb::Opts bench_build_opts()
         .set("withParallax", env_bool("ITB_WITH_PARALLAX"))
         .set("withWrapper", env_bool("ITB_WITH_WRAPPER"))
         .set("innerHash", env_or("ITB_INNER_HASH", "areion512"));
+    const char *mac_name = std::getenv("ITB_MAC_NAME");
+    if (mac_name != nullptr && *mac_name != '\0') {
+        opts.set("macName", mac_name);
+    }
     return opts;
 }
 

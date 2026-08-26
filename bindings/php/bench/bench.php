@@ -64,6 +64,10 @@ function build_opts(): array
     if (is_string($inner) && $inner !== '') {
         $opts['innerHash'] = $inner;
     }
+    $macName = getenv('ITB_MAC_NAME');
+    if (is_string($macName) && $macName !== '') {
+        $opts['macName'] = $macName;
+    }
     return $opts;
 }
 

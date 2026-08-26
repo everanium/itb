@@ -47,6 +47,7 @@ internal object BenchUtil {
         parallax(envBool("ITB_WITH_PARALLAX"))
         wrapper(envBool("ITB_WITH_WRAPPER"))
         System.getenv("ITB_INNER_HASH")?.takeIf { it.isNotEmpty() }?.let { innerHash(it) }
+        System.getenv("ITB_MAC_NAME")?.takeIf { it.isNotEmpty() }?.let { macName(it) }
     }
 
     fun profileName(fallback: String): String =
