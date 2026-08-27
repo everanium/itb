@@ -843,11 +843,13 @@ void itb_process_pixels(
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
     // Prefetch distance — fetch upcoming pixels' container slots into L2
-    // while current pixel is processed. 8 pixels ≈ 64 bytes (one cache
-    // line) of container, hides ~30-50 ns of L2/L3 latency on Zen 5 and
-    // Intel client/server alike. Independent of any future per-pixel
-    // SIMD restructuring — the hint just preloads container[] memory.
-    const int PrefetchDistance = 8;
+    // while current pixel is processed. 64 pixels ≈ 8 cache lines of
+    // container, hides deeper L2/L3 miss latency on Zen 5 and Intel
+    // Rocket Lake alike; the wider window matches the actual sustained
+    // pixel-consumption throughput of the batched hash producer above.
+    // Independent of any future per-pixel SIMD restructuring — the hint
+    // just preloads container[] memory.
+    const int PrefetchDistance = 64;
 
     int bitIndex = startP * DataBitsPerPixel;
     int p = 0;

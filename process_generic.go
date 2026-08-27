@@ -10,7 +10,8 @@ package itb
 // identical to the serial path. Non-batched primitives (BatchHash nil)
 // route directly to the legacy serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
-func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
+	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
 	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
@@ -195,7 +196,8 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 // identical to the serial path. Non-batched primitives (BatchHash nil)
 // route directly to the legacy serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
-func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
+	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
 	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
@@ -380,7 +382,8 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 // identical to processChunk256 with 8-uint64 hash outputs in place of
 // 4-uint64 ones. Pure Go counterpart of the 512-bit batched path in
 // process_cgo.go.
-func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
+	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
 	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))

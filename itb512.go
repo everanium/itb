@@ -41,8 +41,12 @@ func process512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce [
 		numWorkers = maxW
 	}
 
+	// Adaptive CGO batch stride is decided once per invocation from the
+	// actual payload size and threaded uniformly to every worker.
+	microBatch := chooseMicroBatch(len(data))
+
 	if numWorkers == 1 {
-		processChunk512(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, encode)
+		processChunk512(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, microBatch, encode)
 		return
 	}
 
@@ -59,7 +63,7 @@ func process512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce [
 		wg.Add(1)
 		go func(startP, endP int) {
 			defer wg.Done()
-			processChunk512(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, encode)
+			processChunk512(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, microBatch, encode)
 		}(startP, endP)
 	}
 	wg.Wait()
