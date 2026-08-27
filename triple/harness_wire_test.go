@@ -1,3 +1,5 @@
+//go:build redteam
+
 package triple
 
 // harness_wire_test.go — construction-level wire-distinguishability harness
