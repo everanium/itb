@@ -164,3 +164,19 @@ var HasARMAESBatched = false
 // wider tier keep it; the AES-NI XMM path is strictly the fallback.
 var HasAESNIBatched = aes.CPU.HasAESNI &&
 	!HasVAESAVX512 && !HasVAESAVX2NoAVX512 && !HasARMAESBatched
+
+// HasVAESAVX2Batched reports whether the runtime CPU exposes VAES + AVX2
+// but lacks AVX-512 — the same silicon class as HasVAESAVX2NoAVX512, but
+// this flag gates the width-specialised YMM VAES chain-absorb kernels
+// (Areion*ChainAbsorb*x4VaesAvx2) rather than the base 4-way
+// permutation. On these hosts the parent itb package's Areion-SoEM
+// chain-absorb dispatch routes the {13,20,36,68}-byte buf shapes through
+// the YMM kernels, which run two lanes per YMM across two passes: within
+// a pass the SoEM state1 / state2 permutations expose four independent
+// VAES chains, saturating a single VAES issue port at the ~4-cycle
+// VAESENC latency (playbook §8). Shapes outside that set, and unequal
+// lane tails, still fall back to the base Areion*Permutex4Avx2 kernel
+// plus the Go-side SoEM absorb loop gated by HasVAESAVX2NoAVX512, so the
+// two flags coexist: HasVAESAVX2NoAVX512 covers the general path,
+// HasVAESAVX2Batched the width-specialised hot path.
+var HasVAESAVX2Batched = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512
