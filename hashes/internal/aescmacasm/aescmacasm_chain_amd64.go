@@ -39,6 +39,10 @@ func AESCMAC128ChainAbsorb20x4(
 		aesCMAC128ChainAbsorb20x4Asm(roundKeys, seeds, dataPtrs, out)
 		return
 	}
+	if HasAESNIBatched {
+		aesCMAC128ChainAbsorb20x4AesNiAsm(roundKeys, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch128ChainAbsorb20(key, seeds, dataPtrs, out)
 }
 
@@ -55,6 +59,10 @@ func AESCMAC128ChainAbsorb13x4(
 ) {
 	if HasVAESAVX512 {
 		aesCMAC128ChainAbsorb13x4Asm(roundKeys, seeds, dataPtrs, out)
+		return
+	}
+	if HasAESNIBatched {
+		aesCMAC128ChainAbsorb13x4AesNiAsm(roundKeys, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch128ChainAbsorb13(key, seeds, dataPtrs, out)
@@ -107,6 +115,10 @@ func AESCMAC128ChainAbsorb36x4(
 		aesCMAC128ChainAbsorb36x4Asm(roundKeys, seeds, dataPtrs, out)
 		return
 	}
+	if HasAESNIBatched {
+		aesCMAC128ChainAbsorb36x4AesNiAsm(roundKeys, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch128ChainAbsorb36(key, seeds, dataPtrs, out)
 }
 
@@ -140,6 +152,10 @@ func AESCMAC128ChainAbsorb68x4(
 ) {
 	if HasVAESAVX512 {
 		aesCMAC128ChainAbsorb68x4Asm(roundKeys, seeds, dataPtrs, out)
+		return
+	}
+	if HasAESNIBatched {
+		aesCMAC128ChainAbsorb68x4AesNiAsm(roundKeys, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch128ChainAbsorb68(key, seeds, dataPtrs, out)

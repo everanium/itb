@@ -37,6 +37,10 @@ var (
 	// non-nil batched arm that routes through `Areion{256,512}Permutex4`,
 	// running 4 independent ARM AES extension chains in one ASM block.
 	HasARMAESBatched = aes.CPU.HasARMCrypto
+	// HasAESNIBatched is always false on arm64 builds — it is the amd64
+	// AES-NI-only XMM batched flag. The arm64 batched path is gated by
+	// HasARMAESBatched instead.
+	HasAESNIBatched = false
 )
 
 // Areion256Permutex4 applies the 10-round Areion256 permutation to four

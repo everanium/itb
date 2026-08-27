@@ -20,6 +20,10 @@ var (
 	// HasARMAESBatched is always false on these builds (the arm64
 	// production path defines this in areionasm_arm64.go).
 	HasARMAESBatched = false
+	// HasAESNIBatched is always false on these builds — the XMM AES-NI
+	// chain-absorb kernels are amd64-only. The parent itb package uses
+	// its portable Go fallback here.
+	HasAESNIBatched = false
 )
 
 // Areion256Permutex4 should never be called on these builds — the
