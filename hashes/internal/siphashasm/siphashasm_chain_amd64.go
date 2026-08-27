@@ -37,6 +37,10 @@ func SipHash24Chain128Absorb20x4(
 		sipHash24Chain128Absorb20x4Asm(seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		sipHash24Chain128Absorb20x4Avx2Asm(seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch128ChainAbsorb20(seeds, dataPtrs, out)
 }
 
@@ -66,6 +70,10 @@ func SipHash24Chain128Absorb13x4(
 		sipHash24Chain128Absorb13x4Asm(seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		sipHash24Chain128Absorb13x4Avx2Asm(seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch128ChainAbsorb13(seeds, dataPtrs, out)
 }
 
@@ -91,6 +99,10 @@ func SipHash24Chain128Absorb36x4(
 		sipHash24Chain128Absorb36x4Asm(seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		sipHash24Chain128Absorb36x4Avx2Asm(seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch128ChainAbsorb36(seeds, dataPtrs, out)
 }
 
@@ -114,6 +126,10 @@ func SipHash24Chain128Absorb68x4(
 ) {
 	if HasAVX512Fused {
 		sipHash24Chain128Absorb68x4Asm(seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		sipHash24Chain128Absorb68x4Avx2Asm(seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch128ChainAbsorb68(seeds, dataPtrs, out)

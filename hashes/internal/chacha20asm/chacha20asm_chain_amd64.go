@@ -39,6 +39,10 @@ func ChaCha20256ChainAbsorb20x4(
 		chaCha20256ChainAbsorb20x4Asm(fixedKey, seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		chaCha20256ChainAbsorb20x4Avx2Asm(fixedKey, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch256ChainAbsorb20(fixedKey, seeds, dataPtrs, out)
 }
 
@@ -68,6 +72,10 @@ func ChaCha20256ChainAbsorb13x4(
 ) {
 	if HasAVX512Fused {
 		chaCha20256ChainAbsorb13x4Asm(fixedKey, seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		chaCha20256ChainAbsorb13x4Avx2Asm(fixedKey, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch256ChainAbsorb13(fixedKey, seeds, dataPtrs, out)
@@ -105,6 +113,10 @@ func ChaCha20256ChainAbsorb36x4(
 ) {
 	if HasAVX512Fused {
 		chaCha20256ChainAbsorb36x4Asm(fixedKey, seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		chaCha20256ChainAbsorb36x4Avx2Asm(fixedKey, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch256ChainAbsorb36(fixedKey, seeds, dataPtrs, out)
@@ -146,6 +158,10 @@ func ChaCha20256ChainAbsorb68x4(
 ) {
 	if HasAVX512Fused {
 		chaCha20256ChainAbsorb68x4Asm(fixedKey, seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		chaCha20256ChainAbsorb68x4Avx2Asm(fixedKey, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch256ChainAbsorb68(fixedKey, seeds, dataPtrs, out)

@@ -172,12 +172,14 @@ func ChaCha20256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [3
 // state buffer in its native LE byte order.
 func ChaCha20256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
 	single := ChaCha20WithKey(fixedKey)
-	// On hosts without the AVX-512 fused chain-absorb path the batched
-	// closure falls into the scalar Go reference; under that path
-	// process_cgo.go's nil-fallback (driving 4 single calls through
-	// the underlying ChaCha20 stream-cipher path) outperforms the
-	// 4-lane wrapper. Return nil to opt into that fallback.
-	if !chacha20asm.HasAVX512Fused {
+	// On hosts without any fused chain-absorb path (neither the AVX-512
+	// tier nor the AVX2 tier) the batched closure falls into the scalar
+	// Go reference; under that path process_cgo.go's nil-fallback
+	// (driving 4 single calls through the underlying ChaCha20
+	// stream-cipher path) outperforms the 4-lane wrapper. Return nil to
+	// opt into that fallback. AVX2-only hosts (HasAVX2Fused) keep the
+	// batched arm — the 4-lane XMM / fused-YMM kernels win there.
+	if !chacha20asm.HasAVX512Fused && !chacha20asm.HasAVX2Fused {
 		return single, nil
 	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {

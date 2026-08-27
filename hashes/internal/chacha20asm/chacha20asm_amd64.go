@@ -36,3 +36,14 @@ import "golang.org/x/sys/cpu"
 // rest of the AVX-512 baseline (VPROLD, VPBROADCASTD on EVEX form)
 // ships with it.
 var HasAVX512Fused = cpu.X86.HasAVX512F
+
+// HasAVX2Fused reports whether the runtime CPU supports the AVX2 4-lane
+// chain-absorb kernels but lacks the AVX-512 tier (which stays
+// first-choice when present). On these hosts (every AVX2-only CPU:
+// Sandy/Ivy/Haswell/Broadwell, Skylake-client, AMD Zen 1–3, and every
+// AVX2-no-AVX-512 cloud VM) the ChaCha20 chain-absorb dispatch routes to
+// the AVX2 kernels: 4 pixel lanes packed per XMM (single-block widths)
+// or a dual-counter YMM fusion (68-byte width), with the immediate
+// rotates synthesized via VPSHUFB byte-masks and VPSLLD/VPSRLD/VPOR.
+// Gated off when AVX-512F is present so AVX-512 hosts keep their tier.
+var HasAVX2Fused = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
