@@ -143,13 +143,21 @@ CELLS=$(( ${#NONCEBITS[@]} * ${#HASHES[@]} * ${#SIZES[@]} * 2 ))
 
 # ---------------------------------------------------------------------------
 # Section 2 — forced pixel-tier matrix × nonce widths.
-# Sweeps ITB_FORCE_PIXEL_TIER=A|B|C on the tiered cgo arm to exercise
-# all three C dispatch paths on one host regardless of the host CPU's
-# natural tier. Downgrade-only: forcing to B on a Tier C-only host has
-# no effect; forcing to A on an actual Tier A host is a no-op vs the
-# plain cgo arm and re-runs it as sanity coverage.
+# Sweeps ITB_FORCE_PIXEL_TIER on the tiered cgo arm to exercise every C
+# dispatch path on one host regardless of the host CPU's natural tier.
+# Each tag simulates a real fleet CPU class via a feature-suppression
+# mask rather than capping a ladder, so leftover sub-batch pixels route
+# exactly as they would on the simulated silicon:
+#   A        — full AVX-512 + GFNI ZMM (Zen 5 / Rocket Lake)
+#   A_NOGFNI — AVX-512 F+BW+VL, GFNI suppressed (Cascade Lake); 4-7-pixel
+#              leftovers fall to the B_NOGFNI 4-pixel path, as on silicon
+#   B        — AVX2 + GFNI YMM (AVX-512 suppressed)
+#   B_NOGFNI — AVX2 only, GFNI suppressed (Zen 3 / Haswell)
+#   C        — plain-C path (all SIMD tiers suppressed)
+# Downgrade-only: a forced tag can only remove features the host has, so
+# forcing A_NOGFNI on a GFNI-less host is a no-op and re-runs coverage.
 # ---------------------------------------------------------------------------
-TIER_MATRIX=(A B C)
+TIER_MATRIX=(A A_NOGFNI B B_NOGFNI C)
 TIER_CELLS=$(( ${#TIER_MATRIX[@]} * ${#NONCEBITS[@]} * ${#HASHES[@]} * ${#SIZES[@]} * 2 ))
 
 for TIER in "${TIER_MATRIX[@]}"; do
