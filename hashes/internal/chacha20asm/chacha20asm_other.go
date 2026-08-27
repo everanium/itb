@@ -8,3 +8,7 @@ package chacha20asm
 
 // HasAVX512Fused is always false on non-amd64 / purego builds.
 var HasAVX512Fused = false
+
+// HasAVX2Fused is always false on non-amd64 / purego builds — the AVX2
+// chain-absorb kernels are amd64-only.
+var HasAVX2Fused = false
