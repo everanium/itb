@@ -7,12 +7,33 @@ No git operations, no persistent code changes — clean tree after run.
 
 ## `prefetch_sweep.sh` — `PrefetchDistance` const sweep
 
-Sweeps `PrefetchDistance ∈ {8, 16, 32, 64, 128}` through
-`BenchmarkExtProductionMessage_(Encrypt|Decrypt)_(1|16|64)MB` at the
-canonical bench config (`areion512` / 512-bit key / no MAC / no overlays).
+Sweeps `PrefetchDistance ∈ {8, 16, 32, 64, 128}` in `process_pixels.c`
+through `BenchmarkExtProductionMessage_(Encrypt|Decrypt)_(1|16|64)MB`
+at the canonical bench config (`areion512` / 512-bit key / no MAC /
+no overlays). Measures whether the software prefetch distance covers
+what the hardware prefetcher does not.
 
 Wall-time budget: `5s × 3 counts × 6 sub-benches × 5 configs` ≈ 10-15 min on
 a warm cgo cache. Cold-start builds add ~30-60 s per config.
+
+## `microbatch_sweep.sh` — `microBatchSize` const sweep
+
+Sweeps `microBatchSize ∈ {512, 1024, 2048, 4096, 8192}` in
+`process_cgo.go` through the same canonical bench. Measures the
+trade-off between CGO crossing count (fewer at larger batch) and L1
+cache pressure (hash arrays sized `batch × 2 × 8 bytes`).
+
+Memory footprint per config:
+
+| microBatchSize | Hash arrays | Cache tier |
+|---|---:|---|
+| 512  |   8 KiB | L1 |
+| 1024 |  16 KiB | L1 |
+| 2048 |  32 KiB | L1 edge |
+| 4096 |  64 KiB | L1 miss → L2 |
+| 8192 | 128 KiB | L2 hit |
+
+Wall-time budget: ~10-15 min on a warm cgo cache.
 
 **Usage** (run from anywhere; the script self-locates the repo root):
 
