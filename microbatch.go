@@ -32,7 +32,7 @@ func chooseMicroBatch(payloadBytes int) int {
 	switch {
 	case payloadBytes <= 32*1024:
 		return 512
-	case payloadBytes <= 1024*1024:
+	case payloadBytes <= 8*1024*1024:
 		return 262144
 	default:
 		return 512
