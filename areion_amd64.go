@@ -46,7 +46,7 @@ func areionSoEM256ChainAbsorbHot(
 	data *[4][]byte,
 	commonLen int,
 ) (out [4][4]uint64, ok bool) {
-	if !areionasm.HasVAESAVX512 && !areionasm.HasAESNIBatched {
+	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2Batched && !areionasm.HasAESNIBatched {
 		return out, false
 	}
 	if len(data[1]) != commonLen || len(data[2]) != commonLen || len(data[3]) != commonLen {
@@ -73,6 +73,26 @@ func areionSoEM256ChainAbsorbHot(
 			return out, true
 		case 68:
 			areionasm.Areion256ChainAbsorb68x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		}
+		return out, false
+	}
+	// VAES + AVX2 (no AVX-512) hosts route to the YMM 2-lane kernels;
+	// mutually exclusive with the AVX-512 arm (HasVAESAVX2Batched
+	// requires !HasAVX512) and bit-exact.
+	if areionasm.HasVAESAVX2Batched {
+		switch commonLen {
+		case 13:
+			areionasm.Areion256ChainAbsorb13x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 20:
+			areionasm.Areion256ChainAbsorb20x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 36:
+			areionasm.Areion256ChainAbsorb36x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 68:
+			areionasm.Areion256ChainAbsorb68x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
 			return out, true
 		}
 		return out, false
@@ -105,7 +125,7 @@ func areionSoEM512ChainAbsorbHot(
 	data *[4][]byte,
 	commonLen int,
 ) (out [4][8]uint64, ok bool) {
-	if !areionasm.HasVAESAVX512 && !areionasm.HasAESNIBatched {
+	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2Batched && !areionasm.HasAESNIBatched {
 		return out, false
 	}
 	if len(data[1]) != commonLen || len(data[2]) != commonLen || len(data[3]) != commonLen {
@@ -130,6 +150,24 @@ func areionSoEM512ChainAbsorbHot(
 			return out, true
 		case 68:
 			areionasm.Areion512ChainAbsorb68x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		}
+		return out, false
+	}
+	// VAES + AVX2 (no AVX-512) hosts route to the YMM 2-lane kernels.
+	if areionasm.HasVAESAVX2Batched {
+		switch commonLen {
+		case 13:
+			areionasm.Areion512ChainAbsorb13x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 20:
+			areionasm.Areion512ChainAbsorb20x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 36:
+			areionasm.Areion512ChainAbsorb36x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 68:
+			areionasm.Areion512ChainAbsorb68x4VaesAvx2(fixedKey, seeds, &dataPtrs, &out)
 			return out, true
 		}
 		return out, false
