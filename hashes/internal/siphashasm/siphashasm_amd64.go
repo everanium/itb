@@ -40,3 +40,12 @@ import "golang.org/x/sys/cpu"
 // every shipping silicon where AVX-512F is present the rest of
 // the AVX-512 baseline ships with it).
 var HasAVX512Fused = cpu.X86.HasAVX512F
+
+// HasAVX2Fused reports whether the runtime CPU supports the AVX2 4-lane
+// chain-absorb kernels but lacks the AVX-512 tier (which stays
+// first-choice when present). SipHash's 4-word state fits AVX2's
+// 16-register file comfortably, so the AVX2 kernels keep the exact
+// 4-lane YMM layout of the AVX-512 tier, synthesizing the SipRound
+// immediate rotates via VPSHUFD (32), VPSHUFB byte-mask (16), and
+// VPSLLQ/VPSRLQ/VPOR (13, 21, 17). Gated off when AVX-512F is present.
+var HasAVX2Fused = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F

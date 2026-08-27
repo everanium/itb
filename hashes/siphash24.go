@@ -54,7 +54,7 @@ func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 	// process_cgo.go's nil-fallback (driving 4 single calls through
 	// dchest/siphash's already-fast scalar implementation) outperforms
 	// the 4-lane wrapper. Return nil to opt into that fallback.
-	if !siphashasm.HasAVX512Fused {
+	if !siphashasm.HasAVX512Fused && !siphashasm.HasAVX2Fused {
 		return single, nil
 	}
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
