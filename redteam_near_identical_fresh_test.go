@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // Fresh-nonce cross-message near-identical distinguisher re-verification

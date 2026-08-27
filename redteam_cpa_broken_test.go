@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // Fresh-nonce CPA re-verification against the v0.3.0 architecture

@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // Related-nonce differential re-verification for the v0.3.0 architecture
