@@ -46,7 +46,7 @@ func areionSoEM256ChainAbsorbHot(
 	data *[4][]byte,
 	commonLen int,
 ) (out [4][4]uint64, ok bool) {
-	if !areionasm.HasVAESAVX512 {
+	if !areionasm.HasVAESAVX512 && !areionasm.HasAESNIBatched {
 		return out, false
 	}
 	if len(data[1]) != commonLen || len(data[2]) != commonLen || len(data[3]) != commonLen {
@@ -57,6 +57,26 @@ func areionSoEM256ChainAbsorbHot(
 	dataPtrs[1] = &data[1][0]
 	dataPtrs[2] = &data[2][0]
 	dataPtrs[3] = &data[3][0]
+	// AES-NI-only hosts (no VAES) route to the XMM 4-lane kernels; the
+	// two arms are mutually exclusive (HasAESNIBatched requires
+	// !HasVAESAVX512) and bit-exact.
+	if areionasm.HasAESNIBatched {
+		switch commonLen {
+		case 13:
+			areionasm.Areion256ChainAbsorb13x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 20:
+			areionasm.Areion256ChainAbsorb20x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 36:
+			areionasm.Areion256ChainAbsorb36x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 68:
+			areionasm.Areion256ChainAbsorb68x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		}
+		return out, false
+	}
 	switch commonLen {
 	case 13:
 		// Interlocked Barrier PRF fill shape (Lift 2 batched fill path).
@@ -85,7 +105,7 @@ func areionSoEM512ChainAbsorbHot(
 	data *[4][]byte,
 	commonLen int,
 ) (out [4][8]uint64, ok bool) {
-	if !areionasm.HasVAESAVX512 {
+	if !areionasm.HasVAESAVX512 && !areionasm.HasAESNIBatched {
 		return out, false
 	}
 	if len(data[1]) != commonLen || len(data[2]) != commonLen || len(data[3]) != commonLen {
@@ -96,6 +116,24 @@ func areionSoEM512ChainAbsorbHot(
 	dataPtrs[1] = &data[1][0]
 	dataPtrs[2] = &data[2][0]
 	dataPtrs[3] = &data[3][0]
+	// AES-NI-only hosts (no VAES) route to the XMM 4-lane kernels.
+	if areionasm.HasAESNIBatched {
+		switch commonLen {
+		case 13:
+			areionasm.Areion512ChainAbsorb13x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 20:
+			areionasm.Areion512ChainAbsorb20x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 36:
+			areionasm.Areion512ChainAbsorb36x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		case 68:
+			areionasm.Areion512ChainAbsorb68x4AesNi(fixedKey, seeds, &dataPtrs, &out)
+			return out, true
+		}
+		return out, false
+	}
 	switch commonLen {
 	case 13:
 		// Interlocked Barrier PRF fill shape (Lift 2 batched fill path).

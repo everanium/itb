@@ -147,3 +147,20 @@ var HasVAESAVX2NoAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX5
 // uniformly across architectures without per-arch build tag fences
 // inside the gate expression.
 var HasARMAESBatched = false
+
+// HasAESNIBatched reports whether the runtime CPU exposes AES-NI
+// (AESENC / AESENCLAST on XMM) but none of the wider batched-AES paths
+// (VAES + AVX-512, VAES + AVX-2, ARM Crypto Extension). On these hosts
+// the parent itb package's Areion-SoEM chain-absorb dispatch routes to
+// the XMM AES-NI kernels, which run 4 independent per-lane AES chains
+// (Areion-SoEM-256: 2 lanes/pass, each lane contributing its state1 /
+// state2 permutations as 2 disjoint chains; Areion-SoEM-512: 1
+// lane/pass, whose SoEM state1 / state2 each expose the round's a-chain
+// and c-chain, again 4 disjoint chains). Four independent chains hide
+// the ~4-cycle AESENC latency on a single-issue AES port, so this path
+// lifts every AES-NI-only host (Cascade Lake Xeon Gold, AMD Zen 3, and
+// every AVX2-no-VAES cloud VM) off the per-pixel scalar single hasher.
+// It gates on the three wider flags being false so hosts carrying a
+// wider tier keep it; the AES-NI XMM path is strictly the fallback.
+var HasAESNIBatched = aes.CPU.HasAESNI &&
+	!HasVAESAVX512 && !HasVAESAVX2NoAVX512 && !HasARMAESBatched
