@@ -30,7 +30,7 @@ package itb
 // crossover point after the /3 factor.
 func chooseMicroBatch(payloadBytes int) int {
 	switch {
-	case payloadBytes <= 32*1024:
+	case payloadBytes <= 16*1024:
 		return 512
 	case payloadBytes <= 8*1024*1024:
 		return 262144
