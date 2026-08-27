@@ -208,12 +208,18 @@ done
 # checked against the independent scalar reference implementation.
 # Non-existent pairs are skipped with an audit line.
 # ---------------------------------------------------------------------------
-HASHARMS=(avx512 avx2 aesni scalar)
+HASHARMS=(avx512 vaesavx2 avx2 aesni scalar)
 
 # arm_applicable HASH ARM — succeeds when the (hash, arm) pair names a
 # real dispatch arm. Skip rules:
 #   * aesni: only the AES-based primitives carry AES-NI XMM chain
 #     kernels (areion256 / areion512 / aescmac).
+#   * vaesavx2: only areion256 / areion512 carry width-specialised YMM
+#     VAES chain-absorb kernels (Areion*ChainAbsorb*x4VaesAvx2). aescmac
+#     deliberately has no YMM tier — its 2-lane YMM grouping under-fills
+#     a single VAES port versus the XMM 4-lane AES-NI path (see
+#     hashes/internal/aescmacasm/aescmacasm_amd64.go), so it is skipped
+#     exactly as for the avx2 arm; every non-Areion primitive is skipped.
 #   * avx2: aescmac deliberately has no YMM tier (see
 #     hashes/internal/aescmacasm/aescmacasm_amd64.go); areion256 /
 #     areion512 run their VAES-on-YMM general-chain arm
@@ -223,6 +229,11 @@ HASHARMS=(avx512 avx2 aesni scalar)
 arm_applicable() {
     case "$2" in
         avx512|scalar) return 0 ;;
+        vaesavx2)
+            case "$1" in
+                areion256|areion512) return 0 ;;
+                *) return 1 ;;
+            esac ;;
         avx2)
             case "$1" in
                 aescmac) return 1 ;;

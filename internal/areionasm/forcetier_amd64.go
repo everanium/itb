@@ -28,20 +28,32 @@ func init() {
 			forcetier.Warnf("areionasm: avx512 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched, HasAESNIBatched = true, false, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasVAESAVX2Batched, HasARMAESBatched, HasAESNIBatched = true, false, false, false, false
+	case "vaesavx2":
+		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+			forcetier.Warnf("areionasm: vaesavx2 tier needs VAES+AVX2; keeping auto-dispatch")
+			return
+		}
+		// Width-specialised YMM VAES chain-absorb kernels for the hot
+		// {13,20,36,68} shapes; the base Areion*Permutex4Avx2 + Go SoEM
+		// loop (HasVAESAVX2NoAVX512) stays enabled for any other shape.
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasVAESAVX2Batched, HasARMAESBatched, HasAESNIBatched = false, true, true, false, false
 	case "avx2":
 		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
 			forcetier.Warnf("areionasm: avx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched, HasAESNIBatched = false, true, false, false
+		// Base 4-way permutation + Go-side SoEM absorb loop only; the
+		// width-specialised YMM kernels stay off so this arm exercises
+		// the general (non-width-specialised) VAES-on-YMM path.
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasVAESAVX2Batched, HasARMAESBatched, HasAESNIBatched = false, true, false, false, false
 	case "aesni":
 		if !aes.CPU.HasAESNI {
 			forcetier.Warnf("areionasm: aesni tier needs AES-NI; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched, HasAESNIBatched = false, false, false, true
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasVAESAVX2Batched, HasARMAESBatched, HasAESNIBatched = false, false, false, false, true
 	case "scalar":
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched, HasAESNIBatched = false, false, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasVAESAVX2Batched, HasARMAESBatched, HasAESNIBatched = false, false, false, false, false
 	}
 }
