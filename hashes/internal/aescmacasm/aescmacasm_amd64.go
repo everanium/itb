@@ -49,3 +49,16 @@ import "github.com/jedisct1/go-aes"
 // AVX-512F-without-VL chips, Knights Landing / Knights Mill, lack
 // VAES entirely and are excluded by the HasVAES clause).
 var HasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+
+// HasAESNIBatched reports whether the runtime CPU exposes AES-NI
+// (AESENC / AESENCLAST on XMM) but none of the wider batched-AES
+// paths the higher tiers require (VAES + AVX-512). On these hosts the
+// AES-CMAC-128 chain-absorb dispatch routes to the XMM AES-NI kernels
+// (aescmac_chain128_*_aesni_amd64.s): four independent per-lane
+// 128-bit AES-CMAC chains advance under a shared round-key stream, the
+// four disjoint dependency chains hiding the ~4-cycle AESENC latency
+// on a single AES issue port. It gates on !HasVAESAVX512 so that hosts
+// carrying the wider tier keep their ZMM kernel — the AES-NI XMM path
+// is strictly the fallback for AES-NI-only silicon (e.g. Cascade Lake
+// Xeon Gold, AMD Zen 3, and every AVX2-no-VAES cloud VM).
+var HasAESNIBatched = aes.CPU.HasAESNI && !HasVAESAVX512

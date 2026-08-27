@@ -9,3 +9,8 @@ package aescmacasm
 
 // HasVAESAVX512 is always false on non-amd64 / purego builds.
 var HasVAESAVX512 = false
+
+// HasAESNIBatched is always false on non-amd64 / purego builds — the
+// XMM AES-NI chain-absorb kernels are amd64-only. The parent package
+// falls back to the scalar batched reference in this case.
+var HasAESNIBatched = false
