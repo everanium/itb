@@ -28,21 +28,41 @@ import (
 	"unsafe"
 )
 
-// hashPoolStarterSize is the initial per-pool-item hash-array capacity.
-// The pool grows arrays on demand via getHashArrays (see below), so this
-// value only affects the very first Get on a fresh pool item — subsequent
-// reuses of that item retain whatever capacity previous callers grew it
-// to. Kept at 1024 so a small first-use payload (adaptive stride 512 for
-// ≤ 32 KB inputs) does not force an initial grow, without paying for the
-// 4 MB high-tier allocation up front.
-const hashPoolStarterSize = 1024
+// hashPoolSmallSize and hashPoolLargeSize seed two independent
+// sync.Pool tiers so an adaptive batch stride does not force the small
+// tier to grow into the large one on every call while sync.Pool is
+// dropping items across GC cycles. Both tiers still grow on demand for
+// the actual per-worker payload the caller passes to getHashArraysFor.
+//
+//   - Small tier (512 elements × 8 bytes × 2 arrays = 8 KiB per item):
+//     serves callers whose adaptive stride stays at the baseline 512.
+//     Matches the pre-adaptive shipped behaviour for very small and
+//     very large payloads.
+//   - Large tier (262144 elements × 8 bytes × 2 arrays = 4 MiB per
+//     item): serves callers whose adaptive stride opens up to the
+//     high-tier value (mid-band payloads). A per-worker slice inside
+//     that band typically fits without growing, so the widest realistic
+//     batch is filled on a fresh item without allocating in the hot
+//     loop.
+const (
+	hashPoolSmallSize = 512
+	hashPoolLargeSize = 262144
+)
 
-// hashPool reuses hash arrays to avoid allocation per processChunk call.
-var hashPool = sync.Pool{
+var hashPoolSmall = sync.Pool{
 	New: func() any {
 		return &hashArrays{
-			noise: make([]uint64, hashPoolStarterSize),
-			data:  make([]uint64, hashPoolStarterSize),
+			noise: make([]uint64, hashPoolSmallSize),
+			data:  make([]uint64, hashPoolSmallSize),
+		}
+	},
+}
+
+var hashPoolLarge = sync.Pool{
+	New: func() any {
+		return &hashArrays{
+			noise: make([]uint64, hashPoolLargeSize),
+			data:  make([]uint64, hashPoolLargeSize),
 		}
 	},
 }
@@ -50,10 +70,21 @@ var hashPool = sync.Pool{
 type hashArrays struct {
 	noise []uint64
 	data  []uint64
+	large bool // tier tag so putHashArraysFor returns to the right pool
 }
 
-func getHashArrays(n int) *hashArrays {
-	ha := hashPool.Get().(*hashArrays)
+// getHashArraysFor picks the small or large pool based on the adaptive
+// stride microBatch, then returns hash arrays with length exactly n
+// (growing capacity if the pool item does not already carry it).
+func getHashArraysFor(microBatch, n int) *hashArrays {
+	large := microBatch > hashPoolSmallSize
+	var ha *hashArrays
+	if large {
+		ha = hashPoolLarge.Get().(*hashArrays)
+	} else {
+		ha = hashPoolSmall.Get().(*hashArrays)
+	}
+	ha.large = large
 	if cap(ha.noise) < n {
 		ha.noise = make([]uint64, n)
 		ha.data = make([]uint64, n)
@@ -72,7 +103,11 @@ func putHashArrays(ha *hashArrays) {
 	// stores on amd64.
 	clear(ha.noise)
 	clear(ha.data)
-	hashPool.Put(ha)
+	if ha.large {
+		hashPoolLarge.Put(ha)
+	} else {
+		hashPoolSmall.Put(ha)
+	}
 }
 
 // callC sends pre-computed hash arrays to C for pixel bit manipulation.
@@ -119,7 +154,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 	if batchSz > n {
 		batchSz = n
 	}
-	ha := getHashArrays(batchSz)
+	ha := getHashArraysFor(microBatch, batchSz)
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
@@ -213,7 +248,7 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	if batchSz > n {
 		batchSz = n
 	}
-	ha := getHashArrays(batchSz)
+	ha := getHashArraysFor(microBatch, batchSz)
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
@@ -303,7 +338,7 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	if batchSz > n {
 		batchSz = n
 	}
-	ha := getHashArrays(batchSz)
+	ha := getHashArraysFor(microBatch, batchSz)
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
