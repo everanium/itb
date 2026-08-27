@@ -15,12 +15,12 @@ import (
 //	         rank-unrank kernel selected. HasBMI2 keeps its auto
 //	         value: the PEXT/PDEP apply micro-kernel is orthogonal to
 //	         the rank-mask kernel choice.
-//	avx2   — reserved for the AVX2 rank-unrank kernel.
-//	         TODO(Phase B.5): wire HasAVX2RankMask here once the AVX2
-//	         kernel lands; until then the value keeps auto-dispatch
-//	         with a stderr note.
-//	scalar — disables both the AVX-512 rank-mask kernel and the BMI2
-//	         PEXT/PDEP kernels, so the pure-Go softPEXT48 /
+//	avx2   — requires AVX2 + BMI2 silicon; selects the 4-lane AVX2
+//	         rank-unrank kernel, disabling the AVX-512 kernel so the
+//	         AVX2 arm is reachable on AVX-512F hosts. HasBMI2 keeps
+//	         its auto value (orthogonal, as above).
+//	scalar — disables the AVX-512 and AVX2 rank-mask kernels and the
+//	         BMI2 PEXT/PDEP kernels, so the pure-Go softPEXT48 /
 //	         softPDEP48 and scalar rankToMaskTriple48 paths run.
 //
 // Production auto-dispatch is unaffected when the variable is unset: a
@@ -35,9 +35,15 @@ func init() {
 		}
 		HasAVX512RankMask = true
 	case "avx2":
-		forcetier.Warnf("interlock: avx2 rank-mask kernel not yet implemented (Phase B.5); keeping auto-dispatch")
+		if !cpu.X86.HasAVX2 || !cpu.X86.HasBMI2 {
+			forcetier.Warnf("interlock: avx2 tier needs AVX2+BMI2 silicon; keeping auto-dispatch")
+			return
+		}
+		HasAVX2RankMask = true
+		HasAVX512RankMask = false
 	case "scalar":
 		HasAVX512RankMask = false
+		HasAVX2RankMask = false
 		HasBMI2 = false
 	}
 }

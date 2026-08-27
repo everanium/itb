@@ -288,12 +288,9 @@ done
 # ---------------------------------------------------------------------------
 # Section 4 — interlock-tier sweep × nonce widths, canonical hash.
 # Forces the 48-bit interlock rank-mask tier on the cgo arm against the
-# scalar-forced nocgo arm, both directions. Expand ILTIERS to
-# (avx512 avx2 scalar) when Phase B.5's interlock AVX2 kernel lands —
-# currently 2 tiers × 48 = 96 cells, will grow to 3 tiers × 48 = 144
-# cells.
+# scalar-forced nocgo arm, both directions. 3 tiers × 48 = 144 cells.
 # ---------------------------------------------------------------------------
-ILTIERS=(avx512 scalar)
+ILTIERS=(avx512 avx2 scalar)
 ILHASH="areion512"
 ILPROFILE="parity-${ILHASH}-v1"
 IL_CELLS=$(( ${#ILTIERS[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
