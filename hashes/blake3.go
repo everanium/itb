@@ -135,16 +135,16 @@ func BLAKE3256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32]
 // itb.BatchHashFunc256 contract (LE byte ordering).
 func BLAKE3256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
 	single := BLAKE3WithKey(fixedKey)
-	// Without the AVX-512 fused chain-absorb path, the 4-lane batched
-	// closure pays the cost of marshalling [4][]byte / *byte / seeds
-	// arrays only to dispatch into the scalar Go fallback in
-	// blake3asm_chain_scalar.go, which loops 4 lanes through fresh
+	// Without a fused chain-absorb path (neither AVX-512 nor AVX2), the
+	// 4-lane batched closure pays the cost of marshalling [4][]byte /
+	// *byte / seeds arrays only to dispatch into the scalar Go fallback
+	// in blake3asm_chain_scalar.go, which loops 4 lanes through fresh
 	// blake3.NewKeyed → Write → Sum calls with no kernel-internal
 	// batching benefit. Returning nil here lets process_cgo.go's
 	// non-batch path drive the per-pixel hash through the upstream
 	// zeebo/blake3 single-call asm directly — same end-state speed
-	// as the OLDBENCH single-Func path before the batched arm landed.
-	if !blake3asm.HasAVX512Fused {
+	// as the single-Func path.
+	if !blake3asm.HasAVX512Fused && !blake3asm.HasAVX2Fused {
 		return single, nil
 	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {

@@ -47,6 +47,10 @@ func Blake2b512ChainAbsorb20x4(
 		blake2b512ChainAbsorb20x4Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		blake2b512ChainAbsorb20x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch512ChainAbsorb20(h0, b2key, seeds, dataPtrs, out)
 }
 
@@ -64,6 +68,10 @@ func Blake2b512ChainAbsorb13x4(
 ) {
 	if HasAVX512Fused {
 		blake2b512ChainAbsorb13x4Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		blake2b512ChainAbsorb13x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch512ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
@@ -112,6 +120,10 @@ func Blake2b512ChainAbsorb36x4(
 		blake2b512ChainAbsorb36x4Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		blake2b512ChainAbsorb36x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch512ChainAbsorb36(h0, b2key, seeds, dataPtrs, out)
 }
 
@@ -148,6 +160,10 @@ func Blake2b512ChainAbsorb68x4(
 		blake2b512ChainAbsorb68x4Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		blake2b512ChainAbsorb68x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch512ChainAbsorb68(h0, b2key, seeds, dataPtrs, out)
 }
 
@@ -182,6 +198,10 @@ func Blake2b256ChainAbsorb20x4(
 		blake2b256ChainAbsorb20x4Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		blake2b256ChainAbsorb20x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch256ChainAbsorb20(h0, b2key, seeds, dataPtrs, out)
 }
 
@@ -212,6 +232,10 @@ func Blake2b256ChainAbsorb13x4(
 		blake2b256ChainAbsorb13x4Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
+	if HasAVX2Fused {
+		blake2b256ChainAbsorb13x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
 	scalarBatch256ChainAbsorb13(h0, b2key, seeds, dataPtrs, out)
 }
 
@@ -238,6 +262,10 @@ func Blake2b256ChainAbsorb36x4(
 ) {
 	if HasAVX512Fused {
 		blake2b256ChainAbsorb36x4Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		blake2b256ChainAbsorb36x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch256ChainAbsorb36(h0, b2key, seeds, dataPtrs, out)
@@ -268,6 +296,10 @@ func Blake2b256ChainAbsorb68x4(
 ) {
 	if HasAVX512Fused {
 		blake2b256ChainAbsorb68x4Asm(h0, b2key, seeds, dataPtrs, out)
+		return
+	}
+	if HasAVX2Fused {
+		blake2b256ChainAbsorb68x4Avx2Asm(h0, b2key, seeds, dataPtrs, out)
 		return
 	}
 	scalarBatch256ChainAbsorb68(h0, b2key, seeds, dataPtrs, out)
