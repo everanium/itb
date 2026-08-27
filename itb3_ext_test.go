@@ -1458,20 +1458,62 @@ func benchExtProductionStreamDecrypt(b *testing.B, dataSize int) {
 
 // --- ExtProduction Message: env-derived Single Message profile ---
 
+func BenchmarkExtProductionMessage_Encrypt_4KB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 4<<10)
+}
+func BenchmarkExtProductionMessage_Encrypt_64KB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 64<<10)
+}
+func BenchmarkExtProductionMessage_Encrypt_512KB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 512<<10)
+}
 func BenchmarkExtProductionMessage_Encrypt_1MB(b *testing.B) {
 	benchExtProductionMessageEncrypt(b, 1<<20)
+}
+func BenchmarkExtProductionMessage_Encrypt_4MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 4<<20)
+}
+func BenchmarkExtProductionMessage_Encrypt_8MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 8<<20)
 }
 func BenchmarkExtProductionMessage_Encrypt_16MB(b *testing.B) {
 	benchExtProductionMessageEncrypt(b, 16<<20)
 }
+func BenchmarkExtProductionMessage_Encrypt_32MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 32<<20)
+}
+func BenchmarkExtProductionMessage_Encrypt_48MB(b *testing.B) {
+	benchExtProductionMessageEncrypt(b, 48<<20)
+}
 func BenchmarkExtProductionMessage_Encrypt_64MB(b *testing.B) {
 	benchExtProductionMessageEncrypt(b, 64<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_4KB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 4<<10)
+}
+func BenchmarkExtProductionMessage_Decrypt_64KB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 64<<10)
+}
+func BenchmarkExtProductionMessage_Decrypt_512KB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 512<<10)
 }
 func BenchmarkExtProductionMessage_Decrypt_1MB(b *testing.B) {
 	benchExtProductionMessageDecrypt(b, 1<<20)
 }
+func BenchmarkExtProductionMessage_Decrypt_4MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 4<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_8MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 8<<20)
+}
 func BenchmarkExtProductionMessage_Decrypt_16MB(b *testing.B) {
 	benchExtProductionMessageDecrypt(b, 16<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_32MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 32<<20)
+}
+func BenchmarkExtProductionMessage_Decrypt_48MB(b *testing.B) {
+	benchExtProductionMessageDecrypt(b, 48<<20)
 }
 func BenchmarkExtProductionMessage_Decrypt_64MB(b *testing.B) {
 	benchExtProductionMessageDecrypt(b, 64<<20)
@@ -1479,20 +1521,62 @@ func BenchmarkExtProductionMessage_Decrypt_64MB(b *testing.B) {
 
 // --- ExtProduction Stream: env-derived Streaming profile ---
 
+func BenchmarkExtProductionStream_Encrypt_4KB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 4<<10)
+}
+func BenchmarkExtProductionStream_Encrypt_64KB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 64<<10)
+}
+func BenchmarkExtProductionStream_Encrypt_512KB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 512<<10)
+}
 func BenchmarkExtProductionStream_Encrypt_1MB(b *testing.B) {
 	benchExtProductionStreamEncrypt(b, 1<<20)
+}
+func BenchmarkExtProductionStream_Encrypt_4MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 4<<20)
+}
+func BenchmarkExtProductionStream_Encrypt_8MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 8<<20)
 }
 func BenchmarkExtProductionStream_Encrypt_16MB(b *testing.B) {
 	benchExtProductionStreamEncrypt(b, 16<<20)
 }
+func BenchmarkExtProductionStream_Encrypt_32MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 32<<20)
+}
+func BenchmarkExtProductionStream_Encrypt_48MB(b *testing.B) {
+	benchExtProductionStreamEncrypt(b, 48<<20)
+}
 func BenchmarkExtProductionStream_Encrypt_64MB(b *testing.B) {
 	benchExtProductionStreamEncrypt(b, 64<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_4KB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 4<<10)
+}
+func BenchmarkExtProductionStream_Decrypt_64KB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 64<<10)
+}
+func BenchmarkExtProductionStream_Decrypt_512KB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 512<<10)
 }
 func BenchmarkExtProductionStream_Decrypt_1MB(b *testing.B) {
 	benchExtProductionStreamDecrypt(b, 1<<20)
 }
+func BenchmarkExtProductionStream_Decrypt_4MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 4<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_8MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 8<<20)
+}
 func BenchmarkExtProductionStream_Decrypt_16MB(b *testing.B) {
 	benchExtProductionStreamDecrypt(b, 16<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_32MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 32<<20)
+}
+func BenchmarkExtProductionStream_Decrypt_48MB(b *testing.B) {
+	benchExtProductionStreamDecrypt(b, 48<<20)
 }
 func BenchmarkExtProductionStream_Decrypt_64MB(b *testing.B) {
 	benchExtProductionStreamDecrypt(b, 64<<20)
