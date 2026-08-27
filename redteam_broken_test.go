@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // Broken-primitive adversarial re-verification for the v0.3.0 architecture
