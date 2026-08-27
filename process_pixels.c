@@ -433,12 +433,10 @@ static inline void process4PixelsDecodeAVX2GFNI(
     __m256i xors = _mm256_load_si256((const __m256i *)xorsBuf);
     vals = _mm256_xor_si256(vals, xors);
 
-    // Phase 4: pack 8×7-bit values per pixel back into the data byte stream.
-    uint8_t valsBuf[32] __attribute__((aligned(32)));
-    _mm256_store_si256((__m256i *)valsBuf, vals);
-    for (int b = 0; b < 4; b++) {
-        pack56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, &valsBuf[b * Channels], Channels);
-    }
+    // Phase 4: pack 8×7-bit values per pixel back into the data byte
+    // stream — batched, replacing 4 scalar pack56bits calls plus the
+    // store-forwarding-blocked YMM-to-stack round trip they required.
+    pack56bitsX4AVX2(data, dataLen, bitIndex, vals);
 }
 
 // itb_simd_avx2_gfni_supported caches the runtime CPU feature detection so the
