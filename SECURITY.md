@@ -267,7 +267,7 @@ The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was 
 
 | Concern | Status | Detail |
 |---|---|---|
-| AVX2 / AVX-512 / GFNI instruction timing | **Constant-time** | `vpxor`, `vpand`, `vpor`, `vpsrlq`, `vpermb`, `vpmultishiftqb`, `vgf2p8affineqb` — fixed latency on supporting Intel / AMD microarchitectures (Ice Lake+ / Zen 4+ for GFNI + VBMI Tier A; Ice Lake+ / Zen 4+ for GFNI Tier B). See [HWTHREATS.md § Category 5](HWTHREATS.md#category-5-instruction-set-side-channel-profile) for the per-instruction inventory |
+| AVX2 / AVX-512 / GFNI / VBMI / AES-NI / BMI2 instruction timing | **Constant-time** | `vpxor`, `vpand`, `vpor`, `vpsrlq`, `vpsllvw`, `vpsrlvw`, `vpermb`, `vpmultishiftqb`, `vgf2p8affineqb`, `vpternlogq`, `vpshufb`, `vpermd`, `aesenc`, `vaesenc`, `pextq`, `pdepq` — fixed latency on supporting Intel / AMD microarchitectures across the five shipped pixel tiers (Tier A: AVX-512F+BW+VL+GFNI+VBMI on Ice Lake+ / Zen 4+; Tier A′: AVX-512F+BW+VL on Skylake-X+ / Cascade Lake+ / Rocket Lake+ / Zen 4+; Tier B: AVX2+GFNI; Tier B′: AVX2-only on Haswell+ / Zen 1+; Tier C: portable scalar C) and the ChainHash / interlock kernel tiers (AVX-512F ZMM, AVX2 YMM, XMM AES-NI, scalar Go). See [HWTHREATS.md § Category 5](HWTHREATS.md#category-5-instruction-set-side-channel-profile) for the per-instruction inventory |
 | `dataHash % 7` | **Constant-time** | GCC optimizes to `imulq` multiply-by-reciprocal, no `div` instruction |
 | `% totalPixels` (pixel wrap) | Variable-time `idivl` | Not secret: totalPixels = W×H from public header |
 | Container access pattern | Same as Pure Go | `container[pixelOffset]` — startPixel cache pattern unchanged |
