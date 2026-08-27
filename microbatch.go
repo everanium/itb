@@ -1,18 +1,24 @@
 package itb
 
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
 // chooseMicroBatch picks the CGO-batch stride for the pixel encoder inner
 // loop based on the actual per-invocation payload size.
 //
-// The batch stride trades two competing costs. Below ~8 MB per invocation
-// the dominant cost is the per-call CGO transition overhead, so a large
-// batch (fewer calls) wins. Above that threshold the batched hash arrays
-// exceed L2, cache-thrash cost overtakes CGO amortisation and a small
-// batch (baseline stride) wins again. Very small payloads (≤ 32 KB) do
-// not have enough bytes to amortise the up-front hash-array growth to
-// the wide stride, so those also fall back to the baseline.
+// The batch stride trades two competing costs. In the shipped default
+// mid-band the dominant cost is the per-call CGO transition overhead, so
+// a wide stride (fewer calls) wins. Above the mid-band the batched hash
+// arrays exceed L2, cache-thrash cost overtakes CGO amortisation and the
+// baseline stride wins again. Very small payloads do not have enough
+// bytes to amortise the up-front hash-array growth to the wide stride,
+// so those also fall back to the baseline.
 //
-// Constants tuned empirically on AMD EPYC 9655P (Zen 5, L2 = 1 MiB/core)
-// and Intel i7-11700K (Rocket Lake, L2 = 512 KiB/core — worst-case modern
+// Constants calibrated on AMD EPYC 9655P (Zen 5, L2 = 1 MiB/core) and
+// Intel i7-11700K (Rocket Lake, L2 = 512 KiB/core — worst-case modern
 // Intel for this workload). Modern successors (Alder Lake+, Sapphire
 // Rapids, Zen 4+) carry ≥ 1 MiB per-core L2, so the calibration point is
 // a lower bound on the acceptable modern-CPU range.
@@ -25,16 +31,63 @@ package itb
 // separate plumbing.
 //
 // Under Triple Ouroboros the input `data` slice at this entry is one
-// third of the user-visible plaintext, so a user 24 MB whole plaintext
-// arrives here as ~8 MB per snake — the "≤ 8 MB" branch is the
-// crossover point after the /3 factor.
-func chooseMicroBatch(payloadBytes int) int {
-	switch {
-	case payloadBytes <= 16*1024:
-		return 512
-	case payloadBytes <= 8*1024*1024:
-		return 262144
-	default:
-		return 512
+// third of the user-visible plaintext, so a user X MB whole plaintext
+// arrives here as X/3 MB per snake — every threshold below is stated
+// against that per-snake byte count.
+//
+// The ITB_MICROBATCH_TIERS env var overrides the shipped ladder for the
+// microBatch-sweep test harness. Format: comma-separated
+// "upperBound:batchSize" pairs, terminated by a "-1:batchSize" fallback
+// tier for payloads exceeding every prior upperBound. Example:
+// "16384:512,131072:65536,8388608:262144,-1:512". Malformed value falls
+// back to defaults.
+type microBatchTier struct {
+	upperBound int // -1 = fallback tier (matches every remaining payload)
+	batchSize  int
+}
+
+var defaultMicroBatchTiers = []microBatchTier{
+	{upperBound: 16 * 1024, batchSize: 512},
+	{upperBound: 8 * 1024 * 1024, batchSize: 262144},
+	{upperBound: -1, batchSize: 512},
+}
+
+var microBatchTiers = loadMicroBatchTiers()
+
+func loadMicroBatchTiers() []microBatchTier {
+	if s := strings.TrimSpace(os.Getenv("ITB_MICROBATCH_TIERS")); s != "" {
+		if parsed, ok := parseMicroBatchTiers(s); ok {
+			return parsed
+		}
 	}
+	return append([]microBatchTier(nil), defaultMicroBatchTiers...)
+}
+
+func parseMicroBatchTiers(s string) ([]microBatchTier, bool) {
+	var out []microBatchTier
+	for _, part := range strings.Split(s, ",") {
+		pair := strings.SplitN(part, ":", 2)
+		if len(pair) != 2 {
+			return nil, false
+		}
+		upper, err1 := strconv.Atoi(strings.TrimSpace(pair[0]))
+		batch, err2 := strconv.Atoi(strings.TrimSpace(pair[1]))
+		if err1 != nil || err2 != nil || batch <= 0 {
+			return nil, false
+		}
+		out = append(out, microBatchTier{upperBound: upper, batchSize: batch})
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
+func chooseMicroBatch(payloadBytes int) int {
+	for _, t := range microBatchTiers {
+		if t.upperBound < 0 || payloadBytes <= t.upperBound {
+			return t.batchSize
+		}
+	}
+	return 512
 }
