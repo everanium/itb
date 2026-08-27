@@ -5,6 +5,8 @@ package interlock
 import (
 	"math/rand"
 	"testing"
+
+	"golang.org/x/sys/cpu"
 )
 
 // softPEXT48Ref / softPDEP48Ref are local pure-Go references for the
@@ -471,4 +473,254 @@ func TestRankToMaskTripleUnrank48Boundary(t *testing.T) {
 			}
 		}
 	}
+}
+
+// forceAVX2RankMask arms the AVX2 rank-mask arm for the duration of a
+// test the way the parent router selects it on AVX2-only silicon (and
+// the way ITB_FORCE_INTERLOCK_TIER=avx2 forces it on wider silicon):
+// HasAVX2RankMask on, HasAVX512RankMask off. Returns a restore func for
+// defer — the same save/flip/restore idiom the Phase A / Phase B hash
+// kernel tests use for their dispatch flags. Skips when the silicon
+// cannot execute the AVX2 kernel (AVX2 for the unrank body, BMI2 for
+// the scalar-PDEPQ remap tail).
+func forceAVX2RankMask(t testing.TB) func() {
+	if !cpu.X86.HasAVX2 || !cpu.X86.HasBMI2 {
+		t.Skip("AVX2+BMI2 not available")
+	}
+	origAVX2, origAVX512 := HasAVX2RankMask, HasAVX512RankMask
+	HasAVX2RankMask = true
+	HasAVX512RankMask = false
+	return func() {
+		HasAVX2RankMask = origAVX2
+		HasAVX512RankMask = origAVX512
+	}
+}
+
+// TestRankToMaskTripleUnrank48AVX2VsScalar is the AVX2-arm mirror of
+// TestRankToMaskTripleUnrank48VsScalar: random (idx0, idx1) batches
+// through the 4-lane AVX2 kernel against the scalar refTriple48
+// reference, with the byte-level serialisation check.
+func TestRankToMaskTripleUnrank48AVX2VsScalar(t *testing.T) {
+	defer forceAVX2RankMask(t)()
+	const A = 2254848913647
+	const B = 601080390
+	rng := rand.New(rand.NewSource(4))
+	const N = 20000
+	for iter := 0; iter < N; iter++ {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < 8; j++ {
+			idx0[j] = rng.Uint64() % A
+			idx1[j] = uint32(rng.Uint64() % B)
+		}
+		var out [3][8]uint64
+		RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
+		for j := 0; j < 8; j++ {
+			e0, e1, e2 := refTriple48(idx0[j], idx1[j])
+			if out[0][j] != e0 || out[1][j] != e1 || out[2][j] != e2 {
+				t.Fatalf("iter=%d lane=%d idx0=%d idx1=%d:\n got (%012x, %012x, %012x)\nwant (%012x, %012x, %012x)",
+					iter, j, idx0[j], idx1[j], out[0][j], out[1][j], out[2][j], e0, e1, e2)
+			}
+			var gotBytes, wantBytes [24]byte
+			for i, v := range []uint64{out[0][j], out[1][j], out[2][j]} {
+				for b := 0; b < 8; b++ {
+					gotBytes[i*8+b] = byte(v >> (8 * b))
+				}
+			}
+			for i, v := range []uint64{e0, e1, e2} {
+				for b := 0; b < 8; b++ {
+					wantBytes[i*8+b] = byte(v >> (8 * b))
+				}
+			}
+			if gotBytes != wantBytes {
+				t.Fatalf("iter=%d lane=%d: byte-level triple divergence:\n got %x\nwant %x",
+					iter, j, gotBytes, wantBytes)
+			}
+		}
+	}
+}
+
+// TestRankToMaskTripleUnrank48AVX2Krem16Spillover is the AVX2-arm
+// mirror of TestRankToMaskTripleUnrank48Krem16Spillover: the C(p, 16)
+// value exceeds the VPERMD-reachable 16-entry window and merges through
+// the hi == 4 predicate path; the boundary ranks below force that path
+// under both branch outcomes on every reachable row.
+func TestRankToMaskTripleUnrank48AVX2Krem16Spillover(t *testing.T) {
+	defer forceAVX2RankMask(t)()
+	type sample struct {
+		label string
+		idx0  uint64
+	}
+	var m0Samples []sample
+	for p := 16; p <= 47; p++ {
+		c := crow48Table[p][16]
+		if c == 0 {
+			continue
+		}
+		m0Samples = append(m0Samples,
+			sample{label: fmtInt("m0 p=", p, " rank=C-1"), idx0: c - 1},
+			sample{label: fmtInt("m0 p=", p, " rank=C"), idx0: c},
+			sample{label: fmtInt("m0 p=", p, " rank=C+1"), idx0: c + 1},
+		)
+	}
+	m0Samples = append(m0Samples,
+		sample{label: "m0 idx0=A-1", idx0: crow48Table[48][16] - 1},
+		sample{label: "m0 idx0=0", idx0: 0},
+	)
+	var m1Samples []uint32
+	for p := 16; p <= 31; p++ {
+		c := crow48Table[p][16]
+		if c == 0 {
+			continue
+		}
+		m1Samples = append(m1Samples,
+			uint32(c-1), uint32(c), uint32(c+1),
+		)
+	}
+	m1Samples = append(m1Samples, uint32(crow48Table[32][16])-1, 0)
+
+	for _, m0s := range m0Samples {
+		for _, i1 := range m1Samples {
+			var idx0 [8]uint64
+			var idx1 [8]uint32
+			for j := 0; j < 8; j++ {
+				idx0[j] = m0s.idx0
+				idx1[j] = i1
+			}
+			var out [3][8]uint64
+			RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
+			e0, e1, e2 := refTriple48(m0s.idx0, i1)
+			for j := 0; j < 8; j++ {
+				if out[0][j] != e0 || out[1][j] != e1 || out[2][j] != e2 {
+					t.Fatalf("%s idx1=%d lane=%d:\n got (%012x, %012x, %012x)\nwant (%012x, %012x, %012x)",
+						m0s.label, i1, j,
+						out[0][j], out[1][j], out[2][j],
+						e0, e1, e2)
+				}
+			}
+		}
+	}
+}
+
+// TestRankToMaskTripleUnrank48AVX2P48MaxRow is the AVX2-arm mirror of
+// TestRankToMaskTripleUnrank48P48MaxRow: the widest row (p=47, the
+// 42-bit C(47,16) value) through every idx0 boundary point — the row
+// where the signed-VPCMPGTQ translation of the unsigned compare
+// operates on the largest values the kernel ever sees.
+func TestRankToMaskTripleUnrank48AVX2P48MaxRow(t *testing.T) {
+	defer forceAVX2RankMask(t)()
+	c47_16 := crow48Table[47][16]
+	if c47_16 == 0 {
+		t.Fatal("crow48Table not initialised")
+	}
+	cases := []uint64{
+		0,
+		c47_16 - 1,
+		c47_16,
+		c47_16 + 1,
+		crow48Table[48][16] - 1, // A - 1 (max allowed idx0)
+	}
+	for _, i0 := range cases {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < 8; j++ {
+			idx0[j] = i0
+			idx1[j] = uint32(j) // vary idx1 across lanes to avoid degenerate
+		}
+		var out [3][8]uint64
+		RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
+		for j := 0; j < 8; j++ {
+			e0, e1, e2 := refTriple48(i0, uint32(j))
+			if out[0][j] != e0 || out[1][j] != e1 || out[2][j] != e2 {
+				t.Fatalf("i0=%d lane=%d:\n got (%012x, %012x, %012x)\nwant (%012x, %012x, %012x)",
+					i0, j, out[0][j], out[1][j], out[2][j], e0, e1, e2)
+			}
+		}
+	}
+}
+
+// TestRankToMaskTripleUnrank48AVX2Boundary is the AVX2-arm mirror of
+// TestRankToMaskTripleUnrank48Boundary: (idx0, idx1) corner values
+// across all 8 lanes, stressing the row lookup at every p and the
+// hi == 4 spillover merge at loop entry.
+func TestRankToMaskTripleUnrank48AVX2Boundary(t *testing.T) {
+	defer forceAVX2RankMask(t)()
+	const A = uint64(2254848913647)
+	const B = uint32(601080390)
+	i0s := []uint64{0, 1, A / 2, A - 2, A - 1}
+	i1s := []uint32{0, 1, B / 2, B - 2, B - 1}
+	for _, v0 := range i0s {
+		for _, v1 := range i1s {
+			var idx0 [8]uint64
+			var idx1 [8]uint32
+			for j := 0; j < 8; j++ {
+				idx0[j] = v0
+				idx1[j] = v1
+			}
+			var out [3][8]uint64
+			RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
+			e0, e1, e2 := refTriple48(v0, v1)
+			for j := 0; j < 8; j++ {
+				if out[0][j] != e0 || out[1][j] != e1 || out[2][j] != e2 {
+					t.Fatalf("v0=%d v1=%d lane=%d: got (%012x, %012x, %012x), want (%012x, %012x, %012x)",
+						v0, v1, j, out[0][j], out[1][j], out[2][j], e0, e1, e2)
+				}
+			}
+		}
+	}
+}
+
+// benchRankIndexBatch yields a fixed random 8-lane (idx0, idx1) batch
+// for the rank-unrank kernel benchmarks.
+func benchRankIndexBatch() ([8]uint64, [8]uint32) {
+	const A = 2254848913647
+	const B = 601080390
+	rng := rand.New(rand.NewSource(7))
+	var idx0 [8]uint64
+	var idx1 [8]uint32
+	for j := 0; j < 8; j++ {
+		idx0[j] = rng.Uint64() % A
+		idx1[j] = uint32(rng.Uint64() % B)
+	}
+	return idx0, idx1
+}
+
+// BenchmarkRankToMaskTripleUnrank48AVX512 times the 8-lane ZMM kernel
+// per 8-triple batch.
+func BenchmarkRankToMaskTripleUnrank48AVX512(b *testing.B) {
+	if !HasAVX512RankMask {
+		b.Skip("AVX-512F not available")
+	}
+	idx0, idx1 := benchRankIndexBatch()
+	var out [3][8]uint64
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		RankToMaskTripleUnrank48(&idx0, &idx1, &out)
+	}
+}
+
+// BenchmarkRankToMaskTripleUnrank48AVX2 times the 4-lane YMM kernel
+// (two halves per invocation) per 8-triple batch.
+func BenchmarkRankToMaskTripleUnrank48AVX2(b *testing.B) {
+	defer forceAVX2RankMask(b)()
+	idx0, idx1 := benchRankIndexBatch()
+	var out [3][8]uint64
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
+	}
+}
+
+// BenchmarkRankToMaskTripleUnrank48Scalar8x times the 8x scalar
+// refTriple48 walk — the fallback the batched kernels replace.
+func BenchmarkRankToMaskTripleUnrank48Scalar8x(b *testing.B) {
+	idx0, idx1 := benchRankIndexBatch()
+	var out [3][8]uint64
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 8; j++ {
+			out[0][j], out[1][j], out[2][j] = refTriple48(idx0[j], idx1[j])
+		}
+	}
+	_ = out
 }

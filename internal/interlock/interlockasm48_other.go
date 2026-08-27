@@ -31,3 +31,14 @@ const HasAVX512RankMask = false
 func RankToMaskTripleUnrank48(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint64) {
 	panic("interlock: RankToMaskTripleUnrank48 unavailable on this build")
 }
+
+// HasAVX2RankMask is always false on non-amd64 / purego / noitbasm.
+const HasAVX2RankMask = false
+
+// RankToMaskTripleUnrank48AVX2 should never be called when
+// HasAVX2RankMask is false — the parent package's dispatch routes to
+// the scalar rankToMaskTriple48. Kept as a callable stub so the import
+// resolves cleanly.
+func RankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint64) {
+	panic("interlock: RankToMaskTripleUnrank48AVX2 unavailable on this build")
+}

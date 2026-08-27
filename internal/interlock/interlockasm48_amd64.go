@@ -102,3 +102,30 @@ func RankToMaskTripleUnrank48(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint6
 
 //go:noescape
 func rankToMaskTripleUnrank48AVX512(idx0 *[8]uint64, idx1 *[8]uint32, crow *[49][17]uint64, out *[3][8]uint64)
+
+// HasAVX2RankMask caches whether the runtime CPU should use the AVX2
+// 4-lane batched rank-unrank kernel: AVX2 present, BMI2 present (the
+// kernel's remap tail issues scalar PDEPQ), and AVX-512F absent (an
+// AVX-512F CPU takes the wider 8-lane ZMM kernel instead). Covers
+// AVX2-only silicon such as AMD Zen 1-3, Intel Haswell through Comet
+// Lake, and AVX2-only cloud VMs.
+var HasAVX2RankMask = cpu.X86.HasAVX2 && cpu.X86.HasBMI2 && !cpu.X86.HasAVX512F
+
+// RankToMaskTripleUnrank48AVX2 derives 8 balanced (m0, m1, m2) 48-bit
+// mask triples from 8 precomputed combinadic index pairs — the same
+// contract as [RankToMaskTripleUnrank48] — via the AVX2 4-lane batched
+// kernel (two YMM halves per invocation). Caller gates on
+// [HasAVX2RankMask].
+//
+// Constant-time: the crow row address depends only on the public loop
+// position; the secret per-lane remaining-count index is consumed by
+// register-only, data-oblivious operations (VPERMD register permute and
+// VPCMPEQQ / VPCMPGTQ predicates), so neither the memory-access pattern
+// nor the control flow depends on the secret indices — the same
+// invariant the AVX-512 kernel establishes for VPERMI2Q.
+func RankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint64) {
+	rankToMaskTripleUnrank48AVX2(idx0, idx1, &crow48Table, out)
+}
+
+//go:noescape
+func rankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32, crow *[49][17]uint64, out *[3][8]uint64)
