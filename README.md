@@ -154,7 +154,7 @@ ITB ships two pixel-processing backends selected automatically at compile time, 
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | C compiler (GCC/Clang); no minimum SIMD requirement — Tier A (AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI, 8-pixel batch) and Tier B (AVX2 + GFNI, 4-pixel batch) are selected via `__builtin_cpu_supports` at first call; hosts below both tiers fall through to the portable scalar C path (Tier C) |
+| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | C compiler (GCC/Clang); no minimum SIMD requirement — Tier A (AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI, 8-pixel batch), Tier A′ (AVX-512F + AVX-512BW + AVX-512VL without GFNI / VBMI, 8-pixel batch — Cascade Lake class), Tier B (AVX2 + GFNI, 4-pixel batch), and Tier B′ (AVX2 only, 4-pixel batch — Zen 3 / Haswell class) are selected via `__builtin_cpu_supports` at first call; hosts below all four SIMD tiers fall through to the portable scalar C path (Tier C). Leftover 4–7-pixel batches at the end of a Tier A / A′ loop route through the applicable Tier B / B′ / C helper, so a Cascade Lake host completes end-to-end as A′ + B′ + C |
 | **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB chain-absorb / Interlocked Barrier / Areion permutation ASM disabled; upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
 | **Pure Go** | `CGO_ENABLED=0 ...` | Portable Go pipeline (`process_generic.go`) | None (any GOOS / GOARCH the Go compiler supports) |
 
@@ -164,21 +164,27 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 
 | Kernel | Required CPU feature | Runtime capability flag |
 |---|---|---|
-| Interlocked Barrier — scalar rank-unrank | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
-| Interlocked Barrier — batched rank-unrank | AVX-512F (VPERMI2Q, VPCMPUQ, VPTESTMQ, KANDW, mask-merged VPSUBQ / VPORQ / VPBROADCASTQ on ZMM) | `interlock.HasAVX512RankMask` |
+| Interlocked Barrier — scalar apply | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
+| Interlocked Barrier — AVX-512F rank-unrank | AVX-512F (VPERMI2Q, VPCMPUQ, VPTESTMQ, KANDW, mask-merged VPSUBQ / VPORQ / VPBROADCASTQ on ZMM) | `interlock.HasAVX512RankMask` |
+| Interlocked Barrier — AVX2 rank-unrank | AVX2 + BMI2 (VPERMD, VPCMPEQQ, VPCMPGTQ predicated ops on YMM; scalar PDEPQ remap tail) | `interlock.HasAVX2RankMask` |
 | Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
+| Areion-SoEM — AES-NI XMM 4-lane batched chain-absorb | AES-NI (AESENC / AESENCLAST on XMM) | `areionasm.HasAESNIBatched` |
 | AES-CMAC — batched CBC-MAC / fused chain | VAES + AVX-512 | `aescmacasm.HasVAESAVX512` |
-| BLAKE2b — 4-lane YMM chain-absorb + fused chain | AVX-512F | `blake2basm.HasAVX512Fused` |
-| BLAKE2s / BLAKE3 / ChaCha20 — 4-lane XMM chain-absorb + fused chain (the ChaCha20 68-byte chain fuses two compressions per YMM register) | AVX-512F | primitive-local `HasAVX512Fused` |
-| SipHash-2-4 — 4-lane YMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
+| AES-CMAC — AES-NI XMM 4-lane batched chain-absorb | AES-NI (AESENC / AESENCLAST on XMM) | `aescmacasm.HasAESNIBatched` |
+| BLAKE2b — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `blake2basm.HasAVX512Fused` |
+| BLAKE2b — AVX2 4-lane YMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2basm.HasAVX2Fused` |
+| BLAKE2s / BLAKE3 / ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (the ChaCha20 68-byte chain fuses two compressions per YMM register) | AVX-512F | primitive-local `HasAVX512Fused` |
+| BLAKE2s / BLAKE3 / ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; the ChaCha20 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | primitive-local `HasAVX2Fused` |
+| SipHash-2-4 — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
+| SipHash-2-4 — AVX2 4-lane YMM chain-absorb | AVX2 (no AVX-512F) | `siphashasm.HasAVX2Fused` |
 
-Every chain-absorb family additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) that batches the Interlocked Barrier per-group PRF fill derivation — four sequential group indices per call — under the same capability flag as the family's pixel-shape kernels.
+Every chain-absorb family additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that batches the Interlocked Barrier per-group PRF fill derivation — four sequential group indices per call — under the family's capability flag for that tier.
 
 Cross-referenced to shipping x86 microarchitectures:
 
-- **Intel** — the assembly kernels are exercised end-to-end from **Rocket Lake (11th-gen, e.g. i7-11700K)** onward. Ice Lake mobile parts carry the required flags but are not the reference host.
-- **AMD** — exercised end-to-end from **Zen 3+** onward (Ryzen 5000 desktop, Zen 4 / Zen 5 servers). VAES on Zen 3 activates the mid-tier per-half permute path; the top-tier fused chain requires AVX-512, i.e. Zen 4+ or newer.
+- **Intel** — top-tier fused ZMM chain kernels are exercised end-to-end from **Rocket Lake (11th-gen, e.g. i7-11700K)** onward. Ice Lake mobile parts carry the required flags but are not the reference host. **Cascade Lake / Cooper Lake and other AVX-512-without-VAES / VBMI SKUs** engage the AVX-512F ARX chain kernels for the BLAKE / ChaCha20 / SipHash family plus the XMM AES-NI 4-lane batched kernels for Areion-SoEM and AES-CMAC, and select pixel-encoder Tier A′ (AVX-512F+BW+VL without GFNI/VBMI). **Haswell through Comet Lake** engage the AVX2 4-lane chain kernels, the AVX2 4-lane interlock rank-mask kernel, the XMM AES-NI 4-lane batched kernels, and pixel-encoder Tier B′ (AVX2 no GFNI).
+- **AMD** — top-tier fused ZMM chain kernels engage from **Zen 4 onward** (server-class Zen 4 / Zen 5); pixel encoder runs Tier A (GFNI present). **Zen 3** engages the mid-tier VAES-on-YMM per-half Areion permute, the XMM AES-NI 4-lane batched chain-absorb kernels for AES-CMAC (and Areion-SoEM in tandem with the VAES YMM permute), the AVX2 4-lane BLAKE / ChaCha20 / SipHash chain kernels, the AVX2 4-lane interlock rank-mask kernel, and pixel-encoder Tier B′. **Zen 1 / Zen 2** carry AES-NI but `PEXT` / `PDEP` are microcode-emulated with data-dependent latency, so those hosts skip the Interlocked Barrier BMI2 apply kernels and take the `softPEXT48` / `softPDEP48` Go fallback there; the AVX2 chain-absorb and AES-NI batched kernels still engage.
 - **Older or narrower x86_64 hosts** — build with `-tags noitbasm` to skip the ITB-native assembly entirely; the upstream primitive libraries' own ASM (`crypto/aes`, `dchest/siphash`, `golang.org/x/crypto`, `zeebo/blake3`) stays engaged.
 - **ARM64** — scalar path only today. The construction runs correctly on aarch64 (Graviton 4 has been the reference validation host); no Go assembly for NEON / SVE2 ships yet. The upstream primitive libraries' own ARM Crypto Extension assembly stays engaged where present (Areion-SoEM's `internal/areionasm/areion_arm64.s` uses `AESE`/`AESMC`).
 - **Every other Go target** — the pure-Go pipeline via `CGO_ENABLED=0` runs on any GOOS / GOARCH the Go compiler supports; throughput drops but correctness is preserved.
