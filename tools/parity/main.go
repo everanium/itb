@@ -11,9 +11,17 @@
 //
 // Flags:
 //
-//	parity -mode=init    -profile=P -hash=H -seed-file=S
-//	parity -mode=encrypt -profile=P -hash=H -seed-file=S -in=plain.bin -out=wire.bin
-//	parity -mode=decrypt -profile=P -hash=H -seed-file=S -in=wire.bin  -out=back.bin
+//	parity -mode=init    -profile=P -hash=H -seed-file=S [-nonce-bits=N]
+//	parity -mode=encrypt -profile=P -hash=H -seed-file=S -in=plain.bin -out=wire.bin [-nonce-bits=N]
+//	parity -mode=decrypt -profile=P -hash=H -seed-file=S -in=wire.bin  -out=back.bin [-nonce-bits=N]
+//
+// -nonce-bits (default 512) selects the on-wire nonce width (128 |
+// 256 | 512) passed to [triple.Init] / [triple.Open]. The nonce width
+// determines the per-pixel buf shape the inner hash absorbs (nonce
+// bytes + 4 → 20 / 36 / 68 bytes), so sweeping it drives every
+// chain-absorb kernel width through the cross-build matrix. Every
+// invocation against a given seed blob must repeat the -nonce-bits
+// value the blob was initialised with.
 //
 // -mode=init calls [triple.Init] against the requested (profile, hash)
 // pair and writes the session blob to -seed-file. Every subsequent
@@ -98,6 +106,7 @@ func run(args []string) int {
 	seedFile := fs.String("seed-file", "", "path to the session blob produced by -mode=init")
 	inFile := fs.String("in", "", "-mode=encrypt|decrypt: input path")
 	outFile := fs.String("out", "", "-mode=encrypt|decrypt: output path")
+	nonceBits := fs.Int("nonce-bits", 512, "on-wire nonce width in bits (128 | 256 | 512)")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -122,7 +131,7 @@ func run(args []string) int {
 
 	switch *mode {
 	case "init":
-		if err := doInit(*profile, *hash, *seedFile); err != nil {
+		if err := doInit(*profile, *hash, *seedFile, *nonceBits); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: init: %v\n", err)
 			return 1
 		}
@@ -131,7 +140,7 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, "parity: -mode=encrypt requires -in and -out")
 			return 2
 		}
-		if err := doEncrypt(*profile, *seedFile, *inFile, *outFile); err != nil {
+		if err := doEncrypt(*profile, *seedFile, *inFile, *outFile, *nonceBits); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: encrypt: %v\n", err)
 			return 1
 		}
@@ -140,7 +149,7 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, "parity: -mode=decrypt requires -in and -out")
 			return 2
 		}
-		if err := doDecrypt(*profile, *seedFile, *inFile, *outFile); err != nil {
+		if err := doDecrypt(*profile, *seedFile, *inFile, *outFile, *nonceBits); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: decrypt: %v\n", err)
 			return 1
 		}
@@ -193,8 +202,10 @@ func ensureProfile(profileName, hashName string) error {
 // crypto/rand-drawn seed material, then serialises the session blob to
 // -seed-file. Subsequent encrypt / decrypt calls on either build arm
 // consume the same blob, so both arms observe the identical seed state.
-func doInit(profileName, hashName, seedPath string) error {
-	pipe, blob, err := triple.Init(profileName, triple.Opts{})
+// nonceBits selects the on-wire nonce width; the caller must pass the
+// same value to every encrypt / decrypt invocation against the blob.
+func doInit(profileName, hashName, seedPath string, nonceBits int) error {
+	pipe, blob, err := triple.Init(profileName, triple.Opts{NonceBits: nonceBits})
 	if err != nil {
 		return fmt.Errorf("triple.Init(%q): %w", profileName, err)
 	}
@@ -228,8 +239,8 @@ func doInit(profileName, hashName, seedPath string) error {
 // triple.Open, encrypts the -in file, and writes the wire to -out. The
 // -profile flag must match the envelope's recorded profile (double-check
 // against a wrong seed file being paired with a mismatched profile flag).
-func doEncrypt(profileName, seedPath, inPath, outPath string) error {
-	pipe, err := openFromSeed(profileName, seedPath)
+func doEncrypt(profileName, seedPath, inPath, outPath string, nonceBits int) error {
+	pipe, err := openFromSeed(profileName, seedPath, nonceBits)
 	if err != nil {
 		return err
 	}
@@ -253,8 +264,8 @@ func doEncrypt(profileName, seedPath, inPath, outPath string) error {
 // the -in wire, and writes recovered plaintext to -out. Wire produced by
 // the opposite build arm's doEncrypt must round-trip byte-identically
 // through this path; any mismatch localises to the pixel kernel.
-func doDecrypt(profileName, seedPath, inPath, outPath string) error {
-	pipe, err := openFromSeed(profileName, seedPath)
+func doDecrypt(profileName, seedPath, inPath, outPath string, nonceBits int) error {
+	pipe, err := openFromSeed(profileName, seedPath, nonceBits)
 	if err != nil {
 		return err
 	}
@@ -277,8 +288,9 @@ func doDecrypt(profileName, seedPath, inPath, outPath string) error {
 // openFromSeed reads the seed envelope written by -mode=init and
 // reconstructs the Pipeline. The envelope's Profile field is compared
 // against the -profile flag so a wrong pairing surfaces fast rather
-// than deep inside triple.Open's blob-mismatch path.
-func openFromSeed(profileName, seedPath string) (*triple.Pipeline, error) {
+// than deep inside triple.Open's blob-mismatch path. nonceBits must
+// match the value the blob was initialised with.
+func openFromSeed(profileName, seedPath string, nonceBits int) (*triple.Pipeline, error) {
 	buf, err := os.ReadFile(seedPath)
 	if err != nil {
 		return nil, fmt.Errorf("read seed file %q: %w", seedPath, err)
@@ -297,7 +309,7 @@ func openFromSeed(profileName, seedPath string) (*triple.Pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode blob base64: %w", err)
 	}
-	pipe, err := triple.Open(profileName, blob, triple.Opts{})
+	pipe, err := triple.Open(profileName, blob, triple.Opts{NonceBits: nonceBits})
 	if err != nil {
 		return nil, fmt.Errorf("triple.Open(%q): %w", profileName, err)
 	}
