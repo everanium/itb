@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // harness_test.go — construction-level structural / statistical harness for
