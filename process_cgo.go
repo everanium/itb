@@ -28,16 +28,21 @@ import (
 	"unsafe"
 )
 
-// microBatchSize is the number of pixels processed per C call.
-// Sized to keep hash arrays in L1 cache: 512 × 2 × 8 = 8KB << 48KB L1.
-const microBatchSize = 512
+// hashPoolStarterSize is the initial per-pool-item hash-array capacity.
+// The pool grows arrays on demand via getHashArrays (see below), so this
+// value only affects the very first Get on a fresh pool item — subsequent
+// reuses of that item retain whatever capacity previous callers grew it
+// to. Kept at 1024 so a small first-use payload (adaptive stride 512 for
+// ≤ 32 KB inputs) does not force an initial grow, without paying for the
+// 4 MB high-tier allocation up front.
+const hashPoolStarterSize = 1024
 
 // hashPool reuses hash arrays to avoid allocation per processChunk call.
 var hashPool = sync.Pool{
 	New: func() any {
 		return &hashArrays{
-			noise: make([]uint64, microBatchSize),
-			data:  make([]uint64, microBatchSize),
+			noise: make([]uint64, hashPoolStarterSize),
+			data:  make([]uint64, hashPoolStarterSize),
 		}
 	},
 }
@@ -104,13 +109,13 @@ func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel,
 //   - Otherwise the legacy single-call blockHash128 loop is used
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
-func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
 		return
 	}
 
-	batchSz := microBatchSize
+	batchSz := microBatch
 	if batchSz > n {
 		batchSz = n
 	}
@@ -198,13 +203,13 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 //   - Otherwise the legacy single-call blockHash256 loop is used
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
-func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
 		return
 	}
 
-	batchSz := microBatchSize
+	batchSz := microBatch
 	if batchSz > n {
 		batchSz = n
 	}
@@ -288,13 +293,13 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 // Batched dispatch when both seeds expose BatchHash; see processChunk256
 // for the per-lane buffer layout and tail-handling rationale (the 512
 // path mirrors that structure with 8-uint64 hash outputs).
-func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
 	n := endP - startP
 	if n <= 0 {
 		return
 	}
 
-	batchSz := microBatchSize
+	batchSz := microBatch
 	if batchSz > n {
 		batchSz = n
 	}
