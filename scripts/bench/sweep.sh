@@ -121,7 +121,7 @@ for PD in $SWEEP_PREFETCH; do
         LOG="$LOG_ROOT/${LABEL}.log"
         start=$(date +%s)
         go test -run '^$' \
-            -bench '^BenchmarkExtProductionMessage_(Encrypt|Decrypt)_(1|16|64)MB$' \
+            -bench '^BenchmarkExtProductionMessage_(Encrypt|Decrypt)_(4KB|64KB|512KB|1MB|4MB|8MB|16MB|32MB|48MB|64MB)$' \
             -benchtime="$BENCH_TIME" -count="$BENCH_COUNT" -timeout=1200s . \
             > "$LOG" 2>&1
         rc=$?
@@ -130,11 +130,25 @@ for PD in $SWEEP_PREFETCH; do
         if [ $rc -eq 0 ]; then
             printf "  OK %ds — median MB/s per size:\n" "$dur"
             for BENCH in \
+                "BenchmarkExtProductionMessage_Encrypt_4KB" \
+                "BenchmarkExtProductionMessage_Encrypt_64KB" \
+                "BenchmarkExtProductionMessage_Encrypt_512KB" \
                 "BenchmarkExtProductionMessage_Encrypt_1MB" \
+                "BenchmarkExtProductionMessage_Encrypt_4MB" \
+                "BenchmarkExtProductionMessage_Encrypt_8MB" \
                 "BenchmarkExtProductionMessage_Encrypt_16MB" \
+                "BenchmarkExtProductionMessage_Encrypt_32MB" \
+                "BenchmarkExtProductionMessage_Encrypt_48MB" \
                 "BenchmarkExtProductionMessage_Encrypt_64MB" \
+                "BenchmarkExtProductionMessage_Decrypt_4KB" \
+                "BenchmarkExtProductionMessage_Decrypt_64KB" \
+                "BenchmarkExtProductionMessage_Decrypt_512KB" \
                 "BenchmarkExtProductionMessage_Decrypt_1MB" \
+                "BenchmarkExtProductionMessage_Decrypt_4MB" \
+                "BenchmarkExtProductionMessage_Decrypt_8MB" \
                 "BenchmarkExtProductionMessage_Decrypt_16MB" \
+                "BenchmarkExtProductionMessage_Decrypt_32MB" \
+                "BenchmarkExtProductionMessage_Decrypt_48MB" \
                 "BenchmarkExtProductionMessage_Decrypt_64MB"; do
                 MBS=$(grep -oE "${BENCH}-[0-9]+\s+[0-9]+\s+[0-9]+\s+ns/op\s+[0-9]+\.[0-9]+" "$LOG" | grep -oE "[0-9]+\.[0-9]+$" | sort -n | awk 'NR==2')
                 printf "    %-45s %s MB/s\n" "$BENCH" "${MBS:-?}"
