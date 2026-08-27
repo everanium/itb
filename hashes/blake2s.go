@@ -119,12 +119,13 @@ func BLAKE2s256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32
 // itb.BatchHashFunc256 contract (LE byte ordering).
 func BLAKE2s256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
 	single := BLAKE2sWithKey(fixedKey)
-	// On hosts without the AVX-512 fused chain-absorb path the batched
-	// closure falls into the scalar Go reference; under that path
-	// process_cgo.go's nil-fallback (driving 4 single calls into the
-	// upstream golang.org/x/crypto BLAKE2s asm) outperforms the
-	// 4-lane wrapper. Return nil to opt into that fallback.
-	if !blake2sasm.HasAVX512Fused {
+	// On hosts without a fused chain-absorb path (neither AVX-512 nor
+	// AVX2) the batched closure falls into the scalar Go reference;
+	// under that path process_cgo.go's nil-fallback (driving 4 single
+	// calls into the upstream golang.org/x/crypto BLAKE2s asm)
+	// outperforms the 4-lane wrapper. Return nil to opt into that
+	// fallback.
+	if !blake2sasm.HasAVX512Fused && !blake2sasm.HasAVX2Fused {
 		return single, nil
 	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
