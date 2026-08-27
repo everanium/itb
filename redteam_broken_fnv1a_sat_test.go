@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // FNV-1a lo-lane SAT re-verification for the v0.3.0 architecture

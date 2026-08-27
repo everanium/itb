@@ -1,3 +1,5 @@
+//go:build redteam
+
 package itb
 
 // Red-team empirical corroboration for the PRF-grade primitive null
