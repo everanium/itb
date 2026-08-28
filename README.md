@@ -165,7 +165,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Kernel | Required CPU feature | Runtime capability flag |
 |---|---|---|
 | Interlocked Barrier — scalar apply | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
-| Interlocked Barrier — AVX-512F rank-unrank | AVX-512F (VPERMI2Q, VPCMPUQ, VPTESTMQ, KANDW, mask-merged VPSUBQ / VPORQ / VPBROADCASTQ on ZMM) | `interlock.HasAVX512RankMask` |
+| Interlocked Barrier — AVX-512F rank-unrank | AVX-512F (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ, VPTERNLOGQ / VPSLLQ / VPSRLQ constant synthesis on ZMM) | `interlock.HasAVX512RankMask` |
 | Interlocked Barrier — AVX2 rank-unrank | AVX2 + BMI2 (VPERMD, VPCMPEQQ, VPCMPGTQ predicated ops on YMM; scalar PDEPQ remap tail) | `interlock.HasAVX2RankMask` |
 | Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
