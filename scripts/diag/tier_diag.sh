@@ -12,10 +12,10 @@
 # Purpose: identify a slow tier on a given CPU by comparison — natural
 # dispatch throughput vs each forced arm. When natural dispatch is
 # significantly slower than one of the forced arms, the auto-selected
-# tier has a silicon-specific regression on this host and belongs
-# either in the SKU blacklist at
-# `internal/interlock/interlock_sku_blacklist_amd64.go` (interlock
-# axis) or in an equivalent site for the hash / pixel axes.
+# tier has a silicon-specific regression on this host and warrants
+# either a kernel-level fix (preferred: rewrite the offending arm to
+# be neutral across the affected microarchitecture) or an SKU-scoped
+# runtime dispatch adjustment as a last resort.
 #
 # Usage:
 #   bash scripts/diag/tier_diag.sh                     # defaults

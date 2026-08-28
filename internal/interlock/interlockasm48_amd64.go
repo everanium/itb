@@ -13,7 +13,11 @@
 // HasBMI2.
 package interlock
 
-import "golang.org/x/sys/cpu"
+import (
+	"unsafe"
+
+	"golang.org/x/sys/cpu"
+)
 
 // HasBMI2 caches whether the runtime CPU supports BMI2 (PEXT, PDEP).
 // Resolved once at init time from the upstream cpu package's
@@ -59,15 +63,11 @@ func Unchunk48Lock(l0, l1, l2, m0, m1, m2 uint64) (x uint64)
 // Zen 5. Only base AVX-512F is required.
 var HasAVX512RankMask = cpu.X86.HasAVX512F
 
-// crow48Table holds C(p, 0..16) in qword lanes 0..16 (lane 16 stored
-// separately after the two-ZMM header) — the per-position binomial row
-// the kernel selects from by remaining-count. The combinatorial-number-
-// system unrank reads C(p, krem) at descending position p; krem in
-// [0, 16] addresses the row via VPERMI2Q on the first 16 lanes with a
-// mask-merged broadcast of the 17-th value when krem == 16.
-//
-// Row layout: [17]uint64 in memory, 136 bytes per row. Total table
-// size = 49 * 136 = 6664 bytes, fits L1.
+// crow48Table holds C(p, 0..16) in qword lanes 0..16 — the canonical
+// binomial rows of the combinatorial-number-system unrank. It is the
+// init source for the kernel-facing [crow48Packed] repack and the
+// independent oracle for this package's parity tests; the assembly
+// kernels themselves read only crow48Packed.
 var crow48Table [49][17]uint64
 
 func init() {
@@ -90,18 +90,51 @@ func init() {
 // Go; this kernel does only the two unranks and the remap. Output:
 // out[0] = m0 lanes, out[1] = m1, out[2] = m2.
 //
-// Constant-time: C(p, krem) is selected by VPERMI2Q from a two-ZMM
-// row window (register permute, no secret-indexed memory) with a
-// scalar-broadcast mask-merge for the krem == 16 spillover lane, and
-// the per-position pick is applied via mask registers, so neither the
+// Constant-time: C(p, krem) is selected by VPERMT2Q from a two-ZMM
+// row window (register permute, no secret-indexed memory — the row
+// address depends only on the public loop position), and the
+// per-position pick is applied via mask registers, so neither the
 // memory-access pattern nor the control flow depends on the secret
 // indices. Caller gates on [HasAVX512RankMask].
 func RankToMaskTripleUnrank48(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint64) {
-	rankToMaskTripleUnrank48AVX512(idx0, idx1, &crow48Table, out)
+	rankToMaskTripleUnrank48AVX512(idx0, idx1, crow48Packed, out)
 }
 
 //go:noescape
-func rankToMaskTripleUnrank48AVX512(idx0 *[8]uint64, idx1 *[8]uint32, crow *[49][17]uint64, out *[3][8]uint64)
+func rankToMaskTripleUnrank48AVX512(idx0 *[8]uint64, idx1 *[8]uint32, crow *[49][16]uint64, out *[3][8]uint64)
+
+// crow48Packed points at a 64-byte-aligned [49][16]uint64 view of the
+// binomial rows repacked for direct krem indexing: slot 0 of row p
+// holds C(p, 16) and slot i holds C(p, i) for i = 1..15. Both assembly
+// kernels read this table. The AVX-512 kernel selects C(p, krem) with
+// a single VPERMT2Q indexed by krem itself — the permute consumes only
+// the low 4 bits of each qword index, so krem = 16 wraps to slot 0 =
+// C(p, 16) (the spillover entry of the 17-entry layout, folded into
+// the permute), and krem = 0 also reads slot 0 — a garbage value whose
+// pick is suppressed by the krem != 0 predicate, never observable in
+// the output. The AVX2 kernel applies the same low-4-bit wrap through
+// its VPERMD group-gather (hi = (krem >> 2) & 3, t = krem & 3). Rows
+// are 128 bytes, so with the 64-byte-aligned base every row load is
+// cache-line aligned (a 136-byte-stride 17-entry layout would split
+// every ZMM row load across cache lines).
+var crow48Packed *[49][16]uint64
+
+// crow48PackedBacking over-allocates by 8 qwords so init can carve a
+// 64-byte-aligned window regardless of the allocator's base alignment.
+var crow48PackedBacking [49*16 + 8]uint64
+
+func init() {
+	base := uintptr(unsafe.Pointer(&crow48PackedBacking[0]))
+	off := ((64 - base%64) % 64) / 8
+	p := (*[49][16]uint64)(unsafe.Pointer(&crow48PackedBacking[off]))
+	for n := 0; n <= 48; n++ {
+		p[n][0] = crow48Table[n][16]
+		for i := 1; i < 16; i++ {
+			p[n][i] = crow48Table[n][i]
+		}
+	}
+	crow48Packed = p
+}
 
 // HasAVX2RankMask caches whether the runtime CPU should use the AVX2
 // 4-lane batched rank-unrank kernel: AVX2 present, BMI2 present (the
@@ -122,10 +155,10 @@ var HasAVX2RankMask = cpu.X86.HasAVX2 && cpu.X86.HasBMI2 && !cpu.X86.HasAVX512F
 // register-only, data-oblivious operations (VPERMD register permute and
 // VPCMPEQQ / VPCMPGTQ predicates), so neither the memory-access pattern
 // nor the control flow depends on the secret indices — the same
-// invariant the AVX-512 kernel establishes for VPERMI2Q.
+// invariant the AVX-512 kernel establishes for VPERMT2Q.
 func RankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint64) {
-	rankToMaskTripleUnrank48AVX2(idx0, idx1, &crow48Table, out)
+	rankToMaskTripleUnrank48AVX2(idx0, idx1, crow48Packed, out)
 }
 
 //go:noescape
-func rankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32, crow *[49][17]uint64, out *[3][8]uint64)
+func rankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32, crow *[49][16]uint64, out *[3][8]uint64)
