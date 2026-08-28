@@ -17,7 +17,8 @@ func Channels() int { return itb.Channels }
 func DefaultNonceBits() int { return itb.DefaultNonceBits }
 
 // HeaderSize returns the ciphertext-chunk header size in bytes for
-// the supplied nonceBytes (nonce + 2-byte width + 2-byte height).
+// the supplied nonceBytes (main nonce + interlock nonce + 2-byte
+// width + 2-byte height; the two nonces are symmetric in width).
 // nonceBytes must be 16, 32, or 64; other values yield StatusBadInput
 // via the caller-provided out-parameter contract of the FFI shim.
 //
@@ -26,10 +27,15 @@ func DefaultNonceBits() int { return itb.DefaultNonceBits }
 // 256-bit, 64 for 512-bit). Passing the wrong value produces a header
 // size that misaligns the parser and every subsequent chunk parse
 // fails — the parameter is deliberately explicit rather than latent.
+//
+// The 2*nonceBytes+4 formula must remain in sync with itb.headerSizeCfg;
+// the FFI-adapter's copy is intentional (its C-ABI stability contract
+// is decoupled from itb-internal helpers), drift is guarded by the
+// stream_test.go Encrypt3 → ParseChunkLen → Decrypt3 round-trip test.
 func HeaderSize(nonceBytes int) (int, Status) {
 	switch nonceBytes {
 	case 16, 32, 64:
-		return nonceBytes + 4, StatusOK
+		return 2*nonceBytes + 4, StatusOK
 	}
 	setLastErr(StatusBadInput)
 	return 0, StatusBadInput

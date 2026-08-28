@@ -30,8 +30,8 @@ func chunkPixelCountCfg(cfg *Config, chunk []byte) (uint64, error) {
 		return 0, fmt.Errorf("itb: chunk too short for header")
 	}
 	nonceLen := currentNonceSizeCfg(cfg)
-	width := uint64(binary.BigEndian.Uint16(chunk[nonceLen:]))
-	height := uint64(binary.BigEndian.Uint16(chunk[nonceLen+2:]))
+	width := uint64(binary.BigEndian.Uint16(chunk[2*nonceLen:]))
+	height := uint64(binary.BigEndian.Uint16(chunk[2*nonceLen+2:]))
 	if width == 0 || height == 0 {
 		return 0, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
 	}

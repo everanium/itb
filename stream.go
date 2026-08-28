@@ -28,7 +28,7 @@ func ChunkSize(dataLen int) int {
 // override so a non-nil cfg with an explicit NonceBits is honoured at
 // the header parse site. The chunk wire format is:
 //
-//	[nonce][2-byte width BE][2-byte height BE][W*H*8 container]
+//	[main nonce][interlock nonce][2-byte width BE][2-byte height BE][W*H*8 container]
 //
 // Returns an error when the supplied buffer is shorter than the
 // fixed header size, the dimensions are zero / overflow / exceed
@@ -47,8 +47,8 @@ func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 	}
 
 	nonceLen := currentNonceSizeCfg(cfg)
-	width := int(binary.BigEndian.Uint16(data[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(data[nonceLen+2:]))
+	width := int(binary.BigEndian.Uint16(data[2*nonceLen:]))
+	height := int(binary.BigEndian.Uint16(data[2*nonceLen+2:]))
 
 	if width == 0 || height == 0 {
 		return 0, fmt.Errorf("invalid dimensions %dx%d", width, height)

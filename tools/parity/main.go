@@ -18,7 +18,8 @@
 // -nonce-bits (default 512) selects the on-wire nonce width (128 |
 // 256 | 512) passed to [triple.Init] / [triple.Open]. The nonce width
 // determines the per-pixel buf shape the inner hash absorbs (nonce
-// bytes + 4 → 20 / 36 / 68 bytes), so sweeping it drives every
+// bytes + 4 → 20 / 36 / 68 bytes; the dual-nonce wire header itself is
+// 2·nonce + 4 → 36 / 68 / 132 bytes), so sweeping it drives every
 // chain-absorb kernel width through the cross-build matrix. Every
 // invocation against a given seed blob must repeat the -nonce-bits
 // value the blob was initialised with.

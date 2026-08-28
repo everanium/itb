@@ -9,17 +9,22 @@ import (
 )
 
 // installTestNonce forces every generateNonce call within the test's
-// scope to return an identical byte slice, so the encrypt path is
-// deterministic across independent invocations. The nonce contents
-// arrive from the caller — the test picks a fixed byte pattern per
-// width. Cleanup restores the previous override on test exit.
+// scope — the main-nonce and interlock-nonce draws alike — to return
+// an identical byte slice, so the encrypt path is deterministic across
+// independent invocations. The nonce contents arrive from the caller —
+// the test picks a fixed byte pattern per width. Cleanup restores the
+// previous overrides on test exit.
 func installTestNonce(t *testing.T, nonce []byte) {
 	t.Helper()
 	old := testNonceOverride.Load()
+	oldIl := testInterlockNonceOverride.Load()
 	n := append([]byte(nil), nonce...)
 	testNonceOverride.Store(&n)
+	il := append([]byte(nil), nonce...)
+	testInterlockNonceOverride.Store(&il)
 	t.Cleanup(func() {
 		testNonceOverride.Store(old)
+		testInterlockNonceOverride.Store(oldIl)
 	})
 }
 

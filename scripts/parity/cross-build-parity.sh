@@ -19,7 +19,8 @@
 # handoffs.
 #
 # Nonce-width axis: the nonce width determines the per-pixel buf shape
-# the inner hash absorbs (nonce bytes + 4 → 20 / 36 / 68 bytes), so the
+# the inner hash absorbs (nonce bytes + 4 → 20 / 36 / 68 bytes; the
+# dual-nonce wire header is 2·nonce + 4 → 36 / 68 / 132 bytes), so the
 # 128 / 256 / 512 sweep drives every chain-absorb kernel width through
 # the cross-build matrix (the 13-byte width fires on every run via the
 # interlock overlay's batched PRF fill whenever the primitive exposes a
