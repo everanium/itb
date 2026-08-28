@@ -21,10 +21,10 @@ every documented forced-tier value, one axis at a time:
 
 The purpose is to identify a slow tier by comparison. When natural
 dispatch throughput is significantly below one of the forced arms,
-the auto-selected tier on this silicon underperforms and warrants
-either an SKU blacklist entry (see
-`internal/interlock/interlock_sku_blacklist_amd64.go` for the
-canonical pattern on the interlock axis) or a kernel investigation.
+the auto-selected tier on this silicon underperforms and warrants a
+kernel investigation. Prefer fixing the offending kernel so every
+affected silicon runs the same shipped code; an SKU-scoped dispatch
+adjustment is a last-resort fallback.
 
 ```sh
 bash scripts/diag/tier_diag.sh                       # defaults
@@ -50,7 +50,7 @@ host quantifies the AVX-512 vs AVX2 hash kernel spread.
 bash scripts/diag/hash_diag.sh                             # defaults (INTERLOCK=avx2)
 INTERLOCK_TIER=avx512 bash scripts/diag/hash_diag.sh       # compare interlock arms
 HASH_TIER=avx2 bash scripts/diag/hash_diag.sh              # narrow to AVX2 hash kernels
-INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe blacklist dispatch on affected silicon
+INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe natural dispatch on this host
 ```
 
 ## Env inputs shared by both scripts
@@ -78,7 +78,11 @@ runs. Change these only if you understand the profile matters.
    arm (e.g. `INTERLOCK_TIER=avx2`) to check whether the other axes
    have any secondary regressions across the 9-hash × 3-nonce
    surface, or whether they are uniformly healthy on this silicon.
-3. If confirmed narrow (one tier axis, one CPU family), add an
-   entry to the corresponding SKU blacklist site with the empirical
-   evidence in the docblock — see `interlock_sku_blacklist_amd64.go`
-   for the canonical pattern.
+3. If confirmed narrow (one tier axis, one CPU family), first attempt
+   to fix the offending kernel — rewrite so the affected silicon runs
+   the same shipped code as everyone else. The interlock rank-mask
+   kernel is the canonical example: an SKU blacklist against
+   Sapphire Rapids shipped briefly (commit `30c4ddd`) and was retired
+   once the underlying legacy-SSE-bridge issue was fixed at the
+   kernel level. An SKU-scoped runtime dispatch adjustment is a
+   last-resort fallback when kernel-level fixing is not tractable.
