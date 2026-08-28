@@ -93,8 +93,8 @@ func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 	}
 
 	nonceLen := currentNonceSizeCfg(cfg)
-	width := int(binary.BigEndian.Uint16(hdr[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(hdr[nonceLen+2:]))
+	width := int(binary.BigEndian.Uint16(hdr[2*nonceLen:]))
+	height := int(binary.BigEndian.Uint16(hdr[2*nonceLen+2:]))
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
 	}

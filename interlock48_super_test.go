@@ -202,16 +202,16 @@ func TestSuperblockVsPerGroupParity(t *testing.T) {
 func TestInterlock48LockedLaneGolden(t *testing.T) {
 	golden := map[string]map[int]string{
 		"128-factor1": {
-			144:  "565aab4dee88b7ec713a64f4bff764ee0200d35ff4c29f265c008e54d1639ae3",
-			1000: "5480d4ef8c315136d2c43b3d44da12c63e462df1730abd1b1a91918f73e32e91",
+			144:  "ae946fabd42e89159d4f28d390c098d33f0dfef920d78b9a15ce22f681356c50",
+			1000: "8bb7458ad7ca9ad4ad7243277cc5366b8f797c7faa6db476793d0b49d1d98198",
 		},
 		"256-factor2": {
-			144:  "f4eeef6a8cb982b0b2a0d8ba0da830ae9c49afceaf6289e68faf95e82468d638",
-			1000: "3281e826fa9e2a9db325f078ca21ba3cf5a5b5bae05a81da92ef7ab81ba0fdb6",
+			144:  "2c835b87ec8835716f7578f542c01c7d93ebc437389e21684ac174170c592e15",
+			1000: "8bd1a32af335e88e1e1e3800b3f0159c5bc7099369f3c326b5804548d5cdf83f",
 		},
 		"512-factor4": {
-			144:  "b16fa46c9b7f403c5d48877ba9dc6efab73b5220c27e509030984faaaf217f41",
-			1000: "dd0c0fccdd3bebbeb1bff5f0404c83e1b2888a52f6f3c56e926f2a4634acc420",
+			144:  "70a7463fd8fdf4ea415247e0eb3f3f55b544e2ba659d2c485088e9f93d4bafe1",
+			1000: "df6a2f64090e2d5b9e6cf2a8dfee97f9377f04e03ccff584118d6c14c43ed300",
 		},
 	}
 	for _, wc := range superTestBuilders(t) {

@@ -651,15 +651,15 @@ func TestParseChunkLenErrors(t *testing.T) {
 		t.Fatal("expected error for zero dimensions")
 	}
 
-	binary.BigEndian.PutUint16(buf[currentNonceSizeCfg(nil):], 1)
-	binary.BigEndian.PutUint16(buf[currentNonceSizeCfg(nil)+2:], 1)
+	binary.BigEndian.PutUint16(buf[2*currentNonceSizeCfg(nil):], 1)
+	binary.BigEndian.PutUint16(buf[2*currentNonceSizeCfg(nil)+2:], 1)
 	if _, err := ParseChunkLenCfg(nil, buf[:headerSizeCfg(nil)+4]); err == nil {
 		t.Fatal("expected error for truncated data")
 	}
 
 	fullBuf := make([]byte, headerSizeCfg(nil)+Channels)
-	binary.BigEndian.PutUint16(fullBuf[currentNonceSizeCfg(nil):], 1)
-	binary.BigEndian.PutUint16(fullBuf[currentNonceSizeCfg(nil)+2:], 1)
+	binary.BigEndian.PutUint16(fullBuf[2*currentNonceSizeCfg(nil):], 1)
+	binary.BigEndian.PutUint16(fullBuf[2*currentNonceSizeCfg(nil)+2:], 1)
 	n, err := ParseChunkLenCfg(nil, fullBuf)
 	if err != nil {
 		t.Fatalf("unexpected error for valid 1x1: %v", err)
@@ -679,8 +679,8 @@ func TestDecryptRejectOversizeContainer(t *testing.T) {
 
 	header := make([]byte, headerSizeCfg(nil)+Channels)
 	nonceSz := currentNonceSizeCfg(nil)
-	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
-	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 

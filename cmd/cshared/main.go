@@ -582,12 +582,13 @@ func ITB_DecryptAuth3(
 // ─── Streaming helpers ─────────────────────────────────────────────
 
 // Reads a chunk header (the fixed-size
-// [nonce(N) || width(2) || height(2)] prefix where N is
-// nonce_bytes — one of 16 / 32 / 64) at the start of the supplied
-// buffer and writes the total chunk length on the wire to
+// [main_nonce(N) || interlock_nonce(N) || width(2) || height(2)]
+// prefix where N is nonce_bytes — one of 16 / 32 / 64; the main and
+// interlock nonces are symmetric in width) at the start of the
+// supplied buffer and writes the total chunk length on the wire to
 // *outChunkLen. Used by streaming consumers to walk a concatenated
 // chunk stream one chunk at a time without buffering the whole
-// stream in memory: read (nonce_bytes+4) bytes → call
+// stream in memory: read (2*nonce_bytes+4) bytes → call
 // ITB_ParseChunkLen → read the remaining bytes → hand the full chunk
 // to ITB_Decrypt3 / ITB_DecryptAuth3 / etc., repeat.
 //
@@ -632,10 +633,11 @@ func ITB_MaxKeyBits() C.int { return C.int(capi.MaxKeyBits()) }
 func ITB_Channels() C.int { return C.int(capi.Channels()) }
 
 // Returns the ciphertext-chunk header size in bytes for the given
-// nonce_bytes (nonce + width(2) + height(2)). Header size = 20 for
-// 16-byte nonce, 36 for 32-byte, 68 for 64-byte. Streaming consumers
-// must read this many bytes from the wire before calling
-// ITB_ParseChunkLen on each fresh chunk.
+// nonce_bytes (main_nonce + interlock_nonce + width(2) + height(2),
+// i.e. 2*nonce_bytes + 4). Header size = 36 for 16-byte nonce, 68
+// for 32-byte, 132 for 64-byte. Streaming consumers must read this
+// many bytes from the wire before calling ITB_ParseChunkLen on each
+// fresh chunk.
 //
 // Breaking ABI change: the parameter is now explicit rather than
 // implied by a process-global setter (the setters have been retired

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"sync"
 )
 
@@ -69,12 +70,18 @@ func process128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, nonce [
 	wg.Wait()
 }
 
-// checkEightSeeds128 verifies all 8 seeds are distinct pointers (eight-seed isolation).
+// checkEightSeeds128 verifies all 8 seeds are value-distinct
+// (eight-seed isolation): distinct pointers AND distinct Components
+// content across every pair. Byte-identical Components in two slots —
+// reachable through blob import or the low-level constructors, where
+// fresh pointers wrap caller-supplied material — would collapse the
+// per-slot derivations that keep the seed roles independent, so the
+// check compares content, not just identity.
 func checkEightSeeds128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) error {
 	seeds := [8]*Seed128{ns, ls, ds1, ds2, ds3, ss1, ss2, ss3}
 	for i := 0; i < len(seeds); i++ {
 		for j := i + 1; j < len(seeds); j++ {
-			if seeds[i] == seeds[j] {
+			if seeds[i] == seeds[j] || slices.Equal(seeds[i].Components, seeds[j].Components) {
 				return fmt.Errorf("itb: all eight seeds must be different (eight-seed isolation)")
 			}
 		}
@@ -107,8 +114,10 @@ func containerSizeAuth3_128Cfg(cfg *Config, noiseSeed *Seed128, dataSeed1, dataS
 // (128-bit variant). Plaintext is split into 3 parts (every 3rd byte),
 // each encrypted into 1/3 of the pixel data with independent dataSeed
 // and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
-// interlock overlay's per-chunk bit-permutation derivation. Output
-// format is identical to standard ITB: [nonce][W][H][W×H×8 pixels].
+// interlock overlay's per-chunk bit-permutation derivation, bound to a
+// second, independently drawn interlock nonce. Output format is the
+// dual-nonce ITB wire:
+// [main nonce][interlock nonce][W][H][W×H×8 pixels].
 //
 // cfg threads per-encryptor overrides through every Cfg-aware
 // accessor in the pipeline; nil cfg falls back to [DefaultNonceBits] /
@@ -124,12 +133,12 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 
-	nonce, err := generateNonceCfg(cfg)
+	nonce, ilNonce, err := generateNoncePairCfg(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -247,6 +256,7 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 	out := make([]byte, 0, headerSizeCfg(cfg)+len(container))
 	out = append(out, nonce...)
+	out = append(out, ilNonce...)
 	var dim [4]byte
 	binary.BigEndian.PutUint16(dim[0:], uint16(width))
 	binary.BigEndian.PutUint16(dim[2:], uint16(height))
@@ -268,8 +278,9 @@ func Decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 	nonceLen := currentNonceSizeCfg(cfg)
 	nonce := fileData[:nonceLen]
-	width := int(binary.BigEndian.Uint16(fileData[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(fileData[nonceLen+2:]))
+	ilNonce := fileData[nonceLen : 2*nonceLen]
+	width := int(binary.BigEndian.Uint16(fileData[2*nonceLen:]))
+	height := int(binary.BigEndian.Uint16(fileData[2*nonceLen+2:]))
 	container := fileData[headerSizeCfg(cfg):]
 
 	if width == 0 || height == 0 {
@@ -358,5 +369,5 @@ func Decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		wg.Wait()
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, lockSeed, nonce)), nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce)), nil
 }

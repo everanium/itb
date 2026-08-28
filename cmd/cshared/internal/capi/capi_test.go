@@ -97,9 +97,9 @@ func TestHeaderSize(t *testing.T) {
 		want       int
 		wantStatus Status
 	}{
-		{16, 20, StatusOK},
-		{32, 36, StatusOK},
-		{64, 68, StatusOK},
+		{16, 36, StatusOK},
+		{32, 68, StatusOK},
+		{64, 132, StatusOK},
 		{0, 0, StatusBadInput},
 		{20, 0, StatusBadInput},
 		{128, 0, StatusBadInput},

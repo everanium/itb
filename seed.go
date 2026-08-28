@@ -13,6 +13,15 @@ import (
 // Probe 1 of the red-team plan.
 var testNonceOverride atomic.Pointer[[]byte]
 
+// testInterlockNonceOverride is the interlock-nonce counterpart of
+// [testNonceOverride], set only by test code. Keeping the two overrides
+// separate lets red-team fixtures force the three collision classes
+// independently (main-only / interlock-only / both) when validating the
+// quadratic reuse bound of the dual-nonce header. Production callers
+// never set this — generateInterlockNonceCfg falls through to
+// crypto/rand.
+var testInterlockNonceOverride atomic.Pointer[[]byte]
+
 // NonceSize is the default per-message nonce size in bytes (512 bits).
 // 512-bit nonce eliminates the birthday-bound concern for any realistic
 // deployment volume; users who explicitly need 128 / 256 bits set

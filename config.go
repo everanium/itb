@@ -3,6 +3,7 @@ package itb
 import (
 	"crypto/rand"
 	"fmt"
+	"slices"
 )
 
 // Config carries per-encryptor overrides for the previously-global
@@ -87,4 +88,76 @@ func generateNonceCfg(cfg *Config) ([]byte, error) {
 		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
 	}
 	return nonce, nil
+}
+
+// generateInterlockNonceCfg returns a fresh cryptographic interlock
+// nonce of the configured size — the second, independently drawn nonce
+// of the dual-nonce wire header. Width is symmetric with the main
+// nonce (resolved via [currentNonceSizeCfg]); the draw is a separate
+// crypto/rand call so the two nonces share no derivation state. The
+// interlock nonce keys the Interlocked Barrier overlay's per-chunk
+// permutation derivation (via deriveInterLockSeed), while the main
+// nonce keys the pixel-encoding derivations; simultaneous collision of
+// both independent draws is required to reproduce a full reuse event.
+// The test-nonce override path ([testInterlockNonceOverride], set only
+// by *_test.go fixtures) remains in effect for red-team probes.
+func generateInterlockNonceCfg(cfg *Config) ([]byte, error) {
+	if p := testInterlockNonceOverride.Load(); p != nil {
+		return append([]byte(nil), *p...), nil
+	}
+	nonce := make([]byte, currentNonceSizeCfg(cfg))
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
+	}
+	return nonce, nil
+}
+
+// generateNoncePairCfg draws the dual-nonce header pair — main nonce
+// and interlock nonce — guaranteed byte-distinct at the draw site.
+// Distinctness is architecturally already provided by the separate
+// domain tags on the downstream derivations (0x02 startPixel, 0x04
+// interlock); the re-draw loop is belt-and-suspenders so the pair is
+// provably distinct by construction as well.
+//
+// The loop fires only on the CSPRNG path: when either test override
+// ([testNonceOverride] / [testInterlockNonceOverride]) is installed,
+// the override values are respected literally so red-team fixtures can
+// force any collision class (main-only / interlock-only / both). Under
+// a working CSPRNG the per-iteration collision probability is
+// 2^-nonceBits (128 minimum), so the loop terminates on the first
+// iteration with overwhelming probability; no retry cap is needed.
+//
+// Edge case worth documenting: when only ONE override is installed
+// (e.g. testNonceOverride is set, testInterlockNonceOverride is not),
+// the CSPRNG-drawn other half may — with 2^-nonceBits probability —
+// happen to equal the override half, and the pair returns byte-equal
+// because the distinctness loop stays disabled under any-override.
+// This does NOT weaken the three-axis independence of the two
+// derivations: slot separation (lockSeed vs startSeed_i, byte-guaranteed
+// distinct by checkEightSeeds) and domain-tag separation (0x04 vs
+// 0x02) keep the ChainHash outputs independent under the PRF
+// assumption even for a byte-equal nonce pair. The loop is a draw-site
+// hygiene invariant, not a security dependency.
+//
+// The decrypt path never calls this — wire nonces arrive from the
+// header and are consumed as-is.
+func generateNoncePairCfg(cfg *Config) (mainNonce, ilNonce []byte, err error) {
+	ilNonce, err = generateInterlockNonceCfg(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	mainNonce, err = generateNonceCfg(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	if testNonceOverride.Load() != nil || testInterlockNonceOverride.Load() != nil {
+		return mainNonce, ilNonce, nil
+	}
+	for slices.Equal(mainNonce, ilNonce) {
+		mainNonce, err = generateNonceCfg(cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return mainNonce, ilNonce, nil
 }
