@@ -95,7 +95,7 @@ TEXT ·aesCMAC128ChainAbsorb20x4AesNiAsm(SB), NOSPLIT, $64-32
 
 	// X4 = broadcast(uint64(20)) into both qwords.
 	MOVQ $20, R12
-	MOVQ R12, X4
+	VMOVQ R12, X4
 	PUNPCKLQDQ X4, X4
 	PXOR X4, X0
 	PXOR X4, X1
