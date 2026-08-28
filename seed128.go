@@ -163,9 +163,11 @@ func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
 	return int(hLo % uint64(totalPixels))
 }
 
-// deriveInterLockSeed returns the full 128-bit ChainHash output derived from
-// the same domain-tagged buffer used by [Seed128.deriveStartPixel].
-// deriveStartPixel truncates to a pixel index (~13 bits) of hLo;
+// deriveInterLockSeed returns the full 128-bit ChainHash output derived
+// from the dedicated interlock domain tag (0x04) over the interlock
+// nonce. The tag is distinct from the 0x02 tag of
+// [Seed128.deriveStartPixel], keeping the two derivations
+// cryptographically decorrelated even for byte-identical seed material.
 // deriveInterLockSeed exposes the full (hLo, hHi) pair for consumers that
 // need it as PRF seed material — e.g. the Interlocked Barrier overlay's
 // per-chunk keystream.
@@ -176,7 +178,7 @@ func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
 // material.
 func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	buf := make([]byte, 1+len(nonce))
-	buf[0] = 0x02
+	buf[0] = 0x04
 	copy(buf[1:], nonce)
 	return s.ChainHash128(buf)
 }

@@ -73,15 +73,24 @@ func init() {
 	mod128Broken = new(big.Int).Lsh(big.NewInt(1), 128)
 }
 
-// setBrokenTestNonce installs nonce as the output of generateNonceCfg for
-// every subsequent Encrypt* call in the current test, then restores the
-// crypto/rand path at test end. This realises the Nonce-Reuse lab
-// assumption; a production caller cannot reach testNonceOverride.
+// setBrokenTestNonce installs nonce as the output of generateNonceCfg
+// AND generateInterlockNonceCfg for every subsequent Encrypt* call in
+// the current test, then restores the crypto/rand path at test end.
+// Forcing both header nonces realises the full Nonce-Reuse lab
+// assumption (simultaneous collision of the dual-nonce header — the
+// worst case the reuse threat model targets); a production caller
+// cannot reach either override. Probes that need main-only or
+// interlock-only collision classes store the overrides individually.
 func setBrokenTestNonce(t *testing.T, nonce []byte) {
 	t.Helper()
 	cp := append([]byte(nil), nonce...)
 	testNonceOverride.Store(&cp)
-	t.Cleanup(func() { testNonceOverride.Store(nil) })
+	cp2 := append([]byte(nil), nonce...)
+	testInterlockNonceOverride.Store(&cp2)
+	t.Cleanup(func() {
+		testNonceOverride.Store(nil)
+		testInterlockNonceOverride.Store(nil)
+	})
 }
 
 // crc64KeyedBroken runs a standard CRC64 update loop starting from seed as

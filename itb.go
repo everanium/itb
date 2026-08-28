@@ -100,10 +100,11 @@ func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
 }
 
 // headerSizeCfg returns the container header size for the given cfg:
-// nonce + width(2) + height(2). Consults [currentNonceSizeCfg] so a
-// non-nil cfg with an explicit NonceBits override is honoured at the
-// header-layout site.
-func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
+// main nonce + interlock nonce + width(2) + height(2). Both nonces are
+// symmetric in width. Consults [currentNonceSizeCfg] so a non-nil cfg
+// with an explicit NonceBits override is honoured at the header-layout
+// site.
+func headerSizeCfg(cfg *Config) int { return 2*currentNonceSizeCfg(cfg) + 4 }
 
 // calcContainerSizeCfg computes square container dimensions from
 // payload and minimum pixel counts. Consults [currentBarrierFillCfg]

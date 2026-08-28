@@ -33,12 +33,12 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	nonce, err := generateNonceCfg(cfg)
+	nonce, ilNonce, err := generateNoncePairCfg(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_256Cfg(cfg, lockSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -168,6 +168,7 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 
 	out := make([]byte, 0, headerSizeCfg(cfg)+len(container))
 	out = append(out, nonce...)
+	out = append(out, ilNonce...)
 	var dim [4]byte
 	binary.BigEndian.PutUint16(dim[0:], uint16(width))
 	binary.BigEndian.PutUint16(dim[2:], uint16(height))
@@ -199,8 +200,9 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 
 	nonceLen := currentNonceSizeCfg(cfg)
 	nonce := fileData[:nonceLen]
-	width := int(binary.BigEndian.Uint16(fileData[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(fileData[nonceLen+2:]))
+	ilNonce := fileData[nonceLen : 2*nonceLen]
+	width := int(binary.BigEndian.Uint16(fileData[2*nonceLen:]))
+	height := int(binary.BigEndian.Uint16(fileData[2*nonceLen+2:]))
 	container := fileData[headerSizeCfg(cfg):]
 
 	if width == 0 || height == 0 {
@@ -316,7 +318,7 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		}
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_256Cfg(cfg, lockSeed, nonce)), nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce)), nil
 }
 
 // EncryptStreamAuthenticated3x256Cfg encrypts a single Streaming AEAD
@@ -344,12 +346,12 @@ func EncryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
-	nonce, err := generateNonceCfg(cfg)
+	nonce, ilNonce, err := generateNoncePairCfg(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_256Cfg(cfg, lockSeed, nonce))
+	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce))
 
 	// Phase 1: 3 parallel cobsEncode
 	var encs [3][]byte
@@ -477,6 +479,7 @@ func EncryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 	out := make([]byte, 0, headerSizeCfg(cfg)+len(container))
 	out = append(out, nonce...)
+	out = append(out, ilNonce...)
 	var dim [4]byte
 	binary.BigEndian.PutUint16(dim[0:], uint16(width))
 	binary.BigEndian.PutUint16(dim[2:], uint16(height))
@@ -508,8 +511,9 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 	nonceLen := currentNonceSizeCfg(cfg)
 	nonce := chunkData[:nonceLen]
-	width := int(binary.BigEndian.Uint16(chunkData[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(chunkData[nonceLen+2:]))
+	ilNonce := chunkData[nonceLen : 2*nonceLen]
+	width := int(binary.BigEndian.Uint16(chunkData[2*nonceLen:]))
+	height := int(binary.BigEndian.Uint16(chunkData[2*nonceLen+2:]))
 	container := chunkData[headerSizeCfg(cfg):]
 
 	if width == 0 || height == 0 {
@@ -641,5 +645,5 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return []byte{}, true, nil
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_256Cfg(cfg, lockSeed, nonce)), finalFlag, nil
+	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce)), finalFlag, nil
 }

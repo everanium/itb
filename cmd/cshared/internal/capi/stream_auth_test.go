@@ -121,8 +121,9 @@ func TestDecryptStreamAuth3TamperRejection(t *testing.T) {
 	}
 
 	tampered := append([]byte(nil), ctBuf[:ctLen]...)
-	// Default-config header layout: nonce(64) + width(2) + height(2).
-	const tStart = 64 + 4
+	// Default-config header layout: main nonce(64) + interlock
+	// nonce(64) + width(2) + height(2).
+	const tStart = 64 + 64 + 4
 	tEnd := tStart + 256
 	if tEnd > len(tampered) {
 		tEnd = len(tampered)

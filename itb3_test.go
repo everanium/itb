@@ -372,10 +372,10 @@ func TestTriple_CorruptedContainer(t *testing.T) {
 	// Zero dimensions
 	corrupted := make([]byte, len(encrypted))
 	copy(corrupted, encrypted)
-	corrupted[currentNonceSizeCfg(nil)] = 0
-	corrupted[currentNonceSizeCfg(nil)+1] = 0
-	corrupted[currentNonceSizeCfg(nil)+2] = 0
-	corrupted[currentNonceSizeCfg(nil)+3] = 0
+	corrupted[2*currentNonceSizeCfg(nil)] = 0
+	corrupted[2*currentNonceSizeCfg(nil)+1] = 0
+	corrupted[2*currentNonceSizeCfg(nil)+2] = 0
+	corrupted[2*currentNonceSizeCfg(nil)+3] = 0
 	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, corrupted)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
@@ -888,8 +888,8 @@ func TestTriple_DecryptRejectOversizeContainer(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 	header := make([]byte, headerSizeCfg(nil)+Channels)
 	nonceSz := currentNonceSizeCfg(nil)
-	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
-	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 	_, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
@@ -904,8 +904,8 @@ func TestTriple_DecryptRejectOversizeContainer256(t *testing.T) {
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	header := make([]byte, headerSizeCfg(nil)+Channels)
 	nonceSz := currentNonceSizeCfg(nil)
-	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
-	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 	_, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)
@@ -920,8 +920,8 @@ func TestTriple_DecryptRejectOversizeContainer512(t *testing.T) {
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
 	header := make([]byte, headerSizeCfg(nil)+Channels)
 	nonceSz := currentNonceSizeCfg(nil)
-	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
-	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[2*nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 	_, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, fakeContainer)

@@ -10,16 +10,16 @@ import (
 // ParseChunkLen reports the total wire size of a chunk after
 // inspecting only the fixed-size header at the front of the buffer.
 //
-// The header layout is [nonce || width(2) || height(2)] where the
-// nonce length comes from the caller-supplied nonceBytes (16 / 32 /
-// 64 for 128 / 256 / 512-bit nonces). chunk_total = headerSize +
-// width * height * itb.Channels.
+// The header layout is [main nonce || interlock nonce || width(2) ||
+// height(2)] where each nonce's length comes from the caller-supplied
+// nonceBytes (16 / 32 / 64 for 128 / 256 / 512-bit nonces).
+// chunk_total = headerSize + width * height * itb.Channels.
 //
 // Unlike itb.ParseChunkLenCfg, this helper requires only the header
 // bytes to be present — it does not insist that the entire chunk
 // body already sit in the buffer. That is the semantic streaming
-// FFI consumers want: read `nonceBytes+4` bytes from disk → ask for
-// chunk_len → read the remaining (chunk_len - (nonceBytes+4)) bytes
+// FFI consumers want: read `2*nonceBytes+4` bytes from disk → ask for
+// chunk_len → read the remaining (chunk_len - (2*nonceBytes+4)) bytes
 // → hand the full chunk to Decrypt. The body-length check at decrypt
 // time stays inside the cipher entry points where it belongs.
 //
@@ -27,6 +27,12 @@ import (
 // the buffer is shorter than the header, the dimensions are zero /
 // overflow, or the announced pixel count exceeds the container pixel
 // cap.
+//
+// The 2*nonceBytes+4 formula and the dim-offsets `header[2*nonceBytes:]`
+// must remain in sync with itb.headerSizeCfg and the wire layout the
+// itb encrypt entries emit; the FFI-adapter's copy is intentional (its
+// C-ABI stability contract is decoupled from itb-internal helpers),
+// drift is guarded by stream_test.go Encrypt3 → ParseChunkLen → Decrypt3.
 func ParseChunkLen(header []byte, nonceBytes int) (int, Status) {
 	switch nonceBytes {
 	case 16, 32, 64:
@@ -34,13 +40,13 @@ func ParseChunkLen(header []byte, nonceBytes int) (int, Status) {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	headerSz := nonceBytes + 4
+	headerSz := 2*nonceBytes + 4
 	if len(header) < headerSz {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	width := int(binary.BigEndian.Uint16(header[nonceBytes:]))
-	height := int(binary.BigEndian.Uint16(header[nonceBytes+2:]))
+	width := int(binary.BigEndian.Uint16(header[2*nonceBytes:]))
+	height := int(binary.BigEndian.Uint16(header[2*nonceBytes+2:]))
 	if width == 0 || height == 0 {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
