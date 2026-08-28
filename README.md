@@ -731,7 +731,7 @@ The `triple/` facade is the recommended entry point. Callers who need the raw ei
 
 ### Low-Level 1 — Message-shape, MAC Authenticated
 
-Message-shape variant using `itb.EncryptAuthenticated3x256Cfg` / `itb.DecryptAuthenticated3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. Eight typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pointer-identity distinctness is enforced at the call site.
+Message-shape variant using `itb.EncryptAuthenticated3x256Cfg` / `itb.DecryptAuthenticated3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. Eight typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pairwise distinctness (byte-level `Components` comparison plus pointer identity) is enforced at the call site.
 
 ```go
 package main
@@ -1037,10 +1037,11 @@ Streaming counterparts follow the same shape with a `Stream` prefix; the width-a
 
 ```
 Offset  Size     Content
-0       N        Nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
-N       2        Width (uint16 big-endian)
-N+2     2        Height (uint16 big-endian)
-N+4     W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
+0       N        Main nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
+N       N        Interlock nonce (crypto/rand, public; drawn independently; symmetric in width with the main nonce)
+2N      2        Width (uint16 big-endian)
+2N+2    2        Height (uint16 big-endian)
+2N+4    W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
                  routed through the Interlocked Barrier
 ```
 
@@ -1063,7 +1064,7 @@ The core construction provides confidentiality only. For integrity protection ag
 
 ## Eight-seed isolation
 
-The eight mandatory seeds are drawn as independent CSPRNG components; the API surface enforces pointer-identity distinctness across all eight slots. Passing the same seed handle in two positions returns an error at call entry. The eight-seed layout is what lets the security argument treat each channel's entropy source as disjoint: mutual information between independently-drawn seeds is zero, so a structural shortcut against one primitive channel cannot leak into another's derivation.
+The eight mandatory seeds are drawn as independent CSPRNG components; the API surface enforces pairwise distinctness across all eight slots by byte-level `Components` comparison in addition to pointer identity, so both the same seed handle passed twice and two byte-identical seed handles (reachable through blob import or the Low-Level constructors) are rejected on the same gate at call entry. The eight-seed layout is what lets the security argument treat each channel's entropy source as disjoint: mutual information between independently-drawn seeds is zero, so a structural shortcut against one primitive channel cannot leak into another's derivation.
 
 ## Security summary
 

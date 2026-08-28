@@ -34,8 +34,8 @@ The nonce guarantees that the same message with the same seeds produces each tim
 
 - A different random container (new crypto/rand).
 - A different config map (nonce feeds into every ChainHash).
-- Three different startPixels (nonce feeds into each snake's `deriveStartPixel`).
-- A fresh per-chunk 48-bit permutation draw (nonce feeds into the barrier's `deriveInterLockSeed`).
+- Three different startPixels (main nonce feeds into each snake's `deriveStartPixel`).
+- A fresh per-chunk 48-bit permutation draw (an independent interlock nonce feeds into the barrier's `deriveInterLockSeed`).
 
 Repeated transmissions of the same plaintext under fresh nonces produce independent containers. No observable correlation between them; two-time-pad structure appears only under a birthday-bound nonce collision.
 
@@ -43,7 +43,7 @@ The mandatory internal nonce derivation from crypto/rand at every call is API-si
 
 ## 4. Eight-Seed Isolation
 
-The v0.3.0 API surface takes eight mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by pointer identity:
+The v0.3.0 API surface takes eight mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by byte-level `Components` comparison in addition to pointer identity — so byte-identical seeds reaching the API through blob import or the Low-Level constructors are rejected on the same gate:
 
 - **noiseSeed** → noise position (which bit in each channel is noise).
 - **lockSeed** → the 48-bit Interlocked Barrier per-chunk permutation channel.
@@ -118,7 +118,7 @@ Each byte is split across 2 channels (gcd(7,8)=1). Each channel has 7 encrypted 
 **What the attacker sees:**
 
 ```
-Output: [nonce][W][H][uniform random pixels]
+Output: [main_nonce][interlock_nonce][W][H][uniform random pixels]
 
 ┌──────────────────────────────────────────────────────┐
 │ dddddddddddddddddddddddddddddddddddddddddddddddddd  │
@@ -132,7 +132,7 @@ Output: [nonce][W][H][uniform random pixels]
   No visible data/fill boundary (three different, all hidden).
 ```
 
-**Decrypt.** The three snakes are decoded in parallel: read `[nonce][W][H]`, split the pixel data into thirds (integer division; last third absorbs remainder), three parallel goroutines decode each region with the respective seeds, COBS-decode each snake, and interleave: `result[0]=Snake0[0], result[1]=Snake1[0], result[2]=Snake2[0], result[3]=Snake0[1], ...`.
+**Decrypt.** The three snakes are decoded in parallel: read `[main_nonce][interlock_nonce][W][H]`, split the pixel data into thirds (integer division; last third absorbs remainder), three parallel goroutines decode each region with the respective seeds, COBS-decode each snake, and interleave: `result[0]=Snake0[0], result[1]=Snake1[0], result[2]=Snake2[0], result[3]=Snake0[1], ...`.
 
 ## 6. Under Normal Use: The Barrier Is Practically Impenetrable
 
@@ -192,8 +192,8 @@ The pre-verification path: the attacker takes any pixel → 56 candidates (8 noi
 
 Nonce reuse is not a threat the barrier architecturally closes. Closure of the CPA / KPA families is conditional on fresh nonces. Under a birthday-bound nonce collision (~`2^256` messages at the default 512-bit nonce — mathematically unreachable on any foreseeable hardware; ~`2^128` at 256-bit; ~`2^64` at 128-bit — the width is a per-Pipeline choice, only the user can lower it below the default) the following mitigating and non-mitigating facts apply:
 
-- The mandatory internal nonce derivation from crypto/rand on every call prevents caller-side reuse through the shipped API; this is an API-discipline property, not a construction-level guarantee.
-- The Interlocked Barrier's per-chunk masks are derived from the lockSeed and the nonce. Under nonce reuse with the same seeds, the mask draws are identical across the two messages — so the barrier does **not** add protection against nonce reuse; both messages receive the same permutation, and the keystream-reuse structure persists underneath it.
+- The mandatory internal derivation of both header nonces from crypto/rand on every call prevents caller-side reuse through the shipped API; this is an API-discipline property, not a construction-level guarantee.
+- The Interlocked Barrier's per-chunk masks are derived from the lockSeed and the interlock nonce; the per-pixel and per-snake derivations are keyed by the main nonce. Under joint collision of both header nonces with the same seeds, all nonce-bound draws — mask triples, noise positions, rotations, channelXOR, and per-snake startPixels — repeat across the two messages, so the barrier does **not** add protection against joint-nonce reuse and the keystream-reuse structure persists underneath it. A collision of only one of the two nonces degrades one axis; the un-collided axis inherits the barrier's PRF-conditional properties.
 - The three-snake split with three independent startPixels complicates the demask relative to a single-stream construction, but does not remove the underlying two-time-pad structure on the colliding pair.
 
 Empirically (pre-v0.3.0 record on the shared pixel construction), under a deliberate collision with Full KPA, a demasker recovers startPixel and per-pixel (noisePos, rotation) in seconds and reconstructs the pure dataSeed ChainHash output stream — the architectural obstacles below the barrier fall on the colliding pair, leaving only PRF non-invertibility. NIST STS on the reconstructed stream separates PRF from non-PRF: BLAKE3 passes (the single remaining obstacle survives under a PRF), FNV-1a fails.
