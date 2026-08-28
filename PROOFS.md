@@ -83,7 +83,7 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 
 **Theorem.** In the eight-seed architecture — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 — compromise of any proper subset of seeds provides zero information about the remaining seeds.
 
-**Proof.** The eight seeds are generated independently from crypto/rand and enforced pairwise-distinct by pointer identity at the API surface. By construction:
+**Proof.** The eight seeds are generated independently from crypto/rand and enforced pairwise-distinct at the API surface by byte-level `Components` comparison in addition to pointer identity, so byte-identical seed material reaching the API through blob import or the Low-Level constructors is rejected on the same gate. By construction:
 
 1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
 2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce))`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
@@ -580,11 +580,11 @@ P(collision) ≈ 1 - e^(-n²/2^(w+1)) ≈ n²/2^(w+1)
 
 At w = 512 (the shipped default): P reaches ~1/2 only at n ≈ 2^256, mathematically unreachable on foreseeable hardware. At w = 128 (the shortest supported width): P reaches ~1/2 at n ≈ 2^64.
 
-**Impact of collision:** If nonce N is reused with the same eight-seed tuple:
-- Same noiseSeed + N → identical noise positions for both messages.
-- Same lockSeed + N → identical per-chunk Interlocked Barrier permutations for both messages.
-- Same dataSeed_i + N → identical rotation and XOR masks per snake.
-- Same startSeed_i + N → identical per-snake startPixels.
+**Impact of collision:** The wire carries two independent per-message CSPRNG nonces — a main nonce `N_main` (bound to per-pixel noiseSeed / dataSeed_i derivations and per-snake startSeed_i derivations) and an interlock nonce `N_il` (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same eight-seed tuple:
+- Same noiseSeed + `N_main` → identical noise positions for both messages.
+- Same lockSeed + `N_il` → identical per-chunk Interlocked Barrier permutations for both messages.
+- Same dataSeed_i + `N_main` → identical rotation and XOR masks per snake.
+- Same startSeed_i + `N_main` → identical per-snake startPixels.
 - Different crypto/rand containers (generated independently).
 
 The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time-pad structure at the bit level, after per-snake reversal). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
