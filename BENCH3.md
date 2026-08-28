@@ -23,7 +23,7 @@ Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512
 
 * `-tags=noitbasm` — disables only the chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; the encrypt path runs 4× the single arm via upstream asm.
 
-## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-25)
+## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-29)
 
 Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Linux kernel 7.1.9, Go 1.26.5, VMware CGO mode. Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` so allocation churn on the 64 MB rows does not artefact-drop throughput below the 16 MB rows. The 1 MB column is dominated by small-payload GC-cycle amortisation and carries measurable noise across reruns; the 16 MB and 64 MB columns are stable and are the primary reference points for cross-run comparison.
 
@@ -31,45 +31,45 @@ Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Lin
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 512 | PRF | 91 | 229 | 249 | 193 | 328 | 346 |
-| **Areion-SoEM-512** | 512 | 512 | PRF | 93 | 241 | 263 | 154 | 349 | 368 |
-| **BLAKE2b-256** | 256 | 512 | PRF | 79 | 164 | 174 | 143 | 208 | 212 |
-| **BLAKE2b-512** | 512 | 512 | PRF | 79 | 166 | 179 | 120 | 210 | 220 |
-| **BLAKE2s** | 256 | 512 | PRF | 76 | 126 | 134 | 101 | 150 | 156 |
-| **BLAKE3** | 256 | 512 | PRF | 75 | 151 | 158 | 112 | 183 | 189 |
-| **AES-CMAC** | 128 | 512 | PRF | 90 | 224 | 240 | 142 | 316 | 331 |
-| **SipHash-2-4** | 128 | 512 | PRF | 86 | 184 | 199 | 153 | 219 | 250 |
-| **ChaCha20** | 256 | 512 | PRF | 81 | 166 | 178 | 123 | 216 | 227 |
+| **Areion-SoEM-256** | 256 | 512 | PRF | 130 | 224 | 279 | 292 | 329 | 400 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 134 | 237 | 293 | 304 | 356 | 442 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 104 | 162 | 184 | 197 | 210 | 235 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 106 | 164 | 189 | 193 | 212 | 246 |
+| **BLAKE2s** | 256 | 512 | PRF | 89 | 128 | 144 | 142 | 159 | 173 |
+| **BLAKE3** | 256 | 512 | PRF | 100 | 151 | 166 | 175 | 172 | 211 |
+| **AES-CMAC** | 128 | 512 | PRF | 132 | 217 | 265 | 280 | 305 | 380 |
+| **SipHash-2-4** | 128 | 512 | PRF | 116 | 184 | 213 | 226 | 244 | 284 |
+| **ChaCha20** | 256 | 512 | PRF | 115 | 171 | 198 | 208 | 223 | 254 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 1024 | PRF | 85 | 179 | 185 | 132 | 233 | 244 |
-| **Areion-SoEM-512** | 512 | 1024 | PRF | 88 | 199 | 210 | 135 | 267 | 277 |
-| **BLAKE2b-256** | 256 | 1024 | PRF | 68 | 113 | 119 | 118 | 129 | 135 |
-| **BLAKE2b-512** | 512 | 1024 | PRF | 69 | 115 | 122 | 95 | 134 | 140 |
-| **BLAKE2s** | 256 | 1024 | PRF | 56 | 82 | 86 | 72 | 92 | 93 |
-| **BLAKE3** | 256 | 1024 | PRF | 63 | 100 | 105 | 106 | 114 | 118 |
-| **AES-CMAC** | 128 | 1024 | PRF | 85 | 170 | 183 | 126 | 222 | 230 |
-| **SipHash-2-4** | 128 | 1024 | PRF | 75 | 130 | 137 | 107 | 155 | 160 |
-| **ChaCha20** | 256 | 1024 | PRF | 70 | 122 | 129 | 126 | 143 | 149 |
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 114 | 180 | 207 | 214 | 235 | 269 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 119 | 199 | 235 | 243 | 272 | 319 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 83 | 116 | 126 | 126 | 134 | 145 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 84 | 118 | 130 | 131 | 142 | 150 |
+| **BLAKE2s** | 256 | 1024 | PRF | 64 | 85 | 90 | 90 | 96 | 100 |
+| **BLAKE3** | 256 | 1024 | PRF | 74 | 103 | 111 | 112 | 122 | 128 |
+| **AES-CMAC** | 128 | 1024 | PRF | 108 | 171 | 192 | 203 | 224 | 252 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 90 | 132 | 149 | 144 | 161 | 176 |
+| **ChaCha20** | 256 | 1024 | PRF | 91 | 125 | 134 | 133 | 144 | 158 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 2048 | PRF | 71 | 123 | 128 | 96 | 147 | 151 |
-| **Areion-SoEM-512** | 512 | 2048 | PRF | 79 | 144 | 152 | 115 | 176 | 185 |
-| **BLAKE2b-256** | 256 | 2048 | PRF | 57 | 69 | 72 | 62 | 76 | 78 |
-| **BLAKE2b-512** | 512 | 2048 | PRF | 48 | 67 | 74 | 63 | 79 | 80 |
-| **BLAKE2s** | 256 | 2048 | PRF | 38 | 48 | 50 | 42 | 51 | 52 |
-| **BLAKE3** | 256 | 2048 | PRF | 44 | 61 | 64 | 54 | 63 | 67 |
-| **AES-CMAC** | 128 | 2048 | PRF | 70 | 117 | 123 | 120 | 137 | 142 |
-| **SipHash-2-4** | 128 | 2048 | PRF | 57 | 82 | 84 | 73 | 92 | 94 |
-| **ChaCha20** | 256 | 2048 | PRF | 54 | 78 | 80 | 79 | 85 | 87 |
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 92 | 126 | 138 | 145 | 153 | 164 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 104 | 149 | 167 | 179 | 184 | 204 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 57 | 70 | 75 | 76 | 80 | 82 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 58 | 75 | 78 | 79 | 84 | 85 |
+| **BLAKE2s** | 256 | 2048 | PRF | 43 | 50 | 52 | 51 | 54 | 54 |
+| **BLAKE3** | 256 | 2048 | PRF | 51 | 63 | 66 | 65 | 69 | 72 |
+| **AES-CMAC** | 128 | 2048 | PRF | 83 | 119 | 131 | 130 | 140 | 152 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 67 | 85 | 91 | 91 | 96 | 101 |
+| **ChaCha20** | 256 | 2048 | PRF | 58 | 81 | 81 | 85 | 90 | 92 |
 
-## v0.3.0 benchmarks (AMD EPYC 9655P 96-Core, 2026-08-26)
+## v0.3.0 benchmarks (AMD EPYC 9655P 96-Core, 2026-08-29)
 
 Measured on an AMD EPYC 9655P (Zen 5, 96 cores / 192 hardware threads, single NUMA node — no CPU affinity pinning applied), Linux, Go 1.27. Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20`. Observed CPU utilisation during the run: ~2000-2500% on encrypt (~20-25 cores active), ~5000-6000% on decrypt (~50-60 cores). The 96-core silicon is not saturated by three-snake parallelism at 16 / 64 MB — throughput scales into cache + memory bandwidth rather than into additional cores, and small-payload rows carry more Go-runtime setup than the 16-core i7-11700K where a smaller pool warms up faster.
 
@@ -77,45 +77,45 @@ Measured on an AMD EPYC 9655P (Zen 5, 96 cores / 192 hardware threads, single NU
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 512 | PRF | 58 | 320 | 442 | 144 | 660 | 958 |
-| **Areion-SoEM-512** | 512 | 512 | PRF | 68 | 334 | 455 | 173 | 698 | 925 |
-| **BLAKE2b-256** | 256 | 512 | PRF | 61 | 287 | 405 | 107 | 507 | 795 |
-| **BLAKE2b-512** | 512 | 512 | PRF | 58 | 292 | 406 | 120 | 513 | 853 |
-| **BLAKE2s** | 256 | 512 | PRF | 57 | 267 | 376 | 94 | 458 | 712 |
-| **BLAKE3** | 256 | 512 | PRF | 59 | 287 | 395 | 109 | 497 | 787 |
-| **AES-CMAC** | 128 | 512 | PRF | 54 | 315 | 431 | 126 | 632 | 924 |
-| **SipHash-2-4** | 128 | 512 | PRF | 54 | 299 | 421 | 114 | 587 | 844 |
-| **ChaCha20** | 256 | 512 | PRF | 55 | 298 | 407 | 115 | 541 | 836 |
+| **Areion-SoEM-256** | 256 | 512 | PRF | 397 | 469 | 513 | 679 | 888 | 1078 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 393 | 488 | 519 | 765 | 908 | 1095 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 349 | 402 | 475 | 532 | 770 | 878 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 370 | 412 | 472 | 566 | 800 | 919 |
+| **BLAKE2s** | 256 | 512 | PRF | 338 | 373 | 442 | 476 | 654 | 787 |
+| **BLAKE3** | 256 | 512 | PRF | 358 | 382 | 472 | 518 | 746 | 865 |
+| **AES-CMAC** | 128 | 512 | PRF | 378 | 454 | 503 | 673 | 912 | 1031 |
+| **SipHash-2-4** | 128 | 512 | PRF | 381 | 427 | 497 | 629 | 842 | 964 |
+| **ChaCha20** | 256 | 512 | PRF | 367 | 405 | 491 | 567 | 807 | 892 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 1024 | PRF | 54 | 295 | 408 | 120 | 560 | 829 |
-| **Areion-SoEM-512** | 512 | 1024 | PRF | 58 | 316 | 420 | 140 | 605 | 829 |
-| **BLAKE2b-256** | 256 | 1024 | PRF | 55 | 240 | 364 | 90 | 418 | 657 |
-| **BLAKE2b-512** | 512 | 1024 | PRF | 56 | 249 | 363 | 91 | 427 | 688 |
-| **BLAKE2s** | 256 | 1024 | PRF | 52 | 218 | 326 | 85 | 364 | 539 |
-| **BLAKE3** | 256 | 1024 | PRF | 55 | 240 | 350 | 88 | 409 | 640 |
-| **AES-CMAC** | 128 | 1024 | PRF | 52 | 283 | 381 | 102 | 534 | 799 |
-| **SipHash-2-4** | 128 | 1024 | PRF | 51 | 266 | 379 | 99 | 475 | 739 |
-| **ChaCha20** | 256 | 1024 | PRF | 52 | 259 | 367 | 94 | 447 | 696 |
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 364 | 411 | 483 | 576 | 808 | 913 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 378 | 429 | 488 | 660 | 772 | 916 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 312 | 333 | 414 | 429 | 573 | 723 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 316 | 353 | 423 | 459 | 611 | 764 |
+| **BLAKE2s** | 256 | 1024 | PRF | 273 | 300 | 355 | 363 | 468 | 593 |
+| **BLAKE3** | 256 | 1024 | PRF | 303 | 328 | 399 | 414 | 555 | 662 |
+| **AES-CMAC** | 128 | 1024 | PRF | 372 | 418 | 469 | 571 | 765 | 900 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 336 | 371 | 433 | 506 | 658 | 803 |
+| **ChaCha20** | 256 | 1024 | PRF | 326 | 361 | 415 | 454 | 620 | 764 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 2048 | PRF | 54 | 253 | 367 | 91 | 451 | 676 |
-| **Areion-SoEM-512** | 512 | 2048 | PRF | 55 | 278 | 384 | 110 | 492 | 746 |
-| **BLAKE2b-256** | 256 | 2048 | PRF | 51 | 201 | 295 | 81 | 322 | 485 |
-| **BLAKE2b-512** | 512 | 2048 | PRF | 51 | 204 | 305 | 82 | 328 | 507 |
-| **BLAKE2s** | 256 | 2048 | PRF | 46 | 179 | 255 | 71 | 269 | 364 |
-| **BLAKE3** | 256 | 2048 | PRF | 50 | 196 | 286 | 80 | 314 | 448 |
-| **AES-CMAC** | 128 | 2048 | PRF | 49 | 236 | 341 | 89 | 424 | 620 |
-| **SipHash-2-4** | 128 | 2048 | PRF | 49 | 216 | 319 | 87 | 370 | 539 |
-| **ChaCha20** | 256 | 2048 | PRF | 48 | 208 | 307 | 85 | 350 | 513 |
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 320 | 358 | 425 | 467 | 619 | 727 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 347 | 351 | 397 | 525 | 695 | 822 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 248 | 272 | 338 | 319 | 432 | 502 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 250 | 277 | 334 | 338 | 445 | 525 |
+| **BLAKE2s** | 256 | 2048 | PRF | 203 | 226 | 269 | 258 | 326 | 383 |
+| **BLAKE3** | 256 | 2048 | PRF | 235 | 259 | 303 | 303 | 386 | 476 |
+| **AES-CMAC** | 128 | 2048 | PRF | 299 | 331 | 400 | 450 | 563 | 678 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 275 | 298 | 365 | 388 | 480 | 584 |
+| **ChaCha20** | 256 | 2048 | PRF | 260 | 293 | 347 | 344 | 449 | 559 |
 
-**Zen 5 performance profile.** At 512-bit width Decrypt 64 MB Areion-SoEM-256 leads at 958 MB/s and Areion-SoEM-512 follows at 925 MB/s (Zen 5's full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher per-byte primitive call rate that Rocket Lake pays); AES-CMAC hits 924 MB/s at the same point. BLAKE family sustains 712-853 MB/s Decrypt 64 MB 512-bit. Every primitive except the four narrowest-ITB-width / smallest-payload rows exceeds 100 MB/s Decrypt, and the whole fleet exceeds 400 MB/s at 64 MB Decrypt 512-bit width — silicon is bandwidth-bound rather than compute-bound at that point. Small-payload 1 MB rows carry visible Go-runtime warmup cost on the 192-thread machine and are not directly comparable to the 16-thread i7-11700K's 1 MB column.
+**Zen 5 performance profile.** At 512-bit width Decrypt 64 MB Areion-SoEM-512 leads at 1095 MB/s and Areion-SoEM-256 follows at 1078 MB/s (Zen 5's full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher per-byte primitive call rate that Rocket Lake pays); AES-CMAC hits 1031 MB/s at the same point. BLAKE family sustains 787-919 MB/s Decrypt 64 MB 512-bit. Every primitive across every row exceeds 250 MB/s Decrypt, and the whole fleet exceeds 780 MB/s at 64 MB Decrypt 512-bit width — silicon is bandwidth-bound rather than compute-bound at that point. Small-payload 1 MB rows carry visible Go-runtime warmup cost on the 192-thread machine and are not directly comparable to the 16-thread i7-11700K's 1 MB column.
 
 ## v0.3.0 benchmarks (AWS Graviton 4 c8g.4xlarge, 2026-08-26)
 
