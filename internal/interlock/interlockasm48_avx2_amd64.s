@@ -120,7 +120,7 @@ DATA il48qdomain<>+0x018(SB)/8, $0x0000FFFFFFFFFFFF
 GLOBL il48qdomain<>(SB), RODATA|NOPTR, $32
 
 // func rankToMaskTripleUnrank48AVX2(idx0 *[8]uint64, idx1 *[8]uint32,
-//                                  crow *[49][17]uint64, out *[3][8]uint64)
+//                                  crow *[49][16]uint64, out *[3][8]uint64)
 //
 // Lane-parallel combinatorial-number-system unrank for 4 qword lanes
 // per YMM pass, two passes per invocation (lanes 0..3 then 4..7).
@@ -129,14 +129,30 @@ GLOBL il48qdomain<>(SB), RODATA|NOPTR, $32
 // m0 leaves free.
 //
 // Row lookup: per descending position p, c = C(p, krem) is selected by
-// four VPERMD qword-gathers (one per 4-qword group of the 16-entry row
-// window) merged under hi-group equality predicates, with the C(p, 16)
-// spillover entering through the same predicate path.
+// four VPERMD qword-gathers (one per 4-qword group of the packed
+// 16-entry row: slot 0 = C(p, 16), slot i = C(p, i)) merged under
+// hi-group equality predicates. krem indexes the row directly through
+// its low 4 bits (hi = (krem >> 2) & 3, t = krem & 3): krem = 16 wraps
+// to slot 0 = C(p, 16) — the spillover entry folded into the packed
+// layout — and krem = 0 also reads slot 0, a garbage value whose pick
+// the krem == 0 arm of the notpick predicate suppresses.
+//
+// The m0 and m1 unranks are data-independent, so each half runs them
+// interleaved: 32 joint iterations retire one m0 position AND one m1
+// position each, then 16 m0-solo iterations finish positions 15..0 —
+// trip count 48 per half instead of 48 + 32, with the two loop-carried
+// dependency chains in flight concurrently.
 //
 // Frame: 4 pointer args = 32 bytes; 128 bytes of locals spill the
 // remaining / m1Local lane vectors (both halves, contiguous — same
 // layout as the AVX-512 kernel) for the scalar-PDEPQ remap tail.
 //   idx0 +0(FP)  idx1 +8(FP)  crow +16(FP)  out +24(FP)
+//
+// Register split per half: m0 state Y0/Y1/Y2 (rank/krem/mask) + pbit
+// Y8, row pointer R12; m1 state Y11/Y12/Y13 + pbit Y14, row pointer
+// R13. Temps Y3..Y7, Y9, Y10 are reused by both blocks — the blocks
+// carry no cross data dependence, and register renaming removes the
+// reuse hazards.
 TEXT ·rankToMaskTripleUnrank48AVX2(SB), NOSPLIT, $128-32
 	MOVQ idx0+0(FP), AX
 	MOVQ idx1+8(FP), BX
@@ -146,53 +162,60 @@ TEXT ·rankToMaskTripleUnrank48AVX2(SB), NOSPLIT, $128-32
 	XORQ SI, SI                     // half byte offset: 0, then 32
 
 avx2HalfLoop:
-	// ---- unrank m0: rank = idx0[half], n = 48, k = 16 ----
-	VMOVDQU (AX)(SI*1), Y0          // Y0 = rank lanes
-	VMOVDQU il48qrow<>+512(SB), Y1  // Y1 = krem = 16
-	VPXOR Y2, Y2, Y2                // Y2 = mask = 0
-	MOVQ $0x800000000000, R8        // 1 << 47
-	MOVQ R8, X8
-	VPBROADCASTQ X8, Y8             // Y8 = pbit = 1 << p
-	MOVQ $47, R10                   // p = 47
+	// ---- interleaved unrank: m0 (rank = idx0[half], n = 48, k = 16)
+	//      and m1Local (rank = idx1[half], n = 32, k = 16) ----
+	VMOVDQU (AX)(SI*1), Y0          // Y0 = m0 rank lanes
+	MOVQ SI, DX
+	SHRQ $1, DX                     // idx1 is [8]uint32: half stride 16
+	VPMOVZXDQ (BX)(DX*1), Y11       // Y11 = m1 rank lanes (zero-extended)
+	VMOVDQU il48qrow<>+512(SB), Y1  // Y1 = m0 krem = 16
+	VMOVDQA Y1, Y12                 // Y12 = m1 krem = 16
+	VPXOR Y2, Y2, Y2                // Y2 = m0 mask = 0
+	VPXOR Y13, Y13, Y13             // Y13 = m1 mask = 0
+	// pbit constants derived without MOVQ GPR->XMM: Go asm emits the
+	// legacy-SSE encoding for that bridge, which triggers dirty-upper
+	// state transitions on Golden Cove Server P-cores. Bridge-free
+	// prologue keeps this arm's cross-microarchitecture throughput
+	// consistent (see asm-techniques-playbook §12).
+	VPCMPEQD Y8, Y8, Y8             // all-ones
+	VPSLLQ $63, Y8, Y8
+	VMOVDQA Y8, Y14
+	VPSRLQ $16, Y8, Y8              // Y8 = m0 pbit = 1 << 47
+	VPSRLQ $32, Y14, Y14            // Y14 = m1 pbit = 1 << 31
+	LEAQ 47*128(R14), R12           // R12 = &crow[47][0] (m0 row)
+	LEAQ 31*128(R14), R13           // R13 = &crow[31][0] (m1 row)
+	MOVQ $31, R10                   // joint loop counter (public)
 
-avx2M0Loop:
-	// Row byte offset: p * 136 = p * 128 + p * 8.
-	MOVQ R10, R11
-	SHLQ $7, R11
-	LEAQ (R11)(R10*8), R11
-	LEAQ (R14)(R11*1), R12          // R12 = &crow[p][0]
-
+avx2JointLoop:
+	// ---- m0 position ----
 	// ctrl: per-qword dword pair [2*(krem&3), 2*(krem&3)+1] — VPERMD
-	// qword-gather control for the within-group index. hi = krem >> 2
-	// picks the 4-qword group (0..3) or the C(p,16) spillover (4).
+	// qword-gather control for the within-group index. hi = (krem >> 2)
+	// & 3 picks the 4-qword group; krem = 16 wraps to group 0 slot 0.
 	VPAND il48qrow<>+96(SB), Y1, Y3 // krem & 3
 	VPSLLQ $1, Y3, Y3               // 2 * (krem & 3)
 	VPSHUFD $0xA0, Y3, Y3           // duplicate low dword per qword
 	VPADDD il48dadd01<>(SB), Y3, Y3 // ctrl = [2t, 2t+1] per qword
-	VPSRLQ $2, Y1, Y4               // hi = krem >> 2, in {0..4}
+	VPSRLQ $2, Y1, Y4
+	VPAND il48qrow<>+96(SB), Y4, Y4 // hi = (krem >> 2) & 3
 
-	// c = concat(crow[p][0..15], C(p,16))[krem]: per group g, gather
-	// the within-group qword via VPERMD, keep it only on lanes with
-	// hi == g, OR-merge. Secret krem stays register-resident.
+	// c = crow[p][krem & 15]: per group g, gather the within-group
+	// qword via VPERMD, keep it only on lanes with hi == g, OR-merge.
+	// Secret krem stays register-resident.
 	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
-	VPERMD (R12), Y3, Y6            // crow[p][0..3][krem&3]
+	VPERMD (R12), Y3, Y6            // slots 0..3
 	VPAND Y6, Y7, Y5
 	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
-	VPERMD 32(R12), Y3, Y6          // crow[p][4..7][krem&3]
+	VPERMD 32(R12), Y3, Y6          // slots 4..7
 	VPAND Y6, Y7, Y7
 	VPOR Y7, Y5, Y5
 	VPCMPEQQ il48qrow<>+64(SB), Y4, Y7
-	VPERMD 64(R12), Y3, Y6          // crow[p][8..11][krem&3]
+	VPERMD 64(R12), Y3, Y6          // slots 8..11
 	VPAND Y6, Y7, Y7
 	VPOR Y7, Y5, Y5
 	VPCMPEQQ il48qrow<>+96(SB), Y4, Y7
-	VPERMD 96(R12), Y3, Y6          // crow[p][12..15][krem&3]
+	VPERMD 96(R12), Y3, Y6          // slots 12..15
 	VPAND Y6, Y7, Y7
-	VPOR Y7, Y5, Y5
-	VPCMPEQQ il48qrow<>+128(SB), Y4, Y7
-	VPBROADCASTQ 128(R12), Y6       // C(p, 16) spillover
-	VPAND Y6, Y7, Y7
-	VPOR Y7, Y5, Y5                 // Y5 = C(p, krem)
+	VPOR Y7, Y5, Y5                 // Y5 = C(p0, krem)
 
 	// pick = (rank >= c) && (krem != 0). Signed VPCMPGTQ is safe:
 	// both operands < 2^42 (see file header).
@@ -205,84 +228,94 @@ avx2M0Loop:
 	VPSUBQ Y10, Y0, Y0              // rank -= c on picked lanes
 	VPANDN il48qrow<>+32(SB), Y9, Y10 // pick ? 1 : 0
 	VPSUBQ Y10, Y1, Y1              // krem -= 1 on picked lanes
+	VPSRLQ $1, Y8, Y8               // m0 pbit >>= 1
 
-	VPSRLQ $1, Y8, Y8               // pbit >>= 1
+	// ---- m1 position (same construction, independent state) ----
+	VPAND il48qrow<>+96(SB), Y12, Y3
+	VPSLLQ $1, Y3, Y3
+	VPSHUFD $0xA0, Y3, Y3
+	VPADDD il48dadd01<>(SB), Y3, Y3
+	VPSRLQ $2, Y12, Y4
+	VPAND il48qrow<>+96(SB), Y4, Y4
+
+	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
+	VPERMD (R13), Y3, Y6
+	VPAND Y6, Y7, Y5
+	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
+	VPERMD 32(R13), Y3, Y6
+	VPAND Y6, Y7, Y7
+	VPOR Y7, Y5, Y5
+	VPCMPEQQ il48qrow<>+64(SB), Y4, Y7
+	VPERMD 64(R13), Y3, Y6
+	VPAND Y6, Y7, Y7
+	VPOR Y7, Y5, Y5
+	VPCMPEQQ il48qrow<>+96(SB), Y4, Y7
+	VPERMD 96(R13), Y3, Y6
+	VPAND Y6, Y7, Y7
+	VPOR Y7, Y5, Y5                 // Y5 = C(p1, krem)
+
+	VPCMPGTQ Y11, Y5, Y9
+	VPCMPEQQ il48qrow<>+0(SB), Y12, Y10
+	VPOR Y10, Y9, Y9
+	VPANDN Y14, Y9, Y10
+	VPOR Y10, Y13, Y13
+	VPANDN Y5, Y9, Y10
+	VPSUBQ Y10, Y11, Y11
+	VPANDN il48qrow<>+32(SB), Y9, Y10
+	VPSUBQ Y10, Y12, Y12
+	VPSRLQ $1, Y14, Y14
+
+	SUBQ $128, R12
+	SUBQ $128, R13
 	SUBQ $1, R10
-	JGE avx2M0Loop
+	JGE avx2JointLoop
+
+	LEAQ ml-64(SP), R11
+	VMOVDQU Y13, (R11)(SI*1)        // spill m1Local lanes (m1 complete)
+	MOVQ $15, R10                   // m0 solo positions 15..0
+
+avx2M0Solo:
+	VPAND il48qrow<>+96(SB), Y1, Y3
+	VPSLLQ $1, Y3, Y3
+	VPSHUFD $0xA0, Y3, Y3
+	VPADDD il48dadd01<>(SB), Y3, Y3
+	VPSRLQ $2, Y1, Y4
+	VPAND il48qrow<>+96(SB), Y4, Y4
+
+	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
+	VPERMD (R12), Y3, Y6
+	VPAND Y6, Y7, Y5
+	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
+	VPERMD 32(R12), Y3, Y6
+	VPAND Y6, Y7, Y7
+	VPOR Y7, Y5, Y5
+	VPCMPEQQ il48qrow<>+64(SB), Y4, Y7
+	VPERMD 64(R12), Y3, Y6
+	VPAND Y6, Y7, Y7
+	VPOR Y7, Y5, Y5
+	VPCMPEQQ il48qrow<>+96(SB), Y4, Y7
+	VPERMD 96(R12), Y3, Y6
+	VPAND Y6, Y7, Y7
+	VPOR Y7, Y5, Y5
+
+	VPCMPGTQ Y0, Y5, Y9
+	VPCMPEQQ il48qrow<>+0(SB), Y1, Y10
+	VPOR Y10, Y9, Y9
+	VPANDN Y8, Y9, Y10
+	VPOR Y10, Y2, Y2
+	VPANDN Y5, Y9, Y10
+	VPSUBQ Y10, Y0, Y0
+	VPANDN il48qrow<>+32(SB), Y9, Y10
+	VPSUBQ Y10, Y1, Y1
+	VPSRLQ $1, Y8, Y8
+	SUBQ $128, R12
+	SUBQ $1, R10
+	JGE avx2M0Solo
 
 	VMOVDQU Y2, (DI)(SI*1)          // out[0][half] = m0
 	VPANDN il48qdomain<>(SB), Y2, Y3 // remaining = (~m0) & domain
 	LEAQ rem-128(SP), R11
 	VMOVDQU Y3, (R11)(SI*1)         // spill remaining lanes
-
-	// ---- unrank m1Local: rank = idx1[half], n = 32, k = 16 ----
-	MOVQ SI, DX
-	SHRQ $1, DX                     // idx1 is [8]uint32: half stride 16
-	VPMOVZXDQ (BX)(DX*1), Y0        // zero-extend 4 dwords to qwords
-	VMOVDQU il48qrow<>+512(SB), Y1  // krem = 16
-	VPXOR Y2, Y2, Y2
-	MOVQ $0x80000000, R8            // 1 << 31
-	MOVQ R8, X8
-	VPBROADCASTQ X8, Y8
-	MOVQ $31, R10                   // p = 31
-
-avx2M1Loop:
-	// Row byte offset: p * 136 = p * 128 + p * 8.
-	MOVQ R10, R11
-	SHLQ $7, R11
-	LEAQ (R11)(R10*8), R11
-	LEAQ (R14)(R11*1), R12          // R12 = &crow[p][0]
-
-	// ctrl: per-qword dword pair [2*(krem&3), 2*(krem&3)+1] — VPERMD
-	// qword-gather control for the within-group index. hi = krem >> 2
-	// picks the 4-qword group (0..3) or the C(p,16) spillover (4).
-	VPAND il48qrow<>+96(SB), Y1, Y3 // krem & 3
-	VPSLLQ $1, Y3, Y3               // 2 * (krem & 3)
-	VPSHUFD $0xA0, Y3, Y3           // duplicate low dword per qword
-	VPADDD il48dadd01<>(SB), Y3, Y3 // ctrl = [2t, 2t+1] per qword
-	VPSRLQ $2, Y1, Y4               // hi = krem >> 2, in {0..4}
-
-	// c = concat(crow[p][0..15], C(p,16))[krem]: per group g, gather
-	// the within-group qword via VPERMD, keep it only on lanes with
-	// hi == g, OR-merge. Secret krem stays register-resident.
-	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
-	VPERMD (R12), Y3, Y6            // crow[p][0..3][krem&3]
-	VPAND Y6, Y7, Y5
-	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
-	VPERMD 32(R12), Y3, Y6          // crow[p][4..7][krem&3]
-	VPAND Y6, Y7, Y7
-	VPOR Y7, Y5, Y5
-	VPCMPEQQ il48qrow<>+64(SB), Y4, Y7
-	VPERMD 64(R12), Y3, Y6          // crow[p][8..11][krem&3]
-	VPAND Y6, Y7, Y7
-	VPOR Y7, Y5, Y5
-	VPCMPEQQ il48qrow<>+96(SB), Y4, Y7
-	VPERMD 96(R12), Y3, Y6          // crow[p][12..15][krem&3]
-	VPAND Y6, Y7, Y7
-	VPOR Y7, Y5, Y5
-	VPCMPEQQ il48qrow<>+128(SB), Y4, Y7
-	VPBROADCASTQ 128(R12), Y6       // C(p, 16) spillover
-	VPAND Y6, Y7, Y7
-	VPOR Y7, Y5, Y5                 // Y5 = C(p, krem)
-
-	// pick = (rank >= c) && (krem != 0). Signed VPCMPGTQ is safe:
-	// both operands < 2^42 (see file header).
-	VPCMPGTQ Y0, Y5, Y9             // c > rank  (== !(rank >= c))
-	VPCMPEQQ il48qrow<>+0(SB), Y1, Y10 // krem == 0
-	VPOR Y10, Y9, Y9                // notpick
-	VPANDN Y8, Y9, Y10              // pick ? (1 << p) : 0
-	VPOR Y10, Y2, Y2                // mask |= (1<<p) on picked lanes
-	VPANDN Y5, Y9, Y10              // pick ? c : 0
-	VPSUBQ Y10, Y0, Y0              // rank -= c on picked lanes
-	VPANDN il48qrow<>+32(SB), Y9, Y10 // pick ? 1 : 0
-	VPSUBQ Y10, Y1, Y1              // krem -= 1 on picked lanes
-
-	VPSRLQ $1, Y8, Y8               // pbit >>= 1
-	SUBQ $1, R10
-	JGE avx2M1Loop
-
-	LEAQ ml-64(SP), R11
-	VMOVDQU Y2, (R11)(SI*1)         // spill m1Local lanes
 
 	ADDQ $32, SI
 	CMPQ SI, $64

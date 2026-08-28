@@ -61,7 +61,7 @@ TEXT ·Unchunk48Lock(SB),NOSPLIT,$0-56
 	RET
 
 // func rankToMaskTripleUnrank48AVX512(idx0 *[8]uint64, idx1 *[8]uint32,
-//                                     crow *[49][17]uint64, out *[3][8]uint64)
+//                                     crow *[49][16]uint64, out *[3][8]uint64)
 //
 // Lane-parallel combinatorial-number-system unrank for 8 lanes on qwords
 // (all 8 ZMM qword lanes carry payload). Mirrors the bit-exact Go
@@ -69,12 +69,26 @@ TEXT ·Unchunk48Lock(SB),NOSPLIT,$0-56
 // 16-of-32 from idx1) plus the remap onto the bits m0 leaves free.
 //
 // Row lookup: per descending position p, c = C(p, krem) is selected by
-// loading two ZMM halves of the 17-entry row (Z3 = C(p, 0..7), Z4 =
-// C(p, 8..15)) and combining via VPERMI2Q with per-lane index krem & 15.
-// The 17-th entry C(p, 16) is fetched as a scalar and broadcast into
-// lanes where krem == 16 via a masked VPBROADCASTQ. The pick is applied
-// via mask registers throughout — neither memory access nor control flow
-// depends on secret indices — constant-time.
+// loading two ZMM halves of the packed 16-entry row (slot 0 = C(p, 16),
+// slot i = C(p, i) for i = 1..15) and combining via VPERMT2Q indexed by
+// krem directly — VPERMT2Q overwrites its first-table operand and
+// preserves the index register, so krem feeds the permute with no
+// index-adjust op on the loop-carried chain. The permute consumes only
+// the low 4 bits of each qword index: krem = 16 wraps to slot 0 =
+// C(p, 16) (the spillover entry of a 17-entry layout, folded into the
+// permute), and krem = 0 also reads slot 0 — a garbage value whose
+// pick the krem != 0 zeroing predicate on VPCMPUQ suppresses. The pick
+// is applied via mask registers throughout — neither memory access nor
+// control flow depends on secret indices — constant-time.
+//
+// The hot loops contain no scalar-to-SIMD bridge and no legacy-SSE
+// instruction: Go's assembler emits the non-VEX encoding for MOVQ
+// GPR->XMM, and a legacy-SSE write while the ZMM upper state is dirty
+// triggers a save/restore state transition on Golden Cove Server
+// P-cores (Sapphire Rapids / Emerald Rapids) costing on the order of
+// a thousand cycles per loop iteration. Loop constants (the per-
+// position bit, the row address) are maintained by EVEX shifts and
+// scalar pointer arithmetic instead.
 //
 // Frame: 4 pointer args = 32 bytes; 128 bytes of locals spill the
 // remaining / m1Local lane vectors for the scalar-PDEPQ remap tail.
@@ -85,101 +99,84 @@ TEXT ·rankToMaskTripleUnrank48AVX512(SB), NOSPLIT, $128-32
 	MOVQ crow+16(FP), R14
 	MOVQ out+24(FP), DI
 
-	// Global broadcast constants.
-	MOVQ $1, R8
-	MOVQ R8, X14
-	VPBROADCASTQ X14, Z6            // Z6 = 1 (per qword lane)
-	MOVQ $16, R8
-	MOVQ R8, X14
-	VPBROADCASTQ X14, Z28           // Z28 = 16 (krem == 16 comparator)
-	MOVQ $15, R8
-	MOVQ R8, X14
-	VPBROADCASTQ X14, Z29           // Z29 = 15 (VPERMI2Q index mask)
+	// Global broadcast constants — derived arithmetically in-register.
+	// No MOVQ GPR->XMM bridges: Go's assembler emits the legacy-SSE
+	// (non-VEX) encoding for MOVQ to an X register, and a legacy-SSE
+	// write while the ZMM upper state is dirty triggers a save/restore
+	// state transition on Golden Cove Server P-cores (Sapphire Rapids /
+	// Emerald Rapids) costing hundreds of cycles per site. Every
+	// constant below is produced by EVEX-only instructions instead.
+	VPTERNLOGQ $0xFF, Z6, Z6, Z6    // Z6 = all-ones
+	VPSRLQ $63, Z6, Z6              // Z6 = 1 (per qword lane)
+	VPSLLQ $4, Z6, Z28              // Z28 = 16 (krem initial value)
 
-	// ---- unrank m0: rank = idx0, n = 48, k = 16 ----
+	// ---- interleaved unrank: m0 (rank = idx0, n = 48, k = 16) and
+	//      m1Local (rank = idx1, n = 32, k = 16) ----
+	//
+	// The two unranks are data-independent, so their per-position
+	// loop-carried dependency chains (krem -> VPERMT2Q -> VPCMPUQ ->
+	// masked update) run concurrently: 32 joint iterations retire one
+	// m0 position AND one m1 position each, then 16 m0-solo iterations
+	// finish positions 15..0. Total trip count 48 instead of 48 + 32.
+	//
+	// Register split: m0 state in Z0/Z1/Z2 (rank/krem/mask), row window
+	// Z3/Z4 (VPERMT2Q leaves c in Z3), bit in Z5, predicates K2/K3,
+	// row pointer R12; m1 state in Z16/Z17/Z18, rows Z20/Z21 (c in
+	// Z20), bit in Z19, predicates K5/K6, row pointer R13.
 	VMOVDQU64 (AX), Z0              // Z0 = idx0[0..7]
-	VMOVDQA64 Z28, Z1               // Z1 = krem = 16
-	VPXORQ Z2, Z2, Z2               // Z2 = mask = 0
-	MOVQ $47, R10                   // p = 47
+	VPMOVZXDQ (BX), Z16             // Z16 = idx1[0..7] zero-extended to qwords
+	VMOVDQA64 Z28, Z1               // Z1 = m0 krem = 16
+	VMOVDQA64 Z28, Z17              // Z17 = m1 krem = 16
+	VPXORQ Z2, Z2, Z2               // Z2 = m0 mask = 0
+	VPXORQ Z18, Z18, Z18            // Z18 = m1 mask = 0
+	VPSLLQ $47, Z6, Z5              // Z5 = m0 bit = 1 << 47
+	VPSLLQ $31, Z6, Z19             // Z19 = m1 bit = 1 << 31
+	LEAQ 47*128(R14), R12           // R12 = &crow[47][0] (m0 row)
+	LEAQ 31*128(R14), R13           // R13 = &crow[31][0] (m1 row)
+	MOVQ $31, R10                   // joint loop counter (public)
 
-m0Loop:
-	// Row byte offset: p * 136 = p * 128 + p * 8.
-	MOVQ R10, R11
-	SHLQ $7, R11                    // R11 = p * 128
-	LEAQ (R11)(R10*8), R11          // R11 = p * 128 + p * 8 = p * 136
-	LEAQ (R14)(R11*1), R12          // R12 = &crow[p][0]
-
-	VMOVDQU64 (R12), Z3             // Z3 = crow[p][0..7]
-	VMOVDQU64 64(R12), Z4           // Z4 = crow[p][8..15]
-	MOVQ 128(R12), R13              // R13 = crow[p][16] (scalar spillover)
-
-	VPANDQ Z29, Z1, Z7              // Z7 = krem & 15 (VPERMI2Q per-lane index)
-	VPERMI2Q Z4, Z3, Z7             // Z7 = concat(Z3, Z4)[Z7 & 15] per lane
-	//                                  = per-lane C(p, krem) for krem in [0, 15]
-
-	// Mask-merge C(p, 16) into lanes where krem == 16.
-	VPCMPEQQ Z28, Z1, K5            // K5 = (krem == 16)
-	MOVQ R13, X14
-	VPBROADCASTQ X14, K5, Z7        // Z7[K5 lanes] = C(p, 16)
-
-	VPCMPUQ $5, Z7, Z0, K1          // K1 = (rank >= c)
-	VPTESTMQ Z1, Z1, K2             // K2 = (krem != 0)
-	KANDW K1, K2, K3                // K3 = pick
-
-	MOVQ $1, R8
-	MOVQ R10, CX
-	SHLQ CX, R8                     // R8 = 1 << p
-	MOVQ R8, X14
-	VPBROADCASTQ X14, Z5
-	VPORQ Z5, Z2, K3, Z2            // mask |= (1<<p) on picked lanes
-	VPSUBQ Z7, Z0, K3, Z0           // rank -= c on picked lanes
-	VPSUBQ Z6, Z1, K3, Z1           // krem -= 1 on picked lanes
-
+jointLoop:
+	VMOVDQU64 (R12), Z3             // m0 row: slots 0..7  = C(p0, {16, 1..7})
+	VMOVDQU64 64(R12), Z4           // m0 row: slots 8..15 = C(p0, 8..15)
+	VMOVDQU64 (R13), Z20            // m1 row: slots 0..7  = C(p1, {16, 1..7})
+	VMOVDQU64 64(R13), Z21          // m1 row: slots 8..15 = C(p1, 8..15)
+	VPERMT2Q Z4, Z1, Z3             // m0: c = C(p0, krem) (Z1 index preserved)
+	VPERMT2Q Z21, Z17, Z20          // m1: c = C(p1, krem)
+	VPTESTMQ Z1, Z1, K2             // m0: krem != 0
+	VPTESTMQ Z17, Z17, K5           // m1: krem != 0
+	VPCMPUQ $5, Z3, Z0, K2, K3      // m0: pick = (rank >= c) & (krem != 0)
+	VPCMPUQ $5, Z20, Z16, K5, K6    // m1: pick
+	VPORQ Z5, Z2, K3, Z2            // m0: mask |= bit
+	VPORQ Z19, Z18, K6, Z18         // m1: mask |= bit
+	VPSUBQ Z3, Z0, K3, Z0           // m0: rank -= c
+	VPSUBQ Z20, Z16, K6, Z16        // m1: rank -= c
+	VPSUBQ Z6, Z1, K3, Z1           // m0: krem -= 1
+	VPSUBQ Z6, Z17, K6, Z17         // m1: krem -= 1
+	VPSRLQ $1, Z5, Z5               // m0: bit >>= 1
+	VPSRLQ $1, Z19, Z19             // m1: bit >>= 1
+	SUBQ $128, R12
+	SUBQ $128, R13
 	SUBQ $1, R10
-	JGE m0Loop
+	JGE jointLoop
 
-	VMOVDQA64 Z2, Z10               // Z10 = m0
+	VMOVDQA64 Z18, Z11              // Z11 = m1Local (m1 unrank complete)
+	MOVQ $15, R10                   // m0 solo positions 15..0
 
-	// ---- unrank m1Local: rank = idx1, n = 32, k = 16 ----
-	// idx1 is *[8]uint32 = 32 bytes; zero-extend to 8 qwords.
-	VPMOVZXDQ (BX), Z0
-	VMOVDQA64 Z28, Z1               // Z1 = krem = 16
-	VPXORQ Z2, Z2, Z2
-	MOVQ $31, R10                   // p = 31
-
-m1Loop:
-	MOVQ R10, R11
-	SHLQ $7, R11
-	LEAQ (R11)(R10*8), R11
-	LEAQ (R14)(R11*1), R12
-
+m0Solo:
 	VMOVDQU64 (R12), Z3
 	VMOVDQU64 64(R12), Z4
-	MOVQ 128(R12), R13
-
-	VPANDQ Z29, Z1, Z7
-	VPERMI2Q Z4, Z3, Z7
-	VPCMPEQQ Z28, Z1, K5
-	MOVQ R13, X14
-	VPBROADCASTQ X14, K5, Z7
-
-	VPCMPUQ $5, Z7, Z0, K1
+	VPERMT2Q Z4, Z1, Z3
 	VPTESTMQ Z1, Z1, K2
-	KANDW K1, K2, K3
-
-	MOVQ $1, R8
-	MOVQ R10, CX
-	SHLQ CX, R8
-	MOVQ R8, X14
-	VPBROADCASTQ X14, Z5
+	VPCMPUQ $5, Z3, Z0, K2, K3
 	VPORQ Z5, Z2, K3, Z2
-	VPSUBQ Z7, Z0, K3, Z0
+	VPSUBQ Z3, Z0, K3, Z0
 	VPSUBQ Z6, Z1, K3, Z1
-
+	VPSRLQ $1, Z5, Z5
+	SUBQ $128, R12
 	SUBQ $1, R10
-	JGE m1Loop
+	JGE m0Solo
 
-	VMOVDQA64 Z2, Z11               // Z11 = m1Local
+	VMOVDQA64 Z2, Z10               // Z10 = m0
 
 	// ---- remap: m1 = PDEP(m1Local, remaining) — 8 scalar PDEPQ ----
 	//
@@ -197,9 +194,8 @@ m1Loop:
 	// executes PDEPQ in microcode with data-dependent latency; on such
 	// parts this is a performance caveat, not a new leakage surface
 	// relative to the rest of this path.
-	MOVQ $0x0000FFFFFFFFFFFF, R8
-	MOVQ R8, X14
-	VPBROADCASTQ X14, Z27           // Z27 = 0xFFFF_FFFF_FFFF (48-bit domain)
+	VPTERNLOGQ $0xFF, Z27, Z27, Z27 // Z27 = all-ones
+	VPSRLQ $16, Z27, Z27            // Z27 = 0xFFFF_FFFF_FFFF (48-bit domain)
 	VPANDNQ Z27, Z10, Z0            // Z0 = remaining = (~m0) & domain
 	VMOVDQU64 Z10, (DI)             // out[0] = m0
 	VMOVDQU64 Z0, rem-128(SP)       // spill remaining lanes 0..7
