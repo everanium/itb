@@ -57,7 +57,8 @@ func Unchunk48Lock(l0, l1, l2, m0, m1, m2 uint64) (x uint64)
 
 // HasAVX512RankMask caches whether the runtime CPU supports the AVX-512F
 // feature set used by the batched 48-bit interlock mask-derivation
-// kernel (VPERMI2Q, VPCMPUQ, VPSRLVQ, mask-merged VPSUBQ on ZMM).
+// kernel (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ on
+// ZMM; VPTERNLOGQ / VPSLLQ / VPSRLQ for EVEX-only constant synthesis).
 // Resolved once at init time from CPUID. Available on Intel
 // Skylake-X / Ice Lake / Rocket Lake / Sapphire Rapids+, AMD Zen 4 /
 // Zen 5. Only base AVX-512F is required.
