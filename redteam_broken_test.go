@@ -129,7 +129,8 @@ func fnv1a128BrokenLab(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
 }
 
 // ---------------------------------------------------------------------------
-// Attacker-side helpers (ported from scripts/redteam/attack_common.py and
+// Attacker-side helpers (ported from
+// scripts/redteam/itb/theory/_common/attack_common.py and
 // scripts/redteam/itb/theory/crc128/crib_crc128_kpa.py).
 // ---------------------------------------------------------------------------
 

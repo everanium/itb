@@ -276,7 +276,7 @@ Shelf verdict labels:
 
 ## 5. Reproduction
 
-Reproduction commands that invoke a `go test` step (directly or through a shell driver) require the `redteam` build tag: `go test -tags redteam ...`. The four Axis-B shell drivers below (`harness_bias_audit_<primitive>.sh`) already pass the tag internally. The self-parity tests in [§5.5](#55-self-parity-tests) and the pre-screen invocations in [§5.6](#56-sat-free-pre-screen-35) are Python-only and do not require the tag.
+Reproduction commands that invoke a `go test` step (directly or through a shell driver) require the `redteam` build tag: `go test -tags redteam ...`. The four Axis-B shell drivers below (one `harness_bias_audit.sh` per primitive under `scripts/redteam/itb/theory/<primitive>/`) already pass the tag internally. The self-parity tests in [§5.5](#55-self-parity-tests) and the pre-screen invocations in [§5.6](#56-sat-free-pre-screen-35) are Python-only and do not require the tag.
 
 ### 5.1. t1ha1_64le
 
@@ -301,7 +301,7 @@ python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --json-report tmp/attack/t1ha1stress/axis_a_struct_html_n4096_65536.json
 
 # Axis B — ITB-wrapped raw-mode bias
-bash scripts/redteam/harness_bias_audit_t1ha1.sh
+bash scripts/redteam/itb/theory/t1ha1/harness_bias_audit.sh
 
 # Axis C — raw chain SAT KPA (rounds = 1 obs = 8, 24 h budget)
 python3 scripts/redteam/itb/theory/t1ha1/sat_calibration_raw_t1ha1.py \
@@ -335,7 +335,7 @@ python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --json-report tmp/attack/seahashstress/axis_a_struct_html_n4096_65536.json
 
 # Axis B
-bash scripts/redteam/harness_bias_audit_seahash.sh
+bash scripts/redteam/itb/theory/seahash/harness_bias_audit.sh
 
 # Axis C — raw chain SAT KPA (4 encodings × 2 backends, 24 h budget)
 for MUL in native explicit; do for VAR in native case-split; do for SOLVER in z3 bitwuzla; do
@@ -369,7 +369,7 @@ python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --json-report tmp/attack/mx3stress/axis_a_struct_html_n4096_65536.json
 
 # Axis B
-bash scripts/redteam/harness_bias_audit_mx3.sh
+bash scripts/redteam/itb/theory/mx3/harness_bias_audit.sh
 
 # Axis C — Z3 reaches Tier 3 in ~5 s on rounds = 1 obs = 8
 python3 scripts/redteam/itb/theory/mx3/sat_calibration_raw_mx3.py \
@@ -404,7 +404,7 @@ python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --json-report tmp/attack/siphash13stress/axis_a_struct_html_n4096_65536.json
 
 # Axis B
-bash scripts/redteam/harness_bias_audit_siphash13.sh
+bash scripts/redteam/itb/theory/siphash13/harness_bias_audit.sh
 
 # Axis C — raw chain SAT KPA (rounds = 1 obs = 8, 24 h budget)
 python3 scripts/redteam/itb/theory/siphash13/sat_calibration_raw_siphash13.py \

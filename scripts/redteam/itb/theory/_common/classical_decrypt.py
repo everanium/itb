@@ -30,14 +30,15 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# attack_common and nonce_reuse_demask both live alongside this module in
+# `_common/`; direct imports resolve because Python adds a script's own
+# directory to sys.path when it is invoked directly.
 from attack_common import (
     CHANNELS, DATA_BITS_PER_CHANNEL, DATA_BITS_PER_PIXEL,
     EXTRACT7_TABLE, ROT7_TABLE,
     load_cell_meta, parse_itb_header, get_bits7, cobs_encode,
 )
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from nonce_reuse_demask import (
     layer1_recover_range, layer2_brute_force_startpixel,
     precompute_d_xor_per_probe, build_payload_known,

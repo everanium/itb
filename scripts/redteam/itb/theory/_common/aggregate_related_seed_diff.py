@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregate Phase 2e related-seed-differential matrix_summary.jsonl into a
+"""Aggregate related-seed-differential matrix_summary.jsonl into a
 markdown roll-up + roll-down per primitive.
 
 Roll-up: one row per primitive, averaged over all (axis, delta_kind,
@@ -48,7 +48,7 @@ def main() -> int:
     for r in rows:
         by_prim[r["hash"]].append(r)
 
-    print("# Phase 2e — related-seed differential summary\n")
+    print("# Related-seed differential summary\n")
     print(f"Total cells analysed: **{len(rows)}**\n")
     print("## Per-primitive roll-up\n")
     print("Each row aggregates across all (axis, delta_kind, plaintext_kind) "

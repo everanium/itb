@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Phase 2c: startPixel enumeration attack.
+"""StartPixel enumeration attack.
 
 The attacker does NOT know startPixel. They try all P candidates and run
-Phase 2b-style per-candidate analysis for each. Question: can the correct
+Distinguisher-style per-candidate analysis for each. Question: can the correct
 startPixel be identified from statistical properties?
 
 Theoretical prediction (Proof 4a obstacles 2 + 3 combined):
@@ -11,7 +11,7 @@ Theoretical prediction (Proof 4a obstacles 2 + 3 combined):
   - Under wrong startPixel: plaintext-to-ciphertext alignment is scrambled;
     all 56 candidates are garbage XOR masks
   - BOTH cases should produce statistically similar XOR mask distributions
-    (since ciphertext bytes are uniform per Phase 1 validation, and plaintext
+    (since ciphertext bytes are uniform per sanity validation, and plaintext
     is deterministic)
   - Attacker CANNOT identify correct startPixel from byte-level statistics
 
@@ -227,7 +227,7 @@ def run_sample(hash_name: str, base: str, data_pixels_to_test: int = 40):
 
 
 if __name__ == "__main__":
-    print("Phase 2c: startPixel enumeration attack")
+    print("StartPixel enumeration attack")
     print("Test: can attacker identify true startPixel from statistical fingerprint?")
 
     # Run on one sample per hash variant, using http_large_000 (data-dominated)

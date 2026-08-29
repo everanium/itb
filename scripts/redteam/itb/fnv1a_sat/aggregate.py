@@ -91,7 +91,7 @@ def main(argv=None) -> int:
             rows))
         print("Note:", f2.get("note", ""))
 
-    print("\n=== F3 positive control (Single Ouroboros, barrier off) ===")
+    print("\n=== F3 positive control (pre-v0.3.0, barrier off) ===")
     f3 = load(args.dir / "f3_control_positive.json")
     if f3:
         print(f"crib_pixels: {f3['crib_pixels']}")
@@ -130,7 +130,7 @@ def main(argv=None) -> int:
               f"regime: {sat['regime']}  timeout: {sat['timeout_sec']}s")
         if "control" in sat:
             c = sat["control"]
-            print(f"\nControl (Single Ouroboros, barrier off, sp disclosed):")
+            print(f"\nControl (pre-v0.3.0, barrier off, sp disclosed):")
             print(f"  result: {c['result']}  wall: {c['wall_sec']:.2f}s")
             if c.get("audit"):
                 a = c["audit"]

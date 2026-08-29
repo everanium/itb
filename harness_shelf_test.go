@@ -7,7 +7,7 @@ package itb
 // mx3, SipHash-1-3), driving the v0.3.0 Triple + always-on 48-bit Interlocked
 // Barrier construction. One env-gated `TestRedTeamHarnessGenerate*NonceReuse`
 // test per primitive, invoked by the four
-// `scripts/redteam/harness_bias_audit_<primitive>.sh` drivers, which then
+// `scripts/redteam/itb/theory/<primitive>/harness_bias_audit.sh` drivers, which then
 // feed the emitted `cell.meta.json` + `ct_0000.bin` through
 // `scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py` for the |Δ50|
 // reading.
@@ -598,7 +598,7 @@ func padIdx4(i int) string {
 // TestRedTeamHarnessGenerateT1ha1NonceReuse — HARNESS.md § 3.3 Axis B
 // corpus generator with t1ha1_64le keyed into ChainHash128 (parallel
 // two-lane 128-bit adapter). Invoked by
-// `scripts/redteam/harness_bias_audit_t1ha1.sh`.
+// `scripts/redteam/itb/theory/t1ha1/harness_bias_audit.sh`.
 func TestRedTeamHarnessGenerateT1ha1NonceReuse(t *testing.T) {
 	runShelfCorpus(t, shelfParams{
 		envPrefix:   "ITB_HARNESS_T1HA1",
@@ -610,7 +610,7 @@ func TestRedTeamHarnessGenerateT1ha1NonceReuse(t *testing.T) {
 
 // TestRedTeamHarnessGenerateSeaHashNonceReuse — HARNESS.md § 3.3 Axis B
 // corpus generator with SeaHash keyed into ChainHash128 (parallel two-lane
-// adapter). Invoked by `scripts/redteam/harness_bias_audit_seahash.sh`.
+// adapter). Invoked by `scripts/redteam/itb/theory/seahash/harness_bias_audit.sh`.
 func TestRedTeamHarnessGenerateSeaHashNonceReuse(t *testing.T) {
 	runShelfCorpus(t, shelfParams{
 		envPrefix:   "ITB_HARNESS_SEAHASH",
@@ -622,7 +622,7 @@ func TestRedTeamHarnessGenerateSeaHashNonceReuse(t *testing.T) {
 
 // TestRedTeamHarnessGenerateMx3NonceReuse — HARNESS.md § 3.3 Axis B
 // corpus generator with mx3 keyed into ChainHash128 (parallel two-lane
-// adapter). Invoked by `scripts/redteam/harness_bias_audit_mx3.sh`.
+// adapter). Invoked by `scripts/redteam/itb/theory/mx3/harness_bias_audit.sh`.
 func TestRedTeamHarnessGenerateMx3NonceReuse(t *testing.T) {
 	runShelfCorpus(t, shelfParams{
 		envPrefix:   "ITB_HARNESS_MX3",
@@ -635,7 +635,7 @@ func TestRedTeamHarnessGenerateMx3NonceReuse(t *testing.T) {
 // TestRedTeamHarnessGenerateSiphash13NonceReuse — HARNESS.md § 3.3 Axis B
 // corpus generator with SipHash-1-3 keyed into ChainHash128 (parallel
 // two-lane adapter; k1 = 0). Invoked by
-// `scripts/redteam/harness_bias_audit_siphash13.sh`.
+// `scripts/redteam/itb/theory/siphash13/harness_bias_audit.sh`.
 func TestRedTeamHarnessGenerateSiphash13NonceReuse(t *testing.T) {
 	runShelfCorpus(t, shelfParams{
 		envPrefix:   "ITB_HARNESS_SIPHASH13",

@@ -2,7 +2,7 @@
 // triples that the Python chainhashes/ mirrors must reproduce bit-for-bit.
 //
 // Usage:
-//   go run scripts/redteam/phase2_theory/chainhashes/_parity_dump/main.go
+//   go run scripts/redteam/itb/theory/_common/chainhashes/_parity_dump/main.go
 //
 // Output: JSON array on stdout. One entry per (primitive, test_vector) pair.
 // The Python side loads this via chainhashes/_parity_test.py and verifies

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2f — full-plaintext decryption via recovered K against ChainHash<CRC128>.
+"""Crib KPA full-plaintext decryption via recovered K against ChainHash<CRC128>.
 
 Second stage of the Crib KPA attack chain. Takes a 56-bit observable K
 (recovered by `crib_crc128_kpa.py` from a first ciphertext under some
@@ -59,7 +59,6 @@ from crib_crc128_kpa import (
     precompute_const_all,
     _load_hash_module,
 )
-sys.path.insert(0, str(HERE.parents[2]))
 from attack_common import cobs_encode as _cobs_encode
 
 
@@ -183,7 +182,7 @@ def main() -> int:
     crib_pixels = len(crib) // 7
 
     print(f"{'=' * 72}")
-    print(f"Phase 2f — crib-cross full-plaintext decrypt against ChainHash<CRC128>")
+    print(f"Crib KPA crib-cross full-plaintext decrypt against ChainHash<CRC128>")
     print(f"{'=' * 72}")
     print(f"Cell:              {args.cell_dir}")
     print(f"Ciphertext:        {ct_path.name} ({ct_path.stat().st_size} bytes)")
