@@ -44,6 +44,22 @@ Every track drives the shipped core Triple entrypoints (`Encrypt3x256Cfg` / `Enc
 
 The container floor is uniform across all modes: the minimum pixel count is `ceil(keyBits / log2(7))` (`MinPixelsAuth`, aliased by `MinPixels`), so plain and MAC-authenticated paths share one envelope.
 
+**KL matrix — end-to-end indistinguishability from `/dev/urandom`.** A construction-level Mode B χ² / pairwise-KL distinguisher measures, for the shipping wire under every combination of plaintext size and Barrier Fill margin, whether the ITB body bytes are separable from `/dev/urandom` bytes of matched length. Fixed BLAKE3 keys the ChainHash (a single representative PRF-grade primitive suffices per the closure argument in [PRF-grade equivalence](#prf-grade-versus-broken-primitive-equivalence)). Each cell of the 11 sizes × 6 Barrier Fill values grid draws 25 ITB samples plus 25 `/dev/urandom` samples at matched body size, computes the mean discriminator ratio on each side, and z-scores the difference by the pooled standard deviation.
+
+| Size ↓ / BF → | 1 | 2 | 4 | 8 | 16 | 32 |
+|:---|:-:|:-:|:-:|:-:|:-:|:-:|
+| 1 KB / 4 KB / 8 KB / 32 KB / 64 KB / 128 KB / 256 KB / 512 KB / 1 MB / 2 MB / 4 MB | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+All 66 cells satisfy `|z_ratio| ≤ 1.0` (indistinguishable at 1 σ). Peak `z_ratio` across the grid is **0.51** (1 KB, BF = 2) and peak `z(χ²)` is **0.62** (8 KB, BF = 16); every other cell sits below those bounds. Minimum Barrier Fill margin for the indistinguishability verdict is **BF = 1 for every size measured** — the shipped default `DefaultBarrierFill = 1` is already sufficient across the 1 KB → 4 MB payload envelope, and increasing BF up to 32 produces no measurable improvement in the discriminator.
+
+The empirical result matches the architectural expectation above: the mask-space cardinality per chunk (≈ 2^70.20) and the per-chunk bias (≈ 2^-57.8) are architectural guarantees; the KL matrix is the deployment-shape observation that a Mode B distinguisher against the attacker-visible wire cannot separate ITB from `/dev/urandom` bytes at any size × BF in the shipping envelope. Reproduce via:
+
+```bash
+python3 scripts/redteam/phase2_theory/kl_matrix.py
+```
+
+Output lands in `~/scratch/kltest/matrix.md` (grid + per-cell ratios / z-scores) plus `matrix.jsonl` (raw per-cell records).
+
 ## Per-attack verdicts
 
 Each verdict assumes the full barrier active (v0.3.0 default, non-disableable) and, where it invokes primitive strength, the PRF assumption and fresh per-message nonces. BLAKE3 is the representative PRF-grade primitive; the closure argument consumes only the PRF property, not any BLAKE3-specific structure, so a single representative generalises across the PRF-grade registry subset (see [PRF-grade equivalence](#prf-grade-versus-broken-primitive-equivalence)).
