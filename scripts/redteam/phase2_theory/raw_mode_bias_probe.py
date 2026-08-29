@@ -6,9 +6,11 @@ layers under raw-ciphertext analysis (no demasking, no nonce-reuse).
 For any pluggable chainhash implementation and a structured-plaintext
 corpus, the probe:
 
-  1. Parses the raw ciphertext (20-byte header + 8 bytes per pixel).
-  2. Precomputes `const(p) = ChainHash(p_le || nonce, seed=0)` for every
-     container pixel via the pluggable hash module.
+  1. Parses the raw ciphertext (header derived from meta —
+     `2 * len(main_nonce) + 4` on the v0.3.0 dual-nonce wire — then
+     8 bytes per pixel).
+  2. Precomputes `const(p) = ChainHash(p_le || main_nonce, seed=0)` for
+     every container pixel via the pluggable hash module.
   3. For every candidate pixel_shift in `[0, total_pixels)`:
        - Computes 7 candidate K-bit values per observation via
          `K_bit = observed_bit XOR const_bit`
@@ -119,11 +121,19 @@ def main() -> int:
 
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
     total_pixels = int(meta["total_pixels"])
-    nonce = bytes.fromhex(meta["nonce_hex"])
+    # v0.3.0 corpora carry the dual-nonce header — read the main nonce
+    # (noise / data / start ChainHash input) as `main_nonce_hex` and fall
+    # back to the legacy single-nonce `nonce_hex` field for pre-v0.3.0
+    # corpus artefacts.
+    nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
+    nonce = bytes.fromhex(nonce_hex)
+    header_size = int(meta.get("header_size", 2 * len(nonce) + 4))
     # The "correct" pixel_shift the solver should converge to is
     # -start_pixel mod total_pixels; attacker cannot compute this because
     # startPixel is startSeed-derived, but the lab audit prints it for
-    # interpretation.
+    # interpretation. On v0.3.0 Triple corpora `start_pixel` is a
+    # representative per-snake value (the probe uses it only for the
+    # decorative "true shift" rank line, never for the |Δ50| metric).
     true_sp = int(meta["start_pixel"])
     correct_shift = (-true_sp) % total_pixels
 
@@ -147,8 +157,8 @@ def main() -> int:
     print(f"correct shift:   {correct_shift}  (= -startPx mod total_pixels)")
     print()
 
-    obs = parse_raw_ciphertext(ct_path, total_pixels)
-    print(f"parsed {len(obs)} observations")
+    obs = parse_raw_ciphertext(ct_path, total_pixels, header_size)
+    print(f"parsed {len(obs)} observations (header={header_size} bytes)")
 
     # Auto-scale probe size to keep per-bit binomial noise ~0.6%. Floor at
     # 2000 (small corpora) so the scan is still informative; cap at 16000
