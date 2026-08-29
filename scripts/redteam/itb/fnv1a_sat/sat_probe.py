@@ -9,7 +9,7 @@ SAT instance encoding the naive-crib SAT anchoring premise on both the
 Single Ouroboros without-barrier control and the v0.3.0 Triple/barrier
 ciphertext.
 
-Adapted from `scripts/redteam/phase2_theory_fnv1a/sat_harness_4round.py`
+Adapted from `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`
 (1666 lines encoding the full pre-v0.3.0 Single Ouroboros SAT). This
 compact form isolates the CORE claim — does any (seed_lo, np, r) tuple
 make the naive-crib xor_mask56 recovered from the container bytes
@@ -80,7 +80,7 @@ from typing import Any, Dict, List, Tuple
 # arsenal. The concrete evaluator gives us cross-check parity; the
 # symbolic form is re-implemented against Bitwuzla below (the
 # arsenal's symbolic implementation targets Z3).
-_ARSENAL = Path(__file__).resolve().parents[2] / "phase2_theory_fnv1a"
+_ARSENAL = Path(__file__).resolve().parents[2] / "itb" / "theory" / "fnv1a"
 if str(_ARSENAL) not in sys.path:
     sys.path.insert(0, str(_ARSENAL))
 

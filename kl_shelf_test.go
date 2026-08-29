@@ -3,7 +3,7 @@
 package itb
 
 // kl_shelf_test.go — Phase 2b Mode B corpus generator for the KL floor probe
-// driven by `scripts/redteam/phase2_theory/kl_matrix.py`. Emits one massive
+// driven by `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive
 // ITB ciphertext per invocation on the v0.3.0 Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
 // carrying container dimensions and the dual-nonce header layout the two
@@ -31,7 +31,7 @@ package itb
 // PRF-grade registry entry; all PRF-grade entries produce statistically
 // identical Mode B outputs at matched N).
 //
-// Env vars (driver: `scripts/redteam/phase2_theory/kl_matrix.py`):
+// Env vars (driver: `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`):
 //
 //   ITB_REDTEAM_MASSIVE          — must equal "blake3" to enable
 //                                  (name kept for driver compatibility;
@@ -119,9 +119,9 @@ func klBlake3Hash128(key [32]byte) HashFunc128 {
 // `Encrypt3x128Cfg` call on a random plaintext of `ITB_REDTEAM_MASSIVE_SIZE`
 // bytes at `Config.BarrierFill = ITB_BARRIER_FILL`, writes the raw
 // ciphertext to `<outdir>/blake3.bin` and a KEY=VALUE `<outdir>/blake3.pixel`
-// sidecar consumed by `scripts/redteam/phase2_theory/kl_massive_single_full.py`.
+// sidecar consumed by `scripts/redteam/itb/theory/_common/kl/kl_massive_single_full.py`.
 //
-// Driver: `scripts/redteam/phase2_theory/kl_matrix.py` invokes this per
+// Driver: `scripts/redteam/itb/theory/_common/kl/kl_matrix.py` invokes this per
 // cell in the size × BarrierFill Cartesian sweep; the test is inert unless
 // `ITB_REDTEAM_MASSIVE=blake3` is set. Only the "blake3" hash-name value is
 // currently supported (kl_matrix.py fixes the primitive at BLAKE3).

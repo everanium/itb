@@ -135,7 +135,7 @@ not Python scripts. They compile with the release, run through
   re-verification (Full KPA / Partial KPA / Nonce-Reuse / mixed-algebra
   / related-seed differential) under Triple + Interlocked Barrier.
   Some logic is ported from `scripts/redteam/attack_common.py` and
-  `scripts/redteam/phase2_theory/crib_crc128_kpa.py`; the port
+  `scripts/redteam/itb/theory/crc128/crib_crc128_kpa.py`; the port
   attribution lives at the top of the Go file.
 - `redteam_prf_blake3_test.go` — PRF-grade primitive re-verification
   (BLAKE3 as the representative), 4-probe minimum + CPA + equivalence

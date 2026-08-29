@@ -109,12 +109,12 @@ type snakeGeometryFNV struct {
 
 func decodeWireFNV(ct []byte) snakeGeometryFNV {
 	nonce := ct[:NonceSize]
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
+	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
 	total := w * h
 	third := total / 3
 	third3 := total - 2*third
-	body := ct[NonceSize+4:]
+	body := ct[2*NonceSize+4:]
 	return snakeGeometryFNV{
 		nonce:       nonce,
 		totalPixels: total,
@@ -132,7 +132,7 @@ func decodeWireFNV(ct []byte) snakeGeometryFNV {
 // (noisePos, rotation) pair to recover the 56-bit compound
 // `dataHash.lo >> 3` value under the assumed crib alignment. Identical
 // math to the pre-v0.3.0 achievable-key routine in
-// scripts/redteam/phase2_theory_fnv1a/itb_channel_mirror.py
+// scripts/redteam/itb/theory/fnv1a/itb_channel_mirror.py
 // (decode_channel_to_plaintext_bits), specialised to yield the full
 // 56-bit compound directly. Used by both anchor probes.
 func recoverXorMask56FNV(pixelBytes [Channels]byte, np uint, r uint, cribBits [Channels]byte) uint64 {

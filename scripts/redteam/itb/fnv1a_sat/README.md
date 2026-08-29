@@ -92,7 +92,7 @@ Ground-truth seed values appear elsewhere only in terminal-stage
 ## Bitwuzla SAT probe scope
 
 `sat_probe.py` is a compact adaptation of the pre-v0.3.0
-`scripts/redteam/phase2_theory_fnv1a/sat_harness_4round.py`. The full
+`scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`. The full
 Single-Ouroboros harness ran ≈ 8 h on 4 cribs + disclosed startPixel.
 The v0.3.0 probe here targets an **isolated single-chain "strongest
 attacker" upper bound**: the attacker is granted true (np, r) per pixel

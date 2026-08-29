@@ -193,9 +193,9 @@ func generatePlaintextRN(rng *rand.Rand, size int, kind string) []byte {
 
 // bodyOfCTRN slices the ciphertext body out of a v0.3.0 wire.
 func bodyOfCTRN(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
+	header := 2*NonceSize + 4
+	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
 	total := w * h
 	return ct[header : header+total*Channels]
 }

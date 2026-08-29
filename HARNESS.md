@@ -136,7 +136,7 @@ Axis C asks whether commodity-scale Bitwuzla / Z3 KPA recovers a primitive's see
 
 ### 3.5. SAT-free algebraic & differential pre-screen
 
-Axis C is hours-long; it is the wrong instrument for triaging a candidate primitive. This pre-screen is the cheap triage that runs first. Two Monte-Carlo / exact-algebra batteries — [`avalanche_screen.py`](scripts/redteam/phase2_theory/chainhashes/avalanche_screen.py) and [`differential_screen.py`](scripts/redteam/phase2_theory/chainhashes/differential_screen.py) — measure the **ChainHash lo-lane as a function of the seed at a fixed data buffer**: the inner primitive in the chain, not the full ITB envelope. The envelope's barrier (per-pixel `noise_pos` / rotation) is primitive-independent and is characterised separately in [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based); the pre-screen asks only the upstream question a solver depends on — **does the inner primitive hand a SAT/SMT solver a structural hook to grab?** A primitive with no hook is exactly the case where, under its PRF assumption, no efficient recovery exists and Bitwuzla / Z3 cannot help the attacker; a primitive with a hook is a candidate for the expensive Axis C confirmation.
+Axis C is hours-long; it is the wrong instrument for triaging a candidate primitive. This pre-screen is the cheap triage that runs first. Two Monte-Carlo / exact-algebra batteries — [`avalanche_screen.py`](scripts/redteam/itb/theory/_common/chainhashes/avalanche_screen.py) and [`differential_screen.py`](scripts/redteam/itb/theory/_common/chainhashes/differential_screen.py) — measure the **ChainHash lo-lane as a function of the seed at a fixed data buffer**: the inner primitive in the chain, not the full ITB envelope. The envelope's barrier (per-pixel `noise_pos` / rotation) is primitive-independent and is characterised separately in [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based); the pre-screen asks only the upstream question a solver depends on — **does the inner primitive hand a SAT/SMT solver a structural hook to grab?** A primitive with no hook is exactly the case where, under its PRF assumption, no efficient recovery exists and Bitwuzla / Z3 cannot help the attacker; a primitive with a hook is a candidate for the expensive Axis C confirmation.
 
 The pre-screen extends coverage beyond the four full-axis shelf primitives to three additional non-cryptographic mixers chosen to span the failure modes: **murmur3** (MurmurHash3_x64_128) and **xxhash64** (XXH64) as one-way table mixers of a different topology (accumulator vs multiply-xorshift), and **splitmix64** as an explicitly **invertible** mixer. These three are pre-screen primitives only — they are not wired into the Go harness and are not taken through Axis A–C; the pre-screen is precisely the SAT-free substitute for that wiring. Their Python mirrors are parity-checked bit-for-bit against the `mmh3` / `xxhash` reference libraries (murmur3, xxhash64) and the canonical seed-0 vector sequence (splitmix64).
 
@@ -282,21 +282,21 @@ Reproduction commands that invoke a `go test` step (directly or through a shell 
 
 ```bash
 # Axis A — avalanche on raw primitive
-python3 scripts/redteam/phase2_theory_t1ha1/lab_bias_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/lab_bias_t1ha1.py \
     --n-keys 65536 --key-sizes 32,64,128 \
     --json-report tmp/attack/t1ha1stress/axis_a_lab_bias.json
 
 # Axis A' — structural-input bias (json + html × 4 KB / 64 KB)
-python3 scripts/redteam/phase2_theory_t1ha1/lab_struct_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format json --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/t1ha1stress/axis_a_struct_json_n65536_4096.json
-python3 scripts/redteam/phase2_theory_t1ha1/lab_struct_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format json --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/t1ha1stress/axis_a_struct_json_n4096_65536.json
-python3 scripts/redteam/phase2_theory_t1ha1/lab_struct_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format html --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/t1ha1stress/axis_a_struct_html_n65536_4096.json
-python3 scripts/redteam/phase2_theory_t1ha1/lab_struct_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format html --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/t1ha1stress/axis_a_struct_html_n4096_65536.json
 
@@ -304,10 +304,10 @@ python3 scripts/redteam/phase2_theory_t1ha1/lab_struct_t1ha1.py \
 bash scripts/redteam/harness_bias_audit_t1ha1.sh
 
 # Axis C — raw chain SAT KPA (rounds = 1 obs = 8, 24 h budget)
-python3 scripts/redteam/phase2_theory_t1ha1/sat_calibration_raw_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/sat_calibration_raw_t1ha1.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver z3 \
     --json-report tmp/attack/t1ha1stress/axis_c_raw_z3.json
-python3 scripts/redteam/phase2_theory_t1ha1/sat_calibration_raw_t1ha1.py \
+python3 scripts/redteam/itb/theory/t1ha1/sat_calibration_raw_t1ha1.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver bitwuzla \
     --json-report tmp/attack/t1ha1stress/axis_c_raw_bw.json
 ```
@@ -316,21 +316,21 @@ python3 scripts/redteam/phase2_theory_t1ha1/sat_calibration_raw_t1ha1.py \
 
 ```bash
 # Axis A
-python3 scripts/redteam/phase2_theory_seahash/lab_bias_seahash.py \
+python3 scripts/redteam/itb/theory/seahash/lab_bias_seahash.py \
     --n-keys 65536 --key-sizes 32,64,128 \
     --json-report tmp/attack/seahashstress/axis_a_lab_bias.json
 
 # Axis A'
-python3 scripts/redteam/phase2_theory_seahash/lab_struct_seahash.py \
+python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format json --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/seahashstress/axis_a_struct_json_n65536_4096.json
-python3 scripts/redteam/phase2_theory_seahash/lab_struct_seahash.py \
+python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format json --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/seahashstress/axis_a_struct_json_n4096_65536.json
-python3 scripts/redteam/phase2_theory_seahash/lab_struct_seahash.py \
+python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format html --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/seahashstress/axis_a_struct_html_n65536_4096.json
-python3 scripts/redteam/phase2_theory_seahash/lab_struct_seahash.py \
+python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format html --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/seahashstress/axis_a_struct_html_n4096_65536.json
 
@@ -339,7 +339,7 @@ bash scripts/redteam/harness_bias_audit_seahash.sh
 
 # Axis C — raw chain SAT KPA (4 encodings × 2 backends, 24 h budget)
 for MUL in native explicit; do for VAR in native case-split; do for SOLVER in z3 bitwuzla; do
-    python3 scripts/redteam/phase2_theory_seahash/sat_calibration_raw_seahash.py \
+    python3 scripts/redteam/itb/theory/seahash/sat_calibration_raw_seahash.py \
         --rounds 1 --obs 8 --timeout-sec 86400 --solver "$SOLVER" \
         --mul-encoding "$MUL" --var-shift-encoding "$VAR" \
         --json-report "tmp/attack/seahashstress/axis_c_raw_${SOLVER}_${MUL}_${VAR}.json"
@@ -350,21 +350,21 @@ done; done; done
 
 ```bash
 # Axis A
-python3 scripts/redteam/phase2_theory_mx3/lab_bias_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/lab_bias_mx3.py \
     --n-keys 65536 --key-sizes 32,256,1024 \
     --json-report tmp/attack/mx3stress/axis_a_lab_bias.json
 
 # Axis A'
-python3 scripts/redteam/phase2_theory_mx3/lab_struct_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format json --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/mx3stress/axis_a_struct_json_n65536_4096.json
-python3 scripts/redteam/phase2_theory_mx3/lab_struct_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format json --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/mx3stress/axis_a_struct_json_n4096_65536.json
-python3 scripts/redteam/phase2_theory_mx3/lab_struct_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format html --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/mx3stress/axis_a_struct_html_n65536_4096.json
-python3 scripts/redteam/phase2_theory_mx3/lab_struct_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format html --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/mx3stress/axis_a_struct_html_n4096_65536.json
 
@@ -372,11 +372,11 @@ python3 scripts/redteam/phase2_theory_mx3/lab_struct_mx3.py \
 bash scripts/redteam/harness_bias_audit_mx3.sh
 
 # Axis C — Z3 reaches Tier 3 in ~5 s on rounds = 1 obs = 8
-python3 scripts/redteam/phase2_theory_mx3/sat_calibration_raw_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/sat_calibration_raw_mx3.py \
     --rounds 1 --obs 8 --timeout-sec 60 --solver z3 \
     --json-report tmp/attack/mx3stress/axis_c_raw_z3.json
 # Axis C — Bitwuzla reaches Tier 3 in ~2 s on the same cell
-python3 scripts/redteam/phase2_theory_mx3/sat_calibration_raw_mx3.py \
+python3 scripts/redteam/itb/theory/mx3/sat_calibration_raw_mx3.py \
     --rounds 1 --obs 8 --timeout-sec 60 --solver bitwuzla \
     --json-report tmp/attack/mx3stress/axis_c_raw_bw.json
 ```
@@ -385,21 +385,21 @@ python3 scripts/redteam/phase2_theory_mx3/sat_calibration_raw_mx3.py \
 
 ```bash
 # Axis A
-python3 scripts/redteam/phase2_theory_siphash13/lab_bias_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/lab_bias_siphash13.py \
     --n-keys 65536 --key-sizes 32,256,1024 \
     --json-report tmp/attack/siphash13stress/axis_a_lab_bias.json
 
 # Axis A'
-python3 scripts/redteam/phase2_theory_siphash13/lab_struct_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format json --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/siphash13stress/axis_a_struct_json_n65536_4096.json
-python3 scripts/redteam/phase2_theory_siphash13/lab_struct_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format json --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/siphash13stress/axis_a_struct_json_n4096_65536.json
-python3 scripts/redteam/phase2_theory_siphash13/lab_struct_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format html --n-instances 65536 --instance-size 4096 \
     --json-report tmp/attack/siphash13stress/axis_a_struct_html_n65536_4096.json
-python3 scripts/redteam/phase2_theory_siphash13/lab_struct_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format html --n-instances 4096 --instance-size 65536 \
     --json-report tmp/attack/siphash13stress/axis_a_struct_html_n4096_65536.json
 
@@ -407,10 +407,10 @@ python3 scripts/redteam/phase2_theory_siphash13/lab_struct_siphash13.py \
 bash scripts/redteam/harness_bias_audit_siphash13.sh
 
 # Axis C — raw chain SAT KPA (rounds = 1 obs = 8, 24 h budget)
-python3 scripts/redteam/phase2_theory_siphash13/sat_calibration_raw_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/sat_calibration_raw_siphash13.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver z3 \
     --json-report tmp/attack/siphash13stress/axis_c_raw_z3.json
-python3 scripts/redteam/phase2_theory_siphash13/sat_calibration_raw_siphash13.py \
+python3 scripts/redteam/itb/theory/siphash13/sat_calibration_raw_siphash13.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver bitwuzla \
     --json-report tmp/attack/siphash13stress/axis_c_raw_bw.json
 ```
@@ -420,11 +420,11 @@ python3 scripts/redteam/phase2_theory_siphash13/sat_calibration_raw_siphash13.py
 Cross-check concrete vs Z3 symbolic for each primitive's chain-hash mirror:
 
 ```bash
-python3 scripts/redteam/phase2_theory/chainhashes/_parity_test.py
-python3 scripts/redteam/phase2_theory_t1ha1/t1ha1_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
-python3 scripts/redteam/phase2_theory_seahash/seahash_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
-python3 scripts/redteam/phase2_theory_mx3/mx3_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
-python3 scripts/redteam/phase2_theory_siphash13/siphash13_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
+python3 scripts/redteam/itb/theory/_common/chainhashes/_parity_test.py
+python3 scripts/redteam/itb/theory/t1ha1/t1ha1_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
+python3 scripts/redteam/itb/theory/seahash/seahash_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
+python3 scripts/redteam/itb/theory/mx3/mx3_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
+python3 scripts/redteam/itb/theory/siphash13/siphash13_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
 ```
 
 ### 5.6. SAT-free pre-screen (§3.5)
@@ -433,14 +433,14 @@ Algebraic / avalanche battery and the low-byte XOR-differential battery over the
 
 ```bash
 # Algebraic + avalanche + degree + invertibility (rounds 1-3, deg@16)
-python3 scripts/redteam/phase2_theory/chainhashes/avalanche_screen.py \
+python3 scripts/redteam/itb/theory/_common/chainhashes/avalanche_screen.py \
     --all --rounds-max 3 --samples 512 --degree-bits 16
 # Higher degree-saturation point (rounds 1, deg@20)
-python3 scripts/redteam/phase2_theory/chainhashes/avalanche_screen.py \
+python3 scripts/redteam/itb/theory/_common/chainhashes/avalanche_screen.py \
     --all --rounds-max 1 --samples 64 --degree-bits 20
 
 # Low-byte XOR-differential uniformity (rounds 1-3)
-python3 scripts/redteam/phase2_theory/chainhashes/differential_screen.py \
+python3 scripts/redteam/itb/theory/_common/chainhashes/differential_screen.py \
     --all --rounds-max 3 --samples 4096 --probe-bits 32
 ```
 
@@ -448,14 +448,14 @@ Pre-screen primitive parity (bit-for-bit vs the reference libraries / canonical 
 
 ```bash
 # Reference-library parity (mmh3 / xxhash) and canonical-vector self-checks
-python3 scripts/redteam/phase2_theory/chainhashes/murmur3.py
-python3 scripts/redteam/phase2_theory/chainhashes/xxhash64.py
-python3 scripts/redteam/phase2_theory/chainhashes/splitmix64.py
+python3 scripts/redteam/itb/theory/_common/chainhashes/murmur3.py
+python3 scripts/redteam/itb/theory/_common/chainhashes/xxhash64.py
+python3 scripts/redteam/itb/theory/_common/chainhashes/splitmix64.py
 
 # splitmix64 chain concrete-vs-Z3 parity, then raw-chain SAT recovery
-python3 scripts/redteam/phase2_theory_splitmix64/splitmix64_chain_lo_concrete.py \
+python3 scripts/redteam/itb/theory/splitmix64/splitmix64_chain_lo_concrete.py \
     --rounds 1,2,4 --vectors 8
-python3 scripts/redteam/phase2_theory_splitmix64/sat_calibration_raw_splitmix64.py \
+python3 scripts/redteam/itb/theory/splitmix64/sat_calibration_raw_splitmix64.py \
     --rounds 1 --obs 8 --timeout-sec 300 --solver bitwuzla
 ```
 
@@ -466,26 +466,26 @@ The BEA-1 cipher and its trapdoor are a clean-room reimplementation transcribed 
 ```bash
 # Experiment 1 — pure BEA-1: reproduce the published partition trapdoor
 # (full 120-bit key recovery from chosen plaintext/ciphertext pairs).
-python3 scripts/redteam/phase2_theory_bea1/exp1_pure_bea1.py
+python3 scripts/redteam/itb/theory/bea1/exp1_pure_bea1.py
 
 # Experiment 2 — BEA-1 through ChainHash, rounds = 1, partial discard 80->64
 # (the trapdoor still recovers the lo-lane seed).
-python3 scripts/redteam/phase2_theory_bea1/exp2_chainhash_r1.py
+python3 scripts/redteam/itb/theory/bea1/exp2_chainhash_r1.py
 
 # Experiment 3 — BEA-1 through ChainHash, rounds = 2,3,4 (feedforward):
 # the same engine fails; the instrumentation shows the coset signal collapses.
-python3 scripts/redteam/phase2_theory_bea1/exp3_chainhash_feedforward.py
+python3 scripts/redteam/itb/theory/bea1/exp3_chainhash_feedforward.py
 
 # Experiment 3, structure-aware SMT solver (partition-quotient analogue).
-python3 scripts/redteam/phase2_theory_bea1/exp3_structure_solver.py
+python3 scripts/redteam/itb/theory/bea1/exp3_structure_solver.py
 ```
 
 ### 5.8. Reduced-round-primitive control (2-round AES, §3.7)
 
-`chainhashes/aes2r.py` is the 2-round-AES inner primitive (FIPS-197-validated, self-tested on import). The scripts below are in `scripts/redteam/phase2_theory_aes2r/`.
+`chainhashes/aes2r.py` is the 2-round-AES inner primitive (FIPS-197-validated, self-tested on import). The scripts below are in `scripts/redteam/itb/theory/aes2r/`.
 
 ```bash
-cd scripts/redteam/phase2_theory_aes2r
+cd scripts/redteam/itb/theory/aes2r
 
 # Raw 2-round AES is integral-broken: unique master-key byte from one Λ-set.
 python3 integral_aes2r.py
