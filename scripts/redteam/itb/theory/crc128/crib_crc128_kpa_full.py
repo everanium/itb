@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2f — Crib KPA full K recovery (K_data + K_noise_bits_0_2).
+"""Crib KPA full K recovery (K_data + K_noise_bits_0_2).
 
 Recovers both the 64-bit compound key K_data and the 3 low bits of
 noiseSeed's compound key K_noise as a joint side effect of the
@@ -153,7 +153,7 @@ def recover_k_full(
 
     # Return every survivor. Normal-case single survivor; when structural
     # mod-7 aliasing on the 8 unobservable K_data bits lets a shadow pair
-    # pass the crib filter (see Phase 2f architectural finding 3), multiple
+    # pass the crib filter (see Crib KPA architectural finding 3), multiple
     # survivors appear — downstream decrypt_full disambiguates them via
     # COBS-validity cross-check on the target ciphertext.
     return survivors
@@ -206,7 +206,7 @@ def main() -> int:
     known_prefix = bytes.fromhex(args.crib_prefix_hex)
 
     print(f"{'=' * 72}")
-    print(f"Phase 2f — Crib KPA full K recovery (K_data + K_noise_bits_0_2)")
+    print(f"Crib KPA full K recovery (K_data + K_noise_bits_0_2)")
     print(f"{'=' * 72}")
     print(f"Cell:              {args.cell_dir}")
     print(f"Ciphertext:        {ct_path.name} ({ct_path.stat().st_size} bytes)")

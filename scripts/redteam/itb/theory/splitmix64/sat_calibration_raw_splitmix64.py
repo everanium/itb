@@ -8,7 +8,7 @@ the symbolic lo-lane seed components, and measures wall-clock. It answers, for
 the avalanche/differential pre-screen's INVERTIBLE control:
 
     "Does the pre-screen's `inv = Y` flag for SplitMix64 cash out as an actual
-     SAT seed recovery, the way it does for FNV-1a (Phase 2g), even though
+     SAT seed recovery, the way it does for FNV-1a, even though
      SplitMix64 reads ideal on every avalanche / differential / degree column?"
 
 Structure mirrors sat_calibration_raw_mx3.py: independent lo / hi lanes, the

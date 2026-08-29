@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2f — Crib KPA full-plaintext decrypt via (K_data + K_noise_bits_0_2).
+"""Crib KPA full-plaintext decrypt via (K_data + K_noise_bits_0_2).
 
 Second stage of the Crib KPA attack chain. Consumes the output of
 `crib_crc128_kpa_full.py` (K_data 64-bit + K_noise_bits_0_2 3-bit)
@@ -64,7 +64,6 @@ from crib_crc128_kpa import (
     precompute_const_all,
     decrypt_pixel,
 )
-sys.path.insert(0, str(HERE.parents[2]))
 from attack_common import cobs_encode as _cobs_encode
 
 
@@ -239,7 +238,7 @@ def main() -> int:
         return 2
 
     print(f"{'=' * 72}")
-    print(f"Phase 2f — full-plaintext decrypt via (K_data + K_noise_bits_0_2)")
+    print(f"Crib KPA full-plaintext decrypt via (K_data + K_noise_bits_0_2)")
     print(f"{'=' * 72}")
     print(f"Cell:               {args.cell_dir}")
     print(f"Ciphertext:         {ct_path.name} ({ct_path.stat().st_size} bytes)")

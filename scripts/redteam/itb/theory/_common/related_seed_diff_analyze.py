@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2e — related-seed differential analyzer.
+"""Related-seed differential analyzer.
 
 For one corpus cell (two ciphertexts that share everything except a
 known Δ applied to one of the three seeds), compute distributional

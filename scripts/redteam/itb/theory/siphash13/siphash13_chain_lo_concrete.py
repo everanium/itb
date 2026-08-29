@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 2 parity gadget for the SipHash-1-3 SAT calibration plan
+Concrete parity gadget for the SipHash-1-3 SAT calibration
 (HARNESS.md § 9.3).
 
 Cross-checks that two independent lo-lane implementations reproduce

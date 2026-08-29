@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 2b KL floor probe on a single 63 MB ITB encryption.
+"""KL floor probe on a single 63 MB ITB encryption.
 
-One-off experiment complementing the regular Phase 2b run. At N ≈ 77 M
+One-off experiment complementing the regular KL floor probe run. At N ≈ 77 M
 observations per candidate the theoretical finite-sample KL floor
 (~bins/N = 128 / 77·10⁶ ≈ 1.7 × 10⁻⁶ nats) approaches the lower limit
 of what's meaningfully distinguishable from zero on float64 histograms.
@@ -15,7 +15,7 @@ Prerequisites:
     # produces tmp/massive/<hash>.{bin,plain,pixel}
 
 Usage:
-    python3 scripts/redteam/itb/theory/_common/kl/kl_massive_single.py <hash>
+    python3 scripts/redteam/itb/theory/_common/kl/kl_massive.py <hash>
 
 Valid <hash> values match the 10 dirnames used elsewhere:
     fnv1a, md5, areion256, areion512, blake2b,
@@ -105,7 +105,7 @@ def main():
     barrier_fill = int(meta.get("barrier_fill", "1"))
 
     print(f"{'=' * 72}")
-    print(f"  Phase 2b KL floor probe on a single massive sample")
+    print(f"  KL floor probe on a single massive sample")
     print(f"{'=' * 72}")
     print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}")
 
@@ -140,9 +140,9 @@ def main():
     bit_count = np.zeros((8, 7, 56), dtype=np.int64)
     totals = np.zeros((8, 7), dtype=np.int64)
 
-    # Chunked Phase 2b
+    # Chunked KL floor probe
     n_chunks = (data_pixels + CHUNK_SIZE - 1) // CHUNK_SIZE
-    print(f"\n  Chunked Phase 2b: chunk size {CHUNK_SIZE:,} px, {n_chunks} chunks")
+    print(f"\n  Chunked KL floor probe: chunk size {CHUNK_SIZE:,} px, {n_chunks} chunks")
     t_chunks = time.time()
     for chunk_start in range(0, data_pixels, CHUNK_SIZE):
         chunk_end = min(chunk_start + CHUNK_SIZE, data_pixels)

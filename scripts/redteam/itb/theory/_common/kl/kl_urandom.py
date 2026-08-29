@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""/dev/urandom KL floor baseline for Phase 2b Mode B (realistic-attacker).
+"""/dev/urandom KL floor baseline for Mode B (realistic-attacker).
 
 Takes a container size in bytes, reads that many bytes from /dev/urandom,
 and runs the same 56-candidate pairwise-KL analysis that
-`kl_massive_single_full.py` runs on an ITB ciphertext body. Reports
+`kl_massive_full.py` runs on an ITB ciphertext body. Reports
 observations per candidate, theoretical KL floor (`bins/N`), observed
 KL max, ratio max / floor, max bit-fraction deviation, and per-candidate
 χ² statistics.
@@ -38,9 +38,9 @@ import time
 import numpy as np
 
 CHANNELS = 8
-CHUNK_SIZE = 500_000  # pixels per chunk — matches kl_massive_single_full.py
+CHUNK_SIZE = 500_000  # pixels per chunk — matches kl_massive_full.py
 
-# Lookup tables identical to distinguisher.py / kl_massive_single_full.py.
+# Lookup tables identical to distinguisher.py / kl_massive_full.py.
 _extract_tbl = np.zeros((8, 256), dtype=np.uint8)
 for _np_val in range(8):
     _mask_low = (1 << _np_val) - 1
@@ -61,7 +61,7 @@ def run_single(size_bytes: int, run_idx: int = 0) -> dict:
     total_pixels = size_bytes // CHANNELS
 
     print(f"{'=' * 72}")
-    print(f"  /dev/urandom KL baseline  (Phase 2b Mode B mirror) — run #{run_idx + 1}")
+    print(f"  /dev/urandom KL baseline  (Mode B mirror) — run #{run_idx + 1}")
     print(f"{'=' * 72}")
     print(f"  size: {size_bytes:,} bytes   total pixels: {total_pixels:,}   candidates/pixel: 56")
 
@@ -78,7 +78,7 @@ def run_single(size_bytes: int, run_idx: int = 0) -> dict:
     totals = np.zeros((8, 7), dtype=np.int64)
 
     n_chunks = (total_pixels + CHUNK_SIZE - 1) // CHUNK_SIZE
-    print(f"\n  Chunked Phase 2b-full: chunk size {CHUNK_SIZE:,} px, {n_chunks} chunks")
+    print(f"\n  Chunked KL floor: chunk size {CHUNK_SIZE:,} px, {n_chunks} chunks")
     t_chunks = time.time()
     for chunk_start in range(0, total_pixels, CHUNK_SIZE):
         chunk_end = min(chunk_start + CHUNK_SIZE, total_pixels)

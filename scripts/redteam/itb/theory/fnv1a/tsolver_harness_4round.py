@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Phase 3b — ITB FNV-1a Level-2 seed recovery via the structure-aware
+"""ITB FNV-1a Level-2 seed recovery via the structure-aware
 T-function solver (t_solver_fnv.solve_via_tsolver_masked), the fast
 alternative to the Bitwuzla SAT harness (sat_harness_4round.py).
 

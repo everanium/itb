@@ -26,7 +26,7 @@ MASK64 = (1 << 64) - 1
 MASK128 = (1 << 128) - 1
 
 # Not a carry-up T-function — the S-box is a GF(2^8) inverse + affine map, no
-# triangular plane-by-plane hook. The Phase 2g SAT/tsolver route does not apply;
+# triangular plane-by-plane hook. The SAT/tsolver route does not apply;
 # the open question is whether an integral/algebraic attack survives ChainHash.
 INVERTIBLE = False
 N_SEED_COMPONENTS = 16  # 8 rounds x 2 uint64, matching the 1024-bit-key layout

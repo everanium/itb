@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 2 calibration: raw FNV-1a ChainHash lo-lane SAT inversion cost.
+Calibration: raw FNV-1a ChainHash lo-lane SAT inversion cost.
 
 Pure-Python, no ITB involvement. The script synthesises its own
 (seed_lo_vec, data_i, target_i) tuples, hands them to Z3 as constraints
@@ -44,7 +44,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-# Reuse the Phase 0 parity gadget's concrete lo-lane implementation so
+# Reuse the concrete parity gadget's lo-lane implementation so
 # this calibration cannot drift from the verified Go reference. The
 # import path is relative to this file - both live in the same folder.
 _THIS_DIR = Path(__file__).resolve().parent
@@ -95,7 +95,7 @@ def _generate_synthetic_instance(
 
     Each input is 20 bytes matching ITB's `blockHash128` layout
     (4-byte LE pixel index + 16-byte nonce). Content itself is random
-    here because Phase 2 is about raw SAT scaling, not ITB.
+    here because this calibration is about raw SAT scaling, not ITB.
     """
     seed_lo_vec = [rng.getrandbits(64) for _ in range(rounds)]
     observations: List[Observation] = []
@@ -332,7 +332,7 @@ def main() -> int:
     results: List[CellResult] = []
 
     print(
-        f"Phase 2 raw FNV-1a SAT calibration: "
+        f"raw FNV-1a SAT calibration: "
         f"rounds={rounds_list} obs={obs_list} timeout={args.timeout_sec}s"
     )
     print(

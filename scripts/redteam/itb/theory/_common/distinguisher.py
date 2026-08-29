@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2b: per-pixel candidate distinguisher (parallel 8 workers).
+"""Per-pixel candidate distinguisher (parallel 8 workers).
 
 For each pixel in every ciphertext, enumerate all 56 candidate configurations
 (8 noisePos × 7 rotation). Each candidate implies a specific 56-bit XOR mask
@@ -21,7 +21,7 @@ Test 3: chi-square on candidate XOR mask byte distribution
   - Under theory: all 56 candidates pass chi-square
 
 Parallelization: one worker per (hash, sample). Workers return partial
-accumulators; reducer sums by (hash, kind). Same I/O model as Phase 2c.
+accumulators; reducer sums by (hash, kind). Same I/O model as startpixel_enum.
 
 This tests Proof 1 (P(v|h)=1/2), Proof 4 (7 rotation candidates
 indistinguishable), and the Theorem 4a obstacle (3) claim:
@@ -275,7 +275,7 @@ def report(hash_name: str, kind: str, results: dict):
 
 
 if __name__ == "__main__":
-    print(f"Phase 2b: Per-pixel Candidate Distinguisher (parallel 8 workers)")
+    print(f"Per-pixel Candidate Distinguisher (parallel 8 workers)")
     print(f"Corpus: {ENCRYPTED}")
     print(f"Testing theorem: signal/noise 1:1 — all 56 per-pixel candidates")
     print(f"                 equally consistent with the observation")

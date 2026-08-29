@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2a — empirical compound-key recovery against ChainHash<CRC128>.
+"""Empirical compound-key recovery against ChainHash<CRC128>.
 
 ## The finding this script demonstrates
 
@@ -54,7 +54,7 @@ nonlinear multiplication accumulated over 8 rounds. `K` as defined here
 does not exist for FNV-1a; the analogous "compound observation" involves
 genuine carries through 8 Z/2^64 multiplications stacked by GF(2) XOR.
 
-That mixed algebra is precisely the defense the Phase 2a cost tables rely
+That mixed algebra is precisely the defense the compound-key cost tables rely
 on. This empirical probe demonstrates that the defense is load-bearing:
 once the primitive is GF(2)-linear throughout (as CRC128 is), the cost
 collapses from research-lab SAT to a handful of XORs. CRC128 is a test-
@@ -174,7 +174,7 @@ def main() -> int:
     nonce = bytes.fromhex(nonce_hex)
 
     print(f"{'=' * 72}")
-    print(f"Phase 2a — empirical compound-key recovery against ChainHash<CRC128>")
+    print(f"Empirical compound-key recovery against ChainHash<CRC128>")
     print(f"{'=' * 72}")
     print(f"Cell: {cell_dir.relative_to(PROJ)}")
     print(f"  hash              : {meta['hash_display']}")

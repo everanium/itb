@@ -36,11 +36,10 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-# scripts/redteam/ on sys.path so `from attack_common import ...` works
-_THIS = Path(__file__).resolve()
-sys.path.insert(0, str(_THIS.parent.parent))
-
-from attack_common import (  # noqa: E402  (sys.path setup above)
+# attack_common lives alongside this module in `_common/` — a plain relative
+# import is unavailable because these modules are run as scripts, not as
+# a package; the empty sys.path prefix already covers this directory.
+from attack_common import (  # noqa: E402
     CHANNELS,
     DATA_BITS_PER_CHANNEL,
     DATA_BITS_PER_PIXEL,
@@ -55,7 +54,7 @@ from attack_common import (  # noqa: E402  (sys.path setup above)
     parse_itb_header,
 )
 
-PROJ = _THIS.parents[5]  # repo root
+PROJ = Path(__file__).resolve().parents[5]  # repo root
 
 
 # ----------------------------------------------------------------------------

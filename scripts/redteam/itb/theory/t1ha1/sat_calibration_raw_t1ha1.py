@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 0 calibration: raw t1ha1 ChainHash lo-lane SAT inversion cost.
+Calibration: raw t1ha1 ChainHash lo-lane SAT inversion cost.
 
 Pure-Python, no ITB envelope. The script synthesises its own
 (seed_lo_vec, seed_hi_vec, data_i, target_i) tuples, hands them to Z3 as
@@ -767,7 +767,7 @@ def main() -> int:
     results: List[CellResult] = []
 
     print(
-        f"Phase 0 raw t1ha1 SAT calibration: "
+        f"raw t1ha1 SAT calibration: "
         f"rounds={rounds_list} obs={obs_list} timeout={args.timeout_sec}s"
     )
     print(

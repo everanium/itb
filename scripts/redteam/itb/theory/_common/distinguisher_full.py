@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Phase 2b (full-container): per-pixel candidate distinguisher without
+"""Full-container per-pixel candidate distinguisher without
 startPixel or plaintext knowledge — models a realistic attacker.
 
 Sibling script to `distinguisher.py`. That script runs the idealised
-Phase 2b: the analyzer reads `startPixel` from the `.pixel` sidecar,
+The sibling distinguisher.py analyzer reads `startPixel` from the `.pixel` sidecar,
 aligns to data-carrying pixels only, and XORs with the known plaintext
 to expose the 56 candidate XOR masks per pixel. That corresponds to an
 attacker who somehow *knows* where the data region starts and ends
@@ -274,7 +274,7 @@ def report(hash_name: str, kind: str, results: dict):
 
 
 if __name__ == "__main__":
-    print(f"Phase 2b-full: Per-pixel Candidate Distinguisher — no startPixel, no plaintext")
+    print(f"Full-container Per-pixel Candidate Distinguisher — no startPixel, no plaintext")
     print(f"Corpus: {ENCRYPTED}")
     print(f"Testing: realistic-attacker model (obstacle (2) active — startPixel unknown,")
     print(f"         plaintext alignment unknown, CSPRNG fill indistinguishable from data).")
@@ -352,4 +352,4 @@ if __name__ == "__main__":
     print(f"    Test 3: kl_max at finite-sample floor ≈ bins/N")
     print(f"  The realistic-attacker model uses N = container_pixels × 8, which is")
     print(f"  tighter than the idealised Mode A (N = data_pixels × 8). So this is")
-    print(f"  the STRICTER of the two Phase 2b variants, not the weaker one.")
+    print(f"  the STRICTER of the two distinguisher variants, not the weaker one.")

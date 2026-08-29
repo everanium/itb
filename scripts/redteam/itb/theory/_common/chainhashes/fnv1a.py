@@ -35,7 +35,7 @@ N_SEED_COMPONENTS = 16  # 8 rounds × 2 components per round at 128-bit hash wid
 # the per-byte step (XOR a byte, multiply by an odd constant mod 2^128) is a
 # carry-up-only T-function, triangular in the seed bits, hence invertible
 # plane-by-plane. That cheap structural inverse — not any diffusion weakness —
-# is what the Phase 2g SAT harness and the structure-aware T-function solver
+# is what the SAT harness and the structure-aware T-function solver
 # exploit. fnv1a is the cautionary control: a primitive can read clean on the
 # algebraic-degree column yet be solver-tractable because its round map has a
 # cheap triangular inverse.
