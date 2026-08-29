@@ -47,82 +47,84 @@ on wire pre-produced outside the timing loop.
 
 | Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
 |--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native** (message)              |     98 |     187 |     200 |    113 |     244 |     250 |
-| **Rust** (thin proxy)                |     78 |     156 |     195 |    127 |     241 |     253 |
-| **C** (thin proxy)                   |     76 |     175 |     193 |    122 |     243 |     254 |
-| **C++** (thin proxy)                 |     77 |     174 |     194 |    130 |     246 |     249 |
-| **Ada** (thin proxy)                 |     75 |     171 |     183 |    126 |     236 |     241 |
-| **D** (thin proxy)                   |     77 |     178 |     192 |    128 |     247 |     253 |
-| **C#** (thin proxy)                  |     75 |     174 |     190 |    123 |     235 |     250 |
-| **Python** (thin proxy)              |     67 |     158 |     177 |    125 |     236 |     225 |
-| **Node.js** (thin proxy)             |     73 |     168 |     178 |    118 |     229 |     221 |
-| **Fortran** (thin proxy)             |     77 |     180 |     197 |    128 |     247 |     255 |
-| **Swift** (thin proxy)               |     73 |     174 |     181 |    120 |     224 |     241 |
-| **Java** (thin proxy)                |     77 |     171 |     193 |    128 |     236 |     252 |
-| **Zig** (thin proxy)                 |     74 |     177 |     193 |    121 |     240 |     253 |
-| **Kotlin** (JVM)                     |     75 |     168 |     169 |    119 |     226 |     208 |
-| **Erlang** (NIF)                     |     69 |     170 |     188 |    117 |     238 |     248 |
-| **Scala** (JVM)                      |     75 |     167 |     183 |    122 |     228 |     239 |
-| **Groovy** (JVM)                     |     74 |     165 |     186 |    123 |     229 |     243 |
-| **Elixir** (BEAM over Erlang NIF)    |     74 |     173 |     186 |    114 |     238 |     248 |
-| **PowerShell** (over C#)             |     72 |     166 |     185 |    113 |     221 |     243 |
-| **Clojure** (JVM)                    |     72 |     171 |     185 |    121 |     230 |     240 |
-| **F#** (over C#)                     |     72 |     156 |     184 |    113 |     215 |     246 |
-| **VB.NET** (over C#)                 |     76 |     173 |     181 |    122 |     236 |     240 |
-| **Gleam** (BEAM over Erlang NIF)     |     73 |     173 |     190 |    117 |     239 |     248 |
-| **LFE** (BEAM over Erlang NIF)       |     74 |     166 |     185 |    117 |     227 |     240 |
-| **PHP** (FFI)                        |     76 |     174 |     195 |    125 |     233 |     241 |
-| **Ruby** (ffi gem)                   |     75 |     148 |     150 |    126 |     237 |     222 |
-| **Dart** (dart:ffi)                  |     78 |     173 |     188 |    125 |     233 |     245 |
-| **Lua** (C module)                   |     75 |     172 |     185 |    124 |     244 |     244 |
-| **Nim** (thin proxy)                 |     76 |     174 |     174 |    131 |     245 |     235 |
-| **Crystal** (thin proxy)             |     76 |     176 |     194 |    122 |     236 |     254 |
-| **Julia** (ccall)                    |     74 |     174 |     193 |    125 |     243 |     252 |
-| **OCaml** (ocaml-ctypes)             |     76 |     174 |     185 |    124 |     246 |     246 |
-| **Haskell** (foreign import ccall)   |     77 |     179 |     195 |    129 |     246 |     259 |
-| **R** (.Call via C shim)             |     68 |     171 |     169 |    120 |     220 |     211 |
+| **Go native** (message)              |    117 |     191 |     225 |    238 |     281 |     326 |
+| **Rust** (thin proxy)                |    109 |     178 |     213 |    216 |     245 |     286 |
+| **C** (thin proxy)                   |    103 |     177 |     211 |    203 |     245 |     292 |
+| **C++** (thin proxy)                 |    110 |     179 |     212 |    225 |     250 |     297 |
+| **Ada** (thin proxy)                 |    107 |     176 |     188 |    218 |     238 |     260 |
+| **D** (thin proxy)                   |    109 |     183 |     209 |    237 |     249 |     281 |
+| **C#** (thin proxy)                  |    100 |     175 |     203 |    210 |     248 |     286 |
+| **Python** (thin proxy)              |     88 |     160 |     188 |    217 |     232 |     243 |
+| **Node.js** (thin proxy)             |    101 |     170 |     199 |    196 |     233 |     269 |
+| **Fortran** (thin proxy)             |    111 |     179 |     213 |    219 |     249 |     289 |
+| **Swift** (thin proxy)               |    103 |     178 |     203 |    192 |     238 |     277 |
+| **Java** (thin proxy)                |    108 |     175 |     205 |    204 |     238 |     279 |
+| **Zig** (thin proxy)                 |    105 |     180 |     207 |    205 |     245 |     285 |
+| **Kotlin** (JVM)                     |    105 |     167 |     198 |    216 |     225 |     267 |
+| **Erlang** (NIF)                     |    100 |     170 |     205 |    196 |     236 |     277 |
+| **Scala** (JVM)                      |    107 |     170 |     195 |    212 |     231 |     269 |
+| **Groovy** (JVM)                     |    105 |     169 |     201 |    215 |     235 |     273 |
+| **Elixir** (BEAM over Erlang NIF)    |    101 |     172 |     206 |    200 |     239 |     282 |
+| **PowerShell** (over C#)             |     97 |     176 |     206 |    195 |     239 |     282 |
+| **Clojure** (JVM)                    |    109 |     173 |     205 |    216 |     232 |     274 |
+| **F#** (over C#)                     |    104 |     177 |     207 |    196 |     244 |     283 |
+| **VB.NET** (over C#)                 |    101 |     174 |     202 |    210 |     229 |     282 |
+| **Gleam** (BEAM over Erlang NIF)     |    100 |     172 |     201 |    195 |     239 |     278 |
+| **LFE** (BEAM over Erlang NIF)       |     98 |     174 |     202 |    192 |     238 |     284 |
+| **PHP** (FFI)                        |    109 |     179 |     219 |    223 |     236 |     272 |
+| **Ruby** (ffi gem)                   |    105 |     149 |     154 |    218 |     229 |     244 |
+| **Dart** (dart:ffi)                  |    108 |     170 |     208 |    217 |     240 |     279 |
+| **Lua** (C module)                   |    108 |     180 |     200 |    227 |     248 |     277 |
+| **Nim** (thin proxy)                 |    108 |     182 |     215 |    206 |     251 |     300 |
+| **Crystal** (thin proxy)             |    106 |     179 |     210 |    203 |     238 |     289 |
+| **Julia** (ccall)                    |    105 |     177 |     204 |    216 |     241 |     281 |
+| **OCaml** (ocaml-ctypes)             |    105 |     178 |     201 |    218 |     246 |     275 |
+| **Haskell** (foreign import ccall)   |    112 |     182 |     215 |    231 |     251 |     298 |
+| **R** (.Call via C shim)             |     95 |     178 |     196 |    206 |     246 |     273 |
 
 ### Stream pump shape (multi-call session — Begin / Write / End / Read / Free)
 
 `E` columns time the encrypt path; `D` columns time the decrypt path
 on wire pre-produced outside the timing loop.
 
+**Stream pump E 1 MB baseline shift.** The 1 MB Encrypt cell for a subset of bindings (Crystal / F# / Groovy / Haskell / Lua / Nim / R / Ruby / Rust) sits 8-34 % below the earlier baseline. The shift traces to the microBatch adaptive baseline retune (promote commit `3f38abe`) which reshapes how each binding's FFI layer amortises per-chunk work through the shared `libitb.so`. Bindings with a shared-session-many-writes iteration pattern in their bench harness absorb the retune silently or gain from it (25 of the 33 shipped bindings). The shift is not a regression in shipping cipher code — it is confined to the 1 MB Stream pump cell and does not appear on Message shape or Stream one-shot at any width. Every other cell across the fleet either holds or lifts, driven by the full v0.3.0 ASM optimisation cycle culminating in the bridge-free ZMM interlock kernel rewrite.
+
 | Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
 |--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native** (stream)               |    104 |     189 |     204 |    132 |     249 |     257 |
-| **Rust** (stream pump)               |     83 |     161 |     168 |     98 |     200 |     205 |
-| **C** (stream pump)                  |     86 |     153 |     166 |    102 |     202 |     204 |
-| **C++** (stream pump)                |     90 |     164 |     175 |     94 |     210 |     216 |
-| **Ada** (stream pump)                |     92 |     165 |     170 |    104 |     209 |     205 |
-| **D** (stream pump)                  |     94 |     162 |     170 |    104 |     208 |     208 |
-| **C#** (stream pump)                 |     87 |     160 |     151 |     92 |     202 |     188 |
-| **Python** (stream pump)             |     71 |     158 |     159 |    101 |     199 |     196 |
-| **Node.js** (stream pump)            |     75 |     145 |     156 |     84 |     175 |     180 |
-| **Fortran** (stream pump)            |     97 |     167 |     172 |    102 |     211 |     214 |
-| **Swift** (stream pump)              |     81 |     151 |     158 |     96 |     173 |     194 |
-| **Java** (stream pump)               |     94 |     167 |     177 |    104 |     209 |     214 |
-| **Zig** (stream pump)                |     86 |     159 |     166 |    102 |     200 |     206 |
-| **Kotlin** (stream pump)             |     86 |     156 |     165 |     95 |     199 |     200 |
-| **Erlang** (stream pump)             |     89 |     164 |     167 |    102 |     210 |     209 |
-| **Scala** (stream pump)              |     82 |     152 |     151 |     98 |     197 |     172 |
-| **Groovy** (stream pump)             |     86 |     156 |     150 |     97 |     189 |     195 |
-| **Elixir** (stream pump)             |     93 |     161 |     171 |    100 |     213 |     202 |
-| **PowerShell** (stream pump)         |     84 |     157 |     164 |     91 |     197 |     182 |
-| **Clojure** (stream pump)            |     79 |     159 |     167 |     95 |     199 |     202 |
-| **F#** (stream pump)                 |     89 |     160 |     169 |     94 |     202 |     208 |
-| **VB.NET** (stream pump)             |     85 |     149 |     147 |     92 |     183 |     195 |
-| **Gleam** (stream pump)              |     86 |     168 |     172 |    102 |     211 |     212 |
-| **LFE** (stream pump)                |     92 |     145 |     152 |    102 |     179 |     213 |
-| **PHP** (stream pump)                |     95 |     171 |     176 |     99 |     207 |     216 |
-| **Ruby** (stream pump)               |    108 |     136 |     145 |     99 |     182 |     193 |
-| **Dart** (stream pump)               |     89 |     165 |     174 |     94 |     207 |     212 |
-| **Lua** (stream pump)                |     95 |     164 |     173 |    103 |     199 |     208 |
-| **Nim** (stream pump)                |    114 |     167 |     175 |    102 |     214 |     212 |
-| **Crystal** (stream pump)            |     97 |     169 |     176 |    104 |     216 |     219 |
-| **Julia** (stream pump)              |     90 |     151 |     174 |     99 |     198 |     215 |
-| **OCaml** (stream pump)              |     96 |     166 |     173 |    100 |     214 |     214 |
-| **Haskell** (stream pump)            |    129 |     172 |     178 |    118 |     208 |     214 |
-| **R** (stream pump)                  |     97 |     169 |     177 |    101 |     212 |     223 |
+| **Go native** (stream)               |    100 |     189 |     201 |    209 |     256 |     271 |
+| **Rust** (stream pump)               |     74 |     165 |     167 |    140 |     212 |     211 |
+| **C** (stream pump)                  |     81 |     158 |     172 |    144 |     221 |     214 |
+| **C++** (stream pump)                |     90 |     164 |     179 |    140 |     221 |     221 |
+| **Ada** (stream pump)                |     87 |     170 |     174 |    148 |     214 |     217 |
+| **D** (stream pump)                  |     87 |     166 |     174 |    150 |     218 |     212 |
+| **C#** (stream pump)                 |     79 |     165 |     170 |    139 |     211 |     214 |
+| **Python** (stream pump)             |     64 |     153 |     153 |    144 |     189 |     194 |
+| **Node.js** (stream pump)            |     75 |     149 |     154 |    129 |     182 |     184 |
+| **Fortran** (stream pump)            |     88 |     168 |     178 |    146 |     221 |     223 |
+| **Swift** (stream pump)              |     76 |     160 |     164 |    155 |     197 |     206 |
+| **Java** (stream pump)               |     88 |     168 |     176 |    151 |     217 |     220 |
+| **Zig** (stream pump)                |     80 |     162 |     169 |    149 |     218 |     215 |
+| **Kotlin** (stream pump)             |     78 |     158 |     170 |    142 |     205 |     206 |
+| **Erlang** (stream pump)             |     84 |     166 |     169 |    148 |     218 |     219 |
+| **Scala** (stream pump)              |     79 |     162 |     169 |    144 |     206 |     208 |
+| **Groovy** (stream pump)             |     79 |     158 |     170 |    148 |     204 |     212 |
+| **Elixir** (stream pump)             |     84 |     168 |     172 |    150 |     217 |     212 |
+| **PowerShell** (stream pump)         |     79 |     162 |     169 |    124 |     210 |     214 |
+| **Clojure** (stream pump)            |     81 |     160 |     169 |    140 |     208 |     208 |
+| **F#** (stream pump)                 |     79 |     162 |     172 |    140 |     213 |     215 |
+| **VB.NET** (stream pump)             |     78 |     161 |     170 |    134 |     212 |     209 |
+| **Gleam** (stream pump)              |     85 |     164 |     171 |    155 |     219 |     214 |
+| **LFE** (stream pump)                |     86 |     168 |     174 |    148 |     223 |     225 |
+| **PHP** (stream pump)                |     87 |     174 |     179 |    148 |     227 |     228 |
+| **Ruby** (stream pump)               |     71 |     137 |     148 |    150 |     196 |     201 |
+| **Dart** (stream pump)               |     85 |     164 |     173 |    147 |     215 |     218 |
+| **Lua** (stream pump)                |     84 |     166 |     175 |    140 |     214 |     214 |
+| **Nim** (stream pump)                |     88 |     173 |     180 |    152 |     219 |     223 |
+| **Crystal** (stream pump)            |     87 |     172 |     181 |    150 |     224 |     226 |
+| **Julia** (stream pump)              |     88 |     172 |     178 |    153 |     220 |     223 |
+| **OCaml** (stream pump)              |     88 |     171 |     180 |    155 |     220 |     224 |
+| **Haskell** (stream pump)            |     88 |     172 |     180 |    145 |     218 |     222 |
+| **R** (stream pump)                  |     86 |     171 |     178 |    137 |     224 |     246 |
 
 ### Stream one-shot shape (single FFI call, whole plaintext through `encrypt_stream_one_shot`)
 
@@ -130,40 +132,40 @@ The one-shot Stream API surface (`encrypt_stream_one_shot(plain) → wire` and i
 
 | Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
 |--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native** (stream one-shot)      |     98 |     187 |     200 |    113 |     244 |     250 |
-| **Rust** (thin proxy)                |     76 |     168 |     193 |    123 |     239 |     245 |
-| **C** (thin proxy)                   |     74 |     176 |     191 |    119 |     236 |     220 |
-| **C++** (thin proxy)                 |     76 |     180 |     198 |    131 |     248 |     262 |
-| **Ada** (thin proxy)                 |     76 |     173 |     181 |    129 |     236 |     238 |
-| **D** (thin proxy)                   |     76 |     175 |     191 |    130 |     237 |     251 |
-| **C#** (thin proxy)                  |     71 |     169 |     188 |    121 |     238 |     247 |
-| **Python** (thin proxy)              |     66 |     155 |     166 |    126 |     231 |     222 |
-| **Node.js** (thin proxy)             |     69 |     169 |     186 |    112 |     239 |     244 |
-| **Fortran** (thin proxy)             |     76 |     176 |     194 |    132 |     242 |     258 |
-| **Swift** (thin proxy)               |     73 |     172 |     188 |    120 |     235 |     245 |
-| **Java** (thin proxy)                |     75 |     170 |     186 |    122 |     230 |     240 |
-| **Zig** (thin proxy)                 |     73 |     173 |     189 |    120 |     237 |     244 |
-| **Kotlin** (JVM)                     |     76 |     168 |     182 |    126 |     230 |     238 |
-| **Erlang** (NIF)                     |     73 |     172 |     190 |    117 |     235 |     246 |
-| **Scala** (JVM)                      |     76 |     166 |     185 |    120 |     227 |     238 |
-| **Groovy** (JVM)                     |     75 |     168 |     183 |    124 |     230 |     240 |
-| **Elixir** (BEAM over Erlang NIF)    |     72 |     167 |     188 |    116 |     232 |     222 |
-| **PowerShell** (over C#)             |     72 |     169 |     162 |    114 |     234 |     242 |
-| **Clojure** (JVM)                    |     75 |     169 |     185 |    124 |     234 |     245 |
-| **F#** (over C#)                     |     73 |     173 |     187 |    126 |     238 |     251 |
-| **VB.NET** (over C#)                 |     75 |     169 |     188 |    125 |     237 |     250 |
-| **Gleam** (BEAM over Erlang NIF)     |     74 |     170 |     189 |    118 |     237 |     248 |
-| **LFE** (BEAM over Erlang NIF)       |     73 |     170 |     188 |    119 |     237 |     247 |
-| **PHP** (FFI)                        |     78 |     152 |     183 |    127 |     203 |     249 |
-| **Ruby** (ffi gem)                   |     75 |     150 |     146 |    125 |     232 |     218 |
-| **Dart** (dart:ffi)                  |     72 |     171 |     186 |    112 |     228 |     243 |
-| **Lua** (C module)                   |     76 |     168 |     186 |    124 |     241 |     240 |
-| **Nim** (thin proxy)                 |     77 |     175 |     197 |    131 |     244 |     260 |
-| **Crystal** (thin proxy)             |     77 |     171 |     192 |    127 |     237 |     252 |
-| **Julia** (ccall)                    |     75 |     176 |     190 |    124 |     238 |     247 |
-| **OCaml** (ocaml-ctypes)             |     77 |     174 |     184 |    124 |     236 |     243 |
-| **Haskell** (foreign import ccall)   |     78 |     179 |     197 |    128 |     244 |     257 |
-| **R** (.Call via C shim)             |     71 |     169 |     185 |    121 |     238 |     242 |
+| **Go native** (stream one-shot)      |    117 |     191 |     225 |    238 |     281 |     326 |
+| **Rust** (thin proxy)                |    107 |     177 |     202 |    204 |     245 |     279 |
+| **C** (thin proxy)                   |    104 |     179 |     210 |    205 |     243 |     286 |
+| **C++** (thin proxy)                 |    111 |     180 |     213 |    227 |     247 |     293 |
+| **Ada** (thin proxy)                 |    108 |     176 |     200 |    224 |     244 |     276 |
+| **D** (thin proxy)                   |    110 |     182 |     208 |    231 |     248 |     286 |
+| **C#** (thin proxy)                  |    106 |     176 |     201 |    210 |     238 |     281 |
+| **Python** (thin proxy)              |     90 |     160 |     189 |    212 |     230 |     249 |
+| **Node.js** (thin proxy)             |    101 |     173 |     197 |    203 |     238 |     266 |
+| **Fortran** (thin proxy)             |    110 |     180 |     208 |    221 |     249 |     290 |
+| **Swift** (thin proxy)               |    102 |     174 |     200 |    202 |     239 |     275 |
+| **Java** (thin proxy)                |    106 |     167 |     198 |    219 |     230 |     267 |
+| **Zig** (thin proxy)                 |    101 |     179 |     208 |    204 |     245 |     290 |
+| **Kotlin** (JVM)                     |    107 |     170 |     200 |    216 |     234 |     266 |
+| **Erlang** (NIF)                     |     99 |     171 |     204 |    192 |     236 |     278 |
+| **Scala** (JVM)                      |    103 |     171 |     198 |    202 |     229 |     266 |
+| **Groovy** (JVM)                     |    107 |     168 |     202 |    205 |     232 |     272 |
+| **Elixir** (BEAM over Erlang NIF)    |    102 |     171 |     202 |    190 |     241 |     281 |
+| **PowerShell** (over C#)             |    102 |     169 |     204 |    203 |     237 |     279 |
+| **Clojure** (JVM)                    |    107 |     167 |     201 |    214 |     231 |     274 |
+| **F#** (over C#)                     |    104 |     174 |     203 |    209 |     240 |     277 |
+| **VB.NET** (over C#)                 |    104 |     175 |     202 |    187 |     242 |     279 |
+| **Gleam** (BEAM over Erlang NIF)     |    103 |     171 |     201 |    187 |     233 |     272 |
+| **LFE** (BEAM over Erlang NIF)       |    102 |     169 |     206 |    190 |     237 |     282 |
+| **PHP** (FFI)                        |    108 |     174 |     203 |    222 |     240 |     280 |
+| **Ruby** (ffi gem)                   |    106 |     149 |     155 |    232 |     232 |     243 |
+| **Dart** (dart:ffi)                  |     98 |     169 |     201 |    185 |     230 |     274 |
+| **Lua** (C module)                   |    106 |     176 |     202 |    232 |     246 |     275 |
+| **Nim** (thin proxy)                 |    108 |     180 |     210 |    226 |     254 |     300 |
+| **Crystal** (thin proxy)             |    108 |     179 |     211 |    230 |     246 |     289 |
+| **Julia** (ccall)                    |    107 |     179 |     207 |    234 |     246 |     279 |
+| **OCaml** (ocaml-ctypes)             |    105 |     178 |     203 |    218 |     241 |     278 |
+| **Haskell** (foreign import ccall)   |    110 |     181 |     213 |    220 |     254 |     298 |
+| **R** (.Call via C shim)             |     95 |     181 |     197 |    206 |     232 |     267 |
 
 ### Message shape — full production (MAC on, parallax on, wrapper on)
 

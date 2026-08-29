@@ -177,34 +177,34 @@ Encrypt at 64 MB (MB/s per primitive per width; v0.3.0 / pre-v0.3.0 ; **►** ma
 
 | Primitive          | 512-bit E 64 MB    | 1024-bit E 64 MB   | 2048-bit E 64 MB   |
 |--------------------|:------------------:|:------------------:|:------------------:|
-| **Areion-SoEM-256** | 249 / 198 (126%) ► | 185 / 179 (103%) ► | 128 / 141 (91%)    |
-| **Areion-SoEM-512** | 263 / 226 (116%) ► | 210 / 198 (106%) ► | 152 / 162 (94%)    |
-| **BLAKE2b-256**     | 174 / 118 (147%) ► | 119 / 84 (142%) ►  | 72 / 54 (133%) ►   |
-| **BLAKE2b-512**     | 179 / 174 (103%) ► | 122 / 134 (91%)    | 74 / 88 (84%)      |
-| **BLAKE2s**         | 134 / 130 (103%) ► | 86 / 91 (95%)      | 50 / 59 (85%)      |
-| **BLAKE3**          | 158 / 130 (122%) ► | 105 / 101 (104%) ► | 64 / 69 (93%)      |
-| **AES-CMAC**        | 240 / 165 (145%) ► | 183 / 153 (120%) ► | 123 / 120 (103%) ► |
-| **SipHash-2-4**     | 199 / 158 (126%) ► | 137 / 126 (109%) ► | 84 / 90 (93%)      |
-| **ChaCha20**        | 178 / 110 (162%) ► | 129 / 86 (150%) ►  | 80 / 58 (138%) ►   |
+| **Areion-SoEM-256** | 279 / 198 (141%) ► | 207 / 179 (116%) ► | 138 / 141 (98%)    |
+| **Areion-SoEM-512** | 293 / 226 (130%) ► | 235 / 198 (119%) ► | 167 / 162 (103%) ► |
+| **BLAKE2b-256**     | 184 / 118 (156%) ► | 126 / 84 (150%) ►  | 75 / 54 (139%) ►   |
+| **BLAKE2b-512**     | 189 / 174 (109%) ► | 130 / 134 (97%)    | 78 / 88 (89%)      |
+| **BLAKE2s**         | 144 / 130 (111%) ► | 90 / 91 (99%)      | 52 / 59 (88%)      |
+| **BLAKE3**          | 166 / 130 (128%) ► | 111 / 101 (110%) ► | 66 / 69 (96%)      |
+| **AES-CMAC**        | 265 / 165 (161%) ► | 192 / 153 (125%) ► | 131 / 120 (109%) ► |
+| **SipHash-2-4**     | 213 / 158 (135%) ► | 149 / 126 (118%) ► | 91 / 90 (101%) ►   |
+| **ChaCha20**        | 198 / 110 (180%) ► | 134 / 86 (156%) ►  | 81 / 58 (140%) ►   |
 
 Decrypt at 64 MB (MB/s per primitive per width; v0.3.0 / pre-v0.3.0 ; **►** marks ratios ≥ 100%):
 
 | Primitive          | 512-bit D 64 MB    | 1024-bit D 64 MB   | 2048-bit D 64 MB   |
 |--------------------|:------------------:|:------------------:|:------------------:|
-| **Areion-SoEM-256** | 346 / 248 (140%) ► | 244 / 215 (113%) ► | 151 / 165 (92%)    |
-| **Areion-SoEM-512** | 368 / 280 (131%) ► | 277 / 240 (115%) ► | 185 / 187 (99%)    |
-| **BLAKE2b-256**     | 212 / 135 (157%) ► | 135 / 93 (145%) ►  | 78 / 56 (139%) ►   |
-| **BLAKE2b-512**     | 220 / 211 (104%) ► | 140 / 152 (92%)    | 80 / 96 (83%)      |
-| **BLAKE2s**         | 156 / 144 (108%) ► | 93 / 100 (93%)     | 52 / 62 (84%)      |
-| **BLAKE3**          | 189 / 148 (128%) ► | 118 / 110 (107%) ► | 67 / 74 (91%)      |
-| **AES-CMAC**        | 331 / 211 (157%) ► | 230 / 177 (130%) ► | 142 / 137 (104%) ► |
-| **SipHash-2-4**     | 250 / 187 (134%) ► | 160 / 143 (112%) ► | 94 / 98 (96%)      |
-| **ChaCha20**        | 227 / 133 (171%) ► | 149 / 98 (152%) ►  | 87 / 64 (136%) ►   |
+| **Areion-SoEM-256** | 400 / 248 (161%) ► | 269 / 215 (125%) ► | 164 / 165 (99%)    |
+| **Areion-SoEM-512** | 442 / 280 (158%) ► | 319 / 240 (133%) ► | 204 / 187 (109%) ► |
+| **BLAKE2b-256**     | 235 / 135 (174%) ► | 145 / 93 (156%) ►  | 82 / 56 (146%) ►   |
+| **BLAKE2b-512**     | 246 / 211 (117%) ► | 150 / 152 (99%)    | 85 / 96 (89%)      |
+| **BLAKE2s**         | 173 / 144 (120%) ► | 100 / 100 (100%) ► | 54 / 62 (87%)      |
+| **BLAKE3**          | 211 / 148 (143%) ► | 128 / 110 (116%) ► | 72 / 74 (97%)      |
+| **AES-CMAC**        | 380 / 211 (180%) ► | 252 / 177 (142%) ► | 152 / 137 (111%) ► |
+| **SipHash-2-4**     | 284 / 187 (152%) ► | 176 / 143 (123%) ► | 101 / 98 (103%) ►  |
+| **ChaCha20**        | 254 / 133 (191%) ► | 158 / 98 (161%) ►  | 92 / 64 (144%) ►   |
 
-**Every shipped primitive now sits at or above the pre-v0.3.0 line at 512-bit width**, and every shipped primitive on the 1024-bit line except BLAKE2b-512 / BLAKE2s stays at or above baseline. The full ASM optimisation cycle (pack56 batched inversion + chain-kernel narrowing per family + ChaCha20 fused68 + interlock fill batching per family) delivers a fleet-wide throughput uplift that fully amortises the widened nonce envelope + always-on 48-bit interlock mask.
+**Every shipped primitive now sits at or above the pre-v0.3.0 line at 512-bit width on both Encrypt and Decrypt**, and every shipped primitive on the 1024-bit line except BLAKE2b-512 stays at or above baseline (BLAKE2b-512 lands at 97-99%, essentially at baseline; BLAKE2s 1024-bit E sits at 99% and D at exactly baseline). The full ASM optimisation cycle (pack56 batched inversion + chain-kernel narrowing per family + ChaCha20 fused68 + interlock fill batching per family + bridge-free ZMM interlock kernel rewrite) delivers a fleet-wide throughput uplift that fully amortises the widened nonce envelope + always-on 48-bit interlock mask.
 
-**ChaCha20 gains largest** (+62% at 512-bit / +50% at 1024-bit) — the fused68 dual-compression kernel plus interlock fill batching remove the two dominant bottlenecks the pre-v0.3.0 line paid on this primitive. **BLAKE family** climbs from residual (65-90% pre-refresh) to above baseline at 512-bit widths on all four variants, and BLAKE2b-256 sits at +33-47% across all three widths thanks to combined narrowing + fill batching. **AES-CMAC** stays at +45% at 512-bit / +20% at 1024-bit — the AVX-512 VAES chain kernels amortise cleanly across the widened overlay + nonce cost.
+**ChaCha20 gains largest** (+80% at 512-bit E / +91% at 512-bit D / +56% at 1024-bit E / +61% at 1024-bit D) — the fused68 dual-compression kernel plus interlock fill batching remove the two dominant bottlenecks the pre-v0.3.0 line paid on this primitive; the interlock kernel rewrite compounds the win on the decrypt lane. **AES-CMAC** climbs to +61% at 512-bit E / +80% at 512-bit D and +25% / +42% at 1024-bit E/D — the AVX-512 VAES chain kernels amortise cleanly across the widened overlay + nonce cost. **BLAKE family** climbs from residual (65-90% pre-refresh) to above baseline at all 512-bit widths on all four variants, with BLAKE2b-256 sitting at +39-74% across all three widths thanks to combined narrowing + fill batching. **Areion-SoEM family** collects +30-58% on 512-bit Decrypt from the interlock kernel rewrite compounding on top of the pack56 batched inversion and the VAES-YMM 4-lane ChainAbsorb landings.
 
-**2048-bit residual** (5-16% below baseline on the mid-tier primitives) reflects the wider container's higher per-chunk overhead relative to the per-byte hash cost; the AES-family and BLAKE2b-256 / BLAKE3 / ChaCha20 rows still sit at or above baseline at that width, while BLAKE2b-512 / BLAKE2s / AES-CMAC-derived rows land marginally below. The cost delta at 2048-bit is comfortably absorbed by the wider security envelope.
+**2048-bit residual** is now split: **AES-CMAC**, **BLAKE2b-256**, **ChaCha20**, and **Areion-SoEM-512** all sit at or above baseline at 2048-bit width (+3-46% D); **SipHash-2-4** matches baseline (101-103%); **Areion-SoEM-256** and **BLAKE3** land at 96-99% (essentially at baseline); **BLAKE2b-512** and **BLAKE2s** are the sole cells 11-13% below baseline at that width. The 2048-bit line reflects the wider container's higher per-chunk overhead relative to the per-byte hash cost — the pattern is comfortably absorbed by the wider security envelope, and the mid-tier residual is confined to two primitives rather than fleet-wide.
 
 **Further rows** for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) are scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
