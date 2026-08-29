@@ -121,7 +121,7 @@ def summary_verdict(cells: list[dict], floors: dict[str, float]) -> None:
         excess_max = max_chi - floor
         print(f"---- {prim} ----")
         print(f"  floor χ² (no-Δ, CSPRNG artefact):        {fmt_chi2(floor).strip()}")
-        print(f"  Rank 2 lockSeed-axis max χ² (v0.3.0):    {fmt_chi2(rank2).strip()}")
+        print(f"  Rank 2 lockSeed-axis max χ² ( ):    {fmt_chi2(rank2).strip()}")
         print(f"  df=255 one-sided 3σ uniform band top:    ~{df255_top:.0f}")
         print(f"  Rank 3 nonce-Δ min χ²: {fmt_chi2(min_chi).strip()}")
         print(f"  Rank 3 nonce-Δ mean χ²: {fmt_chi2(mean_chi).strip()}")
@@ -158,7 +158,7 @@ def main() -> None:
         floors[row["primitive"]] = row["chi2"]
 
     print("=" * 78)
-    print("Related-nonce differential — v0.3.0 structural analysis")
+    print("Related-nonce differential — structural analysis")
     print("=" * 78)
     cfg = matrix["run"]["config"]
     print(f"total cells: {len(cells)}")

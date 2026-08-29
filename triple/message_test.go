@@ -29,18 +29,18 @@ var messageModeCases = []messageModeCase{
 }
 
 // messagePlaintextSizes covers the empty-input case, sub-chunk sizes,
-// and up to 1 MiB — mirroring the Phase 5 streaming matrix's size
-// dimension minus the giant tail. 0 is included to lock the
-// empty-input rejection contract ([ErrEmptyInput]) inside the matrix.
+// and up to 1 MiB — mirroring the streaming-matrix size dimension minus
+// the giant tail. 0 is included to lock the empty-input rejection
+// contract ([ErrEmptyInput]) inside the matrix.
 var messagePlaintextSizes = []int{0, 1, 6, 64, 1024, 65536, 1 << 20}
 
 // TestEncryptMessageDecryptMessageRoundTripMatrix walks every
 // (width, nonce, toggle, mode, plaintext-size) combination and
 // asserts a byte-exact round-trip via [Pipeline.EncryptMessage] and
-// [Pipeline.DecryptMessage]. Same matrix shape as the Phase 5
-// streaming counterpart — extended across all four cipher-carrying
-// profile modes and with a size=0 row so the empty-plaintext contract
-// is enforced by the matrix, not only the dedicated test.
+// [Pipeline.DecryptMessage]. Same matrix shape as the streaming
+// counterpart — extended across all four cipher-carrying profile modes
+// and with a size=0 row so the empty-plaintext contract is enforced by
+// the matrix, not only the dedicated test.
 func TestEncryptMessageDecryptMessageRoundTripMatrix(t *testing.T) {
 	for _, w := range widthCases {
 		for _, n := range nonceCases {

@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""FNV-1a lo-lane SAT probe against the v0.3.0 barrier + Triple layout.
+"""FNV-1a lo-lane SAT probe against the shipped barrier + Triple layout.
 
 Companion to the Go probes in `redteam_broken_fnv1a_sat_test.go`.
 Reads the JSON corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus`
 under `~/scratch/redteam/fnv1a_sat/f6_corpus_bundle.json` (override the
 parent dir via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`) and runs a Bitwuzla
 SAT instance encoding the naive-crib SAT anchoring premise on both the
-pre-v0.3.0 without-barrier control and the v0.3.0 Triple/barrier
+archived without-barrier control and the shipped Triple/barrier
 ciphertext.
 
 Adapted from `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`
-(1666 lines encoding the full pre-v0.3.0 SAT). This compact form
+(1666 lines encoding the full archived SAT). This compact form
 isolates the CORE claim — does any (seed_lo, np, r) tuple
 make the naive-crib xor_mask56 recovered from the container bytes
 consistent with the FNV-1a chain output at the anchored stream index?
 
 Threat-model framing.
 
-The v0.3.0 closure is multi-seed joint coupling, not single-seed
+The closure is multi-seed joint coupling, not single-seed
 inversion. Attacker-visible bytes are the SUM of contributions from
 noiseSeed (np positions), lockSeed (per-chunk mask triple), dataSeed_i
 (xor_mask + rotation), startSeed_i (per-snake sp_i). Full 8-chain
@@ -51,7 +51,7 @@ Attacker-realism scoping:
     attacker upper bound. Real attacker (with unknown noiseSeed +
     dataSeed_i + interlock masks) is definitionally weaker.
   - Control probe (sanity): grants true (np, r, sp) — same posture as
-    the pre-v0.3.0 Concession 1 harness — and expects SAT.
+    the archived Concession 1 harness — and expects SAT.
   - Ground-truth dataSeed_i values are read only in terminal-stage
     validation printouts (SAT model comparison), never in a decision
     path.
@@ -77,7 +77,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-# Reuse the vetted symbolic FNV-1a lo-lane chain from the pre-v0.3.0
+# Reuse the vetted symbolic FNV-1a lo-lane chain from the archived
 # arsenal. The concrete evaluator gives us cross-check parity; the
 # symbolic form is re-implemented against Bitwuzla below (the
 # arsenal's symbolic implementation targets Z3).
@@ -156,7 +156,7 @@ def decode_wire(ct_hex: str) -> Dict[str, Any]:
     public wire header. Attacker-visible bytes only.
     """
     ct = bytes.fromhex(ct_hex)
-    nonce_size = 64  # DefaultNonceBits/8 in v0.3.0
+    nonce_size = 64  # DefaultNonceBits/8 in 
     nonce = ct[:nonce_size]
     w = int.from_bytes(ct[nonce_size:nonce_size + 2], "big")
     h = int.from_bytes(ct[nonce_size + 2:nonce_size + 4], "big")
@@ -329,7 +329,7 @@ def sat_probe_control(
     total_pixels_ctrl = int(corpus["control_pixels"])
 
     # startPixel derived from startSeed1.deriveStartPixel (matches
-    # Concession 1 of the pre-v0.3.0 harness).
+    # Concession 1 of the archived harness).
     dom = bytes([0x02]) + nonce
     seed_lo_lanes = [int(h, 16) for h in corpus["seed_components"]["start1"][::2]]
     hlo = fnv_chain_lo_concrete(seed_lo_lanes, dom, rounds)
@@ -430,7 +430,7 @@ def sat_probe_barrier(
     regime: str,
     sp_override: int = -1,
 ) -> Dict[str, Any]:
-    """Run SAT on the v0.3.0 barrier ciphertext at snake `snake_idx`
+    """Run SAT on the shipped barrier ciphertext at snake `snake_idx`
     under the naive-crib alignment premise. sp_override < 0 → enumerate
     a fast-scan subset of snake_pixels; sp_override >= 0 → fix to that.
 
@@ -607,13 +607,13 @@ def main(argv=None) -> int:
     }
 
     if not args.barrier_only:
-        print("\n=== Control (pre-v0.3.0, barrier off) ===")
+        print("\n=== Control (archived, barrier off) ===")
         report["control"] = sat_probe_control(
             corpus, args.n_crib_pixels, args.timeout_sec, args.rounds, args.regime,
         )
 
     if not args.control_only:
-        print("\n=== Barrier (v0.3.0 Triple + always-on 48-bit interlock) ===")
+        print("\n=== Barrier (shipped Triple + always-on 48-bit interlock) ===")
         report["barrier"] = []
         for snake_idx in range(3):
             print(f"\n--- Snake {snake_idx} ---")

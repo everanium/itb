@@ -2,13 +2,13 @@
 
 package itb
 
-// Broken-primitive adversarial re-verification for the v0.3.0 architecture
+// Broken-primitive adversarial re-verification for the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8-seed
 // constellation). This file is the Go landing surface for REDTEAM.md's
 // broken-primitive track (Agent A, task #20 Wave 1).
 //
 // Scope: FNV-1a and CRC128 only (MD5 dropped per coordinator decision —
-// MD5 has no reversible triangular structure and the pre-v0.3.0 record
+// MD5 has no reversible triangular structure and the archived record
 // already established it is not invertible even without the overlay).
 //
 // The two adapters below are DELIBERATELY BELOW-SPEC lab controls. They
@@ -20,17 +20,17 @@ package itb
 //   - crc128 (crc128BrokenLab): two keyed CRC64 lanes. Every operation is
 //     GF(2)-linear, so the ITB ChainHash over it stays affine end-to-end:
 //     dataHash(pixel) = K ⊕ const(pixel,nonce) with K = L(components)
-//     pixel-independent. This is what let the pre-v0.3.0 Phase 2f Crib KPA
+//     pixel-independent. This is what let the archived Phase 2f Crib KPA
 //     recover the compound key against Single Ouroboros with the overlay
-//     disengaged (see REDTEAM-v0.2.md §"Phase 2f").
+//     disengaged (see archive/REDTEAM.md §"Phase 2f").
 //   - fnv1a128 (fnv1a128BrokenLab): the classic FNV-1a multiply over
-//     Z/2^128. Invertible but not GF(2)-linear; the pre-v0.3.0 Phase 2g
+//     Z/2^128. Invertible but not GF(2)-linear; the archived Phase 2g
 //     SAT break needed ≈ 8 h single-core against Single Ouroboros with the
-//     overlay disengaged (REDTEAM-v0.2.md §"Phase 2g").
+//     overlay disengaged (archive/REDTEAM.md §"Phase 2g").
 //
-// The v0.3.0 line removes Single Ouroboros, removes the ability to
+// The line removes Single Ouroboros, removes the ability to
 // disengage the overlay, and widens the per-chunk mask space to
-// ≈ 2^70.20. The probes here corroborate empirically that the pre-v0.3.0
+// ≈ 2^70.20. The probes here corroborate empirically that the archived
 // break preconditions no longer hold: with the barrier always on, a known
 // crib does not anchor any fixed bit-position-to-lane mapping, so the
 // Crib KPA filter recovers no consistent key. All claims are
@@ -136,7 +136,7 @@ func fnv1a128BrokenLab(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
 
 // mask56 selects the observable 56 bits of a compound key (bits [3..58]
 // of the ChainHash lo output; the low 3 bits and top 5 bits are the
-// unobservable residue enumerated by the pre-v0.3.0 full-K script).
+// unobservable residue enumerated by the archived full-K script).
 const mask56Broken = uint64(1)<<56 - 1
 
 // extract7Broken removes the noise bit at noisePos from a container
@@ -178,13 +178,13 @@ func pixelConstLoBroken(zeroSeed *Seed128, nonce []byte, pixel int) uint64 {
 
 // achievableKobsBroken returns the set of observable-56-bit compound keys
 // consistent with one crib pixel, over all (noisePos, rotation) guesses.
-// This is Stage 1 of the pre-v0.3.0 Crib KPA (crib_crc128_kpa.py
+// This is Stage 1 of the archived Crib KPA (crib_crc128_kpa.py
 // derive_K_from_pixel + try_shift): for each guess it recovers the
 // per-channel XOR mask from the container byte and the known crib byte,
 // concatenates it into dataHash[3..58], and XORs the public const to get
 // the observable key. noisePos is brute-forced (8-way) and rotation is
 // guessed (7-way), which only makes the attacker STRONGER than the real
-// pre-v0.3.0 filter (which recovers both algebraically).
+// archived filter (which recovers both algebraically).
 func achievableKobsBroken(cb []byte, constLo uint64, cribPixelBits [Channels]byte) map[uint64]struct{} {
 	out := make(map[uint64]struct{}, Channels*7)
 	for noisePos := uint(0); noisePos < 8; noisePos++ {
@@ -204,14 +204,14 @@ func achievableKobsBroken(cb []byte, constLo uint64, cribPixelBits [Channels]byt
 	return out
 }
 
-// cribKPASurvivorsBroken runs the full pre-v0.3.0 Crib KPA shift-scan
+// cribKPASurvivorsBroken runs the full archived Crib KPA shift-scan
 // against an observed container body and returns, for the best-anchoring
 // candidate startPixel, the shadow-K survivor count — the number of
 // observable compound keys consistent with EVERY crib pixel at that shift.
 // It also returns how many candidate shifts anchored (survivor set
 // non-empty). Against the retired Single/overlay-off construction the true
 // shift yields exactly the true key (survivors == 1, anchoredShifts == 1);
-// against the v0.3.0 always-on barrier the crib is scrambled before it
+// against the always-on barrier the crib is scrambled before it
 // reaches any pixel, so no shift anchors (survivors == 0).
 func cribKPASurvivorsBroken(body []byte, totalPixels int, zeroSeed *Seed128, nonce []byte, cribPlain []byte, cribPixels int) (bestSurvivors, anchoredShifts int) {
 	// Pre-unpack the crib into per-pixel 7-bit channel slots.
@@ -269,7 +269,7 @@ func cribKPASurvivorsBroken(body []byte, totalPixels int, zeroSeed *Seed128, non
 
 // ---------------------------------------------------------------------------
 // Probe A1 — CRC128 Crib KPA: positive control (Single/overlay-off) vs
-// v0.3.0 always-on barrier. Nonce-Reuse lab assumption (fixed nonce).
+// always-on barrier. Nonce-Reuse lab assumption (fixed nonce).
 // ---------------------------------------------------------------------------
 
 func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
@@ -289,7 +289,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 
 	// ---- Positive control: Single-snake, overlay-off encode via the
 	// low-level process128Cfg path (NOT reachable through the shipped
-	// v0.3.0 API — used only to confirm the ported filter is sensitive
+	// API — used only to confirm the ported filter is sensitive
 	// and recovers the true key when the barrier is absent). ----
 	dataSeed, err := NewSeed128(keyBits, crc128BrokenLab)
 	if err != nil {
@@ -312,7 +312,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 	totalPixels := (len(plain)*8+DataBitsPerPixel-1)/DataBitsPerPixel + 8
 	ctrl := make([]byte, totalPixels*Channels)
 	// process128Cfg encodes raw plaintext bytes (no COBS, no barrier, one
-	// snake) — the exact shape the pre-v0.3.0 Crib KPA targeted.
+	// snake) — the exact shape the archived Crib KPA targeted.
 	process128Cfg(nil, noiseSeed, dataSeed, startSeed, nonce, ctrl, totalPixels, 1, plain, true, 1)
 
 	// Audit: the CRC128 compound is pixel-independent (affine ChainHash).
@@ -333,7 +333,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 	// The true observable key must be among the control survivors.
 	// (Sanity that the recovered survivor set is the real key set.)
 
-	// ---- v0.3.0 always-on barrier: encrypt the same plaintext through
+	// ---- always-on barrier: encrypt the same plaintext through
 	// the shipped 8-seed Triple + Interlocked Barrier API. ----
 	ns, _ := NewSeed128(keyBits, crc128BrokenLab)
 	ls, _ := NewSeed128(keyBits, crc128BrokenLab)
@@ -367,7 +367,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 	// Attack with the CRC128 const of the barrier ciphertext's own nonce.
 	// (Same fixed nonce — nonce-reuse assumption.)
 	barSurv, barAnchors := cribKPASurvivorsBroken(body, barTotal, zeroSeed, nonce, plain, cribPixels)
-	t.Logf("v0.3.0 BARRIER: anchoredShifts=%d bestSurvivors=%d over %d shifts, crib=%d pixels",
+	t.Logf(" BARRIER: anchoredShifts=%d bestSurvivors=%d over %d shifts, crib=%d pixels",
 		barAnchors, barSurv, barTotal, cribPixels)
 
 	// Null verdict: the crib does not anchor any shift under the always-on
@@ -395,7 +395,7 @@ func dataSeedCompoundBroken(dataSeed, zeroSeed *Seed128, nonce []byte, pixel int
 // ---------------------------------------------------------------------------
 // Probe A2 — Barrier crib-anchor displacement (primitive-agnostic). Shows
 // the 48-bit barrier moves crib bytes to attacker-unpredictable pixel
-// positions, so the pre-v0.3.0 raw-order anchoring assumption fails for
+// positions, so the archived raw-order anchoring assumption fails for
 // BOTH the GF(2)-linear (CRC128) and the non-linear (FNV-1a) control.
 // ---------------------------------------------------------------------------
 
@@ -440,7 +440,7 @@ func TestRedTeamBrokenBarrierDisplacement(t *testing.T) {
 		// Recover the barrier-permuted snake payloads that the pixel layer
 		// actually carries (holding the true seeds — this is an invariant
 		// probe of what the barrier did, NOT an attack path). Compare each
-		// snake's leading bytes against the raw-order crib the pre-v0.3.0
+		// snake's leading bytes against the raw-order crib the archived
 		// attacker would assume. A raw-order match fraction near chance
 		// (1/256) means the crib is not where the attacker predicts.
 		p0, p1, p2 := splitForTriple48LockedCfg(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, nonce))

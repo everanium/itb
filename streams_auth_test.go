@@ -539,7 +539,7 @@ func TestEncryptStreamAuth3xCrossStreamReplayExt(t *testing.T) {
 	}
 }
 
-// --- Triple Ouroboros IO-Driven AEAD Cfg round-trip sweep (Phase 2) ---
+// --- Triple Ouroboros IO-Driven AEAD Cfg round-trip sweep ---
 //
 // The width-less [itb.EncryptStreamAuth3xCfg] /
 // [itb.DecryptStreamAuth3xCfg] IO-Driven helpers accept a per-encryptor

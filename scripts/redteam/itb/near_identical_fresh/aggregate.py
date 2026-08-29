@@ -178,7 +178,7 @@ def print_verdict(rows: list[dict], cells: list[dict], baseline: dict) -> None:
         print("  Verdict: under fresh nonces the near-identical-pair wire is")
         print("           INDISTINGUISHABLE from the independent-pair wire at the")
         print("           tested sample size across every (size, delta) cell. The")
-        print("           mandatory internal nonce alone collapses the pre-v0.3.0")
+        print("           mandatory internal nonce alone collapses the archived")
         print("           traffic-analysis residue the nonce-reuse Layer A probe")
         print("           records at ~16x the 1/256 floor on the same pair shape.")
         print("           Closure argument: each Encrypt call redraws every per-")
@@ -208,7 +208,7 @@ def main() -> None:
     baseline = matrix["run"]["baseline"]
 
     print("=" * 78)
-    print("Fresh-nonce near-identical cross-message distinguisher — v0.3.0 structural analysis")
+    print("Fresh-nonce near-identical cross-message distinguisher — structural analysis")
     print("=" * 78)
     cfg = matrix["run"]["config"]
     print(f"cipher entry: {cfg['cipher_entry']}")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot runner for the v0.3.0 nonce-reuse adversarial re-verification
+# One-shot runner for the shipped nonce-reuse adversarial re-verification
 # probes. Runs the Go test suite; the tests emit JSON records under
 # ~/scratch/redteam/nonce_reuse/ (override via
 # REDTEAM_NONCE_REUSE_OUTPUT_DIR) that aggregate.py then summarises.

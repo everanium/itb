@@ -167,7 +167,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		}
 	}
 
-	// Inner Blob{N} export via the Cfg-aware Phase 3 API.
+	// Inner Blob{N} export via the Cfg-aware API.
 	innerBlob, err := exportInnerBlob(width, cfg, seeds, prfKeys, macKey, resolved.macName)
 	if err != nil {
 		return nil, nil, err

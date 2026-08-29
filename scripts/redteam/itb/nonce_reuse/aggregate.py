@@ -89,7 +89,7 @@ def main() -> None:
         sys.exit(1)
 
     print("=" * 78)
-    print("Nonce-Reuse re-verification (v0.3.0 barrier, FNV-1a on all 8 seeds)")
+    print("Nonce-Reuse re-verification (shipped barrier, FNV-1a on all 8 seeds)")
     print("=" * 78)
 
     if "layer_a_histogram" in records:
@@ -155,8 +155,8 @@ def main() -> None:
 
     print("\n" + "=" * 78)
     print("Attacker-realistic verdict (regimes A and B — no mask peek): 0 bytes of P3")
-    print("recovered under Full KPA + nonce reuse against the v0.3.0 always-on barrier.")
-    print("Mask-oracle upper bound (regime B'): pre-v0.3.0-comparable recovery,")
+    print("recovered under Full KPA + nonce reuse against the always-on barrier.")
+    print("Mask-oracle upper bound (regime B'): archived-comparable recovery,")
     print("confirming the barrier's closure lives in the mask secrecy — not in any")
     print("per-pixel obfuscation the demasker's Layer 1 could route around.")
 

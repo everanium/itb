@@ -10,12 +10,12 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 ## Security Policy
 
-**Supported versions.** Active development tracks `main` (v0.3.0 development snapshot). Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
+**Supported versions.** Active development tracks `main`. Security fixes land on `main` first; older tags receive backports only when the maintainer judges the fix worth backporting (rare given the pre-release status).
 
 | Version | Supported |
 |---|---|
-| `main` (HEAD, v0.3.0 development snapshot) | ✓ |
-| pre-v0.3.0 tagged releases | — |
+| `main` (HEAD) | ✓ |
+| earlier tagged releases | — |
 
 **Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new). Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd). Email contact is intentionally not published — Discord and Security Advisories cover both informal triage and formal disclosure.
 
@@ -138,7 +138,7 @@ The always-on Interlocked Barrier (§18) is a per-chunk 48-bit PRF-keyed permuta
 
 §§ CCA removes noise bits (12.5% of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
-**Nonce reuse is local.** Two-time pad applies only to the colliding 2–3 messages (confidentiality of those messages compromised). Seeds remain secret (PRF non-invertibility blocks ChainHash inversion), so future messages with fresh nonces are unaffected — **no key rotation required**. A single nonce collision provides too few observations for Simon, BHT, or quantum structural algebraic attacks. Unlike AES-GCM where nonce reuse leaks the GHASH key H and enables forgery until key rotation (global catastrophe affecting all subsequent messages), ITB nonce collision is **strictly local** — ITB is nonce-misuse-resistant under the PRF assumption. For the usage-precondition framing and the demasking disclaimer, see [ITB.md § 9 Nonce Reuse](ITB.md#9-nonce-reuse-a-usage-precondition-not-an-absorbed-threat); for the empirical 96-cell Partial KPA matrix + NIST STS PRF-separation, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
+**Nonce reuse is local.** Two-time pad applies only to the colliding 2–3 messages (confidentiality of those messages compromised). Seeds remain secret (PRF non-invertibility blocks ChainHash inversion), so future messages with fresh nonces are unaffected — **no key rotation required**. A single nonce collision provides too few observations for Simon, BHT, or quantum structural algebraic attacks. Unlike AES-GCM where nonce reuse leaks the GHASH key H and enables forgery until key rotation (global catastrophe affecting all subsequent messages), ITB nonce collision is **strictly local** — ITB is nonce-misuse-resistant under the PRF assumption. For the usage-precondition framing and the demasking disclaimer, see [ITB.md § 9 Nonce Reuse](ITB.md#9-nonce-reuse-a-usage-precondition-not-an-absorbed-threat); for the empirical 96-cell Partial KPA matrix + NIST STS PRF-separation, see [archive/REDTEAM.md § Phase 2d — Nonce-Reuse](archive/REDTEAM.md#phase-2d--nonce-reuse).
 
 †† Interlocked Barrier modifier. The always-on Interlocked Barrier removes the demask entry point on the colliding messages: the per-chunk PRF-keyed 48-bit mask triple is applied before COBS, so the two-time-pad XOR yields lane-compressed bits `l₀(P₁)‖l₁(P₁)‖l₂(P₁) ⊕ l₀(P₂)‖l₁(P₂)‖l₂(P₂)` interpretable only with `lockSeed` and PRF-opaque under the PRF assumption. See §18 for the full Interlocked Barrier construction.
 
@@ -300,7 +300,7 @@ Every shipped registry primitive is a PRF-grade construction that satisfies the 
 | Noise barrier (min container) | 2^3200 (1024-bit, unified P=400) to 2^6272 (2048-bit, unified P=784) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
-| PRF output consumed per pixel | 64 bits per ChainHash call (architectural cap independent of native primitive width; 50 % / 25 % / 12.5 % of 128 / 256 / 512-bit output, the remainder discarded by the per-pixel encoder). Truncation preserves PRF-conditional security but does not strengthen it; the discarded portion is architecturally invisible to the encryption path, closing structural weaknesses concentrated in those bits (FNV-1a top-bit-isolation case empirically documented in [REDTEAM.md Phase 2e](REDTEAM.md#phase-2e--related-seed-differential)) — defense-in-depth against partial PRF-failure, not an upgrade of PRF-conditional security under PRF-grade primitives. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security). |
+| PRF output consumed per pixel | 64 bits per ChainHash call (architectural cap independent of native primitive width; 50 % / 25 % / 12.5 % of 128 / 256 / 512-bit output, the remainder discarded by the per-pixel encoder). Truncation preserves PRF-conditional security but does not strengthen it; the discarded portion is architecturally invisible to the encryption path, closing structural weaknesses concentrated in those bits (FNV-1a top-bit-isolation case empirically documented in [archive/REDTEAM.md Phase 2e](archive/REDTEAM.md#phase-2e--related-seed-differential)) — defense-in-depth against partial PRF-failure, not an upgrade of PRF-conditional security under PRF-grade primitives. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security). |
 | Nonce | 128/256/512-bit per-message (default 512-bit, mandatory) |
 | Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
@@ -414,4 +414,4 @@ Framed as "outside the barrier's threat model" where that is the honest descript
 - **CCA via a deployment decryption oracle.** Core ITB and MAC + Silent Drop expose no oracle; MAC + Reveal is an optional deployment mode whose CCA behaviour is per-deployment and bounded by [Proof 6](PROOFS.md#proof-6-cca-leak-upper-bound) (noise position, 3 bits per pixel). Whether an oracle exists at all is a protocol choice, not a barrier property.
 - **Quantum key recovery.** The seed-space search under Grover is a hypothetical upper-bound argument, not something the barrier addresses directly; the oracle-degradation framing applies (under Silent Drop there is no verification predicate for Grover to run against). Post-key quantum recovery is outside the barrier's threat model.
 - **Undiscovered cryptanalysis.** No finite argument, architectural or empirical, establishes resistance to techniques not yet known. The construction has had no external cryptanalysis or formal certification.
-- **Empirical re-verification of the 48-bit line.** The pre-existing empirical measurements were obtained on the shared pixel construction over a 12-primitive spectrum and support the pixel-layer ambiguity claims. The barrier's KPA closure is an architectural claim under the PRF assumption, corroborated by that pixel-layer evidence, not yet re-verified empirically end-to-end on the 48-bit line at the sample sizes that reached the pre-v0.3.0 KL floor.
+- **Empirical re-verification of the 48-bit line.** The pre-existing empirical measurements were obtained on the shared pixel construction over a 12-primitive spectrum and support the pixel-layer ambiguity claims. The barrier's KPA closure is an architectural claim under the PRF assumption, corroborated by that pixel-layer evidence, not yet re-verified empirically end-to-end on the 48-bit line at the sample sizes that reached the archived KL floor.
