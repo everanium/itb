@@ -88,7 +88,7 @@ func TestRegisterRoundtrip(t *testing.T) {
 	_ = h2
 
 	// Full Triple 3x256 encrypt/decrypt round-trip using the registered
-	// primitive across all eight seed slots. The identical fixed key on
+	// primitive across all 8 seed slots. The identical fixed key on
 	// each slot keeps the test hermetic — different slots receive
 	// different Components via NewSeed256, so ChainHash still evolves
 	// per slot as expected.

@@ -357,7 +357,7 @@ ITB is a new construction without prior peer review or independent cryptanalysis
 | Implementation audit | Not performed |
 | Core barrier (∀v, ∀h : ∃c : embed(c,h,d)=v) | Noise absorption — compatibility proof, hash-independent ([Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)) |
 | Rotation barrier (7^P configurations) | Encoding ambiguity — 7 unverifiable rotations per pixel, PRF-dependent ([Proof 4](PROOFS.md#proof-4-rotation-barrier)) |
-| 8-seed isolation (independent CSPRNG components, pointer-distinct at API surface) | noiseSeed / lockSeed / dataSeed1..3 / startSeed1..3; CCA/cache leaks contained ([Proof 3](PROOFS.md#proof-3-triple-seed-isolation)) |
+| 8-seed isolation (independent CSPRNG components, pointer-distinct at API surface) | noiseSeed / lockSeed / dataSeed1..3 / startSeed1..3; CCA/cache leaks contained ([Proof 3](PROOFS.md#proof-3-8-seed-isolation)) |
 | Interlocked Barrier (per-chunk 2^70.20 mask-space) | Architectural claim under the PRF assumption (§18) |
 | Active attack analysis (CCA, MITM) | Self-analysis, invites scrutiny |
 | Side-channel mitigations | Implemented, not independently audited |

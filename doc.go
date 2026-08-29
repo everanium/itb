@@ -85,7 +85,7 @@
 //     Targets: Areion-SoEM-512, BLAKE2b-512 (native 512-bit key and output).
 //
 // All three variants share the same RGBWYOPA pixel format, COBS framing,
-// eight-seed architecture, and security properties. The wider hash output
+// 8-seed architecture, and security properties. The wider hash output
 // is truncated to uint64 for per-pixel config extraction (only 62 bits needed).
 // The benefit is in ChainHash intermediate state width, not per-pixel extraction.
 //
@@ -101,7 +101,7 @@
 // (any of 0-7), each dataSeed determines data rotation (0-6) and per-bit
 // XOR masks for its 3-snake slot, each startSeed determines that slot's
 // pixel start offset, and lockSeed keys the always-on 48-bit Interlocked
-// Barrier overlay. All eight seeds are independent — compromise of one
+// Barrier overlay. All 8 seeds are independent — compromise of one
 // does not reveal the others.
 // dataSeed has zero software-observable side-channel exposure (register-only operations).
 // Config per pixel: 3 bits from noiseSeed + 59 bits from dataSeed
@@ -163,7 +163,7 @@
 // the low-level setup ceremony (per-seed PRF closures, BatchHash
 // wiring, MAC factory, parallax + wrapper masters) with one
 // [github.com/everanium/itb/triple.Init] call. The Pipeline
-// allocates the eight ITB seeds + optional parallax layer + optional
+// allocates the 8 ITB seeds + optional parallax layer + optional
 // wrapper layer + MAC closure, snapshots per-instance settings into a
 // private [Config], and exposes the two cipher shapes (message,
 // stream) plus a lifecycle (Init / Open / Rekey / Close).
@@ -222,7 +222,7 @@
 //
 // # Quick Start (Low-Level)
 //
-// The Low-Level surface takes eight seed pointers and a plaintext
+// The Low-Level surface takes 8 seed pointers and a plaintext
 // slice per call. Every entry point is Cfg-suffixed and takes a
 // [Config] first argument for per-encryptor overrides (nil = compile-in
 // defaults).
@@ -253,8 +253,8 @@
 //	fnN, batchN, keyN := itb.MakeAreionSoEM256Hash()
 //	fnL, batchL, keyL := itb.MakeAreionSoEM256Hash()
 //	fnD1, batchD1, keyD1 := itb.MakeAreionSoEM256Hash()
-//	// (analogous for D2, D3, S1, S2, S3 — eight independent
-//	// (hashFn, batchFn, hashKey) triples, eight independent saved keys)
+//	// (analogous for D2, D3, S1, S2, S3 — 8 independent
+//	// (hashFn, batchFn, hashKey) triples, 8 independent saved keys)
 //	saveKey("noise-key", keyN[:])
 //	saveKey("lock-key", keyL[:])
 //	saveKey("data-key-1", keyD1[:])
@@ -427,8 +427,8 @@
 // Triple Ouroboros splits plaintext into 3 parts at the byte level (every 3rd
 // byte), encrypting each into 1/3 of the pixel data with independent dataSeed
 // and startSeed, sharing noiseSeed. Output format is identical to standard ITB.
-// Security: P × 2^(3×keyBits) under CCA. Eight seeds: 1×noiseSeed +
-// 1×lockSeed + 3×dataSeed + 3×startSeed. All eight seeds must be distinct
+// Security: P × 2^(3×keyBits) under CCA. 8 seeds: 1×noiseSeed +
+// 1×lockSeed + 3×dataSeed + 3×startSeed. All 8 seeds must be distinct
 // pointers.
 //
 //	encrypted, _ := itb.Encrypt3x512Cfg(nil, noiseSeed, lockSeed,
@@ -509,7 +509,7 @@
 //
 // # Dedicated lockSeed
 //
-// Every Triple Ouroboros entry point takes an eight-seed
+// Every Triple Ouroboros entry point takes an 8-seed
 // constellation: (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3).
 // The lockSeed slot keys the 48-bit Interlocked Barrier overlay's
 // per-chunk bit-permutation derivation, and its keying material stays

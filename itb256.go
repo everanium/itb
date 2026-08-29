@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// process256Cfg is the triple-seed encode/decode engine (256-bit variant).
+// process256Cfg is the 8-seed encode/decode engine (256-bit variant).
 //
 // Three independent 256-bit seeds provide separate configuration domains:
 //
@@ -71,7 +71,7 @@ func process256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, nonce [
 }
 
 // checkEightSeeds256 verifies all 8 seeds are value-distinct
-// (eight-seed isolation): distinct pointers AND distinct Components
+// (8-seed isolation): distinct pointers AND distinct Components
 // content across every pair. Byte-identical Components in two slots —
 // reachable through blob import or the low-level constructors, where
 // fresh pointers wrap caller-supplied material — would collapse the
@@ -82,7 +82,7 @@ func checkEightSeeds256(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256) error {
 	for i := 0; i < len(seeds); i++ {
 		for j := i + 1; j < len(seeds); j++ {
 			if seeds[i] == seeds[j] || slices.Equal(seeds[i].Components, seeds[j].Components) {
-				return fmt.Errorf("itb: all eight seeds must be different (eight-seed isolation)")
+				return fmt.Errorf("itb: all 8 seeds must be different (8-seed isolation)")
 			}
 		}
 	}

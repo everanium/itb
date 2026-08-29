@@ -128,7 +128,7 @@ func TestReadOnlyConstants(t *testing.T) {
 // TestRoundtripTripleAllHashes covers Triple Ouroboros (Encrypt3 /
 // Decrypt3) over every shipped primitive at every supported ITB key
 // width. Caller-allocated-buffer convention throughout; each case
-// exercises the eight-seed dispatcher on the FFI surface.
+// exercises the 8-seed dispatcher on the FFI surface.
 func TestRoundtripTripleAllHashes(t *testing.T) {
 	plaintext := make([]byte, 4096)
 	if _, err := rand.Read(plaintext); err != nil {
@@ -183,7 +183,7 @@ func TestRoundtripTripleAllHashes(t *testing.T) {
 
 // TestEncrypt3SeedWidthMix verifies that mixing handles of different
 // native hash widths in one Encrypt3 call is rejected with
-// StatusSeedWidthMix on the eight-seed dispatcher path.
+// StatusSeedWidthMix on the 8-seed dispatcher path.
 func TestEncrypt3SeedWidthMix(t *testing.T) {
 	mk := func(name string) HandleID {
 		id, st := NewSeed(name, 1024)

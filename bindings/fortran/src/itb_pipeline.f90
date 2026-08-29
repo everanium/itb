@@ -1,6 +1,6 @@
 ! itb_pipeline.f90 -- the Triple Pipeline handle wrapper.
 !
-! One itb_pipeline_t replaces the eight-seed + parallax + wrapper +
+! One itb_pipeline_t replaces the 8-seed + parallax + wrapper +
 ! MAC ceremony of the low-level path. The Pipeline is opened against
 ! a profile name (an opaque string validated by Go) plus an optional
 ! itb_opts_t override builder.

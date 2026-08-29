@@ -7,13 +7,13 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// EncryptAuth3 is the eight-seed Triple Ouroboros + Auth variant.
+// EncryptAuth3 is the 8-seed Triple Ouroboros + Auth variant.
 // Takes 8 seed handles (1 shared noise + 1 lockSeed + 3 data + 3
 // start) plus a MAC handle; the underlying
 // itb.EncryptAuthenticated3x* computes a MAC tag over the encrypted
 // payload (under the barrier but inside the container, mirroring
 // ITB's MAC-Inside-Encrypt construction) and embeds the tag into
-// the ciphertext alongside the data. All eight seeds must share the
+// the ciphertext alongside the data. All 8 seeds must share the
 // same native hash width. Same caller-allocated-buffer convention
 // as Encrypt3.
 func EncryptAuth3(
@@ -135,12 +135,12 @@ func classifyAuthError(err error) Status {
 	return StatusDecryptFailed
 }
 
-// EncryptStreamAuth3 is the eight-seed Triple Ouroboros + Streaming
+// EncryptStreamAuth3 is the 8-seed Triple Ouroboros + Streaming
 // AEAD variant. Takes 8 seed handles plus a MAC handle plus the
 // streaming-binding components (a 32-byte streamID, the running
 // cumulativePixelOffset, and the finalFlag byte); the per-chunk MAC
 // is computed over the encoded payload extended with those bindings.
-// All eight seeds must share the same native hash width. Same
+// All 8 seeds must share the same native hash width. Same
 // caller-allocated-buffer convention as Encrypt3.
 func EncryptStreamAuth3(
 	noise, lock, data1, data2, data3, start1, start2, start3 HandleID,

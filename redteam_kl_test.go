@@ -185,7 +185,7 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 	hashFn := klBlake3Hash128(key)
 
 	const keyBits = 1024
-	// Eight seeds keyed by BLAKE3. Deterministic RNG seeded by keySeed
+	// 8 seeds keyed by BLAKE3. Deterministic RNG seeded by keySeed
 	// so seeds are reproducible per keySeed; nonce is still fresh so
 	// ciphertexts across invocations differ.
 	seedRng := rand.New(rand.NewSource(int64(keySeed) ^ 0xFEEDFACE))
