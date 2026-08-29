@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 3b — ITB FNV-1a ChainHash128 SAT harness (keyBits=512, 4 rounds).
+ITB FNV-1a ChainHash128 SAT harness (keyBits=512, 4 rounds).
 
-Consumes the Phase 1 fnvstress corpus (`tmp/attack/fnvstress/`) and
+Consumes the fnvstress corpus (`tmp/attack/fnvstress/`) and
 builds one global Z3 bitvector SAT instance over:
 
   - `rounds` × 64-bit unknown lo-lane seed components (256 unknowns
@@ -475,7 +475,7 @@ def _forward_check_one(
     reproduces the observed byte. If ANY noise_pos makes the concrete
     encoder match the ciphertext, the data-seed recovery succeeded for
     this channel — the specific noise_pos value is a per-pixel detail,
-    not a seed-level secret. This is the same reduction as Phase 2f
+    not a seed-level secret. This is the same reduction as the Crib KPA
     (where K_noise_bits_0_2 was recovered separately from K_data).
     """
     from itb_channel_mirror import (
@@ -1270,7 +1270,7 @@ def main() -> int:
     ap.add_argument(
         "--fnvstress-dir",
         default="tmp/attack/fnvstress",
-        help="path to Phase 1 corpus root",
+        help="path to fnvstress corpus root",
     )
     ap.add_argument(
         "--max-cells", type=int, default=1,

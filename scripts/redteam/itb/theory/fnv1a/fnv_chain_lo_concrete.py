@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 0 parity gadget for the .FNVSTRESS plan.
+Concrete parity gadget for the FNV-1a chainhash lo-lane.
 
 Cross-checks that two independent lo-lane implementations reproduce the
 Go `Seed128.ChainHash128` output bit-exact when the Go primitive is

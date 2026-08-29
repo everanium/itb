@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 4 — full plaintext decrypt under recovered K (.FNVSTRESS).
+Full plaintext decrypt under recovered K (.FNVSTRESS).
 
-Given a recovered dataSeed lo-lane compound state `K_lo` from the Phase 3b
+Given a recovered dataSeed lo-lane compound state `K_lo` from the SAT
 SAT harness and a fresh target ciphertext under the same seeds, this
 script brute-forces `startPixel` (~total_pixels candidates) and, per
 startPixel candidate, brute-forces `noise_pos` per pixel (8 candidates)
@@ -192,8 +192,8 @@ def _try_decode_sp_np0(
     candidate's byte lands a valid terminator (0x00 at an awaiting-code
     position AND the prefix cobs_decodes cleanly to non-empty plaintext),
     it is recorded. The final returned answer is the recorded terminator
-    at the highest stream position — same rationale as the CRC128 Phase
-    2f decrypt: the true noise_pos path always survives to the latest
+    at the highest stream position — same rationale as the CRC128 Crib KPA
+    decrypt: the true noise_pos path always survives to the latest
     terminator, while chance-lucky wrong paths terminate earlier.
     """
     # Beam entries: (COBS state, full stream bytes so far, np_list so far).
@@ -277,8 +277,8 @@ def decrypt_full(
 ) -> Optional[dict]:
     """Attempt full decrypt. Enumerate every (sp, np_0) combination,
     collect all candidates that produce a COBS-valid stream, pick the
-    one whose terminator position is highest — mirrors the CRC128 Phase
-    2f selection rule. A wrong (sp, np_0) can occasionally produce a
+    one whose terminator position is highest — mirrors the CRC128 Crib KPA
+    selection rule. A wrong (sp, np_0) can occasionally produce a
     valid but premature terminator on a chance-aligned short COBS
     chain; the true (sp, np_0) always places its terminator at the
     architectural `COBS(plaintext) + 0x00` boundary, which sits strictly

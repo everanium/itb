@@ -11,7 +11,7 @@ Every operation in the chain is GF(2)-linear, so the 512-bit ECMA-side of
 the dataSeed collapses to a pixel-independent 64-bit compound key K; 56
 of those bits are observable through ITB's channelXOR encoding.
 
-See REDTEAM.md Phase 2a extension for the full empirical treatment.
+See REDTEAM.md for the full empirical treatment.
 """
 
 from __future__ import annotations

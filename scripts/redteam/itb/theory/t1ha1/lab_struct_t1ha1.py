@@ -15,8 +15,7 @@ avalanche:
 Formats: `json_structured` (primary — fixed-width records, byte-aligned
 field-name repetition) and `html_structured` (secondary — tag-wrapped
 records with variable-length content between tags). Both formats sit in
-the printable ASCII alphabet and match the
-[Phase 2a extension](REDTEAM.md#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2)
+the printable ASCII alphabet and match the shelf
 known_json_structured / known_html_structured convention so Axis A' rows
 are directly comparable to the existing Axis B audit across the same
 three plaintext kinds (ascii already covered by lab_bias_t1ha1.py random

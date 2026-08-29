@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 2 parity gadget for the SeaHash SAT calibration plan
+Concrete parity gadget for the SeaHash SAT calibration
 (HARNESS.md § 9.2).
 
 Cross-checks that two independent lo-lane implementations reproduce

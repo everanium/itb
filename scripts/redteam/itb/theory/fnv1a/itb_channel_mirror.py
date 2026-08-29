@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITB byte->channel encoding mirror for Phase 3 SAT harness.
+ITB byte->channel encoding mirror for SAT harness.
 
 Pure-Python bit-exact port of the encode/decode logic in
 `process_generic.go:processChunk128` (without CGO). Covers the byte
@@ -13,10 +13,10 @@ of ciphertext pixels. Two parity-tested public entry points:
   - `encode_pixel(plaintext_7, container_byte_slice, noise_pos,
                   rotation, data_hash_lo)` -> 8 updated container bytes
 
-Plus a `parity_check_corpus()` driver that reads a Phase 1 fnvstress
+Plus a `parity_check_corpus()` driver that reads a shelf fnvstress
 corpus (cell.meta.json + ct_0000.bin + ct_0000.plain + summary.json),
 re-derives noise_pos / rotation / channelXOR per pixel using the Go
-lab ground-truth seeds (laboratory-audit only - the Phase 3 SAT
+lab ground-truth seeds (laboratory-audit only - the SAT
 harness must NOT do this; it will solve for them), and verifies that
 the Python decoder reproduces the original plaintext bit-exact for
 every cell in the corpus.
@@ -261,7 +261,7 @@ def decode_container_to_payload(
 
 
 # ----------------------------------------------------------------------------
-# Parity driver against Phase 1 fnvstress corpus
+# Parity driver against fnvstress corpus
 # ----------------------------------------------------------------------------
 
 
@@ -303,7 +303,7 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
 
     This check runs in LAB MODE: it reads noise/data/start seed
     components from summary.json so it can compute the ground-truth
-    hLo per pixel. The Phase 3 SAT harness must NOT do this — it will
+    hLo per pixel. The SAT harness must NOT do this — it will
     solve for hLo.
     """
     summary = json.loads((fnvstress_dir / "summary.json").read_text())
@@ -419,11 +419,11 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p_parity = sub.add_parser("parity", help="run parity vs Phase 1 corpus")
+    p_parity = sub.add_parser("parity", help="run parity vs fnvstress corpus")
     p_parity.add_argument(
         "--fnvstress-dir",
         default="tmp/attack/fnvstress",
-        help="path to Phase 1 corpus root",
+        help="path to fnvstress corpus root",
     )
     args = ap.parse_args()
 

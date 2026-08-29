@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kl_matrix.py — Phase 2b Mode B BarrierFill auto-selection driver.
+"""kl_matrix.py — Mode B BarrierFill auto-selection driver.
 
 Iterates the Cartesian product of plaintext sizes × BarrierFill values,
 runs the Mode B distinguisher on both ITB ciphertext and a matched-size
@@ -110,7 +110,7 @@ def tprint(msg: str) -> None:
 
 _NUM = r"[\d.eE+-]+"
 
-# kl_massive_single_full.py output patterns.
+# kl_massive_full.py output patterns.
 # NOTE: The χ² header line "Per-candidate χ² (df = 127; H0 mean = 127)"
 # itself contains "mean = 127", so the chi2_mean pattern must anchor
 # after the `min = X` line to grab the real observed mean.
@@ -246,7 +246,7 @@ def run_cell(size: int, bf: int, n_samples: int, worker_id: int) -> Dict[str, fl
     # Step 2 — first ITB sample is already encrypted; probe it.
     itb_samples: List[Dict[str, float]] = []
     mf_out = run_cmd(
-        ["python3", str(PROJ / "scripts/redteam/itb/theory/_common/kl/kl_massive_single_full.py"), "blake3"],
+        ["python3", str(PROJ / "scripts/redteam/itb/theory/_common/kl/kl_massive_full.py"), "blake3"],
         env={"ITB_MASSIVE_DIR": str(worker_dir)},
     )
     itb_samples.append(parse_output(mf_out, _MF_PATTERNS))
@@ -264,7 +264,7 @@ def run_cell(size: int, bf: int, n_samples: int, worker_id: int) -> Dict[str, fl
             },
         )
         mf_out = run_cmd(
-            ["python3", str(PROJ / "scripts/redteam/itb/theory/_common/kl/kl_massive_single_full.py"), "blake3"],
+            ["python3", str(PROJ / "scripts/redteam/itb/theory/_common/kl/kl_massive_full.py"), "blake3"],
             env={"ITB_MASSIVE_DIR": str(worker_dir)},
         )
         itb_samples.append(parse_output(mf_out, _MF_PATTERNS))
@@ -341,7 +341,7 @@ def render_markdown(rows: List[Dict[str, float]], sizes: List[int], bfs: List[in
     by_cell = {(r["size"], r["bf"]): r for r in rows}
 
     lines = []
-    lines.append("# kl_matrix.py output — Phase 2b Mode B BF auto-selection")
+    lines.append("# kl_matrix.py output — Mode B BF auto-selection")
     lines.append("")
     lines.append(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"Cells: {len(rows)}")

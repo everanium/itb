@@ -7,7 +7,7 @@ package itb
 // ITB ciphertext per invocation on the v0.3.0 Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
 // carrying container dimensions and the dual-nonce header layout the two
-// Python sub-scripts (`kl_massive_single_full.py`, `kl_urandom.py`) consume
+// Python sub-scripts (`kl_massive_full.py`, `kl_urandom.py`) consume
 // through `kl_matrix.py`.
 //
 // Attacker-realism (CLAUDE.md discipline):
@@ -119,7 +119,7 @@ func klBlake3Hash128(key [32]byte) HashFunc128 {
 // `Encrypt3x128Cfg` call on a random plaintext of `ITB_REDTEAM_MASSIVE_SIZE`
 // bytes at `Config.BarrierFill = ITB_BARRIER_FILL`, writes the raw
 // ciphertext to `<outdir>/blake3.bin` and a KEY=VALUE `<outdir>/blake3.pixel`
-// sidecar consumed by `scripts/redteam/itb/theory/_common/kl/kl_massive_single_full.py`.
+// sidecar consumed by `scripts/redteam/itb/theory/_common/kl/kl_massive_full.py`.
 //
 // Driver: `scripts/redteam/itb/theory/_common/kl/kl_matrix.py` invokes this per
 // cell in the size × BarrierFill Cartesian sweep; the test is inert unless

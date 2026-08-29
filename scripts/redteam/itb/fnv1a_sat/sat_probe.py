@@ -6,12 +6,12 @@ Companion to the Go probes in `redteam_broken_fnv1a_sat_test.go`.
 Reads the JSON corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus`
 under `tmp/redteam/fnv1a_sat/f6_corpus_bundle.json` and runs a Bitwuzla
 SAT instance encoding the naive-crib SAT anchoring premise on both the
-Single Ouroboros without-barrier control and the v0.3.0 Triple/barrier
+pre-v0.3.0 without-barrier control and the v0.3.0 Triple/barrier
 ciphertext.
 
 Adapted from `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`
-(1666 lines encoding the full pre-v0.3.0 Single Ouroboros SAT). This
-compact form isolates the CORE claim — does any (seed_lo, np, r) tuple
+(1666 lines encoding the full pre-v0.3.0 SAT). This compact form
+isolates the CORE claim — does any (seed_lo, np, r) tuple
 make the naive-crib xor_mask56 recovered from the container bytes
 consistent with the FNV-1a chain output at the anchored stream index?
 
@@ -600,7 +600,7 @@ def main(argv=None) -> int:
     }
 
     if not args.barrier_only:
-        print("\n=== Control (Single Ouroboros, barrier off) ===")
+        print("\n=== Control (pre-v0.3.0, barrier off) ===")
         report["control"] = sat_probe_control(
             corpus, args.n_crib_pixels, args.timeout_sec, args.rounds, args.regime,
         )

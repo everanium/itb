@@ -1,57 +1,55 @@
 #!/usr/bin/env bash
-# HARNESS.md § 4.1 row 1 (seahash_64le) — Axis B ITB-wrapped bias audit.
+# HARNESS.md § 5.4 (SipHash-1-3) — Axis B ITB-wrapped bias audit.
 #
 # Single-primitive driver that generates ITB corpora under known_ascii
-# plaintext mode with seahash wrapped into ChainHash128 (via the parallel
-# two-lane adapter seahashHash128 defined in harness_test.go), then
-# runs the existing raw-mode bias probe against each corpus.
-#
-# Kept SEPARATE from scripts/redteam/bias_audit_matrix.sh to preserve the
-# existing 4-primitive matrix boundary (crc128 / fnv1a / blake3 / md5) that
-# REDTEAM.md reproduction commands assume. This harness runs only seahash
-# as part of the HARNESS.md shelf work; the Phase 2a extension main
-# matrix is untouched.
+# plaintext mode with siphash13 wrapped into ChainHash128 (via the parallel
+# two-lane adapter siphash13Hash128 defined in harness_test.go), then runs
+# the raw-mode bias probe at scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py
+# against each corpus.
 #
 # Corpus generation uses a dedicated Go test entry point —
-# TestRedTeamHarnessGenerateSeaHashNonceReuse in
-# harness_test.go — which delegates to the same
-# runNonceReuse128 body as the Phase 2a extension tests, so encryption,
-# cell.meta.json schema, config.truth.json, and summary.json are identical
-# across the two tracks. The bias probe also reuses the existing
-# scripts/redteam/phase2_theory/raw_mode_bias_probe.py — the only new
-# surface is the chainhashes/seahash.py mirror, already parity-validated
-# against the Go reference.
+# TestRedTeamHarnessGenerateSiphash13NonceReuse in
+# harness_shelf_test.go — which delegates to the same runNonceReuse128
+# body as the sibling harness drivers, so encryption, cell.meta.json
+# schema, config.truth.json, and summary.json are identical across all
+# four shelf primitives. The chainhashes/siphash13.py Python mirror is
+# parity-validated against the Go reference by
+# scripts/redteam/itb/theory/_common/chainhashes/_parity_test.py.
 #
 # Usage:
-#   bash scripts/redteam/harness_bias_audit_seahash.sh
+#   bash scripts/redteam/itb/theory/siphash13/harness_bias_audit.sh
 #
 # Env overrides:
-#   SIZES       default: "524288 1048576"
-#               (512 KB + 1 MB, matching the Phase 2a extension main
-#               matrix baseline; add 4194304 for a 4 MB stress cell
-#               parallel to the MD5 4 MB stress cell)
-#   PROBE_SIZE  default: "auto"  (scales with corpus size)
-#   RESULTS_TAG default: "harness_bias_audit_seahash"
-#   TIMEOUT_S   default: 600     (per-cell Go generator timeout)
+#   SIZES                          default: "524288 1048576"
+#                                  (512 KB + 1 MB, matching the shelf
+#                                  baseline; add 4194304 for a 4 MB
+#                                  stress cell.)
+#   PROBE_SIZE                     default: "auto"  (scales with corpus size)
+#   RESULTS_TAG                    default: "harness_bias_audit_siphash13"
+#   TIMEOUT_S                      default: 600     (per-cell Go generator timeout)
+#   HARNESS_BIAS_AUDIT_OUTPUT_DIR  default: ${HOME}/scratch/redteam/harness_bias_audit_siphash13
+#                                  (corpus + results tree; per CLAUDE.md
+#                                  working-tree layout — no tmp/ in repo)
 #
 # Output:
-#   tmp/attack/seahashstress/corpus/size_<N>_ascii/          — generated corpora
-#   tmp/attack/seahashstress/<RESULTS_TAG>/matrix_summary.jsonl
-#   tmp/attack/seahashstress/<RESULTS_TAG>/matrix.log
-#   tmp/attack/seahashstress/<RESULTS_TAG>/probe_seahash_<N>_ascii.log
+#   ${OUTPUT_DIR}/corpus/size_<N>_ascii/          — generated corpora
+#   ${OUTPUT_DIR}/<RESULTS_TAG>/matrix_summary.jsonl
+#   ${OUTPUT_DIR}/<RESULTS_TAG>/matrix.log
+#   ${OUTPUT_DIR}/<RESULTS_TAG>/probe_siphash13_<N>_ascii.log
 
 set -euo pipefail
 
 SIZES=${SIZES:-"524288 1048576"}
 PROBE_SIZE=${PROBE_SIZE:-"auto"}
-RESULTS_TAG=${RESULTS_TAG:-"harness_bias_audit_seahash"}
+RESULTS_TAG=${RESULTS_TAG:-"harness_bias_audit_siphash13"}
 TIMEOUT_S=${TIMEOUT_S:-600}
+OUTPUT_DIR=${HARNESS_BIAS_AUDIT_OUTPUT_DIR:-"${HOME}/scratch/redteam/harness_bias_audit_siphash13"}
 
-PROJ_DIR=$(cd "$(dirname "$0")/../.." && pwd)
+PROJ_DIR=$(cd "$(dirname "$0")/../../../../.." && pwd)
 cd "$PROJ_DIR"
 
-CORPUS_ROOT="tmp/attack/seahashstress/corpus"
-RESULTS_ROOT="tmp/attack/seahashstress/${RESULTS_TAG}"
+CORPUS_ROOT="${OUTPUT_DIR}/corpus"
+RESULTS_ROOT="${OUTPUT_DIR}/${RESULTS_TAG}"
 mkdir -p "$CORPUS_ROOT" "$RESULTS_ROOT"
 
 MATRIX_SUMMARY="${RESULTS_ROOT}/matrix_summary.jsonl"
@@ -60,9 +58,9 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "seahash harness bias-neutralization audit (HARNESS.md § 4.1, Axis B)"
+echo "siphash13 harness bias-neutralization audit (HARNESS.md § 4.1, Axis B)"
 echo "==========================================================================="
-echo "  primitive    : seahash_64le (harness track; not in Phase 2a matrix)"
+echo "  primitive    : siphash13 (shelf harness track)"
 echo "  sizes        : $SIZES"
 echo "  mode         : known_ascii (Full KPA; strongest per-byte bit-7=0 bias)"
 echo "  probe size   : $PROBE_SIZE"
@@ -74,28 +72,28 @@ echo
 
 for size in $SIZES; do
     cell_dir="${CORPUS_ROOT}/size_${size}_ascii"
-    cell_log="${RESULTS_ROOT}/probe_seahash_${size}_ascii.log"
+    cell_log="${RESULTS_ROOT}/probe_siphash13_${size}_ascii.log"
 
     echo "[${size}B ascii] generating corpus → ${cell_dir}"
     echo "[${size}B ascii] generating corpus → ${cell_dir}" >> "$DRIVER_LOG"
 
-    # Go corpus generator — new harness entry point. cell.meta.json + ct_*.bin
-    # emitted with the same schema as the Phase 2a extension corpora.
-    ITB_HARNESS_SEAHASH_MODE=known_ascii \
-    ITB_HARNESS_SEAHASH_SIZE="$size" \
-    ITB_HARNESS_SEAHASH_OUT="$cell_dir" \
-    go test -tags redteam -run TestRedTeamHarnessGenerateSeaHashNonceReuse \
+    # Go corpus generator — shelf harness entry point. cell.meta.json + ct_*.bin
+    # emitted with the same schema as the sibling shelf corpora.
+    ITB_HARNESS_SIPHASH13_MODE=known_ascii \
+    ITB_HARNESS_SIPHASH13_SIZE="$size" \
+    ITB_HARNESS_SIPHASH13_OUT="$cell_dir" \
+    go test -tags redteam -run TestRedTeamHarnessGenerateSiphash13NonceReuse \
         -count=1 -v -timeout "${TIMEOUT_S}s" >> "$DRIVER_LOG" 2>&1
 
     echo "[${size}B ascii] running bias probe → ${cell_log}"
     echo "[${size}B ascii] running bias probe → ${cell_log}" >> "$DRIVER_LOG"
 
-    # Reuse the existing raw_mode_bias_probe.py; point it at chainhashes.seahash
-    # (Python mirror bit-exact-verified against the Go seahash_64le reference
-    # via scripts/redteam/phase2_theory/chainhashes/_parity_test.py).
-    python3 scripts/redteam/phase2_theory/raw_mode_bias_probe.py \
+    # Invoke the raw-mode bias probe; point it at chainhashes.siphash13 (Python
+    # mirror bit-exact-verified against the Go siphash13 reference by
+    # scripts/redteam/itb/theory/_common/chainhashes/_parity_test.py).
+    python3 scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py \
         --cell-dir "$cell_dir" \
-        --hash-module chainhashes.seahash \
+        --hash-module chainhashes.siphash13 \
         --probe-size "$PROBE_SIZE" \
         --top-n 5 > "$cell_log" 2>&1
 
@@ -122,8 +120,8 @@ def _find(pattern, group=1, cast=None):
 meta = json.loads(Path(cell_dir + "/cell.meta.json").read_text())
 
 row = {
-    "primitive": "seahash",
-    "hash_display": meta.get("hash_display", "seahash_64le"),
+    "primitive": "siphash13",
+    "hash_display": meta.get("hash_display", "siphash13"),
     "hash_width": meta.get("hash_width", 128),
     "size_bytes": size,
     "format": "ascii",

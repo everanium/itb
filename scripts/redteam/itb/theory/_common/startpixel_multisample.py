@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Phase 2c: multi-sample startPixel enumeration, aggregated.
+"""Multi-sample startPixel enumeration, aggregated.
 
-Phase 2c one-sample test showed marginal signal for MD5/MD4 (true startPixel
+The one-sample startpixel_enum test showed marginal signal for MD5/MD4 (true startPixel
 had slightly elevated chi² vs wrong guesses). This script replicates across
 multiple samples per hash and aggregates the ranks to test whether the
 directional signal holds with statistical confidence.
 
-Speed optimizations over Phase 2c:
+Speed optimizations over startpixel_enum:
   - Vectorized candidate XOR computation via numpy broadcasts
   - Skip pairwise KL (expensive, not needed for signal detection)
   - Only compute chi² per candidate + aggregate
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     import multiprocessing as mp
     import time
 
-    print("Phase 2c: multi-sample, multi-kind startPixel enumeration (parallel 8 workers)")
+    print("Multi-sample, multi-kind startPixel enumeration (parallel 8 workers)")
 
     # html_giant excluded: O(P²) startPixel enumeration is infeasible at ~4.8M pixels/container.
     kinds = KINDS_NO_GIANT

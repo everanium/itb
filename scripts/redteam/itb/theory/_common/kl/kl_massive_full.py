@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Phase 2b KL floor probe on a single ITB encryption —
+"""KL floor probe on a single ITB encryption —
 full-container / realistic-attacker variant.
 
-Sibling of `kl_massive_single.py`. That script reads the .pixel
+Sibling of `kl_massive.py`. That script reads the .pixel
 sidecar's startPixel and XORs with the known plaintext (attacker has
 idealised alignment). This script models the realistic threat: no
 startPixel, no plaintext XOR, iterate all P container pixels — data
@@ -25,7 +25,7 @@ Prerequisites:
     # produces <dir>/<hash>.{bin,plain,pixel}
 
 Usage:
-    python3 scripts/redteam/itb/theory/_common/kl/kl_massive_single_full.py <hash>
+    python3 scripts/redteam/itb/theory/_common/kl/kl_massive_full.py <hash>
 
 Valid <hash> values match the shipped registry PRF-grade entries.
 """
@@ -58,7 +58,7 @@ CHUNK_SIZE = 500_000  # same memory budget as Mode A: ~224 MB cand_raw peak
 # fallback for legacy corpora that omit the field.
 LEGACY_HEADER_SIZE = 20
 
-# Lookup tables (identical to distinguisher.py / kl_massive_single.py).
+# Lookup tables (identical to distinguisher.py / kl_massive.py).
 _extract_tbl = np.zeros((8, 256), dtype=np.uint8)
 for _np_val in range(8):
     _mask_low = (1 << _np_val) - 1
@@ -115,7 +115,7 @@ def main():
             header_size = LEGACY_HEADER_SIZE
 
     print(f"{'=' * 72}")
-    print(f"  Phase 2b-full KL floor probe on a single massive sample")
+    print(f"  KL floor probe (full container) on a single massive sample")
     print(f"  (no startPixel, no plaintext — realistic-attacker threat model)")
     print(f"{'=' * 72}")
     print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}   header_size: {header_size}")
@@ -139,7 +139,7 @@ def main():
     totals = np.zeros((8, 7), dtype=np.int64)
 
     n_chunks = (total_pixels + CHUNK_SIZE - 1) // CHUNK_SIZE
-    print(f"\n  Chunked Phase 2b-full: chunk size {CHUNK_SIZE:,} px, {n_chunks} chunks")
+    print(f"\n  Chunked KL floor probe (full container): chunk size {CHUNK_SIZE:,} px, {n_chunks} chunks")
     t_chunks = time.time()
     for chunk_start in range(0, total_pixels, CHUNK_SIZE):
         chunk_end = min(chunk_start + CHUNK_SIZE, total_pixels)

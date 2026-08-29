@@ -26,10 +26,10 @@ Pattern (consumer side):
 `bitwuzla` CLI (>= 0.5.0) must be on PATH (`yay -S bitwuzla` on Arch).
 
 A near-identical private copy of this routine lives inline in
-scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py for Phase 2g
-reproducibility (any drift in that file would break the published
-Phase 2g result). This shared module is for newer callers that are
-free to take a dependency on the helper.
+scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py for reproducibility
+of the published FNV-1a SAT result (any drift in that file would break
+the published numbers). This shared module is for newer callers that
+are free to take a dependency on the helper.
 """
 
 from __future__ import annotations

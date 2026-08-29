@@ -23,7 +23,7 @@ harness needs to test that prediction empirically:
 mix64 is invertible step by step: each `z ^= z >> k` is recoverable by
 top-down bit reconstruction and each `z *= M` (M odd) by the modular inverse.
 Tier 3/4 SAT recovery at modest observation count is therefore the
-structurally expected outcome — the empirical analogue of the FNV-1a Phase 2g
+structurally expected outcome — the empirical analogue of the FNV-1a SAT
 break, in xorshift-multiply algebra rather than a carry chain.
 
 Usage:

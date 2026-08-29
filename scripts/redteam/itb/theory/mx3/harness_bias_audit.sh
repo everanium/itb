@@ -1,44 +1,41 @@
 #!/usr/bin/env bash
-# HARNESS.md § 4.1 mx3 (paradox row) — Axis B ITB-wrapped bias audit.
+# HARNESS.md § 5.3 (mx3) — Axis B ITB-wrapped bias audit.
 #
 # Single-primitive driver that generates ITB corpora under known_ascii
 # plaintext mode with mx3 wrapped into ChainHash128 (via the parallel
-# two-lane adapter mx3Hash128 defined in harness_test.go), then
-# runs the existing raw-mode bias probe against each corpus.
-#
-# Kept SEPARATE from scripts/redteam/bias_audit_matrix.sh to preserve the
-# existing 4-primitive matrix boundary (crc128 / fnv1a / blake3 / md5) that
-# REDTEAM.md reproduction commands assume. This harness runs only mx3
-# as part of the HARNESS.md shelf work; the Phase 2a extension main
-# matrix is untouched.
+# two-lane adapter mx3Hash128 defined in harness_test.go), then runs the
+# raw-mode bias probe at scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py
+# against each corpus.
 #
 # Corpus generation uses a dedicated Go test entry point —
-# TestRedTeamHarnessGenerateMx3NonceReuse in
-# harness_test.go — which delegates to the same
-# runNonceReuse128 body as the Phase 2a extension tests, so encryption,
-# cell.meta.json schema, config.truth.json, and summary.json are identical
-# across the two tracks. The bias probe also reuses the existing
-# scripts/redteam/phase2_theory/raw_mode_bias_probe.py — the only new
-# surface is the chainhashes/mx3.py mirror, already parity-validated
-# against the Go reference.
+# TestRedTeamHarnessGenerateMx3NonceReuse in harness_shelf_test.go —
+# which delegates to the same runNonceReuse128 body as the sibling
+# harness drivers, so encryption, cell.meta.json schema,
+# config.truth.json, and summary.json are identical across all four
+# shelf primitives. The chainhashes/mx3.py Python mirror is parity-
+# validated against the Go reference by
+# scripts/redteam/itb/theory/_common/chainhashes/_parity_test.py.
 #
 # Usage:
-#   bash scripts/redteam/harness_bias_audit_mx3.sh
+#   bash scripts/redteam/itb/theory/mx3/harness_bias_audit.sh
 #
 # Env overrides:
-#   SIZES       default: "524288 1048576"
-#               (512 KB + 1 MB, matching the Phase 2a extension main
-#               matrix baseline; add 4194304 for a 4 MB stress cell
-#               parallel to the MD5 4 MB stress cell)
-#   PROBE_SIZE  default: "auto"  (scales with corpus size)
-#   RESULTS_TAG default: "harness_bias_audit_mx3"
-#   TIMEOUT_S   default: 600     (per-cell Go generator timeout)
+#   SIZES                          default: "524288 1048576"
+#                                  (512 KB + 1 MB, matching the shelf
+#                                  baseline; add 4194304 for a 4 MB
+#                                  stress cell.)
+#   PROBE_SIZE                     default: "auto"  (scales with corpus size)
+#   RESULTS_TAG                    default: "harness_bias_audit_mx3"
+#   TIMEOUT_S                      default: 600     (per-cell Go generator timeout)
+#   HARNESS_BIAS_AUDIT_OUTPUT_DIR  default: ${HOME}/scratch/redteam/harness_bias_audit_mx3
+#                                  (corpus + results tree; per CLAUDE.md
+#                                  working-tree layout — no tmp/ in repo)
 #
 # Output:
-#   tmp/attack/mx3stress/corpus/size_<N>_ascii/          — generated corpora
-#   tmp/attack/mx3stress/<RESULTS_TAG>/matrix_summary.jsonl
-#   tmp/attack/mx3stress/<RESULTS_TAG>/matrix.log
-#   tmp/attack/mx3stress/<RESULTS_TAG>/probe_mx3_<N>_ascii.log
+#   ${OUTPUT_DIR}/corpus/size_<N>_ascii/          — generated corpora
+#   ${OUTPUT_DIR}/<RESULTS_TAG>/matrix_summary.jsonl
+#   ${OUTPUT_DIR}/<RESULTS_TAG>/matrix.log
+#   ${OUTPUT_DIR}/<RESULTS_TAG>/probe_mx3_<N>_ascii.log
 
 set -euo pipefail
 
@@ -46,12 +43,13 @@ SIZES=${SIZES:-"524288 1048576"}
 PROBE_SIZE=${PROBE_SIZE:-"auto"}
 RESULTS_TAG=${RESULTS_TAG:-"harness_bias_audit_mx3"}
 TIMEOUT_S=${TIMEOUT_S:-600}
+OUTPUT_DIR=${HARNESS_BIAS_AUDIT_OUTPUT_DIR:-"${HOME}/scratch/redteam/harness_bias_audit_mx3"}
 
-PROJ_DIR=$(cd "$(dirname "$0")/../.." && pwd)
+PROJ_DIR=$(cd "$(dirname "$0")/../../../../.." && pwd)
 cd "$PROJ_DIR"
 
-CORPUS_ROOT="tmp/attack/mx3stress/corpus"
-RESULTS_ROOT="tmp/attack/mx3stress/${RESULTS_TAG}"
+CORPUS_ROOT="${OUTPUT_DIR}/corpus"
+RESULTS_ROOT="${OUTPUT_DIR}/${RESULTS_TAG}"
 mkdir -p "$CORPUS_ROOT" "$RESULTS_ROOT"
 
 MATRIX_SUMMARY="${RESULTS_ROOT}/matrix_summary.jsonl"
@@ -62,7 +60,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 echo "==========================================================================="
 echo "mx3 harness bias-neutralization audit (HARNESS.md § 4.1, Axis B)"
 echo "==========================================================================="
-echo "  primitive    : mx3 (harness track; not in Phase 2a matrix)"
+echo "  primitive    : mx3 (shelf harness track)"
 echo "  sizes        : $SIZES"
 echo "  mode         : known_ascii (Full KPA; strongest per-byte bit-7=0 bias)"
 echo "  probe size   : $PROBE_SIZE"
@@ -79,8 +77,8 @@ for size in $SIZES; do
     echo "[${size}B ascii] generating corpus → ${cell_dir}"
     echo "[${size}B ascii] generating corpus → ${cell_dir}" >> "$DRIVER_LOG"
 
-    # Go corpus generator — new harness entry point. cell.meta.json + ct_*.bin
-    # emitted with the same schema as the Phase 2a extension corpora.
+    # Go corpus generator — shelf harness entry point. cell.meta.json + ct_*.bin
+    # emitted with the same schema as the sibling shelf corpora.
     ITB_HARNESS_MX3_MODE=known_ascii \
     ITB_HARNESS_MX3_SIZE="$size" \
     ITB_HARNESS_MX3_OUT="$cell_dir" \
@@ -90,10 +88,10 @@ for size in $SIZES; do
     echo "[${size}B ascii] running bias probe → ${cell_log}"
     echo "[${size}B ascii] running bias probe → ${cell_log}" >> "$DRIVER_LOG"
 
-    # Reuse the existing raw_mode_bias_probe.py; point it at chainhashes.mx3
-    # (Python mirror bit-exact-verified against the Go mx3_64le reference
-    # via scripts/redteam/phase2_theory/chainhashes/_parity_test.py).
-    python3 scripts/redteam/phase2_theory/raw_mode_bias_probe.py \
+    # Invoke the raw-mode bias probe; point it at chainhashes.mx3 (Python
+    # mirror bit-exact-verified against the Go mx3_64le reference by
+    # scripts/redteam/itb/theory/_common/chainhashes/_parity_test.py).
+    python3 scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py \
         --cell-dir "$cell_dir" \
         --hash-module chainhashes.mx3 \
         --probe-size "$PROBE_SIZE" \

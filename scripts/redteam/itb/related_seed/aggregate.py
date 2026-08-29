@@ -145,8 +145,8 @@ def print_pt_kind(per_pt: dict) -> None:
 
 def print_control_comparison(ctrl: dict, floors: dict[str, float]) -> None:
     print("==== Positive control — pre-v0.3.0 reproduction via process128Cfg ====")
-    print("Confirms the probe methodology matches pre-v0.3.0 Phase 2e archive numbers")
-    print("(archive/REDTEAM-v0.2.md § Phase 2e: CRC128 42.5M, FNV-1a 56.7M axis-hit on data-axis bit_high).")
+    print("Confirms the probe methodology matches the pre-v0.3.0 related-seed archive numbers")
+    print("(archive/REDTEAM-v0.2.md § related-seed row: CRC128 42.5M, FNV-1a 56.7M axis-hit on data-axis bit_high).")
     print()
     for cell in ctrl.get("cells", []):
         prim = cell["primitive"]
