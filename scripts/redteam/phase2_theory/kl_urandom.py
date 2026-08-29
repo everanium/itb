@@ -3,7 +3,7 @@
 
 Takes a container size in bytes, reads that many bytes from /dev/urandom,
 and runs the same 56-candidate pairwise-KL analysis that
-`kl_massive_single_full.py` runs on an ITB ciphertext. Reports
+`kl_massive_single_full.py` runs on an ITB ciphertext body. Reports
 observations per candidate, theoretical KL floor (`bins/N`), observed
 KL max, ratio max / floor, max bit-fraction deviation, and per-candidate
 χ² statistics.
@@ -13,6 +13,14 @@ same N lands in the same 1.0×–1.5× floor-ratio band as ITB ciphertext,
 then ITB ciphertext sits at the sampling precision of the distinguisher
 itself — the difference between the two observed KLs is below what any
 measurement at this N can resolve.
+
+`size_bytes` is the container BODY size (post-header). The caller passes
+`ciphertext_bytes - header_size`, where `header_size = 2 * NonceSize + 4`
+on the v0.3.0 dual-nonce wire; `kl_matrix.py`'s
+`container_bytes_from_ciphertext` computes this from the shipped
+ciphertext file size. The header layout is not consumed here — this probe
+is a pure /dev/urandom control, so the v0.3.0 wire evolution does not
+touch its logic.
 
 Usage:
     python3 kl_urandom.py <size_bytes>

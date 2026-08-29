@@ -232,15 +232,15 @@ primitive:
 - **Mask-space uniformity + balance.** The per-chunk mask-triple derivation
   produces balanced 16-of-48 lane partitions on 100 % of draws (union covers
   all 48 bits, lanes pairwise disjoint); each bit lands in lane 0 at 16/48 ±
-  the sampling floor (max 2.05 sigma at N = 200 000), and the reduced indices
-  are uniform (chi-square 294 / 243 over 256 bins, band [142, 368]).
+  the sampling floor (max 2.45 sigma at N = 200 000), and the reduced indices
+  are uniform (chi-square 256.5 / 238.7 over 256 bins, band [142, 368]).
 - **gcd anti-collapse trap.** The shipped two-step reduction spreads the reduced
   indices across the full residue grid: the fraction on the diagonal
-  `idx0 ≡ idx1 (mod 66861)` is 1.60 × 10⁻⁵, matching the full-space expectation
+  `idx0 ≡ idx1 (mod 66861)` is 1.00 × 10⁻⁵, matching the full-space expectation
   `1/66861 ≈ 1.50 × 10⁻⁵`, where the rejected same-rank double-mod would confine
   every draw to that diagonal (fraction 1.0).
 - **Lane independence.** Cross-lane Pearson correlation at the barrier kernel
-  sits at the sampling floor (max |r| 0.00294 vs floor 0.00224 at N = 200 000).
+  sits at the sampling floor (max |r| 0.00238 vs floor 0.00224 at N = 200 000).
 
 One wire-level finding from that harness bears on this shelf's Axis B reading:
 the Triple + Interlocked Barrier layer alone (outer cipher off) produces a
@@ -275,6 +275,8 @@ Shelf verdict labels:
 - **Fully broken** — Axis C produced functionally-equivalent K at rounds = 1 AND the rounds ≥ 2 chain is breakable in the same regime.
 
 ## 5. Reproduction
+
+Reproduction commands that invoke a `go test` step (directly or through a shell driver) require the `redteam` build tag: `go test -tags redteam ...`. The four Axis-B shell drivers below (`harness_bias_audit_<primitive>.sh`) already pass the tag internally. The self-parity tests in [§5.5](#55-self-parity-tests) and the pre-screen invocations in [§5.6](#56-sat-free-pre-screen-35) are Python-only and do not require the tag.
 
 ### 5.1. t1ha1_64le
 
