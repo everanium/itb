@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Aggregate the nonce-reuse probe JSON records into a compact table.
 
-Reads every *.json under tmp/redteam/nonce_reuse/ and prints one
-per-layer summary line. Attacker-visible only — consumes only the
-emitted JSON records, no Go test state.
+Reads every *.json under ~/scratch/redteam/nonce_reuse/ (override via
+REDTEAM_NONCE_REUSE_OUTPUT_DIR) and prints one per-layer summary line.
+Attacker-visible only — consumes only the emitted JSON records, no Go
+test state.
 """
 
 from __future__ import annotations
@@ -78,10 +79,13 @@ def fmt_crossmsg(rec: dict) -> str:
 
 
 def main() -> None:
-    root = Path("tmp/redteam/nonce_reuse")
+    root = Path(os.environ.get(
+        "REDTEAM_NONCE_REUSE_OUTPUT_DIR",
+        str(Path.home() / "scratch" / "redteam" / "nonce_reuse"),
+    ))
     records = find_records(root)
     if not records:
-        print("no records — did you run `go test -run TestRedTeamNonceReuse ./`?")
+        print("no records — did you run `go test -tags redteam -run TestRedTeamNonceReuse ./`?")
         sys.exit(1)
 
     print("=" * 78)

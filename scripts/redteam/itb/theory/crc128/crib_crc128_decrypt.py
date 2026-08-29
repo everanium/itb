@@ -29,10 +29,10 @@ K-variant search, ~seconds on a small corpus.
 
 Usage:
     python3 crib_crc128_decrypt.py \\
-        --cell-dir tmp/attack/crib_cross/corpus_B_html \\
+        --cell-dir ~/scratch/redteam/crib_cross/corpus_B_html \\
         --k-observable 0x0770020d7031bed8 \\
         --crib-hex ff3c6964656e  \\
-        --expected-plaintext tmp/attack/crib_cross/corpus_B_html/ct_0000.plain
+        --expected-plaintext ~/scratch/redteam/crib_cross/corpus_B_html/ct_0000.plain
 
 Lab audit: compares reconstructed plaintext byte-for-byte to the
 attacker-known ground truth (only for reporting; the attacker already

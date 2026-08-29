@@ -35,7 +35,7 @@ Tests:
 Usage:
   python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \\
       --n-instances 64 --instance-size 4096 \\
-      --json-report tmp/attack/mx3stress/axis_a_struct_smoke.json
+      --json-report ~/scratch/redteam/mx3stress/axis_a_struct_smoke.json
 
 Sample-size scaling (for publication, scale up):
   n=64     bit_bias noise ≈ 6.25 %  (smoke only — tests pipeline)

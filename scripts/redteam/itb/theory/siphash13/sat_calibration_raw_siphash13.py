@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import resource
 import sys
@@ -703,7 +704,10 @@ def main() -> int:
     )
     ap.add_argument(
         "--json-report",
-        default="tmp/attack/siphash13stress/phase0_raw_sat_calibration.json",
+        default=str(Path(os.environ.get(
+            "SAT_CALIBRATION_RAW_SIPHASH13_OUTPUT_DIR",
+            str(Path.home() / "scratch" / "redteam" / "siphash13stress"),
+        )) / "raw_sat_calibration.json"),
         help="path to write the full cell-by-cell report",
     )
     ap.add_argument(

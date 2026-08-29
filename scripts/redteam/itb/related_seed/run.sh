@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # One-shot runner for the v0.3.0 related-seed differential adversarial
 # re-verification probes. Runs the Go test suite; the tests emit JSON
-# records under tmp/redteam/related_seed/ that aggregate.py summarises
-# as a 4-D structural analysis (axis dominance / Δ pattern / plaintext
-# kind / primitive contrast).
+# records under ~/scratch/redteam/related_seed/ (override via
+# REDTEAM_RELATED_SEED_OUTPUT_DIR) that aggregate.py summarises as a
+# 4-D structural analysis (axis dominance / Δ pattern / plaintext kind
+# / primitive contrast).
 #
 # Runtime: ~10 minutes wall clock at 512 KiB plaintext per cell
 # (192 encrypts under Encrypt3x128Cfg + 4 encrypts under process128Cfg
@@ -23,11 +24,11 @@ echo "==> Running related-seed differential re-verification probes"
 echo "    (repo root: $repo_root)"
 echo
 
-go test -run TestRedTeamRelatedSeed -v -timeout 1800s ./
+go test -tags redteam -run TestRedTeamRelatedSeed -v -timeout 1800s ./
 
 echo
 echo "==> Emitted JSON records"
-ls -la tmp/redteam/related_seed/ 2>/dev/null || {
+ls -la "${REDTEAM_RELATED_SEED_OUTPUT_DIR:-${HOME}/scratch/redteam/related_seed}/" 2>/dev/null || {
     echo "    (no output directory — did the tests run?)"
     exit 1
 }

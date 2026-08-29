@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-shot runner for the v0.3.0 nonce-reuse adversarial re-verification
 # probes. Runs the Go test suite; the tests emit JSON records under
-# tmp/redteam/nonce_reuse/ that aggregate.py then summarises.
+# ~/scratch/redteam/nonce_reuse/ (override via
+# REDTEAM_NONCE_REUSE_OUTPUT_DIR) that aggregate.py then summarises.
 #
 # The script exits non-zero only on Go test failures; the emitted
 # statistics are read from JSON, not from the test exit code (each
@@ -20,11 +21,11 @@ echo "==> Running nonce-reuse re-verification probes"
 echo "    (repo root: $repo_root)"
 echo
 
-go test -run TestRedTeamNonceReuse -v ./
+go test -tags redteam -run TestRedTeamNonceReuse -v ./
 
 echo
 echo "==> Emitted JSON records"
-ls -la tmp/redteam/nonce_reuse/ 2>/dev/null || {
+ls -la "${REDTEAM_NONCE_REUSE_OUTPUT_DIR:-${HOME}/scratch/redteam/nonce_reuse}/" 2>/dev/null || {
     echo "    (no output directory — did the tests run?)"
     exit 1
 }

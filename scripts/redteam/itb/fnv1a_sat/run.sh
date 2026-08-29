@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # One-shot runner for the v0.3.0 FNV-1a lo-lane SAT re-verification
 # probes. Runs the Go test suite; the tests emit JSON records under
-# tmp/redteam/fnv1a_sat/ that the companion Python SAT probe and the
-# aggregate summariser then consume.
+# ~/scratch/redteam/fnv1a_sat/ (override via
+# REDTEAM_FNV1A_SAT_OUTPUT_DIR) that the companion Python SAT probe and
+# the aggregate summariser then consume.
 #
 # The script exits non-zero on Go test failures; the emitted
 # statistics are read from JSON, not from the test exit code.
@@ -20,11 +21,11 @@ echo "==> Running FNV-1a lo-lane SAT re-verification Go probes"
 echo "    (repo root: $repo_root)"
 echo
 
-go test -run TestRedTeamBrokenFNV1a -v ./
+go test -tags redteam -run TestRedTeamBrokenFNV1a -v ./
 
 echo
 echo "==> Emitted JSON records"
-ls -la tmp/redteam/fnv1a_sat/ 2>/dev/null || {
+ls -la "${REDTEAM_FNV1A_SAT_OUTPUT_DIR:-${HOME}/scratch/redteam/fnv1a_sat}/" 2>/dev/null || {
     echo "    (no output directory — did the tests run?)"
     exit 1
 }
@@ -39,7 +40,7 @@ if command -v bitwuzla >/dev/null 2>&1 && python3 -c 'import bitwuzla' 2>/dev/nu
         --n-crib-pixels "${n_pixels}" \
         --timeout-sec "${timeout}" \
         --regime true_npr \
-        --json-report tmp/redteam/fnv1a_sat/sat_probe.json
+        --json-report "${REDTEAM_FNV1A_SAT_OUTPUT_DIR:-${HOME}/scratch/redteam/fnv1a_sat}/sat_probe.json"
 else
     echo "    Bitwuzla not available — skipping (install: yay -S bitwuzla)"
 fi

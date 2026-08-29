@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # One-shot runner for the v0.3.0 related-nonce differential adversarial
 # re-verification probes. Runs the Go test suite; the tests emit JSON
-# records under tmp/redteam/related_nonce/ that aggregate.py summarises
-# as a structural analysis (Δ pattern ranking / plaintext-kind
-# sensitivity / primitive contrast / excess-over-no-Δ-floor).
+# records under ~/scratch/redteam/related_nonce/ (override via
+# REDTEAM_RELATED_NONCE_OUTPUT_DIR) that aggregate.py summarises as a
+# structural analysis (Δ pattern ranking / plaintext-kind sensitivity /
+# primitive contrast / excess-over-no-Δ-floor).
 #
 # Runtime: ~3 minutes wall clock at 512 KiB plaintext per cell
 # (48 encrypts under Encrypt3x128Cfg for the matrix + 4 encrypts under
@@ -22,11 +23,11 @@ echo "==> Running related-nonce differential re-verification probes"
 echo "    (repo root: $repo_root)"
 echo
 
-go test -run TestRedTeamRelatedNonce -v -timeout 1800s ./
+go test -tags redteam -run TestRedTeamRelatedNonce -v -timeout 1800s ./
 
 echo
 echo "==> Emitted JSON records"
-ls -la tmp/redteam/related_nonce/ 2>/dev/null || {
+ls -la "${REDTEAM_RELATED_NONCE_OUTPUT_DIR:-${HOME}/scratch/redteam/related_nonce}/" 2>/dev/null || {
     echo "    (no output directory — did the tests run?)"
     exit 1
 }

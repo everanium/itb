@@ -2,7 +2,8 @@
 """Aggregate the fresh-nonce CPA broken-primitive probe JSON records.
 
 Reads the record file emitted by `TestRedTeamCPABroken` at
-`tmp/redteam/cpa_broken/cpa_broken_matrix.json` and prints a compact
+`~/scratch/redteam/cpa_broken/cpa_broken_matrix.json` (override the
+parent dir via REDTEAM_CPA_BROKEN_OUTPUT_DIR) and prints a compact
 structural analysis:
 
   - per-cell body chi² vs df=255 uniform (per primitive, per plaintext
@@ -21,12 +22,16 @@ Consumes only the emitted JSON records — no Go test state.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 
-DEFAULT_ROOT = Path("tmp/redteam/cpa_broken")
+DEFAULT_ROOT = Path(os.environ.get(
+    "REDTEAM_CPA_BROKEN_OUTPUT_DIR",
+    str(Path.home() / "scratch" / "redteam" / "cpa_broken"),
+))
 
 
 def load(root: Path) -> dict:

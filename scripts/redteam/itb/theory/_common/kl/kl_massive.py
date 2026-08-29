@@ -11,7 +11,7 @@ any modern machine can run it.
 
 Prerequisites:
     ITB_REDTEAM_MASSIVE=<hash> ITB_BARRIER_FILL=1 \\
-      go test -run TestRedTeamGenerateSingleMassive -v -timeout 10m
+      go test -tags redteam -run TestRedTeamGenerateTripleMassive -v -timeout 10m
     # produces tmp/massive/<hash>.{bin,plain,pixel}
 
 Usage:

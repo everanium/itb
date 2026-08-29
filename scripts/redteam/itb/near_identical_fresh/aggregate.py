@@ -2,8 +2,9 @@
 """Aggregate the fresh-nonce near-identical cross-message distinguisher JSON.
 
 Reads the record file emitted by `TestRedTeamNearIdenticalFreshNonce` at
-`tmp/redteam/near_identical_fresh/near_identical_fresh_matrix.json` and
-prints a compact structural analysis:
+`~/scratch/redteam/near_identical_fresh/near_identical_fresh_matrix.json`
+(override the parent dir via REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR)
+and prints a compact structural analysis:
 
   - per-cell byte-XOR chi² vs df=255 uniform (per size, per delta
     position, per category)
@@ -23,12 +24,16 @@ Consumes only the emitted JSON record — no Go test state.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 
-DEFAULT_ROOT = Path("tmp/redteam/near_identical_fresh")
+DEFAULT_ROOT = Path(os.environ.get(
+    "REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR",
+    str(Path.home() / "scratch" / "redteam" / "near_identical_fresh"),
+))
 
 
 def load(root: Path) -> dict:

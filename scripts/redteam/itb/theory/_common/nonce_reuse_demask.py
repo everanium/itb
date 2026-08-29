@@ -19,7 +19,7 @@ data-carrying pixel via Layer 1 constraint matching against the known plaintexts
 
 Usage:
     python3 scripts/redteam/itb/theory/_common/nonce_reuse_demask.py \\
-        --cell-dir tmp/attack/nonce_reuse/corpus/fnv1a/BF1/N2/known \\
+        --cell-dir ~/scratch/redteam/nonce_reuse/corpus/fnv1a/BF1/N2/known \\
         --pair 0000 0001 \\
         --mode known-plaintext \\
         --validate

@@ -4,7 +4,8 @@
 
 Companion to the Go probes in `redteam_broken_fnv1a_sat_test.go`.
 Reads the JSON corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus`
-under `tmp/redteam/fnv1a_sat/f6_corpus_bundle.json` and runs a Bitwuzla
+under `~/scratch/redteam/fnv1a_sat/f6_corpus_bundle.json` (override the
+parent dir via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`) and runs a Bitwuzla
 SAT instance encoding the naive-crib SAT anchoring premise on both the
 pre-v0.3.0 without-barrier control and the v0.3.0 Triple/barrier
 ciphertext.
@@ -566,7 +567,10 @@ def sat_probe_barrier(
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus-json", type=Path,
-                    default=Path("tmp/redteam/fnv1a_sat/f6_corpus_bundle.json"))
+                    default=Path(os.environ.get(
+                        "REDTEAM_FNV1A_SAT_OUTPUT_DIR",
+                        str(Path.home() / "scratch" / "redteam" / "fnv1a_sat"),
+                    )) / "f6_corpus_bundle.json")
     ap.add_argument("--n-crib-pixels", type=int, default=3)
     ap.add_argument("--timeout-sec", type=int, default=600)
     ap.add_argument("--rounds", type=int, default=4,
@@ -576,7 +580,10 @@ def main(argv=None) -> int:
                     help="true_npr grants lab-peek true (np, r) per pixel — "
                          "strongest attacker upper bound. all_npr enumerates all 56.")
     ap.add_argument("--json-report", type=Path,
-                    default=Path("tmp/redteam/fnv1a_sat/sat_probe.json"))
+                    default=Path(os.environ.get(
+                        "REDTEAM_FNV1A_SAT_OUTPUT_DIR",
+                        str(Path.home() / "scratch" / "redteam" / "fnv1a_sat"),
+                    )) / "sat_probe.json")
     ap.add_argument("--barrier-only", action="store_true")
     ap.add_argument("--control-only", action="store_true")
     ap.add_argument("--barrier-sp-peek", action="store_true",
@@ -585,7 +592,7 @@ def main(argv=None) -> int:
 
     if not args.corpus_json.is_file():
         print(f"[FATAL] corpus JSON not found: {args.corpus_json}", file=sys.stderr)
-        print("Run `go test -run TestRedTeamBrokenFNV1aCribKPAEmitCorpus -v ./` first.",
+        print("Run `go test -tags redteam -run TestRedTeamBrokenFNV1aCribKPAEmitCorpus -v ./` first.",
               file=sys.stderr)
         return 1
 
