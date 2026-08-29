@@ -108,18 +108,22 @@ type wireLayoutNR struct {
 	snakePixels      [3]int // pixel counts per snake
 }
 
-// decodeWireNR parses the public wire header (nonce, W, H) and slices
-// the container body into 3 snake regions. Attacker-visible — uses only
+// decodeWireNR parses the v0.3.0 public wire header (main_nonce,
+// interlock_nonce, W, H) and slices the container body into 3 snake
+// regions. `nonce` in the returned layout is the main nonce (first
+// NonceSize bytes); the interlock nonce is not surfaced here because
+// the historical single-nonce probes downstream consult only the main
+// nonce (`deriveStartPixel`, etc.). Attacker-visible — uses only
 // public bytes. Panics if the wire is malformed (tests should not call
 // with an invalid wire).
 func decodeWireNR(ct []byte) wireLayoutNR {
 	nonce := ct[:NonceSize]
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
+	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
 	total := w * h
 	third := total / 3
 	third3 := total - 2*third
-	body := ct[NonceSize+4:]
+	body := ct[2*NonceSize+4:]
 	return wireLayoutNR{
 		nonce:            nonce,
 		totalPixels:      total,
@@ -314,8 +318,8 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 				// Only the container body enters the statistic — nonce +
 				// dim-header bytes carry no XOR signal (identical bytes
 				// XOR to zero and would over-count the "zero rate").
-				bodyXor := xorBytes(c1[NonceSize+4:NonceSize+4+layout.totalPixels*Channels],
-					c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+				bodyXor := xorBytes(c1[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels],
+					c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 				xorAll = append(xorAll, bodyXor...)
 				for _, b := range bodyXor {
 					if b == 0 {
@@ -493,7 +497,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 				}
 				layout := decodeWireNR(c1)
 				bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-					c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+					c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 				plainXor := xorBytes(p1, p2)
 
 				for si := 0; si < 3; si++ {
@@ -657,7 +661,7 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 	}
 	layout := decodeWireNR(c1)
 	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+		c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 
 	// [lab-peek: sp_i] — documented single lab exception for Layer B.
 	sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
@@ -778,7 +782,7 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 	}
 	layout := decodeWireNR(c1)
 	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+		c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 
 	// [lab-peek: sp_i] — documented single lab exception, matches the
 	// Quiet-Chunk probe's peek.
@@ -881,7 +885,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	}
 	layout := decodeWireNR(c1)
 	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+		c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 
 	// [lab-peek: sp_i] and [lab-peek: masks] — this is the mask-oracle
 	// upper-bound probe. The revelation is documented in the test
@@ -1101,7 +1105,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 		for pos := 0; pos < npos; pos++ {
 			seen := make(map[byte]struct{}, N)
 			for i := 0; i < N; i++ {
-				body := cts[i][NonceSize+4:]
+				body := cts[i][2*NonceSize+4:]
 				seen[body[off+pos]] = struct{}{}
 			}
 			distinctCounts[pos] = len(seen)
@@ -1200,7 +1204,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 	}
 	layout := decodeWireNR(c1)
 	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+		c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 
 	// [lab-peek: sp_i] — same documented Layer B lab exception. Even with
 	// this peek granted, Layer C's precondition (recovered channelXOR
@@ -1463,8 +1467,8 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 	}
 	layout := decodeWireNR(c1)
 	bodyXor12 := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
-	c3Body := c3[NonceSize+4 : NonceSize+4+layout.totalPixels*Channels]
+		c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
+	c3Body := c3[2*NonceSize+4 : 2*NonceSize+4+layout.totalPixels*Channels]
 
 	// Regime A — attacker-realistic (no lab peek). Attacker has C1, C2,
 	// C3, P1, P2 and tries to decrypt P3 by first recovering the

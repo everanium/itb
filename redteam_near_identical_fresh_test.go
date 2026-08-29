@@ -175,12 +175,13 @@ func nifBuild8Seeds(t *testing.T, hf HashFunc128) [8]*Seed128 {
 }
 
 // bodyOfCTNIF slices the ciphertext body out of a v0.3.0 wire (nonce +
-// dimension header dropped). Layout: nonce (NonceSize) || W(2 BE) ||
-// H(2 BE) || W*H*Channels body bytes.
+// dimension header dropped). Layout: main_nonce (NonceSize) ||
+// interlock_nonce (NonceSize) || W(2 BE) || H(2 BE) || W*H*Channels
+// body bytes.
 func bodyOfCTNIF(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
+	header := 2*NonceSize + 4
+	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
 	total := w * h
 	return ct[header : header+total*Channels]
 }
