@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2b KL floor probe on a single 63 MB ITB encryption —
+"""Phase 2b KL floor probe on a single ITB encryption —
 full-container / realistic-attacker variant.
 
 Sibling of `kl_massive_single.py`. That script reads the .pixel
@@ -9,25 +9,25 @@ startPixel, no plaintext XOR, iterate all P container pixels — data
 AND CSPRNG fill indistinguishably — and accumulate the raw 7-bit
 candidate distribution.
 
-At BF=1 the container is nearly pure data (fill adds only side = ~310
-pixels to a side length of ~3 100 for a 63 MB plaintext), so N for
-this script ≈ 76 M observations per candidate — marginally more than
-the Mode A variant. At BF=32 the container adds ~2.5 M extra pixels,
-pushing N to ~88 M. In both regimes the theoretical KL floor
-(~bins/N) is tighter than Mode A's, so this is the STRICTER of the
-two probes.
+The container body on the v0.3.0 shipped wire is the barrier-permuted
+Triple stream — three snakes distributed through the always-on 48-bit
+Interlocked Barrier. The probe treats the body as one flat
+8-byte-per-pixel stream (matching the coarse treatment
+`raw_mode_common.py` uses); the barrier's structural complexity is
+absorbed by the χ² / pairwise-KL metric aggregating over all pixels.
 
 Single-threaded, chunked (memory ~500 MB regardless of sample size).
 
 Prerequisites:
     ITB_REDTEAM_MASSIVE=<hash> ITB_BARRIER_FILL=1 \\
-      go test -run TestRedTeamGenerateSingleMassive -v -timeout 10m
-    # produces tmp/massive/<hash>.{bin,plain,pixel}
+      ITB_REDTEAM_MASSIVE_SIZE=<bytes> ITB_REDTEAM_MASSIVE_OUTDIR=<dir> \\
+      go test -tags redteam -run TestRedTeamGenerateTripleMassive -v -timeout 10m
+    # produces <dir>/<hash>.{bin,plain,pixel}
 
 Usage:
     python3 scripts/redteam/phase2_theory/kl_massive_single_full.py <hash>
 
-Valid <hash> values match the 10 dirnames used elsewhere.
+Valid <hash> values match the shipped registry PRF-grade entries.
 """
 
 from __future__ import annotations
@@ -50,9 +50,13 @@ MASSIVE_DIR = (
     else PROJ / "tmp" / "massive"
 )
 
-HEADER_SIZE = 20
 CHANNELS = 8
 CHUNK_SIZE = 500_000  # same memory budget as Mode A: ~224 MB cand_raw peak
+# `header_size` is now read per-cell from the `.pixel` sidecar — the v0.3.0
+# dual-nonce wire header is `2 * NonceSize + 4` bytes (132 at the default
+# 512-bit nonce); the pre-v0.3.0 default of 20 remains as a last-resort
+# fallback for legacy corpora that omit the field.
+LEGACY_HEADER_SIZE = 20
 
 # Lookup tables (identical to distinguisher.py / kl_massive_single.py).
 _extract_tbl = np.zeros((8, 256), dtype=np.uint8)
@@ -95,16 +99,30 @@ def main():
         meta[k] = v
     total_pixels = int(meta["total_pixels"])
     barrier_fill = int(meta.get("barrier_fill", "1"))
+    # v0.3.0 dual-nonce corpora carry `header_size` directly; fall back to
+    # `2 * len(main_nonce) + 4` derived from `main_nonce_hex`, then to the
+    # pre-v0.3.0 20-byte constant as a last resort. `Config.BarrierFill` is
+    # the runtime knob (never `SetBarrierFill(...)` — no such API exists);
+    # the corpus generator threads it via `ITB_BARRIER_FILL` into
+    # `Encrypt3x128Cfg`'s `*Config`.
+    if "header_size" in meta:
+        header_size = int(meta["header_size"])
+    else:
+        nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
+        if nonce_hex:
+            header_size = 2 * (len(nonce_hex) // 2) + 4
+        else:
+            header_size = LEGACY_HEADER_SIZE
 
     print(f"{'=' * 72}")
     print(f"  Phase 2b-full KL floor probe on a single massive sample")
     print(f"  (no startPixel, no plaintext — realistic-attacker threat model)")
     print(f"{'=' * 72}")
-    print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}")
+    print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}   header_size: {header_size}")
 
     t0 = time.time()
     ciphertext = bin_path.read_bytes()
-    container = ciphertext[HEADER_SIZE:HEADER_SIZE + total_pixels * CHANNELS]
+    container = ciphertext[header_size:header_size + total_pixels * CHANNELS]
     print(f"  ciphertext: {len(ciphertext):,} bytes "
           f"({len(ciphertext) / 1024 / 1024:.1f} MB)")
     print(f"  total pixels: {total_pixels:,}   candidates/pixel: 56")
