@@ -46,7 +46,7 @@ const wrapMasterSize = 32
 // derived key + parallax subkeys are drawn from crypto/rand. The
 // returned blob bytes carry the full session bundle the receiver
 // needs — the profile name + wrap-layer version + both masters +
-// nested [itb.Blob{N}] with the eight seed components, per-slot PRF
+// nested [itb.Blob{N}] with the 8 seed components, per-slot PRF
 // keys, and MAC material. Distribution of the blob is the caller's
 // responsibility — treat the blob as the full key bundle.
 //

@@ -382,10 +382,10 @@ func ITB_GetSeedComponents(
 
 // ─── Encrypt / Decrypt ─────────────────────────────────────────────
 
-// Triple Ouroboros encrypt: takes eight seed handles (one shared
+// Triple Ouroboros encrypt: takes 8 seed handles (one shared
 // noise + one lockSeed + three data + three start) and produces one
 // ciphertext that interleaves three snake payloads. Wire format:
-// [nonce || width(2) || height(2) || pixels]. All eight handles
+// [nonce || width(2) || height(2) || pixels]. All 8 handles
 // must share the same native hash width (mixing 128/256/512 returns
 // ITB_ERR_SEED_WIDTH_MIX). Caller-allocated output buffer; on
 // success *outLen receives the bytes written, on
@@ -1531,7 +1531,7 @@ func ITB_UnwrapStreamReader_Free(handle C.uintptr_t) C.int {
 // ─── Triple Pipeline (itb/triple facade) ───────────────────────────
 //
 // The ITB_Triple_* surface wraps the github.com/everanium/itb/triple
-// sub-package — one Pipeline handle replaces the eight-seed +
+// sub-package — one Pipeline handle replaces the 8-seed +
 // parallax + wrapper + MAC ceremony of the low-level path. The
 // Pipeline is opened against one of the shipped profile names (see
 // triple/profile.go: ProfileStreamingAEADTripleMACV1 /

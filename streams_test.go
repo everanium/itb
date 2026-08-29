@@ -145,7 +145,7 @@ func TestEncryptStream3xSingleChunk(t *testing.T) {
 
 // TestEncryptStream3xWidthMixRejected confirms width-mix detection on
 // the io.Reader / io.Writer Triple stream path. The width-less
-// dispatch surfaces an error when the eight seeds are not all the
+// dispatch surfaces an error when the 8 seeds are not all the
 // same width.
 func TestEncryptStream3xWidthMixRejected(t *testing.T) {
 	n128, l128, d128, _, _, s128, _, _ := mkTriple128(t)

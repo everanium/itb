@@ -78,12 +78,12 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 
 **Corollary.** The attacker cannot determine the start pixel from known plaintext: every pixel position produces a valid (d, m) pair, making all P positions indistinguishable. ∎
 
-<a name="proof-3-triple-seed-isolation"></a>
-## Proof 3: Eight-Seed Isolation
+<a name="proof-3-8-seed-isolation"></a>
+## Proof 3: 8-Seed Isolation
 
-**Theorem.** In the eight-seed architecture — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 — compromise of any proper subset of seeds provides zero information about the remaining seeds.
+**Theorem.** In the 8-seed architecture — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 — compromise of any proper subset of seeds provides zero information about the remaining seeds.
 
-**Proof.** The eight seeds are generated independently from crypto/rand and enforced pairwise-distinct at the API surface by byte-level `Components` comparison in addition to pointer identity, so byte-identical seed material reaching the API through blob import or the Low-Level constructors is rejected on the same gate. By construction:
+**Proof.** The 8 seeds are generated independently from crypto/rand and enforced pairwise-distinct at the API surface by byte-level `Components` comparison in addition to pointer identity, so byte-identical seed material reaching the API through blob import or the Low-Level constructors is rejected on the same gate. By construction:
 
 1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
 2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce))`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
@@ -112,10 +112,10 @@ I(startSeed_j ; startPixel_i) = 0   for every j ≠ i
 **Combined compromise:** Even with any strict subset S ⊊ {noiseSeed, lockSeed, dataSeed_{1..3}, startSeed_{1..3}} fully known:
 
 ```
-I(seed ∈ ({all eight} \ S) ; S) = 0
+I(seed ∈ ({all 8} \ S) ; S) = 0
 ```
 
-because all eight are independently generated. The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-snake pixel offsets, and per-chunk barrier permutation remain information-theoretically hidden.
+because all 8 are independently generated. The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-snake pixel offsets, and per-chunk barrier permutation remain information-theoretically hidden.
 
 **dataSeed_i side-channel:** each dataSeed's hash output is consumed only by:
 - `dataRotation = dataHash % 7` — register operation
@@ -127,28 +127,28 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 
 **lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (§13 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
 
-<a name="proof-3a-triple-seed-isolation-minimality"></a>
-## Proof 3a: Eight-Seed Isolation Minimality
+<a name="proof-3a-8-seed-isolation-minimality"></a>
+## Proof 3a: 8-Seed Isolation Minimality
 
-**Theorem.** Eight independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-snake leakage. This has not been independently verified.
+**Theorem.** 8 independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-snake leakage. This has not been independently verified.
 
 **Proof.**
 
-*Part 1: Eight derivation domains.*
+*Part 1: 8 derivation domains.*
 
-The construction defines eight disjoint derivation domains, each keyed by its own seed:
+The construction defines 8 disjoint derivation domains, each keyed by its own seed:
 - **N** (noise): noise bit position per pixel (3 bits/pixel), derived from noiseSeed
 - **L** (lock): per-chunk Interlocked Barrier mask triple, derived from lockSeed
 - **D₁, D₂, D₃** (data): rotation (3 bits) + per-bit XOR masks (56 bits) per pixel, derived from the per-snake dataSeed_i
 - **S₁, S₂, S₃** (start): per-snake pixel embedding offset (one per message), derived from the per-snake startSeed_i
 
-Each domain has a documented attack surface (see [Proof 3](#proof-3-triple-seed-isolation)):
+Each domain has a documented attack surface (see [Proof 3](#proof-3-8-seed-isolation)):
 - N is recoverable via CCA with MAC-reveal (bit-flip → accept = noise bit)
 - each S_i is observable via cache side-channel (memory access pattern)
 - each D_i has zero software-observable side-channel (register-only operations)
 - L has zero software-observable side-channel (fixed-pattern table lookups, constant-time kernels)
 
-Parts 2–4 establish minimality for the pixel-layer domain types (N, D, S) on one snake; Part 5 lifts the argument to the full eight-domain layout.
+Parts 2–4 establish minimality for the pixel-layer domain types (N, D, S) on one snake; Part 5 lifts the argument to the full 8-domain layout.
 
 *Part 2: Single seed — complete break.*
 
@@ -185,15 +185,15 @@ D has zero software-observable side-channel. Even combined CCA + cache + KPA pro
 
 Within the pixel-layer domain types, three independent seeds are therefore minimal: fewer creates cross-domain leakage in every possible pairing.
 
-*Part 5: Lifting to the eight-domain layout.*
+*Part 5: Lifting to the 8-domain layout.*
 
-The shipped construction instantiates the D and S domain types once per snake and adds the barrier domain L. Merging any two of the eight domains onto one seed reproduces one of the Part 3 leakage patterns:
+The shipped construction instantiates the D and S domain types once per snake and adds the barrier domain L. Merging any two of the 8 domains onto one seed reproduces one of the Part 3 leakage patterns:
 
 - **Observable + unobservable** (N or any S_i merged with L or any D_j): the observable domain's attack surface (CCA for N, cache for S_i) constrains the shared seed, leaking information about the unobservable domain — the pattern of pairings (a) and (c).
 - **Observable + observable** (N merged with an S_i, or S_i with S_j): two attack surfaces target one seed, and observations from one surface reduce the search space for the other domain — the pattern of pairing (b). For S_i + S_j the leak is additionally cross-snake: one snake's observed startPixel constrains another snake's offset.
-- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one snake's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-triple-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) treat as disjoint entropy sources.
+- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one snake's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-8-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) treat as disjoint entropy sources.
 
-Every layout with at most seven seeds merges at least two of the eight domains (pigeonhole) and therefore contains at least one of the three patterns. Eight independent seeds are the minimum: any merge creates cross-domain or cross-snake leakage, while eight CSPRNG-generated independent keys achieve the pairwise independence of [Proof 3](#proof-3-triple-seed-isolation). ∎
+Every layout with at most 7 seeds merges at least two of the 8 domains (pigeonhole) and therefore contains at least one of the three patterns. 8 independent seeds are the minimum: any merge creates cross-domain or cross-snake leakage, while 8 CSPRNG-generated independent keys achieve the pairwise independence of [Proof 3](#proof-3-8-seed-isolation). ∎
 
 ## Proof 3b: ChainHash Full Component Utilization
 
@@ -264,13 +264,13 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 **(1) PRF inversion.** Given a verified candidate dataHash h', recovering dataSeed from H(counter||nonce, dataSeed) = h' requires hash inversion ([Definition 2, SCIENCE.md §5](SCIENCE.md#5-formal-definitions)). Under the PRF assumption (which implies one-wayness), this is infeasible.
 
-**(2) startPixel isolation.** startPixel = f(startSeed, nonce) where startSeed ⊥ noiseSeed ⊥ dataSeed ([Proof 3](#proof-3-triple-seed-isolation)). startPixel is not transmitted in the cleartext header. An attacker with full known plaintext does not know which pixel of the container corresponds to plaintext byte 0 — there are P candidate offsets with no feedback to narrow them.
+**(2) startPixel isolation.** startPixel = f(startSeed, nonce) where startSeed ⊥ noiseSeed ⊥ dataSeed ([Proof 3](#proof-3-8-seed-isolation)). startPixel is not transmitted in the cleartext header. An attacker with full known plaintext does not know which pixel of the container corresponds to plaintext byte 0 — there are P candidate offsets with no feedback to narrow them.
 
 **(3) Per-pixel ambiguity at 1:1 signal/noise.** Per [Proof 1](#proof-1-information-theoretic-barrier): P(v | h) = 1/2 for any observed byte v and any hash output h. Per [Proof 4](#proof-4-rotation-barrier): 7 rotation candidates remain indistinguishable after the barrier. Combined: 56 candidates per pixel (8 noisePos × 7 rotation), each equally consistent with the observation. Signal/noise ratio is 1:1 — the observation provides no ranking signal to the attacker. Formally: sup_{c,c'} Pr[c | obs] / Pr[c' | obs] = 1 — all candidates are equiprobable conditional on the observation.
 
 **(4) Byte-splitting non-alignability (Partial KPA defense).** Per [SCIENCE.md §2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment): gcd(7,8)=1 guarantees every plaintext byte is split across exactly 2 channels. Under Partial KPA, where the attacker has incomplete plaintext, per-channel candidate formulation (a potential shortcut attack) is blocked because each channel depends on two bytes — missing one prevents candidate computation. Under Full KPA this shortcut is not available anyway (brute force enumerates seeds directly), so obstacle (4) has no additional defensive effect.
 
-**Composition.** Obstacles (1)–(3) have disjoint entropy sources by [Proof 3](#proof-3-triple-seed-isolation) and jointly determine the Full KPA brute-force cost stated in the theorem. Full KPA defense is 3-factor under PRF assumption (PRF non-invertibility, startPixel isolation, per-pixel 1:1 ambiguity); gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. The obstacles are not independent sub-problems defeated sequentially but interlocking constraints.
+**Composition.** Obstacles (1)–(3) have disjoint entropy sources by [Proof 3](#proof-3-8-seed-isolation) and jointly determine the Full KPA brute-force cost stated in the theorem. Full KPA defense is 3-factor under PRF assumption (PRF non-invertibility, startPixel isolation, per-pixel 1:1 ambiguity); gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. The obstacles are not independent sub-problems defeated sequentially but interlocking constraints.
 
 **Composition conjecture.** Hash output bias and collisions are absorbed by the barrier ([Proof 7](#proof-7-bias-neutralization), BHT analysis). Occasional/sporadic PRF inversion events are additionally absorbed by startPixel isolation and per-pixel 1:1 ambiguity (obstacles 2, 3), plus gcd(7,8)=1 byte-splitting under Partial KPA (obstacle 4): recovered candidates become indistinguishable from the false-positive distribution. Systematic partial PRF inversion is a real (non-absorbed) threat that the barrier does not neutralize — the architecture raises cost but does not eliminate the attack — however, no such systematic weakness is currently known to reduce the Full KPA work factor below the theorem bound. Only total PRF inversion circumvents this via algorithmic seed recovery (see Asymmetry note).
 
@@ -331,7 +331,7 @@ This proof applies to the MAC + Reveal mode only. Under Core ITB and MAC + Silen
 
 **Step 5: No further information.** After classification, the attacker knows noisePos for each pixel (3 bits from noiseSeed). The 7 data bit positions are known, but their VALUES are protected by per-bit XOR:
 - Each data bit = `rotate(plaintext_bit ⊕ xor_mask_bit, r)`
-- XOR mask and rotation from dataSeed (independent of noiseSeed, [Proof 3](#proof-3-triple-seed-isolation))
+- XOR mask and rotation from dataSeed (independent of noiseSeed, [Proof 3](#proof-3-8-seed-isolation))
 - Per [Proof 2](#proof-2-per-bit-xor-kpa-resistance): any observed value is consistent with any plaintext under some (m, r)
 
 Multi-bit flips yield a single binary response — no amplification beyond single-bit classification.
@@ -346,7 +346,7 @@ Multi-bit flips yield a single binary response — no amplification beyond singl
 - dataRotation = dataHash % 7 → some rotations more frequent
 - channelXOR bits → some XOR values more probable
 
-**Unobservability:** The attacker cannot observe dataSeed's hash output ([Proof 3](#proof-3-triple-seed-isolation): eight-seed isolation). The bias manifests only in the encrypted data within the container:
+**Unobservability:** The attacker cannot observe dataSeed's hash output ([Proof 3](#proof-3-8-seed-isolation): 8-seed isolation). The bias manifests only in the encrypted data within the container:
 
 ```
 container_data = insert(rotate(plaintext ⊕ biased_xor, biased_r), noise, noisePos)
@@ -367,7 +367,7 @@ Without the ability to evaluate P(observed | r = r') (requires dataSeed), the Ba
 
 ## Proof 8: Oracle-Free Deniability
 
-**Theorem.** For any container C encrypted with the eight-seed tuple (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3) and any candidate eight-seed tuple that differs on at least one component, the output of `itb.Decrypt3x{128,256,512}Cfg` on C under the candidate tuple is computationally indistinguishable from uniform random bytes.
+**Theorem.** For any container C encrypted with the 8-seed tuple (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3) and any candidate 8-seed tuple that differs on at least one component, the output of `itb.Decrypt3x{128,256,512}Cfg` on C under the candidate tuple is computationally indistinguishable from uniform random bytes.
 
 **Proof.** `Decrypt3x*Cfg` extracts a byte sequence by:
 1. Computing each snake's startPixel from its startSeed' (deterministic, different from the true startPixels).
@@ -580,7 +580,7 @@ P(collision) ≈ 1 - e^(-n²/2^(w+1)) ≈ n²/2^(w+1)
 
 At w = 512 (the shipped default): P reaches ~1/2 only at n ≈ 2^256, mathematically unreachable on foreseeable hardware. At w = 128 (the shortest supported width): P reaches ~1/2 at n ≈ 2^64.
 
-**Impact of collision:** The wire carries two independent per-message CSPRNG nonces — a main nonce `N_main` (bound to per-pixel noiseSeed / dataSeed_i derivations and per-snake startSeed_i derivations) and an interlock nonce `N_il` (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same eight-seed tuple:
+**Impact of collision:** The wire carries two independent per-message CSPRNG nonces — a main nonce `N_main` (bound to per-pixel noiseSeed / dataSeed_i derivations and per-snake startSeed_i derivations) and an interlock nonce `N_il` (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same 8-seed tuple:
 - Same noiseSeed + `N_main` → identical noise positions for both messages.
 - Same lockSeed + `N_il` → identical per-chunk Interlocked Barrier permutations for both messages.
 - Same dataSeed_i + `N_main` → identical rotation and XOR masks per snake.

@@ -23,7 +23,7 @@ func (e capiError) Error() string { return string(e) }
 //
 // All 8 handles must share the same native hash width and must be
 // pairwise distinct (the underlying itb.Encrypt3x* enforces the
-// eight-seed isolation invariant). Same caller-allocated-buffer
+// 8-seed isolation invariant). Same caller-allocated-buffer
 // convention as Encrypt: returned n carries the bytes written on
 // success or the required capacity on StatusBufferTooSmall.
 func Encrypt3(

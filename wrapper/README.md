@@ -165,7 +165,7 @@ Non-AEAD streaming picks `triple.ProfileStreamingNoAEADTripleV1` at `triple.Init
 
 ### Low-Level wrap
 
-Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` entry points directly compose the same wrap shapes above around the caller-produced byte slice or `io.Reader` / `io.Writer` — the wrapper sees only bytes and does not care whether the source is the facade or the Low-Level entry points. The eight-seed constellation (`noiseSeed, lockSeed, dataSeed1..3, startSeed1..3`) is threaded through the Low-Level call in the usual way.
+Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` entry points directly compose the same wrap shapes above around the caller-produced byte slice or `io.Reader` / `io.Writer` — the wrapper sees only bytes and does not care whether the source is the facade or the Low-Level entry points. The 8-seed constellation (`noiseSeed, lockSeed, dataSeed1..3, startSeed1..3`) is threaded through the Low-Level call in the usual way.
 
 ## Verification matrix
 

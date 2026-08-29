@@ -149,7 +149,7 @@ func TestMACDoubleFree(t *testing.T) {
 }
 
 // TestEncryptAuth3RoundtripAllMACsAllWidths covers Triple+Auth
-// (eight seeds + one MAC) across the 3 × 3 = 9 matrix. Bit-flip
+// (8 seeds + one MAC) across the 3 × 3 = 9 matrix. Bit-flip
 // span covers 256 contiguous bytes after the header so the hit
 // guarantee holds regardless of startPixel offset (mirrors the
 // macs/ package integration test).
@@ -321,7 +321,7 @@ func TestMACRegistryMinKeyBytesOutOfRange(t *testing.T) {
 }
 
 // TestEncryptAuth3BufferTooSmall covers the Triple+Auth buffer-probe
-// path on the eight-seed dispatcher.
+// path on the 8-seed dispatcher.
 func TestEncryptAuth3BufferTooSmall(t *testing.T) {
 	ids := newEightSeeds(t, "blake3", 1024)
 	defer freeAll(ids[:]...)
