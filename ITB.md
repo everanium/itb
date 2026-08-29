@@ -8,6 +8,8 @@
 
 ## 1. The Core Idea: Absorption
 
+The shipped barrier composes two mechanisms — a per-chunk 48-bit keyed bit permutation (Part 1) and a per-pixel absorption stage (Part 2), both described together in §12. This section narrates the absorption intuition, which is Part 2's contribution.
+
 The hash output exists — it is computed and determines the pixel configuration. But it is absorbed by a modification of a random container. The observer sees the result: random byte ± modification. The original random byte is unknown → the modification is unknown → the hash output is unobservable.
 
 This is not destruction (the hash output is used), not hiding (there is no encryption on top), but absorption — the random container absorbs the hash output. Like dropping a drop of paint into an ocean of random waves — the paint is there, but the observer sees only waves.
@@ -96,7 +98,7 @@ Snake 2 → COBS → [cobs|0x00|fill] → dataSeed3 + startSeed3 + noiseSeed →
                                     3 goroutines, each with numCPU/3 workers
 ```
 
-Each pipeline is a complete ITB encryption: per-pixel ChainHash, rotation, XOR mask, noise bit at unknown position, startPixel wrap-around — all within its region. The 48-bit Interlocked Barrier (§13) wraps the interleaved payload before COBS.
+Each pipeline is a complete ITB encryption: per-pixel ChainHash, rotation, XOR mask, noise bit at unknown position, startPixel wrap-around — all within its region. The 48-bit Interlocked Barrier (§12) wraps the interleaved payload before COBS.
 
 **Per-pixel bit-level processing.** Inside each region, the standard ITB per-pixel processing applies. For byte `H` (0x48 = 01001000) from Snake 0:
 
@@ -145,13 +147,14 @@ With PRF hash, crypto/rand, and no co-located attacker:
 | **CPA** (chosen plaintext) | Different seed → different config, zero correlation | Intact |
 | **CCA** (chosen ciphertext) | Core ITB and MAC + Silent Drop have no external oracle (see [SECURITY.md](SECURITY.md) ‡‡ for insider case) | No oracle exists |
 
-Under passive observation (COA, CPA), the barrier alone blocks all analysis. Under Full KPA, PRF non-invertibility is essential — it closes the candidate-verification step, while additional architectural layers deny the attacker a usable reference position:
+Under passive observation (COA, CPA), the barrier alone blocks all analysis. Under Full KPA, PRF non-invertibility is essential — it closes the candidate-verification step, while additional architectural layers deny the attacker a usable reference position. The always-on Interlocked Barrier (§12) contributes two obstacles:
 
-- **Independent startSeed per snake** — three startPixels are not transmitted; each is derived from a separate ChainHash. The attacker must jointly enumerate (sp0, sp1, sp2) candidate triples without feedback.
-- **7-rotation × 8-noisePos encoding ambiguity** — 56 per-pixel candidates preserved at signal/noise 1:1.
-- **48-bit Interlocked Barrier per-chunk permutation** — a per-chunk PRF-keyed mask triple drawn from ≈ 2^70.20 balanced partitions (§13) sits between the plaintext and the pixel layer; without the lockSeed the mapping from plaintext bits to observed lane positions is a per-chunk secret.
+- **Part 1 — per-chunk mask permutation** — a per-chunk PRF-keyed mask triple drawn from ≈ 2^70.20 balanced partitions sits between the plaintext and the pixel layer; without the lockSeed the mapping from plaintext bits to observed lane positions is a per-chunk secret.
+- **Part 2 — per-pixel 1:1 signal/noise ambiguity** — 7-rotation × 8-noisePos encoding preserves 56 per-pixel candidates at 1:1 signal/noise from a CSPRNG noise bit at unknown position.
 
-Under Partial KPA, gcd(7,8)=1 byte-splitting adds a fourth factor — per-channel candidate formulation is blocked when adjacent bytes are unknown (each channel depends on two bytes; missing one prevents candidate computation).
+Alongside the barrier, three independent per-snake startPixels — each derived from a separate startSeed and not transmitted on the wire — force the attacker to jointly enumerate (sp0, sp1, sp2) candidate triples without feedback.
+
+Under Partial KPA, gcd(7,8)=1 byte-splitting adds a further factor — per-channel candidate formulation is blocked when adjacent bytes are unknown (each channel depends on two bytes; missing one prevents candidate computation).
 
 An attacker with partial PRF inversion capability still faces three independent startPixel candidates to enumerate, 56-fold per-pixel ambiguity to disambiguate without a verification oracle, and the per-chunk ≈ 2^70.20 permutation to reverse.
 
@@ -278,25 +281,11 @@ Even in the worst case (Full KPA + CCA + cache side-channel on one snake), the a
 
 See [SCIENCE.md Section 4, startPixel limitation](SCIENCE.md#known-theoretical-threats).
 
-## 12. Why the Barrier Is Not Broken by KPA Candidates
+## 12. The Interlocked Barrier
 
-A common question: if the attacker with known plaintext can compute 56 candidate hash outputs per pixel, doesn't that mean the barrier failed to absorb the hash output?
+The Interlocked Barrier is a mandatory, always-on, non-disableable layer that sits between the plaintext-interleaved payload and the pixel-embedding pipeline. It composes two mechanisms in series and never runs either in isolation. **Part 1** is a per-chunk 48-bit keyed bit permutation over the interleaved payload, drawn from a ≈ 2^70.20 balanced-partition space keyed by the lockSeed and the interlock nonce. **Part 2** is the per-pixel absorption stage that whitens each channel byte through channelXOR + rotate7 + noise-bit insertion, keyed by the dataSeed and noiseSeed against the main nonce. Part 1 denies the attacker a stable bit-position-to-lane anchor; Part 2 denies a per-byte observation channel. Neither part alone is sufficient — Part 1 alone is invertible once a primitive is inverted, and Part 2 alone leaves a fixed bit-position map. The shipped construction always engages both.
 
-No. The barrier is intact. Here is why:
-
-**What the barrier guarantees ([Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)):** for any observed byte value v and any hash output h, the probability P(v | h) = 1/2. This holds even under Full KPA — because the noise bit comes from the original container (CSPRNG), which is random and independent of everything. The observation does not uniquely determine the hash output. This is information theory, not computational assumption.
-
-**What the attacker computes:** the 56 candidates are not extracted from the observation. They are **calculated** from the combination of (known plaintext + observed byte + candidate config). This is arithmetic, not a barrier break. All 56 candidates are **equally consistent** with the observation — the attacker does not know which one is real.
-
-**Without hash inversion (PRF):** 56 candidates per pixel × P pixels per snake × 3 snakes = a combinatorial space that no attainable throughput enumerates. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion infeasible. The ambiguity is preserved.
-
-**With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** the ambiguity. The barrier is not broken — ChainHash is inverted.
-
-The barrier absorbs the hash output through two independent mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. CSPRNG residue — guaranteed fill bytes encrypted by dataSeed within the data channel, indistinguishable from encrypted plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — is a structural property of mechanism (1): even after CCA reveals noise bit positions, CSPRNG fill remains in the data channel. CCA (MAC + Reveal) can bypass noise-position uncertainty of mechanism (1), but mechanism (2) and the CSPRNG residue remain intact through 8-seed isolation. The noise bits are removed, but the data bits still contain CSPRNG fill that the attacker cannot separate from plaintext — the information-theoretic barrier is never fully eliminated. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash-function failure, not a barrier failure.
-
-## 13. The 48-bit Interlocked Barrier
-
-The Interlocked Barrier is a mandatory, always-on, non-disableable layer that sits between the plaintext-interleaved payload and the pixel-embedding pipeline. Each 48-bit (6-byte) chunk of the interleaved payload is partitioned into three disjoint 16-of-48 lanes by a mask triple `(m0, m1, m2)`, each of popcount 16, with `m0 ∪ m1 ∪ m2` covering all 48 bits. The mask triple is drawn per chunk by a PRF-keyed unrank of the balanced-partition space, keyed by the lockSeed and the nonce, and unobservable without the lockSeed.
+**Part 1 — 48-bit chunk permutation.** Each 48-bit (6-byte) chunk of the interleaved payload is partitioned into three disjoint 16-of-48 lanes by a mask triple `(m0, m1, m2)`, each of popcount 16, with `m0 ∪ m1 ∪ m2` covering all 48 bits. The mask triple is drawn per chunk by a PRF-keyed unrank of the balanced-partition space, keyed by the lockSeed and the nonce, and unobservable without the lockSeed.
 
 **Mask-space cardinality.** The number of such balanced partitions per chunk is
 
@@ -319,9 +308,25 @@ The rejected alternative — reducing the same rank by both moduli directly, `(r
 
 so the same-rank double-mod reaches only `1 / 66861 ≈ 1.5 × 10⁻⁵` of the `(m0, m1)` pairs — a structured subset that would hand the attacker a 66861×-restricted mask space through the back door. Choosing the two-step reduction is what preserves the full 2^70.20 cardinality. Naming the gcd value is a good-faith showing that the full-space coverage is deliberate, not accidental.
 
-**Algebraic under-determination at 48 known bits per chunk.** Even granting an attacker the 48 known plaintext bits of a chunk under Full KPA, the observation does not determine the chunk's mask: the number of preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80`, and any candidate mask is consistent with the observation. Combined with the per-pixel 1:1 signal/noise ambiguity of the underlying pixel construction (Proof 1: P(observed | hash) = 1/2), the attacker has no ranking signal among the ≈ 2^70.20 masks. The barrier's contribution is structural: it adds a hidden per-chunk permutation whose knowledge is required before any per-bit constraint can even be written down.
+**Algebraic under-determination at 48 known bits per chunk.** Even granting an attacker the 48 known plaintext bits of a chunk under Full KPA, the observation does not determine the chunk's mask: the number of preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80`, and any candidate mask is consistent with the observation. Combined with the per-pixel 1:1 signal/noise ambiguity of Part 2 (Proof 1: P(observed | hash) = 1/2), the attacker has no ranking signal among the ≈ 2^70.20 masks. Part 1's contribution is structural: it adds a hidden per-chunk permutation whose knowledge is required before any per-bit constraint can even be written down.
 
 **Bias distribution — granularity, not a distinguisher.** The two-step reduction is deterministic and constant-time (rejection sampling would introduce a secret-dependent branch and is avoided), so it carries a small, fixed, publicly-known bias: the `2^128 mod (A · B)` lowest-indexed pairs receive one extra preimage, giving a **per-chunk relative deviation of ≈ 2^-57.8**. Because the bias direction is fixed public arithmetic (the nonce and key randomize the draw, not the deviation), chunks across messages are independent samples of one slightly-biased law. Accumulated over a maximum-size message of `2^23.42` chunks, the conservative linear bound is ≈ **2^-34.4** per message (the tighter iid bound is ≈ 2^-36; the linear figure is the contract value). Turning this granularity into a confident distinguisher would require on the order of `1/ε² ≈ 2^115.6` chunk samples, i.e. ≈ `2^92` maximum-size messages — far beyond any attainable sample budget. Crucially, the biased event is a property of PRF output (one-way by assumption) and is unobservable beneath the barrier / noise / fill stack, so it exposes no key or plaintext channel even in principle. The figure is an architectural constant derived from the reduction arithmetic, not an empirical measurement — but the "no distinguisher" consequence is bounded by the attainable sample size and must be phrased as such.
+
+**Part 2 — per-pixel absorption.** Each pixel packs 56 payload bits into 8 channel bytes of 7 data bits each. Per pixel, keyed by the `dataSeed` and `noiseSeed` ChainHash outputs, Part 2 applies per 7-bit field: a **channelXOR** with 7 PRF-mask bits, a **rotate7** by a per-pixel amount in [0, 6], and insertion around a per-pixel **noise bit** taken from the original CSPRNG container byte at a per-pixel `noisePos`. The decode path inverts exactly (noise-strip, inverse rotate, XOR).
+
+**The absorption guarantee** ([Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)): for any observed byte value v and any hash output h, the probability P(v | h) = 1/2. This holds even under Full KPA — because the noise bit comes from the original container (CSPRNG), which is random and independent of everything. The observation does not uniquely determine the hash output. This is information theory, not computational assumption.
+
+### Why KPA candidates do not break the barrier
+
+A common question: if the attacker with known plaintext can compute 56 candidate hash outputs per pixel, doesn't that mean the barrier failed to absorb the hash output?
+
+The 56 candidates are not extracted from the observation. They are **calculated** from the combination of (known plaintext + observed byte + candidate config). This is arithmetic, not a barrier break. All 56 candidates are **equally consistent** with the observation — the attacker does not know which one is real.
+
+**Without hash inversion (PRF):** 56 candidates per pixel × P pixels per snake × 3 snakes = a combinatorial space that no attainable throughput enumerates. The attacker cannot verify any candidate without inverting ChainHash. PRF makes inversion infeasible. Part 2's per-pixel ambiguity is preserved, and Part 1 stacks a per-chunk ≈ 2^70.20 mask-space enumeration on top that must be resolved jointly.
+
+**With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** Part 2's per-pixel ambiguity. Part 1's per-chunk permutation remains — the mapping from plaintext bits to observed lane positions is a hidden per-chunk secret and no inversion of the primitive produces it — so the instance-formulation under-determination survives. The barrier is not broken; ChainHash is inverted.
+
+The barrier absorbs the hash output through both mechanisms: (1) Part 2's noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous, and 7 rotation candidates per pixel create 7^P unverifiable combinations; (2) Part 1's permutation — a hidden per-chunk mask triple denies a bit-position-to-lane anchor. CSPRNG residue — guaranteed fill bytes encrypted by dataSeed within the data channel, indistinguishable from encrypted plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — is a structural property of mechanism (1): even after CCA reveals noise bit positions, CSPRNG fill remains in the data channel. CCA (MAC + Reveal) can bypass Part 2's noise-position uncertainty, but Part 2's rotation ambiguity, the CSPRNG residue, and Part 1's per-chunk permutation remain intact through 8-seed isolation. The noise bits are removed, but the data bits still contain CSPRNG fill that the attacker cannot separate from plaintext — the information-theoretic barrier is never fully eliminated. KPA candidates are ambiguity, not leakage. PRF preserves Part 2's ambiguity; Part 1's under-determination survives even an invertible-hash case.
 
 **Why this matters.** The barrier goes further than an information-theoretic denial of observation: it removes the public encoding of chunks entirely. Each crib chunk multiplies attacker enumeration by ≈ 2^70.20 with no shared algebraic structure to couple chunks across, so the joint SAT instance is information-theoretically under-determined regardless of crib coverage. Even an adversary with full plaintext-ciphertext pairs cannot anchor a SAT instance on a stable bit-position-to-lane mapping — the mapping is per-chunk-keyed and unobservable without the lockSeed. Under the PRF assumption, SAT-based cryptanalysis on the barrier is not a computational-hardness problem; it is an instance-formulation impossibility.
 
@@ -329,7 +334,7 @@ so the same-rank double-mod reaches only `1 / 66861 ≈ 1.5 × 10⁻⁵` of the 
 
 Every entrypoint of the `itb.EncryptAuthenticated3x{128,256,512}Cfg` / `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptStreamAuth3xCfg` families routes through the barrier; there is no runtime knob to bypass it. Every shipped `triple` profile inherits the barrier by construction — both the single-primitive shipped entries and the mixed-primitive counterparts.
 
-## 14. Quantum Resistance
+## 13. Quantum Resistance
 
 The barrier works strictly by information theory: the observation does not contain information about the hash output. This property is **computation-model-independent** — it does not depend on whether the attacker uses a classical computer, a quantum computer, or any future computational model. A quantum computer cannot extract information that does not exist in the observation.
 
@@ -346,7 +351,7 @@ At 1024-bit key: Core / Silent Drop and MAC + Reveal both sit at complexities fa
 
 See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
 
-## 15. Per-Candidate Cost: Why Brute-Force Is Slow
+## 14. Per-Candidate Cost: Why Brute-Force Is Slow
 
 In AES or ChaCha20, testing one candidate key takes on the order of a nanosecond — a single block operation. In ITB, testing one candidate requires decrypting the **entire container** — all P pixels across all three snakes, each with ChainHash evaluation, plus the per-chunk barrier unrank. The larger the message, the more expensive each attempt.
 
@@ -363,7 +368,7 @@ This is not a tunable parameter — it is a structural consequence of the constr
 
 See [SCIENCE.md §2.12](SCIENCE.md#212-per-candidate-decryption-cost) for detailed analysis.
 
-## 16. Barrier and PRF: Symbiosis
+## 15. Barrier and PRF: Symbiosis
 
 The barrier and PRF hash function protect each other:
 
@@ -375,7 +380,7 @@ Together: non-invertibility blocks inversion, and absorption hides collisions. E
 
 See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).
 
-## 17. Custom Primitives at the Low-Level Surface
+## 16. Custom Primitives at the Low-Level Surface
 
 ITB has no runtime `hashes.Register()` API. Users plug custom primitives at the Low-Level surface by constructing their own `itb.HashFunc{N}` + `itb.BatchHashFunc{N}` closures and passing them directly to `*Cfg` entrypoints. The `triple` facade does not expose custom-primitive injection — its shipped profiles bind to the shipped registry entries; the mixed-primitive profiles pick a per-slot constellation from the same registry.
 
