@@ -84,7 +84,7 @@ for size in $SIZES; do
     ITB_HARNESS_T1HA1_MODE=known_ascii \
     ITB_HARNESS_T1HA1_SIZE="$size" \
     ITB_HARNESS_T1HA1_OUT="$cell_dir" \
-    go test -run TestRedTeamHarnessGenerateT1ha1NonceReuse \
+    go test -tags redteam -run TestRedTeamHarnessGenerateT1ha1NonceReuse \
         -count=1 -v -timeout "${TIMEOUT_S}s" >> "$DRIVER_LOG" 2>&1
 
     echo "[${size}B ascii] running bias probe → ${cell_log}"

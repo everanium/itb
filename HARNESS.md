@@ -17,7 +17,7 @@ The shelf measures four non-cryptographic hash primitives plugged into ITB `Chai
 1. **Bias absorption** — whether ITB's encoding pipeline (rotation + noise barrier + COBS framing + CSPRNG fill) neutralises a primitive's documented SMHasher weaknesses on the attacker-observable ciphertext surface (Axes A, A', B).
 2. **SAT-based seed-recovery resistance** — whether commodity-scale Bitwuzla / Z3 KPA can recover the per-primitive seed at minimum ITB deployment (`keyBits = 512`, ChainHash-4 lo-lane) within reasonable wall-clock (Axis C).
 
-The shelf complements [REDTEAM.md Phase 2a extension](REDTEAM.md#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) (which targets the four cryptographic primitives in the Hash matrix) by extending bias-absorption coverage to non-cryptographic hashes, and complements [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based) by characterising raw-chain SAT KPA cost on each primitive in isolation.
+The shelf complements the archived [Phase 2a extension](archive/REDTEAM-v0.2.md#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) (four cryptographic primitives in the Hash matrix) by extending bias-absorption coverage to non-cryptographic hashes, and complements [REDTEAM.md Phase 2g](REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based) by characterising raw-chain SAT KPA cost on each primitive in isolation.
 
 Primitive selection criteria:
 
@@ -36,7 +36,7 @@ Four orthogonal axes:
 
 **Axis A' — structural-input bias.** Per-bit output frequency, byte-distribution chi-square (df = 255), and adjacency XOR statistics, all at fixed seed against varying structured inputs (`json_structured`, `html_structured`). Mirrors the ITB-realistic threat model where seeds are deployment invariants and inputs share schema.
 
-**Axis B — ITB-wrapped bias.** [Phase 2a extension probe](REDTEAM.md#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) against `known_ascii` corpora encrypted with the primitive plugged into `ChainHash128` at `keyBits = 1024`, BF = 1, N = 2 nonce-reuse. Verdict `neutralized ✓` when `|Δ50|` of the per-shift conflict-rate distribution is below 1 %.
+**Axis B — ITB-wrapped bias.** Raw-mode bias probe against `known_ascii` corpora encrypted with the primitive plugged into `ChainHash128` at `keyBits = 1024`, `BarrierFill = 1` (`DefaultBarrierFill`), N = 2 nonce-reuse. The probe operates on attacker-visible wire bytes: it treats the container body (behind the dual-nonce header and the always-on 48-bit Interlocked Barrier) as a flat 8-byte-per-pixel stream, brute-force-scans every candidate pixel-shift under a zero-seed `ChainHash(pixel_le || main_nonce)` oracle, and reports the per-shift conflict-rate distribution. Verdict `neutralized ✓` when `|Δ50|` — the deviation of that distribution's median from the 50 % mid-point — is below 1 %. The metric is coarse: the barrier's per-chunk mask permutation and the three-snake distribution scramble any per-pixel bias into the wire before the probe sees it, so a passing measurement is the barrier's absorption doing its job through a channel the probe deliberately does not try to invert.
 
 **Axis C — SAT KPA seed recovery.** Bitwuzla / Z3 KPA against synthetic `(message, hash(message, k))` pairs at raw chain hash and `ChainHash-1` wrap levels. Cells classified by tier:
 
@@ -100,16 +100,16 @@ Every cell within noise envelope. Under fixed seed + varying structured input, t
 
 | Primitive | size | format | \|Δ50\| | shelf verdict |
 |:----------|-----:|:-------|--------:|:--------------|
-| **t1ha1_64le** | 512 KB | ascii | **0.607 %** ✓ | **neutralized ✓** |
-| **t1ha1_64le** | 1 MB   | ascii | **0.244 %** ✓ | **neutralized ✓** |
-| **SeaHash**    | 512 KB | ascii | **0.816 %** ✓ | **neutralized ✓** |
-| **SeaHash**    | 1 MB   | ascii | **0.140 %** ✓ | **neutralized ✓** |
-| **mx3**        | 512 KB | ascii | **0.363 %** ✓ | **neutralized ✓** |
-| **mx3**        | 1 MB   | ascii | **0.119 %** ✓ | **neutralized ✓** |
-| **SipHash-1-3** | 512 KB | ascii | **0.559 %** ✓ | **neutralized ✓** |
-| **SipHash-1-3** | 1 MB   | ascii | **0.489 %** ✓ | **neutralized ✓** |
+| **t1ha1_64le** | 512 KB | ascii | **0.891 %** ✓ | **neutralized ✓** |
+| **t1ha1_64le** | 1 MB   | ascii | **0.890 %** ✓ | **neutralized ✓** |
+| **SeaHash**    | 512 KB | ascii | **0.890 %** ✓ | **neutralized ✓** |
+| **SeaHash**    | 1 MB   | ascii | **0.889 %** ✓ | **neutralized ✓** |
+| **mx3**        | 512 KB | ascii | **0.890 %** ✓ | **neutralized ✓** |
+| **mx3**        | 1 MB   | ascii | **0.890 %** ✓ | **neutralized ✓** |
+| **SipHash-1-3** | 512 KB | ascii | **0.890 %** ✓ | **neutralized ✓** |
+| **SipHash-1-3** | 1 MB   | ascii | **0.889 %** ✓ | **neutralized ✓** |
 
-The raw-mode bias-audit probe measures the per-shift conflict-rate distribution on the attacker-observable ciphertext surface; the `|Δ50|` column is the deviation of that distribution from the 50 % mid-point. All measured primitives `neutralized ✓` at the 1 % threshold on both corpus sizes. The published SMHasher weaknesses (avalanche-scaling for t1ha1, PerlinNoise for SeaHash and mx3, reduced-round avalanche for SipHash-1-3) do not reach the attacker-observable ITB ciphertext surface. The absorption is a property of ITB's encoding pipeline (rotation + noise barrier + COBS framing + CSPRNG fill under the always-on 48-bit Interlocked Barrier), independent of the primitive that keys it.
+The raw-mode bias-audit probe measures the per-shift conflict-rate distribution on the attacker-observable ciphertext surface (the wire body behind the dual-nonce header and the always-on 48-bit Interlocked Barrier); the `|Δ50|` column is the deviation of that distribution's median from the 50 % mid-point. All measured primitives `neutralized ✓` at the 1 % threshold on both corpus sizes. The published SMHasher weaknesses (avalanche-scaling for t1ha1, PerlinNoise for SeaHash and mx3, reduced-round avalanche for SipHash-1-3) do not reach the attacker-observable ITB ciphertext surface. The absorption is a property of ITB's encoding pipeline (rotation + noise barrier + COBS framing + CSPRNG fill under the always-on 48-bit Interlocked Barrier), independent of the primitive that keys it — the eight cells converge to nearly identical `|Δ50|` values (0.889–0.891 %) across both corpus sizes and all four primitives, corroborating primitive-independent absorption at the metric's resolution.
 
 ### 3.4. Axis C — SAT KPA seed-recovery resistance
 
@@ -244,9 +244,12 @@ primitive:
 
 One wire-level finding from that harness bears on this shelf's Axis B reading:
 the Triple + Interlocked Barrier layer alone (outer cipher off) produces a
-COBS-framed container whose byte histogram carries a fixed signature (the
-terminator `0x00` over-represented ≈ +4.75 %), while entropy stays ≈ 8 bits/byte
-and the wire is incompressible. Engaging the outer-cipher wrapper whitens the
+COBS-framed container whose byte histogram carries a fixed low-mass signature
+— the two byte values that appear in the big-endian 4-byte cleartext W‖H
+dimension header written ahead of every container are over-represented by a
+relative ≈ +5 % (an absolute excess of ≈ 0.02 pp on the `0x00` rate). The COBS
+terminator itself is barrier-scrambled inside a pixel and does not surface as a
+raw byte value. Entropy stays ≈ 8 bits/byte and the wire is incompressible. Engaging the outer-cipher wrapper whitens the
 byte histogram to the uniform floor. Axis B's `|Δ50|` conflict-rate metric is
 insensitive to this marginal byte-value signature (it measures a per-shift
 distribution, not the raw histogram), so the `neutralized ✓` verdicts stand; the
