@@ -381,3 +381,268 @@ func TestRedTeamRelatedNonceDualNonceMatrix(t *testing.T) {
 		"summary":         summary,
 	})
 }
+
+// TestRedTeamRelatedNonceDualNonceScenarioCScaled re-runs Scenario C
+// (interlock-only Δ) at 4× the baseline plaintext size (2 MiB vs 512
+// KiB) to test whether the slight χ² excess at 512 KiB (CRC128 max
+// 505.8 / FNV-1a max 547.8, above the one-sided 3σ ~323) is a stable
+// permutation-boundary artefact or a slowly-growing signal.
+//
+// Discriminator: if the residue is a fixed permutation-boundary
+// contribution, χ² is data-size-independent and stays near the same
+// value at 4× data. If a signal channel is present, χ² scales with
+// plaintext size and the max moves proportionally to N.
+//
+// Scenarios A (dual-slot) and B (main-only) collapsed to the one-sided
+// 3σ band at the baseline size and are not re-run here — the reviewer
+// question is scoped to C. The 6 Δ × 2 primitive × 2 plaintext kind =
+// 24 cells matrix is preserved so the max χ² estimator has the same
+// quality as the baseline matrix's per-(scenario, primitive) slice.
+//
+// Env-gated by `ITB_RELATED_NONCE_DUAL_SCENARIO_C_SCALED=1`. Wall clock
+// ~15–25 min (24 cells × 2 MiB plaintext × 2 encrypts per cell).
+func TestRedTeamRelatedNonceDualNonceScenarioCScaled(t *testing.T) {
+	if os.Getenv("ITB_RELATED_NONCE_DUAL_SCENARIO_C_SCALED") != "1" {
+		t.Skip("scaled dual-nonce Scenario C: set ITB_RELATED_NONCE_DUAL_SCENARIO_C_SCALED=1 to enable (24 cells × 2 MiB, ~15-25 min)")
+	}
+	if testing.Short() {
+		t.Skip("scaled dual-nonce Scenario C: skipped under -short")
+	}
+
+	const scaledPlaintextBytes = 4 * rnPlaintextBytes // 2 MiB
+
+	baseComps := rnBaseComponents(rnBaseNonceSeed)
+	seedVar := uint64(rnBaseNonceSeed)
+	ptRandom := generatePlaintextRN(rand.New(rand.NewSource(int64(seedVar^0x2A2A555555550001))), scaledPlaintextBytes, "random")
+	ptAscii := generatePlaintextRN(rand.New(rand.NewSource(int64(seedVar^0x15552A2A2A2A0001))), scaledPlaintextBytes, "ascii")
+
+	primitives := []struct {
+		name string
+		hf   HashFunc128
+	}{
+		{"CRC128", crc128BrokenLab},
+		{"FNV-1a", fnv1a128BrokenLab},
+	}
+	plaintextKinds := []string{"random", "ascii"}
+
+	// Scenario C only — the reviewer question point.
+	sc := rnScenarioIL
+
+	var cells []rnDualCell
+	for _, prim := range primitives {
+		for _, dp := range rnDeltaPatterns {
+			for _, ptk := range plaintextKinds {
+				var pt []byte
+				if ptk == "random" {
+					pt = ptRandom
+				} else {
+					pt = ptAscii
+				}
+				cell := runRelatedNonceDualCell(t, sc, prim.name, prim.hf, struct {
+					name    string
+					byteIdx int
+					bitIdx  uint
+				}{dp.name, dp.byteIdx, dp.bitIdx}, ptk, pt, baseComps)
+				cells = append(cells, cell)
+				t.Logf("%s %-6s Δ=%-14s (byte=%2d bit=%d) pt=%-6s chi2=%10.1f bit_bal(mean|abs|,max|abs|)=(%.5f,%.5f) body=%d",
+					sc, prim.name, dp.name, dp.byteIdx, dp.bitIdx, ptk,
+					cell.Chi2, cell.BitBalMeanAbs, cell.BitBalMaxAbs, cell.BodyBytes)
+			}
+		}
+	}
+
+	// Per-primitive min / mean / max summary — mirrors the baseline
+	// matrix's reporting shape so the two ledgers read the same way.
+	byPrim := map[string][]float64{}
+	for _, c := range cells {
+		byPrim[c.Primitive] = append(byPrim[c.Primitive], c.Chi2)
+	}
+	summary := map[string]any{}
+	for prim, xs := range byPrim {
+		if len(xs) == 0 {
+			continue
+		}
+		var mn, mx, sum float64
+		mn = xs[0]
+		mx = xs[0]
+		for _, v := range xs {
+			if v < mn {
+				mn = v
+			}
+			if v > mx {
+				mx = v
+			}
+			sum += v
+		}
+		summary[fmt.Sprintf("%s / %s", sc.String(), prim)] = map[string]any{
+			"min_chi2":  mn,
+			"mean_chi2": sum / float64(len(xs)),
+			"max_chi2":  mx,
+			"cells":     len(xs),
+		}
+		t.Logf("SUMMARY %s / %-6s: min=%9.1f mean=%9.1f max=%9.1f (n=%d)",
+			sc, prim, mn, sum/float64(len(xs)), mx, len(xs))
+	}
+
+	emitJSONRNDual(t, "scenario_c_scaled_matrix", map[string]any{
+		"description":            "Scenario C (interlock-only Δ) re-run at 4× baseline plaintext (2 MiB) to test artefact-vs-signal for the +3σ residue.",
+		"plaintext_bytes":        scaledPlaintextBytes,
+		"baseline_plaintext":     rnPlaintextBytes,
+		"scale_factor":           4,
+		"key_bits":               rnKeyComponents * 64,
+		"nonce_bits":             NonceSize * 8,
+		"df255_1sided_3sigma":    323.0,
+		"cells":                  cells,
+		"summary":                summary,
+	})
+}
+
+// generateLowEntropyPlaintext produces a `two_symbol` plaintext of the
+// requested size where each byte is drawn independently and uniformly
+// from {0x00, 0xFF}. Per-byte histogram entropy ≈ 1 bit/byte (two
+// equiprobable byte values); per-bit balance stays at 0.5 (both symbols
+// carry identical 0/1 counts across their eight bit positions), so any
+// residue observed cannot be attributed to an artificial bit-level bias
+// in the input.
+func generateLowEntropyPlaintext(rng *rand.Rand, n int) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		if rng.Intn(2) == 0 {
+			out[i] = 0x00
+		} else {
+			out[i] = 0xFF
+		}
+	}
+	return out
+}
+
+// TestRedTeamRelatedNonceDualNonceScenarioCLowEntropy runs Scenario C
+// (interlock-only Δ) at 2 MiB across three plaintext-entropy points to
+// discriminate whether the sub-linear χ² growth observed on the ASCII
+// axis under `TestRedTeamRelatedNonceDualNonceScenarioCScaled` is
+// coupled to input-byte distribution or arises from a mechanism
+// independent of plaintext entropy.
+//
+// Three plaintexts of identical size 2 MiB:
+//
+//   - `random`     — ≈ 8   bits/byte (uniform-over-256 baseline).
+//   - `ascii`      — ≈ 4.5 bits/byte (≈ 95 printable values).
+//   - `two_symbol` — ≈ 1   bit/byte (bytes drawn independently from
+//                    {0x00, 0xFF} with p = 0.5).
+//
+// Ordering test (attacker-realism: statistics on public ciphertext
+// bytes only; seed components never consulted in the decision path):
+//
+//   - coupling model corroborated: χ²(two_symbol) > χ²(ascii) > χ²(random)
+//     — residue scales monotone with the inverse of input-byte entropy.
+//   - coupling model rejected: χ²(two_symbol) ≤ χ²(ascii) — the
+//     mechanism is not input-entropy-coupled and a different attribution
+//     is required for the ASCII sub-linear growth.
+//
+// Matrix: 3 pt × 6 Δ × 2 primitive = 36 cells × 2 MiB × 2 encrypts.
+// Wall clock ≈ 7–10 min.
+//
+// Env-gated by `ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT=1`.
+func TestRedTeamRelatedNonceDualNonceScenarioCLowEntropy(t *testing.T) {
+	if os.Getenv("ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT") != "1" {
+		t.Skip("low-entropy Scenario C: set ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT=1 to enable (36 cells × 2 MiB, ~7-10 min)")
+	}
+	if testing.Short() {
+		t.Skip("low-entropy Scenario C: skipped under -short")
+	}
+
+	const plaintextBytes = 4 * rnPlaintextBytes // 2 MiB — matches scaled test size
+
+	baseComps := rnBaseComponents(rnBaseNonceSeed)
+	seedVar := uint64(rnBaseNonceSeed)
+	ptRandom := generatePlaintextRN(rand.New(rand.NewSource(int64(seedVar^0x2A2A555555550001))), plaintextBytes, "random")
+	ptAscii := generatePlaintextRN(rand.New(rand.NewSource(int64(seedVar^0x15552A2A2A2A0001))), plaintextBytes, "ascii")
+	ptTwoSymbol := generateLowEntropyPlaintext(rand.New(rand.NewSource(int64(seedVar^0x7373737373730001))), plaintextBytes)
+
+	primitives := []struct {
+		name string
+		hf   HashFunc128
+	}{
+		{"CRC128", crc128BrokenLab},
+		{"FNV-1a", fnv1a128BrokenLab},
+	}
+	ptKinds := []struct {
+		name string
+		data []byte
+	}{
+		{"random", ptRandom},
+		{"ascii", ptAscii},
+		{"two_symbol", ptTwoSymbol},
+	}
+
+	// Scenario C only — the reviewer's ordering-test scope.
+	sc := rnScenarioIL
+
+	var cells []rnDualCell
+	for _, prim := range primitives {
+		for _, dp := range rnDeltaPatterns {
+			for _, pt := range ptKinds {
+				cell := runRelatedNonceDualCell(t, sc, prim.name, prim.hf, struct {
+					name    string
+					byteIdx int
+					bitIdx  uint
+				}{dp.name, dp.byteIdx, dp.bitIdx}, pt.name, pt.data, baseComps)
+				cells = append(cells, cell)
+				t.Logf("%s %-6s Δ=%-14s (byte=%2d bit=%d) pt=%-10s chi2=%10.1f bit_bal(mean|abs|,max|abs|)=(%.5f,%.5f) body=%d",
+					sc, prim.name, dp.name, dp.byteIdx, dp.bitIdx, pt.name,
+					cell.Chi2, cell.BitBalMeanAbs, cell.BitBalMaxAbs, cell.BodyBytes)
+			}
+		}
+	}
+
+	// Per-(primitive, pt-kind) min / mean / max — the ordering-test slice.
+	type sumKey struct {
+		prim string
+		ptk  string
+	}
+	byKey := map[sumKey][]float64{}
+	for _, c := range cells {
+		byKey[sumKey{c.Primitive, c.PlaintextKind}] = append(byKey[sumKey{c.Primitive, c.PlaintextKind}], c.Chi2)
+	}
+	summary := map[string]any{}
+	for _, prim := range primitives {
+		for _, pt := range ptKinds {
+			k := sumKey{prim.name, pt.name}
+			xs := byKey[k]
+			if len(xs) == 0 {
+				continue
+			}
+			var mn, mx, sum float64
+			mn = xs[0]
+			mx = xs[0]
+			for _, v := range xs {
+				if v < mn {
+					mn = v
+				}
+				if v > mx {
+					mx = v
+				}
+				sum += v
+			}
+			summary[fmt.Sprintf("%s / %s / %s", sc.String(), prim.name, pt.name)] = map[string]any{
+				"min_chi2":  mn,
+				"mean_chi2": sum / float64(len(xs)),
+				"max_chi2":  mx,
+				"cells":     len(xs),
+			}
+			t.Logf("SUMMARY %s / %-6s / %-10s: min=%9.1f mean=%9.1f max=%9.1f (n=%d)",
+				sc, prim.name, pt.name, mn, sum/float64(len(xs)), mx, len(xs))
+		}
+	}
+
+	emitJSONRNDual(t, "scenario_c_low_entropy_matrix", map[string]any{
+		"description":           "Scenario C (interlock-only Δ) at 2 MiB across three plaintext-entropy points (random ≈ 8 bits/byte, ascii ≈ 4.5, two_symbol ≈ 1) to discriminate input-entropy coupling from entropy-independent mechanisms.",
+		"plaintext_bytes":       plaintextBytes,
+		"entropy_bits_per_byte": map[string]float64{"random": 8.0, "ascii": 4.5, "two_symbol": 1.0},
+		"key_bits":              rnKeyComponents * 64,
+		"nonce_bits":            NonceSize * 8,
+		"df255_1sided_3sigma":   323.0,
+		"cells":                 cells,
+		"summary":               summary,
+	})
+}
