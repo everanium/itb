@@ -44,7 +44,7 @@
 set -eu
 set -o pipefail
 
-REPO="/home/andrew/go/src/itb"
+REPO="${HOME}/go/src/itb"
 cd "$REPO"
 
 # Build both arms — always fresh so a stale binary cannot mask a

@@ -33,11 +33,11 @@ NOT required:
 
 Usage:
     python3 crib_crc128_decrypt_full.py \\
-        --cell-dir tmp/attack/crib_cross/corpus_B_html \\
+        --cell-dir ~/scratch/redteam/crib_cross/corpus_B_html \\
         --k-data 0xf4f2320a561fd405 \\
         --k-noise-bits-0-2 7 \\
         --crib-hex ff3c6964656e7469666965722d6f662d7265636f72642d696e2d7379 \\
-        --expected-plaintext tmp/attack/crib_cross/corpus_B_html/ct_0000.plain
+        --expected-plaintext ~/scratch/redteam/crib_cross/corpus_B_html/ct_0000.plain
 
 Lab audit: compares reconstructed plaintext byte-for-byte to the ground
 truth file (attacker would validate via format parse — HTML tag balance,

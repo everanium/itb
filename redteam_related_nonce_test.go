@@ -52,9 +52,10 @@ package itb
 //     df=255 uniform band.
 //
 // Emission: each test writes a compact JSON line to
-// `tmp/redteam/related_nonce/<name>.json` under the repo (gitignored)
-// so downstream aggregation can consume the measurements without
-// rerunning the tests.
+// `$HOME/scratch/redteam/related_nonce/<name>.json` (per CLAUDE.md
+// working-tree layout) so downstream aggregation can consume the
+// measurements without rerunning the tests. Override the parent
+// directory via `REDTEAM_RELATED_NONCE_OUTPUT_DIR`.
 
 import (
 	"encoding/binary"
@@ -67,8 +68,9 @@ import (
 )
 
 // tmpRNDir is the shared scratch subdir all related-nonce probes emit
-// into. Relative to the package directory.
-const tmpRNDir = "tmp/redteam/related_nonce"
+// into. Resolved via redteamOutputDir; see that helper for the default
+// + env-override contract.
+var tmpRNDir = redteamOutputDir("related_nonce")
 
 // rnKeyComponents matches the Rank 2 methodology — 1024-bit key across
 // all 8 seed roles so per-cell wall-clock and container geometry stay

@@ -11,6 +11,7 @@ r=1 (single AES2R, known P+ct0) reproduces aes1kp's mg=10 baseline.
 discard ON: only columns 2,3 of ct1 (lo 64 bits = bytes 8..15) are known.
 """
 import itertools, os, sys
+from pathlib import Path
 
 KEY_SCH = ['K_0_3_3, K_1_3_2, K_1_3_3', 'K_0_3_2, K_1_3_1, K_1_3_2',
            'K_0_3_1, K_1_3_0, K_1_3_1', 'K_0_0_3, K_0_3_0, K_1_3_0',
@@ -76,10 +77,17 @@ def build(rounds, discard):
     return body
 
 if __name__ == '__main__':
+    # Output lands in ~/scratch/redteam/gd_chainhash_aes2r/ by default
+    # (per CLAUDE.md working-tree layout — scratch outputs outside repo).
+    # Override via GD_CHAINHASH_AES2R_OUTPUT_DIR.
+    out_dir = Path(os.environ.get("GD_CHAINHASH_AES2R_OUTPUT_DIR",
+                                  str(Path.home() / "scratch" / "redteam" / "gd_chainhash_aes2r")))
+    out_dir.mkdir(parents=True, exist_ok=True)
     for rounds in (1, 2):
         for discard in ([False] if rounds == 1 else [False, True]):
             txt = build(rounds, discard)
             fn = f'relationfile_chainhash_r{rounds}_discard{int(discard)}.txt'
-            with open(fn, 'w') as f:
+            path = out_dir / fn
+            with open(path, 'w') as f:
                 f.write(txt)
-            print(f'wrote {fn}  ({len(txt.splitlines())} lines)')
+            print(f'wrote {path}  ({len(txt.splitlines())} lines)')

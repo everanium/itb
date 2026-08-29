@@ -9,18 +9,18 @@ test-only `setBrokenTestNonce` hook.
 
 ## Files
 
-- `run.sh` — one-shot runner that invokes `go test -run
+- `run.sh` — one-shot runner that invokes `go test -tags redteam -run
   TestRedTeamNonceReuse -v ./` from the repo root and copies the
-  emitted JSON records under `tmp/redteam/nonce_reuse/` into a
+  emitted JSON records under `~/scratch/redteam/nonce_reuse/` into a
   timestamped bundle for archival.
 - `aggregate.py` — reads the emitted JSON records and prints a compact
   per-layer summary table. Consumes only files under
-  `tmp/redteam/nonce_reuse/` — no test dependencies.
+  `~/scratch/redteam/nonce_reuse/` — no test dependencies.
 
 ## Probes (implemented as Go tests in `redteam_nonce_reuse_test.go`)
 
-Each Go test emits one JSON record to `tmp/redteam/nonce_reuse/` for
-downstream aggregation.
+Each Go test emits one JSON record to `~/scratch/redteam/nonce_reuse/`
+for downstream aggregation.
 
 - `TestRedTeamNonceReuseLayerAHistogram` — Layer A: byte-value chi-square
   / KL / byte-equal-rate on `C1 XOR C2` container bodies. Random /
@@ -74,7 +74,7 @@ printouts, never in a decision path.
 ./scripts/redteam/itb/nonce_reuse/run.sh
 
 # Or invoke the tests directly:
-go test -run TestRedTeamNonceReuse -v ./
+go test -tags redteam -run TestRedTeamNonceReuse -v ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/nonce_reuse/aggregate.py
@@ -86,5 +86,6 @@ encryptions).
 
 ## Debug output
 
-`tmp/redteam/nonce_reuse/` is gitignored via the repo-level `tmp/`
-pattern. JSON records land there and stay local.
+`~/scratch/redteam/nonce_reuse/` lives outside the repository per the
+CLAUDE.md working-tree layout. JSON records land there and stay local.
+Override the parent directory via `REDTEAM_NONCE_REUSE_OUTPUT_DIR`.

@@ -18,16 +18,16 @@ not any shipped-API attack path.
 ## Files
 
 - `run.sh` — one-shot runner: invokes
-  `go test -run TestRedTeamRelatedNonce -v ./` from the repo root, then
+  `go test -tags redteam -run TestRedTeamRelatedNonce -v ./` from the repo root, then
   aggregates the emitted JSON.
 - `aggregate.py` — reads the emitted JSON records and prints a compact
   structural summary (Δ pattern ranking, plaintext-kind sensitivity,
   primitive contrast, excess-over-no-Δ-floor). Consumes only files under
-  `tmp/redteam/related_nonce/` — no test dependencies.
+  `~/scratch/redteam/related_nonce/` — no test dependencies.
 
 ## Probes (implemented as Go tests in `redteam_related_nonce_test.go`)
 
-Each Go test emits one JSON record to `tmp/redteam/related_nonce/`.
+Each Go test emits one JSON record to `~/scratch/redteam/related_nonce/`.
 
 - `TestRedTeamRelatedNonceNoDeltaFloor` — **architectural floor**: two
   `Encrypt3x128Cfg` calls with IDENTICAL seeds under the same forced
@@ -105,7 +105,7 @@ and ASCII plaintexts produce comparable χ² per primitive (mean 258 vs
 ./scripts/redteam/itb/related_nonce/run.sh
 
 # Or invoke the tests directly:
-go test -run TestRedTeamRelatedNonce -v -timeout 1800s ./
+go test -tags redteam -run TestRedTeamRelatedNonce -v -timeout 1800s ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/related_nonce/aggregate.py
@@ -116,5 +116,7 @@ Total wall-clock across all probes: ~3 minutes on a workstation
 
 ## Debug output
 
-`tmp/redteam/related_nonce/` is gitignored via the repo-level `tmp/`
-pattern. JSON records land there and stay local.
+`~/scratch/redteam/related_nonce/` lives outside the repository per
+the CLAUDE.md working-tree layout. JSON records land there and stay
+local. Override the parent directory via
+`REDTEAM_RELATED_NONCE_OUTPUT_DIR`.

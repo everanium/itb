@@ -52,8 +52,9 @@ package itb
 //     the run is reproducible, but the values themselves are not
 //     consulted after the seeds are constructed.
 //
-// Emission. `tmp/redteam/cpa_broken/<name>.json` (repo-gitignored) for
-// downstream aggregation.
+// Emission. `$HOME/scratch/redteam/cpa_broken/<name>.json` (per
+// CLAUDE.md working-tree layout) for downstream aggregation. Override
+// the parent directory via `REDTEAM_CPA_BROKEN_OUTPUT_DIR`.
 
 import (
 	"encoding/binary"
@@ -70,8 +71,9 @@ import (
 )
 
 // tmpCPADir is the shared scratch subdir all CPA probes below emit
-// into. Relative to the package directory.
-const tmpCPADir = "tmp/redteam/cpa_broken"
+// into. Resolved via redteamOutputDir; see that helper for the default
+// + env-override contract.
+var tmpCPADir = redteamOutputDir("cpa_broken")
 
 // cpaKeyComponents keeps the 1024-bit key width the related-seed /
 // related-nonce probes settled on so container geometry stays

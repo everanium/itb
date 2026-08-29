@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from collections import defaultdict
@@ -112,7 +113,11 @@ def main() -> int:
         description="ITB FNV-1a Level-2 seed recovery via masked T-solver",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--fnvstress-dir", default="tmp/attack/fnvstress")
+    ap.add_argument("--fnvstress-dir",
+                    default=os.environ.get(
+                        "TSOLVER_HARNESS_4ROUND_FNVSTRESS_DIR",
+                        str(Path.home() / "scratch" / "redteam" / "fnvstress"),
+                    ))
     ap.add_argument("--cell", type=int, default=0)
     ap.add_argument("--max-cribs", type=int, default=4)
     ap.add_argument(

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-shot runner for the v0.3.0 fresh-nonce CPA broken-primitive
 # re-verification probe. Runs the Go test suite; the test emits a JSON
-# record under tmp/redteam/cpa_broken/ that aggregate.py summarises as a
+# record under ~/scratch/redteam/cpa_broken/ (override via
+# REDTEAM_CPA_BROKEN_OUTPUT_DIR) that aggregate.py summarises as a
 # structural analysis (per-cell body chi² / pair byte-equal rate /
 # two-sample homogeneity chi² between FNV-1a and BLAKE3 arms).
 #
@@ -24,11 +25,11 @@ echo "    (repo root: $repo_root)"
 echo "    (sample size per cell: ${ITB_CPA_N:-2000} — override via ITB_CPA_N)"
 echo
 
-go test -run TestRedTeamCPABroken -v -timeout 7200s ./
+go test -tags redteam -run TestRedTeamCPABroken -v -timeout 7200s ./
 
 echo
 echo "==> Emitted JSON records"
-ls -la tmp/redteam/cpa_broken/ 2>/dev/null || {
+ls -la "${REDTEAM_CPA_BROKEN_OUTPUT_DIR:-${HOME}/scratch/redteam/cpa_broken}/" 2>/dev/null || {
     echo "    (no output directory — did the test run?)"
     exit 1
 }

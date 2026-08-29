@@ -84,13 +84,13 @@ isolates the primitive-attributable arm difference.
 
 ## Files
 
-- `run.sh` — one-shot runner: invokes `go test -run TestRedTeamCPABroken`
+- `run.sh` — one-shot runner: invokes `go test -tags redteam -run TestRedTeamCPABroken`
   from the repo root, then aggregates the emitted JSON.
 - `aggregate.py` — reads the emitted JSON records and prints a compact
   structural summary (per-cell body chi², mean pairwise byte-equal rate,
   two-sample homogeneity chi², dominant plaintext kind ranking, null /
   signal verdict against the uniform band). Consumes only files under
-  `tmp/redteam/cpa_broken/` — no test dependencies.
+  `~/scratch/redteam/cpa_broken/` — no test dependencies.
 
 ## Attacker-realism scoping
 
@@ -124,7 +124,7 @@ the chosen bytes to lane positions the attacker cannot pin.
 
 Concrete per-cell numeric values are the output of `aggregate.py`
 after `run.sh` (or the raw JSON at
-`tmp/redteam/cpa_broken/cpa_broken_matrix.json`). The REDTEAM.md
+`~/scratch/redteam/cpa_broken/cpa_broken_matrix.json`). The REDTEAM.md
 "Broken-primitive stress" section carries the load-bearing verdict
 table for this probe.
 
@@ -135,7 +135,7 @@ table for this probe.
 ./scripts/redteam/itb/cpa_broken/run.sh
 
 # Or invoke the test directly:
-go test -run TestRedTeamCPABroken -v -timeout 7200s ./
+go test -tags redteam -run TestRedTeamCPABroken -v -timeout 7200s ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/cpa_broken/aggregate.py
@@ -151,5 +151,6 @@ so wall time scales with cores.
 
 ## Debug output
 
-`tmp/redteam/cpa_broken/` is gitignored via the repo-level `tmp/`
-pattern. JSON records land there and stay local.
+`~/scratch/redteam/cpa_broken/` lives outside the repository per the
+CLAUDE.md working-tree layout. JSON records land there and stay local.
+Override the parent directory via `REDTEAM_CPA_BROKEN_OUTPUT_DIR`.

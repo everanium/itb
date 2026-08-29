@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """Aggregate FNV-1a lo-lane SAT probe outputs into a compact summary.
 
-Consumes JSON records under `tmp/redteam/fnv1a_sat/` (emitted by the Go
-tests in `redteam_broken_fnv1a_sat_test.go` and by `sat_probe.py`) and
-prints a per-layer summary table.
+Consumes JSON records under `~/scratch/redteam/fnv1a_sat/` (emitted by
+the Go tests in `redteam_broken_fnv1a_sat_test.go` and by
+`sat_probe.py`; override the parent dir via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`)
+and prints a per-layer summary table.
 
 Independent of the Go test / SAT probe — no runtime dependency on
 either. Reports:
@@ -17,13 +18,14 @@ either. Reports:
   - Bitwuzla SAT run outcomes per snake per startPixel.
 
 Usage:
-    python3 aggregate.py [--dir tmp/redteam/fnv1a_sat]
+    python3 aggregate.py [--dir ~/scratch/redteam/fnv1a_sat]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -51,7 +53,10 @@ def fmt_table(header, rows):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", type=Path,
-                    default=Path("tmp/redteam/fnv1a_sat"))
+                    default=Path(os.environ.get(
+                        "REDTEAM_FNV1A_SAT_OUTPUT_DIR",
+                        str(Path.home() / "scratch" / "redteam" / "fnv1a_sat"),
+                    )))
     args = ap.parse_args(argv)
 
     if not args.dir.is_dir():

@@ -23,13 +23,14 @@ every cell in the corpus.
 
 Usage:
     python3 itb_channel_mirror.py parity
-        [--fnvstress-dir tmp/attack/fnvstress]
+        [--fnvstress-dir ~/scratch/redteam/fnvstress]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -422,7 +423,10 @@ def main() -> int:
     p_parity = sub.add_parser("parity", help="run parity vs fnvstress corpus")
     p_parity.add_argument(
         "--fnvstress-dir",
-        default="tmp/attack/fnvstress",
+        default=os.environ.get(
+            "ITB_CHANNEL_MIRROR_FNVSTRESS_DIR",
+            str(Path.home() / "scratch" / "redteam" / "fnvstress"),
+        ),
         help="path to fnvstress corpus root",
     )
     args = ap.parse_args()

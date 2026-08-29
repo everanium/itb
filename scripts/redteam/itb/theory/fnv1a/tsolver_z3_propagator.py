@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from collections import defaultdict
@@ -190,7 +191,11 @@ class TSolverPropagator(z3.UserPropagateBase):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fnvstress-dir", default="tmp/attack/fnvstress")
+    ap.add_argument("--fnvstress-dir",
+                    default=os.environ.get(
+                        "TSOLVER_Z3_PROPAGATOR_FNVSTRESS_DIR",
+                        str(Path.home() / "scratch" / "redteam" / "fnvstress"),
+                    ))
     ap.add_argument("--cell", type=int, default=0)
     ap.add_argument("--max-cribs", type=int, default=4)
     ap.add_argument("--pixels", type=int, default=6,

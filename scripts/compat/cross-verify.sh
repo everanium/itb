@@ -21,7 +21,7 @@
 set -eu
 set -o pipefail
 
-REPO="/home/andrew/go/src/itb"
+REPO="${HOME}/go/src/itb"
 IN_FILE="$REPO/tools/eitb/in-file.txt"
 EITB_DIR="$REPO/tmp/eitb"
 DIST_DIR="$REPO/dist/linux-amd64"

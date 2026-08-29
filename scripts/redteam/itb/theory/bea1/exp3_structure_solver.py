@@ -326,7 +326,7 @@ def _solve_bitwuzla(z3solver, seeds, timeout_sec):
     wall-clock cap.  Falls back to a clear message if the helper is unavailable."""
     import sys
     from pathlib import Path
-    helper = Path("/home/andrew/go/src/itb/scripts/redteam/itb/theory/_common")
+    helper = Path(__file__).resolve().parents[1] / "_common"
     if str(helper) not in sys.path:
         sys.path.insert(0, str(helper))
     try:
@@ -499,7 +499,7 @@ def run_ladder_rung(name, n_full_rounds, n_obs, timeout_sec, solver_name, rng):
         smt2 = sol.to_smt2()
         import sys
         from pathlib import Path
-        helper = Path("/home/andrew/go/src/itb/scripts/redteam/itb/theory/_common")
+        helper = Path(__file__).resolve().parents[1] / "_common"
         if str(helper) not in sys.path:
             sys.path.insert(0, str(helper))
         from sat_solver_bitwuzla import solve_via_bitwuzla

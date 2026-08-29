@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import resource
@@ -196,7 +197,10 @@ def main() -> int:
     ap.add_argument("--seed-rng", type=int, default=0x4D55524D55523358)
     ap.add_argument("--solver", choices=["z3", "bitwuzla"], default="bitwuzla")
     ap.add_argument("--json-report",
-                    default="tmp/attack/murmur3stress/axis_c_raw_sat.json")
+                    default=str(Path(os.environ.get(
+                        "SAT_CALIBRATION_RAW_MURMUR3_OUTPUT_DIR",
+                        str(Path.home() / "scratch" / "redteam" / "murmur3stress"),
+                    )) / "axis_c_raw_sat.json"))
     args = ap.parse_args()
 
     rounds_list = _parse_int_list(args.rounds)

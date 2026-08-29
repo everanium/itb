@@ -38,7 +38,9 @@ package itb
 // in the sibling `redteam_nonce_reuse_dualnonce_test.go` file (same
 // package, same build tag).
 //
-// Emission: `tmp/redteam/related_nonce_dualnonce/<name>.json`, gitignored.
+// Emission: `$HOME/scratch/redteam/related_nonce_dualnonce/<name>.json`
+// (per CLAUDE.md working-tree layout). Override the parent directory
+// via `REDTEAM_RELATED_NONCE_DUALNONCE_OUTPUT_DIR`.
 
 import (
 	"encoding/json"
@@ -50,9 +52,9 @@ import (
 )
 
 // tmpRNDualDir is the shared scratch subdir for dual-nonce related-nonce
-// probes. Relative to the package directory so the tests are location-
-// independent.
-const tmpRNDualDir = "tmp/redteam/related_nonce_dualnonce"
+// probes. Resolved via redteamOutputDir; see that helper for the
+// default + env-override contract.
+var tmpRNDualDir = redteamOutputDir("related_nonce_dualnonce")
 
 // emitJSONRNDual writes a compact JSON record. Non-fatal on error.
 func emitJSONRNDual(t *testing.T, name string, v any) {

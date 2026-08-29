@@ -41,9 +41,11 @@ package itb
 //     discriminator, not as validation prints — the results establish
 //     that even the oracle-attacker's naive-crib anchoring fails.
 //
-// Every probe emits a JSON record under `tmp/redteam/fnv1a_sat/` for
-// downstream aggregation. The gitignored `tmp/` path is created
-// lazily; failure to write is logged but non-fatal.
+// Every probe emits a JSON record under
+// `$HOME/scratch/redteam/fnv1a_sat/` (per CLAUDE.md working-tree
+// layout) for downstream aggregation. Override the parent directory
+// via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`. The path is created lazily;
+// failure to write is logged but non-fatal.
 
 import (
 	"encoding/binary"
@@ -55,7 +57,9 @@ import (
 )
 
 // tmpFNVDir is the shared scratch subdir for FNV-1a SAT probes below.
-const tmpFNVDir = "tmp/redteam/fnv1a_sat"
+// Resolved via redteamOutputDir; see that helper for the default +
+// env-override contract.
+var tmpFNVDir = redteamOutputDir("fnv1a_sat")
 
 // emitJSONFNV writes a compact JSON line under tmpFNVDir/<name>.json.
 func emitJSONFNV(t *testing.T, name string, v any) {
@@ -761,8 +765,9 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Probe F6 — emit corpus for the Python SAT harness. Writes a ciphertext
-// + true seeds + true plaintext bundle under `tmp/redteam/fnv1a_sat/
-// corpus/` for the companion Python SAT probe to consume. Runs the Go
+// + true seeds + true plaintext bundle under
+// `$HOME/scratch/redteam/fnv1a_sat/corpus/` for the companion Python
+// SAT probe to consume. Runs the Go
 // side of the two-language experiment: the emitted `bundle.json` is the
 // only interface between Go (which owns the encoder + seed generation)
 // and Python (which owns the SAT harness).

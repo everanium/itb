@@ -13,17 +13,17 @@ encrypted under distinct fresh nonces".
 
 ## Files
 
-- `run.sh` — one-shot runner that invokes `go test -run
+- `run.sh` — one-shot runner that invokes `go test -tags redteam -run
   TestRedTeamNearIdenticalFreshNonce -v ./` from the repo root and then
   runs `aggregate.py` on the emitted JSON record. Runtime ≈ 15–25 min
   wall-clock at the default sample size on an 8-core host.
 - `aggregate.py` — reads the JSON record from
-  `tmp/redteam/near_identical_fresh/` and prints a compact structural
-  analysis table: per-cell byte-XOR chi² vs df=255 uniform, byte-equal
-  floor ratios per category, and cross-category homogeneity chi²
-  between the near-identical and independent-pair categories at every
-  (size, delta position). Consumes only files under `tmp/redteam/near_
-  identical_fresh/` — no test dependencies.
+  `~/scratch/redteam/near_identical_fresh/` and prints a compact
+  structural analysis table: per-cell byte-XOR chi² vs df=255 uniform,
+  byte-equal floor ratios per category, and cross-category homogeneity
+  chi² between the near-identical and independent-pair categories at
+  every (size, delta position). Consumes only files under
+  `~/scratch/redteam/near_identical_fresh/` — no test dependencies.
 
 ## Probe (implemented as one Go test in `redteam_near_identical_fresh_test.go`)
 
@@ -64,8 +64,9 @@ accumulates:
   independent-pair aggregate histograms at every (size, delta) —
   df=255, one-sided 3σ band top ≈ 323
 
-The JSON record emitted to `tmp/redteam/near_identical_fresh/near_
-identical_fresh_matrix.json` also includes the archival nonce-reuse
+The JSON record emitted to
+`~/scratch/redteam/near_identical_fresh/near_identical_fresh_matrix.json`
+also includes the archival nonce-reuse
 Layer A near-identical baseline at 512 B (~16.13× the 1/256 floor)
 for a direct pre-v0.3.0 vs fresh-nonce contrast.
 
@@ -93,7 +94,7 @@ under strictly attacker-realistic inputs.
 ./scripts/redteam/itb/near_identical_fresh/run.sh
 
 # Or invoke the test directly:
-go test -run TestRedTeamNearIdenticalFreshNonce -v -timeout 3600s ./
+go test -tags redteam -run TestRedTeamNearIdenticalFreshNonce -v -timeout 3600s ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/near_identical_fresh/aggregate.py
@@ -104,8 +105,10 @@ smoke-check run in ~2 min.
 
 ## Debug output
 
-`tmp/redteam/near_identical_fresh/` is gitignored via the repo-level
-`tmp/` pattern. JSON records land there and stay local.
+`~/scratch/redteam/near_identical_fresh/` lives outside the repository
+per the CLAUDE.md working-tree layout. JSON records land there and
+stay local. Override the parent directory via
+`REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 
 ## Cross-reference
 

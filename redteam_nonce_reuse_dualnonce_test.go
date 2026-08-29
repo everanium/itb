@@ -51,9 +51,10 @@ package itb
 // both draw independently from crypto/rand.
 //
 // Emission: each probe writes a compact JSON record under
-// `tmp/redteam/nonce_reuse_dualnonce/<name>.json` (gitignored) so
-// downstream aggregation can consume the raw numbers without rerunning
-// the tests.
+// `$HOME/scratch/redteam/nonce_reuse_dualnonce/<name>.json`
+// (per CLAUDE.md working-tree layout) so downstream aggregation can
+// consume the raw numbers without rerunning the tests. Override the
+// parent directory via `REDTEAM_NONCE_REUSE_DUALNONCE_OUTPUT_DIR`.
 
 import (
 	"encoding/binary"
@@ -67,8 +68,9 @@ import (
 )
 
 // tmpDualNRDir is the shared scratch subdir all dual-nonce probes below
-// emit into. Relative to the package directory.
-const tmpDualNRDir = "tmp/redteam/nonce_reuse_dualnonce"
+// emit into. Resolved via redteamOutputDir; see that helper for the
+// default + env-override contract.
+var tmpDualNRDir = redteamOutputDir("nonce_reuse_dualnonce")
 
 // emitJSONDualNR writes a compact JSON record. Non-fatal on error.
 func emitJSONDualNR(t *testing.T, name string, v any) {

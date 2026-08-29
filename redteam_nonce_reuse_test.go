@@ -29,10 +29,13 @@ package itb
 //     the known plaintext pair).
 //
 // Emission: each test writes a compact JSON result line to
-// `tmp/redteam/nonce_reuse/<name>.json` under the repo (gitignored) so
-// downstream aggregation can consume the measurements without rerunning
-// the tests. The tmp/ path is created lazily; failure to create it does
-// not fail the test — the log line is the primary record.
+// `$HOME/scratch/redteam/nonce_reuse/<name>.json` (per CLAUDE.md
+// working-tree layout — scratch outputs live outside the repository
+// tree) so downstream aggregation can consume the measurements without
+// rerunning the tests. Override the parent directory via
+// `REDTEAM_NONCE_REUSE_OUTPUT_DIR`. The path is created lazily;
+// failure to create it does not fail the test — the log line is the
+// primary record.
 
 import (
 	"encoding/binary"
@@ -47,9 +50,9 @@ import (
 )
 
 // tmpNRDir is the shared scratch subdir all nonce-reuse probes below
-// emit into. Relative to the package directory so the tests are
-// location-independent.
-const tmpNRDir = "tmp/redteam/nonce_reuse"
+// emit into. Resolved once at package init via redteamOutputDir; see
+// that helper for the default + env-override contract.
+var tmpNRDir = redteamOutputDir("nonce_reuse")
 
 // emitJSONNR writes a compact JSON line under tmpNRDir/<name>.json for
 // downstream aggregation. Errors are logged, not fatal — the t.Logf line
@@ -1739,8 +1742,8 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Cross-track summary — Layer A / A' / B / B' / C / D at a glance.
 //
-// The individual probes above produce JSON records in tmp/redteam/
-// nonce_reuse/*.json; this test aggregates the key headline numbers into
+// The individual probes above produce JSON records in
+// $HOME/scratch/redteam/nonce_reuse/*.json; this test aggregates the key headline numbers into
 // a single record for the REDTEAM.md rewrite. Runs after all individual
 // probes and echoes the summary to the test log.
 // ---------------------------------------------------------------------------
@@ -1748,7 +1751,7 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 func TestRedTeamNonceReuseSummaryDigest(t *testing.T) {
 	// Re-read the per-probe JSON files (attacker-visible; this is just
 	// aggregation). If any is missing, the digest reports partial —
-	// running `go test -run TestRedTeamNonceReuse -v` in one invocation
+	// running `go test -tags redteam -run TestRedTeamNonceReuse -v` in one invocation
 	// produces all inputs.
 	entries := []string{
 		"layer_a_histogram",

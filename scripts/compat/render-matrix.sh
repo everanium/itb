@@ -6,7 +6,7 @@
 set -eu
 set -o pipefail
 
-REPO="/home/andrew/go/src/itb"
+REPO="${HOME}/go/src/itb"
 EITB_DIR="$REPO/tmp/eitb"
 IN_FILE="$REPO/tools/eitb/in-file.txt"
 RESULTS="$EITB_DIR/results.tsv"

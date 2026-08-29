@@ -284,21 +284,21 @@ Reproduction commands that invoke a `go test` step (directly or through a shell 
 # Axis A — avalanche on raw primitive
 python3 scripts/redteam/itb/theory/t1ha1/lab_bias_t1ha1.py \
     --n-keys 65536 --key-sizes 32,64,128 \
-    --json-report tmp/attack/t1ha1stress/axis_a_lab_bias.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_a_lab_bias.json
 
 # Axis A' — structural-input bias (json + html × 4 KB / 64 KB)
 python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format json --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/t1ha1stress/axis_a_struct_json_n65536_4096.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_a_struct_json_n65536_4096.json
 python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format json --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/t1ha1stress/axis_a_struct_json_n4096_65536.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_a_struct_json_n4096_65536.json
 python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format html --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/t1ha1stress/axis_a_struct_html_n65536_4096.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_a_struct_html_n65536_4096.json
 python3 scripts/redteam/itb/theory/t1ha1/lab_struct_t1ha1.py \
     --format html --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/t1ha1stress/axis_a_struct_html_n4096_65536.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_a_struct_html_n4096_65536.json
 
 # Axis B — ITB-wrapped raw-mode bias
 bash scripts/redteam/itb/theory/t1ha1/harness_bias_audit.sh
@@ -306,10 +306,10 @@ bash scripts/redteam/itb/theory/t1ha1/harness_bias_audit.sh
 # Axis C — raw chain SAT KPA (rounds = 1 obs = 8, 24 h budget)
 python3 scripts/redteam/itb/theory/t1ha1/sat_calibration_raw_t1ha1.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver z3 \
-    --json-report tmp/attack/t1ha1stress/axis_c_raw_z3.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_c_raw_z3.json
 python3 scripts/redteam/itb/theory/t1ha1/sat_calibration_raw_t1ha1.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver bitwuzla \
-    --json-report tmp/attack/t1ha1stress/axis_c_raw_bw.json
+    --json-report ~/scratch/redteam/t1ha1stress/axis_c_raw_bw.json
 ```
 
 ### 5.2. SeaHash
@@ -318,21 +318,21 @@ python3 scripts/redteam/itb/theory/t1ha1/sat_calibration_raw_t1ha1.py \
 # Axis A
 python3 scripts/redteam/itb/theory/seahash/lab_bias_seahash.py \
     --n-keys 65536 --key-sizes 32,64,128 \
-    --json-report tmp/attack/seahashstress/axis_a_lab_bias.json
+    --json-report ~/scratch/redteam/seahashstress/axis_a_lab_bias.json
 
 # Axis A'
 python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format json --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/seahashstress/axis_a_struct_json_n65536_4096.json
+    --json-report ~/scratch/redteam/seahashstress/axis_a_struct_json_n65536_4096.json
 python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format json --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/seahashstress/axis_a_struct_json_n4096_65536.json
+    --json-report ~/scratch/redteam/seahashstress/axis_a_struct_json_n4096_65536.json
 python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format html --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/seahashstress/axis_a_struct_html_n65536_4096.json
+    --json-report ~/scratch/redteam/seahashstress/axis_a_struct_html_n65536_4096.json
 python3 scripts/redteam/itb/theory/seahash/lab_struct_seahash.py \
     --format html --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/seahashstress/axis_a_struct_html_n4096_65536.json
+    --json-report ~/scratch/redteam/seahashstress/axis_a_struct_html_n4096_65536.json
 
 # Axis B
 bash scripts/redteam/itb/theory/seahash/harness_bias_audit.sh
@@ -342,7 +342,7 @@ for MUL in native explicit; do for VAR in native case-split; do for SOLVER in z3
     python3 scripts/redteam/itb/theory/seahash/sat_calibration_raw_seahash.py \
         --rounds 1 --obs 8 --timeout-sec 86400 --solver "$SOLVER" \
         --mul-encoding "$MUL" --var-shift-encoding "$VAR" \
-        --json-report "tmp/attack/seahashstress/axis_c_raw_${SOLVER}_${MUL}_${VAR}.json"
+        --json-report "~/scratch/redteam/seahashstress/axis_c_raw_${SOLVER}_${MUL}_${VAR}.json"
 done; done; done
 ```
 
@@ -352,21 +352,21 @@ done; done; done
 # Axis A
 python3 scripts/redteam/itb/theory/mx3/lab_bias_mx3.py \
     --n-keys 65536 --key-sizes 32,256,1024 \
-    --json-report tmp/attack/mx3stress/axis_a_lab_bias.json
+    --json-report ~/scratch/redteam/mx3stress/axis_a_lab_bias.json
 
 # Axis A'
 python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format json --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/mx3stress/axis_a_struct_json_n65536_4096.json
+    --json-report ~/scratch/redteam/mx3stress/axis_a_struct_json_n65536_4096.json
 python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format json --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/mx3stress/axis_a_struct_json_n4096_65536.json
+    --json-report ~/scratch/redteam/mx3stress/axis_a_struct_json_n4096_65536.json
 python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format html --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/mx3stress/axis_a_struct_html_n65536_4096.json
+    --json-report ~/scratch/redteam/mx3stress/axis_a_struct_html_n65536_4096.json
 python3 scripts/redteam/itb/theory/mx3/lab_struct_mx3.py \
     --format html --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/mx3stress/axis_a_struct_html_n4096_65536.json
+    --json-report ~/scratch/redteam/mx3stress/axis_a_struct_html_n4096_65536.json
 
 # Axis B
 bash scripts/redteam/itb/theory/mx3/harness_bias_audit.sh
@@ -374,11 +374,11 @@ bash scripts/redteam/itb/theory/mx3/harness_bias_audit.sh
 # Axis C — Z3 reaches Tier 3 in ~5 s on rounds = 1 obs = 8
 python3 scripts/redteam/itb/theory/mx3/sat_calibration_raw_mx3.py \
     --rounds 1 --obs 8 --timeout-sec 60 --solver z3 \
-    --json-report tmp/attack/mx3stress/axis_c_raw_z3.json
+    --json-report ~/scratch/redteam/mx3stress/axis_c_raw_z3.json
 # Axis C — Bitwuzla reaches Tier 3 in ~2 s on the same cell
 python3 scripts/redteam/itb/theory/mx3/sat_calibration_raw_mx3.py \
     --rounds 1 --obs 8 --timeout-sec 60 --solver bitwuzla \
-    --json-report tmp/attack/mx3stress/axis_c_raw_bw.json
+    --json-report ~/scratch/redteam/mx3stress/axis_c_raw_bw.json
 ```
 
 ### 5.4. SipHash-1-3
@@ -387,21 +387,21 @@ python3 scripts/redteam/itb/theory/mx3/sat_calibration_raw_mx3.py \
 # Axis A
 python3 scripts/redteam/itb/theory/siphash13/lab_bias_siphash13.py \
     --n-keys 65536 --key-sizes 32,256,1024 \
-    --json-report tmp/attack/siphash13stress/axis_a_lab_bias.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_a_lab_bias.json
 
 # Axis A'
 python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format json --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/siphash13stress/axis_a_struct_json_n65536_4096.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_a_struct_json_n65536_4096.json
 python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format json --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/siphash13stress/axis_a_struct_json_n4096_65536.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_a_struct_json_n4096_65536.json
 python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format html --n-instances 65536 --instance-size 4096 \
-    --json-report tmp/attack/siphash13stress/axis_a_struct_html_n65536_4096.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_a_struct_html_n65536_4096.json
 python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \
     --format html --n-instances 4096 --instance-size 65536 \
-    --json-report tmp/attack/siphash13stress/axis_a_struct_html_n4096_65536.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_a_struct_html_n4096_65536.json
 
 # Axis B
 bash scripts/redteam/itb/theory/siphash13/harness_bias_audit.sh
@@ -409,10 +409,10 @@ bash scripts/redteam/itb/theory/siphash13/harness_bias_audit.sh
 # Axis C — raw chain SAT KPA (rounds = 1 obs = 8, 24 h budget)
 python3 scripts/redteam/itb/theory/siphash13/sat_calibration_raw_siphash13.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver z3 \
-    --json-report tmp/attack/siphash13stress/axis_c_raw_z3.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_c_raw_z3.json
 python3 scripts/redteam/itb/theory/siphash13/sat_calibration_raw_siphash13.py \
     --rounds 1 --obs 8 --timeout-sec 86400 --solver bitwuzla \
-    --json-report tmp/attack/siphash13stress/axis_c_raw_bw.json
+    --json-report ~/scratch/redteam/siphash13stress/axis_c_raw_bw.json
 ```
 
 ### 5.5. Self-parity tests
@@ -491,8 +491,8 @@ cd scripts/redteam/itb/theory/aes2r
 python3 integral_aes2r.py
 
 # Pre-screen the aes2r primitive — avalanche reads clean, differential flags it (§3.5 style).
-python3 ../phase2_theory/chainhashes/avalanche_screen.py    --primitive aes2r --rounds-max 4
-python3 ../phase2_theory/chainhashes/differential_screen.py --primitive aes2r --rounds-max 4
+python3 ../_common/chainhashes/avalanche_screen.py    --primitive aes2r --rounds-max 4
+python3 ../_common/chainhashes/differential_screen.py --primitive aes2r --rounds-max 4
 
 # Integral distinguisher survival through ChainHash (rounds 1/2/4 × discard on/off).
 python3 distinguisher_chainhash.py      # 1st order
@@ -510,6 +510,6 @@ python3 sat_calibration_aes2r.py
 python3 cms_xor_aes2r.py
 
 # Word-level guess-and-determine model for the ChainHash composition (autoguess backend).
-python3 gd_chainhash_aes2r.py     # emits relationfile_chainhash_r{1,2}_discard{0,1}.txt
-# autoguess -i relationfile_chainhash_r1_discard0.txt -s sat -sats cadical195 -mg 12 -ms 20
+python3 gd_chainhash_aes2r.py     # emits relationfile_chainhash_r{1,2}_discard{0,1}.txt into ~/scratch/redteam/gd_chainhash_aes2r/
+# autoguess -i ~/scratch/redteam/gd_chainhash_aes2r/relationfile_chainhash_r1_discard0.txt -s sat -sats cadical195 -mg 12 -ms 20
 ```

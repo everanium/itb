@@ -29,7 +29,7 @@ Usage:
       --n-keys 4096 --key-sizes 8,16,32,64,128,256 \\
       --chi2-samples 1048576 \\
       --sparse-bits 2 \\
-      --json-report tmp/attack/seahashstress/axis_a_lab_bias.json
+      --json-report ~/scratch/redteam/seahashstress/axis_a_lab_bias.json
 
 Default sample sizes are deliberately small for quick iteration (single-
 digit minutes on commodity 16-core); scale up `--n-keys` to 65536 for

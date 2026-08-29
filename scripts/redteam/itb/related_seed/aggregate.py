@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Aggregate the related-seed probe JSON records into a structural table.
 
-Reads the three record files under tmp/redteam/related_seed/ and prints
-a compact 4-dimensional structural analysis: axis dominance ranking,
-primitive contrast, delta-pattern sensitivity, plaintext-kind effect,
-and excess-over-no-delta-floor per (primitive, axis).
+Reads the three record files under ~/scratch/redteam/related_seed/
+(override via REDTEAM_RELATED_SEED_OUTPUT_DIR) and prints a compact
+4-dimensional structural analysis: axis dominance ranking, primitive
+contrast, delta-pattern sensitivity, plaintext-kind effect, and
+excess-over-no-delta-floor per (primitive, axis).
 
 Consumes only the emitted JSON records — no Go test state.
 """
@@ -12,12 +13,16 @@ Consumes only the emitted JSON records — no Go test state.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 
-DEFAULT_ROOT = Path("tmp/redteam/related_seed")
+DEFAULT_ROOT = Path(os.environ.get(
+    "REDTEAM_RELATED_SEED_OUTPUT_DIR",
+    str(Path.home() / "scratch" / "redteam" / "related_seed"),
+))
 
 AXES = [
     "noiseSeed", "lockSeed",

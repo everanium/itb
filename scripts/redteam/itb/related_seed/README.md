@@ -11,17 +11,17 @@ hook.
 
 ## Files
 
-- `run.sh` — one-shot runner: invokes `go test -run TestRedTeamRelatedSeed
+- `run.sh` — one-shot runner: invokes `go test -tags redteam -run TestRedTeamRelatedSeed
   -v ./` from the repo root, then aggregates the emitted JSON.
 - `aggregate.py` — reads the emitted JSON records and prints a 4-D
   structural summary (axis dominance ranking, Δ pattern sensitivity,
   plaintext kind sensitivity, primitive contrast, positive-control
   drift vs pre-v0.3.0). Consumes only files under
-  `tmp/redteam/related_seed/` — no test dependencies.
+  `~/scratch/redteam/related_seed/` — no test dependencies.
 
 ## Probes (implemented as Go tests in `redteam_related_seed_test.go`)
 
-Each Go test emits one JSON record to `tmp/redteam/related_seed/`.
+Each Go test emits one JSON record to `~/scratch/redteam/related_seed/`.
 
 - `TestRedTeamRelatedSeedControl` — **positive control**: reproduces
   the pre-v0.3.0 Phase 2e axis-hit (CRC128 42.5M / FNV-1a 56.7M) via
@@ -92,7 +92,7 @@ leak.
 ./scripts/redteam/itb/related_seed/run.sh
 
 # Or invoke the tests directly:
-go test -run TestRedTeamRelatedSeed -v -timeout 1800s ./
+go test -tags redteam -run TestRedTeamRelatedSeed -v -timeout 1800s ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/related_seed/aggregate.py
@@ -104,5 +104,6 @@ Total wall-clock across all probes: ~10 minutes on a workstation
 
 ## Debug output
 
-`tmp/redteam/related_seed/` is gitignored via the repo-level `tmp/`
-pattern. JSON records land there and stay local.
+`~/scratch/redteam/related_seed/` lives outside the repository per the
+CLAUDE.md working-tree layout. JSON records land there and stay local.
+Override the parent directory via `REDTEAM_RELATED_SEED_OUTPUT_DIR`.

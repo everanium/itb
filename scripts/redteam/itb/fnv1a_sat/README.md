@@ -33,12 +33,12 @@ startSeed_i, so no per-chain observation channel exists.
   detail and the maximum-peek attacker regime.
 - `aggregate.py` — reads the emitted JSON records and prints a
   compact per-layer summary. Consumes only files under
-  `tmp/redteam/fnv1a_sat/` — no test dependency.
+  `~/scratch/redteam/fnv1a_sat/` — no test dependency.
 
 ## Probes (implemented as Go tests in `redteam_broken_fnv1a_sat_test.go`)
 
-Each Go test emits one JSON record to `tmp/redteam/fnv1a_sat/` for
-downstream aggregation.
+Each Go test emits one JSON record to `~/scratch/redteam/fnv1a_sat/`
+for downstream aggregation.
 
 - `TestRedTeamBrokenFNV1aCribKPA` — F1: attacker-realistic
   per-pixel achievable-set structure. Under FNV-1a's non-affine
@@ -65,8 +65,8 @@ downstream aggregation.
   on the exact same plaintext used by every F* probe.
 - `TestRedTeamBrokenFNV1aCribKPAEmitCorpus` — F6: emits the Go /
   Python interface bundle (ciphertext + control + true seeds) under
-  `tmp/redteam/fnv1a_sat/f6_corpus_bundle.json` for the Python SAT
-  probe to consume.
+  `~/scratch/redteam/fnv1a_sat/f6_corpus_bundle.json` for the Python
+  SAT probe to consume.
 
 ## Attacker-realism scoping
 
@@ -112,7 +112,7 @@ load-bearing empirical evidence.
 ./scripts/redteam/itb/fnv1a_sat/run.sh
 
 # Or invoke the Go tests directly:
-go test -run TestRedTeamBrokenFNV1a -v ./
+go test -tags redteam -run TestRedTeamBrokenFNV1a -v ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/fnv1a_sat/aggregate.py
@@ -136,5 +136,6 @@ count; at n = 2 pixels and cap = 4 sp candidates per snake, budget
 
 ## Debug output
 
-`tmp/redteam/fnv1a_sat/` is gitignored via the repo-level `tmp/`
-pattern. JSON records land there and stay local.
+`~/scratch/redteam/fnv1a_sat/` lives outside the repository per the
+CLAUDE.md working-tree layout. JSON records land there and stay local.
+Override the parent directory via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`.

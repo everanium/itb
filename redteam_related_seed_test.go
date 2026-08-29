@@ -39,10 +39,12 @@ package itb
 //     uniform band.
 //
 // Emission: each test writes a compact JSON line to
-// `tmp/redteam/related_seed/<name>.json` under the repo (gitignored)
-// so downstream aggregation can consume the measurements without
-// rerunning the tests. The tmp/ path is created lazily; failure to
-// create it does not fail the test — the log line is the primary record.
+// `$HOME/scratch/redteam/related_seed/<name>.json` (per CLAUDE.md
+// working-tree layout) so downstream aggregation can consume the
+// measurements without rerunning the tests. Override the parent
+// directory via `REDTEAM_RELATED_SEED_OUTPUT_DIR`. The path is created
+// lazily; failure to create it does not fail the test — the log line
+// is the primary record.
 
 import (
 	"encoding/binary"
@@ -57,9 +59,9 @@ import (
 )
 
 // tmpRSDir is the shared scratch subdir all related-seed probes below
-// emit into. Relative to the package directory so the tests are
-// location-independent.
-const tmpRSDir = "tmp/redteam/related_seed"
+// emit into. Resolved via redteamOutputDir; see that helper for the
+// default + env-override contract.
+var tmpRSDir = redteamOutputDir("related_seed")
 
 // rsKeyComponents is the fixed component count per Seed128 used by the
 // matrix — 1024-bit key = 16 uint64. Matches the pre-v0.3.0 Phase 2e

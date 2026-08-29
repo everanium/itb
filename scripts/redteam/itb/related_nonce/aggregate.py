@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Aggregate the related-nonce probe JSON records into a structural table.
 
-Reads the two record files under tmp/redteam/related_nonce/ and prints a
-compact structural analysis: Δ pattern ranking, plaintext-kind
-sensitivity, primitive contrast, and the excess-over-no-Δ-floor for
-every cell.
+Reads the two record files under ~/scratch/redteam/related_nonce/
+(override via REDTEAM_RELATED_NONCE_OUTPUT_DIR) and prints a compact
+structural analysis: Δ pattern ranking, plaintext-kind sensitivity,
+primitive contrast, and the excess-over-no-Δ-floor for every cell.
 
 Consumes only the emitted JSON records — no Go test state.
 """
@@ -12,12 +12,16 @@ Consumes only the emitted JSON records — no Go test state.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 
-DEFAULT_ROOT = Path("tmp/redteam/related_nonce")
+DEFAULT_ROOT = Path(os.environ.get(
+    "REDTEAM_RELATED_NONCE_OUTPUT_DIR",
+    str(Path.home() / "scratch" / "redteam" / "related_nonce"),
+))
 
 
 def load(root: Path) -> tuple[dict, dict]:

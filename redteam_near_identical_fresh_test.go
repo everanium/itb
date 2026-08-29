@@ -63,8 +63,10 @@ package itb
 //   - The plaintexts themselves are attacker-chosen (the delta is the
 //     attacker's own probe). No lab-only peek is invoked.
 //
-// Emission. `tmp/redteam/near_identical_fresh/<name>.json` (repo-
-// gitignored) for downstream aggregation.
+// Emission. `$HOME/scratch/redteam/near_identical_fresh/<name>.json`
+// (per CLAUDE.md working-tree layout) for downstream aggregation.
+// Override the parent directory via
+// `REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 
 import (
 	"encoding/binary"
@@ -78,8 +80,9 @@ import (
 )
 
 // tmpNIFDir is the shared scratch subdir all near-identical-fresh probes
-// below emit into. Relative to the package directory.
-const tmpNIFDir = "tmp/redteam/near_identical_fresh"
+// below emit into. Resolved via redteamOutputDir; see that helper for
+// the default + env-override contract.
+var tmpNIFDir = redteamOutputDir("near_identical_fresh")
 
 // nifKeyComponents keeps the 1024-bit key width the related-seed /
 // related-nonce / CPA probes settled on so container geometry and
