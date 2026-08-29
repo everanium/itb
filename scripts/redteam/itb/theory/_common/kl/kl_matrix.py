@@ -23,7 +23,7 @@ Usage:
         [--sizes 1024,4096,...] [--bfs 1,2,4,8,16,32] [--resume]
 
 The Go entry point is `TestRedTeamGenerateTripleMassive` (in the
-`kl_shelf_test.go` file, guarded by `-tags redteam`); it emits
+`redteam_kl_test.go` file, guarded by `-tags redteam`); it emits
 `<outdir>/blake3.{bin,plain,pixel}` on the v0.3.0 Triple + always-on
 Interlocked Barrier wire, with the `.pixel` sidecar carrying the
 dual-nonce header size and `barrier_fill` value the sub-scripts consume.
