@@ -24,7 +24,7 @@ Usage:
 
 The Go entry point is `TestRedTeamGenerateTripleMassive` (in the
 `redteam_kl_test.go` file, guarded by `-tags redteam`); it emits
-`<outdir>/blake3.{bin,plain,pixel}` on the v0.3.0 Triple + always-on
+`<outdir>/blake3.{bin,plain,pixel}` on the shipped Triple + always-on
 Interlocked Barrier wire, with the `.pixel` sidecar carrying the
 dual-nonce header size and `barrier_fill` value the sub-scripts consume.
 """
@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 PROJ = Path(__file__).resolve().parents[6]
-# Output lands in ~/scratch/kltest by default (per CLAUDE.md working-tree layout:
+# Output lands in ~/scratch/kltest by default (per the working-tree layout:
 # scratch outputs go outside the repository tree). Override via ITB_KL_OUTPUT_DIR.
 OUTPUT_DIR = Path(os.environ.get("ITB_KL_OUTPUT_DIR", str(Path.home() / "scratch" / "kltest")))
 WORKERS_DIR = OUTPUT_DIR / "workers"
@@ -165,14 +165,14 @@ def parse_output(text: str, patterns: Dict[str, re.Pattern]) -> Dict[str, float]
 
 
 def container_bytes_from_ciphertext(bin_path: Path) -> int:
-    # v0.3.0 ITB ciphertext header is `2 * NonceSize + 4` bytes
+    # shipped ITB ciphertext header is `2 * NonceSize + 4` bytes
     # (main nonce + interlock nonce + width(2) + height(2)); at the
     # default 512-bit nonce that is 132 bytes. Strip the header so the
     # /dev/urandom baseline matches the container-body byte count.
     # `main_nonce_hex` / `interlock_nonce_hex` in the sibling corpus
     # `cell.meta.json` schema is the authoritative width source; a
     # meta-parsing path is not routed through this helper today because
-    # the pre-v0.3.0 sub-scripts do not emit one, so this function
+    # the archived sub-scripts do not emit one, so this function
     # falls back to the default-config formula. Callers driving a
     # non-default `NonceBits` must adjust.
     default_nonce_bytes = 64  # itb.NonceSize (config.go default)

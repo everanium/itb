@@ -149,9 +149,9 @@ def print_pt_kind(per_pt: dict) -> None:
 
 
 def print_control_comparison(ctrl: dict, floors: dict[str, float]) -> None:
-    print("==== Positive control — pre-v0.3.0 reproduction via process128Cfg ====")
-    print("Confirms the probe methodology matches the pre-v0.3.0 related-seed archive numbers")
-    print("(archive/REDTEAM-v0.2.md § related-seed row: CRC128 42.5M, FNV-1a 56.7M axis-hit on data-axis bit_high).")
+    print("==== Positive control — archived reproduction via process128Cfg ====")
+    print("Confirms the probe methodology matches the archived related-seed archive numbers")
+    print("(archive/archive/REDTEAM.md § related-seed row: CRC128 42.5M, FNV-1a 56.7M axis-hit on data-axis bit_high).")
     print()
     for cell in ctrl.get("cells", []):
         prim = cell["primitive"]
@@ -206,7 +206,7 @@ def main() -> None:
         floors[row["primitive"]] = row["chi2"]
 
     print("=" * 78)
-    print("Related-seed differential — v0.3.0 structural analysis")
+    print("Related-seed differential — structural analysis")
     print("=" * 78)
     print(f"total cells: {len(cells)}")
     print(f"config: key_bits={matrix['run']['config']['key_bits']}, "

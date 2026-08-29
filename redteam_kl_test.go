@@ -4,13 +4,13 @@ package itb
 
 // redteam_kl_test.go — Phase 2b Mode B corpus generator for the KL floor probe
 // driven by `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive
-// ITB ciphertext per invocation on the v0.3.0 Triple + always-on 48-bit
+// ITB ciphertext per invocation on the shipped Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
 // carrying container dimensions and the dual-nonce header layout the two
 // Python sub-scripts (`kl_massive_full.py`, `kl_urandom.py`) consume
 // through `kl_matrix.py`.
 //
-// Attacker-realism (CLAUDE.md discipline):
+// Attacker-realism (attacker-realism discipline):
 //
 //   - Fresh crypto/rand nonce per invocation (Mode B is a raw ciphertext
 //     bias probe, not a nonce-reuse attack — each of `n_samples` driver
@@ -114,7 +114,7 @@ func klBlake3Hash128(key [32]byte) HashFunc128 {
 // Corpus generator entry point
 // ---------------------------------------------------------------------------
 
-// TestRedTeamGenerateTripleMassive — v0.3.0 corpus-cell generator for the
+// TestRedTeamGenerateTripleMassive — corpus-cell generator for the
 // Phase 2b Mode B KL floor probe. Drives one BLAKE3-keyed
 // `Encrypt3x128Cfg` call on a random plaintext of `ITB_REDTEAM_MASSIVE_SIZE`
 // bytes at `Config.BarrierFill = ITB_BARRIER_FILL`, writes the raw
@@ -245,7 +245,7 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		t.Fatal("round-trip mismatch")
 	}
 
-	// Parse v0.3.0 dual-nonce header off the ciphertext.
+	// Parse shipped dual-nonce header off the ciphertext.
 	nonceLen := currentNonceSizeCfg(cfg)
 	mainNonce := ct[:nonceLen]
 	interlockNonce := ct[nonceLen : 2*nonceLen]
@@ -270,8 +270,8 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		t.Fatalf("write %s: %v", plainPath, err)
 	}
 
-	// KEY=VALUE sidecar for the Python sub-scripts. Preserves the pre-v0.3.0
-	// field shape (`total_pixels=N`, `barrier_fill=N`) and adds the v0.3.0
+	// KEY=VALUE sidecar for the Python sub-scripts. Preserves the archived
+	// field shape (`total_pixels=N`, `barrier_fill=N`) and adds the 
 	// dual-nonce fields (`main_nonce_hex`, `interlock_nonce_hex`, `header_size`).
 	pixLines := []string{
 		"hash=" + hashName,
@@ -287,7 +287,7 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		"start_pixel=" + strconv.Itoa(startPixel),
 		"main_nonce_hex=" + hex.EncodeToString(mainNonce),
 		"interlock_nonce_hex=" + hex.EncodeToString(interlockNonce),
-		// Retained for compatibility with any pre-v0.3.0 consumer that
+		// Retained for compatibility with any archived consumer that
 		// still reads `nonce_hex` — mirrors `main_nonce_hex`.
 		"nonce_hex=" + hex.EncodeToString(mainNonce),
 	}

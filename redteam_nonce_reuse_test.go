@@ -2,7 +2,7 @@
 
 package itb
 
-// Nonce-Reuse adversarial re-verification for the v0.3.0 architecture
+// Nonce-Reuse adversarial re-verification for the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8 mandatory
 // seeds). Companion to `redteam_broken_test.go`; extends that file's
 // broken-primitive scaffolding with focused nonce-reuse probes.
@@ -14,7 +14,7 @@ package itb
 // production callers cannot force it because `generateNonceCfg` draws
 // from `crypto/rand` per call.
 //
-// Attacker-realism (CLAUDE.md discipline):
+// Attacker-realism (attacker-realism discipline):
 //
 //   - No test reads `dataSeed*` / `noiseSeed` / `lockSeed` components in
 //     the decision path. Ground-truth seed values are read only in
@@ -29,7 +29,7 @@ package itb
 //     the known plaintext pair).
 //
 // Emission: each test writes a compact JSON result line to
-// `$HOME/scratch/redteam/nonce_reuse/<name>.json` (per CLAUDE.md
+// `$HOME/scratch/redteam/nonce_reuse/<name>.json` (per the repository discipline
 // working-tree layout — scratch outputs live outside the repository
 // tree) so downstream aggregation can consume the measurements without
 // rerunning the tests. Override the parent directory via
@@ -111,7 +111,7 @@ type wireLayoutNR struct {
 	snakePixels      [3]int // pixel counts per snake
 }
 
-// decodeWireNR parses the v0.3.0 public wire header (main_nonce,
+// decodeWireNR parses the public wire header (main_nonce,
 // interlock_nonce, W, H) and slices the container body into 3 snake
 // regions. `nonce` in the returned layout is the main nonce (first
 // NonceSize bytes); the interlock nonce is not surfaced here because
@@ -216,9 +216,9 @@ func xorBytes(a, b []byte) []byte {
 // ---------------------------------------------------------------------------
 // Layer A — Naive statistical distinguisher on C1 XOR C2 under nonce reuse.
 //
-// Under the pre-v0.3.0 (Single Ouroboros, barrier-off) construction, C1
+// Under the archived (Single Ouroboros, barrier-off) construction, C1
 // XOR C2 concentrated recoverable structure into a narrow ~5.4x-floor
-// byte-histogram tilt that the demasker could exploit. Under v0.3.0's
+// byte-histogram tilt that the demasker could exploit. Under 's
 // always-on 48-bit interlock, per-chunk mask triples permute plaintext
 // bits into 3 lane-scrambled snake payloads BEFORE cobs + pixel encode,
 // so the C1 XOR C2 pixel bytes should carry no residual histogram tilt
@@ -359,10 +359,10 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Layer A' — Naive Crib-KPA XOR-constraint match on the wire.
 //
-// The pre-v0.3.0 Single-Ouroboros nonce-reuse demasker enumerated 56
+// The archived Single-Ouroboros nonce-reuse demasker enumerated 56
 // (noisePos, rotation) candidates per pixel; the correct pair extracts 7
 // data bits per channel matching the KNOWN plaintext XOR at (pixel,
-// channel). Under v0.3.0's 3-snake interlock split, the "known plaintext
+// channel). Under the shipped 3-snake interlock split, the "known plaintext
 // XOR at (pixel, channel)" is NOT the raw plaintext-XOR byte — the
 // intervening 48-bit interlock permutation redistributes plaintext bits
 // across 3 lane-payloads under a per-chunk mask the attacker cannot
@@ -379,7 +379,7 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 //
 // This is a null-probe: it measures whether the interlock alone (without
 // the attacker peeking at masks or startPixels) neutralises the
-// pre-v0.3.0 attack chain.
+// archived attack chain.
 // ---------------------------------------------------------------------------
 
 // naiveKPAAnchorRate counts, per candidate startPixel, the number of
@@ -576,7 +576,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 //         (np, r) survives, and how many bits of (np, r) are pinned.
 //         This is the sharpest constraint an attacker can extract under
 //         Layer B; anything below "unique (np, r)" means the barrier
-//         forces a broader ambiguity than the pre-v0.3.0 demasker faced.
+//         forces a broader ambiguity than the archived demasker faced.
 // ---------------------------------------------------------------------------
 
 // grantStartPixelsLabPeek is the documented single lab peek used by
@@ -844,15 +844,15 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 // This probe is deliberately GENEROUS to the attacker: it grants the
 // attacker not only the startPixels but ALSO the per-chunk mask triples
 // (i.e., the interlock lockSeed is treated as revealed). Under this
-// upper-bound gift, the pre-v0.3.0 Layer 1 constraint match applies
+// upper-bound gift, the archived Layer 1 constraint match applies
 // unchanged: per pixel, (np, r) is uniquely recovered from any two
 // nonzero-diff pixels of a nonce-reuse pair.
 //
 // The point of Layer B' is not attacker-realistic — no attacker gets the
 // masks. It quantifies the upper-bound recovery rate the barrier
 // permits IF a hypothetical primitive break gave the attacker the mask
-// stream: with masks known, the pre-v0.3.0 demasker's Layer 1 succeeds
-// at 99.14-99.30% per-pixel (see REDTEAM-v0.2.md Phase 2d demasker
+// stream: with masks known, the archived demasker's Layer 1 succeeds
+// at 99.14-99.30% per-pixel (see archive/REDTEAM.md Phase 2d demasker
 // validation table). This probe verifies that the barrier does not
 // separately break the constraint match — the mask is the sole
 // architectural closure.
@@ -1003,7 +1003,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
 		"per_snake":    results,
-		"note":         "This probe reveals BOTH the startPixels and the interlock mask triples to the attacker. Results are the upper bound of what the pre-v0.3.0 demasker Layer 1 can recover IF a hypothetical primitive break gave the attacker the lockSeed. Under attacker-realistic inputs (no mask peek), the recovery rate drops to the Layer B random floor.",
+		"note":         "This probe reveals BOTH the startPixels and the interlock mask triples to the attacker. Results are the upper bound of what the archived demasker Layer 1 can recover IF a hypothetical primitive break gave the attacker the lockSeed. Under attacker-realistic inputs (no mask peek), the recovery rate drops to the Layer B random floor.",
 	})
 }
 
@@ -1163,11 +1163,11 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Layer C — FNV-1a algebraic recovery, threat-model dependency.
 //
-// The pre-v0.3.0 nonce-reuse chain (Single Ouroboros, barrier-off)
+// The archived nonce-reuse chain (Single Ouroboros, barrier-off)
 // terminated at "reconstructed pure ChainHash stream", which under
 // FNV-1a exposed enough structure for NIST STS to flag spectral,
 // block-frequency, cumulative-sums, and runs tests (6/188 fails,
-// REDTEAM-v0.2.md Phase 2d). Under v0.3.0's 48-bit interlock, Layer 1
+// archive/REDTEAM.md Phase 2d). Under the shipped 48-bit interlock, Layer 1
 // cannot be run without the mask (Layer B random floor is essentially
 // zero on random plaintexts and constrained-only on all-quiet chunks).
 // Layer C is therefore architecturally foreclosed by Layer B failure —
@@ -1293,20 +1293,20 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 // ciphertexts with Full KPA on N-1 of them, can the attacker decrypt
 // the Nth message?
 //
-// Pre-v0.3.0 (Single Ouroboros, barrier-off): the demasker recovers
+// Archived (Single Ouroboros, barrier-off): the demasker recovers
 // per-pixel (np, r, chanXOR) from any nonce-reuse pair with Full KPA,
 // then applies the same demasker to the third ciphertext — at ~99.17%
-// raw byte match. This is REDTEAM-v0.2.md Phase 2d's "classical
+// raw byte match. This is archive/REDTEAM.md Phase 2d's "classical
 // keystream-reuse decrypt".
 //
-// v0.3.0 (Triple + always-on 48-bit interlock): the demasker's Layer 1
+// (Triple + always-on 48-bit interlock): the demasker's Layer 1
 // requires the per-chunk mask triples the attacker cannot enumerate.
 // Under attacker-realistic no-lab-peek inputs, the demasker returns
 // zero anchors from any nonce-reuse pair; the third-message decrypt
 // therefore has nothing to apply.
 //
-// This probe runs the pre-v0.3.0 classical keystream-reuse decrypt end
-// to end against v0.3.0 ciphertexts and measures the recovered byte
+// This probe runs the archived classical keystream-reuse decrypt end
+// to end against the shipped ciphertexts and measures the recovered byte
 // match on the third message. Three regimes reported: (A) no lab peek,
 // (B) startPixel peek, (B') mask-oracle peek. Only regime B' should
 // achieve high recovery — that quantifies the mask-oracle upper bound
@@ -1317,7 +1317,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 // using the known snake payload XOR bits (lab peek — mask oracle) and
 // returns the recovered per-pixel (noisePos, rotation, chanXOR56)
 // triple. Attacker-realistic reference implementation of the
-// pre-v0.3.0 Phase 2d Layer 1 constraint match, ported to a v0.3.0
+// archived Phase 2d Layer 1 constraint match, ported to a 
 // snake region. Returns per-pixel (np, r, chanXOR56) only for pixels
 // where the constraint uniquely anchors; unresolved pixels report
 // np=r=chanXOR56=0 with a false ok.

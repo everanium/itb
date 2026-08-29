@@ -4,7 +4,7 @@ package itb
 
 // harness_shelf_test.go — HARNESS.md § 3.3 Axis B corpus generators for the
 // four non-cryptographic hash primitives on the shelf (t1ha1_64le, SeaHash,
-// mx3, SipHash-1-3), driving the v0.3.0 Triple + always-on 48-bit Interlocked
+// mx3, SipHash-1-3), driving the shipped Triple + always-on 48-bit Interlocked
 // Barrier construction. One env-gated `TestRedTeamHarnessGenerate*NonceReuse`
 // test per primitive, invoked by the four
 // `scripts/redteam/itb/theory/<primitive>/harness_bias_audit.sh` drivers, which then
@@ -12,7 +12,7 @@ package itb
 // `scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py` for the |Δ50|
 // reading.
 //
-// Attacker-realism (CLAUDE.md discipline):
+// Attacker-realism (attacker-realism discipline):
 //
 //   - Fixed nonce (Nonce-Reuse lab assumption) via `setBrokenTestNonce` —
 //     forces main + interlock nonce collision on every Encrypt* call. A real
@@ -533,7 +533,7 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 		}
 	}
 
-	// Parse the v0.3.0 dual-nonce header off the first ciphertext.
+	// Parse the shipped dual-nonce header off the first ciphertext.
 	nonceLen := NonceSize
 	mainNonce := firstCt[:nonceLen]
 	interlockNonce := firstCt[nonceLen : 2*nonceLen]
@@ -565,7 +565,7 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 		"total_pixels":        totalPixels,
 		"header_size":         headerSize,
 		"start_pixel":         startPixel,
-		// Retained for compatibility with any pre-v0.3.0 consumer that
+		// Retained for compatibility with any archived consumer that
 		// still reads `nonce_hex` — mirrors `main_nonce_hex`.
 		"nonce_hex": hex.EncodeToString(mainNonce),
 	}

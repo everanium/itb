@@ -1,4 +1,4 @@
-# Related-nonce differential re-verification (v0.3.0 barrier)
+# Related-nonce differential re-verification
 
 Empirical re-verification of the barrier's diffusion property against a
 lab-forced 1-bit nonce Δ. Primitives under test: **CRC128** and
@@ -64,7 +64,7 @@ eight nonce consumers, not a bottleneck; **nonce Δ SUPERSETS lockSeed
 ## Attacker-realism scoping
 
 The lab-forced nonce Δ is a probe INPUT designed to measure whether the
-barrier absorbs perturbations at the pre-v0.3.0 measurement angle. Every
+barrier absorbs perturbations at the archived measurement angle. Every
 probe consumes attacker-visible inputs (ciphertext bytes only) for its
 decision path — the χ² statistic depends on nothing else. No seed
 components are read in any decision path. Ground-truth Δ hex is recorded
@@ -73,7 +73,7 @@ decision path.
 
 ## Structural verdict
 
-The v0.3.0 barrier's related-nonce diffusion property is **full
+The barrier's related-nonce diffusion property is **full
 absorption**:
 
 - **CRC128 matrix (24 cells)**: χ² 242.4 – 283.3, mean 257.1. Every
@@ -116,7 +116,6 @@ Total wall-clock across all probes: ~3 minutes on a workstation
 
 ## Debug output
 
-`~/scratch/redteam/related_nonce/` lives outside the repository per
-the CLAUDE.md working-tree layout. JSON records land there and stay
-local. Override the parent directory via
+`~/scratch/redteam/related_nonce/` lives outside the repository. JSON
+records land there and stay local. Override the parent directory via
 `REDTEAM_RELATED_NONCE_OUTPUT_DIR`.

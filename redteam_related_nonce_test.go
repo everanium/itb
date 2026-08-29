@@ -2,7 +2,7 @@
 
 package itb
 
-// Related-nonce differential re-verification for the v0.3.0 architecture
+// Related-nonce differential re-verification for the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8 mandatory
 // seeds). Companion to `redteam_related_seed_test.go`; extends the
 // related-seed Δ probe to the nonce axis.
@@ -39,7 +39,7 @@ package itb
 // property against a hypothetical nonce Δ, not any shipped-API attack
 // path.
 //
-// Attacker-realism (CLAUDE.md discipline):
+// Attacker-realism (attacker-realism discipline):
 //
 //   - The χ² statistic is inherently attacker-visible — it consumes
 //     ciphertext bytes only. No seed components are read in any
@@ -52,7 +52,7 @@ package itb
 //     df=255 uniform band.
 //
 // Emission: each test writes a compact JSON line to
-// `$HOME/scratch/redteam/related_nonce/<name>.json` (per CLAUDE.md
+// `$HOME/scratch/redteam/related_nonce/<name>.json` (per the repository discipline
 // working-tree layout) so downstream aggregation can consume the
 // measurements without rerunning the tests. Override the parent
 // directory via `REDTEAM_RELATED_NONCE_OUTPUT_DIR`.
@@ -193,7 +193,7 @@ func generatePlaintextRN(rng *rand.Rand, size int, kind string) []byte {
 	return pt
 }
 
-// bodyOfCTRN slices the ciphertext body out of a v0.3.0 wire.
+// bodyOfCTRN slices the ciphertext body out of a shipped wire.
 func bodyOfCTRN(ct []byte) []byte {
 	header := 2*NonceSize + 4
 	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
@@ -301,7 +301,7 @@ type rnRun struct {
 // ---------------------------------------------------------------------------
 
 // TestRedTeamRelatedNonceNoDeltaFloor establishes the χ² floor under
-// v0.3.0 Encrypt3x128Cfg with identical seeds + IDENTICAL forced nonce
+// shipped Encrypt3x128Cfg with identical seeds + IDENTICAL forced nonce
 // + same plaintext. The Rank 2 methodology-check identifies this as the
 // "CSPRNG-noise-bit + fill" architectural artefact of two independent
 // encrypts. Values here should reproduce Rank 2's floor within
@@ -358,13 +358,13 @@ func TestRedTeamRelatedNonceNoDeltaFloor(t *testing.T) {
 	}
 
 	emitJSONRN(t, "related_nonce_floor", map[string]any{
-		"description": "no-Δ χ² floor under v0.3.0 shipped Encrypt3x128Cfg, identical nonce",
+		"description": "no-Δ χ² floor under shipped Encrypt3x128Cfg, identical nonce",
 		"floors":      floors,
 	})
 }
 
 // ---------------------------------------------------------------------------
-// v0.3.0 matrix — 6 Δ patterns × 2 plaintext kinds × 2 primitives = 24
+// matrix — 6 Δ patterns × 2 plaintext kinds × 2 primitives = 24
 // cells. Each cell computes ct_baseline_nonce ⊕ ct_delta_nonce body χ²
 // against df=255 uniform expectation via Encrypt3x128Cfg + always-on
 // interlock.

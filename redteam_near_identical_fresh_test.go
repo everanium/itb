@@ -3,7 +3,7 @@
 package itb
 
 // Fresh-nonce cross-message near-identical distinguisher re-verification
-// against the v0.3.0 architecture (always-on 48-bit Interlocked Barrier +
+// against the shipped architecture (always-on 48-bit Interlocked Barrier +
 // Triple Ouroboros + 8 mandatory seeds) with FNV-1a keyed onto every
 // one of the 8 mandatory seed roles. Companion to
 // `redteam_cpa_broken_test.go`; extends the fresh-nonce broken-primitive
@@ -52,7 +52,7 @@ package itb
 // parallelises across `runtime.NumCPU()`; typical wall clock is under
 // five minutes on an 8-core host. Override via `ITB_NIF_N`.
 //
-// Attacker-realism (CLAUDE.md discipline).
+// Attacker-realism (attacker-realism discipline).
 //   - Every ingested byte is a public wire byte reachable by any
 //     observer with a copy of the two ciphertexts. The chi² and
 //     byte-equal statistics are inherently attacker-visible.
@@ -64,7 +64,7 @@ package itb
 //     attacker's own probe). No lab-only peek is invoked.
 //
 // Emission. `$HOME/scratch/redteam/near_identical_fresh/<name>.json`
-// (per CLAUDE.md working-tree layout) for downstream aggregation.
+// (per the working-tree layout) for downstream aggregation.
 // Override the parent directory via
 // `REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 
@@ -177,7 +177,7 @@ func nifBuild8Seeds(t *testing.T, hf HashFunc128) [8]*Seed128 {
 	return out
 }
 
-// bodyOfCTNIF slices the ciphertext body out of a v0.3.0 wire (nonce +
+// bodyOfCTNIF slices the ciphertext body out of a shipped wire (nonce +
 // dimension header dropped). Layout: main_nonce (NonceSize) ||
 // interlock_nonce (NonceSize) || W(2 BE) || H(2 BE) || W*H*Channels
 // body bytes.
@@ -637,7 +637,7 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 	t.Logf("SUMMARY max independent_control byte-equal floor ratio=%.3fx",
 		maxFloorRatioIndep)
 
-	// Baseline comparison against the pre-v0.3.0 archival nonce-reuse
+	// Baseline comparison against the archived archival nonce-reuse
 	// Layer A number at 512 B on the near-identical pair shape. The
 	// number is the published REDTEAM.md range top (`redteam_nonce_
 	// reuse_test.go` Layer A histogram at 512 B, near-identical
@@ -664,7 +664,7 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 		"max_near_identical_floor_ratio_delta":          maxFloorRatioNIDelta,
 		"max_independent_control_floor_ratio":           maxFloorRatioIndep,
 		"nonce_reuse_baseline_near_identical_floor_512": run.Baseline.NonceReuseFloorRatio,
-		"note": "Under fresh nonces the near-identical pair's cross-category homogeneity chi² is the load-bearing between-pair-shape distinguisher; in-band across the matrix implies the pre-v0.3.0 nonce-reuse near-identical-pair traffic-analysis residue collapses to the 1/256 floor.",
+		"note": "Under fresh nonces the near-identical pair's cross-category homogeneity chi² is the load-bearing between-pair-shape distinguisher; in-band across the matrix implies the archived nonce-reuse near-identical-pair traffic-analysis residue collapses to the 1/256 floor.",
 	}
 
 	emitJSONNIF(t, "near_identical_fresh_matrix", map[string]any{

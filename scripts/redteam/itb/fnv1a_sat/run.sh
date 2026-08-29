@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot runner for the v0.3.0 FNV-1a lo-lane SAT re-verification
+# One-shot runner for the FNV-1a lo-lane SAT re-verification
 # probes. Runs the Go test suite; the tests emit JSON records under
 # ~/scratch/redteam/fnv1a_sat/ (override via
 # REDTEAM_FNV1A_SAT_OUTPUT_DIR) that the companion Python SAT probe and

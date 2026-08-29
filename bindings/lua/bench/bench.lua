@@ -12,7 +12,7 @@
 -- Configuration is driven by environment variables so a side-by-side
 -- comparison with the root Go bench harness is straightforward:
 --
---     ITB_NONCE_BITS      512         v0.3.0 secure default
+--     ITB_NONCE_BITS      512         shipped secure default
 --     ITB_KEY_BITS        1024        matches root Go BENCH3.md
 --     ITB_WITH_PARALLAX   false       root Go bench runs without parallax
 --     ITB_WITH_WRAPPER    false       root Go bench runs without the wrapper

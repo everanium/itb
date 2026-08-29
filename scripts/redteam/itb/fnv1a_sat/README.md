@@ -1,8 +1,8 @@
-# FNV-1a lo-lane SAT re-verification (v0.3.0 barrier)
+# FNV-1a lo-lane SAT re-verification
 
-Empirical re-verification of the v0.3.0 (Triple Ouroboros + always-on
+Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction against
-the FNV-1a lo-lane Full-KPA SAT attack from pre-v0.3.0 Phase 2g. That
+the FNV-1a lo-lane Full-KPA SAT attack from the archived Phase 2g. That
 Phase 2g attack recovered a functional dataSeed lo-lane compound key in
 ≈ 8 h single-core Bitwuzla against **Single Ouroboros with the barrier
 disengaged**, yielding 83–85 % byte-level plaintext recovery on JSON /
@@ -12,10 +12,10 @@ HTML holdouts.
 to the nonce-reuse re-verification (see
 `../nonce_reuse/README.md`). Every ciphertext here uses an independent
 nonce (the fixed test nonce is a reproducibility knob, not a lab
-assumption on the attacker). The v0.3.0 closure narrative for this
-track is **multi-seed joint coupling** — every attacker-visible byte is
-the sum of contributions from noiseSeed, lockSeed, dataSeed_i,
-startSeed_i, so no per-chain observation channel exists.
+assumption on the attacker). The closure narrative for this track is
+**multi-seed joint coupling** — every attacker-visible byte is the sum
+of contributions from noiseSeed, lockSeed, dataSeed_i, startSeed_i, so
+no per-chain observation channel exists.
 
 ## Files
 
@@ -27,7 +27,7 @@ startSeed_i, so no per-chain observation channel exists.
 - `sat_probe.py` — Bitwuzla SAT harness. Encodes the naive-crib
   anchoring premise as a per-pixel disjunction over the 56 (np, r)
   tuples chained through the symbolic FNV-1a lo-lane; runs against
-  both the Single Ouroboros / barrier-off control and the v0.3.0
+  both the Single Ouroboros / barrier-off control and the shipped
   Triple / barrier ciphertext (per snake, over a fast-scan sample of
   candidate startPixels). See the module docstring for encoding
   detail and the maximum-peek attacker regime.
@@ -42,7 +42,7 @@ for downstream aggregation.
 
 - `TestRedTeamBrokenFNV1aCribKPA` — F1: attacker-realistic
   per-pixel achievable-set structure. Under FNV-1a's non-affine
-  ChainHash no pixel-independent K exists, so the pre-v0.3.0 CRC128
+  ChainHash no pixel-independent K exists, so the archived CRC128
   compound-K intersection filter yields zero cross-pixel
   intersection at every candidate shift.
 - `TestRedTeamBrokenFNV1aCribKPATrueAnchor` — F2: lab-peek true
@@ -91,13 +91,13 @@ Ground-truth seed values appear elsewhere only in terminal-stage
 
 ## Bitwuzla SAT probe scope
 
-`sat_probe.py` is a compact adaptation of the pre-v0.3.0
+`sat_probe.py` is a compact adaptation of the archived
 `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`. The full
 Single-Ouroboros harness ran ≈ 8 h on 4 cribs + disclosed startPixel.
-The v0.3.0 probe here targets an **isolated single-chain "strongest
-attacker" upper bound**: the attacker is granted true (np, r) per pixel
-(5 of 8 chains inverted for free) and only the single dataSeed_i lo
-lane stays symbolic. If this UPPER-BOUND SAT returns UNSAT, the full
+The probe here targets an **isolated single-chain "strongest attacker"
+upper bound**: the attacker is granted true (np, r) per pixel (5 of 8
+chains inverted for free) and only the single dataSeed_i lo lane stays
+symbolic. If this UPPER-BOUND SAT returns UNSAT, the full
 coupled-8-chain SAT (all 8 chains unknown + per-chunk interlock mask
 triples symbolic) is trivially harder and also UNSAT.
 
@@ -136,6 +136,6 @@ count; at n = 2 pixels and cap = 4 sp candidates per snake, budget
 
 ## Debug output
 
-`~/scratch/redteam/fnv1a_sat/` lives outside the repository per the
-CLAUDE.md working-tree layout. JSON records land there and stay local.
-Override the parent directory via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`.
+`~/scratch/redteam/fnv1a_sat/` lives outside the repository. JSON
+records land there and stay local. Override the parent directory via
+`REDTEAM_FNV1A_SAT_OUTPUT_DIR`.

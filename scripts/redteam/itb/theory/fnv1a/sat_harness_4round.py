@@ -13,7 +13,7 @@ builds one global Z3 bitvector SAT instance over:
     unknowns (6 bits per pixel). `rotation` is pinned by the solver
     via `dataHash % 7 == rotation` constraint; `noise_pos` is free.
 
-Concessions (logged at startup, see `.FNVSTRESS.md` § 4.5):
+Concessions (logged at startup):
 
   1. `startPixel` per cell is disclosed from the lab summary.json.
      Unknown-startPixel case is analytically extrapolated in the
@@ -162,8 +162,8 @@ def _build_cell_context(
         # whichever candidate produces a sat model.
         start_pixel = start_pixel_override % total_pixels
     else:
-        # startPixel concession (disclosed, see `.FNVSTRESS.md` § 4.5):
-        # compute from the lab-audit startSeed components.
+        # startPixel concession (disclosed): compute from the lab-audit
+        # startSeed components.
         summary = json.loads((fnvstress_dir / "summary.json").read_text())
         full_start = [int(h, 16) for h in summary["start_seed_hex"]]
         start_lo = full_start[0::2]
@@ -680,8 +680,8 @@ def solve(
             # rotation < 7 constraint (rotation ∈ {0..6}).
             solver.add(z3.ULT(rot_sym, BitVecVal(7, 3)))
             # rotation == dataHash % 7 — NECESSARY (see comment below),
-            # encoded via optimisation #1 from `.FNVSTRESS.md` § 8.6:
-            # sum-of-3-bit-chunks trick based on `2^3 ≡ 1 (mod 7)`.
+            # encoded via a sum-of-3-bit-chunks trick based on
+            # `2^3 ≡ 1 (mod 7)`.
             # ~50× fewer gates than naive `URem(BV(64), 7)`. Parity
             # with native `x % 7` verified on 10 000 random uint64
             # samples before enabling. Earlier removal of this tie-
@@ -757,8 +757,8 @@ def solve(
         # faster QF_BV bit-blaster + CaDiCaL / Kissat / CryptoMiniSat
         # SAT backends and — crucially — a hard subprocess timeout that
         # is honored across every solver phase (unlike Z3's `timeout`
-        # parameter which applies to CDCL only). See `.FNVSTRESS.md`
-        # § 8.5 "bit-blasting bottleneck" for the Z3 failure mode that
+        # parameter which applies to CDCL only). Z3's bit-blasting
+        # bottleneck on this formula was the Z3 failure mode that
         # drove this decision.
         smt2_text = solver.to_smt2()
         seed_names = [f"s_lo_{i}" for i in range(rounds)]
@@ -1326,9 +1326,7 @@ def main() -> int:
              "Bitwuzla is 2-10x faster on QF_BV mul-heavy circuits and, "
              "more importantly, its subprocess-level wall-clock timeout "
              "is honored in EVERY phase (parse, bit-blast, SAT) — Z3's "
-             "`timeout` only applies to the CDCL loop. See "
-             "`.FNVSTRESS.md` § 8.5 for why this matters on this "
-             "formula.",
+             "`timeout` only applies to the CDCL loop.",
     )
     ap.add_argument(
         "--brute-force-start-pixel", action="store_true",
@@ -1475,8 +1473,8 @@ def main() -> int:
                   if r["status"] == "sat" and r.get("holdout_functionally_equivalent")]
         sat_other = [r for r in bf_results
                      if r["status"] == "sat" and not r.get("holdout_functionally_equivalent")]
-        # Default report path respects CLAUDE.md working-tree layout: writes
-        # land under ~/scratch/redteam/sat_harness_4round/ (overridable via
+        # Default report path writes under
+        # ~/scratch/redteam/sat_harness_4round/ (overridable via
         # SAT_HARNESS_4ROUND_OUTPUT_DIR). Explicit --json-report always wins.
         default_out_dir = Path(os.environ.get(
             "SAT_HARNESS_4ROUND_OUTPUT_DIR",

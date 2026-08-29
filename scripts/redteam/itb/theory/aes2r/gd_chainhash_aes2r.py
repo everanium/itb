@@ -78,7 +78,7 @@ def build(rounds, discard):
 
 if __name__ == '__main__':
     # Output lands in ~/scratch/redteam/gd_chainhash_aes2r/ by default
-    # (per CLAUDE.md working-tree layout — scratch outputs outside repo).
+    # (per the working-tree layout — scratch outputs outside repo).
     # Override via GD_CHAINHASH_AES2R_OUTPUT_DIR.
     out_dir = Path(os.environ.get("GD_CHAINHASH_AES2R_OUTPUT_DIR",
                                   str(Path.home() / "scratch" / "redteam" / "gd_chainhash_aes2r")))

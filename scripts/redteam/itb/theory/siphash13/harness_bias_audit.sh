@@ -28,7 +28,7 @@
 #   RESULTS_TAG                    default: "harness_bias_audit_siphash13"
 #   TIMEOUT_S                      default: 600     (per-cell Go generator timeout)
 #   HARNESS_BIAS_AUDIT_OUTPUT_DIR  default: ${HOME}/scratch/redteam/harness_bias_audit_siphash13
-#                                  (corpus + results tree; per CLAUDE.md
+#                                  (corpus + results tree; per the repository discipline
 #                                  working-tree layout — no tmp/ in repo)
 #
 # Output:

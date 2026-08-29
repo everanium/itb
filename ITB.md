@@ -26,7 +26,7 @@ The barrier works because of separation of sources:
 
 Two independent random processes. CSPRNG does not know about PRF, PRF does not know about CSPRNG. Their only point of contact is the moment of embedding, after which the observer sees only the result, not the components.
 
-**Hash output bandwidth.** Each per-pixel ChainHash call produces a wide output — 128, 256, or 512 bits depending on the primitive — but the encoder consumes only the low 64 bits. About 62 of those are actually used (3 noise-position + 56 channelXOR + ~3 rotation); the rest is slack, and the high portion is discarded entirely. This is a coding-bandwidth choice — one `uint64` register fits the per-pixel needs exactly — not a security upgrade. It has one real side effect: any structural weakness of the underlying primitive that lives in the discarded bits is architecturally invisible to encryption-path observation. FNV-1a's top-bit-isolation case in the empirical red-team work is the canonical example (see [REDTEAM.md Phase 2e](REDTEAM.md#phase-2e--related-seed-differential)). For PRF-grade primitives the narrowing is defense-in-depth against partial weaknesses; under the standard PRF assumption it does not change cryptanalytic resistance at large captured-ciphertext volumes — truncation preserves PRF-security, it does not strengthen it. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security) for the formal treatment.
+**Hash output bandwidth.** Each per-pixel ChainHash call produces a wide output — 128, 256, or 512 bits depending on the primitive — but the encoder consumes only the low 64 bits. About 62 of those are actually used (3 noise-position + 56 channelXOR + ~3 rotation); the rest is slack, and the high portion is discarded entirely. This is a coding-bandwidth choice — one `uint64` register fits the per-pixel needs exactly — not a security upgrade. It has one real side effect: any structural weakness of the underlying primitive that lives in the discarded bits is architecturally invisible to encryption-path observation. FNV-1a's top-bit-isolation case in the empirical red-team work is the canonical example (see [archive/REDTEAM.md Phase 2e](archive/REDTEAM.md#phase-2e--related-seed-differential)). For PRF-grade primitives the narrowing is defense-in-depth against partial weaknesses; under the standard PRF assumption it does not change cryptanalytic resistance at large captured-ciphertext volumes — truncation preserves PRF-security, it does not strengthen it. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security) for the formal treatment.
 
 ## 3. Nonce: A New Universe Per Message
 
@@ -43,7 +43,7 @@ The mandatory internal nonce derivation from crypto/rand at every call is API-si
 
 ## 4. Eight-Seed Isolation
 
-The v0.3.0 API surface takes eight mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by byte-level `Components` comparison in addition to pointer identity — so byte-identical seeds reaching the API through blob import or the Low-Level constructors are rejected on the same gate:
+The API surface takes eight mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by byte-level `Components` comparison in addition to pointer identity — so byte-identical seeds reaching the API through blob import or the Low-Level constructors are rejected on the same gate:
 
 - **noiseSeed** → noise position (which bit in each channel is noise).
 - **lockSeed** → the 48-bit Interlocked Barrier per-chunk permutation channel.
@@ -196,17 +196,17 @@ Nonce reuse is not a threat the barrier architecturally closes. Closure of the C
 - The Interlocked Barrier's per-chunk masks are derived from the lockSeed and the interlock nonce; the per-pixel and per-snake derivations are keyed by the main nonce. Under joint collision of both header nonces with the same seeds, all nonce-bound draws — mask triples, noise positions, rotations, channelXOR, and per-snake startPixels — repeat across the two messages, so the barrier does **not** add protection against joint-nonce reuse and the keystream-reuse structure persists underneath it. A collision of only one of the two nonces degrades one axis; the un-collided axis inherits the barrier's PRF-conditional properties.
 - The three-snake split with three independent startPixels complicates the demask relative to a single-stream construction, but does not remove the underlying two-time-pad structure on the colliding pair.
 
-Empirically (pre-v0.3.0 record on the shared pixel construction), under a deliberate collision with Full KPA, a demasker recovers startPixel and per-pixel (noisePos, rotation) in seconds and reconstructs the pure dataSeed ChainHash output stream — the architectural obstacles below the barrier fall on the colliding pair, leaving only PRF non-invertibility. NIST STS on the reconstructed stream separates PRF from non-PRF: BLAKE3 passes (the single remaining obstacle survives under a PRF), FNV-1a fails.
+Empirically (archived record on the shared pixel construction), under a deliberate collision with Full KPA, a demasker recovers startPixel and per-pixel (noisePos, rotation) in seconds and reconstructs the pure dataSeed ChainHash output stream — the architectural obstacles below the barrier fall on the colliding pair, leaving only PRF non-invertibility. NIST STS on the reconstructed stream separates PRF from non-PRF: BLAKE3 passes (the single remaining obstacle survives under a PRF), FNV-1a fails.
 
 **Disclaimer — what "demasking" means here.** The demasker is **not a decryption tool**. It does not recover plaintext from ciphertext. It strips ITB's masking layers (noise bit at `noisePos`, 7-bit rotation, channelXOR) off a nonce-reuse ciphertext pair, exposing the underlying raw `dataSeed.ChainHash(pixel, nonce)` hash-output bits — the clean PRF signal under a controlled (pixel, nonce) probe, not plaintext. That stream is ammunition for a downstream seed-recovery SAT attempt (feasible only under invertible primitives; infeasible under any PRF-grade primitive). Unlike a stream cipher where `C1 ⊕ C2` directly yields `plaintext_1 ⊕ plaintext_2`, ITB's per-encryption fresh-CSPRNG noise bits + per-pixel rotation + per-pixel channelXOR mean that raw ciphertext XOR does NOT reduce to plaintext XOR — extracting anything requires running the full demasker pipeline, and the pipeline's output is always the hash-output stream, never plaintext bits.
 
 The security gate is the user's choice of nonce width. The shipped default is 512-bit (`itb.DefaultNonceBits = 512`), where the collision bound (~`2^256` messages) is mathematically out of reach on foreseeable hardware; a user who deliberately drops to 128-bit trades this safety-out-of-box for the ~`2^64` birthday bound and takes on the fresh-nonce discipline burden themselves.
 
-For the empirical stream-size and Clean-Signal data across `(format, coverage, plaintext size, primitive)` combinations, see [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse).
+For the empirical stream-size and Clean-Signal data across `(format, coverage, plaintext size, primitive)` combinations, see [REDTEAM.md § Phase 2d — Nonce-Reuse](archive/REDTEAM.md#phase-2d--nonce-reuse).
 
 ### 9.1 Why binary formats defeat Partial KPA demasking entirely
 
-The Partial KPA demask is contingent on the attacker knowing plaintext format at byte-level precision over ≳ 90 % of the plaintext. Idealised JSON / HTML corpora used in the [REDTEAM Phase 2d matrix](REDTEAM.md#phase-2d--nonce-reuse) satisfy this — but only because they are artificially engineered to. Real-world binary formats (ZIP, PDF, MP4, MP3, SQLite database, any container-structured file) do not satisfy it, and on them the demasker extracts nothing meaningful.
+The Partial KPA demask is contingent on the attacker knowing plaintext format at byte-level precision over ≳ 90 % of the plaintext. Idealised JSON / HTML corpora used in the [REDTEAM Phase 2d matrix](archive/REDTEAM.md#phase-2d--nonce-reuse) satisfy this — but only because they are artificially engineered to. Real-world binary formats (ZIP, PDF, MP4, MP3, SQLite database, any container-structured file) do not satisfy it, and on them the demasker extracts nothing meaningful.
 
 **Concrete ZIP example.** Two ZIP archives encrypted under same seeds + same nonce, 1000 files each, filenames `1.txt` … `1000.txt`, contents differ between the two archives.
 
@@ -245,11 +245,11 @@ Partial KPA demasking on ITB is feasible only on plaintext formats that simultan
 2. **Varying content between the two colliding messages** at those known positions (not same-signature-both-messages).
 3. **Byte-level position precision** known to the attacker for ≳ 90 % of plaintext bytes (not "we know it's a ZIP").
 
-Idealised structured plaintexts such as the `json_structured_{25,50,80}` / `html_structured_{25,50,80}` corpora in the [REDTEAM Phase 2d matrix](REDTEAM.md#phase-2d--nonce-reuse) satisfy all three simultaneously — because they are artificially engineered to maximise the signal the demasker can extract. The REDTEAM writeup is explicit that these corpora trade realism for measurable empirical signal; they do not represent a realistic threat model.
+Idealised structured plaintexts such as the `json_structured_{25,50,80}` / `html_structured_{25,50,80}` corpora in the [REDTEAM Phase 2d matrix](archive/REDTEAM.md#phase-2d--nonce-reuse) satisfy all three simultaneously — because they are artificially engineered to maximise the signal the demasker can extract. The REDTEAM writeup is explicit that these corpora trade realism for measurable empirical signal; they do not represent a realistic threat model.
 
 **On real binary formats the demasker is useless.** Even a structured-format attacker-knowledge claim like "we know all filenames and sizes a priori" rarely extends to byte-level coverage of content — and content is where most of any binary file's bytes live.
 
-→ Back-link to [REDTEAM.md § Phase 2d — Nonce-Reuse](REDTEAM.md#phase-2d--nonce-reuse) for the empirical stream-size + Clean-Signal data that underlies the "tiny-signal-on-idealised-corpora, zero-signal-on-realistic-corpora" framing.
+→ Back-link to [REDTEAM.md § Phase 2d — Nonce-Reuse](archive/REDTEAM.md#phase-2d--nonce-reuse) for the empirical stream-size + Clean-Signal data that underlies the "tiny-signal-on-idealised-corpora, zero-signal-on-realistic-corpora" framing.
 
 ## 10. CCA: Reveals Only Noise, Not Data
 

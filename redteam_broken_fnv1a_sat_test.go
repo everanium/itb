@@ -2,25 +2,25 @@
 
 package itb
 
-// FNV-1a lo-lane SAT re-verification for the v0.3.0 architecture
+// FNV-1a lo-lane SAT re-verification for the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8 mandatory
 // seeds). Companion to `redteam_broken_test.go` — this file extends the
 // broken-primitive track with FNV-1a-specific SAT-anchoring probes.
 //
 // Claim under test (REDTEAM.md § "FNV-1a lo-lane SAT — architecturally
-// foreclosed"): the pre-v0.3.0 SAT harness that recovered a functional
+// foreclosed"): the archived SAT harness that recovered a functional
 // FNV-1a lo-lane compound key in ≈ 8 h on Single Ouroboros with the
-// barrier disengaged cannot be formulated under v0.3.0 because the
+// barrier disengaged cannot be formulated under because the
 // 48-bit interlock destroys the fixed bit-to-lane anchor the SAT
 // depends on. This file quantifies that closure at the anchoring layer.
 //
-// The pre-v0.3.0 SAT anchored on the mapping
+// The archived SAT anchored on the mapping
 //
 //	plaintext byte K → pixel (startPixel + K/7) mod totalPixels
 //	                   channel K % 7
 //	                   → dataHash(pixel).lo >> 3
 //
-// which held under Single Ouroboros. Under v0.3.0 the plaintext is
+// which held under Single Ouroboros. Under the plaintext is
 // first prepended with a 4-byte length, then split into three snake
 // streams by the 48-bit interlock (a per-chunk PRF-keyed 16-of-48
 // balanced partition, ≈ 2^70.20 mask space). Lane i's bytes are then
@@ -42,7 +42,7 @@ package itb
 //     that even the oracle-attacker's naive-crib anchoring fails.
 //
 // Every probe emits a JSON record under
-// `$HOME/scratch/redteam/fnv1a_sat/` (per CLAUDE.md working-tree
+// `$HOME/scratch/redteam/fnv1a_sat/` (per the repository discipline working-tree
 // layout) for downstream aggregation. Override the parent directory
 // via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`. The path is created lazily;
 // failure to write is logged but non-fatal.
@@ -87,7 +87,7 @@ func emitJSONFNV(t *testing.T, name string, v any) {
 // buildEightFNV1aSeeds128FNV constructs the 8 mandatory seed roles as
 // independent Seed128 handles keyed by fnv1a128BrokenLab. Mirrors
 // buildEightFNV1aSeeds128 in redteam_nonce_reuse_test.go, namespaced to
-// avoid symbol collision (CLAUDE.md frozen-code rule).
+// avoid symbol collision (frozen-code discipline).
 func buildEightFNV1aSeeds128FNV(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, s1, s2, s3 *Seed128) {
 	t.Helper()
 	mk := func(role string) *Seed128 {
@@ -135,7 +135,7 @@ func decodeWireFNV(ct []byte) snakeGeometryFNV {
 // recoverXorMask56FNV inverts the encode formula for one candidate
 // (noisePos, rotation) pair to recover the 56-bit compound
 // `dataHash.lo >> 3` value under the assumed crib alignment. Identical
-// math to the pre-v0.3.0 achievable-key routine in
+// math to the archived achievable-key routine in
 // scripts/redteam/itb/theory/fnv1a/itb_channel_mirror.py
 // (decode_channel_to_plaintext_bits), specialised to yield the full
 // 56-bit compound directly. Used by both anchor probes.
@@ -151,7 +151,7 @@ func recoverXorMask56FNV(pixelBytes [Channels]byte, np uint, r uint, cribBits [C
 }
 
 // naiveSnakeCribBits returns the assumed 7-bit-per-channel crib payload
-// for snake i at snake-pixel p under the pre-v0.3.0 anchoring
+// for snake i at snake-pixel p under the archived anchoring
 // assumption "plaintext byte K lives at snake K%3, snake-pixel (K/3)/7,
 // channel (K/3)%7". Returns false when the assumed byte range falls
 // outside the raw plaintext (short crib).
@@ -237,7 +237,7 @@ var jsonCribPlaintext = []byte(`[{"identifier_of_record_in_system":"0000000000",
 //
 // Reports the achievable per-pixel candidate xor_mask56 set size under
 // every (sp_i, np, r) tuple, using only attacker-visible bytes plus the
-// naive-crib alignment. Under CRC128 the pre-v0.3.0 pre-anchor filter
+// naive-crib alignment. Under CRC128 the archived pre-anchor filter
 // intersected these sets across crib pixels to collapse candidate
 // startPixels to the true one (pixel-independent K + linear ChainHash).
 // Under FNV-1a the ChainHash is not affine, so no pixel-independent K
@@ -283,9 +283,9 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 	}
 	back, err := Decrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil || string(back) != string(plain) {
-		t.Fatalf("v0.3.0 ciphertext did not round-trip: %v", err)
+		t.Fatalf("shipped ciphertext did not round-trip: %v", err)
 	}
-	t.Logf("[audit] v0.3.0 Triple/barrier round-trip OK (%d B plain → %d B wire)", len(plain), len(ct))
+	t.Logf("[audit] shipped Triple/barrier round-trip OK (%d B plain → %d B wire)", len(plain), len(ct))
 
 	geom := decodeWireFNV(ct)
 
@@ -387,7 +387,7 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 //
 // Under Single Ouroboros without barrier: at the true startPixel, all
 // cribPixels * Channels bytes match — this is the SAT anchor. Under
-// v0.3.0 barrier: the crib bytes are wrong at nearly every position,
+// shipped barrier: the crib bytes are wrong at nearly every position,
 // so the recovered xor_mask56 does NOT equal the true dataHash even
 // under true (np, r). Match count drops to the same-symbol coincidence
 // floor per shift.
@@ -538,7 +538,7 @@ func TestRedTeamBrokenFNV1aCribKPAControl(t *testing.T) {
 	process128Cfg(nil, noiseSeed, dataSeed, startSeed, nonce, ctrl, totalPixels, 1, plain, true, 1)
 
 	// [lab-peek: sp*] disclosed via deriveStartPixel — matches
-	// Concession 1 of the pre-v0.3.0 SAT harness.
+	// Concession 1 of the archived SAT harness.
 	sp := startSeed.deriveStartPixel(nonce, totalPixels)
 	t.Logf("[audit] control startPixel = %d (derived from startSeed.deriveStartPixel)", sp)
 
@@ -712,7 +712,7 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 	}
 	back, err := Decrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil || string(back) != string(plain) {
-		t.Fatalf("v0.3.0 ciphertext did not round-trip: %v", err)
+		t.Fatalf("shipped ciphertext did not round-trip: %v", err)
 	}
 	// [lab-peek: barrier_split] — splitForTriple48LockedCfg with the
 	// true lockSeed reveals the per-snake lane bytes. Used for the
@@ -823,7 +823,7 @@ func TestRedTeamBrokenFNV1aCribKPAEmitCorpus(t *testing.T) {
 	}
 
 	bundle := map[string]any{
-		"description":     "FNV-1a on all 8 seeds; v0.3.0 Triple/barrier + single-snake control",
+		"description":     "FNV-1a on all 8 seeds; shipped Triple/barrier + single-snake control",
 		"key_bits":        keyBits,
 		"nonce_hex":       hexOf(nonce),
 		"plaintext_utf8":  string(plain),

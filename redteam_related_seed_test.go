@@ -2,22 +2,22 @@
 
 package itb
 
-// Related-seed differential re-verification for the v0.3.0 architecture
+// Related-seed differential re-verification for the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8 mandatory
 // seeds). Companion to `redteam_broken_test.go` and
 // `redteam_nonce_reuse_test.go`; extends the below-spec broken-primitive
 // scaffolding with a focused related-seed χ² histogram probe.
 //
-// The pre-v0.3.0 Phase 2e sweep (archived in
-// archive/REDTEAM-v0.2.md § Phase 2e) recorded, on a Single-Ouroboros
+// The archived Phase 2e sweep (archived in
+// archive/archive/REDTEAM.md § Phase 2e) recorded, on a Single-Ouroboros
 // overlay-disengaged encode of the same plaintext under the same nonce,
 // a per-primitive axis-hit ciphertext-XOR χ² of **CRC128 ≈ 42.5M**
 // and **FNV-1a ≈ 56.7M** against a neutralised cluster near **6.1M**
 // (that cluster is the architectural `noisePos` permutation signal on
 // the `noise` axis, not a primitive leak). This file measures the same
-// statistic against v0.3.0's always-on barrier via the shipped
+// statistic against the shipped's always-on barrier via the shipped
 // `Encrypt3x128Cfg` API to test whether the barrier absorbs the two
-// below-spec algebraic surfaces at their pre-v0.3.0 measurement angle.
+// below-spec algebraic surfaces at their archived measurement angle.
 //
 // Threat model per probe (see docstrings): lab-forced 1-bit seed Δ,
 // same nonce forced across the compared pair via `setBrokenTestNonce`,
@@ -26,7 +26,7 @@ package itb
 // production; the χ² measurement stresses the barrier's diffusion
 // property, not any shipped-API attack path.
 //
-// Attacker-realism (CLAUDE.md discipline):
+// Attacker-realism (attacker-realism discipline):
 //
 //   - The χ² statistic is inherently attacker-visible — it consumes
 //     ciphertext bytes only. No `dataSeed*` / `noiseSeed` / `lockSeed`
@@ -39,7 +39,7 @@ package itb
 //     uniform band.
 //
 // Emission: each test writes a compact JSON line to
-// `$HOME/scratch/redteam/related_seed/<name>.json` (per CLAUDE.md
+// `$HOME/scratch/redteam/related_seed/<name>.json` (per the repository discipline
 // working-tree layout) so downstream aggregation can consume the
 // measurements without rerunning the tests. Override the parent
 // directory via `REDTEAM_RELATED_SEED_OUTPUT_DIR`. The path is created
@@ -64,12 +64,12 @@ import (
 var tmpRSDir = redteamOutputDir("related_seed")
 
 // rsKeyComponents is the fixed component count per Seed128 used by the
-// matrix — 1024-bit key = 16 uint64. Matches the pre-v0.3.0 Phase 2e
+// matrix — 1024-bit key = 16 uint64. Matches the archived Phase 2e
 // baseline so the χ² numbers are directly comparable.
 const rsKeyComponents = 16
 
 // rsPlaintextBytes is the plaintext size per matrix cell. 512 KiB
-// matches the pre-v0.3.0 Phase 2e sample size that produced the 42M /
+// matches the archived Phase 2e sample size that produced the 42M /
 // 57M axis-hit records.
 const rsPlaintextBytes = 512 * 1024
 
@@ -131,7 +131,7 @@ func drawBaseComponentsRS(nonceSeed, streamTag uint64, n int) []uint64 {
 }
 
 // rsDeltaComponents returns the 16-uint64 Δ for the given kind, matching
-// the pre-v0.3.0 Phase 2e delta patterns (bit0, bit_mid512,
+// the archived Phase 2e delta patterns (bit0, bit_mid512,
 // bit_high1023). Deterministic and axis-agnostic.
 func rsDeltaComponents(kind string) []uint64 {
 	d := make([]uint64, rsKeyComponents)
@@ -176,7 +176,7 @@ func generatePlaintextRS(rng *rand.Rand, size int, kind string) []byte {
 
 // byteChi2RS computes the Pearson χ² statistic on the 256-bin byte
 // distribution of D against a uniform expectation (df=255). The
-// pre-v0.3.0 analyzer's identical computation is
+// archived analyzer's identical computation is
 // scripts/redteam/itb/theory/_common/related_seed_diff_analyze.py::byte_chi_squared.
 func byteChi2RS(diff []byte) float64 {
 	if len(diff) == 0 {
@@ -223,7 +223,7 @@ func bitBalanceRS(diff []byte) (meanAbs, maxAbs float64) {
 	return meanAbs, maxAbs
 }
 
-// bodyOfCTRS slices the ciphertext body out of a v0.3.0 wire. Layout:
+// bodyOfCTRS slices the ciphertext body out of a shipped wire. Layout:
 // main_nonce (NonceSize) || interlock_nonce (NonceSize) || W(2 BE) || H(2 BE) || W×H×Channels body bytes.
 func bodyOfCTRS(ct []byte) []byte {
 	header := 2*NonceSize + 4
@@ -291,22 +291,22 @@ type rsRun struct {
 }
 
 // ---------------------------------------------------------------------------
-// Positive control — pre-v0.3.0 axis-hit reproduction via process128Cfg
+// Positive control — archived axis-hit reproduction via process128Cfg
 // (Single Ouroboros, no interlock overlay, no 3-snake split). Confirms
-// the probe methodology matches the pre-v0.3.0 42M / 57M axis-hit
+// the probe methodology matches the archived 42M / 57M axis-hit
 // records to within a small multiplier — proves the probe is sensitive
 // and the neutralised-cluster comparison below is real.
 // ---------------------------------------------------------------------------
 
-// TestRedTeamRelatedSeedControl reproduces one pre-v0.3.0 axis-hit cell
+// TestRedTeamRelatedSeedControl reproduces one archived axis-hit cell
 // per below-spec primitive (CRC128 + FNV-1a) on the `data` axis with
 // the `bit_high` Δ pattern (the row that scored 42M / 57M in Phase 2e
 // archived data). The test drives `process128Cfg` directly to bypass
-// the v0.3.0 barrier — this is the retired Single Ouroboros /
-// overlay-disengaged shape that the pre-v0.3.0 record targeted.
+// the shipped barrier — this is the retired Single Ouroboros /
+// overlay-disengaged shape that the archived record targeted.
 //
 // Success criterion: axis-hit χ² for the two below-spec primitives
-// lands in the same order of magnitude as the pre-v0.3.0 42M / 57M
+// lands in the same order of magnitude as the archived 42M / 57M
 // records. A specific tolerance is not asserted here (the seeds and
 // nonce differ across runs); the numbers are recorded for terminal-
 // stage side-by-side comparison with the matrix under
@@ -348,7 +348,7 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 		startSeed0 := mkSeed128RS(t, prim.hf, baseStart)
 
 		// Variant: apply Δ to dataSeed components (data axis, matching
-		// the pre-v0.3.0 row that scored 42M / 57M).
+		// the archived row that scored 42M / 57M).
 		dataVar := make([]uint64, rsKeyComponents)
 		copy(dataVar, baseData)
 		for i, d := range delta {
@@ -359,7 +359,7 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 		// Container sized to hold the plaintext with a little margin.
 		totalPixels := (len(plaintext)*8+DataBitsPerPixel-1)/DataBitsPerPixel + 8
 
-		// Pre-v0.3.0 methodology filled the container with a CSPRNG
+		// Archived methodology filled the container with a CSPRNG
 		// background before process128Cfg overwrote the data-carrying
 		// pixels. Pixels NOT touched by process128Cfg keep the
 		// CSPRNG residue, contributing near-uniform XOR to D; the
@@ -403,8 +403,8 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 	}
 
 	emitJSONRS(t, "related_seed_control", map[string]any{
-		"description":     "pre-v0.3.0 axis-hit reproduction via process128Cfg",
-		"pre_v030_source": "archive/REDTEAM-v0.2.md § Phase 2e",
+		"description":     "archived axis-hit reproduction via process128Cfg",
+		"pre_v030_source": "archive/archive/REDTEAM.md § Phase 2e",
 		"pre_v030_target": map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753},
 		"pre_v030_floor":  6100000.0,
 		"cells":           results,
@@ -412,7 +412,7 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// v0.3.0 architectural floor probe — reveals what the ciphertext-XOR χ²
+// architectural floor probe — reveals what the ciphertext-XOR χ²
 // looks like under the SHIPPED barrier + same-nonce with NO seed Δ
 // applied. This is the floor every axis is measured against: because
 // each Encrypt3x128Cfg call draws independent CSPRNG for the container
@@ -425,7 +425,7 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestRedTeamRelatedSeedNoDeltaFloor measures the χ² floor under the
-// v0.3.0 shipped API with IDENTICAL seeds + same nonce + same
+// shipped API with IDENTICAL seeds + same nonce + same
 // plaintext. Emits per-primitive floor values so the matrix's per-axis
 // χ² can be quoted "over floor" — a Δ that ONLY raises χ² to the
 // floor level (~architectural constant) is NOT a primitive-attributable
@@ -504,13 +504,13 @@ func TestRedTeamRelatedSeedNoDeltaFloor(t *testing.T) {
 	}
 
 	emitJSONRS(t, "related_seed_floor", map[string]any{
-		"description": "no-Δ χ² floor under v0.3.0 shipped Encrypt3x128Cfg",
+		"description": "no-Δ χ² floor under shipped Encrypt3x128Cfg",
 		"floors":      floors,
 	})
 }
 
 // ---------------------------------------------------------------------------
-// v0.3.0 matrix — 8 axes × 3 Δ patterns × 2 plaintext kinds × 2 below-spec
+// matrix — 8 axes × 3 Δ patterns × 2 plaintext kinds × 2 below-spec
 // primitives = 96 cells. Each cell computes ct_0 ⊕ ct_1 body χ² against
 // df=255 uniform expectation via the shipped Encrypt3x128Cfg API with
 // the always-on 48-bit Interlocked Barrier. Same-nonce forced through
@@ -675,7 +675,7 @@ func TestRedTeamRelatedSeedMatrix(t *testing.T) {
 	}
 
 	// Sanity floors: report per-primitive max χ² and identify axis-hit
-	// outliers relative to the pre-v0.3.0 42M/57M baseline and the
+	// outliers relative to the archived 42M/57M baseline and the
 	// neutralised 6.1M cluster.
 	summary := map[string]map[string]any{}
 	for _, prim := range primitives {

@@ -6,7 +6,7 @@ particularly around disk cleanup — that should not leak into the validation
 tooling.
 
 Responsibilities:
-    - safe_rmtree — validated deletion helper (see .REDPLAN.md safety rules)
+    - safe_rmtree — validated deletion helper (mandatory safety discipline)
     - cobs_encode — Python port of cobsEncode from cobs.go
     - parse_itb_header — extract nonce + W + H from ciphertext bytes 0..20
     - rotate7 / extract7 — 7-bit bit-manipulation helpers matching processChunk128
@@ -33,14 +33,13 @@ DATA_BITS_PER_PIXEL = 56
 DATA_ROTATION_BITS = 3
 
 # ----------------------------------------------------------------------------
-# Deletion safety (mandatory for every attack orchestrator — see .REDPLAN.md
-# "Safety discipline for deletion operations")
+# Deletion safety (mandatory for every attack orchestrator).
 # ----------------------------------------------------------------------------
 
 def safe_rmtree(target: Path, expected_parent: Path) -> None:
     """Delete target if and only if it resolves inside expected_parent.
 
-    Enforces the deletion-safety discipline from .REDPLAN.md:
+    Enforces the deletion-safety discipline:
       1. target must be absolute after resolve()
       2. target must be inside expected_parent (raises ValueError on escape)
       3. skips silently if target does not exist (first-run convenience)

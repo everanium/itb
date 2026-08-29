@@ -8,36 +8,36 @@ the shipped Go harness together with the sibling Python bias probe.
 The tree splits into two compatibility bands, matching the split in the
 paper-facing documentation:
 
-- **Compatible with v0.3.0+ (and also with ≤ v0.2.1)** — cited by
+- **Compatible with the shipped tree** — cited by
   [HARNESS.md](../../HARNESS.md) as a reproduction path a reader can
   invoke today against the shipped construction. These are the
   primitive-shelf validation surface (Axes A / A′ / B / C on
   non-cryptographic and reduced-round primitives) plus the SAT-free
   pre-screen. They characterise **individual hash primitives** and
   their `ChainHash128`-wrapped variants — the barrier layer is not in
-  scope for the measurement, so the wire hard-fork at v0.3.0 does not
+  scope for the measurement, so the shipped dual-nonce wire does not
   invalidate them.
-- **Compatible with ≤ v0.2.1 only** — attacks that assumed pre-v0.3.0
-  construction (single-nonce wire, opt-in barrier, historic 3-seed
-  layout). Both conditions are permanently gone in v0.3.0 (Triple is
-  the only construction, the 48-bit Interlocked Barrier is
-  non-disableable), so these scripts require a pre-v0.3.0 tree to run.
-  Check out the last v0.2 commit (the parent of the first v0.3.0
-  commit `2133136`, i.e. `git checkout 2133136^`) into a work tree and
-  the scripts execute exactly as they did on that release. Their
+- **Compatible with the archived tree only** — attacks that assumed
+  the retired construction (single-nonce wire, opt-in barrier, 3-seed
+  layout). Both conditions are permanently gone in the shipped tree
+  (Triple is the only construction, the 48-bit Interlocked Barrier is
+  non-disableable), so these scripts require an archived tree to run.
+  Check out the commit immediately before the first shipped commit
+  `2133136` (i.e. `git checkout 2133136^`) into a work tree and the
+  scripts execute exactly as they did on that release. Their
   historical results are also preserved verbatim in
-  [archive/REDTEAM-v0.2.md](../../archive/REDTEAM-v0.2.md) and
-  [archive/HARNESS-v0.2.md](../../archive/HARNESS-v0.2.md). The
-  scripts remain in tree as templates for future Python probe
-  sequences and as the attribution source `redteam_broken_test.go`
-  cites when it ports logic.
+  [archive/REDTEAM.md](../../archive/REDTEAM.md) and
+  [archive/HARNESS.md](../../archive/HARNESS.md). The scripts remain
+  in tree as templates for future Python probe sequences and as the
+  attribution source `redteam_broken_test.go` cites when it ports
+  logic.
 
-The v0.3.0 empirical validation itself is delivered as shipped Go
-tests, not Python. See the
-[Go test surface](#where-the-v030-empirical-validation-lives) section
-at the bottom.
+The empirical validation for the shipped construction itself is
+delivered as shipped Go tests, not Python. See the
+[Go test surface](#where-the-empirical-validation-lives) section at
+the bottom.
 
-## Compatible with v0.3.0+ (and ≤ v0.2.1)
+## Compatible with the shipped tree
 
 Cited by HARNESS.md and reproducible against the shipped tree.
 
@@ -64,16 +64,15 @@ Cited by HARNESS.md and reproducible against the shipped tree.
 ### Shared probe modules under `itb/theory/_common/`
 
 - `raw_mode_bias_probe.py` — attacker-realistic raw-mode bias probe
-  (attacker-visible input; codified capability, cf.
-  [CLAUDE.md](../../CLAUDE.md) attacker-realism section).
+  (attacker-visible input; codified capability).
 - `raw_mode_common.py` — common raw-mode helpers.
 - `attack_common.py` — shared attacker-side helpers imported by shelf scripts.
 
-## Compatible with ≤ v0.2.1 only
+## Compatible with the archived tree only
 
-Cited from [archive/REDTEAM-v0.2.md](../../archive/REDTEAM-v0.2.md).
-Reproducible against a checked-out pre-v0.3.0 tree (`git checkout
-2133136^`); not against the shipped v0.3.0+ tree, where the pre-v0.3.0
+Cited from [archive/REDTEAM.md](../../archive/REDTEAM.md).
+Reproducible against a checked-out archived tree (`git checkout
+2133136^`); not against the shipped tree, where the archived
 construction and the overlay-disengaged mode the attacks target no
 longer exist. Kept in tree as templates for future Python probe
 sequences and as attribution sources for the ported Go tests.
@@ -84,7 +83,7 @@ sequences and as attribution sources for the ported Go tests.
 - `itb/theory/fnv1a/{decrypt_full_fnv1a,fnv_chain_lo_concrete,itb_channel_mirror,sat_calibration_raw_fnv,sat_harness_4round,t_solver_fnv,tsolver_harness_4round,tsolver_z3_propagator}.py`
 - `itb/theory/bea1/` — BEA-1 trapdoor primitive control (HARNESS.md §3.6
   cites the trapdoor result; the actual break scripts targeted the
-  pre-v0.3.0 construction).
+  archived construction).
 - `itb/theory/_common/nonce_reuse_demask.py`
 - `itb/theory/_common/{classical_decrypt,distinguisher,distinguisher_full}.py`
 - `itb/theory/_common/kl/{kl_massive,kl_massive_full,kl_matrix,kl_urandom}.py`
@@ -112,11 +111,12 @@ primitive in scope. Do not delete individual mirrors even when the
 parent attack script is archived; the pre-screen and the live shelf
 scripts both import from here.
 
-## Where the v0.3.0 empirical validation lives
+## Where the empirical validation lives
 
-The v0.3.0 REDTEAM re-verification is delivered as **shipped Go tests**,
-not Python scripts. They compile with the release, run through
-`go test -count=1 ./...`, and require no external Python environment:
+The REDTEAM re-verification for the shipped construction is delivered
+as **shipped Go tests**, not Python scripts. They compile with the
+release, run through `go test -count=1 ./...`, and require no external
+Python environment:
 
 - `redteam_broken_test.go` — FNV-1a and CRC128 broken-primitive
   re-verification (Full KPA / Partial KPA / Nonce-Reuse / mixed-algebra

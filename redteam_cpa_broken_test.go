@@ -2,7 +2,7 @@
 
 package itb
 
-// Fresh-nonce CPA re-verification against the v0.3.0 architecture
+// Fresh-nonce CPA re-verification against the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8 mandatory
 // seeds) under a below-spec primitive on every seed role. Companion to
 // `redteam_related_seed_test.go` and `redteam_related_nonce_test.go`;
@@ -43,7 +43,7 @@ package itb
 // parallelises across `runtime.NumCPU()`; typical wall clock is a few
 // minutes on an 8-core host. Override via `ITB_CPA_N`.
 //
-// Attacker-realism (CLAUDE.md discipline).
+// Attacker-realism (attacker-realism discipline).
 //   - The chi² and byte-equal statistics are inherently attacker-visible
 //     — every ingested byte is a public wire byte.
 //   - No seed / nonce / mask / rotation / noise-position value is read
@@ -52,9 +52,9 @@ package itb
 //     the run is reproducible, but the values themselves are not
 //     consulted after the seeds are constructed.
 //
-// Emission. `$HOME/scratch/redteam/cpa_broken/<name>.json` (per
-// CLAUDE.md working-tree layout) for downstream aggregation. Override
-// the parent directory via `REDTEAM_CPA_BROKEN_OUTPUT_DIR`.
+// Emission. `$HOME/scratch/redteam/cpa_broken/<name>.json` (per the
+// working-tree layout) for downstream aggregation. Override the parent
+// directory via `REDTEAM_CPA_BROKEN_OUTPUT_DIR`.
 
 import (
 	"encoding/binary"
@@ -220,7 +220,7 @@ func cpaBuild8Seeds(t *testing.T, hf HashFunc128) [8]*Seed128 {
 	return out
 }
 
-// bodyOfCTCPA slices the ciphertext body out of a v0.3.0 wire. Layout:
+// bodyOfCTCPA slices the ciphertext body out of a shipped wire. Layout:
 // main_nonce (NonceSize) || interlock_nonce (NonceSize) || W(2 BE) || H(2 BE) || W*H*Channels body bytes.
 func bodyOfCTCPA(ct []byte) []byte {
 	header := 2*NonceSize + 4

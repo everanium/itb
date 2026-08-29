@@ -1,6 +1,6 @@
-# Nonce-Reuse adversarial re-verification (v0.3.0 barrier)
+# Nonce-Reuse adversarial re-verification
 
-Empirical re-verification of the v0.3.0 (Triple Ouroboros + always-on
+Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction under
 forced nonce reuse. Primitive under test: **FNV-1a** on all 8 seed roles
 (one below-spec lab primitive on every role; each seed still gets an
@@ -35,7 +35,7 @@ for downstream aggregation.
 - `TestRedTeamNonceReuseLayerBRandomPair` — Layer B random floor: same
   probe with random plaintext pair (no artificial quiet chunks).
 - `TestRedTeamNonceReuseLayerBMaskOraclePeek` — Layer B': upper bound
-  under startPixel-peek + mask-oracle-peek. Confirms the pre-v0.3.0
+  under startPixel-peek + mask-oracle-peek. Confirms the archived
   demasker's Layer 1 succeeds at 100% precision IF the mask is revealed.
 - `TestRedTeamNonceReuseLayerCFNVAlgebraic` — Layer C: attacker-realistic
   FNV-1a algebraic-recovery precondition. Zero pixels admit any (np, r)
@@ -86,6 +86,6 @@ encryptions).
 
 ## Debug output
 
-`~/scratch/redteam/nonce_reuse/` lives outside the repository per the
-CLAUDE.md working-tree layout. JSON records land there and stay local.
-Override the parent directory via `REDTEAM_NONCE_REUSE_OUTPUT_DIR`.
+`~/scratch/redteam/nonce_reuse/` lives outside the repository. JSON
+records land there and stay local. Override the parent directory via
+`REDTEAM_NONCE_REUSE_OUTPUT_DIR`.

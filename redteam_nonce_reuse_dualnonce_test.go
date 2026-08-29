@@ -2,10 +2,10 @@
 
 package itb
 
-// Nonce-Reuse dual-nonce re-verification for the v0.3.0 wire format
+// Nonce-Reuse dual-nonce re-verification for the shipped wire format
 // (`[main_nonce (N)][interlock_nonce (N)][W][H][container]`, header
 // size `2*N+4`). Companion to the historical `redteam_nonce_reuse_test.go`
-// probes, which were authored against the pre-v0.3.0 single-nonce wire
+// probes, which were authored against the archived single-nonce wire
 // and cannot re-run against the shipped construction (their wire
 // parsers panic on out-of-range slices when W/H are read from bytes
 // that are actually the interlock nonce).
@@ -17,7 +17,7 @@ package itb
 //     main nonce AND both messages share the interlock nonce; within
 //     each message the two nonces stay byte-distinct (matching the
 //     shipped `generateNoncePairCfg` invariant). This reproduces the
-//     pre-v0.3.0 single-nonce reuse event under the dual-nonce header.
+//     archived single-nonce reuse event under the dual-nonce header.
 //
 //   Scenario B — Partial nonce-reuse (main-only). The main nonce is
 //     fixed across the compared pair; the interlock nonce is drawn
@@ -42,7 +42,7 @@ package itb
 // perfectly correlated bytes under Scenario A. Two primitives cover
 // the PRF (BLAKE3-128) and below-spec (FNV-1a) ends of the spectrum.
 //
-// Attacker-realism (CLAUDE.md discipline): every statistic reads
+// Attacker-realism (attacker-realism discipline): every statistic reads
 // ciphertext bytes and the public wire header only. Seed components
 // and interlock lockSeed material are never touched in the decision
 // path. The forced-nonce lab hooks are the probe input, not an
@@ -52,7 +52,7 @@ package itb
 //
 // Emission: each probe writes a compact JSON record under
 // `$HOME/scratch/redteam/nonce_reuse_dualnonce/<name>.json`
-// (per CLAUDE.md working-tree layout) so downstream aggregation can
+// (per the working-tree layout) so downstream aggregation can
 // consume the raw numbers without rerunning the tests. Override the
 // parent directory via `REDTEAM_NONCE_REUSE_DUALNONCE_OUTPUT_DIR`.
 
@@ -160,7 +160,7 @@ func setBrokenTestInterlockNonceOnly(t *testing.T, interlockNonce []byte) {
 // Dual-nonce wire parser + statistics.
 // ---------------------------------------------------------------------------
 
-// wireLayoutDualNR describes the v0.3.0 dual-nonce wire slices. Both
+// wireLayoutDualNR describes the shipped dual-nonce wire slices. Both
 // nonces are surfaced independently so probes can consult either one.
 type wireLayoutDualNR struct {
 	mainNonce      []byte
@@ -172,7 +172,7 @@ type wireLayoutDualNR struct {
 	body           []byte
 }
 
-// decodeWireDualNR parses the v0.3.0 dual-nonce wire header. Panics on
+// decodeWireDualNR parses the shipped dual-nonce wire header. Panics on
 // malformed input — probes hand it fresh Encrypt output only.
 func decodeWireDualNR(ct []byte) wireLayoutDualNR {
 	n := NonceSize
@@ -414,7 +414,7 @@ func runDualNRScenario(t *testing.T, scenario dualNRScenario, primName string, h
 			plainRng.Read(p1)
 			copy(p2, p1)
 			// Flip one bit at the middle byte per pair — the maximally
-			// adversarial pair shape for the pre-v0.3.0 near-identical
+			// adversarial pair shape for the archived near-identical
 			// Layer A residue.
 			p2[plaintextLen/2] ^= byte(1 << (uint(i) % 8))
 		default:

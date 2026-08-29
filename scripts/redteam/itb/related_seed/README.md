@@ -1,9 +1,9 @@
-# Related-seed differential re-verification (v0.3.0 barrier)
+# Related-seed differential re-verification
 
-Empirical re-verification of the pre-v0.3.0 Phase 2e finding
+Empirical re-verification of the archived Phase 2e finding
 (CRC128 42.5M, FNV-1a 56.7M axis-hit ciphertext-XOR χ² on Single
-Ouroboros with the overlay disengaged) against the shipped v0.3.0
-Triple Ouroboros + always-on 48-bit Interlocked Barrier + 8 mandatory
+Ouroboros with the overlay disengaged) against the shipped Triple
+Ouroboros + always-on 48-bit Interlocked Barrier + 8 mandatory
 seeds API. Primitives under test: **CRC128** and **FNV-1a** on all 8
 seed roles (below-spec lab controls; each seed still gets an independent
 random key). Nonce collision forced via the test-only `setBrokenTestNonce`
@@ -16,7 +16,7 @@ hook.
 - `aggregate.py` — reads the emitted JSON records and prints a 4-D
   structural summary (axis dominance ranking, Δ pattern sensitivity,
   plaintext kind sensitivity, primitive contrast, positive-control
-  drift vs pre-v0.3.0). Consumes only files under
+  drift vs the archived record). Consumes only files under
   `~/scratch/redteam/related_seed/` — no test dependencies.
 
 ## Probes (implemented as Go tests in `redteam_related_seed_test.go`)
@@ -24,9 +24,9 @@ hook.
 Each Go test emits one JSON record to `~/scratch/redteam/related_seed/`.
 
 - `TestRedTeamRelatedSeedControl` — **positive control**: reproduces
-  the pre-v0.3.0 Phase 2e axis-hit (CRC128 42.5M / FNV-1a 56.7M) via
+  the archived Phase 2e axis-hit (CRC128 42.5M / FNV-1a 56.7M) via
   `process128Cfg` (Single Ouroboros, no interlock overlay, no 3-snake
-  split). Confirms the ported χ² probe is sensitive at the pre-v0.3.0
+  split). Confirms the ported χ² probe is sensitive at the archived
   measurement angle and matches the archive numbers to within 0.3 %.
 - `TestRedTeamRelatedSeedNoDeltaFloor` — **architectural floor**:
   two `Encrypt3x128Cfg` calls with IDENTICAL seeds under the same
@@ -47,7 +47,7 @@ an attacker-realistic recovery path. A real attacker cannot force
 1-bit seed deltas because `Encrypt3x128Cfg` draws every seed
 independently through `NewSeed*`, and the shipped API rejects seed
 pointer collisions. The lab-forced Δ is a probe INPUT designed to
-measure whether the barrier absorbs perturbations at the pre-v0.3.0
+measure whether the barrier absorbs perturbations at the archived
 measurement angle.
 
 Every probe consumes attacker-visible inputs (ciphertext bytes only)
@@ -58,7 +58,7 @@ JSON records for later cross-check, never in a decision path.
 
 ## Structural verdict
 
-The v0.3.0 barrier's related-seed diffusion property is **confined to
+The barrier's related-seed diffusion property is **confined to
 the lockSeed axis**:
 
 - **lockSeed axis, both primitives**: χ² ≈ 200-635 across every Δ
@@ -74,13 +74,13 @@ the lockSeed axis**:
   (bit0 / bit_mid) drop χ² BELOW the floor by diluting the noiseMask
   signal. No excess-over-floor signal on any non-lockSeed axis for
   either primitive.
-- **Positive control**: pre-v0.3.0 42.5M / 56.7M axis-hit reproduced
-  via `process128Cfg` (Single Ouroboros, no overlay) within 0.3 %.
-  The probe methodology matches the archive Phase 2e.
+- **Positive control**: the archived 42.5M / 56.7M axis-hit
+  reproduced via `process128Cfg` (Single Ouroboros, no overlay) within
+  0.3 %. The probe methodology matches the archived Phase 2e.
 
-The pre-v0.3.0 Phase 2e "6.1M neutralised cluster" description
+The archived Phase 2e "6.1M neutralised cluster" description
 (architectural noisePos permutation signal, not primitive leak) has
-its v0.3.0 analog in the CRC128 41.9M / FNV-1a 56.3M no-Δ floor. The
+its shipped analog in the CRC128 41.9M / FNV-1a 56.3M no-Δ floor. The
 floor is primitive-conditional through noiseSeed's ChainHash shape
 influencing noisePos derivation; it is not a primitive-attributable Δ
 leak.
@@ -104,6 +104,6 @@ Total wall-clock across all probes: ~10 minutes on a workstation
 
 ## Debug output
 
-`~/scratch/redteam/related_seed/` lives outside the repository per the
-CLAUDE.md working-tree layout. JSON records land there and stay local.
-Override the parent directory via `REDTEAM_RELATED_SEED_OUTPUT_DIR`.
+`~/scratch/redteam/related_seed/` lives outside the repository. JSON
+records land there and stay local. Override the parent directory via
+`REDTEAM_RELATED_SEED_OUTPUT_DIR`.

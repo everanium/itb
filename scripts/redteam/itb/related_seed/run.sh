@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot runner for the v0.3.0 related-seed differential adversarial
+# One-shot runner for the related-seed differential adversarial
 # re-verification probes. Runs the Go test suite; the tests emit JSON
 # records under ~/scratch/redteam/related_seed/ (override via
 # REDTEAM_RELATED_SEED_OUTPUT_DIR) that aggregate.py summarises as a

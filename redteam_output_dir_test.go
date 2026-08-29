@@ -10,7 +10,7 @@ import (
 
 // redteamOutputDir returns the scratch directory into which red-team
 // probes emit their JSON records. Default: `$HOME/scratch/redteam/<name>/`
-// per CLAUDE.md working-tree layout (scratch outputs live outside the
+// per the working-tree layout (scratch outputs live outside the
 // repository tree). Override via `REDTEAM_<UPPER_NAME>_OUTPUT_DIR`
 // (e.g. `REDTEAM_NONCE_REUSE_OUTPUT_DIR`). The env variable takes the
 // full path verbatim, no substitution.

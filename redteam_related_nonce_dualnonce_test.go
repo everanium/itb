@@ -2,7 +2,7 @@
 
 package itb
 
-// Related-nonce differential re-verification under the v0.3.0 dual-nonce
+// Related-nonce differential re-verification under the shipped dual-nonce
 // wire (`[main_nonce (N)][interlock_nonce (N)][W][H][container]`, header
 // size `2*N+4`). Companion to `redteam_related_nonce_test.go`, which
 // applies a 1-bit Δ that perturbs BOTH nonce slots simultaneously (its
@@ -25,7 +25,7 @@ package itb
 //   Scenario C — interlock-only Δ. Applies the Δ to `interlock_nonce`
 //     only; `main_nonce` matches. Isolates the interlock permutation slot.
 //
-// Attacker-realism (CLAUDE.md discipline): all statistics operate on
+// Attacker-realism (attacker-realism discipline): all statistics operate on
 // public ciphertext bytes only. Seed components are never consulted in
 // the decision path. The forced-nonce lab hooks (`setBrokenTestNoncePair`,
 // `setBrokenTestMainNonceOnly`, `setBrokenTestInterlockNonceOnly` — defined
@@ -39,7 +39,7 @@ package itb
 // package, same build tag).
 //
 // Emission: `$HOME/scratch/redteam/related_nonce_dualnonce/<name>.json`
-// (per CLAUDE.md working-tree layout). Override the parent directory
+// (per the working-tree layout). Override the parent directory
 // via `REDTEAM_RELATED_NONCE_DUALNONCE_OUTPUT_DIR`.
 
 import (

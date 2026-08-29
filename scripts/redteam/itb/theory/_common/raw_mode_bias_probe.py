@@ -7,7 +7,7 @@ For any pluggable chainhash implementation and a structured-plaintext
 corpus, the probe:
 
   1. Parses the raw ciphertext (header derived from meta —
-     `2 * len(main_nonce) + 4` on the v0.3.0 dual-nonce wire — then
+     `2 * len(main_nonce) + 4` on the shipped dual-nonce wire — then
      8 bytes per pixel).
   2. Precomputes `const(p) = ChainHash(p_le || main_nonce, seed=0)` for
      every container pixel via the pluggable hash module.
@@ -121,9 +121,9 @@ def main() -> int:
 
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
     total_pixels = int(meta["total_pixels"])
-    # v0.3.0 corpora carry the dual-nonce header — read the main nonce
+    # corpora carry the dual-nonce header — read the main nonce
     # (noise / data / start ChainHash input) as `main_nonce_hex` and fall
-    # back to the legacy single-nonce `nonce_hex` field for pre-v0.3.0
+    # back to the legacy single-nonce `nonce_hex` field for archived
     # corpus artefacts.
     nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
     nonce = bytes.fromhex(nonce_hex)
@@ -131,7 +131,7 @@ def main() -> int:
     # The "correct" pixel_shift the solver should converge to is
     # -start_pixel mod total_pixels; attacker cannot compute this because
     # startPixel is startSeed-derived, but the lab audit prints it for
-    # interpretation. On v0.3.0 Triple corpora `start_pixel` is a
+    # interpretation. On shipped Triple corpora `start_pixel` is a
     # representative per-snake value (the probe uses it only for the
     # decorative "true shift" rank line, never for the |Δ50| metric).
     true_sp = int(meta["start_pixel"])

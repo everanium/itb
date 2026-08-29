@@ -1,4 +1,4 @@
-# Fresh-nonce CPA broken-primitive re-verification (v0.3.0 barrier)
+# Fresh-nonce CPA broken-primitive re-verification
 
 Empirical re-verification of the barrier's closure under a chosen-plaintext
 attacker posture with fresh nonces, driving the below-spec **FNV-1a**
@@ -112,7 +112,7 @@ underlying hash is invertible non-linear rather than PRF-grade.
 
 ## Structural verdict
 
-The v0.3.0 barrier's CPA closure under fresh nonces holds across the
+The barrier's CPA closure under fresh nonces holds across the
 primitive-substitution axis: FNV-1a keyed onto every seed role produces
 a wire that is indistinguishable from a BLAKE3-keyed wire at the tested
 sample size across every plaintext kind. The two-sample homogeneity chi²
@@ -151,6 +151,6 @@ so wall time scales with cores.
 
 ## Debug output
 
-`~/scratch/redteam/cpa_broken/` lives outside the repository per the
-CLAUDE.md working-tree layout. JSON records land there and stay local.
-Override the parent directory via `REDTEAM_CPA_BROKEN_OUTPUT_DIR`.
+`~/scratch/redteam/cpa_broken/` lives outside the repository. JSON
+records land there and stay local. Override the parent directory via
+`REDTEAM_CPA_BROKEN_OUTPUT_DIR`.

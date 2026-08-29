@@ -7,8 +7,8 @@ import (
 )
 
 // Profile mode discriminators. profile.mode selects one of these to
-// tell downstream code (cipher-path stubs in Phase 5/6) which surface
-// the Pipeline exposes. Blob-only profiles have no cipher surface.
+// tell downstream code (cipher-path stubs) which surface the Pipeline
+// exposes. Blob-only profiles have no cipher surface.
 const (
 	modeStreamingAEAD   = "streaming-aead"
 	modeStreamingNoAEAD = "streaming-noaead"

@@ -96,7 +96,7 @@ def main(argv=None) -> int:
             rows))
         print("Note:", f2.get("note", ""))
 
-    print("\n=== F3 positive control (pre-v0.3.0, barrier off) ===")
+    print("\n=== F3 positive control (archived, barrier off) ===")
     f3 = load(args.dir / "f3_control_positive.json")
     if f3:
         print(f"crib_pixels: {f3['crib_pixels']}")
@@ -135,7 +135,7 @@ def main(argv=None) -> int:
               f"regime: {sat['regime']}  timeout: {sat['timeout_sec']}s")
         if "control" in sat:
             c = sat["control"]
-            print(f"\nControl (pre-v0.3.0, barrier off, sp disclosed):")
+            print(f"\nControl (archived, barrier off, sp disclosed):")
             print(f"  result: {c['result']}  wall: {c['wall_sec']:.2f}s")
             if c.get("audit"):
                 a = c["audit"]
@@ -143,7 +143,7 @@ def main(argv=None) -> int:
                     print(f"  audit: bits 0..62 lane matches "
                           f"{a['bit0_62_matches']}/{a['lanes_total']}")
         if "barrier" in sat:
-            print("\nBarrier (v0.3.0 Triple + always-on 48-bit interlock):")
+            print("\nBarrier (shipped Triple + always-on 48-bit interlock):")
             for snake_report in sat["barrier"]:
                 print(f"  snake {snake_report['snake']}: sp_scan={snake_report['sp_scan_count']} "
                       f"sat={snake_report['sat']} unsat={snake_report['unsat']} "

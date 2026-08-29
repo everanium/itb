@@ -14,14 +14,11 @@
 
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
 
-> **v0.3.0 development snapshot — at a glance.** This is the one place in
-> the corpus where the v0.2 → v0.3 pivot is framed historically. Every
-> other section of this README (and every other Markdown file) reads as
-> if the current construction was always the case.
+> **At a glance.**
 >
-> 1. **Triple-only Ouroboros.** The Single Ouroboros mode has been
->    retired; the 3-snake payload split is the only cipher mode. Every
->    encrypt / decrypt entry point takes the eight-seed bundle.
+> 1. **Triple-only Ouroboros.** The 3-snake payload split is the only
+>    cipher mode. Every encrypt / decrypt entry point takes the
+>    eight-seed bundle.
 > 2. **Always-on non-disableable Interlocked Barrier.** A 48-bit-chunk
 >    keyed permutation over three snakes is engaged unconditionally on
 >    every call. Per-chunk mask space is roughly 2^70.20 balanced
@@ -34,28 +31,25 @@
 >    layer, an optional wrapper (Outer cipher) layer, and an optional
 >    MAC into a small lifecycle API.
 > 5. **Cfg-only Low-Level surface.** Every Low-Level entry takes an
->    explicit `*itb.Config`. The pre-v0.3.0 process-wide setter surface
->    is gone; per-Pipeline configuration replaces it.
+>    explicit `*itb.Config`; per-Pipeline configuration is the sole
+>    control surface, with no process-wide setter.
 > 6. **Shipped profiles with parallax + wrapper on by default,** both
 >    single-primitive and mixed-primitive constellations. Toggle via
 >    `triple.Opts`. See the [Quick Start](#quick-start).
-> 7. **Wire hard-fork.** The v0.3.0 wire format is not backwards
->    compatible: v0.2.x ciphertexts do not decrypt on v0.3.0 and vice
->    versa. Both sides of every deployment upgrade together.
-> 8. **capi ABI break.** `ITB_HeaderSize` / `ITB_ParseChunkLen` take a
->    `nonce_bytes` parameter; the retired setter surface is gone; new
->    `ITB_Triple_*` exports carry the shipped surface.
-> 9. **33-binding fleet plan.** Bindings are being reworked as thin
->    proxies over the `ITB_Triple_*` exports (fourteen Tier 1 Thin
->    direct-cshared, nineteen Tier 2 Relay over four backends — C / Java / C# /
->    BEAM). Docs describe them at the architectural level while the
->    rework lands.
-> 10. **Empirical suite re-run planned.** REDTEAM.md and HARNESS.md
->     updates ship separately after the adversarial re-verification
->     phase against the 48-bit always-on line. The barrier's KPA / CPA
->     closure is currently an architectural claim under the PRF
->     assumption, corroborated by pre-v0.3.0 empirical evidence for the
->     shared pixel construction.
+> 7. **Dual-nonce wire.** The header carries two independently drawn
+>    CSPRNG nonces (`main_nonce` and `interlock_nonce`) side-by-side
+>    ahead of the container dimensions.
+> 8. **capi surface.** `ITB_HeaderSize` / `ITB_ParseChunkLen` take a
+>    `nonce_bytes` parameter, and the `ITB_Triple_*` exports carry the
+>    shipped surface.
+> 9. **33-binding fleet.** Bindings are thin proxies over the
+>    `ITB_Triple_*` exports (fourteen Tier 1 Thin direct-cshared,
+>    nineteen Tier 2 Relay over four backends — C / Java / C# / BEAM).
+> 10. **Empirical validation.** The barrier's KPA / CPA closure is an
+>     architectural claim under the PRF assumption, corroborated by the
+>     empirical evidence for the shared pixel construction and by the
+>     adversarial re-verification suite documented in
+>     [REDTEAM.md](REDTEAM.md).
 
 ---
 
@@ -86,14 +80,14 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 ## Status
 
-The core API and the Go C ABI are being consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The construction is being validated afresh against the 48-bit always-on barrier; the paper-facing empirical suite is scheduled to re-run after the follow-up push.
+The core API and the Go C ABI are consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The 48-bit always-on barrier is engaged unconditionally on every call and its adversarial re-verification is documented in [REDTEAM.md](REDTEAM.md).
 
 ### Library
 
 | Native | Status | Features | Tests | Packages |
 |---|---|---|---|---|
-| Go Native | Under consolidation for v0.3.0 | `triple/` facade + Cfg-only Low-Level | Passing on Intel Rocket Lake reference host | TBD |
-| C ABI (`cmd/cshared`) | Under consolidation for v0.3.0 | `ITB_Triple_*` exports + Cfg-aware capi header | Passing on Intel Rocket Lake reference host | TBD |
+| Go Native | Shipped | `triple/` facade + Cfg-only Low-Level | Passing on Intel Rocket Lake reference host | TBD |
+| C ABI (`cmd/cshared`) | Shipped | `ITB_Triple_*` exports + Cfg-aware capi header | Passing on Intel Rocket Lake reference host | TBD |
 
 <!-- preserved-verbatim: cross-platform verification block; do not paraphrase; re-runs after bindings rework produce fresh numbers -->
 
@@ -1078,7 +1072,7 @@ The eight mandatory seeds are drawn as independent CSPRNG components; the API su
 | Eight-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
 | Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
 | Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-snake enumeration dimension + 8-seed isolation (architectural claim; empirical re-verification against the 48-bit line pending) |
-| Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (corroborated by the pre-v0.3.0 empirical record on the shared pixel construction; empirical re-verification against the 48-bit line pending) |
+| Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (corroborated by the archived empirical record on the shared pixel construction; empirical re-verification against the 48-bit line pending) |
 | Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone |
 | Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
