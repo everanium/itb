@@ -28,7 +28,7 @@ func (p *Pipeline) Close() error {
 		return nil
 	}
 
-	// Zero the eight seed Components in place.
+	// Zero the 8 seed Components in place.
 	for _, s := range p.seeds {
 		zeroSeedComponents(s, p.width)
 	}

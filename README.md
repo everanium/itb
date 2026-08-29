@@ -18,16 +18,16 @@
 >
 > 1. **Triple-only Ouroboros.** The 3-snake payload split is the only
 >    cipher mode. Every encrypt / decrypt entry point takes the
->    eight-seed bundle.
+>    8-seed bundle.
 > 2. **Always-on non-disableable Interlocked Barrier.** A 48-bit-chunk
 >    keyed permutation over three snakes is engaged unconditionally on
 >    every call. Per-chunk mask space is roughly 2^70.20 balanced
 >    partitions.
-> 3. **Eight mandatory seeds per session.** noiseSeed, lockSeed,
+> 3. **8 mandatory seeds per session.** noiseSeed, lockSeed,
 >    dataSeed1..3, startSeed1..3. Pointer-identity distinctness is
 >    enforced at the API surface.
 > 4. **`triple/` package facade.** The shipped user-facing entry point.
->    One `Pipeline` bundles the eight-seed state, an optional parallax
+>    One `Pipeline` bundles the 8-seed state, an optional parallax
 >    layer, an optional wrapper (Outer cipher) layer, and an optional
 >    MAC into a small lifecycle API.
 > 5. **Cfg-only Low-Level surface.** Every Low-Level entry takes an
@@ -62,7 +62,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a CSPRNG random container makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three snakes, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). Eight-seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a CSPRNG random container makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three snakes, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). 8-Seed isolation ensures compromise of any one domain provides zero information about the others.
 
 **Ambiguity-Based Security.** Uncertainty about the correct configuration grows with data size, inverting Shannon's classical relationship. The Interlocked Barrier converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.
 
@@ -121,7 +121,7 @@ ITB inverts this approach. The construction interposes a **random container** (g
 - **Random container** — hash output unobservable under passive observation (COA, KPA).
 - **Per-bit XOR (1:1)** — 56 independent mask bits per pixel; every observation consistent with any plaintext.
 - **Interlocked Barrier** — always-on; per-chunk PRF-keyed 48-bit permutation over three snakes; ≈ 2^70.20 mask space per chunk.
-- **Eight-seed isolation** — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 drawn as independent CSPRNG components and keyed into separate channels, so a structural shortcut against one primitive channel cannot leak into another's derivation.
+- **8-seed isolation** — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 drawn as independent CSPRNG components and keyed into separate channels, so a structural shortcut against one primitive channel cannot leak into another's derivation.
 - **Noise bit embedding** — no bit position is deterministically data from the public format.
 
 **Why the barrier and the PRF are complementary.** The PRF closes the candidate-verification step; the barrier and the surrounding architectural layers deny the point of application. Neither is sufficient alone: the architectural layers cannot resist total inversion of the primitive, and without the barrier the attacker would observe the keystream directly.
@@ -281,7 +281,7 @@ Mixed-primitive profiles (per-slot primitive constellation, uniform width per pr
 
 All shipped profiles default to **parallax on + wrapper (Outer cipher) on**; both toggles are opt-out via `triple.Opts`. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
 
-**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — profile identifier, both masters, and the inner Blob{N} carrying the eight seed components + per-slot PRF keys + optional MAC material. Ship the blob to the receiver out-of-band; the receiver calls `triple.Open(profile, blob, opts)` and reconstructs the same Pipeline. Both sides then encrypt / decrypt against their Pipeline.
+**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — profile identifier, both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material. Ship the blob to the receiver out-of-band; the receiver calls `triple.Open(profile, blob, opts)` and reconstructs the same Pipeline. Both sides then encrypt / decrypt against their Pipeline.
 
 ### Triple 1 — Single Message with MAC
 
@@ -382,7 +382,7 @@ func main() {
 ### Rekey — Rotating Parallax + Wrapper Masters
 
 `Rekey` rotates the parallax and wrapper master keys mid-session
-without touching the eight inner seeds (which stay fixed for a
+without touching the 8 inner seeds (which stay fixed for a
 session's lifetime by construction). Only meaningful when
 `opts.ParallaxOn` or `opts.WrapperOn` is set (the shipped
 profiles enable both by default). Pass explicit 32-byte masters or
@@ -434,7 +434,7 @@ func main() {
 ```
 
 Serialise `Rekey` against concurrent cipher calls on the same
-`Pipeline` — the eight inner seeds are read-only, but the parallax
+`Pipeline` — the 8 inner seeds are read-only, but the parallax
 and wrapper master slots are mutated.
 
 ### Triple 3 — Streaming AEAD (MAC Authenticated, IO-Driven)
@@ -673,7 +673,7 @@ Name rules for `RegisterProfile`:
 - Must not start with one of the reserved shipped-catalogue prefixes: `streaming-`, `singlemsg-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
 - Must not already be registered; re-registration returns `triple.ErrProfileExists`.
 
-Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`streaming-aead` / `streaming-noaead` / `singlemsg-mac` / `singlemsg-nomac` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all eight slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default). `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`streaming-aead` / `streaming-noaead` / `singlemsg-mac` / `singlemsg-nomac` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default). `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
 
 Worked example — installing a 256-bit BLAKE3 Streaming AEAD variant and using it identically to a shipped profile:
 
@@ -721,11 +721,11 @@ C-ABI callers install the same profile via `ITB_Triple_RegisterProfile(name, opt
 
 ## Advanced — Low-Level `*Cfg` surface
 
-The `triple/` facade is the recommended entry point. Callers who need the raw eight-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); the process-wide setter surface has been retired.
+The `triple/` facade is the recommended entry point. Callers who need the raw 8-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); the process-wide setter surface has been retired.
 
 ### Low-Level 1 — Message-shape, MAC Authenticated
 
-Message-shape variant using `itb.EncryptAuthenticated3x256Cfg` / `itb.DecryptAuthenticated3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. Eight typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pairwise distinctness (byte-level `Components` comparison plus pointer identity) is enforced at the call site.
+Message-shape variant using `itb.EncryptAuthenticated3x256Cfg` / `itb.DecryptAuthenticated3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. 8 typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pairwise distinctness (byte-level `Components` comparison plus pointer identity) is enforced at the call site.
 
 ```go
 package main
@@ -747,7 +747,7 @@ func main() {
 
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 
-    // Eight independent CSPRNG-keyed Areion-SoEM-256 paired closures.
+    // 8 independent CSPRNG-keyed Areion-SoEM-256 paired closures.
     // Each *Pair() returns (single, batched, [32]byte-key, error).
     fnN,  batchN,  _, _ := hashes.Areion256Pair()
     fnL,  batchL,  _, _ := hashes.Areion256Pair()
@@ -802,7 +802,7 @@ func main() {
 
 ### Low-Level 2 — IO-Driven Stream-shape, MAC Authenticated
 
-Stream-shape variant using the `any`-seed IO-Driven entry `itb.EncryptStreamAuth3xCfg` / `itb.DecryptStreamAuth3xCfg`. The eight seeds pass in as `any` handles — the entry point dispatches on width internally, so `*itb.Seed128`, `*itb.Seed256`, and `*itb.Seed512` seeds all flow through the same IO surface.
+Stream-shape variant using the `any`-seed IO-Driven entry `itb.EncryptStreamAuth3xCfg` / `itb.DecryptStreamAuth3xCfg`. The 8 seeds pass in as `any` handles — the entry point dispatches on width internally, so `*itb.Seed128`, `*itb.Seed256`, and `*itb.Seed512` seeds all flow through the same IO surface.
 
 ```go
 package main
@@ -1056,9 +1056,9 @@ The core construction provides confidentiality only. For integrity protection ag
 
 **Important.** Never place a MAC outside the encrypted container in cleartext — this creates a verification oracle that breaks deniability.
 
-## Eight-seed isolation
+## 8-Seed isolation
 
-The eight mandatory seeds are drawn as independent CSPRNG components; the API surface enforces pairwise distinctness across all eight slots by byte-level `Components` comparison in addition to pointer identity, so both the same seed handle passed twice and two byte-identical seed handles (reachable through blob import or the Low-Level constructors) are rejected on the same gate at call entry. The eight-seed layout is what lets the security argument treat each channel's entropy source as disjoint: mutual information between independently-drawn seeds is zero, so a structural shortcut against one primitive channel cannot leak into another's derivation.
+The 8 mandatory seeds are drawn as independent CSPRNG components; the API surface enforces pairwise distinctness across all 8 slots by byte-level `Components` comparison in addition to pointer identity, so both the same seed handle passed twice and two byte-identical seed handles (reachable through blob import or the Low-Level constructors) are rejected on the same gate at call entry. The 8-seed layout is what lets the security argument treat each channel's entropy source as disjoint: mutual information between independently-drawn seeds is zero, so a structural shortcut against one primitive channel cannot leak into another's derivation.
 
 ## Security summary
 
@@ -1069,7 +1069,7 @@ The eight mandatory seeds are drawn as independent CSPRNG components; the API su
 | Plausible deniability | Every mode (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; CSPRNG residue adds independent ambiguity in data positions) |
 | Interlocked Barrier | Always on; per-chunk 48-bit keyed permutation over three snakes; per-chunk mask space ≈ 2^70.20 balanced partitions |
-| Eight-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
+| 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
 | Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
 | Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-snake enumeration dimension + 8-seed isolation (architectural claim; empirical re-verification against the 48-bit line pending) |
 | Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (corroborated by the archived empirical record on the shared pixel construction; empirical re-verification against the 48-bit line pending) |
@@ -1102,7 +1102,7 @@ All three approaches use standard mathematics. The formal relationship between I
 
 ## Bindings
 
-The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`) — ten entries today: the lifecycle quad `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Rekey` / `ITB_Triple_Close`, the handle-helper `ITB_Triple_Free`, the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`, and the profile-registry entry `ITB_Triple_RegisterProfile` that installs a user-defined profile shape via a URL-query opts string. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw eight-seed handoff.
+The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`) — ten entries today: the lifecycle quad `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Rekey` / `ITB_Triple_Close`, the handle-helper `ITB_Triple_Free`, the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`, and the profile-registry entry `ITB_Triple_RegisterProfile` that installs a user-defined profile shape via a URL-query opts string. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw 8-seed handoff.
 
 ### Fleet plan (33 bindings)
 

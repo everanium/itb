@@ -455,7 +455,7 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 	}
 	setBrokenTestNonce(t, fixedNonce)
 
-	// Eight seeds keyed by the shelf primitive. Deterministic RNG (fixed
+	// 8 seeds keyed by the shelf primitive. Deterministic RNG (fixed
 	// seed) so the corpus is reproducible; independent draws per seed role.
 	seedRng := rand.New(rand.NewSource(int64(nonceSeed) ^ 0xFEEDFACE))
 	mk := func(role string) *Seed128 {

@@ -117,7 +117,7 @@ func main() {
     sha256Hash := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
 
     // Build the 8-seed constellation. Each seed uses the same wrapped
-    // SHA-256 closure here for brevity; in production the eight seeds
+    // SHA-256 closure here for brevity; in production the 8 seeds
     // may use independent primitives from the hashes registry.
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
     noise, _ := itb.NewSeed256(1024, sha256Hash)
@@ -194,7 +194,7 @@ The `triple.Pipeline` facade selects primitives by name from `hashes.Find`, so a
 
 ## Usage
 
-Native Go API — the eight-seed Triple constellation is instantiated once per shipped hash primitive factory and threaded through `itb.Encrypt3xNNNCfg` / `itb.Decrypt3xNNNCfg` (or the authenticated / streaming counterparts). Cross-process persistence is via `itb.Blob{128,256,512}` — each `Blob*.Export3Cfg` packs the per-seed hash keys, `Components`, dedicated lockSeed, optional MAC key, and captured `*itb.Config` into a self-describing JSON blob; the receiver rebuilds the constellation via `Blob{N}.Import3Cfg` followed by per-slot factory rewiring.
+Native Go API — the 8-seed Triple constellation is instantiated once per shipped hash primitive factory and threaded through `itb.Encrypt3xNNNCfg` / `itb.Decrypt3xNNNCfg` (or the authenticated / streaming counterparts). Cross-process persistence is via `itb.Blob{128,256,512}` — each `Blob*.Export3Cfg` packs the per-seed hash keys, `Components`, dedicated lockSeed, optional MAC key, and captured `*itb.Config` into a self-describing JSON blob; the receiver rebuilds the constellation via `Blob{N}.Import3Cfg` followed by per-slot factory rewiring.
 
 Areion-SoEM-512 with the shipped paired (single, batched, fixedKey) constructor:
 
@@ -272,7 +272,7 @@ fn, _, _       := hashes.Make256("blake3", saved) // explicit
 
 ## High-level facade — `triple.Pipeline`
 
-Callers who want the eight-seed constellation, MAC, parallax layer, and outer cipher wrapper composed for them in one step use the [`triple.Pipeline`](../triple/) facade. `triple.Init(profileName, opts)` allocates the full stack around one primitive selected by name from the registry above; the [top-level ITB README](https://github.com/everanium/itb#readme) hosts the canonical Pipeline examples across the four cipher shapes (Single Message MAC / Single Message No MAC / Streaming AEAD / Streaming Non-AEAD).
+Callers who want the 8-seed constellation, MAC, parallax layer, and outer cipher wrapper composed for them in one step use the [`triple.Pipeline`](../triple/) facade. `triple.Init(profileName, opts)` allocates the full stack around one primitive selected by name from the registry above; the [top-level ITB README](https://github.com/everanium/itb#readme) hosts the canonical Pipeline examples across the four cipher shapes (Single Message MAC / Single Message No MAC / Streaming AEAD / Streaming Non-AEAD).
 
 ## Keyed variants
 

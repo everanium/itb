@@ -34,7 +34,7 @@ is itself a sound keyed PRF; see BLAKE3 spec section 6).
 
 ## Usage
 
-Native Go API — the eight-seed Triple constellation is instantiated once per shipped hash primitive factory and threaded through `itb.EncryptAuthenticated3xNNNCfg` / `itb.DecryptAuthenticated3xNNNCfg` (or the streaming counterparts) alongside the `itb.MACFunc` returned by one of the factories in this package. Cross-process persistence is via `itb.Blob{128,256,512}` — `Blob*.Export3Cfg` packs the per-seed hash keys, `Components`, dedicated lockSeed, MAC key, and captured `*itb.Config` into a self-describing JSON blob; the receiver rebuilds the constellation via `Blob{N}.Import3Cfg` followed by per-slot factory rewiring + `macs.Make(blob.MACName, blob.MACKey)`.
+Native Go API — the 8-seed Triple constellation is instantiated once per shipped hash primitive factory and threaded through `itb.EncryptAuthenticated3xNNNCfg` / `itb.DecryptAuthenticated3xNNNCfg` (or the streaming counterparts) alongside the `itb.MACFunc` returned by one of the factories in this package. Cross-process persistence is via `itb.Blob{128,256,512}` — `Blob*.Export3Cfg` packs the per-seed hash keys, `Components`, dedicated lockSeed, MAC key, and captured `*itb.Config` into a self-describing JSON blob; the receiver rebuilds the constellation via `Blob{N}.Import3Cfg` followed by per-slot factory rewiring + `macs.Make(blob.MACName, blob.MACKey)`.
 
 Areion-SoEM-512 paired with HMAC-BLAKE3 — the fastest AVX-512 hash + MAC combination:
 
@@ -148,7 +148,7 @@ parity oracle and the bit-exact KAT.
 
 ## High-level facade — `triple.Pipeline`
 
-Callers who want the eight-seed constellation, MAC, parallax layer, and outer cipher wrapper composed for them in one step use the [`triple.Pipeline`](../triple/) facade. `triple.Init(profileName, opts)` allocates the full stack around one primitive selected by name; the MAC choice rides in `triple.Opts.MacName` (defaults to `hmac-blake3`). The [top-level ITB README](https://github.com/everanium/itb#readme) hosts the canonical Pipeline examples across the four cipher shapes (Single Message MAC / Single Message No MAC / Streaming AEAD / Streaming Non-AEAD).
+Callers who want the 8-seed constellation, MAC, parallax layer, and outer cipher wrapper composed for them in one step use the [`triple.Pipeline`](../triple/) facade. `triple.Init(profileName, opts)` allocates the full stack around one primitive selected by name; the MAC choice rides in `triple.Opts.MacName` (defaults to `hmac-blake3`). The [top-level ITB README](https://github.com/everanium/itb#readme) hosts the canonical Pipeline examples across the four cipher shapes (Single Message MAC / Single Message No MAC / Streaming AEAD / Streaming Non-AEAD).
 
 ## Why these three
 

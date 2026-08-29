@@ -849,7 +849,7 @@ func BenchmarkExtTripleAreion512_2048bit_Decrypt_64MB(b *testing.B) {
 
 // TestTripleLockSeedRoundtrip256 verifies that Triple Ouroboros
 // Encrypt3x / Decrypt3x round-trip succeeds with a dedicated
-// lockSeed threaded through the eight-seed API.
+// lockSeed threaded through the 8-seed API.
 func TestTripleLockSeedRoundtrip256(t *testing.T) {
 	ns := makeBlake3SeedAttachExt(t, 1024)
 	ls := makeBlake3SeedAttachExt(t, 1024)
@@ -888,7 +888,7 @@ func TestTripleLockSeedRoundtrip256(t *testing.T) {
 //     which on amd64 + AVX-512 dispatches the batched arm to the
 //     ZMM-batched chain-absorb kernels in
 //     hashes/internal/blake3asm. A fresh BLAKE3 fixed key is
-//     generated for each of the eight seeds so all carry
+//     generated for each of the 8 seeds so all carry
 //     independent keying material.
 //
 // Run as:

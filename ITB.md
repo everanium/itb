@@ -41,9 +41,9 @@ Repeated transmissions of the same plaintext under fresh nonces produce independ
 
 The mandatory internal nonce derivation from crypto/rand at every call is API-side discipline, not a construction-level guarantee: the barrier does not architecturally absorb reused-nonce exposure; closure of the CPA / KPA families is conditional on fresh nonces (§9).
 
-## 4. Eight-Seed Isolation
+## 4. 8-Seed Isolation
 
-The API surface takes eight mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by byte-level `Components` comparison in addition to pointer identity — so byte-identical seeds reaching the API through blob import or the Low-Level constructors are rejected on the same gate:
+The API surface takes 8 mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by byte-level `Components` comparison in addition to pointer identity — so byte-identical seeds reaching the API through blob import or the Low-Level constructors are rejected on the same gate:
 
 - **noiseSeed** → noise position (which bit in each channel is noise).
 - **lockSeed** → the 48-bit Interlocked Barrier per-chunk permutation channel.
@@ -253,7 +253,7 @@ Idealised structured plaintexts such as the `json_structured_{25,50,80}` / `html
 
 ## 10. CCA: Reveals Only Noise, Not Data
 
-Under CCA (bit-flip with MAC reveal), the attacker learns noise positions — which bit in each channel is noise (3 bits per pixel from noiseSeed). Because of eight-seed isolation:
+Under CCA (bit-flip with MAC reveal), the attacker learns noise positions — which bit in each channel is noise (3 bits per pixel from noiseSeed). Because of 8-seed isolation:
 
 - **noiseSeed config** — revealed via CCA.
 - **dataSeed configs** (rotation + 56 XOR bits, per snake) — completely independent, zero leak.
@@ -292,7 +292,7 @@ No. The barrier is intact. Here is why:
 
 **With hash inversion (invertible hash):** the attacker takes each candidate, inverts ChainHash → gets candidate seed → verifies on another pixel. Inversion **bypasses** the ambiguity. The barrier is not broken — ChainHash is inverted.
 
-The barrier absorbs the hash output through two independent mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. CSPRNG residue — guaranteed fill bytes encrypted by dataSeed within the data channel, indistinguishable from encrypted plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — is a structural property of mechanism (1): even after CCA reveals noise bit positions, CSPRNG fill remains in the data channel. CCA (MAC + Reveal) can bypass noise-position uncertainty of mechanism (1), but mechanism (2) and the CSPRNG residue remain intact through eight-seed isolation. The noise bits are removed, but the data bits still contain CSPRNG fill that the attacker cannot separate from plaintext — the information-theoretic barrier is never fully eliminated. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash-function failure, not a barrier failure.
+The barrier absorbs the hash output through two independent mechanisms: (1) noise absorption — CSPRNG noise bit at unknown position makes the byte ambiguous; (2) encoding ambiguity — 7 rotation candidates per pixel create 7^P unverifiable combinations. CSPRNG residue — guaranteed fill bytes encrypted by dataSeed within the data channel, indistinguishable from encrypted plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — is a structural property of mechanism (1): even after CCA reveals noise bit positions, CSPRNG fill remains in the data channel. CCA (MAC + Reveal) can bypass noise-position uncertainty of mechanism (1), but mechanism (2) and the CSPRNG residue remain intact through 8-seed isolation. The noise bits are removed, but the data bits still contain CSPRNG fill that the attacker cannot separate from plaintext — the information-theoretic barrier is never fully eliminated. KPA candidates are ambiguity, not leakage. PRF preserves this ambiguity. Invertible hash resolves it — but that is a hash-function failure, not a barrier failure.
 
 ## 13. The 48-bit Interlocked Barrier
 
@@ -371,7 +371,7 @@ The barrier and PRF hash function protect each other:
 
 - **Barrier protects the PRF:** hash collisions are the only theoretical weakness of a non-invertible hash function — two different inputs producing the same output. In a traditional cipher, collisions may be exploitable because the attacker observes the output directly. In ITB, collisions are invisible: two pixels with the same dataHash have different original container bytes (CSPRNG), so the observed bytes are different. The collision is absorbed. The 48-bit Interlocked Barrier compounds this by re-mapping every chunk through a hidden per-chunk permutation — any hypothetical collision in the underlying dataHash lands in a chunk-specific lane assignment the attacker cannot recover.
 
-Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In Core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but per-snake dataSeeds and the lockSeed remain protected by PRF non-invertibility and eight-seed isolation. Even after noise removal, the data channel retains CSPRNG fill bytes encrypted by dataSeed — perfect fill is impossible ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — so information-theoretic ambiguity persists within the data bits themselves.
+Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In Core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but per-snake dataSeeds and the lockSeed remain protected by PRF non-invertibility and 8-seed isolation. Even after noise removal, the data channel retains CSPRNG fill bytes encrypted by dataSeed — perfect fill is impossible ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — so information-theoretic ambiguity persists within the data bits themselves.
 
 See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).
 

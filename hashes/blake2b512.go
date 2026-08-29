@@ -17,7 +17,7 @@ import (
 // BLAKE2b natively supports 512-bit output and up to a 64-byte key.
 // The construction is identical to BLAKE2b256 modulo widths:
 // H(key || data ^ seed) where the payload is zero-padded out to 64
-// bytes when shorter, ensuring all eight seed uint64's contribute
+// bytes when shorter, ensuring all 8 seed uint64's contribute
 // regardless of how short the caller's data is.
 // BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 along with
 // the 64-byte fixed key the closure is bound to. With no argument a

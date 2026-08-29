@@ -182,7 +182,7 @@ type Profile struct {
 	WrapperOn bool
 
 	// MixedHashes selects a per-slot ITB hash primitive constellation
-	// for the eight-seed Interlocked Barrier Triple bundle. Slot
+	// for the 8-seed Interlocked Barrier Triple bundle. Slot
 	// ordering matches [allocEightSeeds]:
 	//
 	//	[0] noiseSeed  [1] lockSeed
@@ -191,11 +191,11 @@ type Profile struct {
 	//
 	// When every entry is empty (zero-value), the profile falls back to
 	// the single-primitive path driven by [Profile.InnerHash]. When any
-	// entry is non-empty, ALL eight must be populated, each must resolve
+	// entry is non-empty, ALL 8 must be populated, each must resolve
 	// via [github.com/everanium/itb/hashes.Find], and every entry's
 	// primitive width must equal [Profile.Width]. Repeats within a
 	// single profile are permitted — the constraint is uniform width,
-	// not eight-distinct primitives.
+	// not 8-distinct primitives.
 	//
 	// A mixed constellation and a single-primitive [Profile.InnerHash]
 	// are mutually exclusive: when [Profile.MixedHashes] is populated,
