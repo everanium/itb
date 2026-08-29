@@ -9,7 +9,7 @@ startPixel, no plaintext XOR, iterate all P container pixels — data
 AND CSPRNG fill indistinguishably — and accumulate the raw 7-bit
 candidate distribution.
 
-The container body on the v0.3.0 shipped wire is the barrier-permuted
+The container body on the shipped wire is the barrier-permuted
 Triple stream — three snakes distributed through the always-on 48-bit
 Interlocked Barrier. The probe treats the body as one flat
 8-byte-per-pixel stream (matching the coarse treatment
@@ -52,9 +52,9 @@ MASSIVE_DIR = (
 
 CHANNELS = 8
 CHUNK_SIZE = 500_000  # same memory budget as Mode A: ~224 MB cand_raw peak
-# `header_size` is now read per-cell from the `.pixel` sidecar — the v0.3.0
+# `header_size` is now read per-cell from the `.pixel` sidecar — the 
 # dual-nonce wire header is `2 * NonceSize + 4` bytes (132 at the default
-# 512-bit nonce); the pre-v0.3.0 default of 20 remains as a last-resort
+# 512-bit nonce); the archived default of 20 remains as a last-resort
 # fallback for legacy corpora that omit the field.
 LEGACY_HEADER_SIZE = 20
 
@@ -99,9 +99,9 @@ def main():
         meta[k] = v
     total_pixels = int(meta["total_pixels"])
     barrier_fill = int(meta.get("barrier_fill", "1"))
-    # v0.3.0 dual-nonce corpora carry `header_size` directly; fall back to
+    # shipped dual-nonce corpora carry `header_size` directly; fall back to
     # `2 * len(main_nonce) + 4` derived from `main_nonce_hex`, then to the
-    # pre-v0.3.0 20-byte constant as a last resort. `Config.BarrierFill` is
+    # archived 20-byte constant as a last resort. `Config.BarrierFill` is
     # the runtime knob (never `SetBarrierFill(...)` — no such API exists);
     # the corpus generator threads it via `ITB_BARRIER_FILL` into
     # `Encrypt3x128Cfg`'s `*Config`.

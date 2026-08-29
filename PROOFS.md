@@ -278,7 +278,7 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 ## Proof 5: Noise Barrier Bound
 
-**Note on MinPixels unification.** The shipped v0.3.0 line unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC-authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). This closes an Auth-vs-Non-AEAD distinguisher: before unification the plain floor `⌈keyBits / log₂(56)⌉` produced a smaller minimum container than the auth floor, so the minimum-message container size betrayed which mode was in use — a small length-envelope leak. With one floor for both modes, the minimum-size envelope is mode-independent.
+**Note on MinPixels unification.** The shipped construction unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC-authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). One floor for both modes closes an Auth-vs-Non-AEAD distinguisher: the minimum-message container size is mode-independent, so the length envelope does not betray which mode is in use.
 
 **Theorem.** With Channels = 8 and the unified shipped floor `MinPixels = MinPixelsAuth = ⌈keyBits / log₂(7)⌉` (both plain and Auth surfaces), the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits. The looser `⌈keyBits / log₂(56)⌉` quantity — the no-CCA ambiguity-dominance count of [Proof 9](#proof-9-ambiguity-dominance-threshold), which sits below the shipped floor and never ships as a container minimum — gives a second, weaker worked bound and is retained only for illustration.
 
@@ -427,7 +427,7 @@ P > k / 5.807
 | 1024-bit | P > 365 pixels (~2.5 KB) | P > 177 pixels (~1.2 KB) |
 | 2048-bit | P > 730 pixels (~5.0 KB) | P > 353 pixels (~2.4 KB) |
 
-For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The MinPixels formula (unified in v0.3.0 to `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉`) guarantees ambiguity dominance at the minimum container size across both streaming modes: 7^P > 2^keyBits at the unified floor. The 56^P bound remains valid for any container above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
+For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The unified MinPixels formula (`MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉`) guarantees ambiguity dominance at the minimum container size across both streaming modes: 7^P > 2^keyBits at the unified floor. The 56^P bound remains valid for any container above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
 
 ## Proof 10: Guaranteed CSPRNG Residue (No Perfect Fill)
 

@@ -13,9 +13,8 @@ import (
 // running 4 independent ARM Crypto Extension AES chains per call.
 // Neoverse V2 dispatches AESE/AESMC at 1 instr/cycle with 2-cycle
 // latency, so 4 disjoint state chains in one kernel hide latency
-// completely — significantly better throughput than the Phase 1
-// lane-by-lane (*aes.Areion).Permute() path that this file used
-// before Phase 2.
+// completely — significantly better throughput than a lane-by-lane
+// (*aes.Areion).Permute() path.
 
 // areion256Permutex4SoA runs the Areion256 permutation on each of the 4
 // lanes carried interleaved across (b0, b1) — for lane i, b0[i*16:i*16+16]

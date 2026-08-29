@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot runner for the v0.3.0 fresh-nonce cross-message near-identical
+# One-shot runner for the fresh-nonce cross-message near-identical
 # distinguisher re-verification probe. Runs the Go test; the test emits
 # a JSON record under ~/scratch/redteam/near_identical_fresh/ (override
 # via REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR) that aggregate.py

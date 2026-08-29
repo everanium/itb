@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot runner for the v0.3.0 fresh-nonce CPA broken-primitive
+# One-shot runner for the fresh-nonce CPA broken-primitive
 # re-verification probe. Runs the Go test suite; the test emits a JSON
 # record under ~/scratch/redteam/cpa_broken/ (override via
 # REDTEAM_CPA_BROKEN_OUTPUT_DIR) that aggregate.py summarises as a

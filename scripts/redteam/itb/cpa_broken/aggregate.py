@@ -163,7 +163,7 @@ def main() -> None:
     homog = matrix["run"]["homogeneity"]
 
     print("=" * 78)
-    print("Fresh-nonce CPA broken-primitive — v0.3.0 structural analysis")
+    print("Fresh-nonce CPA broken-primitive — structural analysis")
     print("=" * 78)
     cfg = matrix["run"]["config"]
     print(f"cipher entry: {cfg['cipher_entry']}")

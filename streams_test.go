@@ -246,7 +246,7 @@ func TestEncryptStream3xCfgRoundtrip512(t *testing.T) {
 	}
 }
 
-// --- Triple Ouroboros IO-Driven Cfg round-trip sweep (Phase 2) ---
+// --- Triple Ouroboros IO-Driven Cfg round-trip sweep ---
 //
 // The width-less [EncryptStream3xCfg] / [DecryptStream3xCfg] IO-Driven
 // helpers accept a per-encryptor *Config so cfg.MaxWorkers /

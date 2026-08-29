@@ -188,13 +188,13 @@ func TestRedteamPRF_Probe1_CribKPAFreshNonce(t *testing.T) {
 // Nonce reuse is not reachable through the shipped API (the nonce is
 // drawn from crypto/rand on every call). Forced here via the
 // test-only nonce override to measure the one condition under which the
-// pre-v0.3.0 suite saw any signal. Two different plaintexts are
+// archived suite saw any signal. Two different plaintexts are
 // encrypted under identical seeds AND an identical nonce; the
 // ciphertext-level byte-equal rate and Pearson correlation are
 // reported. The container's CSPRNG tail fill is drawn independently of
 // the nonce, so even under reuse the ciphertext-level correlation
 // stays near the independent-stream floor; a full demask of the
-// colliding pair additionally requires Full KPA (pre-v0.3.0 Phase 2d).
+// colliding pair additionally requires Full KPA (archived Phase 2d).
 func TestRedteamPRF_Probe2_NonceReuseCorrelation(t *testing.T) {
 	const (
 		trials  = 200

@@ -614,8 +614,8 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 }
 
 // TestStreamCfgEnvelopeParity_NoMACvsAEAD ratifies the D18
-// mode-ambiguity envelope invariants (items 1/2/3) via the new Cfg
-// IO-Driven path from Phase 2. With a fixed plaintext + fixed 8 seeds
+// mode-ambiguity envelope invariants (items 1/2/3) via the Cfg
+// IO-Driven path. With a fixed plaintext + fixed 8 seeds
 // + fixed nonce + fixed chunkSize, encrypt through both
 // [EncryptStream3xCfg] (No-MAC) and [EncryptStreamAuth3xCfg] (AEAD)
 // using the same *Config and assert:

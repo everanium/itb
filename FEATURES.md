@@ -46,7 +46,7 @@ Callers that need per-call tuning bypass the facade and drive the `*Cfg` entries
 
 ## C ABI
 
-The C-shared library exports the Triple facade as 8 `ITB_Triple_*` entries (see `cmd/cshared/main.go`). Every FFI entry that consumes a nonce carries the on-wire nonce byte length as an explicit parameter (`nonce_bytes`) — `ITB_HeaderSize(nonce_bytes)` and `ITB_ParseChunkLen(buf, len, nonce_bytes, out)` are ABI breaks against any pre-v0.3.0 export whose per-instance nonce length was carried by a process-global setter. The default nonce byte length is available through `ITB_DefaultNonceBits()`. The Low-Level `*Cfg` entries do not ship in the C ABI — they remain a Go-native advanced surface.
+The C-shared library exports the Triple facade as 8 `ITB_Triple_*` entries (see `cmd/cshared/main.go`). Every FFI entry that consumes a nonce carries the on-wire nonce byte length as an explicit parameter (`nonce_bytes`): `ITB_HeaderSize(nonce_bytes)` and `ITB_ParseChunkLen(buf, len, nonce_bytes, out)` bind the per-instance nonce length explicitly rather than routing it through a process-global setter. The default nonce byte length is available through `ITB_DefaultNonceBits()`. The Low-Level `*Cfg` entries do not ship in the C ABI — they remain a Go-native advanced surface.
 
 ## Information-Theoretic Barrier
 

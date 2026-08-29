@@ -39,14 +39,14 @@ def parse_raw_ciphertext(
     """Parse raw ITB ciphertext directly (no demasking).
 
     Reads a `header_size`-byte header, then `total_pixels × 8` channel
-    bytes. The v0.3.0 shipped wire header carries a dual-nonce layout
+    bytes. The shipped wire header carries a dual-nonce layout
     (`main_nonce || interlock_nonce || W(2) || H(2)`), so the caller
     computes `header_size = 2 * len(main_nonce) + 4` from the corpus
     `cell.meta.json` (see `raw_mode_bias_probe.py`). For each container
     position `cp` and each channel `ch`, emits a triple
     `(cp, ch, byte & 0x7F)` — raw byte masked to low 7 bits.
 
-    On v0.3.0 the container body is the barrier-permuted Triple wire —
+    On the container body is the barrier-permuted Triple wire —
     three snakes' worth of COBS-framed pixels distributed through the
     always-on 48-bit Interlocked Barrier. The probe intentionally treats
     the body as one flat 8-byte-per-pixel stream and lets the metric
