@@ -175,7 +175,7 @@ func generatePlaintextRS(rng *rand.Rand, size int, kind string) []byte {
 // byteChi2RS computes the Pearson χ² statistic on the 256-bin byte
 // distribution of D against a uniform expectation (df=255). The
 // pre-v0.3.0 analyzer's identical computation is
-// scripts/redteam/phase2_theory/related_seed_diff_analyze.py::byte_chi_squared.
+// scripts/redteam/itb/theory/_common/related_seed_diff_analyze.py::byte_chi_squared.
 func byteChi2RS(diff []byte) float64 {
 	if len(diff) == 0 {
 		return 0
@@ -222,11 +222,11 @@ func bitBalanceRS(diff []byte) (meanAbs, maxAbs float64) {
 }
 
 // bodyOfCTRS slices the ciphertext body out of a v0.3.0 wire. Layout:
-// nonce (NonceSize) || W(2 BE) || H(2 BE) || W×H×Channels body bytes.
+// main_nonce (NonceSize) || interlock_nonce (NonceSize) || W(2 BE) || H(2 BE) || W×H×Channels body bytes.
 func bodyOfCTRS(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
+	header := 2*NonceSize + 4
+	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
 	total := w * h
 	return ct[header : header+total*Channels]
 }

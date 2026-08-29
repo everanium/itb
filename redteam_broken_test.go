@@ -130,7 +130,7 @@ func fnv1a128BrokenLab(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
 
 // ---------------------------------------------------------------------------
 // Attacker-side helpers (ported from scripts/redteam/attack_common.py and
-// scripts/redteam/phase2_theory/crib_crc128_kpa.py).
+// scripts/redteam/itb/theory/crc128/crib_crc128_kpa.py).
 // ---------------------------------------------------------------------------
 
 // mask56 selects the observable 56 bits of a compound key (bits [3..58]
@@ -357,9 +357,9 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 		t.Fatalf("barrier ciphertext did not round-trip")
 	}
 
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
+	header := 2*NonceSize + 4
+	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
 	barTotal := w * h
 	body := ct[header : header+barTotal*Channels]
 
@@ -521,9 +521,9 @@ func TestRedTeamBrokenCRC128NonceReuse(t *testing.T) {
 		{"msgA", ctA, plainA},
 		{"msgB", ctB, plainB},
 	} {
-		header := NonceSize + 4
-		w := int(binary.BigEndian.Uint16(tc.ct[NonceSize : NonceSize+2]))
-		h := int(binary.BigEndian.Uint16(tc.ct[NonceSize+2 : NonceSize+4]))
+		header := 2*NonceSize + 4
+		w := int(binary.BigEndian.Uint16(tc.ct[2*NonceSize : 2*NonceSize+2]))
+		h := int(binary.BigEndian.Uint16(tc.ct[2*NonceSize+2 : 2*NonceSize+4]))
 		total := w * h
 		body := tc.ct[header : header+total*Channels]
 		surv, anchors := cribKPASurvivorsBroken(body, total, zeroSeed, nonce, tc.plain, cribPixels)

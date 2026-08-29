@@ -9,7 +9,7 @@ package itb
 // test per primitive, invoked by the four
 // `scripts/redteam/harness_bias_audit_<primitive>.sh` drivers, which then
 // feed the emitted `cell.meta.json` + `ct_0000.bin` through
-// `scripts/redteam/phase2_theory/raw_mode_bias_probe.py` for the |Δ50|
+// `scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py` for the |Δ50|
 // reading.
 //
 // Attacker-realism (CLAUDE.md discipline):
@@ -30,7 +30,7 @@ package itb
 //
 // The four primitive adapters (`t1ha1Hash128`, `seahashHash128`, `mx3Hash128`,
 // `siphash13Hash128`) are copied verbatim from
-// `scripts/redteam/phase2_theory/chainhashes/_parity_dump/main.go` — the
+// `scripts/redteam/itb/theory/_common/chainhashes/_parity_dump/main.go` — the
 // standalone Go dumper used to seed the Python ChainHash mirrors. Keeping
 // the copies local to this test file matches the same pattern the
 // `_parity_dump` uses ("duplicated so this standalone main can be built
@@ -66,7 +66,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // Primitive adapters — verbatim from
-// scripts/redteam/phase2_theory/chainhashes/_parity_dump/main.go.
+// scripts/redteam/itb/theory/_common/chainhashes/_parity_dump/main.go.
 // Kept in-file so the corpus generator can key seeds with the exact same
 // bytes the downstream Python bias probe's ChainHash mirror expects.
 // ---------------------------------------------------------------------------
