@@ -23,7 +23,6 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-HEADER_SIZE = 20          # ITB ciphertext header: 16-byte nonce + 2 × uint16
 CHANNELS = 8              # RGBWYOPA
 DATA_BITS_PER_CHANNEL = 7
 DATA_BITS_PER_PIXEL = 56  # 8 × 7
@@ -35,27 +34,33 @@ MASK64 = (1 << 64) - 1
 # --------------------------------------------------------------------------
 
 def parse_raw_ciphertext(
-    ciphertext_path: Path, total_pixels: int,
+    ciphertext_path: Path, total_pixels: int, header_size: int,
 ) -> List[Tuple[int, int, int]]:
     """Parse raw ITB ciphertext directly (no demasking).
 
-    Reads the 20-byte header, then `total_pixels × 8` channel bytes.
-    For each container position `cp` and each channel `ch`, emits a
-    triple `(cp, ch, byte & 0x7F)` — raw byte masked to low 7 bits.
+    Reads a `header_size`-byte header, then `total_pixels × 8` channel
+    bytes. The v0.3.0 shipped wire header carries a dual-nonce layout
+    (`main_nonce || interlock_nonce || W(2) || H(2)`), so the caller
+    computes `header_size = 2 * len(main_nonce) + 4` from the corpus
+    `cell.meta.json` (see `raw_mode_bias_probe.py`). For each container
+    position `cp` and each channel `ch`, emits a triple
+    `(cp, ch, byte & 0x7F)` — raw byte masked to low 7 bits.
 
-    The raw byte contains `rotate7(plaintext_bits XOR channelXOR,
-    rotation)` with one noise bit inserted at `noisePos`; without
-    demasking the solver's majority-vote sees a mix of those components
-    across many pixels and statistically extracts any residual bias.
+    On v0.3.0 the container body is the barrier-permuted Triple wire —
+    three snakes' worth of COBS-framed pixels distributed through the
+    always-on 48-bit Interlocked Barrier. The probe intentionally treats
+    the body as one flat 8-byte-per-pixel stream and lets the metric
+    absorb the structural complexity; the barrier is what makes the
+    per-shift conflict-rate distribution flat under any shift.
     """
     raw = ciphertext_path.read_bytes()
-    need = HEADER_SIZE + total_pixels * CHANNELS
+    need = header_size + total_pixels * CHANNELS
     if len(raw) < need:
         raise RuntimeError(
-            f"raw ciphertext too short for total_pixels={total_pixels}: "
-            f"{len(raw)} bytes, need {need}."
+            f"raw ciphertext too short for total_pixels={total_pixels} "
+            f"header_size={header_size}: {len(raw)} bytes, need {need}."
         )
-    body = raw[HEADER_SIZE:need]
+    body = raw[header_size:need]
     observations: List[Tuple[int, int, int]] = []
     for cp in range(total_pixels):
         base = cp * CHANNELS

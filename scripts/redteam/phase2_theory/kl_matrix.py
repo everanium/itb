@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
-"""kl_matrix.py — Phase 2b Mode B BF auto-selection driver.
+"""kl_matrix.py — Phase 2b Mode B BarrierFill auto-selection driver.
 
 Iterates the Cartesian product of plaintext sizes × BarrierFill values,
 runs the Mode B distinguisher on both ITB ciphertext and a matched-size
 /dev/urandom sample, and accumulates per-cell metrics to a JSONL log +
 final Markdown summary.
 
-Used to measure the minimum BF per plaintext size at which ITB becomes
-indistinguishable from /dev/urandom, so that SetBarrierFill(0) can map
-plaintext length to the smallest defensive BF via a step function.
+Used to measure the minimum `BarrierFill` per plaintext size at which
+ITB becomes indistinguishable from /dev/urandom. The `BarrierFill` knob
+is a `Config` field consulted per encrypt / decrypt call via
+`currentBarrierFillCfg` (see `config.go`); `DefaultBarrierFill = 1` is
+the shipping default. There is no runtime `SetBarrierFill(...)` API — the
+knob is set by passing a `*Config` with `BarrierFill: N` into the
+`*Cfg` encrypt entry points, or via the corpus-generator env var
+`ITB_BARRIER_FILL` recognised by the underlying Go test entry point.
 
 Primitive is fixed at BLAKE3 (PRF-grade entries produce statistically
-identical Mode B outputs at matched N); Single Ouroboros only.
+identical Mode B outputs at matched N).
 
 Usage:
     python3 scripts/redteam/phase2_theory/kl_matrix.py \\
         [--sizes 1024,4096,...] [--bfs 1,2,4,8,16,32] [--resume]
+
+Status: this driver depends on the pre-v0.3.0 Go test entry point
+`TestRedTeamGenerateSingleMassive` and the pre-v0.3.0 sub-scripts
+`kl_massive_single_full.py` / `kl_urandom.py`. None of the three
+has been re-hosted on the v0.3.0 Triple + always-on Interlocked Barrier
+wire yet, so an end-to-end run currently exits with
+`no tests to run` from the Go step. The docstring above reflects the
+v0.3.0 `Config.BarrierFill` surface; the run harness itself needs the
+Go corpus generator ported (or replaced with a Triple-facade
+equivalent) before the driver produces fresh results.
 """
 
 from __future__ import annotations
@@ -152,8 +167,19 @@ def parse_output(text: str, patterns: Dict[str, re.Pattern]) -> Dict[str, float]
 
 
 def container_bytes_from_ciphertext(bin_path: Path) -> int:
-    # 20-byte header then the container bytes; strip header for urandom match.
-    return bin_path.stat().st_size - 20
+    # v0.3.0 ITB ciphertext header is `2 * NonceSize + 4` bytes
+    # (main nonce + interlock nonce + width(2) + height(2)); at the
+    # default 512-bit nonce that is 132 bytes. Strip the header so the
+    # /dev/urandom baseline matches the container-body byte count.
+    # `main_nonce_hex` / `interlock_nonce_hex` in the sibling corpus
+    # `cell.meta.json` schema is the authoritative width source; a
+    # meta-parsing path is not routed through this helper today because
+    # the pre-v0.3.0 sub-scripts do not emit one, so this function
+    # falls back to the default-config formula. Callers driving a
+    # non-default `NonceBits` must adjust.
+    default_nonce_bytes = 64  # itb.NonceSize (config.go default)
+    header_size = 2 * default_nonce_bytes + 4
+    return bin_path.stat().st_size - header_size
 
 
 def already_done(size: int, bf: int) -> bool:
