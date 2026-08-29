@@ -36,7 +36,7 @@ Tests:
 Usage:
   python3 scripts/redteam/itb/theory/siphash13/lab_struct_siphash13.py \\
       --n-instances 64 --instance-size 4096 \\
-      --json-report tmp/attack/siphash13stress/axis_a_struct_smoke.json
+      --json-report ~/scratch/redteam/siphash13stress/axis_a_struct_smoke.json
 
 Sample-size scaling (for publication, scale up):
   n=64     bit_bias noise ≈ 6.25 %  (smoke only — tests pipeline)

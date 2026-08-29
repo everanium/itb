@@ -33,7 +33,8 @@ Reference file format matches the Go emitter
 
 Usage:
     python3 fnv_chain_lo_concrete.py [--reference PATH]
-    # default PATH: tmp/attack/fnv_parity/reference.json
+    # default PATH: ~/scratch/redteam/fnv_parity/reference.json
+    # override via FNV_CHAIN_LO_CONCRETE_OUTPUT_DIR
 
 Exit codes:
     0 - all vectors matched
@@ -290,7 +291,10 @@ def main() -> int:
     )
     ap.add_argument(
         "--reference",
-        default="tmp/attack/fnv_parity/reference.json",
+        default=str(Path(os.environ.get(
+            "FNV_CHAIN_LO_CONCRETE_OUTPUT_DIR",
+            str(Path.home() / "scratch" / "redteam" / "fnv_parity"),
+        )) / "reference.json"),
         help="Path to JSON reference emitted by the Go harness",
     )
     ap.add_argument(
@@ -307,7 +311,7 @@ def main() -> int:
         print(
             f"[FATAL] reference not found: {ref_path}\n"
             "  generate it first with:\n"
-            "  ITB_FNV_REF=1 go test -run TestRedTeamEmitFNV1aChainHashReference -v",
+            "  ITB_FNV_REF=1 go test -tags redteam -run TestRedTeamEmitFNV1aChainHashReference -v",
             file=sys.stderr,
         )
         return 2

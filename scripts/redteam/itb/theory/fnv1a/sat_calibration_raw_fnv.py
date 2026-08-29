@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import resource
 import sys
@@ -300,7 +301,10 @@ def main() -> int:
     )
     ap.add_argument(
         "--json-report",
-        default="tmp/attack/fnvstress/phase2_raw_sat_calibration.json",
+        default=str(Path(os.environ.get(
+            "SAT_CALIBRATION_RAW_FNV_OUTPUT_DIR",
+            str(Path.home() / "scratch" / "redteam" / "fnvstress"),
+        )) / "raw_sat_calibration.json"),
         help="path to write the full cell-by-cell report",
     )
     ap.add_argument(

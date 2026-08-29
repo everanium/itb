@@ -130,7 +130,7 @@ Two shapes stress the pair: `random` (independent uniform plaintexts) as the nul
 | **C** (interlock only) | BLAKE3-128 | near-identical | 4 KB | 0.00391 (1.00×) | 0.01123 | 0.49986 | 243.0 |
 | **C** (interlock only) | FNV-1a | near-identical | 4 KB | 0.00395 (1.01×) | 0.01085 | 0.50007 | 222.7 |
 
-All cells: N = 200 pairs, container body only. The df = 255 uniform band top at N large is approximately 292 (`p = 0.99`). The full 3 × 2 × 3 × 2 grid emits per-cell records to `tmp/redteam/nonce_reuse_dualnonce/dualnonce_matrix.json`.
+All cells: N = 200 pairs, container body only. The df = 255 uniform band top at N large is approximately 292 (`p = 0.99`). The full 3 × 2 × 3 × 2 grid emits per-cell records to `~/scratch/redteam/nonce_reuse_dualnonce/dualnonce_matrix.json` (override the parent directory via `REDTEAM_NONCE_REUSE_DUALNONCE_OUTPUT_DIR`).
 
 Three axis-attributions the matrix isolates:
 
@@ -171,7 +171,7 @@ The pre-v0.3.0 42.5M / 56.7M axis-hit numbers were Single-Ouroboros primitive-at
 The lockSeed-vs-other axis contrast holds identically across CRC128 and FNV-1a (structural, not primitive-conditional), across bit0 / bit_mid / bit_high Δ patterns (delta-position-independent), and across random / ASCII plaintext (no crib-amplified axis). The pre-v0.3.0 **6.1M neutralised cluster** description — architectural `noisePos` permutation signal, not primitive leak — has its v0.3.0 analog in the ~42-56M no-Δ floor, primitive-conditional through `noiseSeed`'s ChainHash shape influencing `noisePos` derivation but not a primitive-attributable Δ leak. Pre-v0.3.0 1008-cell single-axis sweep detail is in [REDTEAM-v0.2.md § Phase 2e](archive/REDTEAM-v0.2.md); reproduction of the v0.3.0 probes is one command:
 
 ```
-go test -run TestRedTeamRelatedSeed -v -timeout 1800s ./
+go test -tags redteam -run TestRedTeamRelatedSeed -v -timeout 1800s ./
 scripts/redteam/itb/related_seed/run.sh          # same, with JSON aggregation
 ```
 
@@ -215,7 +215,7 @@ FNV-1a and CRC128 were broken in the pre-v0.3.0 record, but only under a constru
 
 ### CRC128 Crib KPA and Nonce-reuse
 
-The recovery is ported from the pre-v0.3.0 CRC128 Crib KPA (`crib_crc128_kpa.py` / `crib_crc128_kpa_full.py`) and run as `go test -run TestRedTeamBrokenCRC128CribKPA ./` (≈ 0.09 s): a 625-candidate startPixel scan against a four-pixel crib, recovering the observable 56-bit compound key over all noise-position and rotation guesses — a strictly stronger attacker than the pre-v0.3.0 algebraic filter.
+The recovery is ported from the pre-v0.3.0 CRC128 Crib KPA (`crib_crc128_kpa.py` / `crib_crc128_kpa_full.py`) and run as `go test -tags redteam -run TestRedTeamBrokenCRC128CribKPA ./` (≈ 0.09 s): a 625-candidate startPixel scan against a four-pixel crib, recovering the observable 56-bit compound key over all noise-position and rotation guesses — a strictly stronger attacker than the pre-v0.3.0 algebraic filter.
 
 **Verdict — null.** Against a legacy Single, barrier-off control encode the ported filter anchors exactly one shift and returns one survivor (the true key), confirming sensitivity. Against the shipped `Encrypt3x128Cfg` ciphertext the filter anchors **zero** shifts and returns **zero** survivors across all 625 candidate startPixels; the ciphertext round-trips, so it is a genuine encryption. Part 1 permutes the plaintext into the snakes before pixel encoding, so the crib bytes the attacker substitutes as "pixel p's plaintext" are the wrong bytes and there is no fixed bit-position-to-lane anchor for the linear system. Under a forced nonce collision (`TestRedTeamBrokenCRC128NonceReuse`, ≈ 0.01 s) the Crib KPA still returns zero survivors from either colliding ciphertext: nonce reuse repeats the masks but does not hand the attacker the permutation, so the crib remains unanchored.
 
@@ -280,19 +280,19 @@ A structural probe (`TestRedTeamBrokenBarrierDisplacement`, ≈ 0.07 s; holds tr
 ### Reproduction
 
 ```
-go test -run TestRedTeamBroken -v ./                  # all broken-primitive probes
-go test -run TestRedTeamBrokenCRC128CribKPA -v ./
-go test -run TestRedTeamBrokenBarrierDisplacement -v ./
-go test -run TestRedTeamBrokenCRC128NonceReuse -v ./
-go test -run TestRedTeamBrokenFNV1a -v ./             # FNV-1a lo-lane SAT probes F1..F6
-go test -run TestRedTeamCPABroken -v -timeout 7200s ./ # fresh-nonce CPA under FNV-1a on every seed role
-go test -run TestRedTeamNearIdenticalFreshNonce -v -timeout 3600s ./ # fresh-nonce cross-message near-identical pair-shape distinguisher
+go test -tags redteam -run TestRedTeamBroken -v ./                  # all broken-primitive probes
+go test -tags redteam -run TestRedTeamBrokenCRC128CribKPA -v ./
+go test -tags redteam -run TestRedTeamBrokenBarrierDisplacement -v ./
+go test -tags redteam -run TestRedTeamBrokenCRC128NonceReuse -v ./
+go test -tags redteam -run TestRedTeamBrokenFNV1a -v ./             # FNV-1a lo-lane SAT probes F1..F6
+go test -tags redteam -run TestRedTeamCPABroken -v -timeout 7200s ./ # fresh-nonce CPA under FNV-1a on every seed role
+go test -tags redteam -run TestRedTeamNearIdenticalFreshNonce -v -timeout 3600s ./ # fresh-nonce cross-message near-identical pair-shape distinguisher
 ./scripts/redteam/itb/fnv1a_sat/run.sh                # aggregate the FNV-1a probes + optional Bitwuzla SAT
 ./scripts/redteam/itb/cpa_broken/run.sh               # aggregate the CPA probe
 ./scripts/redteam/itb/near_identical_fresh/run.sh     # aggregate the fresh-nonce near-identical pair-shape probe
 ```
 
-The harness is `redteam_broken_test.go` (CRC128 + shared adapters), `redteam_broken_fnv1a_sat_test.go` (FNV-1a probes F1..F6), `redteam_cpa_broken_test.go` (fresh-nonce CPA matrix), and `redteam_near_identical_fresh_test.go` (fresh-nonce cross-message near-identical pair matrix), package `itb`; the CRC128 / FNV-1a adapters and the ported filter carry inline provenance comments pointing at the retired lab scaffolds and the Python arsenal routines they adapt. The compact Bitwuzla harness lives at `scripts/redteam/itb/fnv1a_sat/sat_probe.py`; it consumes the corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus` under `tmp/redteam/fnv1a_sat/f6_corpus_bundle.json` and runs against the maximum-peek attacker regime described above. The CPA probe emits its record to `tmp/redteam/cpa_broken/cpa_broken_matrix.json` and the cross-message near-identical pair probe emits its record to `tmp/redteam/near_identical_fresh/near_identical_fresh_matrix.json`, both for their aggregators.
+The harness is `redteam_broken_test.go` (CRC128 + shared adapters), `redteam_broken_fnv1a_sat_test.go` (FNV-1a probes F1..F6), `redteam_cpa_broken_test.go` (fresh-nonce CPA matrix), and `redteam_near_identical_fresh_test.go` (fresh-nonce cross-message near-identical pair matrix), package `itb`; the CRC128 / FNV-1a adapters and the ported filter carry inline provenance comments pointing at the retired lab scaffolds and the Python arsenal routines they adapt. The compact Bitwuzla harness lives at `scripts/redteam/itb/fnv1a_sat/sat_probe.py`; it consumes the corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus` under `~/scratch/redteam/fnv1a_sat/f6_corpus_bundle.json` (override the parent directory via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`) and runs against the maximum-peek attacker regime described above. The CPA probe emits its record to `~/scratch/redteam/cpa_broken/cpa_broken_matrix.json` and the cross-message near-identical pair probe emits its record to `~/scratch/redteam/near_identical_fresh/near_identical_fresh_matrix.json`, both for their aggregators.
 
 ## PRF-grade versus broken-primitive equivalence
 
@@ -377,9 +377,9 @@ Every construction-level probe returns a null or an explained-structural result.
 **Reproduction.**
 
 ```
-ITB_HARNESS_FULL=1 go test -run 'TestHarnessC[245]' -v ./           # kernel probes C2, C4b, C5-core
-ITB_HARNESS_FULL=1 go test -run 'TestHarnessC[13456]' -v ./triple/  # wire probes C1, C3, C4a, C5, C6
-go test -run TestHarness ./ ./triple/                               # fast smoke run
+ITB_HARNESS_FULL=1 go test -tags redteam -run 'TestHarnessC[245]' -v ./           # kernel probes C2, C4b, C5-core
+ITB_HARNESS_FULL=1 go test -tags redteam -run 'TestHarnessC[13456]' -v ./triple/  # wire probes C1, C3, C4a, C5, C6
+go test -tags redteam -run TestHarness ./ ./triple/                               # fast smoke run
 ```
 
 ## Cross-track synthesis

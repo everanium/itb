@@ -3,7 +3,8 @@
 """
 ITB FNV-1a ChainHash128 SAT harness (keyBits=512, 4 rounds).
 
-Consumes the fnvstress corpus (`tmp/attack/fnvstress/`) and
+Consumes the fnvstress corpus (`~/scratch/redteam/fnvstress/`,
+override the parent dir via `SAT_HARNESS_4ROUND_FNVSTRESS_DIR`) and
 builds one global Z3 bitvector SAT instance over:
 
   - `rounds` × 64-bit unknown lo-lane seed components (256 unknowns
@@ -1269,7 +1270,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument(
         "--fnvstress-dir",
-        default="tmp/attack/fnvstress",
+        default=os.environ.get(
+            "SAT_HARNESS_4ROUND_FNVSTRESS_DIR",
+            str(Path.home() / "scratch" / "redteam" / "fnvstress"),
+        ),
         help="path to fnvstress corpus root",
     )
     ap.add_argument(
