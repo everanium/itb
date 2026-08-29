@@ -2,7 +2,7 @@
 
 package itb
 
-// kl_shelf_test.go — Phase 2b Mode B corpus generator for the KL floor probe
+// redteam_kl_test.go — Phase 2b Mode B corpus generator for the KL floor probe
 // driven by `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive
 // ITB ciphertext per invocation on the v0.3.0 Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
@@ -76,7 +76,7 @@ import (
 func klBlake3Hash128(key [32]byte) HashFunc128 {
 	template, err := blake3.NewKeyed(key[:])
 	if err != nil {
-		panic(fmt.Errorf("kl_shelf: BLAKE3 keyed template: %w", err))
+		panic(fmt.Errorf("redteam_kl: BLAKE3 keyed template: %w", err))
 	}
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
