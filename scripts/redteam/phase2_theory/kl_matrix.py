@@ -22,15 +22,11 @@ Usage:
     python3 scripts/redteam/phase2_theory/kl_matrix.py \\
         [--sizes 1024,4096,...] [--bfs 1,2,4,8,16,32] [--resume]
 
-Status: this driver depends on the pre-v0.3.0 Go test entry point
-`TestRedTeamGenerateSingleMassive` and the pre-v0.3.0 sub-scripts
-`kl_massive_single_full.py` / `kl_urandom.py`. None of the three
-has been re-hosted on the v0.3.0 Triple + always-on Interlocked Barrier
-wire yet, so an end-to-end run currently exits with
-`no tests to run` from the Go step. The docstring above reflects the
-v0.3.0 `Config.BarrierFill` surface; the run harness itself needs the
-Go corpus generator ported (or replaced with a Triple-facade
-equivalent) before the driver produces fresh results.
+The Go entry point is `TestRedTeamGenerateTripleMassive` (in the
+`kl_shelf_test.go` file, guarded by `-tags redteam`); it emits
+`<outdir>/blake3.{bin,plain,pixel}` on the v0.3.0 Triple + always-on
+Interlocked Barrier wire, with the `.pixel` sidecar carrying the
+dual-nonce header size and `barrier_fill` value the sub-scripts consume.
 """
 
 from __future__ import annotations
@@ -48,7 +44,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 PROJ = Path(__file__).resolve().parents[3]
-OUTPUT_DIR = PROJ / "tmp" / "kltest"
+# Output lands in ~/scratch/kltest by default (per CLAUDE.md working-tree layout:
+# scratch outputs go outside the repository tree). Override via ITB_KL_OUTPUT_DIR.
+OUTPUT_DIR = Path(os.environ.get("ITB_KL_OUTPUT_DIR", str(Path.home() / "scratch" / "kltest")))
 WORKERS_DIR = OUTPUT_DIR / "workers"
 JSONL_PATH = OUTPUT_DIR / "matrix.jsonl"
 MARKDOWN_PATH = OUTPUT_DIR / "matrix.md"
@@ -220,7 +218,8 @@ def run_cell(size: int, bf: int, n_samples: int, worker_id: int) -> Dict[str, fl
     # Step 0 — single probe encrypt to discover container_bytes, so we can
     # start /dev/urandom concurrently.
     run_cmd(
-        ["go", "test", "-run", "TestRedTeamGenerateSingleMassive", "-timeout", "14400s"],
+        ["go", "test", "-tags", "redteam", "-run",
+         "TestRedTeamGenerateTripleMassive", "-timeout", "14400s"],
         env={
             "ITB_REDTEAM_MASSIVE": "blake3",
             "ITB_REDTEAM_MASSIVE_SIZE": str(size),
@@ -255,7 +254,8 @@ def run_cell(size: int, bf: int, n_samples: int, worker_id: int) -> Dict[str, fl
     # Step 3 — the remaining (n_samples - 1) ITB encryptions + probes.
     for i in range(n_samples - 1):
         run_cmd(
-            ["go", "test", "-run", "TestRedTeamGenerateSingleMassive", "-timeout", "14400s"],
+            ["go", "test", "-tags", "redteam", "-run",
+         "TestRedTeamGenerateTripleMassive", "-timeout", "14400s"],
             env={
                 "ITB_REDTEAM_MASSIVE": "blake3",
                 "ITB_REDTEAM_MASSIVE_SIZE": str(size),
