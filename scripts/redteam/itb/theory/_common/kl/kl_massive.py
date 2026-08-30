@@ -12,7 +12,7 @@ any modern machine can run it.
 Prerequisites:
     ITB_REDTEAM_MASSIVE=<hash> ITB_BARRIER_FILL=1 \\
       go test -tags redteam -run TestRedTeamGenerateTripleMassive -v -timeout 10m
-    # produces tmp/massive/<hash>.{bin,plain,pixel}
+    # produces ~/scratch/kl_massive/<hash>.{bin,plain,pixel}
 
 Usage:
     python3 scripts/redteam/itb/theory/_common/kl/kl_massive.py <hash>
@@ -24,14 +24,22 @@ Valid <hash> values match the 10 dirnames used elsewhere:
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
-PROJ = Path(__file__).resolve().parents[6]
-MASSIVE_DIR = PROJ / "tmp" / "massive"
+# ITB_MASSIVE_DIR env var overrides the default lookup — used by kl_matrix.py
+# to give parallel workers isolated output directories. Symmetric with
+# kl_massive_full.py.
+_MASSIVE_DIR_OVERRIDE = os.environ.get("ITB_MASSIVE_DIR", "")
+MASSIVE_DIR = (
+    Path(_MASSIVE_DIR_OVERRIDE).resolve()
+    if _MASSIVE_DIR_OVERRIDE
+    else Path.home() / "scratch" / "kl_massive"
+)
 
 # Container / extraction layout — same as distinguisher.py.
 HEADER_SIZE = 20
