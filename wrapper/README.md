@@ -95,6 +95,8 @@ delegates `MakeKeystream` / `KeySize` / `NonceSize` to it.
 | SipHash-2-4 in CTR mode | 16 B | 16 B |
 | ChaCha20 (RFC 8439) | 32 B | 12 B |
 
+**Per-stream length cap under ChaCha20 outer cipher — 256 GiB per `(key, nonce)`.** RFC 8439 fixes the ChaCha20 block counter at 32 bits, so one logical outer-cipher stream under a single `(key, nonce)` covers at most `2^32 × 64 B = 256 GiB` before the counter would wrap. `ctr.NewAt` returns an explicit error at the first seek at or above that offset rather than silently reusing keystream. The impact of a hypothetical wrap is scoped to the outer format-deniability layer — inner ITB confidentiality is not carried by the outer cipher and stays intact regardless — but the wrapper still refuses the wrap because reused outer keystream weakens format deniability at the wire (an attacker XORing two wire positions exactly 256 GiB apart would cancel the outer whitener and expose the inner ITB-encrypted body pattern to traffic analysis, though not the plaintext). For streaming a single logical outer stream past this cap, choose an outer cipher whose counter is wider than 32 bits — **AES-128-CTR** uses a 128-bit big-endian counter and is practically unlimited for random nonces; SipHash-CTR and the PRF-counter ciphers (Areion, BLAKE2, BLAKE3) all use 64-bit counters.
+
 For the per-cipher construction detail (including the SipHash-CTR PRF-counter
 keystream), see [`ctr/CONSTRUCTIONS.md`](../ctr/CONSTRUCTIONS.md).
 
