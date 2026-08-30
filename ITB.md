@@ -16,7 +16,7 @@ This is not destruction (the hash output is used), not hiding (there is no encry
 
 The barrier is computation-model-independent under passive observation: no matter how much computational power the attacker has, the information is not in the observation.
 
-**Formal basis:** ∀v, ∀h : ∃c : embed(c, h, d) = v — for any observed value, any hash output, there exists a container byte that produces this observation (see [SCIENCE.md § 2.1 Theorem 1](SCIENCE.md#21-information-theoretic-barrier-theorem-1), [SECURITY.md Section 9](SECURITY.md#9-information-theoretic-barrier-metrics)).
+**Formal basis:** ∀v, ∀h : ∃c : embed(c, h, d) = v — for any observed value, any hash output, there exists a container byte that produces this observation (see [SCIENCE.md § 2.1 Theorem 1](SCIENCE.md#21-information-theoretic-barrier-theorem-1), [SECURITY.md § 4 IT Barrier Metrics](SECURITY.md#4-information-theoretic-barrier-metrics)).
 
 ## 2. Two Independent Sources of Randomness
 
@@ -178,7 +178,7 @@ Under Partial KPA, gcd(7,8)=1 byte-splitting adds a further factor — per-chann
 
 An attacker with partial PRF inversion capability still faces three independent startPixel candidates to enumerate, 56-fold per-pixel ambiguity to disambiguate without a verification oracle, and the per-chunk ≈ 2^70.20 permutation to reverse.
 
-See [SECURITY.md Section 7](SECURITY.md#7-attack-resistance-summary) for the full attack resistance table.
+See [SECURITY.md § 3 Attack Resistance Summary](SECURITY.md#3-attack-resistance-summary) for the full attack resistance table.
 
 ## 7. Byte-Splitting: Why Byte Analysis Does Not Work
 
@@ -194,7 +194,7 @@ Under Partial KPA, three layers of protection combine:
 
 All three layers work together: the barrier denies observation, byte-splitting denies per-channel candidate formulation under Partial KPA, and PRF denies candidate verification. Under Full KPA, byte-splitting does not add defensive benefit (the attacker has all adjacent bytes), but the defense is nonetheless multi-factor under the PRF assumption: PRF non-invertibility + independent startSeeds + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1 + the 48-bit Interlocked Barrier. The layers are architecturally independent and combine conjunctively (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
 
-See [SCIENCE.md § 2.10 Byte-Splitting Property](SCIENCE.md#210-byte-splitting-property), [SECURITY.md Section 8](SECURITY.md#8-byte-splitting-property).
+See [SCIENCE.md § 2.10 Byte-Splitting Property](SCIENCE.md#210-byte-splitting-property).
 
 ## 8. Full KPA (PRF Assumption)
 
@@ -244,7 +244,7 @@ This means CCA does not give the attacker a clean plaintext-only ciphertext. A p
 
 CCA leak = 3/62 ≈ 4.8 % of per-pixel configuration. CCA reveals no plaintext bits, no XOR masks, no start pixel, no barrier permutation. However, CCA eliminates noiseSeed from brute-force search: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining blind enumeration cost exceeds the Landauer bound on irreversible enumeration (~2^306); this bounds enumeration cost, not structural attack resistance, and the Full KPA closure under CCA remains computational and PRF-conditional (Theorem 4a).
 
-See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md § 2.8 CCA Leak Upper Bound](SCIENCE.md#28-cca-leak-upper-bound-theorem-6), [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
+See [SECURITY.md § 2 CCA Oracle Leak Comparison](SECURITY.md#2-cca-oracle-leak-comparison), [SCIENCE.md § 2.8 CCA Leak Upper Bound](SCIENCE.md#28-cca-leak-upper-bound-theorem-6), [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
 
 ## 11. startPixels: Not Transmitted, Not Recoverable
 
@@ -324,7 +324,7 @@ Specific quantum algorithms and why they are conjectured mitigated:
 
 At 1024-bit key: Core / Silent Drop and MAC + Reveal both sit at complexities far beyond any foreseeable quantum capability, before crediting the barrier. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
 
-See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md § 3.3 Quantum Resistance](SCIENCE.md#33-quantum-resistance-conjectured), [SCIENCE.md § 2.6 — Why KPA candidates do not break the barrier](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
+See [SCIENCE.md § 3.3 Quantum Resistance](SCIENCE.md#33-quantum-resistance-conjectured), [SCIENCE.md § 2.6 — Why KPA candidates do not break the barrier](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
 
 ## 14. Per-Candidate Cost: Why Brute-Force Is Slow
 
