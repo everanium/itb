@@ -696,7 +696,7 @@ The `triple/` facade is the recommended entry point. Callers who need the raw 8-
 
 ### Low-Level 1 — Single Message with MAC
 
-Message-shape variant using `itb.EncryptAuthenticated3x256Cfg` / `itb.DecryptAuthenticated3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. 8 typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pairwise distinctness (byte-level `Components` comparison plus pointer identity) is enforced at the call site.
+Message-shape variant using `itb.EncryptAuth3x256Cfg` / `itb.DecryptAuth3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. 8 typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pairwise distinctness (byte-level `Components` comparison plus pointer identity) is enforced at the call site.
 
 ```go
 package main
@@ -747,7 +747,7 @@ func main() {
 
     plaintext := []byte("Low-Level Message-shape round-trip")
 
-    wire, err := itb.EncryptAuthenticated3x256Cfg(
+    wire, err := itb.EncryptAuth3x256Cfg(
         cfg,
         ns, ls, ds1, ds2, ds3, ss1, ss2, ss3,
         plaintext, macFunc,
@@ -756,7 +756,7 @@ func main() {
         panic(err)
     }
 
-    plain, err := itb.DecryptAuthenticated3x256Cfg(
+    plain, err := itb.DecryptAuth3x256Cfg(
         cfg,
         ns, ls, ds1, ds2, ds3, ss1, ss2, ss3,
         wire, macFunc,
