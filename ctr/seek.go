@@ -107,6 +107,21 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 	case *prfHashCTRBatch:
 		c.counter = blockOff
 	case *chacha20.Cipher:
+		// ChaCha20's block counter is a uint32 (RFC 8439); a silent
+		// uint32(blockOff) truncation past 2^32 would reuse keystream
+		// bytes, weakening the wrapper's outer-layer format-deniability
+		// past ~256 GiB of stream under a single (key, nonce). Inner
+		// ITB confidentiality is unaffected by such reuse — the outer
+		// cipher is a format-deniability whitener, not the layer that
+		// carries confidentiality — but the caller must be told
+		// explicitly rather than getting a silently-corrupt keystream.
+		// For streams that need to exceed this, choose an outer cipher
+		// with a wider counter (AES-128-CTR uses a 128-bit big-endian
+		// counter and is practically unlimited for random nonces).
+		const chacha20MaxBlock = uint64(1) << 32
+		if blockOff >= chacha20MaxBlock {
+			return nil, fmt.Errorf("ctr: chacha20 counter overflow — byteOffset %d requires block index %d ≥ 2^32 (~256 GiB per (key, nonce)); outer-layer format deniability weakens past this seek point, inner ITB confidentiality unaffected. Choose AES-128-CTR outer cipher for streams above this cap", byteOffset, blockOff)
+		}
 		c.SetCounter(uint32(blockOff))
 	default:
 		return nil, fmt.Errorf("ctr: %s keystream is not seekable", name)
