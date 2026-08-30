@@ -44,9 +44,9 @@ row so any binding's throughput is directly comparable to the Go native number.
 `E` columns time the encrypt path; `D` columns time the decrypt path
 on wire pre-produced outside the timing loop.
 
-| Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
-|--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native**                        |    117 |     191 |     225 |    238 |     281 |     326 |
+| Binding                             | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
+|-------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
+| **Go native**                       |    117 |     191 |     225 |    238 |     281 |     326 |
 | **Rust** (thin proxy)               |    109 |     178 |     213 |    216 |     245 |     286 |
 | **C** (thin proxy)                  |    103 |     177 |     211 |    203 |     245 |     292 |
 | **C++** (thin proxy)                |    110 |     179 |     212 |    225 |     250 |     297 |
@@ -81,16 +81,16 @@ on wire pre-produced outside the timing loop.
 | **Haskell** (foreign import ccall)  |    112 |     182 |     215 |    231 |     251 |     298 |
 | **R** (.Call via C shim)            |     95 |     178 |     196 |    206 |     246 |     273 |
 
-### Stream pump shape (multi-call session — Begin / Write / End / Read / Free)
+### Stream shape (multi-call session — Begin / Write / End / Read / Free)
 
 `E` columns time the encrypt path; `D` columns time the decrypt path
 on wire pre-produced outside the timing loop.
 
-**Stream pump E 1 MB baseline shift.** The 1 MB Encrypt cell for a subset of bindings (Crystal / F# / Groovy / Haskell / Lua / Nim / R / Ruby / Rust) sits 8-34 % below the earlier baseline. The shift traces to the microBatch adaptive baseline retune (promote commit `3f38abe`) which reshapes how each binding's FFI layer amortises per-chunk work through the shared `libitb.so`. Bindings with a shared-session-many-writes iteration pattern in their bench harness absorb the retune silently or gain from it (25 of the 33 shipped bindings). The shift is not a regression in shipping cipher code — it is confined to the 1 MB Stream pump cell and does not appear on Message shape or Stream one-shot at any width. Every other cell across the fleet either holds or lifts, driven by the full ASM optimisation cycle culminating in the bridge-free ZMM interlock kernel rewrite.
+**Stream E 1 MB baseline shift.** The 1 MB Encrypt cell for a subset of bindings (Crystal / F# / Groovy / Haskell / Lua / Nim / R / Ruby / Rust) sits 8-34 % below the earlier baseline. The shift traces to the microBatch adaptive baseline retune (promote commit `3f38abe`) which reshapes how each binding's FFI layer amortises per-chunk work through the shared `libitb.so`. Bindings with a shared-session-many-writes iteration pattern in their bench harness absorb the retune silently or gain from it (25 of the 33 shipped bindings). The shift is not a regression in shipping cipher code — it is confined to the 1 MB Stream cell and does not appear on Message shape or Stream one-shot at any width. Every other cell across the fleet either holds or lifts, driven by the full ASM optimisation cycle culminating in the bridge-free ZMM interlock kernel rewrite.
 
-| Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
-|--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native**                        |    100 |     189 |     201 |    209 |     256 |     271 |
+| Binding                             | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
+|-------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
+| **Go native**                       |    100 |     189 |     201 |    209 |     256 |     271 |
 | **Rust** (thin proxy)               |     74 |     165 |     167 |    140 |     212 |     211 |
 | **C** (thin proxy)                  |     81 |     158 |     172 |    144 |     221 |     214 |
 | **C++** (thin proxy)                |     90 |     164 |     179 |    140 |     221 |     221 |
@@ -127,11 +127,11 @@ on wire pre-produced outside the timing loop.
 
 ### Stream one-shot shape (single FFI call, whole plaintext through `encrypt_stream_one_shot`)
 
-The one-shot Stream API surface (`encrypt_stream_one_shot(plain) → wire` and its decrypt counterpart) reaches the same direct whole-buffer fast path as the Message shape when parallax is off — the produced wire is a single-chunk Streaming wire, byte-shape-identical to Message wire at the file level. Callers holding the whole plaintext in memory pick this path over the incremental pump session.
+The one-shot Stream API surface (`encrypt_stream_one_shot(plain) → wire` and its decrypt counterpart) reaches the same direct whole-buffer fast path as the Message shape when parallax is off — the produced wire is a single-chunk Streaming wire, byte-shape-identical to Message wire at the file level. Callers holding the whole plaintext in memory pick.
 
-| Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
-|--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native**                        |    117 |     191 |     225 |    238 |     281 |     326 |
+| Binding                             | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
+|-------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
+| **Go native**                       |    117 |     191 |     225 |    238 |     281 |     326 |
 | **Rust** (thin proxy)               |    107 |     177 |     202 |    204 |     245 |     279 |
 | **C** (thin proxy)                  |    104 |     179 |     210 |    205 |     243 |     286 |
 | **C++** (thin proxy)                |    111 |     180 |     213 |    227 |     247 |     293 |
@@ -170,9 +170,9 @@ The one-shot Stream API surface (`encrypt_stream_one_shot(plain) → wire` and i
 
 Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`, exercising the shipped `singlemsg-triple-mac-v1` profile with parallax and wrapper overlays engaged.
 
-| Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
-|--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native**                        |     60 |     138 |     157 |     92 |     195 |     205 |
+| Binding                             | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
+|-------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
+| **Go native**                       |     60 |     138 |     157 |     92 |     195 |     205 |
 | **Rust** (thin proxy)               |     55 |     131 |     151 |     83 |     185 |     186 |
 | **C** (thin proxy)                  |     52 |     129 |     147 |     78 |     181 |     181 |
 | **C++** (thin proxy)                |     51 |     115 |     131 |     77 |     162 |     170 |
@@ -207,13 +207,13 @@ Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAP
 | **Haskell** (foreign import ccall)  |     56 |     127 |     147 |     82 |     184 |     192 |
 | **R** (.Call via C shim)            |     50 |     125 |     135 |     80 |     178 |     181 |
 
-### Stream pump shape — full production (AEAD on, parallax on, wrapper on)
+### Stream shape — full production (AEAD on, parallax on, wrapper on)
 
 Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`, exercising `streaming-aead-triple-mac-v1` with parallax and wrapper overlays engaged.
 
-| Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
-|--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native**                        |     60 |     140 |     158 |     99 |     194 |     211 |
+| Binding                             | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
+|-------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
+| **Go native**                       |     60 |     140 |     158 |     99 |     194 |     211 |
 | **Rust** (thin proxy)               |     56 |     128 |     136 |     79 |     168 |     174 |
 | **C** (thin proxy)                  |     50 |     107 |     126 |     73 |     151 |     156 |
 | **C++** (thin proxy)                |     54 |     118 |     130 |     74 |     152 |     160 |
@@ -250,11 +250,11 @@ Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAP
 
 ### Stream one-shot shape — full production (AEAD on, parallax on, wrapper on)
 
-Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`. Under production overlays the whole-buffer fast path falls through to the streaming fallback (parallax multiplexer engages), so the numbers land within a few percent of the Stream pump baseline; the shipping API surface for callers holding a whole plaintext in memory stays symmetric with the pump path.
+Same rows as above under `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`. Under production overlays the whole-buffer fast path falls through to the streaming fallback (parallax multiplexer engages), so the numbers land within a few percent of the Stream baseline. Callers holding the whole plaintext in memory pick.
 
-| Binding                              | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
-|--------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
-| **Go native**                        |     60 |     140 |     158 |     99 |     194 |     211 |
+| Binding                             | E 1 MB | E 16 MB | E 64 MB | D 1 MB | D 16 MB | D 64 MB |
+|-------------------------------------|-------:|--------:|--------:|-------:|--------:|--------:|
+| **Go native**                       |     60 |     140 |     158 |     99 |     194 |     211 |
 | **Rust** (thin proxy)               |     57 |     126 |     153 |     82 |     185 |     191 |
 | **C** (thin proxy)                  |     52 |     115 |     147 |     74 |     180 |     187 |
 | **C++** (thin proxy)                |     53 |     116 |     133 |     77 |     162 |     167 |
@@ -295,9 +295,9 @@ Throughput in MB/s. Go native row is [BENCH3.md](../BENCH3.md) Triple 1024-bit A
 
 ## FFI overhead
 
-Per-binding throughputs across every shape sit in a band as a percentage of native Go at 64 MB; the raw numbers are the tables above. Ruby sits at the fleet floor — the MRI FFI allocator plus the per-call `ObjectSpace.define_finalizer` handle chain is the language ceiling, documented in the Ruby binding's Limitations section. The top of the band tracks languages with the leanest FFI crossing (Haskell / C++ / Fortran on Message and Stream one-shot; Haskell / Fortran / OCaml / R on Stream pump).
+Per-binding throughputs across every shape sit in a band as a percentage of native Go at 64 MB; the raw numbers are the tables above. Ruby sits at the fleet floor — the MRI FFI allocator plus the per-call `ObjectSpace.define_finalizer` handle chain is the language ceiling, documented in the Ruby binding's Limitations section. The top of the band tracks languages with the leanest FFI crossing (Haskell / C++ / Fortran on Message and Stream one-shot; Haskell / Fortran / OCaml / R on Stream).
 
-The whole-buffer Message and Stream one-shot shapes cluster together — both reach the direct fast path in `triple.Pipeline` when parallax is off — while the Stream pump shape sits ~15-20 MB/s below at the same primitive because the incremental session pays per-chunk container and MAC-binding costs. Under production overlays the parallax multiplexer engages on every path and the three shapes converge into a single band.
+The whole-buffer Message and Stream one-shot shapes cluster together — both reach the direct fast path in `triple.Pipeline` when parallax is off — while the Stream shape sits ~15-20 MB/s below at the same primitive because the incremental session pays per-chunk container and MAC-binding costs. Under production overlays the parallax multiplexer engages on every path and the three shapes converge into a single band.
 
 The residual vs native Go at the top of the band traces to the c-shared / cgo runtime boundary itself: signal handling, scheduler mechanics, and GC work when the main thread is external — not addressable with a Go-side patch.
 
@@ -376,5 +376,5 @@ lands as a follow-up.
 
 Every new binding under `bindings/<lang>/` lands with the same
 env-var surface + canonical config baked into its `run_bench.sh`
-defaults, and a row per shape (Message, Stream pump, Stream one-shot)
+defaults, and a row per shape (Message, Stream, Stream one-shot)
 added to the tables above.
