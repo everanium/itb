@@ -35,12 +35,15 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 | Deniability | ✓ Full (structural) | ✓ Full | ✓ Full (full-capacity MAC) |
 | CCA oracle | No oracle exists | No oracle (silent) | Noise position only (noiseSeed) |
 | noiseSeed config | ✓ Barrier intact | ✓ Barrier intact | ✗ Leaked via CCA |
-| dataSeed config | ✓ Barrier intact | ✓ Barrier intact | ✓ **Independent** (zero CCA leak) |
+| dataSeed config (per-snake) | ✓ Barrier intact | ✓ Barrier intact | ✓ **Independent** (zero CCA leak) |
+| lockSeed config | ✓ Barrier intact | ✓ Barrier intact | ✓ **Independent** (zero CCA leak) |
+| startSeed config (per-snake) | ✓ Barrier intact | ✓ Barrier intact | ✓ **Independent** (zero CCA leak) |
 | Data rotation + XOR | ✓ | ✓ | ✓ (rotation barrier) |
-| Information-theoretic barrier† | ✓ Intact | ✓ Intact | ✓ dataSeed protected |
+| Interlocked Barrier — Part 1 (per-chunk permutation, non-disableable) | ✓ Intact | ✓ Intact | ✓ Intact (lockSeed independent of noiseSeed) |
+| Interlocked Barrier — Part 2 (per-pixel absorption, non-disableable)† | ✓ Intact | ✓ Intact | Partial — noise position leaked; rotation + XOR + CSPRNG residue intact via dataSeed |
 | Brute-force impact of leak | — | — | noiseSeed eliminated¶: P × 2^(2×keyBits) → P × 2^keyBits |
 
-† Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
+† Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer). The information-theoretic barrier under passive observation applies to Part 2 (per-pixel absorption, `P(v | h) = 1/2` from [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)); Part 1's per-chunk mask permutation is a PRF-conditional layer keyed by the lockSeed ([Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space)), and the two parts always run together as the shipped indivisible barrier composition.
 
 ¶ CCA eliminates noise bits (12.5%), but CSPRNG fill bytes remain encrypted in data bit positions by dataSeed — indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
