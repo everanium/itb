@@ -58,10 +58,10 @@ import (
 	"testing"
 )
 
-// tmpRSDir is the shared scratch subdir all related-seed probes below
+// outRSDir is the shared scratch subdir all related-seed probes below
 // emit into. Resolved via redteamOutputDir; see that helper for the
 // default + env-override contract.
-var tmpRSDir = redteamOutputDir("related_seed")
+var outRSDir = redteamOutputDir("related_seed")
 
 // rsKeyComponents is the fixed component count per Seed128 used by the
 // matrix — 1024-bit key = 16 uint64. Matches the archived Phase 2e
@@ -73,16 +73,16 @@ const rsKeyComponents = 16
 // 57M axis-hit records.
 const rsPlaintextBytes = 512 * 1024
 
-// emitJSONRS writes a compact JSON line under tmpRSDir/<name>.json for
+// emitJSONRS writes a compact JSON line under outRSDir/<name>.json for
 // downstream aggregation. Errors are logged, not fatal — the t.Logf
 // line is the primary record; the JSON is a convenience.
 func emitJSONRS(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpRSDir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpRSDir, err)
+	if err := os.MkdirAll(outRSDir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outRSDir, err)
 		return
 	}
-	path := filepath.Join(tmpRSDir, name+".json")
+	path := filepath.Join(outRSDir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)
