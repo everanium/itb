@@ -67,19 +67,19 @@ import (
 	"testing"
 )
 
-// tmpDualNRDir is the shared scratch subdir all dual-nonce probes below
+// outDualNRDir is the shared scratch subdir all dual-nonce probes below
 // emit into. Resolved via redteamOutputDir; see that helper for the
 // default + env-override contract.
-var tmpDualNRDir = redteamOutputDir("nonce_reuse_dualnonce")
+var outDualNRDir = redteamOutputDir("nonce_reuse_dualnonce")
 
 // emitJSONDualNR writes a compact JSON record. Non-fatal on error.
 func emitJSONDualNR(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpDualNRDir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpDualNRDir, err)
+	if err := os.MkdirAll(outDualNRDir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outDualNRDir, err)
 		return
 	}
-	path := filepath.Join(tmpDualNRDir, name+".json")
+	path := filepath.Join(outDualNRDir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)
@@ -587,7 +587,7 @@ func TestRedTeamNonceReuseDualNonceMatrix(t *testing.T) {
 	})
 	// Attach a compact summary row to the log so `go test -v` output is
 	// self-contained without opening the JSON.
-	t.Logf("Wrote %d cells to %s/dualnonce_matrix.json", len(cells), tmpDualNRDir)
+	t.Logf("Wrote %d cells to %s/dualnonce_matrix.json", len(cells), outDualNRDir)
 	_ = fmt.Sprintf // retain import if a future edit drops the Sprintf use
 }
 

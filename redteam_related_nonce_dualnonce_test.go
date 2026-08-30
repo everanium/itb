@@ -53,19 +53,19 @@ import (
 	"testing"
 )
 
-// tmpRNDualDir is the shared scratch subdir for dual-nonce related-nonce
+// outRNDualDir is the shared scratch subdir for dual-nonce related-nonce
 // probes. Resolved via redteamOutputDir; see that helper for the
 // default + env-override contract.
-var tmpRNDualDir = redteamOutputDir("related_nonce_dualnonce")
+var outRNDualDir = redteamOutputDir("related_nonce_dualnonce")
 
 // emitJSONRNDual writes a compact JSON record. Non-fatal on error.
 func emitJSONRNDual(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpRNDualDir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpRNDualDir, err)
+	if err := os.MkdirAll(outRNDualDir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outRNDualDir, err)
 		return
 	}
-	path := filepath.Join(tmpRNDualDir, name+".json")
+	path := filepath.Join(outRNDualDir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)

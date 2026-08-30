@@ -79,10 +79,10 @@ import (
 	"testing"
 )
 
-// tmpNIFDir is the shared scratch subdir all near-identical-fresh probes
+// outNIFDir is the shared scratch subdir all near-identical-fresh probes
 // below emit into. Resolved via redteamOutputDir; see that helper for
 // the default + env-override contract.
-var tmpNIFDir = redteamOutputDir("near_identical_fresh")
+var outNIFDir = redteamOutputDir("near_identical_fresh")
 
 // nifKeyComponents keeps the 1024-bit key width the related-seed /
 // related-nonce / CPA probes settled on so container geometry and
@@ -103,15 +103,15 @@ const nifDefaultN = 80
 const nifBaseSeed uint64 = 0xF1F1F1F1A5A5A5A5
 
 // emitJSONNIF writes a compact JSON record under
-// `tmpNIFDir/<name>.json` for downstream aggregation. Errors are
+// `outNIFDir/<name>.json` for downstream aggregation. Errors are
 // logged, not fatal.
 func emitJSONNIF(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpNIFDir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpNIFDir, err)
+	if err := os.MkdirAll(outNIFDir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outNIFDir, err)
 		return
 	}
-	path := filepath.Join(tmpNIFDir, name+".json")
+	path := filepath.Join(outNIFDir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)
