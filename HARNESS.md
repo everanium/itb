@@ -213,7 +213,24 @@ Methodology is the Axis-C lab style — synthetic `(data, ChainHash-lo)` pairs u
 
 **Conclusion.** At rounds = 1 the integral key-recovery survives the lo-lane truncation untouched; at rounds = 2 only a non-recovering PRF distinguisher survives; at rounds ≥ 4 ChainHash's feedforward neutralises the integral (orders 1–3) and the data-differential entirely. The result is conservatively framed: it is the integral / higher-order integral (orders 1–3), the data-differential, and the no-hook SAT seed-recovery routes that are neutralised at deployment depth, not a proof that no exploitation path exists for so weak a primitive.
 
-### 3.8. Construction-level structural harness — barrier core, primitive-agnostic
+### 3.8. Chosen-constants primitive control — Malicious-SHA-1 collision through ChainHash
+
+[§3.6](#36-trapdoor-primitive-control--bea-1-partition-backdoor-through-chainhash) plugs in a **partition** trapdoor and shows ChainHash's feedforward-depth mechanism dissolves it. [§3.7](#37-reduced-round-primitive-control--2-round-aes-integral-break-through-chainhash) plugs in a **round-reduced** primitive whose textbook integral break is neutralised by the same feedforward mechanism. This control plugs in a primitive whose **round constants have been maliciously chosen to produce collisions** — Malicious-SHA-1 (Albertini, Aumasson, Eichlseder, Mendel, Schläffer, SAC 2014; IACR ePrint 2014/694) — and asks which layer of ChainHash's wrap prevents the trapdoor from projecting through. Under the K constants `SHA1_K_MALICIOUS_EVE = (5A827999, 88E8EA68, 578059DE, 54324A39)` the paper's proof-of-concept shell-script pair (`eve1.sh` / `eve2.sh`, 243 bytes each; the byte-level differential is entirely inside the first 512-bit SHA-1 block, with six of the 28 differing positions falling in the [0, 15] region the wrap's seed-XOR touches) share the digest `96ED59BE 04518A27 C30F17DE 6F0037F9 B3C3257E`.
+
+Methodology is the pre-wire ChainHash layer only — no wire, no interlock, no `Encrypt3x128Cfg`. The observable is direct digest equality / Hamming distance between the two ciphertexts. The wrap is a Python mirror of the two production references (`hashes/blake3.go` `BLAKE3WithKey` for input-XOR keying, `seed128.go` `ChainHash128` for feedforward); the colliding pair is fed as caller data at every wrap variant. Trial count for the random-seed / depth sweeps: N = 64 per cell.
+
+| Stage | Construction | Collision outcome |
+|:------|:-------------|:------------------|
+| Raw primitive | one call to Malicious-SHA-1 with standard SHA-1 IV | **Collision holds** — `sha1_core(eve1) == sha1_core(eve2)` matches the paper's expected digest. Sanity: under standard SHA-1 K the same pair does NOT collide (Hamming 83 / 160), so the trapdoor is specific to the malicious K, not to the input pair. |
+| Invariant test (seed = 0) | `wrap_r1(seed = 0, m)` reduces to `sha1_core(m)` by construction (XOR by zero is identity) | **Collision holds; wrap reduces to raw exactly.** Confirms the wrap does no work beyond input-XOR keying — any absorbance under non-zero seed is attributable to the seed-XOR itself, not to a hidden framing / padding side-effect. |
+| `wrap_r1`, random seed | 16-byte random seed XORed into the first 16 bytes of the caller's data, primitive called on the mixed buffer | **Collision snaps — Hamming distance jumps to ≈ 80 / 160 (n / 2, full-random divergence).** Across N = 64 random-seed trials: 0 / 64 collisions survive; Hamming mean 80.5 (min 68, max 98). The seed-XOR moves both `m1` and `m2` out of the input space the collision was engineered for. |
+| `wrap_r` at r ∈ {2, 4, 8} | feedforward `k = seed[r] ⊕ h_{r-1}` layered on top of input-XOR keying | **Plateau at Hamming ≈ 80 / 160 for every r ≥ 1** (mean 80.1–80.9 across the sweep). Feedforward-depth rounds add no incremental absorbance for this trapdoor class. Distinct from BEA-1's coset-collapse curve where the same feedforward IS the carrying mechanism — collision-brittleness trapdoors snap at r = 1, partition trapdoors degrade with r. |
+
+**Attribution — narrow scope.** ChainHash never exposes raw colliding input to the primitive: input-XOR keying moves it out of the engineered collision space. Two properties in combination — (a) ChainHash does not feed the primitive raw caller data, (b) engineered collisions are brittle to any deterministic input modification. Not a collision-specific defense — the same absorbance would hold for any wrapping that non-trivially modifies the input. The interest here is coverage: partition ([§3.6](#36-trapdoor-primitive-control--bea-1-partition-backdoor-through-chainhash)) is absorbed by feedforward depth; chosen-constants collision is absorbed by input-XOR keying. Two ChainHash mechanisms absorb two different trapdoor classes.
+
+**Conclusion.** The Malicious-SHA-1 collision trapdoor does not project through ChainHash's input-XOR keying: at r = 1 the collision snaps to full-random Hamming distance, and feedforward depth (r ≥ 2) is redundant for this class. The result is conservatively framed: it is the paper's specific chosen-constants collision pair that fails to project, not a proof that no adaptive-attacker collision could be engineered against the wrapped construction. Attribution: ChainHash's input-XOR keying, not its feedforward depth.
+
+### 3.9. Construction-level structural harness — barrier core, primitive-agnostic
 
 §3.1–§3.7 measure the inner primitive through `ChainHash128`. A separate,
 primitive-agnostic harness measures the **48-bit Interlocked Barrier core**
@@ -512,4 +529,16 @@ python3 cms_xor_aes2r.py
 # Word-level guess-and-determine model for the ChainHash composition (autoguess backend).
 python3 gd_chainhash_aes2r.py     # emits relationfile_chainhash_r{1,2}_discard{0,1}.txt into ~/scratch/redteam/gd_chainhash_aes2r/
 # autoguess -i ~/scratch/redteam/gd_chainhash_aes2r/relationfile_chainhash_r1_discard0.txt -s sat -sats cadical195 -mg 12 -ms 20
+```
+
+### 5.9. Chosen-constants collision control (Malicious-SHA-1, §3.8)
+
+The Malicious-SHA-1 core is a clean-room transcription of RFC 3174 with the round constants exposed as a parameter (`sha1_malicious.py`); the modified K set and the colliding shell-script pair are embedded verbatim as bytes literals in `sha1_collide.py` — attribution: Albertini, Aumasson, Eichlseder, Mendel, Schläffer, IACR ePrint 2014/694; Maria Eichlseder's PoC bundle at `malicioussha1.github.io`. The wrap function (`sha1_chainhash.py`) mirrors the two production references cited inline: `hashes/blake3.go` `BLAKE3WithKey` (input-XOR keying) and `seed128.go` `ChainHash128` (feedforward).
+
+```bash
+# Single script — sub-probes A (raw baseline), seed=0 invariant test,
+# B (r=1 random-seed snap), C (r=1/2/4/8 feedforward-depth plateau).
+# JSON output emitted to ~/scratch/redteam/msha1/collision_absorption.json
+# (override via REDTEAM_MSHA1_OUTPUT_DIR); trial count via REDTEAM_MSHA1_TRIALS.
+python3 scripts/redteam/itb/theory/msha1/exp1_snap.py
 ```
