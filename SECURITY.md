@@ -257,6 +257,7 @@ Implemented: Inside (full capacity) — every shipped MAC-authenticated Low-Leve
 
 | Threat | Exploit requires | Practical risk | Mitigation |
 |---|---|---|---|
+| Interlock combinadic unrank index-select timing (DPA/SPA class) | Oscilloscope on CPU die, >10GHz, lab access | Same class as DPA on any cipher | Constant-time VPERMT2Q / VPERMD select over precomputed C(p, k) table, no software side-channel |
 | rotateBits7 shift timing (DPA/SPA class) | Oscilloscope on CPU die, >10GHz, lab access | Same class as DPA on any cipher | Register-only, no software side-channel |
 | Container size metadata | Network observation | Metadata only | Inherent to all ciphers, no crypto advantage |
 | Non-CSPRNG container | Deployer misconfiguration | Degrades barrier | crypto/rand mandatory, non-CSPRNG unsupported |
