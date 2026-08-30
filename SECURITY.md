@@ -53,7 +53,7 @@ Comprehensive security comparison tables for ITB (Information-Theoretic Barrier)
 
 PRF-grade hash functions are required. PRF property guarantees all necessary sub-properties (input sensitivity, chain survival, non-affine mixing, avalanche, non-invertibility) by definition.
 
-PRF weakness decomposes into three cases. **Total inversion** defeats the construction via algorithmic seed recovery (see [Proof 4a Asymmetry note](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). **Occasional/sporadic partial inversion** is absorbed by the architecture: recovered candidates are indistinguishable from the false-positive distribution produced by startPixel isolation, per-pixel 1:1 ambiguity, and byte-splitting under Partial KPA. **Systematic partial inversion** is a real non-absorbed threat — the architecture raises the cost but does not eliminate the attack. No such systematic weakness is currently known to reduce the Full KPA work factor below the Theorem 4a bound.
+PRF weakness decomposes into three cases. **Total inversion** defeats the construction via algorithmic seed recovery (see [Proof 4a Asymmetry note](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). **Occasional/sporadic partial inversion** is absorbed by the architecture: recovered candidates are indistinguishable from the false-positive distribution produced by the Interlocked Barrier's per-chunk mask permutation (Part 1, ≈ 2^70.20 masks per chunk), per-snake startPixel isolation, per-pixel 1:1 ambiguity (Part 2), and byte-splitting under Partial KPA. **Systematic partial inversion** is a real non-absorbed threat — the architecture raises the cost but does not eliminate the attack. No such systematic weakness is currently known to reduce the Full KPA work factor below the Theorem 4a bound.
 
 | # | Requirement | Purpose |
 |---|---|---|
@@ -92,9 +92,12 @@ PRF weakness decomposes into three cases. **Total inversion** defeats the constr
 |---|---|---|---|---|---|
 | Tag encrypted inside | ✓ | ✗ | ✗ | ✗ | ✓ |
 | MAC covers fill | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Information-theoretic barrier† | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Interlocked Barrier — Part 1 (per-chunk permutation) | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Interlocked Barrier — Part 2 (per-pixel absorption)† | ✗ | ✗ | ✗ | ✗ | ✓ |
+| 8-seed isolation (per-chunk / per-pixel / per-snake) | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Oracle-free deniability | ✗ | Partial | Partial | ✗ | ✓ |
 | CCA spatial pattern eliminated | ✗ | — | — | ✓ | ✓ |
+| Nonce reuse behaviour | Confidentiality lost on colliding messages | — | — | Catastrophic — GHASH key H leaked, permanent forgery until key rotation | Plaintext recovery null under lab-forced dual-slot collision (§1 footnote ††; see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)); no key rotation required |
 | Padding oracle | Vulnerable (POODLE, Lucky13) | — | — | N/A (no padding) | N/A (no padding) |
 | Hash requirement | PRF/PRP | PRF | PRF | PRP | PRF |
 | Maturity / standardization | TLS 1.0-1.1 | OTR v3/v4 | Signal Protocol | NIST SP 800-38D | **None** |
