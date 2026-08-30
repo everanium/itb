@@ -103,7 +103,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
 | **SipHash-2-4** | 128 | 2048 | PRF | 275 | 298 | 365 | 388 | 480 | 584 |
 | **ChaCha20** | 256 | 2048 | PRF | 260 | 293 | 347 | 344 | 449 | 559 |
 
-##ARM Graviton 4 16C/16HT
+## ARM Graviton 4 16C/16HT
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
