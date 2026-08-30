@@ -77,7 +77,7 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.5](SCIENCE.md#15-the-48-bit-
 | Brute-force (Grover) | √P × 2^keyBits††† | √P × 2^keyBits††† | √P × 2^(keyBits/2)\*\* | √P × 2^(keyBits/2)\*\* |
 | Map guessing | 2^(62P) | 2^(62P) | 2^(59P) | 2^(59P) |
 | Nonce reuse | Lab-only (not reachable via shipped API); Part 1 lane-scrambles the XOR††; empirical plaintext recovery null | Lab-only; Part 1 lane-scrambles†† → null recovery | Lab-only; Part 1 lane-scrambles†† → null recovery | Lab-only; Part 1 lane-scrambles†† → null recovery |
-| Bit-flipping | Undetected | Detected (MAC) | Detected (MAC) | Detected (MAC) |
+| Bit-flipping | Undetected | Undetected (MAC silently drops, no oracle feedback) | Detected (MAC) | Detected (MAC) |
 | Padding oracle | N/A (no padding) | N/A (no padding) | N/A (no padding) | N/A (no padding) |
 | Quantum structural (Simon, BHT) | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated |
 
