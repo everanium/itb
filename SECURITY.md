@@ -207,9 +207,10 @@ Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in dat
 | Plaintext bits | Zero |
 | XOR mask bits | Zero |
 | Start pixel | Unknown |
+| Interlocked Barrier — Part 1 (per-chunk 48-bit mask permutation) | Zero — lockSeed independent of noiseSeed; per-chunk mask triple stays PRF-opaque (drawn from ≈ 2^70.20 balanced partitions per chunk keyed by lockSeed + interlock_nonce, unobservable without lockSeed) |
 | Key-space reduction | noiseSeed eliminated: P × 2^(2×keyBits) → P × 2^keyBits |
-| Brute-force speedup | Search space halved in exponent (two seeds → one seed) |
-| Grover reduction | √P × 2^keyBits → √P × 2^(keyBits/2) (noiseSeed eliminated from search) |
+| Brute-force speedup | Search space halved in exponent (two seeds → one seed); the barrier's per-chunk mask enumeration (≈ 2^70.20 masks per chunk) stacks on top |
+| Grover reduction | √P × 2^keyBits → √P × 2^(keyBits/2) (noiseSeed eliminated from search); the barrier's per-chunk mask enumeration is not amenable to Grover (no observable anchor to search against) |
 | CSPRNG residue after CCA | Persists: fill bytes in data positions encrypted by dataSeed ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 
 ## 10. Noise-Density Optimality (Why 8/1)
