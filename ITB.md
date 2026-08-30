@@ -305,7 +305,7 @@ The barrier absorbs the hash output through both mechanisms: (1) Part 2's noise 
 
 **Cost.** The barrier is a security/quality architecture, not a throughput optimisation. On x86 with BMI2 (Rocket Lake / Zen 3 and newer) the apply kernel uses three PEXT (forward) / three PDEP (inverse) instructions per chunk with 2–3-chunk ILP; the batched combinadic unrank runs through an AVX-512F ZMM kernel on top-tier hosts and through an AVX2 4-lane YMM kernel (`rankToMaskTripleUnrank48AVX2`) on AVX2-without-AVX-512 hosts (Zen 3, Cascade Lake, AVX2-only cloud VMs). On other platforms a pure-Go scalar path (`softPEXT48` / `softPDEP48`) covers correctness. End-to-end throughput stays at parity-class with the per-pixel pipeline it wraps; the barrier's contribution is architectural, at parity of speed.
 
-Every entrypoint of the `itb.EncryptAuthenticated3x{128,256,512}Cfg` / `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptStreamAuth3xCfg` families routes through the barrier; there is no runtime knob to bypass it. Every shipped `triple` profile inherits the barrier by construction — both the single-primitive shipped entries and the mixed-primitive counterparts.
+Every entrypoint of the `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptAuth3x{128,256,512}Cfg` / `itb.EncryptStream3xCfg` / `itb.EncryptStreamAuth3xCfg` and `Decrypt` families routes through the barrier; there is no runtime knob to bypass it. Every shipped `triple` profile inherits the barrier by construction — both the single-primitive shipped entries and the mixed-primitive counterparts.
 
 ## 13. Quantum Resistance
 
@@ -353,8 +353,14 @@ Together: non-invertibility blocks inversion, and absorption hides collisions. E
 
 See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).
 
-## 16. Custom Primitives at the Low-Level Surface
+## 16. Custom Primitives
 
-ITB has no runtime `hashes.Register()` API. Users plug custom primitives at the Low-Level surface by constructing their own `itb.HashFunc{N}` + `itb.BatchHashFunc{N}` closures and passing them directly to `*Cfg` entrypoints. The `triple` facade does not expose custom-primitive injection — its shipped profiles bind to the shipped registry entries; the mixed-primitive profiles pick a per-slot constellation from the same registry.
+Users plug a custom hash primitive in one of two ways.
 
-For worked examples of Low-Level `Cfg` usage and streaming shapes, see the README's Advanced Low-Level section.
+**Direct closure at the Low-Level surface.** Construct `itb.HashFunc{N}` + `itb.BatchHashFunc{N}` closures and pass them directly to the `*Cfg` entrypoints. This is the most explicit path — the primitive never touches any registry, and every call passes the closure explicitly.
+
+**Registration by name via `hashes.Register`.** The runtime API `hashes.Register(spec hashes.Spec) error` adds a user-supplied primitive to the runtime registry (a mutex-guarded slice separate from the shipped `hashes.Registry`; the FFI iteration surface stays untouched). The registered name resolves through `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` alongside shipped entries. Registration is process-wide, immutable (a second `Register` for the same name returns `hashes.ErrHashExists`), and appended after the shipped Registry in `hashes.AllPrimitives`. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `hashes.MaxNameLen`), `Width` (`W128` / `W256` / `W512`), and exactly one `Make{N}Pair` factory field matching the width. `hashes.Register` is a Go-native API only; bindings are triple-only and do not expose custom-primitive plug.
+
+**Custom primitives in the `triple` facade.** A user-registered primitive is usable through the triple facade via `triple.RegisterProfile`: build a `triple.Profile` whose `InnerHash` (or `MixedHashes` per-slot entries) references the registered name, then register the profile under a new user-chosen name and reference it from `triple.Init` / `triple.Open` like any shipped profile. The shipped profile catalogue itself binds only to shipped registry entries; user profiles pick from any resolvable name (shipped or registered).
+
+For worked examples, see the README's [Advanced — Low-Level `*Cfg` surface](README.md#advanced--low-level-cfg-surface) and [Custom user-supplied primitives](README.md#custom-user-supplied-primitives) sections.
