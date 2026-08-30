@@ -162,8 +162,18 @@ func (c *chaCha20Resettable) ResetCounter(byteOffset int) error {
 	}
 	const blockSize = 64
 	blockOff := uint64(byteOffset / blockSize)
+	// RFC 8439 fixes the ChaCha20 block counter at 32 bits; any
+	// byteOffset at or above 2^38 (~256 GiB per (key, nonce)) implies
+	// blockOff at or above 2^32, which the uint32 cast below would
+	// silently wrap. Reject with the same scoped error the seek-side
+	// NewAt uses so both entry points speak the same language: name
+	// the failure (counter overflow) AND the intact layer (inner ITB
+	// confidentiality unaffected — the outer cipher is a format-
+	// deniability whitener, not the confidentiality carrier) AND the
+	// escape (AES-128-CTR outer cipher uses a 128-bit big-endian
+	// counter and is practically unlimited for random nonces).
 	if blockOff > uint64(^uint32(0)) {
-		return fmt.Errorf("ctr: chacha20 byteOffset %d overflows 32-bit block counter", byteOffset)
+		return fmt.Errorf("ctr: chacha20 counter overflow — byteOffset %d requires block index %d ≥ 2^32 (~256 GiB per (key, nonce)); outer-layer format deniability weakens past this seek point, inner ITB confidentiality unaffected. Choose AES-128-CTR outer cipher for streams above this cap", byteOffset, blockOff)
 	}
 	fresh, err := chacha20.NewUnauthenticatedCipher(c.key, c.nonce)
 	if err != nil {
