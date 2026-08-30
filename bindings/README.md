@@ -1,4 +1,4 @@
-# ITB binding fleet
+# ITB Binding Fleet
 
 Every binding under this directory is a **thin proxy** over the
 same `ITB_Triple_*` FFI surface exposed by the C shared library
