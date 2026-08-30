@@ -1085,8 +1085,7 @@ The complete per-language fleet listing — 34 rows with directory paths, tiers,
 
 ## See also
 
-- [ITB.md](ITB.md) — How the barrier works (accessible explanation).
-- [FEATURES.md](FEATURES.md) — Complete feature list and security properties.
+- [ITB.md](ITB.md) — How the barrier works (accessible explanation) and shipped feature reference.
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
 - [SECURITY.md](SECURITY.md) — Security reference tables.
