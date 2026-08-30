@@ -8,15 +8,15 @@
 
 ## Abstract
 
-ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that achieves key sizes up to 2048 bits through chained hashing of independent key components. The random container creates an information-theoretic barrier between the construction's internal state and the observer, providing known-plaintext resistance under passive observation in the random-container model. PRF-grade hash functions are required. The barrier and PRF are complementary: the random container makes hash output unobservable, and PRF non-invertibility closes the candidate-verification step — neither is sufficient alone. Triple Ouroboros splits the plaintext across three interleaved snakes, and the always-on **Interlocked Barrier** re-maps each 48-bit chunk through a per-chunk PRF-keyed mask triple drawn from a ≈ 2^70.20 space (see [§1.2.1 Interlocked Barrier](#121-interlocked-barrier)). Full KPA resistance is a multi-factor combination under the PRF assumption: PRF non-invertibility, 8-seed isolation, encoding ambiguity, and byte-splitting under Partial KPA. To the author's knowledge, no published symmetric cipher construction combines the random-container barrier, 8-seed isolation, 7^P encoding ambiguity, and per-chunk 2^70.20 mask-space barrier in this way.
+ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that achieves key sizes up to 2048 bits through chained hashing of independent key components. The random container creates an information-theoretic barrier at the noise-absorption layer under passive observation (COA): the hash output is consumed by modifying a random pixel and is not reconstructible from the wire. Under KPA / CPA / CCA the closure is computational and PRF-conditional. PRF-grade hash functions are required. The barrier and PRF are complementary: the random container makes hash output unobservable under COA, and PRF non-invertibility closes the candidate-verification step under active-attack models — neither is sufficient alone. Triple Ouroboros splits the plaintext across three interleaved snakes, and the always-on **Interlocked Barrier** re-maps each 48-bit chunk through a per-chunk PRF-keyed mask triple drawn from a ≈ 2^70.20 space (see [§1.2.1 Interlocked Barrier](#121-interlocked-barrier)). Full KPA resistance is a multi-factor combination under the PRF assumption: PRF non-invertibility, 8-seed isolation, encoding ambiguity, per-chunk mask-triple isolation, and byte-splitting under Partial KPA. To the author's knowledge, no published symmetric cipher construction combines the random-container noise barrier, 8-seed isolation, 7^P encoding ambiguity, and per-chunk 2^70.20 mask-space barrier in this way.
 
 ## Encoding Ambiguity Scale
 
-The barrier's encoding ambiguity grows exponentially with data size. Unlike traditional ciphers where more plaintext provides more constraints for the attacker (reducing uncertainty about the key), ITB inverts this relationship: each additional pixel adds 7 (CCA) or 56 (no CCA) unverifiable candidates, increasing uncertainty about the correct configuration.
+The barrier's encoding ambiguity grows exponentially with data size. The construction exhibits a property orthogonal to Shannon's key-entropy bound: each additional pixel adds 7 (CCA) or 56 (no CCA) unverifiable configuration candidates. The Landauer column below tracks the cost of blind enumeration of the configuration space; it does not measure resistance to structural attacks that do not enumerate.
 
 **MAC + Reveal (worst-case CCA, 7 rotation candidates per pixel, vs 1024-bit key):**
 
-| Data size | P (pixels) | 7^P | vs 2^1024 (exponent ratio) | vs Landauer ~2^306 |
+| Data size | P (pixels) | 7^P | vs 2^1024 (exponent ratio) | vs Landauer enumeration bound ~2^306 |
 |---|---|---|---|---|
 | Min Auth (~2.5 KB) | 400 | 2^1,123 | 1.1× | 3.7× |
 | 8 KB | 1,225 | 2^3,439 | 3.4× | 11× |
@@ -281,7 +281,7 @@ For example, with a 128-bit hash and 1024-bit key (16 components): a single Chai
 
 Together, the three barriers are designed to make MITM harder than brute force at all supported key sizes.
 
-**Quantum (Grover).** Grover complexity depends on the mode. **Core ITB / MAC + Silent Drop:** the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random — independent attack is impossible). startSeed contributes only P startPixel candidates (enumerated as [0, P)), not 2^keyBits. Classical: P × 2^(2×keyBits). Grover: √(P × 2^(2×keyBits)) = √P × 2^keyBits — at 1024 bits (P=400): ~2^1028 iterations, at 2048 bits (P=784): ~2^2053. **MAC + Reveal:** CCA reveals noiseSeed but not startPixel (determined by independent startSeed + nonce, not transmitted). Search: dataSeed (2^keyBits) × P startPixel candidates. Classical: P × 2^keyBits. Grover: √(P × 2^keyBits) = √P × 2^(keyBits/2) — at 1024 bits (P=400): ~2^516 iterations, at 2048 bits (P=784): ~2^1029. Each Grover iteration requires O(P) hash evaluations for full container decryption (where P = pixel count). Even the MAC + Reveal bound (~2^516 at 1024 bits) is computationally infeasible with any foreseeable technology; 2^1024 is far beyond the Landauer thermodynamic limit (~2^306). Note that AES-256 with Grover bound 2^128 is widely considered quantum-resistant for practical purposes.
+**Quantum (Grover).** Grover complexity depends on the mode. **Core ITB / MAC + Silent Drop:** the attacker must jointly search noiseSeed and dataSeed (without dataSeed, noiseSeed output is indistinguishable from random — independent attack is impossible). startSeed contributes only P startPixel candidates (enumerated as [0, P)), not 2^keyBits. Classical: P × 2^(2×keyBits). Grover: √(P × 2^(2×keyBits)) = √P × 2^keyBits — at 1024 bits (P=400): ~2^1028 iterations, at 2048 bits (P=784): ~2^2053. **MAC + Reveal:** CCA reveals noiseSeed but not startPixel (determined by independent startSeed + nonce, not transmitted). Search: dataSeed (2^keyBits) × P startPixel candidates. Classical: P × 2^keyBits. Grover: √(P × 2^keyBits) = √P × 2^(keyBits/2) — at 1024 bits (P=400): ~2^516 iterations, at 2048 bits (P=784): ~2^1029. Each Grover iteration requires O(P) hash evaluations for full container decryption (where P = pixel count). The blind enumeration cost of these Grover bounds exceeds the Landauer bound on irreversible enumeration (~2^306); this scopes to enumeration cost, not to resistance against structural attacks that do not enumerate. Note that AES-256 with Grover bound 2^128 is widely considered quantum-resistant for practical purposes.
 
 The oracle required by Grover is degraded under ITB's oracle-free design: no checksums, no headers, no magic bytes. The null terminator is encrypted and invisible without the correct seed.
 
@@ -581,7 +581,7 @@ The noise bits are not what blocks the analyses. The analyses are blocked by the
 | Seed brute-force (classical) | ~2^2057 | ~2^2058 | ~2^2061 |
 | Seed brute-force (Grover) | ~2^1028 | ~2^1029 | ~2^1030 |
 
-At the unified minimum container onward, configuration guessing exceeds seed brute-force — and seed brute-force itself is already physically impossible (2^2058 >> Landauer ~2^306). Both strategies require a verification oracle (MAC insider knowledge or equivalent); without oracle (Core ITB), neither can verify candidates.
+At the unified minimum container onward, configuration guessing exceeds seed brute-force — and the blind enumeration cost of seed brute-force (2^2058 at 1024-bit) exceeds the Landauer bound on irreversible enumeration (~2^306), which bounds enumeration cost, not structural attack resistance. Both strategies require a verification oracle (MAC insider knowledge or equivalent); without oracle (Core ITB), neither can verify candidates.
 
 ### 2.10 Hash Function Requirements Analysis
 
@@ -608,19 +608,19 @@ ITB requires PRF-grade hash functions. The PRF property guarantees all necessary
 
 **Key space utilization.** A single ChainHash128 call with 128-bit output discriminates 2^128 of 2^1024 seeds. The unified minimum container makes 400 independent calls (20×20 pixels) with different data inputs. Collisions for one input do not persist across inputs (XOR-of-sums is not translation-invariant). Collective constraint: 400 × 64 = 25600 bits >> 1024 key bits. The full key space is utilized.
 
-**Conclusion.** Effective brute-force depends on the mode. **MAC + Reveal** (dataSeed + startPixel enumeration): ~2^1033 classical, ~2^516 Grover (P=400) — both far beyond Landauer (~2^306). **Core ITB / MAC + Silent Drop** (joint noiseSeed+dataSeed, startPixel enumerated): P × 2^(2×keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys (P=400): ~2^2057 classical, ~2^1028 Grover. The information-theoretic barrier (2^3200 for 400 pixels) exceeds the key space under the random-container model.
+**Conclusion.** Effective brute-force depends on the mode. **MAC + Reveal** (dataSeed + startPixel enumeration): ~2^1033 classical, ~2^516 Grover (P=400) — both exceed the Landauer bound on irreversible enumeration cost (~2^306); this scopes to enumeration cost, not structural attack resistance. **Core ITB / MAC + Silent Drop** (joint noiseSeed+dataSeed, startPixel enumerated): P × 2^(2×keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys (P=400): ~2^2057 classical, ~2^1028 Grover. The noise-absorption barrier (2^3200 for 400 pixels) exceeds the key space under the random-container model.
 
 The 8-seed architecture gives dataSeed and lockSeed zero side-channel exposure (register-only operations, pixel-independent chunk keying). PRF properties apply universally to every seed, ensuring protection under all threat models including CCA, local CCA simulation, and cache side-channel combined attacks.
 
 ### 2.11 Quantum Resistance Analysis
 
-ITB's random-container architecture may provide structural resistance to certain quantum attacks beyond the standard Grover bound. This is a conjectured consequence of the information-theoretic barrier and MAC-Inside-Encrypt design — not quantum-specific hardening — and has not been independently verified. AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound).
+ITB's noise-absorption layer under passive observation (COA) is computation-model-independent: a quantum computer cannot extract information absent from the observation. This scoping is essential — under active seed-recovery (Full KPA / MAC + Reveal) the closure is computational and admits Grover speedup on the seed-space brute-force; the layer-independent property does not extend to active-attack models. AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound).
 
-#### 2.11.1 Barrier Property Under the Random-Container Model
+#### 2.11.1 Barrier Property Under the Random-Container Model (COA layer only)
 
-The core security property — every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d) = v) for random container — is a statement from probability theory. Provided the container is generated from a source indistinguishable from true uniform randomness, it holds regardless of computational model: classical, quantum, or any future model. A quantum computer cannot extract information that does not exist in the observation. The original container pixels (crypto/rand) are never transmitted and cannot be recovered by any computation. However, whether this property translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
+The core noise-absorption property — every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d) = v) for a random container — is a statement from probability theory that holds under passive observation (COA). Provided the container is generated from a source indistinguishable from true uniform randomness, it holds regardless of computational model: classical, quantum, or any future model. A quantum computer cannot extract information that does not exist in the observation. The original container pixels (crypto/rand) are never transmitted and cannot be recovered by any computation. This information-theoretic property scopes to the noise-absorption layer under passive observation; under KPA / CPA / CCA / active seed-recovery the closure is computational and PRF-conditional. Whether this layered architecture translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
 
-Under the random-container model, this is an information-theoretic property rather than a computational one. AES-CTR and ChaCha20 achieve quantum resistance through the computational strength of their underlying primitives — well-established constructions with decades of cryptanalysis confirming their robustness. ITB explores an alternative approach: interposing a random container between the internal state and the observer, which in principle limits the applicability of quantum structural analysis at the information level. This architectural difference has not been independently verified against quantum attacks.
+AES-CTR and ChaCha20 achieve quantum resistance through the computational strength of their underlying primitives — well-established constructions with decades of cryptanalysis confirming their robustness. ITB layers a noise-absorption barrier atop a PRF-based construction: the barrier's IT property holds under COA, and active-attack closure remains PRF-conditional like traditional ciphers. This architectural layering has not been independently verified against quantum attacks.
 
 #### 2.11.2 Quantum Algorithm Applicability
 
@@ -655,7 +655,7 @@ Each oracle query requires O(P) hash evaluations (P = pixel count) for full decr
 | ChaCha20 | Well-studied PRF; no known quantum structural attacks | Efficient (single block verify) | 2^128 Grover; widely deployed |
 | ITB | Random container limits structural analysis (not independently verified) | Expensive (full decryption) or absent (no MAC) | IT barrier (conjectured) + computational |
 
-**Summary.** ITB's architecture provides two potential layers of quantum resistance: (1) the random container limits the applicability of quantum structural algorithms by making the construction's internal state unobservable under the random-container model (this property has not been independently verified against quantum attacks), and (2) Grover brute-force remains the primary quantum attack vector, degraded by expensive or absent oracle. At 1024-bit key with the unified minimum container (P=400): Core/Silent Drop ~2^2057 classical, ~2^1028 Grover; MAC + Reveal ~2^1033 classical, ~2^516 Grover. Both are beyond any foreseeable quantum capability. Note that AES-256 and ChaCha20 with their 2^128 Grover bound are widely considered quantum-resistant for practical purposes.
+**Summary.** ITB's architecture layers two properties: (1) under passive observation (COA) the noise-absorption layer is computation-model-independent — a quantum computer cannot extract information absent from the observation (has not been independently verified against quantum attacks); (2) under active seed-recovery Grover brute-force applies on the seed-space, degraded by expensive or absent oracle. At 1024-bit key with the unified minimum container (P=400): Core/Silent Drop ~2^2057 classical, ~2^1028 Grover; MAC + Reveal ~2^1033 classical, ~2^516 Grover. The blind enumeration cost of these Grover bounds exceeds the Landauer bound on irreversible enumeration; this scopes to enumeration cost, not to structural attack resistance. AES-256 and ChaCha20 with their 2^128 Grover bound are widely considered quantum-resistant for practical purposes.
 
 #### 2.11.5 Q1 vs Q2 Quantum Oracle Models
 
@@ -951,7 +951,7 @@ The 22400 data bits are visible but remain encrypted: each is XOR'd with an inde
 
 **Brute-force optimization.** The attacker can use the 1200-bit noise position map as a fast candidate rejection test: compute candidate noise positions from noiseSeed → compare with leaked map → reject mismatches. Wrong noiseSeed values rejected with probability 1 − 2^(−1200). However, the search space remains P × 2^keyBits for dataSeed + startPixel enumeration — the rejection test is cheaper per candidate but does not reduce the number of candidates. Grover complexity remains √P × 2^(keyBits/2).
 
-**Conclusion.** The CCA noise map exposes which 3200 of 25600 bits are noise and which 22400 are encrypted data — revealing the complete noiseSeed configuration (1200 bits). Due to 8-seed isolation, this provides zero information about dataSeed, lockSeed, or the per-snake startSeeds. The per-bit XOR encryption (dataSeed) and unknown start pixel (startSeed) are unaffected. Crucially, the 22400 "data" bits include not only encrypted plaintext but also encrypted CSPRNG fill — both processed identically by dataSeed and indistinguishable to the attacker ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)). The attacker expends 25600 detectable queries to eliminate noiseSeed from brute-force (P × 2^(2×keyBits) → P × 2^keyBits), while the remaining security far exceeds the Landauer limit. For comparison, the padding oracle in TLS 1.0's MAC-then-Encrypt composition with AES-CBC was exploitable to recover full plaintext (POODLE, Lucky13), though this was a protocol-level vulnerability addressed in subsequent TLS versions.
+**Conclusion.** The CCA noise map exposes which 3200 of 25600 bits are noise and which 22400 are encrypted data — revealing the complete noiseSeed configuration (1200 bits). Due to 8-seed isolation, this provides zero information about dataSeed, lockSeed, or the per-snake startSeeds. The per-bit XOR encryption (dataSeed) and unknown start pixel (startSeed) are unaffected. Crucially, the 22400 "data" bits include not only encrypted plaintext but also encrypted CSPRNG fill — both processed identically by dataSeed and indistinguishable to the attacker ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)). The attacker expends 25600 detectable queries to eliminate noiseSeed from brute-force (P × 2^(2×keyBits) → P × 2^keyBits), and the remaining blind enumeration cost exceeds the Landauer bound on irreversible enumeration (~2^306); this bounds enumeration cost, not structural attack resistance. For comparison, the padding oracle in TLS 1.0's MAC-then-Encrypt composition with AES-CBC was exploitable to recover full plaintext (POODLE, Lucky13), though this was a protocol-level vulnerability addressed in subsequent TLS versions.
 
 ### 4.3 Structural Upper Bound on CCA Leak
 
@@ -997,7 +997,7 @@ A natural question: can the MAC cover the entire container including noise bits,
 | Inside container (full capacity) | No | ✓ Preserved | Bit-plane only |
 | Outside container (header) | Yes | ✗ Broken | None |
 
-The library's `EncryptAuthenticated3xCfg` uses MAC-Inside over the full capacity (COBS + null + fill). This is the optimal trade-off: deniability preserved, CCA leak limited to bit-plane ([Sections 4.2–4.3](#42-quantitative-cca-analysis-bit-plane-leak-impact)), and no circular dependency. The bit-plane leak (12.5% of bits classified as noise) reveals no plaintext, no XOR masks, no start pixel — but eliminates noiseSeed from brute-force: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining security (P × 2^keyBits ≈ 2^1033 at 1024-bit, P=400) far exceeds the Landauer limit (~2^306).
+The library's `EncryptAuthenticated3xCfg` uses MAC-Inside over the full capacity (COBS + null + fill). This is the optimal trade-off: deniability preserved, CCA leak limited to bit-plane ([Sections 4.2–4.3](#42-quantitative-cca-analysis-bit-plane-leak-impact)), and no circular dependency. The bit-plane leak (12.5% of bits classified as noise) reveals no plaintext, no XOR masks, no start pixel — but eliminates noiseSeed from brute-force: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining blind enumeration cost (P × 2^keyBits ≈ 2^1033 at 1024-bit, P=400) exceeds the Landauer bound on irreversible enumeration (~2^306); this bounds enumeration cost, not structural attack resistance.
 
 ### 4.5 Structural Barrier Invariant Under CCA
 
@@ -1043,9 +1043,9 @@ The CCA leak percentage (4.8%) is a structural property of the RGBWYOPA 8/1 form
 - Zero start pixel information (data-to-pixel mapping unknown)
 - Key-space reduction: noiseSeed eliminated — classical P × 2^(2×keyBits) → P × 2^keyBits, Grover √P × 2^keyBits → √P × 2^(keyBits/2) (two seeds → one seed)
 
-The remaining security after CCA (P × 2^keyBits ≈ 2^1033 at 1024-bit, P=400) far exceeds the Landauer limit (~2^306).
+The remaining blind enumeration cost after CCA (P × 2^keyBits ≈ 2^1033 at 1024-bit, P=400) exceeds the Landauer bound on irreversible enumeration (~2^306); this bounds enumeration cost, not structural attack resistance.
 
-After CCA noise removal, CSPRNG fill bytes remain in the data bit positions — the information-theoretic barrier continues to operate within the data channel. The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill, as both are processed identically by dataSeed. This CSPRNG residue is guaranteed by the `side += barrierFill` container construction (`*itb.Config{BarrierFill: N}`; the compile-in default is `itb.DefaultBarrierFill`; see [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+After CCA noise removal, CSPRNG fill bytes remain in the data bit positions — the CSPRNG-residue barrier layer continues to operate within the data channel. The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill, as both are processed identically by dataSeed. This CSPRNG residue is guaranteed by the `side += barrierFill` container construction (`*itb.Config{BarrierFill: N}`; the compile-in default is `itb.DefaultBarrierFill`; see [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
 
 The 4.8% leak is the structural cost of noise position range {0-7} under CCA with MAC-reveal. This range was chosen to eliminate the FORMAT+KPA attack surface: with noise restricted to {0,1}, bits 2-7 are deterministically data from the public format, giving an attacker 86% of XOR config under KPA without any oracle. With {0-7}, no bit position is deterministically data — FORMAT knowledge provides 0% XOR config.
 
@@ -1064,16 +1064,16 @@ With N noise bits per channel (8 − N data bits), selecting N positions from 8 
 
 **Barrier strength (1024-bit key):**
 
-| Format | MinPixels | Min side | Barrier | vs Landauer (2^306) |
+| Format | MinPixels | Min side | Barrier | Blind-enumeration exponent vs Landauer (2^306) |
 |---|---|---|---|---|
 | 8/1 (ITB) | 365 → 400 | 20×20 | 2^3200 | 10.5× beyond |
 | 6/2 | 171 → 196 | 14×14 | 2^3136 | 10.2× beyond |
 | 5/3 | 205 → 225 | 15×15 | 2^5400 | 17.6× beyond |
 | 4/4 | 256 → 256 | 16×16 | 2^8192 | 26.8× beyond |
 
-Note: For hypothetical formats 6/2, 5/3, 4/4, MinPixels = ceil(keyBits / dataBitsPerChannel). For 8/1 (ITB), `MinPixels` is unified with `MinPixelsAuth` = ceil(keyBits / log₂(7)). Ratios are of exponents (e.g. 3200/306 = 10.5), not of actual values.
+Note: For hypothetical formats 6/2, 5/3, 4/4, MinPixels = ceil(keyBits / dataBitsPerChannel). For 8/1 (ITB), `MinPixels` is unified with `MinPixelsAuth` = ceil(keyBits / log₂(7)). The Landauer column tracks the exponent of blind-enumeration cost over the noise-barrier space (Landauer bounds enumeration, not structural attack resistance); ratios are of exponents (e.g. 3200/306 = 10.5), not of actual values.
 
-All formats produce barriers far beyond the Landauer limit. Increasing noise strengthens the barrier but with diminishing returns — all are already physically unreachable.
+All formats produce blind-enumeration bounds above the Landauer limit. Increasing noise strengthens the enumeration bound with diminishing returns — all are already physically beyond blind enumeration; structural attacks are handled by the PRF-conditional multi-factor defense of Proof 4a.
 
 **Why 8/1 is optimal.** The format simultaneously minimizes three metrics:
 
@@ -1081,7 +1081,7 @@ All formats produce barriers far beyond the Landauer limit. Increasing noise str
 
 2. **Overhead: 1.14×** — the most storage-efficient format. Each additional noise bit per channel costs 7 data bits per pixel (one per channel), increasing overhead from 1.14× to 1.33×, 1.60×, 2.00×.
 
-3. **Barrier: 2^3200** — already 10.5× beyond the Landauer limit (~2^306). Further increase provides no practical security gain while degrading efficiency and increasing CCA leak.
+3. **Barrier: 2^3200** — blind enumeration cost already 10.5× beyond the Landauer bound (~2^306); further increase provides no practical gain on the enumeration axis (Landauer scopes to enumeration, not structural attack resistance) while degrading efficiency and increasing CCA leak.
 
 The 8/1 format with noise range {0-7} sits at the Pareto frontier among the analyzed configurations. The 4.8% CCA leak is the cost of eliminating the FORMAT+KPA attack surface ([Section 4.7](#47-noise-position-range-paradox)), the 1.14× overhead is the minimum achievable with any noise at all, and the barrier exceeds physical limits by a comfortable margin.
 
@@ -1100,7 +1100,7 @@ The 8/1 format with noise range {0-7} sits at the Pareto frontier among the anal
 | {0, 1} | 86% (bits 2-7 public) | 1.7% (1/60) | **Seed recoverable without CCA** |
 | **{0-7} (ITB)** | **0%** | **4.8%** | **4.8% under CCA only** |
 
-The CCA leak increases from 1.7% to 4.8%, but the FORMAT+KPA attack is completely eliminated. This is a better trade-off: the 4.8% CCA leak eliminates noiseSeed from brute-force but remaining security far exceeds Landauer ([Sections 4.2–4.3](#42-quantitative-cca-analysis-bit-plane-leak-impact)), while the 86% FORMAT+KPA leak was exploitable with invertible hash functions.
+The CCA leak increases from 1.7% to 4.8%, but the FORMAT+KPA attack is completely eliminated. This is a better trade-off: the 4.8% CCA leak eliminates noiseSeed from brute-force and the remaining blind enumeration cost exceeds the Landauer bound ([Sections 4.2–4.3](#42-quantitative-cca-analysis-bit-plane-leak-impact)) — this scopes to enumeration cost, not to structural attack resistance — while the 86% FORMAT+KPA leak was exploitable with invertible hash functions.
 
 ## 5. Formal Definitions
 

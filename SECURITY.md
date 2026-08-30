@@ -185,10 +185,12 @@ Every entry point applies the CCA-resistant `MinPixels` floor uniformly, so the 
 |---|---|
 | MinPixels | 365 → 400 (20×20) |
 | Noise barrier | 2^3200 |
-| Landauer limit | ~2^306 |
-| Beyond Landauer | 10.5× (3200/306) |
+| Landauer bound (blind enumeration) | ~2^306 |
+| Blind-enumeration exponent vs Landauer | 10.5× (3200/306) |
 | Config map space | 2^24800 |
 | Key space | 2^1024 |
+
+The Landauer row bounds the cost of blind enumeration of the noise-barrier space; it does not bound structural attacks that do not enumerate.
 
 Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)); the noise-barrier headline is stated at the unified `MinPixels` floor.
 
@@ -213,7 +215,7 @@ Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in dat
 | 5/3 | 40 | 24 | 1.60× | 12.2% | 2^5400 |
 | 4/4 | 32 | 32 | 2.00× | 17.1% | 2^8192 |
 
-8/1 is Pareto-optimal among the analyzed noise-density configurations. The Barrier column for 8/1 is stated at the unified `MinPixels = 400` floor from §9; the other rows carry each format's own `data_bits × MinPixels(format)` for the illustrative comparison. All barriers exceed the Landauer limit.
+8/1 is Pareto-optimal among the analyzed noise-density configurations. The Barrier column for 8/1 is stated at the unified `MinPixels = 400` floor from §9; the other rows carry each format's own `data_bits × MinPixels(format)` for the illustrative comparison. All noise-barrier exponents place blind enumeration above the Landauer bound; that scopes to enumeration cost, not to structural attack resistance.
 
 ## 11. Effective Key Size by Hash Width
 
@@ -327,7 +329,7 @@ Grover oracle queries have the same O(P) per-candidate cost — ChainHash rounds
 
 ## 16. Quantum Resistance (Conjectured)
 
-The information-theoretic barrier is computation-model-independent: provided the container is generated from a source indistinguishable from true uniform randomness, every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d)=v), regardless of classical, quantum, or any future computational model. A quantum computer cannot extract information that does not exist in the observation. However, whether this property translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
+The noise-absorption layer under passive observation (COA) is computation-model-independent: provided the container is generated from a source indistinguishable from true uniform randomness, every observed byte value is compatible with every possible hash output (∀v, ∀h : ∃c : embed(c,h,d)=v), regardless of classical, quantum, or any future computational model. A quantum computer cannot extract information that does not exist in the observation. This property scopes to the noise-absorption layer under passive observation; under active seed-recovery (KPA / CPA / CCA) the closure is computational and admits Grover speedup on the seed-space brute-force, per the bounds below. Whether this layered architecture translates into practical quantum resistance across all attack scenarios has not been formally proven or independently verified.
 
 | Quantum Algorithm | AES-CTR / ChaCha20 | ITB |
 |---|---|---|
@@ -339,7 +341,7 @@ The information-theoretic barrier is computation-model-independent: provided the
 
 **Q1 vs Q2 models.** In the Q2 model (quantum superposition queries to oracle), constructions such as Luby-Rackoff, Even-Mansour, and Keyed Sum of Permutations become vulnerable. ITB's MAC oracle is inherently classical — it accepts a concrete container over a network and returns accept/reject. Superposition queries are physically impossible. Core ITB and MAC + Silent Drop have no external oracle (if the attacker has insider knowledge of MAC presence, local verification is possible — see ‡‡). This means the Q2 model is inapplicable by design, not by cryptographic countermeasure.
 
-The fundamental difference between ITB and traditional ciphers under quantum attack: AES and ChaCha20 rely on **computational hardness** — their security degrades with more computational power (Grover: √ speedup). ITB's barrier relies on **information absence** — no computation (classical or quantum) helps when the information is not in the observation. This is an information-theoretic property, not a computational assumption.
+The fundamental difference between ITB's noise-absorption layer (under COA) and traditional ciphers under quantum attack: AES and ChaCha20 rely on **computational hardness** across every attack model — their security degrades with more computational power (Grover: √ speedup). ITB's noise-absorption barrier under passive observation relies on **information absence** — no computation (classical or quantum) helps when the information is not in the observation; this is an information-theoretic property scoped to the COA layer, not a construction-wide claim. Under active seed-recovery ITB reverts to computational hardness like AES / ChaCha20.
 
 AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis. See also [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) for why KPA candidates do not break the barrier.
 
