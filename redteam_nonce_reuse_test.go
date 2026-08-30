@@ -49,21 +49,21 @@ import (
 	"testing"
 )
 
-// tmpNRDir is the shared scratch subdir all nonce-reuse probes below
+// outNRDir is the shared scratch subdir all nonce-reuse probes below
 // emit into. Resolved once at package init via redteamOutputDir; see
 // that helper for the default + env-override contract.
-var tmpNRDir = redteamOutputDir("nonce_reuse")
+var outNRDir = redteamOutputDir("nonce_reuse")
 
-// emitJSONNR writes a compact JSON line under tmpNRDir/<name>.json for
+// emitJSONNR writes a compact JSON line under outNRDir/<name>.json for
 // downstream aggregation. Errors are logged, not fatal — the t.Logf line
 // is the primary record; the JSON is a convenience.
 func emitJSONNR(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpNRDir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpNRDir, err)
+	if err := os.MkdirAll(outNRDir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outNRDir, err)
 		return
 	}
-	path := filepath.Join(tmpNRDir, name+".json")
+	path := filepath.Join(outNRDir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)
@@ -1769,7 +1769,7 @@ func TestRedTeamNonceReuseSummaryDigest(t *testing.T) {
 	}
 	present := 0
 	for _, name := range entries {
-		p := filepath.Join(tmpNRDir, name+".json")
+		p := filepath.Join(outNRDir, name+".json")
 		if _, err := os.Stat(p); err == nil {
 			present++
 		}

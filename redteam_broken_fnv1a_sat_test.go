@@ -56,19 +56,19 @@ import (
 	"testing"
 )
 
-// tmpFNVDir is the shared scratch subdir for FNV-1a SAT probes below.
+// outFNVDir is the shared scratch subdir for FNV-1a SAT probes below.
 // Resolved via redteamOutputDir; see that helper for the default +
 // env-override contract.
-var tmpFNVDir = redteamOutputDir("fnv1a_sat")
+var outFNVDir = redteamOutputDir("fnv1a_sat")
 
-// emitJSONFNV writes a compact JSON line under tmpFNVDir/<name>.json.
+// emitJSONFNV writes a compact JSON line under outFNVDir/<name>.json.
 func emitJSONFNV(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpFNVDir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpFNVDir, err)
+	if err := os.MkdirAll(outFNVDir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outFNVDir, err)
 		return
 	}
-	path := filepath.Join(tmpFNVDir, name+".json")
+	path := filepath.Join(outFNVDir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)

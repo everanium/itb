@@ -70,10 +70,10 @@ import (
 	"github.com/zeebo/blake3"
 )
 
-// tmpCPADir is the shared scratch subdir all CPA probes below emit
+// outCPADir is the shared scratch subdir all CPA probes below emit
 // into. Resolved via redteamOutputDir; see that helper for the default
 // + env-override contract.
-var tmpCPADir = redteamOutputDir("cpa_broken")
+var outCPADir = redteamOutputDir("cpa_broken")
 
 // cpaKeyComponents keeps the 1024-bit key width the related-seed /
 // related-nonce probes settled on so container geometry stays
@@ -96,15 +96,15 @@ const cpaBaseSeed uint64 = 0xC1A0F0F0C1A0F0F0
 // with ≥ 500 samples per bin on a 512-byte plaintext (body ≈ 1 KiB).
 const cpaDefaultN = 2000
 
-// emitJSONCPA writes a compact JSON record under `tmpCPADir/<name>.json`
+// emitJSONCPA writes a compact JSON record under `outCPADir/<name>.json`
 // for downstream aggregation. Errors are logged, not fatal.
 func emitJSONCPA(t *testing.T, name string, v any) {
 	t.Helper()
-	if err := os.MkdirAll(tmpCPADir, 0o755); err != nil {
-		t.Logf("[emit] mkdir %s: %v", tmpCPADir, err)
+	if err := os.MkdirAll(outCPADir, 0o755); err != nil {
+		t.Logf("[emit] mkdir %s: %v", outCPADir, err)
 		return
 	}
-	path := filepath.Join(tmpCPADir, name+".json")
+	path := filepath.Join(outCPADir, name+".json")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Logf("[emit] create %s: %v", path, err)
