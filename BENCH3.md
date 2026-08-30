@@ -6,11 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Results below were collected at `ITB_NONCE_BITS=512` (the v0.3.0 secure default) with `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` capping the Go runtime heap so numbers stay stable across the 64 MB rows and are directly comparable with the binding-side benchmark harness under the same caps. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written AVX-512 chain-absorb ASM kernels (each primitive family at its natural active register width) at the per-pixel hash hot path on x86_64 hosts with AVX-512 SIMD support; AVX2-without-AVX-512 hosts (Zen 3, Cascade Lake, AVX2-only cloud VMs) route to AVX2 4-lane chain-absorb kernels for the BLAKE family / ChaCha20 / SipHash and to XMM AES-NI 4-lane batched chain-absorb kernels for Areion-SoEM and AES-CMAC. The AArch64 production path (AWS Graviton 2+ / Apple M1+ / Neoverse N1+/V1+/V2+) uses ARM Crypto Extension `AESE`/`AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 primitives and the upstream library NEON / ARM Crypto Extension paths for the AES-CMAC / BLAKE / ChaCha20 / SipHash family (`jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE / ChaCha20 family, `dchest/siphash` portable Go for SipHash-2-4). The C ABI and Python FFI stacks populate the batched arm automatically.
-
-The Interlocked Barrier overlay derives a fresh PRF-keyed 48-bit bit-permutation mask per chunk (drawn from ≈ 2^70.20 mask space via one PRF evaluation per chunk group — batched four sequential group indices per call through each family's 13-byte fill kernel on AVX-512 and AVX2 hosts — BMI2 PEXT / PDEP hardware path on x86, pure-Go fallback elsewhere; the batched combinadic unrank runs through the AVX-512F kernel on top-tier silicon and through an AVX2 4-lane YMM kernel on AVX2-without-AVX-512 silicon), so per-byte primitive call rate is substantially higher than a permutation-free construction and the hash hot path is throughput-bound. AMD EPYC 9655P closes this gap on every primitive — Zen 5's 192 HT plus full-width 512-bit ALU plus absent AVX-512 frequency throttle absorb the higher call rate better than Rocket Lake's narrower issue width. AArch64 hosts run through the pure-Go path; a NEON / SVE2 kernel for the Interlocked Barrier is not currently shipped.
-
-The CGO per-pixel encoder additionally dispatches through five runtime-selected tiers: Tier A (AVX-512F+BW+VL + GFNI + VBMI, 8-pixel ZMM batch — Ice Lake+ / Zen 4+), Tier A′ (AVX-512F+BW+VL without GFNI / VBMI, 8-pixel ZMM batch — Cascade Lake / Cooper Lake), Tier B (AVX2 + GFNI, 4-pixel YMM batch), Tier B′ (AVX2 only, 4-pixel YMM batch — Zen 3 / Haswell class), and Tier C (portable scalar C). Feature-mask dispatch lets a Cascade Lake host complete a batch end-to-end as A′ + B′ + C when the 8-pixel tail leaves 4–7 leftovers. Isolated-kernel measurements show the AES-NI + AVX2 mid-tier arms lifting throughput on GFNI-less AVX-512 hosts (Cascade Lake) and on AVX2-only hosts (Zen 3, cloud VMs) several-fold over the previous scalar fallback; the whole-pipeline row tables below are the Rocket Lake / Zen 5 / Graviton 4 reference-host figures. A fleet re-measurement that captures the mid-tier uplift on Cascade Lake / Zen 3 in whole-pipeline throughput is queued as a follow-up mini-cycle.
+Results below were collected at `ITB_NONCE_BITS=512` with `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` capping the Go runtime heap. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written AVX-512 / AVX2 chain-absorb ASM kernels (each primitive family at its natural active register width).
 
 Reproduction:
 
@@ -19,13 +15,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
   go test -bench='BenchmarkExtTriple.*_(1MB|16MB|64MB)$' -run='^$' -benchtime=5s -count=1
 ```
 
-Build-tag opt-outs that govern hash-kernel selection for hosts where the AVX-512+VL chain-absorb kernels are not engaged:
-
-* `-tags=noitbasm` — disables only the chain-absorb asm; the per-pixel hash falls into `process_cgo`'s nil-`BatchHash` branch and runs 4 single-call invocations through the upstream asm directly. Useful on hosts without AVX-512+VL where the 4-lane wrapper would be dead weight; the encrypt path runs 4× the single arm via upstream asm.
-
-## v0.3.0 benchmarks (Intel i7-11700K, 2026-08-29)
-
-Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Linux kernel 7.1.9, Go 1.26.5, VMware CGO mode. Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` so allocation churn on the 64 MB rows does not artefact-drop throughput below the 16 MB rows. The 1 MB column is dominated by small-payload GC-cycle amortisation and carries measurable noise across reruns; the 16 MB and 64 MB columns are stable and are the primary reference points for cross-run comparison.
+## Intel Core i7-11700K 8C/16HT
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -69,9 +59,7 @@ Measured on an Intel Core i7-11700K (Rocket Lake, 16 hardware threads), Arch Lin
 | **SipHash-2-4** | 128 | 2048 | PRF | 67 | 85 | 91 | 91 | 96 | 101 |
 | **ChaCha20** | 256 | 2048 | PRF | 58 | 81 | 81 | 85 | 90 | 92 |
 
-## v0.3.0 benchmarks (AMD EPYC 9655P 96-Core, 2026-08-29)
-
-Measured on an AMD EPYC 9655P (Zen 5, 96 cores / 192 hardware threads, single NUMA node — no CPU affinity pinning applied), Linux, Go 1.27. Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20`. Observed CPU utilisation during the run: ~2000-2500% on encrypt (~20-25 cores active), ~5000-6000% on decrypt (~50-60 cores). The 96-core silicon is not saturated by three-snake parallelism at 16 / 64 MB — throughput scales into cache + memory bandwidth rather than into additional cores, and small-payload rows carry more Go-runtime setup than the 16-core i7-11700K where a smaller pool warms up faster.
+## AMD EPYC 9655P 96C/192HT
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -115,13 +103,7 @@ Measured on an AMD EPYC 9655P (Zen 5, 96 cores / 192 hardware threads, single NU
 | **SipHash-2-4** | 128 | 2048 | PRF | 275 | 298 | 365 | 388 | 480 | 584 |
 | **ChaCha20** | 256 | 2048 | PRF | 260 | 293 | 347 | 344 | 449 | 559 |
 
-**Zen 5 performance profile.** At 512-bit width Decrypt 64 MB Areion-SoEM-512 leads at 1095 MB/s and Areion-SoEM-256 follows at 1078 MB/s (Zen 5's full-width 512-bit ALU + absent AVX-512 frequency throttle absorb the higher per-byte primitive call rate that Rocket Lake pays); AES-CMAC hits 1031 MB/s at the same point. BLAKE family sustains 787-919 MB/s Decrypt 64 MB 512-bit. Every primitive across every row exceeds 250 MB/s Decrypt, and the whole fleet exceeds 780 MB/s at 64 MB Decrypt 512-bit width — silicon is bandwidth-bound rather than compute-bound at that point. Small-payload 1 MB rows carry visible Go-runtime warmup cost on the 192-thread machine and are not directly comparable to the 16-thread i7-11700K's 1 MB column.
-
-## v0.3.0 benchmarks (AWS Graviton 4 c8g.4xlarge, 2026-08-26)
-
-Measured on an AWS Graviton 4 c8g.4xlarge (Neoverse V2, 16 vCPU, ARM64 aarch64), Ubuntu 26.04 LTS, kernel 7.0.0-1011-aws, Go 1.27.0, direct pure-Go pipeline (no CGO on the ITB pixel kernel — the C encoder / decoder is an x86-only path). Throughput in MB/s at `ITB_NONCE_BITS=512` (v0.3.0 secure default), `-benchtime=5s -count=1`, Go runtime capped by `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20`.
-
-The ARM64 production path uses ARM Crypto Extension `AESE` / `AESMC` 4-lane parallel ASM for the Areion-SoEM-256/512 kernels (`internal/areionasm/areion_arm64.s`), `jedisct1/go-aes` ARM AES extension for AES-CMAC, `golang.org/x/crypto` NEON for the BLAKE2 family, `dchest/siphash` portable Go for SipHash-2-4, `zeebo/blake3` portable Go for BLAKE3, and portable Go for ChaCha20. The Interlocked Barrier overlay runs through the pure-Go fallback (no NEON / SVE2 kernel shipped); the fill13x4 batched-derivation kernels are amd64-only, so ARM64's interlock cost is higher per byte than the x86 line and the fleet gap widens on primitives dominated by that cost (BLAKE3 / ChaCha20 the most). The `hashes/internal/*asm/` chain-absorb kernels for BLAKE2 / BLAKE3 / ChaCha20 / SipHash / AES-CMAC are amd64-only; ARM64 uses each primitive's scalar Go path directly.
+##ARM Graviton 4 16C/16HT
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -165,15 +147,11 @@ The ARM64 production path uses ARM Crypto Extension `AESE` / `AESMC` 4-lane para
 | **SipHash-2-4** | 128 | 2048 | PRF | 35 | 39 | 39 | 39 | 42 | 43 |
 | **ChaCha20** | 256 | 2048 | PRF | 2 | 7 | 11 | 2 | 6 | 11 |
 
-**Cross-platform note.** Encrypt / Decrypt round-trip verified byte-identical between the i7-11700K x86_64 line and this Graviton 4 aarch64 line: `tools/eitb` encrypt on either side + transfer of wire + settings blob + decrypt on the other side, `singlemsg-triple-mac-v1` and `streaming-aead-triple-mac-v1` profiles, plaintext SHA-256 matches original in both directions. Wire format is architecturally stable across the AVX-512 / NEON split.
+## Intel Core i7-11700K 8C/16HT — New 48-bit Interlocked ITB vs Old ITB (Lock Soup + Lock Batch mode) — Delta
 
-**ARM64 performance profile.** SipHash-2-4 leads at 78 MB/s Decrypt 64 MB 512-bit (its constant-latency ARX + fast Neoverse V2 integer ALUs sit well on this µarch); AES-CMAC and Areion-SoEM-512 follow at 66-69 MB/s Decrypt 64 MB 512-bit through the ARM AES-NI equivalent. BLAKE2 family sits in the 40-53 MB/s Decrypt 64 MB 512-bit band via the upstream NEON path. BLAKE3 (portable Go on ARM64 — no SIMD tree hasher in the shipped `zeebo/blake3` amd64-only fast path) and ChaCha20 (portable Go) trail; a NEON tree hasher for BLAKE3 and a NEON chain kernel for ChaCha20 are candidate follow-up mini-cycles.
+Interlocked ITB with the nonce widens from 128 bits to 512 bits (secure default), and the overlay moves from an opt-in 24-bit Lock Soup + Lock Batch mask (roughly 2^33 mask space per chunk group) to an always-on 48-bit Interlocked Barrier (~ 2^70 mask space per chunk group). Previous "Lock Soup + Lock Batch" mode on the same i7-11700K host is the fair comparison point — both sides carry an overlay derivation cost per chunk, and the ratio isolates the ~ 2^37 mask-space widening plus the 4× nonce widening.
 
-## v0.3.0 vs pre-v0.3.0 (Lock Soup + Lock Batch mode) — cost delta
-
-The v0.3.0 shipped construction carries two feature deltas versus the pre-v0.3.0 line: the nonce widens from 128 bits to 512 bits (secure default), and the overlay moves from an opt-in 24-bit Lock Soup + Lock Batch mask (roughly 2^33 mask space per chunk group) to an always-on 48-bit Interlocked Barrier (~ 2^70 mask space per chunk group). The pre-v0.3.0 "Lock Soup + Lock Batch" mode on the same i7-11700K host is the fair comparison point — both sides carry an overlay derivation cost per chunk, and the ratio isolates the ~ 2^37 mask-space widening plus the 4× nonce widening.
-
-Encrypt at 64 MB (MB/s per primitive per width; v0.3.0 / pre-v0.3.0 ; **►** marks ratios ≥ 100%):
+Encrypt at 64 MB (MB/s per primitive per width; new / old ; **►** marks ratios ≥ 100%):
 
 | Primitive          | 512-bit E 64 MB    | 1024-bit E 64 MB   | 2048-bit E 64 MB   |
 |--------------------|:------------------:|:------------------:|:------------------:|
@@ -187,7 +165,7 @@ Encrypt at 64 MB (MB/s per primitive per width; v0.3.0 / pre-v0.3.0 ; **►** ma
 | **SipHash-2-4**     | 213 / 158 (135%) ► | 149 / 126 (118%) ► | 91 / 90 (101%) ►   |
 | **ChaCha20**        | 198 / 110 (180%) ► | 134 / 86 (156%) ►  | 81 / 58 (140%) ►   |
 
-Decrypt at 64 MB (MB/s per primitive per width; v0.3.0 / pre-v0.3.0 ; **►** marks ratios ≥ 100%):
+Decrypt at 64 MB (MB/s per primitive per width; new / old ; **►** marks ratios ≥ 100%):
 
 | Primitive          | 512-bit D 64 MB    | 1024-bit D 64 MB   | 2048-bit D 64 MB   |
 |--------------------|:------------------:|:------------------:|:------------------:|
@@ -201,7 +179,7 @@ Decrypt at 64 MB (MB/s per primitive per width; v0.3.0 / pre-v0.3.0 ; **►** ma
 | **SipHash-2-4**     | 284 / 187 (152%) ► | 176 / 143 (123%) ► | 101 / 98 (103%) ►  |
 | **ChaCha20**        | 254 / 133 (191%) ► | 158 / 98 (161%) ►  | 92 / 64 (144%) ►   |
 
-**Every shipped primitive now sits at or above the pre-v0.3.0 line at 512-bit width on both Encrypt and Decrypt**, and every shipped primitive on the 1024-bit line except BLAKE2b-512 stays at or above baseline (BLAKE2b-512 lands at 97-99%, essentially at baseline; BLAKE2s 1024-bit E sits at 99% and D at exactly baseline). The full ASM optimisation cycle (pack56 batched inversion + chain-kernel narrowing per family + ChaCha20 fused68 + interlock fill batching per family + bridge-free ZMM interlock kernel rewrite) delivers a fleet-wide throughput uplift that fully amortises the widened nonce envelope + always-on 48-bit interlock mask.
+**Every shipped primitive now sits at or above the old ITB line at 512-bit width on both Encrypt and Decrypt**, and every shipped primitive on the 1024-bit line except BLAKE2b-512 stays at or above baseline (BLAKE2b-512 lands at 97-99%, essentially at baseline; BLAKE2s 1024-bit E sits at 99% and D at exactly baseline). The full ASM optimisation cycle (pack56 batched inversion + chain-kernel narrowing per family + ChaCha20 fused68 + interlock fill batching per family + bridge-free ZMM interlock kernel rewrite) delivers a fleet-wide throughput uplift that fully amortises the widened nonce envelope + always-on 48-bit interlock mask.
 
 **ChaCha20 gains largest** (+80% at 512-bit E / +91% at 512-bit D / +56% at 1024-bit E / +61% at 1024-bit D) — the fused68 dual-compression kernel plus interlock fill batching remove the two dominant bottlenecks the pre-v0.3.0 line paid on this primitive; the interlock kernel rewrite compounds the win on the decrypt lane. **AES-CMAC** climbs to +61% at 512-bit E / +80% at 512-bit D and +25% / +42% at 1024-bit E/D — the AVX-512 VAES chain kernels amortise cleanly across the widened overlay + nonce cost. **BLAKE family** climbs from residual (65-90% pre-refresh) to above baseline at all 512-bit widths on all four variants, with BLAKE2b-256 sitting at +39-74% across all three widths thanks to combined narrowing + fill batching. **Areion-SoEM family** collects +30-58% on 512-bit Decrypt from the interlock kernel rewrite compounding on top of the pack56 batched inversion and the VAES-YMM 4-lane ChainAbsorb landings.
 
