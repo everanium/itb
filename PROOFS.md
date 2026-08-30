@@ -10,7 +10,7 @@ Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cip
 
 ## Notation
 
-- H: PRF-grade hash function satisfying Definition 2 (see [SCIENCE.md](SCIENCE.md#5-formal-definitions))
+- H: PRF-grade hash function satisfying the PRF assumption (see [SCIENCE.md § 1.1 ChainHash](SCIENCE.md#11-chainhash))
 - S = (s₀, s₁, ..., s_{n-1}): seed of n independent w-bit blocks (n = keyBits / w)
 - N: 128-bit nonce from crypto/rand
 - C[p]: original container byte at pixel p (crypto/rand, uniform over [0, 255])
@@ -24,7 +24,7 @@ Proofs are stated in terms of generic ChainHash output. They apply equally to al
 
 ## Proof 1: Information-Theoretic Barrier
 
-**Theorem.** For a random container C generated from crypto/rand and any hash function H satisfying [Definition 2](SCIENCE.md#5-formal-definitions), the distribution of observed pixel values after embedding is independent of the hash output.
+**Theorem.** For a random container C generated from crypto/rand and any hash function H satisfying the PRF assumption (see [SCIENCE.md § 1.1 ChainHash](SCIENCE.md#11-chainhash)), the distribution of observed pixel values after embedding is independent of the hash output.
 
 **Setup.** Consider one channel byte of pixel p. The original value C[p,ch] ~ Uniform(0, 255). The hash output determines: noise position noisePos (0-7), XOR mask channelXOR (7 bits), and rotation r (0-6).
 
@@ -159,7 +159,7 @@ If one seed controls all three domains (N, D, S derived from same seed), CCA rev
 Three possible 2-seed pairings exist. Each creates cross-domain leakage:
 
 **(a) Seed₁ = {N}, Seed₂ = {D, S}:**
-Cache side-channel reveals S (startPixel) from Seed₂. Under KPA, for each pixel the attacker has 56 candidate hash outputs ([Section 2.9 in SCIENCE.md](SCIENCE.md#29-per-bit-xor-and-known-plaintext-resistance)). S narrows the pixel-to-data mapping. Combined KPA + known S constrains Seed₂, leaking partial information about D. Cross-domain leak: S → D.
+Cache side-channel reveals S (startPixel) from Seed₂. Under KPA, for each pixel the attacker has 56 candidate hash outputs ([SCIENCE.md § 2.2 Per-Bit XOR KPA Resistance](SCIENCE.md#22-per-bit-xor-kpa-resistance-theorem-2)). S narrows the pixel-to-data mapping. Combined KPA + known S constrains Seed₂, leaking partial information about D. Cross-domain leak: S → D.
 
 **(b) Seed₁ = {N, S}, Seed₂ = {D}:**
 CCA reveals N from Seed₁. Cache reveals S from Seed₁. Both attack surfaces target the same seed. Multiple (nonce, startPixel) observations from cache side-channel provide constraints on Seed₁ → reduces search space for Seed₁ → N configuration obtained without CCA. Cross-domain leak: S → N.
@@ -181,7 +181,7 @@ CCA reveals N (noiseSeed configuration). Since noiseSeed and dataSeed are indepe
 
 Cache reveals S (startSeed → startPixel). Since startSeed is independent of both noiseSeed and dataSeed, the leak is contained.
 
-D has zero software-observable side-channel. Even combined CCA + cache + KPA provides: N configuration (from noiseSeed) + start pixel (from startSeed) + known plaintext. Per-bit XOR (1:1) ensures 7 candidate rotations per pixel remain valid ([Section 2.9 in SCIENCE.md](SCIENCE.md#29-per-bit-xor-and-known-plaintext-resistance)). Without information about dataSeed, the attacker cannot distinguish candidates → security reduces to brute-force over dataSeed key space.
+D has zero software-observable side-channel. Even combined CCA + cache + KPA provides: N configuration (from noiseSeed) + start pixel (from startSeed) + known plaintext. Per-bit XOR (1:1) ensures 7 candidate rotations per pixel remain valid ([SCIENCE.md § 2.2 Per-Bit XOR KPA Resistance](SCIENCE.md#22-per-bit-xor-kpa-resistance-theorem-2)). Without information about dataSeed, the attacker cannot distinguish candidates → security reduces to brute-force over dataSeed key space.
 
 Within the pixel-layer domain types, three independent seeds are therefore minimal: fewer creates cross-domain leakage in every possible pairing.
 
@@ -262,13 +262,13 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 **Proof.** Obstacles (1)–(3) correspond to disjoint entropy sources and jointly determine the Full KPA brute-force cost; obstacle (4) is a Partial KPA-specific defense:
 
-**(1) PRF inversion.** Given a verified candidate dataHash h', recovering dataSeed from H(counter||nonce, dataSeed) = h' requires hash inversion ([Definition 2, SCIENCE.md §5](SCIENCE.md#5-formal-definitions)). Under the PRF assumption (which implies one-wayness), this is infeasible.
+**(1) PRF inversion.** Given a verified candidate dataHash h', recovering dataSeed from H(counter||nonce, dataSeed) = h' requires hash inversion (PRF assumption; see [SCIENCE.md § 1.1 ChainHash](SCIENCE.md#11-chainhash)). Under the PRF assumption (which implies one-wayness), this is infeasible.
 
 **(2) startPixel isolation.** startPixel = f(startSeed, nonce) where startSeed ⊥ noiseSeed ⊥ dataSeed ([Proof 3](#proof-3-8-seed-isolation)). startPixel is not transmitted in the cleartext header. An attacker with full known plaintext does not know which pixel of the container corresponds to plaintext byte 0 — there are P candidate offsets with no feedback to narrow them.
 
 **(3) Per-pixel ambiguity at 1:1 signal/noise.** Per [Proof 1](#proof-1-information-theoretic-barrier): P(v | h) = 1/2 for any observed byte v and any hash output h. Per [Proof 4](#proof-4-rotation-barrier): 7 rotation candidates remain indistinguishable after the barrier. Combined: 56 candidates per pixel (8 noisePos × 7 rotation), each equally consistent with the observation. Signal/noise ratio is 1:1 — the observation provides no ranking signal to the attacker. Formally: sup_{c,c'} Pr[c | obs] / Pr[c' | obs] = 1 — all candidates are equiprobable conditional on the observation.
 
-**(4) Byte-splitting non-alignability (Partial KPA defense).** Per [SCIENCE.md §2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment): gcd(7,8)=1 guarantees every plaintext byte is split across exactly 2 channels. Under Partial KPA, where the attacker has incomplete plaintext, per-channel candidate formulation (a potential shortcut attack) is blocked because each channel depends on two bytes — missing one prevents candidate computation. Under Full KPA this shortcut is not available anyway (brute force enumerates seeds directly), so obstacle (4) has no additional defensive effect.
+**(4) Byte-splitting non-alignability (Partial KPA defense).** Per [SCIENCE.md § 2.10 Byte-Splitting Property](SCIENCE.md#210-byte-splitting-property): gcd(7,8)=1 guarantees every plaintext byte is split across exactly 2 channels. Under Partial KPA, where the attacker has incomplete plaintext, per-channel candidate formulation (a potential shortcut attack) is blocked because each channel depends on two bytes — missing one prevents candidate computation. Under Full KPA this shortcut is not available anyway (brute force enumerates seeds directly), so obstacle (4) has no additional defensive effect.
 
 **Composition.** Obstacles (1)–(3) have disjoint entropy sources by [Proof 3](#proof-3-8-seed-isolation) and jointly determine the Full KPA brute-force cost stated in the theorem. Full KPA defense is 3-factor under PRF assumption (PRF non-invertibility, startPixel isolation, per-pixel 1:1 ambiguity); gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial KPA. The obstacles are not independent sub-problems defeated sequentially but interlocking constraints.
 

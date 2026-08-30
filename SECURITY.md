@@ -161,7 +161,7 @@ Since `gcd(DataBitsPerChannel, BitsPerByte) = gcd(7, 8) = 1`, plaintext bytes ne
 | Partial KPA (know byte k, not k±1) | Byte k directly analyzable | Cannot compute channel bits (channel mixes 2 bytes) |
 | 7 worst-case candidates (Full KPA + CCA + startPixel) | N/A | noisePos known from CCA, 7 rotation candidates remain; without CCA: 56 (8 noisePos × 7 rotation) |
 
-This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature. See [SCIENCE.md Section 2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment) for detailed analysis.
+This property is a structural consequence of the 8/1 noise format, not a deliberately engineered feature. See [SCIENCE.md § 2.10 Byte-Splitting Property](SCIENCE.md#210-byte-splitting-property) for detailed analysis.
 
 ## 9. Information-Theoretic Barrier Metrics
 
@@ -287,7 +287,7 @@ The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was 
 
 The analysis applies equally to ARM64 NEON auto-vectorization: `veor`, `vand`, `vorr`, `vshl`, `vshr` are constant-time on ARM. ARM `sdiv` (for `% totalPixels`) is variable-time but operates on public data only. ARM has no frequency throttling from NEON (unlike Intel AVX-512).
 
-Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (Pure Go pixel kernel; Go-assembly hash ASM stays engaged) and `CGO_ENABLED=1` (C + SIMD pixel kernel) does not change the security model on any platform. See [SCIENCE.md §4](SCIENCE.md#known-theoretical-threats) "Known Theoretical Threats" point 6 for detailed analysis.
+Both backends produce identical ciphertext. Switching between `CGO_ENABLED=0` (Pure Go pixel kernel; Go-assembly hash ASM stays engaged) and `CGO_ENABLED=1` (C + SIMD pixel kernel) does not change the security model on any platform. See [HWTHREATS.md § Category 5](HWTHREATS.md#category-5-instruction-set-side-channel-profile) for the per-instruction side-channel inventory.
 
 ## 14. Hash Function Compliance
 
@@ -304,17 +304,17 @@ Every shipped registry primitive is a PRF-grade construction that satisfies the 
 | Encoding ambiguity | ✓ All modes (7^P unverifiable rotation combinations, survives CCA; CSPRNG residue persists in data positions, [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | 8-seed isolation | ✓ All modes (noiseSeed / lockSeed / dataSeed1..3 / startSeed1..3 independent CSPRNG components, pointer-distinct at the API surface; CCA leaks noiseSeed only) |
 | Oracle-free deniability | ✓ Core ITB / MAC + Silent Drop (no oracle); MAC + Reveal has CCA oracle but limited to noise positions |
-| Known-plaintext resistance | 4-factor under the PRF assumption for Full KPA: PRF non-invertibility (verification) + Interlocked Barrier per-chunk mask permutation (≈ 2^70.20 masks per chunk) + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. gcd(7,8) byte-splitting is a 5th factor effective only under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance), [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)). The 3-snake unknown-offset split is a further conjunctive layer on top. |
+| Known-plaintext resistance | 4-factor under the PRF assumption for Full KPA: PRF non-invertibility (verification) + Interlocked Barrier per-chunk mask permutation (≈ 2^70.20 masks per chunk) + independent startSeed + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1. gcd(7,8) byte-splitting is a 5th factor effective only under Partial KPA (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance), [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a)). The 3-snake unknown-offset split is a further conjunctive layer on top. |
 | Chosen-plaintext resistance | Independent maps |
 | Noise absorption* | ✓ Core ITB / MAC + Silent Drop (CSPRNG noise bit at unknown position; noise bits bypassed by CCA in MAC + Reveal, but CSPRNG fill in data positions persists — [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
 | Noise barrier (min container) | 2^3200 (1024-bit, unified P=400) to 2^6272 (2048-bit, unified P=784) |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
 | Hash function requirement | PRF |
-| PRF output consumed per pixel | 64 bits per ChainHash call (architectural cap independent of native primitive width; 50 % / 25 % / 12.5 % of 128 / 256 / 512-bit output, the remainder discarded by the per-pixel encoder). Truncation preserves PRF-conditional security but does not strengthen it; the discarded portion is architecturally invisible to the encryption path, closing structural weaknesses concentrated in those bits (FNV-1a top-bit-isolation case documented in [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)) — defense-in-depth against partial PRF-failure, not an upgrade of PRF-conditional security under PRF-grade primitives. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security). |
+| PRF output consumed per pixel | 64 bits per ChainHash call (architectural cap independent of native primitive width; 50 % / 25 % / 12.5 % of 128 / 256 / 512-bit output, the remainder discarded by the per-pixel encoder). Truncation preserves PRF-conditional security but does not strengthen it; the discarded portion is architecturally invisible to the encryption path, closing structural weaknesses concentrated in those bits (FNV-1a top-bit-isolation case documented in [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)) — defense-in-depth against partial PRF-failure, not an upgrade of PRF-conditional security under PRF-grade primitives. See [SCIENCE.md § 1.2 Per-Pixel Configuration](SCIENCE.md#12-per-pixel-configuration). |
 | Nonce | 128/256/512-bit per-message (default 512-bit, mandatory) |
 | Authentication | Optional (MAC-Inside-Encrypt, pluggable) |
 | Deniable authentication | ✓ (tag encrypted inside container) |
-| Classical cryptanalytic techniques | Blocked: differential, linear, algebraic, slide, related-key, integral, boomerang, interpolation, cube — PRF output absorbed by random container, unobservable ([SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier)) |
+| Classical cryptanalytic techniques | Blocked: differential, linear, algebraic, slide, related-key, integral, boomerang, interpolation, cube — PRF output absorbed by random container, unobservable ([SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a)) |
 | Quantum structural attacks | Conjectured mitigated (IT barrier is computation-model-independent; not independently verified) |
 | Grover oracle | Degraded: no oracle without MAC; with MAC-Inside each query requires full decryption O(P). Per-candidate O(P) cost applies to all modes |
 
@@ -333,7 +333,7 @@ Approximate empirical example: 1024-bit key, ~10 ns/hash (average across PRF fun
 | 16 MB | 2,408,704 | 38,539,264 | ~385 ms | ~385,000,000× slower |
 | 64 MB | 9,628,609 | 154,057,744 | ~1.5 s | ~1,500,000,000× slower |
 
-Grover oracle queries have the same O(P) per-candidate cost — ChainHash rounds are sequential and not parallelizable by quantum algorithms. See [SCIENCE.md §2.12](SCIENCE.md#212-per-candidate-decryption-cost) for detailed analysis.
+Grover oracle queries have the same O(P) per-candidate cost — ChainHash rounds are sequential and not parallelizable by quantum algorithms. See [SCIENCE.md § 5 — Per-candidate decryption cost](SCIENCE.md#5-ambiguity-based-security) for detailed analysis.
 
 ## 16. Quantum Resistance (Conjectured)
 
@@ -351,7 +351,7 @@ The noise-absorption layer under passive observation (COA) is computation-model-
 
 The fundamental difference between ITB's noise-absorption layer (under COA) and traditional ciphers under quantum attack: AES and ChaCha20 rely on **computational hardness** across every attack model — their security degrades with more computational power (Grover: √ speedup). ITB's noise-absorption barrier under passive observation relies on **information absence** — no computation (classical or quantum) helps when the information is not in the observation; this is an information-theoretic property scoped to the COA layer, not a construction-wide claim. Under active seed-recovery ITB reverts to computational hardness like AES / ChaCha20.
 
-AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md §2.11](SCIENCE.md#211-quantum-resistance-analysis) for detailed analysis. See also [SCIENCE.md §2.9.2](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier) for why KPA candidates do not break the barrier.
+AES-256 and ChaCha20 are widely considered quantum-resistant for practical purposes (2^128 Grover bound). ITB's random-container architecture may provide an additional architectural layer of resistance to quantum structural algorithms, but this is a conjectured property that has not been independently verified. See [SCIENCE.md § 3.3 Quantum Resistance](SCIENCE.md#33-quantum-resistance-conjectured) for detailed analysis. See also [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a) for why KPA candidates do not break the barrier.
 
 Under the unified `MinPixels` floor from §9 (every entry point applies the auth-side envelope), the joint-seed search covers both `noiseSeed` and `dataSeed`. At 1024-bit key (P=400): Core / MAC + Silent Drop ~2^2057 classical, ~2^1028 Grover; MAC + Reveal ~2^1033 classical, ~2^516 Grover. At 2048-bit key (P=784): Core / MAC + Silent Drop ~2^4106 / ~2^2053; MAC + Reveal ~2^2058 / ~2^1029.
 
@@ -372,7 +372,7 @@ ITB is a new construction without prior peer review or independent cryptanalysis
 | Active attack analysis (CCA, MITM) | Self-analysis, invites scrutiny |
 | Side-channel mitigations | Implemented, not independently audited |
 
-Potential vulnerability classes: (1) fundamental — barrier invalidation under unconsidered attack model (unlikely, barrier is probability-theoretic); (2) implementational — edge cases, timing, off-by-one (correctable). See [SCIENCE.md §4](SCIENCE.md#scope-and-maturity-disclaimer) "Scope and Maturity Disclaimer" for detailed discussion.
+Potential vulnerability classes: (1) fundamental — barrier invalidation under unconsidered attack model (unlikely, barrier is probability-theoretic); (2) implementational — edge cases, timing, off-by-one (correctable). See [SCIENCE.md § 7 Scope and Maturity Disclaimer](SCIENCE.md#scope-and-maturity-disclaimer) for detailed discussion.
 
 ## 18. Interlocked Barrier
 
