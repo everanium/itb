@@ -1,5 +1,16 @@
 # ITB Red-Team Empirical Validation
 
+> **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
+>
+> PRF-grade hash functions are **required**. No warranty is provided.
+
+**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a const
+ruction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorit
+hm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, S
+OG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules
+** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not
+conferred by ITB itself.
+
 This document records the adversarial re-verification of the shipped ITB construction. The construction under test is **Triple Ouroboros** — the byte-level 3-snake split — over the **8-seed** constellation, with the **always-on Interlocked Barrier** as its non-disableable core. There is no Single Ouroboros, no overlay toggle, and no Bit Soup mode.
 
 The prior empirical record — the wider primitive shelf under Single Ouroboros with the overlay optional — is preserved verbatim in **[archive/REDTEAM.md](archive/REDTEAM.md)** and is cross-referenced by phase throughout for archived detail that is not re-inlined here.
