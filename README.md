@@ -169,8 +169,12 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | AES-CMAC — AES-NI XMM 4-lane batched chain-absorb | AES-NI (AESENC / AESENCLAST on XMM) | `aescmacasm.HasAESNIBatched` |
 | BLAKE2b — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `blake2basm.HasAVX512Fused` |
 | BLAKE2b — AVX2 4-lane YMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2basm.HasAVX2Fused` |
-| BLAKE2s / BLAKE3 / ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (the ChaCha20 68-byte chain fuses two compressions per YMM register) | AVX-512F | `{blake2sasm,blake3asm,chacha20asm}.HasAVX512Fused` |
-| BLAKE2s / BLAKE3 / ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; the ChaCha20 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `{blake2sasm,blake3asm,chacha20asm}.HasAVX2Fused` |
+| BLAKE2s — AVX-512 4-lane XMM chain-absorb + fused chain | AVX-512F | `blake2sasm.HasAVX512Fused` |
+| BLAKE2s — AVX2 4-lane XMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2sasm.HasAVX2Fused` |
+| BLAKE3 — AVX-512 4-lane XMM chain-absorb + fused chain | AVX-512F | `blake3asm.HasAVX512Fused` |
+| BLAKE3 — AVX2 4-lane XMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake3asm.HasAVX2Fused` |
+| ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
+| ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 | SipHash-2-4 — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
 | SipHash-2-4 — AVX2 4-lane YMM chain-absorb | AVX2 (no AVX-512F) | `siphashasm.HasAVX2Fused` |
 
