@@ -58,20 +58,40 @@ The lockSeed keys the barrier's permutation channel independently of the noiseSe
 
 ## 5. Triple Ouroboros: Three Interleaved Snakes
 
-Plaintext is split at the byte level across three snakes — every 3rd byte to a different snake:
+Plaintext does not reach the snakes as bytes. Every message first passes through the Interlocked Barrier's Part 1 (§12) — a per-chunk PRF-keyed 48-bit permutation — which is also the mechanism that produces the three snake payloads. What each snake actually carries is a stream of PRF-permuted 16-bit lane fragments, not plaintext at any offset.
+
+**How the plaintext becomes three snake payloads.**
+
+1. A 4-byte big-endian length prefix is prepended to the plaintext (`prependTripleLen`), so the recovery side can slice back to the exact original extent after inverse permutation and interleave.
+2. The length-prefixed byte stream is walked in 48-bit (6-byte) chunks.
+3. For each chunk, `deriveInterLockSeed(lockSeed, interlock_nonce)` seeds a per-chunk PRF call that draws a mask triple `(m0, m1, m2)` — three disjoint 16-of-48 lanes covering all 48 bits — from a space of ≈ 2^70.20 balanced partitions (see §12 for the mask-space accounting).
+4. `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` — three PEXT operations on x86 with BMI2, `softPEXT48` fallback elsewhere.
+5. Snake 0's payload receives `l0` (2 bytes), Snake 1 receives `l1`, Snake 2 receives `l2`. The three payloads grow in lockstep — one 16-bit lane fragment per 48-bit input chunk.
 
 ```
-Plaintext: "Hello World!"   (12 bytes)
-
-Index:  0  1  2  3  4  5  6  7  8  9  10 11
-Byte:   H  e  l  l  o     W  o  r  l  d  !
-
-Snake 0 (bytes 0,3,6,9):   H  l  W  l
-Snake 1 (bytes 1,4,7,10):  e  o  o  d
-Snake 2 (bytes 2,5,8,11):  l     r  !
+Plaintext + 4-byte BE length prefix
+        │
+        ▼
+  ┌─────────────────────────────────────────────────┐
+  │ 48-bit chunk 0 │ 48-bit chunk 1 │ 48-bit ... │
+  └─────────────────────────────────────────────────┘
+        │                │
+        ▼                ▼
+   PRF-keyed         PRF-keyed
+   mask triple 0     mask triple 1     ...  (each independently keyed;
+   (m0, m1, m2)      (m0, m1, m2)           mask of one chunk carries no
+        │                │                   information about any other)
+        ▼                ▼
+   chunk48lock →     chunk48lock →
+   (l0, l1, l2)      (l0, l1, l2)
+        │                │
+        ▼                ▼
+   Snake 0 payload:  l0_chunk0 ‖ l0_chunk1 ‖ ...  (16 bits per chunk)
+   Snake 1 payload:  l1_chunk0 ‖ l1_chunk1 ‖ ...
+   Snake 2 payload:  l2_chunk0 ‖ l2_chunk1 ‖ ...
 ```
 
-No snake carries readable text. `HlWl`, `eood`, `l r!` — meaningless fragments. For a long document, each snake is every 3rd byte — gibberish per snake.
+No snake carries a plaintext byte at any position. Without the lockSeed and interlock_nonce, the mapping from plaintext bits to lane positions is a per-chunk secret drawn from ≈ 2^70.20 balanced partitions; a known-plaintext crib fixes no bit-position-to-lane anchor a solver could rest on. The three per-snake payloads are what feeds every stage below; the plaintext byte sequence never appears intact anywhere past this point.
 
 **Three parallel CSPRNG regions.** One container is allocated. Three parallel goroutines fill it with crypto/rand — each writes to its own region:
 
@@ -88,34 +108,34 @@ Container (one allocation, three parallel fills):
 
 ASIC-ready: three independent DRBGs can fill three regions in parallel.
 
-**Three parallel encrypt pipelines.** Each snake is COBS-encoded, null-terminated, filled with CSPRNG residue, then encrypted into its region with its own seeds:
+**Three parallel encrypt pipelines.** Each per-snake lane payload (16-bit fragments from Part 1's chunk permutation, not plaintext bytes) is COBS-encoded, null-terminated, filled with CSPRNG residue, then encrypted into its region with its own seeds:
 
 ```
-Snake 0 → COBS → [cobs|0x00|fill] → dataSeed1 + startSeed1 + noiseSeed → Region 0
-Snake 1 → COBS → [cobs|0x00|fill] → dataSeed2 + startSeed2 + noiseSeed → Region 1
-Snake 2 → COBS → [cobs|0x00|fill] → dataSeed3 + startSeed3 + noiseSeed → Region 2
-                                    ─────────────────────────────────
-                                    3 goroutines, each with numCPU/3 workers
+Snake 0 payload (l0 stream) → COBS → [cobs|0x00|fill] → dataSeed1 + startSeed1 + noiseSeed → Region 0
+Snake 1 payload (l1 stream) → COBS → [cobs|0x00|fill] → dataSeed2 + startSeed2 + noiseSeed → Region 1
+Snake 2 payload (l2 stream) → COBS → [cobs|0x00|fill] → dataSeed3 + startSeed3 + noiseSeed → Region 2
+                                                        ─────────────────────────────────
+                                                        3 goroutines, each with numCPU/3 workers
 ```
 
-Each pipeline is a complete ITB encryption: per-pixel ChainHash, rotation, XOR mask, noise bit at unknown position, startPixel wrap-around — all within its region. The 48-bit Interlocked Barrier (§12) wraps the interleaved payload before COBS.
+Each pipeline is the per-pixel absorption stage: per-pixel ChainHash, rotation, XOR mask, noise bit at unknown position, startPixel wrap-around — all within its region. Part 1 of the Interlocked Barrier (§12) already ran before this stage produced the lane payloads; Part 2 (per-pixel absorption, §12) is what these three pipelines apply. The two parts always run together — this is the shipped indivisible barrier composition.
 
-**Per-pixel bit-level processing.** Inside each region, the standard ITB per-pixel processing applies. For byte `H` (0x48 = 01001000) from Snake 0:
+**Per-pixel bit-level processing.** Inside each region, the standard ITB per-pixel processing applies. For a lane byte `b` (part of Snake 0's `l0` stream after COBS framing):
 
 ```
-"H" = 01001000 (8 bits)
+b = 01001000 (8 bits of lane data, not plaintext)
 
-Channel 0:  0100100  ← 7 bits extracted from bit stream
+Channel 0:  0100100  ← 7 bits extracted from the lane bit stream
             ⊕ XOR mask from dataSeed1 (7 bits per channel)
             = encrypted 7 bits
             rotate(encrypted, rotation1)  ← rotation 0-6 from dataSeed1
             insert into pixel, preserving noise bit at noisePos (from noiseSeed)
 
-Channel 1:  0??????  ← next 7 bits (from "H" + next byte "l")
+Channel 1:  0??????  ← next 7 bits (from b + next lane byte)
             ... same XOR + rotate + insert ...
 ```
 
-Each byte is split across 2 channels (gcd(7,8)=1). Each channel has 7 encrypted data bits + 1 noise bit. The attacker sees 8 random-looking bits per channel.
+Each lane byte is split across 2 channels (gcd(7,8)=1). Each channel has 7 encrypted data bits + 1 noise bit. The attacker sees 8 random-looking bits per channel.
 
 **What the attacker sees:**
 
@@ -134,7 +154,7 @@ Output: [main_nonce][interlock_nonce][W][H][uniform random pixels]
   No visible data/fill boundary (three different, all hidden).
 ```
 
-**Decrypt.** The three snakes are decoded in parallel: read `[main_nonce][interlock_nonce][W][H]`, split the pixel data into thirds (integer division; last third absorbs remainder), three parallel goroutines decode each region with the respective seeds, COBS-decode each snake, and interleave: `result[0]=Snake0[0], result[1]=Snake1[0], result[2]=Snake2[0], result[3]=Snake0[1], ...`.
+**Decrypt.** The three snakes are decoded in parallel: read `[main_nonce][interlock_nonce][W][H]`, split the pixel data into thirds (integer division; last third absorbs remainder), three parallel goroutines run the Part 2 inverse (noise-strip, inverse rotate, XOR-unmask) on each region with the respective seeds, and COBS-decode each snake back to its lane payload. Then Part 1 inverse (`interleaveTriple48LockedBatch`) reassembles the three lane streams into the 48-bit chunks under the same per-chunk mask triples derived from lockSeed + interlock_nonce, and the 4-byte length prefix is stripped to recover the original plaintext at its exact extent.
 
 ## 6. Under Normal Use: The Barrier Is Practically Impenetrable
 
