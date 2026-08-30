@@ -401,8 +401,8 @@ At 64 KB, encoding ambiguity alone is `2^26,414`, whose exponent is 25.8× the 1
 A reference implementation in Go (`github.com/everanium/itb`) supports three hash width variants:
 
 - 128-bit (SipHash-2-4, AES-CMAC): effective max key 1024 bits.
-- 256-bit (BLAKE3, BLAKE2b-256, BLAKE2s): effective max key 2048 bits.
-- 512-bit (BLAKE2b-512): effective max key 2048 bits.
+- 256-bit (Areion-SoEM-256, BLAKE3, BLAKE2b-256, BLAKE2s): effective max key 2048 bits.
+- 512-bit (Areion-SoEM-512, BLAKE2b-512): effective max key 2048 bits.
 
 Wire format: `main_nonce (N bytes) ‖ interlock_nonce (N bytes) ‖ W (2 bytes) ‖ H (2 bytes) ‖ W × H × 8 raw RGBWYOPA`, header size `2N + 4` bytes (`N` = the primitive's native nonce width in bytes). The 48-bit Interlocked Barrier is mandatory and always-on; no compile-time or runtime flag disables it. The 8-seed constellation is required at every entry point.
 
