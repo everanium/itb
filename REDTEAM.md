@@ -99,7 +99,7 @@ The architectural reason is the two-part composition. Part 1: each 48-bit chunk 
 
 ### Partial KPA
 
-No dedicated probe is run: the result follows a fortiori from the Full / Crib KPA null. A Partial KPA attacker holds strictly less known plaintext, so its achievable-key sets per pixel are a superset of the full-crib sets and its cross-pixel intersection can only be larger — it recovers no key where the stronger full-crib attacker recovers none. The `gcd(7,8)=1` byte-splitting obstacle (every plaintext byte spans two channels; a missing adjacent byte blocks per-channel candidate formulation) is an additional independent factor active only under Partial KPA. On real binary formats the demasking prerequisite (byte-level position precision over ≳ 90 % of plaintext) is not met at all — see [ITB.md §9.1](ITB.md#91-why-binary-formats-defeat-partial-kpa-demasking-entirely).
+No dedicated probe is run: the result follows a fortiori from the Full / Crib KPA null. A Partial KPA attacker holds strictly less known plaintext, so its achievable-key sets per pixel are a superset of the full-crib sets and its cross-pixel intersection can only be larger — it recovers no key where the stronger full-crib attacker recovers none. The `gcd(7,8)=1` byte-splitting obstacle (every plaintext byte spans two channels; a missing adjacent byte blocks per-channel candidate formulation) is an additional independent factor active only under Partial KPA.
 
 ### CPA — chosen-plaintext, fresh nonce
 
