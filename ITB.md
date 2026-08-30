@@ -16,7 +16,7 @@ This is not destruction (the hash output is used), not hiding (there is no encry
 
 The barrier is computation-model-independent under passive observation: no matter how much computational power the attacker has, the information is not in the observation.
 
-**Formal basis:** ∀v, ∀h : ∃c : embed(c, h, d) = v — for any observed value, any hash output, there exists a container byte that produces this observation (see [SCIENCE.md Section 2.4.1](SCIENCE.md#241-the-barrier-passive-observation), [SECURITY.md Section 9](SECURITY.md#9-information-theoretic-barrier-metrics)).
+**Formal basis:** ∀v, ∀h : ∃c : embed(c, h, d) = v — for any observed value, any hash output, there exists a container byte that produces this observation (see [SCIENCE.md § 2.1 Theorem 1](SCIENCE.md#21-information-theoretic-barrier-theorem-1), [SECURITY.md Section 9](SECURITY.md#9-information-theoretic-barrier-metrics)).
 
 ## 2. Two Independent Sources of Randomness
 
@@ -28,7 +28,7 @@ The barrier works because of separation of sources:
 
 Two independent random processes. CSPRNG does not know about PRF, PRF does not know about CSPRNG. Their only point of contact is the moment of embedding, after which the observer sees only the result, not the components.
 
-**Hash output bandwidth.** Each per-pixel ChainHash call produces a wide output — 128, 256, or 512 bits depending on the primitive — but the encoder consumes only the low 64 bits. About 62 of those are actually used (3 noise-position + 56 channelXOR + ~3 rotation); the rest is slack, and the high portion is discarded entirely. This is a coding-bandwidth choice — one `uint64` register fits the per-pixel needs exactly — not a security upgrade. It has one real side effect: any structural weakness of the underlying primitive that lives in the discarded bits is architecturally invisible to encryption-path observation. FNV-1a's top-bit-isolation case is the canonical example (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)). For PRF-grade primitives the narrowing is defense-in-depth against partial weaknesses; under the standard PRF assumption it does not change cryptanalytic resistance at large captured-ciphertext volumes — truncation preserves PRF-security, it does not strengthen it. See [SCIENCE.md §1.1.3](SCIENCE.md#113-per-pixel-config-extraction-and-effective-security) for the formal treatment.
+**Hash output bandwidth.** Each per-pixel ChainHash call produces a wide output — 128, 256, or 512 bits depending on the primitive — but the encoder consumes only the low 64 bits. About 62 of those are actually used (3 noise-position + 56 channelXOR + ~3 rotation); the rest is slack, and the high portion is discarded entirely. This is a coding-bandwidth choice — one `uint64` register fits the per-pixel needs exactly — not a security upgrade. It has one real side effect: any structural weakness of the underlying primitive that lives in the discarded bits is architecturally invisible to encryption-path observation. FNV-1a's top-bit-isolation case is the canonical example (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)). For PRF-grade primitives the narrowing is defense-in-depth against partial weaknesses; under the standard PRF assumption it does not change cryptanalytic resistance at large captured-ciphertext volumes — truncation preserves PRF-security, it does not strengthen it. See [SCIENCE.md § 1.2 Per-Pixel Configuration](SCIENCE.md#12-per-pixel-configuration) for the formal treatment.
 
 ## 3. Nonce: A New Universe Per Message
 
@@ -52,7 +52,7 @@ The API surface takes 8 mandatory seeds, drawn as independent CSPRNG components 
 - **dataSeed1, dataSeed2, dataSeed3** → per-snake rotation + XOR configurations.
 - **startSeed1, startSeed2, startSeed3** → per-snake pixel offsets.
 
-Each seed drives its own ChainHash with its own components. There is no mathematical relationship between them. Full knowledge of any subset of seeds gives zero bits of information about the remaining seeds (see [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements), [SECURITY.md Section 1](SECURITY.md#1-itb-composition-modes)).
+Each seed drives its own ChainHash with its own components. There is no mathematical relationship between them. Full knowledge of any subset of seeds gives zero bits of information about the remaining seeds (see [SCIENCE.md § 2.3 8-Seed Isolation](SCIENCE.md#23-8-seed-isolation-theorems-3-3a), [SECURITY.md Section 1](SECURITY.md#1-itb-composition-modes)).
 
 The lockSeed keys the barrier's permutation channel independently of the noiseSeed that keys the noise-position channel, so a structural shortcut against one channel's primitive cannot leak into another channel's derivation. The three-way per-snake `dataSeed`/`startSeed` split localises any per-snake weakness to that snake alone — recovery of one snake's dataSeed or startSeed reveals nothing about the other two.
 
@@ -194,7 +194,7 @@ Under Partial KPA, three layers of protection combine:
 
 All three layers work together: the barrier denies observation, byte-splitting denies per-channel candidate formulation under Partial KPA, and PRF denies candidate verification. Under Full KPA, byte-splitting does not add defensive benefit (the attacker has all adjacent bytes), but the defense is nonetheless multi-factor under the PRF assumption: PRF non-invertibility + independent startSeeds + 7-rotation × 8-noisePos per-pixel ambiguity at signal/noise 1:1 + the 48-bit Interlocked Barrier. The layers are architecturally independent and combine conjunctively (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)).
 
-See [SCIENCE.md Section 2.9.1](SCIENCE.md#291-byte-splitting-property-78-non-alignment), [SECURITY.md Section 8](SECURITY.md#8-byte-splitting-property).
+See [SCIENCE.md § 2.10 Byte-Splitting Property](SCIENCE.md#210-byte-splitting-property), [SECURITY.md Section 8](SECURITY.md#8-byte-splitting-property).
 
 ## 8. Full KPA (PRF Assumption)
 
@@ -244,7 +244,7 @@ This means CCA does not give the attacker a clean plaintext-only ciphertext. A p
 
 CCA leak = 3/62 ≈ 4.8 % of per-pixel configuration. CCA reveals no plaintext bits, no XOR masks, no start pixel, no barrier permutation. However, CCA eliminates noiseSeed from brute-force search: P × 2^(2×keyBits) → P × 2^keyBits (two seeds → one seed). The remaining blind enumeration cost exceeds the Landauer bound on irreversible enumeration (~2^306); this bounds enumeration cost, not structural attack resistance, and the Full KPA closure under CCA remains computational and PRF-conditional (Theorem 4a).
 
-See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md Section 4.1–4.5](SCIENCE.md#41-chosen-ciphertext-attack-and-mac-composition), [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
+See [SECURITY.md Section 6](SECURITY.md#6-cca-oracle-leak-comparison), [SCIENCE.md § 2.8 CCA Leak Upper Bound](SCIENCE.md#28-cca-leak-upper-bound-theorem-6), [Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
 
 ## 11. startPixels: Not Transmitted, Not Recoverable
 
@@ -252,7 +252,7 @@ Each snake's startPixel is computed from its own startSeed + main nonce via Chai
 
 Even in the worst case (Full KPA + CCA + cache side-channel on one snake), the attacker gets: noisePos (from CCA) + one startPixel (from cache) + 7 rotation candidates per pixel of that snake + the per-chunk barrier permutation still unobservable. Without invertible hash — brute-force 2^keyBits on that snake's dataSeed. The other two snakes remain isolated.
 
-See [SCIENCE.md Section 4, startPixel limitation](SCIENCE.md#known-theoretical-threats).
+See [SCIENCE.md § 2.3 8-Seed Isolation — cache side-channel note](SCIENCE.md#23-8-seed-isolation-theorems-3-3a).
 
 ## 12. The Interlocked Barrier
 
@@ -324,7 +324,7 @@ Specific quantum algorithms and why they are conjectured mitigated:
 
 At 1024-bit key: Core / Silent Drop and MAC + Reveal both sit at complexities far beyond any foreseeable quantum capability, before crediting the barrier. For comparison, AES-256 with Grover: 2^128 — widely considered quantum-resistant.
 
-See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md Section 2.11](SCIENCE.md#211-quantum-resistance-analysis), [SCIENCE.md Section 2.9.2 — Why KPA candidates do not break the barrier](SCIENCE.md#292-why-kpa-candidates-do-not-break-the-barrier).
+See [SECURITY.md Section 16](SECURITY.md#16-quantum-resistance-conjectured), [SCIENCE.md § 3.3 Quantum Resistance](SCIENCE.md#33-quantum-resistance-conjectured), [SCIENCE.md § 2.6 — Why KPA candidates do not break the barrier](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
 
 ## 14. Per-Candidate Cost: Why Brute-Force Is Slow
 
@@ -341,7 +341,7 @@ Approximate example: 1024-bit key, ~10 ns/hash (average across PRF functions on 
 
 This is not a tunable parameter — it is a structural consequence of the construction. Every brute-force candidate, classical or quantum (Grover), must pay this cost. ChainHash rounds are sequential and cannot be parallelized.
 
-See [SCIENCE.md §2.12](SCIENCE.md#212-per-candidate-decryption-cost) for detailed analysis.
+See [SCIENCE.md § 5 — Per-candidate decryption cost](SCIENCE.md#5-ambiguity-based-security) for detailed analysis.
 
 ## 15. Barrier and PRF: Symbiosis
 
@@ -355,7 +355,7 @@ The barrier and PRF hash function protect each other:
 
 Together: non-invertibility blocks inversion, and absorption hides collisions. Each property closes the other's theoretical weakness. In Core ITB and MAC + Silent Drop (no oracle, passive observation only), the barrier makes a non-invertible hash function indistinguishable from an ideal random function — collisions absorbed, statistical patterns absorbed, no known attack surface remains. With MAC + Reveal (CCA): noiseSeed config is leaked via oracle interaction, but per-snake dataSeeds and the lockSeed remain protected by PRF non-invertibility and 8-seed isolation. Even after noise removal, the data channel retains CSPRNG fill bytes encrypted by dataSeed — perfect fill is impossible ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) — so information-theoretic ambiguity persists within the data bits themselves.
 
-See [SCIENCE.md Section 2.4](SCIENCE.md#24-information-theoretic-barrier-and-hash-requirements).
+See [SCIENCE.md § 2.1 Information-Theoretic Barrier](SCIENCE.md#21-information-theoretic-barrier-theorem-1).
 
 ## 16. Oracle-Free Deniability
 
