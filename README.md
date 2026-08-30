@@ -70,13 +70,13 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[Why known-plaintext and advanced attacks are addressed by the barrier](SCIENCE.md)**
 
-**[Empirical Red-Team validation](REDTEAM.md)** — 12 hash primitives (including CRC128, FNV-1a lo-lane and MD5 for positive control) exercised across structural / FFT / Markov, per-pixel candidate distinguisher, startPixel enumeration, ChainHash SAT-cost analysis + hash-agnostic bias audit, Direct Crib KPA SAT-cost analysis, nonce-reuse demasker with 96-cell Partial KPA matrix, 1008-cell related-seed differential, and rotation-invariant edge case surfaces. All PRF-grade primitives held under the tested conditions on the shared pixel construction; the 48-bit always-on line's empirical re-verification is a separate phase.
+**[Empirical Red-Team validation](REDTEAM.md)** — the shipping registry's PRF-grade primitives plus lab-only accidentally-weak controls exercised across an attacker-realistic distinguisher matrix (body-byte statistics indistinguishable from CSPRNG at 1σ over the tested plaintext-size × barrier-fill envelope), a dual-nonce related-nonce differential decomposition (three scenarios × six Δ patterns × two plaintext kinds), Crib / Full / Partial KPA under the always-on 48-bit Interlocked Barrier (anchor protection empirically confirmed on below-spec primitives, PRF-conditional throughout), a nonce-reuse decomposition (simultaneous collision requires a CSPRNG hardware fault; single-slot collision closes on the un-collided axis a fortiori), a COBS-alignment probe across the full Barrier Fill range, a direct pathological-input recovery probe (0 per-byte recoveries across the tested decoder family at 10⁶+ trial-position pairs), and structural / FFT / Markov statistical surfaces. The ChainHash construction empirically absorbs multiple trapdoor mechanism classes (structural partition, chosen-constants collision, round-reduced, accidentally-weak) via two absorption mechanisms — feedforward-depth and input-XOR keying. *SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism.* All closures are instance-formulation-bounded and sample-bounded; where they invoke primitive strength, PRF-conditional.
 
 **[Discord](https://discord.gg/wRYF8shHpd)** — invite to chat with developer.
 
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** — A. Kuvshinov, "A Symmetric Cipher Construction with Ambiguity-Based Security"
 
-**No direct external dependencies** beyond ABI contracts and fallbacks with standard PRF primitives; the chain-absorb hot path is hand-written AVX-512 assembly (each primitive family at its natural active register width) and the barrier's per-chunk rank-unrank kernel is hand-written BMI2 / AVX-512F assembly.
+**No direct external dependencies** beyond the Go standard library and user-supplied hash primitives. On amd64 the chain-absorb hot path is hand-written AVX-512 and AVX2 assembly (each primitive family at its natural active register width, CPU-feature-dispatched), and the barrier's per-chunk mask-derivation kernel (chunk48lock 3-PEXT + combinadic unrank) is hand-written BMI2 and AVX-512F assembly. Non-amd64 platforms use portable Go fallbacks, parity-tested against the assembly path.
 
 ## Status
 
@@ -1095,8 +1095,8 @@ The semantics of decryption are ternary:
 
 Possible formalization paths:
 - **Indistinguishability-based** definitions (standard in cryptography, binary logic — sufficient).
-- **Simulation-based** proof with an ideal functionality that always returns random bytes (this is the "ideal world" of ITB — the real-world output is indistinguishable from random).
-- **Quantitative information flow** (how many bits leak — the per-byte barrier shows 0 bits leaked per observation).
+- **Simulation-based** proof with an ideal functionality that always returns random bytes: the noise-absorption layer's output is information-theoretically indistinguishable from random under passive observation (Theorem 1), and computationally indistinguishable from a CSPRNG-generated cover under the PRF and CSPRNG assumptions.
+- **Quantitative information flow**: the per-byte noise-absorption barrier leaks 0 bits about the hash output per observation under COA / KPA (Theorem 1 marginal uniformity + Theorem 2 candidate equiprobability); under CCA the noise position leaks 3 bits per pixel from noiseSeed (Theorem 6), bounded to that channel — dataSeed, lockSeed, and startSeed channels remain unaffected.
 
 All three approaches use standard mathematics. The formal relationship between ITB's Ambiguity-Based Security and Shannon's framework remains an open research question (see [SCIENCE.md](SCIENCE.md)).
 
