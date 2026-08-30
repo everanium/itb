@@ -45,6 +45,8 @@ package itb
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/bits"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -644,5 +646,208 @@ func TestRedTeamRelatedNonceDualNonceScenarioCLowEntropy(t *testing.T) {
 		"df255_1sided_3sigma":   323.0,
 		"cells":                 cells,
 		"summary":               summary,
+	})
+}
+
+// TestRedTeamRelatedNonceDualNonceScenarioCTwoSymbolRecovery directly
+// measures per-byte plaintext recovery under Scenario C (interlock-only
+// Δ) with `two_symbol` plaintext. The scaled + low-entropy probes above
+// showed that the diff bit-balance lifts to ≈ 0.22–0.27 under
+// `two_symbol` pt (vs ≈ 0.004 on realistic pt). The elevated
+// bit-balance is a distributional artefact of the plaintext's per-byte
+// extremity; this probe verifies directly that it does not translate
+// to a per-byte plaintext-recovery channel — the reviewer's honest gap
+// between "distributional deviation" and "recovery = 0/N".
+//
+// Attacker setup (attacker-realism: statistics on public ciphertext
+// bytes only; seed components never consulted in the decision path):
+//
+//   - N independent trials with a fresh 8-seed bundle drawn per trial
+//     from an independent nonce-seed stream.
+//   - Fresh `two_symbol` plaintext per trial (bytes drawn independently
+//     from {0x00, 0xFF} with p = 0.5).
+//   - Encrypted twice under a Scenario C pair: `main_nonce` fixed,
+//     `interlock_nonce` differs by a 1-bit Δ. Attacker sees the two
+//     wire body byte streams (ct0_body, ct1_body).
+//   - Attacker knows pt is `two_symbol` and attempts to guess each
+//     pt byte position via one of four naive attacker-realistic
+//     decoders. The attacker does not know the mask permutation, so
+//     position-specific decoders fall back to the identity pt-byte-
+//     position → wire-byte-position mapping (the naive default).
+//
+// Decoders tested (each a total function of the observed wire bytes,
+// producing a byte guess in {0x00, 0xFF}):
+//
+//   D0 — constant 0x00. Baseline; yields 0.500 exactly under uniform
+//        two_symbol (half of pt bytes are 0x00 by construction).
+//   D1 — high-bit threshold on ct0_body[i]:
+//        guess = 0x00 if (ct0_body[i] & 0x80) == 0 else 0xFF.
+//   D2 — high-bit threshold on ct0_body[i] XOR ct1_body[i]:
+//        guess = 0x00 if ((ct0[i] ^ ct1[i]) & 0x80) == 0 else 0xFF.
+//   D3 — popcount threshold on ct0_body[i]:
+//        guess = 0x00 if popcount(ct0[i]) < 4 else 0xFF.
+//
+// Per-decoder success rate is `correct guesses / total guesses` across
+// all trials × all pt byte positions. Under a null channel each
+// decoder yields 0.500 ± 3 × sqrt(0.25 / total). At N = 2000 trials ×
+// 512 pt bytes the total is 1024000 guesses per decoder and the 3σ
+// null bound is ≈ 0.5015. Any decoder exceeding this bound raises the
+// test as a fail — the reviewer's closure condition ("recovery = 0/N
+// verified") holds when every tested decoder sits below the bound.
+//
+// Env-gated by `ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT_RECOVERY=1`.
+// Wall clock ≈ 30–60 s.
+func TestRedTeamRelatedNonceDualNonceScenarioCTwoSymbolRecovery(t *testing.T) {
+	if os.Getenv("ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT_RECOVERY") != "1" {
+		t.Skip("two_symbol recovery probe: set ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT_RECOVERY=1 to enable (~30-60 s)")
+	}
+	if testing.Short() {
+		t.Skip("two_symbol recovery probe: skipped under -short")
+	}
+
+	const (
+		Ntrials = 2000
+		ptBytes = 512
+	)
+
+	hf := crc128BrokenLab
+
+	baseMain := deriveFixedNonceRN(rnBaseNonceSeed ^ 0x1000000000000001)
+	baseIL := deriveFixedNonceRN(rnBaseNonceSeed ^ 0x1000000000000002)
+	deltaMask := rnNonceDelta(0, 0) // bit_low Δ on interlock nonce byte 0 bit 0
+	variantIL := make([]byte, NonceSize)
+	for i := 0; i < NonceSize; i++ {
+		variantIL[i] = baseIL[i] ^ deltaMask[i]
+	}
+
+	var totalGuesses int64
+	var d0Correct, d1Correct, d2Correct, d3Correct int64
+
+	for trial := 0; trial < Ntrials; trial++ {
+		// Fresh 8-seed bundle per trial via an independent nonce-seed stream.
+		trialSeed := rnBaseNonceSeed ^ (0xDA7ABE05C0DE0000 + uint64(trial))
+		baseComps := rnBaseComponents(trialSeed)
+		seeds := rnBuild8Seeds(t, hf, baseComps)
+
+		// Fresh two_symbol pt per trial.
+		rng := rand.New(rand.NewSource(int64(0xC0DEBEEF7A5A0000 + uint64(trial))))
+		pt := generateLowEntropyPlaintext(rng, ptBytes)
+
+		// Baseline encrypt (baseMain, baseIL).
+		setBrokenTestNoncePair(t, baseMain, baseIL)
+		ct0, err := Encrypt3x128Cfg(nil, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], pt)
+		if err != nil {
+			t.Fatalf("baseline encrypt trial %d: %v", trial, err)
+		}
+
+		// Variant encrypt (baseMain, variantIL) — Scenario C interlock-only Δ.
+		setBrokenTestNoncePair(t, baseMain, variantIL)
+		ct1, err := Encrypt3x128Cfg(nil, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], pt)
+		if err != nil {
+			t.Fatalf("variant encrypt trial %d: %v", trial, err)
+		}
+
+		body0 := decodeWireDualNR(ct0).body
+		body1 := decodeWireDualNR(ct1).body
+
+		for i := 0; i < len(pt); i++ {
+			actual := pt[i]
+
+			// D0 — constant 0x00.
+			if actual == 0x00 {
+				d0Correct++
+			}
+
+			// D1 / D3 — decoders on ct0_body[i].
+			if i < len(body0) {
+				b := body0[i]
+				var g1, g3 byte
+				if b&0x80 == 0 {
+					g1 = 0x00
+				} else {
+					g1 = 0xFF
+				}
+				if bits.OnesCount8(b) < 4 {
+					g3 = 0x00
+				} else {
+					g3 = 0xFF
+				}
+				if g1 == actual {
+					d1Correct++
+				}
+				if g3 == actual {
+					d3Correct++
+				}
+			}
+
+			// D2 — decoder on (ct0_body[i] XOR ct1_body[i]).
+			if i < len(body0) && i < len(body1) {
+				d := body0[i] ^ body1[i]
+				var g2 byte
+				if d&0x80 == 0 {
+					g2 = 0x00
+				} else {
+					g2 = 0xFF
+				}
+				if g2 == actual {
+					d2Correct++
+				}
+			}
+
+			totalGuesses++
+		}
+	}
+
+	if totalGuesses == 0 {
+		t.Fatalf("no guesses recorded")
+	}
+
+	tg := float64(totalGuesses)
+	d0Rate := float64(d0Correct) / tg
+	d1Rate := float64(d1Correct) / tg
+	d2Rate := float64(d2Correct) / tg
+	d3Rate := float64(d3Correct) / tg
+
+	sigmaPer := math.Sqrt(0.25 / tg)
+	upper3 := 0.5 + 3*sigmaPer
+
+	t.Logf("Total per-decoder guesses: %d (N=%d trials × %d pt bytes)", totalGuesses, Ntrials, ptBytes)
+	t.Logf("Per-guess sigma under null: %.6f; 3-sigma null bound: %.6f", sigmaPer, upper3)
+	t.Logf("D0 constant 0x00                    : %.6f", d0Rate)
+	t.Logf("D1 high-bit(ct0[i])                 : %.6f (bound %.6f)", d1Rate, upper3)
+	t.Logf("D2 high-bit(ct0[i] XOR ct1[i])      : %.6f (bound %.6f)", d2Rate, upper3)
+	t.Logf("D3 popcount(ct0[i]) < 4             : %.6f (bound %.6f)", d3Rate, upper3)
+
+	fail := false
+	if d1Rate > upper3 {
+		t.Errorf("D1 high-bit(ct0[i]) recovery %.6f exceeds 3-sigma null bound %.6f", d1Rate, upper3)
+		fail = true
+	}
+	if d2Rate > upper3 {
+		t.Errorf("D2 high-bit(diff[i]) recovery %.6f exceeds 3-sigma null bound %.6f", d2Rate, upper3)
+		fail = true
+	}
+	if d3Rate > upper3 {
+		t.Errorf("D3 popcount(ct0[i]) recovery %.6f exceeds 3-sigma null bound %.6f", d3Rate, upper3)
+		fail = true
+	}
+
+	if !fail {
+		t.Logf("All decoders within 3-sigma null bound: pt-byte recovery = 0/%d over the tested decoder family verified.", totalGuesses)
+	}
+
+	emitJSONRNDual(t, "scenario_c_two_symbol_recovery", map[string]any{
+		"description":       "Direct per-byte plaintext-recovery probe under Scenario C + two_symbol pt: four naive attacker decoders vs uniform-random baseline. Closes the gap between distributional bit-balance ≈ 0.22–0.27 under two_symbol and per-byte recovery.",
+		"trials":            Ntrials,
+		"pt_bytes":          ptBytes,
+		"total_guesses":     totalGuesses,
+		"sigma_per_guess":   sigmaPer,
+		"null_3sigma_bound": upper3,
+		"primitive":         "CRC128",
+		"delta_pattern":     "bit_low (interlock nonce byte 0 bit 0)",
+		"d0_constant_0x00":  d0Rate,
+		"d1_highbit_ct0":    d1Rate,
+		"d2_highbit_diff":   d2Rate,
+		"d3_popcount_ct0":   d3Rate,
 	})
 }
