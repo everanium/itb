@@ -620,3 +620,121 @@ func TestRedTeamNonceReuseDualNonceHeadlineBLAKE3(t *testing.T) {
 		"cells":       cells,
 	})
 }
+
+// TestRedTeamNonceReuseDualNonceCOBSAlignmentProbe measures how often
+// the near-identical pair (`P2 = P1 XOR 1_bit` at the middle byte)
+// produces a container-body length mismatch between the two encrypts
+// under Scenario A (dual-slot nonce reuse) at each of the three
+// plaintext sizes appearing in the near-identical residue matrix
+// (512 B, 4 KB, 16 KB). Rationale: container size depends on per-snake
+// COBS-encoded lengths (`containerSizeAuth3_128Cfg(..., cobsLens)` in
+// `auth128.go`); a 1-bit flip that transitions the flipped byte to /
+// from `0x00` shifts the COBS overhead by one byte and can shift the
+// container geometry, causing `len(body1) != len(body2)`. The existing
+// residue statistic truncates the byte-equal comparison to
+// `min(len(body1), len(body2))`, so mismatched pairs contribute at
+// (approximately) the 1/256 misalignment floor rather than the true
+// residue rate — the direction of any artefact is deflating (drops
+// the average toward floor), not inflating.
+//
+// This probe quantifies the mismatch rate so the sign and magnitude of
+// any correction can be stated for the published 16× / 111× / 120×
+// figures. Emits per-size mismatch counts and mismatched-pair middle-
+// byte values (attacker-realism-neutral — plaintext used only for
+// terminal-stage generation, decisions require no ground truth).
+//
+// Env-gated by `ITB_NONCE_REUSE_COBS_ALIGN_PROBE=1`. Wall clock ~1-3 s.
+func TestRedTeamNonceReuseDualNonceCOBSAlignmentProbe(t *testing.T) {
+	if os.Getenv("ITB_NONCE_REUSE_COBS_ALIGN_PROBE") != "1" {
+		t.Skip("COBS alignment probe: set ITB_NONCE_REUSE_COBS_ALIGN_PROBE=1 to enable (~1-3 s)")
+	}
+	if testing.Short() {
+		t.Skip("COBS alignment probe: skipped under -short")
+	}
+
+	const pairs = 200
+	sizes := []int{512, 4096, 16384}
+	barrierFills := []int{1, 4, 8, 16, 32}
+	seedBase := uint64(0xB1A2_CE3E_5A17_E1AA)
+	hf := makeBlake3Hash128CPA(0xB13A_5AFE_15AF_E5EE)
+
+	type sizeCell struct {
+		PlaintextBytes    int         `json:"plaintext_bytes"`
+		BarrierFill       int         `json:"barrier_fill"`
+		Pairs             int         `json:"pairs"`
+		MismatchCount     int         `json:"mismatch_count"`
+		MidByteZeroCount  int         `json:"middle_byte_was_zero_count"`
+		MidByteFlipToZero int         `json:"middle_byte_flipped_to_zero_count"`
+		LenDiffHistogram  map[int]int `json:"len_diff_histogram_body2_minus_body1"`
+	}
+	var cells []sizeCell
+
+	for _, bf := range barrierFills {
+		cfg := &Config{BarrierFill: bf}
+		for _, plaintextLen := range sizes {
+			ns, ls, d1, d2, d3, s1, s2, s3 := buildEightSeedsDualNR(t, hf, 512, seedBase)
+			fixedMain, fixedIl := derivePairNonces(seedBase ^ 0xDA1DA100C0DEDA1D)
+			plainRng := rand.New(rand.NewSource(int64(seedBase ^ 0x5EED0FA5A5A50FEE)))
+
+			cell := sizeCell{
+				PlaintextBytes:   plaintextLen,
+				BarrierFill:      bf,
+				Pairs:            pairs,
+				LenDiffHistogram: map[int]int{},
+			}
+
+			for i := 0; i < pairs; i++ {
+				p1 := make([]byte, plaintextLen)
+				plainRng.Read(p1)
+				p2 := make([]byte, plaintextLen)
+				copy(p2, p1)
+				midByteBefore := p1[plaintextLen/2]
+				flipMask := byte(1 << (uint(i) % 8))
+				p2[plaintextLen/2] ^= flipMask
+				midByteAfter := p2[plaintextLen/2]
+				if midByteBefore == 0x00 {
+					cell.MidByteZeroCount++
+				}
+				if midByteAfter == 0x00 {
+					cell.MidByteFlipToZero++
+				}
+
+				setBrokenTestNoncePair(t, fixedMain, fixedIl)
+				c1, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, p1)
+				if err != nil {
+					t.Fatalf("Encrypt3x128Cfg p1 bf=%d size=%d: %v", bf, plaintextLen, err)
+				}
+				setBrokenTestNoncePair(t, fixedMain, fixedIl)
+				c2, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, p2)
+				if err != nil {
+					t.Fatalf("Encrypt3x128Cfg p2 bf=%d size=%d: %v", bf, plaintextLen, err)
+				}
+
+				l1 := decodeWireDualNR(c1)
+				l2 := decodeWireDualNR(c2)
+				body1Len := l1.totalPixels * Channels
+				body2Len := l2.totalPixels * Channels
+				diff := body2Len - body1Len
+				if diff != 0 {
+					cell.MismatchCount++
+				}
+				cell.LenDiffHistogram[diff]++
+			}
+
+			t.Logf("BF=%2d plaintext=%d B: mismatch=%d/%d (%.3f%%), mid_byte_was_0x00=%d, mid_byte_flipped_to_0x00=%d, len_diff_hist=%v",
+				bf, plaintextLen, cell.MismatchCount, pairs,
+				100*float64(cell.MismatchCount)/float64(pairs),
+				cell.MidByteZeroCount, cell.MidByteFlipToZero,
+				cell.LenDiffHistogram)
+			cells = append(cells, cell)
+		}
+	}
+
+	emitJSONDualNR(t, "cobs_alignment_probe", map[string]any{
+		"description":     "COBS-alignment artefact probe for the near-identical Scenario A cells at 512 B / 4 KB / 16 KB across Barrier Fill values {1, 8, 32}. Measures fraction of pairs where a 1-bit flip at middle byte produces a container-body length mismatch between the two encrypts. Direction of any artefact is deflating (misalignment → 1/256 floor comparison, drops the average toward floor). BF=1 is the tight-container regime (worst case for COBS-driven geometry sensitivity); higher BF pads the container further and makes mismatch a fortiori less likely.",
+		"pairs_per_cell":  pairs,
+		"sizes_bytes":     sizes,
+		"barrier_fills":   barrierFills,
+		"cells":           cells,
+	})
+}
