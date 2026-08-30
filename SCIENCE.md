@@ -734,9 +734,12 @@ The `EncryptAuthenticated3xCfg` Triple entry point implements deniable authentic
 |---|---|---|---|---|---|
 | Tag encrypted inside ciphertext | ✓ | ✗ | ✗ | ✗ | ✓ |
 | MAC covers fill | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Information-theoretic barrier† | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Interlocked Barrier — Part 1 (per-chunk permutation) | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Interlocked Barrier — Part 2 (per-pixel absorption)† | ✗ | ✗ | ✗ | ✗ | ✓ |
+| 8-seed isolation (per-chunk / per-pixel / per-snake) | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Oracle-free deniability | ✗ | Partial | Partial | ✗ | ✓ |
 | CCA spatial pattern eliminated | ✗ | — | — | ✓ | ✓ |
+| Nonce reuse behaviour | Confidentiality lost on colliding messages | — | — | Catastrophic — GHASH key H leaked, permanent forgery until key rotation | Plaintext recovery null under lab-forced dual-slot collision (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)); no key rotation required |
 | Padding oracle | Vulnerable (POODLE, Lucky13) | — | — | N/A (no padding) | N/A (no padding) |
 | Hash function requirement | PRF/PRP | PRF | PRF | PRP | PRF |
 | Maturity / peer review | Extensive | Extensive | Extensive | Extensive | **None** |
@@ -765,7 +768,7 @@ The `EncryptAuthenticated3xCfg` Triple entry point implements deniable authentic
 
 The following are theoretical attack surfaces that have been analyzed and accepted. None are practically exploitable under normal conditions.
 
-**1. rotateBits7 shift timing (equivalent to DPA on AES).** The data rotation function uses variable shift amounts (0-6) derived from dataSeed. On some CPU architectures, variable bit shifts have latency differences of ~1 clock cycle (~0.3ns at 3.6GHz). If an attacker can measure per-pixel shift timing, they recover rotation values → rotation barrier broken → combined with CCA (noise positions) + KPA → dataSeed potentially recoverable. However, isolating individual shift operations requires a hardware oscilloscope on the CPU die with >10GHz sampling rate, separating single operations among millions per second. This is the same attack class as Differential Power Analysis (DPA) and Simple Power Analysis (SPA) on AES — well-studied attacks that require physical laboratory access to the chip, specialized equipment (EM probes, high-bandwidth oscilloscopes), and controlled measurement conditions. All software symmetric ciphers (AES, ChaCha20, Serpent) are equally vulnerable to DPA/SPA at this level. dataSeed's register-only design ensures no **software-observable** side-channel exists — only hardware-level emanation analysis applies. Note: even a successful DPA/SPA attack yields only the rotation value of individual pixels (not the key); recovering the key from rotation values requires inverting ChainHash, which is blocked under the PRF assumption (inversion is infeasible). ITB does not claim DPA/SPA resistance, but the construction architecturally does not provide the attack surface that DPA exploits in table-lookup-based ciphers (e.g., AES S-box). This has not been independently verified.
+**1. rotateBits7 shift timing (equivalent to DPA on AES).** The data rotation function uses variable shift amounts (0-6) derived from dataSeed. On some CPU architectures, variable bit shifts have latency differences of ~1 clock cycle (~0.3ns at 3.6GHz). If an attacker can measure per-pixel shift timing, they recover rotation values → rotation barrier broken → combined with CCA (noise positions) + KPA → dataSeed potentially recoverable. However, isolating individual shift operations requires a hardware oscilloscope on the CPU die with >10GHz sampling rate, separating single operations among millions per second. This is the same attack class as Differential Power Analysis (DPA) and Simple Power Analysis (SPA) on AES — well-studied attacks that require physical laboratory access to the chip, specialized equipment (EM probes, high-bandwidth oscilloscopes), and controlled measurement conditions. All software symmetric ciphers (AES, ChaCha20, Serpent) are equally vulnerable to DPA/SPA at this level. dataSeed's register-only design ensures no **software-observable** side-channel exists — only hardware-level emanation analysis applies. The same class applies analogously to the Interlocked Barrier's Part 1 kernels: `chunk48lock` compresses each 48-bit chunk through three `PEXT` instructions on BMI2 hosts, and the combinadic mask-triple unrank selects `C(p, krem)` from a precomputed binomial table via `VPERMT2Q` (AVX-512F) or `VPERMD` (AVX2) — both constant-time on supporting microarchitectures per [HWTHREATS.md § Category 5](HWTHREATS.md#category-5-instruction-set-side-channel-profile), but same-class DPA/SPA concern applies at the same lab-only oscilloscope threshold. Note: even a successful DPA/SPA attack yields only the rotation value of individual pixels or the per-chunk mask fragments (not the key); recovering the key from rotation values or mask fragments requires inverting ChainHash, which is blocked under the PRF assumption (inversion is infeasible). ITB does not claim DPA/SPA resistance, but the construction architecturally does not provide the attack surface that DPA exploits in table-lookup-based ciphers (e.g., AES S-box). This has not been independently verified.
 
 **2. Container size metadata.** Container dimensions (width, height) are stored in the cleartext header, revealing approximate message length. This is inherent to any fixed-overhead cipher — AES-CTR, ChaCha20, and all stream ciphers expose ciphertext length ≈ plaintext length. Since ITB has no padding participating in the cryptographic construction, this metadata does not provide cryptographic advantage to the attacker — the same property holds for all fixed-overhead ciphers (AES-CTR, ChaCha20).
 
@@ -828,6 +831,8 @@ Differential Power Analysis (DPA) and Simple Power Analysis (SPA) exploit data-d
 | `dataHash >> 3` | Register shift | Constant | xorMask derived |
 | `dataBits ^= channelXOR` | Register XOR | Constant | XOR mask applied |
 | `rotateBits7(dataBits, rotation)` | Register shift | ~0.3ns variation | rotation value |
+| `chunk48lock` (Interlocked Barrier Part 1 apply) | 3 × `PEXT` (BMI2) or `softPEXT48` scalar | Constant | per-chunk mask triple from lockSeed |
+| Combinadic unrank `C(p, krem)` select | `VPERMT2Q` (AVX-512F) / `VPERMD` (AVX2) permute over precomputed binomial table | Constant | krem index (secret-derived from lockSeed) |
 
 No memory access depends on dataSeed values. No cache line activation correlates with key material. The power profile of register XOR, shift, and AND operations does not vary with operand values on modern CPUs.
 
@@ -837,7 +842,7 @@ ITB does not claim formal DPA/SPA resistance. This analysis describes the archit
 
 ### Scope and Maturity Disclaimer
 
-ITB is a new construction without prior peer review or independent cryptanalysis. The primary contribution is theoretical: demonstrating that Full KPA resistance is 3-factor under PRF assumption (4-factor under Partial KPA) — PRF non-invertibility closes the candidate-verification step, while architectural layers (8-seed isolation, encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application. PRF and barrier are complementary, neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Performance is not a design goal.
+ITB is a new construction without prior peer review or independent cryptanalysis. The primary contribution is theoretical: demonstrating that Full KPA resistance is 4-factor under the PRF assumption (5-factor under Partial KPA) — PRF non-invertibility closes the candidate-verification step, while architectural layers (the Interlocked Barrier's per-chunk mask permutation of ≈ 2^70.20 balanced partitions, 8-seed isolation with independent startSeeds, and per-pixel 7-rotation × 8-noisePos encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application. PRF and barrier are complementary, neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Performance is not a design goal.
 
 The author does not claim that ITB is the most secure symmetric cipher construction, nor that the analysis is exhaustive. As a first publication, the construction may contain overlooked vulnerabilities at two levels:
 
@@ -849,7 +854,7 @@ The author does not claim that ITB is the most secure symmetric cipher construct
 
 **Areas for reviewer scrutiny:**
 
-- Whether PRF combined with the architectural layers (8-seed isolation, encoding ambiguity; plus byte-splitting under Partial KPA) is sufficient under the analyzed threat models ([Definition 2](#5-formal-definitions), [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)), or whether additional properties are needed for attack models not considered.
+- Whether PRF combined with the architectural layers (Interlocked Barrier per-chunk mask permutation, 8-seed isolation, encoding ambiguity; plus byte-splitting under Partial KPA) is sufficient under the analyzed threat models ([Definition 2](#5-formal-definitions), [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)), or whether additional properties are needed for attack models not considered.
 - Whether the 8-seed isolation provides the claimed independence under all side-channel combinations.
 - Whether the CCA leak analysis ([Sections 4.1–4.7](#41-chosen-ciphertext-attack-and-mac-composition)) correctly bounds the information extractable from the MAC oracle.
 - Whether the ChainHash construction achieves the claimed effective key sizes through multi-call recovery ([Section 1.1.3](#113-per-pixel-config-extraction-and-effective-security), [2.1](#21-key-space)).
@@ -940,8 +945,9 @@ The attacker obtains the noise position (0-7) for every pixel — this is the co
 | XOR masks | No | 0 | dataSeed | Per-bit XOR: no oracle distinguishes mask values |
 | Data rotation | No | 0 | dataSeed | Register-only, unobservable |
 | Start pixel | No | 0 | startSeed | Not leaked via CCA (cache side-channel documented separately) |
+| Interlocked Barrier Part 1 (per-chunk 48-bit mask permutation) | No | 0 | lockSeed | Per-chunk mask triple PRF-opaque; ≈ 2^70.20 balanced partitions per chunk, unobservable without lockSeed |
 | Plaintext | No | 0 | — | Data bits encrypted, ordering unknown |
-| dataSeed / startSeed | No | 0 | — | Independent seeds, CCA reveals only noiseSeed |
+| dataSeed / lockSeed / startSeed | No | 0 | — | Independent seeds, CCA reveals only noiseSeed |
 
 The 22400 data bits are visible but remain encrypted: each is XOR'd with an independent, unknown mask bit from dataSeed. The noise map strips away 3200 noise bits (identifying which bits are noise vs data), but the remaining data bits still contain a mixture of encrypted plaintext and encrypted CSPRNG fill — the attacker cannot distinguish between the two, as both are processed identically by dataSeed ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)). The encryption (per-bit XOR + rotation + unknown start pixel) is untouched, and CSPRNG fill preserves information-theoretic ambiguity within the data channel.
 
