@@ -268,12 +268,42 @@ func TestChaCha20ResetCounterOverflow(t *testing.T) {
 	}
 	// blockOff = byteOffset / 64. The largest valid byteOffset has
 	// blockOff <= 2^32 - 1, so anything past 64 * 2^32 must error.
+	// Boundary values mirror seek.go TestNewAtChaCha20CounterOverflow so
+	// the two entry points speak the same language at the same threshold.
+	const lastValidByteOffset = (1 << 38) - 1
 	overflow := (int64(1) << 32) * 64
 	if int64(int(overflow)) != overflow {
 		t.Skip("platform int width cannot represent overflow boundary")
 	}
-	if err := ks.ResetCounter(int(overflow)); err == nil {
-		t.Error("chacha20 ResetCounter accepted byteOffset that overflows 32-bit block counter")
+
+	// Last valid intra-block seek within block index 2^32 − 1 must succeed —
+	// no bogus rejection at the boundary.
+	if err := ks.ResetCounter(lastValidByteOffset); err != nil {
+		t.Errorf("chacha20 ResetCounter(2^38-1): expected success at the last valid block index, got error: %v", err)
+	}
+
+	// Last valid block-aligned seek must succeed.
+	if err := ks.ResetCounter((1<<32 - 1) * 64); err != nil {
+		t.Errorf("chacha20 ResetCounter((2^32-1)*64): expected success at block-aligned last valid counter, got error: %v", err)
+	}
+
+	// First overflowing seek must return an explicit error, not a silently
+	// wrapped keystream.
+	err = ks.ResetCounter(int(overflow))
+	if err == nil {
+		t.Fatal("chacha20 ResetCounter accepted byteOffset that overflows 32-bit block counter (silent uint32 wrap)")
+	}
+
+	// The error text must both (a) name the failure and (b) reassure that
+	// inner ITB confidentiality is intact — same scope-clarity contract the
+	// seek-side NewAt error carries. A future reader of either error must
+	// see the same layer-scoping wording so this class does not get
+	// misdiagnosed as a confidentiality regression.
+	msg := err.Error()
+	for _, needle := range []string{"chacha20", "overflow", "confidentiality unaffected"} {
+		if !bytes.Contains([]byte(msg), []byte(needle)) {
+			t.Errorf("ResetCounter overflow error text missing %q for scope clarity: %q", needle, msg)
+		}
 	}
 }
 
