@@ -103,7 +103,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
 | **SipHash-2-4** | 128 | 2048 | PRF | 275 | 298 | 365 | 388 | 480 | 584 |
 | **ChaCha20** | 256 | 2048 | PRF | 260 | 293 | 347 | 344 | 449 | 559 |
 
-## ARM Graviton 4 16C/16HT
+## ARM64 Graviton 4 16C/16HT
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -185,4 +185,4 @@ Decrypt at 64 MB (MB/s per primitive per width; new / old ; **►** marks ratios
 
 **2048-bit residual** is now split: **AES-CMAC**, **BLAKE2b-256**, **ChaCha20**, and **Areion-SoEM-512** all sit at or above baseline at 2048-bit width (+3-46% D); **SipHash-2-4** matches baseline (101-103%); **Areion-SoEM-256** and **BLAKE3** land at 96-99% (essentially at baseline); **BLAKE2b-512** and **BLAKE2s** are the sole cells 11-13% below baseline at that width. The 2048-bit line reflects the wider container's higher per-chunk overhead relative to the per-byte hash cost — the pattern is comfortably absorbed by the wider security envelope, and the mid-tier residual is confined to two primitives rather than fleet-wide.
 
-**Further rows** for other µarchs (Zen 3+, ARM64 Graviton 4, etc.) are scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
+**Further rows** for other µarchs are scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.
