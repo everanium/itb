@@ -40,14 +40,13 @@ import numpy as np
 
 import os
 
-PROJ = Path(__file__).resolve().parents[6]
-# ITB_MASSIVE_DIR env var overrides the default tmp/massive lookup — used by
-# kl_matrix.py to give parallel workers isolated output directories.
+# ITB_MASSIVE_DIR env var overrides the default lookup — used by kl_matrix.py
+# to give parallel workers isolated output directories.
 _MASSIVE_DIR_OVERRIDE = os.environ.get("ITB_MASSIVE_DIR", "")
 MASSIVE_DIR = (
     Path(_MASSIVE_DIR_OVERRIDE).resolve()
     if _MASSIVE_DIR_OVERRIDE
-    else PROJ / "tmp" / "massive"
+    else Path.home() / "scratch" / "kl_massive"
 )
 
 CHANNELS = 8
