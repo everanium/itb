@@ -63,9 +63,9 @@
 //
 // # Easter egg
 //
-// MD5 128-bit + ITB + 512-bit nonce — arithmetically "safe" (2^-256 gate never fires).
+// FNV-1a 128-bit + ITB + 512-bit nonce — arithmetically "safe" (2^-256 gate never fires).
 // Mathematically correct. Cryptographically a joke. Do not ship.
-// Look at Phase 2a in archive/REDTEAM.md
+// Look at Broken-primitive stress in REDTEAM.md
 //
 // # Hash Width Variants
 //
