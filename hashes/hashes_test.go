@@ -312,7 +312,6 @@ func TestMake128AESCMACBadKeySize(t *testing.T) {
 	}
 }
 
-
 // TestMake256ExplicitKeyRoundtrip exercises the explicit-key arm of
 // each Make256 case for cross-process persistence: the key is supplied
 // twice, and the resulting closures must produce identical digests on

@@ -171,7 +171,6 @@ func TestBLAKE2sMakePairBadKeySize(t *testing.T) {
 	}
 }
 
-
 // TestBLAKE2sSingleArmDirect exercises the BLAKE2s() entry point that
 // returns only the single-arm closure (no batched dispatch). Calling
 // BLAKE2s(key) followed by BLAKE2s(key) with the same explicit key must

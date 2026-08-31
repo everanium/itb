@@ -271,7 +271,7 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 	}
 
 	// KEY=VALUE sidecar for the Python sub-scripts. Preserves the archived
-	// field shape (`total_pixels=N`, `barrier_fill=N`) and adds the 
+	// field shape (`total_pixels=N`, `barrier_fill=N`) and adds the
 	// dual-nonce fields (`main_nonce_hex`, `interlock_nonce_hex`, `header_size`).
 	pixLines := []string{
 		"hash=" + hashName,

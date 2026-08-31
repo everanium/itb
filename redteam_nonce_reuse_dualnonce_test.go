@@ -576,14 +576,14 @@ func TestRedTeamNonceReuseDualNonceMatrix(t *testing.T) {
 	}
 
 	emitJSONDualNR(t, "dualnonce_matrix", map[string]any{
-		"description":   "Container-body statistics under three dual-nonce reuse scenarios; two primitives; two shapes; three plaintext sizes.",
-		"scenarios":     "A: both nonces collide across pair (main != il within message). B: main only. C: interlock only.",
-		"pairs_per_cell": pairs,
-		"nonce_bits":    NonceSize * 8,
-		"key_bits":      512,
-		"floor_1_over_256": 1.0 / 256.0,
+		"description":                "Container-body statistics under three dual-nonce reuse scenarios; two primitives; two shapes; three plaintext sizes.",
+		"scenarios":                  "A: both nonces collide across pair (main != il within message). B: main only. C: interlock only.",
+		"pairs_per_cell":             pairs,
+		"nonce_bits":                 NonceSize * 8,
+		"key_bits":                   512,
+		"floor_1_over_256":           1.0 / 256.0,
 		"uniform_band_df255_p01_p99": []float64{220, 292},
-		"cells": cells,
+		"cells":                      cells,
 	})
 	// Attach a compact summary row to the log so `go test -v` output is
 	// self-contained without opening the JSON.
@@ -614,10 +614,10 @@ func TestRedTeamNonceReuseDualNonceHeadlineBLAKE3(t *testing.T) {
 	}
 
 	emitJSONDualNR(t, "headline_blake3", map[string]any{
-		"description": "Headline byte-equal / Pearson / Hamming numbers per scenario under PRF-grade BLAKE3-128 reference primitive.",
-		"pairs":       pairs,
+		"description":     "Headline byte-equal / Pearson / Hamming numbers per scenario under PRF-grade BLAKE3-128 reference primitive.",
+		"pairs":           pairs,
 		"plaintext_bytes": bodyLen,
-		"cells":       cells,
+		"cells":           cells,
 	})
 }
 
@@ -731,10 +731,10 @@ func TestRedTeamNonceReuseDualNonceCOBSAlignmentProbe(t *testing.T) {
 	}
 
 	emitJSONDualNR(t, "cobs_alignment_probe", map[string]any{
-		"description":     "COBS-alignment artefact probe for the near-identical Scenario A cells at 512 B / 4 KB / 16 KB across Barrier Fill values {1, 8, 32}. Measures fraction of pairs where a 1-bit flip at middle byte produces a container-body length mismatch between the two encrypts. Direction of any artefact is deflating (misalignment → 1/256 floor comparison, drops the average toward floor). BF=1 is the tight-container regime (worst case for COBS-driven geometry sensitivity); higher BF pads the container further and makes mismatch a fortiori less likely.",
-		"pairs_per_cell":  pairs,
-		"sizes_bytes":     sizes,
-		"barrier_fills":   barrierFills,
-		"cells":           cells,
+		"description":    "COBS-alignment artefact probe for the near-identical Scenario A cells at 512 B / 4 KB / 16 KB across Barrier Fill values {1, 8, 32}. Measures fraction of pairs where a 1-bit flip at middle byte produces a container-body length mismatch between the two encrypts. Direction of any artefact is deflating (misalignment → 1/256 floor comparison, drops the average toward floor). BF=1 is the tight-container regime (worst case for COBS-driven geometry sensitivity); higher BF pads the container further and makes mismatch a fortiori less likely.",
+		"pairs_per_cell": pairs,
+		"sizes_bytes":    sizes,
+		"barrier_fills":  barrierFills,
+		"cells":          cells,
 	})
 }

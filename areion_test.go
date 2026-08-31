@@ -887,5 +887,3 @@ func TestMakeAreionSoEM256HashWithKey(t *testing.T) {
 		}
 	}
 }
-
-

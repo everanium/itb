@@ -7,25 +7,40 @@ import (
 	"github.com/everanium/itb/ctr"
 )
 
-// buildPermutation extracts a 16-byte schedule seed by XORing the
+// buildScheduleSeed derives the 16-byte schedule seed by XORing the
 // anchor cipher's keystream over a zero buffer under cs.scheduleSubkey
-// and the per-message nonce, then expands the seed into a Fisher-Yates
-// permutation of {0, …, N-1}. The expansion uses SplitMix64 seeded by
-// the two 64-bit halves of the seed (lo, hi); SplitMix64 is a
-// well-known full-period PRNG that yields a uniform unbiased
-// permutation under standard Fisher-Yates.
-func buildPermutation(s *Schedule, cs *Cipherset, nonce []byte) ([]int, error) {
+// and the per-message nonce. The seed is the injective nonce-dependent
+// core of the schedule derivation: any change to nonce or subkey
+// flows into a keystream difference and hence a different seed
+// byte-for-byte, since the anchor cipher (AES-128-CTR by default) is
+// a keyed permutation on 128-bit inputs. Callers that need the derived
+// [Fisher-Yates permutation](fisherYates) go through [buildPermutation]
+// which layers Fisher-Yates on top of this seed.
+func buildScheduleSeed(s *Schedule, cs *Cipherset, nonce []byte) ([scheduleSeedSize]byte, error) {
 	anchor := s.palette[0]
 	sliceNonce, err := sliceNonceFor(anchor, nonce)
 	if err != nil {
-		return nil, err
+		return [scheduleSeedSize]byte{}, err
 	}
 	ks, err := ctr.New(anchor, cs.scheduleSubkey, sliceNonce)
 	if err != nil {
-		return nil, fmt.Errorf("parallax: schedule keystream: %w", err)
+		return [scheduleSeedSize]byte{}, fmt.Errorf("parallax: schedule keystream: %w", err)
 	}
 	var seed [scheduleSeedSize]byte
 	ks.XORKeyStream(seed[:], seed[:])
+	return seed, nil
+}
+
+// buildPermutation derives the schedule seed via [buildScheduleSeed]
+// and expands it into a Fisher-Yates permutation of {0, …, N-1}. The
+// expansion uses SplitMix64 seeded by the two 64-bit halves of the
+// seed (lo, hi); SplitMix64 is a well-known full-period PRNG that
+// yields a uniform unbiased permutation under standard Fisher-Yates.
+func buildPermutation(s *Schedule, cs *Cipherset, nonce []byte) ([]int, error) {
+	seed, err := buildScheduleSeed(s, cs, nonce)
+	if err != nil {
+		return nil, err
+	}
 	return fisherYates(seed[:], len(s.palette)), nil
 }
 

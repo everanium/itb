@@ -1587,4 +1587,3 @@ func BenchmarkExtProductionStream_Decrypt_48MB(b *testing.B) {
 func BenchmarkExtProductionStream_Decrypt_64MB(b *testing.B) {
 	benchExtProductionStreamDecrypt(b, 64<<20)
 }
-

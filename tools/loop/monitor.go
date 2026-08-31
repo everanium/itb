@@ -44,9 +44,9 @@ func sample(r *runState) {
 	}
 
 	var (
-		iterParts                          []string
-		totalEnc, totalDec                 int64
-		totalNanosEnc, totalNanosDec       int64
+		iterParts                    []string
+		totalEnc, totalDec           int64
+		totalNanosEnc, totalNanosDec int64
 	)
 	for _, w := range r.workers {
 		iterParts = append(iterParts, fmt.Sprintf("g%d:%d", w.id, w.iters.Load()))
@@ -104,10 +104,10 @@ func sample(r *runState) {
 // baseline.
 func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int, workerErrs []error) int {
 	var (
-		iterParts                          []string
-		totalIters                         int64
-		totalEnc, totalDec                 int64
-		totalNanosEnc, totalNanosDec       int64
+		iterParts                    []string
+		totalIters                   int64
+		totalEnc, totalDec           int64
+		totalNanosEnc, totalNanosDec int64
 	)
 	for _, w := range r.workers {
 		n := w.iters.Load()

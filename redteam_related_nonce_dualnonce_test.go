@@ -487,15 +487,15 @@ func TestRedTeamRelatedNonceDualNonceScenarioCScaled(t *testing.T) {
 	}
 
 	emitJSONRNDual(t, "scenario_c_scaled_matrix", map[string]any{
-		"description":            "Scenario C (interlock-only Δ) re-run at 4× baseline plaintext (2 MiB) to test artefact-vs-signal for the +3σ residue.",
-		"plaintext_bytes":        scaledPlaintextBytes,
-		"baseline_plaintext":     rnPlaintextBytes,
-		"scale_factor":           4,
-		"key_bits":               rnKeyComponents * 64,
-		"nonce_bits":             NonceSize * 8,
-		"df255_1sided_3sigma":    323.0,
-		"cells":                  cells,
-		"summary":                summary,
+		"description":         "Scenario C (interlock-only Δ) re-run at 4× baseline plaintext (2 MiB) to test artefact-vs-signal for the +3σ residue.",
+		"plaintext_bytes":     scaledPlaintextBytes,
+		"baseline_plaintext":  rnPlaintextBytes,
+		"scale_factor":        4,
+		"key_bits":            rnKeyComponents * 64,
+		"nonce_bits":          NonceSize * 8,
+		"df255_1sided_3sigma": 323.0,
+		"cells":               cells,
+		"summary":             summary,
 	})
 }
 
@@ -530,7 +530,7 @@ func generateLowEntropyPlaintext(rng *rand.Rand, n int) []byte {
 //   - `random`     — ≈ 8   bits/byte (uniform-over-256 baseline).
 //   - `ascii`      — ≈ 4.5 bits/byte (≈ 95 printable values).
 //   - `two_symbol` — ≈ 1   bit/byte (bytes drawn independently from
-//                    {0x00, 0xFF} with p = 0.5).
+//     {0x00, 0xFF} with p = 0.5).
 //
 // Ordering test (attacker-realism: statistics on public ciphertext
 // bytes only; seed components never consulted in the decision path):
@@ -678,14 +678,14 @@ func TestRedTeamRelatedNonceDualNonceScenarioCLowEntropy(t *testing.T) {
 // Decoders tested (each a total function of the observed wire bytes,
 // producing a byte guess in {0x00, 0xFF}):
 //
-//   D0 — constant 0x00. Baseline; yields 0.500 exactly under uniform
-//        two_symbol (half of pt bytes are 0x00 by construction).
-//   D1 — high-bit threshold on ct0_body[i]:
-//        guess = 0x00 if (ct0_body[i] & 0x80) == 0 else 0xFF.
-//   D2 — high-bit threshold on ct0_body[i] XOR ct1_body[i]:
-//        guess = 0x00 if ((ct0[i] ^ ct1[i]) & 0x80) == 0 else 0xFF.
-//   D3 — popcount threshold on ct0_body[i]:
-//        guess = 0x00 if popcount(ct0[i]) < 4 else 0xFF.
+//	D0 — constant 0x00. Baseline; yields 0.500 exactly under uniform
+//	     two_symbol (half of pt bytes are 0x00 by construction).
+//	D1 — high-bit threshold on ct0_body[i]:
+//	     guess = 0x00 if (ct0_body[i] & 0x80) == 0 else 0xFF.
+//	D2 — high-bit threshold on ct0_body[i] XOR ct1_body[i]:
+//	     guess = 0x00 if ((ct0[i] ^ ct1[i]) & 0x80) == 0 else 0xFF.
+//	D3 — popcount threshold on ct0_body[i]:
+//	     guess = 0x00 if popcount(ct0[i]) < 4 else 0xFF.
 //
 // Per-decoder success rate is `correct guesses / total guesses` across
 // all trials × all pt byte positions. Under a null channel each
