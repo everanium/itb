@@ -197,6 +197,22 @@ describe ITB do
                 "mode=a%20b%26c%3Dd%25"
   end
 
+  it "typed with_inner_hashes overrides the profile constellation" do
+    # Base profile is a shipped single-primitive width-512 Single
+    # Message profile; the per-call with_inner_hashes override
+    # rebinds all 8 slots to an alternate width-512 constellation
+    # for one Pipeline pair without touching the shipped registry.
+    override = ITB::Opts.new.with_inner_hashes([
+      "areion512", "blake2b512", "areion512", "blake2b512",
+      "areion512", "blake2b512", "areion512", "blake2b512",
+    ])
+    sender = ITB::Pipeline.new("singlemsg-triple-mac-v1", opts: override)
+    receiver = ITB::Pipeline.new(
+      "singlemsg-triple-mac-v1", sender.blob, override)
+    plain = payload(2048, 43_u64)
+    receiver.decrypt_message(sender.encrypt_message(plain)).should eq plain
+  end
+
   it "pins the parent pipeline while a stream session lives" do
     # No other reference to the Pipeline survives this Proc; the
     # session's @parent reference must keep the Go-side handle alive.

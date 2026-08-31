@@ -54,6 +54,19 @@ class Opts {
 
     fun innerHash(name: String): Opts = apply { impl.withInnerHash(name) }
 
+    /**
+     * Per-call override for `Opts.MixedHashes [8]string` on the Go
+     * side. Comma-joins the 8 slot names into the `innerHashes`
+     * opts-string key. Slot ordering is
+     * `[noise, lock, data1, data2, data3, start1, start2, start3]`.
+     * Fail-fast validation surfaces at Init on the Go side; a typo'd
+     * slot or width mismatch surfaces with an error naming the
+     * offending slot. When both this and [innerHash] are set, the
+     * mixed override wins on the Go side.
+     */
+    fun innerHashes(vararg names: String): Opts =
+        apply { impl.withInnerHashes(*names) }
+
     fun outerCipher(name: String): Opts = apply { impl.withOuterCipher(name) }
 
     /** Comma-joins the palette names (`parallaxPalette`). */

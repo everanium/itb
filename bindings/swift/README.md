@@ -67,6 +67,24 @@ cd bindings/swift && swift build -c release
 location, so the package builds from any checkout path without
 `LD_LIBRARY_PATH`.
 
+## Library lookup order
+
+Both `libitb_c` and `libitb` are resolved at **compile time** through
+the linker settings declared in `Package.swift`:
+
+1. `-L bindings/c/build` (the C binding library's build output) and
+   `-L dist/<os>-<arch>` (the libitb shared library) — both directory
+   paths derived from the manifest's own file location so the flags
+   stay valid across checkout paths.
+2. `-Xlinker -rpath` entries for the same two directories are embedded
+   into every produced executable, so the binaries run without
+   `LD_LIBRARY_PATH` (Linux) or `DYLD_LIBRARY_PATH` (macOS).
+3. The OS default loader path is the final fallback.
+
+Moving `libitb.so` or `libitb_c.so` after build requires either the
+baked RPATHs to stay valid or the appropriate loader-path env var at
+run time.
+
 ## Usage example
 
 ```swift

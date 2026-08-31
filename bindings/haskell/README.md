@@ -48,6 +48,8 @@ go build -trimpath -buildmode=c-shared \
 cd bindings/haskell && cabal build all
 ```
 
+## Library lookup order
+
 `build.sh` generates a `cabal.project.local` (gitignored) carrying
 the absolute `extra-lib-dirs` and an rpath to the repository's
 `dist/linux-amd64` directory, so `libitb.so` resolves at link and
@@ -143,10 +145,23 @@ pipe <- initPipeline "streaming-aead-triple-mac-v1"
                      (nonceBits 512 <> keyBits 1024 <> chunkSize 65536)
 ```
 
-Go runtime knobs: `setMemoryLimit bytes` and `setGcPercent pct`
-(negative values query without changing). `hashes` returns the
-shipped hash primitive roster in canonical registry order;
-`profiles` returns the built-in Triple profile names.
+`hashes` returns the shipped hash primitive roster in canonical
+registry order; `profiles` returns the built-in Triple profile names.
+
+## Memory
+
+Two process-wide knobs constrain Go runtime arena pacing, readable at
+libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+adjustable at any time programmatically. Pass a negative value to
+query without changing. Long-running or allocation-heavy workloads
+(benchmarks, bulk encryption) should set both — without a soft cap +
+aggressive GC the Go scratch heap grows unboundedly under allocation
+churn:
+
+```haskell
+setMemoryLimit (512 * 1024 * 1024) -- 512 MiB soft cap
+setGcPercent 20                    -- aggressive GC
+```
 
 ## Testing
 
@@ -177,7 +192,7 @@ via `setMemoryLimit (512 * 1024 * 1024)` and `setGcPercent 20`. See
 `bindings/BENCH.md` for the fleet-wide configuration authority and
 comparison tables.
 
-## eitb CLI
+## eitb utility
 
 ```bash
 ./bindings/haskell/eitb/eitb version

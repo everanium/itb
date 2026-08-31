@@ -11,6 +11,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [dev.everanium.itb.clojure.errors-test]
+            [dev.everanium.itb.clojure.inner-hashes-test]
             [dev.everanium.itb.clojure.message-test]
             [dev.everanium.itb.clojure.rekey-test]
             [dev.everanium.itb.clojure.smoke-test]
@@ -27,7 +28,8 @@
     dev.everanium.itb.clojure.stream-sticky-test
     dev.everanium.itb.clojure.stream-cancel-test
     dev.everanium.itb.clojure.rekey-test
-    dev.everanium.itb.clojure.errors-test])
+    dev.everanium.itb.clojure.errors-test
+    dev.everanium.itb.clojure.inner-hashes-test])
 
 (defn -main [& args]
   (let [wanted (if (seq args)

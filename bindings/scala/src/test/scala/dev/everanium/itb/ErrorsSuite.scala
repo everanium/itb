@@ -65,3 +65,26 @@ class ErrorsSuite extends ItbSuite:
     val e = err(Pipeline.init("singlemsg-triple-mac-v1", opts))
     assert(e.status != Status.Ok)
   }
+
+  test("per-call innerHashes override round-trips") {
+    // The single-primitive width-512 base profile takes an 8-slot
+    // per-call MixedHashes override (Go-side Opts.MixedHashes, wired
+    // through the innerHashes= opts key). Round-trip proves the typed
+    // helper's comma-join lands in the Go parser correctly.
+    val senderOpts = Opts.empty.withInnerHashes(
+      "areion512", "blake2b512", "areion512", "blake2b512",
+      "areion512", "blake2b512", "areion512", "blake2b512",
+    )
+    val receiverOpts = Opts.empty.withInnerHashes(
+      "areion512", "blake2b512", "areion512", "blake2b512",
+      "areion512", "blake2b512", "areion512", "blake2b512",
+    )
+    Using.resource(ok(Pipeline.init("singlemsg-triple-mac-v1", senderOpts))) { sender =>
+      Using.resource(ok(Pipeline.open("singlemsg-triple-mac-v1", sender.blob, receiverOpts))) {
+        receiver =>
+          val plain = "per-call inner-hashes override round-trip payload".getBytes("UTF-8")
+          val wire = ok(sender.encryptMessage(plain))
+          assert(ok(receiver.decryptMessage(wire)).sameElements(plain))
+      }
+    }
+  }

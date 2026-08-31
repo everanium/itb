@@ -86,6 +86,18 @@ class Opts {
         withRaw('innerHash', name)
     }
 
+    /** Per-call override for {@code Opts.MixedHashes [8]string} on
+     * the Go side. Comma-joins the 8 slot names into the
+     * {@code innerHashes} opts-string key. Slot ordering is
+     * {@code [noise, lock, data1, data2, data3, start1, start2, start3]}.
+     * Fail-fast validation surfaces at Init on the Go side; a typo'd
+     * slot or width mismatch surfaces with an error naming the
+     * offending slot. When both this and {@link #withInnerHash} are
+     * set, the mixed override wins on the Go side. */
+    Opts withInnerHashes(String... names) {
+        withRaw('innerHashes', names.join(','))
+    }
+
     Opts withOuterCipher(String name) {
         withRaw('outerCipher', name)
     }

@@ -52,4 +52,22 @@ class MessageTest {
             }
         }
     }
+
+    @Test
+    void optsInnerHashesOverrideRoundTripsOnWidth512Profile() {
+        // Per-call Opts.MixedHashes override over a width-512 shipped
+        // base profile; both sides pass the same 8-slot constellation
+        // so the receiver Pipeline resolves the same mixed inner-hash
+        // bundle as the sender.
+        Opts opts = new Opts().withInnerHashes(
+                'areion512', 'blake2b512', 'areion512', 'blake2b512',
+                'areion512', 'blake2b512', 'areion512', 'blake2b512')
+        Pipeline.withPipeline('singlemsg-triple-mac-v1', opts) { Pipeline sender ->
+            Pipeline.withOpened('singlemsg-triple-mac-v1', sender.blob, opts) { Pipeline receiver ->
+                byte[] plain = payload(4096, 42L)
+                byte[] wire = sender.encryptMessage(plain)
+                assertArrayEquals(plain, receiver.decryptMessage(wire))
+            }
+        }
+    }
 }
