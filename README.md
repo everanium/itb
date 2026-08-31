@@ -688,7 +688,33 @@ func main() {
 }
 ```
 
-C-ABI callers install the same profile via `ITB_Triple_RegisterProfile(name, opts)` — `opts` is a URL-query-encoded profile-shape string with the same keys the shipped opts parser accepts, plus profile-only fields (`mode`, `width`, `parallaxOn`, `wrapperOn`). The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`.
+The mixed-primitive variant of the same registration replaces the single `InnerHash` field with the 8-slot `MixedHashes` array (leaving `InnerHash` empty — the two dispatch paths are mutually exclusive). Slot ordering matches the 8-seed constellation: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`.
+
+```go
+triple.RegisterProfile("acme-triple-mixed-256-v1", triple.Profile{
+    Mode:                "streaming-aead",
+    Width:               256,
+    // InnerHash left empty — mixed dispatch reads MixedHashes.
+    KeyBits:             1024,
+    MacName:             "hmac-blake3",
+    OuterCipher:         "chacha20",
+    ParallaxPalette:     []string{"aescmac", "chacha20", "blake3"},
+    ParallaxSegmentSize: parallax.DefaultSegmentSize,
+    ChunkSize:           itb.DefaultChunkSize,
+    ParallaxOn:          true,
+    WrapperOn:           true,
+    MixedHashes: [8]string{
+        "areion256", "blake3", "blake2b256", "blake2s",    // noise, lock, data1, data2
+        "chacha20",  "areion256", "blake3", "blake2b256",  // data3, start1, start2, start3
+    },
+})
+```
+
+Every mixed-hash slot is validated fail-fast at registration: each name must resolve via `hashes.Find`, each primitive's width must equal the profile's `Width`, and every one of the 8 slots must be populated (partial fills are refused rather than defaulted per slot). A typo in a primitive name or a width mismatch surfaces at process init with a descriptive error naming the offending slot, so a misconfigured mixed profile never reaches the encrypt path.
+
+`triple.Opts` carries no per-call `MixedHashes` override — the 8-slot constellation is a profile-level knob, not a per-call one. Reaching a mixed configuration goes through a named profile (shipped or user-registered), matching the wire-contract discipline that a receiver identifies a profile by name; the four shipped mixed profiles above are referenced by their constants exactly like the shipped single-primitive profiles, no separate wiring is required.
+
+C-ABI callers install the same profile via `ITB_Triple_RegisterProfile(name, opts)` — `opts` is a URL-query-encoded profile-shape string with the same keys the shipped opts parser accepts, plus profile-only fields (`mode`, `width`, `parallaxOn`, `wrapperOn`). The mixed-primitive dispatch is selected by supplying `innerHashes=<comma-separated 8-entry list>` in place of `innerHash=<name>` (the two are mutually exclusive, mirroring the Go-side `MixedHashes` / `InnerHash` split); slot ordering matches the Go-side array. The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`.
 
 ## Advanced — Low-Level `*Cfg` surface
 
