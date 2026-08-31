@@ -63,7 +63,7 @@ So the attacker holding a shipped ciphertext, running `jokeHash` in an arbitrary
 
 - Cannot demask Part 2 → **no observations of hash outputs** → `jokeHash` invertibility has nothing to invert
 - Cannot observe mask triples → Part 1 remains opaque → combinadic unrank is uninformative even at a `jokeHash`-driven `lockSeed`, because a `rank` value never becomes visible
-- Cannot exploit `jokeHash` bias → biased output is not exposed on wire; Part 2 absorption gives `P(v | h) = 1/2` regardless of primitive bias
+- Cannot exploit `jokeHash` bias for plaintext-content recovery → Part 2 absorption gives `P(v | h) = 1/2` **per pixel** regardless of primitive bias, so no wire byte is ever anchored to a specific plaintext bit (a weaker aggregate-statistics residue — a plaintext-Hamming-weight distinguisher visible under repeat-plaintext CPA when the primitive's output distribution itself carries measurable bias — does surface for the popcount-2 `jokeHash` multiplier specifically; see [§ Residual bias under repeat-plaintext CPA](#residual-bias-under-repeat-plaintext-cpa) below, and note that it does not enable plaintext-content recovery)
 
 ### The lab-only scenarios where `jokeHash` bites
 
