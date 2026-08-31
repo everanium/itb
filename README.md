@@ -570,9 +570,17 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
 
     // Cryptographic knob overrides:
     MacName:      "hmac-blake3",
-    InnerHash:    "areion512",
+    InnerHash:    "areion512", // auto-cleared if MixedHashes below is set (dispatch paths are mutually exclusive)
     KeyBits:      1024,        // integer multiple of the primitive's native hash width
     OuterCipher:  "chacha20",
+
+    // Per-slot primitive constellation override — zero-value defers
+    // to the profile default; when any slot is non-empty, all 8 must
+    // be non-empty and every entry's primitive width must equal the
+    // effective KeyBits' hash width (fail-fast at Init). Wins over
+    // InnerHash when both are set. Slot order:
+    // [0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3.
+    MixedHashes: [8]string{}, // e.g. {"areion512","blake2b512","areion512","blake2b512","areion512","blake2b512","areion512","blake2b512"}
 
     // Parallax knob overrides:
     ParallaxPalette:     []string{"aescmac", "areion512", "blake3"},
