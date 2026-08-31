@@ -75,6 +75,15 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 //     parallaxSegmentSize — decimal integer overrides.
 //   - innerHash, macName, outerCipher — canonical primitive-name
 //     overrides.
+//   - innerHashes — comma-separated eight-entry per-slot primitive
+//     constellation override for the mixed-primitive dispatch path.
+//     Slot ordering matches [triple.Opts.MixedHashes]. Exactly 8
+//     entries required when non-empty; mutually exclusive with
+//     innerHash (mixed dispatch wins per the resolver rule). Empty
+//     value defers to the profile default. Same key name and shape
+//     the profile-registration parser already accepts, kept
+//     symmetric so a call site that shares an opts-string helper
+//     can reuse it in both contexts.
 //   - parallaxPalette — comma-separated primitive names for the
 //     parallax palette (empty = profile default).
 func parseTripleOpts(query string) (triple.Opts, error) {
@@ -161,6 +170,17 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 			opts.MacName = v
 		case "innerHash":
 			opts.InnerHash = v
+		case "innerHashes":
+			if v == "" {
+				continue
+			}
+			entries := strings.Split(v, ",")
+			if len(entries) != 8 {
+				return opts, fmt.Errorf("opts innerHashes: got %d entries, want exactly 8", len(entries))
+			}
+			for i, name := range entries {
+				opts.MixedHashes[i] = name
+			}
 		case "outerCipher":
 			opts.OuterCipher = v
 		case "parallaxPalette":

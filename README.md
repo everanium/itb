@@ -603,6 +603,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `ChunkSize` | `int > 0` bytes (or 0 = default) | Streaming chunk-size budget; default `itb.DefaultChunkSize` = 16 MiB. |
 | `MacName` | `"kmac256"` \| `"hmac-sha256"` \| `"hmac-blake3"` | The shipped MACs (see `macs/registry.go`). Empty = profile default. Non-MAC profiles ignore. |
 | `InnerHash` | one of the shipped primitive names below | Empty = profile default. |
+| `MixedHashes` | `[8]string`, all slots one of the shipped primitive names below | Zero-value array (all slots empty) = profile default. When any slot is non-empty, all 8 must be non-empty, every entry's primitive width must equal the effective width, and the override wins over `InnerHash` (both dispatch paths are mutually exclusive). Slot ordering: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`. |
 | `KeyBits` | `512` / `1024` / `2048` (or 0 = default) | Integer multiple of the primitive's native hash width (128 / 256 / 512). |
 | `OuterCipher` | one of the shipped primitive names below | Empty = profile default. Wrapper-off profiles ignore. |
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
@@ -688,33 +689,78 @@ func main() {
 }
 ```
 
-The mixed-primitive variant of the same registration replaces the single `InnerHash` field with the 8-slot `MixedHashes` array (leaving `InnerHash` empty — the two dispatch paths are mutually exclusive). Slot ordering matches the 8-seed constellation: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`.
+Worked example — installing a mixed-primitive width-256 Streaming AEAD variant. Same shape as the single-primitive example above, with the single `InnerHash` field replaced by the 8-slot `MixedHashes` array (leaving `InnerHash` empty — the two dispatch paths are mutually exclusive). Slot ordering matches the 8-seed constellation: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`.
 
 ```go
-triple.RegisterProfile("acme-triple-mixed-256-v1", triple.Profile{
-    Mode:                "streaming-aead",
-    Width:               256,
-    // InnerHash left empty — mixed dispatch reads MixedHashes.
-    KeyBits:             1024,
-    MacName:             "hmac-blake3",
-    OuterCipher:         "chacha20",
-    ParallaxPalette:     []string{"aescmac", "chacha20", "blake3"},
-    ParallaxSegmentSize: parallax.DefaultSegmentSize,
-    ChunkSize:           itb.DefaultChunkSize,
-    ParallaxOn:          true,
-    WrapperOn:           true,
-    MixedHashes: [8]string{
-        "areion256", "blake3", "blake2b256", "blake2s",    // noise, lock, data1, data2
-        "chacha20",  "areion256", "blake3", "blake2b256",  // data3, start1, start2, start3
-    },
+package main
+
+import (
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/parallax"
+    "github.com/everanium/itb/triple"
+)
+
+func init() {
+    // Register once at process init — the profile name is a wire
+    // contract with the receiver, so both sides register the same
+    // (name, Profile) pair before any Init / Open call fires. The
+    // mixed constellation is a per-slot primitive assignment that
+    // spreads dispatch across several width-256 primitives on one
+    // Pipeline; every slot's primitive width must equal Profile.Width
+    // (fail-fast at RegisterProfile via validateMixedHashes).
+    if err := triple.RegisterProfile("acme-triple-mixed-256-v1", triple.Profile{
+        Mode:                "streaming-aead",
+        Width:               256,
+        // InnerHash left empty — mixed dispatch reads MixedHashes.
+        KeyBits:             1024,
+        MacName:             "hmac-blake3",
+        OuterCipher:         "chacha20",
+        ParallaxPalette:     []string{"aescmac", "chacha20", "blake3"},
+        ParallaxSegmentSize: parallax.DefaultSegmentSize,
+        ChunkSize:           itb.DefaultChunkSize,
+        ParallaxOn:          true,
+        WrapperOn:           true,
+        MixedHashes: [8]string{
+            "areion256", "blake3", "blake2b256", "blake2s",   // noise, lock, data1, data2
+            "chacha20", "areion256", "blake3", "blake2b256",  // data3, start1, start2, start3
+        },
+    }); err != nil {
+        panic(err)
+    }
+}
+
+func main() {
+    enc, blob, err := triple.Init("acme-triple-mixed-256-v1", triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    defer enc.Close()
+    _ = blob // ship the blob out-of-band; receiver calls triple.Open on the same name.
+}
+```
+
+The same mixed constellation can also be applied per-call against any single-primitive or mixed base profile without registering a new name — pass an 8-slot array as `Opts.MixedHashes` to `triple.Init` / `triple.Open`, and both sides use it in place of the base profile's default:
+
+```go
+// ProfileStreamingAEADTripleMACV1 is width 512; override slots must
+// all resolve to width-512 primitives (validated fail-fast at Init).
+override := [8]string{
+    "areion512", "blake2b512", "areion512", "blake2b512",
+    "areion512", "blake2b512", "areion512", "blake2b512",
+}
+enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
+    MixedHashes: override, // switch to mixed for this Pipeline only
 })
+// ... receiver on the other side calls triple.Open with the same MixedHashes.
 ```
 
 Every mixed-hash slot is validated fail-fast at registration: each name must resolve via `hashes.Find`, each primitive's width must equal the profile's `Width`, and every one of the 8 slots must be populated (partial fills are refused rather than defaulted per slot). A typo in a primitive name or a width mismatch surfaces at process init with a descriptive error naming the offending slot, so a misconfigured mixed profile never reaches the encrypt path.
 
-`triple.Opts` carries no per-call `MixedHashes` override — the 8-slot constellation is a profile-level knob, not a per-call one. Reaching a mixed configuration goes through a named profile (shipped or user-registered), matching the wire-contract discipline that a receiver identifies a profile by name; the four shipped mixed profiles above are referenced by their constants exactly like the shipped single-primitive profiles, no separate wiring is required.
+`triple.Opts` also carries a per-call `MixedHashes [8]string` override — the same field name and semantics as `Profile.MixedHashes`, but supplied at `Init` / `Open` time instead of at registration. A zero-value array defers to the profile default; a fully-populated array switches this Pipeline to the given constellation without a separate `RegisterProfile` call. The four shipped mixed profiles above are referenced by their constants exactly like the shipped single-primitive profiles, no separate wiring is required; the `Opts.MixedHashes` override is the escape hatch for callers who want a mixed shape only for one Pipeline instance rather than as a stable named profile.
 
-C-ABI callers install the same profile via `ITB_Triple_RegisterProfile(name, opts)` — `opts` is a URL-query-encoded profile-shape string with the same keys the shipped opts parser accepts, plus profile-only fields (`mode`, `width`, `parallaxOn`, `wrapperOn`). The mixed-primitive dispatch is selected by supplying `innerHashes=<comma-separated 8-entry list>` in place of `innerHash=<name>` (the two are mutually exclusive, mirroring the Go-side `MixedHashes` / `InnerHash` split); slot ordering matches the Go-side array. The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`.
+Every per-call slot goes through the same `hashes.Find` / width-match fail-fast validation the profile-registration path uses (via `allocEightSeedsMixed` at `Init` / `importInnerBlobMixed` at `Open`), so a typo'd primitive name or a width mismatch surfaces at `Init` time with an error naming the offending slot. When both `Opts.InnerHash` and `Opts.MixedHashes` are set, `MixedHashes` wins and `InnerHash` is ignored — same mutual-exclusion rule the `Profile` fields obey. `Open` must be called with the same override the sender used at `Init`, so both sides reconstruct the identical effective shape.
+
+C-ABI callers install a persistent profile via `ITB_Triple_RegisterProfile(name, opts)` — `opts` is a URL-query-encoded profile-shape string with the same keys the shipped opts parser accepts, plus profile-only fields (`mode`, `width`, `parallaxOn`, `wrapperOn`). The mixed-primitive dispatch is selected by supplying `innerHashes=<comma-separated 8-entry list>` in place of `innerHash=<name>` (the two are mutually exclusive, mirroring the Go-side `MixedHashes` / `InnerHash` split); slot ordering matches the Go-side array. The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`. The same `innerHashes=<list>` key is also accepted by the per-call opts string passed to `ITB_Triple_Init(name, opts)` / `ITB_Triple_Open(name, opts)`, giving bindings the per-call `Opts.MixedHashes` override at the FFI boundary without any binding-side code change — every existing raw-key escape hatch (`itb_opts_set` / `withRaw` / `with_raw` / equivalent) already carries the new key end-to-end.
 
 ## Advanced — Low-Level `*Cfg` surface
 

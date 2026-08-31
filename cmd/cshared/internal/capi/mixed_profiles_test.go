@@ -175,3 +175,85 @@ func TestTripleRegisterProfileMixedCapiEmptyInnerHashes(t *testing.T) {
 		t.Fatalf("TripleRegisterProfile empty innerHashes: %v (%s)", st, LastError())
 	}
 }
+
+// TestTripleInitPerCallMixedHashesOverrideCapi exercises the per-call
+// innerHashes= opts key at the TripleInit / TripleOpen boundary: a
+// shipped single-primitive profile is switched to a mixed
+// constellation for one Pipeline instance without registering a new
+// profile. The FFI-side round-trip matches
+// triple/opts_mixedhashes_test.go's TestOptsMixedHashesOverrideSingleToMixed
+// on the Go side and confirms the URL-query key wired through
+// parseTripleOpts lands in triple.Opts.MixedHashes correctly.
+func TestTripleInitPerCallMixedHashesOverrideCapi(t *testing.T) {
+	// Shipped single-primitive width-512 profile; override to an
+	// 8-slot width-512 constellation using both shipped width-512
+	// primitives.
+	opts := "innerHashes=areion512,blake2b512,areion512,blake2b512,areion512,blake2b512,areion512,blake2b512"
+
+	blobBuf := make([]byte, 1<<15)
+	sID, blobLen, st := TripleInit(triple.ProfileStreamingAEADTripleMACV1, opts, blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit(single-primitive profile, per-call innerHashes): %v (%s)", st, LastError())
+	}
+	defer FreeTriple(sID)
+
+	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, blobBuf[:blobLen], opts)
+	if st != StatusOK {
+		t.Fatalf("TripleOpen(single-primitive profile, per-call innerHashes): %v (%s)", st, LastError())
+	}
+	defer FreeTriple(rID)
+
+	pt := triplePlaintext(t, 2048)
+	wire := make([]byte, len(pt)+64<<10)
+	wLen, st := TripleEncryptMessage(sID, pt, wire)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v (%s)", st, LastError())
+	}
+	out := make([]byte, len(pt)+1024)
+	pLen, st := TripleDecryptMessage(rID, wire[:wLen], out)
+	if st != StatusOK {
+		t.Fatalf("TripleDecryptMessage: %v (%s)", st, LastError())
+	}
+	if !bytes.Equal(out[:pLen], pt) {
+		t.Fatalf("round-trip plaintext mismatch: got %d bytes, want %d bytes", pLen, len(pt))
+	}
+}
+
+// TestTripleInitPerCallMixedHashesValidationCapi confirms that malformed
+// per-call innerHashes values (wrong entry count, unknown primitive)
+// surface as StatusBadInput at the capi boundary — same fail-fast
+// discipline the RegisterProfile-side path already enforces.
+func TestTripleInitPerCallMixedHashesValidationCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+
+	cases := []struct {
+		label string
+		opts  string
+	}{
+		{
+			label: "seven-entries",
+			opts:  "innerHashes=areion512,blake2b512,areion512,blake2b512,areion512,blake2b512,areion512",
+		},
+		{
+			label: "nine-entries",
+			opts:  "innerHashes=areion512,blake2b512,areion512,blake2b512,areion512,blake2b512,areion512,blake2b512,areion512",
+		},
+		{
+			label: "unknown-primitive-slot4",
+			opts:  "innerHashes=areion512,blake2b512,areion512,blake2b512,not-a-hash,blake2b512,areion512,blake2b512",
+		},
+		{
+			label: "width-mismatch-blake3-in-512",
+			opts:  "innerHashes=areion512,blake2b512,blake3,blake2b512,areion512,blake2b512,areion512,blake2b512",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			_, _, st := TripleInit(triple.ProfileStreamingAEADTripleMACV1, c.opts, blobBuf)
+			if st != StatusBadInput {
+				t.Fatalf("TripleInit %s: got %v, want StatusBadInput; LastError=%q",
+					c.label, st, LastError())
+			}
+		})
+	}
+}
