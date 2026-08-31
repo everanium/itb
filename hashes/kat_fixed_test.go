@@ -55,7 +55,7 @@ type fixedKATVector struct {
 }
 
 // Vectors in canonical primitive order (the order from REDTEAM.md's
-// hash matrix; CRC128 / FNV-1a / MD5 are below-spec lab helpers, not
+// hash matrix; CRC128 / FNV-1a are below-spec lab helpers, not
 // PRF-grade — they live in the test stress harness, not the registry).
 //
 // dataLen=36 is chosen because:

@@ -7,9 +7,9 @@ package itb
 // constellation). This file is the Go landing surface for REDTEAM.md's
 // broken-primitive track (Agent A, task #20 Wave 1).
 //
-// Scope: FNV-1a and CRC128 only (MD5 dropped per coordinator decision —
-// MD5 has no reversible triangular structure and the archived record
-// already established it is not invertible even without the overlay).
+// Scope: FNV-1a and CRC128 only — the two below-spec lab controls with
+// tractable algebraic structure (invertible carry-chain multiply and
+// end-to-end GF(2)-linearity, respectively).
 //
 // The two adapters below are DELIBERATELY BELOW-SPEC lab controls. They
 // are NOT production hashes and must NEVER be plugged into the shipped
