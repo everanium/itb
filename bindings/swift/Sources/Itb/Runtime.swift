@@ -7,7 +7,7 @@ import CItb
 
 /// Binding version. Tracks the Swift wrapper; `ItbRuntime.version`
 /// reports the underlying libitb library version.
-public let itbSwiftVersion = "0.3.0"
+public let itbSwiftVersion = "0.3.1"
 
 /// Registers a user-defined Triple profile; the opts follow the
 /// register-profile grammar validated by Go. A duplicate name fails
@@ -17,7 +17,7 @@ public func registerProfile(name: String, opts: Opts) throws {
 }
 
 public enum ItbRuntime {
-    /// The libitb library version string (e.g. "0.3.0").
+    /// The libitb library version string (e.g. "0.3.1").
     public static var version: String {
         guard let v = itb_version() else {
             return ""

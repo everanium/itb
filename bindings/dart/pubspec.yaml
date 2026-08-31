@@ -2,7 +2,7 @@ name: itb
 description: >-
   Thin Dart proxy over the libitb shared library's Triple Pipeline
   surface (dart:ffi relay, no build step, no C compiler at run time).
-version: 0.3.0
+version: 0.3.1
 repository: https://github.com/everanium/itb
 
 environment:
