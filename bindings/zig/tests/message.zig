@@ -54,25 +54,19 @@ test "message round trip per profile and size" {
     }
 }
 
-test "empty plaintext round trips" {
+test "empty plaintext is rejected with BadInput" {
+    // Go core rejects zero-length plaintext uniformly with
+    // ErrEmptyInput -> error.BadInput before any wire is produced. An
+    // empty message has no cover story: it is always distinguishable
+    // at some layer (wire length, timing, traffic count). Callers for
+    // whom an empty signal is meaningful send a marker byte instead.
     const gpa = std.testing.allocator;
 
     var sender = try itb.Pipeline.init(gpa, "singlemsg-triple-mac-v1", null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "singlemsg-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
+
+    try std.testing.expectError(
+        error.BadInput,
+        sender.encryptMessage(&.{}),
     );
-    defer receiver.deinit();
-
-    const wire = try sender.encryptMessage(&.{});
-    defer gpa.free(wire);
-    try std.testing.expect(wire.len > 0);
-
-    const back = try receiver.decryptMessage(wire);
-    defer gpa.free(back);
-    try std.testing.expectEqual(@as(usize, 0), back.len);
 }
