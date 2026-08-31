@@ -1,12 +1,3 @@
-// Package ctr provides counter-mode keystream constructions over
-// PRF-grade ITB registry primitives. Supports primitives with native cipher mode
-// and PRF-counter mode, where a keystream block is the primitive's
-// keyed-PRF output over the nonce concatenated with the block counter.
-//
-// The package is the single source of truth for cipher key and nonce sizes.
-// Each keystream satisfies the Keystream interface, whose XORKeyStream method
-// matches the crypto/cipher.Stream contract: the keystream segment is XORed
-// over src into dst while the internal counter advances.
 package ctr
 
 import (

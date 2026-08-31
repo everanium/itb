@@ -167,7 +167,7 @@ Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in dat
 | Outside (header) | Yes | ✗ Broken | None | Verification oracle |
 | Inside (full container) | N/A | N/A | N/A | Tag invalidates itself |
 
-Implemented: Inside (full capacity) — every shipped MAC-authenticated Low-Level entry point (`EncryptAuth3x{128,256,512}Cfg`) and every `triple.Pipeline` profile that enables MAC. Other placements are theoretical alternatives, not implemented. For the composition analysis, see [SCIENCE.md § 2.13 MAC-Inside-Encrypt Composition](SCIENCE.md#213-mac-inside-encrypt-composition).
+Implemented: Inside (full capacity) — every shipped MAC Authenticated Low-Level entry point (`EncryptAuth3x{128,256,512}Cfg`) and every `triple.Pipeline` profile that enables MAC. Other placements are theoretical alternatives, not implemented. For the composition analysis, see [SCIENCE.md § 2.13 MAC-Inside-Encrypt Composition](SCIENCE.md#213-mac-inside-encrypt-composition).
 
 ## 7. Known Theoretical Threats
 

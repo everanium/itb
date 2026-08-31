@@ -268,7 +268,7 @@ COBS-framed container whose byte histogram carries a fixed low-mass signature
 dimension header written ahead of every container are over-represented by a
 relative ≈ +5 % (an absolute excess of ≈ 0.02 pp on the `0x00` rate). The COBS
 terminator itself is barrier-scrambled inside a pixel and does not surface as a
-raw byte value. Entropy stays ≈ 8 bits/byte and the wire is incompressible. Engaging the outer-cipher wrapper whitens the
+raw byte value. Entropy stays ≈ 8 bits/byte and the wire is incompressible. Engaging the outer cipher wrapper whitens the
 byte histogram to the uniform floor. Axis B's `|Δ50|` conflict-rate metric is
 insensitive to this marginal byte-value signature (it measures a per-shift
 distribution, not the raw histogram), so the `neutralized ✓` verdicts stand; the

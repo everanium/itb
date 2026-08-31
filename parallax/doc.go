@@ -27,10 +27,10 @@
 // valid palette entry, and palette entries may repeat (a duplicate name
 // in a different slot draws an independently-keyed instance).
 //
-// Surfaces. The package exposes a single-message API (Encrypt, Decrypt,
+// Surfaces. The package exposes a Single Message API (Encrypt, Decrypt,
 // EncryptInPlace, DecryptInPlace) and a streaming API (NewEncryptWriter,
 // NewDecryptWriter, NewEncryptReader, NewDecryptReader). The
-// single-message wire is `nonce(16) || ciphertext_body`. The streaming
+// Single Message wire is `nonce(16) || ciphertext_body`. The streaming
 // wire is a concatenation of per-chunk frames, each shaped as
 // `u32_LE(body_len) || nonce(16) || encrypted_body(body_len)`, where
 // the chunk size is read once at stream construction from the
@@ -45,7 +45,7 @@
 // any frame whose parsed body length is negative or exceeds
 // MaxChunkSize before allocating the body buffer.
 //
-// The wire is Non-AEAD by design. The single-message wire performs no
+// The wire is Non-AEAD by design. The Single Message wire performs no
 // integrity check on the ciphertext body; the streaming wire's 4-byte
 // length prefix is unauthenticated, so a single-bit modification to
 // any prefix desynchronises every subsequent frame on the stream.
@@ -54,4 +54,30 @@
 // the Low-Level Streaming AEAD entry points) when wire integrity is
 // required; standalone use assumes integrity is provided by the
 // surrounding channel.
+//
+// # API surface
+//
+// One-time setup per configuration:
+//
+//   - [NewSchedule] builds a [Schedule] from a palette (a slice of
+//     canonical cipher names, size bounded by [MinPaletteSize] and
+//     [MaxPaletteSize]) and a segment byte-size (positive integer, or
+//     0 to inherit [DefaultSegmentSize]). The schedule holds the keyed
+//     permutation that maps segment index → palette slot.
+//   - [GenerateMasterKey] draws a fresh 32-byte CSPRNG master. Callers
+//     who bring their own master (ML-KEM output, PBKDF2-derived, etc.)
+//     supply it directly instead.
+//   - [NewCipherset] takes the master + schedule and materialises the
+//     per-slot keystream state (each palette entry gets its own
+//     KDF-derived subkey per [github.com/everanium/itb/kdf.Derive]).
+//     The resulting [Cipherset] is the cipher-facing object exposing
+//     Encrypt / Decrypt / EncryptInPlace / DecryptInPlace /
+//     NewEncryptWriter / NewDecryptWriter / NewEncryptReader /
+//     NewDecryptReader.
+//
+// Every encrypt / decrypt entry point draws a fresh CSPRNG nonce
+// ([NonceSize] bytes) per invocation and emits it as the wire prefix;
+// callers do not manage nonces. Concurrent goroutines may share one
+// [Cipherset] freely across independent encrypt / decrypt calls — the
+// per-slot keystreams are stateless across invocations.
 package parallax

@@ -18,8 +18,10 @@
 // widths (512 / 1024 / 2048).
 //
 // Canonical names and ordering (used by [Registry], [Find], [Make128],
-// [Make256], [Make512] and exposed through the FFI surface as the
-// public hash identifier.
+// [Make256], [Make512] and exposed through the FFI surface as the public
+// hash identifier) are the single source of truth: every binding, bench
+// harness, and documentation table refers back to [Registry] rather than
+// restating the roster inline.
 //
 // Each factory has an optional WithKey variant accepting a fixed key
 // of the primitive's native key length, intended for serialization /
@@ -28,8 +30,22 @@
 // components themselves are the entire SipHash key, and no fixed-key
 // state lives in the factory closure.
 //
+// Every registry entry is described by a [Spec] record carrying its
+// canonical name and native intermediate-state [Width] (128 / 256 /
+// 512 bits). [Find] resolves a name to its Spec; the [Make128] /
+// [Make256] / [Make512] name-keyed dispatchers return the single
+// [github.com/everanium/itb.HashFunc128] / HashFunc256 / HashFunc512
+// closure, and the [Make128Pair] / [Make256Pair] / [Make512Pair]
+// counterparts return the (single, batched) pair — the batched arm
+// (a [github.com/everanium/itb.BatchHashFunc128] / BatchHashFunc256 /
+// BatchHashFunc512 closure) fuses four independent per-pixel hash
+// calls into one SIMD-batched invocation on hosts that support the
+// primitive's ZMM / YMM chain-absorb kernel, and falls back to four
+// serial calls elsewhere. The returned batched arm may be nil when
+// the primitive has no batched implementation on the current CPU.
+//
 // All primitives in this package are PRF-grade. The below-spec lab
-// stress controls (CRC128, FNV-1a, MD5) used in REDTEAM.md / SCIENCE.md
+// stress controls (CRC128, FNV-1a) used in REDTEAM.md / SCIENCE.md
 // are intentionally absent here — they are research instruments, not
 // shippable cipher primitives.
 //
@@ -67,7 +83,7 @@
 // callbacks and []byte state buffers, losing 5-15% throughput vs the
 // inline per-primitive closures shipped in this package. The trade
 // is correctness-by-construction for any user primitive vs peak
-// throughput for built-in primitives. See [CONSTRUCTIONS.md]
+// throughput for built-in primitives. See CONSTRUCTIONS.md
 // "Why use builders for custom user primitives" for the silent-
 // truncation failure modes the builders prevent.
 //

@@ -25,7 +25,7 @@ for downstream aggregation.
 - `TestRedTeamNonceReuseLayerAHistogram` — Layer A: byte-value chi-square
   / KL / byte-equal-rate on `C1 XOR C2` container bodies. Random /
   structured / near-identical plaintext pairs.
-- `TestRedTeamNonceReuseLayerANaiveKPA` — Layer A': naive Crib-KPA
+- `TestRedTeamNonceReuseLayerANaiveKPA` — Layer A': naive Crib KPA
   constraint match assuming `snake_payload_byte == plaintext_byte`
   (i.e., ignoring the interlock). Reports max pixel-match count over
   candidate startPixels per snake.
@@ -52,7 +52,7 @@ for downstream aggregation.
 ## Attacker-realism scoping
 
 Every probe consumes attacker-visible inputs (ciphertext bytes, the
-public nonce and dimension header, the known Full-KPA plaintext pair)
+public nonce and dimension header, the known Full KPA plaintext pair)
 for its decision path. Two narrowly-scoped lab peeks are permitted and
 tagged at the call site:
 

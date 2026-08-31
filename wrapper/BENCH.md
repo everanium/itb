@@ -61,11 +61,11 @@ Column abbreviations in the Full ITB + wrapper tables: **Facade** = `triple.Pipe
 
 `WrapInPlace` mutates the caller's blob and returns the per-stream nonce; no output buffer is allocated. A fresh nonce (~16 bytes) is allocated per call on the encrypt side, and the parallel XOR path additionally allocates per-worker keystream state for buffers at or above the 256 KiB threshold. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call. The AES-128-CTR delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; the PRF-counter ciphers are more compute-bound and the allocation savings are a smaller fraction of the total.
 
-### Historical baseline — pre-Interlocked Barrier Triple Ouroboros
+### Historical baseline — old ITB Triple Ouroboros
 
-The tables in this section were measured on the pre-v0.3.0 Triple Ouroboros construction — before the 48-bit Interlocked Barrier became a non-disableable core of every Triple encrypt / decrypt call, before the lockSeed slot became mandatory, and before the parallax / wrapper master-slot coupling landed on the `triple.Pipeline` facade. The numbers are retained as an orientation-scale reference for the outer cipher cost added on top of ITB. Interlocked Barrier bench numbers under the shipped v0.3.0 kernel will supersede these tables when the outer cipher re-run lands.
+The tables in this section were measured on the old ITB Triple Ouroboros construction — before the 48-bit Interlocked Barrier became a non-disableable core of every Triple encrypt / decrypt call, before the lockSeed slot became mandatory, and before the parallax / wrapper master-slot coupling landed on the `triple.Pipeline` facade. The numbers are retained as an orientation-scale reference for the outer cipher cost added on top of ITB. Shipped Interlocked Barrier bench numbers will supersede these tables when the outer cipher re-run lands.
 
-The Facade column measures the wrapper composed with the shipped high-level facade of its era (the retired Easy Encryptor for these historical rows; on the current line the equivalent is `triple.Pipeline` with parallax + wrapper masters wired by `triple.Init`). The LL column measures the wrapper composed with the Low-Level `*Cfg` entry points, which survive from pre-v0.3.0 to the current line.
+The Facade column measures the wrapper composed with the shipped high-level facade of its era (the retired Easy Encryptor for these historical rows; on the current line the equivalent is `triple.Pipeline` with parallax + wrapper masters wired by `triple.Init`). The LL column measures the wrapper composed with the Low-Level `*Cfg` entry points, which survive from the old ITB construction to the current line.
 
 #### Single Message — Triple Ouroboros (16 MiB plaintext)
 

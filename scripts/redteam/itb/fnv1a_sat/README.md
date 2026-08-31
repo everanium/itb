@@ -2,7 +2,7 @@
 
 Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction against
-the FNV-1a lo-lane Full-KPA SAT attack from the archived Phase 2g. That
+the FNV-1a lo-lane Full KPA SAT attack from the archived Phase 2g. That
 Phase 2g attack recovered a functional dataSeed lo-lane compound key in
 ≈ 8 h single-core Bitwuzla against **Single Ouroboros with the barrier
 disengaged**, yielding 83–85 % byte-level plaintext recovery on JSON /
