@@ -11,7 +11,7 @@ module Runtime =
 
     /// The F# binding's own version.
     [<Literal>]
-    let BindingVersion = "0.3.0"
+    let BindingVersion = "0.3.1"
 
     /// Sets the Go runtime's soft heap limit in bytes and returns
     /// the previous limit. A negative value queries without

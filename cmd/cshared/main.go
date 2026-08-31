@@ -47,7 +47,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitbVersion = "0.3.0"
+const libitbVersion = "0.3.1"
 
 func main() {} // required for buildmode=c-shared
 
@@ -662,6 +662,7 @@ func ITB_HeaderSize(nonceBytes C.uint32_t) C.int {
 //
 //export ITB_DefaultNonceBits
 func ITB_DefaultNonceBits() C.int { return C.int(capi.DefaultNonceBits()) }
+
 // ─── Native Blob — low-level state persistence ────────────────────
 //
 // itb.Blob{128,256,512} pack the low-level encryptor material —
@@ -1211,7 +1212,7 @@ func ITB_DecryptStreamAuthenticated3x512(
 
 // ─── Format-deniability wrapper (outer CTR cipher) ─────────────────
 //
-// The wrapper surface seals an ITB ciphertext inside one of 
+// The wrapper surface seals an ITB ciphertext inside one of
 // PRF-grade outer keystream ciphers so the wire bytes carry no header /
 // magic the receiver could match against. Every entry point dispatches off
 // a `cipher_name` string naming any PRF-grade ITB registry primitive,

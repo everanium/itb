@@ -22,7 +22,7 @@ class SmokeSuite extends ItbSuite:
 
   test("library version is non-empty") {
     assert(Runtime.version.nonEmpty)
-    assertEquals(Runtime.BindingVersion, "0.3.0")
+    assertEquals(Runtime.BindingVersion, "0.3.1")
   }
 
   test("smoke round trip") {
