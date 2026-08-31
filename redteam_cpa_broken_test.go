@@ -666,12 +666,12 @@ func TestRedTeamCPABroken(t *testing.T) {
 	}
 
 	summary := map[string]any{
-		"max_homogeneity_chi2":     maxHomog,
-		"max_homogeneity_kind":     maxHomogKind,
-		"df255_uniform_3sigma_top": 323.0,
-		"per_primitive_worst_body_chi2":   worstBody,
-		"per_primitive_worst_body_kind":   worstBodyKind,
-		"note_body_chi2_upper_bound":      "body chi² per cell reflects the dimension-header residual + per-cell CPA response; the homogeneity chi² is the load-bearing between-arm distinguisher.",
+		"max_homogeneity_chi2":          maxHomog,
+		"max_homogeneity_kind":          maxHomogKind,
+		"df255_uniform_3sigma_top":      323.0,
+		"per_primitive_worst_body_chi2": worstBody,
+		"per_primitive_worst_body_kind": worstBodyKind,
+		"note_body_chi2_upper_bound":    "body chi² per cell reflects the dimension-header residual + per-cell CPA response; the homogeneity chi² is the load-bearing between-arm distinguisher.",
 	}
 
 	emitJSONCPA(t, "cpa_broken_matrix", map[string]any{

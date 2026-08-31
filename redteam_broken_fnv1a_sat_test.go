@@ -823,14 +823,14 @@ func TestRedTeamBrokenFNV1aCribKPAEmitCorpus(t *testing.T) {
 	}
 
 	bundle := map[string]any{
-		"description":     "FNV-1a on all 8 seeds; shipped Triple/barrier + single-snake control",
-		"key_bits":        keyBits,
-		"nonce_hex":       hexOf(nonce),
-		"plaintext_utf8":  string(plain),
-		"plaintext_hex":   hexOf(plain),
-		"ciphertext_hex":  hexOf(ct),
-		"control_bytes":   hexOf(ctrl),
-		"control_pixels":  totalCtrlPixels,
+		"description":    "FNV-1a on all 8 seeds; shipped Triple/barrier + single-snake control",
+		"key_bits":       keyBits,
+		"nonce_hex":      hexOf(nonce),
+		"plaintext_utf8": string(plain),
+		"plaintext_hex":  hexOf(plain),
+		"ciphertext_hex": hexOf(ct),
+		"control_bytes":  hexOf(ctrl),
+		"control_pixels": totalCtrlPixels,
 		"seed_components": map[string][]string{
 			"noise":  compOf(ns),
 			"lock":   compOf(ls),

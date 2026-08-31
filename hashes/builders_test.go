@@ -413,7 +413,6 @@ func checkFullAbsorption512(t *testing.T, hash itb.HashFunc512, name string) {
 // Seed{N} and survive a real encrypt-decrypt cycle.
 // ============================================================================
 
-
 // ============================================================================
 // Panic-on-bad-params tests — defensive precondition checks
 // ============================================================================

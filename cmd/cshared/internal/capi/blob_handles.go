@@ -1,7 +1,6 @@
 package capi
 
 import (
-	"errors"
 	"runtime/cgo"
 
 	"github.com/everanium/itb"
@@ -249,31 +248,4 @@ func BlobMode(id BlobHandleID) (int, Status) {
 	}
 	setLastErr(StatusInternal)
 	return 0, StatusInternal
-}
-
-// mapBlobError translates an itb.Blob{N}.Export / Import error onto
-// the matching FFI Status code. The four sentinel errors map 1:1;
-// any other error (nil seed, mismatched component count) is treated
-// as caller-side bad input rather than a malformed blob — those
-// preconditions are observable on the handle's slot state before
-// the call.
-//
-// The errors.Is path covers wrapped sentinels (the itb package does
-// not currently wrap them, but a future revision might — better to
-// be defensive than rely on identity comparison).
-func mapBlobError(err error) Status {
-	if err == nil {
-		return StatusOK
-	}
-	switch {
-	case errors.Is(err, itb.ErrBlobModeMismatch):
-		return StatusBlobModeMismatch
-	case errors.Is(err, itb.ErrBlobMalformed):
-		return StatusBlobMalformed
-	case errors.Is(err, itb.ErrBlobVersionTooNew):
-		return StatusBlobVersionTooNew
-	case errors.Is(err, itb.ErrBlobTooManyOpts):
-		return StatusBlobTooManyOpts
-	}
-	return StatusBadInput
 }

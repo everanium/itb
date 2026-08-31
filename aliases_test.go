@@ -2,9 +2,9 @@ package itb
 
 import (
 	"bytes"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
-	crand "crypto/rand"
 	"math/rand"
 	"sync"
 	"testing"
@@ -106,40 +106,9 @@ func generateData(n int) []byte {
 	return b
 }
 
-// makeTripleSeed128 constructs 3 independent 128-bit seeds sharing one
-// hash function. Legacy 3-seed fixture used by pre-Triple test code.
-func makeTripleSeed128(bits int, h HashFunc128) (noise, data, start *Seed128) {
-	noise, _ = NewSeed128(bits, h)
-	data, _ = NewSeed128(bits, h)
-	start, _ = NewSeed128(bits, h)
-	return
-}
-
-// makeTripleSeed256 — 256-bit counterpart of [makeTripleSeed128].
-func makeTripleSeed256(bits int, h HashFunc256) (noise, data, start *Seed256) {
-	noise, _ = NewSeed256(bits, h)
-	data, _ = NewSeed256(bits, h)
-	start, _ = NewSeed256(bits, h)
-	return
-}
-
-// makeTripleSeed512 — 512-bit counterpart of [makeTripleSeed128].
-func makeTripleSeed512(bits int, h HashFunc512) (noise, data, start *Seed512) {
-	noise, _ = NewSeed512(bits, h)
-	data, _ = NewSeed512(bits, h)
-	start, _ = NewSeed512(bits, h)
-	return
-}
-
-// makeAreionSoEM256 returns the single-call HashFunc256 built from the
-// Areion-SoEM-256 primitive. Kept for legacy test fixtures that
+// makeAreionSoEM512 returns the single-call HashFunc512 built from the
+// Areion-SoEM-512 primitive. Kept for legacy test fixtures that
 // pre-date the batched dispatch and only need a single-arm hash.
-func makeAreionSoEM256() HashFunc256 {
-	h, _, _ := MakeAreionSoEM256Hash()
-	return h
-}
-
-// makeAreionSoEM512 is the 512-bit counterpart of [makeAreionSoEM256].
 func makeAreionSoEM512() HashFunc512 {
 	h, _, _ := MakeAreionSoEM512Hash()
 	return h

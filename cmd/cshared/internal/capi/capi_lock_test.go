@@ -386,4 +386,3 @@ func TestMACNameAndTagSizeBadHandle(t *testing.T) {
 		t.Errorf("MACTagSize(0): %v, want StatusBadMAC", st)
 	}
 }
-

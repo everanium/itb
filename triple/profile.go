@@ -390,11 +390,11 @@ func init() {
 	// parallax on + wrapper on. Width 128; alternates the two shipped
 	// width-128 primitives across every slot.
 	profileRegistry[ProfileSingleMsgTripleMACMixedV1] = Profile{
-		Name:                ProfileSingleMsgTripleMACMixedV1,
-		Mode:                modeSingleMsgMAC,
-		Width:               128,
-		ChunkSize:           itb.DefaultChunkSize,
-		InnerHash:           "", // mixed dispatch — InnerHash inert
+		Name:      ProfileSingleMsgTripleMACMixedV1,
+		Mode:      modeSingleMsgMAC,
+		Width:     128,
+		ChunkSize: itb.DefaultChunkSize,
+		InnerHash: "", // mixed dispatch — InnerHash inert
 		// KeyBits divides the width-128 primitive's native width and
 		// keeps the same total key material as the width-256 profiles
 		// (defaultKeyBits = 1024, which is a valid multiple of 128).

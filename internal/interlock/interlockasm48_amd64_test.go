@@ -283,13 +283,13 @@ func TestRankToMaskTripleUnrank48VsScalar(t *testing.T) {
 // making the C(p, 16) lookup load-bearing.
 //
 // For the m0 loop (p=47..0, krem starts at 16):
-//   * idx0 in [0, C(47,16)): first iteration doesn't set bit 47, so
+//   - idx0 in [0, C(47,16)): first iteration doesn't set bit 47, so
 //     krem stays 16 for p=46, 45, ... until either idx0 crosses
 //     C(p,16) or the whole loop exhausts.
-//   * idx0 = C(47,16) - 1: iteration at p=47 sees rank < C(47,16)
+//   - idx0 = C(47,16) - 1: iteration at p=47 sees rank < C(47,16)
 //     (krem=16 path executes, no pick). Then p=46, still krem=16,
 //     etc.
-//   * idx0 = C(47,16): iteration at p=47 picks (mask-merge value
+//   - idx0 = C(47,16): iteration at p=47 picks (mask-merge value
 //     matches, condition true), krem decrements to 15.
 //
 // The lane-index scanning below marches through every krem == 16

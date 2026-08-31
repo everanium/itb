@@ -172,7 +172,6 @@ func TestBLAKE3MakePairBadKeySize(t *testing.T) {
 	}
 }
 
-
 // TestBLAKE3SingleArmDirect exercises the BLAKE3() entry point that
 // returns only the single-arm closure (no batched dispatch). Calling
 // BLAKE3(key) followed by BLAKE3(key) with the same explicit key must
