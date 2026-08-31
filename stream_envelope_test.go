@@ -345,13 +345,11 @@ func TestStreamEnvelopeRoundTripByteExact(t *testing.T) {
 }
 
 // TestStreamEnvelopeEdgeCases exercises the corner-case plaintext
-// sizes (empty, 1-byte, and larger) across all three nonce widths and
-// both AEAD / No-MAC modes. Round-trip byte-exact recovery is the
-// success criterion. Empty inputs on No-MAC streams produce a zero-
-// byte wire (the pre-existing "empty in → empty out" contract); the
-// decrypt path treats a zero-byte src as a clean end-of-stream.
+// sizes (1-byte and larger) across all three nonce widths and both
+// AEAD / No-MAC modes. Round-trip byte-exact recovery is the success
+// criterion.
 func TestStreamEnvelopeEdgeCases(t *testing.T) {
-	edges := []int{0, 1, 6, 4096}
+	edges := []int{1, 6, 4096}
 	for _, wCfg := range []struct {
 		width, nonceLen int
 	}{{128, 16}, {256, 32}, {512, 64}} {

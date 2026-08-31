@@ -83,7 +83,7 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		return err
 	}
 	if len(data) == 0 {
-		return fmt.Errorf("itb: empty data")
+		return ErrEmptyInput
 	}
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize(len(data))
@@ -123,7 +123,7 @@ func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		return err
 	}
 	if len(data) == 0 {
-		return nil
+		return ErrEmptyInput
 	}
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
@@ -152,7 +152,7 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		return err
 	}
 	if len(data) == 0 {
-		return fmt.Errorf("itb: empty data")
+		return ErrEmptyInput
 	}
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize(len(data))
@@ -191,7 +191,7 @@ func DecryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		return err
 	}
 	if len(data) == 0 {
-		return nil
+		return ErrEmptyInput
 	}
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
@@ -220,7 +220,7 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		return err
 	}
 	if len(data) == 0 {
-		return fmt.Errorf("itb: empty data")
+		return ErrEmptyInput
 	}
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize(len(data))
@@ -259,7 +259,7 @@ func DecryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		return err
 	}
 	if len(data) == 0 {
-		return nil
+		return ErrEmptyInput
 	}
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")

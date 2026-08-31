@@ -127,7 +127,7 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		return nil, err
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("itb: empty data")
+		return nil, ErrEmptyInput
 	}
 	if len(data) > maxDataSize {
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
@@ -271,6 +271,9 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 func Decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
+	}
+	if len(fileData) == 0 {
+		return nil, ErrEmptyInput
 	}
 	if len(fileData) < headerSizeCfg(cfg)+Channels {
 		return nil, fmt.Errorf("itb: data too short")
