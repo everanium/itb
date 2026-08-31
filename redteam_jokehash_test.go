@@ -421,6 +421,28 @@ func sipHash24Adapter(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 	return siphash.Hash128(seed0, seed1, data)
 }
 
+// fnv1a128NativeAdapter is a HashFunc128 wrapper over two independent
+// FNV-1a-64 lanes: T-function class with the standard 64-bit FNV
+// prime 0x100000001b3 (popcount 6). The redteam suite already carries
+// a full-128-bit FNV-1a variant (fnv1a128BrokenLab in
+// redteam_broken_test.go) that uses math/big for the mod-2^128
+// arithmetic; that version is faithful to the archived probe but
+// significantly slower than native uint64. This adapter is the
+// native-speed T-function control the HW distinguisher probe below
+// needs for a 2000-sample two-arm CPA without extending the test's
+// runtime beyond a few seconds.
+func fnv1a128NativeAdapter(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+	const fnvPrime64 = 0x100000001b3
+	lo, hi := seed0, seed1
+	for _, b := range data {
+		lo ^= uint64(b)
+		lo *= fnvPrime64
+		hi ^= uint64(b)
+		hi *= fnvPrime64
+	}
+	return lo, hi
+}
+
 func makeSipHash24Seeds(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, s1, s2, s3 *Seed128) {
 	t.Helper()
 	mk := func(role string) *Seed128 {
@@ -545,30 +567,57 @@ func measureHWDistinguisher(t *testing.T, label string, ns, ls, d1, d2, d3, s1, 
 	}
 }
 
-// TestRedTeamJokeHashHWDistinguisherVsPRF compares the wire under a
-// two-arm repeat-plaintext CPA (all-zeros vs uniform-random 4 KB
-// plaintext, both encrypted N times under fresh nonces) with two
-// primitive choices: jokeHash on all eight seed roles versus SipHash-
-// 2-4 on the same eight roles.
+// makeSeedsFor is a generic 8-seed constructor over any HashFunc128.
+// Used by the HW distinguisher test to build seed constellations for
+// jokeHash, CRC128, FNV-1a, and SipHash-2-4 uniformly.
+func makeSeedsFor(t *testing.T, fn HashFunc128, keyBits int) (ns, ls, d1, d2, d3, s1, s2, s3 *Seed128) {
+	t.Helper()
+	mk := func(role string) *Seed128 {
+		s, err := NewSeed128(keyBits, fn)
+		if err != nil {
+			t.Fatalf("NewSeed128(%s): %v", role, err)
+		}
+		return s
+	}
+	return mk("noiseSeed"), mk("lockSeed"),
+		mk("dataSeed1"), mk("dataSeed2"), mk("dataSeed3"),
+		mk("startSeed1"), mk("startSeed2"), mk("startSeed3")
+}
+
+// TestRedTeamJokeHashHWDistinguisherVsPRF runs a two-arm repeat-
+// plaintext CPA (all-zeros vs uniform-random 4 KB plaintext, both
+// encrypted N times under fresh nonces) under four W128 primitives on
+// all eight seed roles:
+//
+//   jokeHash      — multiply-add fold, multiplier 257 (popcount 2)
+//   CRC128        — GF(2)-linear (two keyed CRC64 lanes, ECMA + ISO)
+//   FNV-1a        — T-function, multiplier 0x100000001b3 (popcount 6)
+//   SipHash-2-4   — designed PRF (hard-gated control)
 //
 // Purpose. Preserve the empirical finding recorded in FAQ.md
-// § Residual bias under repeat-plaintext CPA: through the shipped
-// barrier under attacker-realism a broken primitive absorbs
-// plaintext-content-recovery entirely (see the earlier tests in this
-// file), but a broken primitive still leaks a weak plaintext-Hamming-
-// weight distinguisher under repeat-plaintext CPA. A PRF-grade
-// primitive closes this distinguisher entirely.
+// § Residual bias under repeat-plaintext CPA. The shipped barrier
+// absorbs plaintext-content-recovery entirely (earlier tests in this
+// file), and the HW distinguisher surfaces only when the primitive's
+// output distribution itself carries a measurable bias — for the
+// tested set only jokeHash's popcount-2 multiplier produces the
+// signal; CRC128, FNV-1a, and SipHash-2-4 all show null under the
+// same measurement despite CRC128 and FNV-1a being algebraically
+// weak. The finding is not "any broken primitive leaks"; it is
+// "a poorly-diffused primitive leaks", which is a strictly narrower
+// claim.
 //
 // Gate strategy.
-//   - jokeHash arm — log only. The signal is expected and primitive-
-//     attributable; hard-gating on its presence would create a
-//     spurious FAIL if the primitive's carry-chain bias ever changes.
+//   - jokeHash, CRC128, FNV-1a arms — log only. jokeHash is expected
+//     to show the signal; CRC128 and FNV-1a are expected to be
+//     within the noise floor. Hard-gating on the specific magnitude
+//     would create spurious FAILs if the below-spec primitives'
+//     internals drift.
 //   - SipHash-2-4 arm — hard gate at |z| <= 5 per arm and homogeneity
 //     chi² <= 500. A regression in the PRF-grade control would signal
 //     a wire-format artefact or a barrier defect the earlier tests do
 //     not catch. The gate leaves ample room for stochastic scatter.
 //
-// Runtime: 4 × 2000 encryptions ≈ 8 s.
+// Runtime: 8 × 2000 encryptions ≈ 8-10 s.
 func TestRedTeamJokeHashHWDistinguisherVsPRF(t *testing.T) {
 	const (
 		keyBits    = 1024
@@ -583,25 +632,47 @@ func TestRedTeamJokeHashHWDistinguisherVsPRF(t *testing.T) {
 		t.Fatalf("crypto/rand: %v", err)
 	}
 
-	// jokeHash arm — log only, signal is expected.
+	logResult := func(label string, r hwDistinguisherResult) {
+		t.Logf("[%s] zeros arm  p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", label, r.ZerosPBit1, r.ZerosZ, r.ChiZeros)
+		t.Logf("[%s] random arm p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", label, r.RandomPBit1, r.RandomZ, r.ChiRandom)
+		t.Logf("[%s] two-sample homogeneity chi^2=%.2f (df=255)", label, r.ChiHomog)
+	}
+
+	// jokeHash arm — log only, signal is expected (popcount-2 multiplier).
 	{
 		ns, ls, d1, d2, d3, s1, s2, s3 := makeJokeSeeds(t, keyBits)
 		r := measureHWDistinguisher(t, "jokeHash", ns, ls, d1, d2, d3, s1, s2, s3, ptZeros, ptRand, N, bodyMargin)
-		t.Logf("[jokeHash] zeros arm  p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.ZerosPBit1, r.ZerosZ, r.ChiZeros)
-		t.Logf("[jokeHash] random arm p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.RandomPBit1, r.RandomZ, r.ChiRandom)
-		t.Logf("[jokeHash] two-sample homogeneity chi^2=%.2f (df=255)", r.ChiHomog)
+		logResult("jokeHash", r)
 		if r.ZerosZ < 3 {
 			t.Logf("[jokeHash] note: zeros-arm |z|=%.2f below 3σ this run — primitive-attributable signal did not surface at this sample size (expected occasional stochastic-miss at N=%d)", r.ZerosZ, N)
 		}
 	}
 
-	// SipHash-2-4 arm — hard gate.
+	// CRC128 arm — log only, null expected (GF(2)-linear with dense
+	// polynomial table produces uniform-distributed output under
+	// random seeds).
+	{
+		ns, ls, d1, d2, d3, s1, s2, s3 := makeSeedsFor(t, crc128BrokenLab, keyBits)
+		r := measureHWDistinguisher(t, "CRC128", ns, ls, d1, d2, d3, s1, s2, s3, ptZeros, ptRand, N, bodyMargin)
+		logResult("CRC128", r)
+	}
+
+	// FNV-1a arm (native two-lane, T-function class) — log only, null
+	// expected (multiplier 0x100000001b3 has popcount 6 and is prime,
+	// spreading bits well enough to keep output distribution uniform
+	// under random seeds).
+	{
+		ns, ls, d1, d2, d3, s1, s2, s3 := makeSeedsFor(t, fnv1a128NativeAdapter, keyBits)
+		r := measureHWDistinguisher(t, "FNV-1a", ns, ls, d1, d2, d3, s1, s2, s3, ptZeros, ptRand, N, bodyMargin)
+		logResult("FNV-1a", r)
+	}
+
+	// SipHash-2-4 arm — hard gate. PRF-grade control anchors the null
+	// baseline; regression here signals barrier or wire-format defect.
 	{
 		ns, ls, d1, d2, d3, s1, s2, s3 := makeSipHash24Seeds(t, keyBits)
 		r := measureHWDistinguisher(t, "SipHash-2-4", ns, ls, d1, d2, d3, s1, s2, s3, ptZeros, ptRand, N, bodyMargin)
-		t.Logf("[SipHash-2-4] zeros arm  p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.ZerosPBit1, r.ZerosZ, r.ChiZeros)
-		t.Logf("[SipHash-2-4] random arm p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.RandomPBit1, r.RandomZ, r.ChiRandom)
-		t.Logf("[SipHash-2-4] two-sample homogeneity chi^2=%.2f (df=255)", r.ChiHomog)
+		logResult("SipHash-2-4", r)
 
 		if r.ZerosZ > 5 {
 			t.Errorf("[SipHash-2-4] zeros-arm |z|=%.2f exceeds 5σ (PRF-grade arm must not distinguish plaintext HW)", r.ZerosZ)
