@@ -133,6 +133,27 @@ type Opts struct {
 	// "areion512"). An empty string defers to the profile default.
 	InnerHash string
 
+	// MixedHashes overrides the profile's per-slot primitive
+	// constellation for this Pipeline. A zero-value array (all slots
+	// empty) defers to the profile default. When any slot is
+	// non-empty, all eight slots must be non-empty, every entry must
+	// resolve via [github.com/everanium/itb/hashes.Find], and every
+	// entry's primitive width must equal the effective width — the
+	// [allocEightSeedsMixed] helper enforces this at [Init] time and
+	// [importInnerBlobMixed] enforces it at [Open] time, so a typo'd
+	// slot or a width mismatch surfaces fail-fast rather than
+	// silently corrupting the seed constellation.
+	//
+	// Slot ordering matches [Profile.MixedHashes]:
+	// [0]noiseSeed [1]lockSeed [2]dataSeed1 [3]dataSeed2 [4]dataSeed3
+	// [5]startSeed1 [6]startSeed2 [7]startSeed3.
+	//
+	// When both [Opts.InnerHash] and Opts.MixedHashes are set,
+	// MixedHashes wins (mixed dispatch is chosen and the InnerHash
+	// override is ignored) — same mutual-exclusion rule the
+	// [Profile] fields obey.
+	MixedHashes [8]string
+
 	// KeyBits overrides the profile's per-seed key width in bits (one
 	// of 512 / 1024 / 2048; must be an integer multiple of the
 	// primitive's native hash width). A zero value defers to the
