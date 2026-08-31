@@ -75,7 +75,7 @@ Both scenarios are unreachable through the shipped API and require adversary cap
 
 ### Why REDTEAM.md uses CRC128 and FNV-1a as stress controls
 
-Not to «break ITB through them», but to demonstrate empirically that the barrier absorbs even worst-possible primitives. If under CRC128 (worst primitive, GF(2)-linear compound-key recovery available on paper) the attacker gets null recovery, then any PRF-grade primitive automatically inherits at least the same outcome by a closure argument. The framing is «if the weakest works, all stronger work a fortiori» — not «if the strong works, hope the weak does too».
+Not to «break ITB through them», but to demonstrate empirically that the barrier absorbs primitive weakness across a wide spectrum. If under CRC128 (worst primitive on the algebraic axis, GF(2)-linear compound-key recovery available on paper) the attacker gets null recovery, then any PRF-grade primitive automatically inherits at least the same outcome by a closure argument. The framing is «if the weakest works, all stronger work a fortiori» — a closure scoped to the plaintext-content-recovery axis on which CRC128 is the hardest realistic control. Among realistic below-spec primitives the barrier also absorbs output-distribution bias cleanly: CRC128 and FNV-1a both sit at the noise floor on every measurement in this file. jokeHash is a deliberately pathological stress case (popcount-2 multiplier, more poorly diffused than any real primitive would be), and it is the sole primitive that surfaces the plaintext-Hamming-weight residue documented in [§ Residual bias under repeat-plaintext CPA](#residual-bias-under-repeat-plaintext-cpa) below — a plaintext-structure distinguisher, not plaintext-content recovery, and one that CRC128 and FNV-1a do not exhibit.
 
 ### General principle the `jokeHash` thought experiment illustrates
 
@@ -198,7 +198,7 @@ where `A = C(48, 16) = 2,254,848,913,647` and `B = C(32, 16) = 601,080,390`. Thi
 **Bonus reason — cascade PRF binding across two live hash calls.**
 Per [Proof 11](PROOFS.md#proof-11): `lockKey → per-chunk PRF chain` is two sequential hash calls. An attacker attacking Part 1 via linear algebra must solve a system running through both chain calls simultaneously. The compound-key script composed an 8-round chain as a single affine XOR (`K = M_L^1·s_0 XOR M_L^2·s_2 XOR ...`) because 8 XOR-composed CRC64 rounds are still GF(2)-linear. A cascade of two chain calls with an intermediate unrank/mask draw is no longer a single-composition path — the attacker needs either a system with symbolic `mask` **and** `K_lock` (two unknowns interleaved), or per-chunk hash outputs as observations (which do not exist on wire).
 
-**Summary.** Primitive is same. Seeds are independent. Chain-input structure differs. Observation path differs. Unrank arithmetic is non-linear. `K_data` is fully «locked» to Part 2's `dataSeed → channelXOR` channel and is not transferable to any other seed / channel even when `H` is identical. This is exactly the structural anti-leakage design argument of [Theorem 3a](PROOFS.md#proof-3a)'s minimality — the 8 independent seeds are not redundancy, they oblige the barrier layers to be architecturally separable at the algebra layer, independently of primitive strength or weakness.
+**Summary.** Primitive is same. Seeds are independent. Chain-input structure differs. Observation path differs. Unrank arithmetic is non-linear. Across these five orthogonal structural differences no linear transfer path from `K_data` to any other seed / channel is apparent — combinadic-unrank non-linearity specifically blocks the GF(2) route that CRC128's linearity exploits on Part 2. A non-linear bridge — a symbolic-SAT setup that carries `K` through unrank arithmetic, or a novel algebraic technique that couples the two layers through structure the walkthrough above did not surface — is not ruled out by the reasoning here, only unaddressed by known technique. What [Theorem 3a](PROOFS.md#proof-3a)'s minimality argues is that the 8 independent seeds oblige the barrier layers to be architecturally separable at the algebra layer, independently of primitive strength or weakness.
 
 ### The `2^57.80` preimage math and cross-nonce non-collapsibility
 
@@ -381,7 +381,7 @@ Two potential meeting points, both blocked:
 
 ### Other decomposition attempts
 
-All standard «peel one layer while holding others» techniques fail for the same underlying reason:
+Every standard «peel one layer while holding others» technique the analysis surveyed encounters the same underlying obstacle. The list below is a walkthrough, not a completeness claim over the attack space — a novel technique or a novel composition of the ones tabulated is not on the table by definition; each row states the specific assumption a known technique makes that the shipped architecture removes:
 
 | Technique | What it needs | Why it fails on ITB |
 |---|---|---|
