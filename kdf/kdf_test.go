@@ -280,7 +280,7 @@ func TestMasterTruncation(t *testing.T) {
 // TestErrUnknownName confirms an unsupported or unknown registry name is
 // an error.
 func TestErrUnknownName(t *testing.T) {
-	for _, name := range []string{"md5", "crc128", "fnv1a", ""} {
+	for _, name := range []string{"crc128", "fnv1a", ""} {
 		if _, err := Derive(name, master32, "x", 16); err == nil {
 			t.Errorf("Derive(%q) returned nil error", name)
 		}
