@@ -152,7 +152,7 @@ Honest phrasing of the verdict: the CRC128 linear-algebra path is closed not bec
 
 **Reason 2 — Different derivation-chain shape.**
 The compound-key linear structure depends on the length-`L` CRC64 state-transfer matrix `M_L`:
-- `dataSeed → dataHash`: `data(p) = pixel_le_u32 ‖ nonce = 20` bytes, `M_L` fixed at `L = 20` across all pixels — this is what the compound-key script exploits
+- `dataSeed → dataHash`: `data(p) = pixel_le_u32 ‖ nonce`, so `L = 4 + nonceBytes` — fixed per session at the caller's nonce size — and `M_L` stays constant at that `L` across all pixels; this is what the compound-key script exploits
 - `lockSeed` cascade: `lockKey = ChainHash(0x04 ‖ N_il, lockSeed)` with `L = 1 + nonceBytes`; then `prf_i = H(0x03 ‖ ⟨i⟩, lockKey)` with `L = 9` (1 byte tag + 8-byte LE index). **Different length constants → different matrix products → different compound-key algebra.**
 
 **Reason 3 — Different domain tags.**
