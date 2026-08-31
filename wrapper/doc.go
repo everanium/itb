@@ -41,4 +41,42 @@
 // This is standard CTR mode usage — not nonce-reuse. Nonce-reuse means two
 // distinct streams using the SAME (key, nonce); avoid that by using a fresh
 // CSPRNG nonce per stream, which every entry point in this package does.
+//
+// # API surface
+//
+// One-shot blob envelopes: [Wrap] and [Unwrap] take an allocation-friendly
+// key + input pair and return a fresh output slice; [WrapInPlace] and
+// [UnwrapInPlace] transform the input buffer in place for callers who
+// want zero-allocation on the hot path (the caller supplies a buffer
+// large enough for the nonce prefix + payload; the return slice
+// references the same underlying storage).
+//
+// Streaming envelopes: [NewWrapWriter] wraps an [io.Writer] so bytes
+// written to the returned writer are XORed with the keystream and
+// flushed downstream; [FinishWrapStream] signals end-of-stream on that
+// writer. [NewUnwrapReader] is the inverse — reading from the returned
+// reader consumes wrapped bytes off an upstream [io.Reader] and yields
+// the plaintext.
+//
+// Parallel byte-range XOR: [XORParallel] and [XORParallelAt] drive
+// worker goroutines seeking disjoint keystream ranges via ctr.NewAt;
+// used by the Wrap/Unwrap blob paths when the input exceeds
+// [ParallelThreshold]. Callers who want serial-only behaviour set an
+// input smaller than that threshold or use the [NewWrapWriter] /
+// [NewUnwrapReader] streaming shape which is single-goroutine.
+//
+// Registry access: [CipherNames] enumerates the canonical outer-cipher
+// alphabet in the same order the shared library's ITB_CipherName
+// iteration surface exposes; each entry appears as a matching
+// [CipherAreion256] / [CipherAreion512] / [CipherBLAKE2b256] /
+// [CipherBLAKE2b512] / [CipherBLAKE2s] / [CipherBLAKE3] /
+// [CipherAES128CTR] / [CipherSipHash24] / [CipherChaCha20] name
+// constant. [KeySize] and [NonceSize] delegate to the ctr package for
+// per-primitive byte lengths.
+//
+// Key management: [GenerateKey] draws a fresh CSPRNG key of the
+// primitive's canonical size; [DeriveKey] runs the [github.com/everanium/itb/kdf]
+// counter-mode KDF over a supplied master with a fixed domain label
+// so wrapper keys stay orthogonal to other subkeys derived from the
+// same master.
 package wrapper

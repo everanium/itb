@@ -12,7 +12,7 @@ ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construc
 
 The 8-seed architecture (noiseSeed, lockSeed, three per-snake dataSeeds, three per-snake startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF calls). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
 
-The construction exhibits **ambiguity-based security**: the number of observation-consistent *configurations* grows exponentially with data size. This property is orthogonal to Shannon's key-entropy bound and distinct from Shannon's perfect-secrecy relationship on plaintext entropy. Above a threshold P_th = ⌈k / log₂ C⌉ (C = 56 without CCA, C = 7 under CCA), encoding ambiguity exceeds the 2^k key space. At 64 KB plaintext, ambiguity reaches 2^26,414; its exponent is 25.8× the 1024-bit key-space exponent. An attacker-realistic audit suite in the reference implementation confirms the barrier's absorption across multiple trapdoor mechanism classes at the tested sample sizes (see [REDTEAM.md](REDTEAM.md)).
+The construction exhibits **ambiguity-based security**: the number of observation-consistent **configurations** grows exponentially with data size. This property is orthogonal to Shannon's key-entropy bound and distinct from Shannon's perfect-secrecy relationship on plaintext entropy. Above a threshold P_th = ⌈k / log₂ C⌉ (C = 56 without CCA, C = 7 under CCA), encoding ambiguity exceeds the 2^k key space. At 64 KB plaintext, ambiguity reaches 2^26,414; its exponent is 25.8× the 1024-bit key-space exponent. An attacker-realistic audit suite in the reference implementation confirms the barrier's absorption across multiple trapdoor mechanism classes at the tested sample sizes (see [REDTEAM.md](REDTEAM.md)).
 
 All operations are elementary: XOR, bitwise AND, modular reduction, and bit shifts. No Galois fields, no S-boxes, no polynomial multiplication. The security architecture composes around a pluggable PRF hash function; the construction's own operations are elementary, while the closures under KPA/CPA/CCA remain computational and PRF-conditional on the primitive.
 
@@ -101,7 +101,7 @@ followed by combinadic unrank of `idx_0` (yielding `m_0`) and of `idx_1` over th
 
 ### 2.1 Information-Theoretic Barrier (Theorem 1)
 
-**Theorem 1 (Barrier).** *For a random container `C` generated from a CSPRNG and any PRF hash function `H`, the distribution of observed pixel values after embedding is independent of the hash output.*
+**Theorem 1 (Barrier).** **For a random container `C` generated from a CSPRNG and any PRF hash function `H`, the distribution of observed pixel values after embedding is independent of the hash output.**
 
 The core observation: `P(C'[p, ch] = v | h) = 1/2` for any observed value `v` and any hash output `h`, because the noise bit at `noisePos` retains the original CSPRNG-generated container bit — Bernoulli(1/2) and independent of everything.
 
@@ -117,7 +117,7 @@ For any observed value, any hash output, there exists a container byte that prod
 
 ### 2.2 Per-Bit XOR KPA Resistance (Theorem 2)
 
-**Theorem 2.** *Under per-bit XOR (1:1), for any observed channel byte `v` and known plaintext data bits `d`, there exists a 7-bit XOR mask `m` such that encoding `d` with mask `m` is consistent with `v`, for any noise position and rotation.*
+**Theorem 2.** **Under per-bit XOR (1:1), for any observed channel byte `v` and known plaintext data bits `d`, there exists a 7-bit XOR mask `m` such that encoding `d` with mask `m` is consistent with `v`, for any noise position and rotation.**
 
 Given `v`, `noisePos`, and candidate rotation `r'`, a matching `m' = rotate⁻¹(extract(v, noisePos), r') ⊕ d` always exists. All 56 (8 × 7) candidates per pixel are consistent with the observation without CCA; with CCA (noisePos known), 7 rotation candidates remain. Known plaintext does not uniquely determine the per-pixel configuration. Full derivation: [PROOFS.md § Proof 2](PROOFS.md#proof-2-per-bit-xor-kpa-resistance).
 
@@ -125,31 +125,31 @@ Additionally, the per-chunk mask permutation (§2.15, Theorem 11) removes any fi
 
 ### 2.3 8-Seed Isolation (Theorems 3, 3a)
 
-**Theorem 3.** *In the 8-seed architecture, compromise of any subset of `{noiseSeed, dataSeed_1, dataSeed_2, dataSeed_3, startSeed_1, startSeed_2, startSeed_3}` provides zero information about `lockSeed`, and symmetrically. Pairwise mutual information between any two of the 8 seeds is zero.*
+**Theorem 3.** **In the 8-seed architecture, compromise of any subset of `{noiseSeed, dataSeed_1, dataSeed_2, dataSeed_3, startSeed_1, startSeed_2, startSeed_3}` provides zero information about `lockSeed`, and symmetrically. Pairwise mutual information between any two of the 8 seeds is zero.**
 
-The 8 seeds are drawn independently from CSPRNG. Each seed's ChainHash uses only its own components (`noiseSeed → noisePos`; `lockSeed → lockKey → per-chunk mask via cascade PRF`; `dataSeed_i → rotation_i, XOR_i`; `startSeed_i → startPixel_i`), so `I(any subset ; complement) = 0` where `I` is mutual information. CCA reveals noise positions (noiseSeed config); cache side-channel reveals a `startPixel_i` (startSeed_i config); neither carries any information about any other seed — in particular, none about lockSeed. The pairwise independence between seeds is information-theoretic (all 8 are CSPRNG-drawn); the individual unrecoverability of lockSeed under Full KPA is *computationally* hidden under the PRF assumption via cascade PRF binding, not information-theoretic — total PRF inversion recovers lockSeed via the Asymmetry note (§2.6). Full derivation: [PROOFS.md § Proof 3](PROOFS.md#proof-3-8-seed-isolation).
+The 8 seeds are drawn independently from CSPRNG. Each seed's ChainHash uses only its own components (`noiseSeed → noisePos`; `lockSeed → lockKey → per-chunk mask via cascade PRF`; `dataSeed_i → rotation_i, XOR_i`; `startSeed_i → startPixel_i`), so `I(any subset ; complement) = 0` where `I` is mutual information. CCA reveals noise positions (noiseSeed config); cache side-channel reveals a `startPixel_i` (startSeed_i config); neither carries any information about any other seed — in particular, none about lockSeed. The pairwise independence between seeds is information-theoretic (all 8 are CSPRNG-drawn); the individual unrecoverability of lockSeed under Full KPA is **computationally** hidden under the PRF assumption via cascade PRF binding, not information-theoretic — total PRF inversion recovers lockSeed via the Asymmetry note (§2.6). Full derivation: [PROOFS.md § Proof 3](PROOFS.md#proof-3-8-seed-isolation).
 
 The lockSeed → per-chunk mask path is bound to the primitive via two consecutive live PRF calls (`deriveInterLockSeed`, then the per-chunk hash), so any attempt to isolate the permutation layer's unrank hardness from the primitive's PRF hardness reduces the instance to PRF preimage recovery — dominated by the primitive's SAT-hardness, not by the interlock structure.
 
-**Theorem 3a (Minimality).** *Eight seeds are the minimum configuration where every leak in the 3-snake construction is architecturally isolated. Fewer seeds would create cross-domain leakage in at least one snake pair or between the barrier layer and one per-snake role.*
+**Theorem 3a (Minimality).** **Eight seeds are the minimum configuration where every leak in the 3-snake construction is architecturally isolated. Fewer seeds would create cross-domain leakage in at least one snake pair or between the barrier layer and one per-snake role.**
 
 Pigeonhole argument on 8 disjoint derivation domains (N, L, D₁..D₃, S₁..S₃) with distinct attack surfaces: any layout with at most 7 seeds merges at least two domains, and every merger creates at least one cross-domain leakage pattern (observable + unobservable, snake collapse, or noise/mask coupling). 8 CSPRNG-independent seeds achieve the pairwise independence of Theorem 3. Full derivation: [PROOFS.md § Proof 3a](PROOFS.md#proof-3a-8-seed-isolation-minimality).
 
 ### 2.4 ChainHash Full Component Utilization (Theorem 3b)
 
-**Theorem 3b.** *For any PRF-grade hash function `H`, `ChainHash(data, S)` depends on all `n` components. No component can be changed without affecting the final output.*
+**Theorem 3b.** **For any PRF-grade hash function `H`, `ChainHash(data, S)` depends on all `n` components. No component can be changed without affecting the final output.**
 
 By contradiction plus the PRF property: any component change avalanches through subsequent rounds with overwhelming probability. Full derivation: [PROOFS.md § Proof 3b](PROOFS.md#proof-3b-chainhash-full-component-utilization).
 
 ### 2.5 Rotation Barrier (Theorem 4)
 
-**Theorem 4.** *With unknown rotation `r ∈ {0, …, 6}` from `dataSeed_i`, the attacker faces `7^P` indistinguishable configurations for `P` pixels when using a non-invertible hash.*
+**Theorem 4.** **With unknown rotation `r ∈ {0, …, 6}` from `dataSeed_i`, the attacker faces `7^P` indistinguishable configurations for `P` pixels when using a non-invertible hash.**
 
 For `P = 400` (minimum container at a 1024-bit key): `7^400 ≈ 2^1123`, which exceeds the Landauer bound on irreversible enumeration cost (~2^306); this bounds the cost of blind enumeration of the ambiguity space, not resistance to structural attacks. See [PROOFS.md § Proof 4](PROOFS.md#proof-4-rotation-barrier).
 
 ### 2.6 Multi-Factor Full KPA Resistance (Theorem 4a)
 
-**Theorem 4a.** *Under the PRF assumption, Full KPA brute-force seed recovery requires: for Core ITB in Silent Drop mode (no verification oracle), at least `P × 2^(2·keyBits)` hash evaluations (joint noiseSeed + dataSeed search); for MAC + Reveal variants where the encrypted MAC tag serves as a local verification oracle, at least `P × 2^keyBits` hash evaluations (noiseSeed eliminated, dataSeed + startPixel enumeration verified locally per §2.13). The `7^P` (or `56^P` without CCA) per-pixel encoding ambiguity is an additional factor over either bound that any shortcut attack must also defeat.*
+**Theorem 4a.** **Under the PRF assumption, Full KPA brute-force seed recovery requires: for Core ITB in Silent Drop mode (no verification oracle), at least `P × 2^(2·keyBits)` hash evaluations (joint noiseSeed + dataSeed search); for MAC + Reveal variants where the encrypted MAC tag serves as a local verification oracle, at least `P × 2^keyBits` hash evaluations (noiseSeed eliminated, dataSeed + startPixel enumeration verified locally per §2.13). The `7^P` (or `56^P` without CCA) per-pixel encoding ambiguity is an additional factor over either bound that any shortcut attack must also defeat.**
 
 The attacker must simultaneously succeed on four independent obstacles whose entropy sources are disjoint by Theorem 3, plus one Partial KPA specific obstacle:
 
@@ -167,19 +167,19 @@ Obstacles (1)–(4) jointly determine the Full KPA brute-force cost; `gcd(7,8)=1
 
 **Composition conjecture.** Hash output bias and collisions are absorbed by the barrier (§2.11, Theorem 7 + BHT analysis of §3.4). Occasional/sporadic PRF inversion events are additionally absorbed by per-chunk mask-triple isolation, startPixel isolation, and per-pixel 1:1 ambiguity (obstacles 2–4), plus `gcd(7,8)=1` byte-splitting under Partial KPA (obstacle 5): recovered candidates become indistinguishable from the false-positive distribution. Systematic partial PRF inversion is a real (non-absorbed) threat that the barrier does not neutralize — the architecture raises cost but does not eliminate the attack — however, no such systematic weakness is currently known to reduce the Full KPA work factor below the theorem bound. Only total PRF inversion circumvents this via algorithmic seed recovery (see Asymmetry note).
 
-**Asymmetry note.** Obstacle (1) is asymmetrically privileged: a total PRF inversion algorithmically resolves obstacles (2)–(5) via recovered seeds; the per-chunk mask permutation collapses via lockSeed recovery through cascade PRF inversion of the mask-derivation chain, or via direct Full KPA observation of mask triples from plaintext-chunk to permuted-wire correspondence. Failure of any architectural layer leaves PRF non-invertibility intact. Theorem 4a protects against *partial* PRF weakness and *any degree* of architectural weakness, but not against total PRF inversion.
+**Asymmetry note.** Obstacle (1) is asymmetrically privileged: a total PRF inversion algorithmically resolves obstacles (2)–(5) via recovered seeds; the per-chunk mask permutation collapses via lockSeed recovery through cascade PRF inversion of the mask-derivation chain, or via direct Full KPA observation of mask triples from plaintext-chunk to permuted-wire correspondence. Failure of any architectural layer leaves PRF non-invertibility intact. Theorem 4a protects against **partial** PRF weakness and **any degree** of architectural weakness, but not against total PRF inversion.
 
-**Why KPA candidates do not break the barrier.** Under KPA, the attacker can compute 56 candidate dataHash values per pixel — but these are *calculated* from the combination of (known plaintext + observed byte + candidate config), not extracted from the observation. All 56 are equally consistent; the attacker does not learn which is real. Across P pixels, the pixel-layer ambiguity is `56^P` (or `7^P` with CCA); across `C = ⌈(4 + payload_bytes) × 8 / 48⌉` barrier chunks, Part 1 stacks an additional `≈ 2^(70.20 × C)` mask-enumeration multiplier. Without ChainHash inversion the attacker cannot verify any candidate combination; without lockSeed the attacker cannot even write down the per-bit constraint the candidate would satisfy. Under an invertible primitive on the shipped construction the attacker's naive «candidate → invert primitive → verify on another pixel» path is closed one step earlier by Part 1: the second pixel's mapping is a different per-chunk secret drawn from ≈ 2^70.20 balanced partitions — instance-formulation impossibility, not solver-throughput bound.
+**Why KPA candidates do not break the barrier.** Under KPA, the attacker can compute 56 candidate dataHash values per pixel — but these are **calculated** from the combination of (known plaintext + observed byte + candidate config), not extracted from the observation. All 56 are equally consistent; the attacker does not learn which is real. Across P pixels, the pixel-layer ambiguity is `56^P` (or `7^P` with CCA); across `C = ⌈(4 + payload_bytes) × 8 / 48⌉` barrier chunks, Part 1 stacks an additional `≈ 2^(70.20 × C)` mask-enumeration multiplier. Without ChainHash inversion the attacker cannot verify any candidate combination; without lockSeed the attacker cannot even write down the per-bit constraint the candidate would satisfy. Under an invertible primitive on the shipped construction the attacker's naive «candidate → invert primitive → verify on another pixel» path is closed one step earlier by Part 1: the second pixel's mapping is a different per-chunk secret drawn from ≈ 2^70.20 balanced partitions — instance-formulation impossibility, not solver-throughput bound.
 
 ### 2.7 Noise Barrier Bound (Theorem 5)
 
-**Theorem 5.** *With 8 channels and the unified container floor `MinPixels = ⌈keyBits / log₂(7)⌉` (shared by plain and MAC-authenticated surfaces), the noise barrier `2^(8P)` strictly exceeds the key space `2^keyBits`.*
+**Theorem 5.** **With 8 channels and the unified container floor `MinPixels = ⌈keyBits / log₂(7)⌉` (shared by plain and MAC Authenticated surfaces), the noise barrier `2^(8P)` strictly exceeds the key space `2^keyBits`.**
 
-For `keyBits = 1024`: `MinPixels = 365`, giving `P = 400` after square rounding (20 × 20). Noise barrier = `2^3200 ≫ 2^1024`. The unified floor is mode-independent, so the minimum-message container size does not betray whether the MAC-authenticated or plain surface produced a given wire. See [PROOFS.md § Proof 5](PROOFS.md#proof-5-noise-barrier-bound).
+For `keyBits = 1024`: `MinPixels = 365`, giving `P = 400` after square rounding (20 × 20). Noise barrier = `2^3200 ≫ 2^1024`. The unified floor is mode-independent, so the minimum-message container size does not betray whether the MAC Authenticated or plain surface produced a given wire. See [PROOFS.md § Proof 5](PROOFS.md#proof-5-noise-barrier-bound).
 
 ### 2.8 CCA Leak Upper Bound (Theorem 6)
 
-**Theorem 6.** *Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model.*
+**Theorem 6.** **Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model.**
 
 The CCA oracle classifies each bit as noise (accept) or data (reject). Per pixel: 8 queries suffice (testing each bit position; all channels share the same `noisePos`). After classification, the 7 data-bit positions are known, but their values are protected by per-bit XOR from `dataSeed_i` (independent of noiseSeed by Theorem 3). The per-chunk mask channel is unaffected under this attack model.
 
@@ -187,7 +187,7 @@ CCA leak = 3 / 62 ≈ 4.8 % of per-pixel configuration. CCA reveals no plaintext
 
 ### 2.9 Guaranteed CSPRNG Residue (Theorem 10)
 
-**Theorem 10 (No Perfect Fill).** *With container dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉`, the container capacity strictly exceeds the maximum payload. CSPRNG fill bytes are always present in the data bit positions.*
+**Theorem 10 (No Perfect Fill).** **With container dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉`, the container capacity strictly exceeds the maximum payload. CSPRNG fill bytes are always present in the data bit positions.**
 
 The container capacity gap is `≥ (2s + 1) × 7 > 0` for all `s ≥ 1`; perfect fill is mathematically impossible. Full derivation: [PROOFS.md § Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
 
@@ -201,13 +201,13 @@ Byte-splitting is an auxiliary layer under Partial KPA — the second obstacle t
 
 ### 2.11 Bias Neutralization (Theorem 7)
 
-**Theorem 7.** *With a non-invertible PRF hash function, the rotation barrier makes dataSeed output bias unobservable regardless of the primitive's output distribution.*
+**Theorem 7.** **With a non-invertible PRF hash function, the rotation barrier makes dataSeed output bias unobservable regardless of the primitive's output distribution.**
 
 The attacker cannot observe dataSeed's hash output (Theorem 3, 8-seed isolation), and without knowing rotation `r` the mapping plaintext → observed bits is 7-to-1 ambiguous per pixel (Theorem 4). Any statistical bias in `H` provides a Bayesian prior, but without dataSeed the attacker cannot evaluate `P(observed | r = r')` — the Bayesian update is uninformative. Full derivation: [PROOFS.md § Proof 7](PROOFS.md#proof-7-bias-neutralization).
 
 ### 2.12 Oracle-Free Deniability (Theorem 8)
 
-**Theorem 8.** *For any container `C` encrypted with the 8-seed tuple and any wrong 8-seed tuple, decryption produces output computationally indistinguishable from uniform random bytes.*
+**Theorem 8.** **For any container `C` encrypted with the 8-seed tuple and any wrong 8-seed tuple, decryption produces output computationally indistinguishable from uniform random bytes.**
 
 No magic bytes, no checksums. The COBS null terminator is encrypted inside the container. A wrong lockSeed inverts a wrong per-chunk permutation, so the pre-COBS byte stream is a scrambled reordering of the true post-barrier bits; wrong per-snake seeds extract, un-rotate, and XOR-decrypt with incorrect configurations. Wrong seeds produce random-looking output at a random-length boundary. See [ITB.md § 16 Oracle-Free Deniability](ITB.md#16-oracle-free-deniability) for the accessible property list.
 
@@ -227,7 +227,7 @@ The dual-nonce wire header carries two independently drawn CSPRNG nonces. Birthd
 
 ### 2.15 48-bit Interlocked Barrier Mask Space (Theorem 11)
 
-**Theorem 11.** *The per-chunk mask triple `(m_0, m_1, m_2)` is drawn from a space `Ω_chunk` of cardinality `|Ω_chunk| = A · B` where `A = C(48, 16) = 2,254,848,913,647` and `B = C(32, 16) = 601,080,390`, so `|Ω_chunk| ≈ 2^70.20`. Under the PRF assumption on the primitive, the per-chunk mask draw is computationally indistinguishable from an independent uniform selection from `Ω_chunk`. A known-plaintext crib supplying 48 known bits of a chunk does not determine that chunk's mask triple: the number of PRF-output preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80`.*
+**Theorem 11.** **The per-chunk mask triple `(m_0, m_1, m_2)` is drawn from a space `Ω_chunk` of cardinality `|Ω_chunk| = A · B` where `A = C(48, 16) = 2,254,848,913,647` and `B = C(32, 16) = 601,080,390`, so `|Ω_chunk| ≈ 2^70.20`. Under the PRF assumption on the primitive, the per-chunk mask draw is computationally indistinguishable from an independent uniform selection from `Ω_chunk`. A known-plaintext crib supplying 48 known bits of a chunk does not determine that chunk's mask triple: the number of PRF-output preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80`.**
 
 Balanced-partition counting: `A` ways to choose `m_0`, then `B` ways for `m_1` from the remaining 32 bits; `m_2` = complement. Under the PRF assumption each chunk's mask draw is computationally indistinguishable from an independent uniform selection from `Ω_chunk`. The two-step unrank `(idx_0, idx_1) = (⌊rank / B⌋ mod A, rank mod B)` has preimage counts differing by at most 1 — the `2^128 mod (A · B)` lowest-indexed pairs receive one extra preimage — with both counts equal to ≈ 2^57.80 at that order. Every mask triple therefore has ≈ 2^57.80 PRF-output preimages, so any candidate mask triple is consistent with any observation. Full derivation: [PROOFS.md § Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space).
 
@@ -273,7 +273,7 @@ Full KPA (the attacker knows the entire plaintext) is analyzed by primitive clas
 - **PRF-grade primitive**: closed under PRF (Theorem 4a), bounded by instance formulation and sample size per Theorem 11. Each known-plaintext chunk admits ≈ 2^57.80 mask preimages with no ranking signal among the ≈ 2^70.20 masks per chunk.
 - **Below-spec primitive** (empirically tested controls): the barrier still provides anchor protection — the crib cannot anchor to a fixed byte position because the barrier's per-chunk mask permutation moves every plaintext byte to a per-chunk PRF-keyed lane position. Anchor-based recovery attacks that succeed on such a primitive in isolation fail through the barrier at the tested sample sizes. The closure remains PRF-conditional in the sense of Theorem 4a's Asymmetry note: total PRF inversion still collapses the barrier via cascade lockSeed recovery.
 
-SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism; the argument is stated in full at §2.6 (Theorem 4a). Partial weakness in any single factor leaves the others intact; total PRF inversion would collapse the architectural layers via recovered seeds — the multi-factor property defends against *partial* PRF weakness, not total failure.
+SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism; the argument is stated in full at §2.6 (Theorem 4a). Partial weakness in any single factor leaves the others intact; total PRF inversion would collapse the architectural layers via recovered seeds — the multi-factor property defends against **partial** PRF weakness, not total failure.
 
 ### 3.2 Empirical Corroboration
 
@@ -326,7 +326,7 @@ Shannon (1949) established that perfect secrecy requires key entropy ≥ message
 
 Unlike AES and ChaCha20, which expose the primitive's output directly to the observer (keystream ⊕ plaintext), ITB absorbs the PRF output into a random container before the observer can see it. This is an architectural difference, not a mathematical one. Beyond that distinction, ITB's mandatory 48-bit Interlocked Barrier introduces a per-chunk PRF-keyed permutation over a space of cardinality ≈ 2^70.20 that removes the fixed byte-position anchor a Crib KPA attacker requires.
 
-At the minimum container size, blind enumeration of the ambiguity space at ITB's parameters already exceeds the Landauer bound on irreversible computation: the 2^3200 noise-barrier at 1024-bit keys (P = 400) is `2^2894×` the ~2^306 Landauer bound. This bounds *blind enumeration cost*, not resistance to structural attacks — structural attacks that do not enumerate (e.g., algebraic recovery through a compromised primitive) are not bounded by Landauer. Reversible-computing adversaries are additionally unbounded on the enumeration axis; the physics-layer argument is therefore a conditional positioning of enumeration cost, not an unconditional security guarantee.
+At the minimum container size, blind enumeration of the ambiguity space at ITB's parameters already exceeds the Landauer bound on irreversible computation: the 2^3200 noise-barrier at 1024-bit keys (P = 400) is `2^2894×` the ~2^306 Landauer bound. This bounds **blind enumeration cost**, not resistance to structural attacks — structural attacks that do not enumerate (e.g., algebraic recovery through a compromised primitive) are not bounded by Landauer. Reversible-computing adversaries are additionally unbounded on the enumeration axis; the physics-layer argument is therefore a conditional positioning of enumeration cost, not an unconditional security guarantee.
 
 **Maximum key size comparison:**
 
@@ -347,18 +347,18 @@ At the minimum container size, blind enumeration of the ambiguity space at ITB's
 
 ## 5. Ambiguity-Based Security
 
-Traditional symmetric ciphers follow Shannon's model: each additional plaintext bit constrains the key, reducing uncertainty about it. In ITB, a distinct orthogonal property emerges: each additional pixel adds unverifiable *configuration* candidates without contradicting Shannon's plaintext-entropy bound. The property applies to oracle-free observation; under any verification oracle (e.g., MAC-inside, §2.13) configuration ambiguity collapses to the primitive's brute-force bound.
+Traditional symmetric ciphers follow Shannon's model: each additional plaintext bit constrains the key, reducing uncertainty about it. In ITB, a distinct orthogonal property emerges: each additional pixel adds unverifiable **configuration** candidates without contradicting Shannon's plaintext-entropy bound. The property applies to oracle-free observation; under any verification oracle (e.g., MAC-inside, §2.13) configuration ambiguity collapses to the primitive's brute-force bound.
 
 The per-chunk mask permutation (§1.5, §2.15) additionally multiplies the ambiguity by the mask-space cardinality per chunk (≈ 2^70.20); that contribution is orthogonal to the per-pixel encoding ambiguity this section quantifies.
 
 **Definition (Ambiguity-Based Security).** Fix key size `k` bits and a container of `P` pixels. The construction has `(k, P)`-ambiguity-based security if the number of observation-consistent configurations exceeds `2^k` for all `P > P_threshold`.
 
-**Theorem 9 (Ambiguity Dominance).** *For ITB with key size `k` bits:*
+**Theorem 9 (Ambiguity Dominance).** **For ITB with key size `k` bits:**
 
-- *Without CCA (Core ITB / Silent Drop): `P_threshold = ⌈k / log₂ 56⌉ ≈ ⌈k / 5.807⌉`.*
-- *Under CCA (MAC + Reveal): `P_threshold = ⌈k / log₂ 7⌉ ≈ ⌈k / 2.807⌉`.*
+- **Without CCA (Core ITB / Silent Drop): `P_threshold = ⌈k / log₂ 56⌉ ≈ ⌈k / 5.807⌉`.**
+- **Under CCA (MAC + Reveal): `P_threshold = ⌈k / log₂ 7⌉ ≈ ⌈k / 2.807⌉`.**
 
-*Above `P_threshold`, encoding ambiguity exceeds the key space in the exponent.*
+**Above `P_threshold`, encoding ambiguity exceeds the key space in the exponent.**
 
 Direct from candidate arithmetic: `56^P > 2^k ⇔ P > k / log₂(56)`; under CCA `7^P > 2^k ⇔ P > k / log₂(7)`. Full derivation: [PROOFS.md § Proof 9](PROOFS.md#proof-9-ambiguity-dominance-threshold).
 
@@ -390,11 +390,11 @@ The reference implementation sets the unified floor `MinPixels = ⌈k / log₂(7
 | 64 KB | 9,409 | `2^54,641` | 53.4× |
 | 1 MB | 150,544 | `2^874,262` | 854× |
 
-At 64 KB, encoding ambiguity alone is `2^26,414`, whose exponent is 25.8× the 1024-bit key-space exponent. No computational model can perform *blind enumeration* of `2^26,414` configurations. This bounds enumeration cost, not resistance to structural attacks; ambiguity dominance is orthogonal to the PRF-conditional multi-factor defense (Theorem 4a). Noise barrier (`2^(8P)`) and key brute-force are independent additional enumeration layers.
+At 64 KB, encoding ambiguity alone is `2^26,414`, whose exponent is 25.8× the 1024-bit key-space exponent. No computational model can perform **blind enumeration** of `2^26,414` configurations. This bounds enumeration cost, not resistance to structural attacks; ambiguity dominance is orthogonal to the PRF-conditional multi-factor defense (Theorem 4a). Noise barrier (`2^(8P)`) and key brute-force are independent additional enumeration layers.
 
 **Per-candidate decryption cost.** Each brute-force candidate requires full container decryption: `P × 2R` hash calls (where `R` = ChainHash rounds). This cost applies to all modes and grows linearly with `P`. At 64 MB (`P ≈ 9.6 × 10⁶`), each candidate costs ~154 million hash calls — orders of magnitude more expensive than AES, in which verification costs a single block operation.
 
-**Relationship to Shannon.** Shannon's theorem on unconditional (information-theoretic) key-message equality requires `|key| ≥ |message|`. It applies to models where keystream is XOR'd directly with plaintext — each additional plaintext bit constrains the key. ITB does not meet Shannon's unconditional-secrecy definition: the key is shorter than the message. Instead, ITB exhibits a distinct property orthogonal to Shannon's key-entropy bound: the number of observation-consistent *configurations* grows exponentially with data size. This is a distinct class of security property; the formal relationship to Shannon's framework remains an open research question (see §7).
+**Relationship to Shannon.** Shannon's theorem on unconditional (information-theoretic) key-message equality requires `|key| ≥ |message|`. It applies to models where keystream is XOR'd directly with plaintext — each additional plaintext bit constrains the key. ITB does not meet Shannon's unconditional-secrecy definition: the key is shorter than the message. Instead, ITB exhibits a distinct property orthogonal to Shannon's key-entropy bound: the number of observation-consistent **configurations** grows exponentially with data size. This is a distinct class of security property; the formal relationship to Shannon's framework remains an open research question (see §7).
 
 ## 6. Implementation
 

@@ -42,7 +42,7 @@ Bench-side tuning is available through `PARALLAX_*` environment variables consum
 
 ## Per-primitive throughput across segment size (Single Message, 4 MiB, N=9, Encrypt)
 
-Each row uses a homogeneous palette of N=9 copies of the named primitive across a single-message Encrypt at the listed segment widths. Source: `BenchmarkParallaxPerPrimitiveHomogeneous`. Throughput in MB/s; per-row maximum bolded.
+Each row uses a homogeneous palette of N=9 copies of the named primitive across a Single Message Encrypt at the listed segment widths. Source: `BenchmarkParallaxPerPrimitiveHomogeneous`. Throughput in MB/s; per-row maximum bolded.
 
 | Primitive | S=17 | S=251 | S=1031 | S=4093 | S=16381 | S=65521 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -94,7 +94,7 @@ Streaming emits one frame per chunk; each frame is one `EncryptInPlace` call's o
 | SipHash-2-4 | 519 | 1050 | 1612 | 2035 | 2047 | **2164** |
 | ChaCha20 | 493 | 933 | 1440 | 1940 | **1993** | 1972 |
 
-Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive sits 2–4× below its 4 MiB rate; the inflection sits at 256 KiB, and amortisation is largely complete by 1 MiB. AES-CMAC retains the highest absolute number across the small-chunk band because its per-block cost is already dwarfed by per-chunk `EncryptInPlace` setup; BLAKE2b-256 collapses to 167 MB/s at 64 KiB because the smallest hash output and lowest per-chunk throughput pair poorly with the framing tax. Above 1 MiB chunks the streaming row approaches the single-message rate at the matching primitive.
+Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive sits 2–4× below its 4 MiB rate; the inflection sits at 256 KiB, and amortisation is largely complete by 1 MiB. AES-CMAC retains the highest absolute number across the small-chunk band because its per-block cost is already dwarfed by per-chunk `EncryptInPlace` setup; BLAKE2b-256 collapses to 167 MB/s at 64 KiB because the smallest hash output and lowest per-chunk throughput pair poorly with the framing tax. Above 1 MiB chunks the streaming row approaches the Single Message rate at the matching primitive.
 
 ## Stream-shape comparison (4 MiB plaintext, chunk 16 MiB)
 
@@ -174,6 +174,6 @@ Each per-worker keystream is built once at offset 0 and the per-segment hot loop
 ## Notes
 
 - The serial fast path runs when the plaintext is below `parallelThreshold = 8 KiB`. Below this threshold the per-worker keystream-setup cost cannot be amortised; serial dispatch in the caller's goroutine wins.
-- The streaming chunk size (`SetChunkSize`, default 16 MiB) controls the wire-frame body width on the chunked streaming surface only. The single-message API does not consume the chunk size; segment width is the only S-axis knob for `Encrypt` / `Decrypt` / `EncryptInPlace` / `DecryptInPlace`.
+- The streaming chunk size (`SetChunkSize`, default 16 MiB) controls the wire-frame body width on the chunked streaming surface only. The Single Message API does not consume the chunk size; segment width is the only S-axis knob for `Encrypt` / `Decrypt` / `EncryptInPlace` / `DecryptInPlace`.
 - The default segment size 4093 lands within ~10 % of the per-primitive optimum for the entire registry: AES-CMAC and BLAKE2b-256 trail their peaks at the highest S by less than ~15 %, and the remaining primitives peak at or adjacent to S=4093. The default is a stable choice across mixed palettes where no single primitive dominates the schedule.
 - Worker-scaling shape is per-primitive, not per-package. The bandwidth-limited primitives (AES-CMAC) plateau early; the compute-bound primitives (BLAKE2b-512) keep climbing through P=16 because the parallel path lifts the per-core compute bottleneck before the bandwidth ceiling becomes the constraint.

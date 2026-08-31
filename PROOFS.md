@@ -134,7 +134,7 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 
 **Proof.**
 
-*Part 1: 8 derivation domains.*
+**Part 1: 8 derivation domains.**
 
 The construction defines 8 disjoint derivation domains, each keyed by its own seed:
 - **N** (noise): noise bit position per pixel (3 bits/pixel), derived from noiseSeed
@@ -150,11 +150,11 @@ Each domain has a documented attack surface (see [Proof 3](#proof-3-8-seed-isola
 
 Parts 2–4 establish minimality for the pixel-layer domain types (N, D, S) on one snake; Part 5 lifts the argument to the full 8-domain layout.
 
-*Part 2: Single seed — complete break.*
+**Part 2: Single seed — complete break.**
 
 If one seed controls all three domains (N, D, S derived from same seed), CCA reveals N configuration (noise positions for all pixels). Since N and D are derived from the same seed, knowledge of N constrains the seed → D is recoverable. Complete configuration break.
 
-*Part 3: Two seeds — all pairings create cross-domain leakage.*
+**Part 3: Two seeds — all pairings create cross-domain leakage.**
 
 Three possible 2-seed pairings exist. Each creates cross-domain leakage:
 
@@ -167,7 +167,7 @@ CCA reveals N from Seed₁. Cache reveals S from Seed₁. Both attack surfaces t
 **(c) Seed₁ = {N, D}, Seed₂ = {S}:**
 CCA reveals N from Seed₁ (3 bits/pixel). Since N and D share Seed₁, CCA-derived N constraints reduce the effective key space of Seed₁. With KPA, the attacker knows plaintext and N configuration → 7 candidate D configurations per pixel (rotation 0-6), each fully determining the hash output → verification oracle for Seed₁. Cross-domain leak: N → D. This is the most severe pairing.
 
-*Part 4: Three pixel-layer domain types — pairwise independence.*
+**Part 4: Three pixel-layer domain types — pairwise independence.**
 
 With the three pixel-layer seeds generated independently from crypto/rand:
 
@@ -185,7 +185,7 @@ D has zero software-observable side-channel. Even combined CCA + cache + KPA pro
 
 Within the pixel-layer domain types, three independent seeds are therefore minimal: fewer creates cross-domain leakage in every possible pairing.
 
-*Part 5: Lifting to the 8-domain layout.*
+**Part 5: Lifting to the 8-domain layout.**
 
 The shipped construction instantiates the D and S domain types once per snake and adds the barrier domain L. Merging any two of the 8 domains onto one seed reproduces one of the Part 3 leakage patterns:
 
@@ -207,16 +207,16 @@ h₀ = H(data, s₀)
 hᵢ = H(data, sᵢ ⊕ hᵢ₋₁)    for i = 1, ..., n-1
 ```
 
-*Step 1: Changing s_k changes the input to round k.*
+**Step 1: Changing s_k changes the input to round k.**
 At round k, the second argument to H is `s_k ⊕ h_{k-1}` (or `s₀` for k=0). Changing s_k by even a single bit changes this argument by one bit.
 
-*Step 2: PRF property propagates the change.*
+**Step 2: PRF property propagates the change.**
 By the PRF property, H with altered input is computationally indistinguishable from a fresh uniform value. Therefore h_k differs substantially (with overwhelming probability) when s_k changes.
 
-*Step 3: The change cascades through subsequent rounds.*
+**Step 3: The change cascades through subsequent rounds.**
 At round k+1: the input is `s_{k+1} ⊕ h_k`. Since h_k changed, this input changes; by the PRF property applied again, h_{k+1} is indistinguishable from fresh uniform and hence differs from the original. By induction, every subsequent output h_{k+1}, h_{k+2}, ..., h_{n-1} differs with overwhelming probability.
 
-*Step 4: Contradiction.*
+**Step 4: Contradiction.**
 The final output h_{n-1} changes when s_k changes. This contradicts the assumption that s_k does not influence h_{n-1}.
 
 Since this holds for all k ∈ {0, ..., n-1}, all components influence the output.

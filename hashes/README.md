@@ -53,9 +53,9 @@ Beyond the shipped primitives, the package exposes three builder families that w
 
 | Builder | Wraps | Use when |
 |---|---|---|
-| `BuildCBCMACChainAbsorb{128,256,512}` | `crypto/cipher.Block` (caller-keyed) | You have a block cipher (AES, Camellia, ARIA, SM4, ...) and want CBC-MAC chain-absorb |
-| `BuildSpongeChainAbsorb{128,256,512}` | `Permute` + `(rate, capacity, fixedKey)` | You have an unkeyed permutation (Keccak-f, Ascon-PRF, ...) and want a keyed sponge |
-| `BuildARXChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | You have a full hash function (SHA-256, SM3, SHA-512, ...) and want safe absorption |
+| `BuildCBCMACChainAbsorb{128,256,512}` | `crypto/cipher.Block` (caller-keyed) | Caller has a block cipher (AES, Camellia, ARIA, SM4, ...) and wants CBC-MAC chain-absorb |
+| `BuildSpongeChainAbsorb{128,256,512}` | `Permute` + `(rate, capacity, fixedKey)` | Caller has an unkeyed permutation (Keccak-f, Ascon-PRF, ...) and wants a keyed sponge |
+| `BuildARXChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | Caller has a full hash function (SHA-256, SM3, SHA-512, ...) and wants safe absorption |
 
 **Why these matter for ITB security.** ITB supports nonce widths of 128, 256 or 512 bits via `Config.NonceBits` (threaded through any Cfg-suffixed entry point). The per-call buffer presented to a `HashFunc` closure carries a domain-tag byte plus the configured nonce material — 20, 36, or 68 bytes for the three nonce widths respectively. Every byte of the `data` parameter must reach the digest for ITB's advertised nonce strength to hold.
 
@@ -141,7 +141,7 @@ The same pattern works for any 32-byte hash. `SM3` swap-in: substitute `sha256.S
 
 ### Performance note for builders
 
-Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]byte` state buffers, costing 5-15% throughput vs the inline per-primitive closures shipped here (`aescmac.go`, `chacha20.go`, ...). The built-in closures use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined permutation calls, and `unsafe.Pointer` escape-analysis tricks. The builders are intentionally simpler — they target correctness-by-construction for user primitives, not peak throughput. If you need both correctness *and* peak throughput for a specific primitive, write a dedicated closure following the `hashes/*.go` patterns.
+Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]byte` state buffers, costing 5-15% throughput vs the inline per-primitive closures shipped here (`aescmac.go`, `chacha20.go`, ...). The built-in closures use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined permutation calls, and `unsafe.Pointer` escape-analysis tricks. The builders are intentionally simpler — they target correctness-by-construction for user primitives, not peak throughput. Callers who need both correctness **and** peak throughput for a specific primitive write a dedicated closure following the `hashes/*.go` patterns.
 
 `BatchHash` (4-pixel batched SIMD asm) is **not** provided by these builders — the batched arm is inherently primitive-specific (VAES for AES, multi-buffer SHA-NI for SHA-256, etc.) and cannot be templated. Seeds constructed from builder closures leave `BatchHash = nil`, which makes ITB fall back silently to the per-pixel scalar loop (`process_generic.go`). Correctness is preserved; throughput on AVX-512 hosts is left on the table.
 
@@ -292,8 +292,8 @@ closure (no key tuple element):
 | `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
 
 The variadic short form delegates to `WithKey` (Go inliner removes
-the wrapper at compile time), so semantics are identical. Pick
-whichever reads cleaner at your call site:
+the wrapper at compile time), so semantics are identical. Either
+reads cleanly at the call site — the two are interchangeable:
 
 - **variadic** when the same call site handles both random-key and
   explicit-key paths (e.g. a config-driven factory that defaults to
