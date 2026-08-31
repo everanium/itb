@@ -15,6 +15,8 @@ This document records the adversarial re-verification of the shipped ITB constru
 
 The prior empirical record — the wider primitive shelf under Single Ouroboros with the overlay optional — is preserved verbatim in **[archive/REDTEAM.md](archive/REDTEAM.md)** and is cross-referenced by phase throughout for archived detail that is not re-inlined here.
 
+**[FAQ.md](FAQ.md)** — quick plain-language questions and answers on the most-asked cryptanalytic scenarios (a three-line `jokeHash`, GF(2)-linear CRC128, T-function FNV-1a), tracing the reasoning arrows that lead to the null-recovery observations recorded below.
+
 ## The Interlocked Barrier is a two-part composition
 
 Every verdict below is read against the **full** barrier, which is two layers acting in series, not one. Treating either part in isolation misstates what the construction resists.

@@ -1085,6 +1085,7 @@ The complete per-language fleet listing — 34 rows with directory paths, tiers,
 
 ## See also
 
+- [FAQ.md](FAQ.md) — Plain-language analytical walkthrough of the most-asked cryptanalytic scenarios (jokeHash, CRC128, FNV-1a) under the shipped barrier.
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation) and shipped feature reference.
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
