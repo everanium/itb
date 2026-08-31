@@ -88,6 +88,21 @@ Public NotInheritable Class Opts
         Return Me
     End Function
 
+    ''' <summary>Comma-joins an 8-slot per-call inner-hash
+    ''' constellation into the <c>innerHashes</c> opts key. Parallel
+    ''' to the Go-side <c>Opts.MixedHashes [8]string</c> per-call
+    ''' override; slot ordering is
+    ''' <c>[noise, lock, data1, data2, data3, start1, start2, start3]</c>.
+    ''' Fail-fast validation surfaces at Init on the Go side; a
+    ''' typo'd slot or width mismatch surfaces with an error naming
+    ''' the offending slot. When both this and
+    ''' <see cref="WithInnerHash"/> are set, the mixed override wins
+    ''' on the Go side.</summary>
+    Public Function WithInnerHashes(ParamArray names As String()) As Opts
+        _inner.WithInnerHashes(names)
+        Return Me
+    End Function
+
     Public Function WithOuterCipher(name As String) As Opts
         _inner.WithOuterCipher(name)
         Return Me

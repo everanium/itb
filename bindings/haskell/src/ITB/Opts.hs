@@ -26,6 +26,7 @@ module ITB.Opts
   , parallaxSegmentSize
   , macName
   , innerHash
+  , innerHashes
   , outerCipher
   , parallaxPalette
     -- * Escape hatch
@@ -95,6 +96,17 @@ macName = opt "macName"
 
 innerHash :: String -> Opts
 innerHash = opt "innerHash"
+
+-- | Per-call override for @Opts.MixedHashes [8]string@ on the Go
+-- side. Comma-joins the 8 slot names into the @innerHashes@ opts
+-- key. Slot ordering is
+-- @[noise, lock, data1, data2, data3, start1, start2, start3]@.
+-- Fail-fast validation surfaces at Init on the Go side; a typo'd
+-- slot or width mismatch surfaces with an error naming the offending
+-- slot. When both this and 'innerHash' are set, the mixed override
+-- wins on the Go side.
+innerHashes :: [String] -> Opts
+innerHashes = opt "innerHashes" . intercalate ","
 
 outerCipher :: String -> Opts
 outerCipher = opt "outerCipher"

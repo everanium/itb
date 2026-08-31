@@ -29,3 +29,24 @@ let ``message round trip every profile`` () =
             let wire = unwrap (Pipeline.encryptMessage sender plain)
             let back = unwrap (Pipeline.decryptMessage receiver wire)
             Assert.Equal<byte[]>(plain, back)
+
+[<Fact>]
+let ``opts innerHashes override round trips on width-512 profile`` () =
+    // Per-call Opts.MixedHashes override over a width-512 shipped
+    // base profile; both sides pass the same 8-slot constellation so
+    // the receiver Pipeline (opened via blob hand-off) resolves the
+    // same mixed inner-hash bundle as the sender.
+    let opts =
+        Opts.empty
+        |> Opts.withInnerHashes
+            [ "areion512"; "blake2b512"; "areion512"; "blake2b512"
+              "areion512"; "blake2b512"; "areion512"; "blake2b512" ]
+
+    use sender = unwrap (Pipeline.init "singlemsg-triple-mac-v1" opts)
+    use receiver =
+        unwrap (Pipeline.openBlob "singlemsg-triple-mac-v1" (Pipeline.blob sender) opts)
+
+    let plain = payload 4096 42UL
+    let wire = unwrap (Pipeline.encryptMessage sender plain)
+    let back = unwrap (Pipeline.decryptMessage receiver wire)
+    Assert.Equal<byte[]>(plain, back)
