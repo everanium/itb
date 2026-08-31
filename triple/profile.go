@@ -502,5 +502,23 @@ func resolveProfile(prof Profile, opts Opts) resolvedProfile {
 	if opts.WithWrapper != nil {
 		out.wrapperOn = *opts.WithWrapper
 	}
+	// MixedHashes override. When any Opts.MixedHashes slot is
+	// non-empty, the caller wants mixed dispatch: install the array
+	// and clear innerHash so [isMixedResolved] returns true and the
+	// mixed seed-alloc / blob-import paths take over. This mirrors
+	// the Profile-level mutual-exclusion rule (InnerHash and
+	// MixedHashes are exclusive dispatch paths). Slot-level
+	// validation (each name resolves via hashes.Find, primitive
+	// width matches profile Width, every one of the 8 slots
+	// populated) fires fail-fast inside allocEightSeedsMixed at
+	// Init time and importInnerBlobMixed at Open time — see
+	// [Opts.MixedHashes] doc-comment.
+	for _, s := range opts.MixedHashes {
+		if s != "" {
+			out.mixedHashes = opts.MixedHashes
+			out.innerHash = ""
+			break
+		}
+	}
 	return out
 }

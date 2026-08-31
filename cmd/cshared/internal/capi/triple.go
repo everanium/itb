@@ -3,6 +3,7 @@ package capi
 import (
 	"errors"
 	"runtime/cgo"
+	"strings"
 
 	itb "github.com/everanium/itb"
 	"github.com/everanium/itb/triple"
@@ -304,6 +305,19 @@ func mapTripleError(err error) Status {
 	case errors.Is(err, itb.ErrMACFailure):
 		setLastErrMessageTriple(msg)
 		return StatusMACFailure
+	}
+	// Mixed-primitive validation surface: allocEightSeedsMixed +
+	// importInnerBlobMixed emit fmt.Errorf messages naming the
+	// offending mixedHashes slot when a per-call Opts.MixedHashes
+	// override (or a resolved profile default) fails the
+	// non-empty / hashes.Find / width-match rules. These are
+	// user-input errors regardless of whether they arrived via
+	// RegisterProfile (already routed to StatusBadInput at the
+	// TripleRegisterProfile boundary) or via per-call
+	// TripleInit / TripleOpen; route them uniformly here.
+	if strings.Contains(msg, "mixedHashes") {
+		setLastErrMessageTriple(msg)
+		return StatusBadInput
 	}
 	setLastErrMessageTriple(msg)
 	return StatusInternal
