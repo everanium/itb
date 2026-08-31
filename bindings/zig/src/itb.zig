@@ -23,7 +23,7 @@
 
 /// Zig binding version. Tracks the Zig wrapper; call `version` for
 /// the underlying libitb library version.
-pub const binding_version: [:0]const u8 = "0.3.0";
+pub const binding_version: [:0]const u8 = "0.3.1";
 
 pub const ffi = @import("ffi.zig");
 

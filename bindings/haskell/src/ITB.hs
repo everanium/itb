@@ -87,7 +87,7 @@ import ITB.Stream
 
 -- | The binding's own version.
 bindingVersion :: String
-bindingVersion = "0.3.0"
+bindingVersion = "0.3.1"
 
 -- | Returns the libitb library version string.
 version :: IO String

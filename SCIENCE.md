@@ -261,7 +261,7 @@ Balanced-partition counting: `A` ways to choose `m_0`, then `B` ways for `m_1` f
 | Full KPA | Multi-factor under PRF (Theorem 4a); ≈ 2^57.80 mask preimages per chunk | Closed under PRF* |
 | Partial KPA | Superset of Full KPA candidate sets; `gcd(7,8)=1` auxiliary | Closed under PRF, a fortiori |
 | CPA | Different dual-nonce → independent maps, fresh mask draws | Intact |
-| CCA | No oracle (core ITB without MAC); mask channel unaffected | No oracle |
+| CCA | No oracle (Core ITB without MAC); mask channel unaffected | No oracle |
 | Nonce reuse | Simultaneous collision requires CSPRNG fault; single-slot collision closed on un-collided axis | Not reachable via shipped API |
 
 \* All «closed under PRF» verdicts are instance-formulation-bounded and sample-bounded.
