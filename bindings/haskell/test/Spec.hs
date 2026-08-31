@@ -236,6 +236,25 @@ main = hspec $ do
         `shouldBe` BC.pack "mode=a%20b%26c%3Dd%25"
       renderOpts emptyOpts `shouldBe` BC.pack ""
 
+    it "innerHashes override round-trips on a width-512 profile" $ do
+      -- Per-call Opts.MixedHashes override over a width-512 shipped
+      -- base profile; both sides pass the same 8-slot constellation
+      -- so the receiver Pipeline (opened via blob hand-off) resolves
+      -- the same mixed inner-hash bundle as the sender.
+      let mix = innerHashes
+            [ "areion512", "blake2b512", "areion512", "blake2b512"
+            , "areion512", "blake2b512", "areion512", "blake2b512"
+            ]
+      sender <- initPipeline "singlemsg-triple-mac-v1" mix
+      blobBytes <- blob sender
+      receiver <- openPipeline "singlemsg-triple-mac-v1" blobBytes mix Nothing
+      let plain = payload 4096 42
+      wire <- encryptMessage sender plain
+      back <- decryptMessage receiver wire
+      back `shouldBe` plain
+      freePipeline receiver
+      freePipeline sender
+
 -- | Splits a ByteString into slices of at most @n@ bytes (zero-copy).
 chunksOf :: Int -> BS.ByteString -> [BS.ByteString]
 chunksOf n bs

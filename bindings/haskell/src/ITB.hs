@@ -55,6 +55,7 @@ module ITB
   , parallaxSegmentSize
   , macName
   , innerHash
+  , innerHashes
   , outerCipher
   , parallaxPalette
     -- * Errors

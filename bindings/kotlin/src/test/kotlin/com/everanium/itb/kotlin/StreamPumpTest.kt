@@ -1,5 +1,6 @@
 // InputStream -> OutputStream pump round trips (encrypt + decrypt
-// sides) over the Streaming AEAD profile.
+// sides) over the Streaming AEAD profile, plus the empty-source
+// rejection contract shared with the Single Message shape.
 
 package com.everanium.itb.kotlin
 
@@ -8,6 +9,8 @@ import java.io.ByteArrayOutputStream
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class StreamPumpTest {
@@ -31,18 +34,22 @@ class StreamPumpTest {
     }
 
     @Test
-    fun pumpEmptySource() {
+    fun pumpEmptySourceIsRejectedWithBadInput() {
+        // Empty plaintext stream has no cover story in any
+        // cryptographic construction (see triple/doc.go): the
+        // encrypt pump is rejected uniformly with StatusBadInput
+        // before any wire is produced. Callers who need an empty
+        // signal send a marker byte instead.
         Pipeline.init("streaming-noaead-triple-v1").use { sender ->
-            Pipeline.open("streaming-noaead-triple-v1", sender.blob).use { receiver ->
-                val wireSink = ByteArrayOutputStream()
+            val wireSink = ByteArrayOutputStream()
+            val ex = assertFailsWith<ItbException> {
                 sender.encryptStreamPump(ByteArrayInputStream(ByteArray(0)), wireSink)
-                val wire = wireSink.toByteArray()
-                assertTrue(wire.isNotEmpty())
-
-                val plainSink = ByteArrayOutputStream()
-                receiver.decryptStreamPump(ByteArrayInputStream(wire), plainSink)
-                assertContentEquals(ByteArray(0), plainSink.toByteArray())
             }
+            assertEquals(Status.BadInput, ex.status)
+            assertTrue(
+                wireSink.size() == 0,
+                "no wire bytes should have been emitted, got ${wireSink.size()}",
+            )
         }
     }
 }

@@ -23,6 +23,18 @@
     :parallax-segment-size  long
     :mac-name               string
     :inner-hash             string
+    :inner-hashes           seq of strings — per-call constellation
+                            override mirroring the Go-side
+                            Opts.MixedHashes [8]string field; the 8
+                            slot names in the order [noise, lock,
+                            data1, data2, data3, start1, start2,
+                            start3] are comma-joined into the
+                            \"innerHashes\" pass-through key. Fail-fast
+                            validation surfaces at Init on the Go side;
+                            a typo'd slot or width mismatch surfaces
+                            with an error naming the offending slot.
+                            When both this and :inner-hash are set,
+                            the mixed override wins on the Go side.
     :outer-cipher           string
     :parallax-palette       seq of strings (comma-joined)
     :raw                    map (or seq of pairs) of raw key=value
@@ -56,6 +68,7 @@
         :parallax-segment-size (.withParallaxSegmentSize o (long v))
         :mac-name (.withMacName o (str v))
         :inner-hash (.withInnerHash o (str v))
+        :inner-hashes (.withInnerHashes o ^"[Ljava.lang.String;" (into-array String (map str v)))
         :outer-cipher (.withOuterCipher o (str v))
         :parallax-palette (.withParallaxPalette o ^"[Ljava.lang.String;" (into-array String (map str v)))
         :raw (doseq [[rk rv] v] (.withRaw o (raw-key rk) (str rv)))

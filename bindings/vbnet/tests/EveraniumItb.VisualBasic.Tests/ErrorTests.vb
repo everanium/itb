@@ -75,4 +75,28 @@ Public Class ErrorTests
             Sub() Pipeline.Init("singlemsg-triple-mac-v1", opts))
         Assert.NotEqual(Status.Ok, ex.Status)
     End Sub
+
+    <Fact>
+    Public Sub PerCallInnerHashesOverrideRoundTrips()
+        ' The single-primitive width-512 base profile takes an 8-slot
+        ' per-call MixedHashes override (Go-side Opts.MixedHashes,
+        ' wired through the innerHashes= opts key). Round-trip proves
+        ' the typed helper's comma-join lands in the Go parser
+        ' correctly.
+        Dim senderOpts As Opts = New Opts().WithInnerHashes(
+            "areion512", "blake2b512", "areion512", "blake2b512",
+            "areion512", "blake2b512", "areion512", "blake2b512")
+        Dim receiverOpts As Opts = New Opts().WithInnerHashes(
+            "areion512", "blake2b512", "areion512", "blake2b512",
+            "areion512", "blake2b512", "areion512", "blake2b512")
+        Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", senderOpts)
+            Using receiver As Pipeline = Pipeline.Open(
+                "singlemsg-triple-mac-v1", sender.Blob, receiverOpts)
+                Dim plain As Byte() = Encoding.UTF8.GetBytes(
+                    "per-call inner-hashes override round-trip payload")
+                Dim wire As Byte() = sender.EncryptMessage(plain)
+                Assert.Equal(Of Byte)(plain, receiver.DecryptMessage(wire))
+            End Using
+        End Using
+    End Sub
 End Class

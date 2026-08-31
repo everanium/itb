@@ -65,6 +65,17 @@ module Opts =
 
     let withInnerHash (name: string) (opts: Opts) : Opts = withRaw "innerHash" name opts
 
+    /// Per-call override for <c>Opts.MixedHashes [8]string</c> on the
+    /// Go side. Comma-joins the 8 slot names into the
+    /// <c>innerHashes</c> opts-string key. Slot ordering is
+    /// <c>[noise, lock, data1, data2, data3, start1, start2, start3]</c>.
+    /// Fail-fast validation surfaces at Init on the Go side; a typo'd
+    /// slot or width mismatch surfaces with an error naming the
+    /// offending slot. When both this and <see cref="withInnerHash"/>
+    /// are set, the mixed override wins on the Go side.
+    let withInnerHashes (names: string list) (opts: Opts) : Opts =
+        withRaw "innerHashes" (String.concat "," names) opts
+
     let withOuterCipher (name: string) (opts: Opts) : Opts = withRaw "outerCipher" name opts
 
     /// Comma-joins the palette names (<c>parallaxPalette</c>).

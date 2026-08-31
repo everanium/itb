@@ -71,12 +71,25 @@ void main() {
   test('Single Message round trip (singlemsg-triple-mac-v1)', () {
     final sender = Itb.create('singlemsg-triple-mac-v1');
     final receiver = Itb.open('singlemsg-triple-mac-v1', sender.blob);
-    for (final size in [0, 1, 4 * 1024, 256 * 1024]) {
+    // Empty input has no cover story in any cryptographic
+    // construction (see triple/doc.go): every Pipeline cipher entry
+    // point rejects nil / zero-length plaintext uniformly with
+    // Status.badInput before any wire is produced. The symmetric
+    // decrypt-side rejection guards the empty-wire parse.
+    expect(
+      () => sender.encryptMessage(Uint8List(0)),
+      throwsA(isA<ItbException>()
+          .having((e) => e.statusCode, 'statusCode', Status.badInput)),
+    );
+    expect(
+      () => receiver.decryptMessage(Uint8List(0)),
+      throwsA(isA<ItbException>()
+          .having((e) => e.statusCode, 'statusCode', Status.badInput)),
+    );
+    for (final size in [1, 4 * 1024, 256 * 1024]) {
       final plain = payload(size, size + 1);
       final wire = sender.encryptMessage(plain);
-      if (size > 0) {
-        expect(wire, isNot(equals(plain)));
-      }
+      expect(wire, isNot(equals(plain)));
       expect(receiver.decryptMessage(wire), plain, reason: '@$size');
     }
     sender.free();
@@ -220,6 +233,24 @@ void main() {
       }
       expect(failures, greaterThan(0),
           reason: 'no probe among $probes positions surfaced a failure');
+      sender.free();
+      receiver.free();
+    });
+
+    test('typed withInnerHashes overrides the profile constellation', () {
+      // Base profile is a shipped single-primitive width-512 Single
+      // Message profile; the per-call withInnerHashes override
+      // rebinds all 8 slots to an alternate width-512 constellation
+      // for one Pipeline pair without touching the shipped registry.
+      final override = Opts().withInnerHashes(const [
+        'areion512', 'blake2b512', 'areion512', 'blake2b512',
+        'areion512', 'blake2b512', 'areion512', 'blake2b512',
+      ]);
+      final sender = Itb.create('singlemsg-triple-mac-v1', override);
+      final receiver = Itb.open(
+          'singlemsg-triple-mac-v1', sender.blob, opts: override);
+      final plain = payload(2048, 43);
+      expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
       sender.free();
       receiver.free();
     });

@@ -69,3 +69,28 @@ fn opaque_primitive_name_relay() {
     assert!(err.status().is_some());
     assert_ne!(err.status(), Some(ItbStatus::Ok));
 }
+
+#[test]
+fn per_call_inner_hashes_override_round_trips() {
+    // The single-primitive width-512 base profile takes an 8-slot
+    // per-call MixedHashes override (Go-side Opts.MixedHashes, wired
+    // through the innerHashes= opts key). Round-trip proves the typed
+    // helper's comma-join lands in the Go parser correctly.
+    let mix = [
+        "areion512", "blake2b512", "areion512", "blake2b512",
+        "areion512", "blake2b512", "areion512", "blake2b512",
+    ];
+    let sender_opts = OptsBuilder::new().with_inner_hashes(&mix);
+    let sender = Pipeline::init("singlemsg-triple-mac-v1", &sender_opts).unwrap();
+    let receiver_opts = OptsBuilder::new().with_inner_hashes(&mix);
+    let receiver = Pipeline::open(
+        "singlemsg-triple-mac-v1",
+        sender.blob(),
+        &receiver_opts,
+        None,
+    )
+    .unwrap();
+    let plain = b"per-call inner-hashes override round-trip payload";
+    let wire = sender.encrypt_message(plain).unwrap();
+    assert_eq!(receiver.decrypt_message(&wire).unwrap(), plain);
+}
