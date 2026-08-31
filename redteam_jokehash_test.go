@@ -41,6 +41,8 @@ import (
 	"crypto/rand"
 	"math"
 	"testing"
+
+	"github.com/dchest/siphash"
 )
 
 // jokeHash is a three-line multiply-add fold: initialise the accumulator
@@ -402,6 +404,213 @@ func TestRedTeamJokeHashVaryingPlaintextCPA(t *testing.T) {
 			bodyMargin, L-bodyMargin, N, total, frac, zscore, 3*sigma, 5*sigma)
 		if zscore > 5 {
 			t.Errorf("body monobit exceeds 5 sigma: p(bit=1)=%.6f, |z|=%.2f (structural signal, not stochastic noise)", frac, zscore)
+		}
+	}
+}
+
+// sipHash24Adapter is a HashFunc128 wrapper over dchest/siphash's
+// SipHash-2-4 128-bit variant. The per-call (seed0, seed1) pair is
+// the entire SipHash key, matching hashes/siphash24.go's shipped
+// SipHash24 closure without a package import (this file lives in
+// package itb which hashes/ imports, so hashes/ cannot be pulled in
+// here). SipHash-2-4 is a designed PRF whose output is
+// computationally indistinguishable from random under the standard
+// PRF assumption, so it serves as the load-bearing PRF-grade control
+// for the HW-distinguisher probe below.
+func sipHash24Adapter(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+	return siphash.Hash128(seed0, seed1, data)
+}
+
+func makeSipHash24Seeds(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, s1, s2, s3 *Seed128) {
+	t.Helper()
+	mk := func(role string) *Seed128 {
+		s, err := NewSeed128(keyBits, sipHash24Adapter)
+		if err != nil {
+			t.Fatalf("NewSeed128(sipHash24, %s): %v", role, err)
+		}
+		return s
+	}
+	return mk("noiseSeed"), mk("lockSeed"),
+		mk("dataSeed1"), mk("dataSeed2"), mk("dataSeed3"),
+		mk("startSeed1"), mk("startSeed2"), mk("startSeed3")
+}
+
+// hwDistinguisherResult holds the per-arm metrics for one primitive.
+type hwDistinguisherResult struct {
+	Label       string
+	ZerosPBit1  float64
+	ZerosZ      float64
+	RandomPBit1 float64
+	RandomZ     float64
+	ChiZeros    float64
+	ChiRandom   float64
+	ChiHomog    float64
+}
+
+// measureHWDistinguisher encrypts N ciphertexts of ptZeros and N of
+// ptRand under the supplied 8 seeds, measures pooled body monobit +
+// per-arm chi² against uniform + two-sample chi² homogeneity between
+// the arms, and returns the metrics. Ciphertext length must be
+// identical across all 2N encryptions (guaranteed by fixed ptLen).
+func measureHWDistinguisher(t *testing.T, label string, ns, ls, d1, d2, d3, s1, s2, s3 *Seed128, ptZeros, ptRand []byte, N, bodyMargin int) hwDistinguisherResult {
+	t.Helper()
+	encryptArm := func(pt []byte, armLabel string) [][]byte {
+		cts := make([][]byte, 0, N)
+		for i := 0; i < N; i++ {
+			c, err := Encrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt)
+			if err != nil {
+				t.Fatalf("Encrypt3x128Cfg[%s/%s][%d]: %v", label, armLabel, i, err)
+			}
+			cts = append(cts, c)
+		}
+		return cts
+	}
+	ctsZ := encryptArm(ptZeros, "zeros")
+	ctsR := encryptArm(ptRand, "random")
+	L := len(ctsZ[0])
+	for _, c := range append(ctsZ, ctsR...) {
+		if len(c) != L {
+			t.Fatalf("[%s] ciphertext length varies: got %d, expected %d", label, len(c), L)
+		}
+	}
+
+	poolBits := func(cts [][]byte) (total, ones int) {
+		for _, c := range cts {
+			for _, b := range c[bodyMargin : L-bodyMargin] {
+				total += 8
+				for j := 0; j < 8; j++ {
+					if (b>>j)&1 == 1 {
+						ones++
+					}
+				}
+			}
+		}
+		return
+	}
+	tZ, oZ := poolBits(ctsZ)
+	tR, oR := poolBits(ctsR)
+	pZ := float64(oZ) / float64(tZ)
+	pR := float64(oR) / float64(tR)
+	zZ := math.Abs(pZ-0.5) / math.Sqrt(0.25/float64(tZ))
+	zR := math.Abs(pR-0.5) / math.Sqrt(0.25/float64(tR))
+
+	histZ := [256]int{}
+	histR := [256]int{}
+	tzZ, tzR := 0, 0
+	for _, c := range ctsZ {
+		for _, b := range c[bodyMargin : L-bodyMargin] {
+			histZ[b]++
+			tzZ++
+		}
+	}
+	for _, c := range ctsR {
+		for _, b := range c[bodyMargin : L-bodyMargin] {
+			histR[b]++
+			tzR++
+		}
+	}
+	chi2Uniform := func(h [256]int, total int) float64 {
+		exp := float64(total) / 256.0
+		c := 0.0
+		for _, cnt := range h {
+			d := float64(cnt) - exp
+			c += d * d / exp
+		}
+		return c
+	}
+	chiZ := chi2Uniform(histZ, tzZ)
+	chiR := chi2Uniform(histR, tzR)
+
+	chiHomog := 0.0
+	for i := 0; i < 256; i++ {
+		colTot := histZ[i] + histR[i]
+		if colTot == 0 {
+			continue
+		}
+		eZ := float64(colTot) * float64(tzZ) / float64(tzZ+tzR)
+		eR := float64(colTot) * float64(tzR) / float64(tzZ+tzR)
+		if eZ > 0 {
+			d := float64(histZ[i]) - eZ
+			chiHomog += d * d / eZ
+		}
+		if eR > 0 {
+			d := float64(histR[i]) - eR
+			chiHomog += d * d / eR
+		}
+	}
+
+	return hwDistinguisherResult{
+		Label: label, ZerosPBit1: pZ, ZerosZ: zZ, RandomPBit1: pR, RandomZ: zR,
+		ChiZeros: chiZ, ChiRandom: chiR, ChiHomog: chiHomog,
+	}
+}
+
+// TestRedTeamJokeHashHWDistinguisherVsPRF compares the wire under a
+// two-arm repeat-plaintext CPA (all-zeros vs uniform-random 4 KB
+// plaintext, both encrypted N times under fresh nonces) with two
+// primitive choices: jokeHash on all eight seed roles versus SipHash-
+// 2-4 on the same eight roles.
+//
+// Purpose. Preserve the empirical finding recorded in FAQ.md
+// § Residual bias under repeat-plaintext CPA: through the shipped
+// barrier under attacker-realism a broken primitive absorbs
+// plaintext-content-recovery entirely (see the earlier tests in this
+// file), but a broken primitive still leaks a weak plaintext-Hamming-
+// weight distinguisher under repeat-plaintext CPA. A PRF-grade
+// primitive closes this distinguisher entirely.
+//
+// Gate strategy.
+//   - jokeHash arm — log only. The signal is expected and primitive-
+//     attributable; hard-gating on its presence would create a
+//     spurious FAIL if the primitive's carry-chain bias ever changes.
+//   - SipHash-2-4 arm — hard gate at |z| <= 5 per arm and homogeneity
+//     chi² <= 500. A regression in the PRF-grade control would signal
+//     a wire-format artefact or a barrier defect the earlier tests do
+//     not catch. The gate leaves ample room for stochastic scatter.
+//
+// Runtime: 4 × 2000 encryptions ≈ 8 s.
+func TestRedTeamJokeHashHWDistinguisherVsPRF(t *testing.T) {
+	const (
+		keyBits    = 1024
+		N          = 2000
+		ptLen      = 4096
+		bodyMargin = 200
+	)
+
+	ptZeros := make([]byte, ptLen)
+	ptRand := make([]byte, ptLen)
+	if _, err := rand.Read(ptRand); err != nil {
+		t.Fatalf("crypto/rand: %v", err)
+	}
+
+	// jokeHash arm — log only, signal is expected.
+	{
+		ns, ls, d1, d2, d3, s1, s2, s3 := makeJokeSeeds(t, keyBits)
+		r := measureHWDistinguisher(t, "jokeHash", ns, ls, d1, d2, d3, s1, s2, s3, ptZeros, ptRand, N, bodyMargin)
+		t.Logf("[jokeHash] zeros arm  p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.ZerosPBit1, r.ZerosZ, r.ChiZeros)
+		t.Logf("[jokeHash] random arm p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.RandomPBit1, r.RandomZ, r.ChiRandom)
+		t.Logf("[jokeHash] two-sample homogeneity chi^2=%.2f (df=255)", r.ChiHomog)
+		if r.ZerosZ < 3 {
+			t.Logf("[jokeHash] note: zeros-arm |z|=%.2f below 3σ this run — primitive-attributable signal did not surface at this sample size (expected occasional stochastic-miss at N=%d)", r.ZerosZ, N)
+		}
+	}
+
+	// SipHash-2-4 arm — hard gate.
+	{
+		ns, ls, d1, d2, d3, s1, s2, s3 := makeSipHash24Seeds(t, keyBits)
+		r := measureHWDistinguisher(t, "SipHash-2-4", ns, ls, d1, d2, d3, s1, s2, s3, ptZeros, ptRand, N, bodyMargin)
+		t.Logf("[SipHash-2-4] zeros arm  p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.ZerosPBit1, r.ZerosZ, r.ChiZeros)
+		t.Logf("[SipHash-2-4] random arm p(bit=1)=%.6f |z|=%.2f  chi^2=%.2f", r.RandomPBit1, r.RandomZ, r.ChiRandom)
+		t.Logf("[SipHash-2-4] two-sample homogeneity chi^2=%.2f (df=255)", r.ChiHomog)
+
+		if r.ZerosZ > 5 {
+			t.Errorf("[SipHash-2-4] zeros-arm |z|=%.2f exceeds 5σ (PRF-grade arm must not distinguish plaintext HW)", r.ZerosZ)
+		}
+		if r.RandomZ > 5 {
+			t.Errorf("[SipHash-2-4] random-arm |z|=%.2f exceeds 5σ", r.RandomZ)
+		}
+		if r.ChiHomog > 500 {
+			t.Errorf("[SipHash-2-4] two-sample homogeneity chi^2=%.2f exceeds 500 (PRF-grade arm must not distinguish arms; uniform expects 255±22.6, 3σ band top ≈ 323)", r.ChiHomog)
 		}
 	}
 }
