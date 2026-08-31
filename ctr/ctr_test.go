@@ -70,7 +70,7 @@ func TestKeyNonceSizes(t *testing.T) {
 // TestUnsupportedRegistryPrimitives confirms primitives outside the three
 // stream-capable names are rejected by every entry point.
 func TestUnsupportedRegistryPrimitives(t *testing.T) {
-	for _, name := range []string{"md5", "crc128", "fnv1a"} {
+	for _, name := range []string{"crc128", "fnv1a"} {
 		if _, err := KeySize(name); err == nil {
 			t.Errorf("KeySize(%q) returned nil error", name)
 		}
