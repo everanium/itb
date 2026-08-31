@@ -16,7 +16,16 @@ Three questions, three primitives, one shared architectural pattern.
 
 ## Question 1 — What if I write a three-line `jokeHash`?
 
-**Reader's setup.** «Suppose I define `jokeHash(data, seed) = data[0] XOR seed[0]`. Three lines, invertible in zero cycles, catastrophically biased (single-byte dependency), broken in every canonical sense — weaker than CRC128, no round mixing. I plug it into an ITB `hashes.Register` slot, ship it as a custom primitive, and encrypt real messages. Do I compromise the wire?»
+**Reader's setup.** «Suppose I plug into all eight ITB seed roles this three-line primitive — initialise the accumulator from `seed0`, mix each data byte via a small odd multiplier plus add, complement for the second lane:
+
+```
+jokeHash(data, seed0, seed1):
+    lo = seed0
+    for b in data: lo = lo*257 + b
+    return (lo, ~lo)
+```
+
+T-function class (Klimov and Shamir 2002): output bit t depends only on input bits at position ≤ t, so recovery is polynomial per bit-plane. Trivially invertible for any single `(data, seed)` observation pair, catastrophically weak by any cryptographic standard — no round mixing, no diffusion, below spec compared with CRC128 or FNV-1a on the observation-channel-required stress axis. Ship it via `hashes.Register` as a custom primitive and encrypt real messages. Do I compromise the wire?»
 
 ### Current analytical picture
 
@@ -30,7 +39,7 @@ The attacker's problem, stated in the simplest form:
 observation on wire  →?→  reach jokeHash output  →?→  invert to seed
 ```
 
-`jokeHash` invertibility gives the third arrow essentially for free (one XOR). The first two arrows are what the barrier removes.
+`jokeHash` invertibility gives the third arrow essentially for free — plane-by-plane T-function recovery in polynomial time. The first two arrows are what the barrier removes.
 
 **Where hash outputs live in the pipeline.** In the shipped construction, hash outputs are consumed opaquely inside the encoder and never surface on the wire in cleartext:
 
@@ -60,7 +69,7 @@ So the attacker holding a shipped ciphertext, running `jokeHash` in an arbitrary
 
 Both scenarios are unreachable through the shipped API and require adversary capabilities that the shipped surface does not grant:
 
-1. **7/8 seeds granted via lab peek.** Grant the attacker seven of the eight seeds through instrumentation. Part 2 encoding collapses (all its keying material is known). The attacker now sees clean per-chunk PRF observations, inverts `jokeHash` on one XOR, recovers `lockKey`, decodes mask triples, and reads plaintext. The takeaway is not «`jokeHash` broke ITB» but «once the barrier has been surgically stripped in the lab, whatever remains is `jokeHash`-level trivial to reverse». The shipped API does not expose seven-seed material.
+1. **7/8 seeds granted via lab peek.** Grant the attacker seven of the eight seeds through instrumentation. Part 2 encoding collapses (all its keying material is known). The attacker now sees clean per-chunk PRF observations, inverts `jokeHash` plane-by-plane in polynomial time per T-function, recovers `lockKey`, decodes mask triples, and reads plaintext. The takeaway is not «`jokeHash` broke ITB» but «once the barrier has been surgically stripped in the lab, whatever remains is `jokeHash`-level trivial to reverse». The shipped API does not expose seven-seed material.
 
 2. **Novel observation channel that exposes hash outputs directly.** A side channel that leaks primitive output bypassing PEXT / mask apply — cache timing on a software AES kernel without AES-NI is the classic example. The register-only ITB kernels (with mandatory hardware AES / GFNI / VAES paths for AES-family primitives) do not create this observation surface. `jokeHash` bias would help if the surface existed; the shipped construction denies the surface.
 
