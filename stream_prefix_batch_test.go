@@ -123,21 +123,6 @@ func TestStreamPrefixBodyBatchingAuth(t *testing.T) {
 	}
 }
 
-// TestStreamPrefixBodyBatchingNonAuthEmpty confirms the Non-AEAD encoder
-// emits zero dst.Write calls on an empty input (no prefix leak) — the
-// batched-first-write path still returns cleanly with no bytes written
-// when the source drains to EOF before any chunk is produced.
-func TestStreamPrefixBodyBatchingNonAuthEmpty(t *testing.T) {
-	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
-	var w recordingWriter
-	if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &w, 4096); err != nil {
-		t.Fatalf("EncryptStream3xCfg(empty): %v", err)
-	}
-	if got := len(w.Calls()); got != 0 {
-		t.Fatalf("empty input produced %d dst.Write calls (%v), want 0", got, w.Calls())
-	}
-}
-
 // TestStreamConcurrentDrain16MiB is the permanent regression gate for
 // the prefix-batching invariant under a realistic concurrent-drain
 // caller pattern. A goroutine drives the streaming encoder against an

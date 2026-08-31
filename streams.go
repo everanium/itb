@@ -212,6 +212,9 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	for {
 		n, err := readUpTo(src, buf)
 		if err == io.EOF {
+			if prefixPending {
+				return ErrEmptyInput
+			}
 			return nil
 		}
 		if err != nil {
@@ -247,7 +250,7 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	var prefix [streamIDPrefixLen]byte
 	n, perr := io.ReadFull(src, prefix[:])
 	if perr == io.EOF && n == 0 {
-		return nil
+		return ErrEmptyInput
 	}
 	if perr == io.ErrUnexpectedEOF || (perr == io.EOF && n != streamIDPrefixLen) {
 		return fmt.Errorf("itb: stream too short for stream prefix")

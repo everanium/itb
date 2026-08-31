@@ -19,7 +19,7 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, err
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("itb: empty data")
+		return nil, ErrEmptyInput
 	}
 	if macFunc == nil {
 		return nil, fmt.Errorf("itb: macFunc must not be nil")
@@ -194,6 +194,9 @@ func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
+	if len(fileData) == 0 {
+		return nil, ErrEmptyInput
+	}
 	if len(fileData) < headerSizeCfg(cfg)+Channels {
 		return nil, fmt.Errorf("itb: data too short")
 	}
@@ -332,7 +335,7 @@ func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, err
 	}
 	if len(data) == 0 && !finalFlag {
-		return nil, fmt.Errorf("itb: empty data")
+		return nil, ErrEmptyInput
 	}
 	if macFunc == nil {
 		return nil, fmt.Errorf("itb: macFunc must not be nil")
@@ -505,6 +508,9 @@ func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, false, fmt.Errorf("itb: macFunc returned empty tag")
 	}
 
+	if len(chunkData) == 0 {
+		return nil, false, ErrEmptyInput
+	}
 	if len(chunkData) < headerSizeCfg(cfg)+Channels {
 		return nil, false, fmt.Errorf("itb: data too short")
 	}

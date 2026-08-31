@@ -105,28 +105,6 @@ func TestEncryptStream3xChunkSize1(t *testing.T) {
 	}
 }
 
-// TestEncryptStream3xEmptyInput confirms an empty src emits no chunks
-// (the plain-stream helper has no terminator framing, so
-// "no input -> no output" is the expected wire shape) and that
-// DecryptStream3x on the empty wire returns cleanly.
-func TestEncryptStream3xEmptyInput(t *testing.T) {
-	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
-	var ctBuf bytes.Buffer
-	if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ctBuf, 4096); err != nil {
-		t.Fatalf("EncryptStream3xCfg(nil, empty): %v", err)
-	}
-	if ctBuf.Len() != 0 {
-		t.Fatalf("EncryptStream3xCfg(nil, empty): want 0-byte wire, got %d bytes", ctBuf.Len())
-	}
-	var ptBuf bytes.Buffer
-	if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(nil), &ptBuf); err != nil {
-		t.Fatalf("DecryptStream3xCfg(nil, empty): %v", err)
-	}
-	if ptBuf.Len() != 0 {
-		t.Fatalf("DecryptStream3xCfg(nil, empty): want 0-byte plaintext, got %d bytes", ptBuf.Len())
-	}
-}
-
 func TestEncryptStream3xSingleChunk(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
 	pt := genTestPlaintext(t, 100)
@@ -253,14 +231,14 @@ func TestEncryptStream3xCfgRoundtrip512(t *testing.T) {
 // cfg.NonceBits / cfg.BarrierFill flow through the chunked path
 // without touching the process globals. This sweep exercises every
 // Triple width (128 / 256 / 512), every MaxWorkers cap {1, 2, 4, 8},
-// and every chunk-boundary plaintext size {0, 1, chunkSize-1,
+// and every chunk-boundary plaintext size {1, chunkSize-1,
 // chunkSize, chunkSize+1, 1 MiB} at a modest chunkSize=4096 override,
 // flat t.Run per combination.
 func TestEncryptStream3xCfgRoundTripAllWidths(t *testing.T) {
 	const chunk = 4096
 	widths := []int{128, 256, 512}
 	workers := []int{1, 2, 4, 8}
-	sizes := []int{0, 1, chunk - 1, chunk, chunk + 1, 1 << 20}
+	sizes := []int{1, chunk - 1, chunk, chunk + 1, 1 << 20}
 
 	for _, w := range widths {
 		w := w
