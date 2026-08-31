@@ -1317,7 +1317,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 // using the known snake payload XOR bits (lab peek — mask oracle) and
 // returns the recovered per-pixel (noisePos, rotation, chanXOR56)
 // triple. Attacker-realistic reference implementation of the
-// archived Phase 2d Layer 1 constraint match, ported to a 
+// archived Phase 2d Layer 1 constraint match, ported to a
 // snake region. Returns per-pixel (np, r, chanXOR56) only for pixels
 // where the constraint uniquely anchors; unresolved pixels report
 // np=r=chanXOR56=0 with a false ok.

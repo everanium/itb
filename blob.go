@@ -273,7 +273,6 @@ type Blob512Opts struct {
 	MACName string   // empty if no MAC
 }
 
-
 // ───────────────────────────────────────────────────────────────────
 // Blob256 — 256-bit native-API state container
 // ───────────────────────────────────────────────────────────────────
@@ -318,7 +317,6 @@ type Blob256Opts struct {
 	MACKey  []byte
 	MACName string
 }
-
 
 // ───────────────────────────────────────────────────────────────────
 // Blob128 — 128-bit native-API state container
@@ -367,7 +365,6 @@ type Blob128Opts struct {
 	MACKey  []byte
 	MACName string
 }
-
 
 // ───────────────────────────────────────────────────────────────────
 // Cfg-aware Blob Import / Export (per-instance isolation)

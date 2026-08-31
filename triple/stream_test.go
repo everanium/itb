@@ -49,9 +49,9 @@ var nonceCases = []nonceCase{
 // on/off decision the Opts three-state pointer is expected to
 // represent.
 type toggleCase struct {
-	name       string
-	parallax   bool
-	wrapper    bool
+	name     string
+	parallax bool
+	wrapper  bool
 }
 
 var toggleCases = []toggleCase{
@@ -406,4 +406,3 @@ func TestEncryptStreamClosed(t *testing.T) {
 		t.Fatalf("DecryptStream after Close: got err=%v, want %v", err, ErrClosed)
 	}
 }
-

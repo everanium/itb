@@ -146,4 +146,3 @@ func makeBlake2b512SeedAttachExt(t *testing.T, bits int) *itb.Seed512 {
 	s.BatchHash = b
 	return s
 }
-

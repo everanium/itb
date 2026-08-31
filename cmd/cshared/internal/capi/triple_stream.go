@@ -23,10 +23,10 @@ type TripleStreamHandle struct {
 	spool      *streamSpool
 	done       chan struct{}
 
-	mu       sync.Mutex
-	err      error
+	mu        sync.Mutex
+	err       error
 	endCalled bool
-	freed    bool
+	freed     bool
 }
 
 // TripleStreamID is the opaque uintptr the FFI passes as a session

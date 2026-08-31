@@ -589,10 +589,10 @@ func makeSeedsFor(t *testing.T, fn HashFunc128, keyBits int) (ns, ls, d1, d2, d3
 // encrypted N times under fresh nonces) under four W128 primitives on
 // all eight seed roles:
 //
-//   jokeHash      — multiply-add fold, multiplier 257 (popcount 2)
-//   CRC128        — GF(2)-linear (two keyed CRC64 lanes, ECMA + ISO)
-//   FNV-1a        — T-function, multiplier 0x100000001b3 (popcount 6)
-//   SipHash-2-4   — designed PRF (hard-gated control)
+//	jokeHash      — multiply-add fold, multiplier 257 (popcount 2)
+//	CRC128        — GF(2)-linear (two keyed CRC64 lanes, ECMA + ISO)
+//	FNV-1a        — T-function, multiplier 0x100000001b3 (popcount 6)
+//	SipHash-2-4   — designed PRF (hard-gated control)
 //
 // Purpose. Preserve the empirical finding recorded in FAQ.md
 // § Residual bias under repeat-plaintext CPA. The shipped barrier

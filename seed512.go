@@ -178,4 +178,3 @@ func (s *Seed512) deriveInterLockSeed(nonce []byte) [8]uint64 {
 	copy(buf[1:], nonce)
 	return s.ChainHash512(buf)
 }
-

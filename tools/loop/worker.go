@@ -21,11 +21,11 @@ type worker struct {
 	plainBuf  bytes.Buffer
 
 	// Counters read concurrently by the monitor goroutine.
-	iters      atomic.Int64
-	bytesEnc   atomic.Int64
-	bytesDec   atomic.Int64
-	nanosEnc   atomic.Int64 // wall time this worker spent inside Encrypt calls
-	nanosDec   atomic.Int64 // wall time this worker spent inside Decrypt calls
+	iters    atomic.Int64
+	bytesEnc atomic.Int64
+	bytesDec atomic.Int64
+	nanosEnc atomic.Int64 // wall time this worker spent inside Encrypt calls
+	nanosDec atomic.Int64 // wall time this worker spent inside Decrypt calls
 }
 
 // runLoop is the worker goroutine body: one warmup iteration, the

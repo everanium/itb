@@ -97,7 +97,6 @@ func TestChaCha20Determinism(t *testing.T) {
 	}
 }
 
-
 // TestChaCha20256BatchedParityWithSingle confirms that the 4-way
 // batched dispatch returned by ChaCha20256Pair produces the same
 // digest as four single-call dispatches across all three ITB
@@ -256,5 +255,3 @@ func TestChaCha20MakePairBadKeySize(t *testing.T) {
 		t.Error("Make256Pair(chacha20, 33-byte key) should fail; got nil error")
 	}
 }
-
-

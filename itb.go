@@ -106,33 +106,6 @@ func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
 // site.
 func headerSizeCfg(cfg *Config) int { return 2*currentNonceSizeCfg(cfg) + 4 }
 
-// calcContainerSizeCfg computes square container dimensions from
-// payload and minimum pixel counts. Consults [currentBarrierFillCfg]
-// for the CSPRNG barrier margin so a non-nil cfg with an explicit
-// BarrierFill override is honoured.
-func calcContainerSizeCfg(cfg *Config, payloadCOBSLen, minPxNoise, minPxData, minPxStart int) (width, height int) {
-	needed := payloadCOBSLen + 1 // +1 for null terminator
-	pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
-
-	minPx := minPxNoise
-	if minPxData > minPx {
-		minPx = minPxData
-	}
-	if minPxStart > minPx {
-		minPx = minPxStart
-	}
-	if pixels < minPx {
-		pixels = minPx
-	}
-
-	side := 1
-	for side*side < pixels {
-		side++
-	}
-	side += currentBarrierFillCfg(cfg)
-	return side, side
-}
-
 // calcContainerSize3Cfg computes square container dimensions for
 // Triple Ouroboros. Each third must hold its part's COBS data and
 // satisfy MinPixels independently. Consults [currentBarrierFillCfg]

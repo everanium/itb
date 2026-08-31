@@ -117,29 +117,32 @@ func TestScheduleReproducibleAcrossCiphersets(t *testing.T) {
 	}
 }
 
+// TestScheduleChangesWithNonce asserts that the 16-byte schedule seed
+// derived by [buildScheduleSeed] differs for two nonces that differ
+// only in a single byte. The seed is the injective nonce-dependent
+// core of the derivation (anchor cipher AES-128-CTR is a keyed
+// permutation, so different sliceNonce values give different first-
+// block keystream); the derived Fisher-Yates permutation could
+// coincide on small palettes with probability 1/n! from the Fisher-
+// Yates output-space size and is therefore not the correct assertion
+// target. The security-relevant invariant is that the seed changes,
+// which fully determines the permutation.
 func TestScheduleChangesWithNonce(t *testing.T) {
 	palette := []string{"aescmac", "chacha20", "blake3", "siphash24", "blake2s"}
 	schedule := mustSchedule(t, palette, DefaultSegmentSize)
 	cs := mustCipherset(t, mustMaster(t), schedule)
 	nonceA := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	nonceB := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
-	piA, err := buildPermutation(schedule, cs, nonceA)
+	seedA, err := buildScheduleSeed(schedule, cs, nonceA)
 	if err != nil {
-		t.Fatalf("buildPermutation A: %v", err)
+		t.Fatalf("buildScheduleSeed A: %v", err)
 	}
-	piB, err := buildPermutation(schedule, cs, nonceB)
+	seedB, err := buildScheduleSeed(schedule, cs, nonceB)
 	if err != nil {
-		t.Fatalf("buildPermutation B: %v", err)
+		t.Fatalf("buildScheduleSeed B: %v", err)
 	}
-	equal := true
-	for i := range piA {
-		if piA[i] != piB[i] {
-			equal = false
-			break
-		}
-	}
-	if equal {
-		t.Fatalf("permutation unchanged when nonce changed")
+	if seedA == seedB {
+		t.Fatalf("schedule seed unchanged when nonce changed: %x", seedA)
 	}
 }
 

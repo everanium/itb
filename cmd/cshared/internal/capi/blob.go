@@ -571,4 +571,3 @@ func BlobGetMACName(id BlobHandleID) (name string, st Status) {
 	setLastErr(StatusInternal)
 	return "", StatusInternal
 }
-

@@ -278,4 +278,3 @@ func TestEncryptStreamAuth3EmptyNonFinal(t *testing.T) {
 		t.Fatalf("EncryptStreamAuth3 (empty / non-final): %v, want StatusEncryptFailed", st)
 	}
 }
-

@@ -18,16 +18,16 @@ import (
 // ============================================================================
 
 var (
-	biOne  = big.NewInt(1)
-	biA    = new(big.Int).SetUint64(interlockA48)
-	biB    = new(big.Int).SetUint64(interlockB48)
-	biAB   = new(big.Int).Mul(biA, biB)
-	bi2p64 = new(big.Int).Lsh(biOne, 64)
+	biOne   = big.NewInt(1)
+	biA     = new(big.Int).SetUint64(interlockA48)
+	biB     = new(big.Int).SetUint64(interlockB48)
+	biAB    = new(big.Int).Mul(biA, biB)
+	bi2p64  = new(big.Int).Lsh(biOne, 64)
 	bi2p128 = new(big.Int).Lsh(biOne, 128)
-	biQ    = new(big.Int).Quo(bi2p128, biAB)                        // floor(2^128 / (A*B))
-	biR    = new(big.Int).Sub(bi2p128, new(big.Int).Mul(biQ, biAB)) // 2^128 mod (A*B)
-	biQAB  = new(big.Int).Mul(biQ, biAB)                            // window start
-	biMax  = new(big.Int).Sub(bi2p128, biOne)                       // 2^128 - 1
+	biQ     = new(big.Int).Quo(bi2p128, biAB)                        // floor(2^128 / (A*B))
+	biR     = new(big.Int).Sub(bi2p128, new(big.Int).Mul(biQ, biAB)) // 2^128 mod (A*B)
+	biQAB   = new(big.Int).Mul(biQ, biAB)                            // window start
+	biMax   = new(big.Int).Sub(bi2p128, biOne)                       // 2^128 - 1
 )
 
 // splitLimbs128 converts a big-endian *big.Int in [0, 2^128) into the
