@@ -555,23 +555,6 @@ func TestStreamAuth_FlagPreservedTripleSingleByte(t *testing.T) {
 	}
 }
 
-// --- Empty-stream full-stream Triple round-trip ---
-
-func TestStreamAuth_FullStreamTripleEmpty(t *testing.T) {
-	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-	var wire bytes.Buffer
-	if err := EncryptStreamAuth3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, nil, 1024, streamAuthFlagMACFunc, emitToBuffer(&wire)); err != nil {
-		t.Fatal(err)
-	}
-	var recovered bytes.Buffer
-	if err := DecryptStreamAuth3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, wire.Bytes(), streamAuthFlagMACFunc, emitToBuffer(&recovered)); err != nil {
-		t.Fatal(err)
-	}
-	if recovered.Len() != 0 {
-		t.Fatalf("expected empty recovered plaintext, got %d bytes", recovered.Len())
-	}
-}
-
 // TestStreamAuth_FullStreamTripleAfterFinal confirms bytes appearing
 // after a chunk whose recovered finalFlag = true are rejected with
 // [ErrStreamAfterFinal] on the Triple full-stream decoder.

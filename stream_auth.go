@@ -78,12 +78,11 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
 	}
+	if len(data) == 0 {
+		return ErrEmptyInput
+	}
 	if chunkSize <= 0 {
-		if len(data) == 0 {
-			chunkSize = DefaultChunkSize
-		} else {
-			chunkSize = ChunkSize(len(data))
-		}
+		chunkSize = ChunkSize(len(data))
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
@@ -95,14 +94,6 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if err := emit(streamID[:]); err != nil {
 		return err
-	}
-
-	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
-		if emitErr != nil {
-			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
-		}
-		return emit(chunk)
 	}
 
 	var cumulative uint64
@@ -135,6 +126,9 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if len(data) == 0 {
+		return ErrEmptyInput
 	}
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
@@ -185,12 +179,11 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
 	}
+	if len(data) == 0 {
+		return ErrEmptyInput
+	}
 	if chunkSize <= 0 {
-		if len(data) == 0 {
-			chunkSize = DefaultChunkSize
-		} else {
-			chunkSize = ChunkSize(len(data))
-		}
+		chunkSize = ChunkSize(len(data))
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
@@ -202,14 +195,6 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if err := emit(streamID[:]); err != nil {
 		return err
-	}
-
-	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
-		if emitErr != nil {
-			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
-		}
-		return emit(chunk)
 	}
 
 	var cumulative uint64
@@ -242,6 +227,9 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if len(data) == 0 {
+		return ErrEmptyInput
 	}
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
@@ -292,12 +280,11 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
 	}
+	if len(data) == 0 {
+		return ErrEmptyInput
+	}
 	if chunkSize <= 0 {
-		if len(data) == 0 {
-			chunkSize = DefaultChunkSize
-		} else {
-			chunkSize = ChunkSize(len(data))
-		}
+		chunkSize = ChunkSize(len(data))
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
@@ -309,14 +296,6 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if err := emit(streamID[:]); err != nil {
 		return err
-	}
-
-	if len(data) == 0 {
-		chunk, emitErr := EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, macFunc, streamID, 0, true)
-		if emitErr != nil {
-			return fmt.Errorf("itb: empty-stream chunk: %w", emitErr)
-		}
-		return emit(chunk)
 	}
 
 	var cumulative uint64
@@ -349,6 +328,9 @@ func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if len(data) == 0 {
+		return ErrEmptyInput
 	}
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
