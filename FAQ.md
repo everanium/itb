@@ -20,7 +20,7 @@ Three questions, three primitives, one shared architectural pattern.
 
 ### Current analytical picture
 
-Under attacker-realism (0/8 seeds granted, no `main_nonce` collision, no side channel exposing primitive outputs), the reasoning traced below does not appear to yield a viable attack path — and the empirical measurement in REDTEAM.md records null recovery for this configuration, indistinguishable from the BLAKE3 outcome. The observation the analysis rests on is that the path from the wire to any primitive input appears to be structurally cut, independently of primitive strength — so `jokeHash`'s invertibility, however trivial, seems to have nothing observable to invert. The three sections below trace each arrow in that reasoning.
+Under attacker-realism (0/8 seeds granted, no `main_nonce` collision, no side channel exposing primitive outputs), the reasoning traced below does not appear to yield a viable attack path. The observation the analysis rests on is that the path from the wire to any primitive input appears to be structurally cut, independently of primitive strength — so a three-line invertible primitive, however trivial, seems to have nothing observable to invert. The empirical counterpart lives in `redteam_jokehash_test.go` (Go build tag `redteam`), which encrypts N = 10000 fresh-nonce ciphertexts under a multiply-add-fold jokeHash on all eight seed roles and gates on the wire body region showing zero per-bit fixation (a stricter surface than the shipped FNV-1a-on-8-roles fresh-nonce CPA cell at N = 2000 per REDTEAM.md § Broken-primitive stress). The three sections below trace each arrow in the reasoning.
 
 ### The full picture
 
@@ -48,7 +48,7 @@ where `lane_bits`, `r`, `channelXOR`, `noisePos` are all derived from hash outpu
 
 **The demasker gate.** To extract even one hash output the attacker must «demask» — strip Part 2 encoding. Demasker fundamentally requires a Full KPA anchor to choose among 56 candidates per pixel. Without an anchor, [Proof 1](PROOFS.md#proof-1) says all 56 are equiprobable, and the algorithm does not converge to a decisive answer.
 
-Under **Single Ouroboros** pre-Interlocked-Barrier, an attacker with a Crib KPA anchor could sometimes demask successfully — that is the regime where archived scripts recovered `dataSeed` from a strong-primitive target. Under the current shipped construction (**Triple Ouroboros + Interlocked Barrier + dual-nonce**), the demasker fails empirically per [REDTEAM.md](REDTEAM.md) — even under lab-forced Scenario A on FNV-1a on every seed role — because three unknown-offset snake streams plus Part 1 lane scrambling give the demasker nothing to anchor on.
+Under **Single Ouroboros**, an attacker with a Crib KPA anchor could sometimes demask successfully — that is the regime where archived scripts recovered `dataSeed` from a strong-primitive target. Under the current shipped construction (**Triple Ouroboros + Interlocked Barrier + dual-nonce**), the demasker fails empirically per [REDTEAM.md](REDTEAM.md), even under lab-forced Scenario A on FNV-1a on every seed role, because three unknown-offset snake streams plus Part 1 lane scrambling give the demasker nothing to anchor on.
 
 So the attacker holding a shipped ciphertext, running `jokeHash` in an arbitrary seed role:
 
@@ -72,7 +72,19 @@ Not to «break ITB through them», but to demonstrate empirically that the barri
 
 The primitive-strength assumption in [Proof 4a Asymmetry note](PROOFS.md#proof-4a) is load-bearing only in the case where the attacker has an observation channel on hash outputs. The barrier's job is to remove that observation channel independently of primitive strength. Under attacker-realism the observation channel is closed structurally. Primitive strength then matters only for partial-inversion scenarios where a fragment of output leaks — and even there the multi-factor defense (see the closing note below) demands simultaneous breach of every factor.
 
-`jokeHash` really would be no worse than BLAKE3 under shipped construction attacker-realism. The gap opens only when primitive-inverted output is actually observable, which the shipped API does not permit.
+Even a three-line invertible primitive produces no wire-level plaintext-recovery channel through the shipped barrier under attacker-realism. The gap opens only when primitive-inverted output becomes actually observable, which the shipped API does not permit.
+
+### Empirical corroboration at N = 10 000
+
+`TestRedTeamJokeHashRepeatPlaintextCPA` and `TestRedTeamJokeHashVaryingPlaintextCPA` in `redteam_jokehash_test.go` run 10 000 encryptions under a multiply-add-fold jokeHash on all eight seed roles (fresh nonce per call, no seed peek), at a 5× larger sample than the shipped FNV-1a-on-8-roles cell (N = 2000 per REDTEAM.md). Measurements on the wire:
+
+- **Roundtrip.** All 10 000 ciphertexts unique; every roundtrip recovers plaintext; 18 KB long-plaintext roundtrip confirms `chunk48lock` functionality under jokeHash on `lockSeed`.
+- **Byte-value chi² across five sampled wire positions**: 225.5, 235.8, 246.8, 262.0, 266.2 (df = 255, uniform expects 255 ± 22.6). Every position inside the uniform band.
+- **Hot-bit-per-byte histogram (`|p(bit=1) - 0.5| > 0.15`)**: 9928 body bytes at 0 fixed bits, 4 metadata bytes (the W and H dimension fields, always fixed for a given plaintext length regardless of primitive) at 8 fixed bits, nothing in between.
+- **Delta between repeat-plaintext and varying-plaintext runs**: identical hot-bit histograms and identical 32 catastrophic bits — the plaintext-content-derived wire signal is zero.
+- **Body-region monobit on 762 560 000 bits**: p(bit = 1) = 0.499998, |z| = 0.13 (well inside the 5σ gate; the 3σ band width is 5.4 × 10⁻⁵ at this sample size).
+
+The reasoning arrows above and the numbers here point at the same picture: through the shipped barrier under attacker-realism, a three-line invertible primitive gives the same wire surface as a well-designed one — because the barrier's absorption acts before the primitive's output can be observed.
 
 ---
 
@@ -82,7 +94,7 @@ The primitive-strength assumption in [Proof 4a Asymmetry note](PROOFS.md#proof-4
 
 ### Current analytical picture
 
-Analytically, three shipped-construction factors — **Triple Ouroboros**, the **always-on Interlocked Barrier**, and **dual-nonce separation** — each appear to invalidate one of the assumptions the compound-key linear-algebra recovery relies on, so the attack path that works cleanly against Single Ouroboros pre-barrier does not seem to carry over. Beyond that, the hypothetical transfer of the recovered `K` from Part 2 to Part 1 runs into five orthogonal architectural reasons at the algebra layer, before any observation gap is even considered. The sections below trace each reasoning arrow; countering any of them would supersede the corresponding step in the analysis.
+Analytically, three shipped-construction factors — **Triple Ouroboros**, the **always-on Interlocked Barrier**, and **dual-nonce separation** — each appear to invalidate one of the assumptions the compound-key linear-algebra recovery relies on, so the attack path that works cleanly against Single Ouroboros does not seem to carry over. Beyond that, the hypothetical transfer of the recovered `K` from Part 2 to Part 1 runs into five orthogonal architectural reasons at the algebra layer, before any observation gap is even considered. The sections below trace each reasoning arrow; countering any of them would supersede the corresponding step in the analysis.
 
 ### CRC128 is indeed total inversion — on paper
 
@@ -94,7 +106,7 @@ seed = M_L^{-1} · (h XOR const(0))
 
 by one Gaussian elimination on an `n × n` GF(2) system in `O(n^3)`. This is not a PRF in any cryptographic sense — it is an integrity-check function reused as a stress control precisely because it is the algebra-friendliest possible primitive.
 
-Under **Single Ouroboros** pre-Interlocked-Barrier, this translates into the compound-key attack:
+Under **Single Ouroboros**, this translates into the compound-key attack:
 
 ```
 hLo(p) = K XOR const(data(p))
@@ -224,7 +236,7 @@ The reasoning tracks the CRC128 case, plus one primitive-specific arrow: **combi
 
 Multiplication by an odd constant modulo `2^64` is a T-function: carry propagates only LOW → HIGH, so output bit `t` is an affine function of input bits `0..t` with variable coefficients from the multiplier. This lets a solver work plane-by-plane from LSB to MSB via linear algebra on each bit plane, in `O(n^2)` instead of `2^n`.
 
-Under Single Ouroboros pre-Interlocked-Barrier, this is exactly what enabled the archived Phase 2g result: Bitwuzla with T-function-aware handling of the multiply recovered `dataSeed` lo-lane at ITB's minimum `keyBits = 512` on 4 cribs plus disclosed `startPixel`. The regime was Single Ouroboros, no Interlocked Barrier, disclosed `startPixel`, Crib KPA — a partial-lab posture that the current shipped surface does not expose.
+Under Single Ouroboros, this is exactly what enabled the archived Phase 2g result: Bitwuzla with T-function-aware handling of the multiply recovered `dataSeed` lo-lane at ITB's minimum `keyBits = 512` on 4 cribs plus disclosed `startPixel`. The regime was Single Ouroboros, no Interlocked Barrier, disclosed `startPixel`, Crib KPA — a partial-lab posture that the current shipped surface does not expose.
 
 ### What happens when FNV-1a meets combinadic unrank in Part 1
 
@@ -282,7 +294,7 @@ FNV-1a's T-function property protects the cryptanalyst under direct hash inversi
 
 - The attacker does not observe `h` — per-chunk PRF outputs are consumed opaquely inside unrank + PEXT
 - The attacker cannot recover mask triples from wire observations — Part 2 encoding + Part 1 lane compression prevent it
-- Combinadic unrank is non-linear over GF(2) **and** non-T-function — even a hypothetical T-function attack on the ChainHash 4-round chain that recovered `lockKey` would still break at the unrank arithmetic reverse
+- Combinadic unrank is non-linear over GF(2) **and** non-T-function — even a hypothetical T-function attack on the ChainHash cascade that recovered `lockKey` would still break at the unrank arithmetic reverse
 - Compound-key linear algebra in the CRC128 style does not transfer to FNV-1a anyway (multiplication carry structure defeats it)
 
 REDTEAM.md § FNV-1a lo-lane SAT records precisely this: Bitwuzla UNSAT under maximum-peek regime — even when the attacker gets a lab peek stripping Part 2 encoding, the full-coupled 8-chain SAT with symbolic mask triples is not formulable — not because the solver is too slow, but because the instance is under-determined without `lockSeed` under combinadic-unrank arithmetic that breaks the primitive's T-function / GF(2)-linear structure.
