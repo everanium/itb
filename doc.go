@@ -65,7 +65,7 @@
 //
 // FNV-1a 128-bit + ITB + 512-bit nonce — arithmetically "safe" (2^-256 gate never fires).
 // Mathematically correct. Cryptographically a joke. Do not ship.
-// Look at Broken-primitive stress in REDTEAM.md
+// See Broken-primitive stress in REDTEAM.md
 //
 // # Hash Width Variants
 //
@@ -123,14 +123,14 @@
 //     XOR-chain is sufficient. PRF required; PRF and barrier are complementary —
 //     neither sufficient alone (see PROOFS.md Proof 4a).
 //
-//   - Known-plaintext resistance (3-factor under PRF assumption, 4-factor under Partial KPA): even with
-//     fully known plaintext, the attacker cannot derive hash outputs because
-//     original container pixel values are unknown (crypto/rand, never
-//     transmitted). Under Full KPA, defense is 3-factor: PRF non-invertibility
-//
-//   - independent startSeeds + 7-rotation × 8-noisePos per-pixel ambiguity.
-//     gcd(7,8)=1 byte-splitting is a 4th factor effective only under Partial
-//     KPA (see PROOFS.md Proof 4a).
+//   - Known-plaintext resistance (3-factor under PRF assumption, 4-factor
+//     under Partial KPA): even with fully known plaintext, the attacker
+//     cannot derive hash outputs because original container pixel values
+//     are unknown (crypto/rand, never transmitted). Under Full KPA, defense
+//     is 3-factor: PRF non-invertibility + independent startSeeds +
+//     7-rotation × 8-noisePos per-pixel ambiguity. gcd(7,8)=1 byte-splitting
+//     is a 4th factor effective only under Partial KPA (see PROOFS.md
+//     Proof 4a).
 //
 //   - Oracle-free deniability: no size headers, no checksums. COBS + null
 //     terminator under encryption. Wrong seed produces random-looking output
@@ -142,20 +142,23 @@
 //     256-bit, ~2^256 at 512-bit. Practically safe collision probability
 //     (~2^{-33}): ~2^48 / ~2^112 / ~2^240 messages respectively.
 //
-//   - 8-seed isolation: CCA reveals noiseSeed config only (MAC + Reveal
-//     only) (noise positions), cache side-channel reveals startPixel only
-//     (pixel offset derived from each startSeed). dataSeed config (rotation + XOR) is completely
-//     independent, register-only, and unobservable. After CCA removes noise bits,
-//     guaranteed CSPRNG residue in data positions preserves ambiguity (Proof 10).
+//   - 8-seed isolation: under MAC + Reveal, CCA reveals noiseSeed config
+//     (noise positions) only; a cache side-channel reveals startPixel only
+//     (pixel offset derived from each startSeed). dataSeed config (rotation +
+//     XOR) is completely independent, register-only, and unobservable. After
+//     CCA removes noise bits, guaranteed CSPRNG residue in data positions
+//     preserves ambiguity (Proof 10).
 //
 //   - Information-theoretic barrier of 2^(8P) where P = pixel count.
 //     Minimum container sized so encoding ambiguity exceeds key space:
-//     [MinPixels] = ceil(keyBits / log2(7)) (aliases [MinPixelsAuth]) —
-//     the plain and authenticated envelopes share one unified CCA-resistant
-//     floor so the container does not distinguish mode on tiny payloads.
-//     At 1024-bit: MinPixels = 365 (P = 400 after square rounding).
-//     Noise barrier at MinPixels = 365 (P = 400 after square rounding):
-//     2^(8×400) = 2^3200, far beyond the Landauer limit of ~2^306.
+//     each seed exposes [Seed128.MinPixels] / [Seed256.MinPixels] /
+//     [Seed512.MinPixels] returning ceil(keyBits / log2(7)) (with the
+//     MinPixelsAuth alias for the CCA-resistant floor) — the plain and
+//     authenticated envelopes share one unified CCA-resistant floor so the
+//     container does not distinguish mode on tiny payloads. At 1024-bit:
+//     MinPixels = 365 (P = 400 after square rounding). Noise barrier at
+//     MinPixels = 365 (P = 400 after square rounding): 2^(8×400) = 2^3200,
+//     far beyond the Landauer limit of ~2^306.
 //
 // # Quick Start (Recommended) — triple.Pipeline
 //
@@ -410,14 +413,14 @@
 //
 // # Streaming bindings asymmetry
 //
-// For the No-MAC paths, the Go core and the
+// For the No MAC paths, the Go core and the
 // [github.com/everanium/itb/triple] package expose [io.Reader] /
 // [io.Writer] entry points ([EncryptStream3xCfg] /
 // [DecryptStream3xCfg] and the corresponding
 // [github.com/everanium/itb/triple.Pipeline.EncryptStream] /
 // [github.com/everanium/itb/triple.Pipeline.DecryptStream] methods)
 // that drive the read/write loop internally. The official bindings
-// to other languages expose the No-MAC stream surface as per-chunk
+// to other languages expose the No MAC stream surface as per-chunk
 // free functions only and let the caller drive the loop. The two
 // patterns produce identical on-wire bytes; choice between them is
 // a Go-side convenience.

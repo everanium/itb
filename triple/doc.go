@@ -4,13 +4,16 @@
 // One [Pipeline] bundles the Interlocked Barrier Triple 8-seed state,
 // an optional parallax layer, an optional wrapper (Outer cipher) layer,
 // and an optional MAC into a single object with a small lifecycle API
-// ([Init] / [Open] / [Pipeline.Rekey] / [Pipeline.Close]) and four
-// cipher entry points ([Pipeline.EncryptStream] /
-// [Pipeline.DecryptStream] / [Pipeline.EncryptMessage] /
-// [Pipeline.DecryptMessage]). Callers who need a configuration outside
-// the shipped catalogue install a [Profile] literal at process init
-// via [RegisterProfile] and reference the registered name at [Init]
-// like any shipped profile.
+// ([Init] / [Open] / [Pipeline.Rekey] / [Pipeline.Close]) plus the
+// cipher entry points: [Pipeline.EncryptStream] /
+// [Pipeline.DecryptStream] (Reader/Writer),
+// [Pipeline.EncryptStreamBytes] / [Pipeline.DecryptStreamBytes]
+// (whole-buffer convenience over the streaming wire), and
+// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] (Single
+// Message shape). Callers who need a configuration outside the shipped
+// catalogue install a [Profile] literal at process init via
+// [RegisterProfile] and reference the registered name at [Init] like
+// any shipped profile.
 //
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
@@ -25,11 +28,17 @@
 // slot; mixed-primitive profiles bind a per-slot constellation via
 // [Profile.MixedHashes] with uniform width per profile (repeats
 // permitted). The catalogue spans every combination of streaming vs
-// single-message shape and MAC vs No MAC posture, both dispatch
+// Single Message shape and MAC vs No MAC posture, both dispatch
 // paths, plus one blob-only bundle profile that carries session
 // state without exposing a cipher surface. Users select a profile
 // by name at [Init]; every profile-supplied default is overridable
-// via [Opts] on both [Init] and [Open].
+// via [Opts] on both [Init] and [Open]. The [Opts.MixedHashes]
+// override mirrors [Profile.MixedHashes] at the per-call layer — a
+// single-primitive base profile can be switched to a mixed
+// constellation, or one mixed profile to a different mixed shape,
+// for one [Pipeline] instance without registering a new named
+// profile. Both sides must pass the same override so [Open]
+// reconstructs the same effective constellation as [Init].
 //
 // Under N-concurrent-instance construction, contention-safety is
 // by-design; individual per-instance encryption strength inherits the
