@@ -93,7 +93,32 @@ Even a three-line invertible primitive produces no wire-level plaintext-recovery
 - **Delta between repeat-plaintext and varying-plaintext runs**: identical hot-bit histograms and identical 32 catastrophic bits — the plaintext-content-derived wire signal is zero.
 - **Body-region monobit on 762 560 000 bits**: p(bit = 1) = 0.499998, |z| = 0.13 (well inside the 5σ gate; the 3σ band width is 5.4 × 10⁻⁵ at this sample size).
 
-The reasoning arrows above and the numbers here point at the same picture: through the shipped barrier under attacker-realism, a three-line invertible primitive gives the same wire surface as a well-designed one — because the barrier's absorption acts before the primitive's output can be observed.
+### Residual bias under repeat-plaintext CPA
+
+The tests above measure the wire under a fresh CSPRNG plaintext or under the same plaintext repeated with fresh nonces, and gate on plaintext-content recovery. A different measurement — `TestRedTeamJokeHashHWDistinguisherVsPRF` in the same file, a two-arm repeat-plaintext probe encrypting the same all-zero plaintext under one arm and the same uniform-random 4 KB plaintext under the other, both at N = 2000 fresh-nonce ciphertexts, run twice with jokeHash on all 8 seed roles and then with SipHash-2-4 on all 8 seed roles as a PRF-grade control — surfaces a subtler residue on the jokeHash arm that the SipHash-2-4 arm closes. Representative numbers from one run (specific z-scores drift across runs with the CSPRNG-drawn seed components, the pattern is stable):
+
+**Under jokeHash on all eight seed roles:**
+
+- Zeros arm (`pt = 0^4096`), pooled 152 512 000 body bits: p(bit = 1) = 0.498744, |z| ≈ 31 — a real signal, not stochastic scatter.
+- Random arm (`pt =` fixed uniform 4 KB buffer), pooled 152 512 000 body bits: p(bit = 1) = 0.500008, |z| ≈ 0.2 — inside the noise floor.
+- Two-sample chi² homogeneity between arms (df = 255): ≈ 2000 (uniform band top at 3σ ≈ 323); Kolmogorov-Smirnov D on per-ciphertext HW ratios: ≈ 0.28, critical at α = 0.05 ≈ 0.04.
+
+**Under SipHash-2-4 on all eight seed roles (PRF-grade control):**
+
+- Zeros arm: p(bit = 1) = 0.499987, |z| ≈ 0.3 — inside the noise floor.
+- Random arm: p(bit = 1) = 0.500120, |z| ≈ 3 — inside the noise floor.
+- Two-sample chi² homogeneity between arms (df = 255): ≈ 300 (inside the uniform band).
+
+Mechanism. For a plaintext bit `p` and an encoded wire bit `p ⊕ channelXOR`, uniform `channelXOR` symmetrises any `p` distribution to 0.5 on the wire. Under a PRF-grade primitive `channelXOR` is exactly uniform, so the pooled wire monobit sits at 0.5 regardless of the plaintext's Hamming weight. Under jokeHash's multiply-add fold the primitive output carries a small structural bias (carry-chain artefact of the odd-multiplier round), and `channelXOR` inherits about 1 % of that bias, which then couples with the plaintext's Hamming weight and shifts the pooled wire monobit by ≈ 10⁻³ under a fixed-plaintext arm.
+
+What this residual means:
+
+- **Plaintext-content recovery — unaffected.** The signal does not localise on a per-pixel bit, does not name a wire byte, and does not read out any plaintext bit. Both `TestRedTeamJokeHashRepeatPlaintextCPA` and `TestRedTeamJokeHashVaryingPlaintextCPA` still show 9928 body bytes at 0 fixed bits and identical delta between the repeat and varying arms.
+- **Plaintext-structure distinguisher — present under repeat-plaintext CPA.** An attacker with ~2000 ciphertexts of the same plaintext under jokeHash on all eight seed roles can distinguish «this plaintext was mostly zeros» from «this plaintext was uniform-random» at high confidence. A PRF-grade primitive closes this distinguisher entirely; the residue is primitive-attributable, not architectural.
+
+Honest phrasing: the shipped barrier absorbs the observation channel that a plaintext-content-recovery attack would need, but it does not scrub every last statistical trace of a broken primitive's bias. Under attacker-realism the recovery channel stays closed, which is the load-bearing claim. Under a structured-repeat-plaintext CPA (constant-plaintext heartbeat traffic, for example) a broken primitive leaves a weak distinguisher of the plaintext's Hamming weight that a PRF-grade primitive does not.
+
+The reasoning arrows above and the numbers here point at the same picture: through the shipped barrier under attacker-realism, a three-line invertible primitive gives the same plaintext-content-recovery surface as a well-designed one — because the barrier's absorption acts before the primitive's output can be observed. A separate weaker channel — a plaintext-Hamming-weight distinguisher visible only under repeat-plaintext CPA with a broken primitive — remains open, and closing it is what the PRF assumption on the shipped primitive is for.
 
 ---
 
