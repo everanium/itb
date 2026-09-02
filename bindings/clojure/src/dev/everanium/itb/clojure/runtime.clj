@@ -7,7 +7,7 @@
 
 (def binding-version
   "The binding's own version."
-  "0.3.3")
+  "0.3.4")
 
 (defn set-memory-limit!
   "Sets the Go runtime's soft heap limit in bytes and returns the

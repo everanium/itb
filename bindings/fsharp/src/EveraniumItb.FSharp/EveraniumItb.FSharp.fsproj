@@ -9,7 +9,7 @@
 
   <PropertyGroup Label="Package metadata">
     <PackageId>EveraniumItb.FSharp</PackageId>
-    <Version>0.3.3</Version>
+    <Version>0.3.4</Version>
     <Authors>everanium</Authors>
     <Description>F# binding for ITB (information-theoretic barrier) cipher — idiomatic Result-based layer over the C# binding's Triple Pipeline surface (CLR bytecode interop, no FFI hop of its own).</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

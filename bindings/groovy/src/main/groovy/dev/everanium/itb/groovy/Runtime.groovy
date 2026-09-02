@@ -16,7 +16,7 @@ import com.everanium.itb.Runtime as JRuntime
 final class Runtime {
 
     /** The Groovy binding's own version. */
-    static final String BINDING_VERSION = '0.3.3'
+    static final String BINDING_VERSION = '0.3.4'
 
     private Runtime() {
     }
