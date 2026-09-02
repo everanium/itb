@@ -30,4 +30,4 @@ let ``smoke round trip through the itb computation expression`` () =
 [<Fact>]
 let ``library version string is non-empty`` () =
     Assert.False(System.String.IsNullOrEmpty(Runtime.version ()))
-    Assert.Equal("0.3.3", Runtime.BindingVersion)
+    Assert.Equal("0.3.4", Runtime.BindingVersion)
