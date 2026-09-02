@@ -18,7 +18,7 @@ class SmokeTest {
     @Test
     void libraryVersionIsNonEmpty() {
         assertTrue(!Runtime.version().isEmpty())
-        assertEquals('0.3.3', Runtime.BINDING_VERSION)
+        assertEquals('0.3.4', Runtime.BINDING_VERSION)
     }
 
     @Test

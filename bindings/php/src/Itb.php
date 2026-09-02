@@ -26,7 +26,7 @@ namespace Everanium\Itb;
 final class Itb
 {
     /** Binding version. */
-    public const VERSION = '0.3.3';
+    public const VERSION = '0.3.4';
 
     /** Floor capacity for blob output buffers (create / rekey). */
     public const BLOB_CAP = 65536;

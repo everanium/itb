@@ -4,7 +4,7 @@
  ;; when the classpath is computed.
  :paths ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
-        everanium/itb-java {:local/root "../java/build/libs/itb-java-0.3.3.jar"}}
+        everanium/itb-java {:local/root "../java/build/libs/itb-java-0.3.4.jar"}}
  :aliases
  {;; clojure.test suite: clojure -M:test -m dev.everanium.itb.clojure.test-runner
   :test {:extra-paths ["test"]}
