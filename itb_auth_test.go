@@ -106,7 +106,7 @@ func mkTriple512(t *testing.T) (n, l, d1, d2, d3, s1, s2, s3 *Seed512) {
 
 // --- Single-Ouroboros plain helpers ---
 
-// --- Triple-Ouroboros plain helpers ---
+// --- Triple Ouroboros plain helpers ---
 
 func TestEncrypt3xDecrypt3xRoundtrip(t *testing.T) {
 	sizes := []int{1, 4096, 65536}

@@ -49,7 +49,7 @@ const messageFastPathMaxBytes = 64 << 20
 //  1. Direct whole-buffer path — chosen when the parallax layer is
 //     disengaged for this Pipeline. The plaintext feeds a single
 //     itb-root Cfg-aware entry ([itb.Encrypt3x{128,256,512}Cfg] on the
-//     No-MAC arm, [itb.EncryptStreamAuthenticated3x{128,256,512}Cfg]
+//     No MAC arm, [itb.EncryptStreamAuthenticated3x{128,256,512}Cfg]
 //     with cumulative offset 0 and finalFlag true on the MAC arm) so
 //     the per-chunk io.Reader / io.Writer machinery of
 //     [Pipeline.EncryptStream] is bypassed for the message surface.
@@ -114,7 +114,7 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 //     (streamID prefix followed by exactly one itb-root ciphertext
 //     whose header-announced chunk length equals the remaining wire
 //     length after any wrapper unwrap). Dispatches into
-//     [itb.Decrypt3x{128,256,512}Cfg] on the No-MAC arm or
+//     [itb.Decrypt3x{128,256,512}Cfg] on the No MAC arm or
 //     [itb.DecryptStreamAuthenticated3x{128,256,512}Cfg] with
 //     cumulative offset 0 on the MAC arm.
 //  2. Streaming-fallback path — chosen when the parallax layer is
@@ -232,7 +232,7 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 	inner := wire
 	if p.resolved.wrapperOn {
 		// Empty wire under wrapper-on maps to empty plaintext on the
-		// No-MAC arm (mirrors the empty-input encrypt contract). The
+		// No MAC arm (mirrors the empty-input encrypt contract). The
 		// MAC arm requires the streamID + final chunk envelope and
 		// cannot decode an empty wire; delegating to the streaming
 		// fallback surfaces the appropriate error there.
@@ -303,7 +303,7 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 	return plain, true, derr
 }
 
-// encryptSingleChunkNoMAC width-dispatches to the No-MAC single-chunk
+// encryptSingleChunkNoMAC width-dispatches to the No MAC single-chunk
 // encrypt entry. Threads the Pipeline's per-instance Config so nonce
 // width / barrier fill / max-workers overrides land on the underlying
 // call site.
@@ -365,7 +365,7 @@ func encryptSingleChunkAuth(p *Pipeline, plaintext []byte, streamID [streamIDPre
 	return nil, fmt.Errorf("triple: unsupported inner width %d", p.width)
 }
 
-// decryptSingleChunkNoMAC width-dispatches to the No-MAC single-chunk
+// decryptSingleChunkNoMAC width-dispatches to the No MAC single-chunk
 // decrypt entry. Mirror image of [encryptSingleChunkNoMAC].
 func decryptSingleChunkNoMAC(p *Pipeline, chunk []byte) ([]byte, error) {
 	switch p.width {

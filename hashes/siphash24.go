@@ -1,6 +1,9 @@
 package hashes
 
 import (
+	"fmt"
+	"hash"
+
 	"github.com/dchest/siphash"
 
 	"github.com/everanium/itb"
@@ -108,4 +111,16 @@ func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 		return out
 	}
 	return single, batched
+}
+
+// siphash24KeyedHash backs the shipped registry entry's
+// [Spec.KeyedHash] field: SipHash-2-4 in its native 128-bit-output
+// keyed mode. SipHash keys are exactly 16 bytes; any other length is
+// rejected with an error. The shipped entry leaves [Spec.HashHash]
+// nil — SipHash has no unkeyed general-purpose hash.Hash form.
+func siphash24KeyedHash(key []byte) (hash.Hash, error) {
+	if len(key) != 16 {
+		return nil, fmt.Errorf("siphash24 key must be exactly 16 bytes, got %d", len(key))
+	}
+	return siphash.New128(key), nil
 }

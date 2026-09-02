@@ -165,7 +165,7 @@ func seedWidth(s any) int {
 	}
 }
 
-// dispatchWidthTriple confirms that all eight Triple-Ouroboros seeds
+// dispatchWidthTriple confirms that all eight Triple Ouroboros seeds
 // (noise, lock, three data, three start) share one concrete pointer type
 // and returns the resolved width. Returns 0 + errSeedWidthMix on any
 // type mismatch or an unsupported pointer type.

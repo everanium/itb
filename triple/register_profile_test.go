@@ -313,7 +313,7 @@ func TestRegisterProfileConcurrent(t *testing.T) {
 	}
 }
 
-// TestRegisterProfileNoMacMode confirms a No-MAC profile with an
+// TestRegisterProfileNoMacMode confirms a No MAC profile with an
 // empty MacName registers cleanly, mirroring the shipped
 // streaming-noaead-triple-v1 shape.
 func TestRegisterProfileNoMacMode(t *testing.T) {

@@ -3,6 +3,7 @@ package hashes
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"hash"
 	"sync"
 
 	"github.com/zeebo/blake3"
@@ -207,4 +208,25 @@ func BLAKE3256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc
 		return out
 	}
 	return single, batched
+}
+
+// blake3HashHash backs the shipped registry entry's [Spec.HashHash]
+// field: the unkeyed BLAKE3 hash.Hash form the HMAC construction
+// wraps.
+func blake3HashHash() hash.Hash {
+	return blake3.New()
+}
+
+// blake3KeyedHash backs the shipped registry entry's [Spec.KeyedHash]
+// field: BLAKE3's native keyed mode. The upstream constructor
+// requires an exactly-32-byte key and returns an error for any other
+// length. The explicit nil-on-error arm keeps a failed construction
+// from leaking a typed-nil *blake3.Hasher through the hash.Hash
+// interface.
+func blake3KeyedHash(key []byte) (hash.Hash, error) {
+	h, err := blake3.NewKeyed(key)
+	if err != nil {
+		return nil, err
+	}
+	return h, nil
 }

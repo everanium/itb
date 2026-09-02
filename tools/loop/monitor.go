@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -105,6 +106,7 @@ func sample(r *runState) {
 func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int, workerErrs []error) int {
 	var (
 		iterParts                    []string
+		perWorkerIters               []int64
 		totalIters                   int64
 		totalEnc, totalDec           int64
 		totalNanosEnc, totalNanosDec int64
@@ -112,6 +114,7 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	for _, w := range r.workers {
 		n := w.iters.Load()
 		iterParts = append(iterParts, fmt.Sprintf("%d", n))
+		perWorkerIters = append(perWorkerIters, n)
 		totalIters += n
 		totalEnc += w.bytesEnc.Load()
 		totalDec += w.bytesDec.Load()
@@ -140,6 +143,12 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	avgEncTime := avgWorkerTime(totalNanosEnc, workerCount)
 	avgDecTime := avgWorkerTime(totalNanosDec, workerCount)
 
+	if r.cfg.jsonOutput {
+		return printJSONSummary(r, elapsed, finalHeap, finalGoroutines, workerErrs,
+			perWorkerIters, totalIters, totalEnc, totalDec, avgEncTime, avgDecTime,
+			growthPct, pass)
+	}
+
 	logf("=== FINAL ===")
 	logf("  duration: %s", elapsed.Round(time.Millisecond))
 	logf("  iterations: %s = %d total", strings.Join(iterParts, " + "), totalIters)
@@ -154,6 +163,12 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	logf("  heap: warmup baseline %s, peak %s, final %s (delta %s, %.1f%% growth)",
 		humanBytes(int64(r.warmupHeap)), humanBytes(int64(r.peakHeap)),
 		humanBytes(int64(finalHeap)), humanBytesSigned(heapDelta), growthPct)
+	if n := r.rekeys.Load(); n > 0 {
+		logf("  rekeys: %d", n)
+	}
+	if n := r.blobCycles.Load(); n > 0 {
+		logf("  blob cycles: %d", n)
+	}
 	if r.warnings > 0 {
 		logf("  monitor warnings: %d", r.warnings)
 	}
@@ -190,4 +205,91 @@ func avgWorkerTime(nanosSum, workerCount int64) time.Duration {
 		return 0
 	}
 	return time.Duration(nanosSum / workerCount)
+}
+
+// summaryReport is the machine-readable final-summary shape emitted
+// under --json-output. Field semantics mirror the human-readable
+// summary lines; throughput figures are binary MiB per second (the
+// same unit the MB/s log rendering uses).
+type summaryReport struct {
+	DurationSeconds     float64  `json:"duration_seconds"`
+	Iterations          int64    `json:"iterations"`
+	PerWorkerIterations []int64  `json:"per_worker_iterations"`
+	BytesEncrypted      int64    `json:"bytes_encrypted"`
+	BytesDecrypted      int64    `json:"bytes_decrypted"`
+	EncryptMBPerSec     float64  `json:"encrypt_mb_per_sec"`
+	DecryptMBPerSec     float64  `json:"decrypt_mb_per_sec"`
+	CombinedMBPerSec    float64  `json:"combined_mb_per_sec"`
+	HeapWarmupBytes     uint64   `json:"heap_warmup_bytes"`
+	HeapPeakBytes       uint64   `json:"heap_peak_bytes"`
+	HeapFinalBytes      uint64   `json:"heap_final_bytes"`
+	HeapGrowthPercent   float64  `json:"heap_growth_percent"`
+	GoroutinesIdle      int      `json:"goroutines_idle"`
+	GoroutinesWarmup    int      `json:"goroutines_warmup"`
+	GoroutinesPeak      int      `json:"goroutines_peak"`
+	GoroutinesFinal     int      `json:"goroutines_final"`
+	Warnings            int      `json:"warnings"`
+	Rekeys              int64    `json:"rekeys"`
+	BlobCycles          int64    `json:"blob_cycles"`
+	WorkerErrors        []string `json:"worker_errors"`
+	Verdict             string   `json:"verdict"`
+}
+
+// printJSONSummary emits the final summary as one compact JSON object
+// on stdout and returns the process exit code. Only the final summary
+// swaps format under --json-output; the periodic progress lines during
+// the run stay human-readable.
+func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int,
+	workerErrs []error, perWorkerIters []int64, totalIters, totalEnc, totalDec int64,
+	avgEncTime, avgDecTime time.Duration, growthPct float64, pass bool) int {
+	errStrs := make([]string, 0, len(workerErrs))
+	for _, werr := range workerErrs {
+		errStrs = append(errStrs, werr.Error())
+	}
+	verdict := "PASS"
+	if !pass {
+		verdict = "FAIL"
+	}
+	rep := summaryReport{
+		DurationSeconds:     elapsed.Seconds(),
+		Iterations:          totalIters,
+		PerWorkerIterations: perWorkerIters,
+		BytesEncrypted:      totalEnc,
+		BytesDecrypted:      totalDec,
+		EncryptMBPerSec:     mbPerSec(totalEnc, avgEncTime),
+		DecryptMBPerSec:     mbPerSec(totalDec, avgDecTime),
+		CombinedMBPerSec:    mbPerSec(totalEnc+totalDec, elapsed),
+		HeapWarmupBytes:     r.warmupHeap,
+		HeapPeakBytes:       r.peakHeap,
+		HeapFinalBytes:      finalHeap,
+		HeapGrowthPercent:   growthPct,
+		GoroutinesIdle:      r.idleGoroutines,
+		GoroutinesWarmup:    r.warmupGoroutines,
+		GoroutinesPeak:      r.peakGoroutines,
+		GoroutinesFinal:     finalGoroutines,
+		Warnings:            r.warnings,
+		Rekeys:              r.rekeys.Load(),
+		BlobCycles:          r.blobCycles.Load(),
+		WorkerErrors:        errStrs,
+		Verdict:             verdict,
+	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		fmt.Printf("[loop] json summary marshal: %v\n", err)
+		return 1
+	}
+	fmt.Println(string(b))
+	if pass {
+		return 0
+	}
+	return 1
+}
+
+// mbPerSec converts a byte count over a duration into binary MiB per
+// second; zero when the duration is unmeasured.
+func mbPerSec(n int64, d time.Duration) float64 {
+	if d <= 0 {
+		return 0
+	}
+	return float64(n) / float64(1<<20) / d.Seconds()
 }

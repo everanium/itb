@@ -63,37 +63,75 @@ D   4KB   <allocs/op>   <ns/op>   <MB/s>
 
 ## Usage
 
-Baseline (shipped defaults):
+The runner prints a header (CPU model, policy name, active tier / pool overrides) followed by the compact `E` / `D` rows across the size ladder. Set `POLICY_NAME` for the header label and any of `ITB_MICROBATCH_TIERS` / `ITB_HASHPOOL_STARTERS` for the tuner axes; unset knobs fall back to the shipped defaults.
+
+A one-time shell prep line covers the toolchain env every example below assumes:
 
 ```sh
-bash scripts/bench/sweep.sh
+export GO111MODULE=on GOROOT=/usr/local/go GOPATH=/usr/local/go PATH=/usr/local/go/bin:$PATH
 ```
 
-Mid-tier stride + mid-tier pool:
+### Policy grid
+
+Baseline — shipped defaults:
 
 ```sh
-POLICY_NAME="3tier-mid65536" \
-ITB_MICROBATCH_TIERS="16384:512,131072:65536,8388608:262144,-1:512" \
-ITB_HASHPOOL_STARTERS="512,65536,262144" \
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="baseline" \
     bash scripts/bench/sweep.sh
 ```
 
-Baseline switch but with the extra mid-tier pool (test whether pool
-starter alone moves anything):
+3-tier mid stride at 65 536 with a matching 3-pool:
 
 ```sh
-POLICY_NAME="default+pool65536" \
-ITB_HASHPOOL_STARTERS="512,65536,262144" \
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="3tier-mid65536" \
+    ITB_MICROBATCH_TIERS="16384:512,131072:65536,8388608:262144,-1:512" \
+    ITB_HASHPOOL_STARTERS="512,65536,262144" \
     bash scripts/bench/sweep.sh
 ```
 
-Adaptive always-on:
+3-tier mid stride at 131 072 with a matching 3-pool:
 
 ```sh
-POLICY_NAME="always-wide" \
-ITB_MICROBATCH_TIERS="16384:512,-1:262144" \
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="3tier-mid131072" \
+    ITB_MICROBATCH_TIERS="16384:512,1048576:131072,8388608:262144,-1:512" \
+    ITB_HASHPOOL_STARTERS="512,131072,262144" \
     bash scripts/bench/sweep.sh
 ```
+
+Wider upper tier — raise the adaptive boundary to 16 MiB:
+
+```sh
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="wider-upper" \
+    ITB_MICROBATCH_TIERS="16384:512,16777216:262144,-1:512" \
+    bash scripts/bench/sweep.sh
+```
+
+Always adaptive above 16 KiB — one wide stride for everything larger:
+
+```sh
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="always-wide" \
+    ITB_MICROBATCH_TIERS="16384:512,-1:262144" \
+    bash scripts/bench/sweep.sh
+```
+
+Pre-adaptive baseline — single tier and single pool:
+
+```sh
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="pre-adaptive" \
+    ITB_MICROBATCH_TIERS="-1:512" \
+    ITB_HASHPOOL_STARTERS="512" \
+    bash scripts/bench/sweep.sh
+```
+
+Single large pool — isolate the effect of pool sizing:
+
+```sh
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="single-large-pool" \
+    ITB_HASHPOOL_STARTERS="262144" \
+    bash scripts/bench/sweep.sh
+```
+
+Additional isolation policies compose the same env vars in obvious ways — e.g. `default+pool65536` keeps the shipped tier switch but adds the mid pool tier alone (`ITB_HASHPOOL_STARTERS="512,65536,262144"`) to measure whether the pool starter moves anything on its own.
 
 ## Env overrides
 

@@ -20,6 +20,9 @@ import (
 //     1 / 2 / 4 / 8 / 16 / 32.
 //   - MaxWorkers: 0 = use runtime.NumCPU; otherwise 1..256. Values
 //     above 256 are clamped at consumption.
+//   - TagStubSize: 0 = 32 (every shipped MAC's tag length);
+//     otherwise the paired AEAD peer's MAC tag length in bytes, in
+//     [16, 64].
 //
 // A nil *Config passed to a Cfg-suffixed entry point behaves as an
 // all-zero Config — every field falls back to the compile-in default
@@ -37,6 +40,21 @@ type Config struct {
 	// scratch buffer first. nil (the zero value) keeps the legacy
 	// concatenate-then-MAC path.
 	MACIncremental MACIncrementalFunc
+
+	// TagStubSize governs the CSPRNG dummy stub size the No MAC
+	// envelope reserves in its third-snake region so the on-wire
+	// envelope shape matches the paired AEAD envelope (whose third
+	// snake carries payload || tag || flag). Zero defaults to 32,
+	// which matches every shipped MAC's tag length. Low-Level No MAC
+	// callers pairing with a custom-tag-size AEAD peer set this to
+	// the peer's MAC tag length; a MAC-carrying triple.Pipeline
+	// auto-populates it from its profile's MAC at construction, and
+	// triple-layer callers pin it via triple.Profile.TagStubSize /
+	// triple.Opts.TagStubSize. Accepted values are 0 or 16..64
+	// inclusive — the floor matches the macs.Register TagSize >= 16
+	// contract, the ceiling covers the longest realistic MAC tag; the
+	// No MAC encrypt entry points reject anything else fail-fast.
+	TagStubSize int
 }
 
 // DefaultNonceBits is the nonce width in bits used when [Config.NonceBits]

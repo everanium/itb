@@ -129,6 +129,14 @@ type Opts struct {
 	// MAC-less profiles ignore this field.
 	MacName string
 
+	// TagStubSize overrides the profile's [Profile.TagStubSize]. A
+	// zero value defers to the profile default; non-zero values must
+	// fall in [16, 64] — [Init] and [Open] reject anything else
+	// fail-fast. Meaningful only for No MAC profiles paired with a
+	// custom-tag-size MAC counterpart; see [Profile.TagStubSize] for
+	// the resolution chain.
+	TagStubSize int
+
 	// InnerHash overrides the profile's ITB hash primitive name (e.g.
 	// "areion512"). An empty string defers to the profile default.
 	InnerHash string

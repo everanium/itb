@@ -155,6 +155,20 @@ type Profile struct {
 	// [github.com/everanium/itb/macs.Find].
 	MacName string
 
+	// TagStubSize pins the CSPRNG dummy stub reservation size (bytes)
+	// the No MAC envelope reserves so its wire shape matches a paired
+	// MAC-carrying counterpart with a specific MAC tag length. Zero
+	// defers to the MacName auto-probe (MAC-carrying profiles) or the
+	// 32-byte default, which aligns with every shipped MAC's tag
+	// length. Non-zero values must fall in [16, 64] — the floor
+	// matches the macs.Register TagSize >= 16 contract, the ceiling
+	// covers the longest realistic MAC tag; [RegisterProfile] rejects
+	// anything else fail-fast. Meaningful for No MAC profiles paired
+	// with a custom-tag-size MAC counterpart; a MAC-carrying
+	// profile's authenticated envelope sizes its reservation from the
+	// MAC's probed tag length regardless of this field.
+	TagStubSize int
+
 	// OuterCipher is the wrapper (Outer cipher) primitive name (e.g.
 	// "chacha20"). Empty when WrapperOn is false; otherwise must be
 	// present in [github.com/everanium/itb/wrapper.CipherNames].
@@ -215,6 +229,7 @@ type resolvedProfile struct {
 	innerHash           string
 	keyBits             int
 	macName             string
+	tagStubSize         int
 	outerCipher         string
 	parallaxPalette     []string
 	parallaxSegmentSize int
@@ -465,6 +480,7 @@ func resolveProfile(prof Profile, opts Opts) resolvedProfile {
 		innerHash:           prof.InnerHash,
 		keyBits:             prof.KeyBits,
 		macName:             prof.MacName,
+		tagStubSize:         prof.TagStubSize,
 		outerCipher:         prof.OuterCipher,
 		parallaxPalette:     append([]string(nil), prof.ParallaxPalette...),
 		parallaxSegmentSize: prof.ParallaxSegmentSize,
@@ -484,8 +500,11 @@ func resolveProfile(prof Profile, opts Opts) resolvedProfile {
 	}
 	if opts.MacName != "" && out.macName != "" {
 		// Only respect MacName override when the profile carries a
-		// MAC in the first place — No-MAC profiles ignore the field.
+		// MAC in the first place — No MAC profiles ignore the field.
 		out.macName = opts.MacName
+	}
+	if opts.TagStubSize > 0 {
+		out.tagStubSize = opts.TagStubSize
 	}
 	if opts.OuterCipher != "" {
 		out.outerCipher = opts.OuterCipher

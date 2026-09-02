@@ -3,6 +3,7 @@ package hashes
 import (
 	"errors"
 	"fmt"
+	"hash"
 	"sync"
 
 	"github.com/everanium/itb"
@@ -54,6 +55,34 @@ type Spec struct {
 	Make128Pair func(key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error) `json:"-"`
 	Make256Pair func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) `json:"-"`
 	Make512Pair func(key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc512, []byte, error) `json:"-"`
+
+	// HashHash optionally returns the primitive's general-purpose
+	// unkeyed hash.Hash form — the shape the HMAC construction
+	// (RFC 2104) wraps, consumed by the macs package's BuildHMAC
+	// builder. Populated on the shipped entries built over a
+	// general-purpose hash (the BLAKE family); nil for primitives
+	// without such a form (the Areion SoEM constructions, AES-CMAC,
+	// SipHash-2-4, ChaCha20). A user-registered custom primitive may
+	// populate the field so macs.BuildHMAC composes with it by name;
+	// when nil, macs.BuildHMAC rejects the name and the hand-rolled
+	// macs.Register path applies instead. Each call must return a
+	// fresh instance safe for exclusive use by the caller.
+	HashHash func() hash.Hash `json:"-"`
+
+	// KeyedHash optionally returns the primitive's native keyed mode
+	// as a hash.Hash pre-keyed with key, consumed by the macs
+	// package's BuildKeyedHash builder. Populated on the shipped
+	// entries whose keyed form is itself a sound PRF (the BLAKE2
+	// variants, BLAKE3, SipHash-2-4); nil for primitives without a
+	// native keyed hash.Hash mode. A user-registered custom primitive
+	// may populate the field so macs.BuildKeyedHash composes with it
+	// by name; when nil, macs.BuildKeyedHash rejects the name. The
+	// constructor is the single source of truth for accepted key
+	// lengths: it must return an error — never panic — for a key
+	// length the primitive does not support, and each successful call
+	// must return a fresh instance safe for exclusive use by the
+	// caller.
+	KeyedHash func(key []byte) (hash.Hash, error) `json:"-"`
 }
 
 // Registry lists every shippable PRF-grade primitive in canonical order.
@@ -70,12 +99,12 @@ type Spec struct {
 var Registry = [9]Spec{
 	{Name: "areion256", Width: W256},
 	{Name: "areion512", Width: W512},
-	{Name: "blake2b256", Width: W256},
-	{Name: "blake2b512", Width: W512},
-	{Name: "blake2s", Width: W256},
-	{Name: "blake3", Width: W256},
+	{Name: "blake2b256", Width: W256, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash},
+	{Name: "blake2b512", Width: W512, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash},
+	{Name: "blake2s", Width: W256, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash},
+	{Name: "blake3", Width: W256, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash},
 	{Name: "aescmac", Width: W128},
-	{Name: "siphash24", Width: W128},
+	{Name: "siphash24", Width: W128, KeyedHash: siphash24KeyedHash},
 	{Name: "chacha20", Width: W256},
 }
 

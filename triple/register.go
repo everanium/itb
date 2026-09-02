@@ -85,6 +85,10 @@ var validProfileModes = map[string]struct{}{
 //   - KeyBits is a positive integer multiple of Width.
 //   - MacName, when non-empty, resolves via
 //     [github.com/everanium/itb/macs.Find].
+//   - TagStubSize accepts 0 (defer to the MacName auto-probe or the
+//     32-byte default) or a value in [16, 64] — the floor matches the
+//     macs.Register TagSize >= 16 contract, the ceiling covers the
+//     longest realistic MAC tag; see [Profile.TagStubSize].
 //   - OuterCipher is validated only when WrapperOn is true; must be
 //     a recognised entry in
 //     [github.com/everanium/itb/wrapper.CipherNames].
@@ -223,6 +227,9 @@ func validateProfileFields(p Profile) error {
 	}
 	if p.ChunkSize < 0 {
 		return fmt.Errorf("triple: RegisterProfile: ChunkSize %d must be >= 0", p.ChunkSize)
+	}
+	if p.TagStubSize != 0 && (p.TagStubSize < 16 || p.TagStubSize > 64) {
+		return fmt.Errorf("triple: RegisterProfile: TagStubSize=%d must be 0 or in [16, 64]", p.TagStubSize)
 	}
 	return nil
 }
