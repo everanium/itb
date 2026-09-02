@@ -287,3 +287,49 @@ func TestParseTripleOptsTagStubSize(t *testing.T) {
 		}
 	}
 }
+
+// TestParseTripleOptsNumericBounds pins the fail-fast rejection of
+// out-of-enum numeric opts at the parser boundary — the check
+// surfaces binding-side errors before triple.Init / triple.Open
+// receives a would-be-corrupt Opts value. Covers nonceBits,
+// barrierFill, maxWorkers, chunkSize, keyBits, parallaxSegmentSize.
+func TestParseTripleOptsNumericBounds(t *testing.T) {
+	bad := []struct {
+		key, val string
+	}{
+		{"nonceBits", "-1"},
+		{"nonceBits", "1"},
+		{"nonceBits", "999"},
+		{"nonceBits", "1024"},
+		{"barrierFill", "-1"},
+		{"barrierFill", "3"},
+		{"barrierFill", "5"},
+		{"barrierFill", "33"},
+		{"maxWorkers", "-1"},
+		{"chunkSize", "-1"},
+		{"chunkSize", "268435457"},       // 256 MiB + 1 byte
+		{"chunkSize", "1099511627776"},   // 1 TiB
+		{"keyBits", "-1"},                // negative
+		{"parallaxSegmentSize", "-1"},    // negative
+		{"parallaxSegmentSize", "65536"}, // above parallax.MaxSegmentSize
+	}
+	for _, c := range bad {
+		q := c.key + "=" + c.val
+		if _, err := parseTripleOpts(q); err == nil {
+			t.Errorf("%s: accepted, want range rejection", q)
+		}
+	}
+	good := []string{
+		"nonceBits=0", "nonceBits=128", "nonceBits=256", "nonceBits=512",
+		"barrierFill=0", "barrierFill=1", "barrierFill=2", "barrierFill=4", "barrierFill=8", "barrierFill=16", "barrierFill=32",
+		"maxWorkers=0", "maxWorkers=1", "maxWorkers=256",
+		"chunkSize=0", "chunkSize=1", "chunkSize=65536", "chunkSize=16777216", "chunkSize=268435456",
+		"keyBits=0", "keyBits=512", "keyBits=1024",
+		"parallaxSegmentSize=0", "parallaxSegmentSize=4093", "parallaxSegmentSize=65535",
+	}
+	for _, q := range good {
+		if _, err := parseTripleOpts(q); err != nil {
+			t.Errorf("%s: rejected (%v), want accept", q, err)
+		}
+	}
+}

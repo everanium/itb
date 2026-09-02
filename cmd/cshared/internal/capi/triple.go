@@ -302,6 +302,9 @@ func mapTripleError(err error) Status {
 		err == triple.ErrEmptyInput:
 		setLastErrMessageTriple(msg)
 		return StatusBadInput
+	case errors.Is(err, triple.ErrBadKeyBits):
+		setLastErrMessageTriple(msg)
+		return StatusBadKeyBits
 	case errors.Is(err, itb.ErrMACFailure):
 		setLastErrMessageTriple(msg)
 		return StatusMACFailure

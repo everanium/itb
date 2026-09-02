@@ -206,3 +206,52 @@ func TestParseTripleRegisterOptsTagStubSize(t *testing.T) {
 		}
 	}
 }
+
+// TestParseTripleRegisterOptsChunkSizeBounds pins the fail-fast
+// rejection of a chunkSize value above parallax.MaxChunkSize (256
+// MiB) at the parser boundary so the binding-side error surfaces
+// before triple.RegisterProfile runs. Negatives are also rejected;
+// zero remains the "defer to itb.DefaultChunkSize" sentinel.
+func TestParseTripleRegisterOptsChunkSizeBounds(t *testing.T) {
+	for _, v := range []string{"-1", "268435457", "1099511627776"} {
+		if _, err := parseTripleRegisterOpts("chunkSize=" + v); err == nil {
+			t.Errorf("chunkSize=%s: accepted, want range rejection", v)
+		}
+	}
+	for _, v := range []string{"0", "1", "65536", "16777216", "268435456"} {
+		if _, err := parseTripleRegisterOpts("chunkSize=" + v); err != nil {
+			t.Errorf("chunkSize=%s: rejected (%v), want accept", v, err)
+		}
+	}
+}
+
+// TestParseTripleRegisterOptsParallaxSegmentSizeBounds pins the
+// fail-fast rejection of a parallaxSegmentSize value above
+// parallax.MaxSegmentSize (65535) at the parser boundary. Negatives
+// are also rejected; zero remains the "defer to
+// parallax.DefaultSegmentSize" sentinel.
+func TestParseTripleRegisterOptsParallaxSegmentSizeBounds(t *testing.T) {
+	for _, v := range []string{"-1", "65536", "1000000"} {
+		if _, err := parseTripleRegisterOpts("parallaxSegmentSize=" + v); err == nil {
+			t.Errorf("parallaxSegmentSize=%s: accepted, want range rejection", v)
+		}
+	}
+	for _, v := range []string{"0", "1", "4093", "65535"} {
+		if _, err := parseTripleRegisterOpts("parallaxSegmentSize=" + v); err != nil {
+			t.Errorf("parallaxSegmentSize=%s: rejected (%v), want accept", v, err)
+		}
+	}
+}
+
+// TestParseTripleRegisterOptsKeyBitsBounds pins the fail-fast
+// rejection of a negative keyBits at the parser boundary.
+func TestParseTripleRegisterOptsKeyBitsBounds(t *testing.T) {
+	if _, err := parseTripleRegisterOpts("keyBits=-1"); err == nil {
+		t.Errorf("keyBits=-1: accepted, want rejection")
+	}
+	for _, v := range []string{"0", "512", "1024", "2048"} {
+		if _, err := parseTripleRegisterOpts("keyBits=" + v); err != nil {
+			t.Errorf("keyBits=%s: rejected (%v), want accept", v, err)
+		}
+	}
+}

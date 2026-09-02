@@ -368,3 +368,89 @@ func TestRegisterProfileNameNormalisedAfterRegister(t *testing.T) {
 		t.Fatalf("registered profile Name: got %q, want %q", got.Name, name)
 	}
 }
+
+// TestRegisterProfileRejectsOversizeChunkSize pins the upper-bound
+// check on [Profile.ChunkSize]: any value beyond
+// [parallax.MaxChunkSize] would fail deferred inside the parallax
+// builder at [Init] time; the RegisterProfile-side reject surfaces
+// the misconfiguration at the registration boundary.
+func TestRegisterProfileRejectsOversizeChunkSize(t *testing.T) {
+	p := baseValidProfile()
+	p.ChunkSize = parallax.MaxChunkSize + 1
+	err := RegisterProfile("userns-triple-oversizechunk-v1", p)
+	if err == nil {
+		t.Fatalf("RegisterProfile accepted oversize ChunkSize=%d", p.ChunkSize)
+	}
+	if !strings.Contains(err.Error(), "above maximum") {
+		t.Fatalf("RegisterProfile ChunkSize oversize: got %v, want error mentioning \"above maximum\"", err)
+	}
+}
+
+// TestRegisterProfileRejectsOversizeParallaxSegmentSize pins the
+// upper-bound check on [Profile.ParallaxSegmentSize] mirroring the
+// ChunkSize case. The parallax builder would refuse the value
+// downstream anyway; the reject-at-registration surface is cleaner.
+func TestRegisterProfileRejectsOversizeParallaxSegmentSize(t *testing.T) {
+	p := baseValidProfile()
+	p.ParallaxSegmentSize = parallax.MaxSegmentSize + 1
+	err := RegisterProfile("userns-triple-oversizeseg-v1", p)
+	if err == nil {
+		t.Fatalf("RegisterProfile accepted oversize ParallaxSegmentSize=%d", p.ParallaxSegmentSize)
+	}
+	if !strings.Contains(err.Error(), "above maximum") {
+		t.Fatalf("RegisterProfile ParallaxSegmentSize oversize: got %v, want error mentioning \"above maximum\"", err)
+	}
+}
+
+// TestRegisterProfileRejectsNonCoprimeParallaxSegmentSize pins the
+// coprime-to-504 check moved up from [parallax.NewSchedule]. A value
+// that shares a factor with the parallax pipeline period is refused
+// at registration so the error message says "not coprime" instead of
+// the downstream parallax builder's cryptic failure.
+func TestRegisterProfileRejectsNonCoprimeParallaxSegmentSize(t *testing.T) {
+	p := baseValidProfile()
+	// 504 = 2^3 * 3^2 * 7. Any positive multiple of 2, 3, or 7 is
+	// non-coprime. 100 shares factor 2 → non-coprime.
+	p.ParallaxSegmentSize = 100
+	err := RegisterProfile("userns-triple-notcoprime-v1", p)
+	if err == nil {
+		t.Fatalf("RegisterProfile accepted non-coprime ParallaxSegmentSize=%d", p.ParallaxSegmentSize)
+	}
+	if !strings.Contains(err.Error(), "not coprime") {
+		t.Fatalf("RegisterProfile ParallaxSegmentSize coprime: got %v, want error mentioning \"not coprime\"", err)
+	}
+}
+
+// TestRegisterProfileRejectsOverlongStrings pins the fail-fast
+// rejection of registry-name fields whose length exceeds
+// [hashes.MaxNameLen]. Reaching the downstream registry lookup with
+// an over-long name would produce a cryptic "unknown ..." error; the
+// upfront reject gives a clean "length ... exceeds ..." message.
+func TestRegisterProfileRejectsOverlongStrings(t *testing.T) {
+	long := "abcdefghijklmnopqr" // 18 bytes, > hashes.MaxNameLen (12)
+	cases := []struct {
+		label   string
+		nameSfx string
+		mutate  func(*Profile)
+	}{
+		{"mac-name-too-long", "mac", func(p *Profile) { p.MacName = long }},
+		{"inner-hash-too-long", "inner", func(p *Profile) { p.InnerHash = long }},
+		{"outer-cipher-too-long", "outer", func(p *Profile) { p.OuterCipher = long }},
+		{"palette-entry-too-long", "palette", func(p *Profile) {
+			p.ParallaxPalette = []string{"aescmac", "chacha20", long}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			p := baseValidProfile()
+			c.mutate(&p)
+			err := RegisterProfile("userns-triple-longstr-"+c.nameSfx+"-v1", p)
+			if err == nil {
+				t.Fatalf("RegisterProfile accepted overlong string: %s", c.label)
+			}
+			if !strings.Contains(err.Error(), "exceeds hashes.MaxNameLen") {
+				t.Fatalf("RegisterProfile %s: got %v, want error mentioning \"exceeds hashes.MaxNameLen\"", c.label, err)
+			}
+		})
+	}
+}

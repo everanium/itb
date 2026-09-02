@@ -341,3 +341,41 @@ func TestBlobV1MaxWorkersFieldBackCompat(t *testing.T) {
 			fresh.NonceBits, fresh.BarrierFill)
 	}
 }
+
+// TestBlobExportRejectsInvalidCfg pins the [Blob512.Export3Cfg]
+// front-door validation for out-of-enum [itb.Config] values: a
+// [Config.NonceBits] outside the shipped enum, an off-schedule
+// [Config.BarrierFill], and a negative [Config.MaxWorkers] each
+// prevent a poisoned blob from landing on the wire. The receiver's
+// [Blob512.Import3Cfg] would refuse the resulting JSON downstream —
+// the export-side reject moves the failure to the boundary where the
+// misconfiguration originated.
+func TestBlobExportRejectsInvalidCfg(t *testing.T) {
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+
+	cases := []struct {
+		label string
+		cfg   *itb.Config
+	}{
+		{"bad_nonce_bits", &itb.Config{NonceBits: 999, BarrierFill: 1}},
+		{"neg_nonce_bits", &itb.Config{NonceBits: -1, BarrierFill: 1}},
+		{"bad_barrier_fill", &itb.Config{NonceBits: 256, BarrierFill: 5}},
+		{"neg_barrier_fill", &itb.Config{NonceBits: 256, BarrierFill: -1}},
+		{"huge_barrier_fill", &itb.Config{NonceBits: 256, BarrierFill: 1 << 30}},
+		{"neg_max_workers", &itb.Config{NonceBits: 256, BarrierFill: 1, MaxWorkers: -1}},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			b := &itb.Blob512{}
+			out, err := b.Export3Cfg(c.cfg,
+				ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+				ns, ds1, ds2, ds3, ss1, ss2, ss3,
+				itb.Blob512Opts{KeyL: ks[1], LS: ls},
+			)
+			if err == nil {
+				t.Fatalf("Export3Cfg accepted invalid cfg: %s (produced %d bytes)", c.label, len(out))
+			}
+		})
+	}
+}

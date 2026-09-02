@@ -149,6 +149,9 @@ func Register(spec Spec) error {
 	if err := validateRegisterSpec(spec); err != nil {
 		return err
 	}
+	if err := smokeValidate(spec); err != nil {
+		return err
+	}
 	customsMu.Lock()
 	defer customsMu.Unlock()
 	for _, s := range Registry {
@@ -629,4 +632,111 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 		}
 	}
 	return nil, nil, nil, fmt.Errorf("hashes: unknown 512-bit primitive %q", name)
+}
+
+// smokeValidate builds the width-appropriate Make{N}Pair factory with a
+// throwaway random key and checks the load-bearing closure contracts
+// mirrored from the macs package's smoke discipline:
+//
+//   - The single-arm closure is non-nil.
+//   - The single-arm closure is deterministic — two invocations with
+//     the same seed over the same data return byte-identical output.
+//   - When a batched arm is non-nil, four parallel probes with the
+//     same seed / data yield byte-identical output tuples matching the
+//     single-arm result.
+//
+// A registered custom primitive that fails any of these bars silently
+// corrupts a Triple Ouroboros container at encrypt time; failing
+// registration fail-fast surfaces the misconfiguration at the earliest
+// possible boundary. The check runs only against user-registered
+// factories via [Register]; shipped [Registry] entries are exercised
+// by the round-trip test suite.
+func smokeValidate(spec Spec) error {
+	probe := []byte("hashes: register smoke probe")
+	switch spec.Width {
+	case W128:
+		single, batched, key, err := spec.Make128Pair()
+		if err != nil {
+			return fmt.Errorf("hashes: Register: %q Make128Pair(): %w", spec.Name, err)
+		}
+		if single == nil {
+			return fmt.Errorf("hashes: Register: %q Make128Pair returned a nil single-arm closure", spec.Name)
+		}
+		_ = key
+		lo1, hi1 := single(probe, 0, 0)
+		lo2, hi2 := single(probe, 0, 0)
+		if lo1 != lo2 || hi1 != hi2 {
+			return fmt.Errorf("hashes: Register: %q is non-deterministic (two single-arm calls over the same input disagree)", spec.Name)
+		}
+		if batched != nil {
+			var lanes [4][]byte
+			for i := range lanes {
+				lanes[i] = probe
+			}
+			var seeds [4][2]uint64
+			out := batched(&lanes, seeds)
+			for i := 0; i < 4; i++ {
+				if out[i][0] != lo1 || out[i][1] != hi1 {
+					return fmt.Errorf("hashes: Register: %q batched-arm lane %d diverges from the single-arm result over identical inputs", spec.Name, i)
+				}
+			}
+		}
+	case W256:
+		single, batched, key, err := spec.Make256Pair()
+		if err != nil {
+			return fmt.Errorf("hashes: Register: %q Make256Pair(): %w", spec.Name, err)
+		}
+		if single == nil {
+			return fmt.Errorf("hashes: Register: %q Make256Pair returned a nil single-arm closure", spec.Name)
+		}
+		_ = key
+		var zseed [4]uint64
+		a := single(probe, zseed)
+		b := single(probe, zseed)
+		if a != b {
+			return fmt.Errorf("hashes: Register: %q is non-deterministic (two single-arm calls over the same input disagree)", spec.Name)
+		}
+		if batched != nil {
+			var lanes [4][]byte
+			for i := range lanes {
+				lanes[i] = probe
+			}
+			var seeds [4][4]uint64
+			out := batched(&lanes, seeds)
+			for i := 0; i < 4; i++ {
+				if out[i] != a {
+					return fmt.Errorf("hashes: Register: %q batched-arm lane %d diverges from the single-arm result over identical inputs", spec.Name, i)
+				}
+			}
+		}
+	case W512:
+		single, batched, key, err := spec.Make512Pair()
+		if err != nil {
+			return fmt.Errorf("hashes: Register: %q Make512Pair(): %w", spec.Name, err)
+		}
+		if single == nil {
+			return fmt.Errorf("hashes: Register: %q Make512Pair returned a nil single-arm closure", spec.Name)
+		}
+		_ = key
+		var zseed [8]uint64
+		a := single(probe, zseed)
+		b := single(probe, zseed)
+		if a != b {
+			return fmt.Errorf("hashes: Register: %q is non-deterministic (two single-arm calls over the same input disagree)", spec.Name)
+		}
+		if batched != nil {
+			var lanes [4][]byte
+			for i := range lanes {
+				lanes[i] = probe
+			}
+			var seeds [4][8]uint64
+			out := batched(&lanes, seeds)
+			for i := 0; i < 4; i++ {
+				if out[i] != a {
+					return fmt.Errorf("hashes: Register: %q batched-arm lane %d diverges from the single-arm result over identical inputs", spec.Name, i)
+				}
+			}
+		}
+	}
+	return nil
 }

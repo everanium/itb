@@ -27,6 +27,9 @@ func EncryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	if len(data) > maxDataSize {
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
 
 	tagSize := len(macFunc([]byte{}))
 	if tagSize == 0 {
@@ -344,6 +347,9 @@ func EncryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	}
 	if len(data) > maxDataSize {
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
+	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
 	}
 
 	tagSize := len(macFunc([]byte{}))
