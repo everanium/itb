@@ -10,11 +10,56 @@ This FAQ is the plain-language companion to [REDTEAM.md](REDTEAM.md), [SCIENCE.m
 
 **Framing.** This document is an analytical walkthrough of the reasoning that leads to the null-recovery observations recorded in REDTEAM.md — not a security proof, not a certification claim, not a guarantee that no attack exists. The picture presented below is the current architectural understanding as seen from the reasoning steps listed here. Audit findings that contradict any arrow in the reasoning would supersede the corresponding conclusion. The framing is «this is what the analysis currently shows», not «this is what the construction guarantees».
 
-Three questions, three primitives, one shared architectural pattern.
+Four questions, four primitives, one shared architectural pattern.
 
 ---
 
-## Question 1 — What if I write a three-line `jokeHash`?
+## Question 1 — What if the primitive is even more degenerate than `jokeHash`?
+
+**Reader's setup.** «What if I plug in a two-line primitive weaker than `jokeHash` — one that reads only `data[0]` and the low byte of each seed word, and discards everything else? Under the shipped Triple + Interlocked Barrier construction, is that finally the case where the barrier fails?»
+
+```
+nullHash(data, seed0, seed1):
+    d = data[0] if len(data) > 0 else 0
+    return (d ^ (seed0 & 0xFF), d ^ (seed1 & 0xFF))
+```
+
+### Current analytical picture
+
+`nullHash` violates the barrier's entropy-floor reduction target. Under `Seed128.ChainHash128`'s four-round cascade at 512-bit key, the `data[0]` byte cancels on every even-numbered round because the XOR-carry between the previous-round state (only the low byte carries information under `nullHash`) and the next-round data byte collapses. Final `(hLo, hHi)` degenerates to a pure per-seed 16-bit constant — independent of pixel index and independent of nonce content. Every per-pixel encoder decision becomes a static function of five collapsed 16-bit constants, identical across every pixel of every message.
+
+### Empirical measurement across four attacker threat-model tiers
+
+Attack code: `redteam_nullhash_attack_test.go`, Go build tag `redteam`. Measured on i7-11700K, 512-byte plaintext, 25×25 = 625-pixel container, one victim-freshly-generated ciphertext per tier.
+
+| Threat model | Wall-clock | Recovery |
+|---|---|---|
+| Full KPA + startPixels given | ~285 ms | unique |
+| Crib KPA (48 bytes) + startPixels given | ~315 ms | unique |
+| Crib KPA (48 bytes) + startPixels brute (208³ enumeration) | ~1.25 s | unique |
+| COA (2 wires) + content-agnostic COBS gate | ~2.9 s | ~256 candidates, structural ambiguity |
+
+Under any Full or Crib KPA the recovery is unique. The 48-byte crib alone gives a 128-bit lane-prefix anchor (8 six-byte Part 1 chunks, each with a lockSeed-derived mask) that massively over-constrains the 16-bit collapsed lock. Enumerating the startPixel cube adds only ~4× in wall-clock and does not break uniqueness — the lane-prefix anchor remains decisive.
+
+Under pure ciphertext-only attack the low byte of `lockSeed` retains an irreducible ~8-bit structural ambiguity. The attack recovers `noisePos`, all three `startPixels`, all three `dataSeed` low bytes and the HIGH byte of `lockSeed`, but ~256 candidate `lockSeed` low bytes remain admissible — each producing a distinct 512-byte candidate plaintext, exactly one of which is the true plaintext. Multi-ciphertext does not resolve this residual: under `nullHash` every derivation (mask triple, `startPixel`, all per-role hash outputs) is nonce-independent, so extra messages give the same ambiguity structure and add no cross-message constraint. Only a content-oracle (schema parsing, entropy heuristic, printable-ASCII test) can pick the true plaintext among the ~256 candidates — and that violates content-agnostic COA by definition.
+
+### Reproduction
+
+```
+go test -tags redteam -run TestRedTeamNullHashAttack ./ -v
+```
+
+Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red-team probe layout; override via `REDTEAM_NULLHASH_OUTPUT_DIR`. Per-stage entry points: `TestRedTeamNullHashAttack` (Full KPA), `TestRedTeamNullHashAttackCrib` (Crib + startPixels given), `TestRedTeamNullHashAttackCribNoStartPixels` (Crib + startPixels brute), `TestRedTeamNullHashAttackNoKPA` (ciphertext-only, 2 wires). Each attack test regenerates its own expose files at start, so ordering under `go test -tags redteam ./` is irrelevant.
+
+### Conclusion
+
+`nullHash` violates the entropy-floor reduction target: the barrier absorbs a primitive's algebraic weakness (T-function structure, GF(2)-linearity, poor multiplier diffusion) **when the primitive's cascade output does not collapse to a per-seed constant**. Once the primitive collapses, the barrier's per-chunk mask independence collapses with it and the attack surface reduces to the observable-bit budget on the wire (~42 bits out of 80 nominal for the shipped constellation), which is trivially brute-forceable under any KPA. The positive residual under pure content-agnostic ciphertext-only — an irreducible ~8-bit structural ambiguity on the `lockSeed` low byte — is what the barrier layers still architecturally contribute even at the entropy floor.
+
+The `nullHash` attack path is structurally closed under `jokeHash`: `jokeHash`'s multiply-add fold retains full 64-bit accumulated state per invocation, `ChainHash128` does not collapse under it, per-pixel decisions vary per pixel and per nonce, per-chunk masks vary across chunks. See [Question 2](#question-2--what-if-i-write-a-three-line-jokehash) below for the empirical closure of every reduction step the `nullHash` attack used.
+
+---
+
+## Question 2 — What if I write a three-line `jokeHash`?
 
 **Reader's setup.** «Suppose I plug into all eight ITB seed roles this three-line primitive — initialise the accumulator from `seed0`, mix each data byte via a small odd multiplier plus add, complement for the second lane:
 
@@ -119,9 +164,36 @@ Honest phrasing: the shipped barrier absorbs the observation channel that a plai
 
 The reasoning arrows above and the numbers here point at the same picture: through the shipped barrier under attacker-realism, even a three-line invertible primitive gives the same plaintext-content-recovery surface as a well-designed one — because the barrier's absorption acts before the primitive's output can be observed. A separate weaker channel — a plaintext-Hamming-weight distinguisher visible only under repeat-plaintext CPA with a poorly-diffused primitive — remains open, and closing it is what shipped primitives with adequate output diffusion (all shipped-registry entries qualify, and even CRC128 and FNV-1a as stress controls qualify on this specific measurement) already do.
 
+### Empirical reduction-closure verification
+
+Attack code: `redteam_jokehash_fullkpa_test.go`, `TestRedTeamJokeHashFullKPA` (Go build tag `redteam`). Measured on i7-11700K, same 512-byte plaintext / 25×25 container as Question 1 for direct comparability.
+
+| Threat model | Wall-clock | Recovery |
+|---|---|---|
+| Full KPA + startPixels given | ~40 ms (reduction-closure analysis) | attack does not converge — every path closed |
+| Crib KPA (48 bytes) + startPixels given / brute | not run | pointless — Full KPA already gives no Part 2 foothold |
+| COA (2 wires) | not run | pointless — same reasoning |
+
+Effective safety margin under Full KPA: **~2^256+ compute** for the joint recovery, structural closure of every layer the `nullHash` attack ([Question 1](#question-1--what-if-the-primitive-is-even-more-degenerate-than-jokehash)) used. `TestRedTeamJokeHashFullKPA` empirically confirms four independent reduction paths are all closed under `jokeHash`:
+
+| Reduction path | `nullHash` (cascade collapses) | `jokeHash` (cascade non-collapsing) |
+|---|---|---|
+| Effective key bits per seed role | 16 (per-seed constant) | 256 (four even components fully engaged) |
+| Distinct hash outputs across N = 1000 pixels | 1 (identical every pixel) | 1000 / 1000 |
+| Distinct mask triples across 86 chunks | 1 (message-wide constant) | 86 / 86 |
+| Part 2 known-plaintext under plaintext-level Full KPA | given (all encoder decisions constant) | closed (locked lanes require unrank via 256-bit lockSeed) |
+
+All four paths closed simultaneously. The attack does not converge because every reduction step the `nullHash` Stage 1 attack (~285 ms unique recovery) exploited is empirically demonstrated closed here.
+
+**Reproduction:**
+
+```
+go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v
+```
+
 ---
 
-## Question 2 — CRC128 is GF(2)-linear. Can I use compound-key linear algebra to break ITB?
+## Question 3 — CRC128 is GF(2)-linear. Can I use compound-key linear algebra to break ITB?
 
 **Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any crib KPA on Single Ouroboros. Why does that path not carry into the shipped construction?»
 
@@ -257,7 +329,7 @@ Exactly this aspect makes the barrier «structurally unmeasurable at attacker-re
 
 ---
 
-## Question 3 — FNV-1a has the T-function property. Doesn't that break the barrier?
+## Question 4 — FNV-1a has the T-function property. Doesn't that break the barrier?
 
 **Reader's setup.** «FNV-1a's round is `h = (h XOR byte) * FNV_PRIME`. Multiplication modulo `2^64` is not GF(2)-linear (carry chain), but it has the T-function property (Klimov & Shamir 2002) — output bit `t` depends only on input bits `0..t`, invertible plane-by-plane in `O(n^2)`. Under Single Ouroboros the archived Phase 2g SAT recovered `dataSeed` lo-lane in `~8h` single-core on 4 cribs + disclosed `startPixel` at `keyBits = 512`. Does that path carry into the shipped construction?»
 

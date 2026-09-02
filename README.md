@@ -8,8 +8,8 @@
 
 <p align="center">
   <a href="https://pkg.go.dev/github.com/everanium/itb"><img src="https://pkg.go.dev/badge/github.com/everanium/itb.svg" alt="Go Reference"></a>
-  <a href="https://goreportcard.com/report/github.com/everanium/itb"><img src="https://goreportcard.com/badge/github.com/everanium/itb" alt="Go Report Card"></a>
-  <a href="https://github.com/everanium/itb"><img src="https://img.shields.io/badge/coverage-92%25-brightgreen" alt="Coverage"></a>
+  <a href="https://golangci-lint.run"><img src="https://img.shields.io/badge/golangci--lint-passing-green" alt="golangci-lint"></a>
+  <a href="https://github.com/everanium/itb"><img src="https://img.shields.io/badge/coverage-88%25-green" alt="Coverage"></a>
 </p>
 
 # ITB — Information-Theoretic Barrier with Ambiguity-Based Security
@@ -610,6 +610,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `BarrierFill` | `int > 0` (or 0 = default) | CSPRNG barrier fill margin; profile default varies. |
 | `ChunkSize` | `int > 0` bytes (or 0 = default) | Streaming chunk-size budget; default `itb.DefaultChunkSize` = 16 MiB. |
 | `MacName` | `"kmac256"` \| `"hmac-sha256"` \| `"hmac-blake3"` | The shipped MACs (see `macs/registry.go`). Empty = profile default. Non-MAC profiles ignore. |
+| `TagStubSize` | `int` in `[16, 64]` (or 0 = default) | Overrides the profile's `TagStubSize` — the No MAC envelope's CSPRNG dummy stub reservation, pinned to a paired MAC counterpart's tag length for wire-shape indistinguishability. Resolution: Opts > Profile > MacName auto-probe > 32-byte default (every shipped MAC's tag length). The floor matches the `macs.Register` TagSize ≥ 16 contract; the ceiling covers the longest realistic MAC tag. Meaningful for No MAC profiles paired with a custom-tag-size MAC counterpart. |
 | `InnerHash` | one of the shipped primitive names below | Empty = profile default. |
 | `MixedHashes` | `[8]string`, all slots one of the shipped primitive names below | Zero-value array (all slots empty) = profile default. When any slot is non-empty, all 8 must be non-empty, every entry's primitive width must equal the effective width, and the override wins over `InnerHash` (both dispatch paths are mutually exclusive). Slot ordering: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`. |
 | `KeyBits` | `512` / `1024` / `2048` (or 0 = default) | Integer multiple of the primitive's native hash width (128 / 256 / 512). |
@@ -653,7 +654,7 @@ Name rules for `RegisterProfile`:
 - Must not start with one of the reserved shipped-catalogue prefixes: `singlemsg-`, `streaming-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
 - Must not already be registered; re-registration returns `triple.ErrProfileExists`.
 
-Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default). `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]. `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
 
 Worked example — installing a 256-bit BLAKE3 Streaming AEAD variant and using it identically to a shipped profile:
 
@@ -941,12 +942,12 @@ func main() {
 
 **User-Driven Loop counterpart.** Callers who prefer to drive the read / write loop from their own code (external control over chunk granularity, back-pressure, or interleaved work between chunks) use the typed User-Driven Loop entries `itb.EncryptStreamAuth3x{128,256,512}Cfg(cfg, 8 seeds, data, chunkSize, mac, emit func([]byte) error)`, `itb.EncryptStream3x{128,256,512}Cfg(cfg, 8 seeds, data, chunkSize, emit func([]byte) error)` and their `Decrypt` counterparts. The `emit` callback receives each wire chunk as it lands; the caller is responsible for framing, back-pressure, and disposition. The IO-Driven and User-Driven Loop variants produce identical on-wire bytes.
 
-### Custom user-supplied primitives
+### Custom user-supplied hashes
 
 A user primitive is pluggable at the Low-Level surface in two shapes.
 
 - **Closure-directly-passed.** Construct `itb.HashFunc{N}` (single-call) and `itb.BatchHashFunc{N}` (batched-arm) closures per seed slot and pass them directly to the `*Cfg` Low-Level entry point. The primitive is responsible for its own keying and pooling; ITB's per-pixel dispatcher wires both arms through the seed's `Hash` and `BatchHash` fields. The primitive stays local to the constructing call site — `hashes.Find` does not resolve it.
-- **Registered by name via `hashes.Register(spec hashes.Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `hashes.MaxNameLen = 12` characters — the cap matches `parallax.MaxCipherNameLen` so the registered primitive fits `"<name>:<index>"` inside a 16-byte 128-bit-PRF input block if the caller later wires it into a parallax palette entry), `Width` (`W128` / `W256` / `W512`), and exactly one `Make{N}Pair` factory field matching the width. Registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register` for the same name returns `hashes.ErrHashExists`. The shipped `hashes.Registry` itself is untouched, so the FFI iteration surface (`ITB_HashName` / `ITB_HashWidth`) is unaffected. `hashes.Register` is a Go-native API only; bindings are triple-only and do not expose custom-primitive plug.
+- **Registered by name via `hashes.Register(spec hashes.Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `hashes.MaxNameLen = 12` characters — the cap matches `parallax.MaxCipherNameLen` so the registered primitive fits `"<name>:<index>"` inside a 16-byte 128-bit-PRF input block if the caller later wires it into a parallax palette entry), `Width` (`W128` / `W256` / `W512`), and exactly one `Make{N}Pair` factory field matching the width. Two further optional fields — `HashHash func() hash.Hash` and `KeyedHash func(key []byte) (hash.Hash, error)` — opt the primitive into cross-package MAC composition through `macs.BuildHMAC` / `macs.BuildKeyedHash` (see [Custom user-supplied MACs](#custom-user-supplied-macs)). Registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register` for the same name returns `hashes.ErrHashExists`. The shipped `hashes.Registry` itself is untouched, so the FFI iteration surface (`ITB_HashName` / `ITB_HashWidth`) is unaffected. `hashes.Register` is a Go-native API only; bindings are triple-only and do not expose custom-primitive plug.
 
 The registered path composes with the `triple.Pipeline` facade: `triple.Init(profile, opts)` selects primitives by name via `hashes.Find`, so a registered name is reachable through the same facade the shipped primitives use. Closure-directly-passed primitives are reachable only through the Low-Level `*Cfg` entry points.
 
@@ -975,6 +976,81 @@ func init() {
 }
 ```
 
+### Custom user-supplied macs
+
+The MAC surface is pluggable in the same two shapes.
+
+- **Closure-directly-passed.** Construct an `itb.MACFunc` closure (and optionally the matching `itb.MACIncrementalFunc` arm) and pass it directly to the MAC Authenticated Low-Level entry points. The closure owns its keying and pooling; it stays local to the constructing call site — `macs.Find` does not resolve it.
+- **Registered by name via `macs.Register(spec macs.Spec) error`.** The custom MAC gains a canonical name that `macs.Find` / `macs.Make` / `macs.MakeIncremental` / `macs.MakeMACPair` resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `macs.MaxNameLen = 12`), `KeySize` ≥ `MinKeyBytes` ≥ 16, `TagSize` ≥ 16, a required `MakeMAC` factory, and an optional `MakeIncrementalMAC` factory — when nil, `Register` synthesizes a concatenate-then-MAC arm equivalent by construction. `Register` smoke-validates the factories with a throwaway key (constant tag length, determinism, incremental / one-shot equivalence) before accepting the Spec. Registration is process-wide and immutable — a second `Register` for the same name returns `macs.ErrMACExists`. The shipped `macs.Registry` itself is untouched, so the FFI iteration surface (`ITB_MACCount` / `ITB_MACName`) is unaffected. `macs.Register` is a Go-native API only; bindings are triple-only and do not expose custom-MAC plug.
+
+Two builder helpers produce a `macs.Spec` ready for `Register` from a hash-registry primitive name, honouring every closure contract by construction: `macs.BuildHMAC(hashName, macs.HMACSpec)` wraps a primitive's unkeyed `hash.Hash` form in the HMAC construction (RFC 2104), and `macs.BuildKeyedHash(hashName, macs.KeyedHashSpec)` uses a primitive's native keyed mode directly where that keyed form is itself a sound PRF. The name resolves through `hashes.Find`, so a user-registered custom hash composes the same way as a shipped one — `BuildHMAC` requires the source primitive to expose its `hash.Hash` form via the optional `hashes.Spec.HashHash` field, and `BuildKeyedHash` its native keyed mode via `hashes.Spec.KeyedHash`; a primitive without the matching field (Areion, AES-CMAC, ChaCha20, custom hashes registered without one) is rejected with a clear error and registers through the fully hand-rolled `macs.Register` path instead. `macs.MakeMACPair(name, key)` resolves both arms plus the Spec in one call.
+
+The registered path composes with the `triple.Pipeline` facade: a registered profile's `MacName` (or `triple.Opts.MacName` override) referencing the custom name initialises, encrypts, decrypts, and round-trips seed blobs with no further plumbing.
+
+```go
+import (
+    "github.com/everanium/itb/macs"
+    "github.com/everanium/itb/triple"
+)
+
+func init() {
+    spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{Name: "b2b512_mac"})
+    if err != nil {
+        panic(err)
+    }
+    if err := macs.Register(spec); err != nil {
+        panic(err)
+    }
+}
+
+// "b2b512_mac" now resolves by name through the facade:
+_ = triple.RegisterProfile("team-b2b512-v1", triple.Profile{
+    Mode: "singlemsg-mac", Width: 512, InnerHash: "areion512",
+    KeyBits: 1024, MacName: "b2b512_mac",
+})
+p, blob, _ := triple.Init("team-b2b512-v1", triple.Opts{})
+```
+
+A fully hand-rolled `macs.Spec` — the parallel of the hand-rolled custom-primitive path on the hashes side — registers a caller-written construction with no builder involved. This is the path for any keyed PRF the builders do not cover: a primitive without a `hash.Hash` form, a national-standard MAC, an HSM-backed keyed transform.
+
+```go
+import (
+    "crypto/hmac"
+
+    "golang.org/x/crypto/sha3"
+
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/macs"
+)
+
+func init() {
+    err := macs.Register(macs.Spec{
+        Name:        "hmac_sha3",
+        KeySize:     32,
+        MinKeyBytes: 16,
+        TagSize:     32,
+        MakeMAC: func(key []byte) (itb.MACFunc, error) {
+            keyCopy := append([]byte(nil), key...)
+            return func(data []byte) []byte {
+                h := hmac.New(sha3.New256, keyCopy)
+                h.Write(data)
+                return h.Sum(nil)
+            }, nil
+        },
+        // MakeIncrementalMAC omitted — Register synthesizes the
+        // concatenate-then-MAC arm, equivalent by construction.
+    })
+    if err != nil {
+        panic(err)
+    }
+}
+
+// "hmac_sha3" now resolves through macs.Make and any
+// triple.Profile.MacName / triple.Opts.MacName reference.
+```
+
+**Cross-process contract.** A seed blob exported under a custom MAC name records the name, not the construction. The opening process must have registered the same name with the same construction before `triple.Open` (or `Blob{N}.Import3Cfg` + `macs.Make`); a missing registration fails with an unknown-MAC error, and a divergent construction under the same name surfaces as a MAC failure at decrypt. Full API detail, closure contracts, and builder documentation live in [`macs/README.md`](macs/README.md).
+
 ### Runtime tuning (memory / GC)
 
 Go-native callers reach the Go runtime memory / GC pacing knobs through `itb.SetMemoryLimit(N)` and `itb.SetGCPercent(P)`. Both are **process-global** — they call directly into `runtime/debug.SetMemoryLimit` and `runtime/debug.SetGCPercent` and therefore affect the entire Go runtime, including every concurrently-running `triple.Pipeline` (or Low-Level `*Cfg` call) in the same process. They are orthogonal to any per-Pipeline configuration on `*itb.Config` / `triple.Opts`; the Pipeline knobs govern per-instance encryption behaviour, not the runtime's heap-size or GC-trigger pacing. Pass `-1` to either setter to query the current value without changing it.
@@ -986,6 +1062,12 @@ Both knobs are additionally readable from the environment at libitb load time vi
 **Per-Pipeline memory / GC control is not available.** The Go runtime does not expose per-goroutine or per-object memory-limit / GC-percent scopes, so the setters cannot be scoped to one `Pipeline` while another Pipeline in the same process observes a different setting. Applications that need distinct heap regimes for distinct workloads run them in separate processes.
 
 The `triple/` package does not re-export these setters; Go-native users who wire a `triple.Pipeline` and want the runtime tuners in the same call site `import "github.com/everanium/itb"` alongside `import "github.com/everanium/itb/triple"` to reach `itb.SetMemoryLimit` / `itb.SetGCPercent` directly.
+
+### Tuning microBatch and hash-pool
+
+Two environment-configurable knobs read once at package `init()` shape the CGO pixel encoder's adaptive per-call batch stride (`ITB_MICROBATCH_TIERS`) and the paired-hash factories' scratch-buffer pool tiers (`ITB_HASHPOOL_STARTERS`). Defaults suit the shipping profile; deviations are worth measuring per host and workload rather than assumed.
+
+The sweep runner (`scripts/bench/sweep.sh`), the env-var grammar, the compact per-policy result format, and a ready-to-run menu of alternative policies (`3tier-mid65536`, `3tier-mid131072`, `wider-upper`, `always-wide`, `pre-adaptive`, `single-large-pool`, and more) live in [`scripts/bench/`](scripts/bench/) — start there when calibrating a new host.
 
 ## Hash primitives (`hashes/`)
 
@@ -1111,8 +1193,8 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Property | ITB |
 |---|---|
 | Key space | Up to 2^2048 |
-| Grover resistance | √P × 2^keyBits (Core / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
-| Plausible deniability | Every mode (wrong seed → garbage indistinguishable from valid plaintext) |
+| Grover resistance | √P × 2^keyBits (Core ITB / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
+| Plausible deniability | Core ITB / MAC + Silent Drop (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; CSPRNG residue adds independent ambiguity in data positions) |
 | Interlocked Barrier | Always on; per-chunk 48-bit keyed permutation over three snakes; per-chunk mask space ≈ 2^70.20 balanced partitions |
 | 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
@@ -1124,6 +1206,25 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
 | Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |
 | Storage overhead | 1.14× (56 data bits per 64-bit pixel) |
+
+### Interlocked Barrier — combinadic unrank routing layer
+
+The always-on Interlocked Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the `lockSeed` cascade under domain tag `0x04`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every snake receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap.
+
+Four architectural properties emerge simultaneously from the same layer:
+
+- **Diffusion.** 48 input bits are dispersed across 3 × 16-bit output lanes, distributing every plaintext bit at 1-bit granularity across the three snakes.
+- **Confusion.** The rank → mask mapping is non-linear over GF(2) — integer arithmetic through binomial-coefficient tables produces bit-plane dependencies that neither linear cryptanalysis nor T-function DFS can decompose.
+- **Balance.** Every mask carries exactly 16 set bits; a rank-space anti-collapse rejection at derivation time prevents same-index mask-triple degeneracies.
+- **Key-dependency.** A fresh mask triple is derived per chunk from the `lockSeed` cascade output, so attacker-guessed masks never amortise across chunks.
+
+Neither the combinadic unrank routing layer nor the surrounding composition layers of ITB are cryptographic primitives:
+
+- **ChainHash** composes PRF invocations with XOR feedforward between rounds — a pure composition over the underlying PRF's output, adding no cryptographic content of its own.
+- **Interlock** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk, routing plaintext bits across the three snakes via PRF-derived masks.
+- **Per-pixel channel encoding** applies channel XOR + 7-bit rotation + noise-bit insertion per pixel under PRF-derived per-channel parameters — bit-level routing over PRF-derived material.
+
+None of these layers create entropy; they consume the entropy delivered by the underlying PRF primitive and route it through the ITB construction. As pure combinatorial and bit-routing algorithms with no secret material of their own, they fall outside cryptographic certification regimes (Wassenaar 5A002 and national equivalents) — those regimes cover primitives and the modules built on them, not routing / composition layers over PRF output.
 
 ## Formal security model
 

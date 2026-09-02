@@ -3,6 +3,7 @@ package hashes
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"hash"
 	"sync"
 
 	"golang.org/x/crypto/blake2s"
@@ -192,4 +193,21 @@ func BLAKE2s256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFun
 		return out
 	}
 	return single, batched
+}
+
+// blake2sHashHash backs the shipped registry entry's [Spec.HashHash]
+// field: the unkeyed BLAKE2s-256 hash.Hash form the HMAC
+// construction wraps. A nil key is always accepted by the upstream
+// constructor, so the error arm is unreachable.
+func blake2sHashHash() hash.Hash {
+	h, _ := blake2s.New256(nil)
+	return h
+}
+
+// blake2sKeyedHash backs the shipped registry entry's
+// [Spec.KeyedHash] field: BLAKE2s-256 in its native keyed mode. The
+// upstream constructor accepts key lengths up to 32 bytes and
+// returns an error for longer keys.
+func blake2sKeyedHash(key []byte) (hash.Hash, error) {
+	return blake2s.New256(key)
 }

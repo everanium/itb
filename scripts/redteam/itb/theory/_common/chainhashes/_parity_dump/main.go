@@ -2,7 +2,8 @@
 // triples that the Python chainhashes/ mirrors must reproduce bit-for-bit.
 //
 // Usage:
-//   go run scripts/redteam/itb/theory/_common/chainhashes/_parity_dump/main.go
+//
+//	go run scripts/redteam/itb/theory/_common/chainhashes/_parity_dump/main.go
 //
 // Output: JSON array on stdout. One entry per (primitive, test_vector) pair.
 // The Python side loads this via chainhashes/_parity_test.py and verifies
@@ -24,11 +25,11 @@ import (
 )
 
 type entry struct {
-	Primitive       string   `json:"primitive"`
-	DataHex         string   `json:"data_hex"`
+	Primitive      string   `json:"primitive"`
+	DataHex        string   `json:"data_hex"`
 	SeedComponents []uint64 `json:"seed_components"`
-	ExpectedLoHex   string   `json:"expected_lo_hex"`
-	ExpectedHiHex   string   `json:"expected_hi_hex"`
+	ExpectedLoHex  string   `json:"expected_lo_hex"`
+	ExpectedHiHex  string   `json:"expected_hi_hex"`
 }
 
 // --- t1ha1_64le (erthink/t1ha, LE variant) ----------------------------------

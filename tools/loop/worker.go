@@ -5,13 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	mrand "math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 // worker is one stress goroutine's private state. The plaintext buffer
-// is generated once at startup and never mutated; the wire and
+// is generated once at startup and mutated only by the rotating
+// payload mode (refilled in place before each iteration); the wire and
 // round-trip buffers are reused across iterations via Reset so the
 // steady-state allocation profile stays flat.
 type worker struct {
@@ -19,6 +21,14 @@ type worker struct {
 	plaintext []byte
 	wireBuf   bytes.Buffer
 	plainBuf  bytes.Buffer
+
+	// payloadMode is the plaintext content policy (payload* constants);
+	// rotating mode refills plaintext before every iteration.
+	payloadMode string
+
+	// rng is the deterministic plaintext source for seeded runs; nil
+	// selects crypto/rand (the default).
+	rng *mrand.ChaCha8
 
 	// Counters read concurrently by the monitor goroutine.
 	iters    atomic.Int64
@@ -59,14 +69,29 @@ func (w *worker) runLoop(ctx context.Context, r *runState, warmupWG *sync.WaitGr
 		if err := w.iterate(r, iter); err != nil {
 			return err
 		}
+		if err := w.maintenance(r, iter); err != nil {
+			return err
+		}
 	}
 }
 
 // iterate performs one encrypt -> decrypt -> compare round-trip on the
 // shared Pipeline. Under --shape both, even iterations exercise the
 // streaming surface and odd iterations the Single Message surface, so
-// both shapes interleave inside every worker.
+// both shapes interleave inside every worker. The whole round-trip
+// runs under the pipeMu read lock so pipeline-mutating maintenance
+// (Rekey, blob cycle) never lands between an encrypt and its matching
+// decrypt.
 func (w *worker) iterate(r *runState, iter int64) error {
+	if w.payloadMode == payloadRotating {
+		if err := fillPayload(payloadRotating, w.rng, w.plaintext); err != nil {
+			return fmt.Errorf("g%d iter %d: payload refill: %w", w.id, iter, err)
+		}
+	}
+
+	r.pipeMu.RLock()
+	defer r.pipeMu.RUnlock()
+
 	shape := r.cfg.shape
 	if shape == shapeBoth {
 		if iter%2 == 0 {

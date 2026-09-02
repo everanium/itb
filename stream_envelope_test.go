@@ -51,11 +51,12 @@ func installNonceBits(t *testing.T, bits int) {
 // The envelope-parity tests use this so the on-wire byte counts are
 // determined only by the chunk sizing arithmetic, not by any MAC
 // primitive's own state. The AEAD path uses tag length to size the
-// container's third snake — a 32-byte tag matches nomacTagStubSize's
-// canonical assumption and makes AEAD vs No-MAC chunk widths align.
+// container's third snake — a 32-byte tag matches
+// nomacTagStubSizeCfg's zero-value default and makes AEAD vs No MAC
+// chunk widths align.
 func dummy32MAC(data []byte) []byte { return make([]byte, 32) }
 
-// seedFixtures128 constructs eight fresh 128-bit Triple-Ouroboros
+// seedFixtures128 constructs eight fresh 128-bit Triple Ouroboros
 // seeds keyed by SipHash-2-4. Every seed slot uses the same primitive
 // but carries its own random Components under NewSeed128, matching
 // the fixture shape the rest of itb_test uses.
@@ -83,7 +84,7 @@ func seedFixtures128(t *testing.T, bits int) (ns, ls, ds1, ds2, ds3, ss1, ss2, s
 	return
 }
 
-// seedFixtures256 constructs eight fresh 256-bit Triple-Ouroboros
+// seedFixtures256 constructs eight fresh 256-bit Triple Ouroboros
 // seeds keyed by BLAKE3-256.
 func seedFixtures256(t *testing.T, bits int) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256) {
 	t.Helper()
@@ -110,7 +111,7 @@ func seedFixtures256(t *testing.T, bits int) (ns, ls, ds1, ds2, ds3, ss1, ss2, s
 	return
 }
 
-// seedFixtures512 constructs eight fresh 512-bit Triple-Ouroboros
+// seedFixtures512 constructs eight fresh 512-bit Triple Ouroboros
 // seeds keyed by Areion-SoEM-512.
 func seedFixtures512(t *testing.T, bits int) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) {
 	t.Helper()
@@ -159,9 +160,9 @@ func randomPlaintext(t *testing.T, n int) []byte {
 
 // TestStreamEnvelopeParityAEADvsNoMAC verifies that the wire byte
 // length of a Streaming AEAD stream equals the wire byte length of
-// the corresponding No-MAC stream at every plaintext size — the D18
+// the corresponding No MAC stream at every plaintext size — the D18
 // mode-ambiguity invariant. The dummy32MAC yields 32-byte tags,
-// matching the No-MAC nomacTagStubSize convention. A fixed nonce is
+// matching the No MAC nomacTagStubSizeCfg default. A fixed nonce is
 // injected via testNonceOverride so the mask-driven byte
 // distribution across the three snakes is identical on both paths,
 // which in turn makes COBS-encoded lengths and container sizes
@@ -346,7 +347,7 @@ func TestStreamEnvelopeRoundTripByteExact(t *testing.T) {
 
 // TestStreamEnvelopeEdgeCases exercises the corner-case plaintext
 // sizes (1-byte and larger) across all three nonce widths and both
-// AEAD / No-MAC modes. Round-trip byte-exact recovery is the success
+// AEAD / No MAC modes. Round-trip byte-exact recovery is the success
 // criterion.
 func TestStreamEnvelopeEdgeCases(t *testing.T) {
 	edges := []int{1, 6, 4096}
@@ -362,7 +363,7 @@ func TestStreamEnvelopeEdgeCases(t *testing.T) {
 				t.Run(fmt.Sprintf("size=%d", sz), func(t *testing.T) {
 					plaintext := randomPlaintext(t, sz)
 
-					// No-MAC round-trip (empty input → empty wire, both
+					// No MAC round-trip (empty input → empty wire, both
 					// sides handle it cleanly).
 					var nomacWire, nomacBack bytes.Buffer
 					switch wCfg.width {
@@ -437,7 +438,7 @@ func TestStreamEnvelopeEdgeCases(t *testing.T) {
 // TestStreamEnvelopeChunkSizes covers a spread of chunk sizes with
 // plaintexts that straddle boundaries — single-chunk, exactly one
 // chunk boundary, two chunks, and heavy multi-chunk. Round-trip
-// byte-exactness is the correctness check on both AEAD and No-MAC
+// byte-exactness is the correctness check on both AEAD and No MAC
 // paths, so a chunk-boundary off-by-one in the prefix or stub logic
 // surfaces here.
 func TestStreamEnvelopeChunkSizes(t *testing.T) {
@@ -457,7 +458,7 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 				plaintext := randomPlaintext(t, sz)
 				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures128(t, 512)
 
-				// No-MAC round-trip
+				// No MAC round-trip
 				var wireA, backA bytes.Buffer
 				if err := EncryptStream3xCfg(testStreamNonceCfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, bytes.NewReader(plaintext), &wireA, cs); err != nil {
 					t.Fatalf("No-MAC encrypt: %v", err)
@@ -487,11 +488,11 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 
 // TestSingleMessageEnvelopeParityAEADvsNoMAC asserts the on-wire byte
 // length of a Single Message AEAD ciphertext equals the byte length
-// of the corresponding Single Message No-MAC ciphertext for the same
+// of the corresponding Single Message No MAC ciphertext for the same
 // plaintext, seeds and nonce. Both paths reserve tagSize + 1 bytes in
 // the third snake's container capacity (AEAD: real tag + fixed 0x00
-// dummy flag; No-MAC: pure CSPRNG stub via nomacTagStubSize), so the
-// two containers round to the identical square and the resulting
+// dummy flag; No MAC: pure CSPRNG stub via nomacTagStubSizeCfg), so
+// the two containers round to the identical square and the resulting
 // wire byte counts are equal.
 func TestSingleMessageEnvelopeParityAEADvsNoMAC(t *testing.T) {
 	const plaintextSize = 1024
@@ -615,14 +616,14 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 // mode-ambiguity envelope invariants (items 1/2/3) via the Cfg
 // IO-Driven path. With a fixed plaintext + fixed 8 seeds
 // + fixed nonce + fixed chunkSize, encrypt through both
-// [EncryptStream3xCfg] (No-MAC) and [EncryptStreamAuth3xCfg] (AEAD)
+// [EncryptStream3xCfg] (No MAC) and [EncryptStreamAuth3xCfg] (AEAD)
 // using the same *Config and assert:
 //
 //  1. Per-chunk byte lengths are identical across the two modes.
 //  2. Full-stream byte lengths are identical across the two modes.
 //
-// The dummy32MAC yields 32-byte tags, matching the No-MAC
-// nomacTagStubSize convention; a fixed nonce is injected via
+// The dummy32MAC yields 32-byte tags, matching the No MAC
+// nomacTagStubSizeCfg default; a fixed nonce is injected via
 // testNonceOverride so the mask-driven byte distribution across the
 // three snakes is identical on both paths, which in turn makes
 // COBS-encoded lengths and container sizes identical.
@@ -686,12 +687,12 @@ func TestStreamCfgEnvelopeParity_NoMACvsAEAD(t *testing.T) {
 
 					// Per-chunk length parity. Both wires carry a
 					// streamIDPrefixLen prefix (streamID on AEAD, dummy
-					// prefix on No-MAC) then a sequence of chunks whose
+					// prefix on No MAC) then a sequence of chunks whose
 					// header layout ParseChunkLenCfg can walk.
 					aeadBytes := aeadWire.Bytes()
 					plainBytes := plainWire.Bytes()
 					if len(aeadBytes) < streamIDPrefixLen || len(plainBytes) < streamIDPrefixLen {
-						// Empty-plaintext-with-No-MAC edge is not in the
+						// Empty-plaintext with No MAC edge is not in the
 						// sizes list; nothing to walk.
 						return
 					}

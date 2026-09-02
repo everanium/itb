@@ -23,7 +23,7 @@ import (
 // generated seeds / masters and still observe identical wire
 // byte-lengths at the floor.
 //
-// The Streaming AEAD path prepends a 32-byte streamID; the No-MAC
+// The Streaming AEAD path prepends a 32-byte streamID; the No MAC
 // path prepends a 32-byte dummy prefix. Both prefixes are the same
 // length so full-stream lengths remain comparable.
 //

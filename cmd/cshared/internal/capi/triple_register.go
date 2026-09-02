@@ -38,7 +38,11 @@ import (
 //     exclusive.
 //   - keyBits              — positive integer multiple of width.
 //   - macName              — canonical MAC primitive name (empty for
-//     No-MAC profiles).
+//     No MAC profiles).
+//   - tagStubSize          — decimal integer No MAC stub reservation
+//     size in bytes (see [triple.Profile.TagStubSize]); accepted
+//     values are 0 or 16..64 inclusive; absent = 0 (defer to the
+//     MacName auto-probe or the 32-byte default).
 //   - outerCipher          — canonical wrapper cipher name; required
 //     when wrapperOn=true.
 //   - parallaxPalette      — comma-separated wrapper cipher names.
@@ -128,6 +132,15 @@ func parseTripleRegisterOpts(query string) (triple.Profile, error) {
 			prof.KeyBits = n
 		case "macName":
 			prof.MacName = v
+		case "tagStubSize":
+			n, ierr := strconv.Atoi(v)
+			if ierr != nil {
+				return prof, fmt.Errorf("register-profile opts tagStubSize: %w", ierr)
+			}
+			if n != 0 && (n < 16 || n > 64) {
+				return prof, fmt.Errorf("register-profile opts tagStubSize=%d must be 0 or in [16, 64]", n)
+			}
+			prof.TagStubSize = n
 		case "outerCipher":
 			prof.OuterCipher = v
 		case "parallaxPalette":

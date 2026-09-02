@@ -12,7 +12,7 @@
 
   <PropertyGroup Label="Package metadata">
     <PackageId>EveraniumItb.VisualBasic</PackageId>
-    <Version>0.3.1</Version>
+    <Version>0.3.3</Version>
     <Authors>everanium</Authors>
     <Description>VB.NET binding for ITB (information-theoretic barrier) cipher — thin proxy over the sibling C# binding's Triple Pipeline surface via CLR bytecode interop.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

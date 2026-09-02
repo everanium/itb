@@ -168,3 +168,41 @@ func TestTripleRegisterProfileSentinelDistinct(t *testing.T) {
 	}
 	pipe.Close()
 }
+
+// TestParseTripleRegisterOptsTagStubSize covers the tagStubSize
+// profile-shape key: accepted decimal value lands in
+// triple.Profile.TagStubSize, absent key leaves the zero value
+// (defer to the MacName auto-probe or the 32-byte default), and a
+// non-numeric value is rejected.
+func TestParseTripleRegisterOptsTagStubSize(t *testing.T) {
+	prof, err := parseTripleRegisterOpts("tagStubSize=16")
+	if err != nil {
+		t.Fatalf("tagStubSize=16: %v", err)
+	}
+	if prof.TagStubSize != 16 {
+		t.Fatalf("TagStubSize = %d, want 16", prof.TagStubSize)
+	}
+	prof, err = parseTripleRegisterOpts("chunkSize=65536")
+	if err != nil {
+		t.Fatalf("absent tagStubSize: %v", err)
+	}
+	if prof.TagStubSize != 0 {
+		t.Fatalf("absent key: TagStubSize = %d, want 0", prof.TagStubSize)
+	}
+	if _, err := parseTripleRegisterOpts("tagStubSize=wide"); err == nil {
+		t.Fatal("tagStubSize=wide: accepted, want error")
+	}
+	// Out-of-range values (accepted set is 0 or [16, 64]) are rejected
+	// at the parser so the binding-side error surfaces before
+	// triple.RegisterProfile runs.
+	for _, v := range []string{"-1", "15", "65", "128"} {
+		if _, err := parseTripleRegisterOpts("tagStubSize=" + v); err == nil {
+			t.Errorf("tagStubSize=%s: accepted, want range rejection", v)
+		}
+	}
+	for _, v := range []string{"0", "16", "64"} {
+		if _, err := parseTripleRegisterOpts("tagStubSize=" + v); err != nil {
+			t.Errorf("tagStubSize=%s: rejected (%v), want accept", v, err)
+		}
+	}
+}

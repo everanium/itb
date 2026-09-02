@@ -88,9 +88,9 @@ func TestInterlockDomainTagDecorrelated(t *testing.T) {
 
 // TestDualNonceWireFormat confirms the dual-nonce header layout:
 // header is exactly 2N+4 bytes, both nonces sit at their fixed offsets
-// and are byte-distinct, the payload begins at 2N+4, and the No-MAC and
+// and are byte-distinct, the payload begins at 2N+4, and the No MAC and
 // MAC single-message wire envelopes remain equal in size (the shipped
-// AEAD/No-MAC indistinguishability invariant, preserved because both
+// AEAD/No MAC indistinguishability invariant, preserved because both
 // grow by the same 2N).
 func TestDualNonceWireFormat(t *testing.T) {
 	n := currentNonceSizeCfg(nil)
@@ -121,11 +121,11 @@ func TestDualNonceWireFormat(t *testing.T) {
 		t.Fatal("round-trip mismatch under dual-nonce header")
 	}
 
-	// AEAD / No-MAC single-message envelope sizes must match. Small
+	// AEAD / No MAC single-message envelope sizes must match. Small
 	// payload (777 B) — the MinPixels floor pads containers, so this
 	// primarily verifies that the floor absorbs the reserved-tail
 	// difference between simpleMACFunc's 8-byte tag (tagSize+1 = 9
-	// reserved) and the No-MAC nomacTagStubSize (32 + 1 = 33).
+	// reserved) and the No MAC nomacTagStubSizeCfg default (32 + 1 = 33).
 	ctMAC, err := EncryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, simpleMACFunc)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,8 @@ func TestDualNonceWireFormat(t *testing.T) {
 
 	// Envelope-parity sanity beyond the MinPixels floor: 100 KiB
 	// payload well above the floor's absorption range paired with a
-	// 32-byte MAC (matching nomacTagStubSize's 32 + 1 reservation) —
+	// 32-byte MAC (matching nomacTagStubSizeCfg's default 32 + 1
+	// reservation) —
 	// the two envelopes must match by construction (identical
 	// reserved-tail size), independent of any floor slack.
 	mac32Func := func(_ []byte) []byte { return make([]byte, 32) }

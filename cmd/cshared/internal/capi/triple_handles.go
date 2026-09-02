@@ -72,7 +72,11 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 //   - withParallax / withWrapper — "true" / "false" three-state
 //     override; absent = nil (profile default).
 //   - maxWorkers, nonceBits, barrierFill, chunkSize, keyBits,
-//     parallaxSegmentSize — decimal integer overrides.
+//     parallaxSegmentSize, tagStubSize — decimal integer overrides.
+//     tagStubSize overrides the profile's No MAC stub reservation
+//     size (see [triple.Opts.TagStubSize]); accepted values are 0
+//     or 16..64 inclusive; absent = 0 (profile default, falling
+//     through to the MacName auto-probe or the 32-byte default).
 //   - innerHash, macName, outerCipher — canonical primitive-name
 //     overrides.
 //   - innerHashes — comma-separated eight-entry per-slot primitive
@@ -160,6 +164,15 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 				return opts, fmt.Errorf("opts keyBits: %w", ierr)
 			}
 			opts.KeyBits = n
+		case "tagStubSize":
+			n, ierr := strconv.Atoi(v)
+			if ierr != nil {
+				return opts, fmt.Errorf("opts tagStubSize: %w", ierr)
+			}
+			if n != 0 && (n < 16 || n > 64) {
+				return opts, fmt.Errorf("opts tagStubSize=%d must be 0 or in [16, 64]", n)
+			}
+			opts.TagStubSize = n
 		case "parallaxSegmentSize":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {

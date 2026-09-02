@@ -4,7 +4,7 @@ import 'errors.dart';
 import 'ffi_bridge.dart';
 
 /// Binding package version, reported by the eitb CLI.
-const String bindingVersion = '0.3.1';
+const String bindingVersion = '0.3.3';
 
 /// Returns the libitb library version string.
 String libVersion() {

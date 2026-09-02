@@ -16,6 +16,20 @@
 // parallax on, wrapper on, KMAC256 MAC, Areion-SoEM-512 inner hash,
 // 1024-bit keys, and the compile-in 512-bit nonce width.
 //
+// Overrides beyond that shape: --profile exercises one registered
+// triple profile in place of the shape-based pair; --key-bits /
+// --nonce-bits / --chunk-size / --barrier-fill sweep the corresponding
+// [github.com/everanium/itb/triple.Opts] knobs; --gomaxprocs pins CPU
+// parallelism; --payload-mode swaps the plaintext content policy
+// (rotating CSPRNG refills or degenerate byte patterns — pattern modes
+// trade the cross-worker buffer distinctness above for content
+// edge-case coverage); --seed makes plaintexts deterministic for bug
+// reproduction (pipeline keys stay CSPRNG-drawn); --rekey-every and
+// --blob-cycle-every periodically rotate the outer-layer masters and
+// reopen the pipeline from its session blob; --json-output prints the
+// final summary as one JSON object. Every override defaults to the
+// production shape above.
+//
 // A monitor goroutine samples runtime state every 5 seconds (heap
 // alloc, heap objects, GC count, goroutine count, per-worker iteration
 // counters, aggregate throughput) and warns on goroutine-count or
@@ -37,7 +51,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"flag"
 	"fmt"
 	"os"
@@ -45,6 +58,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -64,6 +78,22 @@ const (
 // and each worker pins payload-sized buffers for the whole run.
 const maxWorkersFlag = 10
 
+// profileSurface maps every shipped triple profile with a cipher
+// surface to the shape its Mode exposes. --profile validation gates on
+// this map: the loop binary links only the shipped registry, so a name
+// outside it cannot resolve at Init time either. The blob-only profile
+// is deliberately absent — it carries no cipher surface to exercise.
+var profileSurface = map[string]string{
+	triple.ProfileStreamingAEADTripleMACV1:      shapeStream,
+	triple.ProfileStreamingNoAEADTripleV1:       shapeStream,
+	triple.ProfileSingleMsgTripleMACV1:          shapeMessage,
+	triple.ProfileSingleMsgTripleNoMACV1:        shapeMessage,
+	triple.ProfileStreamingAEADTripleMACMixedV1: shapeStream,
+	triple.ProfileStreamingNoAEADTripleMixedV1:  shapeStream,
+	triple.ProfileSingleMsgTripleMACMixedV1:     shapeMessage,
+	triple.ProfileSingleMsgTripleNoMACMixedV1:   shapeMessage,
+}
+
 // config carries the resolved CLI surface.
 type config struct {
 	duration   time.Duration
@@ -77,6 +107,18 @@ type config struct {
 	gogc       int   // 0 = leave the runtime default
 	parallax   bool
 	wrapper    bool
+
+	profile        string // non-empty = exercise this single registered profile
+	keyBits        int    // 0 = profile default
+	nonceBits      int    // 0 = profile default
+	chunkSize      int64  // 0 = profile default
+	barrierFill    int    // 0 = profile default
+	gomaxprocs     int    // 0 = inherit from the environment
+	rekeyEvery     int64  // per-worker iterations between Rekey calls; 0 = never
+	blobCycleEvery int64  // per-worker iterations between blob reopen cycles; 0 = never
+	payloadMode    string // plaintext content policy (payload* constants)
+	seed           uint64 // deterministic plaintext RNG seed; 0 = crypto/rand
+	jsonOutput     bool   // final summary as one JSON object
 }
 
 // runState is the shared context handed to workers and the monitor.
@@ -85,6 +127,32 @@ type runState struct {
 	streamPipe *triple.Pipeline // nil when shape == message
 	msgPipe    *triple.Pipeline // nil when shape == stream
 	workers    []*worker
+
+	// opts is the triple.Opts handed to Init; blob-cycle reopens pass
+	// the same shape through triple.Open.
+	opts triple.Opts
+
+	// streamProfile / msgProfile are the profile names the two pipes
+	// were initialised against; blob-cycle reopens address them.
+	streamProfile string
+	msgProfile    string
+
+	// pipeMu serialises pipeline-mutating maintenance (Rekey, blob
+	// cycle) against cipher-path calls, per the [triple.Pipeline.Rekey]
+	// thread-safety contract: workers hold the read lock for each
+	// iteration, maintenance operations take the write lock.
+	pipeMu sync.RWMutex
+
+	// streamBlob / msgBlob hold each pipe's current session blob
+	// (produced by Init, refreshed by every Rekey); blob-cycle reopens
+	// consume them. Guarded by pipeMu.
+	streamBlob []byte
+	msgBlob    []byte
+
+	// rekeys / blobCycles count completed maintenance operations
+	// across all workers.
+	rekeys     atomic.Int64
+	blobCycles atomic.Int64
 
 	// release is closed by main after the warmup barrier; workers
 	// block on it between their warmup iteration and the main loop.
@@ -122,51 +190,88 @@ func run() int {
 	if cfg.gogc > 0 {
 		debug.SetGCPercent(cfg.gogc)
 	}
+	if cfg.gomaxprocs > 0 {
+		runtime.GOMAXPROCS(cfg.gomaxprocs)
+	}
 
 	logf("start: duration=%s iterations=%d goroutines=%d shape=%s hash=%s mac=%s payload=%s memlimit=%s parallax=%s wrapper=%s",
 		cfg.duration, cfg.iterations, cfg.workers, cfg.shape, cfg.hash, cfg.mac,
 		humanBytes(cfg.payload), humanBytes(cfg.memlimit), onOff(cfg.parallax), onOff(cfg.wrapper))
+	logf("overrides: profile=%q key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d payload-mode=%s seed=%d json-output=%v",
+		cfg.profile, cfg.keyBits, cfg.nonceBits, humanBytes(cfg.chunkSize), cfg.barrierFill,
+		cfg.gomaxprocs, cfg.rekeyEvery, cfg.blobCycleEvery, cfg.payloadMode, cfg.seed, cfg.jsonOutput)
 
 	r := &runState{cfg: cfg, release: make(chan struct{})}
 
 	// Pipeline construction — one shared instance per exercised shape.
+	// --profile narrows cfg.shape to that profile's surface at flag
+	// parse, so at most one of the two branches below fires with the
+	// override in place.
 	opts := triple.Opts{
 		InnerHash:    cfg.hash,
 		MacName:      cfg.mac,
 		WithParallax: &cfg.parallax,
 		WithWrapper:  &cfg.wrapper,
+		KeyBits:      cfg.keyBits,
+		NonceBits:    cfg.nonceBits,
+		BarrierFill:  cfg.barrierFill,
+		ChunkSize:    int(cfg.chunkSize),
+	}
+	r.opts = opts
+	r.streamProfile = triple.ProfileStreamingAEADTripleMACV1
+	r.msgProfile = triple.ProfileSingleMsgTripleMACV1
+	if cfg.profile != "" {
+		r.streamProfile = cfg.profile
+		r.msgProfile = cfg.profile
 	}
 	if cfg.shape == shapeStream || cfg.shape == shapeBoth {
-		pipe, blob, ierr := triple.Init(triple.ProfileStreamingAEADTripleMACV1, opts)
+		pipe, blob, ierr := triple.Init(r.streamProfile, opts)
 		if ierr != nil {
-			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", triple.ProfileStreamingAEADTripleMACV1, ierr)
+			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.streamProfile, ierr)
 			return 1
 		}
-		defer pipe.Close()
+		// Close via the runState pointer: blob-cycle swaps fresh
+		// pipelines in (closing the ones they replace), so the
+		// instance live at exit is whatever the pointer holds then.
+		defer func() {
+			r.pipeMu.Lock()
+			r.streamPipe.Close()
+			r.pipeMu.Unlock()
+		}()
 		r.streamPipe = pipe
-		logf("pipeline initialised: profile=%s blob=%d bytes", triple.ProfileStreamingAEADTripleMACV1, len(blob))
+		r.streamBlob = blob
+		logf("pipeline initialised: profile=%s blob=%d bytes", r.streamProfile, len(blob))
 	}
 	if cfg.shape == shapeMessage || cfg.shape == shapeBoth {
-		pipe, blob, ierr := triple.Init(triple.ProfileSingleMsgTripleMACV1, opts)
+		pipe, blob, ierr := triple.Init(r.msgProfile, opts)
 		if ierr != nil {
-			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", triple.ProfileSingleMsgTripleMACV1, ierr)
+			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.msgProfile, ierr)
 			return 1
 		}
-		defer pipe.Close()
+		defer func() {
+			r.pipeMu.Lock()
+			r.msgPipe.Close()
+			r.pipeMu.Unlock()
+		}()
 		r.msgPipe = pipe
-		logf("pipeline initialised: profile=%s blob=%d bytes", triple.ProfileSingleMsgTripleMACV1, len(blob))
+		r.msgBlob = blob
+		logf("pipeline initialised: profile=%s blob=%d bytes", r.msgProfile, len(blob))
 	}
 
-	// Per-worker distinct plaintexts, generated once and held for the
-	// whole run so cross-worker data crossover is detectable.
+	// Per-worker plaintexts, generated once and held for the whole run
+	// (rotating mode refills per iteration inside the worker). Under
+	// the default fixed CSPRNG mode every worker's buffer is distinct,
+	// so cross-worker data crossover is detectable; pattern modes trade
+	// that property for content edge-case coverage.
 	r.workers = make([]*worker, cfg.workers)
 	for i := range r.workers {
 		pt := make([]byte, cfg.payload)
-		if _, rerr := rand.Read(pt); rerr != nil {
-			fmt.Fprintf(os.Stderr, "loop: crypto/rand: %v\n", rerr)
+		rng := newWorkerRNG(cfg.seed, i)
+		if perr := fillPayload(cfg.payloadMode, rng, pt); perr != nil {
+			fmt.Fprintf(os.Stderr, "loop: payload fill: %v\n", perr)
 			return 1
 		}
-		r.workers[i] = &worker{id: i, plaintext: pt}
+		r.workers[i] = &worker{id: i, plaintext: pt, payloadMode: cfg.payloadMode, rng: rng}
 	}
 
 	// Signal-aware root context: Ctrl-C / SIGTERM cancels gracefully.
@@ -278,6 +383,18 @@ func parseFlags(argv []string) (config, error) {
 		gogc        = fs.Int("gogc", 0, "GC trigger percentage; 0 = leave the runtime default")
 		parallaxStr = fs.String("parallax", "on", "parallax layer: on | off")
 		wrapperStr  = fs.String("wrapper", "on", "wrapper (Outer cipher) layer: on | off")
+
+		profile        = fs.String("profile", "", "exercise this single registered triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
+		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
+		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
+		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
+		barrierFill    = fs.Int("barrier-fill", 0, "CSPRNG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
+		gomaxprocs     = fs.Int("gomaxprocs", 0, "runtime.GOMAXPROCS override; 0 = inherit from the environment")
+		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Pipeline.Rekey every N iterations per worker; 0 = never")
+		blobCycleEvery = fs.Int64("blob-cycle-every", 0, "reopen each pipeline from its session blob every N iterations per worker; 0 = never")
+		payloadMode    = fs.String("payload-mode", payloadFixed, "plaintext content: fixed | rotating | pattern-zero | pattern-ff | pattern-ascii")
+		seed           = fs.Uint64("seed", 0, "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts")
+		jsonOutput     = fs.Bool("json-output", false, "print the final summary as one compact JSON object instead of log lines")
 	)
 	if err := fs.Parse(argv); err != nil {
 		return config{}, err
@@ -287,13 +404,23 @@ func parseFlags(argv []string) (config, error) {
 	}
 
 	cfg := config{
-		duration:   *duration,
-		iterations: *iterations,
-		workers:    *workers,
-		shape:      *shape,
-		hash:       *hash,
-		mac:        *mac,
-		gogc:       *gogc,
+		duration:       *duration,
+		iterations:     *iterations,
+		workers:        *workers,
+		shape:          *shape,
+		hash:           *hash,
+		mac:            *mac,
+		gogc:           *gogc,
+		profile:        *profile,
+		keyBits:        *keyBits,
+		nonceBits:      *nonceBits,
+		barrierFill:    *barrierFill,
+		gomaxprocs:     *gomaxprocs,
+		rekeyEvery:     *rekeyEvery,
+		blobCycleEvery: *blobCycleEvery,
+		payloadMode:    *payloadMode,
+		seed:           *seed,
+		jsonOutput:     *jsonOutput,
 	}
 	if cfg.duration <= 0 {
 		return config{}, fmt.Errorf("--duration must be positive, got %s", cfg.duration)
@@ -349,6 +476,52 @@ func parseFlags(argv []string) (config, error) {
 	cfg.wrapper, err = parseOnOff("--wrapper", *wrapperStr)
 	if err != nil {
 		return config{}, err
+	}
+
+	if cfg.profile != "" {
+		surface, ok := profileSurface[cfg.profile]
+		if !ok {
+			if cfg.profile == triple.ProfileBlobTripleMACV1 {
+				return config{}, fmt.Errorf("--profile %q carries no cipher surface (blob-only mode)", cfg.profile)
+			}
+			return config{}, fmt.Errorf("--profile %q is not a shipped triple profile", cfg.profile)
+		}
+		// The profile's Mode dictates which cipher surface exists;
+		// narrow the shape so worker dispatch targets only that one.
+		cfg.shape = surface
+	}
+	switch cfg.keyBits {
+	case 0, 512, 1024, 2048:
+	default:
+		return config{}, fmt.Errorf("--key-bits must be 512 | 1024 | 2048 (or 0 = profile default), got %d", cfg.keyBits)
+	}
+	switch cfg.nonceBits {
+	case 0, 128, 256, 512:
+	default:
+		return config{}, fmt.Errorf("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got %d", cfg.nonceBits)
+	}
+	switch cfg.barrierFill {
+	case 0, 1, 2, 4, 8, 16, 32:
+	default:
+		return config{}, fmt.Errorf("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got %d", cfg.barrierFill)
+	}
+	cfg.chunkSize, err = parseSize(*chunkSizeStr)
+	if err != nil {
+		return config{}, fmt.Errorf("--chunk-size: %v", err)
+	}
+	if cfg.gomaxprocs < 0 {
+		return config{}, fmt.Errorf("--gomaxprocs must be > 0 when specified, got %d", cfg.gomaxprocs)
+	}
+	if cfg.rekeyEvery < 0 {
+		return config{}, fmt.Errorf("--rekey-every must be >= 0, got %d", cfg.rekeyEvery)
+	}
+	if cfg.blobCycleEvery < 0 {
+		return config{}, fmt.Errorf("--blob-cycle-every must be >= 0, got %d", cfg.blobCycleEvery)
+	}
+	switch cfg.payloadMode {
+	case payloadFixed, payloadRotating, payloadPatternZero, payloadPatternFF, payloadPatternASCII:
+	default:
+		return config{}, fmt.Errorf("--payload-mode must be fixed | rotating | pattern-zero | pattern-ff | pattern-ascii, got %q", cfg.payloadMode)
 	}
 	return cfg, nil
 }

@@ -49,6 +49,9 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 	if len(masters) != 0 && len(masters) != 2 {
 		return nil, ErrMastersArity
 	}
+	if opts.TagStubSize != 0 && (opts.TagStubSize < 16 || opts.TagStubSize > 64) {
+		return nil, fmt.Errorf("triple: Open: opts.TagStubSize=%d must be 0 or in [16, 64]", opts.TagStubSize)
+	}
 
 	var wrap blobWrapV1
 	dec := json.NewDecoder(bytes.NewReader(blob))
@@ -129,6 +132,15 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 		return nil, err
 	}
 
+	// Wire-shape pinning, profile / Opts layer — mirrors the Init-side
+	// placement ahead of the MAC probe so the precedence chain reads
+	// Opts > Profile > MacName auto-probe > default 32 on the reopen
+	// path as well. The inner blob's Config snapshot carries no stub
+	// field, so the gate consults only this call's resolved shape.
+	if cfg.TagStubSize == 0 && resolved.tagStubSize > 0 {
+		cfg.TagStubSize = resolved.tagStubSize
+	}
+
 	// Parallax build.
 	var (
 		sched *parallax.Schedule
@@ -178,8 +190,15 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 		if err != nil {
 			return nil, fmt.Errorf("triple: macs.MakeIncremental(%q): %w", macName, err)
 		}
+		// Wire-shape parity: mirror the Init-side auto-population from
+		// the blob's resolved MAC so a reopened Pipeline reserves the
+		// same No MAC stub size as its sender. An explicitly pre-set
+		// field wins.
+		if cfg.TagStubSize == 0 {
+			cfg.TagStubSize = len(macFunc([]byte{}))
+		}
 	} else {
-		// No-MAC profile — drop any blob-side MAC material to keep
+		// No MAC profile — drop any blob-side MAC material to keep
 		// the Pipeline shape consistent with the resolved profile.
 		macName = ""
 		macKey = nil
@@ -234,7 +253,7 @@ func resolveOpenMasters(resolved resolvedProfile, wrap blobWrapV1, masters [][]b
 // Cfg-aware [itb.Blob{N}.Import3Cfg] entry and returns the eight
 // typed seeds + eight per-slot PRF keys in the canonical order used
 // by [allocEightSeeds] (noise, lock, data1..3, start1..3) plus the
-// MAC name and MAC key the blob carries (both empty for No-MAC).
+// MAC name and MAC key the blob carries (both empty for No MAC).
 func importInnerBlob(width int, cfg *itb.Config, innerBytes []byte, innerHash string) ([8]any, [8][]byte, string, []byte, error) {
 	switch width {
 	case 128:

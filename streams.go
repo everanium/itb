@@ -127,7 +127,7 @@ func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 }
 
 // singleMessageEncryptTripleCfg is the per-chunk dispatch helper for
-// the width-less No-MAC Triple-Ouroboros Encrypt path when a Config
+// the width-less No MAC Triple Ouroboros Encrypt path when a Config
 // override is threaded per Pipeline.
 func singleMessageEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
 	switch width {
@@ -142,7 +142,7 @@ func singleMessageEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, 
 }
 
 // singleMessageDecryptTripleCfg is the per-chunk dispatch helper for
-// the width-less No-MAC Triple-Ouroboros Decrypt path when a Config
+// the width-less No MAC Triple Ouroboros Decrypt path when a Config
 // override is threaded per Pipeline.
 func singleMessageDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte) ([]byte, error) {
 	switch width {
@@ -157,7 +157,7 @@ func singleMessageDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, 
 }
 
 // streamAuthEncryptTripleCfg is the per-chunk dispatch helper for the
-// Triple-Ouroboros Streaming AEAD encrypt path when a Config override
+// Triple Ouroboros Streaming AEAD encrypt path when a Config override
 // is threaded per Pipeline.
 func streamAuthEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64, finalFlag bool) ([]byte, error) {
 	switch width {
@@ -172,7 +172,7 @@ func streamAuthEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dat
 }
 
 // streamAuthDecryptTripleCfg is the per-chunk dispatch helper for the
-// Triple-Ouroboros Streaming AEAD decrypt path when a Config override
+// Triple Ouroboros Streaming AEAD decrypt path when a Config override
 // is threaded per Pipeline.
 func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64) ([]byte, bool, error) {
 	switch width {
@@ -186,7 +186,7 @@ func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dat
 	return nil, false, errSeedWidthMix
 }
 
-// EncryptStream3xCfg is the width-less Triple-Ouroboros plain-stream
+// EncryptStream3xCfg is the width-less Triple Ouroboros plain-stream
 // Encrypt entry point with a per-encryptor Config override.
 //
 // The streamID prefix and the first chunk body are emitted as a single
@@ -240,7 +240,7 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	}
 }
 
-// DecryptStream3xCfg is the width-less Triple-Ouroboros plain-stream
+// DecryptStream3xCfg is the width-less Triple Ouroboros plain-stream
 // Decrypt entry point with a per-encryptor Config override.
 func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
@@ -276,7 +276,7 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	}
 }
 
-// EncryptStreamAuth3xCfg is the width-less Triple-Ouroboros Streaming
+// EncryptStreamAuth3xCfg is the width-less Triple Ouroboros Streaming
 // AEAD Encrypt entry point with a per-encryptor Config override.
 //
 // The streamID prefix and the first emitted chunk are combined into a
@@ -368,7 +368,7 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 	return emitChunk(chunk)
 }
 
-// DecryptStreamAuth3xCfg is the width-less Triple-Ouroboros Streaming
+// DecryptStreamAuth3xCfg is the width-less Triple Ouroboros Streaming
 // AEAD Decrypt entry point with a per-encryptor Config override.
 func DecryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)

@@ -235,7 +235,7 @@ func TestEncryptStreamDecryptStreamConcurrentSamePipeline(t *testing.T) {
 // TestEncryptStreamDecryptStreamConcurrentDistinctPipelines spawns N=8
 // independent Pipelines (each built with distinct Opts so their inner
 // state — hash width, MaxWorkers, wrapper cipher, whether parallax is
-// engaged, MAC vs No-MAC — differs across the fleet) and runs one
+// engaged, MAC vs No MAC — differs across the fleet) and runs one
 // concurrent goroutine per Pipeline. Cross-contamination is asserted
 // via a "Pipeline A's wire never round-trips through Pipeline B"
 // property: after every goroutine finishes, its own wire is fed
@@ -334,7 +334,7 @@ func TestEncryptStreamDecryptStreamConcurrentDistinctPipelines(t *testing.T) {
 	// Most cross-pairs return an error (MAC mismatch, wrong width,
 	// wrong wrapper key) — that already proves isolation. When a
 	// cross-pair happens to succeed decoding some bytes (rare — but
-	// possible on the No-MAC path where the receiver has no tag to
+	// possible on the No MAC path where the receiver has no tag to
 	// verify), the bytes must NOT equal the foreign plaintext.
 	for i := range distinctSpecs {
 		for j := range distinctSpecs {
