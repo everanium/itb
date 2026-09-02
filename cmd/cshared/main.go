@@ -47,7 +47,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitbVersion = "0.3.1"
+const libitbVersion = "0.3.3"
 
 func main() {} // required for buildmode=c-shared
 
@@ -955,7 +955,7 @@ func streamIDFromC(p *C.uint8_t) (sid [32]byte, ok bool) {
 	return sid, true
 }
 
-// Streaming AEAD Triple-Ouroboros encrypt for one chunk: 7 seed
+// Streaming AEAD Triple Ouroboros encrypt for one chunk: 7 seed
 // handles plus a MAC handle plus the streaming-binding components.
 // All 7 seeds must share native width 128.
 //
@@ -994,7 +994,7 @@ func ITB_EncryptStreamAuthenticated3x128(
 	return C.int(st)
 }
 
-// Streaming AEAD Triple-Ouroboros encrypt for one chunk (width-256
+// Streaming AEAD Triple Ouroboros encrypt for one chunk (width-256
 // seeds). See ITB_EncryptStreamAuthenticated3x128 for the parameter
 // contract.
 //
@@ -1033,7 +1033,7 @@ func ITB_EncryptStreamAuthenticated3x256(
 	return C.int(st)
 }
 
-// Streaming AEAD Triple-Ouroboros encrypt for one chunk (width-512
+// Streaming AEAD Triple Ouroboros encrypt for one chunk (width-512
 // seeds). See ITB_EncryptStreamAuthenticated3x128 for the parameter
 // contract.
 //
@@ -1072,7 +1072,7 @@ func ITB_EncryptStreamAuthenticated3x512(
 	return C.int(st)
 }
 
-// Streaming AEAD Triple-Ouroboros decrypt for one chunk. finalFlagOut,
+// Streaming AEAD Triple Ouroboros decrypt for one chunk. finalFlagOut,
 // when non-NULL, receives the recovered flag byte interpreted as
 // {0 = non-terminal, 1 = terminating}.
 //
@@ -1118,7 +1118,7 @@ func ITB_DecryptStreamAuthenticated3x128(
 	return C.int(st)
 }
 
-// Streaming AEAD Triple-Ouroboros decrypt for one chunk (width-256
+// Streaming AEAD Triple Ouroboros decrypt for one chunk (width-256
 // seeds). See ITB_DecryptStreamAuthenticated3x128 for the parameter
 // contract.
 //
@@ -1164,7 +1164,7 @@ func ITB_DecryptStreamAuthenticated3x256(
 	return C.int(st)
 }
 
-// Streaming AEAD Triple-Ouroboros decrypt for one chunk (width-512
+// Streaming AEAD Triple Ouroboros decrypt for one chunk (width-512
 // seeds). See ITB_DecryptStreamAuthenticated3x128 for the parameter
 // contract.
 //

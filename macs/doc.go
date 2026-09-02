@@ -72,4 +72,61 @@
 // Every shipped factory is PRF-grade and stateless across the FFI
 // boundary; concurrent goroutines may call the returned closure in
 // parallel.
+//
+// # Runtime registration
+//
+// [Register] adds a user-supplied custom MAC primitive to the runtime
+// registry under a caller-chosen name. A registered primitive
+// resolves through [Find] / [Make] / [MakeIncremental] /
+// [MakeMACPair] exactly like a shipped one and — transitively —
+// through every consumer that resolves MACs by name, including
+// triple profile MacName resolution: a registered profile whose
+// MacName references the custom primitive initialises, encrypts,
+// decrypts, and round-trips seed blobs with no further plumbing.
+// [Registry] itself is not extended — user entries live in a
+// separate mutex-guarded store — so the FFI iteration surface
+// (ITB_MACCount / ITB_MACName) is unaffected. Runtime registration
+// is a Go-native API only; bindings are triple-only and do not
+// expose custom-MAC plug.
+//
+// A seed blob exported under a custom MAC name records the name, not
+// the construction: the name is a promise. Opening such a blob in
+// another process requires that process to have registered the same
+// name with the same construction beforehand; a missing registration
+// fails blob open with an unknown-MAC error, and a divergent
+// construction under the same name surfaces as a MAC failure at
+// decrypt — indistinguishable from tampering by design.
+//
+// # Custom-MAC builders
+//
+// [BuildHMAC] and [BuildKeyedHash] produce a [Spec] ready for
+// [Register] from a hash-registry primitive name — shipped or
+// user-registered via hashes.Register — closing the contract traps
+// of hand-written factories (non-constant tag length,
+// non-determinism, incremental-arm drift) by construction:
+//
+//	spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{
+//		Name: "b2b512_mac",
+//	})
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	if err := macs.Register(spec); err != nil {
+//		log.Fatal(err)
+//	}
+//	// "b2b512_mac" now resolves via Find / Make / MakeIncremental
+//	// and can serve as a registered triple profile's MacName.
+//
+// [BuildHMAC] wraps a primitive's unkeyed hash.Hash form in the HMAC
+// construction (RFC 2104); [BuildKeyedHash] uses a primitive's
+// native keyed mode directly, for primitives whose keyed form is
+// itself a sound PRF. Each builder requires the matching optional
+// composition field on the resolved hashes.Spec — HashHash for
+// [BuildHMAC], KeyedHash for [BuildKeyedHash]; a primitive that
+// leaves the field nil is rejected with an error naming the missing
+// form. Fully hand-rolled factories remain supported — a [Spec] with
+// caller-written MakeMAC / MakeIncrementalMAC closures registers the
+// same way, subject to the closure contracts documented on
+// [Register] — and are the path for primitives without either
+// composition form.
 package macs

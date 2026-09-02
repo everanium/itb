@@ -132,6 +132,9 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	if len(data) > maxDataSize {
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
+	if err := validateTagStubSizeCfg(cfg); err != nil {
+		return nil, err
+	}
 
 	nonce, ilNonce, err := generateNoncePairCfg(cfg)
 	if err != nil {
@@ -155,12 +158,13 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		wg.Wait()
 	}
 
-	// Reserve nomacTagStubSize bytes in the third snake's container
-	// capacity so a wire observer cannot distinguish this No-MAC chunk
-	// from the Streaming AEAD chunk (whose third snake carries
-	// payload || tag(32) || flag(1)). The reserved bytes are pure
-	// CSPRNG on the No-MAC side.
-	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + nomacTagStubSize}
+	// Reserve nomacTagStubSizeCfg(cfg) bytes in the third snake's
+	// container capacity so a wire observer cannot distinguish this
+	// No MAC chunk from the paired authenticated chunk (whose third
+	// snake carries payload || tag || flag(1)). The reserved bytes are
+	// pure CSPRNG on the No MAC side.
+	tagStub := nomacTagStubSizeCfg(cfg)
+	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagStub}
 	width, height := containerSize3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 	totalPixels := width * height
 	third := totalPixels / 3
@@ -171,7 +175,7 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-	fitLimits := [3]int{caps[0], caps[1], caps[2] - nomacTagStubSize}
+	fitLimits := [3]int{caps[0], caps[1], caps[2] - tagStub}
 	for i := 0; i < 3; i++ {
 		if len(encs[i])+1 > fitLimits[i] {
 			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)

@@ -199,7 +199,7 @@
 ;;; ------------------------------------------------------------------
 
 (defun version ()
-  "The libitb library version string (e.g. #\"0.3.1\")."
+  "The libitb library version string (e.g. #\"0.3.3\")."
   (itb:version))
 
 (defun hashes ()

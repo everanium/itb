@@ -67,6 +67,9 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if opts.TagStubSize != 0 && (opts.TagStubSize < 16 || opts.TagStubSize > 64) {
+		return nil, nil, fmt.Errorf("triple: Init: opts.TagStubSize=%d must be 0 or in [16, 64]", opts.TagStubSize)
+	}
 	resolved := resolveProfile(prof, opts)
 
 	// Master intake / auto-generation.
@@ -108,6 +111,14 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	}
 	if cfg.BarrierFill == 0 {
 		cfg.BarrierFill = itb.DefaultBarrierFill
+	}
+	// Wire-shape pinning, profile / Opts layer: a caller-supplied
+	// TagStubSize (Opts override strongest, then the registered
+	// profile's field) lands in the Config ahead of the MAC probe
+	// below, so the precedence chain reads
+	// Opts > Profile > MacName auto-probe > default 32.
+	if cfg.TagStubSize == 0 && resolved.tagStubSize > 0 {
+		cfg.TagStubSize = resolved.tagStubSize
 	}
 
 	// Parallax build.
@@ -164,6 +175,14 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		cfg.MACIncremental, err = macs.MakeIncremental(resolved.macName, macKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: macs.MakeIncremental(%q): %w", resolved.macName, err)
+		}
+		// Wire-shape parity: carry the MAC's probed tag length into the
+		// Config so a No MAC envelope produced under this cfg reserves a
+		// stub of matching size — the authenticated ↔ No MAC envelope
+		// shape then stays aligned for any registered TagSize, not only
+		// the shipped 32-byte tags. An explicitly pre-set field wins.
+		if cfg.TagStubSize == 0 {
+			cfg.TagStubSize = len(macFunc([]byte{}))
 		}
 	}
 
@@ -251,7 +270,7 @@ func prepareMasters(resolved resolvedProfile, opts Opts) (permMaster, wrapMaster
 // exportInnerBlob width-dispatches to the appropriate
 // [itb.Blob{128,256,512}.Export3Cfg] entry to produce the inner blob
 // bytes. The MAC material rides through [itb.Blob{N}Opts] when the
-// Pipeline carries a MAC; No-MAC profiles pass a zero-value opts.
+// Pipeline carries a MAC; No MAC profiles pass a zero-value opts.
 func exportInnerBlob(width int, cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
 	switch width {
 	case 128:

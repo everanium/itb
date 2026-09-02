@@ -33,7 +33,7 @@ var ErrProfileNotStreaming = errors.New("triple: profile does not expose a strea
 //  2. wireDst  ← [wrapper.NewWrapWriter    when wrapper  on] ← innerDst
 //  3. Dispatch on MAC presence:
 //     MAC     → itb.EncryptStreamAuth3xCfg(cfg, seeds, innerSrc, innerDst, mac, chunkSize)
-//     No-MAC  → itb.EncryptStream3xCfg    (cfg, seeds, innerSrc, innerDst,      chunkSize)
+//     No MAC  → itb.EncryptStream3xCfg    (cfg, seeds, innerSrc, innerDst,      chunkSize)
 //  4. Close parallax reader (releases pool scratch); finalize the
 //     wrapper writer via [wrapper.FinishWrapStream] so an inner
 //     stream that produced no bytes still emits its outer cipher
@@ -74,8 +74,8 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 		return err
 	}
 
-	// No-MAC path — pipeline.macFunc is nil by construction on a
-	// Streaming Non-AEAD profile; the No-MAC dispatcher never
+	// No MAC path — pipeline.macFunc is nil by construction on a
+	// Streaming Non-AEAD profile; the No MAC dispatcher never
 	// consumes it.
 	var cipherErr error
 	if p.macFunc != nil {
@@ -119,7 +119,7 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 //  2. plainDst ← [parallax.NewDecryptWriter when parallax on] ← innerDst
 //  3. Dispatch on MAC presence:
 //     MAC     → itb.DecryptStreamAuth3xCfg(cfg, seeds, innerSrc, innerDst, mac)
-//     No-MAC  → itb.DecryptStream3xCfg    (cfg, seeds, innerSrc, innerDst)
+//     No MAC  → itb.DecryptStream3xCfg    (cfg, seeds, innerSrc, innerDst)
 //  4. Close parallax writer (flushes the trailing partial chunk +
 //     releases pool scratch); wrapper reader has no per-call state
 //     that needs an explicit close.

@@ -199,8 +199,13 @@ func TestRegistryStable(t *testing.T) {
 		t.Fatalf("Registry len=%d, want %d", len(Registry), len(want))
 	}
 	for i := range want {
-		if Registry[i] != want[i] {
-			t.Errorf("Registry[%d] = %+v, want %+v", i, Registry[i], want[i])
+		got := Registry[i]
+		if got.Name != want[i].Name || got.KeySize != want[i].KeySize ||
+			got.TagSize != want[i].TagSize || got.MinKeyBytes != want[i].MinKeyBytes {
+			t.Errorf("Registry[%d] = %+v, want %+v", i, got, want[i])
+		}
+		if got.MakeMAC != nil || got.MakeIncrementalMAC != nil {
+			t.Errorf("Registry[%d] %s: shipped entries must leave factory fields nil", i, got.Name)
 		}
 	}
 }

@@ -80,7 +80,7 @@
 // the user only writes a primitive call.
 //
 // Performance trade-off: the builders dispatch through interface
-// callbacks and []byte state buffers, losing 5-15% throughput vs the
+// callbacks and []byte state buffers, losing 15-50% throughput vs the
 // inline per-primitive closures shipped in this package. The trade
 // is correctness-by-construction for any user primitive vs peak
 // throughput for built-in primitives. See CONSTRUCTIONS.md

@@ -115,7 +115,7 @@ func TestExtTripleStreamCrossParity(t *testing.T) {
 
 // TestExtTripleNoMACRoundTrip covers the Streaming Non-AEAD profile
 // (No MAC) round-trip on the toggle-off layer combination — Pipeline
-// with parallax + wrapper OFF and No MAC. Confirms the No-MAC surface
+// with parallax + wrapper OFF and No MAC. Confirms the No MAC surface
 // symmetric round-trip via [triple.Pipeline.EncryptMessage] /
 // [triple.Pipeline.DecryptMessage].
 func TestExtTripleNoMACRoundTrip(t *testing.T) {
