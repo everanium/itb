@@ -199,6 +199,9 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	if err != nil {
 		return err
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return err
+	}
 	cs, err := validateChunkSize(chunkSize)
 	if err != nil {
 		return err
@@ -293,6 +296,9 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 	}
 	if mac == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return err
 	}
 	cs, err := validateChunkSize(chunkSize)
 	if err != nil {

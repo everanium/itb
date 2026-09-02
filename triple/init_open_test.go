@@ -278,3 +278,121 @@ func freshBytes(t *testing.T, n int) []byte {
 	}
 	return b
 }
+
+// TestPipelineInitRejectsBadOptsCommon pins the fail-fast rejection of
+// [Opts.NonceBits] / [Opts.BarrierFill] / [Opts.MaxWorkers] outside
+// the shipped enum. Every case must surface an error before the
+// blob-producing step runs; the shipped default profile is engaged
+// only as a valid backdrop for the Opts probe.
+func TestPipelineInitRejectsBadOptsCommon(t *testing.T) {
+	cases := []struct {
+		label string
+		opts  Opts
+	}{
+		{"nonce_bits_999", Opts{NonceBits: 999}},
+		{"nonce_bits_neg", Opts{NonceBits: -1}},
+		{"barrier_fill_5", Opts{BarrierFill: 5}},
+		{"barrier_fill_neg", Opts{BarrierFill: -1}},
+		{"barrier_fill_huge", Opts{BarrierFill: 1 << 30}},
+		{"max_workers_neg", Opts{MaxWorkers: -1}},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			pipe, _, err := Init(ProfileStreamingAEADTripleMACV1, c.opts)
+			if err == nil {
+				pipe.Close()
+				t.Fatalf("Init accepted invalid opts: %s", c.label)
+			}
+		})
+	}
+}
+
+// TestPipelineOpenRejectsBadOptsCommon mirrors
+// [TestPipelineInitRejectsBadOptsCommon] on the [Open] path. A valid
+// blob is produced first so the master-resolution / inner-decode
+// steps stay green; only the Opts arm is stressed.
+func TestPipelineOpenRejectsBadOptsCommon(t *testing.T) {
+	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	cases := []struct {
+		label string
+		opts  Opts
+	}{
+		{"nonce_bits_999", Opts{NonceBits: 999}},
+		{"nonce_bits_neg", Opts{NonceBits: -1}},
+		{"barrier_fill_5", Opts{BarrierFill: 5}},
+		{"barrier_fill_neg", Opts{BarrierFill: -1}},
+		{"max_workers_neg", Opts{MaxWorkers: -1}},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			pipe, err := Open(ProfileStreamingAEADTripleMACV1, blob, c.opts)
+			if err == nil {
+				pipe.Close()
+				t.Fatalf("Open accepted invalid opts: %s", c.label)
+			}
+		})
+	}
+}
+
+// TestPipelineInitRejectsBadKeyBits pins the fail-fast rejection of
+// an out-of-range [Opts.KeyBits] override at [Init]. The sentinel 0
+// stays valid (defer to profile default); every other rejection
+// surfaces as an [ErrBadKeyBits]-wrapped error so the [capi] mapper
+// routes it to the shared StatusBadKeyBits status code.
+func TestPipelineInitRejectsBadKeyBits(t *testing.T) {
+	cases := []int{-1, 1, 100, 511, 700, 2049, 1 << 20}
+	for _, kb := range cases {
+		_, _, err := Init(ProfileStreamingAEADTripleMACV1, Opts{KeyBits: kb})
+		if err == nil {
+			t.Fatalf("Init accepted KeyBits=%d, want rejection", kb)
+		}
+		if !errors.Is(err, ErrBadKeyBits) {
+			t.Fatalf("Init KeyBits=%d: got err=%v, want wrap of ErrBadKeyBits", kb, err)
+		}
+	}
+}
+
+// TestPipelineInitRejectsBadChunkSize pins the fail-fast rejection of
+// an [Opts.ChunkSize] override above the parallax package's
+// [parallax.MaxChunkSize] cap. Zero remains the "defer to
+// itb.DefaultChunkSize" sentinel; a value beyond the cap would fail
+// deferred inside the parallax builder — the upfront reject moves
+// the surface to the construction boundary.
+func TestPipelineInitRejectsBadChunkSize(t *testing.T) {
+	for _, cs := range []int{-1, 1 << 40, 5 << 40} {
+		_, _, err := Init(ProfileStreamingAEADTripleMACV1, Opts{ChunkSize: cs})
+		if err == nil {
+			t.Fatalf("Init accepted ChunkSize=%d, want rejection", cs)
+		}
+	}
+}
+
+// TestPipelineInitRejectsOverlongStrings pins the fail-fast rejection
+// of Opts string overrides that exceed [hashes.MaxNameLen]. Reaching
+// the downstream lookup with an over-long name would produce a
+// cryptic "unknown ..." message; the upfront check gives a "name too
+// long" surface at the entry point.
+func TestPipelineInitRejectsOverlongStrings(t *testing.T) {
+	long := "abcdefghijklmnopqr" // 18 bytes, > hashes.MaxNameLen (12)
+	cases := []struct {
+		label string
+		opts  Opts
+	}{
+		{"mac_name_too_long", Opts{MacName: long}},
+		{"inner_hash_too_long", Opts{InnerHash: long}},
+		{"outer_cipher_too_long", Opts{OuterCipher: long}},
+		{"parallax_palette_too_long", Opts{ParallaxPalette: []string{"aescmac", "chacha20", long}}},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			pipe, _, err := Init(ProfileStreamingAEADTripleMACV1, c.opts)
+			if err == nil {
+				pipe.Close()
+				t.Fatalf("Init accepted overlong string: %s", c.label)
+			}
+		})
+	}
+}

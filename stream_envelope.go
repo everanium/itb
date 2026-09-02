@@ -68,3 +68,46 @@ func validateTagStubSizeCfg(cfg *Config) error {
 	}
 	return nil
 }
+
+// validateConfigCfg rejects an out-of-range [Config.NonceBits],
+// [Config.BarrierFill], or [Config.MaxWorkers] before any wire is
+// produced or persisted. Accepted values:
+//
+//   - NonceBits: 0 (defer to [DefaultNonceBits]) or 128 / 256 / 512.
+//     Any other value would let a sender emit a nonce width the
+//     receiver's Blob-import decoder rejects with [ErrBlobMalformed],
+//     silently corrupting the on-wire dual-nonce header.
+//   - BarrierFill: 0 (defer to [DefaultBarrierFill]) or one of
+//     {1, 2, 4, 8, 16, 32}. Off-schedule values produce the same
+//     Blob-import mismatch; huge positive values would overflow the
+//     `side * side * 8` container-size arithmetic in
+//     [calcContainerSize3Cfg].
+//   - MaxWorkers: non-negative. Zero defers to runtime.NumCPU; a
+//     positive value is clamped at 256 at consumption. Negative
+//     values leak into the blob JSON verbatim and are rejected on
+//     the receiver's import.
+//
+// Consulted by every Cfg-aware Encrypt entry point in the itb-root
+// package and by every [Blob128.Export3Cfg] / [Blob256.Export3Cfg] /
+// [Blob512.Export3Cfg] call ahead of the wire-producing step; the
+// receiver's import path uses [applyGlobalsV1ToCfg] for the same
+// enum checks so a poisoned blob never lands.
+func validateConfigCfg(cfg *Config) error {
+	if cfg == nil {
+		return nil
+	}
+	switch cfg.NonceBits {
+	case 0, 128, 256, 512:
+	default:
+		return fmt.Errorf("itb: cfg.NonceBits=%d must be 0 or one of {128, 256, 512}", cfg.NonceBits)
+	}
+	switch cfg.BarrierFill {
+	case 0, 1, 2, 4, 8, 16, 32:
+	default:
+		return fmt.Errorf("itb: cfg.BarrierFill=%d must be 0 or one of {1, 2, 4, 8, 16, 32}", cfg.BarrierFill)
+	}
+	if cfg.MaxWorkers < 0 {
+		return fmt.Errorf("itb: cfg.MaxWorkers=%d must be >= 0", cfg.MaxWorkers)
+	}
+	return nil
+}

@@ -70,7 +70,19 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if opts.TagStubSize != 0 && (opts.TagStubSize < 16 || opts.TagStubSize > 64) {
 		return nil, nil, fmt.Errorf("triple: Init: opts.TagStubSize=%d must be 0 or in [16, 64]", opts.TagStubSize)
 	}
+	if err := validateOptsCommon("Init", opts); err != nil {
+		return nil, nil, err
+	}
+	if err := validateOptsStrings("Init", opts); err != nil {
+		return nil, nil, err
+	}
 	resolved := resolveProfile(prof, opts)
+	if err := validateResolvedKeyBits("Init", resolved); err != nil {
+		return nil, nil, err
+	}
+	if err := validateResolvedChunkSize("Init", resolved); err != nil {
+		return nil, nil, err
+	}
 
 	// Master intake / auto-generation.
 	permMaster, wrapMaster, err := prepareMasters(resolved, opts)

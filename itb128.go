@@ -132,6 +132,9 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	if len(data) > maxDataSize {
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return nil, err
 	}

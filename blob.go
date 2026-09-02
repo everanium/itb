@@ -455,6 +455,9 @@ func (b *Blob512) Export3Cfg(
 	if cfg == nil {
 		return nil, ErrBlobNilCfg
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
 	if len(opts) > 1 {
 		return nil, ErrBlobTooManyOpts
 	}
@@ -675,6 +678,9 @@ func (b *Blob256) Export3Cfg(
 	if cfg == nil {
 		return nil, ErrBlobNilCfg
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
 	if len(opts) > 1 {
 		return nil, ErrBlobTooManyOpts
 	}
@@ -886,6 +892,9 @@ func (b *Blob128) Export3Cfg(
 ) ([]byte, error) {
 	if cfg == nil {
 		return nil, ErrBlobNilCfg
+	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
 	}
 	if len(opts) > 1 {
 		return nil, ErrBlobTooManyOpts
