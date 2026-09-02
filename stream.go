@@ -91,6 +91,9 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
@@ -163,6 +166,9 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
@@ -233,6 +239,9 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	}
 	if chunkSize > maxDataSize {
 		return fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
+	}
+	if err := validateConfigCfg(cfg); err != nil {
+		return err
 	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err

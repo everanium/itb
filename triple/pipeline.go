@@ -69,6 +69,14 @@ var (
 	// for whom an empty signal is meaningful send a marker byte
 	// instead.
 	ErrEmptyInput = errors.New("triple: empty input")
+
+	// ErrBadKeyBits is the sentinel [Init] and [Open] wrap when the
+	// resolved [Opts.KeyBits] override lands outside the per-primitive
+	// key-width enum. The FFI [capi] layer maps [errors.Is]-matches on
+	// this sentinel to the shared StatusBadKeyBits status code so a
+	// binding sees the same "invalid key bits" surface produced by the
+	// direct [github.com/everanium/itb.NewSeed*] entry points.
+	ErrBadKeyBits = errors.New("triple: invalid key bits")
 )
 
 // Opts carries per-call overrides for [Init] and [Open]. Every field
@@ -79,8 +87,10 @@ var (
 //
 // Both [Init] and [Open] accept the same [Opts] shape. On [Open] the
 // non-toggle profile-shape overrides ([Opts.InnerHash],
-// [Opts.KeyBits], [Opts.ParallaxPalette], etc.) are informational
-// only — the inner Blob{N} carries the seed material and per-instance
+// [Opts.KeyBits], [Opts.ParallaxPalette], [Opts.NonceBits],
+// [Opts.BarrierFill], [Opts.MaxWorkers], [Opts.ChunkSize],
+// [Opts.ParallaxSegmentSize]) are informational only — the inner
+// Blob{N} carries the seed material and per-instance
 // [github.com/everanium/itb.Config] snapshot, so structural knobs are
 // reconstructed from the blob rather than re-supplied via Opts. The
 // two toggle fields ([Opts.WithParallax] / [Opts.WithWrapper]) on
@@ -108,7 +118,8 @@ type Opts struct {
 	WithWrapper *bool
 
 	// MaxWorkers overrides the profile's per-instance worker cap. A
-	// zero value defers to the profile default; a non-zero value is
+	// zero value defers to the profile default; a negative value is
+	// rejected by [Init] and [Open]; a positive value is
 	// copied verbatim into the Pipeline's [itb.Config].
 	MaxWorkers int
 

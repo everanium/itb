@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
 )
 
@@ -139,11 +140,19 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 			if ierr != nil {
 				return opts, fmt.Errorf("opts maxWorkers: %w", ierr)
 			}
+			if n < 0 {
+				return opts, fmt.Errorf("opts maxWorkers=%d must be >= 0", n)
+			}
 			opts.MaxWorkers = n
 		case "nonceBits":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
 				return opts, fmt.Errorf("opts nonceBits: %w", ierr)
+			}
+			switch n {
+			case 0, 128, 256, 512:
+			default:
+				return opts, fmt.Errorf("opts nonceBits=%d must be 0 or one of {128, 256, 512}", n)
 			}
 			opts.NonceBits = n
 		case "barrierFill":
@@ -151,17 +160,28 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 			if ierr != nil {
 				return opts, fmt.Errorf("opts barrierFill: %w", ierr)
 			}
+			switch n {
+			case 0, 1, 2, 4, 8, 16, 32:
+			default:
+				return opts, fmt.Errorf("opts barrierFill=%d must be 0 or one of {1, 2, 4, 8, 16, 32}", n)
+			}
 			opts.BarrierFill = n
 		case "chunkSize":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
 				return opts, fmt.Errorf("opts chunkSize: %w", ierr)
 			}
+			if n < 0 || n > parallax.MaxChunkSize {
+				return opts, fmt.Errorf("opts chunkSize=%d must be in [0, %d]", n, parallax.MaxChunkSize)
+			}
 			opts.ChunkSize = n
 		case "keyBits":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
 				return opts, fmt.Errorf("opts keyBits: %w", ierr)
+			}
+			if n < 0 {
+				return opts, fmt.Errorf("opts keyBits=%d must be >= 0", n)
 			}
 			opts.KeyBits = n
 		case "tagStubSize":
@@ -177,6 +197,9 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
 				return opts, fmt.Errorf("opts parallaxSegmentSize: %w", ierr)
+			}
+			if n < 0 || n > parallax.MaxSegmentSize {
+				return opts, fmt.Errorf("opts parallaxSegmentSize=%d must be in [0, %d]", n, parallax.MaxSegmentSize)
 			}
 			opts.ParallaxSegmentSize = n
 		case "macName":

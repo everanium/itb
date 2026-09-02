@@ -52,6 +52,12 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 	if opts.TagStubSize != 0 && (opts.TagStubSize < 16 || opts.TagStubSize > 64) {
 		return nil, fmt.Errorf("triple: Open: opts.TagStubSize=%d must be 0 or in [16, 64]", opts.TagStubSize)
 	}
+	if err := validateOptsCommon("Open", opts); err != nil {
+		return nil, err
+	}
+	if err := validateOptsStrings("Open", opts); err != nil {
+		return nil, err
+	}
 
 	var wrap blobWrapV1
 	dec := json.NewDecoder(bytes.NewReader(blob))
@@ -71,6 +77,12 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 
 	// Merge profile defaults with Opts.
 	resolved := resolveProfile(prof, opts)
+	if err := validateResolvedKeyBits("Open", resolved); err != nil {
+		return nil, err
+	}
+	if err := validateResolvedChunkSize("Open", resolved); err != nil {
+		return nil, err
+	}
 
 	// Toggle priority: Opts (highest) → blob → profile (lowest).
 	// resolveProfile already applied Opts on top of the profile

@@ -223,3 +223,77 @@ func TestTagStubSizeRangeRejectedLowLevel(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigNonceBitsRangeRejectedLowLevel pins the Low-Level
+// [validateConfigCfg] rejection of every out-of-enum
+// [Config.NonceBits] value at every Cfg-aware Encrypt entry point.
+// The sentinel 0 and the three shipped widths (128 / 256 / 512) pass;
+// any other value would let the sender emit a nonce width the
+// receiver's [Blob512.Import3Cfg] would refuse, so the check fires
+// fail-fast at the entry point.
+func TestConfigNonceBitsRangeRejectedLowLevel(t *testing.T) {
+	installTestNonce(t, nonceFixture(currentNonceSizeCfg(nil)))
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
+	data := randomPlaintext(t, 256)
+	mac := makeTagMAC(32)
+
+	for _, nb := range []int{-1, 1, 64, 129, 255, 384, 511, 513, 999, 1024} {
+		cfg := &Config{NonceBits: nb}
+		if _, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err == nil {
+			t.Errorf("Encrypt3x512Cfg accepted NonceBits=%d, want rejection", nb)
+		}
+		if _, err := EncryptAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, mac); err == nil {
+			t.Errorf("EncryptAuthenticated3x512Cfg accepted NonceBits=%d, want rejection", nb)
+		}
+		emitted := 0
+		err := EncryptStream3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, 128, func(chunk []byte) error {
+			emitted += len(chunk)
+			return nil
+		})
+		if err == nil {
+			t.Errorf("EncryptStream3x512Cfg accepted NonceBits=%d, want rejection", nb)
+		}
+		if emitted != 0 {
+			t.Errorf("EncryptStream3x512Cfg NonceBits=%d emitted %d bytes before rejection", nb, emitted)
+		}
+	}
+}
+
+// TestConfigBarrierFillRangeRejectedLowLevel pins the same fail-fast
+// rejection for [Config.BarrierFill] — sentinel 0 and the shipped
+// {1, 2, 4, 8, 16, 32} pass; every other value (off-schedule,
+// negative, or huge enough to overflow the side*side*8 container
+// arithmetic in [calcContainerSize3Cfg]) is rejected before any wire
+// is produced.
+func TestConfigBarrierFillRangeRejectedLowLevel(t *testing.T) {
+	installTestNonce(t, nonceFixture(currentNonceSizeCfg(nil)))
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
+	data := randomPlaintext(t, 256)
+	mac := makeTagMAC(32)
+
+	for _, bf := range []int{-1, 3, 5, 6, 7, 9, 15, 17, 33, 100, 1_000_000_000} {
+		cfg := &Config{BarrierFill: bf}
+		if _, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err == nil {
+			t.Errorf("Encrypt3x512Cfg accepted BarrierFill=%d, want rejection", bf)
+		}
+		if _, err := EncryptAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, mac); err == nil {
+			t.Errorf("EncryptAuthenticated3x512Cfg accepted BarrierFill=%d, want rejection", bf)
+		}
+	}
+}
+
+// TestConfigMaxWorkersRejectsNegative pins the fail-fast rejection of
+// a negative [Config.MaxWorkers]. Zero remains the "defer to
+// runtime.NumCPU" sentinel; positive values are clamped at consumption.
+func TestConfigMaxWorkersRejectsNegative(t *testing.T) {
+	installTestNonce(t, nonceFixture(currentNonceSizeCfg(nil)))
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)
+	data := randomPlaintext(t, 256)
+
+	for _, mw := range []int{-1, -2, -1024} {
+		cfg := &Config{MaxWorkers: mw}
+		if _, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err == nil {
+			t.Errorf("Encrypt3x512Cfg accepted MaxWorkers=%d, want rejection", mw)
+		}
+	}
+}

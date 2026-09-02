@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
 )
 
@@ -129,6 +130,9 @@ func parseTripleRegisterOpts(query string) (triple.Profile, error) {
 			if ierr != nil {
 				return prof, fmt.Errorf("register-profile opts keyBits: %w", ierr)
 			}
+			if n < 0 {
+				return prof, fmt.Errorf("register-profile opts keyBits=%d must be >= 0", n)
+			}
 			prof.KeyBits = n
 		case "macName":
 			prof.MacName = v
@@ -153,11 +157,17 @@ func parseTripleRegisterOpts(query string) (triple.Profile, error) {
 			if ierr != nil {
 				return prof, fmt.Errorf("register-profile opts parallaxSegmentSize: %w", ierr)
 			}
+			if n < 0 || n > parallax.MaxSegmentSize {
+				return prof, fmt.Errorf("register-profile opts parallaxSegmentSize=%d must be in [0, %d]", n, parallax.MaxSegmentSize)
+			}
 			prof.ParallaxSegmentSize = n
 		case "chunkSize":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
 				return prof, fmt.Errorf("register-profile opts chunkSize: %w", ierr)
+			}
+			if n < 0 || n > parallax.MaxChunkSize {
+				return prof, fmt.Errorf("register-profile opts chunkSize=%d must be in [0, %d]", n, parallax.MaxChunkSize)
 			}
 			prof.ChunkSize = n
 		case "parallaxOn":

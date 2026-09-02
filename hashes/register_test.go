@@ -319,6 +319,87 @@ func TestRegisterMake128Pair(t *testing.T) {
 	}
 }
 
+// TestRegisterSmokeRejectsNilSingleArm confirms [Register]'s smoke
+// stage rejects a Make{N}Pair factory that returns a nil single-arm
+// closure. Reaching Encrypt with a nil closure would deref-crash on
+// the per-pixel hash call; the smoke check surfaces the bug at
+// registration time.
+func TestRegisterSmokeRejectsNilSingleArm(t *testing.T) {
+	name := customFactoryName + "smoke_nil_single"
+	spec := Spec{
+		Name:  name,
+		Width: W256,
+		Make256Pair: func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
+			return nil, nil, make([]byte, 32), nil
+		},
+	}
+	if err := Register(spec); err == nil {
+		t.Fatalf("Register accepted a factory that returns a nil single-arm closure")
+	}
+}
+
+// TestRegisterSmokeRejectsNonDeterministic confirms [Register]'s smoke
+// stage rejects a Make{N}Pair factory whose single-arm output differs
+// between two calls over the same seed / data. A non-deterministic hash
+// closure would corrupt every ChainHash slot and desynchronise the
+// sender / receiver pair; the smoke check surfaces the bug at
+// registration time.
+func TestRegisterSmokeRejectsNonDeterministic(t *testing.T) {
+	name := customFactoryName + "smoke_nondet"
+	counter := uint64(0)
+	spec := Spec{
+		Name:  name,
+		Width: W256,
+		Make256Pair: func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
+			// Fresh counter capture per factory invocation; the returned
+			// closure increments state on every call so two invocations
+			// with identical inputs disagree.
+			var s uint64
+			single := func(data []byte, seed [4]uint64) [4]uint64 {
+				s++
+				return [4]uint64{s + counter, 0, 0, 0}
+			}
+			return single, nil, make([]byte, 32), nil
+		},
+	}
+	if err := Register(spec); err == nil {
+		t.Fatalf("Register accepted a non-deterministic factory")
+	}
+}
+
+// TestRegisterSmokeRejectsBatchedDivergence confirms [Register]'s
+// smoke stage rejects a Make{N}Pair factory whose batched arm returns
+// output that disagrees with the single arm over identical inputs.
+// Divergence between the two arms would corrupt every per-pixel dispatch
+// that fell into the batched code path; the smoke check surfaces the
+// bug at registration time.
+func TestRegisterSmokeRejectsBatchedDivergence(t *testing.T) {
+	name := customFactoryName + "smoke_batched_diverge"
+	spec := Spec{
+		Name:  name,
+		Width: W256,
+		Make256Pair: func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
+			single := func(data []byte, seed [4]uint64) [4]uint64 {
+				return [4]uint64{0xAAAA, 0, 0, 0}
+			}
+			batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
+				// Deliberately different from single — every lane returns
+				// a divergent tuple to trip the parity smoke.
+				return [4][4]uint64{
+					{0xBBBB, 0, 0, 0},
+					{0xBBBB, 0, 0, 0},
+					{0xBBBB, 0, 0, 0},
+					{0xBBBB, 0, 0, 0},
+				}
+			}
+			return single, batched, make([]byte, 32), nil
+		},
+	}
+	if err := Register(spec); err == nil {
+		t.Fatalf("Register accepted a factory whose batched arm diverges from the single arm")
+	}
+}
+
 // TestRegisterMake512Pair mirrors TestRegisterMake128Pair for the
 // 512-bit dispatch path.
 func TestRegisterMake512Pair(t *testing.T) {
