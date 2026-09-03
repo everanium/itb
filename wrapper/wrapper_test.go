@@ -409,6 +409,32 @@ func TestDeriveKeyUnknownCipher(t *testing.T) {
 	}
 }
 
+// TestDeriveKeyRejectsOversizedMaster pins the upper-cap rejection at
+// MaxMasterKeySize (128 bytes). Guards the downstream kdf.Derive path
+// from an adversarial multi-gigabyte master triggering allocations
+// beyond what any shipped primitive actually consumes.
+func TestDeriveKeyRejectsOversizedMaster(t *testing.T) {
+	oversized := make([]byte, MaxMasterKeySize+1)
+	rand.Read(oversized)
+	for _, name := range CipherNames {
+		t.Run(name+"_129", func(t *testing.T) {
+			if k, err := DeriveKey(name, oversized); err == nil || k != nil {
+				t.Fatalf("DeriveKey(%s, %d bytes): got (len=%d, err=%v), want (nil, non-nil)", name, len(oversized), len(k), err)
+			}
+		})
+	}
+	// The exact-cap length is still accepted.
+	exact := make([]byte, MaxMasterKeySize)
+	rand.Read(exact)
+	for _, name := range CipherNames {
+		t.Run(name+"_exact_cap", func(t *testing.T) {
+			if _, err := DeriveKey(name, exact); err != nil {
+				t.Fatalf("DeriveKey(%s, %d bytes) rejected exact-cap master: %v", name, len(exact), err)
+			}
+		})
+	}
+}
+
 // TestDeriveKeyFromMLKEM demonstrates the intended post-quantum workflow: an
 // ML-KEM-768 shared secret feeds DeriveKey directly, and both endpoints
 // derive the same outer key from their respective shared-key copies, which

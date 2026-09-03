@@ -42,10 +42,14 @@ type KeyedHashSpec struct {
 	// bytes (validated at [Register] time).
 	Name string
 
-	// KeySize is the recommended key size in bytes. Zero defaults to
-	// the primitive's native recommendation; primitives with an
-	// exact-length key contract (BLAKE3's 32, SipHash-2-4's 16)
-	// reject any other value.
+	// KeySize is the required key size in bytes — the caller must
+	// supply a value the primitive's keyed constructor accepts
+	// (BLAKE3's 32, SipHash-2-4's 16, BLAKE2b-256 up to 64,
+	// BLAKE2b-512 up to 64, HMAC-SHA-512-shaped primitives keyed at
+	// the hash's 128-byte block size, and so on). A zero KeySize
+	// returns a directive error from [BuildKeyedHash]; implicit
+	// probe-ladder discovery was removed to avoid hidden key-size
+	// selection in a cryptographic construction.
 	KeySize int
 
 	// TagSize is the tag length in bytes. Zero defaults to the
@@ -58,14 +62,6 @@ type KeyedHashSpec struct {
 	// primitives pin it to the key length.
 	MinKeyBytes int
 }
-
-// keyProbeLengths is the key-length ladder [BuildKeyedHash] walks to
-// discover a KeySize default when KeyedHashSpec.KeySize is zero: the
-// first length the primitive's keyed constructor accepts becomes the
-// default. The ladder covers the shipped keyed-hash geometries; a
-// custom primitive whose constructor rejects every ladder length must
-// set KeyedHashSpec.KeySize explicitly.
-var keyProbeLengths = [...]int{32, 16, 64}
 
 // BuildHMAC returns a [Spec] ready for [Register] that wraps the
 // named hash-registry primitive in the HMAC construction (RFC 2104 /
@@ -139,15 +135,18 @@ func BuildHMAC(hashName string, spec HMACSpec) (Spec, error) {
 // double-invocation HMAC envelope is unnecessary; the keyed-mode
 // soundness of a custom primitive is the registrant's responsibility.
 //
-// The primitive's keyed constructor is the single source of truth
-// for key geometry. A zero KeySize defaults to the first
-// [keyProbeLengths] entry the constructor accepts; a zero
-// MinKeyBytes defaults to 16 (the [Register] floor) when the
-// constructor accepts a 16-byte key and to KeySize otherwise
-// (exact-length key contracts — BLAKE3's 32, SipHash-2-4's 16).
-// Explicit KeySize / MinKeyBytes values the constructor rejects fail
-// eagerly at build time. TagSize defaults to the primitive's native
-// output size; truncation is unsupported.
+// Explicit KeySize required — implicit ladder discovery removed to
+// avoid hidden key-size selection in a cryptographic construction.
+// KeyedHashSpec.KeySize must be non-zero and match a key length the
+// primitive's keyed constructor accepts (BLAKE3's 32, SipHash-2-4's
+// 16, BLAKE2b-256 up to 64, BLAKE2b-512 up to 64, HMAC-SHA-512-shaped
+// primitives keyed at the hash's 128-byte block size, and so on); a
+// zero KeySize returns a directive error, and any explicit value the
+// constructor rejects fails eagerly at build time. A zero MinKeyBytes
+// defaults to 16 (the [Register] floor) when the constructor accepts
+// a 16-byte key and to KeySize otherwise (exact-length key
+// contracts). TagSize defaults to the primitive's native output
+// size; truncation is unsupported.
 //
 // The produced factories honour every [Register] closure contract by
 // construction — same pooled pre-keyed strategy as [BuildHMAC].
@@ -159,24 +158,15 @@ func BuildKeyedHash(hashName string, spec KeyedHashSpec) (Spec, error) {
 	if hspec.KeyedHash == nil {
 		return Spec{}, fmt.Errorf("macs: BuildKeyedHash: primitive %q has no native keyed-hash form (populate hashes.Spec.KeyedHash, or register a hand-rolled Spec via macs.Register)", hashName)
 	}
+	if spec.KeySize == 0 {
+		return Spec{}, fmt.Errorf("macs: BuildKeyedHash: KeyedHashSpec.KeySize is required (probe-ladder auto-discovery removed for explicit key-size discipline)")
+	}
 	newKeyed := hspec.KeyedHash
 	out := Spec{
 		Name:        spec.Name,
 		KeySize:     spec.KeySize,
 		TagSize:     spec.TagSize,
 		MinKeyBytes: spec.MinKeyBytes,
-	}
-	if out.KeySize == 0 {
-		for _, n := range keyProbeLengths {
-			if h, err := newKeyed(make([]byte, n)); err == nil && h != nil {
-				out.KeySize = n
-				break
-			}
-		}
-		if out.KeySize == 0 {
-			return Spec{}, fmt.Errorf("macs: BuildKeyedHash: %s accepts none of the probe key lengths %v; set KeyedHashSpec.KeySize explicitly",
-				hashName, keyProbeLengths)
-		}
 	}
 	probe, err := newKeyed(make([]byte, out.KeySize))
 	if err != nil {

@@ -106,7 +106,8 @@
 // non-determinism, incremental-arm drift) by construction:
 //
 //	spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{
-//		Name: "b2b512_mac",
+//		Name:    "b2b512_mac",
+//		KeySize: 32,
 //	})
 //	if err != nil {
 //		log.Fatal(err)

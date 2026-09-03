@@ -245,7 +245,7 @@ func TestSynthesizedIncremental(t *testing.T) {
 // factory under the same key.
 func TestBuildKeyedHashVariants(t *testing.T) {
 	t.Run("blake2b512-64-byte-tag", func(t *testing.T) {
-		spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{Name: "kh_b2b512"})
+		spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{Name: "kh_b2b512", KeySize: 32})
 		if err != nil {
 			t.Fatalf("BuildKeyedHash: %v", err)
 		}
@@ -271,7 +271,7 @@ func TestBuildKeyedHashVariants(t *testing.T) {
 		}
 	})
 	t.Run("siphash24-16-byte-tag", func(t *testing.T) {
-		spec, err := macs.BuildKeyedHash("siphash24", macs.KeyedHashSpec{Name: "kh_sip"})
+		spec, err := macs.BuildKeyedHash("siphash24", macs.KeyedHashSpec{Name: "kh_sip", KeySize: 16})
 		if err != nil {
 			t.Fatalf("BuildKeyedHash: %v", err)
 		}
@@ -296,7 +296,7 @@ func TestBuildKeyedHashVariants(t *testing.T) {
 		}
 	})
 	t.Run("blake3-matches-shipped", func(t *testing.T) {
-		spec, err := macs.BuildKeyedHash("blake3", macs.KeyedHashSpec{Name: "xv_blake3"})
+		spec, err := macs.BuildKeyedHash("blake3", macs.KeyedHashSpec{Name: "xv_blake3", KeySize: 32})
 		if err != nil {
 			t.Fatalf("BuildKeyedHash: %v", err)
 		}
@@ -345,8 +345,13 @@ func TestBuilderErrors(t *testing.T) {
 	if _, err := macs.BuildKeyedHash("blake2b256", macs.KeyedHashSpec{Name: "be_g", KeySize: 96}); err == nil {
 		t.Error("BuildKeyedHash(blake2b256, KeySize 96): expected error (64-byte ceiling)")
 	}
-	if _, err := macs.BuildKeyedHash("blake2b256", macs.KeyedHashSpec{Name: "be_h", TagSize: 16}); err == nil {
+	if _, err := macs.BuildKeyedHash("blake2b256", macs.KeyedHashSpec{Name: "be_h", KeySize: 32, TagSize: 16}); err == nil {
 		t.Error("BuildKeyedHash(blake2b256, TagSize 16): expected error (truncation unsupported)")
+	}
+	// Zero KeySize is now a directive error — implicit ladder
+	// discovery removed.
+	if _, err := macs.BuildKeyedHash("blake2b256", macs.KeyedHashSpec{Name: "be_i"}); err == nil {
+		t.Error("BuildKeyedHash(blake2b256, zero KeySize): expected error (KeySize required)")
 	}
 }
 
@@ -398,7 +403,7 @@ func TestCustomKeyLengthGate(t *testing.T) {
 // the custom MacName, session initialisation, Single Message
 // encrypt / decrypt round-trip, and blob re-open in-process.
 func TestRegisterTripleIntegration(t *testing.T) {
-	spec, err := macs.BuildKeyedHash("blake2s", macs.KeyedHashSpec{Name: "it_kh_b2s"})
+	spec, err := macs.BuildKeyedHash("blake2s", macs.KeyedHashSpec{Name: "it_kh_b2s", KeySize: 32})
 	if err != nil {
 		t.Fatalf("BuildKeyedHash: %v", err)
 	}
@@ -462,7 +467,7 @@ func TestRegisterConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			spec, err := macs.BuildKeyedHash("blake2b256", macs.KeyedHashSpec{Name: name})
+			spec, err := macs.BuildKeyedHash("blake2b256", macs.KeyedHashSpec{Name: name, KeySize: 32})
 			if err != nil {
 				t.Errorf("BuildKeyedHash(%s): %v", name, err)
 				return

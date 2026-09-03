@@ -26,6 +26,17 @@ const (
 	// truncate / expand policy is owned by kdf.Derive).
 	MasterKeySize = 32
 
+	// MaxMasterKeySize is the upper sanity cap on the master keying
+	// material accepted by NewCipherset. The 128-byte ceiling is 4×
+	// the MasterKeySize floor — comfortably above the largest key any
+	// shipped registry primitive consumes (kdf takes at most the
+	// leading 32 bytes for the 256-bit-keyed primitives and stretches
+	// the leading 32 bytes to 64 for areion512), so no useful entropy
+	// is left on the table — and small enough that a hostile or
+	// mistyped caller-supplied master cannot force multi-gigabyte
+	// allocations along the master-copy path.
+	MaxMasterKeySize = 128
+
 	// DefaultSegmentSize is the recommended segment size for the
 	// single-message API (Encrypt, Decrypt, EncryptInPlace,
 	// DecryptInPlace) and for each per-chunk encrypt under the streaming
@@ -235,6 +246,9 @@ func NewCipherset(master []byte, schedule *Schedule) (*Cipherset, error) {
 	}
 	if len(master) < MasterKeySize {
 		return nil, fmt.Errorf("parallax: master must be at least %d bytes, got %d", MasterKeySize, len(master))
+	}
+	if len(master) > MaxMasterKeySize {
+		return nil, fmt.Errorf("parallax: master length %d exceeds MaxMasterKeySize=%d", len(master), MaxMasterKeySize)
 	}
 	anchor := schedule.palette[0]
 	anchorKeySize, err := ctr.KeySize(anchor)

@@ -59,6 +59,14 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 		return nil, err
 	}
 
+	// Upper cap on the top-level blob JSON. A realistic wrap-layer
+	// (~80–120 bytes plus the inner blob, itself capped by
+	// [itb.MaxBlobJSONSize]) fits well under 1 MiB; the ceiling here
+	// mirrors [itb.MaxBlobJSONSize] so a hostile persisted blob
+	// cannot force multi-megabyte JSON allocation before decode.
+	if len(blob) > itb.MaxBlobJSONSize {
+		return nil, ErrBlobMalformed
+	}
 	var wrap blobWrapV1
 	dec := json.NewDecoder(bytes.NewReader(blob))
 	dec.DisallowUnknownFields()
@@ -238,10 +246,28 @@ func Open(profile string, blob []byte, opts Opts, masters ...[]byte) (*Pipeline,
 // variadic overrides into (permMaster, wrapMaster), and rejects
 // invalid combinations.
 func resolveOpenMasters(resolved resolvedProfile, wrap blobWrapV1, masters [][]byte) (permMaster, wrapMaster []byte, err error) {
+	// Upper cap on both master-source paths — the trailing variadic
+	// override (rekey-on-import) and the persisted wrap-layer slots.
+	// The wrap-layer slots have already survived one JSON decode
+	// allocation at Open's entry, but capping here still prevents the
+	// second amplification via the "append([]byte(nil), ...)" copies
+	// below and short-circuits every downstream consumer.
 	if len(masters) == 2 {
+		if len(masters[0]) > parallax.MaxMasterKeySize {
+			return nil, nil, fmt.Errorf("triple: Open: permMaster override length %d exceeds parallax.MaxMasterKeySize=%d", len(masters[0]), parallax.MaxMasterKeySize)
+		}
+		if len(masters[1]) > wrapper.MaxMasterKeySize {
+			return nil, nil, fmt.Errorf("triple: Open: wrapMaster override length %d exceeds wrapper.MaxMasterKeySize=%d", len(masters[1]), wrapper.MaxMasterKeySize)
+		}
 		permMaster = append([]byte(nil), masters[0]...)
 		wrapMaster = append([]byte(nil), masters[1]...)
 	} else {
+		if len(wrap.PermMaster) > parallax.MaxMasterKeySize {
+			return nil, nil, fmt.Errorf("triple: Open: blob PermMaster length %d exceeds parallax.MaxMasterKeySize=%d", len(wrap.PermMaster), parallax.MaxMasterKeySize)
+		}
+		if len(wrap.WrapMaster) > wrapper.MaxMasterKeySize {
+			return nil, nil, fmt.Errorf("triple: Open: blob WrapMaster length %d exceeds wrapper.MaxMasterKeySize=%d", len(wrap.WrapMaster), wrapper.MaxMasterKeySize)
+		}
 		if len(wrap.PermMaster) > 0 {
 			permMaster = append([]byte(nil), wrap.PermMaster...)
 		}

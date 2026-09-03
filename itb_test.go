@@ -374,6 +374,41 @@ func TestSeedFromComponents512Validation(t *testing.T) {
 	}
 }
 
+// TestCheckEightSeedsRejectsNilHash pins the defensive nil-Hash
+// rejection inside checkEightSeeds{128,256,512}. [Blob{N}.Import3Cfg]
+// leaves Seed{N}.Hash unset by design (documented as caller-wired via
+// the hashes factory); a caller that forgets the wire step would
+// otherwise invoke a nil function later in ChainHash{N}, so the
+// entry-side rejection surfaces a clean error instead of a panic.
+func TestCheckEightSeedsRejectsNilHash(t *testing.T) {
+	t.Run("128", func(t *testing.T) {
+		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
+		// Drop Hash on one slot; the seed set now shape-matches an
+		// Import3Cfg-fresh blob whose caller forgot the wire step.
+		ds2.Hash = nil
+		data := []byte{0x42}
+		if _, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err == nil {
+			t.Fatal("Encrypt3x128Cfg accepted seed with nil Hash")
+		}
+	})
+	t.Run("256", func(t *testing.T) {
+		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
+		ds2.Hash = nil
+		data := []byte{0x42}
+		if _, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err == nil {
+			t.Fatal("Encrypt3x256Cfg accepted seed with nil Hash")
+		}
+	})
+	t.Run("512", func(t *testing.T) {
+		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
+		ds2.Hash = nil
+		data := []byte{0x42}
+		if _, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err == nil {
+			t.Fatal("Encrypt3x512Cfg accepted seed with nil Hash")
+		}
+	})
+}
+
 // TestInvalidSeedSize exercises the seed-width validator inside
 // NewSeed128 / NewSeed256 / NewSeed512: below-minimum, above-maximum,
 // not-a-multiple-of-primitive-width, nil hashFunc.

@@ -994,7 +994,7 @@ import (
 )
 
 func init() {
-    spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{Name: "b2b512_mac"})
+    spec, err := macs.BuildKeyedHash("blake2b512", macs.KeyedHashSpec{Name: "b2b512_mac", KeySize: 32})
     if err != nil {
         panic(err)
     }
