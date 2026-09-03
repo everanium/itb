@@ -9,6 +9,35 @@ import (
 	"strconv"
 )
 
+// MaxBlobJSONSize is the upper sanity cap on the total byte length of
+// a JSON blob accepted by [Blob128.Import3Cfg] / [Blob256.Import3Cfg]
+// / [Blob512.Import3Cfg]. A realistic Triple blob is a few kilobytes;
+// the 1 MiB ceiling is roughly two orders of magnitude above that,
+// and closes the JSON-array-inflation attack surface transitively —
+// no field inside the blob (Components string arrays, hex-encoded
+// keys, MAC key) can physically exceed the total, so a per-field cap
+// beyond this one is a defence-in-depth check rather than the load-
+// bearing bound.
+const MaxBlobJSONSize = 1 << 20
+
+// maxMACKeyHexLen is the upper cap on the hex-encoded MAC key string
+// inside a Blob{N}. Shipped MAC primitives use keys up to 32 bytes
+// (see [github.com/everanium/itb/macs]); the 256-character cap covers
+// 128 decoded bytes — twice the largest realistic key — so a hostile
+// hex payload cannot inflate the decoded []byte before macs.Make
+// rejects an out-of-shape key.
+const maxMACKeyHexLen = 256
+
+// maxBlob128KeyHexLen is the upper cap on the hex-encoded variable-
+// length key strings on [Blob128] (siphash24 empty, aescmac 16 bytes).
+// The 128-character cap covers 64 decoded bytes — matches the 64-byte
+// fixed cap enforced by hexToFixed64 for [Blob256] / [Blob512] Key*
+// fields — so the [Blob128] variable-length path shares the same
+// upper bound as its fixed-length siblings, and no hostile hex
+// payload can inflate any Key{N,D1..3,S1..3,L} slice before the
+// downstream [hashes.Make128Pair] rejects an out-of-shape key.
+const maxBlob128KeyHexLen = 128
+
 // decodeBlobStrict parses a Blob{N} JSON payload into the supplied
 // blobV1 receiver with [json.Decoder.DisallowUnknownFields] enabled
 // so a tampered blob carrying extra fields is rejected as malformed
@@ -18,9 +47,17 @@ import (
 // value and leaves the rest unread, allowing a tampered blob to
 // smuggle data past the structural check.
 //
+// A leading len(data) > MaxBlobJSONSize check rejects a hostile
+// multi-megabyte input before json.Decoder allocates for a single
+// field; a Components / hex-key inflation attack cannot slip past
+// this bound since every field lives inside the same byte buffer.
+//
 // Used by every Blob{128,256,512}.Import / Import3 entry point so
 // the strict-shape promise is uniform across widths.
 func decodeBlobStrict(data []byte, out *blobV1) error {
+	if len(data) > MaxBlobJSONSize {
+		return ErrBlobMalformed
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
@@ -186,10 +223,16 @@ func hexToFixed32(s string) ([32]byte, error) {
 // hexToBytes is the variable-length variant used by [Blob128] —
 // the 128-bit width covers both siphash24 (no fixed key, empty
 // bytes) and aescmac (16-byte key). Returns nil for an empty
-// input string.
+// input string. Rejects any input longer than [maxBlob128KeyHexLen]
+// as [ErrBlobMalformed] so a hostile hex payload cannot force a
+// multi-megabyte decoded slice before the downstream key-length
+// check in [hashes.Make128Pair] runs.
 func hexToBytes(s string) ([]byte, error) {
 	if s == "" {
 		return nil, nil
+	}
+	if len(s) > maxBlob128KeyHexLen {
+		return nil, ErrBlobMalformed
 	}
 	decoded, err := hex.DecodeString(s)
 	if err != nil {
@@ -541,6 +584,15 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Mode != 3 {
 		return ErrBlobModeMismatch
 	}
+	// KeyBits pre-validation — mirrors the [NewSeed512] /
+	// [SeedFromComponents512] contract at the Import boundary so a
+	// malformed blob (KeyBits outside the shipped range, or not a
+	// multiple of the width) cannot slip past validateSeedComponentsLen
+	// with a small "want" that then indexes past the seed material at
+	// first use (Encrypt3x512Cfg → ChainHash512 → Components[0:8]).
+	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%512 != 0 {
+		return ErrBlobMalformed
+	}
 
 	keyN, err := hexToFixed64(blob.KeyN)
 	if err != nil {
@@ -624,6 +676,9 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 
 	var macKey []byte
 	if blob.MACKey != "" {
+		if len(blob.MACKey) > maxMACKeyHexLen {
+			return ErrBlobMalformed
+		}
 		macKey, err = hex.DecodeString(blob.MACKey)
 		if err != nil {
 			return ErrBlobMalformed
@@ -756,6 +811,15 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Mode != 3 {
 		return ErrBlobModeMismatch
 	}
+	// KeyBits pre-validation — mirrors the [NewSeed256] /
+	// [SeedFromComponents256] contract at the Import boundary so a
+	// malformed blob (KeyBits outside the shipped range, or not a
+	// multiple of the width) cannot slip past validateSeedComponentsLen
+	// with a small "want" that then indexes past the seed material at
+	// first use.
+	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%256 != 0 {
+		return ErrBlobMalformed
+	}
 
 	keyN, err := hexToFixed32(blob.KeyN)
 	if err != nil {
@@ -839,6 +903,9 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 
 	var macKey []byte
 	if blob.MACKey != "" {
+		if len(blob.MACKey) > maxMACKeyHexLen {
+			return ErrBlobMalformed
+		}
 		macKey, err = hex.DecodeString(blob.MACKey)
 		if err != nil {
 			return ErrBlobMalformed
@@ -971,6 +1038,15 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Mode != 3 {
 		return ErrBlobModeMismatch
 	}
+	// KeyBits pre-validation — mirrors the [NewSeed128] /
+	// [SeedFromComponents128] contract at the Import boundary so a
+	// malformed blob (KeyBits outside the shipped range, or not a
+	// multiple of the width) cannot slip past validateSeedComponentsLen
+	// with a small "want" that then indexes past the seed material at
+	// first use.
+	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%128 != 0 {
+		return ErrBlobMalformed
+	}
 
 	keyN, err := hexToBytes(blob.KeyN)
 	if err != nil {
@@ -1054,6 +1130,9 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 
 	var macKey []byte
 	if blob.MACKey != "" {
+		if len(blob.MACKey) > maxMACKeyHexLen {
+			return ErrBlobMalformed
+		}
 		macKey, err = hex.DecodeString(blob.MACKey)
 		if err != nil {
 			return ErrBlobMalformed

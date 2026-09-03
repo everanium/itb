@@ -156,7 +156,7 @@ func TestBuildKeyedHashWithRegisteredCustomHash(t *testing.T) {
 		t.Fatalf("hashes.Register: %v", err)
 	}
 
-	spec, err := macs.BuildKeyedHash("xh_keyed", macs.KeyedHashSpec{Name: "xh_khmac"})
+	spec, err := macs.BuildKeyedHash("xh_keyed", macs.KeyedHashSpec{Name: "xh_khmac", KeySize: 32})
 	if err != nil {
 		t.Fatalf("BuildKeyedHash(custom hash): %v", err)
 	}
@@ -191,12 +191,15 @@ type errKeyLen int
 
 func (e errKeyLen) Error() string { return "xh_keyed key must be exactly 32 bytes" }
 
-// TestBuildKeyedHashProbeLadder pins the KeySize-discovery contract
-// for a primitive whose keyed constructor accepts none of the probe
-// ladder lengths: the zero-KeySize default fails with a directive
-// error, and an explicit KeySize outside the ladder builds a working
-// Spec with MinKeyBytes pinned to the key length.
-func TestBuildKeyedHashProbeLadder(t *testing.T) {
+// TestBuildKeyedHashRequiresExplicitKeySize pins the removal of
+// implicit key-size discovery: [macs.BuildKeyedHash] no longer walks
+// a probe ladder when KeyedHashSpec.KeySize is zero. The caller must
+// supply an explicit KeySize matching a length the primitive's keyed
+// constructor accepts, and any explicit value the constructor
+// accepts continues to build a working Spec — exercised here by
+// registering a 48-byte-key custom primitive and building it under
+// explicit KeySize=48.
+func TestBuildKeyedHashRequiresExplicitKeySize(t *testing.T) {
 	newKeyed := func(key []byte) (hash.Hash, error) {
 		if len(key) != 48 {
 			return nil, errKeyLen(len(key))
@@ -212,10 +215,14 @@ func TestBuildKeyedHashProbeLadder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hashes.Register: %v", err)
 	}
+	// Zero KeySize surfaces the directive error — no implicit
+	// discovery.
 	_, err = macs.BuildKeyedHash("xh_key48", macs.KeyedHashSpec{Name: "xh_k48"})
-	if err == nil || !strings.Contains(err.Error(), "set KeyedHashSpec.KeySize explicitly") {
-		t.Fatalf("zero-KeySize build: got %v, want probe-ladder directive error", err)
+	if err == nil || !strings.Contains(err.Error(), "KeyedHashSpec.KeySize is required") {
+		t.Fatalf("zero-KeySize build: got %v, want required-KeySize directive error", err)
 	}
+	// Explicit KeySize matching the constructor's contract still
+	// works.
 	spec, err := macs.BuildKeyedHash("xh_key48", macs.KeyedHashSpec{Name: "xh_k48", KeySize: 48})
 	if err != nil {
 		t.Fatalf("BuildKeyedHash(KeySize 48): %v", err)
@@ -229,6 +236,12 @@ func TestBuildKeyedHashProbeLadder(t *testing.T) {
 	}
 	if _, err := macs.Make("xh_k48", bytes.Repeat([]byte{0x21}, 48)); err != nil {
 		t.Fatalf("Make with 48-byte key: %v", err)
+	}
+	// The same discipline applies to a shipped primitive: zero
+	// KeySize errors, explicit KeySize builds.
+	if _, err := macs.BuildKeyedHash("blake3", macs.KeyedHashSpec{Name: "kh_bl3_missing"}); err == nil ||
+		!strings.Contains(err.Error(), "KeyedHashSpec.KeySize is required") {
+		t.Fatalf("blake3 zero-KeySize build: got %v, want required-KeySize directive error", err)
 	}
 }
 

@@ -406,14 +406,17 @@ by populating the corresponding field; a primitive without either
 form remains MAC-capable through the fully hand-rolled `Register`
 path (Example 3 below).
 
-Key geometry under `BuildKeyedHash` is discovered from the
-constructor: a zero `KeySize` defaults to the first probe length
-(32, 16, 64 bytes, in that order) the constructor accepts — a
-constructor rejecting every probe length requires an explicit
-`KeySize`; a zero `MinKeyBytes` defaults to 16 when the constructor
-accepts a 16-byte key and to `KeySize` otherwise (exact-length key
-contracts); explicit `KeySize` / `MinKeyBytes` values the
-constructor rejects fail eagerly at build time.
+Key geometry under `BuildKeyedHash` is caller-explicit: `KeySize` is
+required — a zero value returns a directive error, since implicit
+key-size discovery was removed to avoid hidden key-size selection in
+a cryptographic construction. The caller supplies a `KeySize` a
+length the primitive's keyed constructor accepts (BLAKE3's 32,
+SipHash-2-4's 16, BLAKE2b-256 up to 64, BLAKE2b-512 up to 64,
+HMAC-SHA-512-shaped primitives keyed at the hash's 128-byte block
+size, and so on). A zero `MinKeyBytes` defaults to 16 when the
+constructor accepts a 16-byte key and to `KeySize` otherwise
+(exact-length key contracts); explicit `KeySize` / `MinKeyBytes`
+values the constructor rejects fail eagerly at build time.
 
 ### Three registration paths
 
@@ -539,7 +542,7 @@ import (
 
 func main() {
     // Build + register a keyed-BLAKE2s custom MAC.
-    spec, err := macs.BuildKeyedHash("blake2s", macs.KeyedHashSpec{Name: "b2s_mac"})
+    spec, err := macs.BuildKeyedHash("blake2s", macs.KeyedHashSpec{Name: "b2s_mac", KeySize: 32})
     if err != nil {
         panic(err)
     }

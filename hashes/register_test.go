@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -437,5 +438,169 @@ func TestRegisterMake512Pair(t *testing.T) {
 	}
 	if h == nil || len(key) != 64 {
 		t.Fatalf("Make512Pair(%q): h=%v, key len=%d", name, h, len(key))
+	}
+}
+
+// nopHash is a hash.Hash stub that discards writes and returns a
+// caller-fixed byte slice on Sum. Used by the smoke-test fixtures
+// below to control the exact bytes / length / determinism the
+// smoke path observes without pulling in a full hash implementation.
+type nopHash struct {
+	sum []byte
+}
+
+func (n *nopHash) Write(_ []byte) (int, error) { return 0, nil }
+func (n *nopHash) Sum(b []byte) []byte         { return append(b, n.sum...) }
+func (n *nopHash) Reset()                      {}
+func (n *nopHash) Size() int                   { return len(n.sum) }
+func (n *nopHash) BlockSize() int              { return 64 }
+
+// TestRegisterSmokeRejectsNilHashHashClosure pins the extended smoke
+// check that a populated [Spec.HashHash] factory must return a
+// non-nil hash.Hash. Reaching a downstream [macs.BuildHMAC] call
+// with a nil returned closure would deref-crash on the first Write;
+// the smoke check surfaces the bug at registration time.
+func TestRegisterSmokeRejectsNilHashHashClosure(t *testing.T) {
+	name := customFactoryName + "smoke_hashhash_nil"
+	spec := Spec{
+		Name:        name,
+		Width:       W256,
+		Make256Pair: makeCustom256PairFactory(),
+		HashHash:    func() hash.Hash { return nil },
+	}
+	if err := Register(spec); err == nil {
+		t.Fatalf("Register accepted a HashHash factory that returns nil")
+	}
+}
+
+// TestRegisterSmokeRejectsNonDeterministicHashHash pins the extended
+// smoke check that a populated [Spec.HashHash] factory must produce
+// byte-identical output across fresh instances over the same input.
+// A non-deterministic HashHash would corrupt every HMAC-shaped MAC
+// composed from the primitive; the smoke check surfaces the bug at
+// registration time.
+func TestRegisterSmokeRejectsNonDeterministicHashHash(t *testing.T) {
+	name := customFactoryName + "smoke_hashhash_nondet"
+	// counter is captured by the factory closure so every fresh
+	// hash.Hash instance sums to a different byte pattern.
+	counter := byte(0)
+	spec := Spec{
+		Name:        name,
+		Width:       W256,
+		Make256Pair: makeCustom256PairFactory(),
+		HashHash: func() hash.Hash {
+			counter++
+			sum := make([]byte, 32)
+			sum[0] = counter
+			return &nopHash{sum: sum}
+		},
+	}
+	if err := Register(spec); err == nil {
+		t.Fatalf("Register accepted a non-deterministic HashHash factory")
+	}
+}
+
+// TestRegisterSmokeRejectsHashHashWrongOutputLength pins the extended
+// smoke check that a populated [Spec.HashHash] factory must produce
+// Sum output whose length matches Spec.Width/8. A stub returning a
+// shorter / longer sum would break every downstream consumer that
+// sizes buffers from Width/8.
+func TestRegisterSmokeRejectsHashHashWrongOutputLength(t *testing.T) {
+	name := customFactoryName + "smoke_hashhash_len"
+	spec := Spec{
+		Name:        name,
+		Width:       W256,
+		Make256Pair: makeCustom256PairFactory(),
+		HashHash: func() hash.Hash {
+			return &nopHash{sum: make([]byte, 16)} // 16 != Width/8 (32)
+		},
+	}
+	if err := Register(spec); err == nil {
+		t.Fatalf("Register accepted a HashHash factory with wrong-length Sum output")
+	}
+}
+
+// TestRegisterSmokeRejectsBrokenKeyedHash pins the extended smoke
+// check that a populated [Spec.KeyedHash] factory must (a) not panic
+// on any key it is called with during smoke, (b) return either a
+// non-nil hash.Hash OR an error — never (nil, nil) — for a key it
+// accepts, and (c) produce byte-identical tags across fresh
+// instances keyed with the same bytes when the first fresh call
+// succeeds. A constructor that cleanly errors on the Width-native
+// probe key length is NOT rejected — that is a legitimate custom-
+// primitive shape that must be composed via [macs.BuildKeyedHash]
+// with an explicit KeySize, exercised by
+// TestBuildKeyedHashRequiresExplicitKeySize in the macs package.
+// Each subcase below covers one broken-branch class the smoke
+// actually rejects.
+func TestRegisterSmokeRejectsBrokenKeyedHash(t *testing.T) {
+	t.Run("panic_on_smoke_key", func(t *testing.T) {
+		name := customFactoryName + "smoke_keyedhash_panic"
+		spec := Spec{
+			Name:        name,
+			Width:       W256,
+			Make256Pair: makeCustom256PairFactory(),
+			KeyedHash: func(k []byte) (hash.Hash, error) {
+				panic("intentional smoke panic")
+			},
+		}
+		if err := Register(spec); err == nil {
+			t.Fatalf("Register accepted a KeyedHash factory that panics")
+		}
+	})
+
+	t.Run("nondeterministic_across_fresh_instances", func(t *testing.T) {
+		name := customFactoryName + "smoke_keyedhash_nondet"
+		counter := byte(0)
+		spec := Spec{
+			Name:        name,
+			Width:       W256,
+			Make256Pair: makeCustom256PairFactory(),
+			KeyedHash: func(k []byte) (hash.Hash, error) {
+				counter++
+				sum := make([]byte, 32)
+				sum[0] = counter
+				return &nopHash{sum: sum}, nil
+			},
+		}
+		if err := Register(spec); err == nil {
+			t.Fatalf("Register accepted a non-deterministic KeyedHash factory")
+		}
+	})
+
+	t.Run("nil_hash_on_width_native_key", func(t *testing.T) {
+		name := customFactoryName + "smoke_keyedhash_nilhash"
+		spec := Spec{
+			Name:        name,
+			Width:       W256,
+			Make256Pair: makeCustom256PairFactory(),
+			KeyedHash: func(k []byte) (hash.Hash, error) {
+				return nil, nil // no error, but nil hash — the trap the smoke closes
+			},
+		}
+		if err := Register(spec); err == nil {
+			t.Fatalf("Register accepted a KeyedHash factory that returns a nil hash.Hash without error")
+		}
+	})
+}
+
+// TestSmokeShippedOptionalHooks exercises the extended optional-hook
+// smoke against every shipped [Registry] entry whose HashHash and /
+// or KeyedHash field is populated. Shipped entries do not run
+// through [Register] (they are compile-time), so this test is the
+// boundary where the smoke contract is validated for the shipped
+// set. Any regression in one of the shipped factories surfaces here.
+func TestSmokeShippedOptionalHooks(t *testing.T) {
+	probe := []byte("hashes: register smoke probe")
+	for _, spec := range Registry {
+		if spec.HashHash == nil && spec.KeyedHash == nil {
+			continue
+		}
+		spec := spec
+		t.Run(spec.Name, func(t *testing.T) {
+			if err := smokeOptionalHashHooks(spec, probe); err != nil {
+				t.Fatalf("shipped %q failed optional-hook smoke: %v", spec.Name, err)
+			}
+		})
 	}
 }
