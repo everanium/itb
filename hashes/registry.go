@@ -1,6 +1,8 @@
 package hashes
 
 import (
+	"bytes"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"hash"
@@ -737,6 +739,103 @@ func smokeValidate(spec Spec) error {
 				}
 			}
 		}
+	}
+	if err := smokeOptionalHashHooks(spec, probe); err != nil {
+		return err
+	}
+	return nil
+}
+
+// smokeOptionalHashHooks exercises the optional [Spec.HashHash] and
+// [Spec.KeyedHash] factory hooks a user-registered Spec may populate
+// so [macs.BuildHMAC] / [macs.BuildKeyedHash] can compose the
+// primitive by name. Both hooks are optional: a nil field is left
+// alone. When populated, each hook is verified against the same
+// contract the mac-builder consumers rely on later:
+//
+//   - HashHash: returns a non-nil hash.Hash whose Sum(nil) after
+//     writing the smoke probe yields Width/8 bytes; two fresh
+//     instances produce byte-identical output over the same input.
+//
+//   - KeyedHash: accepts a fresh Width-native-length key without
+//     error (16 / 32 / 64 bytes for W128 / W256 / W512), returns
+//     a non-nil hash.Hash whose Sum(nil) yields Width/8 bytes; two
+//     fresh instances keyed with the same bytes produce byte-
+//     identical tags over the same input. A nil / empty key is
+//     probed for no-panic only — the constructor may legitimately
+//     accept either as a valid empty key or return an error, both
+//     are within contract, so no other assertion applies.
+//
+// The whole hook-smoke body runs under defer/recover: a factory
+// that panics on any of these calls surfaces as a returned error
+// rather than crashing the [Register] caller.
+func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("hashes: Register: %q optional-hook smoke panicked: %v", spec.Name, r)
+		}
+	}()
+	wantLen := int(spec.Width) / 8
+	if spec.HashHash != nil {
+		h1 := spec.HashHash()
+		if h1 == nil {
+			return fmt.Errorf("hashes: Register: %q HashHash returned a nil hash.Hash", spec.Name)
+		}
+		h1.Write(probe)
+		out1 := h1.Sum(nil)
+		if len(out1) != wantLen {
+			return fmt.Errorf("hashes: Register: %q HashHash output length %d does not match Width/8 = %d", spec.Name, len(out1), wantLen)
+		}
+		h2 := spec.HashHash()
+		if h2 == nil {
+			return fmt.Errorf("hashes: Register: %q HashHash returned a nil hash.Hash on the second fresh call", spec.Name)
+		}
+		h2.Write(probe)
+		out2 := h2.Sum(nil)
+		if !bytes.Equal(out1, out2) {
+			return fmt.Errorf("hashes: Register: %q HashHash is non-deterministic across fresh instances (two Write/Sum passes over identical input disagree)", spec.Name)
+		}
+	}
+	if spec.KeyedHash != nil {
+		// Single probe at the primitive's Width-native key length
+		// (16 / 32 / 64 bytes for W128 / W256 / W512). If the
+		// constructor accepts, run the determinism assertion; if
+		// it cleanly errors, the primitive has an exotic key
+		// contract and must be composed via macs.BuildKeyedHash
+		// with an explicit KeySize — the determinism check is
+		// silently skipped in that case. The no-panic contract
+		// still holds via the outer defer/recover.
+		key := make([]byte, wantLen)
+		if _, rerr := rand.Read(key); rerr != nil {
+			return fmt.Errorf("hashes: Register: %q KeyedHash smoke: crypto/rand: %w", spec.Name, rerr)
+		}
+		kh1, kerr := spec.KeyedHash(key)
+		if kerr == nil {
+			if kh1 == nil {
+				return fmt.Errorf("hashes: Register: %q KeyedHash returned a nil hash.Hash without error at %d-byte key", spec.Name, wantLen)
+			}
+			kh1.Write(probe)
+			tag1 := kh1.Sum(nil)
+			kh2, kerr2 := spec.KeyedHash(key)
+			if kerr2 != nil {
+				return fmt.Errorf("hashes: Register: %q KeyedHash rejected the %d-byte key on the second fresh call after accepting it on the first: %w", spec.Name, wantLen, kerr2)
+			}
+			if kh2 == nil {
+				return fmt.Errorf("hashes: Register: %q KeyedHash returned a nil hash.Hash on the second fresh call at %d-byte key", spec.Name, wantLen)
+			}
+			kh2.Write(probe)
+			tag2 := kh2.Sum(nil)
+			if !bytes.Equal(tag1, tag2) {
+				return fmt.Errorf("hashes: Register: %q KeyedHash is non-deterministic across fresh instances at %d-byte key (two Write/Sum passes over identical (key, input) disagree)", spec.Name, wantLen)
+			}
+		}
+		// Contract-flexibility no-panic probes on nil and empty
+		// key. The constructor may accept either as a valid empty
+		// key or return an error — both are within contract; the
+		// outer defer/recover converts any panic into a returned
+		// error, closing the only misbehaviour worth catching here.
+		_, _ = spec.KeyedHash(nil)
+		_, _ = spec.KeyedHash([]byte{})
 	}
 	return nil
 }

@@ -357,3 +357,25 @@ func TestNilScheduleRejected(t *testing.T) {
 		t.Fatal("NewCipherset(nil schedule) returned no error")
 	}
 }
+
+// TestNewCiphersetRejectsOversizedMaster pins the upper-cap
+// rejection at MaxMasterKeySize. Guards the master-copy paths
+// downstream from amplifying an adversarial multi-gigabyte slice.
+func TestNewCiphersetRejectsOversizedMaster(t *testing.T) {
+	schedule := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	oversized := make([]byte, MaxMasterKeySize+1)
+	if _, err := rand.Read(oversized); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+	if _, err := NewCipherset(oversized, schedule); err == nil {
+		t.Fatalf("NewCipherset accepted %d-byte master (cap is %d)", len(oversized), MaxMasterKeySize)
+	}
+	// The exact-cap length is still accepted.
+	exact := make([]byte, MaxMasterKeySize)
+	if _, err := rand.Read(exact); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+	if _, err := NewCipherset(exact, schedule); err != nil {
+		t.Fatalf("NewCipherset rejected exact-cap master: %v", err)
+	}
+}

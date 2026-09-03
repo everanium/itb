@@ -253,6 +253,16 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 // present (non-nil) — protects callers from accidentally passing the
 // same byte slice to both master parameters.
 func prepareMasters(resolved resolvedProfile, opts Opts) (permMaster, wrapMaster []byte, err error) {
+	// Upper cap on caller-supplied masters — rejected upfront so the
+	// two "append([]byte(nil), ...)" copies below cannot amplify an
+	// adversarial multi-gigabyte slice into two more copies plus the
+	// downstream base64 blob string.
+	if opts.PermMaster != nil && len(opts.PermMaster) > parallax.MaxMasterKeySize {
+		return nil, nil, fmt.Errorf("triple: opts.PermMaster length %d exceeds parallax.MaxMasterKeySize=%d", len(opts.PermMaster), parallax.MaxMasterKeySize)
+	}
+	if opts.WrapMaster != nil && len(opts.WrapMaster) > wrapper.MaxMasterKeySize {
+		return nil, nil, fmt.Errorf("triple: opts.WrapMaster length %d exceeds wrapper.MaxMasterKeySize=%d", len(opts.WrapMaster), wrapper.MaxMasterKeySize)
+	}
 	if resolved.parallaxOn {
 		if opts.PermMaster != nil {
 			permMaster = append([]byte(nil), opts.PermMaster...)

@@ -43,6 +43,16 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 	if p.resolved.wrapperOn && len(wrapMaster) == 0 {
 		return nil, ErrMissingMasters
 	}
+	// Upper cap on caller-supplied masters — rejected upfront so the
+	// two "append([]byte(nil), ...)" copies below cannot amplify an
+	// adversarial multi-gigabyte slice before reaching the downstream
+	// NewCipherset / DeriveKey validators.
+	if p.resolved.parallaxOn && len(permMaster) > parallax.MaxMasterKeySize {
+		return nil, fmt.Errorf("triple: Rekey permMaster length %d exceeds parallax.MaxMasterKeySize=%d", len(permMaster), parallax.MaxMasterKeySize)
+	}
+	if p.resolved.wrapperOn && len(wrapMaster) > wrapper.MaxMasterKeySize {
+		return nil, fmt.Errorf("triple: Rekey wrapMaster length %d exceeds wrapper.MaxMasterKeySize=%d", len(wrapMaster), wrapper.MaxMasterKeySize)
+	}
 	if p.resolved.parallaxOn && p.resolved.wrapperOn && bytes.Equal(permMaster, wrapMaster) {
 		return nil, ErrIdenticalMasters
 	}

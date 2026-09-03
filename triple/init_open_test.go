@@ -396,3 +396,120 @@ func TestPipelineInitRejectsOverlongStrings(t *testing.T) {
 		})
 	}
 }
+
+// TestPipelineInitRejectsOversizedMasters pins the upper-cap
+// rejection of [Opts.PermMaster] / [Opts.WrapMaster] longer than
+// the parallax / wrapper MaxMasterKeySize (128 bytes). The cap
+// protects [prepareMasters] from amplifying an adversarial slice
+// into two append-copies plus the downstream base64 blob string.
+func TestPipelineInitRejectsOversizedMasters(t *testing.T) {
+	perm := freshBytes(t, 129) // one byte past parallax.MaxMasterKeySize
+	wrap := freshBytes(t, 129) // one byte past wrapper.MaxMasterKeySize
+	cases := []struct {
+		label string
+		opts  Opts
+	}{
+		{"perm_master_129", Opts{PermMaster: perm}},
+		{"wrap_master_129", Opts{WrapMaster: wrap}},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			pipe, _, err := Init(ProfileStreamingAEADTripleMACV1, c.opts)
+			if err == nil {
+				pipe.Close()
+				t.Fatalf("Init accepted oversized master: %s", c.label)
+			}
+		})
+	}
+}
+
+// TestPipelineRekeyRejectsOversizedMasters pins the upper-cap
+// rejection on the [Pipeline.Rekey] path. Symmetric with
+// [TestPipelineInitRejectsOversizedMasters] on the entry-side
+// prepareMasters check.
+func TestPipelineRekeyRejectsOversizedMasters(t *testing.T) {
+	pipe, _, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+	goodPerm := freshBytes(t, 32)
+	goodWrap := freshBytes(t, 32)
+	badPerm := freshBytes(t, 129)
+	badWrap := freshBytes(t, 129)
+	if _, err := pipe.Rekey(badPerm, goodWrap); err == nil {
+		t.Fatal("Rekey accepted oversized permMaster")
+	}
+	if _, err := pipe.Rekey(goodPerm, badWrap); err == nil {
+		t.Fatal("Rekey accepted oversized wrapMaster")
+	}
+}
+
+// TestPipelineOpenRejectsOversizedMasters pins the upper-cap
+// rejection on the [Open] rekey-on-import trailing-variadic path.
+func TestPipelineOpenRejectsOversizedMasters(t *testing.T) {
+	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	goodPerm := freshBytes(t, 32)
+	goodWrap := freshBytes(t, 32)
+	badPerm := freshBytes(t, 129)
+	badWrap := freshBytes(t, 129)
+	if _, err := Open(ProfileStreamingAEADTripleMACV1, blob, Opts{}, badPerm, goodWrap); err == nil {
+		t.Fatal("Open accepted oversized permMaster override")
+	}
+	if _, err := Open(ProfileStreamingAEADTripleMACV1, blob, Opts{}, goodPerm, badWrap); err == nil {
+		t.Fatal("Open accepted oversized wrapMaster override")
+	}
+}
+
+// TestPipelineOpenRejectsOversizedBlobMasters pins the upper-cap
+// rejection when the persisted wrap-layer carries an oversized
+// PermMaster / WrapMaster. A hostile persisted blob cannot then
+// force the [Open] path to amplify the multi-megabyte slice.
+func TestPipelineOpenRejectsOversizedBlobMasters(t *testing.T) {
+	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	var w blobWrapV1
+	if err := json.Unmarshal(blob, &w); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	origPerm := w.PermMaster
+	origWrap := w.WrapMaster
+
+	// PermMaster: replace with a 129-byte slice; keep WrapMaster.
+	w.PermMaster = freshBytes(t, 129)
+	w.WrapMaster = origWrap
+	permBlob, err := json.Marshal(w)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if _, err := Open(ProfileStreamingAEADTripleMACV1, permBlob, Opts{}); err == nil {
+		t.Fatal("Open accepted blob with oversized PermMaster slot")
+	}
+
+	// WrapMaster: replace with a 129-byte slice; restore PermMaster.
+	w.PermMaster = origPerm
+	w.WrapMaster = freshBytes(t, 129)
+	wrapBlob, err := json.Marshal(w)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if _, err := Open(ProfileStreamingAEADTripleMACV1, wrapBlob, Opts{}); err == nil {
+		t.Fatal("Open accepted blob with oversized WrapMaster slot")
+	}
+}
+
+// TestPipelineOpenRejectsOversizedBlob pins the top-level byte-length
+// cap on the [Open] entry surface. A 2 MiB persisted blob is rejected
+// before json.Decoder allocates for any wrap-layer field. Mirrors
+// [TestBlobDecodeRejectsOversizedInput] at the triple boundary.
+func TestPipelineOpenRejectsOversizedBlob(t *testing.T) {
+	oversized := bytes.Repeat([]byte{'{'}, 2*itb.MaxBlobJSONSize)
+	if _, err := Open(ProfileStreamingAEADTripleMACV1, oversized, Opts{}); err == nil {
+		t.Fatal("Open accepted 2 MiB blob (cap is itb.MaxBlobJSONSize)")
+	}
+}

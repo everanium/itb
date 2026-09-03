@@ -25,6 +25,16 @@ const (
 	CipherChaCha20   = "chacha20"
 )
 
+// MaxMasterKeySize is the upper sanity cap on the master keying material
+// accepted by DeriveKey. The 128-byte ceiling is 4× the 32-byte floor —
+// comfortably above the largest key any shipped outer cipher consumes
+// (the kdf package takes at most the leading 32 bytes for the 256-bit-
+// keyed primitives and stretches the leading 32 bytes to 64 for
+// areion512), so no useful entropy is left on the table — and small
+// enough that a hostile or mistyped caller-supplied master cannot force
+// multi-gigabyte allocations along the master-copy path.
+const MaxMasterKeySize = 128
+
 // CipherNames lists every supported outer cipher in iteration order, in the
 // project's canonical primitive order.
 var CipherNames = []string{
@@ -420,6 +430,9 @@ func (emptyUnwrapReader) Read(p []byte) (int, error) { return 0, io.EOF }
 func DeriveKey(name string, master []byte) ([]byte, error) {
 	if len(master) < 32 {
 		return nil, fmt.Errorf("wrapper: DeriveKey master must be at least 32 bytes, got %d", len(master))
+	}
+	if len(master) > MaxMasterKeySize {
+		return nil, fmt.Errorf("wrapper: DeriveKey master length %d exceeds MaxMasterKeySize=%d", len(master), MaxMasterKeySize)
 	}
 	n, err := KeySize(name)
 	if err != nil {

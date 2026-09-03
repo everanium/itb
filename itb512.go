@@ -80,6 +80,15 @@ func process512Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce [
 func checkEightSeeds512(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) error {
 	seeds := [8]*Seed512{ns, ls, ds1, ds2, ds3, ss1, ss2, ss3}
 	for i := 0; i < len(seeds); i++ {
+		// Defensive nil-Hash check. [Blob512.Import3Cfg] leaves
+		// Seed512.Hash unset (documented as caller-wired via the
+		// hashes factory); a caller that forgets the wire step would
+		// otherwise invoke a nil function later in ChainHash512, so
+		// the entry-side rejection surfaces a clean error instead of
+		// a runtime panic.
+		if seeds[i].Hash == nil {
+			return fmt.Errorf("itb: seed.Hash is nil at slot %d (Import3Cfg leaves it for the caller to wire via the hashes factory)", i)
+		}
 		for j := i + 1; j < len(seeds); j++ {
 			if seeds[i] == seeds[j] || slices.Equal(seeds[i].Components, seeds[j].Components) {
 				return fmt.Errorf("itb: all 8 seeds must be different (8-seed isolation)")
