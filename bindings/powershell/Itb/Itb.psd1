@@ -2,7 +2,7 @@
 
 @{
     RootModule           = 'Itb.psm1'
-    ModuleVersion        = '0.3.4'
+    ModuleVersion        = '0.3.5'
     GUID                 = 'ac3aa715-a34c-46de-906f-51d29510463b'
     Author               = 'Everanium'
     CompanyName          = 'Everanium'

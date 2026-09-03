@@ -8,7 +8,7 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-JAR="$HERE/../../java/build/libs/itb-java-0.3.4.jar"
+JAR="$HERE/../../java/build/libs/itb-java-0.3.5.jar"
 EJAR="$HERE/../../java/build/libs/eitb.jar"
 JNI="$HERE/../../java/build/jni/libitb_jni.so"
 
