@@ -74,29 +74,6 @@ JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_setGCPercent(
     return ITB_SetGCPercent((int)pct);
 }
 
-JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_hashCount(
-    JNIEnv *env, jclass cls) {
-    (void)env;
-    (void)cls;
-    return ITB_HashCount();
-}
-
-JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_hashName(
-    JNIEnv *env, jclass cls, jint i, jobject out, jlong cap, jlongArray outLen) {
-    (void)cls;
-    size_t n = 0;
-    int rc = ITB_HashName((int)i, (char *)addr(env, out), (size_t)cap, &n);
-    set_long(env, outLen, n);
-    return rc;
-}
-
-JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_hashWidth(
-    JNIEnv *env, jclass cls, jint i) {
-    (void)env;
-    (void)cls;
-    return ITB_HashWidth((int)i);
-}
-
 /* ── Triple Pipeline lifecycle ────────────────────────────────────── */
 
 JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleInit(
@@ -112,20 +89,66 @@ JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleInit(
     return rc;
 }
 
-JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleOpen(
-    JNIEnv *env, jclass cls, jobject profile, jobject blob, jlong blobLen,
-    jobject opts, jobject permMaster, jlong permLen,
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleLoad(
+    JNIEnv *env, jclass cls, jobject blob, jlong blobLen,
+    jobject permMaster, jlong permLen,
     jobject wrapMaster, jlong wrapLen, jlong mastersCount, jlongArray outHandle) {
     (void)cls;
     uintptr_t handle = 0;
-    int rc = ITB_Triple_Open((char *)addr(env, profile),
-                             addr(env, blob), (size_t)blobLen,
-                             (char *)addr(env, opts),
+    int rc = ITB_Triple_Load(addr(env, blob), (size_t)blobLen,
                              addr(env, permMaster), (size_t)permLen,
                              addr(env, wrapMaster), (size_t)wrapLen,
                              (size_t)mastersCount, &handle);
     set_long(env, outHandle, (size_t)handle);
     return rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleLoadF(
+    JNIEnv *env, jclass cls, jobject path,
+    jobject permMaster, jlong permLen,
+    jobject wrapMaster, jlong wrapLen, jlong mastersCount, jlongArray outHandle) {
+    (void)cls;
+    uintptr_t handle = 0;
+    int rc = ITB_Triple_LoadF((char *)addr(env, path),
+                              addr(env, permMaster), (size_t)permLen,
+                              addr(env, wrapMaster), (size_t)wrapLen,
+                              (size_t)mastersCount, &handle);
+    set_long(env, outHandle, (size_t)handle);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleSave(
+    JNIEnv *env, jclass cls, jlong handle, jobject blobOut, jlong blobCap,
+    jlongArray blobLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_Triple_Save((uintptr_t)handle, addr(env, blobOut), (size_t)blobCap, &n);
+    set_long(env, blobLen, n);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleSaveF(
+    JNIEnv *env, jclass cls, jlong handle, jobject path) {
+    (void)cls;
+    return ITB_Triple_SaveF((uintptr_t)handle, (char *)addr(env, path));
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleInspect(
+    JNIEnv *env, jclass cls, jobject blob, jlong blobLen,
+    jobject jsonOut, jlong jsonCap, jlongArray jsonLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_Triple_Inspect(addr(env, blob), (size_t)blobLen,
+                                addr(env, jsonOut), (size_t)jsonCap, &n);
+    set_long(env, jsonLen, n);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleMaxWorkers(
+    JNIEnv *env, jclass cls, jlong handle, jint n) {
+    (void)env;
+    (void)cls;
+    return ITB_Triple_MaxWorkers((uintptr_t)handle, (int)n);
 }
 
 JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleRekey(
@@ -156,11 +179,33 @@ JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleFree(
     return ITB_Triple_Free((uintptr_t)handle);
 }
 
-JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleRegisterProfile(
-    JNIEnv *env, jclass cls, jobject name, jobject opts) {
+/* ── profile registry ─────────────────────────────────────────────── */
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleRegister(
+    JNIEnv *env, jclass cls, jobject name, jobject profileJson) {
     (void)cls;
-    return ITB_Triple_RegisterProfile((char *)addr(env, name),
-                                      (char *)addr(env, opts));
+    return ITB_Triple_Register((char *)addr(env, name),
+                               (char *)addr(env, profileJson));
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleLookup(
+    JNIEnv *env, jclass cls, jobject name, jobject jsonOut, jlong jsonCap,
+    jlongArray jsonLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_Triple_Lookup((char *)addr(env, name),
+                               addr(env, jsonOut), (size_t)jsonCap, &n);
+    set_long(env, jsonLen, n);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_everanium_itb_Native_tripleProfiles(
+    JNIEnv *env, jclass cls, jobject jsonOut, jlong jsonCap, jlongArray jsonLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_Triple_Profiles(addr(env, jsonOut), (size_t)jsonCap, &n);
+    set_long(env, jsonLen, n);
+    return rc;
 }
 
 /* ── one-shot cipher calls ────────────────────────────────────────── */

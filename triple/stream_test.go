@@ -125,7 +125,7 @@ func runStreamRoundTrip(t *testing.T, w widthCase, n nonceCase, tog toggleCase, 
 
 	// Receiver-side Pipeline opened from the sender's blob using the
 	// same Opts so the toggle overrides reach both sides identically.
-	rx, err := Open(m.profile, blob, opts)
+	rx, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestEncryptStreamDecryptStreamConcurrentSamePipeline(t *testing.T) {
 	}
 	defer pipe.Close()
 
-	rx, err := Open(ProfileStreamingAEADTripleMACV1, blob, Opts{})
+	rx, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestEncryptStreamDecryptStreamConcurrentDistinctPipelines(t *testing.T) {
 		senders[i] = s
 		t.Cleanup(func() { s.Close() })
 
-		r, err := Open(spec.profile, blob, spec.opts)
+		r, err := Load(blob)
 		if err != nil {
 			t.Fatalf("Open %s: %v", spec.name, err)
 		}

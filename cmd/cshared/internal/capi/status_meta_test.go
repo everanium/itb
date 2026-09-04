@@ -6,13 +6,11 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
-	"github.com/everanium/itb/hashes"
 )
 
-// Scope: status-code label surface, the BlobWidth / BlobMode metadata
-// accessors across all three widths and the bad-handle paths behind
-// them, ParseChunkLen header validation branches, and the
-// parseTripleOpts / parseBoolOpt option-string parsing branches.
+// Scope: status-code label surface, ParseChunkLen header validation
+// branches, and the parseTripleOpts / parseBoolOpt option-string
+// parsing branches.
 
 // TestStatusStringAllCodes verifies every defined status code carries
 // a non-empty distinct-from-unknown label, and that an out-of-range
@@ -23,7 +21,8 @@ func TestStatusStringAllCodes(t *testing.T) {
 		StatusBadInput, StatusBufferTooSmall, StatusEncryptFailed,
 		StatusDecryptFailed, StatusSeedWidthMix, StatusBadMAC,
 		StatusMACFailure,
-		StatusReserved11, StatusReserved12, StatusReserved13,
+		StatusBlobMalformedRecipe, StatusRecipePrimitiveUnknown,
+		StatusUnknownProfile,
 		StatusReserved14, StatusReserved15, StatusReserved16,
 		StatusReserved17,
 		StatusBlobModeMismatch, StatusBlobMalformed,
@@ -44,64 +43,19 @@ func TestStatusStringAllCodes(t *testing.T) {
 	if got := Status(1000).String(); got != "unknown status" {
 		t.Errorf("Status(1000).String() = %q, want \"unknown status\"", got)
 	}
-}
-
-// TestBlobWidthModeAllWidths verifies the BlobWidth / BlobMode
-// metadata accessors on freshly constructed handles at every width: a
-// fresh handle reports its construction width and Mode == 0 (no
-// Import / Export state transition yet).
-func TestBlobWidthModeAllWidths(t *testing.T) {
-	cases := []struct {
-		name  string
-		mk    func() (BlobHandleID, Status)
-		width hashes.Width
-	}{
-		{"W128", NewBlob128, hashes.W128},
-		{"W256", NewBlob256, hashes.W256},
-		{"W512", NewBlob512, hashes.W512},
+	// Codes 11..13 carry named labels; 14..17 keep the reserved label.
+	for _, s := range []Status{StatusBlobMalformedRecipe, StatusRecipePrimitiveUnknown, StatusUnknownProfile} {
+		if strings.Contains(s.String(), "reserved") {
+			t.Errorf("Status(%d).String() = %q, want a non-reserved label", int(s), s.String())
+		}
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			id, st := tc.mk()
-			if st != StatusOK {
-				t.Fatalf("constructor: %v", st)
-			}
-			defer FreeBlob(id)
-			w, st := BlobWidth(id)
-			if st != StatusOK || w != tc.width {
-				t.Fatalf("BlobWidth = (%v, %v), want (%v, ok)", w, st, tc.width)
-			}
-			mode, st := BlobMode(id)
-			if st != StatusOK || mode != 0 {
-				t.Fatalf("BlobMode = (%d, %v), want (0, ok) on a fresh handle", mode, st)
-			}
-		})
+	for _, s := range []Status{StatusReserved14, StatusReserved15, StatusReserved16, StatusReserved17} {
+		if s.String() != "reserved status" {
+			t.Errorf("Status(%d).String() = %q, want \"reserved status\"", int(s), s.String())
+		}
 	}
-}
-
-// TestBlobWidthModeBadHandle verifies that the metadata accessors
-// reject a zero handle and a stale (already freed) handle with
-// StatusBadHandle instead of panicking — the stale-handle path routes
-// through resolveBlob's deferred recover.
-func TestBlobWidthModeBadHandle(t *testing.T) {
-	if _, st := BlobWidth(0); st != StatusBadHandle {
-		t.Fatalf("BlobWidth(0) = %v, want StatusBadHandle", st)
-	}
-	if _, st := BlobMode(0); st != StatusBadHandle {
-		t.Fatalf("BlobMode(0) = %v, want StatusBadHandle", st)
-	}
-	id, st := NewBlob128()
-	if st != StatusOK {
-		t.Fatalf("NewBlob128: %v", st)
-	}
-	if st := FreeBlob(id); st != StatusOK {
-		t.Fatalf("FreeBlob: %v", st)
-	}
-	if _, st := BlobWidth(id); st != StatusBadHandle {
-		t.Fatalf("BlobWidth(stale) = %v, want StatusBadHandle", st)
-	}
-	if _, st := BlobMode(id); st != StatusBadHandle {
-		t.Fatalf("BlobMode(stale) = %v, want StatusBadHandle", st)
+	if int(StatusBlobMalformedRecipe) != 11 || int(StatusRecipePrimitiveUnknown) != 12 || int(StatusUnknownProfile) != 13 {
+		t.Errorf("numeric assignment drifted: %d / %d / %d", StatusBlobMalformedRecipe, StatusRecipePrimitiveUnknown, StatusUnknownProfile)
 	}
 }
 
@@ -290,9 +244,10 @@ func TestParseTripleOptsTagStubSize(t *testing.T) {
 
 // TestParseTripleOptsNumericBounds pins the fail-fast rejection of
 // out-of-enum numeric opts at the parser boundary — the check
-// surfaces binding-side errors before triple.Init / triple.Open
-// receives a would-be-corrupt Opts value. Covers nonceBits,
-// barrierFill, maxWorkers, chunkSize, keyBits, parallaxSegmentSize.
+// surfaces binding-side errors before triple.Init receives a
+// would-be-corrupt Opts value. Covers nonceBits, barrierFill,
+// chunkSize, keyBits, parallaxSegmentSize; maxWorkers is passed
+// through unchecked (triple.Init clamps it).
 func TestParseTripleOptsNumericBounds(t *testing.T) {
 	bad := []struct {
 		key, val string
@@ -305,7 +260,6 @@ func TestParseTripleOptsNumericBounds(t *testing.T) {
 		{"barrierFill", "3"},
 		{"barrierFill", "5"},
 		{"barrierFill", "33"},
-		{"maxWorkers", "-1"},
 		{"chunkSize", "-1"},
 		{"chunkSize", "268435457"},       // 256 MiB + 1 byte
 		{"chunkSize", "1099511627776"},   // 1 TiB
@@ -322,7 +276,7 @@ func TestParseTripleOptsNumericBounds(t *testing.T) {
 	good := []string{
 		"nonceBits=0", "nonceBits=128", "nonceBits=256", "nonceBits=512",
 		"barrierFill=0", "barrierFill=1", "barrierFill=2", "barrierFill=4", "barrierFill=8", "barrierFill=16", "barrierFill=32",
-		"maxWorkers=0", "maxWorkers=1", "maxWorkers=256",
+		"maxWorkers=-1", "maxWorkers=0", "maxWorkers=1", "maxWorkers=256", "maxWorkers=1000",
 		"chunkSize=0", "chunkSize=1", "chunkSize=65536", "chunkSize=16777216", "chunkSize=268435456",
 		"keyBits=0", "keyBits=512", "keyBits=1024",
 		"parallaxSegmentSize=0", "parallaxSegmentSize=4093", "parallaxSegmentSize=65535",

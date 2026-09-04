@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"io"
 	"testing"
+
+	"github.com/everanium/itb/hashes"
 )
 
 func TestWrapRoundTrip(t *testing.T) {
@@ -195,9 +197,9 @@ func TestMakeKeystreamBadKeyLen(t *testing.T) {
 		badKey  []byte
 		nonceOK []byte
 	}{
-		{CipherAES128CTR, make([]byte, 15), make([]byte, 16)},
-		{CipherSipHash24, make([]byte, 15), make([]byte, 16)},
-		{CipherChaCha20, make([]byte, 31), make([]byte, 12)},
+		{hashes.CipherAES128CTR, make([]byte, 15), make([]byte, 16)},
+		{hashes.CipherSipHash24, make([]byte, 15), make([]byte, 16)},
+		{hashes.CipherChaCha20, make([]byte, 31), make([]byte, 12)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -216,9 +218,9 @@ func TestMakeKeystreamBadNonceLen(t *testing.T) {
 		keyOK    []byte
 		badNonce []byte
 	}{
-		{CipherAES128CTR, make([]byte, 16), make([]byte, 15)},
-		{CipherSipHash24, make([]byte, 16), make([]byte, 15)},
-		{CipherChaCha20, make([]byte, 32), make([]byte, 11)},
+		{hashes.CipherAES128CTR, make([]byte, 16), make([]byte, 15)},
+		{hashes.CipherSipHash24, make([]byte, 16), make([]byte, 15)},
+		{hashes.CipherChaCha20, make([]byte, 32), make([]byte, 11)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -242,7 +244,7 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	rand.Read(plaintext)
 
 	// Encrypt via 3-byte chunks.
-	enc, err := MakeKeystream(CipherSipHash24, key, nonce)
+	enc, err := MakeKeystream(hashes.CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +254,7 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	}
 
 	// Encrypt the same plaintext as one 24-byte block — must match.
-	enc2, err := MakeKeystream(CipherSipHash24, key, nonce)
+	enc2, err := MakeKeystream(hashes.CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +265,7 @@ func TestSipHashCTRPartialBlockDrain(t *testing.T) {
 	}
 
 	// Decrypt the chunked ciphertext via 3-byte chunks — must recover plaintext.
-	dec, err := MakeKeystream(CipherSipHash24, key, nonce)
+	dec, err := MakeKeystream(hashes.CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,14 +288,14 @@ func TestSipHashCTRTailUnaligned(t *testing.T) {
 	plaintext := make([]byte, 17)
 	rand.Read(plaintext)
 
-	enc, err := MakeKeystream(CipherSipHash24, key, nonce)
+	enc, err := MakeKeystream(hashes.CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ct := make([]byte, 17)
 	enc.XORKeyStream(ct, plaintext)
 
-	dec, err := MakeKeystream(CipherSipHash24, key, nonce)
+	dec, err := MakeKeystream(hashes.CipherSipHash24, key, nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,11 +388,11 @@ func TestDeriveKey(t *testing.T) {
 func TestDeriveKeyDomainSeparation(t *testing.T) {
 	master := make([]byte, 32)
 	rand.Read(master)
-	ka, err := DeriveKey(CipherAES128CTR, master)
+	ka, err := DeriveKey(hashes.CipherAES128CTR, master)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ks, err := DeriveKey(CipherSipHash24, master)
+	ks, err := DeriveKey(hashes.CipherSipHash24, master)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,11 +651,11 @@ func TestXORParallelAtBaseOffset(t *testing.T) {
 // src aliasing the same slice - the documented in-place mode.
 func TestXORParallelInPlace(t *testing.T) {
 	const n = 2 * ParallelThreshold
-	key, err := GenerateKey(CipherBLAKE3)
+	key, err := GenerateKey(hashes.CipherBLAKE3)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
-	nonce, err := generateNonce(CipherBLAKE3)
+	nonce, err := generateNonce(hashes.CipherBLAKE3)
 	if err != nil {
 		t.Fatalf("generateNonce: %v", err)
 	}
@@ -662,14 +664,14 @@ func TestXORParallelInPlace(t *testing.T) {
 		t.Fatalf("rand: %v", err)
 	}
 	buf := append([]byte(nil), original...)
-	if err := XORParallel(CipherBLAKE3, key, nonce, buf, buf); err != nil {
+	if err := XORParallel(hashes.CipherBLAKE3, key, nonce, buf, buf); err != nil {
 		t.Fatalf("XORParallel in-place encrypt: %v", err)
 	}
 	if bytes.Equal(buf, original) {
 		t.Fatalf("XORParallel in-place: buffer unchanged")
 	}
 	// XOR again - recovers the original.
-	if err := XORParallel(CipherBLAKE3, key, nonce, buf, buf); err != nil {
+	if err := XORParallel(hashes.CipherBLAKE3, key, nonce, buf, buf); err != nil {
 		t.Fatalf("XORParallel in-place decrypt: %v", err)
 	}
 	if !bytes.Equal(buf, original) {

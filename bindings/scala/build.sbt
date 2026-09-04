@@ -19,7 +19,7 @@ val javaBindingJars = Def.setting {
 
 lazy val commonSettings = Seq(
   organization := "dev.everanium",
-  version := "0.3.5",
+  version := "0.4.1",
   scalaVersion := "3.6.2",
   scalacOptions ++= Seq(
     "-deprecation",
@@ -51,10 +51,4 @@ lazy val bench = (project in file("bench"))
 lazy val eitb = (project in file("eitb"))
   .dependsOn(root)
   .settings(commonSettings)
-  .settings(
-    name := "itb-scala-eitb",
-    // The hash-roster diagnostic lives in the Java binding's eitb
-    // tool jar (HashRoster) — the library jar deliberately exposes
-    // no primitive enumeration.
-    Compile / unmanagedJars ++= (javaLibsDir.value * "eitb.jar").classpath
-  )
+  .settings(name := "itb-scala-eitb")

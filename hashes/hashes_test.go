@@ -10,15 +10,15 @@ import (
 )
 
 // TestRegistryRoundtrip exercises every (hash, ITB key width) pair
-// shipped through this package. Primitives have separate Triple Ouroboros
-// tests in the main itb_test.go and redteam_test.go suites; here we cover
-// the simple Single Ouroboros encrypt/decrypt round trip across all
+// shipped through this package by driving a Triple Ouroboros
+// (8-seed constellation) encrypt/decrypt round trip across all
 // combinations to confirm:
 //
 //   - the canonical name in Registry maps to the right Make{N}
 //     dispatcher;
 //   - the returned closure is wire-compatible with the matching
-//     itb.NewSeed{N} / itb.Encrypt{N} / itb.Decrypt{N} entry points;
+//     itb.NewSeed{N} / itb.Encrypt3x{N}Cfg / itb.Decrypt3x{N}Cfg
+//     entry points;
 //   - every supported ITB key width (512, 1024, 2048) round-trips
 //     for every primitive in canonical order.
 func TestRegistryRoundtrip(t *testing.T) {

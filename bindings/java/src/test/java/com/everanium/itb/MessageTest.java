@@ -37,7 +37,7 @@ class MessageTest {
         };
         for (String profile : profiles) {
             try (Pipeline sender = Pipeline.init(profile);
-                    Pipeline receiver = Pipeline.open(profile, sender.blob(), new Opts())) {
+                    Pipeline receiver = Pipeline.load(sender.save())) {
                 for (int size : new int[] {4 * 1024, 256 * 1024}) {
                     byte[] plain = payload(size, size);
                     byte[] wire = sender.encryptMessage(plain);
@@ -58,8 +58,7 @@ class MessageTest {
                 "areion512", "blake2b512", "areion512", "blake2b512",
                 "areion512", "blake2b512", "areion512", "blake2b512");
         try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1", opts);
-                Pipeline receiver = Pipeline.open(
-                        "singlemsg-triple-mac-v1", sender.blob(), opts)) {
+                Pipeline receiver = Pipeline.load(sender.save())) {
             byte[] plain = payload(4096, 42L);
             byte[] wire = sender.encryptMessage(plain);
             byte[] back = receiver.decryptMessage(wire);

@@ -1,7 +1,8 @@
 (ns dev.everanium.itb.clojure.errors-test
   "Error-mapping surface: opaque-string relay, destroyed Pipeline,
-  duplicate profile registration (with an 8-entry innerHashes
-  constellation), and the ex-info error shape."
+  duplicate profile registration (with an 8-entry mixed
+  constellation), unknown lookup, max-workers! on a destroyed
+  handle, and the ex-info error shape."
   (:require [clojure.test :refer [deftest is]]
             [dev.everanium.itb.clojure.core :as itb]
             [dev.everanium.itb.clojure.error :as err])
@@ -17,10 +18,10 @@
      (catch clojure.lang.ExceptionInfo e#
        (when (err/itb-error? e#) e#))))
 
-(deftest unknown-profile-is-bad-input-with-diagnostic
+(deftest unknown-profile-is-unknown-profile-with-diagnostic
   (let [e (thrown-error (itb/init "no-such-profile"))]
     (is (some? e))
-    (is (= :bad-input (err/error-status e)))
+    (is (= :unknown-profile (err/error-status e)))
     (is (seq (ex-message e)))))
 
 (deftest unknown-opts-key-is-bad-input
@@ -44,26 +45,37 @@
       (is (= :triple-closed (err/error-status e)))
       (is (= 25 (:code (ex-data e)))))))
 
-(deftest register-profile-mixed-then-duplicate
-  ;; 8-entry width-256 innerHashes constellation, layers off.
-  (let [opts {:raw {"mode" "singlemsg-nomac"
-                    "width" "256"
-                    "innerHashes"
-                    "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256"
-                    "keyBits" "1024"
-                    "parallaxOn" "false"
-                    "wrapperOn" "false"}}]
-    (itb/register-profile! "clojure-binding-test-mixed" opts)
+(deftest register-mixed-then-duplicate
+  ;; 8-entry width-256 mixed constellation, layers off.
+  (let [record {:mode "singlemsg-nomac"
+                :width 256
+                :hashes ["blake3" "blake2s" "areion256" "blake2b256"
+                         "chacha20" "blake3" "blake2s" "areion256"]
+                :key-bits 1024
+                :parallax? false
+                :wrapper? false}]
+    (itb/register! "clojure-binding-test-mixed" record)
     ;; The registered profile round-trips.
     (let [plain (.getBytes "custom profile" "UTF-8")]
       (with-open [sender (itb/init "clojure-binding-test-mixed")]
-        (with-open [receiver (itb/open "clojure-binding-test-mixed" (itb/blob sender))]
+        (with-open [receiver (itb/load (itb/save sender))]
           (let [wire (itb/encrypt-message sender plain)]
             (is (Arrays/equals ^bytes plain
                                ^bytes (itb/decrypt-message receiver wire)))))))
     ;; Duplicate name is a distinct status.
-    (let [e (thrown-error (itb/register-profile! "clojure-binding-test-mixed" opts))]
+    (let [e (thrown-error (itb/register! "clojure-binding-test-mixed" record))]
       (is (= :profile-exists (err/error-status e))))))
+
+(deftest lookup-unknown-name-is-unknown-profile
+  (let [e (thrown-error (itb/lookup "no-such-profile"))]
+    (is (= :unknown-profile (err/error-status e)))
+    (is (= 13 (:code (ex-data e))))))
+
+(deftest max-workers-on-destroyed-pipeline-is-triple-closed
+  (with-open [p (itb/init "singlemsg-triple-mac-v1")]
+    (itb/destroy! p)
+    (let [e (thrown-error (itb/max-workers! p 2))]
+      (is (= :triple-closed (err/error-status e))))))
 
 (deftest opaque-primitive-name-relay
   ;; An unknown inner-hash name is relayed to Go and rejected there —

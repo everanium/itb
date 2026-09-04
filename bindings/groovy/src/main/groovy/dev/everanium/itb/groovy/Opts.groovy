@@ -12,11 +12,12 @@ import groovy.transform.CompileStatic
 import com.everanium.itb.Opts as JOpts
 
 /**
- * Chainable options for {@link Pipeline#init}, {@link Pipeline#open},
- * and {@link Pipeline#registerProfile}. An empty value renders the
- * empty query (pure profile defaults). Each {@code with*} call
- * returns {@code this} for fluent chaining; {@link #of} builds a
- * value from a Groovy named-argument map:
+ * Chainable options for {@link Pipeline#init}. An empty value renders
+ * the empty query (pure profile defaults). Profile records for
+ * {@link Pipeline#register} are built with
+ * {@link com.everanium.itb.Profile} or {@link Pipeline#profileOf}.
+ * Each {@code with*} call returns {@code this} for fluent chaining;
+ * {@link #of} builds a value from a Groovy named-argument map:
  *
  * <pre>{@code
  * def opts = Opts.of(chunkSize: 4096, macName: 'some-mac')
@@ -28,9 +29,7 @@ class Opts {
     private final List<List<String>> pairs = []
 
     /** Escape hatch appending a raw {@code key=value} pair. Covers
-     * every key the Go side accepts, including the register-profile
-     * grammar ({@code mode}, {@code width}, {@code innerHashes},
-     * {@code parallaxOn}, {@code wrapperOn}, …). */
+     * every key the Go side accepts. */
     Opts withRaw(String key, String value) {
         pairs << [key, value]
         this

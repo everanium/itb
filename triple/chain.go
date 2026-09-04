@@ -35,7 +35,7 @@ import (
 // bytes still emits its outer cipher nonce.
 func buildEncryptChain(p *Pipeline, plainSrc io.Reader, wireDst io.Writer) (innerSrc io.Reader, innerDst io.Writer, closeFn func() error, err error) {
 	innerDst = wireDst
-	if p.resolved.wrapperOn {
+	if p.resolved.Wrapper {
 		w, werr := wrapper.NewWrapWriter(p.wrapperCipher, p.wrapperKey, wireDst)
 		if werr != nil {
 			return nil, nil, nil, fmt.Errorf("triple: wrapper.NewWrapWriter: %w", werr)
@@ -45,7 +45,7 @@ func buildEncryptChain(p *Pipeline, plainSrc io.Reader, wireDst io.Writer) (inne
 
 	innerSrc = plainSrc
 	closeFn = func() error { return nil }
-	if p.resolved.parallaxOn {
+	if p.resolved.Parallax {
 		r, rerr := p.parallaxSched.NewEncryptReader(p.parallaxCS, plainSrc)
 		if rerr != nil {
 			return nil, nil, nil, fmt.Errorf("triple: parallax.NewEncryptReader: %w", rerr)
@@ -72,7 +72,7 @@ func buildEncryptChain(p *Pipeline, plainSrc io.Reader, wireDst io.Writer) (inne
 // every exit path.
 func buildDecryptChain(p *Pipeline, wireSrc io.Reader, plainDst io.Writer) (innerSrc io.Reader, innerDst io.Writer, closeFn func() error, err error) {
 	innerSrc = wireSrc
-	if p.resolved.wrapperOn {
+	if p.resolved.Wrapper {
 		r, rerr := wrapper.NewUnwrapReader(p.wrapperCipher, p.wrapperKey, wireSrc)
 		if rerr != nil {
 			return nil, nil, nil, fmt.Errorf("triple: wrapper.NewUnwrapReader: %w", rerr)
@@ -82,7 +82,7 @@ func buildDecryptChain(p *Pipeline, wireSrc io.Reader, plainDst io.Writer) (inne
 
 	innerDst = plainDst
 	closeFn = func() error { return nil }
-	if p.resolved.parallaxOn {
+	if p.resolved.Parallax {
 		w, werr := p.parallaxSched.NewDecryptWriter(p.parallaxCS, plainDst)
 		if werr != nil {
 			return nil, nil, nil, fmt.Errorf("triple: parallax.NewDecryptWriter: %w", werr)

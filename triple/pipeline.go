@@ -16,40 +16,57 @@ var (
 	// [Pipeline.Close] has run.
 	ErrClosed = errors.New("triple: pipeline is closed")
 
-	// ErrIdenticalMasters is returned by [Init], [Open], and
+	// ErrIdenticalMasters is returned by [Init], [Load], and
 	// [Pipeline.Rekey] when the resolved PermMaster and WrapMaster
 	// compare bytewise-equal. The check protects callers from
 	// accidentally passing the same slice to both master parameters.
 	ErrIdenticalMasters = errors.New("triple: perm master must differ from wrap master")
 
-	// ErrMissingMasters is returned by [Open] when the profile has
-	// parallax and/or wrapper enabled but neither the blob nor the
+	// ErrMissingMasters is returned by [Load] when the blob's record
+	// has parallax and/or wrapper enabled but neither the blob nor the
 	// trailing variadic argument supplies the master bytes required
 	// to rebuild the corresponding layer.
 	ErrMissingMasters = errors.New("triple: required masters absent from blob and no override supplied")
 
-	// ErrMastersArity is returned by [Open] when the trailing
+	// ErrMastersArity is returned by [Load] when the trailing
 	// variadic master argument has an invalid arity — accepted arities
 	// are 0 (use the blob's masters) or 2 (perm master then wrap
 	// master, overriding the blob).
 	ErrMastersArity = errors.New("triple: trailing masters must be either 0 or 2 slices")
 
-	// ErrUnknownProfile is returned by [Init] and [Open] when the
+	// ErrUnknownProfile is returned by [Init] and [Lookup] when the
 	// named profile is not in the registered profile catalogue.
 	ErrUnknownProfile = errors.New("triple: unknown profile")
 
-	// ErrBlobMismatch is returned by [Open] when the blob's profile
-	// field disagrees with the profile argument.
-	ErrBlobMismatch = errors.New("triple: blob profile does not match requested profile")
-
-	// ErrBlobVersion is returned by [Open] when the blob's wrap-layer
-	// version field carries a value this build does not understand.
+	// ErrBlobVersion is returned by [Load] and [Inspect] when the
+	// blob's wrap-layer version field carries a value other than the
+	// one this build encodes. Blobs produced by earlier releases carry
+	// wrap-layer version 1 and are not loadable; regenerate them with
+	// the current release.
 	ErrBlobVersion = errors.New("triple: unsupported blob wrap-layer version")
 
-	// ErrBlobMalformed is returned by [Open] when the blob's
-	// wrap-layer bytes fail to parse or carry structurally-invalid
-	// content.
+	// ErrBlobMalformed is returned by [Load] and [Inspect] when the
+	// blob's wrap-layer bytes fail to parse or carry structurally-
+	// invalid content: size cap exceeded, JSON parse failure, unknown
+	// key, trailing content, or a missing record / inner blob.
 	ErrBlobMalformed = errors.New("triple: blob malformed")
+
+	// ErrBlobMalformedRecipe is returned by [Load] when the blob's
+	// embedded [Profile] record decodes but fails the profile field
+	// rules (the same rules [Register] applies — mode, width, key
+	// bits, palette bounds, segment-size coprimality, chunk-size
+	// ceiling, tag-stub envelope, InnerHash / MixedHashes exclusivity
+	// and width match) or disagrees with the inner blob (MAC name or
+	// key width mismatch).
+	ErrBlobMalformedRecipe = errors.New("triple: blob profile record invalid")
+
+	// ErrRecipePrimitiveUnknown is returned by [Load] when the blob's
+	// embedded [Profile] record names a primitive not present in the
+	// local hashes / macs / wrapper registries. Runtime-registered
+	// primitives on the sender must be registered under the same name
+	// on the receiver before the blob can be loaded. [Inspect] does
+	// not probe availability and returns the name unchanged.
+	ErrRecipePrimitiveUnknown = errors.New("triple: blob profile record names a primitive absent from the local registries")
 
 	// ErrNotYetImplemented is returned by the cipher-path stubs
 	// ([Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
@@ -70,7 +87,7 @@ var (
 	// instead.
 	ErrEmptyInput = errors.New("triple: empty input")
 
-	// ErrBadKeyBits is the sentinel [Init] and [Open] wrap when the
+	// ErrBadKeyBits is the sentinel [Init] and [Load] wrap when the
 	// resolved [Opts.KeyBits] override lands outside the per-primitive
 	// key-width enum. The FFI [capi] layer maps [errors.Is]-matches on
 	// this sentinel to the shared StatusBadKeyBits status code so a
@@ -79,23 +96,19 @@ var (
 	ErrBadKeyBits = errors.New("triple: invalid key bits")
 )
 
-// Opts carries per-call overrides for [Init] and [Open]. Every field
-// is optional; a zero-value field defers to the profile default. Where
-// a nil pointer type differs from a zero-value non-pointer type (the
-// two layer toggles below), the pointer form disambiguates "user did
-// not set this field" from "user explicitly requested false".
+// Opts carries per-call overrides for [Init]. Every field is
+// optional; a zero-value field defers to the profile default. Where a
+// nil pointer type differs from a zero-value non-pointer type (the two
+// layer toggles below), the pointer form disambiguates "user did not
+// set this field" from "user explicitly requested false".
 //
-// Both [Init] and [Open] accept the same [Opts] shape. On [Open] the
-// non-toggle profile-shape overrides ([Opts.InnerHash],
-// [Opts.KeyBits], [Opts.ParallaxPalette], [Opts.NonceBits],
-// [Opts.BarrierFill], [Opts.MaxWorkers], [Opts.ChunkSize],
-// [Opts.ParallaxSegmentSize]) are informational only — the inner
-// Blob{N} carries the seed material and per-instance
-// [github.com/everanium/itb.Config] snapshot, so structural knobs are
-// reconstructed from the blob rather than re-supplied via Opts. The
-// two toggle fields ([Opts.WithParallax] / [Opts.WithWrapper]) on
-// [Open] override the blob's recorded shape, which itself overrides
-// the profile default.
+// The resolved shape — profile defaults with these overrides folded
+// in — is recorded in the blob [Init] returns, so the reopen path
+// ([Load] / [LoadF]) takes no Opts: every structural field is rebuilt
+// from the record, and the per-instance NonceBits / BarrierFill are
+// restored from the inner blob's Config snapshot. The one runtime
+// knob, the worker cap, is set after construction through
+// [Pipeline.MaxWorkers].
 type Opts struct {
 	// PermMaster overrides the auto-generated parallax master. When
 	// non-nil, [Init] uses these bytes directly rather than drawing
@@ -117,10 +130,14 @@ type Opts struct {
 	// profile default; a non-nil pointer forces the chosen setting.
 	WithWrapper *bool
 
-	// MaxWorkers overrides the profile's per-instance worker cap. A
-	// zero value defers to the profile default; a negative value is
-	// rejected by [Init] and [Open]; a positive value is
-	// copied verbatim into the Pipeline's [itb.Config].
+	// MaxWorkers sets the Pipeline's per-instance worker cap at
+	// [Init] time. The value is clamped into the Pipeline's
+	// [itb.Config] envelope: n ≤ 0 selects auto (runtime.NumCPU at
+	// consumption), 1 ≤ n ≤ 256 pins the cap, n > 256 is treated as
+	// 256. The cap is per-machine performance tuning, not wire shape:
+	// it is never written to the blob, a loaded Pipeline starts at
+	// auto, and [Pipeline.MaxWorkers] overrides it after construction
+	// on either side.
 	MaxWorkers int
 
 	// NonceBits overrides the profile's on-wire nonce width in bits.
@@ -142,8 +159,7 @@ type Opts struct {
 
 	// TagStubSize overrides the profile's [Profile.TagStubSize]. A
 	// zero value defers to the profile default; non-zero values must
-	// fall in [16, 64] — [Init] and [Open] reject anything else
-	// fail-fast. Meaningful only for No MAC profiles paired with a
+	// fall in [16, 64] — [Init] rejects anything else fail-fast. Meaningful only for No MAC profiles paired with a
 	// custom-tag-size MAC counterpart; see [Profile.TagStubSize] for
 	// the resolution chain.
 	TagStubSize int
@@ -158,10 +174,11 @@ type Opts struct {
 	// non-empty, all eight slots must be non-empty, every entry must
 	// resolve via [github.com/everanium/itb/hashes.Find], and every
 	// entry's primitive width must equal the effective width — the
-	// [allocEightSeedsMixed] helper enforces this at [Init] time and
-	// [importInnerBlobMixed] enforces it at [Open] time, so a typo'd
-	// slot or a width mismatch surfaces fail-fast rather than
-	// silently corrupting the seed constellation.
+	// [allocEightSeedsMixed] helper enforces this at [Init] time, so
+	// a typo'd slot or a width mismatch surfaces fail-fast rather
+	// than silently corrupting the seed constellation. The resolved
+	// constellation travels in the blob's record and is reproduced by
+	// [Load].
 	//
 	// Slot ordering matches [Profile.MixedHashes]:
 	// [0]noiseSeed [1]lockSeed [2]dataSeed1 [3]dataSeed2 [4]dataSeed3
@@ -197,9 +214,11 @@ type Opts struct {
 
 // Pipeline is the opaque triple facade session. One Pipeline owns:
 //
-//   - the profile name it was constructed against;
+//   - the resolved [Profile] record it was constructed from (the
+//     shape recorded in its blob);
 //   - a per-instance [github.com/everanium/itb.Config] carrying
-//     NonceBits / BarrierFill / MaxWorkers overrides;
+//     NonceBits / BarrierFill / MaxWorkers;
+//   - the current wrap-layer blob, returned by [Pipeline.Save];
 //   - eight typed ITB seeds (noise + lock + three data + three start)
 //     matching the profile's inner hash width;
 //   - the parallax [parallax.Schedule] + [parallax.Cipherset] when
@@ -210,27 +229,31 @@ type Opts struct {
 //     else nil;
 //   - a Close guard managed via [sync/atomic].
 //
-// Concurrency posture: post-[Init] and post-[Open], all Pipeline
+// Concurrency posture: post-[Init] and post-[Load], all Pipeline
 // state relevant to encryption is read-only. Concurrent
 // [Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
 // [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] calls on the
 // same Pipeline are safe by construction; per-call state lives in
-// caller-provided buffers and per-call scratch. [Pipeline.Rekey] does
-// mutate Pipeline state and MUST be serialised against concurrent
-// cipher calls by the caller — see the [Pipeline.Rekey] doc-comment.
+// caller-provided buffers and per-call scratch. [Pipeline.Rekey] and
+// [Pipeline.MaxWorkers] do mutate Pipeline state and MUST be
+// serialised against concurrent cipher calls by the caller — see the
+// [Pipeline.Rekey] doc-comment.
 // [Pipeline.Close] wipes secret material and marks the Pipeline
 // closed via atomic; subsequent method calls return [ErrClosed].
 type Pipeline struct {
-	// profileName is the name of the profile this Pipeline was
-	// constructed against. Not user-mutable.
-	profileName string
-
 	// resolved holds the profile defaults merged with any Opts
-	// overrides supplied at [Init] / [Open] time.
-	resolved resolvedProfile
+	// overrides supplied at [Init] time, or the record decoded from
+	// the blob at [Load] time. Its Name is the label carried in the
+	// blob. Not user-mutable.
+	resolved Profile
+
+	// blob is the current wrap-layer blob describing this Pipeline —
+	// set by [Init], [Load], and [Pipeline.Rekey]; returned as a copy
+	// by [Pipeline.Save]; zeroed by [Pipeline.Close].
+	blob []byte
 
 	// width caches the ITB hash primitive's native width (128 / 256 /
-	// 512). Equal to int(hashes.Find(resolved.innerHash).Width).
+	// 512). Equal to resolved.Width.
 	width int
 
 	// cfg carries this Pipeline's per-instance
@@ -285,4 +308,47 @@ type Pipeline struct {
 // Pipeline. Used by every public method as the first guard.
 func (p *Pipeline) isClosed() bool {
 	return p.closed.Load()
+}
+
+// maxWorkersCap is the upper bound of the [itb.Config.MaxWorkers]
+// envelope; values above it are clamped by [clampWorkers].
+const maxWorkersCap = 256
+
+// clampWorkers maps a caller-supplied worker count onto the
+// [itb.Config.MaxWorkers] envelope: n ≤ 0 → 0 (auto, runtime.NumCPU at
+// consumption), 1 ≤ n ≤ 256 → n, n > 256 → 256. One rule shared by the
+// [Init] snapshot of [Opts.MaxWorkers] and by [Pipeline.MaxWorkers].
+func clampWorkers(n int) int {
+	switch {
+	case n <= 0:
+		return 0
+	case n > maxWorkersCap:
+		return maxWorkersCap
+	}
+	return n
+}
+
+// MaxWorkers overrides this Pipeline's worker cap for every subsequent
+// cipher call, replacing the value [Init] snapshotted from
+// [Opts.MaxWorkers] or the auto default a loaded Pipeline starts with.
+// Values are clamped to the envelope [github.com/everanium/itb.Config]
+// documents for its MaxWorkers field: n ≤ 0 selects auto
+// (runtime.NumCPU at call time), 1 ≤ n ≤ 256 pins the cap, n > 256 is
+// treated as 256. Works identically on a Pipeline returned by [Init]
+// and by [Load] / [LoadF] — the worker cap is a performance property
+// of the machine running the Pipeline, has no effect on the wire, is
+// never written to the blob, and is the only Config value that may
+// change after construction. A call on a closed Pipeline is ignored;
+// the next cipher call reports [ErrClosed].
+//
+// THREAD-SAFETY. MaxWorkers mutates Pipeline state. The caller is
+// responsible for serialising this call against every concurrent
+// cipher-path call on the same Pipeline (same contract as
+// [Pipeline.Rekey]; a sync.RWMutex with the write lock around
+// MaxWorkers is the recommended pattern).
+func (p *Pipeline) MaxWorkers(n int) {
+	if p.isClosed() {
+		return
+	}
+	p.cfg.MaxWorkers = clampWorkers(n)
 }

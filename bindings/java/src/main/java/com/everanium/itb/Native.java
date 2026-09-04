@@ -49,19 +49,26 @@ final class Native {
 
     static native int setGCPercent(int pct);
 
-    static native int hashCount();
-
-    static native int hashName(int i, ByteBuffer out, long cap, long[] outLen);
-
-    static native int hashWidth(int i);
-
     // ── Triple Pipeline lifecycle ───────────────────────────────────
     static native int tripleInit(ByteBuffer profile, ByteBuffer opts,
             ByteBuffer blobOut, long blobCap, long[] blobLen, long[] outHandle);
 
-    static native int tripleOpen(ByteBuffer profile, ByteBuffer blob, long blobLen,
-            ByteBuffer opts, ByteBuffer permMaster, long permLen,
+    static native int tripleLoad(ByteBuffer blob, long blobLen,
+            ByteBuffer permMaster, long permLen,
             ByteBuffer wrapMaster, long wrapLen, long mastersCount, long[] outHandle);
+
+    static native int tripleLoadF(ByteBuffer path,
+            ByteBuffer permMaster, long permLen,
+            ByteBuffer wrapMaster, long wrapLen, long mastersCount, long[] outHandle);
+
+    static native int tripleSave(long handle, ByteBuffer blobOut, long blobCap, long[] blobLen);
+
+    static native int tripleSaveF(long handle, ByteBuffer path);
+
+    static native int tripleInspect(ByteBuffer blob, long blobLen,
+            ByteBuffer jsonOut, long jsonCap, long[] jsonLen);
+
+    static native int tripleMaxWorkers(long handle, int n);
 
     static native int tripleRekey(long handle, ByteBuffer permMaster, long permLen,
             ByteBuffer wrapMaster, long wrapLen,
@@ -71,7 +78,13 @@ final class Native {
 
     static native int tripleFree(long handle);
 
-    static native int tripleRegisterProfile(ByteBuffer name, ByteBuffer opts);
+    // ── profile registry ────────────────────────────────────────────
+    static native int tripleRegister(ByteBuffer name, ByteBuffer profileJson);
+
+    static native int tripleLookup(ByteBuffer name, ByteBuffer jsonOut, long jsonCap,
+            long[] jsonLen);
+
+    static native int tripleProfiles(ByteBuffer jsonOut, long jsonCap, long[] jsonLen);
 
     // ── one-shot cipher calls ───────────────────────────────────────
     static native int tripleEncryptStream(long handle, ByteBuffer src, long srcLen,

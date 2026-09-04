@@ -1,4 +1,4 @@
-' Init -> blob -> Open -> EncryptMessage -> DecryptMessage round trip.
+' Init -> Save -> Load -> EncryptMessage -> DecryptMessage round trip.
 
 Imports System.Text
 Imports Everanium.Itb.VisualBasic
@@ -9,9 +9,9 @@ Public Class SmokeTests
     <Fact>
     Public Sub SmokeRoundTrip()
         Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1")
-            Assert.NotEmpty(sender.Blob)
+            Assert.NotEmpty(sender.Save())
 
-            Using receiver As Pipeline = Pipeline.Open("singlemsg-triple-mac-v1", sender.Blob)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain As Byte() = Encoding.UTF8.GetBytes("smoke round-trip payload")
                 Dim wire As Byte() = sender.EncryptMessage(plain)
                 Assert.NotEqual(Of Byte)(plain, wire)

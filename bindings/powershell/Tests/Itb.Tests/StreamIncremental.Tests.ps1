@@ -38,8 +38,7 @@ Describe 'Incremental stream sessions' {
         $opts = @{ chunkSize = 4096 }
         $sender = New-ItbPipeline -Profile 'streaming-aead-triple-mac-v1' -Opts $opts
         try {
-            $receiver = Open-ItbPipeline -Profile 'streaming-aead-triple-mac-v1' `
-                -Blob (Get-ItbBlob $sender) -Opts $opts
+            $receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $sender)
             try {
                 $plain = New-TestPayload -Size 64KB -Seed 2001
 

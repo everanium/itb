@@ -48,7 +48,7 @@
                                   "areion512" "blake2b512" "areion512" "blake2b512"]}
           plain   (.getBytes "mixed-hashes typed override round trip" "UTF-8")]
       (with-open [sender (itb/init profile over)]
-        (with-open [receiver (itb/open profile (itb/blob sender) over)]
+        (with-open [receiver (itb/load (itb/save sender))]
           (let [wire (itb/encrypt-message sender plain)]
             (is (Arrays/equals ^bytes plain
                                ^bytes (itb/decrypt-message receiver wire)))))))))

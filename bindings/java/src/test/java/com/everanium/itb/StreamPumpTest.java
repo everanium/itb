@@ -22,8 +22,7 @@ class StreamPumpTest {
     @Test
     void pumpRoundTrip1MiB() {
         try (Pipeline sender = Pipeline.init("streaming-aead-triple-mac-v1");
-                Pipeline receiver = Pipeline.open(
-                        "streaming-aead-triple-mac-v1", sender.blob(), new Opts())) {
+                Pipeline receiver = Pipeline.load(sender.save())) {
             byte[] plain = modFill(1 << 20, 251);
 
             ByteArrayOutputStream wire = new ByteArrayOutputStream();
@@ -39,8 +38,7 @@ class StreamPumpTest {
     @Test
     void pumpMatchesOneShot() {
         try (Pipeline sender = Pipeline.init("streaming-aead-triple-mac-v1");
-                Pipeline receiver = Pipeline.open(
-                        "streaming-aead-triple-mac-v1", sender.blob(), new Opts())) {
+                Pipeline receiver = Pipeline.load(sender.save())) {
             byte[] plain = modFill(65_536, 199);
             byte[] wire = sender.encryptStreamOneShot(plain);
 

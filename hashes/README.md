@@ -47,6 +47,19 @@ The order is FFI-stable; index 0..8 is exposed through
 `ITB_HashName(idx)` in the shared library and re-ordering would
 break the ABI.
 
+Each shipped name is also exported as a `hashes.Cipher*` constant
+(`CipherAES128CTR` names the `aescmac` row — AES-CMAC as an inner
+hash, AES-128-CTR as an outer cipher / palette entry), and every
+shipped entry carries an outer cipher dispatch `Class`
+(`ClassNativeStream` for primitives with a native keystream mode,
+`ClassPRFCounter` for hash primitives run as PRF-counter cores).
+`Names()` returns the shipped name list in this order, `ClassOf(name)`
+the class of a shipped name (`ClassNone` otherwise), and `FullView()`
+the plain-data `Info` snapshot (name / width / class) without the
+factory hooks. The `ctr` and `kdf` packages dispatch on these
+constants; `wrapper` and `parallax` delegate to `ctr` by name. None of
+the four holds a name list of its own.
+
 ## Custom user-primitive builders
 
 Beyond the shipped primitives, the package exposes three builder families that wrap a user-supplied PRF into an `itb.HashFunc{128|256|512}` closure **with correct ITB nonce width preservation by construction**. These are for "I want to plug in SHA-256 / Ascon-PRF / Camellia-CMAC / My Own Custom hash primitive as the ITB PRF" use cases.
@@ -150,7 +163,7 @@ Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]by
 A user primitive is pluggable at the Low-Level surface in two shapes:
 
 - **Closure-directly-passed.** Construct the `itb.HashFunc{N}` (and optional `itb.BatchHashFunc{N}`) closures — for instance via the builders above — and pass the resulting `*itb.Seed{N}` handles through the Cfg-suffixed entry points. Nothing is registered; only the caller holds a reference to the primitive.
-- **Registered by name via `hashes.Register(spec Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register(sameName)` returns `hashes.ErrHashExists`. The Spec is validated on entry (non-empty lowercase-alphanumeric-plus-underscore name capped at `hashes.MaxNameLen = 12` characters, `Width` of W128 / W256 / W512, exactly one `Make{N}Pair` factory field matching the Width). The 12-char cap matches `parallax.MaxCipherNameLen` so a registered primitive that a caller later plugs into a parallax palette entry fits the `"<name>:<index>"` derivation label inside a 16-byte 128-bit-PRF input block. Two further optional Spec fields — `HashHash func() hash.Hash` (the primitive's general-purpose unkeyed `hash.Hash` form) and `KeyedHash func(key []byte) (hash.Hash, error)` (its native keyed mode) — opt the registered primitive into cross-package MAC composition through `macs.BuildHMAC` / `macs.BuildKeyedHash`; see [`macs/README.md`](../macs/README.md) for the builder requirements and examples.
+- **Registered by name via `hashes.Register(spec Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register(sameName)` returns `hashes.ErrHashExists`. The Spec is validated on entry (non-empty lowercase-alphanumeric-plus-underscore name capped at `hashes.MaxNameLen = 12` characters, `Width` of W128 / W256 / W512, exactly one `Make{N}Pair` factory field matching the Width). A further `Class` field records the outer cipher dispatch class (`ClassNativeStream` / `ClassPRFCounter`) of every shipped entry; it is informational on a registered Spec — `hashes.ClassOf` and the outer cipher consumers (`ctr`, `kdf`, `wrapper`, `parallax`) consult the shipped Registry only. The 12-char cap matches `parallax.MaxCipherNameLen` so a registered primitive that a caller later plugs into a parallax palette entry fits the `"<name>:<index>"` derivation label inside a 16-byte 128-bit-PRF input block. Two further optional Spec fields — `HashHash func() hash.Hash` (the primitive's general-purpose unkeyed `hash.Hash` form) and `KeyedHash func(key []byte) (hash.Hash, error)` (its native keyed mode) — opt the registered primitive into cross-package MAC composition through `macs.BuildHMAC` / `macs.BuildKeyedHash`; see [`macs/README.md`](../macs/README.md) for the builder requirements and examples.
 
 ```go
 import (

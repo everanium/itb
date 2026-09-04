@@ -18,7 +18,7 @@ fn drop_mid_flight_then_reuse_pipeline() {
 
     // The Pipeline stays usable after the cancelled session.
     let receiver =
-        Pipeline::open("streaming-aead-triple-mac-v1", sender.blob(), &opts, None).unwrap();
+        Pipeline::load(&sender.save().unwrap(), None).unwrap();
     let wire = sender.encrypt_message(b"after cancel").unwrap();
     assert_eq!(receiver.decrypt_message(&wire).unwrap(), b"after cancel");
 }

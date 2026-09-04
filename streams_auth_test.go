@@ -28,20 +28,6 @@ func macForStreamTest(t *testing.T) itb.MACFunc {
 	return mac
 }
 
-func mkSeeds128Ext(t *testing.T) (*itb.Seed128, *itb.Seed128) {
-	t.Helper()
-	h := hashes.SipHash24()
-	a, err := itb.NewSeed128(512, h)
-	if err != nil {
-		t.Fatalf("NewSeed128: %v", err)
-	}
-	b, err := itb.NewSeed128(512, h)
-	if err != nil {
-		t.Fatalf("NewSeed128: %v", err)
-	}
-	return a, b
-}
-
 func mkTriple128Ext(t *testing.T) (n, l, d1, d2, d3, s1, s2, s3 *itb.Seed128) {
 	t.Helper()
 	h := hashes.SipHash24()

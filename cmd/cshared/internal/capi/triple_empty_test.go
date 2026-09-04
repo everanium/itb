@@ -17,9 +17,9 @@ func tripleEmptyPair(t *testing.T, profile string) (TripleHandleID, TripleHandle
 		t.Fatalf("TripleInit: %v", st)
 	}
 	t.Cleanup(func() { FreeTriple(sID) })
-	rID, st := TripleOpen(profile, blobBuf[:blobLen], "")
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	t.Cleanup(func() { FreeTriple(rID) })
 	return sID, rID

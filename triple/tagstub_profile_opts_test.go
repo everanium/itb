@@ -49,8 +49,8 @@ func TestTagStubSizeProfileDriven(t *testing.T) {
 	prof.Mode = modeSingleMsgNoMAC
 	prof.MacName = ""
 	prof.TagStubSize = 16
-	if err := RegisterProfile(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile: %v", err)
+	if err := Register(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register: %v", err)
 	}
 
 	sender, blob, err := Init(name, Opts{})
@@ -62,9 +62,9 @@ func TestTagStubSizeProfileDriven(t *testing.T) {
 		t.Fatalf("Init profile-driven: TagStubSize = %d, want 16", got)
 	}
 
-	receiver, err := Open(name, blob, Opts{})
+	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(%q): %v", name, err)
+		t.Fatalf("Load(%q): %v", name, err)
 	}
 	defer receiver.Close()
 	if got := receiver.cfg.TagStubSize; got != 16 {
@@ -88,16 +88,17 @@ func TestTagStubSizeProfileDriven(t *testing.T) {
 }
 
 // TestTagStubSizeOptsOverride verifies the Opts.TagStubSize override
-// wins over the registered profile's Profile.TagStubSize on both the
-// Init and Open construction paths.
+// wins over the registered profile's Profile.TagStubSize at Init and
+// that the resolved value travels in the record so Load reproduces
+// it.
 func TestTagStubSizeOptsOverride(t *testing.T) {
 	name := "userns-tagstub-optsoverride-v1"
 	prof := baseValidProfile()
 	prof.Mode = modeSingleMsgNoMAC
 	prof.MacName = ""
 	prof.TagStubSize = 16
-	if err := RegisterProfile(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile: %v", err)
+	if err := Register(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register: %v", err)
 	}
 
 	sender, blob, err := Init(name, Opts{TagStubSize: 24})
@@ -109,13 +110,13 @@ func TestTagStubSizeOptsOverride(t *testing.T) {
 		t.Fatalf("Init Opts override: TagStubSize = %d, want 24", got)
 	}
 
-	receiver, err := Open(name, blob, Opts{TagStubSize: 24})
+	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(%q): %v", name, err)
+		t.Fatalf("Load(%q): %v", name, err)
 	}
 	defer receiver.Close()
 	if got := receiver.cfg.TagStubSize; got != 24 {
-		t.Fatalf("Open Opts override: TagStubSize = %d, want 24", got)
+		t.Fatalf("Load of Opts-overridden record: TagStubSize = %d, want 24", got)
 	}
 }
 
@@ -144,8 +145,8 @@ func TestTagStubSizePrecedence(t *testing.T) {
 	prof.Mode = modeSingleMsgMAC
 	prof.MacName = "stub48mac"
 	prof.TagStubSize = 20
-	if err := RegisterProfile(nameProfWins, prof); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameProfWins, err)
+	if err := Register(nameProfWins, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameProfWins, err)
 	}
 	pProf, _, err := Init(nameProfWins, Opts{})
 	if err != nil {
@@ -161,8 +162,8 @@ func TestTagStubSizePrecedence(t *testing.T) {
 	prof = baseValidProfile()
 	prof.Mode = modeSingleMsgMAC
 	prof.MacName = "stub48mac"
-	if err := RegisterProfile(nameProbe, prof); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameProbe, err)
+	if err := Register(nameProbe, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameProbe, err)
 	}
 	pProbe, _, err := Init(nameProbe, Opts{})
 	if err != nil {
@@ -179,8 +180,8 @@ func TestTagStubSizePrecedence(t *testing.T) {
 	prof = baseValidProfile()
 	prof.Mode = modeSingleMsgNoMAC
 	prof.MacName = ""
-	if err := RegisterProfile(nameDefault, prof); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameDefault, err)
+	if err := Register(nameDefault, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameDefault, err)
 	}
 	pDefault, _, err := Init(nameDefault, Opts{})
 	if err != nil {
@@ -211,8 +212,8 @@ func TestTagStubSizeWireShapeParityPipelines(t *testing.T) {
 	profMAC := baseValidProfile()
 	profMAC.Mode = modeSingleMsgMAC
 	profMAC.MacName = "stub16mac"
-	if err := RegisterProfile(nameMAC, profMAC); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameMAC, err)
+	if err := Register(nameMAC, profMAC); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameMAC, err)
 	}
 
 	nameNoMAC := "userns-tagstub-parity-nomac-v1"
@@ -220,8 +221,8 @@ func TestTagStubSizeWireShapeParityPipelines(t *testing.T) {
 	profNoMAC.Mode = modeSingleMsgNoMAC
 	profNoMAC.MacName = ""
 	profNoMAC.TagStubSize = 16
-	if err := RegisterProfile(nameNoMAC, profNoMAC); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameNoMAC, err)
+	if err := Register(nameNoMAC, profNoMAC); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameNoMAC, err)
 	}
 
 	plain := make([]byte, 4096)
@@ -252,9 +253,9 @@ func TestTagStubSizeWireShapeParityPipelines(t *testing.T) {
 		t.Fatalf("wire-shape drift: MAC=%d No MAC=%d", len(wireMAC), len(wireNoMAC))
 	}
 
-	rMAC, err := Open(nameMAC, bMAC, Opts{})
+	rMAC, err := Load(bMAC)
 	if err != nil {
-		t.Fatalf("Open(%q): %v", nameMAC, err)
+		t.Fatalf("Load(%q): %v", nameMAC, err)
 	}
 	defer rMAC.Close()
 	gotMAC, err := rMAC.DecryptMessage(wireMAC)
@@ -265,9 +266,9 @@ func TestTagStubSizeWireShapeParityPipelines(t *testing.T) {
 		t.Fatal("MAC round-trip plaintext mismatch")
 	}
 
-	rNoMAC, err := Open(nameNoMAC, bNoMAC, Opts{})
+	rNoMAC, err := Load(bNoMAC)
 	if err != nil {
-		t.Fatalf("Open(%q): %v", nameNoMAC, err)
+		t.Fatalf("Load(%q): %v", nameNoMAC, err)
 	}
 	defer rNoMAC.Close()
 	gotNoMAC, err := rNoMAC.DecryptMessage(wireNoMAC)
@@ -281,9 +282,9 @@ func TestTagStubSizeWireShapeParityPipelines(t *testing.T) {
 
 // TestTagStubSizeRangeValidation pins the accepted TagStubSize value
 // set — 0 or [16, 64] inclusive — on every validation surface:
-// RegisterProfile rejects out-of-range Profile.TagStubSize fail-fast,
-// and Init / Open reject out-of-range Opts.TagStubSize before any
-// session material is drawn. The floor matches the macs.Register
+// Register rejects out-of-range Profile.TagStubSize fail-fast,
+// and Init rejects out-of-range Opts.TagStubSize before any session
+// material is drawn. The floor matches the macs.Register
 // TagSize >= 16 contract; the ceiling covers the longest realistic
 // MAC tag (64 bytes).
 func TestTagStubSizeRangeValidation(t *testing.T) {
@@ -295,35 +296,28 @@ func TestTagStubSizeRangeValidation(t *testing.T) {
 		return prof
 	}
 
-	// RegisterProfile-side rejections.
+	// Register-side rejections.
 	for _, stub := range []int{-1, 1, 15, 65, 128} {
 		name := fmt.Sprintf("userns-tagstub-range-bad%d-v1", stub&0xfff)
-		if err := RegisterProfile(name, newNoMACProfile(stub)); err == nil {
-			t.Errorf("RegisterProfile accepted TagStubSize=%d, want rejection", stub)
+		if err := Register(name, newNoMACProfile(stub)); err == nil {
+			t.Errorf("Register accepted TagStubSize=%d, want rejection", stub)
 		}
 	}
 
-	// RegisterProfile-side acceptances (0 = defer; boundary values in
+	// Register-side acceptances (0 = defer; boundary values in
 	// range). Each registration lands under a distinct name.
 	for _, stub := range []int{0, 16, 32, 64} {
 		name := fmt.Sprintf("userns-tagstub-range-ok%d-v1", stub)
-		if err := RegisterProfile(name, newNoMACProfile(stub)); err != nil && !errors.Is(err, ErrProfileExists) {
-			t.Errorf("RegisterProfile rejected TagStubSize=%d: %v", stub, err)
+		if err := Register(name, newNoMACProfile(stub)); err != nil && !errors.Is(err, ErrProfileExists) {
+			t.Errorf("Register rejected TagStubSize=%d: %v", stub, err)
 		}
 	}
 
-	// Opts-side rejections on Init and Open.
+	// Opts-side rejections on Init.
 	nameOK := "userns-tagstub-range-ok0-v1"
-	_, blob, err := Init(nameOK, Opts{})
-	if err != nil {
-		t.Fatalf("Init baseline: %v", err)
-	}
 	for _, stub := range []int{-1, 15, 65} {
 		if _, _, err := Init(nameOK, Opts{TagStubSize: stub}); err == nil {
 			t.Errorf("Init accepted Opts.TagStubSize=%d, want rejection", stub)
-		}
-		if _, err := Open(nameOK, blob, Opts{TagStubSize: stub}); err == nil {
-			t.Errorf("Open accepted Opts.TagStubSize=%d, want rejection", stub)
 		}
 	}
 

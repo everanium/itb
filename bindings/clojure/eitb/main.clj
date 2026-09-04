@@ -3,17 +3,14 @@
 ;; Subcommands:
 ;;
 ;;   eitb version                                   library + binding versions
-;;   eitb hashes                                    shipped hash primitive roster
+;;   eitb profiles                                  registered profile catalogue
 ;;   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 ;;   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 ;;
 ;; `encrypt` prints the session blob to stderr as hex; feed that hex
-;; back to `decrypt` on the receiving side.
-;;
-;; The `hashes` diagnostic iterates the registry through the Java
-;; binding's diagnostic accessor (HashRoster, shipped in the Java
-;; eitb tool jar) — the binding library itself deliberately exposes
-;; no primitive enumeration.
+;; back to `decrypt` on the receiving side. `profiles` lists the
+;; registered profile catalogue one name per line; the profiles that
+;; carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 ;;
 ;; Loaded as a clojure.main script by the sibling `eitb` launcher:
 ;;
@@ -65,8 +62,11 @@
   (println (str "itb-clojure " runtime/binding-version))
   0)
 
-(defn- cmd-hashes []
-  (com.everanium.itb.HashRoster/print)
+(defn- cmd-profiles
+  "Prints the registered profile catalogue one name per line in the
+  sorted order `profiles` returns."
+  []
+  (run! println (itb/profiles))
   0)
 
 (defn- cmd-encrypt [profile in-file out-file]
@@ -77,7 +77,7 @@
                    (itb/encrypt-message pipe plain))]
         (write-file out-file wire)
         (binding [*out* *err*]
-          (println (hex (itb/blob pipe)))
+          (println (hex (itb/save pipe)))
           (flush))
         (println (str "encrypted " in-file " -> " out-file
                       " (" (alength ^bytes plain) " -> " (alength ^bytes wire) " bytes)")))))
@@ -86,7 +86,7 @@
 (defn- cmd-decrypt [profile blob-hex in-file out-file]
   (let [blob (unhex blob-hex)
         wire (read-file in-file)]
-    (with-open [pipe (itb/open profile blob)]
+    (with-open [pipe (itb/load blob)]
       (let [plain (if (streaming-profile? profile)
                     (itb/decrypt-stream-one-shot pipe wire)
                     (itb/decrypt-message pipe wire))]
@@ -98,7 +98,7 @@
 (defn- usage []
   (binding [*out* *err*]
     (println "usage: eitb version")
-    (println "       eitb hashes")
+    (println "       eitb profiles")
     (println "       eitb encrypt <profile> <in-file> <out-file>")
     (println "       eitb decrypt <profile> <blob-hex> <in-file> <out-file>")
     (flush))
@@ -113,7 +113,7 @@
         rc (try
              (cond
                (and (= cmd "version") (empty? more)) (cmd-version)
-               (and (= cmd "hashes") (empty? more)) (cmd-hashes)
+               (and (= cmd "profiles") (empty? more)) (cmd-profiles)
                (and (= cmd "encrypt") (= 3 (count more))) (apply cmd-encrypt more)
                (and (= cmd "decrypt") (= 4 (count more))) (apply cmd-decrypt more)
                :else (usage))

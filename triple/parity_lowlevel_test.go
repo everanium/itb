@@ -17,7 +17,7 @@ import (
 //
 // The parity holds only when both sender and receiver share the exact
 // same 8-seed constellation + Config; the parity test uses
-// [triple.Open] on the sender's blob to rebuild the same seeds on the
+// [triple.Load] on the sender's blob to rebuild the same seeds on the
 // receiver side, then invokes [triple.Pipeline.DecryptMessage] to
 // confirm the wire round-trips through the facade cleanly.
 //
@@ -36,9 +36,9 @@ func TestParityMessageVsLowLevelToggleOff(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, opts)
+	receiver, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open: %v", err)
+		t.Fatalf("triple.Load: %v", err)
 	}
 	defer receiver.Close()
 
@@ -82,9 +82,9 @@ func TestParityStreamVsLowLevelToggleOff(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, opts)
+	receiver, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open (No MAC): %v", err)
+		t.Fatalf("triple.Load (No MAC): %v", err)
 	}
 	defer receiver.Close()
 

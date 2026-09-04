@@ -9,8 +9,9 @@ const stream = @import("stream.zig");
 const Allocator = std.mem.Allocator;
 const Opts = opts_mod.Opts;
 
-/// Explicit master override pair for `Pipeline.open`. Both slices
-/// must be non-empty (a half-supplied pair is rejected Go-side).
+/// Explicit master override pair for `Pipeline.load` / `loadF`. Both
+/// slices must be non-empty (a half-supplied pair is rejected
+/// Go-side).
 pub const Masters = struct {
     perm: []const u8,
     wrap: []const u8,
@@ -18,7 +19,7 @@ pub const Masters = struct {
 
 /// A Triple Pipeline session. Every output buffer the cipher calls
 /// return is owned by the caller and allocated from the `Allocator`
-/// handed to `init` / `open` — release with `allocator.free`. Buffer
+/// handed to `init` / `load` — release with `allocator.free`. Buffer
 /// sizing and the BufferTooSmall retry-once dance live entirely in
 /// the C layer; the Zig side performs no sizing of its own.
 ///
@@ -43,23 +44,34 @@ pub const Pipeline = struct {
         return .{ .allocator = allocator, .handle = handle.? };
     }
 
-    /// Reconstructs a Pipeline from a blob produced by a sender's
-    /// `init` / `rekey`. `masters` is `null` to use the blob-embedded
-    /// masters, or a non-empty pair to override them.
-    pub fn open(
-        allocator: Allocator,
-        profile: [:0]const u8,
-        blob_bytes: []const u8,
-        opts: ?Opts,
-        masters: ?Masters,
-    ) err.Error!Pipeline {
+    /// Reconstructs a Pipeline from a blob produced by `save` /
+    /// `rekey`. `masters` is `null` to use the blob-embedded masters,
+    /// or a pair to override them. The profile shape travels inside
+    /// the blob — no profile name, no opts. A blob whose record names
+    /// a primitive absent from the local build fails with
+    /// `error.RecipePrimitiveUnknown`.
+    pub fn load(allocator: Allocator, blob_bytes: []const u8, masters: ?Masters) err.Error!Pipeline {
         const m = masters orelse Masters{ .perm = &.{}, .wrap = &.{} };
         var handle: ?*ffi.itb_pipeline = null;
-        try err.check(ffi.itb_pipeline_open(
-            profile.ptr,
+        try err.check(ffi.itb_pipeline_load(
             blob_bytes.ptr,
             blob_bytes.len,
-            optsHandle(opts),
+            m.perm.ptr,
+            m.perm.len,
+            m.wrap.ptr,
+            m.wrap.len,
+            &handle,
+        ));
+        return .{ .allocator = allocator, .handle = handle.? };
+    }
+
+    /// `load` for a blob stored at `path`; the file is read inside
+    /// libitb (a missing or unreadable file is `error.BadInput`).
+    pub fn loadF(allocator: Allocator, path: [:0]const u8, masters: ?Masters) err.Error!Pipeline {
+        const m = masters orelse Masters{ .perm = &.{}, .wrap = &.{} };
+        var handle: ?*ffi.itb_pipeline = null;
+        try err.check(ffi.itb_pipeline_load_f(
+            path.ptr,
             m.perm.ptr,
             m.perm.len,
             m.wrap.ptr,
@@ -77,26 +89,50 @@ pub const Pipeline = struct {
         self.handle = undefined;
     }
 
-    /// The exported session-bundle blob for the receiver side. The
-    /// bytes are owned by the C layer and stay valid until the next
-    /// `rekey` or `deinit` on this Pipeline.
-    pub fn blob(self: *const Pipeline) []const u8 {
-        const n = ffi.itb_pipeline_blob_len(self.handle);
-        if (n == 0) return &.{};
-        return ffi.itb_pipeline_blob(self.handle)[0..n];
+    /// The current session-bundle blob for the receiver side (the
+    /// init blob, or the bytes of the latest `rekey`). Caller owns the
+    /// result — release with `allocator.free`.
+    pub fn save(self: *const Pipeline) err.Error![]u8 {
+        var out: [*c]u8 = null;
+        var out_len: usize = 0;
+        const rc = ffi.itb_pipeline_save(self.handle, &out, &out_len);
+        defer ffi.itb_bytes_free(out);
+        try err.check(rc);
+        return self.copyOut(out, out_len);
     }
 
-    /// Rotates the parallax + wrapper masters and refreshes `blob`.
+    /// Writes the current blob to `path` inside libitb (mode 0600; the
+    /// containing directory must exist).
+    pub fn saveF(self: *const Pipeline, path: [:0]const u8) err.Error!void {
+        try err.check(ffi.itb_pipeline_save_f(self.handle, path.ptr));
+    }
+
+    /// Sets the worker cap for every subsequent cipher call. `n` is
+    /// clamped by libitb (`<= 0` selects auto, `> 256` becomes 256);
+    /// only the handle state is reported.
+    pub fn maxWorkers(self: *const Pipeline, n: i32) err.Error!void {
+        try err.check(ffi.itb_pipeline_max_workers(self.handle, n));
+    }
+
+    /// Rotates the parallax + wrapper masters and returns the fresh
+    /// blob (also available through `save`). Caller owns the result.
     /// Must not run concurrently with cipher calls or open stream
     /// sessions on the same Pipeline.
-    pub fn rekey(self: *Pipeline, perm: []const u8, wrap: []const u8) err.Error!void {
-        try err.check(ffi.itb_pipeline_rekey(
+    pub fn rekey(self: *Pipeline, perm: []const u8, wrap: []const u8) err.Error![]u8 {
+        var out: [*c]u8 = null;
+        var out_len: usize = 0;
+        const rc = ffi.itb_pipeline_rekey(
             self.handle,
             perm.ptr,
             perm.len,
             wrap.ptr,
             wrap.len,
-        ));
+            &out,
+            &out_len,
+        );
+        defer ffi.itb_bytes_free(out);
+        try err.check(rc);
+        return self.copyOut(out, out_len);
     }
 
     /// Single Message encrypt: one call, one self-contained wire.
@@ -161,6 +197,10 @@ pub const Pipeline = struct {
         const rc = func(self.handle, src.ptr, src.len, &out, &out_len);
         defer ffi.itb_bytes_free(out); // NULL-safe; out is NULL on failure
         try err.check(rc);
+        return self.copyOut(out, out_len);
+    }
+
+    fn copyOut(self: *const Pipeline, out: [*c]u8, out_len: usize) err.Error![]u8 {
         const copy = try self.allocator.alloc(u8, out_len);
         if (out_len > 0) @memcpy(copy, out[0..out_len]);
         return copy;

@@ -22,6 +22,9 @@ final class Status
     public const SEED_WIDTH_MIX = 8;
     public const BAD_MAC = 9;
     public const MAC_FAILURE = 10;
+    public const BLOB_MALFORMED_RECIPE = 11;
+    public const RECIPE_PRIMITIVE_UNKNOWN = 12;
+    public const UNKNOWN_PROFILE = 13;
     public const BLOB_MODE_MISMATCH = 19;
     public const BLOB_MALFORMED = 20;
     public const BLOB_VERSION_TOO_NEW = 21;
@@ -45,6 +48,9 @@ final class Status
         self::SEED_WIDTH_MIX => 'seed width mismatch',
         self::BAD_MAC => 'unknown MAC name or invalid MAC handle',
         self::MAC_FAILURE => 'MAC verification failed',
+        self::BLOB_MALFORMED_RECIPE => 'blob profile record invalid',
+        self::RECIPE_PRIMITIVE_UNKNOWN => 'blob profile record names a primitive absent from the local registries',
+        self::UNKNOWN_PROFILE => 'unknown profile name',
         self::BLOB_MODE_MISMATCH => 'blob mode mismatch',
         self::BLOB_MALFORMED => 'malformed state blob',
         self::BLOB_VERSION_TOO_NEW => 'blob version too new',

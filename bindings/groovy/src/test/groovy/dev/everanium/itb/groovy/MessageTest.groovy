@@ -41,7 +41,7 @@ class MessageTest {
     void messageRoundTripOnEveryShippedProfile() {
         PROFILES.each { String profile ->
             Pipeline.withPipeline(profile) { Pipeline sender ->
-                Pipeline.withOpened(profile, sender.blob) { Pipeline receiver ->
+                Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                     [4 * 1024, 256 * 1024].each { int size ->
                         byte[] plain = payload(size, size)
                         byte[] wire = sender.encryptMessage(plain)
@@ -63,7 +63,7 @@ class MessageTest {
                 'areion512', 'blake2b512', 'areion512', 'blake2b512',
                 'areion512', 'blake2b512', 'areion512', 'blake2b512')
         Pipeline.withPipeline('singlemsg-triple-mac-v1', opts) { Pipeline sender ->
-            Pipeline.withOpened('singlemsg-triple-mac-v1', sender.blob, opts) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = payload(4096, 42L)
                 byte[] wire = sender.encryptMessage(plain)
                 assertArrayEquals(plain, receiver.decryptMessage(wire))

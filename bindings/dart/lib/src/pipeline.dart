@@ -1,5 +1,6 @@
 // Handle-lifetime wrapper around the Triple Pipeline.
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 
@@ -8,12 +9,18 @@ import 'package:ffi/ffi.dart';
 import 'errors.dart';
 import 'ffi_bridge.dart';
 import 'opts.dart';
+import 'profile.dart';
 import 'stream.dart';
 
 export 'opts.dart';
+export 'profile.dart' show Profile;
 
-/// Floor capacity for blob output buffers (create / rekey).
+/// Floor capacity for blob output buffers (create / save / rekey).
 const int _blobCap = 64 * 1024;
+
+/// Floor capacity for profile-JSON output buffers (inspect / lookup /
+/// profiles).
+const int _jsonCap = 4 * 1024;
 
 /// Pre-allocation formula for Message / one-shot stream outputs:
 /// 1.25x the payload plus a 64 KiB envelope allowance.
@@ -52,24 +59,24 @@ final Finalizer<int> _finalizer = Finalizer<int>((handle) {
   }
 });
 
-/// A Triple Pipeline session plus its exported blob bytes.
+/// A Triple Pipeline session.
 ///
-/// The blob carries the session bundle the receiver feeds to
-/// [Pipeline.open]; [rekey] refreshes it. Release the handle
-/// deterministically via [free]; a [Finalizer] backstop frees on GC
-/// (libitb zeroes key material internally).
+/// [save] exports the self-describing session blob the receiver
+/// feeds to [Pipeline.load] / [Pipeline.loadF]; [rekey] refreshes
+/// it. Release the handle deterministically via [free]; a
+/// [Finalizer] backstop frees on GC (libitb zeroes key material
+/// internally).
 ///
 /// Streaming-decrypt caveat: chunked Streaming AEAD verifies per
 /// chunk, so plaintext of verified chunks is released before a later
 /// chunk can fail authentication.
 class Pipeline {
-  Pipeline._(this._handle, this._blob) {
+  Pipeline._(this._handle) {
     _finalizer.attach(this, _handle, detach: this);
     scratchFinalizer.attach(this, _scratch, detach: this);
   }
 
   int _handle;
-  Uint8List _blob;
 
   /// Grow-only pooled native buffers reused by every cipher call on
   /// this Pipeline (single-isolate ownership serializes access).
@@ -81,6 +88,7 @@ class Pipeline {
   /// Constructs a fresh Pipeline against the named profile. On a
   /// blob-buffer retry the create re-runs and yields a fresh session
   /// (the undersized attempt is closed by libitb before returning).
+  /// The session blob is available through [save].
   factory Pipeline.create(String profile, [Opts? opts]) {
     final bridge = FfiBridge.instance;
     final profileP = profile.toNativeUtf8(allocator: malloc);
@@ -88,11 +96,11 @@ class Pipeline {
     final handleP = malloc<UintPtr>();
     try {
       handleP.value = 0;
-      final blob = _retryOnce(
+      _retryOnce(
           _blobCap,
           (buf, cap, len) =>
               bridge.tripleInit(profileP, optsP, buf, cap, len, handleP));
-      return Pipeline._(handleP.value, blob);
+      return Pipeline._(handleP.value);
     } finally {
       malloc.free(profileP);
       malloc.free(optsP);
@@ -100,11 +108,71 @@ class Pipeline {
     }
   }
 
-  /// Reconstructs a Pipeline from a blob produced by [Pipeline.create]
-  /// or [rekey]. [permMaster] / [wrapMaster] are null to use the
-  /// blob-embedded masters, or both non-empty to override them.
-  factory Pipeline.open(String profile, Uint8List blob,
-      {Opts? opts, Uint8List? permMaster, Uint8List? wrapMaster}) {
+  /// Reconstructs a Pipeline from a blob produced by [save] or
+  /// [rekey]. The blob's embedded profile record is the sole
+  /// structural source. [permMaster] / [wrapMaster] are null to use
+  /// the blob-embedded masters, or both non-empty to override them.
+  factory Pipeline.load(Uint8List blob,
+      {Uint8List? permMaster, Uint8List? wrapMaster}) {
+    final overriding = _checkMasters(permMaster, wrapMaster);
+    final bridge = FfiBridge.instance;
+    final blobP = copyIn(blob);
+    final permP = overriding ? copyIn(permMaster!) : nullptr;
+    final wrapP = overriding ? copyIn(wrapMaster!) : nullptr;
+    final handleP = malloc<UintPtr>();
+    try {
+      handleP.value = 0;
+      check(bridge.tripleLoad(
+        blobP,
+        blob.length,
+        permP,
+        overriding ? permMaster!.length : 0,
+        wrapP,
+        overriding ? wrapMaster!.length : 0,
+        overriding ? 2 : 0,
+        handleP,
+      ));
+      return Pipeline._(handleP.value);
+    } finally {
+      freeIn(blobP);
+      freeIn(permP);
+      freeIn(wrapP);
+      malloc.free(handleP);
+    }
+  }
+
+  /// [Pipeline.load] for a blob stored in a file; the file is read
+  /// inside the library. Same masters semantics.
+  factory Pipeline.loadF(String path,
+      {Uint8List? permMaster, Uint8List? wrapMaster}) {
+    final overriding = _checkMasters(permMaster, wrapMaster);
+    final bridge = FfiBridge.instance;
+    final pathP = path.toNativeUtf8(allocator: malloc);
+    final permP = overriding ? copyIn(permMaster!) : nullptr;
+    final wrapP = overriding ? copyIn(wrapMaster!) : nullptr;
+    final handleP = malloc<UintPtr>();
+    try {
+      handleP.value = 0;
+      check(bridge.tripleLoadF(
+        pathP,
+        permP,
+        overriding ? permMaster!.length : 0,
+        wrapP,
+        overriding ? wrapMaster!.length : 0,
+        overriding ? 2 : 0,
+        handleP,
+      ));
+      return Pipeline._(handleP.value);
+    } finally {
+      malloc.free(pathP);
+      freeIn(permP);
+      freeIn(wrapP);
+      malloc.free(handleP);
+    }
+  }
+
+  /// Folds the optional master pair into the CAPI arity flag.
+  static bool _checkMasters(Uint8List? permMaster, Uint8List? wrapMaster) {
     final overriding = permMaster != null || wrapMaster != null;
     if (overriding &&
         (permMaster == null ||
@@ -113,51 +181,46 @@ class Pipeline {
             wrapMaster.isEmpty)) {
       throw ItbException(Status.badInput, 'master overrides must be non-empty');
     }
-    final bridge = FfiBridge.instance;
-    final profileP = profile.toNativeUtf8(allocator: malloc);
-    final optsP = (opts ?? Opts()).build().toNativeUtf8(allocator: malloc);
-    final blobP = copyIn(blob);
-    final permP = overriding ? copyIn(permMaster!) : nullptr;
-    final wrapP = overriding ? copyIn(wrapMaster!) : nullptr;
-    final handleP = malloc<UintPtr>();
+    return overriding;
+  }
+
+  /// The current self-describing session blob: the bytes
+  /// [Pipeline.create] produced, the bytes [Pipeline.load]
+  /// re-marshalled, or the bytes of the latest [rekey].
+  Uint8List save() => _retryOnce(
+      _blobCap,
+      (buf, cap, len) =>
+          FfiBridge.instance.tripleSave(_handle, buf, cap, len));
+
+  /// Writes [save] to [path] inside the library with mode 0600; the
+  /// containing directory must exist.
+  void saveF(String path) {
+    final pathP = path.toNativeUtf8(allocator: malloc);
     try {
-      handleP.value = 0;
-      check(bridge.tripleOpen(
-        profileP,
-        blobP,
-        blob.length,
-        optsP,
-        permP,
-        overriding ? permMaster!.length : 0,
-        wrapP,
-        overriding ? wrapMaster!.length : 0,
-        overriding ? 2 : 0,
-        handleP,
-      ));
-      return Pipeline._(handleP.value, Uint8List.fromList(blob));
+      check(FfiBridge.instance.tripleSaveF(_handle, pathP));
     } finally {
-      malloc.free(profileP);
-      malloc.free(optsP);
-      freeIn(blobP);
-      freeIn(permP);
-      freeIn(wrapP);
-      malloc.free(handleP);
+      malloc.free(pathP);
     }
   }
 
-  /// The exported session bundle bytes for the receiver side.
-  Uint8List get blob => _blob;
+  /// Sets the worker cap for every subsequent cipher call. [n] is
+  /// clamped, never rejected: `n <= 0` selects auto (CPU count),
+  /// `n > 256` is treated as 256. Only the handle statuses throw.
+  void maxWorkers(int n) {
+    check(FfiBridge.instance.tripleMaxWorkers(_handle, n));
+  }
 
-  /// Rotates the parallax + wrapper masters and refreshes [blob].
-  /// Must not run concurrently with cipher calls or open stream
-  /// sessions on the same Pipeline.
-  void rekey(Uint8List permMaster, Uint8List wrapMaster) {
+  /// Rotates the parallax + wrapper masters and returns the fresh
+  /// session blob (also available through [save]). Must not run
+  /// concurrently with cipher calls or open stream sessions on the
+  /// same Pipeline.
+  Uint8List rekey(Uint8List permMaster, Uint8List wrapMaster) {
     final bridge = FfiBridge.instance;
     final permP = copyIn(permMaster);
     final wrapP = copyIn(wrapMaster);
     try {
-      _blob = _retryOnce(
-          _blob.length > _blobCap ? _blob.length : _blobCap,
+      return _retryOnce(
+          _blobCap,
           (buf, cap, len) => bridge.tripleRekey(_handle, permP,
               permMaster.length, wrapP, wrapMaster.length, buf, cap, len));
     } finally {
@@ -290,21 +353,53 @@ class Pipeline {
   }
 }
 
-/// Registers a user-defined Triple profile under [name] so subsequent
-/// [Pipeline.create] / [Pipeline.open] calls resolve it. The opts
-/// follow the register-profile grammar validated by Go (`mode`,
-/// `width`, `innerHash` / `innerHashes`, `keyBits`, `macName`,
-/// `outerCipher`, `parallaxPalette`, `parallaxSegmentSize`,
-/// `chunkSize`, `parallaxOn`, `wrapperOn`) — build them with
-/// [Opts.withRaw] plus the typed setters where key names coincide. A
-/// duplicate name fails with [Status.profileExists].
-void registerProfile(String name, [Opts? opts]) {
-  final nameP = name.toNativeUtf8(allocator: malloc);
-  final optsP = (opts ?? Opts()).build().toNativeUtf8(allocator: malloc);
+/// Decodes the blob's embedded profile record without opening a
+/// Pipeline. No registry read, no primitive probe.
+Profile inspect(Uint8List blob) {
+  final blobP = copyIn(blob);
   try {
-    check(FfiBridge.instance.tripleRegisterProfile(nameP, optsP));
+    final json = _retryOnce(
+        _jsonCap,
+        (buf, cap, len) => FfiBridge.instance
+            .tripleInspect(blobP, blob.length, buf, cap, len));
+    return Profile.fromJson(utf8.decode(json));
+  } finally {
+    freeIn(blobP);
+  }
+}
+
+/// Registers [profile] under [name] so subsequent [Pipeline.create] /
+/// [lookup] calls resolve it. Every field rule is validated by Go; a
+/// duplicate name fails with [Status.profileExists].
+void register(String name, Profile profile) {
+  final nameP = name.toNativeUtf8(allocator: malloc);
+  final jsonP = profile.toJson().toNativeUtf8(allocator: malloc);
+  try {
+    check(FfiBridge.instance.tripleRegister(nameP, jsonP));
   } finally {
     malloc.free(nameP);
-    malloc.free(optsP);
+    malloc.free(jsonP);
   }
+}
+
+/// Looks up a registered profile (shipped or [register]ed) by name;
+/// an unknown name fails with [Status.unknownProfile].
+Profile lookup(String name) {
+  final nameP = name.toNativeUtf8(allocator: malloc);
+  try {
+    final json = _retryOnce(
+        _jsonCap,
+        (buf, cap, len) =>
+            FfiBridge.instance.tripleLookup(nameP, buf, cap, len));
+    return Profile.fromJson(utf8.decode(json));
+  } finally {
+    malloc.free(nameP);
+  }
+}
+
+/// The sorted names of every registered profile.
+List<String> profiles() {
+  final json = _retryOnce(_jsonCap,
+      (buf, cap, len) => FfiBridge.instance.tripleProfiles(buf, cap, len));
+  return stringsFromJson(utf8.decode(json));
 }

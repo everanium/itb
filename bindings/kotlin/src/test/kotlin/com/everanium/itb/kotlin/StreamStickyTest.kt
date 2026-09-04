@@ -21,7 +21,7 @@ class StreamStickyTest {
     @Test
     fun tamperedWireStickyFailure() {
         Pipeline.init("streaming-aead-triple-mac-v1").use { sender ->
-            Pipeline.open("streaming-aead-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = ByteArray(65_536) { (it % 227).toByte() }
                 val baseWire = sender.encryptStreamOneShot(plain)
                 assertTrue(

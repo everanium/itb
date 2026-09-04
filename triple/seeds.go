@@ -58,7 +58,7 @@ func allocEightSeeds(innerHash string, keyBits int) ([8]any, [8][]byte, int, err
 // allocEightSeedsMixed is the mixed-primitive counterpart to
 // [allocEightSeeds]. Each of the 8 canonical slots is built with its
 // own per-slot primitive name from the mixedHashes array; every
-// primitive's native width must match width (RegisterProfile's
+// primitive's native width must match width (Register's
 // validator enforces this — the check here is defensive, catching
 // programmer mistakes on the raw entry point).
 //

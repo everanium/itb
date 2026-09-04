@@ -36,6 +36,11 @@
 /tools/parity/parity-nocgo-noasm
 # Concurrency stress harness compiled binary
 /tools/loop/loop
+# cmd/itb3 CLI utility compiled binaries (root or in-place build)
+/itb3
+/itb3.exe
+/cmd/itb3/itb3
+/cmd/itb3/itb3.exe
 *.test
 
 # CPU/memory profiles

@@ -3,6 +3,8 @@ package ctr
 import (
 	"bytes"
 	"testing"
+
+	"github.com/everanium/itb/hashes"
 )
 
 // TestNewAtParity proves NewAt is byte-exact: for every cipher and a range of
@@ -15,9 +17,9 @@ import (
 func TestNewAtParity(t *testing.T) {
 	const total = 8192
 	for _, name := range []string{
-		CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512,
-		CipherBLAKE2s, CipherBLAKE3, CipherAES128CTR, CipherSipHash24,
-		CipherChaCha20,
+		hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512,
+		hashes.CipherBLAKE2s, hashes.CipherBLAKE3, hashes.CipherAES128CTR, hashes.CipherSipHash24,
+		hashes.CipherChaCha20,
 	} {
 		ksize, err := KeySize(name)
 		if err != nil {
@@ -78,13 +80,13 @@ func TestNewAtParity(t *testing.T) {
 // ("inner ITB confidentiality unaffected"), so a future reader of the error
 // does not misread it as a confidentiality regression. The AES-CTR escape
 // (128-bit big-endian counter) is separately covered by `TestNewAtParity`
-// on `CipherAES128CTR`.
+// on `hashes.CipherAES128CTR`.
 func TestNewAtChaCha20CounterOverflow(t *testing.T) {
-	ksize, err := KeySize(CipherChaCha20)
+	ksize, err := KeySize(hashes.CipherChaCha20)
 	if err != nil {
 		t.Fatalf("KeySize: %v", err)
 	}
-	nsize, err := NonceSize(CipherChaCha20)
+	nsize, err := NonceSize(hashes.CipherChaCha20)
 	if err != nil {
 		t.Fatalf("NonceSize: %v", err)
 	}
@@ -99,18 +101,18 @@ func TestNewAtChaCha20CounterOverflow(t *testing.T) {
 	const firstOverflowByteOffset = 1 << 38
 
 	// The last valid seek must succeed — no bogus rejection at the boundary.
-	if _, err := NewAt(CipherChaCha20, key, nonce, lastValidByteOffset); err != nil {
+	if _, err := NewAt(hashes.CipherChaCha20, key, nonce, lastValidByteOffset); err != nil {
 		t.Fatalf("NewAt(chacha20, byteOffset=2^38-1): expected success at the last valid block index, got error: %v", err)
 	}
 
 	// A block-aligned last valid position (2^32 − 1 whole blocks in) must also succeed.
-	if _, err := NewAt(CipherChaCha20, key, nonce, (1<<32-1)*64); err != nil {
+	if _, err := NewAt(hashes.CipherChaCha20, key, nonce, (1<<32-1)*64); err != nil {
 		t.Fatalf("NewAt(chacha20, byteOffset=(2^32-1)*64): expected success at block-aligned last valid counter, got error: %v", err)
 	}
 
 	// First overflowing seek must return an explicit error, not a silently
 	// wrapped keystream.
-	_, err = NewAt(CipherChaCha20, key, nonce, firstOverflowByteOffset)
+	_, err = NewAt(hashes.CipherChaCha20, key, nonce, firstOverflowByteOffset)
 	if err == nil {
 		t.Fatalf("NewAt(chacha20, byteOffset=2^38): expected counter-overflow error, got nil (silent uint32 wrap)")
 	}

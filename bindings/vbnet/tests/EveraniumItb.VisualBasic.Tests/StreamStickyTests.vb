@@ -16,7 +16,7 @@ Public Class StreamStickyTests
     <Fact>
     Public Sub TamperedWireStickyFailure()
         Using sender As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1")
-            Using receiver As Pipeline = Pipeline.Open("streaming-aead-triple-mac-v1", sender.Blob)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain(65535) As Byte
                 For i As Integer = 0 To plain.Length - 1
                     plain(i) = CByte(i Mod 227)

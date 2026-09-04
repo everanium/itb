@@ -4,18 +4,20 @@
 const std = @import("std");
 const itb = @import("itb");
 
+/// Save → Load handshake: a receiver reconstructed from the sender's
+/// current blob.
+fn loadFrom(gpa: std.mem.Allocator, sender: *const itb.Pipeline) !itb.Pipeline {
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    return itb.Pipeline.load(gpa, blob, null);
+}
+
 test "stream pump round trip" {
     const gpa = std.testing.allocator;
 
     var sender = try itb.Pipeline.init(gpa, "streaming-aead-triple-mac-v1", null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "streaming-aead-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const size: usize = 1 << 20;

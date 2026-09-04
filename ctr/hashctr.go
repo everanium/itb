@@ -7,18 +7,7 @@ import (
 	"github.com/everanium/itb/internal/hashprf"
 )
 
-// Cipher names for the six hash-based PRF-CTR keystreams. The names match
-// the ITB registry identifiers for these primitives.
-const (
-	CipherAreion256  = "areion256"
-	CipherAreion512  = "areion512"
-	CipherBLAKE2b256 = "blake2b256"
-	CipherBLAKE2b512 = "blake2b512"
-	CipherBLAKE2s    = "blake2s"
-	CipherBLAKE3     = "blake3"
-)
-
-// hashCTRNonceSize is the nonce length shared by all six hash-based
+// hashCTRNonceSize is the nonce length shared by all hash-based
 // PRF-CTR keystreams.
 const hashCTRNonceSize = 16
 

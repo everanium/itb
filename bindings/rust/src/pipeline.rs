@@ -2,14 +2,17 @@
 
 use std::ffi::CString;
 use std::io::{Read, Write};
+use std::path::Path;
 
 use crate::error::{ItbError, ItbResult, check};
 use crate::ffi::{self, FnTripleCipher, Syms};
 use crate::opts::OptsBuilder;
+use crate::profile::Profile;
 use crate::status::ItbStatus;
 use crate::stream::{DecryptStream, EncryptStream};
 
-/// Floor capacity for blob output buffers (Init / Rekey).
+/// Floor capacity for blob / JSON output buffers (Init / Rekey / Save /
+/// Inspect).
 const BLOB_CAP: usize = 64 * 1024;
 
 /// Pre-allocation formula for Message / one-shot stream outputs:
@@ -21,7 +24,7 @@ fn out_cap(payload: usize) -> usize {
 /// Single retry-once dispatch site for every variable-size output
 /// buffer: pre-allocate `cap`, and on `BufferTooSmall` retry once
 /// with the exact size the FFI reported through the length out-param.
-fn retry_once(
+pub(crate) fn retry_once(
     cap: usize,
     mut call: impl FnMut(&mut [u8], &mut usize) -> i32,
 ) -> ItbResult<Vec<u8>> {
@@ -42,10 +45,10 @@ fn retry_once(
     Ok(buf)
 }
 
-/// A Triple Pipeline session plus its exported blob bytes.
+/// A Triple Pipeline session.
 ///
-/// The blob carries the session bundle the receiver feeds to
-/// [`Pipeline::open`]; [`Pipeline::rekey`] refreshes it. Dropping the
+/// [`Pipeline::save`] exports the session bundle the receiver feeds to
+/// [`Pipeline::load`]; [`Pipeline::rekey`] refreshes it. Dropping the
 /// Pipeline frees the handle (libitb zeroes key material internally).
 ///
 /// Streaming-decrypt caveat: chunked Streaming AEAD verifies per
@@ -53,11 +56,11 @@ fn retry_once(
 /// chunk can fail authentication.
 pub struct Pipeline {
     handle: usize,
-    blob: Vec<u8>,
 }
 
 impl Pipeline {
-    /// Constructs a fresh Pipeline against the named profile. On a
+    /// Constructs a fresh Pipeline against the named profile. The
+    /// session bundle is available through [`Pipeline::save`]. On a
     /// blob-buffer retry the Init re-runs and yields a fresh session
     /// (the undersized attempt is closed by libitb before returning).
     pub fn init(profile: &str, opts: &OptsBuilder) -> ItbResult<Self> {
@@ -65,7 +68,7 @@ impl Pipeline {
         let profile_c = cstr(profile, "profile name contains NUL")?;
         let opts_c = opts.build();
         let mut handle = 0usize;
-        let blob = retry_once(BLOB_CAP, |buf, len| {
+        retry_once(BLOB_CAP, |buf, len| {
             // SAFETY: all pointers reference live buffers for the
             // duration of the call; len / handle are valid out-params.
             unsafe {
@@ -79,40 +82,24 @@ impl Pipeline {
                 )
             }
         })?;
-        Ok(Self { handle, blob })
+        Ok(Self { handle })
     }
 
-    /// Reconstructs a Pipeline from a blob produced by [`Pipeline::init`]
-    /// or [`Pipeline::rekey`]. `masters` is `None` to use the
-    /// blob-embedded masters, or `Some((perm, wrap))` to override them.
-    pub fn open(
-        profile: &str,
-        blob: &[u8],
-        opts: &OptsBuilder,
-        masters: Option<(&[u8], &[u8])>,
-    ) -> ItbResult<Self> {
+    /// Reconstructs a Pipeline from a blob produced by
+    /// [`Pipeline::save`] or [`Pipeline::rekey`]. `masters` is `None`
+    /// to use the blob-embedded masters, or `Some((perm, wrap))` to
+    /// override them.
+    pub fn load(blob: &[u8], masters: Option<(&[u8], &[u8])>) -> ItbResult<Self> {
         let s = ffi::syms()?;
-        let profile_c = cstr(profile, "profile name contains NUL")?;
-        let opts_c = opts.build();
-        let (pm, wm, count) = match masters {
-            None => (&[][..], &[][..], 0usize),
-            Some((pm, wm)) => {
-                if pm.is_empty() || wm.is_empty() {
-                    return Err(ItbError::Ffi("master override slices must be non-empty"));
-                }
-                (pm, wm, 2usize)
-            }
-        };
+        let (pm, wm, count) = split_masters(masters);
         let mut handle = 0usize;
         // SAFETY: all pointers reference live buffers for the duration
         // of the call; handle is a valid out-param. Empty slices cross
         // as (dangling, 0), which the Go side treats as absent.
         let rc = unsafe {
-            (s.ITB_Triple_Open)(
-                profile_c.as_ptr(),
+            (s.ITB_Triple_Load)(
                 blob.as_ptr().cast(),
                 blob.len(),
-                opts_c.as_ptr(),
                 pm.as_ptr().cast(),
                 pm.len(),
                 wm.as_ptr().cast(),
@@ -122,23 +109,67 @@ impl Pipeline {
             )
         };
         check(rc)?;
-        Ok(Self {
-            handle,
-            blob: blob.to_vec(),
+        Ok(Self { handle })
+    }
+
+    /// [`Pipeline::load`] for a blob stored at `path`; the file is read
+    /// inside libitb.
+    pub fn load_f(path: impl AsRef<Path>, masters: Option<(&[u8], &[u8])>) -> ItbResult<Self> {
+        let s = ffi::syms()?;
+        let path_c = path_cstr(path.as_ref())?;
+        let (pm, wm, count) = split_masters(masters);
+        let mut handle = 0usize;
+        // SAFETY: as for `load`; path_c is a live NUL-terminated string.
+        let rc = unsafe {
+            (s.ITB_Triple_LoadF)(
+                path_c.as_ptr(),
+                pm.as_ptr().cast(),
+                pm.len(),
+                wm.as_ptr().cast(),
+                wm.len(),
+                count,
+                &mut handle,
+            )
+        };
+        check(rc)?;
+        Ok(Self { handle })
+    }
+
+    /// The current session bundle bytes for the receiver side (the
+    /// Init blob, or the bytes of the latest [`Pipeline::rekey`]).
+    pub fn save(&self) -> ItbResult<Vec<u8>> {
+        let s = ffi::syms()?;
+        retry_once(BLOB_CAP, |buf, len| {
+            // SAFETY: buf / len are valid for the duration of the call.
+            unsafe { (s.ITB_Triple_Save)(self.handle, buf.as_mut_ptr().cast(), buf.len(), len) }
         })
     }
 
-    /// The exported session bundle bytes for the receiver side.
-    pub fn blob(&self) -> &[u8] {
-        &self.blob
+    /// Writes the current session bundle to `path` inside libitb (file
+    /// mode 0600; the containing directory must exist).
+    pub fn save_f(&self, path: impl AsRef<Path>) -> ItbResult<()> {
+        let s = ffi::syms()?;
+        let path_c = path_cstr(path.as_ref())?;
+        // SAFETY: path_c is a live NUL-terminated string.
+        check(unsafe { (s.ITB_Triple_SaveF)(self.handle, path_c.as_ptr()) })
     }
 
-    /// Rotates the parallax + wrapper masters and refreshes
-    /// [`Pipeline::blob`]. Must not run concurrently with cipher calls
-    /// or open stream sessions on the same Pipeline.
-    pub fn rekey(&mut self, perm: &[u8], wrap: &[u8]) -> ItbResult<()> {
+    /// Sets the worker cap for every subsequent cipher call. `n` is
+    /// clamped by libitb (`<= 0` selects auto, `> 256` becomes 256);
+    /// only the handle state is reported.
+    pub fn max_workers(&self, n: i32) -> ItbResult<()> {
         let s = ffi::syms()?;
-        self.blob = retry_once(BLOB_CAP.max(self.blob.len()), |buf, len| {
+        // SAFETY: handle-only call.
+        check(unsafe { (s.ITB_Triple_MaxWorkers)(self.handle, n) })
+    }
+
+    /// Rotates the parallax + wrapper masters and returns the fresh
+    /// session bundle bytes (also available through
+    /// [`Pipeline::save`]). Must not run concurrently with cipher
+    /// calls or open stream sessions on the same Pipeline.
+    pub fn rekey(&mut self, perm: &[u8], wrap: &[u8]) -> ItbResult<Vec<u8>> {
+        let s = ffi::syms()?;
+        retry_once(BLOB_CAP, |buf, len| {
             // SAFETY: all pointers reference live buffers for the
             // duration of the call; len is a valid out-param.
             unsafe {
@@ -153,8 +184,7 @@ impl Pipeline {
                     len,
                 )
             }
-        })?;
-        Ok(())
+        })
     }
 
     /// Zeroes the Pipeline's key material and marks it closed.
@@ -238,13 +268,29 @@ impl Pipeline {
     }
 }
 
+/// Decodes the profile record embedded in `blob` without constructing
+/// a Pipeline. No registry read and no primitive probe — a primitive
+/// name the local build lacks is returned unchanged.
+pub fn inspect(blob: &[u8]) -> ItbResult<Profile> {
+    let s = ffi::syms()?;
+    let json = retry_once(BLOB_CAP, |buf, len| {
+        // SAFETY: blob / buf / len are valid for the duration of the call.
+        unsafe {
+            (s.ITB_Triple_Inspect)(
+                blob.as_ptr().cast(),
+                blob.len(),
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                len,
+            )
+        }
+    })?;
+    crate::register::parse_profile(&json)
+}
+
 impl std::fmt::Debug for Pipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The blob bytes are elided — session-bundle material does not
-        // belong in debug logs.
-        f.debug_struct("Pipeline")
-            .field("blob_len", &self.blob.len())
-            .finish_non_exhaustive()
+        f.debug_struct("Pipeline").finish_non_exhaustive()
     }
 }
 
@@ -265,4 +311,18 @@ impl Drop for Pipeline {
 
 fn cstr(s: &str, msg: &'static str) -> ItbResult<CString> {
     CString::new(s).map_err(|_| ItbError::Ffi(msg))
+}
+
+fn path_cstr(path: &Path) -> ItbResult<CString> {
+    let text = path.to_str().ok_or(ItbError::Ffi("path is not valid UTF-8"))?;
+    cstr(text, "path contains NUL")
+}
+
+/// Splits the optional master override pair into the (perm, wrap,
+/// count) triple the Load exports take; `None` crosses as absent.
+fn split_masters<'a>(masters: Option<(&'a [u8], &'a [u8])>) -> (&'a [u8], &'a [u8], usize) {
+    match masters {
+        None => (&[][..], &[][..], 0usize),
+        Some((pm, wm)) => (pm, wm, 2usize),
+    }
 }

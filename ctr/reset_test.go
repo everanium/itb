@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
 )
 
@@ -15,15 +16,15 @@ var resetCases = []struct {
 	keySize   int
 	nonceSize int
 }{
-	{CipherAreion256, 32, 16},
-	{CipherAreion512, 64, 16},
-	{CipherBLAKE2b256, 32, 16},
-	{CipherBLAKE2b512, 32, 16},
-	{CipherBLAKE2s, 32, 16},
-	{CipherBLAKE3, 32, 16},
-	{CipherAES128CTR, 16, 16},
-	{CipherSipHash24, 16, 16},
-	{CipherChaCha20, 32, 12},
+	{hashes.CipherAreion256, 32, 16},
+	{hashes.CipherAreion512, 64, 16},
+	{hashes.CipherBLAKE2b256, 32, 16},
+	{hashes.CipherBLAKE2b512, 32, 16},
+	{hashes.CipherBLAKE2s, 32, 16},
+	{hashes.CipherBLAKE3, 32, 16},
+	{hashes.CipherAES128CTR, 16, 16},
+	{hashes.CipherSipHash24, 16, 16},
+	{hashes.CipherChaCha20, 32, 12},
 }
 
 // referenceKeystream produces the leading n bytes of the (name, key,
@@ -233,7 +234,7 @@ func TestResetCounterRejectsNegative(t *testing.T) {
 			}
 		})
 	}
-	if _, err := NewResettableAt(CipherAES128CTR, make([]byte, 16), make([]byte, 16), -1); err == nil {
+	if _, err := NewResettableAt(hashes.CipherAES128CTR, make([]byte, 16), make([]byte, 16), -1); err == nil {
 		t.Error("NewResettableAt(aescmac, -1) accepted negative offset")
 	}
 }
@@ -262,7 +263,7 @@ func TestNewResettableErrors(t *testing.T) {
 // overflow guard specific to RFC 8439 ChaCha20.
 func TestChaCha20ResetCounterOverflow(t *testing.T) {
 	key, nonce := randomKeyNonce(t, 32, 12)
-	ks, err := NewResettable(CipherChaCha20, key, nonce)
+	ks, err := NewResettable(hashes.CipherChaCha20, key, nonce)
 	if err != nil {
 		t.Fatalf("NewResettable(chacha20): %v", err)
 	}
@@ -313,7 +314,7 @@ func TestChaCha20ResetCounterOverflow(t *testing.T) {
 // same offset for the Areion family (which is the only family that
 // reaches the batched constructor).
 func TestPRFHashBatchResetCounterParity(t *testing.T) {
-	for _, name := range []string{CipherAreion256, CipherAreion512} {
+	for _, name := range []string{hashes.CipherAreion256, hashes.CipherAreion512} {
 		ksize, err := hashprf.KeySize(name)
 		if err != nil {
 			t.Fatalf("hashprf.KeySize(%q): %v", name, err)

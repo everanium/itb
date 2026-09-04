@@ -19,38 +19,24 @@ namespace Everanium\Itb;
  *     use Everanium\Itb\Itb;
  *
  *     $sender = Itb::create('singlemsg-triple-mac-v1');
- *     $receiver = Itb::open('singlemsg-triple-mac-v1', $sender->blob());
+ *     $receiver = Itb::load($sender->save());
  *     $wire = $sender->encryptMessage('hello');
  *     assert($receiver->decryptMessage($wire) === 'hello');
  */
 final class Itb
 {
     /** Binding version. */
-    public const VERSION = '0.3.5';
+    public const VERSION = '0.4.1';
 
-    /** Floor capacity for blob output buffers (create / rekey). */
+    /** Floor capacity for blob output buffers (create / save / rekey). */
     public const BLOB_CAP = 65536;
 
-    /**
-     * Shipped profile identifiers, mirrored from the Go triple
-     * package registry in declaration order. The C ABI exposes no
-     * profile enumeration, so the roster is pinned here; profiles
-     * registered at runtime via registerProfile() are not included.
-     */
-    private const PROFILES = [
-        'streaming-aead-triple-mac-v1',
-        'streaming-noaead-triple-v1',
-        'singlemsg-triple-mac-v1',
-        'singlemsg-triple-nomac-v1',
-        'blob-triple-mac-v1',
-        'streaming-aead-triple-mac-mixed-v1',
-        'streaming-noaead-triple-mixed-v1',
-        'singlemsg-triple-mac-mixed-v1',
-        'singlemsg-triple-nomac-mixed-v1',
-    ];
+    /** Floor capacity for profile-JSON output buffers (inspect / lookup / profiles). */
+    public const JSON_CAP = 4096;
 
     /**
-     * Constructs a fresh Pipeline against the named profile. On a
+     * Constructs a fresh Pipeline against the named profile. The
+     * session blob is available through Pipeline::save(). On a
      * blob-buffer retry the Init re-runs and yields a fresh session
      * (the undersized attempt is closed by libitb before returning).
      *
@@ -63,46 +49,33 @@ final class Itb
         $handle = $ffi->new('uintptr_t');
         $handlePtr = \FFI::addr($handle);
 
-        $blob = FFIBridge::retryOnce(
+        FFIBridge::retryOnce(
             self::BLOB_CAP,
             static function ($buf, int $cap, $lenPtr) use ($ffi, $profile, $optsStr, $handlePtr): int {
                 return $ffi->ITB_Triple_Init($profile, $optsStr, $buf, $cap, $lenPtr, $handlePtr);
             }
         );
-        return new Pipeline((int) $handle->cdata, $blob);
+        return new Pipeline((int) $handle->cdata);
     }
 
     /**
-     * Reconstructs a Pipeline from a blob produced by create() or
-     * Pipeline::rekey(). $masters is null to use the blob-embedded
-     * masters, or a [perm, wrap] pair of non-empty byte-strings to
-     * override them.
+     * Reconstructs a Pipeline from a blob produced by
+     * Pipeline::save() or Pipeline::rekey(). The blob's embedded
+     * profile record is the sole structural source — no profile
+     * name, no opts. $masters is null to use the blob-embedded
+     * masters, or a [perm, wrap] pair of byte-strings to override
+     * them.
      *
-     * @param array<string, bool|int|float|string> $opts
-     * @param array{0: string, 1: string}|null     $masters
+     * @param array{0: string, 1: string}|null $masters
      */
-    public static function open(string $profile, string $blob, array $opts = [], ?array $masters = null): Pipeline
+    public static function load(string $blob, ?array $masters = null): Pipeline
     {
         $ffi = FFIBridge::get();
-        $optsStr = self::buildOpts($opts);
-        if ($masters === null) {
-            $pm = '';
-            $wm = '';
-            $count = 0;
-        } else {
-            $pm = $masters[0];
-            $wm = $masters[1];
-            if ($pm === '' || $wm === '') {
-                throw new ItbException('master override buffers must be non-empty');
-            }
-            $count = 2;
-        }
+        [$pm, $wm, $count] = self::masters($masters);
         $handle = $ffi->new('uintptr_t');
-        FFIBridge::check($ffi->ITB_Triple_Open(
-            $profile,
+        FFIBridge::check($ffi->ITB_Triple_Load(
             $blob,
             \strlen($blob),
-            $optsStr,
             $pm,
             \strlen($pm),
             $wm,
@@ -110,55 +83,93 @@ final class Itb
             $count,
             \FFI::addr($handle)
         ));
-        return new Pipeline((int) $handle->cdata, $blob);
+        return new Pipeline((int) $handle->cdata);
     }
 
     /**
-     * Registers a user-defined Triple profile under $name so
-     * subsequent create() / open() calls resolve it. The opts follow
-     * the register-profile grammar validated by Go (mode, width,
-     * innerHash / innerHashes, keyBits, macName, outerCipher,
-     * parallaxPalette, parallaxSegmentSize, chunkSize, parallaxOn,
-     * wrapperOn). A duplicate name fails with Status::PROFILE_EXISTS.
+     * load() for a blob stored in a file; the file is read inside
+     * the library.
      *
-     * @param array<string, bool|int|float|string> $opts
+     * @param array{0: string, 1: string}|null $masters
      */
-    public static function registerProfile(string $name, array $opts): void
+    public static function loadF(string $path, ?array $masters = null): Pipeline
     {
         $ffi = FFIBridge::get();
-        FFIBridge::check($ffi->ITB_Triple_RegisterProfile($name, self::buildOpts($opts)));
+        [$pm, $wm, $count] = self::masters($masters);
+        $handle = $ffi->new('uintptr_t');
+        FFIBridge::check($ffi->ITB_Triple_LoadF(
+            $path,
+            $pm,
+            \strlen($pm),
+            $wm,
+            \strlen($wm),
+            $count,
+            \FFI::addr($handle)
+        ));
+        return new Pipeline((int) $handle->cdata);
     }
 
     /**
-     * The shipped hash primitive roster as name => width-bits pairs
-     * in canonical registry order.
+     * Decodes the blob's embedded profile record without opening a
+     * Pipeline and returns it as an associative array decoded from
+     * the JSON libitb emits (keys name, mode, width, hash, hashes,
+     * keybits, mac, tagstub, chunk, wrapper, outer, parallax,
+     * palette, segment; absent keys are optional fields at their
+     * zero value). No registry read, no primitive probe.
      *
-     * @return array<string, int>
+     * @return array<string, mixed>
      */
-    public static function hashes(): array
+    public static function inspect(string $blob): array
     {
         $ffi = FFIBridge::get();
-        $out = [];
-        $count = $ffi->ITB_HashCount();
-        $buf = $ffi->new('char[128]');
-        $n = $ffi->new('size_t');
-        for ($i = 0; $i < $count; $i++) {
-            FFIBridge::check($ffi->ITB_HashName($i, $buf, 128, \FFI::addr($n)));
-            $name = \FFI::string($buf, max((int) $n->cdata - 1, 0));
-            $out[$name] = $ffi->ITB_HashWidth($i);
-        }
-        return $out;
+        return self::jsonOut(static function ($buf, int $cap, $lenPtr) use ($ffi, $blob): int {
+            return $ffi->ITB_Triple_Inspect($blob, \strlen($blob), $buf, $cap, $lenPtr);
+        });
     }
 
     /**
-     * The shipped profile identifiers in Go registry declaration
-     * order.
+     * Registers a profile record under $name so subsequent create()
+     * / lookup() calls resolve it. $profile is the record as an
+     * associative array (the shape inspect() / lookup() return) or an
+     * already-encoded JSON string; a "name" key inside it, if
+     * present, must be empty or equal to $name. Validation (name
+     * pattern, reserved prefixes, field rules) is performed by
+     * libitb; a duplicate name fails with Status::PROFILE_EXISTS.
+     *
+     * @param array<string, mixed>|string $profile
+     */
+    public static function register(string $name, $profile): void
+    {
+        $text = \is_string($profile) ? $profile : \json_encode($profile, \JSON_THROW_ON_ERROR);
+        FFIBridge::check(FFIBridge::get()->ITB_Triple_Register($name, $text));
+    }
+
+    /**
+     * The profile record registered under $name (a shipped catalogue
+     * entry or a prior register()) as an associative array. An
+     * unknown name throws ItbException with Status::UNKNOWN_PROFILE.
+     *
+     * @return array<string, mixed>
+     */
+    public static function lookup(string $name): array
+    {
+        $ffi = FFIBridge::get();
+        return self::jsonOut(static function ($buf, int $cap, $lenPtr) use ($ffi, $name): int {
+            return $ffi->ITB_Triple_Lookup($name, $buf, $cap, $lenPtr);
+        });
+    }
+
+    /**
+     * The sorted list of every registered profile name.
      *
      * @return list<string>
      */
     public static function profiles(): array
     {
-        return self::PROFILES;
+        $ffi = FFIBridge::get();
+        return self::jsonOut(static function ($buf, int $cap, $lenPtr) use ($ffi): int {
+            return $ffi->ITB_Triple_Profiles($buf, $cap, $lenPtr);
+        });
     }
 
     /** The libitb library version string. */
@@ -229,6 +240,36 @@ final class Itb
                 . \str_replace('%2C', ',', \rawurlencode((string) $value));
         }
         return \implode('&', $pairs);
+    }
+
+    /**
+     * Folds the optional [perm, wrap] master pair into the
+     * (perm_master, wrap_master, masters_count) triple the Load
+     * entries take: count 0 selects the blob-embedded masters, count
+     * 2 overrides them.
+     *
+     * @param array{0: string, 1: string}|null $masters
+     * @return array{0: string, 1: string, 2: int}
+     */
+    private static function masters(?array $masters): array
+    {
+        if ($masters === null) {
+            return ['', '', 0];
+        }
+        return [$masters[0], $masters[1], 2];
+    }
+
+    /**
+     * Shared body for the JSON-returning catalogue entries:
+     * retry-once buffer, then a standard-library JSON decode of the
+     * bytes libitb wrote.
+     *
+     * @param callable(\FFI\CData, int, \FFI\CData): int $call
+     * @return array<mixed>
+     */
+    private static function jsonOut(callable $call): array
+    {
+        return \json_decode(FFIBridge::retryOnce(self::JSON_CAP, $call), true, 512, \JSON_THROW_ON_ERROR);
     }
 
     private function __construct()

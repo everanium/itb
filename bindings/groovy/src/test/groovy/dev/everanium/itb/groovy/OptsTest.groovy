@@ -45,7 +45,7 @@ class OptsTest {
         // string reaches libitb intact.
         def opts = new Opts().withChunkSize(4096)
         Pipeline.withPipeline('streaming-aead-triple-mac-v1', opts) { Pipeline sender ->
-            Pipeline.withOpened('streaming-aead-triple-mac-v1', sender.blob, opts) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = MessageTest.payload(20_000, 3)
                 byte[] wire = sender.encryptStreamOneShot(plain)
                 assertArrayEquals(plain, receiver.decryptStreamOneShot(wire))

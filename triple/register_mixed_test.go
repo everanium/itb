@@ -7,7 +7,7 @@ import (
 
 // baseMixedProfile returns a Profile literal populated with a
 // width-256 mixed-primitive constellation that passes every
-// [RegisterProfile] validation check when combined with a fresh
+// [Register] validation check when combined with a fresh
 // user-defined name. Individual test cases mutate one field or one
 // [Profile.MixedHashes] slot to exercise the corresponding rejection
 // path.
@@ -22,9 +22,9 @@ func baseMixedProfile() Profile {
 	return p
 }
 
-// TestRegisterProfileMixedValidation exercises every mixed-path
+// TestRegisterMixedValidation exercises every mixed-path
 // rejection case via table-driven cases.
-func TestRegisterProfileMixedValidation(t *testing.T) {
+func TestRegisterMixedValidation(t *testing.T) {
 	type tc struct {
 		label   string
 		name    string
@@ -78,38 +78,38 @@ func TestRegisterProfileMixedValidation(t *testing.T) {
 		t.Run(c.label, func(t *testing.T) {
 			p := baseMixedProfile()
 			c.mutate(&p)
-			err := RegisterProfile(c.name, p)
+			err := Register(c.name, p)
 			if err == nil {
-				t.Fatalf("RegisterProfile: got nil, want rejection containing %q",
+				t.Fatalf("Register: got nil, want rejection containing %q",
 					c.wantSub)
 			}
 			if !strings.Contains(err.Error(), c.wantSub) {
-				t.Fatalf("RegisterProfile: got %v, want error containing %q",
+				t.Fatalf("Register: got %v, want error containing %q",
 					err, c.wantSub)
 			}
 		})
 	}
 }
 
-// TestRegisterProfileMixedRepeatsAllowed confirms repeated primitive
+// TestRegisterMixedRepeatsAllowed confirms repeated primitive
 // entries within a single mixed profile are accepted — the constraint
 // is uniform width, not eight-distinct primitives.
-func TestRegisterProfileMixedRepeatsAllowed(t *testing.T) {
+func TestRegisterMixedRepeatsAllowed(t *testing.T) {
 	name := "userns-triple-mixed-repeats-v1"
 	p := baseMixedProfile()
 	// Deliberately use 8 identical entries — should still register.
 	for i := range p.MixedHashes {
 		p.MixedHashes[i] = "blake3"
 	}
-	if err := RegisterProfile(name, p); err != nil {
-		t.Fatalf("RegisterProfile with 8 identical MixedHashes entries: %v", err)
+	if err := Register(name, p); err != nil {
+		t.Fatalf("Register with 8 identical MixedHashes entries: %v", err)
 	}
 }
 
-// TestRegisterProfileMixedWidth128 confirms width-128 mixed profiles
+// TestRegisterMixedWidth128 confirms width-128 mixed profiles
 // register cleanly (spot-check for the smaller pool of shipped 128-bit
 // primitives).
-func TestRegisterProfileMixedWidth128(t *testing.T) {
+func TestRegisterMixedWidth128(t *testing.T) {
 	name := "userns-triple-mixed-w128-v1"
 	p := baseMixedProfile()
 	p.Width = 128
@@ -117,14 +117,14 @@ func TestRegisterProfileMixedWidth128(t *testing.T) {
 		"aescmac", "siphash24", "aescmac", "siphash24",
 		"aescmac", "siphash24", "aescmac", "siphash24",
 	}
-	if err := RegisterProfile(name, p); err != nil {
-		t.Fatalf("RegisterProfile width-128 mixed: %v", err)
+	if err := Register(name, p); err != nil {
+		t.Fatalf("Register width-128 mixed: %v", err)
 	}
 }
 
-// TestRegisterProfileMixedWidth512 confirms width-512 mixed profiles
+// TestRegisterMixedWidth512 confirms width-512 mixed profiles
 // register cleanly.
-func TestRegisterProfileMixedWidth512(t *testing.T) {
+func TestRegisterMixedWidth512(t *testing.T) {
 	name := "userns-triple-mixed-w512-v1"
 	p := baseMixedProfile()
 	p.Width = 512
@@ -132,19 +132,19 @@ func TestRegisterProfileMixedWidth512(t *testing.T) {
 		"areion512", "blake2b512", "areion512", "blake2b512",
 		"areion512", "blake2b512", "areion512", "blake2b512",
 	}
-	if err := RegisterProfile(name, p); err != nil {
-		t.Fatalf("RegisterProfile width-512 mixed: %v", err)
+	if err := Register(name, p); err != nil {
+		t.Fatalf("Register width-512 mixed: %v", err)
 	}
 }
 
-// TestRegisterProfileSinglePathUnaffected confirms the single-primitive
+// TestRegisterSinglePathUnaffected confirms the single-primitive
 // dispatch path (empty MixedHashes) is unchanged by the mixed-path
 // validator addition — the baseValidProfile shape still registers.
-func TestRegisterProfileSinglePathUnaffected(t *testing.T) {
+func TestRegisterSinglePathUnaffected(t *testing.T) {
 	name := "userns-triple-single-unaffected-v1"
 	p := baseValidProfile()
 	// MixedHashes zero-value; InnerHash carries the default primitive.
-	if err := RegisterProfile(name, p); err != nil {
-		t.Fatalf("RegisterProfile single-primitive path: %v", err)
+	if err := Register(name, p); err != nil {
+		t.Fatalf("Register single-primitive path: %v", err)
 	}
 }

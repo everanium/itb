@@ -25,16 +25,6 @@ This is **not** a random-oracle indistinguishability claim. It is a "looks like 
 type Keystream = ctr.Keystream
 
 const (
-    CipherAreion256  = "areion256"
-    CipherAreion512  = "areion512"
-    CipherBLAKE2b256 = "blake2b256"
-    CipherBLAKE2b512 = "blake2b512"
-    CipherBLAKE2s    = "blake2s"
-    CipherBLAKE3     = "blake3"
-    CipherAES128CTR  = "aescmac"
-    CipherSipHash24  = "siphash24"
-    CipherChaCha20   = "chacha20"
-
     ParallelThreshold = 256 * 1024
 )
 
@@ -60,7 +50,7 @@ func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 ```
 
 - **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` xors one keystream segment over `src` into `dst` and advances the internal counter.
-- **Cipher constants** (`CipherAreion256` ... `CipherChaCha20`) name every outer cipher the wrapper accepts. `CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry). `CipherNames` enumerates the outer cipher palette in canonical primitive order; it is the iteration source for cross-cipher tests and benchmarks.
+- **`CipherNames`** enumerates the outer cipher palette in canonical primitive order as a snapshot of the shipped `hashes.Registry` names (`hashes.Names()`); it is the iteration source for cross-cipher tests and benchmarks. Each entry is named by a `hashes.Cipher*` constant; `hashes.CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry).
 - **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
 - **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
 - **`GenerateKey`** draws a fresh CSPRNG outer cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
@@ -119,6 +109,10 @@ import (
 
 sender, blob, _ := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{})
 defer sender.Close()
+// Persist the session bundle for a receiver:
+//   _ = sender.SaveF("session.json")
+// The receiver reopens with:
+//   receiver, _ := triple.LoadF("session.json")
 
 encrypted, _ := sender.EncryptMessage(plaintext)
 
@@ -127,8 +121,9 @@ encrypted, _ := sender.EncryptMessage(plaintext)
 outerKey, _ := wrapper.GenerateKey(cipherName)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
-// Receiver
-receiver, _ := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, triple.Opts{})
+// Receiver — the blob carries the resolved recipe; no profile
+// registration and no Opts are needed on the receiving side.
+receiver, _ := triple.Load(blob)
 defer receiver.Close()
 
 recovered, _ := wrapper.Unwrap(cipherName, outerKey, wire)
@@ -147,6 +142,10 @@ import (
 
 sender, blob, _ := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{})
 defer sender.Close()
+// Persist the session bundle for a receiver:
+//   _ = sender.SaveF("session.json")
+// The receiver reopens with:
+//   receiver, _ := triple.LoadF("session.json")
 
 outerKey, _ := wrapper.GenerateKey(cipherName)
 
@@ -154,8 +153,9 @@ var wireBuf bytes.Buffer
 wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
 _ = sender.EncryptStream(plaintextReader, wrapWriter)
 
-// Receiver
-receiver, _ := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{})
+// Receiver — the blob carries the resolved recipe; no profile
+// registration and no Opts are needed on the receiving side.
+receiver, _ := triple.Load(blob)
 defer receiver.Close()
 
 unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))

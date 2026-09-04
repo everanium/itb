@@ -2,6 +2,7 @@
 // profile round trips / stream sessions / error mapping / large
 // payloads. The deep suite lives in Go under the shipped tree.
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:itb/itb.dart';
@@ -19,19 +20,6 @@ Uint8List payload(int n, int seed) {
   }
   return out;
 }
-
-/// Canonical registry order of the shipped hash primitives.
-const canonicalHashes = [
-  'areion256',
-  'areion512',
-  'blake2b256',
-  'blake2b512',
-  'blake2s',
-  'blake3',
-  'aescmac',
-  'siphash24',
-  'chacha20',
-];
 
 /// Cipher-surface profiles (the blob-only profile has no cipher
 /// surface and is exercised in the error-mapping group).
@@ -53,24 +41,16 @@ void main() {
     expect(v, contains('.'));
   });
 
-  test('hash roster follows the canonical registry order', () {
-    final hashes = Itb.hashes();
-    expect(hashes.map((h) => h.name).toList(), canonicalHashes);
-    for (final h in hashes) {
-      expect(h.widthBits, greaterThan(0), reason: h.name);
-    }
-  });
-
   test('profiles list covers every cipher profile', () {
     for (final profile in cipherProfiles) {
-      expect(Itb.profiles, contains(profile));
+      expect(Itb.profiles(), contains(profile));
     }
-    expect(Itb.profiles, contains('blob-triple-mac-v1'));
+    expect(Itb.profiles(), contains('blob-triple-mac-v1'));
   });
 
   test('Single Message round trip (singlemsg-triple-mac-v1)', () {
     final sender = Itb.create('singlemsg-triple-mac-v1');
-    final receiver = Itb.open('singlemsg-triple-mac-v1', sender.blob);
+    final receiver = Itb.load(sender.save());
     // Empty input has no cover story in any cryptographic
     // construction (see triple/doc.go): every Pipeline cipher entry
     // point rejects nil / zero-length plaintext uniformly with
@@ -99,7 +79,7 @@ void main() {
   test('Single Message round trip across every cipher profile', () {
     for (final profile in cipherProfiles) {
       final sender = Itb.create(profile);
-      final receiver = Itb.open(profile, sender.blob);
+      final receiver = Itb.load(sender.save());
       final plain = payload(4 * 1024, profile.length);
       final wire = sender.encryptMessage(plain);
       expect(receiver.decryptMessage(wire), plain, reason: profile);
@@ -110,7 +90,7 @@ void main() {
 
   test('incremental stream round trip (streaming-noaead-triple-v1)', () {
     final sender = Itb.create('streaming-noaead-triple-v1');
-    final receiver = Itb.open('streaming-noaead-triple-v1', sender.blob);
+    final receiver = Itb.load(sender.save());
 
     final plain = payload(512 * 1024, 7);
     final enc = sender.encryptStream();
@@ -150,7 +130,7 @@ void main() {
 
   test('stream pump round trip (streaming-aead-triple-mac-v1)', () {
     final sender = Itb.create('streaming-aead-triple-mac-v1');
-    final receiver = Itb.open('streaming-aead-triple-mac-v1', sender.blob);
+    final receiver = Itb.load(sender.save());
 
     final plain = payload(256 * 1024, 11);
     final wire = BytesBuilder(copy: true);
@@ -176,10 +156,10 @@ void main() {
 
   test('rekey refreshes the blob and the new blob opens', () {
     final sender = Itb.create('singlemsg-triple-mac-v1');
-    final before = sender.blob;
+    final before = sender.save();
     sender.rekey(payload(32, 3), payload(32, 5));
-    expect(sender.blob, isNot(equals(before)));
-    final receiver = Itb.open('singlemsg-triple-mac-v1', sender.blob);
+    expect(sender.save(), isNot(equals(before)));
+    final receiver = Itb.load(sender.save());
     final plain = payload(8 * 1024, 13);
     expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
     sender.free();
@@ -187,11 +167,11 @@ void main() {
   });
 
   group('error mapping', () {
-    test('unknown profile is BadInput with a diagnostic', () {
+    test('unknown profile is UnknownProfile with a diagnostic', () {
       expect(
         () => Itb.create('no-such-profile'),
         throwsA(isA<ItbException>()
-            .having((e) => e.statusCode, 'statusCode', Status.badInput)
+            .having((e) => e.statusCode, 'statusCode', Status.unknownProfile)
             .having((e) => e.toString(), 'message', isNotEmpty)),
       );
     });
@@ -210,7 +190,7 @@ void main() {
 
     test('tampered Single Message wire fails to decrypt', () {
       final sender = Itb.create('singlemsg-triple-mac-v1');
-      final receiver = Itb.open('singlemsg-triple-mac-v1', sender.blob);
+      final receiver = Itb.load(sender.save());
       final wire = sender.encryptMessage(payload(64 * 1024, 17));
 
       // Position probe rather than a single bit flip: the over-sized
@@ -247,8 +227,7 @@ void main() {
         'areion512', 'blake2b512', 'areion512', 'blake2b512',
       ]);
       final sender = Itb.create('singlemsg-triple-mac-v1', override);
-      final receiver = Itb.open(
-          'singlemsg-triple-mac-v1', sender.blob, opts: override);
+      final receiver = Itb.load(sender.save());
       final plain = payload(2048, 43);
       expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
       sender.free();
@@ -256,27 +235,28 @@ void main() {
     });
 
     test('register profile round trip, duplicate name rejected', () {
-      final opts = Opts()
-          .withRaw('mode', 'singlemsg-nomac')
-          .withRaw('width', '256')
-          .withRaw(
-              'innerHashes',
-              'blake3,blake2s,areion256,blake2b256,chacha20,'
-                  'blake3,blake2s,areion256')
-          .withRaw('keyBits', '1024')
-          .withRaw('parallaxOn', 'false')
-          .withRaw('wrapperOn', 'false');
-      registerProfile('dart-binding-test-mixed', opts);
+      final profile = Profile(
+        mode: 'singlemsg-nomac',
+        width: 256,
+        hashes: const [
+          'blake3', 'blake2s', 'areion256', 'blake2b256',
+          'chacha20', 'blake3', 'blake2s', 'areion256',
+        ],
+        keyBits: 1024,
+        parallax: false,
+        wrapper: false,
+      );
+      register('dart-binding-test-mixed', profile);
 
       final sender = Itb.create('dart-binding-test-mixed');
-      final receiver = Itb.open('dart-binding-test-mixed', sender.blob);
+      final receiver = Itb.load(sender.save());
       final plain = payload(4 * 1024, 19);
       expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
       sender.free();
       receiver.free();
 
       expect(
-        () => registerProfile('dart-binding-test-mixed', opts),
+        () => register('dart-binding-test-mixed', profile),
         throwsA(isA<ItbException>()
             .having((e) => e.statusCode, 'statusCode', Status.profileExists)),
       );
@@ -289,7 +269,7 @@ void main() {
     // (handled above) exercises the small-input expansion. Both must
     // round-trip byte-exact.
     final sender = Itb.create('singlemsg-triple-nomac-v1');
-    final receiver = Itb.open('singlemsg-triple-nomac-v1', sender.blob);
+    final receiver = Itb.load(sender.save());
     final plain = payload(3 * 1024 * 1024 + 12345, 23);
     final wire = sender.encryptMessage(plain);
     expect(wire.length, greaterThan(plain.length));
@@ -300,7 +280,7 @@ void main() {
 
   test('caller-buffer message round trip via encryptMessageInto', () {
     final sender = Itb.create('singlemsg-triple-nomac-v1');
-    final receiver = Itb.open('singlemsg-triple-nomac-v1', sender.blob);
+    final receiver = Itb.load(sender.save());
     final plain = payload(256 * 1024 + 777, 29);
     final wireBuf = Uint8List(plain.length + (plain.length >> 2) + 65536);
     final backBuf = Uint8List(wireBuf.length);
@@ -343,7 +323,7 @@ void main() {
 
   test('stream read cap-guard and reusable drain scratch', () {
     final pipe = Itb.create('streaming-noaead-triple-v1');
-    final dec = Itb.open('streaming-noaead-triple-v1', pipe.blob);
+    final dec = Itb.load(pipe.save());
     final plain = payload(1024 * 1024 + 321, 31);
 
     final enc = pipe.encryptStream();
@@ -369,5 +349,105 @@ void main() {
     back.free();
     pipe.free();
     dec.free();
+  });
+
+  group('persistence', () {
+    final plain = payload(2048, 71);
+
+    test('save then load round trip', () {
+      final sender = Itb.create('singlemsg-triple-mac-v1');
+      final blob = sender.save();
+      expect(blob, isNotEmpty);
+      expect(sender.save(), blob);
+      final receiver = Itb.load(blob);
+      expect(receiver.save(), blob);
+      expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
+      sender.free();
+      receiver.free();
+    });
+
+    test('saveF then loadF round trip', () {
+      final dir = Directory.systemTemp.createTempSync('itb-dart-');
+      try {
+        final file = '${dir.path}/session.blob';
+        final sender = Itb.create('streaming-aead-triple-mac-v1');
+        sender.saveF(file);
+        expect(File(file).readAsBytesSync(), sender.save());
+        final receiver = Itb.loadF(file);
+        expect(receiver.decryptStreamOneShot(sender.encryptStreamOneShot(plain)),
+            plain);
+        sender.free();
+        receiver.free();
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
+
+    test('load with master override after rekey', () {
+      final perm = Uint8List(32)..fillRange(0, 32, 0x33);
+      final wrap = Uint8List(32)..fillRange(0, 32, 0x44);
+      final sender = Itb.create('singlemsg-triple-mac-v1');
+      final blob = sender.save();
+      final rotated = sender.rekey(perm, wrap);
+      expect(rotated, isNot(equals(blob)));
+      expect(sender.save(), rotated);
+      final receiver = Itb.load(blob, permMaster: perm, wrapMaster: wrap);
+      expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
+      sender.free();
+      receiver.free();
+    });
+
+    test('inspect reads the embedded record', () {
+      final pipe = Itb.create('streaming-aead-triple-mac-v1');
+      final prof = Itb.inspect(pipe.save());
+      expect(prof.name, 'streaming-aead-triple-mac-v1');
+      expect(prof.mode, 'streaming-aead');
+      expect(prof.width, 512);
+      expect(prof, Itb.lookup('streaming-aead-triple-mac-v1'));
+      pipe.free();
+    });
+
+    test('lookup of an unknown name is UnknownProfile', () {
+      expect(
+        () => Itb.lookup('no-such-profile'),
+        throwsA(isA<ItbException>()
+            .having((e) => e.statusCode, 'statusCode', Status.unknownProfile)),
+      );
+    });
+
+    test('register a copy of a shipped profile', () {
+      final copy = Itb.lookup('singlemsg-triple-nomac-v1')..name = '';
+      Itb.register('dart-binding-test-copy', copy);
+      final back = Itb.lookup('dart-binding-test-copy');
+      expect(back.name, 'dart-binding-test-copy');
+      expect(back.mode, copy.mode);
+      expect(Itb.profiles(), contains('dart-binding-test-copy'));
+      final sender = Itb.create('dart-binding-test-copy');
+      final receiver = Itb.load(sender.save());
+      expect(receiver.decryptMessage(sender.encryptMessage(plain)), plain);
+      sender.free();
+      receiver.free();
+    });
+
+    test('profile JSON codec round-trips', () {
+      final p = Itb.lookup('streaming-aead-triple-mac-mixed-v1');
+      expect(p.hashes, hasLength(8));
+      expect(Profile.fromJson(p.toJson()), p);
+    });
+
+    test('maxWorkers clamps and a closed Pipeline reports TripleClosed', () {
+      final pipe = Itb.create('singlemsg-triple-mac-v1', Opts().withMaxWorkers(-1));
+      pipe.maxWorkers(2);
+      pipe.maxWorkers(-1);
+      pipe.maxWorkers(1000);
+      expect(pipe.decryptMessage(pipe.encryptMessage(plain)), plain);
+      pipe.close();
+      expect(
+        () => pipe.maxWorkers(2),
+        throwsA(isA<ItbException>()
+            .having((e) => e.statusCode, 'statusCode', Status.tripleClosed)),
+      );
+      pipe.free();
+    });
   });
 }

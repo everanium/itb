@@ -1,5 +1,5 @@
-// Init -> blob -> Open -> encryptMessage -> decryptMessage round
-// trip through the withPipeline / withOpened closure scopes.
+// Init -> save -> load -> encryptMessage -> decryptMessage round
+// trip through the withPipeline / withLoaded closure scopes.
 
 package dev.everanium.itb.groovy
 
@@ -18,14 +18,14 @@ class SmokeTest {
     @Test
     void libraryVersionIsNonEmpty() {
         assertTrue(!Runtime.version().isEmpty())
-        assertEquals('0.3.5', Runtime.BINDING_VERSION)
+        assertEquals('0.4.1', Runtime.BINDING_VERSION)
     }
 
     @Test
     void smokeRoundTrip() {
         Pipeline.withPipeline('singlemsg-triple-mac-v1') { Pipeline sender ->
-            assertTrue(sender.blob.length > 0)
-            Pipeline.withOpened('singlemsg-triple-mac-v1', sender.blob) { Pipeline receiver ->
+            assertTrue(sender.save().length > 0)
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = 'smoke round-trip payload'.getBytes('UTF-8')
                 byte[] wire = sender.encryptMessage(plain)
                 assertFalse(Arrays.equals(wire, plain))
@@ -40,7 +40,7 @@ class SmokeTest {
         // as the closure factories.
         Pipeline.init('singlemsg-triple-mac-v1').withCloseable { Pipeline sender ->
             byte[] plain = 'closeable payload'.getBytes('UTF-8')
-            Pipeline.open('singlemsg-triple-mac-v1', sender.blob).withCloseable { Pipeline receiver ->
+            Pipeline.load(sender.save()).withCloseable { Pipeline receiver ->
                 assertArrayEquals(plain, receiver.decryptMessage(sender.encryptMessage(plain)))
             }
         }

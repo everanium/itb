@@ -11,7 +11,7 @@ class StreamCancelTest {
     @Test
     fun cancelledSessionLeavesPipelineUsable() {
         Pipeline.init("streaming-aead-triple-mac-v1").use { sender ->
-            Pipeline.open("streaming-aead-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 // Open a session, feed it, and abandon it un-ended.
                 val session = sender.encryptStream()
                 session.write(ByteArray(50_000) { (it % 199).toByte() })

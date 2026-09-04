@@ -1,4 +1,4 @@
-# New-ItbPipeline -> blob -> Open-ItbPipeline -> encrypt -> decrypt
+# New-ItbPipeline -> Save-ItbPipeline -> Import-ItbPipeline -> encrypt -> decrypt
 # round trip.
 
 BeforeAll {
@@ -6,14 +6,14 @@ BeforeAll {
 }
 
 Describe 'Smoke' {
-    It 'round-trips a Single Message through Init / Open' {
+    It 'round-trips a Single Message through Init / Import' {
         $sender = New-ItbPipeline -Profile 'singlemsg-triple-mac-v1'
         try {
-            $blob = Get-ItbBlob -Pipeline $sender
+            $blob = Save-ItbPipeline $sender
             $blob | Should -Not -BeNullOrEmpty
             $blob.GetType().Name | Should -Be 'Byte[]'
 
-            $receiver = Open-ItbPipeline -Profile 'singlemsg-triple-mac-v1' -Blob $blob
+            $receiver = Import-ItbPipeline -Blob $blob
             try {
                 $plain = [System.Text.Encoding]::UTF8.GetBytes('smoke round-trip payload')
                 $wire = Invoke-ItbEncrypt -Pipeline $sender -Data $plain
@@ -30,8 +30,7 @@ Describe 'Smoke' {
     It 'accepts a string -Data and supports pipeline input' {
         $sender = New-ItbPipeline -Profile 'singlemsg-triple-mac-v1'
         try {
-            $receiver = Open-ItbPipeline -Profile 'singlemsg-triple-mac-v1' `
-                -Blob (Get-ItbBlob $sender)
+            $receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $sender)
             try {
                 $wire = Invoke-ItbEncrypt -Pipeline $sender -Data 'string payload'
                 $back = , $wire | Invoke-ItbDecrypt -Pipeline $receiver

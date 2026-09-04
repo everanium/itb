@@ -15,13 +15,13 @@ import com.everanium.itb.Opts as JOpts
 import com.everanium.itb.Pipeline as JPipeline
 
 /**
- * A Triple Pipeline session plus its exported blob bytes.
+ * A Triple Pipeline session.
  *
- * The blob carries the session bundle the receiver feeds to [open];
- * [rekey] refreshes it. Closing the Pipeline (or letting `use { }`
- * do it) frees the handle — libitb zeroes key material internally;
- * an unreachable un-closed Pipeline is reclaimed by the Java layer's
- * Cleaner backstop.
+ * [save] exports the self-describing session blob the receiver feeds
+ * to [load] / [loadF]; [rekey] refreshes it. Closing the Pipeline (or
+ * letting `use { }` do it) frees the handle — libitb zeroes key
+ * material internally; an unreachable un-closed Pipeline is
+ * reclaimed by the Java layer's Cleaner backstop.
  *
  * Streaming-decrypt caveat: chunked Streaming AEAD verifies per
  * chunk, so plaintext of verified chunks is released before a later
@@ -29,16 +29,33 @@ import com.everanium.itb.Pipeline as JPipeline
  */
 class Pipeline internal constructor(internal val impl: JPipeline) : AutoCloseable {
 
-    /** The exported session bundle bytes for the receiver side. */
-    val blob: ByteArray
-        get() = itbCall { impl.blob() }
+    /**
+     * The current self-describing session blob: the bytes [init]
+     * produced, the bytes [load] re-marshalled, or the bytes of the
+     * latest [rekey].
+     */
+    fun save(): ByteArray = itbCall { impl.save() }
 
     /**
-     * Rotates the parallax + wrapper masters and refreshes [blob].
-     * Must not run concurrently with cipher calls or open stream
-     * sessions on the same Pipeline.
+     * Writes [save] to [path] inside the library with mode 0600; the
+     * containing directory must exist.
      */
-    fun rekey(permMaster: ByteArray, wrapMaster: ByteArray): Unit =
+    fun saveF(path: String): Unit = itbCall { impl.saveF(path) }
+
+    /**
+     * Sets the worker cap for every subsequent cipher call. [n] is
+     * clamped, never rejected: `n <= 0` selects auto (CPU count),
+     * `n > 256` is treated as 256. Only the handle statuses raise.
+     */
+    fun maxWorkers(n: Int): Unit = itbCall { impl.maxWorkers(n) }
+
+    /**
+     * Rotates the parallax + wrapper masters and returns the fresh
+     * session blob (also available through [save]). Must not run
+     * concurrently with cipher calls or open stream sessions on the
+     * same Pipeline.
+     */
+    fun rekey(permMaster: ByteArray, wrapMaster: ByteArray): ByteArray =
         itbCall { impl.rekey(permMaster, wrapMaster) }
 
     /**
@@ -137,35 +154,59 @@ class Pipeline internal constructor(internal val impl: JPipeline) : AutoCloseabl
             Pipeline(itbCall { JPipeline.init(profile, opts?.impl ?: JOpts()) })
 
         /**
-         * Reconstructs a Pipeline from a blob produced by [init] or
-         * [rekey]. Omitting [permMaster] / [wrapMaster] uses the
-         * blob-embedded masters; supplying both (non-empty)
+         * Reconstructs a Pipeline from a blob produced by [save] or
+         * [rekey]. The blob's embedded profile record is the sole
+         * structural source. Omitting [permMaster] / [wrapMaster]
+         * uses the blob-embedded masters; supplying both (non-empty)
          * overrides them.
          */
-        fun open(
-            profile: String,
+        fun load(
             blob: ByteArray,
-            opts: Opts? = null,
             permMaster: ByteArray? = null,
             wrapMaster: ByteArray? = null,
         ): Pipeline {
             require((permMaster == null) == (wrapMaster == null)) {
                 "permMaster and wrapMaster must be supplied together or not at all"
             }
-            return Pipeline(itbCall {
-                JPipeline.open(profile, blob, opts?.impl ?: JOpts(), permMaster, wrapMaster)
-            })
+            return Pipeline(itbCall { JPipeline.load(blob, permMaster, wrapMaster) })
         }
 
         /**
-         * Registers a user-defined Triple profile under [name] so
-         * subsequent [init] / [open] calls resolve it. The opts
-         * follow the register-profile grammar validated by Go —
-         * build them with [Opts.raw] plus the typed setters where
-         * key names coincide. A duplicate name fails with
-         * [Status.ProfileExists].
+         * [load] for a blob stored in a file; the file is read inside
+         * the library. Same masters semantics.
          */
-        fun registerProfile(name: String, opts: Opts): Unit =
-            itbCall { JPipeline.registerProfile(name, opts.impl) }
+        fun loadF(
+            path: String,
+            permMaster: ByteArray? = null,
+            wrapMaster: ByteArray? = null,
+        ): Pipeline {
+            require((permMaster == null) == (wrapMaster == null)) {
+                "permMaster and wrapMaster must be supplied together or not at all"
+            }
+            return Pipeline(itbCall { JPipeline.loadF(path, permMaster, wrapMaster) })
+        }
+
+        /**
+         * Decodes the blob's embedded profile record without opening
+         * a Pipeline. No registry read, no primitive probe.
+         */
+        fun inspect(blob: ByteArray): Profile = itbCall { JPipeline.inspect(blob) }
+
+        /**
+         * Registers [profile] under [name] so subsequent [init] /
+         * [lookup] calls resolve it. Every field rule is validated by
+         * Go; a duplicate name fails with [Status.ProfileExists].
+         */
+        fun register(name: String, profile: Profile): Unit =
+            itbCall { JPipeline.register(name, profile) }
+
+        /**
+         * Looks up a registered profile (shipped or [register]ed) by
+         * name; an unknown name fails with [Status.UnknownProfile].
+         */
+        fun lookup(name: String): Profile = itbCall { JPipeline.lookup(name) }
+
+        /** The sorted names of every registered profile. */
+        fun profiles(): List<String> = itbCall { JPipeline.profiles() }
     }
 }

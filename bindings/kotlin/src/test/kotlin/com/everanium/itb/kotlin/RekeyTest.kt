@@ -1,4 +1,4 @@
-// Init -> Rekey -> Open receiver with the rotated blob -> round trip.
+// Init -> Rekey -> load receiver from the rotated blob -> round trip.
 
 package com.everanium.itb.kotlin
 
@@ -11,14 +11,14 @@ class RekeyTest {
     @Test
     fun rekeyRoundTrip() {
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            val blobBefore = sender.blob
+            val blobBefore = sender.save()
 
             val perm = ByteArray(32) { 0x11 }
             val wrap = ByteArray(32) { 0x22 }
             sender.rekey(perm, wrap)
-            assertFalse(sender.blob.contentEquals(blobBefore))
+            assertFalse(sender.save().contentEquals(blobBefore))
 
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = "post-rekey payload".encodeToByteArray()
                 val wire = sender.encryptMessage(plain)
                 assertContentEquals(plain, receiver.decryptMessage(wire))

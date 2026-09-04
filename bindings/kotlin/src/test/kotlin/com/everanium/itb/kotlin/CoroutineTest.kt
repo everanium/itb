@@ -16,7 +16,7 @@ class CoroutineTest {
     @Test
     fun asyncMessageRoundTrip() = runBlocking {
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = "suspend-path payload".encodeToByteArray()
                 val wire = sender.encryptMessageAsync(plain)
                 assertContentEquals(plain, receiver.decryptMessageAsync(wire))
@@ -29,7 +29,7 @@ class CoroutineTest {
         // The Go-side Pipeline is concurrent-safe for cipher calls;
         // launch several encrypts in flight at once and decrypt each.
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val payloads = (0 until 8).map { i ->
                     ByteArray(10_000) { j -> ((i * 7 + j) % 251).toByte() }
                 }
@@ -46,7 +46,7 @@ class CoroutineTest {
     @Test
     fun asyncPumpRoundTrip() = runBlocking {
         Pipeline.init("streaming-aead-triple-mac-v1").use { sender ->
-            Pipeline.open("streaming-aead-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = ByteArray(300_000) { (it * 17 % 249).toByte() }
                 val wireSink = ByteArrayOutputStream()
                 sender.encryptStreamPumpAsync(ByteArrayInputStream(plain), wireSink)

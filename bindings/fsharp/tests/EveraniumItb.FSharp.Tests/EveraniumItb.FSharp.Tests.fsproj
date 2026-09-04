@@ -15,6 +15,7 @@
     <Compile Include="OptsTests.fs" />
     <Compile Include="ErrorTests.fs" />
     <Compile Include="RekeyTests.fs" />
+    <Compile Include="PersistTests.fs" />
     <Compile Include="StreamPumpTests.fs" />
     <Compile Include="StreamIncrementalTests.fs" />
     <Compile Include="StreamStickyTests.fs" />

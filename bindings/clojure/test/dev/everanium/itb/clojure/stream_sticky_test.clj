@@ -61,7 +61,7 @@
 
 (deftest tampered-wire-sticky-failure
   (with-open [sender (itb/init "streaming-aead-triple-mac-v1")]
-    (with-open [receiver (itb/open "streaming-aead-triple-mac-v1" (itb/blob sender))]
+    (with-open [receiver (itb/load (itb/save sender))]
       (let [plain (byte-array 65536)]
         (dotimes [i 65536]
           (aset-byte plain i (unchecked-byte (rem i 227))))

@@ -56,7 +56,7 @@ func runStreamBytesRoundTrip(t *testing.T, w widthCase, n nonceCase, tog toggleC
 	}
 	defer pipe.Close()
 
-	rx, err := Open(m.profile, blob, opts)
+	rx, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestStreamBytesCrossParityWithIOStream(t *testing.T) {
 						t.Fatalf("Init: %v", err)
 					}
 					defer pipe.Close()
-					rx, err := Open(m.profile, blob, opts)
+					rx, err := Load(blob)
 					if err != nil {
 						t.Fatalf("Open: %v", err)
 					}
@@ -168,7 +168,7 @@ func TestDecryptStreamBytesDoesNotMutateWire(t *testing.T) {
 				t.Fatalf("Init: %v", err)
 			}
 			defer pipe.Close()
-			rx, err := Open(ProfileStreamingAEADTripleMACV1, blob, opts)
+			rx, err := Load(blob)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -207,7 +207,7 @@ func TestStreamBytesTailWrapOversized(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	defer pipe.Close()
-	rx, err := Open(ProfileStreamingAEADTripleMACV1, blob, opts)
+	rx, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

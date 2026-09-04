@@ -5,7 +5,7 @@ package itb
 // Broken-primitive adversarial re-verification for the shipped architecture
 // (always-on 48-bit Interlocked Barrier + Triple Ouroboros + 8-seed
 // constellation). This file is the Go landing surface for REDTEAM.md's
-// broken-primitive track (Agent A, task #20 Wave 1).
+// broken-primitive track.
 //
 // Scope: FNV-1a and CRC128 only — the two below-spec lab controls with
 // tractable algebraic structure (invertible carry-chain multiply and

@@ -18,6 +18,9 @@ module ITB.Errors
   , statusSeedWidthMix
   , statusBadMac
   , statusMacFailure
+  , statusBlobMalformedRecipe
+  , statusRecipePrimitiveUnknown
+  , statusUnknownProfile
   , statusBlobModeMismatch
   , statusBlobMalformed
   , statusBlobVersionTooNew
@@ -64,7 +67,8 @@ instance Exception ITBError where
 statusOk, statusBadHash, statusBadKeyBits, statusBadHandle,
   statusBadInput, statusBufferTooSmall, statusEncryptFailed,
   statusDecryptFailed, statusSeedWidthMix, statusBadMac,
-  statusMacFailure, statusBlobModeMismatch, statusBlobMalformed,
+  statusMacFailure, statusBlobMalformedRecipe, statusRecipePrimitiveUnknown,
+  statusUnknownProfile, statusBlobModeMismatch, statusBlobMalformed,
   statusBlobVersionTooNew, statusBlobTooManyOpts,
   statusStreamTruncated, statusStreamAfterFinal, statusTripleClosed,
   statusProfileExists, statusInternal :: Int
@@ -79,6 +83,9 @@ statusDecryptFailed     = 7
 statusSeedWidthMix      = 8
 statusBadMac            = 9
 statusMacFailure        = 10
+statusBlobMalformedRecipe    = 11
+statusRecipePrimitiveUnknown = 12
+statusUnknownProfile         = 13
 statusBlobModeMismatch  = 19
 statusBlobMalformed     = 20
 statusBlobVersionTooNew = 21
@@ -103,6 +110,9 @@ statusName code = case code of
   8  -> "seed width mismatch"
   9  -> "unknown MAC name or invalid MAC handle"
   10 -> "MAC verification failed"
+  11 -> "blob recipe malformed"
+  12 -> "blob recipe names an unknown primitive"
+  13 -> "unknown profile name"
   19 -> "blob mode mismatch"
   20 -> "malformed state blob"
   21 -> "blob version too new"

@@ -1,6 +1,6 @@
 // Error-mapping surface: opaque-string relay, destroyed Pipeline,
-// duplicate profile registration (with an 8-entry innerHashes
-// constellation).
+// duplicate profile registration (with an 8-entry mixed
+// constellation), unknown lookup, maxWorkers on a destroyed handle.
 
 package com.everanium.itb;
 
@@ -17,10 +17,10 @@ import org.junit.jupiter.api.Test;
 class ErrorsTest {
 
     @Test
-    void unknownProfileIsBadInputWithDiagnostic() {
+    void unknownProfileIsUnknownProfileWithDiagnostic() {
         ItbException e = assertThrows(ItbException.class,
                 () -> Pipeline.init("no-such-profile"));
-        assertEquals(Status.BAD_INPUT, e.status());
+        assertEquals(Status.UNKNOWN_PROFILE, e.status());
         assertFalse(e.getMessage().isEmpty());
     }
 
@@ -46,31 +46,46 @@ class ErrorsTest {
     }
 
     @Test
-    void registerProfileMixedThenDuplicate() {
-        // 8-entry width-256 innerHashes constellation, layers off.
-        Opts opts = new Opts()
-                .withRaw("mode", "singlemsg-nomac")
-                .withRaw("width", "256")
-                .withRaw("innerHashes",
-                        "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256")
-                .withRaw("keyBits", "1024")
-                .withRaw("parallaxOn", "false")
-                .withRaw("wrapperOn", "false");
-        Pipeline.registerProfile("java-binding-test-mixed", opts);
+    void registerMixedThenDuplicate() {
+        // 8-entry width-256 mixed constellation, layers off.
+        Profile profile = new Profile()
+                .mode("singlemsg-nomac")
+                .width(256)
+                .hashes("blake3", "blake2s", "areion256", "blake2b256",
+                        "chacha20", "blake3", "blake2s", "areion256")
+                .keyBits(1024)
+                .parallax(false)
+                .wrapper(false);
+        Pipeline.register("java-binding-test-mixed", profile);
 
         // The registered profile round-trips.
         byte[] plain = "custom profile".getBytes(StandardCharsets.UTF_8);
         try (Pipeline sender = Pipeline.init("java-binding-test-mixed");
-                Pipeline receiver = Pipeline.open(
-                        "java-binding-test-mixed", sender.blob(), new Opts())) {
+                Pipeline receiver = Pipeline.load(sender.save())) {
             byte[] wire = sender.encryptMessage(plain);
             assertArrayEquals(plain, receiver.decryptMessage(wire));
         }
 
         // Duplicate name is a distinct status.
         ItbException e = assertThrows(ItbException.class,
-                () -> Pipeline.registerProfile("java-binding-test-mixed", opts));
+                () -> Pipeline.register("java-binding-test-mixed", profile));
         assertEquals(Status.PROFILE_EXISTS, e.status());
+    }
+
+    @Test
+    void lookupUnknownNameIsUnknownProfile() {
+        ItbException e = assertThrows(ItbException.class,
+                () -> Pipeline.lookup("no-such-profile"));
+        assertEquals(Status.UNKNOWN_PROFILE, e.status());
+    }
+
+    @Test
+    void maxWorkersOnDestroyedPipelineIsTripleClosed() {
+        try (Pipeline p = Pipeline.init("singlemsg-triple-mac-v1")) {
+            p.destroy();
+            ItbException e = assertThrows(ItbException.class, () -> p.maxWorkers(2));
+            assertEquals(Status.TRIPLE_CLOSED, e.status());
+        }
     }
 
     @Test

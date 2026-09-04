@@ -4,6 +4,14 @@
 const std = @import("std");
 const itb = @import("itb");
 
+/// Save → Load handshake: a receiver reconstructed from the sender's
+/// current blob.
+fn loadFrom(gpa: std.mem.Allocator, sender: *const itb.Pipeline) !itb.Pipeline {
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    return itb.Pipeline.load(gpa, blob, null);
+}
+
 /// Deterministic non-trivial payload (xorshift fill). Caller frees.
 fn payload(gpa: std.mem.Allocator, n: usize, seed: u64) ![]u8 {
     const buf = try gpa.alloc(u8, n);
@@ -22,7 +30,7 @@ fn roundTrip(profile: [:0]const u8, size: usize) !void {
 
     var sender = try itb.Pipeline.init(gpa, profile, null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(gpa, profile, sender.blob(), null, null);
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = try payload(gpa, size, size);

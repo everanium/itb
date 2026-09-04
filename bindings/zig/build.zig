@@ -20,6 +20,7 @@ const test_names = [_][]const u8{
     "message",
     "errors",
     "rekey",
+    "persist",
     "stream_pump",
     "stream_one_shot",
     "stream_incremental",

@@ -54,8 +54,8 @@ emptyOpts :: Opts
 emptyOpts = mempty
 
 -- | Escape hatch appending a raw @key=value@ pair. Covers every key
--- the Go side accepts, including the register-profile grammar
--- (@mode@, @width@, @innerHashes@, @parallaxOn@, @wrapperOn@, …).
+-- the Go side accepts for Init overrides. Profile registration takes
+-- a profile JSON record instead (see 'ITB.Pipeline.register').
 opt :: String -> String -> Opts
 opt k v = Opts [(k, v)]
 

@@ -62,10 +62,10 @@ func streamFlagByte(finalFlag bool) byte {
 	return 0x00
 }
 
-// --- Triple Ouroboros (7-seed) Cfg variants ---
+// --- Triple Ouroboros (8-seed) Cfg variants ---
 
 // EncryptStreamAuth3x128Cfg mirrors the wide-stream User-Driven Loop
-// encrypt shape for Triple Ouroboros (7-seed) at 128-bit hash width.
+// encrypt shape for Triple Ouroboros (8-seed) at 128-bit hash width.
 // Generates a fresh 32-byte stream anchor, emits it as the first wire
 // chunk, then loops over data in chunkSize windows calling
 // [EncryptStreamAuthenticated3x128Cfg] per chunk with the running
@@ -174,7 +174,7 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 }
 
 // EncryptStreamAuth3x256Cfg mirrors [EncryptStreamAuth3x128Cfg] for
-// Triple Ouroboros (7-seed) at 256-bit hash width.
+// Triple Ouroboros (8-seed) at 256-bit hash width.
 func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -278,7 +278,7 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 }
 
 // EncryptStreamAuth3x512Cfg mirrors [EncryptStreamAuth3x128Cfg] for
-// Triple Ouroboros (7-seed) at 512-bit hash width.
+// Triple Ouroboros (8-seed) at 512-bit hash width.
 func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err

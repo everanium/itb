@@ -1,21 +1,46 @@
 # Error-mapping surface: opaque-string relay, closed Pipeline,
-# duplicate profile registration (with an 8-entry innerHashes
-# constellation).
+# duplicate profile registration (with an 8-entry mixed
+# constellation), unknown lookup, Set-ItbMaxWorkers on a closed handle.
 
 BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelper.ps1')
 }
 
 Describe 'Error mapping' {
-    It 'surfaces an unknown profile as BadInput with a diagnostic' {
+    It 'surfaces an unknown profile as UnknownProfile with a diagnostic' {
         try {
             New-ItbPipeline -Profile 'no-such-profile'
             throw 'expected ItbException'
         }
         catch [Itb.ItbException] {
-            $_.Exception.Status | Should -Be ([Itb.Status]::BadInput)
+            $_.Exception.Status | Should -Be ([Itb.Status]::UnknownProfile)
             $_.Exception.Message | Should -Not -BeNullOrEmpty
         }
+    }
+
+    It 'surfaces an unknown lookup name as UnknownProfile' {
+        try {
+            Get-ItbProfile -Name 'no-such-profile'
+            throw 'expected ItbException'
+        }
+        catch [Itb.ItbException] {
+            $_.Exception.Status | Should -Be ([Itb.Status]::UnknownProfile)
+        }
+    }
+
+    It 'reports TripleClosed from Set-ItbMaxWorkers after Close-ItbPipeline -KeepHandle' {
+        $pipe = New-ItbPipeline -Profile 'singlemsg-triple-mac-v1'
+        try {
+            Close-ItbPipeline -Pipeline $pipe -KeepHandle
+            try {
+                Set-ItbMaxWorkers -Pipeline $pipe -Count 2
+                throw 'expected ItbException'
+            }
+            catch [Itb.ItbException] {
+                $_.Exception.Status | Should -Be ([Itb.Status]::TripleClosed)
+            }
+        }
+        finally { $pipe.Dispose() }
     }
 
     It 'reports TripleClosed after Close-ItbPipeline -KeepHandle' {
@@ -35,22 +60,21 @@ Describe 'Error mapping' {
     }
 
     It 'registers a mixed profile, round-trips it, and rejects a duplicate' {
-        # 8-entry width-256 innerHashes constellation, layers off.
-        $opts = [ordered]@{
-            mode        = 'singlemsg-nomac'
-            width       = 256
-            innerHashes = @('blake3', 'blake2s', 'areion256', 'blake2b256',
+        # 8-entry width-256 mixed constellation, layers off.
+        $profile = [ordered]@{
+            Mode     = 'singlemsg-nomac'
+            Width    = 256
+            Hashes   = @('blake3', 'blake2s', 'areion256', 'blake2b256',
                 'chacha20', 'blake3', 'blake2s', 'areion256')
-            keyBits     = 1024
-            parallaxOn  = $false
-            wrapperOn   = $false
+            KeyBits  = 1024
+            Parallax = $false
+            Wrapper  = $false
         }
-        Register-ItbProfile -Name 'pwsh-binding-test-mixed' -Opts $opts
+        Register-ItbProfile -Name 'pwsh-binding-test-mixed' -Profile $profile
 
         $sender = New-ItbPipeline -Profile 'pwsh-binding-test-mixed'
         try {
-            $receiver = Open-ItbPipeline -Profile 'pwsh-binding-test-mixed' `
-                -Blob (Get-ItbBlob $sender)
+            $receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $sender)
             try {
                 $wire = Invoke-ItbEncrypt -Pipeline $sender -Data 'custom profile'
                 $back = Invoke-ItbDecrypt -Pipeline $receiver -Data $wire
@@ -62,7 +86,7 @@ Describe 'Error mapping' {
 
         # Duplicate name is a distinct status.
         try {
-            Register-ItbProfile -Name 'pwsh-binding-test-mixed' -Opts $opts
+            Register-ItbProfile -Name 'pwsh-binding-test-mixed' -Profile $profile
             throw 'expected ItbException'
         }
         catch [Itb.ItbException] {

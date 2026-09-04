@@ -24,7 +24,7 @@ import (
 // wrapper both OFF round-trips through
 // [itb.DecryptStreamAuth3xCfg] on the underlying 8 seeds + MAC when
 // wire bytes are fed through a [bytes.Reader]. The receiver builds
-// its own Pipeline via [triple.Open] on the blob the sender exports,
+// its own Pipeline via [triple.Load] on the blob the sender exports,
 // so the two sides share exactly the same 8-seed constellation.
 func TestExtTripleEncryptDecodableByLowLevel(t *testing.T) {
 	off := false
@@ -38,9 +38,9 @@ func TestExtTripleEncryptDecodableByLowLevel(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, opts)
+	receiver, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open: %v", err)
+		t.Fatalf("triple.Load: %v", err)
 	}
 	defer receiver.Close()
 
@@ -77,9 +77,9 @@ func TestExtTripleStreamCrossParity(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, opts)
+	receiver, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open: %v", err)
+		t.Fatalf("triple.Load: %v", err)
 	}
 	defer receiver.Close()
 
@@ -130,9 +130,9 @@ func TestExtTripleNoMACRoundTrip(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, opts)
+	receiver, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open (No MAC): %v", err)
+		t.Fatalf("triple.Load (No MAC): %v", err)
 	}
 	defer receiver.Close()
 
@@ -161,9 +161,9 @@ func TestExtTripleFullStackRoundTrip(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{})
+	receiver, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open (full stack): %v", err)
+		t.Fatalf("triple.Load (full stack): %v", err)
 	}
 	defer receiver.Close()
 

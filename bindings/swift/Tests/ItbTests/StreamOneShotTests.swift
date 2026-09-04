@@ -11,8 +11,7 @@ import XCTest
 final class StreamOneShotTests: XCTestCase {
     func testOneShotRoundTrip() throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(1 << 20, seed: 0x51D3_A7C1)
         let wire = try sender.encryptStreamOneShot(plain)
@@ -23,8 +22,7 @@ final class StreamOneShotTests: XCTestCase {
 
     func testOneShotMatchesPumpWire() throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(65536, seed: 0xB005_EED1)
         let wire = try sender.encryptStreamOneShot(plain)
@@ -39,8 +37,7 @@ final class StreamOneShotTests: XCTestCase {
 
     func testTamperedWireFails() throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(65536, seed: 0x0E5B)
         let wire = try sender.encryptStreamOneShot(plain)
@@ -73,8 +70,7 @@ final class StreamOneShotTests: XCTestCase {
 
     func testAsyncOneShotRoundTrip() async throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(300_000, seed: 0xA5C3)
         let wire: Data = try await sender.encryptStreamOneShot(plain)

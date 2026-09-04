@@ -2,17 +2,15 @@
 #
 # eitb -- launcher for the Clojure binding's eitb CLI. Builds the
 # Java binding layer on first use (via ../build.sh), then execs the
-# clojure.main script with the :eitb alias (which adds the Java
-# eitb tool jar carrying the HashRoster diagnostic bridge).
+# clojure.main script with the :eitb alias.
 
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-JAR="$HERE/../../java/build/libs/itb-java-0.3.5.jar"
-EJAR="$HERE/../../java/build/libs/eitb.jar"
+JAR="$HERE/../../java/build/libs/itb-java-0.4.1.jar"
 JNI="$HERE/../../java/build/jni/libitb_jni.so"
 
-if [ ! -f "$JAR" ] || [ ! -f "$EJAR" ] || [ ! -f "$JNI" ]; then
+if [ ! -f "$JAR" ] || [ ! -f "$JNI" ]; then
     "$HERE/../build.sh" >&2
 fi
 

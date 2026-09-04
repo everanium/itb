@@ -2,8 +2,9 @@
  * Opts.swift — URL-query opts builder over itb_opts.
  *
  * Accumulates key=value pairs into the query string consumed by
- * init / open / registerProfile. The builder performs no validation —
- * Go rejects unknown keys and bad values with a diagnostic relayed
+ * Pipeline(profile:opts:). Profile registration takes a Profile
+ * record instead (see register). The builder performs no validation
+ * — Go rejects unknown keys and bad values with a diagnostic relayed
  * through the thrown ItbError.
  */
 

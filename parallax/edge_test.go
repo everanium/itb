@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/hashes"
 )
 
 func TestSegmentSizeCoprimeValidation(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	for s := 1; s <= 50; s++ {
 		_, err := NewSchedule(palette, s)
 		want := gcd(s, itbPipelinePeriod) == 1
@@ -31,7 +31,7 @@ func TestSegmentSizeCoprimeValidation(t *testing.T) {
 }
 
 func TestSegmentSizeVariants(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3, ctr.CipherBLAKE2b256}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3, hashes.CipherBLAKE2b256}
 	master := mustMaster(t)
 	for _, seg := range []int{11, 17, 19, 23, 47, 2393} {
 		if gcd(seg, itbPipelinePeriod) != 1 {
@@ -64,11 +64,11 @@ func TestSegmentSizeVariants(t *testing.T) {
 func TestPaletteSizeBoundsInvalid(t *testing.T) {
 	cases := [][]string{
 		// Below minimum.
-		{ctr.CipherAES128CTR, ctr.CipherChaCha20},
+		{hashes.CipherAES128CTR, hashes.CipherChaCha20},
 		// Empty.
 		{},
 		// Single.
-		{ctr.CipherAES128CTR},
+		{hashes.CipherAES128CTR},
 	}
 	for _, c := range cases {
 		if _, err := NewSchedule(c, DefaultSegmentSize); err == nil {
@@ -79,7 +79,7 @@ func TestPaletteSizeBoundsInvalid(t *testing.T) {
 	// Above maximum.
 	tooBig := make([]string, MaxPaletteSize+1)
 	for i := range tooBig {
-		tooBig[i] = ctr.CipherAES128CTR
+		tooBig[i] = hashes.CipherAES128CTR
 	}
 	if _, err := NewSchedule(tooBig, DefaultSegmentSize); err == nil {
 		t.Fatalf("NewSchedule(palette len=%d) accepted", len(tooBig))
@@ -90,26 +90,26 @@ func TestPaletteEntryNameInvalid(t *testing.T) {
 	// 13-char name (one over the limit). Use an unknown but
 	// length-valid name to also exercise the unknown-cipher path.
 	long := strings.Repeat("a", MaxCipherNameLen+1)
-	palette := []string{long, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{long, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	if _, err := NewSchedule(palette, DefaultSegmentSize); err == nil {
 		t.Fatalf("NewSchedule accepted %d-char name", MaxCipherNameLen+1)
 	}
 
 	// Empty entry.
-	palette = []string{"", ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette = []string{"", hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	if _, err := NewSchedule(palette, DefaultSegmentSize); err == nil {
 		t.Fatal("NewSchedule accepted empty palette entry")
 	}
 
 	// Unknown cipher name within length cap.
-	palette = []string{"nope", ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette = []string{"nope", hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	if _, err := NewSchedule(palette, DefaultSegmentSize); err == nil {
 		t.Fatal("NewSchedule accepted unknown cipher name")
 	}
 }
 
 func TestMasterTooShortRejected(t *testing.T) {
-	s := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	s := mustSchedule(t, []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}, DefaultSegmentSize)
 	short := make([]byte, MasterKeySize-1)
 	if _, err := NewCipherset(short, s); err == nil {
 		t.Fatal("NewCipherset accepted short master")
@@ -117,7 +117,7 @@ func TestMasterTooShortRejected(t *testing.T) {
 }
 
 func TestDecryptWireTooShort(t *testing.T) {
-	s := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	s := mustSchedule(t, []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}, DefaultSegmentSize)
 	cs := mustCipherset(t, mustMaster(t), s)
 	if _, err := s.Decrypt(make([]byte, NonceSize-1), cs); err == nil {
 		t.Fatal("Decrypt accepted wire shorter than nonce")
@@ -130,10 +130,10 @@ func TestDecryptWireTooShort(t *testing.T) {
 func TestSchedulePaletteIsolation(t *testing.T) {
 	// Mutating the user-supplied palette slice after construction must
 	// not affect the stored schedule.
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	s := mustSchedule(t, palette, DefaultSegmentSize)
 	palette[0] = "tampered"
-	if s.Palette()[0] != ctr.CipherAES128CTR {
+	if s.Palette()[0] != hashes.CipherAES128CTR {
 		t.Fatalf("schedule mutated by external palette write")
 	}
 }
@@ -141,7 +141,7 @@ func TestSchedulePaletteIsolation(t *testing.T) {
 func TestTwoIndependentEncryptionsDiffer(t *testing.T) {
 	// Same plaintext, same cipherset, two Encrypt calls — the
 	// per-message nonces are independent, so the wire bytes must differ.
-	schedule := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	schedule := mustSchedule(t, []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}, DefaultSegmentSize)
 	cs := mustCipherset(t, mustMaster(t), schedule)
 	pt := randomPlaintext(t, 1024)
 	a, err := schedule.Encrypt(pt, cs)
@@ -176,7 +176,7 @@ func TestEdgeOneByte(t *testing.T) {
 }
 
 func TestExactNSegments(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3, ctr.CipherBLAKE2s, ctr.CipherSipHash24}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3, hashes.CipherBLAKE2s, hashes.CipherSipHash24}
 	schedule := mustSchedule(t, palette, DefaultSegmentSize)
 	cs := mustCipherset(t, mustMaster(t), schedule)
 	n := len(palette) * DefaultSegmentSize
@@ -202,11 +202,11 @@ func TestExactNSegments(t *testing.T) {
 // makes that invariant explicit.
 func TestDecryptWireTooShortAllPalettes(t *testing.T) {
 	palettes := [][]string{
-		{ctr.CipherAES128CTR, ctr.CipherAES128CTR, ctr.CipherAES128CTR},
-		{ctr.CipherChaCha20, ctr.CipherChaCha20, ctr.CipherChaCha20},
-		{ctr.CipherBLAKE3, ctr.CipherBLAKE2b512, ctr.CipherBLAKE2s},
-		{ctr.CipherAreion256, ctr.CipherAreion512, ctr.CipherSipHash24},
-		{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3, ctr.CipherAreion512, ctr.CipherSipHash24},
+		{hashes.CipherAES128CTR, hashes.CipherAES128CTR, hashes.CipherAES128CTR},
+		{hashes.CipherChaCha20, hashes.CipherChaCha20, hashes.CipherChaCha20},
+		{hashes.CipherBLAKE3, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s},
+		{hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherSipHash24},
+		{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3, hashes.CipherAreion512, hashes.CipherSipHash24},
 	}
 	for _, palette := range palettes {
 		s := mustSchedule(t, palette, DefaultSegmentSize)
@@ -227,7 +227,7 @@ func TestDecryptWireTooShortAllPalettes(t *testing.T) {
 // largest accepted value is 65533; round-tripping at 65533 across a
 // plaintext spanning multiple segments under that value succeeds.
 func TestSegmentSizeMaxBoundary(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	// MaxSegmentSize itself (65535) shares factor 3 with 504 → reject.
 	if _, err := NewSchedule(palette, MaxSegmentSize); err == nil {
 		t.Fatalf("NewSchedule accepted S=MaxSegmentSize (gcd with 504 is non-trivial)")
@@ -271,7 +271,7 @@ func TestSegmentSizeMaxBoundary(t *testing.T) {
 // observable segment size while an invalid call leaves the Schedule
 // unchanged.
 func TestSetSegmentSizeAfterConstruction(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	s := mustSchedule(t, palette, DefaultSegmentSize)
 	if got := s.SegmentSize(); got != DefaultSegmentSize {
 		t.Fatalf("initial SegmentSize = %d, want %d", got, DefaultSegmentSize)
@@ -300,7 +300,7 @@ func TestSetSegmentSizeAfterConstruction(t *testing.T) {
 // TestChunkSizeDefaultAfterConstruction confirms a freshly constructed
 // Schedule reports DefaultChunkSize from ChunkSize().
 func TestChunkSizeDefaultAfterConstruction(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	s := mustSchedule(t, palette, DefaultSegmentSize)
 	if got := s.ChunkSize(); got != DefaultChunkSize {
 		t.Fatalf("default ChunkSize = %d, want %d", got, DefaultChunkSize)
@@ -312,7 +312,7 @@ func TestChunkSizeDefaultAfterConstruction(t *testing.T) {
 // rejects values outside the range while leaving the Schedule
 // unchanged.
 func TestSetChunkSizeAfterConstruction(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	s := mustSchedule(t, palette, DefaultSegmentSize)
 	if err := s.SetChunkSize(1 << 20); err != nil {
 		t.Fatalf("SetChunkSize(1 MiB) rejected: %v", err)
@@ -334,7 +334,7 @@ func TestSetChunkSizeAfterConstruction(t *testing.T) {
 // confirms a plaintext that spans multiple chunks at the boundary
 // round-trips through the streaming surface.
 func TestChunkSizeMaxBoundary(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	s := mustSchedule(t, palette, DefaultSegmentSize)
 	if err := s.SetChunkSize(MaxChunkSize); err != nil {
 		t.Fatalf("SetChunkSize(MaxChunkSize) rejected: %v", err)

@@ -58,8 +58,8 @@ func emitToBuffer(buf *bytes.Buffer) func(chunk []byte) error {
 // --- Per-chunk Level 1 Triple round-trip ---
 
 // TestStreamAuth_PerChunkTripleRoundtrip covers the width-per-call
-// [EncryptStreamAuthenticated3x{128,256,512}] /
-// [DecryptStreamAuthenticated3x{128,256,512}] pair on the finalFlag
+// [EncryptStreamAuthenticated3x{128,256,512}Cfg] /
+// [DecryptStreamAuthenticated3x{128,256,512}Cfg] pair on the finalFlag
 // = true / false axis across all three widths.
 func TestStreamAuth_PerChunkTripleRoundtrip(t *testing.T) {
 	data := streamAuthTestData(1)

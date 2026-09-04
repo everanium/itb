@@ -18,9 +18,9 @@ Public Enum Status
     SeedWidthMix = 8
     BadMac = 9
     MacFailure = 10
-    Reserved11 = 11
-    Reserved12 = 12
-    Reserved13 = 13
+    BlobMalformedRecipe = 11
+    RecipePrimitiveUnknown = 12
+    UnknownProfile = 13
     Reserved14 = 14
     Reserved15 = 15
     Reserved16 = 16

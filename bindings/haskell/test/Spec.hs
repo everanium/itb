@@ -11,7 +11,9 @@ import Control.Monad (forM_)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import Data.Bits (shiftL, shiftR, xor)
+import Data.List (isInfixOf, sort)
 import Data.Word (Word8, Word64)
+import System.Directory (getTemporaryDirectory, removeFile)
 import System.Mem (performGC)
 import Test.Hspec
 
@@ -41,20 +43,12 @@ main = hspec $ do
       v <- version
       v `shouldNotBe` ""
 
-    it "hashes are in canonical registry order" $ do
-      roster <- hashes
-      map fst roster
-        `shouldBe` [ "areion256", "areion512", "blake2b256", "blake2b512"
-                   , "blake2s", "blake3", "aescmac", "siphash24", "chacha20"
-                   ]
-      forM_ roster $ \(_, w) -> w `shouldSatisfy` (> 0)
-
     it "profiles list carries the shipped names" $ do
       forM_ [ "singlemsg-triple-mac-v1"
             , "singlemsg-triple-nomac-v1"
             , "streaming-aead-triple-mac-v1"
             , "streaming-noaead-triple-v1"
-            ] $ \name -> profiles `shouldSatisfy` elem name
+            ] $ \name -> profiles >>= (`shouldSatisfy` elem name)
 
     it "runtime knobs answer queries" $ do
       -- Negative values query without changing.
@@ -64,9 +58,9 @@ main = hspec $ do
 
   describe "Single Message" $ do
     it "round-trips through blob hand-off (singlemsg-triple-mac-v1)" $ do
-      sender <- newPipeline "singlemsg-triple-mac-v1" Nothing
-      blobBytes <- blob sender
-      receiver <- newPipeline "singlemsg-triple-mac-v1" (Just blobBytes)
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       forM_ [1, 4096, 256 * 1024] $ \size -> do
         let plain = payload size (fromIntegral size)
         wire <- encryptMessage sender plain
@@ -77,9 +71,9 @@ main = hspec $ do
       freePipeline sender
 
     it "round-trips a large plaintext (pattern P1, > 1 MiB)" $ do
-      sender <- newPipeline "singlemsg-triple-nomac-v1" Nothing
-      blobBytes <- blob sender
-      receiver <- newPipeline "singlemsg-triple-nomac-v1" (Just blobBytes)
+      sender <- newPipeline "singlemsg-triple-nomac-v1"
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       let plain = payload (2 * 1024 * 1024 + 17) 3
       wire <- encryptMessage sender plain
       back <- decryptMessage receiver wire
@@ -89,9 +83,9 @@ main = hspec $ do
 
   describe "Streaming" $ do
     it "round-trips incrementally (streaming-noaead-triple-v1)" $ do
-      sender <- newPipeline "streaming-noaead-triple-v1" Nothing
-      blobBytes <- blob sender
-      receiver <- newPipeline "streaming-noaead-triple-v1" (Just blobBytes)
+      sender <- newPipeline "streaming-noaead-triple-v1"
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       let plain = payload (96 * 1024) 7
 
       -- Encrypt incrementally: 8 KiB writes, then end + drain.
@@ -117,9 +111,9 @@ main = hspec $ do
       freePipeline sender
 
     it "one-shot stream matches the incremental wire format" $ do
-      sender <- newPipeline "streaming-noaead-triple-v1" Nothing
-      blobBytes <- blob sender
-      receiver <- newPipeline "streaming-noaead-triple-v1" (Just blobBytes)
+      sender <- newPipeline "streaming-noaead-triple-v1"
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       let plain = payload (64 * 1024 + 3) 11
       wire <- encryptStreamOneShot sender plain
       back <- decryptStreamOneShot receiver wire
@@ -132,7 +126,7 @@ main = hspec $ do
       -- the session record (and its finalizer) must keep the Go-side
       -- Pipeline handle alive.
       sess <- do
-        pipe <- newPipeline "streaming-noaead-triple-v1" Nothing
+        pipe <- newPipeline "streaming-noaead-triple-v1"
         encryptStream pipe
       performGC
       threadDelay 50000
@@ -145,8 +139,8 @@ main = hspec $ do
 
   describe "error mapping" $ do
     it "unknown profile maps to statusBadInput" $
-      newPipeline "no-such-profile" Nothing
-        `shouldFailWithStatus` [statusBadInput]
+      newPipeline "no-such-profile"
+        `shouldFailWithStatus` [statusUnknownProfile]
 
     it "unknown opts key maps to statusBadInput" $
       -- Typoed key (lowercase s) — Go rejects unknown keys; the
@@ -155,9 +149,9 @@ main = hspec $ do
         `shouldFailWithStatus` [statusBadInput]
 
     it "tampered wire fails authentication" $ do
-      sender <- newPipeline "singlemsg-triple-mac-v1" Nothing
-      blobBytes <- blob sender
-      receiver <- newPipeline "singlemsg-triple-mac-v1" (Just blobBytes)
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       wire <- encryptMessage sender (payload 4096 21)
       let i = BS.length wire `div` 2
           tampered = BS.concat
@@ -171,7 +165,7 @@ main = hspec $ do
       freePipeline sender
 
     it "closed Pipeline maps to statusTripleClosed" $ do
-      pipe <- newPipeline "singlemsg-triple-mac-v1" Nothing
+      pipe <- newPipeline "singlemsg-triple-mac-v1"
       closePipeline pipe
       closePipeline pipe -- idempotent
       encryptMessage pipe (BC.pack "payload")
@@ -179,38 +173,137 @@ main = hspec $ do
       freePipeline pipe
 
   describe "session management" $ do
-    it "rekey refreshes the blob and the refreshed blob opens" $ do
-      sender <- newPipeline "singlemsg-triple-mac-v1" Nothing
-      blobBefore <- blob sender
-      rekey sender (payload 32 5) (payload 32 6)
-      blobAfter <- blob sender
-      blobAfter `shouldNotBe` blobBefore
-      receiver <- newPipeline "singlemsg-triple-mac-v1" (Just blobAfter)
+    it "rekey refreshes the blob and the refreshed blob loads" $ do
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      blobBefore <- save sender
+      rotated <- rekey sender (payload 32 5) (payload 32 6)
+      rotated `shouldNotBe` blobBefore
+      blobAfter <- save sender
+      blobAfter `shouldBe` rotated
+      receiver <- loadPipeline rotated Nothing
       wire <- encryptMessage sender (BC.pack "post-rekey payload")
       back <- decryptMessage receiver wire
       back `shouldBe` BC.pack "post-rekey payload"
       freePipeline receiver
       freePipeline sender
 
-    it "registerProfile round-trips and rejects a duplicate" $ do
-      let profOpts = mconcat
-            [ opt "mode" "singlemsg-nomac"
-            , opt "width" "256"
-            , opt "innerHashes"
-                  "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256"
-            , opt "keyBits" "1024"
-            , opt "parallaxOn" "false"
-            , opt "wrapperOn" "false"
+    it "register round-trips, reads back, and rejects a duplicate" $ do
+      -- 8-entry width-256 hashes constellation, layers off; the
+      -- record is a profile JSON object.
+      let prof = concat
+            [ "{\"mode\":\"singlemsg-nomac\",\"width\":256,"
+            , "\"hashes\":[\"blake3\",\"blake2s\",\"areion256\",\"blake2b256\","
+            , "\"chacha20\",\"blake3\",\"blake2s\",\"areion256\"],"
+            , "\"keybits\":1024,\"wrapper\":false,\"parallax\":false}"
             ]
-      registerProfile "haskell-binding-test-mixed" profOpts
-      sender <- newPipeline "haskell-binding-test-mixed" Nothing
-      blobBytes <- blob sender
-      receiver <- newPipeline "haskell-binding-test-mixed" (Just blobBytes)
+      register "haskell-binding-test-mixed" prof
+      sender <- newPipeline "haskell-binding-test-mixed"
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       wire <- encryptMessage sender (BC.pack "custom profile")
       back <- decryptMessage receiver wire
       back `shouldBe` BC.pack "custom profile"
-      registerProfile "haskell-binding-test-mixed" profOpts
+      looked <- lookupProfile "haskell-binding-test-mixed"
+      looked `shouldSatisfy` isInfixOf "\"name\":\"haskell-binding-test-mixed\""
+      looked `shouldSatisfy` isInfixOf "\"hashes\":[\"blake3\",\"blake2s\""
+      register "haskell-binding-test-mixed" prof
         `shouldFailWithStatus` [statusProfileExists]
+      -- A non-empty name inside the record must equal the argument.
+      register "haskell-binding-test-mismatch"
+        "{\"name\":\"other\",\"mode\":\"singlemsg-nomac\",\"width\":512,\"hash\":\"areion512\",\"keybits\":1024,\"wrapper\":false,\"parallax\":false}"
+        `shouldFailWithStatus` [statusBadInput]
+      freePipeline receiver
+      freePipeline sender
+
+    it "unknown profile maps to statusUnknownProfile on lookup" $
+      lookupProfile "no-such-profile" `shouldFailWithStatus` [statusUnknownProfile]
+
+    it "negative maxWorkers opts value is clamped" $ do
+      pipe <- initPipeline "singlemsg-triple-mac-v1" (maxWorkers (-1))
+      b <- save pipe
+      BS.null b `shouldBe` False
+      freePipeline pipe
+
+  describe "persistence" $ do
+    it "save then load round-trips; save is stable; load retains the bytes" $ do
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      b <- save sender
+      b2 <- save sender
+      b2 `shouldBe` b
+      receiver <- loadPipeline b Nothing
+      wire <- encryptMessage sender (BC.pack "in-memory")
+      back <- decryptMessage receiver wire
+      back `shouldBe` BC.pack "in-memory"
+      retained <- save receiver
+      retained `shouldBe` b
+      freePipeline receiver
+      freePipeline sender
+
+    it "load with master overrides equals a sender rekey" $ do
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      b <- save sender
+      let perm = BS.replicate 32 0x31
+          wrap = BS.replicate 32 0x32
+      receiver <- loadPipeline b (Just (perm, wrap))
+      rotated <- save receiver
+      rotated `shouldNotBe` b
+      _ <- rekey sender perm wrap
+      wire <- encryptMessage sender (BC.pack "overrides")
+      back <- decryptMessage receiver wire
+      back `shouldBe` BC.pack "overrides"
+      freePipeline receiver
+      freePipeline sender
+
+    it "inspect equals lookupProfile; garbage is statusBadInput" $ do
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      b <- save sender
+      inspected <- inspect b
+      looked <- lookupProfile "singlemsg-triple-mac-v1"
+      inspected `shouldBe` looked
+      inspected `shouldSatisfy` isInfixOf "\"name\":\"singlemsg-triple-mac-v1\""
+      inspected `shouldSatisfy` isInfixOf "\"mode\":\"singlemsg-mac\""
+      inspect (BC.pack "not a blob") `shouldFailWithStatus` [statusBadInput]
+      freePipeline sender
+
+    it "profiles lists the catalogue sorted and each name resolves" $ do
+      names <- profiles
+      names `shouldSatisfy` elem "singlemsg-triple-mac-v1"
+      names `shouldBe` sort names
+      forM_ names $ \n -> do
+        looked <- lookupProfile n
+        looked `shouldSatisfy` isInfixOf ("\"name\":\"" ++ n ++ "\"")
+
+    it "saveF then loadPipelineF round-trips; missing file is statusBadInput" $ do
+      tmp <- getTemporaryDirectory
+      let path = tmp ++ "/itb-haskell-persist.blob"
+      sender <- newPipeline "streaming-aead-triple-mac-v1"
+      saveF sender path
+      onDisk <- BS.readFile path
+      b <- save sender
+      onDisk `shouldBe` b
+      receiver <- loadPipelineF path Nothing
+      wire <- encryptStreamOneShot sender (BC.pack "on-disk")
+      back <- decryptStreamOneShot receiver wire
+      back `shouldBe` BC.pack "on-disk"
+      removeFile path
+      loadPipelineF path Nothing `shouldFailWithStatus` [statusBadInput]
+      freePipeline receiver
+      freePipeline sender
+
+    it "setMaxWorkers clamps; closed Pipeline maps to statusTripleClosed" $ do
+      sender <- newPipeline "singlemsg-triple-mac-v1"
+      setMaxWorkers sender 2
+      setMaxWorkers sender (-1)
+      setMaxWorkers sender 100000
+      b <- save sender
+      receiver <- loadPipeline b Nothing
+      setMaxWorkers receiver 1
+      wire <- encryptMessage sender (BC.pack "workers")
+      back <- decryptMessage receiver wire
+      back `shouldBe` BC.pack "workers"
+      closePipeline receiver
+      save receiver `shouldFailWithStatus` [statusTripleClosed]
+      setMaxWorkers receiver 2 `shouldFailWithStatus` [statusTripleClosed]
       freePipeline receiver
       freePipeline sender
 
@@ -238,16 +331,16 @@ main = hspec $ do
 
     it "innerHashes override round-trips on a width-512 profile" $ do
       -- Per-call Opts.MixedHashes override over a width-512 shipped
-      -- base profile; both sides pass the same 8-slot constellation
-      -- so the receiver Pipeline (opened via blob hand-off) resolves
-      -- the same mixed inner-hash bundle as the sender.
+      -- base profile; the blob carries the resolved constellation, so
+      -- the receiver Pipeline (loaded from the blob) resolves the same
+      -- mixed inner-hash bundle as the sender without an override.
       let mix = innerHashes
             [ "areion512", "blake2b512", "areion512", "blake2b512"
             , "areion512", "blake2b512", "areion512", "blake2b512"
             ]
       sender <- initPipeline "singlemsg-triple-mac-v1" mix
-      blobBytes <- blob sender
-      receiver <- openPipeline "singlemsg-triple-mac-v1" blobBytes mix Nothing
+      blobBytes <- save sender
+      receiver <- loadPipeline blobBytes Nothing
       let plain = payload 4096 42
       wire <- encryptMessage sender plain
       back <- decryptMessage receiver wire

@@ -3,24 +3,20 @@
 // Subcommands:
 //
 //   eitb version                                   library + binding versions
-//   eitb hashes                                    shipped hash primitive roster
+//   eitb profiles                                  registered profile catalogue
 //   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 //   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex
-// back to `decrypt` on the receiving side.
-//
-// The `hashes` diagnostic iterates the registry through the Java
-// binding's diagnostic accessor — the binding library itself
-// deliberately exposes no primitive enumeration.
+// back to `decrypt` on the receiving side. `profiles` lists the
+// registered profile catalogue one name per line; the profiles that
+// carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 package dev.everanium.itb.eitb
 
 import java.nio.file.{Files, Paths}
 
 import scala.util.Using
-
-import com.everanium.itb.HashRoster
 
 import dev.everanium.itb.{ItbError, Pipeline, Runtime}
 
@@ -33,14 +29,14 @@ object Main:
       try
         args.toList match
           case "version" :: Nil                              => cmdVersion()
-          case "hashes" :: Nil                               => cmdHashes()
+          case "profiles" :: Nil                             => cmdProfiles()
           case "encrypt" :: profile :: in :: out :: Nil      => cmdEncrypt(profile, in, out)
           case "decrypt" :: profile :: blob :: in :: out :: Nil =>
             cmdDecrypt(profile, blob, in, out)
           case _ =>
             System.err.println(
               """usage: eitb version
-                |       eitb hashes
+                |       eitb profiles
                 |       eitb encrypt <profile> <in-file> <out-file>
                 |       eitb decrypt <profile> <blob-hex> <in-file> <out-file>""".stripMargin
             )
@@ -62,8 +58,10 @@ object Main:
     println(s"itb-scala ${Runtime.BindingVersion}")
     0
 
-  private def cmdHashes(): Int =
-    HashRoster.print()
+  // Prints the registered profile catalogue one name per line in the
+  // sorted order Pipeline.profiles() returns.
+  private def cmdProfiles(): Int =
+    orThrow(Pipeline.profiles()).foreach(println)
     0
 
   // Profiles whose canonical name begins with "streaming-" route
@@ -87,7 +85,7 @@ object Main:
       )
       ensureParentDir(outFile)
       Files.write(Paths.get(outFile), wire)
-      System.err.println(hex(pipe.blob))
+      System.err.println(hex(orThrow(pipe.save())))
       println(s"encrypted $inFile -> $outFile (${plain.length} -> ${wire.length} bytes)")
     }
     0
@@ -95,7 +93,7 @@ object Main:
   private def cmdDecrypt(profile: String, blobHex: String, inFile: String, outFile: String): Int =
     val blob = unhex(blobHex)
     val wire = Files.readAllBytes(Paths.get(inFile))
-    Using.resource(orThrow(Pipeline.open(profile, blob))) { pipe =>
+    Using.resource(orThrow(Pipeline.load(blob))) { pipe =>
       val plain = orThrow(
         if isStreamingProfile(profile) then pipe.decryptStreamOneShot(wire)
         else pipe.decryptMessage(wire)

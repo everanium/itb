@@ -1,6 +1,7 @@
 // Error-mapping surface: opaque-string relay, closed Pipeline,
-// duplicate profile registration (with an 8-entry innerHashes
-// constellation), Status code mapping, and ItbFailure interop.
+// duplicate profile registration (with an 8-entry mixed
+// constellation), unknown lookup, maxWorkers on a closed handle,
+// Status code mapping, and ItbFailure interop.
 
 module EveraniumItb.FSharp.Tests.ErrorTests
 
@@ -10,10 +11,10 @@ open EveraniumItb.FSharp
 open EveraniumItb.FSharp.Tests.TestSupport
 
 [<Fact>]
-let ``unknown profile is BadInput with diagnostic`` () =
+let ``unknown profile is UnknownProfile with diagnostic`` () =
     let err = unwrapError (Pipeline.init "no-such-profile" Opts.empty)
-    Assert.Equal(Status.BadInput, err.Status)
-    Assert.Equal(4, err.Code)
+    Assert.Equal(Status.UnknownProfile, err.Status)
+    Assert.Equal(13, err.Code)
     Assert.False(System.String.IsNullOrEmpty err.Detail)
 
 [<Fact>]
@@ -32,29 +33,44 @@ let ``closed pipeline reports TripleClosed`` () =
     Assert.Equal(Status.TripleClosed, err.Status)
 
 [<Fact>]
-let ``register profile mixed then duplicate`` () =
-    // 8-entry width-256 innerHashes constellation, layers off.
-    let opts =
-        Opts.empty
-        |> Opts.withRaw "mode" "singlemsg-nomac"
-        |> Opts.withRaw "width" "256"
-        |> Opts.withRaw "innerHashes" "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256"
-        |> Opts.withRaw "keyBits" "1024"
-        |> Opts.withRaw "parallaxOn" "false"
-        |> Opts.withRaw "wrapperOn" "false"
+let ``register mixed then duplicate`` () =
+    // 8-entry width-256 mixed constellation, layers off.
+    let profile =
+        Profile(
+            Mode = "singlemsg-nomac",
+            Width = 256,
+            Hashes =
+                [| "blake3"; "blake2s"; "areion256"; "blake2b256"
+                   "chacha20"; "blake3"; "blake2s"; "areion256" |],
+            KeyBits = 1024,
+            Parallax = false,
+            Wrapper = false
+        )
 
-    unwrap (Pipeline.registerProfile "fsharp-binding-test-mixed" opts)
+    unwrap (Pipeline.register "fsharp-binding-test-mixed" profile)
 
     // The registered profile round-trips.
     use sender = unwrap (Pipeline.init "fsharp-binding-test-mixed" Opts.empty)
-    use receiver = unwrap (Pipeline.openBlob "fsharp-binding-test-mixed" (Pipeline.blob sender) Opts.empty)
+    use receiver = unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
     let plain = Encoding.UTF8.GetBytes "custom profile"
     let wire = unwrap (Pipeline.encryptMessage sender plain)
     Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage receiver wire))
 
     // Duplicate name is a distinct status.
-    let err = unwrapError (Pipeline.registerProfile "fsharp-binding-test-mixed" opts)
+    let err = unwrapError (Pipeline.register "fsharp-binding-test-mixed" profile)
     Assert.Equal(Status.ProfileExists, err.Status)
+
+[<Fact>]
+let ``unknown lookup name is UnknownProfile`` () =
+    let err = unwrapError (Pipeline.lookup "no-such-profile")
+    Assert.Equal(Status.UnknownProfile, err.Status)
+
+[<Fact>]
+let ``maxWorkers on a closed pipeline reports TripleClosed`` () =
+    use pipe = unwrap (Pipeline.init "singlemsg-triple-mac-v1" Opts.empty)
+    unwrap (Pipeline.closeSession pipe)
+    let err = unwrapError (Pipeline.maxWorkers pipe 2)
+    Assert.Equal(Status.TripleClosed, err.Status)
 
 [<Fact>]
 let ``opaque primitive name relay`` () =
@@ -66,8 +82,8 @@ let ``opaque primitive name relay`` () =
 
 [<Fact>]
 let ``status mapping preserves unnamed codes`` () =
-    Assert.Equal(Status.Unknown 12, Status.ofCode 12)
-    Assert.Equal(12, Status.toCode (Status.Unknown 12))
+    Assert.Equal(Status.Unknown 14, Status.ofCode 14)
+    Assert.Equal(14, Status.toCode (Status.Unknown 14))
     Assert.Equal(Status.MacFailure, Status.ofCode 10)
 
     for code in [ 0; 1; 4; 5; 10; 19; 25; 26; 99 ] do
@@ -97,4 +113,4 @@ let ``failed itb computation expression short-circuits`` () =
         }
 
     Assert.False reached
-    Assert.Equal(Status.BadInput, (unwrapError result).Status)
+    Assert.Equal(Status.UnknownProfile, (unwrapError result).Status)

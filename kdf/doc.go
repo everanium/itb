@@ -11,12 +11,12 @@
 //     PRF = the registry Areion-SoEM keyed hash. areion512 needs a
 //     64-byte PRF key; a 32-byte master is deterministically stretched
 //     to 64 bytes via areion256 first.
-//   - "siphash24" — NIST SP 800-108 KDF in Counter Mode, PRF =
-//     SipHash-2-4 with 128-bit output.
-//   - "aescmac"   — NIST SP 800-108 KDF in Counter Mode, PRF =
-//     AES-CMAC over AES-128.
 //   - "blake2b256", "blake2b512", "blake2s", "blake3" — SP 800-108
 //     KDF in Counter Mode, PRF = the primitive's native keyed hash.
+//   - "aescmac"   — NIST SP 800-108 KDF in Counter Mode, PRF =
+//     AES-CMAC over AES-128.
+//   - "siphash24" — NIST SP 800-108 KDF in Counter Mode, PRF =
+//     SipHash-2-4 with 128-bit output.
 //   - "chacha20"  — XChaCha20 keystream KDF with the public label as
 //     the 24-byte nonce.
 //

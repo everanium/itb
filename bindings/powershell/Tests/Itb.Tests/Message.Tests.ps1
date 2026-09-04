@@ -20,7 +20,7 @@ Describe 'Message round trips' {
         $profile = $_
         $sender = New-ItbPipeline -Profile $profile
         try {
-            $receiver = Open-ItbPipeline -Profile $profile -Blob (Get-ItbBlob $sender)
+            $receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $sender)
             try {
                 foreach ($size in 4KB, 256KB) {
                     $plain = New-TestPayload -Size $size -Seed $size

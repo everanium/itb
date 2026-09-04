@@ -24,9 +24,9 @@ sealed class Status(val code: Int) {
     object SeedWidthMix : Status(8)
     object BadMac : Status(9)
     object MacFailure : Status(10)
-    object Reserved11 : Status(11)
-    object Reserved12 : Status(12)
-    object Reserved13 : Status(13)
+    object BlobMalformedRecipe : Status(11)
+    object RecipePrimitiveUnknown : Status(12)
+    object UnknownProfile : Status(13)
     object Reserved14 : Status(14)
     object Reserved15 : Status(15)
     object Reserved16 : Status(16)
@@ -68,9 +68,9 @@ sealed class Status(val code: Int) {
             8 -> SeedWidthMix
             9 -> BadMac
             10 -> MacFailure
-            11 -> Reserved11
-            12 -> Reserved12
-            13 -> Reserved13
+            11 -> BlobMalformedRecipe
+            12 -> RecipePrimitiveUnknown
+            13 -> UnknownProfile
             14 -> Reserved14
             15 -> Reserved15
             16 -> Reserved16

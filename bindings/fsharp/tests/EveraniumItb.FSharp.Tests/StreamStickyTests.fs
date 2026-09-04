@@ -44,7 +44,7 @@ let private probeOnce (receiver: Pipeline) (wire: byte[]) : (ItbError * ItbError
 let ``tampered wire sticky failure`` () =
     use sender = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" Opts.empty)
     use receiver =
-        unwrap (Pipeline.openBlob "streaming-aead-triple-mac-v1" (Pipeline.blob sender) Opts.empty)
+        unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = Array.init 65536 (fun i -> byte (i % 227))
     let baseWire = unwrap (Pipeline.encryptStreamOneShot sender plain)

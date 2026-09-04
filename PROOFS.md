@@ -12,7 +12,7 @@ Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cip
 
 - H: PRF-grade hash function satisfying the PRF assumption (see [SCIENCE.md § 1.1 ChainHash](SCIENCE.md#11-chainhash))
 - S = (s₀, s₁, ..., s_{n-1}): seed of n independent w-bit blocks (n = keyBits / w)
-- N: 128-bit nonce from crypto/rand
+- N: per-message nonce from crypto/rand (width `NonceBits`, default `DefaultNonceBits = 512`)
 - C[p]: original container byte at pixel p (crypto/rand, uniform over [0, 255])
 - C'[p]: container byte after embedding
 - ChainHash(data, S): iterated hash h₀=H(data,s₀), hᵢ=H(data,sᵢ⊕hᵢ₋₁)
@@ -125,7 +125,7 @@ because all 8 are independently generated (the pairwise independence between see
 
 No memory access depends on dataSeed's values. No cache line, no memory pattern, no software-observable signal.
 
-**lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (§13 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
+**lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (§12 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
 
 <a name="proof-3a-8-seed-isolation-minimality"></a>
 ## Proof 3a: 8-Seed Isolation Minimality
@@ -143,7 +143,7 @@ The construction defines 8 disjoint derivation domains, each keyed by its own se
 - **S₁, S₂, S₃** (start): per-snake pixel embedding offset (one per message), derived from the per-snake startSeed_i
 
 Each domain has a documented attack surface (see [Proof 3](#proof-3-8-seed-isolation)):
-- N is recoverable via CCA with MAC-reveal (bit-flip → accept = noise bit)
+- N is recoverable via CCA with MAC Reveal (bit-flip → accept = noise bit)
 - each S_i is observable via cache side-channel (memory access pattern)
 - each D_i has zero software-observable side-channel (register-only operations)
 - L has zero software-observable side-channel (fixed-pattern table lookups, constant-time kernels)
@@ -282,7 +282,7 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 ## Proof 5: Noise Barrier Bound
 
-**Note on MinPixels unification.** The shipped construction unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC-authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). One floor for both modes closes an Auth-vs-Non-AEAD distinguisher: the minimum-message container size is mode-independent, so the length envelope does not betray which mode is in use.
+**Note on MinPixels unification.** The shipped construction unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC Authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). One floor for both modes closes an Auth-vs-Non-AEAD distinguisher: the minimum-message container size is mode-independent, so the length envelope does not betray which mode is in use.
 
 **Theorem.** With Channels = 8 and the unified shipped floor `MinPixels = MinPixelsAuth = ⌈keyBits / log₂(7)⌉` (both plain and Auth surfaces), the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits. The looser `⌈keyBits / log₂(56)⌉` quantity — the no-CCA ambiguity-dominance count of [Proof 9](#proof-9-ambiguity-dominance-threshold), which sits below the shipped floor and never ships as a container minimum — gives a second, weaker worked bound and is retained only for illustration.
 
@@ -315,13 +315,13 @@ P_noCCA = ⌈1024 / log₂(56)⌉ = ⌈1024 / 5.807⌉ = 177
 
 Square container: side = ⌈√177⌉ = 14, P = 196; noise barrier 2^(8 × 196) = 2^1568 > 2^1024, exceeding the key space by 2^544. This bound is weaker than the shipped floor and is never instantiated as a container minimum.
 
-**General:** For the shipped floor (both modes), P ≥ ⌈keyBits / log₂(7)⌉; since 8 / log₂(7) = 8 / 2.807 ≈ 2.850 > 1, we have 8P > keyBits. The looser no-CCA quantity P ≥ ⌈keyBits / log₂(56)⌉ satisfies 8 / log₂(56) = 8 / 5.807 ≈ 1.378 > 1, so 8P > keyBits there too. ∎
+**General:** For the shipped floor (both modes), P ≥ ⌈keyBits / log₂(7)⌉; since 8 / log₂(7) = 8 / 2.807 ≈ 2.850 > 1, 8P > keyBits follows. The looser no-CCA quantity P ≥ ⌈keyBits / log₂(56)⌉ satisfies 8 / log₂(56) = 8 / 5.807 ≈ 1.378 > 1, so 8P > keyBits there too. ∎
 
 ## Proof 6: CCA Leak Upper Bound
 
 This proof applies to the MAC + Reveal mode only. Under Core ITB and MAC + Silent Drop, no CCA oracle exists and the leak is zero.
 
-**Theorem.** Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model. Per-bit XOR prevents any further leakage.
+**Theorem.** Under CCA with MAC Reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model. Per-bit XOR prevents any further leakage.
 
 **Proof.** The CCA oracle provides a binary response per query: accept (noise bit flipped, data unchanged, MAC passes) or reject (data bit flipped, data changed, MAC fails).
 

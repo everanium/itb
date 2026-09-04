@@ -35,8 +35,7 @@ Describe 'Opts' {
             -Opts @{ chunkSize = 65536 }
         try {
             $back = Invoke-ItbDecrypt -Pipeline (
-                Open-ItbPipeline 'singlemsg-triple-mac-v1' (Get-ItbBlob $pipe) `
-                    -Opts @{ chunkSize = 65536 }) `
+                Import-ItbPipeline -Blob (Save-ItbPipeline $pipe)) `
                 -Data (Invoke-ItbEncrypt -Pipeline $pipe -Data 'hashtable opts')
             [System.Text.Encoding]::UTF8.GetString($back) | Should -Be 'hashtable opts'
         }

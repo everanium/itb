@@ -7,15 +7,17 @@ import java.io.OutputStream;
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.security.auth.Destroyable;
 
 /**
- * A Triple Pipeline session plus its exported blob bytes.
+ * A Triple Pipeline session.
  *
- * <p>The blob carries the session bundle the receiver feeds to
- * {@link #open}; {@link #rekey} refreshes it. {@link #close} (or GC
- * via {@link java.lang.ref.Cleaner}) frees the handle — libitb zeroes
+ * <p>{@link #save} exports the self-describing session blob the
+ * receiver feeds to {@link #load} / {@link #loadF}; {@link #rekey}
+ * refreshes it. {@link #close} (or GC via
+ * {@link java.lang.ref.Cleaner}) frees the handle — libitb zeroes
  * key material internally. {@link #destroy} zeroes the key material
  * while keeping the handle registered; subsequent cipher calls fail
  * with {@link Status#TRIPLE_CLOSED}.</p>
@@ -26,12 +28,15 @@ import javax.security.auth.Destroyable;
  */
 public final class Pipeline implements AutoCloseable, Destroyable {
 
-    /** Floor capacity for blob output buffers (Init / Rekey). */
+    /** Floor capacity for blob output buffers (Init / Save / Rekey). */
     private static final int BLOB_CAP = 64 * 1024;
+
+    /** Floor capacity for profile-JSON output buffers (Inspect /
+     * Lookup / Profiles). */
+    private static final int JSON_CAP = 4 * 1024;
 
     private final long handle;
     private final Cleaner.Cleanable cleanable;
-    private byte[] blob;
     private boolean destroyed;
 
     /** Cleaner action: holds only the raw handle so the action cannot
@@ -49,9 +54,8 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         }
     }
 
-    private Pipeline(long handle, byte[] blob) {
+    private Pipeline(long handle) {
         this.handle = handle;
-        this.blob = blob;
         this.cleanable = Native.CLEANER.register(this, new Handle(handle));
     }
 
@@ -63,72 +67,151 @@ public final class Pipeline implements AutoCloseable, Destroyable {
 
     /** Constructs a fresh Pipeline against the named profile. On a
      * blob-buffer retry the Init re-runs and yields a fresh session
-     * (the undersized attempt is closed by libitb before returning). */
+     * (the undersized attempt is closed by libitb before returning).
+     * The session blob is available through {@link #save}. */
     public static Pipeline init(String profile, Opts opts) {
         ByteBuffer profileC = Native.cstr(profile);
         ByteBuffer optsC = Native.cstr(opts.build());
         long[] handle = new long[1];
-        byte[] blob = retryOnce(BLOB_CAP, (buf, cap, len) ->
+        retryOnce(BLOB_CAP, (buf, cap, len) ->
                 Native.tripleInit(profileC, optsC, buf, cap, len, handle));
-        return new Pipeline(handle[0], blob);
+        return new Pipeline(handle[0]);
     }
 
-    /** Reconstructs a Pipeline from a blob produced by {@link #init}
-     * or {@link #rekey}, using the blob-embedded masters. */
-    public static Pipeline open(String profile, byte[] blob, Opts opts) {
-        return open(profile, blob, opts, null, null);
+    /** Reconstructs a Pipeline from a blob produced by {@link #save}
+     * or {@link #rekey}, using the blob-embedded masters. The blob's
+     * embedded profile record is the sole structural source. */
+    public static Pipeline load(byte[] blob) {
+        return load(blob, null, null);
     }
 
-    /** Reconstructs a Pipeline from a blob produced by {@link #init}
+    /** Reconstructs a Pipeline from a blob produced by {@link #save}
      * or {@link #rekey}. Pass both masters as {@code null} to use the
      * blob-embedded masters, or both non-empty to override them. */
-    public static Pipeline open(String profile, byte[] blob, Opts opts,
-            byte[] permMaster, byte[] wrapMaster) {
-        ByteBuffer profileC = Native.cstr(profile);
-        ByteBuffer optsC = Native.cstr(opts.build());
-        long mastersCount = 0;
-        if (permMaster != null || wrapMaster != null) {
-            if (permMaster == null || permMaster.length == 0
-                    || wrapMaster == null || wrapMaster.length == 0) {
-                throw new IllegalArgumentException(
-                        "itb: master override arrays must both be non-empty");
-            }
-            mastersCount = 2;
-        }
+    public static Pipeline load(byte[] blob, byte[] permMaster, byte[] wrapMaster) {
         ByteBuffer blobC = Native.direct(blob);
         ByteBuffer pmC = Native.direct(permMaster);
         ByteBuffer wmC = Native.direct(wrapMaster);
         long[] handle = new long[1];
-        ItbException.check(Native.tripleOpen(profileC, blobC,
-                blob == null ? 0 : blob.length, optsC,
+        ItbException.check(Native.tripleLoad(blobC,
+                blob == null ? 0 : blob.length,
                 pmC, permMaster == null ? 0 : permMaster.length,
                 wmC, wrapMaster == null ? 0 : wrapMaster.length,
-                mastersCount, handle));
-        return new Pipeline(handle[0], blob == null ? new byte[0] : blob.clone());
+                mastersCount(permMaster, wrapMaster), handle));
+        return new Pipeline(handle[0]);
     }
 
-    /** Registers a user-defined Triple profile under {@code name} so
-     * subsequent {@link #init} / {@link #open} calls resolve it. The
-     * opts follow the register-profile grammar validated by Go; a
-     * duplicate name fails with {@link Status#PROFILE_EXISTS}. */
-    public static void registerProfile(String name, Opts opts) {
-        ItbException.check(Native.tripleRegisterProfile(
-                Native.cstr(name), Native.cstr(opts.build())));
+    /** {@link #load} for a blob stored in a file; the file is read
+     * inside the library. */
+    public static Pipeline loadF(String path) {
+        return loadF(path, null, null);
     }
 
-    /** The exported session bundle bytes for the receiver side. */
-    public byte[] blob() {
-        return blob.clone();
+    /** {@link #load} for a blob stored in a file, with the same
+     * masters semantics. */
+    public static Pipeline loadF(String path, byte[] permMaster, byte[] wrapMaster) {
+        ByteBuffer pathC = Native.cstr(path);
+        ByteBuffer pmC = Native.direct(permMaster);
+        ByteBuffer wmC = Native.direct(wrapMaster);
+        long[] handle = new long[1];
+        ItbException.check(Native.tripleLoadF(pathC,
+                pmC, permMaster == null ? 0 : permMaster.length,
+                wmC, wrapMaster == null ? 0 : wrapMaster.length,
+                mastersCount(permMaster, wrapMaster), handle));
+        return new Pipeline(handle[0]);
     }
 
-    /** Rotates the parallax + wrapper masters and refreshes
-     * {@link #blob}. Must not run concurrently with cipher calls or
-     * open stream sessions on the same Pipeline. */
-    public void rekey(byte[] permMaster, byte[] wrapMaster) {
+    /** Folds the optional master pair into the CAPI arity flag: 0 for
+     * none, 2 for both. */
+    private static long mastersCount(byte[] permMaster, byte[] wrapMaster) {
+        if (permMaster == null && wrapMaster == null) {
+            return 0;
+        }
+        if (permMaster == null || permMaster.length == 0
+                || wrapMaster == null || wrapMaster.length == 0) {
+            throw new IllegalArgumentException(
+                    "itb: master override arrays must both be non-empty");
+        }
+        return 2;
+    }
+
+    /** Decodes the blob's embedded profile record without opening a
+     * Pipeline. No registry read, no primitive probe. */
+    public static Profile inspect(byte[] blob) {
+        ByteBuffer blobC = Native.direct(blob);
+        byte[] json = retryOnce(JSON_CAP, (buf, cap, len) ->
+                Native.tripleInspect(blobC, blob == null ? 0 : blob.length, buf, cap, len));
+        return Profile.fromJson(Profile.utf8(json));
+    }
+
+    /** Registers {@code profile} under {@code name} so subsequent
+     * {@link #init} / {@link #lookup} calls resolve it. Every field
+     * rule is validated by Go; a duplicate name fails with
+     * {@link Status#PROFILE_EXISTS}. */
+    public static void register(String name, Profile profile) {
+        ItbException.check(Native.tripleRegister(
+                Native.cstr(name), Native.cstr(profile.toJson())));
+    }
+
+    /** Looks up a registered profile (shipped or {@link #register}ed)
+     * by name; an unknown name fails with
+     * {@link Status#UNKNOWN_PROFILE}. */
+    public static Profile lookup(String name) {
+        ByteBuffer nameC = Native.cstr(name);
+        byte[] json = retryOnce(JSON_CAP, (buf, cap, len) ->
+                Native.tripleLookup(nameC, buf, cap, len));
+        return Profile.fromJson(Profile.utf8(json));
+    }
+
+    /** The sorted names of every registered profile. */
+    public static List<String> profiles() {
+        byte[] json = retryOnce(JSON_CAP, Native::tripleProfiles);
+        return Profile.stringsFromJson(Profile.utf8(json));
+    }
+
+    /** The current self-describing session blob: the bytes
+     * {@link #init} produced, the bytes {@link #load} re-marshalled,
+     * or the bytes of the latest {@link #rekey}. */
+    public byte[] save() {
+        try {
+            return retryOnce(BLOB_CAP, (buf, cap, len) ->
+                    Native.tripleSave(handle, buf, cap, len));
+        } finally {
+            Reference.reachabilityFence(this);
+        }
+    }
+
+    /** Writes {@link #save} to {@code path} inside the library with
+     * mode 0600; the containing directory must exist. */
+    public void saveF(String path) {
+        try {
+            ItbException.check(Native.tripleSaveF(handle, Native.cstr(path)));
+        } finally {
+            Reference.reachabilityFence(this);
+        }
+    }
+
+    /** Sets the worker cap for every subsequent cipher call. {@code n}
+     * is clamped, never rejected: {@code n <= 0} selects auto
+     * (CPU count), {@code n > 256} is treated as 256. Only the handle
+     * statuses raise. */
+    public void maxWorkers(int n) {
+        try {
+            ItbException.check(Native.tripleMaxWorkers(handle, n));
+        } finally {
+            Reference.reachabilityFence(this);
+        }
+    }
+
+    /** Rotates the parallax + wrapper masters and returns the fresh
+     * session blob (also available through {@link #save}). Must not
+     * run concurrently with cipher calls or open stream sessions on
+     * the same Pipeline. */
+    public byte[] rekey(byte[] permMaster, byte[] wrapMaster) {
         ByteBuffer pmC = Native.direct(permMaster);
         ByteBuffer wmC = Native.direct(wrapMaster);
         try {
-            blob = retryOnce(Math.max(BLOB_CAP, blob.length), (buf, cap, len) ->
+            return retryOnce(BLOB_CAP, (buf, cap, len) ->
                     Native.tripleRekey(handle,
                             pmC, permMaster == null ? 0 : permMaster.length,
                             wmC, wrapMaster == null ? 0 : wrapMaster.length,

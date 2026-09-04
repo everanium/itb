@@ -61,7 +61,7 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 	if p.isClosed() {
 		return ErrClosed
 	}
-	if !isStreamingMode(p.resolved.mode) {
+	if !isStreamingMode(p.resolved.Mode) {
 		return ErrProfileNotStreaming
 	}
 	plainSrc, err := rejectEmptySource(plainSrc)
@@ -84,7 +84,7 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 			p.seeds[0], p.seeds[1],
 			p.seeds[2], p.seeds[3], p.seeds[4],
 			p.seeds[5], p.seeds[6], p.seeds[7],
-			innerSrc, innerDst, p.macFunc, p.resolved.chunkSize,
+			innerSrc, innerDst, p.macFunc, p.resolved.ChunkSize,
 		)
 	} else {
 		cipherErr = itb.EncryptStream3xCfg(
@@ -92,7 +92,7 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 			p.seeds[0], p.seeds[1],
 			p.seeds[2], p.seeds[3], p.seeds[4],
 			p.seeds[5], p.seeds[6], p.seeds[7],
-			innerSrc, innerDst, p.resolved.chunkSize,
+			innerSrc, innerDst, p.resolved.ChunkSize,
 		)
 	}
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
@@ -139,7 +139,7 @@ func (p *Pipeline) DecryptStream(wireSrc io.Reader, plainDst io.Writer) error {
 	if p.isClosed() {
 		return ErrClosed
 	}
-	if !isStreamingMode(p.resolved.mode) {
+	if !isStreamingMode(p.resolved.Mode) {
 		return ErrProfileNotStreaming
 	}
 	wireSrc, err := rejectEmptySource(wireSrc)

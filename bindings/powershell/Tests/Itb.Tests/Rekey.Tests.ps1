@@ -8,7 +8,7 @@ Describe 'Rekey' {
     It 'rotates the masters, refreshes the blob, and round-trips' {
         $sender = New-ItbPipeline -Profile 'singlemsg-triple-mac-v1'
         try {
-            $blobBefore = Get-ItbBlob -Pipeline $sender
+            $blobBefore = Save-ItbPipeline $sender
 
             $perm = [byte[]]::new(32)
             $wrap = [byte[]]::new(32)
@@ -20,11 +20,10 @@ Describe 'Rekey' {
                 -PermMaster $perm -WrapMaster $wrap
             (Test-BytesEqual $blobAfter $blobBefore) | Should -BeFalse
 
-            # Invoke-ItbRekey returns the same bytes Get-ItbBlob reads.
-            (Test-BytesEqual $blobAfter (Get-ItbBlob $sender)) | Should -BeTrue
+            # Invoke-ItbRekey returns the same bytes Save-ItbPipeline reads.
+            (Test-BytesEqual $blobAfter (Save-ItbPipeline $sender)) | Should -BeTrue
 
-            $receiver = Open-ItbPipeline -Profile 'singlemsg-triple-mac-v1' `
-                -Blob $blobAfter
+            $receiver = Import-ItbPipeline -Blob $blobAfter
             try {
                 $wire = Invoke-ItbEncrypt -Pipeline $sender -Data 'post-rekey payload'
                 $back = Invoke-ItbDecrypt -Pipeline $receiver -Data $wire

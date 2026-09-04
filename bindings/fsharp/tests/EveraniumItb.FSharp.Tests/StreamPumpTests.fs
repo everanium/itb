@@ -12,7 +12,7 @@ open EveraniumItb.FSharp.Tests.TestSupport
 let ``pump round trip 1 MiB`` () =
     use sender = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" Opts.empty)
     use receiver =
-        unwrap (Pipeline.openBlob "streaming-aead-triple-mac-v1" (Pipeline.blob sender) Opts.empty)
+        unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = Array.init (1 <<< 20) (fun i -> byte (i % 251))
 
@@ -28,7 +28,7 @@ let ``pump round trip 1 MiB`` () =
 let ``pump matches one-shot`` () =
     use sender = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" Opts.empty)
     use receiver =
-        unwrap (Pipeline.openBlob "streaming-aead-triple-mac-v1" (Pipeline.blob sender) Opts.empty)
+        unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = Array.init 65536 (fun i -> byte (i % 199))
     let wire = unwrap (Pipeline.encryptStreamOneShot sender plain)
@@ -44,7 +44,7 @@ let ``pump matches one-shot`` () =
 let ``transform adapter round trip`` () =
     use sender = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" Opts.empty)
     use receiver =
-        unwrap (Pipeline.openBlob "streaming-aead-triple-mac-v1" (Pipeline.blob sender) Opts.empty)
+        unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = payload 65536 0xF5AA55AAUL
     let plainChunks = plain |> Array.chunkBySize 4099 |> Seq.ofArray

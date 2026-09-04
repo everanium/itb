@@ -4,12 +4,14 @@
  * Subcommands:
  *
  *   eitb version                                   library + binding versions
- *   eitb hashes                                    shipped hash primitive roster
+ *   eitb profiles                                  registered profile catalogue
  *   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
  *   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
  *
  * `encrypt` prints the session blob to stderr as hex; feed that hex
- * back to `decrypt` on the receiving side.
+ * back to `decrypt` on the receiving side. `profiles` lists the
+ * registered profile catalogue one name per line; the profiles that
+ * carry a cipher surface are the ones `encrypt` / `decrypt` accept.
  */
 
 import Foundation
@@ -22,7 +24,7 @@ func errPrint(_ text: String) {
 func usage() -> Int32 {
     errPrint("""
     usage: eitb version
-           eitb hashes
+           eitb profiles
            eitb encrypt <profile> <in-file> <out-file>
            eitb decrypt <profile> <blob-hex> <in-file> <out-file>
     """)
@@ -104,17 +106,18 @@ func cmdVersion() -> Int32 {
     return 0
 }
 
-func cmdHashes() -> Int32 {
-    for i in 0..<ItbRuntime.hashCount {
-        guard let name = ItbRuntime.hashName(i) else {
-            errPrint("eitb: hashName(\(i)) failed")
-            return 1
+/// Prints the registered profile catalogue one name per line in the
+/// sorted order `profiles()` returns.
+func cmdProfiles() -> Int32 {
+    do {
+        for name in try profiles() {
+            print(name)
         }
-        let idx = String(i).padding(toLength: 2, withPad: " ", startingAt: 0)
-        let padded = name.padding(toLength: 12, withPad: " ", startingAt: 0)
-        print("\(idx)  \(padded) \(ItbRuntime.hashWidth(i)) bits")
+        return 0
+    } catch {
+        errPrint("eitb: profiles: \(error)")
+        return 1
     }
-    return 0
 }
 
 func cmdEncrypt(_ profile: String, _ inFile: String, _ outFile: String) -> Int32 {
@@ -130,7 +133,7 @@ func cmdEncrypt(_ profile: String, _ inFile: String, _ outFile: String) -> Int32
         guard writeFile(outFile, wire) else {
             return 1
         }
-        errPrint(hexEncode(pipe.blob))
+        errPrint(hexEncode(try pipe.save()))
         print("encrypted \(inFile) -> \(outFile) (\(plain.count) -> \(wire.count) bytes)")
         return 0
     } catch {
@@ -150,7 +153,9 @@ func cmdDecrypt(_ profile: String, _ blobHex: String,
         return 1
     }
     do {
-        let pipe = try Pipeline(open: profile, blob: blob)
+        // The profile shape travels inside the blob; the profile
+        // argument only selects the Single Message or streaming pair.
+        let pipe = try Pipeline(load: blob)
         let plain = isStreamingProfile(profile)
             ? try pipe.decryptStreamPump(wire)
             : try pipe.decryptMessage(wire)
@@ -169,8 +174,8 @@ let args = CommandLine.arguments
 switch (args.count, args.count > 1 ? args[1] : "") {
 case (2, "version"):
     exit(cmdVersion())
-case (2, "hashes"):
-    exit(cmdHashes())
+case (2, "profiles"):
+    exit(cmdProfiles())
 case (5, "encrypt"):
     exit(cmdEncrypt(args[2], args[3], args[4]))
 case (6, "decrypt"):

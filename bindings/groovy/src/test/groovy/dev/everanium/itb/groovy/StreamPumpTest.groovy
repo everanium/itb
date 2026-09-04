@@ -18,7 +18,7 @@ class StreamPumpTest {
     @Test
     void pumpRoundTripOneMiB() {
         Pipeline.withPipeline(PROFILE) { Pipeline sender ->
-            Pipeline.withOpened(PROFILE, sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = new byte[1 << 20]
                 for (int i = 0; i < plain.length; i++) {
                     plain[i] = (byte) (i % 251)
@@ -38,7 +38,7 @@ class StreamPumpTest {
     @Test
     void pumpMatchesOneShot() {
         Pipeline.withPipeline(PROFILE) { Pipeline sender ->
-            Pipeline.withOpened(PROFILE, sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = MessageTest.payload(65_536, 199)
                 byte[] wire = sender.encryptStreamOneShot(plain)
 
@@ -54,7 +54,7 @@ class StreamPumpTest {
     @Test
     void extensionMethodsRoundTrip() {
         Pipeline.withPipeline(PROFILE) { Pipeline sender ->
-            Pipeline.withOpened(PROFILE, sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 // byte[] sugar (Single Message via the singlemsg path
                 // is covered elsewhere; here the stream extensions).
                 byte[] plain = MessageTest.payload(300_000, 0x5eed)
@@ -73,7 +73,7 @@ class StreamPumpTest {
     @Test
     void byteArrayExtensionRoundTrip() {
         Pipeline.withPipeline('singlemsg-triple-mac-v1') { Pipeline sender ->
-            Pipeline.withOpened('singlemsg-triple-mac-v1', sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = 'extension sugar payload'.getBytes('UTF-8')
                 byte[] wire = plain.encryptWith(sender)
                 assertArrayEquals(plain, wire.decryptWith(receiver))

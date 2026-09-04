@@ -19,6 +19,9 @@ abstract final class Status {
   static const int seedWidthMix = 8;
   static const int badMac = 9;
   static const int macFailure = 10;
+  static const int blobMalformedRecipe = 11;
+  static const int recipePrimitiveUnknown = 12;
+  static const int unknownProfile = 13;
   static const int blobModeMismatch = 19;
   static const int blobMalformed = 20;
   static const int blobVersionTooNew = 21;
@@ -42,6 +45,10 @@ const Map<int, String> _labels = {
   Status.seedWidthMix: 'seed width mismatch',
   Status.badMac: 'unknown MAC name or invalid MAC handle',
   Status.macFailure: 'MAC verification failed',
+  Status.blobMalformedRecipe: 'blob profile record invalid',
+  Status.recipePrimitiveUnknown:
+      'blob profile record names a primitive absent from the local registries',
+  Status.unknownProfile: 'unknown profile name',
   Status.blobModeMismatch: 'blob mode mismatch',
   Status.blobMalformed: 'malformed state blob',
   Status.blobVersionTooNew: 'blob version too new',
