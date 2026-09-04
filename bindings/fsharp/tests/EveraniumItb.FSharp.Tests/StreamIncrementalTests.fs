@@ -35,7 +35,7 @@ let ``incremental tiny batches`` () =
     // Small chunk size so the 64 KiB payload spans many chunks.
     let opts = Opts.empty |> Opts.withChunkSize 4096L
     use sender = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" opts)
-    use receiver = unwrap (Pipeline.openBlob "streaming-aead-triple-mac-v1" (Pipeline.blob sender) opts)
+    use receiver = unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = Array.init 65536 (fun i -> byte (i % 241))
 
@@ -67,7 +67,7 @@ let ``dispose mid-flight then reuse pipeline`` () =
 
     // The Pipeline stays usable after the cancelled session.
     use receiver =
-        unwrap (Pipeline.openBlob "streaming-aead-triple-mac-v1" (Pipeline.blob sender) Opts.empty)
+        unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = Encoding.UTF8.GetBytes "after cancel"
     let wire = unwrap (Pipeline.encryptMessage sender plain)

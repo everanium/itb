@@ -11,12 +11,13 @@
 //   import 'package:itb/itb.dart';
 //
 //   final sender = Itb.create('singlemsg-triple-mac-v1');
-//   final receiver = Itb.open('singlemsg-triple-mac-v1', sender.blob);
+//   final receiver = Itb.load(sender.save());
 //   final wire = sender.encryptMessage(plain);
 //   final back = receiver.decryptMessage(wire);
 
 import 'dart:typed_data';
 
+import 'src/pipeline.dart' as p;
 import 'src/pipeline.dart';
 import 'src/version.dart' as rt;
 
@@ -27,35 +28,38 @@ export 'src/version.dart';
 
 /// Convenience facade over the package's top-level surface.
 abstract final class Itb {
-  /// Shipped profile identifiers (mirrors the Go `triple` registry).
-  /// The list is data for discovery / tooling; every name is still
-  /// validated by the Go side at [create] / [open] time. The
-  /// blob-only profile exposes no cipher surface.
-  static const List<String> profiles = [
-    'streaming-aead-triple-mac-v1',
-    'streaming-noaead-triple-v1',
-    'singlemsg-triple-mac-v1',
-    'singlemsg-triple-nomac-v1',
-    'streaming-aead-triple-mac-mixed-v1',
-    'streaming-noaead-triple-mixed-v1',
-    'singlemsg-triple-mac-mixed-v1',
-    'singlemsg-triple-nomac-mixed-v1',
-    'blob-triple-mac-v1',
-  ];
+  /// The sorted names of every registered profile (the shipped
+  /// catalogue plus prior [register] calls), read from the library
+  /// via `ITB_Triple_Profiles`. The blob-only profile exposes no
+  /// cipher surface.
+  static List<String> profiles() => p.profiles();
 
   /// Constructs a fresh [Pipeline] against the named profile.
   static Pipeline create(String profile, [Opts? opts]) =>
       Pipeline.create(profile, opts);
 
-  /// Reconstructs a [Pipeline] from a blob produced by [create] or
-  /// [Pipeline.rekey].
-  static Pipeline open(String profile, Uint8List blob,
-          {Opts? opts, Uint8List? permMaster, Uint8List? wrapMaster}) =>
-      Pipeline.open(profile, blob,
-          opts: opts, permMaster: permMaster, wrapMaster: wrapMaster);
+  /// Reconstructs a [Pipeline] from a blob produced by
+  /// [Pipeline.save] or [Pipeline.rekey].
+  static Pipeline load(Uint8List blob,
+          {Uint8List? permMaster, Uint8List? wrapMaster}) =>
+      Pipeline.load(blob, permMaster: permMaster, wrapMaster: wrapMaster);
 
-  /// The shipped hash primitive roster in canonical registry order.
-  static List<rt.HashInfo> hashes() => rt.listHashes();
+  /// [load] for a blob stored in a file; the file is read inside the
+  /// library.
+  static Pipeline loadF(String path,
+          {Uint8List? permMaster, Uint8List? wrapMaster}) =>
+      Pipeline.loadF(path, permMaster: permMaster, wrapMaster: wrapMaster);
+
+  /// Decodes the blob's embedded profile record without opening a
+  /// Pipeline.
+  static Profile inspect(Uint8List blob) => p.inspect(blob);
+
+  /// Registers [profile] under [name] (see [p.register]).
+  static void register(String name, Profile profile) =>
+      p.register(name, profile);
+
+  /// Looks up a registered profile by name (see [p.lookup]).
+  static Profile lookup(String name) => p.lookup(name);
 
   /// The libitb library version string.
   static String version() => rt.libVersion();

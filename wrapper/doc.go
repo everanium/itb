@@ -23,12 +23,12 @@
 //   - Areion-SoEM-256 / Areion-SoEM-512 (16-byte nonce) — AES-round permutation
 //     keyed-PRF driving a PRF-CTR keystream via the ITB registry HashFunc
 //     factories.
+//   - BLAKE2b-256 / BLAKE2b-512 / BLAKE2s / BLAKE3 (16-byte nonce) — upstream
+//     keyed-hash mode driving a PRF-CTR keystream.
+//   - AES-128-CTR (16-byte nonce) — stdlib, AES-NI accelerated.
 //   - SipHash-2-4 in CTR mode (16-byte nonce) — github.com/dchest/siphash PRF
 //     with a custom counter loop, sound under the standard PRF assumption
 //     SipHash-2-4 already satisfies as a 128-bit-keyed PRF/MAC.
-//   - AES-128-CTR (16-byte nonce) — stdlib, AES-NI accelerated.
-//   - BLAKE2b-256 / BLAKE2b-512 / BLAKE2s / BLAKE3 (16-byte nonce) — upstream
-//     keyed-hash mode driving a PRF-CTR keystream.
 //   - ChaCha20 (RFC 8439) (12-byte nonce) — golang.org/x/crypto/chacha20.
 //
 // Per-stream nonce hygiene: every Wrap entry point generates a fresh CSPRNG
@@ -65,14 +65,13 @@
 // input smaller than that threshold or use the [NewWrapWriter] /
 // [NewUnwrapReader] streaming shape which is single-goroutine.
 //
-// Registry access: [CipherNames] enumerates the canonical outer-cipher
-// alphabet in the same order the shared library's ITB_CipherName
-// iteration surface exposes; each entry appears as a matching
-// [CipherAreion256] / [CipherAreion512] / [CipherBLAKE2b256] /
-// [CipherBLAKE2b512] / [CipherBLAKE2s] / [CipherBLAKE3] /
-// [CipherAES128CTR] / [CipherSipHash24] / [CipherChaCha20] name
-// constant. [KeySize] and [NonceSize] delegate to the ctr package for
-// per-primitive byte lengths.
+// Registry access: [CipherNames] enumerates the canonical outer cipher
+// alphabet as a snapshot of the shared
+// [github.com/everanium/itb/hashes.Registry] names in registry order;
+// each entry is named by a matching
+// [github.com/everanium/itb/hashes.CipherAES128CTR]-style constant in
+// the hashes package. [KeySize] and [NonceSize] delegate to the ctr
+// package for per-primitive byte lengths.
 //
 // Key management: [GenerateKey] draws a fresh CSPRNG key of the
 // primitive's canonical size; [DeriveKey] runs the [github.com/everanium/itb/kdf]

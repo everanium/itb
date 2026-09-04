@@ -12,11 +12,9 @@ import (
 // constellation for a specific Pipeline instance via Opts, without
 // registering a new profile.
 //
-// Round-trip discipline: the same override must be passed to Open as
-// to Init so both sides reconstruct the same effective shape. This
-// mirrors how the shipping mixed profiles work — sender and receiver
-// agree on the constellation, only here the agreement is per-call
-// rather than baked into the profile name.
+// Round-trip discipline: the resolved constellation travels in the
+// blob's record, so Load reconstructs the same effective shape
+// without the receiver repeating the override.
 func TestOptsMixedHashesOverrideSingleToMixed(t *testing.T) {
 	// ProfileStreamingAEADTripleMACV1 is single-primitive, width 512
 	// (InnerHash = "areion512"). Override to an 8-slot width-512
@@ -33,9 +31,9 @@ func TestOptsMixedHashesOverrideSingleToMixed(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := Open(ProfileStreamingAEADTripleMACV1, blob, opts)
+	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(single-primitive profile, Opts{MixedHashes}): %v", err)
+		t.Fatalf("Load(single-primitive profile, Opts{MixedHashes}): %v", err)
 	}
 	defer receiver.Close()
 
@@ -74,9 +72,9 @@ func TestOptsMixedHashesOverrideMixedToDifferentMixed(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := Open(ProfileStreamingAEADTripleMACMixedV1, blob, opts)
+	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(mixed profile, Opts{MixedHashes}): %v", err)
+		t.Fatalf("Load(mixed profile, Opts{MixedHashes}): %v", err)
 	}
 	defer receiver.Close()
 
@@ -98,7 +96,7 @@ func TestOptsMixedHashesOverrideMixedToDifferentMixed(t *testing.T) {
 // validation surfaces at Init: an override slot whose primitive width
 // differs from the profile's effective width is rejected with a clear
 // error naming the offending slot. Semantics match the
-// RegisterProfile-side validation, which runs in allocEightSeedsMixed
+// Register-side validation, which runs in allocEightSeedsMixed
 // on the resolved constellation regardless of whether the override
 // came from Opts or from the profile default.
 func TestOptsMixedHashesRejectsWidthMismatch(t *testing.T) {
@@ -171,9 +169,9 @@ func TestOptsMixedHashesEmptyDefersToProfile(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := Open(ProfileStreamingAEADTripleMACMixedV1, blob, opts)
+	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(mixed profile, Opts{}): %v", err)
+		t.Fatalf("Load(mixed profile, Opts{}): %v", err)
 	}
 	defer receiver.Close()
 
@@ -212,9 +210,9 @@ func TestOptsMixedHashesWinsOverInnerHash(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := Open(ProfileStreamingAEADTripleMACV1, blob, opts)
+	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	defer receiver.Close()
 

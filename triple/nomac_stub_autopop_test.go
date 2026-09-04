@@ -50,8 +50,8 @@ func TestTagStubSizeAutoPopulation(t *testing.T) {
 	prof := baseValidProfile()
 	prof.Mode = modeSingleMsgMAC
 	prof.MacName = "stub48mac"
-	if err := RegisterProfile(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile: %v", err)
+	if err := Register(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register: %v", err)
 	}
 
 	sender, blob, err := Init(name, Opts{})
@@ -63,7 +63,7 @@ func TestTagStubSizeAutoPopulation(t *testing.T) {
 		t.Fatalf("Init auto-population: TagStubSize = %d, want 48", got)
 	}
 
-	receiver, err := Open(name, blob, Opts{})
+	receiver, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open(%q): %v", name, err)
 	}
@@ -97,8 +97,8 @@ func TestTagStubSizeShippedDefault(t *testing.T) {
 	nameMAC := "userns-stub-shipped-mac-v1"
 	profMAC := baseValidProfile()
 	profMAC.Mode = modeSingleMsgMAC
-	if err := RegisterProfile(nameMAC, profMAC); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameMAC, err)
+	if err := Register(nameMAC, profMAC); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameMAC, err)
 	}
 	pMAC, _, err := Init(nameMAC, Opts{})
 	if err != nil {
@@ -113,8 +113,8 @@ func TestTagStubSizeShippedDefault(t *testing.T) {
 	profNoMAC := baseValidProfile()
 	profNoMAC.Mode = modeSingleMsgNoMAC
 	profNoMAC.MacName = ""
-	if err := RegisterProfile(nameNoMAC, profNoMAC); err != nil && !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile(%q): %v", nameNoMAC, err)
+	if err := Register(nameNoMAC, profNoMAC); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register(%q): %v", nameNoMAC, err)
 	}
 	pNoMAC, _, err := Init(nameNoMAC, Opts{})
 	if err != nil {

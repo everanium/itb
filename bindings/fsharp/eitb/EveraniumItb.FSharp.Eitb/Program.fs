@@ -3,12 +3,14 @@
 // Subcommands:
 //
 //   eitb version                                   library + binding versions
-//   eitb hashes                                    shipped hash primitive roster
+//   eitb profiles                                  registered profile catalogue
 //   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 //   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex
-// back to `decrypt` on the receiving side.
+// back to `decrypt` on the receiving side. `profiles` lists the
+// registered profile catalogue one name per line; the profiles that
+// carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 module EveraniumItb.FSharp.Eitb.Program
 
@@ -21,8 +23,10 @@ let private cmdVersion () : int =
     printfn "itb-fsharp %s" Runtime.BindingVersion
     0
 
-let private cmdHashes () : int =
-    HashRoster.print ()
+// Prints the registered profile catalogue one name per line in the
+// sorted order Pipeline.profiles returns.
+let private cmdProfiles () : int =
+    Pipeline.profiles () |> ItbError.get |> List.iter (printfn "%s")
     0
 
 // Profiles whose canonical name begins with "streaming-" route
@@ -53,7 +57,8 @@ let private cmdEncrypt (profile: string) (inFile: string) (outFile: string) : in
 
             ensureParentDir outFile
             File.WriteAllBytes(outFile, wire)
-            eprintfn "%s" (Convert.ToHexStringLower(Pipeline.blob pipe))
+            let! blob = Pipeline.save pipe
+            eprintfn "%s" (Convert.ToHexStringLower blob)
             printfn "encrypted %s -> %s (%d -> %d bytes)" inFile outFile plain.Length wire.Length
         }
     )
@@ -66,7 +71,7 @@ let private cmdDecrypt (profile: string) (blobHex: string) (inFile: string) (out
 
     ItbError.get (
         itb {
-            use! pipe = Pipeline.openBlob profile blob Opts.empty
+            use! pipe = Pipeline.load blob
 
             let! plain =
                 if isStreamingProfile profile then
@@ -90,12 +95,12 @@ let main args =
     try
         match List.ofArray args with
         | [ "version" ] -> cmdVersion ()
-        | [ "hashes" ] -> cmdHashes ()
+        | [ "profiles" ] -> cmdProfiles ()
         | [ "encrypt"; profile; inFile; outFile ] -> cmdEncrypt profile inFile outFile
         | [ "decrypt"; profile; blobHex; inFile; outFile ] -> cmdDecrypt profile blobHex inFile outFile
         | _ ->
             eprintfn "usage: eitb version"
-            eprintfn "       eitb hashes"
+            eprintfn "       eitb profiles"
             eprintfn "       eitb encrypt <profile> <in-file> <out-file>"
             eprintfn "       eitb decrypt <profile> <blob-hex> <in-file> <out-file>"
             2

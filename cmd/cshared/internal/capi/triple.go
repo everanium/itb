@@ -2,6 +2,7 @@ package capi
 
 import (
 	"errors"
+	"io/fs"
 	"runtime/cgo"
 	"strings"
 
@@ -21,7 +22,7 @@ import (
 //
 // The returned blob bytes carry the caller-visible session state —
 // distribute them to the receiver, which reconstructs an equivalent
-// Pipeline via [TripleOpen]. Same caller-allocated-buffer convention
+// Pipeline via [TripleLoad]. Same caller-allocated-buffer convention
 // as the Encrypt / Decrypt families: the returned n reports bytes
 // written on success or the required capacity on
 // StatusBufferTooSmall.
@@ -52,26 +53,22 @@ func TripleInit(profile string, opts string, blobOut []byte) (id TripleHandleID,
 	return TripleHandleID(cgo.NewHandle(h)), len(blob), StatusOK
 }
 
-// TripleOpen reconstructs a [triple.Pipeline] from a blob produced by
-// [TripleInit] or [TripleRekey] and returns a stable handle.
+// TripleLoad reconstructs a [triple.Pipeline] from a blob produced by
+// [TripleInit], [TripleSave], or [TripleRekey] and returns a stable
+// handle. The blob is self-describing — no profile name, no opts.
 //
 // The masters argument carries either zero or two byte slices in the
 // (PermMaster, WrapMaster) order — zero to use the blob-embedded
 // masters as-is, two to override them (the rekey-on-import path).
 // Any other arity is rejected via StatusBadInput.
-func TripleOpen(profile string, blob []byte, opts string, masters ...[]byte) (id TripleHandleID, st Status) {
+func TripleLoad(blob []byte, masters ...[]byte) (id TripleHandleID, st Status) {
 	defer recoverPanic(&st, StatusInternal)
 
-	parsed, err := parseTripleOpts(opts)
-	if err != nil {
-		setLastErr(StatusBadInput)
-		return 0, StatusBadInput
-	}
 	if len(masters) != 0 && len(masters) != 2 {
 		setLastErr(StatusBadInput)
 		return 0, StatusBadInput
 	}
-	pipe, err := triple.Open(profile, blob, parsed, masters...)
+	pipe, err := triple.Load(blob, masters...)
 	if err != nil {
 		s := mapTripleError(err)
 		setLastErr(s)
@@ -79,6 +76,118 @@ func TripleOpen(profile string, blob []byte, opts string, masters ...[]byte) (id
 	}
 	h := &TripleHandle{pipe: pipe}
 	return TripleHandleID(cgo.NewHandle(h)), StatusOK
+}
+
+// TripleLoadF is [TripleLoad] for a blob stored in a file: the read
+// happens inside the library ([triple.LoadF]). File-system failures
+// (missing file, permission denied) map to StatusBadInput with the
+// raw os diagnostic in [LastError].
+func TripleLoadF(path string, masters ...[]byte) (id TripleHandleID, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	if len(masters) != 0 && len(masters) != 2 {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	pipe, err := triple.LoadF(path, masters...)
+	if err != nil {
+		s := mapTripleError(err)
+		setLastErr(s)
+		return 0, s
+	}
+	h := &TripleHandle{pipe: pipe}
+	return TripleHandleID(cgo.NewHandle(h)), StatusOK
+}
+
+// TripleSave writes the handle's current blob — the bytes
+// [TripleInit] returned, the bytes [TripleLoad] re-marshalled, or the
+// bytes of the latest [TripleRekey] — into blobOut under the
+// caller-allocated-buffer convention of [TripleRekey]: n reports the
+// bytes written on success or the required capacity on
+// StatusBufferTooSmall. A closed handle returns StatusTripleClosed.
+func TripleSave(id TripleHandleID, blobOut []byte) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	h, st := resolveTriple(id)
+	if st != StatusOK {
+		return 0, st
+	}
+	blob := h.pipe.Save()
+	if blob == nil {
+		setLastErr(StatusTripleClosed)
+		return 0, StatusTripleClosed
+	}
+	defer clear(blob)
+	if len(blob) > len(blobOut) {
+		setLastErr(StatusBufferTooSmall)
+		return len(blob), StatusBufferTooSmall
+	}
+	copy(blobOut, blob)
+	return len(blob), StatusOK
+}
+
+// TripleSaveF writes the handle's current blob to path inside the
+// library ([triple.Pipeline.SaveF], mode 0600). A closed handle
+// returns StatusTripleClosed; file-system failures map to
+// StatusBadInput with the raw os diagnostic in [LastError].
+func TripleSaveF(id TripleHandleID, path string) (st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	h, st := resolveTriple(id)
+	if st != StatusOK {
+		return st
+	}
+	if err := h.pipe.SaveF(path); err != nil {
+		s := mapTripleError(err)
+		setLastErr(s)
+		return s
+	}
+	return StatusOK
+}
+
+// TripleInspect decodes the blob's wrap-layer without opening a
+// Pipeline and writes the embedded [triple.Profile] record as its
+// JSON encoding (see [triple.Profile.MarshalJSON] for the key set,
+// name included) into jsonOut under the caller-allocated-buffer
+// convention: n reports the bytes written on success or the required
+// capacity on StatusBufferTooSmall. No registry read, no primitive
+// probe — a name the local build lacks is returned unchanged.
+func TripleInspect(blob []byte, jsonOut []byte) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	prof, err := triple.Inspect(blob)
+	if err != nil {
+		s := mapTripleError(err)
+		setLastErr(s)
+		return 0, s
+	}
+	return writeJSONOut(prof, jsonOut)
+}
+
+// TripleMaxWorkers sets the handle's worker cap for every subsequent
+// cipher call ([triple.Pipeline.MaxWorkers]). n is clamped exactly as
+// in Go (n ≤ 0 → auto, n > 256 → 256), never rejected; the status
+// exists for the handle: StatusBadHandle for an unknown handle,
+// StatusTripleClosed for a closed one. Works identically on a handle
+// from [TripleInit], [TripleLoad], or [TripleLoadF].
+func TripleMaxWorkers(id TripleHandleID, n int) (st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	h, st := resolveTriple(id)
+	if st != StatusOK {
+		return st
+	}
+	// A closed Pipeline ignores MaxWorkers by design; the FFI caller
+	// needs the signal, so probe the closed state through Save (nil
+	// after Close) and wipe the probe copy.
+	blob := h.pipe.Save()
+	if blob == nil {
+		setLastErr(StatusTripleClosed)
+		return StatusTripleClosed
+	}
+	clear(blob)
+	h.pipe.MaxWorkers(n)
+	return StatusOK
 }
 
 // TripleRekey swaps the Pipeline's parallax + wrapper masters and
@@ -281,18 +390,26 @@ func mapTripleError(err error) Status {
 		return StatusOK
 	}
 	msg := err.Error()
-	// Sentinels via string match — the triple package's error values
-	// are unwrapped strings (see triple/pipeline.go / stream.go /
-	// message.go); a substring check is enough here and stays stable
-	// across future error-wrapping refactors.
+	// The two record sentinels are %w-wrapped by the Load validator
+	// and are matched via errors.Is ahead of every identity branch;
+	// the remaining triple sentinels are unwrapped values (see
+	// triple/pipeline.go / stream.go / message.go) and identity
+	// comparison is enough.
 	switch {
+	case errors.Is(err, triple.ErrBlobMalformedRecipe):
+		setLastErrMessageTriple(msg)
+		return StatusBlobMalformedRecipe
+	case errors.Is(err, triple.ErrRecipePrimitiveUnknown):
+		setLastErrMessageTriple(msg)
+		return StatusRecipePrimitiveUnknown
 	case err == triple.ErrClosed:
 		return StatusTripleClosed
+	case err == triple.ErrUnknownProfile:
+		setLastErrMessageTriple(msg)
+		return StatusUnknownProfile
 	case err == triple.ErrIdenticalMasters,
 		err == triple.ErrMissingMasters,
 		err == triple.ErrMastersArity,
-		err == triple.ErrUnknownProfile,
-		err == triple.ErrBlobMismatch,
 		err == triple.ErrBlobVersion,
 		err == triple.ErrBlobMalformed:
 		setLastErrMessageTriple(msg)
@@ -309,15 +426,23 @@ func mapTripleError(err error) Status {
 		setLastErrMessageTriple(msg)
 		return StatusMACFailure
 	}
+	// File-system failures from TripleLoadF / TripleSaveF (missing
+	// file, permission denied, no space) are caller-side input errors
+	// at the FFI boundary; the raw os diagnostic rides in lastErr.
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		setLastErrMessageTriple(msg)
+		return StatusBadInput
+	}
 	// Mixed-primitive validation surface: allocEightSeedsMixed +
 	// importInnerBlobMixed emit fmt.Errorf messages naming the
 	// offending mixedHashes slot when a per-call Opts.MixedHashes
 	// override (or a resolved profile default) fails the
 	// non-empty / hashes.Find / width-match rules. These are
 	// user-input errors regardless of whether they arrived via
-	// RegisterProfile (already routed to StatusBadInput at the
-	// TripleRegisterProfile boundary) or via per-call
-	// TripleInit / TripleOpen; route them uniformly here.
+	// Register (already routed to StatusBadInput at the
+	// TripleRegister boundary) or via per-call TripleInit; route them
+	// uniformly here.
 	if strings.Contains(msg, "mixedHashes") {
 		setLastErrMessageTriple(msg)
 		return StatusBadInput

@@ -36,7 +36,7 @@ class MessageSuite extends ItbSuite:
   test("message round trip on every shipped profile") {
     for profile <- profiles do
       Using.resource(ok(Pipeline.init(profile))) { sender =>
-        Using.resource(ok(Pipeline.open(profile, sender.blob))) { receiver =>
+        Using.resource(ok(Pipeline.load(ok(sender.save())))) { receiver =>
           for size <- Seq(4 * 1024, 256 * 1024) do
             val plain = MessageSuite.payload(size, size.toLong)
             val wire = ok(sender.encryptMessage(plain))

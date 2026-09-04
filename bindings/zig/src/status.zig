@@ -3,8 +3,9 @@
 const std = @import("std");
 const ffi = @import("ffi.zig").c;
 
-/// Mirrors the C binding's `itb_status` numerically. Codes 11..17 are
-/// a reserved sentinel block; 19..22 belong to the native Blob surface
+/// Mirrors the C binding's `itb_status` numerically. Codes 11..13 are
+/// the Triple blob-record / registry sentinels, 14..17 a reserved
+/// block; 19..22 belong to the native Blob surface
 /// (not wrapped here but relayed verbatim if libitb ever returns
 /// them). The enum is non-exhaustive so an unknown future code is
 /// carried through rather than trapping.
@@ -20,9 +21,9 @@ pub const Status = enum(c_uint) {
     seed_width_mix = 8,
     bad_mac = 9,
     mac_failure = 10,
-    reserved_11 = 11,
-    reserved_12 = 12,
-    reserved_13 = 13,
+    blob_malformed_recipe = 11,
+    recipe_primitive_unknown = 12,
+    unknown_profile = 13,
     reserved_14 = 14,
     reserved_15 = 15,
     reserved_16 = 16,

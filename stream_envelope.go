@@ -83,9 +83,9 @@ func validateTagStubSizeCfg(cfg *Config) error {
 //     `side * side * 8` container-size arithmetic in
 //     [calcContainerSize3Cfg].
 //   - MaxWorkers: non-negative. Zero defers to runtime.NumCPU; a
-//     positive value is clamped at 256 at consumption. Negative
-//     values leak into the blob JSON verbatim and are rejected on
-//     the receiver's import.
+//     positive value is clamped at 256 at consumption. The field is
+//     per-machine tuning and never travels in a blob; the guard keeps
+//     a negative value out of the Cfg-aware entry points.
 //
 // Consulted by every Cfg-aware Encrypt entry point in the itb-root
 // package and by every [Blob128.Export3Cfg] / [Blob256.Export3Cfg] /

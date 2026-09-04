@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/crypto/chacha20"
 
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
 )
 
@@ -15,11 +16,11 @@ import (
 // block counter jump plus an intra-block remainder.
 func streamBlockSize(name string) (int, error) {
 	switch name {
-	case CipherAES128CTR, CipherSipHash24:
+	case hashes.CipherAES128CTR, hashes.CipherSipHash24:
 		return 16, nil
-	case CipherChaCha20:
+	case hashes.CipherChaCha20:
 		return 64, nil
-	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return hashprf.BlockSize(name)
 	default:
 		return 0, fmt.Errorf("ctr: unknown cipher %q", name)
@@ -77,7 +78,7 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 
 	// AES-CTR cannot be re-seeked after construction; build it with an
 	// offset IV instead.
-	if name == CipherAES128CTR {
+	if name == hashes.CipherAES128CTR {
 		if len(key) != 16 {
 			return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
 		}

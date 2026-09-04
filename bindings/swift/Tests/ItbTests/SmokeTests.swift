@@ -1,5 +1,5 @@
 /*
- * SmokeTests.swift — Init → blob → Open → encryptMessage →
+ * SmokeTests.swift — Init → save → load → encryptMessage →
  * decryptMessage round trip, plus the Result-shaped and async
  * variants of the same path.
  */
@@ -11,10 +11,9 @@ import XCTest
 final class SmokeTests: XCTestCase {
     func testMessageRoundTrip() throws {
         let sender = try Pipeline(profile: "singlemsg-triple-mac-v1")
-        XCTAssertFalse(sender.blob.isEmpty, "blob must be non-empty")
+        XCTAssertFalse(try sender.save().isEmpty, "blob must be non-empty")
 
-        let receiver = try Pipeline(open: "singlemsg-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = Data("smoke round-trip payload".utf8)
         let wire = try sender.encryptMessage(plain)
@@ -26,8 +25,7 @@ final class SmokeTests: XCTestCase {
 
     func testMessageRoundTripResult() throws {
         let sender = try Pipeline(profile: "singlemsg-triple-mac-v1")
-        let receiver = try Pipeline(open: "singlemsg-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(4096, seed: 0x5EED)
         switch sender.encryptMessageResult(plain) {
@@ -45,8 +43,7 @@ final class SmokeTests: XCTestCase {
 
     func testMessageRoundTripAsync() async throws {
         let sender = try Pipeline(profile: "singlemsg-triple-mac-v1")
-        let receiver = try Pipeline(open: "singlemsg-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(65536, seed: 0xA51C)
         let wire = try await sender.encryptMessage(plain)

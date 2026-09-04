@@ -1,22 +1,26 @@
-//! Init → blob → Open → encryptMessage → decryptMessage round trip.
+//! Init → save → load → encryptMessage → decryptMessage round trip.
 
 const std = @import("std");
 const itb = @import("itb");
+
+/// Save → Load handshake: a receiver reconstructed from the sender's
+/// current blob.
+fn loadFrom(gpa: std.mem.Allocator, sender: *const itb.Pipeline) !itb.Pipeline {
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    return itb.Pipeline.load(gpa, blob, null);
+}
 
 test "smoke round trip" {
     const gpa = std.testing.allocator;
 
     var sender = try itb.Pipeline.init(gpa, "singlemsg-triple-mac-v1", null);
     defer sender.deinit();
-    try std.testing.expect(sender.blob().len > 0);
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    try std.testing.expect(blob.len > 0);
 
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "singlemsg-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = "smoke round-trip payload";

@@ -18,7 +18,7 @@ class StreamCancelSuite extends ItbSuite:
       }
 
       // The Pipeline stays usable after the cancelled session.
-      Using.resource(ok(Pipeline.open("streaming-aead-triple-mac-v1", sender.blob))) {
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) {
         receiver =>
           val plain = "after cancel".getBytes("UTF-8")
           val wire = ok(sender.encryptMessage(plain))

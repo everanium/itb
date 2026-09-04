@@ -1,4 +1,4 @@
-//! Init → blob → Open → EncryptMessage → DecryptMessage round trip.
+//! Init → save → Load → EncryptMessage → DecryptMessage round trip.
 
 use itb::{OptsBuilder, Pipeline};
 
@@ -6,9 +6,10 @@ use itb::{OptsBuilder, Pipeline};
 fn smoke_round_trip() {
     let opts = OptsBuilder::new();
     let sender = Pipeline::init("singlemsg-triple-mac-v1", &opts).unwrap();
-    assert!(!sender.blob().is_empty());
+    let blob = sender.save().unwrap();
+    assert!(!blob.is_empty());
 
-    let receiver = Pipeline::open("singlemsg-triple-mac-v1", sender.blob(), &opts, None).unwrap();
+    let receiver = Pipeline::load(&blob, None).unwrap();
 
     let plain = b"smoke round-trip payload".to_vec();
     let wire = sender.encrypt_message(&plain).unwrap();

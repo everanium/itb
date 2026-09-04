@@ -5,6 +5,14 @@
 const std = @import("std");
 const itb = @import("itb");
 
+/// Save → Load handshake: a receiver reconstructed from the sender's
+/// current blob.
+fn loadFrom(gpa: std.mem.Allocator, sender: *const itb.Pipeline) !itb.Pipeline {
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    return itb.Pipeline.load(gpa, blob, null);
+}
+
 fn fillPayload(buf: []u8, seed: u64) void {
     var x: u64 = seed | 1;
     for (buf) |*b| {
@@ -20,13 +28,7 @@ test "stream one-shot round trip" {
 
     var sender = try itb.Pipeline.init(gpa, "streaming-aead-triple-mac-v1", null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "streaming-aead-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = try gpa.alloc(u8, 1 << 20);
@@ -47,13 +49,7 @@ test "stream one-shot wire interchanges with the pump" {
 
     var sender = try itb.Pipeline.init(gpa, "streaming-aead-triple-mac-v1", null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "streaming-aead-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = try gpa.alloc(u8, 65536);
@@ -80,13 +76,7 @@ test "stream one-shot rejects a tampered wire" {
 
     var sender = try itb.Pipeline.init(gpa, "streaming-aead-triple-mac-v1", null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "streaming-aead-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = try gpa.alloc(u8, 65536);

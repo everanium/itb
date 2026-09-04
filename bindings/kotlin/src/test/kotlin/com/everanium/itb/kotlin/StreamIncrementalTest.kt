@@ -15,7 +15,7 @@ class StreamIncrementalTest {
     @Test
     fun oddBatchSizesRoundTrip() {
         Pipeline.init("streaming-aead-triple-mac-v1").use { sender ->
-            Pipeline.open("streaming-aead-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = ByteArray(200_003) { (it * 131 % 241).toByte() }
 
                 // Feed in deliberately awkward batches: 1, 2, 3, 5, 7,

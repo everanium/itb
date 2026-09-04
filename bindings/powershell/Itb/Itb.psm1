@@ -7,11 +7,11 @@
 # string passed through to Go for validation; the binding carries no
 # ITB construction logic.
 #
-# PowerShell cannot hold ByRef-like values (ReadOnlySpan / Span), so
-# the C# Pipeline.Blob property is unreadable from script; Get-ItbBlob
-# bridges it through reflection over the backing array. Passing byte[]
-# arguments INTO span-typed parameters (EncryptMessage, Open, Rekey,
-# session Write) is handled by the PowerShell binder natively.
+# PowerShell cannot hold ByRef-like values (ReadOnlySpan / Span);
+# every C# entry consumed here returns byte[] / Profile / string
+# values. Passing byte[] arguments INTO span-typed parameters
+# (EncryptMessage, Load, Inspect, Rekey, session Write) is handled by
+# the PowerShell binder natively.
 
 Set-StrictMode -Version Latest
 
@@ -45,14 +45,6 @@ function Script:Resolve-ItbAssembly {
 
 if (-not ('Itb.Pipeline' -as [type])) {
     Add-Type -Path (Script:Resolve-ItbAssembly)
-}
-
-# Reflection bridge for the ReadOnlySpan-typed Pipeline.Blob property
-# (ByRef-like return types are not supported in PowerShell).
-$script:PipelineBlobField = [Itb.Pipeline].GetField(
-    '_blob', [System.Reflection.BindingFlags]'NonPublic,Instance')
-if ($null -eq $script:PipelineBlobField) {
-    throw 'Itb.dll layout mismatch: Pipeline._blob backing field not found.'
 }
 
 # --------------------------------------------------------------------
@@ -113,6 +105,28 @@ function Script:ConvertTo-ItbOpts {
     throw 'Opts must be an [Itb.Opts], a hashtable, or $null.'
 }
 
+# Normalizes the -Profile argument: Itb.Profile passes through, a
+# hashtable is rendered via New-ItbProfile.
+function Script:ConvertTo-ItbProfile {
+    param([object]$Profile)
+    if ($Profile -is [Itb.Profile]) {
+        return $Profile
+    }
+    if ($Profile -is [System.Collections.IDictionary]) {
+        return (New-ItbProfile -Properties $Profile)
+    }
+    throw 'Profile must be an [Itb.Profile] or a hashtable.'
+}
+
+# Folds the optional master pair into the C# (permMaster, wrapMaster)
+# arguments; both or neither.
+function Script:Assert-ItbMasters {
+    param([byte[]]$PermMaster, [byte[]]$WrapMaster)
+    if (($null -eq $PermMaster) -ne ($null -eq $WrapMaster)) {
+        throw 'PermMaster and WrapMaster must be supplied together or not at all.'
+    }
+}
+
 # --------------------------------------------------------------------
 # Opts
 # --------------------------------------------------------------------
@@ -159,6 +173,123 @@ function New-ItbOpts {
 }
 
 # --------------------------------------------------------------------
+# Profile records
+# --------------------------------------------------------------------
+
+function New-ItbProfile {
+    <#
+    .SYNOPSIS
+    Builds an [Itb.Profile] record from a hashtable.
+    .DESCRIPTION
+    Keys are the record's property names (Name, Mode, Width, Hash,
+    Hashes, KeyBits, Mac, TagStub, Chunk, Wrapper, Outer, Parallax,
+    Palette, Segment); values are assigned as-is. No validation
+    happens locally — the Go side enforces every field rule at
+    Register-ItbProfile / Import-ItbPipeline time.
+    .EXAMPLE
+    $p = New-ItbProfile @{ Mode = 'singlemsg-nomac'; Width = 512; Hash = 'areion512'; KeyBits = 1024 }
+    #>
+    [CmdletBinding()]
+    [OutputType([Itb.Profile])]
+    param(
+        [Parameter(Position = 0)]
+        [System.Collections.IDictionary]$Properties
+    )
+    $profile = [Itb.Profile]::new()
+    if ($null -ne $Properties) {
+        foreach ($key in $Properties.Keys) {
+            $value = $Properties[$key]
+            if ($value -is [System.Collections.IEnumerable] -and $value -isnot [string]) {
+                $value = [string[]]@($value | ForEach-Object { [string]$_ })
+            }
+            $profile.$key = $value
+        }
+    }
+    $profile
+}
+
+function Get-ItbProfile {
+    <#
+    .SYNOPSIS
+    Reads a profile record by registry name or from a session blob.
+    .DESCRIPTION
+    -Name wraps [Itb.Pipeline]::Lookup (an unknown name fails with
+    Status UnknownProfile). -Blob wraps [Itb.Pipeline]::Inspect —
+    the blob's embedded record is decoded without opening a Pipeline.
+    .EXAMPLE
+    (Get-ItbProfile -Name 'singlemsg-triple-mac-v1').Mode
+    .EXAMPLE
+    (Get-ItbProfile -Blob (Save-ItbPipeline $sender)).Name
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'Name')]
+    [OutputType([Itb.Profile])]
+    param(
+        [Parameter(ParameterSetName = 'Name', Mandatory, Position = 0)]
+        [string]$Name,
+
+        [Parameter(ParameterSetName = 'Blob', Mandatory)]
+        [byte[]]$Blob
+    )
+    try {
+        if ($PSCmdlet.ParameterSetName -eq 'Name') {
+            [Itb.Pipeline]::Lookup($Name)
+        }
+        else {
+            [Itb.Pipeline]::Inspect($Blob)
+        }
+    }
+    catch [System.Management.Automation.MethodInvocationException] {
+        throw (Script:Get-ItbInnerException $_)
+    }
+}
+
+function Get-ItbProfileName {
+    <#
+    .SYNOPSIS
+    Lists every registered profile name (shipped catalogue plus
+    Register-ItbProfile additions), sorted.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+    try {
+        [Itb.Pipeline]::Profiles()
+    }
+    catch [System.Management.Automation.MethodInvocationException] {
+        throw (Script:Get-ItbInnerException $_)
+    }
+}
+
+function Register-ItbProfile {
+    <#
+    .SYNOPSIS
+    Registers a profile record under a user-chosen name.
+    .DESCRIPTION
+    Wraps [Itb.Pipeline]::Register. -Profile is an [Itb.Profile]
+    (see Get-ItbProfile / New-ItbProfile) or a hashtable of record
+    properties. Every field rule is validated by Go; a duplicate
+    name fails with Status ProfileExists.
+    .EXAMPLE
+    $copy = Get-ItbProfile -Name 'singlemsg-triple-nomac-v1'; $copy.Name = ''
+    Register-ItbProfile -Name 'my-copy' -Profile $copy
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [string]$Name,
+
+        [Parameter(Mandatory, Position = 1)]
+        [object]$Profile
+    )
+    try {
+        [Itb.Pipeline]::Register($Name, (Script:ConvertTo-ItbProfile $Profile))
+    }
+    catch [System.Management.Automation.MethodInvocationException] {
+        throw (Script:Get-ItbInnerException $_)
+    }
+}
+
+# --------------------------------------------------------------------
 # Pipeline lifecycle
 # --------------------------------------------------------------------
 
@@ -167,8 +298,8 @@ function New-ItbPipeline {
     .SYNOPSIS
     Constructs a fresh Triple Pipeline against a named profile.
     .DESCRIPTION
-    Wraps [Itb.Pipeline]::Init. The session bundle for the receiver
-    side is read with Get-ItbBlob. Dispose deterministically with
+    Wraps [Itb.Pipeline]::Init. The session blob for the receiver
+    side is read with Save-ItbPipeline. Dispose deterministically with
     Close-ItbPipeline (or $pipeline.Dispose()); an undisposed Pipeline
     is reclaimed by the SafeHandle finalizer.
     .EXAMPLE
@@ -191,60 +322,112 @@ function New-ItbPipeline {
     }
 }
 
-function Open-ItbPipeline {
+function Import-ItbPipeline {
     <#
     .SYNOPSIS
     Reconstructs a Pipeline from a session blob (receiver side).
     .DESCRIPTION
-    Wraps [Itb.Pipeline]::Open. Omitting -PermMaster / -WrapMaster
-    uses the blob-embedded masters; supplying both overrides them
-    (they must be supplied together or not at all).
+    -Blob wraps [Itb.Pipeline]::Load; -Path wraps
+    [Itb.Pipeline]::LoadF (the file is read inside the library). The
+    blob's embedded profile record is the sole structural source — no
+    profile name, no opts. Omitting -PermMaster / -WrapMaster uses
+    the blob-embedded masters; supplying both overrides them (they
+    must be supplied together or not at all).
     .EXAMPLE
-    $receiver = Open-ItbPipeline -Profile 'singlemsg-triple-mac-v1' -Blob $blob
+    $receiver = Import-ItbPipeline -Blob $blob
+    .EXAMPLE
+    $receiver = Import-ItbPipeline -Path session.blob
     #>
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Blob')]
     [OutputType([Itb.Pipeline])]
     param(
-        [Parameter(Mandatory, Position = 0)]
-        [string]$Profile,
-
-        [Parameter(Mandatory, Position = 1)]
+        [Parameter(ParameterSetName = 'Blob', Mandatory, Position = 0)]
         [byte[]]$Blob,
 
-        [Parameter(Position = 2)]
-        [object]$Opts,
+        [Parameter(ParameterSetName = 'Path', Mandatory)]
+        [string]$Path,
 
         [byte[]]$PermMaster,
 
         [byte[]]$WrapMaster
     )
+    Script:Assert-ItbMasters $PermMaster $WrapMaster
     try {
-        [Itb.Pipeline]::Open(
-            $Profile, $Blob, (Script:ConvertTo-ItbOpts $Opts), $PermMaster, $WrapMaster)
+        if ($PSCmdlet.ParameterSetName -eq 'Blob') {
+            [Itb.Pipeline]::Load($Blob, $PermMaster, $WrapMaster)
+        }
+        else {
+            [Itb.Pipeline]::LoadF($Path, $PermMaster, $WrapMaster)
+        }
     }
     catch [System.Management.Automation.MethodInvocationException] {
         throw (Script:Get-ItbInnerException $_)
     }
 }
 
-function Get-ItbBlob {
+function Save-ItbPipeline {
     <#
     .SYNOPSIS
-    Returns the Pipeline's exported session bundle bytes.
+    Exports the Pipeline's current self-describing session blob.
     .DESCRIPTION
-    The C# Pipeline.Blob property returns a ReadOnlySpan, which
-    PowerShell cannot hold; this cmdlet bridges it through reflection
-    and returns a defensive copy as byte[].
+    Without -Path wraps Pipeline.Save and returns the blob as byte[]:
+    the bytes New-ItbPipeline produced, the bytes Import-ItbPipeline
+    re-marshalled, or the bytes of the latest Invoke-ItbRekey. With
+    -Path wraps Pipeline.SaveF — the blob is written inside the
+    library with mode 0600 (the containing directory must exist) and
+    nothing is returned.
+    .EXAMPLE
+    $blob = Save-ItbPipeline -Pipeline $sender
+    .EXAMPLE
+    Save-ItbPipeline -Pipeline $sender -Path session.blob
     #>
     [CmdletBinding()]
     [OutputType([byte[]])]
     param(
         [Parameter(Mandatory, Position = 0, ValueFromPipeline)]
-        [Itb.Pipeline]$Pipeline
+        [Itb.Pipeline]$Pipeline,
+
+        [string]$Path
     )
     process {
-        $blob = [byte[]]$script:PipelineBlobField.GetValue($Pipeline)
-        Write-Output -NoEnumerate ([byte[]]$blob.Clone())
+        try {
+            if ($Path) {
+                $Pipeline.SaveF($Path)
+            }
+            else {
+                Write-Output -NoEnumerate ([byte[]]$Pipeline.Save())
+            }
+        }
+        catch [System.Management.Automation.MethodInvocationException] {
+            throw (Script:Get-ItbInnerException $_)
+        }
+    }
+}
+
+function Set-ItbMaxWorkers {
+    <#
+    .SYNOPSIS
+    Sets the Pipeline's worker cap for every subsequent cipher call.
+    .DESCRIPTION
+    Wraps Pipeline.MaxWorkers. -Count is clamped, never rejected: 0 or
+    negative selects auto (CPU count), values above 256 are treated
+    as 256. Only the handle statuses raise (BadHandle / TripleClosed).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0, ValueFromPipeline)]
+        [Itb.Pipeline]$Pipeline,
+
+        [Parameter(Mandatory, Position = 1)]
+        [int]$Count
+    )
+    process {
+        try {
+            $Pipeline.MaxWorkers($Count)
+        }
+        catch [System.Management.Automation.MethodInvocationException] {
+            throw (Script:Get-ItbInnerException $_)
+        }
     }
 }
 
@@ -270,35 +453,7 @@ function Invoke-ItbRekey {
         [byte[]]$WrapMaster
     )
     try {
-        $Pipeline.Rekey($PermMaster, $WrapMaster)
-    }
-    catch [System.Management.Automation.MethodInvocationException] {
-        throw (Script:Get-ItbInnerException $_)
-    }
-    Get-ItbBlob -Pipeline $Pipeline
-}
-
-function Register-ItbProfile {
-    <#
-    .SYNOPSIS
-    Registers a user-defined Triple profile.
-    .DESCRIPTION
-    Wraps [Itb.Pipeline]::RegisterProfile. The opts follow the
-    register-profile grammar validated by Go (mode, width, innerHash /
-    innerHashes, keyBits, macName, outerCipher, parallaxPalette,
-    parallaxSegmentSize, chunkSize, parallaxOn, wrapperOn). A
-    duplicate name fails with Status ProfileExists.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory, Position = 0)]
-        [string]$Name,
-
-        [Parameter(Mandatory, Position = 1)]
-        [object]$Opts
-    )
-    try {
-        [Itb.Pipeline]::RegisterProfile($Name, (Script:ConvertTo-ItbOpts $Opts))
+        Write-Output -NoEnumerate ([byte[]]$Pipeline.Rekey($PermMaster, $WrapMaster))
     }
     catch [System.Management.Automation.MethodInvocationException] {
         throw (Script:Get-ItbInnerException $_)
@@ -654,11 +809,15 @@ function Set-ItbGCPercent {
 
 Export-ModuleMember -Function @(
     'New-ItbOpts'
-    'New-ItbPipeline'
-    'Open-ItbPipeline'
-    'Get-ItbBlob'
-    'Invoke-ItbRekey'
+    'New-ItbProfile'
+    'Get-ItbProfile'
+    'Get-ItbProfileName'
     'Register-ItbProfile'
+    'New-ItbPipeline'
+    'Import-ItbPipeline'
+    'Save-ItbPipeline'
+    'Set-ItbMaxWorkers'
+    'Invoke-ItbRekey'
     'Close-ItbPipeline'
     'Invoke-ItbEncrypt'
     'Invoke-ItbDecrypt'

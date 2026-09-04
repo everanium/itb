@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// process512Cfg is the 8-seed encode/decode engine (512-bit variant).
+// process512Cfg is the per-snake encode/decode engine (512-bit variant).
 //
 // Three independent 512-bit seeds provide separate configuration domains:
 //

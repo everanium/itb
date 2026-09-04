@@ -23,9 +23,9 @@ func tripleStreamRoundTrip(t *testing.T, profile string, plain []byte, feedChunk
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(profile, blob[:blobLen], "")
+	rID, st := TripleLoad(blob[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
 
@@ -253,9 +253,9 @@ func TestTripleStreamConcurrentSessions(t *testing.T) {
 		t.Fatalf("TripleInit: %v", st)
 	}
 	defer FreeTriple(sID)
-	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, blob[:blobLen], "")
+	rID, st := TripleLoad(blob[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
 
@@ -358,9 +358,9 @@ func TestTripleStreamStickyError(t *testing.T) {
 		t.Fatalf("TripleInit: %v", st)
 	}
 	defer FreeTriple(sID)
-	rID, st := TripleOpen(prof, blob[:blobLen], "")
+	rID, st := TripleLoad(blob[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
 

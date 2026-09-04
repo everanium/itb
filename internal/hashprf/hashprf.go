@@ -1,4 +1,4 @@
-// Package hashprf builds keyed pseudo-random functions over six hash-based
+// Package hashprf builds keyed pseudo-random functions over hash-based
 // ITB registry primitives, exposing each as a fixed-output-width PRF.
 //
 // The six primitives split into two families:
@@ -35,16 +35,6 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// Registry names accepted by New, NewBatch, KeySize, and BlockSize.
-const (
-	Areion256  = "areion256"
-	Areion512  = "areion512"
-	BLAKE2b256 = "blake2b256"
-	BLAKE2b512 = "blake2b512"
-	BLAKE2s    = "blake2s"
-	BLAKE3     = "blake3"
-)
-
 // spec holds the key length and PRF output width of one primitive.
 type spec struct {
 	keySize   int
@@ -53,12 +43,12 @@ type spec struct {
 
 // specs maps each supported name to its key and output widths.
 var specs = map[string]spec{
-	Areion256:  {keySize: 32, blockSize: 32},
-	Areion512:  {keySize: 64, blockSize: 64},
-	BLAKE2b256: {keySize: 32, blockSize: 32},
-	BLAKE2b512: {keySize: 32, blockSize: 64},
-	BLAKE2s:    {keySize: 32, blockSize: 32},
-	BLAKE3:     {keySize: 32, blockSize: 32},
+	hashes.CipherAreion256:  {keySize: 32, blockSize: 32},
+	hashes.CipherAreion512:  {keySize: 64, blockSize: 64},
+	hashes.CipherBLAKE2b256: {keySize: 32, blockSize: 32},
+	hashes.CipherBLAKE2b512: {keySize: 32, blockSize: 64},
+	hashes.CipherBLAKE2s:    {keySize: 32, blockSize: 32},
+	hashes.CipherBLAKE3:     {keySize: 32, blockSize: 32},
 }
 
 // KeySize returns the byte length of the key for the named primitive.
@@ -79,7 +69,7 @@ func BlockSize(name string) (int, error) {
 	return s.blockSize, nil
 }
 
-// New returns a keyed PRF for one of the six hash-based primitives and its
+// New returns a keyed PRF for one of the hash-based primitives and its
 // output block size. The key length must equal the primitive's key size; a
 // mismatched length or an unknown name is an error.
 //
@@ -97,17 +87,17 @@ func New(name string, key []byte) (prf func(dst, in []byte), blockSize int, err 
 	}
 
 	switch name {
-	case Areion256:
+	case hashes.CipherAreion256:
 		return newAreion256PRF(key), s.blockSize, nil
-	case Areion512:
+	case hashes.CipherAreion512:
 		return newAreion512PRF(key), s.blockSize, nil
-	case BLAKE2b256:
+	case hashes.CipherBLAKE2b256:
 		return newBlake2bPRF(key, 32), s.blockSize, nil
-	case BLAKE2b512:
+	case hashes.CipherBLAKE2b512:
 		return newBlake2bPRF(key, 64), s.blockSize, nil
-	case BLAKE2s:
+	case hashes.CipherBLAKE2s:
 		return newBlake2sPRF(key), s.blockSize, nil
-	case BLAKE3:
+	case hashes.CipherBLAKE3:
 		return newBlake3PRF(key), s.blockSize, nil
 	default:
 		// Unreachable: specs and the switch are kept in lock-step.
@@ -236,7 +226,7 @@ func NewBatch(name string, key []byte) (batch func(dst, in *[4][]byte), blockSiz
 		return nil, 0, false, fmt.Errorf("hashprf: %s key must be %d bytes, got %d", name, s.keySize, len(key))
 	}
 	switch name {
-	case Areion256:
+	case hashes.CipherAreion256:
 		if b := newAreion256BatchPRF(key); b != nil {
 			return b, s.blockSize, true, nil
 		}
@@ -246,7 +236,7 @@ func NewBatch(name string, key []byte) (batch func(dst, in *[4][]byte), blockSiz
 		// through to the single-block PRF path; the ctr keystream's
 		// prfHashCTR variant is bit-exact with the batched keystream.
 		return nil, 0, false, nil
-	case Areion512:
+	case hashes.CipherAreion512:
 		if b := newAreion512BatchPRF(key); b != nil {
 			return b, s.blockSize, true, nil
 		}

@@ -10,8 +10,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 /// Builder producing the URL-query-encoded opts string consumed by
-/// `Pipeline.create`, `Pipeline.open`, and `registerProfile`. Fluent —
-/// every setter mutates and returns the same instance.
+/// `Pipeline.create`. Fluent — every setter mutates and returns the
+/// same instance. Profile records for `register` are built with
+/// `Profile`.
 class Opts {
   final List<(String, String)> _pairs = [];
 
@@ -59,8 +60,7 @@ class Opts {
       withRaw('parallaxPalette', names.join(','));
 
   /// Escape hatch appending a raw `key=value` pair. Covers every key
-  /// the Go side accepts, including the register-profile grammar
-  /// (`mode`, `width`, `innerHashes`, `parallaxOn`, `wrapperOn`, …).
+  /// the Go side accepts.
   Opts withRaw(String key, String value) {
     _pairs.add((key, value));
     return this;

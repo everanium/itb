@@ -19,9 +19,9 @@ pub enum ItbStatus {
     SeedWidthMix = 8,
     BadMac = 9,
     MacFailure = 10,
-    Reserved11 = 11,
-    Reserved12 = 12,
-    Reserved13 = 13,
+    BlobMalformedRecipe = 11,
+    RecipePrimitiveUnknown = 12,
+    UnknownProfile = 13,
     Reserved14 = 14,
     Reserved15 = 15,
     Reserved16 = 16,
@@ -53,9 +53,9 @@ impl TryFrom<i32> for ItbStatus {
             8 => Self::SeedWidthMix,
             9 => Self::BadMac,
             10 => Self::MacFailure,
-            11 => Self::Reserved11,
-            12 => Self::Reserved12,
-            13 => Self::Reserved13,
+            11 => Self::BlobMalformedRecipe,
+            12 => Self::RecipePrimitiveUnknown,
+            13 => Self::UnknownProfile,
             14 => Self::Reserved14,
             15 => Self::Reserved15,
             16 => Self::Reserved16,
@@ -88,10 +88,10 @@ impl fmt::Display for ItbStatus {
             Self::SeedWidthMix => "seed width mismatch",
             Self::BadMac => "unknown MAC name or invalid MAC handle",
             Self::MacFailure => "MAC verification failed",
-            Self::Reserved11
-            | Self::Reserved12
-            | Self::Reserved13
-            | Self::Reserved14
+            Self::BlobMalformedRecipe => "blob recipe malformed",
+            Self::RecipePrimitiveUnknown => "blob recipe names an unknown primitive",
+            Self::UnknownProfile => "unknown profile name",
+            Self::Reserved14
             | Self::Reserved15
             | Self::Reserved16
             | Self::Reserved17 => "reserved status",

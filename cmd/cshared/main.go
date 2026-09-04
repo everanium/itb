@@ -47,7 +47,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitbVersion = "0.3.5"
+const libitbVersion = "0.4.1"
 
 func main() {} // required for buildmode=c-shared
 
@@ -645,7 +645,7 @@ func ITB_Channels() C.int { return C.int(capi.Channels()) }
 // Pipeline / Config selected. Returns ITB_ERR_BAD_INPUT when
 // nonce_bytes is not one of {16, 32, 64}.
 //
-// ITB_DefaultNonceBits exposes the compile-in default in bits (128);
+// ITB_DefaultNonceBits exposes the compile-in default in bits (512);
 // divide by 8 to get the byte count.
 //
 //export ITB_HeaderSize
@@ -663,284 +663,6 @@ func ITB_HeaderSize(nonceBytes C.uint32_t) C.int {
 //export ITB_DefaultNonceBits
 func ITB_DefaultNonceBits() C.int { return C.int(capi.DefaultNonceBits()) }
 
-// ─── Native Blob — low-level state persistence ────────────────────
-//
-// itb.Blob{128,256,512} pack the low-level encryptor material —
-// per-seed hash key + Components + optional dedicated lockSeed +
-// optional MAC material — plus the captured process-wide
-// configuration into one self-describing JSON blob. Native (mix-
-// and-match-primitives) surface: no primitive name is recorded
-// because each seed slot can carry a different primitive on the
-// low-level path. Callers wire the matching factory onto each
-// restored seed after Import.
-//
-// The C ABI exposes the blob as an opaque BlobHandleID built via
-// ITB_Blob{128,256,512}_New, populated through slot-keyed setters
-// (ITB_Blob_SetKey / ITB_Blob_SetComponents) and optional MAC
-// setters, then serialised with ITB_Blob_Export / ITB_Blob_Export3.
-// The receiving side constructs a same-width handle, drives
-// ITB_Blob_Import / ITB_Blob_Import3, then reads each slot back via
-// the matching getter to feed its hash factory.
-//
-// Slot identifiers (ITB_BLOB_SLOT_*):
-//   N=0 (shared), D=1 / S=2 (Single only), L=3 (optional lockSeed,
-//   any mode), D1..D3=4..6 + S1..S3=7..9 (Triple only).
-//
-// Export option bitmask (ITB_BLOB_OPT_*):
-//   LOCKSEED=0x1 emits the L slot; MAC=0x2 emits MAC key + name.
-
-// Constructs a fresh empty Blob128 handle. Zero / unset slots are
-// emitted as zero-length / zero-array fields by Export — the caller
-// populates the slots that apply to the active mode (Single or
-// Triple) before serialising.
-//
-//export ITB_Blob128_New
-func ITB_Blob128_New(outHandle *C.uintptr_t) C.int {
-	if outHandle == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	id, st := capi.NewBlob128()
-	if st == capi.StatusOK {
-		*outHandle = C.uintptr_t(id)
-	} else {
-		*outHandle = 0
-	}
-	return C.int(st)
-}
-
-// Constructs a fresh empty Blob256 handle. See ITB_Blob128_New.
-//
-//export ITB_Blob256_New
-func ITB_Blob256_New(outHandle *C.uintptr_t) C.int {
-	if outHandle == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	id, st := capi.NewBlob256()
-	if st == capi.StatusOK {
-		*outHandle = C.uintptr_t(id)
-	} else {
-		*outHandle = 0
-	}
-	return C.int(st)
-}
-
-// Constructs a fresh empty Blob512 handle. See ITB_Blob128_New.
-//
-//export ITB_Blob512_New
-func ITB_Blob512_New(outHandle *C.uintptr_t) C.int {
-	if outHandle == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	id, st := capi.NewBlob512()
-	if st == capi.StatusOK {
-		*outHandle = C.uintptr_t(id)
-	} else {
-		*outHandle = 0
-	}
-	return C.int(st)
-}
-
-// Releases a blob handle. Safe to call on a zero handle (returns
-// ITB_ERR_BAD_HANDLE); idempotent across all three widths since
-// the underlying type is discriminated on the Go side.
-//
-//export ITB_Blob_Free
-func ITB_Blob_Free(handle C.uintptr_t) C.int {
-	return C.int(capi.FreeBlob(capi.BlobHandleID(handle)))
-}
-
-// Returns the native hash width of an existing blob handle (128 /
-// 256 / 512). Status returned via *outStatus.
-//
-//export ITB_Blob_Width
-func ITB_Blob_Width(handle C.uintptr_t, outStatus *C.int) C.int {
-	w, st := capi.BlobWidth(capi.BlobHandleID(handle))
-	if outStatus != nil {
-		*outStatus = C.int(st)
-	}
-	return C.int(w)
-}
-
-// Returns the blob's mode field (0 = unset, 1 = Single, 3 = Triple).
-// Updated by Import / Import3; freshly constructed handles report 0
-// until Export / Export3 / Import / Import3 has run.
-//
-//export ITB_Blob_Mode
-func ITB_Blob_Mode(handle C.uintptr_t, outStatus *C.int) C.int {
-	m, st := capi.BlobMode(capi.BlobHandleID(handle))
-	if outStatus != nil {
-		*outStatus = C.int(st)
-	}
-	return C.int(m)
-}
-
-// Stores the hash key bytes for the requested slot on the handle.
-// 256-bit width requires exactly 32 bytes; 512-bit width requires
-// exactly 64 bytes. 128-bit width accepts variable lengths (empty
-// for siphash24, 16 bytes for aescmac); the downstream factory
-// validates the per-primitive length on Import-side wiring.
-//
-//export ITB_Blob_SetKey
-func ITB_Blob_SetKey(
-	handle C.uintptr_t, slot C.int,
-	key unsafe.Pointer, keyLen C.size_t,
-) C.int {
-	if !validateLen(keyLen) {
-		return C.int(capi.StatusBadInput)
-	}
-	k := goBytesView(key, keyLen)
-	return C.int(capi.BlobSetKey(capi.BlobHandleID(handle), int(slot), k))
-}
-
-// Copies the hash key bytes from the requested slot into the
-// caller-allocated out buffer. Probe-then-retry: pass out=NULL /
-// outCap=0 to discover the required size in *outLen.
-//
-//export ITB_Blob_GetKey
-func ITB_Blob_GetKey(
-	handle C.uintptr_t, slot C.int,
-	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
-) C.int {
-	if outLen == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	if !validateLen(outCap) {
-		return C.int(capi.StatusBadInput)
-	}
-	dst := goBytesViewMut(out, outCap)
-	n, st := capi.BlobGetKey(capi.BlobHandleID(handle), int(slot), dst)
-	*outLen = C.size_t(n)
-	return C.int(st)
-}
-
-// Stores the seed components (uint64 array) for the requested slot
-// on the handle. Component count is validated lazily at Export /
-// Import time — same 8..MaxKeyBits/64 multiple-of-8 invariants as
-// ITB_NewSeedFromComponents.
-//
-//export ITB_Blob_SetComponents
-func ITB_Blob_SetComponents(
-	handle C.uintptr_t, slot C.int,
-	comps *C.uint64_t, count C.size_t,
-) C.int {
-	if count > maxSliceLen {
-		return C.int(capi.StatusBadInput)
-	}
-	// Reject the inconsistent (comps==NULL && count>0) shape — a
-	// hostile or buggy caller passing a non-zero count without a
-	// matching pointer would otherwise be silently treated as the
-	// (NULL, 0) probe / clear form, dropping the components for
-	// the slot without diagnostic.
-	if comps == nil && count > 0 {
-		return C.int(capi.StatusBadInput)
-	}
-	var compsView []uint64
-	if comps != nil && count > 0 {
-		compsView = unsafe.Slice((*uint64)(unsafe.Pointer(comps)), int(count))
-	}
-	return C.int(capi.BlobSetComponents(
-		capi.BlobHandleID(handle), int(slot), compsView,
-	))
-}
-
-// Copies the seed components from the requested slot into the
-// caller-allocated uint64 array. Probe-then-retry: pass out=NULL /
-// outCap=0 to discover the required count (in uint64 elements,
-// not bytes) in *outCount.
-//
-//export ITB_Blob_GetComponents
-func ITB_Blob_GetComponents(
-	handle C.uintptr_t, slot C.int,
-	out *C.uint64_t, outCap C.size_t, outCount *C.size_t,
-) C.int {
-	if outCount == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	if outCap > maxSliceLen {
-		return C.int(capi.StatusBadInput)
-	}
-	var dst []uint64
-	if out != nil && outCap > 0 {
-		dst = unsafe.Slice((*uint64)(unsafe.Pointer(out)), int(outCap))
-	}
-	n, st := capi.BlobGetComponents(capi.BlobHandleID(handle), int(slot), dst)
-	*outCount = C.size_t(n)
-	return C.int(st)
-}
-
-// Stores the optional MAC key bytes on the handle. Pass NULL / 0 to
-// clear a previously-set key. Export / Export3 only emits the MAC
-// section when both ITB_BLOB_OPT_MAC is set in the bitmask AND the
-// MAC key on the handle is non-empty.
-//
-//export ITB_Blob_SetMACKey
-func ITB_Blob_SetMACKey(
-	handle C.uintptr_t,
-	key unsafe.Pointer, keyLen C.size_t,
-) C.int {
-	if !validateLen(keyLen) {
-		return C.int(capi.StatusBadInput)
-	}
-	k := goBytesView(key, keyLen)
-	return C.int(capi.BlobSetMACKey(capi.BlobHandleID(handle), k))
-}
-
-// Copies the MAC key from the handle into the caller-allocated out
-// buffer. Probe-then-retry standard convention.
-//
-//export ITB_Blob_GetMACKey
-func ITB_Blob_GetMACKey(
-	handle C.uintptr_t,
-	out unsafe.Pointer, outCap C.size_t, outLen *C.size_t,
-) C.int {
-	if outLen == nil {
-		return C.int(capi.StatusBadInput)
-	}
-	if !validateLen(outCap) {
-		return C.int(capi.StatusBadInput)
-	}
-	dst := goBytesViewMut(out, outCap)
-	n, st := capi.BlobGetMACKey(capi.BlobHandleID(handle), dst)
-	*outLen = C.size_t(n)
-	return C.int(st)
-}
-
-// Stores the optional MAC name on the handle (e.g. "kmac256",
-// "hmac-blake3"). Pass NULL / 0 to clear a previously-set name.
-//
-//export ITB_Blob_SetMACName
-func ITB_Blob_SetMACName(
-	handle C.uintptr_t,
-	name *C.char, nameLen C.size_t,
-) C.int {
-	if !validateLen(nameLen) {
-		return C.int(capi.StatusBadInput)
-	}
-	var s string
-	if name != nil && nameLen > 0 {
-		s = C.GoStringN(name, C.int(nameLen))
-	}
-	return C.int(capi.BlobSetMACName(capi.BlobHandleID(handle), s))
-}
-
-// Writes the MAC name from the handle into the caller-allocated
-// out buffer (NUL-terminated). Probe-then-retry standard convention.
-//
-//export ITB_Blob_GetMACName
-func ITB_Blob_GetMACName(
-	handle C.uintptr_t,
-	out *C.char, outCap C.size_t, outLen *C.size_t,
-) C.int {
-	name, st := capi.BlobGetMACName(capi.BlobHandleID(handle))
-	if st != capi.StatusOK {
-		if outLen != nil {
-			*outLen = 0
-		}
-		return C.int(st)
-	}
-	return C.int(writeCString(name, unsafe.Pointer(out), outCap, outLen))
-}
-
 // ─── Streaming AEAD Encrypt / Decrypt ──────────────────────────────
 
 // streamIDFromC copies a 32-byte Streaming AEAD anchor out of a C
@@ -955,9 +677,9 @@ func streamIDFromC(p *C.uint8_t) (sid [32]byte, ok bool) {
 	return sid, true
 }
 
-// Streaming AEAD Triple Ouroboros encrypt for one chunk: 7 seed
+// Streaming AEAD Triple Ouroboros encrypt for one chunk: 8 seed
 // handles plus a MAC handle plus the streaming-binding components.
-// All 7 seeds must share native width 128.
+// All 8 seeds must share native width 128.
 //
 //export ITB_EncryptStreamAuthenticated3x128
 func ITB_EncryptStreamAuthenticated3x128(
@@ -1533,25 +1255,28 @@ func ITB_UnwrapStreamReader_Free(handle C.uintptr_t) C.int {
 //
 // The ITB_Triple_* surface wraps the github.com/everanium/itb/triple
 // sub-package — one Pipeline handle replaces the 8-seed +
-// parallax + wrapper + MAC ceremony of the low-level path. The
-// Pipeline is opened against one of the shipped profile names (see
-// triple/profile.go: ProfileStreamingAEADTripleMACV1 /
-// ProfileStreamingNoAEADTripleV1 / ProfileSingleMsgTripleMACV1 /
-// ProfileSingleMsgTripleNoMACV1 / ProfileBlobTripleMACV1); a
-// URL-query-encoded opts string carries any per-Pipeline overrides
-// (see capi.parseTripleOpts for the accepted keys).
+// parallax + wrapper + MAC ceremony of the low-level path. A fresh
+// Pipeline is constructed against a registered profile name (the
+// shipped catalogue — see triple/profile.go — or a name installed via
+// ITB_Triple_Register); a URL-query-encoded opts string carries any
+// per-Pipeline overrides (see capi.parseTripleOpts for the accepted
+// keys).
 //
 // All cipher entry points share the same caller-allocated
 // out / out_cap / *out_len buffer convention as the low-level
 // ITB_Encrypt / ITB_Decrypt path; the two-phase probe (NULL / 0 →
 // resize → retry) works identically.
 //
-// State persistence rides on the blob bytes ITB_Triple_Init returns.
-// The receiver calls ITB_Triple_Open on the same profile with the
-// blob and optional master overrides, then encrypts / decrypts
-// against the reconstructed Pipeline. ITB_Triple_Rekey rotates the
-// parallax + wrapper masters without disturbing the underlying seed
-// material.
+// State persistence rides on the self-describing blob bytes
+// ITB_Triple_Init returns (also available at any time through
+// ITB_Triple_Save / ITB_Triple_SaveF). The receiver calls
+// ITB_Triple_Load (bytes) or ITB_Triple_LoadF (file path) with the
+// blob and optional master overrides — no profile name, no opts —
+// then encrypts / decrypts against the reconstructed Pipeline.
+// ITB_Triple_Inspect reads the blob's embedded profile record without
+// opening it. ITB_Triple_Rekey rotates the parallax + wrapper masters
+// without disturbing the underlying seed material; ITB_Triple_MaxWorkers
+// sets the per-machine worker cap on a live handle.
 
 // Constructs a fresh Pipeline handle against the named profile and
 // writes the exported blob bytes into blob_out.
@@ -1590,49 +1315,41 @@ func ITB_Triple_Init(
 	return C.int(st)
 }
 
-// Reconstructs a Pipeline handle from a blob produced by
-// ITB_Triple_Init or ITB_Triple_Rekey. masters_count == 0 uses the
-// blob-embedded masters; masters_count == 2 overrides them (with
-// perm_master at index 0, wrap_master at index 1). Any other arity
-// returns ITB_ERR_BAD_INPUT.
+// Reconstructs a Pipeline handle from a self-describing blob produced
+// by ITB_Triple_Init, ITB_Triple_Save, or ITB_Triple_Rekey. The
+// blob's embedded profile record is the sole structural source — no
+// profile name and no opts are taken; the profile registry is not
+// consulted. masters_count == 0 uses the blob-embedded masters;
+// masters_count == 2 overrides them (with perm_master at index 0,
+// wrap_master at index 1). Any other arity returns ITB_ERR_BAD_INPUT.
 //
-//export ITB_Triple_Open
-func ITB_Triple_Open(
-	profile *C.char,
+// A blob whose record names a primitive absent from the local
+// registries returns ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN; a record
+// that fails the profile field rules or disagrees with the inner blob
+// returns ITB_STATUS_BLOB_MALFORMED_RECIPE; a blob from an earlier
+// release (wrap-layer version 1) returns ITB_ERR_BAD_INPUT
+// (triple.ErrBlobVersion in ITB_LastError).
+//
+//export ITB_Triple_Load
+func ITB_Triple_Load(
 	blob unsafe.Pointer, blobLen C.size_t,
-	opts *C.char,
 	permMaster unsafe.Pointer, permMasterLen C.size_t,
 	wrapMaster unsafe.Pointer, wrapMasterLen C.size_t,
 	mastersCount C.size_t,
 	outHandle *C.uintptr_t,
 ) C.int {
-	if profile == nil || outHandle == nil {
+	if outHandle == nil {
 		return C.int(capi.StatusBadInput)
 	}
 	if !validateLen(blobLen, permMasterLen, wrapMasterLen) {
 		return C.int(capi.StatusBadInput)
 	}
-	if mastersCount != 0 && mastersCount != 2 {
+	masters, ok := tripleMastersView(permMaster, permMasterLen, wrapMaster, wrapMasterLen, mastersCount)
+	if !ok {
 		return C.int(capi.StatusBadInput)
 	}
-	var optsStr string
-	if opts != nil {
-		optsStr = C.GoString(opts)
-	}
 	blobBytes := goBytesView(blob, blobLen)
-	var masters [][]byte
-	if mastersCount == 2 {
-		pm := goBytesView(permMaster, permMasterLen)
-		wm := goBytesView(wrapMaster, wrapMasterLen)
-		// A zero-length master under mastersCount==2 is inadmissible
-		// here — the caller's mastersCount signals both slots are
-		// supplied.
-		if pm == nil || wm == nil {
-			return C.int(capi.StatusBadInput)
-		}
-		masters = [][]byte{pm, wm}
-	}
-	id, st := capi.TripleOpen(C.GoString(profile), blobBytes, optsStr, masters...)
+	id, st := capi.TripleLoad(blobBytes, masters...)
 	if st == capi.StatusOK {
 		*outHandle = C.uintptr_t(id)
 	} else {
@@ -1641,9 +1358,144 @@ func ITB_Triple_Open(
 	return C.int(st)
 }
 
+// ITB_Triple_Load for a blob stored in a file. The file is read
+// inside the library (size-capped at itb.MaxBlobJSONSize); a missing
+// or unreadable file returns ITB_ERR_BAD_INPUT with the os diagnostic
+// in ITB_LastError. Masters semantics are identical to
+// ITB_Triple_Load.
+//
+//export ITB_Triple_LoadF
+func ITB_Triple_LoadF(
+	path *C.char,
+	permMaster unsafe.Pointer, permMasterLen C.size_t,
+	wrapMaster unsafe.Pointer, wrapMasterLen C.size_t,
+	mastersCount C.size_t,
+	outHandle *C.uintptr_t,
+) C.int {
+	if path == nil || outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(permMasterLen, wrapMasterLen) {
+		return C.int(capi.StatusBadInput)
+	}
+	masters, ok := tripleMastersView(permMaster, permMasterLen, wrapMaster, wrapMasterLen, mastersCount)
+	if !ok {
+		return C.int(capi.StatusBadInput)
+	}
+	id, st := capi.TripleLoadF(C.GoString(path), masters...)
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
+	} else {
+		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+// tripleMastersView folds the (perm_master, wrap_master,
+// masters_count) triple shared by ITB_Triple_Load / ITB_Triple_LoadF
+// into the variadic masters slice. masters_count must be 0 or 2; under
+// 2 both slots must be non-NULL (a zero-length master is inadmissible
+// when the caller signals both are supplied).
+func tripleMastersView(
+	permMaster unsafe.Pointer, permMasterLen C.size_t,
+	wrapMaster unsafe.Pointer, wrapMasterLen C.size_t,
+	mastersCount C.size_t,
+) ([][]byte, bool) {
+	switch mastersCount {
+	case 0:
+		return nil, true
+	case 2:
+		pm := goBytesView(permMaster, permMasterLen)
+		wm := goBytesView(wrapMaster, wrapMasterLen)
+		if pm == nil || wm == nil {
+			return nil, false
+		}
+		return [][]byte{pm, wm}, true
+	}
+	return nil, false
+}
+
+// Writes the handle's current blob — the bytes ITB_Triple_Init
+// returned, the bytes ITB_Triple_Load re-marshalled (a master
+// override folded in), or the bytes of the latest ITB_Triple_Rekey —
+// into blob_out under the caller-allocated buffer convention: on
+// ITB_ERR_BUFFER_TOO_SMALL *blob_len receives the required size. A
+// closed handle returns ITB_ERR_TRIPLE_CLOSED.
+//
+//export ITB_Triple_Save
+func ITB_Triple_Save(
+	handle C.uintptr_t,
+	blobOut unsafe.Pointer, blobCap C.size_t, blobLen *C.size_t,
+) C.int {
+	if blobLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(blobCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(blobOut, blobCap)
+	n, st := capi.TripleSave(capi.TripleHandleID(handle), dst)
+	*blobLen = C.size_t(n)
+	return C.int(st)
+}
+
+// Writes the handle's current blob to path inside the library with
+// mode 0600 (the blob is key material). The containing directory
+// must exist. A closed handle returns ITB_ERR_TRIPLE_CLOSED; a
+// file-system failure returns ITB_ERR_BAD_INPUT with the os
+// diagnostic in ITB_LastError.
+//
+//export ITB_Triple_SaveF
+func ITB_Triple_SaveF(handle C.uintptr_t, path *C.char) C.int {
+	if path == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	return C.int(capi.TripleSaveF(capi.TripleHandleID(handle), C.GoString(path)))
+}
+
+// Decodes the blob's wrap-layer without opening a Pipeline and writes
+// the embedded profile record as its JSON encoding (the same key set
+// ITB_Triple_Register accepts and the blob carries; name included)
+// into json_out under the caller-allocated buffer convention: on
+// ITB_ERR_BUFFER_TOO_SMALL *json_len receives the required size. No
+// registry read, no primitive probe — a primitive name the local
+// build lacks is returned unchanged.
+//
+//export ITB_Triple_Inspect
+func ITB_Triple_Inspect(
+	blob unsafe.Pointer, blobLen C.size_t,
+	jsonOut unsafe.Pointer, jsonCap C.size_t, jsonLen *C.size_t,
+) C.int {
+	if jsonLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(blobLen, jsonCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	blobBytes := goBytesView(blob, blobLen)
+	dst := goBytesViewMut(jsonOut, jsonCap)
+	n, st := capi.TripleInspect(blobBytes, dst)
+	*jsonLen = C.size_t(n)
+	return C.int(st)
+}
+
+// Sets the handle's worker cap for every subsequent cipher call. n is
+// clamped, never rejected: n <= 0 selects auto (runtime.NumCPU),
+// 1..256 pins the cap, n > 256 is treated as 256. The status reports
+// the handle only — ITB_ERR_BAD_HANDLE for an unknown handle,
+// ITB_ERR_TRIPLE_CLOSED for a closed one. Works identically on a
+// handle from ITB_Triple_Init, ITB_Triple_Load, or ITB_Triple_LoadF;
+// the worker cap is per-machine tuning and is never written to the
+// blob.
+//
+//export ITB_Triple_MaxWorkers
+func ITB_Triple_MaxWorkers(handle C.uintptr_t, n C.int) C.int {
+	return C.int(capi.TripleMaxWorkers(capi.TripleHandleID(handle), int(n)))
+}
+
 // Rotates the Pipeline's parallax + wrapper masters and writes the
 // fresh blob bytes into blob_out. The receiver applies the new blob
-// via ITB_Triple_Open to stay in sync. Rekey mutates Pipeline state;
+// via ITB_Triple_Load to stay in sync. Rekey mutates Pipeline state;
 // the caller is responsible for serialising this against every
 // concurrent cipher-path call on the same handle.
 //
@@ -1792,28 +1644,72 @@ func ITB_Triple_DecryptMessage(
 }
 
 // Installs a user-defined Triple Pipeline profile under name so
-// subsequent ITB_Triple_Init / ITB_Triple_Open calls resolve name to
-// the newly-registered record. opts is a URL-query-encoded profile-
-// shape string (see capi.parseTripleRegisterOpts for the accepted
-// keys). Returns ITB_ERR_PROFILE_EXISTS when the name is already in
-// the catalogue, ITB_ERR_BAD_INPUT on any validation failure, and
-// ITB_OK on success.
+// subsequent ITB_Triple_Init / ITB_Triple_Lookup calls resolve name
+// to the newly-registered record. profile_json is the profile JSON
+// record — the same encoding ITB_Triple_Inspect emits and the blob's
+// wrap-layer carries (see triple.Profile.MarshalJSON for the key
+// set); a name key inside it, if present, must be empty or equal to
+// the name argument. Returns ITB_ERR_PROFILE_EXISTS when the name is
+// already in the catalogue, ITB_ERR_BAD_INPUT on any validation
+// failure (unknown JSON key, name pattern, reserved prefix, field
+// rules), and ITB_OK on success.
 //
-// Name rules mirror triple.RegisterProfile: must match
-// `^[a-z][a-z0-9-]{2,63}$` and must not start with one of the
-// reserved shipped-catalogue prefixes (streaming- / singlemsg- /
-// blob-).
+// Name rules mirror triple.Register: must match
+// `^[a-z][a-z0-9-]{2,}$` (length capped at triple.ProfileNameMaxLen)
+// and must not start with one of the reserved shipped-catalogue
+// prefixes (streaming- / singlemsg- / blob-).
 //
-//export ITB_Triple_RegisterProfile
-func ITB_Triple_RegisterProfile(name *C.char, opts *C.char) C.int {
-	if name == nil {
+//export ITB_Triple_Register
+func ITB_Triple_Register(name *C.char, profileJSON *C.char) C.int {
+	if name == nil || profileJSON == nil {
 		return C.int(capi.StatusBadInput)
 	}
-	var optsStr string
-	if opts != nil {
-		optsStr = C.GoString(opts)
+	return C.int(capi.TripleRegister(C.GoString(name), C.GoString(profileJSON)))
+}
+
+// Writes the profile registered under name — a shipped catalogue
+// entry or a prior ITB_Triple_Register registration — as its JSON
+// record into json_out under the caller-allocated buffer convention
+// (same encoding as ITB_Triple_Inspect). An unknown name returns
+// ITB_STATUS_UNKNOWN_PROFILE (the same code ITB_Triple_Init returns
+// for an unregistered name).
+//
+//export ITB_Triple_Lookup
+func ITB_Triple_Lookup(
+	name *C.char,
+	jsonOut unsafe.Pointer, jsonCap C.size_t, jsonLen *C.size_t,
+) C.int {
+	if name == nil || jsonLen == nil {
+		return C.int(capi.StatusBadInput)
 	}
-	return C.int(capi.TripleRegisterProfile(C.GoString(name), optsStr))
+	if !validateLen(jsonCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(jsonOut, jsonCap)
+	n, st := capi.TripleLookup(C.GoString(name), dst)
+	*jsonLen = C.size_t(n)
+	return C.int(st)
+}
+
+// Writes the sorted list of every registered profile name — the
+// shipped catalogue plus prior ITB_Triple_Register calls — as a JSON
+// array of strings into json_out under the caller-allocated buffer
+// convention.
+//
+//export ITB_Triple_Profiles
+func ITB_Triple_Profiles(
+	jsonOut unsafe.Pointer, jsonCap C.size_t, jsonLen *C.size_t,
+) C.int {
+	if jsonLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(jsonCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	dst := goBytesViewMut(jsonOut, jsonCap)
+	n, st := capi.TripleProfiles(dst)
+	*jsonLen = C.size_t(n)
+	return C.int(st)
 }
 
 // Opens an incremental encrypt session over an already-open Pipeline

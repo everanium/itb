@@ -8,18 +8,19 @@ import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 
 import com.everanium.itb.Pipeline as JPipeline
+import com.everanium.itb.Profile
 
 /**
- * A Triple Pipeline session plus its exported blob bytes.
+ * A Triple Pipeline session.
  *
- * <p>The blob carries the session bundle the receiver feeds to
- * {@link #open}; {@link #rekey} refreshes it. {@code close()}
- * releases the native handle (libitb zeroes key material
- * internally), so the class composes with Groovy's
- * {@code withCloseable { }} and Java's try-with-resources; the Java
- * binding's Cleaner backstop reclaims an unclosed Pipeline. The
- * {@link #withPipeline} / {@link #withOpened} factories scope the
- * whole lifetime inside a closure.</p>
+ * <p>{@link #save} exports the self-describing session blob the
+ * receiver feeds to {@link #load} / {@link #loadF}; {@link #rekey}
+ * refreshes it. {@code close()} releases the native handle (libitb
+ * zeroes key material internally), so the class composes with
+ * Groovy's {@code withCloseable { }} and Java's try-with-resources;
+ * the Java binding's Cleaner backstop reclaims an unclosed Pipeline.
+ * The {@link #withPipeline} / {@link #withLoaded} factories scope
+ * the whole lifetime inside a closure.</p>
  *
  * <p>Every failing libitb call surfaces as {@link ItbException}
  * carrying the structural {@link Status} plus the diagnostic
@@ -43,31 +44,105 @@ final class Pipeline implements AutoCloseable {
         ItbException.relay { new Pipeline(JPipeline.init(profile, opts.toJava())) }
     }
 
-    /** Reconstructs a Pipeline from a blob produced by {@link #init}
-     * or {@link #rekey}, using the blob-embedded masters. See
-     * {@link #openWithMasters} to override them. */
-    static Pipeline open(String profile, byte[] blob, Opts opts = new Opts()) {
-        ItbException.relay { new Pipeline(JPipeline.open(profile, blob, opts.toJava())) }
+    /** Reconstructs a Pipeline from a blob produced by {@link #save}
+     * or {@link #rekey}, using the blob-embedded masters. The blob's
+     * embedded profile record is the sole structural source. See
+     * {@link #loadWithMasters} to override the masters. */
+    static Pipeline load(byte[] blob) {
+        ItbException.relay { new Pipeline(JPipeline.load(blob)) }
     }
 
-    /** {@link #open} with explicit (non-empty) parallax + wrapper
+    /** {@link #load} with explicit (non-empty) parallax + wrapper
      * masters overriding the blob-embedded ones; both must be
      * supplied. */
-    static Pipeline openWithMasters(String profile, byte[] blob, Opts opts,
-            byte[] permMaster, byte[] wrapMaster) {
-        ItbException.relay {
-            new Pipeline(JPipeline.open(profile, blob, opts.toJava(), permMaster, wrapMaster))
-        }
+    static Pipeline loadWithMasters(byte[] blob, byte[] permMaster, byte[] wrapMaster) {
+        ItbException.relay { new Pipeline(JPipeline.load(blob, permMaster, wrapMaster)) }
     }
 
-    /** Registers a user-defined Triple profile under {@code name} so
-     * subsequent {@link #init} / {@link #open} calls resolve it. The
-     * opts follow the register-profile grammar validated by Go —
-     * build them with {@link Opts#withRaw} / {@link Opts#of} plus the
-     * typed setters where key names coincide. A duplicate name fails
-     * with {@link Status#PROFILE_EXISTS}. */
-    static void registerProfile(String name, Opts opts) {
-        ItbException.relay { JPipeline.registerProfile(name, opts.toJava()) }
+    /** {@link #load} for a blob stored in a file; the file is read
+     * inside the library. */
+    static Pipeline loadF(String path) {
+        ItbException.relay { new Pipeline(JPipeline.loadF(path)) }
+    }
+
+    /** {@link #loadF} with explicit (non-empty) parallax + wrapper
+     * masters overriding the blob-embedded ones; both must be
+     * supplied. */
+    static Pipeline loadFWithMasters(String path, byte[] permMaster, byte[] wrapMaster) {
+        ItbException.relay { new Pipeline(JPipeline.loadF(path, permMaster, wrapMaster)) }
+    }
+
+    /** Decodes the blob's embedded profile record without opening a
+     * Pipeline. No registry read, no primitive probe. */
+    static Profile inspect(byte[] blob) {
+        ItbException.relay { JPipeline.inspect(blob) }
+    }
+
+    /** Registers {@code profile} under {@code name} so subsequent
+     * {@link #init} / {@link #lookup} calls resolve it. Every field
+     * rule is validated by Go; a duplicate name fails with
+     * {@link Status#PROFILE_EXISTS}. */
+    static void register(String name, Profile profile) {
+        ItbException.relay { JPipeline.register(name, profile) }
+    }
+
+    /** {@link #register} from a Groovy named-argument map whose keys
+     * are the record's setter names ({@code mode}, {@code width},
+     * {@code hash}, {@code hashes}, {@code keyBits}, {@code mac},
+     * {@code tagStub}, {@code chunk}, {@code wrapper}, {@code outer},
+     * {@code parallax}, {@code palette}, {@code segment}):
+     *
+     * <pre>{@code
+     * Pipeline.register('my-profile', mode: 'singlemsg-nomac', width: 512,
+     *         hash: 'areion512', keyBits: 1024)
+     * }</pre> */
+    static void register(Map<String, ?> record, String name) {
+        register(name, profileOf(record))
+    }
+
+    /** Builds a {@link Profile} record from a named-argument map (see
+     * {@link #register(Map, String)}). List values fill the
+     * {@code hashes} / {@code palette} arrays. */
+    static Profile profileOf(Map<String, ?> record) {
+        Profile profile = new Profile()
+        record.each { String key, Object value ->
+            switch (key) {
+                case 'name': profile.name(String.valueOf(value)); break
+                case 'mode': profile.mode(String.valueOf(value)); break
+                case 'width': profile.width(((Number) value).intValue()); break
+                case 'hash': profile.hash(String.valueOf(value)); break
+                case 'hashes': profile.hashes(strings(value)); break
+                case 'keyBits': profile.keyBits(((Number) value).intValue()); break
+                case 'mac': profile.mac(String.valueOf(value)); break
+                case 'tagStub': profile.tagStub(((Number) value).intValue()); break
+                case 'chunk': profile.chunk(((Number) value).intValue()); break
+                case 'wrapper': profile.wrapper((boolean) value); break
+                case 'outer': profile.outer(String.valueOf(value)); break
+                case 'parallax': profile.parallax((boolean) value); break
+                case 'palette': profile.palette(strings(value)); break
+                case 'segment': profile.segment(((Number) value).intValue()); break
+                default: throw new IllegalArgumentException("itb: unknown profile key ${key}")
+            }
+        }
+        profile
+    }
+
+    private static String[] strings(Object value) {
+        value instanceof Iterable
+                ? ((Iterable) value).collect { String.valueOf(it) } as String[]
+                : [String.valueOf(value)] as String[]
+    }
+
+    /** Looks up a registered profile (shipped or {@link #register}ed)
+     * by name; an unknown name fails with
+     * {@link Status#UNKNOWN_PROFILE}. */
+    static Profile lookup(String name) {
+        ItbException.relay { JPipeline.lookup(name) }
+    }
+
+    /** The sorted names of every registered profile. */
+    static List<String> profiles() {
+        ItbException.relay { JPipeline.profiles() }
     }
 
     /** Scopes a fresh Pipeline inside {@code body}: init, run the
@@ -84,12 +159,12 @@ final class Pipeline implements AutoCloseable {
         }
     }
 
-    /** Receiver-side counterpart of {@link #withPipeline}: open from
+    /** Receiver-side counterpart of {@link #withPipeline}: load from
      * a blob, run the closure, close on the way out. */
-    static <T> T withOpened(String profile, byte[] blob, Opts opts = new Opts(),
+    static <T> T withLoaded(byte[] blob,
             @ClosureParams(value = SimpleType, options = 'dev.everanium.itb.groovy.Pipeline')
             Closure<T> body) {
-        Pipeline pipe = open(profile, blob, opts)
+        Pipeline pipe = load(blob)
         try {
             body.call(pipe)
         } finally {
@@ -97,15 +172,32 @@ final class Pipeline implements AutoCloseable {
         }
     }
 
-    /** The exported session bundle bytes for the receiver side. */
-    byte[] getBlob() {
-        underlying.blob()
+    /** The current self-describing session blob: the bytes
+     * {@link #init} produced, the bytes {@link #load} re-marshalled,
+     * or the bytes of the latest {@link #rekey}. */
+    byte[] save() {
+        ItbException.relay { underlying.save() }
     }
 
-    /** Rotates the parallax + wrapper masters and refreshes
-     * {@link #getBlob}. Must not run concurrently with cipher calls
-     * or open stream sessions on the same Pipeline. */
-    void rekey(byte[] permMaster, byte[] wrapMaster) {
+    /** Writes {@link #save} to {@code path} inside the library with
+     * mode 0600; the containing directory must exist. */
+    void saveF(String path) {
+        ItbException.relay { underlying.saveF(path) }
+    }
+
+    /** Sets the worker cap for every subsequent cipher call.
+     * {@code n} is clamped, never rejected: {@code n <= 0} selects
+     * auto (CPU count), {@code n > 256} is treated as 256. Only the
+     * handle statuses raise. */
+    void maxWorkers(int n) {
+        ItbException.relay { underlying.maxWorkers(n) }
+    }
+
+    /** Rotates the parallax + wrapper masters and returns the fresh
+     * session blob (also available through {@link #save}). Must not
+     * run concurrently with cipher calls or open stream sessions on
+     * the same Pipeline. */
+    byte[] rekey(byte[] permMaster, byte[] wrapMaster) {
         ItbException.relay { underlying.rekey(permMaster, wrapMaster) }
     }
 

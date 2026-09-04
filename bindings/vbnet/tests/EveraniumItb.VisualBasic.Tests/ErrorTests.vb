@@ -1,6 +1,7 @@
 ' Error-mapping surface: opaque-string relay, closed Pipeline,
-' duplicate profile registration (with an 8-entry innerHashes
-' constellation). Every failure surfaces as this binding's own
+' duplicate profile registration (with an 8-entry mixed
+' constellation), unknown lookup, MaxWorkers on a closed handle.
+' Every failure surfaces as this binding's own
 ' ItbException with the numeric status preserved.
 
 Imports System.Text
@@ -10,10 +11,10 @@ Imports Xunit
 Public Class ErrorTests
 
     <Fact>
-    Public Sub UnknownProfileIsBadInputWithDiagnostic()
+    Public Sub UnknownProfileIsUnknownProfileWithDiagnostic()
         Dim ex As ItbException =
             Assert.Throws(Of ItbException)(Sub() Pipeline.Init("no-such-profile"))
-        Assert.Equal(Status.BadInput, ex.Status)
+        Assert.Equal(Status.UnknownProfile, ex.Status)
         Assert.False(String.IsNullOrEmpty(ex.Message))
     End Sub
 
@@ -38,22 +39,21 @@ Public Class ErrorTests
     End Sub
 
     <Fact>
-    Public Sub RegisterProfileMixedThenDuplicate()
-        ' 8-entry width-256 innerHashes constellation, layers off.
-        Dim opts As Opts = New Opts().
-            WithRaw("mode", "singlemsg-nomac").
-            WithRaw("width", "256").
-            WithRaw(
-                "innerHashes",
-                "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256").
-            WithRaw("keyBits", "1024").
-            WithRaw("parallaxOn", "false").
-            WithRaw("wrapperOn", "false")
-        Pipeline.RegisterProfile("vbnet-binding-test-mixed", opts)
+    Public Sub RegisterMixedThenDuplicate()
+        ' 8-entry width-256 mixed constellation, layers off.
+        Dim profile As New Global.Itb.Profile With {
+            .Mode = "singlemsg-nomac",
+            .Width = 256,
+            .Hashes = {"blake3", "blake2s", "areion256", "blake2b256",
+                       "chacha20", "blake3", "blake2s", "areion256"},
+            .KeyBits = 1024,
+            .Parallax = False,
+            .Wrapper = False}
+        Pipeline.Register("vbnet-binding-test-mixed", profile)
 
         ' The registered profile round-trips.
         Using sender As Pipeline = Pipeline.Init("vbnet-binding-test-mixed")
-            Using receiver As Pipeline = Pipeline.Open("vbnet-binding-test-mixed", sender.Blob)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain As Byte() = Encoding.UTF8.GetBytes("custom profile")
                 Dim wire As Byte() = sender.EncryptMessage(plain)
                 Assert.Equal(Of Byte)(plain, receiver.DecryptMessage(wire))
@@ -62,8 +62,25 @@ Public Class ErrorTests
 
         ' Duplicate name is a distinct status.
         Dim ex As ItbException = Assert.Throws(Of ItbException)(
-            Sub() Pipeline.RegisterProfile("vbnet-binding-test-mixed", opts))
+            Sub() Pipeline.Register("vbnet-binding-test-mixed", profile))
         Assert.Equal(Status.ProfileExists, ex.Status)
+    End Sub
+
+    <Fact>
+    Public Sub LookupUnknownNameIsUnknownProfile()
+        Dim ex As ItbException =
+            Assert.Throws(Of ItbException)(Sub() Pipeline.Lookup("no-such-profile"))
+        Assert.Equal(Status.UnknownProfile, ex.Status)
+    End Sub
+
+    <Fact>
+    Public Sub MaxWorkersOnClosedPipelineIsTripleClosed()
+        Using pipe As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1")
+            pipe.Close()
+            Dim ex As ItbException =
+                Assert.Throws(Of ItbException)(Sub() pipe.MaxWorkers(2))
+            Assert.Equal(Status.TripleClosed, ex.Status)
+        End Using
     End Sub
 
     <Fact>
@@ -90,8 +107,7 @@ Public Class ErrorTests
             "areion512", "blake2b512", "areion512", "blake2b512",
             "areion512", "blake2b512", "areion512", "blake2b512")
         Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", senderOpts)
-            Using receiver As Pipeline = Pipeline.Open(
-                "singlemsg-triple-mac-v1", sender.Blob, receiverOpts)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain As Byte() = Encoding.UTF8.GetBytes(
                     "per-call inner-hashes override round-trip payload")
                 Dim wire As Byte() = sender.EncryptMessage(plain)

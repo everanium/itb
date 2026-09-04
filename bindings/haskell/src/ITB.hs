@@ -7,9 +7,9 @@
 -- string passed through to Go for validation; the binding carries no
 -- ITB construction logic of its own.
 --
--- > sender   <- newPipeline "singlemsg-triple-mac-v1" Nothing
--- > blobHere <- blob sender
--- > receiver <- newPipeline "singlemsg-triple-mac-v1" (Just blobHere)
+-- > sender   <- newPipeline "singlemsg-triple-mac-v1"
+-- > blobHere <- save sender
+-- > receiver <- loadPipeline blobHere Nothing
 -- > wire     <- encryptMessage sender "hello"
 -- > plain    <- decryptMessage receiver wire   -- == "hello"
 module ITB
@@ -17,8 +17,11 @@ module ITB
     Pipeline
   , newPipeline
   , initPipeline
-  , openPipeline
-  , blob
+  , loadPipeline
+  , loadPipelineF
+  , save
+  , saveF
+  , setMaxWorkers
   , rekey
   , closePipeline
   , freePipeline
@@ -26,7 +29,11 @@ module ITB
   , decryptMessage
   , encryptStreamOneShot
   , decryptStreamOneShot
-  , registerProfile
+    -- * Profile records
+  , inspect
+  , register
+  , lookupProfile
+  , profiles
     -- * Incremental stream sessions
   , StreamEncryptor
   , StreamDecryptor
@@ -60,10 +67,8 @@ module ITB
   , parallaxPalette
     -- * Errors
   , module ITB.Errors
-    -- * Library roster and runtime knobs
+    -- * Library version and runtime knobs
   , version
-  , hashes
-  , profiles
   , setMemoryLimit
   , setGcPercent
   , bindingVersion
@@ -87,40 +92,11 @@ import ITB.Stream
 
 -- | The binding's own version.
 bindingVersion :: String
-bindingVersion = "0.3.5"
+bindingVersion = "0.4.1"
 
 -- | Returns the libitb library version string.
 version :: IO String
 version = readCStr c_ITB_Version
-
--- | The shipped hash primitive roster in canonical registry order,
--- as @(name, widthBits)@ pairs.
-hashes :: IO [(String, Int)]
-hashes = do
-  n <- c_ITB_HashCount
-  mapM row [0 .. n - 1]
-  where
-    row i = do
-      name <- readCStr (c_ITB_HashName i)
-      w <- c_ITB_HashWidth i
-      pure (name, fromIntegral w)
-
--- | Built-in Triple profile names. The C ABI exposes no profile
--- enumeration; this list mirrors the shipped profile registry
--- (@triple\/profile.go@) and does not include profiles added at
--- runtime via 'registerProfile'.
-profiles :: [String]
-profiles =
-  [ "streaming-aead-triple-mac-v1"
-  , "streaming-noaead-triple-v1"
-  , "singlemsg-triple-mac-v1"
-  , "singlemsg-triple-nomac-v1"
-  , "blob-triple-mac-v1"
-  , "streaming-aead-triple-mac-mixed-v1"
-  , "streaming-noaead-triple-mixed-v1"
-  , "singlemsg-triple-mac-mixed-v1"
-  , "singlemsg-triple-nomac-mixed-v1"
-  ]
 
 -- | Sets the Go runtime's soft heap limit in bytes and returns the
 -- previous limit. A negative value queries without changing.

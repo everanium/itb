@@ -30,8 +30,7 @@ class StreamIncrementalTest {
         // Small chunk size so the 64 KiB payload spans many chunks.
         Opts opts = new Opts().withChunkSize(4096);
         try (Pipeline sender = Pipeline.init("streaming-aead-triple-mac-v1", opts);
-                Pipeline receiver = Pipeline.open(
-                        "streaming-aead-triple-mac-v1", sender.blob(), opts)) {
+                Pipeline receiver = Pipeline.load(sender.save())) {
             byte[] plain = new byte[65_536];
             for (int i = 0; i < plain.length; i++) {
                 plain[i] = (byte) (i % 241);

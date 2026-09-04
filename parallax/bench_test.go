@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/parallax"
 )
 
@@ -85,15 +85,15 @@ var segmentSizeSweep = []int{17, 251, 4093, 16381, 65521}
 // project. Held in the bench-only file so the production package code does
 // not depend on an enumerated list.
 var benchRegistry = []string{
-	ctr.CipherAreion256,
-	ctr.CipherAreion512,
-	ctr.CipherBLAKE2b256,
-	ctr.CipherBLAKE2b512,
-	ctr.CipherBLAKE2s,
-	ctr.CipherBLAKE3,
-	ctr.CipherAES128CTR,
-	ctr.CipherSipHash24,
-	ctr.CipherChaCha20,
+	hashes.CipherAreion256,
+	hashes.CipherAreion512,
+	hashes.CipherBLAKE2b256,
+	hashes.CipherBLAKE2b512,
+	hashes.CipherBLAKE2s,
+	hashes.CipherBLAKE3,
+	hashes.CipherAES128CTR,
+	hashes.CipherSipHash24,
+	hashes.CipherChaCha20,
 }
 
 // benchDefaultPalette is the small mixed palette used by the worker
@@ -101,9 +101,9 @@ var benchRegistry = []string{
 // baseline representative of a typical deployment without inflating
 // per-message setup cost.
 var benchDefaultPalette = []string{
-	ctr.CipherAES128CTR,
-	ctr.CipherChaCha20,
-	ctr.CipherBLAKE3,
+	hashes.CipherAES128CTR,
+	hashes.CipherChaCha20,
+	hashes.CipherBLAKE3,
 }
 
 // baselineSegmentSizes enumerates the segment widths the baseline
@@ -146,15 +146,15 @@ var streamBenchPlaintextLen = 4 * 1024 * 1024
 // noise from neighbouring slots; the homogeneous shape is what makes
 // the per-primitive numbers directly comparable across the table.
 var streamBenchPrimitives = []string{
-	ctr.CipherAreion256,
-	ctr.CipherAreion512,
-	ctr.CipherBLAKE2b256,
-	ctr.CipherBLAKE2b512,
-	ctr.CipherBLAKE2s,
-	ctr.CipherBLAKE3,
-	ctr.CipherAES128CTR,
-	ctr.CipherSipHash24,
-	ctr.CipherChaCha20,
+	hashes.CipherAreion256,
+	hashes.CipherAreion512,
+	hashes.CipherBLAKE2b256,
+	hashes.CipherBLAKE2b512,
+	hashes.CipherBLAKE2s,
+	hashes.CipherBLAKE3,
+	hashes.CipherAES128CTR,
+	hashes.CipherSipHash24,
+	hashes.CipherChaCha20,
 }
 
 // streamBenchPaletteN is the homogeneous palette size used by every

@@ -16,18 +16,19 @@
 //	parity -mode=decrypt -profile=P -hash=H -seed-file=S -in=wire.bin  -out=back.bin [-nonce-bits=N]
 //
 // -nonce-bits (default 512) selects the on-wire nonce width (128 |
-// 256 | 512) passed to [triple.Init] / [triple.Open]. The nonce width
+// 256 | 512) passed to [triple.Init] by -mode=init. The nonce width
 // determines the per-pixel buf shape the inner hash absorbs (nonce
 // bytes + 4 → 20 / 36 / 68 bytes; the dual-nonce wire header itself is
 // 2·nonce + 4 → 36 / 68 / 132 bytes), so sweeping it drives every
-// chain-absorb kernel width through the cross-build matrix. Every
-// invocation against a given seed blob must repeat the -nonce-bits
-// value the blob was initialised with.
+// chain-absorb kernel width through the cross-build matrix. The
+// session blob carries the width it was initialised with, so
+// -mode=encrypt / -mode=decrypt accept the flag for invocation
+// symmetry but take the width from the blob.
 //
 // -mode=init calls [triple.Init] against the requested (profile, hash)
 // pair and writes the session blob to -seed-file. Every subsequent
 // -mode=encrypt / -mode=decrypt invocation on any build arm reads the
-// blob and reconstructs the identical seed state via [triple.Open].
+// blob and reconstructs the identical seed state via [triple.Load].
 // The fixed-seeds contract is what makes cross-build parity comparable:
 // the two arms observe the same PRF key material and per-slot Components
 // on the same nonce space, so wire-shape divergence isolates to the
@@ -141,7 +142,7 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, "parity: -mode=encrypt requires -in and -out")
 			return 2
 		}
-		if err := doEncrypt(*profile, *seedFile, *inFile, *outFile, *nonceBits); err != nil {
+		if err := doEncrypt(*profile, *seedFile, *inFile, *outFile); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: encrypt: %v\n", err)
 			return 1
 		}
@@ -150,7 +151,7 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, "parity: -mode=decrypt requires -in and -out")
 			return 2
 		}
-		if err := doDecrypt(*profile, *seedFile, *inFile, *outFile, *nonceBits); err != nil {
+		if err := doDecrypt(*profile, *seedFile, *inFile, *outFile); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: decrypt: %v\n", err)
 			return 1
 		}
@@ -177,12 +178,12 @@ func ensureProfile(profileName, hashName string) error {
 		return fmt.Errorf("unknown inner hash %q (not in hashes.Registry)", hashName)
 	}
 	prof := triple.Profile{
-		Mode:       "singlemsg-nomac",
-		Width:      int(spec.Width),
-		InnerHash:  hashName,
-		KeyBits:    parityKeyBits,
-		ParallaxOn: false,
-		WrapperOn:  false,
+		Mode:      "singlemsg-nomac",
+		Width:     int(spec.Width),
+		InnerHash: hashName,
+		KeyBits:   parityKeyBits,
+		Parallax:  false,
+		Wrapper:   false,
 	}
 	// parity-mac-* names register the MAC Authenticated variant with
 	// the MAC pinned to kmac256, so the cross-build matrix also forces
@@ -192,7 +193,7 @@ func ensureProfile(profileName, hashName string) error {
 		prof.Mode = "singlemsg-mac"
 		prof.MacName = "kmac256"
 	}
-	err := triple.RegisterProfile(profileName, prof)
+	err := triple.Register(profileName, prof)
 	if err != nil && !errors.Is(err, triple.ErrProfileExists) {
 		return err
 	}
@@ -237,11 +238,12 @@ func doInit(profileName, hashName, seedPath string, nonceBits int) error {
 }
 
 // doEncrypt reads the seed envelope, reconstructs the Pipeline via
-// triple.Open, encrypts the -in file, and writes the wire to -out. The
-// -profile flag must match the envelope's recorded profile (double-check
-// against a wrong seed file being paired with a mismatched profile flag).
-func doEncrypt(profileName, seedPath, inPath, outPath string, nonceBits int) error {
-	pipe, err := openFromSeed(profileName, seedPath, nonceBits)
+// [triple.Load], encrypts the -in file, and writes the wire to -out.
+// The -profile flag must match the envelope's recorded profile
+// (double-check against a wrong seed file being paired with a
+// mismatched profile flag).
+func doEncrypt(profileName, seedPath, inPath, outPath string) error {
+	pipe, err := openFromSeed(profileName, seedPath)
 	if err != nil {
 		return err
 	}
@@ -265,8 +267,8 @@ func doEncrypt(profileName, seedPath, inPath, outPath string, nonceBits int) err
 // the -in wire, and writes recovered plaintext to -out. Wire produced by
 // the opposite build arm's doEncrypt must round-trip byte-identically
 // through this path; any mismatch localises to the pixel kernel.
-func doDecrypt(profileName, seedPath, inPath, outPath string, nonceBits int) error {
-	pipe, err := openFromSeed(profileName, seedPath, nonceBits)
+func doDecrypt(profileName, seedPath, inPath, outPath string) error {
+	pipe, err := openFromSeed(profileName, seedPath)
 	if err != nil {
 		return err
 	}
@@ -287,11 +289,11 @@ func doDecrypt(profileName, seedPath, inPath, outPath string, nonceBits int) err
 }
 
 // openFromSeed reads the seed envelope written by -mode=init and
-// reconstructs the Pipeline. The envelope's Profile field is compared
-// against the -profile flag so a wrong pairing surfaces fast rather
-// than deep inside triple.Open's blob-mismatch path. nonceBits must
-// match the value the blob was initialised with.
-func openFromSeed(profileName, seedPath string, nonceBits int) (*triple.Pipeline, error) {
+// reconstructs the Pipeline via [triple.Load]. The envelope's Profile
+// field is compared against the -profile flag so a wrong pairing
+// surfaces fast: Load itself takes every structural parameter — nonce
+// width included — from the blob and never consults the profile name.
+func openFromSeed(profileName, seedPath string) (*triple.Pipeline, error) {
 	buf, err := os.ReadFile(seedPath)
 	if err != nil {
 		return nil, fmt.Errorf("read seed file %q: %w", seedPath, err)
@@ -310,9 +312,9 @@ func openFromSeed(profileName, seedPath string, nonceBits int) (*triple.Pipeline
 	if err != nil {
 		return nil, fmt.Errorf("decode blob base64: %w", err)
 	}
-	pipe, err := triple.Open(profileName, blob, triple.Opts{NonceBits: nonceBits})
+	pipe, err := triple.Load(blob)
 	if err != nil {
-		return nil, fmt.Errorf("triple.Open(%q): %w", profileName, err)
+		return nil, fmt.Errorf("triple.Load(%q): %w", profileName, err)
 	}
 	return pipe, nil
 }

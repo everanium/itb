@@ -90,12 +90,12 @@
 // expose custom-MAC plug.
 //
 // A seed blob exported under a custom MAC name records the name, not
-// the construction: the name is a promise. Opening such a blob in
+// the construction: the name is a promise. Loading such a blob in
 // another process requires that process to have registered the same
 // name with the same construction beforehand; a missing registration
-// fails blob open with an unknown-MAC error, and a divergent
-// construction under the same name surfaces as a MAC failure at
-// decrypt — indistinguishable from tampering by design.
+// fails blob load with an error naming the unknown primitive, and a
+// divergent construction under the same name surfaces as a MAC
+// failure at decrypt — indistinguishable from tampering by design.
 //
 // # Custom-MAC builders
 //

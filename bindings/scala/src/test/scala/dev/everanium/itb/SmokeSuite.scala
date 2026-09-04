@@ -1,4 +1,4 @@
-// Init -> blob -> Open -> encryptMessage -> decryptMessage round
+// Init -> save -> load -> encryptMessage -> decryptMessage round
 // trip, plus the shared suite base used by every test file.
 
 package dev.everanium.itb
@@ -22,13 +22,13 @@ class SmokeSuite extends ItbSuite:
 
   test("library version is non-empty") {
     assert(Runtime.version.nonEmpty)
-    assertEquals(Runtime.BindingVersion, "0.3.5")
+    assertEquals(Runtime.BindingVersion, "0.4.1")
   }
 
   test("smoke round trip") {
     Using.resource(ok(Pipeline.init("singlemsg-triple-mac-v1"))) { sender =>
-      assert(sender.blob.nonEmpty)
-      Using.resource(ok(Pipeline.open("singlemsg-triple-mac-v1", sender.blob))) { receiver =>
+      assert(ok(sender.save()).nonEmpty)
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) { receiver =>
         val plain = "smoke round-trip payload".getBytes("UTF-8")
         val wire = ok(sender.encryptMessage(plain))
         assert(!wire.sameElements(plain))

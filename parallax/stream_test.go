@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/hashes"
 )
 
 // streamPaletteCases enumerates representative palette shapes the
@@ -20,11 +20,11 @@ var streamPaletteCases = []struct {
 	palette []string
 }{
 	// PRF-counter family: small-block keyed-PRF slots.
-	{"prf-only", []string{ctr.CipherBLAKE3, ctr.CipherSipHash24, ctr.CipherBLAKE2s}},
+	{"prf-only", []string{hashes.CipherBLAKE3, hashes.CipherSipHash24, hashes.CipherBLAKE2s}},
 	// Native-block family: AES-NI and ChaCha20 keystreams.
-	{"rebuild-only", []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherAES128CTR}},
+	{"rebuild-only", []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherAES128CTR}},
 	// Mixed palette spanning both families.
-	{"mixed", []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3, ctr.CipherSipHash24}},
+	{"mixed", []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3, hashes.CipherSipHash24}},
 }
 
 // streamSizes spans sub-chunk, exact-chunk, and multi-chunk payloads

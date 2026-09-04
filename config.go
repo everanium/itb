@@ -6,9 +6,9 @@ import (
 	"slices"
 )
 
-// Config carries per-encryptor overrides for the previously-global
-// dispatch settings that scope per encryptor: nonce size, barrier
-// fill, and parallel-worker cap.
+// Config carries per-encryptor overrides for the dispatch settings
+// that scope per encryptor: nonce size, barrier fill, and
+// parallel-worker cap.
 //
 // Sentinel-valued fields signal "inherit the compile-in default";
 // non-sentinel values signal that the encryptor has explicitly set

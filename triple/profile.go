@@ -1,9 +1,14 @@
 package triple
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/parallax"
-	"github.com/everanium/itb/wrapper"
 )
 
 // Profile mode discriminators. profile.mode selects one of these to
@@ -89,7 +94,7 @@ const (
 	// CTR primitive. ChaCha20 is the widest-known outer cipher in the
 	// wrapper's shipped CipherNames set and is the default used by
 	// tools/eitb/main.go's demonstrator runs.
-	defaultOuterCipher = wrapper.CipherChaCha20
+	defaultOuterCipher = hashes.CipherChaCha20
 )
 
 // defaultParallaxPalette is the shipped parallax palette for every
@@ -102,15 +107,21 @@ func defaultParallaxPalette() []string {
 	return []string{"aescmac", "chacha20", "blake3"}
 }
 
-// Profile is the record for one named profile in the registry. Every
-// field is the profile default; per-call [Opts] overrides are folded
-// in by the internal resolver to build the per-Pipeline effective
-// settings consumed by [Init] and [Open].
+// Profile is the record for one named profile in the registry and,
+// once resolved, the shape a [Pipeline] runs with. In the registry
+// every field is the profile default; [Init] folds the per-call
+// [Opts] overrides in to build the resolved record the Pipeline
+// consumes. The resolved record is the recipe: it is JSON-encoded
+// through [Profile.MarshalJSON] into the blob's wrap-layer, decoded
+// by [Inspect], and is the sole structural source [Load] rebuilds a
+// Pipeline from.
 //
 // Callers who need a configuration outside the shipped set construct
-// a Profile literal and hand it to [RegisterProfile]. The name is
-// supplied separately as the RegisterProfile argument; the Name field
-// is populated by RegisterProfile after validation.
+// a Profile literal and hand it to [Register]. The name is supplied
+// separately as the Register argument; the Name field is populated by
+// Register after validation. Inside a blob the Name field is the
+// sender's label — it is carried for display and is never consulted
+// on the reopen path.
 //
 // Field defaults left at their zero value inherit the corresponding
 // compile-in default at [Init] time: ChunkSize=0 defers to
@@ -120,9 +131,10 @@ func defaultParallaxPalette() []string {
 // field must be supplied explicitly.
 type Profile struct {
 	// Name is the registered profile identifier. Populated by
-	// [RegisterProfile] after validation succeeds; callers construct
-	// Profile literals without a Name and pass the desired name as the
-	// separate RegisterProfile argument.
+	// [Register] after validation succeeds; callers construct Profile
+	// literals without a Name and pass the desired name as the separate
+	// Register argument. On a record decoded from a blob it is the
+	// sender's label.
 	Name string
 
 	// Mode selects which cipher surface the Pipeline exposes. One of:
@@ -162,7 +174,7 @@ type Profile struct {
 	// 32-byte default, which aligns with every shipped MAC's tag
 	// length. Non-zero values must fall in [16, 64] — the floor
 	// matches the macs.Register TagSize >= 16 contract, the ceiling
-	// covers the longest realistic MAC tag; [RegisterProfile] rejects
+	// covers the longest realistic MAC tag; [Register] rejects
 	// anything else fail-fast. Meaningful for No MAC profiles paired
 	// with a custom-tag-size MAC counterpart; a MAC-carrying
 	// profile's authenticated envelope sizes its reservation from the
@@ -170,7 +182,7 @@ type Profile struct {
 	TagStubSize int
 
 	// OuterCipher is the wrapper (Outer cipher) primitive name (e.g.
-	// "chacha20"). Empty when WrapperOn is false; otherwise must be
+	// "chacha20"). Empty when Wrapper is false; otherwise must be
 	// present in [github.com/everanium/itb/wrapper.CipherNames].
 	OuterCipher string
 
@@ -179,7 +191,7 @@ type Profile struct {
 	// the palette size is bounded by
 	// [github.com/everanium/itb/parallax.MinPaletteSize] /
 	// [github.com/everanium/itb/parallax.MaxPaletteSize] when
-	// ParallaxOn is true.
+	// Parallax is true.
 	ParallaxPalette []string
 
 	// ParallaxSegmentSize is the parallax layer's per-segment byte
@@ -188,12 +200,12 @@ type Profile struct {
 	// [Init] time.
 	ParallaxSegmentSize int
 
-	// ParallaxOn engages the parallax layer for this profile.
-	ParallaxOn bool
+	// Parallax engages the parallax layer for this profile.
+	Parallax bool
 
-	// WrapperOn engages the wrapper (Outer cipher) layer for this
+	// Wrapper engages the wrapper (Outer cipher) layer for this
 	// profile.
-	WrapperOn bool
+	Wrapper bool
 
 	// MixedHashes selects a per-slot ITB hash primitive constellation
 	// for the 8-seed Interlocked Barrier Triple bundle. Slot
@@ -214,33 +226,8 @@ type Profile struct {
 	// A mixed constellation and a single-primitive [Profile.InnerHash]
 	// are mutually exclusive: when [Profile.MixedHashes] is populated,
 	// [Profile.InnerHash] must be the empty string. The two paths are
-	// dispatched by [Init] and [Open] according to which field is set.
+	// dispatched by [Init] and [Load] according to which field is set.
 	MixedHashes [8]string
-}
-
-// resolvedProfile is the Opts-merged effective profile shape actually
-// consumed by [Init] / [Open]. Every field carries the final value
-// after profile-default → Opts-override merge.
-type resolvedProfile struct {
-	name                string
-	mode                string
-	width               int
-	chunkSize           int
-	innerHash           string
-	keyBits             int
-	macName             string
-	tagStubSize         int
-	outerCipher         string
-	parallaxPalette     []string
-	parallaxSegmentSize int
-	parallaxOn          bool
-	wrapperOn           bool
-
-	// mixedHashes carries the profile's per-slot primitive constellation
-	// when set. When any entry is non-empty, dispatch consults it per
-	// slot; when every entry is empty, dispatch falls back to
-	// innerHash. See [Profile.MixedHashes] for the slot ordering.
-	mixedHashes [8]string
 }
 
 // isMixedProfile reports whether p carries a mixed-primitive
@@ -255,21 +242,9 @@ func isMixedProfile(p Profile) bool {
 	return false
 }
 
-// isMixedResolved is the resolvedProfile-side counterpart to
-// [isMixedProfile]. Used by [Init] / [Open] dispatch to pick the
-// mixed-vs-single seed-allocation path.
-func isMixedResolved(r resolvedProfile) bool {
-	for _, s := range r.mixedHashes {
-		if s != "" {
-			return true
-		}
-	}
-	return false
-}
-
 // profileRegistry maps profile name to [Profile] record. Populated in
 // package init for the shipped profiles; user-defined additions land
-// via [RegisterProfile]. Access is serialised via profileRegistryMu.
+// via [Register]. Access is serialised via profileRegistryMu.
 var profileRegistry = map[string]Profile{}
 
 func init() {
@@ -285,8 +260,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 	}
 
 	// Streaming Non-AEAD Triple (No MAC), parallax on + wrapper on.
@@ -301,8 +276,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 	}
 
 	// Single Message Triple, MAC-authenticated, parallax on + wrapper on.
@@ -317,8 +292,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 	}
 
 	// Single Message Triple, No MAC, parallax on + wrapper on.
@@ -333,8 +308,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 	}
 
 	// Blob-only bundle profile — MAC-authenticated inner Blob{N}
@@ -352,8 +327,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 	}
 
 	// Mixed-primitive Streaming AEAD Triple, MAC-authenticated, parallax
@@ -370,8 +345,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 		MixedHashes: [8]string{
 			"areion256", "blake3", "blake2b256", "blake2s",
 			"chacha20", "areion256", "blake3", "blake2b256",
@@ -393,8 +368,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 		MixedHashes: [8]string{
 			"blake3", "chacha20", "blake2s", "areion256",
 			"blake2b256", "blake3", "chacha20", "blake2s",
@@ -418,8 +393,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 		MixedHashes: [8]string{
 			"aescmac", "siphash24", "aescmac", "siphash24",
 			"aescmac", "siphash24", "aescmac", "siphash24",
@@ -440,8 +415,8 @@ func init() {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 		MixedHashes: [8]string{
 			"areion512", "blake2b512", "areion512", "blake2b512",
 			"areion512", "blake2b512", "areion512", "blake2b512",
@@ -449,95 +424,200 @@ func init() {
 	}
 }
 
-// lookupProfile returns the registered [Profile] for name and
-// [ErrUnknownProfile] on miss. Serialised via profileRegistryMu so a
-// concurrent [RegisterProfile] is race-free.
-func lookupProfile(name string) (Profile, error) {
+// Lookup returns a copy of the [Profile] registered under name — a
+// shipped catalogue entry or a prior [Register] registration — or
+// [ErrUnknownProfile]. The copy's ParallaxPalette is a fresh slice;
+// caller-side mutation does not affect the registry. Safe under
+// concurrent invocation with [Register], [Init], and [Profiles].
+//
+// Lookup is the registry's read surface. The reopen path ([Load] /
+// [LoadF] / [Inspect]) never consults the registry — the blob carries
+// the resolved record.
+func Lookup(name string) (Profile, error) {
 	profileRegistryMu.RLock()
 	p, ok := profileRegistry[name]
 	profileRegistryMu.RUnlock()
 	if !ok {
 		return Profile{}, ErrUnknownProfile
 	}
+	p.ParallaxPalette = append([]string(nil), p.ParallaxPalette...)
 	return p, nil
 }
 
 // resolveProfile merges the profile defaults with the caller-supplied
-// [Opts] to produce a [resolvedProfile]. Every Opts field takes
-// precedence over the corresponding profile default when set (non-zero
-// / non-empty for value types; non-nil pointer for the two layer
-// toggles).
+// [Opts] to produce the resolved [Profile] a Pipeline runs with. Every
+// Opts field takes precedence over the corresponding profile default
+// when set (non-zero / non-empty for value types; non-nil pointer for
+// the two layer toggles).
 //
-// Callers that supply parallax palette overrides receive a defensive
-// copy so future mutation of the caller's slice does not leak into
-// the Pipeline.
-func resolveProfile(prof Profile, opts Opts) resolvedProfile {
-	out := resolvedProfile{
-		name:                prof.Name,
-		mode:                prof.Mode,
-		width:               prof.Width,
-		chunkSize:           prof.ChunkSize,
-		innerHash:           prof.InnerHash,
-		keyBits:             prof.KeyBits,
-		macName:             prof.MacName,
-		tagStubSize:         prof.TagStubSize,
-		outerCipher:         prof.OuterCipher,
-		parallaxPalette:     append([]string(nil), prof.ParallaxPalette...),
-		parallaxSegmentSize: prof.ParallaxSegmentSize,
-		parallaxOn:          prof.ParallaxOn,
-		wrapperOn:           prof.WrapperOn,
-		mixedHashes:         prof.MixedHashes,
-	}
+// The result carries a defensive copy of the palette so future
+// mutation of the caller's slice (Opts or registry-side) does not
+// leak into the Pipeline.
+func resolveProfile(prof Profile, opts Opts) Profile {
+	out := prof
+	out.ParallaxPalette = append([]string(nil), prof.ParallaxPalette...)
 
 	if opts.ChunkSize > 0 {
-		out.chunkSize = opts.ChunkSize
+		out.ChunkSize = opts.ChunkSize
 	}
 	if opts.InnerHash != "" {
-		out.innerHash = opts.InnerHash
+		out.InnerHash = opts.InnerHash
 	}
 	if opts.KeyBits > 0 {
-		out.keyBits = opts.KeyBits
+		out.KeyBits = opts.KeyBits
 	}
-	if opts.MacName != "" && out.macName != "" {
+	if opts.MacName != "" && out.MacName != "" {
 		// Only respect MacName override when the profile carries a
 		// MAC in the first place — No MAC profiles ignore the field.
-		out.macName = opts.MacName
+		out.MacName = opts.MacName
 	}
 	if opts.TagStubSize > 0 {
-		out.tagStubSize = opts.TagStubSize
+		out.TagStubSize = opts.TagStubSize
 	}
 	if opts.OuterCipher != "" {
-		out.outerCipher = opts.OuterCipher
+		out.OuterCipher = opts.OuterCipher
 	}
 	if len(opts.ParallaxPalette) > 0 {
-		out.parallaxPalette = append([]string(nil), opts.ParallaxPalette...)
+		out.ParallaxPalette = append([]string(nil), opts.ParallaxPalette...)
 	}
 	if opts.ParallaxSegmentSize > 0 {
-		out.parallaxSegmentSize = opts.ParallaxSegmentSize
+		out.ParallaxSegmentSize = opts.ParallaxSegmentSize
 	}
 	if opts.WithParallax != nil {
-		out.parallaxOn = *opts.WithParallax
+		out.Parallax = *opts.WithParallax
 	}
 	if opts.WithWrapper != nil {
-		out.wrapperOn = *opts.WithWrapper
+		out.Wrapper = *opts.WithWrapper
 	}
 	// MixedHashes override. When any Opts.MixedHashes slot is
 	// non-empty, the caller wants mixed dispatch: install the array
-	// and clear innerHash so [isMixedResolved] returns true and the
+	// and clear InnerHash so [isMixedProfile] returns true and the
 	// mixed seed-alloc / blob-import paths take over. This mirrors
 	// the Profile-level mutual-exclusion rule (InnerHash and
 	// MixedHashes are exclusive dispatch paths). Slot-level
 	// validation (each name resolves via hashes.Find, primitive
 	// width matches profile Width, every one of the 8 slots
 	// populated) fires fail-fast inside allocEightSeedsMixed at
-	// Init time and importInnerBlobMixed at Open time — see
+	// Init time and checkRecipeProfile at Load time — see
 	// [Opts.MixedHashes] doc-comment.
 	for _, s := range opts.MixedHashes {
 		if s != "" {
-			out.mixedHashes = opts.MixedHashes
-			out.innerHash = ""
+			out.MixedHashes = opts.MixedHashes
+			out.InnerHash = ""
 			break
 		}
 	}
 	return out
+}
+
+// profileWire is the JSON shape of a [Profile] record — the recipe
+// carried in the blob's wrap-layer, the [Inspect] output, and the
+// input accepted by the FFI register entry. Key names are frozen for
+// wrap-layer schema version 2; every optional key uses omitempty so a
+// zero / empty field is absent on the wire. MixedHashes rides as a
+// slice so an all-empty constellation is omitted rather than emitted
+// as eight empty strings.
+type profileWire struct {
+	Name                string   `json:"name,omitempty"`
+	Mode                string   `json:"mode"`
+	Width               int      `json:"width"`
+	InnerHash           string   `json:"hash,omitempty"`
+	MixedHashes         []string `json:"hashes,omitempty"`
+	KeyBits             int      `json:"keybits"`
+	MacName             string   `json:"mac,omitempty"`
+	TagStubSize         int      `json:"tagstub,omitempty"`
+	ChunkSize           int      `json:"chunk,omitempty"`
+	Wrapper             bool     `json:"wrapper"`
+	OuterCipher         string   `json:"outer,omitempty"`
+	Parallax            bool     `json:"parallax"`
+	ParallaxPalette     []string `json:"palette,omitempty"`
+	ParallaxSegmentSize int      `json:"segment,omitempty"`
+}
+
+// MarshalJSON encodes p as the documented recipe object. Key set and
+// presence rules:
+//
+//	name      Name                 omitted when empty
+//	mode      Mode                 always
+//	width     Width                always
+//	hash      InnerHash            omitted when empty (mixed profiles)
+//	hashes    MixedHashes          omitted when every slot is empty;
+//	                               otherwise exactly eight strings
+//	keybits   KeyBits              always
+//	mac       MacName              omitted when empty (No MAC)
+//	tagstub   TagStubSize          omitted when 0
+//	chunk     ChunkSize            omitted when 0
+//	wrapper   Wrapper              always
+//	outer     OuterCipher          omitted when empty
+//	parallax  Parallax             always
+//	palette   ParallaxPalette      omitted when empty
+//	segment   ParallaxSegmentSize  omitted when 0
+//
+// No semantic validation is applied by the codec; the field rules are
+// enforced by [Register] on the registry side and by [Load] on the
+// reopen side. json.Marshal of a Profile anywhere produces this form.
+func (p Profile) MarshalJSON() ([]byte, error) {
+	w := profileWire{
+		Name:                p.Name,
+		Mode:                p.Mode,
+		Width:               p.Width,
+		InnerHash:           p.InnerHash,
+		KeyBits:             p.KeyBits,
+		MacName:             p.MacName,
+		TagStubSize:         p.TagStubSize,
+		ChunkSize:           p.ChunkSize,
+		Wrapper:             p.Wrapper,
+		OuterCipher:         p.OuterCipher,
+		Parallax:            p.Parallax,
+		ParallaxPalette:     p.ParallaxPalette,
+		ParallaxSegmentSize: p.ParallaxSegmentSize,
+	}
+	if isMixedProfile(p) {
+		w.MixedHashes = append([]string(nil), p.MixedHashes[:]...)
+	}
+	return json.Marshal(w)
+}
+
+// UnmarshalJSON decodes the documented recipe object into p. The
+// decoder is strict: an unknown key, trailing content after the
+// object, or a hashes array whose length is neither 0 nor 8 is an
+// error. Every other field is a straight copy; no semantic validation
+// runs here (see [Profile.MarshalJSON]). A JSON null leaves p
+// unchanged.
+func (p *Profile) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
+	var w profileWire
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&w); err != nil {
+		return fmt.Errorf("triple: profile record: %w", err)
+	}
+	if dec.More() {
+		return errors.New("triple: profile record: trailing content")
+	}
+	if len(w.MixedHashes) != 0 && len(w.MixedHashes) != 8 {
+		return fmt.Errorf("triple: profile record: hashes has %d entries, want 0 or 8", len(w.MixedHashes))
+	}
+	out := Profile{
+		Name:                w.Name,
+		Mode:                w.Mode,
+		Width:               w.Width,
+		InnerHash:           w.InnerHash,
+		KeyBits:             w.KeyBits,
+		MacName:             w.MacName,
+		TagStubSize:         w.TagStubSize,
+		ChunkSize:           w.ChunkSize,
+		Wrapper:             w.Wrapper,
+		OuterCipher:         w.OuterCipher,
+		Parallax:            w.Parallax,
+		ParallaxPalette:     w.ParallaxPalette,
+		ParallaxSegmentSize: w.ParallaxSegmentSize,
+	}
+	if len(w.MixedHashes) == 8 {
+		copy(out.MixedHashes[:], w.MixedHashes)
+	}
+	*p = out
+	return nil
 }

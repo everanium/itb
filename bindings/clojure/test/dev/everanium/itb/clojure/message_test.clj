@@ -30,7 +30,7 @@
                    "singlemsg-triple-mac-mixed-v1"
                    "singlemsg-triple-nomac-mixed-v1"]]
     (with-open [sender (itb/init profile)]
-      (with-open [receiver (itb/open profile (itb/blob sender))]
+      (with-open [receiver (itb/load (itb/save sender))]
         (doseq [size [(* 4 1024) (* 256 1024)]]
           (let [plain (payload size size)
                 wire (itb/encrypt-message sender plain)

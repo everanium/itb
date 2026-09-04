@@ -35,7 +35,7 @@ Public Class MessageTests
         }
         For Each profile As String In profiles
             Using sender As Pipeline = Pipeline.Init(profile)
-                Using receiver As Pipeline = Pipeline.Open(profile, sender.Blob)
+                Using receiver As Pipeline = Pipeline.Load(sender.Save())
                     For Each size As Integer In {4 * 1024, 256 * 1024}
                         Dim plain As Byte() = Payload(size, CULng(size))
                         Dim wire As Byte() = sender.EncryptMessage(plain)

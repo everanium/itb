@@ -12,7 +12,7 @@ Public Class StreamPumpTests
     <Fact>
     Public Sub PumpRoundTrip1MiB()
         Using sender As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1")
-            Using receiver As Pipeline = Pipeline.Open("streaming-aead-triple-mac-v1", sender.Blob)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain((1 << 20) - 1) As Byte
                 For i As Integer = 0 To plain.Length - 1
                     plain(i) = CByte(i Mod 251)
@@ -35,7 +35,7 @@ Public Class StreamPumpTests
     <Fact>
     Public Sub PumpMatchesOneShot()
         Using sender As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1")
-            Using receiver As Pipeline = Pipeline.Open("streaming-aead-triple-mac-v1", sender.Blob)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain(65535) As Byte
                 For i As Integer = 0 To plain.Length - 1
                     plain(i) = CByte(i Mod 199)
@@ -66,7 +66,7 @@ Public Class StreamPumpTests
             End Using
 
             ' The Pipeline stays usable after the cancelled session.
-            Using receiver As Pipeline = Pipeline.Open("streaming-aead-triple-mac-v1", sender.Blob)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain As Byte() = Encoding.UTF8.GetBytes("after cancel")
                 Dim wire As Byte() = sender.EncryptMessage(plain)
                 Assert.Equal(Of Byte)(plain, receiver.DecryptMessage(wire))

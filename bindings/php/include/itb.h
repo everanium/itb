@@ -17,20 +17,24 @@ typedef long long int64_t;
 
 /* Diagnostics + runtime knobs. */
 int ITB_Version(char* out, size_t capBytes, size_t* outLen);
-int ITB_HashCount(void);
-int ITB_HashName(int i, char* out, size_t capBytes, size_t* outLen);
-int ITB_HashWidth(int i);
 int ITB_LastError(char* out, size_t capBytes, size_t* outLen);
 int64_t ITB_SetMemoryLimit(int64_t limit);
 int ITB_SetGCPercent(int pct);
 
 /* Triple Pipeline lifecycle. */
 int ITB_Triple_Init(const char* profile, const char* opts, char* blobOut, size_t blobCap, size_t* blobLen, uintptr_t* outHandle);
-int ITB_Triple_Open(const char* profile, const char* blob, size_t blobLen, const char* opts, const char* permMaster, size_t permMasterLen, const char* wrapMaster, size_t wrapMasterLen, size_t mastersCount, uintptr_t* outHandle);
+int ITB_Triple_Load(const char* blob, size_t blobLen, const char* permMaster, size_t permMasterLen, const char* wrapMaster, size_t wrapMasterLen, size_t mastersCount, uintptr_t* outHandle);
+int ITB_Triple_LoadF(const char* path, const char* permMaster, size_t permMasterLen, const char* wrapMaster, size_t wrapMasterLen, size_t mastersCount, uintptr_t* outHandle);
+int ITB_Triple_Save(uintptr_t handle, char* blobOut, size_t blobCap, size_t* blobLen);
+int ITB_Triple_SaveF(uintptr_t handle, const char* path);
+int ITB_Triple_Inspect(const char* blob, size_t blobLen, char* jsonOut, size_t jsonCap, size_t* jsonLen);
+int ITB_Triple_MaxWorkers(uintptr_t handle, int n);
 int ITB_Triple_Rekey(uintptr_t handle, const char* permMaster, size_t permMasterLen, const char* wrapMaster, size_t wrapMasterLen, char* blobOut, size_t blobCap, size_t* blobLen);
 int ITB_Triple_Close(uintptr_t handle);
 int ITB_Triple_Free(uintptr_t handle);
-int ITB_Triple_RegisterProfile(const char* name, const char* opts);
+int ITB_Triple_Register(const char* name, const char* profileJSON);
+int ITB_Triple_Lookup(const char* name, char* jsonOut, size_t jsonCap, size_t* jsonLen);
+int ITB_Triple_Profiles(char* jsonOut, size_t jsonCap, size_t* jsonLen);
 
 /* Buffer-in / buffer-out cipher calls. */
 int ITB_Triple_EncryptStream(uintptr_t handle, const char* plaintext, size_t ptlen, char* out, size_t outCap, size_t* outLen);

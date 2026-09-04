@@ -24,8 +24,7 @@ final class StreamIncrementalTests: XCTestCase {
 
     func testPathologicalBatchSizes() async throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(200_000, seed: 0x1717)
         let wire = try await feedDrain(try sender.encryptStream(), plain)

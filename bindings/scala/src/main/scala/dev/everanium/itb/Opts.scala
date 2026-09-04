@@ -9,17 +9,16 @@ package dev.everanium.itb
 
 import com.everanium.itb.Opts as JOpts
 
-/** Immutable, chainable options for [[Pipeline.init]],
-  * [[Pipeline.open]], and [[Pipeline.registerProfile]]. An empty
-  * value renders the empty query (pure profile defaults). Each
+/** Immutable, chainable options for [[Pipeline.init]]. An empty
+  * value renders the empty query (pure profile defaults). Profile
+  * records for [[Pipeline.register]] are built with [[Profile]]. Each
   * `with*` call returns a new value; sharing a prefix between two
   * configurations is safe.
   */
 final case class Opts(pairs: Vector[(String, String)] = Vector.empty):
 
   /** Escape hatch appending a raw `key=value` pair. Covers every key
-    * the Go side accepts, including the register-profile grammar
-    * (`mode`, `width`, `innerHashes`, `parallaxOn`, `wrapperOn`, …).
+    * the Go side accepts.
     */
   def withRaw(key: String, value: String): Opts = copy(pairs :+ (key -> value))
 

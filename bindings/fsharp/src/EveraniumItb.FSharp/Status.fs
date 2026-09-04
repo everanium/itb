@@ -19,6 +19,9 @@ type Status =
     | SeedWidthMix
     | BadMac
     | MacFailure
+    | BlobMalformedRecipe
+    | RecipePrimitiveUnknown
+    | UnknownProfile
     | BlobModeMismatch
     | BlobMalformed
     | BlobVersionTooNew
@@ -48,6 +51,9 @@ module Status =
         | 8 -> Status.SeedWidthMix
         | 9 -> Status.BadMac
         | 10 -> Status.MacFailure
+        | 11 -> Status.BlobMalformedRecipe
+        | 12 -> Status.RecipePrimitiveUnknown
+        | 13 -> Status.UnknownProfile
         | 19 -> Status.BlobModeMismatch
         | 20 -> Status.BlobMalformed
         | 21 -> Status.BlobVersionTooNew
@@ -74,6 +80,9 @@ module Status =
         | Status.SeedWidthMix -> 8
         | Status.BadMac -> 9
         | Status.MacFailure -> 10
+        | Status.BlobMalformedRecipe -> 11
+        | Status.RecipePrimitiveUnknown -> 12
+        | Status.UnknownProfile -> 13
         | Status.BlobModeMismatch -> 19
         | Status.BlobMalformed -> 20
         | Status.BlobVersionTooNew -> 21

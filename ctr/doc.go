@@ -8,12 +8,11 @@
 // sizes. [KeySize] and [NonceSize] report the per-primitive byte
 // lengths a caller must allocate before invoking [New] / [NewAt] /
 // [NewResettable] / [NewResettableAt]. Callers who need to enumerate
-// the registry consult the [CipherAES128CTR] / [CipherAreion256] /
-// [CipherAreion512] / [CipherBLAKE2b256] / [CipherBLAKE2b512] /
-// [CipherBLAKE2s] / [CipherBLAKE3] / [CipherChaCha20] / [CipherSipHash24]
-// name constants and the shipping wrapper cipher list; every name
-// resolves via the registry look-up embedded in the constructor
-// call.
+// the registry consult the shipped [github.com/everanium/itb/hashes.Registry]
+// — [github.com/everanium/itb/hashes.Names] returns its names in canonical
+// order and the [github.com/everanium/itb/hashes.CipherAES128CTR] family of
+// constants names each entry; every name resolves via the registry
+// look-up embedded in the constructor call.
 //
 // Each keystream satisfies the [Keystream] interface, whose
 // XORKeyStream method matches the [crypto/cipher.Stream] contract:

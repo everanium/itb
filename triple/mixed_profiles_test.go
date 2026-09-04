@@ -30,7 +30,7 @@ func TestShippedMixedProfilesMessageRoundTrip(t *testing.T) {
 			}
 			defer sender.Close()
 
-			receiver, err := Open(name, blob, Opts{})
+			receiver, err := Load(blob)
 			if err != nil {
 				t.Fatalf("Open(%q): %v", name, err)
 			}
@@ -72,7 +72,7 @@ func TestShippedMixedProfilesStreamRoundTrip(t *testing.T) {
 			}
 			defer sender.Close()
 
-			receiver, err := Open(name, blob, Opts{})
+			receiver, err := Load(blob)
 			if err != nil {
 				t.Fatalf("Open(%q): %v", name, err)
 			}
@@ -95,32 +95,37 @@ func TestShippedMixedProfilesStreamRoundTrip(t *testing.T) {
 }
 
 // TestShippedMixedProfilesCrossProfileIsolation encrypts under mixed
-// profile A and confirms decryption under mixed profile B (different
-// constellation) fails — one of the isolating gates (blob-profile
-// mismatch, MAC failure, or seed mismatch) must surface. This is a
-// negative test: any error signals correct isolation.
+// profile A and confirms decryption by a Pipeline built under mixed
+// profile B (different constellation, independent session material)
+// fails — one of the isolating gates (MAC failure or seed mismatch)
+// must surface. This is a negative test: any error signals correct
+// isolation.
 func TestShippedMixedProfilesCrossProfileIsolation(t *testing.T) {
-	// The four shipped mixed profiles differ by width (128 / 256 /
-	// 256 / 512) so cross-decryption fails at the blob-profile-name
-	// check before the width-typed importer would even fire. That is
-	// still valid isolation — a fresh receiver Init'd under a
-	// different profile name cannot recover the sender's plaintext.
 	sender, blobA, err := Init(ProfileStreamingAEADTripleMACMixedV1, Opts{})
 	if err != nil {
 		t.Fatalf("Init sender A: %v", err)
 	}
 	defer sender.Close()
 
-	// Opening blob A under profile B (different mixed profile) must
-	// fail — the blob's Profile field carries A's name.
-	if _, err := Open(ProfileStreamingNoAEADTripleMixedV1, blobA, Opts{}); err == nil {
-		t.Fatalf("Open blob A under profile B: got nil, want ErrBlobMismatch")
+	// A fresh receiver Init'd under a different mixed profile cannot
+	// recover the sender's plaintext.
+	other, _, err := Init(ProfileStreamingNoAEADTripleMixedV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init receiver B: %v", err)
+	}
+	defer other.Close()
+	crossWire, err := sender.EncryptMessage([]byte("isolation smoke test"))
+	if err != nil {
+		t.Fatalf("EncryptMessage: %v", err)
+	}
+	if got, err := other.DecryptMessage(crossWire); err == nil && bytes.Equal(got, []byte("isolation smoke test")) {
+		t.Fatalf("receiver B recovered sender A's plaintext")
 	}
 
-	// A same-profile receiver still round-trips.
-	receiver, err := Open(ProfileStreamingAEADTripleMACMixedV1, blobA, Opts{})
+	// A same-blob receiver still round-trips.
+	receiver, err := Load(blobA)
 	if err != nil {
-		t.Fatalf("Open blob A under profile A: %v", err)
+		t.Fatalf("Load blob A: %v", err)
 	}
 	defer receiver.Close()
 
@@ -157,7 +162,7 @@ func TestShippedMixedProfilesRekeyRoundTrip(t *testing.T) {
 	}
 	_ = blob // original blob is superseded by rekeyBlob
 
-	receiver, err := Open(name, rekeyBlob, Opts{})
+	receiver, err := Load(rekeyBlob)
 	if err != nil {
 		t.Fatalf("Open post-Rekey: %v", err)
 	}
@@ -182,25 +187,25 @@ func TestShippedMixedProfilesRekeyRoundTrip(t *testing.T) {
 // silent registration regression before the round-trip tests fire.
 func TestShippedMixedProfilesRegistered(t *testing.T) {
 	for _, name := range shippedMixedProfiles {
-		got, err := lookupProfile(name)
+		got, err := Lookup(name)
 		if err != nil {
-			t.Fatalf("lookupProfile(%q): %v", name, err)
+			t.Fatalf("Lookup(%q): %v", name, err)
 		}
 		if got.Name != name {
-			t.Fatalf("lookupProfile(%q): Name=%q", name, got.Name)
+			t.Fatalf("Lookup(%q): Name=%q", name, got.Name)
 		}
 		if got.InnerHash != "" {
-			t.Fatalf("lookupProfile(%q): InnerHash=%q, want empty (mixed profile)",
+			t.Fatalf("Lookup(%q): InnerHash=%q, want empty (mixed profile)",
 				name, got.InnerHash)
 		}
 		if !isMixedProfile(got) {
-			t.Fatalf("lookupProfile(%q): isMixedProfile reports false",
+			t.Fatalf("Lookup(%q): isMixedProfile reports false",
 				name)
 		}
 		// Every mixed slot populated and matches the profile width.
 		for i, slotName := range got.MixedHashes {
 			if slotName == "" {
-				t.Fatalf("lookupProfile(%q): MixedHashes[%d] empty",
+				t.Fatalf("Lookup(%q): MixedHashes[%d] empty",
 					name, i)
 			}
 		}

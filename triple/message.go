@@ -36,7 +36,7 @@ var ErrProfileNoCipher = errors.New("triple: profile does not expose any cipher 
 // messageFastPathMaxBytes caps the plaintext size accepted by the
 // direct whole-buffer fast path. Matches the itb-root single-message
 // cipher cap so oversized payloads fall through to the streaming
-// fallback (which chunks the plaintext at [Pipeline.resolved.chunkSize]
+// fallback (which chunks the plaintext at [Pipeline.resolved.ChunkSize]
 // granularity). Held as an explicit constant here rather than reading
 // the itb-root cap so the message surface has a single, self-documenting
 // gate for the fast path.
@@ -93,13 +93,13 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
-	if hasNoCipherSurface(p.resolved.mode) {
+	if hasNoCipherSurface(p.resolved.Mode) {
 		return nil, ErrProfileNoCipher
 	}
 	if len(plaintext) == 0 {
 		return nil, ErrEmptyInput
 	}
-	if !p.resolved.parallaxOn && len(plaintext) <= messageFastPathMaxBytes {
+	if !p.resolved.Parallax && len(plaintext) <= messageFastPathMaxBytes {
 		return p.encryptMessageDirect(plaintext)
 	}
 	return p.encryptMessageStreaming(plaintext)
@@ -143,13 +143,13 @@ func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
-	if hasNoCipherSurface(p.resolved.mode) {
+	if hasNoCipherSurface(p.resolved.Mode) {
 		return nil, ErrProfileNoCipher
 	}
 	if len(wire) == 0 {
 		return nil, ErrEmptyInput
 	}
-	if !p.resolved.parallaxOn {
+	if !p.resolved.Parallax {
 		plain, ok, err := p.decryptMessageDirect(wire)
 		if ok {
 			return plain, err
@@ -170,7 +170,7 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 	// stream), or empty when it is not (mirrors the underlying stream
 	// helpers' empty-input contract).
 	if len(plaintext) == 0 && p.macFunc == nil {
-		if p.resolved.wrapperOn {
+		if p.resolved.Wrapper {
 			nonce, err := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, nil)
 			if err != nil {
 				return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", err)
@@ -200,7 +200,7 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 	// final wire so the wrapper wrap (when engaged) can operate in
 	// place without a second allocation.
 	wireLen := streamIDPrefixLen + len(chunk)
-	if p.resolved.wrapperOn {
+	if p.resolved.Wrapper {
 		nlen, err := wrapper.NonceSize(p.wrapperCipher)
 		if err != nil {
 			return nil, fmt.Errorf("triple: wrapper.NonceSize: %w", err)
@@ -230,7 +230,7 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 // fallback. Precondition: parallax layer disengaged.
 func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 	inner := wire
-	if p.resolved.wrapperOn {
+	if p.resolved.Wrapper {
 		// Empty wire under wrapper-on maps to empty plaintext on the
 		// No MAC arm (mirrors the empty-input encrypt contract). The
 		// MAC arm requires the streamID + final chunk envelope and
@@ -427,7 +427,7 @@ func decryptSingleChunkAuth(p *Pipeline, chunk []byte, streamID [streamIDPrefixL
 // encryptMessageStreaming is the fallback encrypt path. Chains the
 // plaintext through the same io.Reader / io.Writer surface the
 // [Pipeline.EncryptStream] method uses, chunking at
-// [Pipeline.resolved.chunkSize] granularity. Covers the parallax-on
+// [Pipeline.resolved.ChunkSize] granularity. Covers the parallax-on
 // case (where the parallax reader's per-chunk frame envelope must be
 // preserved) and oversized plaintexts (larger than
 // [messageFastPathMaxBytes]).
@@ -446,7 +446,7 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 			p.seeds[0], p.seeds[1],
 			p.seeds[2], p.seeds[3], p.seeds[4],
 			p.seeds[5], p.seeds[6], p.seeds[7],
-			innerSrc, innerDst, p.macFunc, p.resolved.chunkSize,
+			innerSrc, innerDst, p.macFunc, p.resolved.ChunkSize,
 		)
 	} else {
 		cipherErr = itb.EncryptStream3xCfg(
@@ -454,7 +454,7 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 			p.seeds[0], p.seeds[1],
 			p.seeds[2], p.seeds[3], p.seeds[4],
 			p.seeds[5], p.seeds[6], p.seeds[7],
-			innerSrc, innerDst, p.resolved.chunkSize,
+			innerSrc, innerDst, p.resolved.ChunkSize,
 		)
 	}
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {

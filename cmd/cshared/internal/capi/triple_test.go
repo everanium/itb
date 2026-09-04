@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/everanium/itb/triple"
@@ -20,7 +22,7 @@ func triplePlaintext(t *testing.T, n int) []byte {
 	return buf
 }
 
-// TestTripleInitOpenRoundTrip covers the lifecycle path Init → Open →
+// TestTripleInitOpenRoundTrip covers the lifecycle path Init → Load →
 // EncryptMessage → DecryptMessage → Close across every shipped
 // cipher-bearing profile with default opts (full stack: parallax on
 // + wrapper on).
@@ -40,9 +42,9 @@ func TestTripleInitOpenRoundTrip(t *testing.T) {
 			}
 			defer FreeTriple(sID)
 
-			rID, st := TripleOpen(prof, blobBuf[:blobLen], "")
+			rID, st := TripleLoad(blobBuf[:blobLen])
 			if st != StatusOK {
-				t.Fatalf("TripleOpen: %v", st)
+				t.Fatalf("TripleLoad: %v", st)
 			}
 			defer FreeTriple(rID)
 
@@ -75,9 +77,9 @@ func TestTripleStreamRoundTrip(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, blobBuf[:blobLen], "")
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
 
@@ -165,9 +167,9 @@ func TestTripleRekeyRoundTrip(t *testing.T) {
 	}
 
 	// Fresh receiver on the rekeyed blob still round-trips.
-	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, newBlob[:nLen], "")
+	rID, st := TripleLoad(newBlob[:nLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen (rekeyed): %v", st)
+		t.Fatalf("TripleLoad (rekeyed): %v", st)
 	}
 	defer FreeTriple(rID)
 
@@ -254,7 +256,8 @@ func TestTripleOptsMalformedHex(t *testing.T) {
 
 // TestTripleOptsTypedOverride confirms that a well-formed opts string
 // carrying a per-Pipeline override (nonceBits=256) drives the
-// Pipeline through Init without a parse error. The round-trip on
+// Pipeline through Init without a parse error, and that Load
+// restores the same wire shape from the blob. The round-trip on
 // EncryptMessage → DecryptMessage confirms the override does not
 // break the wire shape.
 func TestTripleOptsTypedOverride(t *testing.T) {
@@ -265,11 +268,15 @@ func TestTripleOptsTypedOverride(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, blobBuf[:blobLen], "nonceBits=256&barrierFill=4&maxWorkers=2")
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen typed override: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
+	// The receiver picks its own worker cap after construction.
+	if st := TripleMaxWorkers(rID, 2); st != StatusOK {
+		t.Fatalf("TripleMaxWorkers: %v", st)
+	}
 
 	pt := triplePlaintext(t, 2048)
 	wire := make([]byte, len(pt)+64<<10)
@@ -320,9 +327,9 @@ func TestTripleOptsMasterHex(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, blobBuf[:blobLen], "")
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
 
@@ -339,5 +346,243 @@ func TestTripleOptsMasterHex(t *testing.T) {
 	}
 	if !bytes.Equal(ptOut[:pLen], pt) {
 		t.Fatalf("master-hex round-trip mismatch")
+	}
+}
+
+// tripleEditRecord decodes the wrap-layer of blob, applies edit to
+// the profile record, and re-marshals — a hand-edited blob for the
+// Load error-surface cases at the capi boundary.
+func tripleEditRecord(t *testing.T, blob []byte, edit func(p map[string]any)) []byte {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(blob, &m); err != nil {
+		t.Fatalf("wrap decode: %v", err)
+	}
+	var p map[string]any
+	if err := json.Unmarshal(m["p"], &p); err != nil {
+		t.Fatalf("record decode: %v", err)
+	}
+	edit(p)
+	pb, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("record marshal: %v", err)
+	}
+	m["p"] = pb
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("wrap marshal: %v", err)
+	}
+	return out
+}
+
+// TestTripleSaveCapi covers TripleSave: the bytes equal TripleInit's
+// blob, a short buffer reports the required size, and a closed handle
+// is StatusTripleClosed.
+func TestTripleSaveCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+
+	out := make([]byte, 1<<15)
+	n, st := TripleSave(id, out)
+	if st != StatusOK {
+		t.Fatalf("TripleSave: %v (%s)", st, LastError())
+	}
+	if !bytes.Equal(out[:n], blobBuf[:blobLen]) {
+		t.Fatalf("TripleSave bytes differ from TripleInit's blob")
+	}
+	short, st := TripleSave(id, out[:16])
+	if st != StatusBufferTooSmall || short != n {
+		t.Fatalf("TripleSave short: (%d, %v), want (%d, StatusBufferTooSmall)", short, st, n)
+	}
+	if st := TripleClose(id); st != StatusOK {
+		t.Fatalf("TripleClose: %v", st)
+	}
+	if _, st := TripleSave(id, out); st != StatusTripleClosed {
+		t.Fatalf("TripleSave after Close: %v, want StatusTripleClosed", st)
+	}
+	if _, st := TripleSave(0, out); st != StatusBadHandle {
+		t.Fatalf("TripleSave(0): %v, want StatusBadHandle", st)
+	}
+}
+
+// TestTripleSaveFLoadFCapi covers the file forms: SaveF then LoadF on a
+// temp path round-trips a message, a missing directory / missing file
+// map to StatusBadInput, and a closed handle is StatusTripleClosed.
+func TestTripleSaveFLoadFCapi(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.blob")
+
+	blobBuf := make([]byte, 1<<15)
+	sID, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(sID)
+
+	if st := TripleSaveF(sID, path); st != StatusOK {
+		t.Fatalf("TripleSaveF: %v (%s)", st, LastError())
+	}
+	if st := TripleSaveF(sID, filepath.Join(dir, "no", "such", "dir", "x.blob")); st != StatusBadInput {
+		t.Fatalf("TripleSaveF missing dir: %v, want StatusBadInput", st)
+	}
+	if st := TripleSaveF(0, path); st != StatusBadHandle {
+		t.Fatalf("TripleSaveF(0): %v, want StatusBadHandle", st)
+	}
+
+	rID, st := TripleLoadF(path)
+	if st != StatusOK {
+		t.Fatalf("TripleLoadF: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(rID)
+	if _, st := TripleLoadF(filepath.Join(dir, "missing.blob")); st != StatusBadInput {
+		t.Fatalf("TripleLoadF missing: %v, want StatusBadInput", st)
+	}
+	if _, st := TripleLoadF(path, []byte{1}); st != StatusBadInput {
+		t.Fatalf("TripleLoadF arity 1: %v, want StatusBadInput", st)
+	}
+
+	pt := triplePlaintext(t, 1024)
+	wire := make([]byte, len(pt)+64<<10)
+	wLen, st := TripleEncryptMessage(sID, pt, wire)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v", st)
+	}
+	out := make([]byte, len(pt)+1024)
+	pLen, st := TripleDecryptMessage(rID, wire[:wLen], out)
+	if st != StatusOK {
+		t.Fatalf("TripleDecryptMessage: %v", st)
+	}
+	if !bytes.Equal(out[:pLen], pt) {
+		t.Fatalf("SaveF/LoadF round-trip mismatch")
+	}
+
+	if st := TripleClose(sID); st != StatusOK {
+		t.Fatalf("TripleClose: %v", st)
+	}
+	if st := TripleSaveF(sID, path); st != StatusTripleClosed {
+		t.Fatalf("TripleSaveF after Close: %v, want StatusTripleClosed", st)
+	}
+}
+
+// TestTripleInspectCapi covers TripleInspect: the output decodes
+// through the profile codec with the label populated, a short buffer
+// reports the required size, and a v1 blob is StatusBadInput.
+func TestTripleInspectCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "keyBits=2048", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+
+	out := make([]byte, 4096)
+	n, st := TripleInspect(blobBuf[:blobLen], out)
+	if st != StatusOK {
+		t.Fatalf("TripleInspect: %v (%s)", st, LastError())
+	}
+	var prof triple.Profile
+	if err := json.Unmarshal(out[:n], &prof); err != nil {
+		t.Fatalf("TripleInspect output does not decode: %v", err)
+	}
+	if prof.Name != triple.ProfileSingleMsgTripleMACV1 || prof.KeyBits != 2048 || prof.Mode != "singlemsg-mac" {
+		t.Fatalf("TripleInspect decoded %+v", prof)
+	}
+	short, st := TripleInspect(blobBuf[:blobLen], out[:8])
+	if st != StatusBufferTooSmall || short != n {
+		t.Fatalf("TripleInspect short: (%d, %v), want (%d, StatusBufferTooSmall)", short, st, n)
+	}
+	v1 := []byte(`{"p":"singlemsg-triple-mac-v1","v":1,"ib":"e30=","wp":true,"ww":true}`)
+	if _, st := TripleInspect(v1, out); st != StatusBadInput {
+		t.Fatalf("TripleInspect v1: %v, want StatusBadInput", st)
+	}
+	if _, st := TripleInspect([]byte("garbage"), out); st != StatusBadInput {
+		t.Fatalf("TripleInspect garbage: %v, want StatusBadInput", st)
+	}
+}
+
+// TestTripleLoadErrorSurfaceCapi pins the status codes the Load path
+// produces at the capi boundary: the two record sentinels (11 / 12),
+// a v1 blob, a bad masters arity, and the unknown-profile code from
+// TripleInit.
+func TestTripleLoadErrorSurfaceCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+	blob := blobBuf[:blobLen]
+
+	unknownPrim := tripleEditRecord(t, blob, func(p map[string]any) { p["hash"] = "nosuchhash" })
+	if _, st := TripleLoad(unknownPrim); st != StatusRecipePrimitiveUnknown {
+		t.Fatalf("TripleLoad unknown primitive: %v, want StatusRecipePrimitiveUnknown (%s)", st, LastError())
+	}
+	badRecipe := tripleEditRecord(t, blob, func(p map[string]any) { p["keybits"] = 1000 })
+	if _, st := TripleLoad(badRecipe); st != StatusBlobMalformedRecipe {
+		t.Fatalf("TripleLoad bad recipe: %v, want StatusBlobMalformedRecipe (%s)", st, LastError())
+	}
+	v1 := []byte(`{"p":"singlemsg-triple-mac-v1","v":1,"ib":"e30=","wp":true,"ww":true}`)
+	if _, st := TripleLoad(v1); st != StatusBadInput {
+		t.Fatalf("TripleLoad v1: %v, want StatusBadInput", st)
+	}
+	if _, st := TripleLoad(blob, []byte{1}); st != StatusBadInput {
+		t.Fatalf("TripleLoad arity 1: %v, want StatusBadInput", st)
+	}
+	if _, _, st := TripleInit("no-such-profile-xyz", "", blobBuf); st != StatusUnknownProfile {
+		t.Fatalf("TripleInit unknown profile: %v, want StatusUnknownProfile", st)
+	}
+	// A negative maxWorkers in the Init opts clamps instead of failing.
+	nID, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "maxWorkers=-1", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit maxWorkers=-1: %v, want StatusOK", st)
+	}
+	FreeTriple(nID)
+}
+
+// TestTripleMaxWorkersCapi covers TripleMaxWorkers: every value is
+// clamped (never rejected), an unknown handle is StatusBadHandle, and
+// a closed handle is StatusTripleClosed.
+func TestTripleMaxWorkersCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+	rID, st := TripleLoad(blobBuf[:blobLen])
+	if st != StatusOK {
+		t.Fatalf("TripleLoad: %v", st)
+	}
+	defer FreeTriple(rID)
+
+	for _, h := range []TripleHandleID{id, rID} {
+		for _, n := range []int{-1, 0, 2, 256, 1000} {
+			if st := TripleMaxWorkers(h, n); st != StatusOK {
+				t.Fatalf("TripleMaxWorkers(%d): %v, want StatusOK", n, st)
+			}
+		}
+	}
+	pt := triplePlaintext(t, 512)
+	wire := make([]byte, len(pt)+64<<10)
+	wLen, st := TripleEncryptMessage(id, pt, wire)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v", st)
+	}
+	out := make([]byte, len(pt)+1024)
+	if _, st := TripleDecryptMessage(rID, wire[:wLen], out); st != StatusOK {
+		t.Fatalf("TripleDecryptMessage: %v", st)
+	}
+	if st := TripleMaxWorkers(0, 4); st != StatusBadHandle {
+		t.Fatalf("TripleMaxWorkers(0): %v, want StatusBadHandle", st)
+	}
+	if st := TripleClose(rID); st != StatusOK {
+		t.Fatalf("TripleClose: %v", st)
+	}
+	if st := TripleMaxWorkers(rID, 4); st != StatusTripleClosed {
+		t.Fatalf("TripleMaxWorkers after Close: %v, want StatusTripleClosed", st)
 	}
 }

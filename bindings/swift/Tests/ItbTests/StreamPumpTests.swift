@@ -11,8 +11,7 @@ import XCTest
 final class StreamPumpTests: XCTestCase {
     func testPumpRoundTrip() throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(1 << 20, seed: 0x9E37_79B9)
         let wire = try sender.encryptStreamPump(plain)
@@ -23,8 +22,7 @@ final class StreamPumpTests: XCTestCase {
 
     func testAsyncSequenceRoundTrip() async throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(300_000, seed: 0xCAFE)
         // Feed the plaintext as an async sequence of 64 KiB chunks.

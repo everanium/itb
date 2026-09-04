@@ -1,16 +1,38 @@
-//! Error-mapping surface: opaque-string relay, opts-builder
-//! rendering, profile registration, duplicate-profile status.
+//! Error-mapping surface: opaque-string relay, unknown profile,
+//! opts-builder rendering, profile registration, duplicate-profile
+//! status.
 
 const std = @import("std");
 const itb = @import("itb");
 
+/// Save → Load handshake: a receiver reconstructed from the sender's
+/// current blob.
+fn loadFrom(gpa: std.mem.Allocator, sender: *const itb.Pipeline) !itb.Pipeline {
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    return itb.Pipeline.load(gpa, blob, null);
+}
+
 test "unknown profile is rejected Go-side" {
     const gpa = std.testing.allocator;
     try std.testing.expectError(
-        error.BadInput,
+        error.UnknownProfile,
         itb.Pipeline.init(gpa, "no-such-profile", null),
     );
     try std.testing.expect(itb.lastError().len > 0);
+    try std.testing.expectError(
+        error.UnknownProfile,
+        itb.lookup(gpa, "no-such-profile"),
+    );
+}
+
+test "negative maxWorkers opts value is clamped" {
+    const gpa = std.testing.allocator;
+    const opts = try itb.Opts.init();
+    defer opts.deinit();
+    try opts.set("maxWorkers", "-1");
+    var pipe = try itb.Pipeline.init(gpa, "singlemsg-triple-mac-v1", opts);
+    defer pipe.deinit();
 }
 
 test "unknown opts key is rejected Go-side" {
@@ -54,26 +76,33 @@ test "opts builder renders insertion order and percent-encodes" {
 test "register profile, use it, duplicate is ProfileExists" {
     const gpa = std.testing.allocator;
 
-    const reg = try itb.Opts.init();
-    defer reg.deinit();
-    try reg.set("mode", "singlemsg-nomac");
-    try reg.set("width", "256");
-    try reg.set("innerHashes", "blake3,blake2s,areion256,blake2b256," ++
-        "chacha20,blake3,blake2s,areion256");
-    try reg.set("keyBits", "1024");
-    try reg.set("parallaxOn", "false");
-    try reg.set("wrapperOn", "false");
-    try itb.registerProfile("zig-binding-test-mixed", reg);
+    // 8-entry width-256 hashes constellation, layers off; the record
+    // is a profile JSON object.
+    const reg =
+        \\{"mode":"singlemsg-nomac","width":256,
+        \\"hashes":["blake3","blake2s","areion256","blake2b256",
+        \\"chacha20","blake3","blake2s","areion256"],
+        \\"keybits":1024,"wrapper":false,"parallax":false}
+    ;
+    try itb.register("zig-binding-test-mixed", reg);
+
+    // The registered record reads back with its name filled in.
+    const looked = try itb.lookup(gpa, "zig-binding-test-mixed");
+    defer gpa.free(looked);
+    try std.testing.expect(std.mem.indexOf(u8, looked, "\"name\":\"zig-binding-test-mixed\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, looked, "\"hashes\":[\"blake3\",\"blake2s\"") != null);
+
+    // A non-empty name inside the record must equal the argument.
+    try std.testing.expectError(error.BadInput, itb.register(
+        "zig-binding-test-mismatch",
+        \\{"name":"other","mode":"singlemsg-nomac","width":512,"hash":"areion512",
+        \\"keybits":1024,"wrapper":false,"parallax":false}
+    ,
+    ));
 
     var sender = try itb.Pipeline.init(gpa, "zig-binding-test-mixed", null);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "zig-binding-test-mixed",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = "custom profile";
@@ -85,6 +114,6 @@ test "register profile, use it, duplicate is ProfileExists" {
 
     try std.testing.expectError(
         error.ProfileExists,
-        itb.registerProfile("zig-binding-test-mixed", reg),
+        itb.register("zig-binding-test-mixed", reg),
     );
 }

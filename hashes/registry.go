@@ -31,13 +31,35 @@ const (
 // [Registry] entries fit well inside this cap (longest is 10).
 const MaxNameLen = 12
 
+// Class is the outer cipher dispatch class of a registry primitive.
+// The ctr / kdf / wrapper / parallax packages route a primitive name
+// through structurally different code paths depending on its class.
+type Class uint8
+
+const (
+	// ClassNone is the zero value: the primitive carries no outer
+	// cipher dispatch class. User-registered Specs carry this value
+	// by default; ctr / kdf construct keystreams and KDFs only for
+	// the shipped Registry entries.
+	ClassNone Class = 0
+
+	// ClassNativeStream marks a primitive that owns a native
+	// keystream mode (AES-128-CTR, SipHash-2-4 CTR, ChaCha20).
+	ClassNativeStream Class = 1
+
+	// ClassPRFCounter marks a hash primitive used as the keyed PRF
+	// core of a PRF-counter keystream / SP 800-108 counter-mode KDF.
+	ClassPRFCounter Class = 2
+)
+
 // Spec describes one PRF-grade hash primitive. Shipped primitives live
 // in [Registry] with all factory fields nil; their factory closures are
 // dispatched through the switch statements in [Make128] / [Make256] /
 // [Make512] and their Pair counterparts. User-registered custom
 // primitives (added via [Register]) populate the factory field matching
 // the primitive's Width so the same Make{N}(Pair) name-keyed dispatch
-// resolves them uniformly.
+// resolves them uniformly. Every shipped entry additionally carries its
+// outer cipher dispatch [Class].
 type Spec struct {
 	Name  string // canonical, FFI-stable identifier (no dashes)
 	Width Width  // native intermediate-state width
@@ -85,7 +107,31 @@ type Spec struct {
 	// must return a fresh instance safe for exclusive use by the
 	// caller.
 	KeyedHash func(key []byte) (hash.Hash, error) `json:"-"`
+
+	// Class is the outer cipher dispatch class (see [Class]). Populated
+	// on every shipped Registry entry; ignored on user-registered Specs —
+	// [ClassOf] consults Registry only, and ctr / kdf construct keystreams
+	// and KDFs for shipped names only.
+	Class Class
 }
+
+// Canonical shipped primitive names. Every registry consumer (ctr, kdf,
+// wrapper, parallax, triple, cmd/itb3) refers to these identifiers; the
+// string values are the FFI-stable names exposed through ITB_HashName.
+const (
+	CipherAreion256  = "areion256"
+	CipherAreion512  = "areion512"
+	CipherBLAKE2b256 = "blake2b256"
+	CipherBLAKE2b512 = "blake2b512"
+	CipherBLAKE2s    = "blake2s"
+	CipherBLAKE3     = "blake3"
+	// CipherAES128CTR names the "aescmac" registry row. As InnerHash
+	// the row is AES-CMAC; as OuterCipher / ParallaxPalette entry the
+	// same name selects AES-128-CTR.
+	CipherAES128CTR = "aescmac"
+	CipherSipHash24 = "siphash24"
+	CipherChaCha20  = "chacha20"
+)
 
 // Registry lists every shippable PRF-grade primitive in canonical order.
 // The same order is used by the FFI iteration surface (ITB_HashName,
@@ -99,21 +145,21 @@ type Spec struct {
 // bindings — which are triple-only and cannot themselves call Register
 // — see a stable primitive set.
 var Registry = [9]Spec{
-	{Name: "areion256", Width: W256},
-	{Name: "areion512", Width: W512},
-	{Name: "blake2b256", Width: W256, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash},
-	{Name: "blake2b512", Width: W512, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash},
-	{Name: "blake2s", Width: W256, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash},
-	{Name: "blake3", Width: W256, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash},
-	{Name: "aescmac", Width: W128},
-	{Name: "siphash24", Width: W128, KeyedHash: siphash24KeyedHash},
-	{Name: "chacha20", Width: W256},
+	{Name: CipherAreion256, Width: W256, Class: ClassPRFCounter},
+	{Name: CipherAreion512, Width: W512, Class: ClassPRFCounter},
+	{Name: CipherBLAKE2b256, Width: W256, Class: ClassPRFCounter, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash},
+	{Name: CipherBLAKE2b512, Width: W512, Class: ClassPRFCounter, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash},
+	{Name: CipherBLAKE2s, Width: W256, Class: ClassPRFCounter, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash},
+	{Name: CipherBLAKE3, Width: W256, Class: ClassPRFCounter, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash},
+	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream},
+	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash},
+	{Name: CipherChaCha20, Width: W256, Class: ClassNativeStream},
 }
 
 // ErrHashExists is returned by [Register] when the supplied Spec.Name
 // is already present in [Registry] or has been registered previously.
 // Once registered, a primitive cannot be re-registered under the same
-// name — immutability matches [triple.RegisterProfile] semantics so a
+// name — immutability matches [triple.Register] semantics so a
 // caller cannot silently swap the factory a downstream Find/Make call
 // resolves.
 var ErrHashExists = errors.New("hashes: primitive already registered")

@@ -7,9 +7,10 @@
 
 namespace EveraniumItb.FSharp
 
-/// Immutable, pipeable options for <c>Pipeline.init</c>,
-/// <c>Pipeline.openBlob</c>, and <c>Pipeline.registerProfile</c>. An
-/// empty value renders the empty query (pure profile defaults). Each
+/// Immutable, pipeable options for <c>Pipeline.init</c>. An empty
+/// value renders the empty query (pure profile defaults). Profile
+/// records for <c>Pipeline.register</c> are built with
+/// <c>Profile</c> (the C# <c>Itb.Profile</c> record). Each
 /// setter returns a new value; sharing a prefix between two
 /// configurations is safe:
 ///
@@ -27,9 +28,7 @@ module Opts =
     let empty: Opts = { Pairs = [] }
 
     /// Escape hatch appending a raw <c>key=value</c> pair. Covers
-    /// every key the Go side accepts, including the register-profile
-    /// grammar (<c>mode</c>, <c>width</c>, <c>innerHashes</c>,
-    /// <c>parallaxOn</c>, <c>wrapperOn</c>, …).
+    /// every key the Go side accepts.
     let withRaw (key: string) (value: string) (opts: Opts) : Opts =
         { opts with Pairs = opts.Pairs @ [ key, value ] }
 

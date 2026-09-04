@@ -412,7 +412,7 @@ func TestRegisterTripleIntegration(t *testing.T) {
 	}
 
 	profile := "userns-macs-custom-mac-v1"
-	err = triple.RegisterProfile(profile, triple.Profile{
+	err = triple.Register(profile, triple.Profile{
 		Mode:      "singlemsg-mac",
 		Width:     256,
 		InnerHash: "blake3",
@@ -420,7 +420,7 @@ func TestRegisterTripleIntegration(t *testing.T) {
 		MacName:   "it_kh_b2s",
 	})
 	if err != nil {
-		t.Fatalf("RegisterProfile with custom MacName: %v", err)
+		t.Fatalf("Register with custom MacName: %v", err)
 	}
 
 	p, blob, err := triple.Init(profile, triple.Opts{})
@@ -442,9 +442,9 @@ func TestRegisterTripleIntegration(t *testing.T) {
 		t.Fatal("decrypt mismatch on originating pipeline")
 	}
 
-	p2, err := triple.Open(profile, blob, triple.Opts{})
+	p2, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open with custom MacName blob: %v", err)
+		t.Fatalf("triple.Load with custom MacName blob: %v", err)
 	}
 	defer p2.Close()
 	got2, err := p2.DecryptMessage(wire)

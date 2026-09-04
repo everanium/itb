@@ -13,11 +13,13 @@ module ITB.FFI
   , c_ITB_LastError
   , c_ITB_SetMemoryLimit
   , c_ITB_SetGCPercent
-  , c_ITB_HashCount
-  , c_ITB_HashName
-  , c_ITB_HashWidth
   , c_ITB_Triple_Init
-  , c_ITB_Triple_Open
+  , c_ITB_Triple_Load
+  , c_ITB_Triple_LoadF
+  , c_ITB_Triple_Save
+  , c_ITB_Triple_SaveF
+  , c_ITB_Triple_Inspect
+  , c_ITB_Triple_MaxWorkers
   , c_ITB_Triple_Rekey
   , c_ITB_Triple_Close
   , c_ITB_Triple_Free
@@ -25,7 +27,9 @@ module ITB.FFI
   , c_ITB_Triple_DecryptMessage
   , c_ITB_Triple_EncryptStream
   , c_ITB_Triple_DecryptStream
-  , c_ITB_Triple_RegisterProfile
+  , c_ITB_Triple_Register
+  , c_ITB_Triple_Lookup
+  , c_ITB_Triple_Profiles
   , c_ITB_Triple_EncryptStreamBegin
   , c_ITB_Triple_DecryptStreamBegin
   , c_ITB_Triple_StreamWrite
@@ -56,17 +60,6 @@ foreign import ccall safe "ITB_SetMemoryLimit"
 foreign import ccall safe "ITB_SetGCPercent"
   c_ITB_SetGCPercent :: CInt -> IO CInt
 
--- ── hash registry iteration ─────────────────────────────────────────
-
-foreign import ccall safe "ITB_HashCount"
-  c_ITB_HashCount :: IO CInt
-
-foreign import ccall safe "ITB_HashName"
-  c_ITB_HashName :: CInt -> Ptr CChar -> CSize -> Ptr CSize -> IO CInt
-
-foreign import ccall safe "ITB_HashWidth"
-  c_ITB_HashWidth :: CInt -> IO CInt
-
 -- ── Triple Pipeline lifecycle ───────────────────────────────────────
 
 foreign import ccall safe "ITB_Triple_Init"
@@ -79,12 +72,10 @@ foreign import ccall safe "ITB_Triple_Init"
     -> Ptr ITBHandle    -- handle out
     -> IO CInt
 
-foreign import ccall safe "ITB_Triple_Open"
-  c_ITB_Triple_Open
-    :: Ptr CChar        -- profile
-    -> Ptr Word8        -- blob
+foreign import ccall safe "ITB_Triple_Load"
+  c_ITB_Triple_Load
+    :: Ptr Word8        -- blob
     -> CSize            -- blob len
-    -> Ptr CChar        -- opts query string
     -> Ptr Word8        -- perm master
     -> CSize            -- perm master len
     -> Ptr Word8        -- wrap master
@@ -92,6 +83,37 @@ foreign import ccall safe "ITB_Triple_Open"
     -> CSize            -- masters count (0 or 2)
     -> Ptr ITBHandle    -- handle out
     -> IO CInt
+
+foreign import ccall safe "ITB_Triple_LoadF"
+  c_ITB_Triple_LoadF
+    :: Ptr CChar        -- path
+    -> Ptr Word8        -- perm master
+    -> CSize            -- perm master len
+    -> Ptr Word8        -- wrap master
+    -> CSize            -- wrap master len
+    -> CSize            -- masters count (0 or 2)
+    -> Ptr ITBHandle    -- handle out
+    -> IO CInt
+
+foreign import ccall safe "ITB_Triple_Save"
+  c_ITB_Triple_Save
+    :: ITBHandle
+    -> Ptr Word8 -> CSize        -- blob out / cap
+    -> Ptr CSize                 -- blob len out
+    -> IO CInt
+
+foreign import ccall safe "ITB_Triple_SaveF"
+  c_ITB_Triple_SaveF :: ITBHandle -> Ptr CChar -> IO CInt
+
+foreign import ccall safe "ITB_Triple_Inspect"
+  c_ITB_Triple_Inspect
+    :: Ptr Word8 -> CSize        -- blob
+    -> Ptr Word8 -> CSize        -- json out / cap
+    -> Ptr CSize                 -- json len out
+    -> IO CInt
+
+foreign import ccall safe "ITB_Triple_MaxWorkers"
+  c_ITB_Triple_MaxWorkers :: ITBHandle -> CInt -> IO CInt
 
 foreign import ccall safe "ITB_Triple_Rekey"
   c_ITB_Triple_Rekey
@@ -126,10 +148,23 @@ foreign import ccall safe "ITB_Triple_DecryptStream"
   c_ITB_Triple_DecryptStream
     :: ITBHandle -> Ptr Word8 -> CSize -> Ptr Word8 -> CSize -> Ptr CSize -> IO CInt
 
--- ── profile registration ────────────────────────────────────────────
+-- ── profile records ─────────────────────────────────────────────────
 
-foreign import ccall safe "ITB_Triple_RegisterProfile"
-  c_ITB_Triple_RegisterProfile :: Ptr CChar -> Ptr CChar -> IO CInt
+foreign import ccall safe "ITB_Triple_Register"
+  c_ITB_Triple_Register :: Ptr CChar -> Ptr CChar -> IO CInt
+
+foreign import ccall safe "ITB_Triple_Lookup"
+  c_ITB_Triple_Lookup
+    :: Ptr CChar                 -- name
+    -> Ptr Word8 -> CSize        -- json out / cap
+    -> Ptr CSize                 -- json len out
+    -> IO CInt
+
+foreign import ccall safe "ITB_Triple_Profiles"
+  c_ITB_Triple_Profiles
+    :: Ptr Word8 -> CSize        -- json out / cap
+    -> Ptr CSize                 -- json len out
+    -> IO CInt
 
 -- ── incremental stream sessions ─────────────────────────────────────
 

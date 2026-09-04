@@ -9,13 +9,16 @@
 ' Try ... Catch ex As ItbException, Byte() signatures).
 
 ''' <summary>
-''' A Triple Pipeline session plus its exported blob bytes.
+''' A Triple Pipeline session.
 '''
-''' The blob carries the session bundle the receiver feeds to
-''' <see cref="Open"/>; <see cref="Rekey"/> refreshes it. Disposing
-''' the Pipeline frees the handle (libitb zeroes key material
-''' internally); an undisposed Pipeline is reclaimed by the C#
-''' layer's SafeHandle finalizer.
+''' <see cref="Save"/> exports the self-describing session blob the
+''' receiver feeds to <see cref="Load"/> / <see cref="LoadF"/>;
+''' <see cref="Rekey"/> refreshes it. Disposing the Pipeline frees
+''' the handle (libitb zeroes key material internally); an
+''' undisposed Pipeline is reclaimed by the C# layer's SafeHandle
+''' finalizer. Profile records (<see cref="Inspect"/> /
+''' <see cref="Lookup"/> results, <see cref="Register"/> input) are
+''' the C# layer's <see cref="Global.Itb.Profile"/> type.
 '''
 ''' Streaming-decrypt caveat: chunked Streaming AEAD verifies per
 ''' chunk, so plaintext of verified chunks is released before a later
@@ -38,57 +41,104 @@ Public NotInheritable Class Pipeline
         End Get
     End Property
 
-    ''' <summary>The exported session bundle bytes for the receiver
-    ''' side. Each access returns a fresh copy.</summary>
-    Public ReadOnly Property Blob As Byte()
-        Get
-            Return _inner.Blob.ToArray()
-        End Get
-    End Property
-
     ''' <summary>Constructs a fresh Pipeline against the named
-    ''' profile.</summary>
+    ''' profile. The session blob is available through
+    ''' <see cref="Save"/>.</summary>
     Public Shared Function Init(profile As String, Optional opts As Opts = Nothing) As Pipeline
         Return Guarded(Function() New Pipeline(Global.Itb.Pipeline.Init(profile, InnerOpts(opts))))
     End Function
 
     ''' <summary>
     ''' Reconstructs a Pipeline from a blob produced by
-    ''' <see cref="Init"/> or <see cref="Rekey"/>. Omitting
+    ''' <see cref="Save"/> or <see cref="Rekey"/>. The blob's embedded
+    ''' profile record is the sole structural source. Omitting
     ''' <paramref name="permMaster"/> / <paramref name="wrapMaster"/>
     ''' uses the blob-embedded masters; supplying both (non-empty)
     ''' overrides them. Supplying only one raises
     ''' <see cref="ArgumentException"/>.
     ''' </summary>
-    Public Shared Function Open(
-            profile As String, blob As Byte(), Optional opts As Opts = Nothing,
+    Public Shared Function Load(
+            blob As Byte(),
             Optional permMaster As Byte() = Nothing,
             Optional wrapMaster As Byte() = Nothing) As Pipeline
-        Return Guarded(Function() New Pipeline(Global.Itb.Pipeline.Open(
-            profile, blob, InnerOpts(opts), permMaster, wrapMaster)))
+        Return Guarded(Function() New Pipeline(Global.Itb.Pipeline.Load(
+            blob, permMaster, wrapMaster)))
+    End Function
+
+    ''' <summary><see cref="Load"/> for a blob stored in a file; the
+    ''' file is read inside the library. Same masters
+    ''' semantics.</summary>
+    Public Shared Function LoadF(
+            path As String,
+            Optional permMaster As Byte() = Nothing,
+            Optional wrapMaster As Byte() = Nothing) As Pipeline
+        Return Guarded(Function() New Pipeline(Global.Itb.Pipeline.LoadF(
+            path, permMaster, wrapMaster)))
+    End Function
+
+    ''' <summary>Decodes the blob's embedded profile record without
+    ''' opening a Pipeline. No registry read, no primitive
+    ''' probe.</summary>
+    Public Shared Function Inspect(blob As Byte()) As Global.Itb.Profile
+        Return Guarded(Function() Global.Itb.Pipeline.Inspect(blob))
     End Function
 
     ''' <summary>
-    ''' Registers a user-defined Triple profile under
+    ''' Registers <paramref name="profile"/> under
     ''' <paramref name="name"/> so subsequent <see cref="Init"/> /
-    ''' <see cref="Open"/> calls resolve it. The opts follow the
-    ''' register-profile grammar validated by Go — build them with
-    ''' <see cref="Opts.WithRaw"/> plus the typed setters where key
-    ''' names coincide. A duplicate name fails with
+    ''' <see cref="Lookup"/> calls resolve it. Every field rule is
+    ''' validated by Go; a duplicate name fails with
     ''' <see cref="Status.ProfileExists"/>.
     ''' </summary>
-    Public Shared Sub RegisterProfile(name As String, opts As Opts)
-        Guarded(Sub() Global.Itb.Pipeline.RegisterProfile(name, opts.Inner))
+    Public Shared Sub Register(name As String, profile As Global.Itb.Profile)
+        Guarded(Sub() Global.Itb.Pipeline.Register(name, profile))
+    End Sub
+
+    ''' <summary>Looks up a registered profile (shipped or
+    ''' <see cref="Register"/>ed) by name; an unknown name fails with
+    ''' <see cref="Status.UnknownProfile"/>.</summary>
+    Public Shared Function Lookup(name As String) As Global.Itb.Profile
+        Return Guarded(Function() Global.Itb.Pipeline.Lookup(name))
+    End Function
+
+    ''' <summary>The sorted names of every registered
+    ''' profile.</summary>
+    Public Shared Function Profiles() As String()
+        Return Guarded(Function() Global.Itb.Pipeline.Profiles())
+    End Function
+
+    ''' <summary>The current self-describing session blob: the bytes
+    ''' <see cref="Init"/> produced, the bytes <see cref="Load"/>
+    ''' re-marshalled, or the bytes of the latest
+    ''' <see cref="Rekey"/>.</summary>
+    Public Function Save() As Byte()
+        Return Guarded(Function() _inner.Save())
+    End Function
+
+    ''' <summary>Writes <see cref="Save"/> to <paramref name="path"/>
+    ''' inside the library with mode 0600; the containing directory
+    ''' must exist.</summary>
+    Public Sub SaveF(path As String)
+        Guarded(Sub() _inner.SaveF(path))
+    End Sub
+
+    ''' <summary>Sets the worker cap for every subsequent cipher call.
+    ''' <paramref name="n"/> is clamped, never rejected: n &lt;= 0
+    ''' selects auto (CPU count), n &gt; 256 is treated as 256. Only
+    ''' the handle statuses raise.</summary>
+    Public Sub MaxWorkers(n As Integer)
+        Guarded(Sub() _inner.MaxWorkers(n))
     End Sub
 
     ''' <summary>
-    ''' Rotates the parallax + wrapper masters and refreshes
-    ''' <see cref="Blob"/>. Must not run concurrently with cipher
-    ''' calls or open stream sessions on the same Pipeline.
+    ''' Rotates the parallax + wrapper masters and returns the fresh
+    ''' session blob (also available through <see cref="Save"/>).
+    ''' Must not run concurrently with cipher calls or open stream
+    ''' sessions on the same Pipeline.
     ''' </summary>
-    Public Sub Rekey(permMaster As Byte(), wrapMaster As Byte())
-        Guarded(Sub() _inner.Rekey(permMaster, wrapMaster))
-    End Sub
+    Public Function Rekey(permMaster As Byte(), wrapMaster As Byte()) As Byte()
+        Return Guarded(Function() _inner.Rekey(permMaster, wrapMaster))
+    End Function
 
     ''' <summary>
     ''' Zeroes the Pipeline's key material and marks it closed.

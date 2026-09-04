@@ -206,7 +206,7 @@ func deterministicPlaintext() []byte {
 }
 
 // aliasFixture3x128 builds a deterministic Triple Ouroboros 128-bit seed
-// septuple. The 7 seeds must be distinct pointers; NewSeed128 returns
+// octuple. The 8 seeds must be distinct pointers; NewSeed128 returns
 // independent allocations per call.
 func aliasFixture3x128(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) {
 	t.Helper()
@@ -225,7 +225,7 @@ func aliasFixture3x128(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed
 }
 
 // aliasFixture3x256 builds a deterministic Triple Ouroboros 256-bit seed
-// septuple. All seven seeds share a single BLAKE3 hash factory but each
+// octuple. All eight seeds share a single BLAKE3 hash factory but each
 // is allocated independently so the pointers compare unequal.
 func aliasFixture3x256(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256) {
 	t.Helper()
@@ -245,7 +245,7 @@ func aliasFixture3x256(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed
 }
 
 // aliasFixture3x512 builds a deterministic Triple Ouroboros 512-bit seed
-// septuple via BLAKE2b-512.
+// octuple via BLAKE2b-512.
 func aliasFixture3x512(t *testing.T) (ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512) {
 	t.Helper()
 	h := makeBlake2bHash512()

@@ -2,8 +2,9 @@
  * Status.swift — Swift mirror of the C binding's itb_status table.
  *
  * The numeric values track cmd/cshared/internal/capi/errors.go via
- * bindings/c/include/itb.h. Codes 11..17 are a reserved sentinel
- * block; 19..22 belong to the native Blob surface (not wrapped here
+ * bindings/c/include/itb.h. Codes 11..13 are the Triple blob-record
+ * / registry sentinels, 14..17 a reserved block; 19..22 belong to the
+ * native Blob surface (not wrapped here
  * but relayed verbatim if libitb ever returns them).
  */
 
@@ -22,9 +23,9 @@ public enum Status: Int32, Sendable, Equatable, Hashable {
     case seedWidthMix = 8
     case badMAC = 9
     case macFailure = 10
-    case reserved11 = 11
-    case reserved12 = 12
-    case reserved13 = 13
+    case blobMalformedRecipe = 11
+    case recipePrimitiveUnknown = 12
+    case unknownProfile = 13
     case reserved14 = 14
     case reserved15 = 15
     case reserved16 = 16

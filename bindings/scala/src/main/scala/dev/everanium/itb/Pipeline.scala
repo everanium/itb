@@ -5,6 +5,8 @@ package dev.everanium.itb
 
 import java.io.{InputStream, OutputStream}
 
+import scala.jdk.CollectionConverters.*
+
 import com.everanium.itb.Pipeline as JPipeline
 
 import ItbError.attempt
@@ -15,13 +17,14 @@ import ItbError.attempt
   */
 final case class ReadResult(count: Int, finished: Boolean)
 
-/** A Triple Pipeline session plus its exported blob bytes.
+/** A Triple Pipeline session.
   *
-  * The blob carries the session bundle the receiver feeds to
-  * [[Pipeline.open]]; [[rekey]] refreshes it. `close()` releases the
-  * native handle (libitb zeroes key material internally), so the
-  * class composes with `scala.util.Using.resource`; the Java
-  * binding's finalization backstop reclaims an unclosed Pipeline.
+  * [[save]] exports the self-describing session blob the receiver
+  * feeds to [[Pipeline.load]] / [[Pipeline.loadF]]; [[rekey]]
+  * refreshes it. `close()` releases the native handle (libitb zeroes
+  * key material internally), so the class composes with
+  * `scala.util.Using.resource`; the Java binding's finalization
+  * backstop reclaims an unclosed Pipeline.
   *
   * Every fallible operation returns `Either[ItbError, _]`; the
   * for-comprehension is the intended composition style. Callers
@@ -35,14 +38,29 @@ final case class ReadResult(count: Int, finished: Boolean)
 final class Pipeline private (private[itb] val underlying: JPipeline)
     extends AutoCloseable:
 
-  /** The exported session bundle bytes for the receiver side. */
-  def blob: Array[Byte] = underlying.blob()
-
-  /** Rotates the parallax + wrapper masters and refreshes [[blob]].
-    * Must not run concurrently with cipher calls or open stream
-    * sessions on the same Pipeline.
+  /** The current self-describing session blob: the bytes [[Pipeline.init]]
+    * produced, the bytes [[Pipeline.load]] re-marshalled, or the
+    * bytes of the latest [[rekey]].
     */
-  def rekey(permMaster: Array[Byte], wrapMaster: Array[Byte]): Either[ItbError, Unit] =
+  def save(): Either[ItbError, Array[Byte]] = attempt(underlying.save())
+
+  /** Writes [[save]] to `path` inside the library with mode 0600;
+    * the containing directory must exist.
+    */
+  def saveF(path: String): Either[ItbError, Unit] = attempt(underlying.saveF(path))
+
+  /** Sets the worker cap for every subsequent cipher call. `n` is
+    * clamped, never rejected: `n <= 0` selects auto (CPU count),
+    * `n > 256` is treated as 256. Only the handle statuses fail.
+    */
+  def maxWorkers(n: Int): Either[ItbError, Unit] = attempt(underlying.maxWorkers(n))
+
+  /** Rotates the parallax + wrapper masters and returns the fresh
+    * session blob (also available through [[save]]). Must not run
+    * concurrently with cipher calls or open stream sessions on the
+    * same Pipeline.
+    */
+  def rekey(permMaster: Array[Byte], wrapMaster: Array[Byte]): Either[ItbError, Array[Byte]] =
     attempt(underlying.rekey(permMaster, wrapMaster))
 
   /** Zeroes the Pipeline's key material and marks it closed.
@@ -106,31 +124,60 @@ object Pipeline:
   def init(profile: String, opts: Opts = Opts.empty): Either[ItbError, Pipeline] =
     attempt(new Pipeline(JPipeline.init(profile, opts.toJava)))
 
-  /** Reconstructs a Pipeline from a blob produced by [[init]] or
-    * [[Pipeline.rekey]], using the blob-embedded masters. See
-    * [[openWithMasters]] to override them.
+  /** Reconstructs a Pipeline from a blob produced by
+    * [[Pipeline.save]] or [[Pipeline.rekey]], using the
+    * blob-embedded masters. The blob's embedded profile record is the
+    * sole structural source. See [[loadWithMasters]] to override the
+    * masters.
     */
-  def open(profile: String, blob: Array[Byte], opts: Opts = Opts.empty): Either[ItbError, Pipeline] =
-    attempt(new Pipeline(JPipeline.open(profile, blob, opts.toJava)))
+  def load(blob: Array[Byte]): Either[ItbError, Pipeline] =
+    attempt(new Pipeline(JPipeline.load(blob)))
 
-  /** [[open]] with explicit (non-empty) parallax + wrapper masters
+  /** [[load]] with explicit (non-empty) parallax + wrapper masters
     * overriding the blob-embedded ones; both must be supplied.
     */
-  def openWithMasters(
-      profile: String,
+  def loadWithMasters(
       blob: Array[Byte],
-      opts: Opts,
       permMaster: Array[Byte],
       wrapMaster: Array[Byte]
   ): Either[ItbError, Pipeline] =
-    attempt(new Pipeline(JPipeline.open(profile, blob, opts.toJava, permMaster, wrapMaster)))
+    attempt(new Pipeline(JPipeline.load(blob, permMaster, wrapMaster)))
 
-  /** Registers a user-defined Triple profile under `name` so
-    * subsequent [[init]] / [[open]] calls resolve it. The opts
-    * follow the register-profile grammar validated by Go — build
-    * them with [[Opts.withRaw]] plus the typed setters where key
-    * names coincide. A duplicate name fails with
-    * [[Status.ProfileExists]].
+  /** [[load]] for a blob stored in a file; the file is read inside
+    * the library.
     */
-  def registerProfile(name: String, opts: Opts): Either[ItbError, Unit] =
-    attempt(JPipeline.registerProfile(name, opts.toJava))
+  def loadF(path: String): Either[ItbError, Pipeline] =
+    attempt(new Pipeline(JPipeline.loadF(path)))
+
+  /** [[loadF]] with explicit (non-empty) parallax + wrapper masters
+    * overriding the blob-embedded ones; both must be supplied.
+    */
+  def loadFWithMasters(
+      path: String,
+      permMaster: Array[Byte],
+      wrapMaster: Array[Byte]
+  ): Either[ItbError, Pipeline] =
+    attempt(new Pipeline(JPipeline.loadF(path, permMaster, wrapMaster)))
+
+  /** Decodes the blob's embedded profile record without opening a
+    * Pipeline. No registry read, no primitive probe.
+    */
+  def inspect(blob: Array[Byte]): Either[ItbError, Profile] =
+    attempt(JPipeline.inspect(blob))
+
+  /** Registers `profile` under `name` so subsequent [[init]] /
+    * [[lookup]] calls resolve it. Every field rule is validated by
+    * Go; a duplicate name fails with [[Status.ProfileExists]].
+    */
+  def register(name: String, profile: Profile): Either[ItbError, Unit] =
+    attempt(JPipeline.register(name, profile))
+
+  /** Looks up a registered profile (shipped or [[register]]ed) by
+    * name; an unknown name fails with [[Status.UnknownProfile]].
+    */
+  def lookup(name: String): Either[ItbError, Profile] =
+    attempt(JPipeline.lookup(name))
+
+  /** The sorted names of every registered profile. */
+  def profiles(): Either[ItbError, List[String]] =
+    attempt(JPipeline.profiles().asScala.toList)

@@ -22,7 +22,7 @@ let private profiles =
 let ``message round trip every profile`` () =
     for profile in profiles do
         use sender = unwrap (Pipeline.init profile Opts.empty)
-        use receiver = unwrap (Pipeline.openBlob profile (Pipeline.blob sender) Opts.empty)
+        use receiver = unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
         for size in [ 4 * 1024; 256 * 1024 ] do
             let plain = payload size (uint64 size)
@@ -44,7 +44,7 @@ let ``opts innerHashes override round trips on width-512 profile`` () =
 
     use sender = unwrap (Pipeline.init "singlemsg-triple-mac-v1" opts)
     use receiver =
-        unwrap (Pipeline.openBlob "singlemsg-triple-mac-v1" (Pipeline.blob sender) opts)
+        unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
 
     let plain = payload 4096 42UL
     let wire = unwrap (Pipeline.encryptMessage sender plain)

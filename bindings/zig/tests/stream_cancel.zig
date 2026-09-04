@@ -6,6 +6,14 @@
 const std = @import("std");
 const itb = @import("itb");
 
+/// Save → Load handshake: a receiver reconstructed from the sender's
+/// current blob.
+fn loadFrom(gpa: std.mem.Allocator, sender: *const itb.Pipeline) !itb.Pipeline {
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    return itb.Pipeline.load(gpa, blob, null);
+}
+
 test "mid-flight cancel leaves the Pipeline usable" {
     const gpa = std.testing.allocator;
 
@@ -28,13 +36,7 @@ test "mid-flight cancel leaves the Pipeline usable" {
     sess.deinit();
 
     // The Pipeline stays usable after the cancelled session.
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "streaming-aead-triple-mac-v1",
-        sender.blob(),
-        null,
-        null,
-    );
+    var receiver = try loadFrom(gpa, &sender);
     defer receiver.deinit();
 
     const plain = "after cancel";

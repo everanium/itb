@@ -24,7 +24,7 @@ final class MessageTests: XCTestCase {
         for profile in Self.profiles {
             for size in [4 * 1024, 256 * 1024] {
                 let sender = try Pipeline(profile: profile)
-                let receiver = try Pipeline(open: profile, blob: sender.blob)
+                let receiver = try Pipeline(load: try sender.save())
                 let plain = testPayload(size, seed: UInt64(size))
                 let wire = try sender.encryptMessage(plain)
                 let back = try receiver.decryptMessage(wire)

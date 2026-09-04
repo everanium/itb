@@ -85,26 +85,28 @@ func (r *runState) rekeyPipes(workerID int, iter int64) error {
 
 // blobCyclePipes reopens every active pipeline from its current
 // session blob under the write lock: a fresh Pipeline is built via
-// [triple.Open], the running instance is closed, and the fresh one is
+// [triple.Load], the running instance is closed, and the fresh one is
 // swapped in. This exercises the blob export/import path's fidelity —
 // every subsequent iteration round-trips through seeds and masters
-// that survived a blob crossing. On an Open failure the running
+// that survived a blob crossing. The blob carries the pipeline's full
+// shape (the resolved profile record plus the inner Config snapshot),
+// so no override reaches the reopen. On a Load failure the running
 // pipeline is left in place and the error aborts the run.
 func (r *runState) blobCyclePipes(workerID int, iter int64) error {
 	r.pipeMu.Lock()
 	defer r.pipeMu.Unlock()
 	if r.streamPipe != nil {
-		fresh, err := triple.Open(r.streamProfile, r.streamBlob, r.opts)
+		fresh, err := triple.Load(r.streamBlob)
 		if err != nil {
-			return fmt.Errorf("g%d iter %d: Open(%s): %w", workerID, iter, r.streamProfile, err)
+			return fmt.Errorf("g%d iter %d: Load(%s): %w", workerID, iter, r.streamProfile, err)
 		}
 		_ = r.streamPipe.Close()
 		r.streamPipe = fresh
 	}
 	if r.msgPipe != nil {
-		fresh, err := triple.Open(r.msgProfile, r.msgBlob, r.opts)
+		fresh, err := triple.Load(r.msgBlob)
 		if err != nil {
-			return fmt.Errorf("g%d iter %d: Open(%s): %w", workerID, iter, r.msgProfile, err)
+			return fmt.Errorf("g%d iter %d: Load(%s): %w", workerID, iter, r.msgProfile, err)
 		}
 		_ = r.msgPipe.Close()
 		r.msgPipe = fresh

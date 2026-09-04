@@ -32,7 +32,7 @@ final class MessageTest extends TestCase
     public function testMessageRoundTrip(): void
     {
         $sender = Itb::create('singlemsg-triple-mac-v1');
-        $receiver = Itb::open('singlemsg-triple-mac-v1', $sender->blob());
+        $receiver = Itb::load($sender->save());
         foreach ([1, 4096, 262144] as $size) {
             $plain = self::payload($size, $size + 1);
             $wire = $sender->encryptMessage($plain);
@@ -50,7 +50,7 @@ final class MessageTest extends TestCase
         $size = 2 * 1024 * 1024 + 12345;
         $plain = self::payload($size, 7);
         $sender = Itb::create('singlemsg-triple-nomac-v1');
-        $receiver = Itb::open('singlemsg-triple-nomac-v1', $sender->blob());
+        $receiver = Itb::load($sender->save());
         $wire = $sender->encryptMessage($plain);
         $this->assertSame($plain, $receiver->decryptMessage($wire));
         $sender->free();
@@ -64,7 +64,7 @@ final class MessageTest extends TestCase
         // BUFFER_TOO_SMALL with the exact required size; the single
         // retry then succeeds and the wire decrypts.
         $sender = Itb::create('singlemsg-triple-mac-v1');
-        $receiver = Itb::open('singlemsg-triple-mac-v1', $sender->blob());
+        $receiver = Itb::load($sender->save());
         $plain = 'retry-once probe payload';
         $ffi = FFIBridge::get();
         $handle = new \ReflectionProperty($sender, 'handle');
@@ -88,11 +88,12 @@ final class MessageTest extends TestCase
     public function testRekeyRefreshesBlobAndRoundTrips(): void
     {
         $sender = Itb::create('singlemsg-triple-mac-v1');
-        $before = $sender->blob();
-        $sender->rekey(\str_repeat("\x11", 32), \str_repeat("\x22", 32));
-        $this->assertNotSame($before, $sender->blob(), 'rekey must refresh the blob');
+        $before = $sender->save();
+        $rotated = $sender->rekey(\str_repeat("\x11", 32), \str_repeat("\x22", 32));
+        $this->assertNotSame($before, $rotated, 'rekey must refresh the blob');
+        $this->assertSame($rotated, $sender->save(), 'save must observe the rekey');
 
-        $receiver = Itb::open('singlemsg-triple-mac-v1', $sender->blob());
+        $receiver = Itb::load($rotated);
         $plain = 'post-rekey payload';
         $this->assertSame($plain, $receiver->decryptMessage($sender->encryptMessage($plain)));
         $sender->free();

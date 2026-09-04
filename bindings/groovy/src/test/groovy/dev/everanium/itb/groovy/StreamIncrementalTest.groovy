@@ -49,7 +49,7 @@ class StreamIncrementalTest {
         // Small chunk size so the 64 KiB payload spans many chunks.
         def opts = { new Opts().withChunkSize(4096) }
         Pipeline.withPipeline('streaming-aead-triple-mac-v1', opts()) { Pipeline sender ->
-            Pipeline.withOpened('streaming-aead-triple-mac-v1', sender.blob, opts()) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = new byte[65_536]
                 for (int i = 0; i < plain.length; i++) {
                     plain[i] = (byte) (i % 241)
@@ -71,7 +71,7 @@ class StreamIncrementalTest {
     @Test
     void drainToCollectsTerminalOutput() {
         Pipeline.withPipeline('streaming-aead-triple-mac-v1') { Pipeline sender ->
-            Pipeline.withOpened('streaming-aead-triple-mac-v1', sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = MessageTest.payload(50_000, 7)
 
                 def wireSpool = new ByteArrayOutputStream()

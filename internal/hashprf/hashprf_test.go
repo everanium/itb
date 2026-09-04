@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/hex"
 	"testing"
+
+	"github.com/everanium/itb/hashes"
 )
 
 // prims enumerates the six primitives with their expected key and block
@@ -13,12 +15,12 @@ var prims = []struct {
 	keySize   int
 	blockSize int
 }{
-	{Areion256, 32, 32},
-	{Areion512, 64, 64},
-	{BLAKE2b256, 32, 32},
-	{BLAKE2b512, 32, 64},
-	{BLAKE2s, 32, 32},
-	{BLAKE3, 32, 32},
+	{hashes.CipherAreion256, 32, 32},
+	{hashes.CipherAreion512, 64, 64},
+	{hashes.CipherBLAKE2b256, 32, 32},
+	{hashes.CipherBLAKE2b512, 32, 64},
+	{hashes.CipherBLAKE2s, 32, 32},
+	{hashes.CipherBLAKE3, 32, 32},
 }
 
 // batchPrims lists the primitives that expose a 4-wide batch PRF (only the
@@ -28,8 +30,8 @@ var batchPrims = []struct {
 	keySize   int
 	blockSize int
 }{
-	{Areion256, 32, 32},
-	{Areion512, 64, 64},
+	{hashes.CipherAreion256, 32, 32},
+	{hashes.CipherAreion512, 64, 64},
 }
 
 // nonBatchPrims lists primitives that do NOT expose a batch path; NewBatch
@@ -38,10 +40,10 @@ var nonBatchPrims = []struct {
 	name    string
 	keySize int
 }{
-	{BLAKE2b256, 32},
-	{BLAKE2b512, 32},
-	{BLAKE2s, 32},
-	{BLAKE3, 32},
+	{hashes.CipherBLAKE2b256, 32},
+	{hashes.CipherBLAKE2b512, 32},
+	{hashes.CipherBLAKE2s, 32},
+	{hashes.CipherBLAKE3, 32},
 }
 
 // TestKeyBlockSizes verifies the declared key and block sizes and the
@@ -123,12 +125,12 @@ func TestPRFRegression(t *testing.T) {
 		name string
 		want string
 	}{
-		{Areion256, "4e4dba2c59c8fe930649304b16365131028038d4efe7dd1c351b7e6b5d56b880"},
-		{Areion512, "571772eb3d57f5d75be5b28fd960bdb32fab0594dea148decaa27002c99b1dd29f881c3e6347a512269b71e8685ef3cf38f2f655d062fa70af49cf9de8130213"},
-		{BLAKE2b256, "7a172a3e6d568847321a0f43318e77f8fa0566fd38230a0f39232d729a7d2fda"},
-		{BLAKE2b512, "3a8f333fff6613bfc0b0d0490f9529eee4642b91e7df425e4da1bc4f290ba38b36ee17e8f6130916985d38ee0a46ae4a45c03c9018252b770b011552c48c786d"},
-		{BLAKE2s, "45d3b20804c1380a77049cb9c89829e23d7e32a5a98bc15a9aea274fcdf19c97"},
-		{BLAKE3, "7b7b8ae52baa66b5b0b815c6a12f2e20dabb95844d6146abcd98916da653c0d1"},
+		{hashes.CipherAreion256, "4e4dba2c59c8fe930649304b16365131028038d4efe7dd1c351b7e6b5d56b880"},
+		{hashes.CipherAreion512, "571772eb3d57f5d75be5b28fd960bdb32fab0594dea148decaa27002c99b1dd29f881c3e6347a512269b71e8685ef3cf38f2f655d062fa70af49cf9de8130213"},
+		{hashes.CipherBLAKE2b256, "7a172a3e6d568847321a0f43318e77f8fa0566fd38230a0f39232d729a7d2fda"},
+		{hashes.CipherBLAKE2b512, "3a8f333fff6613bfc0b0d0490f9529eee4642b91e7df425e4da1bc4f290ba38b36ee17e8f6130916985d38ee0a46ae4a45c03c9018252b770b011552c48c786d"},
+		{hashes.CipherBLAKE2s, "45d3b20804c1380a77049cb9c89829e23d7e32a5a98bc15a9aea274fcdf19c97"},
+		{hashes.CipherBLAKE3, "7b7b8ae52baa66b5b0b815c6a12f2e20dabb95844d6146abcd98916da653c0d1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

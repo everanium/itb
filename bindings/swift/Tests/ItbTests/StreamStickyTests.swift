@@ -54,8 +54,7 @@ final class StreamStickyTests: XCTestCase {
 
     func testTamperedWireFailsSticky() throws {
         let sender = try Pipeline(profile: "streaming-aead-triple-mac-v1")
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
 
         let plain = testPayload(65536, seed: 0x7A3B)
         let wire = try sender.encryptStreamPump(plain)

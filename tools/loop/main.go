@@ -128,12 +128,9 @@ type runState struct {
 	msgPipe    *triple.Pipeline // nil when shape == stream
 	workers    []*worker
 
-	// opts is the triple.Opts handed to Init; blob-cycle reopens pass
-	// the same shape through triple.Open.
-	opts triple.Opts
-
 	// streamProfile / msgProfile are the profile names the two pipes
-	// were initialised against; blob-cycle reopens address them.
+	// were initialised against; blob-cycle log lines and errors are
+	// labelled with them.
 	streamProfile string
 	msgProfile    string
 
@@ -217,7 +214,6 @@ func run() int {
 		BarrierFill:  cfg.barrierFill,
 		ChunkSize:    int(cfg.chunkSize),
 	}
-	r.opts = opts
 	r.streamProfile = triple.ProfileStreamingAEADTripleMACV1
 	r.msgProfile = triple.ProfileSingleMsgTripleMACV1
 	if cfg.profile != "" {

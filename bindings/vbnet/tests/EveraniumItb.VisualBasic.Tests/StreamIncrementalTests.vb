@@ -12,8 +12,7 @@ Public Class StreamIncrementalTests
         ' Small chunk size so the 64 KiB payload spans many chunks.
         Dim opts As Opts = New Opts().WithChunkSize(4096)
         Using sender As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1", opts)
-            Using receiver As Pipeline = Pipeline.Open(
-                    "streaming-aead-triple-mac-v1", sender.Blob, opts)
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
                 Dim plain(65535) As Byte
                 For i As Integer = 0 To plain.Length - 1
                     plain(i) = CByte(i Mod 241)

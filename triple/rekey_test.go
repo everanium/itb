@@ -27,7 +27,7 @@ func TestPipelineRekeyRoundTrip(t *testing.T) {
 	}
 
 	// Fresh blob must carry the new masters.
-	var wnew blobWrapV1
+	var wnew blobWrapV2
 	if err := json.Unmarshal(newBlob, &wnew); err != nil {
 		t.Fatalf("Unmarshal(newBlob): %v", err)
 	}
@@ -39,7 +39,7 @@ func TestPipelineRekeyRoundTrip(t *testing.T) {
 	}
 
 	// Old blob must carry different bytes to be a meaningful test.
-	var wold blobWrapV1
+	var wold blobWrapV2
 	if err := json.Unmarshal(oldBlob, &wold); err != nil {
 		t.Fatalf("Unmarshal(oldBlob): %v", err)
 	}
@@ -51,7 +51,7 @@ func TestPipelineRekeyRoundTrip(t *testing.T) {
 	}
 
 	// Receiver opens the fresh blob successfully.
-	receiver, err := Open(ProfileStreamingAEADTripleMACV1, newBlob, Opts{})
+	receiver, err := Load(newBlob)
 	if err != nil {
 		t.Fatalf("Open(newBlob): %v", err)
 	}

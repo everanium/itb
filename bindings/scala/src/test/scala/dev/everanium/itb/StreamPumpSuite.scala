@@ -13,7 +13,7 @@ class StreamPumpSuite extends ItbSuite:
 
   test("pump round trip 1 MiB") {
     Using.resource(ok(Pipeline.init(profile))) { sender =>
-      Using.resource(ok(Pipeline.open(profile, sender.blob))) { receiver =>
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) { receiver =>
         val plain = Array.tabulate(1 << 20)(i => (i % 251).toByte)
 
         val wire = new ByteArrayOutputStream()
@@ -29,7 +29,7 @@ class StreamPumpSuite extends ItbSuite:
 
   test("pump matches one-shot") {
     Using.resource(ok(Pipeline.init(profile))) { sender =>
-      Using.resource(ok(Pipeline.open(profile, sender.blob))) { receiver =>
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) { receiver =>
         val plain = Array.tabulate(65_536)(i => (i % 199).toByte)
         val wire = ok(sender.encryptStreamOneShot(plain))
 
@@ -45,7 +45,7 @@ class StreamPumpSuite extends ItbSuite:
 
   test("iterator transform round trip") {
     Using.resource(ok(Pipeline.init(profile))) { sender =>
-      Using.resource(ok(Pipeline.open(profile, sender.blob))) { receiver =>
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) { receiver =>
         val plain = MessageSuite.payload(300_000, 0x5eed)
         // Uneven input chunking (7001-byte slices) exercises the
         // feed / drain interleave.

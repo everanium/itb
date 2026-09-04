@@ -52,19 +52,19 @@ func (p *Pipeline) EncryptStreamBytes(plaintext []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
-	if !isStreamingMode(p.resolved.mode) {
+	if !isStreamingMode(p.resolved.Mode) {
 		return nil, ErrProfileNotStreaming
 	}
 	if len(plaintext) == 0 {
 		return nil, ErrEmptyInput
 	}
-	if p.resolved.parallaxOn {
+	if p.resolved.Parallax {
 		return p.encryptMessageStreaming(plaintext)
 	}
 	if len(plaintext) <= messageFastPathMaxBytes {
 		return p.encryptMessageDirect(plaintext)
 	}
-	if p.resolved.wrapperOn {
+	if p.resolved.Wrapper {
 		return p.encryptStreamBytesTailWrap(plaintext)
 	}
 	return p.encryptMessageStreaming(plaintext)
@@ -104,16 +104,16 @@ func (p *Pipeline) DecryptStreamBytes(wire []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
-	if !isStreamingMode(p.resolved.mode) {
+	if !isStreamingMode(p.resolved.Mode) {
 		return nil, ErrProfileNotStreaming
 	}
 	if len(wire) == 0 {
 		return nil, ErrEmptyInput
 	}
-	if p.resolved.parallaxOn {
+	if p.resolved.Parallax {
 		return p.decryptMessageStreaming(wire)
 	}
-	if p.resolved.wrapperOn {
+	if p.resolved.Wrapper {
 		return p.decryptStreamBytesTailUnwrap(wire)
 	}
 	plain, ok, err := p.decryptInnerSingleChunk(wire)
@@ -147,7 +147,7 @@ func (p *Pipeline) encryptStreamBytesTailWrap(plaintext []byte) ([]byte, error) 
 			p.seeds[0], p.seeds[1],
 			p.seeds[2], p.seeds[3], p.seeds[4],
 			p.seeds[5], p.seeds[6], p.seeds[7],
-			src, &wire, p.macFunc, p.resolved.chunkSize,
+			src, &wire, p.macFunc, p.resolved.ChunkSize,
 		)
 	} else {
 		cipherErr = itb.EncryptStream3xCfg(
@@ -155,7 +155,7 @@ func (p *Pipeline) encryptStreamBytesTailWrap(plaintext []byte) ([]byte, error) 
 			p.seeds[0], p.seeds[1],
 			p.seeds[2], p.seeds[3], p.seeds[4],
 			p.seeds[5], p.seeds[6], p.seeds[7],
-			src, &wire, p.resolved.chunkSize,
+			src, &wire, p.resolved.ChunkSize,
 		)
 	}
 	if cipherErr != nil {

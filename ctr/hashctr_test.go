@@ -3,6 +3,8 @@ package ctr
 import (
 	"bytes"
 	"testing"
+
+	"github.com/everanium/itb/hashes"
 )
 
 // hashCiphers enumerates the six hash-based PRF-CTR primitives with their
@@ -13,12 +15,12 @@ var hashCiphers = []struct {
 	nonceSize int
 	blockSize int
 }{
-	{CipherAreion256, 32, 16, 32},
-	{CipherAreion512, 64, 16, 64},
-	{CipherBLAKE2b256, 32, 16, 32},
-	{CipherBLAKE2b512, 32, 16, 64},
-	{CipherBLAKE2s, 32, 16, 32},
-	{CipherBLAKE3, 32, 16, 32},
+	{hashes.CipherAreion256, 32, 16, 32},
+	{hashes.CipherAreion512, 64, 16, 64},
+	{hashes.CipherBLAKE2b256, 32, 16, 32},
+	{hashes.CipherBLAKE2b512, 32, 16, 64},
+	{hashes.CipherBLAKE2s, 32, 16, 32},
+	{hashes.CipherBLAKE3, 32, 16, 32},
 }
 
 // TestHashKeyNonceSizes verifies the declared key and nonce sizes for each

@@ -126,13 +126,15 @@ func TestBlobTooManyOpts(t *testing.T) {
 
 // TestBlob512ExportImport3CfgRoundTrip exercises the Cfg-aware
 // Export3Cfg / Import3Cfg surface at the 512-bit width. Round-tripped
-// Cfg carries the ORIGINAL cfg values; a nil cfg supplied to
-// Export3Cfg / Import3Cfg yields ErrBlobNilCfg.
+// Cfg carries the ORIGINAL NonceBits / BarrierFill; MaxWorkers is
+// per-machine tuning and does not travel (the wire has no
+// max_workers key and the receiver's field stays 0); a nil cfg
+// supplied to Export3Cfg / Import3Cfg yields ErrBlobNilCfg.
 func TestBlob512ExportImport3CfgRoundTrip(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
 
-	t.Run("cfg_carries_maxworkers", func(t *testing.T) {
+	t.Run("cfg_carries_nonce_barrier_not_maxworkers", func(t *testing.T) {
 		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
 
 		bSrc := &itb.Blob512{}
@@ -151,8 +153,11 @@ func TestBlob512ExportImport3CfgRoundTrip(t *testing.T) {
 			t.Fatalf("Import3Cfg: %v", err)
 		}
 
-		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 4 {
-			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:4}", fresh)
+		if bytes.Contains(data, []byte("max_workers")) {
+			t.Fatalf("wire carries max_workers key: %s", data)
+		}
+		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 0 {
+			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:0}", fresh)
 		}
 	})
 
@@ -198,7 +203,7 @@ func TestBlob256ExportImport3CfgRoundTrip(t *testing.T) {
 	ss2, keyS2 := mkSeed()
 	ss3, keyS3 := mkSeed()
 
-	t.Run("cfg_carries_maxworkers", func(t *testing.T) {
+	t.Run("cfg_carries_nonce_barrier_not_maxworkers", func(t *testing.T) {
 		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
 
 		bSrc := &itb.Blob256{}
@@ -215,8 +220,11 @@ func TestBlob256ExportImport3CfgRoundTrip(t *testing.T) {
 			t.Fatalf("Import3Cfg: %v", err)
 		}
 
-		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 4 {
-			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:4}", fresh)
+		if bytes.Contains(data, []byte("max_workers")) {
+			t.Fatalf("wire carries max_workers key: %s", data)
+		}
+		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 0 {
+			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:0}", fresh)
 		}
 	})
 
@@ -260,7 +268,7 @@ func TestBlob128ExportImport3CfgRoundTrip(t *testing.T) {
 	ss2, keyS2 := mkSeed()
 	ss3, keyS3 := mkSeed()
 
-	t.Run("cfg_carries_maxworkers", func(t *testing.T) {
+	t.Run("cfg_carries_nonce_barrier_not_maxworkers", func(t *testing.T) {
 		cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
 
 		bSrc := &itb.Blob128{}
@@ -277,8 +285,11 @@ func TestBlob128ExportImport3CfgRoundTrip(t *testing.T) {
 			t.Fatalf("Import3Cfg: %v", err)
 		}
 
-		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 4 {
-			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:4}", fresh)
+		if bytes.Contains(data, []byte("max_workers")) {
+			t.Fatalf("wire carries max_workers key: %s", data)
+		}
+		if fresh.NonceBits != 256 || fresh.BarrierFill != 8 || fresh.MaxWorkers != 0 {
+			t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:8 MaxWorkers:0}", fresh)
 		}
 	})
 
@@ -304,16 +315,15 @@ func TestBlob128ExportImport3CfgRoundTrip(t *testing.T) {
 	})
 }
 
-// TestBlobV1MaxWorkersFieldBackCompat exercises the wire back-compat
-// contract: a JSON blob that omits the "max_workers" key entirely
-// is accepted by Import3Cfg and lands as cfg.MaxWorkers == 0.
-func TestBlobV1MaxWorkersFieldBackCompat(t *testing.T) {
-	// Build a legit 512-width Triple blob via Export3Cfg, then verify
-	// the raw JSON has no "max_workers" key (Cfg carries MaxWorkers=0
-	// so omitempty drops the field).
+// TestBlobV1MaxWorkersKeyRejected pins the inner-blob schema: the
+// globals object is exactly {nonce_bits, barrier_fill}. A blob
+// carrying a max_workers key is refused by the strict decoder as any
+// unknown key (ErrBlobMalformed); a blob without it decodes with
+// cfg.MaxWorkers left at 0.
+func TestBlobV1MaxWorkersKeyRejected(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
-	cfg := &itb.Config{NonceBits: 256, BarrierFill: 8}
+	cfg := &itb.Config{NonceBits: 256, BarrierFill: 8, MaxWorkers: 4}
 	bSrc := &itb.Blob512{}
 	data, err := bSrc.Export3Cfg(cfg,
 		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
@@ -324,21 +334,30 @@ func TestBlobV1MaxWorkersFieldBackCompat(t *testing.T) {
 		t.Fatalf("Export3Cfg: %v", err)
 	}
 	if bytes.Contains(data, []byte("max_workers")) {
-		t.Fatalf("wire unexpectedly carries max_workers key: %s", data)
+		t.Fatalf("wire carries max_workers key: %s", data)
 	}
 
-	// Round-trip the field-missing blob through Import3Cfg.
 	fresh := &itb.Config{}
 	bDst := &itb.Blob512{}
 	if err := bDst.Import3Cfg(data, fresh); err != nil {
 		t.Fatalf("Import3Cfg: %v", err)
 	}
 	if fresh.MaxWorkers != 0 {
-		t.Errorf("field-missing blob decoded MaxWorkers = %d, want 0", fresh.MaxWorkers)
+		t.Errorf("decoded MaxWorkers = %d, want 0", fresh.MaxWorkers)
 	}
 	if fresh.NonceBits != 256 || fresh.BarrierFill != 8 {
-		t.Errorf("field-missing blob decoded NonceBits/BarrierFill = %d/%d, want 256/8",
+		t.Errorf("decoded NonceBits/BarrierFill = %d/%d, want 256/8",
 			fresh.NonceBits, fresh.BarrierFill)
+	}
+
+	// Inject a max_workers key into globals and confirm the strict
+	// decoder refuses it.
+	injected := bytes.Replace(data, []byte(`"barrier_fill":8`), []byte(`"barrier_fill":8,"max_workers":7`), 1)
+	if bytes.Equal(injected, data) {
+		t.Fatalf("test fixture: barrier_fill anchor not found in %s", data)
+	}
+	if err := (&itb.Blob512{}).Import3Cfg(injected, &itb.Config{}); !errors.Is(err, itb.ErrBlobMalformed) {
+		t.Fatalf("Import3Cfg with max_workers key: got %v, want ErrBlobMalformed", err)
 	}
 }
 

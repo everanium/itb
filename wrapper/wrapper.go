@@ -6,23 +6,8 @@ import (
 	"io"
 
 	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/kdf"
-)
-
-// Cipher names accepted by the Make* helpers and the cmd/-flag parsing.
-// The string values mirror the ctr/ package's primitive identifiers; every
-// name routes through ctr.New / kdf.Derive, so all PRF-grade ITB
-// registry primitives are supported as outer ciphers.
-const (
-	CipherAreion256  = "areion256"
-	CipherAreion512  = "areion512"
-	CipherBLAKE2b256 = "blake2b256"
-	CipherBLAKE2b512 = "blake2b512"
-	CipherBLAKE2s    = "blake2s"
-	CipherBLAKE3     = "blake3"
-	CipherAES128CTR  = "aescmac"
-	CipherSipHash24  = "siphash24"
-	CipherChaCha20   = "chacha20"
 )
 
 // MaxMasterKeySize is the upper sanity cap on the master keying material
@@ -36,13 +21,12 @@ const (
 const MaxMasterKeySize = 128
 
 // CipherNames lists every supported outer cipher in iteration order, in the
-// project's canonical primitive order.
-var CipherNames = []string{
-	CipherAreion256, CipherAreion512,
-	CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3,
-	CipherAES128CTR, CipherSipHash24,
-	CipherChaCha20,
-}
+// project's canonical primitive order. It is a snapshot of the shipped
+// hashes.Registry names (hashes.Names); hashes.Registry is the single
+// source of truth for the shipped primitive name list. Every name routes
+// through ctr.New / kdf.Derive, so all PRF-grade ITB registry primitives
+// are supported as outer ciphers.
+var CipherNames = hashes.Names()
 
 // Keystream is the outer cipher keystream the wrap helpers consume. It
 // aliases ctr.Keystream; the contract matches crypto/cipher.Stream —

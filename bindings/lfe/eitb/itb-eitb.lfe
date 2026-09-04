@@ -4,12 +4,17 @@
 ;;;; Subcommands:
 ;;;;
 ;;;;   eitb version                                 library + binding versions
-;;;;   eitb hashes                                  shipped hash primitive roster
+;;;;   eitb profiles                                registered profile catalogue
+;;;;   eitb inspect <blob-hex>                      profile record of a blob
 ;;;;   eitb encrypt <profile> <in-file> <out-file>  Single Message encrypt
 ;;;;   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 ;;;;
-;;;; `encrypt` prints the session blob to stderr as hex; feed that
-;;;; hex back to `decrypt` on the receiving side.
+;;;; `encrypt` prints the session blob (save/1) to stderr as hex; feed
+;;;; that hex back to `decrypt` on the receiving side, which reopens
+;;;; the session with load/1 (the profile argument only routes Single
+;;;; Message versus streaming). `profiles` lists the registered
+;;;; profile catalogue one name per line; the profiles that carry a
+;;;; cipher surface are the ones `encrypt` / `decrypt` accept.
 ;;;;
 ;;;; The eitb bash launcher compiles this module with the hex-fetched
 ;;;; LFE compiler and invokes main/1 with the CLI argument list; the
@@ -19,14 +24,15 @@
 (defmodule itb-eitb
   (export (main 1)))
 
-(defmacro EITB-LFE-VERSION () "0.3.5")
+(defmacro EITB-LFE-VERSION () "0.4.1")
 
 (defun main (args)
   (erlang:halt (dispatch args)))
 
 (defun dispatch
   (('("version")) (cmd-version))
-  (('("hashes")) (cmd-hashes))
+  (('("profiles")) (cmd-profiles))
+  ((`("inspect" ,blob-hex)) (cmd-inspect blob-hex))
   ((`("encrypt" ,profile ,in-file ,out-file))
     (cmd-encrypt profile in-file out-file))
   ((`("decrypt" ,profile ,blob-hex ,in-file ,out-file))
@@ -36,7 +42,8 @@
 (defun usage ()
   (io:format 'standard_error
              (++ "usage: eitb version~n"
-                 "       eitb hashes~n"
+                 "       eitb profiles~n"
+                 "       eitb inspect <blob-hex>~n"
                  "       eitb encrypt <profile> <in-file> <out-file>~n"
                  "       eitb decrypt <profile> <blob-hex> <in-file>"
                  " <out-file>~n")
@@ -64,16 +71,6 @@
       (io:format "itb-lfe ~s~n" (list (EITB-LFE-VERSION)))
       0)
     (`#(error ,reason) (fail "version" reason))))
-
-(defun cmd-hashes ()
-  (lists:foldl
-    (match-lambda
-      ((`#(,name ,width) index)
-        (io:format "~2b  ~-12s ~b bits~n" (list index name width))
-        (+ index 1)))
-    0
-    (itb-lfe:hashes))
-  0)
 
 ;; Profiles whose canonical name begins with "streaming-" route
 ;; through the streaming session pair instead of the Single Message
@@ -141,13 +138,30 @@
                        (list out-file write-err))
             1)
           ('ok
-            (let ((`#(ok ,blob) (itb-lfe:blob pipe)))
+            (let ((`#(ok ,blob) (itb-lfe:save pipe)))
               (io:format 'standard_error "~s~n"
                          (list (string:lowercase (binary:encode_hex blob))))
               (io:format "encrypted ~s -> ~s (~b -> ~b bytes)~n"
                          (list in-file out-file (byte_size plain)
                                (byte_size wire)))
               0)))))))
+
+(defun cmd-profiles ()
+  (lists:foreach (lambda (name) (io:format "~s~n" (list name)))
+                 (itb-lfe:profiles))
+  0)
+
+(defun cmd-inspect (blob-hex)
+  (case (decode-hex blob-hex)
+    ('error
+      (io:format 'standard_error "eitb: invalid blob hex~n" '())
+      1)
+    (`#(ok ,blob)
+      (case (itb-lfe:inspect blob)
+        (`#(error ,reason) (fail "inspect" reason))
+        (`#(ok ,record)
+          (io:format "~s~n" (list (json:encode record)))
+          0)))))
 
 (defun cmd-decrypt (profile blob-hex in-file out-file)
   (cap-go-runtime)
@@ -165,8 +179,8 @@
           (decrypt-with profile blob wire in-file out-file))))))
 
 (defun decrypt-with (profile blob wire in-file out-file)
-  (case (itb-lfe:open (list_to_binary profile) blob)
-    (`#(error ,reason) (fail "open" reason))
+  (case (itb-lfe:load blob)
+    (`#(error ,reason) (fail "load" reason))
     (`#(ok ,pipe)
       (let* ((result (if (streaming-profile? profile)
                        (stream-one-shot pipe 'decrypt wire)

@@ -76,17 +76,6 @@ typedef _VersionC = Int32 Function(
 typedef VersionDart = int Function(
     Pointer<Uint8> out, int capBytes, Pointer<Size> outLen);
 
-typedef _HashCountC = Int32 Function();
-typedef HashCountDart = int Function();
-
-typedef _HashNameC = Int32 Function(
-    Int32 i, Pointer<Uint8> out, Size capBytes, Pointer<Size> outLen);
-typedef HashNameDart = int Function(
-    int i, Pointer<Uint8> out, int capBytes, Pointer<Size> outLen);
-
-typedef _HashWidthC = Int32 Function(Int32 i);
-typedef HashWidthDart = int Function(int i);
-
 typedef _SetMemoryLimitC = Int64 Function(Int64 limit);
 typedef SetMemoryLimitDart = int Function(int limit);
 
@@ -108,28 +97,67 @@ typedef TripleInitDart = int Function(
     Pointer<Size> blobLen,
     Pointer<UintPtr> outHandle);
 
-typedef _TripleOpenC = Int32 Function(
-    Pointer<Utf8> profile,
+typedef _TripleLoadC = Int32 Function(
     Pointer<Uint8> blob,
     Size blobLen,
-    Pointer<Utf8> opts,
     Pointer<Uint8> permMaster,
     Size permMasterLen,
     Pointer<Uint8> wrapMaster,
     Size wrapMasterLen,
     Size mastersCount,
     Pointer<UintPtr> outHandle);
-typedef TripleOpenDart = int Function(
-    Pointer<Utf8> profile,
+typedef TripleLoadDart = int Function(
     Pointer<Uint8> blob,
     int blobLen,
-    Pointer<Utf8> opts,
     Pointer<Uint8> permMaster,
     int permMasterLen,
     Pointer<Uint8> wrapMaster,
     int wrapMasterLen,
     int mastersCount,
     Pointer<UintPtr> outHandle);
+
+typedef _TripleLoadFC = Int32 Function(
+    Pointer<Utf8> path,
+    Pointer<Uint8> permMaster,
+    Size permMasterLen,
+    Pointer<Uint8> wrapMaster,
+    Size wrapMasterLen,
+    Size mastersCount,
+    Pointer<UintPtr> outHandle);
+typedef TripleLoadFDart = int Function(
+    Pointer<Utf8> path,
+    Pointer<Uint8> permMaster,
+    int permMasterLen,
+    Pointer<Uint8> wrapMaster,
+    int wrapMasterLen,
+    int mastersCount,
+    Pointer<UintPtr> outHandle);
+
+typedef _TripleSaveC = Int32 Function(
+    UintPtr handle, Pointer<Uint8> blobOut, Size blobCap, Pointer<Size> blobLen);
+typedef TripleSaveDart = int Function(
+    int handle, Pointer<Uint8> blobOut, int blobCap, Pointer<Size> blobLen);
+
+typedef _TripleSaveFC = Int32 Function(UintPtr handle, Pointer<Utf8> path);
+typedef TripleSaveFDart = int Function(int handle, Pointer<Utf8> path);
+
+typedef _TripleInspectC = Int32 Function(Pointer<Uint8> blob, Size blobLen,
+    Pointer<Uint8> jsonOut, Size jsonCap, Pointer<Size> jsonLen);
+typedef TripleInspectDart = int Function(Pointer<Uint8> blob, int blobLen,
+    Pointer<Uint8> jsonOut, int jsonCap, Pointer<Size> jsonLen);
+
+typedef _TripleMaxWorkersC = Int32 Function(UintPtr handle, Int32 n);
+typedef TripleMaxWorkersDart = int Function(int handle, int n);
+
+typedef _TripleLookupC = Int32 Function(Pointer<Utf8> name,
+    Pointer<Uint8> jsonOut, Size jsonCap, Pointer<Size> jsonLen);
+typedef TripleLookupDart = int Function(Pointer<Utf8> name,
+    Pointer<Uint8> jsonOut, int jsonCap, Pointer<Size> jsonLen);
+
+typedef _TripleProfilesC = Int32 Function(
+    Pointer<Uint8> jsonOut, Size jsonCap, Pointer<Size> jsonLen);
+typedef TripleProfilesDart = int Function(
+    Pointer<Uint8> jsonOut, int jsonCap, Pointer<Size> jsonLen);
 
 typedef _TripleRekeyC = Int32 Function(
     UintPtr handle,
@@ -158,10 +186,10 @@ typedef _CipherC = Int32 Function(UintPtr handle, Pointer<Uint8> src,
 typedef CipherDart = int Function(int handle, Pointer<Uint8> src, int srcLen,
     Pointer<Uint8> out, int outCap, Pointer<Size> outLen);
 
-typedef _RegisterProfileC = Int32 Function(
-    Pointer<Utf8> name, Pointer<Utf8> opts);
-typedef RegisterProfileDart = int Function(
-    Pointer<Utf8> name, Pointer<Utf8> opts);
+typedef _RegisterC = Int32 Function(
+    Pointer<Utf8> name, Pointer<Utf8> profileJson);
+typedef RegisterDart = int Function(
+    Pointer<Utf8> name, Pointer<Utf8> profileJson);
 
 typedef _StreamBeginC = Int32 Function(UintPtr pipe, Pointer<UintPtr> out);
 typedef StreamBeginDart = int Function(int pipe, Pointer<UintPtr> out);
@@ -186,11 +214,6 @@ class FfiBridge {
   FfiBridge._(DynamicLibrary lib)
       : version = lib.lookupFunction<_VersionC, VersionDart>('ITB_Version'),
         lastError = lib.lookupFunction<_VersionC, VersionDart>('ITB_LastError'),
-        hashCount =
-            lib.lookupFunction<_HashCountC, HashCountDart>('ITB_HashCount'),
-        hashName = lib.lookupFunction<_HashNameC, HashNameDart>('ITB_HashName'),
-        hashWidth =
-            lib.lookupFunction<_HashWidthC, HashWidthDart>('ITB_HashWidth'),
         setMemoryLimit =
             lib.lookupFunction<_SetMemoryLimitC, SetMemoryLimitDart>(
                 'ITB_SetMemoryLimit'),
@@ -198,8 +221,19 @@ class FfiBridge {
             'ITB_SetGCPercent'),
         tripleInit =
             lib.lookupFunction<_TripleInitC, TripleInitDart>('ITB_Triple_Init'),
-        tripleOpen =
-            lib.lookupFunction<_TripleOpenC, TripleOpenDart>('ITB_Triple_Open'),
+        tripleLoad =
+            lib.lookupFunction<_TripleLoadC, TripleLoadDart>('ITB_Triple_Load'),
+        tripleLoadF = lib
+            .lookupFunction<_TripleLoadFC, TripleLoadFDart>('ITB_Triple_LoadF'),
+        tripleSave =
+            lib.lookupFunction<_TripleSaveC, TripleSaveDart>('ITB_Triple_Save'),
+        tripleSaveF = lib
+            .lookupFunction<_TripleSaveFC, TripleSaveFDart>('ITB_Triple_SaveF'),
+        tripleInspect = lib.lookupFunction<_TripleInspectC, TripleInspectDart>(
+            'ITB_Triple_Inspect'),
+        tripleMaxWorkers =
+            lib.lookupFunction<_TripleMaxWorkersC, TripleMaxWorkersDart>(
+                'ITB_Triple_MaxWorkers'),
         tripleRekey = lib
             .lookupFunction<_TripleRekeyC, TripleRekeyDart>('ITB_Triple_Rekey'),
         tripleClose = lib
@@ -214,9 +248,12 @@ class FfiBridge {
             .lookupFunction<_CipherC, CipherDart>('ITB_Triple_EncryptStream'),
         tripleDecryptStream = lib
             .lookupFunction<_CipherC, CipherDart>('ITB_Triple_DecryptStream'),
-        tripleRegisterProfile =
-            lib.lookupFunction<_RegisterProfileC, RegisterProfileDart>(
-                'ITB_Triple_RegisterProfile'),
+        tripleRegister =
+            lib.lookupFunction<_RegisterC, RegisterDart>('ITB_Triple_Register'),
+        tripleLookup = lib
+            .lookupFunction<_TripleLookupC, TripleLookupDart>('ITB_Triple_Lookup'),
+        tripleProfiles = lib.lookupFunction<_TripleProfilesC, TripleProfilesDart>(
+            'ITB_Triple_Profiles'),
         encryptStreamBegin = lib.lookupFunction<_StreamBeginC, StreamBeginDart>(
             'ITB_Triple_EncryptStreamBegin'),
         decryptStreamBegin = lib.lookupFunction<_StreamBeginC, StreamBeginDart>(
@@ -234,13 +271,15 @@ class FfiBridge {
 
   final VersionDart version;
   final VersionDart lastError;
-  final HashCountDart hashCount;
-  final HashNameDart hashName;
-  final HashWidthDart hashWidth;
   final SetMemoryLimitDart setMemoryLimit;
   final SetGCPercentDart setGCPercent;
   final TripleInitDart tripleInit;
-  final TripleOpenDart tripleOpen;
+  final TripleLoadDart tripleLoad;
+  final TripleLoadFDart tripleLoadF;
+  final TripleSaveDart tripleSave;
+  final TripleSaveFDart tripleSaveF;
+  final TripleInspectDart tripleInspect;
+  final TripleMaxWorkersDart tripleMaxWorkers;
   final TripleRekeyDart tripleRekey;
   final HandleOnlyDart tripleClose;
   final HandleOnlyDart tripleFree;
@@ -248,7 +287,9 @@ class FfiBridge {
   final CipherDart tripleDecryptMessage;
   final CipherDart tripleEncryptStream;
   final CipherDart tripleDecryptStream;
-  final RegisterProfileDart tripleRegisterProfile;
+  final RegisterDart tripleRegister;
+  final TripleLookupDart tripleLookup;
+  final TripleProfilesDart tripleProfiles;
   final StreamBeginDart encryptStreamBegin;
   final StreamBeginDart decryptStreamBegin;
   final StreamWriteDart streamWrite;

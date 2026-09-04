@@ -39,13 +39,9 @@ test "incremental sessions with pathological batch sizes" {
 
     var sender = try itb.Pipeline.init(gpa, "streaming-aead-triple-mac-v1", opts);
     defer sender.deinit();
-    var receiver = try itb.Pipeline.open(
-        gpa,
-        "streaming-aead-triple-mac-v1",
-        sender.blob(),
-        opts,
-        null,
-    );
+    const blob = try sender.save();
+    defer gpa.free(blob);
+    var receiver = try itb.Pipeline.load(gpa, blob, null);
     defer receiver.deinit();
 
     const size: usize = 65536;

@@ -1042,11 +1042,11 @@ func BenchmarkTripleBLAKE3RoundTripLockSeed(b *testing.B) {
 
 // --- Streaming benchmarks (Low-Level Triple Ouroboros, areion512, 1024-bit) ---
 
-// makeStreamTripleSeeds builds a 7-seed Triple Ouroboros constellation
-// (1 noise + 3 data + 3 start) under the supplied 512-bit hash pair,
-// with the batched arm wired on every seed so per-pixel hashing routes
-// through the ZMM-batched chain-absorb dispatch when AVX-512 is
-// available. Counterpart of makeStreamSingleSeeds in itb_test.go.
+// makeStreamTripleSeeds builds the 8-seed Triple Ouroboros constellation
+// (1 noise + 1 lockSeed + 3 data + 3 start) under the supplied 512-bit
+// hash pair, with the batched arm wired on every seed so per-pixel
+// hashing routes through the ZMM-batched chain-absorb dispatch when
+// AVX-512 is available.
 func makeStreamTripleSeeds(b *testing.B, bits int, maker func() (HashFunc512, BatchHashFunc512)) (*Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512) {
 	nsH, nsB := maker()
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(bits, nsH)
@@ -1199,12 +1199,6 @@ func BenchmarkTripleDecryptStreamIO_Areion512_1024_64MB_C16MB(b *testing.B) {
 	}
 }
 
-// BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB
-// measures the User-Driven Encrypt loop: caller reads
-// chunkSize-byte windows out of src, calls [Encrypt3x] per chunk, and
-// frames each ciphertext on the wire with a 4-byte big-endian length
-// prefix. Mirrors the exampleLowLevelModePlainUserLoop walker shape
-// from tmp/itb_examples/go/main.go scaled to the Triple 7-seed path.
 func BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
 		bits      = 1024
@@ -1253,7 +1247,7 @@ func BenchmarkTripleEncryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B
 // BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB
 // measures the User-Driven Decrypt loop: the framed
 // transcript is built once, and each iteration walks it via the
-// 4-byte BE length-prefix frame, calling [Decrypt3x] per chunk.
+// 4-byte BE length-prefix frame, calling [Decrypt3x{128,256,512}Cfg] per chunk.
 func BenchmarkTripleDecryptStreamUserLoop_Areion512_1024_64MB_C16MB(b *testing.B) {
 	const (
 		bits      = 1024

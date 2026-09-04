@@ -31,8 +31,12 @@
 // state lives in the factory closure.
 //
 // Every registry entry is described by a [Spec] record carrying its
-// canonical name and native intermediate-state [Width] (128 / 256 /
-// 512 bits). [Find] resolves a name to its Spec; the [Make128] /
+// canonical name, native intermediate-state [Width] (128 / 256 /
+// 512 bits) and — on every shipped entry — its outer cipher dispatch
+// [Class]. The shipped names are also exported as the [CipherAreion256]
+// … [CipherChaCha20] constants, and [Names] / [ClassOf] / [FullView]
+// enumerate the shipped [Registry] without its factory hooks. [Find]
+// resolves a name to its Spec; the [Make128] /
 // [Make256] / [Make512] name-keyed dispatchers return the single
 // [github.com/everanium/itb.HashFunc128] / HashFunc256 / HashFunc512
 // closure, and the [Make128Pair] / [Make256Pair] / [Make512Pair]

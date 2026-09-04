@@ -91,7 +91,7 @@ func TestBuildHMACWithRegisteredCustomHash(t *testing.T) {
 	// MAC initialises, round-trips a Single Message wire, and re-opens
 	// its seed blob in-process.
 	profile := "userns-xhash-hmac-v1"
-	err = triple.RegisterProfile(profile, triple.Profile{
+	err = triple.Register(profile, triple.Profile{
 		Mode:      "singlemsg-mac",
 		Width:     256,
 		InnerHash: "blake3",
@@ -99,7 +99,7 @@ func TestBuildHMACWithRegisteredCustomHash(t *testing.T) {
 		MacName:   "xh_hmac",
 	})
 	if err != nil {
-		t.Fatalf("RegisterProfile: %v", err)
+		t.Fatalf("Register: %v", err)
 	}
 	p, blob, err := triple.Init(profile, triple.Opts{})
 	if err != nil {
@@ -118,9 +118,9 @@ func TestBuildHMACWithRegisteredCustomHash(t *testing.T) {
 	if !bytes.Equal(got, plain) {
 		t.Fatal("decrypt mismatch on originating pipeline")
 	}
-	p2, err := triple.Open(profile, blob, triple.Opts{})
+	p2, err := triple.Load(blob)
 	if err != nil {
-		t.Fatalf("triple.Open: %v", err)
+		t.Fatalf("triple.Load: %v", err)
 	}
 	defer p2.Close()
 	got2, err := p2.DecryptMessage(wire)

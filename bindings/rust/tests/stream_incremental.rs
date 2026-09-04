@@ -9,7 +9,7 @@ fn incremental_tiny_batches() {
     let opts = OptsBuilder::new().with_chunk_size(4096);
     let sender = Pipeline::init("streaming-aead-triple-mac-v1", &opts).unwrap();
     let receiver =
-        Pipeline::open("streaming-aead-triple-mac-v1", sender.blob(), &opts, None).unwrap();
+        Pipeline::load(&sender.save().unwrap(), None).unwrap();
 
     let plain: Vec<u8> = (0..65_536).map(|i| (i % 241) as u8).collect();
 

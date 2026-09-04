@@ -1,23 +1,60 @@
 /*
- * Runtime.swift — profile registration, Go runtime knobs, and the
- * diagnostic registry surface.
+ * Runtime.swift — profile records (inspect / register / lookup /
+ * profiles), Go runtime knobs, and the diagnostic registry surface.
  */
 
 import CItb
+import Foundation
 
 /// Binding version. Tracks the Swift wrapper; `ItbRuntime.version`
 /// reports the underlying libitb library version.
-public let itbSwiftVersion = "0.3.5"
+public let itbSwiftVersion = "0.4.1"
 
-/// Registers a user-defined Triple profile; the opts follow the
-/// register-profile grammar validated by Go. A duplicate name fails
-/// with `.profileExists`.
-public func registerProfile(name: String, opts: Opts) throws {
-    try check(itb_register_profile(name, opts.raw))
+/// Runs a `char **json_out` C entry and hands back the JSON string,
+/// releasing the C buffer via itb_string_free.
+func takeJSON(_ call: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) -> itb_status) throws -> String {
+    var out: UnsafeMutablePointer<CChar>?
+    try check(call(&out))
+    defer { itb_string_free(out) }
+    guard let out else {
+        return ""
+    }
+    return String(cString: out)
+}
+
+/// Decodes the profile record embedded in `blob` without constructing
+/// a Pipeline. No registry read, no primitive probe — a primitive
+/// name the local build lacks is returned unchanged.
+public func inspect(_ blob: Data) throws -> Profile {
+    let json = try blob.withItbBytes { ptr, len in
+        try takeJSON { out in itb_inspect(ptr, len, out) }
+    }
+    return try Profile.fromJSON(json)
+}
+
+/// Registers a user-defined Triple profile under `name` so subsequent
+/// `Pipeline(profile:)` calls resolve it. The record's field rules
+/// are validated by libitb; a duplicate name throws `.profileExists`.
+/// A non-empty `profile.name` must equal `name`.
+public func register(name: String, profile: Profile) throws {
+    try check(itb_register(name, try profile.toJSON()))
+}
+
+/// Returns the profile registered under `name` — a shipped catalogue
+/// entry or a prior `register` call. An unregistered name throws
+/// `.unknownProfile`.
+public func lookup(name: String) throws -> Profile {
+    try Profile.fromJSON(try takeJSON { out in itb_lookup(name, out) })
+}
+
+/// Returns the sorted list of every registered profile name.
+public func profiles() throws -> [String] {
+    let json = try takeJSON { out in itb_profiles(out) }
+    return try JSONDecoder().decode([String].self, from: Data(json.utf8))
 }
 
 public enum ItbRuntime {
-    /// The libitb library version string (e.g. "0.3.5").
+    /// The libitb library version string (e.g. "0.4.1").
     public static var version: String {
         guard let v = itb_version() else {
             return ""
@@ -43,27 +80,5 @@ public enum ItbRuntime {
     @discardableResult
     public static func setGCPercent(_ percent: Int32) -> Int32 {
         itb_set_gc_percent(percent)
-    }
-
-    /// Number of shipped hash primitives (diagnostic registry
-    /// iteration for CLI tooling — the binding itself performs no
-    /// primitive-name validation or enumeration).
-    public static var hashCount: Int {
-        itb_hash_count()
-    }
-
-    /// Canonical name of the index-th shipped hash primitive; nil
-    /// when the index is out of range.
-    public static func hashName(_ index: Int) -> String? {
-        guard index >= 0, let name = itb_hash_name(index) else {
-            return nil
-        }
-        return String(cString: name)
-    }
-
-    /// Native state width in bits of the index-th shipped hash
-    /// primitive; 0 when the index is out of range.
-    public static func hashWidth(_ index: Int) -> Int {
-        index >= 0 ? Int(itb_hash_width(index)) : 0
     }
 }

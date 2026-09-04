@@ -20,7 +20,7 @@ final class StreamTest extends TestCase
     {
         $plain = \random_bytes(300000);
         $sender = Itb::create(self::PROFILE);
-        $receiver = Itb::open(self::PROFILE, $sender->blob());
+        $receiver = Itb::load($sender->save());
 
         $enc = $sender->encryptStream();
         $enc->write($plain);
@@ -44,7 +44,7 @@ final class StreamTest extends TestCase
     {
         $plain = \random_bytes(500000);
         $sender = Itb::create(self::PROFILE);
-        $receiver = Itb::open(self::PROFILE, $sender->blob());
+        $receiver = Itb::load($sender->save());
 
         $enc = $sender->encryptStream();
         $wire = '';
@@ -87,7 +87,7 @@ final class StreamTest extends TestCase
     {
         $plain = \random_bytes(65536);
         $sender = Itb::create(self::PROFILE);
-        $receiver = Itb::open(self::PROFILE, $sender->blob());
+        $receiver = Itb::load($sender->save());
         $wire = $sender->encryptStreamOneShot($plain);
         $this->assertSame($plain, $receiver->decryptStreamOneShot($wire));
         $sender->free();
@@ -102,7 +102,7 @@ final class StreamTest extends TestCase
         $receiverBlob = null;
         $enc = (static function () use (&$receiverBlob) {
             $sender = Itb::create(self::PROFILE);
-            $receiverBlob = $sender->blob();
+            $receiverBlob = $sender->save();
             return $sender->encryptStream();
         })();
         \gc_collect_cycles();
@@ -112,7 +112,7 @@ final class StreamTest extends TestCase
         $wire = $enc->drainAll();
         $enc->free();
 
-        $receiver = Itb::open(self::PROFILE, $receiverBlob);
+        $receiver = Itb::load($receiverBlob);
         $dec = $receiver->decryptStream();
         $dec->write($wire);
         $this->assertSame($plain, $dec->drainAll());

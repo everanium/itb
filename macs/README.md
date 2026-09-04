@@ -268,7 +268,7 @@ No MAC side is driven from:
   registered No MAC profile carries the pin as part of its shape, so
   every Pipeline built against it inherits the reservation.
 - **`triple.Opts.TagStubSize`** (per-instance override) — overrides
-  the profile default at `triple.Init` / `triple.Open` time.
+  the profile default at `triple.Init` time.
 
 Resolution order per Pipeline: Opts > Profile > MacName auto-probe >
 32-byte default. Accepted values at every layer: 0 (defer) or
@@ -296,20 +296,20 @@ _ = macs.Register(macs.Spec{
     },
 })
 
-_ = triple.RegisterProfile("acme-aead-tag16-v1", triple.Profile{
+_ = triple.Register("acme-aead-tag16-v1", triple.Profile{
     Mode: "singlemsg-mac", Width: 512, InnerHash: "areion512",
     KeyBits: 1024, MacName: "tag16mac",
     OuterCipher: "chacha20",
     ParallaxPalette: []string{"aescmac", "chacha20", "blake3"},
-    ParallaxOn: true, WrapperOn: true,
+    Parallax: true, Wrapper: true,
 })
-_ = triple.RegisterProfile("acme-nomac-tag16-v1", triple.Profile{
+_ = triple.Register("acme-nomac-tag16-v1", triple.Profile{
     Mode: "singlemsg-nomac", Width: 512, InnerHash: "areion512",
     KeyBits: 1024,
     TagStubSize: 16, // pin the stub to the paired profile's tag length
     OuterCipher: "chacha20",
     ParallaxPalette: []string{"aescmac", "chacha20", "blake3"},
-    ParallaxOn: true, WrapperOn: true,
+    Parallax: true, Wrapper: true,
 })
 ```
 
@@ -551,7 +551,7 @@ func main() {
     }
 
     // A registered profile referencing the custom name.
-    err = triple.RegisterProfile("team-b2s-v1", triple.Profile{
+    err = triple.Register("team-b2s-v1", triple.Profile{
         Mode: "singlemsg-mac", Width: 256, InnerHash: "blake3",
         KeyBits: 512, MacName: "b2s_mac",
     })
@@ -564,6 +564,10 @@ func main() {
         panic(err)
     }
     defer p.Close()
+    // Persist the session bundle for a receiver:
+    //   _ = p.SaveF("team-b2s-v1.json")
+    // The receiver reopens with:
+    //   dec, _ := triple.LoadF("team-b2s-v1.json")
 
     wire, _ := p.EncryptMessage([]byte("custom-MAC Single Message"))
     plain, _ := p.DecryptMessage(wire)
@@ -576,11 +580,11 @@ func main() {
 A seed blob exported under a custom MAC name records the **name**,
 not the construction — the name is a promise. Opening the blob in
 another process requires that process to have registered the same
-name with the same construction before `triple.Open` (or
-`Blob{N}.Import3Cfg` + `macs.Make`). A missing registration fails
-blob open with an unknown-MAC error; a divergent construction under
-the same name surfaces as a MAC failure at decrypt —
-indistinguishable from tampering by design.
+name with the same construction before `triple.Load` /
+`triple.LoadF` (or `Blob{N}.Import3Cfg` + `macs.Make`). A missing
+registration fails blob open with `triple.ErrRecipePrimitiveUnknown`;
+a divergent construction under the same name surfaces as a MAC
+failure at decrypt — indistinguishable from tampering by design.
 
 ### Scope
 

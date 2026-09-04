@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"fmt"
 
+	"github.com/everanium/itb/hashes"
 	"golang.org/x/crypto/chacha20"
 )
 
@@ -27,17 +28,17 @@ type ResettableKeystream interface {
 // difference is the cached state that backs ResetCounter.
 func NewResettable(name string, key, nonce []byte) (ResettableKeystream, error) {
 	switch name {
-	case CipherSipHash24:
+	case hashes.CipherSipHash24:
 		ks, err := newSipHashCTR(key, nonce)
 		if err != nil {
 			return nil, err
 		}
 		return ks.(*sipCTR), nil
-	case CipherAES128CTR:
+	case hashes.CipherAES128CTR:
 		return newAESResettable(key, nonce)
-	case CipherChaCha20:
+	case hashes.CipherChaCha20:
 		return newChaCha20Resettable(key, nonce)
-	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		ks, err := newPrfHashCTR(name, key, nonce)
 		if err != nil {
 			return nil, err

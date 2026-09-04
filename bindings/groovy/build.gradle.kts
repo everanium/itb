@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "dev.everanium"
-version = "0.3.5"
+version = "0.4.1"
 
 repositories {
     mavenCentral()
@@ -27,13 +27,6 @@ val jniShim = File(javaBindingDir, "build/jni/libitb_jni.so")
 // `./build.sh` builds it before Gradle runs, so the tree is present.
 val javaBindingJars = fileTree(File(javaBindingDir, "build/libs")) {
     include("itb-java-*.jar")
-}
-
-// The hash-roster diagnostic lives in the Java binding's eitb tool
-// jar (HashRoster) — the library jar deliberately exposes no
-// primitive enumeration. Consumed by the eitb source set only.
-val javaEitbJar = fileTree(File(javaBindingDir, "build/libs")) {
-    include("eitb.jar")
 }
 
 dependencies {
@@ -68,10 +61,6 @@ configurations["benchImplementation"].extendsFrom(configurations["implementation
 configurations["benchRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
 configurations["eitbImplementation"].extendsFrom(configurations["implementation"])
 configurations["eitbRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
-
-dependencies {
-    "eitbImplementation"(javaEitbJar)
-}
 
 /** Defaults ITB_JNI_PATH to the sibling Java build's shim when the
  * caller has not exported it. */

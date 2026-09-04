@@ -9,8 +9,8 @@
 use std::ffi::CString;
 
 /// Builder producing the URL-query-encoded opts string consumed by
-/// [`crate::Pipeline::init`], [`crate::Pipeline::open`], and
-/// [`crate::register_profile`].
+/// [`crate::Pipeline::init`]. Profile registration takes a
+/// [`crate::Profile`] record instead (see [`crate::register`]).
 #[derive(Debug, Default, Clone)]
 pub struct OptsBuilder {
     pairs: Vec<(String, String)>,
@@ -95,8 +95,7 @@ impl OptsBuilder {
     }
 
     /// Escape hatch appending a raw `key=value` pair. Covers every
-    /// key the Go side accepts, including the register-profile grammar
-    /// (`mode`, `width`, `innerHashes`, `parallaxOn`, `wrapperOn`, …).
+    /// key the Go side accepts for Init overrides.
     pub fn with_raw(mut self, key: &str, value: &str) -> Self {
         self.pairs.push((key.to_owned(), value.to_owned()));
         self

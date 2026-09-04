@@ -3,17 +3,8 @@ package kdf
 import (
 	"fmt"
 
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
-)
-
-// Registry names for the six hash-based SP 800-108 Counter Mode KDFs.
-const (
-	hashAreion256  = "areion256"
-	hashAreion512  = "areion512"
-	hashBLAKE2b256 = "blake2b256"
-	hashBLAKE2b512 = "blake2b512"
-	hashBLAKE2s    = "blake2s"
-	hashBLAKE3     = "blake3"
 )
 
 // hashKDFMasterMin is the minimum master length accepted by every
@@ -54,7 +45,7 @@ func deriveAreion512(master []byte, label string, outLen int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	prf, prfLen, err := hashprf.New(hashAreion512, key64)
+	prf, prfLen, err := hashprf.New(hashes.CipherAreion512, key64)
 	if err != nil {
 		return nil, fmt.Errorf("kdf: %w", err)
 	}
@@ -75,9 +66,9 @@ func deriveAreion512(master []byte, label string, outLen int) ([]byte, error) {
 // is an error.
 func stretchAreion512Key(master []byte) ([]byte, error) {
 	if len(master) < hashKDFMasterMin {
-		return nil, fmt.Errorf("kdf: %s master must be at least %d bytes, got %d", hashAreion512, hashKDFMasterMin, len(master))
+		return nil, fmt.Errorf("kdf: %s master must be at least %d bytes, got %d", hashes.CipherAreion512, hashKDFMasterMin, len(master))
 	}
-	prf, prfLen, err := hashprf.New(hashAreion256, master[:hashKDFMasterMin])
+	prf, prfLen, err := hashprf.New(hashes.CipherAreion256, master[:hashKDFMasterMin])
 	if err != nil {
 		return nil, fmt.Errorf("kdf: %w", err)
 	}

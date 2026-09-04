@@ -1,4 +1,4 @@
-// Init -> blob -> openBlob -> encryptMessage -> decryptMessage round
+// Init -> save -> load -> encryptMessage -> decryptMessage round
 // trip, composed through the itb computation expression.
 
 module EveraniumItb.FSharp.Tests.SmokeTests
@@ -15,8 +15,8 @@ let ``smoke round trip through the itb computation expression`` () =
     let result =
         itb {
             use! sender = Pipeline.init "singlemsg-triple-mac-v1" Opts.empty
-            let blob = Pipeline.blob sender
-            use! receiver = Pipeline.openBlob "singlemsg-triple-mac-v1" blob Opts.empty
+            let! blob = Pipeline.save sender
+            use! receiver = Pipeline.load blob
             let! wire = Pipeline.encryptMessage sender plain
             let! back = Pipeline.decryptMessage receiver wire
             return blob, wire, back
@@ -30,4 +30,4 @@ let ``smoke round trip through the itb computation expression`` () =
 [<Fact>]
 let ``library version string is non-empty`` () =
     Assert.False(System.String.IsNullOrEmpty(Runtime.version ()))
-    Assert.Equal("0.3.5", Runtime.BindingVersion)
+    Assert.Equal("0.4.1", Runtime.BindingVersion)

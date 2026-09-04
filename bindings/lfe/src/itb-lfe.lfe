@@ -13,8 +13,8 @@
 ;;;; Quick start:
 ;;;;
 ;;;;     (let* ((`#(ok ,sender) (itb-lfe:init #"singlemsg-triple-mac-v1"))
-;;;;            (`#(ok ,blob) (itb-lfe:blob sender))
-;;;;            (`#(ok ,receiver) (itb-lfe:open #"singlemsg-triple-mac-v1" blob))
+;;;;            (`#(ok ,blob) (itb-lfe:save sender))
+;;;;            (`#(ok ,receiver) (itb-lfe:load blob))
 ;;;;            (`#(ok ,wire) (itb-lfe:encrypt-message sender #"hi"))
 ;;;;            (`#(ok ,plain) (itb-lfe:decrypt-message receiver wire)))
 ;;;;       (itb-lfe:free receiver)
@@ -39,8 +39,11 @@
   (export
     ;; Pipeline lifecycle
     (init 1) (init 2)
-    (open 2) (open 3) (open 5)
-    (blob 1)
+    (load 1) (load 3)
+    (load-f 1) (load-f 3)
+    (save 1)
+    (save-f 2)
+    (max-workers 2)
     (rekey 3)
     (free 1)
     ;; Single Message encrypt / decrypt
@@ -56,11 +59,13 @@
     (stream-end 1)
     (stream-read 1) (stream-read 2)
     (stream-free 1)
-    ;; Profile registration
-    (register-profile 2)
+    ;; Profile catalogue
+    (inspect 1)
+    (register 2)
+    (lookup 1)
+    (profiles 0)
     ;; Runtime + diagnostics
     (version 0)
-    (hashes 0)
     (last-error 0)
     (set-memory-limit 1)
     (set-gc-percent 1)))
@@ -81,30 +86,49 @@
   values with a diagnostic in the error detail)."
   (itb:init profile opts))
 
-(defun open (profile blob)
-  "As open/3 with pure profile defaults."
-  (itb:open profile blob (map)))
+(defun load (blob)
+  "Reconstructs a Pipeline from a blob produced by save/1 or rekey/3,
+  using the blob-embedded masters. The blob's embedded profile record
+  is the sole structural source — no profile name, no opts."
+  (itb:load blob))
 
-(defun open (profile blob opts)
-  "Reconstructs a Pipeline from a blob produced by a sender's init /
-  rekey, using the blob-embedded masters."
-  (itb:open profile blob opts))
-
-(defun open (profile blob opts perm-master wrap-master)
-  "As open/3 with explicit master overrides. Both masters must be
-  supplied non-empty (a half-supplied pair is rejected); pass
+(defun load (blob perm-master wrap-master)
+  "As load/1 with explicit master overrides. Both masters must be
+  supplied (a half-supplied pair is rejected Go-side); pass
   #\"\" / #\"\" for the blob-embedded masters."
-  (itb:open profile blob opts perm-master wrap-master))
+  (itb:load blob perm-master wrap-master))
 
-(defun blob (pipeline)
-  "The exported session-bundle blob for the receiver side; refreshed
-  by rekey/3."
-  (itb:blob pipeline))
+(defun load-f (path)
+  "load/1 for a blob stored in a file; the file is read inside the
+  library."
+  (itb:load_f path))
+
+(defun load-f (path perm-master wrap-master)
+  "As load-f/1 with explicit master overrides."
+  (itb:load_f path perm-master wrap-master))
+
+(defun save (pipeline)
+  "The current serialised session blob — the bytes init produced, the
+  bytes load re-marshalled, or the bytes of the latest rekey/3."
+  (itb:save pipeline))
+
+(defun save-f (pipeline path)
+  "Writes the current session blob to path inside the library (mode
+  0600; the containing directory must exist)."
+  (itb:save_f pipeline path))
+
+(defun max-workers (pipeline n)
+  "Sets the worker cap for every subsequent cipher call. n is
+  clamped, never rejected: n =< 0 selects auto, 1..256 pins the cap,
+  larger values are treated as 256. The cap is per-machine tuning and
+  is never written to the blob."
+  (itb:max_workers pipeline n))
 
 (defun rekey (pipeline perm-master wrap-master)
-  "Rotates the parallax + wrapper masters and refreshes the blob.
-  Must not run concurrently with cipher calls or open stream sessions
-  on the same Pipeline."
+  "Rotates the parallax + wrapper masters and returns the refreshed
+  session blob as #(ok blob) (also observable through save/1). Must
+  not run concurrently with cipher calls or open stream sessions on
+  the same Pipeline."
   (itb:rekey pipeline perm-master wrap-master))
 
 (defun free (pipeline)
@@ -185,27 +209,44 @@
   (itb:stream_free stream))
 
 ;;; ------------------------------------------------------------------
-;;; Profile registration
+;;; Profile catalogue
 ;;; ------------------------------------------------------------------
 
-(defun register-profile (name opts)
-  "Registers a user-defined Triple profile under name; the opts
-  follow the register-profile grammar validated by Go. A duplicate
-  name fails with #(error #(profile_exists _))."
-  (itb:register_profile name opts))
+(defun inspect (blob)
+  "Decodes the blob's embedded profile record without opening a
+  Pipeline and returns #(ok record) — a map decoded with the OTP json
+  module (binary keys name / mode / width / hash / hashes / keybits /
+  mac / tagstub / chunk / wrapper / outer / parallax / palette /
+  segment; absent keys are optional fields at their zero value). No
+  registry read, no primitive probe."
+  (itb:inspect blob))
+
+(defun register (name profile)
+  "Registers a profile record under name so subsequent init / lookup
+  calls resolve it. profile is the record as a map (the shape inspect
+  / lookup return) or an already-encoded JSON binary; a name key
+  inside it, if present, must be empty or equal to name. Validation
+  is performed by libitb; a duplicate name fails with
+  #(error #(profile_exists _))."
+  (itb:register name profile))
+
+(defun lookup (name)
+  "The profile record registered under name (a shipped catalogue
+  entry or a prior register/2). An unknown name fails with
+  #(error #(unknown_profile _))."
+  (itb:lookup name))
+
+(defun profiles ()
+  "The sorted list of every registered profile name."
+  (itb:profiles))
 
 ;;; ------------------------------------------------------------------
 ;;; Runtime + diagnostics
 ;;; ------------------------------------------------------------------
 
 (defun version ()
-  "The libitb library version string (e.g. #\"0.3.5\")."
+  "The libitb library version string (e.g. #\"0.4.1\")."
   (itb:version))
-
-(defun hashes ()
-  "The shipped hash primitive roster as a list of #(name width-bits)
-  tuples in canonical registry order."
-  (itb:hashes))
 
 (defun last-error ()
   "The Go-side diagnostic recorded by the most recent failing libitb

@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// process256Cfg is the 8-seed encode/decode engine (256-bit variant).
+// process256Cfg is the per-snake encode/decode engine (256-bit variant).
 //
 // Three independent 256-bit seeds provide separate configuration domains:
 //

@@ -6,7 +6,7 @@ import (
 	mrand "math/rand/v2"
 	"testing"
 
-	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/hashes"
 )
 
 // registryCanonical lists every primitive ctr.NewResettable currently
@@ -14,15 +14,15 @@ import (
 // inside _test.go only — package code never depends on it; the runtime
 // path queries ctr.KeySize / ctr.NonceSize.
 var registryCanonical = []string{
-	ctr.CipherAreion256,
-	ctr.CipherAreion512,
-	ctr.CipherBLAKE2b256,
-	ctr.CipherBLAKE2b512,
-	ctr.CipherBLAKE2s,
-	ctr.CipherBLAKE3,
-	ctr.CipherAES128CTR,
-	ctr.CipherSipHash24,
-	ctr.CipherChaCha20,
+	hashes.CipherAreion256,
+	hashes.CipherAreion512,
+	hashes.CipherBLAKE2b256,
+	hashes.CipherBLAKE2b512,
+	hashes.CipherBLAKE2s,
+	hashes.CipherBLAKE3,
+	hashes.CipherAES128CTR,
+	hashes.CipherSipHash24,
+	hashes.CipherChaCha20,
 }
 
 func mustMaster(t *testing.T) []byte {
@@ -111,13 +111,13 @@ func TestRoundTripPaletteCompositions(t *testing.T) {
 		name    string
 		palette []string
 	}{
-		{"N3-distinct", []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}},
+		{"N3-distinct", []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}},
 		{"N9-shuffled-seed42", shuffledRegistry(42)},
 		{"N9-shuffled-seed1337", shuffledRegistry(1337)},
 		{"N24-replacement", drawWithReplacement(0xc0ffee, 24)},
 		{"N36-replacement", drawWithReplacement(0xdecaf, 36)},
 		{"N254-replacement", drawWithReplacement(0xfeedface, 254)},
-		{"N3-duplicate-aescmac", []string{ctr.CipherAES128CTR, ctr.CipherAES128CTR, ctr.CipherAES128CTR}},
+		{"N3-duplicate-aescmac", []string{hashes.CipherAES128CTR, hashes.CipherAES128CTR, hashes.CipherAES128CTR}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,7 +159,7 @@ func TestEncryptInPlaceRoundTrip(t *testing.T) {
 }
 
 func TestEmptyPlaintextRoundTrip(t *testing.T) {
-	schedule := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	schedule := mustSchedule(t, []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}, DefaultSegmentSize)
 	cs := mustCipherset(t, mustMaster(t), schedule)
 
 	wire, err := schedule.Encrypt(nil, cs)
@@ -198,7 +198,7 @@ func TestEmptyPlaintextRoundTrip(t *testing.T) {
 func TestDeterminismWithFixedNonce(t *testing.T) {
 	// Two independent Ciphersets over the same master and schedule
 	// must agree on encryption and decryption for any plaintext.
-	palette := []string{ctr.CipherBLAKE3, ctr.CipherChaCha20, ctr.CipherAES128CTR}
+	palette := []string{hashes.CipherBLAKE3, hashes.CipherChaCha20, hashes.CipherAES128CTR}
 	schedule := mustSchedule(t, palette, DefaultSegmentSize)
 	master := mustMaster(t)
 	encCs := mustCipherset(t, master, schedule)
@@ -293,7 +293,7 @@ func TestCiphersetMismatchedScheduleRejected(t *testing.T) {
 }
 
 func TestPaletteAccessors(t *testing.T) {
-	palette := []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}
+	palette := []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}
 	schedule := mustSchedule(t, palette, DefaultSegmentSize)
 	if schedule.PaletteSize() != len(palette) {
 		t.Fatalf("PaletteSize=%d want %d", schedule.PaletteSize(), len(palette))
@@ -336,7 +336,7 @@ func TestGenerateMasterKey(t *testing.T) {
 }
 
 func TestNilCiphersetRejected(t *testing.T) {
-	schedule := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	schedule := mustSchedule(t, []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}, DefaultSegmentSize)
 	if _, err := schedule.Encrypt([]byte("hi"), nil); err == nil {
 		t.Fatal("Encrypt(nil cs) returned no error")
 	}
@@ -362,7 +362,7 @@ func TestNilScheduleRejected(t *testing.T) {
 // rejection at MaxMasterKeySize. Guards the master-copy paths
 // downstream from amplifying an adversarial multi-gigabyte slice.
 func TestNewCiphersetRejectsOversizedMaster(t *testing.T) {
-	schedule := mustSchedule(t, []string{ctr.CipherAES128CTR, ctr.CipherChaCha20, ctr.CipherBLAKE3}, DefaultSegmentSize)
+	schedule := mustSchedule(t, []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3}, DefaultSegmentSize)
 	oversized := make([]byte, MaxMasterKeySize+1)
 	if _, err := rand.Read(oversized); err != nil {
 		t.Fatalf("rand.Read: %v", err)

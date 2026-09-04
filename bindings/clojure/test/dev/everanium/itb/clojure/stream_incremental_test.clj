@@ -31,8 +31,7 @@
   ;; Small chunk size so the 64 KiB payload spans many chunks.
   (let [opts {:chunk-size 4096}]
     (with-open [sender (itb/init "streaming-aead-triple-mac-v1" opts)]
-      (with-open [receiver (itb/open "streaming-aead-triple-mac-v1"
-                                     (itb/blob sender) opts)]
+      (with-open [receiver (itb/load (itb/save sender))]
         (let [plain (byte-array 65536)]
           (dotimes [i 65536]
             (aset-byte plain i (unchecked-byte (rem i 241))))
