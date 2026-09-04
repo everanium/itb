@@ -9,16 +9,8 @@ import (
 	"github.com/dchest/siphash"
 	"golang.org/x/crypto/chacha20"
 
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
-)
-
-// Cipher names for the native-mode primitives, matching the ITB registry
-// identifiers. The remaining PRF-counter-mode names are defined alongside
-// their construction.
-const (
-	CipherAES128CTR = "aescmac"
-	CipherSipHash24 = "siphash24"
-	CipherChaCha20  = "chacha20"
 )
 
 // Keystream is the minimal interface a counter-mode cipher exposes. The
@@ -36,13 +28,13 @@ type Keystream interface {
 // KeySize returns the byte length of the key for the named cipher.
 func KeySize(name string) (int, error) {
 	switch name {
-	case CipherAES128CTR:
+	case hashes.CipherAES128CTR:
 		return 16, nil
-	case CipherSipHash24:
+	case hashes.CipherSipHash24:
 		return 16, nil
-	case CipherChaCha20:
+	case hashes.CipherChaCha20:
 		return chacha20.KeySize, nil // 32
-	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return hashprf.KeySize(name)
 	default:
 		return 0, fmt.Errorf("ctr: unknown cipher %q", name)
@@ -52,13 +44,13 @@ func KeySize(name string) (int, error) {
 // NonceSize returns the nonce length for the named cipher.
 func NonceSize(name string) (int, error) {
 	switch name {
-	case CipherAES128CTR:
+	case hashes.CipherAES128CTR:
 		return aes.BlockSize, nil // 16
-	case CipherSipHash24:
+	case hashes.CipherSipHash24:
 		return 16, nil
-	case CipherChaCha20:
+	case hashes.CipherChaCha20:
 		return chacha20.NonceSize, nil // 12
-	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return hashCTRNonceSize, nil // 16
 	default:
 		return 0, fmt.Errorf("ctr: unknown cipher %q", name)
@@ -73,7 +65,7 @@ func NonceSize(name string) (int, error) {
 // unknown-cipher error.
 func New(name string, key, nonce []byte) (Keystream, error) {
 	switch name {
-	case CipherAES128CTR:
+	case hashes.CipherAES128CTR:
 		if len(key) != 16 {
 			return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
 		}
@@ -85,9 +77,9 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 			return nil, err
 		}
 		return cipher.NewCTR(block, nonce), nil
-	case CipherSipHash24:
+	case hashes.CipherSipHash24:
 		return newSipHashCTR(key, nonce)
-	case CipherChaCha20:
+	case hashes.CipherChaCha20:
 		if len(key) != chacha20.KeySize {
 			return nil, fmt.Errorf("ctr: chacha20 key must be %d bytes, got %d", chacha20.KeySize, len(key))
 		}
@@ -99,7 +91,7 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 			return nil, err
 		}
 		return c, nil
-	case CipherAreion256, CipherAreion512, CipherBLAKE2b256, CipherBLAKE2b512, CipherBLAKE2s, CipherBLAKE3:
+	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return newPrfHashCTR(name, key, nonce)
 	default:
 		return nil, fmt.Errorf("ctr: unknown cipher %q", name)

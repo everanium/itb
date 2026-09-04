@@ -1,4 +1,4 @@
-// Init -> blob -> Open -> encryptMessage -> decryptMessage round trip.
+// Init -> save -> load -> encryptMessage -> decryptMessage round trip.
 
 package com.everanium.itb.kotlin
 
@@ -12,9 +12,9 @@ class SmokeTest {
     @Test
     fun smokeRoundTrip() {
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            assertTrue(sender.blob.isNotEmpty())
+            assertTrue(sender.save().isNotEmpty())
 
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = "smoke round-trip payload".encodeToByteArray()
                 val wire = sender.encryptMessage(plain)
                 assertFalse(plain.contentEquals(wire))
@@ -30,9 +30,9 @@ class SmokeTest {
         // The pipeline handle is released on scope exit; the captured
         // wire still decrypts against the captured blob.
         val (blob, wire) = withPipeline("singlemsg-triple-mac-v1") { pipe ->
-            Pair(pipe.blob, pipe.encryptMessage(plain))
+            Pair(pipe.save(), pipe.encryptMessage(plain))
         }
-        Pipeline.open("singlemsg-triple-mac-v1", blob).use { receiver ->
+        Pipeline.load(blob).use { receiver ->
             assertContentEquals(plain, receiver.decryptMessage(wire))
         }
     }

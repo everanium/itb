@@ -13,12 +13,12 @@ fn main() -> Result<(), itb::ItbError> {
 
     let opts = OptsBuilder::new();
 
-    // Sender: fresh session against a shipped profile; the blob is
-    // the session bundle the receiver needs.
+    // Sender: fresh session against a shipped profile; the saved blob
+    // is the session bundle the receiver needs.
     let sender = Pipeline::init("singlemsg-triple-mac-v1", &opts)?;
 
     // Receiver: reconstructed from the blob.
-    let receiver = Pipeline::open("singlemsg-triple-mac-v1", sender.blob(), &opts, None)?;
+    let receiver = Pipeline::load(&sender.save()?, None)?;
 
     let plaintext = b"any text or binary data - including 0x00 bytes";
     let wire = sender.encrypt_message(plaintext)?;

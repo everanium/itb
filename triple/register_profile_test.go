@@ -13,7 +13,7 @@ import (
 )
 
 // baseValidProfile returns a Profile literal that passes every
-// [RegisterProfile] validation check when combined with a fresh
+// [Register] validation check when combined with a fresh
 // user-defined name. Individual test cases mutate one field to
 // exercise the corresponding rejection path.
 func baseValidProfile() Profile {
@@ -27,21 +27,21 @@ func baseValidProfile() Profile {
 		OuterCipher:         defaultOuterCipher,
 		ParallaxPalette:     defaultParallaxPalette(),
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
-		ParallaxOn:          true,
-		WrapperOn:           true,
+		Parallax:            true,
+		Wrapper:             true,
 	}
 }
 
-// TestRegisterProfileRoundTrip installs a fresh custom profile and
+// TestRegisterRoundTrip installs a fresh custom profile and
 // exercises Init → Open against it: the Pipeline reconstructs and
 // decrypts a message-shape round-trip identical to the shipped
 // profile behaviour.
-func TestRegisterProfileRoundTrip(t *testing.T) {
+func TestRegisterRoundTrip(t *testing.T) {
 	name := "userns-triple-roundtrip-v1"
 	prof := baseValidProfile()
 	prof.Mode = modeSingleMsgMAC
-	if err := RegisterProfile(name, prof); err != nil {
-		t.Fatalf("RegisterProfile: %v", err)
+	if err := Register(name, prof); err != nil {
+		t.Fatalf("Register: %v", err)
 	}
 
 	sender, blob, err := Init(name, Opts{})
@@ -50,7 +50,7 @@ func TestRegisterProfileRoundTrip(t *testing.T) {
 	}
 	defer sender.Close()
 
-	receiver, err := Open(name, blob, Opts{})
+	receiver, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open(%q): %v", name, err)
 	}
@@ -70,42 +70,42 @@ func TestRegisterProfileRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRegisterProfileDuplicateName verifies a second registration
+// TestRegisterDuplicateName verifies a second registration
 // under the same name returns [ErrProfileExists], regardless of
 // whether the payload differs from the earlier record.
-func TestRegisterProfileDuplicateName(t *testing.T) {
+func TestRegisterDuplicateName(t *testing.T) {
 	name := "userns-triple-duplicate-v1"
-	if err := RegisterProfile(name, baseValidProfile()); err != nil {
-		t.Fatalf("RegisterProfile initial: %v", err)
+	if err := Register(name, baseValidProfile()); err != nil {
+		t.Fatalf("Register initial: %v", err)
 	}
 	// Re-register with a different payload — must still fail.
 	second := baseValidProfile()
 	second.Mode = modeSingleMsgNoMAC
 	second.MacName = ""
-	err := RegisterProfile(name, second)
+	err := Register(name, second)
 	if !errors.Is(err, ErrProfileExists) {
-		t.Fatalf("RegisterProfile duplicate: got %v, want %v", err, ErrProfileExists)
+		t.Fatalf("Register duplicate: got %v, want %v", err, ErrProfileExists)
 	}
 }
 
-// TestRegisterProfileShippedNameCollision verifies re-registering
+// TestRegisterShippedNameCollision verifies re-registering
 // one of the shipped profile names is refused (the shipped catalogue
 // occupies the reserved namespace, so the caller hits the reserved-
 // prefix guard before the duplicate-name check).
-func TestRegisterProfileShippedNameCollision(t *testing.T) {
-	err := RegisterProfile(ProfileStreamingAEADTripleMACV1, baseValidProfile())
+func TestRegisterShippedNameCollision(t *testing.T) {
+	err := Register(ProfileStreamingAEADTripleMACV1, baseValidProfile())
 	if err == nil {
-		t.Fatalf("RegisterProfile against shipped name: got nil, want error")
+		t.Fatalf("Register against shipped name: got nil, want error")
 	}
 	if !strings.Contains(err.Error(), "reserved prefix") {
-		t.Fatalf("RegisterProfile against shipped name: got %v, want reserved-prefix rejection",
+		t.Fatalf("Register against shipped name: got %v, want reserved-prefix rejection",
 			err)
 	}
 }
 
-// TestRegisterProfileValidation exercises every documented rejection
+// TestRegisterValidation exercises every documented rejection
 // path via table-driven cases.
-func TestRegisterProfileValidation(t *testing.T) {
+func TestRegisterValidation(t *testing.T) {
 	// Each case builds on baseValidProfile and mutates one field to
 	// trigger a specific rejection.
 	type tc struct {
@@ -269,23 +269,23 @@ func TestRegisterProfileValidation(t *testing.T) {
 		t.Run(c.label, func(t *testing.T) {
 			p := baseValidProfile()
 			c.mutate(&p)
-			err := RegisterProfile(c.name, p)
+			err := Register(c.name, p)
 			if err == nil {
-				t.Fatalf("RegisterProfile: got nil, want rejection containing %q",
+				t.Fatalf("Register: got nil, want rejection containing %q",
 					c.wantSub)
 			}
 			if !strings.Contains(err.Error(), c.wantSub) {
-				t.Fatalf("RegisterProfile: got %v, want error containing %q",
+				t.Fatalf("Register: got %v, want error containing %q",
 					err, c.wantSub)
 			}
 		})
 	}
 }
 
-// TestRegisterProfileConcurrent spawns N goroutines each registering
+// TestRegisterConcurrent spawns N goroutines each registering
 // a distinct name. All N must succeed with no data race under -race,
 // exercising profileRegistryMu's per-writer serialisation.
-func TestRegisterProfileConcurrent(t *testing.T) {
+func TestRegisterConcurrent(t *testing.T) {
 	const workers = 32
 	var wg sync.WaitGroup
 	errs := make(chan error, workers)
@@ -294,7 +294,7 @@ func TestRegisterProfileConcurrent(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			name := fmt.Sprintf("userns-triple-concurrent-%02d-v1", idx)
-			if err := RegisterProfile(name, baseValidProfile()); err != nil {
+			if err := Register(name, baseValidProfile()); err != nil {
 				errs <- fmt.Errorf("worker %d: %w", idx, err)
 			}
 		}(i)
@@ -307,60 +307,60 @@ func TestRegisterProfileConcurrent(t *testing.T) {
 	// Verify every worker's profile is now visible via lookupProfile.
 	for i := 0; i < workers; i++ {
 		name := fmt.Sprintf("userns-triple-concurrent-%02d-v1", i)
-		if _, err := lookupProfile(name); err != nil {
-			t.Errorf("lookupProfile(%q) after concurrent register: %v", name, err)
+		if _, err := Lookup(name); err != nil {
+			t.Errorf("Lookup(%q) after concurrent register: %v", name, err)
 		}
 	}
 }
 
-// TestRegisterProfileNoMacMode confirms a No MAC profile with an
+// TestRegisterNoMacMode confirms a No MAC profile with an
 // empty MacName registers cleanly, mirroring the shipped
 // streaming-noaead-triple-v1 shape.
-func TestRegisterProfileNoMacMode(t *testing.T) {
+func TestRegisterNoMacMode(t *testing.T) {
 	p := baseValidProfile()
 	p.Mode = modeStreamingNoAEAD
 	p.MacName = ""
-	if err := RegisterProfile("userns-triple-nomac-v1", p); err != nil {
-		t.Fatalf("RegisterProfile No-MAC: %v", err)
+	if err := Register("userns-triple-nomac-v1", p); err != nil {
+		t.Fatalf("Register No-MAC: %v", err)
 	}
 }
 
-// TestRegisterProfileWrapperOffSkipsOuterCipher verifies OuterCipher
-// validation is skipped when WrapperOn is false — a wrapper-off
+// TestRegisterWrapperOffSkipsOuterCipher verifies OuterCipher
+// validation is skipped when Wrapper is false — a wrapper-off
 // profile is allowed to leave OuterCipher empty or hold a placeholder
 // value, since the field is inert.
-func TestRegisterProfileWrapperOffSkipsOuterCipher(t *testing.T) {
+func TestRegisterWrapperOffSkipsOuterCipher(t *testing.T) {
 	p := baseValidProfile()
-	p.WrapperOn = false
+	p.Wrapper = false
 	p.OuterCipher = "" // wrapper-off — OuterCipher never consumed.
-	if err := RegisterProfile("userns-triple-nowrap-v1", p); err != nil {
-		t.Fatalf("RegisterProfile wrapper-off: %v", err)
+	if err := Register("userns-triple-nowrap-v1", p); err != nil {
+		t.Fatalf("Register wrapper-off: %v", err)
 	}
 }
 
-// TestRegisterProfileParallaxOffSkipsPaletteChecks verifies
-// ParallaxPalette validation is skipped when ParallaxOn is false; the
+// TestRegisterParallaxOffSkipsPaletteChecks verifies
+// ParallaxPalette validation is skipped when Parallax is false; the
 // palette field is inert for parallax-off profiles.
-func TestRegisterProfileParallaxOffSkipsPaletteChecks(t *testing.T) {
+func TestRegisterParallaxOffSkipsPaletteChecks(t *testing.T) {
 	p := baseValidProfile()
-	p.ParallaxOn = false
+	p.Parallax = false
 	p.ParallaxPalette = nil
-	if err := RegisterProfile("userns-triple-nopar-v1", p); err != nil {
-		t.Fatalf("RegisterProfile parallax-off: %v", err)
+	if err := Register("userns-triple-nopar-v1", p); err != nil {
+		t.Fatalf("Register parallax-off: %v", err)
 	}
 }
 
-// TestRegisterProfileNameNormalisedAfterRegister confirms the name
+// TestRegisterNameNormalisedAfterRegister confirms the name
 // argument is copied into p.Name after successful registration, so
 // [lookupProfile] returns a record whose Name matches the requested
 // key.
-func TestRegisterProfileNameNormalisedAfterRegister(t *testing.T) {
+func TestRegisterNameNormalisedAfterRegister(t *testing.T) {
 	name := "userns-triple-namefill-v1"
 	p := baseValidProfile()
-	if err := RegisterProfile(name, p); err != nil {
-		t.Fatalf("RegisterProfile: %v", err)
+	if err := Register(name, p); err != nil {
+		t.Fatalf("Register: %v", err)
 	}
-	got, err := lookupProfile(name)
+	got, err := Lookup(name)
 	if err != nil {
 		t.Fatalf("lookupProfile: %v", err)
 	}
@@ -369,64 +369,64 @@ func TestRegisterProfileNameNormalisedAfterRegister(t *testing.T) {
 	}
 }
 
-// TestRegisterProfileRejectsOversizeChunkSize pins the upper-bound
+// TestRegisterRejectsOversizeChunkSize pins the upper-bound
 // check on [Profile.ChunkSize]: any value beyond
 // [parallax.MaxChunkSize] would fail deferred inside the parallax
-// builder at [Init] time; the RegisterProfile-side reject surfaces
+// builder at [Init] time; the Register-side reject surfaces
 // the misconfiguration at the registration boundary.
-func TestRegisterProfileRejectsOversizeChunkSize(t *testing.T) {
+func TestRegisterRejectsOversizeChunkSize(t *testing.T) {
 	p := baseValidProfile()
 	p.ChunkSize = parallax.MaxChunkSize + 1
-	err := RegisterProfile("userns-triple-oversizechunk-v1", p)
+	err := Register("userns-triple-oversizechunk-v1", p)
 	if err == nil {
-		t.Fatalf("RegisterProfile accepted oversize ChunkSize=%d", p.ChunkSize)
+		t.Fatalf("Register accepted oversize ChunkSize=%d", p.ChunkSize)
 	}
 	if !strings.Contains(err.Error(), "above maximum") {
-		t.Fatalf("RegisterProfile ChunkSize oversize: got %v, want error mentioning \"above maximum\"", err)
+		t.Fatalf("Register ChunkSize oversize: got %v, want error mentioning \"above maximum\"", err)
 	}
 }
 
-// TestRegisterProfileRejectsOversizeParallaxSegmentSize pins the
+// TestRegisterRejectsOversizeParallaxSegmentSize pins the
 // upper-bound check on [Profile.ParallaxSegmentSize] mirroring the
 // ChunkSize case. The parallax builder would refuse the value
 // downstream anyway; the reject-at-registration surface is cleaner.
-func TestRegisterProfileRejectsOversizeParallaxSegmentSize(t *testing.T) {
+func TestRegisterRejectsOversizeParallaxSegmentSize(t *testing.T) {
 	p := baseValidProfile()
 	p.ParallaxSegmentSize = parallax.MaxSegmentSize + 1
-	err := RegisterProfile("userns-triple-oversizeseg-v1", p)
+	err := Register("userns-triple-oversizeseg-v1", p)
 	if err == nil {
-		t.Fatalf("RegisterProfile accepted oversize ParallaxSegmentSize=%d", p.ParallaxSegmentSize)
+		t.Fatalf("Register accepted oversize ParallaxSegmentSize=%d", p.ParallaxSegmentSize)
 	}
 	if !strings.Contains(err.Error(), "above maximum") {
-		t.Fatalf("RegisterProfile ParallaxSegmentSize oversize: got %v, want error mentioning \"above maximum\"", err)
+		t.Fatalf("Register ParallaxSegmentSize oversize: got %v, want error mentioning \"above maximum\"", err)
 	}
 }
 
-// TestRegisterProfileRejectsNonCoprimeParallaxSegmentSize pins the
+// TestRegisterRejectsNonCoprimeParallaxSegmentSize pins the
 // coprime-to-504 check moved up from [parallax.NewSchedule]. A value
 // that shares a factor with the parallax pipeline period is refused
 // at registration so the error message says "not coprime" instead of
 // the downstream parallax builder's cryptic failure.
-func TestRegisterProfileRejectsNonCoprimeParallaxSegmentSize(t *testing.T) {
+func TestRegisterRejectsNonCoprimeParallaxSegmentSize(t *testing.T) {
 	p := baseValidProfile()
 	// 504 = 2^3 * 3^2 * 7. Any positive multiple of 2, 3, or 7 is
 	// non-coprime. 100 shares factor 2 → non-coprime.
 	p.ParallaxSegmentSize = 100
-	err := RegisterProfile("userns-triple-notcoprime-v1", p)
+	err := Register("userns-triple-notcoprime-v1", p)
 	if err == nil {
-		t.Fatalf("RegisterProfile accepted non-coprime ParallaxSegmentSize=%d", p.ParallaxSegmentSize)
+		t.Fatalf("Register accepted non-coprime ParallaxSegmentSize=%d", p.ParallaxSegmentSize)
 	}
 	if !strings.Contains(err.Error(), "not coprime") {
-		t.Fatalf("RegisterProfile ParallaxSegmentSize coprime: got %v, want error mentioning \"not coprime\"", err)
+		t.Fatalf("Register ParallaxSegmentSize coprime: got %v, want error mentioning \"not coprime\"", err)
 	}
 }
 
-// TestRegisterProfileRejectsOverlongStrings pins the fail-fast
+// TestRegisterRejectsOverlongStrings pins the fail-fast
 // rejection of registry-name fields whose length exceeds
 // [hashes.MaxNameLen]. Reaching the downstream registry lookup with
 // an over-long name would produce a cryptic "unknown ..." error; the
 // upfront reject gives a clean "length ... exceeds ..." message.
-func TestRegisterProfileRejectsOverlongStrings(t *testing.T) {
+func TestRegisterRejectsOverlongStrings(t *testing.T) {
 	long := "abcdefghijklmnopqr" // 18 bytes, > hashes.MaxNameLen (12)
 	cases := []struct {
 		label   string
@@ -444,12 +444,12 @@ func TestRegisterProfileRejectsOverlongStrings(t *testing.T) {
 		t.Run(c.label, func(t *testing.T) {
 			p := baseValidProfile()
 			c.mutate(&p)
-			err := RegisterProfile("userns-triple-longstr-"+c.nameSfx+"-v1", p)
+			err := Register("userns-triple-longstr-"+c.nameSfx+"-v1", p)
 			if err == nil {
-				t.Fatalf("RegisterProfile accepted overlong string: %s", c.label)
+				t.Fatalf("Register accepted overlong string: %s", c.label)
 			}
 			if !strings.Contains(err.Error(), "exceeds hashes.MaxNameLen") {
-				t.Fatalf("RegisterProfile %s: got %v, want error mentioning \"exceeds hashes.MaxNameLen\"", c.label, err)
+				t.Fatalf("Register %s: got %v, want error mentioning \"exceeds hashes.MaxNameLen\"", c.label, err)
 			}
 		})
 	}

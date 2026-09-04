@@ -15,7 +15,7 @@
 
 (deftest pump-round-trip-1mib
   (with-open [sender (itb/init "streaming-aead-triple-mac-v1")]
-    (with-open [receiver (itb/open "streaming-aead-triple-mac-v1" (itb/blob sender))]
+    (with-open [receiver (itb/load (itb/save sender))]
       (let [plain (mod-fill (bit-shift-left 1 20) 251)
             wire (ByteArrayOutputStream.)]
         (itb/encrypt-stream-pump sender (ByteArrayInputStream. plain) wire)
@@ -26,7 +26,7 @@
 
 (deftest pump-matches-one-shot
   (with-open [sender (itb/init "streaming-aead-triple-mac-v1")]
-    (with-open [receiver (itb/open "streaming-aead-triple-mac-v1" (itb/blob sender))]
+    (with-open [receiver (itb/load (itb/save sender))]
       (let [plain (mod-fill 65536 199)
             wire (itb/encrypt-stream-one-shot sender plain)
             back (ByteArrayOutputStream.)]

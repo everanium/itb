@@ -10,8 +10,11 @@ module ITB.Pipeline
   ( Pipeline
   , newPipeline
   , initPipeline
-  , openPipeline
-  , blob
+  , loadPipeline
+  , loadPipelineF
+  , save
+  , saveF
+  , setMaxWorkers
   , rekey
   , closePipeline
   , freePipeline
@@ -19,7 +22,10 @@ module ITB.Pipeline
   , decryptMessage
   , encryptStreamOneShot
   , decryptStreamOneShot
-  , registerProfile
+  , inspect
+  , register
+  , lookupProfile
+  , profiles
     -- * Internal (used by "ITB.Stream")
   , withPipelineHandle
   , pipelineForeignPtr
@@ -27,13 +33,11 @@ module ITB.Pipeline
   , outCap
   ) where
 
-import Control.Exception (throwIO)
 import Control.Monad (void)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Unsafe as BU
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Foreign.C.Types (CInt, CSize)
 import Foreign.Concurrent (newForeignPtr)
 import Foreign.ForeignPtr (ForeignPtr, finalizeForeignPtr, withForeignPtr)
@@ -46,7 +50,8 @@ import ITB.Errors
 import ITB.FFI
 import ITB.Opts (Opts, emptyOpts, renderOpts)
 
--- | Floor capacity for blob output buffers (Init \/ Rekey).
+-- | Floor capacity for blob \/ JSON output buffers (Init \/ Rekey \/
+-- Save \/ Inspect \/ Lookup \/ Profiles).
 blobCap :: Int
 blobCap = 64 * 1024
 
@@ -55,14 +60,14 @@ blobCap = 64 * 1024
 outCap :: Int -> Int
 outCap payload = payload + payload `div` 4 + 65536
 
--- | A Triple Pipeline session plus its exported blob bytes.
+-- | A Triple Pipeline session. 'save' exports the session bundle the
+-- receiver feeds to 'loadPipeline'; 'rekey' refreshes it.
 --
 -- Streaming-decrypt caveat: chunked Streaming AEAD verifies per
 -- chunk, so plaintext of verified chunks is released before a later
 -- chunk can fail authentication.
-data Pipeline = Pipeline
-  { pipeFP   :: !(ForeignPtr ())
-  , pipeBlob :: !(IORef BS.ByteString)
+newtype Pipeline = Pipeline
+  { pipeFP :: ForeignPtr ()
   }
 
 -- | The Pipeline's 'ForeignPtr'. Internal — 'ITB.Stream' references it
@@ -77,12 +82,11 @@ withPipelineHandle :: Pipeline -> (ITBHandle -> IO a) -> IO a
 withPipelineHandle p f =
   withForeignPtr (pipeFP p) (f . fromIntegral . ptrToIntPtr)
 
-mkPipeline :: ITBHandle -> BS.ByteString -> IO Pipeline
-mkPipeline h blobBytes = do
-  ref <- newIORef blobBytes
+mkPipeline :: ITBHandle -> IO Pipeline
+mkPipeline h = do
   fp <- newForeignPtr (intPtrToPtr (fromIntegral h))
                       (void (c_ITB_Triple_Free h))
-  pure (Pipeline fp ref)
+  pure (Pipeline fp)
 
 -- ── retry-once buffer discipline ─────────────────────────────────────
 
@@ -123,77 +127,109 @@ withBytes bs f =
 
 -- ── construction ─────────────────────────────────────────────────────
 
--- | Convenience constructor with profile defaults: @Nothing@ starts a
--- fresh session ('initPipeline'), @Just blobBytes@ reconstructs one
--- from a session blob ('openPipeline' with blob-embedded masters).
-newPipeline :: String -> Maybe BS.ByteString -> IO Pipeline
-newPipeline profile Nothing   = initPipeline profile emptyOpts
-newPipeline profile (Just bs) = openPipeline profile bs emptyOpts Nothing
+-- | Convenience constructor with profile defaults ('initPipeline'
+-- with 'emptyOpts').
+newPipeline :: String -> IO Pipeline
+newPipeline profile = initPipeline profile emptyOpts
 
--- | Constructs a fresh Pipeline against the named profile. On a
--- blob-buffer retry the Init re-runs and yields a fresh session (the
--- undersized attempt is closed by libitb before returning).
+-- | Constructs a fresh Pipeline against the named profile; the session
+-- bundle is available through 'save'. On a blob-buffer retry the Init
+-- re-runs and yields a fresh session (the undersized attempt is closed
+-- by libitb before returning). An unregistered name fails with
+-- 'statusUnknownProfile'.
 initPipeline :: String -> Opts -> IO Pipeline
 initPipeline profile opts =
   withCStr profile $ \profileC ->
     withOpts opts $ \optsC ->
       alloca $ \handleP -> do
         poke handleP 0
-        blobBytes <- retryOnce blobCap $ \buf cap lenP ->
+        _ <- retryOnce blobCap $ \buf cap lenP -> do
+          -- Go closes the undersized attempt; the retry re-runs Init
+          -- and yields a fresh session.
+          poke handleP 0
           c_ITB_Triple_Init (castPtr profileC) (castPtr optsC)
                             buf cap lenP handleP
         h <- peek handleP
-        mkPipeline h blobBytes
+        mkPipeline h
 
--- | Reconstructs a Pipeline from a blob produced by 'initPipeline' or
--- 'rekey'. The masters argument is @Nothing@ to use the blob-embedded
--- masters, or @Just (perm, wrap)@ to override them.
-openPipeline
-  :: String
-  -> BS.ByteString
-  -> Opts
-  -> Maybe (BS.ByteString, BS.ByteString)
-  -> IO Pipeline
-openPipeline profile blobBytes opts masters = do
-  case masters of
-    Just (pm, wm) | BS.null pm || BS.null wm ->
-      throwIO (ITBError statusBadInput "master override bytes must be non-empty")
-    _ -> pure ()
-  let (pm, wm, count) = case masters of
-        Nothing       -> (BS.empty, BS.empty, 0 :: CSize)
-        Just (p', w') -> (p', w', 2)
-  withCStr profile $ \profileC ->
-    withOpts opts $ \optsC ->
-      withBytes blobBytes $ \blobP blobLen ->
-        withBytes pm $ \pmP pmLen ->
-          withBytes wm $ \wmP wmLen ->
-            alloca $ \handleP -> do
-              poke handleP 0
-              rc <- c_ITB_Triple_Open (castPtr profileC) blobP blobLen
-                                      (castPtr optsC) pmP pmLen wmP wmLen
-                                      count handleP
-              check rc
-              h <- peek handleP
-              mkPipeline h blobBytes
+-- | The masters pair crosses as @(perm, wrap, count)@: @Nothing@
+-- yields 0, otherwise 2 — libitb validates the pair.
+mastersArgs :: Maybe (BS.ByteString, BS.ByteString) -> (BS.ByteString, BS.ByteString, CSize)
+mastersArgs Nothing         = (BS.empty, BS.empty, 0)
+mastersArgs (Just (p', w')) = (p', w', 2)
+
+-- | Reconstructs a Pipeline from a blob produced by 'save' or 'rekey'.
+-- The masters argument is @Nothing@ to use the blob-embedded masters,
+-- or @Just (perm, wrap)@ to override them. The profile shape travels
+-- inside the blob — no profile name, no opts. A blob whose record
+-- names a primitive absent from the local build fails with
+-- 'statusRecipePrimitiveUnknown'; a record failing the profile field
+-- rules with 'statusBlobMalformedRecipe'.
+loadPipeline :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString) -> IO Pipeline
+loadPipeline blobBytes masters = do
+  let (pm, wm, count) = mastersArgs masters
+  withBytes blobBytes $ \blobP blobLen ->
+    withBytes pm $ \pmP pmLen ->
+      withBytes wm $ \wmP wmLen ->
+        alloca $ \handleP -> do
+          poke handleP 0
+          rc <- c_ITB_Triple_Load blobP blobLen pmP pmLen wmP wmLen count handleP
+          check rc
+          h <- peek handleP
+          mkPipeline h
+
+-- | 'loadPipeline' for a blob stored at the given path; the file is
+-- read inside libitb (a missing or unreadable file fails with
+-- 'statusBadInput' and the diagnostic attached).
+loadPipelineF :: FilePath -> Maybe (BS.ByteString, BS.ByteString) -> IO Pipeline
+loadPipelineF path masters = do
+  let (pm, wm, count) = mastersArgs masters
+  withCStr path $ \pathC ->
+    withBytes pm $ \pmP pmLen ->
+      withBytes wm $ \wmP wmLen ->
+        alloca $ \handleP -> do
+          poke handleP 0
+          rc <- c_ITB_Triple_LoadF (castPtr pathC) pmP pmLen wmP wmLen count handleP
+          check rc
+          h <- peek handleP
+          mkPipeline h
 
 -- ── session management ───────────────────────────────────────────────
 
--- | The exported session bundle bytes for the receiver side.
-blob :: Pipeline -> IO BS.ByteString
-blob = readIORef . pipeBlob
+-- | The current session bundle bytes for the receiver side (the Init
+-- blob, or the bytes of the latest 'rekey'). A closed Pipeline fails
+-- with 'statusTripleClosed'.
+save :: Pipeline -> IO BS.ByteString
+save p =
+  withPipelineHandle p $ \h ->
+    retryOnce blobCap $ \buf cap lenP -> c_ITB_Triple_Save h buf cap lenP
 
--- | Rotates the parallax + wrapper masters and refreshes 'blob'. Must
--- not run concurrently with cipher calls or open stream sessions on
--- the same Pipeline.
-rekey :: Pipeline -> BS.ByteString -> BS.ByteString -> IO ()
-rekey p perm wrap = do
-  prev <- readIORef (pipeBlob p)
-  fresh <- withPipelineHandle p $ \h ->
+-- | Writes the current blob to the given path inside libitb (mode
+-- 0600; the containing directory must exist).
+saveF :: Pipeline -> FilePath -> IO ()
+saveF p path =
+  withPipelineHandle p $ \h ->
+    withCStr path $ \pathC -> c_ITB_Triple_SaveF h (castPtr pathC) >>= check
+
+-- | Sets the worker cap for every subsequent cipher call. The value is
+-- clamped by libitb (@<= 0@ selects auto, @> 256@ becomes 256); only
+-- the handle state is reported. The cap is per-machine and never
+-- travels in the blob. (Named 'setMaxWorkers' because 'ITB.Opts.maxWorkers'
+-- is the Init-time opts setter.)
+setMaxWorkers :: Pipeline -> Int -> IO ()
+setMaxWorkers p n =
+  withPipelineHandle p $ \h -> c_ITB_Triple_MaxWorkers h (fromIntegral n) >>= check
+
+-- | Rotates the parallax + wrapper masters and returns the fresh blob
+-- (also available through 'save'). Must not run concurrently with
+-- cipher calls or open stream sessions on the same Pipeline.
+rekey :: Pipeline -> BS.ByteString -> BS.ByteString -> IO BS.ByteString
+rekey p perm wrap =
+  withPipelineHandle p $ \h ->
     withBytes perm $ \pmP pmLen ->
       withBytes wrap $ \wmP wmLen ->
-        retryOnce (max blobCap (BS.length prev)) $ \buf cap lenP ->
+        retryOnce blobCap $ \buf cap lenP ->
           c_ITB_Triple_Rekey h pmP pmLen wmP wmLen buf cap lenP
-  writeIORef (pipeBlob p) fresh
 
 -- | Zeroes the Pipeline's key material and marks it closed.
 -- Idempotent; subsequent cipher calls fail with 'statusTripleClosed'.
@@ -235,19 +271,57 @@ cipher f p src =
       retryOnce (outCap (BS.length src)) $ \buf cap lenP ->
         f h srcP srcLen buf cap lenP
 
--- ── profile registration ─────────────────────────────────────────────
+-- ── profile records ──────────────────────────────────────────────────
+--
+-- A profile record is the JSON object libitb accepts in 'register',
+-- returns from 'lookupProfile' \/ 'inspect', and embeds in every
+-- blob: keys @name@ \/ @mode@ \/ @width@ \/ @hash@ \/ @hashes@ \/
+-- @keybits@ \/ @mac@ \/ @tagstub@ \/ @chunk@ \/ @wrapper@ \/ @outer@
+-- \/ @parallax@ \/ @palette@ \/ @segment@. Optional keys are omitted
+-- when empty \/ zero. The binding treats the record as an opaque
+-- string; every field rule is enforced by libitb.
 
--- | Registers a user-defined Triple profile under the given name so
--- subsequent 'initPipeline' \/ 'openPipeline' calls resolve it. The
--- opts follow the register-profile grammar validated by Go (@mode@,
--- @width@, @innerHash@ \/ @innerHashes@, @keyBits@, @macName@,
--- @outerCipher@, @parallaxPalette@, @parallaxSegmentSize@,
--- @chunkSize@, @parallaxOn@, @wrapperOn@) — build them with
--- 'ITB.Opts.opt' plus the typed setters where key names coincide. A
--- duplicate name fails with 'statusProfileExists'.
-registerProfile :: String -> Opts -> IO ()
-registerProfile name opts =
+-- | Decodes the profile record embedded in the blob without
+-- constructing a Pipeline. No registry read, no primitive probe.
+inspect :: BS.ByteString -> IO String
+inspect blobBytes =
+  withBytes blobBytes $ \blobP blobLen ->
+    BC.unpack <$> retryOnce blobCap (\buf cap lenP ->
+      c_ITB_Triple_Inspect blobP blobLen buf cap lenP)
+
+-- | Registers a user-defined Triple profile under the given name from
+-- a profile JSON record (a non-empty @name@ key inside the record
+-- must equal the argument) so subsequent 'initPipeline' calls resolve
+-- it. A duplicate name fails with 'statusProfileExists'.
+register :: String -> String -> IO ()
+register name profileJSON =
   withCStr name $ \nameC ->
-    withOpts opts $ \optsC -> do
-      rc <- c_ITB_Triple_RegisterProfile (castPtr nameC) (castPtr optsC)
+    withCStr profileJSON $ \jsonC -> do
+      rc <- c_ITB_Triple_Register (castPtr nameC) (castPtr jsonC)
       check rc
+
+-- | The profile registered under the given name — a shipped catalogue
+-- entry or a prior 'register' — as its JSON record. An unregistered
+-- name fails with 'statusUnknownProfile'. (Named 'lookupProfile'
+-- because 'lookup' is a Prelude function.)
+lookupProfile :: String -> IO String
+lookupProfile name =
+  withCStr name $ \nameC ->
+    BC.unpack <$> retryOnce blobCap (\buf cap lenP ->
+      c_ITB_Triple_Lookup (castPtr nameC) buf cap lenP)
+
+-- | The sorted list of every registered profile name — the shipped
+-- catalogue plus prior 'register' calls. libitb returns a JSON array
+-- of strings; names match @^[a-z][a-z0-9-]+$@, so the array splits
+-- on the quote characters alone.
+profiles :: IO [String]
+profiles = do
+  json <- BC.unpack <$> retryOnce blobCap (\buf cap lenP ->
+    c_ITB_Triple_Profiles buf cap lenP)
+  pure (odds (splitOn '"' json))
+  where
+    splitOn c str = case break (== c) str of
+      (a, [])     -> [a]
+      (a, _:rest) -> a : splitOn c rest
+    odds (_:x:xs) = x : odds xs
+    odds _        = []

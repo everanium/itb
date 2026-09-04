@@ -7,6 +7,8 @@ import (
 
 	"github.com/dchest/siphash"
 	"golang.org/x/crypto/chacha20"
+
+	"github.com/everanium/itb/hashes"
 )
 
 // Key sizes per supported primitive, in bytes.
@@ -54,15 +56,15 @@ func Derive(name string, master []byte, label string, outLen int) ([]byte, error
 		return nil, fmt.Errorf("kdf: output length %d exceeds maximum %d", outLen, maxOutLen)
 	}
 	switch name {
-	case "aescmac":
+	case hashes.CipherAES128CTR:
 		return deriveAESCMAC(master, label, outLen)
-	case "siphash24":
+	case hashes.CipherSipHash24:
 		return deriveSipHash24(master, label, outLen)
-	case "chacha20":
+	case hashes.CipherChaCha20:
 		return deriveChaCha20(master, label, outLen)
-	case hashAreion256, hashBLAKE2b256, hashBLAKE2b512, hashBLAKE2s, hashBLAKE3:
+	case hashes.CipherAreion256, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return deriveHashPRF(name, master, label, outLen)
-	case hashAreion512:
+	case hashes.CipherAreion512:
 		return deriveAreion512(master, label, outLen)
 	default:
 		return nil, fmt.Errorf("kdf: unsupported primitive %q", name)

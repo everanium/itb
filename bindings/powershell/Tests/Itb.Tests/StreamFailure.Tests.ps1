@@ -19,8 +19,7 @@ Describe 'Stream failure paths' {
     It 'fails sticky with MacFailure on a tampered wire' {
         $sender = New-ItbPipeline -Profile 'streaming-aead-triple-mac-v1'
         try {
-            $receiver = Open-ItbPipeline -Profile 'streaming-aead-triple-mac-v1' `
-                -Blob (Get-ItbBlob $sender)
+            $receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $sender)
             try {
                 $plain = New-TestPayload -Size 64KB -Seed 3001
                 $baseWire = Invoke-ItbEncryptStream -Pipeline $sender -Data $plain
@@ -109,8 +108,7 @@ Describe 'Stream failure paths' {
             # is the assertion.
             $session.Dispose()
 
-            $receiver = Open-ItbPipeline -Profile 'streaming-aead-triple-mac-v1' `
-                -Blob (Get-ItbBlob $sender)
+            $receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $sender)
             try {
                 $wire = Invoke-ItbEncrypt -Pipeline $sender -Data 'after cancel'
                 $back = Invoke-ItbDecrypt -Pipeline $receiver -Data $wire

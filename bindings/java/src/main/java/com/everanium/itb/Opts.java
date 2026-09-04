@@ -7,8 +7,8 @@ import java.util.List;
 
 /**
  * Fluent builder producing the URL-query-encoded opts string consumed
- * by {@link Pipeline#init}, {@link Pipeline#open}, and
- * {@link Pipeline#registerProfile}.
+ * by {@link Pipeline#init}. Profile records for
+ * {@link Pipeline#register} are built with {@link Profile}.
  *
  * <p>The builder performs no validation — every key and value is
  * rendered into a percent-encoded query string and passed through to
@@ -92,9 +92,7 @@ public final class Opts {
     }
 
     /** Escape hatch appending a raw {@code key=value} pair. Covers
-     * every key the Go side accepts, including the register-profile
-     * grammar ({@code mode}, {@code width}, {@code innerHashes},
-     * {@code parallaxOn}, {@code wrapperOn}, …). */
+     * every key the Go side accepts. */
     public Opts withRaw(String key, String value) {
         pairs.add(enc(key) + "=" + enc(value));
         return this;

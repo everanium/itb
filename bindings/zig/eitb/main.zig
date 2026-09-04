@@ -3,14 +3,16 @@
 //! Subcommands:
 //!
 //!   eitb version                                   library + binding versions
-//!   eitb hashes                                    shipped hash primitive roster
+//!   eitb profiles                                  registered profile catalogue
 //!   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 //!   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //!
 //! `encrypt` prints the session blob to stderr as hex; feed that hex
 //! back to `decrypt` on the receiving side. The blob-hex argument is
 //! parsed tolerantly: case-insensitive, optional `0x` prefix, and
-//! embedded whitespace are all accepted.
+//! embedded whitespace are all accepted. `profiles` lists the
+//! registered profile catalogue one name per line; the profiles that
+//! carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 const std = @import("std");
 const itb = @import("itb");
@@ -18,7 +20,7 @@ const itb = @import("itb");
 fn usage() u8 {
     std.debug.print(
         \\usage: eitb version
-        \\       eitb hashes
+        \\       eitb profiles
         \\       eitb encrypt <profile> <in-file> <out-file>
         \\       eitb decrypt <profile> <blob-hex> <in-file> <out-file>
         \\
@@ -74,15 +76,19 @@ fn cmdVersion(io: std.Io) !u8 {
     return 0;
 }
 
-fn cmdHashes(io: std.Io) !u8 {
-    const n = itb.hashCount();
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        const name = itb.hashName(i) orelse {
-            std.debug.print("eitb: hashName({d}) failed\n", .{i});
-            return 1;
-        };
-        try print(io, "{d:>2}  {s:<12} {d} bits\n", .{ i, name, itb.hashWidth(i) });
+/// Prints the registered profile catalogue one name per line in the
+/// sorted order `itb.profiles` returns. The catalogue arrives as a
+/// JSON array of strings; profile names are restricted to [a-z0-9-],
+/// so each quoted run is one complete name and no escape handling is
+/// needed.
+fn cmdProfiles(gpa: std.mem.Allocator, io: std.Io) !u8 {
+    const json = itb.profiles(gpa) catch |e| return failWith("profiles", e);
+    defer gpa.free(json);
+    var pos: usize = 0;
+    while (std.mem.indexOfScalarPos(u8, json, pos, '"')) |open| {
+        const close = std.mem.indexOfScalarPos(u8, json, open + 1, '"') orelse break;
+        try print(io, "{s}\n", .{json[open + 1 .. close]});
+        pos = close + 1;
     }
     return 0;
 }
@@ -119,9 +125,11 @@ fn cmdEncrypt(
         return 1;
     };
 
-    const blob_hex = try gpa.alloc(u8, pipe.blob().len * 2);
+    const blob = pipe.save() catch |e| return failWith("save", e);
+    defer gpa.free(blob);
+    const blob_hex = try gpa.alloc(u8, blob.len * 2);
     defer gpa.free(blob_hex);
-    for (pipe.blob(), 0..) |b, i| {
+    for (blob, 0..) |b, i| {
         _ = std.fmt.bufPrint(blob_hex[2 * i ..][0..2], "{x:0>2}", .{b}) catch unreachable;
     }
     std.debug.print("{s}\n", .{blob_hex});
@@ -190,8 +198,10 @@ fn cmdDecrypt(
     };
     defer gpa.free(wire);
 
-    var pipe = itb.Pipeline.open(gpa, profile, blob, null, null) catch |e|
-        return failWith("open", e);
+    // The profile shape travels inside the blob; the profile argument
+    // only selects the Single Message or streaming cipher pair.
+    var pipe = itb.Pipeline.load(gpa, blob, null) catch |e|
+        return failWith("load", e);
     defer pipe.deinit();
 
     const plain = if (isStreamingProfile(profile))
@@ -223,8 +233,8 @@ pub fn main(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, cmd, "version") and argv.len == 2) {
         return cmdVersion(io);
     }
-    if (std.mem.eql(u8, cmd, "hashes") and argv.len == 2) {
-        return cmdHashes(io);
+    if (std.mem.eql(u8, cmd, "profiles") and argv.len == 2) {
+        return cmdProfiles(gpa, io);
     }
     if (std.mem.eql(u8, cmd, "encrypt") and argv.len == 5) {
         return cmdEncrypt(gpa, io, std.mem.span(argv[2]), std.mem.span(argv[3]), std.mem.span(argv[4]));

@@ -2,10 +2,10 @@
 
 // Package interlock holds the BMI2 PEXTQ / PDEPQ assembly implementation
 // of the per-chunk 48-bit interlock keyed bit-permutation kernels. It
-// lives in an internal subpackage by the same convention as
-// `internal/locksoupasm/` because the parent `itb` package uses CGO
-// (Go's build system does not allow Go assembly files in CGO-using
-// packages).
+// lives in an internal subpackage because the parent `itb` package uses
+// CGO (Go's build system does not allow Go assembly files in CGO-using
+// packages), so the assembly kernel is factored out into this
+// non-CGO-using subpackage.
 //
 // Only the assembly entry points and the runtime BMI2 capability flag
 // are exported. The parent package `itb` dispatches between the BMI2

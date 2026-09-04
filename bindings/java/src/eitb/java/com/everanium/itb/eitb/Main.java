@@ -3,16 +3,17 @@
 // Subcommands:
 //
 //   eitb version                                   library + binding versions
-//   eitb hashes                                    shipped hash primitive roster
+//   eitb profiles                                  registered profile catalogue
 //   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 //   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex
-// back to `decrypt` on the receiving side.
+// back to `decrypt` on the receiving side. `profiles` lists the
+// registered profile catalogue one name per line; the profiles that
+// carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 package com.everanium.itb.eitb;
 
-import com.everanium.itb.HashRoster;
 import com.everanium.itb.Pipeline;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,11 +31,17 @@ public final class Main {
         try {
             switch (args.length > 0 ? args[0] : "") {
                 case "version":
-                    cmdVersion();
-                    return;
-                case "hashes":
-                    HashRoster.print();
-                    return;
+                    if (args.length == 1) {
+                        cmdVersion();
+                        return;
+                    }
+                    break;
+                case "profiles":
+                    if (args.length == 1) {
+                        cmdProfiles();
+                        return;
+                    }
+                    break;
                 case "encrypt":
                     if (args.length == 4) {
                         cmdEncrypt(args[1], args[2], args[3]);
@@ -56,7 +63,7 @@ public final class Main {
         }
         System.err.println(
                 "usage: eitb version\n"
-                + "       eitb hashes\n"
+                + "       eitb profiles\n"
                 + "       eitb encrypt <profile> <in-file> <out-file>\n"
                 + "       eitb decrypt <profile> <blob-hex> <in-file> <out-file>");
         System.exit(2);
@@ -65,6 +72,14 @@ public final class Main {
     private static void cmdVersion() {
         System.out.println("libitb " + com.everanium.itb.Runtime.version());
         System.out.println("itb-java " + com.everanium.itb.Runtime.BINDING_VERSION);
+    }
+
+    // Prints the registered profile catalogue one name per line in
+    // the sorted order Pipeline.profiles() returns.
+    private static void cmdProfiles() {
+        for (String name : Pipeline.profiles()) {
+            System.out.println(name);
+        }
     }
 
     // Profiles whose canonical name begins with "streaming-" route
@@ -91,7 +106,7 @@ public final class Main {
                     : pipe.encryptMessage(plain);
             ensureParentDir(outFile);
             Files.write(Path.of(outFile), wire);
-            System.err.println(hexEncode(pipe.blob()));
+            System.err.println(hexEncode(pipe.save()));
             System.out.printf("encrypted %s -> %s (%d -> %d bytes)%n",
                     inFile, outFile, plain.length, wire.length);
         }
@@ -101,7 +116,7 @@ public final class Main {
             String inFile, String outFile) throws IOException {
         byte[] blob = hexDecode(blobHex);
         byte[] wire = Files.readAllBytes(Path.of(inFile));
-        try (Pipeline pipe = Pipeline.open(profile, blob, new com.everanium.itb.Opts())) {
+        try (Pipeline pipe = Pipeline.load(blob)) {
             byte[] plain = isStreamingProfile(profile)
                     ? pipe.decryptStreamOneShot(wire)
                     : pipe.decryptMessage(wire);

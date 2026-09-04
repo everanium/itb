@@ -2,7 +2,6 @@ package capi
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/everanium/itb/triple"
@@ -20,7 +19,7 @@ var shippedMixedProfileNamesCapi = []string{
 }
 
 // TestTripleInitShippedMixedProfilesCapi round-trips every shipped
-// mixed profile through the capi surface via TripleInit + TripleOpen
+// mixed profile through the capi surface via TripleInit + TripleLoad
 // + TripleEncryptMessage + TripleDecryptMessage. This is the FFI-side
 // counterpart to triple/mixed_profiles_test.go's Go-side round-trip
 // suite.
@@ -34,9 +33,9 @@ func TestTripleInitShippedMixedProfilesCapi(t *testing.T) {
 			}
 			defer FreeTriple(sID)
 
-			rID, st := TripleOpen(name, blobBuf[:blobLen], "")
+			rID, st := TripleLoad(blobBuf[:blobLen])
 			if st != StatusOK {
-				t.Fatalf("TripleOpen(%q): %v (%s)", name, st, LastError())
+				t.Fatalf("TripleLoad(%q): %v (%s)", name, st, LastError())
 			}
 			defer FreeTriple(rID)
 
@@ -59,28 +58,19 @@ func TestTripleInitShippedMixedProfilesCapi(t *testing.T) {
 	}
 }
 
-// TestTripleRegisterProfileMixedCapiRoundTrip installs a custom mixed
-// profile via TripleRegisterProfile + innerHashes= opts key, then
-// round-trips a message through the FFI cipher path.
-func TestTripleRegisterProfileMixedCapiRoundTrip(t *testing.T) {
+// TestTripleRegisterMixedCapiRoundTrip installs a custom mixed
+// profile via TripleRegister with a hashes array in the profile JSON,
+// then round-trips a message through the FFI cipher path.
+func TestTripleRegisterMixedCapiRoundTrip(t *testing.T) {
 	const name = "capitest-triple-mixed-roundtrip-v1"
 	// Width-256 mixed constellation using every shipped width-256
 	// primitive with two-slot repeats.
-	opts := strings.Join([]string{
-		"mode=singlemsg-mac",
-		"width=256",
-		"innerHashes=areion256,blake3,blake2b256,blake2s,chacha20,areion256,blake3,blake2b256",
-		"keyBits=1024",
-		"macName=hmac-blake3",
-		"outerCipher=chacha20",
-		"parallaxPalette=aescmac,chacha20,blake3",
-		"parallaxSegmentSize=4093",
-		"chunkSize=16777216",
-		"parallaxOn=true",
-		"wrapperOn=true",
-	}, "&")
-	if st := TripleRegisterProfile(name, opts); st != StatusOK {
-		t.Fatalf("TripleRegisterProfile: %v (%s)", st, LastError())
+	opts := `{"mode":"singlemsg-mac","width":256,` +
+		`"hashes":["areion256","blake3","blake2b256","blake2s","chacha20","areion256","blake3","blake2b256"],` +
+		`"keybits":1024,"mac":"hmac-blake3","wrapper":true,"outer":"chacha20",` +
+		`"parallax":true,"palette":["aescmac","chacha20","blake3"],"segment":4093,"chunk":16777216}`
+	if st := TripleRegister(name, opts); st != StatusOK {
+		t.Fatalf("TripleRegister: %v (%s)", st, LastError())
 	}
 
 	blobBuf := make([]byte, 1<<15)
@@ -90,9 +80,9 @@ func TestTripleRegisterProfileMixedCapiRoundTrip(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(name, blobBuf[:blobLen], "")
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen against registered mixed profile: %v (%s)", st, LastError())
+		t.Fatalf("TripleLoad against registered mixed profile: %v (%s)", st, LastError())
 	}
 	defer FreeTriple(rID)
 
@@ -113,12 +103,12 @@ func TestTripleRegisterProfileMixedCapiRoundTrip(t *testing.T) {
 	}
 }
 
-// TestTripleRegisterProfileMixedCapiValidationErrors exercises the
-// mixed-path opts-string validation surface: wrong entry count,
-// unknown primitive name, mixed-alongside-innerHash, width mismatch.
+// TestTripleRegisterMixedCapiValidationErrors exercises the
+// mixed-path profile-JSON validation surface: wrong entry count,
+// unknown primitive name, mixed-alongside-hash, width mismatch.
 // Every failure surfaces as StatusBadInput at the capi boundary.
-func TestTripleRegisterProfileMixedCapiValidationErrors(t *testing.T) {
-	base := "mode=singlemsg-mac&width=256&keyBits=1024&macName=hmac-blake3&outerCipher=chacha20&parallaxPalette=aescmac,chacha20,blake3&parallaxSegmentSize=4093&chunkSize=16777216&parallaxOn=true&wrapperOn=true"
+func TestTripleRegisterMixedCapiValidationErrors(t *testing.T) {
+	base := `"mode":"singlemsg-mac","width":256,"keybits":1024,"mac":"hmac-blake3","wrapper":true,"outer":"chacha20","parallax":true,"palette":["aescmac","chacha20","blake3"],"segment":4093,"chunk":16777216`
 
 	cases := []struct {
 		label string
@@ -128,59 +118,59 @@ func TestTripleRegisterProfileMixedCapiValidationErrors(t *testing.T) {
 		{
 			label: "seven-entries",
 			name:  "capitest-triple-mixed-seven-v1",
-			opts:  base + "&innerHashes=areion256,blake3,blake2b256,blake2s,chacha20,areion256,blake3",
+			opts:  `{` + base + `,"hashes":["areion256","blake3","blake2b256","blake2s","chacha20","areion256","blake3"]}`,
 		},
 		{
 			label: "nine-entries",
 			name:  "capitest-triple-mixed-nine-v1",
-			opts:  base + "&innerHashes=areion256,blake3,blake2b256,blake2s,chacha20,areion256,blake3,blake2b256,blake2s",
+			opts:  `{` + base + `,"hashes":["areion256","blake3","blake2b256","blake2s","chacha20","areion256","blake3","blake2b256","blake2s"]}`,
 		},
 		{
 			label: "unknown-primitive-slot4",
 			name:  "capitest-triple-mixed-unknown-v1",
-			opts:  base + "&innerHashes=areion256,blake3,blake2b256,blake2s,not-a-hash,areion256,blake3,blake2b256",
+			opts:  `{` + base + `,"hashes":["areion256","blake3","blake2b256","blake2s","not-a-hash","areion256","blake3","blake2b256"]}`,
 		},
 		{
 			label: "width-mismatch-aescmac-in-256",
 			name:  "capitest-triple-mixed-widthmix-v1",
 			// aescmac is width 128; profile width is 256.
-			opts: base + "&innerHashes=areion256,blake3,aescmac,blake2s,chacha20,areion256,blake3,blake2b256",
+			opts: `{` + base + `,"hashes":["areion256","blake3","aescmac","blake2s","chacha20","areion256","blake3","blake2b256"]}`,
 		},
 		{
-			label: "mixed-alongside-innerhash",
+			label: "mixed-alongside-hash",
 			name:  "capitest-triple-mixed-both-v1",
-			opts:  base + "&innerHash=areion256&innerHashes=areion256,blake3,blake2b256,blake2s,chacha20,areion256,blake3,blake2b256",
+			opts:  `{` + base + `,"hash":"areion256","hashes":["areion256","blake3","blake2b256","blake2s","chacha20","areion256","blake3","blake2b256"]}`,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.label, func(t *testing.T) {
-			st := TripleRegisterProfile(c.name, c.opts)
+			st := TripleRegister(c.name, c.opts)
 			if st != StatusBadInput {
-				t.Fatalf("TripleRegisterProfile %s: got %v, want StatusBadInput; LastError=%q",
+				t.Fatalf("TripleRegister %s: got %v, want StatusBadInput; LastError=%q",
 					c.label, st, LastError())
 			}
 		})
 	}
 }
 
-// TestTripleRegisterProfileMixedCapiEmptyInnerHashes confirms that an
-// empty innerHashes= value is treated as "no mixed entries" (skipped
-// silently by the parser) — the single-primitive path must still fire
-// when innerHash= is supplied alongside.
-func TestTripleRegisterProfileMixedCapiEmptyInnerHashes(t *testing.T) {
+// TestTripleRegisterMixedCapiEmptyInnerHashes confirms that an
+// empty hashes array is treated as "no mixed entries" — the
+// single-primitive path must still fire when hash is supplied
+// alongside.
+func TestTripleRegisterMixedCapiEmptyInnerHashes(t *testing.T) {
 	const name = "capitest-triple-mixed-empty-v1"
-	opts := "mode=singlemsg-mac&width=512&innerHash=areion512&innerHashes=&keyBits=1024&macName=hmac-blake3&outerCipher=chacha20&parallaxPalette=aescmac,chacha20,blake3&parallaxSegmentSize=4093&chunkSize=16777216&parallaxOn=true&wrapperOn=true"
-	if st := TripleRegisterProfile(name, opts); st != StatusOK {
-		t.Fatalf("TripleRegisterProfile empty innerHashes: %v (%s)", st, LastError())
+	opts := `{"mode":"singlemsg-mac","width":512,"hash":"areion512","hashes":[],"keybits":1024,"mac":"hmac-blake3","wrapper":true,"outer":"chacha20","parallax":true,"palette":["aescmac","chacha20","blake3"],"segment":4093,"chunk":16777216}`
+	if st := TripleRegister(name, opts); st != StatusOK {
+		t.Fatalf("TripleRegister empty hashes: %v (%s)", st, LastError())
 	}
 }
 
 // TestTripleInitPerCallMixedHashesOverrideCapi exercises the per-call
-// innerHashes= opts key at the TripleInit / TripleOpen boundary: a
-// shipped single-primitive profile is switched to a mixed
-// constellation for one Pipeline instance without registering a new
-// profile. The FFI-side round-trip matches
+// innerHashes= opts key at the TripleInit boundary: a shipped
+// single-primitive profile is switched to a mixed constellation for
+// one Pipeline instance without registering a new profile, and
+// TripleLoad reproduces the constellation from the blob's record. The FFI-side round-trip matches
 // triple/opts_mixedhashes_test.go's TestOptsMixedHashesOverrideSingleToMixed
 // on the Go side and confirms the URL-query key wired through
 // parseTripleOpts lands in triple.Opts.MixedHashes correctly.
@@ -197,9 +187,9 @@ func TestTripleInitPerCallMixedHashesOverrideCapi(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(triple.ProfileStreamingAEADTripleMACV1, blobBuf[:blobLen], opts)
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen(single-primitive profile, per-call innerHashes): %v (%s)", st, LastError())
+		t.Fatalf("TripleLoad(single-primitive profile, per-call innerHashes): %v (%s)", st, LastError())
 	}
 	defer FreeTriple(rID)
 
@@ -222,7 +212,7 @@ func TestTripleInitPerCallMixedHashesOverrideCapi(t *testing.T) {
 // TestTripleInitPerCallMixedHashesValidationCapi confirms that malformed
 // per-call innerHashes values (wrong entry count, unknown primitive)
 // surface as StatusBadInput at the capi boundary — same fail-fast
-// discipline the RegisterProfile-side path already enforces.
+// discipline the Register-side path already enforces.
 func TestTripleInitPerCallMixedHashesValidationCapi(t *testing.T) {
 	blobBuf := make([]byte, 1<<15)
 

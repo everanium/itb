@@ -8,9 +8,10 @@
 
 ''' <summary>
 ''' Builder producing the opts string consumed by
-''' <see cref="Pipeline.Init"/>, <see cref="Pipeline.Open"/>, and
-''' <see cref="Pipeline.RegisterProfile"/>. Setters chain; an empty
-''' builder renders the empty query (pure profile defaults).
+''' <see cref="Pipeline.Init"/>. Setters chain; an empty builder
+''' renders the empty query (pure profile defaults). Profile records
+''' for <see cref="Pipeline.Register"/> are the C# layer's
+''' <see cref="Global.Itb.Profile"/> type.
 ''' </summary>
 Public NotInheritable Class Opts
 
@@ -116,10 +117,7 @@ Public NotInheritable Class Opts
     End Function
 
     ''' <summary>Escape hatch appending a raw <c>key=value</c> pair.
-    ''' Covers every key the Go side accepts, including the
-    ''' register-profile grammar (<c>mode</c>, <c>width</c>,
-    ''' <c>innerHashes</c>, <c>parallaxOn</c>, <c>wrapperOn</c>, …).
-    ''' </summary>
+    ''' Covers every key the Go side accepts.</summary>
     Public Function WithRaw(key As String, value As String) As Opts
         _inner.WithRaw(key, value)
         Return Me

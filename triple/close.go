@@ -3,8 +3,8 @@ package triple
 // Close wipes every piece of secret material this [Pipeline] owns and
 // marks the Pipeline closed. Subsequent [Pipeline.EncryptStream] /
 // [Pipeline.DecryptStream] / [Pipeline.EncryptMessage] /
-// [Pipeline.DecryptMessage] / [Pipeline.Rekey] calls return
-// [ErrClosed].
+// [Pipeline.DecryptMessage] / [Pipeline.Rekey] / [Pipeline.SaveF]
+// calls return [ErrClosed]; [Pipeline.Save] returns nil.
 //
 // Close is idempotent: a second call is a no-op returning nil. Close
 // does NOT interrupt in-flight cipher calls; the caller is
@@ -12,11 +12,12 @@ package triple
 // Pipeline before invoking Close, otherwise those operations may
 // observe zeroed key material and surface arbitrary errors.
 //
-// The Pipeline does not retain a copy of the two masters — they are
-// consumed at [Init] / [Open] time to derive parallax subkeys and the
-// wrapper per-Pipeline key, both of which are wiped here. The
-// [Pipeline.Rekey] caller supplies fresh masters directly; nothing
-// stored on the Pipeline reveals the masters after Close.
+// The two masters are retained only inside the wrap-layer blob kept
+// for [Pipeline.Save]; that blob is zeroed here together with the
+// parallax subkeys and the wrapper per-Pipeline key derived from
+// them at [Init] / [Load] time. The [Pipeline.Rekey] caller supplies
+// fresh masters directly; nothing stored on the Pipeline reveals the
+// masters after Close.
 func (p *Pipeline) Close() error {
 	// Serialise a racing second Close body against the first. The
 	// atomic flag below is the check-then-act guard that keeps the
@@ -51,6 +52,11 @@ func (p *Pipeline) Close() error {
 		p.macKey = nil
 	}
 	p.macFunc = nil
+
+	// Zero the retained wrap-layer blob — it carries both masters and
+	// the inner seed / PRF-key / MAC-key material.
+	clear(p.blob)
+	p.blob = nil
 
 	// Drop parallax handles. The parallax package does not currently
 	// expose a Cipherset.Close for explicit per-subkey wipe (recorded

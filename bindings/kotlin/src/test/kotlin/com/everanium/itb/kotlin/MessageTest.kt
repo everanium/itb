@@ -20,7 +20,7 @@ class MessageTest {
         // with StatusBadInput before any wire is produced. Callers
         // who need an empty signal send a marker byte instead.
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val encEx = assertFailsWith<ItbException> {
                     sender.encryptMessage(ByteArray(0))
                 }
@@ -40,7 +40,7 @@ class MessageTest {
     @Test
     fun binaryPayloadRoundTrip() {
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 // Full byte-value coverage.
                 val plain = ByteArray(4096) { (it % 256).toByte() }
                 assertContentEquals(plain, receiver.decryptMessage(sender.encryptMessage(plain)))
@@ -51,7 +51,7 @@ class MessageTest {
     @Test
     fun resultVariantsCarryStatus() {
         Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = "railway-style payload".encodeToByteArray()
                 val wire = sender.encryptMessageCatching(plain).getOrThrow()
                 val ok = receiver.decryptMessageCatching(wire)
@@ -71,7 +71,7 @@ class MessageTest {
     @Test
     fun oneShotStreamRoundTrip() {
         Pipeline.init("streaming-aead-triple-mac-v1").use { sender ->
-            Pipeline.open("streaming-aead-triple-mac-v1", sender.blob).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = ByteArray(100_000) { (it * 31 % 251).toByte() }
                 val wire = sender.encryptStreamOneShot(plain)
                 assertContentEquals(plain, receiver.decryptStreamOneShot(wire))
@@ -102,7 +102,7 @@ class MessageTest {
             )
         }
         Pipeline.init("singlemsg-triple-mac-v1", mix).use { sender ->
-            Pipeline.open("singlemsg-triple-mac-v1", sender.blob, mix).use { receiver ->
+            Pipeline.load(sender.save()).use { receiver ->
                 val plain = ByteArray(4096) { (it * 31 % 251).toByte() }
                 assertContentEquals(plain, receiver.decryptMessage(sender.encryptMessage(plain)))
             }

@@ -72,7 +72,7 @@ func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 	return chunkLen, nil
 }
 
-// --- Triple Ouroboros streaming (7-seed) ---
+// --- Triple Ouroboros streaming (8-seed) ---
 
 // EncryptStream3x128Cfg encrypts data in chunks using Triple Ouroboros
 // (128-bit variant). Emits a 32-byte CSPRNG dummy prefix ahead of the

@@ -12,43 +12,93 @@ import (
 	"github.com/everanium/itb/wrapper"
 )
 
-// blobWrapV1 is the JSON wrap-layer that carries triple-side session
-// state on the wire. The nested Blob{N} bytes (inner) live in the
-// Inner field; the two masters are optional (omitted when the
-// corresponding layer is disabled for this Pipeline); the two
-// toggle-state booleans encode the parallax/wrapper posture so [Open]
-// reconstructs the same chain shape without matching Opts.
+// blobWrapV2 is the JSON wrap-layer that carries triple-side session
+// state on the wire:
 //
-// Single-letter JSON keys keep the wrap-layer compact
-// (~80–120 bytes plus the inner blob).
-type blobWrapV1 struct {
-	Profile    string `json:"p"`
-	Version    int    `json:"v"`
-	PermMaster []byte `json:"pm,omitempty"`
-	WrapMaster []byte `json:"wm,omitempty"`
-	Inner      []byte `json:"ib"`
-	Parallax   bool   `json:"wp"`
-	Wrapper    bool   `json:"ww"`
+//	v   wrap-layer schema version (= 2)
+//	p   the recipe — the resolved [Profile] record (see
+//	    [Profile.MarshalJSON] for its key set); its name is the
+//	    sender's label
+//	ib  the inner Low-Level Blob{N} JSON, embedded verbatim as an
+//	    object (the only carrier of seed / PRF-key / MAC-key material)
+//	pm  32-byte parallax master, base64; present iff p.parallax
+//	wm  32-byte wrapper master, base64; present iff p.wrapper
+//
+// The record is the sole structural source on the reopen path: [Load]
+// rebuilds every layer from it, and the profile registry is never
+// consulted. The decoder is strict (unknown key → [ErrBlobMalformed]);
+// any schema change bumps v.
+type blobWrapV2 struct {
+	Version    int             `json:"v"`
+	Profile    Profile         `json:"p"`
+	Inner      json.RawMessage `json:"ib"`
+	PermMaster []byte          `json:"pm,omitempty"`
+	WrapMaster []byte          `json:"wm,omitempty"`
 }
 
-// blobWrapVersionV1 is the current wrap-layer schema version.
-const blobWrapVersionV1 = 1
+// blobWrapVersionV2 is the wrap-layer schema version this build
+// encodes and decodes. Blobs carrying any other version are refused
+// with [ErrBlobVersion].
+const blobWrapVersionV2 = 2
+
+// marshalWrap builds the wrap-layer from the resolved [Profile]
+// record, the inner blob bytes, and the resolved masters. Inert layer
+// fields are cleared and a disabled layer's master is dropped from
+// the wire so a receiver that opens with only one layer active cannot
+// recover the unused master. Every wrap-layer producer ([Init],
+// [Load], [Pipeline.Rekey]) routes through this helper, so the blob
+// always describes the shape and keys the Pipeline runs with.
+func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, error) {
+	rec := prof
+	rec.ParallaxPalette = append([]string(nil), prof.ParallaxPalette...)
+	if !rec.Wrapper {
+		rec.OuterCipher = ""
+	}
+	if !rec.Parallax {
+		rec.ParallaxPalette, rec.ParallaxSegmentSize = nil, 0
+	}
+	wrap := blobWrapV2{
+		Version: blobWrapVersionV2,
+		Profile: rec,
+		Inner:   json.RawMessage(inner),
+	}
+	if rec.Parallax {
+		wrap.PermMaster = append([]byte(nil), permMaster...)
+	}
+	if rec.Wrapper {
+		wrap.WrapMaster = append([]byte(nil), wrapMaster...)
+	}
+	out, err := json.Marshal(wrap)
+	if err != nil {
+		return nil, fmt.Errorf("triple: wrap-layer marshal: %w", err)
+	}
+	return out, nil
+}
 
 // wrapMasterSize is the byte length of a fresh wrapper-side master
 // drawn by [Init]. 32 bytes matches the wrapper's DeriveKey lower
 // bound (see [wrapper.DeriveKey]).
 const wrapMasterSize = 32
 
-// Init constructs a fresh [Pipeline] against the named profile.
+// Init constructs a fresh [Pipeline] against the named profile and
+// returns it together with its blob — the same bytes [Pipeline.Save]
+// returns on the fresh Pipeline.
 //
 // Every 8-seed slot's Components slice + fixed PRF key + MAC key + the
 // two masters + (when auto-generation is requested) the wrapper
 // derived key + parallax subkeys are drawn from crypto/rand. The
 // returned blob bytes carry the full session bundle the receiver
-// needs — the profile name + wrap-layer version + both masters +
-// nested [itb.Blob{N}] with the 8 seed components, per-slot PRF
-// keys, and MAC material. Distribution of the blob is the caller's
-// responsibility — treat the blob as the full key bundle.
+// needs — the resolved [Profile] record (profile defaults with the
+// Opts overrides folded in, Name carrying the profile name) + both
+// masters + the nested [itb.Blob{N}] with the 8 seed components,
+// per-slot PRF keys, MAC material, and the NonceBits / BarrierFill
+// snapshot. The receiver rebuilds an equivalent Pipeline with [Load]
+// without holding the profile literal or the Opts. Distribution of
+// the blob is the caller's responsibility — treat the blob as the
+// full key bundle.
+//
+// [Opts.MaxWorkers] is snapshotted into the Pipeline's Config
+// (clamped per [Pipeline.MaxWorkers]) but never into the blob.
 //
 // Master intake rules:
 //
@@ -60,10 +110,10 @@ const wrapMasterSize = 32
 // Layer toggles derive from the profile default modulo any
 // [Opts.WithParallax] / [Opts.WithWrapper] overrides. When a layer is
 // disabled the corresponding master + derived state is still safely
-// zero — the receiver reconstructs the same shape from the blob's
-// recorded wp / ww fields.
+// zero — the receiver reconstructs the same shape from the record's
+// toggles.
 func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
-	prof, err := lookupProfile(profile)
+	prof, err := Lookup(profile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -98,20 +148,26 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		prfKeys [8][]byte
 		width   int
 	)
-	if isMixedResolved(resolved) {
-		seeds, prfKeys, width, err = allocEightSeedsMixed(resolved.mixedHashes, resolved.keyBits, resolved.width)
+	if isMixedProfile(resolved) {
+		seeds, prfKeys, width, err = allocEightSeedsMixed(resolved.MixedHashes, resolved.KeyBits, resolved.Width)
 	} else {
-		seeds, prfKeys, width, err = allocEightSeeds(resolved.innerHash, resolved.keyBits)
+		seeds, prfKeys, width, err = allocEightSeeds(resolved.InnerHash, resolved.KeyBits)
 	}
 	if err != nil {
 		return nil, nil, err
 	}
+	// The record must be self-consistent: an Opts.InnerHash override
+	// may select a primitive of a different width than the profile
+	// default, and the allocator reports the width actually in force.
+	resolved.Width = width
 
-	// Per-instance Config snapshot.
+	// Per-instance Config snapshot. The worker cap is clamped into
+	// the Config envelope here and lives only on the Pipeline; it is
+	// not part of the exported blob.
 	cfg := &itb.Config{
 		NonceBits:   opts.NonceBits,
 		BarrierFill: opts.BarrierFill,
-		MaxWorkers:  opts.MaxWorkers,
+		MaxWorkers:  clampWorkers(opts.MaxWorkers),
 	}
 	// Backfill fields left at zero from the compile-in defaults so the
 	// Cfg-aware Blob export path (which requires a valid nonce /
@@ -129,8 +185,8 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	// profile's field) lands in the Config ahead of the MAC probe
 	// below, so the precedence chain reads
 	// Opts > Profile > MacName auto-probe > default 32.
-	if cfg.TagStubSize == 0 && resolved.tagStubSize > 0 {
-		cfg.TagStubSize = resolved.tagStubSize
+	if cfg.TagStubSize == 0 && resolved.TagStubSize > 0 {
+		cfg.TagStubSize = resolved.TagStubSize
 	}
 
 	// Parallax build.
@@ -138,13 +194,13 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		sched *parallax.Schedule
 		cs    *parallax.Cipherset
 	)
-	if resolved.parallaxOn {
-		sched, err = parallax.NewSchedule(resolved.parallaxPalette, resolved.parallaxSegmentSize)
+	if resolved.Parallax {
+		sched, err = parallax.NewSchedule(resolved.ParallaxPalette, resolved.ParallaxSegmentSize)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: parallax.NewSchedule: %w", err)
 		}
-		if resolved.chunkSize > 0 {
-			if serr := sched.SetChunkSize(resolved.chunkSize); serr != nil {
+		if resolved.ChunkSize > 0 {
+			if serr := sched.SetChunkSize(resolved.ChunkSize); serr != nil {
 				return nil, nil, fmt.Errorf("triple: parallax.SetChunkSize: %w", serr)
 			}
 		}
@@ -156,8 +212,8 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 
 	// Wrapper build.
 	var wrapperKey []byte
-	if resolved.wrapperOn {
-		wrapperKey, err = wrapper.DeriveKey(resolved.outerCipher, wrapMaster)
+	if resolved.Wrapper {
+		wrapperKey, err = wrapper.DeriveKey(resolved.OuterCipher, wrapMaster)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: wrapper.DeriveKey: %w", err)
 		}
@@ -168,25 +224,25 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		macKey  []byte
 		macFunc itb.MACFunc
 	)
-	if resolved.macName != "" {
-		spec, ok := macs.Find(resolved.macName)
+	if resolved.MacName != "" {
+		spec, ok := macs.Find(resolved.MacName)
 		if !ok {
-			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.macName)
+			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
 		}
 		macKey = make([]byte, spec.KeySize)
 		if _, rerr := rand.Read(macKey); rerr != nil {
 			return nil, nil, fmt.Errorf("triple: crypto/rand: %w", rerr)
 		}
-		macFunc, err = macs.Make(resolved.macName, macKey)
+		macFunc, err = macs.Make(resolved.MacName, macKey)
 		if err != nil {
-			return nil, nil, fmt.Errorf("triple: macs.Make(%q): %w", resolved.macName, err)
+			return nil, nil, fmt.Errorf("triple: macs.Make(%q): %w", resolved.MacName, err)
 		}
 		// Multi-slice MAC arm: lets the authenticated entry points
 		// absorb the MAC input parts without the concatenation copy.
 		// Same primitive, same key — tags are byte-identical.
-		cfg.MACIncremental, err = macs.MakeIncremental(resolved.macName, macKey)
+		cfg.MACIncremental, err = macs.MakeIncremental(resolved.MacName, macKey)
 		if err != nil {
-			return nil, nil, fmt.Errorf("triple: macs.MakeIncremental(%q): %w", resolved.macName, err)
+			return nil, nil, fmt.Errorf("triple: macs.MakeIncremental(%q): %w", resolved.MacName, err)
 		}
 		// Wire-shape parity: carry the MAC's probed tag length into the
 		// Config so a No MAC envelope produced under this cfg reserves a
@@ -199,36 +255,22 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	}
 
 	// Inner Blob{N} export via the Cfg-aware API.
-	innerBlob, err := exportInnerBlob(width, cfg, seeds, prfKeys, macKey, resolved.macName)
+	innerBlob, err := exportInnerBlob(width, cfg, seeds, prfKeys, macKey, resolved.MacName)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Wrap-layer JSON. Masters are dropped from the wire when the
-	// corresponding layer is disabled so a receiver that opens with
-	// only one layer active cannot recover the unused master.
-	wrap := blobWrapV1{
-		Profile:  resolved.name,
-		Version:  blobWrapVersionV1,
-		Inner:    innerBlob,
-		Parallax: resolved.parallaxOn,
-		Wrapper:  resolved.wrapperOn,
-	}
-	if resolved.parallaxOn {
-		wrap.PermMaster = append([]byte(nil), permMaster...)
-	}
-	if resolved.wrapperOn {
-		wrap.WrapMaster = append([]byte(nil), wrapMaster...)
-	}
-
-	wrapBytes, err := json.Marshal(wrap)
+	// Wrap-layer JSON from the resolved record and the resolved
+	// masters. The Pipeline retains one copy for Save; the caller
+	// receives another.
+	wrapBytes, err := marshalWrap(resolved, innerBlob, permMaster, wrapMaster)
 	if err != nil {
-		return nil, nil, fmt.Errorf("triple: wrap-layer marshal: %w", err)
+		return nil, nil, err
 	}
 
 	p := &Pipeline{
-		profileName:   resolved.name,
 		resolved:      resolved,
+		blob:          append([]byte(nil), wrapBytes...),
 		width:         width,
 		cfg:           cfg,
 		seeds:         seeds,
@@ -236,10 +278,10 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		parallaxSched: sched,
 		parallaxCS:    cs,
 		wrapperKey:    wrapperKey,
-		wrapperCipher: resolved.outerCipher,
+		wrapperCipher: resolved.OuterCipher,
 		macKey:        macKey,
 		macFunc:       macFunc,
-		macName:       resolved.macName,
+		macName:       resolved.MacName,
 	}
 	return p, wrapBytes, nil
 }
@@ -252,7 +294,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 // The [ErrIdenticalMasters] check runs whenever both masters are
 // present (non-nil) — protects callers from accidentally passing the
 // same byte slice to both master parameters.
-func prepareMasters(resolved resolvedProfile, opts Opts) (permMaster, wrapMaster []byte, err error) {
+func prepareMasters(resolved Profile, opts Opts) (permMaster, wrapMaster []byte, err error) {
 	// Upper cap on caller-supplied masters — rejected upfront so the
 	// two "append([]byte(nil), ...)" copies below cannot amplify an
 	// adversarial multi-gigabyte slice into two more copies plus the
@@ -263,7 +305,7 @@ func prepareMasters(resolved resolvedProfile, opts Opts) (permMaster, wrapMaster
 	if opts.WrapMaster != nil && len(opts.WrapMaster) > wrapper.MaxMasterKeySize {
 		return nil, nil, fmt.Errorf("triple: opts.WrapMaster length %d exceeds wrapper.MaxMasterKeySize=%d", len(opts.WrapMaster), wrapper.MaxMasterKeySize)
 	}
-	if resolved.parallaxOn {
+	if resolved.Parallax {
 		if opts.PermMaster != nil {
 			permMaster = append([]byte(nil), opts.PermMaster...)
 		} else {
@@ -273,7 +315,7 @@ func prepareMasters(resolved resolvedProfile, opts Opts) (permMaster, wrapMaster
 			}
 		}
 	}
-	if resolved.wrapperOn {
+	if resolved.Wrapper {
 		if opts.WrapMaster != nil {
 			wrapMaster = append([]byte(nil), opts.WrapMaster...)
 		} else {
@@ -312,8 +354,8 @@ func exportInnerBlob128(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 	var b itb.Blob128
 	var opts itb.Blob128Opts
 	// The lockSeed slot rides as the dedicated LockSeed in the Blob
-	// opts alongside the other seven Triple 8-seed constellation
-	// entries packed into the blob's core fields.
+	// opts alongside the other entries of the Triple constellation
+	// packed into the blob's core fields.
 	opts.KeyL = append([]byte(nil), prfKeys[1]...)
 	opts.LS = seeds[1].(*itb.Seed128)
 	if len(macKey) > 0 {

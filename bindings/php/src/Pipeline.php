@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Everanium\Itb;
 
 /**
- * A Triple Pipeline session plus its exported blob bytes.
+ * A Triple Pipeline session.
  *
- * The blob carries the session bundle the receiver feeds to
- * Itb::open(); rekey() refreshes it. Destruction (explicit free() or
+ * save() returns the serialised session blob the receiver feeds to
+ * Itb::load(); rekey() refreshes it. Destruction (explicit free() or
  * garbage collection via __destruct) releases the Go-side handle —
  * libitb zeroes key material internally.
  *
@@ -20,9 +20,6 @@ final class Pipeline
 {
     /** @var int */
     private $handle;
-
-    /** @var string */
-    private $blob;
 
     /**
      * Grow-only pooled output scratch shared by the string-returning
@@ -39,34 +36,65 @@ final class Pipeline
     /** @var \FFI\CData|null Pooled size_t out-length cell. */
     private $lenCell = null;
 
-    /** @internal Not part of the public API — use Itb::create() / Itb::open(). */
-    public function __construct(int $handle, string $blob)
+    /** @internal Not part of the public API — use Itb::create() / Itb::load() / Itb::loadF(). */
+    public function __construct(int $handle)
     {
         $this->handle = $handle;
-        $this->blob = $blob;
-    }
-
-    /** The exported session bundle bytes for the receiver side. */
-    public function blob(): string
-    {
-        return $this->blob;
     }
 
     /**
-     * Rotates the parallax + wrapper masters and refreshes blob().
+     * The current serialised session blob — the bytes create()
+     * produced, the bytes load() re-marshalled, or the bytes of the
+     * latest rekey().
+     */
+    public function save(): string
+    {
+        $ffi = FFIBridge::get();
+        $handle = $this->handle;
+        return FFIBridge::retryOnce(
+            Itb::BLOB_CAP,
+            static function ($buf, int $cap, $lenPtr) use ($ffi, $handle): int {
+                return $ffi->ITB_Triple_Save($handle, $buf, $cap, $lenPtr);
+            }
+        );
+    }
+
+    /**
+     * Writes the current session blob to $path inside the library
+     * (mode 0600; the containing directory must exist).
+     */
+    public function saveF(string $path): void
+    {
+        FFIBridge::check(FFIBridge::get()->ITB_Triple_SaveF($this->handle, $path));
+    }
+
+    /**
+     * Sets the worker cap for every subsequent cipher call. $n is
+     * clamped, never rejected: n <= 0 selects auto (runtime.NumCPU),
+     * 1..256 pins the cap, larger values are treated as 256. The cap
+     * is per-machine tuning and is never written to the blob.
+     */
+    public function maxWorkers(int $n): void
+    {
+        FFIBridge::check(FFIBridge::get()->ITB_Triple_MaxWorkers($this->handle, $n));
+    }
+
+    /**
+     * Rotates the parallax + wrapper masters and returns the
+     * refreshed session blob (also observable through save()).
      * Passing null for a master generates a fresh 32-byte CSPRNG
      * value binding-side. Must not run concurrently with cipher
      * calls or open stream sessions on the same Pipeline.
      */
-    public function rekey(?string $permMaster = null, ?string $wrapMaster = null): void
+    public function rekey(?string $permMaster = null, ?string $wrapMaster = null): string
     {
         $ffi = FFIBridge::get();
         $pm = $permMaster ?? \random_bytes(32);
         $wm = $wrapMaster ?? \random_bytes(32);
         $handle = $this->handle;
 
-        $this->blob = FFIBridge::retryOnce(
-            max(Itb::BLOB_CAP, \strlen($this->blob)),
+        return FFIBridge::retryOnce(
+            Itb::BLOB_CAP,
             static function ($buf, int $cap, $lenPtr) use ($ffi, $handle, $pm, $wm): int {
                 return $ffi->ITB_Triple_Rekey(
                     $handle,

@@ -2,107 +2,108 @@ package capi
 
 import (
 	"bytes"
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"github.com/everanium/itb/triple"
 )
 
-// tripleRegisterOptsFull returns a URL-query opts string that
-// installs a full-stack streaming AEAD profile shape (parallax on +
-// wrapper on, MAC-authenticated, 512-bit inner hash). Callers append
-// or drop fields to exercise the validation surface.
-func tripleRegisterOptsFull() string {
-	return strings.Join([]string{
-		"mode=streaming-aead",
-		"width=512",
-		"innerHash=areion512",
-		"keyBits=1024",
-		"macName=hmac-blake3",
-		"outerCipher=chacha20",
-		"parallaxPalette=aescmac,chacha20,blake3",
-		"parallaxSegmentSize=4093",
-		"chunkSize=16777216",
-		"parallaxOn=true",
-		"wrapperOn=true",
-	}, "&")
+// tripleRegisterJSONFull returns a profile JSON record that installs a
+// full-stack streaming AEAD profile shape (parallax on + wrapper on,
+// MAC-authenticated, 512-bit inner hash). Callers rewrite fields to
+// exercise the validation surface.
+func tripleRegisterJSONFull() string {
+	return `{"mode":"streaming-aead","width":512,"hash":"areion512","keybits":1024,` +
+		`"mac":"hmac-blake3","wrapper":true,"outer":"chacha20",` +
+		`"parallax":true,"palette":["aescmac","chacha20","blake3"],"segment":4093,"chunk":16777216}`
 }
 
-// TestTripleRegisterProfileCapi covers the capi entry surface:
-// success, duplicate-name (StatusProfileExists), reserved-prefix
-// rejection (StatusBadInput), and unknown-key rejection
-// (StatusBadInput).
-func TestTripleRegisterProfileCapi(t *testing.T) {
+// TestTripleRegisterCapi covers the capi entry surface: success,
+// duplicate-name (StatusProfileExists), reserved-prefix rejection
+// (StatusBadInput), unknown-key rejection (StatusBadInput), and the
+// name-key agreement rule.
+func TestTripleRegisterCapi(t *testing.T) {
 	const name = "capitest-triple-register-v1"
-	if st := TripleRegisterProfile(name, tripleRegisterOptsFull()); st != StatusOK {
-		t.Fatalf("TripleRegisterProfile initial: %v (%s)", st, LastError())
+	if st := TripleRegister(name, tripleRegisterJSONFull()); st != StatusOK {
+		t.Fatalf("TripleRegister initial: %v (%s)", st, LastError())
 	}
 
 	// Duplicate name → StatusProfileExists.
-	if st := TripleRegisterProfile(name, tripleRegisterOptsFull()); st != StatusProfileExists {
-		t.Fatalf("TripleRegisterProfile duplicate: %v, want StatusProfileExists", st)
+	if st := TripleRegister(name, tripleRegisterJSONFull()); st != StatusProfileExists {
+		t.Fatalf("TripleRegister duplicate: %v, want StatusProfileExists", st)
 	}
 
 	// Reserved-prefix name → StatusBadInput.
-	if st := TripleRegisterProfile("streaming-user-v1", tripleRegisterOptsFull()); st != StatusBadInput {
-		t.Fatalf("TripleRegisterProfile reserved-prefix: %v, want StatusBadInput", st)
+	if st := TripleRegister("streaming-user-v1", tripleRegisterJSONFull()); st != StatusBadInput {
+		t.Fatalf("TripleRegister reserved-prefix: %v, want StatusBadInput", st)
 	}
 
-	// Unknown query key → StatusBadInput.
-	badOpts := tripleRegisterOptsFull() + "&notARealKey=1"
-	if st := TripleRegisterProfile("capitest-triple-badkey-v1", badOpts); st != StatusBadInput {
-		t.Fatalf("TripleRegisterProfile unknown key: %v, want StatusBadInput", st)
+	// Unknown JSON key → StatusBadInput.
+	badKey := `{"notARealKey":1,` + tripleRegisterJSONFull()[1:]
+	if st := TripleRegister("capitest-triple-badkey-v1", badKey); st != StatusBadInput {
+		t.Fatalf("TripleRegister unknown key: %v, want StatusBadInput", st)
 	}
 
-	// Malformed value (non-integer width) → StatusBadInput.
-	badWidth := "mode=streaming-aead&width=abc&innerHash=areion512&keyBits=1024&macName=hmac-blake3&outerCipher=chacha20&parallaxPalette=aescmac,chacha20,blake3&parallaxSegmentSize=4093&chunkSize=16777216&parallaxOn=true&wrapperOn=true"
-	if st := TripleRegisterProfile("capitest-triple-badwidth-v1", badWidth); st != StatusBadInput {
-		t.Fatalf("TripleRegisterProfile bad width: %v, want StatusBadInput", st)
+	// Malformed value (string width) → StatusBadInput.
+	badWidth := `{"mode":"streaming-aead","width":"abc","hash":"areion512","keybits":1024,"mac":"hmac-blake3","wrapper":true,"outer":"chacha20","parallax":true,"palette":["aescmac","chacha20","blake3"]}`
+	if st := TripleRegister("capitest-triple-badwidth-v1", badWidth); st != StatusBadInput {
+		t.Fatalf("TripleRegister bad width: %v, want StatusBadInput", st)
 	}
 
 	// Invalid inner-hash → StatusBadInput.
-	badHash := "mode=streaming-aead&width=512&innerHash=notreal&keyBits=1024&macName=hmac-blake3&outerCipher=chacha20&parallaxPalette=aescmac,chacha20,blake3&parallaxSegmentSize=4093&chunkSize=16777216&parallaxOn=true&wrapperOn=true"
-	if st := TripleRegisterProfile("capitest-triple-badhash-v1", badHash); st != StatusBadInput {
-		t.Fatalf("TripleRegisterProfile bad inner hash: %v, want StatusBadInput", st)
+	badHash := `{"mode":"streaming-aead","width":512,"hash":"notreal","keybits":1024,"mac":"hmac-blake3","wrapper":true,"outer":"chacha20","parallax":true,"palette":["aescmac","chacha20","blake3"]}`
+	if st := TripleRegister("capitest-triple-badhash-v1", badHash); st != StatusBadInput {
+		t.Fatalf("TripleRegister bad inner hash: %v, want StatusBadInput", st)
+	}
+
+	// Malformed JSON → StatusBadInput.
+	if st := TripleRegister("capitest-triple-badjson-v1", `{"mode":`); st != StatusBadInput {
+		t.Fatalf("TripleRegister malformed JSON: %v, want StatusBadInput", st)
+	}
+
+	// hashes array of length 3 → StatusBadInput at the codec.
+	badHashes := `{"mode":"streaming-aead","width":512,"hashes":["areion512","blake2b512","areion512"],"keybits":1024,"mac":"hmac-blake3","wrapper":true,"outer":"chacha20","parallax":true,"palette":["aescmac","chacha20","blake3"]}`
+	if st := TripleRegister("capitest-triple-badhashes-v1", badHashes); st != StatusBadInput {
+		t.Fatalf("TripleRegister hashes length 3: %v, want StatusBadInput", st)
+	}
+
+	// A name key inside the JSON must be empty or equal to the name
+	// argument.
+	withName := `{"name":"capitest-triple-named-v1",` + tripleRegisterJSONFull()[1:]
+	if st := TripleRegister("capitest-triple-named-v1", withName); st != StatusOK {
+		t.Fatalf("TripleRegister matching name key: %v (%s)", st, LastError())
+	}
+	if st := TripleRegister("capitest-triple-othername-v1", withName); st != StatusBadInput {
+		t.Fatalf("TripleRegister disagreeing name key: %v, want StatusBadInput", st)
 	}
 }
 
-// TestTripleRegisterProfileNilName exercises the C-side wrapper's
-// nil-guard behaviour; nil name maps to StatusBadInput without
-// panicking through cgo.
-func TestTripleRegisterProfileNilName(t *testing.T) {
+// TestTripleRegisterNilName exercises the C-side wrapper's nil-guard
+// behaviour; an empty name maps to StatusBadInput without panicking
+// through cgo.
+func TestTripleRegisterNilName(t *testing.T) {
 	// Empty-string name — the pattern-match rejection path in
-	// triple.RegisterProfile, exercised through the capi surface.
-	if st := TripleRegisterProfile("", tripleRegisterOptsFull()); st != StatusBadInput {
-		t.Fatalf("TripleRegisterProfile empty name: %v, want StatusBadInput", st)
+	// triple.Register, exercised through the capi surface.
+	if st := TripleRegister("", tripleRegisterJSONFull()); st != StatusBadInput {
+		t.Fatalf("TripleRegister empty name: %v, want StatusBadInput", st)
 	}
 }
 
-// TestTripleRegisterProfileRoundTrip installs a fresh custom profile
-// via TripleRegisterProfile and then exercises TripleInit →
-// TripleEncryptMessage → TripleDecryptMessage against the newly
-// registered name — the receiver reconstructs an equivalent Pipeline
-// via TripleOpen and decrypts the sender's wire bytes.
-func TestTripleRegisterProfileRoundTrip(t *testing.T) {
+// TestTripleRegisterRoundTrip installs a fresh custom profile via
+// TripleRegister and then exercises TripleInit → TripleEncryptMessage
+// → TripleDecryptMessage against the newly registered name — the
+// receiver reconstructs an equivalent Pipeline via TripleLoad and
+// decrypts the sender's wire bytes.
+func TestTripleRegisterRoundTrip(t *testing.T) {
 	const name = "capitest-triple-roundtrip-v1"
 	// singlemsg-mac mode so the round-trip covers EncryptMessage /
 	// DecryptMessage — the Streaming variant is covered by the
 	// pre-existing TestTripleStreamRoundTrip.
-	opts := strings.Join([]string{
-		"mode=singlemsg-mac",
-		"width=512",
-		"innerHash=areion512",
-		"keyBits=1024",
-		"macName=hmac-blake3",
-		"outerCipher=chacha20",
-		"parallaxPalette=aescmac,chacha20,blake3",
-		"parallaxSegmentSize=4093",
-		"chunkSize=16777216",
-		"parallaxOn=true",
-		"wrapperOn=true",
-	}, "&")
-	if st := TripleRegisterProfile(name, opts); st != StatusOK {
-		t.Fatalf("TripleRegisterProfile: %v (%s)", st, LastError())
+	opts := `{"mode":"singlemsg-mac","width":512,"hash":"areion512","keybits":1024,` +
+		`"mac":"hmac-blake3","wrapper":true,"outer":"chacha20",` +
+		`"parallax":true,"palette":["aescmac","chacha20","blake3"],"segment":4093,"chunk":16777216}`
+	if st := TripleRegister(name, opts); st != StatusOK {
+		t.Fatalf("TripleRegister: %v (%s)", st, LastError())
 	}
 
 	blobBuf := make([]byte, 1<<15)
@@ -112,9 +113,9 @@ func TestTripleRegisterProfileRoundTrip(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(name, blobBuf[:blobLen], "")
+	rID, st := TripleLoad(blobBuf[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen against registered profile: %v (%s)", st, LastError())
+		t.Fatalf("TripleLoad against registered profile: %v (%s)", st, LastError())
 	}
 	defer FreeTriple(rID)
 
@@ -135,25 +136,28 @@ func TestTripleRegisterProfileRoundTrip(t *testing.T) {
 	}
 }
 
-// TestTripleRegisterProfileEmptyOptsRejected confirms an empty opts
-// string is rejected — a zero-value triple.Profile fails validation
-// on Mode (empty), which surfaces as StatusBadInput.
-func TestTripleRegisterProfileEmptyOptsRejected(t *testing.T) {
-	if st := TripleRegisterProfile("capitest-triple-emptyopts-v1", ""); st != StatusBadInput {
-		t.Fatalf("TripleRegisterProfile empty opts: %v, want StatusBadInput", st)
+// TestTripleRegisterEmptyJSONRejected confirms an empty profile string
+// is rejected with StatusBadInput, and that an empty object (a
+// zero-value triple.Profile) fails validation on Mode.
+func TestTripleRegisterEmptyJSONRejected(t *testing.T) {
+	if st := TripleRegister("capitest-triple-emptyopts-v1", ""); st != StatusBadInput {
+		t.Fatalf("TripleRegister empty string: %v, want StatusBadInput", st)
+	}
+	if st := TripleRegister("capitest-triple-emptyobj-v1", "{}"); st != StatusBadInput {
+		t.Fatalf("TripleRegister empty object: %v, want StatusBadInput", st)
 	}
 }
 
-// TestTripleRegisterProfileSentinelDistinct confirms the duplicate-
-// name path returns StatusProfileExists (distinct from
-// StatusBadInput) so bindings can map the two paths to different
-// language-side exceptions.
-func TestTripleRegisterProfileSentinelDistinct(t *testing.T) {
+// TestTripleRegisterSentinelDistinct confirms the duplicate-name path
+// returns StatusProfileExists (distinct from StatusBadInput) so
+// bindings can map the two paths to different language-side
+// exceptions.
+func TestTripleRegisterSentinelDistinct(t *testing.T) {
 	name := "capitest-triple-sentinel-v1"
-	if st := TripleRegisterProfile(name, tripleRegisterOptsFull()); st != StatusOK {
-		t.Fatalf("TripleRegisterProfile initial: %v (%s)", st, LastError())
+	if st := TripleRegister(name, tripleRegisterJSONFull()); st != StatusOK {
+		t.Fatalf("TripleRegister initial: %v (%s)", st, LastError())
 	}
-	st := TripleRegisterProfile(name, tripleRegisterOptsFull())
+	st := TripleRegister(name, tripleRegisterJSONFull())
 	if st == StatusBadInput {
 		t.Fatalf("duplicate name mapped to StatusBadInput; should be StatusProfileExists")
 	}
@@ -169,89 +173,93 @@ func TestTripleRegisterProfileSentinelDistinct(t *testing.T) {
 	pipe.Close()
 }
 
-// TestParseTripleRegisterOptsTagStubSize covers the tagStubSize
-// profile-shape key: accepted decimal value lands in
-// triple.Profile.TagStubSize, absent key leaves the zero value
-// (defer to the MacName auto-probe or the 32-byte default), and a
-// non-numeric value is rejected.
-func TestParseTripleRegisterOptsTagStubSize(t *testing.T) {
-	prof, err := parseTripleRegisterOpts("tagStubSize=16")
-	if err != nil {
-		t.Fatalf("tagStubSize=16: %v", err)
+// TestTripleLookupCapi covers TripleLookup: a shipped name and a
+// registered name come back as the profile JSON (decodable through
+// the codec, name populated), a short buffer reports the required
+// size with StatusBufferTooSmall, and an unknown name is
+// StatusUnknownProfile.
+func TestTripleLookupCapi(t *testing.T) {
+	buf := make([]byte, 4096)
+	n, st := TripleLookup(triple.ProfileSingleMsgTripleMACV1, buf)
+	if st != StatusOK {
+		t.Fatalf("TripleLookup shipped: %v (%s)", st, LastError())
 	}
-	if prof.TagStubSize != 16 {
-		t.Fatalf("TagStubSize = %d, want 16", prof.TagStubSize)
+	var prof triple.Profile
+	if err := json.Unmarshal(buf[:n], &prof); err != nil {
+		t.Fatalf("TripleLookup output does not decode: %v", err)
 	}
-	prof, err = parseTripleRegisterOpts("chunkSize=65536")
-	if err != nil {
-		t.Fatalf("absent tagStubSize: %v", err)
+	if prof.Name != triple.ProfileSingleMsgTripleMACV1 || prof.Mode != "singlemsg-mac" || prof.Width != 512 {
+		t.Fatalf("TripleLookup shipped: decoded %+v", prof)
 	}
-	if prof.TagStubSize != 0 {
-		t.Fatalf("absent key: TagStubSize = %d, want 0", prof.TagStubSize)
+
+	// Short buffer → StatusBufferTooSmall with the required size.
+	short, st := TripleLookup(triple.ProfileSingleMsgTripleMACV1, buf[:8])
+	if st != StatusBufferTooSmall || short != n {
+		t.Fatalf("TripleLookup short buffer: (%d, %v), want (%d, StatusBufferTooSmall)", short, st, n)
 	}
-	if _, err := parseTripleRegisterOpts("tagStubSize=wide"); err == nil {
-		t.Fatal("tagStubSize=wide: accepted, want error")
+
+	// Unknown name → StatusUnknownProfile.
+	if _, st := TripleLookup("no-such-profile-xyz", buf); st != StatusUnknownProfile {
+		t.Fatalf("TripleLookup unknown: %v, want StatusUnknownProfile", st)
 	}
-	// Out-of-range values (accepted set is 0 or [16, 64]) are rejected
-	// at the parser so the binding-side error surfaces before
-	// triple.RegisterProfile runs.
-	for _, v := range []string{"-1", "15", "65", "128"} {
-		if _, err := parseTripleRegisterOpts("tagStubSize=" + v); err == nil {
-			t.Errorf("tagStubSize=%s: accepted, want range rejection", v)
-		}
+
+	// A registered custom profile round-trips through Lookup.
+	const name = "capitest-triple-lookup-v1"
+	if st := TripleRegister(name, tripleRegisterJSONFull()); st != StatusOK {
+		t.Fatalf("TripleRegister: %v (%s)", st, LastError())
 	}
-	for _, v := range []string{"0", "16", "64"} {
-		if _, err := parseTripleRegisterOpts("tagStubSize=" + v); err != nil {
-			t.Errorf("tagStubSize=%s: rejected (%v), want accept", v, err)
-		}
+	n, st = TripleLookup(name, buf)
+	if st != StatusOK {
+		t.Fatalf("TripleLookup registered: %v (%s)", st, LastError())
+	}
+	if err := json.Unmarshal(buf[:n], &prof); err != nil {
+		t.Fatalf("TripleLookup registered output does not decode: %v", err)
+	}
+	if prof.Name != name || prof.InnerHash != "areion512" || len(prof.ParallaxPalette) != 3 {
+		t.Fatalf("TripleLookup registered: decoded %+v", prof)
 	}
 }
 
-// TestParseTripleRegisterOptsChunkSizeBounds pins the fail-fast
-// rejection of a chunkSize value above parallax.MaxChunkSize (256
-// MiB) at the parser boundary so the binding-side error surfaces
-// before triple.RegisterProfile runs. Negatives are also rejected;
-// zero remains the "defer to itb.DefaultChunkSize" sentinel.
-func TestParseTripleRegisterOptsChunkSizeBounds(t *testing.T) {
-	for _, v := range []string{"-1", "268435457", "1099511627776"} {
-		if _, err := parseTripleRegisterOpts("chunkSize=" + v); err == nil {
-			t.Errorf("chunkSize=%s: accepted, want range rejection", v)
-		}
+// TestTripleProfilesCapi covers TripleProfiles: the output is a sorted
+// JSON array of strings that contains every shipped name plus names
+// registered through TripleRegister, and a short buffer reports the
+// required size with StatusBufferTooSmall.
+func TestTripleProfilesCapi(t *testing.T) {
+	const name = "capitest-triple-profiles-v1"
+	if st := TripleRegister(name, tripleRegisterJSONFull()); st != StatusOK && st != StatusProfileExists {
+		t.Fatalf("TripleRegister: %v (%s)", st, LastError())
 	}
-	for _, v := range []string{"0", "1", "65536", "16777216", "268435456"} {
-		if _, err := parseTripleRegisterOpts("chunkSize=" + v); err != nil {
-			t.Errorf("chunkSize=%s: rejected (%v), want accept", v, err)
-		}
-	}
-}
 
-// TestParseTripleRegisterOptsParallaxSegmentSizeBounds pins the
-// fail-fast rejection of a parallaxSegmentSize value above
-// parallax.MaxSegmentSize (65535) at the parser boundary. Negatives
-// are also rejected; zero remains the "defer to
-// parallax.DefaultSegmentSize" sentinel.
-func TestParseTripleRegisterOptsParallaxSegmentSizeBounds(t *testing.T) {
-	for _, v := range []string{"-1", "65536", "1000000"} {
-		if _, err := parseTripleRegisterOpts("parallaxSegmentSize=" + v); err == nil {
-			t.Errorf("parallaxSegmentSize=%s: accepted, want range rejection", v)
+	buf := make([]byte, 1<<16)
+	n, st := TripleProfiles(buf)
+	if st != StatusOK {
+		t.Fatalf("TripleProfiles: %v (%s)", st, LastError())
+	}
+	var names []string
+	if err := json.Unmarshal(buf[:n], &names); err != nil {
+		t.Fatalf("TripleProfiles output does not decode: %v", err)
+	}
+	want := triple.Profiles()
+	if len(names) != len(want) {
+		t.Fatalf("TripleProfiles: %d names, want %d", len(names), len(want))
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("TripleProfiles[%d] = %q, want %q", i, names[i], want[i])
 		}
 	}
-	for _, v := range []string{"0", "1", "4093", "65535"} {
-		if _, err := parseTripleRegisterOpts("parallaxSegmentSize=" + v); err != nil {
-			t.Errorf("parallaxSegmentSize=%s: rejected (%v), want accept", v, err)
+	found := false
+	for _, s := range names {
+		if s == name {
+			found = true
 		}
 	}
-}
+	if !found {
+		t.Fatalf("TripleProfiles output lacks registered name %q", name)
+	}
 
-// TestParseTripleRegisterOptsKeyBitsBounds pins the fail-fast
-// rejection of a negative keyBits at the parser boundary.
-func TestParseTripleRegisterOptsKeyBitsBounds(t *testing.T) {
-	if _, err := parseTripleRegisterOpts("keyBits=-1"); err == nil {
-		t.Errorf("keyBits=-1: accepted, want rejection")
-	}
-	for _, v := range []string{"0", "512", "1024", "2048"} {
-		if _, err := parseTripleRegisterOpts("keyBits=" + v); err != nil {
-			t.Errorf("keyBits=%s: rejected (%v), want accept", v, err)
-		}
+	short, st := TripleProfiles(buf[:4])
+	if st != StatusBufferTooSmall || short != n {
+		t.Fatalf("TripleProfiles short buffer: (%d, %v), want (%d, StatusBufferTooSmall)", short, st, n)
 	}
 }

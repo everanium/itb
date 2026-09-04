@@ -25,8 +25,7 @@ class StreamCancelTest {
 
             // The Pipeline stays usable after the cancelled session.
             byte[] plain = "after cancel".getBytes(StandardCharsets.UTF_8);
-            try (Pipeline receiver = Pipeline.open(
-                    "streaming-aead-triple-mac-v1", sender.blob(), new Opts())) {
+            try (Pipeline receiver = Pipeline.load(sender.save())) {
                 byte[] wire = sender.encryptMessage(plain);
                 assertArrayEquals(plain, receiver.decryptMessage(wire));
             }

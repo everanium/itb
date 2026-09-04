@@ -12,9 +12,10 @@ package com.everanium.itb.kotlin
 import com.everanium.itb.Opts as JOpts
 
 /**
- * Builder producing the opts string consumed by [Pipeline.init],
- * [Pipeline.open], and [Pipeline.registerProfile]. Setters chain;
- * an empty builder renders the empty query (pure profile defaults).
+ * Builder producing the opts string consumed by [Pipeline.init].
+ * Setters chain; an empty builder renders the empty query (pure
+ * profile defaults). Profile records for [Pipeline.register] are
+ * built with [Profile] / [profile].
  *
  * The [opts] DSL entry gives the idiomatic construction:
  *
@@ -75,9 +76,7 @@ class Opts {
 
     /**
      * Escape hatch appending a raw `key=value` pair. Covers every
-     * key the Go side accepts, including the register-profile
-     * grammar (`mode`, `width`, `innerHashes`, `parallaxOn`,
-     * `wrapperOn`, …).
+     * key the Go side accepts.
      */
     fun raw(key: String, value: String): Opts = apply { impl.withRaw(key, value) }
 }

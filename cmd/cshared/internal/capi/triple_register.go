@@ -1,74 +1,42 @@
 package capi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"strconv"
-	"strings"
 
-	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
 )
 
-// TripleRegisterProfile installs a user-defined [triple.Profile]
-// under name so subsequent [TripleInit] / [TripleOpen] calls resolve
-// name to the newly-registered record.
+// TripleRegister installs a user-defined [triple.Profile] under name
+// so subsequent [TripleInit] / [TripleLookup] calls resolve name to
+// the newly-registered record.
 //
-// The opts argument is a URL-query-encoded string parsed by
-// [parseTripleRegisterOpts] — the shape mirrors the [parseTripleOpts]
-// URL-query used by [TripleInit] and [TripleOpen] but with profile-
-// shape keys instead of per-call overrides.
+// profileJSON is the [triple.Profile] JSON record — the same encoding
+// [TripleInspect] emits and the blob's wrap-layer carries (see
+// [triple.Profile.MarshalJSON] for the key set). The decoder is
+// strict: an unknown key, a hashes array whose length is neither 0
+// nor 8, or trailing content is StatusBadInput. A name key inside the
+// JSON, if present, must be empty or equal to the name argument, else
+// StatusBadInput.
 //
-// Accepted keys (mirror the [triple.Profile] fields):
-//
-//   - mode                 — one of streaming-aead / streaming-noaead
-//     / singlemsg-mac / singlemsg-nomac / blob-only.
-//   - width                — 128 / 256 / 512 decimal integer.
-//   - innerHash            — canonical ITB hash primitive name for
-//     the single-primitive dispatch path. Leave empty when
-//     innerHashes is supplied.
-//   - innerHashes          — comma-separated eight-entry per-slot
-//     primitive constellation for the mixed-primitive dispatch path.
-//     Slot ordering matches [triple.Profile.MixedHashes]:
-//     [noise, lock, data1, data2, data3, start1, start2, start3].
-//     Exactly 8 entries required; every entry must resolve via
-//     [hashes.Find] and every entry's primitive width must equal
-//     width. Repeats within a profile are permitted. Leave empty
-//     when innerHash is supplied; the two paths are mutually
-//     exclusive.
-//   - keyBits              — positive integer multiple of width.
-//   - macName              — canonical MAC primitive name (empty for
-//     No MAC profiles).
-//   - tagStubSize          — decimal integer No MAC stub reservation
-//     size in bytes (see [triple.Profile.TagStubSize]); accepted
-//     values are 0 or 16..64 inclusive; absent = 0 (defer to the
-//     MacName auto-probe or the 32-byte default).
-//   - outerCipher          — canonical wrapper cipher name; required
-//     when wrapperOn=true.
-//   - parallaxPalette      — comma-separated wrapper cipher names.
-//   - parallaxSegmentSize  — decimal integer segment byte count
-//     (0 = defer to parallax.DefaultSegmentSize).
-//   - chunkSize            — decimal integer chunk byte budget
-//     (0 = defer to itb.DefaultChunkSize).
-//   - parallaxOn           — "true" / "false".
-//   - wrapperOn            — "true" / "false".
-//
-// Unknown keys are rejected with StatusBadInput. Duplicate name
-// returns StatusProfileExists; every other validation failure returns
-// StatusBadInput. The name argument itself must match the
-// [triple.RegisterProfile] name pattern
-// (`^[a-z][a-z0-9-]{2,63}$`) and must not use one of the shipped
-// reserved prefixes (streaming- / singlemsg- / blob-).
-func TripleRegisterProfile(name string, opts string) (st Status) {
+// Duplicate name returns StatusProfileExists; every other validation
+// failure (name pattern, reserved prefix, field rules) returns
+// StatusBadInput with the diagnostic in [LastError].
+func TripleRegister(name string, profileJSON string) (st Status) {
 	defer recoverPanic(&st, StatusInternal)
 
-	prof, err := parseTripleRegisterOpts(opts)
+	prof, err := parseProfileJSON(profileJSON)
 	if err != nil {
 		setLastErrMessageTriple(err.Error())
 		return StatusBadInput
 	}
-	if err := triple.RegisterProfile(name, prof); err != nil {
+	if prof.Name != "" && prof.Name != name {
+		setLastErrMessageTriple(fmt.Sprintf("register: profile JSON name %q disagrees with name argument %q", prof.Name, name))
+		return StatusBadInput
+	}
+	prof.Name = ""
+	if err := triple.Register(name, prof); err != nil {
 		if errors.Is(err, triple.ErrProfileExists) {
 			setLastErrMessageTriple(err.Error())
 			return StatusProfileExists
@@ -79,112 +47,63 @@ func TripleRegisterProfile(name string, opts string) (st Status) {
 	return StatusOK
 }
 
-// parseTripleRegisterOpts parses a URL-query-formatted opts string
-// into a [triple.Profile] shape. Empty input returns a zero-value
-// Profile — RegisterProfile will reject it via the field-validation
-// path, keeping the "everything mandatory" invariant explicit rather
-// than silently substituting defaults for missing keys.
-//
-// Every accepted key is documented on [TripleRegisterProfile]; unknown
-// keys are rejected with a descriptive error, matching the
-// silently-ignored-key stance already codified in
-// [parseTripleOpts].
-func parseTripleRegisterOpts(query string) (triple.Profile, error) {
+// parseProfileJSON decodes a [triple.Profile] JSON record through the
+// profile codec. Empty input is refused — every structural field is
+// mandatory and the field-validation path inside [triple.Register]
+// reports which one is missing only for an object that decoded.
+func parseProfileJSON(profileJSON string) (triple.Profile, error) {
 	var prof triple.Profile
-	if query == "" {
-		return prof, nil
+	if profileJSON == "" {
+		return prof, errors.New("register: profile JSON is empty")
 	}
-	values, err := url.ParseQuery(query)
-	if err != nil {
-		return prof, fmt.Errorf("parse register-profile opts query: %w", err)
-	}
-	for k, vs := range values {
-		if len(vs) == 0 {
-			continue
-		}
-		v := vs[0]
-		switch k {
-		case "mode":
-			prof.Mode = v
-		case "width":
-			n, ierr := strconv.Atoi(v)
-			if ierr != nil {
-				return prof, fmt.Errorf("register-profile opts width: %w", ierr)
-			}
-			prof.Width = n
-		case "innerHash":
-			prof.InnerHash = v
-		case "innerHashes":
-			if v == "" {
-				continue
-			}
-			entries := strings.Split(v, ",")
-			if len(entries) != 8 {
-				return prof, fmt.Errorf("register-profile opts innerHashes: got %d entries, want exactly 8", len(entries))
-			}
-			for i, name := range entries {
-				prof.MixedHashes[i] = name
-			}
-		case "keyBits":
-			n, ierr := strconv.Atoi(v)
-			if ierr != nil {
-				return prof, fmt.Errorf("register-profile opts keyBits: %w", ierr)
-			}
-			if n < 0 {
-				return prof, fmt.Errorf("register-profile opts keyBits=%d must be >= 0", n)
-			}
-			prof.KeyBits = n
-		case "macName":
-			prof.MacName = v
-		case "tagStubSize":
-			n, ierr := strconv.Atoi(v)
-			if ierr != nil {
-				return prof, fmt.Errorf("register-profile opts tagStubSize: %w", ierr)
-			}
-			if n != 0 && (n < 16 || n > 64) {
-				return prof, fmt.Errorf("register-profile opts tagStubSize=%d must be 0 or in [16, 64]", n)
-			}
-			prof.TagStubSize = n
-		case "outerCipher":
-			prof.OuterCipher = v
-		case "parallaxPalette":
-			if v == "" {
-				continue
-			}
-			prof.ParallaxPalette = strings.Split(v, ",")
-		case "parallaxSegmentSize":
-			n, ierr := strconv.Atoi(v)
-			if ierr != nil {
-				return prof, fmt.Errorf("register-profile opts parallaxSegmentSize: %w", ierr)
-			}
-			if n < 0 || n > parallax.MaxSegmentSize {
-				return prof, fmt.Errorf("register-profile opts parallaxSegmentSize=%d must be in [0, %d]", n, parallax.MaxSegmentSize)
-			}
-			prof.ParallaxSegmentSize = n
-		case "chunkSize":
-			n, ierr := strconv.Atoi(v)
-			if ierr != nil {
-				return prof, fmt.Errorf("register-profile opts chunkSize: %w", ierr)
-			}
-			if n < 0 || n > parallax.MaxChunkSize {
-				return prof, fmt.Errorf("register-profile opts chunkSize=%d must be in [0, %d]", n, parallax.MaxChunkSize)
-			}
-			prof.ChunkSize = n
-		case "parallaxOn":
-			b, berr := parseBoolOpt(v)
-			if berr != nil {
-				return prof, fmt.Errorf("register-profile opts parallaxOn: %w", berr)
-			}
-			prof.ParallaxOn = b
-		case "wrapperOn":
-			b, berr := parseBoolOpt(v)
-			if berr != nil {
-				return prof, fmt.Errorf("register-profile opts wrapperOn: %w", berr)
-			}
-			prof.WrapperOn = b
-		default:
-			return prof, fmt.Errorf("register-profile opts: unknown key %q", k)
-		}
+	if err := json.Unmarshal([]byte(profileJSON), &prof); err != nil {
+		return prof, fmt.Errorf("register: %w", err)
 	}
 	return prof, nil
+}
+
+// TripleLookup returns the [triple.Profile] registered under name —
+// a shipped catalogue entry or a prior [TripleRegister] registration
+// — as its JSON record, written into jsonOut under the same
+// caller-allocated-buffer convention as [TripleInspect]. An unknown
+// name is StatusUnknownProfile.
+func TripleLookup(name string, jsonOut []byte) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	prof, err := triple.Lookup(name)
+	if err != nil {
+		s := mapTripleError(err)
+		setLastErr(s)
+		return 0, s
+	}
+	return writeJSONOut(prof, jsonOut)
+}
+
+// TripleProfiles returns the sorted list of every registered profile
+// name — the shipped catalogue plus prior [TripleRegister] calls — as
+// a JSON array of strings, written into jsonOut under the
+// caller-allocated-buffer convention (StatusBufferTooSmall with n =
+// the required capacity).
+func TripleProfiles(jsonOut []byte) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	return writeJSONOut(triple.Profiles(), jsonOut)
+}
+
+// writeJSONOut marshals v and copies the bytes into out under the
+// caller-allocated-buffer convention shared by every string-returning
+// Triple entry: n reports the bytes written on success or the required
+// capacity on StatusBufferTooSmall.
+func writeJSONOut(v any, out []byte) (n int, st Status) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		setLastErrMessageTriple(err.Error())
+		return 0, StatusInternal
+	}
+	if len(data) > len(out) {
+		setLastErr(StatusBufferTooSmall)
+		return len(data), StatusBufferTooSmall
+	}
+	copy(out, data)
+	return len(data), StatusOK
 }

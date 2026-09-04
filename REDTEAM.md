@@ -57,7 +57,7 @@ Every track drives the shipped core Triple entrypoints (`Encrypt3x256Cfg` / `Enc
 
 Derivation of the cascade `2^70.20 → 2^57.80 → 2^-57.8 → 2^-34.4 → 2^115.6`: [Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space).
 
-The container floor is uniform across all modes: the minimum pixel count is `ceil(keyBits / log2(7))` (`MinPixelsAuth`, aliased by `MinPixels`), so plain and MAC-authenticated paths share one envelope.
+The container floor is uniform across all modes: the minimum pixel count is `ceil(keyBits / log2(7))` (`MinPixelsAuth`, aliased by `MinPixels`), so plain and MAC Authenticated paths share one envelope.
 
 **KL matrix — end-to-end indistinguishability from `/dev/urandom`.** A construction-level Mode B χ² / pairwise-KL distinguisher measures, for the shipping wire under every combination of plaintext size and Barrier Fill margin, whether the ITB body bytes are separable from `/dev/urandom` bytes of matched length. Fixed BLAKE3 keys the ChainHash (a single representative PRF-grade primitive suffices per the closure argument in [PRF-grade closure](#prf-grade-closure-vs-broken-primitive-under-determination)). Each cell of the 11 sizes × 6 Barrier Fill values grid draws 25 ITB samples plus 25 `/dev/urandom` samples at matched body size, computes the mean discriminator ratio on each side, and z-scores the difference by the pooled standard deviation.
 

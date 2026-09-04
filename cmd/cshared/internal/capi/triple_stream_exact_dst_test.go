@@ -43,9 +43,9 @@ func TestTripleStreamExactDstFinishedFlag(t *testing.T) {
 	}
 	defer FreeTriple(sID)
 
-	rID, st := TripleOpen(triple.ProfileStreamingNoAEADTripleV1, blob[:blobLen], "")
+	rID, st := TripleLoad(blob[:blobLen])
 	if st != StatusOK {
-		t.Fatalf("TripleOpen: %v", st)
+		t.Fatalf("TripleLoad: %v", st)
 	}
 	defer FreeTriple(rID)
 

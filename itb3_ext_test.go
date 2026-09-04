@@ -1,19 +1,15 @@
-// Triple Ouroboros (7-seed) integration benchmarks. Mirror of
-// itb_ext_test.go but driving the Encrypt3x{128,256,512} /
-// Decrypt3x{128,256,512} entry points instead of the Single
-// Encrypt{128,256,512} pair, with seven-seed builders in place of
-// the three-seed ones. Bench function names carry a "Triple"
-// infix (BenchmarkExtTriple<Primitive>…) to keep the result
-// cohort distinct from the BenchmarkExtSingle… cohort emitted by
-// itb_ext_test.go.
+// Triple Ouroboros (8-seed) integration benchmarks driving the
+// Encrypt3x{128,256,512}Cfg / Decrypt3x{128,256,512}Cfg entry
+// points. Bench function names carry a "Triple" infix
+// (BenchmarkExtTriple<Primitive>…).
 //
 // The hashes/Pair-factory makers (makeBlake2bHash256PairExt,
 // makeAESCMACHash128PairExt, …) live in itb_ext_test.go and are
 // reused verbatim here — package itb_test sees both files as the
 // same compilation unit, so cross-file symbol reuse is free. Only
-// helpers that are structurally Triple-specific (seven-seed
+// helpers that are structurally Triple-specific (eight-seed
 // constructors, the Encrypt3x / Decrypt3x bench drivers) and the
-// benchmark functions themselves duplicate.
+// benchmark functions themselves live in this file.
 package itb_test
 
 import (
@@ -94,9 +90,9 @@ func makeEightSeeds512Ext(bits int, h itb.HashFunc512) (ns, ls, ds1, ds2, ds3, s
 
 // benchEncrypt3x128CachedBatchedExt mirrors itb_ext_test.go's
 // benchEncrypt128CachedBatchedExt for the Triple Ouroboros API.
-// The maker is invoked seven times so each of the seven seeds
-// (noise + 3 × data + 3 × start) carries its own fresh fixed key
-// and (single, batched) pair; per-seed BatchHash is wired so
+// The maker is invoked eight times so each of the eight seeds
+// (noise + lock + 3 × data + 3 × start) carries its own fresh fixed
+// key and (single, batched) pair; per-seed BatchHash is wired so
 // itb.processChunk128 routes through the batched dispatch on every
 // per-pixel hash call.
 func benchEncrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc128, itb.BatchHashFunc128), bits, dataSize int) {
@@ -157,7 +153,7 @@ func benchDecrypt3x128CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc1
 // benchEncrypt3x256CachedBatchedExt — Triple Ouroboros 256-bit
 // counterpart. Mirrors benchEncrypt256CachedBatchedExt in
 // itb_ext_test.go; same per-seed maker invocation pattern scaled
-// to seven seeds.
+// to eight seeds.
 func benchEncrypt3x256CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc256, itb.BatchHashFunc256), bits, dataSize int) {
 	nsH, nsB := maker()
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256Ext(bits, nsH)

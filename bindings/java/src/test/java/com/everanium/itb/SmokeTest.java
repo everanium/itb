@@ -1,4 +1,4 @@
-// Init → blob → Open → encryptMessage → decryptMessage round trip.
+// Init → save → load → encryptMessage → decryptMessage round trip.
 
 package com.everanium.itb;
 
@@ -15,9 +15,8 @@ class SmokeTest {
     void smokeRoundTrip() {
         byte[] plain = "smoke round-trip payload".getBytes(StandardCharsets.UTF_8);
         try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1")) {
-            assertTrue(sender.blob().length > 0);
-            try (Pipeline receiver = Pipeline.open(
-                    "singlemsg-triple-mac-v1", sender.blob(), new Opts())) {
+            assertTrue(sender.save().length > 0);
+            try (Pipeline receiver = Pipeline.load(sender.save())) {
                 byte[] wire = sender.encryptMessage(plain);
                 assertFalse(java.util.Arrays.equals(wire, plain));
                 byte[] back = receiver.decryptMessage(wire);

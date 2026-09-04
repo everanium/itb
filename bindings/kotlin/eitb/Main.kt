@@ -3,16 +3,17 @@
 // Subcommands:
 //
 //   eitb version                                   library + binding versions
-//   eitb hashes                                    shipped hash primitive roster
+//   eitb profiles                                  registered profile catalogue
 //   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 //   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex
-// back to `decrypt` on the receiving side.
+// back to `decrypt` on the receiving side. `profiles` lists the
+// registered profile catalogue one name per line; the profiles that
+// carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 package com.everanium.itb.kotlin.eitb
 
-import com.everanium.itb.hashRoster
 import com.everanium.itb.kotlin.ItbException
 import com.everanium.itb.kotlin.ItbRuntime
 import com.everanium.itb.kotlin.Pipeline
@@ -26,8 +27,8 @@ fun main(args: Array<String>) {
     ItbRuntime.setGCPercent(20)
     try {
         val rc = when {
-            args.firstOrNull() == "version" -> cmdVersion()
-            args.firstOrNull() == "hashes" -> cmdHashes()
+            args.firstOrNull() == "version" && args.size == 1 -> cmdVersion()
+            args.firstOrNull() == "profiles" && args.size == 1 -> cmdProfiles()
             args.firstOrNull() == "encrypt" && args.size == 4 ->
                 cmdEncrypt(args[1], args[2], args[3])
             args.firstOrNull() == "decrypt" && args.size == 5 ->
@@ -36,7 +37,7 @@ fun main(args: Array<String>) {
                 System.err.println(
                     """
                     usage: eitb version
-                           eitb hashes
+                           eitb profiles
                            eitb encrypt <profile> <in-file> <out-file>
                            eitb decrypt <profile> <blob-hex> <in-file> <out-file>
                     """.trimIndent(),
@@ -60,10 +61,10 @@ private fun cmdVersion(): Int {
     return 0
 }
 
-private fun cmdHashes(): Int {
-    for ((i, name, width) in hashRoster()) {
-        println(String.format("%2d  %-12s %d bits", i, name, width))
-    }
+// Prints the registered profile catalogue one name per line in the
+// sorted order Pipeline.profiles() returns.
+private fun cmdProfiles(): Int {
+    Pipeline.profiles().forEach(::println)
     return 0
 }
 
@@ -88,7 +89,7 @@ private fun cmdEncrypt(profile: String, inFile: String, outFile: String): Int {
         }
         ensureParentDir(outFile)
         File(outFile).writeBytes(wire)
-        System.err.println(toHex(pipe.blob))
+        System.err.println(toHex(pipe.save()))
         println("encrypted $inFile -> $outFile (${plain.size} -> ${wire.size} bytes)")
     }
     return 0
@@ -102,7 +103,7 @@ private fun cmdDecrypt(
 ): Int {
     val blob = fromHex(blobHex)
     val wire = File(inFile).readBytes()
-    Pipeline.open(profile, blob).use { pipe ->
+    Pipeline.load(blob).use { pipe ->
         val plain = if (isStreamingProfile(profile)) {
             pipe.decryptStreamOneShot(wire)
         } else {

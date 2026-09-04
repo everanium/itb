@@ -15,13 +15,13 @@ use PHPUnit\Framework\TestCase;
  */
 final class ErrorsTest extends TestCase
 {
-    public function testUnknownProfileIsBadInputWithDiagnostic(): void
+    public function testUnknownProfileIsUnknownProfileWithDiagnostic(): void
     {
         try {
             Itb::create('no-such-profile');
             $this->fail('expected ItbException');
         } catch (ItbException $e) {
-            $this->assertSame(Status::BAD_INPUT, $e->getStatus());
+            $this->assertSame(Status::UNKNOWN_PROFILE, $e->getStatus());
             $this->assertNotSame('', $e->getMessage());
         }
     }
@@ -74,7 +74,7 @@ final class ErrorsTest extends TestCase
         // failure. The probe is black-box — no wire-layout knowledge
         // is used.
         $sender = Itb::create('singlemsg-triple-mac-v1');
-        $receiver = Itb::open('singlemsg-triple-mac-v1', $sender->blob());
+        $receiver = Itb::load($sender->save());
         $plain = \random_bytes(65536);
         $wire = $sender->encryptMessage($plain);
         $len = \strlen($wire);
@@ -103,22 +103,25 @@ final class ErrorsTest extends TestCase
         $receiver->free();
     }
 
-    public function testRegisterProfileMixedThenDuplicate(): void
+    public function testRegisterMixedThenDuplicate(): void
     {
-        // 8-entry width-256 innerHashes constellation, layers off.
-        $opts = [
+        // 8-entry width-256 hashes constellation, layers off.
+        $profile = [
             'mode' => 'singlemsg-nomac',
             'width' => 256,
-            'innerHashes' => 'blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256',
-            'keyBits' => 1024,
-            'parallaxOn' => false,
-            'wrapperOn' => false,
+            'hashes' => ['blake3', 'blake2s', 'areion256', 'blake2b256', 'chacha20', 'blake3', 'blake2s', 'areion256'],
+            'keybits' => 1024,
+            'parallax' => false,
+            'wrapper' => false,
         ];
-        Itb::registerProfile('php-binding-test-mixed', $opts);
+        Itb::register('php-binding-test-mixed', $profile);
 
-        // The registered profile round-trips.
+        // The registered profile round-trips and is visible in the
+        // catalogue.
+        $this->assertContains('php-binding-test-mixed', Itb::profiles());
+        $this->assertSame($profile['hashes'], Itb::lookup('php-binding-test-mixed')['hashes']);
         $sender = Itb::create('php-binding-test-mixed');
-        $receiver = Itb::open('php-binding-test-mixed', $sender->blob());
+        $receiver = Itb::load($sender->save());
         $wire = $sender->encryptMessage('custom profile');
         $this->assertSame('custom profile', $receiver->decryptMessage($wire));
         $sender->free();
@@ -126,17 +129,26 @@ final class ErrorsTest extends TestCase
 
         // Duplicate name is a distinct status.
         try {
-            Itb::registerProfile('php-binding-test-mixed', $opts);
+            Itb::register('php-binding-test-mixed', $profile);
             $this->fail('expected ItbException');
         } catch (ItbException $e) {
             $this->assertSame(Status::PROFILE_EXISTS, $e->getStatus());
+        }
+
+        // Strict record decode on the Go side: an unknown key is
+        // rejected there, not by the binding.
+        try {
+            Itb::register('php-binding-test-badkey', ['mode' => 'singlemsg-nomac', 'bogus' => 1]);
+            $this->fail('expected ItbException');
+        } catch (ItbException $e) {
+            $this->assertSame(Status::BAD_INPUT, $e->getStatus());
         }
     }
 
     public function testMalformedBlobIsRejected(): void
     {
         try {
-            Itb::open('singlemsg-triple-mac-v1', \random_bytes(64));
+            Itb::load(\random_bytes(64));
             $this->fail('expected ItbException');
         } catch (ItbException $e) {
             $this->assertNotNull($e->getStatus());

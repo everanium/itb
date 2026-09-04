@@ -18,7 +18,7 @@
         ))
     ;; The Pipeline stays usable after the cancelled session.
     (let [plain (.getBytes "after cancel" "UTF-8")]
-      (with-open [receiver (itb/open "streaming-aead-triple-mac-v1" (itb/blob sender))]
+      (with-open [receiver (itb/load (itb/save sender))]
         (let [wire (itb/encrypt-message sender plain)]
           (is (Arrays/equals ^bytes plain
                              ^bytes (itb/decrypt-message receiver wire))))))))

@@ -1,6 +1,6 @@
 // Error-mapping surface: opaque-string relay, closed Pipeline,
-// duplicate profile registration (with an 8-entry innerHashes
-// constellation).
+// duplicate profile registration (with an 8-entry mixed
+// constellation), unknown lookup, maxWorkers on a closed handle.
 
 package dev.everanium.itb
 
@@ -8,10 +8,23 @@ import scala.util.Using
 
 class ErrorsSuite extends ItbSuite:
 
-  test("unknown profile is BadInput with diagnostic") {
+  test("unknown profile is UnknownProfile with diagnostic") {
     val e = err(Pipeline.init("no-such-profile"))
-    assertEquals(e.status, Status.BadInput)
+    assertEquals(e.status, Status.UnknownProfile)
     assert(e.getMessage.nonEmpty)
+  }
+
+  test("unknown lookup name is UnknownProfile") {
+    val e = err(Pipeline.lookup("no-such-profile"))
+    assertEquals(e.status, Status.UnknownProfile)
+  }
+
+  test("maxWorkers on a closed pipeline reports TripleClosed") {
+    Using.resource(ok(Pipeline.init("singlemsg-triple-mac-v1"))) { pipe =>
+      ok(pipe.closeSession())
+      val e = err(pipe.maxWorkers(2))
+      assertEquals(e.status, Status.TripleClosed)
+    }
   }
 
   test("unknown opts key is BadInput") {
@@ -30,23 +43,23 @@ class ErrorsSuite extends ItbSuite:
     }
   }
 
-  test("register profile mixed then duplicate") {
-    // 8-entry width-256 innerHashes constellation, layers off.
-    val opts = Opts.empty
-      .withRaw("mode", "singlemsg-nomac")
-      .withRaw("width", "256")
-      .withRaw(
-        "innerHashes",
-        "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256"
+  test("register mixed then duplicate") {
+    // 8-entry width-256 mixed constellation, layers off.
+    val profile = Profile()
+      .mode("singlemsg-nomac")
+      .width(256)
+      .hashes(
+        "blake3", "blake2s", "areion256", "blake2b256",
+        "chacha20", "blake3", "blake2s", "areion256"
       )
-      .withRaw("keyBits", "1024")
-      .withRaw("parallaxOn", "false")
-      .withRaw("wrapperOn", "false")
-    ok(Pipeline.registerProfile("scala-binding-test-mixed", opts))
+      .keyBits(1024)
+      .parallax(false)
+      .wrapper(false)
+    ok(Pipeline.register("scala-binding-test-mixed", profile))
 
     // The registered profile round-trips.
     Using.resource(ok(Pipeline.init("scala-binding-test-mixed"))) { sender =>
-      Using.resource(ok(Pipeline.open("scala-binding-test-mixed", sender.blob))) { receiver =>
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) { receiver =>
         val plain = "custom profile".getBytes("UTF-8")
         val wire = ok(sender.encryptMessage(plain))
         assert(ok(receiver.decryptMessage(wire)).sameElements(plain))
@@ -54,7 +67,7 @@ class ErrorsSuite extends ItbSuite:
     }
 
     // Duplicate name is a distinct status.
-    val e = err(Pipeline.registerProfile("scala-binding-test-mixed", opts))
+    val e = err(Pipeline.register("scala-binding-test-mixed", profile))
     assertEquals(e.status, Status.ProfileExists)
   }
 
@@ -80,7 +93,7 @@ class ErrorsSuite extends ItbSuite:
       "areion512", "blake2b512", "areion512", "blake2b512",
     )
     Using.resource(ok(Pipeline.init("singlemsg-triple-mac-v1", senderOpts))) { sender =>
-      Using.resource(ok(Pipeline.open("singlemsg-triple-mac-v1", sender.blob, receiverOpts))) {
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) {
         receiver =>
           val plain = "per-call inner-hashes override round-trip payload".getBytes("UTF-8")
           val wire = ok(sender.encryptMessage(plain))

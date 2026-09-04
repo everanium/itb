@@ -41,12 +41,21 @@ pub(crate) type FnTripleInit = unsafe extern "C" fn(
     *mut usize,
     *mut usize,
 ) -> c_int;
-// (profile, blob, blobLen, opts, permMaster, permMasterLen,
-//  wrapMaster, wrapMasterLen, mastersCount, *outHandle)
-pub(crate) type FnTripleOpen = unsafe extern "C" fn(
-    *const c_char,
+// (blob, blobLen, permMaster, permMasterLen, wrapMaster, wrapMasterLen,
+//  mastersCount, *outHandle)
+pub(crate) type FnTripleLoad = unsafe extern "C" fn(
     *const c_void,
     usize,
+    *const c_void,
+    usize,
+    *const c_void,
+    usize,
+    usize,
+    *mut usize,
+) -> c_int;
+// (path, permMaster, permMasterLen, wrapMaster, wrapMasterLen,
+//  mastersCount, *outHandle)
+pub(crate) type FnTripleLoadF = unsafe extern "C" fn(
     *const c_char,
     *const c_void,
     usize,
@@ -55,6 +64,20 @@ pub(crate) type FnTripleOpen = unsafe extern "C" fn(
     usize,
     *mut usize,
 ) -> c_int;
+// (handle, blobOut, blobCap, *blobLen)
+pub(crate) type FnTripleSave = unsafe extern "C" fn(usize, *mut c_void, usize, *mut usize) -> c_int;
+// (handle, path)
+pub(crate) type FnTripleSaveF = unsafe extern "C" fn(usize, *const c_char) -> c_int;
+// (blob, blobLen, jsonOut, jsonCap, *jsonLen)
+pub(crate) type FnTripleInspect =
+    unsafe extern "C" fn(*const c_void, usize, *mut c_void, usize, *mut usize) -> c_int;
+// (handle, n)
+pub(crate) type FnTripleMaxWorkers = unsafe extern "C" fn(usize, c_int) -> c_int;
+// (name, jsonOut, jsonCap, *jsonLen)
+pub(crate) type FnTripleLookup =
+    unsafe extern "C" fn(*const c_char, *mut c_void, usize, *mut usize) -> c_int;
+// (jsonOut, jsonCap, *jsonLen)
+pub(crate) type FnTripleProfiles = unsafe extern "C" fn(*mut c_void, usize, *mut usize) -> c_int;
 // (handle, permMaster, permMasterLen, wrapMaster, wrapMasterLen,
 //  blobOut, blobCap, *blobLen)
 pub(crate) type FnTripleRekey = unsafe extern "C" fn(
@@ -71,8 +94,7 @@ pub(crate) type FnHandleOnly = unsafe extern "C" fn(usize) -> c_int;
 // (handle, src, srcLen, out, outCap, *outLen)
 pub(crate) type FnTripleCipher =
     unsafe extern "C" fn(usize, *const c_void, usize, *mut c_void, usize, *mut usize) -> c_int;
-pub(crate) type FnTripleRegisterProfile =
-    unsafe extern "C" fn(*const c_char, *const c_char) -> c_int;
+pub(crate) type FnTripleRegister = unsafe extern "C" fn(*const c_char, *const c_char) -> c_int;
 pub(crate) type FnTripleStreamBegin = unsafe extern "C" fn(usize, *mut usize) -> c_int;
 pub(crate) type FnTripleStreamWrite = unsafe extern "C" fn(usize, *const c_void, usize) -> c_int;
 // (stream, out, outCap, *outLen, *finished)
@@ -87,7 +109,12 @@ pub(crate) struct Syms {
     pub(crate) ITB_SetGCPercent: FnSetGCPercent,
 
     pub(crate) ITB_Triple_Init: FnTripleInit,
-    pub(crate) ITB_Triple_Open: FnTripleOpen,
+    pub(crate) ITB_Triple_Load: FnTripleLoad,
+    pub(crate) ITB_Triple_LoadF: FnTripleLoadF,
+    pub(crate) ITB_Triple_Save: FnTripleSave,
+    pub(crate) ITB_Triple_SaveF: FnTripleSaveF,
+    pub(crate) ITB_Triple_Inspect: FnTripleInspect,
+    pub(crate) ITB_Triple_MaxWorkers: FnTripleMaxWorkers,
     pub(crate) ITB_Triple_Rekey: FnTripleRekey,
     pub(crate) ITB_Triple_Close: FnHandleOnly,
     pub(crate) ITB_Triple_Free: FnHandleOnly,
@@ -95,7 +122,9 @@ pub(crate) struct Syms {
     pub(crate) ITB_Triple_DecryptStream: FnTripleCipher,
     pub(crate) ITB_Triple_EncryptMessage: FnTripleCipher,
     pub(crate) ITB_Triple_DecryptMessage: FnTripleCipher,
-    pub(crate) ITB_Triple_RegisterProfile: FnTripleRegisterProfile,
+    pub(crate) ITB_Triple_Register: FnTripleRegister,
+    pub(crate) ITB_Triple_Lookup: FnTripleLookup,
+    pub(crate) ITB_Triple_Profiles: FnTripleProfiles,
     pub(crate) ITB_Triple_EncryptStreamBegin: FnTripleStreamBegin,
     pub(crate) ITB_Triple_DecryptStreamBegin: FnTripleStreamBegin,
     pub(crate) ITB_Triple_StreamWrite: FnTripleStreamWrite,
@@ -146,7 +175,12 @@ impl Syms {
             ITB_SetMemoryLimit: sym!(b"ITB_SetMemoryLimit"),
             ITB_SetGCPercent: sym!(b"ITB_SetGCPercent"),
             ITB_Triple_Init: sym!(b"ITB_Triple_Init"),
-            ITB_Triple_Open: sym!(b"ITB_Triple_Open"),
+            ITB_Triple_Load: sym!(b"ITB_Triple_Load"),
+            ITB_Triple_LoadF: sym!(b"ITB_Triple_LoadF"),
+            ITB_Triple_Save: sym!(b"ITB_Triple_Save"),
+            ITB_Triple_SaveF: sym!(b"ITB_Triple_SaveF"),
+            ITB_Triple_Inspect: sym!(b"ITB_Triple_Inspect"),
+            ITB_Triple_MaxWorkers: sym!(b"ITB_Triple_MaxWorkers"),
             ITB_Triple_Rekey: sym!(b"ITB_Triple_Rekey"),
             ITB_Triple_Close: sym!(b"ITB_Triple_Close"),
             ITB_Triple_Free: sym!(b"ITB_Triple_Free"),
@@ -154,7 +188,9 @@ impl Syms {
             ITB_Triple_DecryptStream: sym!(b"ITB_Triple_DecryptStream"),
             ITB_Triple_EncryptMessage: sym!(b"ITB_Triple_EncryptMessage"),
             ITB_Triple_DecryptMessage: sym!(b"ITB_Triple_DecryptMessage"),
-            ITB_Triple_RegisterProfile: sym!(b"ITB_Triple_RegisterProfile"),
+            ITB_Triple_Register: sym!(b"ITB_Triple_Register"),
+            ITB_Triple_Lookup: sym!(b"ITB_Triple_Lookup"),
+            ITB_Triple_Profiles: sym!(b"ITB_Triple_Profiles"),
             ITB_Triple_EncryptStreamBegin: sym!(b"ITB_Triple_EncryptStreamBegin"),
             ITB_Triple_DecryptStreamBegin: sym!(b"ITB_Triple_DecryptStreamBegin"),
             ITB_Triple_StreamWrite: sym!(b"ITB_Triple_StreamWrite"),

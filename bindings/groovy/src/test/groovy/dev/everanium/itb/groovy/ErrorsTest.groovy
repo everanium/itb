@@ -1,6 +1,6 @@
 // Error-mapping surface: opaque-string relay, closed Pipeline,
-// duplicate profile registration (with an 8-entry innerHashes
-// constellation), and the Opts.of map factory.
+// duplicate profile registration (with an 8-entry mixed
+// constellation), unknown lookup, maxWorkers on a destroyed handle.
 
 package dev.everanium.itb.groovy
 
@@ -18,9 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue
 class ErrorsTest {
 
     @Test
-    void unknownProfileIsBadInputWithDiagnostic() {
+    void unknownProfileIsUnknownProfileWithDiagnostic() {
         def e = assertThrows(ItbException) { Pipeline.init('no-such-profile') }
-        assertEquals(Status.BAD_INPUT, e.status)
+        assertEquals(Status.UNKNOWN_PROFILE, e.status)
         assertTrue(!e.message.isEmpty())
     }
 
@@ -46,21 +46,22 @@ class ErrorsTest {
     }
 
     @Test
-    void registerProfileMixedThenDuplicate() {
-        // 8-entry width-256 innerHashes constellation, layers off,
-        // built through the Opts.of named-argument map factory.
-        def opts = Opts.of(
+    void registerMixedThenDuplicate() {
+        // 8-entry width-256 mixed constellation, layers off, built
+        // through the named-argument map form of register.
+        def record = [
                 mode: 'singlemsg-nomac',
                 width: 256,
-                innerHashes: 'blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256',
+                hashes: ['blake3', 'blake2s', 'areion256', 'blake2b256',
+                         'chacha20', 'blake3', 'blake2s', 'areion256'],
                 keyBits: 1024,
-                parallaxOn: false,
-                wrapperOn: false)
-        Pipeline.registerProfile('groovy-binding-test-mixed', opts)
+                parallax: false,
+                wrapper: false] as Map<String, ?>
+        Pipeline.register(record, 'groovy-binding-test-mixed')
 
         // The registered profile round-trips.
         Pipeline.withPipeline('groovy-binding-test-mixed') { Pipeline sender ->
-            Pipeline.withOpened('groovy-binding-test-mixed', sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = 'custom profile'.getBytes('UTF-8')
                 byte[] wire = sender.encryptMessage(plain)
                 assertArrayEquals(plain, receiver.decryptMessage(wire))
@@ -69,9 +70,24 @@ class ErrorsTest {
 
         // Duplicate name is a distinct status.
         def e = assertThrows(ItbException) {
-            Pipeline.registerProfile('groovy-binding-test-mixed', opts)
+            Pipeline.register('groovy-binding-test-mixed', Pipeline.profileOf(record))
         }
         assertEquals(Status.PROFILE_EXISTS, e.status)
+    }
+
+    @Test
+    void lookupUnknownNameIsUnknownProfile() {
+        def e = assertThrows(ItbException) { Pipeline.lookup('no-such-profile') }
+        assertEquals(Status.UNKNOWN_PROFILE, e.status)
+    }
+
+    @Test
+    void maxWorkersOnDestroyedPipelineIsTripleClosed() {
+        Pipeline.withPipeline('singlemsg-triple-mac-v1') { Pipeline pipe ->
+            pipe.destroy()
+            def e = assertThrows(ItbException) { pipe.maxWorkers(2) }
+            assertEquals(Status.TRIPLE_CLOSED, e.status)
+        }
     }
 
     @Test

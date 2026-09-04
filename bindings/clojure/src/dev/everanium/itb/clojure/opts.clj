@@ -39,10 +39,7 @@
     :parallax-palette       seq of strings (comma-joined)
     :raw                    map (or seq of pairs) of raw key=value
                             pass-through entries — covers every key
-                            the Go side accepts, including the
-                            register-profile grammar (\"mode\",
-                            \"width\", \"innerHashes\", \"parallaxOn\",
-                            \"wrapperOn\", …)"
+                            the Go side accepts"
   (:import [com.everanium.itb Opts]))
 
 (defn- raw-key ^String [k]

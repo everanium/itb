@@ -8,32 +8,6 @@ import (
 	"github.com/everanium/itb/internal/areionasm"
 )
 
-// areion256Permutex4SoA is the SoA-native counterpart of
-// areion256Permutex4. It expects the four lanes already packed
-// into Block4 SoA buffers (b0 = first AES blocks of every lane,
-// b1 = second AES blocks of every lane) and runs the permutation
-// in place, with no AoS <-> SoA pack/unpack on entry or exit.
-//
-// Used by AreionSoEM256x4 to skip the pack pass when the caller
-// has built state1/state2 directly in SoA layout from inputs ⊕
-// keys, avoiding the ~8 × MOVUPS pack / unpack steps that the AoS
-// areion256Permutex4 wrapper would otherwise emit. On non-VAES
-// hosts the default Go fallback is still AoS-only, so the SoA
-// path performs an unpack → fallback permute → repack cycle.
-func areion256Permutex4SoA(b0, b1 *aes.Block4) {
-	switch {
-	case areionasm.HasVAESAVX512:
-		areionasm.Areion256Permutex4(b0, b1)
-	case areionasm.HasVAESAVX2NoAVX512:
-		areionasm.Areion256Permutex4Avx2(b0, b1)
-	default:
-		var states [4][32]byte
-		unpack256x4SoA(b0, b1, &states)
-		areion256Permutex4Default(&states)
-		*b0, *b1 = pack256x4SoA(&states)
-	}
-}
-
 // areionSoEM256ChainAbsorbHot is the amd64 dispatcher for the
 // specialised fused chained-absorb VAES kernels covering ITB's three
 // per-pixel buf shapes. Returns (digest, true) when the host has
@@ -274,23 +248,5 @@ func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
 			}
 		}
 		*a1, *b1, *c1, *d1 = pack512x4SoA(&states1)
-	}
-}
-
-// areion512Permutex4SoA is the SoA-native counterpart of
-// areion512Permutex4 — same role as areion256Permutex4SoA scaled
-// to the 4 × Block4 SoA layout of Areion512 states. Used by
-// AreionSoEM512x4 to skip pack/unpack on hot paths.
-func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4) {
-	switch {
-	case areionasm.HasVAESAVX512:
-		areionasm.Areion512Permutex4(b0, b1, b2, b3)
-	case areionasm.HasVAESAVX2NoAVX512:
-		areionasm.Areion512Permutex4Avx2(b0, b1, b2, b3)
-	default:
-		var states [4][64]byte
-		unpack512x4SoA(b0, b1, b2, b3, &states)
-		areion512Permutex4Default(&states)
-		*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
 	}
 }

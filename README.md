@@ -223,7 +223,7 @@ Throughput scales with data size due to goroutine parallelism across CPU cores. 
 
 ### Concurrency
 
-A single `triple.Pipeline` is safe for concurrent `EncryptStream` / `DecryptStream` / `EncryptMessage` / `DecryptMessage` calls: post-`Init` and post-`Open`, all Pipeline state relevant to encryption is read-only, and per-call state (readers, writers, per-chunk scratch inside the itb IO entry) lives on the caller's stack. `Rekey` mutates Pipeline state and must be serialised against concurrent cipher calls by the caller (see [`triple/rekey.go`](triple/rekey.go)); `Close` wipes secret material atomically and subsequent method calls return `triple.ErrClosed`.
+A single `triple.Pipeline` is safe for concurrent `EncryptStream` / `DecryptStream` / `EncryptMessage` / `DecryptMessage` calls: post-`Init` and post-`Load`, all Pipeline state relevant to encryption is read-only, and per-call state (readers, writers, per-chunk scratch inside the itb IO entry) lives on the caller's stack. `Rekey` and `MaxWorkers` mutate Pipeline state and must be serialised against concurrent cipher calls by the caller (see [`triple/rekey.go`](triple/rekey.go)); `Close` wipes secret material atomically and subsequent method calls return `triple.ErrClosed`.
 
 The Low-Level free functions (`itb.Encrypt3x{128,256,512}Cfg`, `itb.EncryptAuth3x{128,256,512}Cfg`, `itb.EncryptStream3x{128,256,512}Cfg`, `itb.EncryptStreamAuth3xCfg`, and the `Decrypt` counterparts) take read-only seed pointers and a `*itb.Config` and allocate output per call — they are thread-safe under concurrent invocation on the same seeds. Concurrent mutation of the shared `*itb.Config` by other goroutines must be serialised by the caller.
 
@@ -237,7 +237,7 @@ Single-primitive profiles (one inner hash across every seed slot):
 - `singlemsg-triple-nomac-v1` — Single Message Triple No MAC.
 - `streaming-aead-triple-mac-v1` — Streaming AEAD Triple with MAC.
 - `streaming-noaead-triple-v1` — Streaming Non-AEAD Triple.
-- `blob-triple-mac-v1` — MAC-authenticated blob-only bundle (no cipher surface; used by `Init` / `Rekey` to bundle session state).
+- `blob-triple-mac-v1` — MAC Authenticated blob-only bundle (no cipher surface; used by `Init` / `Rekey` to bundle session state).
 
 Mixed-primitive profiles (per-slot primitive constellation, uniform width per profile):
 
@@ -248,7 +248,11 @@ Mixed-primitive profiles (per-slot primitive constellation, uniform width per pr
 
 All shipped profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; both toggles are opt-out via `triple.Opts`. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
 
-**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — profile identifier, both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material. Ship the blob to the receiver out-of-band; the receiver calls `triple.Open(profile, blob, opts)` and reconstructs the same Pipeline. Both sides then encrypt / decrypt against their Pipeline.
+**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `NonceBits` / `BarrierFill` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
+
+**Blob persistence and inspection.** `pipe.Save()` returns a copy of the Pipeline's current blob (the bytes `Init` handed back, or the refreshed bytes after `Rekey` / a master override at `Load`); `pipe.SaveF(path)` writes it with mode `0600` (the containing directory must already exist). `triple.LoadF(path)` is the file-side counterpart of `Load`. `triple.Inspect(blob)` decodes the embedded `Profile` record without constructing a Pipeline — a pure metadata read that touches neither the profile registry nor the primitive registries. `Load` accepts an optional trailing `(permMaster, wrapMaster)` pair to swap the masters at reopen time (rekey-on-import); the blob `Save()` returns afterwards carries the overridden masters. A blob whose wrap-layer schema version is not the current one is refused with `triple.ErrBlobVersion`; a recipe naming a primitive absent from the local registries is refused with `triple.ErrRecipePrimitiveUnknown`.
+
+**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships a companion openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash>` generates a session blob (written with mode `0600` when `-o` is used); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF`, and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
 
 ### Triple 1 — Single Message with MAC
 
@@ -275,6 +279,10 @@ func main() {
         panic(err)
     }
     defer enc.Close()
+    // Persist the session bundle for a receiver on disk:
+    //   _ = enc.SaveF("session.json")
+    // The receiver reopens with:
+    //   dec, _ := triple.LoadF("session.json")
 
     wire, err := enc.EncryptMessage([]byte("any text or binary data - including 0x00 bytes"))
     if err != nil {
@@ -282,12 +290,14 @@ func main() {
     }
     fmt.Printf("blob: %d bytes; wire: %d bytes\n", len(blob), len(wire))
 
-    // Receiver — ship the blob out-of-band, then reconstruct.
-    dec, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
+    // Receiver — ship the blob out-of-band, then reconstruct. The blob
+    // carries the full recipe; the receiver picks its own worker cap.
+    dec, err := triple.Load(blob)
     if err != nil {
         panic(err)
     }
     defer dec.Close()
+    dec.MaxWorkers(4)
 
     plain, err := dec.DecryptMessage(wire)
     if err != nil {
@@ -329,11 +339,12 @@ func main() {
         panic(err)
     }
 
-    dec, err := triple.Open(triple.ProfileSingleMsgTripleNoMACV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
+    dec, err := triple.Load(blob)
     if err != nil {
         panic(err)
     }
     defer dec.Close()
+    dec.MaxWorkers(4)
 
     plain, err := dec.DecryptMessage(wire)
     if err != nil {
@@ -390,11 +401,12 @@ func main() {
     fout.Close()
 
     // Ship blob out-of-band, then reconstruct on the receiver.
-    dec, err := triple.Open(triple.ProfileStreamingAEADTripleMACV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
+    dec, err := triple.Load(blob)
     if err != nil {
         panic(err)
     }
     defer dec.Close()
+    dec.MaxWorkers(4)
 
     fin, _ = os.Open(encPath)
     fout, _ = os.Create(dstPath)
@@ -450,11 +462,12 @@ func main() {
     fin.Close()
     fout.Close()
 
-    dec, err := triple.Open(triple.ProfileStreamingNoAEADTripleV1, blob, triple.Opts{MaxWorkers: 4, NonceBits: 512})
+    dec, err := triple.Load(blob)
     if err != nil {
         panic(err)
     }
     defer dec.Close()
+    dec.MaxWorkers(4)
 
     fin, _ = os.Open(encPath)
     fout, _ = os.Create(dstPath)
@@ -472,11 +485,14 @@ func main() {
 
 `Rekey` rotates the parallax and wrapper master keys mid-session
 without touching the 8 inner seeds (which stay fixed for a
-session's lifetime by construction). Only meaningful when
-`opts.ParallaxOn` or `opts.WrapperOn` is set (the shipped
+session's lifetime by construction). Only meaningful when the
+pipeline has parallax or wrapper enabled — either through the
+resolved `Profile` (`Parallax` / `Wrapper`) or an `Init`-time
+override via `Opts.WithParallax` / `Opts.WithWrapper` (the shipped
 profiles enable both by default). Pass explicit 32-byte masters or
-`nil` for CSPRNG generation; the receiver picks up the new masters
-through a fresh `Pipeline.Blob()` handshake.
+`nil` for CSPRNG generation; `Rekey` returns the refreshed session
+blob (the same bytes `Pipeline.Save()` returns from then on), and the
+receiver picks up the new masters through a fresh `Load` of that blob.
 
 ```go
 package main
@@ -511,17 +527,20 @@ func main() {
     if _, err := rand.Read(newWrap); err != nil {
         panic(err)
     }
-    if err := enc.Rekey(newPerm, newWrap); err != nil {
+    refreshed, err := enc.Rekey(newPerm, newWrap)
+    if err != nil {
         panic(err)
     }
+    // enc.Save() now returns the same refreshed bytes; enc.SaveF(path)
+    // writes them to disk for a receiver that reopens via triple.LoadF.
 
     // Receiver reconstructs against the refreshed session blob.
-    refreshed := enc.Blob()
-    dec, err := triple.Open(triple.ProfileSingleMsgTripleMACV1, refreshed, triple.Opts{MaxWorkers: 4, NonceBits: 512})
+    dec, err := triple.Load(refreshed)
     if err != nil {
         panic(err)
     }
     defer dec.Close()
+    dec.MaxWorkers(4)
 
     _ = blob // discard the pre-rekey blob; the refreshed one supersedes it
 }
@@ -533,7 +552,7 @@ and wrapper master slots are mutated.
 
 ### Overriding profile defaults via `Opts`
 
-Every profile-supplied default is overridable on both `Init` and `Open`. Typical overrides:
+Every profile-supplied default is overridable on `Init`; the resolved shape is what the blob records, so a receiver's `Load` reproduces the overrides without being told about them. Typical overrides:
 
 ```go
 withParallax := false
@@ -554,7 +573,7 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
 
 ### Full Opts override — every knob in one block
 
-The 4 examples above pass `triple.Opts{}` (all profile defaults). Every `triple.Opts` field can be set explicitly on a single `Init` (mirrored on `Open`); this one block collects the whole override surface in one place so the full knob set is visible from a single reference:
+The 4 examples above pass `triple.Opts{}` (all profile defaults). Every `triple.Opts` field can be set explicitly on a single `Init`; this one block collects the whole override surface in one place so the full knob set is visible from a single reference:
 
 ```go
 enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
@@ -595,7 +614,7 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
 })
 ```
 
-Any field left at its zero value defers to the resolved profile's default; a nil `*bool` toggle defers to the profile default while a non-nil pointer forces the chosen setting. `Open` accepts the same `Opts` shape — on the receiver side the non-toggle structural overrides (`InnerHash`, `KeyBits`, `ParallaxPalette`, etc.) are informational only, because the inner Blob{N} carries the seed material and per-instance `*itb.Config` snapshot; the two layer toggles remain effective.
+Any field left at its zero value defers to the resolved profile's default; a nil `*bool` toggle defers to the profile default while a non-nil pointer forces the chosen setting. `Load` takes no `Opts`: the blob's recipe fixes the primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, and both layer toggles, and the inner Blob{N} carries the `NonceBits` / `BarrierFill` snapshot — a receiver that deviated from any of them could not decrypt the sender's wires. The receiver-side knobs are `pipe.MaxWorkers(n)` after construction and the optional trailing `(permMaster, wrapMaster)` pair on `Load` for rekey-on-import.
 
 ### Accepted values per Opts field
 
@@ -605,7 +624,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `WrapMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied wrapper master; nil = crypto/rand auto-generate. |
 | `WithParallax` | `*bool` (nil / &false / &true) | Three-state override; nil = profile default (on for every shipped profile). |
 | `WithWrapper` | `*bool` (nil / &false / &true) | Three-state override; nil = profile default. |
-| `MaxWorkers` | `int` (0 or 1 .. `runtime.NumCPU`) | 0 = runtime.NumCPU fallback; positive = per-Pipeline goroutine cap. |
+| `MaxWorkers` | `int` | ≤ 0 = auto (`runtime.NumCPU`); 1 .. 256 = per-Pipeline goroutine cap; > 256 clamps to 256. A per-machine runtime knob: never written to the blob, and adjustable on a live Pipeline (from `Init` or `Load`) via `pipe.MaxWorkers(n)` with the same clamp. |
 | `NonceBits` | `128` / `256` / `512` (or 0 = default) | On-wire nonce width. Default per profile. |
 | `BarrierFill` | `int > 0` (or 0 = default) | CSPRNG barrier fill margin; profile default varies. |
 | `ChunkSize` | `int > 0` bytes (or 0 = default) | Streaming chunk-size budget; default `itb.DefaultChunkSize` = 16 MiB. |
@@ -618,7 +637,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
 | `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093` (prime). Sensible values: primes like `4093` / `4099` / `4111` / `4127`; any composite is fine iff coprime to 504. Parallax segment size. |
 
-**Shipped primitive names.** The single canonical registry (see `hashes/registry.go` + `wrapper/wrapper.go` `CipherNames`) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry:
+**Shipped primitive names.** The single canonical registry (`hashes/registry.go` — `hashes.Registry`, the `hashes.Cipher*` name constants, and the `hashes.Names()` snapshot that `wrapper.CipherNames` mirrors) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry:
 
 ```
 areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash24  chacha20
@@ -630,7 +649,7 @@ areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash2
 - `OuterCipher: "aescmac"` → **AES-128-CTR** (the stream cipher).
 - `ParallaxPalette: []string{"aescmac", ... }` → **AES-128-CTR** (the stream cipher).
 
-Every other name in the registry maps 1:1 across fields (a `blake3` `InnerHash` and a `blake3` `OuterCipher` denote the same construction — a BLAKE3 keystream). Users who reach for AES on the outer cipher path get AES-128-CTR whether they type `"aescmac"` or use the `wrapper.CipherAES128CTR` constant.
+Every other name in the registry maps 1:1 across fields (a `blake3` `InnerHash` and a `blake3` `OuterCipher` denote the same construction — a BLAKE3 keystream). Users who reach for AES on the outer cipher path get AES-128-CTR whether they type `"aescmac"` or use the `hashes.CipherAES128CTR` constant.
 
 **Profile-name constants.** The shipped profiles live in [`triple/profile.go`](triple/profile.go) as string constants; call sites should use the constants rather than raw strings:
 
@@ -646,15 +665,17 @@ Every other name in the registry maps 1:1 across fields (a `blake3` `InnerHash` 
 | `triple.ProfileStreamingAEADTripleMACMixedV1` | `"streaming-aead-triple-mac-mixed-v1"` | Mixed-primitive, width 256 |
 | `triple.ProfileStreamingNoAEADTripleMixedV1` | `"streaming-noaead-triple-mixed-v1"` | Mixed-primitive, width 256 |
 
-The shipped profiles are populated at package init. Callers who need a configuration outside the shipped set install a user-defined `triple.Profile` at process init via `triple.RegisterProfile(name, p)` and reference the registered name from `triple.Init` / `triple.Open` like any shipped profile. The registered name is a wire contract with the receiver, so a profile bound to a name cannot be silently rebound — evolving a profile's shape picks a new name (typically appending `-v2`, `-v3`, …).
+The shipped profiles are populated at package init. Callers who need a configuration outside the shipped set install a user-defined `triple.Profile` at process init via `triple.Register(name, p)` and reference the registered name from `triple.Init` like any shipped profile. The registry serves construction by name only: `Register` writes, `triple.Lookup(name)` reads a registered `Profile` back, and `triple.Profiles()` lists the registered names. The reopen path never consults it — the blob carries the resolved `Profile` record, so a receiver calls `triple.Load(blob)` without registering anything, and the name inside the blob is a sender-chosen label, not a lookup key. A name cannot be re-registered under a different shape (`triple.ErrProfileExists`) — programmer-error detection, so evolving a profile's shape picks a new name (typically appending `-v2`, `-v3`, …).
 
-Name rules for `RegisterProfile`:
+Name rules for `Register`:
 
-- Matches `^[a-z][a-z0-9-]{2,63}$` — lowercase ASCII letter start; 2–63 further ASCII lowercase letters, digits, or hyphens.
+- Matches `^[a-z][a-z0-9-]{2,16383}$` — lowercase ASCII letter start; 2–16383 further ASCII lowercase letters, digits, or hyphens (total length 3–16384). The generous upper bound leaves headroom for tools that encode a profile's full recipe (mode, per-slot constellation, MAC choice, wrapper cipher, parallax palette carrying up to `parallax.MaxPaletteSize` primitives) directly in the profile-name carrier; shipped-catalogue identifiers stay under 40 characters.
 - Must not start with one of the reserved shipped-catalogue prefixes: `singlemsg-`, `streaming-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
 - Must not already be registered; re-registration returns `triple.ErrProfileExists`.
 
-Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `WrapperOn` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `ParallaxOn` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]. `RegisterProfile` is safe under concurrent invocation with itself, `Init`, and `Open`.
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `Wrapper` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `Parallax` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]. The same field rules are re-applied by `Load` to the recipe carried in a blob (a failure surfaces as `triple.ErrBlobMalformedRecipe`). `Register` is safe under concurrent invocation with itself, `Init`, `Lookup`, and `Profiles`.
+
+`triple.Profile` encodes to and decodes from JSON (`MarshalJSON` / `UnmarshalJSON`) under one documented key set — the same codec that carries the record inside the blob, that `Inspect` returns, and that the C ABI `ITB_Triple_Register` / `ITB_Triple_Inspect` entries exchange as their JSON payload.
 
 Worked example — installing a 256-bit BLAKE3 Streaming AEAD variant and using it identically to a shipped profile:
 
@@ -668,10 +689,10 @@ import (
 )
 
 func init() {
-    // Register once at process init — a profile name is a wire
-    // contract with the receiver, so both sides register the same
-    // (name, Profile) pair before any Init / Open call fires.
-    if err := triple.RegisterProfile("acme-triple-b3-256-v1", triple.Profile{
+    // Register once at process init on the sender, before Init. The
+    // receiver does not register anything: the blob carries the
+    // resolved Profile record and triple.Load rebuilds from it.
+    if err := triple.Register("acme-triple-b3-256-v1", triple.Profile{
         Mode:                "streaming-aead",
         Width:               256,
         InnerHash:           "blake3",
@@ -681,8 +702,8 @@ func init() {
         ParallaxPalette:     []string{"aescmac", "chacha20", "blake3"},
         ParallaxSegmentSize: parallax.DefaultSegmentSize,
         ChunkSize:           itb.DefaultChunkSize,
-        ParallaxOn:          true,
-        WrapperOn:           true,
+        Parallax:            true,
+        Wrapper:             true,
     }); err != nil {
         panic(err)
     }
@@ -694,7 +715,7 @@ func main() {
         panic(err)
     }
     defer enc.Close()
-    _ = blob // ship the blob out-of-band; receiver calls triple.Open on the same name.
+    _ = blob // ship the blob out-of-band; receiver calls triple.Load(blob).
 }
 ```
 
@@ -710,14 +731,14 @@ import (
 )
 
 func init() {
-    // Register once at process init — the profile name is a wire
-    // contract with the receiver, so both sides register the same
-    // (name, Profile) pair before any Init / Open call fires. The
-    // mixed constellation is a per-slot primitive assignment that
-    // spreads dispatch across several width-256 primitives on one
-    // Pipeline; every slot's primitive width must equal Profile.Width
-    // (fail-fast at RegisterProfile via validateMixedHashes).
-    if err := triple.RegisterProfile("acme-triple-mixed-256-v1", triple.Profile{
+    // Register once at process init on the sender, before Init; the
+    // receiver rebuilds from the blob's Profile record via
+    // triple.Load without registering. The mixed constellation is a
+    // per-slot primitive assignment that spreads dispatch across
+    // several width-256 primitives on one Pipeline; every slot's
+    // primitive width must equal Profile.Width (fail-fast at
+    // Register via validateMixedHashes).
+    if err := triple.Register("acme-triple-mixed-256-v1", triple.Profile{
         Mode:                "streaming-aead",
         Width:               256,
         // InnerHash left empty — mixed dispatch reads MixedHashes.
@@ -727,8 +748,8 @@ func init() {
         ParallaxPalette:     []string{"aescmac", "chacha20", "blake3"},
         ParallaxSegmentSize: parallax.DefaultSegmentSize,
         ChunkSize:           itb.DefaultChunkSize,
-        ParallaxOn:          true,
-        WrapperOn:           true,
+        Parallax:            true,
+        Wrapper:             true,
         MixedHashes: [8]string{
             "areion256", "blake3", "blake2b256", "blake2s",   // noise, lock, data1, data2
             "chacha20", "areion256", "blake3", "blake2b256",  // data3, start1, start2, start3
@@ -744,11 +765,11 @@ func main() {
         panic(err)
     }
     defer enc.Close()
-    _ = blob // ship the blob out-of-band; receiver calls triple.Open on the same name.
+    _ = blob // ship the blob out-of-band; receiver calls triple.Load(blob).
 }
 ```
 
-The same mixed constellation can also be applied per-call against any single-primitive or mixed base profile without registering a new name — pass an 8-slot array as `Opts.MixedHashes` to `triple.Init` / `triple.Open`, and both sides use it in place of the base profile's default:
+The same mixed constellation can also be applied per-call against any single-primitive or mixed base profile without registering a new name — pass an 8-slot array as `Opts.MixedHashes` to `triple.Init`; the resolved constellation is recorded in the blob's `Profile` record, so the receiver's `Load` reproduces it:
 
 ```go
 // ProfileStreamingAEADTripleMACV1 is width 512; override slots must
@@ -760,16 +781,17 @@ override := [8]string{
 enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
     MixedHashes: override, // switch to mixed for this Pipeline only
 })
-// ... receiver on the other side calls triple.Open with the same MixedHashes.
+// ... receiver on the other side calls triple.Load(blob); the blob's
+// Profile record carries the resolved 8-slot constellation.
 ```
 
 Every mixed-hash slot is validated fail-fast at registration: each name must resolve via `hashes.Find`, each primitive's width must equal the profile's `Width`, and every one of the 8 slots must be populated (partial fills are refused rather than defaulted per slot). A typo in a primitive name or a width mismatch surfaces at process init with a descriptive error naming the offending slot, so a misconfigured mixed profile never reaches the encrypt path.
 
-`triple.Opts` also carries a per-call `MixedHashes [8]string` override — the same field name and semantics as `Profile.MixedHashes`, but supplied at `Init` / `Open` time instead of at registration. A zero-value array defers to the profile default; a fully-populated array switches this Pipeline to the given constellation without a separate `RegisterProfile` call. The four shipped mixed profiles above are referenced by their constants exactly like the shipped single-primitive profiles, no separate wiring is required; the `Opts.MixedHashes` override is the escape hatch for callers who want a mixed shape only for one Pipeline instance rather than as a stable named profile.
+`triple.Opts` also carries a per-call `MixedHashes [8]string` override — the same field name and semantics as `Profile.MixedHashes`, but supplied at `Init` time instead of at registration. A zero-value array defers to the profile default; a fully-populated array switches this Pipeline to the given constellation without a separate `Register` call. The four shipped mixed profiles above are referenced by their constants exactly like the shipped single-primitive profiles, no separate wiring is required; the `Opts.MixedHashes` override is the escape hatch for callers who want a mixed shape only for one Pipeline instance rather than as a stable named profile.
 
-Every per-call slot goes through the same `hashes.Find` / width-match fail-fast validation the profile-registration path uses (via `allocEightSeedsMixed` at `Init` / `importInnerBlobMixed` at `Open`), so a typo'd primitive name or a width mismatch surfaces at `Init` time with an error naming the offending slot. When both `Opts.InnerHash` and `Opts.MixedHashes` are set, `MixedHashes` wins and `InnerHash` is ignored — same mutual-exclusion rule the `Profile` fields obey. `Open` must be called with the same override the sender used at `Init`, so both sides reconstruct the identical effective shape.
+Every per-call slot goes through the same `hashes.Find` / width-match fail-fast validation the profile-registration path uses (via `allocEightSeedsMixed` at `Init` / `importInnerBlobMixed` at `Load`), so a typo'd primitive name or a width mismatch surfaces at `Init` time with an error naming the offending slot. When both `Opts.InnerHash` and `Opts.MixedHashes` are set, `MixedHashes` wins and `InnerHash` is ignored — same mutual-exclusion rule the `Profile` fields obey. The resolved constellation travels in the blob's `Profile` record, so both sides reconstruct the identical effective shape without the receiver restating the override.
 
-C-ABI callers install a persistent profile via `ITB_Triple_RegisterProfile(name, opts)` — `opts` is a URL-query-encoded profile-shape string with the same keys the shipped opts parser accepts, plus profile-only fields (`mode`, `width`, `parallaxOn`, `wrapperOn`). The mixed-primitive dispatch is selected by supplying `innerHashes=<comma-separated 8-entry list>` in place of `innerHash=<name>` (the two are mutually exclusive, mirroring the Go-side `MixedHashes` / `InnerHash` split); slot ordering matches the Go-side array. The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`. The same `innerHashes=<list>` key is also accepted by the per-call opts string passed to `ITB_Triple_Init(name, opts)` / `ITB_Triple_Open(name, opts)`, giving bindings the per-call `Opts.MixedHashes` override at the FFI boundary without any binding-side code change — every raw-key escape hatch (`itb_opts_set` / `withRaw` / `with_raw` / equivalent) carries this key end-to-end.
+C-ABI callers install a persistent profile via `ITB_Triple_Register(name, profile_json)` — `profile_json` is the `triple.Profile` JSON object (the same codec `ITB_Triple_Inspect` emits); a `name` key inside the JSON, when present, must be empty or equal to the `name` argument. Mixed-primitive dispatch is selected by supplying the 8-entry `hashes` array in place of `hash` (the two are mutually exclusive, mirroring the Go-side `MixedHashes` / `InnerHash` split); slot ordering matches the Go-side array. The duplicate-name path maps to `ITB_ERR_PROFILE_EXISTS`; every other validation failure maps to `ITB_ERR_BAD_INPUT`. The per-call opts string passed to `ITB_Triple_Init(name, opts)` remains URL-query encoded and accepts `innerHashes=<comma-separated 8-entry list>` for the per-call `Opts.MixedHashes` override at the FFI boundary — every raw-key escape hatch (`itb_opts_set` / `withRaw` / `with_raw` / equivalent) carries this key end-to-end. `ITB_Triple_Load` / `ITB_Triple_LoadF` take no opts string; the per-machine worker cap is applied to any handle via `ITB_Triple_MaxWorkers(handle, n)`.
 
 ## Advanced — Low-Level `*Cfg` surface
 
@@ -1004,7 +1026,7 @@ func init() {
 }
 
 // "b2b512_mac" now resolves by name through the facade:
-_ = triple.RegisterProfile("team-b2b512-v1", triple.Profile{
+_ = triple.Register("team-b2b512-v1", triple.Profile{
     Mode: "singlemsg-mac", Width: 512, InnerHash: "areion512",
     KeyBits: 1024, MacName: "b2b512_mac",
 })
@@ -1049,7 +1071,7 @@ func init() {
 // triple.Profile.MacName / triple.Opts.MacName reference.
 ```
 
-**Cross-process contract.** A seed blob exported under a custom MAC name records the name, not the construction. The opening process must have registered the same name with the same construction before `triple.Open` (or `Blob{N}.Import3Cfg` + `macs.Make`); a missing registration fails with an unknown-MAC error, and a divergent construction under the same name surfaces as a MAC failure at decrypt. Full API detail, closure contracts, and builder documentation live in [`macs/README.md`](macs/README.md).
+**Cross-process contract.** A seed blob exported under a custom MAC name records the name, not the construction. The opening process must have registered the same name with the same construction before `triple.Load` (or `Blob{N}.Import3Cfg` + `macs.Make`); a missing registration fails with `triple.ErrRecipePrimitiveUnknown` on the facade (an unknown-MAC error on the Low-Level path), and a divergent construction under the same name surfaces as a MAC failure at decrypt. `triple.Inspect` does not probe availability and returns the recorded name unchanged. Full API detail, closure contracts, and builder documentation live in [`macs/README.md`](macs/README.md).
 
 ### Runtime tuning (memory / GC)
 
@@ -1091,7 +1113,7 @@ See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive constru
 
 ## MACs (`macs/`)
 
-The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. Each MAC also carries an incremental multi-slice arm (`MACIncrementalFunc`, name-keyed via `macs.MakeIncremental`) that the authenticated entry points use to absorb the MAC input parts directly instead of concatenating them into a scratch buffer first — wired automatically by `triple.Init` / `triple.Open`, worth roughly +7.5% end-to-end decrypt throughput on the hmac-blake3 default profile at 16 MB.
+The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. Each MAC also carries an incremental multi-slice arm (`MACIncrementalFunc`, name-keyed via `macs.MakeIncremental`) that the authenticated entry points use to absorb the MAC input parts directly instead of concatenating them into a scratch buffer first — wired automatically by `triple.Init` / `triple.Load`, worth roughly +7.5% end-to-end decrypt throughput on the hmac-blake3 default profile at 16 MB.
 
 | # | Factory | Returns | Key size | Tag size |
 |---|---|---|---|---|
@@ -1249,7 +1271,7 @@ All three approaches use standard mathematics. The formal relationship between I
 
 ## Bindings
 
-The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`) — ten entries today: the lifecycle quad `ITB_Triple_Init` / `ITB_Triple_Open` / `ITB_Triple_Rekey` / `ITB_Triple_Close`, the handle-helper `ITB_Triple_Free`, the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`, and the profile-registry entry `ITB_Triple_RegisterProfile` that installs a user-defined profile shape via a URL-query opts string. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw 8-seed handoff.
+The binding surface is the **`ITB_Triple_*` capi shim** (see `cmd/cshared/main.go`): the lifecycle entries `ITB_Triple_Init` / `ITB_Triple_Load` / `ITB_Triple_LoadF` / `ITB_Triple_Rekey` / `ITB_Triple_Close` and the handle-helper `ITB_Triple_Free`; the persistence pair `ITB_Triple_Save` / `ITB_Triple_SaveF`; the metadata read `ITB_Triple_Inspect`; the four cipher entry points `ITB_Triple_EncryptMessage` / `ITB_Triple_DecryptMessage` / `ITB_Triple_EncryptStream` / `ITB_Triple_DecryptStream`; the profile-registry entry `ITB_Triple_Register` (user-defined profile shape as a `Profile` JSON object); and the runtime accessor `ITB_Triple_MaxWorkers`. Every binding is a thin proxy over that surface: an FFI-stable handle table on top of the lifecycle entries, an error-code mapping over `ITB_LastError`, and an optional URL-query-style opts-string parser for the per-Pipeline `Init` overrides. The Cfg-suffixed Low-Level Go surface does **not** ship in any binding — it remains Go-native for callers who need the raw 8-seed handoff.
 
 ### Fleet plan (33 bindings)
 

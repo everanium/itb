@@ -52,7 +52,7 @@ const maxBlob128KeyHexLen = 128
 // field; a Components / hex-key inflation attack cannot slip past
 // this bound since every field lives inside the same byte buffer.
 //
-// Used by every Blob{128,256,512}.Import / Import3 entry point so
+// Used by every Blob{128,256,512}.Import3Cfg entry point so
 // the strict-shape promise is uniform across widths.
 func decodeBlobStrict(data []byte, out *blobV1) error {
 	if len(data) > MaxBlobJSONSize {
@@ -74,10 +74,10 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 
 // Blob — native-API session-bundle surface. Three width-specific
 // types ([Blob128], [Blob256], [Blob512]) pack the low-level
-// encryptor material (hash keys + seed components + optional
-// dedicated lockSeed + optional MAC material) plus the sender's
+// encryptor material (hash keys + seed components + dedicated
+// lockSeed + optional MAC material) plus the sender's
 // process-wide bit-permutation / nonce / barrier configuration into
-// one JSON blob. The receiver calls Import / Import3, which applies
+// one JSON blob. The receiver calls Import3Cfg, which applies
 // the captured globals unconditionally and populates the struct's
 // public fields.
 //
@@ -94,12 +94,11 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // The native Blob API trades that convenience for explicit factory
 // control and global-Set-based configuration.
 
-// ErrBlobModeMismatch is returned by [Blob128.Import] /
-// [Blob256.Import] / [Blob512.Import] when the blob carries
-// mode=3 (Triple) and from Import3 when the blob carries mode=1
-// (Single). Caller picks the matching method; no automatic
-// dispatch.
-var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (Single Import on Triple blob, or vice versa)")
+// ErrBlobModeMismatch is returned by [Blob128.Import3Cfg] /
+// [Blob256.Import3Cfg] / [Blob512.Import3Cfg] when the JSON blob
+// carries mode != 3. The shipped Import path accepts Triple blobs
+// only; Single-mode blobs from legacy senders are rejected.
+var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=3 Triple)")
 
 // ErrBlobMalformed is returned when the JSON blob fails to parse
 // or carries fields outside the documented shape (zero-length
@@ -111,7 +110,7 @@ var ErrBlobMalformed = errors.New("itb: blob malformed")
 // greater than the highest version this build understands.
 var ErrBlobVersionTooNew = errors.New("itb: blob version too new")
 
-// ErrBlobTooManyOpts is returned by Export / Export3 when more than
+// ErrBlobTooManyOpts is returned by Export3Cfg when more than
 // one [Blob128Opts] / [Blob256Opts] / [Blob512Opts] is supplied to
 // the trailing variadic position. Zero or one is accepted.
 var ErrBlobTooManyOpts = errors.New("itb: Export accepts at most one options struct")
@@ -126,16 +125,14 @@ const blobVersionV1 = 1
 // 53-bit number limit); hash keys and MAC key are serialised as
 // lowercase hex without a "0x" prefix. Optional fields use
 // omitempty; the corresponding struct fields on the public Blob{N}
-// types stay zero / nil after Import when the blob omits them.
+// types stay zero / nil after Import3Cfg when the blob omits them.
 type blobV1 struct {
 	Version int    `json:"v"`
-	Mode    int    `json:"mode"` // 1 = Single, 3 = Triple
+	Mode    int    `json:"mode"` // 3 = Triple (only mode emitted)
 	KeyBits int    `json:"key_bits"`
 	KeyN    string `json:"key_n"`
-	KeyD    string `json:"key_d,omitempty"`  // Single only
-	KeyS    string `json:"key_s,omitempty"`  // Single only
-	KeyL    string `json:"key_l,omitempty"`  // optional dedicated lockSeed
-	KeyD1   string `json:"key_d1,omitempty"` // Triple only
+	KeyL    string `json:"key_l,omitempty"` // dedicated lockSeed
+	KeyD1   string `json:"key_d1,omitempty"`
 	KeyD2   string `json:"key_d2,omitempty"`
 	KeyD3   string `json:"key_d3,omitempty"`
 	KeyS1   string `json:"key_s1,omitempty"`
@@ -143,10 +140,8 @@ type blobV1 struct {
 	KeyS3   string `json:"key_s3,omitempty"`
 
 	NS  []string `json:"ns"`
-	DS  []string `json:"ds,omitempty"`  // Single only
-	SS  []string `json:"ss,omitempty"`  // Single only
-	LS  []string `json:"ls,omitempty"`  // optional dedicated lockSeed
-	DS1 []string `json:"ds1,omitempty"` // Triple only
+	LS  []string `json:"ls,omitempty"` // dedicated lockSeed
+	DS1 []string `json:"ds1,omitempty"`
 	DS2 []string `json:"ds2,omitempty"`
 	DS3 []string `json:"ds3,omitempty"`
 	SS1 []string `json:"ss1,omitempty"`
@@ -159,16 +154,15 @@ type blobV1 struct {
 	Globals blobGlobalsV1 `json:"globals"`
 }
 
-// blobGlobalsV1 captures the sender's per-instance nonce / barrier /
-// worker configuration at the moment of Export3Cfg. Import3Cfg copies
-// the captured NonceBits / BarrierFill / MaxWorkers into the caller's
-// *Config. The `omitempty` tag on MaxWorkers keeps the wire
-// byte-identical to pre-MaxWorkers producers when the sender left
-// that field at zero.
+// blobGlobalsV1 captures the sender's per-instance nonce / barrier
+// configuration at the moment of Export3Cfg. Import3Cfg copies the
+// captured NonceBits / BarrierFill into the caller's *Config. The
+// worker cap ([Config.MaxWorkers]) is per-machine performance tuning,
+// not wire shape, and has no key here — the strict decoder rejects
+// one like any unknown key.
 type blobGlobalsV1 struct {
 	NonceBits   int `json:"nonce_bits"`
 	BarrierFill int `json:"barrier_fill"`
-	MaxWorkers  int `json:"max_workers,omitempty"`
 }
 
 // componentsToStrings encodes a uint64 slice as decimal-string
@@ -243,7 +237,7 @@ func hexToBytes(s string) ([]byte, error) {
 
 // validateSeedComponents{N} checks that a freshly parsed component
 // slice has the expected key_bits length and matches the lengths
-// of its peers (e.g. all three Single-mode seeds carry the same
+// of its peers (e.g. all seven Triple-mode seeds carry the same
 // component count).
 func validateSeedComponentsLen(got, want int) error {
 	if got != want {
@@ -257,28 +251,23 @@ func validateSeedComponentsLen(got, want int) error {
 // ───────────────────────────────────────────────────────────────────
 
 // Blob512 carries native-API encryptor material (512-bit width)
-// across processes. Public fields are populated after [Blob512.Import]
-// or [Blob512.Import3]; the caller wires Hash / BatchHash closures
+// across processes. Public fields are populated after
+// [Blob512.Import3Cfg]; the caller wires Hash / BatchHash closures
 // from the saved Key* bytes through the appropriate 512-bit factory.
 //
-// [Blob512.Mode] indicates which fields are populated: 1 (Single)
-// fills NS / DS / SS plus the optional LS; 3 (Triple) fills
-// NS / DS1 / DS2 / DS3 / SS1 / SS2 / SS3 plus the optional LS.
-// Triple-only fields stay zero in Single mode and vice versa;
-// Mode is the authoritative discriminator.
+// [Blob512.Mode] is populated by Import3Cfg / Export3Cfg to 3
+// (Triple); no other value is emitted on the shipped surface.
 //
-// Not safe for concurrent invocation — Export / Import calls on
-// the same Blob512 instance must be serialised by the caller.
+// Not safe for concurrent invocation — Export3Cfg / Import3Cfg
+// calls on the same Blob512 instance must be serialised by the
+// caller.
 type Blob512 struct {
 	Mode int
 
-	// Hash key bytes — populated for the slots actually used by
-	// the active Mode. Other slots stay zero.
-	KeyN  [64]byte // shared (Single + Triple)
-	KeyD  [64]byte // Single only
-	KeyS  [64]byte // Single only
-	KeyL  [64]byte // optional dedicated lockSeed (any mode)
-	KeyD1 [64]byte // Triple only
+	// Hash key bytes.
+	KeyN  [64]byte
+	KeyL  [64]byte // dedicated lockSeed
+	KeyD1 [64]byte
 	KeyD2 [64]byte
 	KeyD3 [64]byte
 	KeyS1 [64]byte
@@ -286,13 +275,11 @@ type Blob512 struct {
 	KeyS3 [64]byte
 
 	// Seed components — *Seed512 with .Components populated.
-	// Hash and BatchHash are nil after Import; the caller wires
+	// Hash and BatchHash are nil after Import3Cfg; the caller wires
 	// them from the saved Key* bytes.
-	NS  *Seed512 // shared
-	DS  *Seed512 // Single only
-	SS  *Seed512 // Single only
-	LS  *Seed512 // optional dedicated lockSeed (nil if absent)
-	DS1 *Seed512 // Triple only
+	NS  *Seed512
+	LS  *Seed512 // dedicated lockSeed
+	DS1 *Seed512
 	DS2 *Seed512
 	DS3 *Seed512
 	SS1 *Seed512
@@ -305,13 +292,13 @@ type Blob512 struct {
 	MACName string
 }
 
-// Blob512Opts carries the optional dedicated lockSeed and MAC
-// material for [Blob512.Export] / [Blob512.Export3]. Zero-valued
-// fields signal "absent" — pass an empty struct, or omit the opts
-// argument entirely, when no LockSeed and no MAC are in use.
+// Blob512Opts carries the dedicated lockSeed material and optional
+// MAC material for [Blob512.Export3Cfg]. Zero-valued MAC fields
+// signal "absent" — pass an empty struct, or omit the opts
+// argument entirely, when no MAC is in use.
 type Blob512Opts struct {
-	KeyL    [64]byte // zero array if no lockSeed
-	LS      *Seed512 // nil if no lockSeed
+	KeyL    [64]byte // dedicated lockSeed
+	LS      *Seed512 // dedicated lockSeed
 	MACKey  []byte   // nil / empty if no MAC
 	MACName string   // empty if no MAC
 }
@@ -327,10 +314,9 @@ type Blob512Opts struct {
 type Blob256 struct {
 	Mode int
 
+	// Hash key bytes.
 	KeyN  [32]byte
-	KeyD  [32]byte
-	KeyS  [32]byte
-	KeyL  [32]byte
+	KeyL  [32]byte // dedicated lockSeed
 	KeyD1 [32]byte
 	KeyD2 [32]byte
 	KeyD3 [32]byte
@@ -338,10 +324,11 @@ type Blob256 struct {
 	KeyS2 [32]byte
 	KeyS3 [32]byte
 
+	// Seed components — *Seed256 with .Components populated.
+	// Hash and BatchHash are nil after Import3Cfg; the caller wires
+	// them from the saved Key* bytes.
 	NS  *Seed256
-	DS  *Seed256
-	SS  *Seed256
-	LS  *Seed256
+	LS  *Seed256 // dedicated lockSeed
 	DS1 *Seed256
 	DS2 *Seed256
 	DS3 *Seed256
@@ -349,16 +336,18 @@ type Blob256 struct {
 	SS2 *Seed256
 	SS3 *Seed256
 
+	// Optional MAC material. Caller rebuilds the closure with
+	// macs.Make(MACName, MACKey).
 	MACKey  []byte
 	MACName string
 }
 
 // Blob256Opts is the 256-bit width counterpart of [Blob512Opts].
 type Blob256Opts struct {
-	KeyL    [32]byte
-	LS      *Seed256
-	MACKey  []byte
-	MACName string
+	KeyL    [32]byte // dedicated lockSeed
+	LS      *Seed256 // dedicated lockSeed
+	MACKey  []byte   // nil / empty if no MAC
+	MACName string   // empty if no MAC
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -373,10 +362,9 @@ type Blob256Opts struct {
 type Blob128 struct {
 	Mode int
 
+	// Hash key bytes.
 	KeyN  []byte
-	KeyD  []byte
-	KeyS  []byte
-	KeyL  []byte
+	KeyL  []byte // dedicated lockSeed
 	KeyD1 []byte
 	KeyD2 []byte
 	KeyD3 []byte
@@ -384,10 +372,11 @@ type Blob128 struct {
 	KeyS2 []byte
 	KeyS3 []byte
 
+	// Seed components — *Seed128 with .Components populated.
+	// Hash and BatchHash are nil after Import3Cfg; the caller wires
+	// them from the saved Key* bytes.
 	NS  *Seed128
-	DS  *Seed128
-	SS  *Seed128
-	LS  *Seed128
+	LS  *Seed128 // dedicated lockSeed
 	DS1 *Seed128
 	DS2 *Seed128
 	DS3 *Seed128
@@ -395,6 +384,8 @@ type Blob128 struct {
 	SS2 *Seed128
 	SS3 *Seed128
 
+	// Optional MAC material. Caller rebuilds the closure with
+	// macs.Make(MACName, MACKey).
 	MACKey  []byte
 	MACName string
 }
@@ -403,10 +394,10 @@ type Blob128 struct {
 // KeyL is a variable-length byte slice (empty for siphash24,
 // 16 bytes for aescmac).
 type Blob128Opts struct {
-	KeyL    []byte
-	LS      *Seed128
-	MACKey  []byte
-	MACName string
+	KeyL    []byte   // dedicated lockSeed
+	LS      *Seed128 // dedicated lockSeed
+	MACKey  []byte   // nil / empty if no MAC
+	MACName string   // empty if no MAC
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -420,19 +411,14 @@ type Blob128Opts struct {
 // caller must supply a non-nil Config.
 var ErrBlobNilCfg = errors.New("itb: blob: Cfg entry point requires non-nil *Config")
 
-// snapshotGlobalsV1FromCfg reads the per-instance nonce / barrier /
-// worker configuration from a caller-supplied *Config. The public
-// Export3Cfg entry points reject nil before reaching this helper (see
-// [ErrBlobNilCfg]).
-//
-// MaxWorkers rides in the returned struct only when non-zero (the
-// omitempty tag on [blobGlobalsV1.MaxWorkers] drops the field from
-// the JSON wire in the zero case).
+// snapshotGlobalsV1FromCfg reads the per-instance nonce / barrier
+// configuration from a caller-supplied *Config. The public Export3Cfg
+// entry points reject nil before reaching this helper (see
+// [ErrBlobNilCfg]). [Config.MaxWorkers] is not snapshotted.
 func snapshotGlobalsV1FromCfg(cfg *Config) blobGlobalsV1 {
 	return blobGlobalsV1{
 		NonceBits:   cfg.NonceBits,
 		BarrierFill: cfg.BarrierFill,
-		MaxWorkers:  cfg.MaxWorkers,
 	}
 }
 
@@ -443,11 +429,9 @@ func snapshotGlobalsV1FromCfg(cfg *Config) blobGlobalsV1 {
 // [ErrBlobMalformed] before any field is written, so a malformed
 // blob does not leave a partially-populated Config behind.
 //
-// MaxWorkers is optional. When the blob carries a non-zero value it
-// is copied into cfg.MaxWorkers verbatim; when zero (pre-MaxWorkers
-// blobs, or blobs built from a Config with the field unset) the
-// receiver's cfg.MaxWorkers is left at 0 so runtime.NumCPU applies
-// at consumption.
+// cfg.MaxWorkers is not touched: the blob carries no worker cap, and
+// the receiver's own value (0 → runtime.NumCPU at consumption unless
+// the caller sets it) applies.
 func applyGlobalsV1ToCfg(g blobGlobalsV1, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
@@ -464,9 +448,6 @@ func applyGlobalsV1ToCfg(g blobGlobalsV1, cfg *Config) error {
 	}
 	cfg.NonceBits = g.NonceBits
 	cfg.BarrierFill = g.BarrierFill
-	if g.MaxWorkers > 0 {
-		cfg.MaxWorkers = g.MaxWorkers
-	}
 	return nil
 }
 
@@ -474,19 +455,16 @@ func applyGlobalsV1ToCfg(g blobGlobalsV1, cfg *Config) error {
 // Blob512 — Cfg-aware Triple Ouroboros Export / Import
 // ───────────────────────────────────────────────────────────────────
 
-// Export3Cfg is the Cfg-aware counterpart of [Blob512.Export3]. The
-// leading cfg argument replaces the process-global snapshot with a
-// per-instance Config snapshot; every other argument matches
-// [Blob512.Export3] and the packed blob shape is byte-identical to
-// the legacy path when cfg's NonceBits / BarrierFill match the
-// current process globals AND cfg.MaxWorkers == 0 (the legacy path
-// never populates the max_workers slot; a non-zero cfg.MaxWorkers
-// adds it to the wire).
+// Export3Cfg packs the 8-seed Triple constellation, per-slot hash
+// keys, dedicated lockSeed, and optional MAC material into
+// a self-describing JSON blob, capturing the per-instance
+// NonceBits / BarrierFill from the caller-supplied *Config into the
+// blob's globals section. The worker cap is not wire state and is
+// not emitted.
 //
-// A nil cfg returns [ErrBlobNilCfg] — the Cfg-aware entry points
-// exist for per-instance isolation, so the caller must supply a
-// non-nil Config; the legacy [Blob512.Export3] remains available for
-// callers that accept process-global semantics.
+// A nil cfg returns [ErrBlobNilCfg] — the Cfg-aware entry point
+// requires per-instance isolation, so the caller must supply a
+// non-nil Config.
 func (b *Blob512) Export3Cfg(
 	cfg *Config,
 	keyN [64]byte,
@@ -560,16 +538,15 @@ func (b *Blob512) Export3Cfg(
 	return json.Marshal(blob)
 }
 
-// Import3Cfg is the Cfg-aware counterpart of [Blob512.Import3]. The
-// captured globals are written into the caller-supplied *Config via
-// [applyGlobalsV1ToCfg] instead of the process globals; no
-// process-wide state is mutated. Every other step matches
-// [Blob512.Import3] verbatim, including the strict-shape decoder,
-// the version / mode / key_bits / component-count validation, and
-// the final receiver population.
+// Import3Cfg unpacks a Triple blob produced by [Blob512.Export3Cfg]
+// and writes the captured globals into the caller-supplied *Config
+// via [applyGlobalsV1ToCfg]; no process-wide state is mutated.
+// The strict-shape decoder rejects unknown fields and trailing
+// junk; the version / mode / key_bits / component-count validation
+// runs before any receiver field is written; and the final receiver
+// population happens only after every check succeeds.
 //
-// A nil cfg returns [ErrBlobNilCfg]. The legacy [Blob512.Import3]
-// remains available for callers that accept process-global semantics.
+// A nil cfg returns [ErrBlobNilCfg].
 func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
@@ -720,8 +697,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 // ───────────────────────────────────────────────────────────────────
 
 // Export3Cfg — Triple Ouroboros, 256-bit width. See
-// [Blob512.Export3Cfg] for the full contract; wire shape mirrors
-// [Blob256.Export3] with the added per-instance-globals semantic.
+// [Blob512.Export3Cfg] for the full contract.
 func (b *Blob256) Export3Cfg(
 	cfg *Config,
 	keyN [32]byte,
@@ -795,8 +771,7 @@ func (b *Blob256) Export3Cfg(
 }
 
 // Import3Cfg — Triple Ouroboros, 256-bit width. See
-// [Blob512.Import3Cfg] for the full contract; behaviour mirrors
-// [Blob256.Import3] with the per-instance-globals write path.
+// [Blob512.Import3Cfg] for the full contract.
 func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
@@ -947,8 +922,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 // ───────────────────────────────────────────────────────────────────
 
 // Export3Cfg — Triple Ouroboros, 128-bit width. See
-// [Blob512.Export3Cfg] for the full contract; wire shape mirrors
-// [Blob128.Export3] with the added per-instance-globals semantic.
+// [Blob512.Export3Cfg] for the full contract.
 func (b *Blob128) Export3Cfg(
 	cfg *Config,
 	keyN []byte,
@@ -1022,8 +996,7 @@ func (b *Blob128) Export3Cfg(
 }
 
 // Import3Cfg — Triple Ouroboros, 128-bit width. See
-// [Blob512.Import3Cfg] for the full contract; behaviour mirrors
-// [Blob128.Import3] with the per-instance-globals write path.
+// [Blob512.Import3Cfg] for the full contract.
 func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg

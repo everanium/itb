@@ -66,7 +66,7 @@ The dual-nonce wire header carries two nonces, `N_m` (main) and `N_il` (interloc
 
 Plaintext is COBS-encoded (Consistent Overhead Byte Stuffing) before embedding. COBS eliminates 0x00 bytes from the encoded output, enabling a null terminator as the unambiguous message boundary. The null terminator is encrypted inside the container — invisible without the correct seeds.
 
-Output format: `main_nonce (N bytes) ‖ interlock_nonce (N bytes) ‖ width (2 bytes) ‖ height (2 bytes) ‖ W×H×8 raw RGBWYOPA`, where `N` is the primitive's native nonce width in bytes. Header size = `2N + 4` bytes.
+Output format: `main_nonce (N bytes) ‖ interlock_nonce (N bytes) ‖ width (2 bytes) ‖ height (2 bytes) ‖ W×H×8 raw RGBWYOPA`, where `N` is the configured nonce width in bytes (`NonceBits / 8`; default `DefaultNonceBits = 512` bits, i.e. `N = 64`). Header size = `2N + 4` bytes.
 
 No magic bytes, no checksums, no message length header. Wrong seeds produce random-looking output with no verification oracle (oracle-free deniability; see [ITB.md § 16 Oracle-Free Deniability](ITB.md#16-oracle-free-deniability)). The per-message empirical decomposition of nonce collision behaviour under the dual-nonce header is deferred to §2.14.
 
@@ -179,7 +179,7 @@ For `keyBits = 1024`: `MinPixels = 365`, giving `P = 400` after square rounding 
 
 ### 2.8 CCA Leak Upper Bound (Theorem 6)
 
-**Theorem 6.** **Under CCA with MAC-reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model.**
+**Theorem 6.** **Under CCA with MAC Reveal, the noise position (3 bits per pixel from noiseSeed) is the maximum information extractable about the configuration under this attack model.**
 
 The CCA oracle classifies each bit as noise (accept) or data (reject). Per pixel: 8 queries suffice (testing each bit position; all channels share the same `noisePos`). After classification, the 7 data-bit positions are known, but their values are protected by per-bit XOR from `dataSeed_i` (independent of noiseSeed by Theorem 3). The per-chunk mask channel is unaffected under this attack model.
 
@@ -219,7 +219,7 @@ If the attacker has insider knowledge that a MAC tag is present (MAC + Silent Dr
 
 ### 2.14 Nonce Uniqueness
 
-The dual-nonce wire header carries two independently drawn CSPRNG nonces. Birthday collision on either single slot reaches ~50 % after `2^(N/2)` messages (`N` = the primitive's nonce width in bits); simultaneous collision on both slots is the product probability, requiring on the order of `2^N` messages. Simultaneous collision is not reachable through the shipped API: both nonces are drawn independently from CSPRNG per encryption, neither slot is caller-addressable, so simultaneous collision requires a **CSPRNG hardware fault**. Under single-slot collision, the un-collided axis provides fresh-nonce closure and the barrier's confidentiality closure holds a fortiori. Each dual-nonce pair creates an independent configuration map; a collision affects only the colliding pair.
+The dual-nonce wire header carries two independently drawn CSPRNG nonces. Birthday collision on either single slot reaches ~50 % after `2^(N/2)` messages (`N` = the configured nonce width in bits, default `DefaultNonceBits = 512`); simultaneous collision on both slots is the product probability, requiring on the order of `2^N` messages. Simultaneous collision is not reachable through the shipped API: both nonces are drawn independently from CSPRNG per encryption, neither slot is caller-addressable, so simultaneous collision requires a **CSPRNG hardware fault**. Under single-slot collision, the un-collided axis provides fresh-nonce closure and the barrier's confidentiality closure holds a fortiori. Each dual-nonce pair creates an independent configuration map; a collision affects only the colliding pair.
 
 **Empirical verdict — plaintext recovery is null under every attacker-realistic dual-slot / main-only / interlock-only collision scenario at the tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under the maximum-leverage dual-slot collision the lab can force (both nonces overridden through test-only setters — impossible through the shipped API), the container XOR carries `rotate7(snake_XOR_bits, r)` at every non-noise bit position plus a fresh CSPRNG noise bit, but only up to the barrier's Part 1 permutation of the plaintext bits into three lane-scrambled snake payloads. The lane assignment a two-time-pad demasker would need to anchor on is a per-chunk PRF secret keyed by lockSeed and unobservable without it. Empirical null holds across BLAKE3 as a PRF-grade reference and FNV-1a as a below-spec stress control on every one of the 8 seed roles.
 
@@ -400,11 +400,11 @@ At 64 KB, encoding ambiguity alone is `2^26,414`, whose exponent is 25.8× the 1
 
 A reference implementation in Go (`github.com/everanium/itb`) supports three hash width variants:
 
-- 128-bit (SipHash-2-4, AES-CMAC): effective max key 1024 bits.
-- 256-bit (Areion-SoEM-256, BLAKE3, BLAKE2b-256, BLAKE2s): effective max key 2048 bits.
-- 512-bit (Areion-SoEM-512, BLAKE2b-512): effective max key 2048 bits.
+- 128-bit primitives: effective max key 1024 bits.
+- 256-bit primitives: effective max key 2048 bits.
+- 512-bit primitives: effective max key 2048 bits.
 
-Wire format: `main_nonce (N bytes) ‖ interlock_nonce (N bytes) ‖ W (2 bytes) ‖ H (2 bytes) ‖ W × H × 8 raw RGBWYOPA`, header size `2N + 4` bytes (`N` = the primitive's native nonce width in bytes). The 48-bit Interlocked Barrier is mandatory and always-on; no compile-time or runtime flag disables it. The 8-seed constellation is required at every entry point.
+Wire format: `main_nonce (N bytes) ‖ interlock_nonce (N bytes) ‖ W (2 bytes) ‖ H (2 bytes) ‖ W × H × 8 raw RGBWYOPA`, header size `2N + 4` bytes (`N` = the configured nonce width in bytes; default `DefaultNonceBits = 512` bits, `N = 64`). The 48-bit Interlocked Barrier is mandatory and always-on; no compile-time or runtime flag disables it. The 8-seed constellation is required at every entry point.
 
 Key sizes range from 512 to 2048 bits (minimum 8 components per seed). Zero external dependencies (Go standard library plus user-supplied hash primitives). Hash functions are user-supplied — either registered by name via `hashes.Register(spec hashes.Spec) error` for use through the Triple facade, or plugged directly as `HashFunc{N}` + `BatchHashFunc{N}` closures at the Low-Level `*Cfg` surface (see [ITB.md § 17 Custom Primitives](ITB.md#17-custom-primitives)). All pixel processing uses elementary operations (XOR, AND, shift, modulo) with no secret-dependent memory access — register-only operations for all dataSeed-derived values; the barrier's per-chunk kernels are constant-time.
 

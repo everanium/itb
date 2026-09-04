@@ -30,7 +30,7 @@
 // [github.com/everanium/itb/triple.Init] call allocates the 8 ITB
 // seeds, the optional parallax + wrapper layers, and the optional
 // MAC, and exposes the Single Message and Streaming shapes (AEAD and
-// Non-AEAD) plus the [github.com/everanium/itb/triple.Open] /
+// Non-AEAD) plus the [github.com/everanium/itb/triple.Load] /
 // [github.com/everanium/itb/triple.Pipeline.Rekey] /
 // [github.com/everanium/itb/triple.Pipeline.Close] lifecycle. See the
 // project README.md for worked examples across every shipped profile.
@@ -136,13 +136,14 @@
 //
 // # See also
 //
-//   - README.md — full API surface, worked examples, primitive registry.
+//   - FAQ.md — plain-language cryptanalytic walkthroughs.
 //   - ITB.md — accessible explanation of how the barrier works.
-//   - SCIENCE.md — architectural argument.
 //   - PROOFS.md — formal security proofs.
-//   - REDTEAM.md — empirical adversarial validation.
+//   - SCIENCE.md — architectural argument.
 //   - SECURITY.md — threat-model reference.
 //   - HWTHREATS.md — hardware-level threat boundary.
-//   - FAQ.md — plain-language cryptanalytic walkthroughs.
+//   - REDTEAM.md — empirical adversarial validation.
+//   - HARNESS.md — adversarial testing methodology and calibration.
+//   - README.md — full API surface, worked examples, primitive registry.
 //   - BENCH3.md — benchmark tables across primitives and CPUs.
 package itb

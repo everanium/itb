@@ -1,6 +1,6 @@
 [package]
 name = "itb"
-version = "0.3.5"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"
@@ -12,6 +12,8 @@ categories = ["cryptography", "external-ffi-bindings", "api-bindings"]
 
 [dependencies]
 libloading = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 criterion = "0.5"

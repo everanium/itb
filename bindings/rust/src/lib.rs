@@ -13,7 +13,7 @@
 //!
 //! let opts = OptsBuilder::new();
 //! let sender = Pipeline::init("singlemsg-triple-mac-v1", &opts)?;
-//! let receiver = Pipeline::open("singlemsg-triple-mac-v1", sender.blob(), &opts, None)?;
+//! let receiver = Pipeline::load(&sender.save()?, None)?;
 //! let wire = sender.encrypt_message(b"hello")?;
 //! assert_eq!(receiver.decrypt_message(&wire)?, b"hello");
 //! # Ok::<(), itb::ItbError>(())
@@ -23,6 +23,7 @@ mod error;
 mod ffi;
 mod opts;
 mod pipeline;
+mod profile;
 mod register;
 mod runtime;
 mod status;
@@ -30,8 +31,9 @@ mod stream;
 
 pub use error::{ItbError, ItbResult};
 pub use opts::OptsBuilder;
-pub use pipeline::Pipeline;
-pub use register::register_profile;
+pub use pipeline::{Pipeline, inspect};
+pub use profile::Profile;
+pub use register::{lookup, profiles, register};
 pub use runtime::{set_gc_percent, set_memory_limit, version};
 pub use status::ItbStatus;
 pub use stream::{DecryptStream, EncryptStream};

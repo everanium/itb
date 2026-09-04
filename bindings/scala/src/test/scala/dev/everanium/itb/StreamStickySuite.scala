@@ -17,7 +17,7 @@ class StreamStickySuite extends ItbSuite:
 
   test("tampered wire sticky failure") {
     Using.resource(ok(Pipeline.init("streaming-aead-triple-mac-v1"))) { sender =>
-      Using.resource(ok(Pipeline.open("streaming-aead-triple-mac-v1", sender.blob))) {
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) {
         receiver =>
           val plain = Array.tabulate(65_536)(i => (i % 227).toByte)
           val baseWire = ok(sender.encryptStreamOneShot(plain))

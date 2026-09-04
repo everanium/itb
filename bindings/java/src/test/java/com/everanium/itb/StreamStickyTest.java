@@ -24,8 +24,7 @@ class StreamStickyTest {
     @Test
     void tamperedWireStickyFailure() {
         try (Pipeline sender = Pipeline.init("streaming-aead-triple-mac-v1");
-                Pipeline receiver = Pipeline.open(
-                        "streaming-aead-triple-mac-v1", sender.blob(), new Opts())) {
+                Pipeline receiver = Pipeline.load(sender.save())) {
             byte[] plain = new byte[65_536];
             for (int i = 0; i < plain.length; i++) {
                 plain[i] = (byte) (i % 227);

@@ -19,8 +19,8 @@ import (
 // layer just pins it via runtime/cgo.Handle so the value survives
 // across the C boundary without leaking the internal type.
 //
-// Mirrors the SeedHandle / MACHandle / BlobHandle pattern in
-// handles.go / macs.go / blob_handles.go — one TripleHandle replaces
+// Mirrors the SeedHandle / MACHandle pattern in
+// handles.go / macs.go — one TripleHandle replaces
 // the (8 seeds + MAC + parallax + wrapper) constructor ceremony of
 // the low-level surface.
 type TripleHandle struct {
@@ -67,14 +67,15 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 // Accepted keys (mirror the [triple.Opts] fields):
 //
 //   - profile   — informational (ignored; the profile name is a
-//     separate argument to Init / Open).
+//     separate argument to Init).
 //   - pm        — hex-encoded parallax master (PermMaster).
 //   - wm        — hex-encoded wrapper master (WrapMaster).
 //   - withParallax / withWrapper — "true" / "false" three-state
 //     override; absent = nil (profile default).
 //   - maxWorkers, nonceBits, barrierFill, chunkSize, keyBits,
 //     parallaxSegmentSize, tagStubSize — decimal integer overrides.
-//     tagStubSize overrides the profile's No MAC stub reservation
+//     maxWorkers is clamped by [triple.Init] (n ≤ 0 → auto, n > 256
+//     → 256), never rejected. tagStubSize overrides the profile's No MAC stub reservation
 //     size (see [triple.Opts.TagStubSize]); accepted values are 0
 //     or 16..64 inclusive; absent = 0 (profile default, falling
 //     through to the MacName auto-probe or the 32-byte default).
@@ -85,10 +86,7 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 //     Slot ordering matches [triple.Opts.MixedHashes]. Exactly 8
 //     entries required when non-empty; mutually exclusive with
 //     innerHash (mixed dispatch wins per the resolver rule). Empty
-//     value defers to the profile default. Same key name and shape
-//     the profile-registration parser already accepts, kept
-//     symmetric so a call site that shares an opts-string helper
-//     can reuse it in both contexts.
+//     value defers to the profile default.
 //   - parallaxPalette — comma-separated primitive names for the
 //     parallax palette (empty = profile default).
 func parseTripleOpts(query string) (triple.Opts, error) {
@@ -108,7 +106,7 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 		switch k {
 		case "profile":
 			// Informational only — the profile name is a separate
-			// argument to Init / Open. Accept the key silently so a
+			// argument to Init. Accept the key silently so a
 			// binding that echoes it back does not trip the unknown
 			// key check.
 		case "pm":
@@ -139,9 +137,6 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {
 				return opts, fmt.Errorf("opts maxWorkers: %w", ierr)
-			}
-			if n < 0 {
-				return opts, fmt.Errorf("opts maxWorkers=%d must be >= 0", n)
 			}
 			opts.MaxWorkers = n
 		case "nonceBits":

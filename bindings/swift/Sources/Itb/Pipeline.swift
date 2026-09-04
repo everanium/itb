@@ -35,22 +35,44 @@ public final class Pipeline: @unchecked Sendable {
         self.init(raw: out)
     }
 
-    /// Reconstructs a Pipeline from a blob produced by a sender's
-    /// init / rekey. Omit the masters to use the blob-embedded pair;
-    /// to override, both must be supplied non-empty (a half-supplied
-    /// pair is rejected).
-    public convenience init(open profile: String, blob: Data, opts: Opts? = nil,
+    /// Reconstructs a Pipeline from a blob produced by `save` / `rekey`.
+    /// Omit the masters to use the blob-embedded pair; supply both to
+    /// override them (the pair is validated by libitb). The profile
+    /// shape travels inside the blob — no profile name, no opts. A
+    /// blob whose record names a primitive absent from the local build
+    /// throws `.recipePrimitiveUnknown`; a record failing the profile
+    /// field rules `.blobMalformedRecipe`.
+    public convenience init(load blob: Data,
                             permMaster: Data? = nil, wrapMaster: Data? = nil) throws {
         var out: OpaquePointer?
         try blob.withItbBytes { blobPtr, blobLen in
             try (permMaster ?? Data()).withItbBytes { permPtr, permLen in
                 try (wrapMaster ?? Data()).withItbBytes { wrapPtr, wrapLen in
-                    try check(itb_pipeline_open(profile, blobPtr, blobLen,
-                                                opts?.raw,
+                    try check(itb_pipeline_load(blobPtr, blobLen,
                                                 permLen > 0 ? permPtr : nil, permLen,
                                                 wrapLen > 0 ? wrapPtr : nil, wrapLen,
                                                 &out))
                 }
+            }
+        }
+        guard let out else {
+            throw ItbError(c: ITB_STATUS_INTERNAL)
+        }
+        self.init(raw: out)
+    }
+
+    /// `init(load:)` for a blob stored at `path`; the file is read
+    /// inside libitb (a missing or unreadable file throws `.badInput`
+    /// with the diagnostic attached).
+    public convenience init(loadFile path: String,
+                            permMaster: Data? = nil, wrapMaster: Data? = nil) throws {
+        var out: OpaquePointer?
+        try (permMaster ?? Data()).withItbBytes { permPtr, permLen in
+            try (wrapMaster ?? Data()).withItbBytes { wrapPtr, wrapLen in
+                try check(itb_pipeline_load_f(path,
+                                              permLen > 0 ? permPtr : nil, permLen,
+                                              wrapLen > 0 ? wrapPtr : nil, wrapLen,
+                                              &out))
             }
         }
         guard let out else {
@@ -65,23 +87,42 @@ public final class Pipeline: @unchecked Sendable {
 
     // MARK: Session blob
 
-    /// The exported session-bundle blob for the receiver side
-    /// (a copy; refreshed by rekey).
-    public var blob: Data {
-        guard let ptr = itb_pipeline_blob(raw) else {
-            return Data()
+    /// The current session-bundle blob for the receiver side (the
+    /// init blob, or the bytes of the latest `rekey`). A closed
+    /// Pipeline throws `.tripleClosed`.
+    public func save() throws -> Data {
+        try takeBytes { out, outLen in
+            itb_pipeline_save(raw, out, outLen)
         }
-        return Data(bytes: ptr, count: itb_pipeline_blob_len(raw))
     }
 
-    /// Rotates the parallax + wrapper masters and refreshes the blob.
-    /// Empty masters request fresh CSPRNG material Go-side.
-    public func rekey(permMaster: Data = Data(), wrapMaster: Data = Data()) throws {
+    /// Writes the current blob to `path` inside libitb (mode 0600; the
+    /// containing directory must exist).
+    public func saveF(_ path: String) throws {
+        try check(itb_pipeline_save_f(raw, path))
+    }
+
+    /// Sets the worker cap for every subsequent cipher call. `n` is
+    /// clamped by libitb (`<= 0` selects auto, `> 256` becomes 256);
+    /// only the handle state is reported. The cap is per-machine and
+    /// never travels in the blob.
+    public func maxWorkers(_ n: Int32) throws {
+        try check(itb_pipeline_max_workers(raw, n))
+    }
+
+    /// Rotates the parallax + wrapper masters and returns the fresh
+    /// blob (also available through `save`). Empty masters request
+    /// fresh CSPRNG material Go-side.
+    @discardableResult
+    public func rekey(permMaster: Data = Data(), wrapMaster: Data = Data()) throws -> Data {
         try permMaster.withItbBytes { permPtr, permLen in
             try wrapMaster.withItbBytes { wrapPtr, wrapLen in
-                try check(itb_pipeline_rekey(raw,
-                                             permLen > 0 ? permPtr : nil, permLen,
-                                             wrapLen > 0 ? wrapPtr : nil, wrapLen))
+                try takeBytes { out, outLen in
+                    itb_pipeline_rekey(raw,
+                                       permLen > 0 ? permPtr : nil, permLen,
+                                       wrapLen > 0 ? wrapPtr : nil, wrapLen,
+                                       out, outLen)
+                }
             }
         }
     }

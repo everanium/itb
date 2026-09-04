@@ -76,7 +76,7 @@ func runMessageRoundTrip(t *testing.T, w widthCase, n nonceCase, tog toggleCase,
 	}
 	defer pipe.Close()
 
-	rx, err := Open(m.profile, blob, opts)
+	rx, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEncryptMessageStreamCrossParityStreamToMessage(t *testing.T) {
 				t.Fatalf("Init: %v", err)
 			}
 			defer pipe.Close()
-			rx, err := Open(m.profile, blob, opts)
+			rx, err := Load(blob)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -172,7 +172,7 @@ func TestEncryptMessageStreamCrossParityMessageToStream(t *testing.T) {
 				t.Fatalf("Init: %v", err)
 			}
 			defer pipe.Close()
-			rx, err := Open(m.profile, blob, opts)
+			rx, err := Load(blob)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -264,7 +264,7 @@ func TestEncryptMessageEmptyInput(t *testing.T) {
 				t.Fatalf("Init: %v", err)
 			}
 			defer pipe.Close()
-			rx, err := Open(ProfileSingleMsgTripleMACV1, blob, Opts{})
+			rx, err := Load(blob)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -298,7 +298,7 @@ func TestEncryptMessageConcurrentSamePipeline(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	defer pipe.Close()
-	rx, err := Open(ProfileSingleMsgTripleMACV1, blob, Opts{})
+	rx, err := Load(blob)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

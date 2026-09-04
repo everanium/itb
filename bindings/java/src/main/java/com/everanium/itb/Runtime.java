@@ -6,7 +6,7 @@ package com.everanium.itb;
 public final class Runtime {
 
     /** The binding's own version. */
-    public static final String BINDING_VERSION = "0.3.5";
+    public static final String BINDING_VERSION = "0.4.1";
 
     private Runtime() {
     }

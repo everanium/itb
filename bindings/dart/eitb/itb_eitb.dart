@@ -3,13 +3,14 @@
 // Subcommands:
 //
 //   eitb version                                   library + binding versions
-//   eitb hashes                                    shipped hash primitive roster
-//   eitb profiles                                  shipped profile identifiers
+//   eitb profiles                                  registered profile catalogue
 //   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 //   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex
-// back to `decrypt` on the receiving side.
+// back to `decrypt` on the receiving side. `profiles` lists the
+// registered profile catalogue one name per line; the profiles that
+// carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -17,7 +18,6 @@ import 'dart:typed_data';
 import 'package:itb/itb.dart';
 
 const String _usage = 'usage: eitb version\n'
-    '       eitb hashes\n'
     '       eitb profiles\n'
     '       eitb encrypt <profile> <in-file> <out-file>\n'
     '       eitb decrypt <profile> <blob-hex> <in-file> <out-file>';
@@ -32,16 +32,8 @@ void cmdVersion() {
   print('itb-dart $bindingVersion');
 }
 
-void cmdHashes() {
-  var i = 0;
-  for (final h in Itb.hashes()) {
-    print('${'$i'.padLeft(2)}  ${h.name.padRight(12)} ${h.widthBits} bits');
-    i++;
-  }
-}
-
 void cmdProfiles() {
-  for (final p in Itb.profiles) {
+  for (final p in Itb.profiles()) {
     print(p);
   }
 }
@@ -81,7 +73,7 @@ void cmdEncrypt(String profile, String infile, String outfile) {
       : pipe.encryptMessage(plain);
   _ensureParentDir(outfile);
   File(outfile).writeAsBytesSync(wire);
-  stderr.writeln(_hex(pipe.blob));
+  stderr.writeln(_hex(pipe.save()));
   print('encrypted $infile -> $outfile '
       '(${plain.length} -> ${wire.length} bytes)');
   pipe.free();
@@ -90,7 +82,7 @@ void cmdEncrypt(String profile, String infile, String outfile) {
 void cmdDecrypt(String profile, String blobHex, String infile, String outfile) {
   final blob = _unhex(blobHex);
   final wire = File(infile).readAsBytesSync();
-  final pipe = Itb.open(profile, blob);
+  final pipe = Itb.load(blob);
   final plain = _isStreamingProfile(profile)
       ? pipe.decryptStreamOneShot(wire)
       : pipe.decryptMessage(wire);
@@ -108,8 +100,6 @@ void main(List<String> args) {
     switch (args.isEmpty ? '' : args[0]) {
       case 'version':
         cmdVersion();
-      case 'hashes':
-        cmdHashes();
       case 'profiles':
         cmdProfiles();
       case 'encrypt':

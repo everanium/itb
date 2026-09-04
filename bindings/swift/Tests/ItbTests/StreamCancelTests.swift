@@ -25,8 +25,7 @@ final class StreamCancelTests: XCTestCase {
         }
 
         // The Pipeline stays usable after the cancelled sessions.
-        let receiver = try Pipeline(open: "streaming-aead-triple-mac-v1",
-                                    blob: sender.blob)
+        let receiver = try Pipeline(load: try sender.save())
         let wire = try sender.encryptStreamPump(chunk)
         let back = try receiver.decryptStreamPump(wire)
         XCTAssertEqual(back, chunk)

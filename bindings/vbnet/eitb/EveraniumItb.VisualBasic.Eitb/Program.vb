@@ -3,16 +3,14 @@
 ' Subcommands:
 '
 '   eitb version                                   library + binding versions
-'   eitb hashes                                    shipped hash primitive roster
+'   eitb profiles                                  registered profile catalogue
 '   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 '   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 '
 ' `encrypt` prints the session blob to stderr as hex; feed that hex
-' back to `decrypt` on the receiving side.
-'
-' The `hashes` diagnostic iterates the registry through the C#
-' layer's internal relay (InternalsVisibleTo) — the binding library
-' itself deliberately exposes no primitive enumeration.
+' back to `decrypt` on the receiving side. `profiles` lists the
+' registered profile catalogue one name per line; the profiles that
+' carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 Imports System.IO
 Imports Everanium.Itb.VisualBasic
@@ -25,9 +23,13 @@ Friend Module Program
         Try
             Select Case If(args.Length > 0, args(0), Nothing)
                 Case "version"
-                    Return CmdVersion()
-                Case "hashes"
-                    Return CmdHashes()
+                    If args.Length = 1 Then
+                        Return CmdVersion()
+                    End If
+                Case "profiles"
+                    If args.Length = 1 Then
+                        Return CmdProfiles()
+                    End If
                 Case "encrypt"
                     If args.Length = 4 Then
                         Return CmdEncrypt(args(1), args(2), args(3))
@@ -39,7 +41,7 @@ Friend Module Program
             End Select
             Console.Error.WriteLine(
                 "usage: eitb version" & Environment.NewLine &
-                "       eitb hashes" & Environment.NewLine &
+                "       eitb profiles" & Environment.NewLine &
                 "       eitb encrypt <profile> <in-file> <out-file>" & Environment.NewLine &
                 "       eitb decrypt <profile> <blob-hex> <in-file> <out-file>")
             Return 2
@@ -55,12 +57,11 @@ Friend Module Program
         Return 0
     End Function
 
-    Private Function CmdHashes() As Integer
-        Dim count As Integer = Global.Itb.VisualBasicInterop.HashCount()
-        For i As Integer = 0 To count - 1
-            Dim name As String = Global.Itb.VisualBasicInterop.HashName(i)
-            Dim width As Integer = Global.Itb.VisualBasicInterop.HashWidth(i)
-            Console.WriteLine($"{i,2}  {name,-12} {width} bits")
+    ' Prints the registered profile catalogue one name per line in
+    ' the sorted order Pipeline.Profiles() returns.
+    Private Function CmdProfiles() As Integer
+        For Each name As String In Pipeline.Profiles()
+            Console.WriteLine(name)
         Next
         Return 0
     End Function
@@ -92,7 +93,7 @@ Friend Module Program
                                     pipe.EncryptMessage(plain))
             EnsureParentDir(outFile)
             File.WriteAllBytes(outFile, wire)
-            Console.Error.WriteLine(Convert.ToHexStringLower(pipe.Blob))
+            Console.Error.WriteLine(Convert.ToHexStringLower(pipe.Save()))
             Console.WriteLine(
                 $"encrypted {inFile} -> {outFile} ({plain.Length} -> {wire.Length} bytes)")
         End Using
@@ -103,7 +104,7 @@ Friend Module Program
             profile As String, blobHex As String, inFile As String, outFile As String) As Integer
         Dim blob As Byte() = Convert.FromHexString(blobHex)
         Dim wire As Byte() = File.ReadAllBytes(inFile)
-        Using pipe As Pipeline = Pipeline.Open(profile, blob)
+        Using pipe As Pipeline = Pipeline.Load(blob)
             Dim plain As Byte() = If(IsStreamingProfile(profile),
                                      pipe.DecryptStreamOneShot(wire),
                                      pipe.DecryptMessage(wire))

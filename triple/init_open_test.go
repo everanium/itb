@@ -25,7 +25,7 @@ func allProfiles() []string {
 
 // TestPipelineInitOpenRoundTripAllProfiles constructs a Pipeline for
 // every shipped profile, exports the blob, reconstructs a receiver-
-// side Pipeline via Open, and verifies the reconstructed state
+// side Pipeline via Load, and verifies the reconstructed state
 // matches the sender's on the load-bearing fields (profile name,
 // layer toggles, MAC name / key, wrapper cipher name, seed
 // Components).
@@ -38,23 +38,23 @@ func TestPipelineInitOpenRoundTripAllProfiles(t *testing.T) {
 			}
 			defer sender.Close()
 
-			receiver, err := Open(prof, blob, Opts{})
+			receiver, err := Load(blob)
 			if err != nil {
-				t.Fatalf("Open(%q): %v", prof, err)
+				t.Fatalf("Load(%q): %v", prof, err)
 			}
 			defer receiver.Close()
 
-			if sender.profileName != receiver.profileName {
+			if sender.resolved.Name != receiver.resolved.Name {
 				t.Fatalf("profileName: sender %q vs receiver %q",
-					sender.profileName, receiver.profileName)
+					sender.resolved.Name, receiver.resolved.Name)
 			}
-			if sender.resolved.parallaxOn != receiver.resolved.parallaxOn {
-				t.Fatalf("parallaxOn: sender %v vs receiver %v",
-					sender.resolved.parallaxOn, receiver.resolved.parallaxOn)
+			if sender.resolved.Parallax != receiver.resolved.Parallax {
+				t.Fatalf("Parallax: sender %v vs receiver %v",
+					sender.resolved.Parallax, receiver.resolved.Parallax)
 			}
-			if sender.resolved.wrapperOn != receiver.resolved.wrapperOn {
-				t.Fatalf("wrapperOn: sender %v vs receiver %v",
-					sender.resolved.wrapperOn, receiver.resolved.wrapperOn)
+			if sender.resolved.Wrapper != receiver.resolved.Wrapper {
+				t.Fatalf("Wrapper: sender %v vs receiver %v",
+					sender.resolved.Wrapper, receiver.resolved.Wrapper)
 			}
 			if sender.macName != receiver.macName {
 				t.Fatalf("macName: sender %q vs receiver %q",
@@ -139,7 +139,7 @@ func TestPipelineInitMastersOverride(t *testing.T) {
 	defer pipe.Close()
 
 	// Decode the wrap-layer to inspect the pm / wm slots.
-	var got blobWrapV1
+	var got blobWrapV2
 	if err := json.Unmarshal(blob, &got); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestPipelineInitMastersOverride(t *testing.T) {
 	}
 }
 
-// TestPipelineOpenMastersOverride verifies that Open accepts the
+// TestPipelineOpenMastersOverride verifies that Load accepts the
 // trailing 2-master variadic override and consumes those bytes
 // instead of the blob's stored masters.
 func TestPipelineOpenMastersOverride(t *testing.T) {
@@ -161,16 +161,16 @@ func TestPipelineOpenMastersOverride(t *testing.T) {
 	}
 	defer sender.Close()
 
-	// Fresh masters that DON'T match the sender's — Open should
+	// Fresh masters that DON'T match the sender's — Load should
 	// consume these rather than the blob's stored pair. Since the
 	// wrapper key is a deterministic function of the wrapper master,
 	// the receiver's wrapperKey will differ from the sender's.
 	newPerm := freshBytes(t, 32)
 	newWrap := freshBytes(t, 32)
 
-	receiver, err := Open(ProfileStreamingAEADTripleMACV1, blob, Opts{}, newPerm, newWrap)
+	receiver, err := Load(blob, newPerm, newWrap)
 	if err != nil {
-		t.Fatalf("Open with overrides: %v", err)
+		t.Fatalf("Load with overrides: %v", err)
 	}
 	defer receiver.Close()
 
@@ -190,21 +190,20 @@ func TestPipelineOpenErrMastersArity(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	// Arity 1 — the invalid case the arity rule flags.
-	_, err = Open(ProfileStreamingAEADTripleMACV1, blob, Opts{}, freshBytes(t, 32))
+	_, err = Load(blob, freshBytes(t, 32))
 	if !errors.Is(err, ErrMastersArity) {
-		t.Fatalf("Open arity=1: got err=%v, want %v", err, ErrMastersArity)
+		t.Fatalf("Load arity=1: got err=%v, want %v", err, ErrMastersArity)
 	}
 	// Arity 3 — also invalid.
-	_, err = Open(ProfileStreamingAEADTripleMACV1, blob, Opts{},
-		freshBytes(t, 32), freshBytes(t, 32), freshBytes(t, 32))
+	_, err = Load(blob, freshBytes(t, 32), freshBytes(t, 32), freshBytes(t, 32))
 	if !errors.Is(err, ErrMastersArity) {
-		t.Fatalf("Open arity=3: got err=%v, want %v", err, ErrMastersArity)
+		t.Fatalf("Load arity=3: got err=%v, want %v", err, ErrMastersArity)
 	}
 }
 
 // TestPipelineOpenErrMissingMasters exercises the failure path when
 // the blob has no masters AND the caller supplies none. Build a
-// synthetic blob without pm / wm and confirm Open surfaces
+// synthetic blob without pm / wm and confirm Load surfaces
 // ErrMissingMasters.
 func TestPipelineOpenErrMissingMasters(t *testing.T) {
 	// Init a real blob to reuse its inner-blob bytes so the decode
@@ -214,7 +213,7 @@ func TestPipelineOpenErrMissingMasters(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	// Strip the masters from the wire and re-marshal.
-	var w blobWrapV1
+	var w blobWrapV2
 	if err := json.Unmarshal(blob, &w); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
@@ -224,9 +223,9 @@ func TestPipelineOpenErrMissingMasters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	_, err = Open(ProfileStreamingAEADTripleMACV1, stripped, Opts{})
+	_, err = Load(stripped)
 	if !errors.Is(err, ErrMissingMasters) {
-		t.Fatalf("Open on master-stripped blob: got err=%v, want %v",
+		t.Fatalf("Load on master-stripped blob: got err=%v, want %v",
 			err, ErrMissingMasters)
 	}
 }
@@ -254,20 +253,6 @@ func TestPipelineInitUnknownProfile(t *testing.T) {
 	}
 }
 
-// TestPipelineOpenErrBlobMismatch verifies Open rejects a blob whose
-// wrap-layer profile field disagrees with the profile argument.
-func TestPipelineOpenErrBlobMismatch(t *testing.T) {
-	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
-	if err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	_, err = Open(ProfileStreamingNoAEADTripleV1, blob, Opts{})
-	if !errors.Is(err, ErrBlobMismatch) {
-		t.Fatalf("Open with mismatched profile: got err=%v, want %v",
-			err, ErrBlobMismatch)
-	}
-}
-
 // freshBytes draws n bytes of CSPRNG-random data via crypto/rand.
 // Test helper used across the package's test files.
 func freshBytes(t *testing.T, n int) []byte {
@@ -280,8 +265,8 @@ func freshBytes(t *testing.T, n int) []byte {
 }
 
 // TestPipelineInitRejectsBadOptsCommon pins the fail-fast rejection of
-// [Opts.NonceBits] / [Opts.BarrierFill] / [Opts.MaxWorkers] outside
-// the shipped enum. Every case must surface an error before the
+// [Opts.NonceBits] / [Opts.BarrierFill] outside the shipped enum
+// ([Opts.MaxWorkers] is clamped, never rejected — see persist_test.go). Every case must surface an error before the
 // blob-producing step runs; the shipped default profile is engaged
 // only as a valid backdrop for the Opts probe.
 func TestPipelineInitRejectsBadOptsCommon(t *testing.T) {
@@ -294,7 +279,6 @@ func TestPipelineInitRejectsBadOptsCommon(t *testing.T) {
 		{"barrier_fill_5", Opts{BarrierFill: 5}},
 		{"barrier_fill_neg", Opts{BarrierFill: -1}},
 		{"barrier_fill_huge", Opts{BarrierFill: 1 << 30}},
-		{"max_workers_neg", Opts{MaxWorkers: -1}},
 	}
 	for _, c := range cases {
 		t.Run(c.label, func(t *testing.T) {
@@ -302,36 +286,6 @@ func TestPipelineInitRejectsBadOptsCommon(t *testing.T) {
 			if err == nil {
 				pipe.Close()
 				t.Fatalf("Init accepted invalid opts: %s", c.label)
-			}
-		})
-	}
-}
-
-// TestPipelineOpenRejectsBadOptsCommon mirrors
-// [TestPipelineInitRejectsBadOptsCommon] on the [Open] path. A valid
-// blob is produced first so the master-resolution / inner-decode
-// steps stay green; only the Opts arm is stressed.
-func TestPipelineOpenRejectsBadOptsCommon(t *testing.T) {
-	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
-	if err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	cases := []struct {
-		label string
-		opts  Opts
-	}{
-		{"nonce_bits_999", Opts{NonceBits: 999}},
-		{"nonce_bits_neg", Opts{NonceBits: -1}},
-		{"barrier_fill_5", Opts{BarrierFill: 5}},
-		{"barrier_fill_neg", Opts{BarrierFill: -1}},
-		{"max_workers_neg", Opts{MaxWorkers: -1}},
-	}
-	for _, c := range cases {
-		t.Run(c.label, func(t *testing.T) {
-			pipe, err := Open(ProfileStreamingAEADTripleMACV1, blob, c.opts)
-			if err == nil {
-				pipe.Close()
-				t.Fatalf("Open accepted invalid opts: %s", c.label)
 			}
 		})
 	}
@@ -446,7 +400,7 @@ func TestPipelineRekeyRejectsOversizedMasters(t *testing.T) {
 }
 
 // TestPipelineOpenRejectsOversizedMasters pins the upper-cap
-// rejection on the [Open] rekey-on-import trailing-variadic path.
+// rejection on the [Load] rekey-on-import trailing-variadic path.
 func TestPipelineOpenRejectsOversizedMasters(t *testing.T) {
 	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
 	if err != nil {
@@ -456,24 +410,24 @@ func TestPipelineOpenRejectsOversizedMasters(t *testing.T) {
 	goodWrap := freshBytes(t, 32)
 	badPerm := freshBytes(t, 129)
 	badWrap := freshBytes(t, 129)
-	if _, err := Open(ProfileStreamingAEADTripleMACV1, blob, Opts{}, badPerm, goodWrap); err == nil {
-		t.Fatal("Open accepted oversized permMaster override")
+	if _, err := Load(blob, badPerm, goodWrap); err == nil {
+		t.Fatal("Load accepted oversized permMaster override")
 	}
-	if _, err := Open(ProfileStreamingAEADTripleMACV1, blob, Opts{}, goodPerm, badWrap); err == nil {
-		t.Fatal("Open accepted oversized wrapMaster override")
+	if _, err := Load(blob, goodPerm, badWrap); err == nil {
+		t.Fatal("Load accepted oversized wrapMaster override")
 	}
 }
 
 // TestPipelineOpenRejectsOversizedBlobMasters pins the upper-cap
 // rejection when the persisted wrap-layer carries an oversized
 // PermMaster / WrapMaster. A hostile persisted blob cannot then
-// force the [Open] path to amplify the multi-megabyte slice.
+// force the [Load] path to amplify the multi-megabyte slice.
 func TestPipelineOpenRejectsOversizedBlobMasters(t *testing.T) {
 	_, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	var w blobWrapV1
+	var w blobWrapV2
 	if err := json.Unmarshal(blob, &w); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
@@ -487,8 +441,8 @@ func TestPipelineOpenRejectsOversizedBlobMasters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	if _, err := Open(ProfileStreamingAEADTripleMACV1, permBlob, Opts{}); err == nil {
-		t.Fatal("Open accepted blob with oversized PermMaster slot")
+	if _, err := Load(permBlob); err == nil {
+		t.Fatal("Load accepted blob with oversized PermMaster slot")
 	}
 
 	// WrapMaster: replace with a 129-byte slice; restore PermMaster.
@@ -498,18 +452,18 @@ func TestPipelineOpenRejectsOversizedBlobMasters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	if _, err := Open(ProfileStreamingAEADTripleMACV1, wrapBlob, Opts{}); err == nil {
-		t.Fatal("Open accepted blob with oversized WrapMaster slot")
+	if _, err := Load(wrapBlob); err == nil {
+		t.Fatal("Load accepted blob with oversized WrapMaster slot")
 	}
 }
 
 // TestPipelineOpenRejectsOversizedBlob pins the top-level byte-length
-// cap on the [Open] entry surface. A 2 MiB persisted blob is rejected
+// cap on the [Load] entry surface. A 2 MiB persisted blob is rejected
 // before json.Decoder allocates for any wrap-layer field. Mirrors
 // [TestBlobDecodeRejectsOversizedInput] at the triple boundary.
 func TestPipelineOpenRejectsOversizedBlob(t *testing.T) {
 	oversized := bytes.Repeat([]byte{'{'}, 2*itb.MaxBlobJSONSize)
-	if _, err := Open(ProfileStreamingAEADTripleMACV1, oversized, Opts{}); err == nil {
-		t.Fatal("Open accepted 2 MiB blob (cap is itb.MaxBlobJSONSize)")
+	if _, err := Load(oversized); err == nil {
+		t.Fatal("Load accepted 2 MiB blob (cap is itb.MaxBlobJSONSize)")
 	}
 }

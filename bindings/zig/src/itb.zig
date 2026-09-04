@@ -12,8 +12,9 @@
 //!
 //!     var sender = try itb.Pipeline.init(allocator, "singlemsg-triple-mac-v1", null);
 //!     defer sender.deinit();
-//!     var receiver = try itb.Pipeline.open(
-//!         allocator, "singlemsg-triple-mac-v1", sender.blob(), null, null);
+//!     const blob = try sender.save();
+//!     defer allocator.free(blob);
+//!     var receiver = try itb.Pipeline.load(allocator, blob, null);
 //!     defer receiver.deinit();
 //!
 //!     const wire = try sender.encryptMessage("hello");
@@ -23,7 +24,7 @@
 
 /// Zig binding version. Tracks the Zig wrapper; call `version` for
 /// the underlying libitb library version.
-pub const binding_version: [:0]const u8 = "0.3.5";
+pub const binding_version: [:0]const u8 = "0.4.1";
 
 pub const ffi = @import("ffi.zig");
 
@@ -46,10 +47,10 @@ pub const DecryptStream = stream_mod.DecryptStream;
 pub const ReadResult = stream_mod.ReadResult;
 
 const runtime_mod = @import("runtime.zig");
-pub const registerProfile = runtime_mod.registerProfile;
+pub const inspect = runtime_mod.inspect;
+pub const register = runtime_mod.register;
+pub const lookup = runtime_mod.lookup;
+pub const profiles = runtime_mod.profiles;
 pub const version = runtime_mod.version;
 pub const setMemoryLimit = runtime_mod.setMemoryLimit;
 pub const setGcPercent = runtime_mod.setGcPercent;
-pub const hashCount = runtime_mod.hashCount;
-pub const hashName = runtime_mod.hashName;
-pub const hashWidth = runtime_mod.hashWidth;

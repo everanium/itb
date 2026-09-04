@@ -9,8 +9,8 @@ use Everanium\Itb\Itb;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Library reachability, version string, hash roster canonical order,
- * profile roster, and the Go runtime knobs.
+ * Library reachability, version string, profile roster, and the Go
+ * runtime knobs.
  */
 final class SmokeTest extends TestCase
 {
@@ -21,28 +21,13 @@ final class SmokeTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+/', $v);
     }
 
-    public function testHashesCanonicalOrder(): void
-    {
-        // The shipped registry roster in canonical order; widths are
-        // the native ChainHash widths in bits.
-        $expected = [
-            'areion256' => 256,
-            'areion512' => 512,
-            'blake2b256' => 256,
-            'blake2b512' => 512,
-            'blake2s' => 256,
-            'blake3' => 256,
-            'aescmac' => 128,
-            'siphash24' => 128,
-            'chacha20' => 256,
-        ];
-        $this->assertSame($expected, Itb::hashes());
-    }
-
     public function testProfilesRosterShape(): void
     {
         $profiles = Itb::profiles();
         $this->assertNotEmpty($profiles);
+        $sorted = $profiles;
+        \sort($sorted, \SORT_STRING);
+        $this->assertSame($sorted, $profiles, 'profiles() is sorted');
         foreach ([
             'streaming-aead-triple-mac-v1',
             'streaming-noaead-triple-v1',
@@ -55,7 +40,8 @@ final class SmokeTest extends TestCase
         // blob-only profile included — it just has no cipher surface).
         foreach ($profiles as $name) {
             $pipe = Itb::create($name);
-            $this->assertNotSame('', $pipe->blob(), $name);
+            $this->assertNotSame('', $pipe->save(), $name);
+            $this->assertSame($name, Itb::lookup($name)['name']);
             $pipe->free();
         }
     }

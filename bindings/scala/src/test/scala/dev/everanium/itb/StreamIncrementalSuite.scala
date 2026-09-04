@@ -31,7 +31,7 @@ class StreamIncrementalSuite extends ItbSuite:
     // Small chunk size so the 64 KiB payload spans many chunks.
     val opts = Opts.empty.withChunkSize(4096)
     Using.resource(ok(Pipeline.init("streaming-aead-triple-mac-v1", opts))) { sender =>
-      Using.resource(ok(Pipeline.open("streaming-aead-triple-mac-v1", sender.blob, opts))) {
+      Using.resource(ok(Pipeline.load(ok(sender.save())))) {
         receiver =>
           val plain = Array.tabulate(65_536)(i => (i % 241).toByte)
 

@@ -78,15 +78,6 @@ var areionRC = [15][16]byte{
 	{0xb6, 0x10, 0xab, 0x2a, 0x6a, 0x39, 0xca, 0x55, 0x40, 0x14, 0xe8, 0x63, 0x62, 0x98, 0x48, 0x57},
 }
 
-// areionSoEM256DomainSepX4 is the SoEM-256 domain separator broadcast to
-// four lanes. The serial value is `[32]byte{0x01}` (one byte 0x01 at
-// position 0, the rest zero).
-var areionSoEM256DomainSepX4 = [32]byte{0x01}
-
-// areionSoEM512DomainSepX4 is the SoEM-512 domain separator broadcast.
-// Serial value is `[64]byte{0x01}`.
-var areionSoEM512DomainSepX4 = [64]byte{0x01}
-
 // The pre-broadcast round constant table (`AreionRC4x`) used by the
 // VAES assembly path lives in `internal/areionasm` because Go does not
 // allow assembly files in CGO-using packages. The amd64 ASM symbol
@@ -239,7 +230,7 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	// of Go-side overhead — measurable on slow-path
 	// 256-bit / 512-bit ITB nonce workloads where the closure dispatches
 	// 2-3 batched calls per ChainHash round.
-	const domainSepU64 = uint64(0x01) // = areionSoEM256DomainSepX4 first u64 word
+	const domainSepU64 = uint64(0x01) // Areion-SoEM-256 domain separator, first u64 word
 	keysU64 := (*[4][8]uint64)(unsafe.Pointer(keys))
 	inputsU64 := (*[4][4]uint64)(unsafe.Pointer(inputs))
 
@@ -383,7 +374,7 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 	// counterpart, scaled to four Block4 buffers per state (b0..b3
 	// holding AES blocks 0..3 of every lane). Skips the AoS pack/
 	// unpack steps the AoS dispatcher would otherwise emit.
-	const domainSepU64 = uint64(0x01) // = areionSoEM512DomainSepX4 first u64 word
+	const domainSepU64 = uint64(0x01) // Areion-SoEM-512 domain separator, first u64 word
 	keysU64 := (*[4][16]uint64)(unsafe.Pointer(keys))
 	inputsU64 := (*[4][8]uint64)(unsafe.Pointer(inputs))
 

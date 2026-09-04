@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
+
+	"github.com/everanium/itb/hashes"
 )
 
 // ciphers enumerates the three stream-capable registry primitives with their
@@ -13,9 +15,9 @@ var ciphers = []struct {
 	keySize   int
 	nonceSize int
 }{
-	{CipherAES128CTR, 16, 16},
-	{CipherSipHash24, 16, 16},
-	{CipherChaCha20, 32, 12},
+	{hashes.CipherAES128CTR, 16, 16},
+	{hashes.CipherSipHash24, 16, 16},
+	{hashes.CipherChaCha20, 32, 12},
 }
 
 func mustRead(t *testing.T, n int) []byte {

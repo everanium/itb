@@ -9,9 +9,9 @@ import "sync"
 //
 // Storing pointers-to-slice-header (`*[]byte`) instead of slice values
 // avoids the slice-header copy that sync.Pool would otherwise perform on
-// every Get / Put — the same idiom the cached hash wrappers in `doc.go`
-// use, and the form go vet's SA6002 rule expects for size-tracked pooled
-// objects.
+// every Get / Put — the same idiom the cached hash wrappers in
+// `process_cgo.go` use, and the form go vet's SA6002 rule expects for
+// size-tracked pooled objects.
 //
 // Scope — the pool manages ONLY internal scratch space:
 //   - encrypt-side `payload` / `payloads[i]` (COBS-encoded plaintext +

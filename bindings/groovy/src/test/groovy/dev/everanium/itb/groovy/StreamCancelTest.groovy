@@ -25,7 +25,7 @@ class StreamCancelTest {
             }
 
             // The Pipeline stays usable after the cancelled session.
-            Pipeline.withOpened('streaming-aead-triple-mac-v1', sender.blob) { Pipeline receiver ->
+            Pipeline.withLoaded(sender.save()) { Pipeline receiver ->
                 byte[] plain = 'after cancel'.getBytes('UTF-8')
                 byte[] wire = sender.encryptMessage(plain)
                 assertArrayEquals(plain, receiver.decryptMessage(wire))

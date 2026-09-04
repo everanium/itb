@@ -18,18 +18,20 @@ const (
 	StatusBadMAC         Status = 9
 	StatusMACFailure     Status = 10
 
-	// Reserved sentinel block 11..17 — previously carried the
-	// retired Easy encryptor surface's per-facade sentinel codes.
-	// The numeric slots stay reserved so no future addition
-	// re-uses them and shifts a wire-numeric error identifier
-	// bindings may still be reading from a legacy log.
-	StatusReserved11 Status = 11
-	StatusReserved12 Status = 12
-	StatusReserved13 Status = 13
-	StatusReserved14 Status = 14
-	StatusReserved15 Status = 15
-	StatusReserved16 Status = 16
-	StatusReserved17 Status = 17
+	// Triple sentinel block 11..13. These slots previously carried the
+	// retired Easy encryptor surface's per-facade codes; the numeric
+	// values are reassigned to the triple-side blob-record sentinels
+	// (see triple.ErrBlobMalformedRecipe and
+	// triple.ErrRecipePrimitiveUnknown) and to the registry miss
+	// (triple.ErrUnknownProfile, returned by [TripleInit] and
+	// [TripleLookup]). 14..17 remain unassigned for future use.
+	StatusBlobMalformedRecipe    Status = 11
+	StatusRecipePrimitiveUnknown Status = 12
+	StatusUnknownProfile         Status = 13
+	StatusReserved14             Status = 14
+	StatusReserved15             Status = 15
+	StatusReserved16             Status = 16
+	StatusReserved17             Status = 17
 
 	// Native Blob (itb.Blob128 / Blob256 / Blob512) sentinel codes.
 	// The numeric block 19..22 is dedicated to the low-level state-
@@ -52,15 +54,16 @@ const (
 	// Triple Pipeline (itb/triple) sentinel — returned by every
 	// [TripleEncryptStream] / [TripleDecryptStream] /
 	// [TripleEncryptMessage] / [TripleDecryptMessage] / [TripleRekey]
-	// call after [TripleClose] has run. Distinct from
-	// StatusEasyClosed so bindings can map the two facades to
-	// distinct language-side exception classes.
+	// call after [TripleClose] has run. Bindings map it to a
+	// language-side exception class distinct from the generic
+	// bad-handle path so the caller sees a clear "already closed"
+	// signal rather than "invalid handle".
 	StatusTripleClosed Status = 25
 
-	// [TripleRegisterProfile] sentinel — returned when the caller
-	// attempts to register a name that is already in the profile
-	// catalogue (either from the shipped set installed at package
-	// init or a prior [TripleRegisterProfile] call). Distinct from
+	// [TripleRegister] sentinel — returned when the caller attempts
+	// to register a name that is already in the profile catalogue
+	// (either from the shipped set installed at package init or a
+	// prior [TripleRegister] call). Distinct from
 	// StatusBadInput so bindings can map the duplicate-name path to
 	// a language-idiomatic "already exists" exception without
 	// conflating it with the validation-failure surface.
@@ -91,21 +94,24 @@ func (s Status) String() string {
 	case StatusDecryptFailed:
 		return "decrypt failed"
 	case StatusSeedWidthMix:
-		return "seed width mismatch (all three handles must share the same hash width)"
+		return "seed width mismatch (all eight seed handles must share the same hash width)"
 	case StatusBadMAC:
 		return "unknown MAC name or invalid MAC handle"
 	case StatusMACFailure:
 		return "MAC verification failed (tampered ciphertext or wrong key)"
-	case StatusReserved11,
-		StatusReserved12,
-		StatusReserved13,
-		StatusReserved14,
+	case StatusBlobMalformedRecipe:
+		return "blob profile record invalid"
+	case StatusRecipePrimitiveUnknown:
+		return "blob profile record names a primitive absent from the local registries"
+	case StatusUnknownProfile:
+		return "unknown profile name"
+	case StatusReserved14,
 		StatusReserved15,
 		StatusReserved16,
 		StatusReserved17:
-		return "reserved status (retired Easy facade)"
+		return "reserved status"
 	case StatusBlobModeMismatch:
-		return "blob mode mismatch (Single Import on Triple blob, or vice versa)"
+		return "blob mode mismatch (expected mode=3 Triple)"
 	case StatusBlobMalformed:
 		return "malformed state blob"
 	case StatusBlobVersionTooNew:

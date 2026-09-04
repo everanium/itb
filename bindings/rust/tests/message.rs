@@ -33,8 +33,8 @@ fn message_round_trip_every_profile() {
     for profile in profiles {
         let sender =
             Pipeline::init(profile, &opts).unwrap_or_else(|e| panic!("init {profile}: {e}"));
-        let receiver = Pipeline::open(profile, sender.blob(), &opts, None)
-            .unwrap_or_else(|e| panic!("open {profile}: {e}"));
+        let receiver = Pipeline::load(&sender.save().unwrap(), None)
+            .unwrap_or_else(|e| panic!("load {profile}: {e}"));
         for size in [4 * 1024, 256 * 1024] {
             let plain = payload(size, size as u64);
             let wire = sender

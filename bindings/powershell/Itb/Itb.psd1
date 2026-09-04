@@ -2,7 +2,7 @@
 
 @{
     RootModule           = 'Itb.psm1'
-    ModuleVersion        = '0.3.5'
+    ModuleVersion        = '0.4.1'
     GUID                 = 'ac3aa715-a34c-46de-906f-51d29510463b'
     Author               = 'Everanium'
     CompanyName          = 'Everanium'
@@ -12,11 +12,15 @@
     CompatiblePSEditions = @('Core')
     FunctionsToExport    = @(
         'New-ItbOpts'
-        'New-ItbPipeline'
-        'Open-ItbPipeline'
-        'Get-ItbBlob'
-        'Invoke-ItbRekey'
+        'New-ItbProfile'
+        'Get-ItbProfile'
+        'Get-ItbProfileName'
         'Register-ItbProfile'
+        'New-ItbPipeline'
+        'Import-ItbPipeline'
+        'Save-ItbPipeline'
+        'Set-ItbMaxWorkers'
+        'Invoke-ItbRekey'
         'Close-ItbPipeline'
         'Invoke-ItbEncrypt'
         'Invoke-ItbDecrypt'

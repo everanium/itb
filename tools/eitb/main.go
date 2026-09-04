@@ -4,12 +4,14 @@
 // Subcommands:
 //
 //	eitb version                                   library + binding versions
-//	eitb hashes                                    shipped hash primitive roster
+//	eitb profiles                                  registered profile catalogue
 //	eitb encrypt <profile> <in-file> <out-file>    encrypt a file
 //	eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex
-// back to `decrypt` on the receiving side.
+// back to `decrypt` on the receiving side. `profiles` lists the
+// registered profile catalogue one name per line; the profiles that
+// carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 //
 // The subcommand shape mirrors every language binding's eitb utility
 // verbatim so cross-binding compatibility scripts can invoke any eitb
@@ -33,17 +35,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/triple"
 )
 
 // eitbGoVersion matches the shipped libitb ABI version reported by
 // [github.com/everanium/itb/cmd/cshared] so the Go native tool prints
 // the same "libitb X.Y.Z" line as every binding's eitb.
-const eitbGoVersion = "0.3.5"
+const eitbGoVersion = "0.4.1"
 
 const usage = `usage: eitb version
-       eitb hashes
+       eitb profiles
        eitb encrypt <profile> <in-file> <out-file>
        eitb decrypt <profile> <blob-hex> <in-file> <out-file>`
 
@@ -66,12 +67,12 @@ func dispatch(args []string) int {
 		}
 		cmdVersion()
 		return 0
-	case "hashes":
+	case "profiles":
 		if len(args) != 1 {
 			fmt.Fprintln(os.Stderr, usage)
 			return 2
 		}
-		cmdHashes()
+		cmdProfiles()
 		return 0
 	case "encrypt":
 		if len(args) != 4 {
@@ -104,9 +105,13 @@ func cmdVersion() {
 	fmt.Printf("itb-go %s\n", eitbGoVersion)
 }
 
-func cmdHashes() {
-	for i, spec := range hashes.Registry {
-		fmt.Printf("%2d  %-12s %d bits\n", i, spec.Name, int(spec.Width))
+// cmdProfiles prints the registered profile catalogue, one name per
+// line, in the sorted order [triple.Profiles] returns. The catalogue
+// includes the blob-only profile, which carries no cipher surface;
+// `eitb encrypt` / `eitb decrypt` accept the remaining names.
+func cmdProfiles() {
+	for _, name := range triple.Profiles() {
+		fmt.Println(name)
 	}
 }
 
@@ -175,7 +180,7 @@ func cmdDecrypt(profile, blobHex, infile, outfile string) error {
 	if err != nil {
 		return err
 	}
-	pipe, err := triple.Open(profile, blob, triple.Opts{})
+	pipe, err := triple.Load(blob)
 	if err != nil {
 		return err
 	}

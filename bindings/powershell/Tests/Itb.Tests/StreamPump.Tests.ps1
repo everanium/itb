@@ -9,8 +9,7 @@ BeforeAll {
 Describe 'Stream pumps' {
     BeforeAll {
         $script:Sender = New-ItbPipeline -Profile 'streaming-aead-triple-mac-v1'
-        $script:Receiver = Open-ItbPipeline -Profile 'streaming-aead-triple-mac-v1' `
-            -Blob (Get-ItbBlob $script:Sender)
+        $script:Receiver = Import-ItbPipeline -Blob (Save-ItbPipeline $script:Sender)
     }
 
     AfterAll {
