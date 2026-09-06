@@ -50,6 +50,23 @@ type Seed128 struct {
 	// parity invariant). nil disables batched dispatch and preserves
 	// the legacy single-call code path.
 	BatchHash BatchHashFunc128
+
+	// FusedChain and BatchFusedChain optionally evaluate the whole
+	// ChainHash128 cascade inside the primitive (see
+	// [FusedChainHashFunc128]). When non-nil and the implementation
+	// reports ok for the input shape, ChainHash128 / BatchChainHash128
+	// return the fused result; otherwise they run the sequential loop
+	// over Hash / BatchHash. Both paths are bit-exact by contract; the
+	// fields are performance hooks, nil disables them.
+	FusedChain      FusedChainHashFunc128
+	BatchFusedChain BatchFusedChainHashFunc128
+
+	// interlockFillX16 optionally accelerates the Interlocked Barrier PRF
+	// fill for the 13-byte per-pixel shape (the sole shape the overlay
+	// uses). When non-nil, a 16-group batch is filled in one kernel
+	// call instead of four sequential 4-lane ChainAbsorb calls.
+	// Populated via SetInterlockBatch16.
+	interlockFillX16 InterlockFillFunc16
 }
 
 // NewSeed128 creates a new 128-bit seed with cryptographically random components.
@@ -141,6 +158,11 @@ func (s *Seed128) MinPixelsAuth() int {
 //	(hLo, hHi) = Hash128(data, s[2] ^ hLo, s[3] ^ hHi)
 //	...
 func (s *Seed128) ChainHash128(buf []byte) (uint64, uint64) {
+	if s.FusedChain != nil {
+		if lo, hi, ok := s.FusedChain(s.Components, buf); ok {
+			return lo, hi
+		}
+	}
 	hLo, hHi := s.Hash(buf, s.Components[0], s.Components[1])
 	for i := 2; i < len(s.Components); i += 2 {
 		hLo, hHi = s.Hash(buf, s.Components[i]^hLo, s.Components[i+1]^hHi)
@@ -181,4 +203,15 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	buf[0] = 0x04
 	copy(buf[1:], nonce)
 	return s.ChainHash128(buf)
+}
+
+// InterlockFillX16 returns the batch-16 interlock PRF fill hook.
+func (s *Seed128) InterlockFillX16() InterlockFillFunc16 {
+	return s.interlockFillX16
+}
+
+// SetInterlockBatch16 sets the batch-16 interlock PRF fill hook directly.
+// Call from hashes.AttachInterlockBatch16 after resolving the factory by name.
+func (s *Seed128) SetInterlockBatch16(fn InterlockFillFunc16) {
+	s.interlockFillX16 = fn
 }

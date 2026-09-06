@@ -15,6 +15,12 @@ import (
 //	         rank-unrank kernel selected. HasBMI2 keeps its auto
 //	         value: the PEXT/PDEP apply micro-kernel is orthogonal to
 //	         the rank-mask kernel choice.
+//	avx512x8 — requires AVX-512F silicon; keeps the AVX-512 rank-unrank
+//	           kernel selected but clears UseUnrank16, so every 16-chunk
+//	           superblock runs as two 8-lane passes instead of the one
+//	           16-lane pass. Makes the x8×2 geometry reachable end-to-end
+//	           on a host whose auto-dispatch selects the 16-lane kernel.
+//	           HasBMI2 keeps its auto value.
 //	avx2   — requires AVX2 + BMI2 silicon; selects the 4-lane AVX2
 //	         rank-unrank kernel, disabling the AVX-512 kernel so the
 //	         AVX2 arm is reachable on AVX-512F hosts. HasBMI2 keeps
@@ -34,6 +40,13 @@ func init() {
 			return
 		}
 		HasAVX512RankMask = true
+	case "avx512x8":
+		if !cpu.X86.HasAVX512F {
+			forcetier.Warnf("interlock: avx512x8 tier needs AVX-512F; keeping auto-dispatch")
+			return
+		}
+		HasAVX512RankMask = true
+		UseUnrank16 = false
 	case "avx2":
 		if !cpu.X86.HasAVX2 || !cpu.X86.HasBMI2 {
 			forcetier.Warnf("interlock: avx2 tier needs AVX2+BMI2 silicon; keeping auto-dispatch")

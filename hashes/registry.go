@@ -38,9 +38,25 @@ type Class uint8
 
 const (
 	// ClassNone is the zero value: the primitive carries no outer
-	// cipher dispatch class. User-registered Specs carry this value
-	// by default; ctr / kdf construct keystreams and KDFs only for
-	// the shipped Registry entries.
+	// cipher dispatch class and MUST NOT be routed through the
+	// ctr / kdf / wrapper / parallax keystream path. Two populations
+	// carry this value:
+	//
+	//   - Shipped Registry entries that are inner-PRF-only by design.
+	//     AES-ITB is the canonical example — a reduced-round AES
+	//     construction that is intentionally weak standalone and safe
+	//     only under ITB's compound inner-PRF defence stack
+	//     (ChainHash cascade + Interlocked Barrier + Part 2
+	//     absorption). Wiring such a primitive as a wrapper outer
+	//     cipher or parallax palette entry would expose the raw
+	//     2-round core as user-selectable keystream material.
+	//   - User-registered Specs, which carry this value by default.
+	//
+	// The outer-cipher consumers (ctr, kdf, wrapper, parallax) treat
+	// ClassNone as "not a keystream candidate": [KeystreamNames]
+	// filters these entries out of the canonical outer-cipher name
+	// list, and the ctr / kdf dispatch tables reject them at the
+	// switch level with an unknown-cipher error.
 	ClassNone Class = 0
 
 	// ClassNativeStream marks a primitive that owns a native
@@ -113,12 +129,38 @@ type Spec struct {
 	// [ClassOf] consults Registry only, and ctr / kdf construct keystreams
 	// and KDFs for shipped names only.
 	Class Class
+
+	// FusedChainHash128 optionally builds the whole-cascade evaluators a
+	// width-128 primitive can offer for [itb.Seed128.FusedChain] /
+	// [itb.Seed128.BatchFusedChain] (see [itb.FusedChainHashFunc128]).
+	// key is the primitive's fixed key exactly as returned by the
+	// Make128Pair factory that built the seed's Hash / BatchHash arms.
+	// nil (every entry without a fused cascade) leaves the seed on the
+	// sequential per-round loop; a populated factory must return
+	// evaluators bit-exact with that loop. Shipped: aesitb128.
+	FusedChainHash128 func(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) `json:"-"`
+
+	// InterlockFillBatch16 optionally builds the batch-16 interlock PRF
+	// fill kernel for [itb.Seed128.interlockFillX16] (see
+	// [itb.InterlockFillFunc16]). key is the primitive's fixed key exactly
+	// as returned by the Make128Pair factory. nil (every entry without batch-16
+	// support) leaves the seed on the per-round fillRanks path.
+	// Shipped: aesitb128.
+	InterlockFillBatch16 func(key []byte) (itb.InterlockFillFunc16, error) `json:"-"`
 }
 
 // Canonical shipped primitive names. Every registry consumer (ctr, kdf,
 // wrapper, parallax, triple, cmd/itb3) refers to these identifiers; the
 // string values are the FFI-stable names exposed through ITB_HashName.
 const (
+	// CipherAESITB128 names the AES-ITB primitive — an ITB-native
+	// session-aware short-input keyed hash built from reduced-round AES
+	// (2 rounds per pixel + sponge-style nonce absorption at session init).
+	// Standalone-weak by design (see HARNESS.md § 3.7 for the reduced-AES
+	// pattern); safe only under ITB's compound defence stack (ChainHash
+	// cascade + Interlocked Barrier + Part 2 absorption). Ships first in
+	// the canonical order to signal its ITB-native status.
+	CipherAESITB128  = "aesitb128"
 	CipherAreion256  = "areion256"
 	CipherAreion512  = "areion512"
 	CipherBLAKE2b256 = "blake2b256"
@@ -133,7 +175,11 @@ const (
 	CipherChaCha20  = "chacha20"
 )
 
-// Registry lists every shippable PRF-grade primitive in canonical order.
+// Registry lists every shippable PRF-grade primitive in canonical
+// order (with AES-ITB-128 as the ITB-native inner-PRF-only exception —
+// see [ClassNone]). Entries with Class == ClassNone are safe only
+// within ITB's compound inner-PRF stack — see the [ClassNone]
+// docstring for the taxonomy.
 // The same order is used by the FFI iteration surface (ITB_HashName,
 // ITB_HashWidth) — callers iterating the registry receive primitives in
 // this order.
@@ -144,7 +190,8 @@ const (
 // The FFI iteration surface deliberately observes only Registry so
 // bindings — which are triple-only and cannot themselves call Register
 // — see a stable primitive set.
-var Registry = [9]Spec{
+var Registry = [10]Spec{
+	{Name: CipherAESITB128, Width: W128, Class: ClassNone, FusedChainHash128: aesITB128FusedChainHash, InterlockFillBatch16: aesITB128InterlockFillBatch16},
 	{Name: CipherAreion256, Width: W256, Class: ClassPRFCounter},
 	{Name: CipherAreion512, Width: W512, Class: ClassPRFCounter},
 	{Name: CipherBLAKE2b256, Width: W256, Class: ClassPRFCounter, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash},
@@ -324,6 +371,19 @@ func validateKey(name string, want int, key ...[]byte) ([]byte, error) {
 // length.
 func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 	switch name {
+	case "aesitb128":
+		explicit, err := validateKey("aesitb128", 16, key...)
+		if err != nil {
+			return nil, nil, err
+		}
+		if explicit != nil {
+			var k [16]byte
+			copy(k[:], explicit)
+			h, _, ret := AESITB128Pair(k)
+			return h, ret[:], nil
+		}
+		h, _, ret := AESITB128Pair()
+		return h, ret[:], nil
 	case "siphash24":
 		if len(key) > 0 {
 			return nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
@@ -363,12 +423,29 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 //
 // Primitives currently returning a non-nil batched arm:
 //
+//   - "aesitb128" — 4-lane chain-absorb kernels (AES-NI XMM on amd64,
+//     NEON on arm64; VAES YMM / ZMM kernels built and force-selectable)
+//     for the 13 / 20 / 36 / 68-byte per-pixel shapes, scalar reference
+//     elsewhere
 //   - "aescmac" — VAES + AVX-512 ZMM-batched AES-CMAC chain-absorb kernels
 //   - "siphash24" — AVX-512 ZMM-batched SipHash-2-4 chain-absorb kernels
 //
 // Variadic key arg follows the same pattern as Make128 / Make256Pair.
 func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error) {
 	switch name {
+	case "aesitb128":
+		explicit, err := validateKey("aesitb128", 16, key...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if explicit != nil {
+			var k [16]byte
+			copy(k[:], explicit)
+			h, b, ret := AESITB128Pair(k)
+			return h, b, ret[:], nil
+		}
+		h, b, ret := AESITB128Pair()
+		return h, b, ret[:], nil
 	case "siphash24":
 		if len(key) > 0 {
 			return nil, nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
@@ -710,7 +787,6 @@ func smokeValidate(spec Spec) error {
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make128Pair returned a nil single-arm closure", spec.Name)
 		}
-		_ = key
 		lo1, hi1 := single(probe, 0, 0)
 		lo2, hi2 := single(probe, 0, 0)
 		if lo1 != lo2 || hi1 != hi2 {
@@ -727,6 +803,11 @@ func smokeValidate(spec Spec) error {
 				if out[i][0] != lo1 || out[i][1] != hi1 {
 					return fmt.Errorf("hashes: Register: %q batched-arm lane %d diverges from the single-arm result over identical inputs", spec.Name, i)
 				}
+			}
+		}
+		if spec.FusedChainHash128 != nil {
+			if err := smokeFusedChainHash128(spec, single, key); err != nil {
+				return err
 			}
 		}
 	case W256:
@@ -882,6 +963,94 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 		// error, closing the only misbehaviour worth catching here.
 		_, _ = spec.KeyedHash(nil)
 		_, _ = spec.KeyedHash([]byte{})
+	}
+	return nil
+}
+
+// smokeFusedChainHash128 exercises the optional [Spec.FusedChainHash128]
+// factory hook a user-registered W128 Spec may populate so that a
+// [itb.Seed128] built through the primitive can offer the whole-cascade
+// evaluators via [AttachFused128]. The check runs only when the field is
+// non-nil; the fixed key passed to the factory is the same key returned
+// by the Spec's Make128Pair factory so both sides bind identical
+// primitive state.
+//
+// The contract enforced here:
+//
+//   - The factory returns without error. A factory that reports an
+//     error at Register time is a misconfiguration surfaced fail-fast.
+//
+//   - A (nil, nil) evaluator return is a valid opt-out (matches the
+//     shipped ITB_FORCE_CHAINHASH_SEQ path); no further probing runs
+//     in that case.
+//
+//   - For each probe length (the four AES-ITB per-pixel shapes cover
+//     the shipped implementation; a user-registered fused kernel that
+//     accepts none of them silently passes the smoke — its production
+//     use will run the sequential loop until it opts in on its own
+//     accepted lengths), whenever the single-arm evaluator reports
+//     ok = true its (lo, hi) output must be bit-exact with the
+//     sequential HashFunc128 loop over the same (components, data)
+//     tuple. The batched-arm evaluator is verified lane-by-lane against
+//     the same sequential reference.
+//
+// A bit-mismatch at any accepted probe length rejects the Spec with a
+// descriptive error, mirroring the fail-fast discipline of the other
+// smoke checks.
+func smokeFusedChainHash128(spec Spec, single itb.HashFunc128, key []byte) error {
+	fSingle, fBatched, ferr := spec.FusedChainHash128(key)
+	if ferr != nil {
+		return fmt.Errorf("hashes: Register: %q FusedChainHash128(key): %w", spec.Name, ferr)
+	}
+	if fSingle == nil && fBatched == nil {
+		return nil
+	}
+	// A modest even-count component array matching the shipping minimum
+	// (8 uint64 = 512-bit key). Values are deterministic so a failure
+	// reproduces without a seeded RNG.
+	var comps [8]uint64
+	for i := range comps {
+		comps[i] = 0x0123456789abcdef ^ uint64(i)*0x9e3779b97f4a7c15
+	}
+	seqChain := func(data []byte) (uint64, uint64) {
+		hLo, hHi := single(data, comps[0], comps[1])
+		for i := 2; i < len(comps); i += 2 {
+			hLo, hHi = single(data, comps[i]^hLo, comps[i+1]^hHi)
+		}
+		return hLo, hHi
+	}
+	for _, n := range [...]int{13, 20, 36, 68} {
+		data := make([]byte, n)
+		for i := range data {
+			data[i] = byte(i)
+		}
+		if fSingle != nil {
+			lo, hi, ok := fSingle(comps[:], data)
+			if ok {
+				wantLo, wantHi := seqChain(data)
+				if lo != wantLo || hi != wantHi {
+					return fmt.Errorf("hashes: Register: %q FusedChainHash128 single arm diverges from the sequential HashFunc128 loop at len=%d", spec.Name, n)
+				}
+			}
+		}
+		if fBatched != nil {
+			var lanes [4][]byte
+			for l := range lanes {
+				lanes[l] = make([]byte, n)
+				for i := range lanes[l] {
+					lanes[l][i] = byte(i + l*7)
+				}
+			}
+			out, ok := fBatched(comps[:], &lanes)
+			if ok {
+				for l := 0; l < 4; l++ {
+					wantLo, wantHi := seqChain(lanes[l])
+					if out[l][0] != wantLo || out[l][1] != wantHi {
+						return fmt.Errorf("hashes: Register: %q FusedChainHash128 batched arm lane %d diverges from the sequential HashFunc128 loop at len=%d", spec.Name, l, n)
+					}
+				}
+			}
+		}
 	}
 	return nil
 }

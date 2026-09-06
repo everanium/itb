@@ -45,6 +45,27 @@ const (
 	// but the Pipeline exposes no cipher surface.
 	ProfileBlobTripleMACV1 = "blob-triple-mac-v1"
 
+	// ProfileSingleMsgAESITBMACV1 is the width-128 AES-ITB counterpart
+	// to [ProfileSingleMsgTripleMACV1]: InnerHash aesitb128, MAC
+	// authenticated, parallax off, wrapper off — the pipeline exercises
+	// the AES-ITB inner PRF alone.
+	ProfileSingleMsgAESITBMACV1 = "singlemsg-aesitb-mac-v1"
+
+	// ProfileSingleMsgAESITBNoMACV1 is the width-128 AES-ITB
+	// counterpart to [ProfileSingleMsgTripleNoMACV1] (parallax off,
+	// wrapper off).
+	ProfileSingleMsgAESITBNoMACV1 = "singlemsg-aesitb-nomac-v1"
+
+	// ProfileStreamingAEADAESITBMACV1 is the width-128 AES-ITB
+	// counterpart to [ProfileStreamingAEADTripleMACV1] (parallax off,
+	// wrapper off).
+	ProfileStreamingAEADAESITBMACV1 = "streaming-aead-aesitb-mac-v1"
+
+	// ProfileStreamingNoAEADAESITBV1 is the width-128 AES-ITB
+	// counterpart to [ProfileStreamingNoAEADTripleV1] (parallax off,
+	// wrapper off).
+	ProfileStreamingNoAEADAESITBV1 = "streaming-noaead-aesitb-v1"
+
 	// ProfileStreamingAEADTripleMACMixedV1 is the width-256 mixed-
 	// primitive counterpart to [ProfileStreamingAEADTripleMACV1]. The
 	// per-slot constellation is
@@ -310,6 +331,68 @@ func init() {
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
 		Parallax:            true,
 		Wrapper:             true,
+	}
+
+	// AES-ITB (width 128) counterparts of the four Triple profiles
+	// above with the wrapper and parallax layers off: same mode / MAC
+	// shape, InnerHash aesitb128, so the pipeline exercises the AES-ITB
+	// inner PRF alone rather than the other shipped primitives the
+	// outer cipher and parallax palette would bring in.
+	profileRegistry[ProfileSingleMsgAESITBMACV1] = Profile{
+		Name:                ProfileSingleMsgAESITBMACV1,
+		Mode:                modeSingleMsgMAC,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
+	}
+	profileRegistry[ProfileSingleMsgAESITBNoMACV1] = Profile{
+		Name:                ProfileSingleMsgAESITBNoMACV1,
+		Mode:                modeSingleMsgNoMAC,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             "",  // No MAC by definition.
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
+	}
+	profileRegistry[ProfileStreamingAEADAESITBMACV1] = Profile{
+		Name:                ProfileStreamingAEADAESITBMACV1,
+		Mode:                modeStreamingAEAD,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
+	}
+	profileRegistry[ProfileStreamingNoAEADAESITBV1] = Profile{
+		Name:                ProfileStreamingNoAEADAESITBV1,
+		Mode:                modeStreamingNoAEAD,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             "",  // No MAC by definition.
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
 	}
 
 	// Blob-only bundle profile — MAC-authenticated inner Blob{N}

@@ -10,8 +10,11 @@
 //
 // Recognised variables:
 //
-//	ITB_FORCE_HASH_TIER      = avx512 | vaesavx2 | avx2 | aesni | scalar
-//	ITB_FORCE_INTERLOCK_TIER = avx512 | avx2 | scalar
+//	ITB_FORCE_HASH_TIER                  = avx512 | vaesavx2 | avx2 | aesni | scalar
+//	ITB_FORCE_INTERLOCK_TIER             = avx512 | avx512x8 | avx2 | scalar
+//	ITB_FORCE_CHAINHASH_SEQ              = 1 | true | yes
+//	ITB_FORCE_INTERLOCK_PRF_FILL_SEQ     = 1 | true | yes
+//	ITB_FORCE_INTERLOCK_PRF_FILL_TIER    = avx512 | vaesavx2 | vex | aesni | neon | scalar
 //
 // An empty or unset variable keeps auto-dispatch (the production
 // default — no visible change). An unknown value keeps auto-dispatch
@@ -34,12 +37,13 @@ import (
 	"strings"
 )
 
-// hashTier / interlockTier are resolved once at package init. Package
-// initialisation order guarantees these are populated before any
-// importing assembly package's init runs its flag override.
+// hashTier / interlockTier / interlockPRFFillTier are resolved once at
+// package init. Package initialisation order guarantees these are populated
+// before any importing assembly package's init runs its flag override.
 var (
-	hashTier      = parse("ITB_FORCE_HASH_TIER", "avx512", "vaesavx2", "avx2", "aesni", "scalar")
-	interlockTier = parse("ITB_FORCE_INTERLOCK_TIER", "avx512", "avx2", "scalar")
+	hashTier             = parse("ITB_FORCE_HASH_TIER", "avx512", "vaesavx2", "avx2", "aesni", "scalar")
+	interlockTier        = parse("ITB_FORCE_INTERLOCK_TIER", "avx512", "avx512x8", "avx2", "scalar")
+	interlockPRFFillTier = parse("ITB_FORCE_INTERLOCK_PRF_FILL_TIER", "avx512", "vaesavx2", "vex", "aesni", "neon", "scalar")
 )
 
 // parse validates the named environment variable against the allowed
@@ -68,6 +72,11 @@ func HashTier() string { return hashTier }
 // InterlockTier returns the validated ITB_FORCE_INTERLOCK_TIER value,
 // or "" for auto-dispatch.
 func InterlockTier() string { return interlockTier }
+
+// InterlockPRFFillTier returns the validated ITB_FORCE_INTERLOCK_PRF_FILL_TIER
+// value, or "" for auto-dispatch. Used by aesitbasm to force the batch-16
+// kernel tier for parity coverage.
+func InterlockPRFFillTier() string { return interlockPRFFillTier }
 
 // Warnf emits a one-line "itb: forcetier: ..." note to stderr. Used by
 // the per-package init overrides to report a forced arm the package

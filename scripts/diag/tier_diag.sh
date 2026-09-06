@@ -5,7 +5,7 @@
 # per direction) at natural dispatch and then under every documented
 # forced-tier value for the three dispatch axes:
 #
-#   ITB_FORCE_INTERLOCK_TIER = avx512 | avx2 | scalar
+#   ITB_FORCE_INTERLOCK_TIER = avx512 | avx512x8 | avx2 | scalar
 #   ITB_FORCE_HASH_TIER      = avx512 | vaesavx2 | avx2 | aesni | scalar
 #   ITB_FORCE_PIXEL_TIER     = A | A_NOGFNI | B | B_NOGFNI | C
 #
@@ -67,7 +67,7 @@ run_bench "natural"
 echo ""
 
 echo "=== Forced interlock tier ==="
-for t in avx512 avx2 scalar; do
+for t in avx512 avx512x8 avx2 scalar; do
     run_bench "INTERLOCK=$t" ITB_FORCE_INTERLOCK_TIER=$t
 done
 echo ""

@@ -1,0 +1,309 @@
+//go:build arm64 && !purego && !noitbasm
+
+// ARM64 NEON crypto-extension (AESE + AESMC, round constant folded into the next AESE key operand)
+// 16-lane chain-absorb kernel for AES-ITB-128 at the 13-byte per-lane shape.
+// See the package comment for the construction; the kernel is pinned to
+// the pure-Go reference (scalarBatchX16) by the in-package parity tests.
+//
+// Unique to the batch-16 kernel: groupIdx is synthesized in-register from
+// groupIdxBase per lane, avoiding the per-lane pointer gather overhead of the x4 path.
+// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03]
+// (domain tag, 8-byte index, 4 zero bytes, 3 PKCS#7 padding bytes).
+
+#include "textflag.h"
+
+// func aesITB128ChainAbsorb13x16NeonAsm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
+TEXT ·aesITB128ChainAbsorb13x16NeonAsm(SB), NOSPLIT, $0-40
+	MOVD key+0(FP), R0
+	MOVD seed0+8(FP), R1
+	MOVD seed1+16(FP), R2
+	MOVD groupIdxBase+24(FP), R3
+	MOVD out+32(FP), R4
+
+	// Load key and compute shared template: key ^ seed pair
+	VLD1 (R0), [V30.B16]
+	VMOV R1, V27.D[0]
+	VMOV R2, V27.D[1]
+	VEOR V30.B16, V27.B16, V30.B16    // V30 = key ^ seed0 ^ seed1
+
+	// Load round constants: RC[0] into V31, RC[1] into V29
+	MOVD $·RC(SB), R5
+	VLD1.P 16(R5), [V31.B16]  // RC[0]
+	VLD1 (R5), [V29.B16]      // RC[1]
+
+	// Materialized constant for pad tail: bytes 13-15 = 0x03
+	MOVD $0x0303030000000000, R7
+
+	// ===== Lane 0 =====
+	MOVD R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V0.D[0]
+	VMOV R9, V0.D[1]
+	AESE V30.B16, V0.B16
+	AESMC V0.B16, V0.B16
+	AESE V31.B16, V0.B16
+	AESMC V0.B16, V0.B16
+	AESE V31.B16, V0.B16
+	AESMC V0.B16, V0.B16
+	VEOR V29.B16, V0.B16, V0.B16
+	VST1.P [V0.B16], 16(R4)
+
+	// ===== Lane 1 =====
+	ADD $1, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V1.D[0]
+	VMOV R9, V1.D[1]
+	AESE V30.B16, V1.B16
+	AESMC V1.B16, V1.B16
+	AESE V31.B16, V1.B16
+	AESMC V1.B16, V1.B16
+	AESE V31.B16, V1.B16
+	AESMC V1.B16, V1.B16
+	VEOR V29.B16, V1.B16, V1.B16
+	VST1.P [V1.B16], 16(R4)
+
+	// ===== Lane 2 =====
+	ADD $2, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V2.D[0]
+	VMOV R9, V2.D[1]
+	AESE V30.B16, V2.B16
+	AESMC V2.B16, V2.B16
+	AESE V31.B16, V2.B16
+	AESMC V2.B16, V2.B16
+	AESE V31.B16, V2.B16
+	AESMC V2.B16, V2.B16
+	VEOR V29.B16, V2.B16, V2.B16
+	VST1.P [V2.B16], 16(R4)
+
+	// ===== Lane 3 =====
+	ADD $3, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V3.D[0]
+	VMOV R9, V3.D[1]
+	AESE V30.B16, V3.B16
+	AESMC V3.B16, V3.B16
+	AESE V31.B16, V3.B16
+	AESMC V3.B16, V3.B16
+	AESE V31.B16, V3.B16
+	AESMC V3.B16, V3.B16
+	VEOR V29.B16, V3.B16, V3.B16
+	VST1.P [V3.B16], 16(R4)
+
+	// ===== Lane 4 =====
+	ADD $4, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V4.D[0]
+	VMOV R9, V4.D[1]
+	AESE V30.B16, V4.B16
+	AESMC V4.B16, V4.B16
+	AESE V31.B16, V4.B16
+	AESMC V4.B16, V4.B16
+	AESE V31.B16, V4.B16
+	AESMC V4.B16, V4.B16
+	VEOR V29.B16, V4.B16, V4.B16
+	VST1.P [V4.B16], 16(R4)
+
+	// ===== Lane 5 =====
+	ADD $5, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V5.D[0]
+	VMOV R9, V5.D[1]
+	AESE V30.B16, V5.B16
+	AESMC V5.B16, V5.B16
+	AESE V31.B16, V5.B16
+	AESMC V5.B16, V5.B16
+	AESE V31.B16, V5.B16
+	AESMC V5.B16, V5.B16
+	VEOR V29.B16, V5.B16, V5.B16
+	VST1.P [V5.B16], 16(R4)
+
+	// ===== Lane 6 =====
+	ADD $6, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V6.D[0]
+	VMOV R9, V6.D[1]
+	AESE V30.B16, V6.B16
+	AESMC V6.B16, V6.B16
+	AESE V31.B16, V6.B16
+	AESMC V6.B16, V6.B16
+	AESE V31.B16, V6.B16
+	AESMC V6.B16, V6.B16
+	VEOR V29.B16, V6.B16, V6.B16
+	VST1.P [V6.B16], 16(R4)
+
+	// ===== Lane 7 =====
+	ADD $7, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V7.D[0]
+	VMOV R9, V7.D[1]
+	AESE V30.B16, V7.B16
+	AESMC V7.B16, V7.B16
+	AESE V31.B16, V7.B16
+	AESMC V7.B16, V7.B16
+	AESE V31.B16, V7.B16
+	AESMC V7.B16, V7.B16
+	VEOR V29.B16, V7.B16, V7.B16
+	VST1.P [V7.B16], 16(R4)
+
+	// ===== Lane 8 =====
+	ADD $8, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V8.D[0]
+	VMOV R9, V8.D[1]
+	AESE V30.B16, V8.B16
+	AESMC V8.B16, V8.B16
+	AESE V31.B16, V8.B16
+	AESMC V8.B16, V8.B16
+	AESE V31.B16, V8.B16
+	AESMC V8.B16, V8.B16
+	VEOR V29.B16, V8.B16, V8.B16
+	VST1.P [V8.B16], 16(R4)
+
+	// ===== Lane 9 =====
+	ADD $9, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V9.D[0]
+	VMOV R9, V9.D[1]
+	AESE V30.B16, V9.B16
+	AESMC V9.B16, V9.B16
+	AESE V31.B16, V9.B16
+	AESMC V9.B16, V9.B16
+	AESE V31.B16, V9.B16
+	AESMC V9.B16, V9.B16
+	VEOR V29.B16, V9.B16, V9.B16
+	VST1.P [V9.B16], 16(R4)
+
+	// ===== Lane 10 =====
+	ADD $10, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V10.D[0]
+	VMOV R9, V10.D[1]
+	AESE V30.B16, V10.B16
+	AESMC V10.B16, V10.B16
+	AESE V31.B16, V10.B16
+	AESMC V10.B16, V10.B16
+	AESE V31.B16, V10.B16
+	AESMC V10.B16, V10.B16
+	VEOR V29.B16, V10.B16, V10.B16
+	VST1.P [V10.B16], 16(R4)
+
+	// ===== Lane 11 =====
+	ADD $11, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V11.D[0]
+	VMOV R9, V11.D[1]
+	AESE V30.B16, V11.B16
+	AESMC V11.B16, V11.B16
+	AESE V31.B16, V11.B16
+	AESMC V11.B16, V11.B16
+	AESE V31.B16, V11.B16
+	AESMC V11.B16, V11.B16
+	VEOR V29.B16, V11.B16, V11.B16
+	VST1.P [V11.B16], 16(R4)
+
+	// ===== Lane 12 =====
+	ADD $12, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V12.D[0]
+	VMOV R9, V12.D[1]
+	AESE V30.B16, V12.B16
+	AESMC V12.B16, V12.B16
+	AESE V31.B16, V12.B16
+	AESMC V12.B16, V12.B16
+	AESE V31.B16, V12.B16
+	AESMC V12.B16, V12.B16
+	VEOR V29.B16, V12.B16, V12.B16
+	VST1.P [V12.B16], 16(R4)
+
+	// ===== Lane 13 =====
+	ADD $13, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V13.D[0]
+	VMOV R9, V13.D[1]
+	AESE V30.B16, V13.B16
+	AESMC V13.B16, V13.B16
+	AESE V31.B16, V13.B16
+	AESMC V13.B16, V13.B16
+	AESE V31.B16, V13.B16
+	AESMC V13.B16, V13.B16
+	VEOR V29.B16, V13.B16, V13.B16
+	VST1.P [V13.B16], 16(R4)
+
+	// ===== Lane 14 =====
+	ADD $14, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V14.D[0]
+	VMOV R9, V14.D[1]
+	AESE V30.B16, V14.B16
+	AESMC V14.B16, V14.B16
+	AESE V31.B16, V14.B16
+	AESMC V14.B16, V14.B16
+	AESE V31.B16, V14.B16
+	AESMC V14.B16, V14.B16
+	VEOR V29.B16, V14.B16, V14.B16
+	VST1.P [V14.B16], 16(R4)
+
+	// ===== Lane 15 =====
+	ADD $15, R3, R6
+	LSL $8, R6, R8
+	ORR $3, R8, R8
+	LSR $56, R6, R9
+	ORR R7, R9, R9
+	VMOV R8, V15.D[0]
+	VMOV R9, V15.D[1]
+	AESE V30.B16, V15.B16
+	AESMC V15.B16, V15.B16
+	AESE V31.B16, V15.B16
+	AESMC V15.B16, V15.B16
+	AESE V31.B16, V15.B16
+	AESMC V15.B16, V15.B16
+	VEOR V29.B16, V15.B16, V15.B16
+	VST1.P [V15.B16], 16(R4)
+
+	RET

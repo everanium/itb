@@ -62,9 +62,19 @@ func TestNamesExcludesRegistered(t *testing.T) {
 }
 
 func TestRegistryClassPopulated(t *testing.T) {
+	// Every shipped Registry entry must carry a Class value the ctr /
+	// kdf / wrapper / parallax packages recognise: ClassNativeStream
+	// and ClassPRFCounter mark outer-cipher-eligible primitives;
+	// ClassNone marks inner-PRF-only primitives (AES-ITB and future
+	// entries whose reduced-round structure makes them safe only
+	// under ITB's compound inner-PRF stack). Any other Class value
+	// is a drift bug.
 	for i := range Registry {
-		if Registry[i].Class == ClassNone {
-			t.Errorf("Registry[%d] (%q) has Class == ClassNone", i, Registry[i].Name)
+		switch Registry[i].Class {
+		case ClassNone, ClassNativeStream, ClassPRFCounter:
+			// recognised
+		default:
+			t.Errorf("Registry[%d] (%q) has unrecognised Class %d", i, Registry[i].Name, Registry[i].Class)
 		}
 	}
 }
@@ -74,6 +84,7 @@ func TestClassOf(t *testing.T) {
 		name string
 		want Class
 	}{
+		{CipherAESITB128, ClassNone},
 		{CipherAreion256, ClassPRFCounter},
 		{CipherAreion512, ClassPRFCounter},
 		{CipherBLAKE2b256, ClassPRFCounter},

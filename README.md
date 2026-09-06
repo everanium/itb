@@ -124,6 +124,10 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Interlocked Barrier — scalar apply | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
 | Interlocked Barrier — AVX-512F rank-unrank | AVX-512F (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ, VPTERNLOGQ / VPSLLQ / VPSRLQ constant synthesis on ZMM) | `interlock.HasAVX512RankMask` |
 | Interlocked Barrier — AVX2 rank-unrank | AVX2 + BMI2 (VPERMD, VPCMPEQQ, VPCMPGTQ predicated ops on YMM; scalar PDEPQ remap tail) | `interlock.HasAVX2RankMask` |
+| AES-ITB-128 — VAES ZMM 4-lane chain-absorb + fused chain (built, force-only) | VAES + AVX-512F | `aesitbasm.HasVAESAVX512` / `aesitbasm.FusedHasVAESAVX512` |
+| AES-ITB-128 — VAES YMM 2-lane-per-register chain-absorb + fused chain (built, force-only) | VAES + AVX2 | `aesitbasm.HasVAESAVX2NoAVX512` / `aesitbasm.FusedHasVAESAVX2` |
+| AES-ITB-128 — VEX AES-NI XMM 4-lane chain-absorb + fused chain (auto-selected on AVX hosts) | AES-NI + AVX2 | `aesitbasm.HasAVXAESNIBatched` / `aesitbasm.FusedHasAVXAESNI` |
+| AES-ITB-128 — legacy-SSE AES-NI XMM 4-lane chain-absorb + fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aesitbasm.HasAESNIBatched` / `aesitbasm.FusedHasAESNI` |
 | Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
 | Areion-SoEM — mid-tier YMM 2-lane batched chain-absorb (`Areion*ChainAbsorb*x4VaesAvx2`) | VAES + AVX2 (no AVX-512F) | `areionasm.HasVAESAVX2Batched` |

@@ -15,7 +15,7 @@ target CPU without side effects.
 Runs a short single-thread bench at natural dispatch and then under
 every documented forced-tier value, one axis at a time:
 
-- `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx2`, `scalar`}
+- `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx512x8`, `avx2`, `scalar`}
 - `ITB_FORCE_HASH_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `aesni`, `scalar`}
 - `ITB_FORCE_PIXEL_TIER` ∈ {`A`, `A_NOGFNI`, `B`, `B_NOGFNI`, `C`}
 

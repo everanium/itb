@@ -66,3 +66,54 @@ func TestRankToMaskTripleUnrank48RemapFixedVectors(t *testing.T) {
 		}
 	}
 }
+
+// TestRankToMaskTripleUnrank48x16RemapFixedVectors is the 16-lane
+// mirror of TestRankToMaskTripleUnrank48RemapFixedVectors: the remap
+// stage of the 16-lane kernel — which spills both batches' remaining /
+// m1Local vectors to the frame and remaps them through scalar PDEPQ —
+// pinned bit-exactly against [remapBitSerial48] on sixteen distinct
+// lanes, with the unrank halves reproduced through refUnrank48 so any
+// divergence isolates to the remap of a specific batch. The same lanes
+// then run through checkX16Lanes for the cross-arm agreement check.
+func TestRankToMaskTripleUnrank48x16RemapFixedVectors(t *testing.T) {
+	if !HasAVX512RankMask {
+		t.Skip("AVX-512F not available")
+	}
+	const A = uint64(2254848913647) // C(48, 16)
+	const B = uint64(601080390)     // C(32, 16)
+
+	idx0 := [16]uint64{
+		0, 1, A / 7, A / 3, A / 2, 2 * A / 3, A - 2, A - 1,
+		A - 1, 0, A / 5, A / 9, 3 * A / 4, A / 11, 2, A / 13,
+	}
+	idx1 := [16]uint32{
+		uint32(B - 1), uint32(B / 2), 0, 1, uint32(B / 5), uint32(2 * B / 3), uint32(B - 2), uint32(B / 9),
+		0, uint32(B - 1), uint32(B / 7), uint32(B / 3), 2, uint32(B / 11), uint32(B - 3), uint32(B / 13),
+	}
+
+	var out [3][16]uint64
+	RankToMaskTripleUnrank48x16(&idx0, &idx1, &out)
+
+	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
+	for j := 0; j < 16; j++ {
+		m0 := refUnrank48(idx0[j], 16, 48)
+		m1Local := refUnrank48(uint64(idx1[j]), 16, 32)
+		wantM1, wantM2 := remapBitSerial48(m0, m1Local)
+		if out[0][j] != m0 {
+			t.Fatalf("lane=%d idx0=%d: m0 %012x, want %012x", j, idx0[j], out[0][j], m0)
+		}
+		if out[1][j] != wantM1 || out[2][j] != wantM2 {
+			t.Fatalf("lane=%d idx0=%d idx1=%d: remap (m1=%012x, m2=%012x), want (%012x, %012x)",
+				j, idx0[j], idx1[j], out[1][j], out[2][j], wantM1, wantM2)
+		}
+		if out[0][j]|out[1][j]|out[2][j] != domain {
+			t.Fatalf("lane=%d: union %012x != domain", j, out[0][j]|out[1][j]|out[2][j])
+		}
+		if out[0][j]&out[1][j] != 0 || out[0][j]&out[2][j] != 0 || out[1][j]&out[2][j] != 0 {
+			t.Fatalf("lane=%d: masks not pairwise disjoint", j)
+		}
+	}
+	if cross := checkX16Lanes(t, "remap fixed vectors", &idx0, &idx1); cross != out {
+		t.Fatal("16-lane kernel output differs between two invocations over the same lanes")
+	}
+}

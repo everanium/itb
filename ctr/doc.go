@@ -9,10 +9,13 @@
 // lengths a caller must allocate before invoking [New] / [NewAt] /
 // [NewResettable] / [NewResettableAt]. Callers who need to enumerate
 // the registry consult the shipped [github.com/everanium/itb/hashes.Registry]
-// — [github.com/everanium/itb/hashes.Names] returns its names in canonical
-// order and the [github.com/everanium/itb/hashes.CipherAES128CTR] family of
-// constants names each entry; every name resolves via the registry
-// look-up embedded in the constructor call.
+// — [github.com/everanium/itb/hashes.KeystreamNames] returns the outer-
+// cipher-eligible names in canonical order (inner-PRF-only entries with
+// [github.com/everanium/itb/hashes.ClassNone] are excluded and rejected by
+// every constructor here) and the
+// [github.com/everanium/itb/hashes.CipherAES128CTR] family of constants
+// names each entry; every name resolves via the registry look-up embedded
+// in the constructor call.
 //
 // Each keystream satisfies the [Keystream] interface, whose
 // XORKeyStream method matches the [crypto/cipher.Stream] contract:

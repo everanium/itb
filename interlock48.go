@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/internal/interlock"
 )
 
@@ -356,6 +357,14 @@ type lockBatchPRF48 struct {
 	// parity invariant (BatchHash must agree with Hash on every input;
 	// see seed256_batch.go).
 	fillRanksX4 func(s *lockFillScratch48, groupIdx uint64, prf []uint64)
+
+	// fillRanksSuper is the optional 16-group batched counterpart of fillRanks.
+	// One call performs the PRF fill for 16 consecutive groups
+	// (groupIdxBase .. groupIdxBase+15) through a single batch-16 kernel
+	// invocation. Only available when the lockSeed's underlying primitive
+	// exposes a batch-16 arm. When nil, splitTriple48LockedBatch falls back
+	// to the x4 loop.
+	fillRanksSuper func(groupIdxBase uint64, prf []uint64)
 }
 
 // lockFillScratch48 is the per-worker scratch consumed by
@@ -535,6 +544,16 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 				{lockLo, lockHi}, {lockLo, lockHi},
 			})
 			for i := 0; i < 4; i++ {
+				prf[2*i] = out[i][0]
+				prf[2*i+1] = out[i][1]
+			}
+		}
+	}
+	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() {
+		bp.fillRanksSuper = func(groupIdxBase uint64, prf []uint64) {
+			var out [16][2]uint64
+			bh16(groupIdxBase, lockLo, lockHi, &out)
+			for i := 0; i < 16; i++ {
 				prf[2*i] = out[i][0]
 				prf[2*i+1] = out[i][1]
 			}
@@ -737,6 +756,30 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 				}
 			}
 			for g := gs; g < ge; {
+				// Try batch-16 path if available and we have enough groups.
+				if bp.fillRanksSuper != nil && ge-g >= 16 {
+					bp.fillRanksSuper(uint64(g), prf[0:32])
+					base := g * factor
+					nChunks := 16 * factor
+					for off := 0; off < nChunks; off += superChunks48 {
+						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
+						fillLockMasksTriple48Super(p, superChunks48, &masks)
+						for j := 0; j < superChunks48; j++ {
+							k := base + off + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+							x := readChunk48(padded, 6*k)
+							l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+							binary.LittleEndian.PutUint16(p0[2*k:], l0)
+							binary.LittleEndian.PutUint16(p1[2*k:], l1)
+							binary.LittleEndian.PutUint16(p2[2*k:], l2)
+						}
+					}
+					g += 16
+					continue
+				}
 				if x4Groups != 0 && ge-g >= x4Groups {
 					base := g * factor
 					for c := 0; c < x4Groups; c += 4 {
@@ -837,6 +880,30 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 				}
 			}
 			for g := gs; g < ge; {
+				// Try batch-16 path if available and we have enough groups.
+				if bp.fillRanksSuper != nil && ge-g >= 16 {
+					bp.fillRanksSuper(uint64(g), prf[0:32])
+					base := g * factor
+					nChunks := 16 * factor
+					for off := 0; off < nChunks; off += superChunks48 {
+						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
+						fillLockMasksTriple48Super(p, superChunks48, &masks)
+						for j := 0; j < superChunks48; j++ {
+							k := base + off + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+							l0 := binary.LittleEndian.Uint16(p0[2*k:])
+							l1 := binary.LittleEndian.Uint16(p1[2*k:])
+							l2 := binary.LittleEndian.Uint16(p2[2*k:])
+							x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+							writeChunk48(result, 6*k, x)
+						}
+					}
+					g += 16
+					continue
+				}
 				if x4Groups != 0 && ge-g >= x4Groups {
 					base := g * factor
 					for c := 0; c < x4Groups; c += 4 {

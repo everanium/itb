@@ -11,14 +11,15 @@ import (
 // every entry plus a few out-of-range edges, confirming the FFI
 // iteration surface is wired through to hashes.Registry.
 func TestRegistry(t *testing.T) {
-	if got := HashCount(); got != 9 {
-		t.Fatalf("HashCount = %d, want 9", got)
+	if got := HashCount(); got != 10 {
+		t.Fatalf("HashCount = %d, want 10", got)
 	}
 
 	want := []struct {
 		name  string
 		width int
 	}{
+		{"aesitb128", 128},
 		{"areion256", 256},
 		{"areion512", 512},
 		{"blake2b256", 256},
@@ -37,7 +38,7 @@ func TestRegistry(t *testing.T) {
 			t.Errorf("HashWidth(%d) = %d, want %d", i, w, exp.width)
 		}
 	}
-	for _, badIdx := range []int{-1, 9, 100} {
+	for _, badIdx := range []int{-1, 10, 100} {
 		if n := HashName(badIdx); n != "" {
 			t.Errorf("HashName(%d) = %q, want empty", badIdx, n)
 		}

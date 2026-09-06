@@ -344,11 +344,13 @@ func randomMixedConstellation(w hashes.Width) ([8]string, error) {
 }
 
 // isShippedCipher reports whether name is a shipped hashes.Registry
-// entry (hashes.Names) — the outer cipher / palette alphabet.
-// User-registered primitives are deliberately excluded: the ctr
-// keystream constructors accept shipped names only.
+// entry eligible as an outer cipher / palette entry (hashes.
+// KeystreamNames). User-registered primitives and inner-PRF-only
+// shipped entries (hashes.ClassNone — e.g. AES-ITB) are deliberately
+// excluded: the ctr keystream constructors accept outer-cipher-
+// eligible shipped names only.
 func isShippedCipher(name string) bool {
-	for _, n := range hashes.Names() {
+	for _, n := range hashes.KeystreamNames() {
 		if n == name {
 			return true
 		}

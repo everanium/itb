@@ -116,6 +116,12 @@ func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte
 			return nil, nil, fmt.Errorf("triple: itb.NewSeed128: %w", serr)
 		}
 		s.BatchHash = batched
+		if ferr := hashes.AttachFused128(s, primitive, key); ferr != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.AttachFused128(%q): %w", primitive, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16(s, primitive, key); ierr != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16(%q): %w", primitive, ierr)
+		}
 		return s, key, nil
 	case 256:
 		single, batched, key, herr := hashes.Make256Pair(primitive)

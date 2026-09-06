@@ -21,12 +21,16 @@ import (
 const MaxMasterKeySize = 128
 
 // CipherNames lists every supported outer cipher in iteration order, in the
-// project's canonical primitive order. It is a snapshot of the shipped
-// hashes.Registry names (hashes.Names); hashes.Registry is the single
-// source of truth for the shipped primitive name list. Every name routes
-// through ctr.New / kdf.Derive, so all PRF-grade ITB registry primitives
-// are supported as outer ciphers.
-var CipherNames = hashes.Names()
+// project's canonical primitive order. It is a snapshot of the outer-cipher-
+// eligible shipped hashes.Registry names (hashes.KeystreamNames);
+// hashes.Registry is the single source of truth for the shipped primitive
+// name list. Inner-PRF-only Registry entries (hashes.ClassNone — e.g.
+// AES-ITB, which is a reduced-round construction safe only under ITB's
+// compound inner-PRF stack) are deliberately excluded — routing them
+// through ctr.New / kdf.Derive would surface a raw reduced-round core as
+// user-selectable keystream material. Every remaining name routes through
+// ctr.New / kdf.Derive.
+var CipherNames = hashes.KeystreamNames()
 
 // Keystream is the outer cipher keystream the wrap helpers consume. It
 // aliases ctr.Keystream; the contract matches crypto/cipher.Stream —

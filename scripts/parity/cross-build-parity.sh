@@ -83,7 +83,7 @@ mkdir -p "$WORKDIR"
 # Canonical PRF-grade hash roster. Order matches
 # github.com/everanium/itb/hashes.Registry so the sweep visits every
 # primitive a §3 asm micro or §4 pixel-kernel change can touch.
-HASHES=(areion256 areion512 blake2b256 blake2b512 blake2s blake3 aescmac siphash24 chacha20)
+HASHES=(aesitb128 areion256 areion512 blake2b256 blake2b512 blake2s blake3 aescmac siphash24 chacha20)
 
 FAIL=0
 
@@ -215,14 +215,16 @@ HASHARMS=(avx512 vaesavx2 avx2 aesni scalar)
 # real dispatch arm. Skip rules:
 #   * aesni: only the AES-based primitives carry AES-NI XMM chain
 #     kernels (areion256 / areion512 / aescmac).
-#   * vaesavx2: only areion256 / areion512 carry width-specialised YMM
+#   * vaesavx2: aesitb128 (internal/aesitbasm, VAES YMM two-lane
+#     kernels) and areion256 / areion512 carry width-specialised YMM
 #     VAES chain-absorb kernels (Areion*ChainAbsorb*x4VaesAvx2). aescmac
 #     deliberately has no YMM tier — its 2-lane YMM grouping under-fills
 #     a single VAES port versus the XMM 4-lane AES-NI path (see
 #     hashes/internal/aescmacasm/aescmacasm_amd64.go), so it is skipped
 #     exactly as for the avx2 arm; every non-Areion primitive is skipped.
 #   * avx2: aescmac deliberately has no YMM tier (see
-#     hashes/internal/aescmacasm/aescmacasm_amd64.go); areion256 /
+#     hashes/internal/aescmacasm/aescmacasm_amd64.go); aesitb128 maps
+#     the avx2 token to its VAES YMM tier; areion256 /
 #     areion512 run their VAES-on-YMM general-chain arm
 #     (Areion*Permutex4Avx2) rather than width-specialised kernels —
 #     a real shipped arm (AMD Zen 3 class), so the pair is applicable.
@@ -232,7 +234,7 @@ arm_applicable() {
         avx512|scalar) return 0 ;;
         vaesavx2)
             case "$1" in
-                areion256|areion512) return 0 ;;
+                aesitb128|areion256|areion512) return 0 ;;
                 *) return 1 ;;
             esac ;;
         avx2)
@@ -242,7 +244,7 @@ arm_applicable() {
             esac ;;
         aesni)
             case "$1" in
-                areion256|areion512|aescmac) return 0 ;;
+                aesitb128|areion256|areion512|aescmac) return 0 ;;
                 *) return 1 ;;
             esac ;;
     esac
@@ -308,9 +310,12 @@ done
 # ---------------------------------------------------------------------------
 # Section 4 — interlock-tier sweep × nonce widths, canonical hash.
 # Forces the 48-bit interlock rank-mask tier on the cgo arm against the
-# scalar-forced nocgo arm, both directions. 3 tiers × 48 = 144 cells.
+# scalar-forced nocgo arm, both directions. 4 tiers × 48 = 192 cells.
+# avx512x8 keeps the AVX-512 kernel but runs each 16-chunk superblock
+# as two 8-lane passes, so the x8×2 wire geometry is validated on the
+# same host as the 16-lane pass.
 # ---------------------------------------------------------------------------
-ILTIERS=(avx512 avx2 scalar)
+ILTIERS=(avx512 avx512x8 avx2 scalar)
 ILHASH="areion512"
 ILPROFILE="parity-${ILHASH}-v1"
 IL_CELLS=$(( ${#ILTIERS[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))

@@ -55,6 +55,31 @@ Cited by HARNESS.md and reproducible against the shipped tree.
 - `itb/theory/aes2r/{integral_aes2r,keyrecover_r2,sat_calibration_aes2r,differential_chainhash,distinguisher_chainhash,higher_order_chainhash,order3_chainhash,cms_xor_aes2r,gd_chainhash_aes2r}.py`
   — 2-round AES integral break characterisation, deferred SAT / differential
   / higher-order calibration. Cited from HARNESS.md §5.7 and §3.4 / §3.5 tables.
+- `itb/theory/aesitb128/{integral_aesitb128,keyrecover_r2,keyrecover_r1_2p20,distinguisher_chainhash,higher_order_chainhash,order3_chainhash,order4_chainhash,differential_chainhash,uniformity_chainhash,screens_common}.py`
+  — the same treatment on the shipped AES-ITB-128 sponge: standalone Square
+  integral + one-pair inversion, then the cascade sweep r ∈ {1 … 16} with
+  the lo-lane / full-state / peeled observables, up to 2^32-text Λ-sets.
+  Cited from HARNESS.md §3.10 / §5.10 and the §3.5 tables.
+- `itb/theory/aes2r/fullkey_aes2r.py` — the aes2r engine extended to the
+  full master key (15 Λ-sets + 2^8), cited from the §3.7 r = 1 row.
+- `itb/theory/aesitb128/keyrecover_r2_20byte.py` — discard-off classical
+  4-round Square κ-byte recovery at the shipped 20-byte shape (r = 2
+  recovers); `--model realistic` runs the same shape on the shipped
+  observable (lo lane only, Λ-sets confined to the `LE32(idx)` bytes, a
+  random nonce per set) with the lab cell as the in-run positive control.
+- `itb/theory/aesitb128/keyrecover_kbyte_go/` — Go κ-byte / pair-constancy /
+  global-parity Square engines driven through the shipped 4-lane batched
+  arm, order-N Λ-sets, attacker-model flags `--observable {full,lo}` ×
+  `--nonce {chosen,idx-only}` (`--model realistic`), lab control in the
+  same invocation.
+- `itb/theory/aesitb128/order5_chainhash_go/` — 2^40 order-5 Λ-set integral
+  through the cascade, every depth from one sweep.
+- `itb/theory/aes2r/higher_round_square_aes2r.py`,
+  `itb/theory/aes2r/square5_go/` — the aes2r NR ladder mirror and the 2^32
+  5-round Square (same attacker-model flags; AES-NI rounds via `--hw`).
+- `itb/theory/aes2r/order5_aes2r_go/` — the aes2r order-5 Λ-set probe
+  (resumable across bounded runs; every complete 2^32 group reported as an
+  order-4 verdict).
 
 ### §5.6 SAT-free pre-screen (Axis 4)
 
@@ -100,9 +125,9 @@ sequences and as attribution sources for the ported Go tests.
 ## The `itb/theory/_common/chainhashes/` primitive mirrors
 
 `itb/theory/_common/chainhashes/` holds Python parity mirrors of the
-per-primitive inner hash: `aes2r.py`, `blake3.py`, `crc128.py`,
-`fnv1a.py`, `murmur3.py`, `mx3.py`, `seahash.py`, `siphash13.py`,
-`splitmix64.py`, `t1ha1.py`, `xxhash64.py`, plus the
+per-primitive inner hash: `aes2r.py`, `aesitb128.py`, `blake3.py`,
+`crc128.py`, `fnv1a.py`, `murmur3.py`, `mx3.py`, `seahash.py`,
+`siphash13.py`, `splitmix64.py`, `t1ha1.py`, `xxhash64.py`, plus the
 `avalanche_screen.py` / `differential_screen.py` pre-screen batteries.
 Each mirror is bit-for-bit parity-checked against its Go reference (see
 `_parity_test.py` and `_parity_dump/`). This subdirectory serves both

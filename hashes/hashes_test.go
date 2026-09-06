@@ -167,6 +167,7 @@ func newSeed512(name string, keyBits int) (*itb.Seed512, error) {
 // ABI-breaking change.
 func TestRegistryStable(t *testing.T) {
 	want := []string{
+		"aesitb128",
 		"areion256", "areion512", "blake2b256", "blake2b512",
 		"blake2s", "blake3", "aescmac", "siphash24", "chacha20",
 	}

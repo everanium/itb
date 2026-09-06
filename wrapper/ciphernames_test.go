@@ -6,10 +6,13 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// TestCipherNamesMirrorsHashesRegistry pins CipherNames to the shipped
-// hashes.Registry name list, element by element and in order.
+// TestCipherNamesMirrorsHashesRegistry pins CipherNames to the outer-
+// cipher-eligible subset of the shipped hashes.Registry (hashes.
+// KeystreamNames), element by element and in order. Inner-PRF-only
+// Registry entries (hashes.ClassNone) are intentionally excluded — see
+// the CipherNames docstring for the security rationale.
 func TestCipherNamesMirrorsHashesRegistry(t *testing.T) {
-	want := hashes.Names()
+	want := hashes.KeystreamNames()
 	if len(CipherNames) != len(want) {
 		t.Fatalf("len(CipherNames) = %d, want %d", len(CipherNames), len(want))
 	}

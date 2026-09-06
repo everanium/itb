@@ -1,0 +1,79 @@
+//go:build amd64 && !purego && !noitbasm
+
+// VAES ZMM (four lanes per register) fused ChainHash cascade kernel for AES-ITB-128 at the
+// 36-byte shape, 4 lanes (3 PKCS#7 blocks, 5 AES rounds per
+// cascade round). The padded data blocks are staged once and every
+// cascade round runs from registers; see aesitbasm_fused.go for the
+// construction and the in-package parity tests for the bit-exact pin
+// against the pure-Go cascade.
+
+#include "textflag.h"
+
+// func aesITB128FusedChain36x4Avx512Asm(key *[16]byte, comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+TEXT ·aesITB128FusedChain36x4Avx512Asm(SB), NOSPLIT, $192-40
+	MOVQ key+0(FP), AX
+	MOVQ comps+8(FP), BX
+	MOVQ nPairs+16(FP), CX
+	MOVQ dataPtrs+24(FP), DX
+	MOVQ out+32(FP), DI
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+
+	VMOVDQU 0(R8), X4
+	VMOVDQU X4, 0(SP)
+	VMOVDQU 0(R9), X4
+	VMOVDQU X4, 16(SP)
+	VMOVDQU 0(R10), X4
+	VMOVDQU X4, 32(SP)
+	VMOVDQU 0(R11), X4
+	VMOVDQU X4, 48(SP)
+	VMOVDQU 16(R8), X4
+	VMOVDQU X4, 64(SP)
+	VMOVDQU 16(R9), X4
+	VMOVDQU X4, 80(SP)
+	VMOVDQU 16(R10), X4
+	VMOVDQU X4, 96(SP)
+	VMOVDQU 16(R11), X4
+	VMOVDQU X4, 112(SP)
+	VMOVDQU ·pad4Tail(SB), X13
+	VPINSRD $0, 32(R8), X13, X4
+	VMOVDQU X4, 128(SP)
+	VPINSRD $0, 32(R9), X13, X4
+	VMOVDQU X4, 144(SP)
+	VPINSRD $0, 32(R10), X13, X4
+	VMOVDQU X4, 160(SP)
+	VPINSRD $0, 32(R11), X13, X4
+	VMOVDQU X4, 176(SP)
+
+	VBROADCASTI32X4 ·RC+0(SB), Z2
+	VBROADCASTI32X4 ·RC+16(SB), Z3
+	VBROADCASTI32X4 ·RC+32(SB), Z4
+	VBROADCASTI32X4 ·RC+48(SB), Z5
+	VBROADCASTI32X4 ·RC+64(SB), Z6
+	VBROADCASTI32X4 ·RC+80(SB), Z7
+	VBROADCASTI32X4 ·RC+96(SB), Z8
+	VBROADCASTI32X4 ·RC+112(SB), Z9
+	VBROADCASTI32X4 0(AX), Z13
+	VPXORD Z0, Z0, Z0
+
+loop:
+	VBROADCASTI32X4 0(BX), Z14
+	VPXORD Z13, Z14, Z14
+	VPXORD Z14, Z0, Z0
+	VPXORD 0(SP), Z0, Z0
+	VAESENC Z2, Z0, Z0
+	VPXORD 64(SP), Z0, Z0
+	VAESENC Z3, Z0, Z0
+	VPXORD 128(SP), Z0, Z0
+	VAESENC Z4, Z0, Z0
+	VAESENC Z2, Z0, Z0
+	VAESENC Z3, Z0, Z0
+	ADDQ $16, BX
+	DECQ CX
+	JNZ loop
+
+	VMOVDQU64 Z0, 0(DI)
+	VZEROUPPER
+	RET

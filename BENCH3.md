@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Results below were collected at `ITB_NONCE_BITS=512` with `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` capping the Go runtime heap. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written AVX-512 / AVX2 chain-absorb ASM kernels (each primitive family at its natural active register width).
+Results below were collected at `ITB_NONCE_BITS=512` with `ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` capping the Go runtime heap. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written AVX-512 / AVX2 chain-absorb ASM kernels (each primitive family at its natural active register width); AES-ITB-128 dispatches through AES-NI XMM / VEX chain-absorb kernels instead (auto-selected on every AES-NI host, with VAES YMM / ZMM tiers built and force-reachable via `ITB_FORCE_HASH_TIER`).
 
 Reproduction:
 
@@ -17,10 +17,13 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
 
 ## Intel Core i7-11700K 8C/16HT
 
+The AES-ITB-128 rows below are measured on this host only; the other host sections do not carry an AES-ITB-128 row until a full-fleet rebench.
+
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
+| **AES-ITB-128** | 128 | 512 | NPRF | 127 | 278 | 355 | 198 | 453 | 625 |
 | **Areion-SoEM-256** | 256 | 512 | PRF | 130 | 224 | 279 | 292 | 329 | 400 |
 | **Areion-SoEM-512** | 512 | 512 | PRF | 134 | 237 | 293 | 304 | 356 | 442 |
 | **BLAKE2b-256** | 256 | 512 | PRF | 104 | 162 | 184 | 197 | 210 | 235 |
@@ -35,6 +38,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
+| **AES-ITB-128** | 128 | 1024 | NPRF | 131 | 266 | 330 | 270 | 403 | 549 |
 | **Areion-SoEM-256** | 256 | 1024 | PRF | 114 | 180 | 207 | 214 | 235 | 269 |
 | **Areion-SoEM-512** | 512 | 1024 | PRF | 119 | 199 | 235 | 243 | 272 | 319 |
 | **BLAKE2b-256** | 256 | 1024 | PRF | 83 | 116 | 126 | 126 | 134 | 145 |
@@ -49,6 +53,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
+| **AES-ITB-128** | 128 | 2048 | NPRF | 131 | 239 | 286 | 276 | 353 | 447 |
 | **Areion-SoEM-256** | 256 | 2048 | PRF | 92 | 126 | 138 | 145 | 153 | 164 |
 | **Areion-SoEM-512** | 512 | 2048 | PRF | 104 | 149 | 167 | 179 | 184 | 204 |
 | **BLAKE2b-256** | 256 | 2048 | PRF | 57 | 70 | 75 | 76 | 80 | 82 |

@@ -2,8 +2,9 @@ package capi
 
 import "github.com/everanium/itb/hashes"
 
-// HashCount returns the number of PRF-grade hash primitives shipped
-// with the library — currently 9, matching len(hashes.Registry).
+// HashCount returns the number of shipped PRF-grade primitives (with
+// AES-ITB-128 as the ITB-native inner-PRF-only exception — see
+// [hashes.ClassNone]).
 func HashCount() int { return len(hashes.Registry) }
 
 // HashName returns the canonical name of the i-th hash primitive

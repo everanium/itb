@@ -3,7 +3,8 @@ package main
 // Registry-listing subcommands: `hashes`, `macs`, `ciphers`, `modes`,
 // `profiles`, and the unified `catalog` dump. Every list is driven by
 // a runtime query against the shipped registry (`hashes.Registry` /
-// `hashes.FullView()` / `hashes.Names()`, `macs.Registry`, plus
+// `hashes.FullView()` for every primitive, `hashes.KeystreamNames()`
+// for the outer-cipher-eligible subset, `macs.Registry`, plus
 // `triple.Profiles()` for the profile catalogue) so the output stays
 // current as the shipped catalogues grow without a CLI code change.
 
@@ -58,7 +59,7 @@ func newCiphersCmd() *cobra.Command {
 		Short: "List shipped wrapper outer ciphers (one per line)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			for _, name := range hashes.Names() {
+			for _, name := range hashes.KeystreamNames() {
 				fmt.Println(name)
 			}
 			return nil
@@ -141,7 +142,7 @@ func printCatalog() {
 	for _, spec := range macs.Registry {
 		macNames = append(macNames, spec.Name)
 	}
-	cipherNames := hashes.Names()
+	cipherNames := hashes.KeystreamNames()
 
 	// Mixed-pool sizes are queried at runtime from the same
 	// hashes.Registry filter the genblob random draw uses.
