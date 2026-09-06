@@ -6,6 +6,10 @@
 // the pure-Go reference by the in-package parity tests. The tail block is
 // read with exact-width inserts — no byte past the 13-byte input is
 // touched.
+// Every load is sized to the store the Go call site leaves in flight
+// (seeds copy, pixel-index write) so it forwards from the store buffer
+// instead of waiting for the store to commit, and the output is written
+// as four 16-byte stores, the width the Go side reads it back with.
 
 #include "textflag.h"
 

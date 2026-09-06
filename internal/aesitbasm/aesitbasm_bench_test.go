@@ -7,17 +7,29 @@ import (
 
 // benchKernel times one (kernel, shape) pair. Bytes/op = 4 lanes × shape
 // so MB/s reports absorbed input bandwidth, comparable across shapes.
+//
+// The seeds vary per call by rotating through a pre-filled ring of seed
+// arrays rather than by a store into one array immediately before the
+// call: a narrow store directly ahead of the kernel's wide seeds load
+// defeats store-to-load forwarding and serialises consecutive calls,
+// which measures the harness rather than the kernel. The kernel-level
+// figure this benchmark reports is therefore free of that artefact; the
+// production call patterns are measured by the *Pix / *Fill benchmarks.
 func benchKernel(b *testing.B, n int, kernel kernelFn) {
 	key := ascendingKey()
-	seeds := [4][2]uint64{{1, 2}, {3, 4}, {5, 6}, {7, 8}}
+	var ring [8][4][2]uint64
+	for i := range ring {
+		for lane := range ring[i] {
+			ring[i][lane] = [2]uint64{uint64(8*i + 2*lane + 1), uint64(8*i + 2*lane + 2)}
+		}
+	}
 	_, ptrs := makeLaneData(n)
 	var out [4][2]uint64
 	b.SetBytes(int64(4 * n))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		seeds[0][0] = uint64(i)
-		kernel(&key, &seeds, &ptrs, &out)
+		kernel(&key, &ring[i&7], &ptrs, &out)
 	}
 }
 

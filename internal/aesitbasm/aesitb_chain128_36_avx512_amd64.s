@@ -6,6 +6,10 @@
 // the pure-Go reference by the in-package parity tests. The tail block is
 // read with exact-width inserts — no byte past the 36-byte input is
 // touched.
+// Every load is sized to the store the Go call site leaves in flight
+// (seeds copy, pixel-index write) so it forwards from the store buffer
+// instead of waiting for the store to commit, and the output is written
+// as four 16-byte stores, the width the Go side reads it back with.
 
 #include "textflag.h"
 
@@ -21,7 +25,10 @@ TEXT ·aesITB128ChainAbsorb36x4Avx512Asm(SB), NOSPLIT, $0-32
 	MOVQ 24(CX), R11
 
 	VBROADCASTI32X4 0(AX), Z1
-	VMOVDQU64 0(BX), Z0
+	VMOVDQU 0(BX), X0
+	VINSERTI64X2 $1, 16(BX), Z0, Z0
+	VINSERTI64X2 $2, 32(BX), Z0, Z0
+	VINSERTI64X2 $3, 48(BX), Z0, Z0
 	VPXORD Z1, Z0, Z0
 
 	VBROADCASTI32X4 ·RC+0(SB), Z2
@@ -33,10 +40,22 @@ TEXT ·aesITB128ChainAbsorb36x4Avx512Asm(SB), NOSPLIT, $0-32
 	VBROADCASTI32X4 ·RC+96(SB), Z8
 	VBROADCASTI32X4 ·RC+112(SB), Z9
 
-	VMOVDQU 0(R8), X11
-	VINSERTI64X2 $1, 0(R9), Z11, Z11
-	VINSERTI64X2 $2, 0(R10), Z11, Z11
-	VINSERTI64X2 $3, 0(R11), Z11, Z11
+	VBROADCASTI32X4 ·pad4Tail(SB), Z10
+	VPINSRD $0, 0(R8), X10, X11
+	VPINSRD $1, 4(R8), X11, X11
+	VPINSRQ $1, 8(R8), X11, X11
+	VPINSRD $0, 0(R9), X10, X12
+	VPINSRD $1, 4(R9), X12, X12
+	VPINSRQ $1, 8(R9), X12, X12
+	VPINSRD $0, 0(R10), X10, X13
+	VPINSRD $1, 4(R10), X13, X13
+	VPINSRQ $1, 8(R10), X13, X13
+	VPINSRD $0, 0(R11), X10, X14
+	VPINSRD $1, 4(R11), X14, X14
+	VPINSRQ $1, 8(R11), X14, X14
+	VINSERTI64X2 $1, X12, Z11, Z11
+	VINSERTI64X2 $2, X13, Z11, Z11
+	VINSERTI64X2 $3, X14, Z11, Z11
 	VPXORD Z11, Z0, Z0
 	VAESENC Z2, Z0, Z0
 
@@ -47,7 +66,6 @@ TEXT ·aesITB128ChainAbsorb36x4Avx512Asm(SB), NOSPLIT, $0-32
 	VPXORD Z11, Z0, Z0
 	VAESENC Z3, Z0, Z0
 
-	VBROADCASTI32X4 ·pad4Tail(SB), Z10
 	VPINSRD $0, 32(R8), X10, X11
 	VPINSRD $0, 32(R9), X10, X12
 	VPINSRD $0, 32(R10), X10, X13
@@ -61,6 +79,9 @@ TEXT ·aesITB128ChainAbsorb36x4Avx512Asm(SB), NOSPLIT, $0-32
 	VAESENC Z2, Z0, Z0
 	VAESENC Z3, Z0, Z0
 
-	VMOVDQU64 Z0, 0(DX)
+	VMOVDQU X0, 0(DX)
+	VEXTRACTI64X2 $1, Z0, 16(DX)
+	VEXTRACTI64X2 $2, Z0, 32(DX)
+	VEXTRACTI64X2 $3, Z0, 48(DX)
 	VZEROUPPER
 	RET

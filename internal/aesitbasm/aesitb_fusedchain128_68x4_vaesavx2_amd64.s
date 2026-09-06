@@ -2,15 +2,18 @@
 
 // VAES YMM (two lanes per register) fused ChainHash cascade kernel for AES-ITB-128 at the
 // 68-byte shape, 4 lanes (5 PKCS#7 blocks, 7 AES rounds per
-// cascade round). The padded data blocks are staged once and every
-// cascade round runs from registers; see aesitbasm_fused.go for the
+// cascade round).
+// The padded data blocks are staged once — in registers, with any
+// block the register file cannot hold written to the frame as a
+// 32-byte store that the round loop reads back at the same width —
+// and every cascade round runs from that staging; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
 #include "textflag.h"
 
 // func aesITB128FusedChain68x4VaesAvx2Asm(key *[16]byte, comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
-TEXT ·aesITB128FusedChain68x4VaesAvx2Asm(SB), NOSPLIT, $320-40
+TEXT ·aesITB128FusedChain68x4VaesAvx2Asm(SB), NOSPLIT, $128-40
 	MOVQ key+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nPairs+16(FP), CX
@@ -21,56 +24,49 @@ TEXT ·aesITB128FusedChain68x4VaesAvx2Asm(SB), NOSPLIT, $320-40
 	MOVQ 16(DX), R10
 	MOVQ 24(DX), R11
 
-	VMOVDQU 0(R8), X4
-	VMOVDQU X4, 0(SP)
-	VMOVDQU 0(R9), X4
-	VMOVDQU X4, 16(SP)
-	VMOVDQU 0(R10), X4
-	VMOVDQU X4, 32(SP)
-	VMOVDQU 0(R11), X4
-	VMOVDQU X4, 48(SP)
-	VMOVDQU 16(R8), X4
-	VMOVDQU X4, 64(SP)
-	VMOVDQU 16(R9), X4
-	VMOVDQU X4, 80(SP)
-	VMOVDQU 16(R10), X4
-	VMOVDQU X4, 96(SP)
-	VMOVDQU 16(R11), X4
-	VMOVDQU X4, 112(SP)
-	VMOVDQU 32(R8), X4
-	VMOVDQU X4, 128(SP)
-	VMOVDQU 32(R9), X4
-	VMOVDQU X4, 144(SP)
-	VMOVDQU 32(R10), X4
-	VMOVDQU X4, 160(SP)
-	VMOVDQU 32(R11), X4
-	VMOVDQU X4, 176(SP)
-	VMOVDQU 48(R8), X4
-	VMOVDQU X4, 192(SP)
-	VMOVDQU 48(R9), X4
-	VMOVDQU X4, 208(SP)
-	VMOVDQU 48(R10), X4
-	VMOVDQU X4, 224(SP)
-	VMOVDQU 48(R11), X4
-	VMOVDQU X4, 240(SP)
 	VMOVDQU ·pad4Tail(SB), X13
-	VPINSRD $0, 64(R8), X13, X4
-	VMOVDQU X4, 256(SP)
+	VPINSRD $0, 0(R8), X13, X2
+	VPINSRD $1, 4(R8), X2, X2
+	VPINSRQ $1, 8(R8), X2, X2
+	VPINSRD $0, 0(R9), X13, X4
+	VPINSRD $1, 4(R9), X4, X4
+	VPINSRQ $1, 8(R9), X4, X4
+	VINSERTI128 $1, X4, Y2, Y2
+	VPINSRD $0, 0(R10), X13, X8
+	VPINSRD $1, 4(R10), X8, X8
+	VPINSRQ $1, 8(R10), X8, X8
+	VPINSRD $0, 0(R11), X13, X4
+	VPINSRD $1, 4(R11), X4, X4
+	VPINSRQ $1, 8(R11), X4, X4
+	VINSERTI128 $1, X4, Y8, Y8
+	VMOVDQU 16(R8), X9
+	VINSERTI128 $1, 16(R9), Y9, Y9
+	VMOVDQU 16(R10), X10
+	VINSERTI128 $1, 16(R11), Y10, Y10
+	VMOVDQU 32(R8), X11
+	VINSERTI128 $1, 32(R9), Y11, Y11
+	VMOVDQU 32(R10), X12
+	VINSERTI128 $1, 32(R11), Y12, Y12
+	VMOVDQU 48(R8), X0
+	VINSERTI128 $1, 48(R9), Y0, Y0
+	VMOVDQU 48(R10), X1
+	VINSERTI128 $1, 48(R11), Y1, Y1
+	VMOVDQU Y0, 0(SP)
+	VMOVDQU Y1, 32(SP)
+	VPINSRD $0, 64(R8), X13, X0
 	VPINSRD $0, 64(R9), X13, X4
-	VMOVDQU X4, 272(SP)
-	VPINSRD $0, 64(R10), X13, X4
-	VMOVDQU X4, 288(SP)
+	VINSERTI128 $1, X4, Y0, Y0
+	VPINSRD $0, 64(R10), X13, X1
 	VPINSRD $0, 64(R11), X13, X4
-	VMOVDQU X4, 304(SP)
+	VINSERTI128 $1, X4, Y1, Y1
+	VMOVDQU Y0, 64(SP)
+	VMOVDQU Y1, 96(SP)
 
 	VBROADCASTI128 ·RC+0(SB), Y3
 	VBROADCASTI128 ·RC+16(SB), Y4
 	VBROADCASTI128 ·RC+32(SB), Y5
 	VBROADCASTI128 ·RC+48(SB), Y6
 	VBROADCASTI128 ·RC+64(SB), Y7
-	VBROADCASTI128 ·RC+80(SB), Y8
-	VBROADCASTI128 ·RC+96(SB), Y9
-	VBROADCASTI128 ·RC+112(SB), Y10
 	VBROADCASTI128 0(AX), Y13
 	VPXOR Y0, Y0, Y0
 	VPXOR Y1, Y1, Y1
@@ -80,20 +76,20 @@ loop:
 	VPXOR Y13, Y14, Y14
 	VPXOR Y14, Y0, Y0
 	VPXOR Y14, Y1, Y1
+	VPXOR Y2, Y0, Y0
+	VPXOR Y8, Y1, Y1
+	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
+	VPXOR Y9, Y0, Y0
+	VPXOR Y10, Y1, Y1
+	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
+	VPXOR Y11, Y0, Y0
+	VPXOR Y12, Y1, Y1
+	VAESENC Y5, Y0, Y0; VAESENC Y5, Y1, Y1
 	VPXOR 0(SP), Y0, Y0
 	VPXOR 32(SP), Y1, Y1
-	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
+	VAESENC Y6, Y0, Y0; VAESENC Y6, Y1, Y1
 	VPXOR 64(SP), Y0, Y0
 	VPXOR 96(SP), Y1, Y1
-	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
-	VPXOR 128(SP), Y0, Y0
-	VPXOR 160(SP), Y1, Y1
-	VAESENC Y5, Y0, Y0; VAESENC Y5, Y1, Y1
-	VPXOR 192(SP), Y0, Y0
-	VPXOR 224(SP), Y1, Y1
-	VAESENC Y6, Y0, Y0; VAESENC Y6, Y1, Y1
-	VPXOR 256(SP), Y0, Y0
-	VPXOR 288(SP), Y1, Y1
 	VAESENC Y7, Y0, Y0; VAESENC Y7, Y1, Y1
 	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
 	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
@@ -101,7 +97,9 @@ loop:
 	DECQ CX
 	JNZ loop
 
-	VMOVDQU Y0, 0(DI)
-	VMOVDQU Y1, 32(DI)
+	VMOVDQU X0, 0(DI)
+	VEXTRACTI128 $1, Y0, 16(DI)
+	VMOVDQU X1, 32(DI)
+	VEXTRACTI128 $1, Y1, 48(DI)
 	VZEROUPPER
 	RET

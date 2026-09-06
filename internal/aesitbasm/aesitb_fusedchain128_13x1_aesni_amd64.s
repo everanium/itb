@@ -2,8 +2,9 @@
 
 // Legacy-SSE AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 13-byte shape, 1 lane (1 PKCS#7 block, 3 AES rounds per
-// cascade round). The padded data blocks are staged once and every
-// cascade round runs from registers; see aesitbasm_fused.go for the
+// cascade round).
+// The padded data blocks are staged once into the frame and every
+// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 

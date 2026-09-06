@@ -2,8 +2,9 @@
 
 // VEX-encoded AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 20-byte shape, 1 lane (2 PKCS#7 blocks, 4 AES rounds per
-// cascade round). The padded data blocks are staged once and every
-// cascade round runs from registers; see aesitbasm_fused.go for the
+// cascade round).
+// The padded data blocks are staged once into the frame and every
+// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -18,9 +19,11 @@ TEXT ·aesITB128FusedChain20x1VexAsm(SB), NOSPLIT, $128-40
 	MOVQ out+32(FP), DI
 	MOVQ DX, R8
 
-	VMOVDQU 0(R8), X4
-	VMOVDQU X4, 0(SP)
 	VMOVDQU ·pad4Tail(SB), X13
+	VPINSRD $0, 0(R8), X13, X4
+	VPINSRD $1, 4(R8), X4, X4
+	VPINSRQ $1, 8(R8), X4, X4
+	VMOVDQU X4, 0(SP)
 	VPINSRD $0, 16(R8), X13, X4
 	VMOVDQU X4, 64(SP)
 

@@ -6,6 +6,10 @@
 // the pure-Go reference by the in-package parity tests. The tail block is
 // read with exact-width inserts — no byte past the 20-byte input is
 // touched.
+// Every load is sized to the store the Go call site leaves in flight
+// (seeds copy, pixel-index write) so it forwards from the store buffer
+// instead of waiting for the store to commit, and the output is written
+// as four 16-byte stores, the width the Go side reads it back with.
 
 #include "textflag.h"
 
@@ -21,8 +25,10 @@ TEXT ·aesITB128ChainAbsorb20x4VaesAvx2Asm(SB), NOSPLIT, $0-32
 	MOVQ 24(CX), R11
 
 	VBROADCASTI128 0(AX), Y2
-	VMOVDQU 0(BX), Y0
-	VMOVDQU 32(BX), Y1
+	VMOVDQU 0(BX), X0
+	VINSERTI128 $1, 16(BX), Y0, Y0
+	VMOVDQU 32(BX), X1
+	VINSERTI128 $1, 48(BX), Y1, Y1
 	VPXOR Y2, Y0, Y0
 	VPXOR Y2, Y1, Y1
 
@@ -35,15 +41,25 @@ TEXT ·aesITB128ChainAbsorb20x4VaesAvx2Asm(SB), NOSPLIT, $0-32
 	VBROADCASTI128 ·RC+96(SB), Y9
 	VBROADCASTI128 ·RC+112(SB), Y10
 
-	VMOVDQU 0(R8), X12
-	VINSERTI128 $1, 0(R9), Y12, Y12
+	VBROADCASTI128 ·pad4Tail(SB), Y11
+	VPINSRD $0, 0(R8), X11, X12
+	VPINSRD $1, 4(R8), X12, X12
+	VPINSRQ $1, 8(R8), X12, X12
+	VPINSRD $0, 0(R9), X11, X14
+	VPINSRD $1, 4(R9), X14, X14
+	VPINSRQ $1, 8(R9), X14, X14
+	VINSERTI128 $1, X14, Y12, Y12
 	VPXOR Y12, Y0, Y0
-	VMOVDQU 0(R10), X13
-	VINSERTI128 $1, 0(R11), Y13, Y13
+	VPINSRD $0, 0(R10), X11, X13
+	VPINSRD $1, 4(R10), X13, X13
+	VPINSRQ $1, 8(R10), X13, X13
+	VPINSRD $0, 0(R11), X11, X15
+	VPINSRD $1, 4(R11), X15, X15
+	VPINSRQ $1, 8(R11), X15, X15
+	VINSERTI128 $1, X15, Y13, Y13
 	VPXOR Y13, Y1, Y1
 	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
 
-	VBROADCASTI128 ·pad4Tail(SB), Y11
 	VPINSRD $0, 16(R8), X11, X12
 	VPINSRD $0, 16(R9), X11, X14
 	VINSERTI128 $1, X14, Y12, Y12
@@ -57,7 +73,9 @@ TEXT ·aesITB128ChainAbsorb20x4VaesAvx2Asm(SB), NOSPLIT, $0-32
 	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
 	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
 
-	VMOVDQU Y0, 0(DX)
-	VMOVDQU Y1, 32(DX)
+	VMOVDQU X0, 0(DX)
+	VEXTRACTI128 $1, Y0, 16(DX)
+	VMOVDQU X1, 32(DX)
+	VEXTRACTI128 $1, Y1, 48(DX)
 	VZEROUPPER
 	RET

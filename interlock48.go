@@ -591,16 +591,21 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 		},
 	}
 	if bh := lockSeed.BatchHash; bh != nil {
+		// The four lane seeds are built once: the batched arm takes them
+		// by value, and the 16-byte copies the call performs then read a
+		// stable array instead of spanning eight 8-byte stores a per-call
+		// literal would leave in flight immediately ahead of them (a
+		// failed store-to-load forward on every copy, measured at 7–27
+		// cycles per call across tiers on Rocket Lake, Sapphire Rapids
+		// and Zen 4).
+		seeds := [4][2]uint64{{lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}}
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
 				s.data[i] = s.bufs[i][:]
 			}
-			out := bh(&s.data, [4][2]uint64{
-				{lockLo, lockHi}, {lockLo, lockHi},
-				{lockLo, lockHi}, {lockLo, lockHi},
-			})
+			out := bh(&s.data, seeds)
 			for i := 0; i < 4; i++ {
 				prf[2*i] = out[i][0]
 				prf[2*i+1] = out[i][1]

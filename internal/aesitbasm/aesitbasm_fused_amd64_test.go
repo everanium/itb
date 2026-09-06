@@ -94,6 +94,12 @@ func TestFusedFlagsExclusive(t *testing.T) {
 
 // BenchmarkFusedTier times every fused tier the host can execute, per
 // shape and per cascade length (4 and 8 pairs = 512- and 1024-bit keys).
+// The components vary per call by rotating through a ring of component
+// slices — no store lands immediately ahead of the kernel's first
+// components load, so consecutive calls are not serialised by a failed
+// store-to-load forward (see benchKernel). The production call pattern,
+// with a pixel-index store into every lane buffer ahead of each call, is
+// measured by BenchmarkFusedTierPix.
 func BenchmarkFusedTier(b *testing.B) {
 	for _, tier := range amd64FusedTiers() {
 		if !tier.ok {
@@ -104,14 +110,17 @@ func BenchmarkFusedTier(b *testing.B) {
 				k := tier.x4[n]
 				b.Run(fmt.Sprintf("%s/x4/shape%d/pairs%d", tier.name, n, pairs), func(b *testing.B) {
 					key := ascendingKey()
-					comps := randomComponents(pairs)
+					var ring [8][]uint64
+					for i := range ring {
+						ring[i] = randomComponents(pairs)
+					}
 					_, ptrs := makeLaneData(n)
 					var out [4][2]uint64
 					b.SetBytes(int64(4 * n))
 					b.ReportAllocs()
+					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
-						comps[0] = uint64(i)
-						k(&key, comps, &ptrs, &out)
+						k(&key, ring[i&7], &ptrs, &out)
 					}
 				})
 			}

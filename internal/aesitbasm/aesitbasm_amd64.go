@@ -9,16 +9,23 @@ import aes "github.com/jedisct1/go-aes"
 // the forcetier init and the in-package dispatch tests can override the
 // auto-selection.
 //
-// Auto-selection takes the XMM tier on every AES-NI host: with 3 to 7
-// AES rounds per lane the kernels are call-overhead bound, and the
-// wider register tiers measured no faster than four XMM chains — the
-// VAES ZMM kernels ran 4–7 % slower and the VAES YMM kernels within
-// ±3 % of XMM on the Rocket Lake / Ice Lake / Zen 4 hosts of the tier
-// sweep, and on Sapphire Rapids both ZMM and YMM measured roughly 2×
-// slower than XMM (lane gather / VZEROUPPER cost exceeds the per-round
-// saving, and the SPR dirty-upper transition penalty compounds it).
-// Both wider tiers stay built and are reachable through
-// ITB_FORCE_HASH_TIER=avx512 / vaesavx2 for parity coverage.
+// Auto-selection takes the XMM tier on every AES-NI host. The per-round
+// kernels run 3 to 7 AES rounds per lane and are latency bound; the
+// wide tiers must first gather four lanes into one register (three
+// dependent inserts ahead of the first round), and the measured
+// ranking depends on the call site. Under the nonce-buf pattern
+// (BenchmarkTierPix: 4-byte pixel-index store into every lane buffer
+// ahead of the call, shapes 20 / 36 / 68) the ZMM kernels lead XMM by
+// 6–8 % on Rocket Lake and Sapphire Rapids and match it on Zen 4; under
+// the Interlocked Barrier x4 fill (BenchmarkLockFillX4, the 13-byte
+// shape through the shipped fillRanksX4 closure) ZMM trails XMM by 16 %
+// on Sapphire Rapids and 19 % on Zen 4, YMM by 7 % / 21 % there, while
+// both lead by ~10 % on Rocket Lake. With the fused cascade carrying the
+// nonce-buf shapes in production and the batch-16 kernel carrying the
+// interlock fill, the per-round kernels are reached as fallbacks, and
+// the XMM tier is the measured floor on every host. Both wider tiers
+// stay built and are reachable through ITB_FORCE_HASH_TIER=avx512 /
+// vaesavx2.
 var (
 	// HasVAESAVX512 selects the ZMM kernels: all four lanes in one
 	// 512-bit register, one VAESENC per round. Needs VAES + AVX-512.
@@ -47,9 +54,10 @@ var (
 	// width, so the batch-16 kernels scale where the four-lane per-round
 	// kernels above do not: VAES ZMM measured 2.1–2.6× and VAES YMM
 	// 1.5–1.9× the XMM throughput on Rocket Lake / Ice Lake / Sapphire
-	// Rapids / Zen 4, including on Sapphire Rapids where the four-lane
-	// wide tiers are slower than XMM. Only one flag is true; the cascade
-	// keeps the "one consistent set" invariant the forcetier init relies on.
+	// Rapids / Zen 4 (BenchmarkTierX16; the kernel takes its arguments
+	// by value and synthesises the fill blocks in-register, so no store
+	// sits ahead of its loads). Only one flag is true; the cascade keeps
+	// the "one consistent set" invariant the forcetier init relies on.
 	HasVAESAVX512X16 = aes.CPU.HasVAES && aes.CPU.HasAVX512
 	HasVAESAVX2X16   = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !HasVAESAVX512X16
 

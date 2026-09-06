@@ -4,8 +4,25 @@
 One file per (shape, tier). Shapes 13/20/36/68; tiers aesni (legacy SSE
 XMM), vex (VEX-encoded XMM), vaesavx2 (VAES YMM, two lanes per register),
 avx512 (VAES ZMM, four lanes per register), neon (ARM64 crypto extension).
+
+Load shapes on amd64 are matched to the stores the Go call sites leave in
+flight so store-to-load forwarding succeeds: the seeds array arrives as a
+by-value copy (four 16-byte stores) and is read as four 16-byte loads on
+every tier; block 0 of the multi-block shapes follows a 4-byte pixel-index
+store at offset 0 and is read as two 4-byte inserts plus an 8-byte insert;
+the output is written as four 16-byte stores on every tier, the width the
+Go side reads it back with. The 13-byte fill block is read as an 8-, a 4-
+and a 1-byte insert.
+
+Usage:
+    gen_kernels.py [--check]
+
+Without flags every kernel is written into internal/aesitbasm/; --check
+regenerates in memory and compares against the committed files without
+writing (exit status 1 on any drift).
 """
 import os
+import sys
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "internal", "aesitbasm")
 SHAPES = [13, 20, 36, 68]
@@ -24,7 +41,7 @@ def header(shape, tier_desc, build):
 // See the package comment for the construction; every tier is pinned to
 // the pure-Go reference by the in-package parity tests. The tail block is
 // read with exact-width inserts — no byte past the {shape}-byte input is
-// touched.
+// touched.{"" if build.startswith("arm64") else chr(10) + "// Every load is sized to the store the Go call site leaves in flight" + chr(10) + "// (seeds copy, pixel-index write) so it forwards from the store buffer" + chr(10) + "// instead of waiting for the store to commit, and the output is written" + chr(10) + "// as four 16-byte stores, the width the Go side reads it back with."}
 
 #include "textflag.h"
 """
@@ -59,15 +76,28 @@ def xmm_kernel(shape, vex):
         L.append(f"\t{mov} ·RC+{16 * i}(SB), X{5 + i}")
     L.append("")
     regs = ["R8", "R9", "R10", "R11"]
+    pad = "pad13Tail" if shape == 13 else "pad4Tail"
+    L.append(f"\t{mov} ·{pad}(SB), X13")
     for b in range(nb):
         off = 16 * b
-        if b < nb - 1:
+        if b == 0 and nb > 1:
+            for l in range(4):
+                r = regs[l]
+                if vex:
+                    L.append(f"\tVPINSRD $0, 0({r}), X13, X4")
+                    L.append(f"\tVPINSRD $1, 4({r}), X4, X4")
+                    L.append(f"\tVPINSRQ $1, 8({r}), X4, X4")
+                else:
+                    L.append(f"\t{mov} X13, X4")
+                    L.append(f"\tPINSRD $0, 0({r}), X4")
+                    L.append(f"\tPINSRD $1, 4({r}), X4")
+                    L.append(f"\tPINSRQ $1, 8({r}), X4")
+                L.append(XOR("X4", f"X{l}"))
+        elif b < nb - 1:
             for l in range(4):
                 L.append(f"\t{mov} {off}({regs[l]}), X4")
                 L.append(XOR("X4", f"X{l}"))
         else:
-            pad = "pad13Tail" if shape == 13 else "pad4Tail"
-            L.append(f"\t{mov} ·{pad}(SB), X13")
             for l in range(4):
                 r = regs[l]
                 if shape == 13:
@@ -108,22 +138,32 @@ def ymm_kernel(shape):
     L.append(f"TEXT ·aesITB128ChainAbsorb{shape}x4VaesAvx2Asm(SB), NOSPLIT, $0-32")
     L += ["\tMOVQ key+0(FP), AX", "\tMOVQ seeds+8(FP), BX", "\tMOVQ dataPtrs+16(FP), CX", "\tMOVQ out+24(FP), DX",
           "\tMOVQ 0(CX), R8", "\tMOVQ 8(CX), R9", "\tMOVQ 16(CX), R10", "\tMOVQ 24(CX), R11", ""]
-    L += ["\tVBROADCASTI128 0(AX), Y2", "\tVMOVDQU 0(BX), Y0", "\tVMOVDQU 32(BX), Y1",
+    L += ["\tVBROADCASTI128 0(AX), Y2",
+          "\tVMOVDQU 0(BX), X0", "\tVINSERTI128 $1, 16(BX), Y0, Y0",
+          "\tVMOVDQU 32(BX), X1", "\tVINSERTI128 $1, 48(BX), Y1, Y1",
           "\tVPXOR Y2, Y0, Y0", "\tVPXOR Y2, Y1, Y1", ""]
     for i in range(8):
         L.append(f"\tVBROADCASTI128 ·RC+{16 * i}(SB), Y{3 + i}")
     L.append("")
+    pad = "pad13Tail" if shape == 13 else "pad4Tail"
+    L.append(f"\tVBROADCASTI128 ·{pad}(SB), Y11")
     pairs = [("R8", "R9", "Y0", "Y12", "X12", "X14"), ("R10", "R11", "Y1", "Y13", "X13", "X15")]
     for b in range(nb):
         off = 16 * b
-        if b < nb - 1:
+        if b == 0 and nb > 1:
+            for ra, rb, st, yt, xt, xs in pairs:
+                for r, x in ((ra, xt), (rb, xs)):
+                    L.append(f"\tVPINSRD $0, 0({r}), X11, {x}")
+                    L.append(f"\tVPINSRD $1, 4({r}), {x}, {x}")
+                    L.append(f"\tVPINSRQ $1, 8({r}), {x}, {x}")
+                L.append(f"\tVINSERTI128 $1, {xs}, {yt}, {yt}")
+                L.append(f"\tVPXOR {yt}, {st}, {st}")
+        elif b < nb - 1:
             for ra, rb, st, yt, xt, _ in pairs:
                 L.append(f"\tVMOVDQU {off}({ra}), {xt}")
                 L.append(f"\tVINSERTI128 $1, {off}({rb}), {yt}, {yt}")
                 L.append(f"\tVPXOR {yt}, {st}, {st}")
         else:
-            pad = "pad13Tail" if shape == 13 else "pad4Tail"
-            L.append(f"\tVBROADCASTI128 ·{pad}(SB), Y11")
             for ra, rb, st, yt, xt, xs in pairs:
                 for r, x in ((ra, xt), (rb, xs)):
                     if shape == 13:
@@ -138,7 +178,8 @@ def ymm_kernel(shape):
         L.append("")
     L.append(f"\tVAESENC {rc(0)}, Y0, Y0; VAESENC {rc(0)}, Y1, Y1")
     L.append(f"\tVAESENC {rc(1)}, Y0, Y0; VAESENC {rc(1)}, Y1, Y1")
-    L += ["", "\tVMOVDQU Y0, 0(DX)", "\tVMOVDQU Y1, 32(DX)", "\tVZEROUPPER", "\tRET"]
+    L += ["", "\tVMOVDQU X0, 0(DX)", "\tVEXTRACTI128 $1, Y0, 16(DX)",
+          "\tVMOVDQU X1, 32(DX)", "\tVEXTRACTI128 $1, Y1, 48(DX)", "\tVZEROUPPER", "\tRET"]
     return "\n".join(L) + "\n"
 
 
@@ -152,22 +193,34 @@ def zmm_kernel(shape):
     L.append(f"TEXT ·aesITB128ChainAbsorb{shape}x4Avx512Asm(SB), NOSPLIT, $0-32")
     L += ["\tMOVQ key+0(FP), AX", "\tMOVQ seeds+8(FP), BX", "\tMOVQ dataPtrs+16(FP), CX", "\tMOVQ out+24(FP), DX",
           "\tMOVQ 0(CX), R8", "\tMOVQ 8(CX), R9", "\tMOVQ 16(CX), R10", "\tMOVQ 24(CX), R11", ""]
-    L += ["\tVBROADCASTI32X4 0(AX), Z1", "\tVMOVDQU64 0(BX), Z0", "\tVPXORD Z1, Z0, Z0", ""]
+    L += ["\tVBROADCASTI32X4 0(AX), Z1",
+          "\tVMOVDQU 0(BX), X0", "\tVINSERTI64X2 $1, 16(BX), Z0, Z0",
+          "\tVINSERTI64X2 $2, 32(BX), Z0, Z0", "\tVINSERTI64X2 $3, 48(BX), Z0, Z0",
+          "\tVPXORD Z1, Z0, Z0", ""]
     for i in range(8):
         L.append(f"\tVBROADCASTI32X4 ·RC+{16 * i}(SB), Z{2 + i}")
     L.append("")
     regs = ["R8", "R9", "R10", "R11"]
+    pad = "pad13Tail" if shape == 13 else "pad4Tail"
+    L.append(f"\tVBROADCASTI32X4 ·{pad}(SB), Z10")
+    xs = ["X11", "X12", "X13", "X14"]
     for b in range(nb):
         off = 16 * b
-        if b < nb - 1:
+        if b == 0 and nb > 1:
+            for l in range(4):
+                r, x = regs[l], xs[l]
+                L.append(f"\tVPINSRD $0, 0({r}), X10, {x}")
+                L.append(f"\tVPINSRD $1, 4({r}), {x}, {x}")
+                L.append(f"\tVPINSRQ $1, 8({r}), {x}, {x}")
+            for l in range(1, 4):
+                L.append(f"\tVINSERTI64X2 ${l}, {xs[l]}, Z11, Z11")
+            L.append("\tVPXORD Z11, Z0, Z0")
+        elif b < nb - 1:
             L.append(f"\tVMOVDQU {off}(R8), X11")
             for l in range(1, 4):
                 L.append(f"\tVINSERTI64X2 ${l}, {off}({regs[l]}), Z11, Z11")
             L.append("\tVPXORD Z11, Z0, Z0")
         else:
-            pad = "pad13Tail" if shape == 13 else "pad4Tail"
-            L.append(f"\tVBROADCASTI32X4 ·{pad}(SB), Z10")
-            xs = ["X11", "X12", "X13", "X14"]
             for l in range(4):
                 r, x = regs[l], xs[l]
                 if shape == 13:
@@ -183,7 +236,8 @@ def zmm_kernel(shape):
         L.append("")
     L.append(f"\tVAESENC {rc(0)}, Z0, Z0")
     L.append(f"\tVAESENC {rc(1)}, Z0, Z0")
-    L += ["", "\tVMOVDQU64 Z0, 0(DX)", "\tVZEROUPPER", "\tRET"]
+    L += ["", "\tVMOVDQU X0, 0(DX)", "\tVEXTRACTI64X2 $1, Z0, 16(DX)",
+          "\tVEXTRACTI64X2 $2, Z0, 32(DX)", "\tVEXTRACTI64X2 $3, Z0, 48(DX)", "\tVZEROUPPER", "\tRET"]
     return "\n".join(L) + "\n"
 
 
@@ -249,22 +303,44 @@ def neon_kernel(shape):
     return "\n".join(L) + "\n"
 
 
-def main():
+def render_all():
     amd = "amd64 && !purego && !noitbasm"
     arm = "arm64 && !purego && !noitbasm"
+    files = {}
     for s in SHAPES:
-        files = {
+        files.update({
             f"aesitb_chain128_{s}_aesni_amd64.s": header(s, "Legacy-SSE AES-NI XMM (AESENC xmm, xmm)", amd) + "\n" + xmm_kernel(s, False),
             f"aesitb_chain128_{s}_vex_amd64.s": header(s, "VEX-encoded AES-NI XMM (VAESENC xmm, xmm, xmm; needs AES-NI + AVX)", amd) + "\n" + xmm_kernel(s, True),
             f"aesitb_chain128_{s}_vaesavx2_amd64.s": header(s, "VAES YMM, two lanes per register (needs VAES + AVX2)", amd) + "\n" + ymm_kernel(s),
             f"aesitb_chain128_{s}_avx512_amd64.s": header(s, "VAES ZMM, four lanes per register (needs VAES + AVX-512)", amd) + "\n" + zmm_kernel(s),
             f"aesitb_chain128_{s}_neon_arm64.s": header(s, "ARM64 NEON crypto-extension (AESE + AESMC, round constant folded into the next AESE key operand)", arm) + "\n" + neon_kernel(s),
-        }
-        for name, body in files.items():
-            with open(os.path.join(OUT, name), "w") as f:
+        })
+    return files
+
+
+def main(argv):
+    check = "--check" in argv[1:]
+    unknown = [a for a in argv[1:] if a != "--check"]
+    if unknown:
+        raise SystemExit(f"gen_kernels.py: unknown argument(s) {unknown}; known: --check")
+    drift = 0
+    for name, body in render_all().items():
+        path = os.path.join(OUT, name)
+        if check:
+            with open(path, "rb") as f:
+                committed = f.read()
+            if committed == body.encode("utf-8"):
+                print("clean", name)
+            else:
+                print("DRIFT", name)
+                drift += 1
+        else:
+            with open(path, "w") as f:
                 f.write(body)
             print("wrote", name)
+    if drift:
+        raise SystemExit(f"gen_kernels.py: {drift} file(s) differ from the generator output")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)

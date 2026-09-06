@@ -9,24 +9,34 @@ import aes "github.com/jedisct1/go-aes"
 // separately from the per-round kernels; the forcetier init sets both
 // flag families as one consistent set. At most one flag is true.
 //
-// Auto-selection takes the XMM tier: on the Rocket Lake tier sweep the
-// ZMM fused kernels ran 2–5 % faster and the YMM kernels 1–3 % faster
-// than XMM — inside the margin that would justify a wider tier, and
-// without a Sapphire Rapids measurement (where the per-round wide tiers
-// ran ~2× slower). Both wider tiers stay built and are reachable through
-// ITB_FORCE_HASH_TIER=avx512 / vaesavx2.
+// Auto-selection takes the widest VAES tier the host offers: ZMM, then
+// YMM, then the VEX-encoded XMM kernels, then legacy-SSE. Under the
+// production call pattern (BenchmarkFusedTierPix: a 4-byte pixel-index
+// store into every lane buffer immediately ahead of the call) the ZMM
+// fused kernels run 1.6–1.7× and the YMM kernels 1.25–1.4× the XMM
+// throughput at the 512-bit nonce shape (shape 68, 8 component pairs)
+// on Rocket Lake and Sapphire Rapids, and 1.26× / 1.19× on Zen 4, where
+// the two VAES tiers trade places by shape (YMM ahead at 4 component
+// pairs, ZMM at 8) and both lead XMM by 13–35 % across the measured
+// shape / pair cells. The wide kernels stage
+// the data blocks in registers and size every load to the caller's
+// store, so no wide load spans a narrower in-flight store. All three
+// measured hosts select ZMM; the YMM tier is auto-selected only on VAES
+// hosts without AVX-512, which are not among the measured hosts. Every
+// tier stays built and is reachable through ITB_FORCE_HASH_TIER.
 var (
 	// FusedHasVAESAVX512 selects the ZMM fused kernels (four lanes in
-	// one register). Needs VAES + AVX-512. Not auto-selected.
-	FusedHasVAESAVX512 = false
+	// one register). Needs VAES + AVX-512.
+	FusedHasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
 
 	// FusedHasVAESAVX2 selects the YMM fused kernels (two lanes per
-	// register). Needs VAES + AVX2. Not auto-selected.
-	FusedHasVAESAVX2 = false
+	// register). Needs VAES + AVX2; yields to the ZMM tier.
+	FusedHasVAESAVX2 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !FusedHasVAESAVX512
 
 	// FusedHasAVXAESNI selects the VEX-encoded XMM fused kernels.
-	// Needs AES-NI + AVX (AVX2 used as the detection superset).
-	FusedHasAVXAESNI = aes.CPU.HasAESNI && aes.CPU.HasAVX2
+	// Needs AES-NI + AVX (AVX2 used as the detection superset); yields
+	// to both VAES tiers.
+	FusedHasAVXAESNI = aes.CPU.HasAESNI && aes.CPU.HasAVX2 && !FusedHasVAESAVX512 && !FusedHasVAESAVX2
 
 	// FusedHasAESNI selects the legacy-SSE XMM fused kernels on AES-NI
 	// hosts without AVX.

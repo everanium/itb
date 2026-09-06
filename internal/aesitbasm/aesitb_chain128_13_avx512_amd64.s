@@ -6,6 +6,10 @@
 // the pure-Go reference by the in-package parity tests. The tail block is
 // read with exact-width inserts — no byte past the 13-byte input is
 // touched.
+// Every load is sized to the store the Go call site leaves in flight
+// (seeds copy, pixel-index write) so it forwards from the store buffer
+// instead of waiting for the store to commit, and the output is written
+// as four 16-byte stores, the width the Go side reads it back with.
 
 #include "textflag.h"
 
@@ -21,7 +25,10 @@ TEXT ·aesITB128ChainAbsorb13x4Avx512Asm(SB), NOSPLIT, $0-32
 	MOVQ 24(CX), R11
 
 	VBROADCASTI32X4 0(AX), Z1
-	VMOVDQU64 0(BX), Z0
+	VMOVDQU 0(BX), X0
+	VINSERTI64X2 $1, 16(BX), Z0, Z0
+	VINSERTI64X2 $2, 32(BX), Z0, Z0
+	VINSERTI64X2 $3, 48(BX), Z0, Z0
 	VPXORD Z1, Z0, Z0
 
 	VBROADCASTI32X4 ·RC+0(SB), Z2
@@ -55,6 +62,9 @@ TEXT ·aesITB128ChainAbsorb13x4Avx512Asm(SB), NOSPLIT, $0-32
 	VAESENC Z2, Z0, Z0
 	VAESENC Z3, Z0, Z0
 
-	VMOVDQU64 Z0, 0(DX)
+	VMOVDQU X0, 0(DX)
+	VEXTRACTI64X2 $1, Z0, 16(DX)
+	VEXTRACTI64X2 $2, Z0, 32(DX)
+	VEXTRACTI64X2 $3, Z0, 48(DX)
 	VZEROUPPER
 	RET

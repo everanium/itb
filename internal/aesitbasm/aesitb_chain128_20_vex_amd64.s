@@ -6,6 +6,10 @@
 // the pure-Go reference by the in-package parity tests. The tail block is
 // read with exact-width inserts — no byte past the 20-byte input is
 // touched.
+// Every load is sized to the store the Go call site leaves in flight
+// (seeds copy, pixel-index write) so it forwards from the store buffer
+// instead of waiting for the store to commit, and the output is written
+// as four 16-byte stores, the width the Go side reads it back with.
 
 #include "textflag.h"
 
@@ -39,17 +43,25 @@ TEXT ·aesITB128ChainAbsorb20x4VexAsm(SB), NOSPLIT, $0-32
 	VMOVDQU ·RC+96(SB), X11
 	VMOVDQU ·RC+112(SB), X12
 
-	VMOVDQU 0(R8), X4
+	VMOVDQU ·pad4Tail(SB), X13
+	VPINSRD $0, 0(R8), X13, X4
+	VPINSRD $1, 4(R8), X4, X4
+	VPINSRQ $1, 8(R8), X4, X4
 	VPXOR X4, X0, X0
-	VMOVDQU 0(R9), X4
+	VPINSRD $0, 0(R9), X13, X4
+	VPINSRD $1, 4(R9), X4, X4
+	VPINSRQ $1, 8(R9), X4, X4
 	VPXOR X4, X1, X1
-	VMOVDQU 0(R10), X4
+	VPINSRD $0, 0(R10), X13, X4
+	VPINSRD $1, 4(R10), X4, X4
+	VPINSRQ $1, 8(R10), X4, X4
 	VPXOR X4, X2, X2
-	VMOVDQU 0(R11), X4
+	VPINSRD $0, 0(R11), X13, X4
+	VPINSRD $1, 4(R11), X4, X4
+	VPINSRQ $1, 8(R11), X4, X4
 	VPXOR X4, X3, X3
 	VAESENC X5, X0, X0; VAESENC X5, X1, X1; VAESENC X5, X2, X2; VAESENC X5, X3, X3
 
-	VMOVDQU ·pad4Tail(SB), X13
 	VPINSRD $0, 16(R8), X13, X4
 	VPXOR X4, X0, X0
 	VPINSRD $0, 16(R9), X13, X4

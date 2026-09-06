@@ -2,8 +2,9 @@
 
 // VEX-encoded AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 36-byte shape, 4 lanes (3 PKCS#7 blocks, 5 AES rounds per
-// cascade round). The padded data blocks are staged once and every
-// cascade round runs from registers; see aesitbasm_fused.go for the
+// cascade round).
+// The padded data blocks are staged once into the frame and every
+// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -21,13 +22,22 @@ TEXT ·aesITB128FusedChain36x4VexAsm(SB), NOSPLIT, $192-40
 	MOVQ 16(DX), R10
 	MOVQ 24(DX), R11
 
-	VMOVDQU 0(R8), X4
+	VMOVDQU ·pad4Tail(SB), X13
+	VPINSRD $0, 0(R8), X13, X4
+	VPINSRD $1, 4(R8), X4, X4
+	VPINSRQ $1, 8(R8), X4, X4
 	VMOVDQU X4, 0(SP)
-	VMOVDQU 0(R9), X4
+	VPINSRD $0, 0(R9), X13, X4
+	VPINSRD $1, 4(R9), X4, X4
+	VPINSRQ $1, 8(R9), X4, X4
 	VMOVDQU X4, 16(SP)
-	VMOVDQU 0(R10), X4
+	VPINSRD $0, 0(R10), X13, X4
+	VPINSRD $1, 4(R10), X4, X4
+	VPINSRQ $1, 8(R10), X4, X4
 	VMOVDQU X4, 32(SP)
-	VMOVDQU 0(R11), X4
+	VPINSRD $0, 0(R11), X13, X4
+	VPINSRD $1, 4(R11), X4, X4
+	VPINSRQ $1, 8(R11), X4, X4
 	VMOVDQU X4, 48(SP)
 	VMOVDQU 16(R8), X4
 	VMOVDQU X4, 64(SP)
@@ -37,7 +47,6 @@ TEXT ·aesITB128FusedChain36x4VexAsm(SB), NOSPLIT, $192-40
 	VMOVDQU X4, 96(SP)
 	VMOVDQU 16(R11), X4
 	VMOVDQU X4, 112(SP)
-	VMOVDQU ·pad4Tail(SB), X13
 	VPINSRD $0, 32(R8), X13, X4
 	VMOVDQU X4, 128(SP)
 	VPINSRD $0, 32(R9), X13, X4
