@@ -46,6 +46,11 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Skip("vaesavx2 tier not executable on this host")
 		}
 		want(false, true, false, false)
+	case "vex":
+		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+			t.Skip("vex tier not executable on this host")
+		}
+		want(false, false, true, false)
 	case "aesni":
 		if !aes.CPU.HasAESNI {
 			t.Skip("aesni tier not executable on this host")

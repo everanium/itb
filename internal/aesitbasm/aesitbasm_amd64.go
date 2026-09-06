@@ -42,17 +42,20 @@ var (
 	// (AESENC xmm, xmm) on AES-NI hosts without AVX.
 	HasAESNIBatched = aes.CPU.HasAESNI && !aes.CPU.HasAVX2
 
-	// Batch-16 tier flags: inherit x4 auto-selection policy for conservative
-	// dispatch. VAES tiers stay built but not auto-selected; vex/aesni inherit
-	// the x4 ranking per host capabilities.
-	//
-	// HasVAESAVX512X16 / HasVAESAVX2X16 start false and can be forced via
-	// ITB_FORCE_INTERLOCK_PRF_FILL_TIER env-var for parity coverage.
-	HasVAESAVX512X16 = false
-	HasVAESAVX2X16   = false
+	// Batch-16 tier flags: auto-select the widest VAES tier the host
+	// offers. Sixteen lanes amortise the per-call cost across the register
+	// width, so the batch-16 kernels scale where the four-lane per-round
+	// kernels above do not: VAES ZMM measured 2.1–2.6× and VAES YMM
+	// 1.5–1.9× the XMM throughput on Rocket Lake / Ice Lake / Sapphire
+	// Rapids / Zen 4, including on Sapphire Rapids where the four-lane
+	// wide tiers are slower than XMM. Only one flag is true; the cascade
+	// keeps the "one consistent set" invariant the forcetier init relies on.
+	HasVAESAVX512X16 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+	HasVAESAVX2X16   = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !HasVAESAVX512X16
 
-	// HasAVXAESNIX16 / HasAESNIX16 inherit the x4 auto-selection.
-	HasAVXAESNIX16 = HasAVXAESNIBatched
+	// HasAVXAESNIX16 / HasAESNIX16 pick up on hosts without VAES, mirroring
+	// the x4 ranking there.
+	HasAVXAESNIX16 = HasAVXAESNIBatched && !HasVAESAVX512X16 && !HasVAESAVX2X16
 	HasAESNIX16    = HasAESNIBatched
 
 	// HasARMAESBatched / HasARMAESX16 are always false on amd64 builds.

@@ -211,7 +211,7 @@ done
 # checked against the independent scalar reference implementation.
 # Non-existent pairs are skipped with an audit line.
 # ---------------------------------------------------------------------------
-HASHARMS=(avx512 vaesavx2 avx2 aesni scalar)
+HASHARMS=(avx512 vaesavx2 avx2 vex aesni scalar)
 
 # arm_applicable HASH ARM — succeeds when the (hash, arm) pair names a
 # real dispatch arm. Skip rules:
