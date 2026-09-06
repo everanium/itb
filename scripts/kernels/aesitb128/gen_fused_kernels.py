@@ -29,6 +29,14 @@ block 0 is read as two 4-byte inserts plus an 8-byte insert rather than
 one 16-byte load, and no wide load spans a narrower staging store. The
 lane outputs are written as four 16-byte stores on every tier — the width
 the Go side reads them back with — rather than one 32- or 64-byte store.
+
+The NEON tier keeps the 16-byte VLD1 of block 0 and the four-register
+VST1 of the lane outputs: on Neoverse V2 (Graviton 4) neither pattern
+stalls — a block-0 staged once through the GPR path measured 2 ns/call
+slower at shape 68 under the production store-then-call pattern, and
+the STP-Q-pair and four-16-byte-store output shapes measured within
+0.5 ns/call of the shipped store (BenchmarkFusedTierPix-style harness,
+static hook, allocation-free) — so no arm64 load or store is reshaped.
 """
 import os
 import sys

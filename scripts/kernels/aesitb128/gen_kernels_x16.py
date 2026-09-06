@@ -20,6 +20,16 @@ runs the three AES rounds (absorb, finaliser RC[0], finaliser RC[1]).
 Parity with scalarBatchX16 (internal/aesitbasm/aesitbasm.go) is enforced
 by the in-package parity tests.
 
+Output store width: the wide tiers write the 16 rank pairs at their full
+register width (eight 32-byte stores on YMM, four 64-byte stores on ZMM).
+The fill closure reads the pairs back with 8-byte loads immediately after
+the call, and those loads forward from the wide stores on every measured
+host; splitting the stores into 16-byte pieces (the shape the 4-lane
+kernels use for their by-value output) measured slower through the fill
+closure (BenchmarkLockFillSuper16) — ZMM 17.6 -> 19.1 ns/op on Rocket
+Lake and 18.5 -> 19.3 on Sapphire Rapids, YMM 20.9 -> 21.7 and
+21.3 -> 21.6 — so the full-width stores stay.
+
 Usage:
     gen_kernels_x16.py [--check | --stdout] [tier ...]
 

@@ -45,10 +45,11 @@ func benchKernelX16(b *testing.B, kernel func(key *[16]byte, seed0, seed1, group
 
 // BenchmarkTierX16 times every batch-16 interlock PRF fill kernel the
 // host silicon can execute, by direct call (independent of the dispatch
-// flags, which leave the VAES tiers unselected by policy). This is the
-// kernel-level signal for the x16 tier decision: if one tier dominates
-// the others, auto-selection should prefer it. The full-stack matrix is
-// too noisy to resolve 2% deltas when x16 fill is <1% of total time.
+// flags). Kernel-level signal for the x16 tier auto-selection: the
+// widest VAES tier the host offers wins by 2× on every measured CPU
+// family, which is what the shipping dispatch selects. The full-stack
+// matrix is too noisy to resolve 2 % deltas when x16 fill is < 1 % of
+// total time — the kernel bench is what the auto-selection rests on.
 func BenchmarkTierX16(b *testing.B) {
 	type tier struct {
 		name string

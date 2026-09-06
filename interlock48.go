@@ -647,13 +647,19 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 		},
 	}
 	if bh := lockSeed.BatchHash; bh != nil {
+		// The four lane seeds are built once, for the reason given in
+		// [buildLockBatchPRF48_128]: the batched arm takes them by value,
+		// and the copy the call performs then reads a stable array
+		// instead of spanning the narrower stores a per-call literal
+		// would leave in flight immediately ahead of it.
+		seeds := [4][4]uint64{lockKey, lockKey, lockKey, lockKey}
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
 				s.data[i] = s.bufs[i][:]
 			}
-			out := bh(&s.data, [4][4]uint64{lockKey, lockKey, lockKey, lockKey})
+			out := bh(&s.data, seeds)
 			for i := 0; i < 4; i++ {
 				copy(prf[4*i:4*i+4], out[i][:])
 			}
@@ -683,13 +689,19 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 		},
 	}
 	if bh := lockSeed.BatchHash; bh != nil {
+		// The four lane seeds are built once, for the reason given in
+		// [buildLockBatchPRF48_128]: the batched arm takes them by value,
+		// and the copy the call performs then reads a stable array
+		// instead of spanning the narrower stores a per-call literal
+		// would leave in flight immediately ahead of it.
+		seeds := [4][8]uint64{lockKey, lockKey, lockKey, lockKey}
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
 				s.data[i] = s.bufs[i][:]
 			}
-			out := bh(&s.data, [4][8]uint64{lockKey, lockKey, lockKey, lockKey})
+			out := bh(&s.data, seeds)
 			for i := 0; i < 4; i++ {
 				copy(prf[8*i:8*i+8], out[i][:])
 			}
