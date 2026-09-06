@@ -15,11 +15,12 @@ import (
 // bit-exact (the parity invariant required by itb.BatchHashFunc128).
 //
 // AES-ITB is an ITB-native primitive: reduced-round AES structure
-// (2 AES rounds per call over a Merkle–Damgård absorption) intentionally
-// weak standalone (matches the aes2r control in HARNESS.md § 3.7).
-// Safe only under ITB's compound defence stack (ChainHash cascade +
-// Interlocked Barrier + Part 2 absorption); do not use as a general-
-// purpose hash outside ITB.
+// (one AES round per absorbed block plus two finalising rounds over a
+// Merkle–Damgård absorption) intentionally weak standalone — HARNESS.md
+// § 3.10 records its standalone breaks and their dissolution through
+// the cascade, alongside the aes2r control of § 3.7. Safe only under
+// ITB's compound defence stack (ChainHash cascade + Interlocked Barrier
+// + Part 2 absorption); do not use as a general-purpose hash outside ITB.
 //
 // The returned (HashFunc128, BatchHashFunc128) pair is the standard
 // shipped factory shape used by every AES-ITB-128 seed-plumbing path:
@@ -171,4 +172,46 @@ func AttachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 	}
 	s.SetInterlockBatch16(fn)
 	return nil
+}
+
+// NewSeed128x16 constructs a [itb.Seed128] with every fast-path hook
+// attached in one call — the Low-Level Mode symmetric of the triple
+// package's automatic attach in [github.com/everanium/itb/triple.Init]
+// and [github.com/everanium/itb/triple.Load]. Equivalent to:
+//
+//	single, batched, key, _ := hashes.Make128Pair(primitiveName, key...)
+//	seed, _ := itb.NewSeed128(bits, single)
+//	seed.BatchHash = batched
+//	hashes.AttachFused128(seed, primitiveName, key)
+//	hashes.AttachInterlockBatch16(seed, primitiveName, key)
+//
+// The variadic key argument follows [Make128Pair]: pass nothing to
+// generate a fresh random fixed key, or a single caller-supplied slice
+// of the primitive's native key length for the persistence-restore
+// path. The key the seed's arms are bound to (random or supplied) is
+// returned alongside the seed; it is nil for keyless primitives
+// (siphash24, which rejects an explicit key).
+//
+// Primitives without fused / batch-16 factories get the base Hash /
+// BatchHash arms; the optional hooks remain nil and the hot paths keep
+// the sequential fallback. Seeds constructed directly through
+// [itb.NewSeed128] never receive the hooks — this helper closes that gap
+// for the Low-Level entry points (Encrypt3x128Cfg and siblings).
+func NewSeed128x16(bits int, primitiveName string, key ...[]byte) (*itb.Seed128, []byte, error) {
+	single, batched, fixedKey, err := Make128Pair(primitiveName, key...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
+	}
+	s, err := itb.NewSeed128(bits, single)
+	if err != nil {
+		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
+	}
+	s.BatchHash = batched
+	if err := AttachFused128(s, primitiveName, fixedKey); err != nil {
+		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
+	}
+	if err := AttachInterlockBatch16(s, primitiveName, fixedKey); err != nil {
+		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
+	}
+	return s, fixedKey, nil
 }

@@ -136,7 +136,7 @@ func rankToMaskTriple48(lane0, lane1 uint64) (m0, m1, m2 uint64) {
 
 	// m1Local: 16-of-32 mask in the local indexing of remaining positions
 	// (bits where m0 is zero). unrankCombination48 keeps everything below
-	// bit 32, so the local mask fits in a uint32; we treat it as uint64
+	// bit 32, so the local mask fits in a uint32; it is carried as uint64
 	// throughout to keep the arithmetic uniform.
 	m1Local := unrankCombination48(idx1, 16, 32)
 
@@ -361,23 +361,44 @@ type lockBatchPRF48 struct {
 	// fillRanksSuper is the optional 16-group batched counterpart of fillRanks.
 	// One call performs the PRF fill for 16 consecutive groups
 	// (groupIdxBase .. groupIdxBase+15) through a single batch-16 kernel
-	// invocation. Only available when the lockSeed's underlying primitive
+	// invocation, writing 16 * 2 * factor rank words into
+	// prf[0 : 32*factor] in chunk order. s provides per-worker scratch for
+	// the kernel's output array so the call performs no per-invocation
+	// allocation. Only available when the lockSeed's underlying primitive
 	// exposes a batch-16 arm. When nil, splitTriple48LockedBatch falls back
-	// to the x4 loop.
-	fillRanksSuper func(groupIdxBase uint64, prf []uint64)
+	// to the x4 loop. fillRanksSuper and fillRanks agree on every group
+	// index: the batch-16 kernel synthesises the identical 13-byte fill
+	// buf per lane, so the produced rank pairs are bit-identical to 16
+	// sequential fillRanks calls (pinned by
+	// TestFillRanksSuperVsFillRanksParity).
+	//
+	// Contract: populated only at factor 1 (the 128-bit builder). The
+	// worker loops size their prf staging at 8 * lockBatchFactor48Max
+	// words, which holds exactly one factor-1 batch of 16 groups; a
+	// wider factor would overflow it. Both loops assert the contract
+	// once per call.
+	fillRanksSuper func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64)
 }
 
 // lockFillScratch48 is the per-worker scratch consumed by
 // lockBatchPRF48.fillRanksX4 — four domain-tagged 13-byte fill bufs
-// plus the slice-header array handed to the seed's BatchHash arm.
-// Declared once per worker goroutine; the BatchHash indirection makes
-// the buffers escape, so worker-scoped reuse keeps the batched fill
-// allocation-free per invocation. The bufs' reserved bytes [9:13] stay
-// zero for the struct's lifetime, matching the scalar fill buf layout.
+// plus the slice-header array handed to the seed's BatchHash arm — and
+// by lockBatchPRF48.fillRanksSuper, whose out16 receives the batch-16
+// kernel's 16 rank pairs. Declared once per worker goroutine; the
+// BatchHash / batch-16 hook indirections make the buffers escape, so
+// worker-scoped reuse keeps both batched fills allocation-free per
+// invocation. The bufs' reserved bytes [9:13] stay zero for the
+// struct's lifetime, matching the scalar fill buf layout.
 type lockFillScratch48 struct {
-	bufs [4][13]byte
-	data [4][]byte
+	bufs  [4][13]byte
+	data  [4][]byte
+	out16 [16][2]uint64
 }
+
+// The batch-16 fill writes 16 * 2 * lockBatchFactor48_128 rank words
+// into the worker's prf staging of 8 * lockBatchFactor48Max words; the
+// staging must hold one full factor-1 batch.
+const _ = uint(8*lockBatchFactor48Max - 16*2*lockBatchFactor48_128)
 
 // fillLockMasksTriple48 fills masks[0..count-1] from count 128-bit ranks
 // packed into prf as pairs (prf[2*j], prf[2*j+1]). count must be <=
@@ -505,6 +526,43 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 	}
 }
 
+// fillLockMasksTriple48Super16 fills masks[0..15] from the 16 128-bit
+// ranks packed into prf as pairs (prf[2*j], prf[2*j+1]) — the batch-16
+// fill of one fillRanksSuper call. When the 16-lane AVX-512 unrank
+// kernel is selected ([interlock.UseUnrank16]) all 16 triples are
+// derived in one interleaved pass (two 8-lane batches sharing every
+// binomial-row load); otherwise the two halves run through
+// [fillLockMasksTriple48Super] as two 8-lane passes. Both geometries are
+// bit-exact — the 16-lane kernel is the 8-lane kernel run twice in one
+// pass — so the choice is a dispatch decision only, pinned by the
+// batch-16 parity tests and forceable through
+// ITB_FORCE_INTERLOCK_TIER=avx512x8.
+func fillLockMasksTriple48Super16(prf *[32]uint64, masks *[16][3]uint64) {
+	if interlock.HasAVX512RankMask && interlock.UseUnrank16 {
+		var idx0 [16]uint64
+		var idx1 [16]uint32
+		for j := 0; j < 16; j++ {
+			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
+			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
+			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
+			_, hiMod := bits.Div64(0, qHi, interlockA48)
+			_, m := bits.Div64(hiMod, qLo, interlockA48)
+			idx0[j] = m
+			idx1[j] = uint32(r)
+		}
+		var out [3][16]uint64
+		interlock.RankToMaskTripleUnrank48x16(&idx0, &idx1, &out)
+		for j := 0; j < 16; j++ {
+			masks[j][0] = out[0][j]
+			masks[j][1] = out[1][j]
+			masks[j][2] = out[2][j]
+		}
+		return
+	}
+	fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[0:2*superChunks48]), superChunks48, (*[superChunks48][3]uint64)(masks[0:superChunks48]))
+	fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[2*superChunks48:4*superChunks48]), superChunks48, (*[superChunks48][3]uint64)(masks[superChunks48:2*superChunks48]))
+}
+
 // buildLockBatchPRF48_128 is the batched 128-bit-width builder.
 // One Hash call per group yields 1 mask triple from the (lo, hi) output pair
 // (each 48-bit chunk consumes two 64-bit lanes for its 128-bit rank, so a
@@ -550,12 +608,11 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 		}
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() {
-		bp.fillRanksSuper = func(groupIdxBase uint64, prf []uint64) {
-			var out [16][2]uint64
-			bh16(groupIdxBase, lockLo, lockHi, &out)
+		bp.fillRanksSuper = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
+			bh16(groupIdxBase, lockLo, lockHi, &s.out16)
 			for i := 0; i < 16; i++ {
-				prf[2*i] = out[i][0]
-				prf[2*i+1] = out[i][1]
+				prf[2*i] = s.out16[i][0]
+				prf[2*i+1] = s.out16[i][1]
 			}
 		}
 	}
@@ -720,6 +777,9 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 
 	factor := bp.factor
 	numGroups := (M + factor - 1) / factor
+	if bp.fillRanksSuper != nil && factor != lockBatchFactor48_128 {
+		panic("itb: fillRanksSuper is only supported at factor 1")
+	}
 
 	G := runtime.NumCPU()
 	if G > numGroups {
@@ -743,6 +803,7 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 			var scratch lockFillScratch48
 			var prf [8 * lockBatchFactor48Max]uint64
 			var masks [superChunks48][3]uint64
+			var masks16 [2 * superChunks48][3]uint64
 			groupsPerSuper := superChunks48 / factor
 			// x4 block sizing: fillRanksX4 covers 4 consecutive groups
 			// per call; a block of max(groupsPerSuper, 4) groups keeps
@@ -756,26 +817,24 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 				}
 			}
 			for g := gs; g < ge; {
-				// Try batch-16 path if available and we have enough groups.
+				// Batch-16 path: one kernel call per 16 consecutive groups
+				// whenever the worker range still holds a full batch, then
+				// one 16-chunk unrank pass (factor is 1 on this path, so
+				// group index and chunk index coincide).
 				if bp.fillRanksSuper != nil && ge-g >= 16 {
-					bp.fillRanksSuper(uint64(g), prf[0:32])
-					base := g * factor
-					nChunks := 16 * factor
-					for off := 0; off < nChunks; off += superChunks48 {
-						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
-						fillLockMasksTriple48Super(p, superChunks48, &masks)
-						for j := 0; j < superChunks48; j++ {
-							k := base + off + j
-							if k >= M {
-								break
-							}
-							m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
-							x := readChunk48(padded, 6*k)
-							l0, l1, l2 := chunk48lock(x, m0, m1, m2)
-							binary.LittleEndian.PutUint16(p0[2*k:], l0)
-							binary.LittleEndian.PutUint16(p1[2*k:], l1)
-							binary.LittleEndian.PutUint16(p2[2*k:], l2)
+					bp.fillRanksSuper(&scratch, uint64(g), prf[0:32])
+					fillLockMasksTriple48Super16((*[32]uint64)(prf[0:32]), &masks16)
+					for j := 0; j < 16; j++ {
+						k := g + j
+						if k >= M {
+							break
 						}
+						m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
+						x := readChunk48(padded, 6*k)
+						l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+						binary.LittleEndian.PutUint16(p0[2*k:], l0)
+						binary.LittleEndian.PutUint16(p1[2*k:], l1)
+						binary.LittleEndian.PutUint16(p2[2*k:], l2)
 					}
 					g += 16
 					continue
@@ -847,6 +906,9 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 
 	factor := bp.factor
 	numGroups := (M + factor - 1) / factor
+	if bp.fillRanksSuper != nil && factor != lockBatchFactor48_128 {
+		panic("itb: fillRanksSuper is only supported at factor 1")
+	}
 
 	G := runtime.NumCPU()
 	if G > numGroups {
@@ -870,6 +932,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 			var scratch lockFillScratch48
 			var prf [8 * lockBatchFactor48Max]uint64
 			var masks [superChunks48][3]uint64
+			var masks16 [2 * superChunks48][3]uint64
 			groupsPerSuper := superChunks48 / factor
 			// x4 block sizing: mirrors splitTriple48LockedBatch.
 			x4Groups := 0
@@ -880,26 +943,21 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 				}
 			}
 			for g := gs; g < ge; {
-				// Try batch-16 path if available and we have enough groups.
+				// Batch-16 path: mirrors splitTriple48LockedBatch.
 				if bp.fillRanksSuper != nil && ge-g >= 16 {
-					bp.fillRanksSuper(uint64(g), prf[0:32])
-					base := g * factor
-					nChunks := 16 * factor
-					for off := 0; off < nChunks; off += superChunks48 {
-						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
-						fillLockMasksTriple48Super(p, superChunks48, &masks)
-						for j := 0; j < superChunks48; j++ {
-							k := base + off + j
-							if k >= M {
-								break
-							}
-							m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
-							l0 := binary.LittleEndian.Uint16(p0[2*k:])
-							l1 := binary.LittleEndian.Uint16(p1[2*k:])
-							l2 := binary.LittleEndian.Uint16(p2[2*k:])
-							x := unchunk48lock(l0, l1, l2, m0, m1, m2)
-							writeChunk48(result, 6*k, x)
+					bp.fillRanksSuper(&scratch, uint64(g), prf[0:32])
+					fillLockMasksTriple48Super16((*[32]uint64)(prf[0:32]), &masks16)
+					for j := 0; j < 16; j++ {
+						k := g + j
+						if k >= M {
+							break
 						}
+						m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
+						l0 := binary.LittleEndian.Uint16(p0[2*k:])
+						l1 := binary.LittleEndian.Uint16(p1[2*k:])
+						l2 := binary.LittleEndian.Uint16(p2[2*k:])
+						x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+						writeChunk48(result, 6*k, x)
 					}
 					g += 16
 					continue

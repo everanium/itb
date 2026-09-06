@@ -8,22 +8,37 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// init applies ITB_FORCE_HASH_TIER on arm64: only "scalar" is meaningful
-// (it disables the NEON kernels so the pure-Go reference runs end to
-// end); every amd64 tier token keeps auto-dispatch with a stderr note.
-// Also applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER to batch-16 dispatch
-// (HasARMAESX16), accepting "neon" and "scalar".
+// init applies the two forcing variables in order: ITB_FORCE_HASH_TIER
+// to every AES-ITB dispatch family, then ITB_FORCE_INTERLOCK_PRF_FILL_TIER
+// to the batch-16 family alone. Each variable is handled by its own
+// function so an unsatisfiable token in one cannot skip the other.
 func init() {
+	applyHashTier()
+	applyInterlockPRFFillTier()
+}
+
+// applyHashTier applies ITB_FORCE_HASH_TIER on arm64: only "scalar" is
+// meaningful (it disables the NEON kernels of every family — per-round
+// x4, fused cascade, and batch-16 — so the pure-Go reference runs end
+// to end); every amd64 tier token keeps auto-dispatch with a stderr
+// note. ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can
+// re-arm the batch-16 NEON kernel on its own.
+func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
 	case "scalar":
 		HasARMAESBatched = false
 		FusedHasARMAES = false
+		HasARMAESX16 = false
 	default:
 		forcetier.Warnf("aesitbasm: %s tier is amd64-only; keeping auto-dispatch", forcetier.HashTier())
 	}
+}
 
-	// Apply batch-16 tier forcing (ITB_FORCE_INTERLOCK_PRF_FILL_TIER).
+// applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER to
+// the batch-16 dispatch flag (HasARMAESX16), accepting "neon" and
+// "scalar"; every amd64 token keeps auto-dispatch with a stderr note.
+func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "":
 	case "neon":

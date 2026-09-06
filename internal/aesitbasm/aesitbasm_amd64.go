@@ -55,8 +55,9 @@ var (
 	HasAVXAESNIX16 = HasAVXAESNIBatched
 	HasAESNIX16    = HasAESNIBatched
 
-	// HasARMAESBatched is always false on amd64 builds.
+	// HasARMAESBatched / HasARMAESX16 are always false on amd64 builds.
 	HasARMAESBatched = false
+	HasARMAESX16     = false
 )
 
 // AESITB128ChainAbsorb13x4 evaluates the 13-byte shape on four lanes.

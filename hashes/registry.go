@@ -141,7 +141,7 @@ type Spec struct {
 	FusedChainHash128 func(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) `json:"-"`
 
 	// InterlockFillBatch16 optionally builds the batch-16 interlock PRF
-	// fill kernel for [itb.Seed128.interlockFillX16] (see
+	// fill kernel installed through [itb.Seed128.SetInterlockBatch16] (see
 	// [itb.InterlockFillFunc16]). key is the primitive's fixed key exactly
 	// as returned by the Make128Pair factory. nil (every entry without batch-16
 	// support) leaves the seed on the per-round fillRanks path.
@@ -154,12 +154,14 @@ type Spec struct {
 // string values are the FFI-stable names exposed through ITB_HashName.
 const (
 	// CipherAESITB128 names the AES-ITB primitive — an ITB-native
-	// session-aware short-input keyed hash built from reduced-round AES
-	// (2 rounds per pixel + sponge-style nonce absorption at session init).
-	// Standalone-weak by design (see HARNESS.md § 3.7 for the reduced-AES
-	// pattern); safe only under ITB's compound defence stack (ChainHash
-	// cascade + Interlocked Barrier + Part 2 absorption). Ships first in
-	// the canonical order to signal its ITB-native status.
+	// short-input keyed hash built from reduced-round AES (one AES round
+	// per absorbed 16-byte block plus two finalising rounds: three rounds
+	// at the one-block shapes, 4 / 5 / 7 at the 20 / 36 / 68-byte per-pixel
+	// shapes). Standalone-weak by design (see HARNESS.md § 3.10 for the
+	// shipped primitive and § 3.7 for the reduced-AES pattern); safe only
+	// under ITB's compound defence stack (ChainHash cascade + Interlocked
+	// Barrier + Part 2 absorption). Ships first in the canonical order to
+	// signal its ITB-native status.
 	CipherAESITB128  = "aesitb128"
 	CipherAreion256  = "areion256"
 	CipherAreion512  = "areion512"

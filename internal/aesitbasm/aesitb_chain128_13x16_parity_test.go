@@ -9,425 +9,200 @@ import (
 	aes "github.com/jedisct1/go-aes"
 )
 
-// TestAESITB128ChainAbsorb13x16AesNiParity verifies that the aesni_amd64.s
-// 16-lane kernel produces byte-exact output matching the scalar reference
-// (scalarBatchX16) across multiple test cases and random seeds.
+// x16Kernel is the batch-16 kernel signature shared by every tier entry
+// and the dispatcher.
+type x16Kernel func(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
+
+// x16FixedCases are the fixed (key, seed pair, bases) vectors every
+// batch-16 tier is checked on. The bases include the byte-7 → byte-8
+// carry of the in-register groupIdx synthesis (0x7FFF…, 0xFEFE…) and
+// the uint64 wrap across the 16-lane batch (0xFFFF…).
+var x16FixedCases = []struct {
+	name         string
+	key          [16]byte
+	seed0, seed1 uint64
+	bases        []uint64
+}{
+	{
+		name:  "zero_key_zero_seeds",
+		key:   [16]byte{},
+		seed0: 0,
+		seed1: 0,
+		bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF},
+	},
+	{
+		name: "ascending_key_distinct_seeds",
+		key: [16]byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+			0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+		},
+		seed0: 0x0102030405060708,
+		seed1: 0x090a0b0c0d0e0f00,
+		bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
+	},
+	{
+		name: "all_ones_key",
+		key: [16]byte{
+			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+		},
+		seed0: 0xFFFFFFFFFFFFFFFF,
+		seed1: 0xFFFFFFFFFFFFFFFF,
+		bases: []uint64{0, 1, 0xFEFEFEFEFEFEFEFE},
+	},
+}
+
+// checkX16Parity pins one batch-16 kernel to the scalar reference
+// (scalarBatchX16): the fixed cases, 64 fixed-seed random iterations
+// with the base pinned to a multiple of 16 (batch-aligned, as the
+// worker loops issue it), and 16 fixed-seed random iterations with a
+// fully random base so the byte-7 → byte-8 carry and the uint64 wrap
+// fall inside a batch at random lane positions.
+func checkX16Parity(t *testing.T, label string, kernel x16Kernel) {
+	t.Helper()
+	check := func(what string, key *[16]byte, seed0, seed1, base uint64) {
+		var got, want [16][2]uint64
+		kernel(key, seed0, seed1, base, &got)
+		scalarBatchX16(key, base, seed0, seed1, &want)
+		for i := 0; i < 16; i++ {
+			if got[i] != want[i] {
+				t.Errorf("%s %s base=%#x lane %d: %v != scalar %v", label, what, base, i, got[i], want[i])
+			}
+		}
+	}
+	for _, tc := range x16FixedCases {
+		for _, base := range tc.bases {
+			check(tc.name, &tc.key, tc.seed0, tc.seed1, base)
+		}
+	}
+	rng := rand.New(rand.NewSource(1))
+	randomKey := func() (key [16]byte) {
+		for j := range key {
+			key[j] = byte(rng.Intn(256))
+		}
+		return key
+	}
+	for iter := 0; iter < 64; iter++ {
+		key := randomKey()
+		seed0, seed1 := rng.Uint64(), rng.Uint64()
+		base := (rng.Uint64() &^ 0xF) | (1 << 56) // batch-aligned, in [2^56, 2^64)
+		check("random-aligned", &key, seed0, seed1, base)
+	}
+	for iter := 0; iter < 16; iter++ {
+		key := randomKey()
+		seed0, seed1 := rng.Uint64(), rng.Uint64()
+		check("random-unaligned", &key, seed0, seed1, rng.Uint64())
+	}
+}
+
+// TestAESITB128ChainAbsorb13x16AesNiParity pins the legacy-SSE AES-NI
+// 16-lane kernel (aesni_amd64.s) to the scalar reference by direct
+// call, independent of the dispatch flags.
 func TestAESITB128ChainAbsorb13x16AesNiParity(t *testing.T) {
 	if !aes.CPU.HasAESNI {
 		t.Skip("AES-NI not available")
 	}
-
-	// Save and restore HasAESNIX16 flag for the test
-	savedFlag := HasAESNIX16
-	defer func() { HasAESNIX16 = savedFlag }()
-
-	HasAESNIX16 = true // Force the aesni tier
-
-	// Test cases with known patterns
-	testCases := []struct {
-		name         string
-		key          [16]byte
-		seed0, seed1 uint64
-		bases        []uint64
-	}{
-		{
-			name:  "zero_key_zero_seeds",
-			key:   [16]byte{},
-			seed0: 0,
-			seed1: 0,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF},
-		},
-		{
-			name: "ascending_key_distinct_seeds",
-			key: [16]byte{
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-			},
-			seed0: 0x0102030405060708,
-			seed1: 0x090a0b0c0d0e0f00,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
-		},
-		{
-			name: "all_ones_key",
-			key: [16]byte{
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-			},
-			seed0: 0xFFFFFFFFFFFFFFFF,
-			seed1: 0xFFFFFFFFFFFFFFFF,
-			bases: []uint64{0, 1, 0xFEFEFEFEFEFEFEFE},
-		},
-	}
-
-	for _, tc := range testCases {
-		for _, base := range tc.bases {
-			// Call the asm function
-			var asmOut [16][2]uint64
-			aesITB128ChainAbsorb13x16AesNiAsm(&tc.key, tc.seed0, tc.seed1, base, &asmOut)
-
-			// Call the scalar reference
-			var scalarOut [16][2]uint64
-			scalarBatchX16(&tc.key, base, tc.seed0, tc.seed1, &scalarOut)
-
-			// Compare byte-exact
-			for i := 0; i < 16; i++ {
-				if asmOut[i][0] != scalarOut[i][0] || asmOut[i][1] != scalarOut[i][1] {
-					t.Errorf("%s base=%#x lane %d: asm %v != scalar %v",
-						tc.name, base, i, asmOut[i], scalarOut[i])
-				}
-			}
-		}
-	}
+	checkX16Parity(t, "aesni", aesITB128ChainAbsorb13x16AesNiAsm)
 }
 
-// TestAESITB128ChainAbsorb13x16VexParity verifies that the vex_amd64.s
-// kernel produces byte-exact output matching the scalar reference.
+// TestAESITB128ChainAbsorb13x16VexParity pins the VEX-encoded AES-NI
+// 16-lane kernel (vex_amd64.s) to the scalar reference by direct call.
 func TestAESITB128ChainAbsorb13x16VexParity(t *testing.T) {
 	if !aes.CPU.HasAESNI || !aes.CPU.HasAVX2 {
 		t.Skip("VEX tier needs AES-NI + AVX2")
 	}
-
-	savedAVXFlag := HasAVXAESNIX16
-	defer func() { HasAVXAESNIX16 = savedAVXFlag }()
-
-	HasAVXAESNIX16 = true
-
-	// Test cases with known patterns
-	testCases := []struct {
-		name         string
-		key          [16]byte
-		seed0, seed1 uint64
-		bases        []uint64
-	}{
-		{
-			name:  "zero_key_zero_seeds",
-			key:   [16]byte{},
-			seed0: 0,
-			seed1: 0,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF},
-		},
-		{
-			name: "ascending_key_distinct_seeds",
-			key: [16]byte{
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-			},
-			seed0: 0x0102030405060708,
-			seed1: 0x090a0b0c0d0e0f00,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
-		},
-		{
-			name: "all_ones_key",
-			key: [16]byte{
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-			},
-			seed0: 0xFFFFFFFFFFFFFFFF,
-			seed1: 0xFFFFFFFFFFFFFFFF,
-			bases: []uint64{0, 1, 0xFEFEFEFEFEFEFEFE},
-		},
-	}
-
-	for _, tc := range testCases {
-		for _, base := range tc.bases {
-			var vexOut [16][2]uint64
-			AESITB128ChainAbsorb13x16(&tc.key, tc.seed0, tc.seed1, base, &vexOut)
-
-			var scalarOut [16][2]uint64
-			scalarBatchX16(&tc.key, base, tc.seed0, tc.seed1, &scalarOut)
-
-			for i := 0; i < 16; i++ {
-				if vexOut[i][0] != scalarOut[i][0] || vexOut[i][1] != scalarOut[i][1] {
-					t.Errorf("%s base=%#x lane %d: vex %v != scalar %v",
-						tc.name, base, i, vexOut[i], scalarOut[i])
-				}
-			}
-		}
-	}
+	checkX16Parity(t, "vex", aesITB128ChainAbsorb13x16VexAsm)
 }
 
-// TestAESITB128ChainAbsorb13x16VaesAvx2Parity verifies that the vaesavx2_amd64.s
-// kernel produces byte-exact output matching the scalar reference.
+// TestAESITB128ChainAbsorb13x16VaesAvx2Parity pins the VAES YMM 16-lane
+// kernel (vaesavx2_amd64.s) to the scalar reference by direct call.
 func TestAESITB128ChainAbsorb13x16VaesAvx2Parity(t *testing.T) {
-	if !aes.CPU.HasAESNI || !aes.CPU.HasAVX2 || !aes.CPU.HasVAES {
-		t.Skip("VAES AVX2 tier needs AES-NI + AVX2 + VAES")
+	if !aes.CPU.HasVAES || !aes.CPU.HasAVX2 {
+		t.Skip("VAES AVX2 tier needs VAES + AVX2")
 	}
-
-	savedVAESFlag := HasVAESAVX2X16
-	defer func() { HasVAESAVX2X16 = savedVAESFlag }()
-
-	HasVAESAVX2X16 = true
-
-	// Test cases with known patterns
-	testCases := []struct {
-		name         string
-		key          [16]byte
-		seed0, seed1 uint64
-		bases        []uint64
-	}{
-		{
-			name:  "zero_key_zero_seeds",
-			key:   [16]byte{},
-			seed0: 0,
-			seed1: 0,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF},
-		},
-		{
-			name: "ascending_key_distinct_seeds",
-			key: [16]byte{
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-			},
-			seed0: 0x0102030405060708,
-			seed1: 0x090a0b0c0d0e0f00,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
-		},
-		{
-			name: "all_ones_key",
-			key: [16]byte{
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-			},
-			seed0: 0xFFFFFFFFFFFFFFFF,
-			seed1: 0xFFFFFFFFFFFFFFFF,
-			bases: []uint64{0, 1, 0xFEFEFEFEFEFEFEFE},
-		},
-	}
-
-	for _, tc := range testCases {
-		for _, base := range tc.bases {
-			var vaesOut [16][2]uint64
-			AESITB128ChainAbsorb13x16(&tc.key, tc.seed0, tc.seed1, base, &vaesOut)
-
-			var scalarOut [16][2]uint64
-			scalarBatchX16(&tc.key, base, tc.seed0, tc.seed1, &scalarOut)
-
-			for i := 0; i < 16; i++ {
-				if vaesOut[i][0] != scalarOut[i][0] || vaesOut[i][1] != scalarOut[i][1] {
-					t.Errorf("%s base=%#x lane %d: vaes %v != scalar %v",
-						tc.name, base, i, vaesOut[i], scalarOut[i])
-				}
-			}
-		}
-	}
-
-	// Random coverage: ~64 iterations with fixed seed for reproducibility
-	rng := rand.New(rand.NewSource(1))
-	for iter := 0; iter < 64; iter++ {
-		var key [16]byte
-		for j := 0; j < 16; j++ {
-			key[j] = byte(rng.Intn(256))
-		}
-		seed0 := rng.Uint64()
-		seed1 := rng.Uint64()
-		base := (rng.Uint64() & ^uint64(0xF)) | (1 << 56) // Ensure base is in [2^56, 2^64)
-
-		var vaesOut [16][2]uint64
-		AESITB128ChainAbsorb13x16(&key, seed0, seed1, base, &vaesOut)
-
-		var scalarOut [16][2]uint64
-		scalarBatchX16(&key, base, seed0, seed1, &scalarOut)
-
-		for i := 0; i < 16; i++ {
-			if vaesOut[i][0] != scalarOut[i][0] || vaesOut[i][1] != scalarOut[i][1] {
-				t.Errorf("random iter %d base=%#x lane %d: vaes %v != scalar %v",
-					iter, base, i, vaesOut[i], scalarOut[i])
-			}
-		}
-	}
+	checkX16Parity(t, "vaesavx2", aesITB128ChainAbsorb13x16VaesAvx2Asm)
 }
 
-// TestAESITB128ChainAbsorb13x16VaesAvx512Parity verifies that the avx512_amd64.s
-// kernel produces byte-exact output matching the scalar reference.
+// TestAESITB128ChainAbsorb13x16VaesAvx512Parity pins the VAES ZMM
+// 16-lane kernel (avx512_amd64.s) to the scalar reference by direct call.
 func TestAESITB128ChainAbsorb13x16VaesAvx512Parity(t *testing.T) {
-	if !aes.CPU.HasAESNI || !aes.CPU.HasAVX2 || !aes.CPU.HasVAES || !aes.CPU.HasAVX512 {
-		t.Skip("VAES AVX512 tier needs AES-NI + AVX2 + VAES + AVX-512")
+	if !aes.CPU.HasVAES || !aes.CPU.HasAVX512 {
+		t.Skip("VAES AVX512 tier needs VAES + AVX-512")
 	}
+	checkX16Parity(t, "avx512", aesITB128ChainAbsorb13x16VaesAvx512Asm)
+}
 
-	savedAVX512Flag := HasVAESAVX512X16
-	defer func() { HasVAESAVX512X16 = savedAVX512Flag }()
+// x16DispatchTiers lists every batch-16 dispatch state with the flag
+// tuple that selects it and the silicon it needs. Each tuple is the
+// complete four-flag state, so installing one cannot leave a
+// higher-priority flag set from the previous state or from the
+// forced-tier init.
+var x16DispatchTiers = []struct {
+	name                 string
+	ok                   func() bool
+	zmm, ymm, vex, aesni bool
+}{
+	{"avx512", func() bool { return aes.CPU.HasVAES && aes.CPU.HasAVX512 }, true, false, false, false},
+	{"vaesavx2", func() bool { return aes.CPU.HasVAES && aes.CPU.HasAVX2 }, false, true, false, false},
+	{"vex", func() bool { return aes.CPU.HasAESNI && aes.CPU.HasAVX2 }, false, false, true, false},
+	{"aesni", func() bool { return aes.CPU.HasAESNI }, false, false, false, true},
+	{"scalar", func() bool { return true }, false, false, false, false},
+}
 
-	HasVAESAVX512X16 = true
+// saveX16Flags snapshots the four batch-16 dispatch flags and registers
+// a Cleanup that restores them.
+func saveX16Flags(t *testing.T) {
+	t.Helper()
+	zmm, ymm, vex, aesni := HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16
+	t.Cleanup(func() {
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = zmm, ymm, vex, aesni
+	})
+}
 
-	// Test cases with known patterns
-	testCases := []struct {
-		name         string
-		key          [16]byte
-		seed0, seed1 uint64
-		bases        []uint64
-	}{
-		{
-			name:  "zero_key_zero_seeds",
-			key:   [16]byte{},
-			seed0: 0,
-			seed1: 0,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF},
-		},
-		{
-			name: "ascending_key_distinct_seeds",
-			key: [16]byte{
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-			},
-			seed0: 0x0102030405060708,
-			seed1: 0x090a0b0c0d0e0f00,
-			bases: []uint64{0, 1, 0x100, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
-		},
-		{
-			name: "all_ones_key",
-			key: [16]byte{
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-				0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-			},
-			seed0: 0xFFFFFFFFFFFFFFFF,
-			seed1: 0xFFFFFFFFFFFFFFFF,
-			bases: []uint64{0, 1, 0xFEFEFEFEFEFEFEFE},
-		},
-	}
-
-	for _, tc := range testCases {
-		for _, base := range tc.bases {
-			var avx512Out [16][2]uint64
-			AESITB128ChainAbsorb13x16(&tc.key, tc.seed0, tc.seed1, base, &avx512Out)
-
-			var scalarOut [16][2]uint64
-			scalarBatchX16(&tc.key, base, tc.seed0, tc.seed1, &scalarOut)
-
-			for i := 0; i < 16; i++ {
-				if avx512Out[i][0] != scalarOut[i][0] || avx512Out[i][1] != scalarOut[i][1] {
-					t.Errorf("%s base=%#x lane %d: avx512 %v != scalar %v",
-						tc.name, base, i, avx512Out[i], scalarOut[i])
+// TestAESITB128ChainAbsorb13x16DispatcherParity installs each dispatch
+// state the host can execute — all four flags set atomically per tier —
+// and pins the dispatcher's output to the scalar reference on the fixed
+// cases. The scalar state verifies the default arm.
+func TestAESITB128ChainAbsorb13x16DispatcherParity(t *testing.T) {
+	saveX16Flags(t)
+	for _, tier := range x16DispatchTiers {
+		tier := tier
+		t.Run(tier.name, func(t *testing.T) {
+			if !tier.ok() {
+				t.Skipf("%s tier not executable on this host", tier.name)
+			}
+			HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.aesni
+			for _, tc := range x16FixedCases {
+				for _, base := range tc.bases {
+					var got, want [16][2]uint64
+					AESITB128ChainAbsorb13x16(&tc.key, tc.seed0, tc.seed1, base, &got)
+					scalarBatchX16(&tc.key, base, tc.seed0, tc.seed1, &want)
+					for i := 0; i < 16; i++ {
+						if got[i] != want[i] {
+							t.Errorf("%s %s base=%#x lane %d: dispatcher %v != scalar %v",
+								tier.name, tc.name, base, i, got[i], want[i])
+						}
+					}
 				}
 			}
-		}
-	}
-
-	// Random coverage: ~64 iterations with fixed seed for reproducibility
-	rng := rand.New(rand.NewSource(1))
-	for iter := 0; iter < 64; iter++ {
-		var key [16]byte
-		for j := 0; j < 16; j++ {
-			key[j] = byte(rng.Intn(256))
-		}
-		seed0 := rng.Uint64()
-		seed1 := rng.Uint64()
-		base := (rng.Uint64() & ^uint64(0xF)) | (1 << 56)
-
-		var avx512Out [16][2]uint64
-		AESITB128ChainAbsorb13x16(&key, seed0, seed1, base, &avx512Out)
-
-		var scalarOut [16][2]uint64
-		scalarBatchX16(&key, base, seed0, seed1, &scalarOut)
-
-		for i := 0; i < 16; i++ {
-			if avx512Out[i][0] != scalarOut[i][0] || avx512Out[i][1] != scalarOut[i][1] {
-				t.Errorf("random iter %d base=%#x lane %d: avx512 %v != scalar %v",
-					iter, base, i, avx512Out[i], scalarOut[i])
-			}
-		}
+		})
 	}
 }
 
-// TestAESITB128ChainAbsorb13x16DispatcherParity verifies that the dispatcher
-// correctly routes to the appropriate tier and produces parity with scalar.
-func TestAESITB128ChainAbsorb13x16DispatcherParity(t *testing.T) {
-	if !aes.CPU.HasAESNI {
-		t.Skip("AES-NI not available")
-	}
-
-	key := [16]byte{
-		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-	}
-	seed0 := uint64(0x0102030405060708)
-	seed1 := uint64(0x090a0b0c0d0e0f00)
-	base := uint64(0x1122334455667788)
-
-	var scalarOut [16][2]uint64
-	scalarBatchX16(&key, base, seed0, seed1, &scalarOut)
-
-	// Test vaesavx512 tier if available
-	if aes.CPU.HasAVX2 && aes.CPU.HasVAES && aes.CPU.HasAVX512 {
-		savedAVX512Flag := HasVAESAVX512X16
-		defer func() { HasVAESAVX512X16 = savedAVX512Flag }()
-		HasVAESAVX512X16 = true
-
-		var dispOut [16][2]uint64
-		AESITB128ChainAbsorb13x16(&key, seed0, seed1, base, &dispOut)
-
-		for i := 0; i < 16; i++ {
-			if dispOut[i][0] != scalarOut[i][0] || dispOut[i][1] != scalarOut[i][1] {
-				t.Errorf("vaesavx512 dispatcher lane %d: got %v, want %v",
-					i, dispOut[i], scalarOut[i])
-			}
-		}
-	}
-
-	// Test vaesavx2 tier if available
-	if aes.CPU.HasAVX2 && aes.CPU.HasVAES {
-		savedVAESFlag := HasVAESAVX2X16
-		defer func() { HasVAESAVX2X16 = savedVAESFlag }()
-		HasVAESAVX2X16 = true
-
-		var dispOut [16][2]uint64
-		AESITB128ChainAbsorb13x16(&key, seed0, seed1, base, &dispOut)
-
-		for i := 0; i < 16; i++ {
-			if dispOut[i][0] != scalarOut[i][0] || dispOut[i][1] != scalarOut[i][1] {
-				t.Errorf("vaesavx2 dispatcher lane %d: got %v, want %v",
-					i, dispOut[i], scalarOut[i])
-			}
-		}
-	}
-
-	// Test vex tier if available
-	if aes.CPU.HasAVX2 && !aes.CPU.HasVAES {
-		savedAVXFlag := HasAVXAESNIX16
-		defer func() { HasAVXAESNIX16 = savedAVXFlag }()
-		HasAVXAESNIX16 = true
-
-		var dispOut [16][2]uint64
-		AESITB128ChainAbsorb13x16(&key, seed0, seed1, base, &dispOut)
-
-		for i := 0; i < 16; i++ {
-			if dispOut[i][0] != scalarOut[i][0] || dispOut[i][1] != scalarOut[i][1] {
-				t.Errorf("vex dispatcher lane %d: got %v, want %v",
-					i, dispOut[i], scalarOut[i])
-			}
-		}
-	}
-
-	// Test aesni tier if available (when vex is not)
-	if !aes.CPU.HasAVX2 {
-		savedFlag := HasAESNIX16
-		defer func() { HasAESNIX16 = savedFlag }()
-		HasAESNIX16 = true
-
-		var dispOut [16][2]uint64
-		AESITB128ChainAbsorb13x16(&key, seed0, seed1, base, &dispOut)
-
-		for i := 0; i < 16; i++ {
-			if dispOut[i][0] != scalarOut[i][0] || dispOut[i][1] != scalarOut[i][1] {
-				t.Errorf("aesni dispatcher lane %d: got %v, want %v",
-					i, dispOut[i], scalarOut[i])
-			}
-		}
-	}
-}
-
-// TestAESITB128ChainAbsorb13x16CrossTier verifies that all 4 amd64 tiers
-// (avx512 / vaesavx2 / vex / aesni) forced via env-var produce byte-identical output.
-// This test forces each available tier and records outputs, then asserts equivalence.
+// TestAESITB128ChainAbsorb13x16CrossTier installs every dispatch state
+// the host can execute in turn and requires all of them to produce
+// byte-identical output on the same inputs — the assembly tiers agree
+// with each other, not only with the reference.
 func TestAESITB128ChainAbsorb13x16CrossTier(t *testing.T) {
 	if !aes.CPU.HasAESNI {
 		t.Skip("AES-NI not available")
 	}
+	saveX16Flags(t)
 
 	key := [16]byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 	}
-
 	testCases := []struct {
 		name  string
 		base  uint64
@@ -439,77 +214,30 @@ func TestAESITB128ChainAbsorb13x16CrossTier(t *testing.T) {
 		{"large", 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
 	}
 
-	// Collect outputs from each available tier, organized per test case
 	type tierResult struct {
 		name   string
 		output [16][2]uint64
 	}
-
-	// Save current flags
-	savedAVX512 := HasVAESAVX512X16
-	savedVAES := HasVAESAVX2X16
-	savedVEX := HasAVXAESNIX16
-	savedAESNI := HasAESNIX16
-	defer func() {
-		HasVAESAVX512X16 = savedAVX512
-		HasVAESAVX2X16 = savedVAES
-		HasAVXAESNIX16 = savedVEX
-		HasAESNIX16 = savedAESNI
-	}()
-
-	// Organize results per test case
 	tierResults := make(map[string][]tierResult)
-
-	// Test AVX512 tier if available
-	if aes.CPU.HasAVX512 && aes.CPU.HasVAES {
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = true, false, false, false
+	for _, tier := range x16DispatchTiers {
+		if !tier.ok() {
+			continue
+		}
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.aesni
 		for _, tc := range testCases {
 			var out [16][2]uint64
 			AESITB128ChainAbsorb13x16(&key, tc.seed0, tc.seed1, tc.base, &out)
-			tierResults[tc.name] = append(tierResults[tc.name], tierResult{"avx512", out})
+			tierResults[tc.name] = append(tierResults[tc.name], tierResult{tier.name, out})
 		}
 	}
 
-	// Test VAES AVX2 tier if available
-	if aes.CPU.HasAVX2 && aes.CPU.HasVAES {
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, true, false, false
-		for _, tc := range testCases {
-			var out [16][2]uint64
-			AESITB128ChainAbsorb13x16(&key, tc.seed0, tc.seed1, tc.base, &out)
-			tierResults[tc.name] = append(tierResults[tc.name], tierResult{"vaesavx2", out})
-		}
-	}
-
-	// Test VEX AES-NI tier if available
-	if aes.CPU.HasAVX2 && aes.CPU.HasAESNI {
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, true, false
-		for _, tc := range testCases {
-			var out [16][2]uint64
-			AESITB128ChainAbsorb13x16(&key, tc.seed0, tc.seed1, tc.base, &out)
-			tierResults[tc.name] = append(tierResults[tc.name], tierResult{"vex", out})
-		}
-	}
-
-	// Test Legacy AES-NI tier if available
-	if aes.CPU.HasAESNI {
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, true
-		for _, tc := range testCases {
-			var out [16][2]uint64
-			AESITB128ChainAbsorb13x16(&key, tc.seed0, tc.seed1, tc.base, &out)
-			tierResults[tc.name] = append(tierResults[tc.name], tierResult{"aesni", out})
-		}
-	}
-
-	// Verify all tiers produce the same output for each test case
 	for tcName, results := range tierResults {
-		if len(results) > 1 {
-			baseline := results[0]
-			for _, result := range results[1:] {
-				for j := 0; j < 16; j++ {
-					if result.output[j] != baseline.output[j] {
-						t.Errorf("test case %s: %s lane %d mismatch: got %v, want %v (from %s)",
-							tcName, result.name, j, result.output[j], baseline.output[j], baseline.name)
-					}
+		baseline := results[0]
+		for _, result := range results[1:] {
+			for j := 0; j < 16; j++ {
+				if result.output[j] != baseline.output[j] {
+					t.Errorf("test case %s: %s lane %d mismatch: got %v, want %v (from %s)",
+						tcName, result.name, j, result.output[j], baseline.output[j], baseline.name)
 				}
 			}
 		}

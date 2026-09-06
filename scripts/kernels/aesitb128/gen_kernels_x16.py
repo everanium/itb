@@ -1,21 +1,43 @@
 #!/usr/bin/env python3
-"""Emit the AES-ITB-128 16-lane chain-absorb kernel for internal/aesitbasm.
+"""Generator slot for the AES-ITB-128 16-lane chain-absorb kernels of
+internal/aesitbasm (aesitb_chain128_13x16_{aesni,vex,vaesavx2,avx512}_amd64.s
+and aesitb_chain128_13x16_neon_arm64.s).
 
-Currently emits only the aesni (legacy-SSE AES-NI XMM) tier.
+The five batch-16 kernels are hand-written; this script holds the shared
+header template and the shape constants so the emitters can be added
+without re-deriving them, but it emits no kernel body. Running it exits
+with an error before touching any file, so the committed kernels cannot
+be overwritten by an incomplete template. Byte-identity between a future
+emitter and the committed kernels is the acceptance gate for bringing a
+tier under generation (the same diff-clean check gen_kernels.py and
+gen_fused_kernels.py pass today).
 
-Key novelty: in-register groupIdx synthesis. The function receives groupIdxBase
-in a GPR and generates 16 sequential groupIdx values (groupIdxBase, groupIdxBase+1,
-..., groupIdxBase+15) as LE64 values for state initialization, avoiding the
-gather overhead of the x4 path.
-
-Parity with scalarBatchX16 (internal/aesitbasm/aesitbasm.go) is enforced by
-in-package parity tests. Additional ASM tiers (vex, vaesavx2, avx512, neon)
-pending implementation.
+Kernel contract (all tiers): the function receives groupIdxBase in a GPR
+and synthesises the 16 per-lane fill blocks in-register —
+[0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03] for lane i — so the
+batch-16 path pays no per-lane pointer gather. Parity with scalarBatchX16
+(internal/aesitbasm/aesitbasm.go) is enforced by the in-package parity
+tests.
 """
 import os
+import sys
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "internal", "aesitbasm")
 SHAPE = 13
+
+# Tier -> (descriptive header line, build constraint, output file name).
+TIERS = {
+    "aesni": ("Legacy-SSE AES-NI XMM (AESENC xmm, xmm)", "amd64 && !purego && !noitbasm",
+              "aesitb_chain128_13x16_aesni_amd64.s"),
+    "vex": ("VEX-encoded AES-NI XMM (VAESENC xmm, xmm, xmm)", "amd64 && !purego && !noitbasm",
+            "aesitb_chain128_13x16_vex_amd64.s"),
+    "vaesavx2": ("VAES YMM, two lanes per register", "amd64 && !purego && !noitbasm",
+                 "aesitb_chain128_13x16_vaesavx2_amd64.s"),
+    "avx512": ("VAES ZMM, four lanes per register", "amd64 && !purego && !noitbasm",
+               "aesitb_chain128_13x16_avx512_amd64.s"),
+    "neon": ("ARM64 NEON crypto-extension (AESE + AESMC)", "arm64 && !purego && !noitbasm",
+             "aesitb_chain128_13x16_neon_arm64.s"),
+}
 
 
 def blocks(n):
@@ -38,31 +60,33 @@ def header(tier_desc, build):
 """
 
 
-def xmm_kernel_aesni():
-    """Legacy-SSE AES-NI XMM kernel for 16 lanes.
-
-    Two batches of 8 lanes each. Signature:
-    func aesITB128ChainAbsorb13x16AesNiAsm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-    """
-    L = []
-    L.append("// func aesITB128ChainAbsorb13x16AesNiAsm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)")
-    L.append("TEXT ·aesITB128ChainAbsorb13x16AesNiAsm(SB), NOSPLIT, $0-40")
-    L.append("\t// Placeholder - implementation in progress")
-    L.append("\tRET")
-    return "\n".join(L) + "\n"
+# Body emitters, keyed like TIERS. Empty until a tier's emitter reproduces
+# the committed kernel byte-for-byte; main() refuses to write while any
+# requested tier has no emitter.
+EMITTERS = {}
 
 
-def main():
-    amd = "amd64 && !purego && !noitbasm"
-
-    aesni_content = header("Legacy-SSE AES-NI XMM (AESENC xmm, xmm)", amd) + "\n" + xmm_kernel_aesni()
-
-    # Write only aesni file
-    aesni_path = os.path.join(OUT, "aesitb_chain128_13x16_aesni_amd64.s")
-    with open(aesni_path, "w") as f:
-        f.write(aesni_content)
-    print("wrote", aesni_path)
+def main(argv):
+    requested = argv[1:] or sorted(TIERS)
+    unknown = [t for t in requested if t not in TIERS]
+    if unknown:
+        raise SystemExit(f"gen_kernels_x16.py: unknown tier(s) {unknown}; known: {sorted(TIERS)}")
+    missing = [t for t in requested if t not in EMITTERS]
+    if missing:
+        raise SystemExit(
+            "gen_kernels_x16.py: no emitter for tier(s) "
+            f"{missing}; the x16 kernels are hand-written and this generator "
+            "writes nothing until an emitter reproduces the committed kernel "
+            "byte-for-byte"
+        )
+    for tier in requested:
+        desc, build, name = TIERS[tier]
+        content = header(desc, build) + "\n" + EMITTERS[tier]()
+        path = os.path.join(OUT, name)
+        with open(path, "w") as f:
+            f.write(content)
+        print("wrote", path)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)

@@ -6,17 +6,20 @@ package itb
 // dispatch and the hashes/ package registry passthrough.
 //
 // This is an ITB-native primitive: reduced-round AES structure that is
-// intentionally weak standalone (2 AES rounds per call, breakable by
-// integral / differential / meet-in-the-middle attacks in the standard
-// standalone model, matching the aes2r control in HARNESS.md § 3.7).
-// The construction is safe only under ITB's compound defence stack —
-// ChainHash cascade over 4–16 rounds × 8 seed components extends the
+// intentionally weak standalone (one AES round per absorbed block plus
+// two finalising rounds — three rounds at the one-block shapes — with
+// the seed entering once by XOR ahead of a public permutation, so the
+// raw primitive is one-pair invertible with the full state visible and
+// carries a probability-1 Square integral; HARNESS.md § 3.10 records
+// these standalone breaks alongside the aes2r control of § 3.7). The
+// construction is safe only under ITB's compound defence stack — the
+// ChainHash cascade over 4–16 rounds (8–32 seed components) extends the
 // effective key beyond primitive brute range, and the Interlocked
 // Barrier / Part 2 absorption layers close the observation gap the
-// primitive's own weakness would otherwise expose. HARNESS.md § 3.7
-// records the empirical validation of the reduced-AES + ChainHash pattern:
-// integral break at rounds = 1 (raw primitive) dissolves at rounds ≥ 2
-// via the cascade feedforward mechanism.
+// primitive's own weakness would otherwise expose. HARNESS.md § 3.10
+// records the empirical validation: the integral and the structured
+// recoveries measured at rounds = 1 (raw primitive) sit at the floor on
+// the shipped observable from rounds ≥ 2 via the cascade feedforward.
 //
 // Design principles:
 //

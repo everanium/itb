@@ -10,6 +10,13 @@ var (
 	HasAVXAESNIBatched  = false
 	HasAESNIBatched     = false
 	HasARMAESBatched    = false
+
+	// Batch-16 tier flags — always false without an assembly tier.
+	HasVAESAVX512X16 = false
+	HasVAESAVX2X16   = false
+	HasAVXAESNIX16   = false
+	HasAESNIX16      = false
+	HasARMAESX16     = false
 )
 
 // AESITB128ChainAbsorb13x4 evaluates the 13-byte shape on four lanes.

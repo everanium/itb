@@ -8,7 +8,6 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/aesitb"
 	"github.com/everanium/itb/hashes"
-	"github.com/everanium/itb/internal/aesitbasm"
 	"github.com/everanium/itb/triple"
 )
 
@@ -135,9 +134,6 @@ func TestAESITBFusedSeqEnvToggle(t *testing.T) {
 // and vice versa, so the wire bytes are pinned equal across the two
 // paths on every AES-ITB profile.
 func TestAESITBFusedWireRoundTrip(t *testing.T) {
-	if aesitbasm.FusedHasVAESAVX512 || aesitbasm.FusedHasVAESAVX2 || aesitbasm.FusedHasAVXAESNI || aesitbasm.FusedHasAESNI || aesitbasm.FusedHasARMAES {
-		// asm fused tier present — the interesting case
-	}
 	plain := make([]byte, 200_000)
 	rand.Read(plain)
 	for _, tc := range []struct {

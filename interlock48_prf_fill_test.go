@@ -22,12 +22,12 @@ func TestInterlockPRFFillSeqEnvVarToggle(t *testing.T) {
 		t.Fatalf("NewSeed128: %v", err)
 	}
 
-	// Attach the batch-16 hook (normally done by triple pipeline in allocOneSeed)
-	// The hook is a dummy function; we're testing that buildLockBatchPRF48_128
-	// correctly checks InterlockFillX16() and toggles fillRanksSuper based on the env-var
-	seed.SetInterlockBatch16(func(groupIdxBase, seed0, seed1 uint64, out *[16][2]uint64) {
-		// Placeholder: real implementation dispatches to x16 kernel
-	})
+	// Attach a batch-16 hook (the Triple pipeline attaches the real one
+	// in allocOneSeed). The hook body is irrelevant here: the test
+	// checks only that buildLockBatchPRF48_128 consults InterlockFillX16()
+	// and gates fillRanksSuper on the env-var, so a no-op stands in for
+	// the kernel dispatch.
+	seed.SetInterlockBatch16(func(groupIdxBase, seed0, seed1 uint64, out *[16][2]uint64) {})
 
 	nonce := bytes.Repeat([]byte{0xAA}, 16)
 

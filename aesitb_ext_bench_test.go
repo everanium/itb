@@ -18,6 +18,7 @@
 package itb_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/everanium/itb"
@@ -25,8 +26,9 @@ import (
 )
 
 // newAESITB128SeedExt returns one independently-keyed aesitb128 seed at
-// the given ITB width with the single, batched and fused-cascade hooks
-// attached — the same wiring triple/seeds.go performs per slot.
+// the given ITB width with the single, batched, fused-cascade and
+// batch-16 interlock fill hooks attached — the same wiring
+// triple/seeds.go performs per slot.
 func newAESITB128SeedExt(b *testing.B, bits int) *itb.Seed128 {
 	b.Helper()
 	h, bh, key, err := hashes.Make128Pair(hashes.CipherAESITB128)
@@ -39,6 +41,9 @@ func newAESITB128SeedExt(b *testing.B, bits int) *itb.Seed128 {
 	}
 	s.BatchHash = bh
 	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, key); err != nil {
+		b.Fatal(err)
+	}
+	if err := hashes.AttachInterlockBatch16(s, hashes.CipherAESITB128, key); err != nil {
 		b.Fatal(err)
 	}
 	return s
@@ -81,6 +86,13 @@ func benchDecrypt3x128AESITBExt(b *testing.B, bits, dataSize int) {
 	encrypted, err := itb.Encrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	if err != nil {
 		b.Fatal(err)
+	}
+	// Verify the round trip once before timing so a forced dispatch
+	// tier that produced garbage cannot report a throughput number.
+	if back, err := itb.Decrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
+		b.Fatal(err)
+	} else if !bytes.Equal(back, data) {
+		b.Fatal("decrypt round trip mismatch")
 	}
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()

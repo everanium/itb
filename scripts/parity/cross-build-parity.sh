@@ -36,7 +36,9 @@
 # passed as green.
 #
 # Interlock-tier axis: ITB_FORCE_INTERLOCK_TIER sweeps the 48-bit
-# interlock rank-mask / apply kernel tiers on one canonical hash.
+# interlock rank-mask / apply kernel tiers on two lockSeed widths
+# (areion512 for the x4 fill, aesitb128 for the batch-16 fill that
+# reaches the 16-lane unrank pass).
 #
 # Working directory tmp/parity/ is under the repo's gitignored tmp/ tree;
 # nothing produced by this script lands in the tracked working set.
@@ -308,18 +310,22 @@ for ARM in "${HASHARMS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# Section 4 — interlock-tier sweep × nonce widths, canonical hash.
+# Section 4 — interlock-tier sweep × nonce widths, two lockSeed widths.
 # Forces the 48-bit interlock rank-mask tier on the cgo arm against the
-# scalar-forced nocgo arm, both directions. 4 tiers × 48 = 192 cells.
-# avx512x8 keeps the AVX-512 kernel but runs each 16-chunk superblock
-# as two 8-lane passes, so the x8×2 wire geometry is validated on the
-# same host as the 16-lane pass.
+# scalar-forced nocgo arm, both directions. 4 tiers × 2 hashes × 48 =
+# 384 cells. areion512 drives the 512-bit lockSeed (x4 fill, 8-lane
+# unrank passes); aesitb128 drives the 128-bit lockSeed whose batch-16
+# fill runs the 16-chunk unrank pass — the only shape that reaches the
+# 16-lane AVX-512 kernel. avx512x8 keeps the AVX-512 kernel but runs
+# each 16-chunk batch as two 8-lane passes, so the x8×2 wire geometry
+# is validated against the 16-lane pass on the same host.
 # ---------------------------------------------------------------------------
 ILTIERS=(avx512 avx512x8 avx2 scalar)
-ILHASH="areion512"
-ILPROFILE="parity-${ILHASH}-v1"
-IL_CELLS=$(( ${#ILTIERS[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
+ILHASHES=(areion512 aesitb128)
+IL_CELLS=$(( ${#ILTIERS[@]} * ${#ILHASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
 
+for ILHASH in "${ILHASHES[@]}"; do
+ILPROFILE="parity-${ILHASH}-v1"
 for ILT in "${ILTIERS[@]}"; do
     for NB in "${NONCEBITS[@]}"; do
         SEED="$WORKDIR/seed-${ILHASH}-nb${NB}.blob"
@@ -328,8 +334,8 @@ for ILT in "${ILTIERS[@]}"; do
             PLAIN="$WORKDIR/plain-${ILHASH}-${SIZE}.bin"
             PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
-            WIRE1="$WORKDIR/wire-il-${SIZE}-nb${NB}-${ILT}.bin"
-            BACK1="$WORKDIR/back-il-${SIZE}-nb${NB}-${ILT}-nocgo.bin"
+            WIRE1="$WORKDIR/wire-il-${ILHASH}-${SIZE}-nb${NB}-${ILT}.bin"
+            BACK1="$WORKDIR/back-il-${ILHASH}-${SIZE}-nb${NB}-${ILT}-nocgo.bin"
             ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=encrypt \
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$PLAIN" -out="$WIRE1"
@@ -337,12 +343,12 @@ for ILT in "${ILTIERS[@]}"; do
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$WIRE1" -out="$BACK1"
             if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
-                echo "FAIL: iltier=$ILT encrypt=cgo decrypt=nocgo-scalar size=$SIZE nb=$NB"
+                echo "FAIL: iltier=$ILT hash=$ILHASH encrypt=cgo decrypt=nocgo-scalar size=$SIZE nb=$NB"
                 FAIL=$((FAIL + 1))
             fi
 
-            WIRE2="$WORKDIR/wire-il-${SIZE}-nb${NB}-scalar-vs-${ILT}.bin"
-            BACK2="$WORKDIR/back-il-${SIZE}-nb${NB}-${ILT}-cgo.bin"
+            WIRE2="$WORKDIR/wire-il-${ILHASH}-${SIZE}-nb${NB}-scalar-vs-${ILT}.bin"
+            BACK2="$WORKDIR/back-il-${ILHASH}-${SIZE}-nb${NB}-${ILT}-cgo.bin"
             ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$PLAIN" -out="$WIRE2"
@@ -350,11 +356,12 @@ for ILT in "${ILTIERS[@]}"; do
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$WIRE2" -out="$BACK2"
             if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
-                echo "FAIL: iltier=$ILT encrypt=nocgo-scalar decrypt=cgo size=$SIZE nb=$NB"
+                echo "FAIL: iltier=$ILT hash=$ILHASH encrypt=nocgo-scalar decrypt=cgo size=$SIZE nb=$NB"
                 FAIL=$((FAIL + 1))
             fi
         done
     done
+done
 done
 
 # ---------------------------------------------------------------------------

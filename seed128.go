@@ -77,6 +77,13 @@ type Seed128 struct {
 // Example:
 //
 //	seed, err := itb.NewSeed128(1024, sipHash128)
+//
+// For automatic attach of the fused ChainHash and batch-16 interlock
+// fast paths, see hashes.NewSeed128x16 — the Low-Level Mode symmetric
+// of the triple package's auto-attach. Directly-constructed seeds keep
+// their optional hooks nil and route hot paths through the sequential
+// fallback until hashes.AttachFused128 and hashes.AttachInterlockBatch16
+// are called explicitly.
 func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 	if bits < 512 || bits > MaxKeyBits || bits%128 != 0 {
 		return nil, fmt.Errorf("itb: seed128 bits must be 512-%d and multiple of 128, got %d", MaxKeyBits, bits)
@@ -113,6 +120,12 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 //	    0x9d8dc0b866e92b87, 0xaf7f4a99914da68b,
 //	    0x51101868dab807ae, 0xbc6e07a2a5067689,
 //	)
+//
+// Directly-constructed seeds keep their optional fast-path hooks nil
+// and route hot paths through the sequential fallback until
+// hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
+// explicitly; see hashes.NewSeed128x16 for the random-components
+// constructor that attaches them in one call.
 func SeedFromComponents128(hashFunc HashFunc128, components ...uint64) (*Seed128, error) {
 	if len(components) < 8 || len(components) > MaxKeyBits/64 {
 		return nil, fmt.Errorf("itb: components count must be 8-%d, got %d", MaxKeyBits/64, len(components))

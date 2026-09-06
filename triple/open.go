@@ -284,6 +284,9 @@ func importInnerBlob128(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 		if ferr := hashes.AttachFused128(rawSeeds[i], innerHash, keys[i]); ferr != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused128(%q): %w", innerHash, ferr)
 		}
+		if ierr := hashes.AttachInterlockBatch16(rawSeeds[i], innerHash, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16(%q): %w", innerHash, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
@@ -394,6 +397,9 @@ func importInnerBlob128Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 		rawSeeds[i].BatchHash = batched
 		if ferr := hashes.AttachFused128(rawSeeds[i], name, keys[i]); ferr != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused128(%q) slot %d: %w", name, i, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16(rawSeeds[i], name, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16(%q) slot %d: %w", name, i, ierr)
 		}
 		out[i] = rawSeeds[i]
 	}
