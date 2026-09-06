@@ -10,7 +10,7 @@
 //
 // Recognised variables:
 //
-//	ITB_FORCE_HASH_TIER                  = avx512 | vaesavx2 | avx2 | aesni | scalar
+//	ITB_FORCE_HASH_TIER                  = avx512 | vaesavx2 | avx2 | vex | aesni | scalar
 //	ITB_FORCE_INTERLOCK_TIER             = avx512 | avx512x8 | avx2 | scalar
 //	ITB_FORCE_CHAINHASH_SEQ              = 1 | true | yes
 //	ITB_FORCE_INTERLOCK_PRF_FILL_SEQ     = 1 | true | yes
@@ -41,7 +41,7 @@ import (
 // package init. Package initialisation order guarantees these are populated
 // before any importing assembly package's init runs its flag override.
 var (
-	hashTier             = parse("ITB_FORCE_HASH_TIER", "avx512", "vaesavx2", "avx2", "aesni", "scalar")
+	hashTier             = parse("ITB_FORCE_HASH_TIER", "avx512", "vaesavx2", "avx2", "vex", "aesni", "scalar")
 	interlockTier        = parse("ITB_FORCE_INTERLOCK_TIER", "avx512", "avx512x8", "avx2", "scalar")
 	interlockPRFFillTier = parse("ITB_FORCE_INTERLOCK_PRF_FILL_TIER", "avx512", "vaesavx2", "vex", "aesni", "neon", "scalar")
 )

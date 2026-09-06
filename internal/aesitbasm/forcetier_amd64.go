@@ -22,13 +22,12 @@ func init() {
 }
 
 // applyHashTier applies ITB_FORCE_HASH_TIER. The per-round and fused
-// flags are assigned as one consistent set. The shared value set has no
-// token for the VEX-encoded XMM tier, so "aesni" selects the legacy-SSE
-// kernels and the VEX kernels are reached only through auto-dispatch
-// and the direct-call parity tests. "scalar" means no assembly anywhere
-// in this package's dispatch, so it also disarms the batch-16 flags;
-// ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can re-arm a
-// batch-16 tier on its own.
+// flags are assigned as one consistent set. "vex" selects the VEX-encoded
+// XMM kernels (AVX-encoded AES-NI, one lane per XMM); "aesni" selects the
+// legacy-SSE-encoded XMM kernels on AES-NI hosts without AVX. "scalar"
+// means no assembly anywhere in this package's dispatch, so it also
+// disarms the batch-16 flags; ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied
+// afterwards, can re-arm a batch-16 tier on its own.
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
@@ -45,6 +44,13 @@ func applyHashTier() {
 		}
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched = false, true, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, true, false, false
+	case "vex":
+		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+			forcetier.Warnf("aesitbasm: vex tier needs AES-NI+AVX2; keeping auto-dispatch")
+			return
+		}
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched = false, false, true, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, true, false
 	case "aesni":
 		if !aes.CPU.HasAESNI {
 			forcetier.Warnf("aesitbasm: aesni tier needs AES-NI; keeping auto-dispatch")
