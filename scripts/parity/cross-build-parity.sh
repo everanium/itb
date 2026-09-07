@@ -33,7 +33,11 @@
 # opposite build with the scalar reference forced, so a
 # self-consistent-but-wrong kernel cannot pass. Non-existent
 # (hash, arm) pairs are skipped explicitly and audited — never silently
-# passed as green.
+# passed as green. The pseudo-arm avx512x4 (ITB_FORCE_HASH_TIER=avx512
+# plus ITB_FORCE_CHAINHASH_X4=1) pins the four-lane ZMM fused ChainHash
+# kernels on a host whose avx512 arm otherwise runs the eight-lane
+# AES-ITB-128 kernels, so both ZMM fused arms are crossed against the
+# scalar reference.
 #
 # Interlock-tier axis: ITB_FORCE_INTERLOCK_TIER sweeps the 48-bit
 # interlock rank-mask / apply kernel tiers on two lockSeed widths
@@ -211,10 +215,25 @@ done
 # checked against the independent scalar reference implementation.
 # Non-existent pairs are skipped with an audit line.
 # ---------------------------------------------------------------------------
-HASHARMS=(avx512 vaesavx2 avx2 vex aesni scalar)
+HASHARMS=(avx512 avx512x4 vaesavx2 avx2 vex aesni scalar)
+
+# arm_env ARM — prints the forcing environment of an arm: the
+# ITB_FORCE_HASH_TIER token, plus ITB_FORCE_CHAINHASH_X4=1 for the
+# avx512x4 pseudo-arm (ZMM tier with the eight-lane fused ChainHash
+# kernels disarmed).
+arm_env() {
+    case "$1" in
+        avx512x4) echo "ITB_FORCE_HASH_TIER=avx512 ITB_FORCE_CHAINHASH_X4=1" ;;
+        *) echo "ITB_FORCE_HASH_TIER=$1" ;;
+    esac
+}
 
 # arm_applicable HASH ARM — succeeds when the (hash, arm) pair names a
 # real dispatch arm. Skip rules:
+#   * avx512x4: only aesitb128 carries eight-lane fused ChainHash
+#     kernels (internal/aesitbasm, VAES ZMM x8 at the nonce-buf shapes),
+#     so only there does the pseudo-arm select something the plain
+#     avx512 arm does not.
 #   * aesni: only the AES-based primitives carry AES-NI XMM chain
 #     kernels (areion256 / areion512 / aescmac).
 #   * vaesavx2: aesitb128 (internal/aesitbasm, VAES YMM two-lane
@@ -234,6 +253,11 @@ HASHARMS=(avx512 vaesavx2 avx2 vex aesni scalar)
 arm_applicable() {
     case "$2" in
         avx512|scalar) return 0 ;;
+        avx512x4)
+            case "$1" in
+                aesitb128) return 0 ;;
+                *) return 1 ;;
+            esac ;;
         vaesavx2)
             case "$1" in
                 aesitb128|areion256|areion512) return 0 ;;
@@ -278,7 +302,7 @@ for ARM in "${HASHARMS[@]}"; do
                 # Direction 1: encrypt=cgo+forced arm, decrypt=nocgo+scalar.
                 WIRE1="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-arm${ARM}.bin"
                 BACK1="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-arm${ARM}-nocgo.bin"
-                ITB_FORCE_HASH_TIER="$ARM" ./tools/parity/parity-cgo -mode=encrypt \
+                env $(arm_env "$ARM") ./tools/parity/parity-cgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE1"
                 ITB_FORCE_HASH_TIER=scalar ./tools/parity/parity-nocgo -mode=decrypt \
@@ -296,7 +320,7 @@ for ARM in "${HASHARMS[@]}"; do
                 ITB_FORCE_HASH_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE2"
-                ITB_FORCE_HASH_TIER="$ARM" ./tools/parity/parity-cgo -mode=decrypt \
+                env $(arm_env "$ARM") ./tools/parity/parity-cgo -mode=decrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$WIRE2" -out="$BACK2"
                 if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then

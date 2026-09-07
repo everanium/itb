@@ -37,6 +37,95 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
 		}
 
+		// Eight-pixel stride (see process128_x8.go): when both seeds
+		// carry the eight-lane fused hook, eight pixels are hashed per
+		// call ahead of the four-pixel loop below; the per-pixel body is
+		// the same.
+		if useBatch8Seeds(noiseSeed, dataSeed) {
+			noiseBufs8, releaseNoise8 := acquireLaneBufs8(&noiseBufs, nonce, 4+currentNonceSizeCfg(cfg))
+			defer releaseNoise8()
+			dataBufs8, releaseData8 := acquireLaneBufs8(&dataBufs, nonce, 4+currentNonceSizeCfg(cfg))
+			defer releaseData8()
+
+			for ; p+8 <= endP && bitIndex < totalBits; p += 8 {
+				pixelIndices := [8]int{p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7}
+				noiseHashes := noiseSeed.blockHash128x8(&noiseBufs8, pixelIndices)
+				dataHashes := dataSeed.blockHash128x8(&dataBufs8, pixelIndices)
+
+				for lane := 0; lane < 8 && bitIndex < totalBits; lane++ {
+					pp := p + lane
+					linearIdx := (startPixel + pp) % totalPixels
+					pixelOffset := linearIdx * Channels
+
+					noiseHash := noiseHashes[lane][0]
+					dataHash := dataHashes[lane][0]
+
+					noisePos := uint(noiseHash & 7)
+					noiseMask := byte(1 << noisePos)
+
+					dataRotation := uint(dataHash % 7)
+					xorMask := dataHash >> DataRotationBits
+
+					if encode {
+						for ch := 0; ch < Channels && bitIndex < totalBits; ch++ {
+							channelXOR := byte((xorMask >> uint(ch*DataBitsPerChannel)) & 0x7F)
+
+							byteIdx := bitIndex / 8
+							bitOff := uint(bitIndex % 8)
+
+							var raw uint16
+							raw = uint16(data[byteIdx])
+							if byteIdx+1 < len(data) {
+								raw |= uint16(data[byteIdx+1]) << 8
+							}
+							dataBits := byte((raw >> bitOff) & 0x7F)
+
+							dataBits ^= channelXOR
+							dataBits = rotateBits7(dataBits, dataRotation)
+
+							orig := container[pixelOffset+ch]
+							low := dataBits & byte(noiseMask-1)
+							high := dataBits >> noisePos
+							container[pixelOffset+ch] = low | (orig & noiseMask) | (high << (noisePos + 1))
+
+							bitIndex += DataBitsPerChannel
+							if bitIndex > totalBits {
+								bitIndex = totalBits
+							}
+						}
+					} else {
+						var packed uint64
+						chCount := Channels
+						if bitsLeft := totalBits - bitIndex; bitsLeft < DataBitsPerPixel {
+							chCount = (bitsLeft + DataBitsPerChannel - 1) / DataBitsPerChannel
+						}
+
+						for ch := 0; ch < chCount; ch++ {
+							channelXOR := byte((xorMask >> uint(ch*DataBitsPerChannel)) & 0x7F)
+
+							channelByte := container[pixelOffset+ch]
+							low := channelByte & byte(noiseMask-1)
+							high := channelByte >> (noisePos + 1)
+							dataBits := low | (high << noisePos)
+
+							dataBits = rotateBits7(dataBits, 7-dataRotation)
+							dataBits ^= channelXOR
+
+							packed |= uint64(dataBits) << uint(ch*DataBitsPerChannel)
+						}
+
+						byteStart := bitIndex / 8
+						bytesToWrite := (chCount*DataBitsPerChannel + 7) / 8
+						for i := 0; i < bytesToWrite && byteStart+i < len(data); i++ {
+							data[byteStart+i] = byte(packed >> uint(i*8))
+						}
+
+						bitIndex += chCount * DataBitsPerChannel
+					}
+				}
+			}
+		}
+
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
 			noiseHashes := noiseSeed.blockHash128x4(&noiseBufs, pixelIndices)

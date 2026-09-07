@@ -37,10 +37,18 @@ Twenty files in total: `aesitb_chain128_<shape>_<tier>_amd64.s` and
 ## Fused ChainHash cascade kernels — `gen_fused_kernels.py`
 
 The fused-cascade kernels that evaluate the whole `Seed128.ChainHash128`
-cascade in one call (see `internal/aesitbasm/aesitbasm_fused.go`): 32
+cascade in one call (see `internal/aesitbasm/aesitbasm_fused.go`): 35
 files, `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
 vaesavx2 / avx512), `aesitb_fusedchain128_<shape>x1_<tier>_amd64.s` (tiers
-aesni / vex) and `aesitb_fusedchain128_<shape>x{1,4}_neon_arm64.s`.
+aesni / vex), `aesitb_fusedchain128_<shape>x{1,4}_neon_arm64.s`, and — at
+the three nonce-buf shapes 20 / 36 / 68 only —
+`aesitb_fusedchain128_<shape>x8_avx512_amd64.s`, the eight-lane ZMM
+kernels the pixel pipeline drives through its eight-pixel stride on
+VAES + AVX-512 hosts: two four-lane state groups per call whose cascade
+rounds are interleaved instruction by instruction, so the two independent
+VAESENC chains overlap on the AES unit. The eight-lane arm is pinned to
+two calls of the four-lane ZMM kernel and to the pure-Go cascade by the
+in-package parity tests, and disarmed by `ITB_FORCE_CHAINHASH_X4=1`.
 
 ## Batch-16 Interlocked Barrier fill kernels — `gen_fused_kernels.py`
 

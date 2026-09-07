@@ -19,6 +19,12 @@ every documented forced-tier value, one axis at a time:
 - `ITB_FORCE_HASH_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `aesni`, `scalar`}
 - `ITB_FORCE_PIXEL_TIER` ∈ {`A`, `A_NOGFNI`, `B`, `B_NOGFNI`, `C`}
 
+`tier_matrix_bench.sh` (the AES-ITB-128 hash-tier × batch-16 fill-tier
+matrix) additionally carries the `avx512x4` row — `ITB_FORCE_HASH_TIER=avx512`
+with `ITB_FORCE_CHAINHASH_X4=1`, the ZMM tier with the eight-lane fused
+ChainHash kernels disarmed — so the `avx512` / `avx512x4` pair isolates the
+eight-lane arm on hosts that select it.
+
 The purpose is to identify a slow tier by comparison. When natural
 dispatch throughput is significantly below one of the forced arms,
 the auto-selected tier on this silicon underperforms and warrants a

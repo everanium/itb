@@ -13,6 +13,7 @@
 //	ITB_FORCE_HASH_TIER                  = avx512 | vaesavx2 | avx2 | vex | aesni | scalar
 //	ITB_FORCE_INTERLOCK_TIER             = avx512 | avx512x8 | avx2 | scalar
 //	ITB_FORCE_CHAINHASH_SEQ              = 1 | true | yes
+//	ITB_FORCE_CHAINHASH_X4               = 1 | true | yes
 //	ITB_FORCE_INTERLOCK_PRF_FILL_SEQ     = 1 | true | yes
 //	ITB_FORCE_INTERLOCK_PRF_FILL_TIER    = avx512 | vaesavx2 | vex | aesni | neon | scalar
 //

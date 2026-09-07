@@ -136,7 +136,64 @@ func AttachFused128(s *itb.Seed128, name string, key []byte) error {
 		return err
 	}
 	s.FusedChain, s.BatchFusedChain = single, batched
+	if batched != nil {
+		attachFused128x8(s, name, key)
+	}
 	return nil
+}
+
+// aesITB128FusedChainHash8 builds the eight-lane fused cascade hook of
+// the aesitb128 entry (see [itb.BatchFusedChainHashFunc128x8]): the
+// whole ChainHash128 cascade on eight lanes inside one internal/aesitbasm
+// eight-lane dispatcher call for the three nonce-buf shapes (20 / 36 /
+// 68 bytes, all lanes equal); any other lane-length configuration
+// reports ok = false and the seed runs the four-lane path twice.
+func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
+	return func(components []uint64, data *[8][]byte) ([8][2]uint64, bool) {
+		var out [8][2]uint64
+		n := len(data[0])
+		switch n {
+		case 20, 36, 68:
+		default:
+			return out, false
+		}
+		var dataPtrs [8]*byte
+		for l := range data {
+			if len(data[l]) != n {
+				return out, false
+			}
+			dataPtrs[l] = &data[l][0]
+		}
+		switch n {
+		case 20:
+			aesitbasm.FusedChain20x8(&k, components, &dataPtrs, &out)
+		case 36:
+			aesitbasm.FusedChain36x8(&k, components, &dataPtrs, &out)
+		case 68:
+			aesitbasm.FusedChain68x8(&k, components, &dataPtrs, &out)
+		}
+		return out, true
+	}
+}
+
+// attachFused128x8 installs the eight-lane fused cascade hook on an
+// aesitb128 seed when the eight-lane ZMM arm is the selected tier
+// (aesitbasm.FusedX8Active: VAES + AVX-512 silicon, ITB_FORCE_HASH_TIER
+// unset or avx512, ITB_FORCE_CHAINHASH_X4 unset). Called from
+// [AttachFused128] once the four-lane hooks are in place, so every
+// shipping constructor path — [NewSeed128x16], [SeedFromComponents128x16]
+// and the triple package's Init / Load seed builders — carries the hook
+// under one attach step; a seed left without it keeps the four-lane
+// pixel stride. Other primitives and other hosts leave the seed
+// unchanged. The hook is a performance path only: the wire is identical
+// with and without it (pinned by the root fused-cascade parity tests).
+func attachFused128x8(s *itb.Seed128, name string, key []byte) {
+	if name != CipherAESITB128 || len(key) != 16 || !aesitbasm.FusedX8Active() {
+		return
+	}
+	var k [16]byte
+	copy(k[:], key)
+	s.SetBatchFusedChain8(aesITB128FusedChainHash8(k))
 }
 
 // aesITB128InterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory.

@@ -14,7 +14,11 @@
 //     aesitb_fusedchain128_*x1_*.s / *x4_*.s, emitted by
 //     gen_fused_kernels.py): the whole component cascade of
 //     itb.Seed128.ChainHash128 with the state kept in registers between
-//     rounds — see aesitbasm_fused.go;
+//     rounds — see aesitbasm_fused.go; on the ZMM tier the three
+//     nonce-buf shapes also carry an eight-lane kernel
+//     ([FusedChain20x8] / [FusedChain36x8] / [FusedChain68x8];
+//     aesitb_fusedchain128_*x8_avx512_amd64.s) — see
+//     aesitbasm_fused_x8.go;
 //   - the batch-16 fused cascade kernel of the Interlocked Barrier fill
 //     ([FusedChain13x16]; aesitb_fusedchain128_13x16_*.s, same generator):
 //     sixteen lanes at the 13-byte shape with the fill blocks synthesised

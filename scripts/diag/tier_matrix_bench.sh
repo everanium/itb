@@ -6,7 +6,12 @@
 # combination the host silicon can execute:
 #
 #   rows    ITB_FORCE_HASH_TIER (per-round x4 + fused cascade family):
-#           natural (variable unset), aesni, vaesavx2, avx512, scalar
+#           natural (variable unset), aesni, vaesavx2, avx512, avx512x4,
+#           scalar — avx512x4 is ITB_FORCE_HASH_TIER=avx512 with
+#           ITB_FORCE_CHAINHASH_X4=1, the ZMM tier with the eight-lane
+#           fused ChainHash kernels disarmed (four-lane ZMM kernels and
+#           the four-pixel stride), so the avx512 / avx512x4 pair isolates
+#           the eight-lane arm
 #   columns ITB_FORCE_INTERLOCK_PRF_FILL_TIER (batch-16 interlock fill):
 #           aesni, vex, vaesavx2, avx512, scalar
 #
@@ -81,7 +86,11 @@ median() {
 run_bench() {
     local hash_tier="$1" prf_fill_tier="$2"
     local env_vars="$COMMON_ENV"
-    [ "$hash_tier" != "natural" ] && env_vars="$env_vars ITB_FORCE_HASH_TIER=$hash_tier"
+    case "$hash_tier" in
+        natural) ;;
+        avx512x4) env_vars="$env_vars ITB_FORCE_HASH_TIER=avx512 ITB_FORCE_CHAINHASH_X4=1" ;;
+        *) env_vars="$env_vars ITB_FORCE_HASH_TIER=$hash_tier" ;;
+    esac
     env_vars="$env_vars ITB_FORCE_INTERLOCK_PRF_FILL_TIER=$prf_fill_tier"
 
     local log_file="$LOG_DIR/tier_${hash_tier}_${prf_fill_tier}.log"
@@ -116,7 +125,7 @@ if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
     hash_tiers=("natural" "scalar")
     prf_fill_tiers=("neon" "scalar")
 else
-    hash_tiers=("natural" "aesni" "vaesavx2" "avx512" "scalar")
+    hash_tiers=("natural" "aesni" "vaesavx2" "avx512" "avx512x4" "scalar")
     prf_fill_tiers=("aesni" "vex" "vaesavx2" "avx512" "scalar")
 fi
 

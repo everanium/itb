@@ -69,6 +69,14 @@ type Seed128 struct {
 	// when nil the derived-pair fill runs. Populated via
 	// SetInterlockBatch16.
 	interlockFillX16 InterlockFillFunc16
+
+	// batchFusedChainX8 is the eight-lane fused cascade hook of the pixel
+	// pipeline (see BatchFusedChainHashFunc128x8). When non-nil on both
+	// the noise and the data seed, processChunk128 hashes eight pixels
+	// per call ahead of the four-pixel stride; nil keeps the four-lane
+	// path. A performance hook only — the wire is identical either way.
+	// Populated via SetBatchFusedChain8.
+	batchFusedChainX8 BatchFusedChainHashFunc128x8
 }
 
 // NewSeed128 creates a new 128-bit seed with cryptographically random components.
