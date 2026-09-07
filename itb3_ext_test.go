@@ -31,16 +31,32 @@ import (
 // explicitly. The external test package cannot reach the root package's
 // testCfg helper, so the env var is read here directly — same contract,
 // same accepted values.
+//
+// The ITB_MAX_WORKERS environment variable pins the Low-Level worker
+// cap ([itb.Config.MaxWorkers]) that every ExtTriple bench cell shares.
+// Unset or 0 leaves the field at zero — the [runtime.NumCPU] default
+// the Low-Level entry points fall back to; a positive integer clamps
+// every bench cell to that worker count, so cross-host bench cells can
+// be compared under an identical worker cap instead of each host's own
+// core count.
 func extTripleBenchCfg() *itb.Config {
+	cfg := &itb.Config{}
 	switch os.Getenv("ITB_NONCE_BITS") {
 	case "128":
-		return &itb.Config{NonceBits: 128}
+		cfg.NonceBits = 128
 	case "256":
-		return &itb.Config{NonceBits: 256}
+		cfg.NonceBits = 256
 	case "512":
-		return &itb.Config{NonceBits: 512}
+		cfg.NonceBits = 512
+	default:
+		cfg.NonceBits = itb.DefaultNonceBits
 	}
-	return &itb.Config{NonceBits: itb.DefaultNonceBits}
+	if v := os.Getenv("ITB_MAX_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.MaxWorkers = n
+		}
+	}
+	return cfg
 }
 
 // makeEightSeeds128Ext is the external-test counterpart of
