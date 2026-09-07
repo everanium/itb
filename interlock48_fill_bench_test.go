@@ -5,23 +5,23 @@ import (
 	"testing"
 )
 
-// BenchmarkLockFillX4 times the 128-bit x4 interlock PRF fill closure
-// (lockBatchPRF48.fillRanksX4) as built by buildLockBatchPRF48_128 over
-// an AES-ITB-128 lockSeed — one call fills four groups through the
-// seed's batched arm — against an in-benchmark closure that produces
-// the identical fill blocks with a 1-byte store at offset 0 plus an
-// 8-byte store at offset 1 and passes the lane seeds as a per-call
-// literal. Both variants drive the same kernel under the same dispatch
-// flags (ITB_FORCE_HASH_TIER selects the tier), so the difference is
-// the Go-side store shape ahead of the call alone. Outputs are checked
-// equal before timing.
+// BenchmarkLockFillX4 times the 256-bit x4 interlock PRF fill closure
+// (lockBatchPRF48.fillRanksX4) as built by buildLockBatchPRF48_256 over
+// an Areion-SoEM-256 lockSeed — one call fills four groups through the
+// seed's batched arm — against in-benchmark closures that produce the
+// identical fill blocks with alternative store shapes and pass the lane
+// seeds as a per-call literal. All variants drive the same kernel under
+// the same dispatch flags (ITB_FORCE_HASH_TIER selects the tier), so
+// the difference is the Go-side store shape ahead of the call alone.
+// Outputs are checked equal before timing.
+//
+// Areion-SoEM-256 is the primitive under measurement because it carries
+// no cascade fill (unlike aesitb128, whose shipping fill routes through
+// the cascade branch and would make a raw single-round store-shape
+// comparison structurally inapplicable).
 func BenchmarkLockFillX4(b *testing.B) {
-	var key [16]byte
-	for i := range key {
-		key[i] = byte(0x11 * i)
-	}
-	h, bh, _ := MakeAESITB128Hash(key)
-	seed, err := NewSeed128(512, h)
+	h, bh, _ := MakeAreionSoEM256Hash()
+	seed, err := NewSeed256(512, h)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -30,12 +30,12 @@ func BenchmarkLockFillX4(b *testing.B) {
 	for i := range nonce {
 		nonce[i] = byte(i)
 	}
-	bp := buildLockBatchPRF48_128(seed, nonce)
+	bp := buildLockBatchPRF48_256(seed, nonce)
 	if bp.fillRanksX4 == nil {
 		b.Fatal("fillRanksX4 not attached")
 	}
-	lockLo, lockHi := seed.deriveInterLockSeed(nonce)
-	stable := [4][2]uint64{{lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}}
+	lockKey := seed.deriveInterLockSeed(nonce)
+	stable := [4][4]uint64{lockKey, lockKey, lockKey, lockKey}
 	fillBytes := func(s *lockFillScratch48, groupIdx uint64) {
 		for i := range s.bufs {
 			s.bufs[i][0] = 0x03
@@ -51,15 +51,14 @@ func BenchmarkLockFillX4(b *testing.B) {
 			s.data[i] = s.bufs[i][:]
 		}
 	}
-	store := func(prf []uint64, out [4][2]uint64) {
+	store := func(prf []uint64, out [4][4]uint64) {
 		for i := 0; i < 4; i++ {
-			prf[2*i] = out[i][0]
-			prf[2*i+1] = out[i][1]
+			copy(prf[4*i:4*i+4], out[i][:])
 		}
 	}
 	byteLiteral := func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 		fillBytes(s, groupIdx)
-		store(prf, bh(&s.data, [4][2]uint64{{lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}}))
+		store(prf, bh(&s.data, [4][4]uint64{lockKey, lockKey, lockKey, lockKey}))
 	}
 	byteStable := func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 		fillBytes(s, groupIdx)
@@ -67,7 +66,7 @@ func BenchmarkLockFillX4(b *testing.B) {
 	}
 	splitLiteral := func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 		fillSplit(s, groupIdx)
-		store(prf, bh(&s.data, [4][2]uint64{{lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}, {lockLo, lockHi}}))
+		store(prf, bh(&s.data, [4][4]uint64{lockKey, lockKey, lockKey, lockKey}))
 	}
 	variants := []struct {
 		name string
@@ -80,13 +79,19 @@ func BenchmarkLockFillX4(b *testing.B) {
 	}
 
 	var sA, sB lockFillScratch48
-	var pA, pB [8]uint64
+	pA := make([]uint64, 16)
+	pB := make([]uint64, 16)
 	for _, v := range variants[1:] {
 		for g := uint64(0); g < 64; g += 4 {
-			bp.fillRanksX4(&sA, g, pA[:])
-			v.fn(&sB, g, pB[:])
-			if pA != pB || sA.bufs != sB.bufs {
-				b.Fatalf("%s disagrees with the shipped fill at group %d", v.name, g)
+			bp.fillRanksX4(&sA, g, pA)
+			v.fn(&sB, g, pB)
+			for i := range pA {
+				if pA[i] != pB[i] {
+					b.Fatalf("%s disagrees with the shipped fill at group %d", v.name, g)
+				}
+			}
+			if sA.bufs != sB.bufs {
+				b.Fatalf("%s scratch disagrees with the shipped fill at group %d", v.name, g)
 			}
 		}
 	}
@@ -94,12 +99,12 @@ func BenchmarkLockFillX4(b *testing.B) {
 	for _, v := range variants {
 		b.Run(v.name, func(b *testing.B) {
 			var s lockFillScratch48
-			var prf [8]uint64
+			prf := make([]uint64, 16)
 			b.SetBytes(4 * 13)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				v.fn(&s, uint64(4*i), prf[:])
+				v.fn(&s, uint64(4*i), prf)
 			}
 		})
 	}
