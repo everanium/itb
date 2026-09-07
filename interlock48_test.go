@@ -399,7 +399,10 @@ func perChunkRoundTrip48(framed []byte, prf lockPRF48) []byte {
 }
 
 func batchRoundTrip48(framed []byte, bp lockBatchPRF48) []byte {
-	p0, p1, p2 := splitTriple48LockedBatch(framed, bp, nil)
+	src := framedSrc48{body: framed}
+	M := src.chunkCount()
+	p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+	splitTriple48LockedBatchInto(src, p0, p1, p2, bp, nil)
 	return interleaveTriple48LockedBatch(p0, p1, p2, bp, nil)
 }
 
@@ -497,7 +500,10 @@ func TestBatchVsPerChunkFactor1(t *testing.T) {
 	for _, sz := range interlock48Sizes {
 		framed := interlock48RandomBytes(sz)
 		pcP0, pcP1, pcP2 := splitTriple48Locked(framed, perChunk)
-		btP0, btP1, btP2 := splitTriple48LockedBatch(framed, batched, nil)
+		src := framedSrc48{body: framed}
+		M := src.chunkCount()
+		btP0, btP1, btP2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+		splitTriple48LockedBatchInto(src, btP0, btP1, btP2, batched, nil)
 		if !bytes.Equal(pcP0, btP0) || !bytes.Equal(pcP1, btP1) || !bytes.Equal(pcP2, btP2) {
 			t.Fatalf("size %d: factor=1 batch vs per-chunk lane bytes diverge", sz)
 		}
@@ -635,7 +641,7 @@ func TestSplitTriple48LockedBatchShortFinalGroup(t *testing.T) {
 // ============================================================================
 //
 // Production dispatches only through the batched closure surface: encrypt /
-// decrypt call splitTriple48LockedBatch / interleaveTriple48LockedBatch with
+// decrypt call splitTriple48LockedBatchInto / interleaveTriple48LockedBatch with
 // a lockBatchPRF48 built by buildLockBatchPRF48_{128,256,512}. The per-chunk
 // closure lives here in _test.go as the oracle against which the batched
 // closure's factor > 1 lane layout is verified (TestBatchClosureLaneOracle,

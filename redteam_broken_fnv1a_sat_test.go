@@ -714,11 +714,12 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 	if err != nil || string(back) != string(plain) {
 		t.Fatalf("shipped ciphertext did not round-trip: %v", err)
 	}
-	// [lab-peek: barrier_split] — splitForTriple48LockedCfg with the
+	// [lab-peek: barrier_split] — splitForTriple48LockedInto with the
 	// true lockSeed reveals the per-snake lane bytes. Used for the
 	// displacement measurement only.
-	p0, p1, p2 := splitForTriple48LockedCfg(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, ct[:NonceSize]))
-	snakes := [3][]byte{p0, p1, p2}
+	n := tripleLaneLen(len(plain))
+	snakes := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+	splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, ct[:NonceSize]), snakes[0], snakes[1], snakes[2])
 
 	type snakeDisp struct {
 		Snake            int     `json:"snake"`

@@ -6,7 +6,7 @@ import (
 )
 
 // interlock48_x4_test.go — parity coverage for the fillRanksX4 batched
-// PRF fill path of splitTriple48LockedBatch / interleaveTriple48LockedBatch.
+// PRF fill path of splitTriple48LockedBatchInto / interleaveTriple48LockedBatch.
 //
 // The x4 arm must produce lane bytes bit-identical to the scalar
 // fillRanks arm on every input: the tests below run the same split with
@@ -80,8 +80,12 @@ func TestFillRanksX4VsScalarParity(t *testing.T) {
 			scalar.fillRanksX4 = nil
 			for _, sz := range interlock48Sizes {
 				framed := interlock48RandomBytes(sz)
-				x0, x1, x2 := splitTriple48LockedBatch(framed, tc.bp, nil)
-				s0, s1, s2 := splitTriple48LockedBatch(framed, scalar, nil)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				x0, x1, x2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				s0, s1, s2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, x0, x1, x2, tc.bp, nil)
+				splitTriple48LockedBatchInto(src, s0, s1, s2, scalar, nil)
 				if !bytes.Equal(x0, s0) || !bytes.Equal(x1, s1) || !bytes.Equal(x2, s2) {
 					t.Fatalf("size %d: x4 lanes diverge from scalar lanes", sz)
 				}
@@ -102,7 +106,10 @@ func TestFillRanksX4RoundTrip(t *testing.T) {
 			}
 			for _, sz := range interlock48Sizes {
 				framed := interlock48RandomBytes(sz)
-				p0, p1, p2 := splitTriple48LockedBatch(framed, tc.bp, nil)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, p0, p1, p2, tc.bp, nil)
 				got := interleaveTriple48LockedBatch(p0, p1, p2, tc.bp, nil)
 				if len(got) < len(framed) {
 					t.Fatalf("size %d: recovered %d bytes < input %d", sz, len(got), len(framed))

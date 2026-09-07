@@ -225,7 +225,9 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		// ... but the barrier OUTPUT (lanes) needs the masks. Compute the
 		// true lanes lab-side to display that Part-2 input is seed-locked.
 		bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-		p0, p1, p2 := splitForTriple48LockedCfg(cfg, plaintext, bp)
+		n := tripleLaneLen(len(plaintext))
+		p0, p1, p2 := make([]byte, n), make([]byte, n), make([]byte, n)
+		splitForTriple48LockedInto(cfg, plaintext, bp, p0, p1, p2)
 		framedKnown := true // attacker computes this exactly
 		lanesSeedLocked := len(p0) > 0 && len(p1) > 0 && len(p2) > 0
 

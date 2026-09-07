@@ -20,7 +20,7 @@ package itb
 // terminator handling, the 7/8 noise-bit insertion, the 7-bit rotation
 // reversal, and the combinadic unrank — every one a known correctness
 // hazard. Linking the shipped process128Cfg (decode), the shipped
-// splitForTriple48LockedCfg (Part-1 lock), and cobsEncode is the same
+// splitForTriple48LockedInto (Part-1 lock), and cobsEncodeInto is the same
 // computation with zero reimplementation risk, so the measured number
 // reflects the search cost, not a reimplementation bug. Candidate seeds
 // are constructed with attacker-chosen constants; no lab-only seed
@@ -265,10 +265,11 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 				hi := byte(c & 0xFF)
 				ls := seedConst(lo, hi)
 				bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-				p0, p1, p2 := splitForTriple48LockedCfg(cfg, kpa, bp)
-				ps := [3][]byte{p0, p1, p2}
+				n := tripleLaneLen(len(kpa))
+				ps := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+				splitForTriple48LockedInto(cfg, kpa, bp, ps[0], ps[1], ps[2])
 				for i := 0; i < 3; i++ {
-					enc := cobsEncode(ps[i])
+					enc := cobsEncodeInto(make([]byte, cobsEncodeBound(len(ps[i]))), ps[i])
 					local[i] = append(local[i], laneKey{string(enc), uint16(c)})
 				}
 			}
@@ -440,7 +441,8 @@ func cobsStructurallyValid(stream []byte) bool {
 			return false // no interior null before the terminator
 		}
 	}
-	return string(cobsEncode(cobsDecode(stream))) == string(stream)
+	dec := cobsDecodeInto(make([]byte, len(stream)), stream)
+	return string(cobsEncodeInto(make([]byte, cobsEncodeBound(len(dec))), dec)) == string(stream)
 }
 
 // printableASCII reports whether every byte is in the printable ASCII
@@ -588,8 +590,9 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 			for c := lo0; c < hi0; c++ {
 				ls := seedConst(byte(c>>8), byte(c&0xFF))
 				bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-				p0, p1, p2 := splitForTriple48LockedCfg(cfg, probe, bp)
-				ps := [3][]byte{p0, p1, p2}
+				n := tripleLaneLen(len(probe))
+				ps := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+				splitForTriple48LockedInto(cfg, probe, bp, ps[0], ps[1], ps[2])
 				for i := 0; i < 3; i++ {
 					if len(ps[i]) < lanePrefixLen {
 						continue
@@ -647,7 +650,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 					continue // fails the public COBS structural invariant
 				}
 				cobsPass++
-				p := cobsDecode(stream)
+				p := cobsDecodeInto(make([]byte, len(stream)), stream)
 				if len(p) < lanePrefixLen {
 					continue
 				}
@@ -939,7 +942,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 								ok = false
 								break
 							}
-							p := cobsDecode(b[:fn])
+							p := cobsDecodeInto(make([]byte, fn), b[:fn])
 							if len(p) < 2 || len(p)%2 != 0 {
 								ok = false
 								break
@@ -1342,8 +1345,9 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 			for c := lo0; c < hi0; c++ {
 				ls := seedConst(byte(c>>8), byte(c&0xFF))
 				bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-				p0, p1, p2 := splitForTriple48LockedCfg(cfg, probe, bp)
-				ps := [3][]byte{p0, p1, p2}
+				n := tripleLaneLen(len(probe))
+				ps := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+				splitForTriple48LockedInto(cfg, probe, bp, ps[0], ps[1], ps[2])
 				for i := 0; i < 3; i++ {
 					if len(ps[i]) < lanePrefixLen {
 						continue
@@ -1405,7 +1409,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 						if fn == len(decoded) || !cobsStructurallyValid(decoded[:fn]) {
 							continue
 						}
-						p := cobsDecode(decoded[:fn])
+						p := cobsDecodeInto(make([]byte, fn), decoded[:fn])
 						if len(p) < lanePrefixLen {
 							continue
 						}

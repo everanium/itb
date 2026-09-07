@@ -288,23 +288,15 @@ func writeChunk48(result []byte, base int, x uint64) {
 	result[base+5] = byte(x >> 40)
 }
 
-// prependTripleLen returns [uint32_BE(len(data)):4] || data. The 4-byte
-// big-endian length prefix is carried inside the plaintext across the
-// chunk-level split; after decrypt-side interleave, the first 4 bytes
-// of the recovered stream give the exact plaintext length, enabling
-// deterministic slicing without a separate header widening.
-func prependTripleLen(data []byte) []byte {
-	out := make([]byte, 4+len(data))
-	binary.BigEndian.PutUint32(out[:4], uint32(len(data)))
-	copy(out[4:], data)
-	return out
-}
-
 // framedSrc48 is a copy-free view of the chunk stream head || body ||
 // zero padding consumed by the 48-bit split kernel. The Cfg dispatcher
-// sets head to the 4-byte length prefix and body to the caller's
-// plaintext so neither the framed copy nor the padded copy is
-// materialised; the unframed kernel entry uses a nil head.
+// sets head to the 4-byte big-endian length prefix and body to the
+// caller's plaintext so neither the framed copy nor the padded copy is
+// materialised; a pre-framed stream is presented with a nil head. The
+// length prefix is carried inside the plaintext across the chunk-level
+// split; after decrypt-side interleave, the first 4 bytes of the
+// recovered stream give the exact plaintext length, enabling
+// deterministic slicing without a separate header widening.
 type framedSrc48 struct {
 	head []byte
 	body []byte
@@ -410,8 +402,8 @@ type lockBatchPRF48 struct {
 	// prf[0 : 32*factor] in chunk order. s provides per-worker scratch for
 	// the kernel's output array so the call performs no per-invocation
 	// allocation. Only available when the lockSeed's underlying primitive
-	// exposes a batch-16 arm. When nil, splitTriple48LockedBatch falls back
-	// to the x4 loop. fillRanksSuper and fillRanks agree on every group
+	// exposes a batch-16 arm. When nil, splitTriple48LockedBatchInto falls
+	// back to the x4 loop. fillRanksSuper and fillRanks agree on every group
 	// index: the batch-16 kernel synthesises the identical 13-byte fill
 	// buf per lane, so the produced rank pairs are bit-identical to 16
 	// sequential fillRanks calls (pinned by
@@ -788,13 +780,12 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // ============================================================================
 //
 // The chunk stream is the plaintext framed with a 4-byte big-endian
-// length prefix (see [prependTripleLen] for the materialised form and
-// [framedSrc48] for the copy-free view the Cfg dispatcher feeds the
-// kernel) and padded up to a multiple of 6 bytes (zero-fill); every
-// 48-bit chunk is processed independently under masks derived from the
-// per-chunk or batched PRF. Padding bytes appear as garbage on the
-// decoder side and are stripped by the length-prefix slice in the
-// caller's dispatcher.
+// length prefix (see [framedSrc48] for the copy-free view the Cfg
+// dispatcher feeds the kernel) and padded up to a multiple of 6 bytes
+// (zero-fill); every 48-bit chunk is processed independently under
+// masks derived from the per-chunk or batched PRF. Padding bytes appear
+// as garbage on the decoder side and are stripped by the length-prefix
+// slice in the caller's dispatcher.
 //
 // Chunk count M = LPad / 6; each per-lane output buffer holds 2*M bytes.
 // Workers take disjoint chunk-index ranges — no locks are needed because
@@ -803,7 +794,12 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // runtime.NumCPU) capped by M; batched workers use the same cap on the
 // group count M / factor.
 
-// splitTriple48LockedBatch is the parallel batched 48-bit encode kernel.
+// splitTriple48LockedBatchInto is the parallel batched 48-bit encode
+// kernel. The chunk stream arrives as a [framedSrc48] view (no framed or
+// padded copy) and the three lane outputs are caller-provided buffers of
+// at least 2·M bytes each, where M = src.chunkCount(). Exactly the first
+// 2·M bytes of every lane are written.
+//
 // Chunks are processed in groups of bp.factor; each group costs one
 // bp.fillRanks call producing factor 128-bit rank pairs for the factor
 // chunks of the group. Workers accumulate the ranks of up to
@@ -830,21 +826,6 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // index (BatchHash parity invariant), so the produced lane bytes stay
 // bit-identical; worker tails shorter than a block fall back to the
 // scalar fillRanks path.
-func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48, cfg *Config) (p0, p1, p2 []byte) {
-	M := (len(data) + 5) / 6
-	p0 = make([]byte, 2*M)
-	p1 = make([]byte, 2*M)
-	p2 = make([]byte, 2*M)
-	splitTriple48LockedBatchInto(framedSrc48{body: data}, p0, p1, p2, bp, cfg)
-	return
-}
-
-// splitTriple48LockedBatchInto is the scratch-buffer form of
-// [splitTriple48LockedBatch]: the chunk stream arrives as a
-// [framedSrc48] view (no framed or padded copy) and the three lane
-// outputs are caller-provided buffers of at least 2·M bytes each, where
-// M = src.chunkCount(). Exactly the first 2·M bytes of every lane are
-// written.
 func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Config) {
 	M := src.chunkCount()
 	if M == 0 {
@@ -972,8 +953,9 @@ func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBat
 	return
 }
 
-// interleaveTriple48LockedBatch is the inverse of [splitTriple48LockedBatch],
-// mirroring its group-granular work split and short-final-group handling.
+// interleaveTriple48LockedBatch is the inverse of
+// [splitTriple48LockedBatchInto], mirroring its group-granular work split
+// and short-final-group handling.
 func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Config) []byte {
 	M := len(p0) / 2
 	result := make([]byte, M*6)
@@ -1013,7 +995,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 			var masks [superChunks48][3]uint64
 			var masks16 [2 * superChunks48][3]uint64
 			groupsPerSuper := superChunks48 / factor
-			// x4 block sizing: mirrors splitTriple48LockedBatch.
+			// x4 block sizing: mirrors splitTriple48LockedBatchInto.
 			x4Groups := 0
 			if bp.fillRanksX4 != nil {
 				x4Groups = groupsPerSuper
@@ -1022,7 +1004,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 				}
 			}
 			for g := gs; g < ge; {
-				// Batch-16 path: mirrors splitTriple48LockedBatch.
+				// Batch-16 path: mirrors splitTriple48LockedBatchInto.
 				if bp.fillRanksSuper != nil && ge-g >= 16 {
 					bp.fillRanksSuper(scratch, uint64(g), prf[0:32])
 					fillLockMasksTriple48Super16((*[32]uint64)(prf[0:32]), &masks16)
@@ -1100,7 +1082,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 // Top-level dispatcher — Cfg-aware routing through the 48-bit interlock overlay.
 // ============================================================================
 //
-// splitForTriple48LockedCfg drives every Triple plaintext through the
+// splitForTriple48LockedInto drives every Triple plaintext through the
 // 48-bit keyed overlay path. The caller-supplied batched
 // (lockBatchPRF48) closure carries the shared lockSeed and Hash
 // function derived once at Encrypt* entry. Only the batched dispatch
@@ -1113,25 +1095,15 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 // returns garbage bytes clamped to the recovered payload extent, no
 // error oracle.
 
-// splitForTriple48LockedCfg dispatches plaintext splitting through the
+// splitForTriple48LockedInto dispatches plaintext splitting through the
 // 48-bit interlock overlay path. The caller-supplied bp closure
 // carries the shared lockSeed and Hash function derived once at
-// Encrypt* entry. The 4-byte big-endian length prefix is prepended
-// inside this function so recoverers can slice back exactly to the
-// original payload extent.
-func splitForTriple48LockedCfg(cfg *Config, data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
-	n := tripleLaneLen(len(data))
-	p0, p1, p2 = make([]byte, n), make([]byte, n), make([]byte, n)
-	splitForTriple48LockedInto(cfg, data, bp, p0, p1, p2)
-	return
-}
-
-// splitForTriple48LockedInto is the scratch-buffer form of
-// [splitForTriple48LockedCfg]: the 4-byte length prefix is framed in
+// Encrypt* entry. The 4-byte big-endian length prefix is framed in
 // front of data as a [framedSrc48] view (no framed or padded copy of the
-// plaintext is made) and the lanes are written into the caller-provided
-// p0 / p1 / p2, each of at least tripleLaneLen(len(data)) bytes. The
-// lane bytes produced are identical to the materialised-frame path.
+// plaintext is made) so recoverers can slice back exactly to the
+// original payload extent, and the lanes are written into the
+// caller-provided p0 / p1 / p2, each of at least
+// tripleLaneLen(len(data)) bytes.
 func splitForTriple48LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
 	var head [4]byte
 	binary.BigEndian.PutUint32(head[:], uint32(len(data)))
@@ -1139,10 +1111,10 @@ func splitForTriple48LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0,
 }
 
 // interleaveForTriple48LockedCfg is the inverse of
-// [splitForTriple48LockedCfg]. The raw padded framed bytes returned by
+// [splitForTriple48LockedInto]. The raw padded framed bytes returned by
 // the underlying interleave are stripped down to the original payload
-// via the 4-byte length prefix that splitForTriple48LockedCfg
-// prepended on the corresponding encode.
+// via the 4-byte length prefix that splitForTriple48LockedInto
+// framed on the corresponding encode.
 //
 // Plausible-decryption invariant: never errors. Wrong-seed brute-force
 // or mismatched-mode decrypt feeds garbage into the inverse; this

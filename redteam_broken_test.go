@@ -443,8 +443,9 @@ func TestRedTeamBrokenBarrierDisplacement(t *testing.T) {
 		// snake's leading bytes against the raw-order crib the archived
 		// attacker would assume. A raw-order match fraction near chance
 		// (1/256) means the crib is not where the attacker predicts.
-		p0, p1, p2 := splitForTriple48LockedCfg(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, nonce))
-		snakes := [3][]byte{p0, p1, p2}
+		n := tripleLaneLen(len(plain))
+		snakes := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+		splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, nonce), snakes[0], snakes[1], snakes[2])
 		// The naive attacker assumes NO barrier: plaintext byte i sits at
 		// stream position i. Measure how many of the first N plaintext
 		// bytes survive at their assumed post-split position.

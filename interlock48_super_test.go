@@ -11,7 +11,7 @@ import (
 // Superblock parity + golden lane digests for the batched 48-bit lock path.
 // ============================================================================
 //
-// The production worker loops in splitTriple48LockedBatch /
+// The production worker loops in splitTriple48LockedBatchInto /
 // interleaveTriple48LockedBatch accumulate the 128-bit rank pairs of up
 // to superChunks48 chunks and derive their mask triples in one
 // fillLockMasksTriple48Super pass. The mask derivation is a pure
@@ -29,7 +29,7 @@ import (
 //     wire contribution against any derivation-order or kernel change.
 
 // refSplitPerGroup48 is the sequential per-group reference for
-// [splitTriple48LockedBatch]: identical padding, group indexing, and
+// [splitTriple48LockedBatchInto]: identical padding, group indexing, and
 // lane serialisation, with one bp.fill mask-derivation per group and no
 // superblock accumulation and no parallelism.
 func refSplitPerGroup48(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
@@ -174,7 +174,10 @@ func TestSuperblockVsPerGroupParity(t *testing.T) {
 					framed := superTestFixedData(sz)
 
 					refP0, refP1, refP2 := refSplitPerGroup48(framed, wc.bp)
-					gotP0, gotP1, gotP2 := splitTriple48LockedBatch(framed, wc.bp, nil)
+					src := framedSrc48{body: framed}
+					M := src.chunkCount()
+					gotP0, gotP1, gotP2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+					splitTriple48LockedBatchInto(src, gotP0, gotP1, gotP2, wc.bp, nil)
 					if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
 						t.Fatalf("M=%d size=%d: superblock split lane bytes diverge from per-group reference", m, sz)
 					}
@@ -219,7 +222,10 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 		t.Run(wc.label, func(t *testing.T) {
 			for sz, want := range golden[wc.label] {
 				framed := superTestFixedData(sz)
-				p0, p1, p2 := splitTriple48LockedBatch(framed, wc.bp, nil)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, p0, p1, p2, wc.bp, nil)
 				h := sha256.New()
 				h.Write(p0)
 				h.Write(p1)

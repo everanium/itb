@@ -26,6 +26,9 @@ import (
 // carries no zero-fill dependence and [cobsEncodeInto] accepts a dirty
 // scratch buffer.
 //
+// This allocating form is the known-answer reference against which
+// [cobsEncodeInto] is verified by the test suite.
+//
 // Reference: Cheshire & Baker, "Consistent Overhead Byte Stuffing",
 // IEEE/ACM Transactions on Networking, 1999.
 func cobsEncode(src []byte) []byte {
@@ -109,6 +112,9 @@ func cobsEncodeInto(dst, src []byte) []byte {
 // Each group is copied in one [copy] into a preallocated output, so the
 // inner loop performs one bulk copy per group instead of one append per
 // byte.
+//
+// This allocating form is the known-answer reference against which
+// [cobsDecodeInto] is verified by the test suite.
 func cobsDecode(src []byte) []byte {
 	n := len(src)
 	if n == 0 {

@@ -14,7 +14,7 @@ import (
 // interlock48_x16_fillranks_parity_test.go — the batch-16 ≡ sequential
 // PRF fill invariant of the Interlocked Barrier.
 //
-// splitTriple48LockedBatch / interleaveTriple48LockedBatch split the
+// splitTriple48LockedBatchInto / interleaveTriple48LockedBatch split the
 // group range across runtime.NumCPU() workers, and each worker routes a
 // group through the batch-16 hook (fillRanksSuper) whenever its range
 // still holds 16 groups and through the per-group fillRanks path
@@ -30,7 +30,7 @@ import (
 //  1. Direct: bp.fillRanksSuper on a base versus 16 sequential
 //     bp.fillRanks calls on base .. base+15, at bases the worker split
 //     can never reach (byte-7 → byte-8 carry, top-of-range wrap).
-//  2. Wiring: splitTriple48LockedBatch with the hook armed versus the
+//  2. Wiring: splitTriple48LockedBatchInto with the hook armed versus the
 //     same closure with fillRanksSuper = nil, at sizes that straddle
 //     the 16-group batch boundary and the worker split, plus the
 //     cross round trip (armed encode → disarmed decode and back).
@@ -280,8 +280,12 @@ func TestFillRanksSuperSplitParity(t *testing.T) {
 						seq := tc.bp
 						seq.fillRanksSuper = nil
 						for i, framed := range inputs {
-							x0, x1, x2 := splitTriple48LockedBatch(framed, tc.bp, nil)
-							s0, s1, s2 := splitTriple48LockedBatch(framed, seq, nil)
+							src := framedSrc48{body: framed}
+							M := src.chunkCount()
+							x0, x1, x2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+							s0, s1, s2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+							splitTriple48LockedBatchInto(src, x0, x1, x2, tc.bp, nil)
+							splitTriple48LockedBatchInto(src, s0, s1, s2, seq, nil)
 							if !bytes.Equal(x0, s0) || !bytes.Equal(x1, s1) || !bytes.Equal(x2, s2) {
 								t.Fatalf("%s size %d: batch-16 lanes diverge from sequential lanes", tc.label, x16SplitSizes[i])
 							}
@@ -319,6 +323,8 @@ func TestFillRanksSuperCrossRoundTrip(t *testing.T) {
 						seq.fillRanksSuper = nil
 						for _, sz := range x16SplitSizes {
 							framed := interlock48RandomBytes(sz)
+							src := framedSrc48{body: framed}
+							M := src.chunkCount()
 							for _, dir := range []struct {
 								label    string
 								enc, dec lockBatchPRF48
@@ -327,7 +333,8 @@ func TestFillRanksSuperCrossRoundTrip(t *testing.T) {
 								{"disarmed→armed", seq, tc.bp},
 								{"armed→armed", tc.bp, tc.bp},
 							} {
-								p0, p1, p2 := splitTriple48LockedBatch(framed, dir.enc, nil)
+								p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+								splitTriple48LockedBatchInto(src, p0, p1, p2, dir.enc, nil)
 								got := interleaveTriple48LockedBatch(p0, p1, p2, dir.dec, nil)
 								if len(got) < len(framed) || !bytes.Equal(got[:len(framed)], framed) {
 									t.Fatalf("%s size %d %s: round-trip mismatch", tc.label, sz, dir.label)
