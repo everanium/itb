@@ -17,7 +17,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=512MiB ITB_GOGC=20 \
 
 ## Intel Core i7-11700K 8C/16HT
 
-The AES-ITB-128 rows below are measured on this host only; the other host sections do not carry an AES-ITB-128 row until a full-fleet rebench.
+The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down; the ARM64 Graviton 4 section does not carry an AES-ITB-128 row until a full-fleet rebench.
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -70,6 +70,7 @@ The AES-ITB-128 rows below are measured on this host only; the other host sectio
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
+| **AES-ITB-128** | 128 | 512 | NPRF | 443 | 549 | 576 | 872 | 1019 | 1132 |
 | **Areion-SoEM-256** | 256 | 512 | PRF | 397 | 469 | 513 | 679 | 888 | 1078 |
 | **Areion-SoEM-512** | 512 | 512 | PRF | 393 | 488 | 519 | 765 | 908 | 1095 |
 | **BLAKE2b-256** | 256 | 512 | PRF | 349 | 402 | 475 | 532 | 770 | 878 |
@@ -84,6 +85,7 @@ The AES-ITB-128 rows below are measured on this host only; the other host sectio
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
+| **AES-ITB-128** | 128 | 1024 | NPRF | 445 | 529 | 596 | 830 | 1019 | 1226 |
 | **Areion-SoEM-256** | 256 | 1024 | PRF | 364 | 411 | 483 | 576 | 808 | 913 |
 | **Areion-SoEM-512** | 512 | 1024 | PRF | 378 | 429 | 488 | 660 | 772 | 916 |
 | **BLAKE2b-256** | 256 | 1024 | PRF | 312 | 333 | 414 | 429 | 573 | 723 |
@@ -98,6 +100,7 @@ The AES-ITB-128 rows below are measured on this host only; the other host sectio
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
+| **AES-ITB-128** | 128 | 2048 | NPRF | 431 | 511 | 550 | 767 | 995 | 1257 |
 | **Areion-SoEM-256** | 256 | 2048 | PRF | 320 | 358 | 425 | 467 | 619 | 727 |
 | **Areion-SoEM-512** | 512 | 2048 | PRF | 347 | 351 | 397 | 525 | 695 | 822 |
 | **BLAKE2b-256** | 256 | 2048 | PRF | 248 | 272 | 338 | 319 | 432 | 502 |
