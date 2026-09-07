@@ -1,7 +1,7 @@
 package itb
 
 import (
-	"crypto/rand"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -152,99 +152,28 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce))
-
-	// Phase 1: 3 parallel cobsEncode
-	var encs [3][]byte
-	{
-		parts := [3][]byte{p0, p1, p2}
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				encs[i] = cobsEncode(parts[i])
-			}(i)
-		}
-		wg.Wait()
-	}
-
-	// Reserve nomacTagStubSizeCfg(cfg) bytes in the third snake's
+	// Interlock split, COBS and payload assembly (see triplepayload.go).
+	// nomacTagStubSizeCfg(cfg) bytes are reserved in the third snake's
 	// container capacity so a wire observer cannot distinguish this
 	// No MAC chunk from the paired authenticated chunk (whose third
 	// snake carries payload || tag || flag(1)). The reserved bytes are
 	// pure CSPRNG on the No MAC side.
-	tagStub := nomacTagStubSizeCfg(cfg)
-	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagStub}
-	width, height := containerSize3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
+	tp, width, height, err := buildTriplePayloads(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true,
+		func(cobsLens [3]int) (int, int) {
+			return containerSize3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
+		})
+	if err != nil {
+		return nil, err
+	}
+	defer tp.release()
+	payloads := tp.bufs
 	totalPixels := width * height
-	third := totalPixels / 3
-	thirdPixels2 := totalPixels - 2*third
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 
-	caps := [3]int{
-		(third * DataBitsPerPixel) / 8,
-		(third * DataBitsPerPixel) / 8,
-		(thirdPixels2 * DataBitsPerPixel) / 8,
-	}
-	fitLimits := [3]int{caps[0], caps[1], caps[2] - tagStub}
-	for i := 0; i < 3; i++ {
-		if len(encs[i])+1 > fitLimits[i] {
-			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
-		}
-	}
-
-	// Phase 2: 3 parallel payload-build
-	var payloadPtrs [3]*[]byte
-	payloads := [3][]byte{}
-	defer func() {
-		for i := range payloadPtrs {
-			if payloadPtrs[i] != nil {
-				releaseBuffer(payloadPtrs[i], payloads[i])
-			}
-		}
-	}()
-	{
-		var errs [3]error
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				payloadPtrs[i], payloads[i] = acquireBuffer(caps[i])
-				copy(payloads[i], encs[i])
-				payloads[i][len(encs[i])] = 0x00
-				fillStart := len(encs[i]) + 1
-				if fillStart < caps[i] {
-					fillBytes, err := generateRandomBytes(caps[i] - fillStart)
-					if err != nil {
-						errs[i] = err
-						return
-					}
-					copy(payloads[i][fillStart:], fillBytes)
-				}
-			}(i)
-		}
-		wg.Wait()
-		for _, err := range errs {
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	// 3×CSPRNG parallel generation into one pre-allocated buffer
-	container := make([]byte, totalPixels*Channels)
-	var wg sync.WaitGroup
-	var randErr [3]error
-	wg.Add(3)
-	go func() { _, randErr[0] = rand.Read(container[0 : third*Channels]); wg.Done() }()
-	go func() { _, randErr[1] = rand.Read(container[third*Channels : 2*third*Channels]); wg.Done() }()
-	go func() { _, randErr[2] = rand.Read(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
-	wg.Wait()
-	for _, err := range randErr {
-		if err != nil {
-			return nil, fmt.Errorf("itb: crypto/rand: %w", err)
-		}
+	// Wire buffer: header followed by the CSPRNG-filled container.
+	out, container, err := newTripleWire(cfg, nonce, ilNonce, width, height)
+	if err != nil {
+		return nil, err
 	}
 
 	// 3 parallel goroutines for pixel processing, each limited to 1/3 of CPU cores
@@ -254,6 +183,7 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	if perThird < 1 {
 		perThird = 1
 	}
+	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
 		process512Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
@@ -268,15 +198,6 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		wg.Done()
 	}()
 	wg.Wait()
-
-	out := make([]byte, 0, headerSizeCfg(cfg)+len(container))
-	out = append(out, nonce...)
-	out = append(out, ilNonce...)
-	var dim [4]byte
-	binary.BigEndian.PutUint16(dim[0:], uint16(width))
-	binary.BigEndian.PutUint16(dim[2:], uint16(height))
-	out = append(out, dim[:]...)
-	out = append(out, container...)
 
 	return out, nil
 }
@@ -319,14 +240,7 @@ func Decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		return nil, fmt.Errorf("itb: container too short: got %d, need %d", len(container), expectedSize)
 	}
 
-	third := totalPixels / 3
-	thirdPixels2 := totalPixels - 2*third
-
-	caps := [3]int{
-		(third * DataBitsPerPixel) / 8,
-		(third * DataBitsPerPixel) / 8,
-		(thirdPixels2 * DataBitsPerPixel) / 8,
-	}
+	third, thirdPixels2, caps := tripleThirdCaps(totalPixels)
 
 	var decodedPtrs [3]*[]byte
 	decoded := [3][]byte{}
@@ -364,7 +278,9 @@ func Decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	}()
 	wg.Wait()
 
-	// 3 parallel null-search + cobsDecode
+	// 3 parallel null-search + in-place cobsDecode (the decoded lane
+	// overwrites its own COBS bytes inside the pooled buffer, which is
+	// wiped on release once the interleave has consumed it).
 	parts := [3][]byte{}
 	{
 		var wg sync.WaitGroup
@@ -372,16 +288,11 @@ func Decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		for i := 0; i < 3; i++ {
 			go func(i int) {
 				defer wg.Done()
-				nullPos := -1
-				for j := 0; j < len(decoded[i]); j++ {
-					if decoded[i][j] == 0x00 && nullPos == -1 {
-						nullPos = j
-					}
-				}
+				nullPos := bytes.IndexByte(decoded[i], 0x00)
 				if nullPos < 0 {
 					nullPos = len(decoded[i])
 				}
-				parts[i] = cobsDecode(decoded[i][:nullPos])
+				parts[i] = cobsDecodeInto(decoded[i], decoded[i][:nullPos])
 			}(i)
 		}
 		wg.Wait()

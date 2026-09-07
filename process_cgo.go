@@ -45,6 +45,13 @@ import (
 //     (mid-band payloads). Fresh items already carry the widest
 //     realistic batch capacity, so no per-call regrow.
 //
+// Starter-width items are deliberately not sized lazily to the width a
+// worker requests: the pooled full-width arrays raise the live heap
+// between calls, which under a constrained GOGC widens the collector's
+// heap goal and spaces collections (and the pool evictions they cause)
+// further apart. Lazy sizing lowers bytes per call but measurably
+// lowers throughput at GOGC=50 on the 1 MB message cells.
+//
 // The ITB_HASHPOOL_STARTERS env var overrides this ladder for the
 // microBatch-sweep test harness. Format: comma-separated int list, e.g.
 // "512,65536,262144". Values below 1 are dropped, duplicates removed,
@@ -195,46 +202,19 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
-	nonceLen := currentNonceSizeCfg(cfg)
 
-	noiseBuf := make([]byte, 4+nonceLen)
-	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+nonceLen)
-	copy(dataBuf[4:], nonce)
-	defer secureWipe(noiseBuf)
-	defer secureWipe(dataBuf)
-
-	// Per-lane scratch buffers used only when the batched path is
-	// active. Lane 0 aliases the serial single-call buffer for tail
-	// fallback handling within the same iteration; lanes 1..3 are
-	// pulled from the shared bufferPool to avoid per-worker heap
-	// allocations on high-core-count hosts.
-	var noiseBufs, dataBufs [4][]byte
-	var noiseBufPtrs, dataBufPtrs [4]*[]byte
-	if useBatch {
-		noiseBufs[0] = noiseBuf
-		dataBufs[0] = dataBuf
-		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + nonceLen)
-			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + nonceLen)
-			copy(dataBufs[lane][4:], nonce)
-			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
-			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
-		}
-	}
+	// Per-worker hash-input lanes (see lanescratch.go): lane 0 is the
+	// serial single-call buffer, lanes 0..3 feed the four-pixel batched
+	// path and lanes 0..7 the eight-pixel stride, all in one block.
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
+	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
 	// Eight-pixel stride (see process128_x8.go): lanes 4..7 extend the
 	// four-lane buffers when both seeds carry the eight-lane fused hook.
 	useBatch8 := useBatch8Seeds(noiseSeed, dataSeed)
-	var noiseBufs8, dataBufs8 [8][]byte
-	if useBatch8 {
-		var releaseNoise8, releaseData8 func()
-		noiseBufs8, releaseNoise8 = acquireLaneBufs8(&noiseBufs, nonce, 4+nonceLen)
-		defer releaseNoise8()
-		dataBufs8, releaseData8 = acquireLaneBufs8(&dataBufs, nonce, 4+nonceLen)
-		defer releaseData8()
-	}
+	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
 
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
@@ -249,8 +229,8 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 				for ; i+8 <= bn; i += 8 {
 					base := batchStart + i
 					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
-					noiseHs := noiseSeed.blockHash128x8(&noiseBufs8, pixelIndices)
-					dataHs := dataSeed.blockHash128x8(&dataBufs8, pixelIndices)
+					noiseHs := noiseSeed.blockHash128x8(noiseBufs8, pixelIndices)
+					dataHs := dataSeed.blockHash128x8(dataBufs8, pixelIndices)
 					for lane := 0; lane < 8; lane++ {
 						ha.noise[i+lane] = noiseHs[lane][0]
 						ha.data[i+lane] = dataHs[lane][0]
@@ -259,8 +239,8 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 			}
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
-				noiseHs := noiseSeed.blockHash128x4(&noiseBufs, pixelIndices)
-				dataHs := dataSeed.blockHash128x4(&dataBufs, pixelIndices)
+				noiseHs := noiseSeed.blockHash128x4(noiseBufs, pixelIndices)
+				dataHs := dataSeed.blockHash128x4(dataBufs, pixelIndices)
 				ha.noise[i+0] = noiseHs[0][0]
 				ha.noise[i+1] = noiseHs[1][0]
 				ha.noise[i+2] = noiseHs[2][0]
@@ -313,34 +293,13 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
-	nonceLen := currentNonceSizeCfg(cfg)
 
-	noiseBuf := make([]byte, 4+nonceLen)
-	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+nonceLen)
-	copy(dataBuf[4:], nonce)
-	defer secureWipe(noiseBuf)
-	defer secureWipe(dataBuf)
-
-	// Per-lane scratch buffers used only when the batched path is
-	// active. Lane 0 aliases the serial single-call buffer for tail
-	// fallback handling within the same iteration; lanes 1..3 are
-	// pulled from the shared bufferPool to avoid per-worker heap
-	// allocations on high-core-count hosts.
-	var noiseBufs, dataBufs [4][]byte
-	var noiseBufPtrs, dataBufPtrs [4]*[]byte
-	if useBatch {
-		noiseBufs[0] = noiseBuf
-		dataBufs[0] = dataBuf
-		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + nonceLen)
-			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + nonceLen)
-			copy(dataBufs[lane][4:], nonce)
-			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
-			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
-		}
-	}
+	// Per-worker hash-input lanes (see lanescratch.go): lane 0 is the
+	// serial single-call buffer, lanes 0..3 feed the batched path.
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
+	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
@@ -353,8 +312,8 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 			i := 0
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
-				noiseHs := noiseSeed.blockHash256x4(&noiseBufs, pixelIndices)
-				dataHs := dataSeed.blockHash256x4(&dataBufs, pixelIndices)
+				noiseHs := noiseSeed.blockHash256x4(noiseBufs, pixelIndices)
+				dataHs := dataSeed.blockHash256x4(dataBufs, pixelIndices)
 				ha.noise[i+0] = noiseHs[0][0]
 				ha.noise[i+1] = noiseHs[1][0]
 				ha.noise[i+2] = noiseHs[2][0]
@@ -403,31 +362,13 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	defer putHashArrays(ha)
 
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
-	nonceLen := currentNonceSizeCfg(cfg)
 
-	noiseBuf := make([]byte, 4+nonceLen)
-	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+nonceLen)
-	copy(dataBuf[4:], nonce)
-	defer secureWipe(noiseBuf)
-	defer secureWipe(dataBuf)
-
-	// Per-lane scratch buffers used only when the batched path is
-	// active. Same bufferPool reuse as processChunk256.
-	var noiseBufs, dataBufs [4][]byte
-	var noiseBufPtrs, dataBufPtrs [4]*[]byte
-	if useBatch {
-		noiseBufs[0] = noiseBuf
-		dataBufs[0] = dataBuf
-		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + nonceLen)
-			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + nonceLen)
-			copy(dataBufs[lane][4:], nonce)
-			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
-			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
-		}
-	}
+	// Per-worker hash-input lanes (see lanescratch.go): same layout as
+	// processChunk256.
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
+	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
@@ -440,8 +381,8 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 			i := 0
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
-				noiseHs := noiseSeed.blockHash512x4(&noiseBufs, pixelIndices)
-				dataHs := dataSeed.blockHash512x4(&dataBufs, pixelIndices)
+				noiseHs := noiseSeed.blockHash512x4(noiseBufs, pixelIndices)
+				dataHs := dataSeed.blockHash512x4(dataBufs, pixelIndices)
 				ha.noise[i+0] = noiseHs[0][0]
 				ha.noise[i+1] = noiseHs[1][0]
 				ha.noise[i+2] = noiseHs[2][0]

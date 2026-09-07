@@ -14,43 +14,29 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
-	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
-	copy(dataBuf[4:], nonce)
-	defer secureWipe(noiseBuf)
-	defer secureWipe(dataBuf)
+	// Per-worker hash-input lanes (see lanescratch.go): lane 0 is the
+	// serial single-call buffer, lanes 0..3 feed the four-pixel batched
+	// path and lanes 0..7 the eight-pixel stride, all in one block.
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 
 	p := startP
 
 	if noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil {
-		var noiseBufs, dataBufs [4][]byte
-		var noiseBufPtrs, dataBufPtrs [4]*[]byte
-		noiseBufs[0] = noiseBuf
-		dataBufs[0] = dataBuf
-		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
-			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
-			copy(dataBufs[lane][4:], nonce)
-			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
-			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
-		}
+		noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
 		// Eight-pixel stride (see process128_x8.go): when both seeds
 		// carry the eight-lane fused hook, eight pixels are hashed per
 		// call ahead of the four-pixel loop below; the per-pixel body is
 		// the same.
 		if useBatch8Seeds(noiseSeed, dataSeed) {
-			noiseBufs8, releaseNoise8 := acquireLaneBufs8(&noiseBufs, nonce, 4+currentNonceSizeCfg(cfg))
-			defer releaseNoise8()
-			dataBufs8, releaseData8 := acquireLaneBufs8(&dataBufs, nonce, 4+currentNonceSizeCfg(cfg))
-			defer releaseData8()
+			noiseBufs8, dataBufs8 := &ls.noise, &ls.data
 
 			for ; p+8 <= endP && bitIndex < totalBits; p += 8 {
 				pixelIndices := [8]int{p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7}
-				noiseHashes := noiseSeed.blockHash128x8(&noiseBufs8, pixelIndices)
-				dataHashes := dataSeed.blockHash128x8(&dataBufs8, pixelIndices)
+				noiseHashes := noiseSeed.blockHash128x8(noiseBufs8, pixelIndices)
+				dataHashes := dataSeed.blockHash128x8(dataBufs8, pixelIndices)
 
 				for lane := 0; lane < 8 && bitIndex < totalBits; lane++ {
 					pp := p + lane
@@ -128,8 +114,8 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
-			noiseHashes := noiseSeed.blockHash128x4(&noiseBufs, pixelIndices)
-			dataHashes := dataSeed.blockHash128x4(&dataBufs, pixelIndices)
+			noiseHashes := noiseSeed.blockHash128x4(noiseBufs, pixelIndices)
+			dataHashes := dataSeed.blockHash128x4(dataBufs, pixelIndices)
 
 			for lane := 0; lane < 4 && bitIndex < totalBits; lane++ {
 				pp := p + lane
@@ -289,33 +275,21 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
-	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
-	copy(dataBuf[4:], nonce)
-	defer secureWipe(noiseBuf)
-	defer secureWipe(dataBuf)
+	// Per-worker hash-input lanes (see lanescratch.go): lane 0 is the
+	// serial single-call buffer, lanes 0..3 feed the batched path.
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 
 	p := startP
 
 	if noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil {
-		var noiseBufs, dataBufs [4][]byte
-		var noiseBufPtrs, dataBufPtrs [4]*[]byte
-		noiseBufs[0] = noiseBuf
-		dataBufs[0] = dataBuf
-		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
-			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
-			copy(dataBufs[lane][4:], nonce)
-			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
-			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
-		}
+		noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
-			noiseHashes := noiseSeed.blockHash256x4(&noiseBufs, pixelIndices)
-			dataHashes := dataSeed.blockHash256x4(&dataBufs, pixelIndices)
+			noiseHashes := noiseSeed.blockHash256x4(noiseBufs, pixelIndices)
+			dataHashes := dataSeed.blockHash256x4(dataBufs, pixelIndices)
 
 			for lane := 0; lane < 4 && bitIndex < totalBits; lane++ {
 				pp := p + lane
@@ -475,33 +449,21 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
-	noiseBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
-	copy(noiseBuf[4:], nonce)
-	dataBuf := make([]byte, 4+currentNonceSizeCfg(cfg))
-	copy(dataBuf[4:], nonce)
-	defer secureWipe(noiseBuf)
-	defer secureWipe(dataBuf)
+	// Per-worker hash-input lanes (see lanescratch.go): lane 0 is the
+	// serial single-call buffer, lanes 0..3 feed the batched path.
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 
 	p := startP
 
 	if noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil {
-		var noiseBufs, dataBufs [4][]byte
-		var noiseBufPtrs, dataBufPtrs [4]*[]byte
-		noiseBufs[0] = noiseBuf
-		dataBufs[0] = dataBuf
-		for lane := 1; lane < 4; lane++ {
-			noiseBufPtrs[lane], noiseBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
-			copy(noiseBufs[lane][4:], nonce)
-			dataBufPtrs[lane], dataBufs[lane] = acquireBuffer(4 + currentNonceSizeCfg(cfg))
-			copy(dataBufs[lane][4:], nonce)
-			defer releaseBuffer(noiseBufPtrs[lane], noiseBufs[lane])
-			defer releaseBuffer(dataBufPtrs[lane], dataBufs[lane])
-		}
+		noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
-			noiseHashes := noiseSeed.blockHash512x4(&noiseBufs, pixelIndices)
-			dataHashes := dataSeed.blockHash512x4(&dataBufs, pixelIndices)
+			noiseHashes := noiseSeed.blockHash512x4(noiseBufs, pixelIndices)
+			dataHashes := dataSeed.blockHash512x4(dataBufs, pixelIndices)
 
 			for lane := 0; lane < 4 && bitIndex < totalBits; lane++ {
 				pp := p + lane

@@ -21,15 +21,32 @@ import (
 // [bytes.IndexByte] over the tail — the latter's amd64 / arm64 runtime
 // assembly reaches the next zero at memory-bandwidth speed on random-uniform
 // input. Runs are emitted in one [copy] per 254-byte group into a
-// preallocated output whose sentinel code-byte slots are left as the
-// spec-guaranteed zero fill of [make] until the group closes and the code
-// byte is written in place.
+// preallocated output; every code-byte slot is written in place when its
+// group closes (or by the final terminating code), so the output buffer
+// carries no zero-fill dependence and [cobsEncodeInto] accepts a dirty
+// scratch buffer.
 //
 // Reference: Cheshire & Baker, "Consistent Overhead Byte Stuffing",
 // IEEE/ACM Transactions on Networking, 1999.
 func cobsEncode(src []byte) []byte {
+	return cobsEncodeInto(make([]byte, cobsEncodeBound(len(src))), src)
+}
+
+// cobsEncodeBound returns the maximum encoded length [cobsEncode]
+// produces for an n-byte input: one code byte per 254-byte group plus
+// the terminating code.
+func cobsEncodeBound(n int) int {
+	return n + n/254 + 2
+}
+
+// cobsEncodeInto is the scratch-buffer form of [cobsEncode]: dst must
+// hold at least cobsEncodeBound(len(src)) bytes and is returned resliced
+// to the encoded length. dst may hold arbitrary prior content — the
+// encoder writes every byte of the result, code slots included. dst
+// must not alias src.
+func cobsEncodeInto(dst, src []byte) []byte {
 	n := len(src)
-	out := make([]byte, n+n/254+2)
+	out := dst[:cobsEncodeBound(n)]
 	pos, codeIdx, fill := 1, 0, 0
 	i := 0
 	for i < n {
@@ -89,16 +106,31 @@ func cobsEncode(src []byte) []byte {
 //
 // Returns nil if src is empty.
 //
-// Each group is copied in one [copy] into a preallocated output; the implicit
-// trailing 0x00 after a short group is a bare position increment on the
-// spec-zeroed buffer of [make], so the inner loop performs one bulk copy per
-// group instead of one append per byte.
+// Each group is copied in one [copy] into a preallocated output, so the
+// inner loop performs one bulk copy per group instead of one append per
+// byte.
 func cobsDecode(src []byte) []byte {
 	n := len(src)
 	if n == 0 {
 		return nil
 	}
-	out := make([]byte, n)
+	return cobsDecodeInto(make([]byte, n), src)
+}
+
+// cobsDecodeInto is the scratch-buffer form of [cobsDecode]: dst must
+// hold at least len(src) bytes and is returned resliced to the decoded
+// length (nil when src is empty). dst may alias src for an in-place
+// decode: the write position never overtakes the read position — every
+// group consumes one code byte more than it emits — and the group copy
+// is [copy] (memmove semantics), so decoding over the encoded bytes is
+// safe. The implicit 0x00 after each short group is written explicitly
+// because dst carries no zero-fill guarantee.
+func cobsDecodeInto(dst, src []byte) []byte {
+	n := len(src)
+	if n == 0 {
+		return nil
+	}
+	out := dst[:n]
 	pos, idx := 0, 0
 	for idx < n {
 		code := src[idx]
@@ -113,9 +145,9 @@ func cobsDecode(src []byte) []byte {
 		pos += copy(out[pos:], src[idx:end])
 		idx = end
 		// Implicit 0x00 after each group with code < 0xFF, except the
-		// last group (no more encoded data follows). The output slot is
-		// already zero from make, so advance the position only.
+		// last group (no more encoded data follows).
 		if code < 0xFF && idx < n {
+			out[pos] = 0
 			pos++
 		}
 	}
