@@ -110,8 +110,8 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         # Go-runtime pacing caps applied before any cipher work.
-        itb.set_memory_limit(512 << 20)
-        itb.set_gc_percent(20)
+        itb.set_memory_limit(2 << 30)
+        itb.set_gc_percent(85)
         if argv[0] == "version":
             cmd_version()
         elif argv[0] == "profiles":

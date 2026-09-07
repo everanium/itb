@@ -201,8 +201,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```kotlin
-ItbRuntime.setMemoryLimit(512L shl 20)
-ItbRuntime.setGCPercent(20)
+ItbRuntime.setMemoryLimit(2L shl 30)
+ItbRuntime.setGCPercent(85)
 ```
 
 ## Testing

@@ -24,8 +24,8 @@ export LD_LIBRARY_PATH="$DIST_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # env vars so a bench crash before the harness's own setMemoryLimit /
 # setGcPercent calls still runs under a bounded heap. The harness
 # reasserts these via the API for self-contained reproducibility.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-2GiB}"
+export ITB_GOGC="${ITB_GOGC:-85}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

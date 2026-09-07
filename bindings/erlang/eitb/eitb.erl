@@ -91,8 +91,8 @@ fail(What, {Status, Detail}) ->
 %% soft memory cap + aggressive GC keep the scratch heap bounded. The
 %% setter return values report the previous settings, not an error.
 cap_go_runtime() ->
-    _ = itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-    _ = itb:set_gc_percent(20),           %% aggressive GC
+    _ = itb:set_memory_limit(2 bsl 30), %% 2 GiB soft cap
+    _ = itb:set_gc_percent(85),         %% balanced GC
     ok.
 
 cmd_version() ->

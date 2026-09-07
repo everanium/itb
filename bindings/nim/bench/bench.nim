@@ -193,8 +193,8 @@ when isMainModule:
   # Bench-scale allocation churn leaks Go scratch heap unboundedly
   # without a soft memory cap + aggressive GC; the return values
   # report the previous settings, not an error.
-  discard setMemoryLimit(512 * 1024 * 1024)
-  discard setGcPercent(20)
+  discard setMemoryLimit(2 * 1024 * 1024 * 1024)
+  discard setGcPercent(85)
 
   echo &"""{"bench":<17} {"size":<8} mb_per_sec"""
   benchMessage()

@@ -107,8 +107,8 @@
 (defn -main [& args]
   ;; Defensive Go-runtime pacing caps — the CLI can be pointed at
   ;; gigabyte files.
-  (runtime/set-memory-limit! (bit-shift-left 512 20))
-  (runtime/set-gc-percent! 20)
+  (runtime/set-memory-limit! (bit-shift-left 2 30))
+  (runtime/set-gc-percent! 85)
   (let [[cmd & more] args
         rc (try
              (cond

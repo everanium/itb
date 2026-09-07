@@ -34,8 +34,8 @@ func usage() -> Int32 {
 /// Defensive Go-runtime pacing for cipher workloads on large files:
 /// a soft memory cap + aggressive GC keep the scratch heap bounded.
 func capGoRuntime() {
-    ItbRuntime.setMemoryLimit(512 << 20) // 512 MiB soft cap
-    ItbRuntime.setGCPercent(20)          // aggressive GC
+    ItbRuntime.setMemoryLimit(2 << 30) // 2 GiB soft cap
+    ItbRuntime.setGCPercent(85)        // balanced GC
 }
 
 func readFile(_ path: String) -> Data? {

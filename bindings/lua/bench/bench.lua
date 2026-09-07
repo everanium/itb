@@ -166,8 +166,8 @@ local function main()
     -- Bench-scale allocation churn leaks Go scratch heap unboundedly
     -- without a soft memory cap + aggressive GC; the return values
     -- report the previous settings, not an error.
-    itb.set_memory_limit(512 * 1024 * 1024)
-    itb.set_gc_percent(20)
+    itb.set_memory_limit(2 * 1024 * 1024 * 1024)
+    itb.set_gc_percent(85)
 
     local opts = build_opts()
     print(("%-17s %-8s mb_per_sec"):format("bench", "size"))

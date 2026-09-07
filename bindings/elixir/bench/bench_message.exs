@@ -26,8 +26,8 @@ defmodule BenchMessage do
     # Bench-scale allocation churn leaks Go scratch heap unboundedly
     # without a soft memory cap + aggressive GC; the return values
     # report the previous settings, not an error.
-    _ = ITB.set_memory_limit(512 <<< 20)
-    _ = ITB.set_gc_percent(20)
+    _ = ITB.set_memory_limit(2 <<< 30)
+    _ = ITB.set_gc_percent(85)
 
     profile = BenchUtil.env("ITB_PROFILE", "singlemsg-triple-nomac-v1")
     {:ok, pipe} = ITB.init(profile, BenchUtil.bench_opts())

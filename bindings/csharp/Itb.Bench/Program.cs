@@ -10,8 +10,8 @@ internal static class Program
         // Bench-scale allocation churn leaks Go scratch heap
         // unboundedly without a soft memory cap + aggressive GC; the
         // return values report the previous settings, not an error.
-        Itb.Runtime.SetMemoryLimit(512L * 1024 * 1024);
-        Itb.Runtime.SetGCPercent(20);
+        Itb.Runtime.SetMemoryLimit(2L * 1024 * 1024 * 1024);
+        Itb.Runtime.SetGCPercent(85);
 
         switch (args.Length > 0 ? args[0] : "all")
         {

@@ -199,8 +199,8 @@ let bench_stream_one_shot () =
 let () =
   (* Bench-scale allocation churn leaks Go scratch heap unboundedly
      without a soft memory cap + aggressive GC. *)
-  Itb.set_memory_limit (512 * 1024 * 1024);
-  Itb.set_gc_percent 20;
+  Itb.set_memory_limit (2 * 1024 * 1024 * 1024);
+  Itb.set_gc_percent 85;
   Printf.printf "%-17s %-8s %s\n%!" "bench" "size" "mb_per_sec";
   bench_message ();
   bench_stream ();

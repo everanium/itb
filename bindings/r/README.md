@@ -238,8 +238,8 @@ aggressive GC the Go scratch heap grows unboundedly under allocation
 churn:
 
 ```r
-set_memory_limit(512 * 1024 * 1024) # 512 MiB soft cap
-set_gc_percent(20)                  # aggressive GC
+set_memory_limit(2 * 1024 * 1024 * 1024) # 2 GiB soft cap
+set_gc_percent(85)                       # balanced GC
 ```
 
 ## Testing
@@ -268,7 +268,7 @@ profiles) at 1 MiB / 16 MiB / 64 MiB, configured through the fleet's
 canonical env vars (`ITB_INNER_HASH`, `ITB_KEY_BITS`,
 `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`,
 `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`); the harness caps the Go runtime
-via `set_memory_limit(512 * 1024 * 1024)` and `set_gc_percent(20)`.
+via `set_memory_limit(2 * 1024 * 1024 * 1024)` and `set_gc_percent(85)`.
 See `bindings/BENCH.md` for the fleet-wide configuration authority
 and comparison tables.
 

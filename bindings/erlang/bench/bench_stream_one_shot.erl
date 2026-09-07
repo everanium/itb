@@ -30,8 +30,8 @@ main(_Args) ->
     %% Bench-scale allocation churn leaks Go scratch heap unboundedly
     %% without a soft memory cap + aggressive GC; the return values
     %% report the previous settings, not an error.
-    _ = itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-    _ = itb:set_gc_percent(20),           %% aggressive GC
+    _ = itb:set_memory_limit(2 bsl 30), %% 2 GiB soft cap
+    _ = itb:set_gc_percent(85),         %% balanced GC
 
     Profile = env("ITB_PROFILE", "streaming-noaead-triple-v1"),
     {ok, Pipe} = itb:init(Profile, bench_opts()),

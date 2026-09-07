@@ -196,8 +196,8 @@ libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically:
 
 ```ada
-Itb.Runtime.Set_Memory_Limit (536_870_912);  --  512 MiB soft cap
-Itb.Runtime.Set_GC_Percent (20);
+Itb.Runtime.Set_Memory_Limit (2_147_483_648);  --  2 GiB soft cap
+Itb.Runtime.Set_GC_Percent (85);
 ```
 
 `Itb.Runtime.Memory_Limit` / `Itb.Runtime.GC_Percent` query without

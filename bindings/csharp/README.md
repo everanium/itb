@@ -158,8 +158,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```csharp
-Itb.Runtime.SetMemoryLimit(512L * 1024 * 1024);
-Itb.Runtime.SetGCPercent(20);
+Itb.Runtime.SetMemoryLimit(2L * 1024 * 1024 * 1024);
+Itb.Runtime.SetGCPercent(85);
 ```
 
 ## Testing

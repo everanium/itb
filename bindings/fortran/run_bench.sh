@@ -36,8 +36,8 @@ export LD_LIBRARY_PATH="$DIST_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains
 # apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-2GiB}"
+export ITB_GOGC="${ITB_GOGC:-85}"
 
 # Bench-shape defaults -- match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

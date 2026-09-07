@@ -212,8 +212,8 @@ bulk encryption) should set both — without a soft cap + aggressive
 GC the Go scratch heap grows unboundedly under allocation churn:
 
 ```swift
-ItbRuntime.setMemoryLimit(512 << 20) // 512 MiB soft cap
-ItbRuntime.setGCPercent(20)          // aggressive GC
+ItbRuntime.setMemoryLimit(2 << 30) // 2 GiB soft cap
+ItbRuntime.setGCPercent(85)        // balanced GC
 ```
 
 ## Testing
@@ -243,7 +243,7 @@ tree.
 Micro-benches: `message` (encryptMessage) and `stream_pump`
 (encryptStreamPump) throughput at 1 MiB / 16 MiB / 64 MiB, reported
 as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` defaults (respecting caller
+`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults (respecting caller
 overrides) and the bench main applies the same caps
 programmatically; the bench shape follows the fleet-canonical
 env-var surface documented in [`bindings/BENCH.md`](../BENCH.md).

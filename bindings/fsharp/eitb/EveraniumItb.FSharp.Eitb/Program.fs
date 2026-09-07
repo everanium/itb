@@ -89,8 +89,8 @@ let private cmdDecrypt (profile: string) (blobHex: string) (inFile: string) (out
 
 [<EntryPoint>]
 let main args =
-    Runtime.setMemoryLimit (512L * 1024L * 1024L) |> ignore
-    Runtime.setGCPercent 20 |> ignore
+    Runtime.setMemoryLimit (2L * 1024L * 1024L * 1024L) |> ignore
+    Runtime.setGCPercent 85 |> ignore
 
     try
         match List.ofArray args with

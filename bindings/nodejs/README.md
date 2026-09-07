@@ -187,8 +187,8 @@ query without changing:
 ```ts
 import { setGCPercent, setMemoryLimit } from 'itb';
 
-setMemoryLimit(512n * 1024n * 1024n); // BigInt: the limit is int64
-setGCPercent(20);
+setMemoryLimit(2n * 1024n * 1024n * 1024n); // BigInt: the limit is int64
+setGCPercent(85);
 ```
 
 ## Testing

@@ -100,8 +100,8 @@ function main(argv::Vector{String})::Int
     end
     try
         # Go-runtime pacing caps applied before any cipher work.
-        set_memory_limit(512 << 20)
-        set_gc_percent(20)
+        set_memory_limit(2 << 30)
+        set_gc_percent(85)
         if argv[1] == "version"
             cmd_version()
         elseif argv[1] == "profiles"

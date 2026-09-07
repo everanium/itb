@@ -182,8 +182,8 @@ fn fail(what: String, error: ItbError) -> Int {
 // The setter return values report the previous settings, not an
 // error.
 fn cap_go_runtime() -> Nil {
-  let _ = itb_gleam.set_memory_limit(536_870_912)
-  let _ = itb_gleam.set_gc_percent(20)
+  let _ = itb_gleam.set_memory_limit(2_147_483_648)
+  let _ = itb_gleam.set_gc_percent(85)
   Nil
 }
 

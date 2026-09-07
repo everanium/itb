@@ -65,8 +65,8 @@ function* chunked(whole: Buffer): Generator<Buffer> {
   }
 }
 
-setMemoryLimit(512n * 1024n * 1024n);
-setGCPercent(20);
+setMemoryLimit(2n * 1024n * 1024n * 1024n);
+setGCPercent(85);
 
 const profile = process.env['ITB_PROFILE'] ?? 'streaming-noaead-triple-v1';
 const pipe = Pipeline.init(profile, buildOpts());

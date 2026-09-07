@@ -192,8 +192,8 @@ changing:
 ```clojure
 (require '[dev.everanium.itb.clojure.runtime :as runtime])
 
-(runtime/set-memory-limit! (bit-shift-left 512 20))
-(runtime/set-gc-percent! 20)
+(runtime/set-memory-limit! (bit-shift-left 2 30))
+(runtime/set-gc-percent! 85)
 ```
 
 ## Testing

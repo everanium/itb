@@ -218,8 +218,8 @@ bulk encryption) should set both — without a soft cap + aggressive GC
 the Go scratch heap grows unboundedly under allocation churn:
 
 ```erlang
-itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-itb:set_gc_percent(20).           %% aggressive GC
+itb:set_memory_limit(2 bsl 30), %% 2 GiB soft cap
+itb:set_gc_percent(85).         %% balanced GC
 ```
 
 ## Testing
@@ -249,7 +249,7 @@ tree.
 Micro-benches: `message` (encrypt_message) and `stream_pump`
 (incremental encrypt session) throughput at 1 MiB / 16 MiB / 64 MiB,
 reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` defaults (respecting caller
+`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults (respecting caller
 overrides) and the bench modules apply the same caps
 programmatically. `./run_bench.sh message` / `./run_bench.sh stream`
 runs one shape.

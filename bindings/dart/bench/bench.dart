@@ -219,8 +219,8 @@ void main() {
   // Bench-scale allocation churn leaks Go scratch heap unboundedly
   // without a soft memory cap + aggressive GC; the return values
   // report the previous settings, not an error.
-  Itb.setMemoryLimit(512 << 20);
-  Itb.setGcPercent(20);
+  Itb.setMemoryLimit(2 << 30);
+  Itb.setGcPercent(85);
 
   benchHeader();
   benchMessage();

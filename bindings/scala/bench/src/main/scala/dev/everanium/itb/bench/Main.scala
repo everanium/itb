@@ -10,8 +10,8 @@ object Main:
     // Go-runtime pacing caps for bench-scale allocation churn; the
     // run_bench.sh env defaults apply the same values at load time —
     // the programmatic setter wins when both are present.
-    val _ = Runtime.setMemoryLimit(512L * 1024 * 1024)
-    val _ = Runtime.setGCPercent(20)
+    val _ = Runtime.setMemoryLimit(2L * 1024 * 1024 * 1024)
+    val _ = Runtime.setGCPercent(85)
     args.headOption.getOrElse("all") match
       case "message"         => BenchMessage.run()
       case "stream"          => BenchStream.run()

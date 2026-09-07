@@ -29,8 +29,8 @@ pub fn main(init: std.process.Init) !void {
     // Bench-scale allocation churn leaks Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
-    _ = itb.setMemoryLimit(512 << 20); // 512 MiB soft cap
-    _ = itb.setGcPercent(20); // aggressive GC
+    _ = itb.setMemoryLimit(2 << 30); // 2 GiB soft cap
+    _ = itb.setGcPercent(85); // balanced GC
 
     const gpa = init.gpa;
     const arena = init.arena.allocator();

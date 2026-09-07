@@ -60,8 +60,8 @@
 ;; soft memory cap + aggressive GC keep the scratch heap bounded. The
 ;; setter return values report the previous settings, not an error.
 (defun cap-go-runtime ()
-  (itb-lfe:set-memory-limit (bsl 512 20)) ;; 512 MiB soft cap
-  (itb-lfe:set-gc-percent 20)             ;; aggressive GC
+  (itb-lfe:set-memory-limit (bsl 2 30)) ;; 2 GiB soft cap
+  (itb-lfe:set-gc-percent 85)           ;; balanced GC
   'ok)
 
 (defun cmd-version ()

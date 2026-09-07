@@ -16,8 +16,8 @@ public final class BenchMessage {
         // Bench-scale allocation churn leaks Go scratch heap
         // unboundedly without a soft memory cap + aggressive GC; the
         // return values report the previous settings, not an error.
-        com.everanium.itb.Runtime.setMemoryLimit(512L << 20);
-        com.everanium.itb.Runtime.setGCPercent(20);
+        com.everanium.itb.Runtime.setMemoryLimit(2L << 30);
+        com.everanium.itb.Runtime.setGCPercent(85);
 
         SecureRandom rng = new SecureRandom();
         try (Pipeline pipe = Pipeline.init(

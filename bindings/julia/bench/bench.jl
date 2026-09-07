@@ -175,8 +175,8 @@ end
 # Bench-scale allocation churn leaks Go scratch heap unboundedly
 # without a soft memory cap + aggressive GC; the return values report
 # the previous settings, not an error.
-set_memory_limit(512 << 20)
-set_gc_percent(20)
+set_memory_limit(2 << 30)
+set_gc_percent(85)
 
 function bench_stream_one_shot()
     # Whole-buffer stream: one FFI round trip through

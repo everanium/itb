@@ -208,8 +208,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```julia
-set_memory_limit(512 << 20)
-set_gc_percent(20)
+set_memory_limit(2 << 30)
+set_gc_percent(85)
 ```
 
 ## Testing

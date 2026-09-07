@@ -254,8 +254,8 @@ bulk encryption) should set both — without a soft cap + aggressive
 GC the Go scratch heap grows unboundedly under allocation churn:
 
 ```elixir
-ITB.set_memory_limit(512 * 1024 * 1024) # 512 MiB soft cap
-ITB.set_gc_percent(20)                  # aggressive GC
+ITB.set_memory_limit(2 * 1024 * 1024 * 1024) # 2 GiB soft cap
+ITB.set_gc_percent(85)                       # balanced GC
 ```
 
 ## Testing
@@ -284,7 +284,7 @@ tree.
 Micro-benches: `message` (encrypt_message) and `stream_pump`
 (incremental encrypt session) throughput at 1 MiB / 16 MiB /
 64 MiB, reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` defaults (respecting caller
+`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults (respecting caller
 overrides) and the bench scripts apply the same caps
 programmatically. `./run_bench.sh message` / `./run_bench.sh
 stream` runs one shape.

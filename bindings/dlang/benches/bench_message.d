@@ -24,8 +24,8 @@ void main()
     // Bench-scale allocation churn leaks Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
-    cast(void) setMemoryLimit(512L * 1024 * 1024); // 512 MiB soft cap
-    cast(void) setGCPercent(20);                   // aggressive GC
+    cast(void) setMemoryLimit(2L * 1024 * 1024 * 1024); // 2 GiB soft cap
+    cast(void) setGCPercent(85);                        // balanced GC
 
     auto pipe = Pipeline.create(
         benchProfileName("singlemsg-triple-nomac-v1"), benchBuildOpts());

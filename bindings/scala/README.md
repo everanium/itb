@@ -175,8 +175,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```scala
-dev.everanium.itb.Runtime.setMemoryLimit(512L * 1024 * 1024)
-dev.everanium.itb.Runtime.setGCPercent(20)
+dev.everanium.itb.Runtime.setMemoryLimit(2L * 1024 * 1024 * 1024)
+dev.everanium.itb.Runtime.setGCPercent(85)
 ```
 
 ## Testing

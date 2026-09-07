@@ -10,8 +10,8 @@ let main args =
     // Bench-scale allocation churn leaks Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
-    Runtime.setMemoryLimit (512L * 1024L * 1024L) |> ignore
-    Runtime.setGCPercent 20 |> ignore
+    Runtime.setMemoryLimit (2L * 1024L * 1024L * 1024L) |> ignore
+    Runtime.setGCPercent 85 |> ignore
 
     match (if args.Length > 0 then args[0] else "all") with
     | "message" ->

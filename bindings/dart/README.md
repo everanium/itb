@@ -189,8 +189,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```dart
-Itb.setMemoryLimit(512 << 20);
-Itb.setGcPercent(20);
+Itb.setMemoryLimit(2 << 30);
+Itb.setGcPercent(85);
 ```
 
 ## Testing

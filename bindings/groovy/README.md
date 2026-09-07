@@ -212,8 +212,8 @@ changing:
 ```groovy
 import dev.everanium.itb.groovy.Runtime
 
-Runtime.setMemoryLimit(512L << 20)
-Runtime.setGCPercent(20)
+Runtime.setMemoryLimit(2L << 30)
+Runtime.setGCPercent(85)
 ```
 
 ## Testing

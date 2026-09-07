@@ -115,8 +115,8 @@ local function main(argv)
     end
     local ok, err = pcall(function()
         -- Go-runtime pacing caps applied before any cipher work.
-        itb.set_memory_limit(512 * 1024 * 1024)
-        itb.set_gc_percent(20)
+        itb.set_memory_limit(2 * 1024 * 1024 * 1024)
+        itb.set_gc_percent(85)
         if argv[1] == "version" then
             cmd_version()
         elseif argv[1] == "profiles" then

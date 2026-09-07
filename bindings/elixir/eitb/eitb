@@ -107,8 +107,8 @@ defmodule EITB do
   # The setter return values report the previous settings, not an
   # error.
   defp cap_go_runtime do
-    _ = ITB.set_memory_limit(512 * 1024 * 1024)
-    _ = ITB.set_gc_percent(20)
+    _ = ITB.set_memory_limit(2 * 1024 * 1024 * 1024)
+    _ = ITB.set_gc_percent(85)
     :ok
   end
 

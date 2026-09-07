@@ -50,8 +50,8 @@ procedure Eitb is
    --  canonical bench configuration).
    procedure Apply_Runtime_Caps is
    begin
-      Itb.Runtime.Set_Memory_Limit (536_870_912);  --  512 MiB soft cap
-      Itb.Runtime.Set_GC_Percent (20);
+      Itb.Runtime.Set_Memory_Limit (2_147_483_648);  --  2 GiB soft cap
+      Itb.Runtime.Set_GC_Percent (85);
    end Apply_Runtime_Caps;
 
    function Read_File (Name : String) return Itb.Byte_Array_Access is

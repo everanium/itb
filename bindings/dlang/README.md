@@ -170,8 +170,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```d
-itb.setMemoryLimit(512L * 1024 * 1024);
-itb.setGCPercent(20);
+itb.setMemoryLimit(2L * 1024 * 1024 * 1024);
+itb.setGCPercent(85);
 ```
 
 ## Testing

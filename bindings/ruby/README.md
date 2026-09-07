@@ -203,8 +203,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```ruby
-ITB.set_memory_limit(512 << 20)
-ITB.set_gc_percent(20)
+ITB.set_memory_limit(2 << 30)
+ITB.set_gc_percent(85)
 ```
 
 ## Testing

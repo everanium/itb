@@ -64,8 +64,8 @@
   run_bench.sh exports the same defaults via ITB_GOMEMLIMIT /
   ITB_GOGC as a fallback."
   []
-  (runtime/set-memory-limit! (bit-shift-left 512 20))
-  (runtime/set-gc-percent! 20))
+  (runtime/set-memory-limit! (bit-shift-left 2 30))
+  (runtime/set-gc-percent! 85))
 
 (defn header []
   (println (format "%-17s %-8s %s" "bench" "size" "mb_per_sec")))

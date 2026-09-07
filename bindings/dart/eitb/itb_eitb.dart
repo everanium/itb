@@ -94,8 +94,8 @@ void cmdDecrypt(String profile, String blobHex, String infile, String outfile) {
 }
 
 void main(List<String> args) {
-  Itb.setMemoryLimit(512 << 20);
-  Itb.setGcPercent(20);
+  Itb.setMemoryLimit(2 << 30);
+  Itb.setGcPercent(85);
   try {
     switch (args.isEmpty ? '' : args[0]) {
       case 'version':

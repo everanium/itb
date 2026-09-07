@@ -25,8 +25,8 @@ program bench_message
   ! Bench-scale allocation churn leaks Go scratch heap unboundedly
   ! without a soft memory cap + aggressive GC; the return values
   ! report the previous settings, not an error.
-  prev_limit = itb_set_memory_limit(int(512, c_int64_t) * 1024 * 1024)
-  prev_gc = itb_set_gc_percent(20_c_int)
+  prev_limit = itb_set_memory_limit(int(2, c_int64_t) * 1024 * 1024 * 1024)
+  prev_gc = itb_set_gc_percent(85_c_int)
 
   call bench_build_opts(opts)
   call itb_pipeline_init(pipe, &

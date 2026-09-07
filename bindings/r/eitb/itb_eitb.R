@@ -114,8 +114,8 @@ main <- function(argv) {
   tryCatch(
     {
       # Go-runtime pacing caps applied before any cipher work.
-      set_memory_limit(512 * 1024 * 1024)
-      set_gc_percent(20)
+      set_memory_limit(2 * 1024 * 1024 * 1024)
+      set_gc_percent(85)
       switch(argv[1],
         version = cmd_version(),
         profiles = cmd_profiles(),

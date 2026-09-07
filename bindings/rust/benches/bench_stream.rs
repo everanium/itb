@@ -59,8 +59,8 @@ fn profile_name() -> String {
 }
 
 fn bench_stream(c: &mut Criterion) {
-    let _ = set_memory_limit(512 << 20);
-    let _ = set_gc_percent(20);
+    let _ = set_memory_limit(2 << 30);
+    let _ = set_gc_percent(85);
     let opts = build_opts();
     let pipe = Pipeline::init(&profile_name(), &opts).unwrap();
     let mut group = c.benchmark_group("encrypt_stream_pump");
