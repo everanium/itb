@@ -26,14 +26,13 @@ import (
 // shipped factory shape used by every AES-ITB-128 seed-plumbing path:
 // the single arm is [itb.MakeAESITB128Hash]'s aesITB128GenericHash
 // (nonce-free 16-byte-block sponge with per-block RC rotation) and
-// the batched arm routes the four ITB per-pixel shapes
-// (13 / 20 / 36 / 68 bytes, all lanes equal) through the
-// internal/aesitbasm 4-lane chain-absorb kernel (auto-selected AES
-// tier or the package's scalar reference), falling back to four
-// single-arm calls for any other lane-length configuration.
-// Whole-cascade evaluation via [Spec.FusedChainHash128] is wired
-// separately through the [itb.Seed128] fused hooks — see
-// [AttachFused128].
+// the batched arm applies the pure-Go 4-lane scalar cascade
+// reference from internal/aesitbasm at the four ITB per-pixel
+// shapes (13 / 20 / 36 / 68 bytes, all lanes equal), falling back
+// to four single-arm calls for any other lane-length configuration.
+// The shipping-runtime dispatch attaches the fused-cascade hooks
+// via [AttachFused128], which intercept before this batched arm
+// is reached — see [Spec.FusedChainHash128].
 //
 // This is a thin wrapper over the in-package itb.MakeAESITB128Hash
 // helper; it exists so that AES-ITB fits the same name-keyed

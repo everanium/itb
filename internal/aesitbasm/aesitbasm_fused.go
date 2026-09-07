@@ -21,8 +21,8 @@ import (
 // x4 kernels run four lanes with distinct data over one shared component
 // slice — the shape Seed128.BatchChainHash128 evaluates; x1 kernels serve
 // the single-lane ChainHash128 path. components must hold at least two
-// words and an even count (Seed128 guarantees both); shapes are the same
-// 13 / 20 / 36 / 68 the per-round kernels cover.
+// words and an even count (Seed128 guarantees both); shapes are the four
+// AES-ITB-128 per-pixel widths 13 / 20 / 36 / 68 bytes.
 
 // ScalarFusedChain is the pure-Go reference cascade over ChainAbsorb.
 func ScalarFusedChain(key *[16]byte, components []uint64, data []byte) (uint64, uint64) {

@@ -9,25 +9,20 @@ import (
 	"github.com/everanium/itb/triple"
 )
 
-// tierFlags is a snapshot of the aesitbasm dispatch flags — the per-round
-// family and the fused-cascade family.
+// tierFlags is a snapshot of the aesitbasm dispatch flags — the
+// fused-cascade family.
 type tierFlags struct {
-	zmm, ymm, vex, aesni, arm      bool
 	fzmm, fymm, fvex, faesni, farm bool
 }
 
 func readTierFlags() tierFlags {
 	return tierFlags{
-		aesitbasm.HasVAESAVX512, aesitbasm.HasVAESAVX2NoAVX512,
-		aesitbasm.HasAVXAESNIBatched, aesitbasm.HasAESNIBatched, aesitbasm.HasARMAESBatched,
 		aesitbasm.FusedHasVAESAVX512, aesitbasm.FusedHasVAESAVX2,
 		aesitbasm.FusedHasAVXAESNI, aesitbasm.FusedHasAESNI, aesitbasm.FusedHasARMAES,
 	}
 }
 
 func (f tierFlags) apply() {
-	aesitbasm.HasVAESAVX512, aesitbasm.HasVAESAVX2NoAVX512 = f.zmm, f.ymm
-	aesitbasm.HasAVXAESNIBatched, aesitbasm.HasAESNIBatched, aesitbasm.HasARMAESBatched = f.vex, f.aesni, f.arm
 	aesitbasm.FusedHasVAESAVX512, aesitbasm.FusedHasVAESAVX2 = f.fzmm, f.fymm
 	aesitbasm.FusedHasAVXAESNI, aesitbasm.FusedHasAESNI, aesitbasm.FusedHasARMAES = f.fvex, f.faesni, f.farm
 }

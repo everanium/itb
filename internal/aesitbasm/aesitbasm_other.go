@@ -5,12 +5,6 @@ package aesitbasm
 // No assembly tier applies on this build; every dispatcher routes to the
 // scalar reference. The flags exist so callers compile uniformly.
 var (
-	HasVAESAVX512       = false
-	HasVAESAVX2NoAVX512 = false
-	HasAVXAESNIBatched  = false
-	HasAESNIBatched     = false
-	HasARMAESBatched    = false
-
 	// Batch-16 tier flags — always false without an assembly tier.
 	HasVAESAVX512X16 = false
 	HasVAESAVX2X16   = false

@@ -8,8 +8,8 @@ var (
 	// FusedHasARMAES selects the NEON fused kernels on arm64 hosts that
 	// carry the AES crypto extension. Runtime-gated on
 	// aes.CPU.HasARMCrypto so the pure-Go scalar cascade runs on cores
-	// without the extension. The per-round NEON kernels remain on the
-	// same gate.
+	// without the extension. The batch-16 fill kernel is gated
+	// separately via HasARMAESX16.
 	FusedHasARMAES = aes.CPU.HasARMCrypto
 
 	FusedHasVAESAVX512 = false

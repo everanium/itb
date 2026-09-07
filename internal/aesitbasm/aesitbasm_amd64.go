@@ -4,71 +4,33 @@ package aesitbasm
 
 import aes "github.com/jedisct1/go-aes"
 
-// Tier flags. At most one of the four is true; all four are false on a
-// host without AES-NI (scalar path). The flags are package variables so
-// the forcetier init and the in-package dispatch tests can override the
-// auto-selection.
+// Batch-16 tier flags: auto-select the widest VAES tier the host offers.
+// The flags are package variables so the forcetier init and the
+// in-package dispatch tests can override the auto-selection. Sixteen
+// lanes amortise the per-call cost across the register width: VAES ZMM
+// measured 2.1–2.6× and VAES YMM 1.5–1.9× the XMM throughput on Rocket
+// Lake / Ice Lake / Sapphire Rapids / Zen 4 (BenchmarkTierX16; the kernel
+// takes its arguments by value and synthesises the fill blocks
+// in-register, so no store sits ahead of its loads). Only one flag is
+// true; the cascade keeps the "one consistent set" invariant the
+// forcetier init relies on.
 //
-// Auto-selection takes the XMM tier on every AES-NI host. The per-round
-// kernels run 3 to 7 AES rounds per lane and are latency bound; the
-// wide tiers must first gather four lanes into one register (three
-// dependent inserts ahead of the first round), and the measured
-// ranking depends on the call site. Under the nonce-buf pattern
-// (BenchmarkTierPix: 4-byte pixel-index store into every lane buffer
-// ahead of the call, shapes 20 / 36 / 68) the ZMM kernels lead XMM by
-// 6–8 % on Rocket Lake and Sapphire Rapids and match it on Zen 4; under
-// the Interlocked Barrier x4 fill (BenchmarkLockFillX4, the 13-byte
-// shape through the shipped fillRanksX4 closure) ZMM trails XMM by 16 %
-// on Sapphire Rapids and 19 % on Zen 4, YMM by 7 % / 21 % there, while
-// both lead by ~10 % on Rocket Lake. With the fused cascade carrying the
-// nonce-buf shapes in production and the batch-16 kernel carrying the
-// interlock fill, the per-round kernels are reached as fallbacks, and
-// the XMM tier is the measured floor on every host. Both wider tiers
-// stay built and are reachable through ITB_FORCE_HASH_TIER=avx512 /
-// vaesavx2.
+// The per-pixel shapes are carried by the fused cascade family
+// (aesitbasm_fused_amd64.go); the four-lane dispatchers below are the
+// scalar reference over ChainAbsorb.
 var (
-	// HasVAESAVX512 selects the ZMM kernels: all four lanes in one
-	// 512-bit register, one VAESENC per round. Needs VAES + AVX-512.
-	// Not auto-selected (see above).
-	HasVAESAVX512 = false
-
-	// HasVAESAVX2NoAVX512 selects the YMM kernels: two lanes per
-	// 256-bit register, two VAESENC per round. Needs VAES + AVX2.
-	// Not auto-selected (see above).
-	HasVAESAVX2NoAVX512 = false
-
-	// HasAVXAESNIBatched selects the VEX-encoded XMM kernels
-	// (VAESENC xmm, xmm, xmm — the AVX form of AES-NI, not VAES): one
-	// lane per register, four independent chains. Needs AES-NI + AVX
-	// (AVX2 is used as the detection superset). Preferred over the
-	// legacy-SSE encoding on AVX hosts so no SSE/AVX state transition
-	// sits between the kernel and the surrounding VEX-encoded code.
-	HasAVXAESNIBatched = aes.CPU.HasAESNI && aes.CPU.HasAVX2
-
-	// HasAESNIBatched selects the legacy-SSE-encoded XMM kernels
-	// (AESENC xmm, xmm) on AES-NI hosts without AVX.
-	HasAESNIBatched = aes.CPU.HasAESNI && !aes.CPU.HasAVX2
-
-	// Batch-16 tier flags: auto-select the widest VAES tier the host
-	// offers. Sixteen lanes amortise the per-call cost across the register
-	// width, so the batch-16 kernels scale where the four-lane per-round
-	// kernels above do not: VAES ZMM measured 2.1–2.6× and VAES YMM
-	// 1.5–1.9× the XMM throughput on Rocket Lake / Ice Lake / Sapphire
-	// Rapids / Zen 4 (BenchmarkTierX16; the kernel takes its arguments
-	// by value and synthesises the fill blocks in-register, so no store
-	// sits ahead of its loads). Only one flag is true; the cascade keeps
-	// the "one consistent set" invariant the forcetier init relies on.
 	HasVAESAVX512X16 = aes.CPU.HasVAES && aes.CPU.HasAVX512
 	HasVAESAVX2X16   = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !HasVAESAVX512X16
 
-	// HasAVXAESNIX16 / HasAESNIX16 pick up on hosts without VAES, mirroring
-	// the x4 ranking there.
-	HasAVXAESNIX16 = HasAVXAESNIBatched && !HasVAESAVX512X16 && !HasVAESAVX2X16
-	HasAESNIX16    = HasAESNIBatched
+	// HasAVXAESNIX16 selects the VEX-encoded XMM batch-16 kernel on
+	// AES-NI + AVX hosts without VAES (AVX2 is used as the detection
+	// superset); HasAESNIX16 selects the legacy-SSE-encoded XMM batch-16
+	// kernel on AES-NI hosts without AVX.
+	HasAVXAESNIX16 = aes.CPU.HasAESNI && aes.CPU.HasAVX2 && !HasVAESAVX512X16 && !HasVAESAVX2X16
+	HasAESNIX16    = aes.CPU.HasAESNI && !aes.CPU.HasAVX2
 
-	// HasARMAESBatched / HasARMAESX16 are always false on amd64 builds.
-	HasARMAESBatched = false
-	HasARMAESX16     = false
+	// HasARMAESX16 is always false on amd64 builds.
+	HasARMAESX16 = false
 )
 
 // The batch-16 flags above select the arm of FusedChain13x16
@@ -76,120 +38,20 @@ var (
 
 // AESITB128ChainAbsorb13x4 evaluates the 13-byte shape on four lanes.
 func AESITB128ChainAbsorb13x4(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	switch {
-	case HasVAESAVX512:
-		aesITB128ChainAbsorb13x4Avx512Asm(key, seeds, dataPtrs, out)
-	case HasVAESAVX2NoAVX512:
-		aesITB128ChainAbsorb13x4VaesAvx2Asm(key, seeds, dataPtrs, out)
-	case HasAVXAESNIBatched:
-		aesITB128ChainAbsorb13x4VexAsm(key, seeds, dataPtrs, out)
-	case HasAESNIBatched:
-		aesITB128ChainAbsorb13x4AesNiAsm(key, seeds, dataPtrs, out)
-	default:
-		scalarBatch(key, seeds, dataPtrs, 13, out)
-	}
+	scalarBatch(key, seeds, dataPtrs, 13, out)
 }
 
 // AESITB128ChainAbsorb20x4 evaluates the 20-byte shape on four lanes.
 func AESITB128ChainAbsorb20x4(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	switch {
-	case HasVAESAVX512:
-		aesITB128ChainAbsorb20x4Avx512Asm(key, seeds, dataPtrs, out)
-	case HasVAESAVX2NoAVX512:
-		aesITB128ChainAbsorb20x4VaesAvx2Asm(key, seeds, dataPtrs, out)
-	case HasAVXAESNIBatched:
-		aesITB128ChainAbsorb20x4VexAsm(key, seeds, dataPtrs, out)
-	case HasAESNIBatched:
-		aesITB128ChainAbsorb20x4AesNiAsm(key, seeds, dataPtrs, out)
-	default:
-		scalarBatch(key, seeds, dataPtrs, 20, out)
-	}
+	scalarBatch(key, seeds, dataPtrs, 20, out)
 }
 
 // AESITB128ChainAbsorb36x4 evaluates the 36-byte shape on four lanes.
 func AESITB128ChainAbsorb36x4(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	switch {
-	case HasVAESAVX512:
-		aesITB128ChainAbsorb36x4Avx512Asm(key, seeds, dataPtrs, out)
-	case HasVAESAVX2NoAVX512:
-		aesITB128ChainAbsorb36x4VaesAvx2Asm(key, seeds, dataPtrs, out)
-	case HasAVXAESNIBatched:
-		aesITB128ChainAbsorb36x4VexAsm(key, seeds, dataPtrs, out)
-	case HasAESNIBatched:
-		aesITB128ChainAbsorb36x4AesNiAsm(key, seeds, dataPtrs, out)
-	default:
-		scalarBatch(key, seeds, dataPtrs, 36, out)
-	}
+	scalarBatch(key, seeds, dataPtrs, 36, out)
 }
 
 // AESITB128ChainAbsorb68x4 evaluates the 68-byte shape on four lanes.
 func AESITB128ChainAbsorb68x4(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	switch {
-	case HasVAESAVX512:
-		aesITB128ChainAbsorb68x4Avx512Asm(key, seeds, dataPtrs, out)
-	case HasVAESAVX2NoAVX512:
-		aesITB128ChainAbsorb68x4VaesAvx2Asm(key, seeds, dataPtrs, out)
-	case HasAVXAESNIBatched:
-		aesITB128ChainAbsorb68x4VexAsm(key, seeds, dataPtrs, out)
-	case HasAESNIBatched:
-		aesITB128ChainAbsorb68x4AesNiAsm(key, seeds, dataPtrs, out)
-	default:
-		scalarBatch(key, seeds, dataPtrs, 68, out)
-	}
+	scalarBatch(key, seeds, dataPtrs, 68, out)
 }
-
-// Legacy-SSE AES-NI XMM kernels (aesitb_chain128_*_aesni_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x4AesNiAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb20x4AesNiAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb36x4AesNiAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb68x4AesNiAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-// VEX-encoded AES-NI XMM kernels (aesitb_chain128_*_vex_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x4VexAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb20x4VexAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb36x4VexAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb68x4VexAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-// VAES YMM kernels, two lanes per register (aesitb_chain128_*_vaesavx2_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x4VaesAvx2Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb20x4VaesAvx2Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb36x4VaesAvx2Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb68x4VaesAvx2Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-// VAES ZMM kernels, four lanes per register (aesitb_chain128_*_avx512_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x4Avx512Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb20x4Avx512Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb36x4Avx512Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-//go:noescape
-func aesITB128ChainAbsorb68x4Avx512Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)

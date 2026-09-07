@@ -10,8 +10,8 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// TestForceHashTierApplied asserts that the per-round, fused and
-// batch-16 dispatch flags carry the state ITB_FORCE_HASH_TIER names,
+// TestForceHashTierApplied asserts that the fused and batch-16
+// dispatch flags carry the state ITB_FORCE_HASH_TIER names,
 // for every recognised token, on silicon that can execute the forced
 // arm. Skips when the variable is unset (auto-dispatch) or when the host
 // cannot honour the token, so it is a no-op in an ordinary test run and
@@ -24,10 +24,6 @@ func TestForceHashTierApplied(t *testing.T) {
 	x16Owned := forcetier.InterlockPRFFillTier() == ""
 	want := func(zmm, ymm, vex, aesni bool) {
 		t.Helper()
-		if HasVAESAVX512 != zmm || HasVAESAVX2NoAVX512 != ymm || HasAVXAESNIBatched != vex || HasAESNIBatched != aesni {
-			t.Fatalf("%s: per-round flags zmm=%v ymm=%v vex=%v aesni=%v, want %v/%v/%v/%v",
-				tier, HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, zmm, ymm, vex, aesni)
-		}
 		if FusedHasVAESAVX512 != zmm || FusedHasVAESAVX2 != ymm || FusedHasAVXAESNI != vex || FusedHasAESNI != aesni {
 			t.Fatalf("%s: fused flags zmm=%v ymm=%v vex=%v aesni=%v, want %v/%v/%v/%v",
 				tier, FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI, zmm, ymm, vex, aesni)

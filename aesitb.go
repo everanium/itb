@@ -37,8 +37,6 @@ import (
 	"encoding/binary"
 
 	aes "github.com/jedisct1/go-aes"
-
-	"github.com/everanium/itb/internal/aesitbasm"
 )
 
 // aesITBRoundConstants are eight pairwise-distinct Nothing-Up-My-Sleeve
@@ -136,31 +134,13 @@ func MakeAESITB128Hash(key ...[16]byte) (HashFunc128, BatchHashFunc128, [16]byte
 // bind a specific key without the CSPRNG draw MakeAESITB128Hash performs.
 func makeAESITB128HashWithKey(fixedKey [16]byte) (HashFunc128, BatchHashFunc128) {
 	h := aesITB128GenericHash(fixedKey)
-	// The batched arm routes the four ITB per-pixel shapes (13 / 20 / 36 /
-	// 68 bytes, all lanes equal) through the internal/aesitbasm 4-lane
-	// chain-absorb dispatcher — the auto-selected AES tier, or the
-	// package's scalar reference where no tier applies — and any other
-	// lane-length configuration through four single-arm calls. Both
-	// paths are bit-exact with h.
-	key := fixedKey
+	// The batched arm evaluates the four lanes through four single-arm
+	// calls of h. Every shipped constructor path attaches the fused
+	// cascade hook (Seed128.BatchFusedChain), which the batched
+	// ChainHash128 entry points consult first, so this closure is the
+	// fallback for seeds built without that hook.
 	bh := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		var out [4][2]uint64
-		n := len(data[0])
-		if (n == 13 || n == 20 || n == 36 || n == 68) &&
-			len(data[1]) == n && len(data[2]) == n && len(data[3]) == n {
-			dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
-			switch n {
-			case 13:
-				aesitbasm.AESITB128ChainAbsorb13x4(&key, &seeds, &dataPtrs, &out)
-			case 20:
-				aesitbasm.AESITB128ChainAbsorb20x4(&key, &seeds, &dataPtrs, &out)
-			case 36:
-				aesitbasm.AESITB128ChainAbsorb36x4(&key, &seeds, &dataPtrs, &out)
-			case 68:
-				aesitbasm.AESITB128ChainAbsorb68x4(&key, &seeds, &dataPtrs, &out)
-			}
-			return out
-		}
 		for i := 0; i < 4; i++ {
 			lo, hi := h(data[i], seeds[i][0], seeds[i][1])
 			out[i] = [2]uint64{lo, hi}

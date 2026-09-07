@@ -1,14 +1,9 @@
 // Package aesitbasm holds the assembly kernels of the AES-ITB-128
-// primitive for the parent itb package, in three families over the four
+// primitive for the parent itb package, in two families over the four
 // fixed per-lane input lengths — 13 bytes (the Interlocked Barrier fill
 // shape) and 20 / 36 / 68 bytes (the ITB 128 / 256 / 512-bit nonce buf
 // shapes):
 //
-//   - per-round chain-absorb kernels, four lanes per call
-//     ([AESITB128ChainAbsorb13x4] and siblings; aesitb_chain128_*.s,
-//     emitted by scripts/kernels/aesitb128/gen_kernels.py): one evaluation
-//     of the sponge below per lane, the arm of the batched hash closure
-//     the parent package builds around the primitive;
 //   - fused ChainHash cascade kernels, one or four lanes per call
 //     ([FusedChain13x1] / [FusedChain13x4] and siblings;
 //     aesitb_fusedchain128_*x1_*.s / *x4_*.s, emitted by
@@ -23,6 +18,10 @@
 //     ([FusedChain13x16]; aesitb_fusedchain128_13x16_*.s, same generator):
 //     sixteen lanes at the 13-byte shape with the fill blocks synthesised
 //     in-register from a group index base.
+//
+// The four-lane dispatchers [AESITB128ChainAbsorb13x4] and siblings
+// evaluate one round of the sponge per lane through the pure-Go
+// reference on every build.
 //
 // Each family runs the same sponge. Per lane, with key = the primitive's
 // 16-byte fixed key and (seed0, seed1) the ChainHash128 seed pair of that
@@ -42,7 +41,7 @@
 // package builds around the same key (itb.MakeAESITB128Hash); the
 // reference implementations in this package ([ChainAbsorb] for one
 // round, [ScalarFusedChain] for the cascade) are pure Go over the
-// software AES round, and every assembly tier of every family is pinned
+// software AES round, and every assembly tier of both families is pinned
 // to them by the in-package parity tests. Kernels read exactly the
 // per-lane input length — the tail block is assembled from 4-byte
 // (20 / 36 / 68) or 8+4+1-byte (13) loads — because callers hand over

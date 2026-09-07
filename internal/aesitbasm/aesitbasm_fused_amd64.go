@@ -4,10 +4,10 @@ package aesitbasm
 
 import aes "github.com/jedisct1/go-aes"
 
-// Fused-cascade tier flags. The fused kernels amortise lane gather and
-// staging over every cascade round, so their tier ranking is measured
-// separately from the per-round kernels; the forcetier init sets both
-// flag families as one consistent set. At most one flag is true.
+// Fused-cascade tier flags. The fused kernels amortise lane gather
+// and staging over every cascade round; the forcetier init keeps the
+// fused-cascade and batch-16 fill flag families mutually consistent.
+// At most one flag in this family is true.
 //
 // Auto-selection takes the widest VAES tier the host offers: ZMM, then
 // YMM, then the VEX-encoded XMM kernels, then legacy-SSE. Under the

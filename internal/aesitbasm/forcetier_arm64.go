@@ -18,16 +18,15 @@ func init() {
 }
 
 // applyHashTier applies ITB_FORCE_HASH_TIER on arm64: only "scalar" is
-// meaningful (it disables the NEON kernels of every family — per-round
-// x4, fused cascade, and batch-16 — so the pure-Go reference runs end
-// to end); every amd64 tier token keeps auto-dispatch with a stderr
-// note. ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can
-// re-arm the batch-16 NEON kernel on its own.
+// meaningful (it disables the NEON kernels of every family — fused
+// cascade and batch-16 — so the pure-Go reference runs end to end);
+// every amd64 tier token keeps auto-dispatch with a stderr note.
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can re-arm the
+// batch-16 NEON kernel on its own.
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
 	case "scalar":
-		HasARMAESBatched = false
 		FusedHasARMAES = false
 		HasARMAESX16 = false
 	default:

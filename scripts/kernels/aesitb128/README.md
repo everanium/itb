@@ -1,38 +1,22 @@
 # AES-ITB-128 kernel generators
 
-Two deterministic generators emit every AES-ITB-128 assembly kernel under
-`internal/aesitbasm/`. Each takes no input beyond its own source, reads
+One deterministic generator emits every AES-ITB-128 assembly kernel under
+`internal/aesitbasm/`. It takes no input beyond its own source, reads
 no numeric tables of its own (round constants, the PKCS#7 pad vectors, the
 batch-16 absorb block and lane-offset table are read from the Go side —
 `·RC`, `·pad4Tail`, `·pad13Tail`, `·absorb13Block`, `·laneIdxZ`), and must
-reproduce the committed `.s` files byte for byte. Every generator accepts
+reproduce the committed `.s` files byte for byte. The generator accepts
 `--check`, which regenerates in memory, compares against the committed
 files without writing, and exits non-zero on any drift.
 
 ```
-python3 scripts/kernels/aesitb128/gen_kernels.py --check
 python3 scripts/kernels/aesitb128/gen_fused_kernels.py --check
 ```
 
-Run a generator without `--check` to (re)write its files; the output
+Run the generator without `--check` to (re)write its files; the output
 directory is resolved relative to the script (`../../../internal/aesitbasm/`).
-After any generator change, run the `--check` form of both and confirm
+After any generator change, run the `--check` form and confirm
 `git diff --stat internal/aesitbasm/` shows only the intended kernels.
-
-## Per-round chain-absorb kernels — `gen_kernels.py`
-
-The 4-lane chain-absorb kernels, one `.s` file per (shape, tier):
-
-- shapes: 13 / 20 / 36 / 68 bytes per lane (Interlocked Barrier PRF fill
-  and the 128 / 256 / 512-bit nonce buf shapes)
-- amd64 tiers: `aesni` (legacy-SSE XMM), `vex` (VEX-encoded XMM),
-  `vaesavx2` (VAES YMM, two lanes per register), `avx512` (VAES ZMM, four
-  lanes per register)
-- arm64 tier: `neon` (AESE + AESMC, round constant folded into the next
-  AESE key operand)
-
-Twenty files in total: `aesitb_chain128_<shape>_<tier>_amd64.s` and
-`aesitb_chain128_<shape>_neon_arm64.s`.
 
 ## Fused ChainHash cascade kernels — `gen_fused_kernels.py`
 
@@ -71,9 +55,6 @@ flight immediately ahead of the call, so the load forwards from the store
 buffer instead of waiting for the store to commit — a failed forward
 serialises consecutive kernel calls and costs more than the kernel itself:
 
-- the seeds array of the per-round kernels arrives as a by-value copy
-  (four 16-byte stores) and is read as four 16-byte loads on every tier,
-  assembled into the wide registers with `VINSERTI128` / `VINSERTI64X2`;
 - block 0 of the multi-block shapes follows the caller's 4-byte
   pixel-index store at offset 0 and is read as two 4-byte inserts plus an
   8-byte insert, never as one 16-byte load;

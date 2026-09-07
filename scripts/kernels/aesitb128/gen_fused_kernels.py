@@ -4,7 +4,7 @@
 One file per (shape, lanes, tier). Shapes 13/20/36/68; lanes x4 (four data
 lanes over one shared component slice) and x1 (single lane); amd64 tiers
 aesni / vex / vaesavx2 / avx512 for x4, aesni / vex for x1; arm64 tier neon
-for both. Companion of gen_kernels.py (per-round chain-absorb kernels).
+for both.
 
 The avx512 tier additionally carries an x8 variant at the three nonce-buf
 shapes 20/36/68 (aesitb_fusedchain128_<shape>x8_avx512_amd64.s): eight

@@ -14,7 +14,7 @@ import (
 // defeats store-to-load forwarding and serialises consecutive calls,
 // which measures the harness rather than the kernel. The kernel-level
 // figure this benchmark reports is therefore free of that artefact; the
-// production call patterns are measured by the *Pix / *Fill benchmarks.
+// production call patterns are measured by the *Pix benchmarks.
 func benchKernel(b *testing.B, n int, kernel kernelFn) {
 	key := ascendingKey()
 	var ring [8][4][2]uint64

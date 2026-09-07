@@ -5,7 +5,7 @@
 # decrypt throughput of the Triple 512-bit AES-ITB-128 cell for every
 # combination the host silicon can execute:
 #
-#   rows    ITB_FORCE_HASH_TIER (per-round x4 + fused cascade family):
+#   rows    ITB_FORCE_HASH_TIER (fused cascade family):
 #           natural (variable unset), aesni, vaesavx2, avx512, avx512x4,
 #           scalar — avx512x4 is ITB_FORCE_HASH_TIER=avx512 with
 #           ITB_FORCE_CHAINHASH_X4=1, the ZMM tier with the eight-lane

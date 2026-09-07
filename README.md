@@ -125,13 +125,13 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Interlocked Barrier — AVX-512F rank-unrank | AVX-512F (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ, VPTERNLOGQ / VPSLLQ / VPSRLQ constant synthesis on ZMM) | `interlock.HasAVX512RankMask` |
 | Interlocked Barrier — AVX-512F 16-lane rank-unrank (the 8-lane kernel run as two interleaved batches for the batch-16 PRF fill; two 8-lane passes via `ITB_FORCE_INTERLOCK_TIER=avx512x8`) | AVX-512F (VPERMI2Q row select, VPTESTMQ predicate; scalar PDEPQ remap tail) | `interlock.HasAVX512RankMask` + `interlock.UseUnrank16` |
 | Interlocked Barrier — AVX2 rank-unrank | AVX2 + BMI2 (VPERMD, VPCMPEQQ, VPCMPGTQ predicated ops on YMM; scalar PDEPQ remap tail) | `interlock.HasAVX2RankMask` |
-| AES-ITB-128 — VAES ZMM 4-lane chain-absorb (built, force-only via `ITB_FORCE_HASH_TIER=avx512`) + fused chain (auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `aesitbasm.HasVAESAVX512` / `aesitbasm.FusedHasVAESAVX512` |
+| AES-ITB-128 — VAES ZMM 4-lane fused chain (auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `aesitbasm.FusedHasVAESAVX512` |
 | AES-ITB-128 — VAES ZMM 8-lane fused chain (two four-lane state groups per call with interleaved cascade rounds; auto-selected on VAES + AVX-512F hosts for the 128 / 256 / 512-bit nonce-buf shapes and driven by the pixel pipeline's eight-pixel stride; the four-lane ZMM kernels and four-pixel stride via `ITB_FORCE_CHAINHASH_X4=1`) | VAES + AVX-512F | `aesitbasm.FusedHasVAESAVX512X8` (with `aesitbasm.FusedHasVAESAVX512`) |
-| AES-ITB-128 — VAES YMM 2-lane-per-register chain-absorb (built, force-only via `ITB_FORCE_HASH_TIER=vaesavx2`) + fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `aesitbasm.HasVAESAVX2NoAVX512` / `aesitbasm.FusedHasVAESAVX2` |
-| AES-ITB-128 — VEX AES-NI XMM 4-lane chain-absorb (auto-selected on AVX hosts) + fused chain (auto-selected on AES-NI + AVX hosts without VAES) | AES-NI + AVX2 | `aesitbasm.HasAVXAESNIBatched` / `aesitbasm.FusedHasAVXAESNI` |
-| AES-ITB-128 — legacy-SSE AES-NI XMM 4-lane chain-absorb + fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aesitbasm.HasAESNIBatched` / `aesitbasm.FusedHasAESNI` |
+| AES-ITB-128 — VAES YMM 2-lane-per-register fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `aesitbasm.FusedHasVAESAVX2` |
+| AES-ITB-128 — VEX AES-NI XMM 4-lane fused chain (auto-selected on AES-NI + AVX hosts without VAES) | AES-NI + AVX2 | `aesitbasm.FusedHasAVXAESNI` |
+| AES-ITB-128 — legacy-SSE AES-NI XMM 4-lane fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aesitbasm.FusedHasAESNI` |
 | AES-ITB-128 — batch-16 Interlocked Barrier PRF fill cascade (VAES ZMM auto-selected on VAES + AVX-512F hosts, VAES YMM on VAES + AVX2 hosts without AVX-512F, VEX / legacy-SSE XMM on the remaining AES-NI hosts; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `aesitbasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAVXAESNIX16` / `HasAESNIX16` |
-| AES-ITB-128 — NEON 4-lane chain-absorb + fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `aesitbasm.HasARMAESBatched` / `aesitbasm.FusedHasARMAES` / `aesitbasm.HasARMAESX16` |
+| AES-ITB-128 — NEON 4-lane fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `aesitbasm.FusedHasARMAES` / `aesitbasm.HasARMAESX16` |
 | Areion-SoEM — top-tier batched permute + fused chain | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
 | Areion-SoEM — mid-tier YMM 2-lane batched chain-absorb (`Areion*ChainAbsorb*x4VaesAvx2`) | VAES + AVX2 (no AVX-512F) | `areionasm.HasVAESAVX2Batched` |
@@ -149,7 +149,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every chain-absorb family additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that batches the Interlocked Barrier per-group PRF fill derivation — four sequential group indices per call — under the family's capability flag for that tier.
+Every chain-absorb family other than AES-ITB-128 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that batches the Interlocked Barrier per-group PRF fill derivation — four sequential group indices per call — under the family's capability flag for that tier; AES-ITB-128 fills the Interlocked Barrier through its batch-16 fused cascade kernel instead.
 
 Cross-referenced to shipping x86 microarchitectures:
 
