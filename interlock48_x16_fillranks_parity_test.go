@@ -280,8 +280,8 @@ func TestFillRanksSuperSplitParity(t *testing.T) {
 						seq := tc.bp
 						seq.fillRanksSuper = nil
 						for i, framed := range inputs {
-							x0, x1, x2 := splitTriple48LockedBatch(framed, tc.bp)
-							s0, s1, s2 := splitTriple48LockedBatch(framed, seq)
+							x0, x1, x2 := splitTriple48LockedBatch(framed, tc.bp, nil)
+							s0, s1, s2 := splitTriple48LockedBatch(framed, seq, nil)
 							if !bytes.Equal(x0, s0) || !bytes.Equal(x1, s1) || !bytes.Equal(x2, s2) {
 								t.Fatalf("%s size %d: batch-16 lanes diverge from sequential lanes", tc.label, x16SplitSizes[i])
 							}
@@ -327,8 +327,8 @@ func TestFillRanksSuperCrossRoundTrip(t *testing.T) {
 								{"disarmed→armed", seq, tc.bp},
 								{"armed→armed", tc.bp, tc.bp},
 							} {
-								p0, p1, p2 := splitTriple48LockedBatch(framed, dir.enc)
-								got := interleaveTriple48LockedBatch(p0, p1, p2, dir.dec)
+								p0, p1, p2 := splitTriple48LockedBatch(framed, dir.enc, nil)
+								got := interleaveTriple48LockedBatch(p0, p1, p2, dir.dec, nil)
 								if len(got) < len(framed) || !bytes.Equal(got[:len(framed)], framed) {
 									t.Fatalf("%s size %d %s: round-trip mismatch", tc.label, sz, dir.label)
 								}

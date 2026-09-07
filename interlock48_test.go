@@ -399,8 +399,8 @@ func perChunkRoundTrip48(framed []byte, prf lockPRF48) []byte {
 }
 
 func batchRoundTrip48(framed []byte, bp lockBatchPRF48) []byte {
-	p0, p1, p2 := splitTriple48LockedBatch(framed, bp)
-	return interleaveTriple48LockedBatch(p0, p1, p2, bp)
+	p0, p1, p2 := splitTriple48LockedBatch(framed, bp, nil)
+	return interleaveTriple48LockedBatch(p0, p1, p2, bp, nil)
 }
 
 func TestSplitInterleaveTriple48LockedRoundTrip(t *testing.T) {
@@ -497,7 +497,7 @@ func TestBatchVsPerChunkFactor1(t *testing.T) {
 	for _, sz := range interlock48Sizes {
 		framed := interlock48RandomBytes(sz)
 		pcP0, pcP1, pcP2 := splitTriple48Locked(framed, perChunk)
-		btP0, btP1, btP2 := splitTriple48LockedBatch(framed, batched)
+		btP0, btP1, btP2 := splitTriple48LockedBatch(framed, batched, nil)
 		if !bytes.Equal(pcP0, btP0) || !bytes.Equal(pcP1, btP1) || !bytes.Equal(pcP2, btP2) {
 			t.Fatalf("size %d: factor=1 batch vs per-chunk lane bytes diverge", sz)
 		}

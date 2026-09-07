@@ -174,13 +174,13 @@ func TestSuperblockVsPerGroupParity(t *testing.T) {
 					framed := superTestFixedData(sz)
 
 					refP0, refP1, refP2 := refSplitPerGroup48(framed, wc.bp)
-					gotP0, gotP1, gotP2 := splitTriple48LockedBatch(framed, wc.bp)
+					gotP0, gotP1, gotP2 := splitTriple48LockedBatch(framed, wc.bp, nil)
 					if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
 						t.Fatalf("M=%d size=%d: superblock split lane bytes diverge from per-group reference", m, sz)
 					}
 
 					refOut := refInterleavePerGroup48(refP0, refP1, refP2, wc.bp)
-					gotOut := interleaveTriple48LockedBatch(gotP0, gotP1, gotP2, wc.bp)
+					gotOut := interleaveTriple48LockedBatch(gotP0, gotP1, gotP2, wc.bp, nil)
 					if !bytes.Equal(refOut, gotOut) {
 						t.Fatalf("M=%d size=%d: superblock interleave diverges from per-group reference", m, sz)
 					}
@@ -219,7 +219,7 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 		t.Run(wc.label, func(t *testing.T) {
 			for sz, want := range golden[wc.label] {
 				framed := superTestFixedData(sz)
-				p0, p1, p2 := splitTriple48LockedBatch(framed, wc.bp)
+				p0, p1, p2 := splitTriple48LockedBatch(framed, wc.bp, nil)
 				h := sha256.New()
 				h.Write(p0)
 				h.Write(p1)
@@ -228,7 +228,7 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 				if got != want {
 					t.Fatalf("size=%d: lane digest %s, want %s", sz, got, want)
 				}
-				out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp)
+				out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp, nil)
 				if !bytes.Equal(out[:sz], framed) {
 					t.Fatalf("size=%d: golden lanes do not round-trip", sz)
 				}

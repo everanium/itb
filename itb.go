@@ -99,6 +99,26 @@ func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
 	return numWorkers
 }
 
+// configuredWorkerCount is the cfg-consulting worker cap shared by
+// pipeline stages that do not carry the dataPixels input
+// [effectiveWorkersCfg] needs (the Interlocked Barrier overlay batch
+// encode / decode loops of interlock48.go, whose group count is the
+// worker-fan-out ceiling rather than a pixel count). Returns
+// cfg.MaxWorkers (clamped at 256) when cfg is non-nil and the field
+// carries a positive value; otherwise falls back to runtime.NumCPU.
+// A nil cfg or a zero MaxWorkers resolves to runtime.NumCPU, matching
+// the sentinel semantics documented on [Config.MaxWorkers].
+func configuredWorkerCount(cfg *Config) int {
+	if cfg != nil && cfg.MaxWorkers > 0 {
+		n := cfg.MaxWorkers
+		if n > 256 {
+			n = 256
+		}
+		return n
+	}
+	return runtime.NumCPU()
+}
+
 // headerSizeCfg returns the container header size for the given cfg:
 // main nonce + interlock nonce + width(2) + height(2). Both nonces are
 // symmetric in width. Consults [currentNonceSizeCfg] so a non-nil cfg

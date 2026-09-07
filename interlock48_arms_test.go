@@ -85,7 +85,7 @@ func TestInterlock48ArmsAgree(t *testing.T) {
 			func() {
 				withInterlockArm(t, interlockArms()[3])
 				for _, sz := range sizes {
-					p0, p1, p2 := splitTriple48LockedBatch(superTestFixedData(sz), wc.bp)
+					p0, p1, p2 := splitTriple48LockedBatch(superTestFixedData(sz), wc.bp, nil)
 					ref[sz] = [3][]byte{p0, p1, p2}
 				}
 			}()
@@ -98,7 +98,7 @@ func TestInterlock48ArmsAgree(t *testing.T) {
 					withInterlockArm(t, a)
 					for _, sz := range sizes {
 						framed := superTestFixedData(sz)
-						p0, p1, p2 := splitTriple48LockedBatch(framed, wc.bp)
+						p0, p1, p2 := splitTriple48LockedBatch(framed, wc.bp, nil)
 						r := ref[sz]
 						if !bytes.Equal(p0, r[0]) || !bytes.Equal(p1, r[1]) || !bytes.Equal(p2, r[2]) {
 							t.Fatalf("size=%d: arm %s lane bytes diverge from the scalar arm", sz, a.name)
@@ -112,7 +112,7 @@ func TestInterlock48ArmsAgree(t *testing.T) {
 								t.Fatalf("size=%d: arm %s golden digest %s, want %s", sz, a.name, got, want)
 							}
 						}
-						out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp)
+						out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp, nil)
 						if !bytes.Equal(out[:sz], framed) {
 							t.Fatalf("size=%d: arm %s does not round-trip", sz, a.name)
 						}
@@ -318,7 +318,7 @@ func TestInterlock48ArmsAgreeX4Block(t *testing.T) {
 				scalar := tc.bp
 				scalar.fillRanksX4 = nil
 				for _, sz := range sizes {
-					p0, p1, p2 := splitTriple48LockedBatch(framed[sz], scalar)
+					p0, p1, p2 := splitTriple48LockedBatch(framed[sz], scalar, nil)
 					q0, q1, q2 := refSplitPerGroup48(framed[sz], tc.bp)
 					if !bytes.Equal(p0, q0) || !bytes.Equal(p1, q1) || !bytes.Equal(p2, q2) {
 						t.Fatalf("size=%d: scalar flush path diverges from the per-group reference", sz)
@@ -343,7 +343,7 @@ func TestInterlock48ArmsAgreeX4Block(t *testing.T) {
 					withInterlockArm(t, a)
 					for _, sz := range sizes {
 						x4Calls.Store(0)
-						p0, p1, p2 := splitTriple48LockedBatch(framed[sz], armed)
+						p0, p1, p2 := splitTriple48LockedBatch(framed[sz], armed, nil)
 						if x4Calls.Load() == 0 {
 							t.Fatalf("size=%d: arm %s split never entered the x4 block loop", sz, a.name)
 						}
@@ -352,7 +352,7 @@ func TestInterlock48ArmsAgreeX4Block(t *testing.T) {
 							t.Fatalf("size=%d: arm %s x4-block lane bytes diverge from the scalar flush path", sz, a.name)
 						}
 						x4Calls.Store(0)
-						out := interleaveTriple48LockedBatch(p0, p1, p2, armed)
+						out := interleaveTriple48LockedBatch(p0, p1, p2, armed, nil)
 						if x4Calls.Load() == 0 {
 							t.Fatalf("size=%d: arm %s interleave never entered the x4 block loop", sz, a.name)
 						}

@@ -3,7 +3,6 @@ package itb
 import (
 	"encoding/binary"
 	"math/bits"
-	"runtime"
 	"sync"
 
 	"github.com/everanium/itb/internal/interlock"
@@ -741,8 +740,9 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // Chunk count M = LPad / 6; each per-lane output buffer holds 2*M bytes.
 // Workers take disjoint chunk-index ranges — no locks are needed because
 // output indices per lane are also disjoint. Per-chunk workers use
-// runtime.NumCPU() goroutines capped by M; batched workers use the same
-// cap on the group count M / factor.
+// [configuredWorkerCount] goroutines (cfg.MaxWorkers when set, otherwise
+// runtime.NumCPU) capped by M; batched workers use the same cap on the
+// group count M / factor.
 
 // splitTriple48LockedBatch is the parallel batched 48-bit encode kernel.
 // Chunks are processed in groups of bp.factor; each group costs one
@@ -771,7 +771,7 @@ func buildLockBatchPRF48_512Cfg(_ *Config, lockSeed *Seed512, nonce []byte) lock
 // index (BatchHash parity invariant), so the produced lane bytes stay
 // bit-identical; worker tails shorter than a block fall back to the
 // scalar fillRanks path.
-func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
+func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48, cfg *Config) (p0, p1, p2 []byte) {
 	L := len(data)
 	LPad := ((L + 5) / 6) * 6
 	var padded []byte
@@ -797,7 +797,7 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 		panic("itb: fillRanksSuper is only supported at factor 1")
 	}
 
-	G := runtime.NumCPU()
+	G := configuredWorkerCount(cfg)
 	if G > numGroups {
 		G = numGroups
 	}
@@ -912,7 +912,7 @@ func splitTriple48LockedBatch(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte
 
 // interleaveTriple48LockedBatch is the inverse of [splitTriple48LockedBatch],
 // mirroring its group-granular work split and short-final-group handling.
-func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
+func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Config) []byte {
 	M := len(p0) / 2
 	result := make([]byte, M*6)
 
@@ -926,7 +926,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 		panic("itb: fillRanksSuper is only supported at factor 1")
 	}
 
-	G := runtime.NumCPU()
+	G := configuredWorkerCount(cfg)
 	if G > numGroups {
 		G = numGroups
 	}
@@ -1056,8 +1056,8 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48) []byte 
 // Encrypt* entry. The 4-byte big-endian length prefix is prepended
 // inside this function so recoverers can slice back exactly to the
 // original payload extent.
-func splitForTriple48LockedCfg(_ *Config, data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
-	return splitTriple48LockedBatch(prependTripleLen(data), bp)
+func splitForTriple48LockedCfg(cfg *Config, data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
+	return splitTriple48LockedBatch(prependTripleLen(data), bp, cfg)
 }
 
 // interleaveForTriple48LockedCfg is the inverse of
@@ -1071,7 +1071,7 @@ func splitForTriple48LockedCfg(_ *Config, data []byte, bp lockBatchPRF48) (p0, p
 // function returns garbage bytes clamped to the recovered payload
 // extent instead of distinguishing wrong-seed attempts from valid ones
 // via an error oracle.
-func interleaveForTriple48LockedCfg(_ *Config, p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
+func interleaveForTriple48LockedCfg(cfg *Config, p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
 	// Wrong-seed decrypt paths pass unequal-length lanes (each COBS-
 	// decoded stream truncates at whatever spurious 0x00 the garbage
 	// bytes contained). Pad every lane to the longest even length so
@@ -1080,7 +1080,7 @@ func interleaveForTriple48LockedCfg(_ *Config, p0, p1, p2 []byte, bp lockBatchPR
 	// panic). Correct-seed decrypt has bit-exact matching lengths and
 	// the padding is a no-op.
 	p0, p1, p2 = padLanesToEqualEven(p0, p1, p2)
-	framed := interleaveTriple48LockedBatch(p0, p1, p2, bp)
+	framed := interleaveTriple48LockedBatch(p0, p1, p2, bp, cfg)
 	if len(framed) < 4 {
 		return framed
 	}

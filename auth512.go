@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"runtime"
 	"sync"
 )
 
@@ -150,7 +149,7 @@ func EncryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		}
 	}
 
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
@@ -256,7 +255,7 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
 	}
 
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
@@ -467,7 +466,7 @@ func EncryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		}
 	}
 
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
@@ -573,7 +572,7 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
 	}
 
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}

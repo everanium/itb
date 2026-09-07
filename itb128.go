@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"runtime"
 	"slices"
 	"sync"
 )
@@ -251,7 +250,7 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	// 3 parallel goroutines for pixel processing, each limited to 1/3 of CPU cores
 	offset1 := third * Channels
 	offset2 := 2 * third * Channels
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
@@ -344,7 +343,7 @@ func Decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 	offset1 := third * Channels
 	offset2 := 2 * third * Channels
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}

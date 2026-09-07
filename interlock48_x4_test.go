@@ -80,8 +80,8 @@ func TestFillRanksX4VsScalarParity(t *testing.T) {
 			scalar.fillRanksX4 = nil
 			for _, sz := range interlock48Sizes {
 				framed := interlock48RandomBytes(sz)
-				x0, x1, x2 := splitTriple48LockedBatch(framed, tc.bp)
-				s0, s1, s2 := splitTriple48LockedBatch(framed, scalar)
+				x0, x1, x2 := splitTriple48LockedBatch(framed, tc.bp, nil)
+				s0, s1, s2 := splitTriple48LockedBatch(framed, scalar, nil)
 				if !bytes.Equal(x0, s0) || !bytes.Equal(x1, s1) || !bytes.Equal(x2, s2) {
 					t.Fatalf("size %d: x4 lanes diverge from scalar lanes", sz)
 				}
@@ -102,8 +102,8 @@ func TestFillRanksX4RoundTrip(t *testing.T) {
 			}
 			for _, sz := range interlock48Sizes {
 				framed := interlock48RandomBytes(sz)
-				p0, p1, p2 := splitTriple48LockedBatch(framed, tc.bp)
-				got := interleaveTriple48LockedBatch(p0, p1, p2, tc.bp)
+				p0, p1, p2 := splitTriple48LockedBatch(framed, tc.bp, nil)
+				got := interleaveTriple48LockedBatch(p0, p1, p2, tc.bp, nil)
 				if len(got) < len(framed) {
 					t.Fatalf("size %d: recovered %d bytes < input %d", sz, len(got), len(framed))
 				}

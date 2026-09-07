@@ -912,8 +912,8 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	p1Framed := prependTripleLen(p1)
 	p2Framed := prependTripleLen(p2)
 	bp := buildLockBatchPRF48_128Cfg(nil, ls, layout.nonce)
-	l0a, l1a, l2a := splitTriple48LockedBatch(p1Framed, bp)
-	l0b, l1b, l2b := splitTriple48LockedBatch(p2Framed, bp)
+	l0a, l1a, l2a := splitTriple48LockedBatch(p1Framed, bp, nil)
+	l0b, l1b, l2b := splitTriple48LockedBatch(p2Framed, bp, nil)
 	// COBS-encode per snake lane to get the deterministic byte prefix.
 	snakeCobs1 := [3][]byte{cobsEncode(l0a), cobsEncode(l1a), cobsEncode(l2a)}
 	snakeCobs2 := [3][]byte{cobsEncode(l0b), cobsEncode(l1b), cobsEncode(l2b)}
@@ -1636,8 +1636,8 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		p2Framed := prependTripleLen(p2)
 		p1Lanes := [3][]byte{}
 		p2Lanes := [3][]byte{}
-		p1Lanes[0], p1Lanes[1], p1Lanes[2] = splitTriple48LockedBatch(p1Framed, bp)
-		p2Lanes[0], p2Lanes[1], p2Lanes[2] = splitTriple48LockedBatch(p2Framed, bp)
+		p1Lanes[0], p1Lanes[1], p1Lanes[2] = splitTriple48LockedBatch(p1Framed, bp, nil)
+		p2Lanes[0], p2Lanes[1], p2Lanes[2] = splitTriple48LockedBatch(p2Framed, bp, nil)
 		snakeCobs1 := [3][]byte{cobsEncode(p1Lanes[0]), cobsEncode(p1Lanes[1]), cobsEncode(p1Lanes[2])}
 		snakeCobs2 := [3][]byte{cobsEncode(p2Lanes[0]), cobsEncode(p2Lanes[1]), cobsEncode(p2Lanes[2])}
 		snakePayloadXor := [3][]byte{}
@@ -1684,7 +1684,7 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		// under mask peek) so we know where COBS terminates.
 		p3Framed := prependTripleLen(p3)
 		p3Lanes := [3][]byte{}
-		p3Lanes[0], p3Lanes[1], p3Lanes[2] = splitTriple48LockedBatch(p3Framed, bp)
+		p3Lanes[0], p3Lanes[1], p3Lanes[2] = splitTriple48LockedBatch(p3Framed, bp, nil)
 		p3Cobs := [3][]byte{cobsEncode(p3Lanes[0]), cobsEncode(p3Lanes[1]), cobsEncode(p3Lanes[2])}
 
 		// Attacker uses lab peek to sizeknow, but doesn't know exact
