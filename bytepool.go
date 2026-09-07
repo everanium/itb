@@ -1,6 +1,10 @@
 package itb
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/everanium/itb/internal/poolstats"
+)
 
 // bufferPool is a process-wide *[]byte pool used for internal scratch
 // buffers inside Encrypt* / Decrypt* / Encrypt3x* / Decrypt3x* paths.
@@ -32,6 +36,7 @@ import "sync"
 // settles at the working-set's maximum after warm-up.
 var bufferPool = &sync.Pool{
 	New: func() any {
+		poolstats.BufNew.Add(1)
 		b := make([]byte, 0, 4096)
 		return &b
 	},
@@ -50,7 +55,10 @@ var bufferPool = &sync.Pool{
 func acquireBuffer(n int) (*[]byte, []byte) {
 	ptr := bufferPool.Get().(*[]byte)
 	buf := *ptr
+	poolstats.BufGet.Add(1)
 	if cap(buf) < n {
+		poolstats.BufRegrow.Add(1)
+		poolstats.BufRegrowBytes.Add(int64(n))
 		buf = make([]byte, n)
 	} else {
 		buf = buf[:n]

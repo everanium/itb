@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/everanium/itb/internal/poolstats"
 )
 
 // monitorInterval is the runtime-stat sampling period.
@@ -69,9 +72,23 @@ func sample(r *runState) {
 	workerCount := int64(len(r.workers))
 	avgEncTime := avgWorkerTime(totalNanosEnc, workerCount)
 	avgDecTime := avgWorkerTime(totalNanosDec, workerCount)
-	logf("+%s: iters=[%s] heap=%s objects=%d goroutines=%d gcs=%d tput=enc:%s dec:%s combined:%s",
+
+	// Allocation rate and pool misses since the previous sample: the
+	// steady-state trace the final differenced figures summarise.
+	now := takeMemSnapshot()
+	prev := r.lastSample
+	r.lastSample = now
+	window := now.at.Sub(prev.at)
+	poolDelta := now.pool.Sub(prev.pool)
+	var hashMiss int64
+	for i := range poolDelta.HashNew {
+		hashMiss += poolDelta.HashNew[i] + poolDelta.HashRegrow[i]
+	}
+	logf("+%s: iters=[%s] heap=%s objects=%d goroutines=%d gcs=%d alloc=%s/s poolmiss=hash:%d buf:%d chunk:%d tput=enc:%s dec:%s combined:%s",
 		elapsed.Round(time.Second), strings.Join(iterParts, " "),
 		humanBytes(int64(ms.HeapAlloc)), ms.HeapObjects, goroutines, ms.NumGC,
+		humanBytes(rateBytes(now.totalAlloc-prev.totalAlloc, window)),
+		hashMiss, poolDelta.BufRegrow, poolDelta.ChunkRegrow,
 		humanRateBare(totalEnc, avgEncTime), humanRateBare(totalDec, avgDecTime),
 		humanRate(totalEnc+totalDec, elapsed))
 
@@ -143,10 +160,12 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	avgEncTime := avgWorkerTime(totalNanosEnc, workerCount)
 	avgDecTime := avgWorkerTime(totalNanosDec, workerCount)
 
+	am := newAllocMetrics(r, totalIters)
+
 	if r.cfg.jsonOutput {
 		return printJSONSummary(r, elapsed, finalHeap, finalGoroutines, workerErrs,
 			perWorkerIters, totalIters, totalEnc, totalDec, avgEncTime, avgDecTime,
-			growthPct, pass)
+			growthPct, pass, am)
 	}
 
 	logf("=== FINAL ===")
@@ -163,6 +182,21 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	logf("  heap: warmup baseline %s, peak %s, final %s (delta %s, %.1f%% growth)",
 		humanBytes(int64(r.warmupHeap)), humanBytes(int64(r.peakHeap)),
 		humanBytes(int64(finalHeap)), humanBytesSigned(heapDelta), growthPct)
+	logf("  alloc: %s total, %s/s, %s/iteration, %d mallocs/iteration",
+		humanBytes(am.AllocTotalBytes), humanBytes(int64(am.AllocBytesPerSec)),
+		humanBytes(int64(am.AllocBytesPerIteration)), int64(am.MallocsPerIteration))
+	logf("  gc: %d cycles (%.1f/s), stw pause %s (%.2f%% of wall), gc cpu fraction %.4f",
+		am.GCCount, am.GCPerSec, time.Duration(am.GCPauseTotalNs), am.GCPausePercent, am.GCCPUFraction)
+	for _, t := range am.HashPoolTiers {
+		logf("  hash pool tier %d (starter %d): get %d, miss %d (new %d + regrow %d), miss %.2f%%, %s allocated",
+			t.Tier, t.Starter, t.Get, t.New+t.Regrow, t.New, t.Regrow, t.MissPercent, humanBytes(t.NewBytes))
+	}
+	logf("  buf pool: get %d, regrow %d (of which fresh %d), miss %.2f%%, %s regrown",
+		am.BufPool.Get, am.BufPool.Regrow, am.BufPool.New,
+		am.BufPool.MissPercent, humanBytes(am.BufPool.RegrowBytes))
+	logf("  parallax chunk pool: get %d, regrow %d (of which fresh %d), miss %.2f%%, %s regrown",
+		am.ChunkPool.Get, am.ChunkPool.Regrow, am.ChunkPool.New,
+		am.ChunkPool.MissPercent, humanBytes(am.ChunkPool.RegrowBytes))
 	if n := r.rekeys.Load(); n > 0 {
 		logf("  rekeys: %d", n)
 	}
@@ -233,6 +267,131 @@ type summaryReport struct {
 	BlobCycles          int64    `json:"blob_cycles"`
 	WorkerErrors        []string `json:"worker_errors"`
 	Verdict             string   `json:"verdict"`
+
+	// Runtime shaping the run executed under, so each summary is
+	// self-describing when cells of a sweep are compared.
+	GOGC         string `json:"gogc"`
+	MemLimit     int64  `json:"memlimit_bytes"`
+	GOMAXPROCS   int    `json:"gomaxprocs"`
+	Hash         string `json:"hash"`
+	PayloadBytes int64  `json:"payload_bytes"`
+	Workers      int    `json:"goroutines"`
+
+	allocMetrics
+}
+
+// allocMetrics is the allocation-rate / GC-cost / pool hit-miss block
+// of the summary. Every figure is differenced between the post-warmup
+// baseline and the instant the last worker returned, so it describes
+// the main loop only — the settle sleep and the forced GCs that
+// precede the leak snapshot are excluded. The one exception is
+// GCCPUFraction, which the runtime reports cumulatively since process
+// start and which cannot be differenced; the warmup phase is short
+// enough for the figure to be dominated by the main loop.
+type allocMetrics struct {
+	AllocTotalBytes        int64   `json:"alloc_total_bytes"`
+	AllocBytesPerSec       float64 `json:"alloc_bytes_per_sec"`
+	AllocBytesPerIteration float64 `json:"alloc_bytes_per_iteration"`
+	MallocsPerIteration    float64 `json:"mallocs_per_iteration"`
+	GCCount                int64   `json:"gc_count"`
+	GCPerSec               float64 `json:"gc_per_sec"`
+	GCPauseTotalNs         int64   `json:"gc_pause_total_ns"`
+	GCPausePercent         float64 `json:"gc_pause_percent"`
+	GCCPUFraction          float64 `json:"gc_cpu_fraction"`
+	HeapSysPeakBytes       uint64  `json:"heap_sys_bytes"`
+
+	HashPoolTiers []hashPoolTierStats `json:"hash_pool_tiers"`
+	BufPool       bufPoolStats        `json:"buf_pool"`
+	ChunkPool     bufPoolStats        `json:"parallax_chunk_pool"`
+}
+
+// hashPoolTierStats is one starter tier of the itb hash-array pool.
+type hashPoolTierStats struct {
+	Tier        int     `json:"tier"`
+	Starter     int64   `json:"starter"`
+	Get         int64   `json:"get"`
+	New         int64   `json:"new"`
+	Regrow      int64   `json:"regrow"`
+	NewBytes    int64   `json:"new_bytes"`
+	MissPercent float64 `json:"miss_percent"`
+}
+
+// bufPoolStats is one single-size byte pool (the itb scratch pool or
+// the parallax chunk pool). MissPercent is regrow over get: a New
+// item carries the pool's minimal 4 KiB capacity and is regrown by the
+// same acquire on any larger request, so counting New separately would
+// double-count that checkout.
+type bufPoolStats struct {
+	Get         int64   `json:"get"`
+	New         int64   `json:"new"`
+	Regrow      int64   `json:"regrow"`
+	RegrowBytes int64   `json:"regrow_bytes"`
+	MissPercent float64 `json:"miss_percent"`
+}
+
+// newAllocMetrics differences the warmup and steady snapshots on r.
+func newAllocMetrics(r *runState, totalIters int64) allocMetrics {
+	w, s := r.warmupMem, r.steadyMem
+	window := s.at.Sub(w.at)
+	allocTotal := int64(s.totalAlloc - w.totalAlloc)
+	gcCount := int64(s.numGC - w.numGC)
+	pauseNs := int64(s.pauseNs - w.pauseNs)
+	am := allocMetrics{
+		AllocTotalBytes:  allocTotal,
+		AllocBytesPerSec: float64(rateBytes(uint64(allocTotal), window)),
+		GCCount:          gcCount,
+		GCPauseTotalNs:   pauseNs,
+		GCCPUFraction:    s.gcCPU,
+		HeapSysPeakBytes: s.heapSys,
+	}
+	if window > 0 {
+		am.GCPerSec = float64(gcCount) / window.Seconds()
+		am.GCPausePercent = 100 * float64(pauseNs) / float64(window.Nanoseconds())
+	}
+	if totalIters > 0 {
+		am.AllocBytesPerIteration = float64(allocTotal) / float64(totalIters)
+		am.MallocsPerIteration = float64(s.mallocs-w.mallocs) / float64(totalIters)
+	}
+	pd := s.pool.Sub(w.pool)
+	for i := 0; i < poolstats.MaxHashTiers; i++ {
+		if pd.HashStarter[i] == 0 {
+			continue
+		}
+		t := hashPoolTierStats{
+			Tier: i, Starter: pd.HashStarter[i],
+			Get: pd.HashGet[i], New: pd.HashNew[i], Regrow: pd.HashRegrow[i],
+			NewBytes: pd.HashNewBytes[i],
+		}
+		t.MissPercent = missPercent(t.New+t.Regrow, t.Get)
+		am.HashPoolTiers = append(am.HashPoolTiers, t)
+	}
+	am.BufPool = bufPoolStats{
+		Get: pd.BufGet, New: pd.BufNew, Regrow: pd.BufRegrow, RegrowBytes: pd.BufRegrowBytes,
+	}
+	am.BufPool.MissPercent = missPercent(am.BufPool.Regrow, am.BufPool.Get)
+	am.ChunkPool = bufPoolStats{
+		Get: pd.ChunkGet, New: pd.ChunkNew, Regrow: pd.ChunkRegrow, RegrowBytes: pd.ChunkRegrowBytes,
+	}
+	am.ChunkPool.MissPercent = missPercent(am.ChunkPool.Regrow, am.ChunkPool.Get)
+	return am
+}
+
+// missPercent renders misses over checkouts as a percentage; zero when
+// nothing was checked out.
+func missPercent(miss, get int64) float64 {
+	if get <= 0 {
+		return 0
+	}
+	return 100 * float64(miss) / float64(get)
+}
+
+// rateBytes converts a byte delta over a window into bytes per second;
+// zero when the window is unmeasured.
+func rateBytes(n uint64, d time.Duration) int64 {
+	if d <= 0 {
+		return 0
+	}
+	return int64(float64(n) / d.Seconds())
 }
 
 // printJSONSummary emits the final summary as one compact JSON object
@@ -241,7 +400,7 @@ type summaryReport struct {
 // the run stay human-readable.
 func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int,
 	workerErrs []error, perWorkerIters []int64, totalIters, totalEnc, totalDec int64,
-	avgEncTime, avgDecTime time.Duration, growthPct float64, pass bool) int {
+	avgEncTime, avgDecTime time.Duration, growthPct float64, pass bool, am allocMetrics) int {
 	errStrs := make([]string, 0, len(workerErrs))
 	for _, werr := range workerErrs {
 		errStrs = append(errStrs, werr.Error())
@@ -272,6 +431,13 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 		BlobCycles:          r.blobCycles.Load(),
 		WorkerErrors:        errStrs,
 		Verdict:             verdict,
+		GOGC:                gogcLabel(r.cfg.gogc),
+		MemLimit:            r.cfg.memlimit,
+		GOMAXPROCS:          runtime.GOMAXPROCS(0),
+		Hash:                r.cfg.hash,
+		PayloadBytes:        r.cfg.payload,
+		Workers:             r.cfg.workers,
+		allocMetrics:        am,
 	}
 	b, err := json.Marshal(rep)
 	if err != nil {
@@ -283,6 +449,19 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 		return 0
 	}
 	return 1
+}
+
+// gogcLabel renders the effective GC percentage: the --gogc flag when
+// set, otherwise the GOGC environment variable the runtime consumed at
+// start ("100" when unset, matching the runtime default).
+func gogcLabel(flag int) string {
+	if flag > 0 {
+		return fmt.Sprint(flag)
+	}
+	if v := os.Getenv("GOGC"); v != "" {
+		return v
+	}
+	return "100"
 }
 
 // mbPerSec converts a byte count over a duration into binary MiB per

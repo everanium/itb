@@ -30,6 +30,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/everanium/itb/internal/poolstats"
 )
 
 // defaultHashPoolStarters is the shipped hash-array sync.Pool starter
@@ -101,8 +103,16 @@ func buildHashPools(starters []int) ([]int, []*sync.Pool) {
 	pools := make([]*sync.Pool, len(starters))
 	for i, starter := range starters {
 		size := starter
+		tier := i
+		if tier < poolstats.MaxHashTiers {
+			poolstats.HashStarter[tier].Store(int64(starter))
+		}
 		pools[i] = &sync.Pool{
 			New: func() any {
+				if tier < poolstats.MaxHashTiers {
+					poolstats.HashNew[tier].Add(1)
+					poolstats.HashNewBytes[tier].Add(int64(2 * 8 * size))
+				}
 				return &hashArrays{
 					noise: make([]uint64, size),
 					data:  make([]uint64, size),
@@ -133,7 +143,14 @@ func getHashArraysFor(microBatch, n int) *hashArrays {
 	}
 	ha := hashPools[poolIdx].Get().(*hashArrays)
 	ha.poolIdx = poolIdx
+	if poolIdx < poolstats.MaxHashTiers {
+		poolstats.HashGet[poolIdx].Add(1)
+	}
 	if cap(ha.noise) < n {
+		if poolIdx < poolstats.MaxHashTiers {
+			poolstats.HashRegrow[poolIdx].Add(1)
+			poolstats.HashNewBytes[poolIdx].Add(int64(2 * 8 * n))
+		}
 		ha.noise = make([]uint64, n)
 		ha.data = make([]uint64, n)
 	} else {

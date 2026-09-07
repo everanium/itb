@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/everanium/itb/internal/poolstats"
 )
 
 // Streaming surface for parallax.
@@ -69,6 +71,7 @@ import (
 // on every call).
 var streamChunkPool = &sync.Pool{
 	New: func() any {
+		poolstats.ChunkNew.Add(1)
 		b := make([]byte, 0, 4096)
 		return &b
 	},
@@ -79,7 +82,10 @@ var streamChunkPool = &sync.Pool{
 func acquireChunkBuffer(capBytes int) (*[]byte, []byte) {
 	ptr := streamChunkPool.Get().(*[]byte)
 	buf := *ptr
+	poolstats.ChunkGet.Add(1)
 	if cap(buf) < capBytes {
+		poolstats.ChunkRegrow.Add(1)
+		poolstats.ChunkRegrowBytes.Add(int64(capBytes))
 		buf = make([]byte, 0, capBytes)
 	} else {
 		buf = buf[:0]
