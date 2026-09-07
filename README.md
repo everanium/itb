@@ -176,14 +176,14 @@ cd cmd/cshared && go build -buildmode=c-shared -tags=noitbasm -o ../../dist/linu
 
 Two process-wide knobs constrain Go runtime arena pacing. Both readable at libitb load time via env vars:
 
-- `ITB_GOMEMLIMIT=512MiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
-- `ITB_GOGC=20` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
+- `ITB_GOMEMLIMIT=2GiB` — soft memory limit in bytes; supports `B` / `KiB` / `MiB` / `GiB` / `TiB` suffixes.
+- `ITB_GOGC=85` — GC trigger percentage; default `100`, lower triggers GC more aggressively.
 
 Programmatic setters override env-set values at any time. Pass `-1` to either setter to query the current value without changing it.
 
 ```go
-itb.SetMemoryLimit(512 << 20)
-itb.SetGCPercent(20)
+itb.SetMemoryLimit(2 << 30)
+itb.SetGCPercent(85)
 ```
 
 ### Nonce width
@@ -278,8 +278,8 @@ import (
 func main() {
     // Runtime tuning — process-global, one-shot at startup. Affects the
     // whole Go runtime including any concurrent triple.Pipeline instances.
-    itb.SetMemoryLimit(512 << 20) // 512 MiB soft heap cap
-    itb.SetGCPercent(20)          // aggressive GC to keep working-set tight
+    itb.SetMemoryLimit(2 << 30) // 2 GiB soft heap cap
+    itb.SetGCPercent(85)          // balanced GC for shipping default
 
     // Sender.
     enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
@@ -333,8 +333,8 @@ import (
 
 func main() {
     // Runtime tuning — process-global, one-shot at startup.
-    itb.SetMemoryLimit(512 << 20)
-    itb.SetGCPercent(20)
+    itb.SetMemoryLimit(2 << 30)
+    itb.SetGCPercent(85)
 
     enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleNoMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
@@ -388,8 +388,8 @@ func main() {
     )
 
     // Runtime tuning — process-global, one-shot at startup.
-    itb.SetMemoryLimit(512 << 20)
-    itb.SetGCPercent(20)
+    itb.SetMemoryLimit(2 << 30)
+    itb.SetGCPercent(85)
 
     enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
@@ -451,8 +451,8 @@ func main() {
     )
 
     // Runtime tuning — process-global, one-shot at startup.
-    itb.SetMemoryLimit(512 << 20)
-    itb.SetGCPercent(20)
+    itb.SetMemoryLimit(2 << 30)
+    itb.SetGCPercent(85)
 
     enc, blob, err := triple.Init(triple.ProfileStreamingNoAEADTripleV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
@@ -514,8 +514,8 @@ import (
 
 func main() {
     // Runtime tuning — process-global, one-shot at startup.
-    itb.SetMemoryLimit(512 << 20)
-    itb.SetGCPercent(20)
+    itb.SetMemoryLimit(2 << 30)
+    itb.SetGCPercent(85)
 
     enc, blob, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{MaxWorkers: 4, NonceBits: 512})
     if err != nil {
@@ -838,8 +838,8 @@ import (
 
 func main() {
     // Runtime tuning — process-global, one-shot at startup.
-    itb.SetMemoryLimit(512 << 20) // 512 MiB soft heap cap
-    itb.SetGCPercent(20)          // aggressive GC to keep working-set tight
+    itb.SetMemoryLimit(2 << 30) // 2 GiB soft heap cap
+    itb.SetGCPercent(85)          // balanced GC for shipping default
 
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 
@@ -922,8 +922,8 @@ func main() {
     )
 
     // Runtime tuning — process-global, one-shot at startup.
-    itb.SetMemoryLimit(512 << 20) // 512 MiB soft heap cap
-    itb.SetGCPercent(20)          // aggressive GC to keep working-set tight
+    itb.SetMemoryLimit(2 << 30) // 2 GiB soft heap cap
+    itb.SetGCPercent(85)          // balanced GC for shipping default
 
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 

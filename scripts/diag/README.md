@@ -71,7 +71,7 @@ INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe natural dis
 | `ITB_KEY_BITS`      | `512`          | Key width                                          |
 
 The bench profile is fixed: `singlemsg-triple-nomac-v1` with
-`GOMEMLIMIT=1GiB GOGC=20` so the numbers stay comparable across
+`GOMEMLIMIT=2GiB GOGC=85` so the numbers stay comparable across
 runs. Change these only if you understand the profile matters.
 
 ## Typical investigation flow
