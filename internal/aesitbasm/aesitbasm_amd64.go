@@ -71,6 +71,9 @@ var (
 	HasARMAESX16     = false
 )
 
+// The batch-16 flags above select the arm of FusedChain13x16
+// (aesitbasm_fused_amd64.go), the Interlocked Barrier fill kernel.
+
 // AESITB128ChainAbsorb13x4 evaluates the 13-byte shape on four lanes.
 func AESITB128ChainAbsorb13x4(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
 	switch {
@@ -190,39 +193,3 @@ func aesITB128ChainAbsorb36x4Avx512Asm(key *[16]byte, seeds *[4][2]uint64, dataP
 
 //go:noescape
 func aesITB128ChainAbsorb68x4Avx512Asm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-// VEX-encoded AES-NI XMM 16-lane kernel (aesitb_chain128_13x16_vex_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x16VexAsm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-
-// Legacy-SSE AES-NI XMM 16-lane kernel (aesitb_chain128_13x16_aesni_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x16AesNiAsm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-
-// VAES ZMM 16-lane kernel (aesitb_chain128_13x16_avx512_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x16VaesAvx512Asm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-
-// VAES YMM 16-lane kernel (aesitb_chain128_13x16_vaesavx2_amd64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x16VaesAvx2Asm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-
-// AESITB128ChainAbsorb13x16 evaluates the 13-byte shape on 16 lanes.
-func AESITB128ChainAbsorb13x16(key *[16]byte, seed0, seed1 uint64, groupIdxBase uint64, out *[16][2]uint64) {
-	switch {
-	case HasVAESAVX512X16:
-		aesITB128ChainAbsorb13x16VaesAvx512Asm(key, seed0, seed1, groupIdxBase, out)
-	case HasVAESAVX2X16:
-		aesITB128ChainAbsorb13x16VaesAvx2Asm(key, seed0, seed1, groupIdxBase, out)
-	case HasAVXAESNIX16:
-		aesITB128ChainAbsorb13x16VexAsm(key, seed0, seed1, groupIdxBase, out)
-	case HasAESNIX16:
-		aesITB128ChainAbsorb13x16AesNiAsm(key, seed0, seed1, groupIdxBase, out)
-	default:
-		scalarBatchX16(key, groupIdxBase, seed0, seed1, out)
-	}
-}

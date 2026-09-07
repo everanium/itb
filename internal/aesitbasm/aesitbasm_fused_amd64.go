@@ -277,3 +277,44 @@ func aesITB128FusedChain36x1VexAsm(key *[16]byte, comps *uint64, nPairs int, dat
 
 //go:noescape
 func aesITB128FusedChain68x1VexAsm(key *[16]byte, comps *uint64, nPairs int, data *byte, out *[2]uint64)
+
+// FusedChain13x16 runs the cascade on the 16 lanes of the Interlocked
+// Barrier fill: lane i carries the 13-byte fill block
+// [0x03 | LE64(groupIdxBase+i) | 4×0x00], synthesised in-register by
+// the kernel, and every lane runs the whole cascade over components.
+// The dispatch follows the batch-16 tier flags (HasVAESAVX512X16 and
+// siblings, the widest VAES tier the host offers) rather than the fused
+// x1 / x4 flags, so ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
+func FusedChain13x16(key *[16]byte, components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+	if !validComponents(components) {
+		scalarFusedX16(key, components, groupIdxBase, out)
+		return
+	}
+	c, n := &components[0], len(components)/2
+	switch {
+	case HasVAESAVX512X16:
+		aesITB128FusedChain13x16Avx512Asm(key, c, n, groupIdxBase, out)
+	case HasVAESAVX2X16:
+		aesITB128FusedChain13x16VaesAvx2Asm(key, c, n, groupIdxBase, out)
+	case HasAVXAESNIX16:
+		aesITB128FusedChain13x16VexAsm(key, c, n, groupIdxBase, out)
+	case HasAESNIX16:
+		aesITB128FusedChain13x16AesNiAsm(key, c, n, groupIdxBase, out)
+	default:
+		scalarFusedX16(key, components, groupIdxBase, out)
+	}
+}
+
+// Sixteen-lane fused fill kernels (aesitb_fusedchain128_13x16_<tier>_amd64.s).
+//
+//go:noescape
+func aesITB128FusedChain13x16AesNiAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+
+//go:noescape
+func aesITB128FusedChain13x16VexAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+
+//go:noescape
+func aesITB128FusedChain13x16VaesAvx2Asm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+
+//go:noescape
+func aesITB128FusedChain13x16Avx512Asm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)

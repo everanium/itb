@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"testing"
-
-	aes "github.com/jedisct1/go-aes"
 )
 
 // BenchmarkTier times every kernel tier the host can execute, per shape,
@@ -26,55 +24,49 @@ func BenchmarkTier(b *testing.B) {
 	}
 }
 
-// benchKernelX16 times one x16 kernel directly. The 13-byte shape is the
-// only x16 shape defined. Input: 16 lanes × 13 bytes = 208 bytes per iteration.
-func benchKernelX16(b *testing.B, kernel func(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)) {
+// benchKernelX16 times one batch-16 fill kernel directly at the given
+// cascade length. Components stay stable across calls (the production
+// pattern: the prepended lock components are built once per container);
+// the group base advances by 16 per call. Input: 16 lanes × 13 bytes =
+// 208 bytes per iteration.
+func benchKernelX16(b *testing.B, pairs int, kernel fusedX16Fn) {
 	key := ascendingKey()
+	comps := fusedX16Components(0x0102030405060708, 0x090a0b0c0d0e0f00, pairs)
 	var out [16][2]uint64
-	// Set bytes to 16 lanes × 13-byte shape
 	b.SetBytes(16 * 13)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		seed0 := uint64(i)
-		seed1 := uint64(i + 1)
-		groupIdxBase := uint64(i * 16)
-		kernel(&key, seed0, seed1, groupIdxBase, &out)
+		kernel(&key, comps, uint64(i*16), &out)
 	}
 }
 
-// BenchmarkTierX16 times every batch-16 interlock PRF fill kernel the
-// host silicon can execute, by direct call (independent of the dispatch
-// flags). Kernel-level signal for the x16 tier auto-selection: the
-// widest VAES tier the host offers wins by 2× on every measured CPU
-// family, which is what the shipping dispatch selects. The full-stack
-// matrix is too noisy to resolve 2 % deltas when x16 fill is < 1 % of
-// total time — the kernel bench is what the auto-selection rests on.
+// BenchmarkTierX16 times every batch-16 Interlocked Barrier fill kernel
+// the host silicon can execute, by direct call (independent of the
+// dispatch flags), at one pair (the plain chain-absorb) and at the
+// 5 / 9 / 17-pair cascades of the 512 / 1024 / 2048-bit lockSeeds.
+// Kernel-level signal for the x16 tier auto-selection: the widest VAES
+// tier the host offers wins on every measured CPU family, which is what
+// the shipping dispatch selects. The full-stack matrix is too noisy to
+// resolve small deltas when the fill is a few percent of total time —
+// the kernel bench is what the auto-selection rests on.
 func BenchmarkTierX16(b *testing.B) {
-	type tier struct {
-		name string
-		ok   bool
-		k    func(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-	}
-
-	tiers := []tier{
-		{"aesni", aes.CPU.HasAESNI, aesITB128ChainAbsorb13x16AesNiAsm},
-		{"vex", aes.CPU.HasAESNI && aes.CPU.HasAVX2, aesITB128ChainAbsorb13x16VexAsm},
-		{"vaesavx2", aes.CPU.HasVAES && aes.CPU.HasAVX2, aesITB128ChainAbsorb13x16VaesAvx2Asm},
-		{"avx512", aes.CPU.HasVAES && aes.CPU.HasAVX512, aesITB128ChainAbsorb13x16VaesAvx512Asm},
-		// Scalar reference (always available)
-		{"scalar", true, func(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64) {
-			scalarBatchX16(key, groupIdxBase, seed0, seed1, out)
-		}},
-	}
-
+	tiers := amd64FusedX16Tiers()
+	tiers[len(tiers)-1].k = FusedChain13x16 // scalar state: dispatcher default arm
+	saved := [4]bool{HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16}
+	b.Cleanup(func() {
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = saved[0], saved[1], saved[2], saved[3]
+	})
 	for _, tier := range tiers {
-		if !tier.ok {
+		if !tier.ok() {
 			continue
 		}
-		b.Run(tier.name, func(b *testing.B) {
-			benchKernelX16(b, tier.k)
-		})
+		for _, pairs := range fusedX16PairCounts {
+			b.Run(fmt.Sprintf("%s/pairs%d", tier.name, pairs), func(b *testing.B) {
+				HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.aesni
+				benchKernelX16(b, pairs, tier.k)
+			})
+		}
 	}
 }
 

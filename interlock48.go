@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/internal/interlock"
 )
 
@@ -571,7 +570,16 @@ func fillLockMasksTriple48Super16(prf *[32]uint64, masks *[16][3]uint64) {
 // The closure captures the lockSeed's ChainHash-derived keying material and
 // the lockSeed's Hash function — the overlay's PRF keying is fully isolated
 // from the noiseSeed slot's material.
+//
+// A lockSeed carrying the batch-16 hook ([Seed128.InterlockFillX16]
+// non-nil) is routed to [buildLockBatchPRF48_128Cascade], which fills
+// through the whole ChainHash cascade over the derived pair and the
+// seed's components; the derived-pair fill below serves every other
+// width-128 primitive.
 func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
+	if lockSeed.InterlockFillX16() != nil {
+		return buildLockBatchPRF48_128Cascade(lockSeed, nonce)
+	}
 	lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)
 	h := lockSeed.Hash
 	bp := lockBatchPRF48{
@@ -609,15 +617,6 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 			for i := 0; i < 4; i++ {
 				prf[2*i] = out[i][0]
 				prf[2*i+1] = out[i][1]
-			}
-		}
-	}
-	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() {
-		bp.fillRanksSuper = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
-			bh16(groupIdxBase, lockLo, lockHi, &s.out16)
-			for i := 0; i < 16; i++ {
-				prf[2*i] = s.out16[i][0]
-				prf[2*i+1] = s.out16[i][1]
 			}
 		}
 	}

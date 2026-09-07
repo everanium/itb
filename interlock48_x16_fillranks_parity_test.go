@@ -138,10 +138,13 @@ func x16HostTiers() []struct {
 
 // x16LockSeedCases builds aesitb128 lockSeeds with the batch-16 hook
 // attached exactly as hashes.AttachInterlockBatch16 attaches it (the
-// hook dispatches through aesitbasm.AESITB128ChainAbsorb13x16 under the
-// seed's own fixed key), on fixed keys and components for
-// reproducibility. Every case's fillRanksSuper must be armed; the test
-// is skipped when ITB_FORCE_INTERLOCK_PRF_FILL_SEQ disarms it.
+// hook dispatches through aesitbasm.FusedChain13x16 under the seed's
+// own fixed key), on fixed keys and components for reproducibility. The
+// seeds carry no fused ChainHash hooks, so fillRanks / fillRanksX4 run
+// the sequential Hash / BatchHash cascade over the prepended lock
+// components and the layers below pin the batch-16 kernel to that
+// sequential reference. Every case's fillRanksSuper must be armed; the
+// test is skipped when ITB_FORCE_INTERLOCK_PRF_FILL_SEQ disarms it.
 func x16LockSeedCases(t *testing.T) []struct {
 	label string
 	bp    lockBatchPRF48
@@ -167,13 +170,14 @@ func x16LockSeedCases(t *testing.T) []struct {
 	}
 	for i := range keys {
 		key := keys[i]
-		h, _, _ := MakeAESITB128Hash(key)
+		h, bh, _ := MakeAESITB128Hash(key)
 		seed, err := SeedFromComponents128(h, componentSets[i]...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		seed.SetInterlockBatch16(func(groupIdxBase, seed0, seed1 uint64, out *[16][2]uint64) {
-			aesitbasm.AESITB128ChainAbsorb13x16(&key, seed0, seed1, groupIdxBase, out)
+		seed.BatchHash = bh
+		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
 		})
 		bp := buildLockBatchPRF48_128(seed, nonce)
 		if bp.fillRanksSuper == nil {

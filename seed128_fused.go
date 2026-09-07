@@ -18,10 +18,18 @@ type FusedChainHashFunc128 func(components []uint64, data []byte) (lo, hi uint64
 // components with its own data, matching [Seed128.BatchChainHash128].
 type BatchFusedChainHashFunc128 func(components []uint64, data *[4][]byte) (out [4][2]uint64, ok bool)
 
-// InterlockFillFunc16 is the batch-16 interlock PRF fill kernel interface.
-// One call fills 16 consecutive chunks' rank pairs in one invocation.
-// groupIdxBase is the first group index (0..numGroups-1); lane offset i
-// (0..15) produces groupIdx = groupIdxBase + i. seed0, seed1 are the
-// interlock lock seed pair (derived once per session). out receives
-// 16 × 128-bit rank pairs at [0..15].
-type InterlockFillFunc16 func(groupIdxBase uint64, seed0, seed1 uint64, out *[16][2]uint64)
+// InterlockFillFunc16 is the batch-16 Interlocked Barrier fill kernel
+// interface and, by its presence on a lockSeed, the selector of the
+// cascade fill: a width-128 lockSeed carrying this hook fills its rank
+// pairs with the whole ChainHash cascade over components — the
+// prepended slice [lockLo, lockHi, c[0], c[1], …] the fill builder
+// assembles from the nonce-derived pair and the seed's Components —
+// instead of the single derived-pair call, so attaching the hook
+// changes the wire the seed produces (shipped: aesitb128, attached
+// through hashes.AttachInterlockBatch16). One call fills 16
+// consecutive groups: groupIdxBase is the first group index and lane
+// offset i (0..15) produces groupIdx = groupIdxBase + i on the fill
+// block [0x03 | LE64(groupIdx) | 4×0x00]; out receives the 16 × 128-bit
+// rank pairs at [0..15]. The result must be bit-exact with sixteen
+// sequential single-lane cascades over the same components and blocks.
+type InterlockFillFunc16 func(components []uint64, groupIdxBase uint64, out *[16][2]uint64)

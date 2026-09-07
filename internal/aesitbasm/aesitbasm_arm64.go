@@ -76,17 +76,3 @@ func aesITB128ChainAbsorb36x4NeonAsm(key *[16]byte, seeds *[4][2]uint64, dataPtr
 
 //go:noescape
 func aesITB128ChainAbsorb68x4NeonAsm(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-// NEON batch-16 kernel (aesitb_chain128_13x16_neon_arm64.s).
-//
-//go:noescape
-func aesITB128ChainAbsorb13x16NeonAsm(key *[16]byte, seed0, seed1, groupIdxBase uint64, out *[16][2]uint64)
-
-// AESITB128ChainAbsorb13x16 evaluates the 13-byte shape on 16 lanes.
-func AESITB128ChainAbsorb13x16(key *[16]byte, seed0, seed1 uint64, groupIdxBase uint64, out *[16][2]uint64) {
-	if HasARMAESX16 {
-		aesITB128ChainAbsorb13x16NeonAsm(key, seed0, seed1, groupIdxBase, out)
-		return
-	}
-	scalarBatchX16(key, groupIdxBase, seed0, seed1, out)
-}

@@ -6,6 +6,15 @@ lanes over one shared component slice) and x1 (single lane); amd64 tiers
 aesni / vex / vaesavx2 / avx512 for x4, aesni / vex for x1; arm64 tier neon
 for both. Companion of gen_kernels.py (per-round chain-absorb kernels).
 
+A third family, x16 at shape 13 only, is the Interlocked Barrier PRF fill
+kernel (aesitb_fusedchain128_13x16_<tier>_amd64.s for the four amd64 tiers
+and aesitb_fusedchain128_13x16_neon_arm64.s): the kernel receives
+groupIdxBase in a GPR and synthesises the 16 per-lane fill blocks
+in-register — [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03] for lane
+i — so the batch-16 path pays no per-lane pointer gather, then runs the
+same cascade per lane. See the x16 section below for the per-tier register
+plans and the output-store discipline of that family.
+
 Cascade evaluated per lane (see aesitbasm_fused.go):
     state = 0
     for each component pair (c0, c1):
@@ -385,10 +394,360 @@ def neon_fused(shape, lanes):
     return "\n".join(L) + "\n"
 
 
+# ---------------------------------------------------------------- x16 fill family
+#
+# The batch-16 kernels at the 13-byte fill shape. Every tier folds the
+# round-invariant synthesised block and the per-round key XOR pair into the
+# state and runs the three AES rounds (absorb, finaliser RC[0], finaliser
+# RC[1]); with one pair the cascade is the plain chain-absorb of the shape.
+# Parity with scalarFusedX16 (aesitbasm_fused.go) is enforced by the
+# in-package parity tests.
+#
+# Output store width: the wide tiers write the 16 rank pairs at their full
+# register width (eight 32-byte stores on YMM, four 64-byte stores on ZMM).
+# The fill closure reads the pairs back with 8-byte loads immediately after
+# the call, and those loads forward from the wide stores on every measured
+# host; splitting the stores into 16-byte pieces (the shape the 4-lane
+# kernels use for their by-value output) measured slower through the fill
+# closure (BenchmarkLockFillSuper16) — ZMM 17.6 -> 19.1 ns/op on Rocket
+# Lake and 18.5 -> 19.3 on Sapphire Rapids, YMM 20.9 -> 21.7 and
+# 21.3 -> 21.6 — so the full-width stores stay. The generator carries no
+# numeric tables of its own: the absorb block and the ZMM lane-offset table
+# are read from the Go side (·absorb13Block, ·laneIdxZ).
+
+X16_SIG = "key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64"
+
+X16_TIERS = {
+    "aesni": ("Legacy-SSE AES-NI XMM (AESENC xmm, xmm)", "amd64 && !purego && !noitbasm",
+              "aesitb_fusedchain128_13x16_aesni_amd64.s"),
+    "vex": ("VEX-encoded AES-NI XMM (VAESENC xmm, xmm, xmm; needs AES-NI + AVX)", "amd64 && !purego && !noitbasm",
+            "aesitb_fusedchain128_13x16_vex_amd64.s"),
+    "vaesavx2": ("VAES YMM, two lanes per 256-bit register (needs VAES + AVX2)", "amd64 && !purego && !noitbasm",
+                 "aesitb_fusedchain128_13x16_vaesavx2_amd64.s"),
+    "avx512": ("VAES ZMM, four lanes per register (needs VAES + AVX-512)", "amd64 && !purego && !noitbasm",
+               "aesitb_fusedchain128_13x16_avx512_amd64.s"),
+    "neon": ("ARM64 NEON crypto-extension (AESE + AESMC, round constant folded into the next AESE key operand)",
+             "arm64 && !purego && !noitbasm",
+             "aesitb_fusedchain128_13x16_neon_arm64.s"),
+}
+
+X16_CASCADE_NOTE = """//
+// Unique to the batch-16 kernel: groupIdx is synthesized in-register from
+// groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
+// the x4 path. The synthesised block is round-invariant per lane; every
+// cascade round XORs key XOR (c0 || c1) and the block into the state and
+// runs the three AES rounds (absorb, finaliser RC[0], finaliser RC[1]).
+"""
+
+
+def x16_shape_note():
+    nb = blocks(13)
+    return f"({nb} PKCS#7 block, {nb + 2} AES rounds per lane and cascade round)"
+
+
+def x16_comment_xmm(tier_desc):
+    return f"""// {tier_desc} 16-lane fused ChainHash cascade kernel for AES-ITB-128
+// at the 13-byte per-lane fill shape {x16_shape_note()}.
+// See aesitbasm_fused.go for the construction; every tier is pinned to
+// the pure-Go reference (scalarFusedX16) by the in-package parity tests.
+""" + X16_CASCADE_NOTE + """//
+// Batch layout: two batches of 8 lanes; each batch runs the whole cascade
+// before the next starts. The 16 blocks are staged once into the frame
+// (16 bytes per lane) in the prologue. Per batch: X0–X7 states, X9–X10
+// RC[0] / RC[1], X13 key, X14 key XOR pair (per round), X15 scratch.
+"""
+
+
+def x16_comment_ymm(tier_desc):
+    return f"""// {tier_desc} 16-lane fused ChainHash cascade kernel
+// for AES-ITB-128 at the 13-byte per-lane fill shape {x16_shape_note()}.
+// See aesitbasm_fused.go for the construction; every tier is pinned to
+// the pure-Go reference (scalarFusedX16) by the in-package parity tests.
+//
+// Batch layout: 8 YMM states, two lanes per YMM (lanes 2i and 2i+1 in Y[i]).
+// Unique to batch-16: groupIdx synthesized in-register per lane via
+// VPUNPCKLQDQ, avoiding per-lane pointer gather overhead of the x4 path.
+// The 8 block pairs are staged to a 256-byte frame with 32-byte stores in
+// the prologue and read back as 32-byte VPXOR operands in every cascade
+// round (the register file cannot hold states, constants and blocks).
+//
+// Register allocation:
+//   Y0–Y7      states, pair i = lanes (2i, 2i+1)
+//   Y8–Y9      RC[0], RC[1] broadcasts
+//   Y10        absorb13Block broadcast (prologue only)
+//   Y11, Y15   scratch for per-lane groupIdx synthesis
+//   Y13        key broadcast
+//   Y14        key XOR component pair, broadcast per cascade round
+//
+// Per-pair synthesis (no index vector):
+//   - Calculate groupIdx for both lanes (2i and 2i+1)
+//   - Load into X11 (lane 2i) and X15 (lane 2i+1)
+//   - VINSERTI128 to form YMM with [gi_even | gi_odd]
+//   - VPUNPCKLQDQ to transform [gi, 0] into [gi<<8, gi>>56] per 128-bit half
+//   - XOR with absorb13Block to form the fill block, store to the frame
+"""
+
+
+def x16_comment_zmm(tier_desc):
+    return f"""// {tier_desc} 16-lane fused ChainHash cascade kernel
+// for AES-ITB-128 at the 13-byte per-lane fill shape {x16_shape_note()}.
+// See aesitbasm_fused.go for the construction; every tier is pinned to
+// the pure-Go reference (scalarFusedX16) by the in-package parity tests.
+//
+// Batch layout: 4 ZMM states, four lanes per ZMM (lanes 4j..4j+3 in Z[j]).
+// Unique to batch-16: groupIdx synthesized in-register per lane via
+// per-group VPADDQ (applying laneIdxZ offsets) and VPUNPCKLQDQ. The whole
+// cascade is register-resident: the four block registers are built once
+// and every cascade round folds key XOR pair and the block into the state
+// with one VPTERNLOGQ per group.
+//
+// Register allocation:
+//   Z0–Z3      states, group j = lanes (4j, 4j+1, 4j+2, 4j+3)
+//   Z4–Z5      RC[0], RC[1] broadcasts
+//   Z6–Z7      groupIdxBase / absorb13Block broadcasts (prologue only)
+//   Z8–Z11     fill blocks, group j = lanes (4j .. 4j+3)
+//   Z12, Z15   scratch for per-lane groupIdx synthesis
+//   Z13        key broadcast
+//   Z14        key XOR component pair, broadcast per cascade round
+//
+// Per-group synthesis:
+//   - Load laneIdxZ[group] to add offsets [0,1,2,3] to groupIdxBase
+//   - VPADDQ to form [base+0, base+1, base+2, base+3]
+//   - VPSRLQ/VPSLLQ/VPUNPCKLQDQ to transform into [gi<<8, gi>>56] per lane
+//   - XOR with absorb13Block to form the fill block
+"""
+
+
+def x16_comment_neon(tier_desc):
+    return f"""// {tier_desc}
+// 16-lane fused ChainHash cascade kernel for AES-ITB-128 at the 13-byte
+// per-lane fill shape. See aesitbasm_fused.go for the construction; the
+// kernel is pinned to the pure-Go reference (scalarFusedX16) by the
+// in-package parity tests.
+""" + X16_CASCADE_NOTE + """// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03]
+// (domain tag, 8-byte index, 4 zero bytes, 3 PKCS#7 padding bytes).
+//
+// Batch layout: two batches of 8 lanes, each register-resident — V0..V7
+// states, V8..V15 blocks, V16 / V17 RC[0] / RC[1], V18 key, V19 key XOR
+// pair (per round), V20 pair load. Each batch runs the whole cascade
+// before the next starts. Issue order inside a round is round-major:
+// every step (the key XOR pair fold, each of the three AESE+AESMC rounds,
+// the final RC[1] XOR) runs across all 8 lanes before the next step
+// starts, so the 8 independent chains keep both crypto pipes busy
+// instead of serialising each lane's dependency chain behind the
+// previous lane's.
+"""
+
+
+X16_COMMENTS = {
+    "aesni": x16_comment_xmm,
+    "vex": x16_comment_xmm,
+    "vaesavx2": x16_comment_ymm,
+    "avx512": x16_comment_zmm,
+    "neon": x16_comment_neon,
+}
+
+
+def x16_header(tier):
+    desc, build, _ = X16_TIERS[tier]
+    return f"//go:build {build}\n\n" + X16_COMMENTS[tier](desc) + "\n#include \"textflag.h\"\n"
+
+
+def x16_xmm(vex):
+    """Two batches of eight lanes; the 16 blocks are built from the
+    groupIdx GPR as [idx<<8 | idx>>56] via shift + PUNPCKLQDQ, XORed with
+    absorb13Block (which carries the 0x03 domain tag and the PKCS#7 tail)
+    and staged to the frame. Each batch then runs the full cascade from
+    the staged blocks. The legacy-SSE tier reloads each block through a
+    register (PXOR m128 would require 16-byte alignment the Go frame does
+    not guarantee)."""
+    tier = "Vex" if vex else "AesNi"
+    mov = "VMOVDQU" if vex else "MOVOU"
+    L = [f"// func aesITB128FusedChain13x16{tier}Asm({X16_SIG})",
+         f"TEXT ·aesITB128FusedChain13x16{tier}Asm(SB), NOSPLIT, $256-40",
+         "\tMOVQ key+0(FP), AX", "\tMOVQ out+32(FP), DI", "\tMOVQ groupIdxBase+24(FP), R8", "",
+         "\t// Stage the 16 fill blocks into the frame at 16*lane(SP)",
+         f"\t{mov} ·absorb13Block(SB), X12", ""]
+    for lane in range(16):
+        L.append(f"\t// Lane {lane}: idx = base" + (f" + {lane}" if lane else ""))
+        L.append("\tMOVQ R8, R9")
+        if lane:
+            L.append(f"\tADDQ ${lane}, R9")
+        if vex:
+            L += ["\tVMOVQ R9, X11", "\tVMOVQ R9, X15", "\tVPSLLQ $8, X11, X11", "\tVPSRLQ $56, X15, X15",
+                  "\tVPUNPCKLQDQ X15, X11, X11", "\tVPXOR X12, X11, X11", f"\tVMOVDQU X11, {16 * lane}(SP)"]
+        else:
+            L += ["\tMOVQ R9, X11", "\tMOVQ R9, X15", "\tPSLLQ $8, X11", "\tPSRLQ $56, X15",
+                  "\tPUNPCKLQDQ X15, X11", "\tPXOR X12, X11", f"\tMOVOU X11, {16 * lane}(SP)"]
+        L.append("")
+    L += ["\t// Load round constants and key", f"\t{mov} ·RC+0(SB), X9", f"\t{mov} ·RC+16(SB), X10",
+          f"\t{mov} 0(AX), X13", ""]
+    for b in range(2):
+        L += [f"\t// ========== BATCH {b + 1}: lanes {8 * b}–{8 * b + 7} ==========",
+              "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX"]
+        for l in range(8):
+            L.append(f"\tVPXOR X{l}, X{l}, X{l}" if vex else f"\tPXOR X{l}, X{l}")
+        L += ["", f"loop{b}:"]
+        if vex:
+            L += ["\tVMOVDQU 0(BX), X14", "\tVPXOR X13, X14, X14"]
+            for l in range(8):
+                L.append(f"\tVPXOR X14, X{l}, X{l}")
+            for l in range(8):
+                L.append(f"\tVPXOR {16 * (8 * b + l)}(SP), X{l}, X{l}")
+            for rc in ("X9", "X9", "X10"):
+                L.append("\t" + "; ".join(f"VAESENC {rc}, X{l}, X{l}" for l in range(8)))
+        else:
+            L += ["\tMOVOU 0(BX), X14", "\tPXOR X13, X14"]
+            for l in range(8):
+                L.append(f"\tPXOR X14, X{l}")
+            for l in range(8):
+                L.append(f"\tMOVOU {16 * (8 * b + l)}(SP), X15")
+                L.append(f"\tPXOR X15, X{l}")
+            for rc in ("X9", "X9", "X10"):
+                L.append("\t" + "; ".join(f"AESENC {rc}, X{l}" for l in range(8)))
+        L += ["\tADDQ $16, BX", "\tDECQ CX", f"\tJNZ loop{b}", "", f"\t// Store batch {b + 1} outputs"]
+        for l in range(8):
+            L.append(f"\t{mov} X{l}, {16 * (8 * b + l)}(DI)")
+        L.append("")
+    L.append("\tRET")
+    return "\n".join(L) + "\n"
+
+
+def x16_ymm():
+    """Eight YMM states of two lanes; each pair's two groupIdx values are
+    materialised via LEAQ, moved into the two 128-bit halves, turned into
+    [idx<<8 | idx>>56] with one shift pair and VPUNPCKLQDQ, XORed with
+    absorb13Block and stored to the frame as one 32-byte block pair."""
+    L = [f"// func aesITB128FusedChain13x16VaesAvx2Asm({X16_SIG})",
+         "TEXT ·aesITB128FusedChain13x16VaesAvx2Asm(SB), NOSPLIT, $256-40",
+         "\tMOVQ key+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
+         "\tMOVQ out+32(FP), DI", "\tMOVQ groupIdxBase+24(FP), R8", "",
+         "\t// Stage the 8 block pairs into the frame at 32*pair(SP)",
+         "\tVBROADCASTI128 ·absorb13Block(SB), Y10", ""]
+    for p in range(8):
+        L.append(f"\t// ========== Pair {p}: lanes {2 * p}–{2 * p + 1} ==========")
+        L.append("\tMOVQ R8, R9" if p == 0 else f"\tLEAQ {2 * p}(R8), R9")
+        L += ["\tVMOVQ R9, X11", f"\tLEAQ {2 * p + 1}(R8), R9", "\tVMOVQ R9, X15",
+              "\tVINSERTI128 $1, X15, Y11, Y11", "\tVPSRLQ $56, Y11, Y15", "\tVPSLLQ $8, Y11, Y11",
+              "\tVPUNPCKLQDQ Y15, Y11, Y11", "\tVPXOR Y10, Y11, Y11", f"\tVMOVDQU Y11, {32 * p}(SP)", ""]
+    L += ["\t// Load round constants and key",
+          "\tVBROADCASTI128 ·RC+0(SB), Y8", "\tVBROADCASTI128 ·RC+16(SB), Y9",
+          "\tVBROADCASTI128 0(AX), Y13"]
+    for i in range(8):
+        L.append(f"\tVPXOR Y{i}, Y{i}, Y{i}")
+    L += ["", "loop:", "\tVBROADCASTI128 0(BX), Y14", "\tVPXOR Y13, Y14, Y14"]
+    for i in range(8):
+        L.append(f"\tVPXOR Y14, Y{i}, Y{i}")
+    for i in range(8):
+        L.append(f"\tVPXOR {32 * i}(SP), Y{i}, Y{i}")
+    L.append("\t// AES rounds: 3 rounds on all 8 YMM pairs (RC[0], RC[0], RC[1])")
+    for rc in ("Y8", "Y8", "Y9"):
+        L.append("\t" + "; ".join(f"VAESENC {rc}, Y{i}, Y{i}" for i in range(8)))
+    L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", "", "\t// Store outputs: pair i at [32i..32i+32]"]
+    for i in range(8):
+        L.append(f"\tVMOVDQU Y{i}, {32 * i}(DI)")
+    L += ["", "\tVZEROUPPER", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
+def x16_zmm():
+    """Four ZMM states of four lanes; groupIdxBase is broadcast once and each
+    group adds its laneIdxZ offset row, so the whole synthesis is vector
+    arithmetic (no GPR-to-vector moves). Blocks stay in Z8..Z11 and every
+    cascade round is one VPTERNLOGQ plus three VAESENC per group."""
+    L = [f"// func aesITB128FusedChain13x16Avx512Asm({X16_SIG})",
+         "TEXT ·aesITB128FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-40",
+         "\tMOVQ key+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
+         "\tMOVQ out+32(FP), DI", "",
+         "\t// Broadcast groupIdxBase to Z6 (all 8 qwords) and absorb13Block to Z7",
+         "\tVPBROADCASTQ groupIdxBase+24(FP), Z6", "\tVBROADCASTI32X4 ·absorb13Block(SB), Z7", ""]
+    for g in range(4):
+        L += [f"\t// ========== Group {g}: lanes {4 * g}–{4 * g + 3} ==========",
+              f"\tVPADDQ ·laneIdxZ+{64 * g}(SB), Z6, Z12", "\tVPSRLQ $56, Z12, Z15", "\tVPSLLQ $8, Z12, Z12",
+              "\tVPUNPCKLQDQ Z15, Z12, Z12", f"\tVPXORD Z7, Z12, Z{8 + g}", ""]
+    L += ["\t// Load round constants and key",
+          "\tVBROADCASTI32X4 ·RC+0(SB), Z4", "\tVBROADCASTI32X4 ·RC+16(SB), Z5",
+          "\tVBROADCASTI32X4 0(AX), Z13"]
+    for j in range(4):
+        L.append(f"\tVPXORD Z{j}, Z{j}, Z{j}")
+    L += ["", "loop:", "\tVBROADCASTI32X4 0(BX), Z14", "\tVPXORD Z13, Z14, Z14"]
+    for j in range(4):
+        L.append(f"\tVPTERNLOGQ $0x96, Z14, Z{8 + j}, Z{j}     // Z{j} ^= Z{8 + j} ^ Z14")
+    L.append("\t// AES rounds: 3 rounds on all 4 ZMM groups (RC[0], RC[0], RC[1])")
+    for rc in ("Z4", "Z4", "Z5"):
+        L.append("\t" + "; ".join(f"VAESENC {rc}, Z{j}, Z{j}" for j in range(4)))
+    L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", "", "\t// Store outputs: group j at [64j..64j+64]"]
+    for j in range(4):
+        L.append(f"\tVMOVDQU64 Z{j}, {64 * j}(DI)")
+    L += ["", "\tVZEROUPPER", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
+def x16_neon():
+    """Two batches of eight lanes, register-resident; the block is assembled
+    in GPRs (D[0] = idx<<8 | 0x03, D[1] = idx>>56 | pad tail) and is the
+    first AESE key operand of every cascade round. Issue order is
+    round-major within a batch."""
+    L = [f"// func aesITB128FusedChain13x16NeonAsm({X16_SIG})",
+         "TEXT ·aesITB128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40",
+         "\tMOVD key+0(FP), R0", "\tMOVD comps+8(FP), R1", "\tMOVD nPairs+16(FP), R2",
+         "\tMOVD groupIdxBase+24(FP), R3", "\tMOVD out+32(FP), R4", "",
+         "\t// Load key (V18) and round constants RC[0] (V16), RC[1] (V17)",
+         "\tVLD1 (R0), [V18.B16]",
+         "\tMOVD $·RC(SB), R5", "\tVLD1.P 16(R5), [V16.B16]  // RC[0]", "\tVLD1 (R5), [V17.B16]      // RC[1]", "",
+         "\t// Materialized constant for pad tail: bytes 13-15 = 0x03", "\tMOVD $0x0303030000000000, R7", ""]
+    for b in range(2):
+        L += [f"\t// ========== BATCH {b + 1}: lanes {8 * b}–{8 * b + 7} ==========",
+              "\t// Step 1 — synthesise the 8 fill blocks in V8..V15:",
+              "\t// [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03] as",
+              "\t// D[0] = (idx << 8) | 0x03, D[1] = (idx >> 56) | pad tail."]
+        for l in range(8):
+            lane = 8 * b + l
+            L.append("\tMOVD R3, R6" if lane == 0 else f"\tADD ${lane}, R3, R6")
+            L += ["\tLSL $8, R6, R8", "\tORR $3, R8, R8", "\tLSR $56, R6, R9", "\tORR R7, R9, R9",
+                  f"\tVMOV R8, V{8 + l}.D[0]", f"\tVMOV R9, V{8 + l}.D[1]"]
+        L += ["", "\t// Step 2 — zero the 8 states, reset the component cursor and pair count."]
+        for l in range(8):
+            L.append(f"\tVEOR V{l}.B16, V{l}.B16, V{l}.B16")
+        L += ["\tMOVD R1, R10", "\tMOVD R2, R11", "", f"loop{b}:",
+              "\t// Fold key XOR pair (V19) into every state, then the block as the",
+              "\t// first AESE key operand, two RC[0] rounds and the final RC[1] XOR.",
+              "\tVLD1.P 16(R10), [V20.B16]", "\tVEOR V18.B16, V20.B16, V19.B16"]
+        for l in range(8):
+            L.append(f"\tVEOR V19.B16, V{l}.B16, V{l}.B16")
+        for l in range(8):
+            L += [f"\tAESE V{8 + l}.B16, V{l}.B16", f"\tAESMC V{l}.B16, V{l}.B16"]
+        for _ in range(2):
+            for l in range(8):
+                L += [f"\tAESE V16.B16, V{l}.B16", f"\tAESMC V{l}.B16, V{l}.B16"]
+        for l in range(8):
+            L.append(f"\tVEOR V17.B16, V{l}.B16, V{l}.B16")
+        L += ["\tSUBS $1, R11, R11", f"\tBNE loop{b}", "", f"\t// Store batch {b + 1} rank pairs in lane order."]
+        for l in range(8):
+            L.append(f"\tVST1.P [V{l}.B16], 16(R4)")
+        L.append("")
+    L.append("\tRET")
+    return "\n".join(L) + "\n"
+
+
+X16_EMITTERS = {
+    "aesni": lambda: x16_xmm(False),
+    "vex": lambda: x16_xmm(True),
+    "vaesavx2": x16_ymm,
+    "avx512": x16_zmm,
+    "neon": x16_neon,
+}
+
+
+def render_x16():
+    return {X16_TIERS[t][2]: x16_header(t) + "\n" + X16_EMITTERS[t]() for t in X16_TIERS}
+
+
 def render_all():
     amd = "amd64 && !purego && !noitbasm"
     arm = "arm64 && !purego && !noitbasm"
     files = {}
+    files.update(render_x16())
     for s in SHAPES:
         files.update({
             f"aesitb_fusedchain128_{s}x4_aesni_amd64.s": header(s, 4, "Legacy-SSE AES-NI XMM", amd, "xmm") + "\n" + xmm_fused(s, 4, False),

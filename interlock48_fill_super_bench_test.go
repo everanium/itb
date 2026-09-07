@@ -28,8 +28,8 @@ func BenchmarkLockFillSuper16(b *testing.B) {
 		b.Fatal(err)
 	}
 	seed.BatchHash = bh
-	seed.SetInterlockBatch16(func(groupIdxBase uint64, seed0, seed1 uint64, out *[16][2]uint64) {
-		aesitbasm.AESITB128ChainAbsorb13x16(&key, seed0, seed1, groupIdxBase, out)
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+		aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
 	})
 	nonce := make([]byte, 64)
 	for i := range nonce {

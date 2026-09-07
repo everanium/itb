@@ -1,14 +1,28 @@
-// Package aesitbasm holds the 4-lane batched chain-absorb kernels of the
-// AES-ITB-128 primitive for the parent itb package. Each kernel evaluates
-// four independent instances of the AES-ITB generic (nonce-free) sponge
-// over a fixed per-lane input length — 13 bytes (the Interlocked Barrier
-// PRF fill shape) and 20 / 36 / 68 bytes (the ITB 128 / 256 / 512-bit
-// nonce buf shapes) — in a single call, so the per-pixel dispatch advances
-// four lanes without the per-round call boundary the single-lane closure
-// pays for every AES round.
+// Package aesitbasm holds the assembly kernels of the AES-ITB-128
+// primitive for the parent itb package, in three families over the four
+// fixed per-lane input lengths — 13 bytes (the Interlocked Barrier fill
+// shape) and 20 / 36 / 68 bytes (the ITB 128 / 256 / 512-bit nonce buf
+// shapes):
 //
-// Per lane, with key = the primitive's 16-byte fixed key and (seed0, seed1)
-// the ChainHash128 seed pair of that lane:
+//   - per-round chain-absorb kernels, four lanes per call
+//     ([AESITB128ChainAbsorb13x4] and siblings; aesitb_chain128_*.s,
+//     emitted by scripts/kernels/aesitb128/gen_kernels.py): one evaluation
+//     of the sponge below per lane, the arm of the batched hash closure
+//     the parent package builds around the primitive;
+//   - fused ChainHash cascade kernels, one or four lanes per call
+//     ([FusedChain13x1] / [FusedChain13x4] and siblings;
+//     aesitb_fusedchain128_*x1_*.s / *x4_*.s, emitted by
+//     gen_fused_kernels.py): the whole component cascade of
+//     itb.Seed128.ChainHash128 with the state kept in registers between
+//     rounds — see aesitbasm_fused.go;
+//   - the batch-16 fused cascade kernel of the Interlocked Barrier fill
+//     ([FusedChain13x16]; aesitb_fusedchain128_13x16_*.s, same generator):
+//     sixteen lanes at the 13-byte shape with the fill blocks synthesised
+//     in-register from a group index base.
+//
+// Each family runs the same sponge. Per lane, with key = the primitive's
+// 16-byte fixed key and (seed0, seed1) the ChainHash128 seed pair of that
+// lane:
 //
 //	state  = key XOR (LE64(seed0) || LE64(seed1))
 //	padded = data || PKCS#7 padding to a 16-byte multiple (always >= 1 byte)
@@ -22,12 +36,13 @@
 //
 // The construction is bit-exact with the single-lane closure the parent
 // package builds around the same key (itb.MakeAESITB128Hash); the
-// reference implementation in this package ([ChainAbsorb]) is pure Go
-// over the software AES round, and every assembly tier is pinned to it
-// by the in-package parity tests. Kernels read exactly the per-lane
-// input length — the tail block is assembled from 4-byte (20 / 36 / 68)
-// or 8+4+1-byte (13) loads — because callers hand over buffers sized to
-// the shape with no slack.
+// reference implementations in this package ([ChainAbsorb] for one
+// round, [ScalarFusedChain] for the cascade) are pure Go over the
+// software AES round, and every assembly tier of every family is pinned
+// to them by the in-package parity tests. Kernels read exactly the
+// per-lane input length — the tail block is assembled from 4-byte
+// (20 / 36 / 68) or 8+4+1-byte (13) loads — because callers hand over
+// buffers sized to the shape with no slack.
 package aesitbasm
 
 import (
@@ -126,17 +141,5 @@ func scalarBatch(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, n int, 
 	for lane := 0; lane < 4; lane++ {
 		data := unsafe.Slice(dataPtrs[lane], n)
 		out[lane][0], out[lane][1] = ChainAbsorb(key, data, seeds[lane][0], seeds[lane][1])
-	}
-}
-
-// scalarBatchX16 evaluates the 13-byte shape on 16 lanes via the
-// Go reference. groupIdxBase is the first group index; lane i (0..15)
-// produces groupIdx = groupIdxBase + i. out receives 16 rank pairs.
-func scalarBatchX16(key *[16]byte, groupIdxBase uint64, seed0, seed1 uint64, out *[16][2]uint64) {
-	for i := 0; i < 16; i++ {
-		var buf [13]byte
-		buf[0] = 0x03
-		binary.LittleEndian.PutUint64(buf[1:9], groupIdxBase+uint64(i))
-		out[i][0], out[i][1] = ChainAbsorb(key, buf[:], seed0, seed1)
 	}
 }

@@ -1,6 +1,6 @@
 # AES-ITB-128 kernel generators
 
-Three deterministic generators emit every AES-ITB-128 assembly kernel under
+Two deterministic generators emit every AES-ITB-128 assembly kernel under
 `internal/aesitbasm/`. Each takes no input beyond its own source, reads
 no numeric tables of its own (round constants, the PKCS#7 pad vectors, the
 batch-16 absorb block and lane-offset table are read from the Go side —
@@ -12,12 +12,11 @@ files without writing, and exits non-zero on any drift.
 ```
 python3 scripts/kernels/aesitb128/gen_kernels.py --check
 python3 scripts/kernels/aesitb128/gen_fused_kernels.py --check
-python3 scripts/kernels/aesitb128/gen_kernels_x16.py --check
 ```
 
 Run a generator without `--check` to (re)write its files; the output
 directory is resolved relative to the script (`../../../internal/aesitbasm/`).
-After any generator change, run the `--check` form of all three and confirm
+After any generator change, run the `--check` form of both and confirm
 `git diff --stat internal/aesitbasm/` shows only the intended kernels.
 
 ## Per-round chain-absorb kernels — `gen_kernels.py`
@@ -43,17 +42,19 @@ files, `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
 vaesavx2 / avx512), `aesitb_fusedchain128_<shape>x1_<tier>_amd64.s` (tiers
 aesni / vex) and `aesitb_fusedchain128_<shape>x{1,4}_neon_arm64.s`.
 
-## Batch-16 interlock PRF fill kernels — `gen_kernels_x16.py`
+## Batch-16 Interlocked Barrier fill kernels — `gen_fused_kernels.py`
 
-The 16-lane chain-absorb kernels at the 13-byte shape that fill the
-Interlocked Barrier PRF for 16 consecutive groups per call: five files,
-`aesitb_chain128_13x16_<tier>_amd64.s` (tiers aesni / vex / vaesavx2 /
-avx512) and `aesitb_chain128_13x16_neon_arm64.s`. The kernels receive
+The same generator emits the 16-lane fused cascade kernels at the 13-byte
+shape that fill the Interlocked Barrier PRF for 16 consecutive groups per
+call: five files, `aesitb_fusedchain128_13x16_<tier>_amd64.s` (tiers
+aesni / vex / vaesavx2 / avx512) and
+`aesitb_fusedchain128_13x16_neon_arm64.s`. The kernels receive
 `groupIdxBase` in a register and synthesise the 16 per-lane fill blocks
 in-register, so the batch-16 path pays no per-lane pointer gather and no
-store ahead of the call. `gen_kernels_x16.py` additionally accepts
-`--stdout` (print instead of write) and an optional list of tier names to
-restrict the run.
+store ahead of the call; every lane then runs the whole ChainHash cascade
+over the caller's component slice (the prepended lock components of the
+cascade fill), and with one pair the kernel is the plain chain-absorb of
+the shape.
 
 ## Store-to-load forwarding discipline (amd64)
 

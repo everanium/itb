@@ -140,12 +140,16 @@ type Spec struct {
 	// evaluators bit-exact with that loop. Shipped: aesitb128.
 	FusedChainHash128 func(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) `json:"-"`
 
-	// InterlockFillBatch16 optionally builds the batch-16 interlock PRF
-	// fill kernel installed through [itb.Seed128.SetInterlockBatch16] (see
-	// [itb.InterlockFillFunc16]). key is the primitive's fixed key exactly
-	// as returned by the Make128Pair factory. nil (every entry without batch-16
-	// support) leaves the seed on the per-round fillRanks path.
-	// Shipped: aesitb128.
+	// InterlockFillBatch16 optionally builds the batch-16 Interlocked
+	// Barrier fill kernel installed through
+	// [itb.Seed128.SetInterlockBatch16] (see [itb.InterlockFillFunc16]).
+	// key is the primitive's fixed key exactly as returned by the
+	// Make128Pair factory. nil (every entry without batch-16 support)
+	// leaves the seed on the derived-pair fill. A populated factory makes
+	// the primitive fill through the ChainHash cascade over the derived
+	// pair and the seed's components — the hook's presence selects that
+	// wire — and must return a kernel bit-exact with sixteen sequential
+	// cascades over the same components. Shipped: aesitb128.
 	InterlockFillBatch16 func(key []byte) (itb.InterlockFillFunc16, error) `json:"-"`
 }
 

@@ -3,11 +3,15 @@
 #
 # Runs a short single-thread bench (default: 4 MiB payload, 300 ms
 # per direction) at natural dispatch and then under every documented
-# forced-tier value for the three dispatch axes:
+# forced-tier value for the four dispatch axes:
 #
-#   ITB_FORCE_INTERLOCK_TIER = avx512 | avx512x8 | avx2 | scalar
-#   ITB_FORCE_HASH_TIER      = avx512 | vaesavx2 | avx2 | aesni | scalar
-#   ITB_FORCE_PIXEL_TIER     = A | A_NOGFNI | B | B_NOGFNI | C
+#   ITB_FORCE_INTERLOCK_TIER          = avx512 | avx512x8 | avx2 | scalar
+#   ITB_FORCE_HASH_TIER               = avx512 | vaesavx2 | avx2 | vex | aesni | scalar
+#   ITB_FORCE_INTERLOCK_PRF_FILL_TIER = avx512 | vaesavx2 | vex | aesni | scalar
+#   ITB_FORCE_PIXEL_TIER              = A | A_NOGFNI | B | B_NOGFNI | C
+#
+# (The neon token of the two aesitbasm axes is arm64-only and is not
+# swept here; the amd64 tokens are rejected there with a stderr note.)
 #
 # Purpose: identify a slow tier on a given CPU by comparison — natural
 # dispatch throughput vs each forced arm. When natural dispatch is
@@ -73,8 +77,14 @@ done
 echo ""
 
 echo "=== Forced hash tier ==="
-for t in avx512 vaesavx2 avx2 aesni scalar; do
+for t in avx512 vaesavx2 avx2 vex aesni scalar; do
     run_bench "HASH=$t" ITB_FORCE_HASH_TIER=$t
+done
+echo ""
+
+echo "=== Forced interlock PRF fill tier ==="
+for t in avx512 vaesavx2 vex aesni scalar; do
+    run_bench "PRF_FILL=$t" ITB_FORCE_INTERLOCK_PRF_FILL_TIER=$t
 done
 echo ""
 

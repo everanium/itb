@@ -61,11 +61,13 @@ type Seed128 struct {
 	FusedChain      FusedChainHashFunc128
 	BatchFusedChain BatchFusedChainHashFunc128
 
-	// interlockFillX16 optionally accelerates the Interlocked Barrier PRF
-	// fill for the 13-byte per-pixel shape (the sole shape the overlay
-	// uses). When non-nil, a 16-group batch is filled in one kernel
-	// call instead of four sequential 4-lane ChainAbsorb calls.
-	// Populated via SetInterlockBatch16.
+	// interlockFillX16 is the batch-16 Interlocked Barrier fill hook for
+	// the 13-byte fill shape (the sole shape the overlay uses). When
+	// non-nil the lockSeed fills through the ChainHash cascade over the
+	// derived pair and its components, a 16-group batch per kernel call
+	// — the hook's presence selects that wire, see InterlockFillFunc16;
+	// when nil the derived-pair fill runs. Populated via
+	// SetInterlockBatch16.
 	interlockFillX16 InterlockFillFunc16
 }
 
@@ -83,7 +85,11 @@ type Seed128 struct {
 // of the triple package's auto-attach. Directly-constructed seeds keep
 // their optional hooks nil and route hot paths through the sequential
 // fallback until hashes.AttachFused128 and hashes.AttachInterlockBatch16
-// are called explicitly.
+// are called explicitly. For aesitb128 the batch-16 hook is
+// wire-affecting — its presence selects the Interlocked Barrier cascade
+// fill (see [InterlockFillFunc16]) — so an aesitb128 seed used as
+// lockSeed must carry it to interoperate with seeds built through
+// hashes.NewSeed128x16 or the triple package.
 func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 	if bits < 512 || bits > MaxKeyBits || bits%128 != 0 {
 		return nil, fmt.Errorf("itb: seed128 bits must be 512-%d and multiple of 128, got %d", MaxKeyBits, bits)
@@ -125,7 +131,13 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 // and route hot paths through the sequential fallback until
 // hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
 // explicitly; see hashes.NewSeed128x16 for the random-components
-// constructor that attaches them in one call.
+// constructor that attaches them in one call and
+// hashes.SeedFromComponents128x16 for the existing-components
+// counterpart of this constructor. For aesitb128 the batch-16 hook is
+// wire-affecting — its presence selects the Interlocked Barrier cascade
+// fill (see [InterlockFillFunc16]) — so an aesitb128 lockSeed rebuilt
+// from components must carry it to decrypt what the exporting side
+// encrypted.
 func SeedFromComponents128(hashFunc HashFunc128, components ...uint64) (*Seed128, error) {
 	if len(components) < 8 || len(components) > MaxKeyBits/64 {
 		return nil, fmt.Errorf("itb: components count must be 8-%d, got %d", MaxKeyBits/64, len(components))

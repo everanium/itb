@@ -1,6 +1,9 @@
 package aesitbasm
 
-import "unsafe"
+import (
+	"encoding/binary"
+	"unsafe"
+)
 
 // Fused cascade kernels evaluate the whole ChainHash128 cascade of the
 // parent package in one call:
@@ -44,4 +47,20 @@ func scalarFusedSingle(key *[16]byte, components []uint64, data *byte, n int, ou
 // and an even word count.
 func validComponents(components []uint64) bool {
 	return len(components) >= 2 && len(components)%2 == 0
+}
+
+// scalarFusedX16 is the pure-Go reference of the batch-16 fused cascade
+// at the Interlocked Barrier fill shape: lane i (0..15) runs
+// ScalarFusedChain over the 13-byte fill block
+// [0x03 | LE64(groupIdxBase+i) | 4×0x00] with the shared components.
+// out receives the 16 rank pairs in lane order. With one component pair
+// the cascade is the plain chain-absorb of each fill block under that
+// pair.
+func scalarFusedX16(key *[16]byte, components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+	for i := 0; i < 16; i++ {
+		var buf [13]byte
+		buf[0] = 0x03
+		binary.LittleEndian.PutUint64(buf[1:9], groupIdxBase+uint64(i))
+		out[i][0], out[i][1] = ScalarFusedChain(key, components, buf[:])
+	}
 }

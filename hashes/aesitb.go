@@ -140,18 +140,21 @@ func AttachFused128(s *itb.Seed128, name string, key []byte) error {
 }
 
 // aesITB128InterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory.
-// Returns a batch-16 interlock PRF fill kernel that synthesizes 16 consecutive
-// 13-byte buffers (domain tag 0x03, group index at bytes [1:9], PKCS#7 pad)
-// and runs the AES-ITB hash under the shared seed pair. Dispatches to tier
-// (avx512, vaesavx2, vex, aesni) or scalar fallback.
+// Returns the batch-16 Interlocked Barrier fill kernel that synthesizes 16
+// consecutive 13-byte fill buffers (domain tag 0x03, group index at bytes
+// [1:9], PKCS#7 pad) and runs the whole AES-ITB ChainHash cascade over the
+// supplied components on every lane inside one internal/aesitbasm kernel
+// call (tier avx512, vaesavx2, vex, aesni, neon, or the scalar reference).
+// Its presence on a lockSeed selects the cascade fill — see
+// [itb.InterlockFillFunc16].
 func aesITB128InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) {
 	if len(key) != 16 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 16-byte key, got %d", CipherAESITB128, len(key))
 	}
 	var k [16]byte
 	copy(k[:], key)
-	return func(groupIdxBase uint64, seed0, seed1 uint64, out *[16][2]uint64) {
-		aesitbasm.AESITB128ChainAbsorb13x16(&k, seed0, seed1, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+		aesitbasm.FusedChain13x16(&k, components, groupIdxBase, out)
 	}, nil
 }
 
@@ -159,8 +162,11 @@ func aesITB128InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) 
 // primitive's [Spec.InterlockFillBatch16] factory, using the fixed key
 // the seed's Hash arm was built with. Primitives without batch-16 support,
 // unknown names, and factories that decline (nil) leave the seed unchanged
-// — the per-round fillRanks path keeps running. A factory error is
-// returned; the seed is left unchanged.
+// — the seed fills the Interlocked Barrier through the single derived-pair
+// call. For aesitb128 the attached hook selects the cascade fill, so a
+// seed with the hook and the same seed without it produce different wire
+// (see [itb.InterlockFillFunc16]); every shipped constructor attaches. A
+// factory error is returned; the seed is left unchanged.
 func AttachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok || spec.InterlockFillBatch16 == nil {
@@ -214,4 +220,57 @@ func NewSeed128x16(bits int, primitiveName string, key ...[]byte) (*itb.Seed128,
 		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
 	}
 	return s, fixedKey, nil
+}
+
+// SeedFromComponents128x16 constructs a [itb.Seed128] from existing
+// components with every fast-path hook attached in one call — the
+// existing-components counterpart of [NewSeed128x16] and the Low-Level
+// bridge for seeds that come back from [itb.Blob128.Import3Cfg] with
+// Components populated and Hash / BatchHash nil. Equivalent to:
+//
+//	single, batched, _, _ := hashes.Make128Pair(primitiveName, key) // key omitted when empty
+//	seed, _ := itb.SeedFromComponents128(single, components...)
+//	seed.BatchHash = batched
+//	hashes.AttachFused128(seed, primitiveName, key)
+//	hashes.AttachInterlockBatch16(seed, primitiveName, key)
+//
+// key is the primitive's fixed key the seed's arms were originally
+// built with (the Key* bytes of the blob). Pass nil or an empty slice
+// for a keyless primitive (siphash24, whose blob key field is empty and
+// which rejects an explicit key); an empty key for a keyed primitive is
+// an error, since arms built on a fresh random key would not reproduce
+// the exported seed's wire.
+//
+// The attach step is wire-affecting for aesitb128: its batch-16 hook
+// selects the Interlocked Barrier cascade fill (see
+// [itb.InterlockFillFunc16]), so an aesitb128 lockSeed rebuilt from
+// imported components without this helper — or without
+// [AttachInterlockBatch16] — fills through the single derived-pair call
+// and decrypts nothing the exporting side encrypted, with no error
+// oracle. Primitives without fused / batch-16 factories get the base
+// Hash / BatchHash arms; their optional hooks remain nil.
+func SeedFromComponents128x16(primitiveName string, key []byte, components ...uint64) (*itb.Seed128, error) {
+	var keyArg [][]byte
+	if len(key) > 0 {
+		keyArg = [][]byte{key}
+	}
+	single, batched, fixedKey, err := Make128Pair(primitiveName, keyArg...)
+	if err != nil {
+		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
+	}
+	if len(key) == 0 && len(fixedKey) > 0 {
+		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): the primitive is keyed; pass the fixed key the components were exported with", primitiveName)
+	}
+	s, err := itb.SeedFromComponents128(single, components...)
+	if err != nil {
+		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
+	}
+	s.BatchHash = batched
+	if err := AttachFused128(s, primitiveName, fixedKey); err != nil {
+		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
+	}
+	if err := AttachInterlockBatch16(s, primitiveName, fixedKey); err != nil {
+		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
+	}
+	return s, nil
 }

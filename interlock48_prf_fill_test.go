@@ -27,7 +27,7 @@ func TestInterlockPRFFillSeqEnvVarToggle(t *testing.T) {
 	// checks only that buildLockBatchPRF48_128 consults InterlockFillX16()
 	// and gates fillRanksSuper on the env-var, so a no-op stands in for
 	// the kernel dispatch.
-	seed.SetInterlockBatch16(func(groupIdxBase, seed0, seed1 uint64, out *[16][2]uint64) {})
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {})
 
 	nonce := bytes.Repeat([]byte{0xAA}, 16)
 
