@@ -804,6 +804,20 @@ C-ABI callers install a persistent profile via `ITB_Triple_Register(name, profil
 
 The `triple/` facade is the recommended entry point. Callers who need the raw 8-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); there is no process-wide setter surface.
 
+> **⚠ AES-ITB-128 Low-Level construction — use `hashes.NewSeed128x16`, not `itb.NewSeed128`.** AES-ITB-128 is a reduced-round primitive that relies on the interlock cascade fill hook attached to the seed (see [HARNESS.md § 3.10.3](HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)). The raw `itb.NewSeed128(bits, fn)` constructor does not know the primitive name and cannot attach the cascade hook; a Low-Level caller who uses it directly for AES-ITB-128 gets a seed with the hook nil, and the interlock fill silently falls back to a single-round primitive call in the hot loop — losing the cascade that closes the reduced-primitive weakness structurally.
+>
+> The `triple/` facade attaches every fast-path hook automatically, so this notice only applies to code that constructs seeds through the Low-Level constructors. Use the helper:
+>
+> ```go
+> // AES-ITB-128 Low-Level construction — attaches all fast-path hooks (fused
+> // ChainHash cascade + batch-16 interlock PRF fill cascade) in one call.
+> ns, key, err := hashes.NewSeed128x16(1024, hashes.CipherAESITB128, nil) // nil key → CSPRNG-generated
+> if err != nil { panic(err) }
+> _ = key // save if the seed needs to be reconstructed across processes
+> ```
+>
+> Every other primitive at width 128 (`aescmac`, `siphash24`) does not have a cascade requirement; `itb.NewSeed128(bits, fn)` remains the direct Low-Level constructor for those cases. The primitive-name-aware `hashes.NewSeed128x16` helper is safe for all of them — it attaches the cascade hook only when the registry entry declares it (AES-ITB-128 alone today).
+
 ### Low-Level 1 — Single Message with MAC
 
 Message-shape variant using `itb.EncryptAuth3x256Cfg` / `itb.DecryptAuth3x256Cfg`. The pattern mirrors the 256-bit-width variant; substitute `128Cfg` or `512Cfg` when the primitive width changes. 8 typed seeds map to the canonical slot order (noise, lock, data1..3, start1..3); pairwise distinctness (byte-level `Components` comparison plus pointer identity) is enforced at the call site.
