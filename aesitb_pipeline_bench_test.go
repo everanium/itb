@@ -23,13 +23,14 @@ func benchInterlockGeometry(b *testing.B) {
 
 // BenchmarkExtWorkersAESITB128 drives every shipped AES-ITB profile
 // (InnerHash aesitb128, wrapper and parallax off) through its mode's
-// encrypt / decrypt surface at 64 MB, at 512- and 1024-bit keys, with
-// the worker cap at auto (0), 4 and 8, once through the fused ChainHash
-// cascade kernel and once through the sequential per-round loop
-// (ITB_FORCE_CHAINHASH_SEQ=1 at Init time). This is a MaxWorkers sweep
-// (every cell carries a W<n> suffix), not the message-size sweep the
-// ExtTriple harness runs — the standard 1 / 16 / 64 MB cells for
-// aesitb128 live in aesitb_ext_bench_test.go.
+// encrypt / decrypt surface at 64 MB, at 512-, 1024- and 2048-bit
+// keys (5 / 9 / 17 cascade rounds in the batch-16 Interlocked Barrier
+// fill hot loop), with the worker cap at auto (0), 4 and 8, once
+// through the fused ChainHash cascade kernel and once through the
+// sequential per-round loop (ITB_FORCE_CHAINHASH_SEQ=1 at Init time).
+// This is a MaxWorkers sweep (every cell carries a W<n> suffix), not
+// the message-size sweep the ExtTriple harness runs — the standard
+// 1 / 16 / 64 MB cells for aesitb128 live in aesitb_ext_bench_test.go.
 func BenchmarkExtWorkersAESITB128(b *testing.B) {
 	benchInterlockGeometry(b)
 	const size = 64 << 20
@@ -46,7 +47,7 @@ func BenchmarkExtWorkersAESITB128(b *testing.B) {
 		{"streaming-noaead", triple.ProfileStreamingNoAEADAESITBV1, true},
 	}
 	for _, workers := range []int{0, 4, 8} {
-		for _, keyBits := range []int{512, 1024} {
+		for _, keyBits := range []int{512, 1024, 2048} {
 			for _, path := range []string{"fused", "seq"} {
 				for _, tc := range profiles {
 					if path == "seq" {

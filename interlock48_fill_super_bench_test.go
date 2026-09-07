@@ -2,6 +2,7 @@ package itb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/everanium/itb/internal/aesitbasm"
@@ -13,17 +14,28 @@ import (
 // batch-16 hook — one call fills sixteen groups through the seed's
 // batch-16 kernel and copies the sixteen rank pairs into the prf
 // staging with 8-byte loads immediately after the kernel returns. The
-// kernel tier is selected by ITB_FORCE_INTERLOCK_PRF_FILL_TIER (avx512 /
-// vaesavx2 / vex / aesni), so the same closure times every tier's store
-// shape against the closure's read-back. Output is checked against the
-// sequential fillRanks path before timing.
+// sweep covers the 512-, 1024- and 2048-bit key sizes (5 / 9 / 17
+// cascade rounds respectively) so the per-call fill cost is timed at
+// every shipped cascade depth. The kernel tier is selected by
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER (avx512 / vaesavx2 / vex / aesni),
+// so the same closure times every tier's store shape against the
+// closure's read-back. Output is checked against the sequential
+// fillRanks path before timing.
 func BenchmarkLockFillSuper16(b *testing.B) {
+	for _, bits := range []int{512, 1024, 2048} {
+		b.Run(fmt.Sprintf("%dbit", bits), func(b *testing.B) {
+			benchLockFillSuper16(b, bits)
+		})
+	}
+}
+
+func benchLockFillSuper16(b *testing.B, bits int) {
 	var key [16]byte
 	for i := range key {
 		key[i] = byte(0x11 * i)
 	}
 	h, bh, _ := MakeAESITB128Hash(key)
-	seed, err := NewSeed128(512, h)
+	seed, err := NewSeed128(bits, h)
 	if err != nil {
 		b.Fatal(err)
 	}
