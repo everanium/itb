@@ -32,6 +32,8 @@ func init() {
 //	aesni  — BLAKE2s has no AES-based arm; the token forces scalar with
 //	         a stderr note (the parity script's skip matrix avoids the
 //	         pairing)
+//	vaesavx2 — no VAES arm exists; the token keeps auto-dispatch with a
+//	         stderr note
 //	scalar — every kernel off
 //
 // The arm64 tokens (neon / sve2 / sve) keep auto-dispatch with a note.
@@ -58,6 +60,8 @@ func applyFusedHashTier() {
 		forcetier.Warnf("blake2sasm: no aesni fused arm; forcing scalar")
 		FusedHasAVX512, FusedHasAVX2 = false, false
 		HasAVX512X16, HasAVX2X16 = false, false
+	case "vaesavx2":
+		forcetier.Warnf("blake2sasm: no vaesavx2 fused arm; keeping auto-dispatch")
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("blake2sasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":

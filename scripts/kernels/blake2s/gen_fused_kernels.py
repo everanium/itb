@@ -462,9 +462,10 @@ def evex_kernel(n, x8=False, fill=False):
     for i in range(WORDS):
         if x8:
             for q in range(2):
-                lines.append(f"\tVEXTRACTI32X4 ${q}, Y{i}, X16")
+                # X8 (a dead c word) is the VEX-encodable extract temp.
+                lines.append(f"\tVEXTRACTI32X4 ${q}, Y{i}, X8")
                 for l in range(4):
-                    lines.append(f"\tVPEXTRD ${l}, X16, {32 * (4 * q + l) + 4 * i}(DX)")
+                    lines.append(f"\tVPEXTRD ${l}, X8, {32 * (4 * q + l) + 4 * i}(DX)")
         else:
             for l in range(4):
                 lines.append(f"\tVPEXTRD ${l}, X{i}, {32 * l + 4 * i}(DX)")

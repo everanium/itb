@@ -45,7 +45,9 @@ func TestForceHashTierFusedApplied(t *testing.T) {
 	case "aesni", "scalar":
 		want(false, false)
 	case "vaesavx2":
-		t.Skip("vaesavx2: not a BLAKE2s token; auto-dispatch kept")
+		if FusedHasAVX512 != cpu.X86.HasAVX512F || FusedHasAVX2 != (cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F) {
+			t.Fatalf("vaesavx2: auto-dispatch not kept (avx512=%v avx2=%v)", FusedHasAVX512, FusedHasAVX2)
+		}
 	case "sve2", "sve", "neon":
 		t.Skipf("%s: arm64-only tier; not applicable on amd64", tier)
 	default:
@@ -84,5 +86,18 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 		t.Skip("neon batch-16 tier is arm64-only")
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)
+	}
+}
+
+// TestForceChainHashX4Applied asserts that ITB_FORCE_CHAINHASH_X4 disarms
+// the eight-lane per-pixel arm: the flag is false and the eight-lane
+// dispatchers run the four-lane kernels. Skips when the variable is
+// unset.
+func TestForceChainHashX4Applied(t *testing.T) {
+	if !forcetier.ChainHashX4() {
+		t.Skip("ITB_FORCE_CHAINHASH_X4 unset")
+	}
+	if FusedHasAVX512X8 || FusedX8Active() {
+		t.Fatalf("ITB_FORCE_CHAINHASH_X4: eight-lane arm armed (flag=%v active=%v)", FusedHasAVX512X8, FusedX8Active())
 	}
 }
