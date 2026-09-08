@@ -12,7 +12,8 @@ import (
 // batched permutation (every other length, and builds without such a
 // tier). Both must reproduce the single arm lane by lane over the
 // equal-length lanes ITB feeds; the tests below pin that on every
-// build and forced tier.
+// build and forced tier, and pin the explicit contract panic on
+// unequal lane lengths.
 
 var areionBatchedLens = []int{0, 1, 5, 13, 20, 24, 36, 48, 68, 100}
 
@@ -81,4 +82,21 @@ func TestAreionBatchedArmMatchesSingle512(t *testing.T) {
 			t.Errorf("fused route allocates: %v allocs/op", allocs)
 		}
 	}
+}
+
+func TestAreionBatchedArmUnequalLanesPanic(t *testing.T) {
+	const want = "areion: batched arm requires equal lane lengths (ITB contract)"
+	expectPanic := func(name string, f func()) {
+		defer func() {
+			if r := recover(); r != want {
+				t.Errorf("%s: panic %v, want %q", name, r, want)
+			}
+		}()
+		f()
+	}
+	data := areionBatchedData([4]int{20, 20, 20, 36})
+	_, b256, _ := MakeAreionSoEM256Hash()
+	expectPanic("256", func() { b256(&data, [4][4]uint64{}) })
+	_, b512, _ := MakeAreionSoEM512Hash()
+	expectPanic("512", func() { b512(&data, [4][8]uint64{}) })
 }

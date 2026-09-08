@@ -562,6 +562,11 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// across 4 pixels), the contract the batched arm requires.
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
+		for lane := 1; lane < 4; lane++ {
+			if len(data[lane]) != commonLen {
+				panic("areion: batched arm requires equal lane lengths (ITB contract)")
+			}
+		}
 
 		if out, ok := areionSoEM256BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
 			return out
@@ -709,6 +714,11 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 	// otherwise.
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])
+		for lane := 1; lane < 4; lane++ {
+			if len(data[lane]) != commonLen {
+				panic("areion: batched arm requires equal lane lengths (ITB contract)")
+			}
+		}
 
 		if out, ok := areionSoEM512BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
 			return out
