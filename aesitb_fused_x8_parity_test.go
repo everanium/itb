@@ -67,6 +67,29 @@ func newAESITBSeedX16(t *testing.T, bits int, key []byte) (*itb.Seed128, []byte)
 	return s, fixedKey
 }
 
+// aesitbSeedFromComponentsX16 rebuilds an aesitb128 seed from existing
+// components under its fixed key through the explicit Low-Level
+// sequence, with both attach helpers applied.
+func aesitbSeedFromComponentsX16(t *testing.T, key []byte, comps []uint64) *itb.Seed128 {
+	t.Helper()
+	single, batched, _, err := hashes.Make128Pair(hashes.CipherAESITB128, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := itb.SeedFromComponents128(single, comps...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.BatchHash = batched
+	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, key); err != nil {
+		t.Fatal(err)
+	}
+	if err := hashes.AttachInterlockBatch16(s, hashes.CipherAESITB128, key); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
 // TestAESITBFusedX8Attach pins the attach step: every shipping
 // constructor path carries the eight-lane hook when the arm is
 // selected, none carries it when the arm is disarmed or the sequential
@@ -77,12 +100,9 @@ func TestAESITBFusedX8Attach(t *testing.T) {
 	if fromHelper.BatchFusedChain8() == nil {
 		t.Fatal("the attach sequence left the eight-lane hook nil")
 	}
-	fromComponents, err := hashes.SeedFromComponents128x16(hashes.CipherAESITB128, key, fromHelper.Components...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	fromComponents := aesitbSeedFromComponentsX16(t, key, fromHelper.Components)
 	if fromComponents.BatchFusedChain8() == nil {
-		t.Fatal("SeedFromComponents128x16 left the eight-lane hook nil")
+		t.Fatal("the components attach sequence left the eight-lane hook nil")
 	}
 	bare := &itb.Seed128{}
 	if err := hashes.AttachFused128(bare, hashes.CipherAESITB128, key); err != nil {
@@ -248,11 +268,7 @@ func TestAESITBFusedX8LowLevelRoundTrip(t *testing.T) {
 				if comps == nil {
 					out[i], keys[i] = newAESITBSeedX16(t, 512, nil)
 				} else {
-					var err error
-					out[i], err = hashes.SeedFromComponents128x16(hashes.CipherAESITB128, keys[i], comps[i]...)
-					if err != nil {
-						t.Fatal(err)
-					}
+					out[i] = aesitbSeedFromComponentsX16(t, keys[i], comps[i])
 				}
 				if (out[i].BatchFusedChain8() != nil) != armed {
 					t.Fatalf("seed %d: eight-lane hook presence %v, want %v", i, out[i].BatchFusedChain8() != nil, armed)

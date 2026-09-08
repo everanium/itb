@@ -377,8 +377,6 @@ type Blob128 struct {
 	// them from the saved Key* bytes, optionally together with the
 	// fused and batch-16 fast-path hooks (hashes.AttachFused128 /
 	// hashes.AttachInterlockBatch16), which never change the wire.
-	// hashes.SeedFromComponents128x16 rebuilds one slot with every hook
-	// from its Key* bytes and Components.
 	NS  *Seed128
 	LS  *Seed128 // dedicated lockSeed
 	DS1 *Seed128
@@ -1003,9 +1001,8 @@ func (b *Blob128) Export3Cfg(
 // [Blob512.Import3Cfg] for the full contract. The imported seeds carry
 // Components only; the caller rebuilds each seed with its Hash /
 // BatchHash arms and, for the fast paths, its hooks
-// (hashes.SeedFromComponents128x16, or the arms plus
-// hashes.AttachFused128 and hashes.AttachInterlockBatch16) — the hooks
-// never change the wire.
+// (hashes.AttachFused128 and hashes.AttachInterlockBatch16) — the
+// hooks never change the wire.
 func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg

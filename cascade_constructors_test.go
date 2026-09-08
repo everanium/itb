@@ -18,8 +18,7 @@ import (
 // decrypt every other constructor's wire: a seed built by hand from the
 // registry arms with the hooks attached, the same seed exported through
 // Blob{128,256,512}.Export3Cfg and rebuilt after Import3Cfg with the
-// hooks (hashes.SeedFromComponents128x16 at width 128, the arms plus
-// the attach helpers by hand), and the same import wired with the arms
+// arms plus the attach helpers, and the same import wired with the arms
 // only — no hook at all — must all decrypt each other's wire at every
 // shipped key size.
 
@@ -192,10 +191,9 @@ func (c lowLevelConstellation) exportImport(t *testing.T, cfg *itb.Config) ([8]a
 	return out, keys
 }
 
-// rebuild wires the imported slots in place: helper rebuilds every
-// width-128 slot through hashes.SeedFromComponents128x16; manual wires
-// the Hash / BatchHash arms and, when attach is set, the attach helpers
-// the width offers; arms-only wires the arms alone.
+// rebuild wires the imported slots in place: manual-attach wires the
+// Hash / BatchHash arms and the attach helpers the width offers;
+// arms-only wires the arms alone.
 func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode string) lowLevelConstellation {
 	t.Helper()
 	raw, keys := c.exportImport(t, cfg)
@@ -207,14 +205,6 @@ func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode strin
 		}
 		switch s := raw[i].(type) {
 		case *itb.Seed128:
-			if mode == "helper" {
-				r, err := hashes.SeedFromComponents128x16(c.name, keys[i], s.Components...)
-				if err != nil {
-					t.Fatalf("SeedFromComponents128x16 slot %d: %v", i, err)
-				}
-				out.seeds[i] = r
-				continue
-			}
 			single, batched, _, err := hashes.Make128Pair(c.name, keyArg...)
 			if err != nil {
 				t.Fatalf("Make128Pair slot %d: %v", i, err)
@@ -266,11 +256,7 @@ func TestCascadeCrossConstructorRoundTrip(t *testing.T) {
 				if err != nil {
 					t.Fatalf("encrypt: %v", err)
 				}
-				modes := []string{"manual-attach", "arms-only"}
-				if spec.Width == hashes.W128 {
-					modes = append(modes, "helper")
-				}
-				for _, mode := range modes {
+				for _, mode := range []string{"manual-attach", "arms-only"} {
 					v := orig.rebuild(t, cfg, mode)
 					for i := range v.seeds {
 						if mode == "arms-only" && v.hooked(i) {

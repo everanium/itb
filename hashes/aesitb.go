@@ -127,9 +127,9 @@ func aesITB128FusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFu
 // running. A factory error is returned; the seed is left unchanged.
 // The hooks are a performance path only: the seed produces the same
 // wire with and without them. Every shipping constructor path — the
-// triple package's Init / Load seed builders, the C ABI seed
-// constructors and [SeedFromComponents128x16] — calls AttachFused128
-// and [AttachInterlockBatch16] together.
+// triple package's Init / Load seed builders and the C ABI seed
+// constructors — calls AttachFused128 and [AttachInterlockBatch16]
+// together.
 func AttachFused128(s *itb.Seed128, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok || spec.FusedChainHash128 == nil {
@@ -185,10 +185,10 @@ func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
 // (aesitbasm.FusedX8Active: VAES + AVX-512 silicon, ITB_FORCE_HASH_TIER
 // unset or avx512, ITB_FORCE_CHAINHASH_X4 unset). Called from
 // [AttachFused128] once the four-lane hooks are in place, so every
-// shipping constructor path — [SeedFromComponents128x16], the C ABI
-// seed constructors and the triple package's Init / Load seed builders
-// — carries the hook under one attach step; a seed left without it
-// keeps the four-lane pixel stride. Other primitives and other hosts leave the seed
+// shipping constructor path — the C ABI seed constructors and the
+// triple package's Init / Load seed builders — carries the hook under
+// one attach step; a seed left without it keeps the four-lane pixel
+// stride. Other primitives and other hosts leave the seed
 // unchanged. The hook is a performance path only: the wire is identical
 // with and without it (pinned by the root fused-cascade parity tests).
 func attachFused128x8(s *itb.Seed128, name string, key []byte) {
@@ -240,54 +240,4 @@ func AttachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 	}
 	s.SetInterlockBatch16(fn)
 	return nil
-}
-
-// SeedFromComponents128x16 constructs a [itb.Seed128] from existing
-// components with every fast-path hook attached in one call — the
-// Low-Level bridge for seeds that come back from
-// [itb.Blob128.Import3Cfg] with Components populated and Hash /
-// BatchHash nil. Equivalent to:
-//
-//	single, batched, _, _ := hashes.Make128Pair(primitiveName, key) // key omitted when empty
-//	seed, _ := itb.SeedFromComponents128(single, components...)
-//	seed.BatchHash = batched
-//	hashes.AttachFused128(seed, primitiveName, key)
-//	hashes.AttachInterlockBatch16(seed, primitiveName, key)
-//
-// key is the primitive's fixed key the seed's arms were originally
-// built with (the Key* bytes of the blob). Pass nil or an empty slice
-// for a keyless primitive (siphash24, whose blob key field is empty and
-// which rejects an explicit key); an empty key for a keyed primitive is
-// an error, since arms built on a fresh random key would not reproduce
-// the exported seed's wire.
-//
-// The attach step is a performance path only: a seed rebuilt through
-// the arms alone produces and decrypts the same wire, including the
-// Interlocked Barrier cascade fill every lockSeed runs. Primitives
-// without fused / batch-16 factories get the base Hash / BatchHash
-// arms; their optional hooks remain nil.
-func SeedFromComponents128x16(primitiveName string, key []byte, components ...uint64) (*itb.Seed128, error) {
-	var keyArg [][]byte
-	if len(key) > 0 {
-		keyArg = [][]byte{key}
-	}
-	single, batched, fixedKey, err := Make128Pair(primitiveName, keyArg...)
-	if err != nil {
-		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
-	}
-	if len(key) == 0 && len(fixedKey) > 0 {
-		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): the primitive is keyed; pass the fixed key the components were exported with", primitiveName)
-	}
-	s, err := itb.SeedFromComponents128(single, components...)
-	if err != nil {
-		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
-	}
-	s.BatchHash = batched
-	if err := AttachFused128(s, primitiveName, fixedKey); err != nil {
-		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
-	}
-	if err := AttachInterlockBatch16(s, primitiveName, fixedKey); err != nil {
-		return nil, fmt.Errorf("hashes: SeedFromComponents128x16(%q): %w", primitiveName, err)
-	}
-	return s, nil
 }

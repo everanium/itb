@@ -133,10 +133,9 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 // Directly-constructed seeds keep their optional fast-path hooks nil
 // and route hot paths through the sequential fallback until
 // hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
-// explicitly; hashes.SeedFromComponents128x16 rebuilds a seed from
-// existing components with every hook attached in one call. The hooks
-// are performance paths only: a seed rebuilt from components decrypts
-// what the exporting side encrypted with or without them.
+// explicitly. The hooks are performance paths only: a seed rebuilt
+// from components decrypts what the exporting side encrypted with or
+// without them.
 func SeedFromComponents128(hashFunc HashFunc128, components ...uint64) (*Seed128, error) {
 	if len(components) < 8 || len(components) > MaxKeyBits/64 {
 		return nil, fmt.Errorf("itb: components count must be 8-%d, got %d", MaxKeyBits/64, len(components))
