@@ -235,17 +235,15 @@ arm_env() {
 #     (hashes/internal/siphashasm) carry eight-lane fused ChainHash
 #     kernels (ZMM x8 at the nonce-buf shapes), so only there does the
 #     pseudo-arm select something the plain avx512 arm does not.
-#   * aesni: only the AES-based primitives carry AES-NI XMM chain
-#     kernels (aesitb128 / areion256 / areion512 / aescmac).
-#   * vaesavx2: aesitb128 and aescmac (VAES YMM two-lane fused cascade
-#     kernels) and areion256 / areion512 (width-specialised YMM VAES
-#     chain-absorb kernels, Areion*ChainAbsorb*x4VaesAvx2); every other
-#     primitive is skipped.
+#   * aesni: only the AES-based primitives carry AES-NI XMM fused
+#     cascade kernels (aesitb128 / areion256 / areion512 / aescmac).
+#   * vaesavx2: aesitb128, aescmac, areion256 and areion512 carry VAES
+#     YMM fused cascade kernels; every other primitive is skipped.
 #   * avx2: aesitb128 and aescmac map the avx2 token to their VAES YMM
-#     tier; areion256 / areion512 run their VAES-on-YMM general-chain
-#     arm (Areion*Permutex4Avx2) rather than width-specialised kernels —
-#     a real shipped arm (AMD Zen 3 class), so the pair is applicable;
-#     the ARX / BLAKE primitives carry AVX2 chain kernels.
+#     tier; areion256 / areion512 run their VAES-on-YMM batched
+#     permutation with the fused cascade off (the arms-only probe on
+#     the AMD Zen 3 class), so the pair is applicable; the ARX / BLAKE
+#     primitives carry AVX2 chain kernels.
 #   * avx512 / scalar: every primitive has both.
 arm_applicable() {
     case "$2" in

@@ -26,27 +26,6 @@ func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4) {
 	*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
 }
 
-// areionSoEM512ChainAbsorbHot — non-amd64 stub. Always returns false.
-func areionSoEM512ChainAbsorbHot(
-	fixedKey *[64]byte,
-	seeds *[4][8]uint64,
-	data *[4][]byte,
-	commonLen int,
-) (out [4][8]uint64, ok bool) {
-	return out, false
-}
-
-// areionSoEM256ChainAbsorbHot — non-amd64 stub. Always returns false
-// so the closure's general CBC-MAC chain path runs.
-func areionSoEM256ChainAbsorbHot(
-	fixedKey *[32]byte,
-	seeds *[4][4]uint64,
-	data *[4][]byte,
-	commonLen int,
-) (out [4][4]uint64, ok bool) {
-	return out, false
-}
-
 // areionSoEM256Permutex4SoA — non-amd64 fallback. Mirrors the AVX-2
 // branch of the amd64 dispatcher: two separate per-half permutes (each
 // dispatching to the platform's best available AES path inside

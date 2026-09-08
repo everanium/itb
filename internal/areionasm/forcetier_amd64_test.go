@@ -48,11 +48,11 @@ func TestForceHashTierApplied(t *testing.T) {
 		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
 			t.Skip("avx2 tier not executable on this host")
 		}
-		// The arms-only probe: base permutation with the Go SoEM loop,
-		// fused cascade and batch-16 fill off.
+		// The arms-only probe: the YMM batched permutation, fused
+		// cascade and batch-16 fill off.
 		want(false, false, false)
-		if !HasVAESAVX2NoAVX512 || HasVAESAVX2Batched {
-			t.Fatalf("avx2: arm flags base=%v batched=%v, want true/false", HasVAESAVX2NoAVX512, HasVAESAVX2Batched)
+		if !HasVAESAVX2NoAVX512 || HasVAESAVX512 {
+			t.Fatalf("avx2: arm flags ymm=%v zmm=%v, want true/false", HasVAESAVX2NoAVX512, HasVAESAVX512)
 		}
 	case "vex", "aesni":
 		if !aes.CPU.HasAESNI {

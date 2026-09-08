@@ -467,9 +467,11 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 //	hashFn, batchFn, _ := itb.MakeAreionSoEM256Hash(savedKey)
 //	ns.Hash, ns.BatchHash = hashFn, batchFn
 //
-// On x86_64 hardware with VAES + AVX-512 the BatchHash path routes
-// per-pixel hashing four pixels per call through AreionSoEM256x4,
-// yielding ~2× throughput over the single-call path on this primitive.
+// On hosts with an Areion assembly tier (VAES ZMM / YMM, AES-NI XMM,
+// or the ARM Crypto Extension) the BatchHash path runs each of the
+// four pixels of a call through the fused ChainHash cascade kernel of
+// its tier for the ITB buf shapes; other lengths, and hosts without
+// such a tier, route four pixels per call through AreionSoEM256x4.
 func MakeAreionSoEM256Hash(key ...[32]byte) (HashFunc256, BatchHashFunc256, [32]byte) {
 	var fixedKey [32]byte
 	if len(key) > 0 {
@@ -571,19 +573,18 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
 
-		// Hot-path fast track: ITB feeds 20-, 36-, or 68-byte buf shapes
-		// per batched call (one of the three per-pixel buf shapes).
-		// Specialised AVX-512 kernels for each length keep the SoEM
-		// state in ZMM registers across all CBC-MAC absorb rounds and
-		// skip the keys[4][64] / states[4][32] memory roundtrips that
-		// the general path emits. The dispatcher returns ok=false on
-		// non-amd64 hosts and on lengths outside {20, 36, 68}, in
-		// which case the general path below runs.
-		if out, ok := areionSoEM256ChainAbsorbHot(&fixedKey, &seeds, data, commonLen); ok {
+		if out, ok := areionSoEM256BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
 			return out
 		}
 
-		// General path: arbitrary equal-length data, or non-AVX-512 host.
+		// The fused route above serves the ITB buf shapes (13, 20,
+		// 36, 68 bytes) whenever an Areion assembly tier is active:
+		// each lane runs the single-lane fused cascade kernel with
+		// its own seed as the one component group. Other lengths,
+		// and builds without an Areion assembly tier, take the
+		// general path below.
+
+		// General path: arbitrary equal-length data, or no fused kernel.
 		var keys [4][64]byte
 		var states [4][32]byte
 		for lane := 0; lane < 4; lane++ {
@@ -719,13 +720,13 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])
 
-		// Hot-path fast track for ITB's three per-pixel buf shapes.
-		// Mirrors the Areion-SoEM-256 dispatch — specialised AVX-512
-		// kernels per length keep the SoEM state in ZMM across all
-		// CBC-MAC absorb rounds.
-		if out, ok := areionSoEM512ChainAbsorbHot(&fixedKey, &seeds, data, commonLen); ok {
+		if out, ok := areionSoEM512BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
 			return out
 		}
+
+		// The fused route above mirrors the Areion-SoEM-256 dispatch:
+		// the ITB buf shapes run the single-lane fused cascade kernel
+		// per lane whenever an Areion assembly tier is active.
 
 		// General path.
 		var keys [4][128]byte
