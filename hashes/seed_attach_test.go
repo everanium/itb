@@ -191,6 +191,7 @@ func TestWideSeedsConstructorArms(t *testing.T) {
 							t.Fatal(err)
 						}
 						if s.BatchHash == nil {
+							// TODO(task-125): remove skip once all 256/512-bit primitives ship a batched arm
 							t.Skip("batched arm not built on this host / tier")
 						}
 						got := s.BatchChainHash256(&lanes)
@@ -205,6 +206,7 @@ func TestWideSeedsConstructorArms(t *testing.T) {
 							t.Fatal(err)
 						}
 						if s.BatchHash == nil {
+							// TODO(task-125): remove skip once all 256/512-bit primitives ship a batched arm
 							t.Skip("batched arm not built on this host / tier")
 						}
 						got := s.BatchChainHash512(&lanes)

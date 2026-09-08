@@ -89,7 +89,8 @@ type Seed128 struct {
 // Directly-constructed seeds keep their optional fast-path hooks nil
 // and route hot paths through the sequential fallback until
 // hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
-// explicitly (the triple package attaches them automatically). The
+// explicitly (hashes.NewSeed128 and the triple package attach them
+// automatically). The
 // hooks are performance paths only: a seed produces the same wire with
 // and without them, including the Interlocked Barrier cascade fill,
 // which every lockSeed runs at every width (see [InterlockFillFunc16]).

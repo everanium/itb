@@ -815,22 +815,16 @@ C-ABI callers install a persistent profile via `ITB_Triple_Register(name, profil
 
 The `triple/` facade is the recommended entry point. Callers who need the raw 8-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); there is no process-wide setter surface.
 
-> **Low-Level seed construction.** Every seed built through `itb.NewSeed{128,256,512}` / `itb.SeedFromComponents{128,256,512}` runs the Interlocked Barrier cascade fill (see [HARNESS.md § 3.10.3](HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)) — the fill is the wire for every primitive at every width and does not depend on any hook attached to the seed. The fast-path hooks (`hashes.AttachFused{128,256,512}` for the fused ChainHash cascade, `hashes.AttachInterlockBatch16` / `hashes.AttachInterlockBatch16x{256,512}` for the batch-16 fill kernel) are performance paths the `triple/` facade attaches automatically; a Low-Level caller attaches them after construction:
+> **Low-Level seed construction.** `hashes.NewSeed{128,256,512}(name, keyBits, key...)` builds a seed of a registry primitive with every fast-path hook the primitive offers and returns the fixed key its arms were built with (CSPRNG-generated when omitted; `nil` for primitives keyed by their seed components alone):
 >
 > ```go
-> // Low-Level construction — arms first, then the fast-path hooks the
-> // primitive offers (no-ops for primitives without them).
-> single, batched, key, err := hashes.Make128Pair(hashes.CipherAESITB128) // no key → CSPRNG-generated
+> // Low-Level construction — arms and every fast-path hook in one call.
+> ns, key, err := hashes.NewSeed128(hashes.CipherAESITB128, 1024)
 > if err != nil { panic(err) }
-> ns, err := itb.NewSeed128(1024, single)
-> if err != nil { panic(err) }
-> ns.BatchHash = batched
-> if err := hashes.AttachFused128(ns, hashes.CipherAESITB128, key); err != nil { panic(err) }
-> if err := hashes.AttachInterlockBatch16(ns, hashes.CipherAESITB128, key); err != nil { panic(err) }
-> _ = key // save if the seed needs to be reconstructed across processes
+> _ = key // save beside ns.Components if the seed needs to be reconstructed across processes
 > ```
 >
-> A seed built without the hooks produces and decrypts the same wire through the sequential arms.
+> Every seed built through `itb.NewSeed{128,256,512}` / `itb.SeedFromComponents{128,256,512}` runs the Interlocked Barrier cascade fill (see [HARNESS.md § 3.10.3](HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)) — the fill is the wire for every primitive at every width and does not depend on any hook attached to the seed. The hooks (`hashes.AttachFused{128,256,512}` for the fused ChainHash cascade, `hashes.AttachInterlockBatch16` / `hashes.AttachInterlockBatch16x{256,512}` for the batch-16 fill kernel) are performance paths: `hashes.NewSeed<W>` and the `triple/` facade attach them automatically, and a caller who builds a seed on the arms alone through `itb.NewSeed<W>` — a custom `HashFunc<W>` outside the registry, or a restore through `itb.SeedFromComponents<W>` — attaches them after construction. A seed built without the hooks produces and decrypts the same wire through the sequential arms.
 >
 > **Migration note.** Ciphertext produced by earlier releases under any primitive other than AES-ITB-128 decrypts only with the release that produced it (the Interlocked Barrier fill differs; there is no error oracle — the recovered bytes do not match). AES-ITB-128 ciphertext and every seed blob (`Blob{128,256,512}` export / import) are unaffected.
 
@@ -858,25 +852,17 @@ func main() {
 
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 
-    // 8 independent CSPRNG-keyed Areion-SoEM-256 paired closures.
-    // Each *Pair() returns (single, batched, [32]byte-key, error).
-    fnN,  batchN,  _, _ := hashes.Areion256Pair()
-    fnL,  batchL,  _, _ := hashes.Areion256Pair()
-    fnD1, batchD1, _, _ := hashes.Areion256Pair()
-    fnD2, batchD2, _, _ := hashes.Areion256Pair()
-    fnD3, batchD3, _, _ := hashes.Areion256Pair()
-    fnS1, batchS1, _, _ := hashes.Areion256Pair()
-    fnS2, batchS2, _, _ := hashes.Areion256Pair()
-    fnS3, batchS3, _, _ := hashes.Areion256Pair()
-
-    ns,  _ := itb.NewSeed256(1024, fnN);  ns.BatchHash  = batchN
-    ls,  _ := itb.NewSeed256(1024, fnL);  ls.BatchHash  = batchL
-    ds1, _ := itb.NewSeed256(1024, fnD1); ds1.BatchHash = batchD1
-    ds2, _ := itb.NewSeed256(1024, fnD2); ds2.BatchHash = batchD2
-    ds3, _ := itb.NewSeed256(1024, fnD3); ds3.BatchHash = batchD3
-    ss1, _ := itb.NewSeed256(1024, fnS1); ss1.BatchHash = batchS1
-    ss2, _ := itb.NewSeed256(1024, fnS2); ss2.BatchHash = batchS2
-    ss3, _ := itb.NewSeed256(1024, fnS3); ss3.BatchHash = batchS3
+    // 8 independent CSPRNG-keyed Areion-SoEM-256 seeds, each with every
+    // fast-path hook the primitive offers. The second return value is
+    // the fixed key of the seed's arms (save it for cross-process restore).
+    ns,  _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ls,  _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ds1, _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ds2, _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ds3, _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ss1, _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ss2, _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
+    ss3, _, _ := hashes.NewSeed256(hashes.CipherAreion256, 1024)
 
     macKey := make([]byte, 32)
     rand.Read(macKey)
@@ -942,23 +928,16 @@ func main() {
 
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4, MaxWorkers: 4}
 
-    fnN,  batchN,  _, _ := hashes.Areion512Pair()
-    fnL,  batchL,  _, _ := hashes.Areion512Pair()
-    fnD1, batchD1, _, _ := hashes.Areion512Pair()
-    fnD2, batchD2, _, _ := hashes.Areion512Pair()
-    fnD3, batchD3, _, _ := hashes.Areion512Pair()
-    fnS1, batchS1, _, _ := hashes.Areion512Pair()
-    fnS2, batchS2, _, _ := hashes.Areion512Pair()
-    fnS3, batchS3, _, _ := hashes.Areion512Pair()
-
-    ns,  _ := itb.NewSeed512(1024, fnN);  ns.BatchHash  = batchN
-    ls,  _ := itb.NewSeed512(1024, fnL);  ls.BatchHash  = batchL
-    ds1, _ := itb.NewSeed512(1024, fnD1); ds1.BatchHash = batchD1
-    ds2, _ := itb.NewSeed512(1024, fnD2); ds2.BatchHash = batchD2
-    ds3, _ := itb.NewSeed512(1024, fnD3); ds3.BatchHash = batchD3
-    ss1, _ := itb.NewSeed512(1024, fnS1); ss1.BatchHash = batchS1
-    ss2, _ := itb.NewSeed512(1024, fnS2); ss2.BatchHash = batchS2
-    ss3, _ := itb.NewSeed512(1024, fnS3); ss3.BatchHash = batchS3
+    // 8 independent CSPRNG-keyed Areion-SoEM-512 seeds, each with every
+    // fast-path hook the primitive offers.
+    ns,  _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ls,  _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ds1, _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ds2, _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ds3, _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ss1, _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ss2, _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
+    ss3, _, _ := hashes.NewSeed512(hashes.CipherAreion512, 1024)
 
     macKey := make([]byte, 32)
     rand.Read(macKey)

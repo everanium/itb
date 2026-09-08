@@ -57,28 +57,20 @@ func main() {
         MaxWorkers:  8, // 0 (default) uses every available CPU
     }
 
-    // Eight independent CSPRNG-keyed Areion-SoEM-512 paired closures
-    // (noise, lock, data1..3, start1..3). Each Pair returns
-    // (single, batched, [64]byte fixedKey). The 48-bit Interlocked
+    // Eight independent CSPRNG-keyed Areion-SoEM-512 seeds (noise, lock,
+    // data1..3, start1..3), each with every fast-path hook the primitive
+    // offers; the second return value is the fixed key of the seed's
+    // arms. The 48-bit Interlocked
     // Barrier overlay is always engaged for Triple Ouroboros and
     // non-disableable by construction.
-    fnN, batchN, keyN := hashes.Areion512Pair()
-    fnL, batchL, keyL := hashes.Areion512Pair()
-    fnD1, batchD1, keyD1 := hashes.Areion512Pair()
-    fnD2, batchD2, keyD2 := hashes.Areion512Pair()
-    fnD3, batchD3, keyD3 := hashes.Areion512Pair()
-    fnS1, batchS1, keyS1 := hashes.Areion512Pair()
-    fnS2, batchS2, keyS2 := hashes.Areion512Pair()
-    fnS3, batchS3, keyS3 := hashes.Areion512Pair()
-
-    ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
-    ls, _ := itb.NewSeed512(2048, fnL); ls.BatchHash = batchL
-    d1, _ := itb.NewSeed512(2048, fnD1); d1.BatchHash = batchD1
-    d2, _ := itb.NewSeed512(2048, fnD2); d2.BatchHash = batchD2
-    d3, _ := itb.NewSeed512(2048, fnD3); d3.BatchHash = batchD3
-    s1, _ := itb.NewSeed512(2048, fnS1); s1.BatchHash = batchS1
-    s2, _ := itb.NewSeed512(2048, fnS2); s2.BatchHash = batchS2
-    s3, _ := itb.NewSeed512(2048, fnS3); s3.BatchHash = batchS3
+    ns, keyN, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    ls, keyL, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    d1, keyD1, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    d2, keyD2, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    d3, keyD3, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    s1, keyS1, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    s2, keyS2, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    s3, keyS3, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
 
     // HMAC-BLAKE3 — fastest of the three MACs through the AVX-512 ASM kernel.
     var macKey [32]byte
@@ -113,7 +105,7 @@ func main() {
 
 On the receiver, `Blob512.Import3Cfg` restores per-slot hash keys + Components + the MAC key + name AND returns the captured `*itb.Config`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey`), then rebuilds the MAC via `macs.Make(bDst.MACName, bDst.MACKey)` and decrypts with `itb.DecryptAuthenticated3x512Cfg`.
 
-BLAKE2b-512 paired with HMAC-SHA256 (universal interoperability standard, RFC 4231) follows the same shape — swap `hashes.Areion512Pair()` for `hashes.BLAKE2b512Pair()`, swap the MAC factory for `macs.HMACSHA256(macKey[:])`, and keep the rest identical. SipHash-2-4 has no internal fixed key (the seed components are the entire SipHash key), so its paired constructor `hashes.SipHash24Pair()` returns just `(single, batched)`; every `Key*` argument passed to `Blob128.Export3Cfg` is a zero `[16]byte`.
+BLAKE2b-512 paired with HMAC-SHA256 (universal interoperability standard, RFC 4231) follows the same shape — swap `hashes.CipherAreion512` for `hashes.CipherBLAKE2b512`, swap the MAC factory for `macs.HMACSHA256(macKey[:])`, and keep the rest identical. SipHash-2-4 has no internal fixed key (the seed components are the entire SipHash key), so `hashes.NewSeed128(hashes.CipherSipHash24, …)` returns a `nil` key and its paired constructor `hashes.SipHash24Pair()` returns just `(single, batched)`; every `Key*` argument passed to `Blob128.Export3Cfg` is a zero `[16]byte`.
 
 Name-keyed dispatch (used by the FFI layer; works for any code that
 selects the MAC primitive at runtime). The key is `[]byte` (size

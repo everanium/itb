@@ -195,9 +195,8 @@ func init() {
 
 // Elsewhere — the registered name resolves through the standard
 // name-keyed dispatcher exactly like a shipped primitive.
-h, _, keyBytes, _ := hashes.Make256Pair("sha256_arx")
-seed, _ := itb.NewSeed256(1024, h)
-_ = keyBytes // persist alongside the seed for cross-process restore
+seed, keyBytes, _ := hashes.NewSeed256("sha256_arx", 1024)
+_ = keyBytes // persist alongside seed.Components for cross-process restore
 _ = seed
 ```
 
@@ -231,24 +230,17 @@ func main() {
     // The 48-bit Interlocked Barrier overlay is always engaged for
     // Triple Ouroboros and non-disableable by construction. The eight
     // seeds carry (noise, lock, data1..3, start1..3) — each with its
-    // own independent hash-key + Components.
-    fnN, batchN, keyN := hashes.Areion512Pair()
-    fnL, batchL, keyL := hashes.Areion512Pair()
-    fnD1, batchD1, keyD1 := hashes.Areion512Pair()
-    fnD2, batchD2, keyD2 := hashes.Areion512Pair()
-    fnD3, batchD3, keyD3 := hashes.Areion512Pair()
-    fnS1, batchS1, keyS1 := hashes.Areion512Pair()
-    fnS2, batchS2, keyS2 := hashes.Areion512Pair()
-    fnS3, batchS3, keyS3 := hashes.Areion512Pair()
-
-    ns, _ := itb.NewSeed512(2048, fnN); ns.BatchHash = batchN
-    ls, _ := itb.NewSeed512(2048, fnL); ls.BatchHash = batchL
-    d1, _ := itb.NewSeed512(2048, fnD1); d1.BatchHash = batchD1
-    d2, _ := itb.NewSeed512(2048, fnD2); d2.BatchHash = batchD2
-    d3, _ := itb.NewSeed512(2048, fnD3); d3.BatchHash = batchD3
-    s1, _ := itb.NewSeed512(2048, fnS1); s1.BatchHash = batchS1
-    s2, _ := itb.NewSeed512(2048, fnS2); s2.BatchHash = batchS2
-    s3, _ := itb.NewSeed512(2048, fnS3); s3.BatchHash = batchS3
+    // own independent hash-key + Components; hashes.NewSeed512 builds
+    // each with every fast-path hook the primitive offers and returns
+    // the fixed key of its arms.
+    ns, keyN, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    ls, keyL, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    d1, keyD1, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    d2, keyD2, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    d3, keyD3, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    s1, keyS1, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    s2, keyS2, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
+    s3, keyS3, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
 
     plaintext := []byte("any text or binary data - including 0x00 bytes")
 
@@ -281,6 +273,13 @@ is `[]byte` (size validated against the primitive's native length):
 ```go
 fn, hashKey, _ := hashes.Make256("blake3") // random
 fn, _, _       := hashes.Make256("blake3", saved) // explicit
+```
+
+The name-keyed seed constructors `hashes.NewSeed{128,256,512}(name, keyBits, key...)` go one step further: each builds a seed of the named primitive with its (single, batched) arms and every fast-path hook the primitive offers — the fused ChainHash cascade and the batch-16 Interlocked Barrier fill kernel — and returns the fixed key its arms were built with (`nil` for a primitive keyed by its seed components alone). The hooks are performance paths only; a seed built on the arms alone through `itb.NewSeed{128,256,512}` produces and decrypts the same wire.
+
+```go
+seed, hashKey, _ := hashes.NewSeed256("blake3", 1024)        // random key
+seed, _, _        = hashes.NewSeed256("blake3", 1024, saved) // explicit
 ```
 
 ## High-level facade — `triple.Pipeline`
