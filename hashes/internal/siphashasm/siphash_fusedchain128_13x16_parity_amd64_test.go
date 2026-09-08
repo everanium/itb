@@ -10,8 +10,9 @@ import (
 )
 
 // fusedX16Tier describes one batch-16 dispatch state: the silicon it
-// needs, its direct kernel entry (nil when the tier runs four x4 calls
-// or the scalar reference) and the flag pair that selects it.
+// needs, its direct kernel entry (the ZMM sixteen-lane kernel, the YMM
+// eight-lane kernel called twice, nil for the scalar reference) and the
+// flag pair that selects it.
 type fusedX16Tier struct {
 	name         string
 	ok           func() bool
@@ -24,7 +25,10 @@ func amd64FusedX16Tiers() []fusedX16Tier {
 		{"avx512", func() bool { return cpu.X86.HasAVX512F }, func(comps []uint64, base uint64, out *[16][2]uint64) {
 			sipHash24FusedChain13x16Avx512Asm(&comps[0], len(comps)/2, base, out)
 		}, true, false},
-		{"avx2", func() bool { return cpu.X86.HasAVX2 }, nil, false, true},
+		{"avx2", func() bool { return cpu.X86.HasAVX2 }, func(comps []uint64, base uint64, out *[16][2]uint64) {
+			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base, x16Half(out, 0))
+			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base+8, x16Half(out, 1))
+		}, false, true},
 		{"scalar", func() bool { return true }, nil, false, false},
 	}
 }
@@ -37,8 +41,9 @@ func saveFusedX16Flags(t *testing.T) {
 	t.Cleanup(func() { HasAVX512X16, HasAVX2X16 = a512, a2 })
 }
 
-// TestFusedChain13x16KernelParityAmd64 pins the ZMM batch-16 kernel to
-// the reference by direct call, independent of the dispatch flags.
+// TestFusedChain13x16KernelParityAmd64 pins the ZMM batch-16 kernel and
+// the YMM eight-lane fill kernel to the reference by direct call,
+// independent of the dispatch flags.
 func TestFusedChain13x16KernelParityAmd64(t *testing.T) {
 	for _, tier := range amd64FusedX16Tiers() {
 		if tier.k == nil {

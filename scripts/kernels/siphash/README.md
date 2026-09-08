@@ -58,9 +58,20 @@ receives `groupIdxBase` and synthesises the two message words of every
 lane in-register (`(idx << 8) | 0x03` and `(idx >> 56) | (13 << 56)`),
 runs the cascade on two eight-lane groups with interleaved instruction
 streams, and interleaves the `(lo, hi)` pairs through `·interleaveIdx16`
-into four 64-byte stores in lane order. The AVX2 and NEON tiers have no
-sixteen-lane kernel: their batch-16 arm synthesises the blocks in Go and
-runs four four-lane kernel calls.
+into four 64-byte stores in lane order. The AVX2 and NEON tiers carry
+`siphash_fusedchain128_13x8_avx2_amd64.s` and
+`siphash_fusedchain128_13x8_neon_arm64.s`, eight-lane fill kernels with
+the same in-register block synthesis (lane offsets from `lane8<>` on
+AVX2, from `·laneIdx16` on NEON) that the batch-16 arm calls twice; on
+AVX2 the eight lanes run as two four-lane YMM groups with interleaved
+instruction streams (15 of 16 registers, constants in RODATA and words
+in the frame as `VPXOR` memory operands), on NEON as four two-lane
+pairs (32 of 32 registers, constants `VDUP`'d on demand from GPRs and
+the words reloaded through the rotate-alternate registers). Sixteen
+lanes would need 16 YMM or 32 NEON registers of state alone, so eight
+is the register ceiling of both tiers; the kernels are pinned to the
+four-lane kernels of their tier and to the pure-Go reference by the
+in-package parity tests.
 
 ## Store-to-load forwarding discipline (amd64)
 

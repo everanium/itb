@@ -72,15 +72,14 @@ func FusedChain68x1(components []uint64, data *byte, out *[2]uint64) {
 	scalarFusedSingle(components, data, 68, out)
 }
 
-// FusedChain13x16 runs the batch-16 fill as four NEON x4 calls over
-// Go-synthesised fill blocks under HasNEONX16, else the pure-Go cascade.
+// FusedChain13x16 runs the batch-16 fill as two calls of the NEON
+// eight-lane fill kernel (lanes 0..7 at groupIdxBase, lanes 8..15 at
+// groupIdxBase + 8; the blocks are synthesised in-register) under
+// HasNEONX16, else the pure-Go cascade.
 func FusedChain13x16(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
 	if HasNEONX16 && validComponents(components) {
-		blocks := fillBlocks16(groupIdxBase)
-		for q := 0; q < 4; q++ {
-			ptrs := x16Quarter(&blocks, q)
-			sipHash24FusedChain13x4NeonAsm(&components[0], len(components)/2, &ptrs, x16Out(out, q))
-		}
+		sipHash24FusedChain13x8NeonAsm(&components[0], len(components)/2, groupIdxBase, x16Half(out, 0))
+		sipHash24FusedChain13x8NeonAsm(&components[0], len(components)/2, groupIdxBase+8, x16Half(out, 1))
 		return
 	}
 	scalarFusedX16(components, groupIdxBase, out)
@@ -112,3 +111,8 @@ func sipHash24FusedChain36x1GprAsm(comps *uint64, nPairs int, data *byte, out *[
 
 //go:noescape
 func sipHash24FusedChain68x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
+
+// Eight-lane fused fill kernel (siphash_fusedchain128_13x8_neon_arm64.s).
+//
+//go:noescape
+func sipHash24FusedChain13x8NeonAsm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)

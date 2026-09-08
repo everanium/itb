@@ -157,8 +157,8 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | SipHash-2-4 — AVX-512 ZMM 8-lane fused chain (eight lanes per register; auto-selected on AVX-512F hosts for the 128 / 256 / 512-bit nonce-buf shapes; the four-lane kernels and four-pixel stride via `ITB_FORCE_CHAINHASH_X4=1`) | AVX-512F | `siphashasm.FusedHasAVX512X8` (with `siphashasm.FusedHasAVX512`) |
 | SipHash-2-4 — AVX2 VEX YMM 4-lane fused chain (synthesised rotates; auto-selected on AVX2 hosts without AVX-512F) | AVX2 | `siphashasm.FusedHasAVX2` |
 | SipHash-2-4 — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `siphashasm.FusedAvailable()` |
-| SipHash-2-4 — batch-16 Interlocked Barrier PRF fill cascade (ZMM kernel on the AVX-512 tier, four four-lane kernel calls on the AVX2 tier; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `siphashasm.HasAVX512X16` / `HasAVX2X16` |
-| SipHash-2-4 — NEON 4-lane fused chain + GPR single-lane fused chain + batch-16 fill (arm64, NEON baseline) | ARMv8-A NEON | `siphashasm.FusedHasNEON` / `siphashasm.HasNEONX16` |
+| SipHash-2-4 — batch-16 Interlocked Barrier PRF fill cascade (sixteen-lane ZMM kernel on the AVX-512 tier, two calls of an eight-lane YMM kernel on the AVX2 tier; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `siphashasm.HasAVX512X16` / `HasAVX2X16` |
+| SipHash-2-4 — NEON 4-lane fused chain + GPR single-lane fused chain + batch-16 fill through an eight-lane NEON kernel (arm64, NEON baseline) | ARMv8-A NEON | `siphashasm.FusedHasNEON` / `siphashasm.HasNEONX16` |
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 

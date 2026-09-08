@@ -17,7 +17,8 @@
 //     ([FusedChain13x16]): sixteen lanes at the 13-byte shape with the
 //     fill blocks synthesised from a group index base — one ZMM kernel
 //     on the AVX-512 tier (siphash_fusedchain128_13x16_avx512_amd64.s),
-//     four x4 kernel calls over Go-synthesised blocks on every other tier.
+//     two calls of an eight-lane kernel on the AVX2 and NEON tiers
+//     (siphash_fusedchain128_13x8_{avx2_amd64,neon_arm64}.s).
 //
 // Every family runs SipHash-2-4 in its 128-bit-output form
 // (Aumasson & Bernstein 2012 §2.4, as implemented by

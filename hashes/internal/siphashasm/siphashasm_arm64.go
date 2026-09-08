@@ -3,8 +3,8 @@
 package siphashasm
 
 var (
-	// HasNEONX16 selects the NEON batch-16 arm (four x4 kernel calls over
-	// Go-synthesised fill blocks). NEON is baseline on arm64, so the flag
+	// HasNEONX16 selects the NEON batch-16 arm (two calls of the
+	// eight-lane NEON fill kernel). NEON is baseline on arm64, so the flag
 	// is true unless a forcetier variable clears it.
 	HasNEONX16 = true
 

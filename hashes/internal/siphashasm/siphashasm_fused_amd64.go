@@ -143,9 +143,10 @@ func FusedChain68x1(components []uint64, data *byte, out *[2]uint64) {
 // [0x03 | LE64(groupIdxBase+i) | 4×0x00] and every lane runs the whole
 // cascade over components. The dispatch follows the batch-16 tier flags
 // (HasAVX512X16 / HasAVX2X16) rather than the fused x4 flags, so
-// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm: the ZMM kernel
-// synthesises the blocks in-register; the AVX2 arm runs four x4 calls
-// over Go-synthesised blocks.
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm. Both kernels
+// synthesise the blocks in-register: the ZMM kernel covers the sixteen
+// lanes in one call, the AVX2 eight-lane YMM kernel runs twice (lanes
+// 0..7 at groupIdxBase, lanes 8..15 at groupIdxBase + 8).
 func FusedChain13x16(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
 	if !validComponents(components) {
 		scalarFusedX16(components, groupIdxBase, out)
@@ -155,11 +156,8 @@ func FusedChain13x16(components []uint64, groupIdxBase uint64, out *[16][2]uint6
 	case HasAVX512X16:
 		sipHash24FusedChain13x16Avx512Asm(&components[0], len(components)/2, groupIdxBase, out)
 	case HasAVX2X16:
-		blocks := fillBlocks16(groupIdxBase)
-		for q := 0; q < 4; q++ {
-			ptrs := x16Quarter(&blocks, q)
-			sipHash24FusedChain13x4Avx2Asm(&components[0], len(components)/2, &ptrs, x16Out(out, q))
-		}
+		sipHash24FusedChain13x8Avx2Asm(&components[0], len(components)/2, groupIdxBase, x16Half(out, 0))
+		sipHash24FusedChain13x8Avx2Asm(&components[0], len(components)/2, groupIdxBase+8, x16Half(out, 1))
 	default:
 		scalarFusedX16(components, groupIdxBase, out)
 	}
@@ -205,7 +203,12 @@ func sipHash24FusedChain36x1GprAsm(comps *uint64, nPairs int, data *byte, out *[
 //go:noescape
 func sipHash24FusedChain68x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
 
-// Sixteen-lane fused fill kernel (siphash_fusedchain128_13x16_avx512_amd64.s).
+// Sixteen-lane fused fill kernel (siphash_fusedchain128_13x16_avx512_amd64.s)
+// and the eight-lane fill kernel of the AVX2 tier
+// (siphash_fusedchain128_13x8_avx2_amd64.s).
 //
 //go:noescape
 func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)

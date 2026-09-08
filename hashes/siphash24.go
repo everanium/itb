@@ -155,9 +155,9 @@ func sipHash24FusedChainHash8() itb.BatchFusedChainHashFunc128x8 {
 // Barrier fill kernel that synthesizes 16 consecutive 13-byte fill
 // buffers (domain tag 0x03, group index at bytes [1:9], zero padding)
 // and runs the whole SipHash-2-4 ChainHash cascade over the supplied
-// components on every lane through hashes/internal/siphashasm (the ZMM
-// kernel on the avx512 tier, four x4 kernel calls on avx2 / neon, or the
-// scalar reference) — the batch-16 arm of the cascade fill every
+// components on every lane through hashes/internal/siphashasm (the
+// sixteen-lane ZMM kernel on the avx512 tier, two eight-lane kernel calls
+// on avx2 / neon, or the scalar reference) — the batch-16 arm of the cascade fill every
 // lockSeed runs, see [itb.InterlockFillFunc16]. The factory accepts only
 // an empty key.
 func sipHash24InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) {

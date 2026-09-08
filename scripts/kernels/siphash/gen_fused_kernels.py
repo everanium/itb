@@ -19,8 +19,13 @@ groupIdxBase in the frame and synthesises the 16 per-lane fill blocks
 in-register — [0x03 | LE64(groupIdxBase+i) | 4×0x00] for lane i — as the
 two message words m0 = (idx << 8) | 0x03 and m1 = (idx >> 56) | (13 << 56),
 then runs the cascade on two eight-lane groups whose instruction streams
-are interleaved. The avx2 and neon tiers have no x16 kernel: the Go
-dispatcher synthesises the blocks and runs four x4 calls.
+are interleaved. The avx2 and neon tiers carry the eight-lane fill kernel
+instead (siphash_fusedchain128_13x8_{avx2_amd64,neon_arm64}.s): the same
+in-register block synthesis for lanes groupIdxBase .. groupIdxBase+7, two
+four-lane groups (YMM) or four two-lane pairs (NEON) with interleaved
+instruction streams; the Go dispatcher runs it twice per batch-16 call.
+A sixteen-lane kernel on those tiers would need 16 YMM (avx2) or 32 NEON
+registers of state alone, so eight lanes is their register ceiling.
 
 Cascade evaluated per lane (see siphashasm_fused.go):
     (lo, hi) = (0, 0)
@@ -51,6 +56,12 @@ Register plans:
                 Y9..Y14 constants, Y15 pair broadcast; the words are staged
                 once into the frame as 32-byte slots and read back as VPXOR
                 memory operands
+    avx2 x8     two four-lane groups: Y0..Y3 / Y4..Y7 state, Y8/Y9 and
+                Y10/Y11 lo/hi, Y12/Y13 rotate scratch, Y14 pair broadcast;
+                the six constants live in RODATA (sipc<>) and the two
+                synthesised words in the frame, both read as VPXOR memory
+                operands — 15 of 16 registers, no spill (16 lanes would
+                need 16 registers of state alone)
     gpr x1      R8..R11 state, R12/R13 lo/hi, AX/SI k0/k1, R14 the tail
                 word, word 0 in the frame, R15 scratch
     neon x4     lanes (0,1) and (2,3) in two register halves: V0/V1 v0,
@@ -60,6 +71,14 @@ Register plans:
                 are staged once into the frame and walked with VLD1.P. The
                 64-bit rotates run as VSHL + VSRI into the alternate register
                 (rotate by 32 as VREV64 on 32-bit elements).
+    neon x8     four lane pairs: V0..V3 v0, V4..V7 v1 (alternate V16..V19),
+                V8..V11 v2, V12..V15 v3 (alternate V20..V23), V24..V27 lo,
+                V28..V31 hi; the constants stay in R19..R24 and are VDUP'd
+                on demand, the pair broadcasts and the synthesised words
+                (staged in the frame, reloaded with VLD1) pass through the
+                alternate registers, which are free at every round boundary
+                — 32 of 32 registers, no spill in the round stream (a
+                sixteen-lane kernel would need all 32 for state alone)
     gpr arm64   R8..R11 state, R12/R13 lo/hi, R14/R15 k0/k1, R19 tail word,
                 R24 word 0, R20..R23 constants, R16 scratch
 """
@@ -349,6 +368,115 @@ def avx2_x4(shape):
     return "\n".join(L) + "\n"
 
 
+AVX2_X8_HEADER = f"""//go:build {AMD}
+
+// AVX2 VEX YMM 8-lane fused ChainHash cascade kernel for SipHash-2-4-128
+// at the 13-byte per-lane fill shape (2 message words, 12 SipRounds per
+// lane and cascade round) — the batch-16 Interlocked Barrier fill arm of
+// the AVX2 tier, called twice per sixteen groups. See siphashasm_fused.go
+// for the construction; the kernel is pinned to the pure-Go reference
+// (scalarFusedX16, through the dispatcher) by the in-package parity tests.
+//
+// The fill block [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is
+// synthesised in-register as its two message words m0 = (idx << 8) | 0x03
+// and m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, lane offsets
+// from lane8<>) and staged into the frame; the eight lanes run as two
+// four-lane YMM groups whose instruction streams are interleaved, so the
+// two dependency chains overlap on the vector ALUs. Y0..Y3 / Y4..Y7 hold
+// the two states, Y8/Y9 and Y10/Y11 the (lo, hi) carries, Y12/Y13 the
+// rotate scratch of each group and Y14 the pair broadcast; the six
+// constants are RODATA broadcasts read as VPXOR memory operands, as are
+// the staged words. The 8 (lo, hi) pairs are unpacked per group and
+// written as 16-byte stores in lane order.
+
+#include "textflag.h"
+"""
+
+AVX2_X8_DATA = "".join(
+    f"DATA sipc<>+{32 * i + 8 * j}(SB)/8, ${c:#x}\n" for i, c in enumerate(CONSTS) for j in range(4)
+) + "GLOBL sipc<>(SB), RODATA|NOPTR, $192\n" + "".join(
+    f"DATA lane8<>+{8 * i}(SB)/8, ${i}\n" for i in range(8)
+) + "GLOBL lane8<>(SB), RODATA|NOPTR, $64\n" + """DATA rol16q<>+0(SB)/8,  $0x0504030201000706
+DATA rol16q<>+8(SB)/8,  $0x0d0c0b0a09080f0e
+DATA rol16q<>+16(SB)/8, $0x0504030201000706
+DATA rol16q<>+24(SB)/8, $0x0d0c0b0a09080f0e
+GLOBL rol16q<>(SB), RODATA|NOPTR, $32
+"""
+
+
+def avx2_round2():
+    """One SipRound on both YMM groups (A: Y0..Y3 with scratch Y12, B: Y4..Y7
+    with scratch Y13), instruction-interleaved; rotates are synthesised
+    (shift / shift / or, VPSHUFD for 32, VPSHUFB for 16)."""
+    G = [("Y0", "Y1", "Y2", "Y3", "Y12"), ("Y4", "Y5", "Y6", "Y7", "Y13")]
+    ops = [
+        lambda s: f"VPADDQ {s[1]}, {s[0]}, {s[0]}",
+        lambda s: f"VPSLLQ $13, {s[1]}, {s[4]}; VPSRLQ $51, {s[1]}, {s[1]}; VPOR {s[4]}, {s[1]}, {s[1]}",
+        lambda s: f"VPXOR {s[0]}, {s[1]}, {s[1]}",
+        lambda s: f"VPSHUFD $0xB1, {s[0]}, {s[0]}",
+        lambda s: f"VPADDQ {s[3]}, {s[2]}, {s[2]}",
+        lambda s: f"VPSHUFB rol16q<>(SB), {s[3]}, {s[3]}",
+        lambda s: f"VPXOR {s[2]}, {s[3]}, {s[3]}",
+        lambda s: f"VPADDQ {s[3]}, {s[0]}, {s[0]}",
+        lambda s: f"VPSLLQ $21, {s[3]}, {s[4]}; VPSRLQ $43, {s[3]}, {s[3]}; VPOR {s[4]}, {s[3]}, {s[3]}",
+        lambda s: f"VPXOR {s[0]}, {s[3]}, {s[3]}",
+        lambda s: f"VPADDQ {s[1]}, {s[2]}, {s[2]}",
+        lambda s: f"VPSLLQ $17, {s[1]}, {s[4]}; VPSRLQ $47, {s[1]}, {s[1]}; VPOR {s[4]}, {s[1]}, {s[1]}",
+        lambda s: f"VPXOR {s[2]}, {s[1]}, {s[1]}",
+        lambda s: f"VPSHUFD $0xB1, {s[2]}, {s[2]}",
+    ]
+    return ["\t" + "; ".join(op(g) for g in G) for op in ops]
+
+
+def avx2_x8_fill():
+    """Eight-lane batch fill kernel on the AVX2 tier: word w of group g is
+    staged at 64*w + 32*g (SP)."""
+    L = [AVX2_X8_DATA,
+         "// func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)",
+         "TEXT ·sipHash24FusedChain13x8Avx2Asm(SB), NOSPLIT, $128-32",
+         "\tMOVQ comps+0(FP), BX", "\tMOVQ nPairs+8(FP), CX", "\tMOVQ out+24(FP), DI", "",
+         "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane",
+         "\tVPBROADCASTQ groupIdxBase+16(FP), Y12",
+         "\tMOVQ $3, R12", "\tVMOVQ R12, X14", "\tVPBROADCASTQ X14, Y14",
+         f"\tMOVQ ${tag(13):#x}, R12", "\tVMOVQ R12, X15", "\tVPBROADCASTQ X15, Y15"]
+    for g in range(2):
+        L += [f"\tVPADDQ lane8<>+{32 * g}(SB), Y12, Y13",
+              f"\tVPSLLQ $8, Y13, Y0", "\tVPOR Y14, Y0, Y0", f"\tVMOVDQU Y0, {32 * g}(SP)",
+              f"\tVPSRLQ $56, Y13, Y1", "\tVPOR Y15, Y1, Y1", f"\tVMOVDQU Y1, {64 + 32 * g}(SP)"]
+    L += ["", "\tVPXOR Y8, Y8, Y8", "\tVPXOR Y9, Y9, Y9", "\tVPXOR Y10, Y10, Y10", "\tVPXOR Y11, Y11, Y11", "", "loop:",
+          "\tVPBROADCASTQ 0(BX), Y14",
+          "\tVPXOR Y8, Y14, Y12; VPXOR Y10, Y14, Y13",
+          "\tVPXOR sipc<>+0(SB), Y12, Y0; VPXOR sipc<>+0(SB), Y13, Y4",
+          "\tVPXOR sipc<>+64(SB), Y12, Y2; VPXOR sipc<>+64(SB), Y13, Y6",
+          "\tVPBROADCASTQ 8(BX), Y14",
+          "\tVPXOR Y9, Y14, Y12; VPXOR Y11, Y14, Y13",
+          "\tVPXOR sipc<>+32(SB), Y12, Y1; VPXOR sipc<>+32(SB), Y13, Y5",
+          "\tVPXOR sipc<>+96(SB), Y12, Y3; VPXOR sipc<>+96(SB), Y13, Y7"]
+    for w in range(2):
+        L.append(f"\tVPXOR {64 * w}(SP), Y3, Y3; VPXOR {64 * w + 32}(SP), Y7, Y7")
+        L += avx2_round2() + avx2_round2()
+        L.append(f"\tVPXOR {64 * w}(SP), Y0, Y0; VPXOR {64 * w + 32}(SP), Y4, Y4")
+    L.append("\tVPXOR sipc<>+128(SB), Y2, Y2; VPXOR sipc<>+128(SB), Y6, Y6")
+    for _ in range(4):
+        L += avx2_round2()
+    L += ["\tVPXOR Y1, Y0, Y8; VPXOR Y5, Y4, Y10",
+          "\tVPXOR Y3, Y8, Y8; VPXOR Y7, Y10, Y10",
+          "\tVPXOR Y2, Y8, Y8; VPXOR Y6, Y10, Y10",
+          "\tVPXOR sipc<>+160(SB), Y1, Y1; VPXOR sipc<>+160(SB), Y5, Y5"]
+    for _ in range(4):
+        L += avx2_round2()
+    L += ["\tVPXOR Y1, Y0, Y9; VPXOR Y5, Y4, Y11",
+          "\tVPXOR Y3, Y9, Y9; VPXOR Y7, Y11, Y11",
+          "\tVPXOR Y2, Y9, Y9; VPXOR Y6, Y11, Y11",
+          "\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    for g, (lo, hi) in enumerate((("Y8", "Y9"), ("Y10", "Y11"))):
+        L += [f"\tVPUNPCKLQDQ {hi}, {lo}, Y12", f"\tVPUNPCKHQDQ {hi}, {lo}, Y13",
+              f"\tVMOVDQU X12, {64 * g}(DI)", f"\tVMOVDQU X13, {64 * g + 16}(DI)",
+              f"\tVEXTRACTI128 $1, Y12, {64 * g + 32}(DI)", f"\tVEXTRACTI128 $1, Y13, {64 * g + 48}(DI)"]
+    L += ["\tVZEROUPPER", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
 # ---------------------------------------------------------------- GPR x1 (amd64)
 
 GPR_ROUND_AMD64 = ["\tADDQ R9, R8", "\tROLQ $13, R9", "\tXORQ R8, R9", "\tROLQ $32, R8",
@@ -485,6 +613,113 @@ def neon_x4(shape):
     return "\n".join(L) + "\n"
 
 
+NEON_X8_HEADER = f"""//go:build {ARM}
+
+// ARM64 NEON 8-lane fused ChainHash cascade kernel for SipHash-2-4-128
+// at the 13-byte per-lane fill shape (2 message words, 12 SipRounds per
+// lane and cascade round) — the batch-16 Interlocked Barrier fill arm of
+// the NEON tier, called twice per sixteen groups. See siphashasm_fused.go
+// for the construction; the kernel is pinned to the pure-Go reference
+// (scalarFusedX16, through the dispatcher) by the in-package parity tests.
+//
+// The fill block [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is
+// synthesised in-register as its two message words m0 = (idx << 8) | 0x03
+// and m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, lane offsets
+// from ·laneIdx16) and staged into the frame; the eight lanes run as four
+// two-lane pairs whose instruction streams are interleaved. V0..V15 hold
+// the four states (V16..V23 the rotate alternates of v1 / v3), V24..V27
+// the lo and V28..V31 the hi carries; the six constants stay in R19..R24
+// and are VDUP'd on demand, the pair broadcasts and the reloaded words
+// pass through the alternate registers, free at every round boundary.
+// The 8 (lo, hi) pairs are zipped per pair and written as two 64-byte
+// stores in lane order.
+
+#include "textflag.h"
+"""
+
+
+def neon_round4():
+    """One SipRound on all four lane pairs (h = 0..3), instruction-interleaved."""
+    def regs(h):
+        return {"v0": f"V{h}", "v1": f"V{4 + h}", "v1x": f"V{16 + h}", "v2": f"V{8 + h}", "v3": f"V{12 + h}", "v3x": f"V{20 + h}"}
+    ops = [
+        lambda r: f"VADD {r['v1']}.D2, {r['v0']}.D2, {r['v0']}.D2",
+        lambda r: f"VSHL $13, {r['v1']}.D2, {r['v1x']}.D2",
+        lambda r: f"VSRI $51, {r['v1']}.D2, {r['v1x']}.D2",
+        lambda r: f"VEOR {r['v0']}.B16, {r['v1x']}.B16, {r['v1x']}.B16",
+        lambda r: f"VREV64 {r['v0']}.S4, {r['v0']}.S4",
+        lambda r: f"VADD {r['v3']}.D2, {r['v2']}.D2, {r['v2']}.D2",
+        lambda r: f"VSHL $16, {r['v3']}.D2, {r['v3x']}.D2",
+        lambda r: f"VSRI $48, {r['v3']}.D2, {r['v3x']}.D2",
+        lambda r: f"VEOR {r['v2']}.B16, {r['v3x']}.B16, {r['v3x']}.B16",
+        lambda r: f"VADD {r['v3x']}.D2, {r['v0']}.D2, {r['v0']}.D2",
+        lambda r: f"VSHL $21, {r['v3x']}.D2, {r['v3']}.D2",
+        lambda r: f"VSRI $43, {r['v3x']}.D2, {r['v3']}.D2",
+        lambda r: f"VEOR {r['v0']}.B16, {r['v3']}.B16, {r['v3']}.B16",
+        lambda r: f"VADD {r['v1x']}.D2, {r['v2']}.D2, {r['v2']}.D2",
+        lambda r: f"VSHL $17, {r['v1x']}.D2, {r['v1']}.D2",
+        lambda r: f"VSRI $47, {r['v1x']}.D2, {r['v1']}.D2",
+        lambda r: f"VEOR {r['v2']}.B16, {r['v1']}.B16, {r['v1']}.B16",
+        lambda r: f"VREV64 {r['v2']}.S4, {r['v2']}.S4",
+    ]
+    return ["\t" + "; ".join(op(regs(h)) for h in range(4)) for op in ops]
+
+
+def neon_x8_fill():
+    """Eight-lane batch fill kernel on the NEON tier: word 0 of the four
+    pairs is staged at words-128(SP), word 1 at words-64(SP)."""
+    L = ["// func sipHash24FusedChain13x8NeonAsm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)",
+         "TEXT ·sipHash24FusedChain13x8NeonAsm(SB), NOSPLIT, $128-32",
+         "\tMOVD comps+0(FP), R6", "\tMOVD nPairs+8(FP), R7", "\tMOVD groupIdxBase+16(FP), R5", "\tMOVD out+24(FP), R3",
+         "\tMOVD $words-128(SP), R4", "\tADD $64, R4, R14", ""]
+    for i, c in enumerate(CONSTS):
+        L.append(f"\tMOVD ${c:#x}, R{19 + i}")
+    L += ["", "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane",
+          "\tMOVD $·laneIdx16(SB), R12", "\tVLD1 (R12), [V16.D2, V17.D2, V18.D2, V19.D2]",
+          "\tVDUP R5, V20.D2", "\tMOVD $3, R12", "\tVDUP R12, V21.D2", f"\tMOVD ${tag(13):#x}, R12", "\tVDUP R12, V22.D2",
+          "\t" + "; ".join(f"VADD V20.D2, V{16 + p}.D2, V{16 + p}.D2" for p in range(4))]
+    L += ["\t" + "; ".join(f"VSHL $8, V{16 + p}.D2, V{24 + p}.D2" for p in range(4)),
+          "\t" + "; ".join(f"VORR V21.B16, V{24 + p}.B16, V{24 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VUSHR $56, V{16 + p}.D2, V{28 + p}.D2" for p in range(4)),
+          "\t" + "; ".join(f"VORR V22.B16, V{28 + p}.B16, V{28 + p}.B16" for p in range(4)),
+          "\tVST1 [V24.D2, V25.D2, V26.D2, V27.D2], (R4)", "\tVST1 [V28.D2, V29.D2, V30.D2, V31.D2], (R14)", ""]
+    L += ["\t" + "; ".join(f"VEOR V{24 + p}.B16, V{24 + p}.B16, V{24 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V{28 + p}.B16, V{28 + p}.B16, V{28 + p}.B16" for p in range(4)), "", "loop:",
+          "\tMOVD 0(R6), R12", "\tVDUP R12, V16.D2", "\tMOVD 8(R6), R12", "\tVDUP R12, V17.D2", "\tADD $16, R6, R6",
+          "\t" + "; ".join(f"VEOR V16.B16, V{24 + p}.B16, V{20 + p}.B16" for p in range(4)),
+          "\tVDUP R19, V18.D2", "\tVDUP R21, V19.D2",
+          "\t" + "; ".join(f"VEOR V18.B16, V{20 + p}.B16, V{p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V19.B16, V{20 + p}.B16, V{8 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V17.B16, V{28 + p}.B16, V{20 + p}.B16" for p in range(4)),
+          "\tVDUP R20, V18.D2", "\tVDUP R22, V19.D2",
+          "\t" + "; ".join(f"VEOR V18.B16, V{20 + p}.B16, V{4 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V19.B16, V{20 + p}.B16, V{12 + p}.B16" for p in range(4))]
+    for wreg in ("R4", "R14"):
+        L += [f"\tVLD1 ({wreg}), [V16.D2, V17.D2, V18.D2, V19.D2]",
+              "\t" + "; ".join(f"VEOR V{16 + p}.B16, V{12 + p}.B16, V{12 + p}.B16" for p in range(4))]
+        L += neon_round4() + neon_round4()
+        L += [f"\tVLD1 ({wreg}), [V16.D2, V17.D2, V18.D2, V19.D2]",
+              "\t" + "; ".join(f"VEOR V{16 + p}.B16, V{p}.B16, V{p}.B16" for p in range(4))]
+    L += ["\tVDUP R23, V16.D2", "\t" + "; ".join(f"VEOR V16.B16, V{8 + p}.B16, V{8 + p}.B16" for p in range(4))]
+    for _ in range(4):
+        L += neon_round4()
+    L += ["\t" + "; ".join(f"VEOR V{4 + p}.B16, V{p}.B16, V{24 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V{8 + p}.B16, V{24 + p}.B16, V{24 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V{12 + p}.B16, V{24 + p}.B16, V{24 + p}.B16" for p in range(4)),
+          "\tVDUP R24, V16.D2", "\t" + "; ".join(f"VEOR V16.B16, V{4 + p}.B16, V{4 + p}.B16" for p in range(4))]
+    for _ in range(4):
+        L += neon_round4()
+    L += ["\t" + "; ".join(f"VEOR V{4 + p}.B16, V{p}.B16, V{28 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V{8 + p}.B16, V{28 + p}.B16, V{28 + p}.B16" for p in range(4)),
+          "\t" + "; ".join(f"VEOR V{12 + p}.B16, V{28 + p}.B16, V{28 + p}.B16" for p in range(4)),
+          "\tSUBS $1, R7, R7", "\tBNE loop", ""]
+    for p in range(4):
+        L += [f"\tVZIP1 V{28 + p}.D2, V{24 + p}.D2, V{16 + 2 * p}.D2", f"\tVZIP2 V{28 + p}.D2, V{24 + p}.D2, V{17 + 2 * p}.D2"]
+    L += ["\tVST1 [V16.D2, V17.D2, V18.D2, V19.D2], (R3)", "\tADD $64, R3, R12",
+          "\tVST1 [V20.D2, V21.D2, V22.D2, V23.D2], (R12)", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
 # ---------------------------------------------------------------- GPR x1 (arm64)
 
 GPR_ROUND_ARM64 = ["\tADD R9, R8, R8", "\tROR $51, R9, R9", "\tEOR R8, R9, R9", "\tROR $32, R8, R8",
@@ -549,7 +784,9 @@ X16_HEADER = f"""//go:build {AMD}
 
 
 def render_all():
-    files = {"siphash_fusedchain128_13x16_avx512_amd64.s": X16_HEADER + "\n" + evex_x16()}
+    files = {"siphash_fusedchain128_13x16_avx512_amd64.s": X16_HEADER + "\n" + evex_x16(),
+             "siphash_fusedchain128_13x8_avx2_amd64.s": AVX2_X8_HEADER + "\n" + avx2_x8_fill(),
+             "siphash_fusedchain128_13x8_neon_arm64.s": NEON_X8_HEADER + "\n" + neon_x8_fill()}
     for s in SHAPES:
         files.update({
             f"siphash_fusedchain128_{s}x4_avx512_amd64.s": header(s, 4, "AVX-512 EVEX YMM (one lane per qword, VPROLQ rotates)", AMD) + "\n" + evex_x4(s),

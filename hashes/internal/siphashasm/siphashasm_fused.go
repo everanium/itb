@@ -72,10 +72,9 @@ func scalarFusedX16(components []uint64, groupIdxBase uint64, out *[16][2]uint64
 }
 
 // x16Quarter returns the lane pointers of quarter q (lanes 4q..4q+3) of
-// the sixteen fill blocks. The tiers without a sixteen-lane kernel run
-// the batch-16 fill as four four-lane kernel calls over Go-synthesised
-// blocks; the kernels are called directly (not through a function value)
-// so the blocks and the pointer array stay on the caller's stack.
+// the sixteen fill blocks — the shape of one four-lane kernel call over
+// Go-synthesised blocks, which the parity tests use to pin the eight-lane
+// fill kernels against the four-lane kernels of the same tier.
 func x16Quarter(blocks *[16][13]byte, q int) [4]*byte {
 	return [4]*byte{&blocks[4*q][0], &blocks[4*q+1][0], &blocks[4*q+2][0], &blocks[4*q+3][0]}
 }
@@ -84,4 +83,12 @@ func x16Quarter(blocks *[16][13]byte, q int) [4]*byte {
 // four-lane output array of one kernel call.
 func x16Out(out *[16][2]uint64, q int) *[4][2]uint64 {
 	return (*[4][2]uint64)(out[4*q : 4*q+4])
+}
+
+// x16Half returns half h (lanes 8h..8h+7) of a batch-16 output as the
+// eight-lane output array of one fill kernel call: the AVX2 and NEON
+// tiers cover the sixteen groups of a batch-16 call as two eight-lane
+// kernel calls.
+func x16Half(out *[16][2]uint64, h int) *[8][2]uint64 {
+	return (*[8][2]uint64)(out[8*h : 8*h+8])
 }
