@@ -50,6 +50,23 @@ type Seed256 struct {
 	// parity invariant). nil disables batched dispatch and preserves
 	// the legacy single-call code path.
 	BatchHash BatchHashFunc256
+
+	// FusedChain and BatchFusedChain optionally evaluate the whole
+	// ChainHash256 cascade inside the primitive (see
+	// [FusedChainHashFunc256]). When non-nil and the implementation
+	// reports ok for the input shape, ChainHash256 / BatchChainHash256
+	// return the fused result; otherwise they run the sequential loop
+	// over Hash / BatchHash. Both paths are bit-exact by contract; the
+	// fields are performance hooks, nil disables them.
+	FusedChain      FusedChainHashFunc256
+	BatchFusedChain BatchFusedChainHashFunc256
+
+	// interlockFillX16 is the batch-16 Interlocked Barrier fill hook for
+	// the 13-byte fill shape (the sole shape the overlay uses): 8 groups
+	// (16 chunks) per kernel call, see [InterlockFillFunc16x256]. A
+	// performance hook only — the cascade fill is the wire with or
+	// without it. Populated via SetInterlockBatch16.
+	interlockFillX16 InterlockFillFunc16x256
 }
 
 // NewSeed256 creates a new 256-bit seed with cryptographically random components.
@@ -129,6 +146,11 @@ func (s *Seed256) MinPixelsAuth() int {
 //	h = Hash256(data, [s[4]^h[0], s[5]^h[1], s[6]^h[2], s[7]^h[3]])
 //	...
 func (s *Seed256) ChainHash256(buf []byte) [4]uint64 {
+	if s.FusedChain != nil {
+		if out, ok := s.FusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
 	var seed [4]uint64
 	copy(seed[:], s.Components[0:4])
 	h := s.Hash(buf, seed)

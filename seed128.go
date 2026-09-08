@@ -62,12 +62,10 @@ type Seed128 struct {
 	BatchFusedChain BatchFusedChainHashFunc128
 
 	// interlockFillX16 is the batch-16 Interlocked Barrier fill hook for
-	// the 13-byte fill shape (the sole shape the overlay uses). When
-	// non-nil the lockSeed fills through the ChainHash cascade over the
-	// derived pair and its components, a 16-group batch per kernel call
-	// — the hook's presence selects that wire, see InterlockFillFunc16;
-	// when nil the derived-pair fill runs. Populated via
-	// SetInterlockBatch16.
+	// the 13-byte fill shape (the sole shape the overlay uses): 16
+	// groups per kernel call, see InterlockFillFunc16. A performance
+	// hook only — the cascade fill is the wire with or without it.
+	// Populated via SetInterlockBatch16.
 	interlockFillX16 InterlockFillFunc16
 
 	// batchFusedChainX8 is the eight-lane fused cascade hook of the pixel
@@ -88,16 +86,13 @@ type Seed128 struct {
 //
 //	seed, err := itb.NewSeed128(1024, sipHash128)
 //
-// For automatic attach of the fused ChainHash and batch-16 interlock
-// fast paths, see hashes.NewSeed128x16 — the Low-Level Mode symmetric
-// of the triple package's auto-attach. Directly-constructed seeds keep
-// their optional hooks nil and route hot paths through the sequential
-// fallback until hashes.AttachFused128 and hashes.AttachInterlockBatch16
-// are called explicitly. For aesitb128 the batch-16 hook is
-// wire-affecting — its presence selects the Interlocked Barrier cascade
-// fill (see [InterlockFillFunc16]) — so an aesitb128 seed used as
-// lockSeed must carry it to interoperate with seeds built through
-// hashes.NewSeed128x16 or the triple package.
+// Directly-constructed seeds keep their optional fast-path hooks nil
+// and route hot paths through the sequential fallback until
+// hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
+// explicitly (the triple package attaches them automatically). The
+// hooks are performance paths only: a seed produces the same wire with
+// and without them, including the Interlocked Barrier cascade fill,
+// which every lockSeed runs at every width (see [InterlockFillFunc16]).
 func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 	if bits < 512 || bits > MaxKeyBits || bits%128 != 0 {
 		return nil, fmt.Errorf("itb: seed128 bits must be 512-%d and multiple of 128, got %d", MaxKeyBits, bits)
@@ -138,14 +133,10 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 // Directly-constructed seeds keep their optional fast-path hooks nil
 // and route hot paths through the sequential fallback until
 // hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
-// explicitly; see hashes.NewSeed128x16 for the random-components
-// constructor that attaches them in one call and
-// hashes.SeedFromComponents128x16 for the existing-components
-// counterpart of this constructor. For aesitb128 the batch-16 hook is
-// wire-affecting — its presence selects the Interlocked Barrier cascade
-// fill (see [InterlockFillFunc16]) — so an aesitb128 lockSeed rebuilt
-// from components must carry it to decrypt what the exporting side
-// encrypted.
+// explicitly; hashes.SeedFromComponents128x16 rebuilds a seed from
+// existing components with every hook attached in one call. The hooks
+// are performance paths only: a seed rebuilt from components decrypts
+// what the exporting side encrypted with or without them.
 func SeedFromComponents128(hashFunc HashFunc128, components ...uint64) (*Seed128, error) {
 	if len(components) < 8 || len(components) > MaxKeyBits/64 {
 		return nil, fmt.Errorf("itb: components count must be 8-%d, got %d", MaxKeyBits/64, len(components))
@@ -238,13 +229,18 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	return s.ChainHash128(buf)
 }
 
-// InterlockFillX16 returns the batch-16 interlock PRF fill hook.
+// InterlockFillX16 returns the batch-16 interlock PRF fill hook, nil
+// when none is attached.
 func (s *Seed128) InterlockFillX16() InterlockFillFunc16 {
 	return s.interlockFillX16
 }
 
-// SetInterlockBatch16 sets the batch-16 interlock PRF fill hook directly.
-// Call from hashes.AttachInterlockBatch16 after resolving the factory by name.
+// SetInterlockBatch16 installs the batch-16 interlock PRF fill hook
+// (hashes.AttachInterlockBatch16 calls it after resolving the factory
+// by name). nil removes it; the Interlocked Barrier fill then runs the
+// cascade through the four-lane and single-lane arms. The hook is a
+// performance path only: with or without it the seed produces the
+// same wire.
 func (s *Seed128) SetInterlockBatch16(fn InterlockFillFunc16) {
 	s.interlockFillX16 = fn
 }

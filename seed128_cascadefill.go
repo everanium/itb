@@ -3,7 +3,7 @@ package itb
 // chainHash128With evaluates the ChainHash128 cascade over a
 // caller-supplied component slice instead of s.Components — the
 // prepended slice of the Interlocked Barrier cascade fill
-// ([buildLockBatchPRF48_128Cascade]). Evaluation order matches
+// ([buildLockBatchPRF48_128]). Evaluation order matches
 // [Seed128.ChainHash128]: the fused hook first, the sequential Hash loop
 // when the hook is absent or declines. components must hold an even
 // count of at least two words.

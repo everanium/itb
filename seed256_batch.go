@@ -20,6 +20,11 @@ type BatchHashFunc256 func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64
 // under the same Components. Caller ensures s.BatchHash != nil
 // (processChunk256 checks this before invoking).
 func (s *Seed256) BatchChainHash256(buf *[4][]byte) [4][4]uint64 {
+	if s.BatchFusedChain != nil {
+		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
 	var seeds [4][4]uint64
 	for lane := 0; lane < 4; lane++ {
 		seeds[lane][0] = s.Components[0]

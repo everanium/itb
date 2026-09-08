@@ -512,11 +512,13 @@ func TestBatchVsPerChunkFactor1(t *testing.T) {
 
 // TestBatchClosureLaneOracle verifies that at each width, the batched
 // closure's per-lane mask output matches an independent reference
-// derivation: manually invoke the underlying hash on the group buffer,
-// take lane pairs (out[2j], out[2j+1]) as chunk j's 128-bit rank, and
-// call rankToMaskTriple48 on each. This anchors the closure's wiring
-// (lane pair layout, group index in buf[1:9], domain tag in buf[0])
-// against a formula that has no closure-side arithmetic to hide behind.
+// derivation: run the cascade over the prepended lock components on the
+// group buffer directly through the underlying hash, take lane pairs
+// (out[2j], out[2j+1]) as chunk j's 128-bit rank, and call
+// rankToMaskTriple48 on each. This anchors the closure's wiring (lane
+// pair layout, group index in buf[1:9], domain tag in buf[0], the
+// prepend order of the cascade) against a formula that has no
+// closure-side arithmetic to hide behind.
 func TestBatchClosureLaneOracle(t *testing.T) {
 	nonce := interlock48Nonce()
 
@@ -533,8 +535,7 @@ func TestBatchClosureLaneOracle(t *testing.T) {
 			var refBuf [13]byte
 			refBuf[0] = 0x03
 			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
-			lockLo, lockHi := ns.deriveInterLockSeed(nonce)
-			lo, hi := ns.Hash(refBuf[:], lockLo, lockHi)
+			lo, hi := oracleCascade128(ns.Hash, oracleLockComps128(ns, nonce), refBuf[:])
 			wantM0, wantM1, wantM2 := rankToMaskTriple48(lo, hi)
 			if masks[0][0] != wantM0 || masks[0][1] != wantM1 || masks[0][2] != wantM2 {
 				t.Fatalf("128 group=%d: batched (%012x, %012x, %012x), reference (%012x, %012x, %012x)",
@@ -555,8 +556,7 @@ func TestBatchClosureLaneOracle(t *testing.T) {
 			var refBuf [13]byte
 			refBuf[0] = 0x03
 			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
-			lockSeed := ns.deriveInterLockSeed(nonce)
-			out := ns.Hash(refBuf[:], lockSeed)
+			out := oracleCascade256(ns.Hash, oracleLockComps256(ns, nonce), refBuf[:])
 			for j := 0; j < 2; j++ {
 				wantM0, wantM1, wantM2 := rankToMaskTriple48(out[2*j], out[2*j+1])
 				if masks[j][0] != wantM0 || masks[j][1] != wantM1 || masks[j][2] != wantM2 {
@@ -579,8 +579,7 @@ func TestBatchClosureLaneOracle(t *testing.T) {
 			var refBuf [13]byte
 			refBuf[0] = 0x03
 			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
-			lockSeed := ns.deriveInterLockSeed(nonce)
-			out := ns.Hash(refBuf[:], lockSeed)
+			out := oracleCascade512(ns.Hash, oracleLockComps512(ns, nonce), refBuf[:])
 			for j := 0; j < 4; j++ {
 				wantM0, wantM1, wantM2 := rankToMaskTriple48(out[2*j], out[2*j+1])
 				if masks[j][0] != wantM0 || masks[j][1] != wantM1 || masks[j][2] != wantM2 {
@@ -658,40 +657,97 @@ func TestSplitTriple48LockedBatchShortFinalGroup(t *testing.T) {
 // splitTriple48Locked / interleaveTriple48Locked.
 type lockPRF48 func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64)
 
+// oracleCascade128 is the per-chunk oracle's own cascade over the
+// prepended lock components, written directly over the raw Hash arm
+// (no seed-side cascade helper is used, so the oracle is independent of
+// the code it checks).
+func oracleCascade128(h HashFunc128, comps []uint64, buf []byte) (uint64, uint64) {
+	lo, hi := h(buf, comps[0], comps[1])
+	for i := 2; i < len(comps); i += 2 {
+		lo, hi = h(buf, comps[i]^lo, comps[i+1]^hi)
+	}
+	return lo, hi
+}
+
+func oracleCascade256(h HashFunc256, comps []uint64, buf []byte) [4]uint64 {
+	var seed [4]uint64
+	copy(seed[:], comps[:4])
+	out := h(buf, seed)
+	for i := 4; i < len(comps); i += 4 {
+		for j := range seed {
+			seed[j] = comps[i+j] ^ out[j]
+		}
+		out = h(buf, seed)
+	}
+	return out
+}
+
+func oracleCascade512(h HashFunc512, comps []uint64, buf []byte) [8]uint64 {
+	var seed [8]uint64
+	copy(seed[:], comps[:8])
+	out := h(buf, seed)
+	for i := 8; i < len(comps); i += 8 {
+		for j := range seed {
+			seed[j] = comps[i+j] ^ out[j]
+		}
+		out = h(buf, seed)
+	}
+	return out
+}
+
+// oracleLockComps128 prepends the setup key K = cascade(0x04 ‖ nonce)
+// over the seed's components to those components — the hot-loop
+// component slice of the cascade fill.
+func oracleLockComps128(lockSeed *Seed128, nonce []byte) []uint64 {
+	lo, hi := oracleCascade128(lockSeed.Hash, lockSeed.Components, append([]byte{0x04}, nonce...))
+	return append([]uint64{lo, hi}, lockSeed.Components...)
+}
+
+func oracleLockComps256(lockSeed *Seed256, nonce []byte) []uint64 {
+	k := oracleCascade256(lockSeed.Hash, lockSeed.Components, append([]byte{0x04}, nonce...))
+	return append(k[:], lockSeed.Components...)
+}
+
+func oracleLockComps512(lockSeed *Seed512, nonce []byte) []uint64 {
+	k := oracleCascade512(lockSeed.Hash, lockSeed.Components, append([]byte{0x04}, nonce...))
+	return append(k[:], lockSeed.Components...)
+}
+
 // buildLockPRF48_128 constructs a per-chunk lockPRF48 closure for the
-// 128-bit Triple context. The lockSeed argument supplies BOTH the
-// per-chunk PRF keying material AND the Hash function.
+// 128-bit Triple context: the cascade fill of the batched builder, one
+// chunk per call. The lockSeed argument supplies BOTH the per-chunk PRF
+// keying material AND the Hash function.
 func buildLockPRF48_128(lockSeed *Seed128, nonce []byte) lockPRF48 {
-	lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)
+	lockComps := oracleLockComps128(lockSeed, nonce)
 	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
-		lo, hi := h(buf, lockLo, lockHi)
+		lo, hi := oracleCascade128(h, lockComps, buf)
 		return rankToMaskTriple48(lo, hi)
 	}
 }
 
 // buildLockPRF48_256 — 256-bit counterpart of [buildLockPRF48_128].
 func buildLockPRF48_256(lockSeed *Seed256, nonce []byte) lockPRF48 {
-	lockKey := lockSeed.deriveInterLockSeed(nonce)
+	lockComps := oracleLockComps256(lockSeed, nonce)
 	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
-		out := h(buf, lockKey)
+		out := oracleCascade256(h, lockComps, buf)
 		return rankToMaskTriple48(out[0], out[1])
 	}
 }
 
 // buildLockPRF48_512 — 512-bit counterpart of [buildLockPRF48_128].
 func buildLockPRF48_512(lockSeed *Seed512, nonce []byte) lockPRF48 {
-	lockKey := lockSeed.deriveInterLockSeed(nonce)
+	lockComps := oracleLockComps512(lockSeed, nonce)
 	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
-		out := h(buf, lockKey)
+		out := oracleCascade512(h, lockComps, buf)
 		return rankToMaskTriple48(out[0], out[1])
 	}
 }

@@ -9,7 +9,9 @@ import (
 )
 
 // interlock48_cascade_test.go — the cascade fill of an aesitb128
-// lockSeed ([buildLockBatchPRF48_128Cascade]).
+// lockSeed ([buildLockBatchPRF48_128]) through the shipped aesitbasm
+// kernels. The primitive-agnostic properties of the universal cascade
+// fill at every width are pinned in interlock48_cascade_wide_test.go.
 //
 // Three properties are pinned on fixed keys and components:
 //
@@ -21,11 +23,10 @@ import (
 //     BatchHash loops) and armed (FusedChain13x1 / FusedChain13x4 under
 //     the hooks, exactly as hashes.AttachFused128 wires them) — the
 //     shipped wiring, pinned directly.
-//  2. Intentional break: the cascade fill differs from the single
-//     derived-pair call the same seed makes without the batch-16 hook,
-//     and the hook-absent seed produces that derived-pair fill — the
-//     documented Low-Level hazard, and a guard against a silent revert
-//     of the cascade selection.
+//  2. Hook independence and the cascade itself: the seed with every
+//     kernel hook and the same seed with none produce the same fill,
+//     and that fill differs from the single derived-pair call — a guard
+//     against a silent revert to a one-round fill.
 //  3. Nonce binding: two interlock nonces give distinct fills on the
 //     same group.
 
@@ -175,41 +176,36 @@ func TestCascadeFillThreeArmParity(t *testing.T) {
 	}
 }
 
-// TestCascadeFillDiffersFromDerivedPair is the intentional-break pin:
-// with the batch-16 hook attached the fill is the cascade, not the
-// single derived-pair call, and the same seed without the hook fills
-// through the derived-pair call — the two wires differ on every group
-// checked.
-func TestCascadeFillDiffersFromDerivedPair(t *testing.T) {
+// TestCascadeFillHookIndependence pins that the aesitb128 kernel hooks
+// never change the wire: the seed carrying the fused and batch-16 hooks
+// and the same seed with none of them produce the same fill on every
+// group, and that fill is the cascade, not the single derived-pair call
+// Hash(block, lockLo, lockHi).
+func TestCascadeFillHookIndependence(t *testing.T) {
 	nonce := interlock48Nonce()
 	for i, key := range cascadeLockSeedKeys {
 		comps := cascadeLockSeedComponents[i]
 		hooked := cascadeLockSeed(t, key, comps, true)
-		plain := cascadeLockSeed(t, key, comps, true)
+		plain := cascadeLockSeed(t, key, comps, false)
 		plain.SetInterlockBatch16(nil)
 		bpHooked := buildLockBatchPRF48_128(hooked, nonce)
 		bpPlain := buildLockBatchPRF48_128(plain, nonce)
 		if bpPlain.fillRanksSuper != nil {
-			t.Fatalf("key %d: hook-absent seed armed fillRanksSuper", i)
+			t.Fatalf("key %d: hook-free seed armed fillRanksSuper", i)
 		}
 		lockLo, lockHi := hooked.deriveInterLockSeed(nonce)
-		differ := 0
 		for g := uint64(0); g < 64; g++ {
 			buf := cascadeFillBlock(g)
-			var cascade, derived [2]uint64
-			bpHooked.fillRanks(buf[:], g, cascade[:])
-			bpPlain.fillRanks(buf[:], g, derived[:])
-			wantDerived := [2]uint64{}
-			wantDerived[0], wantDerived[1] = hooked.Hash(buf[:], lockLo, lockHi)
-			if derived != wantDerived {
-				t.Fatalf("key %d group %d: hook-absent fill is not the derived-pair call", i, g)
+			var a, b, derived [2]uint64
+			bpHooked.fillRanks(buf[:], g, a[:])
+			bpPlain.fillRanks(buf[:], g, b[:])
+			if a != b {
+				t.Fatalf("key %d group %d: hooked and hook-free fills differ", i, g)
 			}
-			if cascade != derived {
-				differ++
+			derived[0], derived[1] = hooked.Hash(buf[:], lockLo, lockHi)
+			if a == derived {
+				t.Fatalf("key %d group %d: fill equals the single derived-pair call", i, g)
 			}
-		}
-		if differ != 64 {
-			t.Fatalf("key %d: cascade fill equals the derived-pair fill on %d of 64 groups", i, 64-differ)
 		}
 	}
 }
