@@ -15,9 +15,8 @@ import "encoding/binary"
 // noise and the data seed carry it, processChunk128 hashes eight pixels
 // per call ahead of the four-pixel and single-pixel tails. Shipped
 // primitives attach it only on hosts whose selected tier carries an
-// eight-lane kernel (aesitb128 on VAES + AVX-512 silicon, through
-// hashes.AttachFused128), so every other host keeps the four-lane stride
-// unchanged.
+// eight-lane kernel (through the hashes package's constructors), so
+// every other host keeps the four-lane stride unchanged.
 type BatchFusedChainHashFunc128x8 func(components []uint64, data *[8][]byte) (out [8][2]uint64, ok bool)
 
 // SetBatchFusedChain8 installs the eight-lane fused cascade hook. nil

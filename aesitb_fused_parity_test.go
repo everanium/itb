@@ -26,20 +26,16 @@ func newAESITBSeedPair(t *testing.T, bits int) (fused, seq *itb.Seed128) {
 	if forcetier.ChainHashSeq() {
 		t.Skip("ITB_FORCE_CHAINHASH_SEQ set: the fused hooks stay nil by design")
 	}
-	single, batched, key, err := hashes.Make128Pair(hashes.CipherAESITB128, aesitbParityKey[:])
+	single, batched, _, err := hashes.Make128Pair(hashes.CipherAESITB128, aesitbParityKey[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	fused, err = itb.NewSeed128(bits, single)
+	fused, _, err = hashes.NewSeed128(hashes.CipherAESITB128, bits, aesitbParityKey[:])
 	if err != nil {
-		t.Fatal(err)
-	}
-	fused.BatchHash = batched
-	if err := hashes.AttachFused128(fused, hashes.CipherAESITB128, key); err != nil {
 		t.Fatal(err)
 	}
 	if fused.FusedChain == nil || fused.BatchFusedChain == nil {
-		t.Fatal("AttachFused128 left the fused hooks nil")
+		t.Fatal("NewSeed128 left the fused hooks nil")
 	}
 	seq = &itb.Seed128{Components: append([]uint64(nil), fused.Components...), Hash: single, BatchHash: batched}
 	return fused, seq
@@ -118,18 +114,16 @@ func TestAESITBFusedBatchChainHashParity(t *testing.T) {
 }
 
 // TestAESITBFusedSeqEnvToggle pins ITB_FORCE_CHAINHASH_SEQ: the factory
-// returns nil evaluators when it is set, so the seed stays sequential.
+// returns nil evaluators when it is set, so a seed built through the
+// name-keyed constructor stays sequential.
 func TestAESITBFusedSeqEnvToggle(t *testing.T) {
 	t.Setenv("ITB_FORCE_CHAINHASH_SEQ", "1")
-	s := &itb.Seed128{}
-	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, aesitbParityKey[:]); err != nil {
+	s, _, err := hashes.NewSeed128(hashes.CipherAESITB128, 512, aesitbParityKey[:])
+	if err != nil {
 		t.Fatal(err)
 	}
-	if s.FusedChain != nil || s.BatchFusedChain != nil {
+	if s.FusedChain != nil || s.BatchFusedChain != nil || s.BatchFusedChain8() != nil {
 		t.Fatal("fused hooks populated despite ITB_FORCE_CHAINHASH_SEQ=1")
-	}
-	if err := hashes.AttachFused128(s, hashes.CipherAreion256, nil); err != nil || s.FusedChain != nil {
-		t.Fatalf("non-fused primitive: err=%v hooks=%v", err, s.FusedChain != nil)
 	}
 }
 

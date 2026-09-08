@@ -8,13 +8,11 @@
 // The generic bench{Encrypt,Decrypt}3x128CachedBatchedExt drivers wire
 // only the (Hash, BatchHash) pair per seed. The shipping aesitb128 path
 // additionally carries the fused ChainHash cascade hooks (FusedChain /
-// BatchFusedChain) that triple/seeds.go attaches through
-// hashes.AttachFused128 at Init time; without them the Low-Level entry
+// BatchFusedChain) that the triple package installs through
+// hashes.NewSeed128 at Init time; without them the Low-Level entry
 // points fall back to the sequential per-round cascade. The drivers
-// below therefore build each of the eight seeds from hashes.Make128Pair
-// (which returns the generated fixed key) and attach the fused hooks
-// with that same key, so the cells measure the path the Triple pipeline
-// runs.
+// below therefore build each of the eight seeds through the same
+// constructor, so the cells measure the path the Triple pipeline runs.
 package itb_test
 
 import (
@@ -27,23 +25,12 @@ import (
 
 // newAESITB128SeedExt returns one independently-keyed aesitb128 seed at
 // the given ITB width with the single, batched, fused-cascade and
-// batch-16 interlock fill hooks attached — the same wiring
-// triple/seeds.go performs per slot.
+// batch-16 interlock fill hooks attached — the same wiring the triple
+// package performs per slot.
 func newAESITB128SeedExt(b *testing.B, bits int) *itb.Seed128 {
 	b.Helper()
-	h, bh, key, err := hashes.Make128Pair(hashes.CipherAESITB128)
+	s, _, err := hashes.NewSeed128(hashes.CipherAESITB128, bits)
 	if err != nil {
-		b.Fatal(err)
-	}
-	s, err := itb.NewSeed128(bits, h)
-	if err != nil {
-		b.Fatal(err)
-	}
-	s.BatchHash = bh
-	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, key); err != nil {
-		b.Fatal(err)
-	}
-	if err := hashes.AttachInterlockBatch16(s, hashes.CipherAESITB128, key); err != nil {
 		b.Fatal(err)
 	}
 	return s

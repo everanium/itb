@@ -43,101 +43,59 @@ func withX8Arm(t *testing.T, armed bool, fn func()) {
 	fn()
 }
 
-// newAESITBSeedX16 builds a fresh aesitb128 seed through the explicit
-// Low-Level sequence every shipping constructor runs — Make128Pair
-// arms, itb.NewSeed128, BatchHash and both attach helpers — under an
-// optional caller-supplied fixed key, and returns the key the arms are
-// bound to.
+// newAESITBSeedX16 builds a fresh aesitb128 seed through the name-keyed
+// constructor every shipping constructor path runs, under an optional
+// caller-supplied fixed key, and returns the key the arms are bound to.
 func newAESITBSeedX16(t *testing.T, bits int, key []byte) (*itb.Seed128, []byte) {
 	t.Helper()
 	var keyArg [][]byte
 	if len(key) > 0 {
 		keyArg = [][]byte{key}
 	}
-	single, batched, fixedKey, err := hashes.Make128Pair(hashes.CipherAESITB128, keyArg...)
+	s, fixedKey, err := hashes.NewSeed128(hashes.CipherAESITB128, bits, keyArg...)
 	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := itb.NewSeed128(bits, single)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.BatchHash = batched
-	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, fixedKey); err != nil {
-		t.Fatal(err)
-	}
-	if err := hashes.AttachInterlockBatch16(s, hashes.CipherAESITB128, fixedKey); err != nil {
 		t.Fatal(err)
 	}
 	return s, fixedKey
 }
 
 // aesitbSeedFromComponentsX16 rebuilds an aesitb128 seed from existing
-// components under its fixed key through the explicit Low-Level
-// sequence, with both attach helpers applied.
+// components under its fixed key through the name-keyed restore
+// constructor.
 func aesitbSeedFromComponentsX16(t *testing.T, key []byte, comps []uint64) *itb.Seed128 {
 	t.Helper()
-	single, batched, _, err := hashes.Make128Pair(hashes.CipherAESITB128, key)
+	s, err := hashes.SeedFromComponents128(hashes.CipherAESITB128, key, comps...)
 	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := itb.SeedFromComponents128(single, comps...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.BatchHash = batched
-	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, key); err != nil {
-		t.Fatal(err)
-	}
-	if err := hashes.AttachInterlockBatch16(s, hashes.CipherAESITB128, key); err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
-// TestAESITBFusedX8Attach pins the attach step: every shipping
-// constructor path carries the eight-lane hook when the arm is
-// selected, none carries it when the arm is disarmed or the sequential
-// loop is forced, and non-aesitb128 primitives never carry it.
+// TestAESITBFusedX8Attach pins the attach step: both name-keyed
+// constructors carry the eight-lane hook when the arm is selected, and
+// neither carries it when the arm is disarmed or the sequential loop is
+// forced.
 func TestAESITBFusedX8Attach(t *testing.T) {
 	x8Hosted(t)
 	fromHelper, key := newAESITBSeedX16(t, 1024, nil)
 	if fromHelper.BatchFusedChain8() == nil {
-		t.Fatal("the attach sequence left the eight-lane hook nil")
+		t.Fatal("NewSeed128 left the eight-lane hook nil")
 	}
 	fromComponents := aesitbSeedFromComponentsX16(t, key, fromHelper.Components)
 	if fromComponents.BatchFusedChain8() == nil {
-		t.Fatal("the components attach sequence left the eight-lane hook nil")
-	}
-	bare := &itb.Seed128{}
-	if err := hashes.AttachFused128(bare, hashes.CipherAESITB128, key); err != nil {
-		t.Fatal(err)
-	}
-	if bare.BatchFusedChain8() == nil {
-		t.Fatal("AttachFused128 left the eight-lane hook nil")
+		t.Fatal("SeedFromComponents128 left the eight-lane hook nil")
 	}
 
 	withX8Arm(t, false, func() {
-		s := &itb.Seed128{}
-		if err := hashes.AttachFused128(s, hashes.CipherAESITB128, key); err != nil {
-			t.Fatal(err)
-		}
+		s := aesitbSeedFromComponentsX16(t, key, fromHelper.Components)
 		if s.BatchFusedChain == nil || s.BatchFusedChain8() != nil {
 			t.Fatal("disarmed eight-lane arm: want four-lane hook only")
 		}
 	})
 	t.Setenv("ITB_FORCE_CHAINHASH_SEQ", "1")
-	seq := &itb.Seed128{}
-	if err := hashes.AttachFused128(seq, hashes.CipherAESITB128, key); err != nil {
-		t.Fatal(err)
-	}
+	seq := aesitbSeedFromComponentsX16(t, key, fromHelper.Components)
 	if seq.BatchFusedChain != nil || seq.BatchFusedChain8() != nil {
 		t.Fatal("ITB_FORCE_CHAINHASH_SEQ=1: fused hooks populated")
-	}
-	t.Setenv("ITB_FORCE_CHAINHASH_SEQ", "")
-	other := &itb.Seed128{}
-	if err := hashes.AttachFused128(other, hashes.CipherAreion256, nil); err != nil || other.BatchFusedChain8() != nil {
-		t.Fatalf("non-fused primitive: err=%v hook=%v", err, other.BatchFusedChain8() != nil)
 	}
 }
 

@@ -41,8 +41,8 @@ func SipHash24() itb.HashFunc128 {
 // on every input. The assembly kernels of the primitive
 // (hashes/internal/siphashasm) evaluate the whole ChainHash128 cascade
 // — every lane over one shared component slice — and are reached
-// through the fused hooks [AttachFused128] and [AttachInterlockBatch16]
-// install, which intercept before either arm is called; see
+// through the fused hooks the name-keyed constructors install, which
+// intercept before either arm is called; see
 // [Spec.FusedChainHash128].
 func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 	single := SipHash24()

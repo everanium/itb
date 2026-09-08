@@ -137,7 +137,7 @@ func x16HostTiers() []struct {
 }
 
 // x16LockSeedCases builds aesitb128 lockSeeds with the batch-16 hook
-// attached exactly as hashes.AttachInterlockBatch16 attaches it (the
+// attached exactly as the hashes package's constructors attach it (the
 // hook dispatches through aesitbasm.FusedChain13x16 under the seed's
 // own fixed key), on fixed keys and components for reproducibility. The
 // seeds carry no fused ChainHash hooks, so fillRanks / fillRanksX4 run

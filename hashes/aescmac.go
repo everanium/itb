@@ -144,8 +144,8 @@ func aesEncryptNoescape(block cipher.Block, buf *[16]byte) {
 // under their per-lane seeds. The assembly kernels of the primitive
 // (hashes/internal/aescmacasm) evaluate the whole ChainHash128 cascade
 // — every lane over one shared component slice — and are reached
-// through the fused hooks [AttachFused128] and [AttachInterlockBatch16]
-// install, which intercept before either arm is called; see
+// through the fused hooks the name-keyed constructors install, which
+// intercept before either arm is called; see
 // [Spec.FusedChainHash128].
 //
 // With no argument a fresh 16-byte AES key is generated via

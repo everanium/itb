@@ -7,7 +7,7 @@ import (
 	"github.com/everanium/itb"
 )
 
-// AttachFused256 populates s.FusedChain / s.BatchFusedChain from the
+// attachFused256 populates s.FusedChain / s.BatchFusedChain from the
 // named primitive's [Spec.FusedChainHash256] factory, using the fixed
 // key the seed's Hash / BatchHash arms were built with, and the
 // eight-lane hook ([itb.Seed256.SetBatchFusedChain8]) from the
@@ -18,11 +18,11 @@ import (
 // (nil evaluators) leave the seed unchanged — the sequential loop keeps
 // running. A factory error is returned; the seed is left unchanged.
 // The hooks are a performance path only: the seed produces the same
-// wire with and without them. Every shipping constructor path — the
-// triple package's Init / Load seed builders and the C ABI seed
-// constructors — calls AttachFused256, [AttachInterlockBatch16x256] and
-// [AttachInterlockBatch32x256] together.
-func AttachFused256(s *itb.Seed256, name string, key []byte) error {
+// wire with and without them. [NewSeed256] and [SeedFromComponents256] —
+// the constructor path of the triple package's seed builders and the C
+// ABI seed constructors — call attachFused256, attachInterlockBatch16x256
+// and attachInterlockBatch32x256 together.
+func attachFused256(s *itb.Seed256, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok {
 		return nil
@@ -46,17 +46,17 @@ func AttachFused256(s *itb.Seed256, name string, key []byte) error {
 	return nil
 }
 
-// AttachInterlockBatch16x256 populates the batch-16 Interlocked Barrier
+// attachInterlockBatch16x256 populates the batch-16 Interlocked Barrier
 // fill hook of s from the named primitive's [Spec.InterlockFillBatch16x256]
 // factory, using the fixed key the seed's Hash arm was built with.
 // Primitives without batch-16 support, unknown names, and factories
 // that decline (nil) leave the seed unchanged — the seed fills the
 // cascade through its four-lane and single-lane arms. The hook is a
 // performance path only: a seed with the hook and the same seed without
-// it produce the same wire (see [itb.InterlockFillFunc16x256]); every
-// shipped constructor attaches. A factory error is returned; the seed is
-// left unchanged.
-func AttachInterlockBatch16x256(s *itb.Seed256, name string, key []byte) error {
+// it produce the same wire (see [itb.InterlockFillFunc16x256]); the
+// name-keyed constructors attach. A factory error is returned; the seed
+// is left unchanged.
+func attachInterlockBatch16x256(s *itb.Seed256, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok || spec.InterlockFillBatch16x256 == nil {
 		return nil
@@ -130,17 +130,17 @@ func smokeFusedChainHash256(spec Spec, single itb.HashFunc256, key []byte) error
 	return nil
 }
 
-// AttachInterlockBatch32x256 populates the batch-32 Interlocked Barrier
+// attachInterlockBatch32x256 populates the batch-32 Interlocked Barrier
 // fill hook of s from the named primitive's [Spec.InterlockFillBatch32x256]
 // factory, using the fixed key the seed's Hash arm was built with.
 // Primitives without batch-32 support, unknown names, and factories
 // that decline (nil) leave the seed unchanged — the fill ladder runs
-// the batch-16 hook (see [AttachInterlockBatch16x256]) and the
+// the batch-16 hook (see attachInterlockBatch16x256) and the
 // four-lane / single-lane arms. The hook is a performance path only: a
 // seed with the hook and the same seed without it produce the same wire
-// (see [itb.InterlockFillFunc32x256]); every shipped constructor
-// attaches. A factory error is returned; the seed is left unchanged.
-func AttachInterlockBatch32x256(s *itb.Seed256, name string, key []byte) error {
+// (see [itb.InterlockFillFunc32x256]); the name-keyed constructors
+// attach. A factory error is returned; the seed is left unchanged.
+func attachInterlockBatch32x256(s *itb.Seed256, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok || spec.InterlockFillBatch32x256 == nil {
 		return nil

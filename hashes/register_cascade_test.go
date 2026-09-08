@@ -129,10 +129,10 @@ func TestRegisterCustomAttachNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachFused256(s256, n256, nil); err != nil {
+	if err := attachFused256(s256, n256, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachInterlockBatch16x256(s256, n256, nil); err != nil {
+	if err := attachInterlockBatch16x256(s256, n256, nil); err != nil {
 		t.Fatal(err)
 	}
 	if s256.FusedChain != nil || s256.BatchFusedChain != nil || s256.InterlockFillX16() != nil {
@@ -142,10 +142,10 @@ func TestRegisterCustomAttachNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachFused512(s512, n512, nil); err != nil {
+	if err := attachFused512(s512, n512, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachInterlockBatch16x512(s512, n512, nil); err != nil {
+	if err := attachInterlockBatch16x512(s512, n512, nil); err != nil {
 		t.Fatal(err)
 	}
 	if s512.FusedChain != nil || s512.BatchFusedChain != nil || s512.InterlockFillX16() != nil {
@@ -185,10 +185,10 @@ func TestRegisterCustomFusedCrossConstructor(t *testing.T) {
 					t.Fatal(err)
 				}
 				p.BatchHash = batched
-				if err := AttachFused128(h, name, key); err != nil {
+				if err := attachFused128(h, name, key); err != nil {
 					t.Fatal(err)
 				}
-				if err := AttachInterlockBatch16(h, name, key); err != nil {
+				if err := attachInterlockBatch16(h, name, key); err != nil {
 					t.Fatal(err)
 				}
 				if h.FusedChain == nil || h.BatchFusedChain == nil || h.InterlockFillX16() == nil {

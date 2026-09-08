@@ -135,10 +135,10 @@ func newSeed128(name string, keyBits int) (*itb.Seed128, error) {
 	if b != nil {
 		s.BatchHash = b
 	}
-	if err := AttachFused128(s, name, key); err != nil {
+	if err := attachFused128(s, name, key); err != nil {
 		return nil, err
 	}
-	if err := AttachInterlockBatch16(s, name, key); err != nil {
+	if err := attachInterlockBatch16(s, name, key); err != nil {
 		return nil, err
 	}
 	return s, nil

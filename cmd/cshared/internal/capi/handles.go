@@ -342,87 +342,46 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 
 	switch spec.Width {
 	case hashes.W128:
-		hf, bf, generatedKey, err := hashes.Make128Pair(hashName, keyArgs...)
+		// The registry validates or generates the fixed key; the
+		// name-keyed constructor then rebuilds the arms under it,
+		// installs the components and attaches every hook the
+		// primitive offers, so a restored seed runs the same fast
+		// paths as a freshly generated one.
+		_, _, generatedKey, err := hashes.Make128Pair(hashName, keyArgs...)
 		if err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
-		s, err := itb.SeedFromComponents128(hf, components...)
+		s, err := hashes.SeedFromComponents128(hashName, generatedKey, components...)
 		if err != nil {
 			setLastErr(StatusBadKeyBits)
 			return 0, StatusBadKeyBits
-		}
-		if bf != nil {
-			s.BatchHash = bf
-		}
-		// Persistence-restore path: attach the fused ChainHash and
-		// batch-16 interlock hooks under the key the arms were built
-		// with, so a restored seed runs the same fast paths as a
-		// freshly generated one. No-op for primitives without the
-		// factories.
-		if err := hashes.AttachFused128(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch16(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
 		}
 		h.seed128 = s
 		h.hashKey = generatedKey
 	case hashes.W256:
-		hf, bf, generatedKey, err := hashes.Make256Pair(hashName, keyArgs...)
+		_, _, generatedKey, err := hashes.Make256Pair(hashName, keyArgs...)
 		if err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
-		s, err := itb.SeedFromComponents256(hf, components...)
+		s, err := hashes.SeedFromComponents256(hashName, generatedKey, components...)
 		if err != nil {
 			setLastErr(StatusBadKeyBits)
 			return 0, StatusBadKeyBits
-		}
-		if bf != nil {
-			s.BatchHash = bf
-		}
-		if err := hashes.AttachFused256(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch16x256(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch32x256(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
 		}
 		h.seed256 = s
 		h.hashKey = generatedKey
 	case hashes.W512:
-		hf, bf, generatedKey, err := hashes.Make512Pair(hashName, keyArgs...)
+		_, _, generatedKey, err := hashes.Make512Pair(hashName, keyArgs...)
 		if err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
-		s, err := itb.SeedFromComponents512(hf, components...)
+		s, err := hashes.SeedFromComponents512(hashName, generatedKey, components...)
 		if err != nil {
 			setLastErr(StatusBadKeyBits)
 			return 0, StatusBadKeyBits
-		}
-		if bf != nil {
-			s.BatchHash = bf
-		}
-		if err := hashes.AttachFused512(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch16x512(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch32x512(s, hashName, generatedKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
 		}
 		h.seed512 = s
 		h.hashKey = generatedKey

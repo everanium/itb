@@ -169,7 +169,8 @@ type Spec struct {
 	// width-512 counterparts of FusedChainHash128: whole-cascade
 	// evaluators for [itb.Seed256.FusedChain] / [itb.Seed256.BatchFusedChain]
 	// and [itb.Seed512.FusedChain] / [itb.Seed512.BatchFusedChain],
-	// installed through [AttachFused256] / [AttachFused512]. key is the
+	// installed by [NewSeed256] / [SeedFromComponents256] and their
+	// width-512 forms. key is the
 	// primitive's fixed key exactly as returned by the Make256Pair /
 	// Make512Pair factory that built the seed's arms. nil leaves the seed
 	// on the sequential per-round loop, which is the cascade definition
@@ -181,8 +182,8 @@ type Spec struct {
 
 	// InterlockFillBatch16x256 and InterlockFillBatch16x512 are the
 	// width-256 and width-512 counterparts of InterlockFillBatch16: the
-	// batch-16 Interlocked Barrier fill kernels installed through
-	// [AttachInterlockBatch16x256] / [AttachInterlockBatch16x512] (see
+	// batch-16 Interlocked Barrier fill kernels installed by the
+	// name-keyed constructors (see
 	// [itb.InterlockFillFunc16x256] and [itb.InterlockFillFunc16x512] for
 	// the group count one call covers at each width). key is the
 	// primitive's fixed key exactly as returned by the Make256Pair /
@@ -194,8 +195,8 @@ type Spec struct {
 	InterlockFillBatch16x512 func(key []byte) (itb.InterlockFillFunc16x512, error) `json:"-"`
 
 	// FusedChainHash256x8 and FusedChainHash512x8 optionally build the
-	// eight-lane fused cascade evaluators installed through
-	// [AttachFused256] / [AttachFused512] on [itb.Seed256.SetBatchFusedChain8]
+	// eight-lane fused cascade evaluators installed by the name-keyed
+	// constructors on [itb.Seed256.SetBatchFusedChain8]
 	// / [itb.Seed512.SetBatchFusedChain8] (see
 	// [itb.BatchFusedChainHashFunc256x8] / [itb.BatchFusedChainHashFunc512x8]):
 	// the pixel pipeline's eight-pixel stride at the two wide widths. key
@@ -211,8 +212,8 @@ type Spec struct {
 	FusedChainHash512x8 func(key []byte) (itb.BatchFusedChainHashFunc512x8, error) `json:"-"`
 
 	// InterlockFillBatch32x256 and InterlockFillBatch32x512 optionally
-	// build the batch-32 Interlocked Barrier fill kernels installed
-	// through [AttachInterlockBatch32x256] / [AttachInterlockBatch32x512]
+	// build the batch-32 Interlocked Barrier fill kernels installed by
+	// the name-keyed constructors
 	// (see [itb.InterlockFillFunc32x256] and [itb.InterlockFillFunc32x512]
 	// for the group count one call covers at each width: 16 groups at
 	// width 256, 8 at width 512, 32 chunks either way). key is the
@@ -509,7 +510,7 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 //   - "aescmac" — four single-arm calls per lane; the assembly kernels of
 //     the primitive evaluate the whole ChainHash cascade
 //     (hashes/internal/aescmacasm) and are reached through the fused
-//     hooks AttachFused128 / AttachInterlockBatch16 install
+//     hooks the name-keyed constructors install
 //   - "siphash24" — AVX-512 ZMM-batched SipHash-2-4 chain-absorb kernels
 //
 // Variadic key arg follows the same pattern as Make128 / Make256Pair.
@@ -661,7 +662,7 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 //     ZMM / YMM, AES-NI XMM or ARM Crypto Extension kernels where
 //     present, the four-way Go permutation elsewhere); the fused cascade
 //     kernels of the primitive (internal/areionasm) are reached through
-//     the hooks AttachFused256 / AttachInterlockBatch16x256 install
+//     the hooks the name-keyed constructors install
 //   - "blake2b256", "blake2s", "blake3", "chacha20" — always: the four
 //     lanes through the single arm; the fused cascade kernels of each
 //     primitive (hashes/internal/blake2basm, blake2sasm, blake3asm,
@@ -808,7 +809,7 @@ func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
 //     ZMM / YMM, AES-NI XMM or ARM Crypto Extension kernels where
 //     present, the four-way Go permutation elsewhere); the fused cascade
 //     kernels of the primitive (internal/areionasm) are reached through
-//     the hooks AttachFused512 / AttachInterlockBatch16x512 install
+//     the hooks the name-keyed constructors install
 //   - "blake2b512" — AVX-512 ZMM-batched BLAKE2b chain-absorb kernels
 func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc512, []byte, error) {
 	switch name {
@@ -1078,7 +1079,7 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 // smokeFusedChainHash128 exercises the optional [Spec.FusedChainHash128]
 // factory hook a user-registered W128 Spec may populate so that a
 // [itb.Seed128] built through the primitive can offer the whole-cascade
-// evaluators via [AttachFused128]. The check runs only when the field is
+// evaluators through [NewSeed128] / [SeedFromComponents128]. The check runs only when the field is
 // non-nil; the fixed key passed to the factory is the same key returned
 // by the Spec's Make128Pair factory so both sides bind identical
 // primitive state.

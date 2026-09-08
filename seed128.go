@@ -87,10 +87,9 @@ type Seed128 struct {
 //	seed, err := itb.NewSeed128(1024, sipHash128)
 //
 // Directly-constructed seeds keep their optional fast-path hooks nil
-// and route hot paths through the sequential fallback until
-// hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
-// explicitly (hashes.NewSeed128 and the triple package attach them
-// automatically). The
+// and route hot paths through the sequential fallback; the name-keyed
+// constructor hashes.NewSeed128 (the path the triple package and the C
+// ABI take) attaches them. The
 // hooks are performance paths only: a seed produces the same wire with
 // and without them, including the Interlocked Barrier cascade fill,
 // which every lockSeed runs at every width (see [InterlockFillFunc16]).
@@ -132,9 +131,9 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 //	)
 //
 // Directly-constructed seeds keep their optional fast-path hooks nil
-// and route hot paths through the sequential fallback until
-// hashes.AttachFused128 and hashes.AttachInterlockBatch16 are called
-// explicitly. The hooks are performance paths only: a seed rebuilt
+// and route hot paths through the sequential fallback;
+// hashes.SeedFromComponents128 rebuilds a seed of a registry primitive
+// with them. The hooks are performance paths only: a seed rebuilt
 // from components decrypts what the exporting side encrypted with or
 // without them.
 func SeedFromComponents128(hashFunc HashFunc128, components ...uint64) (*Seed128, error) {
@@ -236,8 +235,8 @@ func (s *Seed128) InterlockFillX16() InterlockFillFunc16 {
 }
 
 // SetInterlockBatch16 installs the batch-16 interlock PRF fill hook
-// (hashes.AttachInterlockBatch16 calls it after resolving the factory
-// by name). nil removes it; the Interlocked Barrier fill then runs the
+// (the hashes package calls it after resolving the factory by name).
+// nil removes it; the Interlocked Barrier fill then runs the
 // cascade through the four-lane and single-lane arms. The hook is a
 // performance path only: with or without it the seed produces the
 // same wire.

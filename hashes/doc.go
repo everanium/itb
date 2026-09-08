@@ -50,8 +50,10 @@
 // primitive has no batched implementation on the current CPU.
 // The [NewSeed128] / [NewSeed256] / [NewSeed512] constructors build a
 // seed of the named primitive with those arms and every fast-path hook
-// the primitive offers ([AttachFused128] / [AttachInterlockBatch16] and
-// the wide-width helpers), returning the fixed key of the arms.
+// the primitive offers, returning the fixed key of the arms; the
+// [SeedFromComponents128] / [SeedFromComponents256] /
+// [SeedFromComponents512] counterparts rebuild such a seed from saved
+// components under its key.
 //
 // All primitives in this package are PRF-grade. The below-spec lab
 // stress controls (CRC128, FNV-1a) used in REDTEAM.md / SCIENCE.md

@@ -31,10 +31,9 @@ type lowLevelConstellation struct {
 	keys  [8][]byte
 }
 
-// newLowLevelConstellation builds the eight seeds through the explicit
-// Low-Level sequence — Make{W}Pair arms, itb.NewSeed{W}, BatchHash and
-// the width's attach helpers — the sequence the triple package runs for
-// every slot.
+// newLowLevelConstellation builds the eight seeds through the
+// name-keyed constructors — the path the triple package runs for every
+// slot.
 func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConstellation {
 	t.Helper()
 	spec, ok := hashes.Find(name)
@@ -45,59 +44,20 @@ func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConst
 	for i := range c.seeds {
 		switch spec.Width {
 		case hashes.W128:
-			single, batched, key, err := hashes.Make128Pair(name)
+			s, key, err := hashes.NewSeed128(name, bits)
 			if err != nil {
-				t.Fatal(err)
-			}
-			s, err := itb.NewSeed128(bits, single)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.BatchHash = batched
-			if err := hashes.AttachFused128(s, name, key); err != nil {
-				t.Fatal(err)
-			}
-			if err := hashes.AttachInterlockBatch16(s, name, key); err != nil {
 				t.Fatal(err)
 			}
 			c.seeds[i], c.keys[i] = s, key
 		case hashes.W256:
-			single, batched, key, err := hashes.Make256Pair(name)
+			s, key, err := hashes.NewSeed256(name, bits)
 			if err != nil {
-				t.Fatal(err)
-			}
-			s, err := itb.NewSeed256(bits, single)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.BatchHash = batched
-			if err := hashes.AttachFused256(s, name, key); err != nil {
-				t.Fatal(err)
-			}
-			if err := hashes.AttachInterlockBatch16x256(s, name, key); err != nil {
-				t.Fatal(err)
-			}
-			if err := hashes.AttachInterlockBatch32x256(s, name, key); err != nil {
 				t.Fatal(err)
 			}
 			c.seeds[i], c.keys[i] = s, key
 		case hashes.W512:
-			single, batched, key, err := hashes.Make512Pair(name)
+			s, key, err := hashes.NewSeed512(name, bits)
 			if err != nil {
-				t.Fatal(err)
-			}
-			s, err := itb.NewSeed512(bits, single)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.BatchHash = batched
-			if err := hashes.AttachFused512(s, name, key); err != nil {
-				t.Fatal(err)
-			}
-			if err := hashes.AttachInterlockBatch16x512(s, name, key); err != nil {
-				t.Fatal(err)
-			}
-			if err := hashes.AttachInterlockBatch32x512(s, name, key); err != nil {
 				t.Fatal(err)
 			}
 			c.seeds[i], c.keys[i] = s, key
@@ -209,9 +169,10 @@ func (c lowLevelConstellation) exportImport(t *testing.T, cfg *itb.Config) ([8]a
 	return out, keys
 }
 
-// rebuild wires the imported slots in place: manual-attach wires the
-// Hash / BatchHash arms and the attach helpers the width offers;
-// arms-only wires the arms alone.
+// rebuild wires the imported slots: hooked rebuilds every slot through
+// the name-keyed restore constructor, which attaches every hook the
+// width offers; arms-only wires the Hash / BatchHash arms alone onto the
+// imported components.
 func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode string) lowLevelConstellation {
 	t.Helper()
 	raw, keys := c.exportImport(t, cfg)
@@ -223,55 +184,49 @@ func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode strin
 		}
 		switch s := raw[i].(type) {
 		case *itb.Seed128:
+			if mode == "hooked" {
+				h, err := hashes.SeedFromComponents128(c.name, keys[i], s.Components...)
+				if err != nil {
+					t.Fatalf("SeedFromComponents128 slot %d: %v", i, err)
+				}
+				out.seeds[i] = h
+				continue
+			}
 			single, batched, _, err := hashes.Make128Pair(c.name, keyArg...)
 			if err != nil {
 				t.Fatalf("Make128Pair slot %d: %v", i, err)
 			}
 			s.Hash, s.BatchHash = single, batched
-			if mode == "manual-attach" {
-				if err := hashes.AttachFused128(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-				if err := hashes.AttachInterlockBatch16(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-			}
 			out.seeds[i] = s
 		case *itb.Seed256:
+			if mode == "hooked" {
+				h, err := hashes.SeedFromComponents256(c.name, keys[i], s.Components...)
+				if err != nil {
+					t.Fatalf("SeedFromComponents256 slot %d: %v", i, err)
+				}
+				out.seeds[i] = h
+				continue
+			}
 			single, batched, _, err := hashes.Make256Pair(c.name, keyArg...)
 			if err != nil {
 				t.Fatalf("Make256Pair slot %d: %v", i, err)
 			}
 			s.Hash, s.BatchHash = single, batched
-			if mode == "manual-attach" {
-				if err := hashes.AttachFused256(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-				if err := hashes.AttachInterlockBatch16x256(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-				if err := hashes.AttachInterlockBatch32x256(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-			}
 			out.seeds[i] = s
 		case *itb.Seed512:
+			if mode == "hooked" {
+				h, err := hashes.SeedFromComponents512(c.name, keys[i], s.Components...)
+				if err != nil {
+					t.Fatalf("SeedFromComponents512 slot %d: %v", i, err)
+				}
+				out.seeds[i] = h
+				continue
+			}
 			single, batched, _, err := hashes.Make512Pair(c.name, keyArg...)
 			if err != nil {
 				t.Fatalf("Make512Pair slot %d: %v", i, err)
 			}
 			s.Hash, s.BatchHash = single, batched
-			if mode == "manual-attach" {
-				if err := hashes.AttachFused512(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-				if err := hashes.AttachInterlockBatch16x512(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-				if err := hashes.AttachInterlockBatch32x512(s, c.name, keys[i]); err != nil {
-					t.Fatal(err)
-				}
-			}
 			out.seeds[i] = s
 		}
 	}
@@ -296,7 +251,7 @@ func TestCascadeCrossConstructorRoundTrip(t *testing.T) {
 				if err != nil {
 					t.Fatalf("encrypt: %v", err)
 				}
-				for _, mode := range []string{"manual-attach", "arms-only"} {
+				for _, mode := range []string{"hooked", "arms-only"} {
 					v := orig.rebuild(t, cfg, mode)
 					for i := range v.seeds {
 						if mode == "arms-only" && v.hooked(i) {

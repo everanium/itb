@@ -21,7 +21,7 @@ import (
 //     aesitbasm.ScalarFusedChain over the prepended lock components on
 //     every group, with the fused hooks absent (sequential Hash /
 //     BatchHash loops) and armed (FusedChain13x1 / FusedChain13x4 under
-//     the hooks, exactly as hashes.AttachFused128 wires them) — the
+//     the hooks, exactly as the hashes package's constructors wire them) — the
 //     shipped wiring, pinned directly.
 //  2. Hook independence and the cascade itself: the seed with every
 //     kernel hook and the same seed with none produce the same fill,
@@ -32,8 +32,7 @@ import (
 
 // cascadeLockSeed builds an aesitb128 lockSeed with the batch-16 hook
 // and, when armed, the fused ChainHash hooks, dispatching through the
-// same aesitbasm entries hashes.AttachFused128 /
-// hashes.AttachInterlockBatch16 install.
+// same aesitbasm entries the hashes package's constructors install.
 func cascadeLockSeed(t *testing.T, key [16]byte, comps []uint64, armed bool) *Seed128 {
 	t.Helper()
 	h, bh, _ := MakeAESITB128Hash(key)

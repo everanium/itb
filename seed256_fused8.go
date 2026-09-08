@@ -15,7 +15,8 @@ import "encoding/binary"
 // when both the noise and the data seed carry it, processChunk256
 // hashes eight pixels per call ahead of the four-pixel and single-pixel
 // tails. Shipped primitives attach it only on hosts whose selected
-// tier carries an eight-lane kernel (through hashes.AttachFused256),
+// tier carries an eight-lane kernel (through the hashes package's
+// constructors),
 // so every other host keeps the four-lane stride unchanged.
 type BatchFusedChainHashFunc256x8 func(components []uint64, data *[8][]byte) (out [8][4]uint64, ok bool)
 

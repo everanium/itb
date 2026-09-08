@@ -7,8 +7,8 @@ import (
 	"github.com/everanium/itb"
 )
 
-// seed_attach_test.go — the Low-Level attach surface: AttachFused128 /
-// AttachInterlockBatch16. The hooks are performance paths only, so
+// seed_attach_test.go — the Low-Level attach surface: attachFused128 /
+// attachInterlockBatch16. The hooks are performance paths only, so
 // every test below pins agreement between a hooked seed and the same
 // seed on the arms alone rather than the presence of any hook: the
 // wire-level counterpart (every registry primitive at every width,
@@ -91,11 +91,11 @@ func TestAttachHooksWireIndependent(t *testing.T) {
 			}
 			plain := manualSeed128(t, spec.Name, key, comps)
 			hooked := manualSeed128(t, spec.Name, key, comps)
-			if err := AttachFused128(hooked, spec.Name, key); err != nil {
-				t.Fatalf("AttachFused128: %v", err)
+			if err := attachFused128(hooked, spec.Name, key); err != nil {
+				t.Fatalf("attachFused128: %v", err)
 			}
-			if err := AttachInterlockBatch16(hooked, spec.Name, key); err != nil {
-				t.Fatalf("AttachInterlockBatch16: %v", err)
+			if err := attachInterlockBatch16(hooked, spec.Name, key); err != nil {
+				t.Fatalf("attachInterlockBatch16: %v", err)
 			}
 			if plain.FusedChain != nil || plain.BatchFusedChain != nil || plain.InterlockFillX16() != nil {
 				t.Fatal("arms-only seed carries a hook")
@@ -146,14 +146,14 @@ func TestAttachHelpersNoOp(t *testing.T) {
 	}
 	s := manualSeed128(t, name, key, comps)
 	for _, n := range []string{"no_such_primitive", name} {
-		if err := AttachFused128(s, n, key); err != nil {
-			t.Fatalf("AttachFused128(%q): %v", n, err)
+		if err := attachFused128(s, n, key); err != nil {
+			t.Fatalf("attachFused128(%q): %v", n, err)
 		}
-		if err := AttachInterlockBatch16(s, n, key); err != nil {
-			t.Fatalf("AttachInterlockBatch16(%q): %v", n, err)
+		if err := attachInterlockBatch16(s, n, key); err != nil {
+			t.Fatalf("attachInterlockBatch16(%q): %v", n, err)
 		}
 		if s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil {
-			t.Fatalf("AttachFused128 / AttachInterlockBatch16(%q) populated a hook", n)
+			t.Fatalf("attachFused128 / attachInterlockBatch16(%q) populated a hook", n)
 		}
 	}
 }

@@ -10,9 +10,9 @@ import (
 
 // seed_attach_wide32_test.go — the eight-lane fused hook and the
 // batch-32 fill hook of the width-256 / width-512 attach surface:
-// Spec.FusedChainHash256x8 / FusedChainHash512x8 through AttachFused256 /
-// AttachFused512 and Spec.InterlockFillBatch32x256 / x512 through
-// AttachInterlockBatch32x256 / x512. On the shipped registry the helpers
+// Spec.FusedChainHash256x8 / FusedChainHash512x8 through attachFused256 /
+// attachFused512 and Spec.InterlockFillBatch32x256 / x512 through
+// attachInterlockBatch32x256 / x512. On the shipped registry the helpers
 // are pinned entry by entry — a hook an entry's factory returns must be
 // bit-exact with the sequential cascade of the entry's single arm, and
 // an entry without a factory leaves the seed unhooked — and the helpers
@@ -168,11 +168,11 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := AttachFused256(s, spec.Name, key); err != nil {
-				t.Fatalf("AttachFused256: %v", err)
+			if err := attachFused256(s, spec.Name, key); err != nil {
+				t.Fatalf("attachFused256: %v", err)
 			}
-			if err := AttachInterlockBatch32x256(s, spec.Name, key); err != nil {
-				t.Fatalf("AttachInterlockBatch32x256: %v", err)
+			if err := attachInterlockBatch32x256(s, spec.Name, key); err != nil {
+				t.Fatalf("attachInterlockBatch32x256: %v", err)
 			}
 			if spec.FusedChainHash256x8 == nil && s.BatchFusedChain8() != nil {
 				t.Fatalf("%s: attach populated an eight-lane hook without a factory", spec.Name)
@@ -221,11 +221,11 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := AttachFused512(s, spec.Name, key); err != nil {
-				t.Fatalf("AttachFused512: %v", err)
+			if err := attachFused512(s, spec.Name, key); err != nil {
+				t.Fatalf("attachFused512: %v", err)
 			}
-			if err := AttachInterlockBatch32x512(s, spec.Name, key); err != nil {
-				t.Fatalf("AttachInterlockBatch32x512: %v", err)
+			if err := attachInterlockBatch32x512(s, spec.Name, key); err != nil {
+				t.Fatalf("attachInterlockBatch32x512: %v", err)
 			}
 			if spec.FusedChainHash512x8 == nil && s.BatchFusedChain8() != nil {
 				t.Fatalf("%s: attach populated an eight-lane hook without a factory", spec.Name)
@@ -271,15 +271,15 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachInterlockBatch32x256(s256, "no_such_primitive_256", nil); err != nil || s256.InterlockFillX32() != nil {
-		t.Fatalf("AttachInterlockBatch32x256(unknown): err=%v", err)
+	if err := attachInterlockBatch32x256(s256, "no_such_primitive_256", nil); err != nil || s256.InterlockFillX32() != nil {
+		t.Fatalf("attachInterlockBatch32x256(unknown): err=%v", err)
 	}
 	s512, err := newSeed512(CipherAreion512, 512)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachInterlockBatch32x512(s512, "no_such_primitive_512", nil); err != nil || s512.InterlockFillX32() != nil {
-		t.Fatalf("AttachInterlockBatch32x512(unknown): err=%v", err)
+	if err := attachInterlockBatch32x512(s512, "no_such_primitive_512", nil); err != nil || s512.InterlockFillX32() != nil {
+		t.Fatalf("attachInterlockBatch32x512(unknown): err=%v", err)
 	}
 }
 

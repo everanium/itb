@@ -23,7 +23,7 @@ type BatchFusedChainHashFunc128 func(components []uint64, data *[4][]byte) (out 
 // whole ChainHash cascade over components — the prepended slice
 // [lockLo, lockHi, c[0], c[1], …] the fill builder assembles from the
 // nonce-derived pair and the seed's Components — and the hook, when
-// attached (hashes.AttachInterlockBatch16), evaluates that cascade for
+// attached (by the hashes package's constructors), evaluates that cascade for
 // 16 consecutive groups in one kernel call: groupIdxBase is the first
 // group index and lane offset i (0..15) produces groupIdx =
 // groupIdxBase + i on the fill block [0x03 | LE64(groupIdx) | 4×0x00];

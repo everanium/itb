@@ -10,7 +10,7 @@ import (
 )
 
 // seed_attach_wide_test.go — the width-256 / width-512 attach surface:
-// AttachFused256 / AttachInterlockBatch16x256 and their 512 twins. Every
+// attachFused256 / attachInterlockBatch16x256 and their 512 twins. Every
 // shipped entry leaves the wide factory fields nil, so the helpers are
 // pinned as no-ops on the registry and exercised through custom
 // primitives registered with pure-Go whole-cascade factories.
@@ -34,11 +34,11 @@ var wideAttachCases = []wideAttachCase{
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachFused256(s, name, key); err != nil {
-			t.Fatalf("AttachFused256: %v", err)
+		if err := attachFused256(s, name, key); err != nil {
+			t.Fatalf("attachFused256: %v", err)
 		}
-		if err := AttachInterlockBatch16x256(s, name, key); err != nil {
-			t.Fatalf("AttachInterlockBatch16x256: %v", err)
+		if err := attachInterlockBatch16x256(s, name, key); err != nil {
+			t.Fatalf("attachInterlockBatch16x256: %v", err)
 		}
 		return s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil
 	}},
@@ -51,11 +51,11 @@ var wideAttachCases = []wideAttachCase{
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachFused512(s, name, key); err != nil {
-			t.Fatalf("AttachFused512: %v", err)
+		if err := attachFused512(s, name, key); err != nil {
+			t.Fatalf("attachFused512: %v", err)
 		}
-		if err := AttachInterlockBatch16x512(s, name, key); err != nil {
-			t.Fatalf("AttachInterlockBatch16x512: %v", err)
+		if err := attachInterlockBatch16x512(s, name, key); err != nil {
+			t.Fatalf("attachInterlockBatch16x512: %v", err)
 		}
 		return s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil
 	}},
@@ -90,21 +90,21 @@ func TestWideAttachHelpersRegistry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachFused256(s256, name, nil); err != nil || s256.FusedChain != nil {
-			t.Fatalf("AttachFused256(%q): err=%v hook=%v", name, err, s256.FusedChain != nil)
+		if err := attachFused256(s256, name, nil); err != nil || s256.FusedChain != nil {
+			t.Fatalf("attachFused256(%q): err=%v hook=%v", name, err, s256.FusedChain != nil)
 		}
-		if err := AttachInterlockBatch16x256(s256, name, nil); err != nil || s256.InterlockFillX16() != nil {
-			t.Fatalf("AttachInterlockBatch16x256(%q): err=%v", name, err)
+		if err := attachInterlockBatch16x256(s256, name, nil); err != nil || s256.InterlockFillX16() != nil {
+			t.Fatalf("attachInterlockBatch16x256(%q): err=%v", name, err)
 		}
 		s512, err := newSeed512(CipherAreion512, 512)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachFused512(s512, name, nil); err != nil || s512.FusedChain != nil {
-			t.Fatalf("AttachFused512(%q): err=%v hook=%v", name, err, s512.FusedChain != nil)
+		if err := attachFused512(s512, name, nil); err != nil || s512.FusedChain != nil {
+			t.Fatalf("attachFused512(%q): err=%v hook=%v", name, err, s512.FusedChain != nil)
 		}
-		if err := AttachInterlockBatch16x512(s512, name, nil); err != nil || s512.InterlockFillX16() != nil {
-			t.Fatalf("AttachInterlockBatch16x512(%q): err=%v", name, err)
+		if err := attachInterlockBatch16x512(s512, name, nil); err != nil || s512.InterlockFillX16() != nil {
+			t.Fatalf("attachInterlockBatch16x512(%q): err=%v", name, err)
 		}
 	}
 }
@@ -244,11 +244,11 @@ func TestWideAttachCustomFusedFactory(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachFused256(hooked, name, key); err != nil {
-			t.Fatalf("AttachFused256: %v", err)
+		if err := attachFused256(hooked, name, key); err != nil {
+			t.Fatalf("attachFused256: %v", err)
 		}
 		if hooked.FusedChain == nil || hooked.BatchFusedChain == nil {
-			t.Fatal("AttachFused256 left the hooks nil")
+			t.Fatal("attachFused256 left the hooks nil")
 		}
 		for _, n := range pixelShapes {
 			buf := make([]byte, n)
@@ -286,11 +286,11 @@ func TestWideAttachCustomFusedFactory(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachFused512(hooked, name, key); err != nil {
-			t.Fatalf("AttachFused512: %v", err)
+		if err := attachFused512(hooked, name, key); err != nil {
+			t.Fatalf("attachFused512: %v", err)
 		}
 		if hooked.FusedChain == nil || hooked.BatchFusedChain == nil {
-			t.Fatal("AttachFused512 left the hooks nil")
+			t.Fatal("attachFused512 left the hooks nil")
 		}
 		for _, n := range pixelShapes {
 			buf := make([]byte, n)

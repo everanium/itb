@@ -268,26 +268,18 @@ func importInnerBlob128(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 	rawSeeds := [8]*itb.Seed128{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
 		keys[i] = append([]byte(nil), rawKeys[i]...)
-		single, batched, _, err := hashes.Make128Pair(innerHash, keys[i])
+		seed, err := hashes.SeedFromComponents128(innerHash, keys[i], rawSeeds[i].Components...)
 		if err != nil {
 			// Keyless primitives (siphash24) reject a fixed-key
 			// argument; retry with the no-key form since the seed's
 			// Components carry all state.
-			single, batched, _, err = hashes.Make128Pair(innerHash)
+			seed, err = hashes.SeedFromComponents128(innerHash, nil, rawSeeds[i].Components...)
 			if err != nil {
-				return out, keys, "", nil, fmt.Errorf("triple: hashes.Make128Pair(%q): %w", innerHash, err)
+				return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q): %w", innerHash, err)
 			}
 			keys[i] = nil
 		}
-		rawSeeds[i].Hash = single
-		rawSeeds[i].BatchHash = batched
-		if ferr := hashes.AttachFused128(rawSeeds[i], innerHash, keys[i]); ferr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused128(%q): %w", innerHash, ferr)
-		}
-		if ierr := hashes.AttachInterlockBatch16(rawSeeds[i], innerHash, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16(%q): %w", innerHash, ierr)
-		}
-		out[i] = rawSeeds[i]
+		out[i] = seed
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
 }
@@ -309,22 +301,11 @@ func importInnerBlob256(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 	rawSeeds := [8]*itb.Seed256{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
 		keys[i] = append([]byte(nil), rawKeys[i][:]...)
-		single, batched, _, err := hashes.Make256Pair(innerHash, keys[i])
+		seed, err := hashes.SeedFromComponents256(innerHash, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make256Pair(%q): %w", innerHash, err)
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q): %w", innerHash, err)
 		}
-		rawSeeds[i].Hash = single
-		rawSeeds[i].BatchHash = batched
-		if ferr := hashes.AttachFused256(rawSeeds[i], innerHash, keys[i]); ferr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused256(%q): %w", innerHash, ferr)
-		}
-		if ierr := hashes.AttachInterlockBatch16x256(rawSeeds[i], innerHash, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q): %w", innerHash, ierr)
-		}
-		if ierr := hashes.AttachInterlockBatch32x256(rawSeeds[i], innerHash, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x256(%q): %w", innerHash, ierr)
-		}
-		out[i] = rawSeeds[i]
+		out[i] = seed
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
 }
@@ -345,22 +326,11 @@ func importInnerBlob512(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 	rawSeeds := [8]*itb.Seed512{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
 		keys[i] = append([]byte(nil), rawKeys[i][:]...)
-		single, batched, _, err := hashes.Make512Pair(innerHash, keys[i])
+		seed, err := hashes.SeedFromComponents512(innerHash, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make512Pair(%q): %w", innerHash, err)
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q): %w", innerHash, err)
 		}
-		rawSeeds[i].Hash = single
-		rawSeeds[i].BatchHash = batched
-		if ferr := hashes.AttachFused512(rawSeeds[i], innerHash, keys[i]); ferr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused512(%q): %w", innerHash, ferr)
-		}
-		if ierr := hashes.AttachInterlockBatch16x512(rawSeeds[i], innerHash, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q): %w", innerHash, ierr)
-		}
-		if ierr := hashes.AttachInterlockBatch32x512(rawSeeds[i], innerHash, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x512(%q): %w", innerHash, ierr)
-		}
-		out[i] = rawSeeds[i]
+		out[i] = seed
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
 }
@@ -400,26 +370,18 @@ func importInnerBlob128Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 	for i := 0; i < 8; i++ {
 		name := mixedHashes[i]
 		keys[i] = append([]byte(nil), rawKeys[i]...)
-		single, batched, _, err := hashes.Make128Pair(name, keys[i])
+		seed, err := hashes.SeedFromComponents128(name, keys[i], rawSeeds[i].Components...)
 		if err != nil {
 			// Keyless primitives (siphash24) reject a fixed-key
 			// argument; retry with the no-key form since the seed's
 			// Components carry all state.
-			single, batched, _, err = hashes.Make128Pair(name)
+			seed, err = hashes.SeedFromComponents128(name, nil, rawSeeds[i].Components...)
 			if err != nil {
-				return out, keys, "", nil, fmt.Errorf("triple: hashes.Make128Pair(%q) slot %d: %w", name, i, err)
+				return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q) slot %d: %w", name, i, err)
 			}
 			keys[i] = nil
 		}
-		rawSeeds[i].Hash = single
-		rawSeeds[i].BatchHash = batched
-		if ferr := hashes.AttachFused128(rawSeeds[i], name, keys[i]); ferr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused128(%q) slot %d: %w", name, i, ferr)
-		}
-		if ierr := hashes.AttachInterlockBatch16(rawSeeds[i], name, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16(%q) slot %d: %w", name, i, ierr)
-		}
-		out[i] = rawSeeds[i]
+		out[i] = seed
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
 }
@@ -441,22 +403,11 @@ func importInnerBlob256Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 	for i := 0; i < 8; i++ {
 		name := mixedHashes[i]
 		keys[i] = append([]byte(nil), rawKeys[i][:]...)
-		single, batched, _, err := hashes.Make256Pair(name, keys[i])
+		seed, err := hashes.SeedFromComponents256(name, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make256Pair(%q) slot %d: %w", name, i, err)
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q) slot %d: %w", name, i, err)
 		}
-		rawSeeds[i].Hash = single
-		rawSeeds[i].BatchHash = batched
-		if ferr := hashes.AttachFused256(rawSeeds[i], name, keys[i]); ferr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused256(%q) slot %d: %w", name, i, ferr)
-		}
-		if ierr := hashes.AttachInterlockBatch16x256(rawSeeds[i], name, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q) slot %d: %w", name, i, ierr)
-		}
-		if ierr := hashes.AttachInterlockBatch32x256(rawSeeds[i], name, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x256(%q) slot %d: %w", name, i, ierr)
-		}
-		out[i] = rawSeeds[i]
+		out[i] = seed
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
 }
@@ -478,22 +429,11 @@ func importInnerBlob512Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 	for i := 0; i < 8; i++ {
 		name := mixedHashes[i]
 		keys[i] = append([]byte(nil), rawKeys[i][:]...)
-		single, batched, _, err := hashes.Make512Pair(name, keys[i])
+		seed, err := hashes.SeedFromComponents512(name, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.Make512Pair(%q) slot %d: %w", name, i, err)
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q) slot %d: %w", name, i, err)
 		}
-		rawSeeds[i].Hash = single
-		rawSeeds[i].BatchHash = batched
-		if ferr := hashes.AttachFused512(rawSeeds[i], name, keys[i]); ferr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused512(%q) slot %d: %w", name, i, ferr)
-		}
-		if ierr := hashes.AttachInterlockBatch16x512(rawSeeds[i], name, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q) slot %d: %w", name, i, ierr)
-		}
-		if ierr := hashes.AttachInterlockBatch32x512(rawSeeds[i], name, keys[i]); ierr != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x512(%q) slot %d: %w", name, i, ierr)
-		}
-		out[i] = rawSeeds[i]
+		out[i] = seed
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
 }

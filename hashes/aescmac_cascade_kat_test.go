@@ -93,14 +93,14 @@ func TestAESCMACCascadeKAT(t *testing.T) {
 		comps := aescmacKATComponents(pairs)
 		lockComps := append([]uint64{0x1122334455667788, 0x99AABBCCDDEEFF00}, comps...)
 		hooked := manualSeed128(t, CipherAES128CTR, key, comps)
-		if err := AttachFused128(hooked, CipherAES128CTR, key); err != nil {
+		if err := attachFused128(hooked, CipherAES128CTR, key); err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachInterlockBatch16(hooked, CipherAES128CTR, key); err != nil {
+		if err := attachInterlockBatch16(hooked, CipherAES128CTR, key); err != nil {
 			t.Fatal(err)
 		}
 		if hooked.FusedChain == nil || hooked.BatchFusedChain == nil || hooked.InterlockFillX16() == nil {
-			t.Fatal("aescmac seed is missing a hook after AttachFused128 / AttachInterlockBatch16")
+			t.Fatal("aescmac seed is missing a hook after attachFused128 / attachInterlockBatch16")
 		}
 		plain := manualSeed128(t, CipherAES128CTR, key, comps)
 		for _, kat := range aescmacCascadeKATs {

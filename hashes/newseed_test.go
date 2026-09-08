@@ -114,15 +114,15 @@ func checkNewSeed128(t *testing.T, cfg *itb.Config, name string, bits int, plain
 			}
 		}
 		ref := manualSeed128(t, name, key, s.Components)
-		if err := AttachFused128(ref, name, key); err != nil {
+		if err := attachFused128(ref, name, key); err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachInterlockBatch16(ref, name, key); err != nil {
+		if err := attachInterlockBatch16(ref, name, key); err != nil {
 			t.Fatal(err)
 		}
 		if (s.FusedChain == nil) != (ref.FusedChain == nil) || (s.BatchFusedChain == nil) != (ref.BatchFusedChain == nil) ||
 			(s.BatchFusedChain8() == nil) != (ref.BatchFusedChain8() == nil) || (s.InterlockFillX16() == nil) != (ref.InterlockFillX16() == nil) {
-			t.Fatal("hook set differs from AttachFused128 + AttachInterlockBatch16 on the same seed")
+			t.Fatal("hook set differs from attachFused128 + attachInterlockBatch16 on the same seed")
 		}
 		hooked[i], arms[i] = s, twin
 	}
@@ -170,15 +170,15 @@ func checkNewSeed256(t *testing.T, cfg *itb.Config, name string, bits int, plain
 			}
 		}
 		ref := armsSeed256(t, name, key, s.Components)
-		if err := AttachFused256(ref, name, key); err != nil {
+		if err := attachFused256(ref, name, key); err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachInterlockBatch16x256(ref, name, key); err != nil {
+		if err := attachInterlockBatch16x256(ref, name, key); err != nil {
 			t.Fatal(err)
 		}
 		if (s.FusedChain == nil) != (ref.FusedChain == nil) || (s.BatchFusedChain == nil) != (ref.BatchFusedChain == nil) ||
 			(s.InterlockFillX16() == nil) != (ref.InterlockFillX16() == nil) {
-			t.Fatal("hook set differs from AttachFused256 + AttachInterlockBatch16x256 on the same seed")
+			t.Fatal("hook set differs from attachFused256 + attachInterlockBatch16x256 on the same seed")
 		}
 		hooked[i], arms[i] = s, twin
 	}
@@ -226,15 +226,15 @@ func checkNewSeed512(t *testing.T, cfg *itb.Config, name string, bits int, plain
 			}
 		}
 		ref := armsSeed512(t, name, key, s.Components)
-		if err := AttachFused512(ref, name, key); err != nil {
+		if err := attachFused512(ref, name, key); err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachInterlockBatch16x512(ref, name, key); err != nil {
+		if err := attachInterlockBatch16x512(ref, name, key); err != nil {
 			t.Fatal(err)
 		}
 		if (s.FusedChain == nil) != (ref.FusedChain == nil) || (s.BatchFusedChain == nil) != (ref.BatchFusedChain == nil) ||
 			(s.InterlockFillX16() == nil) != (ref.InterlockFillX16() == nil) {
-			t.Fatal("hook set differs from AttachFused512 + AttachInterlockBatch16x512 on the same seed")
+			t.Fatal("hook set differs from attachFused512 + attachInterlockBatch16x512 on the same seed")
 		}
 		hooked[i], arms[i] = s, twin
 	}

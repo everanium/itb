@@ -373,10 +373,11 @@ type Blob128 struct {
 	KeyS3 []byte
 
 	// Seed components — *Seed128 with .Components populated.
-	// Hash and BatchHash are nil after Import3Cfg; the caller wires
-	// them from the saved Key* bytes, optionally together with the
-	// fused and batch-16 fast-path hooks (hashes.AttachFused128 /
-	// hashes.AttachInterlockBatch16), which never change the wire.
+	// Hash and BatchHash are nil after Import3Cfg; the caller rebuilds
+	// each seed from its Components and the saved Key* bytes
+	// (hashes.SeedFromComponents128 attaches the arms and every
+	// fast-path hook the primitive offers; the hooks never change the
+	// wire).
 	NS  *Seed128
 	LS  *Seed128 // dedicated lockSeed
 	DS1 *Seed128
@@ -999,10 +1000,10 @@ func (b *Blob128) Export3Cfg(
 
 // Import3Cfg — Triple Ouroboros, 128-bit width. See
 // [Blob512.Import3Cfg] for the full contract. The imported seeds carry
-// Components only; the caller rebuilds each seed with its Hash /
-// BatchHash arms and, for the fast paths, its hooks
-// (hashes.AttachFused128 and hashes.AttachInterlockBatch16) — the
-// hooks never change the wire.
+// Components only; the caller rebuilds each seed from them with its
+// Hash / BatchHash arms and, for the fast paths, its hooks
+// (hashes.SeedFromComponents128 does both) — the hooks never change
+// the wire.
 func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg

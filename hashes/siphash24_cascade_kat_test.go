@@ -68,14 +68,14 @@ func TestSipHash24CascadeKAT(t *testing.T) {
 		comps := siphash24KATComponents(pairs)
 		lockComps := append([]uint64{0x1122334455667788, 0x99AABBCCDDEEFF00}, comps...)
 		hooked := manualSeed128(t, CipherSipHash24, nil, comps)
-		if err := AttachFused128(hooked, CipherSipHash24, nil); err != nil {
+		if err := attachFused128(hooked, CipherSipHash24, nil); err != nil {
 			t.Fatal(err)
 		}
-		if err := AttachInterlockBatch16(hooked, CipherSipHash24, nil); err != nil {
+		if err := attachInterlockBatch16(hooked, CipherSipHash24, nil); err != nil {
 			t.Fatal(err)
 		}
 		if hooked.FusedChain == nil || hooked.BatchFusedChain == nil || hooked.InterlockFillX16() == nil {
-			t.Fatal("siphash24 seed is missing a hook after AttachFused128 / AttachInterlockBatch16")
+			t.Fatal("siphash24 seed is missing a hook after attachFused128 / attachInterlockBatch16")
 		}
 		plain := manualSeed128(t, CipherSipHash24, nil, comps)
 		for _, kat := range siphash24CascadeKATs {
@@ -149,7 +149,7 @@ func TestSipHash24CascadeKAT(t *testing.T) {
 }
 
 // TestSipHash24HooksZeroAlloc asserts that the hooks installed on a
-// siphash24 seed by AttachFused128 / AttachInterlockBatch16 and the
+// siphash24 seed by attachFused128 / attachInterlockBatch16 and the
 // eight-lane attach step run without a heap allocation per call at
 // every kernel shape — the hooks sit on the per-pixel and per-group hot
 // paths of the pipeline.
@@ -161,10 +161,10 @@ func TestSipHash24HooksZeroAlloc(t *testing.T) {
 	comps := siphash24KATComponents(pairs)
 	lockComps := append([]uint64{0x1122334455667788, 0x99AABBCCDDEEFF00}, comps...)
 	s := manualSeed128(t, CipherSipHash24, nil, comps)
-	if err := AttachFused128(s, CipherSipHash24, nil); err != nil {
+	if err := attachFused128(s, CipherSipHash24, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := AttachInterlockBatch16(s, CipherSipHash24, nil); err != nil {
+	if err := attachInterlockBatch16(s, CipherSipHash24, nil); err != nil {
 		t.Fatal(err)
 	}
 	check := func(what string, f func()) {
