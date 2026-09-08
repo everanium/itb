@@ -50,6 +50,8 @@ func TestForceInterlockTierApplied(t *testing.T) {
 			t.Fatalf("scalar: HasAVX512RankMask=%v HasAVX2RankMask=%v HasBMI2=%v, want all false",
 				HasAVX512RankMask, HasAVX2RankMask, HasBMI2)
 		}
+	case "sve2", "sve", "neon":
+		t.Skipf("%s: arm64-only tier; not applicable on amd64", tier)
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)
 	}

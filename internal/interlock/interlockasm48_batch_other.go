@@ -1,8 +1,9 @@
-//go:build !amd64 || purego || noitbasm
+//go:build (!amd64 && !arm64) || purego || noitbasm
 
 package interlock
 
-// HasChunk48Batch is always false on non-amd64 / purego / noitbasm.
+// HasChunk48Batch is always false on non-amd64 / non-arm64 / purego /
+// noitbasm.
 const HasChunk48Batch = false
 
 // Chunk48LockBatch should never be called when HasChunk48Batch is

@@ -1,12 +1,13 @@
 //go:build !amd64 || purego || noitbasm
 
-// Stub package on platforms where the BMI2 PEXTQ / PDEPQ assembly
-// path does not apply. The parent `itb` package always uses its
-// portable Go softPEXT48 / softPDEP48 fallback in this case; nothing
-// here is exercised.
+// Stub package on platforms without the BMI2 PEXTQ / PDEPQ assembly
+// path. arm64 builds carry their own NEON rank-mask and SVE2 BEXT /
+// BDEP chunk-apply kernels (see the _arm64 files); on every other
+// platform the parent `itb` package uses its portable Go softPEXT48 /
+// softPDEP48 fallback and nothing here is exercised.
 package interlock
 
-// HasBMI2 is always false on non-amd64 builds.
+// HasBMI2 is always false outside amd64.
 const HasBMI2 = false
 
 // Chunk48Lock should never be called on non-amd64 builds — the parent

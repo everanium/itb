@@ -64,5 +64,7 @@ func init() {
 		HasAVX2RankMask = false
 		HasBMI2 = false
 		HasChunk48Batch = false
+	case "sve2", "sve", "neon":
+		forcetier.Warnf("interlock: %s tier is arm64-only; keeping auto-dispatch", forcetier.InterlockTier())
 	}
 }

@@ -344,7 +344,7 @@ done
 # each 16-chunk batch as two 8-lane passes, so the x8×2 wire geometry
 # is validated against the 16-lane pass on the same host.
 # ---------------------------------------------------------------------------
-ILTIERS=(avx512 avx512x8 avx2 scalar)
+ILTIERS=(avx512 avx512x8 avx2 sve2 sve neon scalar)
 ILHASHES=(areion512 aesitb128)
 IL_CELLS=$(( ${#ILTIERS[@]} * ${#ILHASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
 

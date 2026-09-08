@@ -458,8 +458,9 @@ const _ = uint(8*lockBatchFactor48Max - 16*2*lockBatchFactor48_128)
 // the asm entry. Only the first count triples are copied back into the
 // caller's output — the remaining kernel lanes carry garbage that is
 // never observed. On AVX2-only silicon the AVX2 4-lane batch kernel
-// serves the same 8-lane contract (two YMM halves per invocation);
-// without either kernel the per-lane scalar rankToMaskTriple48 runs.
+// serves the same 8-lane contract (two YMM halves per invocation); on
+// arm64 the NEON kernel does; without any kernel the per-lane scalar
+// rankToMaskTriple48 runs.
 func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48Max][3]uint64) {
 	if interlock.HasAVX512RankMask {
 		var idx0 [8]uint64
@@ -503,6 +504,27 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 		}
 		return
 	}
+	if interlock.HasNEONInterlock {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < count; j++ {
+			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
+			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
+			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
+			_, hiMod := bits.Div64(0, qHi, interlockA48)
+			_, m := bits.Div64(hiMod, qLo, interlockA48)
+			idx0[j] = m
+			idx1[j] = uint32(r)
+		}
+		var out [3][8]uint64
+		interlock.RankToMaskTripleUnrank48NEON(&idx0, &idx1, &out)
+		for j := 0; j < count; j++ {
+			masks[j][0] = out[0][j]
+			masks[j][1] = out[1][j]
+			masks[j][2] = out[2][j]
+		}
+		return
+	}
 	for j := 0; j < count; j++ {
 		masks[j][0], masks[j][1], masks[j][2] = rankToMaskTriple48(prf[2*j], prf[2*j+1])
 	}
@@ -524,8 +546,8 @@ const superChunks48 = 8
 // a whole superblock of chunks. A short superblock (count < 8) leaves
 // the upper kernel lanes on zero ranks; their outputs are never read.
 // On AVX2-only silicon the AVX2 4-lane batch kernel serves the same
-// 8-lane contract; without either kernel the per-rank scalar
-// rankToMaskTriple48 runs.
+// 8-lane contract, as does the NEON kernel on arm64; without any kernel
+// the per-rank scalar rankToMaskTriple48 runs.
 func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks *[superChunks48][3]uint64) {
 	if interlock.HasAVX512RankMask {
 		var idx0 [8]uint64
@@ -562,6 +584,27 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
+		for j := 0; j < count; j++ {
+			masks[j][0] = out[0][j]
+			masks[j][1] = out[1][j]
+			masks[j][2] = out[2][j]
+		}
+		return
+	}
+	if interlock.HasNEONInterlock {
+		var idx0 [8]uint64
+		var idx1 [8]uint32
+		for j := 0; j < count; j++ {
+			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
+			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
+			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
+			_, hiMod := bits.Div64(0, qHi, interlockA48)
+			_, m := bits.Div64(hiMod, qLo, interlockA48)
+			idx0[j] = m
+			idx1[j] = uint32(r)
+		}
+		var out [3][8]uint64
+		interlock.RankToMaskTripleUnrank48NEON(&idx0, &idx1, &out)
 		for j := 0; j < count; j++ {
 			masks[j][0] = out[0][j]
 			masks[j][1] = out[1][j]
