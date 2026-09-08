@@ -601,64 +601,64 @@ func BenchmarkExtTripleChaCha20_2048bit_Decrypt_64MB(b *testing.B) {
 // --- AES-CMAC-128 Triple Pair benches: 512-bit ITB width ---
 
 func BenchmarkExtTripleAESCMAC_512bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 512, 1<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 512, 1<<20)
 }
 func BenchmarkExtTripleAESCMAC_512bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 512, 16<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 512, 16<<20)
 }
 func BenchmarkExtTripleAESCMAC_512bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 512, 64<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 512, 64<<20)
 }
 func BenchmarkExtTripleAESCMAC_512bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 512, 1<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 512, 1<<20)
 }
 func BenchmarkExtTripleAESCMAC_512bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 512, 16<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 512, 16<<20)
 }
 func BenchmarkExtTripleAESCMAC_512bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 512, 64<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 512, 64<<20)
 }
 
 // --- AES-CMAC-128 Triple Pair benches: 1024-bit ITB width ---
 
 func BenchmarkExtTripleAESCMAC_1024bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 1024, 1<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 1024, 1<<20)
 }
 func BenchmarkExtTripleAESCMAC_1024bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 1024, 16<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 1024, 16<<20)
 }
 func BenchmarkExtTripleAESCMAC_1024bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 1024, 64<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 1024, 64<<20)
 }
 func BenchmarkExtTripleAESCMAC_1024bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 1024, 1<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 1024, 1<<20)
 }
 func BenchmarkExtTripleAESCMAC_1024bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 1024, 16<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 1024, 16<<20)
 }
 func BenchmarkExtTripleAESCMAC_1024bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 1024, 64<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 1024, 64<<20)
 }
 
 // --- AES-CMAC-128 Triple Pair benches: 2048-bit ITB width ---
 
 func BenchmarkExtTripleAESCMAC_2048bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 2048, 1<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 2048, 1<<20)
 }
 func BenchmarkExtTripleAESCMAC_2048bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 2048, 16<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 2048, 16<<20)
 }
 func BenchmarkExtTripleAESCMAC_2048bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 2048, 64<<20)
+	benchEncrypt3x128HookedExt(b, hashes.CipherAES128CTR, 2048, 64<<20)
 }
 func BenchmarkExtTripleAESCMAC_2048bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 2048, 1<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 2048, 1<<20)
 }
 func BenchmarkExtTripleAESCMAC_2048bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 2048, 16<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 2048, 16<<20)
 }
 func BenchmarkExtTripleAESCMAC_2048bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x128CachedBatchedExt(b, makeAESCMACHash128PairExt, 2048, 64<<20)
+	benchDecrypt3x128HookedExt(b, hashes.CipherAES128CTR, 2048, 64<<20)
 }
 
 // --- SipHash-2-4-128 Triple Pair benches: 512-bit ITB width ---

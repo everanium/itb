@@ -5,10 +5,12 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"unsafe"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/aescmacasm"
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // AESCMAC returns a cached itb.HashFunc128 backed by AES along with
@@ -138,29 +140,19 @@ func aesEncryptNoescape(block cipher.Block, buf *[16]byte) {
 // computed via the batched dispatch match the single-call path
 // bit-exact (the parity invariant required by itb.BatchHashFunc128).
 //
-// On amd64 with VAES + AVX-512 the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
-// shapes (20 / 36 / 68 byte inputs) — VAESENC on ZMM operates on
-// four independent AES blocks per instruction, so the per-pixel
-// AES-CMAC chain advances four lanes through one VAESENC instead of
-// four serial cipher.Block.Encrypt calls. On hosts without VAES +
-// AVX-512, and for non-{20,36,68} input lengths, the batched arm
-// falls back to four single-call invocations and remains bit-exact.
+// The batched arm evaluates the four lanes through the single arm
+// under their per-lane seeds. The assembly kernels of the primitive
+// (hashes/internal/aescmacasm) evaluate the whole ChainHash128 cascade
+// — every lane over one shared component slice — and are reached
+// through the fused hooks [AttachFused128] and [AttachInterlockBatch16]
+// install, which intercept before either arm is called; see
+// [Spec.FusedChainHash128].
 //
 // With no argument a fresh 16-byte AES key is generated via
 // crypto/rand; passing a single caller-supplied [16]byte uses that
 // key instead. The returned key (random or supplied) is always
 // emitted as the third return value — save it for cross-process
 // persistence.
-//
-// Realistic uplift target: substantial over the upstream
-// crypto/aes-driven scalar dispatch on Rocket Lake; higher on AMD
-// Zen 5 / Sapphire Rapids+ where full-width 512-bit ALUs and VAESENC
-// per-cycle throughput (4 AES rounds/cycle on Zen 5 vs ~2-3 on
-// Rocket Lake) widen the envelope. The gain is a mix of 4-lane
-// parallelism (four independent AES-CMAC chains advancing through
-// one VAESENC) and per-call cipher.Block.Encrypt interface-dispatch
-// amortisation across the lanes.
 func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]byte) {
 	var k [16]byte
 	if len(key) > 0 {
@@ -177,88 +169,135 @@ func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]by
 // persistence-restore path where the original key has been saved
 // across processes (encrypt today, decrypt tomorrow).
 //
-// The single arm is identical to AESCMACWithKey(aesKey). The
-// batched arm hot-dispatches to the fused ZMM-batched chain-absorb
-// kernel when all four lanes share an input length in {20, 36, 68};
-// for any other lane-length configuration it falls back to four
-// single-call invocations of the single arm.
-//
-// The AES-128 round-key schedule (11 × 16-byte round keys = 176
-// bytes) is pre-expanded once via aescmacasm.ExpandKeyAES128 and
-// captured by the batched closure; the kernels broadcast each round
-// key to all 4 lanes via VBROADCASTI32X4 at function entry.
+// The single arm is identical to AESCMACWithKey(aesKey); the batched
+// arm evaluates the four lanes through it under their per-lane seeds
+// and is bit-exact with four single calls on every input.
 func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
 	single := AESCMACWithKey(aesKey)
-	// On hosts without any fused chain-absorb path (neither the VAES +
-	// AVX-512 ZMM tier nor the XMM AES-NI tier) the batched closure
-	// falls into the scalar Go reference; under that path
-	// process_cgo.go's nil-fallback (driving 4 single calls into the
-	// underlying crypto/aes asm) outperforms the 4-lane wrapper. Return
-	// nil before the round-key expansion so the per-pair cost matches
-	// the simpler single-only contract. On AES-NI-only hosts
-	// (HasAESNIBatched) the XMM 4-lane kernels win, so the batched arm
-	// is kept.
-	if !aescmacasm.HasVAESAVX512 && !aescmacasm.HasAESNIBatched {
-		return single, nil
-	}
-	roundKeys := aescmacasm.ExpandKeyAES128(aesKey)
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
-		commonLen := len(data[0])
-		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
-			len(data[1]) == commonLen &&
-			len(data[2]) == commonLen &&
-			len(data[3]) == commonLen {
-			var dataPtrs [4]*byte
-			dataPtrs[0] = &data[0][0]
-			dataPtrs[1] = &data[1][0]
-			dataPtrs[2] = &data[2][0]
-			dataPtrs[3] = &data[3][0]
-			var out [4][2]uint64
-			seedsCopy := seeds
-			switch commonLen {
-			case 13:
-				// Interlocked Barrier PRF fill shape (Lift 2).
-				aescmacasm.AESCMAC128ChainAbsorb13x4(
-					&roundKeys,
-					&aesKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			case 20:
-				aescmacasm.AESCMAC128ChainAbsorb20x4(
-					&roundKeys,
-					&aesKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			case 36:
-				aescmacasm.AESCMAC128ChainAbsorb36x4(
-					&roundKeys,
-					&aesKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			case 68:
-				aescmacasm.AESCMAC128ChainAbsorb68x4(
-					&roundKeys,
-					&aesKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			}
-			return out
-		}
 		var out [4][2]uint64
 		for lane := 0; lane < 4; lane++ {
-			lo, hi := single(data[lane], seeds[lane][0], seeds[lane][1])
-			out[lane][0] = lo
-			out[lane][1] = hi
+			out[lane][0], out[lane][1] = single(data[lane], seeds[lane][0], seeds[lane][1])
 		}
 		return out
 	}
 	return single, batched
+}
+
+// aesCMACFusedChainHash is the [Spec.FusedChainHash128] factory of the
+// aescmac entry. The returned evaluators run the ChainHash128 cascade
+// inside one hashes/internal/aescmacasm kernel call for the four
+// per-pixel shapes (13 / 20 / 36 / 68 bytes) and report ok = false for
+// any other input length, which sends the seed back to the sequential
+// loop. When ITB_FORCE_CHAINHASH_SEQ is set both evaluators are nil so
+// the sequential loop runs unconditionally (benchmark / parity knob).
+// The AES-128 round-key schedule is expanded once per factory call and
+// shared by every evaluation.
+func aesCMACFusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) {
+	if len(key) != 16 {
+		return nil, nil, fmt.Errorf("hashes: %q fused cascade needs a 16-byte key, got %d", CipherAES128CTR, len(key))
+	}
+	if forcetier.ChainHashSeq() {
+		return nil, nil, nil
+	}
+	var k [16]byte
+	copy(k[:], key)
+	s := aescmacasm.NewSchedule(k)
+	single := func(components []uint64, data []byte) (uint64, uint64, bool) {
+		var out [2]uint64
+		switch len(data) {
+		case 13:
+			aescmacasm.FusedChain13x1(s, components, &data[0], &out)
+		case 20:
+			aescmacasm.FusedChain20x1(s, components, &data[0], &out)
+		case 36:
+			aescmacasm.FusedChain36x1(s, components, &data[0], &out)
+		case 68:
+			aescmacasm.FusedChain68x1(s, components, &data[0], &out)
+		default:
+			return 0, 0, false
+		}
+		return out[0], out[1], true
+	}
+	batched := func(components []uint64, data *[4][]byte) ([4][2]uint64, bool) {
+		var out [4][2]uint64
+		n := len(data[0])
+		if len(data[1]) != n || len(data[2]) != n || len(data[3]) != n {
+			return out, false
+		}
+		switch n {
+		case 13, 20, 36, 68:
+		default:
+			return out, false
+		}
+		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
+		switch n {
+		case 13:
+			aescmacasm.FusedChain13x4(s, components, &dataPtrs, &out)
+		case 20:
+			aescmacasm.FusedChain20x4(s, components, &dataPtrs, &out)
+		case 36:
+			aescmacasm.FusedChain36x4(s, components, &dataPtrs, &out)
+		case 68:
+			aescmacasm.FusedChain68x4(s, components, &dataPtrs, &out)
+		}
+		return out, true
+	}
+	return single, batched, nil
+}
+
+// aesCMACFusedChainHash8 builds the eight-lane fused cascade hook of
+// the aescmac entry (see [itb.BatchFusedChainHashFunc128x8]): the whole
+// ChainHash128 cascade on eight lanes inside one
+// hashes/internal/aescmacasm eight-lane dispatcher call for the three
+// nonce-buf shapes (20 / 36 / 68 bytes, all lanes equal); any other
+// lane-length configuration reports ok = false and the seed runs the
+// four-lane path twice.
+func aesCMACFusedChainHash8(s *aescmacasm.Schedule) itb.BatchFusedChainHashFunc128x8 {
+	return func(components []uint64, data *[8][]byte) ([8][2]uint64, bool) {
+		var out [8][2]uint64
+		n := len(data[0])
+		switch n {
+		case 20, 36, 68:
+		default:
+			return out, false
+		}
+		var dataPtrs [8]*byte
+		for l := range data {
+			if len(data[l]) != n {
+				return out, false
+			}
+			dataPtrs[l] = &data[l][0]
+		}
+		switch n {
+		case 20:
+			aescmacasm.FusedChain20x8(s, components, &dataPtrs, &out)
+		case 36:
+			aescmacasm.FusedChain36x8(s, components, &dataPtrs, &out)
+		case 68:
+			aescmacasm.FusedChain68x8(s, components, &dataPtrs, &out)
+		}
+		return out, true
+	}
+}
+
+// aesCMACInterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory
+// of the aescmac entry. Returns the batch-16 Interlocked Barrier fill
+// kernel that synthesizes 16 consecutive 13-byte fill buffers (domain
+// tag 0x03, group index at bytes [1:9], zero padding) and runs the whole
+// AES-CMAC ChainHash cascade over the supplied components on every lane
+// inside one hashes/internal/aescmacasm kernel call (tier avx512,
+// vaesavx2, vex, aesni, neon, or the scalar reference) — the batch-16
+// arm of the cascade fill every lockSeed runs, see
+// [itb.InterlockFillFunc16].
+func aesCMACInterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) {
+	if len(key) != 16 {
+		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 16-byte key, got %d", CipherAES128CTR, len(key))
+	}
+	var k [16]byte
+	copy(k[:], key)
+	s := aescmacasm.NewSchedule(k)
+	return func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+		aescmacasm.FusedChain13x16(s, components, groupIdxBase, out)
+	}, nil
 }

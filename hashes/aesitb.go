@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/hashes/internal/aescmacasm"
 	"github.com/everanium/itb/internal/aesitbasm"
 	"github.com/everanium/itb/internal/forcetier"
 )
@@ -180,24 +181,34 @@ func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
 	}
 }
 
-// attachFused128x8 installs the eight-lane fused cascade hook on an
-// aesitb128 seed when the eight-lane ZMM arm is the selected tier
-// (aesitbasm.FusedX8Active: VAES + AVX-512 silicon, ITB_FORCE_HASH_TIER
-// unset or avx512, ITB_FORCE_CHAINHASH_X4 unset). Called from
-// [AttachFused128] once the four-lane hooks are in place, so every
-// shipping constructor path — the C ABI seed constructors and the
-// triple package's Init / Load seed builders — carries the hook under
-// one attach step; a seed left without it keeps the four-lane pixel
-// stride. Other primitives and other hosts leave the seed
-// unchanged. The hook is a performance path only: the wire is identical
-// with and without it (pinned by the root fused-cascade parity tests).
+// attachFused128x8 installs the eight-lane fused cascade hook on a seed
+// of a primitive whose selected tier carries an eight-lane kernel
+// (aesitbasm.FusedX8Active / aescmacasm.FusedX8Active: VAES + AVX-512
+// silicon, ITB_FORCE_HASH_TIER unset or avx512, ITB_FORCE_CHAINHASH_X4
+// unset). Called from [AttachFused128] once the four-lane hooks are in
+// place, so every shipping constructor path — the C ABI seed
+// constructors and the triple package's Init / Load seed builders —
+// carries the hook under one attach step; a seed left without it keeps
+// the four-lane pixel stride. Other primitives and other hosts leave
+// the seed unchanged. The hook is a performance path only: the wire is
+// identical with and without it (pinned by the root fused-cascade
+// parity tests).
 func attachFused128x8(s *itb.Seed128, name string, key []byte) {
-	if name != CipherAESITB128 || len(key) != 16 || !aesitbasm.FusedX8Active() {
+	if len(key) != 16 {
 		return
 	}
 	var k [16]byte
 	copy(k[:], key)
-	s.SetBatchFusedChain8(aesITB128FusedChainHash8(k))
+	switch name {
+	case CipherAESITB128:
+		if aesitbasm.FusedX8Active() {
+			s.SetBatchFusedChain8(aesITB128FusedChainHash8(k))
+		}
+	case CipherAES128CTR:
+		if aescmacasm.FusedX8Active() {
+			s.SetBatchFusedChain8(aesCMACFusedChainHash8(aescmacasm.NewSchedule(k)))
+		}
+	}
 }
 
 // aesITB128InterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory.

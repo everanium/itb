@@ -204,7 +204,7 @@ var Registry = [10]Spec{
 	{Name: CipherBLAKE2b512, Width: W512, Class: ClassPRFCounter, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash},
 	{Name: CipherBLAKE2s, Width: W256, Class: ClassPRFCounter, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash},
 	{Name: CipherBLAKE3, Width: W256, Class: ClassPRFCounter, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash},
-	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream},
+	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream, FusedChainHash128: aesCMACFusedChainHash, InterlockFillBatch16: aesCMACInterlockFillBatch16},
 	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash},
 	{Name: CipherChaCha20, Width: W256, Class: ClassNativeStream},
 }
@@ -433,7 +433,10 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 //     NEON on arm64; VAES YMM / ZMM kernels built and force-selectable)
 //     for the 13 / 20 / 36 / 68-byte per-pixel shapes, scalar reference
 //     elsewhere
-//   - "aescmac" — VAES + AVX-512 ZMM-batched AES-CMAC chain-absorb kernels
+//   - "aescmac" — four single-arm calls per lane; the assembly kernels of
+//     the primitive evaluate the whole ChainHash cascade
+//     (hashes/internal/aescmacasm) and are reached through the fused
+//     hooks AttachFused128 / AttachInterlockBatch16 install
 //   - "siphash24" — AVX-512 ZMM-batched SipHash-2-4 chain-absorb kernels
 //
 // Variadic key arg follows the same pattern as Make128 / Make256Pair.

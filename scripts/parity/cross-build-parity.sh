@@ -230,43 +230,34 @@ arm_env() {
 
 # arm_applicable HASH ARM — succeeds when the (hash, arm) pair names a
 # real dispatch arm. Skip rules:
-#   * avx512x4: only aesitb128 carries eight-lane fused ChainHash
-#     kernels (internal/aesitbasm, VAES ZMM x8 at the nonce-buf shapes),
-#     so only there does the pseudo-arm select something the plain
-#     avx512 arm does not.
+#   * avx512x4: aesitb128 (internal/aesitbasm) and aescmac
+#     (hashes/internal/aescmacasm) carry eight-lane fused ChainHash
+#     kernels (VAES ZMM x8 at the nonce-buf shapes), so only there does
+#     the pseudo-arm select something the plain avx512 arm does not.
 #   * aesni: only the AES-based primitives carry AES-NI XMM chain
-#     kernels (areion256 / areion512 / aescmac).
-#   * vaesavx2: aesitb128 (internal/aesitbasm, VAES YMM two-lane
-#     kernels) and areion256 / areion512 carry width-specialised YMM
-#     VAES chain-absorb kernels (Areion*ChainAbsorb*x4VaesAvx2). aescmac
-#     deliberately has no YMM tier — its 2-lane YMM grouping under-fills
-#     a single VAES port versus the XMM 4-lane AES-NI path (see
-#     hashes/internal/aescmacasm/aescmacasm_amd64.go), so it is skipped
-#     exactly as for the avx2 arm; every non-Areion primitive is skipped.
-#   * avx2: aescmac deliberately has no YMM tier (see
-#     hashes/internal/aescmacasm/aescmacasm_amd64.go); aesitb128 maps
-#     the avx2 token to its VAES YMM tier; areion256 /
-#     areion512 run their VAES-on-YMM general-chain arm
-#     (Areion*Permutex4Avx2) rather than width-specialised kernels —
-#     a real shipped arm (AMD Zen 3 class), so the pair is applicable.
+#     kernels (aesitb128 / areion256 / areion512 / aescmac).
+#   * vaesavx2: aesitb128 and aescmac (VAES YMM two-lane fused cascade
+#     kernels) and areion256 / areion512 (width-specialised YMM VAES
+#     chain-absorb kernels, Areion*ChainAbsorb*x4VaesAvx2); every other
+#     primitive is skipped.
+#   * avx2: aesitb128 and aescmac map the avx2 token to their VAES YMM
+#     tier; areion256 / areion512 run their VAES-on-YMM general-chain
+#     arm (Areion*Permutex4Avx2) rather than width-specialised kernels —
+#     a real shipped arm (AMD Zen 3 class), so the pair is applicable;
+#     the ARX / BLAKE primitives carry AVX2 chain kernels.
 #   * avx512 / scalar: every primitive has both.
 arm_applicable() {
     case "$2" in
-        avx512|scalar) return 0 ;;
+        avx512|scalar|avx2) return 0 ;;
         avx512x4)
             case "$1" in
-                aesitb128) return 0 ;;
+                aesitb128|aescmac) return 0 ;;
                 *) return 1 ;;
             esac ;;
         vaesavx2)
             case "$1" in
-                aesitb128|areion256|areion512) return 0 ;;
+                aesitb128|areion256|areion512|aescmac) return 0 ;;
                 *) return 1 ;;
-            esac ;;
-        avx2)
-            case "$1" in
-                aescmac) return 1 ;;
-                *) return 0 ;;
             esac ;;
         aesni)
             case "$1" in

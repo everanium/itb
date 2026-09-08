@@ -1,0 +1,89 @@
+//go:build amd64 && !purego && !noitbasm
+
+// VAES YMM (two lanes per register) fused ChainHash cascade kernel for AES-CMAC at the
+// 13-byte shape, 4 lanes (1 zero-padded block, 1 AES-128
+// permutation per cascade round).
+// The data blocks are staged once into the frame as 32-byte lane-pair
+// slots with K0 (and, for block 0, the length tag) folded in, and
+// every cascade round runs from those slots; see aescmacasm_fused.go for the
+// construction and the in-package parity tests for the bit-exact pin
+// against the pure-Go cascade.
+
+#include "textflag.h"
+
+// func aesCMAC128FusedChain13x4VaesAvx2Asm(roundKeys *[176]byte, comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+TEXT ·aesCMAC128FusedChain13x4VaesAvx2Asm(SB), NOSPLIT, $64-40
+	MOVQ roundKeys+0(FP), AX
+	MOVQ comps+8(FP), BX
+	MOVQ nPairs+16(FP), CX
+	MOVQ dataPtrs+24(FP), DX
+	MOVQ out+32(FP), DI
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+
+	VPXOR X13, X13, X13
+	VBROADCASTI128 0(AX), Y14
+	MOVQ $13, R12
+	VMOVQ R12, X15
+	VPBROADCASTQ X15, Y15
+	VPXOR Y14, Y15, Y15
+	VPINSRQ $0, 0(R8), X13, X2
+	VPINSRD $2, 8(R8), X2, X2
+	VPINSRB $12, 12(R8), X2, X2
+	VPINSRQ $0, 0(R9), X13, X4
+	VPINSRD $2, 8(R9), X4, X4
+	VPINSRB $12, 12(R9), X4, X4
+	VINSERTI128 $1, X4, Y2, Y2
+	VPXOR Y15, Y2, Y2
+	VMOVDQU Y2, 0(SP)
+	VPINSRQ $0, 0(R10), X13, X2
+	VPINSRD $2, 8(R10), X2, X2
+	VPINSRB $12, 12(R10), X2, X2
+	VPINSRQ $0, 0(R11), X13, X4
+	VPINSRD $2, 8(R11), X4, X4
+	VPINSRB $12, 12(R11), X4, X4
+	VINSERTI128 $1, X4, Y2, Y2
+	VPXOR Y15, Y2, Y2
+	VMOVDQU Y2, 32(SP)
+
+	VBROADCASTI128 16(AX), Y3
+	VBROADCASTI128 32(AX), Y4
+	VBROADCASTI128 48(AX), Y5
+	VBROADCASTI128 64(AX), Y6
+	VBROADCASTI128 80(AX), Y7
+	VBROADCASTI128 96(AX), Y8
+	VBROADCASTI128 112(AX), Y9
+	VBROADCASTI128 128(AX), Y10
+	VBROADCASTI128 144(AX), Y11
+	VBROADCASTI128 160(AX), Y12
+	VPXOR Y0, Y0, Y0
+	VPXOR Y1, Y1, Y1
+
+loop:
+	VBROADCASTI128 0(BX), Y13
+	VPXOR Y13, Y0, Y0
+	VPXOR Y13, Y1, Y1
+	VPXOR 0(SP), Y0, Y0
+	VPXOR 32(SP), Y1, Y1
+	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
+	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
+	VAESENC Y5, Y0, Y0; VAESENC Y5, Y1, Y1
+	VAESENC Y6, Y0, Y0; VAESENC Y6, Y1, Y1
+	VAESENC Y7, Y0, Y0; VAESENC Y7, Y1, Y1
+	VAESENC Y8, Y0, Y0; VAESENC Y8, Y1, Y1
+	VAESENC Y9, Y0, Y0; VAESENC Y9, Y1, Y1
+	VAESENC Y10, Y0, Y0; VAESENC Y10, Y1, Y1
+	VAESENC Y11, Y0, Y0; VAESENC Y11, Y1, Y1
+	VAESENCLAST Y12, Y0, Y0; VAESENCLAST Y12, Y1, Y1
+	ADDQ $16, BX
+	DECQ CX
+	JNZ loop
+
+	VMOVDQU X0, 0(DI)
+	VEXTRACTI128 $1, Y0, 16(DI)
+	VMOVDQU X1, 32(DI)
+	VEXTRACTI128 $1, Y1, 48(DI)
+	VZEROUPPER
+	RET

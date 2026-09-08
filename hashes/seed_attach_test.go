@@ -151,9 +151,13 @@ func TestAttachHelpersNoOp(t *testing.T) {
 
 // TestWideSeedsConstructorArms pins, for every width-256 / width-512
 // registry primitive, that the explicit Low-Level constructor sequence
-// wires the batched arm and that the batched cascade agrees with the
-// single-lane cascade on every pixel shape — the same arms the
-// Interlocked Barrier cascade fill consumes at those widths.
+// wires the batched arm whenever the primitive builds one on this host
+// and tier, and that the batched cascade agrees with the single-lane
+// cascade on every pixel shape — the same arms the Interlocked Barrier
+// cascade fill consumes at those widths. Primitives whose batched arm
+// is built only over an assembly tier return nil under noitbasm and
+// under a forced tier without that arm; the seed then runs the
+// single-lane cascade alone and the case is skipped.
 func TestWideSeedsConstructorArms(t *testing.T) {
 	for _, spec := range Registry {
 		if spec.Width == W128 {
@@ -178,7 +182,7 @@ func TestWideSeedsConstructorArms(t *testing.T) {
 							t.Fatal(err)
 						}
 						if s.BatchHash == nil {
-							t.Fatal("BatchHash not wired")
+							t.Skip("batched arm not built on this host / tier")
 						}
 						got := s.BatchChainHash256(&lanes)
 						for l := range lanes {
@@ -192,7 +196,7 @@ func TestWideSeedsConstructorArms(t *testing.T) {
 							t.Fatal(err)
 						}
 						if s.BatchHash == nil {
-							t.Fatal("BatchHash not wired")
+							t.Skip("batched arm not built on this host / tier")
 						}
 						got := s.BatchChainHash512(&lanes)
 						for l := range lanes {
