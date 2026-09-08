@@ -38,18 +38,44 @@ func withX8Arm(t *testing.T, armed bool, fn func()) {
 	fn()
 }
 
+// newAESITBSeedX16 builds a fresh aesitb128 seed through the explicit
+// Low-Level sequence every shipping constructor runs — Make128Pair
+// arms, itb.NewSeed128, BatchHash and both attach helpers — under an
+// optional caller-supplied fixed key, and returns the key the arms are
+// bound to.
+func newAESITBSeedX16(t *testing.T, bits int, key []byte) (*itb.Seed128, []byte) {
+	t.Helper()
+	var keyArg [][]byte
+	if len(key) > 0 {
+		keyArg = [][]byte{key}
+	}
+	single, batched, fixedKey, err := hashes.Make128Pair(hashes.CipherAESITB128, keyArg...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := itb.NewSeed128(bits, single)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.BatchHash = batched
+	if err := hashes.AttachFused128(s, hashes.CipherAESITB128, fixedKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := hashes.AttachInterlockBatch16(s, hashes.CipherAESITB128, fixedKey); err != nil {
+		t.Fatal(err)
+	}
+	return s, fixedKey
+}
+
 // TestAESITBFusedX8Attach pins the attach step: every shipping
 // constructor path carries the eight-lane hook when the arm is
 // selected, none carries it when the arm is disarmed or the sequential
 // loop is forced, and non-aesitb128 primitives never carry it.
 func TestAESITBFusedX8Attach(t *testing.T) {
 	x8Hosted(t)
-	fromHelper, key, err := hashes.NewSeed128x16(1024, hashes.CipherAESITB128)
-	if err != nil {
-		t.Fatal(err)
-	}
+	fromHelper, key := newAESITBSeedX16(t, 1024, nil)
 	if fromHelper.BatchFusedChain8() == nil {
-		t.Fatal("NewSeed128x16 left the eight-lane hook nil")
+		t.Fatal("the attach sequence left the eight-lane hook nil")
 	}
 	fromComponents, err := hashes.SeedFromComponents128x16(hashes.CipherAESITB128, key, fromHelper.Components...)
 	if err != nil {
@@ -96,10 +122,7 @@ func TestAESITBFusedX8Attach(t *testing.T) {
 func TestAESITBFusedX8HookParity(t *testing.T) {
 	x8Hosted(t)
 	for _, bits := range fusedKeyBits {
-		s, _, err := hashes.NewSeed128x16(bits, hashes.CipherAESITB128, aesitbParityKey[:])
-		if err != nil {
-			t.Fatal(err)
-		}
+		s, _ := newAESITBSeedX16(t, bits, aesitbParityKey[:])
 		hook := s.BatchFusedChain8()
 		if hook == nil {
 			t.Fatalf("bits=%d: eight-lane hook nil", bits)
@@ -222,14 +245,14 @@ func TestAESITBFusedX8LowLevelRoundTrip(t *testing.T) {
 		var out [8]*itb.Seed128
 		withX8Arm(t, armed, func() {
 			for i := range out {
-				var err error
 				if comps == nil {
-					out[i], keys[i], err = hashes.NewSeed128x16(512, hashes.CipherAESITB128)
+					out[i], keys[i] = newAESITBSeedX16(t, 512, nil)
 				} else {
+					var err error
 					out[i], err = hashes.SeedFromComponents128x16(hashes.CipherAESITB128, keys[i], comps[i]...)
-				}
-				if err != nil {
-					t.Fatal(err)
+					if err != nil {
+						t.Fatal(err)
+					}
 				}
 				if (out[i].BatchFusedChain8() != nil) != armed {
 					t.Fatalf("seed %d: eight-lane hook presence %v, want %v", i, out[i].BatchFusedChain8() != nil, armed)

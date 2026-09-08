@@ -374,11 +374,9 @@ type Blob128 struct {
 
 	// Seed components — *Seed128 with .Components populated.
 	// Hash and BatchHash are nil after Import3Cfg; the caller wires
-	// them from the saved Key* bytes — for aesitb128 together with the
-	// fused and batch-16 hooks (hashes.AttachFused128 /
-	// hashes.AttachInterlockBatch16), since the batch-16 hook selects
-	// the Interlocked Barrier cascade fill and a lockSeed without it
-	// produces a different wire (see [InterlockFillFunc16]).
+	// them from the saved Key* bytes, optionally together with the
+	// fused and batch-16 fast-path hooks (hashes.AttachFused128 /
+	// hashes.AttachInterlockBatch16), which never change the wire.
 	// hashes.SeedFromComponents128x16 rebuilds one slot with every hook
 	// from its Key* bytes and Components.
 	NS  *Seed128
@@ -1003,11 +1001,11 @@ func (b *Blob128) Export3Cfg(
 
 // Import3Cfg — Triple Ouroboros, 128-bit width. See
 // [Blob512.Import3Cfg] for the full contract. The imported seeds carry
-// Components only; for aesitb128 slots the caller rebuilds each seed
-// with its hooks (hashes.SeedFromComponents128x16, or the Hash /
-// BatchHash arms plus hashes.AttachFused128 and
-// hashes.AttachInterlockBatch16) — the batch-16 hook is wire-affecting
-// on the lockSeed slot (see [InterlockFillFunc16]).
+// Components only; the caller rebuilds each seed with its Hash /
+// BatchHash arms and, for the fast paths, its hooks
+// (hashes.SeedFromComponents128x16, or the arms plus
+// hashes.AttachFused128 and hashes.AttachInterlockBatch16) — the hooks
+// never change the wire.
 func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg

@@ -125,6 +125,11 @@ func aesITB128FusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFu
 // without a fused cascade, unknown names, and factories that decline
 // (nil evaluators) leave the seed unchanged — the sequential loop keeps
 // running. A factory error is returned; the seed is left unchanged.
+// The hooks are a performance path only: the seed produces the same
+// wire with and without them. Every shipping constructor path — the
+// triple package's Init / Load seed builders, the C ABI seed
+// constructors and [SeedFromComponents128x16] — calls AttachFused128
+// and [AttachInterlockBatch16] together.
 func AttachFused128(s *itb.Seed128, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok || spec.FusedChainHash128 == nil {
@@ -180,10 +185,10 @@ func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
 // (aesitbasm.FusedX8Active: VAES + AVX-512 silicon, ITB_FORCE_HASH_TIER
 // unset or avx512, ITB_FORCE_CHAINHASH_X4 unset). Called from
 // [AttachFused128] once the four-lane hooks are in place, so every
-// shipping constructor path — [NewSeed128x16], [SeedFromComponents128x16]
-// and the triple package's Init / Load seed builders — carries the hook
-// under one attach step; a seed left without it keeps the four-lane
-// pixel stride. Other primitives and other hosts leave the seed
+// shipping constructor path — [SeedFromComponents128x16], the C ABI
+// seed constructors and the triple package's Init / Load seed builders
+// — carries the hook under one attach step; a seed left without it
+// keeps the four-lane pixel stride. Other primitives and other hosts leave the seed
 // unchanged. The hook is a performance path only: the wire is identical
 // with and without it (pinned by the root fused-cascade parity tests).
 func attachFused128x8(s *itb.Seed128, name string, key []byte) {
@@ -200,8 +205,8 @@ func attachFused128x8(s *itb.Seed128, name string, key []byte) {
 // consecutive 13-byte fill buffers (domain tag 0x03, group index at bytes
 // [1:9], PKCS#7 pad) and runs the whole AES-ITB ChainHash cascade over the
 // supplied components on every lane inside one internal/aesitbasm kernel
-// call (tier avx512, vaesavx2, vex, aesni, neon, or the scalar reference).
-// Its presence on a lockSeed selects the cascade fill — see
+// call (tier avx512, vaesavx2, vex, aesni, neon, or the scalar reference)
+// — the batch-16 arm of the cascade fill every lockSeed runs, see
 // [itb.InterlockFillFunc16].
 func aesITB128InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) {
 	if len(key) != 16 {
@@ -216,13 +221,14 @@ func aesITB128InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) 
 
 // AttachInterlockBatch16 populates s.interlockFillX16 from the named
 // primitive's [Spec.InterlockFillBatch16] factory, using the fixed key
-// the seed's Hash arm was built with. Primitives without batch-16 support,
-// unknown names, and factories that decline (nil) leave the seed unchanged
-// — the seed fills the Interlocked Barrier through the single derived-pair
-// call. For aesitb128 the attached hook selects the cascade fill, so a
-// seed with the hook and the same seed without it produce different wire
-// (see [itb.InterlockFillFunc16]); every shipped constructor attaches. A
-// factory error is returned; the seed is left unchanged.
+// the seed's Hash arm was built with. Primitives without batch-16
+// support, unknown names, and factories that decline (nil) leave the
+// seed unchanged — the seed fills the Interlocked Barrier cascade
+// through its four-lane and single-lane arms. The hook is a performance
+// path only: a seed with the hook and the same seed without it produce
+// the same wire (see [itb.InterlockFillFunc16]); every shipped
+// constructor attaches. A factory error is returned; the seed is left
+// unchanged.
 func AttachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 	spec, ok := Find(name)
 	if !ok || spec.InterlockFillBatch16 == nil {
@@ -236,53 +242,11 @@ func AttachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 	return nil
 }
 
-// NewSeed128x16 constructs a [itb.Seed128] with every fast-path hook
-// attached in one call — the Low-Level Mode symmetric of the triple
-// package's automatic attach in [github.com/everanium/itb/triple.Init]
-// and [github.com/everanium/itb/triple.Load]. Equivalent to:
-//
-//	single, batched, key, _ := hashes.Make128Pair(primitiveName, key...)
-//	seed, _ := itb.NewSeed128(bits, single)
-//	seed.BatchHash = batched
-//	hashes.AttachFused128(seed, primitiveName, key)
-//	hashes.AttachInterlockBatch16(seed, primitiveName, key)
-//
-// The variadic key argument follows [Make128Pair]: pass nothing to
-// generate a fresh random fixed key, or a single caller-supplied slice
-// of the primitive's native key length for the persistence-restore
-// path. The key the seed's arms are bound to (random or supplied) is
-// returned alongside the seed; it is nil for keyless primitives
-// (siphash24, which rejects an explicit key).
-//
-// Primitives without fused / batch-16 factories get the base Hash /
-// BatchHash arms; the optional hooks remain nil and the hot paths keep
-// the sequential fallback. Seeds constructed directly through
-// [itb.NewSeed128] never receive the hooks — this helper closes that gap
-// for the Low-Level entry points (Encrypt3x128Cfg and siblings).
-func NewSeed128x16(bits int, primitiveName string, key ...[]byte) (*itb.Seed128, []byte, error) {
-	single, batched, fixedKey, err := Make128Pair(primitiveName, key...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
-	}
-	s, err := itb.NewSeed128(bits, single)
-	if err != nil {
-		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
-	}
-	s.BatchHash = batched
-	if err := AttachFused128(s, primitiveName, fixedKey); err != nil {
-		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
-	}
-	if err := AttachInterlockBatch16(s, primitiveName, fixedKey); err != nil {
-		return nil, nil, fmt.Errorf("hashes: NewSeed128x16(%q): %w", primitiveName, err)
-	}
-	return s, fixedKey, nil
-}
-
 // SeedFromComponents128x16 constructs a [itb.Seed128] from existing
 // components with every fast-path hook attached in one call — the
-// existing-components counterpart of [NewSeed128x16] and the Low-Level
-// bridge for seeds that come back from [itb.Blob128.Import3Cfg] with
-// Components populated and Hash / BatchHash nil. Equivalent to:
+// Low-Level bridge for seeds that come back from
+// [itb.Blob128.Import3Cfg] with Components populated and Hash /
+// BatchHash nil. Equivalent to:
 //
 //	single, batched, _, _ := hashes.Make128Pair(primitiveName, key) // key omitted when empty
 //	seed, _ := itb.SeedFromComponents128(single, components...)
@@ -297,14 +261,11 @@ func NewSeed128x16(bits int, primitiveName string, key ...[]byte) (*itb.Seed128,
 // an error, since arms built on a fresh random key would not reproduce
 // the exported seed's wire.
 //
-// The attach step is wire-affecting for aesitb128: its batch-16 hook
-// selects the Interlocked Barrier cascade fill (see
-// [itb.InterlockFillFunc16]), so an aesitb128 lockSeed rebuilt from
-// imported components without this helper — or without
-// [AttachInterlockBatch16] — fills through the single derived-pair call
-// and decrypts nothing the exporting side encrypted, with no error
-// oracle. Primitives without fused / batch-16 factories get the base
-// Hash / BatchHash arms; their optional hooks remain nil.
+// The attach step is a performance path only: a seed rebuilt through
+// the arms alone produces and decrypts the same wire, including the
+// Interlocked Barrier cascade fill every lockSeed runs. Primitives
+// without fused / batch-16 factories get the base Hash / BatchHash
+// arms; their optional hooks remain nil.
 func SeedFromComponents128x16(primitiveName string, key []byte, components ...uint64) (*itb.Seed128, error) {
 	var keyArg [][]byte
 	if len(key) > 0 {

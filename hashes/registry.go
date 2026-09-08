@@ -145,11 +145,11 @@ type Spec struct {
 	// [itb.Seed128.SetInterlockBatch16] (see [itb.InterlockFillFunc16]).
 	// key is the primitive's fixed key exactly as returned by the
 	// Make128Pair factory. nil (every entry without batch-16 support)
-	// leaves the seed on the derived-pair fill. A populated factory makes
-	// the primitive fill through the ChainHash cascade over the derived
-	// pair and the seed's components — the hook's presence selects that
-	// wire — and must return a kernel bit-exact with sixteen sequential
-	// cascades over the same components. Shipped: aesitb128.
+	// leaves the seed filling the cascade through its four-lane and
+	// single-lane arms. A populated factory must return a kernel
+	// bit-exact with sixteen sequential cascades over the same
+	// components; the kernel is a performance path and never changes the
+	// wire. Shipped: aesitb128.
 	InterlockFillBatch16 func(key []byte) (itb.InterlockFillFunc16, error) `json:"-"`
 }
 

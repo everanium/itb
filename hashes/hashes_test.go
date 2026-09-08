@@ -124,8 +124,24 @@ func roundtrip512(t *testing.T, name string, keyBits int, plaintext []byte) {
 }
 
 func newSeed128(name string, keyBits int) (*itb.Seed128, error) {
-	s, _, err := NewSeed128x16(keyBits, name)
-	return s, err
+	h, b, key, err := Make128Pair(name)
+	if err != nil {
+		return nil, err
+	}
+	s, err := itb.NewSeed128(keyBits, h)
+	if err != nil {
+		return nil, err
+	}
+	if b != nil {
+		s.BatchHash = b
+	}
+	if err := AttachFused128(s, name, key); err != nil {
+		return nil, err
+	}
+	if err := AttachInterlockBatch16(s, name, key); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func newSeed256(name string, keyBits int) (*itb.Seed256, error) {

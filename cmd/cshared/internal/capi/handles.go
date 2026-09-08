@@ -111,14 +111,30 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 
 	switch spec.Width {
 	case hashes.W128:
-		// NewSeed128x16 attaches the fused ChainHash and batch-16
-		// interlock hooks alongside the base arms, mirroring the
-		// triple package's automatic attach. The keyBits range and
-		// multiple-of-width checks above already enforce the
-		// predicate itb.NewSeed128 validates, so the only reachable
-		// failure here is a primitive-factory error.
-		s, hashKey, err := hashes.NewSeed128x16(keyBits, hashName)
+		// The fused ChainHash and batch-16 interlock hooks are attached
+		// alongside the base arms, mirroring the triple package's
+		// automatic attach; both are performance paths only. The
+		// keyBits range and multiple-of-width checks above already
+		// enforce the predicate itb.NewSeed128 validates, so the only
+		// reachable failure here is a primitive-factory error.
+		hf, bf, hashKey, err := hashes.Make128Pair(hashName)
 		if err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		s, err := itb.NewSeed128(keyBits, hf)
+		if err != nil {
+			setLastErr(StatusBadKeyBits)
+			return 0, StatusBadKeyBits
+		}
+		if bf != nil {
+			s.BatchHash = bf
+		}
+		if err := hashes.AttachFused128(s, hashName, hashKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		if err := hashes.AttachInterlockBatch16(s, hashName, hashKey); err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
