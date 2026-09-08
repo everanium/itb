@@ -412,64 +412,64 @@ func BenchmarkExtTripleBLAKE2b512_2048bit_Decrypt_64MB(b *testing.B) {
 // --- BLAKE2s-256 Triple Pair benches: 512-bit ITB width ---
 
 func BenchmarkExtTripleBLAKE2s_512bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 512, 1<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 512, 1<<20)
 }
 func BenchmarkExtTripleBLAKE2s_512bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 512, 16<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 512, 16<<20)
 }
 func BenchmarkExtTripleBLAKE2s_512bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 512, 64<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 512, 64<<20)
 }
 func BenchmarkExtTripleBLAKE2s_512bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 512, 1<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 512, 1<<20)
 }
 func BenchmarkExtTripleBLAKE2s_512bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 512, 16<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 512, 16<<20)
 }
 func BenchmarkExtTripleBLAKE2s_512bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 512, 64<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 512, 64<<20)
 }
 
 // --- BLAKE2s-256 Triple Pair benches: 1024-bit ITB width ---
 
 func BenchmarkExtTripleBLAKE2s_1024bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 1024, 1<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 1024, 1<<20)
 }
 func BenchmarkExtTripleBLAKE2s_1024bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 1024, 16<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 1024, 16<<20)
 }
 func BenchmarkExtTripleBLAKE2s_1024bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 1024, 64<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 1024, 64<<20)
 }
 func BenchmarkExtTripleBLAKE2s_1024bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 1024, 1<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 1024, 1<<20)
 }
 func BenchmarkExtTripleBLAKE2s_1024bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 1024, 16<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 1024, 16<<20)
 }
 func BenchmarkExtTripleBLAKE2s_1024bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 1024, 64<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 1024, 64<<20)
 }
 
 // --- BLAKE2s-256 Triple Pair benches: 2048-bit ITB width ---
 
 func BenchmarkExtTripleBLAKE2s_2048bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 2048, 1<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 2048, 1<<20)
 }
 func BenchmarkExtTripleBLAKE2s_2048bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 2048, 16<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 2048, 16<<20)
 }
 func BenchmarkExtTripleBLAKE2s_2048bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 2048, 64<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 2048, 64<<20)
 }
 func BenchmarkExtTripleBLAKE2s_2048bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 2048, 1<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 2048, 1<<20)
 }
 func BenchmarkExtTripleBLAKE2s_2048bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 2048, 16<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 2048, 16<<20)
 }
 func BenchmarkExtTripleBLAKE2s_2048bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeBlake2sHash256PairExt, 2048, 64<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherBLAKE2s, 2048, 64<<20)
 }
 
 // --- BLAKE3-256 Triple Pair benches: 512-bit ITB width ---
