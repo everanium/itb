@@ -230,10 +230,11 @@ arm_env() {
 
 # arm_applicable HASH ARM — succeeds when the (hash, arm) pair names a
 # real dispatch arm. Skip rules:
-#   * avx512x4: aesitb128 (internal/aesitbasm) and aescmac
-#     (hashes/internal/aescmacasm) carry eight-lane fused ChainHash
-#     kernels (VAES ZMM x8 at the nonce-buf shapes), so only there does
-#     the pseudo-arm select something the plain avx512 arm does not.
+#   * avx512x4: aesitb128 (internal/aesitbasm), aescmac
+#     (hashes/internal/aescmacasm) and siphash24
+#     (hashes/internal/siphashasm) carry eight-lane fused ChainHash
+#     kernels (ZMM x8 at the nonce-buf shapes), so only there does the
+#     pseudo-arm select something the plain avx512 arm does not.
 #   * aesni: only the AES-based primitives carry AES-NI XMM chain
 #     kernels (aesitb128 / areion256 / areion512 / aescmac).
 #   * vaesavx2: aesitb128 and aescmac (VAES YMM two-lane fused cascade
@@ -251,7 +252,7 @@ arm_applicable() {
         avx512|scalar|avx2) return 0 ;;
         avx512x4)
             case "$1" in
-                aesitb128|aescmac) return 0 ;;
+                aesitb128|aescmac|siphash24) return 0 ;;
                 *) return 1 ;;
             esac ;;
         vaesavx2)

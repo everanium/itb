@@ -1,0 +1,260 @@
+//go:build arm64 && !purego && !noitbasm
+
+// ARM64 general-purpose-register fused ChainHash cascade kernel for SipHash-2-4-128 at the
+// 20-byte shape, 1 lane (3 message words, 14 SipRounds per cascade
+// round). The words are packed once and every cascade round re-keys the
+// state from the previous round's output; see siphashasm_fused.go for the
+// construction and the in-package parity tests for the bit-exact pin
+// against the pure-Go cascade.
+
+#include "textflag.h"
+
+// func sipHash24FusedChain20x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
+TEXT ·sipHash24FusedChain20x1GprAsm(SB), NOSPLIT, $0-32
+	MOVD comps+0(FP), R6
+	MOVD nPairs+8(FP), R7
+	MOVD data+16(FP), R2
+	MOVD out+24(FP), R3
+
+	MOVWU 0(R2), R24
+	MOVWU 4(R2), R16
+	ORR R16<<32, R24, R24
+	MOVWU 16(R2), R19
+	MOVD $0x1400000000000000, R16
+	ORR R16, R19, R19
+	MOVD $0x736f6d6570736575, R20
+	MOVD $0x646f72616e646f83, R21
+	MOVD $0x6c7967656e657261, R22
+	MOVD $0x7465646279746573, R23
+	MOVD $0xee, R25
+	MOVD $0xdd, R17
+	MOVD $0, R12
+	MOVD $0, R13
+
+loop:
+	MOVD 0(R6), R14
+	EOR R12, R14, R14
+	MOVD 8(R6), R15
+	EOR R13, R15, R15
+	ADD $16, R6, R6
+	EOR R20, R14, R8
+	EOR R21, R15, R9
+	EOR R22, R14, R10
+	EOR R23, R15, R11
+	EOR R24, R11, R11
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	EOR R24, R8, R8
+	MOVD 8(R2), R16
+	EOR R16, R11, R11
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	EOR R16, R8, R8
+	EOR R19, R11, R11
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	EOR R19, R8, R8
+	EOR R25, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	EOR R9, R8, R12
+	EOR R10, R12, R12
+	EOR R11, R12, R12
+	EOR R17, R9, R9
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	ADD R9, R8, R8
+	ROR $51, R9, R9
+	EOR R8, R9, R9
+	ROR $32, R8, R8
+	ADD R11, R10, R10
+	ROR $48, R11, R11
+	EOR R10, R11, R11
+	ADD R11, R8, R8
+	ROR $43, R11, R11
+	EOR R8, R11, R11
+	ADD R9, R10, R10
+	ROR $47, R9, R9
+	EOR R10, R9, R9
+	ROR $32, R10, R10
+	EOR R9, R8, R13
+	EOR R10, R13, R13
+	EOR R11, R13, R13
+	SUBS $1, R7, R7
+	BNE loop
+
+	MOVD R12, 0(R3)
+	MOVD R13, 8(R3)
+	RET

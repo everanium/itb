@@ -104,6 +104,8 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 			t.Skip("aesni batch-16 tier not executable on this host")
 		}
 		want(false, false, false, true)
+	case "avx2":
+		t.Skip("no avx2 batch-16 arm in aesitbasm")
 	case "neon":
 		t.Skip("neon batch-16 tier is arm64-only")
 	case "scalar":

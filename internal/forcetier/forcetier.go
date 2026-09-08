@@ -15,7 +15,7 @@
 //	ITB_FORCE_CHAINHASH_SEQ              = 1 | true | yes
 //	ITB_FORCE_CHAINHASH_X4               = 1 | true | yes
 //	ITB_FORCE_INTERLOCK_PRF_FILL_SEQ     = 1 | true | yes
-//	ITB_FORCE_INTERLOCK_PRF_FILL_TIER    = avx512 | vaesavx2 | vex | aesni | neon | scalar
+//	ITB_FORCE_INTERLOCK_PRF_FILL_TIER    = avx512 | vaesavx2 | avx2 | vex | aesni | neon | scalar
 //
 // An empty or unset variable keeps auto-dispatch (the production
 // default — no visible change). An unknown value keeps auto-dispatch
@@ -44,7 +44,7 @@ import (
 var (
 	hashTier             = parse("ITB_FORCE_HASH_TIER", "avx512", "vaesavx2", "avx2", "vex", "aesni", "sve2", "sve", "neon", "scalar")
 	interlockTier        = parse("ITB_FORCE_INTERLOCK_TIER", "avx512", "avx512x8", "avx2", "sve2", "sve", "neon", "scalar")
-	interlockPRFFillTier = parse("ITB_FORCE_INTERLOCK_PRF_FILL_TIER", "avx512", "vaesavx2", "vex", "aesni", "neon", "scalar")
+	interlockPRFFillTier = parse("ITB_FORCE_INTERLOCK_PRF_FILL_TIER", "avx512", "vaesavx2", "avx2", "vex", "aesni", "neon", "scalar")
 )
 
 // parse validates the named environment variable against the allowed

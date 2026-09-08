@@ -1,51 +1,21 @@
 //go:build amd64 && !purego && !noitbasm
 
-// Package siphashasm holds the AVX-512 + VL fused chain-absorb
-// kernel implementation of SipHash-2-4-128 for the parent hashes/
-// package. The chain kernels are specialised at four input widths
-// (13 / 20 / 36 / 68 bytes — the 13-byte Interlocked Barrier PRF
-// fill shape plus the ITB 128 / 256 / 512-bit nonce buf shapes) and
-// hold the 4-word SipHash state in just four YMM registers (Y0..Y3,
-// qwords 0..3 = one qword per lane — the YMM active width for the
-// 64-bit word state).
-//
-// The 4-pixel-batched lane-parallel layout differs from the
-// BLAKE2/3 / ChaCha20 ports in shape: SipHash's state is only
-// 4 × u64 words, not 16, so register pressure is far lower —
-// most of the EVEX register file goes unused. The win comes from
-// running four independent SipHash-2-4 chains through the same
-// VPADDQ / VPXORQ / VPROLQ instruction stream concurrently
-// rather than serially. Per-call SipHash via dchest/siphash is
-// already very cheap (no closure overhead, no key schedule, no
-// Hasher state to clone) so the realistic uplift envelope is
-// modest on Rocket Lake (1.5×–2.5×); the structural gain is
-// larger on AMD Zen 5 / Sapphire Rapids+ where wider vector
-// ALUs and absent AVX-512 frequency throttle let the 4-lane
-// parallelism translate directly into wall-clock wins.
-//
-// Below the AVX-512 + VL tier the parent package falls through
-// to dchest/siphash directly; there is no AVX-2 fallback tier
-// (VPROLQ requires AVX-512F + VL, so an AVX-2 arm would have to
-// emulate every rotate as shift/shift/or, tripling the rotate op
-// count — the existing fast scalar path already wins against
-// that).
 package siphashasm
 
 import "golang.org/x/sys/cpu"
 
-// HasAVX512Fused reports whether the runtime CPU supports the
-// fused AVX-512 + VL chain-absorb kernels. Same derivation as
-// blake2{b,s}asm / blake3asm / chacha20asm — only AVX-512F is
-// needed at the CPUID level (VPROLQ is AVX-512F + VL, but on
-// every shipping silicon where AVX-512F is present the rest of
-// the AVX-512 baseline ships with it).
-var HasAVX512Fused = cpu.X86.HasAVX512F
+// Batch-16 tier flags: auto-select the AVX-512 tier when the host offers
+// it, else the AVX2 tier. The flags are package variables so the
+// forcetier init and the in-package dispatch tests can override the
+// auto-selection. Only one flag is true; the family keeps the "one
+// consistent set" invariant the forcetier init relies on. The flags
+// select the arm of FusedChain13x16 (siphashasm_fused_amd64.go), the
+// Interlocked Barrier fill kernel: the ZMM kernel under HasAVX512X16,
+// four AVX2 x4 calls over Go-synthesised blocks under HasAVX2X16.
+var (
+	HasAVX512X16 = cpu.X86.HasAVX512F
+	HasAVX2X16   = cpu.X86.HasAVX2 && !HasAVX512X16
 
-// HasAVX2Fused reports whether the runtime CPU supports the AVX2 4-lane
-// chain-absorb kernels but lacks the AVX-512 tier (which stays
-// first-choice when present). SipHash's 4-word state fits AVX2's
-// 16-register file comfortably, so the AVX2 kernels keep the exact
-// 4-lane YMM layout of the AVX-512 tier, synthesizing the SipRound
-// immediate rotates via VPSHUFD (32), VPSHUFB byte-mask (16), and
-// VPSLLQ/VPSRLQ/VPOR (13, 21, 17). Gated off when AVX-512F is present.
-var HasAVX2Fused = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+	// HasNEONX16 is always false on amd64 builds.
+	HasNEONX16 = false
+)

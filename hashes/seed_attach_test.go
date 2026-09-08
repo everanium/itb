@@ -129,22 +129,31 @@ func TestAttachHooksWireIndependent(t *testing.T) {
 
 // TestAttachHelpersNoOp checks that the attach helpers leave a seed
 // unchanged, without error, for an unknown name and for a primitive
-// without the factories.
+// without the factories — a custom primitive registered with its arms
+// alone, since every shipped width-128 entry carries both factories.
 func TestAttachHelpersNoOp(t *testing.T) {
+	name := customFactoryName + "noopatt"
+	if err := Register(Spec{Name: name, Width: W128, Make128Pair: makeCustom128PairFactory()}); err != nil {
+		t.Fatal(err)
+	}
 	comps := make([]uint64, 8)
 	for i := range comps {
 		comps[i] = uint64(i + 1)
 	}
-	s := manualSeed128(t, CipherSipHash24, nil, comps)
-	for _, name := range []string{"no_such_primitive", CipherSipHash24} {
-		if err := AttachFused128(s, name, nil); err != nil {
-			t.Fatalf("AttachFused128(%q): %v", name, err)
+	_, _, key, err := Make128Pair(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := manualSeed128(t, name, key, comps)
+	for _, n := range []string{"no_such_primitive", name} {
+		if err := AttachFused128(s, n, key); err != nil {
+			t.Fatalf("AttachFused128(%q): %v", n, err)
 		}
-		if err := AttachInterlockBatch16(s, name, nil); err != nil {
-			t.Fatalf("AttachInterlockBatch16(%q): %v", name, err)
+		if err := AttachInterlockBatch16(s, n, key); err != nil {
+			t.Fatalf("AttachInterlockBatch16(%q): %v", n, err)
 		}
 		if s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil {
-			t.Fatalf("AttachFused128 / AttachInterlockBatch16(%q) populated a hook", name)
+			t.Fatalf("AttachFused128 / AttachInterlockBatch16(%q) populated a hook", n)
 		}
 	}
 }

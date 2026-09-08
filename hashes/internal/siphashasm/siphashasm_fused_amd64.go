@@ -1,0 +1,211 @@
+//go:build amd64 && !purego && !noitbasm
+
+package siphashasm
+
+import "golang.org/x/sys/cpu"
+
+// Fused-cascade tier flags. The fused kernels amortise lane gather and
+// word packing over every cascade round and keep the (lo, hi) carry in
+// registers; the forcetier init keeps the fused-cascade and batch-16
+// fill flag families mutually consistent. At most one flag in this
+// family is true.
+//
+// Auto-selection takes the AVX-512 tier when the host offers it (the
+// EVEX kernels rotate with VPROLQ and reach registers 16..31), else the
+// AVX2 tier (VEX kernels with synthesised rotates). The single-lane GPR
+// kernel needs neither and runs under either selected tier.
+var (
+	// FusedHasAVX512 selects the EVEX YMM four-lane kernels, the ZMM
+	// eight-lane kernels and the ZMM batch-16 kernel. Needs AVX-512F
+	// (with DQ, present on every shipping AVX-512F part).
+	FusedHasAVX512 = cpu.X86.HasAVX512F
+
+	// FusedHasAVX2 selects the VEX YMM four-lane kernels on AVX2 hosts
+	// without AVX-512F; yields to the AVX-512 tier.
+	FusedHasAVX2 = cpu.X86.HasAVX2 && !FusedHasAVX512
+
+	// FusedHasNEON is always false on amd64 builds.
+	FusedHasNEON = false
+)
+
+// FusedAvailable reports whether any assembly tier of the fused cascade
+// family is selected.
+func FusedAvailable() bool {
+	return FusedHasAVX512 || FusedHasAVX2
+}
+
+// FusedChain13x4 runs the cascade on four 13-byte lanes.
+func FusedChain13x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 13, out)
+		return
+	}
+	c, n := &components[0], len(components)/2
+	switch {
+	case FusedHasAVX512:
+		sipHash24FusedChain13x4Avx512Asm(c, n, dataPtrs, out)
+	case FusedHasAVX2:
+		sipHash24FusedChain13x4Avx2Asm(c, n, dataPtrs, out)
+	default:
+		scalarFusedBatch(components, dataPtrs, 13, out)
+	}
+}
+
+// FusedChain20x4 runs the cascade on four 20-byte lanes.
+func FusedChain20x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 20, out)
+		return
+	}
+	c, n := &components[0], len(components)/2
+	switch {
+	case FusedHasAVX512:
+		sipHash24FusedChain20x4Avx512Asm(c, n, dataPtrs, out)
+	case FusedHasAVX2:
+		sipHash24FusedChain20x4Avx2Asm(c, n, dataPtrs, out)
+	default:
+		scalarFusedBatch(components, dataPtrs, 20, out)
+	}
+}
+
+// FusedChain36x4 runs the cascade on four 36-byte lanes.
+func FusedChain36x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 36, out)
+		return
+	}
+	c, n := &components[0], len(components)/2
+	switch {
+	case FusedHasAVX512:
+		sipHash24FusedChain36x4Avx512Asm(c, n, dataPtrs, out)
+	case FusedHasAVX2:
+		sipHash24FusedChain36x4Avx2Asm(c, n, dataPtrs, out)
+	default:
+		scalarFusedBatch(components, dataPtrs, 36, out)
+	}
+}
+
+// FusedChain68x4 runs the cascade on four 68-byte lanes.
+func FusedChain68x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 68, out)
+		return
+	}
+	c, n := &components[0], len(components)/2
+	switch {
+	case FusedHasAVX512:
+		sipHash24FusedChain68x4Avx512Asm(c, n, dataPtrs, out)
+	case FusedHasAVX2:
+		sipHash24FusedChain68x4Avx2Asm(c, n, dataPtrs, out)
+	default:
+		scalarFusedBatch(components, dataPtrs, 68, out)
+	}
+}
+
+// FusedChain13x1 runs the cascade on one 13-byte input.
+func FusedChain13x1(components []uint64, data *byte, out *[2]uint64) {
+	if FusedAvailable() && validComponents(components) {
+		sipHash24FusedChain13x1GprAsm(&components[0], len(components)/2, data, out)
+		return
+	}
+	scalarFusedSingle(components, data, 13, out)
+}
+
+// FusedChain20x1 runs the cascade on one 20-byte input.
+func FusedChain20x1(components []uint64, data *byte, out *[2]uint64) {
+	if FusedAvailable() && validComponents(components) {
+		sipHash24FusedChain20x1GprAsm(&components[0], len(components)/2, data, out)
+		return
+	}
+	scalarFusedSingle(components, data, 20, out)
+}
+
+// FusedChain36x1 runs the cascade on one 36-byte input.
+func FusedChain36x1(components []uint64, data *byte, out *[2]uint64) {
+	if FusedAvailable() && validComponents(components) {
+		sipHash24FusedChain36x1GprAsm(&components[0], len(components)/2, data, out)
+		return
+	}
+	scalarFusedSingle(components, data, 36, out)
+}
+
+// FusedChain68x1 runs the cascade on one 68-byte input.
+func FusedChain68x1(components []uint64, data *byte, out *[2]uint64) {
+	if FusedAvailable() && validComponents(components) {
+		sipHash24FusedChain68x1GprAsm(&components[0], len(components)/2, data, out)
+		return
+	}
+	scalarFusedSingle(components, data, 68, out)
+}
+
+// FusedChain13x16 runs the cascade on the 16 lanes of the Interlocked
+// Barrier fill: lane i carries the 13-byte fill block
+// [0x03 | LE64(groupIdxBase+i) | 4×0x00] and every lane runs the whole
+// cascade over components. The dispatch follows the batch-16 tier flags
+// (HasAVX512X16 / HasAVX2X16) rather than the fused x4 flags, so
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm: the ZMM kernel
+// synthesises the blocks in-register; the AVX2 arm runs four x4 calls
+// over Go-synthesised blocks.
+func FusedChain13x16(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+	if !validComponents(components) {
+		scalarFusedX16(components, groupIdxBase, out)
+		return
+	}
+	switch {
+	case HasAVX512X16:
+		sipHash24FusedChain13x16Avx512Asm(&components[0], len(components)/2, groupIdxBase, out)
+	case HasAVX2X16:
+		blocks := fillBlocks16(groupIdxBase)
+		for q := 0; q < 4; q++ {
+			ptrs := x16Quarter(&blocks, q)
+			sipHash24FusedChain13x4Avx2Asm(&components[0], len(components)/2, &ptrs, x16Out(out, q))
+		}
+	default:
+		scalarFusedX16(components, groupIdxBase, out)
+	}
+}
+
+// Four-lane fused kernels (siphash_fusedchain128_<shape>x4_<tier>_amd64.s).
+//
+//go:noescape
+func sipHash24FusedChain13x4Avx512Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain20x4Avx512Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain36x4Avx512Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain68x4Avx512Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain13x4Avx2Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain20x4Avx2Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain36x4Avx2Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+//go:noescape
+func sipHash24FusedChain68x4Avx2Asm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+
+// Single-lane fused kernels (siphash_fusedchain128_<shape>x1_gpr_amd64.s).
+//
+//go:noescape
+func sipHash24FusedChain13x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
+
+//go:noescape
+func sipHash24FusedChain20x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
+
+//go:noescape
+func sipHash24FusedChain36x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
+
+//go:noescape
+func sipHash24FusedChain68x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)
+
+// Sixteen-lane fused fill kernel (siphash_fusedchain128_13x16_avx512_amd64.s).
+//
+//go:noescape
+func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)

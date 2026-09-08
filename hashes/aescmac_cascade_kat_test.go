@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // aescmac_cascade_kat_test.go — known-answer vectors of the AES-CMAC
@@ -83,6 +85,9 @@ func hex64(v uint64) string {
 // TestAESCMACCascadeKAT checks the vectors on a seed with every hook the
 // primitive offers and on the same seed on the arms alone.
 func TestAESCMACCascadeKAT(t *testing.T) {
+	if forcetier.ChainHashSeq() {
+		t.Skip("ITB_FORCE_CHAINHASH_SEQ disables the fused hooks")
+	}
 	key := aescmacKATKey()
 	for _, pairs := range []int{4, 8, 16} {
 		comps := aescmacKATComponents(pairs)

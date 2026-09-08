@@ -90,6 +90,8 @@ func applyInterlockPRFFillTier() {
 			return
 		}
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, true
+	case "avx2":
+		forcetier.Warnf("aescmacasm: no avx2 batch-16 arm (the VAES / AES-NI YMM arms are vaesavx2 / vex); keeping auto-dispatch")
 	case "neon":
 		forcetier.Warnf("aescmacasm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
 	case "scalar":

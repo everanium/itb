@@ -137,7 +137,7 @@ type Spec struct {
 	// Make128Pair factory that built the seed's Hash / BatchHash arms.
 	// nil (every entry without a fused cascade) leaves the seed on the
 	// sequential per-round loop; a populated factory must return
-	// evaluators bit-exact with that loop. Shipped: aesitb128, aescmac.
+	// evaluators bit-exact with that loop. Shipped: aesitb128, aescmac, siphash24.
 	FusedChainHash128 func(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) `json:"-"`
 
 	// InterlockFillBatch16 optionally builds the batch-16 Interlocked
@@ -149,7 +149,7 @@ type Spec struct {
 	// single-lane arms. A populated factory must return a kernel
 	// bit-exact with sixteen sequential cascades over the same
 	// components; the kernel is a performance path and never changes the
-	// wire. Shipped: aesitb128, aescmac.
+	// wire. Shipped: aesitb128, aescmac, siphash24.
 	InterlockFillBatch16 func(key []byte) (itb.InterlockFillFunc16, error) `json:"-"`
 
 	// FusedChainHash256 and FusedChainHash512 are the width-256 and
@@ -233,7 +233,7 @@ var Registry = [10]Spec{
 	{Name: CipherBLAKE2s, Width: W256, Class: ClassPRFCounter, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash},
 	{Name: CipherBLAKE3, Width: W256, Class: ClassPRFCounter, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash},
 	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream, FusedChainHash128: aesCMACFusedChainHash, InterlockFillBatch16: aesCMACInterlockFillBatch16},
-	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash},
+	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash, FusedChainHash128: sipHash24FusedChainHash, InterlockFillBatch16: sipHash24InterlockFillBatch16},
 	{Name: CipherChaCha20, Width: W256, Class: ClassNativeStream},
 }
 

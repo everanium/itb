@@ -150,12 +150,16 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | AES-CMAC — legacy-SSE AES-NI XMM 4-lane fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aescmacasm.FusedHasAESNI` |
 | AES-CMAC — batch-16 Interlocked Barrier PRF fill cascade (same tier ladder as AES-ITB-128; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `aescmacasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAVXAESNIX16` / `HasAESNIX16` |
 | AES-CMAC — NEON 4-lane fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `aescmacasm.FusedHasARMAES` / `aescmacasm.HasARMAESX16` |
-| SipHash-2-4 — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `siphashasm.HasAVX512Fused` |
-| SipHash-2-4 — AVX2 4-lane YMM chain-absorb | AVX2 (no AVX-512F) | `siphashasm.HasAVX2Fused` |
+| SipHash-2-4 — AVX-512 EVEX YMM 4-lane fused chain (auto-selected on AVX-512F hosts) | AVX-512F | `siphashasm.FusedHasAVX512` |
+| SipHash-2-4 — AVX-512 ZMM 8-lane fused chain (eight lanes per register; auto-selected on AVX-512F hosts for the 128 / 256 / 512-bit nonce-buf shapes; the four-lane kernels and four-pixel stride via `ITB_FORCE_CHAINHASH_X4=1`) | AVX-512F | `siphashasm.FusedHasAVX512X8` (with `siphashasm.FusedHasAVX512`) |
+| SipHash-2-4 — AVX2 VEX YMM 4-lane fused chain (synthesised rotates; auto-selected on AVX2 hosts without AVX-512F) | AVX2 | `siphashasm.FusedHasAVX2` |
+| SipHash-2-4 — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `siphashasm.FusedAvailable()` |
+| SipHash-2-4 — batch-16 Interlocked Barrier PRF fill cascade (ZMM kernel on the AVX-512 tier, four four-lane kernel calls on the AVX2 tier; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `siphashasm.HasAVX512X16` / `HasAVX2X16` |
+| SipHash-2-4 — NEON 4-lane fused chain + GPR single-lane fused chain + batch-16 fill (arm64, NEON baseline) | ARMv8-A NEON | `siphashasm.FusedHasNEON` / `siphashasm.HasNEONX16` |
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every chain-absorb family other than AES-ITB-128 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128 fills the Interlocked Barrier through its batch-16 fused cascade kernel instead.
+Every chain-absorb family other than AES-ITB-128, AES-CMAC and SipHash-2-4 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128, AES-CMAC and SipHash-2-4 fill the Interlocked Barrier through their batch-16 fused cascade kernels instead.
 
 Cross-referenced to shipping x86 microarchitectures:
 
