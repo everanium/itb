@@ -31,14 +31,14 @@ batch-16 hook does so on every tier.
 
 Wide cells that are register-legal but not emitted, with the reason:
     areion256 13x16 avx512  4 groups × (s1 2 + s2 2 + temps 2) = 24 + zero 1 +
-                            K1 2 + scratch 1 = 28 ≤ 32 (zmm256_wide(13, 4,
-                            fill=True)). Measured on an i7-11700K against two
+                            K1 2 + scratch 1 = 28 ≤ 32. Measured on an i7-11700K against two
                             calls of the eight-lane kernel over the same sixteen
                             groups, ns per sixteen groups at 2 / 4 / 8 groups:
                             122.7 / 226.2 / 444.5 vs 114.4 / 223.0 / 440.4 — no
                             gain, both arms sit at the ZMM VAESENC port ceiling.
                             The eight-lane kernel stays the width-256 fill top;
-                            width 256 populates no batch-32 hook.
+                            width 256 populates no batch-32 hook; the emitter
+                            is not carried.
     areion512 13x16 avx512  4 groups × (s1 4 + s2 4) = 32 = 32 with zero, K1,
                             D, RC, the blocks and the component broadcasts all
                             as memory operands; and no batch-32 hook hosts
@@ -1158,19 +1158,24 @@ def synth_fill_amd64(name, groups, frame, zero, base_reg, t_idx, t_a, t_b):
     return table, lines
 
 
-def zmm256_wide(n, groups, fill=False):
-    """Width-256 ZMM kernel over `groups` interleaved four-lane groups:
-    per-pixel x8 (groups = 2, message blocks staged from the lane
-    pointers) or the batch-32 fill x16 (groups = 4, blocks synthesised
-    from groupIdxBase)."""
+def zmm256_wide(n, groups):
+    """Width-256 per-pixel ZMM kernel over `groups` interleaved four-lane
+    groups (x8 at groups = 2), message blocks staged from the lane
+    pointers.
+
+    A sixteen-lane fill variant of this layout (four groups, blocks
+    synthesised from groupIdxBase, 28 of 32 registers) was measured on an
+    i7-11700K at 0.93x / 0.99x / 0.99x (2 / 4 / 8 groups) of two calls of
+    the eight-lane fill kernel: both arms sit at the ZMM VAESENC port
+    ceiling, so the narrower kernel wins and the variant is not carried.
+    Do not re-attempt a wider width-256 fill kernel without a
+    fundamentally different scheduling approach."""
     lanes = 4 * groups
     frame = Frame()
     chunks = chunk_maps(256, n)
     nch = len(chunks)
     tier = f"AVX-512 + VAES ZMM ({groups} interleaved four-lane groups)"
-    lines = header(AMD, 256, n, lanes, tier, fill=fill)
-    if fill:
-        lines = lines.replace("batch-16 Interlocked Barrier fill kernel", "batch-32 Interlocked Barrier fill kernel")
+    lines = header(AMD, 256, n, lanes, tier)
     s1 = [[f"Z{6 * g}", f"Z{6 * g + 1}"] for g in range(groups)]
     s2 = [[f"Z{6 * g + 2}", f"Z{6 * g + 3}"] for g in range(groups)]
     tt = [[f"Z{6 * g + 4}", f"Z{6 * g + 5}"] for g in range(groups)]
@@ -1182,14 +1187,7 @@ def zmm256_wide(n, groups, fill=False):
     zero, k1, scr = f"Z{nxt}", [f"Z{nxt + 1}", f"Z{nxt + 2}"], f"Z{nxt + 3}"
     body = ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
     body += [f"\tVPXORD {zero}, {zero}, {zero}"]
-    table = ""
-    if fill:
-        frame.alloc((0, 0), 64 * groups)
-        frame.alloc((0, 1), 64 * groups)
-        table, synth = synth_fill_amd64("areionFill13<>", groups, frame, zero, scr, s1[0][0], s1[0][1], s2[0][0])
-        body += synth + ["\tMOVQ out+32(FP), DX"]
-    else:
-        body += stage_amd64_wide(256, n, groups, frame)
+    body += stage_amd64_wide(256, n, groups, frame)
     body += [f"\tVBROADCASTI32X4 0(AX), {k1[0]}", f"\tVBROADCASTI32X4 16(AX), {k1[1]}"]
     for g in range(groups):
         body += [f"\tVPXORD {r}, {r}, {r}" for r in s1[g]]
@@ -1237,11 +1235,8 @@ def zmm256_wide(n, groups, fill=False):
             body += [f"\tVEXTRACTI64X2 ${l}, {s1[g][0]}, {32 * lane}(DX)",
                      f"\tVEXTRACTI64X2 ${l}, {s1[g][1]}, {32 * lane + 16}(DX)"]
     body += ["\tVZEROUPPER", "\tRET"]
-    if fill:
-        sig = f"// func areion256FusedChain{n}x{lanes}Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[{lanes}][4]uint64)"
-    else:
-        sig = f"// func areion256FusedChain{n}x{lanes}Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64)"
-    return lines + table + f"\n{sig}\nTEXT ·areion256FusedChain{n}x{lanes}Avx512Asm(SB), {text_flags(frame)}${frame.aligned}-40\n" + "\n".join(body) + "\n"
+    sig = f"// func areion256FusedChain{n}x{lanes}Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64)"
+    return lines + f"\n{sig}\nTEXT ·areion256FusedChain{n}x{lanes}Avx512Asm(SB), {text_flags(frame)}${frame.aligned}-40\n" + "\n".join(body) + "\n"
 
 
 def zmm512_wide(n, groups, fill=False):
