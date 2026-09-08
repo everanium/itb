@@ -242,8 +242,9 @@ arm_env() {
 #   * avx2: aesitb128 and aescmac map the avx2 token to their VAES YMM
 #     tier; areion256 / areion512 run their VAES-on-YMM batched
 #     permutation with the fused cascade off (the arms-only probe on
-#     the AMD Zen 3 class), so the pair is applicable; the ARX / BLAKE
-#     primitives carry AVX2 chain kernels.
+#     the AMD Zen 3 class), so the pair is applicable; blake2b256 /
+#     blake2b512 run their AVX2 fused cascade kernels and the other
+#     ARX / BLAKE primitives their AVX2 chain kernels.
 #   * avx512 / scalar: every primitive has both.
 arm_applicable() {
     case "$2" in

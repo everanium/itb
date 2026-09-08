@@ -3,6 +3,7 @@ package hashes
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"hash"
 	"sync"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/blake2basm"
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 with a
@@ -213,4 +215,134 @@ func blake2b512HashHash() hash.Hash {
 // returns an error for longer keys.
 func blake2b512KeyedHash(key []byte) (hash.Hash, error) {
 	return blake2b.New512(key)
+}
+
+// blake2b512FusedChainHash is the [Spec.FusedChainHash512] factory of the
+// blake2b512 entry. The returned evaluators run the ChainHash512 cascade
+// inside one hashes/internal/blake2basm kernel call for the four
+// per-pixel shapes (13 / 20 / 36 / 68 bytes) and report ok = false for
+// any other input length or unequal lane lengths, which sends the seed
+// back to the sequential loop. The key is the 64-byte fixed key the
+// arms were built with. When ITB_FORCE_CHAINHASH_SEQ is set both
+// evaluators are nil so the sequential loop runs end to end.
+func blake2b512FusedChainHash(key []byte) (itb.FusedChainHashFunc512, itb.BatchFusedChainHashFunc512, error) {
+	if len(key) != 64 {
+		return nil, nil, fmt.Errorf("hashes: %q fused cascade needs a 64-byte key, got %d", CipherBLAKE2b512, len(key))
+	}
+	if forcetier.ChainHashSeq() {
+		return nil, nil, nil
+	}
+	var k [64]byte
+	copy(k[:], key)
+	single := func(components []uint64, data []byte) ([8]uint64, bool) {
+		var out [8]uint64
+		switch len(data) {
+		case 13:
+			blake2basm.Fused512Chain13x1(&k, components, &data[0], &out)
+		case 20:
+			blake2basm.Fused512Chain20x1(&k, components, &data[0], &out)
+		case 36:
+			blake2basm.Fused512Chain36x1(&k, components, &data[0], &out)
+		case 68:
+			blake2basm.Fused512Chain68x1(&k, components, &data[0], &out)
+		default:
+			return out, false
+		}
+		return out, true
+	}
+	batched := func(components []uint64, data *[4][]byte) ([4][8]uint64, bool) {
+		var out [4][8]uint64
+		n := len(data[0])
+		if len(data[1]) != n || len(data[2]) != n || len(data[3]) != n {
+			return out, false
+		}
+		switch n {
+		case 13, 20, 36, 68:
+		default:
+			return out, false
+		}
+		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
+		switch n {
+		case 13:
+			blake2basm.Fused512Chain13x4(&k, components, &dataPtrs, &out)
+		case 20:
+			blake2basm.Fused512Chain20x4(&k, components, &dataPtrs, &out)
+		case 36:
+			blake2basm.Fused512Chain36x4(&k, components, &dataPtrs, &out)
+		case 68:
+			blake2basm.Fused512Chain68x4(&k, components, &dataPtrs, &out)
+		}
+		return out, true
+	}
+	return single, batched, nil
+}
+
+// blake2b512InterlockFillBatch16 is the [Spec.InterlockFillBatch16x512]
+// factory: the batch-16 Interlocked Barrier fill hook that runs the
+// whole cascade over four consecutive 13-byte fill blocks per call
+// (see [itb.InterlockFillFunc16x512]).
+func blake2b512InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x512, error) {
+	if len(key) != 64 {
+		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 64-byte key, got %d", CipherBLAKE2b512, len(key))
+	}
+	var k [64]byte
+	copy(k[:], key)
+	return func(components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
+		blake2basm.Fused512Fill13x4(&k, components, groupIdxBase, out)
+	}, nil
+}
+
+// blake2b512FusedChainHash8 is the [Spec.FusedChainHash512x8] factory of
+// the blake2b512 entry — the width-512 form of blake2b256FusedChainHash8
+// with the 64-byte fixed key of the arms.
+func blake2b512FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc512x8, error) {
+	if len(key) != 64 {
+		return nil, fmt.Errorf("hashes: %q fused cascade needs a 64-byte key, got %d", CipherBLAKE2b512, len(key))
+	}
+	if forcetier.ChainHashSeq() || !blake2basm.FusedX8Active() {
+		return nil, nil
+	}
+	var k [64]byte
+	copy(k[:], key)
+	return func(components []uint64, data *[8][]byte) ([8][8]uint64, bool) {
+		var out [8][8]uint64
+		n := len(data[0])
+		switch n {
+		case 20, 36, 68:
+		default:
+			return out, false
+		}
+		var dataPtrs [8]*byte
+		for l := range data {
+			if len(data[l]) != n {
+				return out, false
+			}
+			dataPtrs[l] = &data[l][0]
+		}
+		switch n {
+		case 20:
+			blake2basm.Fused512Chain20x8(&k, components, &dataPtrs, &out)
+		case 36:
+			blake2basm.Fused512Chain36x8(&k, components, &dataPtrs, &out)
+		case 68:
+			blake2basm.Fused512Chain68x8(&k, components, &dataPtrs, &out)
+		}
+		return out, true
+	}, nil
+}
+
+// blake2b512InterlockFillBatch32 is the [Spec.InterlockFillBatch32x512]
+// factory: the batch-32 Interlocked Barrier fill hook that runs the
+// whole cascade over eight consecutive 13-byte fill blocks per call
+// (see [itb.InterlockFillFunc32x512]) — the eight-lane ZMM fill kernel,
+// or two four-lane calls on the AVX2 / NEON tiers.
+func blake2b512InterlockFillBatch32(key []byte) (itb.InterlockFillFunc32x512, error) {
+	if len(key) != 64 {
+		return nil, fmt.Errorf("hashes: %q interlock fill batch-32 needs a 64-byte key, got %d", CipherBLAKE2b512, len(key))
+	}
+	var k [64]byte
+	copy(k[:], key)
+	return func(components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+		blake2basm.Fused512Fill13x8(&k, components, groupIdxBase, out)
+	}, nil
 }

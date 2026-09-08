@@ -108,8 +108,8 @@ func cascadeWide32Cases() []cascadeWide32Case {
 // reference cascade on every group of every probe base, and it agrees
 // with the batch-16 closure over the same groups.
 func TestCascadeFillWide32ReferenceParity(t *testing.T) {
-	if forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillNarrow() {
-		t.Skip("batch-32 hooks disarmed by ITB_FORCE_INTERLOCK_PRF_FILL_SEQ / _NARROW")
+	if forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillX16() {
+		t.Skip("batch-32 hooks disarmed by ITB_FORCE_INTERLOCK_PRF_FILL_SEQ / _X16")
 	}
 	nonce := interlock48Nonce()
 	for _, wc := range cascadeWide32Cases() {
@@ -162,8 +162,8 @@ func TestCascadeFillWide32ReferenceParity(t *testing.T) {
 // sequential arms, the armed path must actually run, and every pair of
 // encoders and decoders must round-trip each other's lanes.
 func TestFillRanksSuper32WideSplitParity(t *testing.T) {
-	if forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillNarrow() {
-		t.Skip("batch-32 hooks disarmed by ITB_FORCE_INTERLOCK_PRF_FILL_SEQ / _NARROW")
+	if forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillX16() {
+		t.Skip("batch-32 hooks disarmed by ITB_FORCE_INTERLOCK_PRF_FILL_SEQ / _X16")
 	}
 	nonce := interlock48Nonce()
 	for _, wc := range cascadeWide32Cases() {
@@ -251,7 +251,7 @@ func TestFillRanksSuper32WideSplitParity(t *testing.T) {
 }
 
 // TestCascadeFillWide32DisarmKnobs pins the two disarm knobs on the
-// batch-32 rung: ITB_FORCE_INTERLOCK_PRF_FILL_NARROW leaves the batch-16
+// batch-32 rung: ITB_FORCE_INTERLOCK_PRF_FILL_X16 leaves the batch-16
 // rung armed and the batch-32 rung off, ITB_FORCE_INTERLOCK_PRF_FILL_SEQ
 // disarms both.
 func TestCascadeFillWide32DisarmKnobs(t *testing.T) {
@@ -259,14 +259,14 @@ func TestCascadeFillWide32DisarmKnobs(t *testing.T) {
 	for _, wc := range cascadeWide32Cases() {
 		wc := wc
 		t.Run(wc.label, func(t *testing.T) {
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_NARROW", "1")
+			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_X16", "1")
 			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "")
 			var calls atomic.Int64
 			bp := wc.build(t, cascadeLockSeedComponents[0], nonce, true, &calls)
 			if bp.fillRanksSuper == nil || bp.fillRanksSuper32 != nil {
-				t.Fatalf("NARROW: batch-16 armed=%v batch-32 armed=%v", bp.fillRanksSuper != nil, bp.fillRanksSuper32 != nil)
+				t.Fatalf("X16: batch-16 armed=%v batch-32 armed=%v", bp.fillRanksSuper != nil, bp.fillRanksSuper32 != nil)
 			}
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_NARROW", "")
+			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_X16", "")
 			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "1")
 			bp = wc.build(t, cascadeLockSeedComponents[0], nonce, true, &calls)
 			if bp.fillRanksSuper != nil || bp.fillRanksSuper32 != nil {

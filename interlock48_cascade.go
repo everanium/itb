@@ -145,7 +145,7 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			}
 		}
 	}
-	if bh32 := lockSeed.InterlockFillX32(); bh32 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillNarrow() {
+	if bh32 := lockSeed.InterlockFillX32(); bh32 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX16() {
 		bp.fillRanksSuper32 = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
 			bh32(lockComps, groupIdxBase, &s.out32x256)
 			for i := 0; i < 16; i++ {
@@ -203,7 +203,7 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			}
 		}
 	}
-	if bh32 := lockSeed.InterlockFillX32(); bh32 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillNarrow() {
+	if bh32 := lockSeed.InterlockFillX32(); bh32 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX16() {
 		bp.fillRanksSuper32 = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
 			bh32(lockComps, groupIdxBase, &s.out32x512)
 			for i := 0; i < 8; i++ {

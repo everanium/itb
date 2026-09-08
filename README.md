@@ -142,6 +142,11 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Areion-SoEM-256 / -512 — NEON fused chain + eight-lane fill kernels (the batch-16 hook at width 256, the batch-32 hook at width 512; arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `areionasm.FusedHasARMAES` / `areionasm.HasARMAESX16` |
 | BLAKE2b — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `blake2basm.HasAVX512Fused` |
 | BLAKE2b — AVX2 4-lane YMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2basm.HasAVX2Fused` |
+| BLAKE2b-256 / -512 — EVEX YMM 4-lane / ZMM 8-lane fused chain (the whole component cascade per call, one qword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `blake2basm.FusedHasAVX512` / `blake2basm.FusedHasAVX512X8` |
+| BLAKE2b-256 / -512 — AVX2 YMM 4-lane fused chain (synthesised rotates, message words as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `blake2basm.FusedHasAVX2` |
+| BLAKE2b-256 / -512 — batch-16 / batch-32 Interlocked Barrier PRF fill cascade (dedicated eight-lane ZMM kernels — the batch-16 hook at width 256, the batch-32 hook at width 512 — on the AVX-512F tier; four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `blake2basm.HasAVX512X16` / `HasAVX2X16` |
+| BLAKE2b-256 / -512 — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `blake2basm.FusedAvailable()` |
+| BLAKE2b-256 / -512 — NEON fused chain + GPR single-lane fused chain + batch-16 / batch-32 fill through four-lane NEON calls (arm64, two lanes per pass; auto-selected on every ARMv8-A host) | Advanced SIMD | `blake2basm.FusedHasNEON` / `blake2basm.HasNEONX16` |
 | BLAKE2s — AVX-512 4-lane XMM chain-absorb + fused chain | AVX-512F | `blake2sasm.HasAVX512Fused` |
 | BLAKE2s — AVX2 4-lane XMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2sasm.HasAVX2Fused` |
 | BLAKE3 — AVX-512 4-lane XMM chain-absorb + fused chain | AVX-512F | `blake3asm.HasAVX512Fused` |
@@ -162,7 +167,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every chain-absorb family other than AES-ITB-128, AES-CMAC, SipHash-2-4 and Areion-SoEM-256 / -512 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128, AES-CMAC, SipHash-2-4 and Areion-SoEM-256 / -512 fill the Interlocked Barrier through their batch-16 fused cascade kernels instead.
+Every chain-absorb family other than AES-ITB-128, AES-CMAC, SipHash-2-4, Areion-SoEM-256 / -512 and BLAKE2b-256 / -512 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128, AES-CMAC, SipHash-2-4, Areion-SoEM-256 / -512 and BLAKE2b-256 / -512 fill the Interlocked Barrier through their batch-16 fused cascade kernels instead.
 
 Cross-referenced to shipping x86 microarchitectures:
 
