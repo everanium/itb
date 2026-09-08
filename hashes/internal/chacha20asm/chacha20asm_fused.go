@@ -1,3 +1,18 @@
+// Package chacha20asm holds the fused ChainHash cascade kernels of
+// ChaCha20 for the parent hashes package: the whole component cascade of
+// a seed evaluated in one kernel call at the four per-pixel shapes (13 /
+// 20 / 36 / 68 bytes) — four lanes on the AVX-512 EVEX XMM, AVX2 VEX XMM
+// and NEON tiers, eight lanes on EVEX YMM registers at the nonce-buf
+// shapes and for the batch-16 Interlocked Barrier fill hook, and one
+// lane in general-purpose registers as the single-lane arm of every
+// tier. Every cascade round rebuilds the eight key words from the fixed
+// key, the component group and the previous output and runs one
+// ChaCha20 block per counter value from the constants, the key words,
+// the counter and the zero nonce; the kernels are emitted by the
+// generator (scripts/kernels/chacha20/gen_fused_kernels.py). Register
+// layout: one register per state word, one dword lane per pixel, the
+// quarter round never crossing lanes, VPROLD for the four ARX rotates
+// on the EVEX tier.
 package chacha20asm
 
 import (

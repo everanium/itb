@@ -12,11 +12,11 @@ import (
 // to the fused cascade flag and the batch-16 fill flag, then
 // ITB_FORCE_INTERLOCK_PRF_FILL_TIER to the batch-16 flag alone.
 func init() {
-	applyFusedHashTier()
-	applyFusedInterlockPRFFillTier()
+	applyHashTier()
+	applyInterlockPRFFillTier()
 }
 
-// applyFusedHashTier applies ITB_FORCE_HASH_TIER on arm64.
+// applyHashTier applies ITB_FORCE_HASH_TIER on arm64.
 //
 //	neon   — selects the NEON kernels of both families; requires
 //	         Advanced SIMD (every ARMv8-A host), otherwise a stderr note
@@ -27,7 +27,7 @@ func init() {
 //	scalar — disables every kernel so the pure-Go paths run end to end.
 //
 // Every amd64 tier token keeps auto-dispatch with a stderr note.
-func applyFusedHashTier() {
+func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
 	case "neon", "sve2", "sve":
@@ -43,10 +43,10 @@ func applyFusedHashTier() {
 	}
 }
 
-// applyFusedInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER
+// applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER
 // to the batch-16 fill flag (HasNEONX16), accepting "neon" and "scalar";
 // every amd64 token keeps auto-dispatch with a stderr note.
-func applyFusedInterlockPRFFillTier() {
+func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "":
 	case "neon":

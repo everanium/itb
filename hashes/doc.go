@@ -42,11 +42,12 @@
 // closure, and the [Make128Pair] / [Make256Pair] / [Make512Pair]
 // counterparts return the (single, batched) pair — the batched arm
 // (a [github.com/everanium/itb.BatchHashFunc128] / BatchHashFunc256 /
-// BatchHashFunc512 closure) fuses four independent per-pixel hash
-// calls into one SIMD-batched invocation on hosts that support the
-// primitive's ZMM / YMM chain-absorb kernel, and falls back to four
-// serial calls elsewhere. The returned batched arm may be nil when
-// the primitive has no batched implementation on the current CPU.
+// BatchHashFunc512 closure) evaluates four independent per-pixel hash
+// calls, through a lane-parallel kernel where the primitive carries one
+// and through four calls of the single arm elsewhere; the fused cascade
+// hooks of the registry entry carry the per-pixel and Interlocked
+// Barrier fill assembly. The returned batched arm may be nil when the
+// primitive has no batched implementation on the current CPU.
 // The [NewSeed128] / [NewSeed256] / [NewSeed512] constructors build a
 // seed of the named primitive with those arms and every fast-path hook
 // the primitive offers ([AttachFused128] / [AttachInterlockBatch16] and

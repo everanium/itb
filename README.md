@@ -173,10 +173,8 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | ChaCha20 — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `chacha20asm.HasAVX512X16` / `HasAVX2X16` |
 | ChaCha20 — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `chacha20asm.FusedAvailable()` |
 | ChaCha20 — NEON fused chain + GPR single-lane fused chain + batch-16 fill through four-lane NEON calls (arm64, four dword lanes per register; auto-selected on every ARMv8-A host) | Advanced SIMD | `chacha20asm.FusedHasNEON` / `chacha20asm.HasNEONX16` |
-| ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
-| ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every shipped primitive fills the Interlocked Barrier through its batch-16 fused cascade kernels; the chain-absorb family of ChaCha20 additionally carries a 13-byte-shape kernel (`ChaCha20256ChainAbsorb13x4`) at each tier, the four-lane arm of the batched cascade over the arms alone.
+Every shipped primitive fills the Interlocked Barrier through its batch-16 fused cascade kernels; the four-lane and single-lane arms of the same kernel families serve the fill below the batch-16 hook.
 
 Cross-referenced to shipping x86 microarchitectures:
 
@@ -1126,7 +1124,7 @@ The sweep runner (`scripts/bench/sweep.sh`), the env-var grammar, the compact pe
 
 ## Hash primitives (`hashes/`)
 
-The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive on the FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction and returns a `(single, batched, key)` triple. The batched arm wires the AVX-512 batched chain-absorb dispatch through `Seed.BatchHash` automatically; a `sync.Pool` amortises per-call scratch allocation. A `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for explicit-key call sites.
+The `hashes/` subpackage ships **paired** cached factories for every PRF-grade primitive on the FFI surface. Each `<Primitive>Pair()` factory pre-keys its primitive once at construction and returns a `(single, batched, key)` triple. The batched arm is wired through `Seed.BatchHash` automatically and evaluates the four lanes through a lane-parallel kernel where the primitive carries one, through the single arm elsewhere; the fused cascade hooks the registry attaches carry the per-pixel and Interlocked Barrier fill assembly, and a `sync.Pool` amortises per-call scratch allocation. A `<Primitive>PairWithKey` counterpart takes the fixed key as a single non-variadic argument for explicit-key call sites.
 
 Name-keyed dispatch is used by the FFI layer and by any code that selects the primitive at runtime. `Make<N>Pair` returns the batched arm alongside the single arm; `Make<N>` (no `Pair` suffix) is the single-arm-only convenience:
 

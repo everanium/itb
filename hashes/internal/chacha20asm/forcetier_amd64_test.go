@@ -10,14 +10,14 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// TestForceHashTierFusedApplied asserts that the fused and batch-16
+// TestForceHashTierApplied asserts that the fused and batch-16
 // dispatch flags carry the state ITB_FORCE_HASH_TIER names, for every
 // recognised token, on silicon that can execute the forced arm. Skips
 // when the variable is unset (auto-dispatch) or when the host cannot
 // honour the token. When ITB_FORCE_INTERLOCK_PRF_FILL_TIER is also set
 // the batch-16 flags belong to that variable and are checked by
 // TestForceInterlockPRFFillTierApplied instead.
-func TestForceHashTierFusedApplied(t *testing.T) {
+func TestForceHashTierApplied(t *testing.T) {
 	tier := forcetier.HashTier()
 	x16Owned := forcetier.InterlockPRFFillTier() == ""
 	want := func(avx512, avx2 bool) {

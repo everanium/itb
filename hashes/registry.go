@@ -649,14 +649,11 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 //     present, the four-way Go permutation elsewhere); the fused cascade
 //     kernels of the primitive (internal/areionasm) are reached through
 //     the hooks AttachFused256 / AttachInterlockBatch16x256 install
-//   - "blake2b256" — AVX-512 ZMM-batched BLAKE2b chain-absorb kernels
-//   - "blake2s" — always: the four lanes through the single arm; the
-//     fused cascade kernels of the primitive (hashes/internal/blake2sasm)
-//     are reached through the hooks the blake2s entry's factories install
-//   - "blake3" — always: the four lanes through the single arm; the
-//     fused cascade kernels of the primitive (hashes/internal/blake3asm)
-//     are reached through the hooks the blake3 entry's factories install
-//   - "chacha20" — AVX-512 ZMM-batched ChaCha20 chain-absorb kernels
+//   - "blake2b256", "blake2s", "blake3", "chacha20" — always: the four
+//     lanes through the single arm; the fused cascade kernels of each
+//     primitive (hashes/internal/blake2basm, blake2sasm, blake3asm,
+//     chacha20asm) are reached through the hooks the entry's factories
+//     install
 //
 // Variadic key arg follows the same pattern as Make256.
 func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {

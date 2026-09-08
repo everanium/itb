@@ -8,30 +8,93 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// init applies ITB_FORCE_HASH_TIER to the ChaCha20 fused
-// chain-absorb dispatch flags. Both flags are assigned explicitly as
-// one consistent set. A forced arm the silicon cannot execute keeps
-// auto-dispatch with a stderr note. ChaCha20 has no AES-based arm, so
-// an aesni force disables both batched arms (scalar behaviour) with a
-// stderr note; the parity script's skip matrix avoids that pairing.
+// init applies the two forcing variables in order: ITB_FORCE_HASH_TIER
+// to both ChaCha20 dispatch families — the fused cascade flags and the
+// batch-16 fill flags — then ITB_FORCE_INTERLOCK_PRF_FILL_TIER to the
+// batch-16 family alone. Each variable is handled by its own function so
+// an unsatisfiable token in one cannot skip the other.
 func init() {
+	applyHashTier()
+	applyInterlockPRFFillTier()
+}
+
+// applyHashTier applies ITB_FORCE_HASH_TIER. Every flag in every
+// family is assigned explicitly as one consistent set, so a partial
+// override cannot leave a flag family contradictory. A forced arm the
+// silicon cannot execute keeps auto-dispatch with a stderr note.
+//
+//	avx512 — EVEX fused cascade and the YMM batch-16 fill
+//	avx2   — VEX XMM fused cascade and batch-16 fill
+//	vex    — the VEX XMM kernels are the avx2 tier; the token selects
+//	         them with a stderr note
+//	aesni  — ChaCha20 has no AES-based arm; the token forces scalar with
+//	         a stderr note (the parity script's skip matrix avoids the
+//	         pairing)
+//	vaesavx2 — no VAES arm exists; the token keeps auto-dispatch with a
+//	         stderr note
+//	scalar — every kernel off
+//
+// The arm64 tokens (neon / sve2 / sve) keep auto-dispatch with a note.
+func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
 		if !cpu.X86.HasAVX512F {
-			forcetier.Warnf("chacha20asm: avx512 tier needs AVX-512F; keeping auto-dispatch")
+			forcetier.Warnf("chacha20asm: avx512 fused tier needs AVX-512F; keeping auto-dispatch")
 			return
 		}
-		HasAVX512Fused, HasAVX2Fused = true, false
-	case "avx2":
+		FusedHasAVX512, FusedHasAVX2 = true, false
+		HasAVX512X16, HasAVX2X16 = true, false
+	case "avx2", "vex":
 		if !cpu.X86.HasAVX2 {
-			forcetier.Warnf("chacha20asm: avx2 tier needs AVX2; keeping auto-dispatch")
+			forcetier.Warnf("chacha20asm: %s fused tier needs AVX2; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
-		HasAVX512Fused, HasAVX2Fused = false, true
+		if forcetier.HashTier() == "vex" {
+			forcetier.Warnf("chacha20asm: no vex fused arm; selecting the AVX2 kernels")
+		}
+		FusedHasAVX512, FusedHasAVX2 = false, true
+		HasAVX512X16, HasAVX2X16 = false, true
 	case "aesni":
-		forcetier.Warnf("chacha20asm: no aesni arm; forcing scalar")
-		HasAVX512Fused, HasAVX2Fused = false, false
+		forcetier.Warnf("chacha20asm: no aesni fused arm; forcing scalar")
+		FusedHasAVX512, FusedHasAVX2 = false, false
+		HasAVX512X16, HasAVX2X16 = false, false
+	case "vaesavx2":
+		forcetier.Warnf("chacha20asm: no vaesavx2 fused arm; keeping auto-dispatch")
+	case "neon", "sve2", "sve":
+		forcetier.Warnf("chacha20asm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
-		HasAVX512Fused, HasAVX2Fused = false, false
+		FusedHasAVX512, FusedHasAVX2 = false, false
+		HasAVX512X16, HasAVX2X16 = false, false
+	}
+}
+
+// applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER
+// to the batch-16 fill flags (HasAVX512X16, HasAVX2X16), assigned as one
+// consistent set. vex selects the AVX2 arm and aesni forces scalar, each
+// with a stderr note.
+func applyInterlockPRFFillTier() {
+	switch forcetier.InterlockPRFFillTier() {
+	case "avx512":
+		if !cpu.X86.HasAVX512F {
+			forcetier.Warnf("chacha20asm: avx512 batch-16 tier needs AVX-512F; keeping auto-dispatch")
+			return
+		}
+		HasAVX512X16, HasAVX2X16 = true, false
+	case "avx2", "vex", "vaesavx2":
+		if !cpu.X86.HasAVX2 {
+			forcetier.Warnf("chacha20asm: %s batch-16 tier needs AVX2; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
+			return
+		}
+		if forcetier.InterlockPRFFillTier() != "avx2" {
+			forcetier.Warnf("chacha20asm: no %s batch-16 arm; selecting the AVX2 arm", forcetier.InterlockPRFFillTier())
+		}
+		HasAVX512X16, HasAVX2X16 = false, true
+	case "aesni":
+		forcetier.Warnf("chacha20asm: no aesni batch-16 arm; forcing scalar")
+		HasAVX512X16, HasAVX2X16 = false, false
+	case "neon":
+		forcetier.Warnf("chacha20asm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
+	case "scalar":
+		HasAVX512X16, HasAVX2X16 = false, false
 	}
 }

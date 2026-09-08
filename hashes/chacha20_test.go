@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
-
-	"github.com/everanium/itb/hashes/internal/chacha20asm"
 )
 
 // TestChaCha20DigestDependsOnEveryByte locks in the fix for the
@@ -140,25 +138,17 @@ func TestChaCha20256BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestChaCha20MakePairBatchedFollowsAsmEngagement verifies the
-// asm-conditional contract of Make256Pair for chacha20 — non-nil
-// batched when AVX-512 fused chain-absorb is engaged, nil batched
-// when the asm path is not reachable so process_cgo's nil-fallback
-// drives 4 single-call dispatches through the underlying ChaCha20
-// stream-cipher path directly.
-func TestChaCha20MakePairBatchedFollowsAsmEngagement(t *testing.T) {
+// TestChaCha20MakePairBatchedArms verifies that Make256Pair returns a
+// batched arm for chacha20 on every build: the arm evaluates the four
+// lanes through the single arm, and the fused cascade hooks of the
+// registry entry carry the assembly.
+func TestChaCha20MakePairBatchedArms(t *testing.T) {
 	_, b, _, err := Make256Pair("chacha20")
 	if err != nil {
 		t.Fatalf("Make256Pair(chacha20): %v", err)
 	}
-	if chacha20asm.HasAVX512Fused {
-		if b == nil {
-			t.Fatal("Make256Pair(chacha20) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
-		}
-	} else {
-		if b != nil {
-			t.Fatal("Make256Pair(chacha20) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
-		}
+	if b == nil {
+		t.Fatal("Make256Pair(chacha20) returned a nil batched arm")
 	}
 }
 
