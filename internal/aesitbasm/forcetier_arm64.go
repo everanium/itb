@@ -17,15 +17,36 @@ func init() {
 	applyInterlockPRFFillTier()
 }
 
-// applyHashTier applies ITB_FORCE_HASH_TIER on arm64: only "scalar" is
-// meaningful (it disables the NEON kernels of every family — fused
-// cascade and batch-16 — so the pure-Go reference runs end to end);
-// every amd64 tier token keeps auto-dispatch with a stderr note.
+// applyHashTier applies ITB_FORCE_HASH_TIER on arm64.
+//
+//	neon   — selects the NEON crypto-extension kernels of every family
+//	         (fused cascade and batch-16); requires the ARM crypto
+//	         extension, otherwise a stderr note is emitted and
+//	         auto-dispatch is kept.
+//	sve2   — reserved for a future SVE2 aesitb128 kernel family. An
+//	         SVE2 arm only pays off on silicon with a fused AES round
+//	         (FEAT_SVE_AES2) or a vector length above 128 bits with SVE
+//	         AES; no shipping Graviton part has either, so the token
+//	         routes to the NEON kernels — identical to neon flag-wise.
+//	         When SVE2-native kernels land, this token remaps.
+//	sve    — the same reservation for an SVE-only slice; today a NEON
+//	         alias for diagnostic simulation.
+//	scalar — disables the NEON kernels of every family so the pure-Go
+//	         reference runs end to end.
+//
+// Every amd64 tier token keeps auto-dispatch with a stderr note.
 // ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can re-arm the
 // batch-16 NEON kernel on its own.
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
+	case "neon", "sve2", "sve":
+		if !aes.CPU.HasARMCrypto {
+			forcetier.Warnf("aesitbasm: %s tier needs the ARM crypto extension; keeping auto-dispatch", forcetier.HashTier())
+			return
+		}
+		FusedHasARMAES = true
+		HasARMAESX16 = true
 	case "scalar":
 		FusedHasARMAES = false
 		HasARMAESX16 = false

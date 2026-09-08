@@ -58,6 +58,8 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Fatalf("scalar: batch-16 flags zmm=%v ymm=%v vex=%v aesni=%v, want all false",
 				HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16)
 		}
+	case "sve2", "sve", "neon":
+		t.Skipf("%s: arm64-only tier; not applicable on amd64", tier)
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)
 	}
