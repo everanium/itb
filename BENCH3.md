@@ -23,7 +23,7 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **AES-ITB-128** | 128 | 512 | NPRF | 423 | 526 | 626 | 648 | 781 | 1011 |
+| **AES-ITB-128** | 128 | 512 | NPRF | 426 | 532 | 634 | 676 | 787 | 1027 |
 | **Areion-SoEM-256** | 256 | 512 | PRF | 130 | 224 | 279 | 292 | 329 | 400 |
 | **Areion-SoEM-512** | 512 | 512 | PRF | 134 | 237 | 293 | 304 | 356 | 442 |
 | **BLAKE2b-256** | 256 | 512 | PRF | 104 | 162 | 184 | 197 | 210 | 235 |
@@ -38,7 +38,7 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **AES-ITB-128** | 128 | 1024 | NPRF | 395 | 496 | 587 | 609 | 729 | 931 |
+| **AES-ITB-128** | 128 | 1024 | NPRF | 408 | 499 | 589 | 614 | 734 | 927 |
 | **Areion-SoEM-256** | 256 | 1024 | PRF | 114 | 180 | 207 | 214 | 235 | 269 |
 | **Areion-SoEM-512** | 512 | 1024 | PRF | 119 | 199 | 235 | 243 | 272 | 319 |
 | **BLAKE2b-256** | 256 | 1024 | PRF | 83 | 116 | 126 | 126 | 134 | 145 |
@@ -53,7 +53,7 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **AES-ITB-128** | 128 | 2048 | NPRF | 356 | 444 | 533 | 534 | 640 | 770 |
+| **AES-ITB-128** | 128 | 2048 | NPRF | 372 | 458 | 527 | 541 | 643 | 768 |
 | **Areion-SoEM-256** | 256 | 2048 | PRF | 92 | 126 | 138 | 145 | 153 | 164 |
 | **Areion-SoEM-512** | 512 | 2048 | PRF | 104 | 149 | 167 | 179 | 184 | 204 |
 | **BLAKE2b-256** | 256 | 2048 | PRF | 57 | 70 | 75 | 76 | 80 | 82 |
@@ -70,7 +70,7 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **AES-ITB-128** | 128 | 512 | NPRF | 702 | 850 | 1015 | 1349 | 2236 | 2863 |
+| **AES-ITB-128** | 128 | 512 | NPRF | 688 | 902 | 991 | 1408 | 2434 | 2840 |
 | **Areion-SoEM-256** | 256 | 512 | PRF | 397 | 469 | 513 | 679 | 888 | 1078 |
 | **Areion-SoEM-512** | 512 | 512 | PRF | 393 | 488 | 519 | 765 | 908 | 1095 |
 | **BLAKE2b-256** | 256 | 512 | PRF | 349 | 402 | 475 | 532 | 770 | 878 |
@@ -85,7 +85,7 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **AES-ITB-128** | 128 | 1024 | NPRF | 680 | 836 | 985 | 1274 | 2233 | 2755 |
+| **AES-ITB-128** | 128 | 1024 | NPRF | 678 | 892 | 958 | 1318 | 2419 | 2787 |
 | **Areion-SoEM-256** | 256 | 1024 | PRF | 364 | 411 | 483 | 576 | 808 | 913 |
 | **Areion-SoEM-512** | 512 | 1024 | PRF | 378 | 429 | 488 | 660 | 772 | 916 |
 | **BLAKE2b-256** | 256 | 1024 | PRF | 312 | 333 | 414 | 429 | 573 | 723 |
@@ -100,7 +100,7 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **AES-ITB-128** | 128 | 2048 | NPRF | 623 | 799 | 966 | 1173 | 2053 | 2516 |
+| **AES-ITB-128** | 128 | 2048 | NPRF | 661 | 850 | 920 | 1189 | 2233 | 2581 |
 | **Areion-SoEM-256** | 256 | 2048 | PRF | 320 | 358 | 425 | 467 | 619 | 727 |
 | **Areion-SoEM-512** | 512 | 2048 | PRF | 347 | 351 | 397 | 525 | 695 | 822 |
 | **BLAKE2b-256** | 256 | 2048 | PRF | 248 | 272 | 338 | 319 | 432 | 502 |
