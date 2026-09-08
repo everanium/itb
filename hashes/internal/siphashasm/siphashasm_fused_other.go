@@ -8,6 +8,8 @@ var (
 	FusedHasAVX512 = false
 	FusedHasAVX2   = false
 	FusedHasNEON   = false
+	FusedHasGPR    = false
+	HasGPRX16      = false
 )
 
 // FusedAvailable is always false on this build.

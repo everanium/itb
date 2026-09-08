@@ -25,7 +25,8 @@ func TestFusedKernelParityArm64(t *testing.T) {
 // guard under the NEON state and the scalar state.
 func TestFusedDispatcherTiersArm64(t *testing.T) {
 	a, b := FusedHasNEON, HasNEONX16
-	t.Cleanup(func() { FusedHasNEON, HasNEONX16 = a, b })
+	g, gx := FusedHasGPR, HasGPRX16
+	t.Cleanup(func() { FusedHasNEON, HasNEONX16 = a, b; FusedHasGPR, HasGPRX16 = g, gx })
 	t.Run("neon", func(t *testing.T) {
 		if !a {
 			t.Skip("requires Advanced SIMD")
@@ -36,6 +37,7 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 	})
 	t.Run("scalar", func(t *testing.T) {
 		FusedHasNEON, HasNEONX16 = false, false
+		FusedHasGPR, HasGPRX16 = false, false
 		checkDispatchers(t, "scalar")
 		checkZeroAlloc(t, "scalar")
 	})

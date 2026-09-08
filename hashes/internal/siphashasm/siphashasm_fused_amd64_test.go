@@ -34,6 +34,7 @@ type fusedTier struct {
 	skipMsg      string
 	x4           map[int]fusedX4Fn
 	avx512, avx2 bool
+	gpr          bool
 }
 
 func amd64FusedTiers() []fusedTier {
@@ -42,13 +43,13 @@ func amd64FusedTiers() []fusedTier {
 			name: "avx2", ok: cpu.X86.HasAVX2, skipMsg: "requires AVX2",
 			x4: map[int]fusedX4Fn{13: wrapX4(sipHash24FusedChain13x4Avx2Asm), 20: wrapX4(sipHash24FusedChain20x4Avx2Asm),
 				36: wrapX4(sipHash24FusedChain36x4Avx2Asm), 68: wrapX4(sipHash24FusedChain68x4Avx2Asm)},
-			avx2: true,
+			avx2: true, gpr: true,
 		},
 		{
 			name: "avx512", ok: cpu.X86.HasAVX512F, skipMsg: "requires AVX-512F",
 			x4: map[int]fusedX4Fn{13: wrapX4(sipHash24FusedChain13x4Avx512Asm), 20: wrapX4(sipHash24FusedChain20x4Avx512Asm),
 				36: wrapX4(sipHash24FusedChain36x4Avx512Asm), 68: wrapX4(sipHash24FusedChain68x4Avx512Asm)},
-			avx512: true,
+			avx512: true, gpr: true,
 		},
 	}
 }
@@ -63,8 +64,8 @@ func gprX1Kernels() map[int]fusedX1Fn {
 // Cleanup that restores them.
 func saveFusedFlags(t *testing.T) {
 	t.Helper()
-	a512, a2 := FusedHasAVX512, FusedHasAVX2
-	t.Cleanup(func() { FusedHasAVX512, FusedHasAVX2 = a512, a2 })
+	a512, a2, g := FusedHasAVX512, FusedHasAVX2, FusedHasGPR
+	t.Cleanup(func() { FusedHasAVX512, FusedHasAVX2, FusedHasGPR = a512, a2, g })
 }
 
 // TestFusedKernelParityAmd64 pins every fused kernel the host can execute
@@ -95,7 +96,7 @@ func TestFusedKernelParityAmd64(t *testing.T) {
 // state — and pins the public dispatchers' output to the reference.
 func TestFusedDispatcherTiers(t *testing.T) {
 	saveFusedFlags(t)
-	tiers := append(amd64FusedTiers(), fusedTier{name: "scalar", ok: true})
+	tiers := append(amd64FusedTiers(), fusedTier{name: "gpr", ok: true, gpr: true}, fusedTier{name: "scalar", ok: true})
 	x4 := map[int]fusedX4Fn{13: FusedChain13x4, 20: FusedChain20x4, 36: FusedChain36x4, 68: FusedChain68x4}
 	x1 := map[int]fusedX1Fn{13: FusedChain13x1, 20: FusedChain20x1, 36: FusedChain36x1, 68: FusedChain68x1}
 	for _, tier := range tiers {
@@ -104,7 +105,7 @@ func TestFusedDispatcherTiers(t *testing.T) {
 			if !tier.ok {
 				t.Skip(tier.skipMsg)
 			}
-			FusedHasAVX512, FusedHasAVX2 = tier.avx512, tier.avx2
+			FusedHasAVX512, FusedHasAVX2, FusedHasGPR = tier.avx512, tier.avx2, tier.gpr
 			for _, n := range shapes {
 				t.Run("x4/"+shapeName(n), func(t *testing.T) { runFusedX4Parity(t, "dispatch-"+tier.name+"-x4", n, x4[n]) })
 				t.Run("x1/"+shapeName(n), func(t *testing.T) { runFusedX1Parity(t, "dispatch-"+tier.name+"-x1", n, x1[n]) })
@@ -132,7 +133,7 @@ func TestFusedCrossTier(t *testing.T) {
 				if !tier.ok {
 					continue
 				}
-				FusedHasAVX512, FusedHasAVX2 = tier.avx512, tier.avx2
+				FusedHasAVX512, FusedHasAVX2, FusedHasGPR = tier.avx512, tier.avx2, tier.gpr
 				var out [4][2]uint64
 				x4[n](comps, &ptrs, &out)
 				if firstName == "" {
@@ -152,7 +153,7 @@ func TestFusedFlagsExclusive(t *testing.T) {
 	if FusedHasAVX512 && FusedHasAVX2 {
 		t.Fatal("both fused tier flags active")
 	}
-	if FusedAvailable() != (FusedHasAVX512 || FusedHasAVX2) {
+	if FusedAvailable() != (FusedHasAVX512 || FusedHasAVX2 || FusedHasGPR) {
 		t.Fatal("FusedAvailable disagrees with the flags")
 	}
 }
@@ -258,8 +259,8 @@ func BenchmarkFusedTierPix(b *testing.B) {
 // tier, and the scalar state.
 func TestFusedDispatchersZeroAllocTiers(t *testing.T) {
 	saveFusedFlags(t)
-	x16, x8 := [2]bool{HasAVX512X16, HasAVX2X16}, FusedHasAVX512X8
-	t.Cleanup(func() { HasAVX512X16, HasAVX2X16, FusedHasAVX512X8 = x16[0], x16[1], x8 })
+	x16, x8, gx := [2]bool{HasAVX512X16, HasAVX2X16}, FusedHasAVX512X8, HasGPRX16
+	t.Cleanup(func() { HasAVX512X16, HasAVX2X16, FusedHasAVX512X8, HasGPRX16 = x16[0], x16[1], x8, gx })
 	for _, tier := range amd64FusedTiers() {
 		if !tier.ok {
 			continue
@@ -272,12 +273,15 @@ func TestFusedDispatchersZeroAllocTiers(t *testing.T) {
 			if tier.avx512 {
 				label += map[bool]string{false: "-x4", true: "-x8"}[armX8]
 			}
-			FusedHasAVX512, FusedHasAVX2 = tier.avx512, tier.avx2
+			FusedHasAVX512, FusedHasAVX2, FusedHasGPR = tier.avx512, tier.avx2, tier.gpr
 			HasAVX512X16, HasAVX2X16 = tier.avx512, tier.avx2
 			FusedHasAVX512X8 = armX8
 			checkDispatchersZeroAlloc(t, label)
 		}
 	}
 	FusedHasAVX512, FusedHasAVX2, HasAVX512X16, HasAVX2X16, FusedHasAVX512X8 = false, false, false, false, false
+	FusedHasGPR, HasGPRX16 = true, true
+	checkDispatchersZeroAlloc(t, "gpr")
+	FusedHasGPR, HasGPRX16 = false, false
 	checkDispatchersZeroAlloc(t, "scalar")
 }

@@ -44,6 +44,9 @@ func TestForceHashTierApplied(t *testing.T) {
 		want(false, true)
 	case "scalar":
 		want(false, false)
+		if FusedHasGPR || (x16Owned && HasGPRX16) {
+			t.Fatalf("scalar: GPR arms armed (fused=%v fill=%v)", FusedHasGPR, HasGPRX16)
+		}
 	case "aesni", "vaesavx2":
 		want(cpu.X86.HasAVX512F, cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F)
 	case "sve2", "sve", "neon":
@@ -82,6 +85,9 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 		want(false, true)
 	case "scalar":
 		want(false, false)
+		if HasGPRX16 {
+			t.Fatal("scalar: batch-16 GPR arm armed")
+		}
 	case "aesni", "vaesavx2":
 		want(fillFlagsFromHashTier())
 	case "neon":
@@ -108,4 +114,19 @@ func fillFlagsFromHashTier() (avx512, avx2 bool) {
 		return false, false
 	}
 	return cpu.X86.HasAVX512F, cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+}
+
+// TestForceTiersKeepGPR asserts that every token other than scalar
+// leaves the single-lane GPR arms armed: the GPR kernels are the
+// single-lane arm of every tier.
+func TestForceTiersKeepGPR(t *testing.T) {
+	if forcetier.HashTier() == "scalar" {
+		t.Skip("scalar clears the GPR arms; asserted by TestForceHashTierApplied")
+	}
+	if !FusedHasGPR {
+		t.Fatalf("ITB_FORCE_HASH_TIER=%q cleared FusedHasGPR", forcetier.HashTier())
+	}
+	if forcetier.InterlockPRFFillTier() != "scalar" && !HasGPRX16 {
+		t.Fatalf("ITB_FORCE_INTERLOCK_PRF_FILL_TIER=%q cleared HasGPRX16", forcetier.InterlockPRFFillTier())
+	}
 }

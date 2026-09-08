@@ -35,13 +35,15 @@ func TestFusedKernelParityArm64(t *testing.T) {
 // each.
 func TestFusedDispatcherTiersArm64(t *testing.T) {
 	a, x := FusedHasNEON, HasNEONX16
-	t.Cleanup(func() { FusedHasNEON, HasNEONX16 = a, x })
+	g, gx := FusedHasGPR, HasGPRX16
+	t.Cleanup(func() { FusedHasNEON, HasNEONX16 = a, x; FusedHasGPR, HasGPRX16 = g, gx })
 	if a {
 		FusedHasNEON, HasNEONX16 = true, true
 		checkDispatchers(t, "neon")
 		checkZeroAlloc(t, "neon")
 	}
 	FusedHasNEON, HasNEONX16 = false, false
+	FusedHasGPR, HasGPRX16 = false, false
 	checkDispatchers(t, "scalar")
 	checkZeroAlloc(t, "scalar")
 }

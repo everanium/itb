@@ -68,6 +68,7 @@ func TestInputEntropyDispatcherTiersAmd64(t *testing.T) {
 			}
 			FusedHasAVX512, FusedHasAVX2 = tier.avx512, tier.avx2
 			HasAVX512X16, HasAVX2X16 = tier.avx512, tier.avx2
+			FusedHasGPR, HasGPRX16 = tier.name != "scalar", tier.name != "scalar"
 			auditDispatchers(t, "dispatch-"+tier.name)
 		})
 	}

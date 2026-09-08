@@ -17,12 +17,13 @@ type fusedTier struct {
 	skipMsg string
 	avx512  bool
 	avx2    bool
+	gpr     bool
 }
 
 func amd64FusedTiers() []fusedTier {
 	return []fusedTier{
-		{name: "avx2", ok: cpu.X86.HasAVX2, skipMsg: "requires AVX2", avx2: true},
-		{name: "avx512", ok: cpu.X86.HasAVX512F, skipMsg: "requires AVX-512F", avx512: true},
+		{name: "avx2", ok: cpu.X86.HasAVX2, skipMsg: "requires AVX2", avx2: true, gpr: true},
+		{name: "avx512", ok: cpu.X86.HasAVX512F, skipMsg: "requires AVX-512F", avx512: true, gpr: true},
 	}
 }
 
@@ -30,15 +31,18 @@ func saveFusedFlags(t *testing.T) {
 	t.Helper()
 	a, b := FusedHasAVX512, FusedHasAVX2
 	x, y := HasAVX512X16, HasAVX2X16
+	g, gx := FusedHasGPR, HasGPRX16
 	t.Cleanup(func() {
 		FusedHasAVX512, FusedHasAVX2 = a, b
 		HasAVX512X16, HasAVX2X16 = x, y
+		FusedHasGPR, HasGPRX16 = g, gx
 	})
 }
 
 func setTier(tier fusedTier) {
 	FusedHasAVX512, FusedHasAVX2 = tier.avx512, tier.avx2
 	HasAVX512X16, HasAVX2X16 = tier.avx512, tier.avx2
+	FusedHasGPR, HasGPRX16 = tier.gpr, tier.gpr
 }
 
 func wrap4_256(f func(*[32]byte, *uint64, int, *[4]*byte, *[4][4]uint64)) x4fn256 {
@@ -96,6 +100,11 @@ func TestFusedDispatcherTiersAmd64(t *testing.T) {
 			checkZeroAlloc(t, tier.name)
 		})
 	}
+	t.Run("gpr", func(t *testing.T) {
+		setTier(fusedTier{name: "gpr", ok: true, gpr: true})
+		checkDispatchers(t, "gpr")
+		checkZeroAlloc(t, "gpr")
+	})
 	t.Run("scalar", func(t *testing.T) {
 		setTier(fusedTier{})
 		checkDispatchers(t, "scalar")

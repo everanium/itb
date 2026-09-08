@@ -37,9 +37,22 @@ var (
 	HasNEONX16   = false
 )
 
-// FusedAvailable reports whether any assembly tier of the fused cascade
-// family is selected.
-func FusedAvailable() bool { return FusedHasAVX512 || FusedHasAVX2 }
+// FusedHasGPR arms the single-lane general-purpose-register kernels, the
+// single-lane arm of every tier: true on every amd64 build, cleared by
+// ITB_FORCE_HASH_TIER=scalar. Where no SIMD tier is selected the
+// four-lane dispatchers run four single-lane calls under this flag, so a
+// host without AVX2 keeps the cascade in assembly.
+var FusedHasGPR = true
+
+// HasGPRX16 is the general-purpose-register arm of the batch-16 fill
+// hook: single-lane calls over Go-synthesised fill blocks where no SIMD
+// fill tier is selected. Cleared by ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar
+// and by ITB_FORCE_HASH_TIER=scalar.
+var HasGPRX16 = true
+
+// FusedAvailable reports whether any assembly arm of the fused cascade
+// family is selected — a SIMD tier or the single-lane GPR arm.
+func FusedAvailable() bool { return FusedHasAVX512 || FusedHasAVX2 || FusedHasGPR }
 
 // Fused256Chain13x4 runs the width-256 cascade on four 13-byte lanes.
 func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
@@ -54,7 +67,13 @@ func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b256FusedChain13x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b256FusedChain13x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -62,7 +81,7 @@ func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // through the general-purpose-register kernel, the single-lane arm of
 // every tier.
 func Fused256Chain13x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain13x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -82,7 +101,13 @@ func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b256FusedChain20x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b256FusedChain20x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -90,7 +115,7 @@ func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused256Chain20x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain20x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -110,7 +135,13 @@ func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b256FusedChain36x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b256FusedChain36x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -118,7 +149,7 @@ func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused256Chain36x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain36x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -138,7 +169,13 @@ func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b256FusedChain68x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b256FusedChain68x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -146,7 +183,7 @@ func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain68x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -166,7 +203,13 @@ func Fused512Chain13x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b512FusedChain13x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused512X4(fixedKey, components, dataPtrs, 13, out)
+		if !FusedHasGPR {
+			scalarFused512X4(fixedKey, components, dataPtrs, 13, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b512FusedChain13x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -174,7 +217,7 @@ func Fused512Chain13x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused512Chain13x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain13x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -194,7 +237,13 @@ func Fused512Chain20x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b512FusedChain20x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused512X4(fixedKey, components, dataPtrs, 20, out)
+		if !FusedHasGPR {
+			scalarFused512X4(fixedKey, components, dataPtrs, 20, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b512FusedChain20x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -202,7 +251,7 @@ func Fused512Chain20x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused512Chain20x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain20x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -222,7 +271,13 @@ func Fused512Chain36x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b512FusedChain36x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused512X4(fixedKey, components, dataPtrs, 36, out)
+		if !FusedHasGPR {
+			scalarFused512X4(fixedKey, components, dataPtrs, 36, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b512FusedChain36x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -230,7 +285,7 @@ func Fused512Chain36x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused512Chain36x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain36x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -250,7 +305,13 @@ func Fused512Chain68x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake2b512FusedChain68x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused512X4(fixedKey, components, dataPtrs, 68, out)
+		if !FusedHasGPR {
+			scalarFused512X4(fixedKey, components, dataPtrs, 68, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake2b512FusedChain68x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
@@ -258,7 +319,7 @@ func Fused512Chain68x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // through the four-lane kernel of the selected tier with the lane
 // replicated.
 func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain68x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -287,7 +348,15 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 			blake2b256FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
 		}
 	default:
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		if !HasGPRX16 {
+			scalarFill256X8(fixedKey, components, groupIdxBase, out)
+			return
+		}
+		var block [13]byte
+		for i := range out {
+			fillBlock(&block, groupIdxBase+uint64(i))
+			blake2b256FusedChain13x1GprAsm(fixedKey, c, ng, &block[0], &out[i])
+		}
 	}
 }
 
@@ -309,7 +378,13 @@ func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 	case HasAVX2X16:
 		blake2b512FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, out)
 	default:
-		scalarFill512X4(fixedKey, components, groupIdxBase, out)
+		if !HasGPRX16 {
+			scalarFill512X4(fixedKey, components, groupIdxBase, out)
+			return
+		}
+		for i := range out {
+			blake2b512FusedChain13x1GprAsm(fixedKey, c, ng, ptrs[i], &out[i])
+		}
 	}
 }
 
@@ -488,7 +563,15 @@ func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 			blake2b512FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
 		}
 	default:
-		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		if !HasGPRX16 {
+			scalarFill512X8(fixedKey, components, groupIdxBase, out)
+			return
+		}
+		var block [13]byte
+		for i := range out {
+			fillBlock(&block, groupIdxBase+uint64(i))
+			blake2b512FusedChain13x1GprAsm(fixedKey, c, ng, &block[0], &out[i])
+		}
 	}
 }
 

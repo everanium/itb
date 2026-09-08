@@ -36,9 +36,22 @@ var (
 	HasNEONX16   = false
 )
 
-// FusedAvailable reports whether any assembly tier of the fused cascade
-// family is selected.
-func FusedAvailable() bool { return FusedHasAVX512 || FusedHasAVX2 }
+// FusedHasGPR arms the single-lane general-purpose-register kernels, the
+// single-lane arm of every tier: true on every amd64 build, cleared by
+// ITB_FORCE_HASH_TIER=scalar. Where no SIMD tier is selected the
+// four-lane dispatchers run four single-lane calls under this flag, so a
+// host without AVX2 keeps the cascade in assembly.
+var FusedHasGPR = true
+
+// HasGPRX16 is the general-purpose-register arm of the batch-16 fill
+// hook: single-lane calls over Go-synthesised fill blocks where no SIMD
+// fill tier is selected. Cleared by ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar
+// and by ITB_FORCE_HASH_TIER=scalar.
+var HasGPRX16 = true
+
+// FusedAvailable reports whether any assembly arm of the fused cascade
+// family is selected — a SIMD tier or the single-lane GPR arm.
+func FusedAvailable() bool { return FusedHasAVX512 || FusedHasAVX2 || FusedHasGPR }
 
 // Fused256Chain13x4 runs the cascade on four 13-byte lanes.
 func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
@@ -53,14 +66,20 @@ func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake3FusedChain13x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake3FusedChain13x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
 // Fused256Chain13x1 runs the cascade on one 13-byte lane through the
 // general-purpose-register kernel, the single-lane arm of every tier.
 func Fused256Chain13x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake3FusedChain13x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -80,14 +99,20 @@ func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake3FusedChain20x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake3FusedChain20x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
 // Fused256Chain20x1 runs the cascade on one 20-byte lane through the
 // general-purpose-register kernel.
 func Fused256Chain20x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake3FusedChain20x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -107,14 +132,20 @@ func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake3FusedChain36x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake3FusedChain36x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
 // Fused256Chain36x1 runs the cascade on one 36-byte lane through the
 // general-purpose-register kernel.
 func Fused256Chain36x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake3FusedChain36x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -134,14 +165,20 @@ func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	case FusedHasAVX2:
 		blake3FusedChain68x4Avx2Asm(fixedKey, c, ng, dataPtrs, out)
 	default:
-		scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
+		if !FusedHasGPR {
+			scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
+			return
+		}
+		for l := range dataPtrs {
+			blake3FusedChain68x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
 	}
 }
 
 // Fused256Chain68x1 runs the cascade on one 68-byte lane through the
 // general-purpose-register kernel.
 func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake3FusedChain68x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -152,8 +189,9 @@ func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 // (0..7) runs the cascade over the fill block of group groupIdxBase+i.
 // The AVX-512 tier synthesises the blocks in-register and runs the
 // eight-lane YMM kernel; the AVX2 tier runs two four-lane kernel calls
-// over Go-synthesised blocks. The dispatch follows the batch-16 flags so
-// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
+// over Go-synthesised blocks; without a SIMD fill tier the GPR arm runs
+// eight single-lane calls over the same blocks. The dispatch follows the
+// batch-16 flags so ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
 func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
 	if !validComponents256(components) {
 		scalarFill256X8(fixedKey, components, groupIdxBase, out)
@@ -170,7 +208,15 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 			blake3FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, out8x256Half(out, h))
 		}
 	default:
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		if !HasGPRX16 {
+			scalarFill256X8(fixedKey, components, groupIdxBase, out)
+			return
+		}
+		var block [13]byte
+		for i := range out {
+			fillBlock(&block, groupIdxBase+uint64(i))
+			blake3FusedChain13x1GprAsm(fixedKey, c, ng, &block[0], &out[i])
+		}
 	}
 }
 

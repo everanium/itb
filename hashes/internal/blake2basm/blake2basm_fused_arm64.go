@@ -21,8 +21,18 @@ var (
 	HasNEONX16   = cpu.ARM64.HasASIMD
 )
 
-// FusedAvailable reports whether the NEON tier is selected.
-func FusedAvailable() bool { return FusedHasNEON }
+// FusedHasGPR arms the single-lane general-purpose-register kernels, the
+// single-lane arm of every tier: true on every arm64 build, cleared by
+// ITB_FORCE_HASH_TIER=scalar.
+var FusedHasGPR = true
+
+// HasGPRX16 is the general-purpose-register arm of the batch-16 fill
+// hook; cleared by ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar and by
+// ITB_FORCE_HASH_TIER=scalar.
+var HasGPRX16 = true
+
+// FusedAvailable reports whether the NEON tier or the GPR arm is selected.
+func FusedAvailable() bool { return FusedHasNEON || FusedHasGPR }
 
 // Fused256Chain13x4 runs the width-256 cascade on four 13-byte lanes.
 func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
@@ -36,7 +46,7 @@ func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // Fused256Chain13x1 runs the width-256 cascade on one 13-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused256Chain13x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain13x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -55,7 +65,7 @@ func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // Fused256Chain20x1 runs the width-256 cascade on one 20-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused256Chain20x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain20x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -74,7 +84,7 @@ func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // Fused256Chain36x1 runs the width-256 cascade on one 36-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused256Chain36x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain36x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -93,7 +103,7 @@ func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 // Fused256Chain68x1 runs the width-256 cascade on one 68-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
+	if FusedHasGPR && validComponents256(components) {
 		blake2b256FusedChain68x1GprAsm(fixedKey, &components[0], len(components)/4, data, out)
 		return
 	}
@@ -112,7 +122,7 @@ func Fused512Chain13x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // Fused512Chain13x1 runs the width-512 cascade on one 13-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused512Chain13x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain13x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -131,7 +141,7 @@ func Fused512Chain20x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // Fused512Chain20x1 runs the width-512 cascade on one 20-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused512Chain20x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain20x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -150,7 +160,7 @@ func Fused512Chain36x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // Fused512Chain36x1 runs the width-512 cascade on one 36-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused512Chain36x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain36x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}
@@ -169,7 +179,7 @@ func Fused512Chain68x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 // Fused512Chain68x1 runs the width-512 cascade on one 68-byte lane
 // through the four-lane kernel with the lane replicated.
 func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
+	if FusedHasGPR && validComponents512(components) {
 		blake2b512FusedChain68x1GprAsm(fixedKey, &components[0], len(components)/8, data, out)
 		return
 	}

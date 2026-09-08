@@ -11,6 +11,8 @@ var (
 	HasAVX512X16   = false
 	HasAVX2X16     = false
 	HasNEONX16     = false
+	FusedHasGPR    = false
+	HasGPRX16      = false
 )
 
 // FusedAvailable is always false on this build.

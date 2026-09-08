@@ -54,7 +54,7 @@ func TestInputEntropyKernelsAmd64(t *testing.T) {
 // each.
 func TestInputEntropyDispatcherTiersAmd64(t *testing.T) {
 	saveFusedFlags(t)
-	for _, tier := range append(amd64FusedTiers(), fusedTier{name: "scalar", ok: true}) {
+	for _, tier := range append(amd64FusedTiers(), fusedTier{name: "gpr", ok: true, gpr: true}, fusedTier{name: "scalar", ok: true}) {
 		t.Run(tier.name, func(t *testing.T) {
 			if !tier.ok {
 				t.Skip(tier.skipMsg)

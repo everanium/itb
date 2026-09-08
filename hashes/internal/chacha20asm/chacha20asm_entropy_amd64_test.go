@@ -45,7 +45,7 @@ func TestInputEntropyKernelsAmd64(t *testing.T) {
 // each.
 func TestInputEntropyDispatcherTiersAmd64(t *testing.T) {
 	saveCascadeFlags(t)
-	for _, tier := range append(amd64CascadeTiers(), cascadeTier{name: "scalar", ok: true}) {
+	for _, tier := range append(amd64CascadeTiers(), cascadeTier{name: "gpr", ok: true, gpr: true}, cascadeTier{name: "scalar", ok: true}) {
 		t.Run(tier.name, func(t *testing.T) {
 			if !tier.ok {
 				t.Skip(tier.skipMsg)

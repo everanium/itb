@@ -29,6 +29,7 @@ func amd64FusedX16Tiers() []fusedX16Tier {
 			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base, x16Half(out, 0))
 			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base+8, x16Half(out, 1))
 		}, false, true},
+		{"gpr", func() bool { return true }, nil, false, false},
 		{"scalar", func() bool { return true }, nil, false, false},
 	}
 }
@@ -37,8 +38,8 @@ func amd64FusedX16Tiers() []fusedX16Tier {
 // a Cleanup that restores them.
 func saveFusedX16Flags(t *testing.T) {
 	t.Helper()
-	a512, a2 := HasAVX512X16, HasAVX2X16
-	t.Cleanup(func() { HasAVX512X16, HasAVX2X16 = a512, a2 })
+	a512, a2, g, gx := HasAVX512X16, HasAVX2X16, FusedHasGPR, HasGPRX16
+	t.Cleanup(func() { HasAVX512X16, HasAVX2X16, FusedHasGPR, HasGPRX16 = a512, a2, g, gx })
 }
 
 // TestFusedChain13x16KernelParityAmd64 pins the ZMM batch-16 kernel and

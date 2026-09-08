@@ -49,8 +49,8 @@ func TestFusedKernelParityArm64(t *testing.T) {
 // dispatch state in turn and pins the dispatchers' output to the
 // reference under each.
 func TestFusedDispatcherTiersArm64(t *testing.T) {
-	saved := FusedHasNEON
-	t.Cleanup(func() { FusedHasNEON = saved })
+	saved, savedGPR := FusedHasNEON, FusedHasGPR
+	t.Cleanup(func() { FusedHasNEON, FusedHasGPR = saved, savedGPR })
 	x4 := map[int]fusedX4Fn{13: FusedChain13x4, 20: FusedChain20x4, 36: FusedChain36x4, 68: FusedChain68x4}
 	x1 := map[int]fusedX1Fn{13: FusedChain13x1, 20: FusedChain20x1, 36: FusedChain36x1, 68: FusedChain68x1}
 	for _, state := range []struct {
@@ -58,7 +58,7 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 		neon bool
 	}{{"neon", true}, {"scalar", false}} {
 		t.Run(state.name, func(t *testing.T) {
-			FusedHasNEON = state.neon
+			FusedHasNEON, FusedHasGPR = state.neon, state.neon
 			for _, n := range shapes {
 				t.Run("x4/"+shapeName(n), func(t *testing.T) { runFusedX4Parity(t, "dispatch-"+state.name+"-x4", n, x4[n]) })
 				t.Run("x1/"+shapeName(n), func(t *testing.T) { runFusedX1Parity(t, "dispatch-"+state.name+"-x1", n, x1[n]) })
@@ -71,10 +71,12 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 // batch-16 state in turn and pins the dispatcher's output to the
 // reference under each.
 func TestFusedChain13x16DispatcherArm64(t *testing.T) {
-	saved := HasNEONX16
-	t.Cleanup(func() { HasNEONX16 = saved })
+	saved, savedGPR := HasNEONX16, HasGPRX16
+	t.Cleanup(func() { HasNEONX16, HasGPRX16 = saved, savedGPR })
 	HasNEONX16 = true
 	checkFusedX16Parity(t, "dispatch-neon", FusedChain13x16)
 	HasNEONX16 = false
+	checkFusedX16Parity(t, "dispatch-gpr", FusedChain13x16)
+	HasGPRX16 = false
 	checkFusedX16Parity(t, "dispatch-scalar", FusedChain13x16)
 }

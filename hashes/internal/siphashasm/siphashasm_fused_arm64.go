@@ -12,8 +12,18 @@ var (
 	FusedHasAVX2   = false
 )
 
-// FusedAvailable reports whether the NEON fused cascade tier is selected.
-func FusedAvailable() bool { return FusedHasNEON }
+// FusedHasGPR arms the single-lane general-purpose-register kernels, the
+// single-lane arm of every tier: true on every arm64 build, cleared by
+// ITB_FORCE_HASH_TIER=scalar.
+var FusedHasGPR = true
+
+// HasGPRX16 is the general-purpose-register arm of the batch-16 fill
+// hook; cleared by ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar and by
+// ITB_FORCE_HASH_TIER=scalar.
+var HasGPRX16 = true
+
+// FusedAvailable reports whether the NEON tier or the GPR arm is selected.
+func FusedAvailable() bool { return FusedHasNEON || FusedHasGPR }
 
 func FusedChain13x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
 	if FusedHasNEON && validComponents(components) {
@@ -44,28 +54,28 @@ func FusedChain68x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) 
 	scalarFusedBatch(components, dataPtrs, 68, out)
 }
 func FusedChain13x1(components []uint64, data *byte, out *[2]uint64) {
-	if FusedHasNEON && validComponents(components) {
+	if FusedHasGPR && validComponents(components) {
 		sipHash24FusedChain13x1GprAsm(&components[0], len(components)/2, data, out)
 		return
 	}
 	scalarFusedSingle(components, data, 13, out)
 }
 func FusedChain20x1(components []uint64, data *byte, out *[2]uint64) {
-	if FusedHasNEON && validComponents(components) {
+	if FusedHasGPR && validComponents(components) {
 		sipHash24FusedChain20x1GprAsm(&components[0], len(components)/2, data, out)
 		return
 	}
 	scalarFusedSingle(components, data, 20, out)
 }
 func FusedChain36x1(components []uint64, data *byte, out *[2]uint64) {
-	if FusedHasNEON && validComponents(components) {
+	if FusedHasGPR && validComponents(components) {
 		sipHash24FusedChain36x1GprAsm(&components[0], len(components)/2, data, out)
 		return
 	}
 	scalarFusedSingle(components, data, 36, out)
 }
 func FusedChain68x1(components []uint64, data *byte, out *[2]uint64) {
-	if FusedHasNEON && validComponents(components) {
+	if FusedHasGPR && validComponents(components) {
 		sipHash24FusedChain68x1GprAsm(&components[0], len(components)/2, data, out)
 		return
 	}

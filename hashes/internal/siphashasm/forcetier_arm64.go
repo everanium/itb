@@ -37,6 +37,7 @@ func applyHashTier() {
 	case "scalar":
 		FusedHasNEON = false
 		HasNEONX16 = false
+		FusedHasGPR, HasGPRX16 = false, false
 	default:
 		forcetier.Warnf("siphashasm: %s tier is amd64-only; keeping auto-dispatch", forcetier.HashTier())
 	}
@@ -52,6 +53,7 @@ func applyInterlockPRFFillTier() {
 		HasNEONX16 = true
 	case "scalar":
 		HasNEONX16 = false
+		HasGPRX16 = false
 	default:
 		forcetier.Warnf("siphashasm: %s batch-16 tier is amd64-only; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 	}
