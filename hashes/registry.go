@@ -650,7 +650,9 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 //     kernels of the primitive (internal/areionasm) are reached through
 //     the hooks AttachFused256 / AttachInterlockBatch16x256 install
 //   - "blake2b256" — AVX-512 ZMM-batched BLAKE2b chain-absorb kernels
-//   - "blake2s" — AVX-512 ZMM-batched BLAKE2s chain-absorb kernels
+//   - "blake2s" — always: the four lanes through the single arm; the
+//     fused cascade kernels of the primitive (hashes/internal/blake2sasm)
+//     are reached through the hooks the blake2s entry's factories install
 //   - "blake3" — AVX-512 ZMM-batched BLAKE3 chain-absorb kernels
 //   - "chacha20" — AVX-512 ZMM-batched ChaCha20 chain-absorb kernels
 //

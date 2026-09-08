@@ -105,11 +105,6 @@ func TestBLAKE2sCascadeKAT(t *testing.T) {
 				if !printKAT && singleGot != kat.single {
 					t.Errorf("%s ChainHash256 = %s, want %s", label, singleGot, kat.single)
 				}
-				if s.BatchFusedChain == nil && s.BatchHash == nil {
-					// The arms-only twin carries no batched arm on a
-					// build without the chain-absorb tiers.
-					continue
-				}
 				b := s.BatchChainHash256(&lanes)
 				var acc uint64
 				for l := range b {

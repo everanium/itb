@@ -150,8 +150,6 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | BLAKE2s — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `blake2sasm.HasAVX512X16` / `HasAVX2X16` |
 | BLAKE2s — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `blake2sasm.FusedAvailable()` |
 | BLAKE2s — NEON fused chain + GPR single-lane fused chain + batch-16 fill through four-lane NEON calls (arm64, four dword lanes per register; auto-selected on every ARMv8-A host) | Advanced SIMD | `blake2sasm.FusedHasNEON` / `blake2sasm.HasNEONX16` |
-| BLAKE2s — AVX-512 4-lane XMM chain-absorb + fused chain | AVX-512F | `blake2sasm.HasAVX512Fused` |
-| BLAKE2s — AVX2 4-lane XMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2sasm.HasAVX2Fused` |
 | BLAKE3 — EVEX XMM 4-lane / YMM 8-lane fused chain (the whole component cascade per call, one dword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `blake3asm.FusedHasAVX512` / `blake3asm.FusedHasAVX512X8` |
 | BLAKE3 — AVX2 XMM 4-lane fused chain (synthesised rotates, message words as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `blake3asm.FusedHasAVX2` |
 | BLAKE3 — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `blake3asm.HasAVX512X16` / `HasAVX2X16` |
@@ -180,7 +178,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every shipped primitive fills the Interlocked Barrier through its batch-16 fused cascade kernels; the chain-absorb families of BLAKE2s, BLAKE3 and ChaCha20 additionally carry a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier, the four-lane arm of the batched cascade over the arms alone.
+Every shipped primitive fills the Interlocked Barrier through its batch-16 fused cascade kernels; the chain-absorb families of BLAKE3 and ChaCha20 additionally carry a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier, the four-lane arm of the batched cascade over the arms alone.
 
 Cross-referenced to shipping x86 microarchitectures:
 

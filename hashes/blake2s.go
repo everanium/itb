@@ -83,11 +83,11 @@ func BLAKE2sWithKey(b2key [32]byte) itb.HashFunc256 {
 // computed via the batched dispatch match the single-call path
 // bit-exact (the parity invariant required by itb.BatchHashFunc256).
 //
-// On amd64 with AVX-512+VL the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
-// shapes (20 / 36 / 68 byte inputs). On hosts without AVX-512+VL, and
-// for non-{20,36,68} input lengths, the batched arm falls back to
-// four single-call invocations and remains bit-exact.
+// The batched arm evaluates the four lanes through the single arm;
+// the per-pixel and Interlocked Barrier fill work of a seed built
+// through the registry runs in the fused cascade kernels of
+// hashes/internal/blake2sasm, installed by the blake2s entry's
+// FusedChainHash256 / InterlockFillBatch16x256 factories.
 //
 // With no argument a fresh 32-byte fixed key is generated via
 // crypto/rand; passing a single caller-supplied [32]byte uses that
@@ -111,83 +111,16 @@ func BLAKE2s256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32
 // persistence-restore path where the original fixed key has been
 // saved across processes (encrypt today, decrypt tomorrow).
 //
-// The single arm is identical to BLAKE2sWithKey(fixedKey). The
-// batched arm hot-dispatches to the fused ZMM-batched chain-absorb
-// kernel when all four lanes share an input length in {20, 36, 68};
-// for any other lane-length configuration it falls back to four
-// single-call invocations of the single arm.
-//
-// The ASM kernel returns 8 × uint32 per lane (32 bytes of digest);
-// the closure repacks each lane's 8 uint32 into 4 uint64 for the
-// itb.BatchHashFunc256 contract (LE byte ordering).
+// The single arm is identical to BLAKE2sWithKey(fixedKey); the
+// batched arm evaluates the four lanes through it under their per-lane
+// seeds and is bit-exact with four single calls on every input. Every
+// shipped constructor path attaches the fused cascade hooks of the
+// blake2s registry entry, which the batched ChainHash256 entry points
+// consult first, so the batched arm is the fallback for seeds built
+// without those hooks.
 func BLAKE2s256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
 	single := BLAKE2sWithKey(fixedKey)
-	// On hosts without a fused chain-absorb path (neither AVX-512 nor
-	// AVX2) the batched closure falls into the scalar Go reference;
-	// under that path process_cgo.go's nil-fallback (driving 4 single
-	// calls into the upstream golang.org/x/crypto BLAKE2s asm)
-	// outperforms the 4-lane wrapper. Return nil to opt into that
-	// fallback.
-	if !blake2sasm.HasAVX512Fused && !blake2sasm.HasAVX2Fused {
-		return single, nil
-	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
-		commonLen := len(data[0])
-		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
-			len(data[1]) == commonLen &&
-			len(data[2]) == commonLen &&
-			len(data[3]) == commonLen {
-			var dataPtrs [4]*byte
-			dataPtrs[0] = &data[0][0]
-			dataPtrs[1] = &data[1][0]
-			dataPtrs[2] = &data[2][0]
-			dataPtrs[3] = &data[3][0]
-			var out8 [4][8]uint32
-			seedsCopy := seeds
-			switch commonLen {
-			case 13:
-				// Interlocked Barrier PRF fill shape (Lift 2).
-				blake2sasm.Blake2s256ChainAbsorb13x4(
-					&blake2sasm.Blake2sIV256Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out8,
-				)
-			case 20:
-				blake2sasm.Blake2s256ChainAbsorb20x4(
-					&blake2sasm.Blake2sIV256Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out8,
-				)
-			case 36:
-				blake2sasm.Blake2s256ChainAbsorb36x4(
-					&blake2sasm.Blake2sIV256Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out8,
-				)
-			case 68:
-				blake2sasm.Blake2s256ChainAbsorb68x4(
-					&blake2sasm.Blake2sIV256Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out8,
-				)
-			}
-			var out [4][4]uint64
-			for lane := 0; lane < 4; lane++ {
-				out[lane][0] = uint64(out8[lane][0]) | uint64(out8[lane][1])<<32
-				out[lane][1] = uint64(out8[lane][2]) | uint64(out8[lane][3])<<32
-				out[lane][2] = uint64(out8[lane][4]) | uint64(out8[lane][5])<<32
-				out[lane][3] = uint64(out8[lane][6]) | uint64(out8[lane][7])<<32
-			}
-			return out
-		}
 		var out [4][4]uint64
 		for lane := 0; lane < 4; lane++ {
 			out[lane] = single(data[lane], seeds[lane])

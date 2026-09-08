@@ -1,3 +1,16 @@
+// Package blake2sasm holds the fused ChainHash cascade kernels of BLAKE2s
+// for the parent hashes package: the whole component cascade of a seed
+// evaluated in one kernel call at the four per-pixel shapes (13 / 20 /
+// 36 / 68 bytes) — four lanes on the AVX-512 EVEX XMM, AVX2 VEX XMM and
+// NEON tiers, eight lanes on EVEX YMM registers at the nonce-buf shapes
+// and for the batch-16 Interlocked Barrier fill hook, and one lane in
+// general-purpose registers as the single-lane arm of every tier. The
+// initialisation vector, the parameter block, the block counters and
+// the final flag are folded into per-kernel read-only tables by the
+// generator (scripts/kernels/blake2s/gen_fused_kernels.py). Register
+// layout after github.com/saucecontrol/Blake2Fast (MIT),
+// Blake2sScalar.g.cs: one register per state word, one dword lane per
+// pixel, VPRORD for the four ARX rotates on the EVEX tier.
 package blake2sasm
 
 import (
